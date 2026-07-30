@@ -107,8 +107,6 @@ impl MetadataNavigator {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
-
     use libadwaita::prelude::*;
     use reprise_core::browser::{AlbumKey, ArtistKey, BrowserPlace};
     use reprise_core::view_source::ViewSource;
@@ -161,8 +159,7 @@ mod tests {
     fn nav_title_follows_scope_navigation() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
-        let conn = Rc::new(RefCell::new(reprise_core::db::open(None).unwrap()));
-        reprise_core::db::migrate(&conn.borrow()).unwrap();
+        let conn = Rc::new(crate::test_db::open().unwrap());
         let app = adw::Application::builder()
             .application_id("org.reprise.Reprise.ScopeTitleTest")
             .build();
@@ -207,8 +204,7 @@ mod tests {
     fn fil_1c_genre_scope_chip_x_returns_to_the_library_with_history() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
-        let conn = Rc::new(RefCell::new(reprise_core::db::open(None).unwrap()));
-        reprise_core::db::migrate(&conn.borrow()).unwrap();
+        let conn = Rc::new(crate::test_db::open().unwrap());
         let app = adw::Application::builder()
             .application_id("org.reprise.Reprise.ScopeChipTest")
             .build();
@@ -272,8 +268,7 @@ mod tests {
     fn fil_8_recently_added_chip_x_returns_to_the_normal_library_with_history() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
-        let conn = Rc::new(RefCell::new(reprise_core::db::open(None).unwrap()));
-        reprise_core::db::migrate(&conn.borrow()).unwrap();
+        let conn = Rc::new(crate::test_db::open().unwrap());
         let app = adw::Application::builder()
             .application_id("org.reprise.Reprise.RecentScopeChipTest")
             .build();

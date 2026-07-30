@@ -38,8 +38,8 @@ fn a_curve() -> AudioEffects {
 /// in place *before* `Runtime::new` applies the stored effects, and `over`
 /// hands the backend to the runtime in the same expression that builds it.
 fn refused_effects_harness() -> Harness {
-    let conn = reprise_core::db::open_migrated(None).expect("an in-memory database migrates");
-    reprise_core::library::audio_effect_settings::store(&conn, &a_curve())
+    let db = reprise_core::db::Db::open_in_memory().expect("an in-memory database migrates");
+    reprise_core::library::audio_effect_settings::store(&db, &a_curve())
         .expect("the settings are writable");
     let playback = crate::fakes::FakePlayback::new();
     let devices = crate::fakes::FakeDevices::new();
@@ -53,7 +53,7 @@ fn refused_effects_harness() -> Harness {
         clock: Box::new(clock),
     };
     Harness {
-        runtime: Runtime::new(conn, ports),
+        runtime: Runtime::new(db, ports),
         playback: handles.0,
         devices: handles.1,
         clock: handles.2,
@@ -62,11 +62,11 @@ fn refused_effects_harness() -> Harness {
 
 #[test]
 fn a_fresh_runtime_applies_what_was_stored() {
-    let conn = reprise_core::db::open_migrated(None).expect("an in-memory database migrates");
-    reprise_core::library::audio_effect_settings::store(&conn, &a_curve())
+    let db = reprise_core::db::Db::open_in_memory().expect("an in-memory database migrates");
+    reprise_core::library::audio_effect_settings::store(&db, &a_curve())
         .expect("the settings are writable");
 
-    let harness = over(conn);
+    let harness = over(db);
 
     assert_eq!(
         harness.playback.accepted_effects().last(),
@@ -100,20 +100,20 @@ fn a_backend_without_an_equalizer_still_plays() {
 fn a_refused_equalizer_keeps_the_curve_the_user_dialled_in() {
     let harness = refused_effects_harness();
 
-    let conn = harness.runtime.connection();
+    let db = harness.runtime.database();
     assert!(
-        !settings::get_equalizer_enabled(conn),
+        !settings::get_equalizer_enabled(db),
         "the switch goes off, so the next start does not repeat a failure \
          the user has already been shown"
     );
     assert_eq!(
-        settings::get_equalizer_bands(conn),
+        settings::get_equalizer_bands(db),
         a_curve().equalizer_bands,
         "but the curve stays: it is work someone did, and flattening it over \
          a missing plugin that may be installed tomorrow destroys it silently"
     );
     assert_eq!(
-        settings::get_replay_gain_mode(conn),
+        settings::get_replay_gain_mode(db),
         ReplayGainMode::Off,
         "ReplayGain is a switch too, not a curve"
     );
@@ -158,7 +158,7 @@ fn effects_that_the_backend_refuses_are_not_stored() {
 
     assert_eq!(error.category(), "failed");
     assert!(
-        !settings::get_equalizer_enabled(harness.runtime.connection()),
+        !settings::get_equalizer_enabled(harness.runtime.database()),
         "storing a setting the audio path refused would have the next start \
          read it, fail on it, and switch it off — the user's change undoing \
          itself one launch later, far from what caused it"

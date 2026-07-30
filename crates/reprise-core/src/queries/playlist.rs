@@ -3,6 +3,7 @@
 //! former single-file `queries.rs` (Refactoring & Extensibility Task 1) — a
 //! pure move, no behavior change.
 
+use crate::db::Db;
 use crate::models::Track;
 
 use super::clauses::{
@@ -53,7 +54,7 @@ fn build_playlist_track_query(
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn query_track_window_playlist(
-    conn: &mut Connection,
+    conn: &Connection,
     playlist_id: i64,
     sort_field: &str,
     sort_dir: &str,
@@ -165,9 +166,10 @@ pub(super) fn query_visible_track_ids_playlist(
 /// with dead paths is useless to another player. Capped at `QUEUE_LIMIT` for
 /// defense in depth, same reasoning as `query_track_ids`'s per-source caps.
 pub fn query_playlist_tracks_full(
-    conn: &Connection,
+    db: &Db,
     playlist_id: i64,
 ) -> Result<Vec<Track>, rusqlite::Error> {
+    let conn = db.conn();
     // M3U export ignores `is_ai`, so project the cheap literal `0` (no
     // per-row provenance subquery) while keeping the column at its fixed index
     // for `row_to_playlist_track` (INST-10 / FIX-4).

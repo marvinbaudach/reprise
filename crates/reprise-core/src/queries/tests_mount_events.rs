@@ -51,10 +51,11 @@ fn p_6_mount_evidence_heals_existing_marks_ejected_and_never_deletes_guesses() {
     let existing_unknown = dir.path().join("unknown.flac");
     std::fs::write(&existing_unmounted, b"present").unwrap();
     std::fs::write(&existing_unknown, b"present").unwrap();
-    let conn = crate::db::open_migrated(None).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
 
     seed_track(
-        &conn,
+        conn,
         1,
         &existing_unmounted,
         Some(MissingReason::Unmounted),
@@ -62,7 +63,7 @@ fn p_6_mount_evidence_heals_existing_marks_ejected_and_never_deletes_guesses() {
         None,
     );
     seed_track(
-        &conn,
+        conn,
         2,
         &existing_unknown,
         Some(MissingReason::Unknown),
@@ -70,7 +71,7 @@ fn p_6_mount_evidence_heals_existing_marks_ejected_and_never_deletes_guesses() {
         None,
     );
     seed_track(
-        &conn,
+        conn,
         3,
         &dir.path().join("still-gone.flac"),
         Some(MissingReason::Unmounted),
@@ -78,7 +79,7 @@ fn p_6_mount_evidence_heals_existing_marks_ejected_and_never_deletes_guesses() {
         None,
     );
     seed_track(
-        &conn,
+        conn,
         4,
         &dir.path().join("present-on-ejected.flac"),
         None,
@@ -86,7 +87,7 @@ fn p_6_mount_evidence_heals_existing_marks_ejected_and_never_deletes_guesses() {
         None,
     );
     seed_track(
-        &conn,
+        conn,
         5,
         Path::new("/media/other/track.flac"),
         None,
@@ -94,7 +95,7 @@ fn p_6_mount_evidence_heals_existing_marks_ejected_and_never_deletes_guesses() {
         None,
     );
     seed_track(
-        &conn,
+        conn,
         6,
         &dir.path().join("tombstoned.flac"),
         None,
@@ -102,7 +103,7 @@ fn p_6_mount_evidence_heals_existing_marks_ejected_and_never_deletes_guesses() {
         Some(9),
     );
     seed_track(
-        &conn,
+        conn,
         7,
         &dir.path().join("stale-mount-column.flac"),
         None,
@@ -110,7 +111,7 @@ fn p_6_mount_evidence_heals_existing_marks_ejected_and_never_deletes_guesses() {
         None,
     );
     seed_track(
-        &conn,
+        conn,
         8,
         Path::new("/outside/incorrect-column.flac"),
         None,
@@ -118,39 +119,39 @@ fn p_6_mount_evidence_heals_existing_marks_ejected_and_never_deletes_guesses() {
         None,
     );
 
-    assert_eq!(verify_unmounted_tracks(&conn).unwrap(), vec![1, 2]);
-    assert_eq!(missing_state(&conn, 1), (None, None));
-    assert_eq!(missing_state(&conn, 2), (None, None));
-    assert_eq!(missing_state(&conn, 3).1.as_deref(), Some("unmounted"));
+    assert_eq!(verify_unmounted_tracks(&db).unwrap(), vec![1, 2]);
+    assert_eq!(missing_state(conn, 1), (None, None));
+    assert_eq!(missing_state(conn, 2), (None, None));
+    assert_eq!(missing_state(conn, 3).1.as_deref(), Some("unmounted"));
 
     assert_eq!(
-        mark_mount_unavailable(&conn, &mount, 500).unwrap(),
+        mark_mount_unavailable(&db, &mount, 500).unwrap(),
         4,
         "path containment, not a possibly stale mount_point column, is the evidence"
     );
     assert_eq!(
-        missing_state(&conn, 1),
+        missing_state(conn, 1),
         (Some(500), Some("unmounted".into()))
     );
     assert_eq!(
-        missing_state(&conn, 2),
+        missing_state(conn, 2),
         (Some(500), Some("unmounted".into()))
     );
     assert_eq!(
-        missing_state(&conn, 4),
+        missing_state(conn, 4),
         (Some(500), Some("unmounted".into()))
     );
-    assert_eq!(missing_state(&conn, 5), (None, None));
-    assert_eq!(missing_state(&conn, 6), (None, None));
+    assert_eq!(missing_state(conn, 5), (None, None));
+    assert_eq!(missing_state(conn, 6), (None, None));
     assert_eq!(
-        missing_state(&conn, 7),
+        missing_state(conn, 7),
         (Some(500), Some("unmounted".into()))
     );
-    assert_eq!(missing_state(&conn, 8), (None, None));
+    assert_eq!(missing_state(conn, 8), (None, None));
 
-    settings::set_missing_auto_clean(&conn, AutoCleanSetting::Days(30)).unwrap();
-    settings::set_auto_clean_armed_at(&conn, 0).unwrap();
-    assert!(auto_clean_eligible(&conn, 60 * 86_400).unwrap().is_empty());
+    settings::set_missing_auto_clean(&db, AutoCleanSetting::Days(30)).unwrap();
+    settings::set_auto_clean_armed_at(&db, 0).unwrap();
+    assert!(auto_clean_eligible(&db, 60 * 86_400).unwrap().is_empty());
 }
 
 // UX FB-6: an external deletion is reported as one aggregate reconcile and
@@ -162,13 +163,13 @@ fn fb_6_watcher_is_silent_and_playing_track_fault_has_one_notice_then_skips() {
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac");
     let path = dir.path().join("gone.flac");
     std::fs::copy(fixture, &path).unwrap();
-    let mut conn = crate::db::open_migrated(None).unwrap();
-    let first = scanner::scan_folder(&mut conn, dir.path()).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let first = scanner::scan_folder(&db, dir.path()).unwrap();
     assert!(matches!(first, ScanOutcome::Completed(_)));
-    settings::set_last_viewed_missing(&conn, 0).unwrap();
+    settings::set_last_viewed_missing(&db, 0).unwrap();
     std::fs::remove_file(&path).unwrap();
 
-    let report = match scanner::scan_folder(&mut conn, dir.path()).unwrap() {
+    let report = match scanner::scan_folder(&db, dir.path()).unwrap() {
         ScanOutcome::Completed(report) => report,
         ScanOutcome::RootUnavailable { root } => panic!("unexpected unavailable root: {root:?}"),
     };
@@ -176,7 +177,7 @@ fn fb_6_watcher_is_silent_and_playing_track_fault_has_one_notice_then_skips() {
         report.vanished, 1,
         "the watcher-facing result is aggregate-only"
     );
-    assert_eq!(count_new_missing(&conn, 0).unwrap(), 1);
+    assert_eq!(count_new_missing(&db, 0).unwrap(), 1);
 
     let policy = playback_fault_policy(false);
     assert!(policy.mark_missing);
@@ -193,17 +194,18 @@ fn playback_fault_mark_rechecks_the_selected_identity_and_disk_state() {
     let old_path = dir.path().join("old.flac");
     let new_path = dir.path().join("new.flac");
     std::fs::write(&new_path, b"returned").unwrap();
-    let conn = crate::db::open_migrated(None).unwrap();
-    seed_track(&conn, 1, &old_path, None, None, None);
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    seed_track(conn, 1, &old_path, None, None, None);
 
     conn.execute(
         "UPDATE tracks SET path=?1 WHERE id=1",
         [new_path.to_string_lossy().to_string()],
     )
     .unwrap();
-    assert!(!mark_track_missing_if_current(&conn, 1, &old_path).unwrap());
-    assert_eq!(missing_state(&conn, 1), (None, None));
+    assert!(!mark_track_missing_if_current(&db, 1, &old_path).unwrap());
+    assert_eq!(missing_state(conn, 1), (None, None));
 
-    assert!(!mark_track_missing_if_current(&conn, 1, &new_path).unwrap());
-    assert_eq!(missing_state(&conn, 1), (None, None));
+    assert!(!mark_track_missing_if_current(&db, 1, &new_path).unwrap());
+    assert_eq!(missing_state(conn, 1), (None, None));
 }

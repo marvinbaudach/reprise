@@ -494,8 +494,8 @@ pub(in crate::ui) fn handle_playlist_reorder_drop(
     };
 
     let result = {
-        let mut conn = shared.conn.borrow_mut();
-        playlists::move_position(&mut conn, playlist_id, from, to)
+        let conn = &shared.conn;
+        playlists::move_position(conn, playlist_id, from, to)
     };
     match result {
         Ok(()) => {
@@ -637,24 +637,18 @@ mod tests {
     // ## reorder_position_for_drag
 
     fn seeded_playlist_model(track_ids_in_order: &[i64]) -> (TrackListModel, i64) {
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
+        let conn = crate::test_db::open().unwrap();
         for id in track_ids_in_order {
-            conn.execute(
-                "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (?1, ?2, ?3, '', 0)",
-                rusqlite::params![id, format!("/x/{id}.flac"), format!("Track {id}")],
-            )
-            .unwrap();
+            crate::test_db::connection(&conn)
+                .execute(
+                    "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (?1, ?2, ?3, '', 0)",
+                    rusqlite::params![id, format!("/x/{id}.flac"), format!("Track {id}")],
+                )
+                .unwrap();
         }
-        let conn = std::rc::Rc::new(std::cell::RefCell::new(conn));
-        let playlist_id = {
-            let c = conn.borrow();
-            playlists::create(&c, "P1").unwrap()
-        };
-        {
-            let mut c = conn.borrow_mut();
-            playlists::add_tracks(&mut c, playlist_id, track_ids_in_order).unwrap();
-        }
+        let conn = std::rc::Rc::new(conn);
+        let playlist_id = playlists::create(&conn, "P1").unwrap();
+        playlists::add_tracks(&conn, playlist_id, track_ids_in_order).unwrap();
         let model = TrackListModel::new(conn);
         model.set_query(
             &ViewSource::Playlist(playlist_id),
@@ -717,24 +711,21 @@ mod tests {
     /// pins the position-lookup half of the contract in isolation.
     #[test]
     fn reorder_position_for_playlist_uses_true_position_not_view_index_under_a_sort() {
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
+        let conn = crate::test_db::open().unwrap();
         // Insertion order (== pt.position order) is A, B, C; artist-ascending
         // view order is C, A, B (artists Alpha, Zeta, ... chosen to diverge).
         let tracks = [(1, "A", "Zeta"), (2, "B", "Theta"), (3, "C", "Alpha")];
         for (id, title, artist) in tracks {
-            conn.execute(
-                "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (?1, ?2, ?3, ?4, 0)",
-                rusqlite::params![id, format!("/x/{id}.flac"), title, artist],
-            )
-            .unwrap();
+            crate::test_db::connection(&conn)
+                .execute(
+                    "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (?1, ?2, ?3, ?4, 0)",
+                    rusqlite::params![id, format!("/x/{id}.flac"), title, artist],
+                )
+                .unwrap();
         }
         let playlist_id = playlists::create(&conn, "P1").unwrap();
-        let conn = std::rc::Rc::new(std::cell::RefCell::new(conn));
-        {
-            let mut c = conn.borrow_mut();
-            playlists::add_tracks(&mut c, playlist_id, &[1, 2, 3]).unwrap();
-        }
+        let conn = std::rc::Rc::new(conn);
+        playlists::add_tracks(&conn, playlist_id, &[1, 2, 3]).unwrap();
         let model = TrackListModel::new(conn);
         model.set_query(&ViewSource::Playlist(playlist_id), "artist", "asc", "", &[]);
         // View row 0 is track C (id 3), whose true pt.position is 2.

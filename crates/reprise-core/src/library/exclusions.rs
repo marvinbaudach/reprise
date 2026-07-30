@@ -4,6 +4,8 @@ use std::path::Path;
 
 use rusqlite::Connection;
 
+use crate::db::Db;
+
 /// Records the current track identity only when both id and path still match
 /// the caller's selection snapshot. `INSERT OR REPLACE` retires an older
 /// record for the same stable identity, or for the same fallback path when
@@ -44,17 +46,20 @@ pub(crate) fn matches_file(
     )
 }
 
-pub fn count(conn: &Connection) -> Result<u32, rusqlite::Error> {
+pub fn count(db: &Db) -> Result<u32, rusqlite::Error> {
+    let conn = db.conn();
     conn.query_row("SELECT count(*) FROM library_exclusions", [], |row| {
         row.get(0)
     })
 }
 
-pub fn clear(conn: &Connection) -> Result<usize, rusqlite::Error> {
+pub fn clear(db: &Db) -> Result<usize, rusqlite::Error> {
+    let conn = db.conn();
     conn.execute("DELETE FROM library_exclusions", [])
 }
 
-pub fn clear_paths(conn: &Connection, paths: &[&Path]) -> Result<usize, rusqlite::Error> {
+pub fn clear_paths(db: &Db, paths: &[&Path]) -> Result<usize, rusqlite::Error> {
+    let conn = db.conn();
     let mut cleared = 0;
     for path in paths {
         cleared += conn.execute(

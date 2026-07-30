@@ -23,10 +23,9 @@ fn loaded_track() -> NowPlaying {
 }
 
 fn test_widgets(content: &impl IsA<gtk4::Widget>, visible: bool) -> PanelWidgets {
-    let conn = reprise_core::db::open(None).unwrap();
-    reprise_core::db::migrate(&conn).unwrap();
+    let conn = crate::test_db::open().unwrap();
     let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
-    build_widgets(content, visible, Rc::new(RefCell::new(conn)), &cover_loader)
+    build_widgets(content, visible, Rc::new(conn), &cover_loader)
 }
 
 fn test_widgets_for_session(
@@ -34,16 +33,9 @@ fn test_widgets_for_session(
     visible: bool,
     session: &Rc<TabSession>,
 ) -> PanelWidgets {
-    let conn = reprise_core::db::open(None).unwrap();
-    reprise_core::db::migrate(&conn).unwrap();
+    let conn = crate::test_db::open().unwrap();
     let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
-    build_widgets_for_session(
-        content,
-        visible,
-        session,
-        Rc::new(RefCell::new(conn)),
-        &cover_loader,
-    )
+    build_widgets_for_session(content, visible, session, Rc::new(conn), &cover_loader)
 }
 
 #[test]
@@ -78,8 +70,7 @@ fn ac_23_visual_is_the_third_panel_tab() {
 
 #[test]
 fn npp_12_panel_defaults_hidden_and_visibility_round_trips() {
-    let conn = reprise_core::db::open(None).unwrap();
-    reprise_core::db::migrate(&conn).unwrap();
+    let conn = crate::test_db::open().unwrap();
     assert!(!reprise_core::library::settings::get_info_panel_visible(
         &conn
     ));
@@ -179,9 +170,7 @@ fn npp_1_long_queue_source_cannot_resize_the_fixed_sidebar() {
     gtk4::init().unwrap();
     let (window, panel) = test_panel("org.reprise.Reprise.NowPlayingSourceWidthTest");
     panel.retain_for_window(&window);
-    panel
-        .conn
-        .borrow()
+    crate::test_db::connection(&panel.conn)
         .execute(
             "INSERT INTO tracks (id,path,title,artist,album,duration_ms,added_at) \
              VALUES (1,'/source-width.flac','Track','Artist','Album',180000,0)",
@@ -608,9 +597,8 @@ fn test_panel_with_cover_loader(
     application_id: &str,
     cover_loader: Rc<CoverLoader>,
 ) -> (adw::ApplicationWindow, Rc<NowPlayingPanel>) {
-    let conn = Rc::new(RefCell::new(reprise_core::db::open(None).unwrap()));
-    reprise_core::db::migrate(&conn.borrow()).unwrap();
-    let runtime = ArtistNewsRuntime::setup(&conn.borrow());
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let runtime = ArtistNewsRuntime::setup(&conn);
     let app = adw::Application::builder()
         .application_id(application_id)
         .build();

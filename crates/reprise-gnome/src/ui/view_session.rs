@@ -54,10 +54,7 @@ pub(super) fn restore(
     );
     let (source, title) = sidebar.restore_source(to_view_source(&state.source));
     window_title.set_title(&title);
-    let viewed = {
-        let conn = track_list.shared.conn.borrow();
-        record_issue_viewed(&conn, &source, now_unix())
-    };
+    let viewed = record_issue_viewed(&track_list.shared.conn, &source, now_unix());
     match viewed {
         Ok(true) => sidebar.refresh("restored issue view opened"),
         Ok(false) => {}
@@ -283,13 +280,13 @@ fn parse_optional(value: &str) -> Option<String> {
 }
 
 pub(in crate::ui) fn record_issue_viewed(
-    conn: &rusqlite::Connection,
+    db: &reprise_core::db::Db,
     source: &ViewSource,
     now: i64,
 ) -> Result<bool, rusqlite::Error> {
     match source {
-        ViewSource::Missing => settings::set_last_viewed_missing(conn, now)?,
-        ViewSource::ImportErrors => settings::set_last_viewed_import_errors(conn, now)?,
+        ViewSource::Missing => settings::set_last_viewed_missing(db, now)?,
+        ViewSource::ImportErrors => settings::set_last_viewed_import_errors(db, now)?,
         _ => return Ok(false),
     }
     Ok(true)
@@ -309,7 +306,7 @@ mod issue_view_tests {
 
     #[test]
     fn opening_each_issue_view_records_only_its_last_viewed_clock() {
-        let conn = reprise_core::db::open_migrated(None).unwrap();
+        let conn = crate::test_db::open().unwrap();
 
         assert!(record_issue_viewed(&conn, &ViewSource::Missing, 111).unwrap());
         assert_eq!(settings::get_last_viewed_missing(&conn).unwrap(), 111);

@@ -9,7 +9,7 @@
 //! Successful copies are counted, not itemized. Only deviations get a row,
 //! so a 278-file run leaves a handful of lines instead of hundreds.
 
-use rusqlite::{Connection, Row};
+use rusqlite::Row;
 
 use super::machine::SyncOutcome;
 use crate::db::DbError;
@@ -173,7 +173,8 @@ pub struct RunRecord {
 
 /// Opens a run. Any run still marked `Running` belongs to a session that
 /// died, so it is closed as `Interrupted` rather than left ambiguous.
-pub fn start_run(conn: &Connection, start: &RunStart) -> Result<i64, DbError> {
+pub fn start_run(db: &crate::db::Db, start: &RunStart) -> Result<i64, DbError> {
+    let conn = db.conn();
     let transaction = conn.unchecked_transaction()?;
     transaction.execute(
         "UPDATE sync_runs SET outcome = 'interrupted' WHERE outcome = 'running'",
@@ -208,7 +209,8 @@ pub fn start_run(conn: &Connection, start: &RunStart) -> Result<i64, DbError> {
 }
 
 /// Closes a run with its balance.
-pub fn finish_run(conn: &Connection, run: i64, summary: &RunSummary) -> Result<(), DbError> {
+pub fn finish_run(db: &crate::db::Db, run: i64, summary: &RunSummary) -> Result<(), DbError> {
+    let conn = db.conn();
     conn.execute(
         "UPDATE sync_runs SET \
            finished_at = ?2, outcome = ?3, copied = ?4, skipped = ?5, deleted = ?6, \
@@ -230,7 +232,8 @@ pub fn finish_run(conn: &Connection, run: i64, summary: &RunSummary) -> Result<(
 }
 
 /// Records one file that did not go through cleanly.
-pub fn note_deviation(conn: &Connection, run: i64, deviation: &Deviation) -> Result<(), DbError> {
+pub fn note_deviation(db: &crate::db::Db, run: i64, deviation: &Deviation) -> Result<(), DbError> {
+    let conn = db.conn();
     conn.execute(
         "INSERT INTO sync_events (run_id, kind, track_id, device_path, detail) \
          VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -246,7 +249,8 @@ pub fn note_deviation(conn: &Connection, run: i64, deviation: &Deviation) -> Res
 }
 
 /// The most recent runs, newest first.
-pub fn recent_runs(conn: &Connection, limit: usize) -> Result<Vec<RunRecord>, DbError> {
+pub fn recent_runs(db: &crate::db::Db, limit: usize) -> Result<Vec<RunRecord>, DbError> {
+    let conn = db.conn();
     let mut statement = conn.prepare(
         "SELECT id, device_serial, device_name, transfer_profile, started_at, finished_at, \
                 outcome, planned, copied, skipped, deleted, failed, bytes_copied, detail \
@@ -259,7 +263,8 @@ pub fn recent_runs(conn: &Connection, limit: usize) -> Result<Vec<RunRecord>, Db
 }
 
 /// The deviations of one run, in the order they happened.
-pub fn deviations(conn: &Connection, run: i64) -> Result<Vec<Deviation>, DbError> {
+pub fn deviations(db: &crate::db::Db, run: i64) -> Result<Vec<Deviation>, DbError> {
+    let conn = db.conn();
     let mut statement = conn.prepare(
         "SELECT kind, track_id, device_path, detail FROM sync_events \
          WHERE run_id = ?1 ORDER BY rowid",

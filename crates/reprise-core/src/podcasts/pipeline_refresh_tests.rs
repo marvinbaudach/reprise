@@ -49,8 +49,8 @@ impl FeedFetcher for PartialFailureFeed {
     }
 }
 
-fn conn() -> Connection {
-    let conn = crate::db::open_migrated(None).unwrap();
+fn conn() -> Db {
+    let conn = Db::open_in_memory().unwrap();
     // These tests exercise fetch/parse/store logic, not the NET-1a gate
     // itself (see the dedicated `net_1a_*` tests below), so Podcasts
     // starts enabled here.
@@ -59,7 +59,7 @@ fn conn() -> Connection {
 }
 
 fn add_subscription(conn: &Connection, url: &str, auto_download: bool) -> i64 {
-    store::add_or_restore(
+    store::add_or_restore_in(
         conn,
         &NewSubscription {
             kind: PodcastKind::Rss,
@@ -94,7 +94,7 @@ fn feed_response(title: &str, episode_count: usize, etag: Option<&str>) -> Respo
 #[test]
 fn conditional_cycle_stores_headers_then_only_bumps_not_modified_state() {
     let conn = conn();
-    let id = add_subscription(&conn, "https://example.test/feed", false);
+    let id = add_subscription(conn.conn(), "https://example.test/feed", false);
     let feed = FakeFeed {
         responses: RefCell::new(vec![
             Ok(feed_response("Fetched Show", 1, Some("\"v1\""))),
@@ -123,7 +123,7 @@ fn conditional_cycle_stores_headers_then_only_bumps_not_modified_state() {
 #[test]
 fn future_only_baseline_skips_known_guids_and_keeps_importing_new_ones() {
     let conn = conn();
-    let id = add_subscription(&conn, "https://example.test/feed", false);
+    let id = add_subscription(conn.conn(), "https://example.test/feed", false);
     store::replace_future_only_baseline(&conn, id, &["g0".to_owned(), "g1".to_owned()]).unwrap();
     let feed = FakeFeed {
         responses: RefCell::new(vec![
@@ -150,8 +150,8 @@ fn future_only_baseline_skips_known_guids_and_keeps_importing_new_ones() {
 #[test]
 fn one_failed_subscription_does_not_block_the_next() {
     let conn = conn();
-    let failed = add_subscription(&conn, "https://example.test/failed", false);
-    let succeeded = add_subscription(&conn, "https://example.test/succeeded", false);
+    let failed = add_subscription(conn.conn(), "https://example.test/failed", false);
+    let succeeded = add_subscription(conn.conn(), "https://example.test/succeeded", false);
     let feed = FakeFeed {
         responses: RefCell::new(vec![
             Err(PodcastError::Transport("offline".to_owned())),
@@ -187,7 +187,7 @@ fn one_failed_subscription_does_not_block_the_next() {
 #[test]
 fn auto_download_is_capped_at_three_new_episodes_per_run() {
     let conn = conn();
-    let id = add_subscription(&conn, "https://example.test/feed", true);
+    let id = add_subscription(conn.conn(), "https://example.test/feed", true);
     let feed = FakeFeed {
         responses: RefCell::new(vec![Ok(feed_response("Show", 5, None))]),
         ..FakeFeed::default()
@@ -209,7 +209,7 @@ fn auto_download_is_capped_at_three_new_episodes_per_run() {
 #[test]
 fn pod_7_auto_download_reports_episode_states_during_refresh() {
     let conn = conn();
-    add_subscription(&conn, "https://example.test/feed", true);
+    add_subscription(conn.conn(), "https://example.test/feed", true);
     let feed = FakeFeed {
         responses: RefCell::new(vec![Ok(feed_response("Show", 1, None))]),
         ..FakeFeed::default()
@@ -218,7 +218,7 @@ fn pod_7_auto_download_reports_episode_states_during_refresh() {
     let mut events = Vec::new();
 
     refresh_to_root_with_download_progress(
-        &conn,
+        conn.conn(),
         &feed,
         &FakeYoutube,
         10,
@@ -250,7 +250,7 @@ fn pod_7_auto_download_reports_episode_states_during_refresh() {
 #[test]
 fn download_episode_downloads_a_specific_episode_by_id_and_persists_its_size() {
     let conn = conn();
-    let id = add_subscription(&conn, "https://example.test/feed", false);
+    let id = add_subscription(conn.conn(), "https://example.test/feed", false);
     let feed = FakeFeed {
         responses: RefCell::new(vec![Ok(feed_response("Show", 1, None))]),
         ..FakeFeed::default()
@@ -285,7 +285,7 @@ fn download_episode_downloads_a_specific_episode_by_id_and_persists_its_size() {
 #[test]
 fn download_episode_is_idempotent_and_does_not_redownload_an_existing_file() {
     let conn = conn();
-    let id = add_subscription(&conn, "https://example.test/feed", false);
+    let id = add_subscription(conn.conn(), "https://example.test/feed", false);
     let feed = FakeFeed {
         responses: RefCell::new(vec![Ok(feed_response("Show", 1, None))]),
         ..FakeFeed::default()
@@ -344,7 +344,7 @@ fn download_episode_reports_not_found_for_an_unknown_id() {
 #[test]
 fn existing_guid_keyed_file_is_reclaimed_without_downloading_again() {
     let conn = conn();
-    let id = add_subscription(&conn, "https://example.test/feed", true);
+    let id = add_subscription(conn.conn(), "https://example.test/feed", true);
     let feed = FakeFeed {
         responses: RefCell::new(vec![Ok(feed_response("Show", 1, None))]),
         ..FakeFeed::default()
@@ -374,7 +374,7 @@ fn existing_guid_keyed_file_is_reclaimed_without_downloading_again() {
 #[test]
 fn failed_download_does_not_leave_a_reclaimable_partial_file() {
     let conn = conn();
-    let id = add_subscription(&conn, "https://example.test/feed", true);
+    let id = add_subscription(conn.conn(), "https://example.test/feed", true);
     let feed = PartialFailureFeed {
         response: RefCell::new(Some(feed_response("Show", 1, None))),
     };
@@ -401,7 +401,7 @@ fn failed_download_does_not_leave_a_reclaimable_partial_file() {
 fn net_1a_disabled_podcasts_module_skips_rss_refresh_without_fetching() {
     let conn = conn();
     crate::modules::set_enabled(&conn, &crate::modules::PODCASTS_MODULE, false).unwrap();
-    let id = add_subscription(&conn, "https://example.test/feed", false);
+    let id = add_subscription(conn.conn(), "https://example.test/feed", false);
     let feed = FakeFeed::default(); // no responses queued: fetch() would panic/underflow if called
     let directory = tempfile::tempdir().unwrap();
 
@@ -425,7 +425,7 @@ fn net_1a_disabled_podcasts_module_skips_rss_refresh_without_fetching() {
 fn net_1a_global_gate_off_blocks_rss_refresh_even_with_podcasts_on() {
     let conn = conn();
     crate::online_sources::set_enabled(&conn, false).unwrap();
-    let id = add_subscription(&conn, "https://example.test/feed", false);
+    let id = add_subscription(conn.conn(), "https://example.test/feed", false);
     let feed = FakeFeed::default();
     let directory = tempfile::tempdir().unwrap();
 
@@ -521,7 +521,7 @@ impl tracing::Subscriber for LogCapture {
 fn pod_13_a_failed_download_never_leaks_the_raw_provider_message_into_state_or_logs() {
     let conn = conn();
     let directory = tempfile::tempdir().unwrap();
-    let id = add_subscription(&conn, "https://example.test/feed", false);
+    let id = add_subscription(conn.conn(), "https://example.test/feed", false);
     let seed_feed = FakeFeed {
         responses: RefCell::new(vec![Ok(feed_response("Show", 1, None))]),
         ..FakeFeed::default()

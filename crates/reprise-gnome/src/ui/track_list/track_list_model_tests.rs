@@ -23,16 +23,16 @@ fn section_for_answers_ranges_and_full_model_fallback() {
 use super::*;
 
 fn seeded_model(rows: &[(&str, &str)]) -> TrackListModel {
-    let conn = reprise_core::db::open(None).unwrap();
-    reprise_core::db::migrate(&conn).unwrap();
+    let conn = crate::test_db::open().unwrap();
     for (t, a) in rows {
-        conn.execute(
-            "INSERT INTO tracks (path, title, artist, added_at) VALUES (?1, ?2, ?3, 0)",
-            rusqlite::params![format!("/x/{t}.flac"), t, a],
-        )
-        .unwrap();
+        crate::test_db::connection(&conn)
+            .execute(
+                "INSERT INTO tracks (path, title, artist, added_at) VALUES (?1, ?2, ?3, 0)",
+                rusqlite::params![format!("/x/{t}.flac"), t, a],
+            )
+            .unwrap();
     }
-    TrackListModel::new(Rc::new(RefCell::new(conn)))
+    TrackListModel::new(Rc::new(conn))
 }
 
 /// Sortable, zero-padded title for row `i` (e.g. `track-00042`), used by
@@ -46,10 +46,10 @@ fn bulk_title(i: u32) -> String {
 /// of rows) with titles from `bulk_title`, so ascending title sort order
 /// matches ascending insertion/index order.
 fn seeded_model_bulk(count: u32) -> TrackListModel {
-    let mut conn = reprise_core::db::open(None).unwrap();
-    reprise_core::db::migrate(&conn).unwrap();
+    let conn = crate::test_db::open().unwrap();
     {
-        let tx = conn.transaction().unwrap();
+        let fixture_conn = crate::test_db::connection(&conn);
+        let tx = fixture_conn.unchecked_transaction().unwrap();
         for i in 0..count {
             let title = bulk_title(i);
             tx.execute(
@@ -60,7 +60,7 @@ fn seeded_model_bulk(count: u32) -> TrackListModel {
         }
         tx.commit().unwrap();
     }
-    TrackListModel::new(Rc::new(RefCell::new(conn)))
+    TrackListModel::new(Rc::new(conn))
 }
 
 #[test]
@@ -303,17 +303,17 @@ fn track_at_evicts_lowest_window_past_cache_capacity() {
 /// (`queries.rs`'s own test module covers each source's SQL directly).
 #[test]
 fn set_query_with_missing_source_shows_only_missing_rows() {
-    let conn = reprise_core::db::open(None).unwrap();
-    reprise_core::db::migrate(&conn).unwrap();
+    let conn = crate::test_db::open().unwrap();
     for (t, missing_since) in [("Alpha", None), ("Beta", Some(1))] {
-        conn.execute(
-            "INSERT INTO tracks (path, title, artist, added_at, missing_since) \
-                 VALUES (?1, ?2, '', 0, ?3)",
-            rusqlite::params![format!("/x/{t}.flac"), t, missing_since],
-        )
-        .unwrap();
+        crate::test_db::connection(&conn)
+            .execute(
+                "INSERT INTO tracks (path, title, artist, added_at, missing_since) \
+                     VALUES (?1, ?2, '', 0, ?3)",
+                rusqlite::params![format!("/x/{t}.flac"), t, missing_since],
+            )
+            .unwrap();
     }
-    let model = TrackListModel::new(Rc::new(RefCell::new(conn)));
+    let model = TrackListModel::new(Rc::new(conn));
 
     model.set_query(&ViewSource::Missing, "title", "asc", "", &[]);
     assert_eq!(model.n_items(), 1);
@@ -329,8 +329,9 @@ fn set_query_with_queue_source_follows_queue_ids_order() {
     let model = seeded_model(&[("Zulu", "AAA"), ("Alpha", "BBB"), ("Mid", "CCC")]);
     let ids: Vec<i64> = {
         let conn = model.imp().conn.borrow().clone().unwrap();
-        let conn = conn.borrow();
-        let mut stmt = conn
+        let conn = &conn;
+        let fixture_conn = crate::test_db::connection(conn.as_ref());
+        let mut stmt = fixture_conn
             .prepare("SELECT id FROM tracks ORDER BY title")
             .unwrap();
         stmt.query_map([], |r| r.get(0))

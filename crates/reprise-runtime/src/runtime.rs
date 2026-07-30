@@ -1,5 +1,6 @@
 //! The runtime itself: one owner, one order, one truth.
 
+use reprise_core::db::Db;
 use reprise_core::device_sync::machine::Event as DeviceEvent;
 use reprise_core::device_sync::MirrorPlan;
 use reprise_core::library::settings::{self, TrackTransition};
@@ -14,7 +15,6 @@ use reprise_runtime_protocol::queue::{QueueCommand, QueueSnapshot};
 use reprise_runtime_protocol::queue::{QueuePage, QueueSection};
 use reprise_runtime_protocol::session::RestoredQueue;
 use reprise_runtime_protocol::PROTOCOL_VERSION;
-use rusqlite::Connection;
 
 use crate::client::{ClientHandshake, ClientId, Clients};
 use crate::devices::DeviceRuns;
@@ -170,7 +170,7 @@ pub struct Connected {
 pub struct Runtime {
     /// The writer. Every runtime effect that touches the database goes
     /// through this one connection, which is what serializes them (§9.1).
-    conn: Connection,
+    db: Db,
     ports: Ports,
     clients: Clients,
     transport: Transport,
@@ -196,14 +196,14 @@ pub struct Runtime {
 impl Runtime {
     /// Builds a runtime over an already-migrated database.
     #[must_use]
-    pub fn new(conn: Connection, ports: Ports) -> Self {
+    pub fn new(db: Db, ports: Ports) -> Self {
         // Before the struct, because the effects the backend accepts are part
         // of what it is built with rather than something applied to it after
         // the fact — and because a refusal has to be recorded, not discovered
         // later by a surface wondering why the equalizer does nothing.
-        let effects = Effects::apply_stored(&conn, &*ports.playback);
+        let effects = Effects::apply_stored(&db, &*ports.playback);
         let runtime = Self {
-            conn,
+            db,
             ports,
             clients: Clients::new(),
             transport: Transport::new(),
@@ -225,8 +225,8 @@ impl Runtime {
     /// that is exactly what the GTK controller does on every pre-feed.
     fn transition(&self) -> (TrackTransition, u8) {
         (
-            settings::get_track_transition(&self.conn),
-            settings::get_crossfade_seconds(&self.conn),
+            settings::get_track_transition(&self.db),
+            settings::get_crossfade_seconds(&self.db),
         )
     }
 
@@ -293,8 +293,8 @@ impl Runtime {
     /// Deliberately test-only: a client asks the runtime, and a second
     /// writer to this database is the thing §9.1 exists to prevent.
     #[cfg(test)]
-    pub(crate) fn connection(&self) -> &Connection {
-        &self.conn
+    pub(crate) fn database(&self) -> &Db {
+        &self.db
     }
 
     /// The complete runtime-bound state right now.
@@ -306,7 +306,7 @@ impl Runtime {
             queue: self.stamped_queue(self.transport.queue_snapshot()),
             effects: self.effects.snapshot(),
             device_runs: self.devices.snapshots(),
-            jobs: jobs::snapshots(&self.conn)?,
+            jobs: jobs::snapshots(&self.db)?,
         })
     }
 
@@ -445,8 +445,8 @@ impl Runtime {
             }
             Command::Job(job) => {
                 let now = self.ports.clock.now_unix();
-                let job_id = jobs::command(&self.conn, now, job)?;
-                if let Some(snapshot) = jobs::snapshot_of(&self.conn, job_id)? {
+                let job_id = jobs::command(&self.db, now, job)?;
+                if let Some(snapshot) = jobs::snapshot_of(&self.db, job_id)? {
                     self.clients
                         .publish(Some(client), RuntimeEvent::JobChanged(snapshot));
                 }
@@ -481,9 +481,7 @@ impl Runtime {
             }
             Command::SetAudioEffects(requested) => {
                 let before = self.effects.snapshot();
-                let result = self
-                    .effects
-                    .set(&self.conn, &*self.ports.playback, requested);
+                let result = self.effects.set(&self.db, &*self.ports.playback, requested);
                 // Published on failure too: `set` reports a refusal only
                 // after the backend has been asked, and a refusal that also
                 // cleared a previous `degraded` is a change a surface has to
@@ -567,7 +565,7 @@ impl Runtime {
         Ok(self.clients.count() == 0
             && !self.transport.is_active()
             && !self.devices.is_active()
-            && !jobs::is_active(&self.conn)?)
+            && !jobs::is_active(&self.db)?)
     }
 
     /// What a command did, with the queue revision it left behind.

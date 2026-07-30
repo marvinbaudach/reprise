@@ -69,7 +69,7 @@ fn file_terminal(
 }
 
 fn finalize_job(
-    conn: &mut Connection,
+    conn: &Connection,
     job_id: i64,
     fields: &[TagWriteFieldRecovery],
 ) -> Result<(), DoctorError> {
@@ -77,7 +77,7 @@ fn finalize_job(
     let was_claimed = fields
         .iter()
         .any(|field| field.job_state != "prepared" || field.file_state == "running");
-    let transaction = conn.transaction()?;
+    let transaction = conn.unchecked_transaction()?;
     for field in fields {
         let changed = transaction.execute(
             "UPDATE tag_write_journal SET outcome=?1 WHERE file_id=?2 AND field=?3 \

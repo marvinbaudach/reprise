@@ -1,9 +1,8 @@
 //! Concerts full-view composition boundary.
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
-use rusqlite::Connection;
+use reprise_core::db::Db;
 
 mod concerts_columns;
 mod concerts_empty_state;
@@ -18,9 +17,6 @@ pub(in crate::ui) use concerts_view::ConcertsView;
 pub(in crate::ui) use concerts_worker::{ConcertsRequest, ConcertsRuntime};
 
 #[allow(dead_code)]
-pub(in crate::ui) fn install(
-    conn: Rc<RefCell<Connection>>,
-    runtime: &Rc<ConcertsRuntime>,
-) -> ConcertsView {
+pub(in crate::ui) fn install(conn: Rc<Db>, runtime: &Rc<ConcertsRuntime>) -> ConcertsView {
     ConcertsView::new(conn, runtime)
 }

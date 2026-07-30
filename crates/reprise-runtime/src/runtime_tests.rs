@@ -2,6 +2,7 @@
 //! competing commands, event ordering and crash recovery — all without a
 //! display, an audio device or a media file.
 
+use reprise_core::db::Db;
 use reprise_core::device_sync::machine::Event as DeviceEvent;
 use reprise_core::device_sync::{
     DesiredManagedFile, MirrorPlan, PlaylistWrite, SelectionSource, SyncTrack, TransferAction,
@@ -31,10 +32,10 @@ struct Harness {
 
 /// A runtime over an in-memory database, holding tracks 1..=3.
 fn harness() -> Harness {
-    over(reprise_core::db::open_migrated(None).expect("an in-memory database migrates"))
+    over(Db::open_in_memory().expect("an in-memory database migrates"))
 }
 
-fn over(conn: rusqlite::Connection) -> Harness {
+fn over(db: Db) -> Harness {
     let playback = FakePlayback::new();
     let devices = FakeDevices::new();
     let clock = FakeClock::starting_at(1_753_600_000);
@@ -46,7 +47,7 @@ fn over(conn: rusqlite::Connection) -> Harness {
         clock: Box::new(clock),
     };
     Harness {
-        runtime: Runtime::new(conn, ports),
+        runtime: Runtime::new(db, ports),
         playback: handles.0,
         devices: handles.1,
         clock: handles.2,
@@ -605,8 +606,7 @@ fn a_runtime_over_a_crashed_predecessors_database_reads_jobs_back_and_invents_no
     let directory = tempfile::tempdir().expect("a temporary directory");
     let database = directory.path().join("reprise.sqlite");
 
-    let mut first =
-        over(reprise_core::db::open_migrated(Some(&database)).expect("the database migrates"));
+    let mut first = over(Db::open_migrated(Some(&database)).expect("the database migrates"));
     let client = full_client(&mut first.runtime);
     first
         .runtime
@@ -628,8 +628,7 @@ fn a_runtime_over_a_crashed_predecessors_database_reads_jobs_back_and_invents_no
     // the runtime is as much cleanup as a SIGKILL would have performed.
     drop(first);
 
-    let mut restarted =
-        over(reprise_core::db::open_migrated(Some(&database)).expect("the database reopens"));
+    let mut restarted = over(Db::open_migrated(Some(&database)).expect("the database reopens"));
     let reconnected = restarted
         .runtime
         .connect(&ClientHandshake::new([Capability::PlaybackControl]))

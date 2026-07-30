@@ -26,11 +26,11 @@
 //! state; a zeroed pill would be redundant clutter, and the player bar is
 //! `set_sensitive(false)`/blank in that state anyway (see `window.rs`).
 
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::rc::Rc;
 
 use gtk4::{glib, prelude::*};
-use rusqlite::Connection;
+use reprise_core::db::Db;
 
 use crate::ui::strings;
 use reprise_core::format::{format_thousands, format_total_duration};
@@ -107,10 +107,10 @@ impl StatusBar {
     /// (or hides the surface, for an empty library — see the module comment).
     /// Query failures are logged and treated the same as an empty library:
     /// hide rather than show stale or partial text.
-    pub fn refresh(&self, conn: &Rc<RefCell<Connection>>) {
+    pub fn refresh(&self, conn: &Rc<Db>) {
         let stats = {
-            let conn = conn.borrow();
-            queries::query_library_stats_browsed(&conn, "", &BrowseFilter::default())
+            let conn = &conn;
+            queries::query_library_stats_browsed(conn, "", &BrowseFilter::default())
         };
         self.inner.visibility.library_source.set(true);
         let label = self.live_label();
@@ -245,8 +245,8 @@ mod tests {
         });
 
         {
-            let conn = Rc::new(RefCell::new(reprise_core::db::open_migrated(None).unwrap()));
-            conn.borrow()
+            let conn = Rc::new(crate::test_db::open().unwrap());
+            crate::test_db::connection(&conn)
                 .execute(
                     "INSERT INTO tracks (path, title, artist, duration_ms, added_at) \
                      VALUES ('/tmp/status-lifecycle.ogg', 'Status', 'Artist', 90000, 0)",

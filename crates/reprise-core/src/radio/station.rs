@@ -19,10 +19,11 @@ pub struct NewStation {
 }
 
 pub fn add_or_restore(
-    conn: &Connection,
+    db: &crate::db::Db,
     station: &NewStation,
     now: i64,
 ) -> Result<i64, rusqlite::Error> {
+    let conn = db.conn();
     let transaction = conn.unchecked_transaction()?;
     let existing_id = find_identity(&transaction, station)?;
     let id = if let Some(id) = existing_id {
@@ -73,7 +74,8 @@ pub fn add_or_restore(
     Ok(id)
 }
 
-pub fn list(conn: &Connection) -> Result<Vec<StationRow>, rusqlite::Error> {
+pub fn list(db: &crate::db::Db) -> Result<Vec<StationRow>, rusqlite::Error> {
+    let conn = db.conn();
     let mut statement = conn.prepare(
         "SELECT id, uuid, name, stream_url, homepage, favicon_url, genre, codec,
                 bitrate_kbps, country_code, votes, added_at, removed_at
@@ -87,7 +89,8 @@ pub fn list(conn: &Connection) -> Result<Vec<StationRow>, rusqlite::Error> {
     Ok(stations)
 }
 
-pub fn get(conn: &Connection, id: i64) -> Result<Option<StationRow>, rusqlite::Error> {
+pub fn get(db: &crate::db::Db, id: i64) -> Result<Option<StationRow>, rusqlite::Error> {
+    let conn = db.conn();
     conn.query_row(
         "SELECT id, uuid, name, stream_url, homepage, favicon_url, genre, codec,
                 bitrate_kbps, country_code, votes, added_at, removed_at
@@ -99,7 +102,8 @@ pub fn get(conn: &Connection, id: i64) -> Result<Option<StationRow>, rusqlite::E
     .optional()
 }
 
-pub fn count_stations(conn: &Connection) -> Result<u64, rusqlite::Error> {
+pub fn count_stations(db: &crate::db::Db) -> Result<u64, rusqlite::Error> {
+    let conn = db.conn();
     let count: i64 = conn.query_row(
         "SELECT COUNT(*) FROM radio_stations WHERE removed_at IS NULL",
         [],
@@ -108,7 +112,8 @@ pub fn count_stations(conn: &Connection) -> Result<u64, rusqlite::Error> {
     Ok(count.try_into().unwrap_or_default())
 }
 
-pub fn tombstone(conn: &Connection, id: i64, now: i64) -> Result<bool, rusqlite::Error> {
+pub fn tombstone(db: &crate::db::Db, id: i64, now: i64) -> Result<bool, rusqlite::Error> {
+    let conn = db.conn();
     Ok(conn.execute(
         "UPDATE radio_stations SET removed_at = ?2
          WHERE id = ?1 AND removed_at IS NULL",
@@ -116,7 +121,8 @@ pub fn tombstone(conn: &Connection, id: i64, now: i64) -> Result<bool, rusqlite:
     )? != 0)
 }
 
-pub fn undo_remove(conn: &Connection, id: i64) -> Result<bool, rusqlite::Error> {
+pub fn undo_remove(db: &crate::db::Db, id: i64) -> Result<bool, rusqlite::Error> {
+    let conn = db.conn();
     Ok(conn.execute(
         "UPDATE radio_stations SET removed_at = NULL
          WHERE id = ?1 AND removed_at IS NOT NULL",
@@ -124,7 +130,8 @@ pub fn undo_remove(conn: &Connection, id: i64) -> Result<bool, rusqlite::Error> 
     )? != 0)
 }
 
-pub fn commit_remove(conn: &Connection, id: i64) -> Result<bool, rusqlite::Error> {
+pub fn commit_remove(db: &crate::db::Db, id: i64) -> Result<bool, rusqlite::Error> {
+    let conn = db.conn();
     Ok(conn.execute(
         "DELETE FROM radio_stations WHERE id = ?1 AND removed_at IS NOT NULL",
         params![id],
@@ -132,6 +139,15 @@ pub fn commit_remove(conn: &Connection, id: i64) -> Result<bool, rusqlite::Error
 }
 
 pub fn update_stream_url(
+    db: &crate::db::Db,
+    id: i64,
+    stream_url: &str,
+) -> Result<bool, rusqlite::Error> {
+    let conn = db.conn();
+    update_stream_url_in(conn, id, stream_url)
+}
+
+pub(crate) fn update_stream_url_in(
     conn: &Connection,
     id: i64,
     stream_url: &str,
@@ -143,12 +159,13 @@ pub fn update_stream_url(
 }
 
 pub fn update_details(
-    conn: &Connection,
+    db: &crate::db::Db,
     id: i64,
     name: &str,
     genre: Option<&str>,
     stream_url: &str,
 ) -> Result<bool, rusqlite::Error> {
+    let conn = db.conn();
     Ok(conn.execute(
         "UPDATE radio_stations
          SET name = ?2, genre = ?3, stream_url = ?4
@@ -157,7 +174,8 @@ pub fn update_details(
     )? != 0)
 }
 
-pub fn update(conn: &Connection, id: i64, station: &NewStation) -> Result<bool, rusqlite::Error> {
+pub fn update(db: &crate::db::Db, id: i64, station: &NewStation) -> Result<bool, rusqlite::Error> {
+    let conn = db.conn();
     Ok(conn.execute(
         "UPDATE radio_stations
          SET uuid = ?2, name = ?3, stream_url = ?4, homepage = ?5,
@@ -215,10 +233,8 @@ fn row_to_station(row: &Row<'_>) -> Result<StationRow, rusqlite::Error> {
 mod tests {
     use super::*;
 
-    fn conn() -> rusqlite::Connection {
-        let conn = rusqlite::Connection::open_in_memory().unwrap();
-        crate::db::migrate(&conn).unwrap();
-        conn
+    fn conn() -> crate::db::Db {
+        crate::db::Db::open_in_memory().unwrap()
     }
 
     fn station() -> NewStation {

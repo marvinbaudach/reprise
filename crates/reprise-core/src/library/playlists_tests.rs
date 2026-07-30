@@ -9,12 +9,11 @@ use super::*;
 
 const GENRE_RULES: &str = r#"[{"field":"genre","op":"=","value":"Ambient"}]"#;
 
-fn seeded_conn() -> Connection {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+fn seeded_conn() -> crate::db::Db {
+    let conn = crate::db::Db::open_in_memory().unwrap();
     // Insert test tracks.
     for id in 1..=5 {
-        conn.execute(
+        conn.conn().execute(
             "INSERT INTO tracks (id, path, title, artist, added_at, rating, play_count, last_played_at) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
@@ -40,6 +39,7 @@ fn create_playlist_returns_new_id() {
     assert!(id > 0);
 
     let name: String = conn
+        .conn()
         .query_row(
             "SELECT name FROM playlists WHERE id = ?1",
             params![id],
@@ -126,18 +126,19 @@ fn create_playlist_assigns_sequential_positions() {
     let id3 = create(&conn, "Playlist 3").unwrap();
 
     let (pos1, pos2, pos3): (i64, i64, i64) = conn
+        .conn()
         .query_row(
             "SELECT position FROM playlists WHERE id = ?1",
             params![id1],
             |r| r.get(0),
         )
         .and_then(|p1| {
-            let p2: i64 = conn.query_row(
+            let p2: i64 = conn.conn().query_row(
                 "SELECT position FROM playlists WHERE id = ?1",
                 params![id2],
                 |r| r.get(0),
             )?;
-            let p3: i64 = conn.query_row(
+            let p3: i64 = conn.conn().query_row(
                 "SELECT position FROM playlists WHERE id = ?1",
                 params![id3],
                 |r| r.get(0),
@@ -156,6 +157,7 @@ fn create_playlist_accepts_empty_name() {
     let conn = seeded_conn();
     let id = create(&conn, "").unwrap();
     let name: String = conn
+        .conn()
         .query_row(
             "SELECT name FROM playlists WHERE id = ?1",
             params![id],
@@ -170,6 +172,7 @@ fn create_playlist_trims_whitespace_name() {
     let conn = seeded_conn();
     let id = create(&conn, "  My Playlist  ").unwrap();
     let name: String = conn
+        .conn()
         .query_row(
             "SELECT name FROM playlists WHERE id = ?1",
             params![id],
@@ -187,6 +190,7 @@ fn rename_playlist() {
     assert_eq!(rename(&conn, id, "New Name").unwrap(), 1);
 
     let name: String = conn
+        .conn()
         .query_row(
             "SELECT name FROM playlists WHERE id = ?1",
             params![id],
@@ -201,9 +205,9 @@ fn rename_playlist() {
 
 #[test]
 fn get_returns_the_summary_or_none() {
-    let mut conn = seeded_conn();
+    let conn = seeded_conn();
     let id = create(&conn, "Mix").unwrap();
-    add_tracks(&mut conn, id, &[1, 2]).unwrap();
+    add_tracks(&conn, id, &[1, 2]).unwrap();
 
     let summary = get(&conn, id).unwrap().expect("playlist exists");
     assert_eq!(summary.id, id);
@@ -216,17 +220,16 @@ fn get_returns_the_summary_or_none() {
 
 #[test]
 fn track_ids_returns_playlist_members_in_order() {
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let conn = crate::db::Db::open_in_memory().unwrap();
     for id in [10_i64, 11, 12] {
-        conn.execute(
+        conn.conn().execute(
             "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (?1, ?2, 'T', 'A', 0)",
             rusqlite::params![id, format!("/m/{id}.flac")],
         )
         .unwrap();
     }
     let pid = create(&conn, "Road").unwrap();
-    add_tracks(&mut conn, pid, &[12, 10, 11]).unwrap();
+    add_tracks(&conn, pid, &[12, 10, 11]).unwrap();
     assert_eq!(track_ids(&conn, pid).unwrap(), vec![12, 10, 11]);
     assert_eq!(track_ids(&conn, 9999).unwrap(), Vec::<i64>::new());
 }
@@ -247,11 +250,11 @@ fn list_playlists_ordered_by_position() {
 
 #[test]
 fn list_playlists_includes_track_count() {
-    let mut m_conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&m_conn).unwrap();
+    let m_conn = crate::db::Db::open_in_memory().unwrap();
     // Set up same test data
     for id in 1..=5 {
         m_conn
+            .conn()
             .execute(
                 "INSERT INTO tracks (id, path, title, artist, added_at) \
                  VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -266,7 +269,7 @@ fn list_playlists_includes_track_count() {
             .unwrap();
     }
     let id = create(&m_conn, "P1").unwrap();
-    add_tracks(&mut m_conn, id, &[1, 2, 3]).unwrap();
+    add_tracks(&m_conn, id, &[1, 2, 3]).unwrap();
 
     let playlists = list(&m_conn).unwrap();
     assert_eq!(playlists.len(), 1);
@@ -275,12 +278,13 @@ fn list_playlists_includes_track_count() {
 
 #[test]
 fn add_tracks_appends_to_end() {
-    let mut conn = seeded_conn();
+    let conn = seeded_conn();
     let id = create(&conn, "P1").unwrap();
-    let inserted = add_tracks(&mut conn, id, &[1, 2, 3]).unwrap();
+    let inserted = add_tracks(&conn, id, &[1, 2, 3]).unwrap();
     assert_eq!(inserted, 3);
 
     let positions: Vec<i64> = conn
+        .conn()
         .prepare("SELECT position FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position")
         .unwrap()
         .query_map(params![id], |r| r.get(0))
@@ -292,19 +296,20 @@ fn add_tracks_appends_to_end() {
 
 #[test]
 fn add_tracks_empty_slice_returns_zero() {
-    let mut conn = seeded_conn();
+    let conn = seeded_conn();
     let id = create(&conn, "P1").unwrap();
-    let inserted = add_tracks(&mut conn, id, &[]).unwrap();
+    let inserted = add_tracks(&conn, id, &[]).unwrap();
     assert_eq!(inserted, 0);
 }
 
 #[test]
 fn add_tracks_allows_duplicates() {
-    let mut conn = seeded_conn();
+    let conn = seeded_conn();
     let id = create(&conn, "P1").unwrap();
-    add_tracks(&mut conn, id, &[1, 2, 1, 3, 1]).unwrap();
+    add_tracks(&conn, id, &[1, 2, 1, 3, 1]).unwrap();
 
     let track_ids: Vec<i64> = conn
+        .conn()
         .prepare("SELECT track_id FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position")
         .unwrap()
         .query_map(params![id], |r| r.get(0))
@@ -316,12 +321,13 @@ fn add_tracks_allows_duplicates() {
 
 #[test]
 fn add_tracks_multiple_calls_append() {
-    let mut conn = seeded_conn();
+    let conn = seeded_conn();
     let id = create(&conn, "P1").unwrap();
-    add_tracks(&mut conn, id, &[1, 2]).unwrap();
-    add_tracks(&mut conn, id, &[3, 4]).unwrap();
+    add_tracks(&conn, id, &[1, 2]).unwrap();
+    add_tracks(&conn, id, &[3, 4]).unwrap();
 
     let track_ids: Vec<i64> = conn
+        .conn()
         .prepare("SELECT track_id FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position")
         .unwrap()
         .query_map(params![id], |r| r.get(0))
@@ -333,10 +339,11 @@ fn add_tracks_multiple_calls_append() {
 
 #[test]
 fn create_with_tracks_creates_playlist_and_appends_in_one_call() {
-    let mut conn = seeded_conn();
-    let id = create_with_tracks(&mut conn, "Mix", &[1, 2, 3]).unwrap();
+    let conn = seeded_conn();
+    let id = create_with_tracks(&conn, "Mix", &[1, 2, 3]).unwrap();
 
     let name: String = conn
+        .conn()
         .query_row(
             "SELECT name FROM playlists WHERE id = ?1",
             params![id],
@@ -346,6 +353,7 @@ fn create_with_tracks_creates_playlist_and_appends_in_one_call() {
     assert_eq!(name, "Mix");
 
     let track_ids: Vec<i64> = conn
+        .conn()
         .prepare("SELECT track_id FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position")
         .unwrap()
         .query_map(params![id], |r| r.get(0))
@@ -357,10 +365,11 @@ fn create_with_tracks_creates_playlist_and_appends_in_one_call() {
 
 #[test]
 fn create_with_tracks_empty_slice_creates_empty_playlist() {
-    let mut conn = seeded_conn();
-    let id = create_with_tracks(&mut conn, "Empty", &[]).unwrap();
+    let conn = seeded_conn();
+    let id = create_with_tracks(&conn, "Empty", &[]).unwrap();
 
     let count: i64 = conn
+        .conn()
         .query_row(
             "SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = ?1",
             params![id],
@@ -376,22 +385,25 @@ fn create_with_tracks_empty_slice_creates_empty_playlist() {
 /// rolls back — no orphaned empty playlist row is left in `playlists`.
 #[test]
 fn create_with_tracks_rolls_back_playlist_row_on_fk_violation() {
-    let mut conn = seeded_conn();
+    let conn = seeded_conn();
     let before: i64 = conn
+        .conn()
         .query_row("SELECT COUNT(*) FROM playlists", [], |r| r.get(0))
         .unwrap();
 
     // Track id 9999 doesn't exist in the seeded data (only 1..=5) — the
     // second insert should trip the foreign key and roll back the first.
-    let result = create_with_tracks(&mut conn, "Bad Playlist", &[1, 9999]);
+    let result = create_with_tracks(&conn, "Bad Playlist", &[1, 9999]);
     assert!(result.is_err());
 
     let after: i64 = conn
+        .conn()
         .query_row("SELECT COUNT(*) FROM playlists", [], |r| r.get(0))
         .unwrap();
     assert_eq!(before, after, "no playlist row should survive the rollback");
 
     let name_exists: i64 = conn
+        .conn()
         .query_row(
             "SELECT COUNT(*) FROM playlists WHERE name = 'Bad Playlist'",
             [],
@@ -403,13 +415,14 @@ fn create_with_tracks_rolls_back_playlist_row_on_fk_violation() {
 
 #[test]
 fn remove_positions_single() {
-    let mut conn = seeded_conn();
+    let conn = seeded_conn();
     let id = create(&conn, "P1").unwrap();
-    add_tracks(&mut conn, id, &[1, 2, 3, 4]).unwrap();
-    let removed = remove_positions(&mut conn, id, &[1]).unwrap();
+    add_tracks(&conn, id, &[1, 2, 3, 4]).unwrap();
+    let removed = remove_positions(&conn, id, &[1]).unwrap();
     assert_eq!(removed, 1);
 
     let track_ids: Vec<i64> = conn
+        .conn()
         .prepare("SELECT track_id FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position")
         .unwrap()
         .query_map(params![id], |r| r.get(0))
@@ -419,6 +432,7 @@ fn remove_positions_single() {
     assert_eq!(track_ids, vec![1, 3, 4]);
 
     let positions: Vec<i64> = conn
+        .conn()
         .prepare("SELECT position FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position")
         .unwrap()
         .query_map(params![id], |r| r.get(0))
@@ -430,13 +444,14 @@ fn remove_positions_single() {
 
 #[test]
 fn remove_positions_multiple() {
-    let mut conn = seeded_conn();
+    let conn = seeded_conn();
     let id = create(&conn, "P1").unwrap();
-    add_tracks(&mut conn, id, &[1, 2, 3, 4, 5]).unwrap();
-    let removed = remove_positions(&mut conn, id, &[1, 3]).unwrap();
+    add_tracks(&conn, id, &[1, 2, 3, 4, 5]).unwrap();
+    let removed = remove_positions(&conn, id, &[1, 3]).unwrap();
     assert_eq!(removed, 2);
 
     let track_ids: Vec<i64> = conn
+        .conn()
         .prepare("SELECT track_id FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position")
         .unwrap()
         .query_map(params![id], |r| r.get(0))
@@ -446,6 +461,7 @@ fn remove_positions_multiple() {
     assert_eq!(track_ids, vec![1, 3, 5]);
 
     let positions: Vec<i64> = conn
+        .conn()
         .prepare("SELECT position FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position")
         .unwrap()
         .query_map(params![id], |r| r.get(0))
@@ -457,13 +473,14 @@ fn remove_positions_multiple() {
 
 #[test]
 fn remove_positions_empty_slice() {
-    let mut conn = seeded_conn();
+    let conn = seeded_conn();
     let id = create(&conn, "P1").unwrap();
-    add_tracks(&mut conn, id, &[1, 2, 3]).unwrap();
-    let removed = remove_positions(&mut conn, id, &[]).unwrap();
+    add_tracks(&conn, id, &[1, 2, 3]).unwrap();
+    let removed = remove_positions(&conn, id, &[]).unwrap();
     assert_eq!(removed, 0);
 
     let track_ids: Vec<i64> = conn
+        .conn()
         .prepare("SELECT track_id FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position")
         .unwrap()
         .query_map(params![id], |r| r.get(0))
@@ -475,12 +492,13 @@ fn remove_positions_empty_slice() {
 
 #[test]
 fn move_position_down() {
-    let mut conn = seeded_conn();
+    let conn = seeded_conn();
     let id = create(&conn, "P1").unwrap();
-    add_tracks(&mut conn, id, &[1, 2, 3, 4]).unwrap();
-    move_position(&mut conn, id, 0, 2).unwrap();
+    add_tracks(&conn, id, &[1, 2, 3, 4]).unwrap();
+    move_position(&conn, id, 0, 2).unwrap();
 
     let track_ids: Vec<i64> = conn
+        .conn()
         .prepare("SELECT track_id FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position")
         .unwrap()
         .query_map(params![id], |r| r.get(0))
@@ -492,12 +510,13 @@ fn move_position_down() {
 
 #[test]
 fn move_position_up() {
-    let mut conn = seeded_conn();
+    let conn = seeded_conn();
     let id = create(&conn, "P1").unwrap();
-    add_tracks(&mut conn, id, &[1, 2, 3, 4]).unwrap();
-    move_position(&mut conn, id, 3, 1).unwrap();
+    add_tracks(&conn, id, &[1, 2, 3, 4]).unwrap();
+    move_position(&conn, id, 3, 1).unwrap();
 
     let track_ids: Vec<i64> = conn
+        .conn()
         .prepare("SELECT track_id FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position")
         .unwrap()
         .query_map(params![id], |r| r.get(0))
@@ -509,12 +528,13 @@ fn move_position_up() {
 
 #[test]
 fn move_position_same_is_noop() {
-    let mut conn = seeded_conn();
+    let conn = seeded_conn();
     let id = create(&conn, "P1").unwrap();
-    add_tracks(&mut conn, id, &[1, 2, 3]).unwrap();
-    move_position(&mut conn, id, 1, 1).unwrap();
+    add_tracks(&conn, id, &[1, 2, 3]).unwrap();
+    move_position(&conn, id, 1, 1).unwrap();
 
     let track_ids: Vec<i64> = conn
+        .conn()
         .prepare("SELECT track_id FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position")
         .unwrap()
         .query_map(params![id], |r| r.get(0))
@@ -650,12 +670,13 @@ fn smart_rules_to_sql_missing_value_on_contains() {
 
 #[test]
 fn move_position_out_of_range_unchanged() {
-    let mut conn = seeded_conn();
+    let conn = seeded_conn();
     let id = create(&conn, "P1").unwrap();
-    add_tracks(&mut conn, id, &[1, 2, 3]).unwrap();
+    add_tracks(&conn, id, &[1, 2, 3]).unwrap();
 
     // Get initial track order
     let initial_tracks: Vec<i64> = conn
+        .conn()
         .prepare("SELECT track_id FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position")
         .unwrap()
         .query_map(params![id], |r| r.get(0))
@@ -664,11 +685,12 @@ fn move_position_out_of_range_unchanged() {
         .unwrap();
 
     // Move out of range
-    let result = move_position(&mut conn, id, 10, 1);
+    let result = move_position(&conn, id, 10, 1);
     assert!(result.is_ok());
 
     // Verify tracks are unchanged
     let final_tracks: Vec<i64> = conn
+        .conn()
         .prepare("SELECT track_id FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position")
         .unwrap()
         .query_map(params![id], |r| r.get(0))
@@ -760,28 +782,5 @@ fn list_smart_recently_added_seed() {
     assert_eq!(recently_added.limit_count, None);
 }
 
-#[test]
-fn ensure_role_playlist_creates_once_and_finds_by_role() {
-    let conn = seeded_conn();
-    let first = ensure_role_playlist(&conn, "Conversion", "conversion").unwrap();
-    let again = ensure_role_playlist(&conn, "Conversion", "conversion").unwrap();
-    assert_eq!(first, again, "role playlists are singletons");
-    assert_eq!(
-        find_role_playlist(&conn, "conversion").unwrap(),
-        Some(first)
-    );
-    assert_eq!(find_role_playlist(&conn, "other").unwrap(), None);
-}
-
-#[test]
-fn playlist_role_is_none_for_a_user_playlist_and_a_missing_id() {
-    let conn = seeded_conn();
-    let user = create(&conn, "My Mix").unwrap();
-    assert_eq!(playlist_role(&conn, user).unwrap(), None);
-    assert_eq!(playlist_role(&conn, 999_999).unwrap(), None);
-    let role = ensure_role_playlist(&conn, "Conversion", "conversion").unwrap();
-    assert_eq!(
-        playlist_role(&conn, role).unwrap().as_deref(),
-        Some("conversion")
-    );
-}
+#[path = "playlists_role_tests.rs"]
+mod role_tests;

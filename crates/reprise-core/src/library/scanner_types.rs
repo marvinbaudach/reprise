@@ -3,7 +3,7 @@
 //! (`pub use scanner_types::*`) so callers keep referring to `scanner::
 //! ScanReport`, `scanner::ScanOutcome`, etc.
 
-use rusqlite::Connection;
+use crate::db::Db;
 
 use crate::models::ImportErrorKind;
 
@@ -119,10 +119,11 @@ impl ScanReport {
 /// from forgetting the `last_scan_relinked` update or running destructive
 /// auto-clean after `RootUnavailable`.
 pub fn finalize_completed_scan(
-    conn: &mut Connection,
+    db: &Db,
     report: &ScanReport,
     now: i64,
 ) -> Result<Vec<i64>, ScanError> {
-    crate::library::settings::set_last_scan_relinked(conn, report.moved)?;
-    Ok(crate::queries::run_auto_clean(conn, now)?)
+    let conn = db.conn();
+    crate::library::settings::set_last_scan_relinked_in(conn, report.moved)?;
+    Ok(crate::queries::run_auto_clean(db, now)?)
 }

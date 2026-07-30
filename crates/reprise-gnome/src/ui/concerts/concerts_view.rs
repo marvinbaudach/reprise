@@ -7,7 +7,7 @@ use chrono::Local;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::concerts::{self, ConcertFilter, ConcertRow};
-use rusqlite::Connection;
+use reprise_core::db::Db;
 
 use super::concerts_columns::{self, OnOpenTarget};
 use super::concerts_empty_state::{
@@ -33,7 +33,7 @@ fn notify_filter_changed(runtime: &ConcertsRuntime) {
 }
 
 struct Shared {
-    conn: Rc<RefCell<Connection>>,
+    conn: Rc<Db>,
     runtime: Rc<ConcertsRuntime>,
     model: Rc<ConcertsModel>,
     filter_bar: Rc<ConcertsFilterBar>,
@@ -62,7 +62,7 @@ pub(in crate::ui) struct ConcertsView {
 }
 
 impl ConcertsView {
-    pub(in crate::ui) fn new(conn: Rc<RefCell<Connection>>, runtime: &Rc<ConcertsRuntime>) -> Self {
+    pub(in crate::ui) fn new(conn: Rc<Db>, runtime: &Rc<ConcertsRuntime>) -> Self {
         let model = Rc::new(ConcertsModel::new());
         let filter_bar = ConcertsFilterBar::new(conn.clone());
         let column_view = gtk4::ColumnView::builder()
@@ -264,23 +264,21 @@ impl ConcertsView {
 
 fn render_cache(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
     let today = Local::now().date_naive();
-    let conn = shared.conn.borrow();
+    let conn = &shared.conn;
     let filter = shared.filter_bar.filter();
-    let location = concerts::config::location(&conn)?;
-    let credentials = concerts::config::credentials(&conn)?;
-    let similar_enabled = concerts::config::similar_config(&conn)?.enabled;
-    let has_similar_rows = concerts::has_similar_events(&conn)?;
-    let rows = concerts::query_events(&conn, &filter, location.as_ref(), today)?;
+    let location = concerts::config::location(conn)?;
+    let credentials = concerts::config::credentials(conn)?;
+    let similar_enabled = concerts::config::similar_config(conn)?.enabled;
+    let has_similar_rows = concerts::has_similar_events(conn)?;
+    let rows = concerts::query_events(conn, &filter, location.as_ref(), today)?;
     let total = if filter == ConcertFilter::default() {
         rows.len()
     } else {
-        concerts::count_upcoming(&conn, &ConcertFilter::default(), location.as_ref(), today)?
+        concerts::count_upcoming(conn, &ConcertFilter::default(), location.as_ref(), today)?
             as usize
     };
-    let latest_fetch = concerts::latest_fetch_at(&conn)?;
+    let latest_fetch = concerts::latest_fetch_at(conn)?;
     let never_fetched = latest_fetch.is_none();
-    drop(conn);
-
     shared
         .filter_bar
         .set_context(location.is_some(), similar_enabled, has_similar_rows);
@@ -362,9 +360,7 @@ fn build_footer() -> (
 }
 
 fn maybe_background_refresh(shared: &Rc<Shared>) {
-    let latest = concerts::latest_fetch_at(&shared.conn.borrow())
-        .ok()
-        .flatten();
+    let latest = concerts::latest_fetch_at(&shared.conn).ok().flatten();
     let due = concerts::refresh_due(
         latest,
         chrono::Utc::now().timestamp(),
@@ -377,8 +373,8 @@ fn maybe_background_refresh(shared: &Rc<Shared>) {
 
 fn request_fetch(shared: &Rc<Shared>, force: bool) {
     let has_credentials = {
-        let conn = shared.conn.borrow();
-        concerts::config::credentials(&conn).is_ok_and(|credentials| !credentials.is_empty())
+        let conn = &shared.conn;
+        concerts::config::credentials(conn).is_ok_and(|credentials| !credentials.is_empty())
     };
     if !has_credentials
         || !request_allowed(shared.runtime.enabled.get(), shared.fetching.get(), true)
@@ -523,9 +519,8 @@ mod tests {
     #[ignore = "requires a display; run via xvfb-run"]
     fn conc_3_concerts_view_exposes_six_columns_and_row_activation() {
         gtk4::init().unwrap();
-        let conn = Rc::new(RefCell::new(Connection::open_in_memory().unwrap()));
-        reprise_core::db::migrate(&conn.borrow()).unwrap();
-        let runtime = ConcertsRuntime::setup(&conn.borrow());
+        let conn = Rc::new(crate::test_db::open().unwrap());
+        let runtime = ConcertsRuntime::setup(&conn);
         let view = ConcertsView::new(conn, &runtime);
         let root = view.root().clone().downcast::<gtk4::Box>().unwrap();
         let stack = root
@@ -546,9 +541,8 @@ mod tests {
     #[ignore = "requires a display; run via xvfb-run"]
     fn conc_5a_footer_keeps_fetch_progress_below_the_live_table() {
         gtk4::init().unwrap();
-        let conn = Rc::new(RefCell::new(Connection::open_in_memory().unwrap()));
-        reprise_core::db::migrate(&conn.borrow()).unwrap();
-        let runtime = ConcertsRuntime::setup(&conn.borrow());
+        let conn = Rc::new(crate::test_db::open().unwrap());
+        let runtime = ConcertsRuntime::setup(&conn);
         let view = ConcertsView::new(conn, &runtime);
         let root = view.root().clone().downcast::<gtk4::Box>().unwrap();
         let footer = root.last_child().and_downcast::<gtk4::Box>().unwrap();
@@ -561,9 +555,8 @@ mod tests {
     #[ignore = "requires a display; run via xvfb-run"]
     fn conc_4b_settings_changes_re_evaluate_credentials_and_refresh_dependents() {
         gtk4::init().unwrap();
-        let conn = Rc::new(RefCell::new(Connection::open_in_memory().unwrap()));
-        reprise_core::db::migrate(&conn.borrow()).unwrap();
-        let runtime = ConcertsRuntime::setup(&conn.borrow());
+        let conn = Rc::new(crate::test_db::open().unwrap());
+        let runtime = ConcertsRuntime::setup(&conn);
         let view = ConcertsView::new(conn.clone(), &runtime);
         let refreshes = Rc::new(Cell::new(0));
         view.set_on_refreshed({
@@ -579,7 +572,7 @@ mod tests {
         assert!(!view.shared.fetch_stack.is_visible());
 
         reprise_core::library::settings::set_setting(
-            &conn.borrow(),
+            &conn,
             reprise_core::concerts::config::TICKETMASTER_API_KEY,
             "stored-key",
         )
@@ -593,7 +586,7 @@ mod tests {
         assert_eq!(refreshes.get(), 1);
 
         reprise_core::library::settings::set_setting(
-            &conn.borrow(),
+            &conn,
             reprise_core::concerts::config::TICKETMASTER_API_KEY,
             "",
         )
@@ -609,8 +602,7 @@ mod tests {
 
     #[test]
     fn conc_7_filter_changes_refresh_badge_dependents() {
-        let conn = Connection::open_in_memory().unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
+        let conn = crate::test_db::open().unwrap();
         let runtime = ConcertsRuntime::setup(&conn);
         let refreshes = Rc::new(Cell::new(0));
         runtime.subscribe_settings(|| true, {

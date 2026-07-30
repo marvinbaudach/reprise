@@ -26,7 +26,7 @@ mod tests {
     #[test]
     fn dg_2_v39_adds_constrained_release_track_counts_after_device_sync_schema() {
         let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
+        crate::db::migrate_connection(&conn).unwrap();
         conn.execute_batch(
             "ALTER TABLE new_releases DROP COLUMN track_count;
              PRAGMA user_version = 38;",

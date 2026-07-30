@@ -2,17 +2,17 @@
 
 use std::cell::RefCell;
 use std::os::unix::fs::MetadataExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::rc::Rc;
 
 use gtk4::gio;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
+use reprise_core::db::Db;
 use reprise_core::library::scanner;
 use reprise_core::models::ImportErrorKind;
 use reprise_core::queries::{self, ImportErrorEntry};
-use rusqlite::Connection;
 
 use crate::ui::issues::{CollapsedList, IssueCard, IssuePill, IssueRow, RowSpec};
 use crate::ui::{one_shot_task, strings, toasts};
@@ -82,7 +82,7 @@ fn row_actions(is_hint: bool) -> Vec<ImportRowAction> {
 type EditHintCallback = Rc<dyn Fn(&str)>;
 
 struct Shared {
-    conn: Rc<RefCell<Connection>>,
+    conn: Rc<Db>,
     groups: gtk4::Box,
     dismissed: gtk4::Box,
     on_mutated: RefCell<Option<Rc<dyn Fn()>>>,
@@ -98,7 +98,7 @@ pub struct ImportErrorsView {
 }
 
 impl ImportErrorsView {
-    pub fn new(conn: Rc<RefCell<Connection>>) -> Self {
+    pub fn new(conn: Rc<Db>) -> Self {
         let groups = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
         let dismissed = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
         let content = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
@@ -197,12 +197,12 @@ fn refresh(shared: &Rc<Shared>) -> usize {
     remove_children(&shared.groups);
     remove_children(&shared.dismissed);
     let (groups, dismissed_count) = {
-        let conn = shared.conn.borrow();
-        let groups = queries::query_import_errors_grouped(&conn).unwrap_or_else(|error| {
+        let conn = &shared.conn;
+        let groups = queries::query_import_errors_grouped(conn).unwrap_or_else(|error| {
             tracing::error!(%error, "import errors view: failed to load active groups");
             Vec::new()
         });
-        let dismissed = queries::count_dismissed_import_errors(&conn).unwrap_or_else(|error| {
+        let dismissed = queries::count_dismissed_import_errors(conn).unwrap_or_else(|error| {
             tracing::error!(%error, "import errors view: failed to count dismissed rows");
             0
         });
@@ -371,8 +371,8 @@ fn build_dismissed_footer(shared: &Rc<Shared>, count: u32) -> gtk4::Widget {
 
 fn populate_dismissed(shared: &Rc<Shared>, rows: &gtk4::ListBox) {
     let dismissed = {
-        let conn = shared.conn.borrow();
-        queries::query_dismissed_import_errors(&conn).unwrap_or_else(|error| {
+        let conn = &shared.conn;
+        queries::query_dismissed_import_errors(conn).unwrap_or_else(|error| {
             tracing::error!(%error, "import errors view: failed to load dismissed rows");
             Vec::new()
         })
@@ -410,8 +410,8 @@ pub(in crate::ui) fn file_stat(path: &str) -> Option<(i64, i64)> {
 
 fn handle_retry(shared: &Rc<Shared>, path: &str) {
     let result = {
-        let mut conn = shared.conn.borrow_mut();
-        scanner::scan_folder(&mut conn, Path::new(path))
+        let conn = &shared.conn;
+        scanner::scan_folder(conn, Path::new(path))
     };
     if let Err(error) = result {
         tracing::error!(%error, path, "import errors view: retry failed to run");
@@ -422,8 +422,8 @@ fn handle_retry(shared: &Rc<Shared>, path: &str) {
 
 fn handle_restore(shared: &Rc<Shared>, path: &str) {
     let result = {
-        let conn = shared.conn.borrow();
-        queries::restore_import_error(&conn, path)
+        let conn = &shared.conn;
+        queries::restore_import_error(conn, path)
     };
     match result {
         Ok(()) => handle_retry(shared, path),
@@ -444,8 +444,8 @@ fn handle_dismiss(shared: &Rc<Shared>, path: &str) {
         return;
     };
     let result = {
-        let conn = shared.conn.borrow();
-        queries::dismiss_import_error(&conn, path, mtime, size)
+        let conn = &shared.conn;
+        queries::dismiss_import_error(conn, path, mtime, size)
     };
     match result {
         Ok(()) => notify_mutated(shared),
@@ -455,8 +455,8 @@ fn handle_dismiss(shared: &Rc<Shared>, path: &str) {
 
 fn handle_dismiss_all(shared: &Rc<Shared>) {
     let result = {
-        let conn = shared.conn.borrow();
-        queries::dismiss_all_import_errors(&conn, &file_stat)
+        let conn = &shared.conn;
+        queries::dismiss_all_import_errors(conn, &file_stat)
     };
     match result {
         Ok(_) => notify_mutated(shared),
@@ -465,8 +465,8 @@ fn handle_dismiss_all(shared: &Rc<Shared>) {
 }
 
 fn active_paths(shared: &Shared) -> Vec<String> {
-    let conn = shared.conn.borrow();
-    queries::query_import_errors_grouped(&conn).map_or_else(
+    let conn = &shared.conn;
+    queries::query_import_errors_grouped(conn).map_or_else(
         |error| {
             tracing::error!(%error, "import errors view: failed to load retry paths");
             Vec::new()
@@ -485,7 +485,7 @@ fn handle_retry_all(shared: &Rc<Shared>) {
     if paths.is_empty() {
         return;
     }
-    let db_path = shared.conn.borrow().path().map(PathBuf::from);
+    let db_path = shared.conn.path();
     let Some(db_path) = db_path else {
         show_toast(
             shared,
@@ -494,11 +494,11 @@ fn handle_retry_all(shared: &Rc<Shared>) {
         return;
     };
     let receiver = match one_shot_task::spawn("reprise-retry-import-errors", move || {
-        let mut conn =
-            reprise_core::db::open_migrated(Some(&db_path)).map_err(|error| error.to_string())?;
+        let conn = reprise_core::db::Db::open_migrated(Some(&db_path))
+            .map_err(|error| error.to_string())?;
         let mut failures = 0usize;
         for path in paths {
-            if let Err(error) = scanner::scan_folder(&mut conn, Path::new(&path)) {
+            if let Err(error) = scanner::scan_folder(&conn, Path::new(&path)) {
                 failures += 1;
                 tracing::error!(%error, path, "import errors view: retry-all item failed");
             }

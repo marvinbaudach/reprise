@@ -16,17 +16,13 @@ mod station_preview;
 
 pub(in crate::ui) use radio_view::RadioView;
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
-use rusqlite::Connection;
+use reprise_core::db::Db;
 
 use crate::ui::playback::player_controller::PlayerController;
 
-pub(in crate::ui) fn install(
-    conn: Rc<RefCell<Connection>>,
-    controller: Option<&Rc<PlayerController>>,
-) -> RadioView {
+pub(in crate::ui) fn install(conn: Rc<Db>, controller: Option<&Rc<PlayerController>>) -> RadioView {
     RadioView::new(conn, controller)
 }
 

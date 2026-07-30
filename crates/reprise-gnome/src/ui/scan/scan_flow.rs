@@ -8,9 +8,9 @@ use gtk4::gio::prelude::*;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
+use reprise_core::db::Db;
 use reprise_core::library::settings;
 use reprise_core::library::watcher::WatcherHandle;
-use rusqlite::Connection;
 
 pub(in crate::ui) use super::scan_controls::ScanControls;
 #[cfg(test)]
@@ -115,7 +115,7 @@ pub(in crate::ui) fn wire_scan_button(
 }
 
 pub(in crate::ui) fn trigger_rescan_of_library_root(
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
     controls: &ScanControls,
     toast_overlay: &adw::ToastOverlay,
     db_path: PathBuf,
@@ -129,7 +129,7 @@ pub(in crate::ui) fn trigger_rescan_of_library_root(
         return;
     }
 
-    let root = settings::get_library_root(&conn.borrow());
+    let root = settings::get_library_root(conn);
     let root = match root {
         Ok(Some(root)) => PathBuf::from(root),
         Ok(None) => {

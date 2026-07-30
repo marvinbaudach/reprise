@@ -6,11 +6,11 @@ use std::rc::{Rc, Weak};
 
 use gtk4::prelude::*;
 use libadwaita as adw;
-use rusqlite::{Connection, OptionalExtension};
 
 use reprise_core::browser::navigation::NavigationIntent;
 use reprise_core::browser::{AlbumKey, ArtistKey};
 use reprise_core::library::watcher::WatcherHandle;
+use reprise_core::queries::query_stats_album_target_for_path;
 use reprise_core::view_source::ViewSource;
 
 use super::player_controller::PlayerController;
@@ -20,10 +20,11 @@ use super::stats_view::StatsView;
 use super::track_list::TrackList;
 use crate::ui::playback::play_origin;
 use crate::ui::stats::stats_metadata_links::StatsMetadataTarget;
+use reprise_core::db::Db;
 
 #[derive(Clone, Copy)]
 pub(in crate::ui) struct ActionWiring<'a> {
-    pub(in crate::ui) conn: &'a Rc<RefCell<Connection>>,
+    pub(in crate::ui) conn: &'a Rc<Db>,
     pub(in crate::ui) db_path: &'a Path,
     pub(in crate::ui) window: &'a adw::ApplicationWindow,
     pub(in crate::ui) toast_overlay: &'a adw::ToastOverlay,
@@ -155,8 +156,8 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
                 return;
             };
             let artist = {
-                let conn = conn.borrow();
-                reprise_core::queries::query_track_summary(&conn, track_id)
+                let conn = &conn;
+                reprise_core::queries::query_track_summary(conn, track_id)
                     .ok()
                     .flatten()
                     .map(|track| track.artist)
@@ -221,10 +222,7 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
         let conn = conn.clone();
         let navigator = metadata_navigator.clone();
         stats_view.set_on_genre_album(move |path| {
-            let target = {
-                let conn = conn.borrow();
-                stats_album_target_for_path(&conn, &path)
-            };
+            let target = query_stats_album_target_for_path(&conn, &path);
             match target {
                 Ok(Some((track_id, album, album_artist))) => navigator.navigate(
                     NavigationIntent::OpenAlbum {
@@ -445,20 +443,6 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
             );
         });
     }
-}
-
-fn stats_album_target_for_path(
-    conn: &Connection,
-    path: &str,
-) -> Result<Option<(i64, String, String)>, rusqlite::Error> {
-    conn.query_row(
-        "SELECT id, album, \
-                CASE WHEN TRIM(album_artist) <> '' THEN TRIM(album_artist) ELSE TRIM(artist) END \
-         FROM tracks WHERE path = ?1",
-        [path],
-        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-    )
-    .optional()
 }
 
 #[cfg(test)]

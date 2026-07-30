@@ -9,6 +9,7 @@ use gtk4::gio;
 // through `use super::*;` rather than importing it a second time.
 #[allow(unused_imports)]
 use gtk4::gio::prelude::*;
+use reprise_core::db::Db;
 use reprise_core::device_sync::browser::{StorageKind, StorageOption};
 use reprise_core::device_sync::settings::save_settings;
 use reprise_core::device_sync::{
@@ -18,7 +19,6 @@ use reprise_core::device_sync::{
 use reprise_platform_linux::device_sync::{CopyOutcome, DeviceDescriptor};
 #[allow(unused_imports)]
 use reprise_platform_linux::device_transfer::{TranscodeProfile, TranscodeRequest, TranscodedFile};
-use rusqlite::Connection;
 
 use super::device_sync_runtime::*;
 
@@ -26,28 +26,25 @@ use super::device_sync_runtime::*;
 mod fake_backend;
 use fake_backend::*;
 
-fn fixture() -> (tempfile::TempDir, Rc<RefCell<Connection>>) {
+fn fixture() -> (tempfile::TempDir, Rc<Db>) {
     let temp = tempfile::tempdir().unwrap();
-    let conn = reprise_core::db::open(None).unwrap();
-    reprise_core::db::migrate(&conn).unwrap();
+    let db = crate::test_db::open().unwrap();
     // Both source modules ship off (`NET-1a`) and `MTP-46` makes an off module
     // contribute nothing to a sync. These tests are about what a device
     // receives once the user uses the features, so having them switched on is
     // their precondition — `MTP-46`'s own tests are the ones that flip them.
-    reprise_core::modules::set_enabled(&conn, &reprise_core::modules::PODCASTS_MODULE, true)
-        .unwrap();
-    reprise_core::modules::set_enabled(&conn, &reprise_core::modules::YOUTUBE_MODULE, true)
-        .unwrap();
+    reprise_core::modules::set_enabled(&db, &reprise_core::modules::PODCASTS_MODULE, true).unwrap();
+    reprise_core::modules::set_enabled(&db, &reprise_core::modules::YOUTUBE_MODULE, true).unwrap();
     for id in 1..=4 {
         let path = temp.path().join(format!("{id}.flac"));
         std::fs::write(&path, vec![id as u8; 100]).unwrap();
-        conn.execute(
+        crate::test_db::connection(&db).execute(
             "INSERT INTO tracks (id,path,title,artist,duration_ms,added_at) VALUES (?1,?2,?3,'Artist',1000,0)",
             rusqlite::params![id, path.to_string_lossy(), format!("Track {id}")],
         )
         .unwrap();
     }
-    (temp, Rc::new(RefCell::new(conn)))
+    (temp, Rc::new(db))
 }
 
 fn write_silent_wav(path: &std::path::Path) {
@@ -94,7 +91,7 @@ fn mtp_24_podcast_and_youtube_audio_are_always_copied_1_to_1_never_transcoded() 
         // take that branch (`MTP-24`) — it copies whatever bytes exist.
         let episode_path = downloads.path().join("episode.flac");
         std::fs::write(&episode_path, b"already-opus-bytes").unwrap();
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute_batch(
                 "INSERT INTO podcast_subscriptions
                  (id, kind, feed_url, title, auto_download, sync_to_phone, added_at)
@@ -103,7 +100,7 @@ fn mtp_24_podcast_and_youtube_audio_are_always_copied_1_to_1_never_transcoded() 
                  VALUES (10, 'a');",
             )
             .unwrap();
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute(
                 "INSERT INTO podcast_episodes
                  (id, subscription_id, guid, title, audio_url, downloaded_path,
@@ -149,7 +146,7 @@ fn pod_12_planned_sync_copies_selected_rss_and_youtube_each_to_its_own_target() 
         let youtube_path = downloads.path().join("youtube.mp3");
         std::fs::write(&rss_path, b"rss audio").unwrap();
         std::fs::write(&youtube_path, b"youtube").unwrap();
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute_batch(
                 "INSERT INTO podcast_subscriptions
                  (id, kind, feed_url, title, auto_download, sync_to_phone, added_at)
@@ -160,7 +157,7 @@ fn pod_12_planned_sync_copies_selected_rss_and_youtube_each_to_its_own_target() 
                  VALUES (10, 'a'), (11, 'a');",
             )
             .unwrap();
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute(
                 "INSERT INTO podcast_episodes
                  (id, subscription_id, guid, title, audio_url, downloaded_path,
@@ -170,7 +167,7 @@ fn pod_12_planned_sync_copies_selected_rss_and_youtube_each_to_its_own_target() 
                 [rss_path.to_string_lossy().as_ref()],
             )
             .unwrap();
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute(
                 "INSERT INTO podcast_episodes
                  (id, subscription_id, guid, title, audio_url, downloaded_path,
@@ -244,7 +241,7 @@ fn mtp_46_switching_a_source_off_mid_sync_keeps_it_out_of_the_running_transfer()
         let (downloads, conn) = fixture();
         let path = downloads.path().join("video.webm");
         std::fs::write(&path, b"video-bytes").unwrap();
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute_batch(
                 "INSERT INTO podcast_subscriptions
                  (id, kind, feed_url, title, auto_download, sync_to_phone, added_at)
@@ -253,7 +250,7 @@ fn mtp_46_switching_a_source_off_mid_sync_keeps_it_out_of_the_running_transfer()
                  VALUES (10, 'a');",
             )
             .unwrap();
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute(
                 "INSERT INTO podcast_episodes
                  (id, subscription_id, guid, title, audio_url, downloaded_path,
@@ -274,7 +271,7 @@ fn mtp_46_switching_a_source_off_mid_sync_keeps_it_out_of_the_running_transfer()
             backend.observe_copies(Rc::new(move |relative_target: &str| {
                 if !relative_target.contains("Channel") {
                     reprise_core::modules::set_enabled(
-                        &conn.borrow(),
+                        &conn,
                         &reprise_core::modules::YOUTUBE_MODULE,
                         false,
                     )
@@ -324,7 +321,7 @@ fn mtp_46_a_recompute_reloads_the_module_state_into_the_device_snapshot() {
         let (downloads, conn) = fixture();
         let path = downloads.path().join("video.webm");
         std::fs::write(&path, b"video-bytes").unwrap();
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute_batch(
                 "INSERT INTO podcast_subscriptions
                  (id, kind, feed_url, title, auto_download, sync_to_phone, added_at)
@@ -333,7 +330,7 @@ fn mtp_46_a_recompute_reloads_the_module_state_into_the_device_snapshot() {
                  VALUES (10, 'a');",
             )
             .unwrap();
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute(
                 "INSERT INTO podcast_episodes
                  (id, subscription_id, guid, title, audio_url, downloaded_path,
@@ -392,12 +389,8 @@ fn mtp_46_a_recompute_reloads_the_module_state_into_the_device_snapshot() {
         runtime.refresh_contents("a");
         settle().await;
 
-        reprise_core::modules::set_enabled(
-            &conn.borrow(),
-            &reprise_core::modules::YOUTUBE_MODULE,
-            false,
-        )
-        .unwrap();
+        reprise_core::modules::set_enabled(&conn, &reprise_core::modules::YOUTUBE_MODULE, false)
+            .unwrap();
         backend.state.managed_copies.borrow_mut().clear();
         // What the Preferences switch triggers (`window.rs` wires this to the
         // "Online sources" master switches) — not `recompute_delta`, so the
@@ -430,7 +423,7 @@ fn mtp_46_a_recompute_reloads_the_module_state_into_the_device_snapshot() {
 fn mtp_36_the_persisted_latest_per_channel_actually_bounds_what_syncs() {
     run(async {
         let (downloads, conn) = fixture();
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute_batch(
                 "INSERT INTO podcast_subscriptions
                  (id, kind, feed_url, title, auto_download, sync_to_phone, added_at)
@@ -447,7 +440,7 @@ fn mtp_36_the_persisted_latest_per_channel_actually_bounds_what_syncs() {
             let path = downloads.path().join(format!("video-{n}.mp3"));
             let content = format!("video-{n}");
             std::fs::write(&path, content.as_bytes()).unwrap();
-            conn.borrow()
+            crate::test_db::connection(&conn)
                 .execute(
                     "INSERT INTO podcast_episodes
                      (id, subscription_id, guid, title, audio_url, downloaded_path,
@@ -477,7 +470,7 @@ fn mtp_36_the_persisted_latest_per_channel_actually_bounds_what_syncs() {
             "the global default of 5 must actually bound what gets copied to the device"
         );
 
-        reprise_core::podcasts::store::set_latest_per_channel(&conn.borrow(), 10, Some(2)).unwrap();
+        reprise_core::podcasts::store::set_latest_per_channel(&conn, 10, Some(2)).unwrap();
         backend.state.managed_copies.borrow_mut().clear();
         runtime.recompute_delta("a").unwrap();
         settle().await;
@@ -489,7 +482,7 @@ fn mtp_36_the_persisted_latest_per_channel_actually_bounds_what_syncs() {
             "a channel override of 2 must change what actually syncs — it beats the global default"
         );
 
-        reprise_core::podcasts::store::set_latest_per_channel(&conn.borrow(), 10, Some(0)).unwrap();
+        reprise_core::podcasts::store::set_latest_per_channel(&conn, 10, Some(0)).unwrap();
         backend.state.managed_copies.borrow_mut().clear();
         runtime.recompute_delta("a").unwrap();
         settle().await;
@@ -690,15 +683,15 @@ fn signal_when(
     (subscription, receiver)
 }
 
-fn select_road_playlist(conn: &Rc<RefCell<Connection>>, ids: &[i64]) {
-    conn.borrow()
+fn select_road_playlist(conn: &Rc<Db>, ids: &[i64]) {
+    crate::test_db::connection(conn.as_ref())
         .execute(
             "INSERT INTO playlists (id, name, position) VALUES (10, 'Road', 0)",
             [],
         )
         .unwrap();
     for (position, track_id) in ids.iter().enumerate() {
-        conn.borrow()
+        crate::test_db::connection(conn.as_ref())
             .execute(
                 "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (10, ?1, ?2)",
                 rusqlite::params![track_id, position as i64],
@@ -713,9 +706,9 @@ fn select_road_playlist(conn: &Rc<RefCell<Connection>>, ids: &[i64]) {
 /// directly via SQL and then drive `sync_now` manually — without this, the
 /// default-on switch (`DEFAULT 1`, schema v44) would start a sync on
 /// connect before the test's own `sync_now` call runs, doubling every copy.
-fn disable_auto_start(conn: &Rc<RefCell<Connection>>, device_id: &str) {
+fn disable_auto_start(conn: &Rc<Db>, device_id: &str) {
     save_settings(
-        &conn.borrow(),
+        conn,
         &DeviceSettings {
             device_serial: device_id.into(),
             device_name: format!("Phone {device_id}"),
@@ -731,9 +724,9 @@ fn disable_auto_start(conn: &Rc<RefCell<Connection>>, device_id: &str) {
     .unwrap();
 }
 
-fn save_road_settings(conn: &Rc<RefCell<Connection>>, device_id: &str) {
+fn save_road_settings(conn: &Rc<Db>, device_id: &str) {
     save_settings(
-        &conn.borrow(),
+        conn,
         &DeviceSettings {
             device_serial: device_id.into(),
             device_name: format!("Phone {device_id}"),

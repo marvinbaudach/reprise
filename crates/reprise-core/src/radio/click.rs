@@ -1,6 +1,5 @@
 //! radio-browser click and stream re-resolution.
 
-use rusqlite::Connection;
 use serde::Deserialize;
 
 use super::{RadioError, StationRow};
@@ -56,20 +55,21 @@ pub fn click_and_resolve(uuid: &str) -> Result<String, RadioError> {
 /// A missing UUID, endpoint failure, or persistence failure never prevents
 /// playback: callers always receive the locally stored stream URL.
 #[must_use]
-pub fn resolve_for_play(conn: &Connection, station: &StationRow) -> PlayResolution {
+pub fn resolve_for_play(db: &crate::db::Db, station: &StationRow) -> PlayResolution {
+    let conn = db.conn();
     let Some(uuid) = station.uuid.as_deref() else {
         return fallback(station);
     };
     // NET-1a: "Report plays to the directory" off, Radio off, or the global
     // online-sources gate off must all mean no request — the stored stream
     // URL is used as-is, same as any other network failure here.
-    if !super::config::report_plays_allowed(conn).unwrap_or(false) {
+    if !super::config::report_plays_allowed_in(conn).unwrap_or(false) {
         return fallback(station);
     }
     let Ok(stream_url) = click_and_resolve(uuid) else {
         return fallback(station);
     };
-    if super::station::update_stream_url(conn, station.id, &stream_url).is_err() {
+    if super::station::update_stream_url_in(conn, station.id, &stream_url).is_err() {
         return fallback(station);
     }
     PlayResolution {
@@ -109,13 +109,11 @@ fn encode_path_segment(value: &str) -> String {
 mod tests {
     use super::*;
 
-    fn conn() -> rusqlite::Connection {
-        let conn = rusqlite::Connection::open_in_memory().unwrap();
-        crate::db::migrate(&conn).unwrap();
-        conn
+    fn conn() -> crate::db::Db {
+        crate::db::Db::open_in_memory().unwrap()
     }
 
-    fn favorite(conn: &Connection) -> StationRow {
+    fn favorite(conn: &crate::db::Db) -> StationRow {
         let id = super::super::station::add_or_restore(
             conn,
             &super::super::station::NewStation {

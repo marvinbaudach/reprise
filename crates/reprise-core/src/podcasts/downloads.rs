@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 
 use rusqlite::{params, Connection};
 
+use crate::db::Db;
+
 use super::config::CleanupPolicy;
 use super::{PodcastError, PodcastKind};
 
@@ -16,6 +18,15 @@ pub struct CleanupSummary {
 }
 
 pub fn set_downloaded_path(
+    db: &Db,
+    episode_id: i64,
+    path: Option<&str>,
+) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
+    set_downloaded_path_in(conn, episode_id, path)
+}
+
+pub(crate) fn set_downloaded_path_in(
     conn: &Connection,
     episode_id: i64,
     path: Option<&str>,
@@ -31,6 +42,16 @@ pub fn set_downloaded_path(
 }
 
 pub fn set_downloaded_file(
+    db: &Db,
+    episode_id: i64,
+    path: Option<&str>,
+    downloaded_bytes: Option<i64>,
+) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
+    set_downloaded_file_in(conn, episode_id, path, downloaded_bytes)
+}
+
+pub(crate) fn set_downloaded_file_in(
     conn: &Connection,
     episode_id: i64,
     path: Option<&str>,
@@ -51,6 +72,16 @@ pub fn set_downloaded_file(
 }
 
 pub fn persist_completed_if_active(
+    db: &Db,
+    episode_id: i64,
+    path: &str,
+    downloaded_bytes: u64,
+) -> Result<bool, rusqlite::Error> {
+    let conn = db.conn();
+    persist_completed_if_active_in(conn, episode_id, path, downloaded_bytes)
+}
+
+pub(crate) fn persist_completed_if_active_in(
     conn: &Connection,
     episode_id: i64,
     path: &str,
@@ -72,6 +103,14 @@ pub fn persist_completed_if_active(
 }
 
 pub fn downloaded_paths_for_subscription(
+    db: &Db,
+    subscription_id: i64,
+) -> Result<Vec<String>, rusqlite::Error> {
+    let conn = db.conn();
+    downloaded_paths_for_subscription_in(conn, subscription_id)
+}
+
+pub(crate) fn downloaded_paths_for_subscription_in(
     conn: &Connection,
     subscription_id: i64,
 ) -> Result<Vec<String>, rusqlite::Error> {
@@ -228,6 +267,17 @@ pub fn resolve_keep_downloaded(default_keep: usize, channel_override: Option<i64
 }
 
 pub fn enforce_cleanup(
+    db: &Db,
+    download_root: &Path,
+    policy: CleanupPolicy,
+    default_keep_downloaded: usize,
+    now: i64,
+) -> Result<CleanupSummary, CleanupError> {
+    let conn = db.conn();
+    enforce_cleanup_in(conn, download_root, policy, default_keep_downloaded, now)
+}
+
+pub(crate) fn enforce_cleanup_in(
     conn: &Connection,
     download_root: &Path,
     policy: CleanupPolicy,
@@ -241,7 +291,7 @@ pub fn enforce_cleanup(
         let canonical_path = match path.canonicalize() {
             Ok(path) => path,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                super::store::set_downloaded_path(conn, episode_id, None)?;
+                set_downloaded_path_in(conn, episode_id, None)?;
                 continue;
             }
             Err(error) => return Err(error.into()),
@@ -261,7 +311,7 @@ pub fn enforce_cleanup(
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(error) => return Err(error.into()),
         }
-        super::store::set_downloaded_path(conn, episode_id, None)?;
+        set_downloaded_path_in(conn, episode_id, None)?;
     }
     Ok(summary)
 }

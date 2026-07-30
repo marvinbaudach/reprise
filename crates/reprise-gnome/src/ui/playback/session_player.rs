@@ -49,8 +49,8 @@ impl PlayerController {
     ) {
         debug_assert!(!restore_should_start_playback());
         let retained = {
-            let conn = self.conn.borrow();
-            match reprise_core::queries::query_queue_retained_track_ids(&conn) {
+            let conn = &self.conn;
+            match reprise_core::queries::query_queue_retained_track_ids(conn) {
                 Ok(ids) => ids,
                 Err(error) => {
                     tracing::warn!(%error, "could not validate restored queue IDs");
@@ -93,8 +93,8 @@ impl PlayerController {
         self.sync_state(PlaybackState::Stopped);
 
         let summary = current.and_then(|id| {
-            let conn = self.conn.borrow();
-            reprise_core::queries::query_track_summary(&conn, id)
+            let conn = &self.conn;
+            reprise_core::queries::query_track_summary(conn, id)
                 .inspect_err(
                     |error| tracing::warn!(%error, id, "could not restore current track metadata"),
                 )

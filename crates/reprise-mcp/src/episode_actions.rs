@@ -11,7 +11,6 @@ use std::path::Path;
 
 use reprise_core::podcasts::pipeline::PipelineError;
 use rmcp::schemars;
-use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 use crate::data::{self, DataError};
@@ -72,8 +71,8 @@ pub fn manage_episodes(
     granted_at_startup: bool,
     params: &ManageEpisodesParams,
 ) -> Result<ManageEpisodesResult, DataError> {
-    let conn = data::open(path)?;
-    let allowed = crate::capability::sources_manage_effective(&conn, granted_at_startup)
+    let db = data::open(path)?;
+    let allowed = crate::capability::sources_manage_effective(&db, granted_at_startup)
         .map_err(DataError::Db)?;
     if !allowed {
         return Err(DataError::CapabilityDenied("sources:manage"));
@@ -112,17 +111,21 @@ pub fn manage_episodes(
         .episode_ids
         .iter()
         .map(|&episode_id| match action {
-            "download" => download_one(&conn, &download_root, episode_id),
-            "remove" => remove_one(&conn, episode_id),
-            _ => want_on_device_one(&conn, episode_id, params.wanted.unwrap_or(false)),
+            "download" => download_one(&db, &download_root, episode_id),
+            "remove" => remove_one(&db, episode_id),
+            _ => want_on_device_one(&db, episode_id, params.wanted.unwrap_or(false)),
         })
         .collect();
 
     Ok(ManageEpisodesResult { action, outcomes })
 }
 
-fn download_one(conn: &Connection, download_root: &Path, episode_id: i64) -> EpisodeOutcome {
-    let Ok(Some(episode)) = reprise_core::podcasts::store::episode(conn, episode_id) else {
+fn download_one(
+    db: &reprise_core::db::Db,
+    download_root: &Path,
+    episode_id: i64,
+) -> EpisodeOutcome {
+    let Ok(Some(episode)) = reprise_core::podcasts::store::episode(db, episode_id) else {
         return EpisodeOutcome {
             episode_id,
             ok: false,
@@ -135,7 +138,7 @@ fn download_one(conn: &Connection, download_root: &Path, episode_id: i64) -> Epi
     // branch — the same `source_network_allowed` call, per the episode's
     // own kind rather than a blanket check.
     let allowed =
-        reprise_core::podcasts::config::source_network_allowed(conn, episode.kind).unwrap_or(false);
+        reprise_core::podcasts::config::source_network_allowed(db, episode.kind).unwrap_or(false);
     if !allowed {
         return EpisodeOutcome {
             episode_id,
@@ -144,7 +147,7 @@ fn download_one(conn: &Connection, download_root: &Path, episode_id: i64) -> Epi
             error: Some("this source is disabled in Reprise preferences".to_owned()),
         };
     }
-    let ytdlp_path = match reprise_core::podcasts::config::load(conn) {
+    let ytdlp_path = match reprise_core::podcasts::config::load(db) {
         Ok(config) => config.ytdlp_path,
         Err(error) => {
             return EpisodeOutcome {
@@ -158,7 +161,7 @@ fn download_one(conn: &Connection, download_root: &Path, episode_id: i64) -> Epi
     let ytdlp = reprise_core::podcasts::ytdlp::YtDlp::discover(ytdlp_path.as_deref());
     let feed_fetcher = reprise_core::podcasts::pipeline::HttpFeedFetcher;
     let result = reprise_core::podcasts::pipeline::download_episode(
-        conn,
+        db,
         &feed_fetcher,
         &ytdlp,
         download_root,
@@ -219,8 +222,8 @@ fn outcome_from_download_result(
     }
 }
 
-fn remove_one(conn: &Connection, episode_id: i64) -> EpisodeOutcome {
-    let Ok(Some(_)) = reprise_core::podcasts::store::episode(conn, episode_id) else {
+fn remove_one(db: &reprise_core::db::Db, episode_id: i64) -> EpisodeOutcome {
+    let Ok(Some(_)) = reprise_core::podcasts::store::episode(db, episode_id) else {
         return EpisodeOutcome {
             episode_id,
             ok: false,
@@ -235,8 +238,8 @@ fn remove_one(conn: &Connection, episode_id: i64) -> EpisodeOutcome {
     // removal (`POD-6`), this commits immediately — matching how
     // `music_manage_podcasts`'s `remove` action already commits a
     // subscription without a second, MCP-only undo window.
-    match reprise_core::podcasts::store::tombstone_episode(conn, episode_id, now)
-        .and_then(|_| reprise_core::podcasts::store::commit_remove_episode(conn, episode_id))
+    match reprise_core::podcasts::store::tombstone_episode(db, episode_id, now)
+        .and_then(|_| reprise_core::podcasts::store::commit_remove_episode(db, episode_id))
     {
         Ok(_) => EpisodeOutcome {
             episode_id,
@@ -253,8 +256,8 @@ fn remove_one(conn: &Connection, episode_id: i64) -> EpisodeOutcome {
     }
 }
 
-fn want_on_device_one(conn: &Connection, episode_id: i64, wanted: bool) -> EpisodeOutcome {
-    match reprise_core::podcasts::wanted_on_device::set_wanted_on_device(conn, episode_id, wanted) {
+fn want_on_device_one(db: &reprise_core::db::Db, episode_id: i64, wanted: bool) -> EpisodeOutcome {
+    match reprise_core::podcasts::wanted_on_device::set_wanted_on_device(db, episode_id, wanted) {
         Ok(true) => EpisodeOutcome {
             episode_id,
             ok: true,
@@ -324,15 +327,15 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("reprise.db");
         let episode_id = {
-            let conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
+            let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
             reprise_core::library::settings::set_bool(
-                &conn,
+                &db,
                 crate::capability::CAP_SOURCES_MANAGE,
                 true,
             )
             .unwrap();
             let subscription_id = store::add_or_restore(
-                &conn,
+                &db,
                 &NewSubscription {
                     kind: PodcastKind::Rss,
                     feed_url: "https://feeds.test/show".into(),
@@ -345,7 +348,7 @@ mod tests {
             )
             .unwrap();
             store::upsert_episode(
-                &conn,
+                &db,
                 subscription_id,
                 &ParsedEpisode {
                     guid: "ep-1".into(),
@@ -368,7 +371,7 @@ mod tests {
     fn manage_episodes_is_denied_when_the_capability_is_not_granted() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("reprise.db");
-        reprise_core::db::open_migrated(Some(&path)).unwrap();
+        let _db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
 
         let error = manage_episodes(
             &path,
@@ -404,12 +407,12 @@ mod tests {
         )
         .unwrap();
         assert!(set.outcomes[0].ok);
-        let conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
+        let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
         assert_eq!(
-            reprise_core::podcasts::wanted_on_device::wanted_on_device(&conn, episode_id).unwrap(),
+            reprise_core::podcasts::wanted_on_device::wanted_on_device(&db, episode_id).unwrap(),
             Some(true)
         );
-        drop(conn);
+        drop(db);
 
         let cleared = manage_episodes(
             &path,
@@ -422,9 +425,9 @@ mod tests {
         )
         .unwrap();
         assert!(cleared.outcomes[0].ok);
-        let conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
+        let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
         assert_eq!(
-            reprise_core::podcasts::wanted_on_device::wanted_on_device(&conn, episode_id).unwrap(),
+            reprise_core::podcasts::wanted_on_device::wanted_on_device(&db, episode_id).unwrap(),
             Some(false)
         );
     }
@@ -463,8 +466,8 @@ mod tests {
         .unwrap();
 
         assert!(result.outcomes[0].ok);
-        let conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
-        assert!(reprise_core::podcasts::store::episode(&conn, episode_id)
+        let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
+        assert!(reprise_core::podcasts::store::episode(&db, episode_id)
             .unwrap()
             .is_none());
     }

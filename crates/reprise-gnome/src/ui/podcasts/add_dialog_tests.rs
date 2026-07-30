@@ -144,7 +144,7 @@ fn src_5_result_rows_use_the_source_artwork_surface() {
 /// them.
 #[test]
 fn src_11_add_dialog_images_allowed_is_the_net_1a_and() {
-    let conn = reprise_core::db::open_migrated(None).unwrap();
+    let conn = crate::test_db::open().unwrap();
     // Neither the global gate nor the module is on by default.
     assert!(!images_allowed(&conn));
 
@@ -183,7 +183,7 @@ fn src_11_result_row_stays_on_the_fallback_when_images_are_not_allowed() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn src_7_a_successful_subscribe_acknowledges_the_row_in_place() {
     gtk4::init().unwrap();
-    let conn = Rc::new(RefCell::new(reprise_core::db::open_migrated(None).unwrap()));
+    let conn = Rc::new(crate::test_db::open().unwrap());
     let parent = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     let on_added: OnAdded = Rc::new(|_| {});
     append_heading(&parent, strings::PODCAST_APPLE_RESULTS);

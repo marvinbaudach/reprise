@@ -6,8 +6,8 @@ use crate::podcasts::store::{self, NewSubscription};
 use crate::podcasts::PodcastError;
 use crate::podcasts::PodcastKind;
 
-fn conn() -> Connection {
-    crate::db::open_migrated(None).unwrap()
+fn conn() -> Db {
+    Db::open_in_memory().unwrap()
 }
 
 const DEFAULT_FEED_URL: &str = "https://example.test/feed";
@@ -17,7 +17,7 @@ fn add_show(conn: &Connection) -> i64 {
 }
 
 fn add_show_with_feed(conn: &Connection, feed_url: &str) -> i64 {
-    store::add_or_restore(
+    store::add_or_restore_in(
         conn,
         &NewSubscription {
             kind: PodcastKind::Rss,
@@ -58,7 +58,7 @@ fn add_download_with_feed(
     played_at: Option<i64>,
 ) -> i64 {
     let guid = format!("episode-{number}");
-    let result = store::upsert_episode(
+    let result = store::upsert_episode_in(
         conn,
         subscription_id,
         &ParsedEpisode {
@@ -76,9 +76,13 @@ fn add_download_with_feed(
     let path = download_path(root, feed_url, &guid, "mp3");
     prepare_destination(&path).unwrap();
     std::fs::write(&path, [0_u8; 4]).unwrap();
-    store::set_downloaded_path(conn, result.episode_id, path.to_str()).unwrap();
+    set_downloaded_path_in(conn, result.episode_id, path.to_str()).unwrap();
     if let Some(played_at) = played_at {
-        store::mark_played(conn, result.episode_id, played_at).unwrap();
+        conn.execute(
+            "UPDATE podcast_episodes SET played_at = ?2, position_ms = 0 WHERE id = ?1",
+            rusqlite::params![result.episode_id, played_at],
+        )
+        .unwrap();
     }
     result.episode_id
 }
@@ -172,7 +176,7 @@ fn pod_7_reclaim_ignores_partial_files() {
 #[test]
 fn pod_7_completed_file_is_not_persisted_after_episode_removal() {
     let conn = conn();
-    let show = add_show(&conn);
+    let show = add_show(conn.conn());
     let result = store::upsert_episode(
         &conn,
         show,
@@ -199,8 +203,8 @@ fn pod_7_completed_file_is_not_persisted_after_episode_removal() {
 fn keep_all_never_deletes_downloads() {
     let conn = conn();
     let directory = tempfile::tempdir().unwrap();
-    let show = add_show(&conn);
-    let episode = add_download(&conn, directory.path(), show, 1, Some(1));
+    let show = add_show(conn.conn());
+    let episode = add_download(conn.conn(), directory.path(), show, 1, Some(1));
 
     assert_eq!(
         enforce_cleanup(
@@ -224,17 +228,17 @@ fn keep_all_never_deletes_downloads() {
 fn played_age_policy_deletes_only_old_played_downloads() {
     let conn = conn();
     let directory = tempfile::tempdir().unwrap();
-    let show = add_show(&conn);
+    let show = add_show(conn.conn());
     let now = 1_000_000;
     let old = add_download(
-        &conn,
+        conn.conn(),
         directory.path(),
         show,
         1,
         Some(now - PLAYED_RETENTION_SECONDS),
     );
-    let recent = add_download(&conn, directory.path(), show, 2, Some(now - 10));
-    let unplayed = add_download(&conn, directory.path(), show, 3, None);
+    let recent = add_download(conn.conn(), directory.path(), show, 2, Some(now - 10));
+    let unplayed = add_download(conn.conn(), directory.path(), show, 3, None);
 
     let summary = enforce_cleanup(
         &conn,
@@ -265,10 +269,10 @@ fn cleanup_never_deletes_a_download_path_outside_its_root() {
     let conn = conn();
     let download_root = tempfile::tempdir().unwrap();
     let foreign_directory = tempfile::tempdir().unwrap();
-    let show = add_show(&conn);
+    let show = add_show(conn.conn());
     let now = 1_000_000;
     let episode = add_download(
-        &conn,
+        conn.conn(),
         download_root.path(),
         show,
         1,
@@ -302,9 +306,9 @@ fn cleanup_never_deletes_a_download_path_outside_its_root() {
 fn keep_last_five_is_applied_per_show() {
     let conn = conn();
     let directory = tempfile::tempdir().unwrap();
-    let show = add_show(&conn);
+    let show = add_show(conn.conn());
     for number in 1..=7 {
-        add_download(&conn, directory.path(), show, number, None);
+        add_download(conn.conn(), directory.path(), show, number, None);
     }
 
     let summary = enforce_cleanup(&conn, directory.path(), CleanupPolicy::KeepLast5, 5, 0).unwrap();
@@ -320,7 +324,7 @@ fn keep_last_five_is_applied_per_show() {
 
 fn add_undownloaded_episode(conn: &Connection, subscription_id: i64, number: i64) -> i64 {
     let guid = format!("undownloaded-{number}");
-    store::upsert_episode(
+    store::upsert_episode_in(
         conn,
         subscription_id,
         &ParsedEpisode {
@@ -349,16 +353,16 @@ fn add_undownloaded_episode(conn: &Connection, subscription_id: i64, number: i64
 fn pod_5_keep_last_n_counts_downloaded_episodes_only_not_all_episodes() {
     let conn = conn();
     let directory = tempfile::tempdir().unwrap();
-    let show = add_show(&conn);
+    let show = add_show(conn.conn());
     // Three older episodes, actually downloaded.
     for number in 1..=3 {
-        add_download(&conn, directory.path(), show, number, None);
+        add_download(conn.conn(), directory.path(), show, number, None);
     }
     // Five newer episodes that were never downloaded — under the buggy
     // rank-over-all-episodes query these take the top ranks and push the
     // real downloads past the N=5 cutoff.
     for number in 4..=8 {
-        add_undownloaded_episode(&conn, show, number);
+        add_undownloaded_episode(conn.conn(), show, number);
     }
 
     let summary = enforce_cleanup(&conn, directory.path(), CleanupPolicy::KeepLast5, 5, 0).unwrap();
@@ -396,12 +400,12 @@ fn pod_5_channel_keep_downloaded_override_changes_what_cleanup_deletes() {
     let directory = tempfile::tempdir().unwrap();
     let overridden_feed = "https://example.test/overridden";
     let default_feed = "https://example.test/default";
-    let overridden_show = add_show_with_feed(&conn, overridden_feed);
-    let default_show = add_show_with_feed(&conn, default_feed);
+    let overridden_show = add_show_with_feed(conn.conn(), overridden_feed);
+    let default_show = add_show_with_feed(conn.conn(), default_feed);
     store::set_keep_downloaded(&conn, overridden_show, Some(1)).unwrap();
     for number in 1..=4 {
         add_download_with_feed(
-            &conn,
+            conn.conn(),
             directory.path(),
             overridden_feed,
             overridden_show,
@@ -409,7 +413,7 @@ fn pod_5_channel_keep_downloaded_override_changes_what_cleanup_deletes() {
             None,
         );
         add_download_with_feed(
-            &conn,
+            conn.conn(),
             directory.path(),
             default_feed,
             default_show,
@@ -448,9 +452,9 @@ fn pod_5_channel_keep_downloaded_override_changes_what_cleanup_deletes() {
 fn pod_5_keep_downloaded_zero_means_unlimited_not_delete_everything() {
     let conn = conn();
     let directory = tempfile::tempdir().unwrap();
-    let show = add_show(&conn);
+    let show = add_show(conn.conn());
     for number in 1..=7 {
-        add_download(&conn, directory.path(), show, number, None);
+        add_download(conn.conn(), directory.path(), show, number, None);
     }
 
     let summary = enforce_cleanup(&conn, directory.path(), CleanupPolicy::KeepLast5, 0, 0).unwrap();
@@ -476,12 +480,12 @@ fn pod_5_channel_override_of_zero_means_unlimited_for_that_channel_only() {
     let directory = tempfile::tempdir().unwrap();
     let unlimited_feed = "https://example.test/unlimited";
     let default_feed = "https://example.test/default-two";
-    let unlimited_show = add_show_with_feed(&conn, unlimited_feed);
-    let default_show = add_show_with_feed(&conn, default_feed);
+    let unlimited_show = add_show_with_feed(conn.conn(), unlimited_feed);
+    let default_show = add_show_with_feed(conn.conn(), default_feed);
     store::set_keep_downloaded(&conn, unlimited_show, Some(0)).unwrap();
     for number in 1..=6 {
         add_download_with_feed(
-            &conn,
+            conn.conn(),
             directory.path(),
             unlimited_feed,
             unlimited_show,
@@ -489,7 +493,7 @@ fn pod_5_channel_override_of_zero_means_unlimited_for_that_channel_only() {
             None,
         );
         add_download_with_feed(
-            &conn,
+            conn.conn(),
             directory.path(),
             default_feed,
             default_show,

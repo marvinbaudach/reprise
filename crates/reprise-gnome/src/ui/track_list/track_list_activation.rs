@@ -148,9 +148,9 @@ pub(in crate::ui) fn queue_ids_for_activation(
     };
 
     let ids = {
-        let conn = shared.conn.borrow();
+        let conn = &shared.conn;
         queries::query_track_ids_browsed(
-            &conn,
+            conn,
             &source,
             &sort.field,
             &sort.dir,

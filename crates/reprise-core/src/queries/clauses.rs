@@ -390,8 +390,8 @@ mod tests {
     // true for a track with an `ai = 1` row, false otherwise.
     #[test]
     fn windowed_query_projects_is_ai_from_track_provenance() {
-        let mut conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
+        let db = crate::db::Db::open_in_memory().unwrap();
+        let conn = db.conn();
         conn.execute_batch(
             "INSERT INTO tracks (id, path, title, artist, added_at, file_mtime, file_size) \
              VALUES (1, '/orig.flac', 'Original', 'A', 1, 1, 1), \
@@ -402,7 +402,7 @@ mod tests {
         .unwrap();
 
         let rows = crate::queries::query_track_window(
-            &mut conn,
+            &db,
             &crate::view_source::ViewSource::Library,
             "title",
             "asc",
@@ -422,8 +422,8 @@ mod tests {
     /// composition with `PRESENT`.
     #[test]
     fn ai_exclude_hides_ai_tracks_includes_originals_and_composes_with_present() {
-        let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
+        let db = crate::db::Db::open_in_memory().unwrap();
+        let conn = db.conn();
         conn.execute_batch(
             "INSERT INTO tracks (id, path, title, artist, added_at, file_mtime, file_size) \
                VALUES (1, '/a.flac', 'Original', 'A', 1, 1, 1);
@@ -500,8 +500,8 @@ mod tests {
     // PRIMARY KEY (a SEARCH, never a full SCAN — so no extra index is needed).
     #[test]
     fn explain_query_plan_confirms_off_path_has_no_provenance_subquery() {
-        let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
+        let db = crate::db::Db::open_in_memory().unwrap();
+        let conn = db.conn();
 
         let plan = |project_ai: bool| -> String {
             let sql = build_track_query_browsed(

@@ -37,8 +37,8 @@ pub(in crate::ui) fn show_new_playlist_dialog(shared: &Rc<Shared>) {
 /// the current source. A creation failure is logged and surfaced as a toast.
 fn create_playlist_and_stay(shared: &Rc<Shared>, name: &str) {
     let created = {
-        let conn = shared.conn.borrow();
-        playlists::create(&conn, name)
+        let conn = &shared.conn;
+        playlists::create(conn, name)
     };
     match created {
         Ok(id) => {

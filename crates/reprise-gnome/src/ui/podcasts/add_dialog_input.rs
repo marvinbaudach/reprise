@@ -6,8 +6,8 @@
 //! [`PodcastKind`], so they live here rather than in the widget code.
 
 use reprise_core::connectivity::Connectivity;
+use reprise_core::db::Db;
 use reprise_core::podcasts::{self, PodcastKind};
-use rusqlite::Connection;
 
 use crate::ui::strings;
 
@@ -129,7 +129,7 @@ pub(super) fn primary_action_for_connectivity(
 ///
 /// Returns the message to show, or `None` when the submit may proceed.
 pub(super) fn submit_refusal(
-    conn: &Connection,
+    conn: &Db,
     kind: PodcastKind,
     input: &AddInput,
     connectivity: Connectivity,
@@ -155,8 +155,8 @@ pub(super) fn submit_refusal(
 mod tests {
     use super::*;
 
-    fn conn_with(youtube: bool, podcasts: bool, global: bool) -> Connection {
-        let conn = reprise_core::db::open_migrated(None).unwrap();
+    fn conn_with(youtube: bool, podcasts: bool, global: bool) -> Db {
+        let conn = crate::test_db::open().unwrap();
         reprise_core::modules::set_enabled(&conn, &reprise_core::modules::YOUTUBE_MODULE, youtube)
             .unwrap();
         reprise_core::modules::set_enabled(

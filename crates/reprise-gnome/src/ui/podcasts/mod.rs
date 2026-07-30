@@ -32,7 +32,7 @@ pub(in crate::ui) use podcasts_worker::{
 };
 
 pub(in crate::ui) fn install(
-    conn: std::rc::Rc<std::cell::RefCell<rusqlite::Connection>>,
+    conn: std::rc::Rc<reprise_core::db::Db>,
     runtime: std::rc::Rc<PodcastsRuntime>,
     callbacks: PodcastsCallbacks,
     kind: reprise_core::podcasts::PodcastKind,

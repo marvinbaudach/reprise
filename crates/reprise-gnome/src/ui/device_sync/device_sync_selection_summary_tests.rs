@@ -14,7 +14,7 @@ use super::*;
 fn mtp_37_the_youtube_selection_summary_changes_when_a_channel_is_enabled_for_this_device() {
     run(async {
         let (_downloads, conn) = fixture();
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute_batch(
                 "INSERT INTO podcast_subscriptions
                  (id, kind, feed_url, title, auto_download, sync_to_phone, added_at)
@@ -38,8 +38,7 @@ fn mtp_37_the_youtube_selection_summary_changes_when_a_channel_is_enabled_for_th
             "neither channel is selected for this device yet"
         );
 
-        reprise_core::podcasts::phone_sync::set_device_enabled(&conn.borrow(), 10, "a", true)
-            .unwrap();
+        reprise_core::podcasts::phone_sync::set_device_enabled(&conn, 10, "a", true).unwrap();
         runtime.recompute_delta("a").unwrap();
         settle().await;
 
@@ -55,8 +54,7 @@ fn mtp_37_the_youtube_selection_summary_changes_when_a_channel_is_enabled_for_th
              the kind of dead control this branch has shipped before"
         );
 
-        reprise_core::podcasts::phone_sync::set_device_enabled(&conn.borrow(), 10, "a", false)
-            .unwrap();
+        reprise_core::podcasts::phone_sync::set_device_enabled(&conn, 10, "a", false).unwrap();
         runtime.recompute_delta("a").unwrap();
         settle().await;
 
@@ -76,7 +74,7 @@ fn mtp_37_the_youtube_selection_summary_changes_when_a_channel_is_enabled_for_th
 fn mtp_37_the_podcast_selection_summary_counts_selected_shows_independently_of_youtube() {
     run(async {
         let (_downloads, conn) = fixture();
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute_batch(
                 "INSERT INTO podcast_subscriptions
                  (id, kind, feed_url, title, auto_download, sync_to_phone, added_at)
@@ -100,8 +98,7 @@ fn mtp_37_the_podcast_selection_summary_counts_selected_shows_independently_of_y
             (0, 1)
         );
 
-        reprise_core::podcasts::phone_sync::set_device_enabled(&conn.borrow(), 20, "a", true)
-            .unwrap();
+        reprise_core::podcasts::phone_sync::set_device_enabled(&conn, 20, "a", true).unwrap();
         runtime.recompute_delta("a").unwrap();
         settle().await;
 

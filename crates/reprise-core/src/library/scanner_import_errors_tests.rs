@@ -47,25 +47,26 @@ fn repeated_scans_of_same_broken_file_produce_one_episode_row() {
     let path = broken_mp3(tmp.path());
     let path_str = path.to_string_lossy().to_string();
 
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let conn = crate::db::Db::open_in_memory().unwrap();
 
     for _ in 0..4 {
-        completed(scan_folder(&mut conn, tmp.path()).unwrap());
+        completed(scan_folder(&conn, tmp.path()).unwrap());
     }
     let (first_seen_after_four, _, seen_count_after_four, _, _) =
-        import_error_row(&conn, &path_str).unwrap();
+        import_error_row(conn.conn(), &path_str).unwrap();
     assert_eq!(seen_count_after_four, 4);
 
     std::thread::sleep(std::time::Duration::from_millis(1100));
-    completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    completed(scan_folder(&conn, tmp.path()).unwrap());
 
     let total_rows: i64 = conn
+        .conn()
         .query_row("SELECT count(*) FROM import_errors", [], |r| r.get(0))
         .unwrap();
     assert_eq!(total_rows, 1, "must converge on ONE row, not one per scan");
 
-    let (first_seen, last_seen, seen_count, _, _) = import_error_row(&conn, &path_str).unwrap();
+    let (first_seen, last_seen, seen_count, _, _) =
+        import_error_row(conn.conn(), &path_str).unwrap();
     assert_eq!(
         seen_count, 5,
         "5 failing scans must produce seen_count == 5"
@@ -91,9 +92,8 @@ fn dismissed_unchanged_file_is_skipped_without_reading_tags() {
     let path = broken_mp3(tmp.path());
     let path_str = path.to_string_lossy().to_string();
 
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    let conn = crate::db::Db::open_in_memory().unwrap();
+    completed(scan_folder(&conn, tmp.path()).unwrap());
 
     let stat = std::fs::metadata(&path).unwrap();
     let mtime = stat
@@ -103,15 +103,16 @@ fn dismissed_unchanged_file_is_skipped_without_reading_tags() {
         .unwrap()
         .as_secs() as i64;
     let size = stat.len() as i64;
-    conn.execute(
-        "UPDATE import_errors SET dismissed_mtime = ?2, dismissed_size = ?3 WHERE path = ?1",
-        rusqlite::params![path_str, mtime, size],
-    )
-    .unwrap();
-    let (_, _, seen_count_before, _, _) = import_error_row(&conn, &path_str).unwrap();
+    conn.conn()
+        .execute(
+            "UPDATE import_errors SET dismissed_mtime = ?2, dismissed_size = ?3 WHERE path = ?1",
+            rusqlite::params![path_str, mtime, size],
+        )
+        .unwrap();
+    let (_, _, seen_count_before, _, _) = import_error_row(conn.conn(), &path_str).unwrap();
 
     track_meta::READ_META_CALLS.with(|calls| calls.set(0));
-    completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    completed(scan_folder(&conn, tmp.path()).unwrap());
     assert_eq!(
         track_meta::READ_META_CALLS.with(std::cell::Cell::get),
         0,
@@ -119,7 +120,7 @@ fn dismissed_unchanged_file_is_skipped_without_reading_tags() {
     );
 
     let (_, _, seen_count_after, dismissed_mtime, dismissed_size) =
-        import_error_row(&conn, &path_str).unwrap();
+        import_error_row(conn.conn(), &path_str).unwrap();
     assert_eq!(
         seen_count_after, seen_count_before,
         "a skipped scan must not bump seen_count"
@@ -139,29 +140,29 @@ fn dismissed_file_with_changed_mtime_starts_a_new_episode() {
     let path = broken_mp3(tmp.path());
     let path_str = path.to_string_lossy().to_string();
 
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    let conn = crate::db::Db::open_in_memory().unwrap();
+    completed(scan_folder(&conn, tmp.path()).unwrap());
 
     // Dismiss against a fingerprint the file will no longer match once
     // rewritten below — an impossible mtime/size pair is fine here, since
     // all that matters is that it differs from the file's real stat.
-    conn.execute(
-        "UPDATE import_errors SET dismissed_mtime = 1, dismissed_size = 1 WHERE path = ?1",
-        [&path_str],
-    )
-    .unwrap();
+    conn.conn()
+        .execute(
+            "UPDATE import_errors SET dismissed_mtime = 1, dismissed_size = 1 WHERE path = ?1",
+            [&path_str],
+        )
+        .unwrap();
 
     // Change the file's actual size (and, incidentally, its mtime) so it no
     // longer matches the dismissed fingerprint above.
     std::fs::write(&path, b"still not audio, but longer now").unwrap();
 
     let before = now_unix();
-    completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    completed(scan_folder(&conn, tmp.path()).unwrap());
     let after = now_unix();
 
     let (first_seen, _last_seen, seen_count, dismissed_mtime, dismissed_size) =
-        import_error_row(&conn, &path_str).unwrap();
+        import_error_row(conn.conn(), &path_str).unwrap();
     assert!(dismissed_mtime.is_none(), "dismissed_mtime must be cleared");
     assert!(dismissed_size.is_none(), "dismissed_size must be cleared");
     assert!(
@@ -205,10 +206,9 @@ fn locked_directory_produces_one_row_with_directory_path_and_permission_denied()
         return;
     }
 
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let conn = crate::db::Db::open_in_memory().unwrap();
 
-    let scan_result = scan_folder(&mut conn, tmp.path());
+    let scan_result = scan_folder(&conn, tmp.path());
 
     // Always restore permissions before asserting, so tempdir cleanup
     // succeeds even if the assertions below fail.
@@ -220,6 +220,7 @@ fn locked_directory_produces_one_row_with_directory_path_and_permission_denied()
 
     let locked_str = locked.to_string_lossy().to_string();
     let reason_kind: String = conn
+        .conn()
         .query_row(
             "SELECT reason_kind FROM import_errors WHERE path = ?1",
             [&locked_str],
@@ -232,6 +233,7 @@ fn locked_directory_produces_one_row_with_directory_path_and_permission_denied()
     );
 
     let total_rows: i64 = conn
+        .conn()
         .query_row(
             "SELECT count(*) FROM import_errors WHERE path = ?1",
             [&locked_str],

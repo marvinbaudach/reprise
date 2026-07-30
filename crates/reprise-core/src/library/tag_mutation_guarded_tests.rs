@@ -13,12 +13,7 @@ const TINY_PNG: &[u8] = &[
     0x42, 0x60, 0x82,
 ];
 
-fn seeded_track() -> (
-    tempfile::TempDir,
-    rusqlite::Connection,
-    i64,
-    std::path::PathBuf,
-) {
+fn seeded_track() -> (tempfile::TempDir, crate::db::Db, i64, std::path::PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac");
     let path = dir.path().join("typed-track-number.flac");
@@ -30,9 +25,10 @@ fn seeded_track() -> (
         .unwrap()
         .save_to_path(&path, lofty::config::WriteOptions::default())
         .unwrap();
-    let mut conn = crate::db::open_migrated(None).unwrap();
-    super::scanner::scan_folder(&mut conn, &path).unwrap();
+    let conn = crate::db::Db::open_in_memory().unwrap();
+    super::scanner::scan_folder(&conn, &path).unwrap();
     let id = conn
+        .conn()
         .query_row(
             "SELECT id FROM tracks WHERE path=?1",
             [path.to_string_lossy().as_ref()],
@@ -44,10 +40,10 @@ fn seeded_track() -> (
 
 #[test]
 fn guarded_fields_are_typed_and_track_number_never_silently_noops() {
-    let (_dir, mut conn, id, path) = seeded_track();
+    let (_dir, conn, id, path) = seeded_track();
 
     let result = commit_guarded_tag_changes(
-        &mut conn,
+        conn.conn(),
         id,
         &path,
         &[GuardedTagChange {
@@ -65,10 +61,10 @@ fn guarded_fields_are_typed_and_track_number_never_silently_noops() {
 
 #[test]
 fn guarded_numeric_values_are_validated_before_save() {
-    let (_dir, mut conn, id, path) = seeded_track();
+    let (_dir, conn, id, path) = seeded_track();
 
     let failure = commit_guarded_tag_changes(
-        &mut conn,
+        conn.conn(),
         id,
         &path,
         &[GuardedTagChange {
@@ -88,7 +84,7 @@ fn guarded_numeric_values_are_validated_before_save() {
 fn guarded_save_preserves_embedded_cover_art() {
     use lofty::picture::{MimeType, Picture, PictureType};
 
-    let (_dir, mut conn, id, path) = seeded_track();
+    let (_dir, conn, id, path) = seeded_track();
     let mut tagged = lofty::read_from_path(&path).unwrap();
     tagged.primary_tag_mut().unwrap().push_picture(
         Picture::unchecked(TINY_PNG.to_vec())
@@ -103,7 +99,7 @@ fn guarded_save_preserves_embedded_cover_art() {
         .unwrap();
 
     commit_guarded_tag_changes(
-        &mut conn,
+        conn.conn(),
         id,
         &path,
         &[GuardedTagChange {

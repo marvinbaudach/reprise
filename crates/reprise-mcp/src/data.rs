@@ -1,6 +1,6 @@
 //! Synchronous database access, run off the async runtime via
 //! `spawn_blocking`. Every function here opens its own short-lived
-//! `rusqlite::Connection` (the "stateless reader per call" model of the
+//! [`reprise_core::db::Db`] handle (the "stateless reader per call" model of the
 //! multi-frontend-core plan) and reaches the library **only** through
 //! `reprise-core` facades — this crate contains no SQL of its own.
 
@@ -9,12 +9,12 @@ use std::path::Path;
 use reprise_core::ai_conversion;
 use reprise_core::ai_jobs::{self, EnqueueOutcome};
 use reprise_core::ai_staging::StagingStore;
-use reprise_core::db::{self, DbError};
+use reprise_core::db::Db;
+use reprise_core::db::DbError;
 use reprise_core::library::playlists;
 use reprise_core::models::Track;
 use reprise_core::queries;
 use reprise_core::view_source::ViewSource;
-use rusqlite::Connection;
 
 use crate::capability;
 pub(crate) use crate::data_concerts::list_concerts;
@@ -86,16 +86,12 @@ impl std::fmt::Display for DataError {
     }
 }
 
-pub(crate) fn open(path: &Path) -> Result<Connection, DataError> {
-    // The database was migrated once at startup; per call we open a plain
-    // connection (WAL, `busy_timeout`, `foreign_keys` all set by `db::open`)
-    // without re-running migrations or the change-log prune, so a read stays a
-    // read and does not contend on the write lock.
-    db::open(Some(path)).map_err(DataError::Open)
+pub(crate) fn open(path: &Path) -> Result<Db, DataError> {
+    Db::open_ready(path).map_err(DataError::Open)
 }
 
-pub(crate) fn require_read(conn: &Connection) -> Result<(), DataError> {
-    if capability::library_read_enabled(conn).map_err(DataError::Db)? {
+pub(crate) fn require_read(db: &Db) -> Result<(), DataError> {
+    if capability::library_read_enabled(db).map_err(DataError::Db)? {
         Ok(())
     } else {
         Err(DataError::CapabilityDenied("library:read"))
@@ -116,16 +112,16 @@ pub fn search_tracks(
     limit: Option<u32>,
     offset: Option<u32>,
 ) -> Result<SearchTracksResult, DataError> {
-    let mut conn = open(path)?;
-    require_read(&conn)?;
+    let db = open(path)?;
+    require_read(&db)?;
 
     let limit = resolve_limit(limit);
     let offset = i64::from(offset.unwrap_or(0));
     let source = ViewSource::Library;
 
-    let total = queries::query_track_count(&conn, &source, query, &[]).map_err(DataError::Db)?;
+    let total = queries::query_track_count(&db, &source, query, &[]).map_err(DataError::Db)?;
     let tracks: Vec<Track> = queries::query_track_window(
-        &mut conn,
+        &db,
         &source,
         SEARCH_SORT_FIELD,
         SEARCH_SORT_DIR,
@@ -158,11 +154,11 @@ pub fn search_artists(
     limit: Option<u32>,
     offset: Option<u32>,
 ) -> Result<SearchArtistsResult, DataError> {
-    let conn = open(path)?;
-    require_read(&conn)?;
+    let db = open(path)?;
+    require_read(&db)?;
 
     let needle = query.trim().to_lowercase();
-    let matching: Vec<_> = queries::query_artists(&conn)
+    let matching: Vec<_> = queries::query_artists(&db)
         .map_err(DataError::Db)?
         .into_iter()
         .filter(|artist| artist.artist.to_lowercase().contains(&needle))
@@ -197,11 +193,11 @@ pub fn search_albums(
     limit: Option<u32>,
     offset: Option<u32>,
 ) -> Result<SearchAlbumsResult, DataError> {
-    let conn = open(path)?;
-    require_read(&conn)?;
+    let db = open(path)?;
+    require_read(&db)?;
 
     let needle = query.trim().to_lowercase();
-    let matching: Vec<_> = queries::query_albums(&conn)
+    let matching: Vec<_> = queries::query_albums(&db)
         .map_err(DataError::Db)?
         .into_iter()
         .filter(|album| {
@@ -233,12 +229,12 @@ pub fn search_albums(
 
 /// Library-wide summary for the `reprise://library/summary` resource.
 pub fn library_summary(path: &Path) -> Result<LibrarySummary, DataError> {
-    let conn = open(path)?;
-    require_read(&conn)?;
+    let db = open(path)?;
+    require_read(&db)?;
 
-    let stats = queries::query_library_stats(&conn, "").map_err(DataError::Db)?;
-    let artist_count = queries::query_artist_count(&conn).map_err(DataError::Db)?;
-    let album_count = queries::query_album_count(&conn).map_err(DataError::Db)?;
+    let stats = queries::query_library_stats(&db, "").map_err(DataError::Db)?;
+    let artist_count = queries::query_artist_count(&db).map_err(DataError::Db)?;
+    let album_count = queries::query_album_count(&db).map_err(DataError::Db)?;
 
     Ok(LibrarySummary {
         track_count: stats.track_count,
@@ -250,10 +246,10 @@ pub fn library_summary(path: &Path) -> Result<LibrarySummary, DataError> {
 
 /// Playlist listing for the `reprise://playlists` resource.
 pub fn list_playlists(path: &Path) -> Result<PlaylistsResult, DataError> {
-    let conn = open(path)?;
-    require_read(&conn)?;
+    let db = open(path)?;
+    require_read(&db)?;
 
-    let summaries = playlists::list(&conn).map_err(DataError::Db)?;
+    let summaries = playlists::list(&db).map_err(DataError::Db)?;
     let playlists = summaries.iter().map(PlaylistDto::from).collect();
     Ok(PlaylistsResult { playlists })
 }
@@ -267,18 +263,18 @@ pub fn playlist_contents(
     limit: Option<u32>,
     offset: Option<u32>,
 ) -> Result<PlaylistContentsResult, DataError> {
-    let mut conn = open(path)?;
-    require_read(&conn)?;
+    let db = open(path)?;
+    require_read(&db)?;
 
-    let summary = playlists::get(&conn, playlist_id)
+    let summary = playlists::get(&db, playlist_id)
         .map_err(DataError::Db)?
         .ok_or_else(|| DataError::InvalidInput("playlist does not exist".to_owned()))?;
     let source = ViewSource::Playlist(playlist_id);
-    let total = queries::query_track_count(&conn, &source, "", &[]).map_err(DataError::Db)?;
+    let total = queries::query_track_count(&db, &source, "", &[]).map_err(DataError::Db)?;
     let limit = resolve_limit(limit);
     let offset = i64::from(offset.unwrap_or(0));
     let tracks = queries::query_track_window(
-        &mut conn,
+        &db,
         &source,
         "playlist_order",
         "asc",
@@ -315,9 +311,8 @@ pub fn create_playlist(
     name: &str,
     track_ids: &[i64],
 ) -> Result<CreatePlaylistResult, DataError> {
-    let mut conn = open(path)?;
-
-    if !capability::write_effective(&conn, write_granted_at_startup).map_err(DataError::Db)? {
+    let db = open(path)?;
+    if !capability::write_effective(&db, write_granted_at_startup).map_err(DataError::Db)? {
         return Err(DataError::CapabilityDenied("playlist:create"));
     }
 
@@ -333,10 +328,10 @@ pub fn create_playlist(
             track_ids.len()
         )));
     }
-    reject_absent_track_ids(&conn, track_ids)?;
+    reject_absent_track_ids(&db, track_ids)?;
 
     let playlist_id =
-        playlists::create_with_tracks(&mut conn, trimmed, track_ids).map_err(map_create_error)?;
+        playlists::create_with_tracks(&db, trimmed, track_ids).map_err(map_create_error)?;
 
     Ok(CreatePlaylistResult {
         playlist_id,
@@ -350,14 +345,11 @@ pub fn create_playlist(
 /// missing (a plain foreign-key check would let a missing row through). Lists
 /// the offending ids so the caller can correct its request. Shared by the
 /// playlist, instrumental, and live-queue mutation paths.
-pub(crate) fn reject_absent_track_ids(
-    conn: &Connection,
-    track_ids: &[i64],
-) -> Result<(), DataError> {
+pub(crate) fn reject_absent_track_ids(db: &Db, track_ids: &[i64]) -> Result<(), DataError> {
     if track_ids.is_empty() {
         return Ok(());
     }
-    let present: std::collections::HashSet<i64> = queries::filter_present(conn, track_ids)
+    let present: std::collections::HashSet<i64> = queries::filter_present(db, track_ids)
         .map_err(DataError::Db)?
         .into_iter()
         .collect();
@@ -387,8 +379,8 @@ pub(crate) fn reject_absent_track_ids(
 /// inserting unknown or currently missing rows into the live queue.
 #[cfg(feature = "mpris")]
 pub fn validate_present_track_ids(path: &Path, track_ids: &[i64]) -> Result<(), DataError> {
-    let conn = open(path)?;
-    reject_absent_track_ids(&conn, track_ids)
+    let db = open(path)?;
+    reject_absent_track_ids(&db, track_ids)
 }
 
 /// Registers one instrumental (vocal-removal) job per source track and returns
@@ -410,9 +402,8 @@ pub fn create_instrumental(
     track_ids: &[i64],
     save: bool,
 ) -> Result<CreateInstrumentalResult, DataError> {
-    let conn = open(db_path)?;
-
-    if !capability::ai_create_effective(&conn, ai_granted_at_startup).map_err(DataError::Db)? {
+    let db = open(db_path)?;
+    if !capability::ai_create_effective(&db, ai_granted_at_startup).map_err(DataError::Db)? {
         return Err(DataError::CapabilityDenied("ai:create"));
     }
     if track_ids.is_empty() {
@@ -426,7 +417,7 @@ pub fn create_instrumental(
             track_ids.len()
         )));
     }
-    reject_absent_track_ids(&conn, track_ids)?;
+    reject_absent_track_ids(&db, track_ids)?;
 
     let staging = StagingStore::new(staging_path);
     let model_id = instrumental_model_id();
@@ -435,12 +426,12 @@ pub fn create_instrumental(
         // save=true carries the auto-promote intent: the completion path files
         // the finished render into the library without a manual save (Beschluss
         // 15, the automation default).
-        ai_jobs::enqueue_instrumental_batch(&conn, &staging, track_ids, model_id, true, now)
+        ai_jobs::enqueue_instrumental_batch(&db, &staging, track_ids, model_id, true, now)
             .map_err(DataError::Db)?
     } else {
         // save=false routes through the Conversion staging playlist with no
         // auto-promote intent, so each render awaits an explicit save/discard.
-        ai_conversion::add_batch_to_conversion(&conn, &staging, track_ids, model_id, false, now)
+        ai_conversion::add_batch_to_conversion(&db, &staging, track_ids, model_id, false, now)
             .map_err(DataError::Db)?
     };
 
@@ -519,8 +510,8 @@ pub fn job_status(
     job_ids: &[i64],
     batch_id: Option<&str>,
 ) -> Result<JobStatusResult, DataError> {
-    let conn = open(db_path)?;
-    require_read(&conn)?;
+    let db = open(db_path)?;
+    require_read(&db)?;
 
     if job_ids.is_empty() && batch_id.is_none() {
         return Err(DataError::InvalidInput(
@@ -541,10 +532,10 @@ pub fn job_status(
 
     let batch = match batch_id {
         Some(batch_id) => {
-            for job in ai_jobs::list_jobs_in_batch(&conn, batch_id).map_err(DataError::Db)? {
+            for job in ai_jobs::list_jobs_in_batch(&db, batch_id).map_err(DataError::Db)? {
                 by_id.insert(job.id, JobStatusDto::from(&job));
             }
-            let progress = ai_jobs::batch_progress(&conn, batch_id).map_err(DataError::Db)?;
+            let progress = ai_jobs::batch_progress(&db, batch_id).map_err(DataError::Db)?;
             Some(BatchProgressDto {
                 batch_id: batch_id.to_string(),
                 total: progress.total,
@@ -563,7 +554,7 @@ pub fn job_status(
         if by_id.contains_key(&id) {
             continue;
         }
-        if let Some(job) = ai_jobs::get_job(&conn, id).map_err(DataError::Db)? {
+        if let Some(job) = ai_jobs::get_job(&db, id).map_err(DataError::Db)? {
             by_id.insert(id, JobStatusDto::from(&job));
         }
     }
@@ -582,14 +573,14 @@ pub fn job_status(
 /// call this, so it is gated the same way.
 #[cfg(feature = "mpris")]
 pub fn playback_allowed(path: &Path) -> Result<bool, DataError> {
-    let conn = open(path)?;
-    capability::playback_control_enabled(&conn).map_err(DataError::Db)
+    let db = open(path)?;
+    capability::playback_control_enabled(&db).map_err(DataError::Db)
 }
 
 #[cfg(feature = "mpris")]
 pub fn device_sync_allowed(path: &Path, granted_at_startup: bool) -> Result<bool, DataError> {
-    let conn = open(path)?;
-    capability::device_sync_effective(&conn, granted_at_startup).map_err(DataError::Db)
+    let db = open(path)?;
+    capability::device_sync_effective(&db, granted_at_startup).map_err(DataError::Db)
 }
 
 /// Resolves a `music_play` request to an ordered id list. Exactly one of
@@ -612,9 +603,9 @@ pub fn resolve_play_ids(
         }
         (Some(track_ids), None) => track_ids.clone(),
         (None, Some(playlist_id)) => {
-            let conn = open(path)?;
-            require_read(&conn)?;
-            playlists::track_ids(&conn, playlist_id).map_err(DataError::Db)?
+            let db = open(path)?;
+            require_read(&db)?;
+            playlists::track_ids(&db, playlist_id).map_err(DataError::Db)?
         }
     };
     if ids.is_empty() {

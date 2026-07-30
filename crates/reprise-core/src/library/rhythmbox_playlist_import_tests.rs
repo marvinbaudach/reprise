@@ -1,7 +1,6 @@
 use std::fs;
 use std::path::PathBuf;
 
-use rusqlite::Connection;
 use tempfile::tempdir;
 
 use super::*;
@@ -50,36 +49,37 @@ fn playlist_parser_rejects_truncated_xml() {
     ));
 }
 
-fn playlist_database() -> Connection {
-    let conn = Connection::open_in_memory().unwrap();
-    crate::db::migrate(&conn).unwrap();
+fn playlist_database() -> crate::db::Db {
+    let conn = crate::db::Db::open_in_memory().unwrap();
     for id in 1..=2 {
-        conn.execute(
-            "INSERT INTO tracks (id, path, added_at) VALUES (?1, ?2, 0)",
-            rusqlite::params![id, format!("/music/{id}.ogg")],
-        )
-        .unwrap();
+        conn.conn()
+            .execute(
+                "INSERT INTO tracks (id, path, added_at) VALUES (?1, ?2, 0)",
+                rusqlite::params![id, format!("/music/{id}.ogg")],
+            )
+            .unwrap();
     }
     conn
 }
 
-fn playlist_track_ids(conn: &Connection, name: &str) -> Vec<i64> {
-    conn.prepare(
-        "SELECT pt.track_id FROM playlist_tracks pt JOIN playlists p ON p.id=pt.playlist_id \
+fn playlist_track_ids(conn: &crate::db::Db, name: &str) -> Vec<i64> {
+    conn.conn()
+        .prepare(
+            "SELECT pt.track_id FROM playlist_tracks pt JOIN playlists p ON p.id=pt.playlist_id \
          WHERE p.name=?1 ORDER BY pt.position",
-    )
-    .unwrap()
-    .query_map([name], |row| row.get(0))
-    .unwrap()
-    .collect::<Result<Vec<_>, _>>()
-    .unwrap()
+        )
+        .unwrap()
+        .query_map([name], |row| row.get(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()
 }
 
 #[test]
 fn playlist_merge_creates_only_nonempty_matched_playlists() {
-    let mut conn = playlist_database();
+    let conn = playlist_database();
     let summary = merge_playlists(
-        &mut conn,
+        &conn,
         &[
             RhythmboxPlaylist {
                 name: "Road Trip".to_string(),
@@ -107,9 +107,9 @@ fn playlist_merge_creates_only_nonempty_matched_playlists() {
 
 #[test]
 fn playlist_merge_extends_same_name_without_duplicates_and_is_idempotent() {
-    let mut conn = playlist_database();
+    let conn = playlist_database();
     let playlist_id = crate::library::playlists::create(&conn, "Favorites").unwrap();
-    crate::library::playlists::add_tracks(&mut conn, playlist_id, &[1]).unwrap();
+    crate::library::playlists::add_tracks(&conn, playlist_id, &[1]).unwrap();
     let imported = [RhythmboxPlaylist {
         name: "Favorites".to_string(),
         paths: vec![
@@ -119,8 +119,8 @@ fn playlist_merge_extends_same_name_without_duplicates_and_is_idempotent() {
         ],
     }];
 
-    let first = merge_playlists(&mut conn, &imported).unwrap();
-    let second = merge_playlists(&mut conn, &imported).unwrap();
+    let first = merge_playlists(&conn, &imported).unwrap();
+    let second = merge_playlists(&conn, &imported).unwrap();
 
     assert_eq!(playlist_track_ids(&conn, "Favorites"), vec![1, 2]);
     assert_eq!(first.tracks_added, 1);

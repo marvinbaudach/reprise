@@ -1,7 +1,6 @@
 use std::path::{Path, PathBuf};
 
 use lofty::prelude::*;
-use rusqlite::Connection;
 
 use super::tag_edit::{read_editable_tags, TagPatch, TrackEditPatch};
 use super::tag_edit_write::{apply_track_writes, TrackWrite};
@@ -26,13 +25,13 @@ fn seed_title(path: &Path) {
         .unwrap();
 }
 
-fn seeded_track(dir: &Path, name: &str) -> (Connection, i64, PathBuf) {
+fn seeded_track(dir: &Path, name: &str) -> (crate::db::Db, i64, PathBuf) {
     let path = fixture_copy(dir, name);
     seed_title(&path);
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    crate::library::scanner::scan_folder(&mut conn, &path).unwrap();
+    let conn = crate::db::Db::open_in_memory().unwrap();
+    crate::library::scanner::scan_folder(&conn, &path).unwrap();
     let id = conn
+        .conn()
         .query_row(
             "SELECT id FROM tracks WHERE path=?1",
             [path.to_string_lossy().as_ref()],
@@ -45,10 +44,10 @@ fn seeded_track(dir: &Path, name: &str) -> (Connection, i64, PathBuf) {
 #[test]
 fn out_of_range_year_fails_before_file_or_journal_write() {
     let dir = tempfile::tempdir().unwrap();
-    let (mut conn, id, path) = seeded_track(dir.path(), "bad-year.flac");
+    let (conn, id, path) = seeded_track(dir.path(), "bad-year.flac");
     let bytes = std::fs::read(&path).unwrap();
     let report = apply_track_writes(
-        &mut conn,
+        &conn,
         &[TrackWrite {
             id,
             path: path.clone(),
@@ -65,6 +64,7 @@ fn out_of_range_year_fails_before_file_or_journal_write() {
     assert_eq!(report.failures.len(), 1);
     assert_eq!(std::fs::read(path).unwrap(), bytes);
     let jobs: i64 = conn
+        .conn()
         .query_row("SELECT COUNT(*) FROM tag_write_jobs", [], |row| row.get(0))
         .unwrap();
     assert_eq!(jobs, 0);
@@ -73,11 +73,12 @@ fn out_of_range_year_fails_before_file_or_journal_write() {
 #[test]
 fn duplicate_requests_fail_only_duplicates_and_keep_unrelated_write() {
     let dir = tempfile::tempdir().unwrap();
-    let (mut conn, duplicate_id, duplicate_path) = seeded_track(dir.path(), "duplicate.flac");
+    let (conn, duplicate_id, duplicate_path) = seeded_track(dir.path(), "duplicate.flac");
     let unique_path = fixture_copy(dir.path(), "unique.flac");
     seed_title(&unique_path);
-    crate::library::scanner::scan_folder(&mut conn, &unique_path).unwrap();
+    crate::library::scanner::scan_folder(&conn, &unique_path).unwrap();
     let unique_id = conn
+        .conn()
         .query_row(
             "SELECT id FROM tracks WHERE path=?1",
             [unique_path.to_string_lossy().as_ref()],
@@ -100,7 +101,7 @@ fn duplicate_requests_fail_only_duplicates_and_keep_unrelated_write() {
         tag_write(duplicate_id, duplicate_path.clone(), "Duplicate two"),
         tag_write(unique_id, unique_path.clone(), "Unique write"),
     ];
-    let report = apply_track_writes(&mut conn, &writes, &mut |_, _| {});
+    let report = apply_track_writes(&conn, &writes, &mut |_, _| {});
     assert_eq!(report.failures.len(), 2);
     assert_eq!(report.updated_ids, vec![unique_id]);
     assert_eq!(
@@ -112,6 +113,7 @@ fn duplicate_requests_fail_only_duplicates_and_keep_unrelated_write() {
         "Unique write"
     );
     let journal_tracks: i64 = conn
+        .conn()
         .query_row("SELECT total_tracks FROM tag_write_jobs", [], |row| {
             row.get(0)
         })
@@ -127,20 +129,21 @@ fn rating_revalidates_id_path_after_progress_callback() {
     seed_title(&first_path);
     seed_title(&second_path);
     let database = dir.path().join("ratings.db");
-    let mut conn = crate::db::open_migrated(Some(&database)).unwrap();
-    crate::library::scanner::scan_folder(&mut conn, &first_path).unwrap();
-    crate::library::scanner::scan_folder(&mut conn, &second_path).unwrap();
+    let conn = crate::db::Db::open_migrated(Some(&database)).unwrap();
+    crate::library::scanner::scan_folder(&conn, &first_path).unwrap();
+    crate::library::scanner::scan_folder(&conn, &second_path).unwrap();
     let id_for = |path: &Path| {
-        conn.query_row(
-            "SELECT id FROM tracks WHERE path=?1",
-            [path.to_string_lossy().as_ref()],
-            |row| row.get::<_, i64>(0),
-        )
-        .unwrap()
+        conn.conn()
+            .query_row(
+                "SELECT id FROM tracks WHERE path=?1",
+                [path.to_string_lossy().as_ref()],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap()
     };
     let first_id = id_for(&first_path);
     let second_id = id_for(&second_path);
-    let other = crate::db::open_migrated(Some(&database)).unwrap();
+    let other = crate::db::Db::open_ready(&database).unwrap();
     let replacement = dir.path().join("moved.flac");
     let writes = [(first_id, first_path), (second_id, second_path)].map(|(id, path)| TrackWrite {
         id,
@@ -150,9 +153,10 @@ fn rating_revalidates_id_path_after_progress_callback() {
             rating: Some(4),
         },
     });
-    let report = apply_track_writes(&mut conn, &writes, &mut |done, _| {
+    let report = apply_track_writes(&conn, &writes, &mut |done, _| {
         if done == 1 {
             other
+                .conn()
                 .execute(
                     "UPDATE tracks SET path=?1 WHERE id=?2",
                     rusqlite::params![replacement.to_string_lossy(), second_id],
@@ -163,6 +167,7 @@ fn rating_revalidates_id_path_after_progress_callback() {
     assert_eq!(report.updated_ids, vec![first_id]);
     assert_eq!(report.failures.len(), 1);
     let second_rating: i32 = conn
+        .conn()
         .query_row(
             "SELECT rating FROM tracks WHERE id=?1",
             [second_id],

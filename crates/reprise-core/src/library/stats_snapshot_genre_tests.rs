@@ -1,5 +1,5 @@
 use chrono::{TimeZone, Utc};
-use rusqlite::{params, Connection};
+use rusqlite::params;
 
 use super::compute;
 use crate::library::stats_period::StatsPeriod;
@@ -50,41 +50,42 @@ fn stats_15_other_has_no_artist_or_representative_path() {
     assert!(other.representative_track_path.is_empty());
 }
 
-fn migrated_conn() -> Connection {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    conn
+fn migrated_conn() -> crate::db::Db {
+    crate::db::Db::open_in_memory().unwrap()
 }
 
-fn insert_track(conn: &Connection, id: i64, title: &str, artist: &str, genre: &str) {
-    conn.execute(
-        "INSERT INTO tracks \
+fn insert_track(conn: &crate::db::Db, id: i64, title: &str, artist: &str, genre: &str) {
+    conn.conn()
+        .execute(
+            "INSERT INTO tracks \
          (id, path, title, artist, album, duration_ms, play_count, added_at) \
          VALUES (?1, ?2, ?3, ?4, 'Album', 100000, 0, 0)",
-        params![
-            id,
-            format!("/music/{id}-{}.flac", title.to_lowercase()),
-            title,
-            artist
-        ],
-    )
-    .unwrap();
-    conn.execute(
-        "UPDATE tracks SET genre = ?1 WHERE id = ?2",
-        params![genre, id],
-    )
-    .unwrap();
+            params![
+                id,
+                format!("/music/{id}-{}.flac", title.to_lowercase()),
+                title,
+                artist
+            ],
+        )
+        .unwrap();
+    conn.conn()
+        .execute(
+            "UPDATE tracks SET genre = ?1 WHERE id = ?2",
+            params![genre, id],
+        )
+        .unwrap();
 }
 
-fn insert_event(conn: &Connection, track_id: i64, minute: i64) {
+fn insert_event(conn: &crate::db::Db, track_id: i64, minute: i64) {
     let played_at = Utc
         .with_ymd_and_hms(2026, 3, track_id as u32, 12, minute as u32, 0)
         .single()
         .unwrap()
         .timestamp();
-    conn.execute(
-        "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (?1, ?2, 100000)",
-        params![track_id, played_at],
-    )
-    .unwrap();
+    conn.conn()
+        .execute(
+            "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (?1, ?2, 100000)",
+            params![track_id, played_at],
+        )
+        .unwrap();
 }

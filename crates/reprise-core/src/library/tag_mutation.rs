@@ -436,13 +436,9 @@ pub(crate) fn prepare_reconciliation(
         .ok_or_else(|| "track path changed before tag reconciliation; refusing stale write".into())
 }
 
-pub(super) fn reconcile_after_write(
-    conn: &mut Connection,
-    id: i64,
-    path: &Path,
-) -> Result<(), String> {
+pub(super) fn reconcile_after_write(conn: &Connection, id: i64, path: &Path) -> Result<(), String> {
     prepare_reconciliation(conn, id, path)?;
-    match crate::library::scanner::scan_folder(conn, path) {
+    match crate::library::scanner::scan_folder_in(conn, path) {
         Ok(ScanOutcome::Completed(scan)) if scan.errors == 0 => Ok(()),
         Ok(ScanOutcome::Completed(scan)) => Err(format!(
             "tag reconciliation reported {} error(s)",
@@ -457,7 +453,7 @@ pub(super) fn reconcile_after_write(
 }
 
 pub(crate) fn commit_tag_mutation(
-    conn: &mut Connection,
+    conn: &Connection,
     prepared: &PreparedTagMutation,
     ignore_watcher: bool,
 ) -> Result<(), TagMutationFailure> {
@@ -523,9 +519,6 @@ pub(crate) fn commit_tag_mutation(
 mod tests {
     use std::path::{Path, PathBuf};
 
-    use lofty::prelude::*;
-    use rusqlite::Connection;
-
     use super::*;
     use crate::library::tag_edit::{read_editable_tags, TagPatch};
 
@@ -536,7 +529,7 @@ mod tests {
         destination
     }
 
-    fn seeded_track(dir: &Path, name: &str) -> (Connection, i64, PathBuf) {
+    fn seeded_track(dir: &Path, name: &str) -> (crate::db::Db, i64, PathBuf) {
         let path = fixture_copy(dir, name);
         let mut tagged = lofty::read_from_path(&path).unwrap();
         tagged
@@ -549,11 +542,11 @@ mod tests {
             .save_to_path(&path, lofty::config::WriteOptions::default())
             .unwrap();
 
-        let mut conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
-        crate::library::scanner::scan_folder(&mut conn, &path).unwrap();
+        let conn = crate::db::Db::open_in_memory().unwrap();
+        crate::library::scanner::scan_folder(&conn, &path).unwrap();
         let path_text = path.to_string_lossy().to_string();
         let id = conn
+            .conn()
             .query_row("SELECT id FROM tracks WHERE path=?1", [&path_text], |row| {
                 row.get(0)
             })
@@ -568,7 +561,7 @@ mod tests {
         let before = std::fs::read(&path).unwrap();
 
         let prepared = prepare_tag_mutation(
-            &conn,
+            conn.conn(),
             id,
             &path,
             &TagPatch {
@@ -588,7 +581,7 @@ mod tests {
         let (conn, id, path) = seeded_track(dir.path(), "capture.flac");
 
         let prepared = prepare_tag_mutation(
-            &conn,
+            conn.conn(),
             id,
             &path,
             &TagPatch {
@@ -613,7 +606,7 @@ mod tests {
         let before = std::fs::read(&other).unwrap();
 
         let error = prepare_tag_mutation(
-            &conn,
+            conn.conn(),
             id,
             &other,
             &TagPatch {
@@ -630,9 +623,9 @@ mod tests {
     #[test]
     fn commit_reconciles_using_id_and_path() {
         let dir = tempfile::tempdir().unwrap();
-        let (mut conn, id, path) = seeded_track(dir.path(), "moved.flac");
+        let (conn, id, path) = seeded_track(dir.path(), "moved.flac");
         let prepared = prepare_tag_mutation(
-            &conn,
+            conn.conn(),
             id,
             &path,
             &TagPatch {
@@ -643,17 +636,19 @@ mod tests {
         .unwrap()
         .unwrap();
         let replacement = dir.path().join("replacement.flac");
-        conn.execute(
-            "UPDATE tracks SET path=?1, file_mtime=123 WHERE id=?2",
-            rusqlite::params![replacement.to_string_lossy(), id],
-        )
-        .unwrap();
+        conn.conn()
+            .execute(
+                "UPDATE tracks SET path=?1, file_mtime=123 WHERE id=?2",
+                rusqlite::params![replacement.to_string_lossy(), id],
+            )
+            .unwrap();
 
-        let error = commit_tag_mutation(&mut conn, &prepared, false).unwrap_err();
+        let error = commit_tag_mutation(conn.conn(), &prepared, false).unwrap_err();
 
         assert_eq!(error.kind, WriteErrorKind::Io);
         assert_eq!(read_editable_tags(&path).unwrap().title, "Original title");
         let file_mtime: i64 = conn
+            .conn()
             .query_row("SELECT file_mtime FROM tracks WHERE id=?1", [id], |row| {
                 row.get(0)
             })
@@ -665,9 +660,9 @@ mod tests {
     #[test]
     fn commit_rejects_an_affected_field_changed_after_prepare() {
         let dir = tempfile::tempdir().unwrap();
-        let (mut conn, id, path) = seeded_track(dir.path(), "external-change.flac");
+        let (conn, id, path) = seeded_track(dir.path(), "external-change.flac");
         let prepared = prepare_tag_mutation(
-            &conn,
+            conn.conn(),
             id,
             &path,
             &TagPatch {
@@ -688,7 +683,7 @@ mod tests {
             .save_to_path(&path, lofty::config::WriteOptions::default())
             .unwrap();
 
-        let error = commit_tag_mutation(&mut conn, &prepared, false).unwrap_err();
+        let error = commit_tag_mutation(conn.conn(), &prepared, false).unwrap_err();
 
         assert!(!error.file_written);
         assert_eq!(read_editable_tags(&path).unwrap().title, "External title");
@@ -697,9 +692,9 @@ mod tests {
     #[test]
     fn reconciliation_failure_reports_that_the_file_was_written() {
         let dir = tempfile::tempdir().unwrap();
-        let (mut conn, id, path) = seeded_track(dir.path(), "reconcile-failure.flac");
+        let (conn, id, path) = seeded_track(dir.path(), "reconcile-failure.flac");
         let prepared = prepare_tag_mutation(
-            &conn,
+            conn.conn(),
             id,
             &path,
             &TagPatch {
@@ -709,17 +704,18 @@ mod tests {
         )
         .unwrap()
         .unwrap();
-        conn.execute_batch(
-            "CREATE TRIGGER reject_tag_reconcile
+        conn.conn()
+            .execute_batch(
+                "CREATE TRIGGER reject_tag_reconcile
              BEFORE UPDATE OF file_mtime ON tracks
              WHEN NEW.file_mtime = -1
              BEGIN
                SELECT RAISE(FAIL, 'injected reconcile failure');
              END;",
-        )
-        .unwrap();
+            )
+            .unwrap();
 
-        let error = commit_tag_mutation(&mut conn, &prepared, false).unwrap_err();
+        let error = commit_tag_mutation(conn.conn(), &prepared, false).unwrap_err();
 
         assert!(error.file_written);
         assert_eq!(read_editable_tags(&path).unwrap().title, "Written title");

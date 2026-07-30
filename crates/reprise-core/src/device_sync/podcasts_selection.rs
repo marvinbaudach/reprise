@@ -4,8 +4,6 @@
 //! `podcasts`'s public query surface (re-exported there), not a separate
 //! concern.
 
-use rusqlite::Connection;
-
 use super::{source_from_kind, PodcastSyncSource};
 use crate::connectivity::LocalAvailability;
 use crate::device_sync::selection::EpisodeSelectionCandidate;
@@ -35,14 +33,15 @@ use crate::device_sync::selection::EpisodeSelectionCandidate;
 /// episode out of the candidate set in the first place, so `MTP-36`'s cap
 /// has a finite backlog to work with rather than an unbounded one.
 pub fn query_selection_candidates_for_device(
-    conn: &Connection,
+    db: &crate::db::Db,
     device_id: &str,
 ) -> Result<Vec<(PodcastSyncSource, EpisodeSelectionCandidate)>, rusqlite::Error> {
+    let conn = db.conn();
     // `MTP-46`: the same gate as `query_candidates_for_device`'s. A source
     // whose module is off contributes no candidates, so it cannot appear in
     // the panel's counts either — a summary that still promised episodes a
     // switched-off module would never deliver would be worse than silence.
-    let enabled = super::enabled_sync_sources(conn)?;
+    let enabled = super::enabled_sync_sources(db)?;
     let mut statement = conn.prepare(
         "SELECT e.id, e.subscription_id, s.kind,
                 COALESCE(e.published_at, e.first_seen_at),
@@ -95,6 +94,8 @@ pub fn query_selection_candidates_for_device(
 
 #[cfg(test)]
 mod tests {
+    use rusqlite::Connection;
+
     use rusqlite::params;
 
     use super::*;
@@ -103,14 +104,11 @@ mod tests {
     };
     use std::collections::HashSet;
 
-    /// See the sibling helper in `podcasts.rs`: both modules ship off, so a
-    /// selection test has to turn them on before it can be about selection at
-    /// all (`MTP-46`).
-    fn migrated() -> Connection {
-        let conn = crate::db::open_migrated(None).unwrap();
-        crate::modules::set_enabled(&conn, &crate::modules::PODCASTS_MODULE, true).unwrap();
-        crate::modules::set_enabled(&conn, &crate::modules::YOUTUBE_MODULE, true).unwrap();
-        conn
+    fn migrated() -> crate::db::Db {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        crate::modules::set_enabled(&db, &crate::modules::PODCASTS_MODULE, true).unwrap();
+        crate::modules::set_enabled(&db, &crate::modules::YOUTUBE_MODULE, true).unwrap();
+        db
     }
 
     fn insert_subscription(conn: &Connection, id: i64, kind: &str, title: &str) {
@@ -188,12 +186,12 @@ mod tests {
         std::fs::write(&episode, b"episode").unwrap();
         std::fs::write(&video, b"video").unwrap();
 
-        insert_subscription(&conn, 1, "rss", "Show");
-        insert_subscription(&conn, 2, "youtube", "Channel");
+        insert_subscription(conn.conn(), 1, "rss", "Show");
+        insert_subscription(conn.conn(), 2, "youtube", "Channel");
         crate::podcasts::phone_sync::set_device_enabled(&conn, 1, "mtp:pixel", true).unwrap();
         crate::podcasts::phone_sync::set_device_enabled(&conn, 2, "mtp:pixel", true).unwrap();
-        insert_episode(&conn, 11, 1, &episode);
-        insert_episode(&conn, 12, 2, &video);
+        insert_episode(conn.conn(), 11, 1, &episode);
+        insert_episode(conn.conn(), 12, 2, &video);
 
         let both = query_selection_candidates_for_device(&conn, "mtp:pixel").unwrap();
         assert_eq!(both.len(), 2, "with both modules on, both are candidates");
@@ -223,15 +221,16 @@ mod tests {
         let played_path = downloads.path().join("played.mp3");
         std::fs::write(&unplayed_path, b"unplayed-audio").unwrap();
         std::fs::write(&played_path, b"played-audio").unwrap();
-        insert_subscription(&conn, 1, "rss", "Show");
+        insert_subscription(conn.conn(), 1, "rss", "Show");
         crate::podcasts::phone_sync::set_device_enabled(&conn, 1, "mtp:pixel", true).unwrap();
-        insert_episode(&conn, 11, 1, &unplayed_path);
-        insert_episode(&conn, 12, 1, &played_path);
-        conn.execute(
-            "UPDATE podcast_episodes SET played_at = 1 WHERE id = 12",
-            [],
-        )
-        .unwrap();
+        insert_episode(conn.conn(), 11, 1, &unplayed_path);
+        insert_episode(conn.conn(), 12, 1, &played_path);
+        conn.conn()
+            .execute(
+                "UPDATE podcast_episodes SET played_at = 1 WHERE id = 12",
+                [],
+            )
+            .unwrap();
 
         let candidates = query_selection_candidates_for_device(&conn, "mtp:pixel").unwrap();
         let result = rss_selection_result(&candidates);
@@ -253,9 +252,9 @@ mod tests {
         let downloads = tempfile::tempdir().unwrap();
         let path = downloads.path().join("fresh.mp3");
         std::fs::write(&path, b"fresh-audio").unwrap();
-        insert_subscription(&conn, 1, "rss", "Show");
+        insert_subscription(conn.conn(), 1, "rss", "Show");
         crate::podcasts::phone_sync::set_device_enabled(&conn, 1, "mtp:pixel", true).unwrap();
-        insert_episode(&conn, 11, 1, &path);
+        insert_episode(conn.conn(), 11, 1, &path);
 
         let candidates = query_selection_candidates_for_device(&conn, "mtp:pixel").unwrap();
         let result = rss_selection_result(&candidates);
@@ -267,9 +266,9 @@ mod tests {
     #[test]
     fn mtp_45_a_wanted_episode_with_no_file_counts_as_waiting_never_as_ready() {
         let conn = migrated();
-        insert_subscription(&conn, 1, "rss", "Show");
+        insert_subscription(conn.conn(), 1, "rss", "Show");
         crate::podcasts::phone_sync::set_device_enabled(&conn, 1, "mtp:pixel", true).unwrap();
-        insert_episode_without_file(&conn, 11, 1);
+        insert_episode_without_file(conn.conn(), 11, 1);
         crate::podcasts::wanted_on_device::set_wanted_on_device(&conn, 11, true).unwrap();
 
         let candidates = query_selection_candidates_for_device(&conn, "mtp:pixel").unwrap();
@@ -289,12 +288,12 @@ mod tests {
     #[test]
     fn mtp_45_an_unwanted_missing_episode_never_becomes_a_candidate_at_all() {
         let conn = migrated();
-        insert_subscription(&conn, 1, "rss", "Show");
+        insert_subscription(conn.conn(), 1, "rss", "Show");
         crate::podcasts::phone_sync::set_device_enabled(&conn, 1, "mtp:pixel", true).unwrap();
         // No file, and nobody asked for it (`wanted_on_device` stays the
         // default `false`) — must not flood `waiting` with an untouched
         // backlog episode the instant its show is enabled for a device.
-        insert_episode_without_file(&conn, 11, 1);
+        insert_episode_without_file(conn.conn(), 11, 1);
 
         let candidates = query_selection_candidates_for_device(&conn, "mtp:pixel").unwrap();
 
@@ -310,11 +309,11 @@ mod tests {
         let downloads = tempfile::tempdir().unwrap();
         let path = downloads.path().join("episode.mp3");
         std::fs::write(&path, b"audio").unwrap();
-        insert_subscription(&conn, 1, "rss", "Enabled Show");
-        insert_subscription(&conn, 2, "rss", "Other Show");
+        insert_subscription(conn.conn(), 1, "rss", "Enabled Show");
+        insert_subscription(conn.conn(), 2, "rss", "Other Show");
         crate::podcasts::phone_sync::set_device_enabled(&conn, 1, "mtp:pixel", true).unwrap();
-        insert_episode(&conn, 11, 1, &path);
-        insert_episode(&conn, 12, 2, &path);
+        insert_episode(conn.conn(), 11, 1, &path);
+        insert_episode(conn.conn(), 12, 2, &path);
 
         let candidates = query_selection_candidates_for_device(&conn, "mtp:pixel").unwrap();
 

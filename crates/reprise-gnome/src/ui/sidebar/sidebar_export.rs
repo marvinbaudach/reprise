@@ -168,8 +168,8 @@ fn confirm_delete(shared: &Rc<Shared>, playlist_id: i64, playlist_name: &str) {
 
 fn delete_playlist(shared: &Rc<Shared>, playlist_id: i64, playlist_name: &str) {
     let result = {
-        let conn = shared.conn.borrow();
-        playlists::delete(&conn, playlist_id, playlist_name)
+        let conn = &shared.conn;
+        playlists::delete(conn, playlist_id, playlist_name)
     };
     match result {
         Ok(true) => {
@@ -279,14 +279,15 @@ mod tests {
 
     #[test]
     fn stale_playlist_dialog_identity_does_not_delete_a_reused_id() {
-        let conn = reprise_core::db::open_migrated(None).unwrap();
+        let conn = crate::test_db::open().unwrap();
         let stale_id = playlists::create(&conn, "Old playlist").unwrap();
         playlists::delete(&conn, stale_id, "Old playlist").unwrap();
-        conn.execute(
-            "INSERT INTO playlists (id,name,position) VALUES (?1,'Replacement playlist',0)",
-            [stale_id],
-        )
-        .unwrap();
+        crate::test_db::connection(&conn)
+            .execute(
+                "INSERT INTO playlists (id,name,position) VALUES (?1,'Replacement playlist',0)",
+                [stale_id],
+            )
+            .unwrap();
 
         assert!(
             !playlists::delete(&conn, stale_id, "Old playlist").unwrap(),
@@ -294,12 +295,13 @@ mod tests {
         );
 
         assert_eq!(
-            conn.query_row(
-                "SELECT name FROM playlists WHERE id=?1",
-                [stale_id],
-                |row| row.get::<_, String>(0),
-            )
-            .unwrap(),
+            crate::test_db::connection(&conn)
+                .query_row(
+                    "SELECT name FROM playlists WHERE id=?1",
+                    [stale_id],
+                    |row| row.get::<_, String>(0),
+                )
+                .unwrap(),
             "Replacement playlist"
         );
     }

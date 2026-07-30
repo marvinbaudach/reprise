@@ -11,8 +11,7 @@
 //! Turning this off does not delete anything: subscriptions, favorites, and
 //! already-cached files are untouched. It only stops new requests.
 
-use rusqlite::Connection;
-
+use crate::db::Db;
 use crate::library::settings;
 use crate::modules::{self, ModuleDescriptor};
 
@@ -23,21 +22,31 @@ pub const ENABLED_KEY: &str = "online-sources-enabled";
 /// Whether the global gate is on. Defaults to `true`: Reprise ships with
 /// per-feature modules already opt-in (`NET-1a`), so the global gate does
 /// not need to additionally default-deny.
-pub fn is_enabled(conn: &Connection) -> Result<bool, rusqlite::Error> {
-    settings::get_bool(conn, ENABLED_KEY, true)
+pub fn is_enabled(db: &Db) -> Result<bool, rusqlite::Error> {
+    let conn = db.conn();
+    settings::get_bool_in(conn, ENABLED_KEY, true)
 }
 
-pub fn set_enabled(conn: &Connection, value: bool) -> Result<(), rusqlite::Error> {
-    settings::set_bool(conn, ENABLED_KEY, value)
+pub fn set_enabled(db: &crate::db::Db, value: bool) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
+    settings::set_bool_in(conn, ENABLED_KEY, value)
 }
 
 /// The one authority for "may this module make a network request right
 /// now" — ANDs the global gate with the module's own flag.
 pub fn network_allowed(
-    conn: &Connection,
+    db: &crate::db::Db,
     module: &ModuleDescriptor,
 ) -> Result<bool, rusqlite::Error> {
-    Ok(is_enabled(conn)? && modules::is_enabled(conn, module)?)
+    let conn = db.conn();
+    network_allowed_in(conn, module)
+}
+
+pub(crate) fn network_allowed_in(
+    conn: &rusqlite::Connection,
+    module: &ModuleDescriptor,
+) -> Result<bool, rusqlite::Error> {
+    Ok(settings::get_bool_in(conn, ENABLED_KEY, true)? && modules::is_enabled_in(conn, module)?)
 }
 
 /// [`network_allowed`] with the read failure already decided: a module whose
@@ -49,8 +58,9 @@ pub fn network_allowed(
 /// module makes no requests, and a database that cannot answer must not be
 /// read as consent. The module names itself in the warning, so the message
 /// can no longer drift from the module it describes.
-pub fn network_allowed_or_off(conn: &Connection, module: &ModuleDescriptor) -> bool {
-    network_allowed(conn, module).unwrap_or_else(|error| {
+pub fn network_allowed_or_off(db: &crate::db::Db, module: &ModuleDescriptor) -> bool {
+    let conn = db.conn();
+    network_allowed_in(conn, module).unwrap_or_else(|error| {
         tracing::warn!(
             %error,
             module = module.id,
@@ -64,57 +74,55 @@ pub fn network_allowed_or_off(conn: &Connection, module: &ModuleDescriptor) -> b
 mod tests {
     use super::*;
 
-    fn migrated_conn() -> Connection {
-        let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
-        conn
+    fn migrated_db() -> Db {
+        Db::open_in_memory().unwrap()
     }
 
     #[test]
     fn net_1a_defaults_to_enabled() {
-        let conn = migrated_conn();
-        assert!(is_enabled(&conn).unwrap());
+        let db = migrated_db();
+        assert!(is_enabled(&db).unwrap());
     }
 
     #[test]
     fn net_1a_round_trips() {
-        let conn = migrated_conn();
-        set_enabled(&conn, false).unwrap();
-        assert!(!is_enabled(&conn).unwrap());
-        set_enabled(&conn, true).unwrap();
-        assert!(is_enabled(&conn).unwrap());
+        let db = migrated_db();
+        set_enabled(&db, false).unwrap();
+        assert!(!is_enabled(&db).unwrap());
+        set_enabled(&db, true).unwrap();
+        assert!(is_enabled(&db).unwrap());
     }
 
     #[test]
     fn net_1a_network_allowed_is_an_and_of_global_and_module() {
-        let conn = migrated_conn();
+        let db = migrated_db();
         let module = &modules::COVER_DOWNLOAD_MODULE;
 
         // Neither the global gate nor the module is on by default for a
         // network module such as cover download.
-        assert!(!network_allowed(&conn, module).unwrap());
+        assert!(!network_allowed(&db, module).unwrap());
 
-        modules::set_enabled(&conn, module, true).unwrap();
+        modules::set_enabled(&db, module, true).unwrap();
         assert!(
-            network_allowed(&conn, module).unwrap(),
+            network_allowed(&db, module).unwrap(),
             "module on, global on (default) => allowed"
         );
 
-        set_enabled(&conn, false).unwrap();
+        set_enabled(&db, false).unwrap();
         assert!(
-            !network_allowed(&conn, module).unwrap(),
+            !network_allowed(&db, module).unwrap(),
             "module on, global off => blocked"
         );
 
-        modules::set_enabled(&conn, module, false).unwrap();
+        modules::set_enabled(&db, module, false).unwrap();
         assert!(
-            !network_allowed(&conn, module).unwrap(),
+            !network_allowed(&db, module).unwrap(),
             "module off, global off => blocked"
         );
 
-        set_enabled(&conn, true).unwrap();
+        set_enabled(&db, true).unwrap();
         assert!(
-            !network_allowed(&conn, module).unwrap(),
+            !network_allowed(&db, module).unwrap(),
             "module off, global on => blocked"
         );
     }

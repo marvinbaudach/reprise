@@ -1,7 +1,5 @@
 use std::path::PathBuf;
 
-use rusqlite::Connection;
-
 use super::delta::{compute_delta, SyncCandidate};
 use super::m3u::{render_named_playlist, DevicePlaylistEntry};
 use super::sanitize::{device_track_path, sanitize_component, DevicePathMetadata};
@@ -13,10 +11,8 @@ use super::settings::{
 use super::transfer::{build_transfer_plan, build_transfer_plan_with_inventory, TransferMode};
 use super::{Mp3Quality, SyncTrack, TransferProfile};
 
-fn migrated() -> Connection {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    conn
+fn migrated() -> crate::db::Db {
+    crate::db::Db::open_in_memory().unwrap()
 }
 
 #[test]
@@ -97,6 +93,7 @@ fn entire_library_is_persisted_as_an_unconfigured_selection() {
     save_settings(&conn, &settings).unwrap();
 
     let raw: String = conn
+        .conn()
         .query_row(
             "SELECT selection_json FROM device_settings WHERE device_serial = 'serial-2'",
             [],
@@ -116,7 +113,7 @@ fn entire_library_is_persisted_as_an_unconfigured_selection() {
 fn unknown_selection_json_is_rejected_instead_of_becoming_an_empty_selection() {
     let conn = migrated();
     load_or_create_settings(&conn, "serial-unknown", "Phone").unwrap();
-    conn.execute(
+    conn.conn().execute(
         "UPDATE device_settings SET selection_json = '{}' WHERE device_serial = 'serial-unknown'",
         [],
     )
@@ -141,7 +138,7 @@ fn empty_selection_json_remains_a_valid_empty_source_selection() {
 #[test]
 fn device_file_inventory_round_trips_and_pinning_is_per_device() {
     let conn = migrated();
-    conn.execute(
+    conn.conn().execute(
         "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (7, '/music/a.flac', 'A', 'B', 0)",
         [],
     )
@@ -511,8 +508,9 @@ fn unknown_duration_has_no_bounded_conservative_transcode_estimate() {
 #[test]
 fn selection_resolves_playlist_union_without_duplicates_and_disables_entire_library() {
     let conn = migrated();
-    conn.execute_batch(
-        "INSERT INTO tracks (id, path, title, artist, added_at) VALUES
+    conn.conn()
+        .execute_batch(
+            "INSERT INTO tracks (id, path, title, artist, added_at) VALUES
            (1, '/1.flac', 'One', 'A', 0),
            (2, '/2.flac', 'Two', 'A', 0),
            (3, '/3.flac', 'Three', 'A', 0);
@@ -520,8 +518,8 @@ fn selection_resolves_playlist_union_without_duplicates_and_disables_entire_libr
            (10, 'First', 0), (11, 'Second', 1);
          INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES
            (10, 1, 0), (10, 2, 1), (11, 2, 0), (11, 3, 1);",
-    )
-    .unwrap();
+        )
+        .unwrap();
 
     assert_eq!(
         resolve_selection_track_ids(
@@ -551,20 +549,22 @@ fn entire_library_legacy_value_computes_no_copy_delta() {
     for (id, title) in [(1, "One"), (2, "Two"), (3, "Three")] {
         let path = dir.path().join(format!("{title}.flac"));
         std::fs::write(&path, b"flac").unwrap();
-        conn.execute(
-            "INSERT INTO tracks (id, path, title, artist, album, duration_ms, added_at) \
+        conn.conn()
+            .execute(
+                "INSERT INTO tracks (id, path, title, artist, album, duration_ms, added_at) \
              VALUES (?1, ?2, ?3, 'Artist', 'Album', 180000, 0)",
-            rusqlite::params![id, path.to_string_lossy(), title],
-        )
-        .unwrap();
+                rusqlite::params![id, path.to_string_lossy(), title],
+            )
+            .unwrap();
     }
     // A missing-flagged row and a row whose file vanished must be skipped.
-    conn.execute_batch(
-        "INSERT INTO tracks (id, path, title, artist, album, added_at, missing_since) VALUES
+    conn.conn()
+        .execute_batch(
+            "INSERT INTO tracks (id, path, title, artist, album, added_at, missing_since) VALUES
          (4, '/gone/away.flac', 'Vanished', 'Artist', 'Album', 0, NULL),
          (5, '/marked/missing.flac', 'Missing', 'Artist', 'Album', 0, 1);",
-    )
-    .unwrap();
+        )
+        .unwrap();
 
     let ids = resolve_selection_track_ids(&conn, &DeviceSelection::EntireLibrary).unwrap();
     let tracks = crate::queries::query_sync_tracks(&conn, &ids).unwrap();

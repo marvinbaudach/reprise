@@ -1,5 +1,5 @@
 use chrono::{FixedOffset, NaiveDate, TimeZone, Utc};
-use rusqlite::{params, Connection};
+use rusqlite::params;
 
 use super::{compute, SortBy};
 use crate::library::group_key::GroupKind;
@@ -42,7 +42,9 @@ fn history_3_deleted_tracks_remain_in_my_stats_with_snapshot_metadata() {
     insert_track(&conn, 1, "River", "Joni", "Joni", "Folk", 240_000, 0, None);
     insert_event(&conn, 1, timestamp(2026, 1, 2, 12, 0), 200_000);
 
-    conn.execute("DELETE FROM tracks WHERE id = 1", []).unwrap();
+    conn.conn()
+        .execute("DELETE FROM tracks WHERE id = 1", [])
+        .unwrap();
 
     let snapshot = compute(&conn, StatsPeriod::AllTime, NOW_2026_07_19, &Utc).unwrap();
     assert_eq!((snapshot.hero.plays, snapshot.hero.total_ms), (1, 200_000));
@@ -67,7 +69,7 @@ fn history_4_top_track_uses_the_latest_listen_snapshot_after_tag_edits() {
         None,
     );
     insert_event(&conn, 1, timestamp(2026, 1, 2, 12, 0), 100_000);
-    conn.execute(
+    conn.conn().execute(
         "UPDATE tracks SET title='New title', album='New album', album_artist='Album Artist' WHERE id=1",
         [],
     )
@@ -567,7 +569,8 @@ fn stats_9_group_track_ids_skip_missing_tracks() {
     insert_event(&conn, 1, timestamp(2026, 6, 1, 12, 0), 100_000);
     insert_event(&conn, 2, timestamp(2026, 6, 2, 12, 0), 100_000);
     insert_event(&conn, 3, timestamp(2026, 6, 3, 12, 0), 100_000);
-    conn.execute("UPDATE tracks SET missing_since = 1 WHERE id IN (1, 3)", [])
+    conn.conn()
+        .execute("UPDATE tracks SET missing_since = 1 WHERE id IN (1, 3)", [])
         .unwrap();
 
     let snapshot = compute(&conn, StatsPeriod::Year(2026), NOW_2026_07_19, &Utc).unwrap();
@@ -628,9 +631,9 @@ fn dedup_does_not_mutate_tags() {
         StatsPeriod::Last30Days,
         StatsPeriod::AllTime,
     ] {
-        let changes = conn.total_changes();
+        let changes = conn.conn().total_changes();
         compute(&conn, period, NOW_2026_07_19, &Utc).unwrap();
-        assert_eq!(conn.total_changes(), changes);
+        assert_eq!(conn.conn().total_changes(), changes);
         assert_eq!(tag_rows(&conn), before);
     }
 }
@@ -664,15 +667,13 @@ fn stats_11_all_time_reports_no_comparison() {
     assert_eq!(snapshot.hero.comparison_percent, None);
 }
 
-fn migrated_conn() -> Connection {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    conn
+fn migrated_conn() -> crate::db::Db {
+    crate::db::Db::open_in_memory().unwrap()
 }
 
 #[allow(clippy::too_many_arguments)]
 fn insert_track(
-    conn: &Connection,
+    conn: &crate::db::Db,
     id: i64,
     title: &str,
     artist: &str,
@@ -682,43 +683,45 @@ fn insert_track(
     play_count: i64,
     artist_mbid: Option<&str>,
 ) {
-    conn.execute(
-        "INSERT INTO tracks \
+    conn.conn()
+        .execute(
+            "INSERT INTO tracks \
          (id, path, title, artist, album, album_artist, genre, duration_ms, \
           play_count, added_at, artist_mbid) \
          VALUES (?1, ?2, ?3, ?4, 'Album', ?5, ?6, ?7, ?8, 0, ?9)",
-        params![
-            id,
-            format!("/music/{id}.flac"),
-            title,
-            artist,
-            album_artist,
-            genre,
-            duration_ms,
-            play_count,
-            artist_mbid,
-        ],
-    )
-    .unwrap();
+            params![
+                id,
+                format!("/music/{id}.flac"),
+                title,
+                artist,
+                album_artist,
+                genre,
+                duration_ms,
+                play_count,
+                artist_mbid,
+            ],
+        )
+        .unwrap();
 }
 
 /// One track on a named album, played `plays` times in June 2026.
 fn insert_album_track(
-    conn: &Connection,
+    conn: &crate::db::Db,
     id: i64,
     title: &str,
     album: &str,
     artist: &str,
     plays: i64,
 ) {
-    conn.execute(
-        "INSERT INTO tracks \
+    conn.conn()
+        .execute(
+            "INSERT INTO tracks \
          (id, path, title, artist, album, album_artist, genre, duration_ms, \
           play_count, added_at) \
          VALUES (?1, ?2, ?3, ?4, ?5, '', 'Rock', 100000, 0, 0)",
-        params![id, format!("/music/{id}.flac"), title, artist, album],
-    )
-    .unwrap();
+            params![id, format!("/music/{id}.flac"), title, artist, album],
+        )
+        .unwrap();
     for play in 0..plays {
         insert_event(
             conn,
@@ -729,16 +732,18 @@ fn insert_album_track(
     }
 }
 
-fn insert_event(conn: &Connection, track_id: i64, played_at: i64, ms_played: i64) {
-    conn.execute(
-        "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (?1, ?2, ?3)",
-        params![track_id, played_at, ms_played],
-    )
-    .unwrap();
+fn insert_event(conn: &crate::db::Db, track_id: i64, played_at: i64, ms_played: i64) {
+    conn.conn()
+        .execute(
+            "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (?1, ?2, ?3)",
+            params![track_id, played_at, ms_played],
+        )
+        .unwrap();
 }
 
-fn tag_rows(conn: &Connection) -> Vec<(String, String, String, Option<String>)> {
-    conn.prepare("SELECT artist, album_artist, genre, artist_mbid FROM tracks ORDER BY id")
+fn tag_rows(conn: &crate::db::Db) -> Vec<(String, String, String, Option<String>)> {
+    conn.conn()
+        .prepare("SELECT artist, album_artist, genre, artist_mbid FROM tracks ORDER BY id")
         .unwrap()
         .query_map([], |row| {
             Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))

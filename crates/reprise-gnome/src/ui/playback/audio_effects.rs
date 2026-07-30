@@ -1,33 +1,23 @@
 //! Keeps persisted playback-effect settings and the platform player in sync.
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
+use reprise_core::db::Db;
 use reprise_core::library::{audio_effect_settings, settings};
 use reprise_core::playback::{AudioEffects, PlaybackBackend, PlaybackError};
-use rusqlite::Connection;
 
 use super::player_controller::PlayerController;
 
-pub(in crate::ui) fn stored(conn: &Connection) -> AudioEffects {
-    audio_effect_settings::load(conn)
+pub(in crate::ui) fn stored(db: &Db) -> AudioEffects {
+    audio_effect_settings::load(db)
 }
 
-pub(in crate::ui) fn persist(
-    conn: &Connection,
-    effects: &AudioEffects,
-) -> Result<(), rusqlite::Error> {
-    audio_effect_settings::store(conn, effects)
+pub(in crate::ui) fn persist(db: &Db, effects: &AudioEffects) -> Result<(), rusqlite::Error> {
+    audio_effect_settings::store(db, effects)
 }
 
-pub(in crate::ui) fn apply_initial(
-    player: &dyn PlaybackBackend,
-    conn: &Rc<RefCell<Connection>>,
-) -> AudioEffects {
-    let requested = {
-        let conn = conn.borrow();
-        stored(&conn)
-    };
+pub(in crate::ui) fn apply_initial(player: &dyn PlaybackBackend, conn: &Rc<Db>) -> AudioEffects {
+    let requested = stored(conn);
     if player.set_audio_effects(requested.clone()).is_ok() {
         return requested;
     }
@@ -37,12 +27,12 @@ pub(in crate::ui) fn apply_initial(
     if let Err(error) = player.set_audio_effects(fallback.clone()) {
         tracing::warn!(%error, "could not explicitly restore disabled audio effects");
     }
-    let conn = conn.borrow();
-    if let Err(error) = settings::set_equalizer_enabled(&conn, false) {
+    let conn = &conn;
+    if let Err(error) = settings::set_equalizer_enabled(conn, false) {
         tracing::warn!(%error, "could not persist equalizer fallback");
     }
     if let Err(error) =
-        settings::set_replay_gain_mode(&conn, reprise_core::library::settings::ReplayGainMode::Off)
+        settings::set_replay_gain_mode(conn, reprise_core::library::settings::ReplayGainMode::Off)
     {
         tracing::warn!(%error, "could not persist ReplayGain fallback");
     }
@@ -69,6 +59,7 @@ mod tests {
     use super::*;
     use reprise_core::library::settings::ReplayGainMode;
     use reprise_core::playback::{PlaybackBackend, PlaybackState};
+    use std::cell::RefCell;
 
     struct RejectingBackend {
         attempts: RefCell<Vec<AudioEffects>>,
@@ -118,28 +109,23 @@ mod tests {
 
     #[test]
     fn unavailable_stored_effects_fall_back_without_disabling_playback() {
-        let conn = Rc::new(RefCell::new(reprise_core::db::open(None).unwrap()));
-        reprise_core::db::migrate(&conn.borrow()).unwrap();
-        settings::set_equalizer_enabled(&conn.borrow(), true).unwrap();
-        settings::set_equalizer_bands(&conn.borrow(), [3.0; 10]).unwrap();
-        settings::set_replay_gain_mode(&conn.borrow(), ReplayGainMode::Album).unwrap();
+        let conn = Rc::new(crate::test_db::open().unwrap());
+        settings::set_equalizer_enabled(&conn, true).unwrap();
+        settings::set_equalizer_bands(&conn, [3.0; 10]).unwrap();
+        settings::set_replay_gain_mode(&conn, ReplayGainMode::Album).unwrap();
         let backend = RejectingBackend {
             attempts: RefCell::new(Vec::new()),
         };
 
         assert_eq!(apply_initial(&backend, &conn), AudioEffects::default());
         assert_eq!(backend.attempts.borrow().len(), 2);
-        assert!(!settings::get_equalizer_enabled(&conn.borrow()));
-        assert_eq!(
-            settings::get_replay_gain_mode(&conn.borrow()),
-            ReplayGainMode::Off
-        );
+        assert!(!settings::get_equalizer_enabled(&conn));
+        assert_eq!(settings::get_replay_gain_mode(&conn), ReplayGainMode::Off);
     }
 
     #[test]
     fn persist_round_trips_the_complete_active_effect_state() {
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
+        let conn = crate::test_db::open().unwrap();
         let effects = AudioEffects {
             equalizer_enabled: true,
             equalizer_bands: [6.0; 10],

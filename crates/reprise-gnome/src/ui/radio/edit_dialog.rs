@@ -1,17 +1,16 @@
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
+use reprise_core::db::Db;
 use reprise_core::radio::{self, StationRow};
-use rusqlite::Connection;
 
 use crate::ui::strings;
 
 pub(super) fn present(
     parent: &impl IsA<gtk4::Widget>,
-    conn: Rc<RefCell<Connection>>,
+    conn: Rc<Db>,
     station: &StationRow,
     on_saved: impl Fn() + 'static,
 ) {
@@ -81,7 +80,7 @@ pub(super) fn present(
                 return;
             }
             match radio::station::update_details(
-                &conn.borrow(),
+                &conn,
                 station_id,
                 name_value.trim(),
                 (!genre_value.trim().is_empty()).then(|| genre_value.trim()),

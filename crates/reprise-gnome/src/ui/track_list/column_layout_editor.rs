@@ -605,11 +605,10 @@ mod tests {
     #[ignore = "requires a display; run via xvfb-run"]
     fn navigation_editor_builds_a_poppable_preferences_detail_page() {
         gtk4::init().unwrap();
-        let conn = rusqlite::Connection::open_in_memory().unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
+        let conn = crate::test_db::open().unwrap();
         let runtime = crate::ui::cover_download_worker::setup_for_test();
         let track_list = Rc::new(TrackList::new(
-            Rc::new(RefCell::new(conn)),
+            Rc::new(conn),
             Box::new(|_, _, _, _| {}),
             |_, _, _, _| {},
             crate::ui::track_list::queue_sections::QueueViewModel::default,
@@ -629,11 +628,10 @@ mod tests {
     #[ignore = "requires a display; run via xvfb-run"]
     fn standalone_editor_uses_native_close_without_a_labeled_close_button() {
         gtk4::init().unwrap();
-        let conn = rusqlite::Connection::open_in_memory().unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
+        let conn = crate::test_db::open().unwrap();
         let runtime = crate::ui::cover_download_worker::setup_for_test();
         let track_list = Rc::new(TrackList::new(
-            Rc::new(RefCell::new(conn)),
+            Rc::new(conn),
             Box::new(|_, _, _, _| {}),
             |_, _, _, _| {},
             crate::ui::track_list::queue_sections::QueueViewModel::default,

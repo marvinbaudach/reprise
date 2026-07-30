@@ -8,11 +8,11 @@ use super::*;
 use crate::library::{playlists, scanner, settings};
 use crate::modules;
 
-fn conn() -> rusqlite::Connection {
-    crate::db::open_migrated(None).unwrap()
+fn conn() -> crate::db::Db {
+    crate::db::Db::open_in_memory().unwrap()
 }
 
-fn all_changes(conn: &rusqlite::Connection) -> Vec<Change> {
+fn all_changes(conn: &crate::db::Db) -> Vec<Change> {
     read_since(conn, 0, None).unwrap()
 }
 
@@ -91,13 +91,13 @@ fn stale_delete_emits_no_event() {
 
 #[test]
 fn add_tracks_emits_one_add_event() {
-    let mut conn = conn();
-    seed_track(&conn, 1);
-    seed_track(&conn, 2);
+    let conn = conn();
+    seed_track(conn.conn(), 1);
+    seed_track(conn.conn(), 2);
     let id = playlists::create(&conn, "Mix").unwrap();
     let baseline = all_changes(&conn).last().unwrap().id;
 
-    playlists::add_tracks(&mut conn, id, &[1, 2]).unwrap();
+    playlists::add_tracks(&conn, id, &[1, 2]).unwrap();
 
     let changes = read_since(&conn, baseline, None).unwrap();
     assert_eq!(changes.len(), 1);
@@ -108,25 +108,25 @@ fn add_tracks_emits_one_add_event() {
 
 #[test]
 fn add_no_tracks_emits_no_event() {
-    let mut conn = conn();
+    let conn = conn();
     let id = playlists::create(&conn, "Mix").unwrap();
     let baseline = all_changes(&conn).last().unwrap().id;
 
-    assert_eq!(playlists::add_tracks(&mut conn, id, &[]).unwrap(), 0);
+    assert_eq!(playlists::add_tracks(&conn, id, &[]).unwrap(), 0);
 
     assert!(read_since(&conn, baseline, None).unwrap().is_empty());
 }
 
 #[test]
 fn remove_positions_emits_one_remove_event() {
-    let mut conn = conn();
-    seed_track(&conn, 1);
-    seed_track(&conn, 2);
+    let conn = conn();
+    seed_track(conn.conn(), 1);
+    seed_track(conn.conn(), 2);
     let id = playlists::create(&conn, "Mix").unwrap();
-    playlists::add_tracks(&mut conn, id, &[1, 2]).unwrap();
+    playlists::add_tracks(&conn, id, &[1, 2]).unwrap();
     let baseline = all_changes(&conn).last().unwrap().id;
 
-    playlists::remove_positions(&mut conn, id, &[0]).unwrap();
+    playlists::remove_positions(&conn, id, &[0]).unwrap();
 
     let changes = read_since(&conn, baseline, None).unwrap();
     assert_eq!(changes.len(), 1);
@@ -137,14 +137,14 @@ fn remove_positions_emits_one_remove_event() {
 
 #[test]
 fn move_position_emits_one_move_event() {
-    let mut conn = conn();
-    seed_track(&conn, 1);
-    seed_track(&conn, 2);
+    let conn = conn();
+    seed_track(conn.conn(), 1);
+    seed_track(conn.conn(), 2);
     let id = playlists::create(&conn, "Mix").unwrap();
-    playlists::add_tracks(&mut conn, id, &[1, 2]).unwrap();
+    playlists::add_tracks(&conn, id, &[1, 2]).unwrap();
     let baseline = all_changes(&conn).last().unwrap().id;
 
-    playlists::move_position(&mut conn, id, 0, 1).unwrap();
+    playlists::move_position(&conn, id, 0, 1).unwrap();
 
     let changes = read_since(&conn, baseline, None).unwrap();
     assert_eq!(changes.len(), 1);
@@ -155,10 +155,10 @@ fn move_position_emits_one_move_event() {
 
 #[test]
 fn create_with_tracks_emits_one_create_event() {
-    let mut conn = conn();
-    seed_track(&conn, 1);
+    let conn = conn();
+    seed_track(conn.conn(), 1);
 
-    let id = playlists::create_with_tracks(&mut conn, "Mix", &[1]).unwrap();
+    let id = playlists::create_with_tracks(&conn, "Mix", &[1]).unwrap();
 
     let changes = all_changes(&conn);
     assert_eq!(changes.len(), 1);
@@ -227,9 +227,9 @@ fn scan_completion_emits_one_collective_library_event() {
     std::fs::create_dir(&root).unwrap();
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac");
     std::fs::copy(&fixture, root.join("song.flac")).unwrap();
-    let mut conn = conn();
+    let conn = conn();
 
-    let outcome = scanner::scan_folder(&mut conn, &root).unwrap();
+    let outcome = scanner::scan_folder(&conn, &root).unwrap();
     assert!(matches!(outcome, scanner::ScanOutcome::Completed(_)));
 
     let changes = all_changes(&conn);
@@ -247,9 +247,9 @@ fn scan_with_no_catalog_change_emits_no_event() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().join("music");
     std::fs::create_dir(&root).unwrap();
-    let mut conn = conn();
+    let conn = conn();
 
-    let outcome = scanner::scan_folder(&mut conn, &root).unwrap();
+    let outcome = scanner::scan_folder(&conn, &root).unwrap();
     assert!(matches!(outcome, scanner::ScanOutcome::Completed(_)));
 
     assert!(

@@ -2,15 +2,17 @@
 //!
 //! Every test runs the real built binary (`CARGO_BIN_EXE_reprise-cli`) against
 //! a throwaway database in a `TempDir`, and arranges/inspects that database
-//! through the same `reprise-core` facades the CLI uses. The user's real
-//! library at `~/.local/share/reprise/reprise.db` is never touched — `--db`
-//! always points at the temp file.
+//! through `reprise-core` facades where the behavior is public. Fixture-only
+//! SQL uses an independent connection to that explicit temp path. The user's
+//! real library at `~/.local/share/reprise/reprise.db` is never touched —
+//! `--db` always points at the temp file.
 
 #![allow(dead_code)]
 
 use std::path::PathBuf;
 use std::process::{Command, Output};
 
+use reprise_core::db::Db;
 use tempfile::TempDir;
 
 pub struct Harness {
@@ -25,14 +27,31 @@ impl Harness {
     pub fn new() -> Self {
         let dir = TempDir::new().expect("create temp dir");
         let db = dir.path().join("reprise.db");
-        reprise_core::db::open_migrated(Some(&db)).expect("migrate temp database");
+        Db::open_migrated(Some(&db)).expect("migrate temp database");
         Self { dir, db }
     }
 
-    /// A core-opened connection over the same database, for test arrangement
-    /// and assertions.
-    pub fn conn(&self) -> rusqlite::Connection {
-        reprise_core::db::open_migrated(Some(&self.db)).expect("open temp database")
+    /// A core-owned handle over the same database, for test arrangement and
+    /// assertions.
+    pub fn db(&self) -> Db {
+        Db::open_migrated(Some(&self.db)).expect("open temp database")
+    }
+
+    /// A short-lived raw connection for fixture-only SQL with no public Core
+    /// facade. It can only target this harness's explicit temporary database.
+    pub fn fixture_connection(&self) -> rusqlite::Connection {
+        let connection = rusqlite::Connection::open(&self.db).expect("open temp fixture database");
+        connection
+            .pragma_update(None, "foreign_keys", "ON")
+            .expect("enable fixture foreign keys");
+        connection
+            .pragma_update(
+                None,
+                "busy_timeout",
+                reprise_core::db::DEFAULT_BUSY_TIMEOUT_MS,
+            )
+            .expect("configure fixture busy timeout");
+        connection
     }
 
     /// Runs the CLI with `--db <temp>` prepended, returning the captured output.
@@ -73,7 +92,8 @@ impl Harness {
     /// Every `ai_job` lifecycle event as `(job_id, op)` pairs, via the core
     /// change-log facade — the ground truth for "was this job claimed once".
     pub fn ai_job_events(&self) -> Vec<(String, String)> {
-        reprise_core::events::read_since(&self.conn(), 0, None)
+        let db = self.db();
+        reprise_core::events::read_since(&db, 0, None)
             .expect("read change log")
             .into_iter()
             .filter(|change| change.entity == "ai_job")
@@ -85,7 +105,7 @@ impl Harness {
     /// deliberately *not* through an event-logging facade, so the change log
     /// stays empty until a command mutates it.
     pub fn seed_tracks(&self, n: i64) {
-        let conn = self.conn();
+        let conn = self.fixture_connection();
         for i in 1..=n {
             conn.execute(
                 "INSERT INTO tracks (path, title, artist, album, genre, duration_ms, added_at) \
@@ -106,7 +126,8 @@ impl Harness {
 
     /// Number of change-log rows currently recorded (via the core facade).
     pub fn change_log_len(&self) -> usize {
-        reprise_core::events::read_since(&self.conn(), 0, None)
+        let db = self.db();
+        reprise_core::events::read_since(&db, 0, None)
             .expect("read change log")
             .len()
     }
@@ -118,7 +139,7 @@ impl Harness {
         let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac");
         let path = self.dir.path().join(format!("track{id}.flac"));
         std::fs::copy(&source, &path).expect("copy fixture");
-        let conn = self.conn();
+        let conn = self.fixture_connection();
         conn.execute(
             "INSERT INTO tracks (id, path, title, artist, album, album_artist, genre, duration_ms, added_at, file_mtime, file_size) \
              VALUES (?1, ?2, ?3, ?4, 'Test Album', ?4, 'Rock', 180000, 1000, 1, 1)",
@@ -131,14 +152,14 @@ impl Harness {
     /// Total number of rows in `ai_jobs` (all states) — direct SQL, allowed in
     /// tests, so the dedup assertions can pin "exactly one job row".
     pub fn ai_job_row_count(&self) -> i64 {
-        self.conn()
+        self.fixture_connection()
             .query_row("SELECT COUNT(*) FROM ai_jobs", [], |row| row.get(0))
             .expect("count ai_jobs")
     }
 
     /// The stored status string of one job (direct SQL).
     pub fn ai_job_status(&self, job_id: i64) -> Option<String> {
-        self.conn()
+        self.fixture_connection()
             .query_row(
                 "SELECT status FROM ai_jobs WHERE id = ?1",
                 [job_id],
@@ -156,7 +177,7 @@ impl Harness {
         let render = store.path_for_job(job_id);
         let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac");
         std::fs::copy(&source, &render).expect("copy render");
-        self.conn()
+        self.fixture_connection()
             .execute("UPDATE ai_jobs SET status = 'done' WHERE id = ?1", [job_id])
             .expect("mark job done");
         render

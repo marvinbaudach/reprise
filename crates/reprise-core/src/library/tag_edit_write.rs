@@ -20,6 +20,8 @@ use std::path::PathBuf;
 
 use rusqlite::Connection;
 
+use crate::db::Db;
+
 use super::tag_edit::{TagBatchReport, TagWriteFailure, TrackEditPatch};
 use super::tag_mutation::{
     prepare_tag_mutation, validate_registered_track, PreparedTagMutation, WriteErrorKind,
@@ -52,7 +54,7 @@ fn push_failure(
     });
 }
 
-fn apply_rating_only(conn: &mut Connection, write: &TrackWrite, report: &mut TagBatchReport) {
+fn apply_rating_only(conn: &Connection, write: &TrackWrite, report: &mut TagBatchReport) {
     let Some(rating) = write.patch.rating else {
         return;
     };
@@ -84,15 +86,16 @@ fn apply_rating_only(conn: &mut Connection, write: &TrackWrite, report: &mut Tag
 /// `progress` after every one — success, no-op skip, or failure alike, so a
 /// caller streaming "Saving… x/N" always reaches `total` at the end.
 pub fn apply_track_writes(
-    conn: &mut Connection,
+    db: &Db,
     writes: &[TrackWrite],
     progress: &mut dyn FnMut(usize, usize),
 ) -> TagBatchReport {
+    let conn = db.conn();
     apply_track_writes_inner(conn, writes, progress, &mut |_, _, _| {})
 }
 
 fn apply_track_writes_inner(
-    conn: &mut Connection,
+    conn: &Connection,
     writes: &[TrackWrite],
     progress: &mut dyn FnMut(usize, usize),
     before_save: &mut dyn FnMut(&Connection, i64, i64),
@@ -244,14 +247,14 @@ mod tests {
             .unwrap();
     }
 
-    fn seeded_track(dir: &Path, name: &str) -> (Connection, i64, PathBuf) {
+    fn seeded_track(dir: &Path, name: &str) -> (crate::db::Db, i64, PathBuf) {
         let path = fixture_copy(dir, name);
         seed_full_tag(&path);
-        let mut conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
-        crate::library::scanner::scan_folder(&mut conn, &path).unwrap();
+        let conn = crate::db::Db::open_in_memory().unwrap();
+        crate::library::scanner::scan_folder(&conn, &path).unwrap();
         let path_text = path.to_string_lossy().to_string();
         let id: i64 = conn
+            .conn()
             .query_row("SELECT id FROM tracks WHERE path=?1", [&path_text], |row| {
                 row.get(0)
             })
@@ -262,32 +265,32 @@ mod tests {
     /// Copies the broken-tag MP3 fixture (a valid MPEG stream carrying an APE
     /// container with an invalid item size, exactly the "unreadable_tags"
     /// scanner import failure) into a scanned in-memory library.
-    fn seeded_broken_track(dir: &Path, name: &str) -> (Connection, i64, PathBuf) {
+    fn seeded_broken_track(dir: &Path, name: &str) -> (crate::db::Db, i64, PathBuf) {
         let path = dir.join(name);
         std::fs::copy(
             Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/broken-tags.mp3"),
             &path,
         )
         .unwrap();
-        let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
+        let conn = crate::db::Db::open_in_memory().unwrap();
         // Register the row directly instead of scanning: the scanner now
         // auto-repairs damaged containers, which would fix this file before the
         // test can exercise the editor's own repair path — keep it broken here.
         let path_text = path.to_string_lossy().to_string();
-        conn.execute(
-            "INSERT INTO tracks (path, title, untagged, added_at) VALUES (?1, ?2, 1, 0)",
-            rusqlite::params![path_text, name],
-        )
-        .unwrap();
-        let id = conn.last_insert_rowid();
+        conn.conn()
+            .execute(
+                "INSERT INTO tracks (path, title, untagged, added_at) VALUES (?1, ?2, 1, 0)",
+                rusqlite::params![path_text, name],
+            )
+            .unwrap();
+        let id = conn.conn().last_insert_rowid();
         (conn, id, path)
     }
 
     #[test]
     fn tag_editor_repairs_an_unreadable_container_by_stripping_and_rewriting() {
         let dir = tempfile::tempdir().unwrap();
-        let (mut conn, id, path) = seeded_broken_track(dir.path(), "broken.mp3");
+        let (conn, id, path) = seeded_broken_track(dir.path(), "broken.mp3");
 
         // Precondition: the strict read the write path relies on genuinely
         // fails on this container, which is why editing used to be impossible.
@@ -308,7 +311,7 @@ mod tests {
                 rating: None,
             },
         };
-        let report = apply_track_writes(&mut conn, &[write], &mut |_, _| {});
+        let report = apply_track_writes(&conn, &[write], &mut |_, _| {});
 
         assert!(
             report.failures.is_empty(),
@@ -326,7 +329,7 @@ mod tests {
     #[test]
     fn tag_5_noop_write_is_skipped_file_untouched() {
         let dir = tempfile::tempdir().unwrap();
-        let (mut conn, id, path) = seeded_track(dir.path(), "noop.flac");
+        let (conn, id, path) = seeded_track(dir.path(), "noop.flac");
         let before_bytes = std::fs::read(&path).unwrap();
         let before_mtime = std::fs::metadata(&path).unwrap().modified().unwrap();
 
@@ -345,7 +348,7 @@ mod tests {
         };
 
         let mut progress_calls = Vec::new();
-        let report = apply_track_writes(&mut conn, &[write], &mut |done, total| {
+        let report = apply_track_writes(&conn, &[write], &mut |done, total| {
             progress_calls.push((done, total));
         });
 
@@ -362,7 +365,7 @@ mod tests {
     #[test]
     fn tag_5_rating_only_counts_but_writes_db_only() {
         let dir = tempfile::tempdir().unwrap();
-        let (mut conn, id, path) = seeded_track(dir.path(), "rating-only.flac");
+        let (conn, id, path) = seeded_track(dir.path(), "rating-only.flac");
         let before_bytes = std::fs::read(&path).unwrap();
 
         let write = TrackWrite {
@@ -374,12 +377,13 @@ mod tests {
             },
         };
 
-        let report = apply_track_writes(&mut conn, &[write], &mut |_, _| {});
+        let report = apply_track_writes(&conn, &[write], &mut |_, _| {});
 
         assert_eq!(report.updated_ids, vec![id]);
         assert!(report.failures.is_empty());
         assert_eq!(std::fs::read(&path).unwrap(), before_bytes);
         let rating: i32 = conn
+            .conn()
             .query_row("SELECT rating FROM tracks WHERE id=?1", [id], |row| {
                 row.get(0)
             })
@@ -390,12 +394,13 @@ mod tests {
     #[test]
     fn tag_5_progress_reports_written_over_total() {
         let dir = tempfile::tempdir().unwrap();
-        let (mut conn, id_a, path_a) = seeded_track(dir.path(), "progress-a.flac");
+        let (conn, id_a, path_a) = seeded_track(dir.path(), "progress-a.flac");
         let path_b = fixture_copy(dir.path(), "progress-b.flac");
         seed_full_tag(&path_b);
-        crate::library::scanner::scan_folder(&mut conn, &path_b).unwrap();
+        crate::library::scanner::scan_folder(&conn, &path_b).unwrap();
         let path_b_text = path_b.to_string_lossy().to_string();
         let id_b: i64 = conn
+            .conn()
             .query_row(
                 "SELECT id FROM tracks WHERE path=?1",
                 [&path_b_text],
@@ -429,13 +434,14 @@ mod tests {
         ];
 
         let mut progress_calls = Vec::new();
-        let report = apply_track_writes(&mut conn, &writes, &mut |done, total| {
+        let report = apply_track_writes(&conn, &writes, &mut |done, total| {
             progress_calls.push((done, total));
         });
 
         assert_eq!(report.updated_ids.len(), 2);
         assert_eq!(progress_calls, vec![(1, 2), (2, 2)]);
         let journal_order = conn
+            .conn()
             .prepare(
                 "SELECT track_id FROM tag_write_job_files \
                  WHERE job_id=(SELECT MAX(id) FROM tag_write_jobs) ORDER BY position",
@@ -511,7 +517,7 @@ mod tests {
     #[test]
     fn a_stale_track_row_fails_before_touching_the_file() {
         let dir = tempfile::tempdir().unwrap();
-        let (mut conn, id, _path) = seeded_track(dir.path(), "stale.flac");
+        let (conn, id, _path) = seeded_track(dir.path(), "stale.flac");
         let other = fixture_copy(dir.path(), "stale-other.flac");
         seed_full_tag(&other);
         let before = std::fs::read(&other).unwrap();
@@ -528,7 +534,7 @@ mod tests {
             },
         };
 
-        let report = apply_track_writes(&mut conn, &[write], &mut |_, _| {});
+        let report = apply_track_writes(&conn, &[write], &mut |_, _| {});
 
         assert!(report.updated_ids.is_empty());
         assert_eq!(report.failures.len(), 1);
@@ -539,7 +545,7 @@ mod tests {
     #[test]
     fn combined_tag_and_rating_write_reconciles_both() {
         let dir = tempfile::tempdir().unwrap();
-        let (mut conn, id, path) = seeded_track(dir.path(), "combined.flac");
+        let (conn, id, path) = seeded_track(dir.path(), "combined.flac");
 
         let write = TrackWrite {
             id,
@@ -553,11 +559,12 @@ mod tests {
             },
         };
 
-        let report = apply_track_writes(&mut conn, &[write], &mut |_, _| {});
+        let report = apply_track_writes(&conn, &[write], &mut |_, _| {});
 
         assert_eq!(report.updated_ids, vec![id]);
         assert!(report.failures.is_empty());
         let row: (String, i32) = conn
+            .conn()
             .query_row(
                 "SELECT title, rating FROM tracks WHERE id=?1",
                 [id],
@@ -570,23 +577,25 @@ mod tests {
     #[test]
     fn tag_editor_adapter_completes_journal_without_moving_doctor_pointer() {
         let dir = tempfile::tempdir().unwrap();
-        let (mut conn, id, path) = seeded_track(dir.path(), "journaled.flac");
-        conn.execute(
-            "INSERT INTO library_doctor_scans \
+        let (conn, id, path) = seeded_track(dir.path(), "journaled.flac");
+        conn.conn()
+            .execute(
+                "INSERT INTO library_doctor_scans \
              (scope_kind, created_at, remote_enabled, checked_tracks, skipped_tracks) \
              VALUES ('selection', 0, 0, 1, 0)",
-            [],
-        )
-        .unwrap();
-        let scan_id = conn.last_insert_rowid();
-        conn.execute(
-            "UPDATE library_doctor_state SET last_complete_scan_id=?1 WHERE singleton=1",
-            [scan_id],
-        )
-        .unwrap();
+                [],
+            )
+            .unwrap();
+        let scan_id = conn.conn().last_insert_rowid();
+        conn.conn()
+            .execute(
+                "UPDATE library_doctor_state SET last_complete_scan_id=?1 WHERE singleton=1",
+                [scan_id],
+            )
+            .unwrap();
 
         let report = apply_track_writes(
-            &mut conn,
+            &conn,
             &[TrackWrite {
                 id,
                 path,
@@ -604,6 +613,7 @@ mod tests {
         assert_eq!(report.updated_ids, vec![id]);
         assert!(report.failures.is_empty());
         let journal: (String, String, String, i64, String, String) = conn
+            .conn()
             .query_row(
                 "SELECT j.kind, j.state, f.state, f.file_written, \
                         v.before_value, v.after_value \
@@ -636,6 +646,7 @@ mod tests {
             )
         );
         let pointer: Option<i64> = conn
+            .conn()
             .query_row(
                 "SELECT last_complete_scan_id FROM library_doctor_state WHERE singleton=1",
                 [],
@@ -648,19 +659,20 @@ mod tests {
     #[test]
     fn journal_records_when_file_write_precedes_reconciliation_failure() {
         let dir = tempfile::tempdir().unwrap();
-        let (mut conn, id, path) = seeded_track(dir.path(), "journal-error.flac");
-        conn.execute_batch(
-            "CREATE TRIGGER reject_journal_reconcile
+        let (conn, id, path) = seeded_track(dir.path(), "journal-error.flac");
+        conn.conn()
+            .execute_batch(
+                "CREATE TRIGGER reject_journal_reconcile
              BEFORE UPDATE OF file_mtime ON tracks
              WHEN NEW.file_mtime = -1
              BEGIN
                SELECT RAISE(FAIL, 'injected reconcile failure');
              END;",
-        )
-        .unwrap();
+            )
+            .unwrap();
 
         let report = apply_track_writes(
-            &mut conn,
+            &conn,
             &[TrackWrite {
                 id,
                 path: path.clone(),
@@ -682,6 +694,7 @@ mod tests {
             "Written before failure"
         );
         let file: (String, String, i64) = conn
+            .conn()
             .query_row(
                 "SELECT state, error_kind, file_written FROM tag_write_job_files",
                 [],
@@ -694,10 +707,10 @@ mod tests {
     #[test]
     fn adapter_commits_and_claims_journal_before_first_save() {
         let dir = tempfile::tempdir().unwrap();
-        let (mut conn, id, path) = seeded_track(dir.path(), "pre-save-hook.flac");
+        let (conn, id, path) = seeded_track(dir.path(), "pre-save-hook.flac");
         let mut hook_called = false;
         let report = apply_track_writes_inner(
-            &mut conn,
+            conn.conn(),
             &[TrackWrite {
                 id,
                 path: path.clone(),

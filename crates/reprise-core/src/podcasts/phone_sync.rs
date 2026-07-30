@@ -5,7 +5,9 @@
 //! its own device target folder (`MTP-38`) — that routing decision lives in
 //! `device_sync::podcasts`, not here.
 
-use rusqlite::{params, Connection};
+use rusqlite::params;
+
+use crate::db::Db;
 
 use super::PodcastKind;
 
@@ -16,10 +18,11 @@ use super::PodcastKind;
 /// edited on the podcast/channel pages via [`set_device_enabled`], not
 /// here — this is a read of that state, not a second control surface.
 pub fn selection_summary(
-    conn: &Connection,
+    db: &Db,
     device_id: &str,
     kind: PodcastKind,
 ) -> Result<(usize, usize), rusqlite::Error> {
+    let conn = db.conn();
     let kind = match kind {
         PodcastKind::Rss => "rss",
         PodcastKind::Youtube => "youtube",
@@ -44,11 +47,12 @@ pub fn selection_summary(
 }
 
 pub fn set_device_enabled(
-    conn: &Connection,
+    db: &Db,
     subscription_id: i64,
     device_id: &str,
     enabled: bool,
 ) -> Result<bool, rusqlite::Error> {
+    let conn = db.conn();
     let device_id = device_id.trim();
     if device_id.is_empty() {
         return Ok(false);
@@ -91,10 +95,8 @@ pub fn set_device_enabled(
     Ok(true)
 }
 
-pub fn selected_device_ids(
-    conn: &Connection,
-    subscription_id: i64,
-) -> Result<Vec<String>, rusqlite::Error> {
+pub fn selected_device_ids(db: &Db, subscription_id: i64) -> Result<Vec<String>, rusqlite::Error> {
+    let conn = db.conn();
     let mut statement = conn.prepare(
         "SELECT d.device_id
          FROM podcast_subscription_devices d
@@ -107,11 +109,8 @@ pub fn selected_device_ids(
     rows.collect()
 }
 
-pub fn set_enabled(
-    conn: &Connection,
-    subscription_id: i64,
-    enabled: bool,
-) -> Result<bool, rusqlite::Error> {
+pub fn set_enabled(db: &Db, subscription_id: i64, enabled: bool) -> Result<bool, rusqlite::Error> {
+    let conn = db.conn();
     Ok(conn.execute(
         "UPDATE podcast_subscriptions
          SET sync_to_phone = ?2
@@ -139,7 +138,7 @@ mod tests {
 
     #[test]
     fn mtp_37_selection_summary_counts_only_this_devices_selected_channels() {
-        let conn = crate::db::open_migrated(None).unwrap();
+        let conn = Db::open_in_memory().unwrap();
         let one = store::add_or_restore(
             &conn,
             &subscription(PodcastKind::Youtube, "https://youtube.test/@one"),
@@ -196,7 +195,7 @@ mod tests {
 
     #[test]
     fn pod_12_rss_and_youtube_subscriptions_can_equally_sync_to_phone() {
-        let conn = crate::db::open_migrated(None).unwrap();
+        let conn = Db::open_in_memory().unwrap();
         let rss = store::add_or_restore(
             &conn,
             &subscription(PodcastKind::Rss, "https://example.test/feed"),
@@ -228,7 +227,7 @@ mod tests {
 
     #[test]
     fn pod_12_restoring_a_source_under_a_different_kind_clears_phone_sync() {
-        let conn = crate::db::open_migrated(None).unwrap();
+        let conn = Db::open_in_memory().unwrap();
         let source = store::add_or_restore(
             &conn,
             &subscription(PodcastKind::Rss, "https://example.test/source"),
@@ -268,7 +267,7 @@ mod tests {
 
     #[test]
     fn pod_12_rss_phone_sync_selection_is_persisted_per_stable_device() {
-        let conn = crate::db::open_migrated(None).unwrap();
+        let conn = Db::open_in_memory().unwrap();
         let rss = store::add_or_restore(
             &conn,
             &subscription(PodcastKind::Rss, "https://example.test/feed"),
@@ -292,7 +291,7 @@ mod tests {
 
     #[test]
     fn pod_12_youtube_persists_device_selection_just_like_rss() {
-        let conn = crate::db::open_migrated(None).unwrap();
+        let conn = Db::open_in_memory().unwrap();
         let youtube = store::add_or_restore(
             &conn,
             &subscription(PodcastKind::Youtube, "https://youtube.test/@channel"),

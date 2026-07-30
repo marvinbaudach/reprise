@@ -13,20 +13,15 @@ use super::*;
 /// receives once the user actually uses these features, so switching them
 /// on is their precondition, not their subject — `MTP-46`'s own tests are
 /// the ones that flip them back.
-fn migrated() -> rusqlite::Connection {
-    let conn = crate::db::open_migrated(None).unwrap();
-    crate::modules::set_enabled(&conn, &crate::modules::PODCASTS_MODULE, true).unwrap();
-    crate::modules::set_enabled(&conn, &crate::modules::YOUTUBE_MODULE, true).unwrap();
-    conn
+fn migrated() -> crate::db::Db {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    crate::modules::set_enabled(&db, &crate::modules::PODCASTS_MODULE, true).unwrap();
+    crate::modules::set_enabled(&db, &crate::modules::YOUTUBE_MODULE, true).unwrap();
+    db
 }
 
-fn insert_subscription(
-    conn: &rusqlite::Connection,
-    id: i64,
-    kind: &str,
-    sync_to_phone: bool,
-    title: &str,
-) {
+fn insert_subscription(db: &crate::db::Db, id: i64, kind: &str, sync_to_phone: bool, title: &str) {
+    let conn = db.conn();
     conn.execute(
         "INSERT INTO podcast_subscriptions
          (id, kind, feed_url, title, auto_download, sync_to_phone, added_at)
@@ -43,12 +38,13 @@ fn insert_subscription(
 }
 
 fn insert_episode(
-    conn: &rusqlite::Connection,
+    db: &crate::db::Db,
     id: i64,
     subscription_id: i64,
     path: &std::path::Path,
     downloaded_bytes: i64,
 ) {
+    let conn = db.conn();
     conn.execute(
         "INSERT INTO podcast_episodes
          (id, subscription_id, guid, title, audio_url, downloaded_path,
@@ -90,11 +86,12 @@ fn pod_12_candidates_are_complete_and_explicitly_selected_for_the_device() {
     insert_episode(&conn, 13, 3, &unselected, 10);
     insert_episode(&conn, 14, 1, &partial, 99);
     insert_episode(&conn, 15, 1, &eligible, 8);
-    conn.execute(
-        "UPDATE podcast_episodes SET removed_at = 1 WHERE id = 15",
-        [],
-    )
-    .unwrap();
+    conn.conn()
+        .execute(
+            "UPDATE podcast_episodes SET removed_at = 1 WHERE id = 15",
+            [],
+        )
+        .unwrap();
 
     let candidates = super::query_candidates_for_device(&conn, "mtp:pixel").unwrap();
 
@@ -174,12 +171,13 @@ fn mtp_46_switching_youtube_off_removes_its_episodes_from_the_device_sync() {
         "and must not touch Podcasts, which is a peer module (issue #96)"
     );
     assert_eq!(
-        conn.query_row(
-            "SELECT COUNT(*) FROM podcast_subscriptions WHERE removed_at IS NULL",
-            [],
-            |row| row.get::<_, i64>(0)
-        )
-        .unwrap(),
+        conn.conn()
+            .query_row(
+                "SELECT COUNT(*) FROM podcast_subscriptions WHERE removed_at IS NULL",
+                [],
+                |row| row.get::<_, i64>(0)
+            )
+            .unwrap(),
         2,
         "`SET-9` keeps the subscription; only its syncing stops"
     );
@@ -262,11 +260,12 @@ fn pod_12_legacy_downloads_backfill_size_before_phone_sync() {
     insert_subscription(&conn, 1, "rss", true, "Legacy Show");
     crate::podcasts::phone_sync::set_device_enabled(&conn, 1, "mtp:pixel", true).unwrap();
     insert_episode(&conn, 11, 1, &legacy, 6);
-    conn.execute(
-        "UPDATE podcast_episodes SET downloaded_bytes = NULL WHERE id = 11",
-        [],
-    )
-    .unwrap();
+    conn.conn()
+        .execute(
+            "UPDATE podcast_episodes SET downloaded_bytes = NULL WHERE id = 11",
+            [],
+        )
+        .unwrap();
 
     let candidates = query_candidates_for_device(&conn, "mtp:pixel").unwrap();
 

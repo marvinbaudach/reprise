@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use reprise_core::artist_news::{ArtistNews, NewsError};
+use reprise_core::db::Db;
 
 pub(in crate::ui) struct ArtistNewsRequest {
     pub generation: u64,
@@ -99,7 +100,7 @@ pub(in crate::ui) struct ArtistNewsRuntime {
 }
 
 impl ArtistNewsRuntime {
-    pub(in crate::ui) fn setup(conn: &rusqlite::Connection) -> Rc<Self> {
+    pub(in crate::ui) fn setup(conn: &Db) -> Rc<Self> {
         Rc::new(Self {
             enabled: Rc::new(Cell::new(
                 reprise_core::online_sources::network_allowed_or_off(
@@ -107,14 +108,14 @@ impl ArtistNewsRuntime {
                     &reprise_core::modules::NEW_RELEASES_MODULE,
                 ),
             )),
-            worker: spawn(reprise_core::db::main_path(conn)),
+            worker: spawn(conn.path()),
             subscribers: EnabledSubscribers::default(),
         })
     }
 
     pub(in crate::ui) fn set_enabled(
         &self,
-        conn: &rusqlite::Connection,
+        conn: &Db,
         enabled: bool,
     ) -> Result<(), rusqlite::Error> {
         reprise_core::modules::set_enabled(
@@ -127,7 +128,7 @@ impl ArtistNewsRuntime {
     }
 
     /// `NET-1a`: re-derives `enabled` from the global online-sources gate.
-    pub(in crate::ui) fn recompute_enabled(&self, conn: &rusqlite::Connection) {
+    pub(in crate::ui) fn recompute_enabled(&self, conn: &Db) {
         let enabled = reprise_core::online_sources::network_allowed_or_off(
             conn,
             &reprise_core::modules::NEW_RELEASES_MODULE,
@@ -168,30 +169,33 @@ fn spawn(database_path: Option<PathBuf>) -> async_channel::Sender<ArtistNewsRequ
         .spawn(move || {
             let connection = database_path
                 .as_deref()
-                .map(|path| reprise_core::db::open_migrated(Some(path)));
+                .map(|path| reprise_core::db::Db::open_migrated(Some(path)));
             while let Ok(request) = receiver.recv_blocking() {
                 let today = chrono::Local::now().date_naive();
                 let result = match connection.as_ref() {
-                    Some(Ok(conn)) => reprise_core::artist_news::configured_fetch_scope(conn)
-                        .map_err(|error| NewsError::Database(error.to_string()))
-                        .and_then(|scope| {
-                            reprise_core::artist_news::refresh(
-                                conn,
-                                today,
-                                scope,
-                                request.force,
-                                crate::ui::updates::release_cover::fallback_accent_for_artist,
-                            )
-                        })
-                        .and_then(|_| {
-                            reprise_core::artist_news::query_artist_news_by_name(
-                                conn,
-                                &request.artist,
-                                today,
-                            )
-                            .map_err(|error| NewsError::Database(error.to_string()))?
-                            .ok_or(NewsError::Unmatched)
-                        }),
+                    Some(Ok(db)) => {
+                        let conn = &db;
+                        reprise_core::artist_news::configured_fetch_scope(conn)
+                            .map_err(|error| NewsError::Database(error.to_string()))
+                            .and_then(|scope| {
+                                reprise_core::artist_news::refresh(
+                                    conn,
+                                    today,
+                                    scope,
+                                    request.force,
+                                    crate::ui::updates::release_cover::fallback_accent_for_artist,
+                                )
+                            })
+                            .and_then(|_| {
+                                reprise_core::artist_news::query_artist_news_by_name(
+                                    conn,
+                                    &request.artist,
+                                    today,
+                                )
+                                .map_err(|error| NewsError::Database(error.to_string()))?
+                                .ok_or(NewsError::Unmatched)
+                            })
+                    }
                     Some(Err(error)) => Err(NewsError::Database(error.to_string())),
                     None => Err(NewsError::Database(
                         "the active database has no persistent path".into(),
@@ -216,10 +220,8 @@ mod tests {
 
     use super::*;
 
-    fn migrated_conn() -> rusqlite::Connection {
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        conn
+    fn migrated_conn() -> Db {
+        crate::test_db::open().unwrap()
     }
 
     #[test]

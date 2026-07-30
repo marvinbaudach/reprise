@@ -92,7 +92,8 @@ fn lists_all_resources() {
 fn reads_filtered_concerts_without_paths() {
     let dir = TempDir::new().unwrap();
     let path = fixture_db(&dir);
-    let conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
+    let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
+    let conn = common::fixture_connection(&path);
     conn.execute(
         "INSERT INTO concert_artists (
            artist_key, artist_name, last_attempt_at, last_outcome, events_found
@@ -114,6 +115,7 @@ fn reads_filtered_concerts_without_paths() {
     )
     .unwrap();
     drop(conn);
+    drop(db);
     let mut client = McpClient::start(&path);
 
     let response = client.read_resource(CONCERTS_URI);
@@ -129,57 +131,58 @@ fn reads_filtered_concerts_without_paths() {
 fn reads_every_stored_concert_field_without_credentials_or_paths() {
     let dir = TempDir::new().unwrap();
     let path = fixture_db(&dir);
-    let conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
+    let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
+    let conn = common::fixture_connection(&path);
     reprise_core::library::settings::set_setting(
-        &conn,
+        &db,
         reprise_core::concerts::config::TICKETMASTER_API_KEY,
         "must-never-leave-the-database",
     )
     .unwrap();
     reprise_core::library::settings::set_setting(
-        &conn,
+        &db,
         reprise_core::location::LOCATION_NAME_KEY,
         "Zurich",
     )
     .unwrap();
     reprise_core::library::settings::set_setting(
-        &conn,
+        &db,
         reprise_core::location::LOCATION_LAT_KEY,
         "47.3769",
     )
     .unwrap();
     reprise_core::library::settings::set_setting(
-        &conn,
+        &db,
         reprise_core::location::LOCATION_LON_KEY,
         "8.5417",
     )
     .unwrap();
     reprise_core::library::settings::set_setting(
-        &conn,
+        &db,
         reprise_core::concerts::config::FILTER_COUNTRY_KEY,
         "DE",
     )
     .unwrap();
     reprise_core::library::settings::set_setting(
-        &conn,
+        &db,
         reprise_core::concerts::config::FILTER_HORIZON_KEY,
         "next_6_months",
     )
     .unwrap();
     reprise_core::library::settings::set_bool(
-        &conn,
+        &db,
         reprise_core::concerts::config::FILTER_INCLUDE_SIMILAR_KEY,
         true,
     )
     .unwrap();
     reprise_core::library::settings::set_bool(
-        &conn,
+        &db,
         reprise_core::concerts::config::SIMILAR_ENABLED_KEY,
         true,
     )
     .unwrap();
     reprise_core::library::settings::set_setting(
-        &conn,
+        &db,
         reprise_core::concerts::config::SIMILAR_COUNT_KEY,
         "25",
     )
@@ -201,6 +204,7 @@ fn reads_every_stored_concert_field_without_credentials_or_paths() {
     )
     .unwrap();
     drop(conn);
+    drop(db);
     let mut client = McpClient::start(&path);
 
     let response = client.read_resource(CONCERTS_ALL_URI);
@@ -247,7 +251,8 @@ fn reads_every_stored_concert_field_without_credentials_or_paths() {
 fn reads_every_stored_release_field_including_hidden_history() {
     let dir = TempDir::new().unwrap();
     let path = fixture_db(&dir);
-    let conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
+    let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
+    let conn = common::fixture_connection(&path);
     conn.execute(
         "INSERT INTO new_releases (
            release_group_mbid, artist_name, artist_mbid, title, release_type,
@@ -263,6 +268,7 @@ fn reads_every_stored_release_field_including_hidden_history() {
     )
     .unwrap();
     drop(conn);
+    drop(db);
     let mut client = McpClient::start(&path);
 
     let response = client.read_resource(RELEASES_URI);
@@ -315,9 +321,9 @@ fn reads_playlists_resource() {
     let dir = TempDir::new().unwrap();
     let path = fixture_db(&dir);
     // Create a playlist through the core facade so the resource has content.
-    let conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
-    reprise_core::library::playlists::create(&conn, "Favourites").unwrap();
-    drop(conn);
+    let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
+    reprise_core::library::playlists::create(&db, "Favourites").unwrap();
+    drop(db);
 
     let mut client = McpClient::start(&path);
     let response = client.read_resource(PLAYLISTS_URI);
@@ -344,9 +350,9 @@ fn reads_cached_podcasts_without_source_or_download_paths() {
 
     let dir = TempDir::new().unwrap();
     let path = fixture_db(&dir);
-    let conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
+    let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
     let subscription_id = store::add_or_restore(
-        &conn,
+        &db,
         &NewSubscription {
             kind: PodcastKind::Rss,
             feed_url: "https://feeds.example.test/private?token=secret".into(),
@@ -359,7 +365,7 @@ fn reads_cached_podcasts_without_source_or_download_paths() {
     )
     .unwrap();
     let episode_id = store::upsert_episode(
-        &conn,
+        &db,
         subscription_id,
         &ParsedEpisode {
             guid: "episode-one".into(),
@@ -374,14 +380,14 @@ fn reads_cached_podcasts_without_source_or_download_paths() {
     .unwrap()
     .expect("episode should be imported")
     .episode_id;
-    store::save_position(&conn, episode_id, 12_000).unwrap();
+    store::save_position(&db, episode_id, 12_000).unwrap();
     store::set_downloaded_path(
-        &conn,
+        &db,
         episode_id,
         Some("/home/marvin/.local/share/reprise/podcasts/secret.mp3"),
     )
     .unwrap();
-    drop(conn);
+    drop(db);
 
     let mut client = McpClient::start(&path);
     let response = client.read_resource(PODCASTS_URI);
@@ -403,9 +409,9 @@ fn reads_cached_podcasts_without_source_or_download_paths() {
 fn reads_cached_radio_favorites_without_stream_urls() {
     let dir = TempDir::new().unwrap();
     let path = fixture_db(&dir);
-    let conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
+    let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
     let station_id = reprise_core::radio::station::add_or_restore(
-        &conn,
+        &db,
         &reprise_core::radio::station::NewStation {
             uuid: Some("metal-one".into()),
             name: "Metal One".into(),
@@ -421,7 +427,7 @@ fn reads_cached_radio_favorites_without_stream_urls() {
         300,
     )
     .unwrap();
-    drop(conn);
+    drop(db);
 
     let mut client = McpClient::start(&path);
     let response = client.read_resource(RADIO_URI);

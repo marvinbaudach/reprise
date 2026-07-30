@@ -18,6 +18,7 @@ use std::rc::Rc;
 use crate::ui::player_controller::PlayerController;
 use crate::ui::track_list::queue_sections::{compose_virtual, QueueViewModel, VirtualContextTail};
 use crate::ui::up_next_transport::AdvanceReason;
+use reprise_core::db::Db;
 use reprise_core::media_integration::MprisPlaybackStatus;
 use reprise_core::queue::Queue;
 use reprise_core::up_next::UpNextQueue;
@@ -70,8 +71,8 @@ fn toggle_action(
     }
 }
 
-pub(super) fn initial_library_availability(conn: &rusqlite::Connection) -> bool {
-    reprise_core::queries::query_has_live_tracks(conn)
+pub(super) fn initial_library_availability(db: &Db) -> bool {
+    reprise_core::queries::query_has_live_tracks(db)
         .inspect_err(
             |error| tracing::warn!(%error, "could not determine idle playback availability"),
         )
@@ -158,8 +159,8 @@ impl PlayerController {
             candidates.push(id);
         }
         let result = {
-            let conn = self.conn.borrow();
-            reprise_core::queries::query_queue_purge_track_ids(&conn, &candidates)
+            let conn = &self.conn;
+            reprise_core::queries::query_queue_purge_track_ids(conn, &candidates)
         };
         match result {
             Ok(ids) => ids,
@@ -206,8 +207,8 @@ impl PlayerController {
             ToggleAction::StartCurrent => {
                 if let Some(id) = current {
                     let playable = {
-                        let conn = self.conn.borrow();
-                        reprise_core::queries::query_live_track_ids(&conn)
+                        let conn = &self.conn;
+                        reprise_core::queries::query_live_track_ids(conn)
                             .map(|ids| ids.contains(&id))
                     };
                     match playable {
@@ -229,8 +230,8 @@ impl PlayerController {
             ToggleAction::StartPending => self.advance_playback(AdvanceReason::Manual),
             ToggleAction::StartRandom => {
                 let snapshot = {
-                    let conn = self.conn.borrow();
-                    reprise_core::queries::query_random_live_track_ids(&conn)
+                    let conn = &self.conn;
+                    reprise_core::queries::query_random_live_track_ids(conn)
                 };
                 match snapshot {
                     Ok(ids) if ids.is_empty() => {
@@ -263,8 +264,8 @@ impl PlayerController {
     /// Track-list reloads call this after scans and library mutations.
     pub(in crate::ui) fn refresh_library_availability(&self) {
         let available = {
-            let conn = self.conn.borrow();
-            reprise_core::queries::query_has_live_tracks(&conn)
+            let conn = &self.conn;
+            reprise_core::queries::query_has_live_tracks(conn)
         };
         let available = match available {
             Ok(available) => available,

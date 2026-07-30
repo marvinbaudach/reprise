@@ -2,8 +2,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
+use reprise_core::db::Db;
 use reprise_core::podcasts::{self, PodcastKind};
-use rusqlite::Connection;
 
 // `active` lives in `podcasts_presentation` (also read by the empty-state
 // classification), not duplicated here.
@@ -17,7 +17,7 @@ type OnChanged = Rc<dyn Fn(PodcastFilter)>;
 
 pub(super) struct PodcastsFilterBar {
     root: gtk4::Box,
-    conn: Rc<RefCell<Connection>>,
+    conn: Rc<Db>,
     filter: RefCell<PodcastFilter>,
     chips: gtk4::Box,
     popover_box: gtk4::Box,
@@ -28,8 +28,8 @@ pub(super) struct PodcastsFilterBar {
 }
 
 impl PodcastsFilterBar {
-    pub(super) fn new(conn: Rc<RefCell<Connection>>, kind: PodcastKind) -> Rc<Self> {
-        let stored = podcasts::config::load_filter(&conn.borrow()).unwrap_or_default();
+    pub(super) fn new(conn: Rc<Db>, kind: PodcastKind) -> Rc<Self> {
+        let stored = podcasts::config::load_filter(&conn).unwrap_or_default();
         let filter = PodcastFilter {
             unplayed_only: stored.unplayed_only,
             show: stored.show,
@@ -146,7 +146,7 @@ impl PodcastsFilterBar {
     }
 
     fn apply(self: &Rc<Self>, filter: PodcastFilter) {
-        if let Err(error) = podcasts::config::save_filter(&self.conn.borrow(), &filter) {
+        if let Err(error) = podcasts::config::save_filter(&self.conn, &filter) {
             tracing::warn!(%error, "could not persist podcast filters");
             return;
         }

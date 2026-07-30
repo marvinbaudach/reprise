@@ -103,10 +103,11 @@ pub enum DeviceSettingsError {
 }
 
 pub fn load_or_create_settings(
-    conn: &Connection,
+    db: &crate::db::Db,
     serial: &str,
     name: &str,
 ) -> Result<DeviceSettings, DeviceSettingsError> {
+    let conn = db.conn();
     let existing = conn
         .query_row(
             "SELECT device_name, selection_json, mp3_quality, transfer_profile, opus_bitrate, \
@@ -172,9 +173,10 @@ pub fn load_or_create_settings(
 }
 
 pub fn save_settings(
-    conn: &Connection,
+    db: &crate::db::Db,
     settings: &DeviceSettings,
 ) -> Result<(), DeviceSettingsError> {
+    let conn = db.conn();
     if !SUPPORTED_OPUS_BITRATES.contains(&settings.opus_bitrate) {
         return Err(DeviceSettingsError::UnsupportedBitrate(
             settings.opus_bitrate,
@@ -216,9 +218,10 @@ pub fn save_settings(
 }
 
 pub fn load_device_files(
-    conn: &Connection,
+    db: &crate::db::Db,
     serial: &str,
 ) -> Result<Vec<DeviceFileRecord>, rusqlite::Error> {
+    let conn = db.conn();
     let mut statement = conn.prepare(
         "SELECT track_id, source_path, source_size, source_mtime, device_path, device_size, \
                 profile_fingerprint, pinned \
@@ -243,9 +246,10 @@ pub fn load_device_files(
 }
 
 pub fn upsert_device_file(
-    conn: &Connection,
+    db: &crate::db::Db,
     file: &DeviceFileRecord,
 ) -> Result<(), DeviceSettingsError> {
+    let conn = db.conn();
     let source_size = sqlite_size(file.source_size)?;
     let device_size = sqlite_size(file.device_size)?;
     conn.execute(
@@ -274,9 +278,10 @@ pub fn upsert_device_file(
 }
 
 pub fn load_device_playlists(
-    conn: &Connection,
+    db: &crate::db::Db,
     serial: &str,
 ) -> Result<Vec<DevicePlaylistRecord>, rusqlite::Error> {
+    let conn = db.conn();
     let mut statement = conn.prepare(
         "SELECT source_kind, source_id, source_name, device_path, last_synced_at \
          FROM device_playlists \
@@ -298,9 +303,10 @@ pub fn load_device_playlists(
 }
 
 pub fn upsert_device_playlist(
-    conn: &Connection,
+    db: &crate::db::Db,
     playlist: &DevicePlaylistRecord,
 ) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
     let (kind, id) = source_columns(&playlist.source);
     conn.execute(
         "INSERT INTO device_playlists \
@@ -322,11 +328,12 @@ pub fn upsert_device_playlist(
 }
 
 pub fn mark_device_playlists_synced(
-    conn: &Connection,
+    db: &crate::db::Db,
     serial: &str,
     sources: &[SelectionSource],
     timestamp: i64,
 ) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
     let transaction = conn.unchecked_transaction()?;
     let mut seen = HashSet::new();
     for source in sources {
@@ -347,10 +354,11 @@ pub fn mark_device_playlists_synced(
 }
 
 pub fn delete_device_playlist(
-    conn: &Connection,
+    db: &crate::db::Db,
     serial: &str,
     source: &SelectionSource,
 ) -> Result<bool, rusqlite::Error> {
+    let conn = db.conn();
     let (kind, id) = source_columns(source);
     Ok(conn.execute(
         "DELETE FROM device_playlists \
@@ -360,11 +368,12 @@ pub fn delete_device_playlist(
 }
 
 pub fn set_file_pinned(
-    conn: &Connection,
+    db: &crate::db::Db,
     serial: &str,
     track_id: i64,
     pinned: bool,
 ) -> Result<bool, rusqlite::Error> {
+    let conn = db.conn();
     Ok(conn.execute(
         "UPDATE device_files SET pinned = ?3 WHERE device_serial = ?1 AND track_id = ?2",
         params![serial, track_id, pinned],
@@ -372,10 +381,11 @@ pub fn set_file_pinned(
 }
 
 pub fn delete_device_file(
-    conn: &Connection,
+    db: &crate::db::Db,
     serial: &str,
     track_id: i64,
 ) -> Result<bool, rusqlite::Error> {
+    let conn = db.conn();
     Ok(conn.execute(
         "DELETE FROM device_files WHERE device_serial = ?1 AND track_id = ?2",
         params![serial, track_id],
@@ -383,6 +393,14 @@ pub fn delete_device_file(
 }
 
 pub fn resolve_selection_track_ids(
+    db: &crate::db::Db,
+    selection: &DeviceSelection,
+) -> Result<Vec<i64>, rusqlite::Error> {
+    let conn = db.conn();
+    resolve_selection_track_ids_in(conn, selection)
+}
+
+fn resolve_selection_track_ids_in(
     conn: &Connection,
     selection: &DeviceSelection,
 ) -> Result<Vec<i64>, rusqlite::Error> {
@@ -396,7 +414,7 @@ pub fn resolve_selection_track_ids(
             SelectionSource::Playlist(id) => ViewSource::Playlist(*id),
             SelectionSource::Smart(id) => ViewSource::Smart(*id),
         };
-        for id in crate::queries::query_track_ids(conn, &source, "title", "asc", "", &[])? {
+        for id in crate::queries::query_track_ids_in(conn, &source, "title", "asc", "", &[])? {
             if seen.insert(id) {
                 selected.push(id);
             }

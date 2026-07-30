@@ -56,17 +56,17 @@ pub enum NewsError {
 }
 
 pub fn refresh<A>(
-    conn: &Connection,
+    db: &crate::db::Db,
     today: NaiveDate,
     scope: FetchScope,
     force: bool,
     mut fallback_accent: A,
 ) -> Result<RefreshReport, NewsError>
 where
-    A: FnMut(&Connection, &str) -> Option<String>,
+    A: FnMut(&crate::db::Db, &str) -> Option<String>,
 {
     refresh_with(
-        conn,
+        db,
         today,
         chrono::Utc::now().timestamp(),
         scope,
@@ -77,7 +77,7 @@ where
 }
 
 pub(crate) fn refresh_with<F, A>(
-    conn: &Connection,
+    db: &crate::db::Db,
     today: NaiveDate,
     now: i64,
     scope: FetchScope,
@@ -87,14 +87,15 @@ pub(crate) fn refresh_with<F, A>(
 ) -> Result<RefreshReport, NewsError>
 where
     F: FnMut(&str) -> Result<String, FetchError>,
-    A: FnMut(&Connection, &str) -> Option<String>,
+    A: FnMut(&crate::db::Db, &str) -> Option<String>,
 {
+    let conn = db.conn();
     let candidates = artists_for_fetch(conn, scope).map_err(database_error)?;
     let mut report = RefreshReport {
         artists_queued: candidates.len(),
         ..RefreshReport::default()
     };
-    let include_singles = include_singles(conn).map_err(database_error)?;
+    let include_singles = include_singles(db).map_err(database_error)?;
     let local_track_counts =
         crate::artist_news_query::local_album_track_counts(conn).map_err(database_error)?;
     for candidate in candidates {
@@ -164,7 +165,7 @@ where
                 continue;
             }
         };
-        let accent = normalize_fallback_accent(fallback_accent(conn, &candidate.name));
+        let accent = normalize_fallback_accent(fallback_accent(db, &candidate.name));
         upsert_releases(conn, &candidate.name, &mbid, now, &accent, &items)
             .map_err(database_error)?;
         enrich_local_release_track_counts(
@@ -187,7 +188,7 @@ where
         report.artists_fetched += 1;
         report.releases_upserted += items.len();
     }
-    crate::artist_news_history::enforce_retention(conn, now).map_err(database_error)?;
+    crate::artist_news_history::enforce_retention(db, now).map_err(database_error)?;
     Ok(report)
 }
 

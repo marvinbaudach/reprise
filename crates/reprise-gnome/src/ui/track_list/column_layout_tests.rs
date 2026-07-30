@@ -153,8 +153,7 @@ fn browse_9_legacy_layout_gains_a_hidden_added_column() {
 fn browse_9_track_list_builds_the_hidden_added_column() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
-    let conn = Rc::new(RefCell::new(reprise_core::db::open(None).unwrap()));
-    reprise_core::db::migrate(&conn.borrow()).unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
     let track_list = crate::ui::track_list::TrackList::new(
         conn,
         Box::new(|_, _, _, _| {}),
@@ -291,8 +290,7 @@ fn restore_stored_widths_applies_persistable_columns_only() {
     if gtk4::init().is_err() {
         return;
     }
-    let conn = rusqlite::Connection::open_in_memory().unwrap();
-    reprise_core::db::migrate(&conn).unwrap();
+    let conn = crate::test_db::open().unwrap();
     settings::set_setting(&conn, COLUMN_WIDTHS_KEY, "artist:333,cover:999").unwrap();
     let registry = test_registry(&[ColumnId::Cover, ColumnId::Artist]);
 

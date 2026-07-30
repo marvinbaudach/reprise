@@ -17,8 +17,8 @@ pub fn update(
     granted_at_startup: bool,
     params: &UpdatePlaylistParams,
 ) -> Result<UpdatePlaylistResult, DataError> {
-    let mut conn = data::open(path)?;
-    if !capability::playlist_manage_effective(&conn, granted_at_startup).map_err(DataError::Db)? {
+    let db = data::open(path)?;
+    if !capability::playlist_manage_effective(&db, granted_at_startup).map_err(DataError::Db)? {
         return Err(DataError::CapabilityDenied("playlist:manage"));
     }
 
@@ -40,13 +40,13 @@ pub fn update(
                 ));
             }
             let changed =
-                playlists::rename(&conn, params.playlist_id, name).map_err(DataError::Db)?;
+                playlists::rename(&db, params.playlist_id, name).map_err(DataError::Db)?;
             if changed == 0 {
                 return Err(DataError::InvalidInput(
                     "playlist does not exist".to_owned(),
                 ));
             }
-            result(&conn, params.playlist_id, "rename", changed)
+            result(&db, params.playlist_id, "rename", changed)
         }
         "add_tracks" => {
             if params.name.is_some() {
@@ -54,7 +54,7 @@ pub fn update(
                     "add_tracks does not accept name".to_owned(),
                 ));
             }
-            if playlists::get(&conn, params.playlist_id)
+            if playlists::get(&db, params.playlist_id)
                 .map_err(DataError::Db)?
                 .is_none()
             {
@@ -73,10 +73,10 @@ pub fn update(
                     params.track_ids.len()
                 )));
             }
-            data::reject_absent_track_ids(&conn, &params.track_ids)?;
-            let inserted = playlists::add_tracks(&mut conn, params.playlist_id, &params.track_ids)
+            data::reject_absent_track_ids(&db, &params.track_ids)?;
+            let inserted = playlists::add_tracks(&db, params.playlist_id, &params.track_ids)
                 .map_err(DataError::Db)?;
-            result(&conn, params.playlist_id, "add_tracks", inserted as usize)
+            result(&db, params.playlist_id, "add_tracks", inserted as usize)
         }
         other => Err(DataError::InvalidInput(format!(
             "unknown playlist update action '{other}'"
@@ -85,12 +85,12 @@ pub fn update(
 }
 
 fn result(
-    conn: &rusqlite::Connection,
+    db: &reprise_core::db::Db,
     playlist_id: i64,
     action: &str,
     affected: usize,
 ) -> Result<UpdatePlaylistResult, DataError> {
-    let summary = playlists::get(conn, playlist_id)
+    let summary = playlists::get(db, playlist_id)
         .map_err(DataError::Db)?
         .ok_or_else(|| DataError::InvalidInput("playlist does not exist".to_owned()))?;
     Ok(UpdatePlaylistResult {

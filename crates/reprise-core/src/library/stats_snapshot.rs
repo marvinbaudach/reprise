@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use crate::db::Db;
 use chrono::{Datelike, NaiveDate, TimeZone};
-use rusqlite::Connection;
 
 use super::group_key::KeyResolver;
 use super::stats_period::{
@@ -130,11 +130,12 @@ impl StatsSnapshot {
 
 /// Computes one owned, side-effect-free snapshot from the selected period.
 pub fn compute<Tz: TimeZone>(
-    conn: &Connection,
+    db: &Db,
     period: StatsPeriod,
     now_unix: i64,
     tz: &Tz,
 ) -> Result<StatsSnapshot, rusqlite::Error> {
+    let conn = db.conn();
     // Eight read statements in a stable order. Keeping this function pure is
     // the seam that permits a transparent cache wrapper later if profiling
     // ever justifies one.

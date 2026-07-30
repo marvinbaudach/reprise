@@ -8,6 +8,8 @@ use std::collections::HashMap;
 
 use rusqlite::{params, Connection};
 
+use crate::db::Db;
+
 use super::group_key::{
     fold_groups, normalize_group_key, Group, GroupInput, GroupKind, KeyResolver,
 };
@@ -143,12 +145,13 @@ pub fn counts_as_play(position_ms: i64, duration_ms: i64) -> bool {
 
 /// Records one qualifying local play. The caller applies [`counts_as_play`].
 pub fn record_listen_event(
-    conn: &Connection,
+    db: &Db,
     track_id: i64,
     played_at: i64,
     ms_played: i64,
     snapshot: &ListenEventSnapshot,
 ) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
     conn.execute(
         "INSERT INTO listen_events
          (track_id, played_at, ms_played, title, artist, album, album_artist,
@@ -386,11 +389,8 @@ pub(crate) fn track_rows(
 /// "Play" on a stats row plays the artist, not the slice of them that happened
 /// to be heard this year. Missing and removed tracks are excluded because they
 /// cannot be played, even though their listen events still feed the numbers.
-pub fn group_track_ids(
-    conn: &Connection,
-    kind: GroupKind,
-    key: &str,
-) -> Result<Vec<i64>, rusqlite::Error> {
+pub fn group_track_ids(db: &Db, kind: GroupKind, key: &str) -> Result<Vec<i64>, rusqlite::Error> {
+    let conn = db.conn();
     let raw_expression = match kind {
         GroupKind::Artist | GroupKind::AlbumArtist => CURRENT_EFFECTIVE_ALBUM_ARTIST,
         GroupKind::Genre => "t.genre",

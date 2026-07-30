@@ -85,12 +85,9 @@ fn settings_updates_are_rejected_before_persistence_while_syncing() {
             runtime.devices()[0].sync_phase,
             PlannedSyncPhase::Syncing { .. }
         ));
-        let persisted = reprise_core::device_sync::settings::load_or_create_settings(
-            &conn.borrow(),
-            "a",
-            "Phone a",
-        )
-        .unwrap();
+        let persisted =
+            reprise_core::device_sync::settings::load_or_create_settings(&conn, "a", "Phone a")
+                .unwrap();
         assert_eq!(persisted.opus_bitrate, 0);
         runtime.cancel_current("a");
         settle().await;

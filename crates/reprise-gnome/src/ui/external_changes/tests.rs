@@ -9,16 +9,16 @@
 
 use super::{read_and_plan, RefreshPlan};
 
-use reprise_core::db;
+use reprise_core::db::Db;
 use reprise_core::events::{read_since, writer_token};
 use reprise_core::library::{playlists, settings};
 
-fn migrated() -> rusqlite::Connection {
-    db::open_migrated(None).unwrap()
+fn migrated() -> Db {
+    crate::test_db::open().unwrap()
 }
 
-fn newest_change_id(conn: &rusqlite::Connection) -> i64 {
-    read_since(conn, 0, None)
+fn newest_change_id(db: &Db) -> i64 {
+    read_since(db, 0, None)
         .unwrap()
         .last()
         .expect("a change was expected")
@@ -97,13 +97,13 @@ fn read_and_plan_ignores_a_foreign_settings_only_change() {
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn ext_1a_external_playlist_appears_in_the_sidebar_without_restart() {
-    use std::cell::RefCell;
     use std::rc::Rc;
     use std::time::{Duration, Instant};
 
     use gtk4::glib::MainContext;
     use gtk4::prelude::*;
     use libadwaita as adw;
+    use reprise_core::db::Db;
     use reprise_core::view_source::ViewSource;
 
     use crate::ui::sidebar::{find_row, Sidebar};
@@ -115,9 +115,9 @@ fn ext_1a_external_playlist_appears_in_the_sidebar_without_restart() {
     // shared across connections nor watched.
     let dir = tempfile::tempdir().unwrap();
     let db_path = dir.path().join("reprise.db");
-    drop(db::open_migrated(Some(&db_path)).unwrap());
+    drop(reprise_core::db::Db::open_migrated(Some(&db_path)).unwrap());
 
-    let conn = Rc::new(RefCell::new(db::open(Some(&db_path)).unwrap()));
+    let conn = Rc::new(Db::open_migrated(Some(&db_path)).unwrap());
     let app = adw::Application::builder()
         .application_id("org.reprise.Reprise.ExternalChangesTest")
         .build();
@@ -142,7 +142,7 @@ fn ext_1a_external_playlist_appears_in_the_sidebar_without_restart() {
 
     // A *second* connection creates the playlist — the foreign write.
     let playlist_id = {
-        let second = db::open(Some(&db_path)).unwrap();
+        let second = reprise_core::db::Db::open_migrated(Some(&db_path)).unwrap();
         playlists::create(&second, "Created by another process").unwrap()
     };
     assert!(

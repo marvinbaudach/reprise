@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use rusqlite::Connection;
+use crate::db::Db;
 use rusqlite::OptionalExtension;
 
 use super::scanner::move_detect::MOVE_MATCH_TOLERANCE_MS;
@@ -29,10 +29,11 @@ pub struct FolderRelinkReport {
 }
 
 pub fn probe_relink(
-    conn: &Connection,
+    db: &Db,
     target: &RelinkTarget,
     new_path: &Path,
 ) -> Result<Option<RelinkMismatch>, ScanError> {
+    let conn = db.conn();
     if target.old_path.exists() {
         return Err(ScanError::RelinkTargetChanged {
             track_id: target.track_id,
@@ -68,11 +69,8 @@ pub fn probe_relink(
     }))
 }
 
-pub fn relink_track(
-    conn: &mut Connection,
-    target: &RelinkTarget,
-    new_path: &Path,
-) -> Result<(), ScanError> {
+pub fn relink_track(db: &Db, target: &RelinkTarget, new_path: &Path) -> Result<(), ScanError> {
+    let conn = db.conn();
     if target.old_path.exists() {
         return Err(ScanError::RelinkTargetChanged {
             track_id: target.track_id,
@@ -97,7 +95,7 @@ pub fn relink_track(
     let mount_point =
         super::mounts::mount_point_of(new_path).map(|path| path.to_string_lossy().into_owned());
 
-    let tx = conn.transaction()?;
+    let tx = conn.unchecked_transaction()?;
     let still_missing = tx
         .query_row(
             &format!(
@@ -134,12 +132,13 @@ pub fn relink_track(
 }
 
 pub fn relink_from_folder(
-    conn: &mut Connection,
+    db: &Db,
     folder: &Path,
     group: &[RelinkTarget],
     cancel: &AtomicBool,
     mut on_progress: impl FnMut(u32, u32),
 ) -> Result<FolderRelinkReport, ScanError> {
+    let conn = db.conn();
     let mut expected_paths: HashMap<i64, PathBuf> = group
         .iter()
         .map(|target| (target.track_id, target.old_path.clone()))
@@ -196,7 +195,7 @@ pub fn relink_from_folder(
         };
         let mount_point =
             super::mounts::mount_point_of(path).map(|mount| mount.to_string_lossy().into_owned());
-        let tx = conn.transaction()?;
+        let tx = conn.unchecked_transaction()?;
         let candidate = super::scanner::move_detect::find_move_candidate_in(
             &tx,
             &super::scanner::move_detect::MoveLookup {
@@ -294,16 +293,14 @@ mod tests {
             .unwrap();
     }
 
-    fn imported_missing_track(
-        title: &str,
-    ) -> (tempfile::TempDir, Connection, i64, std::path::PathBuf) {
+    fn imported_missing_track(title: &str) -> (tempfile::TempDir, Db, i64, std::path::PathBuf) {
         let temp = tempfile::tempdir().unwrap();
         let old_path = fixture_copy(temp.path(), "old.flac");
         tag_file(&old_path, title);
-        let mut conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
-        super::super::scanner::scan_folder(&mut conn, temp.path()).unwrap();
+        let conn = Db::open_in_memory().unwrap();
+        super::super::scanner::scan_folder(&conn, temp.path()).unwrap();
         let track_id = conn
+            .conn()
             .query_row(
                 "SELECT id FROM tracks WHERE path = ?1",
                 [old_path.to_string_lossy().as_ref()],
@@ -312,16 +309,18 @@ mod tests {
             .unwrap();
         let new_path = temp.path().join("new.flac");
         std::fs::rename(old_path, &new_path).unwrap();
-        conn.execute(
-            "UPDATE tracks SET missing_since = 10, missing_reason = 'deleted' WHERE id = ?1",
-            [track_id],
-        )
-        .unwrap();
+        conn.conn()
+            .execute(
+                "UPDATE tracks SET missing_since = 10, missing_reason = 'deleted' WHERE id = ?1",
+                [track_id],
+            )
+            .unwrap();
         (temp, conn, track_id, new_path)
     }
 
-    fn target_for(conn: &Connection, track_id: i64) -> RelinkTarget {
+    fn target_for(conn: &Db, track_id: i64) -> RelinkTarget {
         let old_path = conn
+            .conn()
             .query_row("SELECT path FROM tracks WHERE id = ?1", [track_id], |row| {
                 row.get::<_, String>(0)
             })
@@ -332,14 +331,14 @@ mod tests {
         }
     }
 
-    fn targets_for(conn: &Connection, track_ids: &[i64]) -> Vec<RelinkTarget> {
+    fn targets_for(conn: &Db, track_ids: &[i64]) -> Vec<RelinkTarget> {
         track_ids
             .iter()
             .map(|track_id| target_for(conn, *track_id))
             .collect()
     }
 
-    fn moved_group(count: usize) -> (tempfile::TempDir, Connection, Vec<i64>, std::path::PathBuf) {
+    fn moved_group(count: usize) -> (tempfile::TempDir, Db, Vec<i64>, std::path::PathBuf) {
         let temp = tempfile::tempdir().unwrap();
         let old_folder = temp.path().join("old");
         std::fs::create_dir(&old_folder).unwrap();
@@ -347,11 +346,13 @@ mod tests {
             let path = fixture_copy(&old_folder, &format!("{index:02}.flac"));
             tag_file(&path, &format!("Track {index}"));
         }
-        let mut conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
-        super::super::scanner::scan_folder(&mut conn, &old_folder).unwrap();
+        let conn = Db::open_in_memory().unwrap();
+        super::super::scanner::scan_folder(&conn, &old_folder).unwrap();
         let ids = {
-            let mut statement = conn.prepare("SELECT id FROM tracks ORDER BY path").unwrap();
+            let mut statement = conn
+                .conn()
+                .prepare("SELECT id FROM tracks ORDER BY path")
+                .unwrap();
             statement
                 .query_map([], |row| row.get(0))
                 .unwrap()
@@ -360,11 +361,12 @@ mod tests {
         };
         let new_folder = temp.path().join("new");
         std::fs::rename(&old_folder, &new_folder).unwrap();
-        conn.execute(
-            "UPDATE tracks SET missing_since = 10, missing_reason = 'deleted'",
-            [],
-        )
-        .unwrap();
+        conn.conn()
+            .execute(
+                "UPDATE tracks SET missing_since = 10, missing_reason = 'deleted'",
+                [],
+            )
+            .unwrap();
         (temp, conn, ids, new_folder)
     }
 
@@ -376,11 +378,12 @@ mod tests {
         );
         let (_temp, conn, track_id, new_path) = imported_missing_track("Same recording");
         let target = target_for(&conn, track_id);
-        conn.execute(
-            "UPDATE tracks SET duration_ms = duration_ms + 2000 WHERE id = ?1",
-            [track_id],
-        )
-        .unwrap();
+        conn.conn()
+            .execute(
+                "UPDATE tracks SET duration_ms = duration_ms + 2000 WHERE id = ?1",
+                [track_id],
+            )
+            .unwrap();
 
         assert_eq!(probe_relink(&conn, &target, &new_path).unwrap(), None);
     }
@@ -390,12 +393,14 @@ mod tests {
         let (_temp, conn, track_id, new_path) = imported_missing_track("Old title");
         let target = target_for(&conn, track_id);
         tag_file(&new_path, "New title");
-        conn.execute(
-            "UPDATE tracks SET duration_ms = duration_ms + 3000 WHERE id = ?1",
-            [track_id],
-        )
-        .unwrap();
+        conn.conn()
+            .execute(
+                "UPDATE tracks SET duration_ms = duration_ms + 3000 WHERE id = ?1",
+                [track_id],
+            )
+            .unwrap();
         let old_duration_ms = conn
+            .conn()
             .query_row(
                 "SELECT duration_ms FROM tracks WHERE id = ?1",
                 [track_id],
@@ -432,15 +437,16 @@ mod tests {
 
     #[test]
     fn relink_preserves_user_data_and_refreshes_the_existing_row() {
-        let (_temp, mut conn, track_id, new_path) = imported_missing_track("Relinked title");
+        let (_temp, conn, track_id, new_path) = imported_missing_track("Relinked title");
         let target = target_for(&conn, track_id);
-        conn.execute(
-            "UPDATE tracks SET rating = 4, play_count = 9 WHERE id = ?1",
-            [track_id],
-        )
-        .unwrap();
+        conn.conn()
+            .execute(
+                "UPDATE tracks SET rating = 4, play_count = 9 WHERE id = ?1",
+                [track_id],
+            )
+            .unwrap();
 
-        relink_track(&mut conn, &target, &new_path).unwrap();
+        relink_track(&conn, &target, &new_path).unwrap();
 
         let row: (
             i64,
@@ -451,6 +457,7 @@ mod tests {
             Option<i64>,
             Option<String>,
         ) = conn
+            .conn()
             .query_row(
                 "SELECT id, path, rating, play_count, missing_since, removed_at, mount_point \
                  FROM tracks WHERE id = ?1",
@@ -477,24 +484,27 @@ mod tests {
 
     #[test]
     fn stale_relink_does_not_overwrite_a_track_resurrected_while_dialog_was_open() {
-        let (_temp, mut conn, track_id, new_path) = imported_missing_track("Original title");
+        let (_temp, conn, track_id, new_path) = imported_missing_track("Original title");
         let target = target_for(&conn, track_id);
         let original_path: String = conn
+            .conn()
             .query_row("SELECT path FROM tracks WHERE id = ?1", [track_id], |row| {
                 row.get(0)
             })
             .unwrap();
-        conn.execute(
-            "UPDATE tracks SET missing_since = NULL, missing_reason = NULL WHERE id = ?1",
-            [track_id],
-        )
-        .unwrap();
+        conn.conn()
+            .execute(
+                "UPDATE tracks SET missing_since = NULL, missing_reason = NULL WHERE id = ?1",
+                [track_id],
+            )
+            .unwrap();
 
         assert!(matches!(
-            relink_track(&mut conn, &target, &new_path),
+            relink_track(&conn, &target, &new_path),
             Err(ScanError::RelinkTargetChanged { track_id: changed }) if changed == track_id
         ));
         let path_after: String = conn
+            .conn()
             .query_row("SELECT path FROM tracks WHERE id = ?1", [track_id], |row| {
                 row.get(0)
             })
@@ -504,42 +514,46 @@ mod tests {
 
     #[test]
     fn stale_relink_does_not_overwrite_a_reused_missing_track_id() {
-        let (_temp, mut conn, track_id, new_path) = imported_missing_track("Original title");
+        let (_temp, conn, track_id, new_path) = imported_missing_track("Original title");
         let old_path: String = conn
+            .conn()
             .query_row("SELECT path FROM tracks WHERE id = ?1", [track_id], |row| {
                 row.get(0)
             })
             .unwrap();
-        conn.execute("DELETE FROM tracks WHERE id = ?1", [track_id])
+        conn.conn()
+            .execute("DELETE FROM tracks WHERE id = ?1", [track_id])
             .unwrap();
-        conn.execute(
-            "INSERT INTO tracks (id, path, title, added_at, missing_since, missing_reason) \
+        conn.conn()
+            .execute(
+                "INSERT INTO tracks (id, path, title, added_at, missing_since, missing_reason) \
              VALUES (?1, '/different/reused.flac', 'Different track', 1, 20, 'deleted')",
-            [track_id],
-        )
-        .unwrap();
+                [track_id],
+            )
+            .unwrap();
         let target = RelinkTarget {
             track_id,
             old_path: old_path.into(),
         };
 
         assert!(matches!(
-            relink_track(&mut conn, &target, &new_path),
+            relink_track(&conn, &target, &new_path),
             Err(ScanError::RelinkTargetChanged { track_id: changed }) if changed == track_id
         ));
     }
 
     #[test]
     fn stale_relink_does_not_replace_an_old_path_that_returned_during_the_dialog() {
-        let (_temp, mut conn, track_id, new_path) = imported_missing_track("Returned track");
+        let (_temp, conn, track_id, new_path) = imported_missing_track("Returned track");
         let target = target_for(&conn, track_id);
         std::fs::copy(&new_path, &target.old_path).unwrap();
 
         assert!(matches!(
-            relink_track(&mut conn, &target, &new_path),
+            relink_track(&conn, &target, &new_path),
             Err(ScanError::RelinkTargetChanged { track_id: changed }) if changed == track_id
         ));
         let path: String = conn
+            .conn()
             .query_row("SELECT path FROM tracks WHERE id = ?1", [track_id], |row| {
                 row.get(0)
             })
@@ -549,19 +563,16 @@ mod tests {
 
     #[test]
     fn folder_relink_matches_every_track_in_the_selected_missing_group() {
-        let (_temp, mut conn, ids, new_folder) = moved_group(3);
+        let (_temp, conn, ids, new_folder) = moved_group(3);
         let targets = targets_for(&conn, &ids);
         let cancel = AtomicBool::new(false);
         let mut progress = Vec::new();
 
-        let report = relink_from_folder(
-            &mut conn,
-            &new_folder,
-            &targets,
-            &cancel,
-            |processed, total| progress.push((processed, total)),
-        )
-        .unwrap();
+        let report =
+            relink_from_folder(&conn, &new_folder, &targets, &cancel, |processed, total| {
+                progress.push((processed, total));
+            })
+            .unwrap();
 
         assert_eq!(
             report,
@@ -572,6 +583,7 @@ mod tests {
         );
         assert_eq!(progress.last(), Some(&(3, 3)));
         let present: i64 = conn
+            .conn()
             .query_row(
                 "SELECT count(*) FROM tracks WHERE missing_since IS NULL",
                 [],
@@ -583,21 +595,18 @@ mod tests {
 
     #[test]
     fn folder_relink_stops_immediately_after_the_last_group_match() {
-        let (_temp, mut conn, ids, new_folder) = moved_group(2);
+        let (_temp, conn, ids, new_folder) = moved_group(2);
         let targets = targets_for(&conn, &ids);
         let foreign = fixture_copy(&new_folder, "zz-foreign.flac");
         tag_file(&foreign, "Not in the library");
         let cancel = AtomicBool::new(false);
         let mut progress = Vec::new();
 
-        let report = relink_from_folder(
-            &mut conn,
-            &new_folder,
-            &targets,
-            &cancel,
-            |processed, total| progress.push((processed, total)),
-        )
-        .unwrap();
+        let report =
+            relink_from_folder(&conn, &new_folder, &targets, &cancel, |processed, total| {
+                progress.push((processed, total));
+            })
+            .unwrap();
 
         assert_eq!(report.relinked, 2);
         assert_eq!(progress, vec![(1, 3), (2, 3)]);
@@ -605,17 +614,17 @@ mod tests {
 
     #[test]
     fn folder_relink_never_imports_an_unmatched_audio_file() {
-        let (_temp, mut conn, ids, new_folder) = moved_group(1);
+        let (_temp, conn, ids, new_folder) = moved_group(1);
         let targets = targets_for(&conn, &ids);
         let foreign = fixture_copy(&new_folder, "00-foreign.flac");
         tag_file(&foreign, "Foreign file");
         let cancel = AtomicBool::new(false);
 
-        let report =
-            relink_from_folder(&mut conn, &new_folder, &targets, &cancel, |_, _| {}).unwrap();
+        let report = relink_from_folder(&conn, &new_folder, &targets, &cancel, |_, _| {}).unwrap();
 
         assert_eq!(report.relinked, 1);
         let rows: i64 = conn
+            .conn()
             .query_row("SELECT count(*) FROM tracks", [], |row| row.get(0))
             .unwrap();
         assert_eq!(rows, 1, "folder relink must never become an import");
@@ -623,22 +632,17 @@ mod tests {
 
     #[test]
     fn folder_relink_checks_cancellation_before_each_audio_file() {
-        let (_temp, mut conn, ids, new_folder) = moved_group(3);
+        let (_temp, conn, ids, new_folder) = moved_group(3);
         let targets = targets_for(&conn, &ids);
         let cancel = AtomicBool::new(false);
         let mut progress = Vec::new();
 
-        let report = relink_from_folder(
-            &mut conn,
-            &new_folder,
-            &targets,
-            &cancel,
-            |processed, total| {
+        let report =
+            relink_from_folder(&conn, &new_folder, &targets, &cancel, |processed, total| {
                 progress.push((processed, total));
                 cancel.store(true, Ordering::Release);
-            },
-        )
-        .unwrap();
+            })
+            .unwrap();
 
         assert_eq!(report.relinked, 1);
         assert_eq!(report.group_size, 3);
@@ -647,15 +651,15 @@ mod tests {
 
     #[test]
     fn folder_relink_cannot_attach_a_file_to_a_missing_track_outside_the_group() {
-        let (_temp, mut conn, ids, new_folder) = moved_group(2);
+        let (_temp, conn, ids, new_folder) = moved_group(2);
         let selected = [target_for(&conn, ids[0])];
         let cancel = AtomicBool::new(false);
 
-        let report =
-            relink_from_folder(&mut conn, &new_folder, &selected, &cancel, |_, _| {}).unwrap();
+        let report = relink_from_folder(&conn, &new_folder, &selected, &cancel, |_, _| {}).unwrap();
 
         assert_eq!(report.relinked, 1);
         let selected_missing: Option<i64> = conn
+            .conn()
             .query_row(
                 "SELECT missing_since FROM tracks WHERE id = ?1",
                 [ids[0]],
@@ -663,6 +667,7 @@ mod tests {
             )
             .unwrap();
         let unselected_missing: Option<i64> = conn
+            .conn()
             .query_row(
                 "SELECT missing_since FROM tracks WHERE id = ?1",
                 [ids[1]],
@@ -675,27 +680,30 @@ mod tests {
 
     #[test]
     fn folder_relink_rechecks_path_identity_before_writing_a_match() {
-        let (_temp, mut conn, ids, new_folder) = moved_group(1);
+        let (_temp, conn, ids, new_folder) = moved_group(1);
         let target = target_for(&conn, ids[0]);
         let identity: (i64, i64, i64, i64) = conn
+            .conn()
             .query_row(
                 "SELECT duration_ms, file_size, device, inode FROM tracks WHERE id = ?1",
                 [ids[0]],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
             .unwrap();
-        conn.execute("DELETE FROM tracks WHERE id = ?1", [ids[0]])
+        conn.conn()
+            .execute("DELETE FROM tracks WHERE id = ?1", [ids[0]])
             .unwrap();
-        conn.execute(
-            "INSERT INTO tracks (id, path, title, duration_ms, file_size, device, inode, \
+        conn.conn()
+            .execute(
+                "INSERT INTO tracks (id, path, title, duration_ms, file_size, device, inode, \
              added_at, missing_since, missing_reason) \
              VALUES (?1, '/different/reused.flac', 'Track 0', ?2, ?3, ?4, ?5, 1, 20, 'deleted')",
-            rusqlite::params![ids[0], identity.0, identity.1, identity.2, identity.3],
-        )
-        .unwrap();
+                rusqlite::params![ids[0], identity.0, identity.1, identity.2, identity.3],
+            )
+            .unwrap();
 
         let report = relink_from_folder(
-            &mut conn,
+            &conn,
             &new_folder,
             &[target],
             &AtomicBool::new(false),
@@ -705,6 +713,7 @@ mod tests {
 
         assert_eq!(report.relinked, 0);
         let path: String = conn
+            .conn()
             .query_row("SELECT path FROM tracks WHERE id = ?1", [ids[0]], |row| {
                 row.get(0)
             })

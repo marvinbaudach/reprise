@@ -5,10 +5,10 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::connectivity::Connectivity;
+use reprise_core::db::Db;
 use reprise_core::radio::playlist::PlaylistKind;
 use reprise_core::radio::search::{SearchCriteria, SearchOrder, StationCandidate};
 use reprise_core::radio::{self, RadioError};
-use rusqlite::Connection;
 
 use super::radio_chips::{self, NearYouAction};
 use super::station_preview::StationPreview;
@@ -29,12 +29,9 @@ pub(super) enum AddInput {
 /// favicon tile reflects the current gate — this dialog never lets the
 /// widget read settings itself. A free function (rather than a method) so
 /// its wiring is testable without constructing the GTK dialog.
-pub(super) fn images_allowed(conn: &Connection) -> bool {
-    reprise_core::online_sources::network_allowed(
-        conn,
-        &reprise_core::modules::SOURCE_IMAGES_MODULE,
-    )
-    .unwrap_or(false)
+pub(super) fn images_allowed(db: &Db) -> bool {
+    reprise_core::online_sources::network_allowed(db, &reprise_core::modules::SOURCE_IMAGES_MODULE)
+        .unwrap_or(false)
 }
 
 pub(super) fn classify_input(input: &str) -> AddInput {
@@ -155,7 +152,7 @@ struct DialogWidgets {
 pub(super) struct RadioAddDialog {
     widgets: DialogWidgets,
     state: Rc<RefCell<AddDialogState>>,
-    conn: Rc<RefCell<Connection>>,
+    conn: Rc<Db>,
     on_added: AddedCallback,
     /// `RAD-5`: wired after construction (`set_on_location_settings`), once
     /// the caller can reach Preferences — see `RadioView`/`window.rs`. Not
@@ -170,7 +167,7 @@ pub(super) struct RadioAddDialog {
 
 impl RadioAddDialog {
     pub(super) fn new(
-        conn: Rc<RefCell<Connection>>,
+        conn: Rc<Db>,
         connectivity: Rc<Cell<Connectivity>>,
         on_added: impl Fn() + 'static,
     ) -> Rc<Self> {
@@ -373,7 +370,7 @@ impl RadioAddDialog {
         // NET-1a: radio-browser search and the ICY probe are both network
         // paths, so the switch is honoured before either is dispatched.
         let allowed = reprise_core::online_sources::network_allowed(
-            &self.conn.borrow(),
+            &self.conn,
             &reprise_core::modules::RADIO_MODULE,
         )
         .unwrap_or(false);
@@ -402,7 +399,7 @@ impl RadioAddDialog {
         self.render(state);
         let result = match input {
             AddInput::Search(terms) => {
-                let order = radio::config::load(&self.conn.borrow())
+                let order = radio::config::load(&self.conn)
                     .unwrap_or_default()
                     .search_order;
                 one_shot_task::spawn("reprise-radio-search", move || {
@@ -432,7 +429,7 @@ impl RadioAddDialog {
         // NET-1a: identical gate to `submit` — radio-browser search is a
         // network path regardless of which affordance triggered it.
         let allowed = reprise_core::online_sources::network_allowed(
-            &self.conn.borrow(),
+            &self.conn,
             &reprise_core::modules::RADIO_MODULE,
         )
         .unwrap_or(false);
@@ -462,7 +459,7 @@ impl RadioAddDialog {
     /// portal or a geocoder itself. [`radio_chips::near_you_action`] is the
     /// pure decision; this method just carries it out.
     fn run_near_you(self: &Rc<Self>) {
-        let location = reprise_core::location::app_location(&self.conn.borrow())
+        let location = reprise_core::location::app_location(&self.conn)
             .ok()
             .flatten();
         match radio_chips::near_you_action(location.as_ref()) {
@@ -588,7 +585,7 @@ impl RadioAddDialog {
     }
 
     fn render_results(self: &Rc<Self>, rows: Vec<StationCandidate>) {
-        let favorites = radio::station::list(&self.conn.borrow()).map_or_else(
+        let favorites = radio::station::list(&self.conn).map_or_else(
             |error| {
                 tracing::warn!(%error, "could not load radio favorites for search filtering");
                 Vec::new()
@@ -614,7 +611,7 @@ impl RadioAddDialog {
                 candidate.favicon_url.as_deref(),
                 "network-wireless-symbolic",
                 40,
-                images_allowed(&self.conn.borrow()),
+                images_allowed(&self.conn),
             );
             let copy = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
             copy.set_hexpand(true);
@@ -636,8 +633,8 @@ impl RadioAddDialog {
             add.connect_clicked(move |button| {
                 let station = station_from_candidate(candidate.clone());
                 let result = {
-                    let conn = conn.borrow();
-                    radio::station::add_or_restore(&conn, &station, now_unix())
+                    let conn = &conn;
+                    radio::station::add_or_restore(conn, &station, now_unix())
                 };
                 match result {
                     Ok(_) => {
@@ -668,7 +665,7 @@ impl RadioAddDialog {
         while let Some(child) = self.widgets.preview.first_child() {
             self.widgets.preview.remove(&child);
         }
-        let favorites = radio::station::list(&self.conn.borrow()).map_or_else(
+        let favorites = radio::station::list(&self.conn).map_or_else(
             |error| {
                 tracing::warn!(%error, "could not load radio favorites for preview filtering");
                 Vec::new()
@@ -698,7 +695,7 @@ impl RadioAddDialog {
             preview.favicon_url.as_deref(),
             "network-wireless-symbolic",
             40,
-            images_allowed(&self.conn.borrow()),
+            images_allowed(&self.conn),
         );
         let name = gtk4::Label::new(Some(&preview.name));
         name.set_xalign(0.0);
@@ -716,8 +713,8 @@ impl RadioAddDialog {
             _ => return,
         };
         let result = {
-            let conn = self.conn.borrow();
-            radio::station::add_or_restore(&conn, &preview.into_new_station(), now_unix())
+            let conn = &self.conn;
+            radio::station::add_or_restore(conn, &preview.into_new_station(), now_unix())
         };
         match result {
             Ok(_) => {

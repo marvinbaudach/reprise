@@ -1,21 +1,24 @@
 use std::collections::HashSet;
 
-use rusqlite::{params, Connection};
+use rusqlite::params;
+
+use crate::db::Db;
 
 /// Appends only track ids that are not already members of the playlist.
 /// Repeated ids in the same request are also inserted once. The lower-level
 /// `playlists::add_tracks` intentionally keeps duplicate-preserving import
 /// semantics; interactive UI additions use this stricter operation.
 pub fn add_unique_tracks(
-    conn: &mut Connection,
+    db: &Db,
     playlist_id: i64,
     track_ids: &[i64],
 ) -> Result<u32, rusqlite::Error> {
+    let conn = db.conn();
     if track_ids.is_empty() {
         return Ok(0);
     }
 
-    let tx = conn.transaction()?;
+    let tx = conn.unchecked_transaction()?;
     let mut seen = HashSet::new();
     let mut unique = Vec::new();
     for &track_id in track_ids {
@@ -56,32 +59,34 @@ pub fn add_unique_tracks(
 
 #[cfg(test)]
 mod tests {
+    use crate::db::Db;
     use rusqlite::params;
 
-    fn seeded_conn() -> rusqlite::Connection {
-        let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
+    fn seeded_db() -> Db {
+        let db = Db::open_in_memory().unwrap();
         for id in 1..=4 {
-            conn.execute(
-                "INSERT INTO tracks (id, path, title, artist, added_at) \
+            db.conn()
+                .execute(
+                    "INSERT INTO tracks (id, path, title, artist, added_at) \
                  VALUES (?1, ?2, ?3, '', 0)",
-                params![id, format!("/x/{id}.flac"), format!("Track {id}")],
-            )
-            .unwrap();
+                    params![id, format!("/x/{id}.flac"), format!("Track {id}")],
+                )
+                .unwrap();
         }
-        conn
+        db
     }
 
     #[test]
     fn interactive_add_skips_existing_and_repeated_track_ids() {
-        let mut conn = seeded_conn();
-        let playlist_id = crate::library::playlists::create(&conn, "P").unwrap();
-        crate::library::playlists::add_tracks(&mut conn, playlist_id, &[1, 2]).unwrap();
+        let db = seeded_db();
+        let playlist_id = crate::library::playlists::create(&db, "P").unwrap();
+        crate::library::playlists::add_tracks(&db, playlist_id, &[1, 2]).unwrap();
 
-        let inserted = super::add_unique_tracks(&mut conn, playlist_id, &[2, 3, 3, 4]).unwrap();
+        let inserted = super::add_unique_tracks(&db, playlist_id, &[2, 3, 3, 4]).unwrap();
         assert_eq!(inserted, 2);
 
-        let ids = conn
+        let ids = db
+            .conn()
             .prepare(
                 "SELECT track_id FROM playlist_tracks \
                  WHERE playlist_id=?1 ORDER BY position",
@@ -96,10 +101,11 @@ mod tests {
 
     #[test]
     fn interactive_add_rolls_back_when_any_track_id_is_invalid() {
-        let mut conn = seeded_conn();
-        let playlist_id = crate::library::playlists::create(&conn, "P").unwrap();
-        assert!(super::add_unique_tracks(&mut conn, playlist_id, &[1, 99]).is_err());
-        let count: i64 = conn
+        let db = seeded_db();
+        let playlist_id = crate::library::playlists::create(&db, "P").unwrap();
+        assert!(super::add_unique_tracks(&db, playlist_id, &[1, 99]).is_err());
+        let count: i64 = db
+            .conn()
             .query_row(
                 "SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id=?1",
                 [playlist_id],

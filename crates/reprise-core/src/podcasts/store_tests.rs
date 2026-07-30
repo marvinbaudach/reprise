@@ -2,8 +2,8 @@
 
 use super::*;
 
-fn conn() -> Connection {
-    crate::db::open_migrated(None).unwrap()
+fn conn() -> Db {
+    Db::open_in_memory().unwrap()
 }
 
 fn subscription_draft() -> NewSubscription {
@@ -36,11 +36,12 @@ fn pod_2_episode_upsert_changes_metadata_but_preserves_listening_state() {
         .unwrap()
         .expect("episode should be imported");
     save_position(&conn, first.episode_id, 8_000).unwrap();
-    conn.execute(
-        "UPDATE podcast_episodes SET played_at = 30 WHERE id = ?1",
-        [first.episode_id],
-    )
-    .unwrap();
+    conn.conn()
+        .execute(
+            "UPDATE podcast_episodes SET played_at = 30 WHERE id = ?1",
+            [first.episode_id],
+        )
+        .unwrap();
 
     let second = upsert_episode(&conn, subscription_id, &parsed_episode("Renamed"), 99)
         .unwrap()
@@ -102,6 +103,7 @@ fn subscription_tombstone_cycle_updates_counts_and_can_commit() {
     commit_remove_subscription(&conn, id).unwrap();
     assert!(subscription(&conn, id).unwrap().is_none());
     let count: i64 = conn
+        .conn()
         .query_row("SELECT COUNT(*) FROM podcast_episodes", [], |row| {
             row.get(0)
         })
@@ -241,10 +243,11 @@ fn pod_6_episode_removal_undo_and_commit_block_rss_and_youtube_reimport() {
         assert_eq!(retained_download.as_deref(), Some("/kept/download.mp3"));
         assert!(super::episode(&conn, episode.episode_id).unwrap().is_none());
         assert_eq!(
-            conn.query_row("SELECT COUNT(*) FROM podcast_episodes", [], |row| {
-                row.get::<_, i64>(0)
-            })
-            .unwrap(),
+            conn.conn()
+                .query_row("SELECT COUNT(*) FROM podcast_episodes", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap(),
             0
         );
 
@@ -255,12 +258,13 @@ fn pod_6_episode_removal_undo_and_commit_block_rss_and_youtube_reimport() {
             .unwrap()
             .is_empty());
         assert_eq!(
-            conn.query_row(
-                "SELECT COUNT(*) FROM podcast_episode_dismissals",
-                [],
-                |row| row.get::<_, i64>(0)
-            )
-            .unwrap(),
+            conn.conn()
+                .query_row(
+                    "SELECT COUNT(*) FROM podcast_episode_dismissals",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
             1
         );
     }

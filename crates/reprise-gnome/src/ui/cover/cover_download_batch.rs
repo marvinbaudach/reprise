@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use gtk4::glib;
-use rusqlite::Connection;
+use reprise_core::db::Db;
 
 use super::cover_download_worker::{CoverDownloadRuntime, DownloadOutcome, DownloadRequest};
 use super::player_controller::PlayerController;
@@ -154,7 +154,7 @@ impl ProgressSubscribers {
 }
 
 pub(in crate::ui) struct CoverDownloadBatch {
-    conn: Rc<RefCell<Connection>>,
+    conn: Rc<Db>,
     runtime: CoverDownloadRuntime,
     track_list: Rc<TrackList>,
     player: Option<Rc<PlayerController>>,
@@ -165,7 +165,7 @@ pub(in crate::ui) struct CoverDownloadBatch {
 
 impl CoverDownloadBatch {
     pub(in crate::ui) fn new(
-        conn: &Rc<RefCell<Connection>>,
+        conn: &Rc<Db>,
         runtime: &CoverDownloadRuntime,
         track_list: &Rc<TrackList>,
         player: Option<&Rc<PlayerController>>,
@@ -196,8 +196,8 @@ impl CoverDownloadBatch {
             return;
         }
         let paths = {
-            let conn = self.conn.borrow();
-            reprise_core::queries::query_live_track_paths(&conn)
+            let conn = &self.conn;
+            reprise_core::queries::query_live_track_paths(conn)
         };
         let paths = match paths {
             Ok(paths) => paths,
@@ -289,26 +289,28 @@ mod tests {
 
     #[test]
     fn live_track_paths_excludes_missing_rows_and_is_stable() {
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        conn.execute(
-            "INSERT INTO tracks (path, title, added_at) \
+        let conn = crate::test_db::open().unwrap();
+        crate::test_db::connection(&conn)
+            .execute(
+                "INSERT INTO tracks (path, title, added_at) \
              VALUES ('/music/b.mp3', 'B', 1)",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO tracks (path, title, added_at) \
+                [],
+            )
+            .unwrap();
+        crate::test_db::connection(&conn)
+            .execute(
+                "INSERT INTO tracks (path, title, added_at) \
              VALUES ('/music/a.mp3', 'A', 1)",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO tracks (path, title, added_at, missing_since) \
+                [],
+            )
+            .unwrap();
+        crate::test_db::connection(&conn)
+            .execute(
+                "INSERT INTO tracks (path, title, added_at, missing_since) \
              VALUES ('/music/gone.mp3', 'Gone', 1, 1)",
-            [],
-        )
-        .unwrap();
+                [],
+            )
+            .unwrap();
 
         assert_eq!(
             reprise_core::queries::query_live_track_paths(&conn).unwrap(),

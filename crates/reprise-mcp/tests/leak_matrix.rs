@@ -69,9 +69,9 @@ fn summary_response_has_no_leaks() {
 fn playlists_response_has_no_leaks() {
     let dir = TempDir::new().unwrap();
     let (path, ids) = revealing_db(&dir);
-    let mut conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
-    reprise_core::library::playlists::create_with_tracks(&mut conn, "Secret Mix", &ids).unwrap();
-    drop(conn);
+    let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
+    reprise_core::library::playlists::create_with_tracks(&db, "Secret Mix", &ids).unwrap();
+    drop(db);
 
     let mut client = McpClient::start(&path);
     let response = client.read_resource("reprise://playlists");

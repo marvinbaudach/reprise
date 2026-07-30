@@ -110,8 +110,8 @@ impl DeviceSyncRuntime {
             }
         }
         let previous = {
-            let conn = self.conn.borrow();
-            load_target(&conn, device_id, kind)
+            let conn = &self.conn;
+            load_target(conn, device_id, kind)
                 .map_err(|error| error.to_string())?
                 .unwrap_or_else(|| SyncTarget::default_for(kind))
         };
@@ -120,7 +120,7 @@ impl DeviceSyncRuntime {
             path,
             ..previous.clone()
         };
-        save_target(&self.conn.borrow(), device_id, &next).map_err(|error| error.to_string())?;
+        save_target(&self.conn, device_id, &next).map_err(|error| error.to_string())?;
         if let TargetRelocation::MoveFolder { from_path } =
             target_relocation_action(&previous, &next)
         {

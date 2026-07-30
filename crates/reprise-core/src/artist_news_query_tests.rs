@@ -14,37 +14,32 @@ fn date() -> NaiveDate {
     NaiveDate::from_ymd_opt(2026, 7, 13).unwrap()
 }
 
-fn migrated_conn() -> rusqlite::Connection {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    conn
+fn migrated_conn() -> crate::db::Db {
+    crate::db::Db::open_in_memory().unwrap()
 }
 
-fn insert_release(conn: &rusqlite::Connection, mbid: &str, seen_at: Option<i64>) {
-    conn.execute(
-        "INSERT INTO new_releases (
+fn insert_release(db: &crate::db::Db, mbid: &str, seen_at: Option<i64>) {
+    db.conn()
+        .execute(
+            "INSERT INTO new_releases (
            release_group_mbid, artist_name, artist_mbid, title, release_type,
            first_release_date, fetched_at, seen_at, fallback_accent
          ) VALUES (?1, 'Artist', 'artist-id', 'Release', 'Album', '2026-08-01', 1, ?2, '#123456')",
-        rusqlite::params![mbid, seen_at],
-    )
-    .unwrap();
+            rusqlite::params![mbid, seen_at],
+        )
+        .unwrap();
 }
 
-fn insert_named_release(
-    conn: &rusqlite::Connection,
-    mbid: &str,
-    title: &str,
-    seen_at: Option<i64>,
-) {
-    conn.execute(
-        "INSERT INTO new_releases (
+fn insert_named_release(db: &crate::db::Db, mbid: &str, title: &str, seen_at: Option<i64>) {
+    db.conn()
+        .execute(
+            "INSERT INTO new_releases (
            release_group_mbid, artist_name, artist_mbid, title, release_type,
            first_release_date, fetched_at, seen_at, fallback_accent
          ) VALUES (?1, 'Artist', 'artist-id', ?2, 'Album', '2026-08-01', 1, ?3, '#123456')",
-        rusqlite::params![mbid, title, seen_at],
-    )
-    .unwrap();
+            rusqlite::params![mbid, title, seen_at],
+        )
+        .unwrap();
 }
 
 #[test]
@@ -54,24 +49,26 @@ fn nr_9a_unseen_badge_excludes_complete_albums_but_keeps_partial_ones() {
     insert_named_release(&conn, "partial", "Partial Album", None);
     insert_named_release(&conn, "absent", "Absent Album", None);
     insert_named_release(&conn, "seen", "Seen Album", Some(20));
-    conn.execute(
-        "UPDATE new_releases
+    conn.conn()
+        .execute(
+            "UPDATE new_releases
          SET track_count = 2, first_release_date = '2026-06-01'
          WHERE release_group_mbid = 'owned'",
-        [],
-    )
-    .unwrap();
+            [],
+        )
+        .unwrap();
     for (path, title, album) in [
         ("/music/owned-one.flac", "Owned One", "Owned Album"),
         ("/music/owned-two.flac", "Owned Two", "Owned Album"),
         ("/music/partial.flac", "Partial", "Partial Album"),
     ] {
-        conn.execute(
-            "INSERT INTO tracks (path, title, artist, album, play_count, added_at)
+        conn.conn()
+            .execute(
+                "INSERT INTO tracks (path, title, artist, album, play_count, added_at)
              VALUES (?1, ?2, 'Artist', ?3, 0, 0)",
-            rusqlite::params![path, title, album],
-        )
-        .unwrap();
+                rusqlite::params![path, title, album],
+            )
+            .unwrap();
     }
 
     assert_eq!(
@@ -95,12 +92,13 @@ fn nr_3a_opening_marks_seen_clears_badge() {
     let seen_at: Vec<Option<i64>> = ["one", "two", "already-seen"]
         .into_iter()
         .map(|id| {
-            conn.query_row(
-                "SELECT seen_at FROM new_releases WHERE release_group_mbid = ?1",
-                [id],
-                |row| row.get(0),
-            )
-            .unwrap()
+            conn.conn()
+                .query_row(
+                    "SELECT seen_at FROM new_releases WHERE release_group_mbid = ?1",
+                    [id],
+                    |row| row.get(0),
+                )
+                .unwrap()
         })
         .collect();
     assert_eq!(seen_at, [Some(100), Some(100), Some(50)]);
@@ -113,14 +111,15 @@ fn nr_16_updates_query_excludes_historical_catalog_releases() {
         ("catalog-album", "Older Album", "2024-10-18"),
         ("recent-album", "Recent Album", "2026-06-01"),
     ] {
-        conn.execute(
-            "INSERT INTO new_releases (
+        conn.conn()
+            .execute(
+                "INSERT INTO new_releases (
                release_group_mbid, artist_name, artist_mbid, title, release_type,
                first_release_date, fetched_at, fallback_accent, first_seen
              ) VALUES (?1, 'Artist', 'artist-id', ?2, 'Album', ?3, 1, '#123456', 1)",
-            rusqlite::params![id, title, first_release_date],
-        )
-        .unwrap();
+                rusqlite::params![id, title, first_release_date],
+            )
+            .unwrap();
     }
 
     let rows = query_releases(&conn, false, date()).unwrap();
@@ -142,14 +141,15 @@ fn nr_16_updates_query_excludes_historical_catalog_releases() {
 fn nr_1a_updates_query_caps_each_artist_after_catalog_filtering() {
     let conn = migrated_conn();
     for index in 0..21 {
-        conn.execute(
-            "INSERT INTO new_releases (
+        conn.conn()
+            .execute(
+                "INSERT INTO new_releases (
                release_group_mbid, artist_name, artist_mbid, title, release_type,
                first_release_date, fetched_at, fallback_accent, first_seen
              ) VALUES (?1, 'Artist', 'artist-id', ?2, 'Album', '2026-08-01', 1, '#123456', 1)",
-            rusqlite::params![format!("release-{index:02}"), format!("Release {index:02}")],
-        )
-        .unwrap();
+                rusqlite::params![format!("release-{index:02}"), format!("Release {index:02}")],
+            )
+            .unwrap();
     }
 
     let rows = query_releases(&conn, false, date()).unwrap();
@@ -180,6 +180,7 @@ fn hide_sets_hidden_and_set_release_hidden_false_restores_it() {
         .find(|release| release.release_group_mbid == "one")
         .is_some_and(|release| release.hidden));
     let hidden_at: Option<i64> = conn
+        .conn()
         .query_row(
             "SELECT hidden_at FROM new_releases WHERE release_group_mbid = 'one'",
             [],
@@ -190,6 +191,7 @@ fn hide_sets_hidden_and_set_release_hidden_false_restores_it() {
 
     set_release_hidden(&conn, "one", false).unwrap();
     let hidden_at_after_unhide: Option<i64> = conn
+        .conn()
         .query_row(
             "SELECT hidden_at FROM new_releases WHERE release_group_mbid = 'one'",
             [],
@@ -216,7 +218,7 @@ fn hide_sets_hidden_and_set_release_hidden_false_restores_it() {
 #[test]
 fn nr_13_query_marks_local_albums_instead_of_dropping_them() {
     let conn = migrated_conn();
-    conn.execute(
+    conn.conn().execute(
         "INSERT INTO new_releases (
            release_group_mbid, artist_name, artist_mbid, title, release_type,
            first_release_date, fetched_at, fallback_accent, track_count
@@ -224,7 +226,7 @@ fn nr_13_query_marks_local_albums_instead_of_dropping_them() {
         [],
     )
     .unwrap();
-    conn.execute(
+    conn.conn().execute(
         "INSERT INTO new_releases (
            release_group_mbid, artist_name, artist_mbid, title, release_type,
            first_release_date, fetched_at, fallback_accent
@@ -232,18 +234,20 @@ fn nr_13_query_marks_local_albums_instead_of_dropping_them() {
         [],
     )
     .unwrap();
-    conn.execute(
-        "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
+    conn.conn()
+        .execute(
+            "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
          VALUES ('/music/local.flac', 'Track', 'Pink Floyd', 'Local Album', 5, 0)",
-        [],
-    )
-    .unwrap();
-    conn.execute(
-        "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
+            [],
+        )
+        .unwrap();
+    conn.conn()
+        .execute(
+            "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
          VALUES ('/music/local2.flac', 'Track Two', 'Pink Floyd', 'Local Album', 5, 0)",
-        [],
-    )
-    .unwrap();
+            [],
+        )
+        .unwrap();
 
     let releases = query_releases(&conn, true, date()).unwrap();
 
@@ -303,20 +307,22 @@ fn query_releases_reports_partial_ownership_for_a_single_track() {
     use crate::artist_news::LibraryPresence;
 
     let conn = migrated_conn();
-    conn.execute(
-        "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
+    conn.conn()
+        .execute(
+            "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
          VALUES ('/music/lead.flac', 'Lead Single', 'Pink Floyd', 'Eclipse', 1, 0)",
-        [],
-    )
-    .unwrap();
-    conn.execute(
-        "INSERT INTO new_releases (release_group_mbid, artist_name, artist_mbid, title, \
+            [],
+        )
+        .unwrap();
+    conn.conn()
+        .execute(
+            "INSERT INTO new_releases (release_group_mbid, artist_name, artist_mbid, title, \
          release_type, first_release_date, fetched_at, fallback_accent, first_seen) \
          VALUES ('rg-1', 'Pink Floyd', 'mbid-1', 'Eclipse', 'Album', '2026-09-01', 100, \
          '#3584E4', 100)",
-        [],
-    )
-    .unwrap();
+            [],
+        )
+        .unwrap();
 
     let releases = query_releases(&conn, false, date()).unwrap();
     assert_eq!(releases.len(), 1);
@@ -330,23 +336,25 @@ fn dg_2_future_release_cannot_be_hidden_as_already_complete() {
     use crate::artist_news::LibraryPresence;
 
     let conn = migrated_conn();
-    conn.execute(
-        "INSERT INTO new_releases (
+    conn.conn()
+        .execute(
+            "INSERT INTO new_releases (
            release_group_mbid, artist_name, artist_mbid, title, release_type,
            first_release_date, fetched_at, fallback_accent, track_count
          ) VALUES ('future-ep', 'Ocean Sleeper', 'artist-id', 'Future EP',
                    'EP', '2027-01-01', 1, '#123456', 2)",
-        [],
-    )
-    .unwrap();
-    for track_no in 1..=2 {
-        conn.execute(
-            "INSERT INTO tracks (
-               path, title, artist, album, track_no, play_count, added_at
-             ) VALUES (?1, ?2, 'Ocean Sleeper', 'Future EP', ?2, 0, 0)",
-            rusqlite::params![format!("/music/future-{track_no}.flac"), track_no],
+            [],
         )
         .unwrap();
+    for track_no in 1..=2 {
+        conn.conn()
+            .execute(
+                "INSERT INTO tracks (
+               path, title, artist, album, track_no, play_count, added_at
+             ) VALUES (?1, ?2, 'Ocean Sleeper', 'Future EP', ?2, 0, 0)",
+                rusqlite::params![format!("/music/future-{track_no}.flac"), track_no],
+            )
+            .unwrap();
     }
 
     let releases = query_releases(&conn, false, date()).unwrap();
@@ -360,25 +368,27 @@ fn track_counts_survive_internal_whitespace_tagging_drift() {
     use crate::artist_news::{local_album_track_counts, presence_for, LibraryPresence};
 
     let conn = migrated_conn();
-    conn.execute(
-        "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
+    conn.conn()
+        .execute(
+            "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
          VALUES ('/music/one.flac', 'T1', 'Pink Floyd', 'Eclipse', 1, 0)",
-        [],
-    )
-    .unwrap();
+            [],
+        )
+        .unwrap();
     // Same artist tag, but with an extra internal space. SQL's
     // `lower(trim(x))` grouping treats this as a distinct artist, while
     // Rust's `normalize()` collapses both to "pink floyd". If counting
     // happens on the SQL side, this second track lands in its own group of
     // one and the two real tracks are never summed together.
-    conn.execute(
-        "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
+    conn.conn()
+        .execute(
+            "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
          VALUES ('/music/two.flac', 'T2', 'Pink  Floyd', 'Eclipse', 1, 0)",
-        [],
-    )
-    .unwrap();
+            [],
+        )
+        .unwrap();
 
-    let counts = local_album_track_counts(&conn).unwrap();
+    let counts = local_album_track_counts(conn.conn()).unwrap();
     assert_eq!(
         presence_for(&counts, "Pink Floyd", "Eclipse", Some(2)),
         LibraryPresence::Complete,
@@ -397,17 +407,18 @@ fn dg_2_duplicate_files_do_not_fake_complete_release_ownership() {
         ("/music/two.flac", 2),
     ] {
         let title = format!("Track {track_no}");
-        conn.execute(
-            "INSERT INTO tracks (
+        conn.conn()
+            .execute(
+                "INSERT INTO tracks (
                path, title, artist, album_artist, album, track_no, play_count, added_at
              ) VALUES (?1, ?2, 'Guest Singer', 'Ocean Sleeper',
                        'Maybe Death Is All I Need', ?3, 0, 0)",
-            rusqlite::params![path, title, track_no],
-        )
-        .unwrap();
+                rusqlite::params![path, title, track_no],
+            )
+            .unwrap();
     }
 
-    let counts = local_album_track_counts(&conn).unwrap();
+    let counts = local_album_track_counts(conn.conn()).unwrap();
 
     assert_eq!(
         presence_for(

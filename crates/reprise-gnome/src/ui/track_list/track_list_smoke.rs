@@ -163,8 +163,8 @@ pub(in crate::ui) fn parse_smoke_source(value: &str) -> Option<ViewSource> {
 /// duplicate names don't resolve silently and ambiguously).
 fn resolve_smoke_source_playlist_by_name(shared: &Rc<Shared>, value: &str) -> Option<ViewSource> {
     let name = value.strip_prefix("playlist:")?;
-    let conn = shared.conn.borrow();
-    let playlists = reprise_core::library::playlists::list(&conn)
+    let conn = &shared.conn;
+    let playlists = reprise_core::library::playlists::list(conn)
         .inspect_err(|error| {
             tracing::error!(%error, name, "failed to list playlists for smoke-source name lookup");
         })

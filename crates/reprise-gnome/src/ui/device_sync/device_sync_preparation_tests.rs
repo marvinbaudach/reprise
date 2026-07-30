@@ -15,6 +15,7 @@
 //! real worker thread), so nothing here can hang.
 
 use super::*;
+use reprise_core::db::Db;
 use std::time::Duration;
 
 /// Resolves every request after one real main-loop suspension (`MTP-44`'s
@@ -61,27 +62,23 @@ async fn wait_until(mut condition: impl FnMut() -> bool, max_iters: usize) -> bo
 /// `wanted_on_device` and with no `downloaded_path` — exactly `MTP-40`'s
 /// "wanted but missing" shape, scoped the same way
 /// `query_selection_candidates_for_device`'s own tests seed it.
-fn seed_missing_wanted_episodes(
-    conn: &Rc<RefCell<Connection>>,
-    device_id: &str,
-    episode_ids: &[i64],
-) {
-    let conn = conn.borrow();
-    conn.execute(
-        "INSERT INTO podcast_subscriptions (id, kind, feed_url, title, auto_download, added_at)
+fn seed_missing_wanted_episodes(conn: &Rc<Db>, device_id: &str, episode_ids: &[i64]) {
+    crate::test_db::connection(conn.as_ref())
+        .execute(
+            "INSERT INTO podcast_subscriptions (id, kind, feed_url, title, auto_download, added_at)
          VALUES (1, 'rss', 'https://example.test/feed', 'Show', 0, 1)",
-        [],
-    )
-    .unwrap();
-    reprise_core::podcasts::phone_sync::set_device_enabled(&conn, 1, device_id, true).unwrap();
+            [],
+        )
+        .unwrap();
+    reprise_core::podcasts::phone_sync::set_device_enabled(conn, 1, device_id, true).unwrap();
     for episode_id in episode_ids {
-        conn.execute(
+        crate::test_db::connection(conn.as_ref()).execute(
             "INSERT INTO podcast_episodes (id, subscription_id, guid, title, audio_url, first_seen_at)
              VALUES (?1, 1, ?2, ?3, 'https://example.test/e.mp3', 1)",
             rusqlite::params![episode_id, format!("guid-{episode_id}"), format!("Episode {episode_id}")],
         )
         .unwrap();
-        reprise_core::podcasts::wanted_on_device::set_wanted_on_device(&conn, *episode_id, true)
+        reprise_core::podcasts::wanted_on_device::set_wanted_on_device(conn, *episode_id, true)
             .unwrap();
     }
 }
@@ -110,7 +107,7 @@ fn mtp_43_the_switch_actually_gates_whether_a_preparation_download_starts() {
     run(async {
         let (_temp, conn) = fixture();
         seed_missing_wanted_episodes(&conn, "a", &[101]);
-        save_settings(&conn.borrow(), &settings_with_prepare_switch("a", false)).unwrap();
+        save_settings(&conn, &settings_with_prepare_switch("a", false)).unwrap();
 
         let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
@@ -171,7 +168,7 @@ fn mtp_43_cancelling_a_preparation_run_stops_further_downloads_but_keeps_the_one
     run(async {
         let (_temp, conn) = fixture();
         seed_missing_wanted_episodes(&conn, "a", &[101, 102]);
-        save_settings(&conn.borrow(), &settings_with_prepare_switch("a", true)).unwrap();
+        save_settings(&conn, &settings_with_prepare_switch("a", true)).unwrap();
 
         let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend);

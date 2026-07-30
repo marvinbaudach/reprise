@@ -31,7 +31,7 @@ impl DeviceSyncRuntime {
                 return Err("device synchronization is active".into());
             }
         }
-        save_settings(&self.conn.borrow(), &settings).map_err(|error| error.to_string())?;
+        save_settings(&self.conn, &settings).map_err(|error| error.to_string())?;
         let device_id = settings.device_serial.clone();
         {
             let mut devices = self.device_states.borrow_mut();
@@ -146,13 +146,13 @@ impl DeviceSyncRuntime {
             }
         }
         let mut target = {
-            let conn = self.conn.borrow();
-            load_target(&conn, device_id, kind)
+            let conn = &self.conn;
+            load_target(conn, device_id, kind)
                 .map_err(|error| error.to_string())?
                 .unwrap_or_else(|| SyncTarget::default_for(kind))
         };
         target.enabled = enabled;
-        save_target(&self.conn.borrow(), device_id, &target).map_err(|error| error.to_string())?;
+        save_target(&self.conn, device_id, &target).map_err(|error| error.to_string())?;
         self.recompute_delta(device_id)
     }
 
@@ -185,19 +185,19 @@ impl DeviceSyncRuntime {
             }
         }
         let mut target = {
-            let conn = self.conn.borrow();
-            load_target(&conn, device_id, kind)
+            let conn = &self.conn;
+            load_target(conn, device_id, kind)
                 .map_err(|error| error.to_string())?
                 .unwrap_or_else(|| SyncTarget::default_for(kind))
         };
         target.cap_bytes = cap_bytes;
-        save_target(&self.conn.borrow(), device_id, &target).map_err(|error| error.to_string())?;
+        save_target(&self.conn, device_id, &target).map_err(|error| error.to_string())?;
         self.recompute_delta(device_id)
     }
 
     pub fn selection_options(&self) -> Result<Vec<DeviceSelectionOption>, String> {
-        let conn = self.conn.borrow();
-        let mut options = reprise_core::library::playlists::list(&conn)
+        let conn = &self.conn;
+        let mut options = reprise_core::library::playlists::list(conn)
             .map_err(|error| error.to_string())?
             .into_iter()
             .map(|playlist| DeviceSelectionOption {
@@ -207,12 +207,12 @@ impl DeviceSyncRuntime {
                 smart: false,
             })
             .collect::<Vec<_>>();
-        for playlist in reprise_core::library::playlists::list_smart(&conn)
-            .map_err(|error| error.to_string())?
+        for playlist in
+            reprise_core::library::playlists::list_smart(conn).map_err(|error| error.to_string())?
         {
             let source = SelectionSource::Smart(playlist.id);
             let count =
-                resolve_selection_track_ids(&conn, &DeviceSelection::Sources(vec![source.clone()]))
+                resolve_selection_track_ids(conn, &DeviceSelection::Sources(vec![source.clone()]))
                     .map_err(|error| error.to_string())?
                     .len();
             options.push(DeviceSelectionOption {
@@ -292,13 +292,13 @@ impl DeviceSyncRuntime {
             preparation_missing,
             enabled_sources,
         ) = {
-            let conn = self.conn.borrow();
-            let files = load_device_files(&conn, device_id).map_err(|error| error.to_string())?;
+            let conn = &self.conn;
+            let files = load_device_files(conn, device_id).map_err(|error| error.to_string())?;
             let managed_track_count = files.len();
             let playlist_inventory =
-                load_device_playlists(&conn, device_id).map_err(|error| error.to_string())?;
+                load_device_playlists(conn, device_id).map_err(|error| error.to_string())?;
             let playlists =
-                load_mirror_playlist_snapshots(&conn).map_err(|error| error.to_string())?;
+                load_mirror_playlist_snapshots(conn).map_err(|error| error.to_string())?;
             let projection = project_sync_page(SyncPageInput {
                 selected,
                 playlists,
@@ -309,7 +309,7 @@ impl DeviceSyncRuntime {
                 storage: storage.clone(),
             });
             let targets =
-                load_or_create_targets(&conn, device_id).map_err(|error| error.to_string())?;
+                load_or_create_targets(conn, device_id).map_err(|error| error.to_string())?;
             let podcast_inventory = as_podcast_device_files(&podcast_files);
             let youtube_inventory = as_podcast_device_files(&youtube_files);
             // Both kinds are queried once and each `build_plan` call filters
@@ -317,26 +317,26 @@ impl DeviceSyncRuntime {
             // both target plans, mirroring how RSS and YouTube are equally
             // eligible for phone sync (`POD-12`).
             let candidates =
-                query_candidates_for_device(&conn, device_id).map_err(|error| error.to_string())?;
+                query_candidates_for_device(conn, device_id).map_err(|error| error.to_string())?;
             // `MTP-45`: `select_episodes` — not the raw downloaded-file
             // query above — decides which episodes are actually wanted
             // (unplayed RSS episodes, latest-per-channel YouTube episodes)
             // and splits wanted-but-missing ones into `waiting` instead of
             // letting them vanish from the balance (`MTP-40`).
-            let selection_candidates = query_selection_candidates_for_device(&conn, device_id)
+            let selection_candidates = query_selection_candidates_for_device(conn, device_id)
                 .map_err(|error| error.to_string())?;
             // `MTP-46`: the same switches the query above already honours,
             // read once more here so the Content rows can hide a source the
             // user switched off. Reading them rather than inferring them
             // from an empty candidate list: "no episodes" and "not a feature
             // you use" are different states, and only the second hides a row.
-            let enabled_sources = reprise_core::device_sync::podcasts::enabled_sync_sources(&conn)
+            let enabled_sources = reprise_core::device_sync::podcasts::enabled_sync_sources(conn)
                 .map_err(|error| error.to_string())?;
             // `MTP-36`: the global default plus every enabled YouTube
             // channel's persisted override — resolved here (the only place
             // with DB access) and handed to `plan_episode_selection` as
             // plain data, keeping that function pure and unit-testable.
-            let default_latest_per_channel = reprise_core::podcasts::config::load(&conn)
+            let default_latest_per_channel = reprise_core::podcasts::config::load(conn)
                 .map_err(|error| error.to_string())?
                 .latest_per_channel_default;
             let youtube_channel_ids = selection_candidates
@@ -346,7 +346,7 @@ impl DeviceSyncRuntime {
                 .collect::<Vec<_>>();
             let latest_per_channel_overrides =
                 reprise_core::podcasts::store::latest_per_channel_overrides(
-                    &conn,
+                    conn,
                     &youtube_channel_ids,
                 )
                 .map_err(|error| error.to_string())?;
@@ -389,14 +389,14 @@ impl DeviceSyncRuntime {
             // one that already exists.
             let (youtube_selected, youtube_total) =
                 reprise_core::podcasts::phone_sync::selection_summary(
-                    &conn,
+                    conn,
                     device_id,
                     reprise_core::podcasts::PodcastKind::Youtube,
                 )
                 .map_err(|error| error.to_string())?;
             let (podcast_selected, podcast_total) =
                 reprise_core::podcasts::phone_sync::selection_summary(
-                    &conn,
+                    conn,
                     device_id,
                     reprise_core::podcasts::PodcastKind::Rss,
                 )
@@ -422,7 +422,7 @@ impl DeviceSyncRuntime {
             // episode for its title) rather than re-deriving `waiting` a
             // second time from scratch.
             let preparation_missing = gather_missing_files(
-                &conn,
+                self.conn.as_ref(),
                 rss_selection
                     .waiting
                     .iter()
@@ -433,7 +433,7 @@ impl DeviceSyncRuntime {
                 missing: preparation_missing.clone(),
                 connectivity: current_connectivity(),
                 metered: gio::NetworkMonitor::default().is_network_metered(),
-                online_sources_enabled: reprise_core::online_sources::is_enabled(&conn)
+                online_sources_enabled: reprise_core::online_sources::is_enabled(conn)
                     .unwrap_or(true),
                 prepare_switch_on: settings.prepare_before_sync,
             });
@@ -617,10 +617,8 @@ fn plan_episode_selection(
 /// episodes whose size happens to be already known — which today is none.
 /// Wiring that up is future work, not a decision this projection can make up
 /// on its own.
-fn gather_missing_files(
-    conn: &Connection,
-    episode_ids: impl IntoIterator<Item = i64>,
-) -> Vec<MissingFile> {
+fn gather_missing_files(db: &Db, episode_ids: impl IntoIterator<Item = i64>) -> Vec<MissingFile> {
+    let conn = &db;
     episode_ids
         .into_iter()
         .filter_map(

@@ -3,8 +3,6 @@
 //! installations, and the most recent fetch timestamp the policy is judged
 //! against.
 
-use rusqlite::Connection;
-
 const REFRESH_INTERVAL_SECONDS: i64 = 6 * 60 * 60;
 const REFRESH_JITTER_MAX_SECONDS: i64 = 45 * 60;
 
@@ -52,7 +50,8 @@ pub(crate) fn fnv1a_64(bytes: &[u8]) -> u64 {
 /// ever been attempted. Reads the ledger rather than `new_releases`: a
 /// library whose artists simply have no news would otherwise look like it
 /// had never refreshed, and `refresh_due` would fire on every timer tick.
-pub fn latest_fetched_at(conn: &Connection) -> Result<Option<i64>, rusqlite::Error> {
+pub fn latest_fetched_at(db: &crate::db::Db) -> Result<Option<i64>, rusqlite::Error> {
+    let conn = db.conn();
     crate::artist_news_ledger::latest_attempt(conn)
 }
 
@@ -60,15 +59,13 @@ pub fn latest_fetched_at(conn: &Connection) -> Result<Option<i64>, rusqlite::Err
 mod tests {
     use super::{jitter_seconds, latest_fetched_at, refresh_due};
 
-    fn migrated_conn() -> rusqlite::Connection {
-        let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
-        conn
+    fn migrated_conn() -> crate::db::Db {
+        crate::db::Db::open_in_memory().unwrap()
     }
 
-    fn record_ledger_attempt(conn: &rusqlite::Connection, artist_key: &str, attempted_at: i64) {
+    fn record_ledger_attempt(db: &crate::db::Db, artist_key: &str, attempted_at: i64) {
         crate::artist_news_ledger::record_attempt(
-            conn,
+            db.conn(),
             artist_key,
             None,
             attempted_at,

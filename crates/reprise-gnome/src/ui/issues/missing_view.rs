@@ -1,7 +1,6 @@
 //! Grouped Missing-files view with tombstone Undo and auto-clean arming.
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashSet;
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -9,11 +8,11 @@ use gtk4::gio;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
+use reprise_core::db::Db;
 use reprise_core::library::relink::RelinkTarget;
 use reprise_core::library::settings::{self, AutoCleanSetting};
 use reprise_core::models::Track;
 use reprise_core::queries::{self, MissingGroup, MissingGroupKind};
-use rusqlite::Connection;
 
 use super::missing_dialogs::LocateContext;
 use super::missing_progress::RelinkProgressView;
@@ -106,10 +105,11 @@ enum AutoCleanActivation {
 }
 
 fn activate_auto_clean(
-    conn: &Connection,
+    db: &Db,
     setting: AutoCleanSetting,
     now: i64,
 ) -> Result<AutoCleanActivation, rusqlite::Error> {
+    let conn = &db;
     let previous = settings::get_missing_auto_clean(conn);
     settings::set_missing_auto_clean(conn, setting)?;
     let AutoCleanSetting::Days(days) = setting else {
@@ -135,8 +135,8 @@ fn activate_auto_clean(
     })
 }
 
-fn start_auto_clean_counting_today(conn: &Connection, now: i64) -> Result<(), rusqlite::Error> {
-    settings::set_auto_clean_armed_at(conn, now)
+fn start_auto_clean_counting_today(db: &Db, now: i64) -> Result<(), rusqlite::Error> {
+    settings::set_auto_clean_armed_at(db, now)
 }
 
 fn auto_clean_confirmation_body(count: usize, days: u32) -> String {
@@ -162,7 +162,7 @@ fn missing_since_label(timestamp: i64) -> String {
 type OnPurged = Rc<dyn Fn(&[i64])>;
 
 pub(super) struct Shared {
-    conn: Rc<RefCell<Connection>>,
+    conn: Rc<Db>,
     groups: gtk4::Box,
     auto_clean_button: gtk4::MenuButton,
     toast_overlay: gtk4::glib::WeakRef<adw::ToastOverlay>,
@@ -180,7 +180,7 @@ pub(in crate::ui) struct MissingFilesView {
 }
 
 impl MissingFilesView {
-    pub(in crate::ui) fn new(conn: Rc<RefCell<Connection>>) -> Self {
+    pub(in crate::ui) fn new(conn: Rc<Db>) -> Self {
         let auto_clean_button = gtk4::MenuButton::new();
         auto_clean_button.add_css_class("flat");
         auto_clean_button.add_css_class("pill");
@@ -268,8 +268,8 @@ fn refresh(shared: &Rc<Shared>) -> usize {
     }
     update_auto_clean_label(shared);
     let groups = {
-        let conn = shared.conn.borrow();
-        queries::query_missing_groups(&conn).unwrap_or_else(|error| {
+        let conn = &shared.conn;
+        queries::query_missing_groups(conn).unwrap_or_else(|error| {
             tracing::error!(%error, "missing view: failed to load groups");
             Vec::new()
         })
@@ -322,8 +322,8 @@ fn build_group(shared: &Rc<Shared>, group: &MissingGroup) -> gtk4::Widget {
         group.track_count,
         Rc::new(move |index| {
             let track = {
-                let conn = row_shared.conn.borrow();
-                queries::query_missing_rows(&conn, &kind, index, 1)
+                let conn = &row_shared.conn;
+                queries::query_missing_rows(conn, &kind, index, 1)
                     .ok()
                     .and_then(|mut rows| rows.pop())
             };
@@ -409,8 +409,8 @@ fn build_track_row(
 }
 
 pub(super) fn collect_group_targets(shared: &Shared, kind: &MissingGroupKind) -> Vec<RelinkTarget> {
-    let conn = shared.conn.borrow();
-    queries::query_missing_rows(&conn, kind, 0, u32::MAX).map_or_else(
+    let conn = &shared.conn;
+    queries::query_missing_rows(conn, kind, 0, u32::MAX).map_or_else(
         |error| {
             tracing::error!(%error, "missing view: failed to load relink targets");
             Vec::new()
@@ -451,8 +451,8 @@ pub(super) fn selected_ids(listbox: &gtk4::ListBox) -> Vec<i64> {
 }
 
 fn collect_group_ids(shared: &Shared, kind: &MissingGroupKind) -> Vec<i64> {
-    let conn = shared.conn.borrow();
-    queries::query_missing_rows(&conn, kind, 0, u32::MAX).map_or_else(
+    let conn = &shared.conn;
+    queries::query_missing_rows(conn, kind, 0, u32::MAX).map_or_else(
         |error| {
             tracing::error!(%error, "missing view: failed to load removal ids");
             Vec::new()
@@ -490,43 +490,8 @@ pub(super) fn confirm_remove(shared: &Rc<Shared>, ids: Vec<i64>) {
     });
 }
 
-/// Revalidates a potentially stale dialog selection at the UI boundary.
-/// `queries::tombstone_tracks` deliberately remains generic because FB-7
-/// also removes present tracks outside this Missing-only surface. Here the
-/// selection must still be proven `Deleted`; keeping the read and tombstone
-/// in one transaction prevents a scanner resurrection from slipping between
-/// them (a conflicting writer makes the transaction fail safely instead).
-fn tombstone_still_deleted(
-    conn: &mut Connection,
-    requested_ids: &[i64],
-    now: i64,
-) -> Result<Vec<i64>, rusqlite::Error> {
-    if requested_ids.is_empty() {
-        return Ok(Vec::new());
-    }
-    let tx = conn.transaction()?;
-    let currently_deleted: HashSet<i64> =
-        queries::query_missing_rows(&tx, &MissingGroupKind::Deleted, 0, u32::MAX)?
-            .into_iter()
-            .map(|track| track.id)
-            .collect();
-    let mut seen = HashSet::new();
-    let tombstoned: Vec<i64> = requested_ids
-        .iter()
-        .copied()
-        .filter(|id| currently_deleted.contains(id) && seen.insert(*id))
-        .collect();
-    let changed = queries::tombstone_tracks(&tx, &tombstoned, now)?;
-    debug_assert_eq!(changed, tombstoned.len());
-    tx.commit()?;
-    Ok(tombstoned)
-}
-
 fn tombstone_with_undo(shared: &Rc<Shared>, ids: &[i64]) {
-    let result = {
-        let mut conn = shared.conn.borrow_mut();
-        tombstone_still_deleted(&mut conn, ids, now_unix())
-    };
+    let result = queries::tombstone_still_deleted(&shared.conn, ids, now_unix());
     let tombstoned = match result {
         Ok(ids) => ids,
         Err(error) => {
@@ -555,8 +520,8 @@ fn tombstone_with_undo(shared: &Rc<Shared>, ids: &[i64]) {
         let ids = tombstoned;
         toast.connect_button_clicked(move |_| {
             let result = {
-                let conn = shared.conn.borrow();
-                queries::undo_tombstone(&conn, &ids)
+                let conn = &shared.conn;
+                queries::undo_tombstone(conn, &ids)
             };
             match result {
                 Ok(_) => notify_mutated(&shared),
@@ -581,8 +546,8 @@ fn purge_if_no_undo_left(shared: &Rc<Shared>) {
         return;
     }
     let result = {
-        let mut conn = shared.conn.borrow_mut();
-        queries::purge_tombstones(&mut conn)
+        let conn = &shared.conn;
+        queries::purge_tombstones(conn)
     };
     match result {
         Ok(ids) => {
@@ -640,10 +605,7 @@ fn install_auto_clean_menu(shared: &Rc<Shared>) {
 
 fn handle_auto_clean_choice(shared: &Rc<Shared>, setting: AutoCleanSetting) {
     let now = now_unix();
-    let plan = {
-        let conn = shared.conn.borrow();
-        activate_auto_clean(&conn, setting, now)
-    };
+    let plan = activate_auto_clean(&shared.conn, setting, now);
     match plan {
         Ok(AutoCleanActivation::ConfirmBacklog { days, eligible }) => {
             show_auto_clean_confirmation(shared, days, eligible, now);
@@ -680,10 +642,7 @@ fn show_auto_clean_confirmation(shared: &Rc<Shared>, days: u32, eligible: usize,
         if response.as_str() == RESPONSE_REMOVE_NOW {
             run_auto_clean_now(&shared, now);
         } else {
-            let result = {
-                let conn = shared.conn.borrow();
-                start_auto_clean_counting_today(&conn, now)
-            };
+            let result = start_auto_clean_counting_today(&shared.conn, now);
             if let Err(error) = result {
                 tracing::error!(%error, "missing view: failed to arm auto-clean from today");
             }
@@ -693,10 +652,7 @@ fn show_auto_clean_confirmation(shared: &Rc<Shared>, days: u32, eligible: usize,
 }
 
 fn run_auto_clean_now(shared: &Rc<Shared>, now: i64) {
-    let result = {
-        let mut conn = shared.conn.borrow_mut();
-        remove_auto_clean_backlog_now(&mut conn, now)
-    };
+    let result = remove_auto_clean_backlog_now(&shared.conn, now);
     match result {
         Ok(ids) => {
             notify_purged(shared, &ids);
@@ -706,10 +662,8 @@ fn run_auto_clean_now(shared: &Rc<Shared>, now: i64) {
     }
 }
 
-fn remove_auto_clean_backlog_now(
-    conn: &mut Connection,
-    now: i64,
-) -> Result<Vec<i64>, rusqlite::Error> {
+fn remove_auto_clean_backlog_now(db: &Db, now: i64) -> Result<Vec<i64>, rusqlite::Error> {
+    let conn = &db;
     let run = settings::set_auto_clean_armed_at(conn, 0)
         .and_then(|()| queries::run_auto_clean(conn, now));
     let rearm = settings::set_auto_clean_armed_at(conn, now);
@@ -720,7 +674,7 @@ fn remove_auto_clean_backlog_now(
 }
 
 fn update_auto_clean_label(shared: &Shared) {
-    let setting = settings::get_missing_auto_clean(&shared.conn.borrow());
+    let setting = settings::get_missing_auto_clean(&shared.conn);
     let label = match setting {
         AutoCleanSetting::Off => strings::issue_text(strings::MISSING_AUTO_CLEAN_OFF),
         AutoCleanSetting::Days(days) => strings::missing_auto_clean_label(days),
@@ -735,7 +689,7 @@ fn build_info_card(shared: &Shared) -> gtk4::Widget {
     explanation.set_xalign(0.0);
     explanation.set_wrap(true);
     card.append(&explanation);
-    let last_relinked = settings::get_last_scan_relinked(&shared.conn.borrow())
+    let last_relinked = settings::get_last_scan_relinked(&shared.conn)
         .ok()
         .flatten();
     if let Some(count) = last_relinked {
@@ -744,12 +698,12 @@ fn build_info_card(shared: &Shared) -> gtk4::Widget {
         card.append(&label);
     }
     let auto_clean_off = matches!(
-        settings::get_missing_auto_clean(&shared.conn.borrow()),
+        settings::get_missing_auto_clean(&shared.conn),
         AutoCleanSetting::Off
     );
     let has_deleted = {
-        let conn = shared.conn.borrow();
-        queries::query_missing_groups(&conn).is_ok_and(|groups| {
+        let conn = &shared.conn;
+        queries::query_missing_groups(conn).is_ok_and(|groups| {
             groups
                 .iter()
                 .any(|group| matches!(group.kind, MissingGroupKind::Deleted))
@@ -764,10 +718,8 @@ fn build_info_card(shared: &Shared) -> gtk4::Widget {
     card.upcast()
 }
 
-pub(in crate::ui) fn purge_startup_tombstones(
-    conn: &Rc<RefCell<Connection>>,
-) -> Result<Vec<i64>, rusqlite::Error> {
-    queries::purge_tombstones(&mut conn.borrow_mut())
+pub(in crate::ui) fn purge_startup_tombstones(conn: &Rc<Db>) -> Result<Vec<i64>, rusqlite::Error> {
+    queries::purge_tombstones(conn)
 }
 
 #[cfg(test)]

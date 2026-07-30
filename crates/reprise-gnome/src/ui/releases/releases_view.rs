@@ -11,7 +11,7 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::artist_news::{self, ReleaseSortDirection, ReleasesFilter};
 use reprise_core::artist_news_history::HistoryEntry;
-use rusqlite::Connection;
+use reprise_core::db::Db;
 
 use super::releases_columns;
 use super::releases_empty_state::{releases_empty_state_for, ReleasesEmptyState};
@@ -29,7 +29,7 @@ const FETCH_SPINNER_PAGE: &str = "spinner";
 type Callback = Rc<dyn Fn()>;
 
 struct Shared {
-    conn: Rc<RefCell<Connection>>,
+    conn: Rc<Db>,
     database_path: PathBuf,
     model: Rc<ReleasesModel>,
     filter_bar: Rc<ReleasesFilterBar>,
@@ -54,7 +54,7 @@ pub(in crate::ui) struct ReleasesView {
 }
 
 impl ReleasesView {
-    pub(in crate::ui) fn new(conn: Rc<RefCell<Connection>>, database_path: PathBuf) -> Self {
+    pub(in crate::ui) fn new(conn: Rc<Db>, database_path: PathBuf) -> Self {
         let model = Rc::new(ReleasesModel::new());
         let filter_bar = ReleasesFilterBar::new(conn.clone());
         let column_view = gtk4::ColumnView::builder()
@@ -190,14 +190,13 @@ impl ReleasesView {
 fn render_cache(shared: &Shared) -> Result<(), rusqlite::Error> {
     let today = Local::now().date_naive();
     let filter = shared.filter_bar.filter();
-    let rows = artist_news::query_releases_view(&shared.conn.borrow(), &filter, today)?;
+    let rows = artist_news::query_releases_view(&shared.conn, &filter, today)?;
     let total = if filter == ReleasesFilter::default() {
         rows.len()
     } else {
-        artist_news::count_releases_view(&shared.conn.borrow(), &ReleasesFilter::default(), today)?
-            as usize
+        artist_news::count_releases_view(&shared.conn, &ReleasesFilter::default(), today)? as usize
     };
-    let latest = artist_news::latest_fetched_at(&shared.conn.borrow())?;
+    let latest = artist_news::latest_fetched_at(&shared.conn)?;
     shared.filter_bar.set_counts(rows.len(), total);
     shared.rows.replace(rows.clone());
     shared.model.replace(rows.clone());
@@ -250,7 +249,7 @@ fn apply_empty_state(shared: &Shared, state: ReleasesEmptyState, total: usize) {
 }
 
 fn set_hidden(shared: &Rc<Shared>, mbid: &str, hidden: bool) {
-    if let Err(error) = artist_news::set_release_hidden(&shared.conn.borrow(), mbid, hidden) {
+    if let Err(error) = artist_news::set_release_hidden(&shared.conn, mbid, hidden) {
         tracing::warn!(%error, "could not change release visibility");
         return;
     }
@@ -365,7 +364,7 @@ fn request_fetch(shared: &Rc<Shared>) {
 }
 
 fn fetch_from_database(path: &Path) -> Result<artist_news::RefreshReport, artist_news::NewsError> {
-    let conn = reprise_core::db::open_migrated(Some(path))
+    let conn = reprise_core::db::Db::open_migrated(Some(path))
         .map_err(|error| artist_news::NewsError::Database(error.to_string()))?;
     if !reprise_core::modules::is_enabled(&conn, &reprise_core::modules::NEW_RELEASES_MODULE)
         .map_err(|error| artist_news::NewsError::Database(error.to_string()))?
@@ -386,10 +385,9 @@ fn fetch_from_database(path: &Path) -> Result<artist_news::RefreshReport, artist
 
 fn finish_fetch(shared: &Rc<Shared>, failed: bool) {
     if !failed {
-        if let Err(error) = reprise_core::library::settings::set_new_releases_fetch_completed(
-            &shared.conn.borrow(),
-            true,
-        ) {
+        if let Err(error) =
+            reprise_core::library::settings::set_new_releases_fetch_completed(&shared.conn, true)
+        {
             tracing::warn!(%error, "could not persist Releases fetch completion");
         }
     }
@@ -434,8 +432,7 @@ mod tests {
     #[ignore = "requires a display; run via xvfb-run"]
     fn nr_20_releases_view_exposes_filters_six_columns_and_footer() {
         gtk4::init().unwrap();
-        let conn = Rc::new(RefCell::new(Connection::open_in_memory().unwrap()));
-        reprise_core::db::migrate(&conn.borrow()).unwrap();
+        let conn = Rc::new(crate::test_db::open().unwrap());
         let view = ReleasesView::new(conn, PathBuf::new());
         let root = view.root().clone().downcast::<gtk4::Box>().unwrap();
         assert_eq!(root.observe_children().n_items(), 3);

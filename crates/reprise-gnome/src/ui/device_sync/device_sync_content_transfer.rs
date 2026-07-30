@@ -108,7 +108,7 @@ pub(super) async fn run_content_phase(
     // filtering later is what keeps the *removals* out too: a stale plan's
     // `to_remove` would otherwise delete files of a source the user has just
     // taken out of the sync.
-    let enabled = reprise_core::device_sync::podcasts::enabled_sync_sources(&runtime.conn.borrow())
+    let enabled = reprise_core::device_sync::podcasts::enabled_sync_sources(&runtime.conn)
         .unwrap_or(reprise_core::device_sync::podcasts::EnabledSyncSources {
             rss: false,
             youtube: false,

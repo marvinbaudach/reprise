@@ -5,8 +5,6 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use rusqlite::Connection;
-
 use super::cap::{items_to_evict, CapItem};
 use super::safe_component;
 
@@ -53,11 +51,13 @@ impl EnabledSyncSources {
 /// produced at all — and a plan is the only thing that can copy or delete.
 /// Defaulting to off would instead produce a *successful* empty plan, which
 /// is a stronger claim than an unreadable database supports.
-pub fn enabled_sync_sources(conn: &Connection) -> Result<EnabledSyncSources, rusqlite::Error> {
-    let global = crate::online_sources::is_enabled(conn)?;
+pub fn enabled_sync_sources(db: &crate::db::Db) -> Result<EnabledSyncSources, rusqlite::Error> {
+    let conn = db.conn();
+    let global =
+        crate::library::settings::get_bool_in(conn, crate::online_sources::ENABLED_KEY, true)?;
     Ok(EnabledSyncSources {
-        rss: global && crate::modules::is_enabled(conn, &crate::modules::PODCASTS_MODULE)?,
-        youtube: global && crate::modules::is_enabled(conn, &crate::modules::YOUTUBE_MODULE)?,
+        rss: global && crate::modules::is_enabled_in(conn, &crate::modules::PODCASTS_MODULE)?,
+        youtube: global && crate::modules::is_enabled_in(conn, &crate::modules::YOUTUBE_MODULE)?,
     })
 }
 
@@ -103,10 +103,11 @@ pub struct PodcastSyncPlan {
 /// (`MTP-46`): the gate lives here, at the one place the rows are read, and
 /// not at the callers, so no future caller can reach the rows around it.
 pub fn query_candidates_for_device(
-    conn: &Connection,
+    db: &crate::db::Db,
     device_id: &str,
 ) -> Result<Vec<PodcastSyncCandidate>, rusqlite::Error> {
-    let enabled = enabled_sync_sources(conn)?;
+    let conn = db.conn();
+    let enabled = enabled_sync_sources(db)?;
     let mut statement = conn.prepare(
         "SELECT e.id, e.title, s.title, e.downloaded_path, e.downloaded_bytes, s.kind
          FROM podcast_episodes e
@@ -158,7 +159,7 @@ pub fn query_candidates_for_device(
             None => {
                 let bytes = metadata.len();
                 crate::podcasts::store::set_downloaded_file(
-                    conn,
+                    db,
                     episode_id,
                     source_path.to_str(),
                     Some(bytes.min(i64::MAX as u64) as i64),

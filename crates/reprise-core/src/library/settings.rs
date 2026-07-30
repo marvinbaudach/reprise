@@ -9,6 +9,9 @@
 
 use rusqlite::{Connection, OptionalExtension};
 
+#[path = "settings_api.rs"]
+mod api;
+pub use api::*;
 /// The settings key `ui::window`'s scan flow writes the scanned folder under,
 /// and `main.rs`/`ui::window` read at startup/after-scan to (re)start the
 /// watcher. `pub` so both call sites share the exact same literal rather than
@@ -22,7 +25,10 @@ pub const LAST_SCAN_RELINKED_KEY: &str = "last_scan_relinked";
 /// an error — for a key that has never been written, matching every other
 /// "not found" case in this codebase's query layer (e.g. `queries::query_
 /// track_summary`).
-pub fn get_setting(conn: &Connection, key: &str) -> Result<Option<String>, rusqlite::Error> {
+pub(crate) fn get_setting_in(
+    conn: &Connection,
+    key: &str,
+) -> Result<Option<String>, rusqlite::Error> {
     conn.query_row(
         "SELECT value FROM settings WHERE key = ?1",
         rusqlite::params![key],
@@ -34,7 +40,11 @@ pub fn get_setting(conn: &Connection, key: &str) -> Result<Option<String>, rusql
 /// Writes `key` = `value`, overwriting any previous value — an upsert via
 /// `ON CONFLICT`, not a delete-then-insert (keeps this a single statement,
 /// no transaction needed).
-pub fn set_setting(conn: &Connection, key: &str, value: &str) -> Result<(), rusqlite::Error> {
+pub(crate) fn set_setting_in(
+    conn: &Connection,
+    key: &str,
+    value: &str,
+) -> Result<(), rusqlite::Error> {
     // Every settings write funnels through here, so a single change-log append
     // covers both plain settings and module toggles (which persist under the
     // `module.<id>.enabled` key via `modules::set_enabled`) — exactly one event
@@ -74,8 +84,12 @@ pub fn set_setting(conn: &Connection, key: &str, value: &str) -> Result<(), rusq
 const BOOL_TRUE: &str = "1";
 const BOOL_FALSE: &str = "0";
 
-pub fn get_bool(conn: &Connection, key: &str, default: bool) -> Result<bool, rusqlite::Error> {
-    match get_setting(conn, key)? {
+pub(crate) fn get_bool_in(
+    conn: &Connection,
+    key: &str,
+    default: bool,
+) -> Result<bool, rusqlite::Error> {
+    match get_setting_in(conn, key)? {
         None => Ok(default),
         Some(value) => match value.as_str() {
             BOOL_TRUE => Ok(true),
@@ -92,8 +106,12 @@ pub fn get_bool(conn: &Connection, key: &str, default: bool) -> Result<bool, rus
     }
 }
 
-pub fn set_bool(conn: &Connection, key: &str, value: bool) -> Result<(), rusqlite::Error> {
-    set_setting(conn, key, if value { BOOL_TRUE } else { BOOL_FALSE })
+pub(crate) fn set_bool_in(
+    conn: &Connection,
+    key: &str,
+    value: bool,
+) -> Result<(), rusqlite::Error> {
+    set_setting_in(conn, key, if value { BOOL_TRUE } else { BOOL_FALSE })
 }
 
 /// Typed accessors for `LIBRARY_ROOT_KEY` — the one string setting with
@@ -102,39 +120,42 @@ pub fn set_bool(conn: &Connection, key: &str, value: bool) -> Result<(), rusqlit
 /// (not PathBuf) because the scanner's path storage is string-based and a
 /// lossy round-trip here could diverge from what `mark_vanished_under_root`
 /// compares against.
-pub fn get_library_root(conn: &Connection) -> Result<Option<String>, rusqlite::Error> {
-    get_setting(conn, LIBRARY_ROOT_KEY)
+fn get_library_root_in(conn: &Connection) -> Result<Option<String>, rusqlite::Error> {
+    get_setting_in(conn, LIBRARY_ROOT_KEY)
 }
 
-pub fn set_library_root(conn: &Connection, root: &str) -> Result<(), rusqlite::Error> {
-    set_setting(conn, LIBRARY_ROOT_KEY, root)
+fn set_library_root_in(conn: &Connection, root: &str) -> Result<(), rusqlite::Error> {
+    set_setting_in(conn, LIBRARY_ROOT_KEY, root)
 }
 
-pub fn get_last_scan_relinked(conn: &Connection) -> Result<Option<u32>, rusqlite::Error> {
-    Ok(get_setting(conn, LAST_SCAN_RELINKED_KEY)?.and_then(|value| value.parse::<u32>().ok()))
+fn get_last_scan_relinked_in(conn: &Connection) -> Result<Option<u32>, rusqlite::Error> {
+    Ok(get_setting_in(conn, LAST_SCAN_RELINKED_KEY)?.and_then(|value| value.parse::<u32>().ok()))
 }
 
-pub fn set_last_scan_relinked(conn: &Connection, count: u32) -> Result<(), rusqlite::Error> {
-    set_setting(conn, LAST_SCAN_RELINKED_KEY, &count.to_string())
+pub(super) fn set_last_scan_relinked_in(
+    conn: &Connection,
+    count: u32,
+) -> Result<(), rusqlite::Error> {
+    set_setting_in(conn, LAST_SCAN_RELINKED_KEY, &count.to_string())
 }
 
-pub fn get_onboarding_completed(conn: &Connection) -> Result<bool, rusqlite::Error> {
-    get_bool(conn, ONBOARDING_COMPLETED_KEY, false)
+fn get_onboarding_completed_in(conn: &Connection) -> Result<bool, rusqlite::Error> {
+    get_bool_in(conn, ONBOARDING_COMPLETED_KEY, false)
 }
 
-pub fn set_onboarding_completed(conn: &Connection, completed: bool) -> Result<(), rusqlite::Error> {
-    set_bool(conn, ONBOARDING_COMPLETED_KEY, completed)
+fn set_onboarding_completed_in(conn: &Connection, completed: bool) -> Result<(), rusqlite::Error> {
+    set_bool_in(conn, ONBOARDING_COMPLETED_KEY, completed)
 }
 
-pub fn get_new_releases_fetch_completed(conn: &Connection) -> Result<bool, rusqlite::Error> {
-    get_bool(conn, NEW_RELEASES_FETCH_COMPLETED_KEY, false)
+fn get_new_releases_fetch_completed_in(conn: &Connection) -> Result<bool, rusqlite::Error> {
+    get_bool_in(conn, NEW_RELEASES_FETCH_COMPLETED_KEY, false)
 }
 
-pub fn set_new_releases_fetch_completed(
+fn set_new_releases_fetch_completed_in(
     conn: &Connection,
     completed: bool,
 ) -> Result<(), rusqlite::Error> {
-    set_bool(conn, NEW_RELEASES_FETCH_COMPLETED_KEY, completed)
+    set_bool_in(conn, NEW_RELEASES_FETCH_COMPLETED_KEY, completed)
 }
 
 pub const PLAYER_BAR_POSITION_KEY: &str = "player_bar_position";
@@ -151,8 +172,8 @@ pub enum PlayerBarPosition {
     Bottom,
 }
 
-pub fn get_player_bar_position(conn: &Connection) -> PlayerBarPosition {
-    match get_setting(conn, PLAYER_BAR_POSITION_KEY) {
+fn get_player_bar_position_in(conn: &Connection) -> PlayerBarPosition {
+    match get_setting_in(conn, PLAYER_BAR_POSITION_KEY) {
         Ok(Some(v)) if v == "top" => PlayerBarPosition::Top,
         Ok(Some(v)) if v == "bottom" => PlayerBarPosition::Bottom,
         Ok(Some(other)) => {
@@ -167,7 +188,7 @@ pub fn get_player_bar_position(conn: &Connection) -> PlayerBarPosition {
     }
 }
 
-pub fn set_player_bar_position(
+fn set_player_bar_position_in(
     conn: &Connection,
     pos: PlayerBarPosition,
 ) -> Result<(), rusqlite::Error> {
@@ -175,7 +196,7 @@ pub fn set_player_bar_position(
         PlayerBarPosition::Top => "top",
         PlayerBarPosition::Bottom => "bottom",
     };
-    set_setting(conn, PLAYER_BAR_POSITION_KEY, value)
+    set_setting_in(conn, PLAYER_BAR_POSITION_KEY, value)
 }
 
 pub const LIST_DENSITY_KEY: &str = "ui.list_density";
@@ -252,7 +273,7 @@ pub enum TrackTransition {
 }
 
 fn typed_value(conn: &Connection, key: &str, default: &'static str) -> String {
-    match get_setting(conn, key) {
+    match get_setting_in(conn, key) {
         Ok(Some(value)) => value,
         Ok(None) => default.to_string(),
         Err(error) => {
@@ -262,7 +283,7 @@ fn typed_value(conn: &Connection, key: &str, default: &'static str) -> String {
     }
 }
 
-pub fn get_window_view_mode(conn: &Connection) -> WindowViewMode {
+fn get_window_view_mode_in(conn: &Connection) -> WindowViewMode {
     match typed_value(conn, WINDOW_VIEW_MODE_KEY, "library").as_str() {
         "compact" => WindowViewMode::Compact,
         "library" => WindowViewMode::Library,
@@ -273,7 +294,7 @@ pub fn get_window_view_mode(conn: &Connection) -> WindowViewMode {
     }
 }
 
-pub fn set_window_view_mode(
+fn set_window_view_mode_in(
     conn: &Connection,
     value: WindowViewMode,
 ) -> Result<(), rusqlite::Error> {
@@ -281,22 +302,22 @@ pub fn set_window_view_mode(
         WindowViewMode::Library => "library",
         WindowViewMode::Compact => "compact",
     };
-    set_setting(conn, WINDOW_VIEW_MODE_KEY, value)
+    set_setting_in(conn, WINDOW_VIEW_MODE_KEY, value)
 }
 
-pub fn get_compact_always_on_top(conn: &Connection) -> bool {
-    get_bool(conn, COMPACT_ALWAYS_ON_TOP_KEY, false).unwrap_or(false)
+fn get_compact_always_on_top_in(conn: &Connection) -> bool {
+    get_bool_in(conn, COMPACT_ALWAYS_ON_TOP_KEY, false).unwrap_or(false)
 }
 
-pub fn set_compact_always_on_top(conn: &Connection, above: bool) -> Result<(), rusqlite::Error> {
-    set_setting(
+fn set_compact_always_on_top_in(conn: &Connection, above: bool) -> Result<(), rusqlite::Error> {
+    set_setting_in(
         conn,
         COMPACT_ALWAYS_ON_TOP_KEY,
         if above { BOOL_TRUE } else { BOOL_FALSE },
     )
 }
 
-pub fn get_compact_layout(conn: &Connection) -> CompactLayout {
+fn get_compact_layout_in(conn: &Connection) -> CompactLayout {
     match typed_value(conn, COMPACT_LAYOUT_KEY, "card").as_str() {
         "cover" => CompactLayout::Cover,
         "pill" => CompactLayout::Pill,
@@ -312,16 +333,16 @@ pub fn get_compact_layout(conn: &Connection) -> CompactLayout {
     }
 }
 
-pub fn set_compact_layout(conn: &Connection, value: CompactLayout) -> Result<(), rusqlite::Error> {
+fn set_compact_layout_in(conn: &Connection, value: CompactLayout) -> Result<(), rusqlite::Error> {
     let value = match value {
         CompactLayout::Cover => "cover",
         CompactLayout::Pill => "pill",
         CompactLayout::Card => "card",
     };
-    set_setting(conn, COMPACT_LAYOUT_KEY, value)
+    set_setting_in(conn, COMPACT_LAYOUT_KEY, value)
 }
 
-pub fn get_window_decoration_mode(conn: &Connection) -> WindowDecorationMode {
+fn get_window_decoration_mode_in(conn: &Connection) -> WindowDecorationMode {
     match typed_value(conn, WINDOW_DECORATION_MODE_KEY, "client").as_str() {
         "system" => WindowDecorationMode::System,
         "client" => WindowDecorationMode::Client,
@@ -332,7 +353,7 @@ pub fn get_window_decoration_mode(conn: &Connection) -> WindowDecorationMode {
     }
 }
 
-pub fn set_window_decoration_mode(
+fn set_window_decoration_mode_in(
     conn: &Connection,
     value: WindowDecorationMode,
 ) -> Result<(), rusqlite::Error> {
@@ -340,10 +361,10 @@ pub fn set_window_decoration_mode(
         WindowDecorationMode::Client => "client",
         WindowDecorationMode::System => "system",
     };
-    set_setting(conn, WINDOW_DECORATION_MODE_KEY, value)
+    set_setting_in(conn, WINDOW_DECORATION_MODE_KEY, value)
 }
 
-pub fn get_list_density(conn: &Connection) -> ListDensity {
+fn get_list_density_in(conn: &Connection) -> ListDensity {
     match typed_value(conn, LIST_DENSITY_KEY, "standard").as_str() {
         "comfortable" => ListDensity::Comfortable,
         "compact" => ListDensity::Compact,
@@ -355,86 +376,89 @@ pub fn get_list_density(conn: &Connection) -> ListDensity {
     }
 }
 
-pub fn set_list_density(conn: &Connection, value: ListDensity) -> Result<(), rusqlite::Error> {
+fn set_list_density_in(conn: &Connection, value: ListDensity) -> Result<(), rusqlite::Error> {
     let value = match value {
         ListDensity::Comfortable => "comfortable",
         ListDensity::Standard => "standard",
         ListDensity::Compact => "compact",
     };
-    set_setting(conn, LIST_DENSITY_KEY, value)
+    set_setting_in(conn, LIST_DENSITY_KEY, value)
 }
 
-pub fn get_sidebar_visible(conn: &Connection) -> bool {
-    get_bool(conn, SIDEBAR_VISIBLE_KEY, true).unwrap_or_else(|error| {
+fn get_sidebar_visible_in(conn: &Connection) -> bool {
+    get_bool_in(conn, SIDEBAR_VISIBLE_KEY, true).unwrap_or_else(|error| {
         tracing::warn!(%error, "could not read sidebar visibility; using visible");
         true
     })
 }
 
-pub fn set_sidebar_visible(conn: &Connection, value: bool) -> Result<(), rusqlite::Error> {
-    set_bool(conn, SIDEBAR_VISIBLE_KEY, value)
+fn set_sidebar_visible_in(conn: &Connection, value: bool) -> Result<(), rusqlite::Error> {
+    set_bool_in(conn, SIDEBAR_VISIBLE_KEY, value)
 }
 
 /// Whether the user manually collapsed the sidebar column via the headerbar
 /// toggle. Distinct from `SIDEBAR_VISIBLE_KEY` (the preferences switch that
 /// removes the sidebar slot entirely): this remembers the in-window toggle
 /// so the next session starts with the same layout.
-pub fn get_sidebar_collapsed(conn: &Connection) -> bool {
-    get_bool(conn, SIDEBAR_COLLAPSED_KEY, false).unwrap_or_else(|error| {
+fn get_sidebar_collapsed_in(conn: &Connection) -> bool {
+    get_bool_in(conn, SIDEBAR_COLLAPSED_KEY, false).unwrap_or_else(|error| {
         tracing::warn!(%error, "could not read sidebar collapse state; using expanded");
         false
     })
 }
 
-pub fn set_sidebar_collapsed(conn: &Connection, collapsed: bool) -> Result<(), rusqlite::Error> {
-    set_bool(conn, SIDEBAR_COLLAPSED_KEY, collapsed)
+fn set_sidebar_collapsed_in(conn: &Connection, collapsed: bool) -> Result<(), rusqlite::Error> {
+    set_bool_in(conn, SIDEBAR_COLLAPSED_KEY, collapsed)
 }
 
-pub fn get_browse_visible(conn: &Connection) -> bool {
-    get_bool(conn, BROWSE_VISIBLE_KEY, true).unwrap_or_else(|error| {
+fn get_browse_visible_in(conn: &Connection) -> bool {
+    get_bool_in(conn, BROWSE_VISIBLE_KEY, true).unwrap_or_else(|error| {
         tracing::warn!(%error, "could not read browse bar visibility; using visible");
         true
     })
 }
 
-pub fn set_browse_visible(conn: &Connection, value: bool) -> Result<(), rusqlite::Error> {
-    set_bool(conn, BROWSE_VISIBLE_KEY, value)
+fn set_browse_visible_in(conn: &Connection, value: bool) -> Result<(), rusqlite::Error> {
+    set_bool_in(conn, BROWSE_VISIBLE_KEY, value)
 }
 
-pub fn get_status_visible(conn: &Connection) -> bool {
-    get_bool(conn, STATUS_VISIBLE_KEY, true).unwrap_or_else(|error| {
+fn get_status_visible_in(conn: &Connection) -> bool {
+    get_bool_in(conn, STATUS_VISIBLE_KEY, true).unwrap_or_else(|error| {
         tracing::warn!(%error, "could not read status visibility; using visible");
         true
     })
 }
 
-pub fn set_status_visible(conn: &Connection, value: bool) -> Result<(), rusqlite::Error> {
-    set_bool(conn, STATUS_VISIBLE_KEY, value)
+fn set_status_visible_in(conn: &Connection, value: bool) -> Result<(), rusqlite::Error> {
+    set_bool_in(conn, STATUS_VISIBLE_KEY, value)
 }
 
-pub fn get_info_panel_visible(conn: &Connection) -> bool {
-    get_bool(conn, INFO_PANEL_VISIBLE_KEY, false).unwrap_or_else(|error| {
+fn get_info_panel_visible_in(conn: &Connection) -> bool {
+    get_bool_in(conn, INFO_PANEL_VISIBLE_KEY, false).unwrap_or_else(|error| {
         tracing::warn!(%error, "could not read information panel visibility; using hidden");
         false
     })
 }
 
-pub fn set_info_panel_visible(conn: &Connection, visible: bool) -> Result<(), rusqlite::Error> {
-    set_bool(conn, INFO_PANEL_VISIBLE_KEY, visible)
+fn set_info_panel_visible_in(conn: &Connection, visible: bool) -> Result<(), rusqlite::Error> {
+    set_bool_in(conn, INFO_PANEL_VISIBLE_KEY, visible)
 }
 
-pub fn get_equalizer_enabled(conn: &Connection) -> bool {
-    get_bool(conn, EQUALIZER_ENABLED_KEY, false).unwrap_or_else(|error| {
+pub(super) fn get_equalizer_enabled_in(conn: &Connection) -> bool {
+    get_bool_in(conn, EQUALIZER_ENABLED_KEY, false).unwrap_or_else(|error| {
         tracing::warn!(%error, "could not read equalizer state; using disabled");
         false
     })
 }
 
-pub fn set_equalizer_enabled(conn: &Connection, value: bool) -> Result<(), rusqlite::Error> {
-    set_bool(conn, EQUALIZER_ENABLED_KEY, value)
+pub(super) fn set_equalizer_enabled_in(
+    conn: &Connection,
+    value: bool,
+) -> Result<(), rusqlite::Error> {
+    set_bool_in(conn, EQUALIZER_ENABLED_KEY, value)
 }
 
-pub fn get_equalizer_bands(conn: &Connection) -> [f64; 10] {
+pub(super) fn get_equalizer_bands_in(conn: &Connection) -> [f64; 10] {
     let value = typed_value(conn, EQUALIZER_BANDS_KEY, "0,0,0,0,0,0,0,0,0,0");
     let values = value
         .split(',')
@@ -451,14 +475,17 @@ pub fn get_equalizer_bands(conn: &Connection) -> [f64; 10] {
     values.map(|value| value.clamp(-12.0, 12.0))
 }
 
-pub fn set_equalizer_bands(conn: &Connection, values: [f64; 10]) -> Result<(), rusqlite::Error> {
+pub(super) fn set_equalizer_bands_in(
+    conn: &Connection,
+    values: [f64; 10],
+) -> Result<(), rusqlite::Error> {
     let value = values
         .map(|value| value.clamp(-12.0, 12.0).to_string())
         .join(",");
-    set_setting(conn, EQUALIZER_BANDS_KEY, &value)
+    set_setting_in(conn, EQUALIZER_BANDS_KEY, &value)
 }
 
-pub fn get_replay_gain_mode(conn: &Connection) -> ReplayGainMode {
+pub(super) fn get_replay_gain_mode_in(conn: &Connection) -> ReplayGainMode {
     match typed_value(conn, REPLAY_GAIN_MODE_KEY, "off").as_str() {
         "track" => ReplayGainMode::Track,
         "album" => ReplayGainMode::Album,
@@ -470,7 +497,7 @@ pub fn get_replay_gain_mode(conn: &Connection) -> ReplayGainMode {
     }
 }
 
-pub fn set_replay_gain_mode(
+pub(super) fn set_replay_gain_mode_in(
     conn: &Connection,
     value: ReplayGainMode,
 ) -> Result<(), rusqlite::Error> {
@@ -479,18 +506,18 @@ pub fn set_replay_gain_mode(
         ReplayGainMode::Track => "track",
         ReplayGainMode::Album => "album",
     };
-    set_setting(conn, REPLAY_GAIN_MODE_KEY, value)
+    set_setting_in(conn, REPLAY_GAIN_MODE_KEY, value)
 }
 
 /// Whether gapless playback is enabled. Independent of crossfade: it only takes
 /// effect (as the `Gapless` transition) when no crossfade overlap is set.
 /// Default `true` — the expected modern behavior for a music player.
-pub fn get_gapless_enabled(conn: &Connection) -> bool {
-    get_bool(conn, GAPLESS_ENABLED_KEY, true).unwrap_or(true)
+fn get_gapless_enabled_in(conn: &Connection) -> bool {
+    get_bool_in(conn, GAPLESS_ENABLED_KEY, true).unwrap_or(true)
 }
 
-pub fn set_gapless_enabled(conn: &Connection, enabled: bool) -> Result<(), rusqlite::Error> {
-    set_bool(conn, GAPLESS_ENABLED_KEY, enabled)
+fn set_gapless_enabled_in(conn: &Connection, enabled: bool) -> Result<(), rusqlite::Error> {
+    set_bool_in(conn, GAPLESS_ENABLED_KEY, enabled)
 }
 
 /// The effective transition mode, *derived* from the two independent playback
@@ -498,17 +525,17 @@ pub fn set_gapless_enabled(conn: &Connection, enabled: bool) -> Result<(), rusql
 /// wins, else gapless-on means `Gapless`, else `Off`. There is no separately
 /// stored mode — the two controls in the Audio Transitions settings are the
 /// single source of truth.
-pub fn get_track_transition(conn: &Connection) -> TrackTransition {
-    if get_crossfade_seconds(conn) > 0 {
+fn get_track_transition_in(conn: &Connection) -> TrackTransition {
+    if get_crossfade_seconds_in(conn) > 0 {
         TrackTransition::Crossfade
-    } else if get_gapless_enabled(conn) {
+    } else if get_gapless_enabled_in(conn) {
         TrackTransition::Gapless
     } else {
         TrackTransition::Off
     }
 }
 
-pub fn get_crossfade_seconds(conn: &Connection) -> u8 {
+fn get_crossfade_seconds_in(conn: &Connection) -> u8 {
     typed_value(conn, CROSSFADE_SECONDS_KEY, "")
         .parse::<u8>()
         .ok()
@@ -516,21 +543,21 @@ pub fn get_crossfade_seconds(conn: &Connection) -> u8 {
         .unwrap_or(CROSSFADE_SECONDS_DEFAULT)
 }
 
-pub fn set_crossfade_seconds(conn: &Connection, seconds: u8) -> Result<(), rusqlite::Error> {
+fn set_crossfade_seconds_in(conn: &Connection, seconds: u8) -> Result<(), rusqlite::Error> {
     let clamped = seconds.clamp(CROSSFADE_SECONDS_MIN, CROSSFADE_SECONDS_MAX);
-    set_setting(conn, CROSSFADE_SECONDS_KEY, &clamped.to_string())
+    set_setting_in(conn, CROSSFADE_SECONDS_KEY, &clamped.to_string())
 }
 
-pub fn get_color_scheme(conn: &Connection) -> &'static str {
-    match get_setting(conn, COLOR_SCHEME_KEY).ok().flatten() {
+fn get_color_scheme_in(conn: &Connection) -> &'static str {
+    match get_setting_in(conn, COLOR_SCHEME_KEY).ok().flatten() {
         Some(ref v) if v == "light" => "light",
         Some(ref v) if v == "dark" => "dark",
         _ => "system",
     }
 }
 
-pub fn set_color_scheme(conn: &Connection, value: &str) -> Result<(), rusqlite::Error> {
-    set_setting(conn, COLOR_SCHEME_KEY, value)
+fn set_color_scheme_in(conn: &Connection, value: &str) -> Result<(), rusqlite::Error> {
+    set_setting_in(conn, COLOR_SCHEME_KEY, value)
 }
 
 pub const MISSING_AUTO_CLEAN_KEY: &str = "missing_auto_clean";
@@ -602,8 +629,8 @@ impl AutoCleanSetting {
 /// the stored value is unrecognized/corrupt or the read itself fails — see
 /// the type's own doc comment for why `Off` is the only safe fallback for a
 /// destructive setting.
-pub fn get_missing_auto_clean(conn: &Connection) -> AutoCleanSetting {
-    match get_setting(conn, MISSING_AUTO_CLEAN_KEY) {
+fn get_missing_auto_clean_in(conn: &Connection) -> AutoCleanSetting {
+    match get_setting_in(conn, MISSING_AUTO_CLEAN_KEY) {
         Ok(Some(value)) => AutoCleanSetting::parse(&value),
         Ok(None) => AutoCleanSetting::Off,
         Err(error) => {
@@ -613,11 +640,11 @@ pub fn get_missing_auto_clean(conn: &Connection) -> AutoCleanSetting {
     }
 }
 
-pub fn set_missing_auto_clean(
+fn set_missing_auto_clean_in(
     conn: &Connection,
     value: AutoCleanSetting,
 ) -> Result<(), rusqlite::Error> {
-    set_setting(conn, MISSING_AUTO_CLEAN_KEY, &value.as_str())
+    set_setting_in(conn, MISSING_AUTO_CLEAN_KEY, &value.as_str())
 }
 
 /// Reads the unix-seconds timestamp auto-clean's grace period is measured
@@ -627,8 +654,8 @@ pub fn set_missing_auto_clean(
 /// never run without an explicit arming date) — including when the stored
 /// value fails to parse as an integer, the same fallback direction
 /// `get_missing_auto_clean` takes for a corrupt duration.
-pub fn get_auto_clean_armed_at(conn: &Connection) -> Result<Option<i64>, rusqlite::Error> {
-    let stored = get_setting(conn, AUTO_CLEAN_ARMED_AT_KEY)?;
+fn get_auto_clean_armed_at_in(conn: &Connection) -> Result<Option<i64>, rusqlite::Error> {
+    let stored = get_setting_in(conn, AUTO_CLEAN_ARMED_AT_KEY)?;
     Ok(stored.and_then(|value| value.parse::<i64>().ok()))
 }
 
@@ -639,8 +666,8 @@ pub fn get_auto_clean_armed_at(conn: &Connection) -> Result<Option<i64>, rusqlit
 /// `queries::auto_clean_eligible`'s `max(missing_since, armed_at)` picks
 /// whichever is later, never retroactively sweeping a backlog the instant
 /// the setting is enabled.
-pub fn set_auto_clean_armed_at(conn: &Connection, armed_at: i64) -> Result<(), rusqlite::Error> {
-    set_setting(conn, AUTO_CLEAN_ARMED_AT_KEY, &armed_at.to_string())
+fn set_auto_clean_armed_at_in(conn: &Connection, armed_at: i64) -> Result<(), rusqlite::Error> {
+    set_setting_in(conn, AUTO_CLEAN_ARMED_AT_KEY, &armed_at.to_string())
 }
 
 /// Unix-seconds timestamp of the last time the user opened the Missing
@@ -668,8 +695,8 @@ pub const LAST_VIEWED_IMPORT_ERRORS_KEY: &str = "last_viewed_import_errors";
 /// See [`LAST_VIEWED_MISSING_KEY`]'s doc comment for the "missing key or
 /// corrupt value both read back as 0" contract this and its three siblings
 /// below share.
-pub fn get_last_viewed_missing(conn: &Connection) -> Result<i64, rusqlite::Error> {
-    let stored = get_setting(conn, LAST_VIEWED_MISSING_KEY)?;
+fn get_last_viewed_missing_in(conn: &Connection) -> Result<i64, rusqlite::Error> {
+    let stored = get_setting_in(conn, LAST_VIEWED_MISSING_KEY)?;
     Ok(stored
         .and_then(|value| value.parse::<i64>().ok())
         .unwrap_or(0))
@@ -678,19 +705,19 @@ pub fn get_last_viewed_missing(conn: &Connection) -> Result<i64, rusqlite::Error
 /// Writes `now` as the Missing-files view's last-viewed timestamp — the
 /// view (a later task) calls this the moment it opens, which is what clears
 /// `queries::count_new_missing`'s badge for everything currently visible.
-pub fn set_last_viewed_missing(conn: &Connection, now: i64) -> Result<(), rusqlite::Error> {
-    set_setting(conn, LAST_VIEWED_MISSING_KEY, &now.to_string())
+fn set_last_viewed_missing_in(conn: &Connection, now: i64) -> Result<(), rusqlite::Error> {
+    set_setting_in(conn, LAST_VIEWED_MISSING_KEY, &now.to_string())
 }
 
-pub fn get_last_viewed_import_errors(conn: &Connection) -> Result<i64, rusqlite::Error> {
-    let stored = get_setting(conn, LAST_VIEWED_IMPORT_ERRORS_KEY)?;
+fn get_last_viewed_import_errors_in(conn: &Connection) -> Result<i64, rusqlite::Error> {
+    let stored = get_setting_in(conn, LAST_VIEWED_IMPORT_ERRORS_KEY)?;
     Ok(stored
         .and_then(|value| value.parse::<i64>().ok())
         .unwrap_or(0))
 }
 
-pub fn set_last_viewed_import_errors(conn: &Connection, now: i64) -> Result<(), rusqlite::Error> {
-    set_setting(conn, LAST_VIEWED_IMPORT_ERRORS_KEY, &now.to_string())
+fn set_last_viewed_import_errors_in(conn: &Connection, now: i64) -> Result<(), rusqlite::Error> {
+    set_setting_in(conn, LAST_VIEWED_IMPORT_ERRORS_KEY, &now.to_string())
 }
 
 #[cfg(test)]

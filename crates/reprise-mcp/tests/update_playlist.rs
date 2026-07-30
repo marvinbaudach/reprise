@@ -18,10 +18,9 @@ fn fixture(dir: &TempDir) -> (std::path::PathBuf, Vec<i64>, i64) {
             SeedTrack::simple("Three", "Artist"),
         ],
     );
-    let mut conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
+    let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
     let playlist_id =
-        reprise_core::library::playlists::create_with_tracks(&mut conn, "Before", &[ids[0]])
-            .unwrap();
+        reprise_core::library::playlists::create_with_tracks(&db, "Before", &[ids[0]]).unwrap();
     (path, ids, playlist_id)
 }
 
@@ -52,12 +51,12 @@ fn rename_and_add_tracks_are_capability_gated_and_recorded() {
     assert_eq!(appended["track_count"], 4);
     assert_eq!(appended["affected"], 3);
 
-    let conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
+    let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
     assert_eq!(
-        reprise_core::library::playlists::track_ids(&conn, playlist_id).unwrap(),
+        reprise_core::library::playlists::track_ids(&db, playlist_id).unwrap(),
         [ids[0], ids[1], ids[2], ids[1]]
     );
-    let operations: Vec<String> = reprise_core::events::read_since(&conn, 0, None)
+    let operations: Vec<String> = reprise_core::events::read_since(&db, 0, None)
         .unwrap()
         .into_iter()
         .filter(|change| change.entity == "playlist")

@@ -1,6 +1,8 @@
 //! Versioned, bounded persistence for restorable UI and queue state.
 
 use rusqlite::Connection;
+
+use crate::db::Db;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -97,8 +99,9 @@ pub enum SessionError {
     Serialize(#[from] serde_json::Error),
 }
 
-pub fn load(conn: &Connection) -> SessionState {
-    let stored = match crate::library::settings::get_setting(conn, SESSION_KEY) {
+pub fn load(db: &Db) -> SessionState {
+    let conn = db.conn();
+    let stored = match crate::library::settings::get_setting_in(conn, SESSION_KEY) {
         Ok(Some(stored)) => stored,
         Ok(None) => return SessionState::default(),
         Err(error) => {
@@ -123,10 +126,11 @@ pub fn load(conn: &Connection) -> SessionState {
     resolve_persisted_places(conn, normalize(state))
 }
 
-pub fn save(conn: &Connection, state: &SessionState) -> Result<(), SessionError> {
+pub fn save(db: &Db, state: &SessionState) -> Result<(), SessionError> {
+    let conn = db.conn();
     let serialized =
         serde_json::to_string(&resolve_persisted_places(conn, normalize(state.clone())))?;
-    crate::library::settings::set_setting(conn, SESSION_KEY, &serialized)?;
+    crate::library::settings::set_setting_in(conn, SESSION_KEY, &serialized)?;
     Ok(())
 }
 
@@ -349,10 +353,8 @@ fn truncate_utf8(value: &mut String, max_bytes: usize) {
 mod tests {
     use super::*;
 
-    fn conn() -> Connection {
-        let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
-        conn
+    fn conn() -> Db {
+        Db::open_in_memory().unwrap()
     }
 
     fn full_state() -> SessionState {

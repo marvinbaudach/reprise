@@ -171,8 +171,8 @@ fn dispatch_smoke_menu_action(shared: &Rc<Shared>, action: &str) {
 /// lookup fails or no playlist has that exact name; picks the first by
 /// position on a name collision, same as the other lookup.
 fn resolve_smoke_menu_action_playlist(shared: &Rc<Shared>, name: &str) -> Option<i64> {
-    let conn = shared.conn.borrow();
-    let all = playlists::list(&conn)
+    let conn = &shared.conn;
+    let all = playlists::list(conn)
         .inspect_err(|error| {
             tracing::error!(
                 %error,

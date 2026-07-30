@@ -1,11 +1,11 @@
 //! Folder watcher (Stage 3 Task 8): real-time library updates via `notify`'s
 //! recommended (inotify-backed on Linux) recursive watcher, running on its
-//! own OS thread against its own `rusqlite::Connection` — never the UI's
-//! `Rc<RefCell<Connection>>` (not `Send`, and sharing one connection across
+//! own OS thread against its own [`crate::db::Db`] — never the UI's handle
+//! (`rusqlite::Connection` is not `Sync`, and sharing one connection across
 //! threads invites lock contention with the UI's own reads/writes anyway).
-//! This mirrors `ui::window`'s scan-worker thread, which opens its own
-//! connection over the same `db_path` for the identical reason (see that
-//! module's `run_scan`).
+//! This mirrors `ui::window`'s scan-worker thread, which opens its own handle
+//! over the same `db_path` for the identical reason (see that module's
+//! `run_scan`).
 //!
 //! ## Debounce: collect for `DEBOUNCE` of quiescence, then one reconcile
 //!
@@ -121,8 +121,8 @@ fn should_trigger_after(quiet_duration: Duration) -> bool {
     quiet_duration >= DEBOUNCE
 }
 
-/// Starts watching `root` recursively. Opens its own connection over
-/// `db_path` on every reconcile (never the caller's UI connection — see the
+/// Starts watching `root` recursively. Opens its own database handle over
+/// `db_path` on every reconcile (never the caller's UI handle — see the
 /// module doc). Returns `None` after a `tracing::warn!` if the underlying
 /// `notify` watcher can't be created or armed — see the module doc's `##
 /// Failure is never fatal` section. `on_event` runs on this watcher's own
@@ -266,7 +266,7 @@ fn event_is_relevant(event: &notify::Event) -> bool {
     event.paths.iter().any(|path| !is_ignored(path))
 }
 
-/// Runs one reconcile pass: opens+migrates a fresh connection over
+/// Runs one reconcile pass: opens+migrates a fresh database handle over
 /// `db_path`, runs a single incremental `scanner::scan_folder(root)` (see
 /// the module doc's `## Reconcile is just scan_folder` section — Task 1.5
 /// folded the walk and the mark-vanished phase into one call), and hands the
@@ -276,22 +276,18 @@ fn event_is_relevant(event: &notify::Event) -> bool {
 /// next debounced batch). The one exception is `ScanOutcome::RootUnavailable`
 /// itself, which is NOT an early return — see below.
 fn reconcile(root: &Path, db_path: &Path, on_event: &impl Fn(WatchEvent)) {
-    let mut conn = match crate::db::open(Some(db_path)) {
-        Ok(conn) => conn,
+    let db = match crate::db::Db::open_migrated(Some(db_path)) {
+        Ok(db) => db,
         Err(error) => {
-            tracing::error!(%error, "watcher: failed to open database connection; skipping reconcile");
+            tracing::error!(%error, "watcher: failed to open database handle; skipping reconcile");
             return;
         }
     };
-    if let Err(error) = crate::db::migrate(&conn) {
-        tracing::error!(%error, "watcher: failed to migrate database; skipping reconcile");
-        return;
-    }
 
-    let (report, root_unavailable, auto_cleaned_ids) = match scanner::scan_folder(&mut conn, root) {
+    let (report, root_unavailable, auto_cleaned_ids) = match scanner::scan_folder(&db, root) {
         Ok(ScanOutcome::Completed(report)) => {
             let auto_cleaned_ids =
-                match scanner::finalize_completed_scan(&mut conn, &report, watcher_now_unix()) {
+                match scanner::finalize_completed_scan(&db, &report, watcher_now_unix()) {
                     Ok(ids) => ids,
                     Err(error) => {
                         tracing::error!(%error, "watcher: scan postprocessing failed");
@@ -484,8 +480,7 @@ mod tests {
         std::fs::create_dir(&root).unwrap();
         let db_path = temp.path().join("reprise.db");
         {
-            let conn = crate::db::open(Some(&db_path)).unwrap();
-            crate::db::migrate(&conn).unwrap();
+            let _conn = crate::db::Db::open_migrated(Some(&db_path)).unwrap();
         }
 
         let (sender, receiver) = std_mpsc::sync_channel(1);
@@ -514,7 +509,7 @@ mod tests {
         assert_eq!(event.vanished, 0);
         assert!(event.root_unavailable.is_none());
 
-        let conn = crate::db::open(Some(&db_path)).unwrap();
+        let conn = crate::db::Db::open_ready(&db_path).unwrap();
         let stored = crate::queries::track_id_for_path(&conn, &added.to_string_lossy()).unwrap();
         assert!(
             stored.is_some(),
@@ -530,8 +525,7 @@ mod tests {
         std::fs::create_dir(&root).unwrap();
         let db_path = temp.path().join("reprise.db");
         {
-            let conn = crate::db::open(Some(&db_path)).unwrap();
-            crate::db::migrate(&conn).unwrap();
+            let _conn = crate::db::Db::open_migrated(Some(&db_path)).unwrap();
         }
 
         let added = root.join("added-before-start.flac");
@@ -552,7 +546,7 @@ mod tests {
         assert_eq!(event.vanished, 0);
         assert!(event.root_unavailable.is_none());
 
-        let conn = crate::db::open(Some(&db_path)).unwrap();
+        let conn = crate::db::Db::open_ready(&db_path).unwrap();
         let stored = crate::queries::track_id_for_path(&conn, &added.to_string_lossy()).unwrap();
         assert!(
             stored.is_some(),
@@ -577,8 +571,7 @@ mod tests {
         let root = temp.path().join("does-not-exist");
         let db_path = temp.path().join("reprise.db");
         {
-            let conn = crate::db::open(Some(&db_path)).unwrap();
-            crate::db::migrate(&conn).unwrap();
+            let _conn = crate::db::Db::open_migrated(Some(&db_path)).unwrap();
         }
 
         let (sender, receiver) = std_mpsc::sync_channel(1);
@@ -608,14 +601,15 @@ mod tests {
         std::fs::copy(fixture, root.join("present.flac")).unwrap();
         let db_path = temp.path().join("reprise.db");
         {
-            let conn = crate::db::open_migrated(Some(&db_path)).unwrap();
-            conn.execute(
-                "INSERT INTO tracks \
+            let conn = crate::db::Db::open_migrated(Some(&db_path)).unwrap();
+            conn.conn()
+                .execute(
+                    "INSERT INTO tracks \
                  (id,path,title,artist,added_at,missing_since,missing_reason) \
                  VALUES (99,'/gone.flac','Gone','Artist',0,0,'deleted')",
-                [],
-            )
-            .unwrap();
+                    [],
+                )
+                .unwrap();
             crate::library::settings::set_missing_auto_clean(
                 &conn,
                 crate::library::settings::AutoCleanSetting::Days(0),
@@ -632,7 +626,7 @@ mod tests {
         let event = receiver.recv_timeout(Duration::from_secs(1)).unwrap();
         assert_eq!(event.auto_cleaned_ids, vec![99]);
         assert!(event.root_unavailable.is_none());
-        let conn = crate::db::open_migrated(Some(&db_path)).unwrap();
+        let conn = crate::db::Db::open_migrated(Some(&db_path)).unwrap();
         assert_eq!(
             crate::library::settings::get_last_scan_relinked(&conn).unwrap(),
             Some(event.report.moved)

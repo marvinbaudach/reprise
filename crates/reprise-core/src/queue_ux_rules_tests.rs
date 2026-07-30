@@ -56,8 +56,8 @@ fn play_3b_later_filter_changes_leave_the_playback_snapshot_untouched() {
 // missing after it was queued is skipped silently in either pending layer.
 #[test]
 fn play_4a_list_playback_and_queue_advance_skip_missing_silently() {
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     for (id, missing_since) in [(1_i64, None), (2, Some(1_i64)), (3, None)] {
         conn.execute(
             "INSERT INTO tracks \
@@ -73,10 +73,10 @@ fn play_4a_list_playback_and_queue_advance_skip_missing_silently() {
         )
         .unwrap();
     }
-    let playlist_id = crate::library::playlists::create(&conn, "P1").unwrap();
-    crate::library::playlists::add_tracks(&mut conn, playlist_id, &[1, 2, 3]).unwrap();
+    let playlist_id = crate::library::playlists::create(&db, "P1").unwrap();
+    crate::library::playlists::add_tracks(&db, playlist_id, &[1, 2, 3]).unwrap();
     let playable = crate::queries::query_track_ids(
-        &conn,
+        &db,
         &crate::view_source::ViewSource::Playlist(playlist_id),
         "playlist_order",
         "asc",
@@ -152,9 +152,9 @@ fn play_5a_scan_detection_purges_deleted_but_retains_unmounted_and_playing_track
     let deleted_path = root.join("deleted.flac");
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac");
     std::fs::copy(fixture, &deleted_path).unwrap();
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    let initial = crate::library::scanner::scan_folder(&mut conn, &root).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    let initial = crate::library::scanner::scan_folder(&db, &root).unwrap();
     assert!(matches!(
         initial,
         crate::library::scanner::ScanOutcome::Completed(_)
@@ -188,7 +188,7 @@ fn play_5a_scan_detection_purges_deleted_but_retains_unmounted_and_playing_track
     }
 
     std::fs::remove_file(&deleted_path).unwrap();
-    let report = match crate::library::scanner::scan_folder(&mut conn, &root).unwrap() {
+    let report = match crate::library::scanner::scan_folder(&db, &root).unwrap() {
         crate::library::scanner::ScanOutcome::Completed(report) => report,
         crate::library::scanner::ScanOutcome::RootUnavailable { root } => {
             panic!("test root unexpectedly unavailable: {}", root.display())
@@ -213,8 +213,7 @@ fn play_5a_scan_detection_purges_deleted_but_retains_unmounted_and_playing_track
             (playing_id, None)
         ]
     );
-    let auto_cleaned =
-        crate::library::scanner::finalize_completed_scan(&mut conn, &report, 10).unwrap();
+    let auto_cleaned = crate::library::scanner::finalize_completed_scan(&db, &report, 10).unwrap();
     assert!(auto_cleaned.is_empty(), "auto-clean is disabled by default");
     let mut queue = Queue::new();
     queue.set_tracks(vec![playing_id, deleted_id, unmounted_id], 0);
@@ -223,7 +222,7 @@ fn play_5a_scan_detection_purges_deleted_but_retains_unmounted_and_playing_track
     let mut candidates = queue.ids_in_order();
     candidates.extend_from_slice(pending.ids());
     let mut purge = auto_cleaned;
-    purge.extend(crate::queries::query_queue_purge_track_ids(&conn, &candidates).unwrap());
+    purge.extend(crate::queries::query_queue_purge_track_ids(&db, &candidates).unwrap());
     queue.remove_ids(&purge);
     pending.remove_ids(&purge);
 
@@ -237,8 +236,8 @@ fn play_5a_scan_detection_purges_deleted_but_retains_unmounted_and_playing_track
 // the retained id playable again.
 #[test]
 fn play_5b_unmounted_tracks_stay_skip_heal_and_never_stop_current() {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     for (id, reason, removed_at) in [
         (1_i64, None, None),
         (2, Some("unmounted"), None),
@@ -262,7 +261,7 @@ fn play_5b_unmounted_tracks_stay_skip_heal_and_never_stop_current() {
         .unwrap();
     }
 
-    let retained = crate::queries::query_queue_retained_track_ids(&conn).unwrap();
+    let retained = crate::queries::query_queue_retained_track_ids(&db).unwrap();
     assert_eq!(retained, std::collections::HashSet::from([1, 2, 4]));
 
     let mut queue = Queue::new();
@@ -280,7 +279,7 @@ fn play_5b_unmounted_tracks_stay_skip_heal_and_never_stop_current() {
         "background availability changes never stop the playing track"
     );
 
-    let live = crate::queries::query_live_track_ids(&conn).unwrap();
+    let live = crate::queries::query_live_track_ids(&db).unwrap();
     assert_eq!(queue.advance_auto_matching(|id| live.contains(&id)), None);
     assert_eq!(queue.ids_in_order(), vec![1, 2]);
 
@@ -289,7 +288,7 @@ fn play_5b_unmounted_tracks_stay_skip_heal_and_never_stop_current() {
         [],
     )
     .unwrap();
-    let healed = crate::queries::query_live_track_ids(&conn).unwrap();
+    let healed = crate::queries::query_live_track_ids(&db).unwrap();
     let mut healed_queue = Queue::new();
     healed_queue.set_tracks(queue.ids_in_order(), 0);
     assert_eq!(

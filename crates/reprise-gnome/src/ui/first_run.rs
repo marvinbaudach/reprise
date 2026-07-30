@@ -1,14 +1,14 @@
 //! Native first-run wizard reusing the normal window actions and scan button.
 
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::rc::Rc;
 
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
+use reprise_core::db::Db;
 use reprise_core::library::settings;
-use rusqlite::Connection;
 
 use crate::ui::{preference_rhythmbox, scan_flow::ScanControls, strings};
 
@@ -73,14 +73,14 @@ fn build_rhythmbox_import_group(active: bool) -> RhythmboxImportWidgets {
 
 fn arm_rhythmbox_import_after_library_setup(
     scan_controls: &ScanControls,
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
     present_import: &Rc<dyn Fn()>,
 ) {
     let presented = Rc::new(Cell::new(false));
     let conn = conn.clone();
     let present_import = present_import.clone();
     scan_controls.set_on_complete(move || {
-        let library_root = match settings::get_library_root(&conn.borrow()) {
+        let library_root = match settings::get_library_root(&conn) {
             Ok(root) => root,
             Err(error) => {
                 tracing::warn!(%error, "could not read library root before Rhythmbox import");
@@ -104,15 +104,15 @@ pub(super) fn decide(completed: bool, library_root: Option<&str>) -> FirstRunDec
     FirstRunDecision::ShowWizard
 }
 
-pub(super) fn initial_decision(conn: &Connection) -> FirstRunDecision {
-    let completed = match settings::get_onboarding_completed(conn) {
+pub(super) fn initial_decision(db: &Db) -> FirstRunDecision {
+    let completed = match settings::get_onboarding_completed(db) {
         Ok(completed) => completed,
         Err(error) => {
             tracing::warn!(%error, "could not read onboarding state; showing setup");
             return FirstRunDecision::ShowWizard;
         }
     };
-    let library_root = match settings::get_library_root(conn) {
+    let library_root = match settings::get_library_root(db) {
         Ok(root) => root,
         Err(error) => {
             tracing::warn!(%error, "could not read library root for onboarding; showing setup");
@@ -121,7 +121,7 @@ pub(super) fn initial_decision(conn: &Connection) -> FirstRunDecision {
     };
     let decision = decide(completed, library_root.as_deref());
     if decision == FirstRunDecision::ExistingLibrary {
-        if let Err(error) = settings::set_onboarding_completed(conn, true) {
+        if let Err(error) = settings::set_onboarding_completed(db, true) {
             tracing::warn!(%error, "could not mark existing-library onboarding complete");
         }
     }
@@ -132,7 +132,7 @@ pub(super) fn run(
     window: &adw::ApplicationWindow,
     scan_button: &gtk4::Button,
     scan_controls: &ScanControls,
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
     decision: FirstRunDecision,
     present_rhythmbox_import: &Rc<dyn Fn()>,
 ) {
@@ -201,7 +201,7 @@ pub(super) fn run(
                 return;
             }
             let rhythmbox_import = requested_actions(options);
-            if let Err(error) = settings::set_onboarding_completed(&conn.borrow(), true) {
+            if let Err(error) = settings::set_onboarding_completed(&conn, true) {
                 tracing::warn!(%error, "could not persist onboarding completion");
             }
             if let Some(dialog) = dialog.upgrade() {
@@ -224,7 +224,7 @@ pub(super) fn run(
                 }
             }
             tracing::info!(?response, rhythmbox_import, "first-run setup completed");
-            log_smoke_result(&conn.borrow());
+            log_smoke_result(&conn);
         })
     };
 
@@ -277,11 +277,11 @@ pub(super) fn run(
     });
 }
 
-fn log_smoke_result(conn: &Connection) {
+fn log_smoke_result(db: &Db) {
     if std::env::var(SMOKE_ENV).is_err() {
         return;
     }
-    let completed = settings::get_onboarding_completed(conn).unwrap_or(false);
+    let completed = settings::get_onboarding_completed(db).unwrap_or(false);
     tracing::info!(
         completed,
         cover_download = true,

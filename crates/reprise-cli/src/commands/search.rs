@@ -1,8 +1,8 @@
 //! `search` — paginated track search over the library.
 
+use reprise_core::db::Db;
 use reprise_core::queries;
 use reprise_core::view_source::ViewSource;
-use rusqlite::Connection;
 use serde_json::{json, Value};
 
 use crate::error::CliError;
@@ -12,7 +12,7 @@ use crate::output::{format_duration_ms, print_json, sanitize_for_terminal};
 /// Searches the library for `query` (matched against title, artist, album and
 /// genre) and prints the requested window plus the total match count.
 pub fn run(
-    conn: &mut Connection,
+    db: &Db,
     query: &str,
     limit: i64,
     offset: i64,
@@ -30,9 +30,9 @@ pub fn run(
     }
 
     let source = ViewSource::Library;
-    let total = queries::query_track_count(conn, &source, query, &[])?;
+    let total = queries::query_track_count(db, &source, query, &[])?;
     let tracks =
-        queries::query_track_window(conn, &source, "title", "asc", query, offset, limit, &[])?;
+        queries::query_track_window(db, &source, "title", "asc", query, offset, limit, &[])?;
 
     if json_output {
         let rows: Vec<Value> = tracks.iter().map(json_models::track).collect();

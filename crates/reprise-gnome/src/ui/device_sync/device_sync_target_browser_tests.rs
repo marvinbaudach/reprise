@@ -233,9 +233,7 @@ fn run<T>(future: impl Future<Output = T>) -> T {
 #[test]
 fn mtp_34_a_stale_folder_listing_is_dropped_not_appended_to_a_newer_navigation() {
     run(async {
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        let conn = Rc::new(RefCell::new(conn));
+        let conn = Rc::new(crate::test_db::open().unwrap());
 
         let backend = Rc::new(RaceBackend::new("race-phone"));
         backend.set_listing(StorageId(1), "/Music", &["ShouldNotAppear"]);

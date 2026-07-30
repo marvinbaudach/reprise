@@ -73,11 +73,12 @@ fn v36_migration_preserves_managed_files_without_the_track_cascade() {
     crate::db_device_sync::migrate_v37(&conn).unwrap();
     crate::db_device_sync::migrate_v44(&conn).unwrap();
     crate::db_device_sync::migrate_v46(&conn).unwrap();
-    let settings = load_or_create_settings(&conn, "phone", "ignored").unwrap();
+    let db = crate::db::Db::from_connection(conn);
+    let settings = load_or_create_settings(&db, "phone", "ignored").unwrap();
     assert_eq!(settings.selection, DeviceSelection::Sources(Vec::new()));
     assert_eq!(settings.profile, TransferProfile::Mp3(Mp3Quality::Kbps256));
 
-    let files = load_device_files(&conn, "phone").unwrap();
+    let files = load_device_files(&db, "phone").unwrap();
     assert_eq!(
         files,
         vec![DeviceFileRecord {
@@ -93,8 +94,10 @@ fn v36_migration_preserves_managed_files_without_the_track_cascade() {
         }]
     );
 
-    conn.execute("DELETE FROM tracks WHERE id = 7", []).unwrap();
-    assert_eq!(load_device_files(&conn, "phone").unwrap(), files);
+    db.conn()
+        .execute("DELETE FROM tracks WHERE id = 7", [])
+        .unwrap();
+    assert_eq!(load_device_files(&db, "phone").unwrap(), files);
 }
 
 #[test]
@@ -114,9 +117,10 @@ fn v36_migration_preserves_legacy_orphans_even_if_foreign_keys_were_disabled() {
 
     crate::db_device_sync::migrate_v36(&conn).unwrap();
     crate::db_device_sync::migrate_v37(&conn).unwrap();
+    let db = crate::db::Db::from_connection(conn);
 
     assert_eq!(
-        load_device_files(&conn, "phone").unwrap(),
+        load_device_files(&db, "phone").unwrap(),
         vec![DeviceFileRecord {
             device_serial: "phone".into(),
             track_id: 88,
@@ -147,9 +151,10 @@ fn v36_migration_keeps_valid_playlist_selection_and_marks_it_unconfigured_only_w
     crate::db_device_sync::migrate_v37(&conn).unwrap();
     crate::db_device_sync::migrate_v44(&conn).unwrap();
     crate::db_device_sync::migrate_v46(&conn).unwrap();
+    let db = crate::db::Db::from_connection(conn);
 
     assert_eq!(
-        load_or_create_settings(&conn, "configured", "ignored")
+        load_or_create_settings(&db, "configured", "ignored")
             .unwrap()
             .selection,
         DeviceSelection::Sources(vec![
@@ -158,7 +163,7 @@ fn v36_migration_keeps_valid_playlist_selection_and_marks_it_unconfigured_only_w
         ])
     );
     assert_eq!(
-        load_or_create_settings(&conn, "empty", "ignored")
+        load_or_create_settings(&db, "empty", "ignored")
             .unwrap()
             .selection,
         DeviceSelection::Sources(Vec::new())
@@ -184,14 +189,15 @@ fn v37_migration_preserves_existing_mp3_behavior_while_fresh_devices_default_to_
     assert_eq!(version, 37);
     crate::db_device_sync::migrate_v44(&conn).unwrap();
     crate::db_device_sync::migrate_v46(&conn).unwrap();
+    let db = crate::db::Db::from_connection(conn);
     assert_eq!(
-        load_or_create_settings(&conn, "existing", "ignored")
+        load_or_create_settings(&db, "existing", "ignored")
             .unwrap()
             .profile,
         TransferProfile::Mp3(Mp3Quality::Kbps256)
     );
     assert_eq!(
-        load_or_create_settings(&conn, "fresh", "Fresh phone")
+        load_or_create_settings(&db, "fresh", "Fresh phone")
             .unwrap()
             .profile,
         TransferProfile::Opus160
@@ -220,8 +226,9 @@ fn v46_migration_backfills_prepare_before_sync_to_true_for_existing_rows() {
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
     assert_eq!(version, 46);
+    let db = crate::db::Db::from_connection(conn);
     assert!(
-        load_or_create_settings(&conn, "existing", "ignored")
+        load_or_create_settings(&db, "existing", "ignored")
             .unwrap()
             .prepare_before_sync
     );
@@ -229,17 +236,16 @@ fn v46_migration_backfills_prepare_before_sync_to_true_for_existing_rows() {
 
 #[test]
 fn v37_repair_keeps_an_existing_transfer_profile_column_and_value() {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    let mut settings = load_or_create_settings(&conn, "phone", "Phone").unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let mut settings = load_or_create_settings(&db, "phone", "Phone").unwrap();
     settings.profile = TransferProfile::Original;
-    save_settings(&conn, &settings).unwrap();
-    conn.pragma_update(None, "user_version", 36).unwrap();
+    save_settings(&db, &settings).unwrap();
+    db.conn().pragma_update(None, "user_version", 36).unwrap();
 
-    crate::db_device_sync::migrate_v37(&conn).unwrap();
+    crate::db_device_sync::migrate_v37(db.conn()).unwrap();
 
     assert_eq!(
-        load_or_create_settings(&conn, "phone", "ignored")
+        load_or_create_settings(&db, "phone", "ignored")
             .unwrap()
             .profile,
         TransferProfile::Original
@@ -248,17 +254,16 @@ fn v37_repair_keeps_an_existing_transfer_profile_column_and_value() {
 
 #[test]
 fn settings_round_trip_each_modern_transfer_profile() {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    let mut settings = load_or_create_settings(&conn, "new-phone", "New Phone").unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let mut settings = load_or_create_settings(&db, "new-phone", "New Phone").unwrap();
     assert_eq!(settings.profile, TransferProfile::Opus160);
 
     settings.selection = DeviceSelection::Sources(vec![SelectionSource::Playlist(42)]);
     for profile in TransferProfile::ALL {
         settings.profile = profile;
-        save_settings(&conn, &settings).unwrap();
+        save_settings(&db, &settings).unwrap();
         assert_eq!(
-            load_or_create_settings(&conn, "new-phone", "ignored")
+            load_or_create_settings(&db, "new-phone", "ignored")
                 .unwrap()
                 .profile,
             profile
@@ -268,8 +273,7 @@ fn settings_round_trip_each_modern_transfer_profile() {
 
 #[test]
 fn managed_file_inventory_round_trips_explicit_source_device_and_profile_facts() {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
     let record = DeviceFileRecord {
         device_serial: "phone".into(),
         track_id: 11,
@@ -282,15 +286,14 @@ fn managed_file_inventory_round_trips_explicit_source_device_and_profile_facts()
         pinned: false,
     };
 
-    upsert_device_file(&conn, &record).unwrap();
+    upsert_device_file(&db, &record).unwrap();
 
-    assert_eq!(load_device_files(&conn, "phone").unwrap(), vec![record]);
+    assert_eq!(load_device_files(&db, "phone").unwrap(), vec![record]);
 }
 
 #[test]
 fn managed_playlist_inventory_tracks_renames_and_deletes_by_source_identity() {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
     let original = DevicePlaylistRecord {
         device_serial: "phone".into(),
         source: SelectionSource::Playlist(42),
@@ -298,37 +301,37 @@ fn managed_playlist_inventory_tracks_renames_and_deletes_by_source_identity() {
         device_path: format!("{REPRISE_DEVICE_DIR}/Playlists/Road Trip.m3u8"),
         last_synced_at: None,
     };
-    upsert_device_playlist(&conn, &original).unwrap();
+    upsert_device_playlist(&db, &original).unwrap();
 
     let renamed = DevicePlaylistRecord {
         source_name: "Road Trip 2026".into(),
         device_path: format!("{REPRISE_DEVICE_DIR}/Playlists/Road Trip 2026.m3u8"),
         ..original.clone()
     };
-    upsert_device_playlist(&conn, &renamed).unwrap();
+    upsert_device_playlist(&db, &renamed).unwrap();
     assert_eq!(
-        load_device_playlists(&conn, "phone").unwrap(),
+        load_device_playlists(&db, "phone").unwrap(),
         vec![renamed.clone()]
     );
 
     mark_device_playlists_synced(
-        &conn,
+        &db,
         "phone",
         &[SelectionSource::Playlist(42)],
         1_753_612_496,
     )
     .unwrap();
     assert_eq!(
-        load_device_playlists(&conn, "phone")
+        load_device_playlists(&db, "phone")
             .unwrap()
             .remove(0)
             .last_synced_at,
         Some(1_753_612_496)
     );
 
-    upsert_device_playlist(&conn, &renamed).unwrap();
+    upsert_device_playlist(&db, &renamed).unwrap();
     assert_eq!(
-        load_device_playlists(&conn, "phone")
+        load_device_playlists(&db, "phone")
             .unwrap()
             .remove(0)
             .last_synced_at,
@@ -336,16 +339,16 @@ fn managed_playlist_inventory_tracks_renames_and_deletes_by_source_identity() {
         "rewriting the playlist before verification must preserve the previous timestamp"
     );
 
-    assert!(delete_device_playlist(&conn, "phone", &SelectionSource::Playlist(42)).unwrap());
-    assert!(load_device_playlists(&conn, "phone").unwrap().is_empty());
+    assert!(delete_device_playlist(&db, "phone", &SelectionSource::Playlist(42)).unwrap());
+    assert!(load_device_playlists(&db, "phone").unwrap().is_empty());
 }
 
 #[test]
 fn managed_playlist_inventory_has_a_nullable_verified_sync_timestamp() {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
 
-    let column_count: i64 = conn
+    let column_count: i64 = db
+        .conn()
         .query_row(
             "SELECT COUNT(*) FROM pragma_table_info('device_playlists') \
              WHERE name = 'last_synced_at'",
@@ -355,7 +358,8 @@ fn managed_playlist_inventory_has_a_nullable_verified_sync_timestamp() {
         .unwrap();
     assert_eq!(column_count, 1);
 
-    let nullability: i64 = conn
+    let nullability: i64 = db
+        .conn()
         .query_row(
             "SELECT \"notnull\" FROM pragma_table_info('device_playlists') \
              WHERE name = 'last_synced_at'",
@@ -387,9 +391,10 @@ fn v38_migration_preserves_playlist_inventory_with_an_unknown_sync_time() {
     .unwrap();
 
     crate::db_device_sync::migrate_v38(&conn).unwrap();
+    let db = crate::db::Db::from_connection(conn);
 
     assert_eq!(
-        load_device_playlists(&conn, "phone").unwrap(),
+        load_device_playlists(&db, "phone").unwrap(),
         vec![DevicePlaylistRecord {
             device_serial: "phone".into(),
             source: SelectionSource::Playlist(42),
@@ -399,7 +404,8 @@ fn v38_migration_preserves_playlist_inventory_with_an_unknown_sync_time() {
         }]
     );
     assert_eq!(
-        conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
+        db.conn()
+            .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
             .unwrap(),
         38
     );

@@ -1,5 +1,5 @@
 use chrono::NaiveDate;
-use rusqlite::{params, Connection};
+use rusqlite::params;
 
 use super::{
     artist_due, config, count_unseen, count_upcoming, geocode_url, haversine_km, jitter_seconds,
@@ -7,42 +7,41 @@ use super::{
     DateHorizon,
 };
 
-fn conn() -> Connection {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    conn
+fn conn() -> crate::db::Db {
+    crate::db::Db::open_in_memory().unwrap()
 }
 
 fn insert_event(
-    conn: &Connection,
+    db: &crate::db::Db,
     id: i64,
     date: &str,
     country: &str,
     latitude: Option<f64>,
     is_similar: bool,
 ) {
-    conn.execute(
-        "INSERT INTO concert_events (
+    db.conn()
+        .execute(
+            "INSERT INTO concert_events (
            id, artist_key, artist_name, starts_at, date_key, venue, city,
            country, latitude, longitude, provider, is_similar, fetched_at,
            seen_at, dedupe_key
          ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 11.58,
                    'bandsintown', ?10, 100, NULL, ?11)",
-        params![
-            id,
-            format!("artist-{id}"),
-            format!("Artist {id}"),
-            format!("{date}T19:00:00"),
-            date,
-            format!("Venue {id}"),
-            if id == 3 { "Berlin" } else { "Munich" },
-            country,
-            latitude,
-            i64::from(is_similar),
-            format!("{date}|city|venue-{id}")
-        ],
-    )
-    .unwrap();
+            params![
+                id,
+                format!("artist-{id}"),
+                format!("Artist {id}"),
+                format!("{date}T19:00:00"),
+                date,
+                format!("Venue {id}"),
+                if id == 3 { "Berlin" } else { "Munich" },
+                country,
+                latitude,
+                i64::from(is_similar),
+                format!("{date}|city|venue-{id}")
+            ],
+        )
+        .unwrap();
 }
 
 #[test]
@@ -99,7 +98,7 @@ fn rad_5_geocode_parses_the_addressdetails_country_code_when_present() {
 fn config_defaults_are_bounded_and_stored_credentials_win() {
     let conn = conn();
     assert_eq!(
-        config::credentials_with_env(&conn, |_| Some("environment".into()), None)
+        config::credentials_with_env(conn.conn(), |_| Some("environment".into()), None)
             .unwrap()
             .bandsintown_app_id
             .as_deref(),
@@ -118,7 +117,7 @@ fn config_defaults_are_bounded_and_stored_credentials_win() {
     assert_eq!(config::window_days(&conn).unwrap(), 365);
     assert_eq!(config::similar_config(&conn).unwrap().count, 1);
     assert_eq!(
-        config::credentials_with_env(&conn, |_| Some("environment".into()), None)
+        config::credentials_with_env(conn.conn(), |_| Some("environment".into()), None)
             .unwrap()
             .bandsintown_app_id
             .as_deref(),
@@ -129,16 +128,19 @@ fn config_defaults_are_bounded_and_stored_credentials_win() {
 #[test]
 fn ticketmaster_credentials_fall_back_to_the_bundled_build_value() {
     let conn = conn();
-    let credentials =
-        config::credentials_with_env(&conn, |_| None, Some("  dummy-bundled-ticketmaster-key  "))
-            .unwrap();
+    let credentials = config::credentials_with_env(
+        conn.conn(),
+        |_| None,
+        Some("  dummy-bundled-ticketmaster-key  "),
+    )
+    .unwrap();
     assert_eq!(
         credentials.ticketmaster_api_key.as_deref(),
         Some("dummy-bundled-ticketmaster-key")
     );
 
     let credentials = config::credentials_with_env(
-        &conn,
+        conn.conn(),
         |_| Some(" \t ".to_owned()),
         Some("dummy-bundled-ticketmaster-key"),
     )
@@ -148,7 +150,7 @@ fn ticketmaster_credentials_fall_back_to_the_bundled_build_value() {
         Some("dummy-bundled-ticketmaster-key")
     );
 
-    let credentials = config::credentials_with_env(&conn, |_| None, Some(" \t ")).unwrap();
+    let credentials = config::credentials_with_env(conn.conn(), |_| None, Some(" \t ")).unwrap();
     assert_eq!(credentials.ticketmaster_api_key, None);
 }
 
@@ -159,9 +161,12 @@ fn ticketmaster_credentials_prefer_stored_then_runtime_then_build() {
         (key == "REPRISE_TICKETMASTER_APIKEY")
             .then(|| "  dummy-runtime-ticketmaster-key  ".to_owned())
     };
-    let credentials =
-        config::credentials_with_env(&conn, read_runtime, Some("dummy-bundled-ticketmaster-key"))
-            .unwrap();
+    let credentials = config::credentials_with_env(
+        conn.conn(),
+        read_runtime,
+        Some("dummy-bundled-ticketmaster-key"),
+    )
+    .unwrap();
     assert_eq!(
         credentials.ticketmaster_api_key.as_deref(),
         Some("dummy-runtime-ticketmaster-key")
@@ -173,25 +178,31 @@ fn ticketmaster_credentials_prefer_stored_then_runtime_then_build() {
         "  dummy-stored-ticketmaster-key  ",
     )
     .unwrap();
-    let credentials =
-        config::credentials_with_env(&conn, read_runtime, Some("dummy-bundled-ticketmaster-key"))
-            .unwrap();
+    let credentials = config::credentials_with_env(
+        conn.conn(),
+        read_runtime,
+        Some("dummy-bundled-ticketmaster-key"),
+    )
+    .unwrap();
     assert_eq!(
         credentials.ticketmaster_api_key.as_deref(),
         Some("dummy-stored-ticketmaster-key")
     );
 
     crate::library::settings::set_setting(&conn, config::TICKETMASTER_API_KEY, "   ").unwrap();
-    let credentials =
-        config::credentials_with_env(&conn, read_runtime, Some("dummy-bundled-ticketmaster-key"))
-            .unwrap();
+    let credentials = config::credentials_with_env(
+        conn.conn(),
+        read_runtime,
+        Some("dummy-bundled-ticketmaster-key"),
+    )
+    .unwrap();
     assert_eq!(
         credentials.ticketmaster_api_key.as_deref(),
         Some("dummy-runtime-ticketmaster-key")
     );
 
     let credentials =
-        config::credentials_with_env(&conn, |_| Some("   ".to_owned()), None).unwrap();
+        config::credentials_with_env(conn.conn(), |_| Some("   ".to_owned()), None).unwrap();
     assert_eq!(credentials.ticketmaster_api_key, None);
 }
 
@@ -217,30 +228,32 @@ fn candidates_use_recent_plays_and_oldest_attempt_first() {
         ("Fresh", None, 970),
         ("Expired", None, 100),
     ] {
-        conn.execute(
-            "INSERT INTO listen_events (
+        conn.conn()
+            .execute(
+                "INSERT INTO listen_events (
                track_id, played_at, ms_played, artist, artist_mbid
              ) VALUES (1, ?1, 1, ?2, ?3)",
-            params![played_at, artist, mbid],
-        )
-        .unwrap();
+                params![played_at, artist, mbid],
+            )
+            .unwrap();
     }
-    conn.execute(
-        "INSERT INTO concert_artists (
+    conn.conn()
+        .execute(
+            "INSERT INTO concert_artists (
            artist_key, artist_name, last_attempt_at
          ) VALUES ('frequent', 'Frequent', 900)",
-        [],
-    )
-    .unwrap();
+            [],
+        )
+        .unwrap();
 
-    let rows = super::candidates::library_candidates(&conn, 900).unwrap();
+    let rows = super::candidates::library_candidates(conn.conn(), 900).unwrap();
     assert_eq!(
         rows.iter().map(|row| row.name.as_str()).collect::<Vec<_>>(),
         vec!["Fresh", "Frequent"]
     );
     assert_eq!(rows[1].plays, 2);
     assert_eq!(rows[1].mbid.as_deref(), Some("frequent-id"));
-    let seeds = super::candidates::seed_artists(&conn, 900, 1).unwrap();
+    let seeds = super::candidates::seed_artists(conn.conn(), 900, 1).unwrap();
     assert_eq!(seeds[0].name, "Frequent");
 }
 

@@ -25,9 +25,9 @@ fn browse_db(dir: &TempDir) -> (std::path::PathBuf, Vec<i64>, i64) {
             },
         ],
     );
-    let mut conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
+    let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
     let playlist_id = reprise_core::library::playlists::create_with_tracks(
-        &mut conn,
+        &db,
         "Deathcore",
         &[ids[2], ids[0], ids[2]],
     )

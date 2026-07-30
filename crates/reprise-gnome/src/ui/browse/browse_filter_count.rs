@@ -2,19 +2,18 @@
 //! exact `TrackListModel` query without expanding the already large track
 //! list composition module.
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
+use reprise_core::db::Db;
 use reprise_core::queries::{self, BrowseFilter};
 use reprise_core::view_source::ViewSource;
-use rusqlite::Connection;
 
 use super::browse_bar::BrowseBar;
 
 #[allow(clippy::too_many_arguments)]
 pub(in crate::ui) fn update(
     bar: &Rc<BrowseBar>,
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
     source: &ViewSource,
     count: usize,
     search: &str,
@@ -29,10 +28,7 @@ pub(in crate::ui) fn update(
         return;
     }
     let restricted = super::filter_restriction::is_restricted(search, browse, exclude_ai, source);
-    let total = {
-        let conn = conn.borrow();
-        source_total(&conn, source, restricted, count, queue_ids)
-    };
+    let total = source_total(conn, source, restricted, count, queue_ids);
     match total {
         Ok(total) => bar.set_result_count(count, total),
         Err(error) => {
@@ -43,7 +39,7 @@ pub(in crate::ui) fn update(
 }
 
 fn source_total(
-    conn: &Connection,
+    conn: &Db,
     source: &ViewSource,
     restricted: bool,
     count: usize,
@@ -68,19 +64,19 @@ mod tests {
     use super::*;
     use reprise_core::view_source::ViewSource;
 
-    fn seeded_conn() -> Connection {
-        let conn = Connection::open_in_memory().unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        conn.execute_batch(
-            "INSERT INTO tracks (id,path,title,artist,album,added_at) VALUES
+    fn seeded_conn() -> Db {
+        let conn = crate::test_db::open().unwrap();
+        crate::test_db::connection(&conn)
+            .execute_batch(
+                "INSERT INTO tracks (id,path,title,artist,album,added_at) VALUES
                (1,'/a.flac','Falling Apart','Caskets','X',0),
                (2,'/b.flac','Other','Dead by April','Y',0),
                (3,'/c.flac','Third','Z','Z',0);
              INSERT INTO playlists (id,name,position) VALUES (7,'P',0);
              INSERT INTO playlist_tracks (playlist_id,track_id,position) VALUES
                (7,1,1),(7,2,2);",
-        )
-        .unwrap();
+            )
+            .unwrap();
         conn
     }
 

@@ -79,7 +79,7 @@ fn text_output_strips_ansi_escapes_but_json_preserves_them() {
     let h = Harness::new();
     // Seed a track whose tags carry a hostile ANSI escape sequence.
     {
-        let conn = h.conn();
+        let conn = h.fixture_connection();
         conn.execute(
             "INSERT INTO tracks (path, title, artist, album, genre, duration_ms, added_at) \
              VALUES (?1, ?2, ?3, 'Al', 'Ge', 1000, 1)",

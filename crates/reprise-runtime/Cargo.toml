@@ -18,9 +18,8 @@ fakes = []
 [dependencies]
 reprise-core = { path = "../reprise-core" }
 reprise-runtime-protocol = { path = "../reprise-runtime-protocol" }
-# The runtime owns the database writer (plan §9.1), so it holds a Connection
-# directly. It assembles no SQL of its own: every statement goes through a
-# named `reprise-core` facade.
+# Private adapter seams still name Connection until the core public API moves
+# to Db in wave 4b. The runtime itself owns a Db and assembles no SQL of its own.
 rusqlite = { version = "0.40", features = ["bundled"] }
 tracing = "0.1"
 

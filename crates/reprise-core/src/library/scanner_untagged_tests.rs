@@ -160,9 +160,8 @@ fn pass2_rescues_broken_tags_and_keeps_the_hint_row() {
     let path = album_dir.join("gebrochen.wav");
     write_wav(&path, Some(&bad_id3_chunk()));
 
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    let report = completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    let conn = crate::db::Db::open_in_memory().unwrap();
+    let report = completed(scan_folder(&conn, tmp.path()).unwrap());
     assert_eq!(report.added, 1, "the untagged import still counts as added");
     assert_eq!(report.errors, 0, "a rescued import is not a scan error");
     assert_eq!(
@@ -172,7 +171,7 @@ fn pass2_rescues_broken_tags_and_keeps_the_hint_row() {
     );
 
     let (title, album, duration_ms, untagged) =
-        track_row(&conn, &path).expect("pass 2 must still insert a track row");
+        track_row(conn.conn(), &path).expect("pass 2 must still insert a track row");
     assert_eq!(title, "gebrochen", "title falls back to the file stem");
     assert_eq!(
         album, "Some Album",
@@ -182,7 +181,7 @@ fn pass2_rescues_broken_tags_and_keeps_the_hint_row() {
     assert_eq!(untagged, 1);
 
     assert_eq!(
-        error_kind(&conn, &path),
+        error_kind(conn.conn(), &path),
         Some(ImportErrorKind::UnreadableTags),
         "the hint row must survive, still carrying pass 1's own classification"
     );
@@ -205,19 +204,18 @@ fn scanner_leaves_an_unrecoverable_container_byte_identical_on_import() {
     std::fs::copy(&fixture, &path).unwrap();
     let before = std::fs::read(&path).unwrap();
 
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    let report = completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    let conn = crate::db::Db::open_in_memory().unwrap();
+    let report = completed(scan_folder(&conn, tmp.path()).unwrap());
     assert_eq!(report.added, 1, "the untagged import still counts as added");
     assert_eq!(report.errors, 0);
 
     let (title, album, _duration, untagged) =
-        track_row(&conn, &path).expect("the file still imports as a track row");
+        track_row(conn.conn(), &path).expect("the file still imports as a track row");
     assert_eq!(untagged, 1, "an unrecoverable container stays untagged");
     assert_eq!(title, "Broken Song", "title falls back to the file stem");
     assert_eq!(album, "Some Album", "album falls back to the folder name");
     assert_eq!(
-        error_kind(&conn, &path),
+        error_kind(conn.conn(), &path),
         Some(ImportErrorKind::UnreadableTags),
         "the unreadable-tags hint survives"
     );
@@ -259,26 +257,26 @@ fn a_dismissed_import_error_does_not_block_repairing_an_untagged_track() {
     let mtime = file_mtime(&path);
     let size = meta.len() as i64;
 
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let conn = crate::db::Db::open_in_memory().unwrap();
     // Seed the exact reported state: an untagged row plus a DISMISSED
     // unreadable-tags error whose mtime/size match the file on disk.
-    conn.execute(
+    conn.conn().execute(
         "INSERT INTO tracks (path, title, artist, album, added_at, file_mtime, file_size, untagged) \
          VALUES (?1, 'Broken Song', '', 'Some Album', 0, ?2, ?3, 1)",
         rusqlite::params![path_str, mtime, size],
     )
     .unwrap();
-    conn.execute(
-        "INSERT INTO import_errors \
+    conn.conn()
+        .execute(
+            "INSERT INTO import_errors \
          (path, reason_kind, reason_detail, first_seen, last_seen, seen_count, \
           dismissed_mtime, dismissed_size) \
          VALUES (?1, 'unreadable_tags', 'x', 0, 0, 1, ?2, ?3)",
-        rusqlite::params![path_str, mtime, size],
-    )
-    .unwrap();
+            rusqlite::params![path_str, mtime, size],
+        )
+        .unwrap();
 
-    let report = completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    let report = completed(scan_folder(&conn, tmp.path()).unwrap());
     // The dismiss fast path did NOT skip the row: it was actually re-read
     // (imported or errored, `updated + errors == 1`). Without the untagged
     // exemption the scanner would `continue` past it and touch neither counter.
@@ -295,7 +293,7 @@ fn a_dismissed_import_error_does_not_block_repairing_an_untagged_track() {
         "a dismissed untagged row must not be fast-path skipped"
     );
     assert!(
-        track_row(&conn, &path).is_some() || report.errors == 1,
+        track_row(conn.conn(), &path).is_some() || report.errors == 1,
         "the row was re-processed rather than silently skipped"
     );
 }
@@ -377,21 +375,21 @@ fn a_later_scan_repairs_an_already_imported_untagged_track_with_unchanged_mtime(
     )
     .unwrap();
 
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let conn = crate::db::Db::open_in_memory().unwrap();
 
     // Seed the row exactly as a pre-repair import would have: flagged untagged,
     // with the file's current mtime so the incremental fast path would skip it.
     let mtime = file_mtime(&path);
-    conn.execute(
-        "INSERT INTO tracks (path, title, artist, album, added_at, file_mtime, untagged) \
+    conn.conn()
+        .execute(
+            "INSERT INTO tracks (path, title, artist, album, added_at, file_mtime, untagged) \
          VALUES (?1, 'Broken Song', '', 'Some Album', 0, ?2, 1)",
-        rusqlite::params![path.to_string_lossy().to_string(), mtime],
-    )
-    .unwrap();
+            rusqlite::params![path.to_string_lossy().to_string(), mtime],
+        )
+        .unwrap();
 
     let before = std::fs::read(&path).unwrap();
-    let report = completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    let report = completed(scan_folder(&conn, tmp.path()).unwrap());
     // The untagged row is RE-PROCESSED (imported or errored, `updated + errors
     // == 1`) rather than fast-path skipped on its unchanged mtime — that is what
     // this test guards (`skipped_unchanged == 0`). The `broken-tags` fixture
@@ -428,18 +426,17 @@ fn pass2_failure_on_pure_garbage_leaves_no_track_but_records_the_error() {
     let path = tmp.path().join("muell.mp3");
     std::fs::write(&path, b"not audio").unwrap();
 
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    let report = completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    let conn = crate::db::Db::open_in_memory().unwrap();
+    let report = completed(scan_folder(&conn, tmp.path()).unwrap());
 
     assert_eq!(report.added, 0, "no container survived either pass");
     assert_eq!(report.errors, 1);
     assert!(
-        track_row(&conn, &path).is_none(),
+        track_row(conn.conn(), &path).is_none(),
         "must not insert a track when both passes fail"
     );
     assert!(
-        error_kind(&conn, &path).is_some(),
+        error_kind(conn.conn(), &path).is_some(),
         "must still record an error row"
     );
 }
@@ -457,29 +454,29 @@ fn real_tags_on_a_later_scan_heal_the_hint_and_clear_untagged() {
     let path = tmp.path().join("wird_repariert.wav");
     write_wav(&path, Some(&bad_id3_chunk()));
 
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    completed(scan_folder(&mut conn, tmp.path()).unwrap());
-    let (_, _, _, untagged_before) = track_row(&conn, &path).unwrap();
+    let conn = crate::db::Db::open_in_memory().unwrap();
+    completed(scan_folder(&conn, tmp.path()).unwrap());
+    let (_, _, _, untagged_before) = track_row(conn.conn(), &path).unwrap();
     assert_eq!(untagged_before, 1, "sanity check: starts out untagged");
-    assert!(error_kind(&conn, &path).is_some());
+    assert!(error_kind(conn.conn(), &path).is_some());
 
-    conn.execute(
-        "UPDATE tracks SET file_mtime = 0 WHERE path = ?1",
-        [path.to_string_lossy().to_string()],
-    )
-    .unwrap();
+    conn.conn()
+        .execute(
+            "UPDATE tracks SET file_mtime = 0 WHERE path = ?1",
+            [path.to_string_lossy().to_string()],
+        )
+        .unwrap();
     heal_tags(&path, "Repariert");
 
-    let report = completed(scan_folder(&mut conn, tmp.path()).unwrap());
-    let (title, _, _, untagged_after) = track_row(&conn, &path).unwrap();
+    let report = completed(scan_folder(&conn, tmp.path()).unwrap());
+    let (title, _, _, untagged_after) = track_row(conn.conn(), &path).unwrap();
     assert_eq!(
         title, "Repariert",
         "real tags win over the file-stem fallback"
     );
     assert_eq!(untagged_after, 0, "real tags must clear untagged");
     assert!(
-        error_kind(&conn, &path).is_none(),
+        error_kind(conn.conn(), &path).is_none(),
         "a real pass-1 success must clear the hint row, not just refresh it"
     );
     assert_eq!(

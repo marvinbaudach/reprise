@@ -2,36 +2,31 @@
 
 use chrono::Local;
 use reprise_core::concerts::{self, ConcertFilter, ConcertRow};
-use rusqlite::Connection;
+use reprise_core::db::Db;
 use serde_json::{json, Value};
 
 use crate::cli::ConcertsAction;
 use crate::error::CliError;
 use crate::output::{print_json, sanitize_for_terminal};
 
-pub fn run(conn: &Connection, action: &ConcertsAction, json_output: bool) -> Result<(), CliError> {
+pub fn run(db: &Db, action: &ConcertsAction, json_output: bool) -> Result<(), CliError> {
     match action {
-        ConcertsAction::List { all, limit } => list(conn, *all, *limit, json_output),
+        ConcertsAction::List { all, limit } => list(db, *all, *limit, json_output),
     }
 }
 
-fn list(
-    conn: &Connection,
-    all: bool,
-    limit: Option<usize>,
-    json_output: bool,
-) -> Result<(), CliError> {
+fn list(db: &Db, all: bool, limit: Option<usize>, json_output: bool) -> Result<(), CliError> {
     let filter = if all {
         ConcertFilter {
             include_similar: true,
             ..ConcertFilter::default()
         }
     } else {
-        concerts::config::persisted_filter(conn)?
+        concerts::config::persisted_filter(db)?
     };
-    let location = concerts::config::location(conn)?;
+    let location = concerts::config::location(db)?;
     let mut events =
-        concerts::query_events(conn, &filter, location.as_ref(), Local::now().date_naive())?;
+        concerts::query_events(db, &filter, location.as_ref(), Local::now().date_naive())?;
     if let Some(limit) = limit {
         events.truncate(limit);
     }
@@ -40,7 +35,7 @@ fn list(
         print_json(&json!({
             "events": events,
             "filter_applied": !all,
-            "latest_fetch_at": concerts::latest_fetch_at(conn)?,
+            "latest_fetch_at": concerts::latest_fetch_at(db)?,
         }));
     } else {
         for event in events {

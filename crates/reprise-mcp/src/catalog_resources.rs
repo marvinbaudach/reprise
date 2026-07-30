@@ -116,19 +116,19 @@ struct ProviderConfiguration {
 
 /// Complete durable concert cache plus effective non-secret configuration.
 pub fn complete_concerts(path: &Path) -> Result<CompleteConcertsResource, DataError> {
-    let conn = data::open(path)?;
-    data::require_read(&conn)?;
-    let location = reprise_core::concerts::config::location(&conn)
+    let db = data::open(path)?;
+    data::require_read(&db)?;
+    let location = reprise_core::concerts::config::location(&db)
         .map_err(DataError::Db)?
         .map(|location| ConcertLocation {
             latitude: location.latitude,
             longitude: location.longitude,
             name: location.name,
         });
-    let filter = reprise_core::concerts::config::persisted_filter(&conn).map_err(DataError::Db)?;
-    let similar = reprise_core::concerts::config::similar_config(&conn).map_err(DataError::Db)?;
-    let providers = reprise_core::concerts::config::credentials(&conn).map_err(DataError::Db)?;
-    let events = reprise_core::concerts::query_cached_events(&conn)
+    let filter = reprise_core::concerts::config::persisted_filter(&db).map_err(DataError::Db)?;
+    let similar = reprise_core::concerts::config::similar_config(&db).map_err(DataError::Db)?;
+    let providers = reprise_core::concerts::config::credentials(&db).map_err(DataError::Db)?;
+    let events = reprise_core::concerts::query_cached_events(&db)
         .map_err(DataError::Db)?
         .into_iter()
         .map(CompleteConcertEvent::from)
@@ -138,7 +138,7 @@ pub fn complete_concerts(path: &Path) -> Result<CompleteConcertsResource, DataEr
         events,
         location,
         filter: filter.into(),
-        window_days: reprise_core::concerts::config::window_days(&conn).map_err(DataError::Db)?,
+        window_days: reprise_core::concerts::config::window_days(&db).map_err(DataError::Db)?,
         similar_artists: SimilarArtistsConfig {
             enabled: similar.enabled,
             count: similar.count,
@@ -147,7 +147,7 @@ pub fn complete_concerts(path: &Path) -> Result<CompleteConcertsResource, DataEr
             ticketmaster: providers.ticketmaster_api_key.is_some(),
             bandsintown: providers.bandsintown_app_id.is_some(),
         },
-        latest_fetch_at: reprise_core::concerts::latest_fetch_at(&conn).map_err(DataError::Db)?,
+        latest_fetch_at: reprise_core::concerts::latest_fetch_at(&db).map_err(DataError::Db)?,
     })
 }
 
@@ -205,10 +205,10 @@ impl From<ReleaseHistoryRecord> for CompleteRelease {
 
 /// Complete durable New Releases history, including hidden entries.
 pub fn releases(path: &Path) -> Result<ReleasesResource, DataError> {
-    let conn = data::open(path)?;
-    data::require_read(&conn)?;
+    let db = data::open(path)?;
+    data::require_read(&db)?;
     let releases = reprise_core::artist_news_history::query_complete_history(
-        &conn,
+        &db,
         chrono::Local::now().date_naive(),
     )
     .map_err(DataError::Db)?
@@ -217,7 +217,7 @@ pub fn releases(path: &Path) -> Result<ReleasesResource, DataError> {
     .collect();
     Ok(ReleasesResource {
         releases,
-        latest_fetch_at: reprise_core::artist_news::latest_fetched_at(&conn)
+        latest_fetch_at: reprise_core::artist_news::latest_fetched_at(&db)
             .map_err(DataError::Db)?,
     })
 }

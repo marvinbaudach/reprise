@@ -8,6 +8,7 @@ use reprise_core::concerts::{
     self, BandsintownProvider, CancellationToken, ConcertError, EventProvider, RefreshSummary,
     TicketmasterProvider,
 };
+use reprise_core::db::Db;
 
 pub(in crate::ui) struct ConcertsRequest {
     pub generation: u64,
@@ -170,8 +171,8 @@ pub(in crate::ui) struct ConcertsRuntime {
 }
 
 impl ConcertsRuntime {
-    pub(in crate::ui) fn setup(conn: &rusqlite::Connection) -> Rc<Self> {
-        let database_path = reprise_core::db::main_path(conn);
+    pub(in crate::ui) fn setup(db: &Db) -> Rc<Self> {
+        let database_path = db.path();
         let seed = database_path.as_deref().map_or_else(
             || "memory".into(),
             |path| path.to_string_lossy().into_owned(),
@@ -179,7 +180,7 @@ impl ConcertsRuntime {
         Rc::new(Self {
             enabled: Rc::new(Cell::new(
                 reprise_core::online_sources::network_allowed_or_off(
-                    conn,
+                    db,
                     &reprise_core::modules::CONCERTS_MODULE,
                 ),
             )),
@@ -191,23 +192,19 @@ impl ConcertsRuntime {
         })
     }
 
-    pub(in crate::ui) fn set_enabled(
-        &self,
-        conn: &rusqlite::Connection,
-        enabled: bool,
-    ) -> Result<(), rusqlite::Error> {
-        reprise_core::modules::set_enabled(conn, &reprise_core::modules::CONCERTS_MODULE, enabled)?;
+    pub(in crate::ui) fn set_enabled(&self, db: &Db, enabled: bool) -> Result<(), rusqlite::Error> {
+        reprise_core::modules::set_enabled(db, &reprise_core::modules::CONCERTS_MODULE, enabled)?;
         self.apply_enabled(reprise_core::online_sources::network_allowed_or_off(
-            conn,
+            db,
             &reprise_core::modules::CONCERTS_MODULE,
         ));
         Ok(())
     }
 
     /// `NET-1a`: re-derives `enabled` from the global online-sources gate.
-    pub(in crate::ui) fn recompute_enabled(&self, conn: &rusqlite::Connection) {
+    pub(in crate::ui) fn recompute_enabled(&self, db: &Db) {
         self.apply_enabled(reprise_core::online_sources::network_allowed_or_off(
-            conn,
+            db,
             &reprise_core::modules::CONCERTS_MODULE,
         ));
     }
@@ -290,10 +287,10 @@ fn spawn(database_path: Option<PathBuf>) -> async_channel::Sender<WorkerRequest>
         .spawn(move || {
             let connection = database_path
                 .as_deref()
-                .map(|path| reprise_core::db::open_migrated(Some(path)));
+                .map(|path| Db::open_migrated(Some(path)));
             while let Ok(work) = receiver.recv_blocking() {
                 let result = match connection.as_ref() {
-                    Some(Ok(conn)) => refresh_configured(conn, work.request.force, &work.cancelled),
+                    Some(Ok(db)) => refresh_configured(db, work.request.force, &work.cancelled),
                     Some(Err(error)) => Err(ConcertError::InvalidData(error.to_string())),
                     None => Err(ConcertError::InvalidData(
                         "the active database has no persistent path".into(),
@@ -312,11 +309,11 @@ fn spawn(database_path: Option<PathBuf>) -> async_channel::Sender<WorkerRequest>
 }
 
 fn refresh_configured(
-    conn: &rusqlite::Connection,
+    db: &Db,
     force: bool,
     cancelled: &CancellationToken,
 ) -> Result<RefreshSummary, ConcertError> {
-    let credentials = concerts::config::credentials(conn)?;
+    let credentials = concerts::config::credentials(db)?;
     let mut providers: Vec<Box<dyn EventProvider>> = Vec::new();
     if let Some(app_id) = credentials.bandsintown_app_id {
         providers.push(Box::new(BandsintownProvider::new(app_id)));
@@ -325,7 +322,7 @@ fn refresh_configured(
         providers.push(Box::new(TicketmasterProvider::new(api_key)));
     }
     concerts::refresh_cancellable(
-        conn,
+        db,
         &providers,
         chrono::Local::now().date_naive(),
         chrono::Utc::now().timestamp(),
@@ -338,10 +335,8 @@ fn refresh_configured(
 mod tests {
     use super::*;
 
-    fn migrated_conn() -> rusqlite::Connection {
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        conn
+    fn migrated_conn() -> Db {
+        crate::test_db::open().unwrap()
     }
 
     #[test]
@@ -354,7 +349,8 @@ mod tests {
 
     #[test]
     fn runtime_defaults_off_and_rejects_requests() {
-        let runtime = ConcertsRuntime::setup(&migrated_conn());
+        let db = migrated_conn();
+        let runtime = ConcertsRuntime::setup(&db);
         assert!(!runtime.enabled.get());
         let (response, _) = async_channel::bounded(1);
         assert!(!runtime.request(ConcertsRequest {
@@ -406,7 +402,8 @@ mod tests {
 
     #[test]
     fn runtime_notifies_live_settings_subscribers_without_toggling_the_module() {
-        let runtime = ConcertsRuntime::setup(&migrated_conn());
+        let db = migrated_conn();
+        let runtime = ConcertsRuntime::setup(&db);
         let alive = Rc::new(Cell::new(true));
         let calls = Rc::new(Cell::new(0));
         runtime.subscribe_settings(

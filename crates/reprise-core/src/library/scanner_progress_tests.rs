@@ -8,12 +8,11 @@ fn scan_reports_discovery_then_monotone_audio_file_progress() {
     std::fs::copy(&fixture, dir.path().join("second.FLAC")).unwrap();
     std::fs::write(dir.path().join("notes.txt"), b"not music").unwrap();
 
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let conn = crate::db::Db::open_in_memory().unwrap();
     let mut progress = Vec::new();
 
     let report = super::tests::completed(
-        scan_folder_with_progress(&mut conn, dir.path(), |event| {
+        scan_folder_with_progress(&conn, dir.path(), |event| {
             progress.push(event);
         })
         .unwrap(),

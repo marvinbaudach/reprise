@@ -1,6 +1,6 @@
 use std::fmt;
 
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 
 use super::{ConcertFilter, DateHorizon};
 
@@ -56,7 +56,8 @@ pub struct SimilarConfig {
     pub count: usize,
 }
 
-pub fn credentials(conn: &Connection) -> Result<Credentials, rusqlite::Error> {
+pub fn credentials(db: &crate::db::Db) -> Result<Credentials, rusqlite::Error> {
+    let conn = db.conn();
     credentials_with_env(
         conn,
         |key| std::env::var(key).ok(),
@@ -83,19 +84,26 @@ pub(crate) fn credentials_with_env(
 /// Concerts still reads it through this name so its many call sites did not
 /// need to change — but there is only the one home for the data now.
 pub fn location(
-    conn: &Connection,
+    db: &crate::db::Db,
 ) -> Result<Option<crate::location::AppLocation>, rusqlite::Error> {
-    crate::location::app_location(conn)
+    let conn = db.conn();
+    crate::location::app_location_in(conn)
 }
 
-pub fn window_days(conn: &Connection) -> Result<i64, rusqlite::Error> {
+pub fn window_days(db: &crate::db::Db) -> Result<i64, rusqlite::Error> {
+    let conn = db.conn();
+    window_days_in(conn)
+}
+
+pub(crate) fn window_days_in(conn: &Connection) -> Result<i64, rusqlite::Error> {
     Ok(integer_setting(conn, WINDOW_DAYS_KEY)?
         .unwrap_or(90)
         .clamp(30, 365))
 }
 
-pub fn persisted_filter(conn: &Connection) -> Result<ConcertFilter, rusqlite::Error> {
-    let stored_radius = crate::library::settings::get_setting(conn, FILTER_RADIUS_KEY)?;
+pub fn persisted_filter(db: &crate::db::Db) -> Result<ConcertFilter, rusqlite::Error> {
+    let conn = db.conn();
+    let stored_radius = crate::library::settings::get_setting_in(conn, FILTER_RADIUS_KEY)?;
     let radius_km = match stored_radius {
         Some(value) => value.trim().parse::<f64>().ok(),
         None => Some(numeric_setting(conn, DEFAULT_RADIUS_KEY)?.unwrap_or(DEFAULT_RADIUS_KM)),
@@ -109,7 +117,7 @@ pub fn persisted_filter(conn: &Connection) -> Result<ConcertFilter, rusqlite::Er
         _ => DateHorizon::AllUpcoming,
     };
     let include_similar =
-        crate::library::settings::get_bool(conn, FILTER_INCLUDE_SIMILAR_KEY, false)?;
+        crate::library::settings::get_bool_in(conn, FILTER_INCLUDE_SIMILAR_KEY, false)?;
     Ok(ConcertFilter {
         radius_km,
         country,
@@ -118,8 +126,13 @@ pub fn persisted_filter(conn: &Connection) -> Result<ConcertFilter, rusqlite::Er
     })
 }
 
-pub fn similar_config(conn: &Connection) -> Result<SimilarConfig, rusqlite::Error> {
-    let enabled = crate::library::settings::get_bool(conn, SIMILAR_ENABLED_KEY, false)?;
+pub fn similar_config(db: &crate::db::Db) -> Result<SimilarConfig, rusqlite::Error> {
+    let conn = db.conn();
+    similar_config_in(conn)
+}
+
+pub(crate) fn similar_config_in(conn: &Connection) -> Result<SimilarConfig, rusqlite::Error> {
+    let enabled = crate::library::settings::get_bool_in(conn, SIMILAR_ENABLED_KEY, false)?;
     let count = integer_setting(conn, SIMILAR_COUNT_KEY)?
         .unwrap_or(10)
         .clamp(1, 25) as usize;
@@ -127,7 +140,11 @@ pub fn similar_config(conn: &Connection) -> Result<SimilarConfig, rusqlite::Erro
 }
 
 fn non_empty_setting(conn: &Connection, key: &str) -> Result<Option<String>, rusqlite::Error> {
-    Ok(crate::library::settings::get_setting(conn, key)?
+    Ok(conn
+        .query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| {
+            row.get::<_, String>(0)
+        })
+        .optional()?
         .as_deref()
         .and_then(non_empty))
 }

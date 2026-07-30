@@ -131,11 +131,11 @@ pub struct RadioStationDto {
 }
 
 pub fn podcasts(path: &Path) -> Result<PodcastsResource, DataError> {
-    let conn = data::open(path)?;
-    data::require_read(&conn)?;
+    let db = data::open(path)?;
+    data::require_read(&db)?;
     let subscriptions =
-        reprise_core::podcasts::store::active_subscriptions(&conn).map_err(DataError::Db)?;
-    let episodes = reprise_core::podcasts::query::list_episodes(&conn).map_err(DataError::Db)?;
+        reprise_core::podcasts::store::active_subscriptions(&db).map_err(DataError::Db)?;
+    let episodes = reprise_core::podcasts::query::list_episodes(&db).map_err(DataError::Db)?;
     let subscription_total = subscriptions.len();
     let episode_total = episodes.len();
 
@@ -156,9 +156,9 @@ pub fn podcasts(path: &Path) -> Result<PodcastsResource, DataError> {
 }
 
 pub fn radio(path: &Path) -> Result<RadioResource, DataError> {
-    let conn = data::open(path)?;
-    data::require_read(&conn)?;
-    let stations = reprise_core::radio::station::list(&conn).map_err(DataError::Db)?;
+    let db = data::open(path)?;
+    data::require_read(&db)?;
+    let stations = reprise_core::radio::station::list(&db).map_err(DataError::Db)?;
     let station_total = stations.len();
     Ok(RadioResource {
         stations: stations

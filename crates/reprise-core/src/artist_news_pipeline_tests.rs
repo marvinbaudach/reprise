@@ -20,25 +20,24 @@ fn date() -> NaiveDate {
     NaiveDate::from_ymd_opt(2026, 7, 13).unwrap()
 }
 
-fn migrated_conn() -> rusqlite::Connection {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    conn
+fn migrated_conn() -> crate::db::Db {
+    crate::db::Db::open_in_memory().unwrap()
 }
 
-fn no_accent(_conn: &rusqlite::Connection, _artist: &str) -> Option<String> {
+fn no_accent(_db: &crate::db::Db, _artist: &str) -> Option<String> {
     None
 }
 
 #[test]
 fn nr_1a_tag_mbid_skips_search_and_persists_releases() {
     let conn = migrated_conn();
-    conn.execute(
-        "INSERT INTO tracks (path, title, artist, artist_mbid, album, play_count, added_at) \
+    conn.conn()
+        .execute(
+            "INSERT INTO tracks (path, title, artist, artist_mbid, album, play_count, added_at) \
          VALUES ('/music/one.flac', 'One', 'Pink Floyd', ?1, 'Local Album', 20, 0)",
-        [ARTIST_ID],
-    )
-    .unwrap();
+            [ARTIST_ID],
+        )
+        .unwrap();
     let mut urls = Vec::new();
     let mut fetch = |url: &str| {
         urls.push(url.to_string());
@@ -66,18 +65,20 @@ fn nr_1a_tag_mbid_skips_search_and_persists_releases() {
         release.artist_name == "Pink Floyd" && release.artist_mbid == ARTIST_ID
     }));
 
-    conn.execute(
-        "INSERT INTO tracks (path, title, artist, artist_mbid, album, added_at) \
+    conn.conn()
+        .execute(
+            "INSERT INTO tracks (path, title, artist, artist_mbid, album, added_at) \
          VALUES ('/music/two.flac', 'Two', 'Pink Floyd', ?1, 'Future Album', 0)",
-        [ARTIST_ID],
-    )
-    .unwrap();
-    conn.execute(
-        "INSERT INTO tracks (path, title, artist, artist_mbid, album, added_at) \
+            [ARTIST_ID],
+        )
+        .unwrap();
+    conn.conn()
+        .execute(
+            "INSERT INTO tracks (path, title, artist, artist_mbid, album, added_at) \
          VALUES ('/music/three.flac', 'Three', 'Pink Floyd', ?1, 'Future Album', 0)",
-        [ARTIST_ID],
-    )
-    .unwrap();
+            [ARTIST_ID],
+        )
+        .unwrap();
     let after_import = query_releases(&conn, true, date()).unwrap();
     assert_eq!(
         after_import.len(),
@@ -107,17 +108,18 @@ fn nr_1a_tag_mbid_skips_search_and_persists_releases() {
 #[test]
 fn dg_3_refresh_pages_the_discography_and_enriches_local_matches() {
     let conn = migrated_conn();
-    conn.execute(
-        "INSERT INTO tracks (
+    conn.conn()
+        .execute(
+            "INSERT INTO tracks (
            path, title, artist, artist_mbid, album_artist, album, track_no,
            play_count, added_at
          ) VALUES (
            '/music/advance.flac', 'Advance Single', 'Ocean Sleeper', ?1,
            'Ocean Sleeper', 'Maybe Death Is All I Need', 1, 20, 0
          )",
-        [ARTIST_ID],
-    )
-    .unwrap();
+            [ARTIST_ID],
+        )
+        .unwrap();
     let first_page = r#"{
       "release-group-count": 3,
       "release-group-offset": 0,
@@ -185,12 +187,13 @@ fn nr_1a_name_resolution_persists_positive_and_negative_results() {
         ("/music/pink.flac", "Pink Floyd", 20),
         ("/music/unknown.flac", "Unknown", 10),
     ] {
-        conn.execute(
-            "INSERT INTO tracks (path, title, artist, play_count, added_at) \
+        conn.conn()
+            .execute(
+                "INSERT INTO tracks (path, title, artist, play_count, added_at) \
              VALUES (?1, 'Track', ?2, ?3, 0)",
-            rusqlite::params![path, artist, plays],
-        )
-        .unwrap();
+                rusqlite::params![path, artist, plays],
+            )
+            .unwrap();
     }
     let mut fetch = |url: &str| {
         if url.contains("Pink%20Floyd") {
@@ -215,6 +218,7 @@ fn nr_1a_name_resolution_persists_positive_and_negative_results() {
 
     assert_eq!((report.artists_fetched, report.unmatched), (1, 1));
     let positive: (Option<String>, i64) = conn
+        .conn()
         .query_row(
             "SELECT artist_mbid, artist_mbid_negative FROM tracks WHERE artist = 'Pink Floyd'",
             [],
@@ -223,6 +227,7 @@ fn nr_1a_name_resolution_persists_positive_and_negative_results() {
         .unwrap();
     assert_eq!(positive, (Some(ARTIST_ID.into()), 0));
     let negative: (Option<String>, i64) = conn
+        .conn()
         .query_row(
             "SELECT artist_mbid, artist_mbid_negative FROM tracks WHERE artist = 'Unknown'",
             [],
@@ -235,14 +240,15 @@ fn nr_1a_name_resolution_persists_positive_and_negative_results() {
 #[test]
 fn nr_2_fallback_accent_is_computed_when_release_is_inserted() {
     let conn = migrated_conn();
-    conn.execute(
-        "INSERT INTO tracks (path, title, artist, artist_mbid, play_count, added_at) \
+    conn.conn()
+        .execute(
+            "INSERT INTO tracks (path, title, artist, artist_mbid, play_count, added_at) \
          VALUES ('/music/accent.flac', 'Track', 'Pink Floyd', ?1, 10, 0)",
-        [ARTIST_ID],
-    )
-    .unwrap();
+            [ARTIST_ID],
+        )
+        .unwrap();
     let mut fetch = |_url: &str| Ok(RELEASES.to_string());
-    let mut accent = |_conn: &rusqlite::Connection, artist: &str| {
+    let mut accent = |_db: &crate::db::Db, artist: &str| {
         assert_eq!(artist, "Pink Floyd");
         Some("#123456".to_string())
     };
@@ -259,6 +265,7 @@ fn nr_2_fallback_accent_is_computed_when_release_is_inserted() {
     .unwrap();
 
     let stored: String = conn
+        .conn()
         .query_row(
             "SELECT fallback_accent FROM new_releases LIMIT 1",
             [],
@@ -276,12 +283,13 @@ fn nr_2_accent_source_uses_the_most_played_album() {
         ("/music/a-two.flac", "Album A", 4),
         ("/music/b.flac", "Album B", 8),
     ] {
-        conn.execute(
-            "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
+        conn.conn()
+            .execute(
+                "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
              VALUES (?1, 'Track', 'Artist', ?2, ?3, 0)",
-            rusqlite::params![path, album, plays],
-        )
-        .unwrap();
+                rusqlite::params![path, album, plays],
+            )
+            .unwrap();
     }
 
     let path = most_played_album_track_path(&conn, "Artist").unwrap();
@@ -295,12 +303,13 @@ fn nr_2_accent_source_uses_the_most_played_album() {
 #[test]
 fn nr_3a_seen_item_not_rebadged() {
     let conn = migrated_conn();
-    conn.execute(
-        "INSERT INTO tracks (path, title, artist, artist_mbid, added_at) \
+    conn.conn()
+        .execute(
+            "INSERT INTO tracks (path, title, artist, artist_mbid, added_at) \
          VALUES ('/music/track.flac', 'Track', 'Pink Floyd', ?1, 0)",
-        [ARTIST_ID],
-    )
-    .unwrap();
+            [ARTIST_ID],
+        )
+        .unwrap();
     let first_payload = r#"{"release-groups":[
       {"id":"known","title":"Known","first-release-date":"2026-08-01","primary-type":"Album"}
     ]}"#;
@@ -335,6 +344,7 @@ fn nr_3a_seen_item_not_rebadged() {
 
     assert_eq!(unseen_release_count(&conn, date()).unwrap(), 1);
     let known_seen: Option<i64> = conn
+        .conn()
         .query_row(
             "SELECT seen_at FROM new_releases WHERE release_group_mbid = 'known'",
             [],
@@ -347,12 +357,13 @@ fn nr_3a_seen_item_not_rebadged() {
 #[test]
 fn first_seen_is_set_on_insert_and_preserved_across_upsert() {
     let conn = migrated_conn();
-    conn.execute(
-        "INSERT INTO tracks (path, title, artist, artist_mbid, play_count, added_at) \
+    conn.conn()
+        .execute(
+            "INSERT INTO tracks (path, title, artist, artist_mbid, play_count, added_at) \
          VALUES ('/music/one.flac', 'One', 'Pink Floyd', ?1, 10, 0)",
-        [ARTIST_ID],
-    )
-    .unwrap();
+            [ARTIST_ID],
+        )
+        .unwrap();
     let mut fetch = |_url: &str| Ok(RELEASES.to_string());
 
     refresh_with(
@@ -367,6 +378,7 @@ fn first_seen_is_set_on_insert_and_preserved_across_upsert() {
     .unwrap();
 
     let (first_seen, fetched_at): (i64, i64) = conn
+        .conn()
         .query_row(
             "SELECT first_seen, fetched_at FROM new_releases WHERE release_group_mbid = '1'",
             [],
@@ -388,6 +400,7 @@ fn first_seen_is_set_on_insert_and_preserved_across_upsert() {
     .unwrap();
 
     let (first_seen_after, fetched_at_after): (i64, i64) = conn
+        .conn()
         .query_row(
             "SELECT first_seen, fetched_at FROM new_releases WHERE release_group_mbid = '1'",
             [],
@@ -407,12 +420,13 @@ fn first_seen_is_set_on_insert_and_preserved_across_upsert() {
 #[test]
 fn ledger_marks_artist_without_news_fresh_and_second_run_skips_it() {
     let conn = migrated_conn();
-    conn.execute(
-        "INSERT INTO tracks (path, title, artist, artist_mbid, album, play_count, added_at) \
+    conn.conn()
+        .execute(
+            "INSERT INTO tracks (path, title, artist, artist_mbid, album, play_count, added_at) \
          VALUES ('/music/one.flac', 'One', 'Pink Floyd', ?1, 'Local Album', 20, 0)",
-        [ARTIST_ID],
-    )
-    .unwrap();
+            [ARTIST_ID],
+        )
+        .unwrap();
     // No release groups at all — the artist has nothing to report.
     let empty = r#"{"release-groups":[]}"#;
     // A `Cell` rather than a plain counter: the closure only needs a shared
@@ -462,12 +476,13 @@ fn ledger_marks_artist_without_news_fresh_and_second_run_skips_it() {
 #[test]
 fn ledger_records_unmatched_outcome_and_negative_match_excludes_future_search() {
     let conn = migrated_conn();
-    conn.execute(
-        "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
+    conn.conn()
+        .execute(
+            "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
          VALUES ('/music/two.flac', 'Two', 'Nobody At All', 'Local Album', 5, 0)",
-        [],
-    )
-    .unwrap();
+            [],
+        )
+        .unwrap();
     let calls = std::cell::Cell::new(0);
     let mut fetch = |_url: &str| {
         calls.set(calls.get() + 1);
@@ -491,11 +506,12 @@ fn ledger_records_unmatched_outcome_and_negative_match_excludes_future_search() 
     // under test. `normalize("Nobody At All")` is "nobody at all".
     let artist_key = "nobody at all";
     assert_eq!(
-        crate::artist_news_ledger::last_attempt_at(&conn, artist_key).unwrap(),
+        crate::artist_news_ledger::last_attempt_at(conn.conn(), artist_key).unwrap(),
         Some(1_000),
         "an unmatched artist must still get a ledger entry for its attempt"
     );
     let outcome: String = conn
+        .conn()
         .query_row(
             "SELECT last_outcome FROM artist_news_fetch WHERE artist_key = ?1",
             [artist_key],
@@ -537,12 +553,13 @@ fn ledger_records_failed_outcome_for_a_failed_artist_search() {
     // say so too — `unmatched` would mean "we looked and found nothing",
     // which is not what happened here.
     let conn = migrated_conn();
-    conn.execute(
-        "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
+    conn.conn()
+        .execute(
+            "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
          VALUES ('/music/two.flac', 'Two', 'Nobody At All', 'Local Album', 5, 0)",
-        [],
-    )
-    .unwrap();
+            [],
+        )
+        .unwrap();
     let mut fetch = |_url: &str| Err(crate::musicbrainz::FetchError::Transport);
 
     let first = refresh_with(
@@ -560,11 +577,12 @@ fn ledger_records_failed_outcome_for_a_failed_artist_search() {
 
     let artist_key = "nobody at all";
     assert_eq!(
-        crate::artist_news_ledger::last_attempt_at(&conn, artist_key).unwrap(),
+        crate::artist_news_ledger::last_attempt_at(conn.conn(), artist_key).unwrap(),
         Some(1_000),
         "a failed artist-search must still get a ledger entry for its attempt"
     );
     let outcome: String = conn
+        .conn()
         .query_row(
             "SELECT last_outcome FROM artist_news_fetch WHERE artist_key = ?1",
             [artist_key],
@@ -580,12 +598,13 @@ fn ledger_records_failed_outcome_for_a_failed_artist_search() {
 #[test]
 fn ledger_records_failed_fetch_and_ttl_prevents_a_retry_within_the_window() {
     let conn = migrated_conn();
-    conn.execute(
-        "INSERT INTO tracks (path, title, artist, artist_mbid, play_count, added_at) \
+    conn.conn()
+        .execute(
+            "INSERT INTO tracks (path, title, artist, artist_mbid, play_count, added_at) \
          VALUES ('/music/one.flac', 'One', 'Pink Floyd', ?1, 20, 0)",
-        [ARTIST_ID],
-    )
-    .unwrap();
+            [ARTIST_ID],
+        )
+        .unwrap();
     let calls = std::cell::Cell::new(0);
     let mut fetch = |_url: &str| {
         calls.set(calls.get() + 1);
@@ -611,11 +630,12 @@ fn ledger_records_failed_fetch_and_ttl_prevents_a_retry_within_the_window() {
 
     let artist_key = "pink floyd";
     assert_eq!(
-        crate::artist_news_ledger::last_attempt_at(&conn, artist_key).unwrap(),
+        crate::artist_news_ledger::last_attempt_at(conn.conn(), artist_key).unwrap(),
         Some(1_000),
         "a failed fetch must still be recorded in the ledger"
     );
     let outcome: String = conn
+        .conn()
         .query_row(
             "SELECT last_outcome FROM artist_news_fetch WHERE artist_key = ?1",
             [artist_key],
@@ -654,7 +674,7 @@ fn latest_fetched_at_reads_the_ledger_not_found_releases() {
         "empty ledger means never fetched"
     );
     crate::artist_news_ledger::record_attempt(
-        &conn,
+        conn.conn(),
         "pink floyd",
         None,
         4_242,

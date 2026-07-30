@@ -40,13 +40,14 @@ impl CancellationToken {
 }
 
 pub fn refresh(
-    conn: &Connection,
+    db: &crate::db::Db,
     providers: &[Box<dyn EventProvider>],
     today: NaiveDate,
     now: i64,
     force: bool,
 ) -> Result<RefreshSummary, ConcertError> {
-    refresh_cancellable(
+    let conn = db.conn();
+    refresh_cancellable_in(
         conn,
         providers,
         today,
@@ -57,6 +58,48 @@ pub fn refresh(
 }
 
 pub fn refresh_cancellable(
+    db: &crate::db::Db,
+    providers: &[Box<dyn EventProvider>],
+    today: NaiveDate,
+    now: i64,
+    force: bool,
+    cancelled: &CancellationToken,
+) -> Result<RefreshSummary, ConcertError> {
+    let conn = db.conn();
+    refresh_with_similar_fetch_cancellable(
+        conn,
+        providers,
+        today,
+        now,
+        force,
+        (&HttpSimilarFetch, crate::scrobbling::BUNDLED_API_KEY),
+        cancelled,
+    )
+}
+
+#[cfg(test)]
+pub(crate) fn refresh_with_similar_fetch(
+    db: &crate::db::Db,
+    providers: &[Box<dyn EventProvider>],
+    today: NaiveDate,
+    now: i64,
+    force: bool,
+    similar_fetch: &dyn SimilarFetch,
+    lastfm_api_key: Option<&str>,
+) -> Result<RefreshSummary, ConcertError> {
+    let conn = db.conn();
+    refresh_with_similar_fetch_cancellable(
+        conn,
+        providers,
+        today,
+        now,
+        force,
+        (similar_fetch, lastfm_api_key),
+        &CancellationToken::default(),
+    )
+}
+
+fn refresh_cancellable_in(
     conn: &Connection,
     providers: &[Box<dyn EventProvider>],
     today: NaiveDate,
@@ -72,27 +115,6 @@ pub fn refresh_cancellable(
         force,
         (&HttpSimilarFetch, crate::scrobbling::BUNDLED_API_KEY),
         cancelled,
-    )
-}
-
-#[cfg(test)]
-pub(crate) fn refresh_with_similar_fetch(
-    conn: &Connection,
-    providers: &[Box<dyn EventProvider>],
-    today: NaiveDate,
-    now: i64,
-    force: bool,
-    similar_fetch: &dyn SimilarFetch,
-    lastfm_api_key: Option<&str>,
-) -> Result<RefreshSummary, ConcertError> {
-    refresh_with_similar_fetch_cancellable(
-        conn,
-        providers,
-        today,
-        now,
-        force,
-        (similar_fetch, lastfm_api_key),
-        &CancellationToken::default(),
     )
 }
 
@@ -112,14 +134,15 @@ fn refresh_with_similar_fetch_cancellable(
         delete_past_events(conn, today)?;
         return Err(ConcertError::MissingCredentials);
     }
-    let cutoff = now.saturating_sub(super::config::window_days(conn)?.saturating_mul(24 * 60 * 60));
+    let cutoff =
+        now.saturating_sub(super::config::window_days_in(conn)?.saturating_mul(24 * 60 * 60));
     let library_artists = candidates::library_candidates(conn, cutoff)?;
     let mut candidates = library_artists
         .iter()
         .filter(|candidate| artist_due(candidate.last_attempt_at, now, force))
         .cloned()
         .collect::<Vec<_>>();
-    let similar_config = super::config::similar_config(conn)?;
+    let similar_config = super::config::similar_config_in(conn)?;
     if similar_config.enabled && candidates.len() < MAX_ARTISTS_PER_RUN {
         if cancelled.is_cancelled() {
             return Ok(RefreshSummary::default());

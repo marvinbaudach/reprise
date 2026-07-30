@@ -20,9 +20,9 @@ pub(super) fn run_scan(
     cancellation: &AtomicBool,
     publish: &mut dyn FnMut(DoctorScanProgress),
 ) -> Result<DoctorScanOutcome, String> {
-    let mut conn =
-        reprise_core::db::open_migrated(Some(db_path)).map_err(|error| error.to_string())?;
-    LibraryDoctor::new(&mut conn)
+    let conn =
+        reprise_core::db::Db::open_migrated(Some(db_path)).map_err(|error| error.to_string())?;
+    LibraryDoctor::new(&conn)
         .scan(request, Some(fingerprint), |progress| {
             publish(progress);
             if cancellation.load(Ordering::Relaxed) {
@@ -40,9 +40,9 @@ pub(super) fn run_apply(
     cancellation: &AtomicBool,
     publish: &mut dyn FnMut(DoctorWriteProgress),
 ) -> Result<Option<DoctorWriteReport>, String> {
-    let mut conn =
-        reprise_core::db::open_migrated(Some(db_path)).map_err(|error| error.to_string())?;
-    LibraryDoctor::new(&mut conn)
+    let conn =
+        reprise_core::db::Db::open_migrated(Some(db_path)).map_err(|error| error.to_string())?;
+    LibraryDoctor::new(&conn)
         .apply_review_plan(plan, |progress| {
             publish(progress);
             if cancellation.load(Ordering::Relaxed) {
@@ -60,9 +60,9 @@ pub(super) fn run_revert(
     cancellation: &AtomicBool,
     publish: &mut dyn FnMut(DoctorWriteProgress),
 ) -> Result<Option<DoctorWriteReport>, String> {
-    let mut conn =
-        reprise_core::db::open_migrated(Some(db_path)).map_err(|error| error.to_string())?;
-    LibraryDoctor::new(&mut conn)
+    let conn =
+        reprise_core::db::Db::open_migrated(Some(db_path)).map_err(|error| error.to_string())?;
+    LibraryDoctor::new(&conn)
         .revert_last_cleanup(|progress| {
             publish(progress);
             if cancellation.load(Ordering::Relaxed) {

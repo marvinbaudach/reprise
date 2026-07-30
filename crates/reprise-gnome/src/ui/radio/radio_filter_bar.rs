@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
+use reprise_core::db::Db;
 use reprise_core::radio::StationRow;
-use rusqlite::Connection;
 
 use crate::ui::browse::browse_bar::CHIP_CSS_CLASS;
 use crate::ui::strings;
@@ -85,29 +85,26 @@ fn matches_value(candidate: Option<&str>, expected: Option<&str>) -> bool {
     candidate.is_some_and(|candidate| candidate.trim().eq_ignore_ascii_case(expected.trim()))
 }
 
-pub(super) fn load_filter(conn: &Connection) -> Result<RadioFilter, rusqlite::Error> {
+pub(super) fn load_filter(db: &Db) -> Result<RadioFilter, rusqlite::Error> {
     Ok(RadioFilter {
-        genre: setting(conn, GENRE_KEY)?,
-        country: setting(conn, COUNTRY_KEY)?,
+        genre: setting(db, GENRE_KEY)?,
+        country: setting(db, COUNTRY_KEY)?,
     })
 }
 
-pub(super) fn persist_filter(
-    conn: &Connection,
-    filter: &RadioFilter,
-) -> Result<(), rusqlite::Error> {
-    persist_value(conn, GENRE_KEY, filter.genre.as_deref())?;
-    persist_value(conn, COUNTRY_KEY, filter.country.as_deref())
+pub(super) fn persist_filter(db: &Db, filter: &RadioFilter) -> Result<(), rusqlite::Error> {
+    persist_value(db, GENRE_KEY, filter.genre.as_deref())?;
+    persist_value(db, COUNTRY_KEY, filter.country.as_deref())
 }
 
-fn setting(conn: &Connection, key: &str) -> Result<Option<String>, rusqlite::Error> {
-    Ok(reprise_core::library::settings::get_setting(conn, key)?
+fn setting(db: &Db, key: &str) -> Result<Option<String>, rusqlite::Error> {
+    Ok(reprise_core::library::settings::get_setting(db, key)?
         .map(|value| value.trim().to_owned())
         .filter(|value| !value.is_empty()))
 }
 
-fn persist_value(conn: &Connection, key: &str, value: Option<&str>) -> Result<(), rusqlite::Error> {
-    reprise_core::library::settings::set_setting(conn, key, value.unwrap_or_default())
+fn persist_value(db: &Db, key: &str, value: Option<&str>) -> Result<(), rusqlite::Error> {
+    reprise_core::library::settings::set_setting(db, key, value.unwrap_or_default())
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -124,7 +121,7 @@ pub(super) struct RadioFilterBar {
     count: gtk4::Label,
     chooser: gtk4::ListBox,
     choices: RefCell<Vec<FilterChoice>>,
-    conn: Rc<RefCell<Connection>>,
+    conn: Rc<Db>,
     filter: RefCell<RadioFilter>,
     visible_count: Cell<usize>,
     total_count: Cell<usize>,
@@ -132,7 +129,7 @@ pub(super) struct RadioFilterBar {
 }
 
 impl RadioFilterBar {
-    pub(super) fn new(conn: Rc<RefCell<Connection>>) -> Rc<Self> {
+    pub(super) fn new(conn: Rc<Db>) -> Rc<Self> {
         let add = gtk4::Button::new();
         let add_content = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
         add_content.append(&gtk4::Image::from_icon_name("list-add-symbolic"));
@@ -168,7 +165,7 @@ impl RadioFilterBar {
         root.append(&chips);
         root.append(&count);
 
-        let filter = load_filter(&conn.borrow()).unwrap_or_default();
+        let filter = load_filter(&conn).unwrap_or_default();
         let bar = Rc::new(Self {
             root,
             add,
@@ -223,7 +220,7 @@ impl RadioFilterBar {
     }
 
     fn apply(self: &Rc<Self>, filter: RadioFilter) {
-        if let Err(error) = persist_filter(&self.conn.borrow(), &filter) {
+        if let Err(error) = persist_filter(&self.conn, &filter) {
             tracing::warn!(%error, "could not persist radio filters");
         }
         self.filter.replace(filter.clone());
@@ -331,8 +328,7 @@ mod tests {
 
     #[test]
     fn radio_filter_facets_are_sticky_and_each_chip_removes_one_constraint() {
-        let conn = rusqlite::Connection::open_in_memory().unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
+        let conn = crate::test_db::open().unwrap();
         let filter = RadioFilter {
             genre: Some("Metal".into()),
             country: Some("CH".into()),
@@ -382,10 +378,7 @@ mod tests {
     #[ignore = "requires a display; run via xvfb-run"]
     fn src_2_radio_toolbar_matches_the_podcast_toolbar_geometry() {
         gtk4::init().unwrap();
-        let conn = Rc::new(RefCell::new(
-            rusqlite::Connection::open_in_memory().unwrap(),
-        ));
-        reprise_core::db::migrate(&conn.borrow()).unwrap();
+        let conn = Rc::new(crate::test_db::open().unwrap());
         let bar = RadioFilterBar::new(conn);
         assert!(bar.add.has_css_class(buttons::ADD_ACTION_CLASS));
         assert!(!bar.add.has_css_class(CHIP_CSS_CLASS));

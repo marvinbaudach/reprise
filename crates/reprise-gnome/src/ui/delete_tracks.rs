@@ -158,15 +158,15 @@ fn choose(shared: &Rc<Shared>) {
 }
 
 fn start_worker(shared: &Rc<Shared>, tracks: Vec<(i64, PathBuf)>, mode: DeleteMode) {
-    let db_path = shared.conn.borrow().path().map(PathBuf::from);
+    let db_path = shared.conn.path();
     let Some(db_path) = db_path else {
         show_toast(shared, &strings::text(strings::DELETE_DATABASE_UNAVAILABLE));
         return;
     };
     let receiver = match one_shot_task::spawn("reprise-delete-tracks", move || {
-        reprise_core::db::open_migrated(Some(&db_path))
+        reprise_core::db::Db::open_migrated(Some(&db_path))
             .map_err(|error| error.to_string())
-            .map(|mut conn| run_delete(&mut conn, &tracks, mode))
+            .map(|db| run_delete(&db, &tracks, mode))
     }) {
         Ok(receiver) => receiver,
         Err(error) => {
@@ -197,13 +197,13 @@ fn start_worker(shared: &Rc<Shared>, tracks: Vec<(i64, PathBuf)>, mode: DeleteMo
 }
 
 fn run_delete(
-    conn: &mut rusqlite::Connection,
+    db: &reprise_core::db::Db,
     tracks: &[(i64, PathBuf)],
     mode: DeleteMode,
 ) -> DeleteReport {
     match mode {
         DeleteMode::Remove => {
-            match reprise_core::queries::exclude_tracks_matching_paths(conn, tracks, now_unix()) {
+            match reprise_core::queries::exclude_tracks_matching_paths(db, tracks, now_unix()) {
                 Ok(removed_ids) => {
                     let failures = tracks.len().saturating_sub(removed_ids.len());
                     DeleteReport {
@@ -222,7 +222,7 @@ fn run_delete(
         }
         DeleteMode::Trash => {
             let report = reprise_core::library::trash_tracks::trash_tracks_with(
-                conn,
+                db,
                 tracks,
                 reprise_platform_linux::trash::delete,
             );
@@ -354,12 +354,13 @@ fn paths_within_temp_root(root: &Path, paths: &[PathBuf]) -> bool {
 mod tests {
     use super::*;
 
-    fn insert_track(conn: &rusqlite::Connection, id: i64, path: &Path, title: &str) {
-        conn.execute(
-            "INSERT INTO tracks (id,path,title,artist,added_at) VALUES (?1,?2,?3,'',0)",
-            rusqlite::params![id, path.to_string_lossy(), title],
-        )
-        .unwrap();
+    fn insert_track(db: &reprise_core::db::Db, id: i64, path: &Path, title: &str) {
+        crate::test_db::connection(db)
+            .execute(
+                "INSERT INTO tracks (id,path,title,artist,added_at) VALUES (?1,?2,?3,'',0)",
+                rusqlite::params![id, path.to_string_lossy(), title],
+            )
+            .unwrap();
     }
 
     #[test]
@@ -386,17 +387,19 @@ mod tests {
     fn stale_track_identity_survives_remove_dialog_and_trash_cleanup() {
         let temp = tempfile::tempdir().unwrap();
         let db_path = temp.path().join("delete-race.sqlite");
-        let mut conn = reprise_core::db::open_migrated(Some(&db_path)).unwrap();
+        let conn = reprise_core::db::Db::open_migrated(Some(&db_path)).unwrap();
 
         let old_remove_path = temp.path().join("old-remove.flac");
         let replacement_remove_path = temp.path().join("replacement-remove.flac");
         insert_track(&conn, 1, &old_remove_path, "Old remove row");
         let stale_remove = vec![(1, old_remove_path)];
-        conn.execute("DELETE FROM tracks WHERE id=1", []).unwrap();
+        crate::test_db::connection(&conn)
+            .execute("DELETE FROM tracks WHERE id=1", [])
+            .unwrap();
         insert_track(&conn, 1, &replacement_remove_path, "Replacement remove row");
 
-        let remove_report = run_delete(&mut conn, &stale_remove, DeleteMode::Remove);
-        let remove_path_after = conn
+        let remove_report = run_delete(&conn, &stale_remove, DeleteMode::Remove);
+        let remove_path_after = crate::test_db::connection(&conn)
             .query_row("SELECT path FROM tracks WHERE id=1", [], |row| {
                 row.get::<_, String>(0)
             })
@@ -407,14 +410,12 @@ mod tests {
         std::fs::write(&old_trash_path, b"scratch").unwrap();
         insert_track(&conn, 2, &old_trash_path, "Old trash row");
         let stale_trash = vec![(2, old_trash_path.clone())];
-        let race_conn = reprise_core::db::open_migrated(Some(&db_path)).unwrap();
+        let race_conn = reprise_core::db::Db::open_migrated(Some(&db_path)).unwrap();
 
-        let trash_report = reprise_core::library::trash_tracks::trash_tracks_with(
-            &mut conn,
-            &stale_trash,
-            |path| {
+        let trash_report =
+            reprise_core::library::trash_tracks::trash_tracks_with(&conn, &stale_trash, |path| {
                 std::fs::remove_file(path).map_err(|error| error.to_string())?;
-                race_conn
+                crate::test_db::connection(&race_conn)
                     .execute("DELETE FROM tracks WHERE id=2", [])
                     .map_err(|error| error.to_string())?;
                 insert_track(
@@ -424,10 +425,9 @@ mod tests {
                     "Replacement trash row",
                 );
                 Ok(())
-            },
-        );
+            });
 
-        let trash_path_after = conn
+        let trash_path_after = crate::test_db::connection(&conn)
             .query_row("SELECT path FROM tracks WHERE id=2", [], |row| {
                 row.get::<_, String>(0)
             })
@@ -452,13 +452,13 @@ mod tests {
         let trash_path = temp.path().join("trash.flac");
         std::fs::write(&remove_path, b"remove").unwrap();
         std::fs::write(&trash_path, b"trash").unwrap();
-        let mut conn = reprise_core::db::open_migrated(None).unwrap();
+        let conn = crate::test_db::open().unwrap();
         insert_track(&conn, 1, &remove_path, "Remove");
         insert_track(&conn, 2, &trash_path, "Trash");
 
-        let removed = run_delete(&mut conn, &[(1, remove_path.clone())], DeleteMode::Remove);
+        let removed = run_delete(&conn, &[(1, remove_path.clone())], DeleteMode::Remove);
         let trashed = reprise_core::library::trash_tracks::trash_tracks_with(
-            &mut conn,
+            &conn,
             &[(2, trash_path)],
             |_| Ok(()),
         );

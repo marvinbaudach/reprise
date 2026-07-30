@@ -1,12 +1,12 @@
 //! Persistent Library/Compact root switching and geometry isolation.
 
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
 use libadwaita as adw;
+use reprise_core::db::Db;
 use reprise_core::library::settings::{self, CompactLayout, WindowViewMode};
-use rusqlite::Connection;
 
 use super::compact_player::CompactPlayer;
 use super::compact_player_layouts::{
@@ -97,7 +97,7 @@ pub(in crate::ui) struct MinimalView {
     full_root: gtk4::Widget,
     compact: Option<CompactPlayer>,
     compact_root: Option<adw::ToastOverlay>,
-    conn: Rc<RefCell<Connection>>,
+    conn: Rc<Db>,
     transition: Cell<ViewTransition>,
     full_width: Cell<i32>,
     full_height: Cell<i32>,
@@ -146,7 +146,7 @@ impl MinimalView {
         content_host: &WindowContentHost,
         full_root: &gtk4::Widget,
         compact: Option<&CompactPlayer>,
-        conn: Rc<RefCell<Connection>>,
+        conn: Rc<Db>,
         initial: ViewTransition,
         toast: Rc<dyn Fn(&str)>,
     ) -> Rc<Self> {
@@ -207,8 +207,8 @@ impl MinimalView {
             return;
         }
         let persisted = {
-            let conn = self.conn.borrow();
-            settings::set_window_view_mode(&conn, desired.mode)
+            let conn = &self.conn;
+            settings::set_window_view_mode(conn, desired.mode)
         };
         if let Err(error) = persisted {
             tracing::warn!(%error, ?desired, "could not persist window view mode");
@@ -402,7 +402,7 @@ mod tests {
             full_root: full_root.clone(),
             compact: None,
             compact_root: None,
-            conn: Rc::new(RefCell::new(Connection::open_in_memory().unwrap())),
+            conn: Rc::new(crate::test_db::open().unwrap()),
             transition: Cell::new(ViewTransition {
                 mode: WindowViewMode::Compact,
                 layout: CompactLayout::Card,

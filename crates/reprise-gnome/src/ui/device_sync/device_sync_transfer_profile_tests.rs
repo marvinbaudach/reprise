@@ -1,15 +1,16 @@
 use super::*;
+use reprise_core::db::Db;
 use reprise_core::device_sync::{Mp3Quality, SyncPageWarning, TransferProfile};
 
 fn save_profile(
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
     device_id: &str,
     device_name: &str,
     playlist_id: i64,
     profile: TransferProfile,
 ) {
     save_settings(
-        &conn.borrow(),
+        conn,
         &DeviceSettings {
             device_serial: device_id.into(),
             device_name: device_name.into(),
@@ -27,7 +28,7 @@ fn save_profile(
     .unwrap();
 }
 
-fn save_smoke_profile(conn: &Rc<RefCell<Connection>>, playlist_id: i64, profile: TransferProfile) {
+fn save_smoke_profile(conn: &Rc<Db>, playlist_id: i64, profile: TransferProfile) {
     save_profile(
         conn,
         crate::ui::device_sync_smoke::DEVICE_ID,
@@ -55,9 +56,7 @@ async fn wait_for_storage(runtime: &Rc<DeviceSyncRuntime>, expected_devices: usi
     );
 }
 
-async fn smoke_runtime(
-    conn: &Rc<RefCell<Connection>>,
-) -> (tempfile::TempDir, Rc<DeviceSyncRuntime>) {
+async fn smoke_runtime(conn: &Rc<Db>) -> (tempfile::TempDir, Rc<DeviceSyncRuntime>) {
     let device_root = tempfile::tempdir().unwrap();
     let backend = Rc::new(
         crate::ui::device_sync_smoke::SimulatedMtpDeviceBackend::for_root(device_root.path())
@@ -98,14 +97,14 @@ fn simulated_mtp_phone_transcodes_lossless_selection_to_opus_160() {
         let (sources, conn) = fixture();
         let wav = sources.path().join("transcode.wav");
         write_silent_wav(&wav);
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute(
                 "INSERT INTO tracks (id,path,title,artist,album,album_artist,track_no,duration_ms,added_at) \
                  VALUES (20,?1,'Encoded','Artist','Album','Artist',1,100,0)",
                 [wav.to_string_lossy().as_ref()],
             )
             .unwrap();
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute_batch(
                 "INSERT INTO playlists (id, name, position) VALUES (20, 'Opus', 0);
                  INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (20, 20, 0);",
@@ -158,7 +157,7 @@ fn simulated_mtp_phone_transcodes_lossless_selection_to_opus_160() {
 fn simulated_mtp_phone_preserves_original_flac_bytes_and_extension() {
     run(async {
         let (sources, conn) = fixture();
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute_batch(
                 "INSERT INTO playlists (id, name, position) VALUES (21, 'Original', 0);
                  INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (21, 1, 0);",
@@ -187,14 +186,14 @@ fn simulated_mtp_phone_transcodes_lossless_selection_to_mp3_256() {
         let (sources, conn) = fixture();
         let wav = sources.path().join("fallback.wav");
         write_silent_wav(&wav);
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute(
                 "INSERT INTO tracks (id,path,title,artist,album,album_artist,track_no,duration_ms,added_at) \
                  VALUES (22,?1,'Fallback','Artist','Album','Artist',2,100,0)",
                 [wav.to_string_lossy().as_ref()],
             )
             .unwrap();
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute_batch(
                 "INSERT INTO playlists (id, name, position) VALUES (22, 'Fallback', 0);
                  INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (22, 22, 0);",
@@ -222,7 +221,7 @@ fn simulated_mtp_phones_sync_independently_in_parallel() {
         const FIRST_ID: &str = "simulated-phone-a";
         const SECOND_ID: &str = "simulated-phone-b";
         let (sources, conn) = fixture();
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute_batch(
                 "INSERT INTO playlists (id, name, position) VALUES (23, 'Parallel', 0);
                  INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (23, 1, 0);",
@@ -293,7 +292,7 @@ fn simulated_mtp_phones_sync_independently_in_parallel() {
 fn mtp_17_simulated_mtp_phone_removes_every_untracked_file_from_managed_storage() {
     run(async {
         let (_sources, conn) = fixture();
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute_batch(
                 "INSERT INTO playlists (id, name, position) VALUES (24, 'Preserve', 0);
                  INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (24, 1, 0);",

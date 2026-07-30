@@ -93,6 +93,16 @@ pub fn human_comment(kind: &str) -> String {
 /// Runs within the caller's transaction when there is one (promotion bundles
 /// this with the track row and its events), otherwise standalone.
 pub fn insert_provenance(
+    db: &crate::db::Db,
+    track_id: i64,
+    input: &ProvenanceInput,
+    now: i64,
+) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
+    insert_provenance_in(conn, track_id, input, now)
+}
+
+fn insert_provenance_in(
     conn: &Connection,
     track_id: i64,
     input: &ProvenanceInput,
@@ -118,6 +128,14 @@ pub fn insert_provenance(
 
 /// Reads a track's provenance, or `None` when it has none.
 pub fn get_provenance(
+    db: &crate::db::Db,
+    track_id: i64,
+) -> Result<Option<TrackProvenance>, rusqlite::Error> {
+    let conn = db.conn();
+    get_provenance_in(conn, track_id)
+}
+
+fn get_provenance_in(
     conn: &Connection,
     track_id: i64,
 ) -> Result<Option<TrackProvenance>, rusqlite::Error> {
@@ -132,7 +150,8 @@ pub fn get_provenance(
 
 /// Whether a track is flagged AI — the predicate the exclude filter and the
 /// UI badge both ask. Keyed on the DB flag, never on a path (plan 2.4/8).
-pub fn is_ai_track(conn: &Connection, track_id: i64) -> Result<bool, rusqlite::Error> {
+pub fn is_ai_track(db: &crate::db::Db, track_id: i64) -> Result<bool, rusqlite::Error> {
+    let conn = db.conn();
     let flagged: Option<i64> = conn
         .query_row(
             "SELECT 1 FROM track_provenance WHERE track_id = ?1 AND ai = 1",
@@ -220,18 +239,28 @@ pub fn read_ai_tags(path: &Path) -> Option<AiTagSet> {
 /// track that already has provenance, or whose file carries no `REPRISE_AI`
 /// tag, is left untouched. Returns whether a row was reconstructed.
 pub fn reconstruct_provenance(
+    db: &crate::db::Db,
+    track_id: i64,
+    path: &Path,
+    now: i64,
+) -> Result<bool, rusqlite::Error> {
+    let conn = db.conn();
+    reconstruct_provenance_in(conn, track_id, path, now)
+}
+
+fn reconstruct_provenance_in(
     conn: &Connection,
     track_id: i64,
     path: &Path,
     now: i64,
 ) -> Result<bool, rusqlite::Error> {
-    if get_provenance(conn, track_id)?.is_some() {
+    if get_provenance_in(conn, track_id)?.is_some() {
         return Ok(false);
     }
     let Some(tags) = read_ai_tags(path) else {
         return Ok(false);
     };
-    insert_provenance(
+    insert_provenance_in(
         conn,
         track_id,
         &ProvenanceInput {
@@ -251,7 +280,8 @@ pub fn reconstruct_provenance(
 /// reading its embedded tags — the post-rescan sweep for a fresh database
 /// (Beschluss 13). Returns how many rows were reconstructed. Best-effort and
 /// idempotent: already-known and non-AI tracks are skipped.
-pub fn reconstruct_all_missing(conn: &Connection, now: i64) -> Result<usize, rusqlite::Error> {
+pub fn reconstruct_all_missing(db: &crate::db::Db, now: i64) -> Result<usize, rusqlite::Error> {
+    let conn = db.conn();
     let mut statement = conn.prepare(
         "SELECT t.id, t.path FROM tracks t \
          LEFT JOIN track_provenance p ON p.track_id = t.id \
@@ -263,7 +293,7 @@ pub fn reconstruct_all_missing(conn: &Connection, now: i64) -> Result<usize, rus
     drop(statement);
     let mut reconstructed = 0;
     for (track_id, path) in candidates {
-        if reconstruct_provenance(conn, track_id, Path::new(&path), now)? {
+        if reconstruct_provenance_in(conn, track_id, Path::new(&path), now)? {
             reconstructed += 1;
         }
     }

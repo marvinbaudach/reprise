@@ -100,7 +100,7 @@ mod tests {
     #[test]
     fn migration_v19_creates_library_doctor_snapshot_tables() {
         let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
+        crate::db::migrate_connection(&conn).unwrap();
 
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
@@ -119,7 +119,7 @@ mod tests {
     #[test]
     fn migration_v18_to_v19_preserves_tracks_and_enforces_doctor_invariants() {
         let conn = Connection::open_in_memory().unwrap();
-        crate::db::migrate(&conn).unwrap();
+        crate::db::migrate_connection(&conn).unwrap();
         conn.execute(
             "INSERT INTO tracks (path, title, added_at) VALUES ('keep.flac', 'Keep', 1)",
             [],

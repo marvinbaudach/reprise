@@ -7,14 +7,14 @@
 //! sidebar context-menu action, wired in the sibling `ui::sidebar_export`
 //! module and calling back into this one).
 //!
-//! ## Why the core functions take `&Rc<RefCell<Connection>>`, not `&Connection`
+//! ## Why the flow functions take `&Rc<Db>`
 //!
 //! [`import_playlist`]/[`export_playlist`] are the *same* functions both a
 //! real dialog callback and the `REPRISE_SMOKE_M3U` dev hook call — see
-//! [`arm_smoke_m3u`]'s doc comment. Taking the UI layer's shared connection
-//! handle directly (rather than a borrowed `&Connection` the caller would
-//! have to extract first) keeps both call sites identical, one line shorter,
-//! and matches this project's existing seam for such dual-path functions
+//! [`arm_smoke_m3u`]'s doc comment. Taking the UI layer's shared database
+//! handle directly keeps raw connections and SQL behind Core's named
+//! operations, keeps both call sites identical, and matches this project's
+//! existing seam for such dual-path functions
 //! (e.g. `ui::sidebar_dnd::handle_playlist_drop`, `ui::track_list_context_
 //! menu`'s `handle_*` functions called from both real actions and their
 //! `REPRISE_SMOKE_MENU_ACTION` hook).
@@ -47,7 +47,7 @@
 //! (rare, since most filesystems normalize to UTF-8 already); such a path
 //! simply fails to match afterward like any other unmatched path.
 
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -55,7 +55,7 @@ use gtk4::gio;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
-use rusqlite::Connection;
+use reprise_core::db::Db;
 
 use reprise_core::library::m3u::{self, M3uExportEntry};
 use reprise_core::library::playlists;
@@ -119,10 +119,7 @@ pub enum ExportError {
 /// leave a permanent, unremovable-by-undo empty playlist behind;
 /// [`ImportOutcome::playlist_id`] is `None` in that case and the caller shows
 /// a "0 of N matched" toast without switching the track list anywhere.
-pub fn import_playlist(
-    conn: &Rc<RefCell<Connection>>,
-    file_path: &Path,
-) -> Result<ImportOutcome, ImportError> {
+pub fn import_playlist(conn: &Rc<Db>, file_path: &Path) -> Result<ImportOutcome, ImportError> {
     let bytes = std::fs::read(file_path)?;
     let content = String::from_utf8(bytes).unwrap_or_else(|error| {
         tracing::warn!(
@@ -136,22 +133,19 @@ pub fn import_playlist(
     let total = entries.len();
     let base_dir = file_path.parent().unwrap_or_else(|| Path::new("."));
 
-    let matched_ids: Vec<i64> = {
-        let conn_ref = conn.borrow();
-        entries
-            .iter()
-            .filter_map(|entry| resolve_and_match_path(&conn_ref, &entry.path, base_dir))
-            .collect()
-    };
+    let matched_ids: Vec<i64> = entries
+        .iter()
+        .filter_map(|entry| resolve_and_match_path(conn, &entry.path, base_dir))
+        .collect();
     let matched = matched_ids.len();
 
     let name = playlist_name_from_file(file_path);
     let playlist_id = if matched_ids.is_empty() {
         None
     } else {
-        let mut conn_ref = conn.borrow_mut();
+        let conn_ref = &conn;
         Some(playlists::create_with_tracks(
-            &mut conn_ref,
+            conn_ref,
             &name,
             &matched_ids,
         )?)
@@ -170,7 +164,8 @@ pub fn import_playlist(
 /// strategy. `None` for a path that doesn't match anything either way (a
 /// query failure is logged and also treated as "no match" — this function's
 /// contract is "matched or not", not "matched, not-found, or errored").
-fn resolve_and_match_path(conn: &Connection, entry_path: &str, base_dir: &Path) -> Option<i64> {
+fn resolve_and_match_path(db: &Db, entry_path: &str, base_dir: &Path) -> Option<i64> {
+    let conn = &db;
     let raw = Path::new(entry_path);
     let resolved: PathBuf = if raw.is_absolute() {
         raw.to_path_buf()
@@ -210,13 +205,13 @@ fn resolve_and_match_path(conn: &Connection, entry_path: &str, base_dir: &Path) 
 /// when there's no artist — see [`display_name`]). Returns the number of
 /// tracks written (0 for an empty playlist, not an error).
 pub fn export_playlist(
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
     playlist_id: i64,
     file_path: &Path,
 ) -> Result<usize, ExportError> {
     let tracks = {
-        let conn_ref = conn.borrow();
-        queries::query_playlist_tracks_full(&conn_ref, playlist_id)?
+        let conn_ref = &conn;
+        queries::query_playlist_tracks_full(conn_ref, playlist_id)?
     };
 
     let entries: Vec<M3uExportEntry> = tracks
@@ -257,7 +252,7 @@ pub(in crate::ui) fn m3u_file_filter() -> gtk4::FileFilter {
 pub fn wire_import_action(
     window: &adw::ApplicationWindow,
     toast_overlay: &adw::ToastOverlay,
-    conn: Rc<RefCell<Connection>>,
+    conn: Rc<Db>,
     sidebar: &Rc<Sidebar>,
 ) {
     let window = window.downgrade();
@@ -395,11 +390,7 @@ pub(in crate::ui) fn apply_import_result(
 ///
 /// Usage: `REPRISE_SCAN_DIR=… REPRISE_SMOKE_M3U=import:/tmp/x.m3u
 ///  REPRISE_SMOKE_QUIT=1 xvfb-run -a cargo run`.
-pub fn arm_smoke_m3u(
-    conn: Rc<RefCell<Connection>>,
-    toast_overlay: &adw::ToastOverlay,
-    sidebar: Rc<Sidebar>,
-) {
+pub fn arm_smoke_m3u(conn: Rc<Db>, toast_overlay: &adw::ToastOverlay, sidebar: Rc<Sidebar>) {
     let Ok(value) = std::env::var(SMOKE_M3U_ENV_VAR) else {
         return;
     };
@@ -458,9 +449,9 @@ pub fn arm_smoke_m3u(
 
 /// Looks up a playlist id by exact name — see [`arm_smoke_m3u`]'s doc
 /// comment for why the hook takes a name instead of an id.
-fn find_playlist_id_by_name(conn: &Rc<RefCell<Connection>>, name: &str) -> Option<i64> {
-    let conn_ref = conn.borrow();
-    playlists::list(&conn_ref)
+fn find_playlist_id_by_name(conn: &Rc<Db>, name: &str) -> Option<i64> {
+    let conn_ref = &conn;
+    playlists::list(conn_ref)
         .inspect_err(|error| {
             tracing::error!(%error, name, "failed to list playlists for smoke m3u name lookup");
         })
@@ -475,10 +466,8 @@ mod tests {
     use super::*;
     use reprise_core::models::Track;
 
-    fn seeded_conn() -> Rc<RefCell<Connection>> {
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        Rc::new(RefCell::new(conn))
+    fn seeded_conn() -> Rc<Db> {
+        Rc::new(crate::test_db::open().unwrap())
     }
 
     #[test]
@@ -549,19 +538,21 @@ mod tests {
     fn import_playlist_matches_exact_absolute_paths_and_counts_unmatched() {
         let conn = seeded_conn();
         {
-            let c = conn.borrow();
-            c.execute(
-                "INSERT INTO tracks (id, path, title, artist, duration_ms, added_at) \
+            let c = &conn;
+            crate::test_db::connection(c)
+                .execute(
+                    "INSERT INTO tracks (id, path, title, artist, duration_ms, added_at) \
                  VALUES (1, '/music/a.flac', 'A', 'Artist A', 3000, 0)",
-                [],
-            )
-            .unwrap();
-            c.execute(
-                "INSERT INTO tracks (id, path, title, artist, duration_ms, added_at) \
+                    [],
+                )
+                .unwrap();
+            crate::test_db::connection(c)
+                .execute(
+                    "INSERT INTO tracks (id, path, title, artist, duration_ms, added_at) \
                  VALUES (2, '/music/b.flac', 'B', 'Artist B', 4000, 0)",
-                [],
-            )
-            .unwrap();
+                    [],
+                )
+                .unwrap();
         }
 
         let dir = std::env::temp_dir().join(format!("reprise-m3u-test-{}", std::process::id()));
@@ -578,8 +569,7 @@ mod tests {
         assert_eq!(outcome.total, 3);
         assert_eq!(outcome.matched, 2);
 
-        let track_ids: Vec<i64> = conn
-            .borrow()
+        let track_ids: Vec<i64> = crate::test_db::connection(&conn)
             .prepare(
                 "SELECT track_id FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position",
             )
@@ -600,13 +590,14 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let track_path = dir.join("song.flac");
         {
-            let c = conn.borrow();
-            c.execute(
-                "INSERT INTO tracks (id, path, title, artist, duration_ms, added_at) \
+            let c = &conn;
+            crate::test_db::connection(c)
+                .execute(
+                    "INSERT INTO tracks (id, path, title, artist, duration_ms, added_at) \
                  VALUES (1, ?1, 'S', 'Art', 1000, 0)",
-                rusqlite::params![track_path.to_string_lossy().to_string()],
-            )
-            .unwrap();
+                    rusqlite::params![track_path.to_string_lossy().to_string()],
+                )
+                .unwrap();
         }
         let m3u_path = dir.join("rel.m3u");
         std::fs::write(&m3u_path, "#EXTM3U\nsong.flac\n").unwrap();
@@ -625,13 +616,14 @@ mod tests {
     fn import_playlist_zero_matched_creates_no_playlist() {
         let conn = seeded_conn();
         {
-            let c = conn.borrow();
-            c.execute(
-                "INSERT INTO tracks (id, path, title, artist, duration_ms, added_at) \
+            let c = &conn;
+            crate::test_db::connection(c)
+                .execute(
+                    "INSERT INTO tracks (id, path, title, artist, duration_ms, added_at) \
                  VALUES (1, '/music/a.flac', 'A', 'Artist A', 3000, 0)",
-                [],
-            )
-            .unwrap();
+                    [],
+                )
+                .unwrap();
         }
 
         let dir =
@@ -644,8 +636,7 @@ mod tests {
         )
         .unwrap();
 
-        let before_count: i64 = conn
-            .borrow()
+        let before_count: i64 = crate::test_db::connection(&conn)
             .query_row("SELECT COUNT(*) FROM playlists", [], |r| r.get(0))
             .unwrap();
 
@@ -654,8 +645,7 @@ mod tests {
         assert_eq!(outcome.total, 2);
         assert_eq!(outcome.playlist_id, None);
 
-        let after_count: i64 = conn
-            .borrow()
+        let after_count: i64 = crate::test_db::connection(&conn)
             .query_row("SELECT COUNT(*) FROM playlists", [], |r| r.get(0))
             .unwrap();
         assert_eq!(
@@ -674,13 +664,14 @@ mod tests {
     fn import_playlist_handles_non_utf8_bytes_via_lossy_decode() {
         let conn = seeded_conn();
         {
-            let c = conn.borrow();
-            c.execute(
-                "INSERT INTO tracks (id, path, title, artist, duration_ms, added_at) \
+            let c = &conn;
+            crate::test_db::connection(c)
+                .execute(
+                    "INSERT INTO tracks (id, path, title, artist, duration_ms, added_at) \
                  VALUES (1, '/music/a.flac', 'A', 'Artist A', 3000, 0)",
-                [],
-            )
-            .unwrap();
+                    [],
+                )
+                .unwrap();
         }
 
         let dir =
@@ -738,15 +729,16 @@ mod tests {
     fn export_playlist_writes_absolute_paths_and_extinf() {
         let conn = seeded_conn();
         let playlist_id = {
-            let mut c = conn.borrow_mut();
-            c.execute(
-                "INSERT INTO tracks (id, path, title, artist, duration_ms, added_at) \
+            let c = &conn;
+            crate::test_db::connection(c)
+                .execute(
+                    "INSERT INTO tracks (id, path, title, artist, duration_ms, added_at) \
                  VALUES (1, '/music/a.flac', 'Title A', 'Artist A', 125000, 0)",
-                [],
-            )
-            .unwrap();
-            let id = playlists::create(&c, "Exported").unwrap();
-            playlists::add_tracks(&mut c, id, &[1]).unwrap();
+                    [],
+                )
+                .unwrap();
+            let id = playlists::create(c, "Exported").unwrap();
+            playlists::add_tracks(c, id, &[1]).unwrap();
             id
         };
 

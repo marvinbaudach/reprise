@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use chrono::NaiveDate;
-use rusqlite::{params, Connection};
+use rusqlite::params;
 
 use super::similar::{SimilarArtist, SimilarFetch};
 use super::{
@@ -11,20 +11,19 @@ use super::{
     EventProvider, ProviderError, ProviderEvent, ProviderKind, Resolution, TicketmasterProvider,
 };
 
-fn conn() -> Connection {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    conn
+fn conn() -> crate::db::Db {
+    crate::db::Db::open_in_memory().unwrap()
 }
 
-fn seed_play(conn: &Connection, artist: &str, played_at: i64) {
-    conn.execute(
-        "INSERT INTO listen_events (
+fn seed_play(db: &crate::db::Db, artist: &str, played_at: i64) {
+    db.conn()
+        .execute(
+            "INSERT INTO listen_events (
            track_id, played_at, ms_played, artist
          ) VALUES (1, ?1, 1, ?2)",
-        params![played_at, artist],
-    )
-    .unwrap();
+            params![played_at, artist],
+        )
+        .unwrap();
 }
 
 fn event(venue: &str) -> ProviderEvent {
@@ -175,6 +174,7 @@ fn fallback_uses_ticketmaster_only_after_bandsintown_unmatched() {
     assert_eq!(summary.resolved, 1);
     assert_eq!(summary.events_upserted, 1);
     let provider: String = conn
+        .conn()
         .query_row("SELECT provider FROM concert_artists", [], |row| row.get(0))
         .unwrap();
     assert_eq!(provider, "ticketmaster");
@@ -184,7 +184,8 @@ fn fallback_uses_ticketmaster_only_after_bandsintown_unmatched() {
 fn similar_candidates_share_the_pipeline_and_persist_the_seed_caption() {
     let conn = conn();
     seed_play(&conn, "Library Seed", 1_000);
-    conn.execute("UPDATE listen_events SET artist_mbid = 'seed-mbid'", [])
+    conn.conn()
+        .execute("UPDATE listen_events SET artist_mbid = 'seed-mbid'", [])
         .unwrap();
     crate::library::settings::set_bool(&conn, "concerts.similar_enabled", true).unwrap();
     crate::library::settings::set_setting(&conn, "concerts.similar_count", "10").unwrap();
@@ -217,6 +218,7 @@ fn similar_candidates_share_the_pipeline_and_persist_the_seed_caption() {
 
     assert_eq!(summary.attempted, 2);
     let similar: (i64, Option<String>, Option<String>) = conn
+        .conn()
         .query_row(
             "SELECT is_similar, similar_to, artist_mbid
              FROM concert_artists
@@ -253,6 +255,7 @@ fn similar_candidates_share_the_pipeline_and_persist_the_seed_caption() {
     )
     .unwrap();
     let promoted: (i64, Option<String>) = conn
+        .conn()
         .query_row(
             "SELECT is_similar, similar_to FROM concert_artists
              WHERE artist_name = 'Discovered Artist'",
@@ -269,11 +272,12 @@ fn library_candidates_take_the_shared_thirty_artist_budget_first() {
     for index in 0..30 {
         seed_play(&conn, &format!("Library {index:02}"), 1_000);
     }
-    conn.execute(
-        "UPDATE listen_events SET artist_mbid = 'seed-mbid' WHERE artist = 'Library 00'",
-        [],
-    )
-    .unwrap();
+    conn.conn()
+        .execute(
+            "UPDATE listen_events SET artist_mbid = 'seed-mbid' WHERE artist = 'Library 00'",
+            [],
+        )
+        .unwrap();
     crate::library::settings::set_bool(&conn, "concerts.similar_enabled", true).unwrap();
     let provider = FakeProvider::new(
         ProviderKind::Ticketmaster,
@@ -304,6 +308,7 @@ fn library_candidates_take_the_shared_thirty_artist_budget_first() {
 
     assert_eq!(summary.attempted, 30);
     let overflow: i64 = conn
+        .conn()
         .query_row(
             "SELECT COUNT(*) FROM concert_artists WHERE artist_name = 'Budget Overflow'",
             [],
@@ -379,11 +384,12 @@ fn reconcile_removes_cancelled_events_and_preserves_seen_state() {
         false,
     )
     .unwrap();
-    conn.execute(
-        "UPDATE concert_events SET seen_at = 77 WHERE venue = 'Zenith'",
-        [],
-    )
-    .unwrap();
+    conn.conn()
+        .execute(
+            "UPDATE concert_events SET seen_at = 77 WHERE venue = 'Zenith'",
+            [],
+        )
+        .unwrap();
     let second = FakeProvider::new(
         ProviderKind::Ticketmaster,
         Resolution::Resolved {
@@ -402,6 +408,7 @@ fn reconcile_removes_cancelled_events_and_preserves_seen_state() {
     .unwrap();
 
     let stored: (i64, Option<i64>) = conn
+        .conn()
         .query_row(
             "SELECT COUNT(*), MAX(seen_at) FROM concert_events",
             [],
@@ -475,6 +482,7 @@ fn failed_refresh_preserves_cached_events_and_events_found() {
     .unwrap();
     assert_eq!(summary.failed, 1);
     let ledger: (String, i64) = conn
+        .conn()
         .query_row(
             "SELECT last_outcome, events_found FROM concert_artists",
             [],
@@ -483,6 +491,7 @@ fn failed_refresh_preserves_cached_events_and_events_found() {
         .unwrap();
     assert_eq!(ledger, ("failed".into(), 1));
     let count: i64 = conn
+        .conn()
         .query_row("SELECT COUNT(*) FROM concert_events", [], |row| row.get(0))
         .unwrap();
     assert_eq!(count, 1);
@@ -491,15 +500,16 @@ fn failed_refresh_preserves_cached_events_and_events_found() {
 #[test]
 fn cleanup_removes_past_events_and_missing_credentials_is_typed() {
     let conn = conn();
-    conn.execute(
-        "INSERT INTO concert_events (
+    conn.conn()
+        .execute(
+            "INSERT INTO concert_events (
            artist_key, artist_name, starts_at, date_key, venue, city,
            provider, fetched_at, dedupe_key
          ) VALUES ('past', 'Past', '2026-01-01T00:00:00', '2026-01-01',
                    'Old', 'Town', 'bandsintown', 1, 'past|town|old')",
-        [],
-    )
-    .unwrap();
+            [],
+        )
+        .unwrap();
     seed_play(&conn, "Artist", 1_000);
     let result = refresh(
         &conn,
@@ -510,6 +520,7 @@ fn cleanup_removes_past_events_and_missing_credentials_is_typed() {
     );
     assert!(matches!(result, Err(ConcertError::MissingCredentials)));
     let count: i64 = conn
+        .conn()
         .query_row("SELECT COUNT(*) FROM concert_events", [], |row| row.get(0))
         .unwrap();
     assert_eq!(count, 0);

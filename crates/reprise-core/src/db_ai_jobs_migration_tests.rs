@@ -47,11 +47,11 @@ fn seed_track(conn: &Connection, id: i64) {
 #[test]
 fn fresh_and_upgraded_databases_have_the_same_ai_jobs_shape() {
     let fresh = open(None).unwrap();
-    migrate(&fresh).unwrap();
+    migrate_connection(&fresh).unwrap();
     let upgraded = open(None).unwrap();
-    migrate(&upgraded).unwrap();
+    migrate_connection(&upgraded).unwrap();
     reset_to_v28(&upgraded);
-    migrate(&upgraded).unwrap();
+    migrate_connection(&upgraded).unwrap();
 
     for table in ["ai_jobs", "track_provenance"] {
         assert_eq!(
@@ -71,7 +71,7 @@ fn fresh_and_upgraded_databases_have_the_same_ai_jobs_shape() {
 #[test]
 fn upgrade_preserves_existing_library_rows() {
     let conn = open(None).unwrap();
-    migrate(&conn).unwrap();
+    migrate_connection(&conn).unwrap();
     reset_to_v28(&conn);
     seed_track(&conn, 1);
     conn.execute(
@@ -80,7 +80,7 @@ fn upgrade_preserves_existing_library_rows() {
     )
     .unwrap();
 
-    migrate(&conn).unwrap();
+    migrate_connection(&conn).unwrap();
 
     let (title, name): (String, String) = conn
         .query_row(
@@ -103,7 +103,7 @@ fn upgrade_preserves_existing_library_rows() {
 #[test]
 fn ai_jobs_columns_match_the_plan() {
     let conn = open(None).unwrap();
-    migrate(&conn).unwrap();
+    migrate_connection(&conn).unwrap();
     let columns = conn
         .prepare("PRAGMA table_info(ai_jobs)")
         .unwrap()
@@ -138,7 +138,7 @@ fn ai_jobs_columns_match_the_plan() {
 #[test]
 fn status_and_progress_check_constraints_are_enforced() {
     let conn = open(None).unwrap();
-    migrate(&conn).unwrap();
+    migrate_connection(&conn).unwrap();
     let insert = |status: &str, permille: i64| {
         conn.execute(
             "INSERT INTO ai_jobs (kind, params_json, params_fingerprint, status, progress_permille, created_at) \
@@ -164,7 +164,7 @@ fn status_and_progress_check_constraints_are_enforced() {
 #[test]
 fn dedup_index_blocks_open_and_successful_but_allows_retry_after_failure() {
     let conn = open(None).unwrap();
-    migrate(&conn).unwrap();
+    migrate_connection(&conn).unwrap();
     seed_track(&conn, 1);
     let insert = |status: &str, result: Option<i64>| {
         conn.execute(
@@ -190,7 +190,7 @@ fn dedup_index_blocks_open_and_successful_but_allows_retry_after_failure() {
 #[test]
 fn done_job_frees_its_dedup_slot_when_the_result_track_is_deleted() {
     let conn = open(None).unwrap();
-    migrate(&conn).unwrap();
+    migrate_connection(&conn).unwrap();
     seed_track(&conn, 1); // source
     seed_track(&conn, 2); // instrumental result
     conn.execute(
@@ -229,7 +229,7 @@ fn done_job_frees_its_dedup_slot_when_the_result_track_is_deleted() {
 #[test]
 fn deleting_the_source_track_nulls_references_but_keeps_rows() {
     let conn = open(None).unwrap();
-    migrate(&conn).unwrap();
+    migrate_connection(&conn).unwrap();
     seed_track(&conn, 1); // source original
     seed_track(&conn, 2); // instrumental result
     conn.execute(
@@ -279,7 +279,7 @@ fn deleting_the_source_track_nulls_references_but_keeps_rows() {
 #[test]
 fn deleting_the_instrumental_cascades_its_provenance_row() {
     let conn = open(None).unwrap();
-    migrate(&conn).unwrap();
+    migrate_connection(&conn).unwrap();
     seed_track(&conn, 2);
     conn.execute(
         "INSERT INTO track_provenance (track_id, kind, ai, created_at) \

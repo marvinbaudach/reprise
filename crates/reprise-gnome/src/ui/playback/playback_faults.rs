@@ -62,8 +62,8 @@ impl PlayerController {
     /// next to never crashing.
     pub(in crate::ui) fn handle_unplayable_track(&self, id: i64) {
         let summary = {
-            let conn = self.conn.borrow();
-            queries::query_track_summary(&conn, id)
+            let conn = &self.conn;
+            queries::query_track_summary(conn, id)
         };
 
         match summary {
@@ -86,9 +86,9 @@ impl PlayerController {
                         "file no longer exists on disk; marking missing and skipping"
                     );
                     let mark_result = {
-                        let conn = self.conn.borrow();
+                        let conn = &self.conn;
                         queries::mark_track_missing_if_current(
-                            &conn,
+                            conn,
                             id,
                             std::path::Path::new(&summary.path),
                         )

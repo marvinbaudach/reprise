@@ -49,8 +49,8 @@ fn scan_without_path_or_configured_root_is_invalid_input_exit_7() {
 fn scan_without_path_uses_the_configured_library_root() {
     let h = Harness::new();
     let music = music_folder_with_broken_track();
-    reprise_core::library::settings::set_library_root(&h.conn(), music.path().to_str().unwrap())
-        .unwrap();
+    let db = h.db();
+    reprise_core::library::settings::set_library_root(&db, music.path().to_str().unwrap()).unwrap();
     let out = h.run(&["--json", "scan"]);
     assert_eq!(code(&out), 0);
     assert_eq!(parse_json(&out)["outcome"], "completed");

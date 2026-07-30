@@ -17,13 +17,14 @@ fn missing_group_copy_keeps_unknown_actionless_and_honest() {
 // existing overdue backlog names what is removed and what remains historical.
 #[test]
 fn set_4_auto_clean_activation_names_cascade_and_can_start_today() {
-    let mut conn = reprise_core::db::open_migrated(None).unwrap();
-    conn.execute(
-        "INSERT INTO tracks (id,path,title,artist,added_at,missing_since,missing_reason) \
+    let conn = crate::test_db::open().unwrap();
+    crate::test_db::connection(&conn)
+        .execute(
+            "INSERT INTO tracks (id,path,title,artist,added_at,missing_since,missing_reason) \
          VALUES (1,'/gone.flac','Gone','',0,1,'deleted')",
-        [],
-    )
-    .unwrap();
+            [],
+        )
+        .unwrap();
     let now = 40 * 86_400;
 
     let plan = activate_auto_clean(&conn, AutoCleanSetting::Days(30), now).unwrap();
@@ -45,10 +46,7 @@ fn set_4_auto_clean_activation_names_cascade_and_can_start_today() {
     start_auto_clean_counting_today(&conn, now).unwrap();
     assert_eq!(settings::get_auto_clean_armed_at(&conn).unwrap(), Some(now));
 
-    assert_eq!(
-        remove_auto_clean_backlog_now(&mut conn, now).unwrap(),
-        vec![1]
-    );
+    assert_eq!(remove_auto_clean_backlog_now(&conn, now).unwrap(), vec![1]);
     assert_eq!(settings::get_auto_clean_armed_at(&conn).unwrap(), Some(now));
 }
 
@@ -103,17 +101,16 @@ fn missing_since_copy_uses_a_short_calendar_date() {
 
 #[test]
 fn startup_purge_commits_a_tombstone_left_by_a_closed_window() {
-    let conn = reprise_core::db::open_migrated(None).unwrap();
-    conn.execute(
-        "INSERT INTO tracks (id,path,title,artist,added_at,removed_at) \
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    crate::test_db::connection(&conn)
+        .execute(
+            "INSERT INTO tracks (id,path,title,artist,added_at,removed_at) \
          VALUES (1,'/removed.flac','Removed','',0,100)",
-        [],
-    )
-    .unwrap();
-    let conn = Rc::new(RefCell::new(conn));
+            [],
+        )
+        .unwrap();
     assert_eq!(purge_startup_tombstones(&conn).unwrap(), vec![1]);
-    let count: i64 = conn
-        .borrow()
+    let count: i64 = crate::test_db::connection(&conn)
         .query_row("SELECT count(*) FROM tracks", [], |row| row.get(0))
         .unwrap();
     assert_eq!(count, 0);
@@ -121,32 +118,34 @@ fn startup_purge_commits_a_tombstone_left_by_a_closed_window() {
 
 #[test]
 fn stale_tombstone_request_skips_track_resurrected_while_dialog_was_open() {
-    let mut conn = reprise_core::db::open_migrated(None).unwrap();
+    let conn = crate::test_db::open().unwrap();
     for id in [1, 2] {
-        conn.execute(
-            "INSERT INTO tracks \
+        crate::test_db::connection(&conn)
+            .execute(
+                "INSERT INTO tracks \
              (id,path,title,artist,added_at,missing_since,missing_reason) \
              VALUES (?1,?2,?3,'',0,1,'deleted')",
-            rusqlite::params![id, format!("/x/{id}.flac"), format!("Track {id}"),],
-        )
-        .unwrap();
+                rusqlite::params![id, format!("/x/{id}.flac"), format!("Track {id}"),],
+            )
+            .unwrap();
     }
     let stale_ids = vec![1, 2];
 
     // Simulate a scan/mount event proving track 1 is present while the
     // confirmation dialog remains open.
-    conn.execute(
-        "UPDATE tracks SET missing_since=NULL,missing_reason=NULL WHERE id=1",
-        [],
-    )
-    .unwrap();
+    crate::test_db::connection(&conn)
+        .execute(
+            "UPDATE tracks SET missing_since=NULL,missing_reason=NULL WHERE id=1",
+            [],
+        )
+        .unwrap();
 
     assert_eq!(
-        tombstone_still_deleted(&mut conn, &stale_ids, 100).unwrap(),
+        reprise_core::queries::tombstone_still_deleted(&conn, &stale_ids, 100).unwrap(),
         vec![2]
     );
 
-    let states: Vec<(i64, Option<i64>)> = conn
+    let states: Vec<(i64, Option<i64>)> = crate::test_db::connection(&conn)
         .prepare("SELECT id,removed_at FROM tracks ORDER BY id")
         .unwrap()
         .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))

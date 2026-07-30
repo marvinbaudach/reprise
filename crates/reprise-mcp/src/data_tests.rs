@@ -14,16 +14,15 @@ use crate::dto::PlayParams;
 /// exempts — so a hand-written literal `tracks`-table insert here would
 /// trip it even though it never ships in the binary.
 fn scan_one_track(db_path: &Path) -> i64 {
-    let mut conn = reprise_core::db::open_migrated(Some(db_path)).unwrap();
+    let db = reprise_core::db::Db::open_migrated(Some(db_path)).unwrap();
 
     let library_root = tempfile::tempdir().unwrap();
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac");
     std::fs::copy(&fixture, library_root.path().join("sine.flac")).unwrap();
-    reprise_core::library::scanner::scan_folder(&mut conn, library_root.path()).unwrap();
+    reprise_core::library::scanner::scan_folder(&db, library_root.path()).unwrap();
 
     let source = ViewSource::Library;
-    let tracks =
-        queries::query_track_window(&mut conn, &source, "title", "asc", "", 0, 10, &[]).unwrap();
+    let tracks = queries::query_track_window(&db, &source, "title", "asc", "", 0, 10, &[]).unwrap();
     assert_eq!(tracks.len(), 1, "expected exactly one scanned track");
     tracks[0].id
 }
@@ -34,10 +33,10 @@ fn resolve_play_ids_enforces_exactly_one_source() {
     let path = dir.path().join("t.db");
     let track_id = scan_one_track(&path);
 
-    let mut conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
-    let pid = playlists::create(&conn, "P").unwrap();
-    playlists::add_tracks(&mut conn, pid, &[track_id]).unwrap();
-    drop(conn);
+    let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
+    let pid = playlists::create(&db, "P").unwrap();
+    playlists::add_tracks(&db, pid, &[track_id]).unwrap();
+    drop(db);
 
     // playlist path
     let ids = resolve_play_ids(
@@ -82,8 +81,8 @@ fn resolve_play_ids_enforces_exactly_one_source() {
         Err(DataError::InvalidInput(_))
     ));
     // empty playlist
-    let empty =
-        playlists::create(&reprise_core::db::open_migrated(Some(&path)).unwrap(), "E").unwrap();
+    let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
+    let empty = playlists::create(&db, "E").unwrap();
     assert!(matches!(
         resolve_play_ids(
             &path,

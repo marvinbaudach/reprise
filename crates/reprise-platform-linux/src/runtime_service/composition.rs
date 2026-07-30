@@ -7,12 +7,12 @@
 
 use std::path::Path;
 
+use reprise_core::db::Db;
 use reprise_core::playback::StreamEvent;
 use reprise_core::queries;
 use reprise_runtime::{
     Clock, DeviceEffects, LibraryPort, PlayableTrack, Ports, Runtime, TrackLocation,
 };
-use rusqlite::Connection;
 
 use super::service::Request;
 
@@ -22,12 +22,12 @@ use super::service::Request;
 /// hot path of starting playback, and WAL carries any number of readers. The
 /// writer stays free for the effects that actually need it.
 struct DatabaseLibrary {
-    conn: Connection,
+    db: Db,
 }
 
 impl LibraryPort for DatabaseLibrary {
     fn resolve(&self, track_id: i64) -> Option<PlayableTrack> {
-        let summary = queries::query_track_summary(&self.conn, track_id)
+        let summary = queries::query_track_summary(&self.db, track_id)
             .inspect_err(|error| tracing::warn!(track_id, %error, "track lookup failed"))
             .ok()
             .flatten()?;
@@ -111,8 +111,8 @@ pub fn compose(
     database: &Path,
     requests: async_channel::Sender<Request>,
 ) -> Result<Composition, ComposeError> {
-    let writer = reprise_core::db::open_migrated(Some(database)).map_err(ComposeError::Database)?;
-    let reader = reprise_core::db::open_migrated(Some(database)).map_err(ComposeError::Database)?;
+    let writer = Db::open_migrated(Some(database)).map_err(ComposeError::Database)?;
+    let reader = Db::open_migrated(Some(database)).map_err(ComposeError::Database)?;
 
     let (events, player_events) = async_channel::unbounded::<StreamEvent>();
     // The generation-stamping constructor, not the plain one: the runtime
@@ -127,7 +127,7 @@ pub fn compose(
 
     let ports = Ports {
         playback: Box::new(player),
-        library: Box::new(DatabaseLibrary { conn: reader }),
+        library: Box::new(DatabaseLibrary { db: reader }),
         devices: Box::new(UnmigratedDeviceEffects { requests }),
         clock: Box::new(SystemClock {
             started: std::time::Instant::now(),

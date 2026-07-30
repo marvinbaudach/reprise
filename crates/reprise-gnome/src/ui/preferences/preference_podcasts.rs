@@ -4,14 +4,13 @@
 //! is a peer source with its own module (issue #96), not a Podcasts
 //! sub-setting.
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
+use reprise_core::db::Db;
 use reprise_core::podcasts::config::{self, CleanupPolicy};
-use rusqlite::Connection;
 
 use crate::ui::strings;
 
@@ -38,8 +37,8 @@ impl PodcastPreferenceRows {
     }
 }
 
-pub(in crate::ui) fn build(conn: &Rc<RefCell<Connection>>, enabled: bool) -> PodcastPreferenceRows {
-    let config = config::load(&conn.borrow()).unwrap_or(config::PodcastConfig {
+pub(in crate::ui) fn build(conn: &Rc<Db>, enabled: bool) -> PodcastPreferenceRows {
+    let config = config::load(conn).unwrap_or(config::PodcastConfig {
         import_count: config::DEFAULT_IMPORT_COUNT,
         auto_download_default: false,
         cleanup_policy: CleanupPolicy::KeepAll,
@@ -58,7 +57,7 @@ pub(in crate::ui) fn build(conn: &Rc<RefCell<Connection>>, enabled: bool) -> Pod
         let conn = conn.clone();
         import_count.connect_value_notify(move |row| {
             save_or_warn(config::set_import_count(
-                &conn.borrow(),
+                &conn,
                 row.value().round() as usize,
             ));
         });
@@ -71,10 +70,7 @@ pub(in crate::ui) fn build(conn: &Rc<RefCell<Connection>>, enabled: bool) -> Pod
     {
         let conn = conn.clone();
         auto_download.connect_active_notify(move |row| {
-            save_or_warn(config::set_auto_download_default(
-                &conn.borrow(),
-                row.is_active(),
-            ));
+            save_or_warn(config::set_auto_download_default(&conn, row.is_active()));
         });
     }
 
@@ -92,7 +88,7 @@ pub(in crate::ui) fn build(conn: &Rc<RefCell<Connection>>, enabled: bool) -> Pod
         let conn = conn.clone();
         cleanup.connect_selected_notify(move |row| {
             save_or_warn(config::set_cleanup_policy(
-                &conn.borrow(),
+                &conn,
                 cleanup_policy(row.selected()),
             ));
         });
@@ -144,7 +140,7 @@ mod tests {
     // covered by `podcasts::config`'s own tests.
     #[test]
     fn podcast_preference_values_round_trip_through_core_config() {
-        let conn = reprise_core::db::open_migrated(None).unwrap();
+        let conn = crate::test_db::open().unwrap();
         config::set_import_count(&conn, 42).unwrap();
         config::set_auto_download_default(&conn, true).unwrap();
         config::set_cleanup_policy(&conn, CleanupPolicy::KeepLast5).unwrap();
@@ -162,7 +158,7 @@ mod tests {
     #[ignore = "requires a display; run via xvfb-run"]
     fn podcast_preference_rows_build_with_every_source_control() {
         gtk4::init().unwrap();
-        let conn = Rc::new(RefCell::new(reprise_core::db::open_migrated(None).unwrap()));
+        let conn = Rc::new(crate::test_db::open().unwrap());
         let rows = build(&conn, true);
         assert_eq!(rows.inner.rows.len(), 3);
     }
