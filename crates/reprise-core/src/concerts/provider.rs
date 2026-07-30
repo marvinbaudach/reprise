@@ -1,4 +1,6 @@
-use std::fmt;
+use std::{fmt, time::Duration};
+
+use crate::source_error::{SourceError, SourceErrorKind};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProviderKind {
@@ -66,8 +68,61 @@ pub enum ProviderError {
     MissingCredentials,
 }
 
+impl From<&ProviderError> for SourceErrorKind {
+    fn from(error: &ProviderError) -> Self {
+        match error {
+            ProviderError::RateLimited { retry_after } => Self::RateLimited {
+                retry_after: retry_after.map(Duration::from_secs),
+            },
+            ProviderError::HttpStatus(_)
+            | ProviderError::Timeout
+            | ProviderError::Transport
+            | ProviderError::Body
+            | ProviderError::BodyTooLarge
+            | ProviderError::Parse
+            | ProviderError::MissingCredentials => Self::Unreachable,
+        }
+    }
+}
+
+impl From<ProviderError> for SourceError {
+    fn from(error: ProviderError) -> Self {
+        let kind = SourceErrorKind::from(&error);
+        Self::new(kind, "concert provider request failed", error.to_string())
+    }
+}
+
 pub trait EventProvider: Send {
     fn kind(&self) -> ProviderKind;
     fn resolve(&self, artist: &ArtistRef<'_>) -> Result<Resolution, ProviderError>;
     fn events(&self, provider_id: &str) -> Result<Vec<ProviderEvent>, ProviderError>;
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::ProviderError;
+    use crate::source_error::{SourceError, SourceErrorKind};
+
+    #[test]
+    fn concert_failures_project_rate_limits_without_displaying_statuses() {
+        let error = SourceError::from(ProviderError::RateLimited {
+            retry_after: Some(360),
+        });
+
+        assert_eq!(
+            error.kind(),
+            &SourceErrorKind::RateLimited {
+                retry_after: Some(Duration::from_secs(360))
+            }
+        );
+        assert!(!error.to_string().contains("429"));
+        assert_eq!(
+            error.details("2026-07-30 14:12").to_string(),
+            "concert provider request failed\n\
+             concert provider rate limited the request\n\
+             2026-07-30 14:12 · retry in 6 min"
+        );
+    }
 }

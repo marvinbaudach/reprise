@@ -1,5 +1,7 @@
 //! Podcast subscriptions, episodes, refresh, and provider boundaries.
 
+use crate::source_error::{SourceError, SourceErrorKind};
+
 pub mod channel_window;
 pub mod config;
 pub mod discovery;
@@ -136,18 +138,75 @@ impl PodcastError {
     /// rather than keeping their own copy that could drift from it.
     #[must_use]
     pub fn classify(&self) -> &'static str {
-        match self {
-            PodcastError::Timeout => "podcast source timed out",
-            PodcastError::Transport(_) => "podcast source could not be reached",
-            PodcastError::HttpStatus(_) => "podcast source returned an HTTP error",
-            PodcastError::Body(_) | PodcastError::Parse(_) => {
+        let kind = SourceErrorKind::from(self);
+        match (kind, self) {
+            (SourceErrorKind::Unreachable, PodcastError::Timeout) => "podcast source timed out",
+            (SourceErrorKind::Unreachable, PodcastError::Transport(_)) => {
+                "podcast source could not be reached"
+            }
+            (SourceErrorKind::Unreachable, PodcastError::HttpStatus(_)) => {
+                "podcast source returned an HTTP error"
+            }
+            (SourceErrorKind::Unreachable, PodcastError::Body(_) | PodcastError::Parse(_)) => {
                 "podcast source returned invalid data"
             }
-            PodcastError::NotModified => "podcast source was not modified",
-            PodcastError::YtDlp(_) => "YouTube source could not be read with yt-dlp",
-            PodcastError::YtDlpTimeout => "YouTube source timed out",
-            PodcastError::Disabled(_) => "this source is disabled in Reprise preferences",
+            (SourceErrorKind::Unreachable, PodcastError::NotModified) => {
+                "podcast source was not modified"
+            }
+            (
+                SourceErrorKind::Unreachable
+                | SourceErrorKind::RateLimited { .. }
+                | SourceErrorKind::HelperOutdated,
+                PodcastError::YtDlp(_),
+            ) => "YouTube source could not be read with yt-dlp",
+            (SourceErrorKind::Unreachable, PodcastError::YtDlpTimeout) => {
+                "YouTube source timed out"
+            }
+            (SourceErrorKind::Unreachable, PodcastError::Disabled(_)) => {
+                "this source is disabled in Reprise preferences"
+            }
+            (SourceErrorKind::Offline, _) => "podcast source is offline",
+            (SourceErrorKind::SourceGone, _) => "podcast source has moved or ended",
+            (SourceErrorKind::RateLimited { .. }, _) => "podcast source is rate limited",
+            (SourceErrorKind::HelperOutdated, _) => "YouTube source could not be read with yt-dlp",
         }
+    }
+}
+
+impl From<&PodcastError> for SourceErrorKind {
+    fn from(error: &PodcastError) -> Self {
+        match error {
+            PodcastError::YtDlp(message) => classify_ytdlp_message(message),
+            PodcastError::Timeout
+            | PodcastError::Transport(_)
+            | PodcastError::HttpStatus(_)
+            | PodcastError::Body(_)
+            | PodcastError::Parse(_)
+            | PodcastError::NotModified
+            | PodcastError::YtDlpTimeout
+            | PodcastError::Disabled(_) => Self::Unreachable,
+        }
+    }
+}
+
+impl From<PodcastError> for SourceError {
+    fn from(error: PodcastError) -> Self {
+        let kind = SourceErrorKind::from(&error);
+        Self::new(kind, "podcast source request failed", error.to_string())
+    }
+}
+
+fn classify_ytdlp_message(message: &str) -> SourceErrorKind {
+    let normalized = message.to_ascii_lowercase();
+    if normalized.contains("requires verification") || normalized.contains("rate-limit") {
+        SourceErrorKind::RateLimited { retry_after: None }
+    } else if normalized.contains("update yt-dlp")
+        || normalized.contains("component is unavailable")
+        || normalized.contains("component could not start")
+    {
+        SourceErrorKind::HelperOutdated
+    } else {
+        SourceErrorKind::Unreachable
     }
 }
 
@@ -192,6 +251,39 @@ mod tests {
         assert_ne!(
             PodcastError::YtDlp(String::new()).classify(),
             PodcastError::Disabled(String::new()).classify()
+        );
+    }
+
+    #[test]
+    fn podcast_failures_project_without_displaying_the_raw_payload() {
+        let raw = "https://private.example/feed?token=SECRET failed with HTTP 599";
+        let error = crate::source_error::SourceError::from(PodcastError::Transport(raw.into()));
+
+        assert_eq!(
+            error.kind(),
+            &crate::source_error::SourceErrorKind::Unreachable
+        );
+        assert!(!error.to_string().contains("private.example"));
+        assert!(!error.to_string().contains("SECRET"));
+        assert!(error.details("2026-07-30 14:12").to_string().contains(raw));
+    }
+
+    #[test]
+    fn youtube_failure_messages_project_to_rate_limited_or_helper_outdated() {
+        let rate_limited = crate::source_error::SourceError::from(PodcastError::YtDlp(
+            "YouTube requires verification — try again later or use another network".into(),
+        ));
+        let helper = crate::source_error::SourceError::from(PodcastError::YtDlp(
+            "YouTube changed its response — update yt-dlp and try again".into(),
+        ));
+
+        assert!(matches!(
+            rate_limited.kind(),
+            crate::source_error::SourceErrorKind::RateLimited { retry_after: None }
+        ));
+        assert_eq!(
+            helper.kind(),
+            &crate::source_error::SourceErrorKind::HelperOutdated
         );
     }
 }
