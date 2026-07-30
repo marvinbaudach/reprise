@@ -446,3 +446,48 @@ fn newer_schema_is_refused_before_migration() {
         } if found == SUPPORTED_SCHEMA_VERSION + 1 && supported == SUPPORTED_SCHEMA_VERSION
     ));
 }
+
+// A database can carry the current `user_version` and still be missing this
+// migration's columns: the schema numbers in this repository were reassigned
+// during development, so a build whose `v40` meant something else could raise
+// the version past 40 without ever running this `ALTER TABLE`. Every sibling
+// migration here (v34, v43, v47) guards on its own column as well as on the
+// version and therefore repairs such a database on the next start. v40 guarded
+// on the version alone, so the columns stayed missing forever and every
+// subscription query failed with "no such column: sync_to_phone" — on a real
+// installation, on both the Podcasts and the YouTube page.
+#[test]
+fn v40_repairs_a_database_that_carries_the_version_without_the_columns() {
+    let conn = db::open(None).unwrap();
+    db::migrate_connection(&conn).unwrap();
+    conn.execute_batch(
+        "ALTER TABLE podcast_subscriptions DROP COLUMN sync_to_phone;
+         ALTER TABLE podcast_episodes DROP COLUMN downloaded_bytes;",
+    )
+    .unwrap();
+    let version_before: i64 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(
+        version_before, SUPPORTED_SCHEMA_VERSION,
+        "the affected database reports a fully migrated schema"
+    );
+
+    db::migrate_connection(&conn).unwrap();
+
+    assert!(
+        has_column(&conn, "podcast_subscriptions", "sync_to_phone").unwrap(),
+        "the migration must add its own column back rather than trust the version"
+    );
+    assert!(
+        has_column(&conn, "podcast_episodes", "downloaded_bytes").unwrap(),
+        "the migration must add its own column back rather than trust the version"
+    );
+    let version_after: i64 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(
+        version_after, SUPPORTED_SCHEMA_VERSION,
+        "repairing an older migration must not roll the schema version back to 40"
+    );
+}
