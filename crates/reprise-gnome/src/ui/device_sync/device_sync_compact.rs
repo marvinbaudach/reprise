@@ -25,9 +25,9 @@ impl DeviceSyncRuntime {
     /// re-plans preparation. It deliberately does not read
     /// `gio::NetworkMonitor` here.
     ///
-    /// TODO(integration): attach the real `network-changed` signal and feed
-    /// its value into this seam from the window-level network package.
-    #[cfg_attr(not(test), allow(dead_code))]
+    /// The real `network-changed` signal reaches this seam from
+    /// `ui::window::source_connectivity`, which is the one place in the app
+    /// that reads `gio::NetworkMonitor`.
     pub fn set_connectivity(self: &Rc<Self>, connectivity: Connectivity) {
         if self.connectivity.replace(connectivity) != connectivity {
             self.recompute_all_devices();
@@ -36,7 +36,6 @@ impl DeviceSyncRuntime {
 
     /// The metered companion fact used by `MTP-43`; kept injectable for the
     /// same reason as connectivity.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn set_metered(self: &Rc<Self>, metered: bool) {
         if self.metered.replace(metered) != metered {
             self.recompute_all_devices();

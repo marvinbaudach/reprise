@@ -118,7 +118,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         metadata_navigator,
     } = args;
 
-    super::source_connectivity::wire(podcasts_view, youtube_view, radio_view);
+    super::source_connectivity::wire(podcasts_view, youtube_view, radio_view, device_sync);
     wire_source_module_recompute(preferences, device_sync);
 
     let refresh_doctor_views = {
