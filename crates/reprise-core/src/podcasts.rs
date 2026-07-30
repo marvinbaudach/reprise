@@ -1,5 +1,7 @@
 //! Podcast subscriptions, episodes, refresh, and provider boundaries.
 
+use std::time::Duration;
+
 use crate::source_error::{SourceError, SourceErrorKind};
 
 pub mod channel_window;
@@ -107,6 +109,10 @@ pub enum PodcastError {
     Transport(String),
     #[error("server returned HTTP {0}")]
     HttpStatus(u16),
+    #[error("feed returned HTTP {0} and has moved or ended")]
+    SourceGone(u16),
+    #[error("server returned HTTP 429")]
+    RateLimited { retry_after: Option<Duration> },
     #[error("response body could not be read: {0}")]
     Body(String),
     #[error("response could not be parsed: {0}")]
@@ -147,6 +153,12 @@ impl PodcastError {
             (SourceErrorKind::Unreachable, PodcastError::HttpStatus(_)) => {
                 "podcast source returned an HTTP error"
             }
+            (SourceErrorKind::Unreachable, PodcastError::SourceGone(_)) => {
+                "podcast source has moved or ended"
+            }
+            (SourceErrorKind::Unreachable, PodcastError::RateLimited { .. }) => {
+                "podcast source is rate limited"
+            }
             (SourceErrorKind::Unreachable, PodcastError::Body(_) | PodcastError::Parse(_)) => {
                 "podcast source returned invalid data"
             }
@@ -171,11 +183,31 @@ impl PodcastError {
             (SourceErrorKind::HelperOutdated, _) => "YouTube source could not be read with yt-dlp",
         }
     }
+
+    /// Delay for a background refresh retry under the shared source policy.
+    #[must_use]
+    pub fn retry_delay(&self, attempt: u32) -> Option<Duration> {
+        let retry_after = match self {
+            Self::RateLimited { retry_after } => *retry_after,
+            Self::HttpStatus(500..=599) | Self::Timeout | Self::Transport(_) => None,
+            _ => return None,
+        };
+        crate::source_error::source_backoff_delay(attempt, retry_after)
+    }
+
+    // TODO(integration): the excluded podcast refresh schedulers must schedule
+    // `retry_delay` without blocking their readable error state.
+    // TODO(integration): `podcasts/ytdlp.rs` must retain raw stderr beside its
+    // typed bot-check/helper classification instead of reducing it to display copy.
 }
 
 impl From<&PodcastError> for SourceErrorKind {
     fn from(error: &PodcastError) -> Self {
         match error {
+            PodcastError::SourceGone(_) => Self::SourceGone,
+            PodcastError::RateLimited { retry_after } => Self::RateLimited {
+                retry_after: *retry_after,
+            },
             PodcastError::YtDlp(message) => classify_ytdlp_message(message),
             PodcastError::Timeout
             | PodcastError::Transport(_)
@@ -276,6 +308,9 @@ mod tests {
         let helper = crate::source_error::SourceError::from(PodcastError::YtDlp(
             "YouTube changed its response — update yt-dlp and try again".into(),
         ));
+        let missing = crate::source_error::SourceError::from(PodcastError::YtDlp(
+            "YouTube component is unavailable — reinstall or repair Reprise".into(),
+        ));
 
         assert!(matches!(
             rate_limited.kind(),
@@ -285,5 +320,26 @@ mod tests {
             helper.kind(),
             &crate::source_error::SourceErrorKind::HelperOutdated
         );
+        assert_eq!(
+            missing.kind(),
+            &crate::source_error::SourceErrorKind::HelperOutdated
+        );
+    }
+
+    #[test]
+    fn retryable_podcast_failures_use_the_shared_backoff_policy() {
+        let rate_limited = PodcastError::RateLimited {
+            retry_after: Some(std::time::Duration::from_secs(6)),
+        };
+
+        assert_eq!(
+            rate_limited.retry_delay(1),
+            Some(std::time::Duration::from_secs(6))
+        );
+        assert_eq!(
+            PodcastError::HttpStatus(503).retry_delay(2),
+            Some(std::time::Duration::from_secs(4))
+        );
+        assert_eq!(PodcastError::HttpStatus(403).retry_delay(1), None);
     }
 }

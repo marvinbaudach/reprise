@@ -1,5 +1,7 @@
 //! Internet radio discovery, favorites, and stream metadata.
 
+use std::time::Duration;
+
 use crate::source_error::{SourceError, SourceErrorKind};
 
 pub mod click;
@@ -41,18 +43,71 @@ pub enum RadioError {
     #[error("response could not be parsed: {0}")]
     Parse(String),
     #[error("{0}")]
-    Unavailable(String),
+    Unavailable(RadioFailureDetail),
+}
+
+#[derive(Debug)]
+pub enum RadioFailureDetail {
+    Message(String),
+    SourceGone(u16),
+    RateLimited { retry_after: Option<Duration> },
+}
+
+impl std::fmt::Display for RadioFailureDetail {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Message(message) => formatter.write_str(message),
+            Self::SourceGone(status) => {
+                write!(
+                    formatter,
+                    "source returned HTTP {status} and has moved or ended"
+                )
+            }
+            Self::RateLimited { .. } => formatter.write_str("server returned HTTP 429"),
+        }
+    }
+}
+
+impl From<String> for RadioFailureDetail {
+    fn from(message: String) -> Self {
+        Self::Message(message)
+    }
+}
+
+impl From<&str> for RadioFailureDetail {
+    fn from(message: &str) -> Self {
+        Self::Message(message.to_owned())
+    }
+}
+
+impl RadioError {
+    /// Delay for a background refresh retry under the shared source policy.
+    #[must_use]
+    pub fn retry_delay(&self, attempt: u32) -> Option<Duration> {
+        let retry_after = match self {
+            Self::Unavailable(RadioFailureDetail::RateLimited { retry_after }) => *retry_after,
+            Self::HttpStatus(500..=599) | Self::Timeout | Self::Transport(_) => None,
+            _ => return None,
+        };
+        crate::source_error::source_backoff_delay(attempt, retry_after)
+    }
 }
 
 impl From<&RadioError> for SourceErrorKind {
     fn from(error: &RadioError) -> Self {
         match error {
+            RadioError::Unavailable(RadioFailureDetail::SourceGone(_)) => Self::SourceGone,
+            RadioError::Unavailable(RadioFailureDetail::RateLimited { retry_after }) => {
+                Self::RateLimited {
+                    retry_after: *retry_after,
+                }
+            }
             RadioError::Timeout
             | RadioError::Transport(_)
             | RadioError::HttpStatus(_)
             | RadioError::Body(_)
             | RadioError::Parse(_)
-            | RadioError::Unavailable(_) => Self::Unreachable,
+            | RadioError::Unavailable(RadioFailureDetail::Message(_)) => Self::Unreachable,
         }
     }
 }
@@ -66,7 +121,7 @@ impl From<RadioError> for SourceError {
 
 #[cfg(test)]
 mod tests {
-    use super::RadioError;
+    use super::{RadioError, RadioFailureDetail};
     use crate::source_error::{SourceError, SourceErrorKind};
 
     #[test]
@@ -78,5 +133,22 @@ mod tests {
         assert!(!error.to_string().contains("private.example"));
         assert!(!error.to_string().contains("SECRET"));
         assert!(error.details("2026-07-30 14:12").to_string().contains(raw));
+    }
+
+    #[test]
+    fn retryable_radio_failures_use_the_shared_backoff_policy() {
+        let rate_limited = RadioError::Unavailable(RadioFailureDetail::RateLimited {
+            retry_after: Some(std::time::Duration::from_secs(6)),
+        });
+
+        assert_eq!(
+            rate_limited.retry_delay(1),
+            Some(std::time::Duration::from_secs(6))
+        );
+        assert_eq!(
+            RadioError::HttpStatus(503).retry_delay(2),
+            Some(std::time::Duration::from_secs(4))
+        );
+        assert_eq!(RadioError::HttpStatus(403).retry_delay(1), None);
     }
 }

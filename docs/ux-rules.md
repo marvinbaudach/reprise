@@ -1992,6 +1992,18 @@ property is set and yet nothing happens.
   existing podcast worker; any other transition is a no-op. As with `NET-3b`,
   this is an injectable seam, not yet attached to a real operating-system
   signal.
+- **NET-3d** [active] [core] — One translation layer: every provider and
+  transport error is mapped, in core, onto exactly one of five user-facing
+  states — *unreachable*, *rate-limited*, *source gone*, *helper outdated*,
+  *offline* — and only those are ever rendered. The raw text (HTTP status,
+  host, tool output, exception) is reachable only through an explicit detail
+  accessor, for the copyable `Details` block and the log, and never through
+  `Display`. `404`/`410` on a feed is *source gone* and is the only failure in
+  the app that asks the user to act; everything else offers "try again".
+  `429` and provider bot-checks are *rate-limited* and retry in the background
+  with the shared exponential backoff. Feed and search requests time out at
+  10 s from one shared constant, so no view can sit on a spinner longer than
+  that without resolving; downloads keep their own longer budget.
 - **LYR-1** [planned] [core] — Local embedded lyrics and `.lrc` sidecars
   are shown independently of the Online Lyrics module. Reprise does not
   yet read these local formats today; the rule stays planned until this

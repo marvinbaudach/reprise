@@ -8,10 +8,11 @@ use std::time::{Duration, Instant};
 #[cfg(any(test, feature = "test-fixtures"))]
 use url::Url;
 
-use super::RadioError;
+use super::{RadioError, RadioFailureDetail};
 use crate::http_body::{self, BoundedReadError};
+use crate::source_error::{parse_retry_after, SOURCE_REQUEST_TIMEOUT};
 
-pub const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
+pub const HTTP_TIMEOUT: Duration = SOURCE_REQUEST_TIMEOUT;
 pub const CLICK_TIMEOUT: Duration = Duration::from_secs(5);
 const MIN_REQUEST_INTERVAL: Duration = Duration::from_secs(1);
 #[cfg(any(test, feature = "test-fixtures"))]
@@ -55,8 +56,12 @@ pub fn get_with_timeout(url: &str, timeout: Duration) -> Result<String, RadioErr
         .call()
         .map_err(classify_transport)?;
     let status = response.status().as_u16();
-    if !(200..300).contains(&status) {
-        return Err(RadioError::HttpStatus(status));
+    let retry_after = response
+        .headers()
+        .get("Retry-After")
+        .and_then(|value| value.to_str().ok());
+    if let Some(error) = source_status_error(status, retry_after) {
+        return Err(error);
     }
     http_body::read_bounded_string(response.into_body().into_reader()).map_err(map_body_error)
 }
@@ -74,8 +79,12 @@ pub fn icy_headers(url: &str) -> Result<Vec<(String, String)>, RadioError> {
         .call()
         .map_err(classify_transport)?;
     let status = response.status().as_u16();
-    if !(200..300).contains(&status) {
-        return Err(RadioError::HttpStatus(status));
+    let retry_after = response
+        .headers()
+        .get("Retry-After")
+        .and_then(|value| value.to_str().ok());
+    if let Some(error) = source_status_error(status, retry_after) {
+        return Err(error);
     }
     Ok(response
         .headers()
@@ -87,6 +96,19 @@ pub fn icy_headers(url: &str) -> Result<Vec<(String, String)>, RadioError> {
                 .map(|value| (name.as_str().to_owned(), value.to_owned()))
         })
         .collect())
+}
+
+fn source_status_error(status: u16, retry_after: Option<&str>) -> Option<RadioError> {
+    match status {
+        200..=299 => None,
+        404 | 410 => Some(RadioError::Unavailable(RadioFailureDetail::SourceGone(
+            status,
+        ))),
+        429 => Some(RadioError::Unavailable(RadioFailureDetail::RateLimited {
+            retry_after: parse_retry_after(retry_after),
+        })),
+        _ => Some(RadioError::HttpStatus(status)),
+    }
 }
 
 #[cfg(any(test, feature = "test-fixtures"))]
@@ -245,6 +267,7 @@ fn fixture_component(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::source_error::SourceErrorKind;
 
     #[test]
     fn fixture_routes_cover_discovery_search_and_click() {
@@ -276,5 +299,35 @@ mod tests {
         let value = user_agent();
         assert!(value.starts_with("Reprise/"));
         assert!(value.contains(crate::musicbrainz::CONTACT_URL));
+    }
+
+    #[test]
+    fn source_statuses_distinguish_gone_rate_limited_and_transient_failures() {
+        for status in [404, 410] {
+            let error = source_status_error(status, None).unwrap();
+            assert!(matches!(
+                error,
+                RadioError::Unavailable(RadioFailureDetail::SourceGone(value)) if value == status
+            ));
+            assert_eq!(SourceErrorKind::from(&error), SourceErrorKind::SourceGone);
+        }
+        let error = source_status_error(429, Some("360")).unwrap();
+        assert!(matches!(
+            SourceErrorKind::from(&error),
+            SourceErrorKind::RateLimited {
+                retry_after: Some(value)
+            } if value == Duration::from_secs(360)
+        ));
+        assert!(matches!(
+            source_status_error(500, None),
+            Some(RadioError::HttpStatus(500))
+        ));
+        assert!(source_status_error(204, None).is_none());
+    }
+
+    #[test]
+    fn feed_and_search_requests_use_the_shared_ten_second_budget() {
+        assert_eq!(HTTP_TIMEOUT, Duration::from_secs(10));
+        assert_eq!(HTTP_TIMEOUT, crate::source_error::SOURCE_REQUEST_TIMEOUT);
     }
 }

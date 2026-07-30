@@ -6,6 +6,13 @@
 use std::fmt;
 use std::time::Duration;
 
+const BASE_BACKOFF_SECONDS: u64 = 2;
+const MAX_BACKOFF_SECONDS: u64 = 60;
+const MAX_BACKOFF_ATTEMPTS: u32 = 3;
+
+/// Shared upper bound for feed, search, and provider requests.
+pub const SOURCE_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// The complete set of failure states a source surface may render.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SourceErrorKind {
@@ -87,6 +94,31 @@ impl fmt::Display for SourceError {
 }
 
 impl std::error::Error for SourceError {}
+
+/// Parses the delta-seconds form of an HTTP `Retry-After` header.
+#[must_use]
+pub fn parse_retry_after(value: Option<&str>) -> Option<Duration> {
+    value?.trim().parse::<u64>().ok().map(Duration::from_secs)
+}
+
+/// Returns the shared exponential retry delay, or `None` when retries stop.
+#[must_use]
+pub fn source_backoff_delay(attempt: u32, retry_after: Option<Duration>) -> Option<Duration> {
+    if attempt == 0 || attempt > MAX_BACKOFF_ATTEMPTS {
+        return None;
+    }
+    if retry_after.is_some_and(|delay| delay > Duration::from_secs(MAX_BACKOFF_SECONDS)) {
+        return None;
+    }
+    let exponential = BASE_BACKOFF_SECONDS
+        .saturating_mul(1_u64 << attempt.saturating_sub(1))
+        .min(MAX_BACKOFF_SECONDS);
+    Some(
+        retry_after
+            .unwrap_or_default()
+            .max(Duration::from_secs(exponential)),
+    )
+}
 
 /// The technical lines available only through [`SourceError::details`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -213,5 +245,73 @@ mod tests {
              2026-07-30 14:12 · retry in 6 min"
         );
         assert!(!error.to_string().contains("429"));
+    }
+
+    #[test]
+    fn shared_retry_after_parser_accepts_delta_seconds_only() {
+        assert_eq!(
+            super::parse_retry_after(Some(" 360 ")),
+            Some(Duration::from_secs(360))
+        );
+        assert_eq!(super::parse_retry_after(Some("tomorrow")), None);
+        assert_eq!(super::parse_retry_after(None), None);
+    }
+
+    #[test]
+    fn shared_backoff_retries_three_times_and_caps_long_provider_delays() {
+        assert_eq!(
+            super::source_backoff_delay(1, None),
+            Some(Duration::from_secs(2))
+        );
+        assert_eq!(
+            super::source_backoff_delay(2, None),
+            Some(Duration::from_secs(4))
+        );
+        assert_eq!(
+            super::source_backoff_delay(3, Some(Duration::from_secs(6))),
+            Some(Duration::from_secs(8))
+        );
+        assert_eq!(super::source_backoff_delay(4, None), None);
+        assert_eq!(
+            super::source_backoff_delay(1, Some(Duration::from_secs(61))),
+            None
+        );
+    }
+
+    #[test]
+    fn feed_and_search_requests_share_the_ten_second_budget() {
+        assert_eq!(super::SOURCE_REQUEST_TIMEOUT, Duration::from_secs(10));
+    }
+
+    #[test]
+    fn net_3d_one_projection_separates_safe_copy_details_and_network_policy() {
+        let states = [
+            SourceErrorKind::Unreachable,
+            SourceErrorKind::RateLimited {
+                retry_after: Some(Duration::from_secs(360)),
+            },
+            SourceErrorKind::SourceGone,
+            SourceErrorKind::HelperOutdated,
+            SourceErrorKind::Offline,
+        ];
+        assert_eq!(states.len(), 5);
+
+        let error = SourceError::new(
+            states[1].clone(),
+            "youtube.com feed request failed",
+            "HTTP 429 · too many requests",
+        );
+        assert!(!error.to_string().contains("429"));
+        assert_eq!(
+            error.details("2026-07-30 14:12").to_string(),
+            "youtube.com feed request failed\n\
+             HTTP 429 · too many requests\n\
+             2026-07-30 14:12 · retry in 6 min"
+        );
+        assert_eq!(super::SOURCE_REQUEST_TIMEOUT, Duration::from_secs(10));
+        assert_eq!(
+            super::source_backoff_delay(3, None),
+            Some(Duration::from_secs(8))
+        );
     }
 }

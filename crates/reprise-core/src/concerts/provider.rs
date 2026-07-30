@@ -50,7 +50,7 @@ pub struct ProviderEvent {
 
 #[derive(Clone, Debug, thiserror::Error, PartialEq, Eq)]
 pub enum ProviderError {
-    #[error("concert provider rate limited the request")]
+    #[error("concert provider returned HTTP 429")]
     RateLimited { retry_after: Option<u64> },
     #[error("concert provider returned HTTP status {0}")]
     HttpStatus(u16),
@@ -121,7 +121,7 @@ mod tests {
         assert_eq!(
             error.details("2026-07-30 14:12").to_string(),
             "concert provider request failed\n\
-             concert provider rate limited the request\n\
+             concert provider returned HTTP 429\n\
              2026-07-30 14:12 · retry in 6 min"
         );
     }
