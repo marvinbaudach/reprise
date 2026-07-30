@@ -173,6 +173,7 @@ impl DeviceSyncPage {
         self.device_name.set_label(&device.name);
         self.connection.remove_css_class("success");
         self.connection.remove_css_class("warning");
+        self.connection.remove_css_class("dim-label");
         match &device.session_state {
             reprise_core::device_sync::DeviceSessionState::Active => {
                 if let Some(status) = &device.memory_status {
@@ -190,15 +191,28 @@ impl DeviceSyncPage {
                     ));
                 self.connection.add_css_class("warning");
             }
+            reprise_core::device_sync::DeviceSessionState::Remembered => {
+                self.connection
+                    .set_label(&reprise_core::device_sync::remembered_device_status(
+                        device.last_sync,
+                        chrono::Utc::now(),
+                    ));
+                self.connection.add_css_class("dim-label");
+            }
         }
         self.device_last_sync
             .set_label(&device_last_sync_copy(device));
         if let Some(root) = self.root.upgrade() {
-            root.set_visible_child_name(if device.connected {
-                "connected"
-            } else {
-                "disconnected"
-            });
+            root.set_visible_child_name(
+                if device.connected
+                    || device.session_state
+                        == reprise_core::device_sync::DeviceSessionState::Remembered
+                {
+                    "connected"
+                } else {
+                    "disconnected"
+                },
+            );
         }
         let selected = TransferProfile::ALL
             .iter()

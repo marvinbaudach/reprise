@@ -148,6 +148,9 @@ pub struct DeviceView {
     pub sync_error: Option<SyncFailure>,
     pub last_sync: Option<chrono::DateTime<chrono::Utc>>,
     pub verified_managed_track_count: Option<usize>,
+    /// Last verified total across Reprise-owned target folders. For a
+    /// remembered device this is history, not a live storage reading.
+    pub size_on_device_bytes: Option<u64>,
     pub managed_track_count: usize,
     pub bytes_per_second: u64,
     pub page: SyncPageState,

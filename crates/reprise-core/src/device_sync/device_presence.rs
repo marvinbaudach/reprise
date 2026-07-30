@@ -1,5 +1,9 @@
 //! Pure projection of connected MTP devices onto Reprise's single session.
 
+use std::collections::HashSet;
+
+use chrono::{DateTime, Utc};
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DetectedDevice {
     pub id: String,
@@ -22,6 +26,7 @@ pub fn stable_device_identity(uuid: Option<&str>, usb_serial: Option<&str>) -> O
 pub enum DeviceSessionState {
     Active,
     Inert { active_device_name: String },
+    Remembered,
 }
 
 impl DeviceSessionState {
@@ -36,12 +41,18 @@ impl DeviceSessionState {
     }
 
     #[must_use]
+    pub const fn shows_diff(&self) -> bool {
+        matches!(self, Self::Active)
+    }
+
+    #[must_use]
     pub fn status_text(&self) -> Option<String> {
         match self {
             Self::Active => None,
             Self::Inert { active_device_name } => Some(format!(
                 "Plugged in · disconnect {active_device_name} to use it"
             )),
+            Self::Remembered => Some("Not connected · never verified".to_string()),
         }
     }
 }
@@ -84,6 +95,57 @@ pub fn project_device_sessions(
             }),
     );
     projection
+}
+
+/// Projects the complete device list in one stable order: the sole active
+/// connection, any other detected-but-inert devices, then durable history.
+/// A connected stable identity suppresses its remembered duplicate.
+#[must_use]
+pub fn project_device_presence(
+    previous_active_id: Option<&str>,
+    connected: &[DetectedDevice],
+    remembered: &[DetectedDevice],
+) -> Vec<DeviceSessionProjection> {
+    let mut projection = project_device_sessions(previous_active_id, connected);
+    let connected_ids = connected
+        .iter()
+        .map(|device| device.id.as_str())
+        .collect::<HashSet<_>>();
+    projection.extend(
+        remembered
+            .iter()
+            .filter(|device| !connected_ids.contains(device.id.as_str()))
+            .map(|device| DeviceSessionProjection {
+                id: device.id.clone(),
+                state: DeviceSessionState::Remembered,
+            }),
+    );
+    projection
+}
+
+/// The only honest sidebar reading for absent hardware. No copy/remove
+/// balance is accepted here because it would be a guess after unplugging.
+#[must_use]
+pub fn remembered_device_status(
+    last_verified: Option<DateTime<Utc>>,
+    now: DateTime<Utc>,
+) -> String {
+    let Some(verified) = last_verified else {
+        return "Not connected · never verified".to_string();
+    };
+    let minutes = now.signed_duration_since(verified).num_minutes().max(0);
+    let age = if minutes < 1 {
+        "just now".to_string()
+    } else if minutes < 60 {
+        format!("{minutes} min ago")
+    } else if minutes < 24 * 60 {
+        let hours = minutes / 60;
+        format!("{hours} {} ago", if hours == 1 { "hour" } else { "hours" })
+    } else {
+        let days = minutes / (24 * 60);
+        format!("{days} {} ago", if days == 1 { "day" } else { "days" })
+    };
+    format!("Not connected · synced {age}")
 }
 
 #[cfg(test)]
@@ -171,6 +233,46 @@ mod tests {
             stable_device_identity(None, None),
             Some("mtp://[usb:001,013]/".into()),
             "the volatile MTP root URI must never become a memory key"
+        );
+    }
+
+    #[test]
+    fn mtp_49_active_and_inert_devices_precede_dimmed_remembered_history_without_a_diff() {
+        let connected = vec![
+            detected("anna", "Pixel 7a (Anna)"),
+            detected("ben", "Pixel 7a (Ben)"),
+        ];
+        let remembered = vec![
+            detected("anna", "stale connected duplicate"),
+            detected("old", "Pixel 6"),
+        ];
+
+        let projected = project_device_presence(None, &connected, &remembered);
+
+        assert_eq!(
+            projected
+                .iter()
+                .map(|device| device.id.as_str())
+                .collect::<Vec<_>>(),
+            ["anna", "ben", "old"]
+        );
+        assert_eq!(projected[0].state, DeviceSessionState::Active);
+        assert!(matches!(
+            projected[1].state,
+            DeviceSessionState::Inert { .. }
+        ));
+        assert_eq!(projected[2].state, DeviceSessionState::Remembered);
+        assert!(!projected[2].state.opens_session());
+        assert!(!projected[2].state.offers_sync());
+        assert!(!projected[2].state.shows_diff());
+        assert_eq!(
+            remembered_device_status(None, chrono::Utc::now()),
+            "Not connected · never verified"
+        );
+        let now = chrono::DateTime::from_timestamp(1_753_612_496, 0).unwrap();
+        assert_eq!(
+            remembered_device_status(Some(now - chrono::Duration::days(3)), now),
+            "Not connected · synced 3 days ago"
         );
     }
 }

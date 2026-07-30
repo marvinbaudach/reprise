@@ -16,6 +16,10 @@ pub const EJECT_BLOCKED_SYNCING: &str = N_!("Eject device — Sync in progress")
 pub const INERT_DEVICE_STATUS: &str = N_!("Plugged in · disconnect {other} to use it");
 pub const UNREMEMBERABLE_DEVICE_STATUS: &str =
     N_!("This device can be used now but cannot be remembered");
+pub const RENAME_DEVICE: &str = N_!("Rename device");
+pub const LOCAL_DEVICE_NAME: &str = N_!("Local device name");
+pub const RENAME: &str = N_!("Rename");
+pub const FORGET_DEVICE: &str = N_!("Forget device");
 
 /// Spinner tooltip while syncing, e.g. "Syncing Pixel 8 · 42%".
 pub fn syncing_spinner_tooltip(name: &str, percent: u64) -> String {

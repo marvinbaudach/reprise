@@ -30,6 +30,8 @@ use fake_backend::*;
 mod memory_tests;
 #[path = "device_sync_presence_tests.rs"]
 mod presence_tests;
+#[path = "device_sync_remembered_tests.rs"]
+mod remembered_tests;
 
 fn fixture() -> (tempfile::TempDir, Rc<Db>) {
     let temp = tempfile::tempdir().unwrap();

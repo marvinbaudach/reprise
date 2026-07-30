@@ -112,6 +112,28 @@ fn mtp_47_inert_device_card_names_the_active_device_and_offers_no_sync_copy() {
 }
 
 #[test]
+fn mtp_49_remembered_card_is_dimmed_has_no_diff_and_exposes_local_memory_actions() {
+    let mut device = view(PlannedSyncPhase::Idle);
+    device.connected = false;
+    device.session_state = reprise_core::device_sync::DeviceSessionState::Remembered;
+    device.last_sync = Some(chrono::Utc::now() - chrono::Duration::days(3));
+    device.category_readings = [
+        CategoryReading::Diff(diff(14, 2_600_000_000, 3, 148 * 1_024 * 1_024)),
+        CategoryReading::SourceOff,
+        CategoryReading::SourceOff,
+    ];
+
+    assert_eq!(card_subtitle(&device), "Not connected · synced 3 days ago");
+    assert!(idle_tooltip(&device).is_none());
+    assert!(css().contains(".device-card.remembered-device { opacity: 0.58; }"));
+    let menu_source = include_str!("sidebar_device_card_menu.rs");
+    assert!(menu_source.contains("BUTTON_SECONDARY"));
+    assert!(menu_source.contains("FORGET_DEVICE"));
+    assert!(menu_source.contains("rename_remembered_device"));
+    assert!(menu_source.contains("forget_remembered_device"));
+}
+
+#[test]
 fn mtp_29_deletions_only_idle_card_reads_frees_not_zero_bytes() {
     let mut device = view(PlannedSyncPhase::Idle);
     device.contents_state = DeviceContentsState::Verified;

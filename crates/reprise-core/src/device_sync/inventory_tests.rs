@@ -1,9 +1,11 @@
 use rusqlite::Connection;
 
 use super::settings::{
-    delete_device_playlist, load_device_files, load_device_playlists, load_or_create_settings,
-    mark_device_playlists_synced, rekey_legacy_device, save_settings, upsert_device_file,
-    upsert_device_playlist, DeviceFileRecord, DevicePlaylistRecord, LegacyDeviceRekey,
+    delete_device_playlist, forget_device, list_remembered_devices, load_device_files,
+    load_device_playlists, load_or_create_settings, mark_device_playlists_synced,
+    record_device_verification, rekey_legacy_device, rename_device, save_settings,
+    upsert_device_file, upsert_device_playlist, DeviceFileRecord, DevicePlaylistRecord,
+    LegacyDeviceRekey,
 };
 use super::{
     load_or_create_targets, load_target, save_target, DeviceSelection, Mp3Quality, SelectionSource,
@@ -123,6 +125,54 @@ fn ambiguous_legacy_uri_rows_are_kept_when_the_replugged_uri_does_not_match() {
             .unwrap(),
         2,
         "an ambiguous legacy history must not be guessed away"
+    );
+}
+
+#[test]
+fn mtp_49_remembered_devices_keep_only_stable_history_and_can_be_renamed_or_forgotten() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    load_or_create_settings(&db, "pixel-anna", "Pixel 7a").unwrap();
+    load_or_create_settings(&db, "mtp://[usb:001,013]/", "Legacy phone").unwrap();
+    let mut target = load_or_create_targets(&db, "pixel-anna").unwrap()[0].clone();
+    target.storage_id = Some(StorageId(7));
+    target.path = "/Music/Anna".into();
+    save_target(&db, "pixel-anna", &target).unwrap();
+
+    record_device_verification(&db, "pixel-anna", 1_753_612_496, 2_400_000_000).unwrap();
+    rename_device(&db, "pixel-anna", " Pixel 7a (Anna) ").unwrap();
+
+    let remembered = list_remembered_devices(&db).unwrap();
+    assert_eq!(remembered.len(), 1, "volatile URI rows are not memories");
+    assert_eq!(remembered[0].stable_id, "pixel-anna");
+    assert_eq!(remembered[0].local_name, "Pixel 7a (Anna)");
+    assert_eq!(remembered[0].last_verified_at, Some(1_753_612_496));
+    assert_eq!(remembered[0].size_on_device_bytes, Some(2_400_000_000));
+    assert_eq!(
+        load_target(&db, "pixel-anna", SyncTargetKind::Playlists)
+            .unwrap()
+            .unwrap(),
+        target,
+        "the local rename must leave target folders unchanged"
+    );
+
+    forget_device(&db, "pixel-anna").unwrap();
+    assert!(list_remembered_devices(&db).unwrap().is_empty());
+    assert!(
+        load_target(&db, "pixel-anna", SyncTargetKind::Playlists)
+            .unwrap()
+            .is_none(),
+        "forgetting drops only Reprise's device memory"
+    );
+    assert_eq!(
+        db.conn()
+            .query_row(
+                "SELECT COUNT(*) FROM device_settings WHERE device_serial LIKE 'mtp://%'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+        1,
+        "forgetting one stable device must not delete unrelated history"
     );
 }
 

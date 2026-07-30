@@ -837,6 +837,15 @@ human. Rationale for changes lives in the git history.
   every replug. A device with no stable key is usable but not remembered, and
   the UI says so rather than pretending. Persisted per identity: target
   folders, last verified state, size on device, local name — nothing else.
+- **MTP-49** [active] [gtk] — The sidebar lists the active device first,
+  then remembered devices dimmed as history. A remembered device shows no
+  diff — only "Not connected · synced 3 days ago" or
+  "Not connected · never verified" — because a balance for an absent device
+  would be a guess. Opening one shows its target folders and last verified
+  state; syncing requires connecting it. Right-click → "Forget device" drops
+  the persisted row and deletes nothing, on the device or locally. A local
+  rename keeps two identical models distinguishable and is never written to
+  the device.
 
 ## F. Settings & modals
 

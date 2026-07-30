@@ -112,6 +112,14 @@ pub struct DevicePlaylistRecord {
     pub last_synced_at: Option<i64>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RememberedDevice {
+    pub stable_id: String,
+    pub local_name: String,
+    pub last_verified_at: Option<i64>,
+    pub size_on_device_bytes: Option<u64>,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum DeviceSettingsError {
     #[error("database error: {0}")]
@@ -122,6 +130,8 @@ pub enum DeviceSettingsError {
     UnsupportedBitrate(u32),
     #[error("device file size is too large for SQLite: {0}")]
     FileTooLarge(u64),
+    #[error("device name must not be empty")]
+    EmptyDeviceName,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -130,6 +140,111 @@ pub enum LegacyDeviceRekey {
     AmbiguousLegacyRows,
     StableKeyAlreadyExists,
     Rekeyed,
+}
+
+const ADD_LAST_VERIFIED_AT: &str =
+    "ALTER TABLE device_settings ADD COLUMN last_verified_at INTEGER";
+const ADD_SIZE_ON_DEVICE: &str = "ALTER TABLE device_settings ADD COLUMN size_on_device INTEGER";
+
+fn ensure_remembered_device_columns(db: &crate::db::Db) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
+    for (column, statement) in [
+        ("last_verified_at", ADD_LAST_VERIFIED_AT),
+        ("size_on_device", ADD_SIZE_ON_DEVICE),
+    ] {
+        let exists = conn.query_row(
+            "SELECT EXISTS(
+               SELECT 1 FROM pragma_table_info('device_settings') WHERE name = ?1
+             )",
+            [column],
+            |row| row.get::<_, bool>(0),
+        )?;
+        if !exists {
+            conn.execute(statement, [])?;
+        }
+    }
+    Ok(())
+}
+
+pub fn list_remembered_devices(
+    db: &crate::db::Db,
+) -> Result<Vec<RememberedDevice>, DeviceSettingsError> {
+    ensure_remembered_device_columns(db)?;
+    let conn = db.conn();
+    let mut statement = conn.prepare(
+        "SELECT device_serial, device_name, last_verified_at, size_on_device
+           FROM device_settings
+          WHERE device_serial NOT LIKE 'mtp://%'
+          ORDER BY device_name COLLATE NOCASE, device_serial",
+    )?;
+    let rows = statement.query_map([], |row| {
+        let size = row.get::<_, Option<i64>>(3)?;
+        Ok(RememberedDevice {
+            stable_id: row.get(0)?,
+            local_name: row.get(1)?,
+            last_verified_at: row.get(2)?,
+            size_on_device_bytes: size.map(|value| value.max(0) as u64),
+        })
+    })?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
+pub fn record_device_verification(
+    db: &crate::db::Db,
+    stable_id: &str,
+    verified_at: i64,
+    size_on_device_bytes: u64,
+) -> Result<(), DeviceSettingsError> {
+    ensure_remembered_device_columns(db)?;
+    let size = sqlite_size(size_on_device_bytes)?;
+    db.conn().execute(
+        "UPDATE device_settings
+            SET last_verified_at = ?2, size_on_device = ?3
+          WHERE device_serial = ?1",
+        params![stable_id, verified_at, size],
+    )?;
+    Ok(())
+}
+
+pub fn rename_device(
+    db: &crate::db::Db,
+    stable_id: &str,
+    local_name: &str,
+) -> Result<(), DeviceSettingsError> {
+    let local_name = local_name.trim();
+    if local_name.is_empty() {
+        return Err(DeviceSettingsError::EmptyDeviceName);
+    }
+    db.conn().execute(
+        "UPDATE device_settings SET device_name = ?2 WHERE device_serial = ?1",
+        params![stable_id, local_name],
+    )?;
+    Ok(())
+}
+
+pub fn forget_device(db: &crate::db::Db, stable_id: &str) -> Result<(), DeviceSettingsError> {
+    let conn = db.conn();
+    let transaction = conn.unchecked_transaction()?;
+    transaction.execute(
+        "DELETE FROM sync_events
+          WHERE run_id IN (SELECT id FROM sync_runs WHERE device_serial = ?1)",
+        [stable_id],
+    )?;
+    for (table, column) in [
+        ("device_files", "device_serial"),
+        ("device_playlists", "device_serial"),
+        ("device_sync_targets", "device_serial"),
+        ("sync_runs", "device_serial"),
+        ("podcast_subscription_devices", "device_id"),
+        ("device_settings", "device_serial"),
+    ] {
+        transaction.execute(
+            &format!("DELETE FROM {table} WHERE {column} = ?1"),
+            [stable_id],
+        )?;
+    }
+    transaction.commit()?;
+    Ok(())
 }
 
 /// Moves every persisted device-owned row off a volatile legacy MTP URI once
@@ -202,6 +317,7 @@ pub fn load_or_create_settings(
     serial: &str,
     name: &str,
 ) -> Result<DeviceSettings, DeviceSettingsError> {
+    ensure_remembered_device_columns(db)?;
     let conn = db.conn();
     let existing = conn
         .query_row(

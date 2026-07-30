@@ -82,6 +82,16 @@ pub(super) fn device_last_sync_copy(device: &DeviceView) -> String {
             )
         },
     );
+    if device.session_state == reprise_core::device_sync::DeviceSessionState::Remembered {
+        return device
+            .size_on_device_bytes
+            .map_or(history.clone(), |bytes| {
+                format!(
+                    "{history} · {} on device when last verified",
+                    device_sync_strings::file_size(bytes)
+                )
+            });
+    }
     device
         .verified_managed_track_count
         .map_or(history.clone(), |_| {

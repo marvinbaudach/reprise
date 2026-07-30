@@ -491,7 +491,7 @@ impl DeviceSyncRuntime {
                 self,
                 &RunStart {
                     device_serial: device_id.to_string(),
-                    device_name: device.descriptor.name.clone(),
+                    device_name: device.settings.device_name.clone(),
                     transfer_profile: device.settings.profile.storage_value().to_owned(),
                     started_at: now_seconds(),
                     // The additive content copies count as planned work too

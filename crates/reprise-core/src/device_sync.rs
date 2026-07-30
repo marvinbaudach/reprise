@@ -45,8 +45,8 @@ pub use category_diff::{
 };
 pub use delta::{compute_delta, SyncCandidate, SyncDelta};
 pub use device_presence::{
-    project_device_sessions, stable_device_identity, DetectedDevice, DeviceSessionProjection,
-    DeviceSessionState,
+    project_device_presence, project_device_sessions, remembered_device_status,
+    stable_device_identity, DetectedDevice, DeviceSessionProjection, DeviceSessionState,
 };
 pub use device_view::{
     category_bytes, project_category_content_row, project_category_segments,
@@ -81,7 +81,8 @@ pub use selection::{
     YoutubeSelectionSummary,
 };
 pub use settings::{
-    DeviceFileRecord, DevicePlaylistRecord, DeviceSelection, DeviceSettings, SelectionSource,
+    DeviceFileRecord, DevicePlaylistRecord, DeviceSelection, DeviceSettings, RememberedDevice,
+    SelectionSource,
 };
 pub use snapshot::load_mirror_playlist_snapshots;
 pub use storage::{
