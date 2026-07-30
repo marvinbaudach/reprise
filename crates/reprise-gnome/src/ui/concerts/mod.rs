@@ -6,6 +6,7 @@ use reprise_core::db::Db;
 
 mod concerts_columns;
 mod concerts_empty_state;
+mod concerts_failure_ui;
 mod concerts_filter_bar;
 mod concerts_model;
 mod concerts_presentation;

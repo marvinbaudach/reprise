@@ -8,6 +8,7 @@ use chrono::Local;
 use gtk4::gio;
 use gtk4::glib::variant::ToVariant;
 use gtk4::prelude::*;
+use reprise_core::connectivity::Connectivity;
 use reprise_core::podcasts::channel_window::{
     available_count, shorts_only_hidden, visible_window, EXTENDED_WINDOW, INITIAL_WINDOW,
 };
@@ -167,6 +168,8 @@ pub(super) struct YoutubeChannelDetail {
     /// &modules::SOURCE_IMAGES_MODULE)`, refreshed by [`Self::update`] on
     /// every render pass — this view never reads settings itself.
     images_allowed: Cell<bool>,
+    connectivity: Cell<Connectivity>,
+    unavailable_episode: Cell<Option<i64>>,
 }
 
 impl YoutubeChannelDetail {
@@ -196,6 +199,8 @@ impl YoutubeChannelDetail {
             connected_devices: RefCell::new(Vec::new()),
             selected_devices: RefCell::new(BTreeMap::new()),
             images_allowed: Cell::new(false),
+            connectivity: Cell::new(Connectivity::Online),
+            unavailable_episode: Cell::new(None),
         })
     }
 
@@ -235,12 +240,16 @@ impl YoutubeChannelDetail {
         connected_devices: &[PodcastSyncDevice],
         selected_devices: &BTreeMap<i64, Vec<String>>,
         images_allowed: bool,
+        connectivity: Connectivity,
+        unavailable_episode: Option<i64>,
     ) {
         self.groups.replace(groups.to_vec());
         self.download_states.replace(download_states.clone());
         self.connected_devices.replace(connected_devices.to_vec());
         self.selected_devices.replace(selected_devices.clone());
         self.images_allowed.set(images_allowed);
+        self.connectivity.set(connectivity);
+        self.unavailable_episode.set(unavailable_episode);
         let active = self.state.borrow().active_channel();
         if active.is_some_and(|id| !groups.iter().any(|group| group.group.subscription_id == id)) {
             self.state.borrow_mut().close_channel();
@@ -261,6 +270,12 @@ impl YoutubeChannelDetail {
         let widgets = self.download_widgets.borrow().get(&episode_id).cloned();
         if let Some(widgets) = widgets {
             podcasts_groups::update_download_state(&widgets, state);
+            podcasts_groups::update_network_state(
+                &widgets,
+                state,
+                self.connectivity.get(),
+                self.unavailable_episode.get() == Some(episode_id),
+            );
         }
     }
 
@@ -566,7 +581,11 @@ impl YoutubeChannelDetail {
         action.add_css_class("flat");
         action.set_action_name(Some("podcasts.toggle-download"));
         action.set_action_target_value(Some(&episode.id.to_variant()));
-        let download_widgets = DownloadRowWidgets { status, action };
+        let download_widgets = DownloadRowWidgets {
+            root: row.clone(),
+            status,
+            action,
+        };
         let state = self
             .download_states
             .borrow()
@@ -574,6 +593,12 @@ impl YoutubeChannelDetail {
             .cloned()
             .unwrap_or(DownloadState::NotDownloaded);
         podcasts_groups::update_download_state(&download_widgets, &state);
+        podcasts_groups::update_network_state(
+            &download_widgets,
+            &state,
+            self.connectivity.get(),
+            self.unavailable_episode.get() == Some(episode.id),
+        );
         row.append(&download_widgets.status);
         row.append(&download_widgets.action);
         widgets.insert(episode.id, download_widgets);

@@ -9,20 +9,14 @@ pub(in crate::ui) enum PageId {
     Appearance,
     Layout,
     Library,
-    OnlineSources,
-    NewReleases,
-    Concerts,
     Plugins,
 }
 
-pub(in crate::ui) const PAGE_ORDER: [PageId; 8] = [
+pub(in crate::ui) const PAGE_ORDER: [PageId; 5] = [
     PageId::Playback,
     PageId::Appearance,
     PageId::Layout,
     PageId::Library,
-    PageId::OnlineSources,
-    PageId::NewReleases,
-    PageId::Concerts,
     PageId::Plugins,
 ];
 
@@ -33,9 +27,6 @@ impl PageId {
             Self::Appearance => "appearance",
             Self::Layout => "layout",
             Self::Library => "library",
-            Self::OnlineSources => "online_sources",
-            Self::NewReleases => "new_releases",
-            Self::Concerts => "concerts",
             Self::Plugins => "plugins",
         }
     }
@@ -46,9 +37,6 @@ impl PageId {
             Self::Appearance => strings::PREFERENCES_APPEARANCE,
             Self::Layout => strings::PREFERENCES_LAYOUT,
             Self::Library => strings::PREFERENCES_LIBRARY,
-            Self::OnlineSources => strings::PREFERENCES_ONLINE_SOURCES,
-            Self::NewReleases => strings::NEW_RELEASES,
-            Self::Concerts => strings::CONCERTS,
             Self::Plugins => strings::PREFERENCES_PLUGINS,
         };
         strings::text(message)
@@ -60,9 +48,6 @@ impl PageId {
             Self::Appearance => "applications-graphics-symbolic",
             Self::Layout => "view-grid-symbolic",
             Self::Library => "folder-music-symbolic",
-            Self::OnlineSources => "network-server-symbolic",
-            Self::NewReleases => "starred-symbolic",
-            Self::Concerts => "x-office-calendar-symbolic",
             Self::Plugins => "application-x-addon-symbolic",
         }
     }
@@ -256,7 +241,7 @@ mod tests {
     }
 
     #[test]
-    fn set_7_updates_settings_are_peer_pages_in_the_design_order() {
+    fn set_10_plugins_replaces_the_three_retired_peer_pages() {
         assert_eq!(
             PAGE_ORDER,
             [
@@ -264,19 +249,13 @@ mod tests {
                 PageId::Appearance,
                 PageId::Layout,
                 PageId::Library,
-                PageId::OnlineSources,
-                PageId::NewReleases,
-                PageId::Concerts,
                 PageId::Plugins,
             ]
         );
-        assert_eq!(page_index_by_name("new_releases"), Some(5));
-        assert_eq!(page_index_by_name("concerts"), Some(6));
-    }
-
-    #[test]
-    fn set_9_online_sources_is_a_peer_page_right_before_new_releases() {
-        assert_eq!(page_index_by_name("online_sources"), Some(4));
+        assert_eq!(page_index_by_name("plugins"), Some(4));
+        for retired in ["online_sources", "new_releases", "concerts"] {
+            assert_eq!(page_index_by_name(retired), None);
+        }
     }
 
     #[test]

@@ -10,19 +10,13 @@ use reprise_core::radio::playlist::PlaylistKind;
 use reprise_core::radio::search::{SearchCriteria, SearchOrder, StationCandidate};
 use reprise_core::radio::{self, RadioError};
 
+use super::radio_add_input::{classify_input, AddInput};
 use super::radio_chips::{self, NearYouAction};
 use super::station_preview::StationPreview;
 use crate::ui::{one_shot_task, source_add_action, strings};
 
 type AddedCallback = Rc<dyn Fn()>;
 type LocationSettingsCallback = Rc<dyn Fn()>;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) enum AddInput {
-    Empty,
-    Search(String),
-    Url(String),
-}
 
 /// `NET-1a` / `C1`: `online_sources::network_allowed(conn,
 /// &modules::SOURCE_IMAGES_MODULE)`, computed fresh at every call so each
@@ -32,18 +26,6 @@ pub(super) enum AddInput {
 pub(super) fn images_allowed(db: &Db) -> bool {
     reprise_core::online_sources::network_allowed(db, &reprise_core::modules::SOURCE_IMAGES_MODULE)
         .unwrap_or(false)
-}
-
-pub(super) fn classify_input(input: &str) -> AddInput {
-    let input = input.trim();
-    if input.is_empty() {
-        return AddInput::Empty;
-    }
-    if input.starts_with("http://") || input.starts_with("https://") {
-        AddInput::Url(input.to_owned())
-    } else {
-        AddInput::Search(input.to_owned())
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -66,6 +48,7 @@ pub(super) enum AddFailure {
 pub(super) struct AddDialogState {
     pub phase: AddDialogPhase,
     generation: u64,
+    query: Option<String>,
 }
 
 impl Default for AddDialogState {
@@ -73,6 +56,7 @@ impl Default for AddDialogState {
         Self {
             phase: AddDialogPhase::Idle,
             generation: 0,
+            query: None,
         }
     }
 }
@@ -87,6 +71,10 @@ pub(super) enum AddResult {
 impl AddDialogState {
     pub(super) fn begin(mut self, input: &AddInput) -> (Self, u64) {
         self.generation = self.generation.wrapping_add(1);
+        self.query = match input {
+            AddInput::Search(query) => Some(query.clone()),
+            AddInput::Empty | AddInput::Url(_) => None,
+        };
         self.phase = match input {
             AddInput::Empty => AddDialogPhase::Idle,
             AddInput::Search(_) => AddDialogPhase::Searching,
@@ -598,6 +586,14 @@ impl RadioAddDialog {
         );
         let rows = radio::search::filter_new_stations(rows, &favorites);
         self.widgets.status.remove_css_class("error");
+        if rows.is_empty() {
+            let query = self.state.borrow().query.clone().unwrap_or_default();
+            self.widgets
+                .status
+                .set_text(&strings::source_nothing_found(&query));
+            self.widgets.status.set_visible(true);
+            return;
+        }
         self.widgets.status.set_text(&format!(
             "{} · {}",
             strings::text(strings::RADIO_RESULTS_HEADER),

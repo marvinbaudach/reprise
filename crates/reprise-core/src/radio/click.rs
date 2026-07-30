@@ -110,7 +110,9 @@ mod tests {
     use super::*;
 
     fn conn() -> crate::db::Db {
-        crate::db::Db::open_in_memory().unwrap()
+        let db = crate::db::Db::open_in_memory().unwrap();
+        crate::online_sources::set_enabled(&db, true).unwrap();
+        db
     }
 
     fn favorite(conn: &crate::db::Db) -> StationRow {

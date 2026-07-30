@@ -1,7 +1,7 @@
 use std::{ffi::OsStr, fs, path::PathBuf};
 
 use super::test_support::{fake_binary, short_timeouts, CapturedLogs, LogCapture};
-use super::{classify_stderr, resolve_binary, YtDlp};
+use super::{classify_stderr, finalize_download, resolve_binary, YtDlp, YtDlpFailureKind};
 
 #[test]
 fn pod_3_ytdlp_errors_are_actionable_and_never_expose_provider_details() {
@@ -285,4 +285,71 @@ fn update_uses_the_same_guarded_subprocess_boundary() {
 
     assert_eq!(runner.update().unwrap(), "Latest version");
     assert_eq!(fs::read_to_string(log).unwrap(), "--no-warnings\n-U\n");
+}
+#[test]
+fn failed_resolve_keeps_sanitized_stderr_only_in_explicit_details() {
+    let directory = tempfile::tempdir().unwrap();
+    let binary = fake_binary(
+        directory.path(),
+        "printf '%s\\n' \
+         'ERROR: Sign in to confirm you are not a bot for \
+         https://youtube.test/watch?token=SECRET while reading \
+         /home/user/private/cookies.txt with access_token=ALSO-SECRET' >&2\n\
+         exit 9",
+    );
+    let runner = YtDlp::with_binary_and_timeouts(binary, short_timeouts());
+
+    let error = runner
+        .resolve("https://youtube.test/watch?v=private")
+        .unwrap_err();
+    let source_error = crate::source_error::SourceError::from(error);
+
+    assert!(matches!(
+        source_error.kind(),
+        crate::source_error::SourceErrorKind::RateLimited { retry_after: None }
+    ));
+    assert_eq!(
+        source_error.to_string(),
+        "This source is limiting requests. Reprise will try again."
+    );
+    let details = source_error.details("2026-07-30 16:55").to_string();
+    assert!(details.contains("Sign in to confirm you are not a bot"));
+    assert!(!details.contains("youtube.test"), "{details}");
+    assert!(!details.contains("SECRET"), "{details}");
+    assert!(!details.contains("/home/user"), "{details}");
+    assert!(!details.contains("cookies.txt"), "{details}");
+    assert_ne!(
+        details.lines().nth(1),
+        Some("YouTube requires verification — try again later or use another network")
+    );
+}
+
+#[test]
+fn finalize_failure_keeps_a_private_path_out_of_explicit_details() {
+    let directory = tempfile::tempdir().unwrap();
+    let produced = directory
+        .path()
+        .join("private-library")
+        .join("missing.opus");
+    let destination = directory.path().join("episode.opus");
+
+    let error = finalize_download(&produced.to_string_lossy(), &destination).unwrap_err();
+
+    assert!(matches!(
+        &error,
+        crate::podcasts::PodcastError::YtDlpFailure {
+            kind: YtDlpFailureKind::DownloadStorage,
+            ..
+        }
+    ));
+    let details = crate::source_error::SourceError::from(error)
+        .details("2026-07-30 17:20")
+        .to_string();
+    assert!(details.contains("yt-dlp did not create"), "{details}");
+    assert!(details.contains("[redacted path]"), "{details}");
+    assert!(
+        !details.contains(directory.path().to_string_lossy().as_ref()),
+        "{details}"
+    );
+    assert!(!details.contains("private-library"), "{details}");
 }

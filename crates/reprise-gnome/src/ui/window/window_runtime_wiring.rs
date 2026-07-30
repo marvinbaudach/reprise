@@ -118,6 +118,14 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         metadata_navigator,
     } = args;
 
+    super::source_connectivity::wire(
+        concerts_view,
+        releases_view,
+        podcasts_view,
+        youtube_view,
+        radio_view,
+        device_sync,
+    );
     wire_source_module_recompute(preferences, device_sync);
 
     let refresh_doctor_views = {
@@ -160,6 +168,22 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         view.set_on_open_preferences(move || {
             if let Some(preferences) = preferences.upgrade() {
                 preferences.present_online_sources();
+            }
+        });
+    }
+    {
+        let preferences = Rc::downgrade(preferences);
+        youtube_view.set_on_open_youtube_preferences(move || {
+            if let Some(preferences) = preferences.upgrade() {
+                preferences.present_plugins(&["youtube"]);
+            }
+        });
+    }
+    {
+        let preferences = Rc::downgrade(preferences);
+        concerts_view.set_on_open_preferences(move || {
+            if let Some(preferences) = preferences.upgrade() {
+                preferences.present_plugins(&["concerts"]);
             }
         });
     }

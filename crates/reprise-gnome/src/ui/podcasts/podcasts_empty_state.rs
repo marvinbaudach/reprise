@@ -12,6 +12,7 @@ pub(super) enum PodcastsEmptyState {
     /// nothing downloaded matches it — distinct from `NoResults` so the
     /// copy can say why, not just that nothing matched.
     NoDownloads,
+    FetchFailed,
 }
 
 /// Decides which of the six states a render pass is in. Never renders
@@ -25,9 +26,12 @@ pub(super) fn podcasts_empty_state_for(
     has_filter: bool,
     downloaded_filter_active: bool,
     module_enabled: bool,
+    fetch_failed: bool,
 ) -> PodcastsEmptyState {
     if visible_episodes > 0 {
         PodcastsEmptyState::List
+    } else if fetch_failed && subscription_count > 0 && total_episodes == 0 {
+        PodcastsEmptyState::FetchFailed
     } else if subscription_count == 0 {
         if module_enabled {
             PodcastsEmptyState::Empty
@@ -52,19 +56,19 @@ mod tests {
     #[test]
     fn empty_state_has_one_deterministic_next_step() {
         assert_eq!(
-            podcasts_empty_state_for(1, 2, 2, false, false, true),
+            podcasts_empty_state_for(1, 2, 2, false, false, true, false),
             PodcastsEmptyState::List
         );
         assert_eq!(
-            podcasts_empty_state_for(0, 0, 0, false, false, true),
+            podcasts_empty_state_for(0, 0, 0, false, false, true, false),
             PodcastsEmptyState::Empty
         );
         assert_eq!(
-            podcasts_empty_state_for(1, 0, 0, false, false, true),
+            podcasts_empty_state_for(1, 0, 0, false, false, true, false),
             PodcastsEmptyState::NoEpisodes
         );
         assert_eq!(
-            podcasts_empty_state_for(1, 3, 0, true, false, true),
+            podcasts_empty_state_for(1, 3, 0, true, false, true, false),
             PodcastsEmptyState::NoResults
         );
     }
@@ -75,14 +79,14 @@ mod tests {
     #[test]
     fn src_10_a_switched_off_module_with_nothing_subscribed_decides_module_off_not_empty() {
         assert_eq!(
-            podcasts_empty_state_for(0, 0, 0, false, false, false),
+            podcasts_empty_state_for(0, 0, 0, false, false, false, false),
             PodcastsEmptyState::ModuleOff
         );
         // Existing subscriptions outrank the module gate here — B2 only
         // replaces the empty case's Add button, it does not lock out an
         // already-populated view.
         assert_eq!(
-            podcasts_empty_state_for(1, 2, 2, false, false, false),
+            podcasts_empty_state_for(1, 2, 2, false, false, false, false),
             PodcastsEmptyState::List
         );
     }
@@ -94,7 +98,7 @@ mod tests {
     #[test]
     fn src_10_a_filter_matching_nothing_decides_no_results_not_empty_or_no_episodes() {
         assert_eq!(
-            podcasts_empty_state_for(2, 10, 0, true, false, true),
+            podcasts_empty_state_for(2, 10, 0, true, false, true, false),
             PodcastsEmptyState::NoResults
         );
     }
@@ -105,8 +109,16 @@ mod tests {
     #[test]
     fn src_10_the_downloaded_filter_matching_nothing_decides_no_downloads_not_no_results() {
         assert_eq!(
-            podcasts_empty_state_for(2, 10, 0, true, true, true),
+            podcasts_empty_state_for(2, 10, 0, true, true, true, false),
             PodcastsEmptyState::NoDownloads
+        );
+    }
+
+    #[test]
+    fn net_3_empty_cache_and_a_failed_fetch_decide_the_failure_page() {
+        assert_eq!(
+            podcasts_empty_state_for(1, 0, 0, false, false, true, true),
+            PodcastsEmptyState::FetchFailed
         );
     }
 }

@@ -368,7 +368,7 @@ fn open_v12_database() -> Connection {
 }
 
 #[test]
-fn net_2_migration_preserves_existing_cover_usage() {
+fn net_2a_migration_preserves_existing_cover_usage() {
     let conn = open_v12_database();
     let cover_cache = tempfile::tempdir().unwrap();
     let portrait_cache = tempfile::tempdir().unwrap();
@@ -384,7 +384,7 @@ fn net_2_migration_preserves_existing_cover_usage() {
 }
 
 #[test]
-fn net_2_migration_preserves_existing_portrait_usage() {
+fn net_2a_migration_preserves_existing_portrait_usage() {
     let conn = open_v12_database();
     let cover_cache = tempfile::tempdir().unwrap();
     let portrait_cache = tempfile::tempdir().unwrap();
@@ -398,7 +398,7 @@ fn net_2_migration_preserves_existing_portrait_usage() {
 }
 
 #[test]
-fn net_2_migration_preserves_online_lyrics_for_existing_databases() {
+fn net_2a_migration_preserves_online_lyrics_for_existing_databases() {
     let conn = open_v12_database();
     let cover_cache = tempfile::tempdir().unwrap();
     let portrait_cache = tempfile::tempdir().unwrap();
@@ -409,7 +409,7 @@ fn net_2_migration_preserves_online_lyrics_for_existing_databases() {
 }
 
 #[test]
-fn net_2_migration_carries_artist_news_opt_in_to_new_releases() {
+fn net_2a_migration_carries_artist_news_opt_in_to_new_releases() {
     let conn = open_v12_database();
     conn.execute(
         "INSERT INTO settings (key, value) VALUES ('module.artist_news.enabled', '1')",
@@ -425,7 +425,7 @@ fn net_2_migration_carries_artist_news_opt_in_to_new_releases() {
 }
 
 #[test]
-fn net_2_migration_ignores_negative_cache_markers() {
+fn net_2a_migration_ignores_negative_cache_markers() {
     let conn = open_v12_database();
     let cover_cache = tempfile::tempdir().unwrap();
     let portrait_cache = tempfile::tempdir().unwrap();
@@ -441,7 +441,7 @@ fn net_2_migration_ignores_negative_cache_markers() {
 }
 
 #[test]
-fn net_2_migration_preserves_explicit_opt_outs() {
+fn net_2a_migration_preserves_explicit_opt_outs() {
     let conn = open_v12_database();
     for key in [
         "module.cover_download.enabled",

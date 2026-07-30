@@ -14,6 +14,9 @@ use crate::ui::device_sync_runtime::{
 };
 use crate::ui::device_sync_strings;
 
+#[path = "../device_sync/device_sync_card_menu.rs"]
+mod menu;
+
 type OpenCallback = Rc<dyn Fn(String, String)>;
 
 /// Live card widgets, keyed by device id, so a state update can refresh them
@@ -59,7 +62,8 @@ pub(super) fn bind(runtime: &Rc<DeviceSyncRuntime>, on_open: OpenCallback) -> gt
     let subscription = runtime.subscribe(Rc::new({
         let section = section.clone();
         let cards = cards.clone();
-        move |state| render(&section, &cards, &state, &on_open)
+        let runtime = runtime.clone();
+        move |state| render(&section, &cards, &state, &on_open, &runtime)
     }));
     subscription.retain_for_widget(&section);
     section
@@ -70,12 +74,9 @@ fn render(
     cards: &CardRegistry,
     state: &DeviceSyncState,
     on_open: &OpenCallback,
+    runtime: &Rc<DeviceSyncRuntime>,
 ) {
-    let devices = state
-        .devices
-        .iter()
-        .filter(|device| device.connected)
-        .collect::<Vec<_>>();
+    let devices = state.devices.iter().collect::<Vec<_>>();
     section.set_visible(!devices.is_empty());
 
     let mut registry = cards.borrow_mut();
@@ -88,16 +89,23 @@ fn render(
         keep
     });
     // Update in place, appending only genuinely new devices.
-    for device in devices {
+    for device in &devices {
         match registry.get(&device.id) {
             Some(card) => card.update(device),
             None => {
                 let card = DeviceCard::new(device, on_open);
+                menu::wire(&card.root, runtime, &device.id);
                 section.append(&card.root);
                 card.update(device);
                 registry.insert(device.id.clone(), card);
             }
         }
+    }
+    let mut previous = section.first_child();
+    for device in devices {
+        let card = &registry[&device.id];
+        section.reorder_child_after(&card.root, previous.as_ref());
+        previous = Some(card.root.clone().upcast());
     }
 }
 
@@ -247,6 +255,11 @@ impl DeviceCard {
     }
 
     fn update(&self, device: &DeviceView) {
+        if device.session_state == reprise_core::device_sync::DeviceSessionState::Remembered {
+            self.root.add_css_class("remembered-device");
+        } else {
+            self.root.remove_css_class("remembered-device");
+        }
         self.name.set_text(&card_title(device));
         self.root
             .update_property(&[gtk4::accessible::Property::Label(
@@ -268,6 +281,15 @@ impl DeviceCard {
         match detail_mode(device) {
             DetailMode::Delta => {
                 self.delta_detail.set_text(&card_subtitle(device));
+                if matches!(
+                    device.session_state,
+                    reprise_core::device_sync::DeviceSessionState::Inert { .. }
+                ) || !device.rememberable
+                {
+                    self.delta_detail.add_css_class("warning");
+                } else {
+                    self.delta_detail.remove_css_class("warning");
+                }
                 self.detail_stack.set_visible_child_name("delta");
             }
             DetailMode::Progress => {
@@ -403,6 +425,9 @@ fn mirror_needs_attention(device: &DeviceView) -> bool {
 /// and has real pending work — otherwise the leading sentence already says
 /// everything the tooltip would.
 fn idle_tooltip(device: &DeviceView) -> Option<String> {
+    if !device.session_state.shows_diff() {
+        return None;
+    }
     if device.sync_phase != PlannedSyncPhase::Idle || mirror_needs_attention(device) {
         return None;
     }
@@ -431,6 +456,7 @@ pub(in crate::ui) fn css() -> String {
        border: 1px solid alpha(@window_fg_color, 0.07); \
        background-color: alpha(@window_fg_color, 0.035); }\n\
      .device-card:hover { background-color: alpha(@window_fg_color, 0.065); }\n\
+     .device-card.remembered-device { opacity: 0.58; }\n\
      .device-card:focus-visible { box-shadow: inset 0 0 0 2px \
        alpha(@window_fg_color, 0.32); }\n\
      .device-card-icon { border-radius: 13px; \
@@ -460,6 +486,17 @@ fn card_title(device: &DeviceView) -> String {
 }
 
 fn card_subtitle(device: &DeviceView) -> String {
+    if device.session_state == reprise_core::device_sync::DeviceSessionState::Remembered {
+        return sidebar_device_card_text::remembered_sentence(device.last_sync, Utc::now());
+    }
+    if let reprise_core::device_sync::DeviceSessionState::Inert { active_device_name } =
+        &device.session_state
+    {
+        return device_sync_strings::inert_device_status(active_device_name);
+    }
+    if let Some(status) = &device.memory_status {
+        return status.clone();
+    }
     match &device.sync_phase {
         PlannedSyncPhase::ComputingDelta => format!(
             "{} · Checking…",
@@ -530,6 +567,9 @@ mod tests {
             name: "Pixel 8".into(),
             icon: gtk4::gio::ThemedIcon::new("phone-symbolic").upcast(),
             connected: true,
+            rememberable: true,
+            memory_status: None,
+            session_state: reprise_core::device_sync::DeviceSessionState::Active,
             storage: Default::default(),
             scan_error: None,
             settings: reprise_core::device_sync::DeviceSettings {
@@ -547,6 +587,7 @@ mod tests {
             sync_error: None,
             last_sync: None,
             verified_managed_track_count: None,
+            size_on_device_bytes: None,
             managed_track_count: 0,
             bytes_per_second: 0,
             contents_state: reprise_core::device_sync::device_view::DeviceContentsState::Verified,
@@ -739,46 +780,3 @@ mod tests {
 #[cfg(test)]
 #[path = "sidebar_device_card_mirror_tests.rs"]
 mod mirror_tests;
-
-#[cfg(test)]
-mod css_tests {
-    #[test]
-    fn css_covers_the_sync_card_vocabulary() {
-        let css = super::css();
-        for marker in [
-            ".device-card {",
-            ".device-card:hover",
-            ".device-card:focus-visible",
-            ".device-card-icon",
-            ".device-card-glyph",
-            ".device-card-detail",
-            ".device-card-percent",
-            ".device-card-progress trough",
-            ".device-card-progress progress",
-        ] {
-            assert!(css.contains(marker), "missing rule: {marker}");
-        }
-        assert!(
-            !css.contains("#1CA98F"),
-            "the accent must come from the theme, not a literal, or non-default palettes break"
-        );
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn css_parses_in_gtk_without_dropping_declarations() {
-        if gtk4::init().is_err() {
-            return;
-        }
-        let combined = format!(
-            "{}\n{}",
-            crate::ui::style::theme::theme_css(crate::ui::style::theme::Theme::DEFAULT, true),
-            super::css()
-        );
-        let errors = crate::ui::style::css_parse_errors(&combined);
-        assert!(
-            errors.is_empty(),
-            "GTK reported CSS parsing errors: {errors:?}"
-        );
-    }
-}

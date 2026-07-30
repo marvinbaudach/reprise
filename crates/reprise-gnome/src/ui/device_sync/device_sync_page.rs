@@ -171,15 +171,48 @@ impl DeviceSyncPage {
         super::device_sync_history::fill(&self.history, &device.history);
         self.updating.set(true);
         self.device_name.set_label(&device.name);
-        self.connection.set_label("MTP connected");
+        self.connection.remove_css_class("success");
+        self.connection.remove_css_class("warning");
+        self.connection.remove_css_class("dim-label");
+        match &device.session_state {
+            reprise_core::device_sync::DeviceSessionState::Active => {
+                if let Some(status) = &device.memory_status {
+                    self.connection.set_label(status);
+                    self.connection.add_css_class("warning");
+                } else {
+                    self.connection.set_label("MTP connected");
+                    self.connection.add_css_class("success");
+                }
+            }
+            reprise_core::device_sync::DeviceSessionState::Inert { active_device_name } => {
+                self.connection
+                    .set_label(&device_sync_strings::inert_device_status(
+                        active_device_name,
+                    ));
+                self.connection.add_css_class("warning");
+            }
+            reprise_core::device_sync::DeviceSessionState::Remembered => {
+                self.connection
+                    .set_label(&reprise_core::device_sync::remembered_device_status(
+                        device.last_sync,
+                        chrono::Utc::now(),
+                    ));
+                self.connection.add_css_class("dim-label");
+            }
+        }
         self.device_last_sync
             .set_label(&device_last_sync_copy(device));
         if let Some(root) = self.root.upgrade() {
-            root.set_visible_child_name(if device.connected {
-                "connected"
-            } else {
-                "disconnected"
-            });
+            root.set_visible_child_name(
+                if device.connected
+                    || device.session_state
+                        == reprise_core::device_sync::DeviceSessionState::Remembered
+                {
+                    "connected"
+                } else {
+                    "disconnected"
+                },
+            );
         }
         let selected = TransferProfile::ALL
             .iter()

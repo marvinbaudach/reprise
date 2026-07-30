@@ -26,6 +26,13 @@ use super::device_sync_runtime::*;
 mod fake_backend;
 use fake_backend::*;
 
+#[path = "device_sync_memory_tests.rs"]
+mod memory_tests;
+#[path = "device_sync_presence_tests.rs"]
+mod presence_tests;
+#[path = "device_sync_remembered_tests.rs"]
+mod remembered_tests;
+
 fn fixture() -> (tempfile::TempDir, Rc<Db>) {
     let temp = tempfile::tempdir().unwrap();
     let db = crate::test_db::open().unwrap();
@@ -757,6 +764,8 @@ mod compact_tests;
 mod content_transfer_tests;
 #[path = "device_sync_inflight_tests.rs"]
 mod inflight_tests;
+#[path = "device_sync_picker_tests.rs"]
+mod picker_tests;
 #[path = "device_sync_planned_tests.rs"]
 mod planned_tests;
 #[path = "device_sync_podcast_removal_tests.rs"]

@@ -31,6 +31,12 @@ pub const RELEASES_MISSING: &str = N_!("Missing");
 pub const RELEASES_NO_DATA_TITLE: &str = N_!("No discography data yet");
 pub const RELEASES_EMPTY_TITLE: &str = N_!("No missing albums or EPs");
 pub const RELEASES_HIDE: &str = N_!("Hide");
+pub const RELEASES_COULD_NOT_REFRESH: &str = N_!("Couldn't refresh new releases");
+pub const RELEASES_CACHED_FAILURE_DESCRIPTION: &str =
+    N_!("Showing saved releases from {time}. Announcement links need a connection.");
+pub const RELEASES_EMPTY_FAILURE_DESCRIPTION: &str =
+    N_!("There are no saved releases to show. Your library is unaffected.");
+pub const RELEASES_SAVED_CACHE_TIME: &str = N_!("an earlier update");
 
 pub fn release_count_line(shown: usize, total: usize) -> String {
     formatted(
@@ -55,6 +61,10 @@ pub fn release_track_count_line(local: i64, total: i64) -> String {
         N_!("{local} of {total} tracks"),
         &[("local", &local.to_string()), ("total", &total.to_string())],
     )
+}
+
+pub fn releases_cached_failure_description(time: &str) -> String {
+    formatted(RELEASES_CACHED_FAILURE_DESCRIPTION, &[("time", time)])
 }
 
 #[cfg(test)]

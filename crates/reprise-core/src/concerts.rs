@@ -31,7 +31,8 @@ pub use geo::haversine_km;
 pub use geocode::{geocode, geocode_url, parse_geocode, GeocodedLocation};
 pub use pipeline::{refresh, refresh_cancellable, CancellationToken, RefreshSummary};
 pub use provider::{
-    ArtistRef, EventProvider, ProviderError, ProviderEvent, ProviderKind, Resolution,
+    ArtistRef, ConcertFailure, EventProvider, ProviderError, ProviderEvent, ProviderKind,
+    Resolution,
 };
 pub use query::{
     count_unseen, count_upcoming, has_similar_events, known_countries, latest_fetch_at,
@@ -114,4 +115,32 @@ pub enum ConcertError {
     InvalidData(String),
     #[error("no concert provider is configured")]
     MissingCredentials,
+}
+
+impl ConcertError {
+    #[must_use]
+    pub fn into_source_failure(self) -> ConcertFailure {
+        match self {
+            Self::Provider(error) => error.into(),
+            Self::MissingCredentials => {
+                ConcertFailure::MissingCredentials(crate::source_error::SourceError::new(
+                    crate::source_error::SourceErrorKind::Unreachable,
+                    "concert provider configuration check failed",
+                    "no concert provider is configured",
+                ))
+            }
+            Self::Database(error) => ConcertFailure::Source(crate::source_error::SourceError::new(
+                crate::source_error::SourceErrorKind::Unreachable,
+                "concert refresh failed",
+                error.to_string(),
+            )),
+            Self::InvalidData(error) => {
+                ConcertFailure::Source(crate::source_error::SourceError::new(
+                    crate::source_error::SourceErrorKind::Unreachable,
+                    "concert refresh failed",
+                    error,
+                ))
+            }
+        }
+    }
 }

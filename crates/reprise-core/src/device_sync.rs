@@ -14,6 +14,7 @@ pub mod browser;
 pub mod cap;
 pub mod category_diff;
 pub mod delta;
+pub mod device_presence;
 pub mod device_view;
 pub mod m3u;
 pub mod machine;
@@ -43,6 +44,10 @@ pub use category_diff::{
     CategoryDiff, CategoryReading, SyncBalance,
 };
 pub use delta::{compute_delta, SyncCandidate, SyncDelta};
+pub use device_presence::{
+    project_device_presence, project_device_sessions, remembered_device_status,
+    stable_device_identity, DetectedDevice, DeviceSessionProjection, DeviceSessionState,
+};
 pub use device_view::{
     category_bytes, project_category_content_row, project_category_segments,
     project_contents_state, project_device_category_reading, CategoryContentRow, CategorySegments,
@@ -70,15 +75,17 @@ pub use profile::{
     TransferAction, TransferProfile, UnsupportedMp3Quality,
 };
 pub use selection::{
-    resolve_latest_per_channel, select_episodes, summarize_playlist_selection,
+    apply_frozen_smart_playlist_policy, everything_playlist_snapshot, resolve_latest_per_channel,
+    select_episodes, summarize_picker_selection, summarize_playlist_selection,
     summarize_youtube_selection, EpisodeSelectionCandidate, EpisodeSelectionResult,
-    EpisodeSelectionRule, PlaylistSelectionSummary, PodcastSelectionSummary, YoutubeChannelToggle,
-    YoutubeSelectionSummary,
+    EpisodeSelectionRule, PickerSelectionItem, PickerSelectionSummary, PlaylistSelectionSummary,
+    PodcastSelectionSummary, YoutubeChannelToggle, YoutubeSelectionSummary, EVERYTHING_SOURCE,
 };
 pub use settings::{
-    DeviceFileRecord, DevicePlaylistRecord, DeviceSelection, DeviceSettings, SelectionSource,
+    DeviceFileRecord, DevicePlaylistRecord, DeviceSelection, DeviceSettings, RememberedDevice,
+    SelectionSource,
 };
-pub use snapshot::load_mirror_playlist_snapshots;
+pub use snapshot::{load_everything_playlist_snapshot, load_mirror_playlist_snapshots};
 pub use storage::{
     project_storage, storage_composition, DeviceStorageAccess, DeviceStorageInspection,
     DeviceStorageProjection, DeviceStorageSnapshot, StorageComposition, StorageKnowledge,

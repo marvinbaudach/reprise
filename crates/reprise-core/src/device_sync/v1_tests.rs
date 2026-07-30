@@ -86,7 +86,7 @@ fn prepare_before_sync_defaults_true_and_round_trips() {
 }
 
 #[test]
-fn entire_library_is_persisted_as_an_unconfigured_selection() {
+fn mtp_51_entire_library_selection_round_trips_as_the_everything_decision() {
     let conn = migrated();
     let mut settings = load_or_create_settings(&conn, "serial-2", "Phone").unwrap();
     settings.selection = DeviceSelection::EntireLibrary;
@@ -100,12 +100,12 @@ fn entire_library_is_persisted_as_an_unconfigured_selection() {
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(raw, "[]");
+    assert_eq!(raw, "\"entire_library\"");
     assert_eq!(
         load_or_create_settings(&conn, "serial-2", "Phone")
             .unwrap()
             .selection,
-        DeviceSelection::Sources(Vec::new())
+        DeviceSelection::EntireLibrary
     );
 }
 
@@ -506,7 +506,7 @@ fn unknown_duration_has_no_bounded_conservative_transcode_estimate() {
 }
 
 #[test]
-fn selection_resolves_playlist_union_without_duplicates_and_disables_entire_library() {
+fn selection_resolves_playlist_union_and_the_entire_library_without_duplicates() {
     let conn = migrated();
     conn.conn()
         .execute_batch(
@@ -534,16 +534,12 @@ fn selection_resolves_playlist_union_without_duplicates_and_disables_entire_libr
     );
     assert_eq!(
         resolve_selection_track_ids(&conn, &DeviceSelection::EntireLibrary).unwrap(),
-        Vec::<i64>::new()
+        vec![1, 3, 2]
     );
 }
 
-/// A legacy in-memory `EntireLibrary` value is inert even if it reaches the
-/// old V1 pipeline. The durable v34 migration and settings encoder both turn
-/// it into an unconfigured selection, while this guard prevents an outdated
-/// caller from reviving the retired whole-library mode.
 #[test]
-fn entire_library_legacy_value_computes_no_copy_delta() {
+fn mtp_51_entire_library_selection_computes_the_whole_library_copy_delta() {
     let conn = migrated();
     let dir = tempfile::tempdir().unwrap();
     for (id, title) in [(1, "One"), (2, "Two"), (3, "Three")] {
@@ -587,7 +583,7 @@ fn entire_library_legacy_value_computes_no_copy_delta() {
     let delta = compute_delta(&candidates, &files, true);
     let mut to_copy = delta.to_copy.clone();
     to_copy.sort_unstable();
-    assert!(to_copy.is_empty());
+    assert_eq!(to_copy, [1, 2, 3]);
     assert!(delta.to_remove.is_empty());
-    assert_eq!(delta.bytes, 0);
+    assert!(delta.bytes > 0);
 }

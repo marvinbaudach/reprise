@@ -235,7 +235,7 @@ fn known_read_only_target_is_rejected_at_the_runtime_boundary() {
 }
 
 #[test]
-fn different_devices_sync_concurrently_while_each_device_stays_single_operation() {
+fn mtp_48_cancelling_the_active_device_never_opens_or_queues_the_inert_device() {
     run(async {
         let (_temp, conn) = fixture();
         select_road_playlist(&conn, &[1]);
@@ -244,36 +244,35 @@ fn different_devices_sync_concurrently_while_each_device_stays_single_operation(
             vec![descriptor("a", true), descriptor("b", true)],
             0,
         ));
-        let (started, releases) = backend.gate_copies(&["a", "b"]);
+        let (started, releases) = backend.gate_copies(&["a"]);
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
         gtk4::glib::timeout_future(Duration::from_millis(2)).await;
-        let (_subscription, completed) = signal_when(&runtime, |state| {
-            state.devices.len() == 2
-                && state
-                    .devices
-                    .iter()
-                    .all(|device| device.last_sync.is_some())
-        });
 
-        assert_eq!(runtime.sync_now("a"), Ok(()));
-        assert_eq!(runtime.sync_now("a"), Err(SyncStartError::Busy));
-        assert_eq!(runtime.sync_now("b"), Ok(()));
-        let mut active = vec![started.recv().await.unwrap(), started.recv().await.unwrap()];
-        active.sort();
+        runtime.sync_now("a").unwrap();
+        assert_eq!(runtime.sync_now("b"), Err(SyncStartError::UnknownDevice));
+        assert_eq!(started.recv().await.unwrap(), "a");
 
-        assert_eq!(active, ["a", "b"]);
-        assert_eq!(backend.state.max_total.get(), 2);
-        assert_eq!(backend.state.max_by_device.borrow().get("a"), Some(&1));
-        assert_eq!(backend.state.max_by_device.borrow().get("b"), Some(&1));
-
+        runtime.cancel_current("a");
         releases["a"].send(()).await.unwrap();
-        releases["b"].send(()).await.unwrap();
-        completed.recv().await.unwrap();
+        settle().await;
+
+        assert_eq!(backend.state.max_total.get(), 1);
+        assert!(
+            reprise_core::device_sync::settings::load_device_files(&conn, "b")
+                .unwrap()
+                .is_empty()
+        );
     });
 }
 
 #[test]
-fn mtp_3_cancelling_one_device_does_not_cancel_an_independent_sync() {
+fn mtp_48_unplugging_the_active_device_mid_transfer_opens_the_waiting_one_exactly_once() {
+    // The riskiest moment for the single-session rule: a transfer is in flight
+    // on "a" when the cable is pulled, and "b" has been sitting inert waiting
+    // for the session. Cancelling from the UI (the case
+    // `mtp_48_cancelling_the_active_device_never_opens_or_queues_the_inert_device`
+    // covers) leaves both devices connected; this one removes the owner
+    // outright, which is the transition that could open two sessions at once.
     run(async {
         let (_temp, conn) = fixture();
         select_road_playlist(&conn, &[1]);
@@ -282,44 +281,42 @@ fn mtp_3_cancelling_one_device_does_not_cancel_an_independent_sync() {
             vec![descriptor("a", true), descriptor("b", true)],
             0,
         ));
-        let (started, releases) = backend.gate_copies(&["a", "b"]);
+        let (started, _releases) = backend.gate_copies(&["a"]);
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
         gtk4::glib::timeout_future(Duration::from_millis(2)).await;
-        let (_subscription, completed) = signal_when(&runtime, |state| {
-            let a = state.devices.iter().find(|device| device.id == "a");
-            let b = state.devices.iter().find(|device| device.id == "b");
-            matches!(
-                (a, b),
-                (Some(a), Some(b))
-                    if a.sync_phase == PlannedSyncPhase::Idle
-                        && a.last_sync.is_none()
-                        && b.last_sync.is_some()
-            )
-        });
 
         runtime.sync_now("a").unwrap();
-        runtime.sync_now("b").unwrap();
-        let first = started.recv().await.unwrap();
-        let second = started.recv().await.unwrap();
-        assert_ne!(first, second);
+        assert_eq!(started.recv().await.unwrap(), "a");
+        let inspections_before = backend.state.inspection_roots.borrow().len();
 
-        runtime.cancel_current("a");
-        releases["a"].send(()).await.unwrap();
-        releases["b"].send(()).await.unwrap();
-        completed.recv().await.unwrap();
+        // The cable is pulled while "a" is still copying.
+        backend.set_devices(&[descriptor("b", true)]);
+        settle().await;
 
-        assert!(
-            reprise_core::device_sync::settings::load_device_files(&conn, "a")
-                .unwrap()
-                .is_empty()
+        let inspections: Vec<String> = backend.state.inspection_roots.borrow().clone();
+        assert_eq!(
+            inspections
+                .iter()
+                .skip(inspections_before)
+                .filter(|root| root.contains('b'))
+                .count(),
+            1,
+            "the waiting device must be inspected exactly once when it takes over: {inspections:?}"
         );
         assert_eq!(
-            reprise_core::device_sync::settings::load_device_files(&conn, "b")
-                .unwrap()
-                .len(),
-            1
+            backend.state.max_total.get(),
+            1,
+            "two devices must never transfer at the same time"
         );
-        assert_eq!(backend.state.max_total.get(), 2);
+        assert!(
+            !backend
+                .state
+                .copy_order
+                .borrow()
+                .iter()
+                .any(|(device, _)| device == "b"),
+            "taking over a session must not start a transfer nobody asked for"
+        );
     });
 }
 

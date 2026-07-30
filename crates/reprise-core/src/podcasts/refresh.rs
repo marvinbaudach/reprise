@@ -5,6 +5,45 @@ use super::config::DEFAULT_REFRESH_HOURS;
 const SECONDS_PER_HOUR: i64 = 60 * 60;
 const MAX_JITTER_SECONDS: i64 = SECONDS_PER_HOUR;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RefreshRetry {
+    attempt: u32,
+    retry_at: i64,
+}
+
+impl RefreshRetry {
+    #[must_use]
+    pub const fn attempt(self) -> u32 {
+        self.attempt
+    }
+
+    #[must_use]
+    pub const fn retry_at(self) -> i64 {
+        self.retry_at
+    }
+
+    #[must_use]
+    pub const fn is_due(self, now: i64) -> bool {
+        now >= self.retry_at
+    }
+}
+
+/// Computes the next bounded background retry without reading a clock.
+#[must_use]
+pub fn next_retry(
+    error: &super::PodcastError,
+    previous_attempt: u32,
+    failed_at: i64,
+) -> Option<RefreshRetry> {
+    let attempt = previous_attempt.saturating_add(1);
+    let delay = error.retry_delay(attempt)?;
+    let delay_seconds = i64::try_from(delay.as_secs()).unwrap_or(i64::MAX);
+    Some(RefreshRetry {
+        attempt,
+        retry_at: failed_at.saturating_add(delay_seconds),
+    })
+}
+
 #[must_use]
 pub fn refresh_due(last_fetch_at: Option<i64>, now: i64, jitter: i64) -> bool {
     refresh_due_with_hours(last_fetch_at, now, DEFAULT_REFRESH_HOURS, jitter)
@@ -82,5 +121,38 @@ mod tests {
         for ((enabled, count, metered, due), expected) in cases {
             assert_eq!(should_auto_refresh(enabled, count, metered, due), expected);
         }
+    }
+
+    #[test]
+    fn net_3d_retry_schedule_is_pure_and_uses_the_shared_backoff() {
+        let failure = super::super::PodcastError::Transport("reset".to_owned());
+
+        let retry = next_retry(&failure, 0, 1_000).unwrap();
+
+        assert_eq!(retry.attempt(), 1);
+        assert_eq!(retry.retry_at(), 1_002);
+        assert!(!retry.is_due(1_001));
+        assert!(retry.is_due(1_002));
+    }
+
+    #[test]
+    fn net_3d_retry_schedule_caps_attempts_and_includes_typed_bot_checks() {
+        let transport = super::super::PodcastError::Transport("reset".to_owned());
+        let first = next_retry(&transport, 0, 1_000).unwrap();
+        let second = next_retry(&transport, first.attempt(), first.retry_at()).unwrap();
+        let third = next_retry(&transport, second.attempt(), second.retry_at()).unwrap();
+
+        assert_eq!(
+            [first.retry_at(), second.retry_at(), third.retry_at()],
+            [1_002, 1_006, 1_014]
+        );
+        assert_eq!(next_retry(&transport, third.attempt(), 1_014), None);
+        assert_eq!(next_retry(&transport, u32::MAX, 1_014), None);
+
+        let bot_check = super::super::PodcastError::YtDlpFailure {
+            kind: super::super::ytdlp::YtDlpFailureKind::VerificationRequired,
+            stderr: "provider verification response".to_owned(),
+        };
+        assert_eq!(next_retry(&bot_check, 0, 2_000).unwrap().retry_at(), 2_002);
     }
 }

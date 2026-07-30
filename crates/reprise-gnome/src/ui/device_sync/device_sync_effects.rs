@@ -126,6 +126,9 @@ pub(super) async fn perform(
             }
         }
         Effect::RecordFile { index, device_size } => {
+            if !work.persist_device_state {
+                return Event::FileRecorded(Ok(()));
+            }
             let entry = transfer(work, index).desired.clone();
             let record = DeviceFileRecord {
                 device_serial: work.device_id.clone(),
@@ -175,6 +178,9 @@ pub(super) async fn perform(
             }))
         }
         Effect::RecordPlaylist { index } => {
+            if !work.persist_device_state {
+                return Event::PlaylistRecorded(Ok(()));
+            }
             let playlist = playlist_write(work, index);
             let record = DevicePlaylistRecord {
                 device_serial: work.device_id.clone(),
@@ -209,6 +215,9 @@ pub(super) async fn perform(
             }))
         }
         Effect::ForgetPlaylist { index } => {
+            if !work.persist_device_state {
+                return Event::PlaylistForgotten(Ok(()));
+            }
             let source = playlist_removal(work, index).source.clone();
             let result = delete_device_playlist(&runtime.conn, &work.device_id, &source);
             Event::PlaylistForgotten(result.map(|_| ()).map_err(|error| {
@@ -248,6 +257,9 @@ pub(super) async fn perform(
             }))
         }
         Effect::ForgetFile { index } => {
+            if !work.persist_device_state {
+                return Event::FileForgotten(Ok(()));
+            }
             let Some(track_id) = removal_track_id(&removal(work, index)) else {
                 return Event::FileForgotten(Ok(()));
             };

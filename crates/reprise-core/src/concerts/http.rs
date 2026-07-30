@@ -14,8 +14,8 @@ use url::Url;
 
 use super::ProviderError;
 use crate::http_body::{self, BoundedReadError};
+use crate::source_error::{parse_retry_after, SOURCE_REQUEST_TIMEOUT};
 
-const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 const MIN_REQUEST_INTERVAL: Duration = Duration::from_secs(1);
 #[cfg(any(test, feature = "test-fixtures"))]
 const FIXTURE_DIR_ENV: &str = "REPRISE_CONCERTS_FIXTURE_DIR";
@@ -46,7 +46,7 @@ pub fn get(url: &str) -> Result<String, ProviderError> {
         return fixture_get(url, &directory);
     }
     let response = ureq::Agent::config_builder()
-        .timeout_global(Some(HTTP_TIMEOUT))
+        .timeout_global(Some(SOURCE_REQUEST_TIMEOUT))
         .user_agent(user_agent())
         .http_status_as_error(false)
         .build()
@@ -60,7 +60,8 @@ pub fn get(url: &str) -> Result<String, ProviderError> {
             .headers()
             .get("Retry-After")
             .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.trim().parse().ok());
+            .and_then(|value| parse_retry_after(Some(value)))
+            .map(|delay| delay.as_secs());
         return Err(ProviderError::RateLimited { retry_after });
     }
     if !(200..300).contains(&status) {
@@ -346,6 +347,18 @@ mod tests {
                 fixtures.path()
             ),
             Err(ProviderError::BodyTooLarge)
+        );
+    }
+
+    #[test]
+    fn provider_requests_use_shared_timeout_and_retry_after_parser() {
+        assert_eq!(
+            crate::source_error::SOURCE_REQUEST_TIMEOUT,
+            Duration::from_secs(10)
+        );
+        assert_eq!(
+            crate::source_error::parse_retry_after(Some("360")),
+            Some(Duration::from_secs(360))
         );
     }
 }

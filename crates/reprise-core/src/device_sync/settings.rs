@@ -68,6 +68,28 @@ pub struct DeviceSettings {
     pub prepare_before_sync: bool,
 }
 
+impl DeviceSettings {
+    /// Session-only defaults for a device whose platform cannot supply a
+    /// stable identity. Callers may mutate this value while the cable is
+    /// connected, but must never pass it to [`save_settings`].
+    #[must_use]
+    pub fn transient(serial: &str, name: &str) -> Self {
+        Self {
+            device_serial: serial.to_string(),
+            device_name: name.to_string(),
+            selection: DeviceSelection::default(),
+            profile: TransferProfile::default(),
+            opus_bitrate: 0,
+            ratings_back: false,
+            remove_deleted: true,
+            // An unrememberable device must not silently auto-start on every
+            // replug as though the app remembered a user choice.
+            sync_automatically: false,
+            prepare_before_sync: true,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DeviceFileRecord {
     pub device_serial: String,
@@ -90,6 +112,14 @@ pub struct DevicePlaylistRecord {
     pub last_synced_at: Option<i64>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RememberedDevice {
+    pub stable_id: String,
+    pub local_name: String,
+    pub last_verified_at: Option<i64>,
+    pub size_on_device_bytes: Option<u64>,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum DeviceSettingsError {
     #[error("database error: {0}")]
@@ -100,6 +130,186 @@ pub enum DeviceSettingsError {
     UnsupportedBitrate(u32),
     #[error("device file size is too large for SQLite: {0}")]
     FileTooLarge(u64),
+    #[error("device name must not be empty")]
+    EmptyDeviceName,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LegacyDeviceRekey {
+    NoLegacyRow,
+    AmbiguousLegacyRows,
+    StableKeyAlreadyExists,
+    Rekeyed,
+}
+
+const ADD_LAST_VERIFIED_AT: &str =
+    "ALTER TABLE device_settings ADD COLUMN last_verified_at INTEGER";
+const ADD_SIZE_ON_DEVICE: &str = "ALTER TABLE device_settings ADD COLUMN size_on_device INTEGER";
+
+fn ensure_remembered_device_columns(db: &crate::db::Db) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
+    for (column, statement) in [
+        ("last_verified_at", ADD_LAST_VERIFIED_AT),
+        ("size_on_device", ADD_SIZE_ON_DEVICE),
+    ] {
+        let exists = conn.query_row(
+            "SELECT EXISTS(
+               SELECT 1 FROM pragma_table_info('device_settings') WHERE name = ?1
+             )",
+            [column],
+            |row| row.get::<_, bool>(0),
+        )?;
+        if !exists {
+            conn.execute(statement, [])?;
+        }
+    }
+    Ok(())
+}
+
+pub fn list_remembered_devices(
+    db: &crate::db::Db,
+) -> Result<Vec<RememberedDevice>, DeviceSettingsError> {
+    ensure_remembered_device_columns(db)?;
+    let conn = db.conn();
+    let mut statement = conn.prepare(
+        "SELECT device_serial, device_name, last_verified_at, size_on_device
+           FROM device_settings
+          WHERE device_serial NOT LIKE 'mtp://%'
+          ORDER BY device_name COLLATE NOCASE, device_serial",
+    )?;
+    let rows = statement.query_map([], |row| {
+        let size = row.get::<_, Option<i64>>(3)?;
+        Ok(RememberedDevice {
+            stable_id: row.get(0)?,
+            local_name: row.get(1)?,
+            last_verified_at: row.get(2)?,
+            size_on_device_bytes: size.map(|value| value.max(0) as u64),
+        })
+    })?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
+pub fn record_device_verification(
+    db: &crate::db::Db,
+    stable_id: &str,
+    verified_at: i64,
+    size_on_device_bytes: u64,
+) -> Result<(), DeviceSettingsError> {
+    ensure_remembered_device_columns(db)?;
+    let size = sqlite_size(size_on_device_bytes)?;
+    db.conn().execute(
+        "UPDATE device_settings
+            SET last_verified_at = ?2, size_on_device = ?3
+          WHERE device_serial = ?1",
+        params![stable_id, verified_at, size],
+    )?;
+    Ok(())
+}
+
+pub fn rename_device(
+    db: &crate::db::Db,
+    stable_id: &str,
+    local_name: &str,
+) -> Result<(), DeviceSettingsError> {
+    let local_name = local_name.trim();
+    if local_name.is_empty() {
+        return Err(DeviceSettingsError::EmptyDeviceName);
+    }
+    db.conn().execute(
+        "UPDATE device_settings SET device_name = ?2 WHERE device_serial = ?1",
+        params![stable_id, local_name],
+    )?;
+    Ok(())
+}
+
+pub fn forget_device(db: &crate::db::Db, stable_id: &str) -> Result<(), DeviceSettingsError> {
+    let conn = db.conn();
+    let transaction = conn.unchecked_transaction()?;
+    transaction.execute(
+        "DELETE FROM sync_events
+          WHERE run_id IN (SELECT id FROM sync_runs WHERE device_serial = ?1)",
+        [stable_id],
+    )?;
+    for (table, column) in [
+        ("device_files", "device_serial"),
+        ("device_playlists", "device_serial"),
+        ("device_sync_targets", "device_serial"),
+        ("sync_runs", "device_serial"),
+        ("podcast_subscription_devices", "device_id"),
+        ("device_settings", "device_serial"),
+    ] {
+        transaction.execute(
+            &format!("DELETE FROM {table} WHERE {column} = ?1"),
+            [stable_id],
+        )?;
+    }
+    transaction.commit()?;
+    Ok(())
+}
+
+/// Moves every persisted device-owned row off a volatile legacy MTP URI once
+/// the same connection exposes a stable identity. A pre-existing stable row
+/// wins without merging guesses; the transaction then leaves the legacy row
+/// intact for an explicit later decision.
+pub fn rekey_legacy_device(
+    db: &crate::db::Db,
+    legacy_uri: &str,
+    stable_id: &str,
+) -> Result<LegacyDeviceRekey, rusqlite::Error> {
+    let conn = db.conn();
+    let exact_legacy_exists = conn.query_row(
+        "SELECT EXISTS(
+           SELECT 1 FROM device_settings WHERE device_serial = ?1
+         )",
+        [legacy_uri],
+        |row| row.get::<_, bool>(0),
+    )?;
+    let legacy_key = if exact_legacy_exists {
+        legacy_uri.to_string()
+    } else {
+        let mut statement = conn.prepare(
+            "SELECT device_serial
+               FROM device_settings
+              WHERE device_serial LIKE 'mtp://%'
+              ORDER BY device_serial
+              LIMIT 2",
+        )?;
+        let candidates = statement
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        match candidates.as_slice() {
+            [] => return Ok(LegacyDeviceRekey::NoLegacyRow),
+            [only] => only.clone(),
+            _ => return Ok(LegacyDeviceRekey::AmbiguousLegacyRows),
+        }
+    };
+    let stable_exists = conn.query_row(
+        "SELECT EXISTS(
+           SELECT 1 FROM device_settings WHERE device_serial = ?1
+         )",
+        [stable_id],
+        |row| row.get::<_, bool>(0),
+    )?;
+    if stable_exists {
+        return Ok(LegacyDeviceRekey::StableKeyAlreadyExists);
+    }
+
+    let transaction = conn.unchecked_transaction()?;
+    for (table, column) in [
+        ("device_files", "device_serial"),
+        ("device_playlists", "device_serial"),
+        ("device_sync_targets", "device_serial"),
+        ("sync_runs", "device_serial"),
+        ("podcast_subscription_devices", "device_id"),
+        ("device_settings", "device_serial"),
+    ] {
+        transaction.execute(
+            &format!("UPDATE {table} SET {column} = ?2 WHERE {column} = ?1"),
+            params![legacy_key, stable_id],
+        )?;
+    }
+    transaction.commit()?;
+    Ok(LegacyDeviceRekey::Rekeyed)
 }
 
 pub fn load_or_create_settings(
@@ -107,6 +317,7 @@ pub fn load_or_create_settings(
     serial: &str,
     name: &str,
 ) -> Result<DeviceSettings, DeviceSettingsError> {
+    ensure_remembered_device_columns(db)?;
     let conn = db.conn();
     let existing = conn
         .query_row(
@@ -159,17 +370,9 @@ pub fn load_or_create_settings(
         "INSERT INTO device_settings (device_serial, device_name) VALUES (?1, ?2)",
         params![serial, name],
     )?;
-    Ok(DeviceSettings {
-        device_serial: serial.to_string(),
-        device_name: name.to_string(),
-        selection: DeviceSelection::default(),
-        profile: TransferProfile::default(),
-        opus_bitrate: 0,
-        ratings_back: false,
-        remove_deleted: true,
-        sync_automatically: true,
-        prepare_before_sync: true,
-    })
+    let mut settings = DeviceSettings::transient(serial, name);
+    settings.sync_automatically = true;
+    Ok(settings)
 }
 
 pub fn save_settings(
@@ -404,8 +607,18 @@ fn resolve_selection_track_ids_in(
     conn: &Connection,
     selection: &DeviceSelection,
 ) -> Result<Vec<i64>, rusqlite::Error> {
+    if selection == &DeviceSelection::EntireLibrary {
+        return crate::queries::query_track_ids_in(
+            conn,
+            &ViewSource::Library,
+            "title",
+            "asc",
+            "",
+            &[],
+        );
+    }
     let DeviceSelection::Sources(sources) = selection else {
-        return Ok(Vec::new());
+        unreachable!("the entire-library case returned above");
     };
     let mut seen = HashSet::new();
     let mut selected = Vec::new();
@@ -425,7 +638,7 @@ fn resolve_selection_track_ids_in(
 
 fn encode_selection(selection: &DeviceSelection) -> Result<String, serde_json::Error> {
     match selection {
-        DeviceSelection::EntireLibrary => serde_json::to_string(&Vec::<String>::new()),
+        DeviceSelection::EntireLibrary => serde_json::to_string("entire_library"),
         DeviceSelection::Sources(sources) => {
             let values = sources
                 .iter()
@@ -439,7 +652,7 @@ fn encode_selection(selection: &DeviceSelection) -> Result<String, serde_json::E
 fn decode_selection(value: &str) -> Result<DeviceSelection, serde_json::Error> {
     let decoded = serde_json::from_str::<serde_json::Value>(value)?;
     if decoded.as_str() == Some("entire_library") {
-        return Ok(DeviceSelection::Sources(Vec::new()));
+        return Ok(DeviceSelection::EntireLibrary);
     }
     let Some(values) = decoded.as_array() else {
         return Err(unknown_selection_error());
@@ -474,6 +687,9 @@ fn sqlite_size(value: u64) -> Result<i64, DeviceSettingsError> {
 }
 
 fn source_columns(source: &SelectionSource) -> (&'static str, i64) {
+    if source == &super::selection::EVERYTHING_SOURCE {
+        return ("library", 0);
+    }
     match source {
         SelectionSource::Playlist(id) => ("playlist", *id),
         SelectionSource::Smart(id) => ("smart", *id),
@@ -482,6 +698,7 @@ fn source_columns(source: &SelectionSource) -> (&'static str, i64) {
 
 fn decode_source_columns(kind: &str, id: i64) -> Result<SelectionSource, rusqlite::Error> {
     let source = match kind {
+        "library" if id == 0 => super::selection::EVERYTHING_SOURCE,
         "playlist" if id > 0 => SelectionSource::Playlist(id),
         "smart" if id > 0 => SelectionSource::Smart(id),
         _ => {

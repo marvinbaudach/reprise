@@ -9,6 +9,7 @@ fn conn() -> Db {
     // These tests exercise fetch/parse/store logic, not the NET-1a gate
     // itself (see the dedicated `net_1a_*` tests below), so YouTube starts
     // enabled here.
+    crate::online_sources::set_enabled(&conn, true).unwrap();
     crate::modules::set_enabled(&conn, &crate::modules::YOUTUBE_MODULE, true).unwrap();
     conn
 }
@@ -18,11 +19,17 @@ struct NeverYoutube;
 
 impl YoutubeFetcher for NeverYoutube {
     fn list(&self, _: &str, _: usize) -> Result<ParsedFeed, PodcastError> {
-        Err(PodcastError::YtDlp("unexpected YouTube call".to_owned()))
+        Err(PodcastError::YtDlpFailure {
+            kind: crate::podcasts::ytdlp::YtDlpFailureKind::Other,
+            stderr: "unexpected YouTube call".to_owned(),
+        })
     }
 
     fn download(&self, _: &str, _: &Path) -> Result<(), PodcastError> {
-        Err(PodcastError::YtDlp("unexpected YouTube call".to_owned()))
+        Err(PodcastError::YtDlpFailure {
+            kind: crate::podcasts::ytdlp::YtDlpFailureKind::Other,
+            stderr: "unexpected YouTube call".to_owned(),
+        })
     }
 }
 
@@ -313,11 +320,17 @@ struct UnresolvableHandle;
 
 impl YoutubeFetcher for UnresolvableHandle {
     fn resolve_channel_url(&self, _: &str) -> Result<Option<String>, PodcastError> {
-        Err(PodcastError::YtDlp("yt-dlp unavailable".to_owned()))
+        Err(PodcastError::YtDlpFailure {
+            kind: crate::podcasts::ytdlp::YtDlpFailureKind::HelperMissing,
+            stderr: "yt-dlp unavailable".to_owned(),
+        })
     }
 
     fn list(&self, _: &str, _: usize) -> Result<ParsedFeed, PodcastError> {
-        Err(PodcastError::YtDlp("yt-dlp unavailable".to_owned()))
+        Err(PodcastError::YtDlpFailure {
+            kind: crate::podcasts::ytdlp::YtDlpFailureKind::HelperMissing,
+            stderr: "yt-dlp unavailable".to_owned(),
+        })
     }
 
     fn download(&self, _: &str, _: &Path) -> Result<(), PodcastError> {
@@ -365,7 +378,7 @@ impl FeedFetcher for PlainRssFeed {
 fn a_channel_that_cannot_be_resolved_fails_alone_and_never_aborts_the_batch() {
     let conn = conn();
     crate::modules::set_enabled(&conn, &crate::modules::PODCASTS_MODULE, true).unwrap();
-    store::add_or_restore(
+    let youtube_id = store::add_or_restore(
         &conn,
         &NewSubscription {
             kind: PodcastKind::Youtube,
@@ -404,7 +417,15 @@ fn a_channel_that_cannot_be_resolved_fails_alone_and_never_aborts_the_batch() {
     .expect("one unresolvable channel must not abort the whole refresh");
 
     assert_eq!(summary.attempted, 2);
-    assert_eq!(summary.failed, 1);
+    assert_eq!(
+        summary.failures,
+        [RefreshFailure {
+            subscription_id: youtube_id,
+            title: "Channel".to_owned(),
+            kind: crate::source_error::SourceErrorKind::HelperOutdated,
+        }]
+    );
+    assert_eq!(summary.failed, summary.failures.len());
     assert_eq!(summary.episodes_inserted, 1);
     assert_eq!(
         super::super::query::episodes_for_subscription(&conn, rss_id)
@@ -610,7 +631,7 @@ fn net_1a_disabled_youtube_module_skips_refresh_without_fetching() {
     )
     .unwrap();
 
-    assert_eq!(summary.failed, 1);
+    assert_eq!(summary.failures.len(), 1);
     assert_eq!(
         store::subscription(&conn, id)
             .unwrap()

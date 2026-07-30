@@ -7,6 +7,7 @@ use std::rc::Rc;
 use chrono::Local;
 use gtk4::glib::variant::ToVariant;
 use gtk4::prelude::*;
+use reprise_core::connectivity::Connectivity;
 use reprise_core::podcasts::download_state::DownloadState;
 use reprise_core::podcasts::{EpisodeRow, PodcastKind, SourceGroup};
 
@@ -18,11 +19,13 @@ use super::podcasts_presentation::{
 use super::podcasts_row_interaction::{
     episode_thumbnail, install_row_activation, reveal_unsubscribe_on_hover_or_focus,
 };
+use super::podcasts_row_state::{download_status, RowNetworkState};
 use super::podcasts_title::TitleParts;
 use crate::ui::strings;
 
 #[derive(Clone)]
 pub(super) struct DownloadRowWidgets {
+    pub(super) root: gtk4::Box,
     pub(super) status: gtk4::Box,
     pub(super) action: gtk4::Button,
 }
@@ -38,6 +41,8 @@ struct GroupRenderContext<'a> {
     /// &modules::SOURCE_IMAGES_MODULE)`, computed once per render pass by
     /// the caller — this module never reads settings itself.
     images_allowed: bool,
+    connectivity: Connectivity,
+    unavailable_episode: Option<i64>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -51,6 +56,8 @@ pub(super) fn replace(
     connected_devices: &[podcasts_context_menu::PodcastSyncDevice],
     selected_devices: &BTreeMap<i64, Vec<String>>,
     images_allowed: bool,
+    connectivity: Connectivity,
+    unavailable_episode: Option<i64>,
 ) -> BTreeMap<i64, DownloadRowWidgets> {
     while let Some(child) = container.first_child() {
         container.remove(&child);
@@ -64,6 +71,8 @@ pub(super) fn replace(
         connected_devices,
         selected_devices,
         images_allowed,
+        connectivity,
+        unavailable_episode,
     };
     for rendered in groups {
         container.append(&build_group(rendered, &context, &mut download_widgets));
@@ -142,6 +151,10 @@ fn build_group(
             &state,
             download_widgets,
             context.images_allowed,
+            RowNetworkState {
+                connectivity: context.connectivity,
+                unavailable_now: context.unavailable_episode == Some(episode.id),
+            },
         ));
     }
     if visible_count < group.episodes.len() {
@@ -258,6 +271,7 @@ fn episode_row(
     download_state: &DownloadState,
     download_widgets: &mut BTreeMap<i64, DownloadRowWidgets>,
     images_allowed: bool,
+    network: RowNetworkState,
 ) -> gtk4::Widget {
     let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
     root.add_css_class("reprise-podcast-episode-row");
@@ -313,10 +327,17 @@ fn episode_row(
     download.set_action_name(Some("podcasts.toggle-download"));
     download.set_action_target_value(Some(&row.id.to_variant()));
     let widgets = DownloadRowWidgets {
+        root: root.clone(),
         status,
         action: download.clone(),
     };
     update_download_state(&widgets, download_state);
+    update_network_state(
+        &widgets,
+        download_state,
+        network.connectivity,
+        network.unavailable_now,
+    );
     download_widgets.insert(row.id, widgets);
     root.append(&download);
 
@@ -330,105 +351,7 @@ fn episode_row(
     root.upcast()
 }
 
-pub(super) fn update_download_state(widgets: &DownloadRowWidgets, state: &DownloadState) {
-    while let Some(child) = widgets.status.first_child() {
-        widgets.status.remove(&child);
-    }
-    widgets.status.append(&download_status(state));
-    widgets.action.set_icon_name(match state {
-        DownloadState::Downloaded { .. } => "object-select-symbolic",
-        // `POD-13`: a distinct retry glyph, not the plain first-download
-        // icon — the action is "try again", not "download for the first
-        // time".
-        DownloadState::Failed { .. } => "view-refresh-symbolic",
-        _ => "folder-download-symbolic",
-    });
-    widgets
-        .action
-        .set_tooltip_text(Some(&strings::text(match state {
-            DownloadState::Downloaded { .. } => strings::PODCAST_DELETE_DOWNLOAD,
-            DownloadState::Failed { .. } => strings::PODCAST_RETRY_DOWNLOAD,
-            _ => strings::PODCAST_DOWNLOAD,
-        })));
-    // `POD-13`: a failed download must offer a clean retry — the action
-    // stays sensitive (only an in-flight Queued/Downloading state disables
-    // it), and clicking it re-enters `toggle_download`'s plain download
-    // branch (a Failed episode never has `downloaded_path` set), which runs
-    // the exact same queued/downloading/downloaded pipeline as a first
-    // attempt with a fresh provider call — never a cached first failure.
-    widgets.action.set_sensitive(!matches!(
-        state,
-        DownloadState::Queued | DownloadState::Downloading { .. }
-    ));
-}
-
-fn download_status(state: &DownloadState) -> gtk4::Widget {
-    let root = gtk4::Box::new(gtk4::Orientation::Vertical, 3);
-    if matches!(state, DownloadState::NotDownloaded) {
-        return root.upcast();
-    }
-    root.set_size_request(110, -1);
-
-    let label = gtk4::Label::new(None);
-    label.set_xalign(1.0);
-    label.add_css_class("caption");
-    label.add_css_class("dim-label");
-    match state {
-        DownloadState::NotDownloaded => unreachable!("handled before building the status label"),
-        DownloadState::Queued => {
-            label.set_text(&strings::text(strings::PODCAST_DOWNLOAD_QUEUED));
-        }
-        DownloadState::Downloading {
-            received_bytes,
-            total_bytes,
-        } => {
-            label.set_text(&format!(
-                "{} · {}",
-                strings::text(strings::PODCAST_DOWNLOADING),
-                strings::compact_file_size(*received_bytes)
-            ));
-            match total_bytes {
-                Some(total) if *total > 0 => {
-                    let progress = gtk4::ProgressBar::new();
-                    progress.set_fraction((*received_bytes as f64 / *total as f64).clamp(0.0, 1.0));
-                    root.append(&progress);
-                }
-                _ => {
-                    let spinner = gtk4::Spinner::new();
-                    spinner.start();
-                    spinner.set_halign(gtk4::Align::End);
-                    root.append(&spinner);
-                }
-            }
-        }
-        DownloadState::Downloaded { bytes } => {
-            // POD-11: the file exists, so its compact, truthful size is shown.
-            label.set_text(&strings::compact_file_size(*bytes));
-        }
-        DownloadState::Missing => {
-            label.set_text(&strings::text(strings::PODCAST_DOWNLOAD_MISSING));
-        }
-        DownloadState::Failed { message } => {
-            // `POD-13`: the classified reason (never the raw provider
-            // error — `message` is already sanitized before it reaches
-            // here) is a second, always-visible label, not a tooltip. A
-            // tooltip is a pointer-only affordance: it never reaches a
-            // keyboard or touch user, which this repo's accessibility and
-            // input-parity gates both treat as a defect.
-            label.set_text(&strings::text(strings::PODCAST_DOWNLOAD_FAILED));
-            let reason = gtk4::Label::new(Some(message));
-            reason.set_xalign(1.0);
-            reason.set_wrap(true);
-            reason.set_wrap_mode(gtk4::pango::WrapMode::WordChar);
-            reason.set_justify(gtk4::Justification::Right);
-            reason.add_css_class("caption");
-            reason.add_css_class("dim-label");
-            root.append(&reason);
-        }
-    }
-    root.prepend(&label);
-    root.upcast()
-}
+pub(super) use super::podcasts_row_state::{update_download_state, update_network_state};
 
 #[cfg(test)]
 mod tests {
@@ -499,6 +422,10 @@ mod tests {
                 &DownloadState::NotDownloaded,
                 &mut widgets,
                 false,
+                RowNetworkState {
+                    connectivity: Connectivity::Online,
+                    unavailable_now: false,
+                },
             );
             let buttons = descendants(&rendered)
                 .into_iter()
@@ -570,6 +497,8 @@ mod tests {
             &[],
             &BTreeMap::new(),
             false,
+            Connectivity::Online,
+            None,
         );
 
         let rows = container
@@ -626,6 +555,8 @@ mod tests {
             &[],
             &BTreeMap::new(),
             false,
+            Connectivity::Online,
+            None,
         );
         assert!(widgets.is_empty());
         assert!(container.first_child().is_some());
@@ -752,6 +683,7 @@ mod tests {
     fn pod_13_a_failed_download_offers_a_sensitive_retry_action() {
         gtk4::init().unwrap();
         let widgets = DownloadRowWidgets {
+            root: gtk4::Box::new(gtk4::Orientation::Horizontal, 0),
             status: gtk4::Box::new(gtk4::Orientation::Vertical, 0),
             action: gtk4::Button::new(),
         };

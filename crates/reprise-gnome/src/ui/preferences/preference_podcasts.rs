@@ -1,4 +1,4 @@
-//! Podcasts block rows for the Online sources page (`SET-8`).
+//! Podcasts child rows for the Plugins-page expander (`SET-10`).
 //!
 //! YouTube's rows live in the sibling `preference_youtube` module — YouTube
 //! is a peer source with its own module (issue #96), not a Podcasts
@@ -24,9 +24,9 @@ pub(in crate::ui) struct PodcastPreferenceRows {
 }
 
 impl PodcastPreferenceRows {
-    pub(in crate::ui) fn add_to(&self, group: &adw::PreferencesGroup) {
+    pub(in crate::ui) fn add_to(&self, expander: &adw::ExpanderRow) {
         for row in &self.inner.rows {
-            group.add(row);
+            expander.add_row(row);
         }
     }
 

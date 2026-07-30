@@ -15,79 +15,16 @@ use serde_json::Value;
 #[path = "ytdlp_range.rs"]
 mod range;
 
+#[path = "ytdlp_failure.rs"]
+mod failure;
+
+pub use failure::YtDlpFailureKind;
+use failure::*;
+
 pub use super::ytdlp_search::YtDlpChannel;
 use super::PodcastError;
 
-const VERIFICATION_MESSAGE: &str =
-    "YouTube requires verification — try again later or use another network";
-const RATE_LIMIT_MESSAGE: &str = "YouTube is rate-limiting requests — try again later";
-const UNSUPPORTED_URL_MESSAGE: &str = "This YouTube URL is not supported";
-const ACCESS_REFUSED_MESSAGE: &str = "YouTube refused the request — try again later";
-const UNREACHABLE_MESSAGE: &str = "YouTube could not be reached — check your connection";
-const AUDIO_UNAVAILABLE_MESSAGE: &str = "YouTube did not provide playable audio for this video";
-const VIDEO_UNAVAILABLE_MESSAGE: &str = "This YouTube video is unavailable or private";
-const EXTRACTOR_OUTDATED_MESSAGE: &str =
-    "YouTube changed its response — update yt-dlp and try again";
-const CONVERSION_UNAVAILABLE_MESSAGE: &str =
-    "Audio conversion is unavailable — install or repair FFmpeg";
-const INVALID_RESPONSE_MESSAGE: &str =
-    "YouTube returned an unreadable response — update yt-dlp and try again";
-const DOWNLOAD_SAVE_MESSAGE: &str =
-    "YouTube download could not be saved — check available space and permissions";
-const MISSING_MESSAGE: &str = "YouTube component is unavailable — reinstall or repair Reprise";
-const START_FAILED_MESSAGE: &str =
-    "YouTube component could not start — check its path and permissions";
-const GENERIC_FAILURE: &str = "YouTube request failed — check the application log";
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum YtDlpFailureKind {
-    VerificationRequired,
-    RateLimited,
-    UnsupportedUrl,
-    AccessRefused,
-    Unreachable,
-    AudioUnavailable,
-    VideoUnavailable,
-    ExtractorOutdated,
-    ConversionUnavailable,
-    DownloadStorage,
-    Other,
-}
-
-impl YtDlpFailureKind {
-    const fn diagnostic_name(self) -> &'static str {
-        match self {
-            Self::VerificationRequired => "verification_required",
-            Self::RateLimited => "rate_limited",
-            Self::UnsupportedUrl => "unsupported_url",
-            Self::AccessRefused => "access_refused",
-            Self::Unreachable => "unreachable",
-            Self::AudioUnavailable => "audio_unavailable",
-            Self::VideoUnavailable => "video_unavailable",
-            Self::ExtractorOutdated => "extractor_outdated",
-            Self::ConversionUnavailable => "conversion_unavailable",
-            Self::DownloadStorage => "download_storage",
-            Self::Other => "other",
-        }
-    }
-
-    const fn user_message(self) -> &'static str {
-        match self {
-            Self::VerificationRequired => VERIFICATION_MESSAGE,
-            Self::RateLimited => RATE_LIMIT_MESSAGE,
-            Self::UnsupportedUrl => UNSUPPORTED_URL_MESSAGE,
-            Self::AccessRefused => ACCESS_REFUSED_MESSAGE,
-            Self::Unreachable => UNREACHABLE_MESSAGE,
-            Self::AudioUnavailable => AUDIO_UNAVAILABLE_MESSAGE,
-            Self::VideoUnavailable => VIDEO_UNAVAILABLE_MESSAGE,
-            Self::ExtractorOutdated => EXTRACTOR_OUTDATED_MESSAGE,
-            Self::ConversionUnavailable => CONVERSION_UNAVAILABLE_MESSAGE,
-            Self::DownloadStorage => DOWNLOAD_SAVE_MESSAGE,
-            Self::Other => GENERIC_FAILURE,
-        }
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct YtDlpTimeouts {
@@ -431,7 +368,7 @@ pub(super) fn collect_output(
                 stream,
                 "yt-dlp output reader disconnected"
             );
-            Err(PodcastError::YtDlp(GENERIC_FAILURE.to_string()))
+            Err(diagnostic_error(YtDlpFailureKind::Other, GENERIC_FAILURE))
         }
     }
 }
@@ -474,9 +411,9 @@ pub(super) fn terminate_process_group(_process_group: u32) {}
 
 pub(super) fn map_spawn_error(error: &std::io::Error) -> PodcastError {
     if error.kind() == std::io::ErrorKind::NotFound {
-        PodcastError::YtDlp(MISSING_MESSAGE.to_string())
+        diagnostic_error(YtDlpFailureKind::HelperMissing, MISSING_MESSAGE)
     } else {
-        PodcastError::YtDlp(START_FAILED_MESSAGE.to_string())
+        diagnostic_error(YtDlpFailureKind::HelperStartFailed, START_FAILED_MESSAGE)
     }
 }
 
@@ -526,7 +463,7 @@ pub(super) fn output_read_error(
         error_kind = ?error.kind(),
         "could not read yt-dlp output"
     );
-    PodcastError::YtDlp(GENERIC_FAILURE.to_string())
+    diagnostic_error(YtDlpFailureKind::Other, GENERIC_FAILURE)
 }
 
 pub(super) fn runtime_error(
@@ -540,7 +477,7 @@ pub(super) fn runtime_error(
         error_kind = ?error.kind(),
         "yt-dlp operation could not be completed"
     );
-    PodcastError::YtDlp(GENERIC_FAILURE.to_string())
+    diagnostic_error(YtDlpFailureKind::Other, GENERIC_FAILURE)
 }
 
 fn response_error(operation: &'static str) -> PodcastError {
@@ -549,7 +486,10 @@ fn response_error(operation: &'static str) -> PodcastError {
         failure_kind = "response_invalid",
         "yt-dlp response could not be parsed"
     );
-    PodcastError::YtDlp(INVALID_RESPONSE_MESSAGE.to_string())
+    diagnostic_error(
+        YtDlpFailureKind::ResponseUnreadable,
+        INVALID_RESPONSE_MESSAGE,
+    )
 }
 
 fn audio_unavailable_error(operation: &'static str) -> PodcastError {
@@ -558,7 +498,10 @@ fn audio_unavailable_error(operation: &'static str) -> PodcastError {
         failure_kind = "audio_unavailable",
         "yt-dlp response omitted playable audio"
     );
-    PodcastError::YtDlp(AUDIO_UNAVAILABLE_MESSAGE.to_string())
+    diagnostic_error(
+        YtDlpFailureKind::AudioUnavailable,
+        AUDIO_UNAVAILABLE_MESSAGE,
+    )
 }
 
 pub(super) fn download_finalize_error() -> PodcastError {
@@ -567,7 +510,7 @@ pub(super) fn download_finalize_error() -> PodcastError {
         failure_kind = "finalize_failed",
         "yt-dlp download could not be finalized"
     );
-    PodcastError::YtDlp(DOWNLOAD_SAVE_MESSAGE.to_string())
+    diagnostic_error(YtDlpFailureKind::DownloadStorage, DOWNLOAD_SAVE_MESSAGE)
 }
 
 pub(super) fn error_from_status(
@@ -575,14 +518,72 @@ pub(super) fn error_from_status(
     status: ExitStatus,
     stderr: &[u8],
 ) -> PodcastError {
-    let failure = classify_failure(&String::from_utf8_lossy(stderr));
+    let stderr = String::from_utf8_lossy(stderr);
+    let failure = classify_failure(&stderr);
     tracing::warn!(
         operation,
         failure_kind = failure.diagnostic_name(),
         exit_code = status.code().unwrap_or(-1),
         "yt-dlp operation failed"
     );
-    PodcastError::YtDlp(failure.user_message().to_string())
+    diagnostic_error(failure, &stderr)
+}
+
+fn diagnostic_error(kind: YtDlpFailureKind, diagnostic: &str) -> PodcastError {
+    PodcastError::YtDlpFailure {
+        kind,
+        stderr: sanitize_diagnostic(diagnostic),
+    }
+}
+
+fn sanitize_diagnostic(stderr: &str) -> String {
+    stderr
+        .split_whitespace()
+        .map(|token| {
+            let normalized = token.to_ascii_lowercase();
+            if normalized.contains("http://")
+                || normalized.contains("https://")
+                || normalized.contains("file://")
+            {
+                "[redacted URL]"
+            } else if is_private_path(token) {
+                "[redacted path]"
+            } else if contains_secret(&normalized) {
+                "[redacted secret]"
+            } else {
+                token
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn is_private_path(token: &str) -> bool {
+    let token = token.trim_start_matches(['\'', '"', '(', '[', '{']);
+    token.starts_with('/')
+        || (token.len() >= 3
+            && token.as_bytes()[0].is_ascii_alphabetic()
+            && token.as_bytes()[1] == b':'
+            && matches!(token.as_bytes()[2], b'/' | b'\\'))
+}
+
+fn contains_secret(normalized: &str) -> bool {
+    const SECRET_KEYS: [&str; 8] = [
+        "token",
+        "signature",
+        "sig",
+        "credential",
+        "authorization",
+        "auth",
+        "cookie",
+        "key",
+    ];
+    let normalized = normalized.trim_start_matches(['\'', '"', '(', '[', '{', '?', '&', '-', ':']);
+    SECRET_KEYS.iter().any(|key| {
+        [format!("{key}="), format!("{key}:")]
+            .iter()
+            .any(|marker| normalized.contains(marker))
+    }) || normalized.contains("akia")
 }
 
 fn output_from_status(
@@ -605,39 +606,49 @@ pub(super) fn finalize_download(stdout: &str, destination: &Path) -> Result<(), 
         .find(|line| !line.trim().is_empty())
         .map(PathBuf::from)
         .ok_or_else(|| {
-            PodcastError::YtDlp("yt-dlp did not report the downloaded file".to_string())
+            diagnostic_error(
+                YtDlpFailureKind::DownloadStorage,
+                "yt-dlp did not report the downloaded file",
+            )
         })?;
     let produced_is_regular_file = produced
         .symlink_metadata()
         .is_ok_and(|metadata| metadata.file_type().is_file());
     if !produced_is_regular_file {
-        return Err(PodcastError::YtDlp(format!(
-            "yt-dlp did not create {}",
-            produced.display()
-        )));
+        return Err(diagnostic_error(
+            YtDlpFailureKind::DownloadStorage,
+            &format!("yt-dlp did not create {}", produced.display()),
+        ));
     }
     if produced == destination {
         return Ok(());
     }
     if destination.exists() {
-        return Err(PodcastError::YtDlp(format!(
-            "download destination already exists: {}",
-            destination.display()
-        )));
+        return Err(diagnostic_error(
+            YtDlpFailureKind::DownloadStorage,
+            &format!(
+                "download destination already exists: {}",
+                destination.display()
+            ),
+        ));
     }
 
     let produced_parent = canonical_parent(&produced)?;
     let destination_parent = canonical_parent(destination)?;
     if produced_parent != destination_parent {
-        return Err(PodcastError::YtDlp(
-            "yt-dlp reported a file outside the download destination".to_string(),
+        return Err(diagnostic_error(
+            YtDlpFailureKind::DownloadStorage,
+            "yt-dlp reported a file outside the download destination",
         ));
     }
     std::fs::rename(&produced, destination).map_err(|error| {
-        PodcastError::YtDlp(format!(
-            "could not finalize podcast download at {}: {error}",
-            destination.display()
-        ))
+        diagnostic_error(
+            YtDlpFailureKind::DownloadStorage,
+            &format!(
+                "could not finalize podcast download at {}: {error}",
+                destination.display()
+            ),
+        )
     })
 }
 
@@ -646,9 +657,10 @@ fn canonical_parent(path: &Path) -> Result<PathBuf, PodcastError> {
         .unwrap_or_else(|| Path::new("."))
         .canonicalize()
         .map_err(|error| {
-            PodcastError::YtDlp(format!(
-                "could not resolve podcast download directory: {error}"
-            ))
+            diagnostic_error(
+                YtDlpFailureKind::DownloadStorage,
+                &format!("could not resolve podcast download directory: {error}"),
+            )
         })
 }
 

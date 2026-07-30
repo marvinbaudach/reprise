@@ -11,6 +11,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
+use crate::source_error::{SourceError, SourceErrorKind};
+
 const API_URL: &str = "https://lrclib.net/api/get";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 const MAX_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
@@ -85,6 +87,19 @@ pub enum LyricsError {
     Temporary,
     #[error("the lyrics service returned an invalid response")]
     InvalidResponse,
+}
+
+impl From<&LyricsError> for SourceErrorKind {
+    fn from(_error: &LyricsError) -> Self {
+        Self::Unreachable
+    }
+}
+
+impl From<LyricsError> for SourceError {
+    fn from(error: LyricsError) -> Self {
+        let kind = SourceErrorKind::from(&error);
+        Self::new(kind, "lyrics request failed", error.to_string())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -472,4 +487,22 @@ fn unix_timestamp() -> i64 {
         .as_secs()
         .try_into()
         .unwrap_or(i64::MAX)
+}
+
+#[cfg(test)]
+mod source_error_tests {
+    use super::LyricsError;
+    use crate::source_error::{SourceError, SourceErrorKind};
+
+    #[test]
+    fn lyrics_failures_expose_technical_context_only_through_details() {
+        let error = SourceError::from(LyricsError::InvalidResponse);
+
+        assert_eq!(error.kind(), &SourceErrorKind::Unreachable);
+        assert!(!error.to_string().contains("invalid response"));
+        assert!(error
+            .details("2026-07-30 14:12")
+            .to_string()
+            .contains("lyrics service returned an invalid response"));
+    }
 }

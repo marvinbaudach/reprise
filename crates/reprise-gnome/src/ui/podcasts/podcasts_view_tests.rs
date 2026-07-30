@@ -356,7 +356,7 @@ fn pod_13_activating_the_retry_action_runs_a_fresh_download_attempt() {
     }
 }
 
-/// `POD-16`: the footer carries the library's status line, and on a load
+/// `POD-19`: the footer carries the library's status line, and on a load
 /// failure it used to carry `DbError`'s `Display` instead. For a rusqlite
 /// input error that renders as the message plus the entire failing statement
 /// and a byte offset, which is what a real installation showed on both the
@@ -366,7 +366,7 @@ fn pod_13_activating_the_retry_action_runs_a_fresh_download_attempt() {
 /// statement is asserted separately.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn pod_16_an_unreadable_library_says_so_without_printing_the_query() {
+fn pod_19_an_unreadable_library_says_so_without_printing_the_query() {
     gtk4::init().unwrap();
     // A schema the subscription query cannot read — the shape the reported
     // failure had. Seeded through the fixture's own connection, since `Db`

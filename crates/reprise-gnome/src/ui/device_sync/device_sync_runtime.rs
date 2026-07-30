@@ -10,21 +10,26 @@ use std::sync::Arc;
 
 use gtk4::gio;
 use gtk4::gio::prelude::*;
+use reprise_core::connectivity::Connectivity;
 use reprise_core::db::Db;
 use reprise_core::device_sync::browser::StorageOption;
 use reprise_core::device_sync::device_view::{
     category_bytes, project_category_content_row, project_contents_state,
     project_device_category_reading,
 };
-use reprise_core::device_sync::settings::{load_or_create_settings, mark_device_playlists_synced};
+use reprise_core::device_sync::settings::{
+    forget_device, mark_device_playlists_synced, record_device_verification, rename_device,
+};
 use reprise_core::device_sync::{
-    aggregate_balance, load_or_create_targets, should_auto_start, AutoStartFacts, CategoryDiff,
-    CategoryReading, DeviceSelection, DeviceSettings, DeviceStorageInspection,
+    aggregate_balance, should_auto_start, AutoStartFacts, CategoryDiff, CategoryReading,
+    DeviceSelection, DeviceSessionState, DeviceSettings, DeviceStorageInspection,
     DeviceStorageSnapshot, ManagedDeviceFile, MirrorPlan, PodcastSelectionSummary, SelectionSource,
     StorageId, SyncPageState, SyncTarget, SyncTargetKind, YoutubeSelectionSummary,
 };
 use reprise_platform_linux::device_sync::{CopyOutcome, DeviceDescriptor, DeviceMonitor};
 use reprise_platform_linux::device_transfer::{TranscodeProfile, TranscodeRequest, TranscodedFile};
+
+use crate::ui::device_sync_strings;
 
 #[path = "device_sync_rate.rs"]
 pub(super) mod rate;
@@ -39,6 +44,7 @@ pub use types::*;
 struct DeviceState {
     descriptor: DeviceDescriptor,
     connected: bool,
+    session_state: DeviceSessionState,
     /// The run that currently owns this device, if any. Identity of this
     /// handle is what tells a superseded run to stop writing here.
     machine: Option<Rc<RefCell<reprise_core::device_sync::DeviceSyncMachine>>>,
@@ -69,6 +75,7 @@ struct DeviceState {
     resume_planned: bool,
     last_sync: Option<chrono::DateTime<chrono::Utc>>,
     verified_managed_track_count: Option<usize>,
+    size_on_device_bytes: Option<u64>,
     mtp_rate: MtpRateMeter,
     mirror_plan: MirrorPlan,
     podcast_plan: reprise_core::device_sync::podcasts::PodcastSyncPlan,
@@ -120,11 +127,22 @@ struct DeviceState {
 }
 
 impl DeviceState {
-    fn new(descriptor: DeviceDescriptor, settings: DeviceSettings) -> Self {
+    fn new(
+        descriptor: DeviceDescriptor,
+        settings: DeviceSettings,
+        targets: [SyncTarget; 3],
+        session_state: DeviceSessionState,
+    ) -> Self {
+        let sync_phase = if session_state.opens_session() {
+            PlannedSyncPhase::ComputingDelta
+        } else {
+            PlannedSyncPhase::Idle
+        };
         Self {
             history: Vec::new(),
             descriptor,
             connected: true,
+            session_state,
             machine: None,
             cancellable: None,
             storage: DeviceStorageSnapshot::default(),
@@ -136,14 +154,15 @@ impl DeviceState {
             scan_generation: 0,
             scan_error: None,
             ever_inspected: false,
-            targets: SyncTargetKind::ALL.map(SyncTarget::default_for),
+            targets,
             settings,
-            sync_phase: PlannedSyncPhase::ComputingDelta,
+            sync_phase,
             sync_error: None,
             planned_cancel: None,
             resume_planned: false,
             last_sync: None,
             verified_managed_track_count: None,
+            size_on_device_bytes: None,
             mtp_rate: MtpRateMeter::default(),
             mirror_plan: MirrorPlan::default(),
             podcast_plan: reprise_core::device_sync::podcasts::PodcastSyncPlan::default(),
@@ -169,10 +188,29 @@ impl DeviceState {
         }
     }
 
+    fn remembered(memory: memory::RememberedDeviceMemory) -> Self {
+        let mut state = Self::new(
+            memory.descriptor,
+            memory.settings,
+            memory.targets,
+            DeviceSessionState::Remembered,
+        );
+        state.connected = false;
+        state.sync_phase = PlannedSyncPhase::Idle;
+        state.last_sync = memory
+            .last_verified_at
+            .and_then(|timestamp| chrono::DateTime::from_timestamp(timestamp, 0));
+        state.size_on_device_bytes = memory.size_on_device_bytes;
+        state
+    }
+
     fn view(&self) -> DeviceView {
         let mut page = self.page.clone();
+        if !self.session_state.shows_diff() {
+            page.changes = Default::default();
+        }
         page.update_controls(
-            self.connected,
+            self.connected && self.session_state.opens_session(),
             !self.scanning
                 && self.scan_error.is_none()
                 && self.sync_phase != PlannedSyncPhase::ComputingDelta,
@@ -189,7 +227,14 @@ impl DeviceState {
         // `youtube_waiting`, both populated by `selection::select_episodes`
         // (`MTP-40`/`MTP-45`) in `recompute_delta_silent` from
         // `podcasts::query_selection_candidates_for_device`.
-        let category_readings = self.category_readings();
+        let category_readings = if self.session_state.shows_diff() {
+            self.category_readings()
+        } else {
+            std::array::from_fn(|index| {
+                let target = &self.targets[index];
+                project_device_category_reading(target, CategoryDiff::default())
+            })
+        };
         let device_bytes = [
             category_bytes(&self.managed_files),
             category_bytes(&self.youtube_files),
@@ -201,9 +246,13 @@ impl DeviceState {
         DeviceView {
             history: self.history.clone(),
             id: self.descriptor.id.clone(),
-            name: self.descriptor.name.clone(),
+            name: self.settings.device_name.clone(),
             icon: self.descriptor.icon.clone(),
             connected: self.connected,
+            rememberable: self.descriptor.persistent_id.is_some(),
+            memory_status: (self.connected && self.descriptor.persistent_id.is_none())
+                .then(device_sync_strings::unrememberable_device_status),
+            session_state: self.session_state.clone(),
             storage: self.storage.clone(),
             scan_error: self.scan_error.clone(),
             settings: self.settings.clone(),
@@ -211,6 +260,7 @@ impl DeviceState {
             sync_error: self.sync_error.clone(),
             last_sync: self.last_sync,
             verified_managed_track_count: self.verified_managed_track_count,
+            size_on_device_bytes: self.size_on_device_bytes,
             managed_track_count: self.managed_track_count,
             bytes_per_second: self.mtp_rate.bytes_per_second(),
             page,
@@ -271,6 +321,13 @@ pub struct DeviceSyncRuntime {
     /// — preparation then falls back to a plain sync, see
     /// `preparation::begin_prepared_sync`.
     preparation_downloader: RefCell<Option<Rc<dyn preparation::PreparationDownloader>>>,
+    /// `NET-3a`: explicit application belief, injected by
+    /// [`Self::set_connectivity`]. The runtime never polls the OS at the
+    /// preparation decision point.
+    connectivity: Cell<Connectivity>,
+    /// Metered is a separate injected fact because `Connectivity` only
+    /// distinguishes online from offline.
+    metered: Cell<bool>,
 }
 
 impl DeviceSyncRuntime {
@@ -282,15 +339,25 @@ impl DeviceSyncRuntime {
     }
 
     pub fn with_backend(conn: &Rc<Db>, backend: Rc<dyn DeviceBackend>) -> Rc<Self> {
+        let remembered = memory::load_remembered_device_memories(conn)
+            .unwrap_or_else(|error| {
+                tracing::warn!(%error, "could not load remembered device history");
+                Vec::new()
+            })
+            .into_iter()
+            .map(DeviceState::remembered)
+            .collect();
         let runtime = Rc::new(Self {
             conn: conn.clone(),
             backend,
-            device_states: RefCell::new(Vec::new()),
+            device_states: RefCell::new(remembered),
             subscribers: RefCell::new(HashMap::new()),
             next_subscription_id: Cell::new(1),
             weak_self: RefCell::new(Weak::new()),
             agent_subscription: RefCell::new(None),
             preparation_downloader: RefCell::new(None),
+            connectivity: Cell::new(Connectivity::default()),
+            metered: Cell::new(false),
         });
         runtime.weak_self.replace(Rc::downgrade(&runtime));
         runtime.apply_devices(runtime.backend.devices());
@@ -304,13 +371,13 @@ impl DeviceSyncRuntime {
     }
 
     pub fn devices(&self) -> Vec<DeviceView> {
-        let mut devices = self
+        let devices = self
             .device_states
             .borrow()
             .iter()
+            .filter(|state| state.connected || state.descriptor.persistent_id.is_some())
             .map(DeviceState::view)
             .collect::<Vec<_>>();
-        devices.sort_by(|left, right| left.name.cmp(&right.name));
         devices
     }
 
@@ -324,6 +391,53 @@ impl DeviceSyncRuntime {
             preparation::cancel_preparation(device);
         }
         self.notify();
+    }
+
+    pub fn rename_remembered_device(
+        self: &Rc<Self>,
+        device_id: &str,
+        local_name: &str,
+    ) -> Result<(), String> {
+        let rememberable = self
+            .device_states
+            .borrow()
+            .iter()
+            .find(|device| device.descriptor.id == device_id)
+            .is_some_and(|device| device.descriptor.persistent_id.is_some());
+        if !rememberable {
+            return Err("this device has no stable identity to rename".into());
+        }
+        rename_device(&self.conn, device_id, local_name).map_err(|error| error.to_string())?;
+        if let Some(device) = self
+            .device_states
+            .borrow_mut()
+            .iter_mut()
+            .find(|device| device.descriptor.id == device_id)
+        {
+            device.settings.device_name = local_name.trim().to_string();
+        }
+        self.notify();
+        Ok(())
+    }
+
+    pub fn forget_remembered_device(self: &Rc<Self>, device_id: &str) -> Result<(), String> {
+        let can_forget = self
+            .device_states
+            .borrow()
+            .iter()
+            .find(|device| device.descriptor.id == device_id)
+            .is_some_and(|device| {
+                !device.connected && device.session_state == DeviceSessionState::Remembered
+            });
+        if !can_forget {
+            return Err("disconnect the device before forgetting it".into());
+        }
+        forget_device(&self.conn, device_id).map_err(|error| error.to_string())?;
+        self.device_states
+            .borrow_mut()
+            .retain(|device| device.descriptor.id != device_id);
+        self.notify();
+        Ok(())
     }
 
     pub fn refresh_contents(self: &Rc<Self>, device_id: &str) {
@@ -363,20 +477,14 @@ impl DeviceSyncRuntime {
         // each of the three named targets (`MTP-38`) at the storage/path
         // the folder browser (`MTP-31`) most recently persisted for it —
         // never a stale or default guess (finding 1).
-        let targets = match load_or_create_targets(&self.conn, device_id) {
-            Ok(targets) => targets,
-            Err(error) => {
-                let mut devices = self.device_states.borrow_mut();
-                if let Some(device) = devices
-                    .iter_mut()
-                    .find(|device| device.descriptor.id == device_id)
-                {
-                    device.scan_error = Some(error.to_string());
-                }
-                drop(devices);
-                self.notify();
-                return;
-            }
+        let targets = self
+            .device_states
+            .borrow()
+            .iter()
+            .find(|device| device.descriptor.id == device_id)
+            .map(|device| device.targets.clone());
+        let Some(targets) = targets else {
+            return;
         };
         let request = {
             let mut devices = self.device_states.borrow_mut();
@@ -386,7 +494,7 @@ impl DeviceSyncRuntime {
             else {
                 return;
             };
-            if !device.connected {
+            if !device.connected || !device.session_state.opens_session() {
                 return;
             }
             device.scan_generation = device.scan_generation.saturating_add(1);
@@ -452,16 +560,46 @@ impl DeviceSyncRuntime {
                         if inspection_error.is_none() && planning_error.is_none() =>
                     {
                         let verified_at = chrono::Utc::now();
-                        if let Err(error) = mark_device_playlists_synced(
-                            &runtime.conn,
-                            &id,
-                            sources,
-                            verified_at.timestamp(),
-                        ) {
-                            playlist_timestamp_error = Some(format!(
-                                "could not record verified playlist synchronization: {error}"
-                            ));
-                            None
+                        let rememberable = runtime
+                            .device_states
+                            .borrow()
+                            .iter()
+                            .find(|device| device.descriptor.id == id)
+                            .is_some_and(|device| device.descriptor.persistent_id.is_some());
+                        if rememberable {
+                            let size_on_device = runtime
+                                .device_states
+                                .borrow()
+                                .iter()
+                                .find(|device| device.descriptor.id == id)
+                                .map_or(0, |device| {
+                                    category_bytes(&device.managed_files)
+                                        .saturating_add(category_bytes(&device.youtube_files))
+                                        .saturating_add(category_bytes(&device.podcast_files))
+                                });
+                            if let Err(error) = mark_device_playlists_synced(
+                                &runtime.conn,
+                                &id,
+                                sources,
+                                verified_at.timestamp(),
+                            ) {
+                                playlist_timestamp_error = Some(format!(
+                                    "could not record verified playlist synchronization: {error}"
+                                ));
+                                None
+                            } else if let Err(error) = record_device_verification(
+                                &runtime.conn,
+                                &id,
+                                verified_at.timestamp(),
+                                size_on_device,
+                            ) {
+                                playlist_timestamp_error = Some(format!(
+                                    "could not remember verified device state: {error}"
+                                ));
+                                None
+                            } else {
+                                Some(verified_at)
+                            }
                         } else {
                             Some(verified_at)
                         }
@@ -488,6 +626,11 @@ impl DeviceSyncRuntime {
                                 }
                                 device.last_sync = Some(verified_at);
                                 device.verified_managed_track_count = verified_track_count;
+                                device.size_on_device_bytes = Some(
+                                    category_bytes(&device.managed_files)
+                                        .saturating_add(category_bytes(&device.youtube_files))
+                                        .saturating_add(category_bytes(&device.podcast_files)),
+                                );
                                 device.sync_error = None;
                             }
                         }
@@ -591,88 +734,6 @@ impl DeviceSyncRuntime {
         }
     }
 
-    fn apply_devices(self: &Rc<Self>, descriptors: Vec<DeviceDescriptor>) {
-        let incoming = descriptors
-            .into_iter()
-            .map(|descriptor| (descriptor.id.clone(), descriptor))
-            .collect::<HashMap<_, _>>();
-        let mut refresh = Vec::new();
-        {
-            let mut states = self.device_states.borrow_mut();
-            for state in states.iter_mut() {
-                if incoming.contains_key(&state.descriptor.id) || !state.connected {
-                    continue;
-                }
-                state.connected = false;
-                state.scanning = false;
-                state.scan_generation = state.scan_generation.saturating_add(1);
-                if state.machine.is_some() || state.preparing {
-                    state.resume_planned = state.descriptor.reconnectable;
-                    preparation::cancel_preparation(state);
-                }
-            }
-            states.retain(|state| {
-                incoming.contains_key(&state.descriptor.id)
-                    || state.machine.is_some()
-                    || state.resume_planned
-            });
-            for (id, descriptor) in incoming {
-                if let Some(state) = states.iter_mut().find(|state| state.descriptor.id == id) {
-                    let was_connected = state.connected;
-                    state.descriptor = descriptor;
-                    state.connected = true;
-                    if !was_connected {
-                        refresh.push((id.clone(), false));
-                    }
-                } else {
-                    let settings = load_or_create_settings(
-                        &self.conn,
-                        &descriptor.id,
-                        &descriptor.name,
-                    )
-                    .unwrap_or_else(|error| {
-                        tracing::warn!(device_id = descriptor.id, %error, "could not load device settings");
-                        DeviceSettings {
-                            device_serial: descriptor.id.clone(),
-                            device_name: descriptor.name.clone(),
-                            selection: DeviceSelection::default(),
-                            profile: reprise_core::device_sync::TransferProfile::default(),
-                            opus_bitrate: 0,
-                            ratings_back: false,
-                            remove_deleted: true,
-                            sync_automatically: true,
-                            prepare_before_sync: true,
-                        }
-                    });
-                    states.push(DeviceState::new(descriptor, settings));
-                    refresh.push((id, true));
-                }
-            }
-        }
-        self.notify();
-        for (id, is_new) in refresh {
-            self.reload_sync_history(&id);
-            if is_new {
-                if let Err(error) = self.recompute_delta_silent(&id) {
-                    tracing::warn!(
-                        device_id = id,
-                        %error,
-                        "could not prepare Android sync playlists before device inspection"
-                    );
-                }
-                if let Some(device) = self
-                    .device_states
-                    .borrow_mut()
-                    .iter_mut()
-                    .find(|device| device.descriptor.id == id)
-                {
-                    device.sync_phase = PlannedSyncPhase::ComputingDelta;
-                }
-            }
-            self.refresh_contents_on_connect(&id);
-        }
-    }
-
     fn notify(&self) {
         let state = DeviceSyncState {
             devices: self.devices(),
@@ -715,6 +776,12 @@ enum RefreshPurpose {
 mod agent;
 #[path = "device_sync_compact.rs"]
 mod compact;
+#[path = "device_sync_device_list.rs"]
+mod device_list;
+#[path = "device_sync_memory.rs"]
+mod memory;
+#[path = "device_sync_picker_runtime.rs"]
+mod picker;
 #[path = "device_sync_planned.rs"]
 mod planned;
 #[path = "device_sync_preparation.rs"]
@@ -722,6 +789,7 @@ mod preparation;
 #[path = "device_sync_target_actions.rs"]
 mod target_actions;
 
+pub(super) use picker::*;
 #[cfg(test)]
 pub(super) use planned::SyncStartError;
 #[cfg(test)]

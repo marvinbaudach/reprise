@@ -155,7 +155,8 @@ pub fn project_sync_page(input: SyncPageInput) -> SyncPageProjection {
         rows.push(SyncPlaylistRow {
             source: source.clone(),
             name: previous_names.get(source).cloned(),
-            smart: matches!(source, SelectionSource::Smart(_)),
+            smart: matches!(source, SelectionSource::Smart(_))
+                && source != &super::selection::EVERYTHING_SOURCE,
             selected: true,
             available: false,
             entry_count: 0,
@@ -254,7 +255,8 @@ fn playlist_row(
     SyncPlaylistRow {
         source: playlist.source.clone(),
         name: Some(playlist.name.clone()),
-        smart: matches!(playlist.source, SelectionSource::Smart(_)),
+        smart: matches!(playlist.source, SelectionSource::Smart(_))
+            && playlist.source != super::selection::EVERYTHING_SOURCE,
         selected,
         available: true,
         entry_count: playlist.entries.len(),

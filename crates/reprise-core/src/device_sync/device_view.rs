@@ -343,7 +343,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_37_content_row_reads_the_targets_per_device_folder_activation_and_cap() {
+    fn mtp_51_content_row_reads_the_targets_per_device_folder_activation_and_cap() {
         let target = SyncTarget {
             kind: SyncTargetKind::YoutubeAudio,
             storage_id: None,
@@ -362,7 +362,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_37_a_disabled_target_reads_source_off_even_with_a_nonzero_diff() {
+    fn mtp_51_a_disabled_target_reads_source_off_even_with_a_nonzero_diff() {
         let target = SyncTarget {
             kind: SyncTargetKind::PodcastEpisodes,
             storage_id: None,
@@ -386,7 +386,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_37_an_enabled_target_reads_its_computed_diff() {
+    fn mtp_51_an_enabled_target_reads_its_computed_diff() {
         let target = SyncTarget {
             kind: SyncTargetKind::Playlists,
             storage_id: None,
