@@ -19,12 +19,12 @@ use crate::modules::{self, ModuleDescriptor};
 /// this is not a module, it is the gate that sits above all of them.
 pub const ENABLED_KEY: &str = "online-sources-enabled";
 
-/// Whether the global gate is on. Defaults to `true`: Reprise ships with
-/// per-feature modules already opt-in (`NET-1a`), so the global gate does
-/// not need to additionally default-deny.
+/// Whether the global gate is on. A missing or unreadable value defaults off:
+/// network access needs an affirmative persisted opt-in. Schema v49 writes the
+/// value for every database while preserving explicit choices (`NET-2a`).
 pub fn is_enabled(db: &Db) -> Result<bool, rusqlite::Error> {
     let conn = db.conn();
-    settings::get_bool_in(conn, ENABLED_KEY, true)
+    settings::get_bool_in(conn, ENABLED_KEY, false)
 }
 
 pub fn set_enabled(db: &crate::db::Db, value: bool) -> Result<(), rusqlite::Error> {
@@ -46,7 +46,7 @@ pub(crate) fn network_allowed_in(
     conn: &rusqlite::Connection,
     module: &ModuleDescriptor,
 ) -> Result<bool, rusqlite::Error> {
-    Ok(settings::get_bool_in(conn, ENABLED_KEY, true)? && modules::is_enabled_in(conn, module)?)
+    Ok(settings::get_bool_in(conn, ENABLED_KEY, false)? && modules::is_enabled_in(conn, module)?)
 }
 
 /// [`network_allowed`] with the read failure already decided: a module whose
@@ -79,9 +79,9 @@ mod tests {
     }
 
     #[test]
-    fn net_1a_defaults_to_enabled() {
+    fn online_gate_fresh_database_defaults_to_disabled() {
         let db = migrated_db();
-        assert!(is_enabled(&db).unwrap());
+        assert!(!is_enabled(&db).unwrap());
     }
 
     #[test]
@@ -102,10 +102,11 @@ mod tests {
         // network module such as cover download.
         assert!(!network_allowed(&db, module).unwrap());
 
+        set_enabled(&db, true).unwrap();
         modules::set_enabled(&db, module, true).unwrap();
         assert!(
             network_allowed(&db, module).unwrap(),
-            "module on, global on (default) => allowed"
+            "module on, global on => allowed"
         );
 
         set_enabled(&db, false).unwrap();

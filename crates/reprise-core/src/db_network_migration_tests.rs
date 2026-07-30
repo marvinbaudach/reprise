@@ -1,4 +1,5 @@
 use super::*;
+use rusqlite::OptionalExtension;
 
 fn open_database_at(version: i64) -> Connection {
     let conn = open(None).unwrap();
@@ -34,6 +35,124 @@ fn migrate_with_empty_caches(conn: &Connection) {
     let cover_cache = tempfile::tempdir().unwrap();
     let portrait_cache = tempfile::tempdir().unwrap();
     migrate_with_cache_dirs(conn, cover_cache.path(), portrait_cache.path()).unwrap();
+}
+
+fn open_pre_online_gate_database() -> Connection {
+    let conn = open(None).unwrap();
+    migrate_with_empty_caches(&conn);
+    conn.execute(
+        "DELETE FROM settings WHERE key = ?1",
+        [crate::online_sources::ENABLED_KEY],
+    )
+    .unwrap();
+    conn.pragma_update(None, "user_version", 48).unwrap();
+    conn
+}
+
+fn stored_online_gate(conn: &Connection) -> Option<String> {
+    conn.query_row(
+        "SELECT value FROM settings WHERE key = ?1",
+        [crate::online_sources::ENABLED_KEY],
+        |row| row.get(0),
+    )
+    .optional()
+    .unwrap()
+}
+
+#[test]
+fn online_gate_fresh_database_migration_stores_the_master_off() {
+    let conn = open(None).unwrap();
+
+    migrate_with_empty_caches(&conn);
+
+    assert_eq!(stored_online_gate(&conn).as_deref(), Some("0"));
+}
+
+#[test]
+fn online_gate_existing_subscription_migration_stores_the_master_on() {
+    let conn = open_pre_online_gate_database();
+    conn.execute(
+        "INSERT INTO podcast_subscriptions \
+         (kind, feed_url, title, added_at) VALUES ('podcast', 'https://example.test/feed', 'Show', 1)",
+        [],
+    )
+    .unwrap();
+
+    migrate_with_empty_caches(&conn);
+
+    assert_eq!(stored_online_gate(&conn).as_deref(), Some("1"));
+}
+
+#[test]
+fn online_gate_existing_database_without_use_stores_the_master_off() {
+    let conn = open_pre_online_gate_database();
+
+    migrate_with_empty_caches(&conn);
+
+    assert_eq!(stored_online_gate(&conn).as_deref(), Some("0"));
+}
+
+#[test]
+fn online_gate_explicit_master_value_survives_migration_untouched() {
+    for value in ["0", "1"] {
+        let conn = open_pre_online_gate_database();
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2)",
+            rusqlite::params![crate::online_sources::ENABLED_KEY, value],
+        )
+        .unwrap();
+
+        migrate_with_empty_caches(&conn);
+
+        assert_eq!(stored_online_gate(&conn).as_deref(), Some(value));
+    }
+}
+
+#[test]
+fn online_gate_existing_radio_favourite_counts_as_demonstrable_use() {
+    let conn = open_pre_online_gate_database();
+    conn.execute(
+        "INSERT INTO radio_stations (name, stream_url, added_at) \
+         VALUES ('Station', 'https://example.test/radio', 1)",
+        [],
+    )
+    .unwrap();
+
+    migrate_with_empty_caches(&conn);
+
+    assert_eq!(stored_online_gate(&conn).as_deref(), Some("1"));
+}
+
+#[test]
+fn online_gate_existing_positive_image_caches_count_as_demonstrable_use() {
+    for cache_kind in ["cover", "portrait"] {
+        let conn = open_pre_online_gate_database();
+        let cover_cache = tempfile::tempdir().unwrap();
+        let portrait_cache = tempfile::tempdir().unwrap();
+        let cache = if cache_kind == "cover" {
+            cover_cache.path()
+        } else {
+            portrait_cache.path()
+        };
+        std::fs::write(cache.join("used.jpg"), b"cached").unwrap();
+
+        migrate_with_cache_dirs(&conn, cover_cache.path(), portrait_cache.path()).unwrap();
+
+        assert_eq!(stored_online_gate(&conn).as_deref(), Some("1"));
+    }
+}
+
+#[test]
+fn online_gate_negative_cache_markers_do_not_count_as_demonstrable_use() {
+    let conn = open_pre_online_gate_database();
+    let cover_cache = tempfile::tempdir().unwrap();
+    let portrait_cache = tempfile::tempdir().unwrap();
+    std::fs::write(cover_cache.path().join("miss.notfound"), b"").unwrap();
+    std::fs::write(portrait_cache.path().join("miss.notfound"), b"").unwrap();
+
+    migrate_with_cache_dirs(&conn, cover_cache.path(), portrait_cache.path()).unwrap();
+
+    assert_eq!(stored_online_gate(&conn).as_deref(), Some("0"));
 }
 
 #[test]

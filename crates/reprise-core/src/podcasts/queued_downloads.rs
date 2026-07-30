@@ -136,6 +136,7 @@ mod tests {
 
     fn conn() -> Db {
         let db = Db::open_in_memory().unwrap();
+        crate::online_sources::set_enabled(&db, true).unwrap();
         crate::modules::set_enabled(&db, &crate::modules::PODCASTS_MODULE, true).unwrap();
         db
     }

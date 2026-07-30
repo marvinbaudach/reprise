@@ -2,7 +2,9 @@
 //!
 //! Production code only receives [`Db`]. Tests may open a separate, short-lived
 //! connection to the same throwaway file so fixture setup does not widen
-//! Core's public database boundary.
+//! Core's public database boundary. The general fixture keeps the historical
+//! online-enabled precondition used by feature tests; first-run tests use
+//! [`open_fresh`] to exercise the real fresh-install default.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;
@@ -15,6 +17,13 @@ static FIXTURE_ROOT: OnceLock<tempfile::TempDir> = OnceLock::new();
 static NEXT_FIXTURE: AtomicU64 = AtomicU64::new(0);
 
 pub(crate) fn open() -> Result<Db, DbError> {
+    let db = open_fresh()?;
+    reprise_core::online_sources::set_enabled(&db, true)?;
+    connection(&db).execute("DELETE FROM change_log", [])?;
+    Ok(db)
+}
+
+pub(crate) fn open_fresh() -> Result<Db, DbError> {
     let root = FIXTURE_ROOT.get_or_init(|| {
         tempfile::Builder::new()
             .prefix("reprise-gnome-tests-")
