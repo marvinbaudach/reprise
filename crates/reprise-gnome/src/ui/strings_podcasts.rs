@@ -77,8 +77,7 @@ pub const PODCAST_SOURCE_OFF_DESCRIPTION: &str = N_!(
 pub const PODCAST_ENABLE_IN_PREFERENCES: &str = N_!("Enable in Preferences");
 pub const PODCAST_REFRESH_NOW: &str = N_!("Refresh now");
 pub const PODCAST_REFRESHING: &str = N_!("Refreshing podcasts…");
-pub const PODCAST_REFRESH_FAILED: &str = N_!("Refresh failed · showing saved episodes");
-// `POD-16`: what the footer says when the subscriptions cannot be read at all.
+// `POD-17`: what the footer says when the subscriptions cannot be read at all.
 // The failure is a database one, so there is nothing the text could usefully
 // name — the "Refresh now" button beside it is the offer.
 pub const PODCAST_LIBRARY_UNREADABLE: &str = N_!("Could not read your subscriptions");
@@ -134,6 +133,9 @@ pub const PODCAST_DOWNLOAD_QUEUED: &str = N_!("Queued");
 pub const PODCAST_DOWNLOADING: &str = N_!("Downloading");
 pub const PODCAST_DOWNLOAD_MISSING: &str = N_!("File missing");
 pub const PODCAST_DOWNLOAD_FAILED: &str = N_!("Download failed");
+pub const PODCAST_NEEDS_NETWORK: &str = N_!("Needs network");
+pub const PODCAST_UNAVAILABLE_NOW: &str = N_!("Unavailable now");
+pub const PODCAST_QUEUED_OFFLINE: &str = N_!("Queued offline");
 /// `POD-13`: the retry action's tooltip, distinct from `PODCAST_DOWNLOAD` so
 /// a failed row's action button reads as "try again", not "download for the
 /// first time".

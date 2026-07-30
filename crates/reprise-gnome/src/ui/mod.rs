@@ -77,6 +77,8 @@ pub(crate) mod sidebar;
 mod source_add_action;
 mod source_context_surface;
 mod source_empty_state;
+mod source_error_banner;
+mod source_error_details;
 mod stats;
 pub mod status_bar;
 pub mod strings;

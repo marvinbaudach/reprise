@@ -245,6 +245,8 @@ fn src_11_channel_header_stays_on_the_fallback_when_images_are_not_allowed() {
         &[],
         &BTreeMap::new(),
         false,
+        reprise_core::connectivity::Connectivity::Online,
+        None,
     );
 
     let header = detail
@@ -312,6 +314,8 @@ fn pod_12_channel_header_on_phone_indicator_reflects_the_toggle_and_stays_read_o
         std::slice::from_ref(&phone),
         &BTreeMap::new(),
         false,
+        reprise_core::connectivity::Connectivity::Online,
+        None,
     );
     let header = detail
         .build_header(&rendered)
@@ -332,6 +336,8 @@ fn pod_12_channel_header_on_phone_indicator_reflects_the_toggle_and_stays_read_o
         &[phone],
         &selected,
         false,
+        reprise_core::connectivity::Connectivity::Online,
+        None,
     );
     let header = detail
         .build_header(&rendered)
@@ -381,6 +387,8 @@ fn pod_14_only_shorts_here_offers_a_way_to_reveal_them() {
         &[],
         &BTreeMap::new(),
         false,
+        reprise_core::connectivity::Connectivity::Online,
+        None,
     );
     detail.state.borrow_mut().open_channel(7);
     detail.render_active();

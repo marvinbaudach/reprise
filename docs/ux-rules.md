@@ -1954,15 +1954,16 @@ property is set and yet nothing happens.
   the global gate is already on, and is never a modal or a toast. The
   permanent path is Preferences → Plugins. On the first enable the master
   turns on and every source remains off except Radio.
-- **NET-3** [planned] — Offline is a state, not an error: no network-backed
+- **NET-3** [active] [core] [gtk] — Offline is a state, not an error: no network-backed
   place in the app may treat a missing network connection like an error
   message. The contract covers seven states every network-backed view (feed,
   search, refresh) must know: **cached** (the last successful state stays
   visible along with its age, never replaced by an error), **empty** (never
   fetched successfully yet — a loading/first-run state rather than silent
   emptiness), **queued** (an online action was accepted and is waiting for the
-  network), **interrupted** (a running fetch aborts — the cache stays, only a
-  discreet inline note, never a banner), **authentication** (401 or a missing
+  network), **interrupted** (a running fetch aborts — the cache stays and one
+  neutral source banner explains what failed, what still works and how to
+  retry), **authentication** (401 or a missing
   credential — neutral, without prompting for credentials in the flow itself),
   **rate limit** (429 — treated like "interrupted", no special error picture)
   and **provider failure** (5xx/other — likewise). For the three online sources
@@ -2001,8 +2002,8 @@ property is set and yet nothing happens.
   pending or offers a retry. This contract never checks a module switch, only
   connectivity.
 
-  This rule is the contract prose and only turns `[active]` itself once all of
-  its lettered sub-rules are. It consolidates the shared "a cache is never an
+  This rule is active because all lettered sub-rules and their GTK
+  presentation are wired. It consolidates the shared "a cache is never an
   error" principle that `NR-6`, `NR-8` and `CONC-4b` each already state in
   their own words for their own surface — those three rules stay `[active]`
   unchanged and refer here from now on instead of duplicating the principle;
@@ -2026,8 +2027,9 @@ property is set and yet nothing happens.
   provider, authentication, or rate limits; those are request outcomes, not a
   connectivity state. This projection is a wiring foundation: automatically
   running pending actions when the network returns is now built on top of it
-  (`NET-3c`, F2); the "Needs network" display in the podcast and YouTube rows
-  remains open and is not claimed here.
+  (`NET-3c`, F2). Podcast and YouTube rows consume this projection: missing
+  rows remain listed, dimmed, and read "Needs network"; downloaded rows remain
+  fully playable.
 - **NET-3b** [active] [gtk] — The radio exception: stations always stay listed.
   The context menu shows "Play" (`radio_context_menu::play_menu_label`) when
   `Connectivity::Online` holds or the station is already playing; under
@@ -2035,8 +2037,9 @@ property is set and yet nothing happens.
   (`radio_view::try_play_station`) opens no connection while connectivity stays
   offline — no marking pending, no automatic run, because a live stream cannot
   be deferred. Connectivity is an injectable state
-  (`RadioView::set_connectivity`), `Online` by default and not yet attached to
-  a real operating-system signal in this rule.
+  (`RadioView::set_connectivity`), `Online` by default. The main-window
+  composition root initializes it and both podcast views from one
+  `gio::NetworkMonitor` and updates all three from `network-changed`.
 - **NET-3c** [active] [core] — The runner `NET-3a` reserved this id for:
   once connectivity is believed online, whatever is `wanted_on_device`
   (`MTP-40`) but still missing a local file replays, in order, without a
@@ -2052,9 +2055,12 @@ property is set and yet nothing happens.
   uses. The GTK trigger is `PodcastsView::set_connectivity`, mirroring
   `NET-3b`'s `RadioView::set_connectivity` exactly: a transition from
   `Offline` to `Online` dispatches `PodcastsOperation::RunQueued` on the
-  existing podcast worker; any other transition is a no-op. As with `NET-3b`,
-  this is an injectable seam, not yet attached to a real operating-system
-  signal.
+  existing podcast worker; manually requested downloads and Load more actions
+  use the same transition and retain their click order in a transient,
+  de-duplicated action list. The persistent phone-sync authority remains
+  `wanted_on_device`; no second queue table or persisted truth is introduced.
+  The window-level `gio::NetworkMonitor` is the sole production caller of the
+  injectable seams.
 - **NET-3d** [active] [core] — One translation layer: every provider and
   transport error is mapped, in core, onto exactly one of five user-facing
   states — *unreachable*, *rate-limited*, *source gone*, *helper outdated*,
@@ -2068,15 +2074,17 @@ property is set and yet nothing happens.
   10 s from one shared constant, so no view can sit on a spinner longer than
   that without resolving; downloads keep their own longer budget.
 
-  Like `NET-3b` and `NET-3c`, this rule claims the **core contract only**. The
-  projection, the conversions and the detail accessor exist and are tested; the
-  surfaces that render them do not exist yet. There is no `Details` block to
-  open in the app today, and no banner reads these states. The podcast and
+  The core projection is rendered by one reusable neutral
+  `SourceErrorBanner` and one shared full-area failure state. Both embed the
+  same collapsed-by-default monospace `SourceErrorDetails` widget with Copy;
+  technical text is reachable there and in logs, never in ordinary labels or
+  toasts. The podcast and
   YouTube refresh loop records a failure immediately, then consults
   `retry_delay` before another provider attempt; its bounded per-source attempt
   count resets on success, and exhaustion returns the source to its fixed
-  refresh interval. The missing surfaces are the presentation half of `NET-3`,
-  and `NET-3` stays `[planned]` until they land.
+  refresh interval. A successful fetch removes the banner silently; cached
+  content is never replaced, and three or more failures become one collected
+  notice.
 - **LYR-1** [planned] [core] — Local embedded lyrics and `.lrc` sidecars
   are shown independently of the Online Lyrics module. Reprise does not
   yet read these local formats today; the rule stays planned until this
@@ -3412,7 +3420,10 @@ listening statistics.
   state: the toolbar and filter row stay visible, with a "Clear filters"
   action, because clearing the filter — not adding a source — is the way
   out. `NoEpisodes` (subscribed, the feed genuinely has nothing yet) is
-  unchanged and keeps the filter row hidden.
+  unchanged and keeps the filter row hidden. A fetch failure with an existing
+  subscription but no cached or downloaded episode uses the same geometry as
+  `PodcastsEmptyState::FetchFailed`, with Retry and the collapsed Details
+  block; it never masquerades as "nothing subscribed yet".
 - **SRC-11** [active] [core] [gtk] — Channel, show and station images (YouTube
   `thumbnails`, iTunes `artworkUrl600`, radio-browser `favicon` — `C1`) run
   through a module of their own (`module.source_images.enabled`) and are
@@ -3579,7 +3590,7 @@ listening statistics.
   (`MTP-45`/`POD-12`) — the two lines can no longer call the same subscription
   by two different nouns. Found by the `source-youtube` acceptance scenario,
   which reads the header back out of the running app.
-- **POD-16** [active] [gtk] — The status line under the Podcasts and YouTube
+- **POD-16** [replaced by POD-17] [gtk] — The status line under the Podcasts and YouTube
   libraries never renders a raw error. Its two failure states are fixed
   sentences — "Could not read your subscriptions" when the library itself
   cannot be read, and `POD-11`'s "Refresh failed · showing saved episodes"
@@ -3592,6 +3603,14 @@ listening statistics.
   for provider errors, since a statement can carry a path or an identifier.
   The "Refresh now" button beside the line is the offer; the text does not
   repeat it.
+- **POD-17** [active] [gtk] — Replaces POD-16's refresh-failure footer.
+  The footer keeps only neutral refresh progress, last-updated age and library
+  read failures. A provider refresh failure appears once in the shared neutral
+  source banner above the unchanged cached list, with fixed safe copy, Retry
+  and collapsed Details; a successful refresh removes it silently. When no
+  cached or downloaded episode exists, the same information and actions use
+  the shared full-area failure state instead. Neither surface renders raw
+  provider, transport, database or helper text outside Details.
 - **RAD-1** [active] [gtk] — Only the currently connected station is
   accented in the table; its state icon, name, now-playing, and row
   tint change together. All others, as well as a presented but
@@ -3602,8 +3621,11 @@ listening statistics.
   geometry-matched waveform placeholder, MPRIS reports `CanSeek=false`
   and no length. Pause disconnects the stream but stays presented as
   Paused/CanPause with station and dimmed last title; play reconnects
-  live. A reconnect error leaves the paused state standing with an
-  inline error and retry. Radio produces no listening statistics;
+  live. A reconnect error leaves the paused state standing and shows the
+  neutral shared source banner with "This station isn't broadcasting right
+  now", Retry, Find a new URL and collapsed Details; Retry/Find re-resolve a
+  UUID station through radio-browser once before surfacing the failure again.
+  Radio produces no listening statistics;
   reactivating the running row stops it.
 - **RAD-3** [active] [core] — Radio-browser servers are chosen via
   the discovery endpoint and rotated on failure. Every start of a

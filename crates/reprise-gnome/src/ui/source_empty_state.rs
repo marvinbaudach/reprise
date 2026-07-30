@@ -19,6 +19,11 @@
 //! first subscription lands, this stops rendering.
 
 use gtk4::prelude::*;
+use reprise_core::source_error::{FailureAction, SourceError, SourceFailurePresentation};
+
+use crate::ui::source_error_banner::headline_text;
+use crate::ui::source_error_details::SourceErrorDetails;
+use crate::ui::strings;
 
 const GLYPH_TILE_SIZE: i32 = 64;
 const GLYPH_PIXEL_SIZE: i32 = 28;
@@ -50,6 +55,96 @@ pub(super) struct SourceEmptyStateCopy {
 pub(super) struct SourceEmptyState {
     root: gtk4::Widget,
     button: gtk4::Button,
+}
+
+/// The same neutral full-area geometry used when a source genuinely has no
+/// cached or downloaded content, extended with reusable failure actions and
+/// the explicit technical Details block.
+pub(super) struct SourceFailureState {
+    root: gtk4::Box,
+    title: gtk4::Label,
+    body: gtk4::Label,
+    actions: gtk4::Box,
+    details: SourceErrorDetails,
+}
+
+impl SourceFailureState {
+    pub(super) fn new(icon_name: &str) -> Self {
+        let root = gtk4::Box::new(gtk4::Orientation::Vertical, CONTENT_SPACING);
+        root.add_css_class("reprise-source-empty-state");
+        root.set_valign(gtk4::Align::Center);
+        root.set_halign(gtk4::Align::Center);
+        root.set_vexpand(true);
+        let tile = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        tile.add_css_class("reprise-source-empty-state-tile");
+        tile.set_size_request(GLYPH_TILE_SIZE, GLYPH_TILE_SIZE);
+        tile.set_halign(gtk4::Align::Center);
+        let glyph = gtk4::Image::from_icon_name(icon_name);
+        glyph.set_pixel_size(GLYPH_PIXEL_SIZE);
+        glyph.set_halign(gtk4::Align::Center);
+        glyph.set_valign(gtk4::Align::Center);
+        tile.append(&glyph);
+        root.append(&tile);
+        let title = gtk4::Label::new(None);
+        title.add_css_class("title-2");
+        root.append(&title);
+        let body = gtk4::Label::new(None);
+        body.add_css_class("dim-label");
+        body.set_wrap(true);
+        body.set_justify(gtk4::Justification::Center);
+        body.set_max_width_chars(BODY_MAX_WIDTH_CHARS);
+        root.append(&body);
+        let actions = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+        actions.set_halign(gtk4::Align::Center);
+        root.append(&actions);
+        let details = SourceErrorDetails::new();
+        root.append(details.widget());
+        Self {
+            root,
+            title,
+            body,
+            actions,
+            details,
+        }
+    }
+
+    pub(super) fn widget(&self) -> &gtk4::Widget {
+        self.root.upcast_ref()
+    }
+
+    pub(super) fn show(
+        &self,
+        presentation: &SourceFailurePresentation,
+        error: &SourceError,
+        occurred_at: &str,
+        on_action: impl Fn(FailureAction) + 'static,
+    ) {
+        self.title.set_text(&headline_text(presentation.headline));
+        self.body
+            .set_text(&strings::text(strings::SOURCE_EMPTY_FAILURE_DESCRIPTION));
+        while let Some(child) = self.actions.first_child() {
+            self.actions.remove(&child);
+        }
+        let callback: std::rc::Rc<dyn Fn(FailureAction)> = std::rc::Rc::new(on_action);
+        for action in &presentation.actions {
+            let label = match action {
+                FailureAction::TryAgain => strings::SOURCE_TRY_AGAIN,
+                FailureAction::CheckSubscription => strings::SOURCE_CHECK_SUBSCRIPTION,
+                FailureAction::Unsubscribe => strings::SOURCE_UNSUBSCRIBE,
+                FailureAction::OpenPreferences => strings::SOURCE_OPEN_PREFERENCES,
+                FailureAction::FindNewUrl => strings::SOURCE_FIND_NEW_URL,
+            };
+            let button = gtk4::Button::with_label(&strings::text(label));
+            if self.actions.first_child().is_none() {
+                button.add_css_class("suggested-action");
+            }
+            let action = *action;
+            let callback = callback.clone();
+            button.connect_clicked(move |_| callback(action));
+            self.actions.append(&button);
+        }
+        self.details.set_error(error, occurred_at);
+    }
 }
 
 impl SourceEmptyState {

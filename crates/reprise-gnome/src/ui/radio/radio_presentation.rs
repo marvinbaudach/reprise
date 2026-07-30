@@ -8,6 +8,7 @@ pub(super) struct RadioLiveState {
     pub station_id: Option<i64>,
     pub connected: bool,
     pub title: Option<String>,
+    pub failed: bool,
 }
 
 pub(super) fn format_bitrate(value: Option<i64>) -> String {
@@ -98,6 +99,7 @@ mod tests {
             station_id: Some(1),
             connected: true,
             title: Some("Artist — Song".into()),
+            failed: false,
         };
         assert_eq!(now_playing(1, &live), "Artist — Song");
         assert_eq!(now_playing(2, &live), "—");

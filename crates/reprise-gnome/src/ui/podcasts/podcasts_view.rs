@@ -8,13 +8,15 @@ use gtk4::gio;
 use gtk4::glib::{self};
 use gtk4::prelude::*;
 use libadwaita as adw;
-use reprise_core::connectivity::Connectivity;
+use reprise_core::connectivity::{self, ActionOutcome, Connectivity};
 use reprise_core::db::Db;
 use reprise_core::podcasts::download_state::DownloadState;
 use reprise_core::podcasts::{self, EpisodeRow, PodcastKind, SourceGroup};
+use reprise_core::source_error::SourceError;
 
 use super::add_dialog;
 use super::podcasts_context_menu;
+use super::podcasts_deferred_actions::{DeferredAction, DeferredActions};
 use super::podcasts_device_sync::PodcastDeviceSyncState;
 use super::podcasts_download_presentation::refreshed_download_states;
 use super::podcasts_empty_state::{podcasts_empty_state_for, PodcastsEmptyState};
@@ -35,13 +37,18 @@ use super::podcasts_worker::{
     PodcastsRequest, PodcastsRuntime, PodcastsWorkerResult,
 };
 use super::youtube_channel_detail::YoutubeChannelDetail;
-use crate::ui::source_empty_state::SourceEmptyState;
+use crate::ui::source_empty_state::{SourceEmptyState, SourceFailureState};
+use crate::ui::source_error_banner::SourceErrorBanner;
 use crate::ui::strings;
 
 #[path = "podcasts_view_actions.rs"]
 mod actions;
+#[path = "podcasts_connectivity_ui.rs"]
+mod connectivity_ui;
 #[path = "podcasts_view_copy.rs"]
 mod copy;
+#[path = "podcasts_failure_ui.rs"]
+mod failure_ui;
 #[path = "podcasts_view_requests.rs"]
 mod requests;
 #[cfg(test)]
@@ -54,6 +61,7 @@ const EMPTY_PAGE: &str = "empty";
 /// `SRC-10` addendum (Block B2): the module-off sibling of `EMPTY_PAGE` —
 /// same geometry, "Enable in Preferences" instead of Add.
 const MODULE_OFF_PAGE: &str = "module-off";
+const FAILURE_PAGE: &str = "fetch-failed";
 
 type OnEpisodeActivated = Rc<dyn Fn(EpisodeRow)>;
 type OnSubscriptionRemoved = Rc<dyn Fn(i64)>;
@@ -109,9 +117,13 @@ pub(in crate::ui) struct PodcastsView {
     /// (open the add dialog vs. open Preferences) and `SourceEmptyState`
     /// wires exactly one `connect_add` callback for its lifetime.
     module_off_state: SourceEmptyState,
+    error_banner: SourceErrorBanner,
+    failure_state: SourceFailureState,
+    fetch_failure: RefCell<Option<SourceError>>,
     /// Set post-construction (parallel to `set_toast_overlay`) once
     /// Preferences exists — `PodcastsView` is built before it in `window.rs`.
     on_open_preferences: RefCell<Option<Rc<dyn Fn()>>>,
+    on_open_youtube_preferences: RefCell<Option<Rc<dyn Fn()>>>,
     footer: gtk4::Box,
     footer_status: gtk4::Label,
     footer_spinner: gtk4::Spinner,
@@ -123,6 +135,7 @@ pub(in crate::ui) struct PodcastsView {
     download_states: Rc<RefCell<BTreeMap<i64, DownloadState>>>,
     download_widgets: RefCell<BTreeMap<i64, podcasts_groups::DownloadRowWidgets>>,
     playing_episode: Cell<Option<i64>>,
+    unavailable_episode: Cell<Option<i64>>,
     generation: Cell<u64>,
     toast_overlay: glib::WeakRef<adw::ToastOverlay>,
     kept_downloads: RefCell<KeptDownloads>,
@@ -132,6 +145,7 @@ pub(in crate::ui) struct PodcastsView {
     /// tests) change it. A transition from `Offline` to `Online` triggers
     /// the queued-download runner.
     connectivity: Cell<Connectivity>,
+    deferred_actions: RefCell<DeferredActions>,
 }
 
 impl PodcastsView {
@@ -156,11 +170,14 @@ impl PodcastsView {
         status.set_child(Some(&status_button));
         let empty_state = SourceEmptyState::new(&copy::empty_state_copy(kind));
         let module_off_state = SourceEmptyState::new(&copy::module_off_copy(kind));
+        let error_banner = SourceErrorBanner::new();
+        let failure_state = SourceFailureState::new(copy::empty_state_copy(kind).icon_name);
         let stack = gtk4::Stack::new();
         stack.add_named(&scroller, Some("list"));
         stack.add_named(&status, Some("status"));
         stack.add_named(empty_state.widget(), Some(EMPTY_PAGE));
         stack.add_named(module_off_state.widget(), Some(MODULE_OFF_PAGE));
+        stack.add_named(failure_state.widget(), Some(FAILURE_PAGE));
         let default_hide_shorts =
             podcasts::config::load(&conn).map_or(true, |config| config.youtube_hide_shorts_default);
         let youtube_detail = YoutubeChannelDetail::new(&stack, default_hide_shorts);
@@ -192,6 +209,7 @@ impl PodcastsView {
         // `List`/`NoEpisodes`/`NoResults`/`NoDownloads`, hidden for the two
         // whole-page-replaced states `Empty`/`ModuleOff`.
         root.append(filter_bar.widget());
+        root.append(error_banner.widget());
         root.append(&stack);
         root.append(&footer);
 
@@ -209,7 +227,11 @@ impl PodcastsView {
             status_button,
             empty_state,
             module_off_state,
+            error_banner,
+            failure_state,
+            fetch_failure: RefCell::new(None),
             on_open_preferences: RefCell::new(None),
+            on_open_youtube_preferences: RefCell::new(None),
             footer,
             footer_status,
             footer_spinner,
@@ -221,10 +243,12 @@ impl PodcastsView {
             download_states: Rc::new(RefCell::new(BTreeMap::new())),
             download_widgets: RefCell::new(BTreeMap::new()),
             playing_episode: Cell::new(None),
+            unavailable_episode: Cell::new(None),
             generation: Cell::new(0),
             toast_overlay: glib::WeakRef::new(),
             kept_downloads: RefCell::new(KeptDownloads::default()),
             connectivity: Cell::new(Connectivity::default()),
+            deferred_actions: RefCell::new(DeferredActions::default()),
         });
         view.install_actions();
         view.wire_controls(&refresh);
@@ -254,6 +278,10 @@ impl PodcastsView {
         *self.on_open_preferences.borrow_mut() = Some(Rc::new(callback));
     }
 
+    pub(in crate::ui) fn set_on_open_youtube_preferences(&self, callback: impl Fn() + 'static) {
+        *self.on_open_youtube_preferences.borrow_mut() = Some(Rc::new(callback));
+    }
+
     pub(in crate::ui) fn root(&self) -> &gtk4::Widget {
         self.root.upcast_ref()
     }
@@ -267,24 +295,9 @@ impl PodcastsView {
         self.render();
     }
 
-    /// `NET-3c`: sets the connectivity seam this view consults — see the
-    /// `connectivity` field doc. Not wired to any real OS signal yet, same
-    /// as `RadioView::set_connectivity` (`NET-3b`). A transition from
-    /// `Offline` to `Online` dispatches the queued-download runner; every
-    /// other transition (including staying `Online` or staying `Offline`)
-    /// is a no-op so re-asserting the same state never replays anything.
-    pub(in crate::ui) fn set_connectivity(self: &Rc<Self>, value: Connectivity) {
-        let previous = self.connectivity.replace(value);
-        if previous == Connectivity::Offline && value == Connectivity::Online {
-            self.request_run_queued();
-        }
-    }
-
-    /// `NET-3` point 4 (F4): the add dialog reads this once, at present
-    /// time, to decide whether to disable search and to route a pasted URL
-    /// through the offline path instead of a live preview fetch.
-    pub(in crate::ui) fn connectivity(&self) -> Connectivity {
-        self.connectivity.get()
+    pub(in crate::ui) fn set_unavailable_episode(&self, episode_id: Option<i64>) {
+        self.unavailable_episode.set(episode_id);
+        self.render();
     }
 
     pub(in crate::ui) fn bind_device_sync(
@@ -318,7 +331,7 @@ impl PodcastsView {
                 self.footer_status.set_text(&last_updated);
                 self.render();
             }
-            // `POD-16`: the detail belongs in the log, not in the footer.
+            // `POD-17`: the detail belongs in the log, not in the footer.
             // `DbError`'s `Display` carries rusqlite's whole failing statement
             // and a byte offset, which is neither readable nor actionable.
             Err(error) => {
@@ -387,6 +400,8 @@ impl PodcastsView {
             &connected_devices,
             &selected_devices,
             images_allowed,
+            self.connectivity.get(),
+            self.unavailable_episode.get(),
         );
         let download_widgets = podcasts_groups::replace(
             &self.group_container,
@@ -398,6 +413,8 @@ impl PodcastsView {
             &connected_devices,
             &selected_devices,
             images_allowed,
+            self.connectivity.get(),
+            self.unavailable_episode.get(),
         );
         self.download_widgets.replace(download_widgets);
         // `G2` (design 6a): the header line is a projection over the
@@ -423,6 +440,7 @@ impl PodcastsView {
             filter_active(&filter),
             filter.downloaded_only,
             module_enabled,
+            self.fetch_failure.borrow().is_some(),
         );
         // `SRC-10`: the two whole-page-replaced states (`Empty`/
         // `ModuleOff`) hide the footer's refresh row too — refreshing zero
@@ -434,7 +452,9 @@ impl PodcastsView {
         // `List`, `NoResults`, `NoDownloads`.
         let whole_page_replaced = matches!(
             classification,
-            PodcastsEmptyState::Empty | PodcastsEmptyState::ModuleOff
+            PodcastsEmptyState::Empty
+                | PodcastsEmptyState::ModuleOff
+                | PodcastsEmptyState::FetchFailed
         );
         self.footer.set_visible(!whole_page_replaced);
         self.filter_bar.widget().set_visible(matches!(
@@ -448,6 +468,9 @@ impl PodcastsView {
             PodcastsEmptyState::Empty => self.stack.set_visible_child_name(EMPTY_PAGE),
             PodcastsEmptyState::ModuleOff => {
                 self.stack.set_visible_child_name(MODULE_OFF_PAGE);
+            }
+            PodcastsEmptyState::FetchFailed => {
+                self.stack.set_visible_child_name(FAILURE_PAGE);
             }
             state => {
                 let (title, description, button) = copy::status_copy(state);
@@ -494,6 +517,23 @@ impl PodcastsView {
                 return;
             }
         }
+        if connectivity::deferrable_action_outcome(
+            self.connectivity.get(),
+            DownloadState::NotDownloaded.local_availability(),
+        ) == ActionOutcome::QueuedOffline
+        {
+            self.deferred_actions
+                .borrow_mut()
+                .push(DeferredAction::Download(episode_id));
+            self.set_download_state(episode_id, &DownloadState::Queued);
+            self.footer_status
+                .set_text(&strings::text(strings::PODCAST_QUEUED_OFFLINE));
+            return;
+        }
+        self.dispatch_download(episode_id);
+    }
+
+    fn dispatch_download(self: &Rc<Self>, episode_id: i64) {
         let operation = PodcastsOperation::Download { episode_id };
         let generation = request_generation(self.generation.get(), operation);
         let (response, receiver) = podcasts_response_channel();
@@ -530,13 +570,14 @@ impl PodcastsView {
                     Ok(PodcastsWorkerResult::LoadedMore { .. }) => {}
                     Ok(PodcastsWorkerResult::QueueRunComplete { .. }) => {}
                     Err(error) => {
+                        tracing::warn!(%error, episode_id, "podcast download failed");
                         view.set_download_state(
                             episode_id,
                             &DownloadState::Failed {
-                                message: error.clone(),
+                                message: strings::text(strings::PODCAST_DOWNLOAD_FAILED),
                             },
                         );
-                        view.show_error(&error);
+                        view.show_error(&strings::text(strings::PODCAST_DOWNLOAD_FAILED));
                         break;
                     }
                 }
@@ -726,15 +767,5 @@ impl PodcastsView {
             }
         });
         overlay.add_toast(toast);
-    }
-
-    pub(super) fn show_error(&self, message: &str) {
-        if let Some(overlay) = self.toast_overlay.upgrade() {
-            let toast = adw::Toast::new(message);
-            toast.set_priority(adw::ToastPriority::High);
-            overlay.add_toast(toast);
-        } else {
-            tracing::warn!(%message, "podcast action failed");
-        }
     }
 }

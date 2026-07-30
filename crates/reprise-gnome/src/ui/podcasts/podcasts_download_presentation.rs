@@ -2,9 +2,31 @@
 
 use std::collections::BTreeMap;
 
+use reprise_core::connectivity::{self, Connectivity, RowPresentation};
 use reprise_core::podcasts::channel_window;
 use reprise_core::podcasts::download_state::{self, DownloadState};
 use reprise_core::podcasts::EpisodeRow;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum EpisodeNetworkPresentation {
+    Normal,
+    NeedsNetwork,
+    UnavailableNow,
+}
+
+pub(super) fn episode_network_presentation(
+    connectivity: Connectivity,
+    state: &DownloadState,
+    unavailable_now: bool,
+) -> EpisodeNetworkPresentation {
+    if unavailable_now {
+        return EpisodeNetworkPresentation::UnavailableNow;
+    }
+    match connectivity::row_presentation(connectivity, state.local_availability()) {
+        RowPresentation::Playable => EpisodeNetworkPresentation::Normal,
+        RowPresentation::NeedsNetwork => EpisodeNetworkPresentation::NeedsNetwork,
+    }
+}
 
 /// `POD-11`: the YouTube channel detail's header summary data. The actual
 /// computation is `reprise_core::podcasts::channel_window::
@@ -51,6 +73,7 @@ pub(super) fn refreshed_download_states(
 
 #[cfg(test)]
 mod tests {
+    use reprise_core::connectivity::Connectivity;
     use reprise_core::podcasts::PodcastKind;
 
     use super::*;
@@ -140,5 +163,33 @@ mod tests {
         let after_delete = channel_download_summary(1, 1, &episodes, &states);
         assert_eq!(after_delete.downloaded_count, 0);
         assert_eq!(after_delete.downloaded_bytes, 0);
+    }
+
+    #[test]
+    fn net_3_a_offline_missing_rows_stay_listed_dimmed_and_need_network() {
+        assert_eq!(
+            episode_network_presentation(
+                Connectivity::Offline,
+                &DownloadState::NotDownloaded,
+                false,
+            ),
+            EpisodeNetworkPresentation::NeedsNetwork
+        );
+    }
+
+    #[test]
+    fn net_3_a_downloaded_rows_remain_normal_offline_and_resolution_failures_stay_visible() {
+        assert_eq!(
+            episode_network_presentation(
+                Connectivity::Offline,
+                &DownloadState::Downloaded { bytes: 12 },
+                false,
+            ),
+            EpisodeNetworkPresentation::Normal
+        );
+        assert_eq!(
+            episode_network_presentation(Connectivity::Online, &DownloadState::NotDownloaded, true,),
+            EpisodeNetworkPresentation::UnavailableNow
+        );
     }
 }

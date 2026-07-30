@@ -83,7 +83,10 @@ pub(super) fn status_copy(state: PodcastsEmptyState) -> (String, String, String)
             strings::text(strings::PODCAST_NO_DOWNLOADS_DESCRIPTION),
             strings::text(strings::SRC_CLEAR_FILTERS),
         ),
-        PodcastsEmptyState::List | PodcastsEmptyState::Empty | PodcastsEmptyState::ModuleOff => {
+        PodcastsEmptyState::List
+        | PodcastsEmptyState::Empty
+        | PodcastsEmptyState::ModuleOff
+        | PodcastsEmptyState::FetchFailed => {
             unreachable!("status_copy is only called for the three status-page states")
         }
     }
