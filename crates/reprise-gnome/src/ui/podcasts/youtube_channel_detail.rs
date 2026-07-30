@@ -130,10 +130,6 @@ impl YoutubeChannelState {
             self.selected.remove(&subscription_id);
         }
     }
-
-    fn clear_selected(&mut self, subscription_id: i64) {
-        self.selected.remove(&subscription_id);
-    }
 }
 
 fn project_channel(
@@ -495,22 +491,19 @@ impl YoutubeChannelDetail {
         download.connect_clicked(move |_| {
             let Some(detail) = weak.upgrade() else { return };
             let ids = detail.state.borrow().selected_ids(subscription_id);
-            let states = detail.download_states.borrow().clone();
-            podcasts_batch_actions::dispatch_downloads(
+            podcasts_batch_actions::dispatch_selected(
                 &detail.host,
+                podcasts_context_menu::ACTION_DOWNLOAD_SELECTED,
                 &ids,
-                &states,
-                podcasts_context_menu::ACTION_TOGGLE_DOWNLOAD,
             );
         });
         let weak = Rc::downgrade(self);
         remove.connect_clicked(move |_| {
             let Some(detail) = weak.upgrade() else { return };
             let ids = detail.state.borrow().selected_ids(subscription_id);
-            detail.state.borrow_mut().clear_selected(subscription_id);
-            podcasts_batch_actions::dispatch_each(
+            podcasts_batch_actions::dispatch_selected(
                 &detail.host,
-                podcasts_context_menu::ACTION_REMOVE_EPISODE,
+                podcasts_context_menu::ACTION_REMOVE_SELECTED,
                 &ids,
             );
         });
