@@ -25,6 +25,9 @@ pub const PODCAST_STATUS_RESUME: &str = N_!("Resume");
 pub const PODCAST_STATUS_PLAYED: &str = N_!("Played");
 pub const PODCAST_TODAY: &str = N_!("Today");
 pub const PODCAST_YESTERDAY: &str = N_!("Yesterday");
+pub const PODCAST_DURATION_UNDER_MINUTE: &str = N_!("< 1 min");
+pub const PODCAST_DURATION_MINUTES: &str = N_!("{minutes} min");
+pub const PODCAST_DURATION_HOURS: &str = N_!("{hours} h {minutes}");
 pub const PODCAST_ADD: &str = N_!("Add podcast");
 pub const YOUTUBE_ADD: &str = N_!("Add YouTube channel");
 pub const PODCAST_ADD_FILTER: &str = N_!("Add filter");
@@ -33,8 +36,8 @@ pub const PODCAST_FILTER_DOWNLOADED: &str = N_!("Downloaded");
 pub const PODCAST_FILTER_SHOW: &str = N_!("Show");
 pub const PODCAST_FILTER_SOURCE: &str = N_!("Source");
 pub const PODCAST_CLEAR_ALL: &str = N_!("Clear all");
-pub const PODCAST_GROUP_FACTS: &str =
-    N_!("{episodes} · {unplayed} new · latest {latest} · {downloaded}");
+pub const PODCAST_NEW_COUNT: &str = N_!("{count} new");
+pub const PODCAST_LATEST: &str = N_!("latest {date}");
 /// `SRC-10`: the shared empty-state grammar's copy for Podcasts — title, one
 /// paragraph of what lands here and where it comes from, the primary
 /// button, and a quiet secondary line. The design's approved secondary text
@@ -182,22 +185,39 @@ pub fn podcast_episode_count(count: usize) -> String {
     )
 }
 
+pub fn podcast_duration_minutes(minutes: i64) -> String {
+    formatted(
+        PODCAST_DURATION_MINUTES,
+        &[("minutes", &minutes.to_string())],
+    )
+}
+
+pub fn podcast_duration_hours(hours: i64, minutes: i64) -> String {
+    formatted(
+        PODCAST_DURATION_HOURS,
+        &[
+            ("hours", &hours.to_string()),
+            ("minutes", &format!("{minutes:02}")),
+        ],
+    )
+}
+
 pub fn podcast_group_facts(
     episodes: &str,
     unplayed: usize,
     latest: &str,
     downloaded: &str,
 ) -> String {
-    let unplayed = unplayed.to_string();
-    formatted(
-        PODCAST_GROUP_FACTS,
-        &[
-            ("episodes", episodes),
-            ("unplayed", &unplayed),
-            ("latest", latest),
-            ("downloaded", downloaded),
-        ],
-    )
+    let new_count = formatted(PODCAST_NEW_COUNT, &[("count", &unplayed.to_string())]);
+    let latest =
+        (!latest.trim().is_empty()).then(|| formatted(PODCAST_LATEST, &[("date", latest)]));
+    [Some(episodes.to_owned()), Some(new_count), latest, {
+        (!downloaded.trim().is_empty()).then(|| downloaded.to_owned())
+    }]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(" · ")
 }
 
 pub const PODCAST_LIBRARY_SUMMARY: &str = N_!("{shows} · {episodes} · {new} new");
