@@ -118,10 +118,18 @@ fn pill_column(view: &gtk4::ColumnView, title: &str, source: bool, is_playing: &
         };
         let row = object.row();
         let pill = if source {
-            source_pill(row.kind)
+            Some(source_pill(row.kind))
         } else {
             status_pill(&row)
         };
+        let Some(pill) = pill else {
+            icon.set_visible(false);
+            label.set_text("");
+            cell.set_css_classes(&[]);
+            cell.set_visible(false);
+            return;
+        };
+        cell.set_visible(true);
         icon.set_icon_name(pill.icon);
         icon.set_visible(pill.icon.is_some());
         label.set_text(&strings::text(pill.label));
@@ -160,20 +168,10 @@ fn unsubscribe_column(view: &gtk4::ColumnView, on_unsubscribe: &OnUnsubscribe) {
             };
             callback(object.row().subscription_id);
         });
-        let motion = gtk4::EventControllerMotion::new();
-        let weak = button.downgrade();
-        motion.connect_enter(move |_, _, _| {
-            if let Some(button) = weak.upgrade() {
-                button.set_opacity(1.0);
-            }
-        });
-        let weak = button.downgrade();
-        motion.connect_leave(move |_| {
-            if let Some(button) = weak.upgrade() {
-                button.set_opacity(0.0);
-            }
-        });
-        button.add_controller(motion);
+        // The same reveal rule as every other row (`SRC-4`), from the same
+        // place: a second hand-rolled hover controller here is how the two
+        // views drifted apart, with this one staying pointer-only.
+        super::podcasts_row_interaction::reveal_unsubscribe_on_hover_or_focus(&button, &button);
         let surface = crate::ui::source_context_surface::wrap(&button);
         podcasts_context_menu::wire_gesture(&surface, item);
         item.set_child(Some(&surface));
@@ -275,6 +273,7 @@ mod tests {
             title: "Episode".into(),
             show: "Show".into(),
             show_image_url: None,
+            image_url: None,
             kind: PodcastKind::Rss,
             audio_url: "https://example.test/e.mp3".into(),
             page_url: None,
@@ -285,6 +284,7 @@ mod tests {
             played_at: None,
             position_ms: 0,
             first_seen_at: 1,
+            is_new: false,
         }
     }
 

@@ -43,7 +43,7 @@ fake audio sink, and copied FLAC fixtures. It exercises nine public workflows:
    unreachable, with it on the empty state offers subscribing, and a fixture
    feed goes through the Add Podcast dialog — including the primary button
    turning from `Search` into `Preview` once a URL is entered — to a listed
-   show whose counts (`1 show · 1 episode · 1 new`) prove the feed was parsed
+   show whose counts (`1 show · 1 episode · 0 new`) prove the feed was parsed
    rather than its name taken from the URL. It closes the dialog before the
    phase ends: while one is open the app never exits, and `finish_scenario`
    then waits for an exit that never comes.

@@ -123,6 +123,7 @@ mod tests {
             title: format!("Video {id}"),
             show: "Channel".into(),
             show_image_url: None,
+            image_url: None,
             kind: PodcastKind::Youtube,
             audio_url: format!("https://youtube.test/watch?v={id}"),
             page_url: None,
@@ -133,6 +134,7 @@ mod tests {
             played_at: None,
             position_ms: 0,
             first_seen_at: id,
+            is_new: false,
         }
     }
 

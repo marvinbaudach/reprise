@@ -67,6 +67,12 @@ impl PodcastsView {
             view.request_load_more(subscription_id, end as usize);
         });
         group.add_action(&load_more);
+        self.add_target_action(&group, "show-all-episodes", |view, subscription_id| {
+            view.expanded_episode_sources
+                .borrow_mut()
+                .insert(subscription_id);
+            view.render();
+        });
         self.youtube_detail.install_actions(&group);
         let add = gio::SimpleAction::new("open-add", None);
         let weak = Rc::downgrade(self);

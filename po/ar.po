@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-30 17:50+0200\n"
+"POT-Creation-Date: 2026-07-30 18:29+0200\n"
 "PO-Revision-Date: 2026-07-20 11:38+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Arabic\n"
@@ -55,7 +55,7 @@ msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings.rs:128
 #: crates/reprise-gnome/src/ui/strings_issues.rs:42
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:159
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:162
 #: crates/reprise-gnome/src/ui/strings_radio.rs:61
 msgid "Undo"
 msgstr "تراجع"
@@ -329,7 +329,7 @@ msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings.rs:219
 #: crates/reprise-gnome/src/ui/strings.rs:496
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:106
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:109
 #: crates/reprise-gnome/src/ui/strings_radio.rs:38
 #: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:30
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:65
@@ -1581,7 +1581,7 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:58
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:26
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:19
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:34
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:37
 msgid "Source"
 msgstr "المصدر"
 
@@ -2021,7 +2021,7 @@ msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:68
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:86
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:172
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:175
 msgid "Updated just now"
 msgstr ""
 
@@ -2132,6 +2132,7 @@ msgid "in {days} d"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:166
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:39
 #, rust-format
 msgid "{count} new"
 msgstr ""
@@ -2553,7 +2554,7 @@ msgid "Episode"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:17
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:33
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:36
 msgid "Show"
 msgstr ""
 
@@ -2578,402 +2579,416 @@ msgid "Yesterday"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:28
-msgid "Add podcast"
+msgid "< 1 min"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:29
-msgid "Add YouTube channel"
+#: crates/reprise-gnome/src/ui/strings_stats.rs:16
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:82
+#, rust-format
+msgid "{minutes} min"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:30
+#: crates/reprise-gnome/src/ui/strings_stats.rs:14
+#, rust-format
+msgid "{hours} h {minutes}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:31
+msgid "Add podcast"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:32
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:59
+msgid "Add channel"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:33
 #: crates/reprise-gnome/src/ui/strings_radio.rs:20
 #: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:13
 msgid "Add filter"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:31
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:34
 msgid "Unplayed"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:32
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:35
 msgid "Downloaded"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:35
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:38
 #: crates/reprise-gnome/src/ui/strings_radio.rs:23
 #: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:14
 msgid "Clear all"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:37
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:40
 #, rust-format
-msgid "{episodes} · {unplayed} new · latest {latest} · {downloaded}"
+msgid "latest {date}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:44
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:47
 msgid "No podcasts yet"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:46
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:49
 msgid ""
 "Search by name or paste a feed URL. New episodes arrive on their own and "
 "remember where you stopped listening."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:48
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:51
 msgid "or paste a feed URL in the dialog"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:49
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:52
 msgid "No channels yet"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:51
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:54
 msgid ""
 "Subscribe to a channel and its uploads appear here as audio-only episodes — "
 "long mixes, sets, instrumentals. Shorts stay hidden."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:56
-msgid "Add channel"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:57
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:60
 msgid "or paste a channel URL in the dialog"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:58
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:61
 msgid "No episodes yet"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:60
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:63
 msgid "Refresh subscriptions to check for new episodes."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:64
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:67
 msgid "Nothing downloaded yet"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:66
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:69
 msgid "Episodes you download for offline listening will appear here."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:70
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:73
 #, rust-format
 msgid "{source} is turned off"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:72
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:75
 msgid ""
 "Turn it back on in Online sources to search, subscribe, and fetch new "
 "episodes again. Existing subscriptions are kept."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:74
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:77
 msgid "Enable in Preferences"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:75
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:78
 msgid "Refresh now"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:76
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:79
 msgid "Refreshing podcasts…"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:77
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:80
 msgid "Refresh failed · showing saved episodes"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:81
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:84
 msgid "Could not read your subscriptions"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:82
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:85
 msgid "Add Podcast"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:83
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:86
 msgid "Search by name or paste a feed URL"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:84
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:87
 msgid "Add Channel"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:85
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:88
 msgid "Search or paste a channel URL"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:87
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:90
 msgid "That is a YouTube channel — add it under YouTube"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:88
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:91
 msgid "That is an RSS feed — add it under Podcasts"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:93
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:96
 msgid "Search needs a connection — paste a feed URL instead"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:95
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:98
 msgid "Search needs a connection — paste a channel URL instead"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:99
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:102
 msgid "Added — details fill in once you're back online"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:100
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:103
 msgid "Search"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:101
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:104
 msgid "Preview"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:102
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:105
 #: crates/reprise-gnome/src/ui/strings_radio.rs:34
 msgid "Searching…"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:103
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:106
 msgid "PODCASTS · APPLE PODCASTS"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:104
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:107
 msgid "YOUTUBE · audio only"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:105
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:108
 msgid "Subscribe"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:107
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:110
 msgid "RSS feed detected"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:109
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:112
 msgid ""
 "YouTube channel detected — videos become episodes · audio only via yt-dlp"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:110
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:113
 msgid "Import the latest episodes"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:111
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:114
 msgid "Download new episodes automatically"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:113
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:116
 msgid "YouTube subscriptions are played audio-only via yt-dlp."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:114
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:117
 msgid "Could not preview this podcast"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:115
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:118
 msgid "Could not search for podcasts"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:116
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:119
 msgid "Could not subscribe to this podcast"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:117
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:120
 msgid "This source is already subscribed"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:119
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:122
 msgid "YouTube component is unavailable — reinstall or repair Reprise"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:121
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:124
 msgid "YouTube blocked the request — update yt-dlp (Preferences)"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:122
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:125
 msgid "Resolving audio…"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:123
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:126
 #: crates/reprise-gnome/src/ui/strings_radio.rs:53
 msgid "Play"
 msgstr "شغِّل"
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:124
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:127
 msgid "Copy episode URL"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:125
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:128
 msgid "Mark as played"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:126
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:129
 msgid "Mark as unplayed"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:127
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:130
 msgid "Download episode"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:128
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:131
 msgid "Delete download"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:129
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:132
 msgid "Not downloaded"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:130
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:133
 msgid "Queued"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:131
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:134
 msgid "Downloading"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:132
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:135
 msgid "File missing"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:133
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:136
 msgid "Download failed"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:137
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:140
 msgid "Retry download"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:138
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:141
 msgid "Remove episode"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:139
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:142
 msgid "More episode options"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:140
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:143
 msgid "More source options"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:141
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:144
 msgid "Unsubscribe"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:142
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:145
 msgid "Sync downloaded episodes to phone"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:143
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:146
 msgid "Stop syncing episodes to phone"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:144
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:147
 msgid "Sync downloaded episodes to devices"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:145
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:148
 msgid "Load more"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:146
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:149
 msgid "Loading more videos…"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:147
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:150
 msgid "Back to YouTube channels"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:148
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:151
 msgid "Hide Shorts"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:151
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:154
 msgid "Only Shorts here"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:153
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:156
 msgid "Every recent upload from this channel is a Short. Show them anyway?"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:154
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:157
 msgid "Show Shorts anyway"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:155
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:158
 msgid "Open channel"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:156
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:159
 msgid "Select episodes"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:157
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:160
 msgid "Download selected"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:158
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:161
 msgid "Remove selected"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:160
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:163
 msgid "Delete files"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:161
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:164
 msgid "Play next episode"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:162
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:165
 msgid "Episodes per show"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:163
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:166
 msgid "Download new episodes"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:164
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:167
 msgid "Delete played episodes"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:165
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:168
 msgid "Keep all"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:166
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:169
 msgid "After 7 days"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:167
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:170
 msgid "Keep last 5 per show"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:168
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:171
 msgid "Episodes per channel"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:169
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:172
 msgid "yt-dlp"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:170
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:173
 msgid "Update"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:171
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:174
 msgid "Checking installed version…"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:173
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:176
 #, rust-format
 msgid "{count} subscribers"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:178
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:181
 #, rust-format
 msgid "{count} episode"
 msgid_plural "{count} episodes"
@@ -2984,12 +2999,23 @@ msgstr[3] ""
 msgstr[4] ""
 msgstr[5] ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:203
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:191
+#, rust-format
+msgid "Show all {count} episode"
+msgid_plural "Show all {count} episodes"
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+msgstr[3] ""
+msgstr[4] ""
+msgstr[5] ""
+
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:228
 #, rust-format
 msgid "{shows} · {episodes} · {new} new"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:212
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:237
 #, rust-format
 msgid "{shows} show"
 msgid_plural "{shows} shows"
@@ -3000,7 +3026,7 @@ msgstr[3] ""
 msgstr[4] ""
 msgstr[5] ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:226
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:251
 #, rust-format
 msgid "{channels} channel"
 msgid_plural "{channels} channels"
@@ -3011,47 +3037,47 @@ msgstr[3] ""
 msgstr[4] ""
 msgstr[5] ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:247
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:272
 #, rust-format
 msgid "{visible} of {total} episodes"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:262
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:287
 #, rust-format
 msgid "Unsubscribe from “{show}”"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:267
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:292
 #, rust-format
 msgid "Sync downloaded episodes to “{device}”"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:283
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:308
 #, rust-format
 msgid "{shown} of {available} · {downloaded} downloaded · {size}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:294
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:319
 #, rust-format
 msgid "{count} selected"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:299
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:324
 #, rust-format
 msgid "Stop syncing episodes to “{device}”"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:305
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:330
 #, rust-format
 msgid "Removed “{title}”"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:309
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:334
 #, rust-format
 msgid "Play next: “{title}”"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:317
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:342
 #, rust-format
 msgid "{downloads} download kept"
 msgid_plural "{downloads} downloads kept"
@@ -3062,17 +3088,17 @@ msgstr[3] ""
 msgstr[4] ""
 msgstr[5] ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:324
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:349
 #, rust-format
 msgid "{shows} shows — {downloads} downloads kept"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:331
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:356
 #, rust-format
 msgid "Import the latest {count} episodes"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:339
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:364
 #, rust-format
 msgid "{count} matching video · audio only"
 msgid_plural "{count} matching videos · audio only"
@@ -3083,7 +3109,7 @@ msgstr[3] ""
 msgstr[4] ""
 msgstr[5] ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:348
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:373
 #, rust-format
 msgid "Updated {minutes} min ago"
 msgstr ""
@@ -3681,20 +3707,9 @@ msgid_plural "{n} queued"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_stats.rs:14
-#, rust-format
-msgid "{hours} h {minutes}"
-msgstr ""
-
 #: crates/reprise-gnome/src/ui/strings_stats.rs:15
 #, rust-format
 msgid "{hours} h"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_stats.rs:16
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:82
-#, rust-format
-msgid "{minutes} min"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_stats.rs:17
@@ -4726,3 +4741,9 @@ msgstr ""
 
 #~ msgid "Unknown Artist"
 #~ msgstr "فنان غير معروف"
+
+#~ msgid "Connected"
+#~ msgstr "متصل"
+
+#~ msgid "Open Preferences"
+#~ msgstr "فتح التفضيلات"

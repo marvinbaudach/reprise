@@ -154,6 +154,7 @@ mod tests {
                 &ParsedEpisode {
                     guid: format!("video-{id}"),
                     title: format!("Video {id}"),
+                    image_url: None,
                     audio_url: format!("https://youtube.test/watch?v={id}"),
                     page_url: None,
                     published_at: Some(id),

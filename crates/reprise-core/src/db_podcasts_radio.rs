@@ -259,6 +259,20 @@ pub(crate) fn migrate_v48(conn: &Connection) -> Result<(), rusqlite::Error> {
     transaction.commit()
 }
 
+pub(crate) fn migrate_v49(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    let has_image_url = has_column(conn, "podcast_episodes", "image_url")?;
+    if version >= 49 && has_image_url {
+        return Ok(());
+    }
+    let transaction = conn.unchecked_transaction()?;
+    if !has_image_url {
+        transaction.execute("ALTER TABLE podcast_episodes ADD COLUMN image_url TEXT", [])?;
+    }
+    transaction.pragma_update(None, "user_version", version.max(49))?;
+    transaction.commit()
+}
+
 fn has_column(conn: &Connection, table: &str, expected: &str) -> Result<bool, rusqlite::Error> {
     let mut statement = conn.prepare(&format!("PRAGMA table_info({table})"))?;
     let columns = statement

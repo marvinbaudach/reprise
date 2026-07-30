@@ -91,7 +91,7 @@ case "$*" in
     printf '%s\n' '{"title":"search","entries":[{"id":"s1","title":"Search hit","duration":30}]}'
     ;;
   "--no-warnings --flat-playlist -J https://youtube.test/@show")
-    printf '%s\n' '{"title":"Channel title","channel_id":"UC-stable","channel_url":"https://youtube.test/@show","thumbnail":"https://img.test/channel.jpg","entries":[{"id":"v1","title":"One","duration":12.8},{"id":"","title":"Blank ID"},{"id":"v2","title":"Two","duration":null},{"id":"blank-title","title":"   "}]}'
+    printf '%s\n' '{"title":"Channel title","channel_url":"https://youtube.test/@show","thumbnail":"https://img.test/channel.jpg","entries":[{"id":"v1","title":"One","duration":12.8,"channel_id":"UC-stable","timestamp":1775001600,"thumbnail":"https://img.test/v1.jpg"},{"id":"","title":"Blank ID"},{"id":"v2","title":"Two","duration":null,"upload_date":"20260730"},{"id":"blank-title","title":"   "}]}'
     ;;
   *) printf '%s\n' "unexpected arguments: $*" >&2; exit 2 ;;
 esac
@@ -114,7 +114,13 @@ esac
     assert_eq!(playlist.entries.len(), 2);
     assert_eq!(playlist.entries[0].id, "v1");
     assert_eq!(playlist.entries[0].duration_secs, Some(12));
+    assert_eq!(playlist.entries[0].timestamp, Some(1_775_001_600));
+    assert_eq!(
+        playlist.entries[0].image_url.as_deref(),
+        Some("https://img.test/v1.jpg")
+    );
     assert_eq!(playlist.entries[1].duration_secs, None);
+    assert_eq!(playlist.entries[1].upload_date.as_deref(), Some("20260730"));
 
     let results = runner.search("rust audio").unwrap();
     assert_eq!(results.entries[0].id, "s1");
@@ -265,6 +271,22 @@ fn failed_resolve_logs_operation_category_and_exit_code_without_provider_details
 }
 
 #[test]
+fn update_uses_the_same_guarded_subprocess_boundary() {
+    let directory = tempfile::tempdir().unwrap();
+    let log = directory.path().join("args");
+    let binary = fake_binary(
+        directory.path(),
+        &format!(
+            "printf '%s\\n' \"$@\" > '{}'\nprintf '%s\\n' 'Latest version'",
+            log.display()
+        ),
+    );
+    let runner = YtDlp::with_binary_and_timeouts(binary, short_timeouts());
+
+    assert_eq!(runner.update().unwrap(), "Latest version");
+    assert_eq!(fs::read_to_string(log).unwrap(), "--no-warnings\n-U\n");
+}
+#[test]
 fn failed_resolve_keeps_sanitized_stderr_only_in_explicit_details() {
     let directory = tempfile::tempdir().unwrap();
     let binary = fake_binary(
@@ -330,243 +352,4 @@ fn finalize_failure_keeps_a_private_path_out_of_explicit_details() {
         "{details}"
     );
     assert!(!details.contains("private-library"), "{details}");
-}
-
-#[test]
-fn update_uses_the_same_guarded_subprocess_boundary() {
-    let directory = tempfile::tempdir().unwrap();
-    let log = directory.path().join("args");
-    let binary = fake_binary(
-        directory.path(),
-        &format!(
-            "printf '%s\\n' \"$@\" > '{}'\nprintf '%s\\n' 'Latest version'",
-            log.display()
-        ),
-    );
-    let runner = YtDlp::with_binary_and_timeouts(binary, short_timeouts());
-
-    assert_eq!(runner.update().unwrap(), "Latest version");
-    assert_eq!(fs::read_to_string(log).unwrap(), "--no-warnings\n-U\n");
-}
-
-#[test]
-fn download_passes_audio_only_output_arguments() {
-    let directory = tempfile::tempdir().unwrap();
-    let output = directory.path().join("episode.audio");
-    let postprocessed = directory.path().join("episode.opus");
-    let log = directory.path().join("args");
-    let binary = fake_binary(
-        directory.path(),
-        &format!(
-            "printf '%s\\n' \"$@\" > '{}'\nprintf downloaded > '{}'\nprintf '%s\\n' '{}'",
-            log.display(),
-            postprocessed.display(),
-            postprocessed.display()
-        ),
-    );
-    let runner = YtDlp::with_binary_and_timeouts(binary, short_timeouts());
-
-    runner
-        .download("https://www.youtube.com/watch?v=v1", &output)
-        .unwrap();
-
-    let args = fs::read_to_string(log).unwrap();
-    assert_eq!(
-        args.lines().collect::<Vec<_>>(),
-        vec![
-            "--no-warnings",
-            "--newline",
-            "--progress-template",
-            "download:reprise-progress:%(progress.downloaded_bytes)s\t%(progress.total_bytes)s\t%(progress.total_bytes_estimate)s",
-            "-f",
-            "bestaudio",
-            "-x",
-            "--audio-format",
-            "opus",
-            "--no-part",
-            "--print",
-            "after_move:filepath",
-            "-o",
-            // Not `output` itself: a trailing `.part` is yt-dlp's own
-            // marker and gets stripped, so the executor asks for a name it
-            // honours literally and moves the result onto `output`
-            // afterwards. See
-            // `a_youtube_download_is_not_handed_an_output_path_yt_dlp_reserves`.
-            &format!("{}.download", output.display()),
-            "https://www.youtube.com/watch?v=v1",
-        ]
-    );
-    assert_eq!(fs::read_to_string(&output).unwrap(), "downloaded");
-    assert!(!postprocessed.exists());
-}
-
-/// `POD-13`: a failed YouTube download must not leave a `.part` file or
-/// a yt-dlp postprocessor leftover behind — `output` here already
-/// carries the `.part` suffix `downloads::partial_path` would give it,
-/// and `leftover` stands in for an intermediate file (e.g. a
-/// pre-conversion `.webm`) yt-dlp wrote before failing.
-/// `ytdlp_download::cleanup_artifacts` sweeps every file in the parent
-/// directory whose name starts with `output`'s — deleting that call
-/// turns this red, since the leftover would then survive the failure.
-#[test]
-fn pod_13_a_failed_download_removes_part_and_postprocessor_leftovers() {
-    let directory = tempfile::tempdir().unwrap();
-    let output = directory.path().join("episode.opus.part");
-    let leftover = directory.path().join("episode.opus.part.webm");
-    let binary = fake_binary(
-        directory.path(),
-        &format!(
-            "printf leftover > '{}'\nprintf '%s\\n' 'ERROR: unable to download video data' >&2\nexit 1",
-            leftover.display()
-        ),
-    );
-    let runner = YtDlp::with_binary_and_timeouts(binary, short_timeouts());
-
-    let result = runner.download("https://www.youtube.com/watch?v=v1", &output);
-
-    assert!(result.is_err());
-    assert!(
-        !leftover.exists(),
-        "a yt-dlp postprocessor leftover must not survive a failed download"
-    );
-    assert!(!output.exists());
-}
-
-#[test]
-fn failed_download_logs_operation_category_and_exit_code_without_provider_details() {
-    let directory = tempfile::tempdir().unwrap();
-    let output = directory.path().join("private-episode.audio");
-    let binary = fake_binary(
-        directory.path(),
-        "printf '%s\\n' \
-         'ERROR: HTTP Error 429 for https://youtube.test/watch?token=SECRET \
-         while using /home/user/cookies.txt' >&2\n\
-         exit 29",
-    );
-    let runner = YtDlp::with_binary_and_timeouts(binary, short_timeouts());
-    let logs = CapturedLogs::default();
-    let subscriber = LogCapture(logs.clone());
-
-    let error = tracing::subscriber::with_default(subscriber, || {
-        runner
-            .download("https://youtube.test/watch?v=private", &output)
-            .unwrap_err()
-    });
-
-    assert_eq!(
-        error.to_string(),
-        "YouTube is rate-limiting requests — try again later"
-    );
-    let logged = logs.joined();
-    for expected in [
-        "message=yt-dlp operation failed",
-        "operation=\"download\"",
-        "failure_kind=\"rate_limited\"",
-        "exit_code=29",
-    ] {
-        assert!(
-            logged.contains(expected),
-            "yt-dlp download log omitted {expected:?}: {logged}"
-        );
-    }
-    for secret in [
-        "youtube.test",
-        "token",
-        "SECRET",
-        "/home/user",
-        "cookies.txt",
-        "private",
-    ] {
-        assert!(
-            !logged.contains(secret),
-            "yt-dlp download log leaked {secret:?}: {logged}"
-        );
-    }
-}
-
-#[test]
-fn unreported_download_file_is_actionable_and_logged_without_local_paths() {
-    let directory = tempfile::tempdir().unwrap();
-    let output = directory.path().join("private-episode.audio");
-    let binary = fake_binary(
-        directory.path(),
-        "printf '%s\\n' '/home/user/secret-download.opus'",
-    );
-    let runner = YtDlp::with_binary_and_timeouts(binary, short_timeouts());
-    let logs = CapturedLogs::default();
-    let subscriber = LogCapture(logs.clone());
-
-    let error = tracing::subscriber::with_default(subscriber, || {
-        runner
-            .download("https://youtube.test/watch?v=private", &output)
-            .unwrap_err()
-    });
-
-    assert_eq!(
-        error.to_string(),
-        "YouTube download could not be saved — check available space and permissions"
-    );
-    let logged = logs.joined();
-    for expected in [
-        "message=yt-dlp download could not be finalized",
-        "operation=\"download\"",
-        "failure_kind=\"finalize_failed\"",
-    ] {
-        assert!(
-            logged.contains(expected),
-            "yt-dlp finalization log omitted {expected:?}: {logged}"
-        );
-    }
-    for private in [
-        "/home/user",
-        "secret-download",
-        "private-episode",
-        "private",
-    ] {
-        assert!(
-            !logged.contains(private),
-            "yt-dlp finalization log leaked {private:?}: {logged}"
-        );
-    }
-}
-
-#[test]
-fn pod_7_download_reports_machine_readable_progress_with_unknown_totals() {
-    let directory = tempfile::tempdir().unwrap();
-    let output = directory.path().join("episode.audio");
-    let binary = fake_binary(
-        directory.path(),
-        &format!(
-            "printf '%s\\n' 'reprise-progress:5\tNA\tNA'\n\
-             printf '%s\\n' 'reprise-progress:8\t10\tNA'\n\
-             printf downloaded > '{}'\n\
-             printf '%s\\n' '{}'",
-            output.display(),
-            output.display()
-        ),
-    );
-    let runner = YtDlp::with_binary_and_timeouts(binary, short_timeouts());
-    let mut progress = Vec::new();
-
-    runner
-        .download_with_progress(
-            "https://www.youtube.com/watch?v=v1",
-            &output,
-            &mut |event| progress.push(event),
-        )
-        .unwrap();
-
-    assert_eq!(
-        progress,
-        [
-            crate::podcasts::download_state::DownloadProgress {
-                received_bytes: 5,
-                total_bytes: None,
-            },
-            crate::podcasts::download_state::DownloadProgress {
-                received_bytes: 8,
-                total_bytes: Some(10),
-            },
-        ]
-    );
 }

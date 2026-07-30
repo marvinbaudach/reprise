@@ -25,16 +25,19 @@ pub const PODCAST_STATUS_RESUME: &str = N_!("Resume");
 pub const PODCAST_STATUS_PLAYED: &str = N_!("Played");
 pub const PODCAST_TODAY: &str = N_!("Today");
 pub const PODCAST_YESTERDAY: &str = N_!("Yesterday");
+pub const PODCAST_DURATION_UNDER_MINUTE: &str = N_!("< 1 min");
+pub const PODCAST_DURATION_MINUTES: &str = N_!("{minutes} min");
+pub const PODCAST_DURATION_HOURS: &str = N_!("{hours} h {minutes}");
 pub const PODCAST_ADD: &str = N_!("Add podcast");
-pub const YOUTUBE_ADD: &str = N_!("Add YouTube channel");
+pub const YOUTUBE_ADD: &str = N_!("Add channel");
 pub const PODCAST_ADD_FILTER: &str = N_!("Add filter");
 pub const PODCAST_FILTER_UNPLAYED: &str = N_!("Unplayed");
 pub const PODCAST_FILTER_DOWNLOADED: &str = N_!("Downloaded");
 pub const PODCAST_FILTER_SHOW: &str = N_!("Show");
 pub const PODCAST_FILTER_SOURCE: &str = N_!("Source");
 pub const PODCAST_CLEAR_ALL: &str = N_!("Clear all");
-pub const PODCAST_GROUP_FACTS: &str =
-    N_!("{episodes} · {unplayed} new · latest {latest} · {downloaded}");
+pub const PODCAST_NEW_COUNT: &str = N_!("{count} new");
+pub const PODCAST_LATEST: &str = N_!("latest {date}");
 /// `SRC-10`: the shared empty-state grammar's copy for Podcasts — title, one
 /// paragraph of what lands here and where it comes from, the primary
 /// button, and a quiet secondary line. The design's approved secondary text
@@ -51,8 +54,8 @@ pub const YOUTUBE_NO_CHANNELS_DESCRIPTION: &str = N_!(
     "Subscribe to a channel and its uploads appear here as audio-only episodes — long mixes, sets, instrumentals. Shorts stay hidden."
 );
 /// The empty state's primary button — deliberately shorter than the
-/// toolbar's `YOUTUBE_ADD` ("Add YouTube channel"): the page's own glyph and
-/// title already say YouTube, so the button need not repeat it.
+/// toolbar's `YOUTUBE_ADD`: both read "Add channel" now — the page's own glyph
+/// and title already say YouTube, so neither button repeats it.
 pub const YOUTUBE_NO_CHANNELS_ADD: &str = N_!("Add channel");
 pub const YOUTUBE_NO_CHANNELS_SECONDARY: &str = N_!("or paste a channel URL in the dialog");
 pub const PODCAST_NO_EPISODES: &str = N_!("No episodes yet");
@@ -182,22 +185,44 @@ pub fn podcast_episode_count(count: usize) -> String {
     )
 }
 
-pub fn podcast_group_facts(
-    episodes: &str,
-    unplayed: usize,
-    latest: &str,
-    downloaded: &str,
-) -> String {
-    let unplayed = unplayed.to_string();
+pub fn podcast_show_all_episodes(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "Show all {count} episode",
+        "Show all {count} episodes",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+pub fn podcast_duration_minutes(minutes: i64) -> String {
     formatted(
-        PODCAST_GROUP_FACTS,
+        PODCAST_DURATION_MINUTES,
+        &[("minutes", &minutes.to_string())],
+    )
+}
+
+pub fn podcast_duration_hours(hours: i64, minutes: i64) -> String {
+    formatted(
+        PODCAST_DURATION_HOURS,
         &[
-            ("episodes", episodes),
-            ("unplayed", &unplayed),
-            ("latest", latest),
-            ("downloaded", downloaded),
+            ("hours", &hours.to_string()),
+            ("minutes", &format!("{minutes:02}")),
         ],
     )
+}
+
+pub fn podcast_group_facts(episodes: &str, new: usize, latest: &str, downloaded: &str) -> String {
+    let new_count = formatted(PODCAST_NEW_COUNT, &[("count", &new.to_string())]);
+    let latest =
+        (!latest.trim().is_empty()).then(|| formatted(PODCAST_LATEST, &[("date", latest)]));
+    [Some(episodes.to_owned()), Some(new_count), latest, {
+        (!downloaded.trim().is_empty()).then(|| downloaded.to_owned())
+    }]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(" · ")
 }
 
 pub const PODCAST_LIBRARY_SUMMARY: &str = N_!("{shows} · {episodes} · {new} new");
@@ -414,6 +439,11 @@ mod tests {
     fn episode_count_uses_singular_and_plural_copy() {
         assert_eq!(podcast_episode_count(1), "1 episode");
         assert_eq!(podcast_episode_count(23), "23 episodes");
+    }
+
+    #[test]
+    fn show_all_episodes_uses_the_full_group_count() {
+        assert_eq!(podcast_show_all_episodes(15), "Show all 15 episodes");
     }
 
     /// `G2` (design 6a): matches the owner's design example verbatim.
