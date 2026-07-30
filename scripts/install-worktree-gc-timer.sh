@@ -4,10 +4,13 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 source_dir="$repo_root/docs/automation"
 unit_dir=${WORKTREE_GC_SYSTEMD_USER_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user}
+libexec_dir="$HOME/.local/libexec"
 systemctl_bin=${SYSTEMCTL_BIN:-systemctl}
 
 service_source="$source_dir/reprise-worktree-gc.service"
 timer_source="$source_dir/reprise-worktree-gc.timer"
+collector_source="$repo_root/scripts/reprise-worktree-gc.sh"
+collector_destination="$libexec_dir/reprise-worktree-gc"
 [[ -f $service_source ]] || {
   echo "Missing worktree cleanup service: $service_source" >&2
   exit 1
@@ -16,7 +19,12 @@ timer_source="$source_dir/reprise-worktree-gc.timer"
   echo "Missing worktree cleanup timer: $timer_source" >&2
   exit 1
 }
+[[ -x $collector_source ]] || {
+  echo "Missing worktree collector: $collector_source" >&2
+  exit 1
+}
 
+install -Dm755 "$collector_source" "$collector_destination"
 install -Dm644 "$service_source" "$unit_dir/reprise-worktree-gc.service"
 install -Dm644 "$timer_source" "$unit_dir/reprise-worktree-gc.timer"
 

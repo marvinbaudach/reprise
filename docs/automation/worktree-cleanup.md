@@ -57,6 +57,11 @@ Install and start the checked-in user timer:
 scripts/install-worktree-gc-timer.sh
 ```
 
+The installer copies the collector to
+`~/.local/libexec/reprise-worktree-gc`, so the timer does not depend on the
+checkout used for installation remaining on `dev`. Rerun the installer after
+updating Reprise to refresh that installed copy.
+
 It runs on Sunday at 04:15 with up to 30 minutes of randomized delay.
 `Persistent=true` makes systemd run a missed sweep after the machine starts
 again.
