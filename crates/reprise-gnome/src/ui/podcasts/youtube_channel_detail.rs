@@ -15,7 +15,8 @@ use reprise_core::podcasts::channel_window::{
 use reprise_core::podcasts::download_state::DownloadState;
 use reprise_core::podcasts::EpisodeRow;
 
-use super::podcasts_context_menu::PodcastSyncDevice;
+use super::podcasts_batch_actions;
+use super::podcasts_context_menu::{self, PodcastSyncDevice};
 use super::podcasts_download_presentation;
 use super::podcasts_groups::{self, DownloadRowWidgets};
 use super::podcasts_presentation::{
@@ -495,31 +496,23 @@ impl YoutubeChannelDetail {
             let Some(detail) = weak.upgrade() else { return };
             let ids = detail.state.borrow().selected_ids(subscription_id);
             let states = detail.download_states.borrow().clone();
-            for id in ids {
-                if !matches!(
-                    states.get(&id),
-                    Some(
-                        DownloadState::Queued
-                            | DownloadState::Downloading { .. }
-                            | DownloadState::Downloaded { .. }
-                    )
-                ) {
-                    let _ = detail
-                        .host
-                        .activate_action("podcasts.toggle-download", Some(&id.to_variant()));
-                }
-            }
+            podcasts_batch_actions::dispatch_downloads(
+                &detail.host,
+                &ids,
+                &states,
+                podcasts_context_menu::ACTION_TOGGLE_DOWNLOAD,
+            );
         });
         let weak = Rc::downgrade(self);
         remove.connect_clicked(move |_| {
             let Some(detail) = weak.upgrade() else { return };
             let ids = detail.state.borrow().selected_ids(subscription_id);
             detail.state.borrow_mut().clear_selected(subscription_id);
-            for id in ids {
-                let _ = detail
-                    .host
-                    .activate_action("podcasts.remove-episode", Some(&id.to_variant()));
-            }
+            podcasts_batch_actions::dispatch_each(
+                &detail.host,
+                podcasts_context_menu::ACTION_REMOVE_EPISODE,
+                &ids,
+            );
         });
     }
 
