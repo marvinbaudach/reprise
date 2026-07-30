@@ -23,6 +23,138 @@ pub enum SourceErrorKind {
     Offline,
 }
 
+/// The source place presenting a classified failure.
+///
+/// This is intentionally smaller than the module registry: it names only
+/// distinctions that change failure copy or actions. New Releases and
+/// Concerts can use `Generic` until their own approved wording needs a
+/// distinct projection.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SourceSurface {
+    Podcast,
+    Youtube,
+    Radio,
+    Generic,
+}
+
+/// Whether a failed fetch augments cached content or replaces a genuinely
+/// empty source area.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FailureSurface {
+    Banner,
+    FullArea,
+}
+
+/// Safe copy identities. GTK translates these identities into localized
+/// text; technical provider text is deliberately not part of this type.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FailureHeadline {
+    CouldNotCheckChannel,
+    CouldNotReachYoutube,
+    CouldNotReachSource,
+    PodcastMovedOrEnded,
+    YoutubeRateLimited,
+    YoutubeHelperNeedsUpdate,
+    RadioNotBroadcasting,
+    Offline,
+    SeveralSourcesCouldNotRefresh { count: usize },
+}
+
+/// User actions a classified failure may offer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FailureAction {
+    TryAgain,
+    CheckSubscription,
+    Unsubscribe,
+    OpenPreferences,
+    FindNewUrl,
+}
+
+/// Pure presentation decision shared by banners and full-area states.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourceFailurePresentation {
+    pub surface: FailureSurface,
+    pub headline: FailureHeadline,
+    pub actions: Vec<FailureAction>,
+    pub cached_items: usize,
+}
+
+/// Decides how a classified provider failure is presented.
+///
+/// Cached items are never removed: any non-zero cache selects a banner.
+/// Three or more failures collapse into one page-level notice instead of
+/// repeating the same message per source.
+#[must_use]
+pub fn source_failure_presentation(
+    source: SourceSurface,
+    kind: &SourceErrorKind,
+    cached_items: usize,
+    failed_sources: usize,
+) -> SourceFailurePresentation {
+    let surface = if cached_items == 0 {
+        FailureSurface::FullArea
+    } else {
+        FailureSurface::Banner
+    };
+    let (headline, actions) = if failed_sources >= 3 {
+        (
+            FailureHeadline::SeveralSourcesCouldNotRefresh {
+                count: failed_sources,
+            },
+            vec![FailureAction::TryAgain],
+        )
+    } else {
+        failure_copy(source, kind, surface)
+    };
+    SourceFailurePresentation {
+        surface,
+        headline,
+        actions,
+        cached_items,
+    }
+}
+
+fn failure_copy(
+    source: SourceSurface,
+    kind: &SourceErrorKind,
+    surface: FailureSurface,
+) -> (FailureHeadline, Vec<FailureAction>) {
+    match (source, kind, surface) {
+        (_, SourceErrorKind::Offline, _) => {
+            (FailureHeadline::Offline, vec![FailureAction::TryAgain])
+        }
+        (SourceSurface::Podcast, SourceErrorKind::SourceGone, _) => (
+            FailureHeadline::PodcastMovedOrEnded,
+            vec![FailureAction::CheckSubscription, FailureAction::Unsubscribe],
+        ),
+        (SourceSurface::Youtube, SourceErrorKind::RateLimited { .. }, _) => (
+            FailureHeadline::YoutubeRateLimited,
+            vec![FailureAction::TryAgain],
+        ),
+        (SourceSurface::Youtube, SourceErrorKind::HelperOutdated, _) => (
+            FailureHeadline::YoutubeHelperNeedsUpdate,
+            vec![FailureAction::OpenPreferences],
+        ),
+        (SourceSurface::Radio, _, _) => (
+            FailureHeadline::RadioNotBroadcasting,
+            vec![FailureAction::TryAgain, FailureAction::FindNewUrl],
+        ),
+        (SourceSurface::Youtube, _, FailureSurface::FullArea) => (
+            FailureHeadline::CouldNotReachYoutube,
+            vec![FailureAction::TryAgain],
+        ),
+        (SourceSurface::Podcast | SourceSurface::Youtube, _, FailureSurface::Banner) => (
+            FailureHeadline::CouldNotCheckChannel,
+            vec![FailureAction::TryAgain],
+        ),
+        (SourceSurface::Podcast | SourceSurface::Generic, _, FailureSurface::FullArea)
+        | (SourceSurface::Generic, _, FailureSurface::Banner) => (
+            FailureHeadline::CouldNotReachSource,
+            vec![FailureAction::TryAgain],
+        ),
+    }
+}
+
 /// A classified source failure with technical context kept out of normal display.
 #[derive(Clone, PartialEq, Eq)]
 pub struct SourceError {
@@ -313,5 +445,95 @@ mod tests {
             super::source_backoff_delay(3, None),
             Some(Duration::from_secs(8))
         );
+    }
+
+    #[test]
+    fn net_3_a_cached_failure_uses_one_banner_and_keeps_the_cached_content() {
+        let presentation = super::source_failure_presentation(
+            super::SourceSurface::Youtube,
+            &SourceErrorKind::Unreachable,
+            10,
+            1,
+        );
+
+        assert_eq!(presentation.surface, super::FailureSurface::Banner);
+        assert_eq!(
+            presentation.headline,
+            super::FailureHeadline::CouldNotCheckChannel
+        );
+        assert_eq!(presentation.actions, vec![super::FailureAction::TryAgain]);
+    }
+
+    #[test]
+    fn net_3_a_failure_without_cached_content_uses_the_full_area_state() {
+        let presentation = super::source_failure_presentation(
+            super::SourceSurface::Youtube,
+            &SourceErrorKind::Unreachable,
+            0,
+            1,
+        );
+
+        assert_eq!(presentation.surface, super::FailureSurface::FullArea);
+        assert_eq!(
+            presentation.headline,
+            super::FailureHeadline::CouldNotReachYoutube
+        );
+        assert_eq!(presentation.actions, vec![super::FailureAction::TryAgain]);
+    }
+
+    #[test]
+    fn source_failure_actions_are_provider_specific_and_never_blame_the_user() {
+        let gone = super::source_failure_presentation(
+            super::SourceSurface::Podcast,
+            &SourceErrorKind::SourceGone,
+            4,
+            1,
+        );
+        assert_eq!(gone.headline, super::FailureHeadline::PodcastMovedOrEnded);
+        assert_eq!(
+            gone.actions,
+            vec![
+                super::FailureAction::CheckSubscription,
+                super::FailureAction::Unsubscribe,
+            ]
+        );
+
+        let helper = super::source_failure_presentation(
+            super::SourceSurface::Youtube,
+            &SourceErrorKind::HelperOutdated,
+            4,
+            1,
+        );
+        assert_eq!(helper.actions, vec![super::FailureAction::OpenPreferences]);
+
+        let radio = super::source_failure_presentation(
+            super::SourceSurface::Radio,
+            &SourceErrorKind::Unreachable,
+            1,
+            1,
+        );
+        assert_eq!(
+            radio.actions,
+            vec![
+                super::FailureAction::TryAgain,
+                super::FailureAction::FindNewUrl,
+            ]
+        );
+    }
+
+    #[test]
+    fn net_3_three_or_more_failures_collapse_into_one_collected_notice() {
+        let presentation = super::source_failure_presentation(
+            super::SourceSurface::Podcast,
+            &SourceErrorKind::Unreachable,
+            12,
+            3,
+        );
+
+        assert_eq!(
+            presentation.headline,
+            super::FailureHeadline::SeveralSourcesCouldNotRefresh { count: 3 }
+        );
+        assert_eq!(presentation.surface, super::FailureSurface::Banner);
     }
 }
