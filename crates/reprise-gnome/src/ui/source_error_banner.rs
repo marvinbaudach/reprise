@@ -30,7 +30,10 @@ pub(super) fn headline_text(headline: FailureHeadline) -> String {
     }
 }
 
-fn action_text(action: FailureAction) -> String {
+/// The one place a failure action is named. Both the banner and the full-area
+/// state offer the same actions, and two copies of this match were free to
+/// drift into two different words for the same button.
+pub(in crate::ui) fn action_text(action: FailureAction) -> String {
     strings::text(match action {
         FailureAction::TryAgain => strings::SOURCE_TRY_AGAIN,
         FailureAction::CheckSubscription => strings::SOURCE_CHECK_SUBSCRIPTION,

@@ -39,6 +39,20 @@ pub(super) fn should_clear_radio_failure(
     connectivity == Connectivity::Online && matches!(failure_kind, Some(SourceErrorKind::Offline))
 }
 
+/// Whether going offline may post its notice — see the podcast twin of this
+/// guard. A station that is not broadcasting stays not broadcasting while the
+/// connection is down, and "No connection" would both hide that and make the
+/// notice look transient enough for reconnect to clear it.
+pub(super) fn should_show_offline_radio_notice(
+    connectivity: Connectivity,
+    has_stations: bool,
+    failure_kind: Option<&SourceErrorKind>,
+) -> bool {
+    connectivity == Connectivity::Offline
+        && has_stations
+        && matches!(failure_kind, None | Some(SourceErrorKind::Offline))
+}
+
 pub(super) fn reresolve_station_url(shared: &Rc<Shared>, station: &StationRow) {
     let Some(uuid) = station.uuid.clone().filter(|uuid| !uuid.is_empty()) else {
         present_add_dialog(shared);
@@ -100,6 +114,38 @@ mod tests {
         assert!(!should_clear_radio_failure(
             Connectivity::Offline,
             Some(&SourceErrorKind::Offline),
+        ));
+    }
+
+    #[test]
+    fn net_3_b_going_offline_never_replaces_a_dead_station_notice() {
+        // A station that is not broadcasting stays that way while the network
+        // is down. Rewriting the notice as "No connection" both hid that and
+        // made it transient enough for reconnect to clear it entirely.
+        assert!(!should_show_offline_radio_notice(
+            Connectivity::Offline,
+            true,
+            Some(&SourceErrorKind::Unreachable),
+        ));
+        assert!(!should_show_offline_radio_notice(
+            Connectivity::Offline,
+            true,
+            Some(&SourceErrorKind::SourceGone),
+        ));
+        assert!(should_show_offline_radio_notice(
+            Connectivity::Offline,
+            true,
+            None
+        ));
+        assert!(should_show_offline_radio_notice(
+            Connectivity::Offline,
+            true,
+            Some(&SourceErrorKind::Offline),
+        ));
+        assert!(!should_show_offline_radio_notice(
+            Connectivity::Offline,
+            false,
+            None
         ));
     }
 }

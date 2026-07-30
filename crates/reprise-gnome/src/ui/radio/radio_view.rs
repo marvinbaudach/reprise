@@ -28,7 +28,8 @@ use crate::ui::strings;
 #[path = "radio_failure_ui.rs"]
 mod failure_ui;
 use failure_ui::{
-    radio_failure_action, reresolve_station_url, should_clear_radio_failure, RadioFailureAction,
+    radio_failure_action, reresolve_station_url, should_clear_radio_failure,
+    should_show_offline_radio_notice, RadioFailureAction,
 };
 
 const LIST_PAGE: &str = "list";
@@ -282,7 +283,11 @@ impl RadioView {
         self.shared.connectivity.set(value);
         render_rows(&self.shared);
         let failure_kind = self.shared.failure_kind.borrow().clone();
-        if value == Connectivity::Offline && !self.shared.rows.borrow().is_empty() {
+        if should_show_offline_radio_notice(
+            value,
+            !self.shared.rows.borrow().is_empty(),
+            failure_kind.as_ref(),
+        ) {
             show_radio_failure(
                 &self.shared,
                 SourceErrorKind::Offline,

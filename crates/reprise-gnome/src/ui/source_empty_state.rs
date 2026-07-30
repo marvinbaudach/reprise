@@ -23,7 +23,6 @@ use reprise_core::source_error::{FailureAction, SourceError, SourceFailurePresen
 
 use crate::ui::source_error_banner::headline_text;
 use crate::ui::source_error_details::SourceErrorDetails;
-use crate::ui::strings;
 
 const GLYPH_TILE_SIZE: i32 = 64;
 const GLYPH_PIXEL_SIZE: i32 = 28;
@@ -127,14 +126,8 @@ impl SourceFailureState {
         }
         let callback: std::rc::Rc<dyn Fn(FailureAction)> = std::rc::Rc::new(on_action);
         for action in &presentation.actions {
-            let label = match action {
-                FailureAction::TryAgain => strings::SOURCE_TRY_AGAIN,
-                FailureAction::CheckSubscription => strings::SOURCE_CHECK_SUBSCRIPTION,
-                FailureAction::Unsubscribe => strings::SOURCE_UNSUBSCRIBE,
-                FailureAction::OpenPreferences => strings::SOURCE_OPEN_PREFERENCES,
-                FailureAction::FindNewUrl => strings::SOURCE_FIND_NEW_URL,
-            };
-            let button = gtk4::Button::with_label(&strings::text(label));
+            let button =
+                gtk4::Button::with_label(&crate::ui::source_error_banner::action_text(*action));
             if self.actions.first_child().is_none() {
                 button.add_css_class("suggested-action");
             }
