@@ -5,6 +5,7 @@ mod add_dialog;
 mod add_dialog_input;
 mod add_dialog_results;
 mod css;
+mod podcasts_batch_actions;
 mod podcasts_columns;
 mod podcasts_context_menu;
 mod podcasts_deferred_actions;
