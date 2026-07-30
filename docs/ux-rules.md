@@ -685,7 +685,7 @@ human. Rationale for changes lives in the git history.
   field and the selection line as equal, real neighbours instead of read-only
   text beside it. The planned "Phone sync" block in Preferences (`SET-8`) is
   dropped with nothing in its place, not merely "as long as its sync foundation
-  does not exist" — see `SET-9`.
+  does not exist" — see `SET-11`.
 - **MTP-38** [active] [core] — Reprise knows three named sync targets per
   device — playlists, YouTube audio, podcast episodes — rather than a single
   managed folder (supersedes `78e379fd`, no migration: see Turn 6/7 plan §1b).
@@ -807,14 +807,14 @@ human. Rationale for changes lives in the git history.
   #96), so each switch acts only on its own source — switching YouTube off
   leaves podcast episodes syncing untouched, and the reverse. The global "Use
   online sources" gate sits above both and empties the sync on its own, since
-  `SET-9` calls that state "a local player only" and a phone still filling
+  `SET-11` calls that state "a local player only" and a phone still filling
   with feed downloads would not be one. This does **not** delete anything —
   and that clause is the load-bearing one. A switched-off source is not a
   source with nothing selected: with "Remove from phone when deleted or
   unsubscribed here" on, an empty desired set makes *every* resident file of
   that source a removal, so a gate that only emptied the candidate list would
   have turned switching YouTube off into "wipe YouTube off the phone on the
-  next sync". `SET-9`'s promise that subscriptions and favorites are *kept*
+  next sync". `SET-11`'s promise that subscriptions and favorites are *kept*
   stands unchanged, switching the module back on restores exactly the previous
   sync, and `build_plan` returns an empty plan for a disabled source rather
   than a plan full of deletions. The ordinary `remove_deleted` cleanup for an
@@ -856,7 +856,7 @@ human. Rationale for changes lives in the git history.
   begins with the compact standard spacing directly below the content
   header. Short pages are not vertically centered; unused space stays
   below the last group.
-- **SET-6a** [active] [gtk] — The Plugins page groups by user intent:
+- **SET-6a** [replaced by SET-10] [gtk] — The Plugins page groups by user intent:
   "Local Features", "Online Content" and "Connected Services". Scrobbling
   appears there exactly once as a navigation entry and opens a
   navigation page in the same Preferences window with ‹-Back. There is
@@ -867,7 +867,7 @@ human. Rationale for changes lives in the git history.
   provider-specific. With bundled app credentials, Last.fm offers the
   normal browser login directly; custom API credentials sit collapsed
   under "Advanced setup".
-- **SET-7** [active] [gtk] — "New Releases" and "Concerts" are peer
+- **SET-7** [replaced by SET-10] [gtk] — "New Releases" and "Concerts" are peer
   Preferences main pages in the vertical navigation. For these two
   features, the Plugins page keeps only the activation switches; scope,
   provider, location and similar options live exclusively on their
@@ -888,7 +888,7 @@ human. Rationale for changes lives in the git history.
   deleted." The fourth block, "Phone sync" from 7b, is deliberately not part of
   this as long as its sync foundation (block E) does not exist — its rules
   follow with that block.
-- **SET-9** [active] [gtk] — Replaces `SET-8`: the same Preferences main page
+- **SET-9** [replaced by SET-10/SET-11] [gtk] — Replaces `SET-8`: the same Preferences main page
   "Online sources" (turn 7b) with the same rows for YouTube, Podcasts and
   Radio, unchanged — a global gate "Use online sources" with the subtitle "Off
   makes this a local player only: no requests, no downloads, nothing hidden —
@@ -903,6 +903,22 @@ human. Rationale for changes lives in the git history.
   for sync rules needing a cross-device Preferences surface at all; they live
   on the device page instead (`MTP-37`). "Online sources" remains the only
   Preferences main page this area will ever get.
+- **SET-10** [active] [gtk] — Plugins is the only settings surface for
+  optional capabilities. It has exactly three groups in this order: Local,
+  Online content, Connected services. Every capability appears exactly once;
+  a capability with settings is an `AdwExpanderRow` whose settings are child
+  rows. There are no "Online sources", "New Releases", or "Concerts"
+  Preferences main pages. Every Online-content row names the service it
+  contacts, so Plugins is also the privacy overview. Phone sync deliberately
+  does not appear here: its rules stay on the device page (`MTP-37`).
+- **SET-11** [active] [gtk] — The Online-content group's own header is the
+  master switch. Off is a kill switch, not a bulk toggle: no request of any
+  kind runs, sidebar entries are hidden, and running downloads are cancelled,
+  while every per-module key keeps its value so switching the master back on
+  restores the exact previous configuration. The group collapses to its
+  header, which never disappears, and offers "Show the N sources"; revealing
+  it shows every source read-only. Connected services collapses the same way
+  and is labelled "Scrobbling · needs online sources".
 
 ## G. Feedback vocabulary
 
@@ -1873,7 +1889,7 @@ property is set and yet nothing happens.
   fully network-free use remains possible. Switching off takes effect
   immediately and does not hide images already cached locally.
 - **NET-1a** [active] [core] [gtk] — Extends `NET-1` by a global gate
-  `online-sources-enabled` (Preferences page "Online sources", `SET-9`): an AND
+  `online-sources-enabled` (Plugins, `SET-11`): an AND
   condition in front of **every** network fetch in the app, sitting on top of
   the respective module or source switch — cover downloads, artist portraits,
   New Releases, online lyrics **and** the three online sources YouTube,

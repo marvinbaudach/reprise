@@ -1,4 +1,4 @@
-//! YouTube block rows for the Online sources page (`SET-8`).
+//! YouTube child rows for the Plugins-page expander (`SET-10`).
 //!
 //! YouTube is a peer of Podcasts and Radio (issue #96): its own module
 //! (`reprise_core::modules::YOUTUBE_MODULE`), its own rows here, no longer a
@@ -48,9 +48,9 @@ pub(in crate::ui) struct YoutubePreferenceRows {
 }
 
 impl YoutubePreferenceRows {
-    pub(in crate::ui) fn add_to(&self, group: &adw::PreferencesGroup) {
+    pub(in crate::ui) fn add_to(&self, expander: &adw::ExpanderRow) {
         for row in &self.inner.rows {
-            group.add(row);
+            expander.add_row(row);
         }
     }
 

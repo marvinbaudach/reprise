@@ -171,9 +171,9 @@ pub(in crate::ui) struct ConcertPreferenceRows {
 }
 
 impl ConcertPreferenceRows {
-    pub(in crate::ui) fn add_to(&self, group: &adw::PreferencesGroup) {
+    pub(in crate::ui) fn add_to(&self, expander: &adw::ExpanderRow) {
         for row in &self.inner.rows {
-            group.add(row);
+            expander.add_row(row);
         }
     }
 
@@ -186,27 +186,6 @@ impl ConcertPreferenceRows {
             .similar_count
             .set_sensitive(enabled && self.inner.similar_enabled.is_active());
     }
-}
-
-pub(in crate::ui) fn build_page(
-    conn: &Rc<Db>,
-    runtime: &Rc<ConcertsRuntime>,
-) -> adw::PreferencesPage {
-    let page = adw::PreferencesPage::builder()
-        .title(strings::text(strings::CONCERTS))
-        .icon_name("x-office-calendar-symbolic")
-        .build();
-    let group = adw::PreferencesGroup::new();
-    let rows = build(conn, runtime, runtime.enabled.get());
-    rows.add_to(&group);
-    page.add(&group);
-
-    let alive = page.downgrade();
-    runtime.subscribe_enabled(
-        move || alive.upgrade().is_some(),
-        move |enabled| rows.set_sensitive(enabled),
-    );
-    page
 }
 
 pub(in crate::ui) fn build(

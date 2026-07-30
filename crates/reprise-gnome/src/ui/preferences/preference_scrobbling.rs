@@ -162,7 +162,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn set_6a_scrobbling_detail_stays_inside_preferences_navigation() {
+    fn set_10_scrobbling_detail_stays_inside_preferences_navigation() {
         gtk4::init().unwrap();
         let listenbrainz = adw::ExpanderRow::builder().title("ListenBrainz").build();
         let lastfm = adw::ExpanderRow::builder().title("Last.fm").build();
