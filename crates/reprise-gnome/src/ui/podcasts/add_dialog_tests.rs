@@ -254,7 +254,10 @@ fn pod_13_preview_error_never_forwards_a_leaking_payload() {
         failed while writing /home/user/.local/share/reprise/podcasts/leak.mp3";
 
     for error in [
-        podcasts::PodcastError::YtDlp(leaking.to_owned()),
+        podcasts::PodcastError::YtDlpFailure {
+            kind: reprise_core::podcasts::ytdlp::YtDlpFailureKind::Other,
+            stderr: leaking.to_owned(),
+        },
         podcasts::PodcastError::Transport(leaking.to_owned()),
         podcasts::PodcastError::Body(leaking.to_owned()),
     ] {
@@ -274,7 +277,10 @@ fn pod_13_preview_error_never_forwards_a_leaking_payload() {
         }
     }
     assert_eq!(
-        preview_error(&podcasts::PodcastError::YtDlp(leaking.to_owned())),
+        preview_error(&podcasts::PodcastError::YtDlpFailure {
+            kind: reprise_core::podcasts::ytdlp::YtDlpFailureKind::Other,
+            stderr: leaking.to_owned(),
+        }),
         "YouTube source could not be read with yt-dlp"
     );
 }

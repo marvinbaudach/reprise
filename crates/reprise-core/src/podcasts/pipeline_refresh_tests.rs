@@ -25,11 +25,17 @@ struct FakeYoutube;
 
 impl YoutubeFetcher for FakeYoutube {
     fn list(&self, _: &str, _: usize) -> Result<ParsedFeed, PodcastError> {
-        Err(PodcastError::YtDlp("unexpected YouTube call".to_owned()))
+        Err(PodcastError::YtDlpFailure {
+            kind: crate::podcasts::ytdlp::YtDlpFailureKind::Other,
+            stderr: "unexpected YouTube call".to_owned(),
+        })
     }
 
     fn download(&self, _: &str, _: &Path) -> Result<(), PodcastError> {
-        Err(PodcastError::YtDlp("unexpected YouTube call".to_owned()))
+        Err(PodcastError::YtDlpFailure {
+            kind: crate::podcasts::ytdlp::YtDlpFailureKind::Other,
+            stderr: "unexpected YouTube call".to_owned(),
+        })
     }
 }
 

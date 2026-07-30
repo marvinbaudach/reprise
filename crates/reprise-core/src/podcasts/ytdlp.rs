@@ -52,6 +52,14 @@ pub enum YtDlpFailureKind {
     ExtractorOutdated,
     ConversionUnavailable,
     DownloadStorage,
+    /// The helper binary is absent.
+    HelperMissing,
+    /// The helper binary is present but refuses to start — a different repair
+    /// than a missing one, so it keeps its own message.
+    HelperStartFailed,
+    /// The helper answered with something unreadable, which its own copy
+    /// already attributes to being out of date.
+    ResponseUnreadable,
     Other,
 }
 
@@ -68,6 +76,9 @@ impl YtDlpFailureKind {
             Self::ExtractorOutdated => "extractor_outdated",
             Self::ConversionUnavailable => "conversion_unavailable",
             Self::DownloadStorage => "download_storage",
+            Self::HelperMissing => "helper_missing",
+            Self::HelperStartFailed => "helper_start_failed",
+            Self::ResponseUnreadable => "response_unreadable",
             Self::Other => "other",
         }
     }
@@ -84,6 +95,9 @@ impl YtDlpFailureKind {
             Self::ExtractorOutdated => EXTRACTOR_OUTDATED_MESSAGE,
             Self::ConversionUnavailable => CONVERSION_UNAVAILABLE_MESSAGE,
             Self::DownloadStorage => DOWNLOAD_SAVE_MESSAGE,
+            Self::HelperMissing => MISSING_MESSAGE,
+            Self::HelperStartFailed => START_FAILED_MESSAGE,
+            Self::ResponseUnreadable => INVALID_RESPONSE_MESSAGE,
             Self::Other => GENERIC_FAILURE,
         }
     }
@@ -418,7 +432,7 @@ pub(super) fn collect_output(
                 stream,
                 "yt-dlp output reader disconnected"
             );
-            Err(PodcastError::YtDlp(GENERIC_FAILURE.to_string()))
+            Err(diagnostic_error(YtDlpFailureKind::Other, GENERIC_FAILURE))
         }
     }
 }
@@ -461,9 +475,9 @@ pub(super) fn terminate_process_group(_process_group: u32) {}
 
 pub(super) fn map_spawn_error(error: &std::io::Error) -> PodcastError {
     if error.kind() == std::io::ErrorKind::NotFound {
-        PodcastError::YtDlp(MISSING_MESSAGE.to_string())
+        diagnostic_error(YtDlpFailureKind::HelperMissing, MISSING_MESSAGE)
     } else {
-        PodcastError::YtDlp(START_FAILED_MESSAGE.to_string())
+        diagnostic_error(YtDlpFailureKind::HelperStartFailed, START_FAILED_MESSAGE)
     }
 }
 
@@ -513,7 +527,7 @@ pub(super) fn output_read_error(
         error_kind = ?error.kind(),
         "could not read yt-dlp output"
     );
-    PodcastError::YtDlp(GENERIC_FAILURE.to_string())
+    diagnostic_error(YtDlpFailureKind::Other, GENERIC_FAILURE)
 }
 
 pub(super) fn runtime_error(
@@ -527,7 +541,7 @@ pub(super) fn runtime_error(
         error_kind = ?error.kind(),
         "yt-dlp operation could not be completed"
     );
-    PodcastError::YtDlp(GENERIC_FAILURE.to_string())
+    diagnostic_error(YtDlpFailureKind::Other, GENERIC_FAILURE)
 }
 
 fn response_error(operation: &'static str) -> PodcastError {
@@ -536,7 +550,10 @@ fn response_error(operation: &'static str) -> PodcastError {
         failure_kind = "response_invalid",
         "yt-dlp response could not be parsed"
     );
-    PodcastError::YtDlp(INVALID_RESPONSE_MESSAGE.to_string())
+    diagnostic_error(
+        YtDlpFailureKind::ResponseUnreadable,
+        INVALID_RESPONSE_MESSAGE,
+    )
 }
 
 fn audio_unavailable_error(operation: &'static str) -> PodcastError {
@@ -545,7 +562,10 @@ fn audio_unavailable_error(operation: &'static str) -> PodcastError {
         failure_kind = "audio_unavailable",
         "yt-dlp response omitted playable audio"
     );
-    PodcastError::YtDlp(AUDIO_UNAVAILABLE_MESSAGE.to_string())
+    diagnostic_error(
+        YtDlpFailureKind::AudioUnavailable,
+        AUDIO_UNAVAILABLE_MESSAGE,
+    )
 }
 
 pub(super) fn download_finalize_error() -> PodcastError {
@@ -554,7 +574,7 @@ pub(super) fn download_finalize_error() -> PodcastError {
         failure_kind = "finalize_failed",
         "yt-dlp download could not be finalized"
     );
-    PodcastError::YtDlp(DOWNLOAD_SAVE_MESSAGE.to_string())
+    diagnostic_error(YtDlpFailureKind::DownloadStorage, DOWNLOAD_SAVE_MESSAGE)
 }
 
 pub(super) fn error_from_status(
@@ -570,9 +590,13 @@ pub(super) fn error_from_status(
         exit_code = status.code().unwrap_or(-1),
         "yt-dlp operation failed"
     );
+    diagnostic_error(failure, &stderr)
+}
+
+fn diagnostic_error(kind: YtDlpFailureKind, diagnostic: &str) -> PodcastError {
     PodcastError::YtDlpFailure {
-        kind: failure,
-        stderr: sanitize_diagnostic(&stderr),
+        kind,
+        stderr: sanitize_diagnostic(diagnostic),
     }
 }
 
@@ -646,39 +670,49 @@ pub(super) fn finalize_download(stdout: &str, destination: &Path) -> Result<(), 
         .find(|line| !line.trim().is_empty())
         .map(PathBuf::from)
         .ok_or_else(|| {
-            PodcastError::YtDlp("yt-dlp did not report the downloaded file".to_string())
+            diagnostic_error(
+                YtDlpFailureKind::DownloadStorage,
+                "yt-dlp did not report the downloaded file",
+            )
         })?;
     let produced_is_regular_file = produced
         .symlink_metadata()
         .is_ok_and(|metadata| metadata.file_type().is_file());
     if !produced_is_regular_file {
-        return Err(PodcastError::YtDlp(format!(
-            "yt-dlp did not create {}",
-            produced.display()
-        )));
+        return Err(diagnostic_error(
+            YtDlpFailureKind::DownloadStorage,
+            &format!("yt-dlp did not create {}", produced.display()),
+        ));
     }
     if produced == destination {
         return Ok(());
     }
     if destination.exists() {
-        return Err(PodcastError::YtDlp(format!(
-            "download destination already exists: {}",
-            destination.display()
-        )));
+        return Err(diagnostic_error(
+            YtDlpFailureKind::DownloadStorage,
+            &format!(
+                "download destination already exists: {}",
+                destination.display()
+            ),
+        ));
     }
 
     let produced_parent = canonical_parent(&produced)?;
     let destination_parent = canonical_parent(destination)?;
     if produced_parent != destination_parent {
-        return Err(PodcastError::YtDlp(
-            "yt-dlp reported a file outside the download destination".to_string(),
+        return Err(diagnostic_error(
+            YtDlpFailureKind::DownloadStorage,
+            "yt-dlp reported a file outside the download destination",
         ));
     }
     std::fs::rename(&produced, destination).map_err(|error| {
-        PodcastError::YtDlp(format!(
-            "could not finalize podcast download at {}: {error}",
-            destination.display()
-        ))
+        diagnostic_error(
+            YtDlpFailureKind::DownloadStorage,
+            &format!(
+                "could not finalize podcast download at {}: {error}",
+                destination.display()
+            ),
+        )
     })
 }
 
@@ -687,9 +721,10 @@ fn canonical_parent(path: &Path) -> Result<PathBuf, PodcastError> {
         .unwrap_or_else(|| Path::new("."))
         .canonicalize()
         .map_err(|error| {
-            PodcastError::YtDlp(format!(
-                "could not resolve podcast download directory: {error}"
-            ))
+            diagnostic_error(
+                YtDlpFailureKind::DownloadStorage,
+                &format!("could not resolve podcast download directory: {error}"),
+            )
         })
 }
 

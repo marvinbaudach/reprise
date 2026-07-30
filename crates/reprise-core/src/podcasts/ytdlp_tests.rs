@@ -1,7 +1,7 @@
 use std::{ffi::OsStr, fs, path::PathBuf};
 
 use super::test_support::{fake_binary, short_timeouts, CapturedLogs, LogCapture};
-use super::{classify_stderr, resolve_binary, YtDlp};
+use super::{classify_stderr, finalize_download, resolve_binary, YtDlp, YtDlpFailureKind};
 
 #[test]
 fn pod_3_ytdlp_errors_are_actionable_and_never_expose_provider_details() {
@@ -300,6 +300,36 @@ fn failed_resolve_keeps_sanitized_stderr_only_in_explicit_details() {
         details.lines().nth(1),
         Some("YouTube requires verification — try again later or use another network")
     );
+}
+
+#[test]
+fn finalize_failure_keeps_a_private_path_out_of_explicit_details() {
+    let directory = tempfile::tempdir().unwrap();
+    let produced = directory
+        .path()
+        .join("private-library")
+        .join("missing.opus");
+    let destination = directory.path().join("episode.opus");
+
+    let error = finalize_download(&produced.to_string_lossy(), &destination).unwrap_err();
+
+    assert!(matches!(
+        &error,
+        crate::podcasts::PodcastError::YtDlpFailure {
+            kind: YtDlpFailureKind::DownloadStorage,
+            ..
+        }
+    ));
+    let details = crate::source_error::SourceError::from(error)
+        .details("2026-07-30 17:20")
+        .to_string();
+    assert!(details.contains("yt-dlp did not create"), "{details}");
+    assert!(details.contains("[redacted path]"), "{details}");
+    assert!(
+        !details.contains(directory.path().to_string_lossy().as_ref()),
+        "{details}"
+    );
+    assert!(!details.contains("private-library"), "{details}");
 }
 
 #[test]

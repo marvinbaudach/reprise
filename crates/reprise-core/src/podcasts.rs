@@ -119,10 +119,6 @@ pub enum PodcastError {
     Parse(String),
     #[error("not modified")]
     NotModified,
-    /// Compatibility variant for callers that already hold a fixed,
-    /// payload-free yt-dlp message rather than subprocess diagnostics.
-    #[error("{0}")]
-    YtDlp(String),
     #[error("{}", kind.user_message())]
     YtDlpFailure {
         kind: ytdlp::YtDlpFailureKind,
@@ -180,7 +176,7 @@ impl PodcastError {
                 SourceErrorKind::Unreachable
                 | SourceErrorKind::RateLimited { .. }
                 | SourceErrorKind::HelperOutdated,
-                PodcastError::YtDlp(_) | PodcastError::YtDlpFailure { .. },
+                PodcastError::YtDlpFailure { .. },
             ) => "YouTube source could not be read with yt-dlp",
             (SourceErrorKind::Unreachable, PodcastError::YtDlpTimeout) => {
                 "YouTube source timed out"
@@ -221,7 +217,6 @@ impl From<&PodcastError> for SourceErrorKind {
             PodcastError::RateLimited { retry_after } => Self::RateLimited {
                 retry_after: *retry_after,
             },
-            PodcastError::YtDlp(_) => Self::Unreachable,
             PodcastError::YtDlpFailure { kind, .. } => Self::from(*kind),
             PodcastError::Timeout
             | PodcastError::Transport(_)
@@ -252,7 +247,10 @@ impl From<ytdlp::YtDlpFailureKind> for SourceErrorKind {
             ytdlp::YtDlpFailureKind::VerificationRequired
             | ytdlp::YtDlpFailureKind::RateLimited => Self::RateLimited { retry_after: None },
             ytdlp::YtDlpFailureKind::ExtractorOutdated
-            | ytdlp::YtDlpFailureKind::ConversionUnavailable => Self::HelperOutdated,
+            | ytdlp::YtDlpFailureKind::ConversionUnavailable
+            | ytdlp::YtDlpFailureKind::HelperMissing
+            | ytdlp::YtDlpFailureKind::HelperStartFailed
+            | ytdlp::YtDlpFailureKind::ResponseUnreadable => Self::HelperOutdated,
             ytdlp::YtDlpFailureKind::UnsupportedUrl
             | ytdlp::YtDlpFailureKind::AccessRefused
             | ytdlp::YtDlpFailureKind::Unreachable
@@ -282,7 +280,10 @@ mod tests {
             PodcastError::Body(leaking.to_owned()),
             PodcastError::Parse(leaking.to_owned()),
             PodcastError::NotModified,
-            PodcastError::YtDlp(leaking.to_owned()),
+            PodcastError::YtDlpFailure {
+                kind: crate::podcasts::ytdlp::YtDlpFailureKind::Other,
+                stderr: leaking.to_owned(),
+            },
             PodcastError::YtDlpFailure {
                 kind: ytdlp::YtDlpFailureKind::VerificationRequired,
                 stderr: leaking.to_owned(),
@@ -307,15 +308,21 @@ mod tests {
             PodcastError::Transport(String::new()).classify()
         );
         assert_ne!(
-            PodcastError::YtDlp(String::new()).classify(),
+            PodcastError::YtDlpFailure {
+                kind: crate::podcasts::ytdlp::YtDlpFailureKind::Other,
+                stderr: String::new(),
+            }
+            .classify(),
             PodcastError::Disabled(String::new()).classify()
         );
     }
 
     #[test]
     fn yt_dlp_projection_uses_the_typed_kind_not_message_substrings() {
-        let legacy_message =
-            PodcastError::YtDlp("requires verification and says update yt-dlp".to_owned());
+        let legacy_message = PodcastError::YtDlpFailure {
+            kind: crate::podcasts::ytdlp::YtDlpFailureKind::Other,
+            stderr: "requires verification and says update yt-dlp".to_owned(),
+        };
 
         assert_eq!(
             SourceErrorKind::from(&legacy_message),
