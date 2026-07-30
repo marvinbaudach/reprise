@@ -8,7 +8,7 @@ impl PodcastsView {
     pub(super) fn install_actions(self: &Rc<Self>) {
         let group = gio::SimpleActionGroup::new();
         self.add_target_action(&group, podcasts_context_menu::ACTION_PLAY, |view, id| {
-            match activation_for_episode(view.playing_episode.get(), id) {
+            match activation_for_episode(view.playing_episode.get().map(|mark| mark.id), id) {
                 EpisodeActivation::TogglePlayback => {
                     (view.callbacks.on_play_pause)();
                 }

@@ -1,5 +1,19 @@
 //! Pure playback decisions shared by the podcast episode surfaces.
 
+use crate::ui::playback::external_media::PodcastPhase;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::ui) struct EpisodeMark {
+    pub(in crate::ui) id: i64,
+    pub(in crate::ui) playing: bool,
+}
+
+impl EpisodeMark {
+    pub(in crate::ui) fn new(id: i64, playing: bool) -> Self {
+        Self { id, playing }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum EpisodeActivation {
     StartEpisode,
@@ -15,6 +29,17 @@ pub(super) fn activation_for_episode(
     } else {
         EpisodeActivation::StartEpisode
     }
+}
+
+pub(in crate::ui) fn podcast_phase_is_playing(phase: Option<PodcastPhase>) -> bool {
+    matches!(phase, Some(PodcastPhase::Resolving | PodcastPhase::Playing))
+}
+
+pub(super) fn episode_mark_requires_render(
+    previous: Option<EpisodeMark>,
+    next: Option<EpisodeMark>,
+) -> bool {
+    previous.map(|mark| mark.id) != next.map(|mark| mark.id)
 }
 
 #[cfg(test)]
@@ -35,5 +60,27 @@ mod tests {
             activation_for_episode(None, 41),
             EpisodeActivation::StartEpisode
         );
+    }
+
+    #[test]
+    fn podcast_phase_maps_to_the_visible_playing_state() {
+        assert!(podcast_phase_is_playing(Some(PodcastPhase::Resolving)));
+        assert!(podcast_phase_is_playing(Some(PodcastPhase::Playing)));
+        assert!(!podcast_phase_is_playing(Some(PodcastPhase::Paused)));
+        assert!(!podcast_phase_is_playing(Some(PodcastPhase::Failed)));
+        assert!(!podcast_phase_is_playing(None));
+    }
+
+    #[test]
+    fn only_an_episode_identity_change_requires_a_full_render() {
+        let playing = Some(EpisodeMark::new(41, true));
+        let paused = Some(EpisodeMark::new(41, false));
+        let other = Some(EpisodeMark::new(42, true));
+
+        assert!(!episode_mark_requires_render(playing, paused));
+        assert!(!episode_mark_requires_render(playing, playing));
+        assert!(episode_mark_requires_render(playing, other));
+        assert!(episode_mark_requires_render(playing, None));
+        assert!(!episode_mark_requires_render(None, None));
     }
 }

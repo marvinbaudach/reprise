@@ -12,6 +12,7 @@ use reprise_core::podcasts::download_state::DownloadState;
 use reprise_core::podcasts::{EpisodeRow, PodcastKind, SourceGroup};
 
 use super::podcasts_context_menu;
+use super::podcasts_playback::EpisodeMark;
 use super::podcasts_presentation::{
     author_line, detail_line, duration, file_size, on_phone, relative_date, status_pill,
     RenderedSourceGroup, SourceSummary,
@@ -34,7 +35,7 @@ pub(super) struct DownloadRowWidgets {
 }
 
 struct GroupRenderContext<'a> {
-    playing_episode: Option<i64>,
+    playing_episode: Option<EpisodeMark>,
     expanded_sources: &'a Rc<RefCell<BTreeSet<i64>>>,
     expanded_episode_sources: &'a Rc<RefCell<BTreeSet<i64>>>,
     download_states: &'a BTreeMap<i64, DownloadState>,
@@ -52,7 +53,7 @@ struct GroupRenderContext<'a> {
 pub(super) fn replace(
     container: &gtk4::Box,
     groups: &[RenderedSourceGroup],
-    playing_episode: Option<i64>,
+    playing_episode: Option<EpisodeMark>,
     expanded_sources: &Rc<RefCell<BTreeSet<i64>>>,
     expanded_episode_sources: &Rc<RefCell<BTreeSet<i64>>>,
     download_states: &BTreeMap<i64, DownloadState>,
@@ -150,7 +151,7 @@ fn build_group(
         episodes.append(&episode_row(
             episode,
             &title_parts,
-            context.playing_episode == Some(episode.id),
+            context.playing_episode.filter(|mark| mark.id == episode.id),
             &state,
             download_widgets,
             context.images_allowed,
@@ -270,12 +271,14 @@ fn group_header(
 fn episode_row(
     row: &EpisodeRow,
     title_parts: &TitleParts,
-    playing: bool,
+    mark: Option<EpisodeMark>,
     download_state: &DownloadState,
     download_widgets: &mut BTreeMap<i64, DownloadRowWidgets>,
     images_allowed: bool,
     network: RowNetworkState,
 ) -> gtk4::Widget {
+    let loaded = mark.is_some();
+    let playing = mark.is_some_and(|mark| mark.playing);
     let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
     root.add_css_class("reprise-podcast-episode-row");
     // a11y-semantics: role=button name=podcast-episode-row state=focusable action=activate
@@ -287,7 +290,7 @@ fn episode_row(
         strings::PLAY_OR_PAUSE,
     ))]);
     root.set_valign(gtk4::Align::Center);
-    if playing {
+    if loaded {
         root.add_css_class("reprise-podcast-playing");
     }
     root.set_margin_start(12);
@@ -297,8 +300,8 @@ fn episode_row(
 
     let (thumbnail, play_glyph) = episode_thumbnail(row, playing, images_allowed);
     let marker = playing_marker::build();
-    playing_marker::set_playing(&marker, true);
-    marker.set_visible(playing);
+    playing_marker::set_playing(&marker, playing);
+    marker.set_visible(loaded);
     thumbnail.add_overlay(&marker);
     thumbnail.add_overlay(&play_glyph);
     root.append(&thumbnail);
@@ -362,6 +365,15 @@ fn episode_row(
 }
 
 pub(super) use super::podcasts_row_state::{update_download_state, update_network_state};
+
+pub(super) fn update_playback_state(widgets: &DownloadRowWidgets, playing: bool) {
+    playing_marker::set_playing(&widgets.marker, playing);
+    widgets.play_glyph.set_icon_name(Some(if playing {
+        "media-playback-pause-symbolic"
+    } else {
+        "media-playback-start-symbolic"
+    }));
+}
 
 #[cfg(test)]
 mod tests {
@@ -428,7 +440,7 @@ mod tests {
                     distinct: row.title.clone(),
                     dimmed: None,
                 },
-                false,
+                None,
                 &DownloadState::NotDownloaded,
                 &mut widgets,
                 false,

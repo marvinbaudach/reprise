@@ -22,6 +22,7 @@ use super::podcasts_download_presentation::refreshed_download_states;
 use super::podcasts_empty_state::{podcasts_empty_state_for, PodcastsEmptyState};
 use super::podcasts_filter_bar::PodcastsFilterBar;
 use super::podcasts_groups;
+use super::podcasts_playback::{episode_mark_requires_render, EpisodeMark};
 use super::podcasts_presentation::{
     active as filter_active, apply_filter, library_summary, rendered_source_groups,
     sort_newest_first,
@@ -139,7 +140,7 @@ pub(in crate::ui) struct PodcastsView {
     expanded_episode_sources: Rc<RefCell<BTreeSet<i64>>>,
     download_states: Rc<RefCell<BTreeMap<i64, DownloadState>>>,
     download_widgets: RefCell<BTreeMap<i64, podcasts_groups::DownloadRowWidgets>>,
-    playing_episode: Cell<Option<i64>>,
+    playing_episode: Cell<Option<EpisodeMark>>,
     unavailable_episode: Cell<Option<i64>>,
     generation: Cell<u64>,
     toast_overlay: glib::WeakRef<adw::ToastOverlay>,
@@ -295,14 +296,24 @@ impl PodcastsView {
         self.toast_overlay.set(Some(overlay));
     }
 
-    pub(in crate::ui) fn set_playing_episode(&self, episode_id: Option<i64>) {
-        self.playing_episode.set(episode_id);
-        self.render();
+    pub(in crate::ui) fn set_playing_episode(&self, mark: Option<EpisodeMark>) {
+        let previous = self.playing_episode.replace(mark);
+        if episode_mark_requires_render(previous, mark) {
+            self.render();
+        } else if previous != mark {
+            let Some(mark) = mark else { return };
+            let widgets = self.download_widgets.borrow().get(&mark.id).cloned();
+            if let Some(widgets) = widgets {
+                podcasts_groups::update_playback_state(&widgets, mark.playing);
+            }
+            self.youtube_detail.update_playback_state(mark);
+        }
     }
 
     pub(in crate::ui) fn set_unavailable_episode(&self, episode_id: Option<i64>) {
-        self.unavailable_episode.set(episode_id);
-        self.render();
+        if self.unavailable_episode.replace(episode_id) != episode_id {
+            self.render();
+        }
     }
 
     pub(in crate::ui) fn bind_device_sync(

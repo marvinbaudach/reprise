@@ -18,6 +18,7 @@ use reprise_core::podcasts::EpisodeRow;
 use super::podcasts_context_menu::PodcastSyncDevice;
 use super::podcasts_download_presentation;
 use super::podcasts_groups::{self, DownloadRowWidgets};
+use super::podcasts_playback::EpisodeMark;
 use super::podcasts_presentation::{
     detail_line, duration, on_phone, relative_date, status_pill, RenderedSourceGroup,
 };
@@ -172,7 +173,7 @@ pub(super) struct YoutubeChannelDetail {
     images_allowed: Cell<bool>,
     connectivity: Cell<Connectivity>,
     unavailable_episode: Cell<Option<i64>>,
-    playing_episode: Cell<Option<i64>>,
+    playing_episode: Cell<Option<EpisodeMark>>,
 }
 
 impl YoutubeChannelDetail {
@@ -246,7 +247,7 @@ impl YoutubeChannelDetail {
         images_allowed: bool,
         connectivity: Connectivity,
         unavailable_episode: Option<i64>,
-        playing_episode: Option<i64>,
+        playing_episode: Option<EpisodeMark>,
     ) {
         self.groups.replace(groups.to_vec());
         self.download_states.replace(download_states.clone());
@@ -282,6 +283,14 @@ impl YoutubeChannelDetail {
                 self.connectivity.get(),
                 self.unavailable_episode.get() == Some(episode_id),
             );
+        }
+    }
+
+    pub(super) fn update_playback_state(&self, mark: EpisodeMark) {
+        self.playing_episode.set(Some(mark));
+        let widgets = self.download_widgets.borrow().get(&mark.id).cloned();
+        if let Some(widgets) = widgets {
+            podcasts_groups::update_playback_state(&widgets, mark.playing);
         }
     }
 
@@ -536,8 +545,13 @@ impl YoutubeChannelDetail {
     ) -> gtk4::Widget {
         let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
         row.add_css_class("reprise-podcast-episode-row");
-        let playing = self.playing_episode.get() == Some(episode.id);
-        if playing {
+        let mark = self
+            .playing_episode
+            .get()
+            .filter(|mark| mark.id == episode.id);
+        let loaded = mark.is_some();
+        let playing = mark.is_some_and(|mark| mark.playing);
+        if loaded {
             row.add_css_class("reprise-podcast-playing");
         }
         let selected = gtk4::CheckButton::new();
@@ -572,18 +586,18 @@ impl YoutubeChannelDetail {
         let play_surface = gtk4::Overlay::new();
         play_surface.set_size_request(32, 32);
         let marker = playing_marker::build();
-        playing_marker::set_playing(&marker, true);
-        marker.set_visible(playing);
+        playing_marker::set_playing(&marker, playing);
+        marker.set_visible(loaded);
         play_surface.add_overlay(&marker);
         let play_glyph = gtk4::Image::from_icon_name(if playing {
             "media-playback-pause-symbolic"
         } else {
             "media-playback-start-symbolic"
         });
-        play_glyph.set_opacity(if playing { 0.0 } else { 1.0 });
+        play_glyph.set_opacity(if loaded { 0.0 } else { 1.0 });
         play_surface.add_overlay(&play_glyph);
         play.set_child(Some(&play_surface));
-        install_playback_hover(&play, &marker, &play_glyph, if playing { 0.0 } else { 1.0 });
+        install_playback_hover(&play, &marker, &play_glyph, if loaded { 0.0 } else { 1.0 });
         row.append(&play);
         let copy = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
         copy.set_hexpand(true);

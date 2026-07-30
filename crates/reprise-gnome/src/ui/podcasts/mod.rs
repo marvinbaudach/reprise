@@ -28,6 +28,7 @@ mod podcasts_worker;
 pub(crate) mod source_image;
 mod youtube_channel_detail;
 
+pub(in crate::ui) use podcasts_playback::{podcast_phase_is_playing, EpisodeMark};
 pub(in crate::ui) use podcasts_view::{PodcastsCallbacks, PodcastsView};
 // `MTP-43`: the device-sync preparation phase (E9) reuses `MTP-44`'s
 // priority lane instead of a second download path — it needs these to build
