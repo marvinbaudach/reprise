@@ -30,12 +30,20 @@ pub(super) struct RunLog {
 }
 
 impl RunLog {
-    pub(super) fn open(runtime: &DeviceSyncRuntime, start: &RunStart) -> Self {
-        let run = match sync_log::start_run(&runtime.conn, start) {
-            Ok(run) => Some(run),
-            Err(error) => {
-                tracing::warn!(%error, "could not open the device sync log entry");
-                None
+    pub(super) fn open(
+        runtime: &DeviceSyncRuntime,
+        start: &RunStart,
+        persist_device_state: bool,
+    ) -> Self {
+        let run = if !persist_device_state {
+            None
+        } else {
+            match sync_log::start_run(&runtime.conn, start) {
+                Ok(run) => Some(run),
+                Err(error) => {
+                    tracing::warn!(%error, "could not open the device sync log entry");
+                    None
+                }
             }
         };
         Self {

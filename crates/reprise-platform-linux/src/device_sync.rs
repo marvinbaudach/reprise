@@ -11,44 +11,15 @@ use reprise_core::library::m3u::{parse_m3u, M3uEntry};
 
 pub use reprise_core::device_sync::{DeviceStorageInspection, DeviceStorageSnapshot};
 
+#[path = "device_sync_identity.rs"]
+mod identity;
+pub use identity::{
+    descriptor_from_mount, project_descriptor, usb_serial_from_sysfs, DeviceDescriptor,
+};
+
 const ENUMERATE_ATTRIBUTES: &str = "standard::name,standard::type,standard::size";
 const ENUMERATE_BATCH_SIZE: i32 = 64;
 const PARTIAL_SUFFIX: &str = ".part";
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct DeviceDescriptor {
-    pub id: String,
-    pub name: String,
-    pub root_uri: String,
-    pub reconnectable: bool,
-    pub icon: gio::Icon,
-}
-
-pub fn project_descriptor(
-    root_uri: &str,
-    uuid: Option<&str>,
-    name: &str,
-) -> Option<DeviceDescriptor> {
-    if !root_uri.starts_with("mtp://") {
-        return None;
-    }
-    let stable_uuid = uuid.filter(|value| !value.trim().is_empty());
-    Some(DeviceDescriptor {
-        id: stable_uuid.unwrap_or(root_uri).to_string(),
-        name: name.to_string(),
-        root_uri: root_uri.to_string(),
-        reconnectable: stable_uuid.is_some(),
-        icon: gio::ThemedIcon::new("phone-symbolic").upcast(),
-    })
-}
-
-pub fn descriptor_from_mount(mount: &gio::Mount) -> Option<DeviceDescriptor> {
-    let root_uri = mount.root().uri();
-    let uuid = mount.uuid();
-    let mut descriptor = project_descriptor(&root_uri, uuid.as_deref(), &mount.name())?;
-    descriptor.icon = mount.icon();
-    Some(descriptor)
-}
 
 type DeviceCallback = Rc<dyn Fn(Vec<DeviceDescriptor>)>;
 
@@ -173,8 +144,13 @@ fn projected_devices(monitor: &gio::VolumeMonitor) -> Vec<DeviceDescriptor> {
             continue;
         }
         let uuid = volume.uuid();
-        let Some(mut descriptor) = project_descriptor(&root_uri, uuid.as_deref(), &volume.name())
-        else {
+        let usb_serial = usb_serial_from_sysfs(&root_uri, Path::new("/sys/bus/usb/devices"));
+        let Some(mut descriptor) = project_descriptor(
+            &root_uri,
+            uuid.as_deref(),
+            usb_serial.as_deref(),
+            &volume.name(),
+        ) else {
             continue;
         };
         descriptor.icon = volume.icon();

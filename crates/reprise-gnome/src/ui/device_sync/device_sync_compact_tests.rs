@@ -490,7 +490,7 @@ fn a_failed_track_copy_does_not_publish_a_playlist_with_dead_new_paths() {
 }
 
 #[test]
-fn active_device_controls_lock_only_that_device_and_offer_cancel() {
+fn mtp_47_active_device_offers_cancel_while_the_inert_device_offers_no_sync_action() {
     run(async {
         let (_temp, conn) = fixture();
         add_playlist(&conn, 10, "Road", &[1]);
@@ -512,8 +512,8 @@ fn active_device_controls_lock_only_that_device_and_offer_cancel() {
         assert!(!a.page.controls.editable);
         assert!(!a.page.controls.can_start);
         assert!(a.page.controls.can_cancel);
-        assert!(b.page.controls.editable);
-        assert!(b.page.controls.can_start);
+        assert!(!b.page.controls.editable);
+        assert!(!b.page.controls.can_start);
         assert!(!b.page.controls.can_cancel);
 
         runtime.cancel_current("a");

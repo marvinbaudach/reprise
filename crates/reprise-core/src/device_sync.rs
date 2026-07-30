@@ -14,6 +14,7 @@ pub mod browser;
 pub mod cap;
 pub mod category_diff;
 pub mod delta;
+pub mod device_presence;
 pub mod device_view;
 pub mod m3u;
 pub mod machine;
@@ -43,6 +44,10 @@ pub use category_diff::{
     CategoryDiff, CategoryReading, SyncBalance,
 };
 pub use delta::{compute_delta, SyncCandidate, SyncDelta};
+pub use device_presence::{
+    project_device_presence, project_device_sessions, remembered_device_status,
+    stable_device_identity, DetectedDevice, DeviceSessionProjection, DeviceSessionState,
+};
 pub use device_view::{
     category_bytes, project_category_content_row, project_category_segments,
     project_contents_state, project_device_category_reading, CategoryContentRow, CategorySegments,
@@ -76,7 +81,8 @@ pub use selection::{
     YoutubeSelectionSummary,
 };
 pub use settings::{
-    DeviceFileRecord, DevicePlaylistRecord, DeviceSelection, DeviceSettings, SelectionSource,
+    DeviceFileRecord, DevicePlaylistRecord, DeviceSelection, DeviceSettings, RememberedDevice,
+    SelectionSource,
 };
 pub use snapshot::load_mirror_playlist_snapshots;
 pub use storage::{

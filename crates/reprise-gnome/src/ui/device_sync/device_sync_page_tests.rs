@@ -58,6 +58,9 @@ fn device() -> DeviceView {
         name: "Pixel 8".into(),
         icon: gtk4::gio::ThemedIcon::new("phone-symbolic").upcast(),
         connected: true,
+        rememberable: true,
+        memory_status: None,
+        session_state: reprise_core::device_sync::DeviceSessionState::Active,
         storage: DeviceStorageSnapshot {
             target_name: Some("Internal storage".into()),
             access: DeviceStorageAccess::Writable,
@@ -82,6 +85,7 @@ fn device() -> DeviceView {
         sync_error: None::<SyncFailure>,
         last_sync: None,
         verified_managed_track_count: None,
+        size_on_device_bytes: None,
         managed_track_count: 0,
         bytes_per_second: 0,
         contents_state: reprise_core::device_sync::device_view::DeviceContentsState::Verified,
@@ -143,6 +147,14 @@ fn mtp_8_full_page_names_each_modern_transfer_profile() {
             "MP3 · 256 kbit/s (Compatibility)",
             "Original files (no conversion)",
         ]
+    );
+}
+
+#[test]
+fn mtp_24_transfer_profile_heading_names_its_music_only_scope() {
+    assert_eq!(
+        super::device_sync_page_layout::MUSIC_TRANSFER_PROFILE_HEADING,
+        "Music · Opus 160 kbit/s"
     );
 }
 
@@ -381,6 +393,32 @@ fn mtp_14_device_header_reports_the_last_device_sync_without_claiming_one() {
     assert_eq!(
         device_last_sync_copy(&device),
         format!("Last synced {}", local.format("%b %-d, %Y at %H:%M"))
+    );
+}
+
+#[test]
+fn mtp_49_remembered_page_names_the_last_verified_size_without_a_live_diff() {
+    let mut device = device();
+    device.connected = false;
+    device.session_state = reprise_core::device_sync::DeviceSessionState::Remembered;
+    device.last_sync = Some(
+        chrono::Utc
+            .timestamp_opt(1_753_612_496, 0)
+            .single()
+            .unwrap(),
+    );
+    device.size_on_device_bytes = Some(2_400_000_000);
+
+    let local = chrono::Local
+        .timestamp_opt(1_753_612_496, 0)
+        .single()
+        .unwrap();
+    assert_eq!(
+        device_last_sync_copy(&device),
+        format!(
+            "Last synced {} · 2.2 GiB on device when last verified",
+            local.format("%b %-d, %Y at %H:%M")
+        )
     );
 }
 

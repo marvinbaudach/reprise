@@ -13,6 +13,14 @@ pub fn text(message: &str) -> String {
 pub const EJECT_DEVICE: &str = N_!("Eject device");
 pub const OPEN_DEVICE: &str = N_!("Open {name}");
 pub const EJECT_BLOCKED_SYNCING: &str = N_!("Eject device — Sync in progress");
+pub const INERT_DEVICE_STATUS: &str = N_!("Plugged in · disconnect {other} to use it");
+pub const UNREMEMBERABLE_DEVICE_STATUS: &str =
+    N_!("This device can be used now but cannot be remembered");
+pub const RENAME_DEVICE: &str = N_!("Rename device");
+pub const LOCAL_DEVICE_NAME: &str = N_!("Local device name");
+pub const RENAME: &str = N_!("Rename");
+pub const FORGET_DEVICE: &str = N_!("Forget device");
+pub const MUSIC_TRANSFER_PROFILE_HEADING: &str = N_!("Music · Opus 160 kbit/s");
 
 /// Spinner tooltip while syncing, e.g. "Syncing Pixel 8 · 42%".
 pub fn syncing_spinner_tooltip(name: &str, percent: u64) -> String {
@@ -25,6 +33,14 @@ pub fn syncing_spinner_tooltip(name: &str, percent: u64) -> String {
 
 pub fn open_device_label(name: &str) -> String {
     formatted(OPEN_DEVICE, &[("name", name)])
+}
+
+pub fn inert_device_status(other: &str) -> String {
+    formatted(INERT_DEVICE_STATUS, &[("other", other)])
+}
+
+pub fn unrememberable_device_status() -> String {
+    text(UNREMEMBERABLE_DEVICE_STATUS)
 }
 
 /// TIP-2a: a disabled eject keeps its tooltip and appends the reason.

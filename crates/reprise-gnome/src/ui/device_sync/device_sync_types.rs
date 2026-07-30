@@ -134,6 +134,13 @@ pub struct DeviceView {
     pub name: String,
     pub icon: gio::Icon,
     pub connected: bool,
+    /// `MTP-48`: whether changes can be attached to a stable device key.
+    pub rememberable: bool,
+    /// Honest user-facing explanation when the platform exposed no stable key.
+    pub memory_status: Option<String>,
+    /// `MTP-47`: whether this detected device owns the sole MTP session or
+    /// is only listed while another connected device owns it.
+    pub session_state: reprise_core::device_sync::DeviceSessionState,
     pub storage: DeviceStorageSnapshot,
     pub scan_error: Option<String>,
     pub settings: DeviceSettings,
@@ -141,6 +148,9 @@ pub struct DeviceView {
     pub sync_error: Option<SyncFailure>,
     pub last_sync: Option<chrono::DateTime<chrono::Utc>>,
     pub verified_managed_track_count: Option<usize>,
+    /// Last verified total across Reprise-owned target folders. For a
+    /// remembered device this is history, not a live storage reading.
+    pub size_on_device_bytes: Option<u64>,
     pub managed_track_count: usize,
     pub bytes_per_second: u64,
     pub page: SyncPageState,

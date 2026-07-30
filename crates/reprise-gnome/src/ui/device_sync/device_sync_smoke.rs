@@ -57,6 +57,7 @@ impl SimulatedMtpDeviceBackend {
                 return None;
             }
             descriptors.push(DeviceDescriptor {
+                persistent_id: Some(id.clone()),
                 id,
                 name,
                 root_uri: gio::File::for_path(root).uri().into(),

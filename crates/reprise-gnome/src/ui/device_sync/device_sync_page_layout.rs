@@ -7,6 +7,9 @@ use reprise_core::device_sync::TransferProfile;
 use super::device_sync_runtime::DeviceView;
 use super::device_sync_storage_bar::StorageBar;
 
+pub(super) const MUSIC_TRANSFER_PROFILE_HEADING: &str =
+    super::device_sync_strings::MUSIC_TRANSFER_PROFILE_HEADING;
+
 const OVERVIEW_WIDTH_CHARS: i32 = 42;
 
 pub(super) struct DeviceDashboard {
@@ -111,7 +114,10 @@ pub(super) fn build(device: &DeviceView, profile_labels: &[&str]) -> DeviceDashb
     playlists.set_hexpand(true);
 
     let overview_title = label("Sync overview", "title-2");
-    let profile_title = label("Transfer profile", "heading");
+    let profile_title = label(
+        &super::device_sync_strings::text(MUSIC_TRANSFER_PROFILE_HEADING),
+        "heading",
+    );
     let profile_model = gtk4::StringList::new(profile_labels);
     let profile = gtk4::DropDown::builder()
         .model(&profile_model)

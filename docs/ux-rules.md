@@ -326,7 +326,7 @@ human. Rationale for changes lives in the git history.
   the sidebar. It never automatically navigates away from the current
   view.
 - **MTP-2** [replaced by MTP-13]
-- **MTP-3** [active] [gtk] — The device card and an open device page
+- **MTP-3** [replaced by MTP-47] — The device card and an open device page
   project the same device-related runtime state. Syncs of different
   devices may run in parallel; start and cancel act exclusively on the
   named device, and a late progress event of a cancelled run is
@@ -825,6 +825,27 @@ human. Rationale for changes lives in the git history.
   deliberately not `online_sources::network_allowed`: copying an
   already-downloaded file makes no request, so the two share a formula but not
   a meaning, and must stay free to diverge.
+- **MTP-47** [active] [core] [gtk] — Replaces `MTP-3`. Exactly one MTP
+  device is active at a time and exactly one session is ever open. The first
+  device detected owns it; a second one is detected and listed but never
+  opened, its row reading "Plugged in · disconnect {other} to use it" in
+  amber with no sync action. There is no queue, no parallel transfer and no
+  device chooser.
+- **MTP-48** [active] [core] — Device identity is a stable key: the GVfs
+  mount UUID, else the USB serial number from udev/sysfs. The `mtp://` root
+  URI is never an identity — it carries the USB bus number and changes on
+  every replug. A device with no stable key is usable but not remembered, and
+  the UI says so rather than pretending. Persisted per identity: target
+  folders, last verified state, size on device, local name — nothing else.
+- **MTP-49** [active] [gtk] — The sidebar lists the active device first,
+  then remembered devices dimmed as history. A remembered device shows no
+  diff — only "Not connected · synced 3 days ago" or
+  "Not connected · never verified" — because a balance for an absent device
+  would be a guess. Opening one shows its target folders and last verified
+  state; syncing requires connecting it. Right-click → "Forget device" drops
+  the persisted row and deletes nothing, on the device or locally. A local
+  rename keeps two identical models distinguishable and is never written to
+  the device.
 
 ## F. Settings & modals
 
