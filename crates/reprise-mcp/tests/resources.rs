@@ -370,6 +370,7 @@ fn reads_cached_podcasts_without_source_or_download_paths() {
         &ParsedEpisode {
             guid: "episode-one".into(),
             title: "Episode One".into(),
+            image_url: None,
             audio_url: "https://audio.example.test/private?token=secret".into(),
             page_url: Some("https://pages.example.test/private?token=secret".into()),
             published_at: Some(200),

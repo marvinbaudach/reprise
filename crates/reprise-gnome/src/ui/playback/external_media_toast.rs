@@ -65,6 +65,7 @@ mod tests {
             title: "Next".into(),
             show: "Show".into(),
             show_image_url: None,
+            image_url: None,
             kind: PodcastKind::Rss,
             audio_url: "https://example.test/next.mp3".into(),
             page_url: None,
@@ -75,6 +76,7 @@ mod tests {
             played_at: None,
             position_ms: 5_000,
             first_seen_at: 10,
+            is_new: false,
         };
 
         assert!(matches!(

@@ -21,6 +21,7 @@ fn parsed_episode(title: &str) -> ParsedEpisode {
     ParsedEpisode {
         guid: "stable-guid".to_owned(),
         title: title.to_owned(),
+        image_url: None,
         audio_url: "https://example.test/episode.mp3".to_owned(),
         page_url: None,
         published_at: Some(100),
@@ -55,6 +56,33 @@ fn pod_2_episode_upsert_changes_metadata_but_preserves_listening_state() {
     assert_eq!(row.first_seen_at, 20);
     assert_eq!(row.position_ms, 8_000);
     assert_eq!(row.played_at, Some(30));
+}
+
+#[test]
+fn episode_upsert_backfills_publication_date_and_artwork() {
+    let conn = conn();
+    let subscription_id = add_or_restore(&conn, &subscription_draft(), 10).unwrap();
+    let mut initial = parsed_episode("Episode");
+    initial.published_at = None;
+    let result = upsert_episode(&conn, subscription_id, &initial, 20)
+        .unwrap()
+        .expect("episode should be imported");
+
+    let mut enriched = initial;
+    enriched.published_at = Some(1_785_369_600);
+    enriched.image_url = Some("https://img.test/episode.jpg".to_owned());
+    let updated = upsert_episode(&conn, subscription_id, &enriched, 30)
+        .unwrap()
+        .expect("episode should be updated");
+    let row = episode(&conn, result.episode_id).unwrap().unwrap();
+
+    assert!(!updated.inserted);
+    assert_eq!(row.published_at, Some(1_785_369_600));
+    assert_eq!(
+        row.image_url.as_deref(),
+        Some("https://img.test/episode.jpg")
+    );
+    assert_eq!(row.first_seen_at, 20);
 }
 
 #[test]

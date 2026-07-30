@@ -42,6 +42,9 @@ pub trait FeedFetcher {
 }
 
 pub trait YoutubeFetcher {
+    fn resolve_channel_url(&self, _url: &str) -> Result<Option<String>, PodcastError> {
+        Ok(None)
+    }
     fn list(&self, url: &str, limit: usize) -> Result<ParsedFeed, PodcastError>;
     fn list_range(&self, url: &str, end: usize) -> Result<ParsedFeed, PodcastError> {
         self.list(url, end)
@@ -85,6 +88,10 @@ impl FeedFetcher for HttpFeedFetcher {
 }
 
 impl YoutubeFetcher for super::ytdlp::YtDlp {
+    fn resolve_channel_url(&self, url: &str) -> Result<Option<String>, PodcastError> {
+        Ok(super::ytdlp::YtDlp::list(self, url)?.source_url)
+    }
+
     fn list(&self, url: &str, limit: usize) -> Result<ParsedFeed, PodcastError> {
         let listing = super::youtube::project_playlist(super::ytdlp::YtDlp::list(self, url)?);
         Ok(project_youtube_feed(listing, limit))
@@ -122,6 +129,7 @@ pub fn project_youtube_feed(listing: super::youtube::YoutubeListing, limit: usiz
             .map(|episode| ParsedEpisode {
                 guid: episode.guid,
                 title: episode.title,
+                image_url: episode.image_url,
                 audio_url: episode.audio_url,
                 page_url: None,
                 published_at: episode.published_at,
@@ -360,6 +368,28 @@ pub fn refresh_to_root(
     )
 }
 
+/// Persists the canonical channel URL a `@handle` resolved to, so later
+/// refreshes skip the yt-dlp round trip entirely.
+///
+/// The write is refused when another subscription already holds that URL. That
+/// is the right outcome — two rows must not share a `feed_url` — but it leaves
+/// the handle subscription resolving forever, so it is worth a line in the log
+/// rather than a discarded `bool`.
+fn adopt_resolved_channel_url(
+    conn: &Connection,
+    subscription_id: i64,
+    channel_url: &str,
+) -> Result<(), rusqlite::Error> {
+    if !super::store::update_feed_url_in(conn, subscription_id, channel_url)? {
+        tracing::warn!(
+            subscription_id,
+            channel_url,
+            "resolved channel URL already belongs to another subscription; keeping the handle URL"
+        );
+    }
+    Ok(())
+}
+
 fn refresh_to_root_with_download_progress(
     conn: &Connection,
     feed_fetcher: &dyn FeedFetcher,
@@ -387,6 +417,7 @@ fn refresh_to_root_with_download_progress(
             continue;
         }
         summary.attempted += 1;
+        let mut resolved_channel_url = None::<String>;
         let result = match subscription.kind {
             PodcastKind::Rss if rss_allowed => {
                 feed_fetcher.fetch(&subscription).and_then(|response| {
@@ -398,8 +429,39 @@ fn refresh_to_root_with_download_progress(
                 "RSS podcasts are disabled".to_owned(),
             )),
             PodcastKind::Youtube if youtube_allowed => {
-                if let Some(feed_url) = super::youtube::long_form_feed_url(&subscription.feed_url) {
-                    feed_fetcher
+                // Resolving a channel identity runs a yt-dlp subprocess, so a
+                // transient failure here is ordinary. It must stay this one
+                // subscription's failure, handled by the shared `Err` arm below
+                // like any fetch or parse failure — propagating it with `?`
+                // would abandon every remaining subscription in the batch and
+                // skip recording the failure on this one.
+                let channel_url = if super::youtube::long_form_feed_url(&subscription.feed_url)
+                    .is_some()
+                {
+                    Ok(subscription.feed_url.clone())
+                } else {
+                    youtube_fetcher
+                        .resolve_channel_url(&subscription.feed_url)
+                        .map(|resolved| resolved.unwrap_or_else(|| subscription.feed_url.clone()))
+                };
+                let channel_url = match channel_url {
+                    Ok(channel_url) => channel_url,
+                    Err(error) => {
+                        tracing::warn!(
+                            subscription_id = subscription.id,
+                            %error,
+                            "could not resolve the YouTube channel identity"
+                        );
+                        super::store::update_fetch_failed_in(conn, subscription.id, now)?;
+                        summary.failed += 1;
+                        continue;
+                    }
+                };
+                if let Some(feed_url) = super::youtube::long_form_feed_url(&channel_url) {
+                    if channel_url != subscription.feed_url {
+                        resolved_channel_url = Some(channel_url.clone());
+                    }
+                    let official_feed = feed_fetcher
                         .fetch_url(
                             &feed_url,
                             subscription.etag.as_deref(),
@@ -409,10 +471,16 @@ fn refresh_to_root_with_download_progress(
                             let feed =
                                 super::feed::parse_feed(&response.body, OFFICIAL_YOUTUBE_LIMIT)?;
                             Ok((feed, Some(response)))
-                        })
+                        });
+                    match official_feed {
+                        result @ (Ok(_) | Err(PodcastError::NotModified)) => result,
+                        Err(_) => youtube_fetcher
+                            .list(&channel_url, config.youtube_import_count)
+                            .map(|feed| (feed, None)),
+                    }
                 } else {
                     youtube_fetcher
-                        .list(&subscription.feed_url, config.youtube_import_count)
+                        .list(&channel_url, config.youtube_import_count)
                         .map(|feed| (feed, None))
                 }
             }
@@ -423,6 +491,9 @@ fn refresh_to_root_with_download_progress(
         let (feed, response) = match result {
             Ok(result) => result,
             Err(PodcastError::NotModified) => {
+                if let Some(url) = resolved_channel_url.as_deref() {
+                    adopt_resolved_channel_url(conn, subscription.id, url)?;
+                }
                 super::store::update_fetch_not_modified_in(conn, subscription.id, now)?;
                 summary.not_modified += 1;
                 continue;
@@ -439,16 +510,28 @@ fn refresh_to_root_with_download_progress(
             }
         };
 
+        if let Some(url) = resolved_channel_url.as_deref() {
+            adopt_resolved_channel_url(conn, subscription.id, url)?;
+        }
+
         let baseline = super::store::future_only_baseline_in(conn, subscription.id)?
             .into_iter()
             .collect::<std::collections::HashSet<_>>();
+        let first_seen_at = if matches!(
+            subscription.last_outcome.as_deref(),
+            Some("ok" | "not_modified")
+        ) {
+            now
+        } else {
+            subscription.added_at
+        };
         let mut new_episode_ids = Vec::new();
         for episode in &feed.episodes {
             if baseline.contains(&episode.guid) {
                 continue;
             }
             let Some(upsert) =
-                super::store::upsert_episode_in(conn, subscription.id, episode, now)?
+                super::store::upsert_episode_in(conn, subscription.id, episode, first_seen_at)?
             else {
                 continue;
             };

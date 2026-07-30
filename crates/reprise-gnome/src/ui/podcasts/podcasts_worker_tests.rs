@@ -95,6 +95,7 @@ fn episode(conn: &reprise_core::db::Db) -> i64 {
         &ParsedEpisode {
             guid: "episode".to_owned(),
             title: "Episode".to_owned(),
+            image_url: None,
             audio_url: "https://example.test/episode.mp3".to_owned(),
             page_url: None,
             published_at: None,
@@ -198,6 +199,7 @@ fn net_3c_run_queued_replays_a_pending_episode_through_the_real_worker_dispatch(
         &ParsedEpisode {
             guid: "episode".to_owned(),
             title: "Episode".to_owned(),
+            image_url: None,
             audio_url: "https://example.test/episode.mp3".to_owned(),
             page_url: None,
             published_at: None,
@@ -570,6 +572,7 @@ fn net_1a_download_is_blocked_when_its_source_kind_is_disabled() {
         &ParsedEpisode {
             guid: "video".to_owned(),
             title: "Video".to_owned(),
+            image_url: None,
             audio_url: "https://www.youtube.com/watch?v=video".to_owned(),
             page_url: None,
             published_at: None,
