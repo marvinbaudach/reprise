@@ -309,8 +309,11 @@ fn episode_row(
     root.set_margin_top(4);
     root.set_margin_bottom(4);
 
-    let selected =
-        podcasts_selection::episode_checkbox(row.id, context.selection.borrow().contains(row.id));
+    let selected = podcasts_selection::episode_checkbox(
+        row.id,
+        &row.title,
+        context.selection.borrow().contains(row.id),
+    );
     root.append(&selected);
 
     let (thumbnail, play_glyph) = episode_thumbnail(row, context.playing, context.images_allowed);
