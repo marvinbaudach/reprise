@@ -3511,6 +3511,11 @@ listening statistics.
   connection rather than relying on an upstream checkpoint — the lesson from
   `T6-G1-gap`: a privacy promise in UI copy needs a test per call path, not per
   feature.
+- **SRC-12** [active] [gtk] — Episodes can be selected in bulk in both the
+  grouped library view and the channel detail view, with one shared set of
+  batch actions. Actions that are meaningless for more than one episode are
+  hidden rather than applied to an arbitrary member, and a batch reports
+  itself with a single aggregated toast and a single undo.
 - **POD-1** [active] [core] — Episode status is a pure derivation:
   Played exactly when `played_at` is set, otherwise Resume when
   `position_ms > 0`, otherwise unstarted. The visible New pill is a
