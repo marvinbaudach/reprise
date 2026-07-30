@@ -11,6 +11,17 @@ pub(super) struct TitleParts {
     pub dimmed: Option<String>,
 }
 
+pub(super) fn for_group(titles: &[&str], title: &str, split_tail: bool) -> TitleParts {
+    if split_tail {
+        split_repeated_suffix(titles, title)
+    } else {
+        TitleParts {
+            distinct: title.to_owned(),
+            dimmed: None,
+        }
+    }
+}
+
 /// Splits a title only when at least three titles in the group share the
 /// longest exact suffix that starts at a supported separator.
 pub(super) fn split_repeated_suffix(titles: &[&str], title: &str) -> TitleParts {
