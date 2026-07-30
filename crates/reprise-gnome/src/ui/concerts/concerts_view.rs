@@ -6,22 +6,30 @@ use std::rc::Rc;
 use chrono::Local;
 use gtk4::prelude::*;
 use libadwaita as adw;
-use reprise_core::concerts::{self, ConcertFilter, ConcertRow};
+use reprise_core::concerts::{self, ConcertFailure, ConcertFilter, ConcertRow};
+use reprise_core::connectivity::Connectivity;
 use reprise_core::db::Db;
+use reprise_core::source_error::{FailureAction, FailureSurface, SourceError, SourceErrorKind};
 
 use super::concerts_columns::{self, OnOpenTarget};
 use super::concerts_empty_state::{
     concerts_empty_state_for, concerts_empty_state_presentation, ConcertsEmptyState,
+};
+use super::concerts_failure_ui::{
+    concerts_failure_presentation, failure_support, row_is_dimmed, update_failure_for_connectivity,
 };
 use super::concerts_filter_bar::ConcertsFilterBar;
 use super::concerts_model::{ConcertObject, ConcertsModel};
 use super::concerts_presentation::{sort_rows, updated_ago, ConcertSortKey, SortDirection};
 use super::concerts_worker::{request_allowed, ConcertsRequest, ConcertsResponse, ConcertsRuntime};
 use crate::ui::external_link::{self, LaunchErrorSlot};
+use crate::ui::source_empty_state::SourceFailureState;
+use crate::ui::source_error_banner::SourceErrorBanner;
 use crate::ui::strings;
 
 const LIST_PAGE: &str = "list";
 const STATUS_PAGE: &str = "status";
+const FAILURE_PAGE: &str = "failure";
 const FETCH_BUTTON_PAGE: &str = "button";
 const FETCH_SPINNER_PAGE: &str = "spinner";
 const REFRESH_TIMER_SECONDS: u32 = 60 * 60;
@@ -38,6 +46,8 @@ struct Shared {
     model: Rc<ConcertsModel>,
     filter_bar: Rc<ConcertsFilterBar>,
     rows: RefCell<Vec<ConcertRow>>,
+    cached_items: Cell<usize>,
+    column_view: gtk4::ColumnView,
     stack: gtk4::Stack,
     status: adw::StatusPage,
     status_button: gtk4::Button,
@@ -45,7 +55,11 @@ struct Shared {
     fetch_stack: gtk4::Stack,
     spinner: gtk4::Spinner,
     updated: gtk4::Label,
-    failure: gtk4::Label,
+    error_banner: SourceErrorBanner,
+    failure_state: SourceFailureState,
+    fetch_failure: RefCell<Option<ConcertFailure>>,
+    failure_occurred_at: RefCell<String>,
+    connectivity: Cell<Connectivity>,
     fetching: Cell<bool>,
     generation: Cell<u64>,
     refresh_timer: Cell<Option<gtk4::glib::SourceId>>,
@@ -53,6 +67,7 @@ struct Shared {
     on_fetch_now: RefCell<Option<Callback>>,
     on_clear_filters: RefCell<Option<Callback>>,
     on_refreshed: RefCell<Option<Callback>>,
+    on_open_preferences: RefCell<Option<Callback>>,
     on_launch_error: LaunchErrorSlot,
 }
 
@@ -95,11 +110,15 @@ impl ConcertsView {
             .build();
         stack.add_named(&scrolled, Some(LIST_PAGE));
         stack.add_named(&status, Some(STATUS_PAGE));
+        let failure_state = SourceFailureState::new("x-office-calendar-symbolic");
+        stack.add_named(failure_state.widget(), Some(FAILURE_PAGE));
 
-        let (footer, updated, failure, fetch_button, fetch_stack, spinner) = build_footer();
+        let (footer, updated, fetch_button, fetch_stack, spinner) = build_footer();
+        let error_banner = SourceErrorBanner::new();
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         root.add_css_class("reprise-concerts-view");
         root.append(filter_bar.widget());
+        root.append(error_banner.widget());
         root.append(&stack);
         root.append(&footer);
 
@@ -109,6 +128,8 @@ impl ConcertsView {
             model,
             filter_bar: filter_bar.clone(),
             rows: RefCell::new(Vec::new()),
+            cached_items: Cell::new(0),
+            column_view: column_view.clone(),
             stack,
             status,
             status_button: status_button.clone(),
@@ -116,7 +137,11 @@ impl ConcertsView {
             fetch_stack,
             spinner,
             updated,
-            failure,
+            error_banner,
+            failure_state,
+            fetch_failure: RefCell::new(None),
+            failure_occurred_at: RefCell::new(String::new()),
+            connectivity: Cell::new(Connectivity::Online),
             fetching: Cell::new(false),
             generation: Cell::new(0),
             refresh_timer: Cell::new(None),
@@ -124,6 +149,7 @@ impl ConcertsView {
             on_fetch_now: RefCell::new(None),
             on_clear_filters: RefCell::new(None),
             on_refreshed: RefCell::new(None),
+            on_open_preferences: RefCell::new(None),
             on_launch_error: launch_error,
         });
         {
@@ -260,6 +286,29 @@ impl ConcertsView {
     pub(in crate::ui) fn set_on_refreshed(&self, callback: impl Fn() + 'static) {
         *self.shared.on_refreshed.borrow_mut() = Some(Rc::new(callback));
     }
+
+    pub(in crate::ui) fn set_on_open_preferences(&self, callback: impl Fn() + 'static) {
+        *self.shared.on_open_preferences.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub(in crate::ui) fn set_connectivity(&self, value: Connectivity) {
+        self.shared.connectivity.set(value);
+        let can_fetch = concerts::config::credentials(&self.shared.conn)
+            .is_ok_and(|credentials| !credentials.is_empty());
+        let previous = self.shared.fetch_failure.borrow().clone();
+        update_failure_for_connectivity(
+            &mut self.shared.fetch_failure.borrow_mut(),
+            value,
+            can_fetch,
+        );
+        if self.shared.fetch_failure.borrow().as_ref() != previous.as_ref() {
+            *self.shared.failure_occurred_at.borrow_mut() = chrono::Utc::now().to_rfc3339();
+        }
+        apply_row_connectivity(&self.shared);
+        if let Err(error) = render_cache(&self.shared) {
+            tracing::warn!(%error, "could not apply Concerts connectivity");
+        }
+    }
 }
 
 fn render_cache(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
@@ -285,6 +334,7 @@ fn render_cache(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
     shared.filter_bar.set_counts(rows.len(), total);
     shared.rows.replace(rows.clone());
     shared.model.replace(rows.clone());
+    shared.cached_items.set(total);
     let state = concerts_empty_state_for(
         rows.len(),
         filter != ConcertFilter::default(),
@@ -295,6 +345,7 @@ fn render_cache(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
     shared
         .updated
         .set_label(&updated_ago(latest_fetch, chrono::Utc::now().timestamp()));
+    render_current_failure(shared);
     Ok(())
 }
 
@@ -326,7 +377,6 @@ fn apply_empty_state(shared: &Shared, state: ConcertsEmptyState, total: usize) {
 fn build_footer() -> (
     gtk4::Box,
     gtk4::Label,
-    gtk4::Label,
     gtk4::Button,
     gtk4::Stack,
     gtk4::Spinner,
@@ -339,14 +389,8 @@ fn build_footer() -> (
     let updated = gtk4::Label::new(None);
     updated.add_css_class("dim-label");
     updated.add_css_class("caption");
+    updated.set_hexpand(true);
     footer.append(&updated);
-    let failure = gtk4::Label::new(Some(&strings::text(strings::CONCERTS_FETCH_FAILED)));
-    failure.add_css_class("error");
-    failure.add_css_class("caption");
-    failure.set_hexpand(true);
-    failure.set_halign(gtk4::Align::End);
-    failure.set_visible(false);
-    footer.append(&failure);
     let fetch_button = gtk4::Button::with_label(&strings::text(strings::FETCH_NOW));
     fetch_button.add_css_class("flat");
     let spinner = gtk4::Spinner::new();
@@ -356,7 +400,7 @@ fn build_footer() -> (
     fetch_stack.add_named(&spinner, Some(FETCH_SPINNER_PAGE));
     fetch_stack.set_visible_child_name(FETCH_BUTTON_PAGE);
     footer.append(&fetch_stack);
-    (footer, updated, failure, fetch_button, fetch_stack, spinner)
+    (footer, updated, fetch_button, fetch_stack, spinner)
 }
 
 fn maybe_background_refresh(shared: &Rc<Shared>) {
@@ -384,7 +428,6 @@ fn request_fetch(shared: &Rc<Shared>, force: bool) {
     if shared.fetching.replace(true) {
         return;
     }
-    shared.failure.set_visible(false);
     shared.fetch_button.set_sensitive(false);
     shared
         .fetch_stack
@@ -399,7 +442,14 @@ fn request_fetch(shared: &Rc<Shared>, force: bool) {
         force,
         response: sender,
     }) {
-        finish_fetch(shared, true);
+        finish_fetch(
+            shared,
+            Some(ConcertFailure::Source(SourceError::new(
+                SourceErrorKind::Unreachable,
+                "Queue Concerts refresh",
+                "Concerts worker refused the refresh request",
+            ))),
+        );
         return;
     }
     let weak = Rc::downgrade(shared);
@@ -408,33 +458,40 @@ fn request_fetch(shared: &Rc<Shared>, force: bool) {
         let Some(shared) = weak.upgrade() else {
             return;
         };
-        let failed = match response {
+        let failure = match response {
             Ok(ConcertsResponse {
                 generation: response_generation,
                 result,
             }) if response_generation == shared.generation.get() => match result {
-                Ok(summary) => summary.failed > 0,
+                Ok(summary) => summary.failures.into_iter().next(),
                 Err(error) => {
                     tracing::warn!(%error, "could not refresh Concerts");
-                    true
+                    Some(error.into_source_failure())
                 }
             },
             Ok(_) => return,
             Err(error) => {
                 tracing::warn!(%error, "Concerts worker closed without a result");
-                true
+                Some(ConcertFailure::Source(SourceError::new(
+                    SourceErrorKind::Unreachable,
+                    "Refresh Concerts",
+                    error.to_string(),
+                )))
             }
         };
-        finish_fetch(&shared, failed);
+        finish_fetch(&shared, failure);
     });
 }
 
-fn finish_fetch(shared: &Rc<Shared>, failed: bool) {
+fn finish_fetch(shared: &Rc<Shared>, failure: Option<ConcertFailure>) {
     shared.fetching.set(false);
     shared.spinner.stop();
     shared.fetch_stack.set_visible_child_name(FETCH_BUTTON_PAGE);
     shared.fetch_button.set_sensitive(true);
-    shared.failure.set_visible(failed);
+    shared.fetch_failure.replace(failure);
+    if shared.fetch_failure.borrow().is_some() {
+        *shared.failure_occurred_at.borrow_mut() = chrono::Utc::now().to_rfc3339();
+    }
     if let Err(error) = render_cache(shared) {
         tracing::warn!(%error, "could not reload Concerts after fetch");
     }
@@ -442,6 +499,60 @@ fn finish_fetch(shared: &Rc<Shared>, failed: bool) {
     if let Some(callback) = callback {
         callback();
     }
+}
+
+fn render_current_failure(shared: &Rc<Shared>) {
+    let Some(failure) = shared.fetch_failure.borrow().clone() else {
+        shared.error_banner.hide();
+        return;
+    };
+    let cached_items = shared.cached_items.get();
+    let presentation = concerts_failure_presentation(&failure, cached_items);
+    let support = failure_support(&failure, cached_items, shared.updated.text().as_str());
+    let error = failure.source_error().clone();
+    let occurred_at = shared.failure_occurred_at.borrow().clone();
+    let weak = Rc::downgrade(shared);
+    let on_action = move |action| {
+        let Some(shared) = weak.upgrade() else {
+            return;
+        };
+        match action {
+            FailureAction::TryAgain => request_fetch(&shared, true),
+            FailureAction::OpenPreferences => {
+                let callback = shared.on_open_preferences.borrow().clone();
+                if let Some(callback) = callback {
+                    callback();
+                }
+            }
+            FailureAction::CheckSubscription
+            | FailureAction::Unsubscribe
+            | FailureAction::FindNewUrl => {}
+        }
+    };
+    match presentation.surface {
+        FailureSurface::Banner => {
+            shared
+                .error_banner
+                .show(&presentation, &support, &error, &occurred_at, on_action);
+        }
+        FailureSurface::FullArea => {
+            shared.error_banner.hide();
+            shared
+                .failure_state
+                .show(&presentation, &support, &error, &occurred_at, on_action);
+            shared.stack.set_visible_child_name(FAILURE_PAGE);
+        }
+    }
+}
+
+fn apply_row_connectivity(shared: &Shared) {
+    shared
+        .column_view
+        .set_opacity(if row_is_dimmed(shared.connectivity.get()) {
+            0.55
+        } else {
+            1.0
+        });
 }
 
 fn enabled_changed(shared: &Rc<Shared>, enabled: bool) {
@@ -525,6 +636,7 @@ mod tests {
         let root = view.root().clone().downcast::<gtk4::Box>().unwrap();
         let stack = root
             .first_child()
+            .and_then(|child| child.next_sibling())
             .and_then(|child| child.next_sibling())
             .and_downcast::<gtk4::Stack>()
             .unwrap();

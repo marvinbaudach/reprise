@@ -23,6 +23,15 @@ pub(super) fn headline_text(headline: FailureHeadline) -> String {
             strings::text(strings::SOURCE_YOUTUBE_HELPER_UPDATE)
         }
         FailureHeadline::RadioNotBroadcasting => strings::text(strings::RADIO_RECONNECT_FAILED),
+        FailureHeadline::CouldNotRefreshConcerts => {
+            strings::text(strings::CONCERTS_COULD_NOT_REFRESH)
+        }
+        FailureHeadline::ConcertsNeedsConfiguration => {
+            strings::text(strings::CONCERTS_NEEDS_CONFIGURATION)
+        }
+        FailureHeadline::CouldNotRefreshNewReleases => {
+            strings::text(strings::RELEASES_COULD_NOT_REFRESH)
+        }
         FailureHeadline::Offline => strings::text(strings::SOURCE_OFFLINE),
         FailureHeadline::SeveralSourcesCouldNotRefresh { count } => {
             strings::source_several_failed(count)

@@ -8,6 +8,7 @@ use reprise_core::db::Db;
 pub(super) mod css;
 mod releases_columns;
 mod releases_empty_state;
+mod releases_failure_ui;
 mod releases_filter_bar;
 mod releases_model;
 mod releases_presentation;

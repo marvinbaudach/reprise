@@ -34,6 +34,14 @@ pub const CONCERTS_SET_LOCATION_TOOLTIP: &str = N_!("Set a location in Preferenc
 pub const CONCERTS_NO_DATA_TITLE: &str = N_!("No concert data yet");
 pub const CONCERTS_NO_UPCOMING_TITLE: &str = N_!("No upcoming concerts for your artists");
 pub const CONCERTS_FETCH_FAILED: &str = N_!("Concerts fetch failed · showing saved concerts");
+pub const CONCERTS_COULD_NOT_REFRESH: &str = N_!("Couldn't refresh concerts");
+pub const CONCERTS_NEEDS_CONFIGURATION: &str = N_!("Concerts needs provider credentials");
+pub const CONCERTS_CACHED_FAILURE_DESCRIPTION: &str =
+    N_!("Showing saved concerts from {time}. Ticket and event links need a connection.");
+pub const CONCERTS_EMPTY_FAILURE_DESCRIPTION: &str =
+    N_!("There are no saved concerts to show. Your music is unaffected.");
+pub const CONCERTS_CONFIGURATION_DESCRIPTION: &str =
+    N_!("Saved concerts stay available. Add credentials in Preferences to refresh them.");
 pub const CONCERTS_UPDATED_NEVER: &str = N_!("Never updated");
 pub const CONCERTS_NO_LINK: &str = N_!("No ticket or event link available");
 pub const CONCERTS_BANDSINTOWN_APP_ID: &str = N_!("Bandsintown app_id");
@@ -101,6 +109,10 @@ pub fn concerts_updated_ago(timestamp: i64, now: i64) -> String {
         N_!("Updated {age} d ago"),
         &[("age", &(age / (24 * 60 * 60)).to_string())],
     )
+}
+
+pub fn concerts_cached_failure_description(time: &str) -> String {
+    formatted(CONCERTS_CACHED_FAILURE_DESCRIPTION, &[("time", time)])
 }
 
 #[cfg(test)]

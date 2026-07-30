@@ -25,6 +25,8 @@ pub(super) const fn connectivity_for(network_available: bool) -> Connectivity {
 /// between two refreshes, and it has no state to keep in sync — so pushing it
 /// would buy nothing.
 pub(super) fn wire(
+    concerts: &Rc<crate::ui::concerts::ConcertsView>,
+    releases: &Rc<crate::ui::releases::ReleasesView>,
     podcasts: &Rc<crate::ui::podcasts::PodcastsView>,
     youtube: &Rc<crate::ui::podcasts::PodcastsView>,
     radio: &Rc<crate::ui::radio::RadioView>,
@@ -32,18 +34,28 @@ pub(super) fn wire(
 ) {
     let monitor = gio::NetworkMonitor::default();
     let initial = connectivity_for(monitor.is_network_available());
+    concerts.set_connectivity(initial);
+    releases.set_connectivity(initial);
     podcasts.set_connectivity(initial);
     youtube.set_connectivity(initial);
     radio.set_connectivity(initial);
     device_sync.set_connectivity(initial);
     device_sync.set_metered(monitor.is_network_metered());
 
+    let concerts = Rc::downgrade(concerts);
+    let releases = Rc::downgrade(releases);
     let podcasts = Rc::downgrade(podcasts);
     let youtube = Rc::downgrade(youtube);
     let radio = Rc::downgrade(radio);
     let device_sync = Rc::downgrade(device_sync);
     monitor.connect_network_changed(move |monitor, available| {
         let connectivity = connectivity_for(available);
+        if let Some(view) = concerts.upgrade() {
+            view.set_connectivity(connectivity);
+        }
+        if let Some(view) = releases.upgrade() {
+            view.set_connectivity(connectivity);
+        }
         if let Some(view) = podcasts.upgrade() {
             view.set_connectivity(connectivity);
         }

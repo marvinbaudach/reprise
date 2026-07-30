@@ -1679,11 +1679,9 @@ the panel).
   navigation.
 - **NR-6** [active] [gtk] — „Fetch now" replaces its refresh icon with
   a spinner during the fetch and otherwise shows the age of the last
-  update. Offline or error still show the last cache along with its
-  age and only a subtle inline note in the footer — never an error
-  banner. The underlying principle has been named app-wide since `NET-3`
-  (`cached`/`interrupted`); this rule remains the authoritative version for
-  New Releases' own spinner mechanics and is not superseded by it.
+  update. Offline or error still show the last cache along with its age.
+  The shared failure surface is specified by NR-21; this rule remains the
+  authoritative version for New Releases' own spinner mechanics.
 - **NR-7** [active] [gtk] — New Releases is a plugin on the plugins
   page, off by default, with the privacy subtitle „contacts
   MusicBrainz" and a choice of „Top artists only / all artists". With
@@ -1807,6 +1805,17 @@ the panel).
   no purchase button. The direct link is commission-free, contains no
   tracking parameters, and is not labeled as an affiliate link; NR-19
   remains reserved for a later contractually approved monetization.
+- **NR-21** [active] [gtk] — A failed New Releases fetch leaves every
+  cached release and the existing update age untouched. A neutral shared
+  banner above a populated view names the failed refresh, what remains
+  available, and „Try again"; only a genuinely empty cache uses the shared
+  full-area failure state. Both surfaces carry the same collapsed `Details`
+  block with Copy, and technical status, host, and exception text appears
+  only there. Offline is written from the window's explicit connectivity
+  value, dims the remote-action rows, and never overwrites a provider
+  failure already on screen; reconnect removes only an offline-authored
+  notice. A successful fetch removes the notice silently. NR-6's spinner
+  and NR-8's consent and first-fetch loop remain unchanged.
 ## S. Surfaces & Geometry
 
 <!-- Section letter: R (New Releases) is the last one assigned; S follows
@@ -2005,9 +2014,10 @@ property is set and yet nothing happens.
   This rule is active because all lettered sub-rules and their GTK
   presentation are wired. It consolidates the shared "a cache is never an
   error" principle that `NR-6`, `NR-8` and `CONC-4b` each already state in
-  their own words for their own surface — those three rules stay `[active]`
-  unchanged and refer here from now on instead of duplicating the principle;
-  none of them changes behaviour or tests. `INST-12` stated the same principle
+  their own words for their own surface. NR-21 and CONC-11 now specify their
+  shared banner, Details, and explicit-connectivity rendering without changing
+  the existing fetch, consent, credential, or filter mechanics. `INST-12`
+  stated the same principle
   for the instrumental model download and belonged in this list when it was
   written, but that surface has since been removed from the GTK frontend and
   the rule is replaced, so it is deliberately not counted here. `LYR-3` does **not**
@@ -2038,11 +2048,11 @@ property is set and yet nothing happens.
   offline — no marking pending, no automatic run, because a live stream cannot
   be deferred. Connectivity is an injectable state
   (`RadioView::set_connectivity`), `Online` by default. The main-window
-  composition root initializes it and both podcast views from one
-  `gio::NetworkMonitor` and updates all three from `network-changed`. Returning
-  online removes an offline-only notice; it never dismisses a dead-stream or
-  other provider failure, which remains until playback succeeds or the user
-  acts on it.
+  composition root initializes it, both podcast views, Concerts, New Releases,
+  and phone sync from one `gio::NetworkMonitor` and updates every seam from
+  `network-changed`. Returning online removes an offline-only notice; it never
+  dismisses a dead-stream or other provider failure, which remains until
+  playback succeeds or the user acts on it.
 - **NET-3c** [active] [core] — The runner `NET-3a` reserved this id for:
   once connectivity is believed online, whatever is `wanted_on_device`
   (`MTP-40`) but still missing a local file replays, in order, without a
@@ -2086,8 +2096,11 @@ property is set and yet nothing happens.
   `SourceErrorBanner` and one shared full-area failure state. Both embed the
   same collapsed-by-default monospace `SourceErrorDetails` widget with Copy;
   technical text is reachable there and in logs, never in ordinary labels or
-  toasts. The podcast and
-  YouTube refresh loop records a failure immediately, then consults
+  toasts. Concerts and New Releases use the same two widgets and retain typed
+  refresh failures in their Core reports; missing Concerts credentials remain
+  a configuration outcome whose action opens its Plugins row, never a network
+  retry. The podcast and YouTube refresh loop records a failure immediately,
+  then consults
   `retry_delay` before another provider attempt; its bounded per-source attempt
   count resets on success, and exhaustion returns the source to its fixed
   refresh interval. A successful fetch removes the banner silently; cached
@@ -3284,10 +3297,9 @@ edges are deliberately accepted. The player plays only finished files.
   re-evaluate the already-open view, its sidebar count, and the Updates
   popover. Never fetched offers exactly "Fetch now"; zero hits with
   filters offers exactly "Show all". Offline or error leaves the cache
-  and "Updated X ago" visible and reports the error exclusively inline
-  in the footer — the same `cached`/`interrupted` reading that `NET-3` has
-  since named app-wide; credential and filter behaviour stay Concerts' own
-  and remain `[active]` unchanged.
+  and "Updated X ago" visible. CONC-11 specifies the shared failure surface;
+  credential and filter behaviour stay Concerts' own and remain `[active]`
+  unchanged.
 - **CONC-5** [replaced by CONC-5a] — Original worker contract with
   view-open staleness, due check, and "Fetch now" as the only network
   triggers.
@@ -3322,6 +3334,19 @@ edges are deliberately accepted. The player plays only finished files.
   baseline as date, location, venue, distance, and ticket; an optional
   "similar to …" caption expands and centers the artist group as a
   unit, instead of pinning the artist to the top edge of the row.
+- **CONC-11** [active] [gtk] — A failed Concerts fetch leaves every cached
+  event and „Updated X ago" untouched. A neutral shared banner above a
+  populated view names the failed refresh, what remains available, and the
+  next action; only a genuinely empty cache uses the shared full-area failure
+  state. Both surfaces carry the same collapsed `Details` block with Copy, and
+  technical status, host, and exception text appears only there. Offline is
+  written from the window's explicit connectivity value, dims the remote-action
+  rows, and never overwrites a provider or configuration failure already on
+  screen; reconnect removes only an offline-authored notice. A successful
+  fetch removes the notice silently. Missing credentials are a configuration
+  outcome with „Open Preferences" targeting the Concerts Plugins row, never
+  „Try again"; CONC-4b's ordinary no-credential empty state remains neutral
+  with no action.
 ## AF. Podcasts & Radio
 
 <!-- Section letter: AE is the last assigned section after Concerts

@@ -26,14 +26,14 @@ pub enum SourceErrorKind {
 /// The source place presenting a classified failure.
 ///
 /// This is intentionally smaller than the module registry: it names only
-/// distinctions that change failure copy or actions. New Releases and
-/// Concerts can use `Generic` until their own approved wording needs a
-/// distinct projection.
+/// distinctions that change failure copy or actions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SourceSurface {
     Podcast,
     Youtube,
     Radio,
+    Concerts,
+    NewReleases,
     Generic,
 }
 
@@ -56,6 +56,9 @@ pub enum FailureHeadline {
     YoutubeRateLimited,
     YoutubeHelperNeedsUpdate,
     RadioNotBroadcasting,
+    CouldNotRefreshConcerts,
+    ConcertsNeedsConfiguration,
+    CouldNotRefreshNewReleases,
     Offline,
     SeveralSourcesCouldNotRefresh { count: usize },
 }
@@ -138,6 +141,14 @@ fn failure_copy(
         (SourceSurface::Radio, _, _) => (
             FailureHeadline::RadioNotBroadcasting,
             vec![FailureAction::TryAgain, FailureAction::FindNewUrl],
+        ),
+        (SourceSurface::Concerts, _, _) => (
+            FailureHeadline::CouldNotRefreshConcerts,
+            vec![FailureAction::TryAgain],
+        ),
+        (SourceSurface::NewReleases, _, _) => (
+            FailureHeadline::CouldNotRefreshNewReleases,
+            vec![FailureAction::TryAgain],
         ),
         (SourceSurface::Youtube, _, FailureSurface::FullArea) => (
             FailureHeadline::CouldNotReachYoutube,
@@ -535,5 +546,32 @@ mod tests {
             super::FailureHeadline::SeveralSourcesCouldNotRefresh { count: 3 }
         );
         assert_eq!(presentation.surface, super::FailureSurface::Banner);
+    }
+
+    #[test]
+    fn net_3d_concerts_and_new_releases_get_source_specific_safe_copy() {
+        let concerts = super::source_failure_presentation(
+            super::SourceSurface::Concerts,
+            &SourceErrorKind::Unreachable,
+            4,
+            1,
+        );
+        assert_eq!(
+            concerts.headline,
+            super::FailureHeadline::CouldNotRefreshConcerts
+        );
+        assert_eq!(concerts.actions, vec![super::FailureAction::TryAgain]);
+
+        let releases = super::source_failure_presentation(
+            super::SourceSurface::NewReleases,
+            &SourceErrorKind::Unreachable,
+            0,
+            1,
+        );
+        assert_eq!(
+            releases.headline,
+            super::FailureHeadline::CouldNotRefreshNewReleases
+        );
+        assert_eq!(releases.surface, super::FailureSurface::FullArea);
     }
 }
