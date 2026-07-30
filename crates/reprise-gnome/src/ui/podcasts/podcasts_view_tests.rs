@@ -214,7 +214,7 @@ fn pod_9_the_library_summary_header_actually_reaches_the_filter_bar() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn pod_15_the_youtube_page_header_counts_channels_not_shows() {
     gtk4::init().unwrap();
-    let conn = reprise_core::db::open_migrated(None).unwrap();
+    let conn = crate::test_db::open().unwrap();
     subscribe_one_episode_of_kind(&conn, PodcastKind::Youtube);
 
     let view = view(conn, PodcastKind::Youtube);
@@ -361,11 +361,27 @@ fn pod_13_activating_the_retry_action_runs_a_fresh_download_attempt() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn pod_16_an_unreadable_library_says_so_without_printing_the_query() {
     gtk4::init().unwrap();
-    let conn = reprise_core::db::open_migrated(None).unwrap();
-    // The exact shape the migration defect left behind: a schema the
-    // subscription query cannot read.
-    conn.execute_batch("ALTER TABLE podcast_subscriptions DROP COLUMN sync_to_phone;")
+    // A schema the subscription query cannot read — the shape the reported
+    // failure had. Seeded through the fixture's own connection, since `Db`
+    // deliberately exposes no raw SQL (ADR 002).
+    //
+    // `auto_download` and not `sync_to_phone`, although the report named the
+    // latter: `migrate_v40` now repairs its own columns on open, so dropping
+    // one of those is healed by `PodcastsRuntime::setup` before the view ever
+    // reads anything — the fix in the preceding commit defeats the test.
+    // `auto_download` belongs to the v32 table body, which no migration
+    // re-adds, so the failure survives to the point this rule is about. The
+    // error is the same class either way: a column the SELECT names and the
+    // table does not have.
+    let fixture = crate::test_db::open().unwrap();
+    crate::test_db::connection(&fixture)
+        .execute_batch("ALTER TABLE podcast_subscriptions DROP COLUMN auto_download;")
         .unwrap();
+    let path = fixture
+        .path()
+        .expect("the fixture database must be file-backed");
+    drop(fixture);
+    let conn = Db::open_ready(&path).unwrap();
 
     let view = view(conn, PodcastKind::Rss);
 
@@ -376,7 +392,7 @@ fn pod_16_an_unreadable_library_says_so_without_printing_the_query() {
         "a failed load must reach the user as a sentence"
     );
     assert!(
-        !status.contains("SELECT") && !status.contains("sync_to_phone"),
+        !status.contains("SELECT") && !status.contains("auto_download"),
         "the failing statement must never reach the footer, got: {status}"
     );
 }

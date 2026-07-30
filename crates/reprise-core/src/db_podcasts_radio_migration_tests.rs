@@ -459,7 +459,7 @@ fn newer_schema_is_refused_before_migration() {
 #[test]
 fn v40_repairs_a_database_that_carries_the_version_without_the_columns() {
     let conn = db::open(None).unwrap();
-    db::migrate(&conn).unwrap();
+    db::migrate_connection(&conn).unwrap();
     conn.execute_batch(
         "ALTER TABLE podcast_subscriptions DROP COLUMN sync_to_phone;
          ALTER TABLE podcast_episodes DROP COLUMN downloaded_bytes;",
@@ -473,7 +473,7 @@ fn v40_repairs_a_database_that_carries_the_version_without_the_columns() {
         "the affected database reports a fully migrated schema"
     );
 
-    db::migrate(&conn).unwrap();
+    db::migrate_connection(&conn).unwrap();
 
     assert!(
         has_column(&conn, "podcast_subscriptions", "sync_to_phone").unwrap(),
