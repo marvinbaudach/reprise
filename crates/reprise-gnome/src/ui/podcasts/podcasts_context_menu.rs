@@ -40,25 +40,36 @@ struct SelectionMenuEntry {
     action: &'static str,
 }
 
-fn multi_selection_entries() -> Vec<SelectionMenuEntry> {
-    [
-        (strings::PODCAST_MARK_PLAYED, ACTION_MARK_PLAYED_SELECTED),
-        (
+fn entry(label: &'static str, action: &'static str) -> SelectionMenuEntry {
+    SelectionMenuEntry {
+        label: strings::text(label),
+        action,
+    }
+}
+
+/// The non-destructive half of a multi-selection menu. The split between this
+/// and [`multi_selection_destructive_entry`] is expressed here, at the
+/// definition, rather than as a slice bound at the call site: an index-based
+/// split silently reassigns entries to the wrong section the moment this list
+/// gains or reorders one.
+fn multi_selection_primary_entries() -> Vec<SelectionMenuEntry> {
+    vec![
+        entry(strings::PODCAST_MARK_PLAYED, ACTION_MARK_PLAYED_SELECTED),
+        entry(
             strings::PODCAST_MARK_UNPLAYED,
             ACTION_MARK_UNPLAYED_SELECTED,
         ),
-        (strings::YOUTUBE_DOWNLOAD_SELECTED, ACTION_DOWNLOAD_SELECTED),
-        (
+        entry(strings::YOUTUBE_DOWNLOAD_SELECTED, ACTION_DOWNLOAD_SELECTED),
+        entry(
             strings::PODCAST_DELETE_FILES,
             ACTION_DELETE_DOWNLOADS_SELECTED,
         ),
-        (strings::YOUTUBE_REMOVE_SELECTED, ACTION_REMOVE_SELECTED),
     ]
-    .map(|(label, action)| SelectionMenuEntry {
-        label: strings::text(label),
-        action,
-    })
-    .into()
+}
+
+/// The destructive entry, kept last in its own section (CTX convention).
+fn multi_selection_destructive_entry() -> SelectionMenuEntry {
+    entry(strings::YOUTUBE_REMOVE_SELECTED, ACTION_REMOVE_SELECTED)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -162,15 +173,14 @@ pub(super) fn build_for_selection(row: &EpisodeRow, selected_ids: &[i64]) -> gio
     if selected_ids.len() <= 1 {
         return build(row);
     }
-    let entries = multi_selection_entries();
     let menu = gio::Menu::new();
     let primary = gio::Menu::new();
-    for entry in &entries[..4] {
+    for entry in multi_selection_primary_entries() {
         append_selected(&primary, &entry.label, entry.action, selected_ids);
     }
     menu.append_section(None, &primary);
     let destructive = gio::Menu::new();
-    let remove = &entries[4];
+    let remove = multi_selection_destructive_entry();
     append_selected(&destructive, &remove.label, remove.action, selected_ids);
     menu.append_section(None, &destructive);
     menu
@@ -393,7 +403,8 @@ mod tests {
 
     #[test]
     fn src_12_multi_selection_hides_single_targets_and_offers_explicit_played_states() {
-        let entries = multi_selection_entries();
+        let mut entries = multi_selection_primary_entries();
+        entries.push(multi_selection_destructive_entry());
         let actions = entries.iter().map(|entry| entry.action).collect::<Vec<_>>();
 
         assert!(!actions.contains(&ACTION_PLAY));
@@ -410,6 +421,15 @@ mod tests {
         assert!(actions.contains(&ACTION_DELETE_DOWNLOADS_SELECTED));
         assert!(actions.contains(&ACTION_REMOVE_SELECTED));
         assert!(!actions.contains(&ACTION_UNSUBSCRIBE));
+        // The destructive entry is the last one and sits alone in its section;
+        // the split is a property of the two builders, not of an index.
+        assert_eq!(
+            multi_selection_destructive_entry().action,
+            ACTION_REMOVE_SELECTED
+        );
+        assert!(!multi_selection_primary_entries()
+            .iter()
+            .any(|entry| entry.action == ACTION_REMOVE_SELECTED));
     }
 
     #[test]

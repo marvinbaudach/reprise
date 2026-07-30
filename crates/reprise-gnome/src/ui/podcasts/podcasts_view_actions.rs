@@ -223,13 +223,27 @@ impl PodcastsView {
                 tracing::warn!(%error, episode_id, "could not clear podcast download path");
             }
         }
-        if result.requested > 0 {
-            self.refresh();
-            self.show_batch_result(&result);
+        if result.requested == 0 {
+            // Nothing in the selection had a downloaded file. Silence would
+            // read as a dead button, so say so.
+            self.show_batch_toast(&strings::text(strings::PODCAST_BATCH_NOTHING_TO_DELETE));
+            return;
         }
+        self.refresh();
+        self.show_batch_result(&result);
     }
 
     fn remove_episodes(self: &Rc<Self>, episode_ids: &[i64]) {
+        // SRC-12 requires a one-episode selection to behave exactly as it did
+        // before multi-selection existed. The batch path would report the
+        // generic "1 removed" where the single path names the episode, so a
+        // lone selection is handed straight back to it. The context menu makes
+        // the same choice in `build_for_selection`; the toolbar buttons route
+        // here, so the fallback has to live at this end too.
+        if let [episode_id] = episode_ids {
+            self.remove_episode(*episode_id);
+            return;
+        }
         let episodes = episode_ids
             .iter()
             .filter_map(|episode_id| {
@@ -276,7 +290,7 @@ impl PodcastsView {
         toast.connect_button_clicked(move |_| {
             undo_flag.set(true);
             let Some(view) = weak.upgrade() else { return };
-            podcasts_batch_actions::undo_batch(&succeeded_ids, |episode_id| {
+            let undo_result = podcasts_batch_actions::undo_batch(&succeeded_ids, |episode_id| {
                 match podcasts::store::undo_remove_episode(&view.conn, episode_id) {
                     Ok(changed) => changed,
                     Err(error) => {
@@ -287,6 +301,14 @@ impl PodcastsView {
             });
             view.refresh();
             (view.callbacks.on_sidebar_refresh)();
+            // An undo can be partial — `commit_remove_episode` may already have
+            // run for some of the batch. Staying silent about that would leave
+            // episodes gone while the user believes the undo restored all of
+            // them, so the same honest count every other batch reports is
+            // reported here too.
+            if undo_result.failed > 0 {
+                view.show_batch_result(&undo_result);
+            }
         });
         let weak = Rc::downgrade(self);
         let succeeded_ids = result.succeeded_ids;
@@ -325,10 +347,14 @@ impl PodcastsView {
     }
 
     fn show_batch_result(&self, result: &BatchResult) {
+        self.show_batch_toast(&batch_result_text(result));
+    }
+
+    fn show_batch_toast(&self, message: &str) {
         let Some(overlay) = self.toast_overlay.upgrade() else {
             return;
         };
-        overlay.add_toast(adw::Toast::new(&batch_result_text(result)));
+        overlay.add_toast(adw::Toast::new(message));
     }
 
     pub(super) fn open_add_dialog(self: &Rc<Self>) {
@@ -352,12 +378,7 @@ impl PodcastsView {
 }
 
 fn batch_result_text(result: &BatchResult) -> String {
-    let removed = strings::missing_removed(result.succeeded());
-    if result.failed == 0 {
-        return removed;
-    }
-    let failed = strings::import_issue_failed(u32::try_from(result.failed).unwrap_or(u32::MAX));
-    format!("{removed} · {failed}")
+    strings::podcast_batch_result(result.succeeded(), result.failed)
 }
 
 #[cfg(test)]
@@ -372,7 +393,21 @@ mod batch_tests {
             failed: 3,
         };
 
-        assert_eq!(batch_result_text(&result), "4 removed · 3 failed");
+        // One message carrying both numbers, not two translated fragments
+        // glued together — word order around "N done, M failed" is not the
+        // same in every language.
+        assert_eq!(batch_result_text(&result), "4 episodes updated; 3 failed");
         assert_eq!(result.succeeded() + result.failed, result.requested);
+    }
+
+    #[test]
+    fn src_12_a_fully_successful_batch_says_nothing_about_failures() {
+        let result = BatchResult {
+            requested: 3,
+            succeeded_ids: vec![1, 2, 3],
+            failed: 0,
+        };
+
+        assert_eq!(batch_result_text(&result), "3 episodes updated");
     }
 }

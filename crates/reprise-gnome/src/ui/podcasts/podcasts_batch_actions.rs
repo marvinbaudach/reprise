@@ -7,6 +7,10 @@ use gtk4::glib::variant::ToVariant;
 use gtk4::prelude::*;
 use reprise_core::podcasts::download_state::DownloadState;
 
+/// `#[must_use]`: a dropped `BatchResult` is a batch whose partial failures
+/// were never reported to anyone. That exact bug shipped once here — the undo
+/// path discarded its result — so the compiler carries the rule now.
+#[must_use]
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(super) struct BatchResult {
     pub(super) requested: usize,

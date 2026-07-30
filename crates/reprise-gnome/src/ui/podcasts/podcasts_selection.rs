@@ -42,13 +42,15 @@ impl PodcastSelection {
     }
 }
 
-pub(super) fn episode_checkbox(episode_id: i64, active: bool) -> gtk4::CheckButton {
+pub(super) fn episode_checkbox(episode_id: i64, title: &str, active: bool) -> gtk4::CheckButton {
     let checkbox = gtk4::CheckButton::new();
     checkbox.set_active(active);
     checkbox.set_tooltip_text(Some(&strings::text(strings::YOUTUBE_SELECT_EPISODES)));
-    checkbox.update_property(&[gtk4::accessible::Property::Label(&strings::text(
-        strings::YOUTUBE_SELECT_EPISODES,
-    ))]);
+    // The accessible name names the episode; the tooltip stays generic because
+    // it is read alongside the row's own visible title anyway.
+    checkbox.update_property(&[gtk4::accessible::Property::Label(
+        &strings::podcast_select_episode(title),
+    )]);
     checkbox.connect_toggled(move |checkbox| {
         let target = (episode_id, checkbox.is_active()).to_variant();
         let _ = checkbox.activate_action("podcasts.set-selected", Some(&target));
