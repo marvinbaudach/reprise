@@ -690,6 +690,9 @@ run_private_session() {
     source-podcasts)
       run_source_podcasts_scenario
       ;;
+    source-youtube)
+      run_source_youtube_scenario
+      ;;
     *)
       echo "unknown private CUA scenario group: $private_group" >&2
       return 2
@@ -836,6 +839,7 @@ case "${CUA_E2E_ONLY:-all}" in
       responsive-window
       source-modules
       source-podcasts
+      source-youtube
     )
     ;;
   populated-library)
@@ -846,7 +850,7 @@ case "${CUA_E2E_ONLY:-all}" in
     | tag-3-multi-dialog-structure | tag-autocomplete-surface \
     | library-doctor | song-visuals \
     | track-sort-playing-marker | scrobbling | responsive-window \
-    | source-modules | source-podcasts)
+    | source-modules | source-podcasts | source-youtube)
     scenario_groups=("$CUA_E2E_ONLY")
     ;;
   *)
