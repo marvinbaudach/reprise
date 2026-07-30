@@ -2057,8 +2057,13 @@ property is set and yet nothing happens.
   `Offline` to `Online` dispatches `PodcastsOperation::RunQueued` on the
   existing podcast worker; manually requested downloads and Load more actions
   use the same transition and retain their click order in a transient,
-  de-duplicated action list. The persistent phone-sync authority remains
-  `wanted_on_device`; no second queue table or persisted truth is introduced.
+  de-duplicated action list. A transient action leaves that list only after
+  the worker accepts it; if dispatch is temporarily refused, that action and
+  everything behind it retain their original order for a later replay. The
+  reconnect transition also removes an offline-only notice immediately,
+  without dismissing a provider-specific failure. The persistent phone-sync
+  authority remains `wanted_on_device`; no second queue table or persisted
+  truth is introduced.
   The window-level `gio::NetworkMonitor` is the sole production caller of the
   injectable seams.
 - **NET-3d** [active] [core] — One translation layer: every provider and

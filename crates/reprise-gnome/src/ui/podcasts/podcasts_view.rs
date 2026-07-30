@@ -16,7 +16,7 @@ use reprise_core::source_error::SourceError;
 
 use super::add_dialog;
 use super::podcasts_context_menu;
-use super::podcasts_deferred_actions::{DeferredAction, DeferredActions};
+use super::podcasts_deferred_actions::{replay_until_refused, DeferredAction, DeferredActions};
 use super::podcasts_device_sync::PodcastDeviceSyncState;
 use super::podcasts_download_presentation::refreshed_download_states;
 use super::podcasts_empty_state::{podcasts_empty_state_for, PodcastsEmptyState};
@@ -533,7 +533,7 @@ impl PodcastsView {
         self.dispatch_download(episode_id);
     }
 
-    fn dispatch_download(self: &Rc<Self>, episode_id: i64) {
+    fn dispatch_download(self: &Rc<Self>, episode_id: i64) -> bool {
         let operation = PodcastsOperation::Download { episode_id };
         let generation = request_generation(self.generation.get(), operation);
         let (response, receiver) = podcasts_response_channel();
@@ -543,7 +543,7 @@ impl PodcastsView {
             priority: PodcastsPriority::Normal,
             response,
         }) {
-            return;
+            return false;
         }
         self.set_download_state(episode_id, &DownloadState::Queued);
         let weak = Rc::downgrade(self);
@@ -583,6 +583,7 @@ impl PodcastsView {
                 }
             }
         });
+        true
     }
 
     fn set_download_state(&self, episode_id: i64, state: &DownloadState) {
