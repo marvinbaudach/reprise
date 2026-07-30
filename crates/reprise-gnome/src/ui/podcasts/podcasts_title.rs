@@ -61,6 +61,15 @@ pub(super) fn split_repeated_suffix(titles: &[&str], title: &str) -> TitleParts 
     }
 }
 
+pub(super) fn markup(parts: &TitleParts) -> String {
+    let distinct = gtk4::glib::markup_escape_text(&parts.distinct);
+    let Some(dimmed) = parts.dimmed.as_deref() else {
+        return distinct.to_string();
+    };
+    let dimmed = gtk4::glib::markup_escape_text(dimmed);
+    format!("{distinct}<span alpha=\"55%\">{dimmed}</span>")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -136,6 +145,17 @@ mod tests {
                 distinct: "One |".to_owned(),
                 dimmed: None,
             }
+        );
+    }
+
+    #[test]
+    fn markup_escapes_titles_and_dims_only_the_repeated_tail() {
+        assert_eq!(
+            markup(&TitleParts {
+                distinct: "Fish & Chips".to_owned(),
+                dimmed: Some(" | <Channel>".to_owned()),
+            }),
+            "Fish &amp; Chips<span alpha=\"55%\"> | &lt;Channel&gt;</span>"
         );
     }
 }
