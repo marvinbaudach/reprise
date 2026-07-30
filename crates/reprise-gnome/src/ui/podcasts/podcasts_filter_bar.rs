@@ -25,6 +25,9 @@ pub(super) struct PodcastsFilterBar {
     result: gtk4::Label,
     shows: RefCell<Vec<String>>,
     on_changed: RefCell<Option<OnChanged>>,
+    // `POD-15`: kept past the constructor because the summary line below the
+    // chips names channels on the YouTube page and shows on the RSS one.
+    kind: PodcastKind,
 }
 
 impl PodcastsFilterBar {
@@ -86,6 +89,7 @@ impl PodcastsFilterBar {
             result,
             shows: RefCell::new(Vec::new()),
             on_changed: RefCell::new(None),
+            kind,
         });
         bar.rebuild();
         bar
@@ -135,8 +139,16 @@ impl PodcastsFilterBar {
             // `G2` (design 6a): "4 shows · 41 episodes · 7 new" replaces the
             // bare episode count once nothing is filtered. The filtered
             // branch above is unchanged — "shown of total" is what matters
-            // once a filter has narrowed the view.
-            strings::podcast_library_summary(summary.shows, summary.episodes, summary.new)
+            // once a filter has narrowed the view. `POD-15`: the YouTube page
+            // subscribes to channels, so it counts channels here.
+            match self.kind {
+                PodcastKind::Rss => {
+                    strings::podcast_library_summary(summary.shows, summary.episodes, summary.new)
+                }
+                PodcastKind::Youtube => {
+                    strings::youtube_library_summary(summary.shows, summary.episodes, summary.new)
+                }
+            }
         });
         self.rebuild();
     }

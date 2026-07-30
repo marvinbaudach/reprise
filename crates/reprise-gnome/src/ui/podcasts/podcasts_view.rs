@@ -316,7 +316,14 @@ impl PodcastsView {
                 self.footer_status.set_text(&last_updated);
                 self.render();
             }
-            Err(error) => self.footer_status.set_text(&error.to_string()),
+            // `POD-16`: the detail belongs in the log, not in the footer.
+            // `DbError`'s `Display` carries rusqlite's whole failing statement
+            // and a byte offset, which is neither readable nor actionable.
+            Err(error) => {
+                tracing::warn!(%error, "could not read podcast subscriptions");
+                self.footer_status
+                    .set_text(&strings::text(strings::PODCAST_LIBRARY_UNREADABLE));
+            }
         }
     }
 
