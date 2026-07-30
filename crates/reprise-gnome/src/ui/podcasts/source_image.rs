@@ -88,7 +88,7 @@ pub(in crate::ui) fn recompute_gate(conn: &Db) {
 pub(crate) struct SourceImage {
     root: gtk4::Stack,
     fallback: gtk4::Image,
-    picture: gtk4::Picture,
+    artwork: gtk4::Image,
     generation: Rc<Cell<u64>>,
 }
 
@@ -115,33 +115,42 @@ impl SourceImage {
         fallback.set_valign(gtk4::Align::Center);
         fallback.set_hexpand(false);
         fallback.set_vexpand(false);
-        let picture = gtk4::Picture::new();
-        picture.set_can_shrink(true);
-        picture.set_content_fit(gtk4::ContentFit::Cover);
-        picture.set_size_request(width, height);
-        picture.set_halign(gtk4::Align::Center);
-        picture.set_valign(gtk4::Align::Center);
-        picture.set_hexpand(false);
-        picture.set_vexpand(false);
-        let artwork_frame =
-            gtk4::AspectFrame::new(0.5, 0.5, width as f32 / height.max(1) as f32, false);
-        artwork_frame.set_size_request(width, height);
-        artwork_frame.set_child(Some(&picture));
+        // The artwork is a `Gtk::Image`, not a `Gtk::Picture`, and that is the
+        // whole point of this widget: a `Picture` measures its natural size
+        // from the texture, and neither `set_size_request` nor an `AspectFrame`
+        // caps that — both only ever raise the *minimum*. A single 600 px cover
+        // therefore grew its row to 600 px. An `Image` with `pixel_size` asks
+        // for exactly that many pixels no matter how large the texture is, and
+        // paints the texture scaled into whatever it is given, so the row's
+        // height comes from its text alone. The texture itself is still cached
+        // at 2x this size, so the downscale stays sharp on HiDPI.
+        let artwork = gtk4::Image::new();
+        artwork.set_pixel_size(width.min(height));
+        artwork.set_halign(gtk4::Align::Center);
+        artwork.set_valign(gtk4::Align::Center);
+        artwork.set_hexpand(false);
+        artwork.set_vexpand(false);
         let root = gtk4::Stack::new();
         root.set_size_request(width, height);
         root.set_halign(gtk4::Align::Center);
         root.set_valign(gtk4::Align::Center);
         root.set_hexpand(false);
         root.set_vexpand(false);
+        // A `Stack` is homogeneous by default, i.e. it measures every page and
+        // sizes itself to the largest — so a hidden artwork page would still
+        // inflate the row. Both pages are bounded to the same size here anyway;
+        // switching homogeneity off keeps that true even if one page changes.
+        root.set_hhomogeneous(false);
+        root.set_vhomogeneous(false);
         root.set_overflow(gtk4::Overflow::Hidden);
         root.add_css_class("reprise-source-image");
         root.add_named(&fallback, Some("fallback"));
-        root.add_named(&artwork_frame, Some("artwork"));
+        root.add_named(&artwork, Some("artwork"));
         root.set_visible_child(&fallback);
         let image = Self {
             root,
             fallback,
-            picture,
+            artwork,
             generation: Rc::new(Cell::new(0)),
         };
         image.set_url(image_url, width, height, images_allowed);
@@ -156,13 +165,13 @@ impl SourceImage {
         let generation = self.generation.get().wrapping_add(1);
         self.generation.set(generation);
         self.root.set_visible_child(&self.fallback);
-        self.picture.set_paintable(gtk4::gdk::Paintable::NONE);
+        self.artwork.set_paintable(gtk4::gdk::Paintable::NONE);
         let Some(url) = image_url.and_then(validated_url) else {
             return;
         };
         if let Some(texture) = cached_texture(&url, width, height) {
-            self.picture.set_paintable(Some(&texture));
-            self.root.set_visible_child(&self.picture);
+            self.artwork.set_paintable(Some(&texture));
+            self.root.set_visible_child(&self.artwork);
             return;
         }
         // `NET-1a` / `SRC-11`: a memory-cache miss does not by itself justify a
@@ -180,7 +189,7 @@ impl SourceImage {
             return;
         };
         let weak_root = self.root.downgrade();
-        let weak_picture = self.picture.downgrade();
+        let weak_artwork = self.artwork.downgrade();
         let current = self.generation.clone();
         gtk4::glib::spawn_future_local(async move {
             let path = match receiver.recv().await {
@@ -197,7 +206,7 @@ impl SourceImage {
             let Some(root) = weak_root.upgrade() else {
                 return;
             };
-            let Some(picture) = weak_picture.upgrade() else {
+            let Some(artwork) = weak_artwork.upgrade() else {
                 return;
             };
             let texture = match decode_texture(&path, width, height) {
@@ -208,8 +217,8 @@ impl SourceImage {
                 }
             };
             remember_texture(url, width, height, texture.clone());
-            picture.set_paintable(Some(&texture));
-            root.set_visible_child(&picture);
+            artwork.set_paintable(Some(&texture));
+            root.set_visible_child(&artwork);
         });
     }
 }
