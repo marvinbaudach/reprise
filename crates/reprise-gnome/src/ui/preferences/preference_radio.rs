@@ -16,9 +16,9 @@ pub(in crate::ui) struct RadioPreferenceRows {
 }
 
 impl RadioPreferenceRows {
-    pub(in crate::ui) fn add_to(&self, group: &adw::PreferencesGroup) {
+    pub(in crate::ui) fn add_to(&self, expander: &adw::ExpanderRow) {
         for row in self.rows.iter() {
-            group.add(row);
+            expander.add_row(row);
         }
     }
 

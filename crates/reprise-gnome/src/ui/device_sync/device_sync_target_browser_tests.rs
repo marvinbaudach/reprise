@@ -134,6 +134,7 @@ impl RaceBackend {
         Self {
             descriptor: DeviceDescriptor {
                 id: device_id.to_string(),
+                persistent_id: Some(device_id.to_string()),
                 name: "Race Phone".to_string(),
                 root_uri: format!("mtp://{device_id}"),
                 icon: gio::ThemedIcon::new("phone-symbolic").upcast(),

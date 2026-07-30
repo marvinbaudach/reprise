@@ -2,6 +2,7 @@
 
 use std::rc::Rc;
 
+use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::db::Db;
@@ -10,30 +11,43 @@ use crate::ui::artist_news_worker::ArtistNewsRuntime;
 
 use super::strings;
 
-pub(in crate::ui) fn build_page(
+#[derive(Clone)]
+pub(in crate::ui) struct NewReleasePreferenceRows {
+    rows: Rc<Vec<gtk4::Widget>>,
+}
+
+impl NewReleasePreferenceRows {
+    pub(in crate::ui) fn add_to(&self, expander: &adw::ExpanderRow) {
+        for row in self.rows.iter() {
+            expander.add_row(row);
+        }
+    }
+
+    pub(in crate::ui) fn set_sensitive(&self, enabled: bool) {
+        for row in self.rows.iter() {
+            row.set_sensitive(enabled);
+        }
+    }
+}
+
+pub(in crate::ui) fn build(
     conn: &Rc<Db>,
     runtime: &Rc<ArtistNewsRuntime>,
-) -> adw::PreferencesPage {
-    let page = adw::PreferencesPage::builder()
-        .title(strings::text(strings::NEW_RELEASES))
-        .icon_name("starred-symbolic")
-        .build();
-    let group = adw::PreferencesGroup::new();
-    let scope = scope_row(conn, runtime.enabled.get());
-    let singles = singles_row(conn, runtime.enabled.get());
-    group.add(&scope);
-    group.add(&singles);
-    page.add(&group);
-
-    let alive = page.downgrade();
+    enabled: bool,
+) -> NewReleasePreferenceRows {
+    let rows = NewReleasePreferenceRows {
+        rows: Rc::new(vec![
+            scope_row(conn, enabled).upcast(),
+            singles_row(conn, enabled).upcast(),
+        ]),
+    };
+    let alive = rows.rows[0].downgrade();
+    let target = rows.clone();
     runtime.subscribe_enabled(
         move || alive.upgrade().is_some(),
-        move |enabled| {
-            scope.set_sensitive(enabled);
-            singles.set_sensitive(enabled);
-        },
+        move |enabled| target.set_sensitive(enabled),
     );
-    page
+    rows
 }
 
 pub(in crate::ui) fn scope_row(conn: &Rc<Db>, enabled: bool) -> adw::ComboRow {

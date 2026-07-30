@@ -46,7 +46,8 @@ fn mtp_1_connected_devices_appear_without_automatic_navigation() {
     let cards = ui_source("sidebar/sidebar_device_card.rs");
 
     assert!(feedback.contains("format!(\"{} connected\", device.name)"));
-    assert!(cards.contains(".filter(|device| device.connected)"));
+    assert!(cards.contains("let devices = state.devices.iter().collect::<Vec<_>>();"));
+    assert!(!cards.contains(".filter(|device| device.connected)"));
     assert!(!feedback.contains("content_stack"));
 }
 

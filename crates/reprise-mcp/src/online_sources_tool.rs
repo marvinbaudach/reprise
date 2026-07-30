@@ -155,7 +155,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(state.global_enabled, "NET-1a defaults to on");
+        assert!(!state.global_enabled, "NET-2a defaults the global gate off");
         assert!(!state.youtube_enabled, "podcasts/youtube default to off");
         assert!(!state.podcasts_enabled);
         assert!(
@@ -167,7 +167,7 @@ mod tests {
     /// The whole point of a settings tool: the two positions must produce
     /// different reads, not just accept a write and echo the same state.
     #[test]
-    fn set_global_off_actually_changes_what_get_reports_afterward() {
+    fn set_global_on_actually_changes_what_get_reports_afterward() {
         let (_dir, path) = seeded_db();
 
         let before = manage_online_sources(
@@ -180,7 +180,7 @@ mod tests {
             },
         )
         .unwrap();
-        assert!(before.global_enabled);
+        assert!(!before.global_enabled);
 
         let after = manage_online_sources(
             &path,
@@ -188,22 +188,17 @@ mod tests {
             &ManageOnlineSourcesParams {
                 action: "set".into(),
                 target: Some("global".into()),
-                enabled: Some(false),
+                enabled: Some(true),
             },
         )
         .unwrap();
 
-        assert!(!after.global_enabled);
+        assert!(after.global_enabled);
         assert_ne!(before.global_enabled, after.global_enabled);
 
-        // And the effect actually reaches the one real authority every
-        // network entry point ANDs itself against.
+        // And the effect actually reaches the one real global authority.
         let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
-        assert!(!reprise_core::online_sources::network_allowed(
-            &db,
-            &reprise_core::modules::YOUTUBE_MODULE
-        )
-        .unwrap());
+        assert!(reprise_core::online_sources::is_enabled(&db).unwrap());
     }
 
     #[test]
@@ -312,6 +307,6 @@ mod tests {
         )
         .unwrap();
 
-        assert!(state.global_enabled);
+        assert!(!state.global_enabled);
     }
 }

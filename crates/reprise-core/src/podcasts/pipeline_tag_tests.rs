@@ -71,17 +71,27 @@ struct FakeYoutube;
 
 impl YoutubeFetcher for FakeYoutube {
     fn list(&self, _: &str, _: usize) -> Result<ParsedFeed, PodcastError> {
-        Err(PodcastError::YtDlp("unexpected YouTube call".to_owned()))
+        Err(PodcastError::YtDlpFailure {
+            kind: crate::podcasts::ytdlp::YtDlpFailureKind::Other,
+            stderr: "unexpected YouTube call".to_owned(),
+        })
     }
 
     fn download(&self, _: &str, _: &Path) -> Result<(), PodcastError> {
-        Err(PodcastError::YtDlp("unexpected YouTube call".to_owned()))
+        Err(PodcastError::YtDlpFailure {
+            kind: crate::podcasts::ytdlp::YtDlpFailureKind::Other,
+            stderr: "unexpected YouTube call".to_owned(),
+        })
     }
 }
 
 fn conn() -> Db {
     let conn = Db::open_in_memory().unwrap();
     crate::modules::set_enabled(&conn, &crate::modules::PODCASTS_MODULE, true).unwrap();
+    // `NET-2a`: a fresh database now starts with the global gate off, so a
+    // download refuses before it reaches the tagging this file is about. The
+    // module flag alone is not consent — `network_allowed` is an AND of both.
+    crate::online_sources::set_enabled(&conn, true).unwrap();
     conn
 }
 

@@ -351,6 +351,7 @@ mod tests {
         assert!(!source_network_allowed(&db, PodcastKind::Rss).unwrap());
         assert!(!source_network_allowed(&db, PodcastKind::Youtube).unwrap());
 
+        crate::online_sources::set_enabled(&db, true).unwrap();
         crate::modules::set_enabled(&db, &crate::modules::PODCASTS_MODULE, true).unwrap();
         assert!(source_network_allowed(&db, PodcastKind::Rss).unwrap());
         assert!(

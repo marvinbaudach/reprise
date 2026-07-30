@@ -4,6 +4,7 @@
 mod add_dialog;
 mod css;
 mod edit_dialog;
+mod radio_add_input;
 mod radio_chips;
 mod radio_columns;
 mod radio_context_menu;

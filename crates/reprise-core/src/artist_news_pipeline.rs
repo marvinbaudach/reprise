@@ -14,17 +14,19 @@ use crate::artist_news_parsing::{
     sort_release_groups, ArtistMatch,
 };
 use crate::musicbrainz::{self, FetchError};
+use crate::source_error::{SourceError, SourceErrorKind};
 
 const FETCH_TTL_SECONDS: i64 = 7 * 24 * 60 * 60;
 const DEFAULT_FALLBACK_ACCENT: &str = "#3584E4";
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RefreshReport {
     pub artists_queued: usize,
     pub artists_fetched: usize,
     pub releases_upserted: usize,
     pub unmatched: usize,
     pub failed: usize,
+    pub failures: Vec<SourceError>,
 }
 
 /// Outcome of resolving an artist's MBID for a refresh attempt. Distinct from
@@ -36,7 +38,7 @@ pub struct RefreshReport {
 enum MbidResolution {
     Found(String),
     /// The artist-search request failed or returned an invalid payload.
-    Failed,
+    Failed(SourceError),
     /// The search succeeded but matched nothing, or matched ambiguously.
     Unmatched,
 }
@@ -53,6 +55,20 @@ pub enum NewsError {
     Fetch(#[from] FetchError),
     #[error("New Releases database operation failed: {0}")]
     Database(String),
+}
+
+impl NewsError {
+    #[must_use]
+    pub fn into_source_error(self) -> SourceError {
+        match self {
+            Self::Fetch(error) => source_error_for_fetch(&error),
+            error => SourceError::new(
+                SourceErrorKind::Unreachable,
+                "New Releases refresh failed",
+                error.to_string(),
+            ),
+        }
+    }
 }
 
 pub fn refresh<A>(
@@ -124,7 +140,8 @@ where
         }
         let mbid = match resolve_artist_mbid(conn, &candidate, fetch, &mut report)? {
             MbidResolution::Found(mbid) => mbid,
-            MbidResolution::Failed => {
+            MbidResolution::Failed(error) => {
+                record_failure(&mut report, error);
                 crate::artist_news_ledger::record_attempt(
                     conn,
                     &artist_key,
@@ -150,9 +167,9 @@ where
             }
         };
         let items = match fetch_release_discography(&mbid, today, include_singles, fetch) {
-            Some(items) => items,
-            None => {
-                report.failed += 1;
+            Ok(items) => items,
+            Err(error) => {
+                record_failure(&mut report, error);
                 crate::artist_news_ledger::record_attempt(
                     conn,
                     &artist_key,
@@ -197,7 +214,7 @@ fn fetch_release_discography<F>(
     today: NaiveDate,
     include_singles: bool,
     fetch: &mut F,
-) -> Option<Vec<AlbumNews>>
+) -> Result<Vec<AlbumNews>, SourceError>
 where
     F: FnMut(&str) -> Result<String, FetchError>,
 {
@@ -205,8 +222,10 @@ where
     let mut items = Vec::new();
     let mut seen = std::collections::HashSet::new();
     loop {
-        let body = fetch(&release_groups_page_url(artist_mbid, offset)).ok()?;
-        let page = parse_release_group_page(&body, today, include_singles)?;
+        let body = fetch(&release_groups_page_url(artist_mbid, offset))
+            .map_err(|error| source_error_for_fetch(&error))?;
+        let page = parse_release_group_page(&body, today, include_singles)
+            .ok_or_else(invalid_response_source_error)?;
         items.extend(
             page.items
                 .into_iter()
@@ -216,12 +235,12 @@ where
             break;
         };
         if next_offset <= offset {
-            return None;
+            return Err(invalid_response_source_error());
         }
         offset = next_offset;
     }
     sort_release_groups(&mut items);
-    Some(items)
+    Ok(items)
 }
 
 fn enrich_local_release_track_counts<F>(
@@ -285,9 +304,9 @@ where
     }
     let body = match fetch(&artist_search_url(&candidate.name)) {
         Ok(body) if artist_payload_valid(&body) => body,
-        Ok(_) | Err(_) => {
-            report.failed += 1;
-            return Ok(MbidResolution::Failed);
+        Ok(_) => return Ok(MbidResolution::Failed(invalid_response_source_error())),
+        Err(error) => {
+            return Ok(MbidResolution::Failed(source_error_for_fetch(&error)));
         }
     };
     match parse_artist_mbid(&body, &candidate.name) {
@@ -302,6 +321,31 @@ where
             Ok(MbidResolution::Unmatched)
         }
     }
+}
+
+fn record_failure(report: &mut RefreshReport, error: SourceError) {
+    report.failed += 1;
+    report.failures.push(error);
+}
+
+fn source_error_for_fetch(error: &FetchError) -> SourceError {
+    let kind = match error {
+        FetchError::HttpStatus(429) => SourceErrorKind::RateLimited { retry_after: None },
+        FetchError::Timeout
+        | FetchError::Transport
+        | FetchError::HttpStatus(_)
+        | FetchError::Body
+        | FetchError::BodyTooLarge => SourceErrorKind::Unreachable,
+    };
+    SourceError::new(kind, "New Releases fetch failed", error.to_string())
+}
+
+fn invalid_response_source_error() -> SourceError {
+    SourceError::new(
+        SourceErrorKind::Unreachable,
+        "New Releases fetch failed",
+        "MusicBrainz response was invalid",
+    )
 }
 
 fn persist_artist_match(

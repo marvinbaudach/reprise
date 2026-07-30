@@ -11,7 +11,7 @@ use crate::db::Db;
 
 use super::PodcastKind;
 
-/// `MTP-37`: how many of the user's active subscriptions of `kind` are
+/// `MTP-51`: how many of the user's active subscriptions of `kind` are
 /// currently selected to sync to `device_id`, out of how many exist —
 /// the live counts behind the device page's Content section selection
 /// summary ("N of M channels selected"). Per-item selection itself is
@@ -137,7 +137,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_37_selection_summary_counts_only_this_devices_selected_channels() {
+    fn mtp_51_selection_summary_counts_only_this_devices_selected_channels() {
         let conn = Db::open_in_memory().unwrap();
         let one = store::add_or_restore(
             &conn,

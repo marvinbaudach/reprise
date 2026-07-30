@@ -98,6 +98,82 @@ fn mtp_29_idle_card_reads_the_aggregate_balance_not_a_blended_change_count() {
 }
 
 #[test]
+fn mtp_48_inert_device_card_names_the_active_device_and_offers_no_sync_copy() {
+    let mut device = view(PlannedSyncPhase::Idle);
+    device.session_state = reprise_core::device_sync::DeviceSessionState::Inert {
+        active_device_name: "Pixel 7a (Anna)".into(),
+    };
+
+    assert_eq!(
+        card_subtitle(&device),
+        "Plugged in · disconnect Pixel 7a (Anna) to use it"
+    );
+    assert!(!device.page.controls.can_start);
+}
+
+#[test]
+fn mtp_50_remembered_card_is_dimmed_has_no_diff_and_exposes_local_memory_actions() {
+    let mut device = view(PlannedSyncPhase::Idle);
+    device.connected = false;
+    device.session_state = reprise_core::device_sync::DeviceSessionState::Remembered;
+    device.last_sync = Some(chrono::Utc::now() - chrono::Duration::days(3));
+    device.category_readings = [
+        CategoryReading::Diff(diff(14, 2_600_000_000, 3, 148 * 1_024 * 1_024)),
+        CategoryReading::SourceOff,
+        CategoryReading::SourceOff,
+    ];
+
+    assert_eq!(card_subtitle(&device), "Not connected · synced 3 days ago");
+    assert!(idle_tooltip(&device).is_none());
+    assert!(css().contains(".device-card.remembered-device { opacity: 0.58; }"));
+    let menu_source = include_str!("../device_sync/device_sync_card_menu.rs");
+    assert!(menu_source.contains("BUTTON_SECONDARY"));
+    assert!(menu_source.contains("FORGET_DEVICE"));
+    assert!(menu_source.contains("rename_remembered_device"));
+    assert!(menu_source.contains("forget_remembered_device"));
+}
+
+#[test]
+fn css_covers_the_sync_card_vocabulary() {
+    let css = css();
+    for marker in [
+        ".device-card {",
+        ".device-card:hover",
+        ".device-card:focus-visible",
+        ".device-card-icon",
+        ".device-card-glyph",
+        ".device-card-detail",
+        ".device-card-percent",
+        ".device-card-progress trough",
+        ".device-card-progress progress",
+    ] {
+        assert!(css.contains(marker), "missing rule: {marker}");
+    }
+    assert!(
+        !css.contains("#1CA98F"),
+        "the accent must come from the theme, not a literal, or non-default palettes break"
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn css_parses_in_gtk_without_dropping_declarations() {
+    if gtk4::init().is_err() {
+        return;
+    }
+    let combined = format!(
+        "{}\n{}",
+        crate::ui::style::theme::theme_css(crate::ui::style::theme::Theme::DEFAULT, true),
+        css()
+    );
+    let errors = crate::ui::style::css_parse_errors(&combined);
+    assert!(
+        errors.is_empty(),
+        "GTK reported CSS parsing errors: {errors:?}"
+    );
+}
+
+#[test]
 fn mtp_29_deletions_only_idle_card_reads_frees_not_zero_bytes() {
     let mut device = view(PlannedSyncPhase::Idle);
     device.contents_state = DeviceContentsState::Verified;

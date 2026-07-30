@@ -326,7 +326,7 @@ human. Rationale for changes lives in the git history.
   the sidebar. It never automatically navigates away from the current
   view.
 - **MTP-2** [replaced by MTP-13]
-- **MTP-3** [active] [gtk] — The device card and an open device page
+- **MTP-3** [replaced by MTP-48] — The device card and an open device page
   project the same device-related runtime state. Syncs of different
   devices may run in parallel; start and cancel act exclusively on the
   named device, and a late progress event of a cancelled run is
@@ -646,7 +646,7 @@ human. Rationale for changes lives in the git history.
   surface. That gap is tracked, not hidden behind `[planned]` — the
   persistence, the default, and the live wiring this rule actually decides
   are real and tested (`mtp_36_…`), which is what `[active]` asserts here.
-- **MTP-37** [active] [core] [gtk] — Replaces `MTP-28`'s addendum of 2026-07-28
+- **MTP-37** [replaced by MTP-51] [core] [gtk] — Replaces `MTP-28`'s addendum of 2026-07-28
   (Turn 6/7 plan `E-6`, `E-8`): Reprise supports exactly one MTP device
   (`E-5`), so the sole justification for a global Preferences surface — "applies
   to all devices, no device picker in the settings" — falls away. The device
@@ -685,7 +685,7 @@ human. Rationale for changes lives in the git history.
   field and the selection line as equal, real neighbours instead of read-only
   text beside it. The planned "Phone sync" block in Preferences (`SET-8`) is
   dropped with nothing in its place, not merely "as long as its sync foundation
-  does not exist" — see `SET-9`.
+  does not exist" — see `SET-11`.
 - **MTP-38** [active] [core] — Reprise knows three named sync targets per
   device — playlists, YouTube audio, podcast episodes — rather than a single
   managed folder (supersedes `78e379fd`, no migration: see Turn 6/7 plan §1b).
@@ -807,14 +807,14 @@ human. Rationale for changes lives in the git history.
   #96), so each switch acts only on its own source — switching YouTube off
   leaves podcast episodes syncing untouched, and the reverse. The global "Use
   online sources" gate sits above both and empties the sync on its own, since
-  `SET-9` calls that state "a local player only" and a phone still filling
+  `SET-11` calls that state "a local player only" and a phone still filling
   with feed downloads would not be one. This does **not** delete anything —
   and that clause is the load-bearing one. A switched-off source is not a
   source with nothing selected: with "Remove from phone when deleted or
   unsubscribed here" on, an empty desired set makes *every* resident file of
   that source a removal, so a gate that only emptied the candidate list would
   have turned switching YouTube off into "wipe YouTube off the phone on the
-  next sync". `SET-9`'s promise that subscriptions and favorites are *kept*
+  next sync". `SET-11`'s promise that subscriptions and favorites are *kept*
   stands unchanged, switching the module back on restores exactly the previous
   sync, and `build_plan` returns an empty plan for a disabled source rather
   than a plan full of deletions. The ordinary `remove_deleted` cleanup for an
@@ -853,6 +853,36 @@ human. Rationale for changes lives in the git history.
   unsubscribed here" on, the old names are removed and the new names copied in
   one noisy sync; with it off, both remain until the user deletes one. Sorting
   a show folder by name is now chronological, which the id form never was.
+- **MTP-48** [active] [core] [gtk] — Replaces `MTP-3`. Exactly one MTP
+  device is active at a time and exactly one session is ever open. The first
+  device detected owns it; a second one is detected and listed but never
+  opened, its row reading "Plugged in · disconnect {other} to use it" in
+  amber with no sync action. There is no queue, no parallel transfer and no
+  device chooser.
+- **MTP-49** [active] [core] — Device identity is a stable key: the GVfs
+  mount UUID, else the USB serial number from udev/sysfs. The `mtp://` root
+  URI is never an identity — it carries the USB bus number and changes on
+  every replug. A device with no stable key is usable but not remembered, and
+  the UI says so rather than pretending. Persisted per identity: target
+  folders, last verified state, size on device, local name — nothing else.
+- **MTP-50** [active] [gtk] — The sidebar lists the active device first,
+  then remembered devices dimmed as history. A remembered device shows no
+  diff — only "Not connected · synced 3 days ago" or
+  "Not connected · never verified" — because a balance for an absent device
+  would be a guess. Opening one shows its target folders and last verified
+  state; syncing requires connecting it. Right-click → "Forget device" drops
+  the persisted row and deletes nothing, on the device or locally. A local
+  rename keeps two identical models distinguishable and is never written to
+  the device.
+- **MTP-51** [active] [core] [gtk] — Replaces `MTP-37`. The device page's
+  Content rows each offer "Choose…", opening one shared picker pattern: a rule
+  row, a grouped checkbox list, a filter, "Select all", and a live footer. The
+  picker and the library's right-click "Include in phone sync" are two ways to
+  operate **one** decision — they write the same flag and neither holds a copy
+  of it. An individual tick overrides the rule and stays pinned when the
+  episode ages out of the rule's window. Playlists additionally offer
+  "Everything" and "Keep smart playlists up to date on each sync", because a
+  smart playlist not re-evaluated at sync time freezes on the phone.
 
 ## F. Settings & modals
 
@@ -884,7 +914,7 @@ human. Rationale for changes lives in the git history.
   begins with the compact standard spacing directly below the content
   header. Short pages are not vertically centered; unused space stays
   below the last group.
-- **SET-6a** [active] [gtk] — The Plugins page groups by user intent:
+- **SET-6a** [replaced by SET-10] [gtk] — The Plugins page groups by user intent:
   "Local Features", "Online Content" and "Connected Services". Scrobbling
   appears there exactly once as a navigation entry and opens a
   navigation page in the same Preferences window with ‹-Back. There is
@@ -895,7 +925,7 @@ human. Rationale for changes lives in the git history.
   provider-specific. With bundled app credentials, Last.fm offers the
   normal browser login directly; custom API credentials sit collapsed
   under "Advanced setup".
-- **SET-7** [active] [gtk] — "New Releases" and "Concerts" are peer
+- **SET-7** [replaced by SET-10] [gtk] — "New Releases" and "Concerts" are peer
   Preferences main pages in the vertical navigation. For these two
   features, the Plugins page keeps only the activation switches; scope,
   provider, location and similar options live exclusively on their
@@ -916,7 +946,7 @@ human. Rationale for changes lives in the git history.
   deleted." The fourth block, "Phone sync" from 7b, is deliberately not part of
   this as long as its sync foundation (block E) does not exist — its rules
   follow with that block.
-- **SET-9** [active] [gtk] — Replaces `SET-8`: the same Preferences main page
+- **SET-9** [replaced by SET-10/SET-11] [gtk] — Replaces `SET-8`: the same Preferences main page
   "Online sources" (turn 7b) with the same rows for YouTube, Podcasts and
   Radio, unchanged — a global gate "Use online sources" with the subtitle "Off
   makes this a local player only: no requests, no downloads, nothing hidden —
@@ -931,6 +961,22 @@ human. Rationale for changes lives in the git history.
   for sync rules needing a cross-device Preferences surface at all; they live
   on the device page instead (`MTP-37`). "Online sources" remains the only
   Preferences main page this area will ever get.
+- **SET-10** [active] [gtk] — Plugins is the only settings surface for
+  optional capabilities. It has exactly three groups in this order: Local,
+  Online content, Connected services. Every capability appears exactly once;
+  a capability with settings is an `AdwExpanderRow` whose settings are child
+  rows. There are no "Online sources", "New Releases", or "Concerts"
+  Preferences main pages. Every Online-content row names the service it
+  contacts, so Plugins is also the privacy overview. Phone sync deliberately
+  does not appear here: its rules stay on the device page (`MTP-37`).
+- **SET-11** [active] [gtk] — The Online-content group's own header is the
+  master switch. Off is a kill switch, not a bulk toggle: no request of any
+  kind runs, sidebar entries are hidden, and running downloads are cancelled,
+  while every per-module key keeps its value so switching the master back on
+  restores the exact previous configuration. The group collapses to its
+  header, which never disappears, and offers "Show the N sources"; revealing
+  it shows every source read-only. Connected services collapses the same way
+  and is labelled "Scrobbling · needs online sources".
 
 ## G. Feedback vocabulary
 
@@ -1662,11 +1708,9 @@ the panel).
   navigation.
 - **NR-6** [active] [gtk] — „Fetch now" replaces its refresh icon with
   a spinner during the fetch and otherwise shows the age of the last
-  update. Offline or error still show the last cache along with its
-  age and only a subtle inline note in the footer — never an error
-  banner. The underlying principle has been named app-wide since `NET-3`
-  (`cached`/`interrupted`); this rule remains the authoritative version for
-  New Releases' own spinner mechanics and is not superseded by it.
+  update. Offline or error still show the last cache along with its age.
+  The shared failure surface is specified by NR-21; this rule remains the
+  authoritative version for New Releases' own spinner mechanics.
 - **NR-7** [active] [gtk] — New Releases is a plugin on the plugins
   page, off by default, with the privacy subtitle „contacts
   MusicBrainz" and a choice of „Top artists only / all artists". With
@@ -1790,6 +1834,17 @@ the panel).
   no purchase button. The direct link is commission-free, contains no
   tracking parameters, and is not labeled as an affiliate link; NR-19
   remains reserved for a later contractually approved monetization.
+- **NR-21** [active] [gtk] — A failed New Releases fetch leaves every
+  cached release and the existing update age untouched. A neutral shared
+  banner above a populated view names the failed refresh, what remains
+  available, and „Try again"; only a genuinely empty cache uses the shared
+  full-area failure state. Both surfaces carry the same collapsed `Details`
+  block with Copy, and technical status, host, and exception text appears
+  only there. Offline is written from the window's explicit connectivity
+  value, dims the remote-action rows, and never overwrites a provider
+  failure already on screen; reconnect removes only an offline-authored
+  notice. A successful fetch removes the notice silently. NR-6's spinner
+  and NR-8's consent and first-fetch loop remain unchanged.
 ## S. Surfaces & Geometry
 
 <!-- Section letter: R (New Releases) is the last one assigned; S follows
@@ -1902,7 +1957,7 @@ property is set and yet nothing happens.
   fully network-free use remains possible. Switching off takes effect
   immediately and does not hide images already cached locally.
 - **NET-1a** [active] [core] [gtk] — Extends `NET-1` by a global gate
-  `online-sources-enabled` (Preferences page "Online sources", `SET-9`): an AND
+  `online-sources-enabled` (Plugins, `SET-11`): an AND
   condition in front of **every** network fetch in the app, sitting on top of
   the respective module or source switch — cover downloads, artist portraits,
   New Releases, online lyrics **and** the three online sources YouTube,
@@ -1914,21 +1969,39 @@ property is set and yet nothing happens.
   already cached locally are left untouched. Per source and module, YouTube
   additionally has its own module flag, independent of Podcasts (issue #96):
   "Podcasts off + YouTube on" is a valid state.
-- **NET-2** [active] [core] — Updates protect demonstrable prior use:
+- **NET-2** [replaced by NET-2a] [core] — Updates protect demonstrable prior use:
   existing downloaded covers or portraits activate their module, existing
   library databases keep Online Lyrics, and a previously active
   `artist_news` is carried over as an active New Releases module. Negative
   cache markers do not count as use; fresh installations start with all
   four network modules off.
-- **NET-3** [planned] — Offline is a state, not an error: no network-backed
+- **NET-2a** [active] [core] — Replaces `NET-2`. A fresh installation starts
+  with the global gate `online-sources-enabled` off: no online sidebar
+  entries, no requests, and no startup dialog. An update keeps the gate on
+  where prior use is demonstrable: a podcast or YouTube subscription, a radio
+  favourite, a downloaded episode, or a populated cover or portrait cache.
+  An existing database without any such use starts with the gate off.
+  Negative cache markers do not count, and an explicitly stored gate value
+  is never overwritten. The per-module grandfathering described by `NET-2`
+  remains in force unchanged.
+- **NET-4** [active] [gtk] — Discovery without nagging: exactly one
+  dismissible banner appears in the Library on the first launch after the
+  update: "Reprise can now follow podcasts, YouTube channels, radio and
+  concerts — all off by default." with "Review in Preferences" and "Not now".
+  Once dismissed or acted on it never appears again; it is never shown when
+  the global gate is already on, and is never a modal or a toast. The
+  permanent path is Preferences → Plugins. On the first enable the master
+  turns on and every source remains off except Radio.
+- **NET-3** [active] [core] [gtk] — Offline is a state, not an error: no network-backed
   place in the app may treat a missing network connection like an error
   message. The contract covers seven states every network-backed view (feed,
   search, refresh) must know: **cached** (the last successful state stays
   visible along with its age, never replaced by an error), **empty** (never
   fetched successfully yet — a loading/first-run state rather than silent
   emptiness), **queued** (an online action was accepted and is waiting for the
-  network), **interrupted** (a running fetch aborts — the cache stays, only a
-  discreet inline note, never a banner), **authentication** (401 or a missing
+  network), **interrupted** (a running fetch aborts — the cache stays and one
+  neutral source banner explains what failed, what still works and how to
+  retry), **authentication** (401 or a missing
   credential — neutral, without prompting for credentials in the flow itself),
   **rate limit** (429 — treated like "interrupted", no special error picture)
   and **provider failure** (5xx/other — likewise). For the three online sources
@@ -1967,12 +2040,13 @@ property is set and yet nothing happens.
   pending or offers a retry. This contract never checks a module switch, only
   connectivity.
 
-  This rule is the contract prose and only turns `[active]` itself once all of
-  its lettered sub-rules are. It consolidates the shared "a cache is never an
+  This rule is active because all lettered sub-rules and their GTK
+  presentation are wired. It consolidates the shared "a cache is never an
   error" principle that `NR-6`, `NR-8` and `CONC-4b` each already state in
-  their own words for their own surface — those three rules stay `[active]`
-  unchanged and refer here from now on instead of duplicating the principle;
-  none of them changes behaviour or tests. `INST-12` stated the same principle
+  their own words for their own surface. NR-21 and CONC-11 now specify their
+  shared banner, Details, and explicit-connectivity rendering without changing
+  the existing fetch, consent, credential, or filter mechanics. `INST-12`
+  stated the same principle
   for the instrumental model download and belonged in this list when it was
   written, but that surface has since been removed from the GTK frontend and
   the rule is replaced, so it is deliberately not counted here. `LYR-3` does **not**
@@ -1992,8 +2066,9 @@ property is set and yet nothing happens.
   provider, authentication, or rate limits; those are request outcomes, not a
   connectivity state. This projection is a wiring foundation: automatically
   running pending actions when the network returns is now built on top of it
-  (`NET-3c`, F2); the "Needs network" display in the podcast and YouTube rows
-  remains open and is not claimed here.
+  (`NET-3c`, F2). Podcast and YouTube rows consume this projection: missing
+  rows remain listed, dimmed, and read "Needs network"; downloaded rows remain
+  fully playable.
 - **NET-3b** [active] [gtk] — The radio exception: stations always stay listed.
   The context menu shows "Play" (`radio_context_menu::play_menu_label`) when
   `Connectivity::Online` holds or the station is already playing; under
@@ -2001,8 +2076,12 @@ property is set and yet nothing happens.
   (`radio_view::try_play_station`) opens no connection while connectivity stays
   offline — no marking pending, no automatic run, because a live stream cannot
   be deferred. Connectivity is an injectable state
-  (`RadioView::set_connectivity`), `Online` by default and not yet attached to
-  a real operating-system signal in this rule.
+  (`RadioView::set_connectivity`), `Online` by default. The main-window
+  composition root initializes it, both podcast views, Concerts, New Releases,
+  and phone sync from one `gio::NetworkMonitor` and updates every seam from
+  `network-changed`. Returning online removes an offline-only notice; it never
+  dismisses a dead-stream or other provider failure, which remains until
+  playback succeeds or the user acts on it.
 - **NET-3c** [active] [core] — The runner `NET-3a` reserved this id for:
   once connectivity is believed online, whatever is `wanted_on_device`
   (`MTP-40`) but still missing a local file replays, in order, without a
@@ -2018,9 +2097,44 @@ property is set and yet nothing happens.
   uses. The GTK trigger is `PodcastsView::set_connectivity`, mirroring
   `NET-3b`'s `RadioView::set_connectivity` exactly: a transition from
   `Offline` to `Online` dispatches `PodcastsOperation::RunQueued` on the
-  existing podcast worker; any other transition is a no-op. As with `NET-3b`,
-  this is an injectable seam, not yet attached to a real operating-system
-  signal.
+  existing podcast worker; manually requested downloads and Load more actions
+  use the same transition and retain their click order in a transient,
+  de-duplicated action list. A transient action leaves that list only after
+  the worker accepts it; if dispatch is temporarily refused, that action and
+  everything behind it retain their original order for a later replay. The
+  reconnect transition also removes an offline-only notice immediately,
+  without dismissing a provider-specific failure. The persistent phone-sync
+  authority remains `wanted_on_device`; no second queue table or persisted
+  truth is introduced.
+  The window-level `gio::NetworkMonitor` is the sole production caller of the
+  injectable seams.
+- **NET-3d** [active] [core] — One translation layer: every provider and
+  transport error is mapped, in core, onto exactly one of five user-facing
+  states — *unreachable*, *rate-limited*, *source gone*, *helper outdated*,
+  *offline* — and only those are ever rendered. The raw text (HTTP status,
+  host, tool output, exception) is reachable only through an explicit detail
+  accessor, for the copyable `Details` block and the log, and never through
+  `Display`. `404`/`410` on a feed is *source gone* and is the only failure in
+  the app that asks the user to act; everything else offers "try again".
+  `429` and provider bot-checks are *rate-limited* and retry in the background
+  with the shared exponential backoff. Feed and search requests time out at
+  10 s from one shared constant, so no view can sit on a spinner longer than
+  that without resolving; downloads keep their own longer budget.
+
+  The core projection is rendered by one reusable neutral
+  `SourceErrorBanner` and one shared full-area failure state. Both embed the
+  same collapsed-by-default monospace `SourceErrorDetails` widget with Copy;
+  technical text is reachable there and in logs, never in ordinary labels or
+  toasts. Concerts and New Releases use the same two widgets and retain typed
+  refresh failures in their Core reports; missing Concerts credentials remain
+  a configuration outcome whose action opens its Plugins row, never a network
+  retry. The podcast and YouTube refresh loop records a failure immediately,
+  then consults
+  `retry_delay` before another provider attempt; its bounded per-source attempt
+  count resets on success, and exhaustion returns the source to its fixed
+  refresh interval. A successful fetch removes the banner silently; cached
+  content is never replaced, and three or more failures become one collected
+  notice.
 - **LYR-1** [planned] [core] — Local embedded lyrics and `.lrc` sidecars
   are shown independently of the Online Lyrics module. Reprise does not
   yet read these local formats today; the rule stays planned until this
@@ -3221,10 +3335,9 @@ available. The player plays only finished files.
   re-evaluate the already-open view, its sidebar count, and the Updates
   popover. Never fetched offers exactly "Fetch now"; zero hits with
   filters offers exactly "Show all". Offline or error leaves the cache
-  and "Updated X ago" visible and reports the error exclusively inline
-  in the footer — the same `cached`/`interrupted` reading that `NET-3` has
-  since named app-wide; credential and filter behaviour stay Concerts' own
-  and remain `[active]` unchanged.
+  and "Updated X ago" visible. CONC-11 specifies the shared failure surface;
+  credential and filter behaviour stay Concerts' own and remain `[active]`
+  unchanged.
 - **CONC-5** [replaced by CONC-5a] — Original worker contract with
   view-open staleness, due check, and "Fetch now" as the only network
   triggers.
@@ -3259,6 +3372,19 @@ available. The player plays only finished files.
   baseline as date, location, venue, distance, and ticket; an optional
   "similar to …" caption expands and centers the artist group as a
   unit, instead of pinning the artist to the top edge of the row.
+- **CONC-11** [active] [gtk] — A failed Concerts fetch leaves every cached
+  event and „Updated X ago" untouched. A neutral shared banner above a
+  populated view names the failed refresh, what remains available, and the
+  next action; only a genuinely empty cache uses the shared full-area failure
+  state. Both surfaces carry the same collapsed `Details` block with Copy, and
+  technical status, host, and exception text appears only there. Offline is
+  written from the window's explicit connectivity value, dims the remote-action
+  rows, and never overwrites a provider or configuration failure already on
+  screen; reconnect removes only an offline-authored notice. A successful
+  fetch removes the notice silently. Missing credentials are a configuration
+  outcome with „Open Preferences" targeting the Concerts Plugins row, never
+  „Try again"; CONC-4b's ordinary no-credential empty state remains neutral
+  with no action.
 ## AF. Podcasts & Radio
 
 <!-- Section letter: AE is the last assigned section after Concerts
@@ -3365,7 +3491,10 @@ listening statistics.
   state: the toolbar and filter row stay visible, with a "Clear filters"
   action, because clearing the filter — not adding a source — is the way
   out. `NoEpisodes` (subscribed, the feed genuinely has nothing yet) is
-  unchanged and keeps the filter row hidden.
+  unchanged and keeps the filter row hidden. A fetch failure with an existing
+  subscription but no cached or downloaded episode uses the same geometry as
+  `PodcastsEmptyState::FetchFailed`, with Retry and the collapsed Details
+  block; it never masquerades as "nothing subscribed yet".
 - **SRC-11** [active] [core] [gtk] — Channel, show and station images (YouTube
   `thumbnails`, iTunes `artworkUrl600`, radio-browser `favicon` — `C1`) run
   through a module of their own (`module.source_images.enabled`) and are
@@ -3532,7 +3661,7 @@ listening statistics.
   (`MTP-45`/`POD-12`) — the two lines can no longer call the same subscription
   by two different nouns. Found by the `source-youtube` acceptance scenario,
   which reads the header back out of the running app.
-- **POD-16** [active] [gtk] — The status line under the Podcasts and YouTube
+- **POD-16** [replaced by POD-19] [gtk] — The status line under the Podcasts and YouTube
   libraries never renders a raw error. Its two failure states are fixed
   sentences — "Could not read your subscriptions" when the library itself
   cannot be read, and `POD-11`'s "Refresh failed · showing saved episodes"
@@ -3585,6 +3714,14 @@ listening statistics.
   every episode imported from one channel on the same day would receive that
   import day, so the date could not tell otherwise identical channel episodes
   apart.
+- **POD-19** [active] [gtk] — Replaces POD-16's refresh-failure footer.
+  The footer keeps only neutral refresh progress, last-updated age and library
+  read failures. A provider refresh failure appears once in the shared neutral
+  source banner above the unchanged cached list, with fixed safe copy, Retry
+  and collapsed Details; a successful refresh removes it silently. When no
+  cached or downloaded episode exists, the same information and actions use
+  the shared full-area failure state instead. Neither surface renders raw
+  provider, transport, database or helper text outside Details.
 - **RAD-1** [active] [gtk] — Only the currently connected station is
   accented in the table; its state icon, name, now-playing, and row
   tint change together. All others, as well as a presented but
@@ -3595,8 +3732,11 @@ listening statistics.
   geometry-matched waveform placeholder, MPRIS reports `CanSeek=false`
   and no length. Pause disconnects the stream but stays presented as
   Paused/CanPause with station and dimmed last title; play reconnects
-  live. A reconnect error leaves the paused state standing with an
-  inline error and retry. Radio produces no listening statistics;
+  live. A reconnect error leaves the paused state standing and shows the
+  neutral shared source banner with "This station isn't broadcasting right
+  now", Retry, Find a new URL and collapsed Details; Retry/Find re-resolve a
+  UUID station through radio-browser once before surfacing the failure again.
+  Radio produces no listening statistics;
   reactivating the running row stops it.
 - **RAD-3** [active] [core] — Radio-browser servers are chosen via
   the discovery endpoint and rotated on failure. Every start of a

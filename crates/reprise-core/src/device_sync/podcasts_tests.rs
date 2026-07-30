@@ -15,6 +15,7 @@ use super::*;
 /// the ones that flip them back.
 fn migrated() -> crate::db::Db {
     let db = crate::db::Db::open_in_memory().unwrap();
+    crate::online_sources::set_enabled(&db, true).unwrap();
     crate::modules::set_enabled(&db, &crate::modules::PODCASTS_MODULE, true).unwrap();
     crate::modules::set_enabled(&db, &crate::modules::YOUTUBE_MODULE, true).unwrap();
     db

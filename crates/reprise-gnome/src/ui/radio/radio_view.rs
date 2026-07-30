@@ -7,6 +7,9 @@ use libadwaita as adw;
 use reprise_core::connectivity::{self, Connectivity};
 use reprise_core::db::Db;
 use reprise_core::radio::{self, StationRow};
+use reprise_core::source_error::{
+    source_failure_presentation, SourceError, SourceErrorKind, SourceSurface,
+};
 
 use super::add_dialog::RadioAddDialog;
 use super::radio_columns::{self, LiveState, OnRemove};
@@ -19,7 +22,15 @@ use crate::ui::playback::external_media::{ExternalMedia, RadioPhase};
 use crate::ui::playback::player_controller::PlayerController;
 use crate::ui::sidebar::sidebar_presentation::NavIcon;
 use crate::ui::source_empty_state::{SourceEmptyState, SourceEmptyStateCopy};
+use crate::ui::source_error_banner::SourceErrorBanner;
 use crate::ui::strings;
+
+#[path = "radio_failure_ui.rs"]
+mod failure_ui;
+use failure_ui::{
+    radio_failure_action, reresolve_station_url, should_clear_radio_failure,
+    should_show_offline_radio_notice, RadioFailureAction,
+};
 
 const LIST_PAGE: &str = "list";
 const STATUS_PAGE: &str = "status";
@@ -39,15 +50,17 @@ struct Shared {
     rows: RefCell<Vec<StationRow>>,
     live: Rc<RefCell<RadioLiveState>>,
     /// `NET-3b`: explicit, injectable connectivity seam (see
-    /// `reprise_core::connectivity`) — defaults to `Online` and is not
-    /// wired to any real OS signal yet; only [`RadioView::set_connectivity`]
-    /// (and tests) change it.
+    /// `reprise_core::connectivity`) — defaults to `Online`; the window
+    /// composition root and tests change it only through
+    /// [`RadioView::set_connectivity`].
     connectivity: Rc<Cell<Connectivity>>,
+    failure_kind: RefCell<Option<SourceErrorKind>>,
     stack: gtk4::Stack,
     status: adw::StatusPage,
     status_button: gtk4::Button,
     empty_state: Cell<RadioEmptyState>,
     empty_page: SourceEmptyState,
+    error_banner: SourceErrorBanner,
     root: gtk4::Widget,
     add_dialog: RefCell<Option<Rc<RadioAddDialog>>>,
     toast_overlay: gtk4::glib::WeakRef<adw::ToastOverlay>,
@@ -119,6 +132,7 @@ impl RadioView {
         status_button.set_halign(gtk4::Align::Center);
         status.set_child(Some(&status_button));
         let empty_page = SourceEmptyState::new(&radio_empty_state_copy());
+        let error_banner = SourceErrorBanner::new();
         let stack = gtk4::Stack::builder()
             .transition_type(gtk4::StackTransitionType::Crossfade)
             .vexpand(true)
@@ -129,6 +143,7 @@ impl RadioView {
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         root.add_css_class("reprise-radio-view");
         root.append(filter_bar.widget());
+        root.append(error_banner.widget());
         root.append(&stack);
 
         let shared = Rc::new(Shared {
@@ -139,11 +154,13 @@ impl RadioView {
             rows: RefCell::new(Vec::new()),
             live,
             connectivity,
+            failure_kind: RefCell::new(None),
             stack,
             status,
             status_button: status_button.clone(),
             empty_state: Cell::new(RadioEmptyState::Empty),
             empty_page,
+            error_banner,
             root: root.upcast(),
             add_dialog: RefCell::new(None),
             toast_overlay: gtk4::glib::WeakRef::new(),
@@ -228,7 +245,18 @@ impl RadioView {
                 let Some(shared) = weak.upgrade() else {
                     return;
                 };
+                let failure = snapshot
+                    .as_ref()
+                    .and_then(|snapshot| snapshot.radio.as_ref())
+                    .and_then(|radio| radio.inline_error())
+                    .map(str::to_owned);
                 shared.live.replace(live_state(snapshot));
+                if let Some(failure) = failure {
+                    show_radio_failure(&shared, SourceErrorKind::Unreachable, failure);
+                } else {
+                    shared.failure_kind.replace(None);
+                    shared.error_banner.hide();
+                }
                 render_rows(&shared);
             });
         }
@@ -249,11 +277,26 @@ impl RadioView {
     }
 
     /// `NET-3b`: sets the connectivity seam this view's Play affordance
-    /// consults. Not wired to any real OS signal yet — see
-    /// `reprise_core::connectivity` for what such a signal could and could
-    /// not know; this is the injection point a future binding would call.
+    /// consults. The window composition root feeds it from the one shared
+    /// `gio::NetworkMonitor`; tests can inject the same explicit value.
     pub(in crate::ui) fn set_connectivity(&self, value: Connectivity) {
         self.shared.connectivity.set(value);
+        render_rows(&self.shared);
+        let failure_kind = self.shared.failure_kind.borrow().clone();
+        if should_show_offline_radio_notice(
+            value,
+            !self.shared.rows.borrow().is_empty(),
+            failure_kind.as_ref(),
+        ) {
+            show_radio_failure(
+                &self.shared,
+                SourceErrorKind::Offline,
+                "NetworkMonitor reports no available connection".to_owned(),
+            );
+        } else if should_clear_radio_failure(value, failure_kind.as_ref()) {
+            self.shared.failure_kind.replace(None);
+            self.shared.error_banner.hide();
+        }
     }
 
     pub(in crate::ui) fn set_on_mutated(&self, callback: impl Fn() + 'static) {
@@ -418,7 +461,49 @@ fn live_state(
             .as_ref()
             .is_some_and(|radio| radio.phase() == RadioPhase::Connected),
         title: snapshot.stream_tags.title,
+        failed: snapshot
+            .radio
+            .as_ref()
+            .and_then(|radio| radio.inline_error())
+            .is_some(),
     }
+}
+
+fn show_radio_failure(shared: &Rc<Shared>, kind: SourceErrorKind, technical_cause: String) {
+    let error = SourceError::new(kind, "Play radio station", technical_cause);
+    shared.failure_kind.replace(Some(error.kind().clone()));
+    let presentation = source_failure_presentation(
+        SourceSurface::Radio,
+        error.kind(),
+        shared.rows.borrow().len(),
+        1,
+    );
+    let weak = Rc::downgrade(shared);
+    shared.error_banner.show(
+        &presentation,
+        "",
+        &error,
+        &chrono::Utc::now().to_rfc3339(),
+        move |action| {
+            let Some(shared) = weak.upgrade() else {
+                return;
+            };
+            let station_id = shared.live.borrow().station_id;
+            let Some(station) =
+                station_id.and_then(|id| radio::station::get(&shared.conn, id).ok().flatten())
+            else {
+                return;
+            };
+            match radio_failure_action(action, station.uuid.as_deref()) {
+                RadioFailureAction::RetryPlayback => activate_station(&shared, &station),
+                RadioFailureAction::ReresolveDirectoryUrl => {
+                    reresolve_station_url(&shared, &station);
+                }
+                RadioFailureAction::OpenAddDialog => present_add_dialog(&shared),
+                RadioFailureAction::None => {}
+            }
+        },
+    );
 }
 
 fn remove_station(shared: &Rc<Shared>, id: i64) {
@@ -576,6 +661,7 @@ mod tests {
         ExternalPlaybackSnapshot, RadioPresentation, StreamTags,
     };
     use crate::ui::playback::preview::PlaybackMode;
+    use reprise_core::source_error::FailureAction;
 
     #[test]
     fn rad_1_table_projects_only_connected_radio_snapshots() {
@@ -598,6 +684,22 @@ mod tests {
         assert_eq!(connected.station_id, Some(7));
         assert!(connected.connected);
         assert_eq!(connected.title.as_deref(), Some("Artist — Song"));
+    }
+
+    #[test]
+    fn rad_3_dead_stream_actions_distinguish_retry_from_directory_reresolution() {
+        assert_eq!(
+            radio_failure_action(FailureAction::TryAgain, Some("station-uuid")),
+            RadioFailureAction::RetryPlayback
+        );
+        assert_eq!(
+            radio_failure_action(FailureAction::FindNewUrl, Some("station-uuid")),
+            RadioFailureAction::ReresolveDirectoryUrl
+        );
+        assert_eq!(
+            radio_failure_action(FailureAction::FindNewUrl, None),
+            RadioFailureAction::OpenAddDialog
+        );
     }
 
     #[test]

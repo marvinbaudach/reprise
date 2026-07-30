@@ -395,7 +395,7 @@ impl PreparedCandidate {
 }
 
 /// Returns the episode id for every candidate that needs one to reach a
-/// device path no other candidate has (`MTP-47`).
+/// device path no other candidate has (`MTP-48`).
 ///
 /// Judged on the *composed* path rather than on the bare name, because the
 /// suffix is part of the name it has to be unique against: an episode titled

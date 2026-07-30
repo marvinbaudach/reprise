@@ -56,6 +56,14 @@ pub(super) fn tooltip_text(balance: &SyncBalance) -> String {
     device_sync_strings::balance_text(balance)
 }
 
+#[must_use]
+pub(super) fn remembered_sentence(
+    last_verified: Option<DateTime<Utc>>,
+    now: DateTime<Utc>,
+) -> String {
+    reprise_core::device_sync::remembered_device_status(last_verified, now)
+}
+
 /// Design 7c's two "has work" states, kept distinct from the aggregate
 /// balance formatter used for the tooltip (`MTP-22`'s "To copy N files ·
 /// X" wording) because the card's leading sentence is deliberately terser:
@@ -192,6 +200,24 @@ mod tests {
         assert_eq!(
             tooltip_text(&balance),
             "To copy 14 files · 2.0 GiB · To remove 3 files · 100.0 MiB"
+        );
+    }
+
+    #[test]
+    fn mtp_50_remembered_devices_name_only_connection_history_and_never_a_diff() {
+        let last_verified = now() - chrono::Duration::days(3);
+        assert_eq!(
+            remembered_sentence(Some(last_verified), now()),
+            "Not connected · synced 3 days ago"
+        );
+        assert_eq!(
+            remembered_sentence(None, now()),
+            "Not connected · never verified"
+        );
+        let copy_balance = balance(14, 2_600_000_000, 3, 148 * 1024 * 1024);
+        assert!(
+            !remembered_sentence(Some(last_verified), now()).contains(&tooltip_text(&copy_balance)),
+            "an absent card must never present a stale copy/remove balance"
         );
     }
 }

@@ -6,7 +6,10 @@ pub(crate) mod deezer;
 
 use std::path::{Path, PathBuf};
 
-use crate::musicbrainz::FetchError;
+use crate::{
+    musicbrainz::FetchError,
+    source_error::{SourceError, SourceErrorKind},
+};
 
 #[derive(Debug)]
 pub enum PortraitOutcome {
@@ -20,6 +23,22 @@ pub enum PortraitError {
     Fetch(#[from] FetchError),
     #[error("Deezer response was invalid")]
     InvalidResponse,
+}
+
+impl From<&PortraitError> for SourceErrorKind {
+    fn from(error: &PortraitError) -> Self {
+        match error {
+            PortraitError::Fetch(error) => Self::from(error),
+            PortraitError::InvalidResponse => Self::Unreachable,
+        }
+    }
+}
+
+impl From<PortraitError> for SourceError {
+    fn from(error: PortraitError) -> Self {
+        let kind = SourceErrorKind::from(&error);
+        Self::new(kind, "artist portrait request failed", error.to_string())
+    }
 }
 
 pub fn load_or_fetch(name: &str) -> Result<PortraitOutcome, PortraitError> {
@@ -121,6 +140,19 @@ fn stale_or(
 mod tests {
     use super::*;
     use crate::musicbrainz::FetchError;
+    use crate::source_error::{SourceError, SourceErrorKind};
+
+    #[test]
+    fn portrait_failures_project_without_displaying_the_http_status() {
+        let error = SourceError::from(PortraitError::Fetch(FetchError::HttpStatus(599)));
+
+        assert_eq!(error.kind(), &SourceErrorKind::Unreachable);
+        assert!(!error.to_string().contains("599"));
+        assert!(error
+            .details("2026-07-30 14:12")
+            .to_string()
+            .contains("HTTP status 599"));
+    }
 
     fn png_bytes() -> Vec<u8> {
         let mut buffer = std::io::Cursor::new(Vec::new());

@@ -4,7 +4,10 @@ use std::path::PathBuf;
 
 use rusqlite::Connection;
 
-use super::{MirrorPlaylistSnapshot, MirrorTrack, SelectionSource, SyncTrack, UnavailableTrack};
+use super::{
+    everything_playlist_snapshot, MirrorPlaylistSnapshot, MirrorTrack, SelectionSource, SyncTrack,
+    UnavailableTrack,
+};
 
 pub fn load_mirror_playlist_snapshots(
     db: &crate::db::Db,
@@ -29,6 +32,21 @@ pub fn load_mirror_playlist_snapshots(
         });
     }
     Ok(snapshots)
+}
+
+pub fn load_everything_playlist_snapshot(
+    db: &crate::db::Db,
+) -> Result<MirrorPlaylistSnapshot, rusqlite::Error> {
+    let library_ids = crate::queries::query_track_ids(
+        db,
+        &crate::view_source::ViewSource::Library,
+        "title",
+        "asc",
+        "",
+        &[],
+    )?;
+    let library_tracks = crate::queries::query_sync_tracks(db, &library_ids)?;
+    Ok(everything_playlist_snapshot(library_tracks))
 }
 
 fn load_manual_entries(
@@ -121,5 +139,24 @@ impl SnapshotTrack {
             artist: self.artist,
             duration_ms: self.duration_ms,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mtp_51_everything_is_exposed_only_by_the_picker_not_as_a_playlist() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+
+        let snapshots = load_mirror_playlist_snapshots(&db).unwrap();
+
+        assert!(
+            snapshots
+                .iter()
+                .all(|snapshot| snapshot.source != super::super::selection::EVERYTHING_SOURCE),
+            "the ordinary playlist projection must not gain the picker's synthetic Everything row"
+        );
     }
 }

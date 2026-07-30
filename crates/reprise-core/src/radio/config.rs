@@ -104,8 +104,10 @@ mod tests {
     #[test]
     fn net_1a_report_plays_allowed_ands_global_gate_module_and_preference() {
         let conn = crate::db::Db::open_in_memory().unwrap();
-        // Radio is on by default, the preference is on by default, and the
-        // global gate defaults to on — so plays are reported by default.
+        // Radio and the preference are on by default, but the fresh global
+        // gate is not. Reporting begins only after explicit master opt-in.
+        assert!(!report_plays_allowed(&conn).unwrap());
+        crate::online_sources::set_enabled(&conn, true).unwrap();
         assert!(report_plays_allowed(&conn).unwrap());
 
         set_report_plays(&conn, false).unwrap();

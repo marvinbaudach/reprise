@@ -71,12 +71,12 @@ fn pod_10_shorts_filter_can_be_disabled_per_channel() {
     assert_eq!(state.visible_episodes(7, &episodes).len(), 2);
 }
 
-/// `SET-9`: the Online sources page's "Hide Shorts" default seeds new
+/// `SET-10`: the "Hide Shorts" default seeds new
 /// channels' Shorts visibility, but a channel's own explicit toggle
 /// still overrides it — turning the global default off must not
 /// silently flip a channel someone already set the other way.
 #[test]
-fn set_9_hide_shorts_default_seeds_new_channels_but_per_channel_override_wins() {
+fn set_10_hide_shorts_default_seeds_new_channels_but_per_channel_override_wins() {
     let episodes = vec![episode(2, Some(600)), episode(1, Some(60))];
     let mut state = YoutubeChannelState::default();
     state.set_default_shows_shorts(true); // "Hide Shorts" preference is off
@@ -245,6 +245,8 @@ fn src_11_channel_header_stays_on_the_fallback_when_images_are_not_allowed() {
         &[],
         &BTreeMap::new(),
         false,
+        reprise_core::connectivity::Connectivity::Online,
+        None,
     );
 
     let header = detail
@@ -312,6 +314,8 @@ fn pod_12_channel_header_on_phone_indicator_reflects_the_toggle_and_stays_read_o
         std::slice::from_ref(&phone),
         &BTreeMap::new(),
         false,
+        reprise_core::connectivity::Connectivity::Online,
+        None,
     );
     let header = detail
         .build_header(&rendered)
@@ -332,6 +336,8 @@ fn pod_12_channel_header_on_phone_indicator_reflects_the_toggle_and_stays_read_o
         &[phone],
         &selected,
         false,
+        reprise_core::connectivity::Connectivity::Online,
+        None,
     );
     let header = detail
         .build_header(&rendered)
@@ -381,6 +387,8 @@ fn pod_14_only_shorts_here_offers_a_way_to_reveal_them() {
         &[],
         &BTreeMap::new(),
         false,
+        reprise_core::connectivity::Connectivity::Online,
+        None,
     );
     detail.state.borrow_mut().open_channel(7);
     detail.render_active();

@@ -273,10 +273,11 @@ fn search(request_generation: u64, terms: String, context: &SearchContext<'_>) {
 
     match dialog_provider(context.preferred_kind) {
         PodcastKind::Rss => {
+            let query = terms.clone();
             let task = one_shot_task::spawn("reprise-podcast-search", move || {
                 podcasts::itunes::search(&terms, &locale)
                     .map(|rows| rows.into_iter().map(rss_candidate).collect::<Vec<_>>())
-                    .map_err(|error| error.to_string())
+                    .map_err(|error| preview_error(&error))
             });
             attach_candidates(
                 task,
@@ -288,6 +289,7 @@ fn search(request_generation: u64, terms: String, context: &SearchContext<'_>) {
                 context.on_added,
                 strings::PODCAST_APPLE_RESULTS,
                 auto_download_default,
+                query,
             );
         }
         PodcastKind::Youtube => {
@@ -300,11 +302,12 @@ fn search(request_generation: u64, terms: String, context: &SearchContext<'_>) {
                 return;
             }
             let ytdlp_path = config.and_then(|value| value.ytdlp_path);
+            let query = terms.clone();
             let task = one_shot_task::spawn("reprise-youtube-search", move || {
                 podcasts::ytdlp::YtDlp::discover(ytdlp_path.as_deref())
                     .search_channels(&terms)
                     .map(|rows| rows.into_iter().map(youtube_candidate).collect::<Vec<_>>())
-                    .map_err(|error| error.to_string())
+                    .map_err(|error| preview_error(&error))
             });
             attach_candidates(
                 task,
@@ -316,6 +319,7 @@ fn search(request_generation: u64, terms: String, context: &SearchContext<'_>) {
                 context.on_added,
                 strings::PODCAST_YOUTUBE_RESULTS,
                 auto_download_default,
+                query,
             );
         }
     }
@@ -332,6 +336,7 @@ fn attach_candidates(
     on_added: &OnAdded,
     heading: &'static str,
     auto_download_default: bool,
+    query: String,
 ) {
     let generation = generation.clone();
     let status = status.clone();
@@ -340,8 +345,14 @@ fn attach_candidates(
     let on_added = on_added.clone();
     gtk4::glib::spawn_future_local(async move {
         let response = match receiver {
-            Ok(receiver) => receiver.recv().await.map_err(|error| error.to_string()),
-            Err(error) => Err(error.to_string()),
+            Ok(receiver) => receiver
+                .recv()
+                .await
+                .map_err(|_| strings::text(strings::PODCAST_SEARCH_FAILED)),
+            Err(error) => {
+                tracing::warn!(%error, "could not start podcast search task");
+                Err(strings::text(strings::PODCAST_SEARCH_FAILED))
+            }
         };
         if generation.get() != request_generation {
             return;
@@ -352,6 +363,7 @@ fn attach_candidates(
                 let subscribed = active_source_keys(&conn);
                 let rows = filter_unsubscribed(rows, &subscribed);
                 if rows.is_empty() {
+                    status.set_text(&strings::source_nothing_found(&query));
                     return;
                 }
                 append_heading(&results, heading);
@@ -457,8 +469,14 @@ fn preview(
     let on_added = on_added.clone();
     gtk4::glib::spawn_future_local(async move {
         let response = match receiver {
-            Ok(receiver) => receiver.recv().await.map_err(|error| error.to_string()),
-            Err(error) => Err(error.to_string()),
+            Ok(receiver) => receiver
+                .recv()
+                .await
+                .map_err(|_| strings::text(strings::PODCAST_PREVIEW_FAILED)),
+            Err(error) => {
+                tracing::warn!(%error, "could not start podcast preview task");
+                Err(strings::text(strings::PODCAST_PREVIEW_FAILED))
+            }
         };
         if generation.get() != request_generation {
             return;
@@ -543,7 +561,10 @@ fn append_candidate(
                     &title,
                 );
             }
-            Err(error) => button.set_tooltip_text(Some(&error.to_string())),
+            Err(error) => {
+                tracing::warn!(%error, "could not subscribe to podcast");
+                button.set_tooltip_text(Some(&strings::text(strings::PODCAST_SUBSCRIBE_FAILED)));
+            }
         }
     });
     row.append(&button);
@@ -605,7 +626,10 @@ fn append_preview(
                     clear(&parent);
                 }
             }
-            Err(error) => button.set_tooltip_text(Some(&error.to_string())),
+            Err(error) => {
+                tracing::warn!(%error, "could not subscribe to podcast preview");
+                button.set_tooltip_text(Some(&strings::text(strings::PODCAST_SUBSCRIBE_FAILED)));
+            }
         }
     });
     parent.append(&subscribe_button);
@@ -687,7 +711,10 @@ fn subscribe_offline(
             // just fail loudly over the network this dialog just avoided.
             on_added(false);
         }
-        Err(error) => status.set_text(&error.to_string()),
+        Err(error) => {
+            tracing::warn!(%error, "could not save offline podcast subscription");
+            status.set_text(&strings::text(strings::PODCAST_SUBSCRIBE_FAILED));
+        }
     }
 }
 

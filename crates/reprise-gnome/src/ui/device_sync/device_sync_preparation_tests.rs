@@ -159,6 +159,39 @@ fn mtp_43_the_switch_actually_gates_whether_a_preparation_download_starts() {
     });
 }
 
+#[test]
+fn net_3a_device_sync_preparation_uses_injected_connectivity_without_reading_the_os() {
+    run(async {
+        let (_temp, conn) = fixture();
+        seed_missing_wanted_episodes(&conn, "a", &[101]);
+        save_settings(&conn, &settings_with_prepare_switch("a", true)).unwrap();
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+        settle().await;
+
+        runtime.set_connectivity(reprise_core::connectivity::Connectivity::Offline);
+        assert!(matches!(
+            runtime.devices()[0].preparation,
+            reprise_core::device_sync::PreparationPhase::SkippedOffline { files: 1 }
+        ));
+
+        runtime.set_connectivity(reprise_core::connectivity::Connectivity::Online);
+        assert!(matches!(
+            runtime.devices()[0].preparation,
+            reprise_core::device_sync::PreparationPhase::Planned { files: 1, .. }
+        ));
+        runtime.set_metered(true);
+        assert!(matches!(
+            runtime.devices()[0].preparation,
+            reprise_core::device_sync::PreparationPhase::Offered { files: 1, .. }
+        ));
+        assert!(
+            !include_str!("device_sync_compact.rs").contains("NetworkMonitor::default()"),
+            "the point of use must trust the injected value, never read the OS"
+        );
+    });
+}
+
 /// Cancelling mid-run must stop the *next* download from ever being
 /// requested, while leaving the one already in flight completely alone —
 /// two missing episodes, cancel fires between them, and the assertion

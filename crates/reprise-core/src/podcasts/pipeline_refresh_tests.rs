@@ -25,11 +25,17 @@ struct FakeYoutube;
 
 impl YoutubeFetcher for FakeYoutube {
     fn list(&self, _: &str, _: usize) -> Result<ParsedFeed, PodcastError> {
-        Err(PodcastError::YtDlp("unexpected YouTube call".to_owned()))
+        Err(PodcastError::YtDlpFailure {
+            kind: crate::podcasts::ytdlp::YtDlpFailureKind::Other,
+            stderr: "unexpected YouTube call".to_owned(),
+        })
     }
 
     fn download(&self, _: &str, _: &Path) -> Result<(), PodcastError> {
-        Err(PodcastError::YtDlp("unexpected YouTube call".to_owned()))
+        Err(PodcastError::YtDlpFailure {
+            kind: crate::podcasts::ytdlp::YtDlpFailureKind::Other,
+            stderr: "unexpected YouTube call".to_owned(),
+        })
     }
 }
 
@@ -54,6 +60,7 @@ fn conn() -> Db {
     // These tests exercise fetch/parse/store logic, not the NET-1a gate
     // itself (see the dedicated `net_1a_*` tests below), so Podcasts
     // starts enabled here.
+    crate::online_sources::set_enabled(&conn, true).unwrap();
     crate::modules::set_enabled(&conn, &crate::modules::PODCASTS_MODULE, true).unwrap();
     conn
 }
@@ -106,7 +113,7 @@ fn first_fetch_backlog_is_not_new_and_next_refresh_marks_only_new_arrivals() {
     let directory = tempfile::tempdir().unwrap();
 
     let failed = refresh_to_root(&conn, &feed, &FakeYoutube, 5, true, directory.path()).unwrap();
-    assert_eq!(failed.failed, 1);
+    assert_eq!(failed.failures.len(), 1);
 
     refresh_to_root(&conn, &feed, &FakeYoutube, 10, true, directory.path()).unwrap();
     let backlog = super::super::query::episodes_for_subscription(&conn, id).unwrap();
@@ -199,7 +206,15 @@ fn one_failed_subscription_does_not_block_the_next() {
     let summary = refresh_to_root(&conn, &feed, &FakeYoutube, 10, true, directory.path()).unwrap();
 
     assert_eq!(summary.attempted, 2);
-    assert_eq!(summary.failed, 1);
+    assert_eq!(
+        summary.failures,
+        [RefreshFailure {
+            subscription_id: failed,
+            title: "Show".to_owned(),
+            kind: crate::source_error::SourceErrorKind::Unreachable,
+        }]
+    );
+    assert_eq!(summary.failed, summary.failures.len());
     assert_eq!(summary.refreshed, 1);
     assert_eq!(
         store::subscription(&conn, failed)
@@ -217,6 +232,78 @@ fn one_failed_subscription_does_not_block_the_next() {
             .as_deref(),
         Some("ok")
     );
+}
+
+#[test]
+fn net_3d_retryable_refresh_waits_without_delaying_failure_state_and_success_resets_it() {
+    let conn = conn();
+    let id = add_subscription(conn.conn(), "https://example.test/retry", false);
+    let feed = FakeFeed {
+        responses: RefCell::new(vec![
+            Err(PodcastError::Transport("connection reset".to_owned())),
+            Ok(feed_response("Recovered", 1, None)),
+        ]),
+        ..FakeFeed::default()
+    };
+    let directory = tempfile::tempdir().unwrap();
+
+    let failed = refresh_to_root(&conn, &feed, &FakeYoutube, 10, false, directory.path()).unwrap();
+    assert_eq!(failed.attempted, 1);
+    assert_eq!(failed.failures.len(), 1);
+    let stored = store::subscription(&conn, id).unwrap().unwrap();
+    assert_eq!(stored.last_outcome.as_deref(), Some("failed"));
+    assert_eq!(
+        stored.last_fetch_at, None,
+        "a retryable failure must keep the prior successful-fetch clock due"
+    );
+
+    let waiting = refresh_to_root(&conn, &feed, &FakeYoutube, 11, false, directory.path()).unwrap();
+    assert_eq!(waiting.attempted, 0);
+
+    let recovered =
+        refresh_to_root(&conn, &feed, &FakeYoutube, 12, false, directory.path()).unwrap();
+    assert_eq!(recovered.attempted, 1);
+    assert_eq!(recovered.refreshed, 1);
+    let stored = store::subscription(&conn, id).unwrap().unwrap();
+    assert_eq!(stored.last_outcome.as_deref(), Some("ok"));
+    assert_eq!(stored.last_fetch_at, Some(12));
+
+    let reset = refresh_to_root(&conn, &feed, &FakeYoutube, 13, false, directory.path()).unwrap();
+    assert_eq!(reset.attempted, 0);
+}
+
+#[test]
+fn net_3d_background_attempts_stop_after_the_shared_cap() {
+    let conn = conn();
+    let id = add_subscription(conn.conn(), "https://example.test/retry-cap", false);
+    let feed = FakeFeed {
+        responses: RefCell::new(vec![
+            Err(PodcastError::Transport("first".to_owned())),
+            Err(PodcastError::Transport("second".to_owned())),
+            Err(PodcastError::Transport("third".to_owned())),
+            Err(PodcastError::Transport("fourth".to_owned())),
+        ]),
+        ..FakeFeed::default()
+    };
+    let directory = tempfile::tempdir().unwrap();
+
+    for now in [100, 102, 106, 114] {
+        let summary =
+            refresh_to_root(&conn, &feed, &FakeYoutube, now, false, directory.path()).unwrap();
+        assert_eq!(summary.attempted, 1, "expected an attempt at {now}");
+        assert_eq!(summary.failures.len(), 1);
+    }
+
+    let stored = store::subscription(&conn, id).unwrap().unwrap();
+    assert_eq!(stored.last_outcome.as_deref(), Some("failed"));
+    assert_eq!(
+        stored.last_fetch_at,
+        Some(114),
+        "exhaustion must return the source to its normal refresh interval"
+    );
+    let stopped =
+        refresh_to_root(&conn, &feed, &FakeYoutube, 115, false, directory.path()).unwrap();
+    assert_eq!(stopped.attempted, 0);
 }
 
 #[test]
@@ -442,7 +529,7 @@ fn net_1a_disabled_podcasts_module_skips_rss_refresh_without_fetching() {
 
     let summary = refresh_to_root(&conn, &feed, &FakeYoutube, 10, true, directory.path()).unwrap();
 
-    assert_eq!(summary.failed, 1);
+    assert_eq!(summary.failures.len(), 1);
     assert_eq!(
         store::subscription(&conn, id)
             .unwrap()
@@ -466,7 +553,7 @@ fn net_1a_global_gate_off_blocks_rss_refresh_even_with_podcasts_on() {
 
     let summary = refresh_to_root(&conn, &feed, &FakeYoutube, 10, true, directory.path()).unwrap();
 
-    assert_eq!(summary.failed, 1);
+    assert_eq!(summary.failures.len(), 1);
     assert_eq!(
         store::subscription(&conn, id)
             .unwrap()

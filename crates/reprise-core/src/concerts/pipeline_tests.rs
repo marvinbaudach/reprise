@@ -92,6 +92,25 @@ impl EventProvider for FailingEventsProvider {
     }
 }
 
+struct HttpFailureProvider(u16);
+
+impl EventProvider for HttpFailureProvider {
+    fn kind(&self) -> ProviderKind {
+        ProviderKind::Ticketmaster
+    }
+
+    fn resolve(&self, _artist: &ArtistRef<'_>) -> Result<Resolution, ProviderError> {
+        Ok(Resolution::Resolved {
+            provider_id: "http-failure".into(),
+            mbid_verified: false,
+        })
+    }
+
+    fn events(&self, _provider_id: &str) -> Result<Vec<ProviderEvent>, ProviderError> {
+        Err(ProviderError::HttpStatus(self.0))
+    }
+}
+
 struct CancellingProvider {
     cancelled: CancellationToken,
     requests: Arc<Mutex<Vec<String>>>,
@@ -481,6 +500,7 @@ fn failed_refresh_preserves_cached_events_and_events_found() {
     )
     .unwrap();
     assert_eq!(summary.failed, 1);
+    assert_eq!(summary.failures.len(), 1);
     let ledger: (String, i64) = conn
         .conn()
         .query_row(
@@ -495,6 +515,31 @@ fn failed_refresh_preserves_cached_events_and_events_found() {
         .query_row("SELECT COUNT(*) FROM concert_events", [], |row| row.get(0))
         .unwrap();
     assert_eq!(count, 1);
+}
+
+#[test]
+fn net_3d_concert_classification_never_forwards_the_raw_payload() {
+    let conn = conn();
+    seed_play(&conn, "Raw Failure Artist", 1_000);
+    let summary = refresh(
+        &conn,
+        &[Box::new(HttpFailureProvider(599))],
+        NaiveDate::from_ymd_opt(2026, 7, 25).unwrap(),
+        1_000,
+        true,
+    )
+    .unwrap();
+
+    let failure = summary.failures.first().expect("one typed failure");
+    let displayed = failure.source_error().to_string();
+    for raw in ["HTTP", "599", "concert provider"] {
+        assert!(!displayed.contains(raw), "{displayed}");
+    }
+    let details = failure
+        .source_error()
+        .details("2026-07-30 14:12")
+        .to_string();
+    assert!(details.contains("HTTP status 599"), "{details}");
 }
 
 #[test]

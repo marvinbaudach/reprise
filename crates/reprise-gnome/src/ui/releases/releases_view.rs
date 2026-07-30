@@ -11,18 +11,26 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::artist_news::{self, ReleaseSortDirection, ReleasesFilter};
 use reprise_core::artist_news_history::HistoryEntry;
+use reprise_core::connectivity::Connectivity;
 use reprise_core::db::Db;
+use reprise_core::source_error::{FailureAction, FailureSurface, SourceError, SourceErrorKind};
 
 use super::releases_columns;
 use super::releases_empty_state::{releases_empty_state_for, ReleasesEmptyState};
+use super::releases_failure_ui::{
+    failure_support, releases_failure_presentation, row_is_dimmed, update_failure_for_connectivity,
+};
 use super::releases_filter_bar::ReleasesFilterBar;
 use super::releases_model::{ReleaseObject, ReleasesModel};
 use super::releases_presentation::{releases_row_action, ReleasesRowAction};
 use crate::ui::external_link::{self, LaunchErrorSlot};
+use crate::ui::source_empty_state::SourceFailureState;
+use crate::ui::source_error_banner::SourceErrorBanner;
 use crate::ui::{one_shot_task, strings};
 
 const LIST_PAGE: &str = "list";
 const STATUS_PAGE: &str = "status";
+const FAILURE_PAGE: &str = "failure";
 const FETCH_ICON_PAGE: &str = "icon";
 const FETCH_SPINNER_PAGE: &str = "spinner";
 
@@ -34,6 +42,8 @@ struct Shared {
     model: Rc<ReleasesModel>,
     filter_bar: Rc<ReleasesFilterBar>,
     rows: RefCell<Vec<HistoryEntry>>,
+    cached_items: Cell<usize>,
+    column_view: gtk4::ColumnView,
     stack: gtk4::Stack,
     status: adw::StatusPage,
     status_button: gtk4::Button,
@@ -41,7 +51,11 @@ struct Shared {
     fetch_stack: gtk4::Stack,
     spinner: gtk4::Spinner,
     updated: gtk4::Label,
-    failure: gtk4::Label,
+    error_banner: SourceErrorBanner,
+    failure_state: SourceFailureState,
+    fetch_failure: RefCell<Option<SourceError>>,
+    failure_occurred_at: RefCell<String>,
+    connectivity: Cell<Connectivity>,
     fetching: Cell<bool>,
     empty_state: Cell<ReleasesEmptyState>,
     on_launch_error: LaunchErrorSlot,
@@ -102,11 +116,15 @@ impl ReleasesView {
             .build();
         stack.add_named(&scrolled, Some(LIST_PAGE));
         stack.add_named(&status, Some(STATUS_PAGE));
+        let failure_state = SourceFailureState::new("star-new-symbolic");
+        stack.add_named(failure_state.widget(), Some(FAILURE_PAGE));
 
-        let (footer, fetch_button, fetch_stack, spinner, updated, failure) = build_footer();
+        let (footer, fetch_button, fetch_stack, spinner, updated) = build_footer();
+        let error_banner = SourceErrorBanner::new();
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         root.add_css_class("reprise-releases-view");
         root.append(filter_bar.widget());
+        root.append(error_banner.widget());
         root.append(&stack);
         root.append(&footer);
 
@@ -116,6 +134,8 @@ impl ReleasesView {
             model,
             filter_bar: filter_bar.clone(),
             rows: RefCell::new(Vec::new()),
+            cached_items: Cell::new(0),
+            column_view: column_view.clone(),
             stack,
             status,
             status_button: status_button.clone(),
@@ -123,7 +143,11 @@ impl ReleasesView {
             fetch_stack,
             spinner,
             updated,
-            failure,
+            error_banner,
+            failure_state,
+            fetch_failure: RefCell::new(None),
+            failure_occurred_at: RefCell::new(String::new()),
+            connectivity: Cell::new(Connectivity::Online),
             fetching: Cell::new(false),
             empty_state: Cell::new(ReleasesEmptyState::NeverFetched),
             on_launch_error: Rc::new(RefCell::new(None)),
@@ -185,9 +209,22 @@ impl ReleasesView {
     pub(in crate::ui) fn set_on_refreshed(&self, callback: impl Fn() + 'static) {
         *self.shared.on_refreshed.borrow_mut() = Some(Rc::new(callback));
     }
+
+    pub(in crate::ui) fn set_connectivity(&self, value: Connectivity) {
+        self.shared.connectivity.set(value);
+        let previous = self.shared.fetch_failure.borrow().clone();
+        update_failure_for_connectivity(&mut self.shared.fetch_failure.borrow_mut(), value);
+        if self.shared.fetch_failure.borrow().as_ref() != previous.as_ref() {
+            *self.shared.failure_occurred_at.borrow_mut() = chrono::Utc::now().to_rfc3339();
+        }
+        apply_row_connectivity(&self.shared);
+        if let Err(error) = render_cache(&self.shared) {
+            tracing::warn!(%error, "could not apply New Releases connectivity");
+        }
+    }
 }
 
-fn render_cache(shared: &Shared) -> Result<(), rusqlite::Error> {
+fn render_cache(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
     let today = Local::now().date_naive();
     let filter = shared.filter_bar.filter();
     let rows = artist_news::query_releases_view(&shared.conn, &filter, today)?;
@@ -200,6 +237,7 @@ fn render_cache(shared: &Shared) -> Result<(), rusqlite::Error> {
     shared.filter_bar.set_counts(rows.len(), total);
     shared.rows.replace(rows.clone());
     shared.model.replace(rows.clone());
+    shared.cached_items.set(total);
     apply_empty_state(
         shared,
         releases_empty_state_for(
@@ -215,6 +253,7 @@ fn render_cache(shared: &Shared) -> Result<(), rusqlite::Error> {
             strings::new_releases_updated_ago(timestamp, chrono::Utc::now().timestamp())
         }));
     shared.updated.set_visible(latest.is_some());
+    render_current_failure(shared);
     Ok(())
 }
 
@@ -289,7 +328,6 @@ fn build_footer() -> (
     gtk4::Stack,
     gtk4::Spinner,
     gtk4::Label,
-    gtk4::Label,
 ) {
     let footer = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
     for (property, value) in [
@@ -305,11 +343,6 @@ fn build_footer() -> (
     updated.add_css_class("caption");
     updated.set_hexpand(true);
     footer.append(&updated);
-    let failure = gtk4::Label::new(Some(&strings::text(strings::FETCH_FAILED_INLINE)));
-    failure.add_css_class("error");
-    failure.add_css_class("caption");
-    failure.set_visible(false);
-    footer.append(&failure);
     let icon = gtk4::Image::from_icon_name("view-refresh-symbolic");
     let spinner = gtk4::Spinner::new();
     let fetch_stack = gtk4::Stack::new();
@@ -325,14 +358,13 @@ fn build_footer() -> (
         .css_classes(["flat", "new-release-ghost"])
         .build();
     footer.append(&fetch_button);
-    (footer, fetch_button, fetch_stack, spinner, updated, failure)
+    (footer, fetch_button, fetch_stack, spinner, updated)
 }
 
 fn request_fetch(shared: &Rc<Shared>) {
     if shared.fetching.replace(true) {
         return;
     }
-    shared.failure.set_visible(false);
     shared.fetch_button.set_sensitive(false);
     shared
         .fetch_stack
@@ -341,24 +373,35 @@ fn request_fetch(shared: &Rc<Shared>) {
     let path = shared.database_path.clone();
     let result = one_shot_task::spawn("reprise-releases", move || fetch_from_database(&path));
     let Ok(receiver) = result else {
-        finish_fetch(shared, true);
+        finish_fetch(
+            shared,
+            Some(SourceError::new(
+                SourceErrorKind::Unreachable,
+                "Queue New Releases refresh",
+                "New Releases worker refused the refresh request",
+            )),
+        );
         return;
     };
     let weak = Rc::downgrade(shared);
     gtk4::glib::spawn_future_local(async move {
-        let failed = match receiver.recv().await {
-            Ok(Ok(report)) => report.failed > 0,
+        let failure = match receiver.recv().await {
+            Ok(Ok(report)) => report.failures.into_iter().next(),
             Ok(Err(error)) => {
                 tracing::warn!(%error, "could not refresh Releases");
-                true
+                Some(error.into_source_error())
             }
             Err(error) => {
                 tracing::warn!(%error, "Releases worker closed without a result");
-                true
+                Some(SourceError::new(
+                    SourceErrorKind::Unreachable,
+                    "Refresh New Releases",
+                    error.to_string(),
+                ))
             }
         };
         if let Some(shared) = weak.upgrade() {
-            finish_fetch(&shared, failed);
+            finish_fetch(&shared, failure);
         }
     });
 }
@@ -383,8 +426,8 @@ fn fetch_from_database(path: &Path) -> Result<artist_news::RefreshReport, artist
     )
 }
 
-fn finish_fetch(shared: &Rc<Shared>, failed: bool) {
-    if !failed {
+fn finish_fetch(shared: &Rc<Shared>, failure: Option<SourceError>) {
+    if failure.is_none() {
         if let Err(error) =
             reprise_core::library::settings::set_new_releases_fetch_completed(&shared.conn, true)
         {
@@ -395,11 +438,62 @@ fn finish_fetch(shared: &Rc<Shared>, failed: bool) {
     shared.spinner.stop();
     shared.fetch_stack.set_visible_child_name(FETCH_ICON_PAGE);
     shared.fetch_button.set_sensitive(true);
-    shared.failure.set_visible(failed);
+    shared.fetch_failure.replace(failure);
+    if shared.fetch_failure.borrow().is_some() {
+        *shared.failure_occurred_at.borrow_mut() = chrono::Utc::now().to_rfc3339();
+    }
     if let Err(error) = render_cache(shared) {
         tracing::warn!(%error, "could not reload Releases after fetch");
     }
     notify_refreshed(shared);
+}
+
+fn render_current_failure(shared: &Rc<Shared>) {
+    let Some(error) = shared.fetch_failure.borrow().clone() else {
+        shared.error_banner.hide();
+        return;
+    };
+    let cached_items = shared.cached_items.get();
+    let presentation = releases_failure_presentation(&error, cached_items);
+    let updated = shared.updated.text();
+    let support = failure_support(
+        cached_items,
+        (!updated.is_empty()).then_some(updated.as_str()),
+    );
+    let occurred_at = shared.failure_occurred_at.borrow().clone();
+    let weak = Rc::downgrade(shared);
+    let on_action = move |action| {
+        let Some(shared) = weak.upgrade() else {
+            return;
+        };
+        if action == FailureAction::TryAgain {
+            request_fetch(&shared);
+        }
+    };
+    match presentation.surface {
+        FailureSurface::Banner => {
+            shared
+                .error_banner
+                .show(&presentation, &support, &error, &occurred_at, on_action);
+        }
+        FailureSurface::FullArea => {
+            shared.error_banner.hide();
+            shared
+                .failure_state
+                .show(&presentation, &support, &error, &occurred_at, on_action);
+            shared.stack.set_visible_child_name(FAILURE_PAGE);
+        }
+    }
+}
+
+fn apply_row_connectivity(shared: &Shared) {
+    shared
+        .column_view
+        .set_opacity(if row_is_dimmed(shared.connectivity.get()) {
+            0.55
+        } else {
+            1.0
+        });
 }
 
 fn wire_sorting(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
@@ -435,9 +529,10 @@ mod tests {
         let conn = Rc::new(crate::test_db::open().unwrap());
         let view = ReleasesView::new(conn, PathBuf::new());
         let root = view.root().clone().downcast::<gtk4::Box>().unwrap();
-        assert_eq!(root.observe_children().n_items(), 3);
+        assert_eq!(root.observe_children().n_items(), 4);
         let stack = root
             .first_child()
+            .and_then(|child| child.next_sibling())
             .and_then(|child| child.next_sibling())
             .and_downcast::<gtk4::Stack>()
             .unwrap();

@@ -4,7 +4,11 @@ use std::path::Path;
 
 use rusqlite::Connection;
 
-use crate::db::Db;
+#[path = "pipeline_retry.rs"]
+mod retry;
+use retry::{clear_retry, pending_retry, previous_attempt, set_retry, RetryKey};
+
+use crate::{db::Db, source_error::SourceErrorKind};
 
 use super::download_state::{DownloadProgress, DownloadState};
 use super::feed::{ParsedEpisode, ParsedFeed};
@@ -139,16 +143,49 @@ pub fn project_youtube_feed(listing: super::youtube::YoutubeListing, limit: usiz
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RefreshFailure {
+    pub subscription_id: i64,
+    pub title: String,
+    pub kind: SourceErrorKind,
+}
+
+impl RefreshFailure {
+    pub(crate) fn from_error(
+        subscription_id: i64,
+        title: impl Into<String>,
+        error: &PodcastError,
+    ) -> Self {
+        Self {
+            subscription_id,
+            title: title.into(),
+            kind: SourceErrorKind::from(error),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RefreshSummary {
     pub attempted: usize,
     pub refreshed: usize,
     pub not_modified: usize,
     pub failed: usize,
+    pub failures: Vec<RefreshFailure>,
     pub episodes_inserted: usize,
     pub episodes_updated: usize,
     pub downloads_completed: usize,
     pub downloads_failed: usize,
+}
+
+impl RefreshSummary {
+    fn push_failure(&mut self, subscription: &SubscriptionRow, error: &PodcastError) {
+        self.failed += 1;
+        self.failures.push(RefreshFailure::from_error(
+            subscription.id,
+            &subscription.title,
+            error,
+        ));
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -431,15 +468,31 @@ fn refresh_to_root_with_download_progress(
     let subscriptions = super::store::active_subscriptions_in(conn)?;
     let mut summary = RefreshSummary::default();
     for subscription in subscriptions {
-        if !force
-            && !super::refresh::refresh_due_with_hours(
-                subscription.last_fetch_at,
-                now,
-                config.refresh_hours,
-                jitter,
-            )
-        {
-            continue;
+        let retry_key = RetryKey {
+            connection: std::ptr::from_ref(conn).addr(),
+            subscription_id: subscription.id,
+        };
+        if !force {
+            let retry = if subscription.last_outcome.as_deref() == Some("failed") {
+                pending_retry(retry_key)
+            } else {
+                clear_retry(retry_key);
+                None
+            };
+            let due = retry.map_or_else(
+                || {
+                    super::refresh::refresh_due_with_hours(
+                        subscription.last_fetch_at,
+                        now,
+                        config.refresh_hours,
+                        jitter,
+                    )
+                },
+                |retry| retry.is_due(now),
+            );
+            if !due {
+                continue;
+            }
         }
         summary.attempted += 1;
         let mut resolved_channel_url = None::<String>;
@@ -478,7 +531,7 @@ fn refresh_to_root_with_download_progress(
                             "could not resolve the YouTube channel identity"
                         );
                         super::store::update_fetch_failed_in(conn, subscription.id, now)?;
-                        summary.failed += 1;
+                        summary.push_failure(&subscription, &error);
                         continue;
                     }
                 };
@@ -520,6 +573,7 @@ fn refresh_to_root_with_download_progress(
                     adopt_resolved_channel_url(conn, subscription.id, url)?;
                 }
                 super::store::update_fetch_not_modified_in(conn, subscription.id, now)?;
+                clear_retry(retry_key);
                 summary.not_modified += 1;
                 continue;
             }
@@ -529,8 +583,22 @@ fn refresh_to_root_with_download_progress(
                     %error,
                     "podcast refresh failed"
                 );
-                super::store::update_fetch_failed_in(conn, subscription.id, now)?;
-                summary.failed += 1;
+                let retry = if force {
+                    None
+                } else {
+                    super::refresh::next_retry(&error, previous_attempt(retry_key), now)
+                };
+                if retry.is_some() {
+                    // Keep the last successful-fetch timestamp due so the
+                    // existing outer hourly trigger continues dispatching.
+                    // The in-process retry state below still prevents an
+                    // actual provider call before the computed deadline.
+                    record_failed_outcome_in(conn, subscription.id)?;
+                } else {
+                    super::store::update_fetch_failed_in(conn, subscription.id, now)?;
+                }
+                set_retry(retry_key, retry);
+                summary.push_failure(&subscription, &error);
                 continue;
             }
         };
@@ -587,6 +655,7 @@ fn refresh_to_root_with_download_progress(
                 image_url: feed.image_url.as_deref(),
             },
         )?;
+        clear_retry(retry_key);
         summary.refreshed += 1;
 
         if subscription.auto_download {
@@ -633,6 +702,21 @@ fn refresh_to_root_with_download_progress(
         now,
     )?;
     Ok(summary)
+}
+
+fn record_failed_outcome_in(
+    conn: &Connection,
+    subscription_id: i64,
+) -> Result<(), rusqlite::Error> {
+    // A retryable failure changes the readable state immediately without
+    // pretending that the last successful fetch happened just now.
+    conn.execute(
+        "UPDATE podcast_subscriptions
+         SET last_outcome = 'failed'
+         WHERE id = ?1",
+        [subscription_id],
+    )?;
+    Ok(())
 }
 
 fn remove_completed_download(episode_id: i64, path: &Path) {

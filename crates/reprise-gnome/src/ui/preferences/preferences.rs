@@ -30,6 +30,19 @@ use crate::ui::window_decorations::WindowDecorations;
 
 pub(in crate::ui) const SMOKE_ENV: &str = "REPRISE_SMOKE_PREFERENCES";
 
+#[derive(Clone, Copy)]
+enum SettingsDeepLink {
+    OnlineSources,
+    ConcertLocation,
+}
+
+fn plugin_targets_for_deep_link(link: SettingsDeepLink) -> &'static [&'static str] {
+    match link {
+        SettingsDeepLink::OnlineSources => &["youtube", "podcasts", "radio"],
+        SettingsDeepLink::ConcertLocation => &["concerts"],
+    }
+}
+
 fn equalizer_preset(index: u32) -> [f64; 10] {
     match index {
         1 => [4.0, 3.0, 2.0, 0.0, -1.0, 0.0, 2.0, 3.0, 4.0, 4.0],
@@ -274,13 +287,6 @@ impl PreferencesContext {
                 PageId::Appearance => self.appearance_page(),
                 PageId::Layout => self.layout_page(),
                 PageId::Library => self.library_page(),
-                PageId::OnlineSources => self.online_sources_page(),
-                PageId::NewReleases => {
-                    super::preference_new_releases::build_page(&self.conn, &self.artist_news)
-                }
-                PageId::Concerts => {
-                    super::preference_concerts::build_page(&self.conn, &self.concerts)
-                }
                 PageId::Plugins => self.plugins_page(),
             };
             (id, page)
@@ -407,7 +413,9 @@ impl PreferencesContext {
     /// in Preferences" button lands here directly, rather than the plain
     /// Preferences root the user would otherwise have to navigate from.
     pub(in crate::ui) fn present_online_sources(self: &Rc<Self>) {
-        self.open(Some("online_sources"));
+        self.present_plugins(plugin_targets_for_deep_link(
+            SettingsDeepLink::OnlineSources,
+        ));
     }
 
     /// `RAD-5`: Radio's "Near you" chip deep-links here when no app-level
@@ -417,7 +425,9 @@ impl PreferencesContext {
     /// `present_plugins` above, reused rather than a second navigation
     /// mechanism.
     pub(in crate::ui) fn present_location_settings(self: &Rc<Self>) {
-        self.open(Some("concerts"));
+        self.present_plugins(plugin_targets_for_deep_link(
+            SettingsDeepLink::ConcertLocation,
+        ));
     }
 
     fn appearance_page(self: &Rc<Self>) -> adw::PreferencesPage {
@@ -426,10 +436,6 @@ impl PreferencesContext {
 
     fn layout_page(self: &Rc<Self>) -> adw::PreferencesPage {
         super::preference_layout::build(self)
-    }
-
-    fn online_sources_page(self: &Rc<Self>) -> adw::PreferencesPage {
-        super::preference_online_sources::build(self)
     }
 
     /// `NET-1a`: persists the global online-sources gate and re-derives
@@ -443,6 +449,11 @@ impl PreferencesContext {
         enabled: bool,
     ) -> Result<(), rusqlite::Error> {
         reprise_core::online_sources::set_enabled(&self.conn, enabled)?;
+        self.refresh_online_module_state("online sources gate toggled");
+        Ok(())
+    }
+
+    pub(in crate::ui) fn refresh_online_module_state(&self, reason: &'static str) {
         self.cover_download.recompute_enabled(&self.conn);
         self.artist_portrait.recompute_enabled(&self.conn);
         self.artist_news.recompute_enabled(&self.conn);
@@ -455,8 +466,11 @@ impl PreferencesContext {
         if let Some(player) = &self.player {
             player.recompute_lyrics_enabled();
         }
-        self.sidebar.refresh("online sources gate toggled");
-        Ok(())
+        self.sidebar.refresh(reason);
+        self.notify_source_modules_changed();
+        // TODO(package-B): replace this fan-out and consumer-side database
+        // re-reads with one shared enabled-state signal for contributed
+        // surfaces.
     }
 
     pub(in crate::ui) fn open_column_layout_editor(&self) {
@@ -754,36 +768,5 @@ pub(in crate::ui) fn action_row(title: &str, callback: Rc<dyn Fn()>) -> adw::Act
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::ui::preference_plugins::plugin_applies_live;
-
-    #[test]
-    fn gapless_control_is_available_only_without_crossfade_overlap() {
-        assert!(gapless_control_state(0).sensitive);
-        assert_eq!(gapless_control_state(0).subtitle, strings::GAPLESS_SUBTITLE);
-        assert!(!gapless_control_state(1).sensitive);
-        assert_eq!(
-            gapless_control_state(10).subtitle,
-            strings::GAPLESS_CROSSFADE_ACTIVE_SUBTITLE
-        );
-    }
-
-    #[test]
-    fn only_runtime_safe_plugins_apply_without_restart() {
-        for descriptor in reprise_core::modules::ALL_MODULES {
-            assert!(plugin_applies_live(descriptor), "{}", descriptor.id);
-        }
-        assert!(!plugin_applies_live(&reprise_core::modules::MPRIS_MODULE));
-    }
-
-    #[test]
-    fn equalizer_presets_are_bounded_and_flat_is_zero() {
-        assert_eq!(equalizer_preset(0), [0.0; 10]);
-        for index in 0..4 {
-            assert!(equalizer_preset(index)
-                .into_iter()
-                .all(|gain| (-12.0..=12.0).contains(&gain)));
-        }
-    }
-}
+#[path = "preferences_tests.rs"]
+mod tests;

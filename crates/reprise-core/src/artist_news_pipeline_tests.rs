@@ -666,6 +666,38 @@ fn ledger_records_failed_fetch_and_ttl_prevents_a_retry_within_the_window() {
 }
 
 #[test]
+fn net_3d_new_releases_classification_never_forwards_the_raw_payload() {
+    let conn = migrated_conn();
+    conn.conn()
+        .execute(
+            "INSERT INTO tracks (path, title, artist, artist_mbid, play_count, added_at) \
+             VALUES ('/music/raw.flac', 'Raw', 'Raw Failure Artist', ?1, 20, 0)",
+            [ARTIST_ID],
+        )
+        .unwrap();
+    let mut fetch = |_url: &str| Err(crate::musicbrainz::FetchError::HttpStatus(599));
+
+    let report = refresh_with(
+        &conn,
+        date(),
+        1_000,
+        FetchScope::TopArtists,
+        true,
+        &mut fetch,
+        &mut no_accent,
+    )
+    .unwrap();
+
+    let error = report.failures.first().expect("one typed failure");
+    let displayed = error.to_string();
+    for raw in ["HTTP", "599", "MusicBrainz"] {
+        assert!(!displayed.contains(raw), "{displayed}");
+    }
+    let details = error.details("2026-07-30 14:12").to_string();
+    assert!(details.contains("HTTP status 599"), "{details}");
+}
+
+#[test]
 fn latest_fetched_at_reads_the_ledger_not_found_releases() {
     let conn = migrated_conn();
     assert_eq!(

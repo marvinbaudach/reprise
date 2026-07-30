@@ -90,9 +90,14 @@ impl PodcastsView {
                         }
                         view.set_download_state(episode_id, &state);
                     }
-                    Ok(PodcastsWorkerResult::Refreshed(_)) => {
+                    Ok(PodcastsWorkerResult::Refreshed(summary)) => {
                         view.footer_spinner.stop();
                         view.refresh();
+                        if summary.failures.is_empty() {
+                            view.clear_fetch_failure();
+                        } else {
+                            view.show_refresh_failures(&summary.failures);
+                        }
                         (view.callbacks.on_sidebar_refresh)();
                         break;
                     }
@@ -113,14 +118,8 @@ impl PodcastsView {
                     Err(error) => {
                         view.footer_spinner.stop();
                         view.refresh();
-                        // `POD-16`: the same footer, the same rule. The worker
-                        // hands back a plain string that may be a `DbError`'s
-                        // whole failing statement, so it is logged rather than
-                        // appended — the sentence already says what happened
-                        // and that the saved episodes are still shown.
                         tracing::warn!(%error, "podcast refresh failed");
-                        view.footer_status
-                            .set_text(&strings::text(strings::PODCAST_REFRESH_FAILED));
+                        view.show_unclassified_refresh_failure(error);
                         break;
                     }
                 }
@@ -130,6 +129,17 @@ impl PodcastsView {
     }
 
     pub(super) fn request_load_more(self: &Rc<Self>, subscription_id: i64, end: usize) -> bool {
+        if self.connectivity.get() == Connectivity::Offline {
+            self.deferred_actions
+                .borrow_mut()
+                .push(DeferredAction::LoadMore {
+                    subscription_id,
+                    end,
+                });
+            self.footer_status
+                .set_text(&strings::text(strings::PODCAST_QUEUED_OFFLINE));
+            return true;
+        }
         let operation = PodcastsOperation::LoadMore {
             subscription_id,
             end,

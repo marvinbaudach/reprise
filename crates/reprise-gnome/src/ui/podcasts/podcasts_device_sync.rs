@@ -125,6 +125,9 @@ pub(super) fn install_action(view: &Rc<PodcastsView>, group: &gio::SimpleActionG
             return;
         }
         view.refresh();
+        if view.connectivity().is_offline() {
+            view.show_queued_offline();
+        }
         let runtime = view.device_sync.runtime.borrow().upgrade();
         if let Some(runtime) = runtime {
             if let Err(error) = runtime.recompute_delta(&device_id) {
