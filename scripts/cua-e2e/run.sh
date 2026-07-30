@@ -15,6 +15,8 @@ source "$repo_root/scripts/cua-e2e/scrobbling.sh"
 source "$repo_root/scripts/cua-e2e/responsive_window.sh"
 # `MTP-46`: the source modules and what their switches take out of the sync.
 source "$repo_root/scripts/cua-e2e/source_modules.sh"
+# What the sources actually do, offline via fixtures.
+source "$repo_root/scripts/cua-e2e/source_content.sh"
 
 APP_ID=org.reprise.Reprise
 WINDOW_CLASS_MATCH=reprise
@@ -685,6 +687,9 @@ run_private_session() {
     source-modules)
       run_source_modules_scenario
       ;;
+    source-podcasts)
+      run_source_podcasts_scenario
+      ;;
     *)
       echo "unknown private CUA scenario group: $private_group" >&2
       return 2
@@ -706,13 +711,18 @@ if [[ ! -x /usr/lib/at-spi-bus-launcher ]]; then
   exit 2
 fi
 
+# `test-fixtures` routes the podcast and radio HTTP clients at a directory of
+# files instead of the network. The feature is inert without the matching
+# environment variables — `reprise-gnome/Cargo.toml` documents it as existing
+# exactly for isolated smoke/E2E binaries — so building it in costs the other
+# scenarios nothing and is what lets the source scenarios run offline at all.
 case "$CUA_E2E_PROFILE" in
   debug)
-    (cd "$repo_root" && cargo build --locked -p reprise-gnome)
+    (cd "$repo_root" && cargo build --locked -p reprise-gnome --features test-fixtures)
     CUA_E2E_BIN_PATH="$repo_root/target/debug/reprise"
     ;;
   release)
-    (cd "$repo_root" && cargo build --locked -p reprise-gnome --release)
+    (cd "$repo_root" && cargo build --locked -p reprise-gnome --release --features test-fixtures)
     CUA_E2E_BIN_PATH="$repo_root/target/release/reprise"
     ;;
   *) echo "CUA_E2E_PROFILE must be debug or release" >&2; exit 2 ;;
@@ -825,6 +835,7 @@ case "${CUA_E2E_ONLY:-all}" in
       scrobbling
       responsive-window
       source-modules
+      source-podcasts
     )
     ;;
   populated-library)
@@ -835,7 +846,7 @@ case "${CUA_E2E_ONLY:-all}" in
     | tag-3-multi-dialog-structure | tag-autocomplete-surface \
     | library-doctor | song-visuals \
     | track-sort-playing-marker | scrobbling | responsive-window \
-    | source-modules)
+    | source-modules | source-podcasts)
     scenario_groups=("$CUA_E2E_ONLY")
     ;;
   *)
