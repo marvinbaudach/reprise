@@ -44,7 +44,7 @@ fn recompute(
     };
     let search = shared.filter.borrow().clone();
     // FIL-7: the AI-exclude filter also restricts; the `hidden == 0` guard below
-    // handles the experimental-off case (no rows are actually hidden then).
+    // handles the nothing-actually-hidden case.
     let restricted = crate::ui::browse::filter_restriction::filters_restrict(
         &search,
         &browse,

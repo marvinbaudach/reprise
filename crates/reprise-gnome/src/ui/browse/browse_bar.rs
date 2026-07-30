@@ -203,8 +203,7 @@ pub struct BrowseBar {
     chooser_values: RefCell<Vec<BrowseValue>>,
     pub(super) visible_values: RefCell<Vec<String>>,
     filter: RefCell<BrowseFilter>,
-    /// FIL-7: sticky opt-in "Hide AI music" state (Library-only, gated on the
-    /// experimental switch).
+    /// FIL-7: sticky opt-in "Hide AI music" state (Library-only).
     exclude_ai: Cell<bool>,
     /// The facet-chooser row index of the "Hide AI music" entry, when present —
     /// so its activation is distinguished from a real facet.
@@ -341,7 +340,7 @@ impl BrowseBar {
     }
 
     /// FIL-7: the sticky "Hide AI music" state. `run_query` re-reads this each
-    /// reload (and gates it on Library + the experimental switch itself).
+    /// reload (and gates it on Library).
     pub(in crate::ui) fn exclude_ai(&self) -> bool {
         self.exclude_ai.get()
     }
@@ -358,10 +357,9 @@ impl BrowseBar {
         }
     }
 
-    /// Whether the "Hide AI music" filter is offered here: Library-only and
-    /// gated on the experimental switch (INST-11).
+    /// Whether the "Hide AI music" filter is offered here: Library-only.
     fn ai_filter_available(&self) -> bool {
-        self.is_library.get() && crate::ui::experimental::experimental_enabled(&self.conn)
+        self.is_library.get()
     }
 
     /// Toggles the sticky AI-exclude filter and reloads (via the browse-changed
