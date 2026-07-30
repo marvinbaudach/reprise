@@ -173,6 +173,112 @@ fn handle_subscription_resolves_channel_identity_before_refresh() {
         .all(|episode| episode.published_at.is_some()));
 }
 
+struct UnresolvableHandle;
+
+impl YoutubeFetcher for UnresolvableHandle {
+    fn resolve_channel_url(&self, _: &str) -> Result<Option<String>, PodcastError> {
+        Err(PodcastError::YtDlp("yt-dlp unavailable".to_owned()))
+    }
+
+    fn list(&self, _: &str, _: usize) -> Result<ParsedFeed, PodcastError> {
+        Err(PodcastError::YtDlp("yt-dlp unavailable".to_owned()))
+    }
+
+    fn download(&self, _: &str, _: &Path) -> Result<(), PodcastError> {
+        panic!("refresh without auto-download must not download")
+    }
+}
+
+struct PlainRssFeed;
+
+impl FeedFetcher for PlainRssFeed {
+    fn fetch(&self, _: &SubscriptionRow) -> Result<Response, PodcastError> {
+        Ok(Response {
+            body: r#"<rss><channel><title>Show</title><item>
+              <title>Episode</title><guid>rss-1</guid>
+              <enclosure url="https://example.test/rss-1.mp3" type="audio/mpeg"/>
+            </item></channel></rss>"#
+                .to_owned(),
+            etag: None,
+            last_modified: None,
+        })
+    }
+
+    fn fetch_url(
+        &self,
+        _: &str,
+        _: Option<&str>,
+        _: Option<&str>,
+    ) -> Result<Response, PodcastError> {
+        Err(PodcastError::Transport("no official feed here".to_owned()))
+    }
+
+    fn download(&self, _: &str, _: &Path) -> Result<(), PodcastError> {
+        panic!("refresh without auto-download must not download")
+    }
+}
+
+/// A channel identity that cannot be resolved is one subscription's failure,
+/// exactly like a fetch or parse failure: it is recorded on that subscription
+/// and the batch carries on. Propagating it out of the loop instead — which is
+/// what `?` on `resolve_channel_url` did — aborted the whole refresh cycle for
+/// every other subscription and never even recorded the failure on the broken
+/// one. `resolve_channel_url` calls a yt-dlp subprocess, so a transient failure
+/// there is the expected case, not an exceptional one.
+#[test]
+fn a_channel_that_cannot_be_resolved_fails_alone_and_never_aborts_the_batch() {
+    let conn = conn();
+    crate::modules::set_enabled(&conn, &crate::modules::PODCASTS_MODULE, true).unwrap();
+    store::add_or_restore(
+        &conn,
+        &NewSubscription {
+            kind: PodcastKind::Youtube,
+            feed_url: "https://www.youtube.com/@show".to_owned(),
+            title: "Channel".to_owned(),
+            author: None,
+            image_url: None,
+            auto_download: false,
+        },
+        1,
+    )
+    .unwrap();
+    let rss_id = store::add_or_restore(
+        &conn,
+        &NewSubscription {
+            kind: PodcastKind::Rss,
+            feed_url: "https://example.test/feed.xml".to_owned(),
+            title: "Show".to_owned(),
+            author: None,
+            image_url: None,
+            auto_download: false,
+        },
+        1,
+    )
+    .unwrap();
+    let directory = tempfile::tempdir().unwrap();
+
+    let summary = refresh_to_root(
+        &conn,
+        &PlainRssFeed,
+        &UnresolvableHandle,
+        10,
+        true,
+        directory.path(),
+    )
+    .expect("one unresolvable channel must not abort the whole refresh");
+
+    assert_eq!(summary.attempted, 2);
+    assert_eq!(summary.failed, 1);
+    assert_eq!(summary.episodes_inserted, 1);
+    assert_eq!(
+        super::super::query::episodes_for_subscription(&conn, rss_id)
+            .unwrap()
+            .len(),
+        1,
+        "the healthy subscription still refreshes"
+    );
+}
+
 struct UnavailableOfficialFeed;
 
 impl FeedFetcher for UnavailableOfficialFeed {
