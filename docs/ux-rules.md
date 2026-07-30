@@ -326,7 +326,7 @@ human. Rationale for changes lives in the git history.
   the sidebar. It never automatically navigates away from the current
   view.
 - **MTP-2** [replaced by MTP-13]
-- **MTP-3** [active] [gtk] — The device card and an open device page
+- **MTP-3** [replaced by MTP-47] — The device card and an open device page
   project the same device-related runtime state. Syncs of different
   devices may run in parallel; start and cancel act exclusively on the
   named device, and a late progress event of a cancelled run is
@@ -825,6 +825,12 @@ human. Rationale for changes lives in the git history.
   deliberately not `online_sources::network_allowed`: copying an
   already-downloaded file makes no request, so the two share a formula but not
   a meaning, and must stay free to diverge.
+- **MTP-47** [active] [core] [gtk] — Replaces `MTP-3`. Exactly one MTP
+  device is active at a time and exactly one session is ever open. The first
+  device detected owns it; a second one is detected and listed but never
+  opened, its row reading "Plugged in · disconnect {other} to use it" in
+  amber with no sync action. There is no queue, no parallel transfer and no
+  device chooser.
 
 ## F. Settings & modals
 

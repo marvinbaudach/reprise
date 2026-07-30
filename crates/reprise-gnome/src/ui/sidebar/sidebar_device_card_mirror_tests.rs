@@ -98,6 +98,20 @@ fn mtp_29_idle_card_reads_the_aggregate_balance_not_a_blended_change_count() {
 }
 
 #[test]
+fn mtp_47_inert_device_card_names_the_active_device_and_offers_no_sync_copy() {
+    let mut device = view(PlannedSyncPhase::Idle);
+    device.session_state = reprise_core::device_sync::DeviceSessionState::Inert {
+        active_device_name: "Pixel 7a (Anna)".into(),
+    };
+
+    assert_eq!(
+        card_subtitle(&device),
+        "Plugged in · disconnect Pixel 7a (Anna) to use it"
+    );
+    assert!(!device.page.controls.can_start);
+}
+
+#[test]
 fn mtp_29_deletions_only_idle_card_reads_frees_not_zero_bytes() {
     let mut device = view(PlannedSyncPhase::Idle);
     device.contents_state = DeviceContentsState::Verified;

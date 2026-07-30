@@ -118,7 +118,9 @@ impl DeviceSyncRuntime {
         let devices = self
             .devices()
             .into_iter()
-            .filter(|device| device.connected && device.name == name)
+            .filter(|device| {
+                device.connected && device.session_state.opens_session() && device.name == name
+            })
             .collect::<Vec<_>>();
         (devices.len() == 1).then(|| devices[0].clone())
     }

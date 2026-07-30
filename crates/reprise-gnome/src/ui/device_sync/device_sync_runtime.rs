@@ -19,7 +19,7 @@ use reprise_core::device_sync::device_view::{
 use reprise_core::device_sync::settings::{load_or_create_settings, mark_device_playlists_synced};
 use reprise_core::device_sync::{
     aggregate_balance, load_or_create_targets, should_auto_start, AutoStartFacts, CategoryDiff,
-    CategoryReading, DeviceSelection, DeviceSettings, DeviceStorageInspection,
+    CategoryReading, DeviceSelection, DeviceSessionState, DeviceSettings, DeviceStorageInspection,
     DeviceStorageSnapshot, ManagedDeviceFile, MirrorPlan, PodcastSelectionSummary, SelectionSource,
     StorageId, SyncPageState, SyncTarget, SyncTargetKind, YoutubeSelectionSummary,
 };
@@ -39,6 +39,7 @@ pub use types::*;
 struct DeviceState {
     descriptor: DeviceDescriptor,
     connected: bool,
+    session_state: DeviceSessionState,
     /// The run that currently owns this device, if any. Identity of this
     /// handle is what tells a superseded run to stop writing here.
     machine: Option<Rc<RefCell<reprise_core::device_sync::DeviceSyncMachine>>>,
@@ -120,11 +121,21 @@ struct DeviceState {
 }
 
 impl DeviceState {
-    fn new(descriptor: DeviceDescriptor, settings: DeviceSettings) -> Self {
+    fn new(
+        descriptor: DeviceDescriptor,
+        settings: DeviceSettings,
+        session_state: DeviceSessionState,
+    ) -> Self {
+        let sync_phase = if session_state.opens_session() {
+            PlannedSyncPhase::ComputingDelta
+        } else {
+            PlannedSyncPhase::Idle
+        };
         Self {
             history: Vec::new(),
             descriptor,
             connected: true,
+            session_state,
             machine: None,
             cancellable: None,
             storage: DeviceStorageSnapshot::default(),
@@ -138,7 +149,7 @@ impl DeviceState {
             ever_inspected: false,
             targets: SyncTargetKind::ALL.map(SyncTarget::default_for),
             settings,
-            sync_phase: PlannedSyncPhase::ComputingDelta,
+            sync_phase,
             sync_error: None,
             planned_cancel: None,
             resume_planned: false,
@@ -172,7 +183,7 @@ impl DeviceState {
     fn view(&self) -> DeviceView {
         let mut page = self.page.clone();
         page.update_controls(
-            self.connected,
+            self.connected && self.session_state.opens_session(),
             !self.scanning
                 && self.scan_error.is_none()
                 && self.sync_phase != PlannedSyncPhase::ComputingDelta,
@@ -204,6 +215,7 @@ impl DeviceState {
             name: self.descriptor.name.clone(),
             icon: self.descriptor.icon.clone(),
             connected: self.connected,
+            session_state: self.session_state.clone(),
             storage: self.storage.clone(),
             scan_error: self.scan_error.clone(),
             settings: self.settings.clone(),
@@ -304,13 +316,12 @@ impl DeviceSyncRuntime {
     }
 
     pub fn devices(&self) -> Vec<DeviceView> {
-        let mut devices = self
+        let devices = self
             .device_states
             .borrow()
             .iter()
             .map(DeviceState::view)
             .collect::<Vec<_>>();
-        devices.sort_by(|left, right| left.name.cmp(&right.name));
         devices
     }
 
@@ -386,7 +397,7 @@ impl DeviceSyncRuntime {
             else {
                 return;
             };
-            if !device.connected {
+            if !device.connected || !device.session_state.opens_session() {
                 return;
             }
             device.scan_generation = device.scan_generation.saturating_add(1);
@@ -592,7 +603,24 @@ impl DeviceSyncRuntime {
     }
 
     fn apply_devices(self: &Rc<Self>, descriptors: Vec<DeviceDescriptor>) {
-        let incoming = descriptors
+        let previous_active_id = self
+            .device_states
+            .borrow()
+            .iter()
+            .find(|state| state.connected && state.session_state.opens_session())
+            .map(|state| state.descriptor.id.clone());
+        let detected = descriptors
+            .iter()
+            .map(|descriptor| reprise_core::device_sync::DetectedDevice {
+                id: descriptor.id.clone(),
+                name: descriptor.name.clone(),
+            })
+            .collect::<Vec<_>>();
+        let projection = reprise_core::device_sync::project_device_sessions(
+            previous_active_id.as_deref(),
+            &detected,
+        );
+        let mut incoming = descriptors
             .into_iter()
             .map(|descriptor| (descriptor.id.clone(), descriptor))
             .collect::<HashMap<_, _>>();
@@ -616,12 +644,18 @@ impl DeviceSyncRuntime {
                     || state.machine.is_some()
                     || state.resume_planned
             });
-            for (id, descriptor) in incoming {
+            for projected in projection {
+                let id = projected.id;
+                let Some(descriptor) = incoming.remove(&id) else {
+                    continue;
+                };
                 if let Some(state) = states.iter_mut().find(|state| state.descriptor.id == id) {
                     let was_connected = state.connected;
+                    let owned_session = state.session_state.opens_session();
                     state.descriptor = descriptor;
                     state.connected = true;
-                    if !was_connected {
+                    state.session_state = projected.state;
+                    if state.session_state.opens_session() && (!was_connected || !owned_session) {
                         refresh.push((id.clone(), false));
                     }
                 } else {
@@ -644,8 +678,11 @@ impl DeviceSyncRuntime {
                             prepare_before_sync: true,
                         }
                     });
-                    states.push(DeviceState::new(descriptor, settings));
-                    refresh.push((id, true));
+                    let opens_session = projected.state.opens_session();
+                    states.push(DeviceState::new(descriptor, settings, projected.state));
+                    if opens_session {
+                        refresh.push((id, true));
+                    }
                 }
             }
         }

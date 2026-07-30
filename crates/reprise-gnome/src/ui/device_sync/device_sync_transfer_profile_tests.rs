@@ -216,7 +216,7 @@ fn simulated_mtp_phone_transcodes_lossless_selection_to_mp3_256() {
 }
 
 #[test]
-fn simulated_mtp_phones_sync_independently_in_parallel() {
+fn mtp_47_simulated_mtp_backend_writes_only_the_active_device() {
     run(async {
         const FIRST_ID: &str = "simulated-phone-a";
         const SECOND_ID: &str = "simulated-phone-b";
@@ -262,29 +262,24 @@ fn simulated_mtp_phones_sync_independently_in_parallel() {
         wait_for_storage(&runtime, 2).await;
 
         runtime.sync_now(FIRST_ID).unwrap();
-        runtime.sync_now(SECOND_ID).unwrap();
-        assert!(
-            runtime
-                .devices()
-                .iter()
-                .all(|device| device.page.controls.can_cancel),
-            "both device operations must be active before the main context advances"
+        assert_eq!(
+            runtime.sync_now(SECOND_ID),
+            Err(SyncStartError::UnknownDevice),
+            "the inert device never reaches the transfer backend"
         );
 
         let first = wait_for_completion(&runtime, FIRST_ID).await;
-        let second = wait_for_completion(&runtime, SECOND_ID).await;
         let relative = "Music/Reprise/Artist/Unknown Album/00 Track 1.flac";
         let expected = std::fs::read(sources.path().join("1.flac")).unwrap();
         assert_eq!(
             std::fs::read(first_root.path().join(relative)).unwrap(),
             expected
         );
-        assert_eq!(
-            std::fs::read(second_root.path().join(relative)).unwrap(),
-            expected
+        assert!(
+            !second_root.path().join(relative).exists(),
+            "a listed-but-inert device must remain untouched"
         );
         assert_eq!(first.verified_managed_track_count, Some(1));
-        assert_eq!(second.verified_managed_track_count, Some(1));
     });
 }
 

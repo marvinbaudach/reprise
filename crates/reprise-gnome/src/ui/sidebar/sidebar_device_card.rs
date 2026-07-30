@@ -268,6 +268,14 @@ impl DeviceCard {
         match detail_mode(device) {
             DetailMode::Delta => {
                 self.delta_detail.set_text(&card_subtitle(device));
+                if matches!(
+                    device.session_state,
+                    reprise_core::device_sync::DeviceSessionState::Inert { .. }
+                ) {
+                    self.delta_detail.add_css_class("warning");
+                } else {
+                    self.delta_detail.remove_css_class("warning");
+                }
                 self.detail_stack.set_visible_child_name("delta");
             }
             DetailMode::Progress => {
@@ -460,6 +468,11 @@ fn card_title(device: &DeviceView) -> String {
 }
 
 fn card_subtitle(device: &DeviceView) -> String {
+    if let reprise_core::device_sync::DeviceSessionState::Inert { active_device_name } =
+        &device.session_state
+    {
+        return device_sync_strings::inert_device_status(active_device_name);
+    }
     match &device.sync_phase {
         PlannedSyncPhase::ComputingDelta => format!(
             "{} · Checking…",
@@ -530,6 +543,7 @@ mod tests {
             name: "Pixel 8".into(),
             icon: gtk4::gio::ThemedIcon::new("phone-symbolic").upcast(),
             connected: true,
+            session_state: reprise_core::device_sync::DeviceSessionState::Active,
             storage: Default::default(),
             scan_error: None,
             settings: reprise_core::device_sync::DeviceSettings {

@@ -329,7 +329,11 @@ impl DeviceSyncRuntime {
             let devices = self.device_states.borrow();
             let device = devices
                 .iter()
-                .find(|device| device.descriptor.id == device_id && device.connected)
+                .find(|device| {
+                    device.descriptor.id == device_id
+                        && device.connected
+                        && device.session_state.opens_session()
+                })
                 .ok_or(SyncStartError::UnknownDevice)?;
             if device.is_busy() {
                 return Err(SyncStartError::Busy);
@@ -375,7 +379,11 @@ impl DeviceSyncRuntime {
             let devices = self.device_states.borrow();
             let device = devices
                 .iter()
-                .find(|device| device.descriptor.id == device_id && device.connected)
+                .find(|device| {
+                    device.descriptor.id == device_id
+                        && device.connected
+                        && device.session_state.opens_session()
+                })
                 .ok_or(SyncStartError::UnknownDevice)?;
             if device.is_busy() {
                 return Err(SyncStartError::Busy);
@@ -402,7 +410,11 @@ impl DeviceSyncRuntime {
             let devices = self.device_states.borrow();
             let device = devices
                 .iter()
-                .find(|device| device.descriptor.id == device_id && device.connected)
+                .find(|device| {
+                    device.descriptor.id == device_id
+                        && device.connected
+                        && device.session_state.opens_session()
+                })
                 .ok_or(SyncStartError::UnknownDevice)?;
             if !device.mirror_plan.blockers.is_empty() {
                 return Err(SyncStartError::Planning(blocker_message(
@@ -424,7 +436,11 @@ impl DeviceSyncRuntime {
             let mut devices = self.device_states.borrow_mut();
             let device = devices
                 .iter_mut()
-                .find(|device| device.descriptor.id == device_id && device.connected)
+                .find(|device| {
+                    device.descriptor.id == device_id
+                        && device.connected
+                        && device.session_state.opens_session()
+                })
                 .ok_or(SyncStartError::UnknownDevice)?;
             if device.is_busy() {
                 return Err(SyncStartError::Busy);

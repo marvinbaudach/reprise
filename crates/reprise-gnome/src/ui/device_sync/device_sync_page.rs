@@ -171,7 +171,21 @@ impl DeviceSyncPage {
         super::device_sync_history::fill(&self.history, &device.history);
         self.updating.set(true);
         self.device_name.set_label(&device.name);
-        self.connection.set_label("MTP connected");
+        self.connection.remove_css_class("success");
+        self.connection.remove_css_class("warning");
+        match &device.session_state {
+            reprise_core::device_sync::DeviceSessionState::Active => {
+                self.connection.set_label("MTP connected");
+                self.connection.add_css_class("success");
+            }
+            reprise_core::device_sync::DeviceSessionState::Inert { active_device_name } => {
+                self.connection
+                    .set_label(&device_sync_strings::inert_device_status(
+                        active_device_name,
+                    ));
+                self.connection.add_css_class("warning");
+            }
+        }
         self.device_last_sync
             .set_label(&device_last_sync_copy(device));
         if let Some(root) = self.root.upgrade() {

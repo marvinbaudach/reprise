@@ -134,6 +134,9 @@ pub struct DeviceView {
     pub name: String,
     pub icon: gio::Icon,
     pub connected: bool,
+    /// `MTP-47`: whether this detected device owns the sole MTP session or
+    /// is only listed while another connected device owns it.
+    pub session_state: reprise_core::device_sync::DeviceSessionState,
     pub storage: DeviceStorageSnapshot,
     pub scan_error: Option<String>,
     pub settings: DeviceSettings,

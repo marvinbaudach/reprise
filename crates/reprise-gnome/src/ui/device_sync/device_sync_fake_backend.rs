@@ -75,6 +75,7 @@ pub(super) struct FakeState {
     /// device's persisted per-target storage choice is what the transfer
     /// layer uses, not just what `device.targets` records in memory.
     pub(super) transfer_storage_ids: RefCell<Vec<(String, Option<StorageId>)>>,
+    pub(super) inspection_roots: RefCell<Vec<String>>,
     pub(super) last_inspected_targets: RefCell<Option<[SyncTarget; 3]>>,
     pub(super) podcast_files: RefCell<Vec<ManagedDeviceFile>>,
     pub(super) youtube_files: RefCell<Vec<ManagedDeviceFile>>,
@@ -264,7 +265,7 @@ impl DeviceBackend for FakeBackend {
 
     fn inspect(
         &self,
-        _root_uri: String,
+        root_uri: String,
         targets: [SyncTarget; 3],
     ) -> TestFuture<DeviceStorageInspection> {
         let available_bytes = self.state.available_bytes.get();
@@ -274,6 +275,7 @@ impl DeviceBackend for FakeBackend {
         let inspection_error = self.state.inspection_error.borrow_mut().take();
         let podcast_files = self.state.podcast_files.borrow().clone();
         let youtube_files = self.state.youtube_files.borrow().clone();
+        self.state.inspection_roots.borrow_mut().push(root_uri);
         self.state.last_inspected_targets.replace(Some(targets));
         Box::pin(async move {
             if let Some(gate) = gate {
