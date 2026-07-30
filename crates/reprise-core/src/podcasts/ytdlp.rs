@@ -745,5 +745,11 @@ mod range_tests;
 mod test_support;
 
 #[cfg(all(test, unix))]
+#[path = "ytdlp_download_tests.rs"]
+mod download_tests;
+#[cfg(all(test, unix))]
+#[path = "ytdlp_process_tests.rs"]
+mod process_tests;
+#[cfg(all(test, unix))]
 #[path = "ytdlp_tests.rs"]
 mod tests;
