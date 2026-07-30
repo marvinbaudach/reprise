@@ -78,6 +78,11 @@ fn build_group(
 ) -> gtk4::Expander {
     let group = &rendered.group;
     let expander = gtk4::Expander::new(None);
+    // The title lives in the header widget, which leaves the expander itself
+    // nameless in the accessibility tree — a screen reader announces "toggle
+    // button" with nothing to say which show it opens. Naming it is also what
+    // lets a keyboard or assistive user address one show among several.
+    expander.update_property(&[gtk4::accessible::Property::Label(&group.title)]);
     let expanded = context
         .expanded_sources
         .borrow()
