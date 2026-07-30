@@ -18,8 +18,8 @@ use reprise_core::device_sync::settings::{
 };
 use reprise_core::device_sync::sync_log::{DeviationKind, RunStart};
 use reprise_core::device_sync::{
-    load_or_create_targets, DeviceSyncMachine, Effect, Event, ManagedRemoval, MirrorPlan,
-    StorageId, SyncOutcome, SyncTargetKind, TransferAction, TransferOperation, TransferSource,
+    DeviceSyncMachine, Effect, Event, ManagedRemoval, MirrorPlan, StorageId, SyncOutcome,
+    SyncTargetKind, TransferAction, TransferOperation, TransferSource,
 };
 
 use super::*;
@@ -68,6 +68,10 @@ impl std::error::Error for SyncStartError {}
 struct PlannedWork {
     device_id: String,
     root_uri: String,
+    /// Whether the platform supplied a durable identity for database state.
+    /// A session-only device still transfers, but records nothing under its
+    /// volatile URI.
+    persist_device_state: bool,
     machine: Rc<RefCell<DeviceSyncMachine>>,
     /// The additive content plans (`MTP-23`). The machine above owns only the
     /// music and playlist mirror; podcast episodes and YouTube audio are
@@ -481,8 +485,8 @@ impl DeviceSyncRuntime {
             device.cancellable = Some(cancellable.clone());
             device.sync_error = None;
             device.mtp_rate.reset();
-            let targets = load_or_create_targets(&self.conn, device_id)
-                .map_err(|error| SyncStartError::Planning(error.to_string()))?;
+            let targets = device.targets.clone();
+            let persist_device_state = device.descriptor.persistent_id.is_some();
             let log = RunLog::open(
                 self,
                 &RunStart {
@@ -501,10 +505,12 @@ impl DeviceSyncRuntime {
                     )
                     .unwrap_or(u32::MAX),
                 },
+                persist_device_state,
             );
             PlannedWork {
                 device_id: device_id.to_string(),
                 root_uri: device.descriptor.root_uri.clone(),
+                persist_device_state,
                 machine,
                 podcasts: device.podcast_plan.clone(),
                 youtube: device.youtube_plan.clone(),

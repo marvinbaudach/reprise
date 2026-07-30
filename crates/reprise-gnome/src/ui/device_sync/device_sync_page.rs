@@ -175,8 +175,13 @@ impl DeviceSyncPage {
         self.connection.remove_css_class("warning");
         match &device.session_state {
             reprise_core::device_sync::DeviceSessionState::Active => {
-                self.connection.set_label("MTP connected");
-                self.connection.add_css_class("success");
+                if let Some(status) = &device.memory_status {
+                    self.connection.set_label(status);
+                    self.connection.add_css_class("warning");
+                } else {
+                    self.connection.set_label("MTP connected");
+                    self.connection.add_css_class("success");
+                }
             }
             reprise_core::device_sync::DeviceSessionState::Inert { active_device_name } => {
                 self.connection

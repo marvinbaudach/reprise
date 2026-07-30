@@ -45,7 +45,8 @@ pub use category_diff::{
 };
 pub use delta::{compute_delta, SyncCandidate, SyncDelta};
 pub use device_presence::{
-    project_device_sessions, DetectedDevice, DeviceSessionProjection, DeviceSessionState,
+    project_device_sessions, stable_device_identity, DetectedDevice, DeviceSessionProjection,
+    DeviceSessionState,
 };
 pub use device_view::{
     category_bytes, project_category_content_row, project_category_segments,

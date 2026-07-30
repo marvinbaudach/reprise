@@ -831,6 +831,12 @@ human. Rationale for changes lives in the git history.
   opened, its row reading "Plugged in · disconnect {other} to use it" in
   amber with no sync action. There is no queue, no parallel transfer and no
   device chooser.
+- **MTP-48** [active] [core] — Device identity is a stable key: the GVfs
+  mount UUID, else the USB serial number from udev/sysfs. The `mtp://` root
+  URI is never an identity — it carries the USB bus number and changes on
+  every replug. A device with no stable key is usable but not remembered, and
+  the UI says so rather than pretending. Persisted per identity: target
+  folders, last verified state, size on device, local name — nothing else.
 
 ## F. Settings & modals
 

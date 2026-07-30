@@ -6,6 +6,18 @@ pub struct DetectedDevice {
     pub name: String,
 }
 
+/// Chooses the durable key for device-owned state. Provider values are
+/// normalized here so every platform follows the same UUID-first rule and
+/// a volatile transport URI can never be supplied as a fallback.
+#[must_use]
+pub fn stable_device_identity(uuid: Option<&str>, usb_serial: Option<&str>) -> Option<String> {
+    uuid.into_iter()
+        .chain(usb_serial)
+        .map(str::trim)
+        .find(|value| !value.is_empty())
+        .map(str::to_owned)
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DeviceSessionState {
     Active,
@@ -136,6 +148,29 @@ mod tests {
             project_device_sessions(Some("anna"), &[detected("ben", "Pixel 7a (Ben)")])[0].state,
             DeviceSessionState::Active,
             "the waiting device becomes active once the owner disconnects"
+        );
+    }
+
+    #[test]
+    fn mtp_48_identity_prefers_uuid_then_usb_serial_and_never_uses_the_root_uri() {
+        assert_eq!(
+            stable_device_identity(Some(" mount-uuid "), Some("usb-serial")),
+            Some("mount-uuid".into())
+        );
+        assert_eq!(
+            stable_device_identity(None, Some(" usb-serial ")),
+            Some("usb-serial".into())
+        );
+        assert_eq!(stable_device_identity(None, None), None);
+        assert_eq!(
+            stable_device_identity(Some("  "), Some("  ")),
+            None,
+            "blank provider values are not stable identities"
+        );
+        assert_ne!(
+            stable_device_identity(None, None),
+            Some("mtp://[usb:001,013]/".into()),
+            "the volatile MTP root URI must never become a memory key"
         );
     }
 }

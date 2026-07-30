@@ -58,6 +58,8 @@ fn device() -> DeviceView {
         name: "Pixel 8".into(),
         icon: gtk4::gio::ThemedIcon::new("phone-symbolic").upcast(),
         connected: true,
+        rememberable: true,
+        memory_status: None,
         session_state: reprise_core::device_sync::DeviceSessionState::Active,
         storage: DeviceStorageSnapshot {
             target_name: Some("Internal storage".into()),

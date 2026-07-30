@@ -566,6 +566,7 @@ impl DeviceBackend for FakeBackend {
 pub(super) fn descriptor(id: &str, reconnectable: bool) -> DeviceDescriptor {
     DeviceDescriptor {
         id: id.into(),
+        persistent_id: reconnectable.then(|| id.to_string()),
         name: format!("Phone {id}"),
         root_uri: format!("mtp://{id}"),
         icon: gio::ThemedIcon::new("phone-symbolic").upcast(),

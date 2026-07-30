@@ -9,19 +9,19 @@ use reprise_core::device_sync::preparation::MissingFile;
 use reprise_core::device_sync::settings::{
     load_device_files, load_device_playlists, resolve_selection_track_ids, save_settings,
 };
-use reprise_core::device_sync::targets::{load_target, save_target};
+use reprise_core::device_sync::targets::save_target;
 use reprise_core::device_sync::{
-    load_mirror_playlist_snapshots, load_or_create_targets, plan_preparation, project_storage,
-    project_sync_page, resolve_latest_per_channel, select_episodes, DeviceSelection,
-    EpisodeSelectionCandidate, EpisodeSelectionResult, EpisodeSelectionRule, PreparationFacts,
-    SelectionSource, SyncPageInput, SyncTarget, SyncTargetKind, TransferProfile,
+    load_mirror_playlist_snapshots, plan_preparation, project_storage, project_sync_page,
+    resolve_latest_per_channel, select_episodes, DeviceSelection, EpisodeSelectionCandidate,
+    EpisodeSelectionResult, EpisodeSelectionRule, PreparationFacts, SelectionSource, SyncPageInput,
+    SyncTarget, SyncTargetKind, TransferProfile,
 };
 
 use super::*;
 
 impl DeviceSyncRuntime {
     pub fn update_settings(self: &Rc<Self>, settings: DeviceSettings) -> Result<(), String> {
-        {
+        let rememberable = {
             let devices = self.device_states.borrow();
             let device = devices
                 .iter()
@@ -30,8 +30,11 @@ impl DeviceSyncRuntime {
             if device.is_busy() {
                 return Err("device synchronization is active".into());
             }
+            device.descriptor.persistent_id.is_some()
+        };
+        if rememberable {
+            save_settings(&self.conn, &settings).map_err(|error| error.to_string())?;
         }
-        save_settings(&self.conn, &settings).map_err(|error| error.to_string())?;
         let device_id = settings.device_serial.clone();
         {
             let mut devices = self.device_states.borrow_mut();
@@ -135,7 +138,7 @@ impl DeviceSyncRuntime {
         kind: SyncTargetKind,
         enabled: bool,
     ) -> Result<(), String> {
-        {
+        let (mut target, rememberable) = {
             let devices = self.device_states.borrow();
             let device = devices
                 .iter()
@@ -144,15 +147,21 @@ impl DeviceSyncRuntime {
             if device.is_busy() {
                 return Err("device synchronization is active".into());
             }
-        }
-        let mut target = {
-            let conn = &self.conn;
-            load_target(conn, device_id, kind)
-                .map_err(|error| error.to_string())?
-                .unwrap_or_else(|| SyncTarget::default_for(kind))
+            (
+                device
+                    .targets
+                    .iter()
+                    .find(|target| target.kind == kind)
+                    .cloned()
+                    .unwrap_or_else(|| SyncTarget::default_for(kind)),
+                device.descriptor.persistent_id.is_some(),
+            )
         };
         target.enabled = enabled;
-        save_target(&self.conn, device_id, &target).map_err(|error| error.to_string())?;
+        if rememberable {
+            save_target(&self.conn, device_id, &target).map_err(|error| error.to_string())?;
+        }
+        update_runtime_target(&mut self.device_states.borrow_mut(), device_id, target)?;
         self.recompute_delta(device_id)
     }
 
@@ -174,7 +183,7 @@ impl DeviceSyncRuntime {
         kind: SyncTargetKind,
         cap_bytes: Option<u64>,
     ) -> Result<(), String> {
-        {
+        let (mut target, rememberable) = {
             let devices = self.device_states.borrow();
             let device = devices
                 .iter()
@@ -183,15 +192,21 @@ impl DeviceSyncRuntime {
             if device.is_busy() {
                 return Err("device synchronization is active".into());
             }
-        }
-        let mut target = {
-            let conn = &self.conn;
-            load_target(conn, device_id, kind)
-                .map_err(|error| error.to_string())?
-                .unwrap_or_else(|| SyncTarget::default_for(kind))
+            (
+                device
+                    .targets
+                    .iter()
+                    .find(|target| target.kind == kind)
+                    .cloned()
+                    .unwrap_or_else(|| SyncTarget::default_for(kind)),
+                device.descriptor.persistent_id.is_some(),
+            )
         };
         target.cap_bytes = cap_bytes;
-        save_target(&self.conn, device_id, &target).map_err(|error| error.to_string())?;
+        if rememberable {
+            save_target(&self.conn, device_id, &target).map_err(|error| error.to_string())?;
+        }
+        update_runtime_target(&mut self.device_states.borrow_mut(), device_id, target)?;
         self.recompute_delta(device_id)
     }
 
@@ -259,7 +274,7 @@ impl DeviceSyncRuntime {
     }
 
     pub(super) fn recompute_delta_silent(self: &Rc<Self>, device_id: &str) -> Result<(), String> {
-        let (settings, storage, managed_files, podcast_files, youtube_files) = self
+        let (settings, storage, managed_files, podcast_files, youtube_files, targets) = self
             .device_states
             .borrow()
             .iter()
@@ -271,6 +286,7 @@ impl DeviceSyncRuntime {
                     device.managed_files.clone(),
                     device.podcast_files.clone(),
                     device.youtube_files.clone(),
+                    device.targets.clone(),
                 )
             })
             .ok_or_else(|| "device is not connected".to_string())?;
@@ -308,8 +324,6 @@ impl DeviceSyncRuntime {
                 managed_files,
                 storage: storage.clone(),
             });
-            let targets =
-                load_or_create_targets(conn, device_id).map_err(|error| error.to_string())?;
             let podcast_inventory = as_podcast_device_files(&podcast_files);
             let youtube_inventory = as_podcast_device_files(&youtube_files);
             // Both kinds are queried once and each `build_plan` call filters
@@ -498,6 +512,24 @@ impl DeviceSyncRuntime {
             .map(|device| device.settings.clone())
             .ok_or_else(|| "device is not connected".to_string())
     }
+}
+
+fn update_runtime_target(
+    devices: &mut [DeviceState],
+    device_id: &str,
+    next: SyncTarget,
+) -> Result<(), String> {
+    let device = devices
+        .iter_mut()
+        .find(|device| device.descriptor.id == device_id)
+        .ok_or_else(|| "device is not connected".to_string())?;
+    let target = device
+        .targets
+        .iter_mut()
+        .find(|target| target.kind == next.kind)
+        .ok_or_else(|| "device sync target is unavailable".to_string())?;
+    *target = next;
+    Ok(())
 }
 
 /// Builds one target's podcast/YouTube plan, or an empty one when that

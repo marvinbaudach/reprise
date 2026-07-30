@@ -271,7 +271,8 @@ impl DeviceCard {
                 if matches!(
                     device.session_state,
                     reprise_core::device_sync::DeviceSessionState::Inert { .. }
-                ) {
+                ) || !device.rememberable
+                {
                     self.delta_detail.add_css_class("warning");
                 } else {
                     self.delta_detail.remove_css_class("warning");
@@ -473,6 +474,9 @@ fn card_subtitle(device: &DeviceView) -> String {
     {
         return device_sync_strings::inert_device_status(active_device_name);
     }
+    if let Some(status) = &device.memory_status {
+        return status.clone();
+    }
     match &device.sync_phase {
         PlannedSyncPhase::ComputingDelta => format!(
             "{} · Checking…",
@@ -543,6 +547,8 @@ mod tests {
             name: "Pixel 8".into(),
             icon: gtk4::gio::ThemedIcon::new("phone-symbolic").upcast(),
             connected: true,
+            rememberable: true,
+            memory_status: None,
             session_state: reprise_core::device_sync::DeviceSessionState::Active,
             storage: Default::default(),
             scan_error: None,
@@ -755,44 +761,5 @@ mod tests {
 mod mirror_tests;
 
 #[cfg(test)]
-mod css_tests {
-    #[test]
-    fn css_covers_the_sync_card_vocabulary() {
-        let css = super::css();
-        for marker in [
-            ".device-card {",
-            ".device-card:hover",
-            ".device-card:focus-visible",
-            ".device-card-icon",
-            ".device-card-glyph",
-            ".device-card-detail",
-            ".device-card-percent",
-            ".device-card-progress trough",
-            ".device-card-progress progress",
-        ] {
-            assert!(css.contains(marker), "missing rule: {marker}");
-        }
-        assert!(
-            !css.contains("#1CA98F"),
-            "the accent must come from the theme, not a literal, or non-default palettes break"
-        );
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn css_parses_in_gtk_without_dropping_declarations() {
-        if gtk4::init().is_err() {
-            return;
-        }
-        let combined = format!(
-            "{}\n{}",
-            crate::ui::style::theme::theme_css(crate::ui::style::theme::Theme::DEFAULT, true),
-            super::css()
-        );
-        let errors = crate::ui::style::css_parse_errors(&combined);
-        assert!(
-            errors.is_empty(),
-            "GTK reported CSS parsing errors: {errors:?}"
-        );
-    }
-}
+#[path = "sidebar_device_card_css_tests.rs"]
+mod css_tests;

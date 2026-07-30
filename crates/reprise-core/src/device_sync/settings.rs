@@ -68,6 +68,28 @@ pub struct DeviceSettings {
     pub prepare_before_sync: bool,
 }
 
+impl DeviceSettings {
+    /// Session-only defaults for a device whose platform cannot supply a
+    /// stable identity. Callers may mutate this value while the cable is
+    /// connected, but must never pass it to [`save_settings`].
+    #[must_use]
+    pub fn transient(serial: &str, name: &str) -> Self {
+        Self {
+            device_serial: serial.to_string(),
+            device_name: name.to_string(),
+            selection: DeviceSelection::default(),
+            profile: TransferProfile::default(),
+            opus_bitrate: 0,
+            ratings_back: false,
+            remove_deleted: true,
+            // An unrememberable device must not silently auto-start on every
+            // replug as though the app remembered a user choice.
+            sync_automatically: false,
+            prepare_before_sync: true,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DeviceFileRecord {
     pub device_serial: String,
@@ -100,6 +122,79 @@ pub enum DeviceSettingsError {
     UnsupportedBitrate(u32),
     #[error("device file size is too large for SQLite: {0}")]
     FileTooLarge(u64),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LegacyDeviceRekey {
+    NoLegacyRow,
+    AmbiguousLegacyRows,
+    StableKeyAlreadyExists,
+    Rekeyed,
+}
+
+/// Moves every persisted device-owned row off a volatile legacy MTP URI once
+/// the same connection exposes a stable identity. A pre-existing stable row
+/// wins without merging guesses; the transaction then leaves the legacy row
+/// intact for an explicit later decision.
+pub fn rekey_legacy_device(
+    db: &crate::db::Db,
+    legacy_uri: &str,
+    stable_id: &str,
+) -> Result<LegacyDeviceRekey, rusqlite::Error> {
+    let conn = db.conn();
+    let exact_legacy_exists = conn.query_row(
+        "SELECT EXISTS(
+           SELECT 1 FROM device_settings WHERE device_serial = ?1
+         )",
+        [legacy_uri],
+        |row| row.get::<_, bool>(0),
+    )?;
+    let legacy_key = if exact_legacy_exists {
+        legacy_uri.to_string()
+    } else {
+        let mut statement = conn.prepare(
+            "SELECT device_serial
+               FROM device_settings
+              WHERE device_serial LIKE 'mtp://%'
+              ORDER BY device_serial
+              LIMIT 2",
+        )?;
+        let candidates = statement
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        match candidates.as_slice() {
+            [] => return Ok(LegacyDeviceRekey::NoLegacyRow),
+            [only] => only.clone(),
+            _ => return Ok(LegacyDeviceRekey::AmbiguousLegacyRows),
+        }
+    };
+    let stable_exists = conn.query_row(
+        "SELECT EXISTS(
+           SELECT 1 FROM device_settings WHERE device_serial = ?1
+         )",
+        [stable_id],
+        |row| row.get::<_, bool>(0),
+    )?;
+    if stable_exists {
+        return Ok(LegacyDeviceRekey::StableKeyAlreadyExists);
+    }
+
+    let transaction = conn.unchecked_transaction()?;
+    for (table, column) in [
+        ("device_files", "device_serial"),
+        ("device_playlists", "device_serial"),
+        ("device_sync_targets", "device_serial"),
+        ("sync_runs", "device_serial"),
+        ("podcast_subscription_devices", "device_id"),
+        ("device_settings", "device_serial"),
+    ] {
+        transaction.execute(
+            &format!("UPDATE {table} SET {column} = ?2 WHERE {column} = ?1"),
+            params![legacy_key, stable_id],
+        )?;
+    }
+    transaction.commit()?;
+    Ok(LegacyDeviceRekey::Rekeyed)
 }
 
 pub fn load_or_create_settings(
@@ -159,17 +254,9 @@ pub fn load_or_create_settings(
         "INSERT INTO device_settings (device_serial, device_name) VALUES (?1, ?2)",
         params![serial, name],
     )?;
-    Ok(DeviceSettings {
-        device_serial: serial.to_string(),
-        device_name: name.to_string(),
-        selection: DeviceSelection::default(),
-        profile: TransferProfile::default(),
-        opus_bitrate: 0,
-        ratings_back: false,
-        remove_deleted: true,
-        sync_automatically: true,
-        prepare_before_sync: true,
-    })
+    let mut settings = DeviceSettings::transient(serial, name);
+    settings.sync_automatically = true;
+    Ok(settings)
 }
 
 pub fn save_settings(

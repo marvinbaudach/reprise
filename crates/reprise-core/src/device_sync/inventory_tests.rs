@@ -2,10 +2,13 @@ use rusqlite::Connection;
 
 use super::settings::{
     delete_device_playlist, load_device_files, load_device_playlists, load_or_create_settings,
-    mark_device_playlists_synced, save_settings, upsert_device_file, upsert_device_playlist,
-    DeviceFileRecord, DevicePlaylistRecord,
+    mark_device_playlists_synced, rekey_legacy_device, save_settings, upsert_device_file,
+    upsert_device_playlist, DeviceFileRecord, DevicePlaylistRecord, LegacyDeviceRekey,
 };
-use super::{DeviceSelection, Mp3Quality, SelectionSource, TransferProfile, REPRISE_DEVICE_DIR};
+use super::{
+    load_or_create_targets, load_target, save_target, DeviceSelection, Mp3Quality, SelectionSource,
+    StorageId, SyncTargetKind, TransferProfile, REPRISE_DEVICE_DIR,
+};
 
 fn open_legacy_v33() -> Connection {
     let conn = crate::db::open(None).unwrap();
@@ -37,6 +40,90 @@ fn open_legacy_v33() -> Connection {
     )
     .unwrap();
     conn
+}
+
+#[test]
+fn mtp_48_rekeys_legacy_uri_settings_and_target_folders_when_a_stable_key_arrives() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let legacy = "mtp://[usb:001,013]/";
+    let current_uri = "mtp://[usb:001,027]/";
+    let stable = "pixel-usb-serial";
+    let mut settings = load_or_create_settings(&db, legacy, "Pixel 7a").unwrap();
+    settings.profile = TransferProfile::Original;
+    save_settings(&db, &settings).unwrap();
+    let mut target = load_or_create_targets(&db, legacy).unwrap()[0].clone();
+    target.storage_id = Some(StorageId(7));
+    target.path = "/Music/Anna".into();
+    save_target(&db, legacy, &target).unwrap();
+
+    assert_eq!(
+        rekey_legacy_device(&db, current_uri, stable).unwrap(),
+        LegacyDeviceRekey::Rekeyed
+    );
+    assert_eq!(
+        load_or_create_settings(&db, stable, "ignored")
+            .unwrap()
+            .profile,
+        TransferProfile::Original
+    );
+    assert_eq!(
+        load_target(&db, stable, SyncTargetKind::Playlists)
+            .unwrap()
+            .unwrap(),
+        target
+    );
+    assert_eq!(
+        db.conn()
+            .query_row(
+                "SELECT COUNT(*) FROM device_settings WHERE device_serial = ?1",
+                [legacy],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+        0
+    );
+}
+
+#[test]
+fn legacy_uri_row_is_kept_when_the_stable_key_already_exists() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let legacy = "mtp://[usb:001,013]/";
+    load_or_create_settings(&db, legacy, "Legacy Pixel").unwrap();
+    load_or_create_settings(&db, "stable", "Remembered Pixel").unwrap();
+
+    assert_eq!(
+        rekey_legacy_device(&db, legacy, "stable").unwrap(),
+        LegacyDeviceRekey::StableKeyAlreadyExists
+    );
+    assert_eq!(
+        load_or_create_settings(&db, legacy, "ignored")
+            .unwrap()
+            .device_name,
+        "Legacy Pixel"
+    );
+}
+
+#[test]
+fn ambiguous_legacy_uri_rows_are_kept_when_the_replugged_uri_does_not_match() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    load_or_create_settings(&db, "mtp://[usb:001,013]/", "Pixel").unwrap();
+    load_or_create_settings(&db, "mtp://[usb:001,014]/", "Another phone").unwrap();
+
+    assert_eq!(
+        rekey_legacy_device(&db, "mtp://[usb:001,027]/", "stable").unwrap(),
+        LegacyDeviceRekey::AmbiguousLegacyRows
+    );
+    assert_eq!(
+        db.conn()
+            .query_row(
+                "SELECT COUNT(*) FROM device_settings WHERE device_serial LIKE 'mtp://%'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+        2,
+        "an ambiguous legacy history must not be guessed away"
+    );
 }
 
 #[test]

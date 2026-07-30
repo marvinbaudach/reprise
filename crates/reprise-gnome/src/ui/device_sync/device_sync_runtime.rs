@@ -16,15 +16,17 @@ use reprise_core::device_sync::device_view::{
     category_bytes, project_category_content_row, project_contents_state,
     project_device_category_reading,
 };
-use reprise_core::device_sync::settings::{load_or_create_settings, mark_device_playlists_synced};
+use reprise_core::device_sync::settings::mark_device_playlists_synced;
 use reprise_core::device_sync::{
-    aggregate_balance, load_or_create_targets, should_auto_start, AutoStartFacts, CategoryDiff,
-    CategoryReading, DeviceSelection, DeviceSessionState, DeviceSettings, DeviceStorageInspection,
+    aggregate_balance, should_auto_start, AutoStartFacts, CategoryDiff, CategoryReading,
+    DeviceSelection, DeviceSessionState, DeviceSettings, DeviceStorageInspection,
     DeviceStorageSnapshot, ManagedDeviceFile, MirrorPlan, PodcastSelectionSummary, SelectionSource,
     StorageId, SyncPageState, SyncTarget, SyncTargetKind, YoutubeSelectionSummary,
 };
 use reprise_platform_linux::device_sync::{CopyOutcome, DeviceDescriptor, DeviceMonitor};
 use reprise_platform_linux::device_transfer::{TranscodeProfile, TranscodeRequest, TranscodedFile};
+
+use crate::ui::device_sync_strings;
 
 #[path = "device_sync_rate.rs"]
 pub(super) mod rate;
@@ -124,6 +126,7 @@ impl DeviceState {
     fn new(
         descriptor: DeviceDescriptor,
         settings: DeviceSettings,
+        targets: [SyncTarget; 3],
         session_state: DeviceSessionState,
     ) -> Self {
         let sync_phase = if session_state.opens_session() {
@@ -147,7 +150,7 @@ impl DeviceState {
             scan_generation: 0,
             scan_error: None,
             ever_inspected: false,
-            targets: SyncTargetKind::ALL.map(SyncTarget::default_for),
+            targets,
             settings,
             sync_phase,
             sync_error: None,
@@ -215,6 +218,12 @@ impl DeviceState {
             name: self.descriptor.name.clone(),
             icon: self.descriptor.icon.clone(),
             connected: self.connected,
+            rememberable: self.descriptor.persistent_id.is_some(),
+            memory_status: self
+                .descriptor
+                .persistent_id
+                .is_none()
+                .then(device_sync_strings::unrememberable_device_status),
             session_state: self.session_state.clone(),
             storage: self.storage.clone(),
             scan_error: self.scan_error.clone(),
@@ -374,20 +383,14 @@ impl DeviceSyncRuntime {
         // each of the three named targets (`MTP-38`) at the storage/path
         // the folder browser (`MTP-31`) most recently persisted for it —
         // never a stale or default guess (finding 1).
-        let targets = match load_or_create_targets(&self.conn, device_id) {
-            Ok(targets) => targets,
-            Err(error) => {
-                let mut devices = self.device_states.borrow_mut();
-                if let Some(device) = devices
-                    .iter_mut()
-                    .find(|device| device.descriptor.id == device_id)
-                {
-                    device.scan_error = Some(error.to_string());
-                }
-                drop(devices);
-                self.notify();
-                return;
-            }
+        let targets = self
+            .device_states
+            .borrow()
+            .iter()
+            .find(|device| device.descriptor.id == device_id)
+            .map(|device| device.targets.clone());
+        let Some(targets) = targets else {
+            return;
         };
         let request = {
             let mut devices = self.device_states.borrow_mut();
@@ -463,16 +466,26 @@ impl DeviceSyncRuntime {
                         if inspection_error.is_none() && planning_error.is_none() =>
                     {
                         let verified_at = chrono::Utc::now();
-                        if let Err(error) = mark_device_playlists_synced(
-                            &runtime.conn,
-                            &id,
-                            sources,
-                            verified_at.timestamp(),
-                        ) {
-                            playlist_timestamp_error = Some(format!(
-                                "could not record verified playlist synchronization: {error}"
-                            ));
-                            None
+                        let rememberable = runtime
+                            .device_states
+                            .borrow()
+                            .iter()
+                            .find(|device| device.descriptor.id == id)
+                            .is_some_and(|device| device.descriptor.persistent_id.is_some());
+                        if rememberable {
+                            if let Err(error) = mark_device_playlists_synced(
+                                &runtime.conn,
+                                &id,
+                                sources,
+                                verified_at.timestamp(),
+                            ) {
+                                playlist_timestamp_error = Some(format!(
+                                    "could not record verified playlist synchronization: {error}"
+                                ));
+                                None
+                            } else {
+                                Some(verified_at)
+                            }
                         } else {
                             Some(verified_at)
                         }
@@ -659,27 +672,21 @@ impl DeviceSyncRuntime {
                         refresh.push((id.clone(), false));
                     }
                 } else {
-                    let settings = load_or_create_settings(
-                        &self.conn,
-                        &descriptor.id,
-                        &descriptor.name,
-                    )
-                    .unwrap_or_else(|error| {
-                        tracing::warn!(device_id = descriptor.id, %error, "could not load device settings");
-                        DeviceSettings {
-                            device_serial: descriptor.id.clone(),
-                            device_name: descriptor.name.clone(),
-                            selection: DeviceSelection::default(),
-                            profile: reprise_core::device_sync::TransferProfile::default(),
-                            opus_bitrate: 0,
-                            ratings_back: false,
-                            remove_deleted: true,
-                            sync_automatically: true,
-                            prepare_before_sync: true,
-                        }
-                    });
+                    let (settings, targets) =
+                        memory::load_device_memory(&self.conn, &descriptor).unwrap_or_else(|error| {
+                            tracing::warn!(device_id = descriptor.id, %error, "could not load device memory");
+                            (
+                                DeviceSettings::transient(&descriptor.id, &descriptor.name),
+                                SyncTargetKind::ALL.map(SyncTarget::default_for),
+                            )
+                        });
                     let opens_session = projected.state.opens_session();
-                    states.push(DeviceState::new(descriptor, settings, projected.state));
+                    states.push(DeviceState::new(
+                        descriptor,
+                        settings,
+                        targets,
+                        projected.state,
+                    ));
                     if opens_session {
                         refresh.push((id, true));
                     }
@@ -752,6 +759,8 @@ enum RefreshPurpose {
 mod agent;
 #[path = "device_sync_compact.rs"]
 mod compact;
+#[path = "device_sync_memory.rs"]
+mod memory;
 #[path = "device_sync_planned.rs"]
 mod planned;
 #[path = "device_sync_preparation.rs"]

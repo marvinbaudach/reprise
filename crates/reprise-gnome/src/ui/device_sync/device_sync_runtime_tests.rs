@@ -26,6 +26,11 @@ use super::device_sync_runtime::*;
 mod fake_backend;
 use fake_backend::*;
 
+#[path = "device_sync_memory_tests.rs"]
+mod memory_tests;
+#[path = "device_sync_presence_tests.rs"]
+mod presence_tests;
+
 fn fixture() -> (tempfile::TempDir, Rc<Db>) {
     let temp = tempfile::tempdir().unwrap();
     let db = crate::test_db::open().unwrap();
@@ -79,34 +84,6 @@ async fn settle() {
     for _ in 0..100 {
         gtk4::glib::timeout_future(Duration::from_millis(2)).await;
     }
-}
-
-#[test]
-fn mtp_47_runtime_opens_exactly_one_session_and_never_scans_the_inert_device() {
-    run(async {
-        let (_temp, conn) = fixture();
-        disable_auto_start(&conn, "a");
-        disable_auto_start(&conn, "b");
-        let backend = Rc::new(FakeBackend::new(
-            vec![descriptor("a", true), descriptor("b", true)],
-            1,
-        ));
-
-        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
-        settle().await;
-
-        let devices = runtime.devices();
-        assert_eq!(devices.len(), 2, "the waiting device remains listed");
-        assert_eq!(
-            backend.state.inspection_roots.borrow().as_slice(),
-            ["mtp://a"],
-            "only the first detected device may open and inspect an MTP session"
-        );
-        assert!(
-            runtime.sync_now("b").is_err(),
-            "an inert row must never expose a working sync action"
-        );
-    });
 }
 
 #[test]

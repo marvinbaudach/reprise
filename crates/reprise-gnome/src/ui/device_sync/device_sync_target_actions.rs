@@ -7,7 +7,7 @@
 use reprise_core::device_sync::browser::{
     target_relocation_action, StorageOption, TargetRelocation,
 };
-use reprise_core::device_sync::targets::{load_target, save_target};
+use reprise_core::device_sync::targets::save_target;
 
 use super::*;
 
@@ -99,7 +99,7 @@ impl DeviceSyncRuntime {
         storage_id: Option<StorageId>,
         path: String,
     ) -> Result<(), String> {
-        {
+        let (previous, rememberable) = {
             let devices = self.device_states.borrow();
             let device = devices
                 .iter()
@@ -108,19 +108,37 @@ impl DeviceSyncRuntime {
             if device.is_busy() {
                 return Err("device synchronization is active".into());
             }
-        }
-        let previous = {
-            let conn = &self.conn;
-            load_target(conn, device_id, kind)
-                .map_err(|error| error.to_string())?
-                .unwrap_or_else(|| SyncTarget::default_for(kind))
+            (
+                device
+                    .targets
+                    .iter()
+                    .find(|target| target.kind == kind)
+                    .cloned()
+                    .unwrap_or_else(|| SyncTarget::default_for(kind)),
+                device.descriptor.persistent_id.is_some(),
+            )
         };
         let next = SyncTarget {
             storage_id,
             path,
             ..previous.clone()
         };
-        save_target(&self.conn, device_id, &next).map_err(|error| error.to_string())?;
+        if rememberable {
+            save_target(&self.conn, device_id, &next).map_err(|error| error.to_string())?;
+        }
+        {
+            let mut devices = self.device_states.borrow_mut();
+            let device = devices
+                .iter_mut()
+                .find(|device| device.descriptor.id == device_id)
+                .ok_or_else(|| "device is not connected".to_string())?;
+            let target = device
+                .targets
+                .iter_mut()
+                .find(|target| target.kind == kind)
+                .ok_or_else(|| "device sync target is unavailable".to_string())?;
+            *target = next.clone();
+        }
         if let TargetRelocation::MoveFolder { from_path } =
             target_relocation_action(&previous, &next)
         {
