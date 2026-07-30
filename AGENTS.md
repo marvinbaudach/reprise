@@ -222,3 +222,25 @@ exist.)
   shows a stale result (see `cover_loader.rs`).
 - Runtime-optional features are **modules** in `reprise-core::modules` (a descriptor + a
   persisted `module.<id>.enabled` flag); gate the behavior on `modules::is_enabled`.
+
+## Completed file ownership — episodes as queue citizens
+
+Packages 1 and 2 are complete and this ownership is released. No repository
+lock or coordination board exists in this checkout.
+
+### Package 1 — typed manual queue
+
+| Owner | Files |
+| --- | --- |
+| episodes-as-queue-citizens | `crates/reprise-core/src/up_next.rs`, `crates/reprise-core/src/library/session.rs`, `crates/reprise-core/src/queries/queue.rs`, `crates/reprise-core/src/queries/mod.rs`, and directly affected Core/GNOME tests and typed-call-site adapters |
+| episodes-as-queue-citizens | Minimal append-only rule and plan records in `docs/ux-rules.md`, `docs/plans/podcasts-radio.md`, plus `.superpowers/sdd/progress.md` |
+| sibling branches — excluded | `crates/reprise-gnome/src/ui/podcasts/**`, `crates/reprise-core/src/podcasts/store.rs`, `crates/reprise-core/src/podcasts/youtube.rs` |
+
+### Package 2 — queued-episode playback
+
+| Owner | Files |
+| --- | --- |
+| episodes-as-queue-citizens | `crates/reprise-gnome/src/ui/playback/{preview,external_media_state,external_media,external_media_completion,playback_faults,up_next_transport,session_player,queue_transport,player_controller,player_event_handling}.rs` and their directly affected tests |
+| episodes-as-queue-citizens | Narrow typed-state adapters in the GNOME and runtime crates, podcast playback copy in `strings_podcasts.rs`, and the matching gettext catalogs |
+| episodes-as-queue-citizens | Minimal append-only rule and plan records in `docs/ux-rules.md`, `docs/plans/podcasts-radio.md`, plus `.superpowers/sdd/progress.md` |
+| sibling branches — excluded | `crates/reprise-gnome/src/ui/podcasts/**`, `crates/reprise-core/src/podcasts/store.rs`, `crates/reprise-core/src/podcasts/youtube.rs` |

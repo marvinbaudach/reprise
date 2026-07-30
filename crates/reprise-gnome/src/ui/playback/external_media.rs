@@ -14,7 +14,7 @@ use crate::ui::player_controller::PlayerController;
 
 use super::external_media_state::{
     podcast_source_requires_resolution, AutomaticAdvance, ExternalSession, NeighbourContext,
-    PodcastSession, RadioCommand, RadioSession, ResumePolicy,
+    PodcastOrigin, PodcastSession, RadioCommand, RadioSession, ResumePolicy,
 };
 use super::preview::PlaybackMode;
 
@@ -77,6 +77,7 @@ impl PlayerController {
         if should_stop {
             self.stop_external();
         }
+        self.purge_unavailable_episodes();
         should_stop
     }
 
@@ -93,12 +94,35 @@ impl PlayerController {
         neighbours: Option<NeighbourContext>,
         automatic_advance: Option<AutomaticAdvance>,
     ) -> Result<(), PlaybackError> {
+        self.play_external_with_context_and_origin(
+            media,
+            neighbours,
+            automatic_advance,
+            PodcastOrigin::Direct,
+        )
+    }
+
+    fn play_external_with_origin(
+        self: &Rc<Self>,
+        media: ExternalMedia,
+        origin: PodcastOrigin,
+    ) -> Result<(), PlaybackError> {
+        self.play_external_with_context_and_origin(media, None, None, origin)
+    }
+
+    fn play_external_with_context_and_origin(
+        self: &Rc<Self>,
+        media: ExternalMedia,
+        neighbours: Option<NeighbourContext>,
+        automatic_advance: Option<AutomaticAdvance>,
+        origin: PodcastOrigin,
+    ) -> Result<(), PlaybackError> {
         match media {
             media @ ExternalMedia::Podcast { episode_id, .. } => {
                 let row = reprise_core::podcasts::store::episode(&self.conn, episode_id)
                     .map_err(|error| PlaybackError::Backend(error.to_string()))?;
                 self.prepare_external_playback();
-                self.begin_podcast(media, row, neighbours, automatic_advance)
+                self.begin_podcast(media, row, neighbours, automatic_advance, origin)
             }
             media @ ExternalMedia::Radio { station_id, .. } => {
                 self.prepare_external_playback();
@@ -121,6 +145,7 @@ impl PlayerController {
             Some(episode),
             Some(neighbours),
             Some(automatic_advance),
+            PodcastOrigin::Direct,
         )
     }
 
@@ -134,12 +159,39 @@ impl PlayerController {
         *self.now_playing.borrow_mut() = None;
     }
 
+    pub(in crate::ui) fn play_queued_episode(self: &Rc<Self>, episode_id: i64) {
+        let episode = reprise_core::podcasts::store::episode(&self.conn, episode_id);
+        match episode {
+            Ok(Some(episode)) => {
+                if let Err(error) = self.play_external_with_origin(
+                    media_from_episode(&episode),
+                    PodcastOrigin::ManualQueue,
+                ) {
+                    tracing::error!(%error, episode_id, "queued episode playback failed");
+                }
+            }
+            Ok(None) => {
+                tracing::info!(
+                    episode_id,
+                    "queued episode is no longer subscribed; dropping it silently"
+                );
+                self.advance_playback(super::up_next_transport::AdvanceReason::Automatic);
+            }
+            Err(error) => {
+                tracing::error!(%error, episode_id, "could not resolve queued episode");
+                super::playback_faults::note_episode_skip(&self.consecutive_episode_skips);
+                self.skip_after_failure();
+            }
+        }
+    }
+
     fn begin_podcast(
         self: &Rc<Self>,
         media: ExternalMedia,
         row: Option<EpisodeRow>,
         neighbours: Option<NeighbourContext>,
         automatic_advance: Option<AutomaticAdvance>,
+        origin: PodcastOrigin,
     ) -> Result<(), PlaybackError> {
         let episode_id = session_id(&media);
         let kind = row
@@ -163,6 +215,7 @@ impl PlayerController {
             published_at,
             art_url,
             phase,
+            origin,
             resume: ResumePolicy::new(resume_ms),
             position_ms: resume_ms.max(0),
             last_persisted_ms: resume_ms.max(0),
@@ -221,7 +274,7 @@ impl PlayerController {
             };
             match result {
                 Ok(audio) => {
-                    if !controller.external_generation_matches(generation, PlaybackMode::Podcast) {
+                    if !controller.external_generation_matches_podcast(generation) {
                         return;
                     }
                     if let Some(duration) = audio.duration_secs {
@@ -255,7 +308,7 @@ impl PlayerController {
         source: EpisodeSource,
         resume_ms: i64,
     ) -> Result<(), PlaybackError> {
-        if !self.external_generation_matches(generation, PlaybackMode::Podcast) {
+        if !self.external_generation_matches_podcast(generation) {
             return Ok(());
         }
         let result = match source {
@@ -266,6 +319,7 @@ impl PlayerController {
             self.fail_podcast(generation, &error.to_string());
             return Err(error);
         }
+        self.flush_episode_skip_toast();
         let should_seek = {
             let mut external = self.external.borrow_mut();
             let Some(ExternalSession::Podcast(session)) = external.session.as_mut() else {
@@ -411,7 +465,7 @@ impl PlayerController {
 
     pub(in crate::ui) fn toggle_external_pause(self: &Rc<Self>) -> bool {
         match self.playback_mode() {
-            PlaybackMode::Podcast => {
+            PlaybackMode::Podcast | PlaybackMode::QueuedEpisode => {
                 match self.player.toggle_pause() {
                     Ok(PlaybackState::Paused) => {
                         self.persist_external_position();
@@ -524,58 +578,12 @@ impl PlayerController {
         self.notify_external_changed();
     }
 
-    pub(in crate::ui) fn finish_external(self: &Rc<Self>) {
-        match self.playback_mode() {
-            PlaybackMode::Podcast => self.finish_podcast(),
-            PlaybackMode::Radio => self.handle_external_error("Radio stream ended".into()),
-            PlaybackMode::Preview => self.end_preview(),
-            PlaybackMode::Queue => {}
-        }
-    }
-
-    fn finish_podcast(self: &Rc<Self>) {
-        let finished = {
-            let external = self.external.borrow();
-            let Some(ExternalSession::Podcast(session)) = external.session.as_ref() else {
-                return;
-            };
-            (
-                session_id(&session.media),
-                session.subscription_id,
-                session.published_at,
-            )
-        };
-        let now = chrono::Utc::now().timestamp();
-        if let Err(error) = reprise_core::podcasts::store::mark_played(&self.conn, finished.0, now)
-        {
-            tracing::error!(%error, episode_id = finished.0, "could not mark podcast played");
-        }
-        let next = reprise_core::podcasts::query::next_unplayed_of_show(
-            &self.conn, finished.1, finished.2,
-        )
-        .ok()
-        .flatten();
-        let callbacks = {
-            let mut external = self.external.borrow_mut();
-            external.play_next = next.clone();
-            external.clear_session();
-            external.play_next_callbacks.clone()
-        };
-        if let Some(next) = next {
-            self.show_play_next_offer(&next);
-            for callback in callbacks {
-                callback(next.clone());
-            }
-        }
-        self.update_mpris_mirror(MprisPlaybackStatus::Stopped);
-        self.sync_state(PlaybackState::Stopped);
-        self.sync_clear_track();
-        self.notify_external_changed();
-    }
-
     pub(in crate::ui) fn handle_external_error(self: &Rc<Self>, message: String) {
         if self.playback_mode() != PlaybackMode::Radio {
-            if self.playback_mode() == PlaybackMode::Podcast {
+            if matches!(
+                self.playback_mode(),
+                PlaybackMode::Podcast | PlaybackMode::QueuedEpisode
+            ) {
                 let generation = self.external.borrow().generation;
                 self.fail_podcast(generation, &message);
             }

@@ -21,7 +21,7 @@ use crate::ui::up_next_transport::AdvanceReason;
 use reprise_core::db::Db;
 use reprise_core::media_integration::MprisPlaybackStatus;
 use reprise_core::queue::Queue;
-use reprise_core::up_next::UpNextQueue;
+use reprise_core::up_next::{QueueItem, UpNextQueue};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ToggleAction {
@@ -58,7 +58,7 @@ fn queue_purge_plan(ids: &[i64], loaded: Option<i64>) -> QueuePurgePlan {
 
 fn toggle_action(
     status: MprisPlaybackStatus,
-    current_track: Option<i64>,
+    current_track: Option<QueueItem>,
     has_pending: bool,
 ) -> ToggleAction {
     match (status, current_track, has_pending) {
@@ -103,7 +103,7 @@ fn move_rows_to_front(
                     continue;
                 };
                 if let Some(id) = context.id_at_order_position(position) {
-                    ids.push(id);
+                    ids.push(QueueItem::Track(id));
                     snapshot_positions.push(position);
                 }
             }
@@ -138,7 +138,7 @@ fn apply_queue_reorder(
                 return false;
             };
             context.remove_order_positions(&[position]);
-            manual.insert(insert_at, id);
+            manual.insert(insert_at, QueueItem::Track(id));
             true
         }
     }
@@ -154,8 +154,14 @@ impl PlayerController {
     /// purge path as hard deletes and auto-clean.
     pub(in crate::ui) fn scan_queue_purge_ids(&self) -> Vec<i64> {
         let mut candidates = self.queue.borrow().ids_in_order();
-        candidates.extend_from_slice(self.up_next.borrow().ids());
-        if let Some(id) = self.current_up_next.get() {
+        candidates.extend(
+            self.up_next
+                .borrow()
+                .ids()
+                .iter()
+                .filter_map(|item| item.track_id()),
+        );
+        if let Some(id) = self.current_up_next.get().and_then(QueueItem::track_id) {
             candidates.push(id);
         }
         let result = {
@@ -169,6 +175,37 @@ impl PlayerController {
                 Vec::new()
             }
         }
+    }
+
+    pub(in crate::ui) fn purge_unavailable_episodes(&self) -> usize {
+        let available = match reprise_core::queries::query_available_episode_ids(&self.conn) {
+            Ok(ids) => ids,
+            Err(error) => {
+                tracing::warn!(%error, "could not reconcile unsubscribed queued episodes");
+                return 0;
+            }
+        };
+        let unavailable = self
+            .up_next
+            .borrow()
+            .ids()
+            .iter()
+            .copied()
+            .filter(|item| item.episode_id().is_some_and(|id| !available.contains(&id)))
+            .collect::<Vec<_>>();
+        let removed = self.up_next.borrow_mut().remove_ids(&unavailable);
+        let current_removed = self
+            .current_up_next
+            .get()
+            .is_some_and(|item| item.episode_id().is_some_and(|id| !available.contains(&id)));
+        if current_removed {
+            self.current_up_next.set(None);
+        }
+        let changed = removed + usize::from(current_removed);
+        if changed > 0 {
+            self.notify_queue_changed();
+        }
+        changed
     }
 
     pub(in crate::ui) fn notify_queue_changed(&self) {
@@ -201,26 +238,36 @@ impl PlayerController {
         let current = self
             .current_up_next
             .get()
-            .or_else(|| self.queue.borrow().current());
+            .or_else(|| self.queue.borrow().current().map(QueueItem::Track));
         let has_pending = !self.up_next.borrow().is_empty();
         match toggle_action(status, current, has_pending) {
             ToggleAction::StartCurrent => {
-                if let Some(id) = current {
+                if let Some(item) = current {
+                    let id = item.id();
                     let playable = {
-                        let conn = &self.conn;
-                        reprise_core::queries::query_live_track_ids(conn)
-                            .map(|ids| ids.contains(&id))
+                        match item {
+                            QueueItem::Track(id) => {
+                                reprise_core::queries::query_live_track_ids(&self.conn)
+                                    .map(|ids| ids.contains(&id))
+                            }
+                            QueueItem::Episode(id) => {
+                                reprise_core::queries::query_available_episode_ids(&self.conn)
+                                    .map(|ids| ids.contains(&id))
+                            }
+                        }
                     };
                     match playable {
-                        Ok(true) => self.play_track_id_with_change(
-                            id,
+                        Ok(true) => self.present_queue_item(
+                            item,
+                            crate::ui::player_controller::StartPlayback::Yes,
                             crate::ui::current_track_selection::CurrentTrackChange::ExplicitTransport,
                         ),
                         Ok(false) => self.advance_playback(AdvanceReason::Manual),
                         Err(error) => {
                             tracing::error!(%error, id, "could not validate restored current track; trying it directly");
-                            self.play_track_id_with_change(
-                                id,
+                            self.present_queue_item(
+                                item,
+                                crate::ui::player_controller::StartPlayback::Yes,
                                 crate::ui::current_track_selection::CurrentTrackChange::ExplicitTransport,
                             );
                         }
@@ -286,7 +333,7 @@ impl PlayerController {
     /// MPRIS's `Previous` method. Borrow discipline: `previous()` runs
     /// inside this one `let` statement, so the borrow drops before
     /// `play_track_id`/`reset_to_stopped` run.
-    pub(in crate::ui) fn previous(&self) {
+    pub(in crate::ui) fn previous(self: &Rc<Self>) {
         if self.playback_mode() != super::preview::PlaybackMode::Queue {
             return;
         }
@@ -296,7 +343,7 @@ impl PlayerController {
     /// Steps the queue to the next track and plays it (or resets to stopped
     /// if there is none) — shared by the bar's next button and MPRIS's
     /// `Next` method. Same borrow discipline as `previous`.
-    pub(in crate::ui) fn next(&self) {
+    pub(in crate::ui) fn next(self: &Rc<Self>) {
         if self.playback_mode() != super::preview::PlaybackMode::Queue {
             return;
         }
@@ -311,7 +358,8 @@ impl PlayerController {
             tracing::debug!("append to queue: nothing to add; ignoring");
             return;
         }
-        self.up_next.borrow_mut().append(ids);
+        let items = track_items(ids);
+        self.up_next.borrow_mut().append(&items);
         self.notify_queue_changed();
         let queue_len = self.up_next.borrow().len();
         self.sync_transport_enabled(true);
@@ -330,7 +378,7 @@ impl PlayerController {
     /// `reset_to_stopped` run — see the module's `## Queue borrow
     /// discipline` doc section.
     pub fn play_from_view(
-        &self,
+        self: &Rc<Self>,
         ids: Vec<i64>,
         start_index: usize,
         origin: super::play_origin::PlayOrigin,
@@ -376,7 +424,13 @@ impl PlayerController {
             .as_ref()
             .map(|np| np.id)
             .filter(|id| Some(*id) != deferred);
-        let play_next = self.up_next.borrow().ids().to_vec();
+        let play_next = self
+            .up_next
+            .borrow()
+            .ids()
+            .iter()
+            .filter_map(|item| item.track_id())
+            .collect::<Vec<_>>();
         let (context_count, context_sequence, context_start) = {
             let queue = self.queue.borrow();
             (
@@ -415,7 +469,8 @@ impl PlayerController {
             tracing::debug!("play next: nothing to add; ignoring");
             return;
         }
-        self.up_next.borrow_mut().prepend(ids);
+        let items = track_items(ids);
+        self.up_next.borrow_mut().prepend(&items);
         self.notify_queue_changed();
         self.sync_transport_enabled(true);
         tracing::info!(added = ids.len(), "tracks queued to play next");
@@ -460,7 +515,7 @@ impl PlayerController {
     /// it and playback continues with the next target (or stops cleanly).
     /// Returns how many rows were removed (for the toast).
     pub(in crate::ui) fn remove_queue_rows(
-        &self,
+        self: &Rc<Self>,
         rows: &[crate::ui::track_list::queue_row_mapping::QueueRow],
     ) -> usize {
         use crate::ui::track_list::queue_row_mapping::QueueRow;
@@ -561,7 +616,7 @@ impl PlayerController {
     /// (`Queue::play_order_position_now`) — so a click never drops the rest of
     /// the queue out of view; the Now Playing row restarts itself.
     pub(in crate::ui) fn jump_to_queue_row(
-        &self,
+        self: &Rc<Self>,
         row: crate::ui::track_list::queue_row_mapping::QueueRow,
     ) {
         use crate::ui::track_list::queue_row_mapping::QueueRow;
@@ -597,10 +652,11 @@ impl PlayerController {
                 let current = self
                     .current_up_next
                     .get()
-                    .or_else(|| self.queue.borrow().current());
-                if let Some(id) = current {
-                    self.play_track_id_with_change(
-                        id,
+                    .or_else(|| self.queue.borrow().current().map(QueueItem::Track));
+                if let Some(item) = current {
+                    self.present_queue_item(
+                        item,
+                        crate::ui::player_controller::StartPlayback::Yes,
                         crate::ui::current_track_selection::CurrentTrackChange::ExplicitTransport,
                     );
                 }
@@ -634,7 +690,7 @@ impl PlayerController {
         let playing = self.now_playing.borrow().as_ref().map(|track| track.id);
         let plan = queue_purge_plan(ids, playing);
         let playing_from_up_next = plan.after_loaded_track.is_some()
-            && self.current_up_next.get() == plan.after_loaded_track;
+            && self.current_up_next.get().and_then(QueueItem::track_id) == plan.after_loaded_track;
         let context_changed = if playing_from_up_next {
             self.queue.borrow_mut().remove_ids(ids)
         } else {
@@ -645,10 +701,12 @@ impl PlayerController {
                 .is_some_and(|id| queue.remove_ids_except_current(&[id]) > 0);
             immediate || duplicates
         };
-        let pending_changed = self.up_next.borrow_mut().remove_ids(ids) > 0;
+        let items = track_items(ids);
+        let pending_changed = self.up_next.borrow_mut().remove_ids(&items) > 0;
         if self
             .current_up_next
             .get()
+            .and_then(QueueItem::track_id)
             .is_some_and(|id| ids.contains(&id))
             && !playing_from_up_next
         {
@@ -679,6 +737,10 @@ impl PlayerController {
             );
         }
     }
+}
+
+fn track_items(ids: &[i64]) -> Vec<QueueItem> {
+    ids.iter().copied().map(QueueItem::Track).collect()
 }
 
 #[cfg(test)]

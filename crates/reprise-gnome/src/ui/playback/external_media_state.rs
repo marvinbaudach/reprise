@@ -158,6 +158,12 @@ impl AutomaticAdvance {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum PodcastOrigin {
+    Direct,
+    ManualQueue,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct PodcastSession {
     pub(super) media: ExternalMedia,
@@ -167,6 +173,7 @@ pub(super) struct PodcastSession {
     pub(super) published_at: Option<i64>,
     pub(super) art_url: Option<String>,
     pub(super) phase: PodcastPhase,
+    pub(super) origin: PodcastOrigin,
     pub(super) resume: ResumePolicy,
     pub(super) position_ms: i64,
     pub(super) last_persisted_ms: i64,
@@ -252,7 +259,10 @@ pub(super) enum NeighbourTransport {
 impl ExternalPlaybackState {
     pub(in crate::ui) fn mode(&self) -> PlaybackMode {
         match self.session {
-            Some(ExternalSession::Podcast(_)) => PlaybackMode::Podcast,
+            Some(ExternalSession::Podcast(ref session)) => match session.origin {
+                PodcastOrigin::Direct => PlaybackMode::Podcast,
+                PodcastOrigin::ManualQueue => PlaybackMode::QueuedEpisode,
+            },
             Some(ExternalSession::Radio(_)) => PlaybackMode::Radio,
             None if self.preview_path.is_some() => PlaybackMode::Preview,
             None => PlaybackMode::Queue,
@@ -320,7 +330,10 @@ impl ExternalPlaybackState {
     pub(super) fn snapshot(&self) -> Option<ExternalPlaybackSnapshot> {
         match self.session.as_ref()? {
             ExternalSession::Podcast(session) => Some(ExternalPlaybackSnapshot {
-                mode: PlaybackMode::Podcast,
+                mode: match session.origin {
+                    PodcastOrigin::Direct => PlaybackMode::Podcast,
+                    PodcastOrigin::ManualQueue => PlaybackMode::QueuedEpisode,
+                },
                 media: session.media.clone(),
                 art_url: session.art_url.clone(),
                 can_go_previous: session
@@ -496,6 +509,7 @@ mod tests {
             published_at: None,
             art_url: None,
             phase: PodcastPhase::Playing,
+            origin: PodcastOrigin::Direct,
             resume: ResumePolicy::new(0),
             position_ms: 0,
             last_persisted_ms: 0,

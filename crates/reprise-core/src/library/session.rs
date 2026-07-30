@@ -8,7 +8,7 @@ use thiserror::Error;
 
 use crate::queries::BrowseFilter;
 use crate::queue::{Queue, QueueSnapshot, Repeat};
-use crate::up_next::UpNextQueue;
+use crate::up_next::{QueueItem, UpNextQueue};
 use crate::{browser::BrowserPlace, view_source::ViewSource};
 
 pub const SESSION_KEY: &str = "ui.session.v1";
@@ -51,7 +51,7 @@ pub struct SessionState {
     #[serde(default, deserialize_with = "deserialize_up_next")]
     pub up_next: UpNextQueue,
     #[serde(default, deserialize_with = "deserialize_current_up_next")]
-    pub current_up_next: Option<i64>,
+    pub current_up_next: Option<QueueItem>,
     /// Where the current playback snapshot was started from (QUE-1's
     /// "Up Next · from <source>" and NAV-9's jump target). `None` for
     /// sessions saved before the field existed or when nothing was played.
@@ -295,15 +295,27 @@ where
     D: serde::Deserializer<'de>,
 {
     let value = serde_json::Value::deserialize(deserializer)?;
-    Ok(serde_json::from_value(value).unwrap_or_default())
+    if let Ok(queue) = serde_json::from_value(value.clone()) {
+        return Ok(queue);
+    }
+    let legacy = serde_json::from_value::<Vec<i64>>(value).unwrap_or_default();
+    let mut queue = UpNextQueue::default();
+    let legacy = legacy.into_iter().map(QueueItem::Track).collect::<Vec<_>>();
+    queue.append(&legacy);
+    Ok(queue)
 }
 
-fn deserialize_current_up_next<'de, D>(deserializer: D) -> Result<Option<i64>, D::Error>
+fn deserialize_current_up_next<'de, D>(deserializer: D) -> Result<Option<QueueItem>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
     let value = serde_json::Value::deserialize(deserializer)?;
-    Ok(serde_json::from_value(value).unwrap_or_default())
+    if let Ok(item) = serde_json::from_value(value.clone()) {
+        return Ok(item);
+    }
+    Ok(serde_json::from_value::<i64>(value)
+        .ok()
+        .map(QueueItem::Track))
 }
 
 /// Tolerates a removed `BrowserPlace` enum variant in old session JSON: an
@@ -598,17 +610,43 @@ mod tests {
     }
 
     #[test]
+    fn legacy_plain_id_queue_migrates_every_entry_to_a_track_item() {
+        let mut value = serde_json::to_value(full_state()).unwrap();
+        value["up_next"] = serde_json::json!([30, 40, 30]);
+        value["current_up_next"] = serde_json::json!(20);
+
+        let state: SessionState = serde_json::from_value(value).unwrap();
+
+        assert_eq!(
+            state.up_next.ids(),
+            &[
+                crate::up_next::QueueItem::Track(30),
+                crate::up_next::QueueItem::Track(40),
+                crate::up_next::QueueItem::Track(30),
+            ]
+        );
+        assert_eq!(
+            state.current_up_next,
+            Some(crate::up_next::QueueItem::Track(20))
+        );
+        assert_eq!(state.source, SessionSource::Playlist(7));
+    }
+
+    #[test]
     fn up_next_fields_round_trip_and_pending_state_is_bounded() {
         let conn = conn();
         let mut state = full_state();
-        state.up_next.append(&[30, 40]);
-        state.current_up_next = Some(20);
+        state
+            .up_next
+            .append(&[QueueItem::Track(30), QueueItem::Track(40)]);
+        state.current_up_next = Some(QueueItem::Track(20));
         save(&conn, &state).unwrap();
         assert_eq!(load(&conn), state);
 
         let len = usize::try_from(crate::queries::QUEUE_LIMIT).unwrap() + 1;
         state.up_next = crate::up_next::UpNextQueue::default();
-        state.up_next.append(&(0..len as i64).collect::<Vec<_>>());
+        let items = (0..len as i64).map(QueueItem::Track).collect::<Vec<_>>();
+        state.up_next.append(&items);
         save(&conn, &state).unwrap();
         assert_eq!(load(&conn).up_next.len(), len - 1);
     }

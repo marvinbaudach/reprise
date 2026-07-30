@@ -41,6 +41,14 @@ use crate::ui::up_next_transport::AdvanceReason;
 use reprise_core::playback::{playback_fault_policy, PlaybackFaultNotice};
 use reprise_core::queries;
 
+pub(super) fn note_episode_skip(run: &std::cell::Cell<usize>) {
+    run.set(run.get().saturating_add(1));
+}
+
+pub(super) fn take_episode_skip_count(run: &std::cell::Cell<usize>) -> usize {
+    run.replace(0)
+}
+
 fn notice_text(notice: PlaybackFaultNotice, title: &str) -> String {
     match notice {
         PlaybackFaultNotice::TrackUnavailableSkipped => {
@@ -51,6 +59,13 @@ fn notice_text(notice: PlaybackFaultNotice, title: &str) -> String {
 }
 
 impl PlayerController {
+    pub(in crate::ui) fn flush_episode_skip_toast(&self) {
+        let count = take_episode_skip_count(&self.consecutive_episode_skips);
+        if count > 0 {
+            self.show_toast(&strings::skipped_unplayable_episodes(count));
+        }
+    }
+
     /// Diagnoses and reports a playback failure for `id` (shared by
     /// `player_controller.rs`'s `play_track_id` `Player::play` failure
     /// branch and its `apply_event`'s `PlayerEvent::Error` arm — see this
@@ -60,7 +75,7 @@ impl PlayerController {
     /// one function even though only `play_track_id` already has a summary
     /// in hand — one extra small `SELECT` on the failure path is a non-issue
     /// next to never crashing.
-    pub(in crate::ui) fn handle_unplayable_track(&self, id: i64) {
+    pub(in crate::ui) fn handle_unplayable_track(self: &std::rc::Rc<Self>, id: i64) {
         let summary = {
             let conn = &self.conn;
             queries::query_track_summary(conn, id)
@@ -132,7 +147,7 @@ impl PlayerController {
     /// combined context/Up Next bound — gives up, toasts, and resets to
     /// stopped instead of spinning through entirely broken candidates. All
     /// queue borrows end before advancing playback.
-    pub(in crate::ui) fn skip_after_failure(&self) {
+    pub(in crate::ui) fn skip_after_failure(self: &std::rc::Rc<Self>) {
         let queue_len = failure_limit(
             self.failure_skip_limit.get(),
             self.queue.borrow().len(),
@@ -151,10 +166,15 @@ impl PlayerController {
             );
             self.consecutive_skips.set(0);
             self.failure_skip_limit.set(0);
+            let episode_skips = take_episode_skip_count(&self.consecutive_episode_skips);
             self.reset_to_stopped();
-            self.show_toast(&strings::text(
-                strings::PLAYBACK_STOPPED_TOO_MANY_UNPLAYABLE,
-            ));
+            if episode_skips > 0 {
+                self.show_toast(&strings::skipped_unplayable_episodes(episode_skips));
+            } else {
+                self.show_toast(&strings::text(
+                    strings::PLAYBACK_STOPPED_TOO_MANY_UNPLAYABLE,
+                ));
+            }
             return;
         }
 
@@ -188,6 +208,17 @@ fn failure_limit(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fb_6_consecutive_episode_faults_collapse_to_one_toast_count() {
+        let run = std::cell::Cell::new(0);
+        super::note_episode_skip(&run);
+        super::note_episode_skip(&run);
+        super::note_episode_skip(&run);
+
+        assert_eq!(super::take_episode_skip_count(&run), 3);
+        assert_eq!(super::take_episode_skip_count(&run), 0);
+    }
 
     #[test]
     fn missing_fault_notice_matches_fb_6_copy_exactly() {

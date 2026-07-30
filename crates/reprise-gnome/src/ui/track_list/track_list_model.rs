@@ -312,33 +312,45 @@ impl TrackListModel {
             tracing::error!("TrackListModel::set_query: connection not set");
             return;
         };
+        let queue_items = queue_ids
+            .iter()
+            .copied()
+            .map(reprise_core::up_next::QueueItem::Track)
+            .collect::<Vec<_>>();
 
         let new_total = if exclude_ai {
             let conn_ref = &conn;
-            queries::query_track_count_browsed_ai(conn_ref, source, filter, browse, queue_ids, true)
-                .map_or_else(
-                    |error| {
-                        tracing::error!(%error, "failed to count non-AI tracks for query");
-                        0
-                    },
-                    |count| {
-                        let total = count.max(0) as u32;
-                        // The count is exact now, but the "play all" queue this view
-                        // feeds still caps at QUEUE_LIMIT — warn per convention when
-                        // the view is that large, so the truncation is not silent.
-                        if queries::is_queue_capped(total as usize) {
-                            tracing::warn!(
-                                limit = queries::QUEUE_LIMIT,
-                                "AI-filtered view queue capped at {} tracks",
-                                queries::QUEUE_LIMIT
-                            );
-                        }
-                        total
-                    },
-                )
+            queries::query_track_count_browsed_ai(
+                conn_ref,
+                source,
+                filter,
+                browse,
+                &queue_items,
+                true,
+            )
+            .map_or_else(
+                |error| {
+                    tracing::error!(%error, "failed to count non-AI tracks for query");
+                    0
+                },
+                |count| {
+                    let total = count.max(0) as u32;
+                    // The count is exact now, but the "play all" queue this view
+                    // feeds still caps at QUEUE_LIMIT — warn per convention when
+                    // the view is that large, so the truncation is not silent.
+                    if queries::is_queue_capped(total as usize) {
+                        tracing::warn!(
+                            limit = queries::QUEUE_LIMIT,
+                            "AI-filtered view queue capped at {} tracks",
+                            queries::QUEUE_LIMIT
+                        );
+                    }
+                    total
+                },
+            )
         } else {
             let conn_ref = &conn;
-            queries::query_track_count_browsed(conn_ref, source, filter, browse, queue_ids)
+            queries::query_track_count_browsed(conn_ref, source, filter, browse, &queue_items)
                 .map_or_else(
                     |error| {
                         tracing::error!(%error, source = %source.label(), "failed to count tracks for query");
@@ -433,6 +445,11 @@ impl TrackListModel {
 
         let rows = {
             let conn = &conn;
+            let queue_items = queue_ids
+                .iter()
+                .copied()
+                .map(reprise_core::up_next::QueueItem::Track)
+                .collect::<Vec<_>>();
             queries::query_track_window_browsed_ai(
                 conn,
                 &source,
@@ -442,7 +459,7 @@ impl TrackListModel {
                 &browse,
                 query_offset,
                 i64::from(WINDOW_SIZE),
-                &queue_ids,
+                &queue_items,
                 exclude_ai,
                 // INST-10: the AI badge marks every AI-manipulated row, so the
                 // windowed query always projects the real `is_ai` column.

@@ -182,7 +182,7 @@ use reprise_core::media_integration::{
 use reprise_core::playback::{PlaybackBackend, PlaybackState, PlayerEvent, SpectrumFrame};
 use reprise_core::queries;
 use reprise_core::queue::Queue;
-use reprise_core::up_next::UpNextQueue;
+use reprise_core::up_next::{QueueItem, UpNextQueue};
 use reprise_core::waveform::WaveformBackend;
 
 type ViewRefillIds = Rc<dyn Fn() -> Vec<i64>>;
@@ -261,7 +261,7 @@ pub struct PlayerController {
     /// enabling it for a genuinely empty library.
     pub(in crate::ui) library_has_tracks: Cell<bool>,
     pub(in crate::ui) up_next: RefCell<UpNextQueue>,
-    pub(in crate::ui) current_up_next: Cell<Option<i64>>,
+    pub(in crate::ui) current_up_next: Cell<Option<QueueItem>>,
     /// Catalog id removed while its player-owned snapshot remains loaded.
     /// The exact current queue slot survives until `present_track` hands off.
     pub(in crate::ui) deferred_queue_purge_id: Cell<Option<i64>>,
@@ -313,6 +313,7 @@ pub struct PlayerController {
     /// tolerance` doc section.
     pub(in crate::ui) consecutive_skips: Cell<usize>,
     pub(in crate::ui) failure_skip_limit: Cell<usize>,
+    pub(in crate::ui) consecutive_episode_skips: Cell<usize>,
     /// Shared with `mpris.rs`'s D-Bus thread — see the module's `## MPRIS`
     /// doc section. Written by `mpris_mirror.rs`'s `update_mpris_mirror`,
     /// never read directly here (the MPRIS thread is the only reader).
@@ -479,6 +480,7 @@ impl PlayerController {
             view_refill_ids: RefCell::new(None),
             consecutive_skips: Cell::new(0),
             failure_skip_limit: Cell::new(0),
+            consecutive_episode_skips: Cell::new(0),
             mpris_state,
             agent_queue_state,
             now_playing: Rc::new(RefCell::new(None)),
@@ -582,7 +584,7 @@ impl PlayerController {
     /// failure has no title/path to toast from, so those just log and go
     /// straight to `skip_after_failure`. `pub(in crate::ui)` so `mpris_mirror.rs`
     /// and `playback_faults.rs` can call it too.
-    pub(in crate::ui) fn play_track_id(&self, id: i64) {
+    pub(in crate::ui) fn play_track_id(self: &Rc<Self>, id: i64) {
         self.play_track_id_with_change(
             id,
             super::current_track_selection::CurrentTrackChange::PlaybackStarted,
@@ -590,7 +592,7 @@ impl PlayerController {
     }
 
     pub(in crate::ui) fn play_track_id_with_change(
-        &self,
+        self: &Rc<Self>,
         id: i64,
         change: super::current_track_selection::CurrentTrackChange,
     ) {
@@ -605,7 +607,7 @@ impl PlayerController {
     /// handed off gaplessly to this track's pre-fed URI (see `advance_
     /// gaplessly`), so only the metadata/UI catch up — no `play()`, no gap.
     pub(in crate::ui) fn present_track(
-        &self,
+        self: &Rc<Self>,
         id: i64,
         start: StartPlayback,
         change: super::current_track_selection::CurrentTrackChange,
@@ -636,7 +638,7 @@ impl PlayerController {
                 {
                     self.deferred_queue_purge_id.set(None);
                     let context_changed = self.queue.borrow_mut().remove_ids(&[deleted]);
-                    if self.current_up_next.get() == Some(deleted) {
+                    if self.current_up_next.get() == Some(QueueItem::Track(deleted)) {
                         self.current_up_next.set(None);
                     }
                     if context_changed {
@@ -690,7 +692,7 @@ impl PlayerController {
                         tracing::info!(
                             track_id = id,
                             gapless = matches!(start, StartPlayback::No),
-                            from_up_next = self.current_up_next.get() == Some(id),
+                            from_up_next = self.current_up_next.get() == Some(QueueItem::Track(id)),
                             "playback started"
                         );
                         self.begin_scrobble(reprise_core::scrobbling::TrackMetadata {
@@ -708,6 +710,7 @@ impl PlayerController {
                         self.notify_queue_changed();
                         self.consecutive_skips.set(0);
                         self.failure_skip_limit.set(0);
+                        self.flush_episode_skip_toast();
                         // `reset_to_stopped` disables prev/next, and MPRIS
                         // can resume from Stopped through this arm without
                         // going through `play_from_view` — re-derive and
