@@ -258,6 +258,7 @@ fn episode_row(
     root.add_css_class("reprise-podcast-episode-row");
     // a11y-semantics: role=button name=podcast-episode-row state=focusable action=activate
     root.set_focusable(true);
+    // input-parity: ACC-8 keyboard=episode-row-enter-space
     root.set_cursor_from_name(Some("pointer"));
     root.set_accessible_role(gtk4::AccessibleRole::Button);
     root.update_property(&[gtk4::accessible::Property::Label(&strings::text(
