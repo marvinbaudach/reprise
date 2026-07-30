@@ -148,26 +148,36 @@ pub(crate) fn migrate_v34(conn: &Connection) -> Result<(), rusqlite::Error> {
     transaction.commit()
 }
 
+// The version alone is not evidence that this migration ran. Schema numbers in
+// this repository were reassigned during development, so a database can carry a
+// `user_version` past 40 that some other build wrote, without these two columns
+// ever having been added — and then no later start repairs it, because the
+// version says there is nothing to do. Both columns are therefore part of the
+// guard, exactly as in `migrate_v34`, `migrate_v43` and `migrate_v47`, and the
+// version is raised with `max` so repairing an old migration on a newer
+// database cannot roll its schema version backwards.
 pub(crate) fn migrate_v40(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if version >= 40 {
+    let has_sync_to_phone = has_column(conn, "podcast_subscriptions", "sync_to_phone")?;
+    let has_downloaded_bytes = has_column(conn, "podcast_episodes", "downloaded_bytes")?;
+    if version >= 40 && has_sync_to_phone && has_downloaded_bytes {
         return Ok(());
     }
     let transaction = conn.unchecked_transaction()?;
-    if !has_column(&transaction, "podcast_subscriptions", "sync_to_phone")? {
+    if !has_sync_to_phone {
         transaction.execute(
             "ALTER TABLE podcast_subscriptions
              ADD COLUMN sync_to_phone INTEGER NOT NULL DEFAULT 0",
             [],
         )?;
     }
-    if !has_column(&transaction, "podcast_episodes", "downloaded_bytes")? {
+    if !has_downloaded_bytes {
         transaction.execute(
             "ALTER TABLE podcast_episodes ADD COLUMN downloaded_bytes INTEGER",
             [],
         )?;
     }
-    transaction.pragma_update(None, "user_version", 40)?;
+    transaction.pragma_update(None, "user_version", version.max(40))?;
     transaction.commit()
 }
 
