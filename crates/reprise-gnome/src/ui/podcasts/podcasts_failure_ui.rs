@@ -82,15 +82,28 @@ impl PodcastsView {
                 let support = if matches!(error.kind(), SourceErrorKind::Offline) {
                     strings::source_offline_description(&last_checked)
                 } else {
-                    strings::source_cached_content_still_works(cached_items, &last_checked)
+                    strings::source_cached_episodes_still_work(cached_items, &last_checked)
                 };
                 self.error_banner
                     .show(&presentation, &support, &error, &occurred_at, on_action);
             }
             FailureSurface::FullArea => {
                 self.error_banner.hide();
-                self.failure_state
-                    .show(&presentation, &error, &occurred_at, on_action);
+                let description = match self.kind {
+                    reprise_core::podcasts::PodcastKind::Rss => {
+                        strings::SOURCE_PODCAST_EMPTY_FAILURE_DESCRIPTION
+                    }
+                    reprise_core::podcasts::PodcastKind::Youtube => {
+                        strings::SOURCE_YOUTUBE_EMPTY_FAILURE_DESCRIPTION
+                    }
+                };
+                self.failure_state.show(
+                    &presentation,
+                    &strings::text(description),
+                    &error,
+                    &occurred_at,
+                    on_action,
+                );
                 self.stack.set_visible_child_name(FAILURE_PAGE);
             }
         }

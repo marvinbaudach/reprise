@@ -30,10 +30,13 @@ pub const SOURCE_YOUTUBE_LIMITING: &str =
 pub const SOURCE_YOUTUBE_HELPER_UPDATE: &str = N_!("The YouTube helper needs an update");
 pub const SOURCE_OFFLINE: &str = N_!("You're offline");
 pub const SOURCE_SEVERAL_FAILED: &str = N_!("Couldn't refresh {count} sources");
-pub const SOURCE_CACHED_CONTENT_STILL_WORKS: &str =
-    N_!("Showing {count} saved items from {time}. Downloads play as usual.");
-pub const SOURCE_EMPTY_FAILURE_DESCRIPTION: &str = N_!(
-    "Nothing is downloaded from this source yet, so there's nothing to show. Your other sources and your music are unaffected."
+pub const SOURCE_CACHED_EPISODES_STILL_WORK: &str =
+    N_!("Showing the {count} episodes from {time}. Downloads play as usual.");
+pub const SOURCE_YOUTUBE_EMPTY_FAILURE_DESCRIPTION: &str = N_!(
+    "Nothing is downloaded from this channel yet, so there's nothing to show. Your other channels and your music are unaffected."
+);
+pub const SOURCE_PODCAST_EMPTY_FAILURE_DESCRIPTION: &str = N_!(
+    "Nothing is downloaded from this podcast yet, so there's nothing to show. Your other podcasts and your music are unaffected."
 );
 pub const SOURCE_OFFLINE_DESCRIPTION: &str =
     N_!("Showing downloaded content. Last checked {time}.");
@@ -57,9 +60,9 @@ pub fn source_several_failed(count: usize) -> String {
     formatted(SOURCE_SEVERAL_FAILED, &[("count", &count.to_string())])
 }
 
-pub fn source_cached_content_still_works(count: usize, time: &str) -> String {
+pub fn source_cached_episodes_still_work(count: usize, time: &str) -> String {
     formatted(
-        SOURCE_CACHED_CONTENT_STILL_WORKS,
+        SOURCE_CACHED_EPISODES_STILL_WORK,
         &[("count", &count.to_string()), ("time", time)],
     )
 }

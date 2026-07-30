@@ -14,6 +14,24 @@ pub(super) enum EpisodeNetworkPresentation {
     UnavailableNow,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct DownloadFailurePresentation<'a> {
+    pub(super) tooltip: &'a str,
+    pub(super) visible_detail: Option<&'a str>,
+}
+
+pub(super) fn download_failure_presentation(
+    state: &DownloadState,
+) -> Option<DownloadFailurePresentation<'_>> {
+    let DownloadState::Failed { message } = state else {
+        return None;
+    };
+    Some(DownloadFailurePresentation {
+        tooltip: message,
+        visible_detail: None,
+    })
+}
+
 pub(super) fn episode_network_presentation(
     connectivity: Connectivity,
     state: &DownloadState,
@@ -190,6 +208,21 @@ mod tests {
         assert_eq!(
             episode_network_presentation(Connectivity::Online, &DownloadState::NotDownloaded, true,),
             EpisodeNetworkPresentation::UnavailableNow
+        );
+    }
+
+    #[test]
+    fn pod_13_download_failure_reason_is_available_only_as_a_tooltip() {
+        let state = DownloadState::Failed {
+            message: "podcast source timed out".into(),
+        };
+
+        assert_eq!(
+            download_failure_presentation(&state),
+            Some(DownloadFailurePresentation {
+                tooltip: "podcast source timed out",
+                visible_detail: None,
+            })
         );
     }
 }

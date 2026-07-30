@@ -3,7 +3,7 @@ use reprise_core::connectivity::Connectivity;
 use reprise_core::podcasts::download_state::DownloadState;
 
 use super::podcasts_download_presentation::{
-    episode_network_presentation, EpisodeNetworkPresentation,
+    download_failure_presentation, episode_network_presentation, EpisodeNetworkPresentation,
 };
 use super::podcasts_groups::DownloadRowWidgets;
 use crate::ui::strings;
@@ -72,6 +72,9 @@ pub(super) fn download_status(state: &DownloadState) -> gtk4::Widget {
     if matches!(state, DownloadState::NotDownloaded) {
         return root.upcast();
     }
+    if let Some(failure) = download_failure_presentation(state) {
+        root.set_tooltip_text(Some(failure.tooltip));
+    }
     root.set_size_request(110, -1);
     let label = gtk4::Label::new(None);
     label.set_xalign(1.0);
@@ -106,15 +109,8 @@ pub(super) fn download_status(state: &DownloadState) -> gtk4::Widget {
         DownloadState::Missing => {
             label.set_text(&strings::text(strings::PODCAST_DOWNLOAD_MISSING));
         }
-        DownloadState::Failed { message } => {
+        DownloadState::Failed { .. } => {
             label.set_text(&strings::text(strings::PODCAST_DOWNLOAD_FAILED));
-            let reason = gtk4::Label::new(Some(message));
-            reason.set_xalign(1.0);
-            reason.set_wrap(true);
-            reason.set_justify(gtk4::Justification::Right);
-            reason.add_css_class("caption");
-            reason.add_css_class("dim-label");
-            root.append(&reason);
         }
     }
     root.prepend(&label);

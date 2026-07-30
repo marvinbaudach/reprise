@@ -115,13 +115,13 @@ impl SourceFailureState {
     pub(super) fn show(
         &self,
         presentation: &SourceFailurePresentation,
+        description: &str,
         error: &SourceError,
         occurred_at: &str,
         on_action: impl Fn(FailureAction) + 'static,
     ) {
         self.title.set_text(&headline_text(presentation.headline));
-        self.body
-            .set_text(&strings::text(strings::SOURCE_EMPTY_FAILURE_DESCRIPTION));
+        self.body.set_text(description);
         while let Some(child) = self.actions.first_child() {
             self.actions.remove(&child);
         }

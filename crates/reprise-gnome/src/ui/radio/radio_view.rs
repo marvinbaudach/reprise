@@ -267,9 +267,8 @@ impl RadioView {
     }
 
     /// `NET-3b`: sets the connectivity seam this view's Play affordance
-    /// consults. Not wired to any real OS signal yet — see
-    /// `reprise_core::connectivity` for what such a signal could and could
-    /// not know; this is the injection point a future binding would call.
+    /// consults. The window composition root feeds it from the one shared
+    /// `gio::NetworkMonitor`; tests can inject the same explicit value.
     pub(in crate::ui) fn set_connectivity(&self, value: Connectivity) {
         self.shared.connectivity.set(value);
         render_rows(&self.shared);

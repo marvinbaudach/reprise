@@ -144,6 +144,19 @@ mod tests {
     }
 
     #[test]
+    fn net_3_cached_and_empty_support_copy_names_episodes_and_the_channel() {
+        assert_eq!(
+            strings::source_cached_episodes_still_work(10, "4 hours ago"),
+            "Showing the 10 episodes from 4 hours ago. Downloads play as usual."
+        );
+        assert_eq!(
+            strings::text(strings::SOURCE_YOUTUBE_EMPTY_FAILURE_DESCRIPTION),
+            "Nothing is downloaded from this channel yet, so there's nothing to show. \
+             Your other channels and your music are unaffected."
+        );
+    }
+
+    #[test]
     fn pod_17_refresh_failures_use_the_banner_and_never_the_footer() {
         let requests = include_str!("podcasts/podcasts_view_requests.rs");
         assert!(requests.contains("show_refresh_failure"));
