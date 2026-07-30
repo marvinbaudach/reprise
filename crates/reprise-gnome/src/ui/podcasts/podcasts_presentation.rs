@@ -133,7 +133,7 @@ pub(super) fn relative_date(timestamp: Option<i64>, today: NaiveDate) -> String 
         .and_then(|value| DateTime::<Utc>::from_timestamp(value, 0))
         .map(|value| value.with_timezone(&Local).date_naive())
     else {
-        return "—".to_owned();
+        return String::new();
     };
     if date == today {
         strings::text(strings::PODCAST_TODAY)
@@ -147,27 +147,56 @@ pub(super) fn relative_date(timestamp: Option<i64>, today: NaiveDate) -> String 
 }
 
 pub(super) fn duration(duration_secs: Option<i64>) -> String {
-    duration_secs.map_or_else(
-        || "—".to_owned(),
-        |seconds| {
-            let seconds = seconds.max(0);
-            format!("{}:{:02}", seconds / 3_600, (seconds % 3_600) / 60)
-        },
-    )
+    let Some(seconds) = duration_secs.filter(|seconds| *seconds >= 0) else {
+        return String::new();
+    };
+    if seconds < 60 {
+        strings::text(strings::PODCAST_DURATION_UNDER_MINUTE)
+    } else if seconds < 3_600 {
+        strings::podcast_duration_minutes(seconds / 60)
+    } else {
+        strings::podcast_duration_hours(seconds / 3_600, (seconds % 3_600) / 60)
+    }
 }
 
-pub(super) fn file_size(bytes: Option<i64>) -> String {
-    let Some(bytes) = bytes.filter(|bytes| *bytes >= 0) else {
-        return "—".to_owned();
-    };
+pub(super) fn file_size(bytes: Option<i64>) -> Option<String> {
+    let bytes = bytes.filter(|bytes| *bytes > 0)?;
     let bytes = bytes as f64;
     const MIB: f64 = 1_048_576.0;
     const GIB: f64 = 1_073_741_824.0;
     if bytes >= GIB {
-        format!("{:.1} GB", bytes / GIB)
+        Some(format!("{:.1} GB", bytes / GIB))
     } else {
-        format!("{:.1} MB", bytes / MIB)
+        Some(format!("{:.1} MB", bytes / MIB))
     }
+}
+
+pub(super) fn detail_line<'a>(parts: impl IntoIterator<Item = &'a str>) -> String {
+    parts
+        .into_iter()
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(" · ")
+}
+
+pub(super) fn author_line<'a>(title: &str, author: Option<&'a str>) -> Option<&'a str> {
+    let author = author.map(str::trim).filter(|author| !author.is_empty())?;
+    let normalized_title = title.trim().to_lowercase();
+    let normalized_author = author.to_lowercase();
+    if normalized_title == normalized_author {
+        return None;
+    }
+    if let Some(remainder) = normalized_title.strip_prefix(&normalized_author) {
+        if remainder
+            .chars()
+            .next()
+            .is_some_and(|character| !character.is_alphanumeric())
+        {
+            return None;
+        }
+    }
+    Some(author)
 }
 
 pub(super) fn source_pill(kind: PodcastKind) -> Pill {
@@ -303,8 +332,8 @@ mod tests {
             relative_date(Some(today_timestamp - 86_400), today),
             "Yesterday"
         );
-        assert_eq!(duration(Some(4_533)), "1:15");
-        assert_eq!(file_size(Some(41_943_040)), "40.0 MB");
+        assert_eq!(duration(Some(4_533)), "1 h 15");
+        assert_eq!(file_size(Some(41_943_040)), Some("40.0 MB".to_owned()));
         assert_eq!(source_pill(PodcastKind::Rss).label, "RSS");
         let mut episode = row(1, Some(today_timestamp), PodcastKind::Rss);
         assert_eq!(status_pill(&episode).label, "New");
@@ -312,6 +341,67 @@ mod tests {
         assert_eq!(status_pill(&episode).label, "Resume");
         episode.played_at = Some(1);
         assert_eq!(status_pill(&episode).label, "Played");
+    }
+
+    #[test]
+    fn duration_uses_unambiguous_minute_and_hour_boundaries() {
+        let cases = [
+            (None, ""),
+            (Some(-1), ""),
+            (Some(0), "< 1 min"),
+            (Some(59), "< 1 min"),
+            (Some(60), "1 min"),
+            (Some(3_599), "59 min"),
+            (Some(3_600), "1 h 00"),
+            (Some(7_500), "2 h 05"),
+        ];
+
+        for (value, expected) in cases {
+            assert_eq!(duration(value), expected, "duration {value:?}");
+        }
+    }
+
+    #[test]
+    fn file_size_omits_unknown_zero_and_negative_values() {
+        assert_eq!(file_size(None), None);
+        assert_eq!(file_size(Some(-1)), None);
+        assert_eq!(file_size(Some(0)), None);
+        assert_eq!(file_size(Some(1_048_576)), Some("1.0 MB".to_owned()));
+        assert_eq!(file_size(Some(1_073_741_824)), Some("1.0 GB".to_owned()));
+    }
+
+    #[test]
+    fn missing_dates_and_detail_parts_render_no_placeholders_or_empty_separators() {
+        let today = NaiveDate::from_ymd_opt(2026, 7, 26).unwrap();
+
+        assert_eq!(relative_date(None, today), "");
+        assert_eq!(
+            detail_line(["", "", strings::PODCAST_STATUS_NEW]),
+            strings::PODCAST_STATUS_NEW
+        );
+        assert_eq!(
+            detail_line(["Today", "", strings::PODCAST_STATUS_NEW]),
+            "Today · New"
+        );
+        assert_eq!(
+            strings::podcast_group_facts("15 episodes", 0, "", ""),
+            "15 episodes · 0 new"
+        );
+    }
+
+    #[test]
+    fn author_line_hides_title_prefixes_but_keeps_distinct_publishers() {
+        assert_eq!(author_line("The Daily", Some("The Daily")), None);
+        assert_eq!(
+            author_line("The Daily – News Briefing", Some("The Daily")),
+            None
+        );
+        assert_eq!(
+            author_line("The Daily", Some("The New York Times")),
+            Some("The New York Times")
+        );
+        assert_eq!(author_line("Artist Notes", Some("Art")), Some("Art"));
+        assert_eq!(author_line("Show", Some("   ")), None);
     }
 
     #[test]

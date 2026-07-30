@@ -12,7 +12,8 @@ use reprise_core::podcasts::{EpisodeRow, PodcastKind, SourceGroup};
 
 use super::podcasts_context_menu;
 use super::podcasts_presentation::{
-    duration, file_size, on_phone, relative_date, status_pill, RenderedSourceGroup, SourceSummary,
+    author_line, detail_line, duration, file_size, on_phone, relative_date, status_pill,
+    RenderedSourceGroup, SourceSummary,
 };
 use crate::ui::strings;
 
@@ -150,11 +151,7 @@ fn group_header(
     title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
     title.add_css_class("heading");
     identity.append(&title);
-    if let Some(author) = group
-        .author
-        .as_deref()
-        .filter(|author| !author.trim().is_empty())
-    {
+    if let Some(author) = author_line(&group.title, group.author.as_deref()) {
         let author = gtk4::Label::new(Some(author));
         author.set_xalign(0.0);
         author.set_ellipsize(gtk4::pango::EllipsizeMode::End);
@@ -164,11 +161,12 @@ fn group_header(
     }
     header.append(&identity);
 
+    let downloaded = file_size(Some(summary.downloaded_bytes));
     let facts = strings::podcast_group_facts(
         &strings::podcast_episode_count(summary.episode_count),
         summary.unplayed_count,
         &relative_date(summary.latest_published_at, Local::now().date_naive()),
-        &file_size(Some(summary.downloaded_bytes)),
+        downloaded.as_deref().unwrap_or_default(),
     );
     let facts = gtk4::Label::new(Some(&facts));
     facts.add_css_class("caption");
@@ -260,12 +258,9 @@ fn episode_row(
     title.set_xalign(0.0);
     title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
     identity.append(&title);
-    let detail = format!(
-        "{} · {} · {}",
-        relative_date(row.published_at, Local::now().date_naive()),
-        duration(row.duration_secs),
-        status_pill(row).label
-    );
+    let date = relative_date(row.published_at, Local::now().date_naive());
+    let duration = duration(row.duration_secs);
+    let detail = detail_line([date.as_str(), duration.as_str(), status_pill(row).label]);
     let detail = gtk4::Label::new(Some(&detail));
     detail.set_xalign(0.0);
     detail.add_css_class("caption");

@@ -16,6 +16,7 @@ mod podcasts_model;
 mod podcasts_presentation;
 mod podcasts_removal;
 mod podcasts_scroller;
+mod podcasts_title;
 mod podcasts_view;
 mod podcasts_view_data;
 mod podcasts_worker;

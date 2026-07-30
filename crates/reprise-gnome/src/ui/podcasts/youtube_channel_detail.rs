@@ -18,7 +18,7 @@ use super::podcasts_context_menu::PodcastSyncDevice;
 use super::podcasts_download_presentation;
 use super::podcasts_groups::{self, DownloadRowWidgets};
 use super::podcasts_presentation::{
-    duration, on_phone, relative_date, status_pill, RenderedSourceGroup,
+    detail_line, duration, on_phone, relative_date, status_pill, RenderedSourceGroup,
 };
 use crate::ui::strings;
 
@@ -547,12 +547,11 @@ impl YoutubeChannelDetail {
         title.set_xalign(0.0);
         title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
         copy.append(&title);
-        let subtitle = gtk4::Label::new(Some(&format!(
-            "{} · {} · {}",
-            relative_date(episode.published_at, Local::now().date_naive()),
-            duration(episode.duration_secs),
-            status_pill(episode).label
-        )));
+        let date = relative_date(episode.published_at, Local::now().date_naive());
+        let duration = duration(episode.duration_secs);
+        let subtitle_text =
+            detail_line([date.as_str(), duration.as_str(), status_pill(episode).label]);
+        let subtitle = gtk4::Label::new(Some(&subtitle_text));
         subtitle.set_xalign(0.0);
         subtitle.add_css_class("caption");
         subtitle.add_css_class("dim-label");
