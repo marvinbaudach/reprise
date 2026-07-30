@@ -325,7 +325,12 @@ fn download_passes_audio_only_output_arguments() {
             "--print",
             "after_move:filepath",
             "-o",
-            output.to_str().unwrap(),
+            // Not `output` itself: a trailing `.part` is yt-dlp's own
+            // marker and gets stripped, so the executor asks for a name it
+            // honours literally and moves the result onto `output`
+            // afterwards. See
+            // `a_youtube_download_is_not_handed_an_output_path_yt_dlp_reserves`.
+            &format!("{}.download", output.display()),
             "https://www.youtube.com/watch?v=v1",
         ]
     );
@@ -781,3 +786,55 @@ fn assert_process_exits(pid: u32) {
 
 #[cfg(not(target_os = "linux"))]
 fn assert_process_exits(_pid: u32) {}
+
+/// yt-dlp reserves a trailing `.part` for its own partial downloads: it
+/// strips that suffix from the output template, writes the media under the
+/// shortened name, and its post-processor then fails to find what it just
+/// wrote — the run ends in `exit 1` with "Postprocessing: WARNING: unable to
+/// obtain file audio codec with ffprobe" and no episode.
+///
+/// `downloads::partial_path` appends exactly that suffix, because the atomic
+/// publish contract needs a temporary name, and the value was handed straight
+/// to `-o`. For RSS that is harmless — Reprise writes the file itself — but
+/// every YouTube download failed. Verified against the real binary
+/// (2026.07.04): the identical command differs only in `-o`, and succeeds
+/// with `episode.opus` where it exits 1 with `episode.part`.
+///
+/// The fake below reproduces that contract rather than the symptom: it
+/// refuses any `-o` ending in `.part` and otherwise behaves like a successful
+/// run. Handing the reserved path back turns this red.
+#[test]
+fn a_youtube_download_is_not_handed_an_output_path_yt_dlp_reserves() {
+    let directory = tempfile::tempdir().unwrap();
+    let output = directory.path().join("episode.opus.part");
+    let binary = fake_binary(
+        directory.path(),
+        "target=''\n\
+         while [ $# -gt 0 ]; do\n\
+           if [ \"$1\" = '-o' ]; then target=$2; fi\n\
+           shift\n\
+         done\n\
+         case \"$target\" in\n\
+           *.part)\n\
+             printf '%s\\n' 'ERROR: Postprocessing: WARNING: unable to obtain file audio codec with ffprobe' >&2\n\
+             exit 1\n\
+             ;;\n\
+         esac\n\
+         printf downloaded > \"$target\"\n\
+         printf '%s\\n' \"$target\"",
+    );
+    let runner = YtDlp::with_binary_and_timeouts(binary, short_timeouts());
+
+    let result = runner.download("https://www.youtube.com/watch?v=v1", &output);
+
+    assert!(
+        result.is_ok(),
+        "yt-dlp must not be given a path whose suffix it reserves, got {result:?}"
+    );
+    assert_eq!(
+        fs::read_to_string(&output).unwrap(),
+        "downloaded",
+        "the finished download must still be published at the temporary path \
+         `download_atomically` waits for"
+    );
+}

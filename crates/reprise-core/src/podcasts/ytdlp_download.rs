@@ -3,7 +3,7 @@
 use std::{
     ffi::OsString,
     io::{BufRead, BufReader},
-    path::Path,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::mpsc::{self, Receiver, RecvTimeoutError},
     thread,
@@ -25,6 +25,15 @@ pub(super) fn download(
     output: &Path,
     on_progress: &mut dyn FnMut(DownloadProgress),
 ) -> Result<(), PodcastError> {
+    // `output` is `downloads::partial_path`'s temporary name, so it ends in
+    // `.part` — a suffix yt-dlp reserves for its own partial downloads and
+    // strips from the output template. It then writes the media under the
+    // shortened name and its post-processor fails to find it, ending the run
+    // in `exit 1`. Give yt-dlp a name it does not reserve; it reports what it
+    // actually produced through `--print after_move:filepath`, and
+    // `finalize_download` moves that onto `output` as before. The name stays
+    // prefixed with `output`, so `cleanup_artifacts` still sweeps it.
+    let requested_output = reserved_free_output(output);
     let mut command = Command::new(binary);
     command
         .args([
@@ -41,7 +50,7 @@ pub(super) fn download(
             OsString::from("--print"),
             OsString::from("after_move:filepath"),
             OsString::from("-o"),
-            output.as_os_str().to_os_string(),
+            requested_output.as_os_str().to_os_string(),
             OsString::from(video_url),
         ])
         .stdin(Stdio::null())
@@ -223,6 +232,18 @@ fn parse_bytes(value: &str) -> Option<u64> {
         .ok()
         .filter(|value| value.is_finite() && *value >= 0.0)
         .map(|value| value as u64)
+}
+
+/// An output template yt-dlp will honour literally.
+///
+/// A trailing `.part` is yt-dlp's own marker for an unfinished download and is
+/// removed from the output name, which breaks the post-processing step that
+/// follows. Appending rather than replacing keeps the result a strict
+/// extension of `output`, which is what [`cleanup_artifacts`] matches on.
+fn reserved_free_output(output: &Path) -> PathBuf {
+    let mut name = output.as_os_str().to_os_string();
+    name.push(".download");
+    PathBuf::from(name)
 }
 
 fn cleanup_artifacts(output: &Path) {
