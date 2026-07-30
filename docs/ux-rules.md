@@ -2062,11 +2062,12 @@ property is set and yet nothing happens.
   Like `NET-3b` and `NET-3c`, this rule claims the **core contract only**. The
   projection, the conversions and the detail accessor exist and are tested; the
   surfaces that render them do not exist yet. There is no `Details` block to
-  open in the app today, no banner reads these states, and the background
-  schedulers do not yet consult `retry_delay` — the podcast and YouTube refresh
-  loops still poll on their fixed interval, so a host that is rate-limiting
-  Reprise is not yet backed off from. Those are the presentation half of
-  `NET-3`, and `NET-3` stays `[planned]` until they land.
+  open in the app today, and no banner reads these states. The podcast and
+  YouTube refresh loop records a failure immediately, then consults
+  `retry_delay` before another provider attempt; its bounded per-source attempt
+  count resets on success, and exhaustion returns the source to its fixed
+  refresh interval. The missing surfaces are the presentation half of `NET-3`,
+  and `NET-3` stays `[planned]` until they land.
 - **LYR-1** [planned] [core] — Local embedded lyrics and `.lrc` sidecars
   are shown independently of the Online Lyrics module. Reprise does not
   yet read these local formats today; the rule stays planned until this
