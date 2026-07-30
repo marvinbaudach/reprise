@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-30 13:51+0200\n"
+"POT-Creation-Date: 2026-07-30 15:03+0200\n"
 "PO-Revision-Date: 2026-07-20 11:38+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Hindi\n"
@@ -2236,7 +2236,21 @@ msgstr ""
 msgid "Use Radio"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_online_sources.rs:54
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:50
+msgid ""
+"Reprise can now follow podcasts, YouTube channels, radio and concerts — all "
+"off by default."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:52
+msgid "Review in Preferences"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:53
+msgid "Not now"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_online_sources.rs:59
 msgid "Online sources are turned off — enable them in Preferences"
 msgstr ""
 
