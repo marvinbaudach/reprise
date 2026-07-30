@@ -385,9 +385,11 @@ lässt **`mpris:length` bei `live_stream` weg**; `metadata_differs` sieht die ne
 
 Drei Schärfungen aus dem Grill (External sieht nach außen nie kaputt aus):
 
-- **`can_go_next`/`can_go_previous` = false, sobald `external_ref` gesetzt ist** (External kennt
-  keine Queue-Nachbarn — sauberes Prädikat statt No-op-Buttons); Play/Pause/Seek bleiben für
-  Episoden voll funktional.
+- **Durch POD-20 eingeengt:** `can_go_next`/`can_go_previous` sind nur bei External **ohne**
+  Episoden-Nachbarn false. Eine Podcast-/YouTube-Session mit eingefrorenem
+  Listen-Kontext meldet die tatsächlich vorhandenen Nachbarn; Radio und
+  kontextlose Episoden bleiben false. So folgen Media Keys denselben
+  Grenzen wie die sichtbaren Buttons, ohne External zu Queue-Mitgliedern zu machen.
 - **`mpris:artUrl` = Remote-URL-Pass-through:** Podcast → persistierte `image_url`, Radio →
   `favicon_url` (falls vorhanden). GNOME Shell lädt selbst — es gibt weiterhin **keinen
   In-App-Bild-Downloader** (Nicht-Ziel 8 bleibt unangetastet).
@@ -703,7 +705,8 @@ startet das echte yt-dlp.
   Timeout-Kill, ENOENT, Version-Probe.
 - **Playback-Core:** `play_uri`-Schema-Validierung; MPRIS-Prädikat-Matrix
   (`can_seek`/`can_pause`/`build_metadata` mit `live_stream`/`external_ref`;
-  `can_go_next`/`can_go_previous` = false bei External; Länge weggelassen; `artUrl` aus
+  `can_go_next`/`can_go_previous` = Episoden-Nachbarn bei kontextgebundenem External, sonst false;
+  Länge weggelassen; `artUrl` aus
   `image_url`/`favicon_url`; `metadata_differs` bei ICY-Wechsel); `PlaybackMode`-Matrix (nur Queue
   advanced; Podcast-Finish → played + Play-next-Angebot; Radio-Finish → Reconnect-Policy);
   **Radio-Pause-Zustandsmatrix** (paused→Play = Reconnect mit Elapsed-Reset; Reconnect-Fehler →
@@ -872,7 +875,8 @@ Agenten — gelernte Lektion). Jeder Task: TDD (Red zuerst), volle Gate-Battery,
 - **Paket E · Playback-Integration (Owner E; E1→E2→E3 sequenziell).**
   - **E1 · Backend + MPRIS-Core.** Dateien: `reprise-core/src/playback.rs` (StreamTags,
     play_uri-Trait), `media_integration.rs` (MprisState-Felder + Prädikate inkl.
-    `can_go_next`/`can_go_previous` = false bei External; `artUrl`-Pass-through in
+    `can_go_next`/`can_go_previous` = false bei External, später durch POD-20 auf External ohne
+    Episoden-Nachbarn eingeengt; `artUrl`-Pass-through in
     `build_metadata`), `platform-linux/src/player.rs` (play_uri-Impl, Tag-Arm), `mpris/state.rs` +
     `mpris/mod.rs`. TDD: Prädikat-Matrix, Schema-Validierung.
   - **E2 · Controller-External-Modus.** Dateien: `ui/playback/external_media.rs` (neu), `preview.rs`

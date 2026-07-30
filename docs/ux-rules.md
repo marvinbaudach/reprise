@@ -3722,6 +3722,12 @@ listening statistics.
   cached or downloaded episode exists, the same information and actions use
   the shared full-area failure state instead. Neither surface renders raw
   provider, transport, database or helper text outside Details.
+- **POD-20** [active] [gtk] — A playing podcast or YouTube episode has
+  neighbours: ⏮/⏭ move to the adjacent row of the list it was started from,
+  in rendered order, without wrapping. The neighbour list is frozen when
+  playback starts. Radio has no neighbours. While any external session is
+  active the lyrics tab is hidden and the panel header shows the episode
+  instead of "Nothing playing".
 - **RAD-1** [active] [gtk] — Only the currently connected station is
   accented in the table; its state icon, name, now-playing, and row
   tint change together. All others, as well as a presented but

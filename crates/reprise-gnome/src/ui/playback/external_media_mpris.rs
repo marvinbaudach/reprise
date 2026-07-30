@@ -6,8 +6,20 @@ use reprise_core::playback::PlaybackState;
 use crate::ui::player_controller::PlayerController;
 
 use super::external_media::{ExternalMedia, PodcastPhase};
-use super::external_media_state::{ExternalSession, RadioPhase};
+use super::external_media_state::{ExternalSession, NeighbourContext, RadioPhase};
 use super::preview::PlaybackMode;
+
+struct ExternalMprisProjection {
+    external_ref: String,
+    live_stream: bool,
+    title: String,
+    artist: String,
+    art_url: Option<String>,
+    duration_ms: i64,
+    position_ms: i64,
+    can_next: bool,
+    can_prev: bool,
+}
 
 impl PlayerController {
     pub(in crate::ui) fn external_state_changed(&self, state: PlaybackState) {
@@ -60,15 +72,23 @@ impl PlayerController {
                     else {
                         unreachable!("podcast session contains radio media")
                     };
-                    (
-                        format!("podcast/{episode_id}"),
-                        false,
-                        title.clone(),
-                        show.clone(),
-                        session.art_url.clone(),
-                        duration_ms.unwrap_or_default(),
-                        session.position_ms,
-                    )
+                    ExternalMprisProjection {
+                        external_ref: format!("podcast/{episode_id}"),
+                        live_stream: false,
+                        title: title.clone(),
+                        artist: show.clone(),
+                        art_url: session.art_url.clone(),
+                        duration_ms: duration_ms.unwrap_or_default(),
+                        position_ms: session.position_ms,
+                        can_next: session
+                            .neighbours
+                            .as_ref()
+                            .is_some_and(NeighbourContext::has_next),
+                        can_prev: session
+                            .neighbours
+                            .as_ref()
+                            .is_some_and(NeighbourContext::has_previous),
+                    }
                 }
                 Some(ExternalSession::Radio(session)) => {
                     let ExternalMedia::Radio {
@@ -77,19 +97,21 @@ impl PlayerController {
                     else {
                         unreachable!("radio session contains podcast media")
                     };
-                    (
-                        format!("radio/{station_id}"),
-                        true,
-                        session
+                    ExternalMprisProjection {
+                        external_ref: format!("radio/{station_id}"),
+                        live_stream: true,
+                        title: session
                             .presentation
                             .last_title
                             .clone()
                             .unwrap_or_else(|| name.clone()),
-                        name.clone(),
-                        session.art_url.clone(),
-                        0,
-                        0,
-                    )
+                        artist: name.clone(),
+                        art_url: session.art_url.clone(),
+                        duration_ms: 0,
+                        position_ms: 0,
+                        can_next: false,
+                        can_prev: false,
+                    }
                 }
                 None => return,
             }
@@ -98,23 +120,24 @@ impl PlayerController {
             .mpris_state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let position_ms = if mirror.external_ref.as_deref() == Some(projection.0.as_str()) {
-            mirror.position_ms
-        } else {
-            projection.6
-        };
+        let position_ms =
+            if mirror.external_ref.as_deref() == Some(projection.external_ref.as_str()) {
+                mirror.position_ms
+            } else {
+                projection.position_ms
+            };
         *mirror = MprisState {
             status,
             track_id: None,
-            external_ref: Some(projection.0),
-            live_stream: projection.1,
-            title: projection.2,
-            artist: projection.3,
+            external_ref: Some(projection.external_ref),
+            live_stream: projection.live_stream,
+            title: projection.title,
+            artist: projection.artist,
             album: String::new(),
-            art_url: projection.4,
-            duration_ms: projection.5,
-            can_next: false,
-            can_prev: false,
+            art_url: projection.art_url,
+            duration_ms: projection.duration_ms,
+            can_next: projection.can_next,
+            can_prev: projection.can_prev,
             position_ms,
             shuffle: self.queue.borrow().is_shuffled(),
             repeat: self.queue.borrow().repeat(),

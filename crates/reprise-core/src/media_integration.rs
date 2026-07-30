@@ -228,11 +228,11 @@ pub fn can_seek(state: &MprisState) -> bool {
 }
 
 pub fn can_go_next(state: &MprisState) -> bool {
-    state.external_ref.is_none() && state.can_next
+    state.can_next
 }
 
 pub fn can_go_previous(state: &MprisState) -> bool {
-    state.external_ref.is_none() && state.can_prev
+    state.can_prev
 }
 
 /// Whether the `Metadata` dict-valued property needs re-emitting: any field
@@ -515,7 +515,7 @@ mod tests {
     }
 
     #[test]
-    fn rad_2_live_state_disables_seek_and_reports_external_transport_truth() {
+    fn pod_20_external_episode_neighbours_are_mpris_transport_capabilities() {
         let podcast = MprisState {
             track_id: None,
             external_ref: Some("podcast/42".into()),
@@ -527,12 +527,22 @@ mod tests {
         assert!(can_play(&podcast));
         assert!(can_pause(&podcast));
         assert!(can_seek(&podcast));
-        assert!(!can_go_next(&podcast));
-        assert!(!can_go_previous(&podcast));
+        assert!(can_go_next(&podcast));
+        assert!(can_go_previous(&podcast));
+
+        let podcast_without_neighbours = MprisState {
+            can_next: false,
+            can_prev: false,
+            ..podcast.clone()
+        };
+        assert!(!can_go_next(&podcast_without_neighbours));
+        assert!(!can_go_previous(&podcast_without_neighbours));
 
         let radio = MprisState {
             external_ref: Some("radio/7".into()),
             live_stream: true,
+            can_next: false,
+            can_prev: false,
             ..podcast
         };
         assert!(can_play(&radio));

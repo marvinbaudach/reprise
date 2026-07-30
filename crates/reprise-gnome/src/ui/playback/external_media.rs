@@ -13,8 +13,8 @@ use reprise_core::podcasts::{EpisodeRow, PodcastKind};
 use crate::ui::player_controller::PlayerController;
 
 use super::external_media_state::{
-    podcast_source_requires_resolution, ExternalSession, PodcastSession, RadioCommand,
-    RadioSession, ResumePolicy,
+    podcast_source_requires_resolution, AutomaticAdvance, ExternalSession, NeighbourContext,
+    PodcastSession, RadioCommand, RadioSession, ResumePolicy,
 };
 use super::preview::PlaybackMode;
 
@@ -69,12 +69,6 @@ impl PlayerController {
         }
     }
 
-    pub(in crate::ui) fn play_podcast_episode(self: &Rc<Self>, episode: &EpisodeRow) {
-        if let Err(error) = self.play_external(media_from_episode(episode)) {
-            self.show_toast(&error.to_string());
-        }
-    }
-
     pub(in crate::ui) fn stop_podcast_subscription(&self, subscription_id: i64) -> bool {
         let should_stop = self
             .external
@@ -90,6 +84,47 @@ impl PlayerController {
         self: &Rc<Self>,
         media: ExternalMedia,
     ) -> Result<(), PlaybackError> {
+        self.play_external_with_context(media, None, None)
+    }
+
+    pub(super) fn play_external_with_context(
+        self: &Rc<Self>,
+        media: ExternalMedia,
+        neighbours: Option<NeighbourContext>,
+        automatic_advance: Option<AutomaticAdvance>,
+    ) -> Result<(), PlaybackError> {
+        match media {
+            media @ ExternalMedia::Podcast { episode_id, .. } => {
+                let row = reprise_core::podcasts::store::episode(&self.conn, episode_id)
+                    .map_err(|error| PlaybackError::Backend(error.to_string()))?;
+                self.prepare_external_playback();
+                self.begin_podcast(media, row, neighbours, automatic_advance)
+            }
+            media @ ExternalMedia::Radio { station_id, .. } => {
+                self.prepare_external_playback();
+                self.begin_radio(media, station_id);
+                Ok(())
+            }
+        }
+    }
+
+    pub(super) fn play_podcast_row_with_context(
+        self: &Rc<Self>,
+        episode: EpisodeRow,
+        neighbours: NeighbourContext,
+        automatic_advance: AutomaticAdvance,
+    ) -> Result<(), PlaybackError> {
+        let media = media_from_episode(&episode);
+        self.prepare_external_playback();
+        self.begin_podcast(
+            media,
+            Some(episode),
+            Some(neighbours),
+            Some(automatic_advance),
+        )
+    }
+
+    fn prepare_external_playback(&self) {
         self.persist_external_position();
         self.evaluate_play_tracking();
         self.sync_lyrics_track(None);
@@ -97,31 +132,22 @@ impl PlayerController {
         self.max_position_ms.set(0);
         self.player.set_next(None);
         *self.now_playing.borrow_mut() = None;
-
-        match media {
-            media @ ExternalMedia::Podcast { episode_id, .. } => {
-                self.begin_podcast(media, episode_id)
-            }
-            media @ ExternalMedia::Radio { station_id, .. } => {
-                self.begin_radio(media, station_id);
-                Ok(())
-            }
-        }
     }
 
     fn begin_podcast(
         self: &Rc<Self>,
         media: ExternalMedia,
-        episode_id: i64,
+        row: Option<EpisodeRow>,
+        neighbours: Option<NeighbourContext>,
+        automatic_advance: Option<AutomaticAdvance>,
     ) -> Result<(), PlaybackError> {
-        let row = reprise_core::podcasts::store::episode(&self.conn, episode_id)
-            .map_err(|error| PlaybackError::Backend(error.to_string()))?;
+        let episode_id = session_id(&media);
         let kind = row
             .as_ref()
             .map_or(PodcastKind::Rss, |episode| episode.kind);
         let subscription_id = row.as_ref().map_or(0, |episode| episode.subscription_id);
         let published_at = row.as_ref().and_then(|episode| episode.published_at);
-        let art_url = row.and_then(|episode| episode.show_image_url);
+        let art_url = row.and_then(|episode| episode.image_url.or(episode.show_image_url));
         let (title, show, source, resume_ms, duration_ms) = podcast_fields(&media);
         let needs_ytdlp = podcast_source_requires_resolution(kind, &source);
         let phase = if needs_ytdlp {
@@ -131,6 +157,8 @@ impl PlayerController {
         };
         let session = PodcastSession {
             media,
+            neighbours,
+            automatic_advance,
             subscription_id,
             published_at,
             art_url,
@@ -220,7 +248,7 @@ impl PlayerController {
     }
 
     fn start_podcast_source(
-        &self,
+        self: &Rc<Self>,
         generation: u64,
         episode_id: i64,
         source: EpisodeSource,
@@ -246,6 +274,7 @@ impl PlayerController {
                 return Ok(());
             }
             session.phase = PodcastPhase::Playing;
+            session.automatic_advance = None;
             resume_ms > 0
         };
         if should_seek {
@@ -652,21 +681,6 @@ impl PlayerController {
         self.notify_external_changed();
     }
 
-    fn fail_podcast(&self, generation: u64, message: &str) {
-        if !self.external_generation_matches(generation, PlaybackMode::Podcast) {
-            return;
-        }
-        if let Some(ExternalSession::Podcast(session)) = self.external.borrow_mut().session.as_mut()
-        {
-            session.phase = PodcastPhase::Failed;
-            session.error = Some(message.to_owned());
-        }
-        self.show_toast(message);
-        self.sync_state(PlaybackState::Stopped);
-        self.update_external_mpris(MprisPlaybackStatus::Stopped);
-        self.notify_external_changed();
-    }
-
     fn set_podcast_phase(&self, phase: PodcastPhase) {
         if let Some(ExternalSession::Podcast(session)) = self.external.borrow_mut().session.as_mut()
         {
@@ -690,12 +704,12 @@ impl PlayerController {
         }
     }
 
-    fn external_generation_matches(&self, generation: u64, mode: PlaybackMode) -> bool {
+    pub(super) fn external_generation_matches(&self, generation: u64, mode: PlaybackMode) -> bool {
         let external = self.external.borrow();
         external.generation == generation && external.mode() == mode
     }
 
-    fn notify_external_changed(&self) {
+    pub(super) fn notify_external_changed(&self) {
         let (snapshot, callbacks) = {
             let external = self.external.borrow();
             (external.snapshot(), external.changed_callbacks.clone())

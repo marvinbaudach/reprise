@@ -56,6 +56,64 @@ fn play_9_idle_play_is_reachable_without_enabling_queue_navigation() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn pod_20_external_transport_sensitivity_matches_neighbour_edges_and_radio() {
+    use crate::ui::playback::external_media::{
+        EpisodeSource, ExternalMedia, ExternalPlaybackSnapshot, PodcastPhase, RadioPresentation,
+        StreamTags,
+    };
+    use crate::ui::playback::preview::PlaybackMode;
+
+    gtk4::init().unwrap();
+    let bar = PlayerBar::new();
+    let episode = |can_go_previous, can_go_next| ExternalPlaybackSnapshot {
+        mode: PlaybackMode::Podcast,
+        media: ExternalMedia::Podcast {
+            episode_id: 7,
+            title: "Episode".into(),
+            show: "Show".into(),
+            source: EpisodeSource::Url("https://example.test/episode.mp3".into()),
+            resume_ms: 0,
+            duration_ms: None,
+        },
+        art_url: None,
+        can_go_previous,
+        can_go_next,
+        stream_tags: StreamTags::default(),
+        podcast_phase: Some(PodcastPhase::Playing),
+        radio: None,
+        error: None,
+    };
+
+    bar.set_external_snapshot(Some(&episode(false, true)));
+    assert!(!bar.prev_button.is_sensitive());
+    assert!(bar.next_button.is_sensitive());
+    bar.set_external_snapshot(Some(&episode(true, false)));
+    assert!(bar.prev_button.is_sensitive());
+    assert!(!bar.next_button.is_sensitive());
+
+    let radio = ExternalPlaybackSnapshot {
+        mode: PlaybackMode::Radio,
+        media: ExternalMedia::Radio {
+            station_id: 9,
+            name: "Radio".into(),
+            stream_url: "https://radio.test/live".into(),
+            uuid: None,
+        },
+        art_url: None,
+        can_go_previous: false,
+        can_go_next: false,
+        stream_tags: StreamTags::default(),
+        podcast_phase: None,
+        radio: Some(RadioPresentation::connected()),
+        error: None,
+    };
+    bar.set_external_snapshot(Some(&radio));
+    assert!(!bar.prev_button.is_sensitive());
+    assert!(!bar.next_button.is_sensitive());
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn mot_5_play_pause_pulses_on_state_change() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();

@@ -8,7 +8,8 @@ impl PodcastsView {
         let group = gio::SimpleActionGroup::new();
         self.add_target_action(&group, podcasts_context_menu::ACTION_PLAY, |view, id| {
             if let Ok(Some(row)) = podcasts::store::episode(&view.conn, id) {
-                (view.callbacks.on_episode_activated)(row);
+                let episode_ids = view.neighbour_ids_for_episode(id);
+                (view.callbacks.on_episode_activated)(row, episode_ids);
             }
         });
         self.add_target_action(
@@ -103,6 +104,13 @@ impl PodcastsView {
             callback(&view, id);
         });
         group.add_action(&action);
+    }
+
+    fn neighbour_ids_for_episode(&self, episode_id: i64) -> Vec<i64> {
+        if let Some(ids) = self.youtube_detail.neighbour_ids_for_episode(episode_id) {
+            return ids;
+        }
+        episode_ids_in_rendered_order(&self.groups.borrow())
     }
 
     pub(super) fn open_add_dialog(self: &Rc<Self>) {

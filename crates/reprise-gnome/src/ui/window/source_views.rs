@@ -42,9 +42,9 @@ pub(in crate::ui) fn install(
     let callbacks = crate::ui::podcasts::PodcastsCallbacks::new(
         {
             let player = player.map(Rc::downgrade);
-            move |episode| {
+            move |episode, episode_ids| {
                 if let Some(player) = player.as_ref().and_then(std::rc::Weak::upgrade) {
-                    player.play_podcast_episode(&episode);
+                    player.play_podcast_episode(&episode, &episode_ids);
                 } else {
                     tracing::warn!(
                         episode_id = episode.id,
