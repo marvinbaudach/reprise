@@ -710,3 +710,7 @@ mod test_support;
 #[cfg(all(test, unix))]
 #[path = "ytdlp_tests.rs"]
 mod tests;
+
+#[cfg(all(test, unix))]
+#[path = "ytdlp_failure_tests.rs"]
+mod failure_tests;
