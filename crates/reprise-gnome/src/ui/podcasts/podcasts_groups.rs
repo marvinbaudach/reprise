@@ -1,6 +1,6 @@
 //! Channel/show-grouped podcast and YouTube rows.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
@@ -15,6 +15,7 @@ use super::podcasts_presentation::{
     author_line, detail_line, duration, file_size, on_phone, relative_date, status_pill,
     RenderedSourceGroup, SourceSummary,
 };
+use super::podcasts_title::TitleParts;
 use crate::ui::strings;
 
 #[derive(Clone)]
@@ -86,7 +87,7 @@ fn build_group(
         }
     });
     expander.add_css_class("reprise-podcast-group");
-    expander.set_label_widget(Some(&group_header(
+    let (header, unsubscribe) = group_header(
         group,
         &rendered.summary,
         context.connected_devices,
@@ -95,21 +96,38 @@ fn build_group(
             .get(&group.subscription_id)
             .map_or(&[], Vec::as_slice),
         context.images_allowed,
-    )));
+    );
+    expander.set_label_widget(Some(&header));
+    reveal_unsubscribe_on_hover_or_focus(&expander, &unsubscribe);
 
     let episodes = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     episodes.add_css_class("reprise-podcast-episodes");
+    let titles = group
+        .episodes
+        .iter()
+        .map(|episode| episode.title.as_str())
+        .collect::<Vec<_>>();
     for episode in &group.episodes {
         let state = context
             .download_states
             .get(&episode.id)
             .cloned()
             .unwrap_or(DownloadState::NotDownloaded);
+        let title_parts = if group.kind == PodcastKind::Youtube {
+            super::podcasts_title::split_repeated_suffix(&titles, &episode.title)
+        } else {
+            TitleParts {
+                distinct: episode.title.clone(),
+                dimmed: None,
+            }
+        };
         episodes.append(&episode_row(
             episode,
+            &title_parts,
             context.playing_episode == Some(episode.id),
             &state,
             download_widgets,
+            context.images_allowed,
         ));
     }
     expander.set_child(Some(&episodes));
@@ -122,7 +140,7 @@ fn group_header(
     connected_devices: &[podcasts_context_menu::PodcastSyncDevice],
     selected_device_ids: &[String],
     images_allowed: bool,
-) -> gtk4::Widget {
+) -> (gtk4::Widget, gtk4::Button) {
     let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
     header.set_hexpand(true);
     header.set_margin_top(10);
@@ -190,27 +208,12 @@ fn group_header(
     let unsubscribe = gtk4::Button::from_icon_name("starred-symbolic");
     unsubscribe.add_css_class("flat");
     unsubscribe.add_css_class("accent");
-    unsubscribe.set_focusable(false);
+    unsubscribe.set_focusable(true);
     unsubscribe.set_opacity(0.0);
     unsubscribe.set_tooltip_text(Some(&strings::text(strings::PODCAST_UNSUBSCRIBE)));
     unsubscribe.set_action_name(Some("podcasts.unsubscribe"));
     unsubscribe.set_action_target_value(Some(&group.subscription_id.to_variant()));
     header.append(&unsubscribe);
-    let hover = gtk4::EventControllerMotion::new();
-    let hovered_unsubscribe = unsubscribe.downgrade();
-    hover.connect_enter(move |_, _, _| {
-        if let Some(unsubscribe) = hovered_unsubscribe.upgrade() {
-            unsubscribe.set_opacity(1.0);
-        }
-    });
-    let hovered_unsubscribe = unsubscribe.downgrade();
-    hover.connect_leave(move |_| {
-        if let Some(unsubscribe) = hovered_unsubscribe.upgrade() {
-            unsubscribe.set_opacity(0.0);
-        }
-    });
-    header.add_controller(hover);
-
     let menu = gtk4::MenuButton::builder()
         .icon_name("view-more-symbolic")
         .menu_model(&podcasts_context_menu::build_source(
@@ -222,39 +225,155 @@ fn group_header(
     menu.add_css_class("flat");
     menu.set_tooltip_text(Some(&strings::text(strings::PODCAST_MORE_SOURCE_OPTIONS)));
     header.append(&menu);
-    header.upcast()
+    (header.upcast(), unsubscribe)
 }
 
-fn episode_row(
+fn reveal_unsubscribe_on_hover_or_focus(expander: &gtk4::Expander, unsubscribe: &gtk4::Button) {
+    let hovered = Rc::new(Cell::new(false));
+    let hover = gtk4::EventControllerMotion::new();
+    let hovered_state = hovered.clone();
+    let hovered_unsubscribe = unsubscribe.downgrade();
+    hover.connect_enter(move |_, _, _| {
+        hovered_state.set(true);
+        if let Some(unsubscribe) = hovered_unsubscribe.upgrade() {
+            unsubscribe.set_opacity(1.0);
+        }
+    });
+    let hovered_state = hovered.clone();
+    let hovered_unsubscribe = unsubscribe.downgrade();
+    hover.connect_leave(move |_| {
+        hovered_state.set(false);
+        if let Some(unsubscribe) = hovered_unsubscribe.upgrade() {
+            unsubscribe.set_opacity(if unsubscribe.has_focus() { 1.0 } else { 0.0 });
+        }
+    });
+    expander.add_controller(hover);
+
+    unsubscribe.connect_has_focus_notify(move |unsubscribe| {
+        unsubscribe.set_opacity(if unsubscribe.has_focus() || hovered.get() {
+            1.0
+        } else {
+            0.0
+        });
+    });
+}
+
+fn episode_thumbnail(
     row: &EpisodeRow,
     playing: bool,
-    download_state: &DownloadState,
-    download_widgets: &mut BTreeMap<i64, DownloadRowWidgets>,
-) -> gtk4::Widget {
-    let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 10);
-    root.add_css_class("reprise-podcast-episode-row");
-    if playing {
-        root.add_css_class("reprise-podcast-playing");
-    }
-    root.set_margin_start(20);
-    root.set_margin_end(8);
-    root.set_margin_top(7);
-    root.set_margin_bottom(7);
-
-    let play = gtk4::Button::from_icon_name(if playing {
+    images_allowed: bool,
+) -> (gtk4::Overlay, gtk4::Image) {
+    let (width, height) = match row.kind {
+        PodcastKind::Rss => (32, 32),
+        PodcastKind::Youtube => (56, 32),
+    };
+    let source = super::source_image::SourceImage::new_with_dimensions(
+        row.image_url.as_deref().or(row.show_image_url.as_deref()),
+        match row.kind {
+            PodcastKind::Rss => "audio-input-microphone-symbolic",
+            PodcastKind::Youtube => "video-x-generic-symbolic",
+        },
+        width,
+        height,
+        images_allowed,
+    );
+    source
+        .widget()
+        .add_css_class("reprise-podcast-episode-thumbnail");
+    let overlay = gtk4::Overlay::new();
+    overlay.set_size_request(width, height);
+    overlay.set_child(Some(source.widget()));
+    let play = gtk4::Image::from_icon_name(if playing {
         "media-playback-pause-symbolic"
     } else {
         "media-playback-start-symbolic"
     });
-    play.add_css_class("flat");
-    play.set_tooltip_text(Some(&strings::text(strings::PLAY_OR_PAUSE)));
-    play.set_action_name(Some("podcasts.play"));
-    play.set_action_target_value(Some(&row.id.to_variant()));
-    root.append(&play);
+    play.add_css_class("reprise-podcast-episode-play-glyph");
+    play.set_halign(gtk4::Align::Center);
+    play.set_valign(gtk4::Align::Center);
+    play.set_opacity(0.0);
+    overlay.add_overlay(&play);
+    (overlay, play)
+}
 
-    let identity = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
+fn install_row_activation(root: &gtk4::Box, episode_id: i64, play_glyph: &gtk4::Image) {
+    let hover = gtk4::EventControllerMotion::new();
+    let hovered_glyph = play_glyph.downgrade();
+    hover.connect_enter(move |_, _, _| {
+        if let Some(glyph) = hovered_glyph.upgrade() {
+            glyph.set_opacity(1.0);
+        }
+    });
+    let hovered_glyph = play_glyph.downgrade();
+    hover.connect_leave(move |_| {
+        if let Some(glyph) = hovered_glyph.upgrade() {
+            glyph.set_opacity(0.0);
+        }
+    });
+    root.add_controller(hover);
+
+    let click = gtk4::GestureClick::new();
+    let clicked_root = root.downgrade();
+    click.connect_released(move |gesture, _, _, _| {
+        if gesture.current_button() != 1 {
+            return;
+        }
+        if let Some(root) = clicked_root.upgrade() {
+            let _ = root.activate_action("podcasts.play", Some(&episode_id.to_variant()));
+        }
+    });
+    root.add_controller(click);
+
+    let keys = gtk4::EventControllerKey::new();
+    let keyed_root = root.downgrade();
+    keys.connect_key_pressed(move |_, key, _, _| {
+        if !matches!(
+            key,
+            gtk4::gdk::Key::Return | gtk4::gdk::Key::KP_Enter | gtk4::gdk::Key::space
+        ) {
+            return gtk4::glib::Propagation::Proceed;
+        }
+        if let Some(root) = keyed_root.upgrade() {
+            let _ = root.activate_action("podcasts.play", Some(&episode_id.to_variant()));
+        }
+        gtk4::glib::Propagation::Stop
+    });
+    root.add_controller(keys);
+}
+
+fn episode_row(
+    row: &EpisodeRow,
+    title_parts: &TitleParts,
+    playing: bool,
+    download_state: &DownloadState,
+    download_widgets: &mut BTreeMap<i64, DownloadRowWidgets>,
+    images_allowed: bool,
+) -> gtk4::Widget {
+    let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+    root.add_css_class("reprise-podcast-episode-row");
+    root.set_focusable(true);
+    root.set_cursor_from_name(Some("pointer"));
+    root.set_accessible_role(gtk4::AccessibleRole::Button);
+    root.update_property(&[gtk4::accessible::Property::Label(&strings::text(
+        strings::PLAY_OR_PAUSE,
+    ))]);
+    root.set_valign(gtk4::Align::Center);
+    if playing {
+        root.add_css_class("reprise-podcast-playing");
+    }
+    root.set_margin_start(12);
+    root.set_margin_end(8);
+    root.set_margin_top(4);
+    root.set_margin_bottom(4);
+
+    let (thumbnail, play_glyph) = episode_thumbnail(row, playing, images_allowed);
+    root.append(&thumbnail);
+    install_row_activation(&root, row.id, &play_glyph);
+
+    let identity = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     identity.set_hexpand(true);
-    let title = gtk4::Label::new(Some(&row.title));
+    let title = gtk4::Label::new(None);
+    title.set_markup(&super::podcasts_title::markup(title_parts));
     title.set_xalign(0.0);
     title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
     identity.append(&title);
@@ -333,16 +452,17 @@ pub(super) fn update_download_state(widgets: &DownloadRowWidgets, state: &Downlo
 
 fn download_status(state: &DownloadState) -> gtk4::Widget {
     let root = gtk4::Box::new(gtk4::Orientation::Vertical, 3);
-    root.set_size_request(130, -1);
+    if matches!(state, DownloadState::NotDownloaded) {
+        return root.upcast();
+    }
+    root.set_size_request(110, -1);
 
     let label = gtk4::Label::new(None);
     label.set_xalign(1.0);
     label.add_css_class("caption");
     label.add_css_class("dim-label");
     match state {
-        DownloadState::NotDownloaded => {
-            label.set_text(&strings::text(strings::PODCAST_NOT_DOWNLOADED));
-        }
+        DownloadState::NotDownloaded => unreachable!("handled before building the status label"),
         DownloadState::Queued => {
             label.set_text(&strings::text(strings::PODCAST_DOWNLOAD_QUEUED));
         }
@@ -402,6 +522,100 @@ fn download_status(state: &DownloadState) -> gtk4::Widget {
 mod tests {
     use super::*;
 
+    fn episode(image_url: Option<&str>) -> EpisodeRow {
+        EpisodeRow {
+            id: 1,
+            subscription_id: 1,
+            guid: "episode".into(),
+            title: "A compact episode title".into(),
+            show: "Show".into(),
+            show_image_url: None,
+            image_url: image_url.map(str::to_owned),
+            kind: PodcastKind::Rss,
+            audio_url: "https://example.test/episode.mp3".into(),
+            page_url: None,
+            published_at: None,
+            duration_secs: Some(3_180),
+            downloaded_path: None,
+            downloaded_bytes: None,
+            played_at: None,
+            position_ms: 0,
+            first_seen_at: 1,
+            is_new: false,
+        }
+    }
+
+    fn descendants(widget: &gtk4::Widget) -> Vec<gtk4::Widget> {
+        let mut found = Vec::new();
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            found.push(current.clone());
+            found.extend(descendants(&current));
+            child = current.next_sibling();
+        }
+        found
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn compact_episode_row_has_no_play_button_and_stays_within_height_budget() {
+        gtk4::init().unwrap();
+        let bytes = gtk4::glib::Bytes::from_owned(vec![0x66_u8; 64 * 64 * 4]);
+        let texture: gtk4::gdk::Texture = gtk4::gdk::MemoryTexture::new(
+            64,
+            64,
+            gtk4::gdk::MemoryFormat::R8g8b8a8,
+            &bytes,
+            64 * 4,
+        )
+        .upcast();
+        super::super::source_image::remember_texture(
+            "https://img.test/episode.jpg".to_owned(),
+            32,
+            32,
+            texture,
+        );
+        for row in [episode(None), episode(Some("https://img.test/episode.jpg"))] {
+            let mut widgets = BTreeMap::new();
+            let rendered = episode_row(
+                &row,
+                &TitleParts {
+                    distinct: row.title.clone(),
+                    dimmed: None,
+                },
+                false,
+                &DownloadState::NotDownloaded,
+                &mut widgets,
+                false,
+            );
+            let buttons = descendants(&rendered)
+                .into_iter()
+                .filter_map(|widget| widget.downcast::<gtk4::Button>().ok())
+                .collect::<Vec<_>>();
+
+            assert!(
+                buttons
+                    .iter()
+                    .all(|button| button.action_name().as_deref() != Some("podcasts.play")),
+                "row activation replaces the per-row play button"
+            );
+            let (_, natural, _, _) = rendered.measure(gtk4::Orientation::Vertical, -1);
+            assert!(natural <= 52, "natural row height was {natural}px");
+        }
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn not_downloaded_has_no_redundant_status_label() {
+        gtk4::init().unwrap();
+
+        let status = download_status(&DownloadState::NotDownloaded)
+            .downcast::<gtk4::Box>()
+            .unwrap();
+
+        assert!(status.first_child().is_none());
+    }
+
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn src_5_one_expander_is_rendered_per_source_group() {
@@ -456,7 +670,7 @@ mod tests {
             sync_to_phone: false,
             episodes: Vec::new(),
         };
-        let header = group_header(
+        let (header, star) = group_header(
             &group,
             &SourceSummary {
                 episode_count: 0,
@@ -467,18 +681,21 @@ mod tests {
             &[],
             &[],
             false,
-        )
-        .downcast::<gtk4::Box>()
-        .unwrap();
+        );
+        let header = header.downcast::<gtk4::Box>().unwrap();
         let menu = header
             .last_child()
             .and_downcast::<gtk4::MenuButton>()
             .unwrap();
-        let star = menu.prev_sibling().and_downcast::<gtk4::Button>().unwrap();
+        assert_eq!(menu.prev_sibling().as_ref(), Some(star.upcast_ref()));
         let icon = star.child().and_downcast::<gtk4::Image>().unwrap();
+        let expander = gtk4::Expander::new(None);
+        reveal_unsubscribe_on_hover_or_focus(&expander, &star);
 
         assert_eq!(icon.icon_name().as_deref(), Some("starred-symbolic"));
         assert_eq!(star.opacity(), 0.0);
+        assert!(star.is_focusable());
+        assert!(expander.observe_controllers().n_items() > 0);
         assert!(star.has_css_class("accent"));
         assert_eq!(star.action_name().as_deref(), Some("podcasts.unsubscribe"));
     }
@@ -499,7 +716,7 @@ mod tests {
             sync_to_phone: false,
             episodes: Vec::new(),
         };
-        let header = group_header(
+        let (header, _) = group_header(
             &group,
             &SourceSummary {
                 episode_count: 0,
@@ -510,9 +727,8 @@ mod tests {
             &[],
             &[],
             false,
-        )
-        .downcast::<gtk4::Box>()
-        .unwrap();
+        );
+        let header = header.downcast::<gtk4::Box>().unwrap();
         let artwork = header
             .first_child()
             .and_downcast::<gtk4::Stack>()

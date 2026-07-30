@@ -37,7 +37,7 @@ const ARTWORK_QUEUE_LIMIT: usize = 64;
 const ARTWORK_WORKERS: usize = 4;
 
 thread_local! {
-    static TEXTURE_CACHE: RefCell<VecDeque<(String, gtk4::gdk::Texture)>> =
+    static TEXTURE_CACHE: RefCell<VecDeque<(String, i32, i32, gtk4::gdk::Texture)>> =
         const { RefCell::new(VecDeque::new()) };
 }
 
@@ -99,18 +99,44 @@ impl SourceImage {
         size: i32,
         images_allowed: bool,
     ) -> SourceImage {
+        Self::new_with_dimensions(image_url, fallback_icon, size, size, images_allowed)
+    }
+
+    pub(crate) fn new_with_dimensions(
+        image_url: Option<&str>,
+        fallback_icon: &str,
+        width: i32,
+        height: i32,
+        images_allowed: bool,
+    ) -> SourceImage {
         let fallback = gtk4::Image::from_icon_name(fallback_icon);
-        fallback.set_pixel_size(size);
+        fallback.set_pixel_size(width.min(height));
+        fallback.set_halign(gtk4::Align::Center);
+        fallback.set_valign(gtk4::Align::Center);
+        fallback.set_hexpand(false);
+        fallback.set_vexpand(false);
         let picture = gtk4::Picture::new();
         picture.set_can_shrink(true);
         picture.set_content_fit(gtk4::ContentFit::Cover);
-        picture.set_size_request(size, size);
+        picture.set_size_request(width, height);
+        picture.set_halign(gtk4::Align::Center);
+        picture.set_valign(gtk4::Align::Center);
+        picture.set_hexpand(false);
+        picture.set_vexpand(false);
+        let artwork_frame =
+            gtk4::AspectFrame::new(0.5, 0.5, width as f32 / height.max(1) as f32, false);
+        artwork_frame.set_size_request(width, height);
+        artwork_frame.set_child(Some(&picture));
         let root = gtk4::Stack::new();
-        root.set_size_request(size, size);
+        root.set_size_request(width, height);
+        root.set_halign(gtk4::Align::Center);
+        root.set_valign(gtk4::Align::Center);
+        root.set_hexpand(false);
+        root.set_vexpand(false);
         root.set_overflow(gtk4::Overflow::Hidden);
         root.add_css_class("reprise-source-image");
         root.add_named(&fallback, Some("fallback"));
-        root.add_named(&picture, Some("artwork"));
+        root.add_named(&artwork_frame, Some("artwork"));
         root.set_visible_child(&fallback);
         let image = Self {
             root,
@@ -118,7 +144,7 @@ impl SourceImage {
             picture,
             generation: Rc::new(Cell::new(0)),
         };
-        image.set_url(image_url, images_allowed);
+        image.set_url(image_url, width, height, images_allowed);
         image
     }
 
@@ -126,7 +152,7 @@ impl SourceImage {
         &self.root
     }
 
-    fn set_url(&self, image_url: Option<&str>, images_allowed: bool) {
+    fn set_url(&self, image_url: Option<&str>, width: i32, height: i32, images_allowed: bool) {
         let generation = self.generation.get().wrapping_add(1);
         self.generation.set(generation);
         self.root.set_visible_child(&self.fallback);
@@ -134,7 +160,7 @@ impl SourceImage {
         let Some(url) = image_url.and_then(validated_url) else {
             return;
         };
-        if let Some(texture) = cached_texture(&url) {
+        if let Some(texture) = cached_texture(&url, width, height) {
             self.picture.set_paintable(Some(&texture));
             self.root.set_visible_child(&self.picture);
             return;
@@ -174,14 +200,14 @@ impl SourceImage {
             let Some(picture) = weak_picture.upgrade() else {
                 return;
             };
-            let texture = match gtk4::gdk::Texture::from_filename(&path) {
+            let texture = match decode_texture(&path, width, height) {
                 Ok(texture) => texture,
                 Err(error) => {
                     tracing::debug!(%error, %url, path = %path.display(), "source artwork could not be decoded");
                     return;
                 }
             };
-            remember_texture(url, texture.clone());
+            remember_texture(url, width, height, texture.clone());
             picture.set_paintable(Some(&texture));
             root.set_visible_child(&picture);
         });
@@ -240,24 +266,60 @@ fn queue_artwork(url: String, allowed: bool) -> Option<async_channel::Receiver<O
     Some(receiver)
 }
 
-fn cached_texture(url: &str) -> Option<gtk4::gdk::Texture> {
+fn decode_texture(
+    path: &std::path::Path,
+    width: i32,
+    height: i32,
+) -> Result<gtk4::gdk::Texture, gtk4::glib::Error> {
+    let pixbuf = gtk4::gdk_pixbuf::Pixbuf::from_file_at_scale(
+        path,
+        width.saturating_mul(2),
+        height.saturating_mul(2),
+        true,
+    )?;
+    let format = if pixbuf.has_alpha() {
+        gtk4::gdk::MemoryFormat::R8g8b8a8
+    } else {
+        gtk4::gdk::MemoryFormat::R8g8b8
+    };
+    let bytes = pixbuf.read_pixel_bytes();
+    Ok(gtk4::gdk::MemoryTexture::new(
+        pixbuf.width(),
+        pixbuf.height(),
+        format,
+        &bytes,
+        pixbuf.rowstride() as usize,
+    )
+    .upcast())
+}
+
+fn cached_texture(url: &str, width: i32, height: i32) -> Option<gtk4::gdk::Texture> {
     TEXTURE_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
-        let index = cache.iter().position(|(cached, _)| cached == url)?;
+        let index = cache
+            .iter()
+            .position(|(cached, cached_width, cached_height, _)| {
+                cached == url && *cached_width == width && *cached_height == height
+            })?;
         let entry = cache.remove(index)?;
-        let texture = entry.1.clone();
+        let texture = entry.3.clone();
         cache.push_front(entry);
         Some(texture)
     })
 }
 
-fn remember_texture(url: String, texture: gtk4::gdk::Texture) {
+pub(super) fn remember_texture(url: String, width: i32, height: i32, texture: gtk4::gdk::Texture) {
     TEXTURE_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
-        if let Some(index) = cache.iter().position(|(cached, _)| cached == &url) {
+        if let Some(index) = cache
+            .iter()
+            .position(|(cached, cached_width, cached_height, _)| {
+                cached == &url && *cached_width == width && *cached_height == height
+            })
+        {
             cache.remove(index);
         }
-        cache.push_front((url, texture));
+        cache.push_front((url, width, height, texture));
         cache.truncate(CACHE_LIMIT);
     });
 }
@@ -271,6 +333,24 @@ fn validated_url(value: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use gtk4::gdk::prelude::TextureExt;
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn large_source_texture_is_decoded_to_twice_the_requested_cache_size() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("large.png");
+        let pixbuf =
+            gtk4::gdk_pixbuf::Pixbuf::new(gtk4::gdk_pixbuf::Colorspace::Rgb, true, 8, 600, 600)
+                .unwrap();
+        pixbuf.fill(0x336699ff);
+        pixbuf.savev(&path, "png", &[]).unwrap();
+
+        let texture = super::decode_texture(&path, 40, 40).unwrap();
+
+        assert_eq!((texture.width(), texture.height()), (80, 80));
+    }
+
     #[test]
     fn source_artwork_accepts_only_remote_http_urls() {
         assert_eq!(
