@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-30 15:03+0200\n"
+"POT-Creation-Date: 2026-07-30 15:35+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Marvin Baudach\n"
 "Language-Team: German\n"
@@ -2321,7 +2321,8 @@ msgstr "Radio verwenden"
 msgid ""
 "Reprise can now follow podcasts, YouTube channels, radio and concerts — all "
 "off by default."
-msgstr "Reprise kann jetzt Podcasts, YouTube-Kanälen, Radio und Konzerten folgen — "
+msgstr ""
+"Reprise kann jetzt Podcasts, YouTube-Kanälen, Radio und Konzerten folgen — "
 "standardmäßig ist alles aus."
 
 #: crates/reprise-gnome/src/ui/strings_online_sources.rs:52
@@ -4378,50 +4379,79 @@ msgstr "{name} öffnen"
 msgid "Eject device — Sync in progress"
 msgstr "Gerät auswerfen — Synchronisierung läuft"
 
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:16
+#, rust-format
+msgid "Plugged in · disconnect {other} to use it"
+msgstr "Angeschlossen · zum Verwenden zuerst {other} trennen"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:18
+msgid "This device can be used now but cannot be remembered"
+msgstr "Dieses Gerät lässt sich jetzt verwenden, aber nicht merken"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:19
+msgid "Rename device"
+msgstr "Gerät umbenennen"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:20
+msgid "Local device name"
+msgstr "Lokaler Gerätename"
+
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:21
+msgid "Rename"
+msgstr "Umbenennen"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:22
+msgid "Forget device"
+msgstr "Gerät vergessen"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:23
+msgid "Music · Opus 160 kbit/s"
+msgstr "Musik · Opus 160 kbit/s"
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:29
 #, rust-format
 msgid "Syncing {name} · {percent}%"
 msgstr "Synchronisiere {name} · {percent} %"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:43
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:59
 msgid "Available space unknown"
 msgstr "Verfügbarer Speicherplatz unbekannt"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:44
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:60
 msgid "Synchronization Progress"
 msgstr "Synchronisierungsfortschritt"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:51
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:67
 #, rust-format
 msgid "{size} available"
 msgstr "{size} verfügbar"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:61
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:77
 #, rust-format
 msgid "{size} free"
 msgstr "{size} frei"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:70
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:86
 #, rust-format
 msgid "{completed} of {total} tracks"
 msgstr "{completed} von {total} Titeln"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:87
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:103
 #, rust-format
 msgid "{percent} %"
 msgstr "{percent} %"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:110
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:126
 #, rust-format
 msgid "{done} of {total}"
 msgstr "{done} von {total}"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:134
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:150
 #, rust-format
 msgid "~{minutes} min left"
 msgstr "Noch etwa {minutes} Min."
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:139
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:155
 #, rust-format
 msgid "~{seconds} s left"
 msgstr "Noch etwa {seconds} Sek."
