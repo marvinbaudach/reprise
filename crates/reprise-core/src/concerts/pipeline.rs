@@ -12,17 +12,18 @@ use super::candidates::{self, ArtistCandidate, MAX_ARTISTS_PER_RUN};
 use super::resolution::{self, LedgerArtist, ResolvedIdentity, StoredOutcome};
 use super::similar::{self, HttpSimilarFetch, SimilarFetch, SIMILAR_SEEDS};
 use super::{
-    artist_due, backoff_delay, dedupe_key, merge, ArtistRef, ConcertError, EventProvider,
-    ProviderError, ProviderEvent, ProviderKind, Resolution,
+    artist_due, backoff_delay, dedupe_key, merge, ArtistRef, ConcertError, ConcertFailure,
+    EventProvider, ProviderError, ProviderEvent, ProviderKind, Resolution,
 };
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RefreshSummary {
     pub attempted: usize,
     pub resolved: usize,
     pub unmatched: usize,
     pub failed: usize,
     pub events_upserted: usize,
+    pub failures: Vec<ConcertFailure>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -188,6 +189,7 @@ fn refresh_with_similar_fetch_cancellable(
                     );
                     resolution::store_failed(conn, &artist, now)?;
                     summary.failed += 1;
+                    summary.failures.push(error.into());
                     continue;
                 }
                 Err(AttemptFailure::QuietPeriod(error)) => {
@@ -222,6 +224,7 @@ fn refresh_with_similar_fetch_cancellable(
                 );
                 resolution::store_failed(conn, &artist, now)?;
                 summary.failed += 1;
+                summary.failures.push(error.into());
                 continue;
             }
             Err(AttemptFailure::QuietPeriod(error)) => {

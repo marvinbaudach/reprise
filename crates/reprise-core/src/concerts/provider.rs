@@ -68,6 +68,26 @@ pub enum ProviderError {
     MissingCredentials,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ConcertFailure {
+    Source(SourceError),
+    MissingCredentials(SourceError),
+}
+
+impl ConcertFailure {
+    #[must_use]
+    pub const fn source_error(&self) -> &SourceError {
+        match self {
+            Self::Source(error) | Self::MissingCredentials(error) => error,
+        }
+    }
+
+    #[must_use]
+    pub const fn is_missing_credentials(&self) -> bool {
+        matches!(self, Self::MissingCredentials(_))
+    }
+}
+
 impl From<&ProviderError> for SourceErrorKind {
     fn from(error: &ProviderError) -> Self {
         match error {
@@ -85,10 +105,16 @@ impl From<&ProviderError> for SourceErrorKind {
     }
 }
 
-impl From<ProviderError> for SourceError {
+impl From<ProviderError> for ConcertFailure {
     fn from(error: ProviderError) -> Self {
         let kind = SourceErrorKind::from(&error);
-        Self::new(kind, "concert provider request failed", error.to_string())
+        let missing_credentials = matches!(error, ProviderError::MissingCredentials);
+        let error = SourceError::new(kind, "concert provider request failed", error.to_string());
+        if missing_credentials {
+            Self::MissingCredentials(error)
+        } else {
+            Self::Source(error)
+        }
     }
 }
 
@@ -103,13 +129,14 @@ mod tests {
     use std::time::Duration;
 
     use super::ProviderError;
-    use crate::source_error::{SourceError, SourceErrorKind};
+    use crate::source_error::SourceErrorKind;
 
     #[test]
     fn concert_failures_project_rate_limits_without_displaying_statuses() {
-        let error = SourceError::from(ProviderError::RateLimited {
+        let failure = super::ConcertFailure::from(ProviderError::RateLimited {
             retry_after: Some(360),
         });
+        let error = failure.source_error();
 
         assert_eq!(
             error.kind(),
@@ -124,5 +151,12 @@ mod tests {
              concert provider returned HTTP 429\n\
              2026-07-30 14:12 · retry in 6 min"
         );
+    }
+
+    #[test]
+    fn missing_credentials_stay_a_configuration_failure() {
+        let failure = super::ConcertFailure::from(ProviderError::MissingCredentials);
+
+        assert!(failure.is_missing_credentials());
     }
 }
