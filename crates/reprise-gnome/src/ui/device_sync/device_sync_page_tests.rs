@@ -151,6 +151,14 @@ fn mtp_8_full_page_names_each_modern_transfer_profile() {
 }
 
 #[test]
+fn mtp_24_transfer_profile_heading_names_its_music_only_scope() {
+    assert_eq!(
+        super::device_sync_page_layout::MUSIC_TRANSFER_PROFILE_HEADING,
+        "Music · Opus 160 kbit/s"
+    );
+}
+
+#[test]
 fn full_page_playlist_copy_keeps_snapshot_repeats_and_physical_size_distinct() {
     assert_eq!(
         playlist_subtitle(&row()),

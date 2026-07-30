@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use gtk4::gio;
 use gtk4::gio::prelude::*;
+use reprise_core::connectivity::Connectivity;
 use reprise_core::db::Db;
 use reprise_core::device_sync::browser::StorageOption;
 use reprise_core::device_sync::device_view::{
@@ -320,6 +321,13 @@ pub struct DeviceSyncRuntime {
     /// — preparation then falls back to a plain sync, see
     /// `preparation::begin_prepared_sync`.
     preparation_downloader: RefCell<Option<Rc<dyn preparation::PreparationDownloader>>>,
+    /// `NET-3a`: explicit application belief, injected by
+    /// [`Self::set_connectivity`]. The runtime never polls the OS at the
+    /// preparation decision point.
+    connectivity: Cell<Connectivity>,
+    /// Metered is a separate injected fact because `Connectivity` only
+    /// distinguishes online from offline.
+    metered: Cell<bool>,
 }
 
 impl DeviceSyncRuntime {
@@ -348,6 +356,8 @@ impl DeviceSyncRuntime {
             weak_self: RefCell::new(Weak::new()),
             agent_subscription: RefCell::new(None),
             preparation_downloader: RefCell::new(None),
+            connectivity: Cell::new(Connectivity::default()),
+            metered: Cell::new(false),
         });
         runtime.weak_self.replace(Rc::downgrade(&runtime));
         runtime.apply_devices(runtime.backend.devices());

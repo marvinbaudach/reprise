@@ -20,6 +20,7 @@ pub const RENAME_DEVICE: &str = N_!("Rename device");
 pub const LOCAL_DEVICE_NAME: &str = N_!("Local device name");
 pub const RENAME: &str = N_!("Rename");
 pub const FORGET_DEVICE: &str = N_!("Forget device");
+pub const MUSIC_TRANSFER_PROFILE_HEADING: &str = N_!("Music · Opus 160 kbit/s");
 
 /// Spinner tooltip while syncing, e.g. "Syncing Pixel 8 · 42%".
 pub fn syncing_spinner_tooltip(name: &str, percent: u64) -> String {

@@ -20,6 +20,28 @@ use reprise_core::device_sync::{
 use super::*;
 
 impl DeviceSyncRuntime {
+    /// `NET-3a`: accepts the app's connectivity belief and immediately
+    /// re-plans preparation. It deliberately does not read
+    /// `gio::NetworkMonitor` here.
+    ///
+    /// TODO(integration): attach the real `network-changed` signal and feed
+    /// its value into this seam from the window-level network package.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn set_connectivity(self: &Rc<Self>, connectivity: Connectivity) {
+        if self.connectivity.replace(connectivity) != connectivity {
+            self.recompute_all_devices();
+        }
+    }
+
+    /// The metered companion fact used by `MTP-43`; kept injectable for the
+    /// same reason as connectivity.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn set_metered(self: &Rc<Self>, metered: bool) {
+        if self.metered.replace(metered) != metered {
+            self.recompute_all_devices();
+        }
+    }
+
     pub fn update_settings(self: &Rc<Self>, settings: DeviceSettings) -> Result<(), String> {
         let rememberable = {
             let devices = self.device_states.borrow();
@@ -445,8 +467,8 @@ impl DeviceSyncRuntime {
             );
             let preparation_phase = plan_preparation(&PreparationFacts {
                 missing: preparation_missing.clone(),
-                connectivity: current_connectivity(),
-                metered: gio::NetworkMonitor::default().is_network_metered(),
+                connectivity: self.connectivity.get(),
+                metered: self.metered.get(),
                 online_sources_enabled: reprise_core::online_sources::is_enabled(conn)
                     .unwrap_or(true),
                 prepare_switch_on: settings.prepare_before_sync,
@@ -672,16 +694,4 @@ fn gather_missing_files(db: &Db, episode_ids: impl IntoIterator<Item = i64>) -> 
             },
         )
         .collect()
-}
-
-/// `NET-3a`: the app's current connectivity belief, read from the one real
-/// OS signal `podcast_refresh_scheduler.rs` already uses for "metered"
-/// (`gio::NetworkMonitor`) — not a guess after a failed request, which
-/// `reprise_core::connectivity`'s module docs explicitly rule out.
-fn current_connectivity() -> Connectivity {
-    if gio::NetworkMonitor::default().is_network_available() {
-        Connectivity::Online
-    } else {
-        Connectivity::Offline
-    }
 }
