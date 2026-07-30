@@ -20,11 +20,15 @@ fn view(conn: Db, kind: PodcastKind) -> Rc<PodcastsView> {
 }
 
 fn subscribe_with_one_episode(conn: &Db) -> i64 {
+    subscribe_one_episode_of_kind(conn, PodcastKind::Rss)
+}
+
+fn subscribe_one_episode_of_kind(conn: &Db, kind: PodcastKind) -> i64 {
     let conn = &conn;
     let subscription_id = store::add_or_restore(
         conn,
         &NewSubscription {
-            kind: PodcastKind::Rss,
+            kind,
             feed_url: "https://example.test/feed".to_owned(),
             title: "Show".to_owned(),
             author: None,
@@ -199,6 +203,26 @@ fn pod_9_the_library_summary_header_actually_reaches_the_filter_bar() {
         view.filter_bar.result_text(),
         strings::podcast_library_summary(1, 1, 1),
         "render() must hand the real library summary to the filter bar, not leave it stale"
+    );
+}
+
+/// `POD-15`: the same wired path on the YouTube page must name channels. The
+/// string-level test in `strings_podcasts.rs` cannot see which formatter the
+/// filter bar picks — hand the RSS one to both pages and this stays green
+/// there while failing here.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn pod_15_the_youtube_page_header_counts_channels_not_shows() {
+    gtk4::init().unwrap();
+    let conn = reprise_core::db::open_migrated(None).unwrap();
+    subscribe_one_episode_of_kind(&conn, PodcastKind::Youtube);
+
+    let view = view(conn, PodcastKind::Youtube);
+
+    assert_eq!(
+        view.filter_bar.result_text(),
+        strings::youtube_library_summary(1, 1, 1),
+        "the YouTube page subscribes to channels, so its header must count channels"
     );
 }
 

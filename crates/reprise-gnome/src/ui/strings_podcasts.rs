@@ -210,10 +210,28 @@ pub fn podcast_library_summary(shows: usize, episodes: usize, new: usize) -> Str
         shows,
         &[("shows", &shows_text)],
     );
+    library_summary(&shows_text, episodes, new)
+}
+
+/// `POD-15`: the same header on the YouTube page counts channels, not shows.
+/// Only the leading subject changes — episode and new counts are the same
+/// quantities the RSS page reports, so they keep one formatter.
+pub fn youtube_library_summary(channels: usize, episodes: usize, new: usize) -> String {
+    let channels_text = channels.to_string();
+    let channels_text = plural(
+        "{channels} channel",
+        "{channels} channels",
+        channels,
+        &[("channels", &channels_text)],
+    );
+    library_summary(&channels_text, episodes, new)
+}
+
+fn library_summary(subjects: &str, episodes: usize, new: usize) -> String {
     formatted(
         PODCAST_LIBRARY_SUMMARY,
         &[
-            ("shows", &shows_text),
+            ("shows", subjects),
             ("episodes", &podcast_episode_count(episodes)),
             ("new", &new.to_string()),
         ],
@@ -409,6 +427,29 @@ mod tests {
         assert_eq!(
             podcast_library_summary(1, 1, 0),
             "1 show · 1 episode · 0 new"
+        );
+    }
+
+    /// `POD-15`: the YouTube page counts channels. Both forms, and the shared
+    /// tail proven identical to the RSS page's — the subject is the only
+    /// difference, so a future edit that diverges the tail fails here.
+    #[test]
+    fn pod_15_library_summary_counts_channels_on_the_youtube_page() {
+        assert_eq!(
+            youtube_library_summary(4, 41, 7),
+            "4 channels · 41 episodes · 7 new"
+        );
+        assert_eq!(
+            youtube_library_summary(1, 1, 0),
+            "1 channel · 1 episode · 0 new"
+        );
+        assert_ne!(
+            youtube_library_summary(1, 1, 0),
+            podcast_library_summary(1, 1, 0)
+        );
+        assert_eq!(
+            youtube_library_summary(4, 41, 7).trim_start_matches("4 channels"),
+            podcast_library_summary(4, 41, 7).trim_start_matches("4 shows"),
         );
     }
 
