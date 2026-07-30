@@ -15,93 +15,16 @@ use serde_json::Value;
 #[path = "ytdlp_range.rs"]
 mod range;
 
+#[path = "ytdlp_failure.rs"]
+mod failure;
+
+pub use failure::YtDlpFailureKind;
+use failure::*;
+
 pub use super::ytdlp_search::YtDlpChannel;
 use super::PodcastError;
 
-const VERIFICATION_MESSAGE: &str =
-    "YouTube requires verification — try again later or use another network";
-const RATE_LIMIT_MESSAGE: &str = "YouTube is rate-limiting requests — try again later";
-const UNSUPPORTED_URL_MESSAGE: &str = "This YouTube URL is not supported";
-const ACCESS_REFUSED_MESSAGE: &str = "YouTube refused the request — try again later";
-const UNREACHABLE_MESSAGE: &str = "YouTube could not be reached — check your connection";
-const AUDIO_UNAVAILABLE_MESSAGE: &str = "YouTube did not provide playable audio for this video";
-const VIDEO_UNAVAILABLE_MESSAGE: &str = "This YouTube video is unavailable or private";
-const EXTRACTOR_OUTDATED_MESSAGE: &str =
-    "YouTube changed its response — update yt-dlp and try again";
-const CONVERSION_UNAVAILABLE_MESSAGE: &str =
-    "Audio conversion is unavailable — install or repair FFmpeg";
-const INVALID_RESPONSE_MESSAGE: &str =
-    "YouTube returned an unreadable response — update yt-dlp and try again";
-const DOWNLOAD_SAVE_MESSAGE: &str =
-    "YouTube download could not be saved — check available space and permissions";
-const MISSING_MESSAGE: &str = "YouTube component is unavailable — reinstall or repair Reprise";
-const START_FAILED_MESSAGE: &str =
-    "YouTube component could not start — check its path and permissions";
-const GENERIC_FAILURE: &str = "YouTube request failed — check the application log";
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum YtDlpFailureKind {
-    VerificationRequired,
-    RateLimited,
-    UnsupportedUrl,
-    AccessRefused,
-    Unreachable,
-    AudioUnavailable,
-    VideoUnavailable,
-    ExtractorOutdated,
-    ConversionUnavailable,
-    DownloadStorage,
-    /// The helper binary is absent.
-    HelperMissing,
-    /// The helper binary is present but refuses to start — a different repair
-    /// than a missing one, so it keeps its own message.
-    HelperStartFailed,
-    /// The helper answered with something unreadable, which its own copy
-    /// already attributes to being out of date.
-    ResponseUnreadable,
-    Other,
-}
-
-impl YtDlpFailureKind {
-    const fn diagnostic_name(self) -> &'static str {
-        match self {
-            Self::VerificationRequired => "verification_required",
-            Self::RateLimited => "rate_limited",
-            Self::UnsupportedUrl => "unsupported_url",
-            Self::AccessRefused => "access_refused",
-            Self::Unreachable => "unreachable",
-            Self::AudioUnavailable => "audio_unavailable",
-            Self::VideoUnavailable => "video_unavailable",
-            Self::ExtractorOutdated => "extractor_outdated",
-            Self::ConversionUnavailable => "conversion_unavailable",
-            Self::DownloadStorage => "download_storage",
-            Self::HelperMissing => "helper_missing",
-            Self::HelperStartFailed => "helper_start_failed",
-            Self::ResponseUnreadable => "response_unreadable",
-            Self::Other => "other",
-        }
-    }
-
-    pub(crate) const fn user_message(self) -> &'static str {
-        match self {
-            Self::VerificationRequired => VERIFICATION_MESSAGE,
-            Self::RateLimited => RATE_LIMIT_MESSAGE,
-            Self::UnsupportedUrl => UNSUPPORTED_URL_MESSAGE,
-            Self::AccessRefused => ACCESS_REFUSED_MESSAGE,
-            Self::Unreachable => UNREACHABLE_MESSAGE,
-            Self::AudioUnavailable => AUDIO_UNAVAILABLE_MESSAGE,
-            Self::VideoUnavailable => VIDEO_UNAVAILABLE_MESSAGE,
-            Self::ExtractorOutdated => EXTRACTOR_OUTDATED_MESSAGE,
-            Self::ConversionUnavailable => CONVERSION_UNAVAILABLE_MESSAGE,
-            Self::DownloadStorage => DOWNLOAD_SAVE_MESSAGE,
-            Self::HelperMissing => MISSING_MESSAGE,
-            Self::HelperStartFailed => START_FAILED_MESSAGE,
-            Self::ResponseUnreadable => INVALID_RESPONSE_MESSAGE,
-            Self::Other => GENERIC_FAILURE,
-        }
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct YtDlpTimeouts {

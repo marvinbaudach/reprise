@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-30 15:35+0200\n"
+"POT-Creation-Date: 2026-07-30 17:50+0200\n"
 "PO-Revision-Date: 2026-07-20 11:38+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Simplified Chinese\n"
@@ -327,6 +327,7 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:106
 #: crates/reprise-gnome/src/ui/strings_radio.rs:38
 #: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:30
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:65
 #: crates/reprise-gnome/src/ui/sidebar/sidebar_issue_strings.rs:27
 msgid "Cancel"
 msgstr "取消"
@@ -1166,6 +1167,7 @@ msgid "1 track"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_issues.rs:58
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:87
 #, rust-format
 msgid "{count} tracks"
 msgstr ""
@@ -3645,6 +3647,7 @@ msgid "{hours} h"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_stats.rs:16
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:82
 #, rust-format
 msgid "{minutes} min"
 msgstr ""
@@ -4072,6 +4075,7 @@ msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:180
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:198
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:66
 msgid "Save"
 msgstr ""
 
@@ -4266,37 +4270,138 @@ msgstr ""
 msgid "Synchronization Progress"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:67
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:61
+msgid "Choose…"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:62
 #, rust-format
-msgid "{size} available"
+msgid "Choose {category}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:63
+msgid "Filter sync content"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:64
+msgid "Select all"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:67
+msgid "Everything"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:68
+msgid "Smart playlist"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:69
+msgid "Keep smart playlists up to date on each sync"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:70
+msgid "Per channel, sync the latest N episodes"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:71
+msgid "Per show, sync unplayed only"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:72
+msgid "Latest episodes per channel, 0 for unlimited"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:74
+msgid ""
+"Once played on the phone, an episode is removed on the next sync — this is a "
+"standing rule."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:76
+msgid "On disk"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:77
+msgid "Needs download"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:78
+msgid "Downloaded in the preparation phase"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:79
+msgid "Show the preparation phase on the device page"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:80
+msgid "Selected by the rule"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:81
+msgid "Unavailable playlist"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:83
 #, rust-format
-msgid "{size} free"
+msgid "{minutes} min in"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:84
+#, rust-format
+msgid "{selected} of {total}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:85
+#, rust-format
+msgid "{selected} selected · {content} · {size}"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:86
 #, rust-format
+msgid "{count} still need downloading · preparation phase"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:88
+#, rust-format
+msgid "{count} episodes"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:89
+#, rust-format
+msgid "+ {count} unknown sizes"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:96
+#, rust-format
+msgid "{size} available"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:106
+#, rust-format
+msgid "{size} free"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:115
+#, rust-format
 msgid "{completed} of {total} tracks"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:103
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:132
 #, rust-format
 msgid "{percent} %"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:126
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:155
 #, rust-format
 msgid "{done} of {total}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:150
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:179
 #, rust-format
 msgid "~{minutes} min left"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:155
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:184
 #, rust-format
 msgid "~{seconds} s left"
 msgstr ""
