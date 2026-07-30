@@ -43,13 +43,14 @@ fn insert_episode(
     subscription_id: i64,
     path: &std::path::Path,
     downloaded_bytes: i64,
+    published_at: Option<i64>,
 ) {
     let conn = db.conn();
     conn.execute(
         "INSERT INTO podcast_episodes
          (id, subscription_id, guid, title, audio_url, downloaded_path,
-          downloaded_bytes, first_seen_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1)",
+          downloaded_bytes, published_at, first_seen_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1)",
         params![
             id,
             subscription_id,
@@ -57,7 +58,8 @@ fn insert_episode(
             format!("Episode {id}: /?*"),
             format!("https://example.test/{id}.mp3"),
             path.to_string_lossy(),
-            downloaded_bytes
+            downloaded_bytes,
+            published_at
         ],
     )
     .unwrap();
@@ -81,11 +83,11 @@ fn pod_12_candidates_are_complete_and_explicitly_selected_for_the_device() {
     insert_subscription(&conn, 3, "rss", false, "Other Show");
     crate::podcasts::phone_sync::set_device_enabled(&conn, 1, "mtp:pixel", true).unwrap();
     crate::podcasts::phone_sync::set_device_enabled(&conn, 3, "mtp:tablet", true).unwrap();
-    insert_episode(&conn, 11, 1, &eligible, 8);
-    insert_episode(&conn, 12, 2, &youtube, 7);
-    insert_episode(&conn, 13, 3, &unselected, 10);
-    insert_episode(&conn, 14, 1, &partial, 99);
-    insert_episode(&conn, 15, 1, &eligible, 8);
+    insert_episode(&conn, 11, 1, &eligible, 8, Some(1_785_225_600));
+    insert_episode(&conn, 12, 2, &youtube, 7, None);
+    insert_episode(&conn, 13, 3, &unselected, 10, None);
+    insert_episode(&conn, 14, 1, &partial, 99, None);
+    insert_episode(&conn, 15, 1, &eligible, 8, None);
     conn.conn()
         .execute(
             "UPDATE podcast_episodes SET removed_at = 1 WHERE id = 15",
@@ -106,8 +108,167 @@ fn pod_12_candidates_are_complete_and_explicitly_selected_for_the_device() {
     assert_eq!(candidates[0].size_bytes, 8);
     assert_eq!(
         candidates[0].device_path,
-        "Show One Daily/11-Episode 11.mp3"
+        "Show One Daily/2026-07-28 - Episode 11.mp3"
     );
+}
+
+#[test]
+fn mtp_47_the_device_path_names_the_publication_day_not_the_database_id() {
+    let db = migrated();
+    let downloads = tempfile::tempdir().unwrap();
+    let episode = downloads.path().join("episode.mp3");
+    std::fs::write(&episode, b"episode").unwrap();
+    insert_subscription(&db, 1, "rss", true, "Show");
+    crate::podcasts::phone_sync::set_device_enabled(&db, 1, "mtp:pixel", true).unwrap();
+    insert_episode(&db, 11, 1, &episode, 7, Some(1_785_225_600));
+
+    let candidates = query_candidates_for_device(&db, "mtp:pixel").unwrap();
+
+    assert_eq!(
+        candidates[0].device_path,
+        "Show/2026-07-28 - Episode 11.mp3"
+    );
+}
+
+#[test]
+fn mtp_47_an_episode_without_a_publication_date_uses_the_day_it_was_first_seen() {
+    let db = migrated();
+    let downloads = tempfile::tempdir().unwrap();
+    let episode = downloads.path().join("episode.mp3");
+    std::fs::write(&episode, b"episode").unwrap();
+    insert_subscription(&db, 1, "rss", true, "Show");
+    crate::podcasts::phone_sync::set_device_enabled(&db, 1, "mtp:pixel", true).unwrap();
+    insert_episode(&db, 11, 1, &episode, 7, None);
+    db.conn()
+        .execute(
+            "UPDATE podcast_episodes SET first_seen_at = ?2 WHERE id = ?1",
+            params![11, 1_785_225_600_i64],
+        )
+        .unwrap();
+
+    let candidates = query_candidates_for_device(&db, "mtp:pixel").unwrap();
+
+    assert_eq!(
+        candidates[0].device_path,
+        "Show/2026-07-28 - Episode 11.mp3"
+    );
+}
+
+#[test]
+fn mtp_47_two_episodes_that_would_share_a_name_are_told_apart_by_their_episode_id() {
+    let db = migrated();
+    let downloads = tempfile::tempdir().unwrap();
+    let first = downloads.path().join("first.mp3");
+    let second = downloads.path().join("second.mp3");
+    std::fs::write(&first, b"first").unwrap();
+    std::fs::write(&second, b"second").unwrap();
+    insert_subscription(&db, 1, "rss", true, "Show");
+    crate::podcasts::phone_sync::set_device_enabled(&db, 1, "mtp:pixel", true).unwrap();
+    insert_episode(&db, 11, 1, &first, 5, Some(1_785_225_600));
+    insert_episode(&db, 12, 1, &second, 6, Some(1_785_225_600));
+    db.conn()
+        .execute(
+            "UPDATE podcast_episodes SET title = 'Same title' WHERE id = 11",
+            [],
+        )
+        .unwrap();
+    db.conn()
+        .execute(
+            "UPDATE podcast_episodes SET title = 'same TITLE' WHERE id = 12",
+            [],
+        )
+        .unwrap();
+
+    let candidates = query_candidates_for_device(&db, "mtp:pixel").unwrap();
+
+    assert_eq!(candidates.len(), 2);
+    assert!(candidates.iter().any(|candidate| {
+        candidate.episode_id == 11
+            && candidate.device_path == "Show/2026-07-28 - Same title [11].mp3"
+    }));
+    assert!(candidates.iter().any(|candidate| {
+        candidate.episode_id == 12
+            && candidate.device_path == "Show/2026-07-28 - same TITLE [12].mp3"
+    }));
+    let plan = build_plan(
+        candidates,
+        &[],
+        true,
+        PodcastSyncSource::Rss,
+        None,
+        EnabledSyncSources {
+            rss: true,
+            youtube: true,
+        },
+    );
+    assert_eq!(plan.selected, 2);
+}
+
+#[test]
+fn mtp_47_an_episode_without_a_namesake_carries_no_disambiguator() {
+    let db = migrated();
+    let downloads = tempfile::tempdir().unwrap();
+    let episode = downloads.path().join("episode.mp3");
+    std::fs::write(&episode, b"episode").unwrap();
+    insert_subscription(&db, 1, "rss", true, "Show");
+    crate::podcasts::phone_sync::set_device_enabled(&db, 1, "mtp:pixel", true).unwrap();
+    insert_episode(&db, 11, 1, &episode, 7, Some(1_785_225_600));
+
+    let candidates = query_candidates_for_device(&db, "mtp:pixel").unwrap();
+
+    assert_eq!(
+        candidates[0].device_path,
+        "Show/2026-07-28 - Episode 11.mp3"
+    );
+    assert!(!candidates[0].device_path.contains('['));
+}
+
+#[test]
+fn mtp_47_a_very_long_episode_title_stays_within_the_component_byte_limit() {
+    let db = migrated();
+    let downloads = tempfile::tempdir().unwrap();
+    let episode = downloads.path().join("episode.mp3");
+    std::fs::write(&episode, b"episode").unwrap();
+    insert_subscription(&db, 1, "rss", true, "Show");
+    crate::podcasts::phone_sync::set_device_enabled(&db, 1, "mtp:pixel", true).unwrap();
+    insert_episode(&db, 11, 1, &episode, 7, Some(1_785_225_600));
+    let long_title = "界".repeat(140);
+    db.conn()
+        .execute(
+            "UPDATE podcast_episodes SET title = ?2 WHERE id = ?1",
+            params![11, long_title],
+        )
+        .unwrap();
+
+    let candidates = query_candidates_for_device(&db, "mtp:pixel").unwrap();
+    let path = &candidates[0].device_path;
+    let (folder, file_name) = path.split_once('/').unwrap();
+    let title = file_name
+        .strip_suffix(".mp3")
+        .unwrap()
+        .strip_prefix("2026-07-28 - ")
+        .unwrap();
+
+    assert!(folder.len() <= MAX_COMPONENT_BYTES);
+    assert!(title.len() <= MAX_COMPONENT_BYTES);
+    assert!(std::str::from_utf8(path.as_bytes()).is_ok());
+    assert!(path.ends_with(".mp3"));
+}
+
+#[test]
+fn mtp_47_the_device_path_separator_stays_ascii() {
+    let db = migrated();
+    let downloads = tempfile::tempdir().unwrap();
+    let episode = downloads.path().join("episode.mp3");
+    std::fs::write(&episode, b"episode").unwrap();
+    insert_subscription(&db, 1, "rss", true, "Show");
+    crate::podcasts::phone_sync::set_device_enabled(&db, 1, "mtp:pixel", true).unwrap();
+    insert_episode(&db, 11, 1, &episode, 7, Some(1_785_225_600));
+
+    let candidates = query_candidates_for_device(&db, "mtp:pixel").unwrap();
+
+    assert!(candidates[0].device_path.contains(" - "));
+    assert!(candidates[0].device_path.is_ascii());
 }
 
 #[test]
@@ -119,7 +280,7 @@ fn pod_12_a_selected_youtube_subscription_is_queried_just_like_rss() {
 
     insert_subscription(&conn, 1, "youtube", false, "Channel");
     crate::podcasts::phone_sync::set_device_enabled(&conn, 1, "mtp:pixel", true).unwrap();
-    insert_episode(&conn, 11, 1, &video, 11);
+    insert_episode(&conn, 11, 1, &video, 11, None);
 
     let candidates = query_candidates_for_device(&conn, "mtp:pixel").unwrap();
 
@@ -144,8 +305,8 @@ fn mtp_46_switching_youtube_off_removes_its_episodes_from_the_device_sync() {
     insert_subscription(&conn, 2, "rss", false, "Show");
     crate::podcasts::phone_sync::set_device_enabled(&conn, 1, "mtp:pixel", true).unwrap();
     crate::podcasts::phone_sync::set_device_enabled(&conn, 2, "mtp:pixel", true).unwrap();
-    insert_episode(&conn, 11, 1, &video, 11);
-    insert_episode(&conn, 12, 2, &episode, 7);
+    insert_episode(&conn, 11, 1, &video, 11, None);
+    insert_episode(&conn, 12, 2, &episode, 7, None);
 
     let on = query_candidates_for_device(&conn, "mtp:pixel").unwrap();
     assert_eq!(
@@ -198,8 +359,8 @@ fn mtp_46_switching_podcasts_off_removes_its_episodes_and_leaves_youtube_alone()
     insert_subscription(&conn, 2, "rss", false, "Show");
     crate::podcasts::phone_sync::set_device_enabled(&conn, 1, "mtp:pixel", true).unwrap();
     crate::podcasts::phone_sync::set_device_enabled(&conn, 2, "mtp:pixel", true).unwrap();
-    insert_episode(&conn, 11, 1, &video, 11);
-    insert_episode(&conn, 12, 2, &episode, 7);
+    insert_episode(&conn, 11, 1, &video, 11, None);
+    insert_episode(&conn, 12, 2, &episode, 7, None);
 
     crate::modules::set_enabled(&conn, &crate::modules::PODCASTS_MODULE, false).unwrap();
     let candidates = query_candidates_for_device(&conn, "mtp:pixel").unwrap();
@@ -232,7 +393,7 @@ fn mtp_46_the_global_online_sources_gate_empties_the_sync_even_with_both_modules
 
     insert_subscription(&conn, 1, "rss", false, "Show");
     crate::podcasts::phone_sync::set_device_enabled(&conn, 1, "mtp:pixel", true).unwrap();
-    insert_episode(&conn, 11, 1, &episode, 7);
+    insert_episode(&conn, 11, 1, &episode, 7, None);
 
     assert_eq!(
         query_candidates_for_device(&conn, "mtp:pixel")
@@ -259,7 +420,7 @@ fn pod_12_legacy_downloads_backfill_size_before_phone_sync() {
     std::fs::write(&legacy, b"legacy").unwrap();
     insert_subscription(&conn, 1, "rss", true, "Legacy Show");
     crate::podcasts::phone_sync::set_device_enabled(&conn, 1, "mtp:pixel", true).unwrap();
-    insert_episode(&conn, 11, 1, &legacy, 6);
+    insert_episode(&conn, 11, 1, &legacy, 6, None);
     conn.conn()
         .execute(
             "UPDATE podcast_episodes SET downloaded_bytes = NULL WHERE id = 11",
@@ -512,8 +673,8 @@ fn pod_12_each_device_receives_only_its_selected_subscriptions() {
     std::fs::write(&tablet_episode, b"tablet").unwrap();
     insert_subscription(&conn, 1, "rss", false, "Phone Show");
     insert_subscription(&conn, 2, "rss", false, "Tablet Show");
-    insert_episode(&conn, 11, 1, &phone_episode, 5);
-    insert_episode(&conn, 12, 2, &tablet_episode, 6);
+    insert_episode(&conn, 11, 1, &phone_episode, 5, None);
+    insert_episode(&conn, 12, 2, &tablet_episode, 6, None);
     crate::podcasts::phone_sync::set_device_enabled(&conn, 1, "mtp:phone", true).unwrap();
     crate::podcasts::phone_sync::set_device_enabled(&conn, 2, "mtp:tablet", true).unwrap();
 
@@ -541,6 +702,7 @@ fn pod_12_each_device_receives_only_its_selected_subscriptions() {
 #[test]
 fn pod_12_managed_paths_reject_absolute_parent_and_control_components() {
     assert!(safe_relative_path("Show/1-Episode.mp3"));
+    assert!(safe_relative_path("Show/2026-07-28 - Episode.mp3"));
     assert!(!safe_relative_path("../Music/Reprise/track.mp3"));
     assert!(!safe_relative_path("Show/../../track.mp3"));
     assert!(!safe_relative_path("/Podcasts/Reprise/track.mp3"));

@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-const MAX_COMPONENT_BYTES: usize = 120;
+pub(super) const MAX_COMPONENT_BYTES: usize = 120;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DevicePathMetadata {
@@ -77,7 +77,7 @@ pub fn device_track_path(
     format!("{album_artist}/{album}/{number} {title}{suffix}.{extension}")
 }
 
-fn truncate_utf8(value: &str, max_bytes: usize) -> String {
+pub(super) fn truncate_utf8(value: &str, max_bytes: usize) -> String {
     if value.len() <= max_bytes {
         return value.to_string();
     }

@@ -49,6 +49,21 @@ impl FeedFetcher for PartialFailureFeed {
     }
 }
 
+struct FixtureAudioFeed;
+
+impl FeedFetcher for FixtureAudioFeed {
+    fn fetch(&self, _: &SubscriptionRow) -> Result<Response, PodcastError> {
+        unreachable!("download_episode never refreshes the feed")
+    }
+
+    fn download(&self, _: &str, destination: &Path) -> Result<(), PodcastError> {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac");
+        std::fs::copy(fixture, destination)
+            .map(|_| ())
+            .map_err(|error| PodcastError::Body(error.to_string()))
+    }
+}
+
 fn conn() -> Db {
     let conn = Db::open_in_memory().unwrap();
     // These tests exercise fetch/parse/store logic, not the NET-1a gate
@@ -56,6 +71,39 @@ fn conn() -> Db {
     // starts enabled here.
     crate::modules::set_enabled(&conn, &crate::modules::PODCASTS_MODULE, true).unwrap();
     conn
+}
+
+fn add_downloadable_episode(db: &Db, audio_url: &str, published_at: Option<i64>) -> i64 {
+    let subscription_id = store::add_or_restore(
+        db,
+        &NewSubscription {
+            kind: PodcastKind::Rss,
+            feed_url: "https://example.test/tagged-feed".to_owned(),
+            title: "The Show".to_owned(),
+            author: Some("The Author".to_owned()),
+            image_url: None,
+            auto_download: false,
+        },
+        1,
+    )
+    .unwrap();
+    store::upsert_episode(
+        db,
+        subscription_id,
+        &crate::podcasts::feed::ParsedEpisode {
+            guid: "tagged-episode".to_owned(),
+            title: "Episode title".to_owned(),
+            image_url: None,
+            audio_url: audio_url.to_owned(),
+            page_url: None,
+            published_at,
+            duration_secs: None,
+        },
+        1_785_225_600,
+    )
+    .unwrap()
+    .unwrap()
+    .episode_id
 }
 
 fn add_subscription(conn: &Connection, url: &str, auto_download: bool) -> i64 {
@@ -315,6 +363,125 @@ fn download_episode_downloads_a_specific_episode_by_id_and_persists_its_size() {
         .unwrap();
     assert!(stored.downloaded_path.is_some());
     assert_eq!(stored.downloaded_bytes, Some(5));
+}
+
+#[test]
+fn pod_17_a_downloaded_episode_is_tagged_before_its_size_is_recorded() {
+    use lofty::prelude::*;
+
+    let db = conn();
+    let episode_id = add_downloadable_episode(
+        &db,
+        "https://example.test/episode.flac",
+        Some(1_785_225_600),
+    );
+    let directory = tempfile::tempdir().unwrap();
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac");
+    let fixture_bytes = std::fs::metadata(fixture).unwrap().len();
+    let mut states = Vec::new();
+
+    let outcome = download_episode(
+        &db,
+        &FixtureAudioFeed,
+        &FakeYoutube,
+        directory.path(),
+        episode_id,
+        &mut |state| states.push(state),
+    )
+    .unwrap();
+
+    let stored = store::episode(&db, episode_id).unwrap().unwrap();
+    let downloaded_path = Path::new(stored.downloaded_path.as_deref().unwrap());
+    let tagged = lofty::read_from_path(downloaded_path).unwrap();
+    let tag = tagged.primary_tag().unwrap();
+    assert_eq!(tag.title().as_deref(), Some("Episode title"));
+    assert_eq!(tag.album().as_deref(), Some("The Show"));
+    assert_eq!(tag.artist().as_deref(), Some("The Author"));
+    assert_eq!(
+        tag.get_string(lofty::tag::ItemKey::AlbumArtist),
+        Some("The Show")
+    );
+    assert_eq!(
+        tag.get_string(lofty::tag::ItemKey::RecordingDate),
+        Some("2026-07-28")
+    );
+    let published_bytes = std::fs::metadata(downloaded_path).unwrap().len();
+    assert_eq!(stored.downloaded_bytes, Some(published_bytes as i64));
+    assert_ne!(published_bytes, fixture_bytes);
+    assert_eq!(
+        outcome,
+        DownloadState::Downloaded {
+            bytes: published_bytes
+        }
+    );
+    assert_eq!(
+        states.last(),
+        Some(&DownloadState::Downloaded {
+            bytes: published_bytes
+        })
+    );
+}
+
+#[test]
+fn pod_17_an_untaggable_download_is_still_published_with_its_true_size() {
+    let db = conn();
+    let episode_id = add_downloadable_episode(&db, "https://example.test/episode.mp3", None);
+    let directory = tempfile::tempdir().unwrap();
+
+    let outcome = download_episode(
+        &db,
+        &FakeFeed::default(),
+        &FakeYoutube,
+        directory.path(),
+        episode_id,
+        &mut |_| {},
+    )
+    .unwrap();
+
+    assert_eq!(outcome, DownloadState::Downloaded { bytes: 5 });
+    let stored = store::episode(&db, episode_id).unwrap().unwrap();
+    assert_eq!(stored.downloaded_bytes, Some(5));
+    assert!(Path::new(stored.downloaded_path.as_deref().unwrap()).is_file());
+}
+
+#[test]
+fn pod_17_the_date_in_the_device_path_is_the_date_in_the_file_tag() {
+    use lofty::prelude::*;
+
+    let db = conn();
+    crate::modules::set_enabled(&db, &crate::modules::YOUTUBE_MODULE, true).unwrap();
+    let episode_id = add_downloadable_episode(
+        &db,
+        "https://example.test/episode.flac",
+        Some(1_785_312_000),
+    );
+    let directory = tempfile::tempdir().unwrap();
+    download_episode(
+        &db,
+        &FixtureAudioFeed,
+        &FakeYoutube,
+        directory.path(),
+        episode_id,
+        &mut |_| {},
+    )
+    .unwrap();
+    let stored = store::episode(&db, episode_id).unwrap().unwrap();
+    crate::podcasts::phone_sync::set_device_enabled(&db, stored.subscription_id, "mtp:pixel", true)
+        .unwrap();
+
+    let candidates =
+        crate::device_sync::podcasts::query_candidates_for_device(&db, "mtp:pixel").unwrap();
+    let file_name = candidates[0].device_path.rsplit('/').next().unwrap();
+    let device_date = &file_name[..10];
+    let tagged =
+        lofty::read_from_path(Path::new(stored.downloaded_path.as_deref().unwrap())).unwrap();
+    let tag_date = tagged
+        .primary_tag()
+        .unwrap()
+        .get_string(lofty::tag::ItemKey::RecordingDate)
+        .unwrap();
+
+    assert_eq!(device_date, tag_date);
 }
 
 #[test]

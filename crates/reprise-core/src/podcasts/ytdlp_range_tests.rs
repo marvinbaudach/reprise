@@ -48,6 +48,8 @@ fn pod_10_extended_listing_requests_the_first_forty_provider_items() {
         [
             "--no-warnings",
             "--flat-playlist",
+            "--extractor-args",
+            "youtubetab:approximate_date",
             "-I",
             "1:40",
             "-J",

@@ -5,6 +5,7 @@ pub mod config;
 pub mod discovery;
 pub mod download_state;
 pub mod downloads;
+pub mod episode_tags;
 pub mod feed;
 pub mod http;
 pub mod itunes;

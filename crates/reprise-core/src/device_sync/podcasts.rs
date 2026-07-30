@@ -7,6 +7,7 @@ use std::time::UNIX_EPOCH;
 
 use super::cap::{items_to_evict, CapItem};
 use super::safe_component;
+use super::sanitize::{truncate_utf8, MAX_COMPONENT_BYTES};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PodcastSyncSource {
@@ -109,7 +110,8 @@ pub fn query_candidates_for_device(
     let conn = db.conn();
     let enabled = enabled_sync_sources(db)?;
     let mut statement = conn.prepare(
-        "SELECT e.id, e.title, s.title, e.downloaded_path, e.downloaded_bytes, s.kind
+        "SELECT e.id, e.title, s.title, e.downloaded_path, e.downloaded_bytes, s.kind,
+                e.published_at, e.first_seen_at
          FROM podcast_episodes e
          JOIN podcast_subscriptions s ON s.id = e.subscription_id
          JOIN podcast_subscription_devices d
@@ -127,13 +129,24 @@ pub fn query_candidates_for_device(
             PathBuf::from(row.get::<_, String>(3)?),
             row.get::<_, Option<i64>>(4)?,
             row.get::<_, String>(5)?,
+            row.get::<_, Option<i64>>(6)?,
+            row.get::<_, i64>(7)?,
         ))
     })?;
     let rows = rows.collect::<Result<Vec<_>, _>>()?;
     drop(statement);
     let mut candidates = Vec::new();
     for row in rows {
-        let (episode_id, title, show, source_path, recorded_bytes, kind) = row;
+        let (
+            episode_id,
+            title,
+            show,
+            source_path,
+            recorded_bytes,
+            kind,
+            published_at,
+            first_seen_at,
+        ) = row;
         let Some(source) = source_from_kind(&kind) else {
             continue;
         };
@@ -167,10 +180,16 @@ pub fn query_candidates_for_device(
                 bytes
             }
         };
-        candidates.push(PodcastSyncCandidate {
+        let path_parts = device_path_parts(
+            &show,
+            &title,
+            &crate::podcasts::episode_tags::episode_date(published_at, first_seen_at),
+            &source_path,
+        );
+        candidates.push(PreparedCandidate {
             episode_id,
             source,
-            device_path: device_path(episode_id, &show, &title, &source_path),
+            source_path,
             title,
             show,
             size_bytes: recorded_bytes,
@@ -180,10 +199,18 @@ pub fn query_candidates_for_device(
                 .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
                 .and_then(|duration| i64::try_from(duration.as_secs()).ok())
                 .unwrap_or(0),
-            source_path,
+            device_path: path_parts,
         });
     }
-    Ok(candidates)
+    let collision_rows = candidates
+        .iter()
+        .map(PreparedCandidate::collision_row)
+        .collect::<Vec<_>>();
+    Ok(candidates
+        .into_iter()
+        .zip(disambiguators(&collision_rows))
+        .map(|(candidate, disambiguator)| candidate.into_candidate(disambiguator))
+        .collect())
 }
 
 // `MTP-45`: `query_selection_candidates_for_device` lives in its own sibling
@@ -313,9 +340,87 @@ pub fn safe_relative_path(path: &str) -> bool {
             .all(|component| matches!(component, std::path::Component::Normal(_)))
 }
 
-fn device_path(episode_id: i64, show: &str, title: &str, source: &Path) -> String {
-    let show = safe_component(show, "Unknown Podcast");
-    let title = safe_component(title, "Untitled Episode");
+/// The show folder, file-name stem without a disambiguator, and validated
+/// extension including its dot (empty when the source has none).
+struct DevicePathParts {
+    folder: String,
+    stem: String,
+    extension: String,
+}
+
+impl DevicePathParts {
+    /// Composes a readable path, adding the stable episode id only when
+    /// another episode would otherwise land on the same name.
+    fn compose(&self, disambiguator: Option<i64>) -> String {
+        let disambiguator = disambiguator
+            .map(|episode_id| format!(" [{episode_id}]"))
+            .unwrap_or_default();
+        format!(
+            "{}/{}{}{}",
+            self.folder, self.stem, disambiguator, self.extension
+        )
+    }
+
+    /// Builds the case-insensitive device-name key used to find collisions.
+    fn collision_key(&self) -> String {
+        format!("{}\0{}\0{}", self.folder, self.stem, self.extension).to_lowercase()
+    }
+}
+
+/// A complete candidate except for the device path, which depends on whether
+/// another prepared row shares its collision key.
+struct PreparedCandidate {
+    episode_id: i64,
+    source: PodcastSyncSource,
+    source_path: PathBuf,
+    title: String,
+    show: String,
+    size_bytes: u64,
+    source_mtime: i64,
+    device_path: DevicePathParts,
+}
+
+impl PreparedCandidate {
+    fn collision_row(&self) -> (i64, String) {
+        (self.episode_id, self.device_path.collision_key())
+    }
+
+    fn into_candidate(self, disambiguator: Option<i64>) -> PodcastSyncCandidate {
+        PodcastSyncCandidate {
+            episode_id: self.episode_id,
+            source: self.source,
+            source_path: self.source_path,
+            device_path: self.device_path.compose(disambiguator),
+            title: self.title,
+            show: self.show,
+            size_bytes: self.size_bytes,
+            source_mtime: self.source_mtime,
+        }
+    }
+}
+
+/// Returns the episode id for every row whose collision key is shared.
+fn disambiguators(rows: &[(i64, String)]) -> Vec<Option<i64>> {
+    let mut counts = std::collections::HashMap::new();
+    for (_, key) in rows {
+        *counts.entry(key.as_str()).or_insert(0_usize) += 1;
+    }
+    rows.iter()
+        .map(|(episode_id, key)| {
+            (counts.get(key.as_str()).copied().unwrap_or_default() > 1).then_some(*episode_id)
+        })
+        .collect()
+}
+
+fn device_path_parts(show: &str, title: &str, date: &str, source: &Path) -> DevicePathParts {
+    let folder = truncate_utf8(
+        &safe_component(show, "Unknown Podcast"),
+        MAX_COMPONENT_BYTES,
+    );
+    let title = truncate_utf8(
+        &safe_component(title, "Untitled Episode"),
+        MAX_COMPONENT_BYTES,
+    );
     let extension = source
         .extension()
         .and_then(|extension| extension.to_str())
@@ -328,7 +433,11 @@ fn device_path(episode_id: i64, show: &str, title: &str, source: &Path) -> Strin
         })
         .map(|extension| format!(".{}", extension.to_ascii_lowercase()))
         .unwrap_or_default();
-    format!("{show}/{episode_id}-{title}{extension}")
+    DevicePathParts {
+        folder,
+        stem: format!("{date} - {title}"),
+        extension,
+    }
 }
 
 #[cfg(test)]

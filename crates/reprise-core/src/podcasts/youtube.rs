@@ -21,7 +21,7 @@ pub struct YoutubeEpisode {
     pub title: String,
     /// The durable watch URL, never the expiring best-audio stream URL.
     pub audio_url: String,
-    /// Flat playlists do not provide a dependable publication date.
+    /// Day-granular upload timestamp requested from yt-dlp's channel listing.
     pub published_at: Option<i64>,
     pub duration_secs: Option<i64>,
     pub image_url: Option<String>,
@@ -142,6 +142,20 @@ mod tests {
         );
         assert!(!episode.audio_url.contains("googlevideo"));
         assert_eq!(episode.published_at, Some(1_785_369_600));
+    }
+
+    #[test]
+    fn project_video_keeps_a_timestamp_supplied_by_the_listing() {
+        let episode = project_video(YtDlpVideo {
+            id: "dated-video".to_owned(),
+            title: "Dated episode".to_owned(),
+            duration_secs: None,
+            timestamp: Some(1_785_225_600),
+            upload_date: None,
+            image_url: None,
+        });
+
+        assert_eq!(episode.published_at, Some(1_785_225_600));
     }
 
     #[test]

@@ -236,6 +236,16 @@ fn download_episode_in(
         on_progress(state.clone());
         return Ok(state);
     }
+    let tag_set = super::episode_tags::EpisodeTagSet {
+        title: episode.title.clone(),
+        show: subscription.title.clone(),
+        artist: subscription
+            .author
+            .clone()
+            .filter(|author| !author.trim().is_empty())
+            .unwrap_or_else(|| subscription.title.clone()),
+        date: super::episode_tags::episode_date(episode.published_at, episode.first_seen_at),
+    };
     let download = super::downloads::download_atomically(&destination, |temporary| {
         let mut report = |progress: DownloadProgress| {
             state = super::download_state::downloading(
@@ -247,12 +257,21 @@ fn download_episode_in(
         };
         match subscription.kind {
             PodcastKind::Rss => {
-                feed_fetcher.download_with_progress(&episode.audio_url, temporary, &mut report)
+                feed_fetcher.download_with_progress(&episode.audio_url, temporary, &mut report)?;
             }
             PodcastKind::Youtube => {
-                youtube_fetcher.download_with_progress(&episode.audio_url, temporary, &mut report)
+                youtube_fetcher.download_with_progress(
+                    &episode.audio_url,
+                    temporary,
+                    &mut report,
+                )?;
             }
         }
+        // `POD-17`: tag the temporary, never the published file. Lofty
+        // rewrites Ogg by truncating first, so an interrupted write may only
+        // destroy a `.part` file that the next attempt deletes.
+        super::episode_tags::tag_best_effort(temporary, &tag_set, episode_id);
+        Ok(())
     });
     match download {
         Ok(bytes) => {
