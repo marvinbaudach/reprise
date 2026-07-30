@@ -71,7 +71,7 @@ fn src_5_radio_search_hides_existing_favorites() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn src_7_a_successful_radio_add_acknowledges_the_row_in_place() {
     gtk4::init().unwrap();
-    let conn = Rc::new(RefCell::new(reprise_core::db::open_migrated(None).unwrap()));
+    let conn = Rc::new(crate::test_db::open().unwrap());
     let dialog = RadioAddDialog::new(conn, Rc::new(Cell::new(Connectivity::Online)), || {});
     dialog.render_results(vec![StationCandidate {
         uuid: "new".into(),
@@ -119,7 +119,7 @@ fn src_7_a_successful_radio_add_acknowledges_the_row_in_place() {
 /// module.
 #[test]
 fn src_11_radio_add_dialog_images_allowed_is_the_net_1a_and() {
-    let conn = reprise_core::db::open_migrated(None).unwrap();
+    let conn = crate::test_db::open().unwrap();
     // Neither the global gate nor the module is on by default.
     assert!(!images_allowed(&conn));
 
@@ -140,7 +140,7 @@ fn src_11_radio_add_dialog_images_allowed_is_the_net_1a_and() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn src_11_radio_search_result_stays_on_the_fallback_when_images_are_not_allowed() {
     gtk4::init().unwrap();
-    let conn = Rc::new(RefCell::new(reprise_core::db::open_migrated(None).unwrap()));
+    let conn = Rc::new(crate::test_db::open().unwrap());
     let dialog = RadioAddDialog::new(conn, Rc::new(Cell::new(Connectivity::Online)), || {});
     dialog.render_results(vec![StationCandidate {
         uuid: "new".into(),
@@ -212,7 +212,7 @@ fn find_scroller(widget: &gtk4::Widget) -> Option<gtk4::ScrolledWindow> {
 #[ignore = "requires a display; run via xvfb-run"]
 fn src_8_radio_results_scroll_inside_a_bounded_viewport() {
     gtk4::init().unwrap();
-    let conn = Rc::new(RefCell::new(reprise_core::db::open_migrated(None).unwrap()));
+    let conn = Rc::new(crate::test_db::open().unwrap());
     let dialog = RadioAddDialog::new(conn, Rc::new(Cell::new(Connectivity::Online)), || {});
     let scroller = dialog
         .widgets
@@ -245,7 +245,7 @@ fn src_8_radio_results_scroll_inside_a_bounded_viewport() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn rad_5_near_you_click_without_a_location_opens_settings_and_dispatches_no_search() {
     gtk4::init().unwrap();
-    let conn = Rc::new(RefCell::new(reprise_core::db::open_migrated(None).unwrap()));
+    let conn = Rc::new(crate::test_db::open().unwrap());
     let dialog = RadioAddDialog::new(conn, Rc::new(Cell::new(Connectivity::Online)), || {});
     let opened = Rc::new(std::cell::Cell::new(false));
     let flag = opened.clone();
@@ -271,15 +271,8 @@ fn rad_5_near_you_click_without_a_location_opens_settings_and_dispatches_no_sear
 #[ignore = "requires a display; run via xvfb-run"]
 fn rad_5_near_you_click_with_a_location_dispatches_a_search_and_never_opens_settings() {
     gtk4::init().unwrap();
-    let conn = Rc::new(RefCell::new(reprise_core::db::open_migrated(None).unwrap()));
-    reprise_core::location::store(
-        &conn.borrow(),
-        52.52,
-        13.405,
-        "Berlin, Deutschland",
-        Some("DE"),
-    )
-    .unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    reprise_core::location::store(&conn, 52.52, 13.405, "Berlin, Deutschland", Some("DE")).unwrap();
     let dialog = RadioAddDialog::new(conn, Rc::new(Cell::new(Connectivity::Online)), || {});
     let opened = Rc::new(std::cell::Cell::new(false));
     let flag = opened.clone();
@@ -305,8 +298,8 @@ fn rad_5_near_you_click_with_a_location_dispatches_a_search_and_never_opens_sett
 #[ignore = "requires a display; run via xvfb-run"]
 fn net_1a_radio_search_never_reaches_the_directory_while_the_switch_is_off() {
     gtk4::init().unwrap();
-    let conn = Rc::new(RefCell::new(reprise_core::db::open_migrated(None).unwrap()));
-    reprise_core::online_sources::set_enabled(&conn.borrow(), false).unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    reprise_core::online_sources::set_enabled(&conn, false).unwrap();
     let dialog = RadioAddDialog::new(conn, Rc::new(Cell::new(Connectivity::Online)), || {});
 
     dialog.submit("metalcore");
@@ -330,7 +323,7 @@ fn net_1a_radio_search_never_reaches_the_directory_while_the_switch_is_off() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn net_3_radio_search_is_refused_offline_but_a_url_still_reaches_preview() {
     gtk4::init().unwrap();
-    let conn = Rc::new(RefCell::new(reprise_core::db::open_migrated(None).unwrap()));
+    let conn = Rc::new(crate::test_db::open().unwrap());
     let dialog = RadioAddDialog::new(conn, Rc::new(Cell::new(Connectivity::Offline)), || {});
 
     dialog.submit("metalcore");
@@ -363,7 +356,7 @@ fn net_3_radio_search_is_refused_offline_but_a_url_still_reaches_preview() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn net_3_confirming_an_offline_url_preview_persists_the_station() {
     gtk4::init().unwrap();
-    let conn = Rc::new(RefCell::new(reprise_core::db::open_migrated(None).unwrap()));
+    let conn = Rc::new(crate::test_db::open().unwrap());
     let dialog = RadioAddDialog::new(
         conn.clone(),
         Rc::new(Cell::new(Connectivity::Offline)),
@@ -373,7 +366,7 @@ fn net_3_confirming_an_offline_url_preview_persists_the_station() {
     dialog.submit("https://radio.example/live.mp3");
     dialog.widgets.confirm.emit_clicked();
 
-    let stations = radio::station::list(&conn.borrow()).unwrap();
+    let stations = radio::station::list(&conn).unwrap();
     assert!(
         stations
             .iter()

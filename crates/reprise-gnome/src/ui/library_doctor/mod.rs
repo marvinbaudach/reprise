@@ -17,13 +17,13 @@ use std::sync::Arc;
 use gtk4::glib;
 use libadwaita as adw;
 use libadwaita::prelude::*;
+use reprise_core::db::Db;
 use reprise_core::fingerprint::{FingerprintBackend, FingerprintCapability};
 use reprise_core::library_doctor::{
     DoctorApplyPlan, DoctorScanOutcome, DoctorScanRequest, DoctorScopeRequest, DoctorViewSnapshot,
     DoctorWriteProgress, DoctorWriteReport, LibraryDoctor,
 };
 use reprise_core::view_source::ViewSource;
-use rusqlite::Connection;
 
 use super::preferences::PreferencesContext;
 use super::scan_flow::ScanControls;
@@ -36,7 +36,7 @@ use review_page::LibraryDoctorReviewPage;
 use summary_page::LibraryDoctorPage;
 
 pub(in crate::ui) struct LibraryDoctorCoordinator {
-    conn: Rc<RefCell<Connection>>,
+    conn: Rc<Db>,
     db_path: PathBuf,
     navigation: adw::NavigationView,
     window: adw::ApplicationWindow,
@@ -59,7 +59,7 @@ pub(in crate::ui) struct LibraryDoctorCoordinator {
 }
 
 pub(in crate::ui) struct LibraryDoctorContext<'a> {
-    pub(in crate::ui) conn: &'a Rc<RefCell<Connection>>,
+    pub(in crate::ui) conn: &'a Rc<Db>,
     pub(in crate::ui) db_path: &'a Path,
     pub(in crate::ui) navigation: &'a adw::NavigationView,
     pub(in crate::ui) window: &'a adw::ApplicationWindow,
@@ -216,10 +216,7 @@ impl LibraryDoctorCoordinator {
     }
 
     fn open_available(&self) {
-        {
-            let conn = self.conn.borrow();
-            self.page.sync_remote_preference(&conn);
-        }
+        self.page.sync_remote_preference(&self.conn);
         self.open_root_page();
     }
 
@@ -242,8 +239,8 @@ impl LibraryDoctorCoordinator {
 
     fn load_last_scan(&self) {
         let scan = {
-            let mut conn = self.conn.borrow_mut();
-            LibraryDoctor::new(&mut conn)
+            let conn = &self.conn;
+            LibraryDoctor::new(conn)
                 .last_complete_scan()
                 .unwrap_or_else(|error| {
                     tracing::warn!(%error, "could not load the last Library Doctor result");
@@ -400,8 +397,7 @@ impl LibraryDoctorCoordinator {
                 filter,
                 Rc::new(move |_| {
                     if let Some(coordinator) = weak.upgrade() {
-                        let conn = coordinator.conn.borrow();
-                        coordinator.page.sync_remote_preference(&conn);
+                        coordinator.page.sync_remote_preference(&coordinator.conn);
                     }
                 }),
                 &on_edit,
@@ -511,8 +507,8 @@ impl LibraryDoctorCoordinator {
             return;
         }
         let total = {
-            let mut conn = self.conn.borrow_mut();
-            LibraryDoctor::new(&mut conn)
+            let conn = &self.conn;
+            LibraryDoctor::new(conn)
                 .last_cleanup()
                 .ok()
                 .flatten()

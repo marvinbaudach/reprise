@@ -146,9 +146,9 @@ fn job_status_request_matches_committed_fixture() {
     // Enqueue one queued job (id 1) with a fixed clock so `created_at` is
     // deterministic and the whole response can be diffed.
     {
-        let conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
+        let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
         let staging = reprise_core::ai_staging::StagingStore::new(dir.path().join("staging"));
-        reprise_core::ai_jobs::enqueue_instrumental(&conn, &staging, 1, "test@1", 1000).unwrap();
+        reprise_core::ai_jobs::enqueue_instrumental(&db, &staging, 1, "test@1", 1000).unwrap();
     }
 
     let mut client = McpClient::start(&path);

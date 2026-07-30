@@ -1,9 +1,7 @@
 use super::*;
 
-fn migrated_conn() -> Connection {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    conn
+fn migrated_conn() -> crate::db::Db {
+    crate::db::Db::open_in_memory().unwrap()
 }
 
 #[test]

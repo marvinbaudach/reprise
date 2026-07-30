@@ -106,12 +106,12 @@ fn apply_window_control(
     active: bool,
 ) -> Result<(), rusqlite::Error> {
     {
-        let conn = context.conn.borrow();
+        let conn = &context.conn;
         match control {
-            LibraryWindowControl::Sidebar => settings::set_sidebar_visible(&conn, active),
-            LibraryWindowControl::BrowseBar => settings::set_browse_visible(&conn, active),
-            LibraryWindowControl::InfoPanel => settings::set_info_panel_visible(&conn, active),
-            LibraryWindowControl::StatusLine => settings::set_status_visible(&conn, active),
+            LibraryWindowControl::Sidebar => settings::set_sidebar_visible(conn, active),
+            LibraryWindowControl::BrowseBar => settings::set_browse_visible(conn, active),
+            LibraryWindowControl::InfoPanel => settings::set_info_panel_visible(conn, active),
+            LibraryWindowControl::StatusLine => settings::set_status_visible(conn, active),
         }
     }?;
     match control {
@@ -215,8 +215,8 @@ pub(in crate::ui) fn build(context: &Rc<PreferencesContext>) -> adw::Preferences
         .description(strings::text(strings::PLAYER_BAR_POSITION))
         .build();
     let selected_position = {
-        let conn = context.conn.borrow();
-        bar_position_index(settings::get_player_bar_position(&conn))
+        let conn = &context.conn;
+        bar_position_index(settings::get_player_bar_position(conn))
     };
     let on_position_selected: Rc<dyn Fn(u32) -> bool> = {
         let weak = Rc::downgrade(context);
@@ -226,8 +226,8 @@ pub(in crate::ui) fn build(context: &Rc<PreferencesContext>) -> adw::Preferences
             };
             let value = bar_position_from_index(index);
             let saved = {
-                let conn = context.conn.borrow();
-                settings::set_player_bar_position(&conn, value)
+                let conn = &context.conn;
+                settings::set_player_bar_position(conn, value)
             };
             match saved {
                 Ok(()) => {
@@ -265,12 +265,12 @@ pub(in crate::ui) fn build(context: &Rc<PreferencesContext>) -> adw::Preferences
         .title(visual_strings::text(visual_strings::LIBRARY_WINDOW))
         .build();
     let states = {
-        let conn = context.conn.borrow();
+        let conn = &context.conn;
         LibraryWindowStates {
-            sidebar: settings::get_sidebar_visible(&conn),
-            browse_bar: settings::get_browse_visible(&conn),
-            info_panel: settings::get_info_panel_visible(&conn),
-            status_line: settings::get_status_visible(&conn),
+            sidebar: settings::get_sidebar_visible(conn),
+            browse_bar: settings::get_browse_visible(conn),
+            info_panel: settings::get_info_panel_visible(conn),
+            status_line: settings::get_status_visible(conn),
         }
     };
     let on_window_control_changed: Rc<dyn Fn(LibraryWindowControl, bool) -> bool> = {
@@ -301,8 +301,8 @@ pub(in crate::ui) fn build(context: &Rc<PreferencesContext>) -> adw::Preferences
         &strings::text(strings::DENSITY_COMPACT),
     ]);
     let selected_density = {
-        let conn = context.conn.borrow();
-        density_index(settings::get_list_density(&conn))
+        let conn = &context.conn;
+        density_index(settings::get_list_density(conn))
     };
     let density = adw::ComboRow::builder()
         .title(strings::text(strings::LIST_DENSITY))
@@ -323,8 +323,8 @@ pub(in crate::ui) fn build(context: &Rc<PreferencesContext>) -> adw::Preferences
         }
         let value = density_from_index(row.selected());
         let saved = {
-            let conn = context.conn.borrow();
-            settings::set_list_density(&conn, value)
+            let conn = &context.conn;
+            settings::set_list_density(conn, value)
         };
         match saved {
             Ok(()) => {

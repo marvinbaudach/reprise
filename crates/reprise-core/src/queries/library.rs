@@ -16,7 +16,7 @@ use rusqlite::Connection;
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn query_track_window_library(
-    conn: &mut Connection,
+    conn: &Connection,
     sort_field: &str,
     sort_dir: &str,
     filter: &str,
@@ -43,7 +43,7 @@ pub(super) fn query_track_window_library(
 }
 
 pub(super) fn query_track_window_missing(
-    conn: &mut Connection,
+    conn: &Connection,
     sort_field: &str,
     sort_dir: &str,
     filter: &str,

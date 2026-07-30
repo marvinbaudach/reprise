@@ -1,4 +1,5 @@
 use super::*;
+use reprise_core::db::Db;
 
 fn release(id: &str) -> reprise_core::artist_news::StoredRelease {
     reprise_core::artist_news::StoredRelease {
@@ -80,11 +81,8 @@ fn noop_show_album() -> release_row::OnShowAlbum {
     Rc::new(|_, _| {})
 }
 
-fn test_popover(
-    conn: Rc<RefCell<rusqlite::Connection>>,
-    database_path: PathBuf,
-) -> Rc<NewReleasesPopover> {
-    let concerts_runtime = ConcertsRuntime::setup(&conn.borrow());
+fn test_popover(conn: Rc<Db>, database_path: PathBuf) -> Rc<NewReleasesPopover> {
+    let concerts_runtime = ConcertsRuntime::setup(&conn);
     NewReleasesPopover::new(
         conn,
         database_path,
@@ -173,18 +171,18 @@ fn nr_8_first_fetch_and_retry_keep_feedback_reachable_without_a_badge() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn nr_7_header_button_stays_hidden_with_cached_releases_while_disabled() {
     gtk4::init().unwrap();
-    let conn = reprise_core::db::open(None).unwrap();
-    reprise_core::db::migrate(&conn).unwrap();
-    conn.execute(
-        "INSERT INTO new_releases (
+    let conn = crate::test_db::open().unwrap();
+    crate::test_db::connection(&conn)
+        .execute(
+            "INSERT INTO new_releases (
            release_group_mbid, artist_name, artist_mbid, title, release_type,
            first_release_date, fetched_at, fallback_accent
          ) VALUES ('release', 'Artist', 'artist', 'Release', 'Album',
                    '2026-08-01', 1, '#123456')",
-        [],
-    )
-    .unwrap();
-    let conn = Rc::new(RefCell::new(conn));
+            [],
+        )
+        .unwrap();
+    let conn = Rc::new(conn);
 
     let state = test_popover(conn, PathBuf::from("unused.db"));
 
@@ -195,16 +193,13 @@ fn nr_7_header_button_stays_hidden_with_cached_releases_while_disabled() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn nr_3a_header_button_is_visible_only_when_releases_exist_after_first_fetch() {
     gtk4::init().unwrap();
-    let conn = reprise_core::db::open(None).unwrap();
-    reprise_core::db::migrate(&conn).unwrap();
-    let conn = Rc::new(RefCell::new(conn));
+    let conn = Rc::new(crate::test_db::open().unwrap());
     let state = test_popover(conn.clone(), PathBuf::from("unused.db"));
     assert!(!state.button.is_visible());
 
-    reprise_core::library::settings::set_new_releases_fetch_completed(&conn.borrow(), true)
-        .unwrap();
+    reprise_core::library::settings::set_new_releases_fetch_completed(&conn, true).unwrap();
 
-    conn.borrow()
+    crate::test_db::connection(&conn)
         .execute(
             "INSERT INTO new_releases (
                release_group_mbid, artist_name, artist_mbid, title, release_type,
@@ -214,12 +209,8 @@ fn nr_3a_header_button_is_visible_only_when_releases_exist_after_first_fetch() {
             [],
         )
         .unwrap();
-    reprise_core::modules::set_enabled(
-        &conn.borrow(),
-        &reprise_core::modules::NEW_RELEASES_MODULE,
-        true,
-    )
-    .unwrap();
+    reprise_core::modules::set_enabled(&conn, &reprise_core::modules::NEW_RELEASES_MODULE, true)
+        .unwrap();
     state.render(false, false);
 
     assert!(state.button.is_visible());
@@ -236,15 +227,13 @@ fn nr_3a_header_button_is_visible_only_when_releases_exist_after_first_fetch() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn nr_8_enabling_the_module_reaches_a_fetch() {
     gtk4::init().unwrap();
-    let conn = reprise_core::db::open(None).unwrap();
-    reprise_core::db::migrate(&conn).unwrap();
-    let conn = Rc::new(RefCell::new(conn));
+    let conn = Rc::new(crate::test_db::open().unwrap());
     let state = test_popover(conn.clone(), PathBuf::from("unused.db"));
-    let runtime = ArtistNewsRuntime::setup(&conn.borrow());
+    let runtime = ArtistNewsRuntime::setup(&conn);
     bind_runtime(&state, &runtime);
 
     // The real user action: consent, with nothing fetched yet.
-    runtime.set_enabled(&conn.borrow(), true).unwrap();
+    runtime.set_enabled(&conn, true).unwrap();
 
     assert!(
         state.button.is_visible(),
@@ -274,24 +263,24 @@ fn nr_9a_opening_the_popover_clears_the_badge() {
     if gtk4::init().is_err() {
         return;
     }
-    let conn = reprise_core::db::open(None).unwrap();
-    reprise_core::db::migrate(&conn).unwrap();
+    let conn = crate::test_db::open().unwrap();
     reprise_core::modules::set_enabled(&conn, &reprise_core::modules::NEW_RELEASES_MODULE, true)
         .unwrap();
     reprise_core::library::settings::set_new_releases_fetch_completed(&conn, true).unwrap();
     let now = chrono::Utc::now().timestamp();
     for mbid in ["release-one", "release-two"] {
-        conn.execute(
-            "INSERT INTO new_releases (
+        crate::test_db::connection(&conn)
+            .execute(
+                "INSERT INTO new_releases (
                release_group_mbid, artist_name, artist_mbid, title, release_type,
                first_release_date, fetched_at, fallback_accent
              ) VALUES (?1, 'Artist', 'artist', 'Release', 'Album',
                        '2026-08-01', ?2, '#123456')",
-            rusqlite::params![mbid, now],
-        )
-        .unwrap();
+                rusqlite::params![mbid, now],
+            )
+            .unwrap();
     }
-    let conn = Rc::new(RefCell::new(conn));
+    let conn = Rc::new(conn);
     let state = test_popover(conn, PathBuf::from("unused.db"));
 
     assert!(
@@ -319,12 +308,11 @@ fn enabling_starts_the_refresh_timer_and_disabling_stops_it() {
     if gtk4::init().is_err() {
         return;
     }
-    let conn = reprise_core::db::open(None).unwrap();
-    reprise_core::db::migrate(&conn).unwrap();
+    let conn = crate::test_db::open().unwrap();
     reprise_core::modules::set_enabled(&conn, &reprise_core::modules::NEW_RELEASES_MODULE, true)
         .unwrap();
     reprise_core::library::settings::set_new_releases_fetch_completed(&conn, true).unwrap();
-    let conn = Rc::new(RefCell::new(conn));
+    let conn = Rc::new(conn);
     let state = test_popover(conn, PathBuf::from("unused.db"));
 
     assert!(
@@ -358,15 +346,13 @@ fn nr_5b_jump_rows_route_to_full_views_without_an_internal_page() {
     if gtk4::init().is_err() {
         return;
     }
-    let conn = reprise_core::db::open(None).unwrap();
-    reprise_core::db::migrate(&conn).unwrap();
-    let conn = Rc::new(RefCell::new(conn));
+    let conn = Rc::new(crate::test_db::open().unwrap());
     let routed = Rc::new(RefCell::new(Vec::new()));
     let on_open_view: OnOpenView = {
         let routed = routed.clone();
         Rc::new(move |target| routed.borrow_mut().push(target))
     };
-    let runtime = ConcertsRuntime::setup(&conn.borrow());
+    let runtime = ConcertsRuntime::setup(&conn);
     let state = NewReleasesPopover::new(
         conn,
         PathBuf::from("unused.db"),

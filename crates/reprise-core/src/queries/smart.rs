@@ -24,7 +24,7 @@ fn load_smart_playlist(
     conn: &Connection,
     id: i64,
 ) -> Result<Option<SmartPlaylist>, rusqlite::Error> {
-    Ok(playlists::list_smart(conn)?
+    Ok(playlists::list_smart_in(conn)?
         .into_iter()
         .find(|p| p.id == id))
 }
@@ -83,7 +83,7 @@ fn build_smart_window_query(
 }
 
 pub(super) fn query_track_window_smart(
-    conn: &mut Connection,
+    conn: &Connection,
     smart_id: i64,
     view_sort: (&str, &str),
     filter: &str,

@@ -10,6 +10,7 @@ use std::rc::Rc;
 
 use reprise_core::cover::{read_cover_tag, resolve_source, CoverSource, CoverTag};
 use reprise_core::cover_download::{album_key, fetch_and_cache};
+use reprise_core::db::Db;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::ui) enum DownloadOutcome {
@@ -37,7 +38,7 @@ pub struct CoverDownloadRuntime {
 }
 
 /// Starts the one shared serial worker and seeds its live opt-in state.
-pub(in crate::ui) fn setup(conn: &rusqlite::Connection) -> CoverDownloadRuntime {
+pub(in crate::ui) fn setup(conn: &Db) -> CoverDownloadRuntime {
     CoverDownloadRuntime {
         enabled: Rc::new(Cell::new(
             reprise_core::online_sources::network_allowed_or_off(
@@ -60,7 +61,7 @@ pub(in crate::ui) fn setup_for_test() -> CoverDownloadRuntime {
 impl CoverDownloadRuntime {
     pub(in crate::ui) fn set_enabled(
         &self,
-        conn: &rusqlite::Connection,
+        conn: &Db,
         enabled: bool,
     ) -> Result<(), rusqlite::Error> {
         reprise_core::modules::set_enabled(
@@ -80,7 +81,7 @@ impl CoverDownloadRuntime {
     /// called after the gate toggles on the Online sources page, so a
     /// module that is itself on still stops immediately when the gate goes
     /// off (`SET-4`).
-    pub(in crate::ui) fn recompute_enabled(&self, conn: &rusqlite::Connection) {
+    pub(in crate::ui) fn recompute_enabled(&self, conn: &Db) {
         self.enabled
             .set(reprise_core::online_sources::network_allowed_or_off(
                 conn,
@@ -232,8 +233,7 @@ mod tests {
 
     #[test]
     fn net_1a_recompute_enabled_reflects_the_global_gate() {
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
+        let conn = crate::test_db::open().unwrap();
         reprise_core::modules::set_enabled(
             &conn,
             &reprise_core::modules::COVER_DOWNLOAD_MODULE,
@@ -257,8 +257,7 @@ mod tests {
 
     #[test]
     fn runtime_reads_and_updates_the_live_module_setting() {
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
+        let conn = crate::test_db::open().unwrap();
         let runtime = setup(&conn);
         assert!(!runtime.enabled.get());
 

@@ -1,15 +1,11 @@
-use rusqlite::Connection;
-
 use super::sync_log::{
     deviations, finish_run, note_deviation, recent_runs, start_run, summarize, Deviation,
     DeviationKind, RunCounters, RunOutcome, RunStart, RunSummary, RETAINED_RUNS,
 };
 use crate::device_sync::machine::SyncOutcome;
 
-fn database() -> Connection {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    conn
+fn database() -> crate::db::Db {
+    crate::db::Db::open_in_memory().unwrap()
 }
 
 fn start() -> RunStart {

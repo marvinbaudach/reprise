@@ -34,12 +34,10 @@ impl TrackList {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
     use std::rc::Rc;
 
     use gtk4::gio::prelude::*;
     use gtk4::glib;
-    use rusqlite::Connection;
 
     use super::*;
 
@@ -48,16 +46,16 @@ mod tests {
     fn clear_all_restrictions_resets_search_and_browse_in_one_pass() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
-        let conn = Connection::open_in_memory().unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        conn.execute_batch(
-            "INSERT INTO tracks (path,title,artist,album,genre,added_at) VALUES
-               ('/a.flac','Falling Apart','Caskets','X','Metal',0),
-               ('/b.flac','Other','Dead by April','Y','Rock',0);",
-        )
-        .unwrap();
+        let conn = crate::test_db::open().unwrap();
+        crate::test_db::connection(&conn)
+            .execute_batch(
+                "INSERT INTO tracks (path,title,artist,album,genre,added_at) VALUES
+                   ('/a.flac','Falling Apart','Caskets','X','Metal',0),
+                   ('/b.flac','Other','Dead by April','Y','Rock',0);",
+            )
+            .unwrap();
         let track_list = TrackList::new(
-            Rc::new(RefCell::new(conn)),
+            Rc::new(conn),
             Box::new(|_, _, _, _| {}),
             |_, _, _, _| {},
             super::super::queue_sections::QueueViewModel::default,
@@ -88,17 +86,17 @@ mod tests {
     fn fil_1c_clear_all_keeps_the_genre_scope_and_counts_against_the_library() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
-        let conn = Connection::open_in_memory().unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        conn.execute_batch(
-            "INSERT INTO tracks (path,title,artist,album,genre,year,added_at) VALUES
-               ('/a.flac','A','X','One','Metalcore',2026,0),
-               ('/b.flac','B','Y','Two','Metalcore',2025,0),
-               ('/c.flac','C','Z','Three','Jazz',2026,0);",
-        )
-        .unwrap();
+        let conn = crate::test_db::open().unwrap();
+        crate::test_db::connection(&conn)
+            .execute_batch(
+                "INSERT INTO tracks (path,title,artist,album,genre,year,added_at) VALUES
+                   ('/a.flac','A','X','One','Metalcore',2026,0),
+                   ('/b.flac','B','Y','Two','Metalcore',2025,0),
+                   ('/c.flac','C','Z','Three','Jazz',2026,0);",
+            )
+            .unwrap();
         let track_list = TrackList::new(
-            Rc::new(RefCell::new(conn)),
+            Rc::new(conn),
             Box::new(|_, _, _, _| {}),
             |_, _, _, _| {},
             super::super::queue_sections::QueueViewModel::default,
@@ -136,16 +134,16 @@ mod tests {
     fn fil_7_hide_ai_music_filter_hides_ai_tracks_and_counts() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
-        let conn = Connection::open_in_memory().unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        conn.execute_batch(
-            "INSERT INTO tracks (id,path,title,artist,album,added_at) VALUES
-               (1,'/a.flac','A','X','Al',0),(2,'/b.flac','B','X','Al',0),
-               (3,'/c.flac','C','X','Al',0),
-               (4,'/d.flac','D (Instrumental)','X','Al',0),
-               (5,'/e.flac','E (Instrumental)','X','Al',0);",
-        )
-        .unwrap();
+        let conn = crate::test_db::open().unwrap();
+        crate::test_db::connection(&conn)
+            .execute_batch(
+                "INSERT INTO tracks (id,path,title,artist,album,added_at) VALUES
+                   (1,'/a.flac','A','X','Al',0),(2,'/b.flac','B','X','Al',0),
+                   (3,'/c.flac','C','X','Al',0),
+                   (4,'/d.flac','D (Instrumental)','X','Al',0),
+                   (5,'/e.flac','E (Instrumental)','X','Al',0);",
+            )
+            .unwrap();
         for id in [4, 5] {
             reprise_core::provenance::insert_provenance(
                 &conn,
@@ -166,7 +164,7 @@ mod tests {
         crate::ui::experimental::set_experimental_enabled(&conn, true).unwrap();
 
         let track_list = TrackList::new(
-            Rc::new(RefCell::new(conn)),
+            Rc::new(conn),
             Box::new(|_, _, _, _| {}),
             |_, _, _, _| {},
             super::super::queue_sections::QueueViewModel::default,

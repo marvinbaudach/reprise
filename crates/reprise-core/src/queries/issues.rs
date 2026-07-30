@@ -43,8 +43,11 @@
 //! cards this function returns, in the fixed order above (unmounted groups,
 //! each sorted by `mount_point`, then unknown, then deleted).
 
+use std::collections::HashSet;
+
 use rusqlite::Connection;
 
+use crate::db::Db;
 use crate::library::settings::{self, AutoCleanSetting};
 use crate::models::{MissingReason, Track};
 
@@ -93,7 +96,8 @@ const MISSING_ROWS_SELECT: &str = "SELECT id, path, title, artist, album, album_
 /// the single `Unavailable { mount_point: None }` group for `unknown` rows
 /// if any exist, then the single `Deleted` group if any exist. See the
 /// module doc for why `unknown` and `deleted` can never be merged.
-pub fn query_missing_groups(conn: &Connection) -> Result<Vec<MissingGroup>, rusqlite::Error> {
+pub fn query_missing_groups(db: &Db) -> Result<Vec<MissingGroup>, rusqlite::Error> {
+    let conn = db.conn();
     let mut groups = query_unavailable_groups(conn)?;
     if let Some(unknown) = query_reason_count_group(
         conn,
@@ -167,11 +171,12 @@ fn query_reason_count_group(
 /// mount, an additional `mount_point` filter — see [`MissingGroupKind`]'s
 /// doc comment for how each variant maps to a `missing_reason` value.
 pub fn query_missing_rows(
-    conn: &Connection,
+    db: &Db,
     kind: &MissingGroupKind,
     offset: u32,
     limit: u32,
 ) -> Result<Vec<Track>, rusqlite::Error> {
+    let conn = db.conn();
     let (reason, mount_point) = match kind {
         MissingGroupKind::Deleted => (MissingReason::Deleted, None),
         MissingGroupKind::Unavailable {
@@ -215,7 +220,8 @@ pub fn query_missing_rows(
 /// removed, or otherwise reconciled. Requiring the same `(id, path)` and a
 /// still-live `unmounted`/`unknown` state prevents stale mount-event work
 /// from resurrecting or rewriting that newer identity.
-pub fn verify_unmounted_tracks(conn: &Connection) -> Result<Vec<i64>, rusqlite::Error> {
+pub fn verify_unmounted_tracks(db: &Db) -> Result<Vec<i64>, rusqlite::Error> {
+    let conn = db.conn();
     let candidates = {
         let mut statement = conn.prepare(&format!(
             "SELECT id,path FROM tracks WHERE {MISSING} AND missing_reason IN (?1,?2) \
@@ -264,10 +270,11 @@ pub fn verify_unmounted_tracks(conn: &Connection) -> Result<Vec<i64>, rusqlite::
 /// while an older row's cached mount identity may be absent or stale.
 /// Existing missing rows and tombstones are left untouched.
 pub fn mark_mount_unavailable(
-    conn: &Connection,
+    db: &Db,
     mount_point: &str,
     now: i64,
 ) -> Result<u32, rusqlite::Error> {
+    let conn = db.conn();
     let mount_root = std::path::Path::new(mount_point);
     if !mount_root.is_absolute() {
         return Ok(0);
@@ -301,6 +308,66 @@ pub fn mark_mount_unavailable(
         marked += changed as u32;
     }
     Ok(marked)
+}
+
+/// Revalidates a potentially stale Deleted-card selection and tombstones
+/// only rows that are still proven deleted.
+///
+/// The revalidation read and guarded update share one transaction so a
+/// scanner resurrection cannot land between them. A conflicting writer
+/// makes the operation fail without leaving a partial tombstone batch.
+/// Returned ids preserve the caller's order with duplicates collapsed.
+pub fn tombstone_still_deleted(
+    db: &Db,
+    requested_ids: &[i64],
+    now: i64,
+) -> Result<Vec<i64>, rusqlite::Error> {
+    let conn = db.conn();
+    tombstone_still_deleted_in(conn, requested_ids, now)
+}
+
+fn tombstone_still_deleted_in(
+    conn: &Connection,
+    requested_ids: &[i64],
+    now: i64,
+) -> Result<Vec<i64>, rusqlite::Error> {
+    if requested_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let tx = conn.unchecked_transaction()?;
+    let currently_deleted: HashSet<i64> = {
+        let mut statement = tx.prepare(
+            "SELECT id FROM tracks
+             WHERE missing_since IS NOT NULL
+               AND removed_at IS NULL
+               AND missing_reason = 'deleted'",
+        )?;
+        let ids = statement
+            .query_map([], |row| row.get(0))?
+            .collect::<Result<_, _>>()?;
+        ids
+    };
+    let mut seen = HashSet::new();
+    let tombstoned: Vec<i64> = requested_ids
+        .iter()
+        .copied()
+        .filter(|id| currently_deleted.contains(id) && seen.insert(*id))
+        .collect();
+    if !tombstoned.is_empty() {
+        let placeholders = (2..=tombstoned.len() + 1)
+            .map(|index| format!("?{index}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "UPDATE tracks SET removed_at = ?1
+             WHERE id IN ({placeholders}) AND removed_at IS NULL"
+        );
+        let params = std::iter::once(now).chain(tombstoned.iter().copied());
+        let changed = tx.execute(&sql, rusqlite::params_from_iter(params))?;
+        debug_assert_eq!(changed, tombstoned.len());
+    }
+    tx.commit()?;
+    Ok(tombstoned)
 }
 
 // -- Auto-clean (Task 2.3) --------------------------------------------------
@@ -356,11 +423,26 @@ const SECONDS_PER_DAY: i64 = 86_400;
 /// missing rows delete them the instant it's turned on. See `settings::
 /// set_auto_clean_armed_at`'s doc comment for the "start counting from
 /// today" flow this protects.
-pub fn auto_clean_eligible(conn: &Connection, now: i64) -> Result<Vec<i64>, rusqlite::Error> {
-    let AutoCleanSetting::Days(days) = settings::get_missing_auto_clean(conn) else {
+pub fn auto_clean_eligible(db: &Db, now: i64) -> Result<Vec<i64>, rusqlite::Error> {
+    let conn = db.conn();
+    auto_clean_eligible_in(
+        conn,
+        settings::get_missing_auto_clean(db),
+        settings::get_auto_clean_armed_at(db)?,
+        now,
+    )
+}
+
+fn auto_clean_eligible_in(
+    conn: &Connection,
+    setting: AutoCleanSetting,
+    armed_at: Option<i64>,
+    now: i64,
+) -> Result<Vec<i64>, rusqlite::Error> {
+    let AutoCleanSetting::Days(days) = setting else {
         return Ok(Vec::new());
     };
-    let Some(armed_at) = settings::get_auto_clean_armed_at(conn)? else {
+    let Some(armed_at) = armed_at else {
         return Ok(Vec::new());
     };
     let grace_period_seconds = i64::from(days) * SECONDS_PER_DAY;
@@ -423,8 +505,14 @@ pub fn auto_clean_eligible(conn: &Connection, now: i64) -> Result<Vec<i64>, rusq
 /// eligible`]'s own three fail-safes (see its doc comment): get the deadline
 /// right before deleting, because there is no undo once this function has
 /// run — the whole point of a hard delete, made deliberately.
-pub fn run_auto_clean(conn: &mut Connection, now: i64) -> Result<Vec<i64>, rusqlite::Error> {
-    let ids = auto_clean_eligible(conn, now)?;
+pub fn run_auto_clean(db: &Db, now: i64) -> Result<Vec<i64>, rusqlite::Error> {
+    let conn = db.conn();
+    let ids = auto_clean_eligible_in(
+        conn,
+        settings::get_missing_auto_clean(db),
+        settings::get_auto_clean_armed_at(db)?,
+        now,
+    )?;
     super::maintenance::remove_auto_clean_eligible_tracks(conn, &ids)
 }
 
@@ -457,7 +545,8 @@ pub fn run_auto_clean(conn: &mut Connection, now: i64) -> Result<Vec<i64>, rusql
 /// missing`]. Tombstoned rows (`removed_at` set) are excluded by `MISSING`
 /// itself: the user already asked for those to be gone, so they can't be
 /// what makes the sidebar row exist.
-pub fn count_missing(conn: &Connection) -> Result<u32, rusqlite::Error> {
+pub fn count_missing(db: &Db) -> Result<u32, rusqlite::Error> {
+    let conn = db.conn();
     let count: i64 = conn.query_row(
         &format!("SELECT count(*) FROM tracks WHERE {MISSING}"),
         [],
@@ -480,7 +569,8 @@ pub fn count_missing(conn: &Connection) -> Result<u32, rusqlite::Error> {
 /// `missing_since` equals `last_viewed` exactly went missing in the very
 /// scan/second the user's last view already covered, so it must not
 /// re-badge as new.
-pub fn count_new_missing(conn: &Connection, last_viewed: i64) -> Result<u32, rusqlite::Error> {
+pub fn count_new_missing(db: &Db, last_viewed: i64) -> Result<u32, rusqlite::Error> {
+    let conn = db.conn();
     let count: i64 = conn.query_row(
         &format!("SELECT count(*) FROM tracks WHERE {MISSING} AND missing_since > ?1"),
         rusqlite::params![last_viewed],

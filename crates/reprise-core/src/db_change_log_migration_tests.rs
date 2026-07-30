@@ -19,11 +19,11 @@ fn change_log_schema(conn: &Connection) -> Vec<(String, String)> {
 #[test]
 fn schema_v28_fresh_and_v26_upgrade_have_the_same_change_log_shape() {
     let fresh = open(None).unwrap();
-    migrate(&fresh).unwrap();
+    migrate_connection(&fresh).unwrap();
     let expected = change_log_schema(&fresh);
 
     let upgraded = open(None).unwrap();
-    migrate(&upgraded).unwrap();
+    migrate_connection(&upgraded).unwrap();
     // Roll back to before change_log (now v28). Every object created at v28+
     // must go, or re-migration's later steps collide with the survivors — the
     // v29 AI-jobs shape (ai_jobs/track_provenance/playlists.role) included. The
@@ -39,7 +39,7 @@ fn schema_v28_fresh_and_v26_upgrade_have_the_same_change_log_shape() {
              PRAGMA user_version = 26;",
         )
         .unwrap();
-    migrate(&upgraded).unwrap();
+    migrate_connection(&upgraded).unwrap();
 
     assert_eq!(change_log_schema(&upgraded), expected);
     assert_eq!(
@@ -53,7 +53,7 @@ fn schema_v28_fresh_and_v26_upgrade_have_the_same_change_log_shape() {
 #[test]
 fn schema_v28_change_log_has_the_ordering_and_lookup_contract() {
     let conn = open(None).unwrap();
-    migrate(&conn).unwrap();
+    migrate_connection(&conn).unwrap();
 
     let columns = conn
         .prepare("PRAGMA table_info(change_log)")
@@ -76,7 +76,7 @@ fn migrate_rejects_a_schema_newer_than_the_binary_supports() {
     let conn = open(None).unwrap();
     conn.pragma_update(None, "user_version", too_new).unwrap();
 
-    let error = migrate(&conn).unwrap_err();
+    let error = migrate_connection(&conn).unwrap_err();
 
     assert!(matches!(
         error,

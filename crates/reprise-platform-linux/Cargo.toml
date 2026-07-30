@@ -33,10 +33,6 @@ rustix = { version = "1", features = ["fs"] }
 # The signal bodies the runtime service emits are the protocol's own dict
 # types, so it needs zvariant's `DynamicType` bound and serde's `Serialize`
 # to hand them to zbus. Both are already in the tree via zbus/zvariant.
-# The runtime service holds the database writer, so it needs a Connection to
-# hand to `Runtime::new`. It assembles no SQL: every statement goes through a
-# named `reprise-core` facade.
-rusqlite = { version = "0.40", features = ["bundled"] }
 zvariant = "5"
 serde = { version = "1", features = ["derive"] }
 reprise-runtime = { path = "../reprise-runtime" }

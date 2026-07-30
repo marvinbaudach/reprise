@@ -113,8 +113,8 @@ impl PlayerController {
     /// (`No`, audio already rolling gaplessly).
     fn advance_common(&self, reason: AdvanceReason, start: StartPlayback) {
         let live_ids = {
-            let conn = self.conn.borrow();
-            match queries::query_live_track_ids(&conn) {
+            let conn = &self.conn;
+            match queries::query_live_track_ids(conn) {
                 Ok(ids) => Some(ids),
                 Err(error) => {
                     tracing::error!(%error, "failed to resolve playable queue ids; advancing without filtering");
@@ -224,10 +224,10 @@ impl PlayerController {
     /// preference handler.
     pub(in crate::ui) fn apply_transition(&self) {
         let (mode, seconds) = {
-            let conn = self.conn.borrow();
+            let conn = &self.conn;
             (
-                settings::get_track_transition(&conn),
-                settings::get_crossfade_seconds(&conn),
+                settings::get_track_transition(conn),
+                settings::get_crossfade_seconds(conn),
             )
         };
         self.player.set_transition(mode, seconds);
@@ -235,14 +235,14 @@ impl PlayerController {
     }
 
     pub(in crate::ui) fn feed_next(&self) {
-        let transition = settings::get_track_transition(&self.conn.borrow());
+        let transition = settings::get_track_transition(&self.conn);
         if transition == TrackTransition::Off {
             self.player.set_next(None);
             return;
         }
         let live_ids = {
-            let conn = self.conn.borrow();
-            match queries::query_live_track_ids(&conn) {
+            let conn = &self.conn;
+            match queries::query_live_track_ids(conn) {
                 Ok(ids) => Some(ids),
                 Err(error) => {
                     tracing::error!(%error, "failed to resolve playable pre-feed ids; pre-feeding without filtering");
@@ -258,8 +258,8 @@ impl PlayerController {
             })
         };
         let path = next_id.and_then(|id| {
-            let conn = self.conn.borrow();
-            queries::query_track_summary(&conn, id)
+            let conn = &self.conn;
+            queries::query_track_summary(conn, id)
                 .ok()
                 .flatten()
                 .map(|summary| summary.path)

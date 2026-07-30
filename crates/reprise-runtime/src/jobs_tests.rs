@@ -2,9 +2,9 @@
 
 use std::path::Path;
 
-use reprise_core::ai_jobs;
 use reprise_core::ai_promotion::PromotionError;
 use reprise_core::ai_staging::StagingStore;
+use reprise_core::{ai_jobs, db::Db};
 use reprise_runtime_protocol::jobs::JobCommand;
 
 use crate::error::{Rejected, RuntimeError};
@@ -18,14 +18,14 @@ const NOW: i64 = 1_753_600_000;
 /// Returns the job id. Lives here rather than in `runtime_tests` because it
 /// is job-facade knowledge, and the crash-recovery test only borrows it.
 pub(crate) fn enqueue_running_job(database: &Path) -> i64 {
-    let conn = reprise_core::db::open_migrated(Some(database)).expect("the database opens");
-    seed_track(&conn, 1);
+    let db = Db::open_migrated(Some(database)).expect("the database opens");
+    seed_track(database, 1);
     let staging = tempfile::tempdir().expect("a staging directory");
     let outcome =
-        ai_jobs::enqueue_instrumental(&conn, &StagingStore::new(staging.path()), 1, "model@1", NOW)
+        ai_jobs::enqueue_instrumental(&db, &StagingStore::new(staging.path()), 1, "model@1", NOW)
             .expect("enqueueing succeeds");
     let job_id = outcome.job_id();
-    ai_jobs::claim_next(&conn, 7, NOW, 600)
+    ai_jobs::claim_next(&db, 7, NOW, 600)
         .expect("claiming succeeds")
         .expect("the freshly enqueued job is claimable");
     job_id
@@ -33,7 +33,16 @@ pub(crate) fn enqueue_running_job(database: &Path) -> i64 {
 
 /// A minimal library row. Jobs reference tracks, so one has to exist; the
 /// path is never opened.
-fn seed_track(conn: &rusqlite::Connection, id: i64) {
+fn seed_track(database: &Path, id: i64) {
+    let conn = rusqlite::Connection::open(database).expect("the fixture database opens");
+    conn.pragma_update(None, "foreign_keys", "ON")
+        .expect("fixture foreign keys are enabled");
+    conn.pragma_update(
+        None,
+        "busy_timeout",
+        reprise_core::db::DEFAULT_BUSY_TIMEOUT_MS,
+    )
+    .expect("fixture busy timeout is configured");
     conn.execute(
         "INSERT INTO tracks (id, path, title, artist, added_at, file_mtime, file_size) \
          VALUES (?1, ?2, 'Track', 'Artist', 1, 1, 1)",
@@ -52,9 +61,9 @@ fn database() -> (tempfile::TempDir, std::path::PathBuf) {
 fn a_claimed_job_is_reported_as_running() {
     let (_directory, path) = database();
     let job_id = enqueue_running_job(&path);
-    let conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
+    let db = Db::open_migrated(Some(&path)).unwrap();
 
-    let snapshot = super::snapshot_of(&conn, job_id)
+    let snapshot = super::snapshot_of(&db, job_id)
         .expect("reading succeeds")
         .expect("the job exists");
 
@@ -62,20 +71,20 @@ fn a_claimed_job_is_reported_as_running() {
     assert_eq!(snapshot.state, "running");
     assert_eq!(snapshot.kind, "instrumental");
     assert!(!snapshot.cancel_requested);
-    assert!(super::is_active(&conn).unwrap());
+    assert!(super::is_active(&db).unwrap());
 }
 
 #[test]
 fn cancelling_a_running_job_records_the_request_without_claiming_it_stopped() {
     let (_directory, path) = database();
     let job_id = enqueue_running_job(&path);
-    let conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
+    let db = Db::open_migrated(Some(&path)).unwrap();
 
-    let touched = super::command(&conn, NOW, &JobCommand::Cancel(job_id))
+    let touched = super::command(&db, NOW, &JobCommand::Cancel(job_id))
         .expect("cancelling a running job is admissible");
 
     assert_eq!(touched, job_id);
-    let snapshot = super::snapshot_of(&conn, job_id).unwrap().unwrap();
+    let snapshot = super::snapshot_of(&db, job_id).unwrap().unwrap();
     assert!(
         snapshot.cancel_requested,
         "the ask is recorded immediately …"
@@ -91,10 +100,10 @@ fn cancelling_a_running_job_records_the_request_without_claiming_it_stopped() {
 #[test]
 fn cancelling_a_job_that_does_not_exist_is_rejected() {
     let (_directory, path) = database();
-    let conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
+    let db = Db::open_migrated(Some(&path)).unwrap();
 
     assert_eq!(
-        super::command(&conn, NOW, &JobCommand::Cancel(404)).expect_err("there is no such job"),
+        super::command(&db, NOW, &JobCommand::Cancel(404)).expect_err("there is no such job"),
         RuntimeError::Rejected(Rejected::UnknownJob)
     );
 }
@@ -103,11 +112,11 @@ fn cancelling_a_job_that_does_not_exist_is_rejected() {
 fn saving_and_discarding_say_so_instead_of_silently_doing_nothing() {
     let (_directory, path) = database();
     let job_id = enqueue_running_job(&path);
-    let conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
+    let db = Db::open_migrated(Some(&path)).unwrap();
 
     for command in [JobCommand::Save(job_id), JobCommand::Discard(job_id)] {
         assert_eq!(
-            super::command(&conn, NOW, &command)
+            super::command(&db, NOW, &command)
                 .expect_err("the staging store is not the runtime's yet"),
             RuntimeError::Rejected(Rejected::UnsupportedCommand),
             "a client learns the command is unserved rather than watching a \
@@ -119,10 +128,10 @@ fn saving_and_discarding_say_so_instead_of_silently_doing_nothing() {
 #[test]
 fn an_empty_job_table_is_idle() {
     let (_directory, path) = database();
-    let conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
+    let db = Db::open_migrated(Some(&path)).unwrap();
 
-    assert!(super::snapshots(&conn).unwrap().is_empty());
-    assert!(!super::is_active(&conn).unwrap());
+    assert!(super::snapshots(&db).unwrap().is_empty());
+    assert!(!super::is_active(&db).unwrap());
 }
 
 #[test]
@@ -197,15 +206,15 @@ fn sanitize_error_kind_replaces_an_empty_string() {
 fn a_failed_jobs_snapshot_never_carries_the_path_guard_message() {
     let (_directory, path) = database();
     let job_id = enqueue_running_job(&path);
-    let conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
+    let db = Db::open_migrated(Some(&path)).unwrap();
     let leaky_message = PromotionError::PathGuard {
         attempted: "/home/marvin/Music/outside.flac".into(),
     }
     .to_string();
-    ai_jobs::mark_failed(&conn, job_id, 7, &leaky_message, NOW)
+    ai_jobs::mark_failed(&db, job_id, 7, &leaky_message, NOW)
         .expect("marking the claimed job failed succeeds");
 
-    let snapshot = super::snapshot_of(&conn, job_id).unwrap().unwrap();
+    let snapshot = super::snapshot_of(&db, job_id).unwrap().unwrap();
 
     assert_eq!(snapshot.state, "failed");
     assert_eq!(

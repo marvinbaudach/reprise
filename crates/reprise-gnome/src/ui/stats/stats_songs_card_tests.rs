@@ -26,33 +26,34 @@ fn summary_cover_generation_survives_rendering_the_full_ranking() {
 }
 
 fn card_and_snapshot(metadata: MetadataCallback) -> (StatsSongsCard, StatsSnapshot) {
-    let conn = reprise_core::db::open(None).unwrap();
-    reprise_core::db::migrate(&conn).unwrap();
+    let conn = crate::test_db::open().unwrap();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
     for id in 1..=6_i64 {
-        conn.execute(
-            "INSERT INTO tracks \
-             (id, path, title, artist, album, album_artist, genre, duration_ms, added_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, '', 'Rock', 300000, 0)",
-            rusqlite::params![
-                id,
-                format!("/music/{id}.flac"),
-                format!("Track {id}"),
-                format!("Artist {id}"),
-                format!("Album {id}")
-            ],
-        )
-        .unwrap();
-        for play in 0..=(6 - id) {
-            conn.execute(
-                "INSERT INTO listen_events (track_id, played_at, ms_played) \
-                 VALUES (?1, ?2, ?3)",
-                rusqlite::params![id, now - play, id * 60_000],
+        crate::test_db::connection(&conn)
+            .execute(
+                "INSERT INTO tracks \
+                 (id, path, title, artist, album, album_artist, genre, duration_ms, added_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, '', 'Rock', 300000, 0)",
+                rusqlite::params![
+                    id,
+                    format!("/music/{id}.flac"),
+                    format!("Track {id}"),
+                    format!("Artist {id}"),
+                    format!("Album {id}")
+                ],
             )
             .unwrap();
+        for play in 0..=(6 - id) {
+            crate::test_db::connection(&conn)
+                .execute(
+                    "INSERT INTO listen_events (track_id, played_at, ms_played) \
+                     VALUES (?1, ?2, ?3)",
+                    rusqlite::params![id, now - play, id * 60_000],
+                )
+                .unwrap();
         }
     }
     let snapshot = stats_snapshot::compute(

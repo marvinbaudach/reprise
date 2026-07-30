@@ -44,46 +44,44 @@ fn seed_import_error(conn: &Connection, path: &str, kind: &str, first_seen: i64)
 // a fresh episode and therefore badges again.
 #[test]
 fn fb_4_badges_count_new_since_viewed_and_reactivated_episode_is_new() {
-    let mut conn = crate::db::open_migrated(None).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
 
-    seed_missing_since(&conn, 10, 50);
-    seed_missing_since(&conn, 11, 150);
-    settings::set_last_viewed_missing(&conn, 100).unwrap();
-    assert_eq!(count_missing(&conn).unwrap(), 2);
+    seed_missing_since(conn, 10, 50);
+    seed_missing_since(conn, 11, 150);
+    settings::set_last_viewed_missing(&db, 100).unwrap();
+    assert_eq!(count_missing(&db).unwrap(), 2);
     assert_eq!(
-        count_new_missing(&conn, settings::get_last_viewed_missing(&conn).unwrap()).unwrap(),
+        count_new_missing(&db, settings::get_last_viewed_missing(&db).unwrap()).unwrap(),
         1
     );
 
-    seed_import_error(&conn, "/music/old.mp3", "io", 50);
-    seed_import_error(&conn, "/music/new.mp3", "io", 150);
-    seed_import_error(&conn, "/music/hint.mp3", "unreadable_tags", 150);
+    seed_import_error(conn, "/music/old.mp3", "io", 50);
+    seed_import_error(conn, "/music/new.mp3", "io", 150);
+    seed_import_error(conn, "/music/hint.mp3", "unreadable_tags", 150);
     conn.execute(
         "INSERT INTO tracks (path,title,artist,added_at,untagged) \
          VALUES ('/music/hint.mp3','hint','',0,1)",
         [],
     )
     .unwrap();
-    seed_import_error(&conn, "/music/reactivated.mp3", "io", 10);
+    seed_import_error(conn, "/music/reactivated.mp3", "io", 10);
     conn.execute(
         "UPDATE import_errors SET dismissed_mtime=1,dismissed_size=1 \
          WHERE path='/music/reactivated.mp3'",
         [],
     )
     .unwrap();
-    settings::set_last_viewed_import_errors(&conn, 100).unwrap();
-    assert_eq!(count_import_errors_active(&conn).unwrap(), 3);
+    settings::set_last_viewed_import_errors(&db, 100).unwrap();
+    assert_eq!(count_import_errors_active(&db).unwrap(), 3);
     assert_eq!(
-        count_new_import_errors(
-            &conn,
-            settings::get_last_viewed_import_errors(&conn).unwrap()
-        )
-        .unwrap(),
+        count_new_import_errors(&db, settings::get_last_viewed_import_errors(&db).unwrap())
+            .unwrap(),
         1,
         "only the fresh actionable row badges; hints and dismissed rows do not"
     );
 
-    let tx = conn.transaction().unwrap();
+    let tx = conn.unchecked_transaction().unwrap();
     assert!(!crate::library::import_errors::check_dismissed(
         &tx,
         "/music/reactivated.mp3",
@@ -111,30 +109,31 @@ fn fb_4_badges_count_new_since_viewed_and_reactivated_episode_is_new() {
         )
         .unwrap();
     assert_eq!(episode, (900, 1, None, None));
-    assert_eq!(count_new_import_errors(&conn, 100).unwrap(), 2);
+    assert_eq!(count_new_import_errors(&db, 100).unwrap(), 2);
 
-    settings::set_last_viewed_missing(&conn, 900).unwrap();
-    settings::set_last_viewed_import_errors(&conn, 900).unwrap();
-    assert_eq!(count_new_missing(&conn, 900).unwrap(), 0);
-    assert_eq!(count_new_import_errors(&conn, 900).unwrap(), 0);
+    settings::set_last_viewed_missing(&db, 900).unwrap();
+    settings::set_last_viewed_import_errors(&db, 900).unwrap();
+    assert_eq!(count_new_missing(&db, 900).unwrap(), 0);
+    assert_eq!(count_new_import_errors(&db, 900).unwrap(), 0);
 }
 
 // UX FB-7: tombstones preserve catalog identity for exact Undo. Expiry
 // commits catalog-owned cascades while durable listen history remains.
 #[test]
 fn fb_7_tombstone_undo_is_exact_and_expiry_commits_cascades() {
-    let mut conn = crate::db::open_migrated(None).unwrap();
-    seed_track(&conn, 1, 4, 17);
-    seed_track(&conn, 2, 2, 3);
-    let playlist_id = playlists::create(&conn, "Keep order").unwrap();
-    playlists::add_tracks(&mut conn, playlist_id, &[1, 2]).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    seed_track(conn, 1, 4, 17);
+    seed_track(conn, 2, 2, 3);
+    let playlist_id = playlists::create(&db, "Keep order").unwrap();
+    playlists::add_tracks(&db, playlist_id, &[1, 2]).unwrap();
     conn.execute(
         "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (1, 10, 2000)",
         [],
     )
     .unwrap();
 
-    assert_eq!(tombstone_tracks(&conn, &[1], 1_000).unwrap(), 1);
+    assert_eq!(tombstone_tracks(&db, &[1], 1_000).unwrap(), 1);
     let preserved: (i64, i64, i64, i64) = conn
         .query_row(
             "SELECT id,rating,play_count,removed_at FROM tracks WHERE id = 1",
@@ -153,7 +152,7 @@ fn fb_7_tombstone_undo_is_exact_and_expiry_commits_cascades() {
         .collect::<Result<_, _>>()
         .unwrap();
     assert_eq!(preserved_playlist, vec![(1, 0), (2, 1)]);
-    assert_eq!(undo_tombstone(&conn, &[1]).unwrap(), 1);
+    assert_eq!(undo_tombstone(&db, &[1]).unwrap(), 1);
     let restored: (i64, i64, i64, Option<i64>) = conn
         .query_row(
             "SELECT id,rating,play_count,removed_at FROM tracks WHERE id = 1",
@@ -173,8 +172,8 @@ fn fb_7_tombstone_undo_is_exact_and_expiry_commits_cascades() {
         .unwrap();
     assert_eq!(restored_playlist, preserved_playlist);
 
-    tombstone_tracks(&conn, &[1], 2_000).unwrap();
-    assert_eq!(purge_tombstones(&mut conn).unwrap(), vec![1]);
+    tombstone_tracks(&db, &[1], 2_000).unwrap();
+    assert_eq!(purge_tombstones(&db).unwrap(), vec![1]);
     let playlist_rows: Vec<(i64, i64)> = conn
         .prepare(
             "SELECT track_id,position FROM playlist_tracks WHERE playlist_id=?1 ORDER BY position",
@@ -202,17 +201,17 @@ fn fb_7_tombstone_undo_is_exact_and_expiry_commits_cascades() {
         (4, MissingReason::Unmounted),
         (5, MissingReason::Unknown),
     ] {
-        seed_track(&conn, id, 1, 1);
+        seed_track(conn, id, 1, 1);
         conn.execute(
             "UPDATE tracks SET missing_since=0,missing_reason=?1 WHERE id=?2",
             rusqlite::params![reason.as_str(), id],
         )
         .unwrap();
     }
-    assert!(run_auto_clean(&mut conn, 90 * 86_400).unwrap().is_empty());
-    settings::set_missing_auto_clean(&conn, AutoCleanSetting::Days(30)).unwrap();
-    settings::set_auto_clean_armed_at(&conn, 0).unwrap();
-    assert_eq!(run_auto_clean(&mut conn, 30 * 86_400).unwrap(), vec![3]);
+    assert!(run_auto_clean(&db, 90 * 86_400).unwrap().is_empty());
+    settings::set_missing_auto_clean(&db, AutoCleanSetting::Days(30)).unwrap();
+    settings::set_auto_clean_armed_at(&db, 0).unwrap();
+    assert_eq!(run_auto_clean(&db, 30 * 86_400).unwrap(), vec![3]);
     let survivors: Vec<i64> = conn
         .prepare("SELECT id FROM tracks WHERE id IN (4,5) ORDER BY id")
         .unwrap()
@@ -221,4 +220,66 @@ fn fb_7_tombstone_undo_is_exact_and_expiry_commits_cascades() {
         .collect::<Result<_, _>>()
         .unwrap();
     assert_eq!(survivors, vec![4, 5]);
+}
+
+#[test]
+fn deleted_track_tombstone_revalidates_the_selection_and_rolls_back_atomically() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    seed_missing_since(conn, 1, 10);
+    seed_missing_since(conn, 2, 20);
+    seed_missing_since(conn, 3, 30);
+    conn.execute(
+        "UPDATE tracks SET missing_reason = 'unknown' WHERE id = 2",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "UPDATE tracks SET missing_since = NULL, missing_reason = NULL WHERE id = 3",
+        [],
+    )
+    .unwrap();
+
+    assert_eq!(
+        tombstone_still_deleted(&db, &[3, 2, 1, 1], 1_000).unwrap(),
+        vec![1]
+    );
+    assert_eq!(
+        conn.query_row("SELECT removed_at FROM tracks WHERE id = 1", [], |row| {
+            row.get::<_, Option<i64>>(0)
+        },)
+            .unwrap(),
+        Some(1_000)
+    );
+    assert_eq!(undo_tombstone(&db, &[1]).unwrap(), 1);
+
+    conn.execute(
+        "CREATE TEMP TRIGGER reject_second_tombstone
+         BEFORE UPDATE OF removed_at ON tracks
+         WHEN NEW.id = 2
+         BEGIN
+           SELECT RAISE(ABORT, 'forced tombstone failure');
+         END",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "UPDATE tracks SET missing_reason = 'deleted' WHERE id = 2",
+        [],
+    )
+    .unwrap();
+
+    assert!(tombstone_still_deleted(&db, &[1, 2], 2_000).is_err());
+    let removed: Vec<Option<i64>> = conn
+        .prepare("SELECT removed_at FROM tracks WHERE id IN (1, 2) ORDER BY id")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(
+        removed,
+        vec![None, None],
+        "a failed tombstone batch must roll back every selected row"
+    );
 }

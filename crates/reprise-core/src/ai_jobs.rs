@@ -39,6 +39,11 @@ use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBe
 use crate::ai_staging::StagingStore;
 use crate::events;
 
+mod query;
+
+pub(crate) use query::get_job_in;
+pub use query::{batch_progress, count_saved, get_job, list_active_jobs, list_jobs_in_batch};
+
 /// The first (and, in v1, only) job kind.
 pub const INSTRUMENTAL_KIND: &str = "instrumental";
 
@@ -195,6 +200,17 @@ fn instrumental_params(model_id: &str) -> (String, String) {
 /// work (Beschluss 16). `staging` lets the dedup see a finished-but-unsaved
 /// render so re-dragging a converted track is a hint, not a second render.
 pub fn enqueue_instrumental(
+    db: &crate::db::Db,
+    staging: &StagingStore,
+    source_track_id: i64,
+    model_id: &str,
+    now: i64,
+) -> Result<EnqueueOutcome, rusqlite::Error> {
+    let conn = db.conn();
+    enqueue_instrumental_in(conn, staging, source_track_id, model_id, now)
+}
+
+pub(crate) fn enqueue_instrumental_in(
     conn: &Connection,
     staging: &StagingStore,
     source_track_id: i64,
@@ -230,6 +246,18 @@ pub fn enqueue_instrumental(
 /// not part of a job's dedup identity, and honored by the completion path
 /// [`crate::ai_promotion::complete_render`].
 pub fn enqueue_instrumental_batch(
+    db: &crate::db::Db,
+    staging: &StagingStore,
+    source_track_ids: &[i64],
+    model_id: &str,
+    auto_promote: bool,
+    now: i64,
+) -> Result<BatchOutcome, rusqlite::Error> {
+    let conn = db.conn();
+    enqueue_instrumental_batch_in(conn, staging, source_track_ids, model_id, auto_promote, now)
+}
+
+pub(crate) fn enqueue_instrumental_batch_in(
     conn: &Connection,
     staging: &StagingStore,
     source_track_ids: &[i64],
@@ -352,11 +380,12 @@ fn enqueue_one(
 /// that `busy_timeout` never retries; taking the write lock upfront makes a
 /// loser wait its turn and then re-select, exactly as documented.
 pub fn claim_next(
-    conn: &Connection,
+    db: &crate::db::Db,
     worker: i64,
     now: i64,
     lease_secs: i64,
 ) -> Result<Option<ClaimedJob>, rusqlite::Error> {
+    let conn = db.conn();
     let lease_expires_at = now.saturating_add(lease_secs);
     let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
     let claimed = loop {
@@ -417,12 +446,13 @@ pub fn claim_next(
 /// whether a cancel has been requested — the worker calls this between chunks.
 /// Not a lifecycle transition, so it appends no change-log event.
 pub fn heartbeat(
-    conn: &Connection,
+    db: &crate::db::Db,
     job_id: i64,
     worker: i64,
     now: i64,
     lease_secs: i64,
 ) -> Result<HeartbeatOutcome, rusqlite::Error> {
+    let conn = db.conn();
     let lease_expires_at = now.saturating_add(lease_secs);
     let still_owner = conn.execute(
         "UPDATE ai_jobs SET lease_expires_at = ?1 \
@@ -448,11 +478,12 @@ pub fn heartbeat(
 /// the caller still owns the job. No change-log event (plan 2.2). The caller
 /// is responsible for rate-limiting these writes.
 pub fn set_progress(
-    conn: &Connection,
+    db: &crate::db::Db,
     job_id: i64,
     worker: i64,
     permille: u16,
 ) -> Result<bool, rusqlite::Error> {
+    let conn = db.conn();
     let clamped = permille.min(crate::stem_separation::PROGRESS_COMPLETE);
     let changed = conn.execute(
         "UPDATE ai_jobs SET progress_permille = ?1 \
@@ -466,23 +497,25 @@ pub fn set_progress(
 /// stays `NULL` — the job is staged until promotion attaches a track. Owner-
 /// guarded; records the `done` lifecycle event.
 pub fn mark_done(
-    conn: &Connection,
+    db: &crate::db::Db,
     job_id: i64,
     worker: i64,
     now: i64,
 ) -> Result<bool, rusqlite::Error> {
+    let conn = db.conn();
     finish_owned(conn, job_id, worker, "done", None, now, "done")
 }
 
 /// Marks a running job `failed` with a diagnostic `error_kind`. Owner-guarded;
 /// records the `fail` lifecycle event.
 pub fn mark_failed(
-    conn: &Connection,
+    db: &crate::db::Db,
     job_id: i64,
     worker: i64,
     error_kind: &str,
     now: i64,
 ) -> Result<bool, rusqlite::Error> {
+    let conn = db.conn();
     finish_owned(
         conn,
         job_id,
@@ -498,11 +531,12 @@ pub fn mark_failed(
 /// (`running` -> `cancelled`). Owner-guarded and gated on `cancel_requested`,
 /// so it can only complete a real cancel. Records the `cancel` event.
 pub fn mark_cancelled(
-    conn: &Connection,
+    db: &crate::db::Db,
     job_id: i64,
     worker: i64,
     now: i64,
 ) -> Result<bool, rusqlite::Error> {
+    let conn = db.conn();
     events::in_txn(conn, |conn| {
         let changed = conn.execute(
             "UPDATE ai_jobs SET status = 'cancelled', finished_at = ?1 \
@@ -558,10 +592,11 @@ fn finish_owned(
 /// running); a `running` job is flagged for its worker to ack between chunks
 /// (plan 2.4/2). Terminal/absent jobs are `NotCancellable`.
 pub fn request_cancel(
-    conn: &Connection,
+    db: &crate::db::Db,
     job_id: i64,
     now: i64,
 ) -> Result<CancelOutcome, rusqlite::Error> {
+    let conn = db.conn();
     events::in_txn(conn, |conn| {
         let queued_cancelled = conn.execute(
             "UPDATE ai_jobs SET status = 'cancelled', cancel_requested = 1, finished_at = ?1 \
@@ -639,11 +674,12 @@ pub(crate) fn note_promotion_error(
 /// the job `done` -> `cancelled` so it stops blocking dedup and leaves the
 /// conversion view (Beschluss 15). Returns whether a staged job was discarded.
 pub fn discard_staged(
-    conn: &Connection,
+    db: &crate::db::Db,
     staging: &StagingStore,
     job_id: i64,
     now: i64,
 ) -> Result<bool, rusqlite::Error> {
+    let conn = db.conn();
     let discarded = events::in_txn(conn, |conn| {
         let changed = conn.execute(
             "UPDATE ai_jobs SET status = 'cancelled', finished_at = ?1 \
@@ -663,115 +699,11 @@ pub fn discard_staged(
     Ok(discarded)
 }
 
-/// Reads one job in surface shape, or `None` if it does not exist.
-pub fn get_job(conn: &Connection, job_id: i64) -> Result<Option<AiJob>, rusqlite::Error> {
-    conn.query_row(
-        &format!("{JOB_SELECT} WHERE id = ?1"),
-        [job_id],
-        map_job_row,
-    )
-    .optional()
-}
-
-/// Lists every job in a batch, in id order.
-pub fn list_jobs_in_batch(
-    conn: &Connection,
-    batch_id: &str,
-) -> Result<Vec<AiJob>, rusqlite::Error> {
-    let mut statement = conn.prepare(&format!("{JOB_SELECT} WHERE batch_id = ?1 ORDER BY id"))?;
-    let jobs = statement
-        .query_map([batch_id], map_job_row)?
-        .collect::<Result<_, _>>()?;
-    Ok(jobs)
-}
-
-/// Lists every non-cancelled job in id order — the conversion view's rows
-/// (queued/processing/done-unsaved/saved/failed; Beschluss 15/18).
-pub fn list_active_jobs(conn: &Connection) -> Result<Vec<AiJob>, rusqlite::Error> {
-    let mut statement = conn.prepare(&format!(
-        "{JOB_SELECT} WHERE status != 'cancelled' ORDER BY id"
-    ))?;
-    let jobs = statement
-        .query_map([], map_job_row)?
-        .collect::<Result<_, _>>()?;
-    Ok(jobs)
-}
-
-/// The number of jobs whose render has been promoted into the library (a
-/// `result_track_id` is attached). The app-hosted worker auto-promotes on its
-/// own thread, whose writes carry the app's writer token and are therefore
-/// filtered out of the external-changes runtime; the conversion view watches
-/// this count instead, reloading the library the moment it grows so a
-/// worker-promoted instrumental appears without a manual refresh.
-pub fn count_saved(conn: &Connection) -> Result<i64, rusqlite::Error> {
-    conn.query_row(
-        "SELECT COUNT(*) FROM ai_jobs WHERE result_track_id IS NOT NULL",
-        [],
-        |row| row.get(0),
-    )
-}
-
-/// Aggregate progress for a batch's single bar (plan 2.4/7).
-pub fn batch_progress(conn: &Connection, batch_id: &str) -> Result<BatchProgress, rusqlite::Error> {
-    conn.query_row(
-        "SELECT COUNT(*), \
-                COALESCE(SUM(status = 'done'), 0), \
-                COALESCE(SUM(status = 'failed'), 0), \
-                COALESCE(SUM(status = 'cancelled'), 0), \
-                COALESCE(SUM(status = 'running'), 0), \
-                COALESCE(SUM(status = 'queued'), 0), \
-                COALESCE(AVG(progress_permille), 0) \
-         FROM ai_jobs WHERE batch_id = ?1",
-        [batch_id],
-        |row| {
-            let permille: f64 = row.get(6)?;
-            Ok(BatchProgress {
-                total: row.get(0)?,
-                done: row.get(1)?,
-                failed: row.get(2)?,
-                cancelled: row.get(3)?,
-                running: row.get(4)?,
-                queued: row.get(5)?,
-                permille: permille.round() as u16,
-            })
-        },
-    )
-}
-
 /// A random 64-bit hex token grouping a multi-select batch — collision-free
 /// enough for a per-invocation grouping key (fastrand is already a core dep,
 /// same source as the change-log writer token).
 fn new_batch_id() -> String {
     format!("{:016x}", fastrand::u64(..))
-}
-
-const JOB_SELECT: &str = "SELECT id, kind, batch_id, source_track_id, params_fingerprint, \
-     status, progress_permille, cancel_requested, error_kind, result_track_id, \
-     created_at, finished_at FROM ai_jobs";
-
-fn map_job_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AiJob> {
-    let status: String = row.get(5)?;
-    let state = JobState::parse(&status).ok_or_else(|| {
-        rusqlite::Error::FromSqlConversionFailure(
-            5,
-            rusqlite::types::Type::Text,
-            format!("unknown ai_jobs.status {status:?}").into(),
-        )
-    })?;
-    Ok(AiJob {
-        id: row.get(0)?,
-        kind: row.get(1)?,
-        batch_id: row.get(2)?,
-        source_track_id: row.get(3)?,
-        params_fingerprint: row.get(4)?,
-        state,
-        progress_permille: row.get(6)?,
-        cancel_requested: row.get::<_, i64>(7)? != 0,
-        error_kind: row.get(8)?,
-        result_track_id: row.get(9)?,
-        created_at: row.get(10)?,
-        finished_at: row.get(11)?,
-    })
 }
 
 #[cfg(test)]

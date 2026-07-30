@@ -33,7 +33,6 @@ pub(in crate::ui) fn css() -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
     use std::rc::Rc;
 
     use gtk4::prelude::*;
@@ -115,8 +114,8 @@ mod tests {
     #[ignore = "requires a display; run via xvfb-run"]
     fn contrast_2a_status_overlay_renders_with_content() {
         gtk4::init().unwrap();
-        let conn = Rc::new(RefCell::new(reprise_core::db::open_migrated(None).unwrap()));
-        conn.borrow()
+        let conn = Rc::new(crate::test_db::open().unwrap());
+        crate::test_db::connection(&conn)
             .execute(
                 "INSERT INTO tracks (path, title, artist, duration_ms, added_at) \
                  VALUES ('/tmp/rendered-status.ogg', 'Rendered status', 'Artist', 90000, 0)",
@@ -157,7 +156,9 @@ mod tests {
             "non-Library sources keep the status surface hidden"
         );
 
-        conn.borrow().execute("DELETE FROM tracks", []).unwrap();
+        crate::test_db::connection(&conn)
+            .execute("DELETE FROM tracks", [])
+            .unwrap();
         status.refresh(&conn);
         while gtk4::glib::MainContext::default().iteration(false) {}
         assert!(

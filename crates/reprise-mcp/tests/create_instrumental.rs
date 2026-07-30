@@ -140,8 +140,8 @@ fn save_true_registers_a_job_that_promotes_end_to_end() {
     let result_track_id = saved_track.expect("save=true auto-promotes to a library track");
     assert_ne!(result_track_id, source_id, "a new track was created");
 
-    let conn = reprise_core::db::open_migrated(Some(&db)).unwrap();
-    let provenance = reprise_core::provenance::get_provenance(&conn, result_track_id)
+    let handle = reprise_core::db::Db::open_migrated(Some(&db)).unwrap();
+    let provenance = reprise_core::provenance::get_provenance(&handle, result_track_id)
         .unwrap()
         .expect("the promoted track has a provenance row");
     assert!(provenance.ai, "the promoted track is flagged AI");
@@ -176,9 +176,9 @@ fn save_false_stages_the_render_in_the_conversion_view() {
 
     // save=false routed through the conversion playlist, so the staging view's
     // sidebar entry exists, and the render is on disk to play.
-    let conn = reprise_core::db::open_migrated(Some(&db)).unwrap();
+    let handle = reprise_core::db::Db::open_migrated(Some(&db)).unwrap();
     assert!(
-        reprise_core::ai_conversion::conversion_playlist(&conn)
+        reprise_core::ai_conversion::conversion_playlist(&handle)
             .unwrap()
             .is_some(),
         "save=false ensures the Conversion playlist exists"

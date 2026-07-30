@@ -155,7 +155,20 @@ fn summarize_query_plan(details: Vec<String>) -> QueryPlanSummary {
     }
 }
 
-fn explain_window(conn: &Connection, sort_field: &str) -> rusqlite::Result<QueryPlanSummary> {
+fn open_benchmark_connection(path: &Path) -> rusqlite::Result<Connection> {
+    let conn = Connection::open(path)?;
+    conn.pragma_update(None, "journal_mode", "WAL")?;
+    conn.pragma_update(None, "foreign_keys", "ON")?;
+    conn.pragma_update(
+        None,
+        "busy_timeout",
+        reprise_core::db::DEFAULT_BUSY_TIMEOUT_MS,
+    )?;
+    Ok(conn)
+}
+
+fn explain_window(path: &Path, sort_field: &str) -> rusqlite::Result<QueryPlanSummary> {
+    let conn = open_benchmark_connection(path)?;
     let query = queries::build_track_query(sort_field, "asc", false);
     let mut statement = conn.prepare(&format!("EXPLAIN QUERY PLAN {query}"))?;
     let details = statement
@@ -164,8 +177,8 @@ fn explain_window(conn: &Connection, sort_field: &str) -> rusqlite::Result<Query
     Ok(summarize_query_plan(details))
 }
 
-fn seed_generated_metadata(conn: &mut Connection, track_count: usize) -> rusqlite::Result<()> {
-    let tx = conn.transaction()?;
+fn seed_generated_metadata(conn: &Connection, track_count: usize) -> rusqlite::Result<()> {
+    let tx = conn.unchecked_transaction()?;
     insert_generated_metadata(&tx, 0, track_count)?;
     tx.commit()
 }
@@ -257,7 +270,7 @@ fn remove_generated_database(path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-fn no_write_setup(_conn: &mut Connection) -> rusqlite::Result<()> {
+fn no_write_setup(_conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
@@ -269,7 +282,7 @@ fn measure_committed_write<S, F>(
     mut operation: F,
 ) -> Result<TimingSummary, Box<dyn Error>>
 where
-    S: FnMut(&mut Connection) -> rusqlite::Result<()>,
+    S: FnMut(&Connection) -> rusqlite::Result<()>,
     F: for<'tx> FnMut(&Transaction<'tx>) -> rusqlite::Result<usize>,
 {
     let mut samples = Vec::with_capacity(iterations);
@@ -278,12 +291,14 @@ where
         let clone_path = append_path_suffix(source_path, &format!(".{label}-{iteration}"));
         std::fs::copy(source_path, &clone_path)?;
         let measured = (|| -> Result<(u64, usize), Box<dyn Error>> {
-            let mut conn = reprise_core::db::open_migrated(Some(&clone_path))?;
-            setup(&mut conn)?;
+            let db = reprise_core::db::Db::open_migrated(Some(&clone_path))?;
+            drop(db);
+            let conn = open_benchmark_connection(&clone_path)?;
+            setup(&conn)?;
             conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")?;
 
             let started = Instant::now();
-            let tx = conn.transaction()?;
+            let tx = conn.unchecked_transaction()?;
             let result_rows = operation(&tx)?;
             tx.commit()?;
             Ok((elapsed_us(started), result_rows))
@@ -317,15 +332,17 @@ fn run(config: &Config) -> Result<BaselineReport, Box<dyn Error>> {
         .into());
     }
 
-    let mut conn = reprise_core::db::open_migrated(Some(&config.db_path))?;
-    seed_generated_metadata(&mut conn, config.track_count)?;
-    reprise_core::library::settings::set_onboarding_completed(&conn, true)?;
+    let db = reprise_core::db::Db::open_migrated(Some(&config.db_path))?;
+    let conn = open_benchmark_connection(&config.db_path)?;
+    seed_generated_metadata(&conn, config.track_count)?;
+    reprise_core::library::settings::set_onboarding_completed(&db, true)?;
     conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")?;
     drop(conn);
+    drop(db);
 
     let startup = measure(config.iterations, || {
-        let conn = reprise_core::db::open_migrated(Some(&config.db_path))?;
-        let count: i64 = conn.query_row("SELECT count(*) FROM tracks", [], |row| row.get(0))?;
+        let db = reprise_core::db::Db::open_migrated(Some(&config.db_path))?;
+        let count = queries::query_track_count(&db, &ViewSource::Library, "", &[])?;
         let count = usize::try_from(count).unwrap_or(usize::MAX);
         if count != config.track_count {
             return Err(format!(
@@ -337,35 +354,35 @@ fn run(config: &Config) -> Result<BaselineReport, Box<dyn Error>> {
         Ok(1)
     })?;
 
-    let mut conn = reprise_core::db::open_migrated(Some(&config.db_path))?;
+    let db = reprise_core::db::Db::open_migrated(Some(&config.db_path))?;
     let library_count = measure(config.iterations, || {
-        let count = queries::query_track_count(&conn, &ViewSource::Library, "", &[])?;
+        let count = queries::query_track_count(&db, &ViewSource::Library, "", &[])?;
         Ok(usize::try_from(count).unwrap_or(usize::MAX))
     })?;
 
-    let first_window = measure_window(&mut conn, config.iterations, "title", 0)?;
+    let first_window = measure_window(&db, config.iterations, "title", 0)?;
     let middle_offset = i64::try_from(config.track_count / 2).unwrap_or(i64::MAX);
-    let middle_window = measure_window(&mut conn, config.iterations, "title", middle_offset)?;
+    let middle_window = measure_window(&db, config.iterations, "title", middle_offset)?;
     let final_offset =
         i64::try_from(config.track_count.saturating_sub(WINDOW_ROWS as usize)).unwrap_or(i64::MAX);
-    let final_window = measure_window(&mut conn, config.iterations, "title", final_offset)?;
-    let title_window_query_plan = explain_window(&conn, "title")?;
-    let album_final_window = measure_window(&mut conn, config.iterations, "album", final_offset)?;
-    let album_window_query_plan = explain_window(&conn, "album")?;
+    let final_window = measure_window(&db, config.iterations, "title", final_offset)?;
+    let title_window_query_plan = explain_window(&config.db_path, "title")?;
+    let album_final_window = measure_window(&db, config.iterations, "album", final_offset)?;
+    let album_window_query_plan = explain_window(&config.db_path, "album")?;
 
     let filtered_count = measure(config.iterations, || {
-        let count = queries::query_track_count(&conn, &ViewSource::Library, "needle", &[])?;
+        let count = queries::query_track_count(&db, &ViewSource::Library, "needle", &[])?;
         Ok(usize::try_from(count).unwrap_or(usize::MAX))
     })?;
     let library_stats = measure(config.iterations, || {
-        let stats = queries::query_library_stats(&conn, "")?;
+        let stats = queries::query_library_stats(&db, "")?;
         Ok(usize::try_from(stats.track_count).unwrap_or(usize::MAX))
     })?;
     let playback_ids = measure(config.iterations, || {
-        let ids = queries::query_track_ids(&conn, &ViewSource::Library, "title", "asc", "", &[])?;
+        let ids = queries::query_track_ids(&db, &ViewSource::Library, "title", "asc", "", &[])?;
         Ok(ids.len())
     })?;
-    drop(conn);
+    drop(db);
 
     let write_batch_rows = config.track_count.min(WRITE_BATCH_LIMIT);
     let write_batch_rows_i64 = i64::try_from(write_batch_rows).unwrap_or(i64::MAX);
@@ -445,14 +462,14 @@ fn run(config: &Config) -> Result<BaselineReport, Box<dyn Error>> {
 }
 
 fn measure_window(
-    conn: &mut Connection,
+    db: &reprise_core::db::Db,
     iterations: usize,
     sort_field: &str,
     offset: i64,
 ) -> Result<TimingSummary, Box<dyn Error>> {
     measure(iterations, || {
         let rows = queries::query_track_window(
-            conn,
+            db,
             &ViewSource::Library,
             sort_field,
             "asc",
@@ -669,16 +686,14 @@ mod tests {
         assert_eq!(report.metadata_update_batch.result_rows, 2);
         assert_eq!(report.hide_batch.result_rows, 2);
         assert_eq!(report.restore_batch.result_rows, 2);
-        let conn = reprise_core::db::open_migrated(Some(&db_path)).unwrap();
-        assert!(reprise_core::library::settings::get_onboarding_completed(&conn).unwrap());
+        let db = reprise_core::db::Db::open_migrated(Some(&db_path)).unwrap();
+        assert!(reprise_core::library::settings::get_onboarding_completed(&db).unwrap());
         assert_eq!(
-            conn.query_row("SELECT count(*) FROM tracks", [], |row| row
-                .get::<_, i64>(0))
-                .unwrap(),
+            queries::query_track_count(&db, &ViewSource::Library, "", &[]).unwrap(),
             2
         );
 
-        drop(conn);
+        drop(db);
         std::fs::remove_file(db_path).unwrap();
     }
 }

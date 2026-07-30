@@ -31,7 +31,7 @@ pub(super) struct RunLog {
 
 impl RunLog {
     pub(super) fn open(runtime: &DeviceSyncRuntime, start: &RunStart) -> Self {
-        let run = match sync_log::start_run(&runtime.conn.borrow(), start) {
+        let run = match sync_log::start_run(&runtime.conn, start) {
             Ok(run) => Some(run),
             Err(error) => {
                 tracing::warn!(%error, "could not open the device sync log entry");
@@ -73,7 +73,7 @@ impl RunLog {
             device_path: device_path.to_owned(),
             detail,
         };
-        if let Err(error) = sync_log::note_deviation(&runtime.conn.borrow(), run, &deviation) {
+        if let Err(error) = sync_log::note_deviation(&runtime.conn, run, &deviation) {
             tracing::warn!(%error, "could not record a device sync deviation");
         }
     }
@@ -88,7 +88,7 @@ impl RunLog {
             return;
         };
         let summary = sync_log::summarize(outcome, self.counters, finished_at);
-        if let Err(error) = sync_log::finish_run(&runtime.conn.borrow(), run, &summary) {
+        if let Err(error) = sync_log::finish_run(&runtime.conn, run, &summary) {
             tracing::warn!(%error, "could not close the device sync log entry");
         }
     }
@@ -100,13 +100,13 @@ impl DeviceSyncRuntime {
     /// than breaking the page.
     pub(in crate::ui) fn reload_sync_history(&self, device_id: &str) {
         let loaded = {
-            let conn = self.conn.borrow();
-            match sync_log::recent_runs(&conn, sync_log::RETAINED_RUNS) {
+            let conn = &self.conn;
+            match sync_log::recent_runs(conn, sync_log::RETAINED_RUNS) {
                 Ok(runs) => runs
                     .into_iter()
                     .filter(|run| run.device_serial == device_id)
                     .map(|run| {
-                        let found = sync_log::deviations(&conn, run.id).unwrap_or_default();
+                        let found = sync_log::deviations(conn, run.id).unwrap_or_default();
                         (run, found)
                     })
                     .collect(),

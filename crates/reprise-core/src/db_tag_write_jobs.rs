@@ -113,7 +113,7 @@ mod tests {
     #[test]
     fn migration_v19_has_future_complete_job_and_field_states() {
         let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
+        crate::db::migrate_connection(&conn).unwrap();
 
         conn.execute(
             "INSERT INTO tag_write_jobs \
@@ -144,7 +144,7 @@ mod tests {
     #[test]
     fn migration_v20_creates_constrained_tag_write_journal() {
         let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
+        crate::db::migrate_connection(&conn).unwrap();
         conn.execute_batch(
             "DROP TRIGGER tag_write_journal_identity_immutable;
              DROP TABLE tag_write_journal;
@@ -219,7 +219,7 @@ mod tests {
     #[test]
     fn migration_v18_to_v19_preserves_real_rows_and_is_idempotent() {
         let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
+        crate::db::migrate_connection(&conn).unwrap();
         conn.execute(
             "INSERT INTO tracks (path, title, added_at) VALUES ('keep.flac', 'Keep', 1)",
             [],
@@ -284,7 +284,7 @@ mod tests {
     #[test]
     fn v19_identity_columns_are_immutable_but_runtime_state_can_advance() {
         let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
+        crate::db::migrate_connection(&conn).unwrap();
         conn.execute(
             "INSERT INTO library_doctor_scans \
              (scope_kind, created_at, remote_enabled, checked_tracks, skipped_tracks) \

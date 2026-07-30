@@ -9,9 +9,9 @@ use gtk4::glib::{self};
 use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::connectivity::Connectivity;
+use reprise_core::db::Db;
 use reprise_core::podcasts::download_state::DownloadState;
 use reprise_core::podcasts::{self, EpisodeRow, PodcastKind, SourceGroup};
-use rusqlite::Connection;
 
 use super::add_dialog;
 use super::podcasts_context_menu;
@@ -92,7 +92,7 @@ impl PodcastsCallbacks {
 
 pub(in crate::ui) struct PodcastsView {
     root: gtk4::Box,
-    pub(super) conn: Rc<RefCell<Connection>>,
+    pub(super) conn: Rc<Db>,
     runtime: Rc<PodcastsRuntime>,
     callbacks: PodcastsCallbacks,
     kind: PodcastKind,
@@ -135,7 +135,7 @@ pub(in crate::ui) struct PodcastsView {
 
 impl PodcastsView {
     pub(in crate::ui) fn install(
-        conn: Rc<RefCell<Connection>>,
+        conn: Rc<Db>,
         runtime: Rc<PodcastsRuntime>,
         callbacks: PodcastsCallbacks,
         kind: PodcastKind,
@@ -160,8 +160,8 @@ impl PodcastsView {
         stack.add_named(&status, Some("status"));
         stack.add_named(empty_state.widget(), Some(EMPTY_PAGE));
         stack.add_named(module_off_state.widget(), Some(MODULE_OFF_PAGE));
-        let default_hide_shorts = podcasts::config::load(&conn.borrow())
-            .map_or(true, |config| config.youtube_hide_shorts_default);
+        let default_hide_shorts =
+            podcasts::config::load(&conn).map_or(true, |config| config.youtube_hide_shorts_default);
         let youtube_detail = YoutubeChannelDetail::new(&stack, default_hide_shorts);
         stack.add_named(youtube_detail.widget(), Some("youtube-channel"));
         stack.set_vexpand(true);
@@ -294,9 +294,8 @@ impl PodcastsView {
 
     pub(in crate::ui) fn refresh(&self) {
         let result = {
-            let conn = self.conn.borrow();
-            podcasts::query::list_source_groups(&conn, self.kind).and_then(|groups| {
-                let selected = PodcastDeviceSyncState::selected_for_groups(&conn, &groups)?;
+            podcasts::query::list_source_groups(&self.conn, self.kind).and_then(|groups| {
+                let selected = PodcastDeviceSyncState::selected_for_groups(&self.conn, &groups)?;
                 Ok((groups, selected))
             })
         };
@@ -313,10 +312,7 @@ impl PodcastsView {
                 self.groups.replace(groups);
                 self.rows.replace(rows);
                 self.device_sync.replace_selected(selected_devices);
-                let last_updated = {
-                    let conn = self.conn.borrow();
-                    last_updated_text(&conn)
-                };
+                let last_updated = last_updated_text(&self.conn);
                 self.footer_status.set_text(&last_updated);
                 self.render();
             }
@@ -372,7 +368,7 @@ impl PodcastsView {
         // module + global-gate state, then threaded down to every source
         // image entry point in this view instead of each one re-deriving it.
         let images_allowed = reprise_core::online_sources::network_allowed(
-            &self.conn.borrow(),
+            &self.conn,
             &reprise_core::modules::SOURCE_IMAGES_MODULE,
         )
         .unwrap_or(false);
@@ -409,8 +405,7 @@ impl PodcastsView {
             PodcastKind::Youtube => &reprise_core::modules::YOUTUBE_MODULE,
         };
         let module_enabled =
-            reprise_core::online_sources::network_allowed(&self.conn.borrow(), module)
-                .unwrap_or(false);
+            reprise_core::online_sources::network_allowed(&self.conn, module).unwrap_or(false);
         let classification = podcasts_empty_state_for(
             subscriptions,
             total,
@@ -465,7 +460,7 @@ impl PodcastsView {
         if !allowed {
             return;
         }
-        let Ok(Some(row)) = podcasts::store::episode(&self.conn.borrow(), episode_id) else {
+        let Ok(Some(row)) = podcasts::store::episode(&self.conn, episode_id) else {
             return;
         };
         if let Some(path) = row.downloaded_path.as_deref() {
@@ -477,9 +472,7 @@ impl PodcastsView {
                     return;
                 }
             }
-            if let Err(error) =
-                podcasts::store::set_downloaded_path(&self.conn.borrow(), episode_id, None)
-            {
+            if let Err(error) = podcasts::store::set_downloaded_path(&self.conn, episode_id, None) {
                 self.show_error(&error.to_string());
                 return;
             }
@@ -553,18 +546,14 @@ impl PodcastsView {
     }
 
     fn unsubscribe(self: &Rc<Self>, subscription_id: i64) {
-        let Ok(Some(subscription)) =
-            podcasts::store::subscription(&self.conn.borrow(), subscription_id)
+        let Ok(Some(subscription)) = podcasts::store::subscription(&self.conn, subscription_id)
         else {
             return;
         };
-        let paths = podcasts::store::downloaded_paths_for_subscription(
-            &self.conn.borrow(),
-            subscription_id,
-        )
-        .unwrap_or_default();
+        let paths = podcasts::store::downloaded_paths_for_subscription(&self.conn, subscription_id)
+            .unwrap_or_default();
         if let Err(error) = podcasts::store::tombstone_subscription(
-            &self.conn.borrow(),
+            &self.conn,
             subscription_id,
             chrono::Utc::now().timestamp(),
         ) {
@@ -578,7 +567,7 @@ impl PodcastsView {
         let Some(overlay) = self.toast_overlay.upgrade() else {
             self.kept_downloads.borrow_mut().add(subscription_id, paths);
             if let Err(error) =
-                podcasts::store::commit_remove_subscription(&self.conn.borrow(), subscription_id)
+                podcasts::store::commit_remove_subscription(&self.conn, subscription_id)
             {
                 self.show_error(&error.to_string());
             }
@@ -595,7 +584,7 @@ impl PodcastsView {
             undo_flag.set(true);
             if let Some(view) = weak.upgrade() {
                 if let Err(error) =
-                    podcasts::store::undo_remove_subscription(&view.conn.borrow(), subscription_id)
+                    podcasts::store::undo_remove_subscription(&view.conn, subscription_id)
                 {
                     view.show_error(&error.to_string());
                 }
@@ -615,7 +604,7 @@ impl PodcastsView {
                 .borrow_mut()
                 .add(subscription_id, paths.clone());
             if let Err(error) =
-                podcasts::store::commit_remove_subscription(&view.conn.borrow(), subscription_id)
+                podcasts::store::commit_remove_subscription(&view.conn, subscription_id)
             {
                 view.show_error(&error.to_string());
                 return;
@@ -626,11 +615,11 @@ impl PodcastsView {
     }
 
     fn remove_episode(self: &Rc<Self>, episode_id: i64) {
-        let Ok(Some(episode)) = podcasts::store::episode(&self.conn.borrow(), episode_id) else {
+        let Ok(Some(episode)) = podcasts::store::episode(&self.conn, episode_id) else {
             return;
         };
         if let Err(error) = podcasts::store::tombstone_episode(
-            &self.conn.borrow(),
+            &self.conn,
             episode_id,
             chrono::Utc::now().timestamp(),
         ) {
@@ -641,7 +630,7 @@ impl PodcastsView {
         (self.callbacks.on_sidebar_refresh)();
 
         let Some(overlay) = self.toast_overlay.upgrade() else {
-            match podcasts::store::commit_remove_episode(&self.conn.borrow(), episode_id) {
+            match podcasts::store::commit_remove_episode(&self.conn, episode_id) {
                 Ok(Some(path)) => self
                     .kept_downloads
                     .borrow_mut()
@@ -663,9 +652,7 @@ impl PodcastsView {
         toast.connect_button_clicked(move |_| {
             undo_flag.set(true);
             if let Some(view) = weak.upgrade() {
-                if let Err(error) =
-                    podcasts::store::undo_remove_episode(&view.conn.borrow(), episode_id)
-                {
+                if let Err(error) = podcasts::store::undo_remove_episode(&view.conn, episode_id) {
                     view.show_error(&error.to_string());
                 }
                 view.refresh();
@@ -680,7 +667,7 @@ impl PodcastsView {
             let Some(view) = weak.upgrade() else {
                 return;
             };
-            match podcasts::store::commit_remove_episode(&view.conn.borrow(), episode_id) {
+            match podcasts::store::commit_remove_episode(&view.conn, episode_id) {
                 Ok(Some(path)) => view
                     .kept_downloads
                     .borrow_mut()

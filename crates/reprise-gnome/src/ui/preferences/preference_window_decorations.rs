@@ -27,8 +27,8 @@ pub(in crate::ui) fn row(context: &Rc<PreferencesContext>) -> adw::ComboRow {
         &strings::text(strings::DECORATION_SYSTEM),
     ]);
     let selected = {
-        let conn = context.conn.borrow();
-        mode_index(settings::get_window_decoration_mode(&conn))
+        let conn = &context.conn;
+        mode_index(settings::get_window_decoration_mode(conn))
     };
     let row = adw::ComboRow::builder()
         .title(strings::text(strings::WINDOW_DECORATIONS))
@@ -43,8 +43,8 @@ pub(in crate::ui) fn row(context: &Rc<PreferencesContext>) -> adw::ComboRow {
         };
         let mode = mode_from_index(row.selected());
         let saved = {
-            let conn = context.conn.borrow();
-            settings::set_window_decoration_mode(&conn, mode)
+            let conn = &context.conn;
+            settings::set_window_decoration_mode(conn, mode)
         };
         if let Err(error) = saved {
             tracing::warn!(%error, "could not save window decoration mode");

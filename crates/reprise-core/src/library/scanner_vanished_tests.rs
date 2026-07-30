@@ -95,14 +95,13 @@ fn root_unavailable(outcome: ScanOutcome) -> std::path::PathBuf {
 fn scan_folder_leaves_a_present_file_untouched() {
     let tmp = tempfile::tempdir().unwrap();
     let path = fixture_copy(tmp.path(), "a.flac");
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let conn = crate::db::Db::open_in_memory().unwrap();
 
-    let report = completed(scan_folder(&mut conn, tmp.path()).unwrap());
-    let (id, ..) = row_by_path(&conn, &path);
+    let report = completed(scan_folder(&conn, tmp.path()).unwrap());
+    let (id, ..) = row_by_path(conn.conn(), &path);
 
     assert_eq!(report.vanished, 0);
-    assert!(!is_missing(&conn, id));
+    assert!(!is_missing(conn.conn(), id));
 }
 
 /// A track whose path lives outside `root` must never be touched, even if
@@ -120,23 +119,22 @@ fn scan_folder_ignores_a_track_outside_root_even_if_its_file_is_gone() {
     let watched_path = fixture_copy(&watched_root, "in-root.flac");
     let other_path = fixture_copy(&other_root, "outside-root.flac");
 
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    completed(scan_folder(&mut conn, &watched_root).unwrap());
-    completed(scan_folder(&mut conn, &other_root).unwrap());
-    let (watched_id, ..) = row_by_path(&conn, &watched_path);
-    let (other_id, ..) = row_by_path(&conn, &other_path);
+    let conn = crate::db::Db::open_in_memory().unwrap();
+    completed(scan_folder(&conn, &watched_root).unwrap());
+    completed(scan_folder(&conn, &other_root).unwrap());
+    let (watched_id, ..) = row_by_path(conn.conn(), &watched_path);
+    let (other_id, ..) = row_by_path(conn.conn(), &other_path);
 
     // Both files vanish, but only `watched_root` is scanned again.
     std::fs::remove_file(&watched_path).unwrap();
     std::fs::remove_file(&other_path).unwrap();
 
-    let report = completed(scan_folder(&mut conn, &watched_root).unwrap());
+    let report = completed(scan_folder(&conn, &watched_root).unwrap());
 
     assert_eq!(report.vanished, 1, "only the in-root track is marked");
-    assert!(is_missing(&conn, watched_id));
+    assert!(is_missing(conn.conn(), watched_id));
     assert!(
-        !is_missing(&conn, other_id),
+        !is_missing(conn.conn(), other_id),
         "a track outside the watched root must never be touched"
     );
 }
@@ -148,20 +146,19 @@ fn scan_folder_ignores_a_track_outside_root_even_if_its_file_is_gone() {
 fn scan_folder_does_not_recount_an_already_missing_track() {
     let tmp = tempfile::tempdir().unwrap();
     let path = fixture_copy(tmp.path(), "a.flac");
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    completed(scan_folder(&mut conn, tmp.path()).unwrap());
-    let (id, ..) = row_by_path(&conn, &path);
+    let conn = crate::db::Db::open_in_memory().unwrap();
+    completed(scan_folder(&conn, tmp.path()).unwrap());
+    let (id, ..) = row_by_path(conn.conn(), &path);
 
     std::fs::remove_file(&path).unwrap();
-    let first = completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    let first = completed(scan_folder(&conn, tmp.path()).unwrap());
     assert_eq!(first.vanished, 1);
 
     // Second scan: the same track is already missing (missing_since set),
     // so it must not be counted again even though its file is still gone.
-    let second = completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    let second = completed(scan_folder(&conn, tmp.path()).unwrap());
     assert_eq!(second.vanished, 0);
-    assert!(is_missing(&conn, id));
+    assert!(is_missing(conn.conn(), id));
 }
 
 /// A reconcile of `<base>/music` must not touch a row under the sibling root
@@ -177,17 +174,16 @@ fn scan_folder_ignores_sibling_root_with_common_string_prefix() {
     std::fs::create_dir_all(&root).unwrap();
     std::fs::create_dir_all(&sibling).unwrap();
 
-    let conn_holder = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn_holder).unwrap();
-    let mut conn = conn_holder;
+    let conn_holder = crate::db::Db::open_in_memory().unwrap();
+    let conn = conn_holder;
     // A non-missing row whose file never existed, under the sibling root.
-    insert_raw_track(&conn, &sibling.join("gone.flac"));
+    insert_raw_track(conn.conn(), &sibling.join("gone.flac"));
 
-    let report = completed(scan_folder(&mut conn, &root).unwrap());
+    let report = completed(scan_folder(&conn, &root).unwrap());
 
     assert_eq!(report.vanished, 0);
     assert_eq!(
-        missing_count(&conn),
+        missing_count(conn.conn()),
         0,
         "sibling-root row must not be marked"
     );
@@ -206,13 +202,12 @@ fn scan_folder_treats_like_metacharacters_in_root_literally() {
     std::fs::create_dir_all(&root).unwrap();
     std::fs::create_dir_all(&decoy).unwrap();
 
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    insert_raw_track(&conn, &decoy.join("gone.flac"));
+    let conn = crate::db::Db::open_in_memory().unwrap();
+    insert_raw_track(conn.conn(), &decoy.join("gone.flac"));
 
-    completed(scan_folder(&mut conn, &root).unwrap());
+    completed(scan_folder(&conn, &root).unwrap());
 
-    assert_eq!(missing_count(&conn), 0);
+    assert_eq!(missing_count(conn.conn()), 0);
 }
 
 /// The false-*negative* direction of the metacharacter case (the
@@ -229,21 +224,20 @@ fn scan_folder_still_marks_in_root_file_when_root_has_like_metacharacter() {
     let root = base.path().join("a_b");
     std::fs::create_dir_all(&root).unwrap();
 
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let conn = crate::db::Db::open_in_memory().unwrap();
     // A non-missing row under the metacharacter root whose file never
     // exists, with `root`'s real device so the root guard sees proof.
     let gone = root.join("gone.flac");
-    insert_raw_track_with_device(&conn, &gone, dev_of(&root));
-    let (id, ..) = row_by_path(&conn, &gone);
+    insert_raw_track_with_device(conn.conn(), &gone, dev_of(&root));
+    let (id, ..) = row_by_path(conn.conn(), &gone);
 
-    let report = completed(scan_folder(&mut conn, &root).unwrap());
+    let report = completed(scan_folder(&conn, &root).unwrap());
 
     assert_eq!(
         report.vanished, 1,
         "vanished in-root file must be marked missing"
     );
-    assert!(is_missing(&conn, id));
+    assert!(is_missing(conn.conn(), id));
 }
 
 /// Uses `queries::MISSING` directly rather than a hand-copied literal, so
@@ -274,17 +268,16 @@ fn missing_count(conn: &Connection) -> i64 {
 fn scan_folder_folds_a_deleted_file_into_the_same_scan() {
     let tmp = tempfile::tempdir().unwrap();
     let path = fixture_copy(tmp.path(), "a.flac");
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    completed(scan_folder(&mut conn, tmp.path()).unwrap());
-    let (id, ..) = row_by_path(&conn, &path);
+    let conn = crate::db::Db::open_in_memory().unwrap();
+    completed(scan_folder(&conn, tmp.path()).unwrap());
+    let (id, ..) = row_by_path(conn.conn(), &path);
 
     std::fs::remove_file(&path).unwrap();
-    let report = completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    let report = completed(scan_folder(&conn, tmp.path()).unwrap());
 
     assert_eq!(report.vanished, 1);
-    assert!(is_missing(&conn, id));
-    assert_eq!(missing_reason(&conn, id).as_deref(), Some("deleted"));
+    assert!(is_missing(conn.conn(), id));
+    assert_eq!(missing_reason(conn.conn(), id).as_deref(), Some("deleted"));
 }
 
 /// Brief case 2 (atomicity/ordering): a move and an unrelated deletion
@@ -299,12 +292,11 @@ fn scan_folder_move_and_delete_in_the_same_scan_never_marks_the_moved_row_missin
     let tmp = tempfile::tempdir().unwrap();
     let moved_path = fixture_copy(tmp.path(), "moved.flac");
     let gone_path = fixture_copy(tmp.path(), "gone.flac");
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    let r1 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    let conn = crate::db::Db::open_in_memory().unwrap();
+    let r1 = completed(scan_folder(&conn, tmp.path()).unwrap());
     assert_eq!(r1.added, 2);
-    let (moved_id, ..) = row_by_path(&conn, &moved_path);
-    let (gone_id, ..) = row_by_path(&conn, &gone_path);
+    let (moved_id, ..) = row_by_path(conn.conn(), &moved_path);
+    let (gone_id, ..) = row_by_path(conn.conn(), &gone_path);
 
     let new_dir = tmp.path().join("new_subdir");
     std::fs::create_dir(&new_dir).unwrap();
@@ -312,16 +304,16 @@ fn scan_folder_move_and_delete_in_the_same_scan_never_marks_the_moved_row_missin
     std::fs::rename(&moved_path, &new_path).unwrap();
     std::fs::remove_file(&gone_path).unwrap();
 
-    let r2 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    let r2 = completed(scan_folder(&conn, tmp.path()).unwrap());
 
     assert_eq!(r2.moved, 1, "the renamed file must be recognized as a move");
     assert_eq!(r2.vanished, 1, "only the genuinely deleted file is marked");
     assert!(
-        !is_missing(&conn, moved_id),
+        !is_missing(conn.conn(), moved_id),
         "the moved row must never be marked missing"
     );
-    assert!(is_missing(&conn, gone_id));
-    let (still_moved_id, ..) = row_by_path(&conn, &new_path);
+    assert!(is_missing(conn.conn(), gone_id));
+    let (still_moved_id, ..) = row_by_path(conn.conn(), &new_path);
     assert_eq!(still_moved_id, moved_id, "the moved row kept its identity");
 }
 
@@ -333,23 +325,23 @@ fn scan_folder_move_and_delete_in_the_same_scan_never_marks_the_moved_row_missin
 fn scan_folder_root_guard_a_nonexistent_root_reports_root_unavailable() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().join("does-not-exist");
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let conn = crate::db::Db::open_in_memory().unwrap();
     // A present row the DB believes lives under `root`, seeded directly
     // (never actually scanned, since `root` never existed) so the test can
     // prove the guard leaves it completely untouched.
     let phantom = root.join("phantom.flac");
-    insert_raw_track(&conn, &phantom);
-    let (id, ..) = row_by_path(&conn, &phantom);
+    insert_raw_track(conn.conn(), &phantom);
+    let (id, ..) = row_by_path(conn.conn(), &phantom);
 
-    let outcome = scan_folder(&mut conn, &root).unwrap();
+    let outcome = scan_folder(&conn, &root).unwrap();
 
     assert_eq!(root_unavailable(outcome), root);
     assert!(
-        !is_missing(&conn, id),
+        !is_missing(conn.conn(), id),
         "root-guard case (a) must mark nothing"
     );
     let import_error_count: i64 = conn
+        .conn()
         .query_row(
             "SELECT count(*) FROM import_errors WHERE path = ?1",
             [root.to_string_lossy().to_string()],
@@ -373,18 +365,17 @@ fn scan_folder_root_guard_b_empty_root_with_mismatched_device_reports_root_unava
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().join("root");
     std::fs::create_dir(&root).unwrap();
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let conn = crate::db::Db::open_in_memory().unwrap();
     let real_dev = dev_of(&root);
     let phantom = root.join("phantom.flac");
-    insert_raw_track_with_device(&conn, &phantom, real_dev + 99_999);
-    let (id, ..) = row_by_path(&conn, &phantom);
+    insert_raw_track_with_device(conn.conn(), &phantom, real_dev + 99_999);
+    let (id, ..) = row_by_path(conn.conn(), &phantom);
 
-    let outcome = scan_folder(&mut conn, &root).unwrap();
+    let outcome = scan_folder(&conn, &root).unwrap();
 
     assert_eq!(root_unavailable(outcome), root);
     assert!(
-        !is_missing(&conn, id),
+        !is_missing(conn.conn(), id),
         "root-guard case (b) must mark nothing even though the walk found nothing"
     );
 }
@@ -405,24 +396,24 @@ fn scan_folder_root_guard_widened_evidence_trips_when_only_already_missing_rows_
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().join("root");
     std::fs::create_dir(&root).unwrap();
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let conn = crate::db::Db::open_in_memory().unwrap();
     let real_dev = dev_of(&root);
     let phantom = root.join("phantom.flac");
-    insert_raw_track_with_device(&conn, &phantom, real_dev + 99_999);
-    let (id, ..) = row_by_path(&conn, &phantom);
+    insert_raw_track_with_device(conn.conn(), &phantom, real_dev + 99_999);
+    let (id, ..) = row_by_path(conn.conn(), &phantom);
     // Already flagged missing by some earlier reconcile — excluded from the
     // `PRESENT`-filtered mark-phase candidate list, but must still count as
     // root-guard evidence: an already-missing, not-yet-tombstoned row is
     // real proof this root once had tracks, and its mismatching device is
     // real proof the mount underneath it has since changed.
-    conn.execute(
-        "UPDATE tracks SET missing_since = 1, missing_reason = 'deleted' WHERE id = ?1",
-        [id],
-    )
-    .unwrap();
+    conn.conn()
+        .execute(
+            "UPDATE tracks SET missing_since = 1, missing_reason = 'deleted' WHERE id = ?1",
+            [id],
+        )
+        .unwrap();
 
-    let outcome = scan_folder(&mut conn, &root).unwrap();
+    let outcome = scan_folder(&conn, &root).unwrap();
 
     assert_eq!(root_unavailable(outcome), root);
 }
@@ -437,18 +428,17 @@ fn scan_folder_root_guard_c_empty_root_with_matching_device_marks_deleted() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().join("root");
     std::fs::create_dir(&root).unwrap();
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let conn = crate::db::Db::open_in_memory().unwrap();
     let real_dev = dev_of(&root);
     let phantom = root.join("phantom.flac");
-    insert_raw_track_with_device(&conn, &phantom, real_dev);
-    let (id, ..) = row_by_path(&conn, &phantom);
+    insert_raw_track_with_device(conn.conn(), &phantom, real_dev);
+    let (id, ..) = row_by_path(conn.conn(), &phantom);
 
-    let report = completed(scan_folder(&mut conn, &root).unwrap());
+    let report = completed(scan_folder(&conn, &root).unwrap());
 
     assert_eq!(report.vanished, 1);
-    assert!(is_missing(&conn, id));
-    assert_eq!(missing_reason(&conn, id).as_deref(), Some("deleted"));
+    assert!(is_missing(conn.conn(), id));
+    assert_eq!(missing_reason(conn.conn(), id).as_deref(), Some("deleted"));
 }
 
 /// Brief case 6 (single-file Retry no-op guarantee): `scan_folder` called
@@ -462,11 +452,10 @@ fn scan_folder_root_guard_c_empty_root_with_matching_device_marks_deleted() {
 fn scan_folder_on_a_single_file_root_is_a_vanish_mark_no_op() {
     let tmp = tempfile::tempdir().unwrap();
     let path = fixture_copy(tmp.path(), "a.flac");
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    let conn = crate::db::Db::open_in_memory().unwrap();
+    completed(scan_folder(&conn, tmp.path()).unwrap());
 
-    let report = completed(scan_folder(&mut conn, &path).unwrap());
+    let report = completed(scan_folder(&conn, &path).unwrap());
 
     assert_eq!(report.vanished, 0);
     assert_eq!(

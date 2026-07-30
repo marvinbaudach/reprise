@@ -239,8 +239,8 @@ fn smoke_reorder_queue(shared: &Rc<Shared>, range: &str) {
 /// the lookup fails or no playlist has that exact name; picks the first by
 /// position on a name collision, same as the other two lookups.
 fn resolve_smoke_dnd_playlist_by_name(shared: &Rc<Shared>, name: &str) -> Option<i64> {
-    let conn = shared.conn.borrow();
-    let all = playlists::list(&conn)
+    let conn = &shared.conn;
+    let all = playlists::list(conn)
         .inspect_err(|error| {
             tracing::error!(%error, name, "failed to list playlists for smoke-dnd name lookup");
         })

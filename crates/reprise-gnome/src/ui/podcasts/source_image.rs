@@ -29,6 +29,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
 use gtk4::prelude::*;
+use reprise_core::db::Db;
 use reprise_core::remote_image::ImageOutcome;
 
 const CACHE_LIMIT: usize = 128;
@@ -45,7 +46,7 @@ thread_local! {
 ///
 /// `NET-1a` requires that switching the gate off takes effect immediately —
 /// including for artwork tasks that were already queued while it was on. The
-/// worker threads have no `rusqlite::Connection` and must not open one per
+/// worker threads have no `Db` and must not open one per
 /// task (that would mean a DB hit on every dequeue, on a thread with no
 /// natural connection lifetime); polling settings from a background thread is
 /// the wrong shape here. Instead, every caller of `SourceImage::new`/
@@ -74,7 +75,7 @@ static GATE_OPEN: AtomicBool = AtomicBool::new(false);
 ///
 /// A failed lookup counts as not allowed: refusing when unsure is the safe
 /// direction for a privacy promise (`SRC-11`).
-pub(in crate::ui) fn recompute_gate(conn: &rusqlite::Connection) {
+pub(in crate::ui) fn recompute_gate(conn: &Db) {
     let allowed = reprise_core::online_sources::network_allowed(
         conn,
         &reprise_core::modules::SOURCE_IMAGES_MODULE,
@@ -363,7 +364,7 @@ mod tests {
     fn src_11_turning_the_setting_off_closes_the_gate_without_a_further_enqueue() {
         use std::sync::atomic::Ordering;
 
-        let conn = reprise_core::db::open_migrated(None).unwrap();
+        let conn = crate::test_db::open().unwrap();
         reprise_core::modules::set_enabled(
             &conn,
             &reprise_core::modules::SOURCE_IMAGES_MODULE,

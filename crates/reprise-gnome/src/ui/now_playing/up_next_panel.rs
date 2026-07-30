@@ -7,8 +7,8 @@ use std::rc::Rc;
 use gtk4::glib;
 use gtk4::prelude::*;
 use reprise_core::cover::ThumbnailSize;
+use reprise_core::db::Db;
 use reprise_core::models::Track;
-use rusqlite::Connection;
 
 use super::cover_loader::CoverLoader;
 use crate::ui::track_list::queue_row_mapping::{classify, QueueRow};
@@ -79,14 +79,11 @@ pub(in crate::ui) struct UpNextPanel {
     on_jump: Rc<RefCell<Option<OnJump>>>,
     on_remove: Rc<RefCell<Option<OnRemove>>>,
     on_reorder: Rc<RefCell<Option<OnReorder>>>,
-    conn: Rc<RefCell<Connection>>,
+    conn: Rc<Db>,
 }
 
 impl UpNextPanel {
-    pub(in crate::ui) fn new(
-        conn: Rc<RefCell<Connection>>,
-        cover_loader: &Rc<CoverLoader>,
-    ) -> Rc<Self> {
+    pub(in crate::ui) fn new(conn: Rc<Db>, cover_loader: &Rc<CoverLoader>) -> Rc<Self> {
         let model = TrackListModel::new(conn.clone());
         let queue_sections = Rc::new(RefCell::new(Vec::new()));
         let section_headers = Rc::new(RefCell::new(Vec::new()));
@@ -167,14 +164,13 @@ impl UpNextPanel {
         let mut total_duration_ms = 0_i64;
         for offset in (0..upcoming.total_len()).step_by(200) {
             let ids = upcoming.ids_window(offset, 200);
-            let duration =
-                match reprise_core::queries::query_queue_duration_ms(&self.conn.borrow(), &ids) {
-                    Ok(duration) => duration,
-                    Err(error) => {
-                        tracing::warn!(%error, "could not load up-next panel duration window");
-                        0
-                    }
-                };
+            let duration = match reprise_core::queries::query_queue_duration_ms(&self.conn, &ids) {
+                Ok(duration) => duration,
+                Err(error) => {
+                    tracing::warn!(%error, "could not load up-next panel duration window");
+                    0
+                }
+            };
             total_duration_ms = total_duration_ms.saturating_add(duration);
             if ids.is_empty() {
                 break;

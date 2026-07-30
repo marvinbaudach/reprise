@@ -1,4 +1,5 @@
 use super::*;
+use reprise_core::db::Db;
 use reprise_core::device_sync::settings::{
     load_device_playlists, load_or_create_settings, upsert_device_file, upsert_device_playlist,
 };
@@ -70,15 +71,15 @@ impl DeviceBackend for FailingCopyBackend {
     }
 }
 
-fn add_playlist(conn: &Rc<RefCell<Connection>>, id: i64, name: &str, track_ids: &[i64]) {
-    conn.borrow()
+fn add_playlist(conn: &Rc<Db>, id: i64, name: &str, track_ids: &[i64]) {
+    crate::test_db::connection(conn.as_ref())
         .execute(
             "INSERT INTO playlists (id, name, position) VALUES (?1, ?2, ?3)",
             rusqlite::params![id, name, id],
         )
         .unwrap();
     for (position, track_id) in track_ids.iter().enumerate() {
-        conn.borrow()
+        crate::test_db::connection(conn.as_ref())
             .execute(
                 "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, ?3)",
                 rusqlite::params![id, track_id, position as i64],
@@ -87,9 +88,9 @@ fn add_playlist(conn: &Rc<RefCell<Connection>>, id: i64, name: &str, track_ids: 
     }
 }
 
-fn save_sources(conn: &Rc<RefCell<Connection>>, device_id: &str, sources: Vec<SelectionSource>) {
+fn save_sources(conn: &Rc<Db>, device_id: &str, sources: Vec<SelectionSource>) {
     save_settings(
-        &conn.borrow(),
+        conn,
         &DeviceSettings {
             device_serial: device_id.into(),
             device_name: format!("Phone {device_id}"),
@@ -238,7 +239,7 @@ fn profile_and_playlist_changes_persist_and_recompute_the_page_immediately() {
                 .selected
         );
 
-        let persisted = load_or_create_settings(&conn.borrow(), "a", "Phone a").unwrap();
+        let persisted = load_or_create_settings(&conn, "a", "Phone a").unwrap();
         assert_eq!(persisted.profile, TransferProfile::Original);
         assert_eq!(
             persisted.selection,
@@ -253,8 +254,7 @@ fn mtp_16_transfer_profile_survives_runtime_recreation_for_the_same_device() {
         let temp = tempfile::tempdir().unwrap();
         let database = temp.path().join("reprise.db");
         {
-            let conn = Rc::new(RefCell::new(Connection::open(&database).unwrap()));
-            reprise_core::db::migrate(&conn.borrow()).unwrap();
+            let conn = Rc::new(Db::open_migrated(Some(&database)).unwrap());
             let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
             let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
             gtk4::glib::timeout_future(Duration::from_millis(2)).await;
@@ -265,8 +265,7 @@ fn mtp_16_transfer_profile_survives_runtime_recreation_for_the_same_device() {
             assert_eq!(runtime.devices()[0].page.profile, TransferProfile::Original);
         }
 
-        let conn = Rc::new(RefCell::new(Connection::open(&database).unwrap()));
-        reprise_core::db::migrate(&conn.borrow()).unwrap();
+        let conn = Rc::new(Db::open_migrated(Some(&database)).unwrap());
         let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
         gtk4::glib::timeout_future(Duration::from_millis(2)).await;
@@ -283,7 +282,7 @@ fn missing_or_empty_selected_playlists_block_start_without_planning_deletions() 
         let (_temp, conn) = fixture();
         save_sources(&conn, "a", vec![SelectionSource::Playlist(99)]);
         upsert_device_file(
-            &conn.borrow(),
+            &conn,
             &DeviceFileRecord {
                 device_serial: "a".into(),
                 track_id: 1,
@@ -331,7 +330,7 @@ fn unavailable_selected_tracks_are_retained_and_written_to_the_playlist() {
     run(async {
         let (_temp, conn) = fixture();
         add_playlist(&conn, 10, "Offline", &[1]);
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute(
                 "UPDATE tracks SET missing_since = 1, missing_reason = 'unmounted' WHERE id = 1",
                 [],
@@ -339,7 +338,7 @@ fn unavailable_selected_tracks_are_retained_and_written_to_the_playlist() {
             .unwrap();
         save_sources(&conn, "a", vec![SelectionSource::Playlist(10)]);
         upsert_device_file(
-            &conn.borrow(),
+            &conn,
             &DeviceFileRecord {
                 device_serial: "a".into(),
                 track_id: 1,
@@ -380,12 +379,12 @@ fn deleted_library_rows_are_removed_instead_of_being_retained_as_unavailable() {
     run(async {
         let (_temp, conn) = fixture();
         add_playlist(&conn, 10, "Road", &[1]);
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute("UPDATE tracks SET removed_at = 1 WHERE id = 1", [])
             .unwrap();
         save_sources(&conn, "a", vec![SelectionSource::Playlist(10)]);
         upsert_device_file(
-            &conn.borrow(),
+            &conn,
             &DeviceFileRecord {
                 device_serial: "a".into(),
                 track_id: 1,
@@ -424,7 +423,7 @@ fn successful_playlist_rename_writes_inventory_before_removing_the_old_m3u() {
         add_playlist(&conn, 10, "Renamed Road", &[1]);
         save_sources(&conn, "a", vec![SelectionSource::Playlist(10)]);
         upsert_device_playlist(
-            &conn.borrow(),
+            &conn,
             &DevicePlaylistRecord {
                 device_serial: "a".into(),
                 source: SelectionSource::Playlist(10),
@@ -453,7 +452,7 @@ fn successful_playlist_rename_writes_inventory_before_removing_the_old_m3u() {
             .borrow()
             .iter()
             .any(|path| path == "Old Road.m3u8"));
-        let inventory = load_device_playlists(&conn.borrow(), "a").unwrap();
+        let inventory = load_device_playlists(&conn, "a").unwrap();
         assert_eq!(inventory.len(), 1);
         assert_eq!(inventory[0].source_name, "Renamed Road");
         assert_eq!(inventory[0].device_path, "Renamed Road.m3u8");
@@ -466,7 +465,7 @@ fn a_failed_track_copy_does_not_publish_a_playlist_with_dead_new_paths() {
         let (temp, conn) = fixture();
         let mp3 = temp.path().join("copy.mp3");
         std::fs::write(&mp3, vec![1_u8; 100]).unwrap();
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute(
                 "UPDATE tracks SET path = ?1, bitrate_kbps = 128 WHERE id = 1",
                 [mp3.to_string_lossy().as_ref()],

@@ -10,8 +10,8 @@ use std::time::{Duration, Instant};
 use reprise_core::ai_jobs::{self, AiJob, JobState};
 use reprise_core::ai_promotion::{self, PromotionConfig};
 use reprise_core::ai_staging::StagingStore;
+use reprise_core::db::Db;
 use reprise_core::queries;
-use rusqlite::Connection;
 use serde_json::{json, Value};
 
 use crate::clock::now_unix;
@@ -58,7 +58,7 @@ impl WaitResult {
 /// promoting finished renders in save mode, then reports each outcome. Exits
 /// non-zero if any job did not end successfully — including a timeout.
 pub fn wait_for_jobs(
-    conn: &mut Connection,
+    db: &Db,
     store: &StagingStore,
     config: Option<&PromotionConfig>,
     outcome: &CreateOutcome,
@@ -77,7 +77,7 @@ pub fn wait_for_jobs(
             if results[index].is_some() {
                 continue;
             }
-            match settle_job(conn, store, config, mode, job_id)? {
+            match settle_job(db, store, config, mode, job_id)? {
                 Some(result) => results[index] = Some(result),
                 None => all_done = false,
             }
@@ -86,7 +86,7 @@ pub fn wait_for_jobs(
             break;
         }
         if Instant::now() >= deadline {
-            mark_timeouts(conn, &job_ids, &mut results)?;
+            mark_timeouts(db, &job_ids, &mut results)?;
             break;
         }
         sleep(WAIT_POLL_INTERVAL);
@@ -107,28 +107,28 @@ pub fn wait_for_jobs(
 /// still queued/running. A finished, unsaved render is promoted here in save
 /// mode.
 fn settle_job(
-    conn: &mut Connection,
+    db: &Db,
     store: &StagingStore,
     config: Option<&PromotionConfig>,
     mode: SaveMode,
     job_id: i64,
 ) -> Result<Option<WaitResult>, CliError> {
-    let job = ai_jobs::get_job(conn, job_id)?
-        .ok_or_else(|| CliError::NotFound(format!("job {job_id}")))?;
+    let job =
+        ai_jobs::get_job(db, job_id)?.ok_or_else(|| CliError::NotFound(format!("job {job_id}")))?;
     match job.state {
         JobState::Queued | JobState::Running => Ok(None),
         JobState::Failed => Ok(Some(WaitResult::Failed {
             error_kind: job.error_kind.unwrap_or_else(|| "unknown".to_string()),
         })),
         JobState::Cancelled => Ok(Some(WaitResult::Cancelled)),
-        JobState::Done => settle_done(conn, store, config, mode, &job),
+        JobState::Done => settle_done(db, store, config, mode, &job),
     }
 }
 
 /// Resolves a `done` job: already-saved returns its track; a staged render is
 /// promoted in save mode, or reported as staged in stage mode.
 fn settle_done(
-    conn: &mut Connection,
+    db: &Db,
     store: &StagingStore,
     config: Option<&PromotionConfig>,
     mode: SaveMode,
@@ -138,7 +138,7 @@ fn settle_done(
         // Already promoted (e.g. by the app or a prior save).
         return Ok(Some(WaitResult::Saved {
             result_track_id,
-            path: promoted_path(conn, result_track_id),
+            path: promoted_path(db, result_track_id),
         }));
     }
     match mode {
@@ -147,7 +147,7 @@ fn settle_done(
             let now = now_unix();
             // `config` is always `Some` in save+wait mode (checked up front).
             let config = config.expect("promotion config present in save+wait mode");
-            match ai_promotion::promote(conn, store, config, job.id, now) {
+            match ai_promotion::promote(db, store, config, job.id, now) {
                 Ok(promotion) => Ok(Some(WaitResult::Saved {
                     result_track_id: promotion.result_track_id,
                     path: promotion.path,
@@ -159,8 +159,8 @@ fn settle_done(
 }
 
 /// Best-effort on-disk path for an already-saved result track (for reporting).
-fn promoted_path(conn: &Connection, result_track_id: i64) -> PathBuf {
-    queries::query_track_summary(conn, result_track_id)
+fn promoted_path(db: &Db, result_track_id: i64) -> PathBuf {
+    queries::query_track_summary(db, result_track_id)
         .ok()
         .flatten()
         .map_or_else(PathBuf::new, |summary| PathBuf::from(summary.path))
@@ -169,7 +169,7 @@ fn promoted_path(conn: &Connection, result_track_id: i64) -> PathBuf {
 /// Records a `TimedOut` result (with the last-seen state) for every job that
 /// never reached a terminal state.
 fn mark_timeouts(
-    conn: &Connection,
+    db: &Db,
     job_ids: &[i64],
     results: &mut [Option<WaitResult>],
 ) -> Result<(), CliError> {
@@ -177,7 +177,7 @@ fn mark_timeouts(
         if results[index].is_some() {
             continue;
         }
-        let state = ai_jobs::get_job(conn, job_id)?.map_or(JobState::Queued, |job| job.state);
+        let state = ai_jobs::get_job(db, job_id)?.map_or(JobState::Queued, |job| job.state);
         results[index] = Some(WaitResult::TimedOut { state });
     }
     Ok(())

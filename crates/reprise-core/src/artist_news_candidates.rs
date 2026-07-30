@@ -18,27 +18,31 @@ pub enum FetchScope {
     AllArtists,
 }
 
-pub fn configured_fetch_scope(conn: &Connection) -> Result<FetchScope, rusqlite::Error> {
-    if crate::library::settings::get_bool(conn, FETCH_ALL_ARTISTS_KEY, true)? {
+pub fn configured_fetch_scope(db: &crate::db::Db) -> Result<FetchScope, rusqlite::Error> {
+    let conn = db.conn();
+    if crate::library::settings::get_bool_in(conn, FETCH_ALL_ARTISTS_KEY, true)? {
         Ok(FetchScope::AllArtists)
     } else {
         Ok(FetchScope::TopArtists)
     }
 }
 
-pub fn set_fetch_all_artists(conn: &Connection, all_artists: bool) -> Result<(), rusqlite::Error> {
-    crate::library::settings::set_bool(conn, FETCH_ALL_ARTISTS_KEY, all_artists)
+pub fn set_fetch_all_artists(db: &crate::db::Db, all_artists: bool) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
+    crate::library::settings::set_bool_in(conn, FETCH_ALL_ARTISTS_KEY, all_artists)
 }
 
 /// Whether already-released singles count as news. Off by default: singles
 /// are the most common release type, so switching this on noticeably
 /// increases how much the badge reports.
-pub fn include_singles(conn: &Connection) -> Result<bool, rusqlite::Error> {
-    crate::library::settings::get_bool(conn, INCLUDE_SINGLES_KEY, false)
+pub fn include_singles(db: &crate::db::Db) -> Result<bool, rusqlite::Error> {
+    let conn = db.conn();
+    crate::library::settings::get_bool_in(conn, INCLUDE_SINGLES_KEY, false)
 }
 
-pub fn set_include_singles(conn: &Connection, include: bool) -> Result<(), rusqlite::Error> {
-    crate::library::settings::set_bool(conn, INCLUDE_SINGLES_KEY, include)
+pub fn set_include_singles(db: &crate::db::Db, include: bool) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
+    crate::library::settings::set_bool_in(conn, INCLUDE_SINGLES_KEY, include)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

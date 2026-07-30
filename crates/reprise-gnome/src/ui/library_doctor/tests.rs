@@ -73,7 +73,7 @@ fn doc_7b_entry_scope_defaults_to_library_and_suggests_filtered_view() {
 fn doctor_worker_uses_only_its_isolated_database_connection() {
     let directory = tempfile::tempdir().unwrap();
     let database = directory.path().join("doctor.db");
-    drop(reprise_core::db::open_migrated(Some(&database)).unwrap());
+    drop(reprise_core::db::Db::open_migrated(Some(&database)).unwrap());
     let request = reprise_core::library_doctor::DoctorScanRequest {
         scope: DoctorScopeRequest::WholeLibrary,
         options: reprise_core::library_doctor::DoctorScanOptions::local_only(),

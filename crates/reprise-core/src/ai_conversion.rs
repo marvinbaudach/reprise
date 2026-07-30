@@ -29,13 +29,19 @@ pub const CONVERSION_PLAYLIST_NAME: &str = "Conversion";
 
 /// Ensures the conversion drop playlist exists and returns its id. Idempotent
 /// — safe to call on every startup and every drop.
-pub fn ensure_conversion_playlist(conn: &Connection) -> Result<i64, rusqlite::Error> {
-    playlists::ensure_role_playlist(conn, CONVERSION_PLAYLIST_NAME, CONVERSION_ROLE)
+pub fn ensure_conversion_playlist(db: &crate::db::Db) -> Result<i64, rusqlite::Error> {
+    let conn = db.conn();
+    ensure_conversion_playlist_in(conn)
+}
+
+fn ensure_conversion_playlist_in(conn: &Connection) -> Result<i64, rusqlite::Error> {
+    playlists::ensure_role_playlist_in(conn, CONVERSION_PLAYLIST_NAME, CONVERSION_ROLE)
 }
 
 /// The conversion playlist's id, or `None` if it has never been created.
-pub fn conversion_playlist(conn: &Connection) -> Result<Option<i64>, rusqlite::Error> {
-    playlists::find_role_playlist(conn, CONVERSION_ROLE)
+pub fn conversion_playlist(db: &crate::db::Db) -> Result<Option<i64>, rusqlite::Error> {
+    let conn = db.conn();
+    playlists::find_role_playlist_in(conn, CONVERSION_ROLE)
 }
 
 /// Adds one track to the conversion playlist: ensures the playlist exists, then
@@ -43,14 +49,15 @@ pub fn conversion_playlist(conn: &Connection) -> Result<Option<i64>, rusqlite::E
 /// open/staged/saved job returns [`EnqueueOutcome::Deduplicated`] — the
 /// caller surfaces that as a hint rather than a second render (Beschluss 16).
 pub fn add_to_conversion(
-    conn: &Connection,
+    db: &crate::db::Db,
     staging: &StagingStore,
     track_id: i64,
     model_id: &str,
     now: i64,
 ) -> Result<EnqueueOutcome, rusqlite::Error> {
-    ensure_conversion_playlist(conn)?;
-    ai_jobs::enqueue_instrumental(conn, staging, track_id, model_id, now)
+    let conn = db.conn();
+    ensure_conversion_playlist_in(conn)?;
+    ai_jobs::enqueue_instrumental_in(conn, staging, track_id, model_id, now)
 }
 
 /// Adds several tracks (a multi-select drop) to the conversion playlist under
@@ -59,15 +66,16 @@ pub fn add_to_conversion(
 /// by default, the GTK drop stages for a manual decision) onto every fresh job,
 /// where the completion path honors it.
 pub fn add_batch_to_conversion(
-    conn: &Connection,
+    db: &crate::db::Db,
     staging: &StagingStore,
     track_ids: &[i64],
     model_id: &str,
     auto_promote: bool,
     now: i64,
 ) -> Result<BatchOutcome, rusqlite::Error> {
-    ensure_conversion_playlist(conn)?;
-    ai_jobs::enqueue_instrumental_batch(conn, staging, track_ids, model_id, auto_promote, now)
+    let conn = db.conn();
+    ensure_conversion_playlist_in(conn)?;
+    ai_jobs::enqueue_instrumental_batch_in(conn, staging, track_ids, model_id, auto_promote, now)
 }
 
 #[cfg(test)]
@@ -75,19 +83,18 @@ mod tests {
     use super::*;
     use crate::library::playlists;
 
-    fn migrated() -> Connection {
-        let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
-        conn
+    fn migrated() -> crate::db::Db {
+        crate::db::Db::open_in_memory().unwrap()
     }
 
-    fn seed_track(conn: &Connection, id: i64) {
-        conn.execute(
-            "INSERT INTO tracks (id, path, title, artist, added_at, file_mtime, file_size) \
+    fn seed_track(db: &crate::db::Db, id: i64) {
+        db.conn()
+            .execute(
+                "INSERT INTO tracks (id, path, title, artist, added_at, file_mtime, file_size) \
              VALUES (?1, ?2, 'T', 'A', 1, 1, 1)",
-            rusqlite::params![id, format!("/music/{id}.flac")],
-        )
-        .unwrap();
+                rusqlite::params![id, format!("/music/{id}.flac")],
+            )
+            .unwrap();
     }
 
     #[test]
@@ -104,6 +111,7 @@ mod tests {
         assert_eq!(conversion_playlist(&conn).unwrap(), Some(first));
         // Exactly one playlist row exists.
         let count: i64 = conn
+            .conn()
             .query_row("SELECT COUNT(*) FROM playlists", [], |r| r.get(0))
             .unwrap();
         assert_eq!(count, 1);
@@ -158,6 +166,7 @@ mod tests {
             }
         );
         let jobs: i64 = conn
+            .conn()
             .query_row("SELECT COUNT(*) FROM ai_jobs", [], |r| r.get(0))
             .unwrap();
         assert_eq!(jobs, 1);

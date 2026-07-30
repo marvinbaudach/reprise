@@ -45,7 +45,7 @@ fn net_2_migration_preserves_existing_cover_usage() {
 
     migrate_with_cache_dirs(&conn, cover_cache.path(), portrait_cache.path()).unwrap();
 
-    assert!(crate::modules::is_enabled(&conn, &crate::modules::COVER_DOWNLOAD_MODULE).unwrap());
+    assert!(crate::modules::is_enabled_in(&conn, &crate::modules::COVER_DOWNLOAD_MODULE).unwrap());
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
@@ -61,7 +61,9 @@ fn net_2_migration_preserves_existing_portrait_usage() {
 
     migrate_with_cache_dirs(&conn, cover_cache.path(), portrait_cache.path()).unwrap();
 
-    assert!(crate::modules::is_enabled(&conn, &crate::modules::ARTIST_PORTRAITS_MODULE).unwrap());
+    assert!(
+        crate::modules::is_enabled_in(&conn, &crate::modules::ARTIST_PORTRAITS_MODULE).unwrap()
+    );
 }
 
 #[test]
@@ -70,7 +72,7 @@ fn net_2_migration_preserves_online_lyrics_for_existing_databases() {
 
     migrate_with_empty_caches(&conn);
 
-    assert!(crate::modules::is_enabled(&conn, &crate::modules::ONLINE_LYRICS_MODULE).unwrap());
+    assert!(crate::modules::is_enabled_in(&conn, &crate::modules::ONLINE_LYRICS_MODULE).unwrap());
 }
 
 #[test]
@@ -84,7 +86,7 @@ fn net_2_migration_carries_artist_news_opt_in_to_new_releases() {
 
     migrate_with_empty_caches(&conn);
 
-    assert!(crate::modules::is_enabled(&conn, &crate::modules::NEW_RELEASES_MODULE).unwrap());
+    assert!(crate::modules::is_enabled_in(&conn, &crate::modules::NEW_RELEASES_MODULE).unwrap());
 }
 
 #[test]
@@ -97,8 +99,10 @@ fn net_2_migration_ignores_negative_cache_markers() {
 
     migrate_with_cache_dirs(&conn, cover_cache.path(), portrait_cache.path()).unwrap();
 
-    assert!(!crate::modules::is_enabled(&conn, &crate::modules::COVER_DOWNLOAD_MODULE).unwrap());
-    assert!(!crate::modules::is_enabled(&conn, &crate::modules::ARTIST_PORTRAITS_MODULE).unwrap());
+    assert!(!crate::modules::is_enabled_in(&conn, &crate::modules::COVER_DOWNLOAD_MODULE).unwrap());
+    assert!(
+        !crate::modules::is_enabled_in(&conn, &crate::modules::ARTIST_PORTRAITS_MODULE).unwrap()
+    );
 }
 
 #[test]
@@ -131,7 +135,7 @@ fn net_2_migration_preserves_explicit_opt_outs() {
         &crate::modules::ONLINE_LYRICS_MODULE,
         &crate::modules::NEW_RELEASES_MODULE,
     ] {
-        assert!(!crate::modules::is_enabled(&conn, module).unwrap());
+        assert!(!crate::modules::is_enabled_in(&conn, module).unwrap());
     }
 }
 
@@ -153,6 +157,6 @@ fn net_2_v15_database_runs_network_grandfathering_at_v16() {
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
     assert_eq!(version, SUPPORTED_SCHEMA_VERSION);
-    assert!(!crate::modules::is_enabled(&conn, &crate::modules::COVER_DOWNLOAD_MODULE).unwrap());
-    assert!(crate::modules::is_enabled(&conn, &crate::modules::ONLINE_LYRICS_MODULE).unwrap());
+    assert!(!crate::modules::is_enabled_in(&conn, &crate::modules::COVER_DOWNLOAD_MODULE).unwrap());
+    assert!(crate::modules::is_enabled_in(&conn, &crate::modules::ONLINE_LYRICS_MODULE).unwrap());
 }

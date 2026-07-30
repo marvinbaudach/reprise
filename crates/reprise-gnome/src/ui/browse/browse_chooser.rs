@@ -3,8 +3,8 @@
 use std::rc::Rc;
 
 use gtk4::prelude::*;
+use reprise_core::db::Db;
 use reprise_core::queries::{self, BrowseFacet, BrowseFilter, BrowseValue};
-use rusqlite::Connection;
 
 use super::browse_bar::{apply_selection, BrowseBar};
 use crate::ui::browse_filter_strings as filter_strings;
@@ -163,12 +163,8 @@ pub(super) fn wire_chooser(bar: &Rc<BrowseBar>) {
     }
 }
 
-pub(super) fn load_values(
-    conn: &Connection,
-    facet: BrowseFacet,
-    filter: &BrowseFilter,
-) -> Vec<BrowseValue> {
-    queries::query_browse_values(conn, facet, filter).unwrap_or_else(|error| {
+pub(super) fn load_values(db: &Db, facet: BrowseFacet, filter: &BrowseFilter) -> Vec<BrowseValue> {
+    queries::query_browse_values(db, facet, filter).unwrap_or_else(|error| {
         tracing::warn!(%error, ?facet, "could not load browse facet values");
         Vec::new()
     })

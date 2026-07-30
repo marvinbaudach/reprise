@@ -28,7 +28,7 @@ fn mtp_33_remove_deleted_off_keeps_an_unsubscribed_episode_on_the_device() {
         let (downloads, conn) = fixture();
         let rss_path = downloads.path().join("rss.mp3");
         std::fs::write(&rss_path, b"rss audio").unwrap();
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute_batch(
                 "INSERT INTO podcast_subscriptions
                  (id, kind, feed_url, title, auto_download, sync_to_phone, added_at)
@@ -37,7 +37,7 @@ fn mtp_33_remove_deleted_off_keeps_an_unsubscribed_episode_on_the_device() {
                  VALUES (10, 'a');",
             )
             .unwrap();
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute(
                 "INSERT INTO podcast_episodes
                  (id, subscription_id, guid, title, audio_url, downloaded_path,
@@ -47,7 +47,7 @@ fn mtp_33_remove_deleted_off_keeps_an_unsubscribed_episode_on_the_device() {
                 [rss_path.to_string_lossy().as_ref()],
             )
             .unwrap();
-        save_settings(&conn.borrow(), &podcast_settings("a", false)).unwrap();
+        save_settings(&conn, &podcast_settings("a", false)).unwrap();
 
         let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
         // Already on the device from an earlier sync, but its show is no

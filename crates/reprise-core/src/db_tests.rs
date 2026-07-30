@@ -3,7 +3,7 @@ use super::*;
 /// Stage-3 close-out regression: proves each version step is atomic — a
 /// transaction rolled back partway through (simulating a crash between
 /// the schema change and the `user_version` bump) leaves neither the
-/// schema change nor the version bump behind, so a real `migrate()` call
+/// schema change nor the version bump behind, so a real `migrate_connection()` call
 /// afterward can safely retry the whole step from scratch rather than
 /// tripping over a partially-applied schema ("duplicate column").
 #[test]
@@ -30,10 +30,10 @@ fn migrate_version_step_is_atomic_a_rollback_leaves_no_partial_schema() {
     );
 
     // The rolled-back schema change must not have survived either — a
-    // real migrate() call must be able to re-run SCHEMA_V2 cleanly
+    // real migrate_connection() call must be able to re-run SCHEMA_V2 cleanly
     // (would fail with "duplicate column name" if the ALTERs had
     // partially committed).
-    migrate(&conn).unwrap();
+    migrate_connection(&conn).unwrap();
     let version_after: i64 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
@@ -43,8 +43,8 @@ fn migrate_version_step_is_atomic_a_rollback_leaves_no_partial_schema() {
 #[test]
 fn migrate_creates_tracks_table_and_is_idempotent() {
     let conn = open(None).unwrap();
-    migrate(&conn).unwrap();
-    migrate(&conn).unwrap(); // second run must not fail
+    migrate_connection(&conn).unwrap();
+    migrate_connection(&conn).unwrap(); // second run must not fail
     let n: i64 = conn
         .query_row("SELECT count(*) FROM tracks", [], |r| r.get(0))
         .unwrap();
@@ -72,7 +72,7 @@ fn migrate_v1_to_v2_adds_columns_preserves_data_and_is_idempotent() {
     )
     .unwrap();
 
-    migrate(&conn).unwrap();
+    migrate_connection(&conn).unwrap();
 
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
@@ -113,9 +113,9 @@ fn migrate_v1_to_v2_adds_columns_preserves_data_and_is_idempotent() {
     assert_eq!(device, None);
     assert_eq!(inode, None);
 
-    // Second migrate() call (e.g. next app launch) must not fail or
+    // Second migrate_connection() call (e.g. next app launch) must not fail or
     // re-run the ALTERs (which would error: "duplicate column name").
-    migrate(&conn).unwrap();
+    migrate_connection(&conn).unwrap();
     let version_after_second_run: i64 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
@@ -163,7 +163,7 @@ fn migrate_v2_to_v3_creates_playlist_tables_and_seeds_smart_playlists() {
         .unwrap();
     assert_eq!(version, 2);
 
-    migrate(&conn).unwrap();
+    migrate_connection(&conn).unwrap();
 
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
@@ -216,7 +216,7 @@ fn migrate_v2_to_v3_creates_playlist_tables_and_seeds_smart_playlists() {
     assert_eq!(rules1, r#"[{"field":"last_played_at","op":"not-null"}]"#);
 
     // Second migration must be idempotent (no duplicate inserts).
-    migrate(&conn).unwrap();
+    migrate_connection(&conn).unwrap();
     let smart_count_after: i64 = conn
         .query_row("SELECT COUNT(*) FROM smart_playlists", [], |r| r.get(0))
         .unwrap();
@@ -227,7 +227,7 @@ fn migrate_v2_to_v3_creates_playlist_tables_and_seeds_smart_playlists() {
 #[test]
 fn migrate_v3_foreign_keys_cascade_on_track_delete() {
     let conn = open(None).unwrap();
-    migrate(&conn).unwrap();
+    migrate_connection(&conn).unwrap();
     conn.execute(
             "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (1, '/x/a.flac', 'A', 'B', 0)",
             [],
@@ -262,7 +262,7 @@ fn migrate_v3_foreign_keys_cascade_on_track_delete() {
 #[test]
 fn migrate_v3_foreign_keys_cascade_on_playlist_delete() {
     let conn = open(None).unwrap();
-    migrate(&conn).unwrap();
+    migrate_connection(&conn).unwrap();
     conn.execute(
             "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (1, '/x/a.flac', 'A', 'B', 0)",
             [],
@@ -318,7 +318,7 @@ fn migrate_v3_to_v4_creates_settings_table_preserves_data_and_is_idempotent() {
     )
     .unwrap();
 
-    migrate(&conn).unwrap();
+    migrate_connection(&conn).unwrap();
 
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
@@ -348,9 +348,9 @@ fn migrate_v3_to_v4_creates_settings_table_preserves_data_and_is_idempotent() {
         .unwrap();
     assert_eq!(playlist_name, "My Playlist");
 
-    // Second migrate() call must not fail (would error: "table settings
+    // Second migrate_connection() call must not fail (would error: "table settings
     // already exists" if the ALTER/CREATE ran a second time).
-    migrate(&conn).unwrap();
+    migrate_connection(&conn).unwrap();
     let version_after_second_run: i64 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
@@ -371,7 +371,7 @@ fn migrate_v4_to_v5_creates_listenbrainz_queue_and_preserves_settings() {
     .unwrap();
     conn.pragma_update(None, "user_version", 4).unwrap();
 
-    migrate(&conn).unwrap();
+    migrate_connection(&conn).unwrap();
 
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
@@ -391,7 +391,7 @@ fn migrate_v4_to_v5_creates_listenbrainz_queue_and_preserves_settings() {
             )
             .unwrap();
     assert!(queue_exists);
-    migrate(&conn).unwrap();
+    migrate_connection(&conn).unwrap();
 }
 
 #[test]
@@ -410,7 +410,7 @@ fn migrate_v6_to_v7_creates_listen_events_and_preserves_tracks() {
         .unwrap();
     conn.pragma_update(None, "user_version", 6).unwrap();
 
-    migrate(&conn).unwrap();
+    migrate_connection(&conn).unwrap();
 
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
@@ -441,8 +441,8 @@ fn migrate_v6_to_v7_creates_listen_events_and_preserves_tracks() {
         .unwrap();
     assert_eq!(title, "A");
 
-    // Second migrate() must be a no-op (would error re-creating the table).
-    migrate(&conn).unwrap();
+    // Second migrate_connection() must be a no-op (would error re-creating the table).
+    migrate_connection(&conn).unwrap();
     let version_after: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
@@ -454,7 +454,7 @@ fn migrate_v6_to_v7_creates_listen_events_and_preserves_tracks() {
 #[test]
 fn migrate_v23_listen_history_survives_track_delete() {
     let conn = open(None).unwrap();
-    migrate(&conn).unwrap();
+    migrate_connection(&conn).unwrap();
     conn.execute(
             "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (1, '/x/a.flac', 'A', 'B', 0)",
             [],
@@ -495,7 +495,7 @@ fn migrate_v5_to_v6_creates_lastfm_queue_and_preserves_listenbrainz_rows() {
     .unwrap();
     conn.pragma_update(None, "user_version", 5).unwrap();
 
-    migrate(&conn).unwrap();
+    migrate_connection(&conn).unwrap();
 
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
@@ -521,7 +521,7 @@ fn migrate_v5_to_v6_creates_lastfm_queue_and_preserves_listenbrainz_rows() {
 fn migrate_v7_to_v8_adds_waveform_peaks_column() {
     let conn = open(None).unwrap();
     // Build up to v7 manually
-    migrate(&conn).unwrap(); // goes all the way to current
+    migrate_connection(&conn).unwrap(); // goes all the way to current
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
@@ -559,17 +559,17 @@ fn migrate_v7_to_v8_adds_waveform_peaks_column() {
 
 #[test]
 fn waveform_peaks_crud_round_trips() {
-    let conn = open(None).unwrap();
-    migrate(&conn).unwrap();
-    conn.execute(
+    let db = Db::open_in_memory().unwrap();
+    db.conn()
+        .execute(
         "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (1, '/t.flac', 'T', 'A', 0)",
         [],
     )
     .unwrap();
-    assert!(get_waveform_peaks(&conn, 1).unwrap().is_none());
+    assert!(get_waveform_peaks(&db, 1).unwrap().is_none());
     let peaks: Vec<u8> = vec![0, 128, 255, 64, 192];
-    set_waveform_peaks(&conn, 1, &peaks).unwrap();
-    assert_eq!(get_waveform_peaks(&conn, 1).unwrap().unwrap(), peaks);
+    set_waveform_peaks(&db, 1, &peaks).unwrap();
+    assert_eq!(get_waveform_peaks(&db, 1).unwrap().unwrap(), peaks);
 }
 
 #[test]
@@ -588,23 +588,24 @@ fn open_migrated_returns_a_ready_to_use_database() {
 
 #[test]
 fn pending_waveform_tracks_excludes_cached_and_missing_rows() {
-    let conn = open_migrated(None).unwrap();
+    let db = Db::open_in_memory().unwrap();
     for (id, path, missing_since) in [
         (1, "/one.flac", None),
         (2, "/two.flac", None),
         (3, "/missing.flac", Some(1)),
     ] {
-        conn.execute(
-            "INSERT INTO tracks (id, path, title, added_at, missing_since) \
+        db.conn()
+            .execute(
+                "INSERT INTO tracks (id, path, title, added_at, missing_since) \
              VALUES (?1, ?2, '', 0, ?3)",
-            rusqlite::params![id, path, missing_since],
-        )
-        .unwrap();
+                rusqlite::params![id, path, missing_since],
+            )
+            .unwrap();
     }
-    set_waveform_peaks(&conn, 2, &[1, 2, 3]).unwrap();
+    set_waveform_peaks(&db, 2, &[1, 2, 3]).unwrap();
 
     assert_eq!(
-        pending_waveform_tracks(&conn).unwrap(),
+        pending_waveform_tracks(&db).unwrap(),
         vec![(1, "/one.flac".to_string())]
     );
 }

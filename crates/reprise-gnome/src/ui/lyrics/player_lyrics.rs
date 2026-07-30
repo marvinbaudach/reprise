@@ -5,6 +5,7 @@ use std::rc::{Rc, Weak};
 use std::time::Duration;
 
 use gtk4::glib;
+use reprise_core::db::Db;
 use reprise_core::lyrics::{LyricsBody, LyricsQuery};
 use reprise_core::playback::{PlaybackBackend, PlaybackError, PlaybackState};
 use reprise_core::queries::TrackSummary;
@@ -27,9 +28,9 @@ pub(in crate::ui) struct PlayerLyrics {
 }
 
 impl PlayerLyrics {
-    pub(in crate::ui) fn new(conn: &rusqlite::Connection) -> Rc<Self> {
+    pub(in crate::ui) fn new(db: &Db) -> Rc<Self> {
         let enabled = reprise_core::online_sources::network_allowed(
-            conn,
+            db,
             &reprise_core::modules::ONLINE_LYRICS_MODULE,
         )
         .unwrap_or_else(|error| {
@@ -364,7 +365,7 @@ impl PlayerController {
         enabled: bool,
     ) -> Result<(), rusqlite::Error> {
         reprise_core::modules::set_enabled(
-            &self.conn.borrow(),
+            &self.conn,
             &reprise_core::modules::ONLINE_LYRICS_MODULE,
             enabled,
         )?;
@@ -377,7 +378,7 @@ impl PlayerController {
     /// after either toggles.
     pub(in crate::ui) fn recompute_lyrics_enabled(self: &Rc<Self>) {
         let enabled = reprise_core::online_sources::network_allowed(
-            &self.conn.borrow(),
+            &self.conn,
             &reprise_core::modules::ONLINE_LYRICS_MODULE,
         )
         .unwrap_or(false);

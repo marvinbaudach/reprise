@@ -61,7 +61,7 @@ use std::rc::Rc;
 use gtk4::gio;
 use gtk4::glib;
 use libadwaita as adw;
-use rusqlite::Connection;
+use reprise_core::db::Db;
 
 use crate::ui::browse_bar::BrowseBar;
 use crate::ui::column_layout::ColumnRegistry;
@@ -142,7 +142,7 @@ pub(in crate::ui) struct Shared {
     /// too (alongside the clone `TrackListModel` holds internally) so the
     /// rating column's click handler can write through `library::stats`
     /// without reaching into the model's private state.
-    pub(in crate::ui) conn: Rc<RefCell<Connection>>,
+    pub(in crate::ui) conn: Rc<Db>,
     /// Shared list-cell cover cache, retained so successful tag writes can
     /// invalidate entries keyed by the same path before rows are rebound.
     pub(in crate::ui) cover_loader: Rc<CoverLoader>,
@@ -326,7 +326,7 @@ impl TrackList {
     /// current queue's ids whenever `source` is switched to `ViewSource::
     /// Queue` (see the `Shared::queue_ids_provider` doc comment).
     pub fn new(
-        conn: Rc<RefCell<Connection>>,
+        conn: Rc<Db>,
         on_activate: OnActivate,
         on_reload: impl Fn(&ViewSource, usize, &str, &BrowseFilter) + 'static,
         queue_ids_provider: impl Fn() -> super::queue_sections::QueueViewModel + 'static,
@@ -425,8 +425,8 @@ impl TrackList {
     }
 
     pub(in crate::ui) fn contains_track(&self, id: i64) -> bool {
-        let conn = self.shared.conn.borrow();
-        reprise_core::queries::query_track_summary(&conn, id)
+        let conn = &self.shared.conn;
+        reprise_core::queries::query_track_summary(conn, id)
             .inspect_err(|error| {
                 tracing::warn!(%error, id, "metadata-link catalog lookup failed");
             })

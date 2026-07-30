@@ -119,17 +119,17 @@ pub fn manage_podcasts(
     granted_at_startup: bool,
     params: &ManagePodcastsParams,
 ) -> Result<ManagePodcastsResult, DataError> {
-    let conn = data::open(path)?;
-    let allowed = crate::capability::sources_manage_effective(&conn, granted_at_startup)
+    let db = data::open(path)?;
+    let allowed = crate::capability::sources_manage_effective(&db, granted_at_startup)
         .map_err(DataError::Db)?;
     if !allowed {
         return Err(DataError::CapabilityDenied("sources:manage"));
     }
     match params.action.as_str() {
-        "add" => add_podcast(&conn, params).map(ManagePodcastsResult::Source),
-        "edit" => edit_podcast(&conn, params).map(ManagePodcastsResult::Source),
-        "remove" => remove_podcast(&conn, params).map(ManagePodcastsResult::Source),
-        "refresh" => refresh_podcasts(path, &conn).map(ManagePodcastsResult::Refresh),
+        "add" => add_podcast(&db, params).map(ManagePodcastsResult::Source),
+        "edit" => edit_podcast(&db, params).map(ManagePodcastsResult::Source),
+        "remove" => remove_podcast(&db, params).map(ManagePodcastsResult::Source),
+        "refresh" => refresh_podcasts(path, &db).map(ManagePodcastsResult::Refresh),
         other => Err(DataError::InvalidInput(format!(
             "unknown podcast action '{other}'"
         ))),
@@ -141,12 +141,12 @@ pub fn manage_radio(
     granted_at_startup: bool,
     params: &ManageRadioParams,
 ) -> Result<ManageRadioResult, DataError> {
-    let conn = data::open(path)?;
-    require_manage(&conn, granted_at_startup)?;
+    let db = data::open(path)?;
+    require_manage(&db, granted_at_startup)?;
     match params.action.as_str() {
-        "add" => add_radio(&conn, params),
-        "edit" => edit_radio(&conn, params),
-        "remove" => remove_radio(&conn, params),
+        "add" => add_radio(&db, params),
+        "edit" => edit_radio(&db, params),
+        "remove" => remove_radio(&db, params),
         other => Err(DataError::InvalidInput(format!(
             "unknown radio action '{other}'"
         ))),
@@ -154,7 +154,7 @@ pub fn manage_radio(
 }
 
 fn add_radio(
-    conn: &rusqlite::Connection,
+    db: &reprise_core::db::Db,
     params: &ManageRadioParams,
 ) -> Result<ManageRadioResult, DataError> {
     let url = required_http_url(params.url.as_deref(), "url is required for add")?;
@@ -196,13 +196,13 @@ fn add_radio(
         country_code: normalized_country(params.country_code.as_deref()),
         votes: params.votes.map(|value| value.max(0)),
     };
-    let id = reprise_core::radio::station::add_or_restore(conn, &station, now_secs())
+    let id = reprise_core::radio::station::add_or_restore(db, &station, now_secs())
         .map_err(DataError::Db)?;
     Ok(radio_result("add", id, station))
 }
 
 fn edit_radio(
-    conn: &rusqlite::Connection,
+    db: &reprise_core::db::Db,
     params: &ManageRadioParams,
 ) -> Result<ManageRadioResult, DataError> {
     let id = required_id(params.station_id, "station_id is required for edit")?;
@@ -218,7 +218,7 @@ fn edit_radio(
             "edit requires at least one changed field".to_owned(),
         ));
     }
-    let current = active_station(conn, id)?;
+    let current = active_station(db, id)?;
     let name = match params.name.as_deref() {
         Some(value) => required_nonempty(Some(value), "name must not be empty")?.to_owned(),
         None => current.name,
@@ -258,8 +258,7 @@ fn edit_radio(
             .votes
             .map_or(current.votes, |value| Some(value.max(0))),
     };
-    let updated =
-        reprise_core::radio::station::update(conn, id, &station).map_err(DataError::Db)?;
+    let updated = reprise_core::radio::station::update(db, id, &station).map_err(DataError::Db)?;
     if !updated {
         return Err(DataError::InvalidInput(
             "radio station does not exist".to_owned(),
@@ -269,13 +268,13 @@ fn edit_radio(
 }
 
 fn remove_radio(
-    conn: &rusqlite::Connection,
+    db: &reprise_core::db::Db,
     params: &ManageRadioParams,
 ) -> Result<ManageRadioResult, DataError> {
     let id = required_id(params.station_id, "station_id is required for remove")?;
-    let current = active_station(conn, id)?;
-    reprise_core::radio::station::tombstone(conn, id, now_secs()).map_err(DataError::Db)?;
-    reprise_core::radio::station::commit_remove(conn, id).map_err(DataError::Db)?;
+    let current = active_station(db, id)?;
+    reprise_core::radio::station::tombstone(db, id, now_secs()).map_err(DataError::Db)?;
+    reprise_core::radio::station::commit_remove(db, id).map_err(DataError::Db)?;
     Ok(radio_result(
         "remove",
         id,
@@ -296,16 +295,16 @@ fn remove_radio(
 
 fn refresh_podcasts(
     db_path: &Path,
-    conn: &rusqlite::Connection,
+    db: &reprise_core::db::Db,
 ) -> Result<PodcastRefreshResult, DataError> {
-    let config = reprise_core::podcasts::config::load(conn).map_err(DataError::Db)?;
+    let config = reprise_core::podcasts::config::load(db).map_err(DataError::Db)?;
     let ytdlp = reprise_core::podcasts::ytdlp::YtDlp::discover(config.ytdlp_path.as_deref());
     let download_root = db_path
         .parent()
         .unwrap_or_else(|| Path::new("."))
         .join("podcasts");
     let summary = reprise_core::podcasts::pipeline::refresh_to_root(
-        conn,
+        db,
         &reprise_core::podcasts::pipeline::HttpFeedFetcher,
         &ytdlp,
         now_secs(),
@@ -330,7 +329,7 @@ fn refresh_podcasts(
 }
 
 fn edit_podcast(
-    conn: &rusqlite::Connection,
+    db: &reprise_core::db::Db,
     params: &ManagePodcastsParams,
 ) -> Result<ManageSourceResult, DataError> {
     let id = required_id(
@@ -352,9 +351,9 @@ fn edit_podcast(
             "title must not be empty".to_owned(),
         ));
     }
-    let current = active_subscription(conn, id)?;
+    let current = active_subscription(db, id)?;
     let updated = reprise_core::podcasts::store::update_subscription_details(
-        conn,
+        db,
         id,
         title,
         params.auto_download,
@@ -375,20 +374,20 @@ fn edit_podcast(
 }
 
 fn remove_podcast(
-    conn: &rusqlite::Connection,
+    db: &reprise_core::db::Db,
     params: &ManagePodcastsParams,
 ) -> Result<ManageSourceResult, DataError> {
     let id = required_id(
         params.subscription_id,
         "subscription_id is required for remove",
     )?;
-    let current = active_subscription(conn, id)?;
-    let episode_count = reprise_core::podcasts::query::episodes_for_subscription(conn, id)
+    let current = active_subscription(db, id)?;
+    let episode_count = reprise_core::podcasts::query::episodes_for_subscription(db, id)
         .map_err(DataError::Db)?
         .len();
-    reprise_core::podcasts::store::tombstone_subscription(conn, id, now_secs())
+    reprise_core::podcasts::store::tombstone_subscription(db, id, now_secs())
         .map_err(DataError::Db)?;
-    reprise_core::podcasts::store::commit_remove_subscription(conn, id).map_err(DataError::Db)?;
+    reprise_core::podcasts::store::commit_remove_subscription(db, id).map_err(DataError::Db)?;
     Ok(ManageSourceResult {
         action: "remove",
         id,
@@ -399,7 +398,7 @@ fn remove_podcast(
 }
 
 fn add_podcast(
-    conn: &rusqlite::Connection,
+    db: &reprise_core::db::Db,
     params: &ManagePodcastsParams,
 ) -> Result<ManageSourceResult, DataError> {
     use reprise_core::podcasts;
@@ -414,7 +413,7 @@ fn add_podcast(
             ));
         }
     };
-    let config = podcasts::config::load(conn).map_err(DataError::Db)?;
+    let config = podcasts::config::load(db).map_err(DataError::Db)?;
     let (feed, response) = match kind {
         podcasts::PodcastKind::Rss => {
             let response =
@@ -425,7 +424,7 @@ fn add_podcast(
         }
         podcasts::PodcastKind::Youtube
             if reprise_core::online_sources::network_allowed(
-                conn,
+                db,
                 &reprise_core::modules::YOUTUBE_MODULE,
             )
             .unwrap_or(false) =>
@@ -454,7 +453,7 @@ fn add_podcast(
     let auto_download = params.auto_download.unwrap_or(config.auto_download_default);
     let now = now_secs();
     let id = podcasts::store::add_or_restore_with_baseline(
-        conn,
+        db,
         &podcasts::store::NewSubscription {
             kind,
             feed_url: url.to_owned(),
@@ -470,7 +469,7 @@ fn add_podcast(
     let mut episodes_affected = 0;
     if params.import_existing {
         for episode in &feed.episodes {
-            if podcasts::store::upsert_episode(conn, id, episode, now)
+            if podcasts::store::upsert_episode(db, id, episode, now)
                 .map_err(DataError::Db)?
                 .is_some()
             {
@@ -479,7 +478,7 @@ fn add_podcast(
         }
     }
     podcasts::store::update_fetch_success(
-        conn,
+        db,
         id,
         now,
         podcasts::store::FetchSuccess {
@@ -568,20 +567,20 @@ fn required_id(value: Option<i64>, message: &str) -> Result<i64, DataError> {
 }
 
 fn active_subscription(
-    conn: &rusqlite::Connection,
+    db: &reprise_core::db::Db,
     id: i64,
 ) -> Result<reprise_core::podcasts::SubscriptionRow, DataError> {
-    reprise_core::podcasts::store::subscription(conn, id)
+    reprise_core::podcasts::store::subscription(db, id)
         .map_err(DataError::Db)?
         .filter(|row| row.removed_at.is_none())
         .ok_or_else(|| DataError::InvalidInput("podcast subscription does not exist".to_owned()))
 }
 
 fn active_station(
-    conn: &rusqlite::Connection,
+    db: &reprise_core::db::Db,
     id: i64,
 ) -> Result<reprise_core::radio::StationRow, DataError> {
-    reprise_core::radio::station::get(conn, id)
+    reprise_core::radio::station::get(db, id)
         .map_err(DataError::Db)?
         .ok_or_else(|| DataError::InvalidInput("radio station does not exist".to_owned()))
 }
@@ -609,8 +608,8 @@ fn radio_result(
     }
 }
 
-fn require_manage(conn: &rusqlite::Connection, granted_at_startup: bool) -> Result<(), DataError> {
-    let allowed = crate::capability::sources_manage_effective(conn, granted_at_startup)
+fn require_manage(db: &reprise_core::db::Db, granted_at_startup: bool) -> Result<(), DataError> {
+    let allowed = crate::capability::sources_manage_effective(db, granted_at_startup)
         .map_err(DataError::Db)?;
     if allowed {
         Ok(())

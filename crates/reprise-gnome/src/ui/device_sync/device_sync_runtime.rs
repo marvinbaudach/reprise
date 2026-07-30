@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use gtk4::gio;
 use gtk4::gio::prelude::*;
+use reprise_core::db::Db;
 use reprise_core::device_sync::browser::StorageOption;
 use reprise_core::device_sync::device_view::{
     category_bytes, project_category_content_row, project_contents_state,
@@ -24,7 +25,6 @@ use reprise_core::device_sync::{
 };
 use reprise_platform_linux::device_sync::{CopyOutcome, DeviceDescriptor, DeviceMonitor};
 use reprise_platform_linux::device_transfer::{TranscodeProfile, TranscodeRequest, TranscodedFile};
-use rusqlite::Connection;
 
 #[path = "device_sync_rate.rs"]
 pub(super) mod rate;
@@ -258,7 +258,7 @@ impl DeviceState {
 }
 
 pub struct DeviceSyncRuntime {
-    conn: Rc<RefCell<Connection>>,
+    conn: Rc<Db>,
     backend: Rc<dyn DeviceBackend>,
     device_states: RefCell<Vec<DeviceState>>,
     subscribers: RefCell<HashMap<u64, StateCallback>>,
@@ -274,17 +274,14 @@ pub struct DeviceSyncRuntime {
 }
 
 impl DeviceSyncRuntime {
-    pub fn new(conn: &Rc<RefCell<Connection>>, monitor: DeviceMonitor) -> Rc<Self> {
+    pub fn new(conn: &Rc<Db>, monitor: DeviceMonitor) -> Rc<Self> {
         Self::with_backend(
             conn,
             Rc::new(super::device_sync_backend::GioDeviceBackend::new(monitor)),
         )
     }
 
-    pub fn with_backend(
-        conn: &Rc<RefCell<Connection>>,
-        backend: Rc<dyn DeviceBackend>,
-    ) -> Rc<Self> {
+    pub fn with_backend(conn: &Rc<Db>, backend: Rc<dyn DeviceBackend>) -> Rc<Self> {
         let runtime = Rc::new(Self {
             conn: conn.clone(),
             backend,
@@ -366,7 +363,7 @@ impl DeviceSyncRuntime {
         // each of the three named targets (`MTP-38`) at the storage/path
         // the folder browser (`MTP-31`) most recently persisted for it —
         // never a stale or default guess (finding 1).
-        let targets = match load_or_create_targets(&self.conn.borrow(), device_id) {
+        let targets = match load_or_create_targets(&self.conn, device_id) {
             Ok(targets) => targets,
             Err(error) => {
                 let mut devices = self.device_states.borrow_mut();
@@ -456,7 +453,7 @@ impl DeviceSyncRuntime {
                     {
                         let verified_at = chrono::Utc::now();
                         if let Err(error) = mark_device_playlists_synced(
-                            &runtime.conn.borrow(),
+                            &runtime.conn,
                             &id,
                             sources,
                             verified_at.timestamp(),
@@ -629,7 +626,7 @@ impl DeviceSyncRuntime {
                     }
                 } else {
                     let settings = load_or_create_settings(
-                        &self.conn.borrow(),
+                        &self.conn,
                         &descriptor.id,
                         &descriptor.name,
                     )

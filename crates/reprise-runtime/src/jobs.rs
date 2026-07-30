@@ -12,8 +12,8 @@
 //! `reprise-core` facade, exactly as the headless surfaces do.
 
 use reprise_core::ai_jobs::{self, AiJob, CancelOutcome, JobState};
+use reprise_core::db::Db;
 use reprise_runtime_protocol::jobs::{JobCommand, JobSnapshot};
-use rusqlite::Connection;
 
 use crate::error::{failed_database, Rejected, RuntimeError};
 
@@ -84,25 +84,22 @@ fn sanitize_error_kind(raw: &str) -> String {
 }
 
 /// Every job a client should see, in id order.
-pub(crate) fn snapshots(conn: &Connection) -> Result<Vec<JobSnapshot>, RuntimeError> {
-    let jobs = ai_jobs::list_active_jobs(conn).map_err(|error| failed_database(&error))?;
+pub(crate) fn snapshots(db: &Db) -> Result<Vec<JobSnapshot>, RuntimeError> {
+    let jobs = ai_jobs::list_active_jobs(db).map_err(|error| failed_database(&error))?;
     Ok(jobs.iter().map(snapshot).collect())
 }
 
 /// One job's current shape, or `None` if it is gone.
-pub(crate) fn snapshot_of(
-    conn: &Connection,
-    job_id: i64,
-) -> Result<Option<JobSnapshot>, RuntimeError> {
-    let job = ai_jobs::get_job(conn, job_id).map_err(|error| failed_database(&error))?;
+pub(crate) fn snapshot_of(db: &Db, job_id: i64) -> Result<Option<JobSnapshot>, RuntimeError> {
+    let job = ai_jobs::get_job(db, job_id).map_err(|error| failed_database(&error))?;
     Ok(job.as_ref().map(snapshot))
 }
 
 /// Whether any job is still unfinished — one of §9.6's four idle conditions.
 /// A runtime that shut down here would abandon work to save memory, which is
 /// a data-loss feature, not an optimization.
-pub(crate) fn is_active(conn: &Connection) -> Result<bool, RuntimeError> {
-    let jobs = ai_jobs::list_active_jobs(conn).map_err(|error| failed_database(&error))?;
+pub(crate) fn is_active(db: &Db) -> Result<bool, RuntimeError> {
+    let jobs = ai_jobs::list_active_jobs(db).map_err(|error| failed_database(&error))?;
     Ok(jobs
         .iter()
         .any(|job| matches!(job.state, JobState::Queued | JobState::Running)))
@@ -110,14 +107,10 @@ pub(crate) fn is_active(conn: &Connection) -> Result<bool, RuntimeError> {
 
 /// Applies a job command. Returns the job it touched, so the caller can
 /// publish exactly that job's new shape.
-pub(crate) fn command(
-    conn: &Connection,
-    now_unix: i64,
-    command: &JobCommand,
-) -> Result<i64, RuntimeError> {
+pub(crate) fn command(db: &Db, now_unix: i64, command: &JobCommand) -> Result<i64, RuntimeError> {
     match command {
         JobCommand::Cancel(job_id) => {
-            let outcome = ai_jobs::request_cancel(conn, *job_id, now_unix)
+            let outcome = ai_jobs::request_cancel(db, *job_id, now_unix)
                 .map_err(|error| failed_database(&error))?;
             match outcome {
                 // Both are successes: a queued job is gone, a running one has

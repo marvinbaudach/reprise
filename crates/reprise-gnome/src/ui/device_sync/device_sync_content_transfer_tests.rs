@@ -71,7 +71,7 @@ fn mtp_23_a_failed_content_copy_must_stop_the_later_removal_phases() {
         let (downloads, conn) = fixture();
         let rss_path = downloads.path().join("rss.mp3");
         std::fs::write(&rss_path, b"rss audio").unwrap();
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute_batch(
                 "INSERT INTO podcast_subscriptions
                  (id, kind, feed_url, title, auto_download, sync_to_phone, added_at)
@@ -80,7 +80,7 @@ fn mtp_23_a_failed_content_copy_must_stop_the_later_removal_phases() {
                  VALUES (10, 'a');",
             )
             .unwrap();
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute(
                 "INSERT INTO podcast_episodes
                  (id, subscription_id, guid, title, audio_url, downloaded_path,
@@ -90,7 +90,7 @@ fn mtp_23_a_failed_content_copy_must_stop_the_later_removal_phases() {
                 [rss_path.to_string_lossy().as_ref()],
             )
             .unwrap();
-        save_settings(&conn.borrow(), &podcast_settings("a")).unwrap();
+        save_settings(&conn, &podcast_settings("a")).unwrap();
 
         let backend = Rc::new(
             FakeBackend::new(vec![descriptor("a", true)], 1)
@@ -141,7 +141,7 @@ fn mtp_23_cancelling_during_the_content_phase_is_not_reported_as_completed() {
         let (downloads, conn) = fixture();
         let episode_path = downloads.path().join("episode.mp3");
         std::fs::write(&episode_path, b"rss audio").unwrap();
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute_batch(
                 "INSERT INTO podcast_subscriptions
                  (id, kind, feed_url, title, auto_download, sync_to_phone, added_at)
@@ -150,7 +150,7 @@ fn mtp_23_cancelling_during_the_content_phase_is_not_reported_as_completed() {
                  VALUES (10, 'a');",
             )
             .unwrap();
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute(
                 "INSERT INTO podcast_episodes
                  (id, subscription_id, guid, title, audio_url, downloaded_path,
@@ -160,7 +160,7 @@ fn mtp_23_cancelling_during_the_content_phase_is_not_reported_as_completed() {
                 [episode_path.to_string_lossy().as_ref()],
             )
             .unwrap();
-        save_settings(&conn.borrow(), &podcast_settings("a")).unwrap();
+        save_settings(&conn, &podcast_settings("a")).unwrap();
 
         let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 5));
         let (started, releases) = backend.gate_copies(&["a"]);

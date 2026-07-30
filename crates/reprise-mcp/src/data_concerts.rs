@@ -33,12 +33,12 @@ struct ConcertResourceEvent {
 
 /// Upcoming concerts after the saved filters, with no filesystem paths.
 pub(crate) fn list_concerts(path: &Path) -> Result<ConcertsResource, DataError> {
-    let conn = open(path)?;
-    require_read(&conn)?;
-    let filter = reprise_core::concerts::config::persisted_filter(&conn).map_err(DataError::Db)?;
-    let location = reprise_core::concerts::config::location(&conn).map_err(DataError::Db)?;
+    let db = open(path)?;
+    require_read(&db)?;
+    let filter = reprise_core::concerts::config::persisted_filter(&db).map_err(DataError::Db)?;
+    let location = reprise_core::concerts::config::location(&db).map_err(DataError::Db)?;
     let events = reprise_core::concerts::query_events(
-        &conn,
+        &db,
         &filter,
         location.as_ref(),
         chrono::Local::now().date_naive(),
@@ -65,6 +65,6 @@ pub(crate) fn list_concerts(path: &Path) -> Result<ConcertsResource, DataError> 
     Ok(ConcertsResource {
         events,
         filter_applied: true,
-        latest_fetch_at: reprise_core::concerts::latest_fetch_at(&conn).map_err(DataError::Db)?,
+        latest_fetch_at: reprise_core::concerts::latest_fetch_at(&db).map_err(DataError::Db)?,
     })
 }

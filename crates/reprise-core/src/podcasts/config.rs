@@ -1,5 +1,6 @@
 //! Persisted podcast behavior and filter settings.
 
+use crate::db::Db;
 use rusqlite::Connection;
 
 use super::PodcastKind;
@@ -113,17 +114,22 @@ pub struct PodcastFilterConfig {
     pub downloaded_only: bool,
 }
 
-pub fn load(conn: &Connection) -> Result<PodcastConfig, rusqlite::Error> {
+pub fn load(db: &Db) -> Result<PodcastConfig, rusqlite::Error> {
+    let conn = db.conn();
+    load_in(conn)
+}
+
+pub(crate) fn load_in(conn: &Connection) -> Result<PodcastConfig, rusqlite::Error> {
     Ok(PodcastConfig {
         import_count: integer_setting(conn, IMPORT_COUNT_KEY)?
             .unwrap_or(DEFAULT_IMPORT_COUNT as i64)
             .clamp(IMPORT_COUNT_MIN, IMPORT_COUNT_MAX) as usize,
-        auto_download_default: crate::library::settings::get_bool(
+        auto_download_default: crate::library::settings::get_bool_in(
             conn,
             AUTO_DOWNLOAD_DEFAULT_KEY,
             false,
         )?,
-        cleanup_policy: crate::library::settings::get_setting(conn, CLEANUP_POLICY_KEY)?
+        cleanup_policy: crate::library::settings::get_setting_in(conn, CLEANUP_POLICY_KEY)?
             .as_deref()
             .map(CleanupPolicy::from_setting)
             .unwrap_or_default(),
@@ -131,7 +137,7 @@ pub fn load(conn: &Connection) -> Result<PodcastConfig, rusqlite::Error> {
             .unwrap_or(DEFAULT_YOUTUBE_IMPORT_COUNT as i64)
             .clamp(YOUTUBE_IMPORT_COUNT_MIN, YOUTUBE_IMPORT_COUNT_MAX)
             as usize,
-        youtube_hide_shorts_default: crate::library::settings::get_bool(
+        youtube_hide_shorts_default: crate::library::settings::get_bool_in(
             conn,
             YOUTUBE_HIDE_SHORTS_DEFAULT_KEY,
             true,
@@ -154,16 +160,17 @@ pub fn load(conn: &Connection) -> Result<PodcastConfig, rusqlite::Error> {
     })
 }
 
-pub fn load_filter(conn: &Connection) -> Result<PodcastFilterConfig, rusqlite::Error> {
+pub fn load_filter(db: &Db) -> Result<PodcastFilterConfig, rusqlite::Error> {
+    let conn = db.conn();
     Ok(PodcastFilterConfig {
-        unplayed_only: crate::library::settings::get_bool(conn, FILTER_UNPLAYED_KEY, false)?,
+        unplayed_only: crate::library::settings::get_bool_in(conn, FILTER_UNPLAYED_KEY, false)?,
         show: non_empty_setting(conn, FILTER_SHOW_KEY)?,
         source: match non_empty_setting(conn, FILTER_SOURCE_KEY)?.as_deref() {
             Some("rss") => Some(PodcastKind::Rss),
             Some("youtube") => Some(PodcastKind::Youtube),
             _ => None,
         },
-        downloaded_only: crate::library::settings::get_bool(conn, FILTER_DOWNLOADED_KEY, false)?,
+        downloaded_only: crate::library::settings::get_bool_in(conn, FILTER_DOWNLOADED_KEY, false)?,
     })
 }
 
@@ -174,48 +181,51 @@ pub fn load_filter(conn: &Connection) -> Result<PodcastFilterConfig, rusqlite::E
 /// frontend — where they were until this commit — each one duplicated a key
 /// name and skipped the clamp, so a value the UI happened to allow could be
 /// stored and then silently read back as something else.
-pub fn set_import_count(conn: &Connection, value: usize) -> Result<(), rusqlite::Error> {
+pub fn set_import_count(db: &Db, value: usize) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
     let clamped = (value as i64).clamp(IMPORT_COUNT_MIN, IMPORT_COUNT_MAX);
-    crate::library::settings::set_setting(conn, IMPORT_COUNT_KEY, &clamped.to_string())
+    crate::library::settings::set_setting_in(conn, IMPORT_COUNT_KEY, &clamped.to_string())
 }
 
 /// Persists whether newly discovered episodes download automatically.
-pub fn set_auto_download_default(conn: &Connection, value: bool) -> Result<(), rusqlite::Error> {
-    crate::library::settings::set_bool(conn, AUTO_DOWNLOAD_DEFAULT_KEY, value)
+pub fn set_auto_download_default(db: &Db, value: bool) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
+    crate::library::settings::set_bool_in(conn, AUTO_DOWNLOAD_DEFAULT_KEY, value)
 }
 
 /// Persists the cleanup policy, through the policy's own setting spelling
 /// rather than a string the caller has to get right.
-pub fn set_cleanup_policy(conn: &Connection, value: CleanupPolicy) -> Result<(), rusqlite::Error> {
-    crate::library::settings::set_setting(conn, CLEANUP_POLICY_KEY, value.as_setting())
+pub fn set_cleanup_policy(db: &Db, value: CleanupPolicy) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
+    crate::library::settings::set_setting_in(conn, CLEANUP_POLICY_KEY, value.as_setting())
 }
 
 /// Persists the YouTube per-channel import count, through the same clamp
 /// [`load`] reads it back through.
-pub fn set_youtube_import_count(conn: &Connection, value: usize) -> Result<(), rusqlite::Error> {
+pub fn set_youtube_import_count(db: &Db, value: usize) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
     let clamped = (value as i64).clamp(YOUTUBE_IMPORT_COUNT_MIN, YOUTUBE_IMPORT_COUNT_MAX);
-    crate::library::settings::set_setting(conn, YOUTUBE_IMPORT_COUNT_KEY, &clamped.to_string())
+    crate::library::settings::set_setting_in(conn, YOUTUBE_IMPORT_COUNT_KEY, &clamped.to_string())
 }
 
 /// Persists whether YouTube Shorts are hidden by default on new channels.
-pub fn set_youtube_hide_shorts_default(
-    conn: &Connection,
-    value: bool,
-) -> Result<(), rusqlite::Error> {
-    crate::library::settings::set_bool(conn, YOUTUBE_HIDE_SHORTS_DEFAULT_KEY, value)
+pub fn set_youtube_hide_shorts_default(db: &Db, value: bool) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
+    crate::library::settings::set_bool_in(conn, YOUTUBE_HIDE_SHORTS_DEFAULT_KEY, value)
 }
 
 /// Persists the whole podcast filter — the exact inverse of [`load_filter`],
 /// and kept adjacent to it so the two cannot drift. `None` is stored as the
 /// empty string, which is what [`load_filter`] reads back as `None`.
-pub fn save_filter(conn: &Connection, filter: &PodcastFilterConfig) -> Result<(), rusqlite::Error> {
-    crate::library::settings::set_bool(conn, FILTER_UNPLAYED_KEY, filter.unplayed_only)?;
-    crate::library::settings::set_setting(
+pub fn save_filter(db: &Db, filter: &PodcastFilterConfig) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
+    crate::library::settings::set_bool_in(conn, FILTER_UNPLAYED_KEY, filter.unplayed_only)?;
+    crate::library::settings::set_setting_in(
         conn,
         FILTER_SHOW_KEY,
         filter.show.as_deref().unwrap_or_default(),
     )?;
-    crate::library::settings::set_setting(
+    crate::library::settings::set_setting_in(
         conn,
         FILTER_SOURCE_KEY,
         match filter.source {
@@ -224,7 +234,7 @@ pub fn save_filter(conn: &Connection, filter: &PodcastFilterConfig) -> Result<()
             None => "",
         },
     )?;
-    crate::library::settings::set_bool(conn, FILTER_DOWNLOADED_KEY, filter.downloaded_only)
+    crate::library::settings::set_bool_in(conn, FILTER_DOWNLOADED_KEY, filter.downloaded_only)
 }
 
 /// The one authority for "may a refresh/download for this kind start a
@@ -232,7 +242,12 @@ pub fn save_filter(conn: &Connection, filter: &PodcastFilterConfig) -> Result<()
 /// (`NET-1a`) with the kind's own module (Podcasts for RSS, YouTube for
 /// YouTube). Every podcast/YouTube network entry point routes through this
 /// instead of checking a module flag alone.
-pub fn source_network_allowed(
+pub fn source_network_allowed(db: &Db, kind: PodcastKind) -> Result<bool, rusqlite::Error> {
+    let conn = db.conn();
+    source_network_allowed_in(conn, kind)
+}
+
+pub(crate) fn source_network_allowed_in(
     conn: &Connection,
     kind: PodcastKind,
 ) -> Result<bool, rusqlite::Error> {
@@ -240,11 +255,11 @@ pub fn source_network_allowed(
         PodcastKind::Rss => &crate::modules::PODCASTS_MODULE,
         PodcastKind::Youtube => &crate::modules::YOUTUBE_MODULE,
     };
-    crate::online_sources::network_allowed(conn, module)
+    crate::online_sources::network_allowed_in(conn, module)
 }
 
 fn non_empty_setting(conn: &Connection, key: &str) -> Result<Option<String>, rusqlite::Error> {
-    Ok(crate::library::settings::get_setting(conn, key)?
+    Ok(crate::library::settings::get_setting_in(conn, key)?
         .map(|value| value.trim().to_owned())
         .filter(|value| !value.is_empty()))
 }
@@ -257,13 +272,13 @@ fn integer_setting(conn: &Connection, key: &str) -> Result<Option<i64>, rusqlite
 mod tests {
     use super::*;
 
-    fn conn() -> Connection {
-        crate::db::open_migrated(None).unwrap()
+    fn db() -> Db {
+        Db::open_in_memory().unwrap()
     }
 
     #[test]
     fn defaults_match_the_source_contract() {
-        let config = load(&conn()).unwrap();
+        let config = load(&db()).unwrap();
         assert_eq!(config.import_count, 25);
         assert!(!config.auto_download_default);
         assert_eq!(config.cleanup_policy, CleanupPolicy::KeepAll);
@@ -277,24 +292,23 @@ mod tests {
 
     #[test]
     fn values_are_bundled_and_bounded() {
-        let conn = conn();
-        crate::library::settings::set_setting(&conn, IMPORT_COUNT_KEY, "900").unwrap();
-        crate::library::settings::set_bool(&conn, AUTO_DOWNLOAD_DEFAULT_KEY, true).unwrap();
+        let db = db();
+        crate::library::settings::set_setting(&db, IMPORT_COUNT_KEY, "900").unwrap();
+        crate::library::settings::set_bool(&db, AUTO_DOWNLOAD_DEFAULT_KEY, true).unwrap();
         crate::library::settings::set_setting(
-            &conn,
+            &db,
             CLEANUP_POLICY_KEY,
             CleanupPolicy::KeepLast5.as_setting(),
         )
         .unwrap();
-        crate::library::settings::set_setting(&conn, YOUTUBE_IMPORT_COUNT_KEY, "900").unwrap();
-        crate::library::settings::set_bool(&conn, YOUTUBE_HIDE_SHORTS_DEFAULT_KEY, false).unwrap();
-        crate::library::settings::set_setting(&conn, YTDLP_PATH_KEY, " /opt/yt-dlp ").unwrap();
-        crate::library::settings::set_setting(&conn, REFRESH_HOURS_KEY, "0").unwrap();
-        crate::library::settings::set_setting(&conn, LATEST_PER_CHANNEL_DEFAULT_KEY, "900")
-            .unwrap();
-        crate::library::settings::set_setting(&conn, KEEP_DOWNLOADED_DEFAULT_KEY, "900").unwrap();
+        crate::library::settings::set_setting(&db, YOUTUBE_IMPORT_COUNT_KEY, "900").unwrap();
+        crate::library::settings::set_bool(&db, YOUTUBE_HIDE_SHORTS_DEFAULT_KEY, false).unwrap();
+        crate::library::settings::set_setting(&db, YTDLP_PATH_KEY, " /opt/yt-dlp ").unwrap();
+        crate::library::settings::set_setting(&db, REFRESH_HOURS_KEY, "0").unwrap();
+        crate::library::settings::set_setting(&db, LATEST_PER_CHANNEL_DEFAULT_KEY, "900").unwrap();
+        crate::library::settings::set_setting(&db, KEEP_DOWNLOADED_DEFAULT_KEY, "900").unwrap();
 
-        let config = load(&conn).unwrap();
+        let config = load(&db).unwrap();
         assert_eq!(config.import_count, 100);
         assert!(config.auto_download_default);
         assert_eq!(config.cleanup_policy, CleanupPolicy::KeepLast5);
@@ -312,10 +326,10 @@ mod tests {
         // value here (unlimited) — the clamp floor must not reject it back
         // up to some positive minimum the way `import_count`'s floor of 5
         // would.
-        let conn = conn();
-        crate::library::settings::set_setting(&conn, LATEST_PER_CHANNEL_DEFAULT_KEY, "0").unwrap();
+        let db = db();
+        crate::library::settings::set_setting(&db, LATEST_PER_CHANNEL_DEFAULT_KEY, "0").unwrap();
 
-        assert_eq!(load(&conn).unwrap().latest_per_channel_default, 0);
+        assert_eq!(load(&db).unwrap().latest_per_channel_default, 0);
     }
 
     #[test]
@@ -323,44 +337,44 @@ mod tests {
         // Same reasoning as `latest_per_channel_default` above (`E-9`): 0
         // means unlimited here, so the clamp floor must not reject it back
         // up to a positive minimum.
-        let conn = conn();
-        crate::library::settings::set_setting(&conn, KEEP_DOWNLOADED_DEFAULT_KEY, "0").unwrap();
+        let db = db();
+        crate::library::settings::set_setting(&db, KEEP_DOWNLOADED_DEFAULT_KEY, "0").unwrap();
 
-        assert_eq!(load(&conn).unwrap().keep_downloaded_default, 0);
+        assert_eq!(load(&db).unwrap().keep_downloaded_default, 0);
     }
 
     #[test]
     fn net_1a_source_network_allowed_ands_the_global_gate_with_the_kind_module() {
-        let conn = conn();
+        let db = db();
 
         // Neither Podcasts nor YouTube is on by default.
-        assert!(!source_network_allowed(&conn, PodcastKind::Rss).unwrap());
-        assert!(!source_network_allowed(&conn, PodcastKind::Youtube).unwrap());
+        assert!(!source_network_allowed(&db, PodcastKind::Rss).unwrap());
+        assert!(!source_network_allowed(&db, PodcastKind::Youtube).unwrap());
 
-        crate::modules::set_enabled(&conn, &crate::modules::PODCASTS_MODULE, true).unwrap();
-        assert!(source_network_allowed(&conn, PodcastKind::Rss).unwrap());
+        crate::modules::set_enabled(&db, &crate::modules::PODCASTS_MODULE, true).unwrap();
+        assert!(source_network_allowed(&db, PodcastKind::Rss).unwrap());
         assert!(
-            !source_network_allowed(&conn, PodcastKind::Youtube).unwrap(),
+            !source_network_allowed(&db, PodcastKind::Youtube).unwrap(),
             "Podcasts on must not implicitly allow YouTube (issue #96)"
         );
 
-        crate::modules::set_enabled(&conn, &crate::modules::YOUTUBE_MODULE, true).unwrap();
-        assert!(source_network_allowed(&conn, PodcastKind::Youtube).unwrap());
+        crate::modules::set_enabled(&db, &crate::modules::YOUTUBE_MODULE, true).unwrap();
+        assert!(source_network_allowed(&db, PodcastKind::Youtube).unwrap());
 
-        crate::online_sources::set_enabled(&conn, false).unwrap();
-        assert!(!source_network_allowed(&conn, PodcastKind::Rss).unwrap());
-        assert!(!source_network_allowed(&conn, PodcastKind::Youtube).unwrap());
+        crate::online_sources::set_enabled(&db, false).unwrap();
+        assert!(!source_network_allowed(&db, PodcastKind::Rss).unwrap());
+        assert!(!source_network_allowed(&db, PodcastKind::Youtube).unwrap());
     }
 
     #[test]
     fn sticky_filter_values_are_bundled_and_invalid_sources_clear() {
-        let conn = conn();
-        crate::library::settings::set_bool(&conn, FILTER_UNPLAYED_KEY, true).unwrap();
-        crate::library::settings::set_setting(&conn, FILTER_SHOW_KEY, " Show ").unwrap();
-        crate::library::settings::set_setting(&conn, FILTER_SOURCE_KEY, "youtube").unwrap();
+        let db = db();
+        crate::library::settings::set_bool(&db, FILTER_UNPLAYED_KEY, true).unwrap();
+        crate::library::settings::set_setting(&db, FILTER_SHOW_KEY, " Show ").unwrap();
+        crate::library::settings::set_setting(&db, FILTER_SOURCE_KEY, "youtube").unwrap();
 
         assert_eq!(
-            load_filter(&conn).unwrap(),
+            load_filter(&db).unwrap(),
             PodcastFilterConfig {
                 unplayed_only: true,
                 show: Some("Show".to_owned()),
@@ -369,18 +383,18 @@ mod tests {
             }
         );
 
-        crate::library::settings::set_setting(&conn, FILTER_SOURCE_KEY, "unknown").unwrap();
-        assert_eq!(load_filter(&conn).unwrap().source, None);
+        crate::library::settings::set_setting(&db, FILTER_SOURCE_KEY, "unknown").unwrap();
+        assert_eq!(load_filter(&db).unwrap().source, None);
     }
 
     /// `SRC-10` addendum (Block B2): the "Downloaded" filter persists like
     /// every other sticky filter value.
     #[test]
     fn src_10_downloaded_filter_persists_across_a_reload() {
-        let conn = conn();
-        crate::library::settings::set_bool(&conn, FILTER_DOWNLOADED_KEY, true).unwrap();
+        let db = db();
+        crate::library::settings::set_bool(&db, FILTER_DOWNLOADED_KEY, true).unwrap();
 
-        assert!(load_filter(&conn).unwrap().downloaded_only);
+        assert!(load_filter(&db).unwrap().downloaded_only);
     }
 
     #[test]
@@ -388,36 +402,36 @@ mod tests {
         // The bug this closes: written unclamped (as the frontend did), a
         // value outside the range is stored happily and then read back as a
         // different number, so the UI shows something nobody chose.
-        let conn = crate::db::open_migrated(None).unwrap();
+        let db = db();
 
-        set_import_count(&conn, 4).unwrap();
-        assert_eq!(load(&conn).unwrap().import_count, IMPORT_COUNT_MIN as usize);
-        set_import_count(&conn, 1_000).unwrap();
-        assert_eq!(load(&conn).unwrap().import_count, IMPORT_COUNT_MAX as usize);
+        set_import_count(&db, 4).unwrap();
+        assert_eq!(load(&db).unwrap().import_count, IMPORT_COUNT_MIN as usize);
+        set_import_count(&db, 1_000).unwrap();
+        assert_eq!(load(&db).unwrap().import_count, IMPORT_COUNT_MAX as usize);
 
-        set_youtube_import_count(&conn, 1).unwrap();
+        set_youtube_import_count(&db, 1).unwrap();
         assert_eq!(
-            load(&conn).unwrap().youtube_import_count,
+            load(&db).unwrap().youtube_import_count,
             YOUTUBE_IMPORT_COUNT_MIN as usize
         );
-        set_youtube_import_count(&conn, 1_000).unwrap();
+        set_youtube_import_count(&db, 1_000).unwrap();
         assert_eq!(
-            load(&conn).unwrap().youtube_import_count,
+            load(&db).unwrap().youtube_import_count,
             YOUTUBE_IMPORT_COUNT_MAX as usize
         );
     }
 
     #[test]
     fn every_setter_round_trips_through_its_own_reader() {
-        let conn = crate::db::open_migrated(None).unwrap();
+        let db = db();
 
-        set_import_count(&conn, 42).unwrap();
-        set_auto_download_default(&conn, true).unwrap();
-        set_cleanup_policy(&conn, CleanupPolicy::KeepLast5).unwrap();
-        set_youtube_import_count(&conn, 20).unwrap();
-        set_youtube_hide_shorts_default(&conn, false).unwrap();
+        set_import_count(&db, 42).unwrap();
+        set_auto_download_default(&db, true).unwrap();
+        set_cleanup_policy(&db, CleanupPolicy::KeepLast5).unwrap();
+        set_youtube_import_count(&db, 20).unwrap();
+        set_youtube_hide_shorts_default(&db, false).unwrap();
 
-        let config = load(&conn).unwrap();
+        let config = load(&db).unwrap();
         assert_eq!(config.import_count, 42);
         assert!(config.auto_download_default);
         assert_eq!(config.cleanup_policy, CleanupPolicy::KeepLast5);
@@ -427,7 +441,7 @@ mod tests {
 
     #[test]
     fn save_filter_is_the_exact_inverse_of_load_filter() {
-        let conn = crate::db::open_migrated(None).unwrap();
+        let db = db();
         let filter = PodcastFilterConfig {
             unplayed_only: true,
             show: Some("Some Show".to_owned()),
@@ -435,13 +449,13 @@ mod tests {
             downloaded_only: true,
         };
 
-        save_filter(&conn, &filter).unwrap();
-        assert_eq!(load_filter(&conn).unwrap(), filter);
+        save_filter(&db, &filter).unwrap();
+        assert_eq!(load_filter(&db).unwrap(), filter);
 
         // And back to empty: `None` must survive as `None`, not as `Some("")`.
-        save_filter(&conn, &PodcastFilterConfig::default()).unwrap();
+        save_filter(&db, &PodcastFilterConfig::default()).unwrap();
         assert_eq!(
-            load_filter(&conn).unwrap(),
+            load_filter(&db).unwrap(),
             PodcastFilterConfig::default(),
             "an empty filter must round trip as empty, not as empty strings"
         );

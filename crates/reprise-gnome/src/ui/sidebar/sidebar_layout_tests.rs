@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
@@ -15,7 +14,7 @@ use crate::ui::scan::scan_progress::ScanProgressView;
 #[ignore = "requires a display; run via xvfb-run"]
 fn fb_8_progress_region_reaches_split_view_bottom() {
     gtk4::init().unwrap();
-    let conn = Rc::new(RefCell::new(reprise_core::db::open_migrated(None).unwrap()));
+    let conn = Rc::new(crate::test_db::open().unwrap());
     let window = adw::ApplicationWindow::builder()
         .default_width(1200)
         .default_height(800)

@@ -8,11 +8,11 @@ use chrono::Datelike;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
+use reprise_core::db::Db;
 use reprise_core::library::group_key::GroupKind;
 use reprise_core::library::stats_period::StatsPeriod;
 use reprise_core::library::stats_screen::group_track_ids;
 use reprise_core::library::stats_snapshot::{self, StatsSnapshot};
-use rusqlite::Connection;
 
 use super::stats_band_card::StatsBandCard;
 use super::stats_entrance::{HorizontalBarGroup, StatsEntrance};
@@ -55,7 +55,7 @@ pub(in crate::ui) struct StatsView {
     periods: Rc<RefCell<Vec<StatsPeriod>>>,
     wired: Cell<bool>,
     entrance_pending: Rc<Cell<bool>>,
-    connection: Rc<RefCell<Option<Rc<RefCell<Connection>>>>>,
+    connection: Rc<RefCell<Option<Rc<Db>>>>,
     #[cfg_attr(not(test), allow(dead_code))]
     page: glib::WeakRef<gtk4::Box>,
     #[cfg_attr(not(test), allow(dead_code))]
@@ -168,7 +168,7 @@ impl StatsView {
             .vexpand(true)
             .build();
 
-        let connection = Rc::new(RefCell::new(None::<Rc<RefCell<Connection>>>));
+        let connection = Rc::new(RefCell::new(None::<Rc<Db>>));
         let on_go_to_artist: StringCallback = Rc::new(RefCell::new(None));
         let on_unify_spellings: IdsCallback = Rc::new(RefCell::new(None));
         let entrance_pending = Rc::new(Cell::new(false));
@@ -251,12 +251,12 @@ impl StatsView {
         &self.root
     }
 
-    pub(in crate::ui) fn wire_year_selector(&self, conn: &Rc<RefCell<Connection>>) {
+    pub(in crate::ui) fn wire_year_selector(&self, conn: &Rc<Db>) {
         *self.connection.borrow_mut() = Some(conn.clone());
         let now_year = chrono::Local::now().year();
         let periods = {
-            let conn = conn.borrow();
-            StatsPeriod::available(&conn, now_year, &chrono::Local).unwrap_or_else(|error| {
+            let conn = &conn;
+            StatsPeriod::available(conn, now_year, &chrono::Local).unwrap_or_else(|error| {
                 tracing::error!(%error, "failed to read available My Stats periods");
                 vec![
                     StatsPeriod::YearToDate(now_year),
@@ -309,7 +309,7 @@ impl StatsView {
         self.refresh(conn);
     }
 
-    pub(in crate::ui) fn refresh(&self, conn: &Rc<RefCell<Connection>>) {
+    pub(in crate::ui) fn refresh(&self, conn: &Rc<Db>) {
         *self.connection.borrow_mut() = Some(conn.clone());
         let period = self
             .periods
@@ -441,7 +441,7 @@ struct RenderParts {
 }
 
 fn refresh_parts(
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
     period: StatsPeriod,
     page_stack: &gtk4::Stack,
     current_snapshot: &Rc<RefCell<Option<StatsSnapshot>>>,
@@ -450,8 +450,8 @@ fn refresh_parts(
 ) {
     let now_unix = now_unix();
     let result = {
-        let conn = conn.borrow();
-        stats_snapshot::compute(&conn, period, now_unix, &chrono::Local)
+        let conn = &conn;
+        stats_snapshot::compute(conn, period, now_unix, &chrono::Local)
     };
     match result {
         Ok(snapshot) => {
@@ -526,7 +526,7 @@ fn render_snapshot(render: &RenderParts, snapshot: &StatsSnapshot, entrance: boo
 fn wire_unify(
     band_card: &StatsBandCard,
     genres: &StatsGenreCard,
-    connection: &Rc<RefCell<Option<Rc<RefCell<Connection>>>>>,
+    connection: &Rc<RefCell<Option<Rc<Db>>>>,
     callback: &IdsCallback,
 ) {
     band_card.set_on_unify({
@@ -542,7 +542,7 @@ fn wire_unify(
 }
 
 fn resolve_unify(
-    connection: &Rc<RefCell<Option<Rc<RefCell<Connection>>>>>,
+    connection: &Rc<RefCell<Option<Rc<Db>>>>,
     callback: &IdsCallback,
     kind: GroupKind,
     key: &str,
@@ -550,8 +550,8 @@ fn resolve_unify(
     let connection = connection.borrow().clone();
     let Some(connection) = connection else { return };
     let ids = {
-        let connection = connection.borrow();
-        group_track_ids(&connection, kind, key)
+        let connection = &connection;
+        group_track_ids(connection, kind, key)
     };
     match ids {
         Ok(ids) if !ids.is_empty() => {

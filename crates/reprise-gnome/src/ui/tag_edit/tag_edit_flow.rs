@@ -18,7 +18,6 @@
 //! this file among the modules that must route background work through that
 //! helper, which is what caught the hand-rolled version.
 
-use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -29,11 +28,11 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::library::tag_edit::{
-    apply_track_writes, EditableTags, TagBatchReport, TagWriteFailure, TrackWrite,
+    apply_track_writes, live_track_edit_seed_by_path, track_edit_seed_by_id, EditableTags,
+    TagBatchReport, TagWriteFailure, TrackWrite,
 };
 use reprise_core::library::tag_edit_session::SessionTrack;
 use reprise_core::view_source::ViewSource;
-use rusqlite::{Connection, OptionalExtension};
 
 use crate::ui::one_shot_task;
 use crate::ui::player_controller::PlayerController;
@@ -47,6 +46,7 @@ use crate::ui::track_list::track_list_activation::current_queue_ids;
 use crate::ui::track_list::track_list_reload::{capture_reload_anchor, reload_with_anchor};
 use crate::ui::track_list::{reload_restore, show_toast, Shared, TrackList};
 use crate::ui::track_list_context_menu::current_selection_positions;
+use reprise_core::db::Db;
 
 pub(in crate::ui) const ACTION_EDIT_TAGS: &str = "edit-tags";
 const SMOKE_TAG_EDIT_ENV_VAR: &str = "REPRISE_SMOKE_TAG_EDIT";
@@ -174,27 +174,19 @@ fn tracks_and_bitrates_from_selection(
 /// "Edit failed tracks…" retry path) — re-reads path/rating from the DB and
 /// tags straight from the file, since these ids may not even be in the
 /// currently visible/filtered list anymore.
-fn tracks_and_bitrates_for_ids(conn: &Connection, ids: &[i64]) -> Vec<(SessionTrack, Option<u32>)> {
+fn tracks_and_bitrates_for_ids(db: &Db, ids: &[i64]) -> Vec<(SessionTrack, Option<u32>)> {
     ids.iter()
         .filter_map(|&id| {
-            let (path, rating, bitrate): (String, i32, Option<i64>) = conn
-                .query_row(
-                    "SELECT path, rating, bitrate_kbps FROM tracks WHERE id=?1",
-                    [id],
-                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-                )
-                .ok()?;
-            let path = PathBuf::from(path);
-            let tags = reprise_core::library::tag_edit::read_editable_tags(&path).ok()?;
-            let bitrate = bitrate.and_then(|value| u32::try_from(value).ok());
+            let seed = track_edit_seed_by_id(db, id).ok().flatten()?;
+            let tags = reprise_core::library::tag_edit::read_editable_tags(&seed.path).ok()?;
             Some((
                 SessionTrack {
-                    id,
-                    path,
+                    id: seed.id,
+                    path: seed.path,
                     tags,
-                    rating,
+                    rating: seed.rating,
                 },
-                bitrate,
+                seed.bitrate_kbps,
             ))
         })
         .collect()
@@ -209,10 +201,7 @@ fn begin(shared: &Rc<Shared>) {
 }
 
 pub(in crate::ui) fn begin_for_ids(shared: &Rc<Shared>, ids: &[i64]) {
-    let entries = {
-        let conn = shared.conn.borrow();
-        tracks_and_bitrates_for_ids(&conn, ids)
-    };
+    let entries = tracks_and_bitrates_for_ids(&shared.conn, ids);
     if entries.is_empty() {
         tracing::warn!("tag editor retry: none of the failed tracks could be re-read");
         return;
@@ -255,9 +244,9 @@ fn browsable_snapshot(shared: &Rc<Shared>) -> Option<tag_editor::BrowseSnapshot>
         }
     };
     let rows = {
-        let mut conn = shared.conn.borrow_mut();
+        let conn = &shared.conn;
         reprise_core::queries::query_track_window_browsed(
-            &mut conn,
+            conn,
             &source,
             &sort.field,
             &sort.dir,
@@ -327,41 +316,7 @@ fn open_editor(shared: &Rc<Shared>, tracks: Vec<SessionTrack>, bitrates: &[Optio
 /// the usual success toast (the row just disappearing from the failed-import
 /// list is feedback enough).
 pub(in crate::ui) fn begin_for_path(shared: &Rc<Shared>, path: &str) {
-    let seed = {
-        let conn = shared.conn.borrow();
-        conn.query_row(
-            "SELECT id,title,artist,album,album_artist,year,track_no,genre,rating,bitrate_kbps \
-             FROM tracks WHERE path=?1 AND removed_at IS NULL",
-            [path],
-            |row| {
-                let year = row
-                    .get::<_, Option<i32>>(5)?
-                    .and_then(|value| u32::try_from(value).ok());
-                let track_no = row
-                    .get::<_, Option<i32>>(6)?
-                    .and_then(|value| u32::try_from(value).ok());
-                let bitrate = row
-                    .get::<_, Option<i64>>(9)?
-                    .and_then(|value| u32::try_from(value).ok());
-                Ok((
-                    row.get::<_, i64>(0)?,
-                    EditableTags {
-                        title: row.get(1)?,
-                        artist: row.get(2)?,
-                        album: row.get(3)?,
-                        album_artist: row.get(4)?,
-                        year,
-                        track_no,
-                        genre: row.get(7)?,
-                    },
-                    row.get::<_, i32>(8)?,
-                    bitrate,
-                ))
-            },
-        )
-        .optional()
-    };
-    let Ok(Some((id, tags, rating, bitrate))) = seed else {
+    let Ok(Some(seed)) = live_track_edit_seed_by_path(&shared.conn, path) else {
         tracing::warn!(path, "tag editor: import hint has no live track row");
         return;
     };
@@ -372,16 +327,16 @@ pub(in crate::ui) fn begin_for_path(shared: &Rc<Shared>, path: &str) {
     let conn = shared.conn.clone();
     let shared_for_saved = shared.clone();
     let session_track = SessionTrack {
-        id,
-        path: PathBuf::from(path),
-        tags,
-        rating,
+        id: seed.id,
+        path: seed.path,
+        tags: seed.tags,
+        rating: seed.rating,
     };
     tag_editor::present(
         &window,
         &conn,
         vec![session_track],
-        &[bitrate],
+        &[seed.bitrate_kbps],
         None,
         shared.tag_write_gate.clone(),
         move |writes, report| {
@@ -417,7 +372,7 @@ pub(in crate::ui) struct SaveProgressWidgets {
 /// report so the caller can tell which succeeded tracks actually touched
 /// tags (as opposed to rating-only) without re-deriving it.
 pub(in crate::ui) fn spawn_save(
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
     widgets: SaveProgressWidgets,
     writes: Vec<TrackWrite>,
     tag_write_gate: &crate::ui::tag_write_gate::TagWriteGate,
@@ -442,7 +397,7 @@ pub(in crate::ui) fn spawn_save(
     content.set_sensitive(false);
     save_button.set_label(&strings::tag_saving_progress(0, total));
 
-    let db_path = conn.borrow().path().map(PathBuf::from);
+    let db_path = conn.path();
     let Some(db_path) = db_path else {
         tracing::warn!("tag-edit save: database has no path; aborting save");
         save_button.set_sensitive(true);
@@ -456,8 +411,8 @@ pub(in crate::ui) fn spawn_save(
     let writes_for_result = writes.clone();
     let spawned = one_shot_task::spawn_with_progress("reprise-tag-save", move |publish| {
         let _tag_write_lease = tag_write_lease;
-        reprise_core::db::open_migrated(Some(&db_path)).map(|mut worker_conn| {
-            apply_track_writes(&mut worker_conn, &writes, &mut |done, done_total| {
+        reprise_core::db::Db::open_migrated(Some(&db_path)).map(|worker_conn| {
+            apply_track_writes(&worker_conn, &writes, &mut |done, done_total| {
                 publish((done, done_total));
             })
         })
@@ -657,16 +612,13 @@ pub(in crate::ui) fn arm_smoke(shared: &Rc<Shared>) {
                 },
             })
             .collect();
-        let db_path = {
-            let conn = shared.conn.borrow();
-            conn.path().map(PathBuf::from)
-        };
+        let db_path = shared.conn.path();
         let Some(db_path) = db_path else {
             tracing::warn!("tag-edit smoke: database has no path");
             return;
         };
-        let report = reprise_core::db::open_migrated(Some(&db_path))
-            .map(|mut worker_conn| apply_track_writes(&mut worker_conn, &writes, &mut |_, _| {}));
+        let report = reprise_core::db::Db::open_migrated(Some(&db_path))
+            .map(|worker_conn| apply_track_writes(&worker_conn, &writes, &mut |_, _| {}));
         match report {
             Ok(report) => {
                 let anchor = capture_reload_anchor(&shared);

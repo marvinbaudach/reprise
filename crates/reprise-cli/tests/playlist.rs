@@ -164,8 +164,8 @@ fn list_text_strips_ansi_escapes_from_playlist_names() {
     // A playlist name carrying a hostile escape (e.g. imported from a crafted
     // M3U's #PLAYLIST directive).
     {
-        let conn = h.conn();
-        reprise_core::library::playlists::create(&conn, "Evil\u{1b}[2JName").unwrap();
+        let db = h.db();
+        reprise_core::library::playlists::create(&db, "Evil\u{1b}[2JName").unwrap();
     }
     let out = h.run(&["playlist", "list"]);
     assert_eq!(code(&out), 0);

@@ -22,6 +22,7 @@ pub mod stats_period;
 pub mod stats_screen;
 pub mod stats_snapshot;
 pub mod tag_edit;
+mod tag_edit_seed;
 pub mod tag_edit_session;
 mod tag_edit_write;
 #[cfg(test)]

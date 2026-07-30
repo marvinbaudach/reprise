@@ -50,47 +50,46 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
         concerts_enabled,
         concerts_count,
     ) = {
-        let conn = shared.conn.borrow();
+        let conn = &shared.conn;
         let today = chrono::Local::now().date_naive();
         let music_count =
-            queries::query_track_count(&conn, &ViewSource::Library, "", &[]).unwrap_or(0);
-        let missing_count = queries::count_missing(&conn).unwrap_or_else(|error| {
+            queries::query_track_count(conn, &ViewSource::Library, "", &[]).unwrap_or(0);
+        let missing_count = queries::count_missing(conn).unwrap_or_else(|error| {
             tracing::error!(%error, "failed to count missing files for sidebar visibility");
             0
         });
-        let last_viewed_missing =
-            settings::get_last_viewed_missing(&conn).unwrap_or_else(|error| {
-                tracing::error!(%error, "failed to read Missing-files last-viewed timestamp");
-                0
-            });
-        let new_missing_count = queries::count_new_missing(&conn, last_viewed_missing)
+        let last_viewed_missing = settings::get_last_viewed_missing(conn).unwrap_or_else(|error| {
+            tracing::error!(%error, "failed to read Missing-files last-viewed timestamp");
+            0
+        });
+        let new_missing_count = queries::count_new_missing(conn, last_viewed_missing)
             .unwrap_or_else(|error| {
                 tracing::error!(%error, "failed to count new missing files for sidebar badge");
                 0
             });
-        let active_import_error_count = queries::count_import_errors_active(&conn)
+        let active_import_error_count = queries::count_import_errors_active(conn)
             .unwrap_or_else(|error| {
                 tracing::error!(%error, "failed to count active import errors for sidebar visibility");
                 0
             });
-        let dismissed_import_error_count = queries::count_dismissed_import_errors(&conn)
+        let dismissed_import_error_count = queries::count_dismissed_import_errors(conn)
             .unwrap_or_else(|error| {
                 tracing::error!(%error, "failed to count dismissed import errors for sidebar reachability");
                 0
             });
-        let last_viewed_import_errors = settings::get_last_viewed_import_errors(&conn)
+        let last_viewed_import_errors = settings::get_last_viewed_import_errors(conn)
             .unwrap_or_else(|error| {
                 tracing::error!(%error, "failed to read Import-errors last-viewed timestamp");
                 0
             });
         let new_import_error_count =
-            queries::count_new_import_errors(&conn, last_viewed_import_errors).unwrap_or_else(
+            queries::count_new_import_errors(conn, last_viewed_import_errors).unwrap_or_else(
                 |error| {
                     tracing::error!(%error, "failed to count new import errors for sidebar badge");
                     0
                 },
             );
-        let playlist_rows = playlists::list(&conn).unwrap_or_else(|error| {
+        let playlist_rows = playlists::list(conn).unwrap_or_else(|error| {
             tracing::error!(%error, "failed to list playlists for sidebar");
             Vec::new()
         });
@@ -100,7 +99,7 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
         // itself resolves to — so the badge always matches what opening the
         // list shows. Paired with its row here (rather than as a parallel vec)
         // so the count travels with the row it belongs to.
-        let smart_rows: Vec<(playlists::SmartPlaylist, i64)> = playlists::list_smart(&conn)
+        let smart_rows: Vec<(playlists::SmartPlaylist, i64)> = playlists::list_smart(conn)
             .unwrap_or_else(|error| {
                 tracing::error!(%error, "failed to list smart playlists for sidebar");
                 Vec::new()
@@ -113,7 +112,7 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
                     ViewSource::Smart(smart.id)
                 };
                 let count =
-                    queries::query_track_count(&conn, &source, "", &[]).unwrap_or_else(|error| {
+                    queries::query_track_count(conn, &source, "", &[]).unwrap_or_else(|error| {
                         tracing::error!(
                             %error,
                             smart_id = smart.id,
@@ -129,9 +128,9 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
         // independently, and both additionally require the global
         // online-sources gate, matching every other online-source row here.
         let podcasts_enabled =
-            online_sources::network_allowed(&conn, &modules::PODCASTS_MODULE).unwrap_or(false);
+            online_sources::network_allowed(conn, &modules::PODCASTS_MODULE).unwrap_or(false);
         let podcasts_count = if podcasts_enabled {
-            podcasts::query::count_unplayed_for_kind(&conn, podcasts::PodcastKind::Rss).map_or_else(
+            podcasts::query::count_unplayed_for_kind(conn, podcasts::PodcastKind::Rss).map_or_else(
                 |error| {
                     tracing::error!(%error, "failed to count unplayed podcast episodes");
                     0
@@ -142,9 +141,9 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
             0
         };
         let youtube_enabled =
-            online_sources::network_allowed(&conn, &modules::YOUTUBE_MODULE).unwrap_or(false);
+            online_sources::network_allowed(conn, &modules::YOUTUBE_MODULE).unwrap_or(false);
         let youtube_count = if youtube_enabled {
-            podcasts::query::count_unplayed_for_kind(&conn, podcasts::PodcastKind::Youtube)
+            podcasts::query::count_unplayed_for_kind(conn, podcasts::PodcastKind::Youtube)
                 .map_or_else(
                     |error| {
                         tracing::error!(%error, "failed to count unplayed YouTube episodes");
@@ -155,9 +154,9 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
         } else {
             0
         };
-        let radio_enabled = online_sources::network_allowed(&conn, &RADIO_MODULE).unwrap_or(false);
+        let radio_enabled = online_sources::network_allowed(conn, &RADIO_MODULE).unwrap_or(false);
         let radio_count = if radio_enabled {
-            radio::station::count_stations(&conn).map_or_else(
+            radio::station::count_stations(conn).map_or_else(
                 |error| {
                     tracing::error!(%error, "failed to count favorite radio stations");
                     0
@@ -167,10 +166,10 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
         } else {
             0
         };
-        let releases_enabled = modules::is_enabled(&conn, &NEW_RELEASES_MODULE).unwrap_or(false);
+        let releases_enabled = modules::is_enabled(conn, &NEW_RELEASES_MODULE).unwrap_or(false);
         let releases_count = if releases_enabled {
-            artist_news::persisted_releases_filter(&conn)
-                .and_then(|filter| artist_news::count_releases_view(&conn, &filter, today))
+            artist_news::persisted_releases_filter(conn)
+                .and_then(|filter| artist_news::count_releases_view(conn, &filter, today))
                 .unwrap_or_else(|error| {
                     tracing::error!(%error, "failed to count Releases rows for sidebar badge");
                     0
@@ -178,12 +177,12 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
         } else {
             0
         };
-        let concerts_enabled = modules::is_enabled(&conn, &CONCERTS_MODULE).unwrap_or(false);
+        let concerts_enabled = modules::is_enabled(conn, &CONCERTS_MODULE).unwrap_or(false);
         let concerts_count = if concerts_enabled {
-            concerts::config::persisted_filter(&conn)
+            concerts::config::persisted_filter(conn)
                 .and_then(|filter| {
-                    let location = concerts::config::location(&conn)?;
-                    concerts::count_upcoming(&conn, &filter, location.as_ref(), today)
+                    let location = concerts::config::location(conn)?;
+                    concerts::count_upcoming(conn, &filter, location.as_ref(), today)
                 })
                 .unwrap_or_else(|error| {
                     tracing::error!(%error, "failed to count Concerts rows for sidebar badge");

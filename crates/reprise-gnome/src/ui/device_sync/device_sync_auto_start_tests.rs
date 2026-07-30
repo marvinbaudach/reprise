@@ -5,23 +5,20 @@
 //! button pressed, and every other case stays silent.
 
 use super::*;
+use reprise_core::db::Db;
 
 /// Seeds playlist `10` with `ids` selected for device `"a"` and sets
 /// `sync_automatically` explicitly, unlike `select_road_playlist` (which
 /// always turns it on) — needed here to exercise the switch being off.
-fn seed_playlist_with_auto_start(
-    conn: &Rc<RefCell<Connection>>,
-    ids: &[i64],
-    sync_automatically: bool,
-) {
-    conn.borrow()
+fn seed_playlist_with_auto_start(conn: &Rc<Db>, ids: &[i64], sync_automatically: bool) {
+    crate::test_db::connection(conn.as_ref())
         .execute(
             "INSERT INTO playlists (id, name, position) VALUES (10, 'Road', 0)",
             [],
         )
         .unwrap();
     for (position, track_id) in ids.iter().enumerate() {
-        conn.borrow()
+        crate::test_db::connection(conn.as_ref())
             .execute(
                 "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (10, ?1, ?2)",
                 rusqlite::params![track_id, position as i64],
@@ -29,7 +26,7 @@ fn seed_playlist_with_auto_start(
             .unwrap();
     }
     save_settings(
-        &conn.borrow(),
+        conn,
         &DeviceSettings {
             device_serial: "a".into(),
             device_name: "Phone a".into(),
@@ -118,7 +115,7 @@ fn mtp_30_stays_silent_when_the_connect_scan_fails() {
 fn mtp_30_a_waiting_only_podcast_balance_would_still_trigger_automatic_start() {
     run(async {
         let (_downloads, conn) = fixture();
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute(
                 "INSERT INTO podcast_subscriptions
                  (id, kind, feed_url, title, auto_download, sync_to_phone, added_at)
@@ -126,14 +123,14 @@ fn mtp_30_a_waiting_only_podcast_balance_would_still_trigger_automatic_start() {
                 [],
             )
             .unwrap();
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute(
                 "INSERT INTO podcast_subscription_devices (subscription_id, device_id)
                  VALUES (10, 'a')",
                 [],
             )
             .unwrap();
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute(
                 "INSERT INTO podcast_episodes
                  (id, subscription_id, guid, title, audio_url, wanted_on_device, first_seen_at)

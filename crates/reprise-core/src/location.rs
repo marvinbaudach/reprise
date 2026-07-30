@@ -11,6 +11,7 @@
 //! migrate (`AGENTS.md`), so the settings keys were renamed cleanly rather
 //! than kept as fallbacks — `concerts::config::location` now forwards here.
 
+use crate::db::Db;
 use rusqlite::Connection;
 
 pub const LOCATION_LAT_KEY: &str = "location.lat";
@@ -38,7 +39,12 @@ pub struct AppLocation {
     pub country_code: Option<String>,
 }
 
-pub fn app_location(conn: &Connection) -> Result<Option<AppLocation>, rusqlite::Error> {
+pub fn app_location(db: &Db) -> Result<Option<AppLocation>, rusqlite::Error> {
+    let conn = db.conn();
+    app_location_in(conn)
+}
+
+pub(crate) fn app_location_in(conn: &Connection) -> Result<Option<AppLocation>, rusqlite::Error> {
     let latitude = numeric_setting(conn, LOCATION_LAT_KEY)?;
     let longitude = numeric_setting(conn, LOCATION_LON_KEY)?;
     let name = non_empty_setting(conn, LOCATION_NAME_KEY)?.unwrap_or_default();
@@ -59,30 +65,32 @@ pub fn app_location(conn: &Connection) -> Result<Option<AppLocation>, rusqlite::
 /// location") and any future writer must go through, so there is never a
 /// second copy of these keys.
 pub fn store(
-    conn: &Connection,
+    db: &Db,
     latitude: f64,
     longitude: f64,
     name: &str,
     country_code: Option<&str>,
 ) -> Result<(), rusqlite::Error> {
-    crate::library::settings::set_setting(conn, LOCATION_LAT_KEY, &latitude.to_string())?;
-    crate::library::settings::set_setting(conn, LOCATION_LON_KEY, &longitude.to_string())?;
-    crate::library::settings::set_setting(conn, LOCATION_NAME_KEY, name)?;
-    crate::library::settings::set_setting(conn, LOCATION_COUNTRY_KEY, country_code.unwrap_or(""))
+    let conn = db.conn();
+    crate::library::settings::set_setting_in(conn, LOCATION_LAT_KEY, &latitude.to_string())?;
+    crate::library::settings::set_setting_in(conn, LOCATION_LON_KEY, &longitude.to_string())?;
+    crate::library::settings::set_setting_in(conn, LOCATION_NAME_KEY, name)?;
+    crate::library::settings::set_setting_in(conn, LOCATION_COUNTRY_KEY, country_code.unwrap_or(""))
 }
 
 /// Clears the stored location — "Clear" in Concerts preferences. `RAD-5`'s
 /// "Near you" chip disappears back to its no-location behavior the moment
 /// this runs, because it reads the same keys, not a cached copy.
-pub fn clear(conn: &Connection) -> Result<(), rusqlite::Error> {
-    crate::library::settings::set_setting(conn, LOCATION_LAT_KEY, "")?;
-    crate::library::settings::set_setting(conn, LOCATION_LON_KEY, "")?;
-    crate::library::settings::set_setting(conn, LOCATION_NAME_KEY, "")?;
-    crate::library::settings::set_setting(conn, LOCATION_COUNTRY_KEY, "")
+pub fn clear(db: &Db) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
+    crate::library::settings::set_setting_in(conn, LOCATION_LAT_KEY, "")?;
+    crate::library::settings::set_setting_in(conn, LOCATION_LON_KEY, "")?;
+    crate::library::settings::set_setting_in(conn, LOCATION_NAME_KEY, "")?;
+    crate::library::settings::set_setting_in(conn, LOCATION_COUNTRY_KEY, "")
 }
 
 fn non_empty_setting(conn: &Connection, key: &str) -> Result<Option<String>, rusqlite::Error> {
-    Ok(crate::library::settings::get_setting(conn, key)?
+    Ok(crate::library::settings::get_setting_in(conn, key)?
         .as_deref()
         .and_then(non_empty))
 }
@@ -102,20 +110,18 @@ fn numeric_setting(conn: &Connection, key: &str) -> Result<Option<f64>, rusqlite
 mod tests {
     use super::*;
 
-    fn conn() -> Connection {
-        let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
-        conn
+    fn db() -> Db {
+        Db::open_in_memory().unwrap()
     }
 
     #[test]
     fn app_location_round_trips_and_rejects_out_of_range_coordinates() {
-        let conn = conn();
-        assert_eq!(app_location(&conn).unwrap(), None);
+        let db = db();
+        assert_eq!(app_location(&db).unwrap(), None);
 
-        store(&conn, 52.52, 13.405, "Berlin, Deutschland", Some("DE")).unwrap();
+        store(&db, 52.52, 13.405, "Berlin, Deutschland", Some("DE")).unwrap();
         assert_eq!(
-            app_location(&conn).unwrap(),
+            app_location(&db).unwrap(),
             Some(AppLocation {
                 latitude: 52.52,
                 longitude: 13.405,
@@ -124,30 +130,28 @@ mod tests {
             })
         );
 
-        crate::library::settings::set_setting(&conn, LOCATION_LAT_KEY, "999").unwrap();
-        assert_eq!(app_location(&conn).unwrap(), None);
+        crate::library::settings::set_setting(&db, LOCATION_LAT_KEY, "999").unwrap();
+        assert_eq!(app_location(&db).unwrap(), None);
     }
 
     #[test]
     fn clear_removes_the_full_location_including_the_country_code() {
-        let conn = conn();
-        store(&conn, 52.52, 13.405, "Berlin, Deutschland", Some("DE")).unwrap();
-        assert!(app_location(&conn).unwrap().is_some());
+        let db = db();
+        store(&db, 52.52, 13.405, "Berlin, Deutschland", Some("DE")).unwrap();
+        assert!(app_location(&db).unwrap().is_some());
 
-        clear(&conn).unwrap();
-        assert_eq!(app_location(&conn).unwrap(), None);
+        clear(&db).unwrap();
+        assert_eq!(app_location(&db).unwrap(), None);
     }
 
     #[test]
     fn a_location_without_a_country_code_stores_and_reads_as_none() {
         // The XDG portal path ("Use current location") — no address text,
         // so honestly no country, never a guessed one.
-        let conn = conn();
-        store(&conn, 47.376, 8.541, "Current location", None).unwrap();
+        let db = db();
+        store(&db, 47.376, 8.541, "Current location", None).unwrap();
         assert_eq!(
-            app_location(&conn)
-                .unwrap()
-                .and_then(|loc| loc.country_code),
+            app_location(&db).unwrap().and_then(|loc| loc.country_code),
             None
         );
     }
@@ -161,11 +165,11 @@ mod tests {
     /// back at a private copy would turn this red.
     #[test]
     fn rad_5_radio_and_concerts_read_the_same_hoisted_location() {
-        let conn = conn();
-        store(&conn, 52.52, 13.405, "Berlin, Deutschland", Some("DE")).unwrap();
+        let db = db();
+        store(&db, 52.52, 13.405, "Berlin, Deutschland", Some("DE")).unwrap();
 
-        let for_radio = app_location(&conn).unwrap().expect("radio sees a location");
-        let for_concerts = crate::concerts::config::location(&conn)
+        let for_radio = app_location(&db).unwrap().expect("radio sees a location");
+        let for_concerts = crate::concerts::config::location(&db)
             .unwrap()
             .expect("concerts sees a location");
 

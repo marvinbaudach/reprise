@@ -245,8 +245,8 @@ pub(super) fn sort_newest_first(rows: &mut [EpisodeRow]) {
 /// group_header`) and the channel detail page (`youtube_channel_detail::
 /// build_header`). Pure projection of state that already lives in
 /// `podcast_subscription_devices`; nothing about this function's shape lets
-/// a caller write the selection back — it takes no `Connection` and returns
-/// a plain `bool`, never a handle to mutate anything.
+/// a caller write the selection back — it takes no database handle and
+/// returns a plain `bool`, never a handle to mutate anything.
 #[must_use]
 pub(super) fn on_phone(
     connected_devices: &[PodcastSyncDevice],

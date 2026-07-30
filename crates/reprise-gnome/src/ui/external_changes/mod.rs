@@ -28,8 +28,8 @@ use std::path::Path;
 use std::rc::Rc;
 
 use gtk4::glib;
+use reprise_core::db::Db;
 use reprise_core::events::{self, WriterToken};
-use rusqlite::Connection;
 
 mod coalesce;
 pub(in crate::ui) use coalesce::RefreshPlan;
@@ -46,11 +46,11 @@ mod tests;
 /// a burst of the app's own mutations never forces a growing re-scan on the
 /// next wake; only the coarse plan drops them (via `excluded`).
 pub(in crate::ui) fn read_and_plan(
-    conn: &Connection,
+    db: &Db,
     since: i64,
     excluded: Option<WriterToken>,
 ) -> (i64, RefreshPlan) {
-    match events::read_since(conn, since, None) {
+    match events::read_since(db, since, None) {
         Ok(changes) => {
             let cursor = changes.last().map_or(since, |change| change.id);
             (cursor, coalesce::plan_for(&changes, excluded))
@@ -66,8 +66,8 @@ pub(in crate::ui) fn read_and_plan(
 /// history already reflected in the freshly loaded UI is not replayed on the
 /// first wake. Uses the indexed `events::latest_id` (`MAX(id)`) instead of
 /// paging every row through `read_since(0, ..)` only to keep the last id.
-fn current_cursor(conn: &Connection) -> i64 {
-    match events::latest_id(conn) {
+fn current_cursor(db: &Db) -> i64 {
+    match events::latest_id(db) {
         Ok(id) => id,
         Err(error) => {
             tracing::warn!(
@@ -96,8 +96,8 @@ pub(in crate::ui) fn start(
     excluded: Option<WriterToken>,
     apply: Rc<dyn Fn(RefreshPlan)>,
 ) {
-    let read_conn = match reprise_core::db::open(Some(db_path)) {
-        Ok(conn) => conn,
+    let read_db = match Db::open_ready(db_path) {
+        Ok(db) => db,
         Err(error) => {
             tracing::warn!(
                 %error,
@@ -108,14 +108,14 @@ pub(in crate::ui) fn start(
         }
     };
 
-    let cursor = Cell::new(current_cursor(&read_conn));
+    let cursor = Cell::new(current_cursor(&read_db));
     let (sender, receiver) = async_channel::unbounded::<RefreshPlan>();
 
     // Runs on the notifier's own thread: read the new rows, advance the cursor,
     // and forward a coarse plan. No shared `RefCell`/`Rc` crosses the thread
     // boundary — the read connection, cursor, and sender are all owned here.
     let on_wake = move || {
-        let (next, plan) = read_and_plan(&read_conn, cursor.get(), excluded);
+        let (next, plan) = read_and_plan(&read_db, cursor.get(), excluded);
         cursor.set(next);
         if plan.is_empty() {
             return;

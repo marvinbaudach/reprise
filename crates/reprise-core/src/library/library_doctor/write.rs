@@ -13,7 +13,7 @@ use crate::library::tag_mutation::{
     classify_write_error, commit_guarded_tag_changes, read_tag_field_values, GuardedTagChange,
     GuardedTagField, TagMutationFailure, WriteErrorKind,
 };
-use crate::library::tag_write_job::{recover_incomplete_tag_write_jobs, TagWriteRecovery};
+use crate::library::tag_write_job::TagWriteRecovery;
 
 #[derive(Debug, Clone)]
 struct InputChange {
@@ -286,14 +286,14 @@ fn insert_file(
 }
 
 fn prepare_job(
-    conn: &mut Connection,
+    conn: &Connection,
     kind: &'static str,
     source_job_id: Option<i64>,
     scan_id: Option<i64>,
     changes: &[InputChange],
 ) -> Result<(i64, Vec<ExecutableFile>), DoctorError> {
     let files = prepare_files(conn, changes)?;
-    let transaction = conn.transaction()?;
+    let transaction = conn.unchecked_transaction()?;
     transaction.execute(
         "INSERT INTO tag_write_jobs \
          (kind, source_job_id, scan_id, state, created_at, finished_at, total_tracks) \
@@ -338,12 +338,8 @@ fn parse_error_kind(kind: Option<&str>) -> Option<WriteErrorKind> {
     }
 }
 
-fn claim_file(
-    conn: &mut Connection,
-    job_id: i64,
-    file: &ExecutableFile,
-) -> Result<(), DoctorError> {
-    let transaction = conn.transaction()?;
+fn claim_file(conn: &Connection, job_id: i64, file: &ExecutableFile) -> Result<(), DoctorError> {
+    let transaction = conn.unchecked_transaction()?;
     transaction.execute(
         "UPDATE tag_write_jobs SET state='running' WHERE id=?1 AND state='prepared'",
         [job_id],
@@ -367,14 +363,14 @@ fn claim_file(
 }
 
 fn terminal_failure(
-    conn: &mut Connection,
+    conn: &Connection,
     file: &ExecutableFile,
     failure: TagMutationFailure,
     source_job_id: Option<i64>,
 ) -> Result<(), DoctorError> {
     let (kind, message, file_written) = failure.into_parts();
     let unavailable = !file_written && kind == WriteErrorKind::NotFound;
-    let transaction = conn.transaction()?;
+    let transaction = conn.unchecked_transaction()?;
     transaction.execute(
         "UPDATE tag_write_job_files SET state=?1, error_kind=?2, error_message=?3, \
          file_written=?4 WHERE id=?5 AND state='running'",
@@ -427,14 +423,14 @@ fn terminal_failure(
 }
 
 fn terminal_success(
-    conn: &mut Connection,
+    conn: &Connection,
     file: &ExecutableFile,
     applied: &[GuardedTagField],
     conflicts: &[GuardedTagField],
     source_job_id: Option<i64>,
     post_write_failure: Option<TagMutationFailure>,
 ) -> Result<(), DoctorError> {
-    let transaction = conn.transaction()?;
+    let transaction = conn.unchecked_transaction()?;
     for field in applied {
         let changed = transaction.execute(
             "UPDATE tag_write_journal SET outcome='applied' \
@@ -502,8 +498,8 @@ fn terminal_success(
     Ok(())
 }
 
-fn cancel_remaining(conn: &mut Connection, job_id: i64) -> Result<(), DoctorError> {
-    let transaction = conn.transaction()?;
+fn cancel_remaining(conn: &Connection, job_id: i64) -> Result<(), DoctorError> {
+    let transaction = conn.unchecked_transaction()?;
     transaction.execute(
         "UPDATE tag_write_journal SET outcome='not_applied' WHERE file_id IN \
          (SELECT id FROM tag_write_job_files WHERE job_id=?1 AND state='pending') \
@@ -533,7 +529,7 @@ fn complete_job(conn: &Connection, job_id: i64) -> Result<(), DoctorError> {
 }
 
 fn run_job(
-    conn: &mut Connection,
+    conn: &Connection,
     job_id: i64,
     files: &[ExecutableFile],
     source_job_id: Option<i64>,
@@ -762,6 +758,7 @@ impl LibraryDoctor<'_> {
     }
 
     pub fn recover_incomplete_writes(&self) -> Result<Vec<TagWriteRecovery>, DoctorError> {
-        recover_incomplete_tag_write_jobs(self.conn).map_err(DoctorError::from)
+        crate::library::tag_write_job::recover_incomplete_tag_write_jobs_in(self.conn)
+            .map_err(DoctorError::from)
     }
 }

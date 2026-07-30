@@ -2,16 +2,13 @@ use std::path::{Path, PathBuf};
 
 use lofty::prelude::*;
 use lofty::tag::ItemKey;
-use rusqlite::Connection;
 
 use super::remote::{RemoteProviderError, RemoteResolution, RemoteResolver, RemoteTrackMetadata};
 use super::*;
 use crate::fingerprint::FingerprintBackend;
 
-fn migrated_connection() -> Connection {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    conn
+fn migrated_connection() -> crate::db::Db {
+    crate::db::Db::open_in_memory().unwrap()
 }
 
 fn fixture_copy(dir: &Path, name: &str) -> PathBuf {
@@ -44,8 +41,8 @@ fn write_tags(
         .unwrap();
 }
 
-fn insert_track(conn: &Connection, id: i64, path: &Path, database_artist: &str) {
-    conn.execute(
+fn insert_track(db: &crate::db::Db, id: i64, path: &Path, database_artist: &str) {
+    db.conn().execute(
         "INSERT INTO tracks (id, path, title, artist, album, album_artist, genre, added_at, file_mtime, file_size) \
          VALUES (?1, ?2, 'Database title', ?3, 'Database album', '', 'Database genre', 0, 0, 0)",
         rusqlite::params![id, path.to_string_lossy(), database_artist],
@@ -53,8 +50,8 @@ fn insert_track(conn: &Connection, id: i64, path: &Path, database_artist: &str) 
     .unwrap();
 }
 
-fn scan_selection(conn: &mut Connection, ids: Vec<i64>) -> DoctorScan {
-    let mut doctor = LibraryDoctor::new(conn);
+fn scan_selection(db: &crate::db::Db, ids: Vec<i64>) -> DoctorScan {
+    let mut doctor = LibraryDoctor::new(db);
     match doctor
         .scan_local(
             &LocalScanRequest {
@@ -208,11 +205,11 @@ fn remote_scan_uses_actual_allowlisted_tags_and_persists_evidence() {
         "Actual Artist",
         "Rock",
     );
-    let mut conn = migrated_connection();
+    let conn = migrated_connection();
     insert_track(&conn, 1, &path, "Database placeholder");
     let mut resolver = CapturingRemoteResolver::default();
 
-    let outcome = LibraryDoctor::new(&mut conn)
+    let outcome = LibraryDoctor::new(&conn)
         .scan_with_resolver(
             &DoctorScanRequest {
                 scope: DoctorScopeRequest::Selection { track_ids: vec![1] },
@@ -233,7 +230,7 @@ fn remote_scan_uses_actual_allowlisted_tags_and_persists_evidence() {
     assert!(!serde_json::to_string(&resolver.metadata[0])
         .unwrap()
         .contains("placeholder"));
-    let restored = LibraryDoctor::new(&mut conn)
+    let restored = LibraryDoctor::new(&conn)
         .last_complete_scan()
         .unwrap()
         .unwrap();
@@ -253,10 +250,10 @@ fn remote_merge_keeps_one_active_row_and_preserves_the_local_fallback() {
         "Artist",
         "Rock",
     );
-    let mut conn = migrated_connection();
+    let conn = migrated_connection();
     insert_track(&conn, 1, &path, "Artist");
 
-    let outcome = LibraryDoctor::new(&mut conn)
+    let outcome = LibraryDoctor::new(&conn)
         .scan_with_resolver(
             &DoctorScanRequest {
                 scope: DoctorScopeRequest::Selection { track_ids: vec![1] },
@@ -290,7 +287,7 @@ fn remote_merge_keeps_one_active_row_and_preserves_the_local_fallback() {
     assert!(!scan.unresolved_groups.iter().any(|group| {
         group.field == DoctorField::Title && group.members.iter().any(|member| member.track_id == 1)
     }));
-    let restored = LibraryDoctor::new(&mut conn)
+    let restored = LibraryDoctor::new(&conn)
         .last_complete_scan()
         .unwrap()
         .unwrap();
@@ -303,14 +300,14 @@ fn remote_merge_keeps_one_active_row_and_preserves_the_local_fallback() {
 #[test]
 fn combined_scan_progress_is_monotonic_and_completes_after_remote_resolution() {
     let dir = tempfile::tempdir().unwrap();
-    let mut conn = migrated_connection();
+    let conn = migrated_connection();
     for id in 1..=2 {
         let path = fixture_copy(dir.path(), &format!("progress-{id}.flac"));
         write_tags(&path, "Title", "Artist", "Album", "Artist", "Rock");
         insert_track(&conn, id, &path, "Artist");
     }
     let mut progress = Vec::new();
-    let outcome = LibraryDoctor::new(&mut conn)
+    let outcome = LibraryDoctor::new(&conn)
         .scan_with_resolver(
             &DoctorScanRequest {
                 scope: DoctorScopeRequest::Selection {
@@ -358,9 +355,9 @@ fn remote_year_manual_candidates_roundtrip_with_typed_values_and_evidence() {
     let dir = tempfile::tempdir().unwrap();
     let path = fixture_copy(dir.path(), "year-group.flac");
     write_tags(&path, "Title", "Artist", "Album", "Artist", "Rock");
-    let mut conn = migrated_connection();
+    let conn = migrated_connection();
     insert_track(&conn, 1, &path, "Artist");
-    LibraryDoctor::new(&mut conn)
+    LibraryDoctor::new(&conn)
         .scan_with_resolver(
             &DoctorScanRequest {
                 scope: DoctorScopeRequest::Selection { track_ids: vec![1] },
@@ -373,7 +370,7 @@ fn remote_year_manual_candidates_roundtrip_with_typed_values_and_evidence() {
             &mut |_| ScanControl::Continue,
         )
         .unwrap();
-    let restored = LibraryDoctor::new(&mut conn)
+    let restored = LibraryDoctor::new(&conn)
         .last_complete_scan()
         .unwrap()
         .unwrap();
@@ -399,13 +396,14 @@ fn doc_1a_scan_is_readonly() {
         "Actual Genre",
     );
     let before = std::fs::read(&path).unwrap();
-    let mut conn = migrated_connection();
+    let conn = migrated_connection();
     insert_track(&conn, 1, &path, "Stale database artist");
 
-    let scan = scan_selection(&mut conn, vec![1]);
+    let scan = scan_selection(&conn, vec![1]);
 
     assert_eq!(std::fs::read(&path).unwrap(), before);
     let database_artist: String = conn
+        .conn()
         .query_row("SELECT artist FROM tracks WHERE id=1", [], |row| row.get(0))
         .unwrap();
     assert_eq!(database_artist, "Stale database artist");
@@ -421,14 +419,14 @@ fn doc_1a_scan_is_readonly() {
 #[test]
 fn doc_1a_local_rules_never_invent_spelling() {
     let dir = tempfile::tempdir().unwrap();
-    let mut conn = migrated_connection();
+    let conn = migrated_connection();
     for (id, artist) in [(1, "AC/DC"), (2, "AC/DC"), (3, "ac/dc")] {
         let path = fixture_copy(dir.path(), &format!("{id}.flac"));
         write_tags(&path, "Track", artist, "Album", artist, "Rock");
         insert_track(&conn, id, &path, "stale");
     }
 
-    let scan = scan_selection(&mut conn, vec![1, 2, 3]);
+    let scan = scan_selection(&conn, vec![1, 2, 3]);
 
     let artist_fixes = scan
         .proposals
@@ -447,10 +445,10 @@ fn doc_1a_edge_trim_survives_an_empty_normalized_group_key() {
     let dir = tempfile::tempdir().unwrap();
     let path = fixture_copy(dir.path(), "combining.flac");
     write_tags(&path, "Track", " \u{301} ", "Album", "Artist", "Rock");
-    let mut conn = migrated_connection();
+    let conn = migrated_connection();
     insert_track(&conn, 1, &path, "stale");
 
-    let scan = scan_selection(&mut conn, vec![1]);
+    let scan = scan_selection(&conn, vec![1]);
 
     let proposal = scan
         .proposals
@@ -464,14 +462,14 @@ fn doc_1a_edge_trim_survives_an_empty_normalized_group_key() {
 #[test]
 fn local_tie_is_visible_without_a_default_proposal() {
     let dir = tempfile::tempdir().unwrap();
-    let mut conn = migrated_connection();
+    let conn = migrated_connection();
     for (id, artist) in [(1, "CHVRCHES"), (2, "chvrches")] {
         let path = fixture_copy(dir.path(), &format!("tie-{id}.flac"));
         write_tags(&path, "Track", artist, "Album", artist, "Rock");
         insert_track(&conn, id, &path, "stale");
     }
 
-    let scan = scan_selection(&mut conn, vec![1, 2]);
+    let scan = scan_selection(&conn, vec![1, 2]);
 
     assert!(!scan
         .proposals
@@ -517,10 +515,10 @@ fn missing_album_artist_uses_same_track_artist() {
     let dir = tempfile::tempdir().unwrap();
     let path = fixture_copy(dir.path(), "album-artist.flac");
     write_tags(&path, "Track", "deadmau5", "Album", "", "Electronic");
-    let mut conn = migrated_connection();
+    let conn = migrated_connection();
     insert_track(&conn, 1, &path, "stale");
 
-    let scan = scan_selection(&mut conn, vec![1]);
+    let scan = scan_selection(&conn, vec![1]);
 
     let proposal = scan
         .proposals
@@ -534,8 +532,8 @@ fn missing_album_artist_uses_same_track_artist() {
 
 #[test]
 fn doc_2a_scope_freezes_present_track_ids() {
-    let mut conn = migrated_connection();
-    let transaction = conn.transaction().unwrap();
+    let conn = migrated_connection();
+    let transaction = conn.conn().unchecked_transaction().unwrap();
     {
         let mut insert = transaction
             .prepare("INSERT INTO tracks (id, path, title, added_at) VALUES (?1, ?2, 'Track', 0)")
@@ -547,11 +545,12 @@ fn doc_2a_scope_freezes_present_track_ids() {
         }
     }
     transaction.commit().unwrap();
-    conn.execute(
-        "UPDATE tracks SET missing_since=1, missing_reason='deleted' WHERE id=5000",
-        [],
-    )
-    .unwrap();
+    conn.conn()
+        .execute(
+            "UPDATE tracks SET missing_since=1, missing_reason='deleted' WHERE id=5000",
+            [],
+        )
+        .unwrap();
     let snapshot = DoctorViewSnapshot {
         source: crate::view_source::ViewSource::Library,
         sort_field: "title".into(),
@@ -560,7 +559,7 @@ fn doc_2a_scope_freezes_present_track_ids() {
         browse: crate::queries::BrowseFilter::default(),
         queue_ids: Vec::new(),
     };
-    let mut doctor = LibraryDoctor::new(&mut conn);
+    let mut doctor = LibraryDoctor::new(&conn);
 
     let scope = doctor
         .freeze_scope(&DoctorScopeRequest::CurrentView(Box::new(snapshot)))
@@ -581,11 +580,12 @@ fn current_queue_scope_crosses_a_stale_page_and_rejects_tombstones() {
     let first = fixture_copy(dir.path(), "queue-first.flac");
     let tombstone = fixture_copy(dir.path(), "queue-tombstone.flac");
     let last = fixture_copy(dir.path(), "queue-last.flac");
-    let mut conn = migrated_connection();
+    let conn = migrated_connection();
     insert_track(&conn, 201, &first, "Artist");
     insert_track(&conn, 202, &tombstone, "Artist");
     insert_track(&conn, 203, &last, "Artist");
-    conn.execute("UPDATE tracks SET removed_at=1 WHERE id=202", [])
+    conn.conn()
+        .execute("UPDATE tracks SET removed_at=1 WHERE id=202", [])
         .unwrap();
     let snapshot = DoctorViewSnapshot {
         source: crate::view_source::ViewSource::Queue,
@@ -595,7 +595,7 @@ fn current_queue_scope_crosses_a_stale_page_and_rejects_tombstones() {
         browse: crate::queries::BrowseFilter::default(),
         queue_ids: (1..=203).collect(),
     };
-    let mut doctor = LibraryDoctor::new(&mut conn);
+    let mut doctor = LibraryDoctor::new(&conn);
 
     let scope = doctor
         .freeze_scope(&DoctorScopeRequest::CurrentView(Box::new(snapshot)))
@@ -615,8 +615,8 @@ fn current_queue_scope_crosses_a_stale_page_and_rejects_tombstones() {
 
 #[test]
 fn invalid_context_requires_visible_scope_fallback() {
-    let mut conn = migrated_connection();
-    let mut doctor = LibraryDoctor::new(&mut conn);
+    let conn = migrated_connection();
+    let mut doctor = LibraryDoctor::new(&conn);
     let scope = doctor
         .freeze_scope(&DoctorScopeRequest::Selection {
             track_ids: vec![44, 44],
@@ -633,16 +633,14 @@ fn doc_2a_last_complete_scan_survives_restart() {
     let track = fixture_copy(dir.path(), "persist.flac");
     write_tags(&track, "  Track  ", "Artist", "Album", "Artist", "Rock");
     {
-        let mut conn = crate::db::open(Some(&database)).unwrap();
-        crate::db::migrate(&conn).unwrap();
+        let conn = crate::db::Db::open_migrated(Some(&database)).unwrap();
         insert_track(&conn, 7, &track, "stale");
-        let scan = scan_selection(&mut conn, vec![7]);
+        let scan = scan_selection(&conn, vec![7]);
         assert_eq!(scan.checked_tracks, 1);
     }
 
-    let mut reopened = crate::db::open(Some(&database)).unwrap();
-    crate::db::migrate(&reopened).unwrap();
-    let doctor = LibraryDoctor::new(&mut reopened);
+    let reopened = crate::db::Db::open_migrated(Some(&database)).unwrap();
+    let doctor = LibraryDoctor::new(&reopened);
     let restored = doctor.last_complete_scan().unwrap().unwrap();
 
     assert_eq!(restored.track_ids, vec![7]);
@@ -665,22 +663,22 @@ fn reopened_scan_marks_changed_database_identity_stale() {
     let track = fixture_copy(dir.path(), "stale.flac");
     write_tags(&track, "Track", "Artist", "Album", "Artist", "Rock");
     {
-        let mut conn = crate::db::open(Some(&database)).unwrap();
-        crate::db::migrate(&conn).unwrap();
+        let conn = crate::db::Db::open_migrated(Some(&database)).unwrap();
         insert_track(&conn, 9, &track, "Artist");
-        conn.execute(
-            "UPDATE tracks SET file_mtime=10, file_size=20, device=30, inode=40 WHERE id=9",
-            [],
-        )
-        .unwrap();
-        scan_selection(&mut conn, vec![9]);
-        conn.execute("UPDATE tracks SET file_mtime=11 WHERE id=9", [])
+        conn.conn()
+            .execute(
+                "UPDATE tracks SET file_mtime=10, file_size=20, device=30, inode=40 WHERE id=9",
+                [],
+            )
+            .unwrap();
+        scan_selection(&conn, vec![9]);
+        conn.conn()
+            .execute("UPDATE tracks SET file_mtime=11 WHERE id=9", [])
             .unwrap();
     }
 
-    let mut reopened = crate::db::open(Some(&database)).unwrap();
-    crate::db::migrate(&reopened).unwrap();
-    let restored = LibraryDoctor::new(&mut reopened)
+    let reopened = crate::db::Db::open_migrated(Some(&database)).unwrap();
+    let restored = LibraryDoctor::new(&reopened)
         .last_complete_scan()
         .unwrap()
         .unwrap();
@@ -691,8 +689,8 @@ fn reopened_scan_marks_changed_database_identity_stale() {
 
 #[test]
 fn public_library_doctor_seam_is_available_at_the_crate_root() {
-    let mut conn = migrated_connection();
-    let _doctor = crate::library_doctor::LibraryDoctor::new(&mut conn);
+    let conn = migrated_connection();
+    let _doctor = crate::library_doctor::LibraryDoctor::new(&conn);
 }
 
 #[test]
@@ -702,12 +700,12 @@ fn cancelled_scan_preserves_the_previous_complete_snapshot() {
     let second = fixture_copy(dir.path(), "second.flac");
     write_tags(&first, "  First  ", "Artist", "Album", "Artist", "Rock");
     write_tags(&second, "  Second  ", "Artist", "Album", "Artist", "Rock");
-    let mut conn = migrated_connection();
+    let conn = migrated_connection();
     insert_track(&conn, 1, &first, "stale");
     insert_track(&conn, 2, &second, "stale");
-    let first_scan = scan_selection(&mut conn, vec![1]);
+    let first_scan = scan_selection(&conn, vec![1]);
     let previous_id = first_scan.id;
-    let mut doctor = LibraryDoctor::new(&mut conn);
+    let mut doctor = LibraryDoctor::new(&conn);
 
     let outcome = doctor
         .scan_local(
@@ -737,10 +735,10 @@ fn unreadable_files_are_counted_as_skipped_not_checked() {
     let dir = tempfile::tempdir().unwrap();
     let unreadable = dir.path().join("broken.flac");
     std::fs::write(&unreadable, b"not a FLAC container").unwrap();
-    let mut conn = migrated_connection();
+    let conn = migrated_connection();
     insert_track(&conn, 1, &unreadable, "stale");
 
-    let scan = scan_selection(&mut conn, vec![1]);
+    let scan = scan_selection(&conn, vec![1]);
 
     assert_eq!(scan.checked_tracks, 0);
     assert_eq!(scan.skipped_tracks, 1);

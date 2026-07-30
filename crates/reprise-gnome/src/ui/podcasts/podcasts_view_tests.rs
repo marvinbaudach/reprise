@@ -13,13 +13,14 @@ use super::*;
 /// Callers seed subscriptions/episodes/persisted filter values on `conn`
 /// *before* calling this, since `PodcastsFilterBar::new` and the initial
 /// `refresh()` both read the DB at construction time.
-fn view(conn: rusqlite::Connection, kind: PodcastKind) -> Rc<PodcastsView> {
+fn view(conn: Db, kind: PodcastKind) -> Rc<PodcastsView> {
     let runtime = PodcastsRuntime::setup(&conn);
-    let conn = Rc::new(RefCell::new(conn));
+    let conn = Rc::new(conn);
     PodcastsView::install(conn, runtime, PodcastsCallbacks::default(), kind)
 }
 
-fn subscribe_with_one_episode(conn: &rusqlite::Connection) -> i64 {
+fn subscribe_with_one_episode(conn: &Db) -> i64 {
+    let conn = &conn;
     let subscription_id = store::add_or_restore(
         conn,
         &NewSubscription {
@@ -58,7 +59,7 @@ fn subscribe_with_one_episode(conn: &rusqlite::Connection) -> i64 {
 #[ignore = "requires a display; run via xvfb-run"]
 fn src_10_the_true_empty_state_hides_the_filter_row_and_the_footer() {
     gtk4::init().unwrap();
-    let conn = reprise_core::db::open_migrated(None).unwrap();
+    let conn = crate::test_db::open().unwrap();
     // Module on, nothing subscribed — the genuine `Empty` case. Modules
     // default to off, and an off module with zero subscriptions decides
     // `ModuleOff` instead (its own, separately tested, sibling state).
@@ -81,7 +82,7 @@ fn src_10_the_true_empty_state_hides_the_filter_row_and_the_footer() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn src_10_the_filter_mismatch_state_keeps_the_filter_row_visible_unlike_the_true_empty_state() {
     gtk4::init().unwrap();
-    let conn = reprise_core::db::open_migrated(None).unwrap();
+    let conn = crate::test_db::open().unwrap();
     let episode_id = subscribe_with_one_episode(&conn);
     store::mark_played(&conn, episode_id, 1).unwrap();
     // Persisted *before* construction: `PodcastsFilterBar::new` loads the
@@ -111,7 +112,7 @@ fn src_10_the_filter_mismatch_state_keeps_the_filter_row_visible_unlike_the_true
 #[ignore = "requires a display; run via xvfb-run"]
 fn src_10_the_downloads_only_view_names_nothing_downloaded_not_a_generic_mismatch() {
     gtk4::init().unwrap();
-    let conn = reprise_core::db::open_migrated(None).unwrap();
+    let conn = crate::test_db::open().unwrap();
     subscribe_with_one_episode(&conn);
     reprise_core::library::settings::set_bool(
         &conn,
@@ -135,7 +136,7 @@ fn src_10_the_downloads_only_view_names_nothing_downloaded_not_a_generic_mismatc
 #[ignore = "requires a display; run via xvfb-run"]
 fn src_10_the_module_off_state_offers_enable_in_preferences_and_never_opens_add() {
     gtk4::init().unwrap();
-    let conn = reprise_core::db::open_migrated(None).unwrap();
+    let conn = crate::test_db::open().unwrap();
     // Modules default to disabled — no explicit `set_enabled` call needed.
     let view = view(conn, PodcastKind::Youtube);
 
@@ -167,7 +168,7 @@ fn src_10_the_module_off_state_offers_enable_in_preferences_and_never_opens_add(
 #[ignore = "requires a display; run via xvfb-run"]
 fn src_10_module_off_does_not_hide_an_already_populated_view() {
     gtk4::init().unwrap();
-    let conn = reprise_core::db::open_migrated(None).unwrap();
+    let conn = crate::test_db::open().unwrap();
     subscribe_with_one_episode(&conn);
 
     let view = view(conn, PodcastKind::Rss);
@@ -189,7 +190,7 @@ fn src_10_module_off_does_not_hide_an_already_populated_view() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn pod_9_the_library_summary_header_actually_reaches_the_filter_bar() {
     gtk4::init().unwrap();
-    let conn = reprise_core::db::open_migrated(None).unwrap();
+    let conn = crate::test_db::open().unwrap();
     subscribe_with_one_episode(&conn);
 
     let view = view(conn, PodcastKind::Rss);
@@ -250,7 +251,7 @@ fn pump_until_terminal(
 #[ignore = "requires a display; run via xvfb-run"]
 fn pod_13_activating_the_retry_action_runs_a_fresh_download_attempt() {
     gtk4::init().unwrap();
-    let conn = reprise_core::db::open_migrated(None).unwrap();
+    let conn = crate::test_db::open().unwrap();
     reprise_core::modules::set_enabled(&conn, &reprise_core::modules::PODCASTS_MODULE, true)
         .unwrap();
     let subscription_id = store::add_or_restore(

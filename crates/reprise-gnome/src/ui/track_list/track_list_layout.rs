@@ -39,7 +39,7 @@ impl TrackList {
     ) -> Result<(), rusqlite::Error> {
         let serialized = column_layout::serialize_layout(layout);
         reprise_core::library::settings::set_setting(
-            &self.shared.conn.borrow(),
+            &self.shared.conn,
             reprise_core::library::settings::COLUMN_LAYOUT_KEY,
             &serialized,
         )?;
@@ -67,7 +67,7 @@ impl TrackList {
     }
 
     pub(in crate::ui) fn current_column_layout(&self) -> ColumnLayout {
-        column_layout::load_layout(&self.shared.conn.borrow())
+        column_layout::load_layout(&self.shared.conn)
     }
 
     /// Restores every column to its built-in default width; the wired

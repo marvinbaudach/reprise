@@ -222,9 +222,8 @@ fn widget_projects_removable_chips_without_a_redundant_reset_button() {
     if gtk4::init().is_err() {
         return;
     }
-    let conn = Connection::open_in_memory().unwrap();
-    reprise_core::db::migrate(&conn).unwrap();
-    let bar = BrowseBar::new(Rc::new(RefCell::new(conn)));
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let bar = BrowseBar::new(conn);
 
     // QA #8: the bar keeps a constant height across empty/active states.
     assert_eq!(bar.root.height_request(), FILTER_BAR_MIN_HEIGHT);
@@ -265,8 +264,7 @@ fn fil_7_hide_ai_filter_state_is_sticky_across_sessions() {
     if gtk4::init().is_err() {
         return;
     }
-    let conn = Rc::new(RefCell::new(Connection::open_in_memory().unwrap()));
-    reprise_core::db::migrate(&conn.borrow()).unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
 
     // A fresh bar defaults to off — the filter is opt-in (AI tracks visible).
     let bar = BrowseBar::new(conn.clone());
@@ -276,7 +274,7 @@ fn fil_7_hide_ai_filter_state_is_sticky_across_sessions() {
     bar.set_exclude_ai(true);
     assert!(bar.exclude_ai());
     assert!(
-        reprise_core::library::settings::get_bool(&conn.borrow(), EXCLUDE_AI_KEY, false).unwrap(),
+        reprise_core::library::settings::get_bool(&conn, EXCLUDE_AI_KEY, false).unwrap(),
         "the on state is written to settings"
     );
 
@@ -296,9 +294,8 @@ fn fil_7_hide_ai_filter_state_is_sticky_across_sessions() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn rebuilding_chips_reparents_the_persistent_filter_button() {
     gtk4::init().unwrap();
-    let conn = Connection::open_in_memory().unwrap();
-    reprise_core::db::migrate(&conn).unwrap();
-    let bar = BrowseBar::new(Rc::new(RefCell::new(conn)));
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let bar = BrowseBar::new(conn);
 
     bar.refresh();
 

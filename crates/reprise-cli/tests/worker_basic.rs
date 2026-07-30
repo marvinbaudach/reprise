@@ -17,7 +17,8 @@ fn staging_dir(h: &Harness) -> PathBuf {
 fn set_library_root(h: &Harness) -> PathBuf {
     let root = h.dir.path().join("library");
     std::fs::create_dir_all(&root).unwrap();
-    reprise_core::library::settings::set_library_root(&h.conn(), root.to_str().unwrap()).unwrap();
+    let db = h.db();
+    reprise_core::library::settings::set_library_root(&db, root.to_str().unwrap()).unwrap();
     root
 }
 

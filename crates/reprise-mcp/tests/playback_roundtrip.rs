@@ -560,10 +560,10 @@ fn music_play_playlist_resolves_to_ordered_ids_on_the_wire() {
         ],
     );
     let ordered = vec![ids[2], ids[0], ids[1]];
-    let mut conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
-    let playlist_id = reprise_core::library::playlists::create(&conn, "Roadtrip").unwrap();
-    reprise_core::library::playlists::add_tracks(&mut conn, playlist_id, &ordered).unwrap();
-    drop(conn);
+    let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
+    let playlist_id = reprise_core::library::playlists::create(&db, "Roadtrip").unwrap();
+    reprise_core::library::playlists::add_tracks(&db, playlist_id, &ordered).unwrap();
+    drop(db);
 
     let mut client = McpClient::start_on_bus(&path, &bus);
     let response = client.call_tool("music_play", json!({ "playlist_id": playlist_id }));

@@ -143,13 +143,14 @@ struct SourceMeta {
 
 /// Promotes the finished staging render of `job_id` into the library.
 pub fn promote(
-    conn: &mut Connection,
+    db: &crate::db::Db,
     staging: &StagingStore,
     config: &PromotionConfig,
     job_id: i64,
     now: i64,
 ) -> Result<PromotionOutcome, PromotionError> {
-    let job = ai_jobs::get_job(conn, job_id)?.ok_or(PromotionError::JobNotFound(job_id))?;
+    let conn = db.conn();
+    let job = ai_jobs::get_job(db, job_id)?.ok_or(PromotionError::JobNotFound(job_id))?;
     // Only a finished, not-yet-saved render is promotable; re-saving a job is a
     // no-op guarded here (idempotent from the caller's view).
     if job.state != JobState::Done || job.result_track_id.is_some() {
@@ -173,7 +174,7 @@ pub fn promote(
     std::fs::copy(&staging_path, &destination)?;
 
     let result = write_final_tags(&destination, &source, &job.params_fingerprint)
-        .and_then(|()| register_and_record(conn, &source, &job, &destination, now));
+        .and_then(|()| register_and_record(db, &source, &job, &destination, now));
     match result {
         Ok(result_track_id) => {
             // Success: the render now lives in the library; drop the staging copy.
@@ -203,22 +204,23 @@ pub fn promote(
 /// resumes from. Only the owner's `running` job transitions; a non-owner or
 /// non-running call is [`CompletionOutcome::NotOwned`] and promotes nothing.
 pub fn complete_render(
-    conn: &mut Connection,
+    db: &crate::db::Db,
     staging: &StagingStore,
     config: &PromotionConfig,
     job_id: i64,
     worker: i64,
     now: i64,
 ) -> Result<CompletionOutcome, PromotionError> {
+    let conn = db.conn();
     // The ordinary owner-guarded done transition — unchanged for every worker.
-    if !ai_jobs::mark_done(conn, job_id, worker, now)? {
+    if !ai_jobs::mark_done(db, job_id, worker, now)? {
         return Ok(CompletionOutcome::NotOwned);
     }
     // Honor the persisted save-intent; without it the render waits in staging.
     if !ai_jobs::job_auto_promote(conn, job_id)? {
         return Ok(CompletionOutcome::Staged);
     }
-    match promote(conn, staging, config, job_id, now) {
+    match promote(db, staging, config, job_id, now) {
         Ok(outcome) => Ok(CompletionOutcome::Promoted(outcome)),
         Err(error) => {
             // Keep the job done + unsaved (retryable), just note why it deferred.
@@ -249,7 +251,7 @@ pub fn complete_render(
 /// noted (retryable). The temp file is consumed either way: renamed on a win,
 /// deleted on a lost guard.
 pub fn complete_render_with_publish(
-    conn: &mut Connection,
+    db: &crate::db::Db,
     staging: &StagingStore,
     config: Option<&PromotionConfig>,
     job_id: i64,
@@ -257,10 +259,11 @@ pub fn complete_render_with_publish(
     temp_path: &Path,
     now: i64,
 ) -> Result<CompletionOutcome, PromotionError> {
+    let conn = db.conn();
     // 1. Owner-guarded done transition FIRST — the ownership decision. A
     //    straggler (reclaimed lease, or an already-terminal job) fails here and
     //    must never reach the canonical staging path; drop its worthless temp.
-    if !ai_jobs::mark_done(conn, job_id, worker, now)? {
+    if !ai_jobs::mark_done(db, job_id, worker, now)? {
         let _ = std::fs::remove_file(temp_path);
         return Ok(CompletionOutcome::NotOwned);
     }
@@ -275,7 +278,7 @@ pub fn complete_render_with_publish(
     if !ai_jobs::job_auto_promote(conn, job_id)? {
         return Ok(CompletionOutcome::Staged);
     }
-    match promote(conn, staging, config, job_id, now) {
+    match promote(db, staging, config, job_id, now) {
         Ok(outcome) => Ok(CompletionOutcome::Promoted(outcome)),
         Err(error) => {
             let message = error.to_string();
@@ -287,14 +290,15 @@ pub fn complete_render_with_publish(
 
 /// Registers the copied file and records provenance + the job `save` event.
 fn register_and_record(
-    conn: &mut Connection,
+    db: &crate::db::Db,
     source: &SourceMeta,
     job: &ai_jobs::AiJob,
     destination: &Path,
     now: i64,
 ) -> Result<i64, PromotionError> {
+    let conn = db.conn();
     // Register through the existing scanner metadata path (its own transaction).
-    match scanner::scan_folder(conn, destination) {
+    match scanner::scan_folder(db, destination) {
         Ok(ScanOutcome::Completed(report)) if report.errors == 0 => {}
         Ok(ScanOutcome::Completed(report)) => {
             return Err(PromotionError::Registration(format!(
@@ -324,20 +328,30 @@ fn register_and_record(
     let source_text = format!("{} — {}", source.artist, source.title);
     // Provenance + the staged->saved job transition land in one transaction.
     crate::events::in_txn(conn, |conn| {
-        provenance::insert_provenance(
-            conn,
-            result_track_id,
-            &ProvenanceInput {
-                kind: KIND_VOCALS_REMOVED.to_string(),
-                ai: true,
-                // The link is by id only while the original still exists; the
-                // embedded tags carry the textual reference regardless.
-                source_track_id: job.source_track_id,
-                source_text: Some(source_text),
-                source_mbid: None,
-                model: Some(job.params_fingerprint.clone()),
-            },
-            now,
+        let input = ProvenanceInput {
+            kind: KIND_VOCALS_REMOVED.to_string(),
+            ai: true,
+            // The link is by id only while the original still exists; the
+            // embedded tags carry the textual reference regardless.
+            source_track_id: job.source_track_id,
+            source_text: Some(source_text),
+            source_mbid: None,
+            model: Some(job.params_fingerprint.clone()),
+        };
+        conn.execute(
+            "INSERT OR REPLACE INTO track_provenance \
+               (track_id, kind, ai, source_track_id, source_text, source_mbid, model, created_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                result_track_id,
+                input.kind,
+                i64::from(input.ai),
+                input.source_track_id,
+                input.source_text,
+                input.source_mbid,
+                input.model,
+                now,
+            ],
         )?;
         ai_jobs::attach_result_track(conn, job.id, result_track_id)?;
         Ok(())

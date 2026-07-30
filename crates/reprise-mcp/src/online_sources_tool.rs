@@ -64,16 +64,16 @@ pub fn manage_online_sources(
     granted_at_startup: bool,
     params: &ManageOnlineSourcesParams,
 ) -> Result<OnlineSourcesState, DataError> {
-    let conn = data::open(path)?;
+    let db = data::open(path)?;
     match params.action.as_str() {
         "get" => {
-            data::require_read(&conn)?;
+            data::require_read(&db)?;
         }
         "set" => {
             // Gated like the other podcast/YouTube/radio mutations: turning
             // a source on or off is source management, not a different
             // capability domain.
-            let allowed = crate::capability::sources_manage_effective(&conn, granted_at_startup)
+            let allowed = crate::capability::sources_manage_effective(&db, granted_at_startup)
                 .map_err(DataError::Db)?;
             if !allowed {
                 return Err(DataError::CapabilityDenied("sources:manage"));
@@ -86,11 +86,11 @@ pub fn manage_online_sources(
                 .enabled
                 .ok_or_else(|| DataError::InvalidInput("enabled is required for set".to_owned()))?;
             match target {
-                "global" => reprise_core::online_sources::set_enabled(&conn, enabled)
+                "global" => reprise_core::online_sources::set_enabled(&db, enabled)
                     .map_err(DataError::Db)?,
-                "youtube" => set_module(&conn, &YOUTUBE_MODULE, enabled)?,
-                "podcasts" => set_module(&conn, &PODCASTS_MODULE, enabled)?,
-                "radio" => set_module(&conn, &RADIO_MODULE, enabled)?,
+                "youtube" => set_module(&db, &YOUTUBE_MODULE, enabled)?,
+                "podcasts" => set_module(&db, &PODCASTS_MODULE, enabled)?,
+                "radio" => set_module(&db, &RADIO_MODULE, enabled)?,
                 other => {
                     return Err(DataError::InvalidInput(format!(
                         "unknown target '{other}'; expected global, youtube, podcasts, or radio"
@@ -104,25 +104,25 @@ pub fn manage_online_sources(
             )))
         }
     }
-    read_state(&conn)
+    read_state(&db)
 }
 
 fn set_module(
-    conn: &rusqlite::Connection,
+    db: &reprise_core::db::Db,
     module: &ModuleDescriptor,
     enabled: bool,
 ) -> Result<(), DataError> {
-    reprise_core::modules::set_enabled(conn, module, enabled).map_err(DataError::Db)
+    reprise_core::modules::set_enabled(db, module, enabled).map_err(DataError::Db)
 }
 
-fn read_state(conn: &rusqlite::Connection) -> Result<OnlineSourcesState, DataError> {
+fn read_state(db: &reprise_core::db::Db) -> Result<OnlineSourcesState, DataError> {
     Ok(OnlineSourcesState {
-        global_enabled: reprise_core::online_sources::is_enabled(conn).map_err(DataError::Db)?,
-        youtube_enabled: reprise_core::modules::is_enabled(conn, &YOUTUBE_MODULE)
+        global_enabled: reprise_core::online_sources::is_enabled(db).map_err(DataError::Db)?,
+        youtube_enabled: reprise_core::modules::is_enabled(db, &YOUTUBE_MODULE)
             .map_err(DataError::Db)?,
-        podcasts_enabled: reprise_core::modules::is_enabled(conn, &PODCASTS_MODULE)
+        podcasts_enabled: reprise_core::modules::is_enabled(db, &PODCASTS_MODULE)
             .map_err(DataError::Db)?,
-        radio_enabled: reprise_core::modules::is_enabled(conn, &RADIO_MODULE)
+        radio_enabled: reprise_core::modules::is_enabled(db, &RADIO_MODULE)
             .map_err(DataError::Db)?,
     })
 }
@@ -134,13 +134,9 @@ mod tests {
     fn seeded_db() -> (tempfile::TempDir, std::path::PathBuf) {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("reprise.db");
-        let conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
-        reprise_core::library::settings::set_bool(
-            &conn,
-            crate::capability::CAP_SOURCES_MANAGE,
-            true,
-        )
-        .unwrap();
+        let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
+        reprise_core::library::settings::set_bool(&db, crate::capability::CAP_SOURCES_MANAGE, true)
+            .unwrap();
         (dir, path)
     }
 
@@ -202,9 +198,9 @@ mod tests {
 
         // And the effect actually reaches the one real authority every
         // network entry point ANDs itself against.
-        let conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
+        let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
         assert!(!reprise_core::online_sources::network_allowed(
-            &conn,
+            &db,
             &reprise_core::modules::YOUTUBE_MODULE
         )
         .unwrap());

@@ -173,9 +173,9 @@ impl super::Shared {
             Vec::new()
         };
         let result = {
-            let conn = self.conn.borrow();
+            let conn = &self.conn;
             queries::query_visible_track_ids_browsed(
-                &conn,
+                conn,
                 &source,
                 &sort.field,
                 &sort.dir,
@@ -355,10 +355,6 @@ fn reveal_automatic_track_position(
 
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
-
-    use rusqlite::Connection;
-
     use super::*;
 
     #[test]
@@ -385,9 +381,9 @@ mod tests {
     #[ignore = "requires a display; run via xvfb-run"]
     fn nav_10a_row_activation_marker_does_not_move_selection_or_viewport() {
         gtk4::init().unwrap();
-        let mut conn = Connection::open_in_memory().unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        let tx = conn.transaction().unwrap();
+        let conn = crate::test_db::open().unwrap();
+        let fixture_conn = crate::test_db::connection(&conn);
+        let tx = fixture_conn.unchecked_transaction().unwrap();
         for id in 1..=100 {
             tx.execute(
                 "INSERT INTO tracks (id, path, title, artist, added_at) \
@@ -402,7 +398,7 @@ mod tests {
         }
         tx.commit().unwrap();
         let track_list = TrackList::new(
-            Rc::new(RefCell::new(conn)),
+            Rc::new(conn),
             Box::new(|_, _, _, _| {}),
             |_, _, _, _| {},
             super::super::queue_sections::QueueViewModel::default,
@@ -476,9 +472,9 @@ mod tests {
     fn fil_9_filter_changes_center_the_visible_playing_track() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
-        let mut conn = Connection::open_in_memory().unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        let tx = conn.transaction().unwrap();
+        let conn = crate::test_db::open().unwrap();
+        let fixture_conn = crate::test_db::connection(&conn);
+        let tx = fixture_conn.unchecked_transaction().unwrap();
         for id in 1..=100 {
             let title = if (31..=60).contains(&id) {
                 format!("Match Track {id:03}")
@@ -494,7 +490,7 @@ mod tests {
         }
         tx.commit().unwrap();
         let track_list = TrackList::new(
-            Rc::new(RefCell::new(conn)),
+            Rc::new(conn),
             Box::new(|_, _, _, _| {}),
             |_, _, _, _| {},
             super::super::queue_sections::QueueViewModel::default,
@@ -599,9 +595,9 @@ mod tests {
     #[ignore = "requires a display; run via xvfb-run"]
     fn now_playing_marker_toggles_visible_cells_in_place() {
         gtk4::init().unwrap();
-        let mut conn = Connection::open_in_memory().unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        let tx = conn.transaction().unwrap();
+        let conn = crate::test_db::open().unwrap();
+        let fixture_conn = crate::test_db::connection(&conn);
+        let tx = fixture_conn.unchecked_transaction().unwrap();
         for id in 1..=100 {
             tx.execute(
                 "INSERT INTO tracks (id, path, title, artist, added_at) \
@@ -616,7 +612,7 @@ mod tests {
         }
         tx.commit().unwrap();
         let track_list = TrackList::new(
-            Rc::new(RefCell::new(conn)),
+            Rc::new(conn),
             Box::new(|_, _, _, _| {}),
             |_, _, _, _| {},
             super::super::queue_sections::QueueViewModel::default,

@@ -7,30 +7,29 @@ use crate::artist_news::{
     artists_for_fetch, configured_fetch_scope, set_fetch_all_artists, FetchScope,
 };
 
-fn migrated_conn() -> rusqlite::Connection {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    conn
+fn migrated_conn() -> crate::db::Db {
+    crate::db::Db::open_in_memory().unwrap()
 }
 
 #[test]
 fn nr_1a_fetch_queue_prioritizes_top_artists_and_includes_the_never_checked_rest() {
     let conn = migrated_conn();
     for index in 0..27 {
-        conn.execute(
-            "INSERT INTO tracks (path, title, artist, play_count, added_at) \
+        conn.conn()
+            .execute(
+                "INSERT INTO tracks (path, title, artist, play_count, added_at) \
              VALUES (?1, 'Track', ?2, ?3, 0)",
-            rusqlite::params![
-                format!("/music/{index}.flac"),
-                format!("Artist {index:02}"),
-                100 - index
-            ],
-        )
-        .unwrap();
+                rusqlite::params![
+                    format!("/music/{index}.flac"),
+                    format!("Artist {index:02}"),
+                    100 - index
+                ],
+            )
+            .unwrap();
     }
 
-    let top = artists_for_fetch(&conn, FetchScope::TopArtists).unwrap();
-    let all = artists_for_fetch(&conn, FetchScope::AllArtists).unwrap();
+    let top = artists_for_fetch(conn.conn(), FetchScope::TopArtists).unwrap();
+    let all = artists_for_fetch(conn.conn(), FetchScope::AllArtists).unwrap();
 
     assert_eq!(top.len(), 20);
     assert_eq!(top[0].name, "Artist 00");
@@ -72,21 +71,22 @@ fn rotation_prefers_never_checked_artists_over_play_count() {
     // 22 artists so the rest group is non-empty (TOP_ARTIST_COUNT = 20).
     // Play counts descend, so "artist-21" and "artist-22" are the tail.
     for index in 1..=22 {
-        conn.execute(
-            "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
+        conn.conn()
+            .execute(
+                "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
              VALUES (?1, 'T', ?2, 'Album', ?3, 0)",
-            rusqlite::params![
-                format!("/music/{index}.flac"),
-                format!("artist-{index:02}"),
-                100 - index,
-            ],
-        )
-        .unwrap();
+                rusqlite::params![
+                    format!("/music/{index}.flac"),
+                    format!("artist-{index:02}"),
+                    100 - index,
+                ],
+            )
+            .unwrap();
     }
     // The very last artist by plays was checked long ago; the second-to-last
     // was checked just now. Only the stale one may come up.
     crate::artist_news_ledger::record_attempt(
-        &conn,
+        conn.conn(),
         "artist-21",
         None,
         9_000,
@@ -95,7 +95,7 @@ fn rotation_prefers_never_checked_artists_over_play_count() {
     )
     .unwrap();
 
-    let candidates = artists_for_fetch(&conn, FetchScope::AllArtists).unwrap();
+    let candidates = artists_for_fetch(conn.conn(), FetchScope::AllArtists).unwrap();
     let names = candidates
         .iter()
         .map(|candidate| candidate.name.as_str())
@@ -120,28 +120,30 @@ fn rest_group_is_capped_at_rest_artists_per_run_and_keeps_the_stalest() {
     // `last_attempt_at` — never an arbitrary 30.
     let conn = migrated_conn();
     for index in 1..=20 {
-        conn.execute(
-            "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
+        conn.conn()
+            .execute(
+                "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
              VALUES (?1, 'T', ?2, 'Album', ?3, 0)",
-            rusqlite::params![
-                format!("/music/top-{index}.flac"),
-                format!("top-{index:02}"),
-                300 - index,
-            ],
-        )
-        .unwrap();
+                rusqlite::params![
+                    format!("/music/top-{index}.flac"),
+                    format!("top-{index:02}"),
+                    300 - index,
+                ],
+            )
+            .unwrap();
     }
     for index in 1..=50 {
-        conn.execute(
-            "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
+        conn.conn()
+            .execute(
+                "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
              VALUES (?1, 'T', ?2, 'Album', ?3, 0)",
-            rusqlite::params![
-                format!("/music/rest-{index}.flac"),
-                format!("rest-{index:02}"),
-                200 - index,
-            ],
-        )
-        .unwrap();
+                rusqlite::params![
+                    format!("/music/rest-{index}.flac"),
+                    format!("rest-{index:02}"),
+                    200 - index,
+                ],
+            )
+            .unwrap();
     }
     // rest-01..rest-15 are never checked (no ledger row at all) — `None`
     // sorts before every `Some`, so all 15 must be picked.
@@ -151,7 +153,7 @@ fn rest_group_is_capped_at_rest_artists_per_run_and_keeps_the_stalest() {
     // remaining slots up to REST_ARTISTS_PER_RUN (30).
     for index in 16..=50 {
         crate::artist_news_ledger::record_attempt(
-            &conn,
+            conn.conn(),
             &format!("rest-{index:02}"),
             None,
             i64::from(index - 15) * 100,
@@ -161,7 +163,7 @@ fn rest_group_is_capped_at_rest_artists_per_run_and_keeps_the_stalest() {
         .unwrap();
     }
 
-    let candidates = artists_for_fetch(&conn, FetchScope::AllArtists).unwrap();
+    let candidates = artists_for_fetch(conn.conn(), FetchScope::AllArtists).unwrap();
     let names = candidates
         .iter()
         .map(|candidate| candidate.name.clone())
@@ -190,18 +192,19 @@ fn rest_group_is_capped_at_rest_artists_per_run_and_keeps_the_stalest() {
 fn top_artists_scope_ignores_the_rest_group_entirely() {
     let conn = migrated_conn();
     for index in 1..=22 {
-        conn.execute(
-            "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
+        conn.conn()
+            .execute(
+                "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
              VALUES (?1, 'T', ?2, 'Album', ?3, 0)",
-            rusqlite::params![
-                format!("/music/{index}.flac"),
-                format!("artist-{index:02}"),
-                100 - index,
-            ],
-        )
-        .unwrap();
+                rusqlite::params![
+                    format!("/music/{index}.flac"),
+                    format!("artist-{index:02}"),
+                    100 - index,
+                ],
+            )
+            .unwrap();
     }
-    let candidates = artists_for_fetch(&conn, FetchScope::TopArtists).unwrap();
+    let candidates = artists_for_fetch(conn.conn(), FetchScope::TopArtists).unwrap();
     assert_eq!(candidates.len(), 20);
 }
 

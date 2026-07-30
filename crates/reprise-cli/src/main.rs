@@ -1,8 +1,9 @@
 //! `reprise-cli`: a headless, MIT-licensed command-line frontend over the
 //! `reprise-core` engine. It opens the same SQLite library the GTK app uses
-//! (WAL, so both can run at once) and drives it through core's `&Connection`
-//! facades — every mutation lands in `change_log`, so a running app refreshes
-//! live. See `cli` for the surface and `commands` for the implementations.
+//! (WAL, so both can run at once), owns it through [`reprise_core::db::Db`], and
+//! drives it through core's `&Db` facades — every mutation lands in
+//! `change_log`, so a running app refreshes live. See `cli` for the surface and
+//! `commands` for the implementations.
 
 mod cli;
 mod clock;
@@ -66,24 +67,24 @@ fn run_with_db(
     command: Command,
     json: bool,
 ) -> Result<(), CliError> {
-    let mut conn = db_open::open(db)?;
+    let db = db_open::open(db)?;
     match command {
-        Command::Playlist { action } => run_playlist(&mut conn, action, json),
+        Command::Playlist { action } => run_playlist(&db, action, json),
         Command::Search {
             query,
             limit,
             offset,
-        } => commands::search::run(&mut conn, &query, limit, offset, json),
+        } => commands::search::run(&db, &query, limit, offset, json),
         Command::Library { action } => match action {
-            LibraryAction::Summary => commands::library::summary(&conn, json),
+            LibraryAction::Summary => commands::library::summary(&db, json),
         },
-        Command::Concerts { action } => commands::concerts::run(&conn, &action, json),
-        Command::Scan { path } => commands::scan::run(&mut conn, path, json),
+        Command::Concerts { action } => commands::concerts::run(&db, &action, json),
+        Command::Scan { path } => commands::scan::run(&db, path, json),
         Command::Events { action } => match action {
-            EventsAction::Tail { since } => commands::events::tail(&conn, since, json),
+            EventsAction::Tail { since } => commands::events::tail(&db, since, json),
         },
-        Command::Instrumental { action } => run_instrumental(&mut conn, staging_dir, action, json),
-        Command::Jobs { action } => run_jobs(&mut conn, staging_dir, action, json),
+        Command::Instrumental { action } => run_instrumental(&db, staging_dir, action, json),
+        Command::Jobs { action } => run_jobs(&db, staging_dir, action, json),
         #[cfg(feature = "mpris")]
         Command::Playback { .. } => {
             unreachable!("playback is dispatched before opening the database")
@@ -104,7 +105,7 @@ fn run_playback(action: cli::PlaybackAction, json: bool) -> Result<(), CliError>
 }
 
 fn run_instrumental(
-    conn: &mut rusqlite::Connection,
+    db: &reprise_core::db::Db,
     staging_dir: Option<&std::path::PathBuf>,
     action: InstrumentalAction,
     json: bool,
@@ -119,44 +120,44 @@ fn run_instrumental(
         } => {
             let mode = SaveMode::from_flags(save, stage);
             let waiting = commands::instrumental::WaitOptions::new(wait, wait_timeout);
-            commands::instrumental::create(conn, staging_dir, &track_ids, mode, waiting, json)
+            commands::instrumental::create(db, staging_dir, &track_ids, mode, waiting, json)
         }
         InstrumentalAction::Save { job_ids } => {
-            commands::instrumental::save(conn, staging_dir, &job_ids, json)
+            commands::instrumental::save(db, staging_dir, &job_ids, json)
         }
         InstrumentalAction::Discard { job_ids } => {
-            commands::instrumental::discard(conn, staging_dir, &job_ids, json)
+            commands::instrumental::discard(db, staging_dir, &job_ids, json)
         }
     }
 }
 
 fn run_jobs(
-    conn: &mut rusqlite::Connection,
+    db: &reprise_core::db::Db,
     staging_dir: Option<&std::path::PathBuf>,
     action: JobsAction,
     json: bool,
 ) -> Result<(), CliError> {
     match action {
         JobsAction::Status { batch } => {
-            commands::jobs::status(conn, staging_dir, batch.as_deref(), json)
+            commands::jobs::status(db, staging_dir, batch.as_deref(), json)
         }
         #[cfg(feature = "worker")]
-        JobsAction::Work(args) => commands::worker::run(conn, staging_dir, &args, json),
+        JobsAction::Work(args) => commands::worker::run(db, staging_dir, &args, json),
     }
 }
 
 fn run_playlist(
-    conn: &mut rusqlite::Connection,
+    db: &reprise_core::db::Db,
     action: PlaylistAction,
     json: bool,
 ) -> Result<(), CliError> {
     match action {
-        PlaylistAction::List => commands::playlist::list(conn, json),
-        PlaylistAction::Show { id } => commands::playlist::show(conn, id, json),
+        PlaylistAction::List => commands::playlist::list(db, json),
+        PlaylistAction::Show { id } => commands::playlist::show(db, id, json),
         PlaylistAction::Create { name, tracks } => {
-            commands::playlist::create(conn, &name, &tracks, json)
+            commands::playlist::create(db, &name, &tracks, json)
         }
-        PlaylistAction::Rename { id, name } => commands::playlist::rename(conn, id, &name, json),
-        PlaylistAction::Delete { id, yes } => commands::playlist::delete(conn, id, yes, json),
+        PlaylistAction::Rename { id, name } => commands::playlist::rename(db, id, &name, json),
+        PlaylistAction::Delete { id, yes } => commands::playlist::delete(db, id, yes, json),
     }
 }

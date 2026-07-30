@@ -33,12 +33,11 @@ mpris = ["dep:zbus"]
 
 [dependencies]
 # Default build stays core-only plus the CLI's own presentation deps (clap +
-# serde_json), enforced by package I via `cargo tree`. `rusqlite` is the same
-# direct engine-connection dependency the GNOME frontend already takes: core
-# hands out `&rusqlite::Connection`-based facades, so any frontend that opens
-# the database and inspects busy/lock error codes must name those types. It is
-# neither a workspace crate nor one of the banned gtk/glib/gstreamer/zbus
-# families, so the dependency rule holds.
+# serde_json), enforced by package I via `cargo tree`. `rusqlite` remains a
+# direct dependency because the adapter has a few intentionally local SQL test
+# seams and inspects busy/lock error codes. It is neither a workspace crate nor
+# one of the banned gtk/glib/gstreamer/zbus families, so the dependency rule
+# holds.
 reprise-core = { path = "../reprise-core" }
 clap = { version = "4", features = ["derive"] }
 serde_json = "1.0"

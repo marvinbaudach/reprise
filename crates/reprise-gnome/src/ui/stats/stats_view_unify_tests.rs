@@ -4,8 +4,7 @@ use super::*;
 #[ignore = "requires a display; run via xvfb-run"]
 fn stats_unify_wiring_resolves_artist_and_genre_group_ids() {
     gtk4::init().unwrap();
-    let conn = Rc::new(RefCell::new(reprise_core::db::open(None).unwrap()));
-    reprise_core::db::migrate(&conn.borrow()).unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
     let loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
     let view = StatsView::new(loader);
     for (id, artist, genre) in [
@@ -14,7 +13,7 @@ fn stats_unify_wiring_resolves_artist_and_genre_group_ids() {
         (3, "Artist A", "Deathcore"),
         (4, "Artist B", "deathcore "),
     ] {
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute(
                 "INSERT INTO tracks \
                  (id, path, title, artist, album_artist, genre, duration_ms, added_at) \

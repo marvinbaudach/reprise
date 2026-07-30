@@ -180,7 +180,7 @@ fn after_value_is_valid(change: &GuardedTagChange) -> bool {
 }
 
 pub(crate) fn commit_guarded_tag_changes(
-    conn: &mut Connection,
+    conn: &Connection,
     id: i64,
     path: &Path,
     changes: &[GuardedTagChange],

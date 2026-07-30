@@ -7,7 +7,7 @@ impl PodcastsView {
     pub(super) fn install_actions(self: &Rc<Self>) {
         let group = gio::SimpleActionGroup::new();
         self.add_target_action(&group, podcasts_context_menu::ACTION_PLAY, |view, id| {
-            if let Ok(Some(row)) = podcasts::store::episode(&view.conn.borrow(), id) {
+            if let Ok(Some(row)) = podcasts::store::episode(&view.conn, id) {
                 (view.callbacks.on_episode_activated)(row);
             }
         });
@@ -15,7 +15,7 @@ impl PodcastsView {
             &group,
             podcasts_context_menu::ACTION_COPY_URL,
             |view, id| {
-                if let Ok(Some(row)) = podcasts::store::episode(&view.conn.borrow(), id) {
+                if let Ok(Some(row)) = podcasts::store::episode(&view.conn, id) {
                     view.root.clipboard().set_text(&row.audio_url);
                 }
             },
@@ -24,15 +24,11 @@ impl PodcastsView {
             &group,
             podcasts_context_menu::ACTION_TOGGLE_PLAYED,
             |view, id| {
-                if let Ok(Some(row)) = podcasts::store::episode(&view.conn.borrow(), id) {
+                if let Ok(Some(row)) = podcasts::store::episode(&view.conn, id) {
                     let result = if row.played_at.is_some() {
-                        podcasts::store::mark_unplayed(&view.conn.borrow(), id)
+                        podcasts::store::mark_unplayed(&view.conn, id)
                     } else {
-                        podcasts::store::mark_played(
-                            &view.conn.borrow(),
-                            id,
-                            chrono::Utc::now().timestamp(),
-                        )
+                        podcasts::store::mark_played(&view.conn, id, chrono::Utc::now().timestamp())
                     };
                     if let Err(error) = result {
                         tracing::warn!(%error, "could not update podcast episode status");

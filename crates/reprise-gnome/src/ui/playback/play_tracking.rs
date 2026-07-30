@@ -82,8 +82,8 @@ impl PlayerController {
             return;
         }
         let result = {
-            let conn = self.conn.borrow();
-            stats::record_play(&conn, track_id, now_unix())
+            let conn = &self.conn;
+            stats::record_play(conn, track_id, now_unix())
         };
         match result {
             Ok(()) => {
@@ -125,9 +125,9 @@ impl PlayerController {
             return;
         };
         let result = {
-            let conn = self.conn.borrow();
+            let conn = &self.conn;
             stats_screen::record_listen_event(
-                &conn,
+                conn,
                 track_id,
                 now_unix(),
                 max_position_ms,
@@ -157,7 +157,7 @@ impl PlayerController {
         if !runtime.is_active() {
             return;
         }
-        let queued = scrobbling::enqueue_for(&self.conn.borrow(), provider, listen);
+        let queued = scrobbling::enqueue_for(&self.conn, provider, listen);
         match queued {
             Ok(queue_id) => {
                 tracing::debug!(queue_id, service, "scrobble queued");

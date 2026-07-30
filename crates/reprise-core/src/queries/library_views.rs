@@ -1,5 +1,6 @@
 //! Read-only projections and detail queries for the visual library views.
 
+use crate::db::Db;
 use crate::models::Track;
 use rusqlite::types::Value;
 use rusqlite::Connection;
@@ -38,7 +39,8 @@ pub struct ArtistSummary {
 /// Returns one row per case-insensitive `(album, effective album artist)`
 /// pair. Blank albums and missing tracks are excluded; the lowest track id
 /// supplies stable display spelling and the representative cover path.
-pub fn query_albums(conn: &Connection) -> Result<Vec<AlbumSummary>, rusqlite::Error> {
+pub fn query_albums(db: &Db) -> Result<Vec<AlbumSummary>, rusqlite::Error> {
+    let conn = db.conn();
     let sql = format!(
         "WITH grouped AS ( \
            SELECT LOWER(TRIM(album)) AS album_key, \
@@ -81,7 +83,8 @@ pub fn query_albums(conn: &Connection) -> Result<Vec<AlbumSummary>, rusqlite::Er
 /// One row per case-insensitive effective album artist. Compilation and
 /// featured tracks collapse under their album artist rather than exploding
 /// the list. Blank artists and missing tracks are excluded.
-pub fn query_artists(conn: &Connection) -> Result<Vec<ArtistSummary>, rusqlite::Error> {
+pub fn query_artists(db: &Db) -> Result<Vec<ArtistSummary>, rusqlite::Error> {
+    let conn = db.conn();
     let sql = format!(
         "WITH grouped AS ( \
            SELECT LOWER({EFFECTIVE_ALBUM_ARTIST}) AS artist_key, \
@@ -118,7 +121,8 @@ pub fn query_artists(conn: &Connection) -> Result<Vec<ArtistSummary>, rusqlite::
 /// [`query_albums`] without materializing every [`AlbumSummary`]. Same
 /// `PRESENT`/blank-album filter and same case-insensitive grouping keys, so the
 /// two always agree.
-pub fn query_album_count(conn: &Connection) -> Result<i64, rusqlite::Error> {
+pub fn query_album_count(db: &Db) -> Result<i64, rusqlite::Error> {
+    let conn = db.conn();
     conn.query_row(
         &format!(
             "SELECT COUNT(*) FROM ( \
@@ -135,7 +139,8 @@ pub fn query_album_count(conn: &Connection) -> Result<i64, rusqlite::Error> {
 /// Counts the distinct effective album artists — the length of [`query_artists`]
 /// without materializing every [`ArtistSummary`]. Same `PRESENT`/blank-artist
 /// filter and case-insensitive key as `query_artists`, so the two always agree.
-pub fn query_artist_count(conn: &Connection) -> Result<i64, rusqlite::Error> {
+pub fn query_artist_count(db: &Db) -> Result<i64, rusqlite::Error> {
+    let conn = db.conn();
     conn.query_row(
         &format!(
             "SELECT COUNT(DISTINCT LOWER({EFFECTIVE_ALBUM_ARTIST})) FROM tracks \
@@ -148,7 +153,7 @@ pub fn query_artist_count(conn: &Connection) -> Result<i64, rusqlite::Error> {
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn query_album_track_window(
-    conn: &mut Connection,
+    conn: &Connection,
     album: &str,
     album_artist: &str,
     sort_field: &str,
@@ -219,13 +224,14 @@ pub(super) fn query_album_track_count(
 }
 
 pub fn query_album_track_ids(
-    conn: &Connection,
+    db: &Db,
     album: &str,
     album_artist: &str,
     sort_field: &str,
     sort_dir: &str,
     filter: &str,
 ) -> Result<Vec<i64>, rusqlite::Error> {
+    let conn = db.conn();
     query_album_track_ids_browsed(
         conn,
         album,
@@ -277,10 +283,11 @@ pub(super) fn query_album_track_ids_browsed(
 /// snapshot. Legacy rows without a disc number behave as disc 1; unknown
 /// track numbers sort after numbered tracks, then path/id make ties stable.
 pub fn query_album_canonical_track_ids(
-    conn: &Connection,
+    db: &Db,
     album: &str,
     album_artist: &str,
 ) -> Result<Vec<i64>, rusqlite::Error> {
+    let conn = db.conn();
     let sql = format!(
         "SELECT id FROM tracks WHERE {PRESENT} \
          AND TRIM(album) = ?1 COLLATE NOCASE \
@@ -308,9 +315,10 @@ pub struct ArtistAlbum {
 
 /// Albums by one effective album artist, newest release year first.
 pub fn query_artist_detail_albums(
-    conn: &Connection,
+    db: &Db,
     artist: &str,
 ) -> Result<Vec<ArtistAlbum>, rusqlite::Error> {
+    let conn = db.conn();
     let sql = format!(
         "WITH grouped AS ( \
            SELECT LOWER(TRIM(album)) AS album_key, MIN(id) AS representative_id, \
@@ -338,7 +346,7 @@ pub fn query_artist_detail_albums(
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn query_artist_track_window(
-    conn: &mut Connection,
+    conn: &Connection,
     artist: &str,
     sort_field: &str,
     sort_dir: &str,
@@ -434,9 +442,9 @@ mod tests {
     use crate::queries::{query_track_count, query_track_ids, query_track_window};
     use crate::view_source::ViewSource;
 
-    fn seeded_library() -> rusqlite::Connection {
-        let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
+    fn seeded_library() -> crate::db::Db {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        let conn = db.conn();
         conn.execute_batch(
             "INSERT INTO tracks
                (id,path,title,artist,album,album_artist,added_at,missing_since) VALUES
@@ -449,34 +457,34 @@ mod tests {
              (7,'/music/missing.flac','Missing','Solo','Lost','',0,999999999);",
         )
         .unwrap();
-        conn
+        db
     }
 
     #[test]
     fn artist_and_album_counts_match_the_grouped_summaries() {
-        let conn = seeded_library();
+        let db = seeded_library();
         // The counts are exactly the lengths of the grouped summaries — the
         // point of the facade is to get that number without materializing them.
         assert_eq!(
-            query_artist_count(&conn).unwrap(),
-            query_artists(&conn).unwrap().len() as i64
+            query_artist_count(&db).unwrap(),
+            query_artists(&db).unwrap().len() as i64
         );
         assert_eq!(
-            query_album_count(&conn).unwrap(),
-            query_albums(&conn).unwrap().len() as i64
+            query_album_count(&db).unwrap(),
+            query_albums(&db).unwrap().len() as i64
         );
         // Nobody, Other Artist, Solo, Various Artists; the missing "Lost" and
         // blank-album rows are excluded exactly as in the summaries.
-        assert_eq!(query_artist_count(&conn).unwrap(), 4);
-        assert_eq!(query_album_count(&conn).unwrap(), 3);
+        assert_eq!(query_artist_count(&db).unwrap(), 4);
+        assert_eq!(query_album_count(&db).unwrap(), 3);
     }
 
     #[test]
     fn albums_group_by_trimmed_case_insensitive_title_and_effective_artist() {
-        let conn = seeded_library();
+        let db = seeded_library();
 
         assert_eq!(
-            query_albums(&conn).unwrap(),
+            query_albums(&db).unwrap(),
             vec![
                 AlbumSummary {
                     album: "Compilation".into(),
@@ -514,10 +522,11 @@ mod tests {
 
     #[test]
     fn albums_query_is_read_only_and_excludes_blank_or_missing_rows() {
-        let conn = seeded_library();
+        let db = seeded_library();
+        let conn = db.conn();
         let changes_before = conn.total_changes();
 
-        let albums = query_albums(&conn).unwrap();
+        let albums = query_albums(&db).unwrap();
 
         assert_eq!(conn.total_changes(), changes_before);
         assert!(albums.iter().all(|album| !album.album.is_empty()));
@@ -526,15 +535,15 @@ mod tests {
 
     #[test]
     fn album_source_count_window_and_ids_select_the_exact_album_artist_group() {
-        let mut conn = seeded_library();
+        let db = seeded_library();
         let source = ViewSource::Album {
             album: "FIRST".into(),
             album_artist: "solo".into(),
         };
 
-        assert_eq!(query_track_count(&conn, &source, "", &[]).unwrap(), 2);
+        assert_eq!(query_track_count(&db, &source, "", &[]).unwrap(), 2);
         assert_eq!(
-            query_track_window(&mut conn, &source, "title", "desc", "", 0, 20, &[])
+            query_track_window(&db, &source, "title", "desc", "", 0, 20, &[])
                 .unwrap()
                 .into_iter()
                 .map(|track| track.title)
@@ -542,15 +551,15 @@ mod tests {
             ["B", "A"]
         );
         assert_eq!(
-            query_track_ids(&conn, &source, "title", "asc", "A", &[]).unwrap(),
+            query_track_ids(&db, &source, "title", "asc", "A", &[]).unwrap(),
             [1]
         );
     }
 
     #[test]
     fn canonical_album_ids_order_disc_then_track_with_stable_null_fallbacks() {
-        let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
+        let db = crate::db::Db::open_in_memory().unwrap();
+        let conn = db.conn();
         conn.execute_batch(
             "INSERT INTO tracks
                (id,path,title,artist,album,album_artist,disc_no,track_no,added_at,missing_since) VALUES
@@ -565,15 +574,15 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            query_album_canonical_track_ids(&conn, "album", "artist").unwrap(),
+            query_album_canonical_track_ids(&db, "album", "artist").unwrap(),
             [30, 60, 20, 50, 40, 10]
         );
     }
 
     #[test]
     fn artists_group_by_effective_album_artist_with_aggregates() {
-        let conn = seeded_library();
-        let artists = query_artists(&conn).unwrap();
+        let db = seeded_library();
+        let artists = query_artists(&db).unwrap();
         let names: Vec<&str> = artists.iter().map(|a| a.artist.as_str()).collect();
         assert_eq!(
             names,
@@ -594,8 +603,8 @@ mod tests {
 
     #[test]
     fn artists_sum_play_count_and_max_last_played_at_across_group_rows() {
-        let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
+        let db = crate::db::Db::open_in_memory().unwrap();
+        let conn = db.conn();
         conn.execute_batch(
             "INSERT INTO tracks
                (id,path,title,artist,album,album_artist,added_at,play_count,last_played_at) VALUES
@@ -604,7 +613,7 @@ mod tests {
         )
         .unwrap();
 
-        let artists = query_artists(&conn).unwrap();
+        let artists = query_artists(&db).unwrap();
         let solo = artists.iter().find(|a| a.artist == "Solo").unwrap();
 
         // A per-row read (e.g. only the representative row's play_count) or a
@@ -616,7 +625,8 @@ mod tests {
 
     #[test]
     fn artists_query_is_read_only_and_excludes_blank_or_missing_rows() {
-        let conn = seeded_library();
+        let db = seeded_library();
+        let conn = db.conn();
         conn.execute(
             "INSERT INTO tracks (path,title,artist,album,added_at) \
              VALUES ('/music/no-artist.flac','No Artist',' ','First',0)",
@@ -625,7 +635,7 @@ mod tests {
         .unwrap();
         let changes_before = conn.total_changes();
 
-        let artists = query_artists(&conn).unwrap();
+        let artists = query_artists(&db).unwrap();
 
         assert_eq!(conn.total_changes(), changes_before);
         assert!(artists.iter().all(|artist| !artist.artist.is_empty()));
@@ -641,12 +651,12 @@ mod tests {
 
     #[test]
     fn artist_source_count_window_and_ids_select_the_exact_artist_group() {
-        let mut conn = seeded_library();
+        let db = seeded_library();
         let source = ViewSource::Artist(" SOLO ".into());
 
-        assert_eq!(query_track_count(&conn, &source, "", &[]).unwrap(), 2);
+        assert_eq!(query_track_count(&db, &source, "", &[]).unwrap(), 2);
         assert_eq!(
-            query_track_window(&mut conn, &source, "title", "desc", "", 0, 20, &[])
+            query_track_window(&db, &source, "title", "desc", "", 0, 20, &[])
                 .unwrap()
                 .into_iter()
                 .map(|track| track.title)
@@ -654,15 +664,15 @@ mod tests {
             ["B", "A"]
         );
         assert_eq!(
-            query_track_ids(&conn, &source, "title", "asc", "A", &[]).unwrap(),
+            query_track_ids(&db, &source, "title", "asc", "A", &[]).unwrap(),
             [1]
         );
     }
 
     #[test]
     fn albums_include_year_duration_added_and_play_count_aggregates() {
-        let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
+        let db = crate::db::Db::open_in_memory().unwrap();
+        let conn = db.conn();
         conn.execute_batch(
             "INSERT INTO tracks
                (id,path,title,artist,album,album_artist,year,duration_ms,added_at,play_count) VALUES
@@ -672,7 +682,7 @@ mod tests {
         )
         .unwrap();
 
-        let albums = super::query_albums(&conn).unwrap();
+        let albums = super::query_albums(&db).unwrap();
         assert_eq!(albums.len(), 1);
         let album = &albums[0];
         assert_eq!(album.year, Some(2020));
@@ -683,24 +693,24 @@ mod tests {
 
     #[test]
     fn artist_source_matches_by_effective_album_artist() {
-        let conn = seeded_library();
+        let db = seeded_library();
         let solo = ViewSource::Artist(" SOLO ".into());
-        assert_eq!(query_track_count(&conn, &solo, "", &[]).unwrap(), 2);
+        assert_eq!(query_track_count(&db, &solo, "", &[]).unwrap(), 2);
         let va = ViewSource::Artist("Various Artists".into());
-        assert_eq!(query_track_count(&conn, &va, "", &[]).unwrap(), 2);
+        assert_eq!(query_track_count(&db, &va, "", &[]).unwrap(), 2);
     }
 
     #[test]
     fn artist_albums_are_newest_first() {
-        let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
+        let db = crate::db::Db::open_in_memory().unwrap();
+        let conn = db.conn();
         conn.execute_batch(
             "INSERT INTO tracks (path,title,artist,album,album_artist,year,added_at) VALUES
              ('/a','A','Solo','Old','Solo',2010,0),
              ('/b','B','Solo','New','Solo',2024,0);",
         )
         .unwrap();
-        let albums = query_artist_detail_albums(&conn, "Solo").unwrap();
+        let albums = query_artist_detail_albums(&db, "Solo").unwrap();
         assert_eq!(
             albums.iter().map(|a| a.album.as_str()).collect::<Vec<_>>(),
             vec!["New", "Old"]

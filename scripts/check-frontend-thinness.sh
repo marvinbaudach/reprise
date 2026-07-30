@@ -29,21 +29,13 @@ echo "== Frontend thinness =="
 # Every budget below is a ceiling AND a floor: it must equal the measured
 # count. Lower it in the same commit that removes a use. Never raise one
 # without a reason recorded in the commit message.
-# NET-3c (podcast-channel-redesign, F2): +2 rusqlite, irreducible thin
-# wiring shaped exactly like an existing budgeted sibling. podcasts_worker.rs
-# gained `run_queued`'s `conn: &rusqlite::Connection` (+2 matches on the one
-# line, same as `download_episode` right above it already contributes) to
-# reach `reprise_core::podcasts::queued_downloads::run_queued_downloads` —
-# the selection/replay logic itself already lives in reprise-core; this is
-# only the connection handle the worker needs to call in.
-# NET-3 point 4 (podcast-channel-redesign, F4): +1 more rusqlite, same
-# shape again. add_dialog.rs's `subscribe_offline` gained a
-# `conn: &Rc<RefCell<Connection>>` (matching the existing `subscribe`
-# wrapper right below it) to reach
-# `reprise_core::podcasts::offline_add::offline_subscribe` — the
-# already-subscribed check and the one DB write both live in reprise-core.
+# The Db-handle migration removed shared `Rc<RefCell<Connection>>` ownership
+# from GTK, moved public Core calls to `&Db`, and sealed `Db::conn()` inside
+# Core. The remaining rusqlite count includes error types and domain names
+# containing `Connection`; direct access to the owned connection is a
+# separate zero-tolerance ban below.
 declare -A budget=(
-  [rusqlite]=538
+  [rusqlite]=112
   [filesystem]=17
   [threads]=14
   [workers]=7
@@ -51,7 +43,7 @@ declare -A budget=(
 
 # Prints the frontend's *production* lines as `path:line:code`.
 #
-# Two exclusions, both deliberate:
+# Three exclusions, all deliberate:
 #
 #   - Comment-only lines. Without this, `ui/mod.rs`'s module documentation —
 #     which explains that the frontend must not touch GStreamer or zbus —
@@ -61,6 +53,9 @@ declare -A budget=(
 #     counting it would punish writing tests. Skipping the block rather than
 #     truncating the file matters: production code that happens to sit after
 #     the test module stays measured.
+#   - `test_db.rs`, whose entire module is declared behind `#[cfg(test)]` in
+#     `main.rs`. This scanner reads files independently and cannot infer that
+#     crate-level module gate from the helper file itself.
 frontend_code() {
   local file
   while IFS= read -r file; do
@@ -70,7 +65,12 @@ frontend_code() {
       skipping                { next }
       { print path ":" FNR ":" $0 }
     ' "$file"
-  done < <(find "$frontend" -name '*.rs' -type f ! -name '*_tests.rs' | sort) \
+  done < <(
+    find "$frontend" -name '*.rs' -type f \
+      ! -name '*_tests.rs' \
+      ! -name 'test_db.rs' \
+      | sort
+  ) \
     | rg --invert-match ':[0-9]+:[[:space:]]*(//|/\*|\*)'
 }
 
@@ -115,6 +115,7 @@ check_ban() {
 }
 
 check_budget rusqlite 'rusqlite::|use rusqlite|params!|\.prepare\(|\.query_row\(|Connection'
+check_ban db_handle_access '\.conn\('
 check_budget filesystem 'std::fs::|use std::fs|File::open|File::create|create_dir|remove_file'
 check_budget threads 'thread::spawn|thread::Builder'
 check_ban gstreamer 'gstreamer|\bgst::|use gst\b'

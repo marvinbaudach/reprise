@@ -201,14 +201,22 @@ pub enum SyncTargetError {
 /// missing ones with their defaults. Returns them in
 /// [`SyncTargetKind::ALL`] order.
 pub fn load_or_create_targets(
+    db: &crate::db::Db,
+    serial: &str,
+) -> Result<[SyncTarget; 3], SyncTargetError> {
+    let conn = db.conn();
+    load_or_create_targets_in(conn, serial)
+}
+
+fn load_or_create_targets_in(
     conn: &Connection,
     serial: &str,
 ) -> Result<[SyncTarget; 3], SyncTargetError> {
     let mut targets = SyncTargetKind::ALL.map(SyncTarget::default_for);
     for target in &mut targets {
-        match load_target(conn, serial, target.kind)? {
+        match load_target_in(conn, serial, target.kind)? {
             Some(loaded) => *target = loaded,
-            None => save_target(conn, serial, target)?,
+            None => save_target_in(conn, serial, target)?,
         }
     }
     Ok(targets)
@@ -216,6 +224,15 @@ pub fn load_or_create_targets(
 
 /// Loads one target, if it has been persisted for this device yet.
 pub fn load_target(
+    db: &crate::db::Db,
+    serial: &str,
+    kind: SyncTargetKind,
+) -> Result<Option<SyncTarget>, rusqlite::Error> {
+    let conn = db.conn();
+    load_target_in(conn, serial, kind)
+}
+
+fn load_target_in(
     conn: &Connection,
     serial: &str,
     kind: SyncTargetKind,
@@ -243,6 +260,15 @@ pub fn load_target(
 /// Persists one target, replacing whatever was previously stored for its
 /// `(device_serial, kind)` pair.
 pub fn save_target(
+    db: &crate::db::Db,
+    serial: &str,
+    target: &SyncTarget,
+) -> Result<(), SyncTargetError> {
+    let conn = db.conn();
+    save_target_in(conn, serial, target)
+}
+
+fn save_target_in(
     conn: &Connection,
     serial: &str,
     target: &SyncTarget,
@@ -278,8 +304,8 @@ fn sqlite_i64(value: u64) -> Result<i64, SyncTargetError> {
 mod tests {
     use super::*;
 
-    fn migrated() -> Connection {
-        crate::db::open_migrated(None).unwrap()
+    fn migrated() -> crate::db::Db {
+        crate::db::Db::open_in_memory().unwrap()
     }
 
     #[test]

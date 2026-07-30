@@ -3,6 +3,8 @@ use std::path::PathBuf;
 
 use rusqlite::{Connection, OptionalExtension};
 
+use crate::db::Db;
+
 use super::super::tag_mutation::{
     classify_write_error, read_tag_field_values, GuardedTagField, WriteErrorKind,
 };
@@ -200,6 +202,13 @@ pub(crate) fn recover_incomplete_tag_write_fields(
 }
 
 pub fn recover_incomplete_tag_write_jobs(
+    db: &Db,
+) -> Result<Vec<TagWriteRecovery>, rusqlite::Error> {
+    let conn = db.conn();
+    recover_incomplete_tag_write_jobs_in(conn)
+}
+
+pub(crate) fn recover_incomplete_tag_write_jobs_in(
     conn: &Connection,
 ) -> Result<Vec<TagWriteRecovery>, rusqlite::Error> {
     let fields = recover_incomplete_tag_write_fields(conn)?;

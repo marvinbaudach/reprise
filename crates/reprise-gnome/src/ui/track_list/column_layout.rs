@@ -8,6 +8,7 @@ use std::time::Duration;
 use gtk4::gio::prelude::*;
 use gtk4::glib;
 
+use reprise_core::db::Db;
 use reprise_core::library::settings::{self, COLUMN_WIDTHS_KEY};
 
 use crate::ui::cover_loader::CoverLoader;
@@ -236,7 +237,8 @@ pub fn parse_layout(value: &str) -> Option<ColumnLayout> {
     Some(normalize(order, visible))
 }
 
-pub fn load_layout(conn: &rusqlite::Connection) -> ColumnLayout {
+pub fn load_layout(conn: &Db) -> ColumnLayout {
+    let conn = &conn;
     let stored = reprise_core::library::settings::get_setting(
         conn,
         reprise_core::library::settings::COLUMN_LAYOUT_KEY,
@@ -429,10 +431,7 @@ impl ColumnRegistry {
 const WIDTH_SAVE_DEBOUNCE_MS: u64 = 500;
 
 /// Overrides policy default widths with any the user previously stored.
-fn restore_stored_widths(
-    columns: &HashMap<ColumnId, gtk4::ColumnViewColumn>,
-    conn: &rusqlite::Connection,
-) {
+fn restore_stored_widths(columns: &HashMap<ColumnId, gtk4::ColumnViewColumn>, conn: &Db) {
     let stored = settings::get_setting(conn, COLUMN_WIDTHS_KEY)
         .map_err(|error| tracing::warn!(%error, "could not load stored column widths"))
         .ok()
@@ -465,8 +464,7 @@ fn save_widths_now(shared: &Shared, columns: &[(ColumnId, gtk4::ColumnViewColumn
         .map(|(id, column)| (*id, column.fixed_width()))
         .collect();
     let serialized = crate::ui::column_widths::serialize_widths(&widths);
-    if let Err(error) = settings::set_setting(&shared.conn.borrow(), COLUMN_WIDTHS_KEY, &serialized)
-    {
+    if let Err(error) = settings::set_setting(&shared.conn, COLUMN_WIDTHS_KEY, &serialized) {
         tracing::warn!(%error, "could not persist column widths");
     }
 }
@@ -573,7 +571,7 @@ fn wire_order_persistence(
             .collect();
         let serialized = serialize_layout(&normalize(order, visible));
         let saved = settings::set_setting(
-            &shared.conn.borrow(),
+            &shared.conn,
             reprise_core::library::settings::COLUMN_LAYOUT_KEY,
             &serialized,
         );
@@ -681,7 +679,7 @@ pub(super) fn build_columns(
     for (id, column) in &columns {
         apply_column_width_policy(column, *id);
     }
-    restore_stored_widths(&columns, &shared.conn.borrow());
+    restore_stored_widths(&columns, &shared.conn);
     let syncing_width = Rc::new(Cell::new(false));
     wire_width_persistence(shared, &columns, &syncing_width);
     // GTK's native header drag-reorder is broken in 4.22 (the title widget's
@@ -700,7 +698,7 @@ pub(super) fn build_columns(
         syncing_order,
         syncing_width,
     };
-    let layout = load_layout(&shared.conn.borrow());
+    let layout = load_layout(&shared.conn);
     registry.apply(&layout);
     BuiltColumns {
         registry,

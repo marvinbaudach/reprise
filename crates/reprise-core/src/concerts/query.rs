@@ -41,7 +41,8 @@ pub struct CachedConcertEvent {
 
 /// Reads every durable concert-event field without applying the current UI
 /// date, radius, country, horizon, or similar-artist filters.
-pub fn query_cached_events(conn: &Connection) -> Result<Vec<CachedConcertEvent>, rusqlite::Error> {
+pub fn query_cached_events(db: &crate::db::Db) -> Result<Vec<CachedConcertEvent>, rusqlite::Error> {
+    let conn = db.conn();
     let mut statement = conn.prepare(
         "SELECT id, artist_key, artist_name, starts_at, date_key, venue, city,
                 region, country, latitude, longitude, ticket_url, ticket_source,
@@ -80,11 +81,12 @@ pub fn query_cached_events(conn: &Connection) -> Result<Vec<CachedConcertEvent>,
 }
 
 pub fn query_events(
-    conn: &Connection,
+    db: &crate::db::Db,
     filter: &ConcertFilter,
     location: Option<&AppLocation>,
     today: NaiveDate,
 ) -> Result<Vec<ConcertRow>, rusqlite::Error> {
+    let conn = db.conn();
     Ok(filtered_events(conn, filter, location, today)?
         .into_iter()
         .map(|event| event.row)
@@ -92,21 +94,23 @@ pub fn query_events(
 }
 
 pub fn count_upcoming(
-    conn: &Connection,
+    db: &crate::db::Db,
     filter: &ConcertFilter,
     location: Option<&AppLocation>,
     today: NaiveDate,
 ) -> Result<i64, rusqlite::Error> {
+    let conn = db.conn();
     Ok(filtered_events(conn, filter, location, today)?.len() as i64)
 }
 
 pub fn query_unseen(
-    conn: &Connection,
+    db: &crate::db::Db,
     filter: &ConcertFilter,
     location: Option<&AppLocation>,
     today: NaiveDate,
     limit: usize,
 ) -> Result<Vec<ConcertRow>, rusqlite::Error> {
+    let conn = db.conn();
     Ok(filtered_events(conn, filter, location, today)?
         .into_iter()
         .filter(|event| event.seen_at.is_none())
@@ -116,11 +120,12 @@ pub fn query_unseen(
 }
 
 pub fn count_unseen(
-    conn: &Connection,
+    db: &crate::db::Db,
     filter: &ConcertFilter,
     location: Option<&AppLocation>,
     today: NaiveDate,
 ) -> Result<i64, rusqlite::Error> {
+    let conn = db.conn();
     Ok(filtered_events(conn, filter, location, today)?
         .into_iter()
         .filter(|event| event.seen_at.is_none())
@@ -128,12 +133,13 @@ pub fn count_unseen(
 }
 
 pub fn mark_scope_seen(
-    conn: &Connection,
+    db: &crate::db::Db,
     filter: &ConcertFilter,
     location: Option<&AppLocation>,
     today: NaiveDate,
     now: i64,
 ) -> Result<usize, rusqlite::Error> {
+    let conn = db.conn();
     let ids = filtered_events(conn, filter, location, today)?
         .into_iter()
         .filter(|event| event.seen_at.is_none())
@@ -150,7 +156,8 @@ pub fn mark_scope_seen(
     Ok(ids.len())
 }
 
-pub fn latest_fetch_at(conn: &Connection) -> Result<Option<i64>, rusqlite::Error> {
+pub fn latest_fetch_at(db: &crate::db::Db) -> Result<Option<i64>, rusqlite::Error> {
+    let conn = db.conn();
     super::refresh::latest_attempt(conn)
 }
 
@@ -251,7 +258,8 @@ fn horizon_end(today: NaiveDate, horizon: DateHorizon) -> Option<String> {
 /// The filter bar offers the "include similar" switch only when there is
 /// something for it to reveal; without this the switch appears and does
 /// nothing.
-pub fn has_similar_events(conn: &Connection) -> rusqlite::Result<bool> {
+pub fn has_similar_events(db: &crate::db::Db) -> rusqlite::Result<bool> {
+    let conn = db.conn();
     conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM concert_events WHERE is_similar = 1)",
         [],
@@ -263,7 +271,8 @@ pub fn has_similar_events(conn: &Connection) -> rusqlite::Result<bool> {
 ///
 /// Blank and whitespace-only values are dropped rather than offered as an
 /// unnamed choice.
-pub fn known_countries(conn: &Connection) -> rusqlite::Result<Vec<String>> {
+pub fn known_countries(db: &crate::db::Db) -> rusqlite::Result<Vec<String>> {
+    let conn = db.conn();
     let mut statement = conn.prepare(
         "SELECT DISTINCT trim(country) FROM concert_events
          WHERE country IS NOT NULL AND trim(country) <> ''

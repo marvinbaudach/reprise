@@ -123,10 +123,11 @@ pub(crate) fn in_txn_immediate<T>(
 }
 
 pub fn read_since(
-    conn: &Connection,
+    db: &crate::db::Db,
     last_seen_id: i64,
     excluded_writer: Option<WriterToken>,
 ) -> Result<Vec<Change>, rusqlite::Error> {
+    let conn = db.conn();
     let sql = if excluded_writer.is_some() {
         "SELECT id, entity, entity_id, op, writer, at FROM change_log \
          WHERE id > ?1 AND writer != ?2 ORDER BY id"
@@ -158,7 +159,8 @@ pub fn read_since(
 /// `MAX(id)` read — the cheap way for a frontend to seed its live-refresh cursor
 /// at startup, instead of paging the whole log through `read_since(0, ..)` (up
 /// to [`MAX_RETAINED_CHANGES`] rows) only to keep the last row's id.
-pub fn latest_id(conn: &Connection) -> Result<i64, rusqlite::Error> {
+pub fn latest_id(db: &crate::db::Db) -> Result<i64, rusqlite::Error> {
+    let conn = db.conn();
     Ok(conn
         .query_row("SELECT MAX(id) FROM change_log", [], |row| {
             row.get::<_, Option<i64>>(0)
@@ -166,7 +168,8 @@ pub fn latest_id(conn: &Connection) -> Result<i64, rusqlite::Error> {
         .unwrap_or(0))
 }
 
-pub fn prune(conn: &Connection) -> Result<usize, rusqlite::Error> {
+pub fn prune(db: &crate::db::Db) -> Result<usize, rusqlite::Error> {
+    let conn = db.conn();
     prune_at(conn, unix_timestamp())
 }
 

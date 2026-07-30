@@ -1,9 +1,8 @@
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
 use libadwaita as adw;
-use rusqlite::Connection;
+use reprise_core::db::Db;
 
 pub(in crate::ui) fn apply_sidebar_visibility(
     split_view: &adw::OverlaySplitView,
@@ -111,7 +110,7 @@ pub(in crate::ui) fn wire_sidebar_toggle(
     sidebar_toggle: &gtk4::ToggleButton,
     split_view: &adw::OverlaySplitView,
     sidebar_page: &adw::NavigationPage,
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
 ) {
     sidebar_toggle.add_css_class(crate::ui::shortcuts::SIDEBAR_TOGGLE_CSS_CLASS);
     // Keep pointer use from moving focus away from the content surface:
@@ -123,9 +122,7 @@ pub(in crate::ui) fn wire_sidebar_toggle(
     let manually_hidden = Rc::new(std::cell::Cell::new(false));
     // Restore last session's manual collapse before the initial toggle sync,
     // so the button starts in the matching state.
-    if reprise_core::library::settings::get_sidebar_collapsed(&conn.borrow())
-        && sidebar_page.is_visible()
-    {
+    if reprise_core::library::settings::get_sidebar_collapsed(conn) && sidebar_page.is_visible() {
         hide_sidebar(split_view, &manually_hidden);
     }
     sync_sidebar_toggle(sidebar_toggle, split_view, sidebar_page, &updating);
@@ -145,9 +142,9 @@ pub(in crate::ui) fn wire_sidebar_toggle(
                 // Persist only real user toggles — never the responsive
                 // (width-driven) collapse, which does not go through here.
                 let saved = {
-                    let conn = conn.borrow();
+                    let conn = &conn;
                     reprise_core::library::settings::set_sidebar_collapsed(
-                        &conn,
+                        conn,
                         !button.is_active(),
                     )
                 };
@@ -200,10 +197,8 @@ pub(in crate::ui) fn wire_sidebar_toggle(
 mod tests {
     use super::*;
 
-    fn test_conn() -> Rc<RefCell<Connection>> {
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        Rc::new(RefCell::new(conn))
+    fn test_conn() -> Rc<Db> {
+        Rc::new(crate::test_db::open().unwrap())
     }
 
     #[test]

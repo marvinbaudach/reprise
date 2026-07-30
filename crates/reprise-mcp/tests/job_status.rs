@@ -20,9 +20,9 @@ const CAP_LIBRARY_READ: &str = "agent.capability.library:read";
 /// Enqueues one `queued` job for `source_id` straight through the core facade
 /// (no capability needed to *set up* status fixtures).
 fn enqueue_job(db: &Path, source_id: i64) -> i64 {
-    let conn = reprise_core::db::open_migrated(Some(db)).unwrap();
     let staging = reprise_core::ai_staging::StagingStore::new(db.parent().unwrap().join("staging"));
-    reprise_core::ai_jobs::enqueue_instrumental(&conn, &staging, source_id, "test@1", 1_000)
+    let handle = reprise_core::db::Db::open_migrated(Some(db)).unwrap();
+    reprise_core::ai_jobs::enqueue_instrumental(&handle, &staging, source_id, "test@1", 1_000)
         .unwrap()
         .job_id()
 }
@@ -135,12 +135,12 @@ fn reflects_a_running_job_progress() {
     let job_id = enqueue_job(&db, ids[0]);
     // Claim it and post partial progress via the facade — no MCP write needed.
     {
-        let conn = reprise_core::db::open_migrated(Some(&db)).unwrap();
-        let claimed = reprise_core::ai_jobs::claim_next(&conn, 7, 2_000, 300)
+        let handle = reprise_core::db::Db::open_migrated(Some(&db)).unwrap();
+        let claimed = reprise_core::ai_jobs::claim_next(&handle, 7, 2_000, 300)
             .unwrap()
             .unwrap();
         assert_eq!(claimed.id, job_id);
-        assert!(reprise_core::ai_jobs::set_progress(&conn, job_id, 7, 500).unwrap());
+        assert!(reprise_core::ai_jobs::set_progress(&handle, job_id, 7, 500).unwrap());
     }
     let mut client = McpClient::start(&db);
 

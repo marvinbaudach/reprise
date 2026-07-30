@@ -38,7 +38,7 @@ use gtk4::gio;
 use gtk4::gio::prelude::*;
 use gtk4::glib;
 use gtk4::glib::subclass::prelude::ObjectSubclassIsExt;
-use rusqlite::Connection;
+use reprise_core::db::Db;
 
 use reprise_core::models::Track;
 use reprise_core::queries::{self, BrowseFilter};
@@ -98,7 +98,7 @@ mod imp {
     /// and degrade from, never to panic on.
     #[derive(Default)]
     pub struct TrackListModel {
-        pub conn: RefCell<Option<Rc<RefCell<Connection>>>>,
+        pub conn: RefCell<Option<Rc<Db>>>,
         pub state: RefCell<ModelState>,
     }
 
@@ -199,7 +199,7 @@ impl TrackListModel {
     /// Builds an empty model (`n_items() == 0`) bound to `conn`. Call
     /// `set_query` to load the initial sort/filter — the model does not
     /// query anything until then.
-    pub fn new(conn: Rc<RefCell<Connection>>) -> Self {
+    pub fn new(conn: Rc<Db>) -> Self {
         let obj: Self = glib::Object::new();
         obj.imp().conn.replace(Some(conn));
         obj
@@ -320,33 +320,31 @@ impl TrackListModel {
         };
 
         let new_total = if exclude_ai {
-            let conn_ref = conn.borrow();
-            queries::query_track_count_browsed_ai(
-                &conn_ref, source, filter, browse, queue_ids, true,
-            )
-            .map_or_else(
-                |error| {
-                    tracing::error!(%error, "failed to count non-AI tracks for query");
-                    0
-                },
-                |count| {
-                    let total = count.max(0) as u32;
-                    // The count is exact now, but the "play all" queue this view
-                    // feeds still caps at QUEUE_LIMIT — warn per convention when
-                    // the view is that large, so the truncation is not silent.
-                    if queries::is_queue_capped(total as usize) {
-                        tracing::warn!(
-                            limit = queries::QUEUE_LIMIT,
-                            "AI-filtered view queue capped at {} tracks",
-                            queries::QUEUE_LIMIT
-                        );
-                    }
-                    total
-                },
-            )
+            let conn_ref = &conn;
+            queries::query_track_count_browsed_ai(conn_ref, source, filter, browse, queue_ids, true)
+                .map_or_else(
+                    |error| {
+                        tracing::error!(%error, "failed to count non-AI tracks for query");
+                        0
+                    },
+                    |count| {
+                        let total = count.max(0) as u32;
+                        // The count is exact now, but the "play all" queue this view
+                        // feeds still caps at QUEUE_LIMIT — warn per convention when
+                        // the view is that large, so the truncation is not silent.
+                        if queries::is_queue_capped(total as usize) {
+                            tracing::warn!(
+                                limit = queries::QUEUE_LIMIT,
+                                "AI-filtered view queue capped at {} tracks",
+                                queries::QUEUE_LIMIT
+                            );
+                        }
+                        total
+                    },
+                )
         } else {
-            let conn_ref = conn.borrow();
-            queries::query_track_count_browsed(&conn_ref, source, filter, browse, queue_ids)
+            let conn_ref = &conn;
+            queries::query_track_count_browsed(conn_ref, source, filter, browse, queue_ids)
                 .map_or_else(
                     |error| {
                         tracing::error!(%error, source = %source.label(), "failed to count tracks for query");
@@ -359,7 +357,7 @@ impl TrackListModel {
         // INST-10 / FIX-4: the AI badge (and so the `is_ai` column) is needed
         // only while the experimental switch is on. Cache that here so the hot
         // windowed query pays the correlated provenance subquery only then.
-        let project_ai = crate::ui::experimental::experimental_enabled(&conn.borrow());
+        let project_ai = crate::ui::experimental::experimental_enabled(&conn);
 
         {
             let mut state = self.imp().state.borrow_mut();
@@ -457,9 +455,9 @@ impl TrackListModel {
         };
 
         let rows = {
-            let mut conn = conn.borrow_mut();
+            let conn = &conn;
             queries::query_track_window_browsed_ai(
-                &mut conn,
+                conn,
                 &source,
                 &sort_field,
                 &sort_dir,

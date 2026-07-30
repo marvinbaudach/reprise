@@ -28,12 +28,12 @@ use clap::Args;
 use reprise_core::ai_jobs::{self, ClaimedJob};
 use reprise_core::ai_promotion::{self, CompletionOutcome, PromotionConfig};
 use reprise_core::ai_staging::StagingStore;
+use reprise_core::db::Db;
 use reprise_core::library::settings;
 use reprise_core::queries;
 use reprise_core::stem_separation::{
     FakeStemBackend, ProgressPermille, StemError, StemSeparationBackend, PROGRESS_COMPLETE,
 };
-use rusqlite::Connection;
 use serde_json::json;
 
 use crate::clock::now_unix;
@@ -148,12 +148,12 @@ struct WorkerCtx<'a> {
     shutdown: &'a AtomicBool,
 }
 
-/// Runs the worker host. `conn` is this process's own connection (WAL lets many
+/// Runs the worker host. `db` owns this process's connection (WAL lets many
 /// coexist); the backend is chosen once at startup. A configured library root
 /// lets the worker honor a job's persisted save-intent by promoting the render
 /// on completion; with no root, renders are left staged (nothing to file).
 pub fn run(
-    conn: &mut Connection,
+    db: &Db,
     staging_dir: Option<&PathBuf>,
     args: &WorkerArgs,
     json_output: bool,
@@ -163,10 +163,10 @@ pub fn run(
     store
         .ensure_dir()
         .map_err(|error| CliError::Database(format!("cannot create staging dir: {error}")))?;
-    sweep_staging_orphans(&store, conn);
+    sweep_staging_orphans(&store, db);
     let worker = worker_token();
     let shutdown = install_signal_flag()?;
-    let config = library_promotion_config(conn)?;
+    let config = library_promotion_config(db)?;
 
     let ctx = WorkerCtx {
         store: &store,
@@ -181,7 +181,7 @@ pub fn run(
     // infrastructure error aborts the loop, so a `--json` caller still gets a
     // summary of the work already done and automation never sees empty output.
     let mut tally = Tally::default();
-    let outcome = work_loop(conn, &ctx, &mut tally);
+    let outcome = work_loop(db, &ctx, &mut tally);
     report(tally, json_output, outcome.is_err());
     outcome
 }
@@ -189,16 +189,16 @@ pub fn run(
 /// Builds the promotion target from the configured library root, or `None` when
 /// none is set — then the worker leaves every finished render staged, since
 /// there is nowhere to file a promotion regardless of a job's save-intent.
-fn library_promotion_config(conn: &Connection) -> Result<Option<PromotionConfig>, CliError> {
-    Ok(settings::get_library_root(conn)?.map(PromotionConfig::new))
+fn library_promotion_config(db: &Db) -> Result<Option<PromotionConfig>, CliError> {
+    Ok(settings::get_library_root(db)?.map(PromotionConfig::new))
 }
 
 /// Removes resurrectable staging orphans (a saved/cancelled/vanished job's
 /// leftover render) before the worker starts. Best-effort: a sweep failure is a
 /// non-fatal housekeeping miss reported on stderr, never a reason to refuse to
 /// work. Diagnostics go to stderr so `--json` stdout stays a clean summary.
-fn sweep_staging_orphans(store: &StagingStore, conn: &Connection) {
-    match store.sweep_orphans(conn) {
+fn sweep_staging_orphans(store: &StagingStore, db: &Db) {
+    match store.sweep_orphans(db) {
         Ok(removed) if !removed.is_empty() => {
             eprintln!("worker: swept {} staging orphan(s)", removed.len());
         }
@@ -209,24 +209,15 @@ fn sweep_staging_orphans(store: &StagingStore, conn: &Connection) {
 
 /// The claim/process loop. Returns the first infrastructure error that aborts
 /// it (individual failed renders are recorded on their jobs, not returned).
-fn work_loop(
-    conn: &mut Connection,
-    ctx: &WorkerCtx<'_>,
-    tally: &mut Tally,
-) -> Result<(), CliError> {
+fn work_loop(db: &Db, ctx: &WorkerCtx<'_>, tally: &mut Tally) -> Result<(), CliError> {
     loop {
         if ctx.shutdown.load(Ordering::Relaxed) {
             return Ok(());
         }
-        // The claim only needs `&Connection`; scope an immutable reborrow so
-        // `process_job` can take `conn` mutably for the promotion path.
-        let claimed = {
-            let conn: &Connection = conn;
-            retrying(|| ai_jobs::claim_next(conn, ctx.worker, now_unix(), ctx.args.lease))?
-        };
+        let claimed = retrying(|| ai_jobs::claim_next(db, ctx.worker, now_unix(), ctx.args.lease))?;
         match claimed {
             Some(job) => {
-                tally.record(process_job(conn, ctx, &job)?);
+                tally.record(process_job(db, ctx, &job)?);
                 if ctx.args.max_jobs != 0 && tally.total() >= ctx.args.max_jobs {
                     return Ok(());
                 }
@@ -269,7 +260,7 @@ fn select_backend(args: &WorkerArgs) -> Result<Box<dyn StemSeparationBackend + S
 /// Claims-scoped mutable state shared between the progress sink and the cancel
 /// probe (interior mutability so both closures can borrow it at once).
 struct RunState<'a> {
-    conn: &'a Connection,
+    db: &'a Db,
     job_id: i64,
     worker: i64,
     lease: i64,
@@ -284,7 +275,7 @@ impl RunState<'_> {
     /// then write throttled progress.
     fn on_progress(&self, permille: ProgressPermille) {
         let beat = with_retry(
-            || ai_jobs::heartbeat(self.conn, self.job_id, self.worker, now_unix(), self.lease),
+            || ai_jobs::heartbeat(self.db, self.job_id, self.worker, now_unix(), self.lease),
             rusqlite_is_busy,
         );
         match beat {
@@ -308,7 +299,7 @@ impl RunState<'_> {
         }
         if self.should_write_progress(permille) {
             let written = with_retry(
-                || ai_jobs::set_progress(self.conn, self.job_id, self.worker, permille),
+                || ai_jobs::set_progress(self.db, self.job_id, self.worker, permille),
                 rusqlite_is_busy,
             );
             if let Err(error) = written {
@@ -339,16 +330,10 @@ impl RunState<'_> {
 /// `ai_jobs`/`ai_promotion` facades; a genuine infrastructure failure is
 /// returned as a [`CliError`] (stopping the worker), while a failed render is
 /// recorded on the job and reported as [`JobOutcome::Failed`].
-fn process_job(
-    conn: &mut Connection,
-    ctx: &WorkerCtx<'_>,
-    job: &ClaimedJob,
-) -> Result<JobOutcome, CliError> {
+fn process_job(db: &Db, ctx: &WorkerCtx<'_>, job: &ClaimedJob) -> Result<JobOutcome, CliError> {
     let worker = ctx.worker;
-    let Some(source_path) = resolve_source(conn, job)? else {
-        retrying(|| {
-            ai_jobs::mark_failed(conn, job.id, worker, "source_track_missing", now_unix())
-        })?;
+    let Some(source_path) = resolve_source(db, job)? else {
+        retrying(|| ai_jobs::mark_failed(db, job.id, worker, "source_track_missing", now_unix()))?;
         return Ok(JobOutcome::Failed);
     };
     // Render into a claim-scoped temp file, never the shared canonical path:
@@ -363,15 +348,13 @@ fn process_job(
     // Optional simulated occupancy (test aid): hold the claim without
     // heartbeating, so a short lease can expire and be reclaimed elsewhere.
     if let Some(reason) = simulate_occupancy(ctx.args, ctx.shutdown) {
-        return abandon_or_cancel(conn, job.id, worker, reason);
+        return abandon_or_cancel(db, job.id, worker, reason);
     }
 
-    // Render inside a scope so the immutable `&Connection` the heartbeat/progress
-    // sink borrows is released before the completion below takes `conn` mutably
-    // (promotion needs `&mut Connection`).
+    // Render inside a scope so the progress state is dropped before completion.
     let (result, infra_error, stop) = {
         let state = RunState {
-            conn,
+            db,
             job_id: job.id,
             worker,
             lease: ctx.args.lease,
@@ -395,17 +378,17 @@ fn process_job(
         return Err(CliError::Database(error));
     }
     match result {
-        Ok(()) => complete_owned_render(conn, ctx, job, &temp_path, stop),
+        Ok(()) => complete_owned_render(db, ctx, job, &temp_path, stop),
         Err(StemError::Cancelled) => {
             let _ = std::fs::remove_file(&temp_path);
             let reason = stop.unwrap_or(StopReason::Shutdown);
-            abandon_or_cancel(conn, job.id, worker, reason)
+            abandon_or_cancel(db, job.id, worker, reason)
         }
         Err(other) => {
             // A backend error leaves no complete output, but drop any partial.
             let _ = std::fs::remove_file(&temp_path);
             let kind = error_kind(&other);
-            let marked = retrying(|| ai_jobs::mark_failed(conn, job.id, worker, kind, now_unix()))?;
+            let marked = retrying(|| ai_jobs::mark_failed(db, job.id, worker, kind, now_unix()))?;
             Ok(if marked {
                 JobOutcome::Failed
             } else {
@@ -423,7 +406,7 @@ fn process_job(
 /// straggler that lost its lease fails the guard, never touches the canonical
 /// file, and has its temp deleted — no clobber, no resurrected orphan.
 fn complete_owned_render(
-    conn: &mut Connection,
+    db: &Db,
     ctx: &WorkerCtx<'_>,
     job: &ClaimedJob,
     temp_path: &Path,
@@ -438,7 +421,7 @@ fn complete_owned_render(
         return Ok(JobOutcome::Abandoned);
     }
     let outcome = ai_promotion::complete_render_with_publish(
-        conn,
+        db,
         ctx.store,
         ctx.config,
         job.id,
@@ -460,14 +443,14 @@ fn complete_owned_render(
 /// A user cancel is acked (`-> cancelled`); a shutdown or lost lease leaves the
 /// job `running` for another worker to reclaim after the lease expires.
 fn abandon_or_cancel(
-    conn: &Connection,
+    db: &Db,
     job_id: i64,
     worker: i64,
     reason: StopReason,
 ) -> Result<JobOutcome, CliError> {
     match reason {
         StopReason::Cancel => {
-            let marked = retrying(|| ai_jobs::mark_cancelled(conn, job_id, worker, now_unix()))?;
+            let marked = retrying(|| ai_jobs::mark_cancelled(db, job_id, worker, now_unix()))?;
             Ok(if marked {
                 JobOutcome::Cancelled
             } else {
@@ -482,11 +465,11 @@ fn abandon_or_cancel(
 /// the job has no source or the track row is gone. Uses the focused
 /// [`queries::track_source_path`] facade — the same by-id path lookup the
 /// app-hosted worker resolves through.
-fn resolve_source(conn: &Connection, job: &ClaimedJob) -> Result<Option<PathBuf>, CliError> {
+fn resolve_source(db: &Db, job: &ClaimedJob) -> Result<Option<PathBuf>, CliError> {
     let Some(source_track_id) = job.source_track_id else {
         return Ok(None);
     };
-    Ok(queries::track_source_path(conn, source_track_id)?)
+    Ok(queries::track_source_path(db, source_track_id)?)
 }
 
 /// Sleeps the configured simulated-render time in short slices, honoring

@@ -2,8 +2,9 @@
 //! the time window takes its reference "now" as a parameter (UTC unix seconds)
 //! so tests stay timezone- and clock-free, matching `library::stats_screen`.
 
-use rusqlite::{params, Connection};
+use rusqlite::params;
 
+use crate::db::Db;
 use crate::queries::library_views::EFFECTIVE_ALBUM_ARTIST;
 use crate::queries::PRESENT;
 
@@ -27,10 +28,11 @@ pub struct ArtistTopTrack {
 }
 
 pub fn artist_header(
-    conn: &Connection,
+    db: &Db,
     artist: &str,
     now_unix: i64,
 ) -> Result<ArtistHeader, rusqlite::Error> {
+    let conn = db.conn();
     // Start of the calendar year containing now_unix, UTC, as unix seconds.
     let year_start: i64 = conn.query_row(
         "SELECT CAST(strftime('%s', strftime('%Y', ?1, 'unixepoch') || '-01-01T00:00:00Z') AS INTEGER)",
@@ -61,10 +63,11 @@ pub fn artist_header(
 }
 
 pub fn artist_top_tracks(
-    conn: &Connection,
+    db: &Db,
     artist: &str,
     limit: i64,
 ) -> Result<Vec<ArtistTopTrack>, rusqlite::Error> {
+    let conn = db.conn();
     let sql = format!(
         "SELECT id, title, album, path, play_count, duration_ms FROM tracks \
          WHERE {PRESENT} AND {EFFECTIVE_ALBUM_ARTIST} = ?1 COLLATE NOCASE \
@@ -88,25 +91,26 @@ pub fn artist_top_tracks(
 mod tests {
     use super::*;
 
-    fn seeded() -> Connection {
-        let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
-        conn.execute_batch(
-            "INSERT INTO tracks (id,path,title,artist,album,album_artist,year,\
+    fn seeded() -> Db {
+        let db = Db::open_in_memory().unwrap();
+        db.conn()
+            .execute_batch(
+                "INSERT INTO tracks (id,path,title,artist,album,album_artist,year,\
                duration_ms,play_count,last_played_at,added_at) VALUES
              (1,'/a.flac','A','Solo','One','Solo',2020,180000,5,100,0),
              (2,'/b.flac','B','Solo','One','Solo',2020,120000,2,50,0),
              (3,'/c.flac','C','Solo','Two','Solo',2022,200000,9,200,0);",
-        )
-        .unwrap();
+            )
+            .unwrap();
         // one in-year event (2026-03), one prior-year (2025-03)
-        conn.execute_batch(
-            "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES
+        db.conn()
+            .execute_batch(
+                "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES
              (1, 1772582400, 180000),
              (3, 1741046400, 200000);",
-        )
-        .unwrap();
-        conn
+            )
+            .unwrap();
+        db
     }
 
     // 2026-07-15T00:00:00Z
@@ -114,8 +118,8 @@ mod tests {
 
     #[test]
     fn header_aggregates_counts_hours_and_year_plays() {
-        let conn = seeded();
-        let h = artist_header(&conn, "solo", NOW).unwrap();
+        let db = seeded();
+        let h = artist_header(&db, "solo", NOW).unwrap();
         assert_eq!(h.track_count, 3);
         assert_eq!(h.album_count, 2);
         // Σ duration_ms = 180000 + 120000 + 200000 (catalog length, not weighted by play_count)
@@ -126,8 +130,8 @@ mod tests {
 
     #[test]
     fn top_tracks_order_by_play_count_desc() {
-        let conn = seeded();
-        let top = artist_top_tracks(&conn, "solo", 5).unwrap();
+        let db = seeded();
+        let top = artist_top_tracks(&db, "solo", 5).unwrap();
         assert_eq!(
             top.iter().map(|t| t.track_id).collect::<Vec<_>>(),
             vec![3, 1, 2]
@@ -136,11 +140,11 @@ mod tests {
 
     #[test]
     fn detail_queries_are_read_only() {
-        let conn = seeded();
-        let before = conn.total_changes();
-        artist_header(&conn, "solo", NOW).unwrap();
-        artist_top_tracks(&conn, "solo", 5).unwrap();
-        assert_eq!(conn.total_changes(), before);
+        let db = seeded();
+        let before = db.conn().total_changes();
+        artist_header(&db, "solo", NOW).unwrap();
+        artist_top_tracks(&db, "solo", 5).unwrap();
+        assert_eq!(db.conn().total_changes(), before);
     }
 
     // 2026-01-01T00:00:00Z — start of the calendar year containing NOW.
@@ -148,42 +152,43 @@ mod tests {
 
     #[test]
     fn plays_this_year_includes_year_start_and_excludes_after_now() {
-        let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
-        conn.execute_batch(
-            "INSERT INTO tracks (id,path,title,artist,album,album_artist,year,\
+        let db = Db::open_in_memory().unwrap();
+        db.conn()
+            .execute_batch(
+                "INSERT INTO tracks (id,path,title,artist,album,album_artist,year,\
                duration_ms,play_count,last_played_at,added_at) VALUES
              (1,'/a.flac','A','Solo','One','Solo',2026,180000,1,0,0);",
-        )
-        .unwrap();
+            )
+            .unwrap();
         // One event exactly at the year-start boundary (inclusive, `>=`):
         // must count. One event after NOW, later in the same year (the
         // upper bound is `<= now_unix`): must be excluded.
-        conn.execute_batch(&format!(
-            "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES
+        db.conn()
+            .execute_batch(&format!(
+                "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES
              (1, {YEAR_START}, 180000),
              (1, {}, 180000);",
-            NOW + 10 * 24 * 60 * 60
-        ))
-        .unwrap();
-        let h = artist_header(&conn, "solo", NOW).unwrap();
+                NOW + 10 * 24 * 60 * 60
+            ))
+            .unwrap();
+        let h = artist_header(&db, "solo", NOW).unwrap();
         assert_eq!(h.plays_this_year, 1);
     }
 
     #[test]
     fn top_tracks_tiebreak_by_last_played_then_id() {
-        let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
-        conn.execute_batch(
-            "INSERT INTO tracks (id,path,title,artist,album,album_artist,year,\
+        let db = Db::open_in_memory().unwrap();
+        db.conn()
+            .execute_batch(
+                "INSERT INTO tracks (id,path,title,artist,album,album_artist,year,\
                duration_ms,play_count,last_played_at,added_at) VALUES
              (1,'/a.flac','A','Solo','One','Solo',2020,180000,5,100,0),
              (2,'/b.flac','B','Solo','One','Solo',2020,120000,5,200,0),
              (3,'/c.flac','C','Solo','Two','Solo',2022,150000,3,300,0),
              (4,'/d.flac','D','Solo','Two','Solo',2022,150000,3,300,0);",
-        )
-        .unwrap();
-        let top = artist_top_tracks(&conn, "solo", 10).unwrap();
+            )
+            .unwrap();
+        let top = artist_top_tracks(&db, "solo", 10).unwrap();
         // Track 1 and 2 share play_count=5; track 2 has the later
         // last_played_at, so it must sort first (tiebreak `last_played_at
         // DESC`). Track 3 and 4 share both play_count=3 and last_played_at

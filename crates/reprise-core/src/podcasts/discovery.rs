@@ -4,7 +4,7 @@
 //! surfaces filter "already subscribed" results by the exact same identity
 //! rules; a copy in only one crate would let the two silently drift apart.
 
-use rusqlite::Connection;
+use crate::db::Db;
 
 use super::{query, store, PodcastKind};
 
@@ -30,8 +30,9 @@ pub struct ActiveSourceKey {
 /// for filtering fresh search results. Never fails outright — a lookup error
 /// is logged and treated as "nothing subscribed yet" so a transient DB issue
 /// degrades to showing everything rather than hiding search results.
-pub fn active_source_keys(conn: &Connection) -> Vec<ActiveSourceKey> {
-    store::active_subscriptions(conn).map_or_else(
+pub fn active_source_keys(db: &Db) -> Vec<ActiveSourceKey> {
+    let conn = db.conn();
+    store::active_subscriptions_in(conn).map_or_else(
         |error| {
             tracing::warn!(%error, "could not load subscribed sources for search filtering");
             Vec::new()
@@ -39,7 +40,7 @@ pub fn active_source_keys(conn: &Connection) -> Vec<ActiveSourceKey> {
         |rows| {
             rows.into_iter()
                 .map(|row| {
-                    let identity_guids = query::episodes_for_subscription(conn, row.id)
+                    let identity_guids = query::episodes_for_subscription_in(conn, row.id)
                         .map_or_else(
                             |error| {
                                 tracing::warn!(

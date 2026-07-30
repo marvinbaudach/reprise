@@ -67,7 +67,7 @@ fn theme_row(context: &Rc<PreferencesContext>) -> adw::ComboRow {
         .build();
 
     let stored = reprise_core::library::settings::get_setting(
-        &context.conn.borrow(),
+        &context.conn,
         style::theme::THEME_SETTING_KEY,
     )
     .ok()
@@ -88,7 +88,7 @@ fn theme_row(context: &Rc<PreferencesContext>) -> adw::ComboRow {
             };
             style::set_theme(theme);
             if let Err(error) = reprise_core::library::settings::set_setting(
-                &context.conn.borrow(),
+                &context.conn,
                 style::theme::THEME_SETTING_KEY,
                 theme.id(),
             ) {
@@ -119,7 +119,7 @@ fn color_scheme_row(context: &Rc<PreferencesContext>) -> adw::ComboRow {
         .model(&model)
         .build();
 
-    let stored = reprise_core::library::settings::get_color_scheme(&context.conn.borrow());
+    let stored = reprise_core::library::settings::get_color_scheme(&context.conn);
     let index = match stored {
         "dark" => 1u32,
         "light" => 2,
@@ -137,7 +137,7 @@ fn color_scheme_row(context: &Rc<PreferencesContext>) -> adw::ComboRow {
             };
             style::set_color_scheme(scheme);
             if let Err(error) =
-                reprise_core::library::settings::set_color_scheme(&context.conn.borrow(), scheme)
+                reprise_core::library::settings::set_color_scheme(&context.conn, scheme)
             {
                 tracing::warn!(%error, "could not persist color scheme");
             }

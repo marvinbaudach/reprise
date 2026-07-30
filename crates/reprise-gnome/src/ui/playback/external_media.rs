@@ -114,7 +114,7 @@ impl PlayerController {
         media: ExternalMedia,
         episode_id: i64,
     ) -> Result<(), PlaybackError> {
-        let row = reprise_core::podcasts::store::episode(&self.conn.borrow(), episode_id)
+        let row = reprise_core::podcasts::store::episode(&self.conn, episode_id)
             .map_err(|error| PlaybackError::Backend(error.to_string()))?;
         let kind = row
             .as_ref()
@@ -169,7 +169,7 @@ impl PlayerController {
             self.fail_podcast(generation, "YouTube episodes require a video URL");
             return;
         };
-        let setting = reprise_core::podcasts::config::load(&self.conn.borrow())
+        let setting = reprise_core::podcasts::config::load(&self.conn)
             .ok()
             .and_then(|config| config.ytdlp_path);
         let result = crate::ui::one_shot_task::spawn("reprise-youtube-resolve", move || {
@@ -197,7 +197,7 @@ impl PlayerController {
                     }
                     if let Some(duration) = audio.duration_secs {
                         let _ = reprise_core::podcasts::store::save_duration(
-                            &controller.conn.borrow(),
+                            &controller.conn,
                             episode_id,
                             duration,
                         );
@@ -265,7 +265,7 @@ impl PlayerController {
     }
 
     fn begin_radio(self: &Rc<Self>, media: ExternalMedia, station_id: i64) {
-        let art_url = reprise_core::radio::station::get(&self.conn.borrow(), station_id)
+        let art_url = reprise_core::radio::station::get(&self.conn, station_id)
             .ok()
             .flatten()
             .and_then(|station| station.favicon_url);
@@ -354,11 +354,7 @@ impl PlayerController {
                 *fallback = stream_url.to_owned();
             }
         }
-        let _ = reprise_core::radio::station::update_stream_url(
-            &self.conn.borrow(),
-            station_id,
-            stream_url,
-        );
+        let _ = reprise_core::radio::station::update_stream_url(&self.conn, station_id, stream_url);
         match self.player.play_uri(stream_url) {
             Ok(()) => {
                 if let Some(ExternalSession::Radio(session)) =
@@ -488,15 +484,12 @@ impl PlayerController {
             (episode_id, persist, save_duration, retry_seek)
         };
         if persist {
-            let _ = reprise_core::podcasts::store::save_position(
-                &self.conn.borrow(),
-                episode_id,
-                position_ms,
-            );
+            let _ =
+                reprise_core::podcasts::store::save_position(&self.conn, episode_id, position_ms);
         }
         if let Some(duration_ms) = save_duration {
             let _ = reprise_core::podcasts::store::save_duration(
-                &self.conn.borrow(),
+                &self.conn,
                 episode_id,
                 duration_ms / 1_000,
             );
@@ -564,15 +557,12 @@ impl PlayerController {
             )
         };
         let now = chrono::Utc::now().timestamp();
-        if let Err(error) =
-            reprise_core::podcasts::store::mark_played(&self.conn.borrow(), finished.0, now)
+        if let Err(error) = reprise_core::podcasts::store::mark_played(&self.conn, finished.0, now)
         {
             tracing::error!(%error, episode_id = finished.0, "could not mark podcast played");
         }
         let next = reprise_core::podcasts::query::next_unplayed_of_show(
-            &self.conn.borrow(),
-            finished.1,
-            finished.2,
+            &self.conn, finished.1, finished.2,
         )
         .ok()
         .flatten();
@@ -694,7 +684,7 @@ impl PlayerController {
             (session_id(&session.media), session.position_ms)
         };
         if let Err(error) =
-            reprise_core::podcasts::store::save_position(&self.conn.borrow(), value.0, value.1)
+            reprise_core::podcasts::store::save_position(&self.conn, value.0, value.1)
         {
             tracing::warn!(%error, episode_id = value.0, "could not persist podcast position");
         }

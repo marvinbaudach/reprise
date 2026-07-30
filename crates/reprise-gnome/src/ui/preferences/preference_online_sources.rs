@@ -28,8 +28,7 @@ pub(in crate::ui) fn build(context: &Rc<PreferencesContext>) -> adw::Preferences
         .build();
 
     let global_group = adw::PreferencesGroup::new();
-    let global_enabled =
-        reprise_core::online_sources::is_enabled(&context.conn.borrow()).unwrap_or(true);
+    let global_enabled = reprise_core::online_sources::is_enabled(&context.conn).unwrap_or(true);
     let global_master = adw::SwitchRow::builder()
         .title(strings::text(strings::ONLINE_SOURCES_MASTER_TITLE))
         .subtitle(strings::text(strings::ONLINE_SOURCES_MASTER_BODY))
@@ -43,7 +42,7 @@ pub(in crate::ui) fn build(context: &Rc<PreferencesContext>) -> adw::Preferences
         .description(strings::text(strings::ONLINE_SOURCES_YOUTUBE_SUBTITLE))
         .build();
     let youtube_enabled =
-        modules::is_enabled(&context.conn.borrow(), &modules::YOUTUBE_MODULE).unwrap_or(false);
+        modules::is_enabled(&context.conn, &modules::YOUTUBE_MODULE).unwrap_or(false);
     let youtube_master = adw::SwitchRow::builder()
         .title(strings::text(strings::ONLINE_SOURCES_USE_YOUTUBE))
         .active(youtube_enabled)
@@ -58,10 +57,7 @@ pub(in crate::ui) fn build(context: &Rc<PreferencesContext>) -> adw::Preferences
         let rows = youtube_rows.clone();
         youtube_master.connect_active_notify(move |row| {
             let active = row.is_active();
-            if let Err(error) = context
-                .podcasts
-                .set_youtube_enabled(&context.conn.borrow(), active)
-            {
+            if let Err(error) = context.podcasts.set_youtube_enabled(&context.conn, active) {
                 tracing::warn!(%error, "could not save YouTube preference");
                 return;
             }
@@ -76,7 +72,7 @@ pub(in crate::ui) fn build(context: &Rc<PreferencesContext>) -> adw::Preferences
         .description(strings::text(strings::ONLINE_SOURCES_PODCASTS_SUBTITLE))
         .build();
     let podcasts_enabled =
-        modules::is_enabled(&context.conn.borrow(), &modules::PODCASTS_MODULE).unwrap_or(false);
+        modules::is_enabled(&context.conn, &modules::PODCASTS_MODULE).unwrap_or(false);
     let podcasts_master = adw::SwitchRow::builder()
         .title(strings::text(strings::ONLINE_SOURCES_USE_PODCASTS))
         .active(podcasts_enabled)
@@ -91,10 +87,7 @@ pub(in crate::ui) fn build(context: &Rc<PreferencesContext>) -> adw::Preferences
         let rows = podcasts_rows.clone();
         podcasts_master.connect_active_notify(move |row| {
             let active = row.is_active();
-            if let Err(error) = context
-                .podcasts
-                .set_podcasts_enabled(&context.conn.borrow(), active)
-            {
+            if let Err(error) = context.podcasts.set_podcasts_enabled(&context.conn, active) {
                 tracing::warn!(%error, "could not save Podcasts preference");
                 return;
             }
@@ -108,8 +101,7 @@ pub(in crate::ui) fn build(context: &Rc<PreferencesContext>) -> adw::Preferences
         .title(strings::text(strings::RADIO))
         .description(strings::text(strings::ONLINE_SOURCES_RADIO_SUBTITLE))
         .build();
-    let radio_enabled =
-        modules::is_enabled(&context.conn.borrow(), &modules::RADIO_MODULE).unwrap_or(false);
+    let radio_enabled = modules::is_enabled(&context.conn, &modules::RADIO_MODULE).unwrap_or(false);
     let radio_master = adw::SwitchRow::builder()
         .title(strings::text(strings::ONLINE_SOURCES_USE_RADIO))
         .active(radio_enabled)
@@ -124,8 +116,7 @@ pub(in crate::ui) fn build(context: &Rc<PreferencesContext>) -> adw::Preferences
         let rows = radio_rows.clone();
         radio_master.connect_active_notify(move |row| {
             let active = row.is_active();
-            if let Err(error) =
-                modules::set_enabled(&context.conn.borrow(), &modules::RADIO_MODULE, active)
+            if let Err(error) = modules::set_enabled(&context.conn, &modules::RADIO_MODULE, active)
             {
                 tracing::warn!(%error, "could not save Radio preference");
                 return;

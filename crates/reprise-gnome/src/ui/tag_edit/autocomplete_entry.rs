@@ -14,7 +14,7 @@ use gtk4::pango;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::EntryRowExt;
-use rusqlite::Connection;
+use reprise_core::db::Db;
 
 use reprise_core::queries::autocomplete::{
     query_autocomplete_suggestions, query_ghost_completion, AutocompleteColumn,
@@ -150,7 +150,7 @@ pub struct AutocompleteEntry {
     /// visible (TAG-7); added via `EntryRow::add_suffix`, so it lives
     /// inside the row itself rather than needing a separate parent.
     tab_badge: gtk4::Label,
-    conn: Rc<RefCell<Connection>>,
+    conn: Rc<Db>,
     column: AutocompleteColumn,
     debounce_source: Rc<RefCell<Option<glib::SourceId>>>,
     /// Suppresses the `changed` → query cycle while we programmatically
@@ -167,7 +167,7 @@ pub struct AutocompleteEntry {
 }
 
 impl AutocompleteEntry {
-    pub fn new(title: &str, column: AutocompleteColumn, conn: Rc<RefCell<Connection>>) -> Self {
+    pub fn new(title: &str, column: AutocompleteColumn, conn: Rc<Db>) -> Self {
         let row = adw::EntryRow::builder().title(title).build();
         let listbox = gtk4::ListBox::builder()
             .selection_mode(gtk4::SelectionMode::Single)
@@ -315,8 +315,8 @@ impl AutocompleteEntry {
 
                 if should_show_dropdown(&input) {
                     let suggestions = {
-                        let conn = conn.borrow();
-                        match query_autocomplete_suggestions(&conn, column, &input, MAX_SUGGESTIONS)
+                        let conn = &conn;
+                        match query_autocomplete_suggestions(conn, column, &input, MAX_SUGGESTIONS)
                         {
                             Ok(suggestions) => suggestions,
                             Err(error) => {
@@ -353,8 +353,8 @@ impl AutocompleteEntry {
                 // gate above — it can show below MIN_DROPDOWN_CHARS, where
                 // the dropdown never appears.
                 let ghost_completion = {
-                    let conn = conn.borrow();
-                    query_ghost_completion(&conn, column, &input)
+                    let conn = &conn;
+                    query_ghost_completion(conn, column, &input)
                 };
                 apply_ghost(
                     &ghost_popover,
@@ -732,7 +732,7 @@ mod tests {
         let entry = AutocompleteEntry::new(
             "Artist",
             AutocompleteColumn::Artist,
-            Rc::new(RefCell::new(Connection::open_in_memory().unwrap())),
+            Rc::new(crate::test_db::open().unwrap()),
         );
         assert_eq!(entry.popover.position(), gtk4::PositionType::Bottom);
         assert_eq!(entry.popover.halign(), gtk4::Align::Start);

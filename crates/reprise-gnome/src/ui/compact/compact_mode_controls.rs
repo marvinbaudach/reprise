@@ -1,26 +1,22 @@
 //! Composition wiring for every Library/Compact mode entry point.
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
+use reprise_core::db::Db;
 use reprise_core::library::settings;
-use rusqlite::Connection;
 
 use super::compact_player::CompactPlayer;
 use super::first_run::FirstRunDecision;
 use super::minimal_view::{self, MinimalView, ViewTransition};
 use super::window_decorations::WindowContentHost;
 
-pub(in crate::ui) fn initial_transition(
-    conn: &Connection,
-    first_run: FirstRunDecision,
-) -> ViewTransition {
+pub(in crate::ui) fn initial_transition(db: &Db, first_run: FirstRunDecision) -> ViewTransition {
     minimal_view::startup_transition(
-        settings::get_window_view_mode(conn),
-        settings::get_compact_layout(conn),
+        settings::get_window_view_mode(db),
+        settings::get_compact_layout(db),
         first_run,
     )
 }
@@ -30,7 +26,7 @@ pub(in crate::ui) fn build_mode(
     content_host: &WindowContentHost,
     full_root: &gtk4::Widget,
     compact: Option<&CompactPlayer>,
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
     initial: ViewTransition,
     toast_overlay: &adw::ToastOverlay,
 ) -> Rc<MinimalView> {
@@ -123,7 +119,7 @@ pub(in crate::ui) fn install(
     window: &adw::ApplicationWindow,
     mode: &Rc<MinimalView>,
     compact: Option<&CompactPlayer>,
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
     on_preferences: Rc<dyn Fn()>,
 ) {
     if let Some(compact) = compact {
@@ -142,7 +138,7 @@ pub(in crate::ui) fn install(
 
         // Restore persisted state.
         if x11_available {
-            let above = settings::get_compact_always_on_top(&conn.borrow());
+            let above = settings::get_compact_always_on_top(conn);
             if above {
                 compact.set_always_on_top_active(true);
                 let window_weak = glib::WeakRef::new();
@@ -164,7 +160,7 @@ pub(in crate::ui) fn install(
                 set_always_on_top(&window, above);
             }
             if let Some(conn) = conn_weak.upgrade() {
-                if let Err(e) = settings::set_compact_always_on_top(&conn.borrow(), above) {
+                if let Err(e) = settings::set_compact_always_on_top(&conn, above) {
                     tracing::warn!(%e, "failed to persist always-on-top");
                 }
             }
@@ -182,12 +178,9 @@ pub(in crate::ui) fn install(
 
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
-
     use gtk4::gio;
     use libadwaita::prelude::*;
     use reprise_core::library::settings::{CompactLayout, WindowViewMode};
-    use rusqlite::Connection;
 
     use super::*;
     use crate::ui::minimal_view::ViewTransition;
@@ -234,8 +227,7 @@ mod tests {
             .build();
         let full_root = test_split_view();
         let compact = CompactPlayer::new();
-        let conn = Rc::new(RefCell::new(Connection::open_in_memory().unwrap()));
-        reprise_core::db::migrate(&conn.borrow()).unwrap();
+        let conn = Rc::new(crate::test_db::open().unwrap());
         let content_host = WindowContentHost::new(&window);
         let mode = MinimalView::new(
             &window,

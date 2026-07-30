@@ -2,6 +2,10 @@ use crate::db_grandfather::grandfather_network_features;
 use rusqlite::Connection;
 use std::path::Path;
 
+#[path = "db_handle.rs"]
+mod handle;
+pub use handle::Db;
+
 #[derive(Debug, thiserror::Error)]
 pub enum DbError {
     #[error("database error: {0}")]
@@ -10,20 +14,22 @@ pub enum DbError {
     Io(#[from] std::io::Error),
     #[error("database schema {found} is newer than supported schema {supported}")]
     SchemaTooNew { found: i64, supported: i64 },
+    #[error("database schema {found} is not ready; expected schema {supported}")]
+    SchemaNotReady { found: i64, supported: i64 },
 }
 
 pub const SUPPORTED_SCHEMA_VERSION: i64 = 48;
 
-/// Default SQLite `busy_timeout` (milliseconds) every [`open`] connection is
-/// configured with: wait up to this long for a write lock instead of failing
+/// Default SQLite `busy_timeout` (milliseconds) for every connection opened
+/// through [`Db`]: wait up to this long for a write lock instead of failing
 /// immediately with `SQLITE_BUSY` — cheap insurance for a concurrent writer
 /// (e.g. a scan worker thread's own `Connection` writing while the UI thread
 /// reads). Exposed as a named constant so a caller that temporarily overrides
-/// the timeout (the change-log prune's non-blocking probe in [`open_migrated`])
-/// can restore exactly this value afterwards.
+/// the timeout (the change-log prune's non-blocking probe during
+/// [`Db::open_migrated`]) can restore exactly this value afterwards.
 pub const DEFAULT_BUSY_TIMEOUT_MS: i64 = 5000;
 
-pub fn open(path: Option<&Path>) -> Result<Connection, DbError> {
+pub(crate) fn open(path: Option<&Path>) -> Result<Connection, DbError> {
     open_with_options(path, DEFAULT_BUSY_TIMEOUT_MS)
 }
 
@@ -33,7 +39,10 @@ pub fn open(path: Option<&Path>) -> Result<Connection, DbError> {
 /// contention fail immediately with `SQLITE_BUSY` rather than block — the
 /// non-blocking posture [`open_migrated`]'s prune uses so a fresh open never
 /// stalls behind a long foreign write transaction.
-pub fn open_with_options(path: Option<&Path>, busy_timeout_ms: i64) -> Result<Connection, DbError> {
+pub(crate) fn open_with_options(
+    path: Option<&Path>,
+    busy_timeout_ms: i64,
+) -> Result<Connection, DbError> {
     let conn = match path {
         Some(p) => {
             if let Some(dir) = p.parent() {
@@ -49,12 +58,13 @@ pub fn open_with_options(path: Option<&Path>, busy_timeout_ms: i64) -> Result<Co
     Ok(conn)
 }
 
-/// Opens a database and applies every pending schema migration before it is
-/// returned to a feature. Frontends should use this boundary for worker
-/// connections instead of duplicating schema-readiness details.
-pub fn open_migrated(path: Option<&Path>) -> Result<Connection, DbError> {
+/// Opens Core's internal connection and applies every pending schema migration.
+///
+/// Public callers construct [`Db`] instead of duplicating these
+/// schema-readiness details.
+pub(crate) fn open_migrated(path: Option<&Path>) -> Result<Connection, DbError> {
     let conn = open(path)?;
-    migrate(&conn)?;
+    migrate_connection(&conn)?;
     // Non-blocking, skip-when-idle: this must never stall or fail because a
     // concurrent writer (a running app's long scan transaction) holds the lock —
     // see `events::prune_on_open`. The ~30 GTK `open_migrated(...).unwrap()`
@@ -68,8 +78,8 @@ pub fn open_migrated(path: Option<&Path>) -> Result<Connection, DbError> {
 /// without touching `~/.local/share/reprise`). Lives in `reprise-core` so
 /// every frontend — GNOME today, a future KDE/Qt or macOS client — resolves
 /// the *same* library database. Frontends also hand this path to scan-worker
-/// threads: each worker opens its own `rusqlite::Connection` over it rather
-/// than sharing the UI's `Rc<RefCell<Connection>>` across threads.
+/// threads: each worker opens its own [`Db`] over it rather than sharing the
+/// UI's handle across threads.
 pub fn default_path() -> std::path::PathBuf {
     dirs::data_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
@@ -83,7 +93,7 @@ pub fn default_path() -> std::path::PathBuf {
 /// honest than assuming [`default_path`], which is wrong under a test
 /// fixture or an explicitly chosen library. An in-memory database has no
 /// file and yields `None`.
-pub fn main_path(conn: &Connection) -> Option<std::path::PathBuf> {
+pub(crate) fn main_path_connection(conn: &Connection) -> Option<std::path::PathBuf> {
     let mut statement = conn.prepare("PRAGMA database_list").ok()?;
     let mut rows = statement.query([]).ok()?;
     while let Some(row) = rows.next().ok()? {
@@ -510,7 +520,7 @@ CREATE INDEX idx_track_audio_analysis_status_retry
 /// call retries the same step cleanly. Idempotency (a second full `migrate()`
 /// call being a no-op) is unaffected — every existing migration test still
 /// passes unmodified.
-pub fn migrate(conn: &Connection) -> Result<(), DbError> {
+pub(crate) fn migrate_connection(conn: &Connection) -> Result<(), DbError> {
     let cover_cache = crate::cover_download::downloaded_dir();
     let portrait_cache = crate::artist_portrait::cache::cache_dir();
     migrate_with_cache_dirs(conn, &cover_cache, &portrait_cache)
@@ -717,7 +727,8 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
 }
 
 /// Stores pre-computed waveform peaks for a track.
-pub fn set_waveform_peaks(conn: &Connection, track_id: i64, peaks: &[u8]) -> Result<(), DbError> {
+pub fn set_waveform_peaks(db: &Db, track_id: i64, peaks: &[u8]) -> Result<(), DbError> {
+    let conn = db.conn();
     conn.execute(
         "UPDATE tracks SET waveform_peaks = ?1 WHERE id = ?2",
         rusqlite::params![peaks, track_id],
@@ -726,7 +737,8 @@ pub fn set_waveform_peaks(conn: &Connection, track_id: i64, peaks: &[u8]) -> Res
 }
 
 /// Loads pre-computed waveform peaks for a track. Returns `None` if not yet analyzed.
-pub fn get_waveform_peaks(conn: &Connection, track_id: i64) -> Result<Option<Vec<u8>>, DbError> {
+pub fn get_waveform_peaks(db: &Db, track_id: i64) -> Result<Option<Vec<u8>>, DbError> {
+    let conn = db.conn();
     let result = conn.query_row(
         "SELECT waveform_peaks FROM tracks WHERE id = ?1",
         [track_id],
@@ -738,7 +750,8 @@ pub fn get_waveform_peaks(conn: &Connection, track_id: i64) -> Result<Option<Vec
 /// Returns live tracks which still need waveform analysis, in stable id
 /// order. SQL ownership stays in core while platform frontends only schedule
 /// extraction work.
-pub fn pending_waveform_tracks(conn: &Connection) -> Result<Vec<(i64, String)>, DbError> {
+pub fn pending_waveform_tracks(db: &Db) -> Result<Vec<(i64, String)>, DbError> {
+    let conn = db.conn();
     let mut statement = conn.prepare(&format!(
         "SELECT id, path FROM tracks \
          WHERE waveform_peaks IS NULL AND {} ORDER BY id",

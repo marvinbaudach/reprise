@@ -7,12 +7,14 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
+use reprise_core::db::Db;
+
 pub(in crate::ui) struct ArtistPortraitRuntime {
     pub enabled: Rc<Cell<bool>>,
 }
 
 impl ArtistPortraitRuntime {
-    pub(in crate::ui) fn setup(conn: &rusqlite::Connection) -> Rc<Self> {
+    pub(in crate::ui) fn setup(conn: &Db) -> Rc<Self> {
         Rc::new(Self {
             enabled: Rc::new(Cell::new(
                 reprise_core::online_sources::network_allowed_or_off(
@@ -25,7 +27,7 @@ impl ArtistPortraitRuntime {
 
     pub(in crate::ui) fn set_enabled(
         &self,
-        conn: &rusqlite::Connection,
+        conn: &Db,
         enabled: bool,
     ) -> Result<(), rusqlite::Error> {
         reprise_core::modules::set_enabled(
@@ -42,7 +44,7 @@ impl ArtistPortraitRuntime {
     }
 
     /// `NET-1a`: re-derives `enabled` from the global online-sources gate.
-    pub(in crate::ui) fn recompute_enabled(&self, conn: &rusqlite::Connection) {
+    pub(in crate::ui) fn recompute_enabled(&self, conn: &Db) {
         self.enabled
             .set(reprise_core::online_sources::network_allowed_or_off(
                 conn,
@@ -57,8 +59,7 @@ mod tests {
 
     #[test]
     fn runtime_reads_and_updates_the_live_module_setting() {
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
+        let conn = crate::test_db::open().unwrap();
         let runtime = ArtistPortraitRuntime::setup(&conn);
         assert!(!runtime.enabled.get());
 
@@ -74,8 +75,7 @@ mod tests {
 
     #[test]
     fn net_1a_recompute_enabled_reflects_the_global_gate() {
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
+        let conn = crate::test_db::open().unwrap();
         let runtime = ArtistPortraitRuntime::setup(&conn);
         runtime.set_enabled(&conn, true).unwrap();
         assert!(runtime.enabled.get());

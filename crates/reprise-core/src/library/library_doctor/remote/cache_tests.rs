@@ -96,7 +96,7 @@ fn identity() -> RemoteIdentity {
 #[test]
 fn doc_1c_complete_mbid_hit_survives_provider_restart_with_provenance() {
     let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    crate::db::migrate_connection(&conn).unwrap();
     let calls = Rc::new(Cell::new(0));
     let lookup = RemoteDirectLookup::Recording("123e4567-e89b-12d3-a456-426614174000".into());
     let expected = vec![identity()];
@@ -125,7 +125,7 @@ fn doc_1c_complete_mbid_hit_survives_provider_restart_with_provenance() {
 #[test]
 fn doc_1c_acoustid_cache_key_includes_namespace_fingerprint_and_duration() {
     let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    crate::db::migrate_connection(&conn).unwrap();
     let calls = Rc::new(Cell::new(0));
     let expected = vec![identity()];
     let metadata = RemoteTrackMetadata {
@@ -209,7 +209,7 @@ fn doc_1c_complete_and_negative_cache_entries_use_30_and_7_day_ttls() {
     let mut control = || ScanControl::Continue;
 
     let positive_conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&positive_conn).unwrap();
+    crate::db::migrate_connection(&positive_conn).unwrap();
     let positive_calls = Rc::new(Cell::new(0));
     let expected = vec![identity()];
     let mut first = CachedRemoteProvider::new(
@@ -245,7 +245,7 @@ fn doc_1c_complete_and_negative_cache_entries_use_30_and_7_day_ttls() {
     assert_eq!(positive_calls.get(), 2);
 
     let negative_conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&negative_conn).unwrap();
+    crate::db::migrate_connection(&negative_conn).unwrap();
     let negative_calls = Rc::new(Cell::new(0));
     let mut first = CachedRemoteProvider::new(
         DirectProvider {
@@ -283,7 +283,7 @@ fn doc_1c_complete_and_negative_cache_entries_use_30_and_7_day_ttls() {
 #[test]
 fn doc_1c_incomplete_responses_are_never_cached() {
     let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    crate::db::migrate_connection(&conn).unwrap();
     let calls = Rc::new(Cell::new(0));
     let lookup = RemoteDirectLookup::Recording("123e4567-e89b-12d3-a456-426614174000".into());
     let mut control = || ScanControl::Continue;

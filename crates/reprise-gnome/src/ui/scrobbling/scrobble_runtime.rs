@@ -9,10 +9,10 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
 use gtk4::glib;
+use reprise_core::db::Db;
 use reprise_core::scrobbling::{
     self, ScrobbleProvider, ScrobblerTransport, TrackMetadata, TransportError,
 };
-use rusqlite::Connection;
 
 const INITIAL_BACKOFF: Duration = Duration::from_secs(5);
 const MAX_BACKOFF: Duration = Duration::from_secs(5 * 60);
@@ -263,7 +263,7 @@ fn wait_for_retry(
 }
 
 fn flush_pending<T: ScrobblerTransport + ?Sized>(
-    conn: &Connection,
+    db: &Db,
     provider: ScrobbleProvider,
     transport: &T,
     credential: &str,
@@ -273,9 +273,9 @@ fn flush_pending<T: ScrobblerTransport + ?Sized>(
         ScrobbleProvider::LastFm => 50,
     };
     loop {
-        let listens = scrobbling::pending_for(conn, provider, request_limit)?;
+        let listens = scrobbling::pending_for(db, provider, request_limit)?;
         if listens.is_empty() {
-            return scrobbling::pending_count_for(conn, provider).map_err(FlushError::from);
+            return scrobbling::pending_count_for(db, provider).map_err(FlushError::from);
         }
         transport.submit(credential, &listens)?;
         let ids = listens
@@ -285,7 +285,7 @@ fn flush_pending<T: ScrobblerTransport + ?Sized>(
         if ids.len() != listens.len() {
             return Err(FlushError::MissingQueueId);
         }
-        scrobbling::acknowledge_for(conn, provider, &ids)?;
+        scrobbling::acknowledge_for(db, provider, &ids)?;
     }
 }
 
@@ -297,15 +297,15 @@ fn publish(
     let _ = sender.try_send((generation, status));
 }
 
-fn pending_or_zero(conn: &Connection, provider: ScrobbleProvider, service: &str) -> usize {
-    scrobbling::pending_count_for(conn, provider).unwrap_or_else(|error| {
+fn pending_or_zero(db: &Db, provider: ScrobbleProvider, service: &str) -> usize {
+    scrobbling::pending_count_for(db, provider).unwrap_or_else(|error| {
         tracing::warn!(%error, service, "could not count pending scrobbles");
         0
     })
 }
 
-fn submitted_or_zero(conn: &Connection, provider: ScrobbleProvider, service: &str) -> usize {
-    scrobbling::submitted_count_for(conn, provider).unwrap_or_else(|error| {
+fn submitted_or_zero(db: &Db, provider: ScrobbleProvider, service: &str) -> usize {
+    scrobbling::submitted_count_for(db, provider).unwrap_or_else(|error| {
         tracing::warn!(%error, service, "could not count submitted scrobbles");
         0
     })
@@ -325,8 +325,8 @@ fn run_worker<T: ScrobblerTransport + ?Sized>(
         credential,
         generation,
     } = config;
-    let conn = match reprise_core::db::open_migrated(Some(database_path)) {
-        Ok(conn) => conn,
+    let db = match Db::open_migrated(Some(database_path)) {
+        Ok(db) => db,
         Err(error) => {
             tracing::warn!(%error, service, "could not open scrobbling queue");
             publish(
@@ -340,6 +340,7 @@ fn run_worker<T: ScrobblerTransport + ?Sized>(
             return;
         }
     };
+    let conn = &db;
 
     let mut user_name = None;
     let mut backoff = INITIAL_BACKOFF;
@@ -366,8 +367,8 @@ fn run_worker<T: ScrobblerTransport + ?Sized>(
                         status_sender,
                         generation,
                         ConnectionStatus::Error {
-                            pending: pending_or_zero(&conn, provider, service),
-                            submitted: submitted_or_zero(&conn, provider, service),
+                            pending: pending_or_zero(conn, provider, service),
+                            submitted: submitted_or_zero(conn, provider, service),
                         },
                     );
                     return;
@@ -378,8 +379,8 @@ fn run_worker<T: ScrobblerTransport + ?Sized>(
                         status_sender,
                         generation,
                         ConnectionStatus::Offline {
-                            pending: pending_or_zero(&conn, provider, service),
-                            submitted: submitted_or_zero(&conn, provider, service),
+                            pending: pending_or_zero(conn, provider, service),
+                            submitted: submitted_or_zero(conn, provider, service),
                         },
                     );
                     if !wait_for_retry(receiver, &mut backoff, &mut deferred_playing_now) {
@@ -396,7 +397,7 @@ fn run_worker<T: ScrobblerTransport + ?Sized>(
             }
             if let Err(error) = transport.playing_now(credential, &track) {
                 if !handle_transport_error(
-                    &conn,
+                    conn,
                     provider,
                     service,
                     status_sender,
@@ -421,7 +422,7 @@ fn run_worker<T: ScrobblerTransport + ?Sized>(
                 .drain_lock
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            flush_pending(&conn, provider, transport, credential)
+            flush_pending(conn, provider, transport, credential)
         };
         match flush_result {
             Ok(pending) => {
@@ -432,13 +433,13 @@ fn run_worker<T: ScrobblerTransport + ?Sized>(
                     ConnectionStatus::Connected {
                         user_name: user_name.clone().unwrap_or_default(),
                         pending,
-                        submitted: submitted_or_zero(&conn, provider, service),
+                        submitted: submitted_or_zero(conn, provider, service),
                     },
                 );
             }
             Err(FlushError::Transport(error)) => {
                 if !handle_transport_error(
-                    &conn,
+                    conn,
                     provider,
                     service,
                     status_sender,
@@ -459,8 +460,8 @@ fn run_worker<T: ScrobblerTransport + ?Sized>(
                     status_sender,
                     generation,
                     ConnectionStatus::Error {
-                        pending: pending_or_zero(&conn, provider, service),
-                        submitted: submitted_or_zero(&conn, provider, service),
+                        pending: pending_or_zero(conn, provider, service),
+                        submitted: submitted_or_zero(conn, provider, service),
                     },
                 );
                 return;
@@ -471,8 +472,8 @@ fn run_worker<T: ScrobblerTransport + ?Sized>(
                     status_sender,
                     generation,
                     ConnectionStatus::Error {
-                        pending: pending_or_zero(&conn, provider, service),
-                        submitted: submitted_or_zero(&conn, provider, service),
+                        pending: pending_or_zero(conn, provider, service),
+                        submitted: submitted_or_zero(conn, provider, service),
                     },
                 );
                 return;
@@ -486,7 +487,7 @@ fn run_worker<T: ScrobblerTransport + ?Sized>(
                 }
                 if let Err(error) = transport.playing_now(credential, &track) {
                     if !handle_transport_error(
-                        &conn,
+                        conn,
                         provider,
                         service,
                         status_sender,
@@ -508,7 +509,7 @@ fn run_worker<T: ScrobblerTransport + ?Sized>(
 }
 
 fn handle_transport_error(
-    conn: &Connection,
+    conn: &Db,
     provider: ScrobbleProvider,
     service: &str,
     status_sender: &async_channel::Sender<(u64, ConnectionStatus)>,
@@ -578,12 +579,11 @@ mod tests {
         }
     }
 
-    fn queued_conn() -> rusqlite::Connection {
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
+    fn queued_conn() -> Db {
+        let db = crate::test_db::open().unwrap();
         for listened_at in [1, 2] {
             reprise_core::scrobbling::enqueue(
-                &conn,
+                &db,
                 &Listen {
                     id: None,
                     listened_at,
@@ -597,7 +597,7 @@ mod tests {
             )
             .unwrap();
         }
-        conn
+        db
     }
 
     #[test]
@@ -706,8 +706,7 @@ mod tests {
         let path = temp.path().join("worker.db");
         {
             let source = queued_conn();
-            let destination = reprise_core::db::open(Some(&path)).unwrap();
-            reprise_core::db::migrate(&destination).unwrap();
+            let destination = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
             for listen in reprise_core::scrobbling::pending(&source, 100).unwrap() {
                 reprise_core::scrobbling::enqueue(&destination, &listen).unwrap();
             }
@@ -756,8 +755,7 @@ mod tests {
         command_sender.send(WorkerCommand::Stop).unwrap();
         handle.join().unwrap();
         assert_eq!(submitted.lock().unwrap().len(), 2);
-        let conn = reprise_core::db::open(Some(&path)).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
+        let conn = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
         assert_eq!(reprise_core::scrobbling::pending_count(&conn).unwrap(), 0);
     }
 

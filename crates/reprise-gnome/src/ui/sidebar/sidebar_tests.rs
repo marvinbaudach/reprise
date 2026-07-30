@@ -7,10 +7,9 @@ use super::*;
 /// simply stay unset, which every consumer already degrades on). Display
 /// required (`gtk::ListBox`), hence only the `#[ignore]` tests below use it.
 fn test_shared() -> Rc<Shared> {
-    let conn = reprise_core::db::open(None).unwrap();
-    reprise_core::db::migrate(&conn).unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
     Rc::new(Shared {
-        conn: Rc::new(RefCell::new(conn)),
+        conn,
         listbox: gtk4::ListBox::new(),
         issues_listbox: gtk4::ListBox::new(),
         queue_len_provider: Box::new(|| 0),
@@ -514,26 +513,28 @@ fn smart_playlist_rows_badge_their_live_track_count() {
     // Seed five present tracks; the default "Recently added" smart list has an
     // empty rule set, so it matches every present track — the badge must read 5.
     let _smart_id = {
-        let conn = shared.conn.borrow();
+        let conn = &shared.conn;
         let now = chrono::Utc::now().timestamp();
         for id in 1..=5i64 {
-            conn.execute(
-                "INSERT INTO tracks (path, title, artist, added_at) \
+            crate::test_db::connection(conn)
+                .execute(
+                    "INSERT INTO tracks (path, title, artist, added_at) \
                  VALUES (?1, ?2, 'Synthetic Artist', ?3)",
-                (
-                    format!("/synthetic/{id:03}.flac"),
-                    format!("Track {id:03}"),
-                    now - id,
-                ),
-            )
-            .unwrap();
+                    (
+                        format!("/synthetic/{id:03}.flac"),
+                        format!("Track {id:03}"),
+                        now - id,
+                    ),
+                )
+                .unwrap();
         }
-        conn.query_row(
-            "SELECT id FROM smart_playlists WHERE name = 'Recently added'",
-            [],
-            |r| r.get::<_, i64>(0),
-        )
-        .unwrap()
+        crate::test_db::connection(conn)
+            .query_row(
+                "SELECT id FROM smart_playlists WHERE name = 'Recently added'",
+                [],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap()
     };
 
     rebuild(&shared, None, "test build");
@@ -556,13 +557,14 @@ fn empty_smart_playlist_shows_no_badge() {
     // No tracks seeded: every default smart list resolves to zero and must
     // therefore render no badge at all (nonzero-only policy).
     let _smart_id = {
-        let conn = shared.conn.borrow();
-        conn.query_row(
-            "SELECT id FROM smart_playlists WHERE name = 'Recently added'",
-            [],
-            |r| r.get::<_, i64>(0),
-        )
-        .unwrap()
+        let conn = &shared.conn;
+        crate::test_db::connection(conn)
+            .query_row(
+                "SELECT id FROM smart_playlists WHERE name = 'Recently added'",
+                [],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap()
     };
 
     rebuild(&shared, None, "test build");
@@ -619,40 +621,39 @@ fn assert_update_feed_rows_are_module_gated_ordered_and_badged() {
     assert!(find_row(&shared, &ViewSource::Concerts).is_none());
 
     {
-        let conn = shared.conn.borrow();
-        reprise_core::modules::set_enabled(
-            &conn,
-            &reprise_core::modules::NEW_RELEASES_MODULE,
-            true,
-        )
-        .unwrap();
-        reprise_core::modules::set_enabled(&conn, &reprise_core::modules::CONCERTS_MODULE, true)
+        let conn = &shared.conn;
+        reprise_core::modules::set_enabled(conn, &reprise_core::modules::NEW_RELEASES_MODULE, true)
             .unwrap();
-        conn.execute(
-            "INSERT INTO tracks (path, title, artist, album, added_at)
+        reprise_core::modules::set_enabled(conn, &reprise_core::modules::CONCERTS_MODULE, true)
+            .unwrap();
+        crate::test_db::connection(conn)
+            .execute(
+                "INSERT INTO tracks (path, title, artist, album, added_at)
              VALUES ('/music/track.flac', 'Track', 'Artist', 'Local Album', 0)",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO new_releases (
+                [],
+            )
+            .unwrap();
+        crate::test_db::connection(conn)
+            .execute(
+                "INSERT INTO new_releases (
                release_group_mbid, artist_name, artist_mbid, title, release_type,
                first_release_date, fetched_at, fallback_accent, first_seen
              ) VALUES ('release', 'Artist', 'artist-id', 'Release', 'Album',
                        '2099-08-01', 1, '#123456', 1)",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO concert_events (
+                [],
+            )
+            .unwrap();
+        crate::test_db::connection(conn)
+            .execute(
+                "INSERT INTO concert_events (
                artist_key, artist_name, starts_at, date_key, venue, city,
                provider, fetched_at, dedupe_key
              ) VALUES ('artist', 'Artist', '2099-08-02T20:00:00',
                        '2099-08-02', 'Venue', 'City', 'bandsintown', 1,
                        '2099-08-02|city|venue')",
-            [],
-        )
-        .unwrap();
+                [],
+            )
+            .unwrap();
     }
 
     rebuild(&shared, None, "modules on");

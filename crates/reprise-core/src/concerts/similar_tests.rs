@@ -12,7 +12,7 @@ use super::{
 
 fn conn() -> Connection {
     let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    crate::db::migrate_connection(&conn).unwrap();
     conn
 }
 

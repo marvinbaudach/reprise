@@ -8,8 +8,8 @@ use gtk4::gio;
 use gtk4::gio::prelude::ActionMapExt;
 use gtk4::glib;
 use gtk4::glib::variant::StaticVariantType;
+use reprise_core::db::Db;
 use reprise_core::podcasts::{self, SourceGroup};
-use rusqlite::Connection;
 
 use super::podcasts_context_menu::{self, PodcastSyncDevice};
 use super::podcasts_view::PodcastsView;
@@ -50,7 +50,7 @@ impl PodcastDeviceSyncState {
     }
 
     pub(super) fn selected_for_groups(
-        conn: &Connection,
+        conn: &Db,
         groups: &[SourceGroup],
     ) -> Result<BTreeMap<i64, Vec<String>>, rusqlite::Error> {
         groups
@@ -114,10 +114,12 @@ pub(super) fn install_action(view: &Rc<PodcastsView>, group: &gio::SimpleActionG
             .borrow()
             .get(&subscription_id)
             .is_some_and(|devices| devices.contains(&device_id));
-        let result = {
-            let conn = view.conn.borrow();
-            podcasts::phone_sync::set_device_enabled(&conn, subscription_id, &device_id, enabled)
-        };
+        let result = podcasts::phone_sync::set_device_enabled(
+            &view.conn,
+            subscription_id,
+            &device_id,
+            enabled,
+        );
         if let Err(error) = result {
             view.show_error(&error.to_string());
             return;

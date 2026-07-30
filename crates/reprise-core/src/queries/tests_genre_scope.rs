@@ -2,8 +2,8 @@ use super::*;
 
 #[test]
 fn fil_1c_genre_source_remains_restricted_after_facets_are_cleared() {
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     for (id, genre) in [(1, "Metalcore"), (2, "Metalcore"), (3, "Jazz")] {
         conn.execute(
             "INSERT INTO tracks (id, path, title, artist, genre, added_at)
@@ -15,11 +15,11 @@ fn fil_1c_genre_source_remains_restricted_after_facets_are_cleared() {
 
     let source = ViewSource::Genre("Metalcore".into());
     assert_eq!(
-        query_track_count_browsed(&conn, &source, "", &BrowseFilter::default(), &[]).unwrap(),
+        query_track_count_browsed(&db, &source, "", &BrowseFilter::default(), &[]).unwrap(),
         2
     );
     let rows = query_track_window_browsed(
-        &mut conn,
+        &db,
         &source,
         "title",
         "asc",
@@ -34,7 +34,7 @@ fn fil_1c_genre_source_remains_restricted_after_facets_are_cleared() {
     assert!(rows.iter().all(|track| track.genre == "Metalcore"));
     assert_eq!(
         query_track_ids_browsed(
-            &conn,
+            &db,
             &source,
             "title",
             "asc",

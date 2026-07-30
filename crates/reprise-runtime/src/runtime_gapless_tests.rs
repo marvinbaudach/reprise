@@ -148,12 +148,12 @@ fn a_gapless_handoff_pre_feeds_the_track_after_the_new_one() {
 
 #[test]
 fn transition_off_pre_feeds_nothing_at_all() {
-    // Configured before the runtime takes the connection: the runtime owns
+    // Configured before the runtime takes the database handle: the runtime owns
     // the writer once it has it, and a test reaching around that would be
     // testing a seam the product does not have.
-    let conn = reprise_core::db::open_migrated(None).expect("an in-memory database migrates");
-    settings::set_gapless_enabled(&conn, false).expect("the setting is writable");
-    let mut harness = over(conn);
+    let db = reprise_core::db::Db::open_in_memory().expect("an in-memory database migrates");
+    settings::set_gapless_enabled(&db, false).expect("the setting is writable");
+    let mut harness = over(db);
     let client = full_client(&mut harness.runtime);
 
     playing(&mut harness, client);

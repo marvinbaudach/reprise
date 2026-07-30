@@ -7,8 +7,8 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
+use reprise_core::db::Db;
 use reprise_core::library::settings::{self, ListDensity, PlayerBarPosition, ReplayGainMode};
-use rusqlite::Connection;
 
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
 use crate::ui::artist_portrait_worker::ArtistPortraitRuntime;
@@ -93,7 +93,7 @@ fn apply_gapless_control_state(row: &adw::SwitchRow, crossfade_seconds: u8) {
 
 pub(in crate::ui) struct PreferencesContext {
     pub(in crate::ui) window: adw::ApplicationWindow,
-    pub(in crate::ui) conn: Rc<RefCell<Connection>>,
+    pub(in crate::ui) conn: Rc<Db>,
     pub(in crate::ui) track_list: Rc<TrackList>,
     pub(in crate::ui) sidebar: Rc<Sidebar>,
     pub(in crate::ui) split_view: adw::OverlaySplitView,
@@ -152,7 +152,7 @@ impl PreferencesContext {
     #[allow(clippy::too_many_arguments)]
     pub(in crate::ui) fn new(
         window: &adw::ApplicationWindow,
-        conn: &Rc<RefCell<Connection>>,
+        conn: &Rc<Db>,
         track_list: &Rc<TrackList>,
         sidebar: &Rc<Sidebar>,
         split_view: &adw::OverlaySplitView,
@@ -225,14 +225,14 @@ impl PreferencesContext {
 
     fn apply_initial(&self) {
         let (density, sidebar_visible, browse_visible, info_visible, status_visible, decorations) = {
-            let conn = self.conn.borrow();
+            let conn = &self.conn;
             (
-                settings::get_list_density(&conn),
-                settings::get_sidebar_visible(&conn),
-                settings::get_browse_visible(&conn),
-                settings::get_info_panel_visible(&conn),
-                settings::get_status_visible(&conn),
-                settings::get_window_decoration_mode(&conn),
+                settings::get_list_density(conn),
+                settings::get_sidebar_visible(conn),
+                settings::get_browse_visible(conn),
+                settings::get_info_panel_visible(conn),
+                settings::get_status_visible(conn),
+                settings::get_window_decoration_mode(conn),
             )
         };
         super::list_density::apply(self.track_list.column_view_widget(), density);
@@ -370,19 +370,18 @@ impl PreferencesContext {
     }
 
     fn apply_smoke(&self) {
-        let conn = self.conn.borrow();
-        let _ = settings::set_list_density(&conn, ListDensity::Compact);
-        let _ = settings::set_sidebar_visible(&conn, false);
-        let _ = settings::set_browse_visible(&conn, false);
-        let _ = settings::set_info_panel_visible(&conn, false);
-        let _ = settings::set_status_visible(&conn, false);
+        let conn = &self.conn;
+        let _ = settings::set_list_density(conn, ListDensity::Compact);
+        let _ = settings::set_sidebar_visible(conn, false);
+        let _ = settings::set_browse_visible(conn, false);
+        let _ = settings::set_info_panel_visible(conn, false);
+        let _ = settings::set_status_visible(conn, false);
         let _ = settings::set_window_decoration_mode(
-            &conn,
+            conn,
             reprise_core::library::settings::WindowDecorationMode::System,
         );
-        let _ = settings::set_player_bar_position(&conn, PlayerBarPosition::Top);
-        let _ = settings::set_equalizer_bands(&conn, equalizer_preset(1));
-        drop(conn);
+        let _ = settings::set_player_bar_position(conn, PlayerBarPosition::Top);
+        let _ = settings::set_equalizer_bands(conn, equalizer_preset(1));
         super::list_density::apply(self.track_list.column_view_widget(), ListDensity::Compact);
         super::window_navigation::apply_sidebar_visibility(
             &self.split_view,
@@ -444,18 +443,16 @@ impl PreferencesContext {
         &self,
         enabled: bool,
     ) -> Result<(), rusqlite::Error> {
-        let conn = self.conn.borrow();
-        reprise_core::online_sources::set_enabled(&conn, enabled)?;
-        self.cover_download.recompute_enabled(&conn);
-        self.artist_portrait.recompute_enabled(&conn);
-        self.artist_news.recompute_enabled(&conn);
-        self.concerts.recompute_enabled(&conn);
-        self.podcasts.recompute_enabled(&conn);
+        reprise_core::online_sources::set_enabled(&self.conn, enabled)?;
+        self.cover_download.recompute_enabled(&self.conn);
+        self.artist_portrait.recompute_enabled(&self.conn);
+        self.artist_news.recompute_enabled(&self.conn);
+        self.concerts.recompute_enabled(&self.conn);
+        self.podcasts.recompute_enabled(&self.conn);
         // `SRC-11`: source artwork keeps its gate in a process-wide atomic the
         // artwork workers read, so it has to be republished here too — a queue
         // that is still draining has no other reason to notice the change.
-        crate::ui::podcasts::source_image::recompute_gate(&conn);
-        drop(conn);
+        crate::ui::podcasts::source_image::recompute_gate(&self.conn);
         if let Some(player) = &self.player {
             player.recompute_lyrics_enabled();
         }
@@ -497,8 +494,8 @@ impl PreferencesContext {
             .title(strings::text(strings::EQUALIZER))
             .build();
         let equalizer_enabled = {
-            let conn = self.conn.borrow();
-            settings::get_equalizer_enabled(&conn)
+            let conn = &self.conn;
+            settings::get_equalizer_enabled(conn)
         };
         let enabled = adw::SwitchRow::builder()
             .title(strings::text(strings::ENABLE_EQUALIZER))
@@ -523,7 +520,7 @@ impl PreferencesContext {
             &strings::text(strings::PRESET_POP),
             &strings::text(strings::PRESET_BASS),
         ]);
-        let stored_bands = settings::get_equalizer_bands(&self.conn.borrow());
+        let stored_bands = settings::get_equalizer_bands(&self.conn);
         let selected = (0..4)
             .find(|index| equalizer_preset(*index) == stored_bands)
             .unwrap_or(gtk4::INVALID_LIST_POSITION);
@@ -548,9 +545,9 @@ impl PreferencesContext {
             updating_for_band.set(true);
             preset_for_band.set_selected(gtk4::INVALID_LIST_POSITION);
             updating_for_band.set(false);
-            let mut bands = settings::get_equalizer_bands(&context.conn.borrow());
+            let mut bands = settings::get_equalizer_bands(&context.conn);
             bands[index] = value;
-            if let Err(error) = settings::set_equalizer_bands(&context.conn.borrow(), bands) {
+            if let Err(error) = settings::set_equalizer_bands(&context.conn, bands) {
                 tracing::warn!(%error, "could not save equalizer bands");
                 return;
             }
@@ -575,7 +572,7 @@ impl PreferencesContext {
                 return;
             };
             let bands = equalizer_preset(row.selected());
-            if let Err(error) = settings::set_equalizer_bands(&context.conn.borrow(), bands) {
+            if let Err(error) = settings::set_equalizer_bands(&context.conn, bands) {
                 tracing::warn!(%error, "could not save equalizer preset");
                 return;
             }
@@ -595,8 +592,8 @@ impl PreferencesContext {
             &strings::text(strings::REPLAYGAIN_ALBUM),
         ]);
         let selected_mode = {
-            let conn = self.conn.borrow();
-            replay_gain_index(settings::get_replay_gain_mode(&conn))
+            let conn = &self.conn;
+            replay_gain_index(settings::get_replay_gain_mode(conn))
         };
         let mode = adw::ComboRow::builder()
             .title(strings::text(strings::REPLAYGAIN_MODE))
@@ -636,8 +633,8 @@ impl PreferencesContext {
         // Crossfade card row: title + live value + subtitle + a 0..10 s slider
         // ("Off" at 0).
         let stored_crossfade = {
-            let conn = self.conn.borrow();
-            settings::get_crossfade_seconds(&conn)
+            let conn = &self.conn;
+            settings::get_crossfade_seconds(conn)
         };
         let crossfade_content = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
         crossfade_content.add_css_class("reprise-crossfade");
@@ -682,8 +679,8 @@ impl PreferencesContext {
 
         // Gapless: a standard switch row, the second row of the same card.
         let gapless_enabled = {
-            let conn = self.conn.borrow();
-            settings::get_gapless_enabled(&conn)
+            let conn = &self.conn;
+            settings::get_gapless_enabled(conn)
         };
         let gapless = adw::SwitchRow::builder()
             .title(strings::text(strings::GAPLESS_PLAYBACK))
@@ -722,8 +719,8 @@ impl PreferencesContext {
     /// backend (plus a re-feed) so the change takes effect immediately.
     fn set_gapless_enabled(&self, enabled: bool) {
         {
-            let conn = self.conn.borrow();
-            if let Err(error) = settings::set_gapless_enabled(&conn, enabled) {
+            let conn = &self.conn;
+            if let Err(error) = settings::set_gapless_enabled(conn, enabled) {
                 tracing::warn!(%error, "could not save gapless setting");
                 return;
             }
@@ -735,8 +732,8 @@ impl PreferencesContext {
 
     fn set_crossfade_seconds(&self, seconds: u8) {
         {
-            let conn = self.conn.borrow();
-            if let Err(error) = settings::set_crossfade_seconds(&conn, seconds) {
+            let conn = &self.conn;
+            if let Err(error) = settings::set_crossfade_seconds(conn, seconds) {
                 tracing::warn!(%error, "could not save crossfade duration");
                 return;
             }

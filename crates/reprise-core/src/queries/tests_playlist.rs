@@ -8,9 +8,9 @@
 use super::*;
 use crate::library::playlists;
 
-fn seeded_conn_with_tracks(count: i64) -> Connection {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+fn seeded_conn_with_tracks(count: i64) -> crate::db::Db {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     for i in 1..=count {
         conn.execute(
             "INSERT INTO tracks (id, path, title, artist, added_at) \
@@ -19,17 +19,17 @@ fn seeded_conn_with_tracks(count: i64) -> Connection {
         )
         .unwrap();
     }
-    conn
+    db
 }
 
 #[test]
 fn playlist_window_follows_position_order_by_default() {
-    let mut conn = seeded_conn_with_tracks(3);
-    let playlist_id = playlists::create(&conn, "P1").unwrap();
-    playlists::add_tracks(&mut conn, playlist_id, &[3, 1, 2]).unwrap();
+    let db = seeded_conn_with_tracks(3);
+    let playlist_id = playlists::create(&db, "P1").unwrap();
+    playlists::add_tracks(&db, playlist_id, &[3, 1, 2]).unwrap();
 
     let rows = query_track_window(
-        &mut conn,
+        &db,
         &ViewSource::Playlist(playlist_id),
         "playlist_order",
         "asc",
@@ -45,12 +45,12 @@ fn playlist_window_follows_position_order_by_default() {
 
 #[test]
 fn playlist_window_shows_duplicates_as_separate_rows() {
-    let mut conn = seeded_conn_with_tracks(3);
-    let playlist_id = playlists::create(&conn, "P1").unwrap();
-    playlists::add_tracks(&mut conn, playlist_id, &[1, 2, 1]).unwrap();
+    let db = seeded_conn_with_tracks(3);
+    let playlist_id = playlists::create(&db, "P1").unwrap();
+    playlists::add_tracks(&db, playlist_id, &[1, 2, 1]).unwrap();
 
     let rows = query_track_window(
-        &mut conn,
+        &db,
         &ViewSource::Playlist(playlist_id),
         "playlist_order",
         "asc",
@@ -63,21 +63,21 @@ fn playlist_window_shows_duplicates_as_separate_rows() {
     let ids: Vec<i64> = rows.iter().map(|t| t.id).collect();
     assert_eq!(ids, vec![1, 2, 1]);
     assert_eq!(
-        query_track_count(&conn, &ViewSource::Playlist(playlist_id), "", &[]).unwrap(),
+        query_track_count(&db, &ViewSource::Playlist(playlist_id), "", &[]).unwrap(),
         3
     );
 }
 
 #[test]
 fn playlist_window_honors_an_explicit_column_sort_override() {
-    let mut conn = seeded_conn_with_tracks(3);
-    let playlist_id = playlists::create(&conn, "P1").unwrap();
-    playlists::add_tracks(&mut conn, playlist_id, &[3, 1, 2]).unwrap();
+    let db = seeded_conn_with_tracks(3);
+    let playlist_id = playlists::create(&db, "P1").unwrap();
+    playlists::add_tracks(&db, playlist_id, &[3, 1, 2]).unwrap();
 
     // A column header click (e.g. "title") temporarily overrides
     // playlist order.
     let rows = query_track_window(
-        &mut conn,
+        &db,
         &ViewSource::Playlist(playlist_id),
         "title",
         "asc",
@@ -93,17 +93,18 @@ fn playlist_window_honors_an_explicit_column_sort_override() {
 
 #[test]
 fn playlist_window_keeps_missing_tracks_at_their_playlist_positions() {
-    let mut conn = seeded_conn_with_tracks(3);
+    let db = seeded_conn_with_tracks(3);
+    let conn = db.conn();
     conn.execute(
         "UPDATE tracks SET missing_since = 1, missing_reason = 'unknown' WHERE id = 2",
         [],
     )
     .unwrap();
-    let playlist_id = playlists::create(&conn, "P1").unwrap();
-    playlists::add_tracks(&mut conn, playlist_id, &[1, 2, 3]).unwrap();
+    let playlist_id = playlists::create(&db, "P1").unwrap();
+    playlists::add_tracks(&db, playlist_id, &[1, 2, 3]).unwrap();
 
     let rows = query_track_window(
-        &mut conn,
+        &db,
         &ViewSource::Playlist(playlist_id),
         "playlist_order",
         "asc",
@@ -129,30 +130,31 @@ fn playlist_window_keeps_missing_tracks_at_their_playlist_positions() {
 
 #[test]
 fn playlist_count_includes_missing_members() {
-    let mut conn = seeded_conn_with_tracks(3);
+    let db = seeded_conn_with_tracks(3);
+    let conn = db.conn();
     conn.execute(
         "UPDATE tracks SET missing_since = 1, missing_reason = 'deleted' WHERE id = 2",
         [],
     )
     .unwrap();
-    let playlist_id = playlists::create(&conn, "P1").unwrap();
-    playlists::add_tracks(&mut conn, playlist_id, &[1, 2, 3]).unwrap();
+    let playlist_id = playlists::create(&db, "P1").unwrap();
+    playlists::add_tracks(&db, playlist_id, &[1, 2, 3]).unwrap();
 
     assert_eq!(
-        query_track_count(&conn, &ViewSource::Playlist(playlist_id), "", &[]).unwrap(),
+        query_track_count(&db, &ViewSource::Playlist(playlist_id), "", &[]).unwrap(),
         3
     );
 }
 
 #[test]
 fn playlist_ids_always_follow_position_order_ignoring_sort_param() {
-    let mut conn = seeded_conn_with_tracks(3);
-    let playlist_id = playlists::create(&conn, "P1").unwrap();
-    playlists::add_tracks(&mut conn, playlist_id, &[3, 1, 2]).unwrap();
+    let db = seeded_conn_with_tracks(3);
+    let playlist_id = playlists::create(&db, "P1").unwrap();
+    playlists::add_tracks(&db, playlist_id, &[3, 1, 2]).unwrap();
 
     // Even asking for "title" order, activation ids stay position order.
     let ids = query_track_ids(
-        &conn,
+        &db,
         &ViewSource::Playlist(playlist_id),
         "title",
         "asc",
@@ -165,105 +167,103 @@ fn playlist_ids_always_follow_position_order_ignoring_sort_param() {
 
 #[test]
 fn playlist_playable_ids_exclude_missing_members() {
-    let mut conn = seeded_conn_with_tracks(3);
+    let db = seeded_conn_with_tracks(3);
+    let conn = db.conn();
     conn.execute(
         "UPDATE tracks SET missing_since = 1, missing_reason = 'unmounted' WHERE id = 2",
         [],
     )
     .unwrap();
-    let playlist_id = playlists::create(&conn, "P1").unwrap();
-    playlists::add_tracks(&mut conn, playlist_id, &[1, 2, 3]).unwrap();
+    let playlist_id = playlists::create(&db, "P1").unwrap();
+    playlists::add_tracks(&db, playlist_id, &[1, 2, 3]).unwrap();
 
     assert_eq!(
-        playlist::query_playable_track_ids_playlist(&conn, playlist_id, "").unwrap(),
+        playlist::query_playable_track_ids_playlist(conn, playlist_id, "").unwrap(),
         vec![1, 3]
     );
 }
 
 #[test]
 fn playlist_visible_ids_include_missing_members_in_position_order() {
-    let mut conn = seeded_conn_with_tracks(3);
+    let db = seeded_conn_with_tracks(3);
+    let conn = db.conn();
     conn.execute(
         "UPDATE tracks SET missing_since = 1, missing_reason = 'deleted' WHERE id = 2",
         [],
     )
     .unwrap();
-    let playlist_id = playlists::create(&conn, "P1").unwrap();
-    playlists::add_tracks(&mut conn, playlist_id, &[3, 2, 1]).unwrap();
+    let playlist_id = playlists::create(&db, "P1").unwrap();
+    playlists::add_tracks(&db, playlist_id, &[3, 2, 1]).unwrap();
 
     assert_eq!(
-        playlist::query_visible_track_ids_playlist(
-            &conn,
-            playlist_id,
-            "playlist_order",
-            "asc",
-            "",
-        )
-        .unwrap(),
+        playlist::query_visible_track_ids_playlist(conn, playlist_id, "playlist_order", "asc", "",)
+            .unwrap(),
         vec![3, 2, 1]
     );
 }
 
 #[test]
 fn playlist_visible_ids_follow_the_visible_column_sort() {
-    let mut conn = seeded_conn_with_tracks(3);
+    let db = seeded_conn_with_tracks(3);
+    let conn = db.conn();
     conn.execute(
         "UPDATE tracks SET missing_since = 1, missing_reason = 'deleted' WHERE id = 2",
         [],
     )
     .unwrap();
-    let playlist_id = playlists::create(&conn, "P1").unwrap();
-    playlists::add_tracks(&mut conn, playlist_id, &[3, 2, 1]).unwrap();
+    let playlist_id = playlists::create(&db, "P1").unwrap();
+    playlists::add_tracks(&db, playlist_id, &[3, 2, 1]).unwrap();
 
     assert_eq!(
-        playlist::query_visible_track_ids_playlist(&conn, playlist_id, "title", "asc", "").unwrap(),
+        playlist::query_visible_track_ids_playlist(conn, playlist_id, "title", "asc", "").unwrap(),
         vec![1, 2, 3]
     );
 }
 
 #[test]
 fn playlist_count_applies_filter() {
-    let mut conn = seeded_conn_with_tracks(3);
-    let playlist_id = playlists::create(&conn, "P1").unwrap();
-    playlists::add_tracks(&mut conn, playlist_id, &[1, 2, 3]).unwrap();
+    let db = seeded_conn_with_tracks(3);
+    let playlist_id = playlists::create(&db, "P1").unwrap();
+    playlists::add_tracks(&db, playlist_id, &[1, 2, 3]).unwrap();
 
     assert_eq!(
-        query_track_count(&conn, &ViewSource::Playlist(playlist_id), "Track 2", &[]).unwrap(),
+        query_track_count(&db, &ViewSource::Playlist(playlist_id), "Track 2", &[]).unwrap(),
         1
     );
 }
 
 #[test]
 fn playlist_tracks_full_returns_all_rows_in_position_order() {
-    let mut conn = seeded_conn_with_tracks(5);
-    let playlist_id = playlists::create(&conn, "P1").unwrap();
-    playlists::add_tracks(&mut conn, playlist_id, &[3, 1, 5, 2]).unwrap();
+    let db = seeded_conn_with_tracks(5);
+    let playlist_id = playlists::create(&db, "P1").unwrap();
+    playlists::add_tracks(&db, playlist_id, &[3, 1, 5, 2]).unwrap();
 
-    let tracks = query_playlist_tracks_full(&conn, playlist_id).unwrap();
+    let tracks = query_playlist_tracks_full(&db, playlist_id).unwrap();
     let ids: Vec<i64> = tracks.iter().map(|t| t.id).collect();
     assert_eq!(ids, vec![3, 1, 5, 2]);
 }
 
 #[test]
 fn playlist_tracks_full_excludes_missing_tracks() {
-    let mut conn = seeded_conn_with_tracks(3);
+    let db = seeded_conn_with_tracks(3);
+    let conn = db.conn();
     conn.execute(
         "UPDATE tracks SET missing_since = 1, missing_reason = 'unknown' WHERE id = 2",
         [],
     )
     .unwrap();
-    let playlist_id = playlists::create(&conn, "P1").unwrap();
-    playlists::add_tracks(&mut conn, playlist_id, &[1, 2, 3]).unwrap();
+    let playlist_id = playlists::create(&db, "P1").unwrap();
+    playlists::add_tracks(&db, playlist_id, &[1, 2, 3]).unwrap();
 
-    let tracks = query_playlist_tracks_full(&conn, playlist_id).unwrap();
+    let tracks = query_playlist_tracks_full(&db, playlist_id).unwrap();
     let ids: Vec<i64> = tracks.iter().map(|t| t.id).collect();
     assert_eq!(ids, vec![1, 3]);
 }
 
 #[test]
 fn playlist_tracks_full_empty_playlist_returns_empty() {
-    let conn = seeded_conn_with_tracks(3);
-    let playlist_id = playlists::create(&conn, "P1").unwrap();
-    let tracks = query_playlist_tracks_full(&conn, playlist_id).unwrap();
+    let db = seeded_conn_with_tracks(3);
+    let playlist_id = playlists::create(&db, "P1").unwrap();
+    let tracks = query_playlist_tracks_full(&db, playlist_id).unwrap();
     assert!(tracks.is_empty());
 }

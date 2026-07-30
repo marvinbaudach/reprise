@@ -61,9 +61,9 @@ impl Served {
                 devices: Box::new(FakeDevices::new()),
                 clock: Box::new(FakeClock::starting_at(1_753_600_000)),
             };
-            let conn = reprise_core::db::open_migrated(None).expect("an in-memory database");
+            let db = reprise_core::db::Db::open_in_memory().expect("an in-memory database");
             let lease = RuntimeLease::claim_at(&lease_path).expect("the test owns its own lease");
-            RuntimeService::serve(Runtime::new(conn, ports), lease, &options, inbox, None)
+            RuntimeService::serve(Runtime::new(db, ports), lease, &options, inbox, None)
                 .expect("the service starts");
         });
 

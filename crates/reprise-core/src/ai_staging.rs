@@ -16,9 +16,8 @@
 
 use std::path::{Path, PathBuf};
 
-use rusqlite::Connection;
-
 use crate::ai_jobs::{self, JobState};
+use rusqlite::Connection;
 
 /// The staging subdirectory under the XDG data dir
 /// (`<data_dir>/reprise/staging`). Resolves the *same* base as
@@ -168,7 +167,8 @@ impl StagingStore {
     /// Idempotent. Returns the job ids whose renders were removed (ascending).
     /// Only `*.flac` renders are considered; claim-scoped `*.partial` temps are
     /// invisible to the listing this walks.
-    pub fn sweep_orphans(&self, conn: &Connection) -> Result<Vec<i64>, SweepError> {
+    pub fn sweep_orphans(&self, db: &crate::db::Db) -> Result<Vec<i64>, SweepError> {
+        let conn = db.conn();
         let mut removed = Vec::new();
         for entry in self.list()? {
             if render_is_orphan(conn, entry.job_id)? {
@@ -187,7 +187,7 @@ impl StagingStore {
 /// Whether the render for `job_id` is an orphan [`StagingStore::sweep_orphans`]
 /// removes (see its doc for the exact rule).
 fn render_is_orphan(conn: &Connection, job_id: i64) -> Result<bool, rusqlite::Error> {
-    let Some(job) = ai_jobs::get_job(conn, job_id)? else {
+    let Some(job) = ai_jobs::get_job_in(conn, job_id)? else {
         return Ok(true); // no job owns this render
     };
     Ok(match job.state {
@@ -329,18 +329,18 @@ mod tests {
         let store = StagingStore::new(dir.path());
         store.ensure_dir().unwrap();
 
-        let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
+        let db = crate::db::Db::open_in_memory().unwrap();
         // A track for the saved job's result_track_id foreign key.
-        conn.execute(
-            "INSERT INTO tracks (id, path, title, artist, added_at, file_mtime, file_size) \
+        db.conn()
+            .execute(
+                "INSERT INTO tracks (id, path, title, artist, added_at, file_mtime, file_size) \
              VALUES (1, '/music/x.flac', 'X', 'A', 1, 1, 1)",
-            [],
-        )
-        .unwrap();
+                [],
+            )
+            .unwrap();
 
         let make = |id: i64, status: &str, result: Option<i64>| {
-            conn.execute(
+            db.conn().execute(
                 "INSERT INTO ai_jobs (id, kind, params_json, params_fingerprint, status, result_track_id, created_at) \
                  VALUES (?1, 'instrumental', '{}', ?2, ?3, ?4, 0)",
                 rusqlite::params![id, format!("fp-{id}"), status, result],
@@ -356,7 +356,7 @@ mod tests {
                                  // A render whose job never existed -> remove.
         std::fs::write(store.path_for_job(9), b"orphan").unwrap();
 
-        let removed = store.sweep_orphans(&conn).unwrap();
+        let removed = store.sweep_orphans(&db).unwrap();
 
         assert_eq!(
             removed,
@@ -371,6 +371,6 @@ mod tests {
         assert!(!store.exists(9));
 
         // Idempotent: a second sweep finds nothing more to remove.
-        assert!(store.sweep_orphans(&conn).unwrap().is_empty());
+        assert!(store.sweep_orphans(&db).unwrap().is_empty());
     }
 }

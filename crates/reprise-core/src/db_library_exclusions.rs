@@ -36,7 +36,7 @@ mod tests {
     #[test]
     fn browse_7_v24_upgrade_adds_idempotent_exclusion_schema() {
         let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
+        crate::db::migrate_connection(&conn).unwrap();
         conn.execute_batch(
             "DROP TABLE library_exclusions;
              PRAGMA user_version = 24;",

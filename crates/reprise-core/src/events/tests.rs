@@ -1,14 +1,14 @@
 use super::*;
 
-fn migrated_conn() -> rusqlite::Connection {
-    crate::db::open_migrated(None).unwrap()
+fn migrated_conn() -> crate::db::Db {
+    crate::db::Db::open_in_memory().unwrap()
 }
 
 #[test]
 fn rolled_back_domain_transaction_leaves_no_change_event() {
-    let mut conn = migrated_conn();
+    let conn = migrated_conn();
     {
-        let transaction = conn.transaction().unwrap();
+        let transaction = conn.conn().unchecked_transaction().unwrap();
         record_at(
             &transaction,
             "playlist",
@@ -26,8 +26,24 @@ fn rolled_back_domain_transaction_leaves_no_change_event() {
 #[test]
 fn committed_events_are_read_in_total_id_order() {
     let conn = migrated_conn();
-    record_at(&conn, "playlist", "2", "rename", WriterToken(7), 2_000).unwrap();
-    record_at(&conn, "settings", "density", "set", WriterToken(8), 1_000).unwrap();
+    record_at(
+        conn.conn(),
+        "playlist",
+        "2",
+        "rename",
+        WriterToken(7),
+        2_000,
+    )
+    .unwrap();
+    record_at(
+        conn.conn(),
+        "settings",
+        "density",
+        "set",
+        WriterToken(8),
+        1_000,
+    )
+    .unwrap();
 
     let changes = read_since(&conn, 0, None).unwrap();
 
@@ -41,8 +57,8 @@ fn committed_events_are_read_in_total_id_order() {
 #[test]
 fn read_since_excludes_the_callers_writer_token() {
     let conn = migrated_conn();
-    record_at(&conn, "playlist", "1", "create", WriterToken(11), 1).unwrap();
-    record_at(&conn, "playlist", "2", "create", WriterToken(12), 2).unwrap();
+    record_at(conn.conn(), "playlist", "1", "create", WriterToken(11), 1).unwrap();
+    record_at(conn.conn(), "playlist", "2", "create", WriterToken(12), 2).unwrap();
 
     let changes = read_since(&conn, 0, Some(WriterToken(11))).unwrap();
 
@@ -68,7 +84,7 @@ fn writer_token_exposes_its_value_and_serializes_as_a_bare_integer() {
 fn record_uses_the_process_writer_token() {
     let conn = migrated_conn();
 
-    record(&conn, "playlist", "1", "create").unwrap();
+    record(conn.conn(), "playlist", "1", "create").unwrap();
 
     let changes = read_since(&conn, 0, None).unwrap();
     assert_eq!(changes[0].writer, writer_token());
@@ -79,11 +95,11 @@ fn latest_id_is_zero_when_empty_and_tracks_the_newest_row() {
     let conn = migrated_conn();
     assert_eq!(latest_id(&conn).unwrap(), 0);
 
-    record(&conn, "playlist", "1", "create").unwrap();
+    record(conn.conn(), "playlist", "1", "create").unwrap();
     let first = latest_id(&conn).unwrap();
     assert!(first > 0);
 
-    record(&conn, "playlist", "2", "create").unwrap();
+    record(conn.conn(), "playlist", "2", "create").unwrap();
     let second = latest_id(&conn).unwrap();
     assert_eq!(second, first + 1);
     // Agrees with read_since's view of the last row's id.
@@ -98,7 +114,7 @@ fn prune_keeps_recent_rows_even_beyond_the_count_floor() {
     let conn = migrated_conn();
     for id in 0..=MAX_RETAINED_CHANGES {
         record_at(
-            &conn,
+            conn.conn(),
             "scan",
             &id.to_string(),
             "complete",
@@ -108,7 +124,7 @@ fn prune_keeps_recent_rows_even_beyond_the_count_floor() {
         .unwrap();
     }
 
-    assert_eq!(prune_at(&conn, 10_000).unwrap(), 0);
+    assert_eq!(prune_at(conn.conn(), 10_000).unwrap(), 0);
     assert_eq!(read_since(&conn, 0, None).unwrap().len(), 10_001);
 }
 
@@ -117,7 +133,7 @@ fn prune_removes_only_rows_older_than_both_retention_boundaries() {
     let conn = migrated_conn();
     for id in 0..=MAX_RETAINED_CHANGES {
         record_at(
-            &conn,
+            conn.conn(),
             "scan",
             &id.to_string(),
             "complete",
@@ -127,7 +143,7 @@ fn prune_removes_only_rows_older_than_both_retention_boundaries() {
         .unwrap();
     }
 
-    assert_eq!(prune_at(&conn, RETENTION_SECS + 2).unwrap(), 1);
+    assert_eq!(prune_at(conn.conn(), RETENTION_SECS + 2).unwrap(), 1);
     let remaining = read_since(&conn, 0, None).unwrap();
     assert_eq!(remaining.len(), MAX_RETAINED_CHANGES);
     assert_eq!(remaining.first().unwrap().entity_id, "1");
@@ -136,10 +152,10 @@ fn prune_removes_only_rows_older_than_both_retention_boundaries() {
 #[test]
 fn open_migrated_prunes_the_persisted_change_log() {
     let database = tempfile::NamedTempFile::new().unwrap();
-    let conn = crate::db::open_migrated(Some(database.path())).unwrap();
+    let conn = crate::db::Db::open_migrated(Some(database.path())).unwrap();
     for id in 0..=MAX_RETAINED_CHANGES {
         record_at(
-            &conn,
+            conn.conn(),
             "scan",
             &id.to_string(),
             "complete",
@@ -150,7 +166,7 @@ fn open_migrated_prunes_the_persisted_change_log() {
     }
     drop(conn);
 
-    let reopened = crate::db::open_migrated(Some(database.path())).unwrap();
+    let reopened = crate::db::Db::open_migrated(Some(database.path())).unwrap();
 
     assert_eq!(read_since(&reopened, 0, None).unwrap().len(), 10_000);
 }
@@ -164,10 +180,10 @@ fn open_migrated_succeeds_while_a_foreign_write_transaction_is_held() {
     let database = tempfile::NamedTempFile::new().unwrap();
     // Populate enough old rows that a prune is genuinely due, so the open path
     // actually reaches the (now non-blocking) DELETE rather than the idle probe.
-    let conn = crate::db::open_migrated(Some(database.path())).unwrap();
+    let conn = crate::db::Db::open_migrated(Some(database.path())).unwrap();
     for id in 0..=MAX_RETAINED_CHANGES {
         record_at(
-            &conn,
+            conn.conn(),
             "scan",
             &id.to_string(),
             "complete",
@@ -183,7 +199,7 @@ fn open_migrated_succeeds_while_a_foreign_write_transaction_is_held() {
     blocker.execute_batch("BEGIN IMMEDIATE").unwrap();
 
     let started = std::time::Instant::now();
-    let reopened = crate::db::open_migrated(Some(database.path())).unwrap();
+    let reopened = crate::db::Db::open_migrated(Some(database.path())).unwrap();
     assert!(
         started.elapsed() < std::time::Duration::from_secs(4),
         "open must not block waiting out the busy_timeout on the held write lock"
@@ -202,9 +218,9 @@ fn open_migrated_succeeds_while_a_foreign_write_transaction_is_held() {
 #[test]
 fn open_migrated_with_nothing_to_prune_performs_no_write() {
     let database = tempfile::NamedTempFile::new().unwrap();
-    let conn = crate::db::open_migrated(Some(database.path())).unwrap();
+    let conn = crate::db::Db::open_migrated(Some(database.path())).unwrap();
     // One recent row: below both retention floors, so nothing is ever eligible.
-    record(&conn, "playlist", "1", "create").unwrap();
+    record(conn.conn(), "playlist", "1", "create").unwrap();
     drop(conn);
 
     let observer = crate::db::open(Some(database.path())).unwrap();
@@ -212,7 +228,7 @@ fn open_migrated_with_nothing_to_prune_performs_no_write() {
         .query_row("PRAGMA data_version", [], |row| row.get(0))
         .unwrap();
 
-    let reopened = crate::db::open_migrated(Some(database.path())).unwrap();
+    let reopened = crate::db::Db::open_migrated(Some(database.path())).unwrap();
     // Read the counter while `reopened` is still alive: a would-be prune write
     // happens during the open above, so it would already show here.
     let after: i64 = observer

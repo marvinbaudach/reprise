@@ -102,10 +102,18 @@ impl HistoryEntry {
 /// The tie-break reuses `parse_partial_date`'s fallback-to-`today` pattern
 /// from `compare_stored_releases` rather than a raw string compare.
 pub fn query_history(
+    db: &crate::db::Db,
+    today: NaiveDate,
+) -> Result<Vec<HistoryEntry>, rusqlite::Error> {
+    let conn = db.conn();
+    query_history_in(conn, today)
+}
+
+pub(crate) fn query_history_in(
     conn: &Connection,
     today: NaiveDate,
 ) -> Result<Vec<HistoryEntry>, rusqlite::Error> {
-    Ok(query_complete_history(conn, today)?
+    Ok(query_complete_history_in(conn, today)?
         .into_iter()
         .map(|record| HistoryEntry {
             release_group_mbid: record.release_group_mbid,
@@ -128,6 +136,14 @@ pub fn query_history(
 /// Reads every durable New Releases field, including hidden history, without
 /// applying the current Releases UI filters.
 pub fn query_complete_history(
+    db: &crate::db::Db,
+    today: NaiveDate,
+) -> Result<Vec<ReleaseHistoryRecord>, rusqlite::Error> {
+    let conn = db.conn();
+    query_complete_history_in(conn, today)
+}
+
+fn query_complete_history_in(
     conn: &Connection,
     today: NaiveDate,
 ) -> Result<Vec<ReleaseHistoryRecord>, rusqlite::Error> {
@@ -211,7 +227,8 @@ fn local_today(now: i64) -> NaiveDate {
 /// durable catalog data. Any other row is deleted when it is NOT protected
 /// AND (it is older than `HISTORY_RETENTION_SECONDS` by `first_seen`, OR it
 /// falls beyond the `HISTORY_MAX_ENTRIES` newest transient rows).
-pub fn enforce_retention(conn: &Connection, now: i64) -> Result<(), rusqlite::Error> {
+pub fn enforce_retention(db: &crate::db::Db, now: i64) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
     let today = local_today(now);
     let cutoff = now - HISTORY_RETENTION_SECONDS;
     let window_start = today - chrono::Duration::days(FETCH_WINDOW_PROTECTION_DAYS);
@@ -288,44 +305,48 @@ fn is_protected_by_fetch_window(first_release_date: &str, window_start: NaiveDat
 /// path (which also nulls `hidden_at`) so there is a single place that
 /// defines what "un-hidden" means. The Releases full view calls this for
 /// its per-row "Show again" action.
-pub fn restore_release(conn: &Connection, release_group_mbid: &str) -> Result<(), rusqlite::Error> {
-    crate::artist_news::set_release_hidden(conn, release_group_mbid, false)
+pub fn restore_release(
+    db: &crate::db::Db,
+    release_group_mbid: &str,
+) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
+    crate::artist_news_query::set_release_hidden_in(conn, release_group_mbid, false)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn migrated_conn() -> Connection {
-        let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
-        conn
+    fn migrated_conn() -> crate::db::Db {
+        crate::db::Db::open_in_memory().unwrap()
     }
 
     fn insert_history_row(
-        conn: &Connection,
+        db: &crate::db::Db,
         mbid: &str,
         first_seen: i64,
         first_release_date: &str,
         release_type: &str,
     ) {
-        conn.execute(
-            "INSERT INTO new_releases (
+        db.conn()
+            .execute(
+                "INSERT INTO new_releases (
                release_group_mbid, artist_name, artist_mbid, title, release_type,
                first_release_date, fetched_at, fallback_accent, first_seen
              ) VALUES (?1, 'Artist', 'artist-mbid', 'Title', ?2, ?3, ?4, '#123456', ?4)",
-            rusqlite::params![mbid, release_type, first_release_date, first_seen],
-        )
-        .unwrap();
+                rusqlite::params![mbid, release_type, first_release_date, first_seen],
+            )
+            .unwrap();
     }
 
-    fn release_exists(conn: &Connection, mbid: &str) -> bool {
-        conn.query_row(
-            "SELECT COUNT(*) FROM new_releases WHERE release_group_mbid = ?1",
-            [mbid],
-            |row| row.get::<_, i64>(0),
-        )
-        .unwrap()
+    fn release_exists(db: &crate::db::Db, mbid: &str) -> bool {
+        db.conn()
+            .query_row(
+                "SELECT COUNT(*) FROM new_releases WHERE release_group_mbid = ?1",
+                [mbid],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap()
             > 0
     }
 
@@ -374,6 +395,7 @@ mod tests {
         enforce_retention(&conn, now).unwrap();
 
         let remaining: i64 = conn
+            .conn()
             .query_row("SELECT COUNT(*) FROM new_releases", [], |row| row.get(0))
             .unwrap();
         assert_eq!(remaining, 200);

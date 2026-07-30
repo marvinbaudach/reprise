@@ -13,6 +13,7 @@ use gtk4::gio::prelude::*;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
+use reprise_core::db::Db;
 use reprise_core::queries::{self, MissingGroupKind};
 use reprise_core::view_source::ViewSource;
 
@@ -109,8 +110,8 @@ fn show_context_menu(
 
 fn dismiss_all_import_errors(shared: &Rc<Shared>) {
     let result = {
-        let conn = shared.conn.borrow();
-        dismiss_import_errors_with_stat(&conn, &crate::ui::import_errors_view::file_stat)
+        let conn = &shared.conn;
+        dismiss_import_errors_with_stat(conn, &crate::ui::import_errors_view::file_stat)
     };
     match result {
         Ok(dismissed) => {
@@ -129,16 +130,16 @@ fn dismiss_all_import_errors(shared: &Rc<Shared>) {
 }
 
 fn dismiss_import_errors_with_stat(
-    conn: &rusqlite::Connection,
+    db: &Db,
     stat: &dyn Fn(&str) -> Option<(i64, i64)>,
 ) -> Result<u32, rusqlite::Error> {
-    queries::dismiss_all_import_errors(conn, stat)
+    queries::dismiss_all_import_errors(db, stat)
 }
 
 fn confirm_remove_all_missing(shared: &Rc<Shared>) {
     let ids = {
-        let conn = shared.conn.borrow();
-        match missing_ids_for_cleanup(&conn) {
+        let conn = &shared.conn;
+        match missing_ids_for_cleanup(conn) {
             Ok(ids) => ids,
             Err(error) => {
                 tracing::error!(%error, "failed to load missing ids for bulk removal");
@@ -172,8 +173,8 @@ fn confirm_remove_all_missing(shared: &Rc<Shared>) {
     });
 }
 
-fn missing_ids_for_cleanup(conn: &rusqlite::Connection) -> Result<Vec<i64>, rusqlite::Error> {
-    queries::query_missing_rows(conn, &MissingGroupKind::Deleted, 0, u32::MAX)
+fn missing_ids_for_cleanup(db: &Db) -> Result<Vec<i64>, rusqlite::Error> {
+    queries::query_missing_rows(db, &MissingGroupKind::Deleted, 0, u32::MAX)
         .map(|tracks| tracks.into_iter().map(|track| track.id).collect())
 }
 
@@ -221,15 +222,16 @@ mod tests {
 
     #[test]
     fn bulk_cleanup_routes_keep_issue_rows_reversible() {
-        let conn = reprise_core::db::open_migrated(None).unwrap();
+        let conn = crate::test_db::open().unwrap();
         for path in ["/x/stat-ok.flac", "/x/stat-fails.flac"] {
-            conn.execute(
-                "INSERT INTO import_errors \
+            crate::test_db::connection(&conn)
+                .execute(
+                    "INSERT INTO import_errors \
                  (path,reason_kind,reason_detail,first_seen,last_seen) \
                  VALUES (?1,'io','broken',1,1)",
-                [path],
-            )
-            .unwrap();
+                    [path],
+                )
+                .unwrap();
         }
         let dismissed = dismiss_import_errors_with_stat(&conn, &|path| {
             (path == "/x/stat-ok.flac").then_some((11, 22))
@@ -240,56 +242,57 @@ mod tests {
         assert_eq!(queries::count_import_errors_active(&conn).unwrap(), 1);
         assert_eq!(queries::count_dismissed_import_errors(&conn).unwrap(), 1);
 
-        conn.execute(
-            "INSERT INTO tracks \
+        crate::test_db::connection(&conn)
+            .execute(
+                "INSERT INTO tracks \
              (id,path,title,artist,added_at,missing_since,missing_reason) \
              VALUES (7,'/x/gone.flac','Gone','',0,1,'deleted')",
-            [],
-        )
-        .unwrap();
+                [],
+            )
+            .unwrap();
         let ids = missing_ids_for_cleanup(&conn).unwrap();
         assert_eq!(ids, vec![7]);
 
-        let conn = Rc::new(RefCell::new(conn));
+        let conn = Rc::new(conn);
         let invoked = Rc::new(Cell::new(false));
         let route: OnRemoveMissing = {
             let conn = conn.clone();
             let invoked = invoked.clone();
             Rc::new(move |ids| {
                 invoked.set(true);
-                queries::tombstone_tracks(&conn.borrow(), ids, 100).unwrap();
+                queries::tombstone_tracks(&conn, ids, 100).unwrap();
             })
         };
         assert!(dispatch_missing_cleanup(Some(route), &ids));
         assert!(invoked.get());
-        assert_eq!(queries::count_missing(&conn.borrow()).unwrap(), 0);
-        let removed_at: Option<i64> = conn
-            .borrow()
+        assert_eq!(queries::count_missing(&conn).unwrap(), 0);
+        let removed_at: Option<i64> = crate::test_db::connection(&conn)
             .query_row("SELECT removed_at FROM tracks WHERE id=7", [], |row| {
                 row.get(0)
             })
             .unwrap();
         assert_eq!(removed_at, Some(100), "the row is retained for Undo");
-        queries::undo_tombstone(&conn.borrow(), &ids).unwrap();
-        assert_eq!(queries::count_missing(&conn.borrow()).unwrap(), 1);
+        queries::undo_tombstone(&conn, &ids).unwrap();
+        assert_eq!(queries::count_missing(&conn).unwrap(), 1);
     }
 
     #[test]
     fn sidebar_bulk_cleanup_selects_only_proven_deleted_tracks() {
-        let conn = reprise_core::db::open_migrated(None).unwrap();
+        let conn = crate::test_db::open().unwrap();
         for (id, reason) in [(1, "deleted"), (2, "unmounted"), (3, "unknown")] {
-            conn.execute(
-                "INSERT INTO tracks \
-                 (id,path,title,artist,added_at,missing_since,missing_reason) \
-                 VALUES (?1,?2,?3,'',0,1,?4)",
-                rusqlite::params![
-                    id,
-                    format!("/x/{reason}.flac"),
-                    format!("Track {id}"),
-                    reason,
-                ],
-            )
-            .unwrap();
+            crate::test_db::connection(&conn)
+                .execute(
+                    "INSERT INTO tracks \
+                     (id,path,title,artist,added_at,missing_since,missing_reason) \
+                     VALUES (?1,?2,?3,'',0,1,?4)",
+                    rusqlite::params![
+                        id,
+                        format!("/x/{reason}.flac"),
+                        format!("Track {id}"),
+                        reason,
+                    ],
+                )
+                .unwrap();
         }
 
         assert_eq!(queries::count_missing(&conn).unwrap(), 3);
@@ -304,25 +307,26 @@ mod tests {
     #[ignore = "requires a display; run via xvfb-run"]
     fn issue_rows_install_context_gestures_and_missing_cleanup_falls_back() {
         gtk4::init().unwrap();
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
+        let conn = crate::test_db::open().unwrap();
         let bad = tempfile::NamedTempFile::new().unwrap();
         let bad_path = bad.path().to_string_lossy().to_string();
-        conn.execute(
-            "INSERT INTO import_errors \
+        crate::test_db::connection(&conn)
+            .execute(
+                "INSERT INTO import_errors \
              (path, reason_kind, reason_detail, first_seen, last_seen) \
              VALUES (?1, 'io', 'bad tag', 1, 1)",
-            [&bad_path],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO tracks \
+                [&bad_path],
+            )
+            .unwrap();
+        crate::test_db::connection(&conn)
+            .execute(
+                "INSERT INTO tracks \
              (id,path,title,artist,added_at,missing_since,missing_reason) \
              VALUES (7,'/x/gone.flac','Gone','',0,1,'deleted')",
-            [],
-        )
-        .unwrap();
-        let conn = Rc::new(RefCell::new(conn));
+                [],
+            )
+            .unwrap();
+        let conn = Rc::new(conn);
         let window = adw::ApplicationWindow::builder().build();
         let sidebar = Sidebar::new(conn.clone(), &window, || 0);
         let removed = Rc::new(RefCell::new(Vec::new()));
@@ -330,7 +334,7 @@ mod tests {
         let conn_for_callback = conn.clone();
         sidebar.set_on_remove_missing(move |ids| {
             removed_for_callback.borrow_mut().extend_from_slice(ids);
-            queries::tombstone_tracks(&conn_for_callback.borrow(), ids, 100).unwrap();
+            queries::tombstone_tracks(&conn_for_callback, ids, 100).unwrap();
         });
 
         for source in [ViewSource::ImportErrors, ViewSource::Missing] {
@@ -346,22 +350,13 @@ mod tests {
         }
 
         dismiss_all_import_errors(sidebar.test_shared());
-        assert_eq!(
-            queries::query_import_error_count(&conn.borrow()).unwrap(),
-            1
-        );
-        assert_eq!(
-            queries::count_import_errors_active(&conn.borrow()).unwrap(),
-            0
-        );
-        assert_eq!(
-            queries::count_dismissed_import_errors(&conn.borrow()).unwrap(),
-            1
-        );
+        assert_eq!(queries::query_import_error_count(&conn).unwrap(), 1);
+        assert_eq!(queries::count_import_errors_active(&conn).unwrap(), 0);
+        assert_eq!(queries::count_dismissed_import_errors(&conn).unwrap(), 1);
         assert!(find_row(sidebar.test_shared(), &ViewSource::ImportErrors).is_some());
 
         sidebar.refresh_and_select(ViewSource::Missing, "test missing cleanup");
-        let ids = missing_ids_for_cleanup(&conn.borrow()).unwrap();
+        let ids = missing_ids_for_cleanup(&conn).unwrap();
         remove_all_missing(sidebar.test_shared(), &ids);
         sidebar.refresh("test tombstone refresh");
         assert_eq!(*removed.borrow(), vec![7]);

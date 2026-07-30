@@ -24,8 +24,8 @@ fn db_with_tracks(dir: &TempDir, count: usize) -> (std::path::PathBuf, Vec<i64>)
 /// Reads the change_log through the core facade to prove the write recorded a
 /// cross-process event in the same transaction.
 fn playlist_create_events(path: &std::path::Path) -> usize {
-    let conn = reprise_core::db::open_migrated(Some(path)).unwrap();
-    reprise_core::events::read_since(&conn, 0, None)
+    let db = reprise_core::db::Db::open_migrated(Some(path)).unwrap();
+    reprise_core::events::read_since(&db, 0, None)
         .unwrap()
         .into_iter()
         .filter(|change| change.entity == "playlist" && change.operation == "create")
@@ -187,12 +187,12 @@ fn create_playlist_rejects_a_present_but_missing_track_id() {
     // Mark the first track missing (file gone) — the row still exists, so a
     // plain foreign-key check would accept it; PRESENT semantics must reject it.
     {
-        let conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
-        conn.execute(
-            "UPDATE tracks SET missing_since = 1 WHERE id = ?1",
-            [ids[0]],
-        )
-        .unwrap();
+        common::fixture_connection(&path)
+            .execute(
+                "UPDATE tracks SET missing_since = 1 WHERE id = ?1",
+                [ids[0]],
+            )
+            .unwrap();
     }
     let mut client = McpClient::start(&path);
 

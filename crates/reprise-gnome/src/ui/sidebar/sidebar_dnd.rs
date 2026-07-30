@@ -116,8 +116,8 @@ pub(in crate::ui) fn handle_playlist_drop(
     }
 
     let result = {
-        let mut conn = shared.conn.borrow_mut();
-        playlist_membership::add_unique_tracks(&mut conn, playlist_id, ids)
+        let conn = &shared.conn;
+        playlist_membership::add_unique_tracks(conn, playlist_id, ids)
     };
     match result {
         Ok(inserted) => {

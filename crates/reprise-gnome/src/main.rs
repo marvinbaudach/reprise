@@ -1,4 +1,6 @@
 mod i18n;
+#[cfg(test)]
+mod test_db;
 mod ui;
 
 use std::cell::RefCell;
@@ -8,6 +10,7 @@ use gtk4::gio;
 use gtk4::glib;
 use libadwaita as adw;
 use libadwaita::prelude::*;
+use reprise_core::db::Db;
 use reprise_core::{db, library};
 use tracing_subscriber::EnvFilter;
 
@@ -73,13 +76,10 @@ fn init_logging() {
 /// doc comment for why descending title order): reads every track id
 /// currently in the library, then creates `name` with them via `library::
 /// playlists::create_with_tracks`. Returns `(playlist_id, track_count)`.
-fn seed_playlist_from_library(
-    conn: &mut rusqlite::Connection,
-    name: &str,
-) -> rusqlite::Result<(i64, usize)> {
-    let ids = reprise_core::queries::query_track_ids_by_title_desc(conn)?;
+fn seed_playlist_from_library(db: &db::Db, name: &str) -> rusqlite::Result<(i64, usize)> {
+    let ids = reprise_core::queries::query_track_ids_by_title_desc(db)?;
     let count = ids.len();
-    let playlist_id = library::playlists::create_with_tracks(conn, name, &ids)?;
+    let playlist_id = library::playlists::create_with_tracks(db, name, &ids)?;
     Ok((playlist_id, count))
 }
 
@@ -99,7 +99,7 @@ type SharedFileOpenHandler = Rc<RefCell<Option<ui::file_open::FileOpenHandler>>>
 
 fn ensure_window(
     app: &adw::Application,
-    conn: &Rc<RefCell<rusqlite::Connection>>,
+    conn: &Rc<Db>,
     db_path: &std::path::Path,
     shared: &SharedFileOpenHandler,
 ) -> ui::file_open::FileOpenHandler {
@@ -134,7 +134,7 @@ fn main() -> glib::ExitCode {
     // (which registers idempotently again later); after it,
     // `is_remote()` says which side this process is. This seam is chosen
     // over moving the DB open into a `connect_startup` closure because it
-    // keeps the existing synchronous `Rc<RefCell<Connection>>` plumbing
+    // keeps the existing synchronous `Rc<Db>` plumbing
     // into `connect_activate` untouched — and it gives the secondary a
     // natural place to say goodbye out loud.
     if let Err(error) = app.register(gio::Cancellable::NONE) {
@@ -154,21 +154,20 @@ fn main() -> glib::ExitCode {
 
     let path = db::default_path();
     tracing::info!(db_path = %path.display(), "opening database");
-    let conn = db::open_migrated(Some(&path)).expect("failed to open or migrate database");
+    let conn = db::Db::open_migrated(Some(&path)).expect("failed to open or migrate database");
     tracing::info!("database ready");
 
-    // Single-threaded UI: the connection is shared via Rc<RefCell<_>>, not
-    // Arc/Mutex. Scans (Task 10) open their own connection over the same
-    // path instead of sharing this one across threads.
-    let conn = Rc::new(RefCell::new(conn));
+    // Single-threaded UI: the database handle is shared via Rc, not Arc/Mutex.
+    // Core owns the connection and exposes named operations; scans open their
+    // own handle over the same path instead of sharing this one across threads.
+    let conn = Rc::new(conn);
 
     if let Ok(dir) = std::env::var(SCAN_DIR_ENV_VAR) {
         tracing::info!(
             dir = %dir,
             "{SCAN_DIR_ENV_VAR} set: running headless dev scan before window shows"
         );
-        let mut conn = conn.borrow_mut();
-        match library::scanner::scan_folder(&mut conn, std::path::Path::new(&dir)) {
+        match library::scanner::scan_folder(&conn, std::path::Path::new(&dir)) {
             Ok(library::scanner::ScanOutcome::Completed(report)) => {
                 tracing::info!(?report, "dev scan complete");
             }
@@ -201,8 +200,7 @@ fn main() -> glib::ExitCode {
             name = %name,
             "{SEED_PLAYLIST_ENV_VAR} set: seeding a playlist from the current library"
         );
-        let mut conn = conn.borrow_mut();
-        match seed_playlist_from_library(&mut conn, &name) {
+        match seed_playlist_from_library(&conn, &name) {
             Ok((playlist_id, count)) => tracing::info!(
                 playlist_id,
                 count,
