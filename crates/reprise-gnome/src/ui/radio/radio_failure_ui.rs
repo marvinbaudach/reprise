@@ -2,6 +2,7 @@
 
 use std::rc::Rc;
 
+use reprise_core::connectivity::Connectivity;
 use reprise_core::radio::{self, StationRow};
 use reprise_core::source_error::{FailureAction, SourceErrorKind};
 
@@ -29,6 +30,13 @@ pub(super) fn radio_failure_action(
         | FailureAction::Unsubscribe
         | FailureAction::OpenPreferences => RadioFailureAction::None,
     }
+}
+
+pub(super) fn should_clear_radio_failure(
+    connectivity: Connectivity,
+    failure_kind: Option<&SourceErrorKind>,
+) -> bool {
+    connectivity == Connectivity::Online && matches!(failure_kind, Some(SourceErrorKind::Offline))
 }
 
 pub(super) fn reresolve_station_url(shared: &Rc<Shared>, station: &StationRow) {
@@ -73,4 +81,25 @@ pub(super) fn reresolve_station_url(shared: &Rc<Shared>, station: &StationRow) {
         };
         activate_station(&shared, &station);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn net_3_b_online_connectivity_clears_only_the_offline_radio_notice() {
+        assert!(should_clear_radio_failure(
+            Connectivity::Online,
+            Some(&SourceErrorKind::Offline),
+        ));
+        assert!(!should_clear_radio_failure(
+            Connectivity::Online,
+            Some(&SourceErrorKind::Unreachable),
+        ));
+        assert!(!should_clear_radio_failure(
+            Connectivity::Offline,
+            Some(&SourceErrorKind::Offline),
+        ));
+    }
 }

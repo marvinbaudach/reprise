@@ -2039,7 +2039,10 @@ property is set and yet nothing happens.
   be deferred. Connectivity is an injectable state
   (`RadioView::set_connectivity`), `Online` by default. The main-window
   composition root initializes it and both podcast views from one
-  `gio::NetworkMonitor` and updates all three from `network-changed`.
+  `gio::NetworkMonitor` and updates all three from `network-changed`. Returning
+  online removes an offline-only notice; it never dismisses a dead-stream or
+  other provider failure, which remains until playback succeeds or the user
+  acts on it.
 - **NET-3c** [active] [core] — The runner `NET-3a` reserved this id for:
   once connectivity is believed online, whatever is `wanted_on_device`
   (`MTP-40`) but still missing a local file replays, in order, without a

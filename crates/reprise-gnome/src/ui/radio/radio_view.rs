@@ -27,7 +27,9 @@ use crate::ui::strings;
 
 #[path = "radio_failure_ui.rs"]
 mod failure_ui;
-use failure_ui::{radio_failure_action, reresolve_station_url, RadioFailureAction};
+use failure_ui::{
+    radio_failure_action, reresolve_station_url, should_clear_radio_failure, RadioFailureAction,
+};
 
 const LIST_PAGE: &str = "list";
 const STATUS_PAGE: &str = "status";
@@ -47,10 +49,11 @@ struct Shared {
     rows: RefCell<Vec<StationRow>>,
     live: Rc<RefCell<RadioLiveState>>,
     /// `NET-3b`: explicit, injectable connectivity seam (see
-    /// `reprise_core::connectivity`) — defaults to `Online` and is not
-    /// wired to any real OS signal yet; only [`RadioView::set_connectivity`]
-    /// (and tests) change it.
+    /// `reprise_core::connectivity`) — defaults to `Online`; the window
+    /// composition root and tests change it only through
+    /// [`RadioView::set_connectivity`].
     connectivity: Rc<Cell<Connectivity>>,
+    failure_kind: RefCell<Option<SourceErrorKind>>,
     stack: gtk4::Stack,
     status: adw::StatusPage,
     status_button: gtk4::Button,
@@ -150,6 +153,7 @@ impl RadioView {
             rows: RefCell::new(Vec::new()),
             live,
             connectivity,
+            failure_kind: RefCell::new(None),
             stack,
             status,
             status_button: status_button.clone(),
@@ -249,6 +253,7 @@ impl RadioView {
                 if let Some(failure) = failure {
                     show_radio_failure(&shared, SourceErrorKind::Unreachable, failure);
                 } else {
+                    shared.failure_kind.replace(None);
                     shared.error_banner.hide();
                 }
                 render_rows(&shared);
@@ -276,13 +281,15 @@ impl RadioView {
     pub(in crate::ui) fn set_connectivity(&self, value: Connectivity) {
         self.shared.connectivity.set(value);
         render_rows(&self.shared);
+        let failure_kind = self.shared.failure_kind.borrow().clone();
         if value == Connectivity::Offline && !self.shared.rows.borrow().is_empty() {
             show_radio_failure(
                 &self.shared,
                 SourceErrorKind::Offline,
                 "NetworkMonitor reports no available connection".to_owned(),
             );
-        } else if value == Connectivity::Online {
+        } else if should_clear_radio_failure(value, failure_kind.as_ref()) {
+            self.shared.failure_kind.replace(None);
             self.shared.error_banner.hide();
         }
     }
@@ -459,6 +466,7 @@ fn live_state(
 
 fn show_radio_failure(shared: &Rc<Shared>, kind: SourceErrorKind, technical_cause: String) {
     let error = SourceError::new(kind, "Play radio station", technical_cause);
+    shared.failure_kind.replace(Some(error.kind().clone()));
     let presentation = source_failure_presentation(
         SourceSurface::Radio,
         error.kind(),
