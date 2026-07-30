@@ -6,7 +6,10 @@
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
-use crate::{cover, musicbrainz};
+use crate::{
+    cover, musicbrainz,
+    source_error::{SourceError, SourceErrorKind},
+};
 
 pub(crate) const IMAGE_EXTS: &[&str] = &["jpg", "jpeg", "png", "webp", "gif", "bmp"];
 
@@ -21,6 +24,25 @@ const NEGATIVE_MARKER_MAX_AGE: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
 /// Minimum MusicBrainz search score to even consider a release.
 const MIN_MB_SCORE: i64 = 90;
+
+impl From<&musicbrainz::FetchError> for SourceErrorKind {
+    fn from(error: &musicbrainz::FetchError) -> Self {
+        match error {
+            musicbrainz::FetchError::Timeout
+            | musicbrainz::FetchError::Transport
+            | musicbrainz::FetchError::HttpStatus(_)
+            | musicbrainz::FetchError::Body
+            | musicbrainz::FetchError::BodyTooLarge => Self::Unreachable,
+        }
+    }
+}
+
+impl From<musicbrainz::FetchError> for SourceError {
+    fn from(error: musicbrainz::FetchError) -> Self {
+        let kind = SourceErrorKind::from(&error);
+        Self::new(kind, "album cover request failed", error.to_string())
+    }
+}
 
 enum CaaFetchResult {
     Found(Vec<u8>, &'static str),
@@ -291,6 +313,7 @@ fn store_downloaded(key: &str, bytes: &[u8], ext: &str) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::source_error::{SourceError, SourceErrorKind};
 
     const MB_STRONG: &str = r#"{"releases":[
       {"id":"11111111-1111-1111-1111-111111111111","score":100,
@@ -298,6 +321,18 @@ mod tests {
     const MB_WEAK: &str = r#"{"releases":[
       {"id":"22222222-2222-2222-2222-222222222222","score":42,
        "title":"Something Else","artist-credit":[{"name":"Other Band"}]}]}"#;
+
+    #[test]
+    fn cover_failures_project_without_displaying_the_http_status() {
+        let error = SourceError::from(musicbrainz::FetchError::HttpStatus(599));
+
+        assert_eq!(error.kind(), &SourceErrorKind::Unreachable);
+        assert!(!error.to_string().contains("599"));
+        assert!(error
+            .details("2026-07-30 14:12")
+            .to_string()
+            .contains("HTTP status 599"));
+    }
 
     #[test]
     fn album_key_normalizes_case_and_whitespace() {

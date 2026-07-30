@@ -75,6 +75,7 @@ pub mod queue;
 pub mod radio;
 pub mod remote_image;
 pub mod scrobbling;
+pub mod source_error;
 pub mod stem_separation;
 pub mod up_next;
 pub mod updates;

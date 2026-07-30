@@ -16,8 +16,9 @@ use url::Url;
 use super::download_state::DownloadProgress;
 use super::PodcastError;
 use crate::http_body::{self, BoundedReadError};
+use crate::source_error::{parse_retry_after, SOURCE_REQUEST_TIMEOUT};
 
-const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(15);
 const MIN_REQUEST_INTERVAL: Duration = Duration::from_secs(1);
 #[cfg(any(test, feature = "test-fixtures"))]
 const FIXTURE_DIR_ENV: &str = "REPRISE_PODCASTS_FIXTURE_DIR";
@@ -83,7 +84,7 @@ pub fn get_conditional(
     }
 
     let agent = ureq::Agent::config_builder()
-        .timeout_global(Some(HTTP_TIMEOUT))
+        .timeout_global(Some(SOURCE_REQUEST_TIMEOUT))
         .user_agent(user_agent())
         .http_status_as_error(false)
         .build()
@@ -97,11 +98,9 @@ pub fn get_conditional(
     }
     let response = request.call().map_err(classify_transport)?;
     let status = response.status().as_u16();
-    if status == 304 {
-        return Err(PodcastError::NotModified);
-    }
-    if !(200..300).contains(&status) {
-        return Err(PodcastError::HttpStatus(status));
+    let retry_after = header(&response, "Retry-After");
+    if let Some(error) = feed_status_error(status, retry_after.as_deref()) {
+        return Err(error);
     }
     let response_etag = header(&response, "ETag");
     let response_last_modified = header(&response, "Last-Modified");
@@ -129,7 +128,7 @@ pub fn download_with_progress(
         return fixture_download(url, destination, &directory, on_progress);
     }
     let response = ureq::Agent::config_builder()
-        .timeout_global(Some(HTTP_TIMEOUT))
+        .timeout_global(Some(DOWNLOAD_TIMEOUT))
         .user_agent(user_agent())
         .http_status_as_error(false)
         .build()
@@ -138,8 +137,9 @@ pub fn download_with_progress(
         .call()
         .map_err(classify_transport)?;
     let status = response.status().as_u16();
-    if !(200..300).contains(&status) {
-        return Err(PodcastError::HttpStatus(status));
+    let retry_after = header(&response, "Retry-After");
+    if let Some(error) = download_status_error(status, retry_after.as_deref()) {
+        return Err(error);
     }
     let total_bytes = header(&response, "Content-Length").and_then(|value| value.parse().ok());
     let mut reader = response.into_body().into_reader();
@@ -204,6 +204,28 @@ fn header(response: &ureq::http::Response<ureq::Body>, name: &str) -> Option<Str
         .map(str::to_owned)
 }
 
+fn feed_status_error(status: u16, retry_after: Option<&str>) -> Option<PodcastError> {
+    match status {
+        200..=299 => None,
+        304 => Some(PodcastError::NotModified),
+        404 | 410 => Some(PodcastError::SourceGone(status)),
+        429 => Some(PodcastError::RateLimited {
+            retry_after: parse_retry_after(retry_after),
+        }),
+        _ => Some(PodcastError::HttpStatus(status)),
+    }
+}
+
+fn download_status_error(status: u16, retry_after: Option<&str>) -> Option<PodcastError> {
+    match status {
+        200..=299 => None,
+        429 => Some(PodcastError::RateLimited {
+            retry_after: parse_retry_after(retry_after),
+        }),
+        _ => Some(PodcastError::HttpStatus(status)),
+    }
+}
+
 #[cfg(any(test, feature = "test-fixtures"))]
 fn fixture_directory() -> Option<PathBuf> {
     #[cfg(test)]
@@ -252,12 +274,14 @@ fn fixture_get(
         .ok_or_else(|| PodcastError::Transport("no fixture route for request".to_owned()))?;
     let path = directory.join(route.filename());
     let status_path = path.with_extension("status");
-    if std::fs::read_to_string(status_path)
+    let fixture_status = std::fs::read_to_string(status_path)
         .ok()
-        .and_then(|value| value.trim().parse::<u16>().ok())
-        == Some(304)
-    {
-        return Err(PodcastError::NotModified);
+        .and_then(|value| value.trim().parse::<u16>().ok());
+    if let Some(error) = fixture_status.and_then(|status| {
+        let retry_after = read_sidecar(&path, "retry-after");
+        feed_status_error(status, retry_after.as_deref())
+    }) {
+        return Err(error);
     }
     let stored_etag = read_sidecar(&path, "etag");
     let stored_last_modified = read_sidecar(&path, "last-modified");
@@ -346,6 +370,7 @@ fn fixture_component(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::source_error::SourceErrorKind;
 
     #[test]
     fn user_agent_identifies_reprise_and_contact() {
@@ -434,5 +459,49 @@ mod tests {
                 total_bytes: Some(14),
             })
         );
+    }
+
+    #[test]
+    fn feed_statuses_distinguish_gone_rate_limited_and_transient_failures() {
+        for status in [404, 410] {
+            let error = feed_status_error(status, None).unwrap();
+            assert!(matches!(error, PodcastError::SourceGone(value) if value == status));
+            assert_eq!(SourceErrorKind::from(&error), SourceErrorKind::SourceGone);
+        }
+        let error = feed_status_error(429, Some("360")).unwrap();
+        assert!(matches!(
+            SourceErrorKind::from(&error),
+            SourceErrorKind::RateLimited {
+                retry_after: Some(value)
+            } if value == Duration::from_secs(360)
+        ));
+        assert!(matches!(
+            feed_status_error(500, None),
+            Some(PodcastError::HttpStatus(500))
+        ));
+        assert!(feed_status_error(204, None).is_none());
+    }
+
+    #[test]
+    fn feed_requests_use_the_shared_budget_but_downloads_keep_their_own() {
+        assert_eq!(
+            crate::source_error::SOURCE_REQUEST_TIMEOUT,
+            Duration::from_secs(10)
+        );
+        assert_eq!(DOWNLOAD_TIMEOUT, Duration::from_secs(15));
+    }
+
+    #[test]
+    fn episode_downloads_parse_rate_limits_without_calling_a_miss_source_gone() {
+        assert!(matches!(
+            download_status_error(429, Some("45")),
+            Some(PodcastError::RateLimited {
+                retry_after: Some(value)
+            }) if value == Duration::from_secs(45)
+        ));
+        assert!(matches!(
+            download_status_error(404, None),
+            Some(PodcastError::HttpStatus(404))
+        ));
     }
 }
