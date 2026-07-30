@@ -14,7 +14,7 @@ scripts/cua-e2e/run.sh
 
 The runner creates a private Xvfb display and Openbox window manager. Each
 scenario group gets a fresh D-Bus session, AT-SPI bus, CUA daemon, XDG profile,
-fake audio sink, and copied FLAC fixtures. It exercises eight public workflows:
+fake audio sink, and copied FLAC fixtures. It exercises nine public workflows:
 
 1. a fresh profile exposes the first-run wizard; activating `Skip for Now`
    reveals the `No music yet` empty-library state;
@@ -38,7 +38,15 @@ fake audio sink, and copied FLAC fixtures. It exercises eight public workflows:
    persisted module setting in between, because the Preferences dialog keeps
    every page in the accessibility tree at once — a label found there says
    nothing about the page being visible, so driving the switch itself would
-   assert against invisible widgets.
+   assert against invisible widgets;
+9. the Podcasts source end to end and offline: with the module off its page is
+   unreachable, with it on the empty state offers subscribing, and a fixture
+   feed goes through the Add Podcast dialog — including the primary button
+   turning from `Search` into `Preview` once a URL is entered — to a listed
+   show whose counts (`1 show · 1 episode · 1 new`) prove the feed was parsed
+   rather than its name taken from the URL. It closes the dialog before the
+   phase ends: while one is open the app never exits, and `finish_scenario`
+   then waits for an exit that never comes.
 
 Every CUA action is bracketed by a fresh `get_window_state` snapshot. The run
 fails on a degraded accessibility tree, a suspected no-op/escalation request,
@@ -89,8 +97,8 @@ For an iterative keyboard-only retry, run
 `CUA_E2E_ONLY=populated-library scripts/cua-e2e/run.sh`; use
 `CUA_E2E_ONLY=library-doctor scripts/cua-e2e/run.sh` for the Doctor workflow,
 or `CUA_E2E_ONLY=track-sort-playing-marker scripts/cua-e2e/run.sh` for the
-repeated-sort regression, or `CUA_E2E_ONLY=source-modules` for the module
-switches.
+repeated-sort regression, `CUA_E2E_ONLY=source-modules` for the module switches, or
+`CUA_E2E_ONLY=source-podcasts` for the offline feed workflow.
 The default remains the complete matrix.
 
 This headless X11 run proves accessibility exposure, input delivery, widget

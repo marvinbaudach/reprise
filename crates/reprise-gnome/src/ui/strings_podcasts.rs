@@ -75,6 +75,10 @@ pub const PODCAST_ENABLE_IN_PREFERENCES: &str = N_!("Enable in Preferences");
 pub const PODCAST_REFRESH_NOW: &str = N_!("Refresh now");
 pub const PODCAST_REFRESHING: &str = N_!("Refreshing podcasts…");
 pub const PODCAST_REFRESH_FAILED: &str = N_!("Refresh failed · showing saved episodes");
+// `POD-16`: what the footer says when the subscriptions cannot be read at all.
+// The failure is a database one, so there is nothing the text could usefully
+// name — the "Refresh now" button beside it is the offer.
+pub const PODCAST_LIBRARY_UNREADABLE: &str = N_!("Could not read your subscriptions");
 pub const PODCAST_DIALOG_TITLE: &str = N_!("Add Podcast");
 pub const PODCAST_DIALOG_HINT: &str = N_!("Search by name or paste a feed URL");
 pub const YOUTUBE_DIALOG_TITLE: &str = N_!("Add Channel");
@@ -210,10 +214,28 @@ pub fn podcast_library_summary(shows: usize, episodes: usize, new: usize) -> Str
         shows,
         &[("shows", &shows_text)],
     );
+    library_summary(&shows_text, episodes, new)
+}
+
+/// `POD-15`: the same header on the YouTube page counts channels, not shows.
+/// Only the leading subject changes — episode and new counts are the same
+/// quantities the RSS page reports, so they keep one formatter.
+pub fn youtube_library_summary(channels: usize, episodes: usize, new: usize) -> String {
+    let channels_text = channels.to_string();
+    let channels_text = plural(
+        "{channels} channel",
+        "{channels} channels",
+        channels,
+        &[("channels", &channels_text)],
+    );
+    library_summary(&channels_text, episodes, new)
+}
+
+fn library_summary(subjects: &str, episodes: usize, new: usize) -> String {
     formatted(
         PODCAST_LIBRARY_SUMMARY,
         &[
-            ("shows", &shows_text),
+            ("shows", subjects),
             ("episodes", &podcast_episode_count(episodes)),
             ("new", &new.to_string()),
         ],
@@ -409,6 +431,29 @@ mod tests {
         assert_eq!(
             podcast_library_summary(1, 1, 0),
             "1 show · 1 episode · 0 new"
+        );
+    }
+
+    /// `POD-15`: the YouTube page counts channels. Both forms, and the shared
+    /// tail proven identical to the RSS page's — the subject is the only
+    /// difference, so a future edit that diverges the tail fails here.
+    #[test]
+    fn pod_15_library_summary_counts_channels_on_the_youtube_page() {
+        assert_eq!(
+            youtube_library_summary(4, 41, 7),
+            "4 channels · 41 episodes · 7 new"
+        );
+        assert_eq!(
+            youtube_library_summary(1, 1, 0),
+            "1 channel · 1 episode · 0 new"
+        );
+        assert_ne!(
+            youtube_library_summary(1, 1, 0),
+            podcast_library_summary(1, 1, 0)
+        );
+        assert_eq!(
+            youtube_library_summary(4, 41, 7).trim_start_matches("4 channels"),
+            podcast_library_summary(4, 41, 7).trim_start_matches("4 shows"),
         );
     }
 

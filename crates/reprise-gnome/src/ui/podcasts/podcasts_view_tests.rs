@@ -20,11 +20,15 @@ fn view(conn: Db, kind: PodcastKind) -> Rc<PodcastsView> {
 }
 
 fn subscribe_with_one_episode(conn: &Db) -> i64 {
+    subscribe_one_episode_of_kind(conn, PodcastKind::Rss)
+}
+
+fn subscribe_one_episode_of_kind(conn: &Db, kind: PodcastKind) -> i64 {
     let conn = &conn;
     let subscription_id = store::add_or_restore(
         conn,
         &NewSubscription {
-            kind: PodcastKind::Rss,
+            kind,
             feed_url: "https://example.test/feed".to_owned(),
             title: "Show".to_owned(),
             author: None,
@@ -202,6 +206,26 @@ fn pod_9_the_library_summary_header_actually_reaches_the_filter_bar() {
     );
 }
 
+/// `POD-15`: the same wired path on the YouTube page must name channels. The
+/// string-level test in `strings_podcasts.rs` cannot see which formatter the
+/// filter bar picks — hand the RSS one to both pages and this stays green
+/// there while failing here.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn pod_15_the_youtube_page_header_counts_channels_not_shows() {
+    gtk4::init().unwrap();
+    let conn = crate::test_db::open().unwrap();
+    subscribe_one_episode_of_kind(&conn, PodcastKind::Youtube);
+
+    let view = view(conn, PodcastKind::Youtube);
+
+    assert_eq!(
+        view.filter_bar.result_text(),
+        strings::youtube_library_summary(1, 1, 1),
+        "the YouTube page subscribes to channels, so its header must count channels"
+    );
+}
+
 /// Pumps the GLib main loop until `episode_id`'s recorded download state is
 /// terminal (`Downloaded`/`Failed`) or `deadline` passes, returning whatever
 /// was last observed. Bounded so a wiring regression that leaves the action
@@ -323,4 +347,52 @@ fn pod_13_activating_the_retry_action_runs_a_fresh_download_attempt() {
         }
         other => panic!("expected a fresh terminal Failed state, got {other:?}"),
     }
+}
+
+/// `POD-16`: the footer carries the library's status line, and on a load
+/// failure it used to carry `DbError`'s `Display` instead. For a rusqlite
+/// input error that renders as the message plus the entire failing statement
+/// and a byte offset, which is what a real installation showed on both the
+/// Podcasts and the YouTube page: "no such column: sync_to_phone in SELECT id,
+/// kind, feed_url, … at offset 150". Asserting only the replacement string
+/// would still pass if the raw text were appended, so the absence of the
+/// statement is asserted separately.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn pod_16_an_unreadable_library_says_so_without_printing_the_query() {
+    gtk4::init().unwrap();
+    // A schema the subscription query cannot read — the shape the reported
+    // failure had. Seeded through the fixture's own connection, since `Db`
+    // deliberately exposes no raw SQL (ADR 002).
+    //
+    // `auto_download` and not `sync_to_phone`, although the report named the
+    // latter: `migrate_v40` now repairs its own columns on open, so dropping
+    // one of those is healed by `PodcastsRuntime::setup` before the view ever
+    // reads anything — the fix in the preceding commit defeats the test.
+    // `auto_download` belongs to the v32 table body, which no migration
+    // re-adds, so the failure survives to the point this rule is about. The
+    // error is the same class either way: a column the SELECT names and the
+    // table does not have.
+    let fixture = crate::test_db::open().unwrap();
+    crate::test_db::connection(&fixture)
+        .execute_batch("ALTER TABLE podcast_subscriptions DROP COLUMN auto_download;")
+        .unwrap();
+    let path = fixture
+        .path()
+        .expect("the fixture database must be file-backed");
+    drop(fixture);
+    let conn = Db::open_ready(&path).unwrap();
+
+    let view = view(conn, PodcastKind::Rss);
+
+    let status = view.footer_status.text().to_string();
+    assert_eq!(
+        status,
+        strings::text(strings::PODCAST_LIBRARY_UNREADABLE),
+        "a failed load must reach the user as a sentence"
+    );
+    assert!(
+        !status.contains("SELECT") && !status.contains("auto_download"),
+        "the failing statement must never reach the footer, got: {status}"
+    );
 }
