@@ -366,7 +366,10 @@ pub(crate) fn upsert_episode_in(
            audio_url = excluded.audio_url,
            page_url = excluded.page_url,
            image_url = COALESCE(excluded.image_url, podcast_episodes.image_url),
-           published_at = COALESCE(excluded.published_at, podcast_episodes.published_at),
+           -- `POD-18`: a stored date wins. A listing date is approximate by
+           -- yt-dlp's own description, so it may fill an empty column but must
+           -- never overwrite the exact date an RSS feed already supplied.
+           published_at = COALESCE(podcast_episodes.published_at, excluded.published_at),
            duration_secs = COALESCE(excluded.duration_secs, podcast_episodes.duration_secs)
          RETURNING id",
         params![

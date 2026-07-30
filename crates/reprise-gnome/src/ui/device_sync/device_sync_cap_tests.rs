@@ -61,7 +61,7 @@ fn podcast_files_to_copy(runtime: &Rc<DeviceSyncRuntime>, device_id: &str) -> us
 }
 
 #[test]
-fn mtp_50_lowering_the_podcast_cap_evicts_the_older_episode_from_the_next_plan() {
+fn mtp_51_lowering_the_podcast_cap_evicts_the_older_episode_from_the_next_plan() {
     run(async {
         let (downloads, conn) = fixture();
         let older = downloads.path().join("older.mp3");

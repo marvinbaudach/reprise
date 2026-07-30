@@ -126,13 +126,22 @@ impl YtDlp {
     pub fn list(&self, url: &str) -> Result<YtDlpPlaylist, PodcastError> {
         let output = self.run(
             "list",
-            ["--no-warnings", "--flat-playlist", "-J", url],
+            [
+                "--no-warnings",
+                "--flat-playlist",
+                "--extractor-args",
+                "youtubetab:approximate_date",
+                "-J",
+                url,
+            ],
             self.timeouts.list,
         )?;
         parse_playlist("list", &output)
     }
 
     pub fn search(&self, terms: &str) -> Result<YtDlpPlaylist, PodcastError> {
+        // Search discovers channels; it does not ingest a channel's episodes,
+        // so only the channel-listing calls request approximate upload dates.
         let target = format!("ytsearch5:{terms}");
         let output = self.run(
             "search",
@@ -148,6 +157,7 @@ impl YtDlp {
     }
 
     pub fn search_channels(&self, terms: &str) -> Result<Vec<YtDlpChannel>, PodcastError> {
+        // This is channel discovery, not an episode listing.
         let target = format!("ytsearch20:{terms}");
         let output = self.run(
             "search_channels",
@@ -751,6 +761,10 @@ fn integer_value(value: Option<&Value>) -> Option<i64> {
 #[cfg(all(test, unix))]
 #[path = "ytdlp_range_tests.rs"]
 mod range_tests;
+
+#[cfg(all(test, unix))]
+#[path = "ytdlp_listing_tests.rs"]
+mod listing_tests;
 
 #[cfg(all(test, unix))]
 #[path = "ytdlp_test_support.rs"]

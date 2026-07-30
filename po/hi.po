@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-30 21:30+0200\n"
+"POT-Creation-Date: 2026-07-30 21:39+0200\n"
 "PO-Revision-Date: 2026-07-20 11:38+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Hindi\n"
@@ -3908,28 +3908,6 @@ msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_ai.rs:13
 msgid "Hide AI music"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_ai.rs:21
-msgid "Experimental"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_ai.rs:22
-msgid "Experimental features"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_ai.rs:24
-msgid "Unfinished features with rough edges, off by default."
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_ai.rs:25
-msgid "Enable experimental features"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_ai.rs:27
-msgid ""
-"Shows AI instrumental versions across the app: the context-menu trigger, the "
-"conversion view, badges, and the \"Hide AI music\" filter."
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_scan.rs:5

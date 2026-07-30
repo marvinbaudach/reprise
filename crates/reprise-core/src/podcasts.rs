@@ -9,6 +9,7 @@ pub mod config;
 pub mod discovery;
 pub mod download_state;
 pub mod downloads;
+pub mod episode_tags;
 pub mod feed;
 pub mod http;
 pub mod itunes;
@@ -132,6 +133,15 @@ pub enum PodcastError {
     /// own module or the global online-sources gate (`NET-1a`).
     #[error("{0}")]
     Disabled(String),
+    /// `POD-17`: the episode arrived, but writing its tags into the file
+    /// failed and may have left it truncated. Not a provider failure at all
+    /// — it lives here because this is the error the download closure has to
+    /// return so `downloads::download_atomically` deletes the destroyed
+    /// temporary instead of publishing it. Deliberately payload-free: there
+    /// is nothing to say about it that `episode_tags::EpisodeTagError`'s own
+    /// classified log line has not already said.
+    #[error("the download could not be tagged")]
+    TagWrite,
 }
 
 impl PodcastError {
@@ -186,6 +196,9 @@ impl PodcastError {
             (SourceErrorKind::Unreachable, PodcastError::Disabled(_)) => {
                 "this source is disabled in Reprise preferences"
             }
+            (SourceErrorKind::Unreachable, PodcastError::TagWrite) => {
+                "podcast download could not be tagged"
+            }
             (SourceErrorKind::Offline, _) => "podcast source is offline",
             (SourceErrorKind::SourceGone, _) => "podcast source has moved or ended",
             (SourceErrorKind::RateLimited { .. }, _) => "podcast source is rate limited",
@@ -227,7 +240,12 @@ impl From<&PodcastError> for SourceErrorKind {
             | PodcastError::Parse(_)
             | PodcastError::NotModified
             | PodcastError::YtDlpTimeout
-            | PodcastError::Disabled(_) => Self::Unreachable,
+            | PodcastError::Disabled(_)
+            // Writing a tag failed locally. Not a provider or transport
+            // problem, but it is transient in the same way and offers the same
+            // action, so it shares the "try again" bucket rather than earning
+            // a state of its own that no surface would render differently.
+            | PodcastError::TagWrite => Self::Unreachable,
         }
     }
 }
@@ -292,6 +310,7 @@ mod tests {
             },
             PodcastError::YtDlpTimeout,
             PodcastError::Disabled(leaking.to_owned()),
+            PodcastError::TagWrite,
         ];
         for error in cases {
             let classified = error.classify();

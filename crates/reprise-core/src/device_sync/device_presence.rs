@@ -160,7 +160,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_47_only_the_first_detected_device_owns_the_single_open_session() {
+    fn mtp_48_only_the_first_detected_device_owns_the_single_open_session() {
         let first = vec![
             detected("anna", "Pixel 7a (Anna)"),
             detected("ben", "Pixel 7a (Ben)"),
@@ -214,7 +214,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_48_identity_prefers_uuid_then_usb_serial_and_never_uses_the_root_uri() {
+    fn mtp_49_identity_prefers_uuid_then_usb_serial_and_never_uses_the_root_uri() {
         assert_eq!(
             stable_device_identity(Some(" mount-uuid "), Some("usb-serial")),
             Some("mount-uuid".into())
@@ -237,7 +237,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_49_active_and_inert_devices_precede_dimmed_remembered_history_without_a_diff() {
+    fn mtp_50_active_and_inert_devices_precede_dimmed_remembered_history_without_a_diff() {
         let connected = vec![
             detected("anna", "Pixel 7a (Anna)"),
             detected("ben", "Pixel 7a (Ben)"),

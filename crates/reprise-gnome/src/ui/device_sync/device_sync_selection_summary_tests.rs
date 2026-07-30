@@ -11,7 +11,7 @@
 use super::*;
 
 #[test]
-fn mtp_50_the_youtube_selection_summary_changes_when_a_channel_is_enabled_for_this_device() {
+fn mtp_51_the_youtube_selection_summary_changes_when_a_channel_is_enabled_for_this_device() {
     run(async {
         let (_downloads, conn) = fixture();
         crate::test_db::connection(&conn)
@@ -71,7 +71,7 @@ fn mtp_50_the_youtube_selection_summary_changes_when_a_channel_is_enabled_for_th
 }
 
 #[test]
-fn mtp_50_the_podcast_selection_summary_counts_selected_shows_independently_of_youtube() {
+fn mtp_51_the_podcast_selection_summary_counts_selected_shows_independently_of_youtube() {
     run(async {
         let (_downloads, conn) = fixture();
         crate::test_db::connection(&conn)

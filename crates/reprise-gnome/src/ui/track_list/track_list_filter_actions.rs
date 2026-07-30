@@ -127,8 +127,8 @@ mod tests {
         assert_eq!(track_list.shared.browse_bar.result_count(), Some((2, 3)));
     }
 
-    // UX FIL-7: with the experimental switch on, the "Hide AI music" filter
-    // hides AI-flagged tracks and the filter row counts "X of Y" (FIL-2).
+    // UX FIL-7: the "Hide AI music" filter hides AI-flagged tracks and the
+    // filter row counts "X of Y" (FIL-2).
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn fil_7_hide_ai_music_filter_hides_ai_tracks_and_counts() {
@@ -160,9 +160,6 @@ mod tests {
             )
             .unwrap();
         }
-        // The AI-exclude filter only applies when the experimental switch is on.
-        crate::ui::experimental::set_experimental_enabled(&conn, true).unwrap();
-
         let track_list = TrackList::new(
             Rc::new(conn),
             Box::new(|_, _, _, _| {}),

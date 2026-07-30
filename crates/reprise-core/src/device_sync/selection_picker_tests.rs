@@ -16,7 +16,7 @@ fn candidate(episode_id: i64, group_id: i64, published_at: i64) -> EpisodeSelect
 }
 
 #[test]
-fn mtp_50_explicit_episode_pin_survives_rule_changes_refreshes_and_ageing_out() {
+fn mtp_51_explicit_episode_pin_survives_rule_changes_refreshes_and_ageing_out() {
     let initially_pinned = EpisodeSelectionCandidate {
         pinned: true,
         ..candidate(1, 10, 100)
@@ -55,7 +55,7 @@ fn mtp_50_explicit_episode_pin_survives_rule_changes_refreshes_and_ageing_out() 
 }
 
 #[test]
-fn mtp_50_podcast_pin_does_not_override_the_unplayed_standing_rule() {
+fn mtp_51_podcast_pin_does_not_override_the_unplayed_standing_rule() {
     let played_and_pinned = EpisodeSelectionCandidate {
         played: true,
         pinned: true,

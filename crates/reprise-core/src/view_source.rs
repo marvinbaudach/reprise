@@ -75,10 +75,12 @@ pub enum ViewSource {
     /// The Internet Radio source — a dedicated station table rather than the
     /// shared local-track list.
     Radio,
-    /// The instrumental conversion/staging view (experimental) — a dedicated
-    /// view backed by `ai_jobs` + the staging store rather than the shared
-    /// track list. The sidebar routes to it only while the experimental switch
-    /// is on (INST-11/INST-13); the content area shows the conversion widget.
+    /// The instrumental conversion/staging view — a dedicated view backed by
+    /// `ai_jobs` + the staging store rather than the shared track list. No
+    /// frontend offers it any more: the GTK surface that routed here was
+    /// removed (INST-13), and the switch that gated that route went with the
+    /// Experimental preferences page (INST-11). The variant stays so the
+    /// exhaustive matches over `ViewSource` keep their arm.
     Conversions,
 }
 

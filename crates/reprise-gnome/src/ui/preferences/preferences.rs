@@ -288,7 +288,6 @@ impl PreferencesContext {
                 PageId::Layout => self.layout_page(),
                 PageId::Library => self.library_page(),
                 PageId::Plugins => self.plugins_page(),
-                PageId::Experimental => super::preference_experimental::build_page(self),
             };
             (id, page)
         });

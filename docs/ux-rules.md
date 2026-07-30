@@ -326,7 +326,7 @@ human. Rationale for changes lives in the git history.
   the sidebar. It never automatically navigates away from the current
   view.
 - **MTP-2** [replaced by MTP-13]
-- **MTP-3** [replaced by MTP-47] — The device card and an open device page
+- **MTP-3** [replaced by MTP-48] — The device card and an open device page
   project the same device-related runtime state. Syncs of different
   devices may run in parallel; start and cancel act exclusively on the
   named device, and a late progress event of a cancelled run is
@@ -646,7 +646,7 @@ human. Rationale for changes lives in the git history.
   surface. That gap is tracked, not hidden behind `[planned]` — the
   persistence, the default, and the live wiring this rule actually decides
   are real and tested (`mtp_36_…`), which is what `[active]` asserts here.
-- **MTP-37** [replaced by MTP-50] [core] [gtk] — Replaces `MTP-28`'s addendum of 2026-07-28
+- **MTP-37** [replaced by MTP-51] [core] [gtk] — Replaces `MTP-28`'s addendum of 2026-07-28
   (Turn 6/7 plan `E-6`, `E-8`): Reprise supports exactly one MTP device
   (`E-5`), so the sole justification for a global Preferences surface — "applies
   to all devices, no device picker in the settings" — falls away. The device
@@ -825,19 +825,47 @@ human. Rationale for changes lives in the git history.
   deliberately not `online_sources::network_allowed`: copying an
   already-downloaded file makes no request, so the two share a formula but not
   a meaning, and must stay free to diverge.
-- **MTP-47** [active] [core] [gtk] — Replaces `MTP-3`. Exactly one MTP
+- **MTP-47** [active] [core] — An episode on the phone is named
+  `<Show>/<YYYY-MM-DD> - <Title>.<ext>`, never by its database id. The date is
+  `published_at`, or the day the episode was first seen when nothing else is
+  known — the same fallback the download cleanup order already uses. It is
+  never a constant, because every undated episode of one show would otherwise
+  collapse onto one name and overwrite the others. The day is formatted in UTC,
+  not local time: the path is the sync's delta key, and a key that moved with
+  the machine's timezone would evacuate and re-copy the whole podcast tree
+  after a trip. The separator is ASCII because the inventory side of that
+  comparison arrives through a lossy UTF-8 conversion, and components use the
+  same byte cap as music paths. Two episodes that would land on one name are
+  told apart by their stable episode id in brackets, not by a positional index:
+  podcast device files are inventoried live and persisted nowhere, so a
+  positional index would move whenever another episode was deleted and cost a
+  delete plus a full re-transfer. When a collision group shrinks to one member,
+  that survivor loses its now-unnecessary suffix once; deleting any namesake
+  never renumbers the rest. Uniqueness is judged on the composed path, never on
+  the bare name, because the suffix becomes part of that name: an episode whose
+  title already ends in `[42]` would otherwise take exactly the path episode 42
+  receives the moment a namesake disambiguates it, and two episodes on one path
+  are both copied and overwrite each other on the phone rather than colliding
+  anywhere Reprise could notice. A file Reprise itself named `.audio` is
+  managed like every other audio file, so it is inventoried, removable and
+  counted instead of being re-copied on every sync. Renaming makes files from
+  an earlier sync look new: with "Remove from phone when deleted or
+  unsubscribed here" on, the old names are removed and the new names copied in
+  one noisy sync; with it off, both remain until the user deletes one. Sorting
+  a show folder by name is now chronological, which the id form never was.
+- **MTP-48** [active] [core] [gtk] — Replaces `MTP-3`. Exactly one MTP
   device is active at a time and exactly one session is ever open. The first
   device detected owns it; a second one is detected and listed but never
   opened, its row reading "Plugged in · disconnect {other} to use it" in
   amber with no sync action. There is no queue, no parallel transfer and no
   device chooser.
-- **MTP-48** [active] [core] — Device identity is a stable key: the GVfs
+- **MTP-49** [active] [core] — Device identity is a stable key: the GVfs
   mount UUID, else the USB serial number from udev/sysfs. The `mtp://` root
   URI is never an identity — it carries the USB bus number and changes on
   every replug. A device with no stable key is usable but not remembered, and
   the UI says so rather than pretending. Persisted per identity: target
   folders, last verified state, size on device, local name — nothing else.
-- **MTP-49** [active] [gtk] — The sidebar lists the active device first,
+- **MTP-50** [active] [gtk] — The sidebar lists the active device first,
   then remembered devices dimmed as history. A remembered device shows no
   diff — only "Not connected · synced 3 days ago" or
   "Not connected · never verified" — because a balance for an absent device
@@ -846,7 +874,7 @@ human. Rationale for changes lives in the git history.
   the persisted row and deletes nothing, on the device or locally. A local
   rename keeps two identical models distinguishable and is never written to
   the device.
-- **MTP-50** [active] [core] [gtk] — Replaces `MTP-37`. The device page's
+- **MTP-51** [active] [core] [gtk] — Replaces `MTP-37`. The device page's
   Content rows each offer "Choose…", opening one shared picker pattern: a rule
   row, a grouped checkbox list, a filter, "Select all", and a live footer. The
   picker and the library's right-click "Include in phone sync" are two ways to
@@ -1182,8 +1210,9 @@ human. Rationale for changes lives in the git history.
   **sticky across sessions** like other view states. **No
   shuffle/auto-queue special rule** in v1: queue refill follows the
   visible view — with the filter active, AI titles are not visible and
-  are not refilled. Only available while the Experimental switch is on
-  (INST-11). (Decision 17)
+  are not refilled. The filter is always available in the library; the
+  Experimental switch that used to gate it is gone (INST-11).
+  (Decision 17)
 - **FIL-8** [active] [core] [gtk] — "Recently added" is its own library
   scope over all currently existing tracks whose `added_at` is at most
   seven days ago; there is no 50-track limit. The source initially
@@ -3105,9 +3134,12 @@ external write.
 
 An instrumental version is an **explicitly commissioned, permanent
 title, clearly marked as AI-manipulated** (CONTEXT.md), not a transient
-playback effect. The feature is **experimental** (decision 11): its
-entire UI appears only behind the "Experimental features" toggle; rough
-edges are deliberately accepted. The player plays only finished files.
+playback effect. The GTK frontend no longer commissions one — the
+conversion surface and the "Experimental features" toggle that gated it
+are gone; the CLI and MCP frontends still create instrumentals. What
+remains here is how the GTK frontend *marks* and *filters* the results:
+the AI badge (INST-10) and "Hide AI music" (FIL-7), both always
+available. The player plays only finished files.
 
 - **INST-1** [replaced by nothing — the instrumental surface was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — Triggered via track context menu: with
   the Experimental toggle active, the track context menu carries the
@@ -3174,12 +3206,18 @@ edges are deliberately accepted. The player plays only finished files.
   badge** ("Instrumental · AI-manipulated") with a **source reference**,
   where linked. Provenance is DB-primary (`track_provenance`), the tag
   reference secondary; the badge keys off the DB flag, never off the
-  storage folder. (Decision 13/14)
-- **INST-11** [active] [gtk] — **Master gate:** the entire instrumental
+  storage folder. The flag is the badge's only input — no settings gate
+  sits in front of it, so a track another frontend produced is marked
+  the moment it appears. (Decision 13/14)
+- **INST-11** [replaced by nothing — the gate lost its subject when the instrumental surface left the GTK frontend; the ID stays as a signpost per the append-only contract] — **Master gate:** the entire instrumental
   UI — context menu entry, conversion view, AI badges, "Hide AI music"
   filter (FIL-7) — is **hidden as long as the "Experimental features"
   toggle is off**. The toggle is a persisted setting; its state alone
-  decides visibility. (Decision 11)
+  decides visibility. (Decision 11) The surface the gate protected was
+  removed; the two survivors it still covered — the AI badge (INST-10)
+  and "Hide AI music" (FIL-7) — mark and filter tracks the CLI/MCP
+  frontends produce and are worth showing unconditionally, so the
+  toggle and its Experimental preferences page were removed with it.
 - **INST-12** [replaced by nothing — the instrumental surface was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — Model provisioning: behind the toggle
   lies the first-use download flow for the ML runtime weights via the
   core facade `ensure_weights` (background thread with progress,
@@ -3623,7 +3661,7 @@ listening statistics.
   (`MTP-45`/`POD-12`) — the two lines can no longer call the same subscription
   by two different nouns. Found by the `source-youtube` acceptance scenario,
   which reads the header back out of the running app.
-- **POD-16** [replaced by POD-17] [gtk] — The status line under the Podcasts and YouTube
+- **POD-16** [replaced by POD-19] [gtk] — The status line under the Podcasts and YouTube
   libraries never renders a raw error. Its two failure states are fixed
   sentences — "Could not read your subscriptions" when the library itself
   cannot be read, and `POD-11`'s "Refresh failed · showing saved episodes"
@@ -3636,7 +3674,47 @@ listening statistics.
   for provider errors, since a statement can carry a path or an identifier.
   The "Refresh now" button beside the line is the offer; the text does not
   repeat it.
-- **POD-17** [active] [gtk] — Replaces POD-16's refresh-failure footer.
+- **POD-17** [active] [core] — Every newly downloaded episode carries Title,
+  Album (the show), Artist (the feed author, or the show when no author is
+  present), Album Artist (the show), and the recording date in the file itself,
+  so a phone can name it without Reprise. The container is detected from the
+  file's bytes, never its name: the tag is written to the `.part` temporary,
+  whose name an extension-based reader would reject. Tags go to the temporary
+  and never to a published file because the tag library rewrites Ogg and FLAC
+  by truncating first, so a rewrite that fails part-way leaves a destroyed
+  file; only a `.part` may ever be that file, which the next attempt deletes
+  and which `reclaim_existing` refuses to adopt. Which of the two ways tagging
+  can fail decides the download's fate, and they are never collapsed into one.
+  A container Reprise cannot read or cannot tag is decided before anything is
+  written: the file is untouched and is still published untagged, so an
+  untaggable container never costs a completed download. A failed *write*
+  fails the download: the file may already be truncated, so the temporary is
+  deleted and the episode stays not-downloaded and retryable. Publishing it
+  instead would record the size of the wreckage as the episode's size — device
+  sync only compares the file against exactly that number, so it would agree
+  forever, while the recorded path would stop the episode from ever being
+  downloaded again. Either way only the classified reason may reach a log line
+  (`POD-13`). The size is measured after the tag write, so `downloaded_bytes`
+  always equals the published file's size; device sync rejects an episode whose
+  file and record differ, so reversing that order would silently remove every
+  tagged episode from future syncs. Every written value is capped at the byte
+  length the device path caps its components at (`MTP-47`), because the feed
+  owns these strings and nothing else bounds how much of one reaches the
+  truncate-and-rewrite. Files downloaded before this rule keep no tags;
+  re-downloading is the remedy. The reclaim path deliberately does not tag
+  because it is the one path that would rewrite an already-published file in
+  place.
+- **POD-18** [active] [core] — A YouTube episode carries the upload day yt-dlp
+  reports for it. Reprise asks for it explicitly in the channel listing because
+  the flat listing otherwise omits dates entirely. The value is day-granular by
+  yt-dlp's own description, which is all the device file name and date tag use.
+  A listing without a date still yields every episode, and a date that arrives
+  later fills an episode stored without one; an exact date already parsed from
+  an RSS feed is never overwritten by an approximate one. Without this rule,
+  every episode imported from one channel on the same day would receive that
+  import day, so the date could not tell otherwise identical channel episodes
+  apart.
+- **POD-19** [active] [gtk] — Replaces POD-16's refresh-failure footer.
   The footer keeps only neutral refresh progress, last-updated age and library
   read failures. A provider refresh failure appears once in the shared neutral
   source banner above the unchanged cached list, with fixed safe copy, Retry

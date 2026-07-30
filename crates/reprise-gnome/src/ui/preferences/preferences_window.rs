@@ -10,16 +10,14 @@ pub(in crate::ui) enum PageId {
     Layout,
     Library,
     Plugins,
-    Experimental,
 }
 
-pub(in crate::ui) const PAGE_ORDER: [PageId; 6] = [
+pub(in crate::ui) const PAGE_ORDER: [PageId; 5] = [
     PageId::Playback,
     PageId::Appearance,
     PageId::Layout,
     PageId::Library,
     PageId::Plugins,
-    PageId::Experimental,
 ];
 
 impl PageId {
@@ -30,7 +28,6 @@ impl PageId {
             Self::Layout => "layout",
             Self::Library => "library",
             Self::Plugins => "plugins",
-            Self::Experimental => "experimental",
         }
     }
 
@@ -41,7 +38,6 @@ impl PageId {
             Self::Layout => strings::PREFERENCES_LAYOUT,
             Self::Library => strings::PREFERENCES_LIBRARY,
             Self::Plugins => strings::PREFERENCES_PLUGINS,
-            Self::Experimental => strings::EXPERIMENTAL_PAGE_TITLE,
         };
         strings::text(message)
     }
@@ -53,7 +49,6 @@ impl PageId {
             Self::Layout => "view-grid-symbolic",
             Self::Library => "folder-music-symbolic",
             Self::Plugins => "application-x-addon-symbolic",
-            Self::Experimental => "applications-science-symbolic",
         }
     }
 }
@@ -109,7 +104,7 @@ pub(in crate::ui) fn selected_sidebar_focus_target(sidebar: &gtk4::ListBox) -> g
 }
 
 pub(in crate::ui) fn build(
-    pages: [(PageId, adw::PreferencesPage); 6],
+    pages: [(PageId, adw::PreferencesPage); PAGE_ORDER.len()],
     foreground_top_bar: Option<&gtk4::Widget>,
 ) -> PreferencesShell {
     let stack = adw::ViewStack::new();
@@ -255,7 +250,6 @@ mod tests {
                 PageId::Layout,
                 PageId::Library,
                 PageId::Plugins,
-                PageId::Experimental,
             ]
         );
         assert_eq!(page_index_by_name("plugins"), Some(4));

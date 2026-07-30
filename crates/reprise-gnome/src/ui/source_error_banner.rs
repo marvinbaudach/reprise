@@ -169,7 +169,7 @@ mod tests {
     }
 
     #[test]
-    fn pod_17_refresh_failures_use_the_banner_and_never_the_footer() {
+    fn pod_19_refresh_failures_use_the_banner_and_never_the_footer() {
         let requests = include_str!("podcasts/podcasts_view_requests.rs");
         assert!(requests.contains("show_refresh_failure"));
         assert!(!requests.contains("PODCAST_REFRESH_FAILED"));

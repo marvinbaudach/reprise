@@ -225,7 +225,7 @@ fn simulated_mtp_phone_transcodes_lossless_selection_to_mp3_256() {
 }
 
 #[test]
-fn mtp_47_simulated_mtp_backend_writes_only_the_active_device() {
+fn mtp_48_simulated_mtp_backend_writes_only_the_active_device() {
     run(async {
         const FIRST_ID: &str = "simulated-phone-a";
         const SECOND_ID: &str = "simulated-phone-b";

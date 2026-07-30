@@ -235,7 +235,7 @@ fn known_read_only_target_is_rejected_at_the_runtime_boundary() {
 }
 
 #[test]
-fn mtp_47_cancelling_the_active_device_never_opens_or_queues_the_inert_device() {
+fn mtp_48_cancelling_the_active_device_never_opens_or_queues_the_inert_device() {
     run(async {
         let (_temp, conn) = fixture();
         select_road_playlist(&conn, &[1]);
@@ -266,11 +266,11 @@ fn mtp_47_cancelling_the_active_device_never_opens_or_queues_the_inert_device() 
 }
 
 #[test]
-fn mtp_47_unplugging_the_active_device_mid_transfer_opens_the_waiting_one_exactly_once() {
+fn mtp_48_unplugging_the_active_device_mid_transfer_opens_the_waiting_one_exactly_once() {
     // The riskiest moment for the single-session rule: a transfer is in flight
     // on "a" when the cable is pulled, and "b" has been sitting inert waiting
     // for the session. Cancelling from the UI (the case
-    // `mtp_47_cancelling_the_active_device_never_opens_or_queues_the_inert_device`
+    // `mtp_48_cancelling_the_active_device_never_opens_or_queues_the_inert_device`
     // covers) leaves both devices connected; this one removes the owner
     // outright, which is the transition that could open two sessions at once.
     run(async {

@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-30 21:30+0200\n"
+"POT-Creation-Date: 2026-07-30 21:39+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Marvin Baudach\n"
 "Language-Team: German\n"
@@ -2457,17 +2457,23 @@ msgstr "Konzerte brauchen Zugangsdaten des Anbieters"
 #, rust-format
 msgid ""
 "Showing saved concerts from {time}. Ticket and event links need a connection."
-msgstr "Es werden gespeicherte Konzerte von {time} angezeigt. Ticket- und Event-Links brauchen eine Verbindung."
+msgstr ""
+"Es werden gespeicherte Konzerte von {time} angezeigt. Ticket- und Event-"
+"Links brauchen eine Verbindung."
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:42
 msgid "There are no saved concerts to show. Your music is unaffected."
-msgstr "Es sind keine gespeicherten Konzerte da, die gezeigt werden könnten. Deine Musik ist unberührt."
+msgstr ""
+"Es sind keine gespeicherten Konzerte da, die gezeigt werden könnten. Deine "
+"Musik ist unberührt."
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:44
 msgid ""
 "Saved concerts stay available. Add credentials in Preferences to refresh "
 "them."
-msgstr "Gespeicherte Konzerte bleiben verfügbar. Zugangsdaten in den Einstellungen hinterlegen, um sie zu aktualisieren."
+msgstr ""
+"Gespeicherte Konzerte bleiben verfügbar. Zugangsdaten in den Einstellungen "
+"hinterlegen, um sie zu aktualisieren."
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:45
 msgid "Never updated"
@@ -2623,11 +2629,15 @@ msgstr "Neuerscheinungen konnten nicht aktualisiert werden"
 #, rust-format
 msgid ""
 "Showing saved releases from {time}. Announcement links need a connection."
-msgstr "Es werden gespeicherte Veröffentlichungen von {time} angezeigt. Ankündigungs-Links brauchen eine Verbindung."
+msgstr ""
+"Es werden gespeicherte Veröffentlichungen von {time} angezeigt. Ankündigungs-"
+"Links brauchen eine Verbindung."
 
 #: crates/reprise-gnome/src/ui/strings_releases.rs:38
 msgid "There are no saved releases to show. Your library is unaffected."
-msgstr "Es sind keine gespeicherten Veröffentlichungen da, die gezeigt werden könnten. Deine Bibliothek ist unberührt."
+msgstr ""
+"Es sind keine gespeicherten Veröffentlichungen da, die gezeigt werden "
+"könnten. Deine Bibliothek ist unberührt."
 
 #: crates/reprise-gnome/src/ui/strings_releases.rs:39
 msgid "an earlier update"
@@ -4051,31 +4061,6 @@ msgstr "Instrumental · KI-bearbeitet"
 msgid "Hide AI music"
 msgstr "KI-Musik ausblenden"
 
-#: crates/reprise-gnome/src/ui/strings_ai.rs:21
-msgid "Experimental"
-msgstr "Experimentell"
-
-#: crates/reprise-gnome/src/ui/strings_ai.rs:22
-msgid "Experimental features"
-msgstr "Experimentelle Funktionen"
-
-#: crates/reprise-gnome/src/ui/strings_ai.rs:24
-msgid "Unfinished features with rough edges, off by default."
-msgstr "Unfertige Funktionen mit rauen Kanten, standardmäßig aus."
-
-#: crates/reprise-gnome/src/ui/strings_ai.rs:25
-msgid "Enable experimental features"
-msgstr "Experimentelle Funktionen aktivieren"
-
-#: crates/reprise-gnome/src/ui/strings_ai.rs:27
-msgid ""
-"Shows AI instrumental versions across the app: the context-menu trigger, the "
-"conversion view, badges, and the \"Hide AI music\" filter."
-msgstr ""
-"Zeigt KI-Instrumentalversionen in der ganzen App: den Auslöser im "
-"Kontextmenü, die Konvertierungsansicht, Abzeichen und den Filter „KI-Musik "
-"ausblenden“."
-
 #: crates/reprise-gnome/src/ui/strings_scan.rs:5
 msgid "Library folder unavailable"
 msgstr "Musikordner nicht verfügbar"
@@ -4967,6 +4952,26 @@ msgstr "Chromium (CSD)"
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:18
 msgid "Separate title bar"
 msgstr "Separate Titelleiste"
+
+#~ msgid "Experimental"
+#~ msgstr "Experimentell"
+
+#~ msgid "Experimental features"
+#~ msgstr "Experimentelle Funktionen"
+
+#~ msgid "Unfinished features with rough edges, off by default."
+#~ msgstr "Unfertige Funktionen mit rauen Kanten, standardmäßig aus."
+
+#~ msgid "Enable experimental features"
+#~ msgstr "Experimentelle Funktionen aktivieren"
+
+#~ msgid ""
+#~ "Shows AI instrumental versions across the app: the context-menu trigger, "
+#~ "the conversion view, badges, and the \"Hide AI music\" filter."
+#~ msgstr ""
+#~ "Zeigt KI-Instrumentalversionen in der ganzen App: den Auslöser im "
+#~ "Kontextmenü, die Konvertierungsansicht, Abzeichen und den Filter „KI-"
+#~ "Musik ausblenden“."
 
 #~ msgid "Refresh failed · showing saved episodes"
 #~ msgstr ""

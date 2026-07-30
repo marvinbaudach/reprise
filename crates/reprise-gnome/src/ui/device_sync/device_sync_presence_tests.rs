@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn mtp_47_runtime_opens_exactly_one_session_and_never_scans_the_inert_device() {
+fn mtp_48_runtime_opens_exactly_one_session_and_never_scans_the_inert_device() {
     run(async {
         let (_temp, conn) = fixture();
         disable_auto_start(&conn, "a");

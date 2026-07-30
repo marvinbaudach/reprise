@@ -147,7 +147,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn mtp_50_everything_is_exposed_only_by_the_picker_not_as_a_playlist() {
+    fn mtp_51_everything_is_exposed_only_by_the_picker_not_as_a_playlist() {
         let db = crate::db::Db::open_in_memory().unwrap();
 
         let snapshots = load_mirror_playlist_snapshots(&db).unwrap();

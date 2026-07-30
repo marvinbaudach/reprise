@@ -707,13 +707,13 @@ mod tests {
     /// summaries report — is exercised end to end (DB through
     /// `phone_sync::selection_summary` through the live runtime) by
     /// `device_sync_selection_summary_tests::
-    /// mtp_50_the_youtube_selection_summary_changes_when_a_channel_is_enabled_for_this_device`
+    /// mtp_51_the_youtube_selection_summary_changes_when_a_channel_is_enabled_for_this_device`
     /// and its podcast counterpart. This test only pins the exact copy
     /// [`selection_summary_text`] renders for given inputs — it must not be
     /// the only coverage the label has, the same gap that let the old
     /// "Rules from Preferences" stub go unnoticed.
     #[test]
-    fn mtp_50_selection_summary_renders_live_youtube_and_podcast_counts() {
+    fn mtp_51_selection_summary_renders_live_youtube_and_podcast_counts() {
         assert_eq!(
             selection_summary_text(
                 SyncTargetKind::YoutubeAudio,
@@ -761,7 +761,7 @@ mod tests {
 
     /// `E-9`: `0` is the real, resolved value the pipeline hands the panel
     /// for "unlimited" — never `usize::MAX`, which is a display-only
-    /// sentinel (see `mtp_50_selection_summary_renders_live_youtube_and_podcast_counts`).
+    /// sentinel (see `mtp_51_selection_summary_renders_live_youtube_and_podcast_counts`).
     /// Before this fix, `0` fell through to the "latest {n} each" branch and
     /// rendered "latest 0 each", reading as "no episodes selected" when in
     /// fact every episode of every selected channel was. Assert the literal
@@ -787,7 +787,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_50_cap_gib_conversion_round_trips_and_treats_zero_as_unlimited() {
+    fn mtp_51_cap_gib_conversion_round_trips_and_treats_zero_as_unlimited() {
         assert_eq!(cap_bytes_to_gib(None), 0.0);
         assert_eq!(cap_bytes_to_gib(Some(8 * GIB_BYTES)), 8.0);
         assert_eq!(cap_bytes_to_gib(Some(4 * GIB_BYTES)), 4.0);

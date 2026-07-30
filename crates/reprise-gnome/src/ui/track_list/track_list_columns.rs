@@ -361,11 +361,9 @@ pub(in crate::ui) fn append_title_column(
         eq.set_visible(playing);
         toggle_class(&label, NOW_PLAYING_TITLE_CLASS, playing);
         // INST-10: the AI badge (the label's trailing sibling) follows the row's
-        // provenance flag, gated on the live experimental switch (INST-11).
+        // provenance flag.
         if let Some(ai_badge) = label.next_sibling() {
-            let experimental_on =
-                crate::ui::experimental::experimental_enabled(&shared_for_bind.conn);
-            ai_badge.set_visible(ai_badge_visible(experimental_on, track.is_ai));
+            ai_badge.set_visible(ai_badge_visible(track.is_ai));
         }
         now_playing_marker::register_cell(&shared_for_bind, item, {
             let row = row.clone();
@@ -721,11 +719,10 @@ fn on_rating_changed(
     }
 }
 
-/// INST-10 + INST-11: the AI badge shows only for an AI-manipulated track and
-/// only while the experimental switch is on (the badge is instrumental UI). A
+/// INST-10: the AI badge shows for an AI-manipulated track and nothing else. A
 /// pure decision so the rule is testable without realising a ColumnView cell.
-fn ai_badge_visible(experimental_on: bool, is_ai: bool) -> bool {
-    experimental_on && is_ai
+fn ai_badge_visible(is_ai: bool) -> bool {
+    is_ai
 }
 
 #[cfg(test)]
@@ -772,23 +769,12 @@ mod missing_track_tests {
 mod ai_badge_tests {
     use super::ai_badge_visible;
 
-    // UX INST-10: the AI badge renders for AI-manipulated tracks, and (INST-11)
-    // only while the experimental switch is on — never on a plain track, never
-    // when the switch is off.
+    // UX INST-10: the AI badge renders for AI-manipulated tracks and never on a
+    // plain one. The provenance flag is the only input — no gate sits in front
+    // of it, so a track the CLI/MCP frontends produced is always marked.
     #[test]
-    fn inst_10_ai_badge_shows_only_for_ai_tracks_with_experimental_on() {
-        assert!(
-            ai_badge_visible(true, true),
-            "an AI track with experimental on shows the badge"
-        );
-        assert!(
-            !ai_badge_visible(true, false),
-            "a plain track shows no badge"
-        );
-        assert!(
-            !ai_badge_visible(false, true),
-            "experimental off hides the badge (INST-11 master gate)"
-        );
-        assert!(!ai_badge_visible(false, false));
+    fn inst_10_ai_badge_shows_only_for_ai_tracks() {
+        assert!(ai_badge_visible(true), "an AI track shows the badge");
+        assert!(!ai_badge_visible(false), "a plain track shows no badge");
     }
 }

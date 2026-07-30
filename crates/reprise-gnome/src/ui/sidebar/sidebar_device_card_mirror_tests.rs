@@ -98,7 +98,7 @@ fn mtp_29_idle_card_reads_the_aggregate_balance_not_a_blended_change_count() {
 }
 
 #[test]
-fn mtp_47_inert_device_card_names_the_active_device_and_offers_no_sync_copy() {
+fn mtp_48_inert_device_card_names_the_active_device_and_offers_no_sync_copy() {
     let mut device = view(PlannedSyncPhase::Idle);
     device.session_state = reprise_core::device_sync::DeviceSessionState::Inert {
         active_device_name: "Pixel 7a (Anna)".into(),
@@ -112,7 +112,7 @@ fn mtp_47_inert_device_card_names_the_active_device_and_offers_no_sync_copy() {
 }
 
 #[test]
-fn mtp_49_remembered_card_is_dimmed_has_no_diff_and_exposes_local_memory_actions() {
+fn mtp_50_remembered_card_is_dimmed_has_no_diff_and_exposes_local_memory_actions() {
     let mut device = view(PlannedSyncPhase::Idle);
     device.connected = false;
     device.session_state = reprise_core::device_sync::DeviceSessionState::Remembered;

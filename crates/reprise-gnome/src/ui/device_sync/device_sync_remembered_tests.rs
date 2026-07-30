@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn mtp_49_runtime_lists_active_then_remembered_without_a_diff_and_supports_local_memory_actions() {
+fn mtp_50_runtime_lists_active_then_remembered_without_a_diff_and_supports_local_memory_actions() {
     run(async {
         let (_temp, conn) = fixture();
         disable_auto_start(&conn, "active");
@@ -72,7 +72,7 @@ fn mtp_49_runtime_lists_active_then_remembered_without_a_diff_and_supports_local
 }
 
 #[test]
-fn mtp_49_when_the_owner_disconnects_the_new_active_device_moves_above_history() {
+fn mtp_50_when_the_owner_disconnects_the_new_active_device_moves_above_history() {
     run(async {
         let (_temp, conn) = fixture();
         disable_auto_start(&conn, "a");

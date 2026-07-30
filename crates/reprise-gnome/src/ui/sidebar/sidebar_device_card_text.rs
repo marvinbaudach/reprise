@@ -204,7 +204,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_49_remembered_devices_name_only_connection_history_and_never_a_diff() {
+    fn mtp_50_remembered_devices_name_only_connection_history_and_never_a_diff() {
         let last_verified = now() - chrono::Duration::days(3);
         assert_eq!(
             remembered_sentence(Some(last_verified), now()),

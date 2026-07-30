@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn mtp_48_unrememberable_device_is_usable_without_persisting_the_volatile_uri() {
+fn mtp_49_unrememberable_device_is_usable_without_persisting_the_volatile_uri() {
     run(async {
         let (_temp, conn) = fixture();
         let root_uri = "mtp://[usb:001,013]/";

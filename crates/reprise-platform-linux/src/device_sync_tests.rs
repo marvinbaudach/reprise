@@ -79,7 +79,7 @@ fn descriptor_uses_the_uri_only_for_the_live_unrememberable_session() {
 }
 
 #[test]
-fn mtp_48_sysfs_serial_resolution_prefers_id_serial_short_and_degrades_cleanly() {
+fn mtp_49_sysfs_serial_resolution_prefers_id_serial_short_and_degrades_cleanly() {
     let sysfs = tempfile::tempdir().unwrap();
     let device = sysfs.path().join("1-13");
     fs::create_dir(&device).unwrap();

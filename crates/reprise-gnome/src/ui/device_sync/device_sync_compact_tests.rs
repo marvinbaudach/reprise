@@ -490,7 +490,7 @@ fn a_failed_track_copy_does_not_publish_a_playlist_with_dead_new_paths() {
 }
 
 #[test]
-fn mtp_47_active_device_offers_cancel_while_the_inert_device_offers_no_sync_action() {
+fn mtp_48_active_device_offers_cancel_while_the_inert_device_offers_no_sync_action() {
     run(async {
         let (_temp, conn) = fixture();
         add_playlist(&conn, 10, "Road", &[1]);

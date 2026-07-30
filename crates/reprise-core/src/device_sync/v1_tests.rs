@@ -86,7 +86,7 @@ fn prepare_before_sync_defaults_true_and_round_trips() {
 }
 
 #[test]
-fn mtp_50_entire_library_selection_round_trips_as_the_everything_decision() {
+fn mtp_51_entire_library_selection_round_trips_as_the_everything_decision() {
     let conn = migrated();
     let mut settings = load_or_create_settings(&conn, "serial-2", "Phone").unwrap();
     settings.selection = DeviceSelection::EntireLibrary;
@@ -539,7 +539,7 @@ fn selection_resolves_playlist_union_and_the_entire_library_without_duplicates()
 }
 
 #[test]
-fn mtp_50_entire_library_selection_computes_the_whole_library_copy_delta() {
+fn mtp_51_entire_library_selection_computes_the_whole_library_copy_delta() {
     let conn = migrated();
     let dir = tempfile::tempdir().unwrap();
     for (id, title) in [(1, "One"), (2, "Two"), (3, "Three")] {

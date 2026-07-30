@@ -737,7 +737,7 @@ fn is_audio_file(name: &str) -> bool {
         .is_some_and(|extension| {
             matches!(
                 extension.to_ascii_lowercase().as_str(),
-                "mp3" | "flac" | "ogg" | "opus" | "m4a" | "aac" | "wav"
+                "mp3" | "flac" | "ogg" | "opus" | "m4a" | "aac" | "wav" | "audio"
             )
         })
 }

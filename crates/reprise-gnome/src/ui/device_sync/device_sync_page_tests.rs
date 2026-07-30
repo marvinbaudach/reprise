@@ -398,7 +398,7 @@ fn mtp_14_device_header_reports_the_last_device_sync_without_claiming_one() {
 }
 
 #[test]
-fn mtp_49_remembered_page_names_the_last_verified_size_without_a_live_diff() {
+fn mtp_50_remembered_page_names_the_last_verified_size_without_a_live_diff() {
     let mut device = device();
     device.connected = false;
     device.session_state = reprise_core::device_sync::DeviceSessionState::Remembered;

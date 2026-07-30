@@ -45,6 +45,142 @@ fn untitled_youtube_listing_uses_a_non_url_fallback_title() {
     assert_eq!(feed.title, "YouTube source");
 }
 
+struct DatedYoutubeListing {
+    published_at: i64,
+}
+
+impl YoutubeFetcher for DatedYoutubeListing {
+    fn list(&self, _: &str, _: usize) -> Result<ParsedFeed, PodcastError> {
+        Ok(ParsedFeed {
+            title: "Channel".to_owned(),
+            author: None,
+            image_url: None,
+            episodes: vec![ParsedEpisode {
+                guid: "video".to_owned(),
+                title: "Video".to_owned(),
+                image_url: None,
+                audio_url: "https://www.youtube.com/watch?v=video".to_owned(),
+                page_url: None,
+                published_at: Some(self.published_at),
+                duration_secs: None,
+            }],
+        })
+    }
+
+    fn download(&self, _: &str, _: &Path) -> Result<(), PodcastError> {
+        panic!("refresh without auto-download must not download")
+    }
+}
+
+#[test]
+fn pod_18_a_date_arriving_later_fills_an_episode_that_had_none() {
+    let db = conn();
+    let subscription_id = store::add_or_restore(
+        &db,
+        &NewSubscription {
+            kind: PodcastKind::Youtube,
+            feed_url: "https://youtube.test/@dated".to_owned(),
+            title: "Channel".to_owned(),
+            author: None,
+            image_url: None,
+            auto_download: false,
+        },
+        1,
+    )
+    .unwrap();
+    let episode = ParsedEpisode {
+        guid: "video".to_owned(),
+        title: "Video".to_owned(),
+        image_url: None,
+        audio_url: "https://www.youtube.com/watch?v=video".to_owned(),
+        page_url: None,
+        published_at: None,
+        duration_secs: None,
+    };
+    let episode_id = store::upsert_episode(&db, subscription_id, &episode, 10)
+        .unwrap()
+        .unwrap()
+        .episode_id;
+
+    let directory = tempfile::tempdir().unwrap();
+    let summary = refresh_to_root(
+        &db,
+        &FakeFeedNeverCalled,
+        &DatedYoutubeListing {
+            published_at: 1_785_225_600,
+        },
+        20,
+        true,
+        directory.path(),
+    )
+    .unwrap();
+
+    assert_eq!(summary.episodes_updated, 1);
+    assert_eq!(
+        store::episode(&db, episode_id)
+            .unwrap()
+            .unwrap()
+            .published_at,
+        Some(1_785_225_600)
+    );
+}
+
+#[test]
+fn pod_18_an_exact_feed_date_is_not_overwritten_by_an_approximate_one() {
+    let db = conn();
+    let subscription_id = store::add_or_restore(
+        &db,
+        &NewSubscription {
+            kind: PodcastKind::Youtube,
+            feed_url: "https://youtube.test/@exact-date".to_owned(),
+            title: "Channel".to_owned(),
+            author: None,
+            image_url: None,
+            auto_download: false,
+        },
+        1,
+    )
+    .unwrap();
+    // The row already carries an exact date obtained before this approximate
+    // YouTube listing. The schema stores no provenance, so non-NULL is the
+    // boundary the refresh must preserve.
+    let episode = ParsedEpisode {
+        guid: "video".to_owned(),
+        title: "Video".to_owned(),
+        image_url: None,
+        audio_url: "https://www.youtube.com/watch?v=video".to_owned(),
+        page_url: None,
+        published_at: Some(1_785_225_600),
+        duration_secs: None,
+    };
+    let episode_id = store::upsert_episode(&db, subscription_id, &episode, 10)
+        .unwrap()
+        .unwrap()
+        .episode_id;
+
+    let directory = tempfile::tempdir().unwrap();
+    let summary = refresh_to_root(
+        &db,
+        &FakeFeedNeverCalled,
+        &DatedYoutubeListing {
+            published_at: 1_785_312_000,
+        },
+        20,
+        true,
+        directory.path(),
+    )
+    .unwrap();
+
+    assert_eq!(summary.episodes_updated, 1);
+    assert_eq!(
+        store::episode(&db, episode_id)
+            .unwrap()
+            .unwrap()
+            .published_at,
+        Some(1_785_225_600)
+    );
+}
+
 struct OfficialYoutubeFeed {
     requested_urls: RefCell<Vec<String>>,
 }

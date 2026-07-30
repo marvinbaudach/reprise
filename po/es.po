@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-30 21:30+0200\n"
+"POT-Creation-Date: 2026-07-30 21:39+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Spanish\n"
@@ -2464,7 +2464,9 @@ msgstr "Conciertos necesita credenciales del proveedor"
 #, rust-format
 msgid ""
 "Showing saved concerts from {time}. Ticket and event links need a connection."
-msgstr "Se muestran los conciertos guardados de {time}. Los enlaces de entradas y eventos necesitan conexión."
+msgstr ""
+"Se muestran los conciertos guardados de {time}. Los enlaces de entradas y "
+"eventos necesitan conexión."
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:42
 msgid "There are no saved concerts to show. Your music is unaffected."
@@ -2474,7 +2476,9 @@ msgstr "No hay conciertos guardados que mostrar. Tu música no se ve afectada."
 msgid ""
 "Saved concerts stay available. Add credentials in Preferences to refresh "
 "them."
-msgstr "Los conciertos guardados siguen disponibles. Añade credenciales en Preferencias para actualizarlos."
+msgstr ""
+"Los conciertos guardados siguen disponibles. Añade credenciales en "
+"Preferencias para actualizarlos."
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:45
 msgid "Never updated"
@@ -2630,11 +2634,14 @@ msgstr "No se pudieron actualizar los nuevos lanzamientos"
 #, rust-format
 msgid ""
 "Showing saved releases from {time}. Announcement links need a connection."
-msgstr "Se muestran los lanzamientos guardados de {time}. Los enlaces de anuncios necesitan conexión."
+msgstr ""
+"Se muestran los lanzamientos guardados de {time}. Los enlaces de anuncios "
+"necesitan conexión."
 
 #: crates/reprise-gnome/src/ui/strings_releases.rs:38
 msgid "There are no saved releases to show. Your library is unaffected."
-msgstr "No hay lanzamientos guardados que mostrar. Tu biblioteca no se ve afectada."
+msgstr ""
+"No hay lanzamientos guardados que mostrar. Tu biblioteca no se ve afectada."
 
 #: crates/reprise-gnome/src/ui/strings_releases.rs:39
 msgid "an earlier update"
@@ -4056,32 +4063,6 @@ msgstr "Instrumental · modificado con IA"
 msgid "Hide AI music"
 msgstr "Ocultar música con IA"
 
-#: crates/reprise-gnome/src/ui/strings_ai.rs:21
-msgid "Experimental"
-msgstr "Experimental"
-
-#: crates/reprise-gnome/src/ui/strings_ai.rs:22
-msgid "Experimental features"
-msgstr "Funciones experimentales"
-
-#: crates/reprise-gnome/src/ui/strings_ai.rs:24
-msgid "Unfinished features with rough edges, off by default."
-msgstr ""
-"Funciones inacabadas y con aristas, desactivadas de forma predeterminada."
-
-#: crates/reprise-gnome/src/ui/strings_ai.rs:25
-msgid "Enable experimental features"
-msgstr "Activar funciones experimentales"
-
-#: crates/reprise-gnome/src/ui/strings_ai.rs:27
-msgid ""
-"Shows AI instrumental versions across the app: the context-menu trigger, the "
-"conversion view, badges, and the \"Hide AI music\" filter."
-msgstr ""
-"Muestra versiones instrumentales con IA en toda la aplicación: el disparador "
-"del menú contextual, la vista de conversión, las insignias y el filtro "
-"«Ocultar música con IA»."
-
 #: crates/reprise-gnome/src/ui/strings_scan.rs:5
 msgid "Library folder unavailable"
 msgstr "Carpeta de la biblioteca no disponible"
@@ -4973,6 +4954,27 @@ msgstr "Chromium (CSD)"
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:18
 msgid "Separate title bar"
 msgstr "Barra de título independiente"
+
+#~ msgid "Experimental"
+#~ msgstr "Experimental"
+
+#~ msgid "Experimental features"
+#~ msgstr "Funciones experimentales"
+
+#~ msgid "Unfinished features with rough edges, off by default."
+#~ msgstr ""
+#~ "Funciones inacabadas y con aristas, desactivadas de forma predeterminada."
+
+#~ msgid "Enable experimental features"
+#~ msgstr "Activar funciones experimentales"
+
+#~ msgid ""
+#~ "Shows AI instrumental versions across the app: the context-menu trigger, "
+#~ "the conversion view, badges, and the \"Hide AI music\" filter."
+#~ msgstr ""
+#~ "Muestra versiones instrumentales con IA en toda la aplicación: el "
+#~ "disparador del menú contextual, la vista de conversión, las insignias y "
+#~ "el filtro «Ocultar música con IA»."
 
 #~ msgid "Refresh failed · showing saved episodes"
 #~ msgstr "Falló la actualización · se muestran los episodios guardados"

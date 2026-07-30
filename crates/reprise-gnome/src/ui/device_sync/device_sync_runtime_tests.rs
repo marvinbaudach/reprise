@@ -111,9 +111,9 @@ fn mtp_24_podcast_and_youtube_audio_are_always_copied_1_to_1_never_transcoded() 
             .execute(
                 "INSERT INTO podcast_episodes
                  (id, subscription_id, guid, title, audio_url, downloaded_path,
-                  downloaded_bytes, first_seen_at)
+                  downloaded_bytes, published_at, first_seen_at)
                  VALUES (100, 10, 'yt-100', 'Video', 'https://example.test/video.webm',
-                         ?1, 18, 1)",
+                         ?1, 18, 1785225600, 1)",
                 [episode_path.to_string_lossy().as_ref()],
             )
             .unwrap();
@@ -130,7 +130,7 @@ fn mtp_24_podcast_and_youtube_audio_are_always_copied_1_to_1_never_transcoded() 
             backend.state.managed_copies.borrow().as_slice(),
             [(
                 "/Music/Reprise-YouTube".to_string(),
-                "Channel/100-Video.flac".to_string()
+                "Channel/2026-07-28 - Video.flac".to_string()
             )]
         );
         assert!(
@@ -168,9 +168,9 @@ fn pod_12_planned_sync_copies_selected_rss_and_youtube_each_to_its_own_target() 
             .execute(
                 "INSERT INTO podcast_episodes
                  (id, subscription_id, guid, title, audio_url, downloaded_path,
-                  downloaded_bytes, first_seen_at)
+                  downloaded_bytes, published_at, first_seen_at)
                  VALUES (100, 10, 'rss-100', 'Episode', 'https://example.test/rss.mp3',
-                         ?1, 9, 1)",
+                         ?1, 9, 1785225600, 1)",
                 [rss_path.to_string_lossy().as_ref()],
             )
             .unwrap();
@@ -178,9 +178,9 @@ fn pod_12_planned_sync_copies_selected_rss_and_youtube_each_to_its_own_target() 
             .execute(
                 "INSERT INTO podcast_episodes
                  (id, subscription_id, guid, title, audio_url, downloaded_path,
-                  downloaded_bytes, first_seen_at)
+                  downloaded_bytes, published_at, first_seen_at)
                  VALUES (101, 11, 'yt-101', 'Video', 'https://example.test/youtube.webm',
-                         ?1, 7, 1)",
+                         ?1, 7, 1785225600, 1)",
                 [youtube_path.to_string_lossy().as_ref()],
             )
             .unwrap();
@@ -211,11 +211,11 @@ fn pod_12_planned_sync_copies_selected_rss_and_youtube_each_to_its_own_target() 
             [
                 (
                     "/Music/Reprise-YouTube".to_string(),
-                    "Video/101-Video.mp3".to_string()
+                    "Video/2026-07-28 - Video.mp3".to_string()
                 ),
                 (
                     "/Podcasts/Reprise".to_string(),
-                    "RSS Show/100-Episode.mp3".to_string()
+                    "RSS Show/2026-07-28 - Episode.mp3".to_string()
                 ),
             ]
         );

@@ -1,12 +1,12 @@
 //! Serial podcast refresh and download pipeline.
 
-use std::{
-    collections::HashMap,
-    path::Path,
-    sync::{Mutex, MutexGuard, OnceLock},
-};
+use std::path::Path;
 
 use rusqlite::Connection;
+
+#[path = "pipeline_retry.rs"]
+mod retry;
+use retry::{clear_retry, pending_retry, previous_attempt, set_retry, RetryKey};
 
 use crate::{db::Db, source_error::SourceErrorKind};
 
@@ -22,15 +22,6 @@ pub use load_more::load_more_youtube;
 
 const MAX_AUTO_DOWNLOADS_PER_SUBSCRIPTION: usize = 3;
 const OFFICIAL_YOUTUBE_LIMIT: usize = 15;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-struct RetryKey {
-    connection: usize,
-    subscription_id: i64,
-}
-
-static REFRESH_RETRIES: OnceLock<Mutex<HashMap<RetryKey, super::refresh::RefreshRetry>>> =
-    OnceLock::new();
 
 pub trait FeedFetcher {
     fn fetch(&self, subscription: &SubscriptionRow) -> Result<Response, PodcastError>;
@@ -282,6 +273,16 @@ fn download_episode_in(
         on_progress(state.clone());
         return Ok(state);
     }
+    let tag_set = super::episode_tags::EpisodeTagSet {
+        title: episode.title.clone(),
+        show: subscription.title.clone(),
+        artist: subscription
+            .author
+            .clone()
+            .filter(|author| !author.trim().is_empty())
+            .unwrap_or_else(|| subscription.title.clone()),
+        date: super::episode_tags::episode_date(episode.published_at, episode.first_seen_at),
+    };
     let download = super::downloads::download_atomically(&destination, |temporary| {
         let mut report = |progress: DownloadProgress| {
             state = super::download_state::downloading(
@@ -293,12 +294,27 @@ fn download_episode_in(
         };
         match subscription.kind {
             PodcastKind::Rss => {
-                feed_fetcher.download_with_progress(&episode.audio_url, temporary, &mut report)
+                feed_fetcher.download_with_progress(&episode.audio_url, temporary, &mut report)?;
             }
             PodcastKind::Youtube => {
-                youtube_fetcher.download_with_progress(&episode.audio_url, temporary, &mut report)
+                youtube_fetcher.download_with_progress(
+                    &episode.audio_url,
+                    temporary,
+                    &mut report,
+                )?;
             }
         }
+        // `POD-17`: tag the temporary, never the published file. Lofty
+        // rewrites Ogg and FLAC by truncating first, so a write that fails
+        // part-way destroys the `.part` — which is why a failed write fails
+        // the whole download here: `download_atomically` then deletes the
+        // temporary and the episode stays downloadable, instead of the
+        // truncated file being measured and published as a finished
+        // episode. A container Reprise cannot tag at all is the opposite
+        // case: nothing was written, and the download is published untagged.
+        super::episode_tags::tag_download(temporary, &tag_set, episode_id)
+            .map_err(|_| PodcastError::TagWrite)?;
+        Ok(())
     });
     match download {
         Ok(bytes) => {
@@ -688,34 +704,6 @@ fn refresh_to_root_with_download_progress(
     Ok(summary)
 }
 
-fn retry_states() -> MutexGuard<'static, HashMap<RetryKey, super::refresh::RefreshRetry>> {
-    REFRESH_RETRIES
-        .get_or_init(|| Mutex::new(HashMap::new()))
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-}
-
-fn pending_retry(key: RetryKey) -> Option<super::refresh::RefreshRetry> {
-    retry_states().get(&key).copied()
-}
-
-fn previous_attempt(key: RetryKey) -> u32 {
-    pending_retry(key).map_or(0, super::refresh::RefreshRetry::attempt)
-}
-
-fn set_retry(key: RetryKey, retry: Option<super::refresh::RefreshRetry>) {
-    let mut states = retry_states();
-    if let Some(retry) = retry {
-        states.insert(key, retry);
-    } else {
-        states.remove(&key);
-    }
-}
-
-fn clear_retry(key: RetryKey) {
-    set_retry(key, None);
-}
-
 fn record_failed_outcome_in(
     conn: &Connection,
     subscription_id: i64,
@@ -794,3 +782,7 @@ mod youtube_tests;
 #[cfg(test)]
 #[path = "pipeline_refresh_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "pipeline_tag_tests.rs"]
+mod tag_tests;

@@ -17,7 +17,7 @@ fn podcast_episode(id: i64, played: bool) -> PickerEpisodeRow {
 }
 
 #[test]
-fn mtp_50_select_all_respects_the_podcast_unplayed_standing_rule() {
+fn mtp_51_select_all_respects_the_podcast_unplayed_standing_rule() {
     let mut snapshot = PickerSnapshot::Episodes {
         kind: SyncTargetKind::PodcastEpisodes,
         latest_per_group: 5,
@@ -48,7 +48,7 @@ fn mtp_50_select_all_respects_the_podcast_unplayed_standing_rule() {
 }
 
 #[test]
-fn mtp_50_an_explicit_tick_pins_an_episode_already_selected_by_the_rule() {
+fn mtp_51_an_explicit_tick_pins_an_episode_already_selected_by_the_rule() {
     assert!(
         explicit_pin_after_toggle(true, false, false),
         "clicking a rule-selected row must turn the same durable episode flag into an override"

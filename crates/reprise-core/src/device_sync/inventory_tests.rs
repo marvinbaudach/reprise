@@ -45,7 +45,7 @@ fn open_legacy_v33() -> Connection {
 }
 
 #[test]
-fn mtp_48_rekeys_legacy_uri_settings_and_target_folders_when_a_stable_key_arrives() {
+fn mtp_49_rekeys_legacy_uri_settings_and_target_folders_when_a_stable_key_arrives() {
     let db = crate::db::Db::open_in_memory().unwrap();
     let legacy = "mtp://[usb:001,013]/";
     let current_uri = "mtp://[usb:001,027]/";
@@ -129,7 +129,7 @@ fn ambiguous_legacy_uri_rows_are_kept_when_the_replugged_uri_does_not_match() {
 }
 
 #[test]
-fn mtp_49_remembered_devices_keep_only_stable_history_and_can_be_renamed_or_forgotten() {
+fn mtp_50_remembered_devices_keep_only_stable_history_and_can_be_renamed_or_forgotten() {
     let db = crate::db::Db::open_in_memory().unwrap();
     load_or_create_settings(&db, "pixel-anna", "Pixel 7a").unwrap();
     load_or_create_settings(&db, "mtp://[usb:001,013]/", "Legacy phone").unwrap();
