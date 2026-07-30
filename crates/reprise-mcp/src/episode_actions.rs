@@ -353,6 +353,7 @@ mod tests {
                 &ParsedEpisode {
                     guid: "ep-1".into(),
                     title: "Episode".into(),
+                    image_url: None,
                     audio_url: "https://audio.test/ep.mp3".into(),
                     page_url: None,
                     published_at: Some(1),

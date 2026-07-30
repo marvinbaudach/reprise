@@ -447,6 +447,48 @@ fn newer_schema_is_refused_before_migration() {
     ));
 }
 
+#[test]
+fn v49_adds_episode_artwork_without_changing_existing_rows() {
+    let conn = db::open(None).unwrap();
+    db::migrate_connection(&conn).unwrap();
+    conn.execute(
+        "INSERT INTO podcast_subscriptions
+         (id, kind, feed_url, title, added_at)
+         VALUES (1, 'rss', 'https://example.test/feed', 'Show', 1)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO podcast_episodes
+         (subscription_id, guid, title, audio_url, first_seen_at)
+         VALUES (1, 'episode', 'Existing', 'https://example.test/episode.mp3', 1)",
+        [],
+    )
+    .unwrap();
+    conn.execute_batch(
+        "ALTER TABLE podcast_episodes DROP COLUMN image_url;
+         PRAGMA user_version = 48;",
+    )
+    .unwrap();
+
+    migrate_v49(&conn).unwrap();
+
+    assert!(has_column(&conn, "podcast_episodes", "image_url").unwrap());
+    let row: (String, Option<String>) = conn
+        .query_row(
+            "SELECT title, image_url FROM podcast_episodes WHERE guid = 'episode'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(row, ("Existing".to_owned(), None));
+    assert_eq!(
+        conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
+            .unwrap(),
+        49
+    );
+}
+
 // A database can carry the current `user_version` and still be missing this
 // migration's columns: the schema numbers in this repository were reassigned
 // during development, so a build whose `v40` meant something else could raise

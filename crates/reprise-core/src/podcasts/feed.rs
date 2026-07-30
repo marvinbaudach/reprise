@@ -18,6 +18,7 @@ pub struct ParsedFeed {
 pub struct ParsedEpisode {
     pub guid: String,
     pub title: String,
+    pub image_url: Option<String>,
     pub audio_url: String,
     pub page_url: Option<String>,
     pub published_at: Option<i64>,
@@ -29,6 +30,7 @@ struct EpisodeBuilder {
     guid: Option<String>,
     video_id: Option<String>,
     title: Option<String>,
+    image_url: Option<String>,
     audio_enclosure: Option<String>,
     fallback_enclosure: Option<String>,
     page_url: Option<String>,
@@ -56,7 +58,10 @@ impl EpisodeBuilder {
         let audio_url = youtube_watch_url
             .or(self.audio_enclosure)
             .or(self.fallback_enclosure)?;
-        let title = self.title.filter(|value| !value.trim().is_empty())?;
+        let title = self
+            .title
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty())?;
         Some(ParsedEpisode {
             guid: self
                 .video_id
@@ -64,6 +69,7 @@ impl EpisodeBuilder {
                 .or(self.guid)
                 .unwrap_or_else(|| audio_url.clone()),
             title,
+            image_url: self.image_url,
             audio_url,
             page_url: self.page_url,
             published_at: self.published_at,
@@ -74,7 +80,7 @@ impl EpisodeBuilder {
 
 pub fn parse_feed(xml: &str, limit: usize) -> Result<ParsedFeed, PodcastError> {
     let mut reader = Reader::from_str(xml);
-    reader.config_mut().trim_text(true);
+    reader.config_mut().trim_text(false);
     reader.config_mut().check_end_names = true;
 
     let mut path = Vec::<String>::new();
@@ -99,30 +105,37 @@ pub fn parse_feed(xml: &str, limit: usize) -> Result<ParsedFeed, PodcastError> {
                 handle_element(&reader, &name, &element, &mut episode, &mut image_url)?;
             }
             Event::Text(text) => {
-                let value = text.decode().map_err(parse_error)?.trim().to_owned();
-                if !value.is_empty() {
-                    handle_text(
-                        &path,
-                        &value,
-                        &mut title,
-                        &mut author,
-                        &mut episode,
-                        &mut image_url,
-                    );
-                }
+                let value = text.decode().map_err(parse_error)?.into_owned();
+                handle_text(
+                    &path,
+                    &value,
+                    &mut title,
+                    &mut author,
+                    &mut episode,
+                    &mut image_url,
+                );
             }
             Event::CData(text) => {
-                let value = text.decode().map_err(parse_error)?.trim().to_owned();
-                if !value.is_empty() {
-                    handle_text(
-                        &path,
-                        &value,
-                        &mut title,
-                        &mut author,
-                        &mut episode,
-                        &mut image_url,
-                    );
-                }
+                let value = text.decode().map_err(parse_error)?.into_owned();
+                handle_text(
+                    &path,
+                    &value,
+                    &mut title,
+                    &mut author,
+                    &mut episode,
+                    &mut image_url,
+                );
+            }
+            Event::GeneralRef(reference) => {
+                let value = resolve_reference(&reference)?;
+                handle_text(
+                    &path,
+                    &value,
+                    &mut title,
+                    &mut author,
+                    &mut episode,
+                    &mut image_url,
+                );
             }
             Event::End(element) => {
                 let name = local_name(element.name().as_ref()).to_owned();
@@ -148,11 +161,14 @@ pub fn parse_feed(xml: &str, limit: usize) -> Result<ParsedFeed, PodcastError> {
     }
 
     let title = title
-        .filter(|value: &String| !value.trim().is_empty())
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
         .ok_or_else(|| PodcastError::Parse("feed has no title".to_owned()))?;
     Ok(ParsedFeed {
         title,
-        author,
+        author: author
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty()),
         image_url,
         episodes,
     })
@@ -185,9 +201,20 @@ fn handle_element(
                 }
             }
         }
-        "image" if episode.is_none() => {
-            if let Some(url) = attribute(&attributes, "href") {
+        "image" => {
+            if let Some(builder) = episode {
+                if let Some(url) =
+                    attribute(&attributes, "href").or_else(|| attribute(&attributes, "url"))
+                {
+                    builder.image_url.get_or_insert_with(|| url.to_owned());
+                }
+            } else if let Some(url) = attribute(&attributes, "href") {
                 image_url.get_or_insert_with(|| url.to_owned());
+            }
+        }
+        "thumbnail" => {
+            if let (Some(builder), Some(url)) = (episode, attribute(&attributes, "url")) {
+                builder.image_url.get_or_insert_with(|| url.to_owned());
             }
         }
         _ => {}
@@ -207,24 +234,28 @@ fn handle_text(
     if let Some(builder) = episode {
         match current {
             "title" => {
-                builder.title.get_or_insert_with(|| value.to_owned());
+                append_text(&mut builder.title, value);
             }
             "guid" | "id" => {
-                builder.guid.get_or_insert_with(|| value.to_owned());
+                builder.guid.get_or_insert_with(|| value.trim().to_owned());
             }
             "videoId" => {
-                builder.video_id.get_or_insert_with(|| value.to_owned());
+                builder
+                    .video_id
+                    .get_or_insert_with(|| value.trim().to_owned());
             }
             "link" => {
-                builder.page_url.get_or_insert_with(|| value.to_owned());
+                builder
+                    .page_url
+                    .get_or_insert_with(|| value.trim().to_owned());
             }
             "pubDate" | "published" | "updated" => {
-                if let Some(timestamp) = parse_published_at(value) {
+                if let Some(timestamp) = parse_published_at(value.trim()) {
                     builder.published_at.get_or_insert(timestamp);
                 }
             }
             "duration" => {
-                if let Some(duration) = parse_duration(value) {
+                if let Some(duration) = parse_duration(value.trim()) {
                     builder.duration_secs.get_or_insert(duration);
                 }
             }
@@ -234,17 +265,16 @@ fn handle_text(
     }
 
     match current {
-        "title" if title.is_none() => *title = Some(value.to_owned()),
-        "author" if author.is_none() => *author = Some(value.to_owned()),
+        "title" => append_text(title, value),
+        "author" => append_text(author, value),
         "name"
-            if author.is_none()
-                && path
-                    .iter()
-                    .rev()
-                    .nth(1)
-                    .is_some_and(|parent| parent == "author") =>
+            if path
+                .iter()
+                .rev()
+                .nth(1)
+                .is_some_and(|parent| parent == "author") =>
         {
-            *author = Some(value.to_owned());
+            append_text(author, value);
         }
         "url"
             if image_url.is_none()
@@ -254,9 +284,29 @@ fn handle_text(
                     .nth(1)
                     .is_some_and(|parent| parent == "image") =>
         {
-            *image_url = Some(value.to_owned());
+            *image_url = Some(value.trim().to_owned());
         }
         _ => {}
+    }
+}
+
+fn append_text(target: &mut Option<String>, value: &str) {
+    target.get_or_insert_with(String::new).push_str(value);
+}
+
+fn resolve_reference(reference: &quick_xml::events::BytesRef<'_>) -> Result<String, PodcastError> {
+    if let Some(value) = reference.resolve_char_ref().map_err(parse_error)? {
+        return Ok(value.to_string());
+    }
+    match reference.decode().map_err(parse_error)?.as_ref() {
+        "amp" => Ok("&".to_owned()),
+        "apos" => Ok("'".to_owned()),
+        "gt" => Ok(">".to_owned()),
+        "lt" => Ok("<".to_owned()),
+        "quot" => Ok("\"".to_owned()),
+        value => Err(PodcastError::Parse(format!(
+            "unsupported XML entity: {value}"
+        ))),
     }
 }
 
@@ -360,6 +410,51 @@ mod tests {
     }
 
     #[test]
+    fn item_titles_accumulate_entity_and_cdata_segments_without_truncation() {
+        let parsed = parse_feed(
+            r#"<rss><channel><title>Show</title><item>
+              <title>Fish &amp; <![CDATA[Chips (After Dark)]]></title>
+              <guid>segmented</guid>
+              <enclosure url="https://example.test/segmented.mp3" type="audio/mpeg"/>
+            </item></channel></rss>"#,
+            10,
+        )
+        .unwrap();
+
+        assert_eq!(parsed.episodes[0].title, "Fish & Chips (After Dark)");
+    }
+
+    #[test]
+    fn rss_items_keep_itunes_and_media_episode_artwork() {
+        let parsed = parse_feed(
+            r#"<rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"
+                     xmlns:media="http://search.yahoo.com/mrss/">
+              <channel><title>Show</title>
+                <item><title>iTunes art</title><guid>itunes</guid>
+                  <itunes:image href="https://images.test/itunes.jpg"/>
+                  <enclosure url="https://example.test/itunes.mp3" type="audio/mpeg"/>
+                </item>
+                <item><title>Media art</title><guid>media</guid>
+                  <media:thumbnail url="https://images.test/media.jpg"/>
+                  <enclosure url="https://example.test/media.mp3" type="audio/mpeg"/>
+                </item>
+              </channel>
+            </rss>"#,
+            10,
+        )
+        .unwrap();
+
+        assert_eq!(
+            parsed.episodes[0].image_url.as_deref(),
+            Some("https://images.test/itunes.jpg")
+        );
+        assert_eq!(
+            parsed.episodes[1].image_url.as_deref(),
+            Some("https://images.test/media.jpg")
+        );
+    }
+
+    #[test]
     fn atom_feed_reads_namespaced_fields_and_honors_limit() {
         let parsed = parse_feed(
             r#"<feed xmlns="http://www.w3.org/2005/Atom">
@@ -390,6 +485,8 @@ mod tests {
                 <id>yt:video:newest-video</id>
                 <yt:videoId>newest-video</yt:videoId>
                 <title>Newest long mix</title>
+                <media:thumbnail xmlns:media="http://search.yahoo.com/mrss/"
+                  url="https://images.test/youtube.jpg"/>
                 <link rel="alternate" href="https://www.youtube.com/watch?v=newest-video"/>
                 <published>2026-07-28T08:00:00Z</published>
               </entry>
@@ -405,6 +502,10 @@ mod tests {
             "https://www.youtube.com/watch?v=newest-video"
         );
         assert_eq!(parsed.episodes[0].published_at, Some(1_785_225_600));
+        assert_eq!(
+            parsed.episodes[0].image_url.as_deref(),
+            Some("https://images.test/youtube.jpg")
+        );
     }
 
     #[test]

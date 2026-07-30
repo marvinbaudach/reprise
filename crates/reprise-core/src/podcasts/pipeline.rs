@@ -42,6 +42,9 @@ pub trait FeedFetcher {
 }
 
 pub trait YoutubeFetcher {
+    fn resolve_channel_url(&self, _url: &str) -> Result<Option<String>, PodcastError> {
+        Ok(None)
+    }
     fn list(&self, url: &str, limit: usize) -> Result<ParsedFeed, PodcastError>;
     fn list_range(&self, url: &str, end: usize) -> Result<ParsedFeed, PodcastError> {
         self.list(url, end)
@@ -85,6 +88,10 @@ impl FeedFetcher for HttpFeedFetcher {
 }
 
 impl YoutubeFetcher for super::ytdlp::YtDlp {
+    fn resolve_channel_url(&self, url: &str) -> Result<Option<String>, PodcastError> {
+        Ok(super::ytdlp::YtDlp::list(self, url)?.source_url)
+    }
+
     fn list(&self, url: &str, limit: usize) -> Result<ParsedFeed, PodcastError> {
         let listing = super::youtube::project_playlist(super::ytdlp::YtDlp::list(self, url)?);
         Ok(project_youtube_feed(listing, limit))
@@ -122,6 +129,7 @@ pub fn project_youtube_feed(listing: super::youtube::YoutubeListing, limit: usiz
             .map(|episode| ParsedEpisode {
                 guid: episode.guid,
                 title: episode.title,
+                image_url: episode.image_url,
                 audio_url: episode.audio_url,
                 page_url: None,
                 published_at: episode.published_at,
@@ -387,6 +395,7 @@ fn refresh_to_root_with_download_progress(
             continue;
         }
         summary.attempted += 1;
+        let mut resolved_channel_url = None::<String>;
         let result = match subscription.kind {
             PodcastKind::Rss if rss_allowed => {
                 feed_fetcher.fetch(&subscription).and_then(|response| {
@@ -398,8 +407,19 @@ fn refresh_to_root_with_download_progress(
                 "RSS podcasts are disabled".to_owned(),
             )),
             PodcastKind::Youtube if youtube_allowed => {
-                if let Some(feed_url) = super::youtube::long_form_feed_url(&subscription.feed_url) {
-                    feed_fetcher
+                let channel_url =
+                    if super::youtube::long_form_feed_url(&subscription.feed_url).is_some() {
+                        subscription.feed_url.clone()
+                    } else {
+                        youtube_fetcher
+                            .resolve_channel_url(&subscription.feed_url)?
+                            .unwrap_or_else(|| subscription.feed_url.clone())
+                    };
+                if let Some(feed_url) = super::youtube::long_form_feed_url(&channel_url) {
+                    if channel_url != subscription.feed_url {
+                        resolved_channel_url = Some(channel_url.clone());
+                    }
+                    let official_feed = feed_fetcher
                         .fetch_url(
                             &feed_url,
                             subscription.etag.as_deref(),
@@ -409,10 +429,16 @@ fn refresh_to_root_with_download_progress(
                             let feed =
                                 super::feed::parse_feed(&response.body, OFFICIAL_YOUTUBE_LIMIT)?;
                             Ok((feed, Some(response)))
-                        })
+                        });
+                    match official_feed {
+                        result @ Ok(_) | result @ Err(PodcastError::NotModified) => result,
+                        Err(_) => youtube_fetcher
+                            .list(&channel_url, config.youtube_import_count)
+                            .map(|feed| (feed, None)),
+                    }
                 } else {
                     youtube_fetcher
-                        .list(&subscription.feed_url, config.youtube_import_count)
+                        .list(&channel_url, config.youtube_import_count)
                         .map(|feed| (feed, None))
                 }
             }
@@ -423,6 +449,9 @@ fn refresh_to_root_with_download_progress(
         let (feed, response) = match result {
             Ok(result) => result,
             Err(PodcastError::NotModified) => {
+                if let Some(url) = resolved_channel_url.as_deref() {
+                    super::store::update_feed_url_in(conn, subscription.id, url)?;
+                }
                 super::store::update_fetch_not_modified_in(conn, subscription.id, now)?;
                 summary.not_modified += 1;
                 continue;
@@ -438,6 +467,10 @@ fn refresh_to_root_with_download_progress(
                 continue;
             }
         };
+
+        if let Some(url) = resolved_channel_url.as_deref() {
+            super::store::update_feed_url_in(conn, subscription.id, url)?;
+        }
 
         let baseline = super::store::future_only_baseline_in(conn, subscription.id)?
             .into_iter()

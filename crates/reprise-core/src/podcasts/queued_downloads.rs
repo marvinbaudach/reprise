@@ -163,6 +163,7 @@ mod tests {
             &ParsedEpisode {
                 guid: guid.to_owned(),
                 title: format!("Episode {guid}"),
+                image_url: None,
                 audio_url: format!("https://example.test/{guid}.mp3"),
                 page_url: None,
                 published_at: None,

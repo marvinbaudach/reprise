@@ -310,6 +310,7 @@ mod tests {
             title: format!("Episode {id}"),
             show: if id == 3 { "Other" } else { "Show" }.into(),
             show_image_url: None,
+            image_url: None,
             kind,
             audio_url: "https://example.test/episode.mp3".into(),
             page_url: None,

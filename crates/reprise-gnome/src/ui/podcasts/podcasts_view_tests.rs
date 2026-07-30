@@ -44,6 +44,7 @@ fn subscribe_one_episode_of_kind(conn: &Db, kind: PodcastKind) -> i64 {
         &ParsedEpisode {
             guid: "episode".to_owned(),
             title: "Episode".to_owned(),
+            image_url: None,
             audio_url: "https://example.test/episode.mp3".to_owned(),
             page_url: None,
             published_at: None,
@@ -297,6 +298,7 @@ fn pod_13_activating_the_retry_action_runs_a_fresh_download_attempt() {
         &ParsedEpisode {
             guid: "episode".to_owned(),
             title: "Episode".to_owned(),
+            image_url: None,
             // Loopback, nothing listening: a same-host connection refusal,
             // so this is fast and deterministic without touching the real
             // network.

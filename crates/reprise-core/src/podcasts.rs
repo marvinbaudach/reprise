@@ -74,6 +74,7 @@ pub struct EpisodeRow {
     pub title: String,
     pub show: String,
     pub show_image_url: Option<String>,
+    pub image_url: Option<String>,
     pub kind: PodcastKind,
     pub audio_url: String,
     pub page_url: Option<String>,

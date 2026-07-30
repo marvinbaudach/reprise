@@ -97,7 +97,7 @@ case "$*" in
     printf '%s\n' '{"title":"search","entries":[{"id":"s1","title":"Search hit","duration":30}]}'
     ;;
   "--no-warnings --flat-playlist -J https://youtube.test/@show")
-    printf '%s\n' '{"title":"Channel title","channel_id":"UC-stable","channel_url":"https://youtube.test/@show","thumbnail":"https://img.test/channel.jpg","entries":[{"id":"v1","title":"One","duration":12.8},{"id":"","title":"Blank ID"},{"id":"v2","title":"Two","duration":null},{"id":"blank-title","title":"   "}]}'
+    printf '%s\n' '{"title":"Channel title","channel_url":"https://youtube.test/@show","thumbnail":"https://img.test/channel.jpg","entries":[{"id":"v1","title":"One","duration":12.8,"channel_id":"UC-stable","timestamp":1775001600,"thumbnail":"https://img.test/v1.jpg"},{"id":"","title":"Blank ID"},{"id":"v2","title":"Two","duration":null,"upload_date":"20260730"},{"id":"blank-title","title":"   "}]}'
     ;;
   *) printf '%s\n' "unexpected arguments: $*" >&2; exit 2 ;;
 esac
@@ -120,7 +120,13 @@ esac
     assert_eq!(playlist.entries.len(), 2);
     assert_eq!(playlist.entries[0].id, "v1");
     assert_eq!(playlist.entries[0].duration_secs, Some(12));
+    assert_eq!(playlist.entries[0].timestamp, Some(1_775_001_600));
+    assert_eq!(
+        playlist.entries[0].image_url.as_deref(),
+        Some("https://img.test/v1.jpg")
+    );
     assert_eq!(playlist.entries[1].duration_secs, None);
+    assert_eq!(playlist.entries[1].upload_date.as_deref(), Some("20260730"));
 
     let results = runner.search("rust audio").unwrap();
     assert_eq!(results.entries[0].id, "s1");

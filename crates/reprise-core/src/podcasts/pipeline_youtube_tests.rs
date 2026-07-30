@@ -112,6 +112,160 @@ fn pod_10_initial_youtube_window_uses_the_official_long_form_feed() {
     );
 }
 
+struct HandleYoutube;
+
+impl YoutubeFetcher for HandleYoutube {
+    fn resolve_channel_url(&self, url: &str) -> Result<Option<String>, PodcastError> {
+        assert_eq!(url, "https://www.youtube.com/@show");
+        Ok(Some(
+            "https://www.youtube.com/channel/UCresolved".to_owned(),
+        ))
+    }
+
+    fn list(&self, _: &str, _: usize) -> Result<ParsedFeed, PodcastError> {
+        panic!("a resolved channel identity must use the official Atom feed")
+    }
+
+    fn download(&self, _: &str, _: &Path) -> Result<(), PodcastError> {
+        panic!("refresh without auto-download must not download")
+    }
+}
+
+#[test]
+fn handle_subscription_resolves_channel_identity_before_refresh() {
+    let conn = conn();
+    let subscription_id = store::add_or_restore(
+        &conn,
+        &NewSubscription {
+            kind: PodcastKind::Youtube,
+            feed_url: "https://www.youtube.com/@show".to_owned(),
+            title: "Channel".to_owned(),
+            author: None,
+            image_url: None,
+            auto_download: false,
+        },
+        1,
+    )
+    .unwrap();
+    let feed = OfficialYoutubeFeed {
+        requested_urls: RefCell::new(Vec::new()),
+    };
+    let directory = tempfile::tempdir().unwrap();
+
+    let summary =
+        refresh_to_root(&conn, &feed, &HandleYoutube, 10, true, directory.path()).unwrap();
+
+    assert_eq!(summary.episodes_inserted, 2);
+    assert_eq!(
+        feed.requested_urls.into_inner(),
+        ["https://www.youtube.com/feeds/videos.xml?playlist_id=UULFresolved"]
+    );
+    assert_eq!(
+        store::subscription(&conn, subscription_id)
+            .unwrap()
+            .unwrap()
+            .feed_url,
+        "https://www.youtube.com/channel/UCresolved"
+    );
+    let episodes = super::super::query::episodes_for_subscription(&conn, subscription_id).unwrap();
+    assert!(episodes
+        .iter()
+        .all(|episode| episode.published_at.is_some()));
+}
+
+struct UnavailableOfficialFeed;
+
+impl FeedFetcher for UnavailableOfficialFeed {
+    fn fetch(&self, _: &SubscriptionRow) -> Result<Response, PodcastError> {
+        panic!("YouTube refresh must not use the subscription fetch boundary")
+    }
+
+    fn fetch_url(
+        &self,
+        _: &str,
+        _: Option<&str>,
+        _: Option<&str>,
+    ) -> Result<Response, PodcastError> {
+        Err(PodcastError::Transport(
+            "fixture official feed unavailable".to_owned(),
+        ))
+    }
+
+    fn download(&self, _: &str, _: &Path) -> Result<(), PodcastError> {
+        panic!("refresh without auto-download must not download")
+    }
+}
+
+struct DatedFlatPlaylist;
+
+impl YoutubeFetcher for DatedFlatPlaylist {
+    fn resolve_channel_url(&self, _: &str) -> Result<Option<String>, PodcastError> {
+        Ok(Some(
+            "https://www.youtube.com/channel/UCresolved".to_owned(),
+        ))
+    }
+
+    fn list(&self, _: &str, _: usize) -> Result<ParsedFeed, PodcastError> {
+        Ok(ParsedFeed {
+            title: "Channel".to_owned(),
+            author: None,
+            image_url: None,
+            episodes: vec![ParsedEpisode {
+                guid: "fallback".to_owned(),
+                title: "Fallback".to_owned(),
+                image_url: Some("https://img.test/fallback.jpg".to_owned()),
+                audio_url: "https://www.youtube.com/watch?v=fallback".to_owned(),
+                page_url: None,
+                published_at: Some(1_785_369_600),
+                duration_secs: None,
+            }],
+        })
+    }
+
+    fn download(&self, _: &str, _: &Path) -> Result<(), PodcastError> {
+        panic!("refresh without auto-download must not download")
+    }
+}
+
+#[test]
+fn resolved_handle_falls_back_to_dated_flat_playlist_when_atom_is_unavailable() {
+    let conn = conn();
+    let subscription_id = store::add_or_restore(
+        &conn,
+        &NewSubscription {
+            kind: PodcastKind::Youtube,
+            feed_url: "https://www.youtube.com/@show".to_owned(),
+            title: "Channel".to_owned(),
+            author: None,
+            image_url: None,
+            auto_download: false,
+        },
+        1,
+    )
+    .unwrap();
+    let directory = tempfile::tempdir().unwrap();
+
+    let summary = refresh_to_root(
+        &conn,
+        &UnavailableOfficialFeed,
+        &DatedFlatPlaylist,
+        10,
+        true,
+        directory.path(),
+    )
+    .unwrap();
+
+    assert_eq!(summary.episodes_inserted, 1);
+    let episode = super::super::query::episodes_for_subscription(&conn, subscription_id)
+        .unwrap()
+        .remove(0);
+    assert_eq!(episode.published_at, Some(1_785_369_600));
+    assert_eq!(
+        episode.image_url.as_deref(),
+        Some("https://img.test/fallback.jpg")
+    );
+}
+
 struct ExtendedYoutube {
     requested: RefCell<Vec<(String, usize)>>,
 }
@@ -131,6 +285,7 @@ impl YoutubeFetcher for ExtendedYoutube {
                 .map(|index| ParsedEpisode {
                     guid: format!("video-{index}"),
                     title: format!("Video {index}"),
+                    image_url: None,
                     audio_url: format!("https://www.youtube.com/watch?v=video-{index}"),
                     page_url: None,
                     published_at: None,
