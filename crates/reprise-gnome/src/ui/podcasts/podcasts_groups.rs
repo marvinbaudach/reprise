@@ -184,7 +184,7 @@ fn group_header(
     header.set_margin_end(6);
 
     let artwork = super::source_image::SourceImage::new(
-        group.image_url.as_deref(),
+        group_image_url(group),
         match group.kind {
             PodcastKind::Rss => "audio-input-microphone-symbolic",
             PodcastKind::Youtube => "video-x-generic-symbolic",
@@ -262,6 +262,16 @@ fn group_header(
     menu.set_tooltip_text(Some(&strings::text(strings::PODCAST_MORE_SOURCE_OPTIONS)));
     header.append(&menu);
     (header.upcast(), unsubscribe)
+}
+
+fn group_image_url(group: &SourceGroup) -> Option<&str> {
+    group.image_url.as_deref().or_else(|| match group.kind {
+        PodcastKind::Rss => None,
+        PodcastKind::Youtube => group
+            .episodes
+            .first()
+            .and_then(|episode| episode.image_url.as_deref()),
+    })
 }
 
 fn episode_row(
@@ -378,6 +388,46 @@ mod tests {
             first_seen_at: 1,
             is_new: false,
         }
+    }
+
+    #[test]
+    fn src_11_youtube_group_without_channel_artwork_uses_the_newest_episode_thumbnail() {
+        let mut newest = episode(Some("https://img.test/newest.jpg"));
+        newest.kind = PodcastKind::Youtube;
+        let mut older = episode(Some("https://img.test/older.jpg"));
+        older.kind = PodcastKind::Youtube;
+        let group = SourceGroup {
+            subscription_id: 1,
+            title: "Channel".into(),
+            author: None,
+            image_url: None,
+            kind: PodcastKind::Youtube,
+            sync_to_phone: false,
+            episodes: vec![newest, older],
+        };
+
+        assert_eq!(group_image_url(&group), Some("https://img.test/newest.jpg"));
+    }
+
+    #[test]
+    fn src_11_group_artwork_prefers_its_source_and_never_borrows_for_rss() {
+        let mut episode = episode(Some("https://img.test/episode.jpg"));
+        episode.kind = PodcastKind::Youtube;
+        let mut group = SourceGroup {
+            subscription_id: 1,
+            title: "Source".into(),
+            author: None,
+            image_url: Some("https://img.test/source.jpg".into()),
+            kind: PodcastKind::Youtube,
+            sync_to_phone: false,
+            episodes: vec![episode],
+        };
+
+        assert_eq!(group_image_url(&group), Some("https://img.test/source.jpg"));
+
+        group.image_url = None;
+        group.kind = PodcastKind::Rss;
+        assert_eq!(group_image_url(&group), None);
     }
 
     fn descendants(widget: &gtk4::Widget) -> Vec<gtk4::Widget> {

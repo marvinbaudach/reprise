@@ -3511,11 +3511,13 @@ listening statistics.
   leitet die Leseprojektion
   `https://i.ytimg.com/vi/<video-id>/hqdefault.jpg` aus ihrer dauerhaften
   Video-ID ab, ohne einen zweiten Wert zu persistieren, während RSS keine
-  abgeleitete YouTube-URL erhält. Every caller (podcast library view, YouTube
-  channel detail, all three add dialogs) computes the gate itself at its own
-  connection rather than relying on an upstream checkpoint — the lesson from
-  `T6-G1-gap`: a privacy promise in UI copy needs a test per call path, not per
-  feature.
+  abgeleitete YouTube-URL erhält. Fehlt dem YouTube-Kanal selbst ein Bild,
+  zeigt sein Bibliotheks-Gruppenkopf das Bild der neuesten Episode; RSS
+  übernimmt kein Episodenbild für den Gruppenkopf. Every caller (podcast
+  library view, YouTube channel detail, all three add dialogs) computes the
+  gate itself at its own connection rather than relying on an upstream
+  checkpoint — the lesson from `T6-G1-gap`: a privacy promise in UI copy needs
+  a test per call path, not per feature.
 - **POD-1** [active] [core] — Episode status is a pure derivation:
   Played exactly when `played_at` is set, otherwise Resume when
   `position_ms > 0`, otherwise unstarted. The visible New pill is a
