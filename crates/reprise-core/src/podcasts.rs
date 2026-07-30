@@ -300,6 +300,14 @@ mod tests {
             assert!(!classified.contains("sig="), "{classified}");
             assert!(!classified.contains("/home/"), "{classified}");
             assert!(!classified.contains("cdn.example.test"), "{classified}");
+
+            let failure = pipeline::RefreshFailure::from_error(42, "Safe source title", &error);
+            assert_eq!(failure.subscription_id, 42);
+            assert_eq!(failure.title, "Safe source title");
+            let summary_fields = format!("{failure:?}");
+            for raw in ["token", "SECRET", "sig=", "/home/", "cdn.example.test"] {
+                assert!(!summary_fields.contains(raw), "{summary_fields}");
+            }
         }
     }
 

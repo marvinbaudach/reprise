@@ -113,7 +113,7 @@ fn first_fetch_backlog_is_not_new_and_next_refresh_marks_only_new_arrivals() {
     let directory = tempfile::tempdir().unwrap();
 
     let failed = refresh_to_root(&conn, &feed, &FakeYoutube, 5, true, directory.path()).unwrap();
-    assert_eq!(failed.failed, 1);
+    assert_eq!(failed.failures.len(), 1);
 
     refresh_to_root(&conn, &feed, &FakeYoutube, 10, true, directory.path()).unwrap();
     let backlog = super::super::query::episodes_for_subscription(&conn, id).unwrap();
@@ -206,7 +206,15 @@ fn one_failed_subscription_does_not_block_the_next() {
     let summary = refresh_to_root(&conn, &feed, &FakeYoutube, 10, true, directory.path()).unwrap();
 
     assert_eq!(summary.attempted, 2);
-    assert_eq!(summary.failed, 1);
+    assert_eq!(
+        summary.failures,
+        [RefreshFailure {
+            subscription_id: failed,
+            title: "Show".to_owned(),
+            kind: crate::source_error::SourceErrorKind::Unreachable,
+        }]
+    );
+    assert_eq!(summary.failed, summary.failures.len());
     assert_eq!(summary.refreshed, 1);
     assert_eq!(
         store::subscription(&conn, failed)
@@ -241,7 +249,7 @@ fn net_3d_retryable_refresh_waits_without_delaying_failure_state_and_success_res
 
     let failed = refresh_to_root(&conn, &feed, &FakeYoutube, 10, false, directory.path()).unwrap();
     assert_eq!(failed.attempted, 1);
-    assert_eq!(failed.failed, 1);
+    assert_eq!(failed.failures.len(), 1);
     let stored = store::subscription(&conn, id).unwrap().unwrap();
     assert_eq!(stored.last_outcome.as_deref(), Some("failed"));
     assert_eq!(
@@ -283,7 +291,7 @@ fn net_3d_background_attempts_stop_after_the_shared_cap() {
         let summary =
             refresh_to_root(&conn, &feed, &FakeYoutube, now, false, directory.path()).unwrap();
         assert_eq!(summary.attempted, 1, "expected an attempt at {now}");
-        assert_eq!(summary.failed, 1);
+        assert_eq!(summary.failures.len(), 1);
     }
 
     let stored = store::subscription(&conn, id).unwrap().unwrap();
@@ -521,7 +529,7 @@ fn net_1a_disabled_podcasts_module_skips_rss_refresh_without_fetching() {
 
     let summary = refresh_to_root(&conn, &feed, &FakeYoutube, 10, true, directory.path()).unwrap();
 
-    assert_eq!(summary.failed, 1);
+    assert_eq!(summary.failures.len(), 1);
     assert_eq!(
         store::subscription(&conn, id)
             .unwrap()
@@ -545,7 +553,7 @@ fn net_1a_global_gate_off_blocks_rss_refresh_even_with_podcasts_on() {
 
     let summary = refresh_to_root(&conn, &feed, &FakeYoutube, 10, true, directory.path()).unwrap();
 
-    assert_eq!(summary.failed, 1);
+    assert_eq!(summary.failures.len(), 1);
     assert_eq!(
         store::subscription(&conn, id)
             .unwrap()

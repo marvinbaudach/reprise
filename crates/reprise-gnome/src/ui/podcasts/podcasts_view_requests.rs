@@ -93,12 +93,13 @@ impl PodcastsView {
                     Ok(PodcastsWorkerResult::Refreshed(summary)) => {
                         view.footer_spinner.stop();
                         view.refresh();
-                        if summary.failed == 0 {
+                        if summary.failures.is_empty() {
                             view.clear_fetch_failure();
                         } else {
+                            let failed_sources = summary.failures.len();
                             view.show_refresh_failure(
-                                summary.failed,
-                                format!("{} source refreshes failed", summary.failed),
+                                failed_sources,
+                                format!("{failed_sources} source refreshes failed"),
                             );
                         }
                         (view.callbacks.on_sidebar_refresh)();

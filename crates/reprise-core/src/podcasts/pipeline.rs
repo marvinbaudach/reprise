@@ -8,7 +8,7 @@ use std::{
 
 use rusqlite::Connection;
 
-use crate::db::Db;
+use crate::{db::Db, source_error::SourceErrorKind};
 
 use super::download_state::{DownloadProgress, DownloadState};
 use super::feed::{ParsedEpisode, ParsedFeed};
@@ -152,16 +152,49 @@ pub fn project_youtube_feed(listing: super::youtube::YoutubeListing, limit: usiz
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RefreshFailure {
+    pub subscription_id: i64,
+    pub title: String,
+    pub kind: SourceErrorKind,
+}
+
+impl RefreshFailure {
+    pub(crate) fn from_error(
+        subscription_id: i64,
+        title: impl Into<String>,
+        error: &PodcastError,
+    ) -> Self {
+        Self {
+            subscription_id,
+            title: title.into(),
+            kind: SourceErrorKind::from(error),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RefreshSummary {
     pub attempted: usize,
     pub refreshed: usize,
     pub not_modified: usize,
     pub failed: usize,
+    pub failures: Vec<RefreshFailure>,
     pub episodes_inserted: usize,
     pub episodes_updated: usize,
     pub downloads_completed: usize,
     pub downloads_failed: usize,
+}
+
+impl RefreshSummary {
+    fn push_failure(&mut self, subscription: &SubscriptionRow, error: &PodcastError) {
+        self.failed += 1;
+        self.failures.push(RefreshFailure::from_error(
+            subscription.id,
+            &subscription.title,
+            error,
+        ));
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -482,7 +515,7 @@ fn refresh_to_root_with_download_progress(
                             "could not resolve the YouTube channel identity"
                         );
                         super::store::update_fetch_failed_in(conn, subscription.id, now)?;
-                        summary.failed += 1;
+                        summary.push_failure(&subscription, &error);
                         continue;
                     }
                 };
@@ -549,7 +582,7 @@ fn refresh_to_root_with_download_progress(
                     super::store::update_fetch_failed_in(conn, subscription.id, now)?;
                 }
                 set_retry(retry_key, retry);
-                summary.failed += 1;
+                summary.push_failure(&subscription, &error);
                 continue;
             }
         };

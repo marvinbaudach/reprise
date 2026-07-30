@@ -242,7 +242,7 @@ impl FeedFetcher for PlainRssFeed {
 fn a_channel_that_cannot_be_resolved_fails_alone_and_never_aborts_the_batch() {
     let conn = conn();
     crate::modules::set_enabled(&conn, &crate::modules::PODCASTS_MODULE, true).unwrap();
-    store::add_or_restore(
+    let youtube_id = store::add_or_restore(
         &conn,
         &NewSubscription {
             kind: PodcastKind::Youtube,
@@ -281,7 +281,15 @@ fn a_channel_that_cannot_be_resolved_fails_alone_and_never_aborts_the_batch() {
     .expect("one unresolvable channel must not abort the whole refresh");
 
     assert_eq!(summary.attempted, 2);
-    assert_eq!(summary.failed, 1);
+    assert_eq!(
+        summary.failures,
+        [RefreshFailure {
+            subscription_id: youtube_id,
+            title: "Channel".to_owned(),
+            kind: crate::source_error::SourceErrorKind::HelperOutdated,
+        }]
+    );
+    assert_eq!(summary.failed, summary.failures.len());
     assert_eq!(summary.episodes_inserted, 1);
     assert_eq!(
         super::super::query::episodes_for_subscription(&conn, rss_id)
@@ -487,7 +495,7 @@ fn net_1a_disabled_youtube_module_skips_refresh_without_fetching() {
     )
     .unwrap();
 
-    assert_eq!(summary.failed, 1);
+    assert_eq!(summary.failures.len(), 1);
     assert_eq!(
         store::subscription(&conn, id)
             .unwrap()
