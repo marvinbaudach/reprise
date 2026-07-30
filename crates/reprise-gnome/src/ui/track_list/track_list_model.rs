@@ -70,12 +70,6 @@ mod imp {
         /// FIL-7: hide AI-flagged tracks (only honored on the flat Library
         /// source, where the browse filter row lives).
         pub exclude_ai: bool,
-        /// INST-10 / FIX-4: whether the windowed query projects the real `is_ai`
-        /// column (the correlated provenance `EXISTS`) or a cheap literal `0`.
-        /// Set to `experimental_enabled` when the query is (re)set — the AI badge
-        /// only renders while the experimental switch is on, so with it off the
-        /// hot windowed query pays no per-row provenance subquery.
-        pub project_ai: bool,
         /// Only meaningful when `source == ViewSource::Queue` — see
         /// `TrackListModel::set_query`'s doc comment. Empty (and ignored)
         /// for every other source.
@@ -354,11 +348,6 @@ impl TrackListModel {
                 )
         };
 
-        // INST-10 / FIX-4: the AI badge (and so the `is_ai` column) is needed
-        // only while the experimental switch is on. Cache that here so the hot
-        // windowed query pays the correlated provenance subquery only then.
-        let project_ai = crate::ui::experimental::experimental_enabled(&conn);
-
         {
             let mut state = self.imp().state.borrow_mut();
             state.source = source.clone();
@@ -367,7 +356,6 @@ impl TrackListModel {
             state.filter = filter.to_string();
             state.browse = browse.clone();
             state.exclude_ai = exclude_ai;
-            state.project_ai = project_ai;
             state.queue_ids = queue_ids.to_vec();
             state.virtual_queue = None;
             state.total = new_total;
@@ -416,17 +404,7 @@ impl TrackListModel {
             return None;
         };
 
-        let (
-            source,
-            sort_field,
-            sort_dir,
-            filter,
-            browse,
-            exclude_ai,
-            project_ai,
-            queue_ids,
-            virtual_queue,
-        ) = {
+        let (source, sort_field, sort_dir, filter, browse, exclude_ai, queue_ids, virtual_queue) = {
             let state = self.imp().state.borrow();
             (
                 state.source.clone(),
@@ -435,7 +413,6 @@ impl TrackListModel {
                 state.filter.clone(),
                 state.browse.clone(),
                 state.exclude_ai,
-                state.project_ai,
                 state.queue_ids.clone(),
                 state.virtual_queue.clone(),
             )
@@ -467,7 +444,9 @@ impl TrackListModel {
                 i64::from(WINDOW_SIZE),
                 &queue_ids,
                 exclude_ai,
-                project_ai,
+                // INST-10: the AI badge marks every AI-manipulated row, so the
+                // windowed query always projects the real `is_ai` column.
+                true,
             )
         };
 
