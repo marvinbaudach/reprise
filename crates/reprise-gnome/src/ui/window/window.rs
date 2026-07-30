@@ -530,6 +530,16 @@ pub fn build(app: &adw::Application, conn: &Rc<Db>, db_path: &Path) -> FileOpenH
     );
     {
         let preferences = Rc::downgrade(&preferences);
+        if let Some(discovery) = super::online_discovery_banner::build(conn, move || {
+            if let Some(preferences) = preferences.upgrade() {
+                preferences.present_plugins(&[]);
+            }
+        }) {
+            library_chrome.root.add_top_bar(discovery.widget());
+        }
+    }
+    {
+        let preferences = Rc::downgrade(&preferences);
         info_panel.lyrics_view().set_on_settings(move || {
             if let Some(preferences) = preferences.upgrade() {
                 preferences.present_plugins(crate::ui::preference_plugins::ONLINE_LYRICS_TARGETS);

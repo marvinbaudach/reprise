@@ -9,6 +9,7 @@ fn conn() -> Db {
     // These tests exercise fetch/parse/store logic, not the NET-1a gate
     // itself (see the dedicated `net_1a_*` tests below), so YouTube starts
     // enabled here.
+    crate::online_sources::set_enabled(&conn, true).unwrap();
     crate::modules::set_enabled(&conn, &crate::modules::YOUTUBE_MODULE, true).unwrap();
     conn
 }

@@ -47,6 +47,7 @@ mod db_library_exclusions;
 mod db_listen_history;
 mod db_mix_planner;
 mod db_new_releases_history;
+mod db_online_sources;
 mod db_podcasts_radio;
 mod db_recently_added;
 mod db_release_discography;

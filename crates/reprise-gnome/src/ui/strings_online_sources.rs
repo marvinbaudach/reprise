@@ -46,6 +46,11 @@ pub const SOURCE_IMAGES_DESCRIPTION: &str = N_!(
 pub const ONLINE_SOURCES_USE_YOUTUBE: &str = N_!("Use YouTube");
 pub const ONLINE_SOURCES_USE_PODCASTS: &str = N_!("Use Podcasts");
 pub const ONLINE_SOURCES_USE_RADIO: &str = N_!("Use Radio");
+pub const ONLINE_DISCOVERY_BANNER_BODY: &str = N_!(
+    "Reprise can now follow podcasts, YouTube channels, radio and concerts — all off by default."
+);
+pub const ONLINE_DISCOVERY_REVIEW: &str = N_!("Review in Preferences");
+pub const ONLINE_DISCOVERY_NOT_NOW: &str = N_!("Not now");
 
 /// `NET-1a`: shown wherever a surface refuses to reach the network because the
 /// global switch — or the source's own switch — is off. The page promises "no
