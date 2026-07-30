@@ -1,6 +1,10 @@
 //! Serial podcast refresh and download pipeline.
 
-use std::path::Path;
+use std::{
+    collections::HashMap,
+    path::Path,
+    sync::{Mutex, MutexGuard, OnceLock},
+};
 
 use rusqlite::Connection;
 
@@ -18,6 +22,15 @@ pub use load_more::load_more_youtube;
 
 const MAX_AUTO_DOWNLOADS_PER_SUBSCRIPTION: usize = 3;
 const OFFICIAL_YOUTUBE_LIMIT: usize = 15;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct RetryKey {
+    connection: usize,
+    subscription_id: i64,
+}
+
+static REFRESH_RETRIES: OnceLock<Mutex<HashMap<RetryKey, super::refresh::RefreshRetry>>> =
+    OnceLock::new();
 
 pub trait FeedFetcher {
     fn fetch(&self, subscription: &SubscriptionRow) -> Result<Response, PodcastError>;
@@ -376,15 +389,31 @@ fn refresh_to_root_with_download_progress(
     let subscriptions = super::store::active_subscriptions_in(conn)?;
     let mut summary = RefreshSummary::default();
     for subscription in subscriptions {
-        if !force
-            && !super::refresh::refresh_due_with_hours(
-                subscription.last_fetch_at,
-                now,
-                config.refresh_hours,
-                jitter,
-            )
-        {
-            continue;
+        let retry_key = RetryKey {
+            connection: std::ptr::from_ref(conn).addr(),
+            subscription_id: subscription.id,
+        };
+        if !force {
+            let retry = if subscription.last_outcome.as_deref() == Some("failed") {
+                pending_retry(retry_key)
+            } else {
+                clear_retry(retry_key);
+                None
+            };
+            let due = retry.map_or_else(
+                || {
+                    super::refresh::refresh_due_with_hours(
+                        subscription.last_fetch_at,
+                        now,
+                        config.refresh_hours,
+                        jitter,
+                    )
+                },
+                |retry| retry.is_due(now),
+            );
+            if !due {
+                continue;
+            }
         }
         summary.attempted += 1;
         let result = match subscription.kind {
@@ -424,6 +453,7 @@ fn refresh_to_root_with_download_progress(
             Ok(result) => result,
             Err(PodcastError::NotModified) => {
                 super::store::update_fetch_not_modified_in(conn, subscription.id, now)?;
+                clear_retry(retry_key);
                 summary.not_modified += 1;
                 continue;
             }
@@ -433,7 +463,21 @@ fn refresh_to_root_with_download_progress(
                     %error,
                     "podcast refresh failed"
                 );
-                super::store::update_fetch_failed_in(conn, subscription.id, now)?;
+                let retry = if force {
+                    None
+                } else {
+                    super::refresh::next_retry(&error, previous_attempt(retry_key), now)
+                };
+                if retry.is_some() {
+                    // Keep the last successful-fetch timestamp due so the
+                    // existing outer hourly trigger continues dispatching.
+                    // The in-process retry state below still prevents an
+                    // actual provider call before the computed deadline.
+                    record_failed_outcome_in(conn, subscription.id)?;
+                } else {
+                    super::store::update_fetch_failed_in(conn, subscription.id, now)?;
+                }
+                set_retry(retry_key, retry);
                 summary.failed += 1;
                 continue;
             }
@@ -479,6 +523,7 @@ fn refresh_to_root_with_download_progress(
                 image_url: feed.image_url.as_deref(),
             },
         )?;
+        clear_retry(retry_key);
         summary.refreshed += 1;
 
         if subscription.auto_download {
@@ -525,6 +570,49 @@ fn refresh_to_root_with_download_progress(
         now,
     )?;
     Ok(summary)
+}
+
+fn retry_states() -> MutexGuard<'static, HashMap<RetryKey, super::refresh::RefreshRetry>> {
+    REFRESH_RETRIES
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+fn pending_retry(key: RetryKey) -> Option<super::refresh::RefreshRetry> {
+    retry_states().get(&key).copied()
+}
+
+fn previous_attempt(key: RetryKey) -> u32 {
+    pending_retry(key).map_or(0, super::refresh::RefreshRetry::attempt)
+}
+
+fn set_retry(key: RetryKey, retry: Option<super::refresh::RefreshRetry>) {
+    let mut states = retry_states();
+    if let Some(retry) = retry {
+        states.insert(key, retry);
+    } else {
+        states.remove(&key);
+    }
+}
+
+fn clear_retry(key: RetryKey) {
+    set_retry(key, None);
+}
+
+fn record_failed_outcome_in(
+    conn: &Connection,
+    subscription_id: i64,
+) -> Result<(), rusqlite::Error> {
+    // A retryable failure changes the readable state immediately without
+    // pretending that the last successful fetch happened just now.
+    conn.execute(
+        "UPDATE podcast_subscriptions
+         SET last_outcome = 'failed'
+         WHERE id = ?1",
+        [subscription_id],
+    )?;
+    Ok(())
 }
 
 fn remove_completed_download(episode_id: i64, path: &Path) {

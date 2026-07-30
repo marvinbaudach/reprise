@@ -212,9 +212,6 @@ impl PodcastError {
         };
         crate::source_error::source_backoff_delay(attempt, retry_after)
     }
-
-    // TODO(integration): the excluded podcast refresh schedulers must schedule
-    // `retry_delay` without blocking their readable error state.
 }
 
 impl From<&PodcastError> for SourceErrorKind {

@@ -186,6 +186,78 @@ fn one_failed_subscription_does_not_block_the_next() {
 }
 
 #[test]
+fn net_3d_retryable_refresh_waits_without_delaying_failure_state_and_success_resets_it() {
+    let conn = conn();
+    let id = add_subscription(conn.conn(), "https://example.test/retry", false);
+    let feed = FakeFeed {
+        responses: RefCell::new(vec![
+            Err(PodcastError::Transport("connection reset".to_owned())),
+            Ok(feed_response("Recovered", 1, None)),
+        ]),
+        ..FakeFeed::default()
+    };
+    let directory = tempfile::tempdir().unwrap();
+
+    let failed = refresh_to_root(&conn, &feed, &FakeYoutube, 10, false, directory.path()).unwrap();
+    assert_eq!(failed.attempted, 1);
+    assert_eq!(failed.failed, 1);
+    let stored = store::subscription(&conn, id).unwrap().unwrap();
+    assert_eq!(stored.last_outcome.as_deref(), Some("failed"));
+    assert_eq!(
+        stored.last_fetch_at, None,
+        "a retryable failure must keep the prior successful-fetch clock due"
+    );
+
+    let waiting = refresh_to_root(&conn, &feed, &FakeYoutube, 11, false, directory.path()).unwrap();
+    assert_eq!(waiting.attempted, 0);
+
+    let recovered =
+        refresh_to_root(&conn, &feed, &FakeYoutube, 12, false, directory.path()).unwrap();
+    assert_eq!(recovered.attempted, 1);
+    assert_eq!(recovered.refreshed, 1);
+    let stored = store::subscription(&conn, id).unwrap().unwrap();
+    assert_eq!(stored.last_outcome.as_deref(), Some("ok"));
+    assert_eq!(stored.last_fetch_at, Some(12));
+
+    let reset = refresh_to_root(&conn, &feed, &FakeYoutube, 13, false, directory.path()).unwrap();
+    assert_eq!(reset.attempted, 0);
+}
+
+#[test]
+fn net_3d_background_attempts_stop_after_the_shared_cap() {
+    let conn = conn();
+    let id = add_subscription(conn.conn(), "https://example.test/retry-cap", false);
+    let feed = FakeFeed {
+        responses: RefCell::new(vec![
+            Err(PodcastError::Transport("first".to_owned())),
+            Err(PodcastError::Transport("second".to_owned())),
+            Err(PodcastError::Transport("third".to_owned())),
+            Err(PodcastError::Transport("fourth".to_owned())),
+        ]),
+        ..FakeFeed::default()
+    };
+    let directory = tempfile::tempdir().unwrap();
+
+    for now in [100, 102, 106, 114] {
+        let summary =
+            refresh_to_root(&conn, &feed, &FakeYoutube, now, false, directory.path()).unwrap();
+        assert_eq!(summary.attempted, 1, "expected an attempt at {now}");
+        assert_eq!(summary.failed, 1);
+    }
+
+    let stored = store::subscription(&conn, id).unwrap().unwrap();
+    assert_eq!(stored.last_outcome.as_deref(), Some("failed"));
+    assert_eq!(
+        stored.last_fetch_at,
+        Some(114),
+        "exhaustion must return the source to its normal refresh interval"
+    );
+    let stopped =
+        refresh_to_root(&conn, &feed, &FakeYoutube, 115, false, directory.path()).unwrap();
+    assert_eq!(stopped.attempted, 0);
+}
+
+#[test]
 fn auto_download_is_capped_at_three_new_episodes_per_run() {
     let conn = conn();
     let id = add_subscription(conn.conn(), "https://example.test/feed", true);
