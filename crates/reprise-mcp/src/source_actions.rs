@@ -626,15 +626,7 @@ pub(crate) fn podcast_source_error(error: &reprise_core::podcasts::PodcastError)
 }
 
 pub(crate) fn radio_source_error(error: &reprise_core::radio::RadioError) -> DataError {
-    use reprise_core::radio::RadioError;
-    let message = match error {
-        RadioError::Timeout => "radio stream timed out",
-        RadioError::Transport(_) => "radio stream could not be reached",
-        RadioError::HttpStatus(_) => "radio stream returned an HTTP error",
-        RadioError::Body(_) | RadioError::Parse(_) => "radio stream returned invalid data",
-        RadioError::Unavailable(_) => "radio stream is unavailable",
-    };
-    DataError::InvalidInput(message.to_owned())
+    DataError::InvalidInput(error.classify().to_owned())
 }
 
 fn codec_from_content_type(content_type: &str) -> Option<String> {

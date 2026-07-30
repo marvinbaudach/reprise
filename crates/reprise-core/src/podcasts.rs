@@ -153,6 +153,10 @@ impl PodcastError {
             (SourceErrorKind::Unreachable, PodcastError::HttpStatus(_)) => {
                 "podcast source returned an HTTP error"
             }
+            // These two pairings cannot occur — `SourceGone` and `RateLimited`
+            // map to their own kinds, matched below — but the tuple match has
+            // to stay exhaustive, so they carry the same text their real kind
+            // produces rather than a different one that could drift.
             (SourceErrorKind::Unreachable, PodcastError::SourceGone(_)) => {
                 "podcast source has moved or ended"
             }

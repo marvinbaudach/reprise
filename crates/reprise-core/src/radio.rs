@@ -93,6 +93,30 @@ impl RadioError {
     }
 }
 
+impl RadioError {
+    /// The safe, payload-free sentence for a radio provider failure. Mirrors
+    /// `PodcastError::classify` and exists for the same reason: the MCP surface
+    /// used to keep its own copy of this match, which was free to drift and
+    /// which flattened *source gone* and *rate limited* into one message even
+    /// though the taxonomy already tells them apart.
+    #[must_use]
+    pub fn classify(&self) -> &'static str {
+        match SourceErrorKind::from(self) {
+            SourceErrorKind::SourceGone => "radio station has moved or ended",
+            SourceErrorKind::RateLimited { .. } => "radio station is rate limited",
+            SourceErrorKind::HelperOutdated => "radio station needs an updated helper",
+            SourceErrorKind::Offline => "radio station is offline",
+            SourceErrorKind::Unreachable => match self {
+                RadioError::Timeout => "radio stream timed out",
+                RadioError::Transport(_) => "radio stream could not be reached",
+                RadioError::HttpStatus(_) => "radio stream returned an HTTP error",
+                RadioError::Body(_) | RadioError::Parse(_) => "radio stream returned invalid data",
+                RadioError::Unavailable(_) => "radio stream is unavailable",
+            },
+        }
+    }
+}
+
 impl From<&RadioError> for SourceErrorKind {
     fn from(error: &RadioError) -> Self {
         match error {

@@ -2058,6 +2058,15 @@ property is set and yet nothing happens.
   with the shared exponential backoff. Feed and search requests time out at
   10 s from one shared constant, so no view can sit on a spinner longer than
   that without resolving; downloads keep their own longer budget.
+
+  Like `NET-3b` and `NET-3c`, this rule claims the **core contract only**. The
+  projection, the conversions and the detail accessor exist and are tested; the
+  surfaces that render them do not exist yet. There is no `Details` block to
+  open in the app today, no banner reads these states, and the background
+  schedulers do not yet consult `retry_delay` — the podcast and YouTube refresh
+  loops still poll on their fixed interval, so a host that is rate-limiting
+  Reprise is not yet backed off from. Those are the presentation half of
+  `NET-3`, and `NET-3` stays `[planned]` until they land.
 - **LYR-1** [planned] [core] — Local embedded lyrics and `.lrc` sidecars
   are shown independently of the Online Lyrics module. Reprise does not
   yet read these local formats today; the rule stays planned until this
