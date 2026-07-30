@@ -1885,12 +1885,29 @@ property is set and yet nothing happens.
   already cached locally are left untouched. Per source and module, YouTube
   additionally has its own module flag, independent of Podcasts (issue #96):
   "Podcasts off + YouTube on" is a valid state.
-- **NET-2** [active] [core] — Updates protect demonstrable prior use:
+- **NET-2** [replaced by NET-2a] [core] — Updates protect demonstrable prior use:
   existing downloaded covers or portraits activate their module, existing
   library databases keep Online Lyrics, and a previously active
   `artist_news` is carried over as an active New Releases module. Negative
   cache markers do not count as use; fresh installations start with all
   four network modules off.
+- **NET-2a** [active] [core] — Replaces `NET-2`. A fresh installation starts
+  with the global gate `online-sources-enabled` off: no online sidebar
+  entries, no requests, and no startup dialog. An update keeps the gate on
+  where prior use is demonstrable: a podcast or YouTube subscription, a radio
+  favourite, a downloaded episode, or a populated cover or portrait cache.
+  An existing database without any such use starts with the gate off.
+  Negative cache markers do not count, and an explicitly stored gate value
+  is never overwritten. The per-module grandfathering described by `NET-2`
+  remains in force unchanged.
+- **NET-4** [active] [gtk] — Discovery without nagging: exactly one
+  dismissible banner appears in the Library on the first launch after the
+  update: "Reprise can now follow podcasts, YouTube channels, radio and
+  concerts — all off by default." with "Review in Preferences" and "Not now".
+  Once dismissed or acted on it never appears again; it is never shown when
+  the global gate is already on, and is never a modal or a toast. The
+  permanent path is Preferences → Plugins. On the first enable the master
+  turns on and every source remains off except Radio.
 - **NET-3** [planned] — Offline is a state, not an error: no network-backed
   place in the app may treat a missing network connection like an error
   message. The contract covers seven states every network-backed view (feed,

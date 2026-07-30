@@ -139,7 +139,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn discovery_banner_persists_review_and_dismiss_actions_before_hiding() {
+    fn net_4_discovery_banner_persists_review_and_dismiss_actions_before_hiding() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         if gtk4::init().is_err() {
             return;

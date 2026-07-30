@@ -69,7 +69,7 @@ fn first_enable_completed(conn: &Connection) -> bool {
 }
 
 #[test]
-fn online_gate_fresh_database_migration_stores_the_master_off() {
+fn net_2a_fresh_database_migration_stores_the_master_off() {
     let conn = open(None).unwrap();
 
     migrate_with_empty_caches(&conn);
@@ -169,7 +169,7 @@ fn online_gate_negative_cache_markers_do_not_count_as_demonstrable_use() {
 }
 
 #[test]
-fn net_2_migration_preserves_existing_cover_usage() {
+fn net_2a_migration_preserves_existing_cover_usage() {
     let conn = open_database_at(12);
     let cover_cache = tempfile::tempdir().unwrap();
     let portrait_cache = tempfile::tempdir().unwrap();
@@ -185,7 +185,7 @@ fn net_2_migration_preserves_existing_cover_usage() {
 }
 
 #[test]
-fn net_2_migration_preserves_existing_portrait_usage() {
+fn net_2a_migration_preserves_existing_portrait_usage() {
     let conn = open_database_at(12);
     let cover_cache = tempfile::tempdir().unwrap();
     let portrait_cache = tempfile::tempdir().unwrap();
@@ -199,7 +199,7 @@ fn net_2_migration_preserves_existing_portrait_usage() {
 }
 
 #[test]
-fn net_2_migration_preserves_online_lyrics_for_existing_databases() {
+fn net_2a_migration_preserves_online_lyrics_for_existing_databases() {
     let conn = open_database_at(12);
 
     migrate_with_empty_caches(&conn);
@@ -208,7 +208,7 @@ fn net_2_migration_preserves_online_lyrics_for_existing_databases() {
 }
 
 #[test]
-fn net_2_migration_carries_artist_news_opt_in_to_new_releases() {
+fn net_2a_migration_carries_artist_news_opt_in_to_new_releases() {
     let conn = open_database_at(12);
     conn.execute(
         "INSERT INTO settings (key, value) VALUES ('module.artist_news.enabled', '1')",
@@ -222,7 +222,7 @@ fn net_2_migration_carries_artist_news_opt_in_to_new_releases() {
 }
 
 #[test]
-fn net_2_migration_ignores_negative_cache_markers() {
+fn net_2a_migration_ignores_negative_cache_markers() {
     let conn = open_database_at(12);
     let cover_cache = tempfile::tempdir().unwrap();
     let portrait_cache = tempfile::tempdir().unwrap();
@@ -238,7 +238,7 @@ fn net_2_migration_ignores_negative_cache_markers() {
 }
 
 #[test]
-fn net_2_migration_preserves_explicit_opt_outs() {
+fn net_2a_migration_preserves_explicit_opt_outs() {
     let conn = open_database_at(12);
     for key in [
         "module.cover_download.enabled",
@@ -272,7 +272,7 @@ fn net_2_migration_preserves_explicit_opt_outs() {
 }
 
 #[test]
-fn net_2_v15_database_runs_network_grandfathering_at_v16() {
+fn net_2a_v15_database_runs_network_grandfathering_at_v16() {
     let conn = open_database_at(15);
     conn.execute(
         "INSERT INTO settings (key, value) VALUES ('module.cover_download.enabled', '0')",
