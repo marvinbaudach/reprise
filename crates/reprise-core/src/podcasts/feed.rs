@@ -89,6 +89,12 @@ pub fn parse_feed(xml: &str, limit: usize) -> Result<ParsedFeed, PodcastError> {
     let mut image_url = None;
     let mut episode = None::<EpisodeBuilder>;
     let mut episodes = Vec::new();
+    // One element's text, assembled from every text, CDATA and entity segment
+    // between its start and end tag. Reading only the first segment is what
+    // truncated titles at the first `&amp;`; appending straight into the target
+    // field instead would merge sibling elements that map to the same field
+    // (`<itunes:author>` next to `<author>`) into one run-on string.
+    let mut text_buffer = String::new();
 
     loop {
         match reader.read_event().map_err(parse_error)? {
@@ -99,46 +105,34 @@ pub fn parse_feed(xml: &str, limit: usize) -> Result<ParsedFeed, PodcastError> {
                     episode = Some(EpisodeBuilder::default());
                 }
                 path.push(name);
+                text_buffer.clear();
             }
             Event::Empty(element) => {
                 let name = local_name(element.name().as_ref()).to_owned();
                 handle_element(&reader, &name, &element, &mut episode, &mut image_url)?;
             }
             Event::Text(text) => {
-                let value = text.decode().map_err(parse_error)?.into_owned();
-                handle_text(
-                    &path,
-                    &value,
-                    &mut title,
-                    &mut author,
-                    &mut episode,
-                    &mut image_url,
-                );
+                text_buffer.push_str(&text.decode().map_err(parse_error)?);
             }
             Event::CData(text) => {
-                let value = text.decode().map_err(parse_error)?.into_owned();
-                handle_text(
-                    &path,
-                    &value,
-                    &mut title,
-                    &mut author,
-                    &mut episode,
-                    &mut image_url,
-                );
+                text_buffer.push_str(&text.decode().map_err(parse_error)?);
             }
             Event::GeneralRef(reference) => {
-                let value = resolve_reference(&reference)?;
-                handle_text(
-                    &path,
-                    &value,
-                    &mut title,
-                    &mut author,
-                    &mut episode,
-                    &mut image_url,
-                );
+                text_buffer.push_str(&resolve_reference(&reference)?);
             }
             Event::End(element) => {
                 let name = local_name(element.name().as_ref()).to_owned();
+                let text = std::mem::take(&mut text_buffer);
+                if !text.trim().is_empty() {
+                    handle_text(
+                        &path,
+                        text.trim(),
+                        &mut title,
+                        &mut author,
+                        &mut episode,
+                        &mut image_url,
+                    );
+                }
                 if matches!(name.as_str(), "item" | "entry") {
                     if episodes.len() < limit {
                         if let Some(parsed) = episode.take().and_then(EpisodeBuilder::finish) {
@@ -234,28 +228,24 @@ fn handle_text(
     if let Some(builder) = episode {
         match current {
             "title" => {
-                append_text(&mut builder.title, value);
+                builder.title.get_or_insert_with(|| value.to_owned());
             }
             "guid" | "id" => {
-                builder.guid.get_or_insert_with(|| value.trim().to_owned());
+                builder.guid.get_or_insert_with(|| value.to_owned());
             }
             "videoId" => {
-                builder
-                    .video_id
-                    .get_or_insert_with(|| value.trim().to_owned());
+                builder.video_id.get_or_insert_with(|| value.to_owned());
             }
             "link" => {
-                builder
-                    .page_url
-                    .get_or_insert_with(|| value.trim().to_owned());
+                builder.page_url.get_or_insert_with(|| value.to_owned());
             }
             "pubDate" | "published" | "updated" => {
-                if let Some(timestamp) = parse_published_at(value.trim()) {
+                if let Some(timestamp) = parse_published_at(value) {
                     builder.published_at.get_or_insert(timestamp);
                 }
             }
             "duration" => {
-                if let Some(duration) = parse_duration(value.trim()) {
+                if let Some(duration) = parse_duration(value) {
                     builder.duration_secs.get_or_insert(duration);
                 }
             }
@@ -265,8 +255,12 @@ fn handle_text(
     }
 
     match current {
-        "title" => append_text(title, value),
-        "author" => append_text(author, value),
+        "title" => {
+            title.get_or_insert_with(|| value.to_owned());
+        }
+        "author" => {
+            author.get_or_insert_with(|| value.to_owned());
+        }
         "name"
             if path
                 .iter()
@@ -274,7 +268,7 @@ fn handle_text(
                 .nth(1)
                 .is_some_and(|parent| parent == "author") =>
         {
-            append_text(author, value);
+            author.get_or_insert_with(|| value.to_owned());
         }
         "url"
             if image_url.is_none()
@@ -284,30 +278,50 @@ fn handle_text(
                     .nth(1)
                     .is_some_and(|parent| parent == "image") =>
         {
-            *image_url = Some(value.trim().to_owned());
+            *image_url = Some(value.to_owned());
         }
         _ => {}
     }
 }
 
-fn append_text(target: &mut Option<String>, value: &str) {
-    target.get_or_insert_with(String::new).push_str(value);
-}
-
+/// Resolves one `&…;` reference, and never fails the document over it.
+///
+/// `quick-xml` reports every reference as a `GeneralRef`, whether or not the
+/// document declares it — and real feeds carry undeclared HTML entities
+/// (`&nbsp;`, `&mdash;`, `&hellip;`) in fields this parser never reads, above
+/// all `<description>`. Returning an error there would fail the whole feed, and
+/// with it the whole subscription refresh, over a character that never reaches
+/// the UI. So the predefined XML entities and the handful of HTML ones that
+/// actually turn up in titles are resolved, and anything else is kept verbatim
+/// as it was written — visible if it ever does land in a title, but never fatal.
 fn resolve_reference(reference: &quick_xml::events::BytesRef<'_>) -> Result<String, PodcastError> {
     if let Some(value) = reference.resolve_char_ref().map_err(parse_error)? {
         return Ok(value.to_string());
     }
-    match reference.decode().map_err(parse_error)?.as_ref() {
-        "amp" => Ok("&".to_owned()),
-        "apos" => Ok("'".to_owned()),
-        "gt" => Ok(">".to_owned()),
-        "lt" => Ok("<".to_owned()),
-        "quot" => Ok("\"".to_owned()),
-        value => Err(PodcastError::Parse(format!(
-            "unsupported XML entity: {value}"
-        ))),
-    }
+    let name = reference.decode().map_err(parse_error)?;
+    Ok(match name.as_ref() {
+        "amp" => "&".to_owned(),
+        "apos" => "'".to_owned(),
+        "gt" => ">".to_owned(),
+        "lt" => "<".to_owned(),
+        "quot" => "\"".to_owned(),
+        "nbsp" => "\u{a0}".to_owned(),
+        "mdash" => "—".to_owned(),
+        "ndash" => "–".to_owned(),
+        "hellip" => "…".to_owned(),
+        "lsquo" => "‘".to_owned(),
+        "rsquo" => "’".to_owned(),
+        "ldquo" => "“".to_owned(),
+        "rdquo" => "”".to_owned(),
+        "bull" => "•".to_owned(),
+        "copy" => "©".to_owned(),
+        "reg" => "®".to_owned(),
+        "trade" => "™".to_owned(),
+        other => {
+            tracing::debug!(entity = %other, "feed uses an undeclared XML entity; kept verbatim");
+            format!("&{other};")
+        }
+    })
 }
 
 #[must_use]
@@ -422,6 +436,59 @@ mod tests {
         .unwrap();
 
         assert_eq!(parsed.episodes[0].title, "Fish & Chips (After Dark)");
+    }
+
+    /// Real feeds carry undeclared HTML entities (`&nbsp;`, `&mdash;`, …) in
+    /// fields this parser never reads, above all `<description>`. Refusing the
+    /// whole document over one of them would fail the entire subscription
+    /// refresh over a field that does not even reach the UI, so an entity that
+    /// is not resolvable is kept verbatim instead of aborting the parse.
+    #[test]
+    fn an_unresolvable_entity_never_fails_the_whole_feed() {
+        let parsed = parse_feed(
+            r#"<rss><channel><title>Show</title><item>
+              <title>Deep Dive</title>
+              <description>Spaced&nbsp;out &mdash; part two</description>
+              <guid>entity</guid>
+              <enclosure url="https://example.test/entity.mp3" type="audio/mpeg"/>
+            </item></channel></rss>"#,
+            10,
+        )
+        .expect("an unknown entity in an unread field must not fail the feed");
+
+        assert_eq!(parsed.episodes.len(), 1);
+        assert_eq!(parsed.episodes[0].title, "Deep Dive");
+    }
+
+    /// Accumulation must be per element instance. Appending into the shared
+    /// target field instead would merge two sibling elements that map to the
+    /// same field — `<itunes:author>` next to `<author>` is the common case —
+    /// into one run-on string, and would leave `<link>`/`<guid>` truncated at
+    /// the first entity because those still took only their first segment.
+    #[test]
+    fn element_text_is_accumulated_per_element_and_never_merged_across_siblings() {
+        let parsed = parse_feed(
+            r#"<rss><channel>
+              <title>Show</title>
+              <itunes:author>Ada</itunes:author>
+              <author>Ada Lovelace</author>
+              <item>
+                <title>Episode</title>
+                <link>https://example.test/ep?a=1&amp;b=2</link>
+                <guid>id&amp;one</guid>
+                <enclosure url="https://example.test/ep.mp3" type="audio/mpeg"/>
+              </item>
+            </channel></rss>"#,
+            10,
+        )
+        .unwrap();
+
+        assert_eq!(parsed.author.as_deref(), Some("Ada"));
+        assert_eq!(
+            parsed.episodes[0].page_url.as_deref(),
+            Some("https://example.test/ep?a=1&b=2")
+        );
+        assert_eq!(parsed.episodes[0].guid, "id&one");
     }
 
     #[test]
