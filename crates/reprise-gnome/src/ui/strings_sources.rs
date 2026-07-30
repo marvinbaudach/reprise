@@ -30,6 +30,16 @@ pub const SOURCE_YOUTUBE_LIMITING: &str =
 pub const SOURCE_YOUTUBE_HELPER_UPDATE: &str = N_!("The YouTube helper needs an update");
 pub const SOURCE_OFFLINE: &str = N_!("You're offline");
 pub const SOURCE_SEVERAL_FAILED: &str = N_!("Couldn't refresh {count} sources");
+pub const SOURCE_COLLECTED_FAILURES_CACHED: &str =
+    N_!("Affected: {sources}. Saved episodes and downloads still work.");
+pub const SOURCE_COLLECTED_FAILURES_CACHED_MORE: &str =
+    N_!("Affected: {sources}, and {count} more. Saved episodes and downloads still work.");
+pub const SOURCE_COLLECTED_FAILURES_EMPTY: &str = N_!(
+    "Affected: {sources}. Nothing is downloaded from these sources yet; your other sources and music are unaffected."
+);
+pub const SOURCE_COLLECTED_FAILURES_EMPTY_MORE: &str = N_!(
+    "Affected: {sources}, and {count} more. Nothing is downloaded from these sources yet; your other sources and music are unaffected."
+);
 pub const SOURCE_CACHED_EPISODES_STILL_WORK: &str =
     N_!("Showing the {count} episodes from {time}. Downloads play as usual.");
 pub const SOURCE_YOUTUBE_EMPTY_FAILURE_DESCRIPTION: &str = N_!(
@@ -58,6 +68,23 @@ pub fn source_added_accessible(source: &str) -> String {
 
 pub fn source_several_failed(count: usize) -> String {
     formatted(SOURCE_SEVERAL_FAILED, &[("count", &count.to_string())])
+}
+
+pub fn source_collected_failures(
+    sources: &str,
+    remaining: usize,
+    has_cached_items: bool,
+) -> String {
+    let template = match (has_cached_items, remaining == 0) {
+        (true, true) => SOURCE_COLLECTED_FAILURES_CACHED,
+        (true, false) => SOURCE_COLLECTED_FAILURES_CACHED_MORE,
+        (false, true) => SOURCE_COLLECTED_FAILURES_EMPTY,
+        (false, false) => SOURCE_COLLECTED_FAILURES_EMPTY_MORE,
+    };
+    formatted(
+        template,
+        &[("sources", sources), ("count", &remaining.to_string())],
+    )
 }
 
 pub fn source_cached_episodes_still_work(count: usize, time: &str) -> String {

@@ -42,6 +42,25 @@ fn refresh_failure_notice(
     })
 }
 
+fn collected_failure_support(source_titles: &[String], cached_items: usize) -> Option<String> {
+    const MAX_VISIBLE_SOURCE_TITLES: usize = 3;
+
+    if source_titles.len() < MAX_VISIBLE_SOURCE_TITLES {
+        return None;
+    }
+    let shown = source_titles
+        .iter()
+        .take(MAX_VISIBLE_SOURCE_TITLES)
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join(", ");
+    Some(strings::source_collected_failures(
+        &shown,
+        source_titles.len() - MAX_VISIBLE_SOURCE_TITLES,
+        cached_items > 0,
+    ))
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum FailureActionRoute {
     Retry,
@@ -131,6 +150,7 @@ impl PodcastsView {
         };
         let presentation =
             source_failure_presentation(surface, error.kind(), cached_items, notice.failed_sources);
+        let collected_support = collected_failure_support(&notice.source_titles, cached_items);
         self.fetch_failure.replace(Some(error.clone()));
         let occurred_at = chrono::Utc::now().to_rfc3339();
         let last_checked = super::last_updated_text(&self.conn);
@@ -162,6 +182,8 @@ impl PodcastsView {
             FailureSurface::Banner => {
                 let support = if matches!(error.kind(), SourceErrorKind::Offline) {
                     strings::source_offline_description(&last_checked)
+                } else if let Some(support) = collected_support {
+                    support
                 } else {
                     strings::source_cached_episodes_still_work(cached_items, &last_checked)
                 };
@@ -170,17 +192,19 @@ impl PodcastsView {
             }
             FailureSurface::FullArea => {
                 self.error_banner.hide();
-                let description = match self.kind {
-                    reprise_core::podcasts::PodcastKind::Rss => {
-                        strings::SOURCE_PODCAST_EMPTY_FAILURE_DESCRIPTION
-                    }
-                    reprise_core::podcasts::PodcastKind::Youtube => {
-                        strings::SOURCE_YOUTUBE_EMPTY_FAILURE_DESCRIPTION
-                    }
-                };
+                let description = collected_support.unwrap_or_else(|| {
+                    strings::text(match self.kind {
+                        reprise_core::podcasts::PodcastKind::Rss => {
+                            strings::SOURCE_PODCAST_EMPTY_FAILURE_DESCRIPTION
+                        }
+                        reprise_core::podcasts::PodcastKind::Youtube => {
+                            strings::SOURCE_YOUTUBE_EMPTY_FAILURE_DESCRIPTION
+                        }
+                    })
+                });
                 self.failure_state.show(
                     &presentation,
-                    &strings::text(description),
+                    &description,
                     &error,
                     &occurred_at,
                     on_action,
@@ -256,6 +280,18 @@ mod tests {
         assert_eq!(
             failure_action_route(FailureAction::OpenPreferences, Some(42)),
             FailureActionRoute::OpenYoutubePreferences
+        );
+    }
+
+    #[test]
+    fn net_3_three_or_more_failures_name_sources_in_one_bounded_notice() {
+        let titles = ["Alpha", "Beta", "Gamma", "Delta"].map(str::to_owned);
+
+        let support = collected_failure_support(&titles, 12).unwrap();
+
+        assert_eq!(
+            support,
+            "Affected: Alpha, Beta, Gamma, and 1 more. Saved episodes and downloads still work."
         );
     }
 }
