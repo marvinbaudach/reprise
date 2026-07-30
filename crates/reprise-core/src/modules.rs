@@ -157,6 +157,27 @@ pub const ALL_MODULES: &[&ModuleDescriptor] = &[
     &LASTFM_MODULE,
 ];
 
+/// The modules that reach the network. `ALL_MODULES` minus the two local ones
+/// (Song Visuals, Library Doctor), which never make a request and therefore say
+/// nothing about whether someone used an online feature.
+///
+/// This exists so "did this user use online features" is decided in one place.
+/// The grandfathering in `db_grandfather` reads it; a local module being on —
+/// both default to on — must never be mistaken for evidence of online use.
+pub const ONLINE_MODULES: &[&ModuleDescriptor] = &[
+    &NEW_RELEASES_MODULE,
+    &CONCERTS_MODULE,
+    &PODCASTS_MODULE,
+    &YOUTUBE_MODULE,
+    &RADIO_MODULE,
+    &COVER_DOWNLOAD_MODULE,
+    &ARTIST_PORTRAITS_MODULE,
+    &ONLINE_LYRICS_MODULE,
+    &SOURCE_IMAGES_MODULE,
+    &LISTENBRAINZ_MODULE,
+    &LASTFM_MODULE,
+];
+
 pub(crate) fn enabled_key(module: &ModuleDescriptor) -> String {
     format!("module.{}.enabled", module.id)
 }
@@ -252,6 +273,23 @@ mod tests {
         assert!(is_enabled(&db, &LISTENBRAINZ_MODULE).unwrap());
         set_enabled(&db, &LISTENBRAINZ_MODULE, false).unwrap();
         assert!(!is_enabled(&db, &LISTENBRAINZ_MODULE).unwrap());
+    }
+
+    #[test]
+    fn online_modules_are_every_module_except_the_two_local_ones() {
+        let online: Vec<&str> = ONLINE_MODULES.iter().map(|module| module.id).collect();
+        let local: Vec<&str> = ALL_MODULES
+            .iter()
+            .map(|module| module.id)
+            .filter(|id| !online.contains(id))
+            .collect();
+
+        // Pinned deliberately: a new module added to ALL_MODULES has to be
+        // classified here on purpose. Defaulting it to "local" would let a
+        // network-reaching module escape the grandfathering evidence check,
+        // and defaulting it to "online" would let an always-on local module
+        // masquerade as proof that someone used an online feature.
+        assert_eq!(local, vec!["song_visuals", "library_doctor"]);
     }
 
     #[test]

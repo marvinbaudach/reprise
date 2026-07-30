@@ -272,6 +272,56 @@ fn net_2a_migration_preserves_explicit_opt_outs() {
 }
 
 #[test]
+fn net_2a_an_explicitly_enabled_online_module_is_demonstrable_use() {
+    // Concerts and New Releases fetch on demand and cache nothing, so none of
+    // the data-trace signals can see them. Without this, someone who follows
+    // only concerts loses the feature on update: the module stays on while the
+    // gate above it goes off.
+    for key in [
+        "module.concerts.enabled",
+        "module.new_releases.enabled",
+        "module.listenbrainz.enabled",
+    ] {
+        let conn = open_pre_online_gate_database();
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, '1')",
+            [key],
+        )
+        .unwrap();
+
+        migrate_with_empty_caches(&conn);
+
+        assert_eq!(
+            stored_online_gate(&conn).as_deref(),
+            Some("1"),
+            "{key} on must count as prior online use"
+        );
+    }
+}
+
+#[test]
+fn net_2a_an_enabled_local_module_is_not_demonstrable_use() {
+    // Song Visuals and Library Doctor both default to on and never make a
+    // request, so a pattern match over `module.%.enabled` would report every
+    // database as having used online features.
+    let conn = open_pre_online_gate_database();
+    for key in [
+        "module.song_visuals.enabled",
+        "module.library_doctor.enabled",
+    ] {
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, '1')",
+            [key],
+        )
+        .unwrap();
+    }
+
+    migrate_with_empty_caches(&conn);
+
+    assert_eq!(stored_online_gate(&conn).as_deref(), Some("0"));
+}
+
+#[test]
 fn net_2a_v15_database_runs_network_grandfathering_at_v16() {
     let conn = open_database_at(15);
     conn.execute(

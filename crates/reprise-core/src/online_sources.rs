@@ -39,7 +39,15 @@ pub fn set_enabled(db: &crate::db::Db, value: bool) -> Result<(), rusqlite::Erro
         if !first_enable_completed {
             if !current && value {
                 for (module, enabled) in first_enable_source_defaults() {
-                    settings::set_bool_in(conn, &modules::enabled_key(module), enabled)?;
+                    let key = modules::enabled_key(module);
+                    // Only seed a module that has never been decided. A stored
+                    // value is the user's own choice from before this one-shot
+                    // existed, and a first enable must not silently discard it
+                    // — "turning this off does not delete anything" has to hold
+                    // for preferences too, not just for files.
+                    if settings::get_setting_in(conn, &key)?.is_none() {
+                        settings::set_bool_in(conn, &key, enabled)?;
+                    }
                 }
                 settings::set_bool_in(
                     conn,
@@ -174,7 +182,25 @@ mod tests {
 
     #[test]
     fn first_enable_turns_every_online_source_off_except_radio() {
+        // A fresh install: nothing has been decided yet, so the first enable
+        // writes the defaults down. This deliberately does NOT pre-set the
+        // modules — a stored value is the user's own choice and survives
+        // (`net_2a_a_first_enable_never_overwrites_a_module_the_user_already_decided`).
         let db = migrated_db();
+        for module in modules::ONLINE_MODULES {
+            assert!(
+                settings::get_setting_in(db.conn(), &modules::enabled_key(module))
+                    .unwrap()
+                    .is_none(),
+                "{} was already decided before the first enable",
+                module.id
+            );
+        }
+
+        set_enabled(&db, true).unwrap();
+
+        // Every source is written down explicitly, not merely left at its
+        // compiled-in default — otherwise the one-shot would be unobservable.
         for module in [
             &modules::NEW_RELEASES_MODULE,
             &modules::CONCERTS_MODULE,
@@ -186,10 +212,14 @@ mod tests {
             &modules::ONLINE_LYRICS_MODULE,
             &modules::SOURCE_IMAGES_MODULE,
         ] {
-            modules::set_enabled(&db, module, true).unwrap();
+            assert!(
+                settings::get_setting_in(db.conn(), &modules::enabled_key(module))
+                    .unwrap()
+                    .is_some(),
+                "{} was not seeded by the first enable",
+                module.id
+            );
         }
-
-        set_enabled(&db, true).unwrap();
 
         assert!(is_enabled(&db).unwrap());
         assert!(modules::is_enabled(&db, &modules::RADIO_MODULE).unwrap());
@@ -229,6 +259,27 @@ mod tests {
 
         assert!(modules::is_enabled(&db, &modules::PODCASTS_MODULE).unwrap());
         assert!(!modules::is_enabled(&db, &modules::RADIO_MODULE).unwrap());
+    }
+
+    #[test]
+    fn net_2a_a_first_enable_never_overwrites_a_module_the_user_already_decided() {
+        // The upgrade path that used to lose data: someone had Concerts on,
+        // the migration found no other trace of online use and left the gate
+        // off, and their next flip of the master switch was mistaken for a
+        // first enable — which reset every module, Concerts included.
+        let db = migrated_db();
+        modules::set_enabled(&db, &modules::CONCERTS_MODULE, true).unwrap();
+        modules::set_enabled(&db, &modules::PODCASTS_MODULE, false).unwrap();
+        settings::set_bool(&db, ENABLED_KEY, false).unwrap();
+
+        set_enabled(&db, true).unwrap();
+
+        assert!(modules::is_enabled(&db, &modules::CONCERTS_MODULE).unwrap());
+        assert!(!modules::is_enabled(&db, &modules::PODCASTS_MODULE).unwrap());
+        // Untouched sources still get their first-enable default, and Radio is
+        // the one that may run because it only reaches the network on a click.
+        assert!(modules::is_enabled(&db, &modules::RADIO_MODULE).unwrap());
+        assert!(!modules::is_enabled(&db, &modules::YOUTUBE_MODULE).unwrap());
     }
 
     #[test]

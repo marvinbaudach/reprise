@@ -21,6 +21,11 @@ struct NetworkUseEvidence {
     downloaded_episode: bool,
     cover_cache: bool,
     portrait_cache: bool,
+    /// Any module that reaches the network is explicitly switched on. This is
+    /// the broadest signal and the only one that covers the features which
+    /// leave no other trace in the database — Concerts and New Releases fetch
+    /// on demand and cache nothing a data probe could find.
+    online_module_enabled: bool,
 }
 
 fn online_gate_default(existing_database: bool, evidence: NetworkUseEvidence) -> bool {
@@ -29,7 +34,24 @@ fn online_gate_default(existing_database: bool, evidence: NetworkUseEvidence) ->
             || evidence.radio_favourite
             || evidence.downloaded_episode
             || evidence.cover_cache
-            || evidence.portrait_cache)
+            || evidence.portrait_cache
+            || evidence.online_module_enabled)
+}
+
+/// `EXISTS(...)` over the `module.<id>.enabled` keys of every network-reaching
+/// module. Deliberately not a `LIKE 'module.%.enabled'` pattern: the two local
+/// modules default to on, so a pattern match would report every database as
+/// having used online features.
+fn any_online_module_enabled(tx: &rusqlite::Transaction<'_>) -> Result<bool, rusqlite::Error> {
+    let keys: Vec<String> = crate::modules::ONLINE_MODULES
+        .iter()
+        .map(|module| crate::modules::enabled_key(module))
+        .collect();
+    let placeholders = vec!["?"; keys.len()].join(", ");
+    let sql = format!(
+        "SELECT EXISTS(SELECT 1 FROM settings WHERE value = '1' AND key IN ({placeholders}))"
+    );
+    tx.query_row(&sql, rusqlite::params_from_iter(keys), |row| row.get(0))
 }
 
 pub(crate) fn grandfather_network_features(
@@ -91,6 +113,7 @@ pub(crate) fn grandfather_online_sources_gate(
             portrait_cache,
             crate::artist_portrait::cache::IMAGE_EXTS,
         ),
+        online_module_enabled: any_online_module_enabled(tx)?,
     };
     let value = if online_gate_default(existing_database, evidence) {
         "1"
