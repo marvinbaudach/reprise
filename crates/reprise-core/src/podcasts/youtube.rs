@@ -48,9 +48,26 @@ pub fn project_video(video: YtDlpVideo) -> YoutubeEpisode {
     }
 }
 
+/// The thumbnail URL for a video id, or `None` when the id is not shaped like
+/// one.
+///
+/// The id reaches this function from a remote feed by way of yt-dlp, so it is
+/// validated rather than trusted: only the YouTube id alphabet is admitted, so
+/// a `/`, `?`, `..` or whitespace can never reshape the path this builds. The
+/// origin is a hardcoded literal, so a malformed id could not have redirected
+/// the fetch to another host either way — this keeps a bad id from becoming a
+/// pointless request and a wasted cache entry, and turns "yt-dlp's `id` really
+/// is a video id" from an implicit assumption into a checked one.
 #[must_use]
-pub fn thumbnail_url(video_id: &str) -> String {
-    format!("{THUMBNAIL_URL_PREFIX}{video_id}/hqdefault.jpg")
+pub fn thumbnail_url(video_id: &str) -> Option<String> {
+    if video_id.is_empty()
+        || !video_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return None;
+    }
+    Some(format!("{THUMBNAIL_URL_PREFIX}{video_id}/hqdefault.jpg"))
 }
 
 fn upload_date_timestamp(value: Option<&str>) -> Option<i64> {
@@ -83,9 +100,25 @@ mod tests {
     #[test]
     fn src_11_thumbnail_url_uses_the_plain_video_id() {
         assert_eq!(
-            thumbnail_url("9fCfJzK0ZE4"),
-            "https://i.ytimg.com/vi/9fCfJzK0ZE4/hqdefault.jpg"
+            thumbnail_url("9fCfJzK0ZE4").as_deref(),
+            Some("https://i.ytimg.com/vi/9fCfJzK0ZE4/hqdefault.jpg")
         );
+    }
+
+    #[test]
+    fn src_11_thumbnail_url_rejects_an_id_that_could_reshape_the_path() {
+        // The id arrives from a remote feed via yt-dlp; anything outside the
+        // YouTube id alphabet must not be interpolated into the URL.
+        for bogus in [
+            "",
+            "../../etc/passwd",
+            "abc/def",
+            "abc?x=1",
+            "abc def",
+            "abc#frag",
+        ] {
+            assert_eq!(thumbnail_url(bogus), None, "must reject {bogus:?}");
+        }
     }
 
     #[test]

@@ -657,8 +657,11 @@ pub(crate) fn episode_from_row(row: &rusqlite::Row<'_>) -> Result<EpisodeRow, ru
     let kind = parse_kind(&kind)?;
     let guid: String = row.get(2)?;
     let image_url: Option<String> = row.get(6)?;
-    let image_url = image_url
-        .or_else(|| (kind == PodcastKind::Youtube).then(|| super::youtube::thumbnail_url(&guid)));
+    let image_url = image_url.or_else(|| {
+        (kind == PodcastKind::Youtube)
+            .then(|| super::youtube::thumbnail_url(&guid))
+            .flatten()
+    });
     Ok(EpisodeRow {
         id: row.get(0)?,
         subscription_id: row.get(1)?,
