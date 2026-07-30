@@ -90,6 +90,13 @@ fi
 results_dir=$(mktemp -d)
 trap 'rm -rf "$results_dir"' EXIT
 
+# The display band this run owns (see `server_num` below). One band per run,
+# 4000 wide, picked from this shell's PID: enough headroom for the test count
+# plus both retry steps, and cheap. Two runs whose PIDs land in the same bucket
+# still collide — a one-in-sixteen chance that costs a retry, not a wrong
+# result — which is the trade for not maintaining a lock file of claimed bands.
+run_display_offset=$(( ($$ % 16) * 4000 ))
+
 cleanup_worker_roots() {
   # Portal and accessibility helpers can release private mounts slightly
   # after the test process exits. Cleanup must not overwrite the recorded
@@ -100,7 +107,7 @@ cleanup_worker_roots() {
 run_display_test() {
   local index=$1
   local test=$2
-  local data_home cache_home config_home runtime_dir marker_dir
+  local data_home cache_home config_home runtime_dir marker_dir tmp_home
   local display_test_passed server_num attempt attempts
   # The parent owns the shared results directory. A background worker must
   # never inherit its EXIT cleanup and remove siblings' logs or statuses.
@@ -111,6 +118,22 @@ run_display_test() {
   runtime_dir=$(mktemp -d)
   chmod 700 "$runtime_dir"
   marker_dir=$(mktemp -d)
+  # The sixth directory, and the one the cleanup below could not reach until
+  # now. The test process makes its own fixture root through `tempfile`
+  # (`reprise-gnome/src/test_db.rs`, prefix `reprise-gnome-tests-`) and holds
+  # it in a `static OnceLock<TempDir>`. Rust never drops statics, so that
+  # directory outlives *every* exit — a passing run leaks exactly as reliably
+  # as a killed one. Measured on 2026-07-30: one clean 218-test run left 243
+  # directories and 905 MB behind, the largest 90 MB each, and an earlier
+  # accumulation of 926 of them (7.1 GB of the 16 GB tmpfs, i.e. RAM) made a
+  # full run report 153 of 217 tests as display failures when the real cause
+  # was "No space left on device".
+  #
+  # Fixing it in the fixture would mean giving up the static that deliberately
+  # outlives every test in the process, so it is fixed here instead: TMPDIR
+  # points at a worker-owned directory, which puts the fixture root inside the
+  # tree the trap below already removes — on exit, interrupt, or kill alike.
+  tmp_home=$(mktemp -d)
   # Own the cleanup rather than merely reaching it. The `trap - EXIT` above
   # drops the PARENT's cleanup so a worker never deletes its siblings' logs;
   # it must not leave the worker with no cleanup at all. Without this, the
@@ -123,16 +146,35 @@ run_display_test() {
   # case that leaked, and bash does not run an EXIT trap for an untrapped
   # fatal signal.
   trap 'cleanup_worker_roots "$data_home" "$cache_home" "$config_home" \
-    "$runtime_dir" "$marker_dir"' EXIT INT TERM HUP
+    "$runtime_dir" "$marker_dir" "$tmp_home"' EXIT INT TERM HUP
   display_test_passed="$marker_dir/passed"
   # xvfb-run -a can race while parallel workers probe the same free display.
   # Assign a stable, unique server number to every worker instead.
-  server_num=$((99 + index))
+  #
+  # Unique within this run, and — through `run_display_offset` — across
+  # concurrent runs too. `99 + index` alone is identical in every invocation of
+  # this script, so two gate runs started from two worktrees claim exactly the
+  # same display for every index; `xvfb-run --server-num` refuses a number
+  # whose /tmp/.X<n>-lock exists, and the loser reports "display never came up"
+  # for a stretch of neighbouring tests. That reads as a code defect and is not
+  # one. Retries add 1000 and 2000, so a run needs its own band wider than
+  # that plus the test count.
+  server_num=$((99 + index + run_display_offset))
   # Under load Xvfb can still be coming up when the test connects, which
   # surfaces as GTK's "Failed to initialize GTK" rather than as a test failure.
-  # That signature is an environment fault, never an assertion, so it earns one
+  # That signature is an environment fault, never an assertion, so it earns a
   # retry on a different server number. Any other failure is reported as-is.
-  attempts=2
+  #
+  # Two retries, not one: on a machine running several agents at once, two
+  # consecutive full runs on 2026-07-30 each lost the same contiguous block of
+  # four `ui::podcasts::*` tests, every one of them to this signature and to
+  # the script's own "display never came up", and every one of them passing in
+  # isolation immediately afterwards. Neighbouring tests fail together because
+  # the window of contention is a stretch of wall-clock time, which is also why
+  # a repeated run looks deterministic and invites the wrong conclusion. One
+  # retry was not enough to cross that window; the cost of a third attempt is
+  # paid only by a test that has already failed twice.
+  attempts=3
   {
     echo "== display test: $test =="
     # Set XDG roots before dbus-run-session so D-Bus-activated Portal and
@@ -144,6 +186,7 @@ run_display_test() {
       if env \
         XDG_DATA_HOME="$data_home" XDG_CACHE_HOME="$cache_home" \
         XDG_CONFIG_HOME="$config_home" XDG_RUNTIME_DIR="$runtime_dir" \
+        TMPDIR="$tmp_home" \
         GIO_USE_VFS=local GTK_USE_PORTAL=0 \
         GDK_BACKEND=x11 WAYLAND_DISPLAY= REPRISE_AUDIO_SINK=fakesink \
         DISPLAY_TEST="$test" DISPLAY_TEST_PASSED="$display_test_passed" \
