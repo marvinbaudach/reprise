@@ -85,6 +85,7 @@ pub struct EpisodeRow {
     pub played_at: Option<i64>,
     pub position_ms: i64,
     pub first_seen_at: i64,
+    pub is_new: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

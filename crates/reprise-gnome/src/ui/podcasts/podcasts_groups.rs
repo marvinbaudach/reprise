@@ -164,7 +164,7 @@ fn group_header(
     let downloaded = file_size(Some(summary.downloaded_bytes));
     let facts = strings::podcast_group_facts(
         &strings::podcast_episode_count(summary.episode_count),
-        summary.unplayed_count,
+        summary.new_count,
         &relative_date(summary.latest_published_at, Local::now().date_naive()),
         downloaded.as_deref().unwrap_or_default(),
     );
@@ -260,7 +260,12 @@ fn episode_row(
     identity.append(&title);
     let date = relative_date(row.published_at, Local::now().date_naive());
     let duration = duration(row.duration_secs);
-    let detail = detail_line([date.as_str(), duration.as_str(), status_pill(row).label]);
+    let status = status_pill(row);
+    let detail = detail_line([
+        date.as_str(),
+        duration.as_str(),
+        status.as_ref().map_or("", |pill| pill.label),
+    ]);
     let detail = gtk4::Label::new(Some(&detail));
     detail.set_xalign(0.0);
     detail.add_css_class("caption");
@@ -414,7 +419,7 @@ mod tests {
         let rendered = RenderedSourceGroup {
             summary: SourceSummary {
                 episode_count: 0,
-                unplayed_count: 0,
+                new_count: 0,
                 downloaded_bytes: 0,
                 latest_published_at: None,
             },
@@ -455,7 +460,7 @@ mod tests {
             &group,
             &SourceSummary {
                 episode_count: 0,
-                unplayed_count: 0,
+                new_count: 0,
                 downloaded_bytes: 0,
                 latest_published_at: None,
             },
@@ -498,7 +503,7 @@ mod tests {
             &group,
             &SourceSummary {
                 episode_count: 0,
-                unplayed_count: 0,
+                new_count: 0,
                 downloaded_bytes: 0,
                 latest_published_at: None,
             },

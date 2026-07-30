@@ -431,7 +431,7 @@ fn refresh_to_root_with_download_progress(
                             Ok((feed, Some(response)))
                         });
                     match official_feed {
-                        result @ Ok(_) | result @ Err(PodcastError::NotModified) => result,
+                        result @ (Ok(_) | Err(PodcastError::NotModified)) => result,
                         Err(_) => youtube_fetcher
                             .list(&channel_url, config.youtube_import_count)
                             .map(|feed| (feed, None)),
@@ -475,13 +475,21 @@ fn refresh_to_root_with_download_progress(
         let baseline = super::store::future_only_baseline_in(conn, subscription.id)?
             .into_iter()
             .collect::<std::collections::HashSet<_>>();
+        let first_seen_at = if matches!(
+            subscription.last_outcome.as_deref(),
+            Some("ok" | "not_modified")
+        ) {
+            now
+        } else {
+            subscription.added_at
+        };
         let mut new_episode_ids = Vec::new();
         for episode in &feed.episodes {
             if baseline.contains(&episode.guid) {
                 continue;
             }
             let Some(upsert) =
-                super::store::upsert_episode_in(conn, subscription.id, episode, now)?
+                super::store::upsert_episode_in(conn, subscription.id, episode, first_seen_at)?
             else {
                 continue;
             };

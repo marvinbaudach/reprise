@@ -549,8 +549,12 @@ impl YoutubeChannelDetail {
         copy.append(&title);
         let date = relative_date(episode.published_at, Local::now().date_naive());
         let duration = duration(episode.duration_secs);
-        let subtitle_text =
-            detail_line([date.as_str(), duration.as_str(), status_pill(episode).label]);
+        let status = status_pill(episode);
+        let subtitle_text = detail_line([
+            date.as_str(),
+            duration.as_str(),
+            status.as_ref().map_or("", |pill| pill.label),
+        ]);
         let subtitle = gtk4::Label::new(Some(&subtitle_text));
         subtitle.set_xalign(0.0);
         subtitle.add_css_class("caption");

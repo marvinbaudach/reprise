@@ -251,6 +251,7 @@ mod tests {
             played_at: None,
             position_ms: 0,
             first_seen_at: 1,
+            is_new: false,
         }
     }
 
