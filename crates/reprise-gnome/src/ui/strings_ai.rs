@@ -1,6 +1,6 @@
 //! Labels for the AI surface that survives in the GTK frontend: the AI badge
-//! (INST-10), the "Hide AI music" filter (FIL-7), and the Experimental
-//! preferences page that gates both (INST-11).
+//! (INST-10) and the "Hide AI music" filter (FIL-7). Both mark tracks the
+//! CLI/MCP frontends produce; neither sits behind a settings gate any more.
 
 use super::text;
 
@@ -16,12 +16,3 @@ pub const FILTER_HIDE_AI: &str = N_!("Hide AI music");
 pub fn remove_hide_ai_filter() -> String {
     format!("Remove filter: {}", text(FILTER_HIDE_AI))
 }
-
-// Experimental preferences page (INST-11/INST-12).
-pub const EXPERIMENTAL_PAGE_TITLE: &str = N_!("Experimental");
-pub const EXPERIMENTAL_GROUP_TITLE: &str = N_!("Experimental features");
-pub const EXPERIMENTAL_GROUP_DESCRIPTION: &str =
-    N_!("Unfinished features with rough edges, off by default.");
-pub const EXPERIMENTAL_TOGGLE_TITLE: &str = N_!("Enable experimental features");
-pub const EXPERIMENTAL_TOGGLE_SUBTITLE: &str =
-    N_!("Shows AI instrumental versions across the app: the context-menu trigger, the conversion view, badges, and the \"Hide AI music\" filter.");

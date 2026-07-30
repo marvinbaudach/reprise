@@ -92,13 +92,13 @@ pub(super) fn ai_exclude_clause(exclude_ai: bool) -> &'static str {
 /// it is the correlated provenance `EXISTS` the AI badge reads; otherwise it is
 /// a literal `0`, so the query plan carries **no** per-row subquery.
 ///
-/// The badge only renders while the experimental switch is on (`ui::track_list`
-/// gates it), so projecting the correlated `EXISTS` on every windowed track
-/// query — 50k–500k rows, workspace-wide, once per filtered row before `LIMIT` —
-/// was a measured 20–30% cost paid even when nothing reads the column. Callers
-/// pass whether they need it (the GTK layer knows `experimental_on`); when they
-/// do not, the literal `0` keeps the plan subquery-free. Either way the column
-/// is projected at the same position, so `row_to_track`'s fixed index is
+/// Projecting the correlated `EXISTS` on every windowed track query — 50k–500k
+/// rows, workspace-wide, once per filtered row before `LIMIT` — was a measured
+/// 20–30% cost, so callers pass whether they read the column at all; when they
+/// do not, the literal `0` keeps the plan subquery-free. The GTK track list
+/// renders the badge on every AI row and so always asks for the real column;
+/// other callers (playlist counts, id-only windows) do not. Either way the
+/// column is projected at the same position, so `row_to_track`'s fixed index is
 /// unaffected — an off-path row simply reads `is_ai = false`.
 pub(super) fn ai_projection(project_ai: bool) -> &'static str {
     if project_ai {
@@ -213,9 +213,9 @@ pub(super) fn build_track_query_base_browsed(
 
 /// Builds the parameterized SELECT for a library window (`PRESENT`).
 /// See `build_track_query_base`'s doc comment for the whitelist guarantee.
-/// Projects the real `is_ai` column (`project_ai = true`); the AI-gated hot
-/// path uses `build_track_query_browsed` to opt out. Its only callers are this
-/// module's tests.
+/// Projects the real `is_ai` column (`project_ai = true`); callers that do not
+/// read it use `build_track_query_browsed` to opt out. Its only callers are
+/// this module's tests.
 pub fn build_track_query(sort_field: &str, sort_dir: &str, has_filter: bool) -> String {
     build_track_query_base(0, sort_field, sort_dir, has_filter, true)
 }

@@ -1136,8 +1136,9 @@ human. Rationale for changes lives in the git history.
   **sticky across sessions** like other view states. **No
   shuffle/auto-queue special rule** in v1: queue refill follows the
   visible view — with the filter active, AI titles are not visible and
-  are not refilled. Only available while the Experimental switch is on
-  (INST-11). (Decision 17)
+  are not refilled. The filter is always available in the library; the
+  Experimental switch that used to gate it is gone (INST-11).
+  (Decision 17)
 - **FIL-8** [active] [core] [gtk] — "Recently added" is its own library
   scope over all currently existing tracks whose `added_at` is at most
   seven days ago; there is no 50-track limit. The source initially
@@ -2991,9 +2992,12 @@ external write.
 
 An instrumental version is an **explicitly commissioned, permanent
 title, clearly marked as AI-manipulated** (CONTEXT.md), not a transient
-playback effect. The feature is **experimental** (decision 11): its
-entire UI appears only behind the "Experimental features" toggle; rough
-edges are deliberately accepted. The player plays only finished files.
+playback effect. The GTK frontend no longer commissions one — the
+conversion surface and the "Experimental features" toggle that gated it
+are gone; the CLI and MCP frontends still create instrumentals. What
+remains here is how the GTK frontend *marks* and *filters* the results:
+the AI badge (INST-10) and "Hide AI music" (FIL-7), both always
+available. The player plays only finished files.
 
 - **INST-1** [replaced by nothing — the instrumental surface was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — Triggered via track context menu: with
   the Experimental toggle active, the track context menu carries the
@@ -3060,12 +3064,18 @@ edges are deliberately accepted. The player plays only finished files.
   badge** ("Instrumental · AI-manipulated") with a **source reference**,
   where linked. Provenance is DB-primary (`track_provenance`), the tag
   reference secondary; the badge keys off the DB flag, never off the
-  storage folder. (Decision 13/14)
-- **INST-11** [active] [gtk] — **Master gate:** the entire instrumental
+  storage folder. The flag is the badge's only input — no settings gate
+  sits in front of it, so a track another frontend produced is marked
+  the moment it appears. (Decision 13/14)
+- **INST-11** [replaced by nothing — the gate lost its subject when the instrumental surface left the GTK frontend; the ID stays as a signpost per the append-only contract] — **Master gate:** the entire instrumental
   UI — context menu entry, conversion view, AI badges, "Hide AI music"
   filter (FIL-7) — is **hidden as long as the "Experimental features"
   toggle is off**. The toggle is a persisted setting; its state alone
-  decides visibility. (Decision 11)
+  decides visibility. (Decision 11) The surface the gate protected was
+  removed; the two survivors it still covered — the AI badge (INST-10)
+  and "Hide AI music" (FIL-7) — mark and filter tracks the CLI/MCP
+  frontends produce and are worth showing unconditionally, so the
+  toggle and its Experimental preferences page were removed with it.
 - **INST-12** [replaced by nothing — the instrumental surface was removed from the GTK frontend; the ID stays as a signpost per the append-only contract] — Model provisioning: behind the toggle
   lies the first-use download flow for the ML runtime weights via the
   core facade `ensure_weights` (background thread with progress,
