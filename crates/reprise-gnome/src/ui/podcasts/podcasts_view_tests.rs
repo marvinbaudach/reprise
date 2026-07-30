@@ -348,3 +348,35 @@ fn pod_13_activating_the_retry_action_runs_a_fresh_download_attempt() {
         other => panic!("expected a fresh terminal Failed state, got {other:?}"),
     }
 }
+
+/// `POD-16`: the footer carries the library's status line, and on a load
+/// failure it used to carry `DbError`'s `Display` instead. For a rusqlite
+/// input error that renders as the message plus the entire failing statement
+/// and a byte offset, which is what a real installation showed on both the
+/// Podcasts and the YouTube page: "no such column: sync_to_phone in SELECT id,
+/// kind, feed_url, … at offset 150". Asserting only the replacement string
+/// would still pass if the raw text were appended, so the absence of the
+/// statement is asserted separately.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn pod_16_an_unreadable_library_says_so_without_printing_the_query() {
+    gtk4::init().unwrap();
+    let conn = reprise_core::db::open_migrated(None).unwrap();
+    // The exact shape the migration defect left behind: a schema the
+    // subscription query cannot read.
+    conn.execute_batch("ALTER TABLE podcast_subscriptions DROP COLUMN sync_to_phone;")
+        .unwrap();
+
+    let view = view(conn, PodcastKind::Rss);
+
+    let status = view.footer_status.text().to_string();
+    assert_eq!(
+        status,
+        strings::text(strings::PODCAST_LIBRARY_UNREADABLE),
+        "a failed load must reach the user as a sentence"
+    );
+    assert!(
+        !status.contains("SELECT") && !status.contains("sync_to_phone"),
+        "the failing statement must never reach the footer, got: {status}"
+    );
+}

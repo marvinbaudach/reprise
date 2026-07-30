@@ -3489,6 +3489,19 @@ listening statistics.
   (`MTP-45`/`POD-12`) — the two lines can no longer call the same subscription
   by two different nouns. Found by the `source-youtube` acceptance scenario,
   which reads the header back out of the running app.
+- **POD-16** [active] [gtk] — The status line under the Podcasts and YouTube
+  libraries never renders a raw error. Its two failure states are fixed
+  sentences — "Could not read your subscriptions" when the library itself
+  cannot be read, and `POD-11`'s "Refresh failed · showing saved episodes"
+  when a refresh fails — and the underlying error goes to a warning-level log
+  line instead. This is not cosmetic: a `rusqlite` input error renders as the
+  message plus the entire failing statement and a byte offset, so a real
+  installation showed "no such column: sync_to_phone in SELECT id, kind,
+  feed_url, … at offset 150" across five lines of the footer on both pages.
+  Beyond being unreadable it is also a leak of the same class `POD-13` closes
+  for provider errors, since a statement can carry a path or an identifier.
+  The "Refresh now" button beside the line is the offer; the text does not
+  repeat it.
 - **RAD-1** [active] [gtk] — Only the currently connected station is
   accented in the table; its state icon, name, now-playing, and row
   tint change together. All others, as well as a presented but

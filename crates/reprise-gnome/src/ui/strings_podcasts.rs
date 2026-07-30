@@ -75,6 +75,10 @@ pub const PODCAST_ENABLE_IN_PREFERENCES: &str = N_!("Enable in Preferences");
 pub const PODCAST_REFRESH_NOW: &str = N_!("Refresh now");
 pub const PODCAST_REFRESHING: &str = N_!("Refreshing podcasts…");
 pub const PODCAST_REFRESH_FAILED: &str = N_!("Refresh failed · showing saved episodes");
+// `POD-16`: what the footer says when the subscriptions cannot be read at all.
+// The failure is a database one, so there is nothing the text could usefully
+// name — the "Refresh now" button beside it is the offer.
+pub const PODCAST_LIBRARY_UNREADABLE: &str = N_!("Could not read your subscriptions");
 pub const PODCAST_DIALOG_TITLE: &str = N_!("Add Podcast");
 pub const PODCAST_DIALOG_HINT: &str = N_!("Search by name or paste a feed URL");
 pub const YOUTUBE_DIALOG_TITLE: &str = N_!("Add Channel");
