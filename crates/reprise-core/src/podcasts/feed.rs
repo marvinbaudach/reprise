@@ -18,6 +18,7 @@ pub struct ParsedFeed {
 pub struct ParsedEpisode {
     pub guid: String,
     pub title: String,
+    pub image_url: Option<String>,
     pub audio_url: String,
     pub page_url: Option<String>,
     pub published_at: Option<i64>,
@@ -29,6 +30,7 @@ struct EpisodeBuilder {
     guid: Option<String>,
     video_id: Option<String>,
     title: Option<String>,
+    image_url: Option<String>,
     audio_enclosure: Option<String>,
     fallback_enclosure: Option<String>,
     page_url: Option<String>,
@@ -56,7 +58,10 @@ impl EpisodeBuilder {
         let audio_url = youtube_watch_url
             .or(self.audio_enclosure)
             .or(self.fallback_enclosure)?;
-        let title = self.title.filter(|value| !value.trim().is_empty())?;
+        let title = self
+            .title
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty())?;
         Some(ParsedEpisode {
             guid: self
                 .video_id
@@ -64,6 +69,7 @@ impl EpisodeBuilder {
                 .or(self.guid)
                 .unwrap_or_else(|| audio_url.clone()),
             title,
+            image_url: self.image_url,
             audio_url,
             page_url: self.page_url,
             published_at: self.published_at,
@@ -74,7 +80,7 @@ impl EpisodeBuilder {
 
 pub fn parse_feed(xml: &str, limit: usize) -> Result<ParsedFeed, PodcastError> {
     let mut reader = Reader::from_str(xml);
-    reader.config_mut().trim_text(true);
+    reader.config_mut().trim_text(false);
     reader.config_mut().check_end_names = true;
 
     let mut path = Vec::<String>::new();
@@ -83,6 +89,12 @@ pub fn parse_feed(xml: &str, limit: usize) -> Result<ParsedFeed, PodcastError> {
     let mut image_url = None;
     let mut episode = None::<EpisodeBuilder>;
     let mut episodes = Vec::new();
+    // One element's text, assembled from every text, CDATA and entity segment
+    // between its start and end tag. Reading only the first segment is what
+    // truncated titles at the first `&amp;`; appending straight into the target
+    // field instead would merge sibling elements that map to the same field
+    // (`<itunes:author>` next to `<author>`) into one run-on string.
+    let mut text_buffer = String::new();
 
     loop {
         match reader.read_event().map_err(parse_error)? {
@@ -93,39 +105,34 @@ pub fn parse_feed(xml: &str, limit: usize) -> Result<ParsedFeed, PodcastError> {
                     episode = Some(EpisodeBuilder::default());
                 }
                 path.push(name);
+                text_buffer.clear();
             }
             Event::Empty(element) => {
                 let name = local_name(element.name().as_ref()).to_owned();
                 handle_element(&reader, &name, &element, &mut episode, &mut image_url)?;
             }
             Event::Text(text) => {
-                let value = text.decode().map_err(parse_error)?.trim().to_owned();
-                if !value.is_empty() {
-                    handle_text(
-                        &path,
-                        &value,
-                        &mut title,
-                        &mut author,
-                        &mut episode,
-                        &mut image_url,
-                    );
-                }
+                text_buffer.push_str(&text.decode().map_err(parse_error)?);
             }
             Event::CData(text) => {
-                let value = text.decode().map_err(parse_error)?.trim().to_owned();
-                if !value.is_empty() {
-                    handle_text(
-                        &path,
-                        &value,
-                        &mut title,
-                        &mut author,
-                        &mut episode,
-                        &mut image_url,
-                    );
-                }
+                text_buffer.push_str(&text.decode().map_err(parse_error)?);
+            }
+            Event::GeneralRef(reference) => {
+                text_buffer.push_str(&resolve_reference(&reference)?);
             }
             Event::End(element) => {
                 let name = local_name(element.name().as_ref()).to_owned();
+                let text = std::mem::take(&mut text_buffer);
+                if !text.trim().is_empty() {
+                    handle_text(
+                        &path,
+                        text.trim(),
+                        &mut title,
+                        &mut author,
+                        &mut episode,
+                        &mut image_url,
+                    );
+                }
                 if matches!(name.as_str(), "item" | "entry") {
                     if episodes.len() < limit {
                         if let Some(parsed) = episode.take().and_then(EpisodeBuilder::finish) {
@@ -148,11 +155,14 @@ pub fn parse_feed(xml: &str, limit: usize) -> Result<ParsedFeed, PodcastError> {
     }
 
     let title = title
-        .filter(|value: &String| !value.trim().is_empty())
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
         .ok_or_else(|| PodcastError::Parse("feed has no title".to_owned()))?;
     Ok(ParsedFeed {
         title,
-        author,
+        author: author
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty()),
         image_url,
         episodes,
     })
@@ -185,9 +195,20 @@ fn handle_element(
                 }
             }
         }
-        "image" if episode.is_none() => {
-            if let Some(url) = attribute(&attributes, "href") {
+        "image" => {
+            if let Some(builder) = episode {
+                if let Some(url) =
+                    attribute(&attributes, "href").or_else(|| attribute(&attributes, "url"))
+                {
+                    builder.image_url.get_or_insert_with(|| url.to_owned());
+                }
+            } else if let Some(url) = attribute(&attributes, "href") {
                 image_url.get_or_insert_with(|| url.to_owned());
+            }
+        }
+        "thumbnail" => {
+            if let (Some(builder), Some(url)) = (episode, attribute(&attributes, "url")) {
+                builder.image_url.get_or_insert_with(|| url.to_owned());
             }
         }
         _ => {}
@@ -234,17 +255,20 @@ fn handle_text(
     }
 
     match current {
-        "title" if title.is_none() => *title = Some(value.to_owned()),
-        "author" if author.is_none() => *author = Some(value.to_owned()),
+        "title" => {
+            title.get_or_insert_with(|| value.to_owned());
+        }
+        "author" => {
+            author.get_or_insert_with(|| value.to_owned());
+        }
         "name"
-            if author.is_none()
-                && path
-                    .iter()
-                    .rev()
-                    .nth(1)
-                    .is_some_and(|parent| parent == "author") =>
+            if path
+                .iter()
+                .rev()
+                .nth(1)
+                .is_some_and(|parent| parent == "author") =>
         {
-            *author = Some(value.to_owned());
+            author.get_or_insert_with(|| value.to_owned());
         }
         "url"
             if image_url.is_none()
@@ -258,6 +282,46 @@ fn handle_text(
         }
         _ => {}
     }
+}
+
+/// Resolves one `&…;` reference, and never fails the document over it.
+///
+/// `quick-xml` reports every reference as a `GeneralRef`, whether or not the
+/// document declares it — and real feeds carry undeclared HTML entities
+/// (`&nbsp;`, `&mdash;`, `&hellip;`) in fields this parser never reads, above
+/// all `<description>`. Returning an error there would fail the whole feed, and
+/// with it the whole subscription refresh, over a character that never reaches
+/// the UI. So the predefined XML entities and the handful of HTML ones that
+/// actually turn up in titles are resolved, and anything else is kept verbatim
+/// as it was written — visible if it ever does land in a title, but never fatal.
+fn resolve_reference(reference: &quick_xml::events::BytesRef<'_>) -> Result<String, PodcastError> {
+    if let Some(value) = reference.resolve_char_ref().map_err(parse_error)? {
+        return Ok(value.to_string());
+    }
+    let name = reference.decode().map_err(parse_error)?;
+    Ok(match name.as_ref() {
+        "amp" => "&".to_owned(),
+        "apos" => "'".to_owned(),
+        "gt" => ">".to_owned(),
+        "lt" => "<".to_owned(),
+        "quot" => "\"".to_owned(),
+        "nbsp" => "\u{a0}".to_owned(),
+        "mdash" => "—".to_owned(),
+        "ndash" => "–".to_owned(),
+        "hellip" => "…".to_owned(),
+        "lsquo" => "‘".to_owned(),
+        "rsquo" => "’".to_owned(),
+        "ldquo" => "“".to_owned(),
+        "rdquo" => "”".to_owned(),
+        "bull" => "•".to_owned(),
+        "copy" => "©".to_owned(),
+        "reg" => "®".to_owned(),
+        "trade" => "™".to_owned(),
+        other => {
+            tracing::debug!(entity = %other, "feed uses an undeclared XML entity; kept verbatim");
+            format!("&{other};")
+        }
+    })
 }
 
 #[must_use]
@@ -360,6 +424,104 @@ mod tests {
     }
 
     #[test]
+    fn item_titles_accumulate_entity_and_cdata_segments_without_truncation() {
+        let parsed = parse_feed(
+            r#"<rss><channel><title>Show</title><item>
+              <title>Fish &amp; <![CDATA[Chips (After Dark)]]></title>
+              <guid>segmented</guid>
+              <enclosure url="https://example.test/segmented.mp3" type="audio/mpeg"/>
+            </item></channel></rss>"#,
+            10,
+        )
+        .unwrap();
+
+        assert_eq!(parsed.episodes[0].title, "Fish & Chips (After Dark)");
+    }
+
+    /// Real feeds carry undeclared HTML entities (`&nbsp;`, `&mdash;`, …) in
+    /// fields this parser never reads, above all `<description>`. Refusing the
+    /// whole document over one of them would fail the entire subscription
+    /// refresh over a field that does not even reach the UI, so an entity that
+    /// is not resolvable is kept verbatim instead of aborting the parse.
+    #[test]
+    fn an_unresolvable_entity_never_fails_the_whole_feed() {
+        let parsed = parse_feed(
+            r#"<rss><channel><title>Show</title><item>
+              <title>Deep Dive</title>
+              <description>Spaced&nbsp;out &mdash; part two</description>
+              <guid>entity</guid>
+              <enclosure url="https://example.test/entity.mp3" type="audio/mpeg"/>
+            </item></channel></rss>"#,
+            10,
+        )
+        .expect("an unknown entity in an unread field must not fail the feed");
+
+        assert_eq!(parsed.episodes.len(), 1);
+        assert_eq!(parsed.episodes[0].title, "Deep Dive");
+    }
+
+    /// Accumulation must be per element instance. Appending into the shared
+    /// target field instead would merge two sibling elements that map to the
+    /// same field — `<itunes:author>` next to `<author>` is the common case —
+    /// into one run-on string, and would leave `<link>`/`<guid>` truncated at
+    /// the first entity because those still took only their first segment.
+    #[test]
+    fn element_text_is_accumulated_per_element_and_never_merged_across_siblings() {
+        let parsed = parse_feed(
+            r#"<rss><channel>
+              <title>Show</title>
+              <itunes:author>Ada</itunes:author>
+              <author>Ada Lovelace</author>
+              <item>
+                <title>Episode</title>
+                <link>https://example.test/ep?a=1&amp;b=2</link>
+                <guid>id&amp;one</guid>
+                <enclosure url="https://example.test/ep.mp3" type="audio/mpeg"/>
+              </item>
+            </channel></rss>"#,
+            10,
+        )
+        .unwrap();
+
+        assert_eq!(parsed.author.as_deref(), Some("Ada"));
+        assert_eq!(
+            parsed.episodes[0].page_url.as_deref(),
+            Some("https://example.test/ep?a=1&b=2")
+        );
+        assert_eq!(parsed.episodes[0].guid, "id&one");
+    }
+
+    #[test]
+    fn rss_items_keep_itunes_and_media_episode_artwork() {
+        let parsed = parse_feed(
+            r#"<rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"
+                     xmlns:media="http://search.yahoo.com/mrss/">
+              <channel><title>Show</title>
+                <item><title>iTunes art</title><guid>itunes</guid>
+                  <itunes:image href="https://images.test/itunes.jpg"/>
+                  <enclosure url="https://example.test/itunes.mp3" type="audio/mpeg"/>
+                </item>
+                <item><title>Media art</title><guid>media</guid>
+                  <media:thumbnail url="https://images.test/media.jpg"/>
+                  <enclosure url="https://example.test/media.mp3" type="audio/mpeg"/>
+                </item>
+              </channel>
+            </rss>"#,
+            10,
+        )
+        .unwrap();
+
+        assert_eq!(
+            parsed.episodes[0].image_url.as_deref(),
+            Some("https://images.test/itunes.jpg")
+        );
+        assert_eq!(
+            parsed.episodes[1].image_url.as_deref(),
+            Some("https://images.test/media.jpg")
+        );
+    }
+
+    #[test]
     fn atom_feed_reads_namespaced_fields_and_honors_limit() {
         let parsed = parse_feed(
             r#"<feed xmlns="http://www.w3.org/2005/Atom">
@@ -390,6 +552,8 @@ mod tests {
                 <id>yt:video:newest-video</id>
                 <yt:videoId>newest-video</yt:videoId>
                 <title>Newest long mix</title>
+                <media:thumbnail xmlns:media="http://search.yahoo.com/mrss/"
+                  url="https://images.test/youtube.jpg"/>
                 <link rel="alternate" href="https://www.youtube.com/watch?v=newest-video"/>
                 <published>2026-07-28T08:00:00Z</published>
               </entry>
@@ -405,6 +569,10 @@ mod tests {
             "https://www.youtube.com/watch?v=newest-video"
         );
         assert_eq!(parsed.episodes[0].published_at, Some(1_785_225_600));
+        assert_eq!(
+            parsed.episodes[0].image_url.as_deref(),
+            Some("https://images.test/youtube.jpg")
+        );
     }
 
     #[test]

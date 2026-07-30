@@ -200,6 +200,7 @@ fn edits_and_removes_a_subscription_without_deleting_downloads() {
         &ParsedEpisode {
             guid: "one".into(),
             title: "One".into(),
+            image_url: None,
             audio_url: "https://audio.example.test/one.mp3".into(),
             page_url: None,
             published_at: Some(200),

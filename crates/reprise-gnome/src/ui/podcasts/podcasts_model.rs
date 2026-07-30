@@ -101,6 +101,7 @@ mod tests {
             title: "Episode".into(),
             show: "Show".into(),
             show_image_url: None,
+            image_url: None,
             kind: PodcastKind::Rss,
             audio_url: "https://example.test/e.mp3".into(),
             page_url: None,
@@ -111,6 +112,7 @@ mod tests {
             played_at: None,
             position_ms: 0,
             first_seen_at: 1,
+            is_new: false,
         };
         let model = PodcastsModel::new();
         model.replace(vec![row]);

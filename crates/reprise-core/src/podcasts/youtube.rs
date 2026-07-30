@@ -1,5 +1,7 @@
 //! YouTube podcast provider projections.
 
+use chrono::NaiveDate;
+
 use super::ytdlp::{YtDlpPlaylist, YtDlpVideo};
 
 const WATCH_URL_PREFIX: &str = "https://www.youtube.com/watch?v=";
@@ -22,6 +24,7 @@ pub struct YoutubeEpisode {
     /// Flat playlists do not provide a dependable publication date.
     pub published_at: Option<i64>,
     pub duration_secs: Option<i64>,
+    pub image_url: Option<String>,
 }
 
 pub fn project_playlist(playlist: YtDlpPlaylist) -> YoutubeListing {
@@ -36,9 +39,19 @@ pub fn project_video(video: YtDlpVideo) -> YoutubeEpisode {
         audio_url: format!("{WATCH_URL_PREFIX}{}", video.id),
         guid: video.id,
         title: video.title,
-        published_at: None,
+        published_at: video
+            .timestamp
+            .or_else(|| upload_date_timestamp(video.upload_date.as_deref())),
         duration_secs: video.duration_secs,
+        image_url: video.image_url,
     }
+}
+
+fn upload_date_timestamp(value: Option<&str>) -> Option<i64> {
+    NaiveDate::parse_from_str(value?, "%Y%m%d")
+        .ok()?
+        .and_hms_opt(0, 0, 0)
+        .map(|date| date.and_utc().timestamp())
 }
 
 #[must_use]
@@ -72,11 +85,17 @@ mod tests {
                     id: "second".to_owned(),
                     title: "Second in playlist order".to_owned(),
                     duration_secs: None,
+                    timestamp: None,
+                    upload_date: None,
+                    image_url: None,
                 },
                 YtDlpVideo {
                     id: "first".to_owned(),
                     title: "First in playlist order".to_owned(),
                     duration_secs: Some(75),
+                    timestamp: Some(1_700_000_000),
+                    upload_date: None,
+                    image_url: Some("https://img.test/first.jpg".to_owned()),
                 },
             ],
         });
@@ -91,13 +110,15 @@ mod tests {
                     audio_url: "https://www.youtube.com/watch?v=second".to_owned(),
                     published_at: None,
                     duration_secs: None,
+                    image_url: None,
                 },
                 YoutubeEpisode {
                     guid: "first".to_owned(),
                     title: "First in playlist order".to_owned(),
                     audio_url: "https://www.youtube.com/watch?v=first".to_owned(),
-                    published_at: None,
+                    published_at: Some(1_700_000_000),
                     duration_secs: Some(75),
+                    image_url: Some("https://img.test/first.jpg".to_owned()),
                 },
             ]
         );
@@ -109,6 +130,9 @@ mod tests {
             id: "video-id".to_owned(),
             title: "Episode".to_owned(),
             duration_secs: Some(42),
+            timestamp: None,
+            upload_date: Some("20260730".to_owned()),
+            image_url: None,
         });
 
         assert_eq!(episode.guid, "video-id");
@@ -117,6 +141,7 @@ mod tests {
             "https://www.youtube.com/watch?v=video-id"
         );
         assert!(!episode.audio_url.contains("googlevideo"));
+        assert_eq!(episode.published_at, Some(1_785_369_600));
     }
 
     #[test]

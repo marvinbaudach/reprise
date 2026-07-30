@@ -21,6 +21,21 @@ pub(super) fn css() -> String {
 .reprise-podcast-episode-row {
   border-bottom: 1px solid alpha(currentColor, 0.06);
 }
+.reprise-podcast-episode-row:focus-visible {
+  outline: 2px solid alpha(@accent_color, 0.65);
+  outline-offset: -2px;
+}
+.reprise-podcast-episode-thumbnail {
+  border-radius: 6px;
+  background: alpha(currentColor, 0.08);
+}
+.reprise-podcast-episode-play-glyph {
+  min-width: 24px;
+  min-height: 24px;
+  border-radius: 999px;
+  color: white;
+  background: alpha(black, 0.58);
+}
 .reprise-podcast-source,
 .reprise-podcast-status-new,
 .reprise-podcast-status-resume,

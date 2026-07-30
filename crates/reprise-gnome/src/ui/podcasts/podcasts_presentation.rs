@@ -31,7 +31,7 @@ pub(super) struct Pill {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct SourceSummary {
     pub episode_count: usize,
-    pub unplayed_count: usize,
+    pub new_count: usize,
     pub downloaded_bytes: i64,
     pub latest_published_at: Option<i64>,
 }
@@ -54,10 +54,9 @@ pub(super) struct LibrarySummary {
 /// `G2`: a pure projection over the **unfiltered** group set — always the
 /// whole library, independent of the active filter, so the header keeps
 /// reading as an overview rather than jittering with every filter chip.
-/// "new" uses the same definition as the per-group facts line
-/// (`SourceSummary::unplayed_count`, i.e. `played_at.is_none()`, which
-/// includes in-progress "Resume" episodes) so the aggregate and the
-/// per-group counts never disagree about what counts as new.
+/// "new" uses the same discovery-time definition as the per-group facts
+/// line (`SourceSummary::new_count`) so playback never rewrites discovery
+/// history and both counts stay aligned.
 pub(super) fn library_summary(groups: &[SourceGroup]) -> LibrarySummary {
     let mut episodes = 0_usize;
     let mut new = 0_usize;
@@ -66,7 +65,7 @@ pub(super) fn library_summary(groups: &[SourceGroup]) -> LibrarySummary {
         new += group
             .episodes
             .iter()
-            .filter(|episode| episode.played_at.is_none())
+            .filter(|episode| episode.is_new)
             .count();
     }
     LibrarySummary {
@@ -82,10 +81,10 @@ pub(super) fn source_summary(
 ) -> SourceSummary {
     SourceSummary {
         episode_count: group.episodes.len(),
-        unplayed_count: group
+        new_count: group
             .episodes
             .iter()
-            .filter(|episode| episode.played_at.is_none())
+            .filter(|episode| episode.is_new)
             .count(),
         downloaded_bytes: group
             .episodes
@@ -133,7 +132,7 @@ pub(super) fn relative_date(timestamp: Option<i64>, today: NaiveDate) -> String 
         .and_then(|value| DateTime::<Utc>::from_timestamp(value, 0))
         .map(|value| value.with_timezone(&Local).date_naive())
     else {
-        return "—".to_owned();
+        return String::new();
     };
     if date == today {
         strings::text(strings::PODCAST_TODAY)
@@ -147,27 +146,56 @@ pub(super) fn relative_date(timestamp: Option<i64>, today: NaiveDate) -> String 
 }
 
 pub(super) fn duration(duration_secs: Option<i64>) -> String {
-    duration_secs.map_or_else(
-        || "—".to_owned(),
-        |seconds| {
-            let seconds = seconds.max(0);
-            format!("{}:{:02}", seconds / 3_600, (seconds % 3_600) / 60)
-        },
-    )
+    let Some(seconds) = duration_secs.filter(|seconds| *seconds >= 0) else {
+        return String::new();
+    };
+    if seconds < 60 {
+        strings::text(strings::PODCAST_DURATION_UNDER_MINUTE)
+    } else if seconds < 3_600 {
+        strings::podcast_duration_minutes(seconds / 60)
+    } else {
+        strings::podcast_duration_hours(seconds / 3_600, (seconds % 3_600) / 60)
+    }
 }
 
-pub(super) fn file_size(bytes: Option<i64>) -> String {
-    let Some(bytes) = bytes.filter(|bytes| *bytes >= 0) else {
-        return "—".to_owned();
-    };
+pub(super) fn file_size(bytes: Option<i64>) -> Option<String> {
+    let bytes = bytes.filter(|bytes| *bytes > 0)?;
     let bytes = bytes as f64;
     const MIB: f64 = 1_048_576.0;
     const GIB: f64 = 1_073_741_824.0;
     if bytes >= GIB {
-        format!("{:.1} GB", bytes / GIB)
+        Some(format!("{:.1} GB", bytes / GIB))
     } else {
-        format!("{:.1} MB", bytes / MIB)
+        Some(format!("{:.1} MB", bytes / MIB))
     }
+}
+
+pub(super) fn detail_line<'a>(parts: impl IntoIterator<Item = &'a str>) -> String {
+    parts
+        .into_iter()
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(" · ")
+}
+
+pub(super) fn author_line<'a>(title: &str, author: Option<&'a str>) -> Option<&'a str> {
+    let author = author.map(str::trim).filter(|author| !author.is_empty())?;
+    let normalized_title = title.trim().to_lowercase();
+    let normalized_author = author.to_lowercase();
+    if normalized_title == normalized_author {
+        return None;
+    }
+    if let Some(remainder) = normalized_title.strip_prefix(&normalized_author) {
+        if remainder
+            .chars()
+            .next()
+            .is_some_and(|character| !character.is_alphanumeric())
+        {
+            return None;
+        }
+    }
+    Some(author)
 }
 
 pub(super) fn source_pill(kind: PodcastKind) -> Pill {
@@ -185,23 +213,24 @@ pub(super) fn source_pill(kind: PodcastKind) -> Pill {
     }
 }
 
-pub(super) fn status_pill(row: &EpisodeRow) -> Pill {
+pub(super) fn status_pill(row: &EpisodeRow) -> Option<Pill> {
     match reprise_core::podcasts::status::derive(row.played_at, row.position_ms) {
-        EpisodeStatus::New => Pill {
+        EpisodeStatus::New if row.is_new => Some(Pill {
             label: strings::PODCAST_STATUS_NEW,
             icon: None,
             css_class: "reprise-podcast-status-new",
-        },
-        EpisodeStatus::Resume => Pill {
+        }),
+        EpisodeStatus::New => None,
+        EpisodeStatus::Resume => Some(Pill {
             label: strings::PODCAST_STATUS_RESUME,
             icon: None,
             css_class: "reprise-podcast-status-resume",
-        },
-        EpisodeStatus::Played => Pill {
+        }),
+        EpisodeStatus::Played => Some(Pill {
             label: strings::PODCAST_STATUS_PLAYED,
             icon: None,
             css_class: "reprise-podcast-status-played",
-        },
+        }),
     }
 }
 
@@ -281,6 +310,7 @@ mod tests {
             title: format!("Episode {id}"),
             show: if id == 3 { "Other" } else { "Show" }.into(),
             show_image_url: None,
+            image_url: None,
             kind,
             audio_url: "https://example.test/episode.mp3".into(),
             page_url: None,
@@ -291,6 +321,7 @@ mod tests {
             played_at: None,
             position_ms: 0,
             first_seen_at: id,
+            is_new: false,
         }
     }
 
@@ -303,15 +334,78 @@ mod tests {
             relative_date(Some(today_timestamp - 86_400), today),
             "Yesterday"
         );
-        assert_eq!(duration(Some(4_533)), "1:15");
-        assert_eq!(file_size(Some(41_943_040)), "40.0 MB");
+        assert_eq!(duration(Some(4_533)), "1 h 15");
+        assert_eq!(file_size(Some(41_943_040)), Some("40.0 MB".to_owned()));
         assert_eq!(source_pill(PodcastKind::Rss).label, "RSS");
         let mut episode = row(1, Some(today_timestamp), PodcastKind::Rss);
-        assert_eq!(status_pill(&episode).label, "New");
+        assert_eq!(status_pill(&episode), None);
+        episode.is_new = true;
+        assert_eq!(status_pill(&episode).map(|pill| pill.label), Some("New"));
         episode.position_ms = 10;
-        assert_eq!(status_pill(&episode).label, "Resume");
+        assert_eq!(status_pill(&episode).map(|pill| pill.label), Some("Resume"));
         episode.played_at = Some(1);
-        assert_eq!(status_pill(&episode).label, "Played");
+        assert_eq!(status_pill(&episode).map(|pill| pill.label), Some("Played"));
+    }
+
+    #[test]
+    fn duration_uses_unambiguous_minute_and_hour_boundaries() {
+        let cases = [
+            (None, ""),
+            (Some(-1), ""),
+            (Some(0), "< 1 min"),
+            (Some(59), "< 1 min"),
+            (Some(60), "1 min"),
+            (Some(3_599), "59 min"),
+            (Some(3_600), "1 h 00"),
+            (Some(7_500), "2 h 05"),
+        ];
+
+        for (value, expected) in cases {
+            assert_eq!(duration(value), expected, "duration {value:?}");
+        }
+    }
+
+    #[test]
+    fn file_size_omits_unknown_zero_and_negative_values() {
+        assert_eq!(file_size(None), None);
+        assert_eq!(file_size(Some(-1)), None);
+        assert_eq!(file_size(Some(0)), None);
+        assert_eq!(file_size(Some(1_048_576)), Some("1.0 MB".to_owned()));
+        assert_eq!(file_size(Some(1_073_741_824)), Some("1.0 GB".to_owned()));
+    }
+
+    #[test]
+    fn missing_dates_and_detail_parts_render_no_placeholders_or_empty_separators() {
+        let today = NaiveDate::from_ymd_opt(2026, 7, 26).unwrap();
+
+        assert_eq!(relative_date(None, today), "");
+        assert_eq!(
+            detail_line(["", "", strings::PODCAST_STATUS_NEW]),
+            strings::PODCAST_STATUS_NEW
+        );
+        assert_eq!(
+            detail_line(["Today", "", strings::PODCAST_STATUS_NEW]),
+            "Today · New"
+        );
+        assert_eq!(
+            strings::podcast_group_facts("15 episodes", 0, "", ""),
+            "15 episodes · 0 new"
+        );
+    }
+
+    #[test]
+    fn author_line_hides_title_prefixes_but_keeps_distinct_publishers() {
+        assert_eq!(author_line("The Daily", Some("The Daily")), None);
+        assert_eq!(
+            author_line("The Daily – News Briefing", Some("The Daily")),
+            None
+        );
+        assert_eq!(
+            author_line("The Daily", Some("The New York Times")),
+            Some("The New York Times")
+        );
+        assert_eq!(author_line("Artist Notes", Some("Art")), Some("Art"));
+        assert_eq!(author_line("Show", Some("   ")), None);
     }
 
     #[test]
@@ -371,8 +465,9 @@ mod tests {
     }
 
     #[test]
-    fn src_5_source_summary_counts_unplayed_downloads_and_latest_episode() {
+    fn src_5_source_summary_counts_new_downloads_and_latest_episode() {
         let mut first = row(1, Some(10), PodcastKind::Rss);
+        first.is_new = true;
         first.downloaded_bytes = Some(2_000_000);
         let mut second = row(2, Some(20), PodcastKind::Rss);
         second.downloaded_bytes = Some(3_000_000);
@@ -395,7 +490,7 @@ mod tests {
             source_summary(&group, &states),
             SourceSummary {
                 episode_count: 2,
-                unplayed_count: 1,
+                new_count: 1,
                 downloaded_bytes: 5_000_000,
                 latest_published_at: Some(20),
             }
@@ -403,16 +498,14 @@ mod tests {
     }
 
     /// `G2` (design 6a): the header line's "new" figure must sum the same
-    /// unplayed definition as the per-group facts (`played_at.is_none()`,
-    /// so a "Resume" episode still counts as new) across every group, not
-    /// just the "New" status — this would go red if the count were narrowed
-    /// to `EpisodeStatus::New` only, or if it summed distinct show titles
-    /// instead of episodes.
+    /// discovery definition as the per-group facts (`is_new`) across every
+    /// group, independent of playback status.
     #[test]
     fn pod_9_library_summary_counts_shows_episodes_and_new_across_all_groups() {
         let mut played = row(1, Some(10), PodcastKind::Rss);
         played.played_at = Some(30);
-        let unplayed = row(2, Some(20), PodcastKind::Rss);
+        let mut unplayed = row(2, Some(20), PodcastKind::Rss);
+        unplayed.is_new = true;
         let mut resuming = row(3, Some(15), PodcastKind::Rss);
         resuming.position_ms = 5_000;
         let group_a = SourceGroup {
@@ -441,7 +534,7 @@ mod tests {
             LibrarySummary {
                 shows: 2,
                 episodes: 3,
-                new: 2,
+                new: 1,
             }
         );
     }
@@ -456,7 +549,8 @@ mod tests {
     fn pod_9_filtered_children_keep_the_full_source_summary() {
         let mut played = row(1, Some(10), PodcastKind::Rss);
         played.played_at = Some(30);
-        let unplayed = row(2, Some(20), PodcastKind::Rss);
+        let mut unplayed = row(2, Some(20), PodcastKind::Rss);
+        unplayed.is_new = true;
         let group = SourceGroup {
             subscription_id: 7,
             title: "Show".into(),
@@ -478,7 +572,7 @@ mod tests {
 
         assert_eq!(rendered[0].group.episodes.len(), 1);
         assert_eq!(rendered[0].summary.episode_count, 2);
-        assert_eq!(rendered[0].summary.unplayed_count, 1);
+        assert_eq!(rendered[0].summary.new_count, 1);
         assert_eq!(rendered[0].summary.latest_published_at, Some(20));
     }
 

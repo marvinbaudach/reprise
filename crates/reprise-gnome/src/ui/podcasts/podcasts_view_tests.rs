@@ -44,12 +44,18 @@ fn subscribe_one_episode_of_kind(conn: &Db, kind: PodcastKind) -> i64 {
         &ParsedEpisode {
             guid: "episode".to_owned(),
             title: "Episode".to_owned(),
+            image_url: None,
             audio_url: "https://example.test/episode.mp3".to_owned(),
             page_url: None,
             published_at: None,
             duration_secs: None,
         },
-        1,
+        // Seen after the subscription was added (`added_at: 1`), so this
+        // episode counts as new. An episode first seen at the moment of
+        // subscribing is backlog and deliberately counts as `0 new`, which
+        // would make every "the count reaches the header" assertion below pass
+        // on a plain zero and stop proving anything.
+        2,
     )
     .unwrap()
     .unwrap()
@@ -297,6 +303,7 @@ fn pod_13_activating_the_retry_action_runs_a_fresh_download_attempt() {
         &ParsedEpisode {
             guid: "episode".to_owned(),
             title: "Episode".to_owned(),
+            image_url: None,
             // Loopback, nothing listening: a same-host connection refusal,
             // so this is fast and deterministic without touching the real
             // network.

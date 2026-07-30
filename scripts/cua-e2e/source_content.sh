@@ -78,12 +78,14 @@ FEED
 
   # The page lists shows, not episodes — the episode titles live one level in.
   # The counts are the stronger assertion anyway: a show's *name* could have
-  # come from the URL, but "1 show · 1 episode · 1 new" can only be true if
+  # come from the URL, but "1 show · 1 episode · 0 new" can only be true if
   # the fixture feed was parsed. Labels are matched exactly here, so these are
   # the elements' own strings rather than fragments of the row's aggregate.
   snapshot=$(wait_for_label "$APP_PID" "$WINDOW_ID" "Systems Weekly" sp-show)
-  assert_snapshot_contains "$snapshot" "1 show · 1 episode · 1 new"
-  assert_snapshot_contains "$snapshot" "1 episode · 1 new · latest — · 0.0 MB"
+  assert_snapshot_contains "$snapshot" "1 show · 1 episode · 0 new"
+  assert_snapshot_contains "$snapshot" "1 episode · 0 new"
+  assert_snapshot_absent "$snapshot" "0.0 MB"
+  assert_snapshot_absent "$snapshot" "latest —"
   assert_snapshot_absent "$snapshot" "No podcasts yet"
 
   # Subscribing leaves the dialog up, so close it before the phase ends.
@@ -161,7 +163,7 @@ YTDLP
   # Two entries in, two episodes out: the count can only come from the fake
   # binary's answer, where the channel's name could have come from the URL.
   snapshot=$(wait_for_label "$APP_PID" "$WINDOW_ID" "Reprise Test Channel" sy-channel)
-  assert_snapshot_contains "$snapshot" "1 channel · 2 episodes · 2 new"
+  assert_snapshot_contains "$snapshot" "1 channel · 2 episodes · 0 new"
   assert_snapshot_absent "$snapshot" "No channels yet"
 
   cua_click_label "$APP_PID" "$WINDOW_ID" "Cancel" sy-dialog-close
