@@ -11,10 +11,11 @@ use reprise_core::device_sync::settings::{
 };
 use reprise_core::device_sync::targets::save_target;
 use reprise_core::device_sync::{
-    load_mirror_playlist_snapshots, plan_preparation, project_storage, project_sync_page,
-    resolve_latest_per_channel, select_episodes, DeviceSelection, EpisodeSelectionCandidate,
-    EpisodeSelectionResult, EpisodeSelectionRule, PreparationFacts, SelectionSource, SyncPageInput,
-    SyncTarget, SyncTargetKind, TransferProfile,
+    load_everything_playlist_snapshot, load_mirror_playlist_snapshots, plan_preparation,
+    project_storage, project_sync_page, resolve_latest_per_channel, select_episodes,
+    DeviceSelection, EpisodeSelectionCandidate, EpisodeSelectionResult, EpisodeSelectionRule,
+    PreparationFacts, SelectionSource, SyncPageInput, SyncTarget, SyncTargetKind, TransferProfile,
+    EVERYTHING_SOURCE,
 };
 
 use super::*;
@@ -314,7 +315,7 @@ impl DeviceSyncRuntime {
             .ok_or_else(|| "device is not connected".to_string())?;
         let selected = match &settings.selection {
             DeviceSelection::Sources(sources) => sources.clone(),
-            DeviceSelection::EntireLibrary => Vec::new(),
+            DeviceSelection::EntireLibrary => vec![EVERYTHING_SOURCE],
         };
         let (
             mut projection,
@@ -335,9 +336,21 @@ impl DeviceSyncRuntime {
             let managed_track_count = files.len();
             let playlist_inventory =
                 load_device_playlists(conn, device_id).map_err(|error| error.to_string())?;
-            let playlists =
+            let mut playlists =
                 load_mirror_playlist_snapshots(conn).map_err(|error| error.to_string())?;
-            let projection = project_sync_page(SyncPageInput {
+            if selected.contains(&EVERYTHING_SOURCE) {
+                playlists.push(
+                    load_everything_playlist_snapshot(conn).map_err(|error| error.to_string())?,
+                );
+            }
+            let (frozen_smart_sources, frozen_smart_track_ids) =
+                apply_frozen_smart_snapshots(conn, device_id, &selected, &mut playlists)?;
+            let published_frozen_sources = playlist_inventory
+                .iter()
+                .filter(|playlist| frozen_smart_sources.contains(&playlist.source))
+                .map(|playlist| playlist.source.clone())
+                .collect::<HashSet<_>>();
+            let mut projection = project_sync_page(SyncPageInput {
                 selected,
                 playlists,
                 profile: settings.profile,
@@ -346,6 +359,14 @@ impl DeviceSyncRuntime {
                 managed_files,
                 storage: storage.clone(),
             });
+            reprise_core::device_sync::apply_frozen_smart_playlist_policy(
+                &mut projection.plan,
+                &published_frozen_sources,
+                &frozen_smart_track_ids,
+            );
+            projection.page.changes.removals = projection.plan.remove.len();
+            projection.page.changes.playlist_writes = projection.plan.playlist_writes.len();
+            projection.page.changes.transfer_bytes = projection.plan.transfer_bytes;
             let podcast_inventory = as_podcast_device_files(&podcast_files);
             let youtube_inventory = as_podcast_device_files(&youtube_files);
             // Both kinds are queried once and each `build_plan` call filters
@@ -526,7 +547,7 @@ impl DeviceSyncRuntime {
     }
 
     #[cfg_attr(not(test), allow(dead_code))]
-    fn settings_for_update(&self, device_id: &str) -> Result<DeviceSettings, String> {
+    pub(super) fn settings_for_update(&self, device_id: &str) -> Result<DeviceSettings, String> {
         self.device_states
             .borrow()
             .iter()

@@ -22,6 +22,7 @@ fn no_op_content_actions() -> ContentPanelActions {
         set_prepare_before_sync: Rc::new(|_| {}),
         scan_device: Rc::new(|| {}),
         open_folder_browser: Rc::new(|_, _| {}),
+        open_picker: Rc::new(|_, _| {}),
     }
 }
 

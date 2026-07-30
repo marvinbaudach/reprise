@@ -764,6 +764,8 @@ mod compact_tests;
 mod content_transfer_tests;
 #[path = "device_sync_inflight_tests.rs"]
 mod inflight_tests;
+#[path = "device_sync_picker_tests.rs"]
+mod picker_tests;
 #[path = "device_sync_planned_tests.rs"]
 mod planned_tests;
 #[path = "device_sync_podcast_removal_tests.rs"]

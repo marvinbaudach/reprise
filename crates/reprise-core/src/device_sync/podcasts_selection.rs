@@ -46,7 +46,8 @@ pub fn query_selection_candidates_for_device(
         "SELECT e.id, e.subscription_id, s.kind,
                 COALESCE(e.published_at, e.first_seen_at),
                 e.played_at IS NOT NULL,
-                e.downloaded_path IS NOT NULL
+                e.downloaded_path IS NOT NULL,
+                e.wanted_on_device
          FROM podcast_episodes e
          JOIN podcast_subscriptions s ON s.id = e.subscription_id
          JOIN podcast_subscription_devices d
@@ -63,11 +64,12 @@ pub fn query_selection_candidates_for_device(
             row.get::<_, i64>(3)?,
             row.get::<_, bool>(4)?,
             row.get::<_, bool>(5)?,
+            row.get::<_, bool>(6)?,
         ))
     })?;
     let mut candidates = Vec::new();
     for row in rows {
-        let (episode_id, group_id, kind, published_at, played, has_file) = row?;
+        let (episode_id, group_id, kind, published_at, played, has_file, pinned) = row?;
         let Some(source) = source_from_kind(&kind) else {
             continue;
         };
@@ -86,6 +88,7 @@ pub fn query_selection_candidates_for_device(
                 } else {
                     LocalAvailability::Missing
                 },
+                pinned,
             },
         ));
     }

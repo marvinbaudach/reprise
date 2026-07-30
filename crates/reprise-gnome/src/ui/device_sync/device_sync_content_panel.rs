@@ -53,6 +53,7 @@ pub(super) struct ContentPanelActions {
     /// `MTP-31` (design 7d): opens the target-folder browser for one
     /// category, relative to the widget that triggered it.
     pub(super) open_folder_browser: Rc<dyn Fn(SyncTargetKind, gtk4::Widget)>,
+    pub(super) open_picker: Rc<dyn Fn(SyncTargetKind, gtk4::Widget)>,
 }
 
 impl ContentPanelActions {
@@ -114,6 +115,13 @@ impl ContentPanelActions {
                 super::device_sync_target_browser::present(&parent, &runtime, &device_id, kind);
             }) as Rc<dyn Fn(SyncTargetKind, gtk4::Widget)>
         };
+        let open_picker = {
+            let runtime = runtime.clone();
+            let device_id = device_id.to_string();
+            Rc::new(move |kind, parent: gtk4::Widget| {
+                super::device_sync_picker::present(&parent, &runtime, &device_id, kind);
+            }) as Rc<dyn Fn(SyncTargetKind, gtk4::Widget)>
+        };
         Self {
             set_target_enabled,
             set_target_cap,
@@ -122,6 +130,7 @@ impl ContentPanelActions {
             set_prepare_before_sync,
             scan_device,
             open_folder_browser,
+            open_picker,
         }
     }
 }
@@ -405,6 +414,20 @@ fn build_category_row(
     path_row.append(&path);
     path_row.append(&browse_button);
     let selection = detail("");
+    let choose_button = gtk4::Button::with_label(&device_sync_strings::text(
+        device_sync_strings::CHOOSE_CONTENT,
+    ));
+    choose_button.add_css_class("flat");
+    {
+        let open_picker = actions.open_picker.clone();
+        choose_button.connect_clicked(move |button| {
+            open_picker(kind, button.clone().upcast());
+        });
+    }
+    let selection_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+    selection.set_hexpand(true);
+    selection_row.append(&selection);
+    selection_row.append(&choose_button);
     let size_label = detail("");
 
     // `MTP-37`: the cap becomes a real editable control here. Playlists
@@ -446,7 +469,7 @@ fn build_category_row(
     labels.set_hexpand(true);
     labels.append(&title);
     labels.append(&path_row);
-    labels.append(&selection);
+    labels.append(&selection_row);
     labels.append(&size_label);
     labels.append(&cap_row);
 
@@ -684,13 +707,13 @@ mod tests {
     /// summaries report — is exercised end to end (DB through
     /// `phone_sync::selection_summary` through the live runtime) by
     /// `device_sync_selection_summary_tests::
-    /// mtp_37_the_youtube_selection_summary_changes_when_a_channel_is_enabled_for_this_device`
+    /// mtp_50_the_youtube_selection_summary_changes_when_a_channel_is_enabled_for_this_device`
     /// and its podcast counterpart. This test only pins the exact copy
     /// [`selection_summary_text`] renders for given inputs — it must not be
     /// the only coverage the label has, the same gap that let the old
     /// "Rules from Preferences" stub go unnoticed.
     #[test]
-    fn mtp_37_selection_summary_renders_live_youtube_and_podcast_counts() {
+    fn mtp_50_selection_summary_renders_live_youtube_and_podcast_counts() {
         assert_eq!(
             selection_summary_text(
                 SyncTargetKind::YoutubeAudio,
@@ -738,7 +761,7 @@ mod tests {
 
     /// `E-9`: `0` is the real, resolved value the pipeline hands the panel
     /// for "unlimited" — never `usize::MAX`, which is a display-only
-    /// sentinel (see `mtp_37_selection_summary_renders_live_youtube_and_podcast_counts`).
+    /// sentinel (see `mtp_50_selection_summary_renders_live_youtube_and_podcast_counts`).
     /// Before this fix, `0` fell through to the "latest {n} each" branch and
     /// rendered "latest 0 each", reading as "no episodes selected" when in
     /// fact every episode of every selected channel was. Assert the literal
@@ -764,7 +787,7 @@ mod tests {
     }
 
     #[test]
-    fn mtp_37_cap_gib_conversion_round_trips_and_treats_zero_as_unlimited() {
+    fn mtp_50_cap_gib_conversion_round_trips_and_treats_zero_as_unlimited() {
         assert_eq!(cap_bytes_to_gib(None), 0.0);
         assert_eq!(cap_bytes_to_gib(Some(8 * GIB_BYTES)), 8.0);
         assert_eq!(cap_bytes_to_gib(Some(4 * GIB_BYTES)), 4.0);

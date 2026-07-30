@@ -607,8 +607,18 @@ fn resolve_selection_track_ids_in(
     conn: &Connection,
     selection: &DeviceSelection,
 ) -> Result<Vec<i64>, rusqlite::Error> {
+    if selection == &DeviceSelection::EntireLibrary {
+        return crate::queries::query_track_ids_in(
+            conn,
+            &ViewSource::Library,
+            "title",
+            "asc",
+            "",
+            &[],
+        );
+    }
     let DeviceSelection::Sources(sources) = selection else {
-        return Ok(Vec::new());
+        unreachable!("the entire-library case returned above");
     };
     let mut seen = HashSet::new();
     let mut selected = Vec::new();
@@ -628,7 +638,7 @@ fn resolve_selection_track_ids_in(
 
 fn encode_selection(selection: &DeviceSelection) -> Result<String, serde_json::Error> {
     match selection {
-        DeviceSelection::EntireLibrary => serde_json::to_string(&Vec::<String>::new()),
+        DeviceSelection::EntireLibrary => serde_json::to_string("entire_library"),
         DeviceSelection::Sources(sources) => {
             let values = sources
                 .iter()
@@ -642,7 +652,7 @@ fn encode_selection(selection: &DeviceSelection) -> Result<String, serde_json::E
 fn decode_selection(value: &str) -> Result<DeviceSelection, serde_json::Error> {
     let decoded = serde_json::from_str::<serde_json::Value>(value)?;
     if decoded.as_str() == Some("entire_library") {
-        return Ok(DeviceSelection::Sources(Vec::new()));
+        return Ok(DeviceSelection::EntireLibrary);
     }
     let Some(values) = decoded.as_array() else {
         return Err(unknown_selection_error());
@@ -677,6 +687,9 @@ fn sqlite_size(value: u64) -> Result<i64, DeviceSettingsError> {
 }
 
 fn source_columns(source: &SelectionSource) -> (&'static str, i64) {
+    if source == &super::selection::EVERYTHING_SOURCE {
+        return ("library", 0);
+    }
     match source {
         SelectionSource::Playlist(id) => ("playlist", *id),
         SelectionSource::Smart(id) => ("smart", *id),
@@ -685,6 +698,7 @@ fn source_columns(source: &SelectionSource) -> (&'static str, i64) {
 
 fn decode_source_columns(kind: &str, id: i64) -> Result<SelectionSource, rusqlite::Error> {
     let source = match kind {
+        "library" if id == 0 => super::selection::EVERYTHING_SOURCE,
         "playlist" if id > 0 => SelectionSource::Playlist(id),
         "smart" if id > 0 => SelectionSource::Smart(id),
         _ => {

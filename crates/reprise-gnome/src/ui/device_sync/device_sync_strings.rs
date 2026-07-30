@@ -58,6 +58,35 @@ fn formatted(message: &str, values: &[(&str, &str)]) -> String {
 
 pub const SPACE_UNKNOWN: &str = N_!("Available space unknown");
 pub const SYNC_PROGRESS: &str = N_!("Synchronization Progress");
+pub const CHOOSE_CONTENT: &str = N_!("Choose…");
+pub const CHOOSE_CATEGORY: &str = N_!("Choose {category}");
+pub const FILTER_SYNC_CONTENT: &str = N_!("Filter sync content");
+pub const SELECT_ALL: &str = N_!("Select all");
+pub const CANCEL: &str = N_!("Cancel");
+pub const SAVE: &str = N_!("Save");
+pub const EVERYTHING: &str = N_!("Everything");
+pub const SMART_PLAYLIST: &str = N_!("Smart playlist");
+pub const KEEP_SMART_PLAYLISTS_UPDATED: &str = N_!("Keep smart playlists up to date on each sync");
+pub const YOUTUBE_PICKER_RULE: &str = N_!("Per channel, sync the latest N episodes");
+pub const PODCAST_PICKER_RULE: &str = N_!("Per show, sync unplayed only");
+pub const LATEST_EPISODES_PER_CHANNEL: &str = N_!("Latest episodes per channel, 0 for unlimited");
+pub const PODCAST_REMOVAL_NOTE: &str = N_!(
+    "Once played on the phone, an episode is removed on the next sync — this is a standing rule."
+);
+pub const ON_DISK: &str = N_!("On disk");
+pub const NEEDS_DOWNLOAD: &str = N_!("Needs download");
+pub const PREPARATION_LINK: &str = N_!("Downloaded in the preparation phase");
+pub const SHOW_PREPARATION_PHASE: &str = N_!("Show the preparation phase on the device page");
+pub const SELECTED_BY_RULE: &str = N_!("Selected by the rule");
+pub const UNAVAILABLE_PLAYLIST: &str = N_!("Unavailable playlist");
+pub const DURATION_MINUTES: &str = N_!("{minutes} min");
+pub const RESUME_MINUTES: &str = N_!("{minutes} min in");
+pub const GROUP_COUNTER: &str = N_!("{selected} of {total}");
+pub const PICKER_FOOTER: &str = N_!("{selected} selected · {content} · {size}");
+pub const PICKER_NEEDS_DOWNLOAD: &str = N_!("{count} still need downloading · preparation phase");
+pub const TRACKS: &str = N_!("{count} tracks");
+pub const EPISODES: &str = N_!("{count} episodes");
+pub const UNKNOWN_SIZES: &str = N_!("+ {count} unknown sizes");
 
 pub fn available_space(bytes: Option<u64>) -> String {
     bytes.map_or_else(
@@ -161,6 +190,67 @@ fn remaining_hint(bytes_done: u64, bytes_total: u64) -> Option<String> {
 
 pub fn file_size(bytes: u64) -> String {
     format_bytes(bytes)
+}
+
+pub fn group_counter(selected: usize, total: usize) -> String {
+    formatted(
+        GROUP_COUNTER,
+        &[
+            ("selected", &selected.to_string()),
+            ("total", &total.to_string()),
+        ],
+    )
+}
+
+pub fn resume_minutes(position_ms: i64) -> String {
+    formatted(
+        RESUME_MINUTES,
+        &[("minutes", &(position_ms.max(0) / 60_000).to_string())],
+    )
+}
+
+pub fn duration_minutes(duration_secs: i64) -> String {
+    formatted(
+        DURATION_MINUTES,
+        &[(
+            "minutes",
+            &duration_secs
+                .max(0)
+                .saturating_add(59)
+                .div_euclid(60)
+                .to_string(),
+        )],
+    )
+}
+
+pub fn picker_footer(selected: usize, content: &str, size: &str) -> String {
+    formatted(
+        PICKER_FOOTER,
+        &[
+            ("selected", &selected.to_string()),
+            ("content", content),
+            ("size", size),
+        ],
+    )
+}
+
+pub fn picker_needs_download(count: usize) -> String {
+    formatted(PICKER_NEEDS_DOWNLOAD, &[("count", &count.to_string())])
+}
+
+pub fn choose_category(category: &str) -> String {
+    formatted(CHOOSE_CATEGORY, &[("category", category)])
+}
+
+pub fn picker_content(count: usize, tracks: bool) -> String {
+    formatted(
+        if tracks { TRACKS } else { EPISODES },
+        &[("count", &count.to_string())],
+    )
+}
+
+pub fn unknown_sizes(count: usize) -> String {
+    formatted(UNKNOWN_SIZES, &[("count", &count.to_string())])
 }
 
 /// Design 7a: "Playlists" / "YouTube audio" / "Podcast episodes" — the

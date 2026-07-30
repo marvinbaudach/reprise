@@ -646,7 +646,7 @@ human. Rationale for changes lives in the git history.
   surface. That gap is tracked, not hidden behind `[planned]` — the
   persistence, the default, and the live wiring this rule actually decides
   are real and tested (`mtp_36_…`), which is what `[active]` asserts here.
-- **MTP-37** [active] [core] [gtk] — Replaces `MTP-28`'s addendum of 2026-07-28
+- **MTP-37** [replaced by MTP-50] [core] [gtk] — Replaces `MTP-28`'s addendum of 2026-07-28
   (Turn 6/7 plan `E-6`, `E-8`): Reprise supports exactly one MTP device
   (`E-5`), so the sole justification for a global Preferences surface — "applies
   to all devices, no device picker in the settings" — falls away. The device
@@ -846,6 +846,15 @@ human. Rationale for changes lives in the git history.
   the persisted row and deletes nothing, on the device or locally. A local
   rename keeps two identical models distinguishable and is never written to
   the device.
+- **MTP-50** [active] [core] [gtk] — Replaces `MTP-37`. The device page's
+  Content rows each offer "Choose…", opening one shared picker pattern: a rule
+  row, a grouped checkbox list, a filter, "Select all", and a live footer. The
+  picker and the library's right-click "Include in phone sync" are two ways to
+  operate **one** decision — they write the same flag and neither holds a copy
+  of it. An individual tick overrides the rule and stays pinned when the
+  episode ages out of the rule's window. Playlists additionally offer
+  "Everything" and "Keep smart playlists up to date on each sync", because a
+  smart playlist not re-evaluated at sync time freezes on the phone.
 
 ## F. Settings & modals
 

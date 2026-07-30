@@ -64,6 +64,51 @@ use std::collections::{HashMap, HashSet};
 use crate::connectivity::LocalAvailability;
 
 use super::page::SyncPlaylistRow;
+use super::{
+    ManagedRemoval, MirrorPlan, MirrorPlaylistSnapshot, MirrorTrack, SelectionSource, SyncTrack,
+};
+
+/// Transient source identity for the picker’s “Everything” projection and
+/// its published M3U inventory. The durable selection is the existing
+/// `DeviceSelection::EntireLibrary`; this value is never encoded as a smart
+/// playlist selection.
+pub const EVERYTHING_SOURCE: SelectionSource = SelectionSource::Smart(i64::MIN);
+
+#[must_use]
+pub fn everything_playlist_snapshot(tracks: Vec<SyncTrack>) -> MirrorPlaylistSnapshot {
+    MirrorPlaylistSnapshot {
+        source: EVERYTHING_SOURCE,
+        name: "Everything".to_string(),
+        entries: tracks.into_iter().map(MirrorTrack::Available).collect(),
+    }
+}
+
+/// Applies the transfer consequences of smart-playlist copies that have
+/// already been published and are configured to stay frozen. Their M3U files
+/// are not rewritten, and tracks named by their captured membership are not
+/// removed. Unrelated authoritative cleanup continues normally.
+pub fn apply_frozen_smart_playlist_policy(
+    plan: &mut MirrorPlan,
+    frozen_sources: &HashSet<SelectionSource>,
+    frozen_track_ids: &HashSet<i64>,
+) {
+    if frozen_sources.is_empty() {
+        return;
+    }
+    plan.playlist_writes
+        .retain(|write| !frozen_sources.contains(&write.source));
+    plan.remove.retain(|removal| match removal {
+        ManagedRemoval::Inventory(file) => !frozen_track_ids.contains(&file.track_id),
+        ManagedRemoval::Orphan(_) => true,
+    });
+    plan.bytes_freed = plan.remove.iter().fold(0_u64, |sum, removal| {
+        let bytes = match removal {
+            ManagedRemoval::Inventory(file) => file.device_size,
+            ManagedRemoval::Orphan(file) => file.size_bytes,
+        };
+        sum.saturating_add(bytes)
+    });
+}
 
 /// "N of M selected · K tracks" — Playlists' selection summary (design:
 /// "2 of 4 selected · 278 tracks"). `available_total`/`selected` only ever
@@ -136,6 +181,49 @@ pub struct PodcastSelectionSummary {
     pub shows_total: usize,
 }
 
+/// One row's contribution to the picker footer. The GTK layer supplies the
+/// row facts and chooses the localized noun ("tracks" or "episodes"); the
+/// arithmetic and missing-size honesty stay toolkit-neutral here.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PickerSelectionItem {
+    pub selected: bool,
+    pub content_count: usize,
+    pub size_bytes: Option<u64>,
+    pub needs_download: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PickerSelectionSummary {
+    pub selected_items: usize,
+    pub content_count: usize,
+    pub known_size_bytes: u64,
+    pub unknown_size_items: usize,
+    pub needs_download: usize,
+}
+
+#[must_use]
+pub fn summarize_picker_selection(items: &[PickerSelectionItem]) -> PickerSelectionSummary {
+    items.iter().filter(|item| item.selected).fold(
+        PickerSelectionSummary::default(),
+        |mut summary, item| {
+            summary.selected_items = summary.selected_items.saturating_add(1);
+            summary.content_count = summary.content_count.saturating_add(item.content_count);
+            match item.size_bytes {
+                Some(bytes) => {
+                    summary.known_size_bytes = summary.known_size_bytes.saturating_add(bytes);
+                }
+                None => {
+                    summary.unknown_size_items = summary.unknown_size_items.saturating_add(1);
+                }
+            }
+            if item.needs_download {
+                summary.needs_download = summary.needs_download.saturating_add(1);
+            }
+            summary
+        },
+    )
+}
+
 /// One episode considered for phone-sync selection — provider-neutral: an
 /// RSS episode and a YouTube video both reduce to this shape. `group_id` is
 /// the owning subscription/channel id.
@@ -146,6 +234,10 @@ pub struct EpisodeSelectionCandidate {
     pub published_at: i64,
     pub played: bool,
     pub local: LocalAvailability,
+    /// The same persistent `wanted_on_device` flag operated by an explicit
+    /// episode tick. A pin augments the category rule; it never replaces or
+    /// mirrors the rule state.
+    pub pinned: bool,
 }
 
 /// E2's per-category selection rule — what makes an episode "wanted" for a
@@ -269,11 +361,26 @@ fn latest_per_channel(
         // channel, which is exactly the "0 stops syncing" bug this rule
         // must not have.
         let latest = channel_latest.get(&channel_id).copied().unwrap_or(0);
-        if latest == 0 {
-            wanted.extend(episodes.into_iter().map(|c| c.episode_id));
+        let automatic = if latest == 0 {
+            episodes.len()
         } else {
-            wanted.extend(episodes.into_iter().take(latest).map(|c| c.episode_id));
-        }
+            latest.min(episodes.len())
+        };
+        let mut selected = episodes.iter().take(automatic).copied().collect::<Vec<_>>();
+        selected.extend(
+            episodes
+                .iter()
+                .skip(automatic)
+                .filter(|candidate| candidate.pinned)
+                .copied(),
+        );
+        selected.sort_by(|left, right| {
+            right
+                .published_at
+                .cmp(&left.published_at)
+                .then_with(|| right.episode_id.cmp(&left.episode_id))
+        });
+        wanted.extend(selected.into_iter().map(|candidate| candidate.episode_id));
     }
     wanted
 }
@@ -295,6 +402,7 @@ mod tests {
             published_at,
             played,
             local,
+            pinned: false,
         }
     }
 
@@ -508,3 +616,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "selection_picker_tests.rs"]
+mod picker_tests;

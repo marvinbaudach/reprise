@@ -780,6 +780,8 @@ mod compact;
 mod device_list;
 #[path = "device_sync_memory.rs"]
 mod memory;
+#[path = "device_sync_picker_runtime.rs"]
+mod picker;
 #[path = "device_sync_planned.rs"]
 mod planned;
 #[path = "device_sync_preparation.rs"]
@@ -787,6 +789,7 @@ mod preparation;
 #[path = "device_sync_target_actions.rs"]
 mod target_actions;
 
+pub(super) use picker::*;
 #[cfg(test)]
 pub(super) use planned::SyncStartError;
 #[cfg(test)]
