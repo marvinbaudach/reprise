@@ -31,7 +31,7 @@ pub(super) struct Pill {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct SourceSummary {
     pub episode_count: usize,
-    pub unplayed_count: usize,
+    pub new_count: usize,
     pub downloaded_bytes: i64,
     pub latest_published_at: Option<i64>,
 }
@@ -54,10 +54,9 @@ pub(super) struct LibrarySummary {
 /// `G2`: a pure projection over the **unfiltered** group set — always the
 /// whole library, independent of the active filter, so the header keeps
 /// reading as an overview rather than jittering with every filter chip.
-/// "new" uses the same definition as the per-group facts line
-/// (`SourceSummary::unplayed_count`, i.e. `played_at.is_none()`, which
-/// includes in-progress "Resume" episodes) so the aggregate and the
-/// per-group counts never disagree about what counts as new.
+/// "new" uses the same discovery-time definition as the per-group facts
+/// line (`SourceSummary::new_count`) so playback never rewrites discovery
+/// history and both counts stay aligned.
 pub(super) fn library_summary(groups: &[SourceGroup]) -> LibrarySummary {
     let mut episodes = 0_usize;
     let mut new = 0_usize;
@@ -66,7 +65,7 @@ pub(super) fn library_summary(groups: &[SourceGroup]) -> LibrarySummary {
         new += group
             .episodes
             .iter()
-            .filter(|episode| episode.played_at.is_none())
+            .filter(|episode| episode.is_new)
             .count();
     }
     LibrarySummary {
@@ -82,10 +81,10 @@ pub(super) fn source_summary(
 ) -> SourceSummary {
     SourceSummary {
         episode_count: group.episodes.len(),
-        unplayed_count: group
+        new_count: group
             .episodes
             .iter()
-            .filter(|episode| episode.played_at.is_none())
+            .filter(|episode| episode.is_new)
             .count(),
         downloaded_bytes: group
             .episodes
@@ -214,23 +213,24 @@ pub(super) fn source_pill(kind: PodcastKind) -> Pill {
     }
 }
 
-pub(super) fn status_pill(row: &EpisodeRow) -> Pill {
+pub(super) fn status_pill(row: &EpisodeRow) -> Option<Pill> {
     match reprise_core::podcasts::status::derive(row.played_at, row.position_ms) {
-        EpisodeStatus::New => Pill {
+        EpisodeStatus::New if row.is_new => Some(Pill {
             label: strings::PODCAST_STATUS_NEW,
             icon: None,
             css_class: "reprise-podcast-status-new",
-        },
-        EpisodeStatus::Resume => Pill {
+        }),
+        EpisodeStatus::New => None,
+        EpisodeStatus::Resume => Some(Pill {
             label: strings::PODCAST_STATUS_RESUME,
             icon: None,
             css_class: "reprise-podcast-status-resume",
-        },
-        EpisodeStatus::Played => Pill {
+        }),
+        EpisodeStatus::Played => Some(Pill {
             label: strings::PODCAST_STATUS_PLAYED,
             icon: None,
             css_class: "reprise-podcast-status-played",
-        },
+        }),
     }
 }
 
@@ -321,6 +321,7 @@ mod tests {
             played_at: None,
             position_ms: 0,
             first_seen_at: id,
+            is_new: false,
         }
     }
 
@@ -337,11 +338,13 @@ mod tests {
         assert_eq!(file_size(Some(41_943_040)), Some("40.0 MB".to_owned()));
         assert_eq!(source_pill(PodcastKind::Rss).label, "RSS");
         let mut episode = row(1, Some(today_timestamp), PodcastKind::Rss);
-        assert_eq!(status_pill(&episode).label, "New");
+        assert_eq!(status_pill(&episode), None);
+        episode.is_new = true;
+        assert_eq!(status_pill(&episode).map(|pill| pill.label), Some("New"));
         episode.position_ms = 10;
-        assert_eq!(status_pill(&episode).label, "Resume");
+        assert_eq!(status_pill(&episode).map(|pill| pill.label), Some("Resume"));
         episode.played_at = Some(1);
-        assert_eq!(status_pill(&episode).label, "Played");
+        assert_eq!(status_pill(&episode).map(|pill| pill.label), Some("Played"));
     }
 
     #[test]
@@ -462,8 +465,9 @@ mod tests {
     }
 
     #[test]
-    fn src_5_source_summary_counts_unplayed_downloads_and_latest_episode() {
+    fn src_5_source_summary_counts_new_downloads_and_latest_episode() {
         let mut first = row(1, Some(10), PodcastKind::Rss);
+        first.is_new = true;
         first.downloaded_bytes = Some(2_000_000);
         let mut second = row(2, Some(20), PodcastKind::Rss);
         second.downloaded_bytes = Some(3_000_000);
@@ -486,7 +490,7 @@ mod tests {
             source_summary(&group, &states),
             SourceSummary {
                 episode_count: 2,
-                unplayed_count: 1,
+                new_count: 1,
                 downloaded_bytes: 5_000_000,
                 latest_published_at: Some(20),
             }
@@ -494,16 +498,14 @@ mod tests {
     }
 
     /// `G2` (design 6a): the header line's "new" figure must sum the same
-    /// unplayed definition as the per-group facts (`played_at.is_none()`,
-    /// so a "Resume" episode still counts as new) across every group, not
-    /// just the "New" status — this would go red if the count were narrowed
-    /// to `EpisodeStatus::New` only, or if it summed distinct show titles
-    /// instead of episodes.
+    /// discovery definition as the per-group facts (`is_new`) across every
+    /// group, independent of playback status.
     #[test]
     fn pod_9_library_summary_counts_shows_episodes_and_new_across_all_groups() {
         let mut played = row(1, Some(10), PodcastKind::Rss);
         played.played_at = Some(30);
-        let unplayed = row(2, Some(20), PodcastKind::Rss);
+        let mut unplayed = row(2, Some(20), PodcastKind::Rss);
+        unplayed.is_new = true;
         let mut resuming = row(3, Some(15), PodcastKind::Rss);
         resuming.position_ms = 5_000;
         let group_a = SourceGroup {
@@ -532,7 +534,7 @@ mod tests {
             LibrarySummary {
                 shows: 2,
                 episodes: 3,
-                new: 2,
+                new: 1,
             }
         );
     }
@@ -547,7 +549,8 @@ mod tests {
     fn pod_9_filtered_children_keep_the_full_source_summary() {
         let mut played = row(1, Some(10), PodcastKind::Rss);
         played.played_at = Some(30);
-        let unplayed = row(2, Some(20), PodcastKind::Rss);
+        let mut unplayed = row(2, Some(20), PodcastKind::Rss);
+        unplayed.is_new = true;
         let group = SourceGroup {
             subscription_id: 7,
             title: "Show".into(),
@@ -569,7 +572,7 @@ mod tests {
 
         assert_eq!(rendered[0].group.episodes.len(), 1);
         assert_eq!(rendered[0].summary.episode_count, 2);
-        assert_eq!(rendered[0].summary.unplayed_count, 1);
+        assert_eq!(rendered[0].summary.new_count, 1);
         assert_eq!(rendered[0].summary.latest_published_at, Some(20));
     }
 

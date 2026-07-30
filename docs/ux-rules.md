@@ -3346,8 +3346,10 @@ listening statistics.
   feature.
 - **POD-1** [active] [core] — Episode status is a pure derivation:
   Played exactly when `played_at` is set, otherwise Resume when
-  `position_ms > 0`, otherwise New. An episode ending sets Played and
-  clears the position.
+  `position_ms > 0`, otherwise unstarted. The visible New pill is a
+  separate discovery fact (`first_seen_at > subscription.added_at`), not
+  another spelling of unplayed; an unstarted backlog episode therefore has
+  no status pill. An episode ending sets Played and clears the position.
 - **POD-2** [active] [core] — RSS is the data API:
   enclosure/guid/pubDate/itunes:duration; the GUID — or, failing that,
   the enclosure URL, and for YouTube the video ID — is the sole
@@ -3400,11 +3402,14 @@ listening statistics.
 - **POD-9** [active] [core] [gtk] — Within each show grouped by stable
   subscription ID, and within each channel, episodes are ordered by date
   descending with the status semantics from POD-1; the group row shows the
-  total and unplayed counts, the newest episode, and the local data volume.
+  total and new counts, the newest episode, and the local data volume. New
+  means `first_seen_at > subscription.added_at`: the first successful fetch
+  writes its backlog with `first_seen_at = added_at`, while later discoveries
+  use their refresh time. Playback never rewrites this discovery fact.
   **Addendum (`G2`, design 6a):** above the grouped list, a page-level header
-  line ("4 shows · 41 episodes · 7 new") restates the same total/unplayed
+  line ("4 shows · 41 episodes · 7 new") restates the same total/new
   definition as a library-wide sum — number of subscribed shows, total
-  episode count, and the unplayed ("new") count, all computed over the
+  episode count, and the new count, all computed over the
   unfiltered list so the header reads as a stable overview instead of
   jittering with the active filter chip. The pure projection is
   `podcasts_presentation::library_summary`; while a filter is active the

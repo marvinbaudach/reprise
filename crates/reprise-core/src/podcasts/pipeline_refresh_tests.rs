@@ -92,6 +92,41 @@ fn feed_response(title: &str, episode_count: usize, etag: Option<&str>) -> Respo
 }
 
 #[test]
+fn first_fetch_backlog_is_not_new_and_next_refresh_marks_only_new_arrivals() {
+    let conn = conn();
+    let id = add_subscription(conn.conn(), "https://example.test/feed", false);
+    let feed = FakeFeed {
+        responses: RefCell::new(vec![
+            Err(PodcastError::Transport("fixture offline".to_owned())),
+            Ok(feed_response("Show", 15, None)),
+            Ok(feed_response("Show", 16, None)),
+        ]),
+        ..FakeFeed::default()
+    };
+    let directory = tempfile::tempdir().unwrap();
+
+    let failed = refresh_to_root(&conn, &feed, &FakeYoutube, 5, true, directory.path()).unwrap();
+    assert_eq!(failed.failed, 1);
+
+    refresh_to_root(&conn, &feed, &FakeYoutube, 10, true, directory.path()).unwrap();
+    let backlog = super::super::query::episodes_for_subscription(&conn, id).unwrap();
+    assert_eq!(backlog.len(), 15);
+    assert!(backlog.iter().all(|episode| !episode.is_new));
+    assert!(backlog.iter().all(|episode| episode.first_seen_at == 1));
+
+    refresh_to_root(&conn, &feed, &FakeYoutube, 20, true, directory.path()).unwrap();
+    let refreshed = super::super::query::episodes_for_subscription(&conn, id).unwrap();
+    assert_eq!(refreshed.iter().filter(|episode| episode.is_new).count(), 1);
+    assert_eq!(
+        refreshed
+            .iter()
+            .find(|episode| episode.is_new)
+            .map(|episode| episode.guid.as_str()),
+        Some("g15")
+    );
+}
+
+#[test]
 fn conditional_cycle_stores_headers_then_only_bumps_not_modified_state() {
     let conn = conn();
     let id = add_subscription(conn.conn(), "https://example.test/feed", false);

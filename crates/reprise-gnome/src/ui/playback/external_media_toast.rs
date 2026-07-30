@@ -76,6 +76,7 @@ mod tests {
             played_at: None,
             position_ms: 5_000,
             first_seen_at: 10,
+            is_new: false,
         };
 
         assert!(matches!(

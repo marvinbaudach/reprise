@@ -202,13 +202,8 @@ pub fn podcast_duration_hours(hours: i64, minutes: i64) -> String {
     )
 }
 
-pub fn podcast_group_facts(
-    episodes: &str,
-    unplayed: usize,
-    latest: &str,
-    downloaded: &str,
-) -> String {
-    let new_count = formatted(PODCAST_NEW_COUNT, &[("count", &unplayed.to_string())]);
+pub fn podcast_group_facts(episodes: &str, new: usize, latest: &str, downloaded: &str) -> String {
+    let new_count = formatted(PODCAST_NEW_COUNT, &[("count", &new.to_string())]);
     let latest =
         (!latest.trim().is_empty()).then(|| formatted(PODCAST_LATEST, &[("date", latest)]));
     [Some(episodes.to_owned()), Some(new_count), latest, {

@@ -401,7 +401,7 @@ pub(crate) fn episode_in(
         "SELECT e.id, e.subscription_id, e.guid, e.title, s.title,
                 s.image_url, e.image_url, s.kind, e.audio_url, e.page_url, e.published_at,
                 e.duration_secs, e.downloaded_path, e.downloaded_bytes, e.played_at,
-                e.position_ms, e.first_seen_at
+                e.position_ms, e.first_seen_at, e.first_seen_at > s.added_at
          FROM podcast_episodes e
          JOIN podcast_subscriptions s ON s.id = e.subscription_id
          WHERE e.id = ?1 AND s.removed_at IS NULL AND e.removed_at IS NULL",
@@ -669,6 +669,7 @@ pub(crate) fn episode_from_row(row: &rusqlite::Row<'_>) -> Result<EpisodeRow, ru
         played_at: row.get(14)?,
         position_ms: row.get(15)?,
         first_seen_at: row.get(16)?,
+        is_new: row.get(17)?,
     })
 }
 

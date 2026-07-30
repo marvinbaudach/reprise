@@ -118,10 +118,18 @@ fn pill_column(view: &gtk4::ColumnView, title: &str, source: bool, is_playing: &
         };
         let row = object.row();
         let pill = if source {
-            source_pill(row.kind)
+            Some(source_pill(row.kind))
         } else {
             status_pill(&row)
         };
+        let Some(pill) = pill else {
+            icon.set_visible(false);
+            label.set_text("");
+            cell.set_css_classes(&[]);
+            cell.set_visible(false);
+            return;
+        };
+        cell.set_visible(true);
         icon.set_icon_name(pill.icon);
         icon.set_visible(pill.icon.is_some());
         label.set_text(&strings::text(pill.label));
@@ -286,6 +294,7 @@ mod tests {
             played_at: None,
             position_ms: 0,
             first_seen_at: 1,
+            is_new: false,
         }
     }
 
