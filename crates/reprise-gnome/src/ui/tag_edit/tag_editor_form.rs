@@ -16,10 +16,10 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 use libadwaita as adw;
+use reprise_core::db::Db;
 use reprise_core::library::tag_edit::MixedValue;
 use reprise_core::library::tag_edit_session::{TagEditSession, TagField};
 use reprise_core::queries::autocomplete::AutocompleteColumn;
-use rusqlite::Connection;
 
 use crate::ui::autocomplete_entry::AutocompleteEntry;
 use crate::ui::strings;
@@ -101,7 +101,7 @@ pub(in crate::ui) struct TagEditorForm {
 impl TagEditorForm {
     pub(in crate::ui) fn build(
         mode: EditorMode,
-        conn: &Rc<RefCell<Connection>>,
+        conn: &Rc<Db>,
         tracks: &[(i64, PathBuf)],
         bitrates: &[Option<u32>],
         session: &Rc<RefCell<TagEditSession>>,

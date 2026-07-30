@@ -15,7 +15,7 @@ fn counts_as_play_matches_the_scrobble_threshold() {
 #[test]
 fn genre_artist_rows_exclude_blank_genres() {
     let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    crate::db::migrate_connection(&conn).unwrap();
     for (id, genre) in [(1, "Deathcore"), (2, "  ")] {
         conn.execute(
             "INSERT INTO tracks \
@@ -41,7 +41,7 @@ fn genre_artist_rows_exclude_blank_genres() {
 #[test]
 fn genre_artist_rows_aggregate_tracks_for_the_same_genre_artist() {
     let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    crate::db::migrate_connection(&conn).unwrap();
     for (id, path, played_at, ms_played) in [
         (1, "/music/a.flac", 100, 40_000),
         (2, "/music/z.flac", 101, 60_000),

@@ -7,9 +7,9 @@ use std::time::Duration;
 
 use gtk4::glib;
 use gtk4::prelude::*;
+use reprise_core::db::Db;
 use reprise_core::queries::{self, BrowseFacet, BrowseFilter, BrowseValue};
 use reprise_core::view_source::ViewSource;
-use rusqlite::Connection;
 
 use super::browse_chooser::{
     browse_popup_min_height, build_chooser, chooser_row, load_values, wire_chooser, FACET_PAGE,
@@ -210,7 +210,7 @@ pub struct BrowseBar {
     /// so its activation is distinguished from a real facet.
     chooser_ai_row_index: Cell<Option<usize>>,
     result_count: Cell<Option<(usize, usize)>>,
-    conn: Rc<RefCell<Connection>>,
+    conn: Rc<Db>,
     on_changed: RefCell<Option<OnChanged>>,
     on_search_cleared: RefCell<Option<OnVoid>>,
     on_clear_all: RefCell<Option<OnVoid>>,
@@ -218,7 +218,7 @@ pub struct BrowseBar {
 }
 
 impl BrowseBar {
-    pub fn new(conn: Rc<RefCell<Connection>>) -> Rc<Self> {
+    pub fn new(conn: Rc<Db>) -> Rc<Self> {
         let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 10);
         root.set_margin_top(6);
         root.set_margin_bottom(6);
@@ -280,7 +280,7 @@ impl BrowseBar {
         root.append(&clear_all);
 
         let initial_exclude_ai =
-            reprise_core::library::settings::get_bool(&conn.borrow(), EXCLUDE_AI_KEY, false)
+            reprise_core::library::settings::get_bool(&conn, EXCLUDE_AI_KEY, false)
                 .unwrap_or(false);
         let bar = Rc::new(Self {
             root,
@@ -352,7 +352,7 @@ impl BrowseBar {
     pub(in crate::ui) fn clear_exclude_ai(&self) {
         self.exclude_ai.set(false);
         if let Err(error) =
-            reprise_core::library::settings::set_bool(&self.conn.borrow(), EXCLUDE_AI_KEY, false)
+            reprise_core::library::settings::set_bool(&self.conn, EXCLUDE_AI_KEY, false)
         {
             tracing::warn!(%error, "could not clear the AI-exclude filter state");
         }
@@ -361,7 +361,7 @@ impl BrowseBar {
     /// Whether the "Hide AI music" filter is offered here: Library-only and
     /// gated on the experimental switch (INST-11).
     fn ai_filter_available(&self) -> bool {
-        self.is_library.get() && crate::ui::experimental::experimental_enabled(&self.conn.borrow())
+        self.is_library.get() && crate::ui::experimental::experimental_enabled(&self.conn)
     }
 
     /// Toggles the sticky AI-exclude filter and reloads (via the browse-changed
@@ -373,7 +373,7 @@ impl BrowseBar {
         }
         self.exclude_ai.set(value);
         if let Err(error) =
-            reprise_core::library::settings::set_bool(&self.conn.borrow(), EXCLUDE_AI_KEY, value)
+            reprise_core::library::settings::set_bool(&self.conn, EXCLUDE_AI_KEY, value)
         {
             tracing::warn!(%error, "could not persist the AI-exclude filter state");
         }
@@ -654,8 +654,8 @@ impl BrowseBar {
     pub(super) fn show_values(&self, facet: BrowseFacet) {
         let filter = self.filter();
         let values = {
-            let conn = self.conn.borrow();
-            load_values(&conn, facet, &filter)
+            let conn = &self.conn;
+            load_values(conn, facet, &filter)
         };
         self.chooser_facet.set(Some(facet));
         *self.chooser_values.borrow_mut() = values;
@@ -690,8 +690,8 @@ impl BrowseBar {
     fn select_raw(self: &Rc<Self>, facet: BrowseFacet, value: &str) -> bool {
         let filter = self.filter();
         let found = {
-            let conn = self.conn.borrow();
-            load_values(&conn, facet, &filter)
+            let conn = &self.conn;
+            load_values(conn, facet, &filter)
                 .iter()
                 .any(|candidate| candidate.value == value)
         };
@@ -759,9 +759,9 @@ fn schedule_smoke_step(
         let sort = shared.sort.borrow().clone();
         let filter = shared.filter.borrow().clone();
         let ids = {
-            let conn = shared.conn.borrow();
+            let conn = &shared.conn;
             queries::query_track_ids_browsed(
-                &conn,
+                conn,
                 &reprise_core::view_source::ViewSource::Library,
                 &sort.field,
                 &sort.dir,

@@ -6,9 +6,8 @@
 //! they narrow every query but do not participate in the cascade, so their
 //! value lists reflect all *other* active facets.
 
-use rusqlite::Connection;
-
 use super::clauses::PRESENT;
+use crate::db::Db;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct BrowseFilter {
@@ -135,10 +134,11 @@ fn value_list_filter(facet: BrowseFacet, filter: &BrowseFilter) -> BrowseFilter 
 }
 
 pub fn query_browse_values(
-    conn: &Connection,
+    db: &Db,
     facet: BrowseFacet,
     filter: &BrowseFilter,
 ) -> Result<Vec<BrowseValue>, rusqlite::Error> {
+    let conn = db.conn();
     let FacetSql {
         select,
         group,
@@ -223,9 +223,9 @@ mod tests {
         assert!(!sql.contains(hostile));
     }
 
-    fn seeded_facets() -> Connection {
-        let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
+    fn seeded_facets() -> crate::db::Db {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        let conn = db.conn();
         // `year` is nullable and `rating` is NOT NULL DEFAULT 0; row 5 leaves
         // both at their "unknown" edge (NULL year, rating 0).
         for (id, artist, album, genre, year, rating) in [
@@ -251,18 +251,18 @@ mod tests {
             )
             .unwrap();
         }
-        conn
+        db
     }
 
     #[test]
     fn artist_values_are_constrained_by_genre() {
-        let conn = seeded_facets();
+        let db = seeded_facets();
         let filter = BrowseFilter {
             genre: Some("Rock".into()),
             ..BrowseFilter::default()
         };
         assert_eq!(
-            query_browse_values(&conn, BrowseFacet::Artist, &filter).unwrap(),
+            query_browse_values(&db, BrowseFacet::Artist, &filter).unwrap(),
             vec![
                 BrowseValue {
                     value: "A".into(),
@@ -278,7 +278,7 @@ mod tests {
 
     #[test]
     fn album_values_are_constrained_by_genre_and_artist() {
-        let conn = seeded_facets();
+        let db = seeded_facets();
         let filter = BrowseFilter {
             genre: Some("Rock".into()),
             artist: Some("A".into()),
@@ -286,7 +286,7 @@ mod tests {
             ..BrowseFilter::default()
         };
         assert_eq!(
-            query_browse_values(&conn, BrowseFacet::Album, &filter).unwrap(),
+            query_browse_values(&db, BrowseFacet::Album, &filter).unwrap(),
             vec![BrowseValue {
                 value: "Stage".into(),
                 count: 2
@@ -296,9 +296,9 @@ mod tests {
 
     #[test]
     fn empty_metadata_is_returned_as_typed_empty_value() {
-        let conn = seeded_facets();
+        let db = seeded_facets();
         assert!(
-            query_browse_values(&conn, BrowseFacet::Genre, &BrowseFilter::default())
+            query_browse_values(&db, BrowseFacet::Genre, &BrowseFilter::default())
                 .unwrap()
                 .contains(&BrowseValue {
                     value: String::new(),
@@ -309,9 +309,9 @@ mod tests {
 
     #[test]
     fn year_values_are_distinct_text_numbers_ordered_ascending_without_nulls() {
-        let conn = seeded_facets();
+        let db = seeded_facets();
         assert_eq!(
-            query_browse_values(&conn, BrowseFacet::Year, &BrowseFilter::default()).unwrap(),
+            query_browse_values(&db, BrowseFacet::Year, &BrowseFilter::default()).unwrap(),
             vec![
                 BrowseValue {
                     value: "1999".into(),
@@ -327,9 +327,9 @@ mod tests {
 
     #[test]
     fn rating_values_include_zero_and_are_ordered_numerically() {
-        let conn = seeded_facets();
+        let db = seeded_facets();
         assert_eq!(
-            query_browse_values(&conn, BrowseFacet::Rating, &BrowseFilter::default()).unwrap(),
+            query_browse_values(&db, BrowseFacet::Rating, &BrowseFilter::default()).unwrap(),
             vec![
                 BrowseValue {
                     value: "0".into(),
@@ -353,7 +353,7 @@ mod tests {
 
     #[test]
     fn year_value_list_reflects_other_active_facets_but_not_year_itself() {
-        let conn = seeded_facets();
+        let db = seeded_facets();
         // Genre=Rock keeps rows 1,2,3; the standalone year selection is
         // ignored when listing years, but genre still narrows the counts.
         let filter = BrowseFilter {
@@ -362,7 +362,7 @@ mod tests {
             ..BrowseFilter::default()
         };
         assert_eq!(
-            query_browse_values(&conn, BrowseFacet::Year, &filter).unwrap(),
+            query_browse_values(&db, BrowseFacet::Year, &filter).unwrap(),
             vec![
                 BrowseValue {
                     value: "1999".into(),

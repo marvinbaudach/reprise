@@ -1,12 +1,12 @@
 //! Display tests for the My Stats composer.
 
 use super::*;
+use reprise_core::db::Db;
 use reprise_core::library::stats_snapshot::ComparisonPresentation;
 use std::sync::{Arc, Mutex};
 
-fn view_and_conn() -> (StatsView, Rc<RefCell<Connection>>) {
-    let conn = Rc::new(RefCell::new(reprise_core::db::open(None).unwrap()));
-    reprise_core::db::migrate(&conn.borrow()).unwrap();
+fn view_and_conn() -> (StatsView, Rc<Db>) {
+    let conn = Rc::new(crate::test_db::open().unwrap());
     let loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
     (StatsView::new(loader), conn)
 }
@@ -70,7 +70,7 @@ fn stats_6c_fresh_library_without_counters_keeps_plain_empty_state() {
 fn stats_6c_imported_counters_do_not_change_the_empty_period_state() {
     gtk4::init().unwrap();
     let (view, conn) = view_and_conn();
-    seed_imported_plays(&conn.borrow(), 194);
+    seed_imported_plays(&conn, 194);
 
     view.wire_year_selector(&conn);
 
@@ -85,7 +85,7 @@ fn stats_6c_imported_counters_do_not_change_the_empty_period_state() {
 fn stats_6c_empty_period_keeps_the_period_selector_available() {
     gtk4::init().unwrap();
     let (view, conn) = view_and_conn();
-    seed_play_at(&conn.borrow(), now_unix() - 60 * 24 * 60 * 60);
+    seed_play_at(&conn, now_unix() - 60 * 24 * 60 * 60);
     view.wire_year_selector(&conn);
 
     let last_30_days = view
@@ -128,7 +128,7 @@ fn stats_6c_empty_period_keeps_the_period_selector_available() {
 fn stats_6c_empty_state_disappears_when_real_events_exist() {
     gtk4::init().unwrap();
     let (view, conn) = view_and_conn();
-    seed_imported_plays(&conn.borrow(), 194);
+    seed_imported_plays(&conn, 194);
     view.wire_year_selector(&conn);
     assert_eq!(
         view.page_stack.visible_child_name().as_deref(),
@@ -136,7 +136,7 @@ fn stats_6c_empty_state_disappears_when_real_events_exist() {
     );
 
     for seconds_ago in 0..5 {
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute(
                 "INSERT INTO listen_events (track_id, played_at, ms_played) \
                  VALUES (1, ?1, 60000)",
@@ -161,7 +161,7 @@ fn stats_6c_empty_state_disappears_when_real_events_exist() {
     assert_eq!(snapshot.hero.plays, 5);
     assert_eq!(snapshot.top_tracks[0].play_count, 5);
     assert_eq!(
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .query_row("SELECT play_count FROM tracks WHERE id = 1", [], |row| {
                 row.get::<_, i64>(0)
             })
@@ -177,14 +177,14 @@ fn stats_6c_empty_state_disappears_when_real_events_exist() {
 fn stats_6a_unreadable_history_shows_the_failure_page() {
     gtk4::init().unwrap();
     let (view, conn) = view_and_conn();
-    seed_one_play(&conn.borrow());
+    seed_one_play(&conn);
     view.wire_year_selector(&conn);
     assert_eq!(
         view.page_stack.visible_child_name().as_deref(),
         Some("sections")
     );
 
-    conn.borrow()
+    crate::test_db::connection(&conn)
         .execute("DROP TABLE listen_events", [])
         .unwrap();
     view.refresh(&conn);
@@ -212,55 +212,60 @@ fn wait_for(milliseconds: u64) {
 /// One track with one play in the current period, so the page stack shows
 /// the sections instead of the empty state — a hidden stack page is never
 /// allocated, and an unallocated row cannot prove responsive wrapping.
-fn seed_one_play(conn: &Connection) {
-    seed_play_at(conn, now_unix());
+fn seed_one_play(db: &Db) {
+    seed_play_at(db, now_unix());
 }
 
-fn seed_plays(conn: &Connection, count: i64) {
-    seed_play_at(conn, now_unix());
+fn seed_plays(db: &Db, count: i64) {
+    seed_play_at(db, now_unix());
     for offset in 1..count {
-        conn.execute(
-            "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (1, ?1, 200000)",
-            rusqlite::params![now_unix() - offset],
-        )
-        .unwrap();
+        crate::test_db::connection(db)
+            .execute(
+                "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (1, ?1, 200000)",
+                rusqlite::params![now_unix() - offset],
+            )
+            .unwrap();
     }
 }
 
-fn seed_previous_year_play(conn: &Connection) {
-    conn.execute(
-        "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (1, ?1, 100000)",
-        rusqlite::params![now_unix() - 365 * 24 * 60 * 60],
-    )
-    .unwrap();
+fn seed_previous_year_play(db: &Db) {
+    crate::test_db::connection(db)
+        .execute(
+            "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (1, ?1, 100000)",
+            rusqlite::params![now_unix() - 365 * 24 * 60 * 60],
+        )
+        .unwrap();
 }
 
-fn seed_play_at(conn: &Connection, played_at: i64) {
-    conn.execute(
-        "INSERT INTO tracks \
+fn seed_play_at(db: &Db, played_at: i64) {
+    crate::test_db::connection(db)
+        .execute(
+            "INSERT INTO tracks \
          (id, path, title, artist, album, album_artist, genre, duration_ms, \
           play_count, added_at) \
          VALUES (1, '/music/1.flac', 'Track', 'Artist', 'Album', '', 'Rock', 300000, 1, 0)",
-        [],
-    )
-    .unwrap();
-    conn.execute(
-        "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (1, ?1, 200000)",
-        rusqlite::params![played_at],
-    )
-    .unwrap();
+            [],
+        )
+        .unwrap();
+    crate::test_db::connection(db)
+        .execute(
+            "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (1, ?1, 200000)",
+            rusqlite::params![played_at],
+        )
+        .unwrap();
 }
 
-fn seed_imported_plays(conn: &Connection, play_count: i64) {
-    conn.execute(
-        "INSERT INTO tracks \
+fn seed_imported_plays(db: &Db, play_count: i64) {
+    crate::test_db::connection(db)
+        .execute(
+            "INSERT INTO tracks \
          (id, path, title, artist, album, album_artist, genre, duration_ms, \
           play_count, added_at) \
          VALUES (1, '/music/imported.flac', 'Imported', 'Artist', 'Album', '', \
                  'Rock', 300000, ?1, 0)",
-        rusqlite::params![play_count],
-    )
-    .unwrap();
+            rusqlite::params![play_count],
+        )
+        .unwrap();
 }
 
 fn descendant_copy(root: &gtk4::Widget) -> Vec<String> {
@@ -283,7 +288,7 @@ fn descendant_copy(root: &gtk4::Widget) -> Vec<String> {
 
 fn presented(width: i32) -> (StatsView, adw::Window) {
     let (view, conn) = view_and_conn();
-    seed_one_play(&conn.borrow());
+    seed_one_play(&conn);
     view.wire_year_selector(&conn);
     assert_eq!(
         view.page_stack.visible_child_name().as_deref(),
@@ -355,7 +360,7 @@ fn stats_view_present_refresh_and_teardown_emit_no_criticals() {
 
     {
         let (view, conn) = view_and_conn();
-        seed_one_play(&conn.borrow());
+        seed_one_play(&conn);
         view.wire_year_selector(&conn);
         let callback_copy = view.clone();
         let window = adw::Window::builder()
@@ -476,8 +481,8 @@ fn stats_11_realistic_width_keeps_the_hero_copy_unellipsized() {
     gtk4::init().unwrap();
     crate::ui::style::install();
     let (view, conn) = view_and_conn();
-    seed_one_play(&conn.borrow());
-    seed_previous_year_play(&conn.borrow());
+    seed_one_play(&conn);
+    seed_previous_year_play(&conn);
     view.wire_year_selector(&conn);
 
     let window = adw::Window::builder()
@@ -521,7 +526,7 @@ fn stats_11a_new_badge_is_not_ellipsized_at_a_realistic_width() {
     gtk4::init().unwrap();
     crate::ui::style::install();
     let (view, conn) = view_and_conn();
-    seed_one_play(&conn.borrow());
+    seed_one_play(&conn);
     view.wire_year_selector(&conn);
 
     let window = adw::Window::builder()
@@ -553,8 +558,8 @@ fn stats_11a_new_badge_is_not_ellipsized_at_a_realistic_width() {
 fn stats_11_hero_renders_kpi_pairs_without_placeholders() {
     gtk4::init().unwrap();
     let (view, conn) = view_and_conn();
-    seed_one_play(&conn.borrow());
-    seed_previous_year_play(&conn.borrow());
+    seed_one_play(&conn);
+    seed_previous_year_play(&conn);
     view.wire_year_selector(&conn);
 
     assert!(view.render.hero.kpis.per_day.root.is_visible());
@@ -584,7 +589,7 @@ fn stats_11_hero_renders_kpi_pairs_without_placeholders() {
 fn stats_11a_zero_baseline_shows_new_badge_not_a_delta() {
     gtk4::init().unwrap();
     let (view, conn) = view_and_conn();
-    seed_one_play(&conn.borrow());
+    seed_one_play(&conn);
     view.wire_year_selector(&conn);
 
     assert!(view.render.header.new_badge.is_visible());
@@ -597,7 +602,7 @@ fn stats_11a_zero_baseline_shows_new_badge_not_a_delta() {
 fn stats_16_thin_history_swaps_chart_for_hint() {
     gtk4::init().unwrap();
     let (view, conn) = view_and_conn();
-    seed_plays(&conn.borrow(), 9);
+    seed_plays(&conn, 9);
     view.wire_year_selector(&conn);
 
     assert_eq!(
@@ -606,7 +611,7 @@ fn stats_16_thin_history_swaps_chart_for_hint() {
     );
     assert!(view.render.hero.subline.label().starts_with("9 plays"));
 
-    conn.borrow()
+    crate::test_db::connection(&conn)
         .execute(
             "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (1, ?1, 200000)",
             rusqlite::params![now_unix() - 10],

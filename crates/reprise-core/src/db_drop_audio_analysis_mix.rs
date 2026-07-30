@@ -42,7 +42,7 @@ mod tests {
     #[test]
     fn fresh_migrate_drops_retired_tables_and_reaches_current_schema() {
         let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
+        crate::db::migrate_connection(&conn).unwrap();
 
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
@@ -56,7 +56,7 @@ mod tests {
     #[test]
     fn migration_is_idempotent() {
         let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
+        crate::db::migrate_connection(&conn).unwrap();
         super::migrate_v27(&conn).unwrap();
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))

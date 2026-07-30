@@ -6,7 +6,7 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
-use rusqlite::Connection;
+use reprise_core::db::Db;
 
 use crate::ui::info_panel::InfoPanel;
 
@@ -91,10 +91,9 @@ impl ConstraintState {
 fn visibility(
     library: &adw::OverlaySplitView,
     now_playing: &Rc<InfoPanel>,
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
 ) -> PanelVisibility {
-    let persisted_collapsed =
-        reprise_core::library::settings::get_sidebar_collapsed(&conn.borrow());
+    let persisted_collapsed = reprise_core::library::settings::get_sidebar_collapsed(conn);
     PanelVisibility {
         library: effective_library_visibility(
             library.shows_sidebar(),
@@ -122,7 +121,7 @@ pub(in crate::ui) fn install(
     overlay: &adw::ToastOverlay,
     library: &adw::OverlaySplitView,
     now_playing: &Rc<InfoPanel>,
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
 ) {
     let condition = adw::BreakpointCondition::new_length(
         adw::BreakpointConditionLengthType::MaxWidth,

@@ -58,16 +58,17 @@ fn insert_untagged_present_track(conn: &rusqlite::Connection, path: &str) {
 
 #[test]
 fn query_import_errors_grouped_orders_groups_by_kind_declaration_order() {
-    let conn = crate::db::open_migrated(None).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     // Inserted out of declaration order on purpose, so the result can only
     // be right if the query itself imposes the order, not insertion order.
-    insert_error(&conn, "/x/io.flac", "io", 100, 100);
-    insert_error(&conn, "/x/unknown.flac", "unknown", 100, 100);
-    insert_error(&conn, "/x/tags.flac", "unreadable_tags", 100, 100);
-    insert_error(&conn, "/x/perm.flac", "permission_denied", 100, 100);
-    insert_error(&conn, "/x/fmt.flac", "unsupported_format", 100, 100);
+    insert_error(conn, "/x/io.flac", "io", 100, 100);
+    insert_error(conn, "/x/unknown.flac", "unknown", 100, 100);
+    insert_error(conn, "/x/tags.flac", "unreadable_tags", 100, 100);
+    insert_error(conn, "/x/perm.flac", "permission_denied", 100, 100);
+    insert_error(conn, "/x/fmt.flac", "unsupported_format", 100, 100);
 
-    let groups = query_import_errors_grouped(&conn).unwrap();
+    let groups = query_import_errors_grouped(&db).unwrap();
     let kinds: Vec<ImportErrorKind> = groups.iter().map(|(kind, _)| *kind).collect();
     assert_eq!(
         kinds,
@@ -86,12 +87,13 @@ fn query_import_errors_grouped_orders_groups_by_kind_declaration_order() {
 
 #[test]
 fn query_import_errors_grouped_orders_rows_within_a_group_by_last_seen_desc_then_path() {
-    let conn = crate::db::open_migrated(None).unwrap();
-    insert_error(&conn, "/x/b.flac", "io", 100, 200);
-    insert_error(&conn, "/x/a.flac", "io", 100, 200);
-    insert_error(&conn, "/x/older.flac", "io", 100, 50);
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    insert_error(conn, "/x/b.flac", "io", 100, 200);
+    insert_error(conn, "/x/a.flac", "io", 100, 200);
+    insert_error(conn, "/x/older.flac", "io", 100, 50);
 
-    let groups = query_import_errors_grouped(&conn).unwrap();
+    let groups = query_import_errors_grouped(&db).unwrap();
     assert_eq!(groups.len(), 1);
     let (kind, entries) = &groups[0];
     assert_eq!(*kind, ImportErrorKind::Io);
@@ -102,28 +104,30 @@ fn query_import_errors_grouped_orders_rows_within_a_group_by_last_seen_desc_then
 
 #[test]
 fn query_import_errors_grouped_a_kind_with_no_rows_is_absent_not_empty() {
-    let conn = crate::db::open_migrated(None).unwrap();
-    insert_error(&conn, "/x/a.flac", "io", 100, 100);
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    insert_error(conn, "/x/a.flac", "io", 100, 100);
 
-    let groups = query_import_errors_grouped(&conn).unwrap();
+    let groups = query_import_errors_grouped(&db).unwrap();
     assert_eq!(groups.len(), 1);
     assert_eq!(groups[0].0, ImportErrorKind::Io);
 }
 
 #[test]
 fn query_import_errors_grouped_empty_table_returns_empty_vec() {
-    let conn = crate::db::open_migrated(None).unwrap();
-    assert!(query_import_errors_grouped(&conn).unwrap().is_empty());
+    let db = crate::db::Db::open_in_memory().unwrap();
+    assert!(query_import_errors_grouped(&db).unwrap().is_empty());
 }
 
 #[test]
 fn is_hint_true_only_for_a_present_untagged_track_at_the_same_path() {
-    let conn = crate::db::open_migrated(None).unwrap();
-    insert_error(&conn, "/x/hint.flac", "unreadable_tags", 100, 100);
-    insert_untagged_present_track(&conn, "/x/hint.flac");
-    insert_error(&conn, "/x/no-track.flac", "unreadable_tags", 100, 100);
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    insert_error(conn, "/x/hint.flac", "unreadable_tags", 100, 100);
+    insert_untagged_present_track(conn, "/x/hint.flac");
+    insert_error(conn, "/x/no-track.flac", "unreadable_tags", 100, 100);
 
-    let groups = query_import_errors_grouped(&conn).unwrap();
+    let groups = query_import_errors_grouped(&db).unwrap();
     let (_, entries) = &groups[0];
     let hint = entries.iter().find(|e| e.path == "/x/hint.flac").unwrap();
     let no_track = entries
@@ -136,8 +140,9 @@ fn is_hint_true_only_for_a_present_untagged_track_at_the_same_path() {
 
 #[test]
 fn is_hint_false_for_a_tagged_track_at_the_same_path() {
-    let conn = crate::db::open_migrated(None).unwrap();
-    insert_error(&conn, "/x/tagged.flac", "unreadable_tags", 100, 100);
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    insert_error(conn, "/x/tagged.flac", "unreadable_tags", 100, 100);
     conn.execute(
         "INSERT INTO tracks (path, title, artist, added_at, untagged) \
          VALUES ('/x/tagged.flac', 'Real Title', 'Real Artist', 0, 0)",
@@ -145,14 +150,15 @@ fn is_hint_false_for_a_tagged_track_at_the_same_path() {
     )
     .unwrap();
 
-    let groups = query_import_errors_grouped(&conn).unwrap();
+    let groups = query_import_errors_grouped(&db).unwrap();
     assert!(!groups[0].1[0].is_hint);
 }
 
 #[test]
 fn is_hint_false_for_an_untagged_track_that_is_itself_missing() {
-    let conn = crate::db::open_migrated(None).unwrap();
-    insert_error(&conn, "/x/gone.flac", "unreadable_tags", 100, 100);
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    insert_error(conn, "/x/gone.flac", "unreadable_tags", 100, 100);
     conn.execute(
         "INSERT INTO tracks (path, title, artist, added_at, untagged, missing_since, missing_reason) \
          VALUES ('/x/gone.flac', 'stem', '', 0, 1, 100, 'deleted')",
@@ -160,7 +166,7 @@ fn is_hint_false_for_an_untagged_track_that_is_itself_missing() {
     )
     .unwrap();
 
-    let groups = query_import_errors_grouped(&conn).unwrap();
+    let groups = query_import_errors_grouped(&db).unwrap();
     assert!(
         !groups[0].1[0].is_hint,
         "a missing track's untagged row must not count as a live hint"
@@ -169,11 +175,12 @@ fn is_hint_false_for_an_untagged_track_that_is_itself_missing() {
 
 #[test]
 fn query_import_errors_grouped_excludes_dismissed_rows() {
-    let conn = crate::db::open_migrated(None).unwrap();
-    insert_error(&conn, "/x/active.flac", "io", 100, 100);
-    insert_dismissed_error(&conn, "/x/dismissed.flac", "io", 100, 100, 111, 222);
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    insert_error(conn, "/x/active.flac", "io", 100, 100);
+    insert_dismissed_error(conn, "/x/dismissed.flac", "io", 100, 100, 111, 222);
 
-    let groups = query_import_errors_grouped(&conn).unwrap();
+    let groups = query_import_errors_grouped(&db).unwrap();
     assert_eq!(groups.len(), 1);
     assert_eq!(groups[0].1.len(), 1);
     assert_eq!(groups[0].1[0].path, "/x/active.flac");
@@ -181,11 +188,12 @@ fn query_import_errors_grouped_excludes_dismissed_rows() {
 
 #[test]
 fn query_dismissed_import_errors_returns_only_dismissed_rows() {
-    let conn = crate::db::open_migrated(None).unwrap();
-    insert_error(&conn, "/x/active.flac", "io", 100, 100);
-    insert_dismissed_error(&conn, "/x/dismissed-a.flac", "io", 100, 200, 111, 222);
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    insert_error(conn, "/x/active.flac", "io", 100, 100);
+    insert_dismissed_error(conn, "/x/dismissed-a.flac", "io", 100, 200, 111, 222);
     insert_dismissed_error(
-        &conn,
+        conn,
         "/x/dismissed-b.flac",
         "unreadable_tags",
         100,
@@ -194,59 +202,63 @@ fn query_dismissed_import_errors_returns_only_dismissed_rows() {
         222,
     );
 
-    let dismissed = query_dismissed_import_errors(&conn).unwrap();
+    let dismissed = query_dismissed_import_errors(&db).unwrap();
     let paths: Vec<&str> = dismissed.iter().map(|e| e.path.as_str()).collect();
     assert_eq!(paths, vec!["/x/dismissed-b.flac", "/x/dismissed-a.flac"]);
 }
 
 #[test]
 fn query_dismissed_import_errors_empty_when_nothing_dismissed() {
-    let conn = crate::db::open_migrated(None).unwrap();
-    insert_error(&conn, "/x/active.flac", "io", 100, 100);
-    assert!(query_dismissed_import_errors(&conn).unwrap().is_empty());
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    insert_error(conn, "/x/active.flac", "io", 100, 100);
+    assert!(query_dismissed_import_errors(&db).unwrap().is_empty());
 }
 
 #[test]
 fn count_dismissed_import_errors_counts_only_dismissed_rows() {
-    let conn = crate::db::open_migrated(None).unwrap();
-    insert_error(&conn, "/x/active.flac", "io", 100, 100);
-    insert_dismissed_error(&conn, "/x/dismissed-a.flac", "io", 100, 100, 1, 2);
-    insert_dismissed_error(&conn, "/x/dismissed-b.flac", "io", 100, 100, 1, 2);
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    insert_error(conn, "/x/active.flac", "io", 100, 100);
+    insert_dismissed_error(conn, "/x/dismissed-a.flac", "io", 100, 100, 1, 2);
+    insert_dismissed_error(conn, "/x/dismissed-b.flac", "io", 100, 100, 1, 2);
 
-    assert_eq!(count_dismissed_import_errors(&conn).unwrap(), 2);
+    assert_eq!(count_dismissed_import_errors(&db).unwrap(), 2);
 }
 
 #[test]
 fn dismiss_import_error_moves_a_row_from_active_to_dismissed() {
-    let conn = crate::db::open_migrated(None).unwrap();
-    insert_error(&conn, "/x/a.flac", "io", 100, 100);
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    insert_error(conn, "/x/a.flac", "io", 100, 100);
 
-    dismiss_import_error(&conn, "/x/a.flac", 555, 4096).unwrap();
+    dismiss_import_error(&db, "/x/a.flac", 555, 4096).unwrap();
 
-    assert!(query_import_errors_grouped(&conn).unwrap().is_empty());
-    let dismissed = query_dismissed_import_errors(&conn).unwrap();
+    assert!(query_import_errors_grouped(&db).unwrap().is_empty());
+    let dismissed = query_dismissed_import_errors(&db).unwrap();
     assert_eq!(dismissed.len(), 1);
     assert_eq!(dismissed[0].path, "/x/a.flac");
 }
 
 #[test]
 fn dismiss_import_error_on_an_unknown_path_is_a_noop() {
-    let conn = crate::db::open_migrated(None).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
     // No row at all — must not error.
-    dismiss_import_error(&conn, "/x/never-existed.flac", 1, 2).unwrap();
-    assert_eq!(count_dismissed_import_errors(&conn).unwrap(), 0);
+    dismiss_import_error(&db, "/x/never-existed.flac", 1, 2).unwrap();
+    assert_eq!(count_dismissed_import_errors(&db).unwrap(), 0);
 }
 
 #[test]
 fn restore_import_error_nulls_only_the_dismissed_columns() {
-    let conn = crate::db::open_migrated(None).unwrap();
-    insert_error(&conn, "/x/a.flac", "io", 100, 200);
-    dismiss_import_error(&conn, "/x/a.flac", 555, 4096).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    insert_error(conn, "/x/a.flac", "io", 100, 200);
+    dismiss_import_error(&db, "/x/a.flac", 555, 4096).unwrap();
 
-    restore_import_error(&conn, "/x/a.flac").unwrap();
+    restore_import_error(&db, "/x/a.flac").unwrap();
 
-    assert_eq!(count_dismissed_import_errors(&conn).unwrap(), 0);
-    let groups = query_import_errors_grouped(&conn).unwrap();
+    assert_eq!(count_dismissed_import_errors(&db).unwrap(), 0);
+    let groups = query_import_errors_grouped(&db).unwrap();
     assert_eq!(groups.len(), 1);
     let entry = &groups[0].1[0];
     assert_eq!(entry.path, "/x/a.flac");
@@ -258,30 +270,32 @@ fn restore_import_error_nulls_only_the_dismissed_columns() {
 
 #[test]
 fn restore_import_error_on_an_unknown_path_is_a_noop() {
-    let conn = crate::db::open_migrated(None).unwrap();
-    restore_import_error(&conn, "/x/never-existed.flac").unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    restore_import_error(&db, "/x/never-existed.flac").unwrap();
 }
 
 #[test]
 fn dismiss_all_import_errors_dismisses_every_active_row_it_can_stat() {
-    let conn = crate::db::open_migrated(None).unwrap();
-    insert_error(&conn, "/x/a.flac", "io", 100, 100);
-    insert_error(&conn, "/x/b.flac", "unreadable_tags", 100, 100);
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    insert_error(conn, "/x/a.flac", "io", 100, 100);
+    insert_error(conn, "/x/b.flac", "unreadable_tags", 100, 100);
 
-    let dismissed_count = dismiss_all_import_errors(&conn, &|_path| Some((123, 456))).unwrap();
+    let dismissed_count = dismiss_all_import_errors(&db, &|_path| Some((123, 456))).unwrap();
 
     assert_eq!(dismissed_count, 2);
-    assert!(query_import_errors_grouped(&conn).unwrap().is_empty());
-    assert_eq!(count_dismissed_import_errors(&conn).unwrap(), 2);
+    assert!(query_import_errors_grouped(&db).unwrap().is_empty());
+    assert_eq!(count_dismissed_import_errors(&db).unwrap(), 2);
 }
 
 #[test]
 fn dismiss_all_import_errors_skips_a_path_that_fails_to_stat() {
-    let conn = crate::db::open_migrated(None).unwrap();
-    insert_error(&conn, "/x/present.flac", "io", 100, 100);
-    insert_error(&conn, "/x/vanished.flac", "io", 100, 100);
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    insert_error(conn, "/x/present.flac", "io", 100, 100);
+    insert_error(conn, "/x/vanished.flac", "io", 100, 100);
 
-    let dismissed_count = dismiss_all_import_errors(&conn, &|path| {
+    let dismissed_count = dismiss_all_import_errors(&db, &|path| {
         if path == "/x/vanished.flac" {
             None
         } else {
@@ -292,21 +306,22 @@ fn dismiss_all_import_errors_skips_a_path_that_fails_to_stat() {
 
     // Only the statable row counts as dismissed...
     assert_eq!(dismissed_count, 1);
-    assert_eq!(count_dismissed_import_errors(&conn).unwrap(), 1);
+    assert_eq!(count_dismissed_import_errors(&db).unwrap(), 1);
     // ...and the un-statable row is left exactly as active as it was before
     // the call, not silently dismissed with bogus/NULL stat values.
-    let groups = query_import_errors_grouped(&conn).unwrap();
+    let groups = query_import_errors_grouped(&db).unwrap();
     assert_eq!(groups.len(), 1);
     assert_eq!(groups[0].1[0].path, "/x/vanished.flac");
 }
 
 #[test]
 fn dismiss_all_import_errors_leaves_already_dismissed_rows_untouched() {
-    let conn = crate::db::open_migrated(None).unwrap();
-    insert_dismissed_error(&conn, "/x/a.flac", "io", 100, 100, 1, 2);
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    insert_dismissed_error(conn, "/x/a.flac", "io", 100, 100, 1, 2);
 
     let stat_calls = std::cell::RefCell::new(Vec::new());
-    let dismissed_count = dismiss_all_import_errors(&conn, &|path| {
+    let dismissed_count = dismiss_all_import_errors(&db, &|path| {
         stat_calls.borrow_mut().push(path.to_string());
         Some((999, 999))
     })
@@ -318,15 +333,15 @@ fn dismiss_all_import_errors_leaves_already_dismissed_rows_untouched() {
         "an already-dismissed row must not even be stat-ed again"
     );
     // Original stat fingerprint is preserved, not overwritten.
-    let dismissed = query_dismissed_import_errors(&conn).unwrap();
+    let dismissed = query_dismissed_import_errors(&db).unwrap();
     assert_eq!(dismissed.len(), 1);
 }
 
 #[test]
 fn dismiss_all_import_errors_is_a_noop_on_an_empty_table() {
-    let conn = crate::db::open_migrated(None).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
     assert_eq!(
-        dismiss_all_import_errors(&conn, &|_| Some((1, 2))).unwrap(),
+        dismiss_all_import_errors(&db, &|_| Some((1, 2))).unwrap(),
         0
     );
 }
@@ -342,38 +357,41 @@ fn dismiss_all_import_errors_is_a_noop_on_an_empty_table() {
 
 #[test]
 fn count_import_errors_active_includes_hints_but_excludes_dismissed() {
-    let conn = crate::db::open_migrated(None).unwrap();
-    insert_error(&conn, "/x/plain.flac", "io", 100, 100);
-    insert_error(&conn, "/x/hint.flac", "unreadable_tags", 100, 100);
-    insert_untagged_present_track(&conn, "/x/hint.flac");
-    insert_dismissed_error(&conn, "/x/dismissed.flac", "io", 100, 100, 1, 2);
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    insert_error(conn, "/x/plain.flac", "io", 100, 100);
+    insert_error(conn, "/x/hint.flac", "unreadable_tags", 100, 100);
+    insert_untagged_present_track(conn, "/x/hint.flac");
+    insert_dismissed_error(conn, "/x/dismissed.flac", "io", 100, 100, 1, 2);
 
     // The View-visibility count includes the hint (the row must stay
     // reachable) but not the dismissed row.
-    assert_eq!(count_import_errors_active(&conn).unwrap(), 2);
+    assert_eq!(count_import_errors_active(&db).unwrap(), 2);
 }
 
 #[test]
 fn count_import_errors_active_is_zero_on_an_empty_table() {
-    let conn = crate::db::open_migrated(None).unwrap();
-    assert_eq!(count_import_errors_active(&conn).unwrap(), 0);
+    let db = crate::db::Db::open_in_memory().unwrap();
+    assert_eq!(count_import_errors_active(&db).unwrap(), 0);
 }
 
 #[test]
 fn count_new_import_errors_counts_only_first_seen_after_last_viewed() {
-    let conn = crate::db::open_migrated(None).unwrap();
-    insert_error(&conn, "/x/old.flac", "io", 50, 50); // before last_viewed
-    insert_error(&conn, "/x/new-a.flac", "io", 150, 150); // after
-    insert_error(&conn, "/x/new-b.flac", "unreadable_tags", 200, 200); // after
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    insert_error(conn, "/x/old.flac", "io", 50, 50); // before last_viewed
+    insert_error(conn, "/x/new-a.flac", "io", 150, 150); // after
+    insert_error(conn, "/x/new-b.flac", "unreadable_tags", 200, 200); // after
 
-    assert_eq!(count_new_import_errors(&conn, 100).unwrap(), 2);
+    assert_eq!(count_new_import_errors(&db, 100).unwrap(), 2);
 }
 
 #[test]
 fn count_new_import_errors_boundary_equal_to_last_viewed_does_not_count() {
-    let conn = crate::db::open_migrated(None).unwrap();
-    insert_error(&conn, "/x/a.flac", "io", 100, 100);
-    assert_eq!(count_new_import_errors(&conn, 100).unwrap(), 0);
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    insert_error(conn, "/x/a.flac", "io", 100, 100);
+    assert_eq!(count_new_import_errors(&db, 100).unwrap(), 0);
 }
 
 /// A hint must NEVER badge, even when it is freshly seen — the app already
@@ -382,13 +400,14 @@ fn count_new_import_errors_boundary_equal_to_last_viewed_does_not_count() {
 /// visibility count) includes it; the badge must not.
 #[test]
 fn count_new_import_errors_excludes_hints_even_when_freshly_seen() {
-    let conn = crate::db::open_migrated(None).unwrap();
-    insert_error(&conn, "/x/hint.flac", "unreadable_tags", 200, 200);
-    insert_untagged_present_track(&conn, "/x/hint.flac");
-    insert_error(&conn, "/x/real.flac", "unreadable_tags", 200, 200);
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    insert_error(conn, "/x/hint.flac", "unreadable_tags", 200, 200);
+    insert_untagged_present_track(conn, "/x/hint.flac");
+    insert_error(conn, "/x/real.flac", "unreadable_tags", 200, 200);
 
     assert_eq!(
-        count_new_import_errors(&conn, 100).unwrap(),
+        count_new_import_errors(&db, 100).unwrap(),
         1,
         "only the non-hint row may badge"
     );
@@ -396,17 +415,19 @@ fn count_new_import_errors_excludes_hints_even_when_freshly_seen() {
 
 #[test]
 fn count_new_import_errors_excludes_dismissed_rows_even_when_freshly_seen() {
-    let conn = crate::db::open_migrated(None).unwrap();
-    insert_dismissed_error(&conn, "/x/dismissed.flac", "io", 200, 200, 1, 2);
-    assert_eq!(count_new_import_errors(&conn, 100).unwrap(), 0);
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    insert_dismissed_error(conn, "/x/dismissed.flac", "io", 200, 200, 1, 2);
+    assert_eq!(count_new_import_errors(&db, 100).unwrap(), 0);
 }
 
 #[test]
 fn count_new_import_errors_zero_last_viewed_treats_every_active_non_hint_row_as_new() {
-    let conn = crate::db::open_migrated(None).unwrap();
-    insert_error(&conn, "/x/a.flac", "io", 1, 1);
-    insert_error(&conn, "/x/b.flac", "io", 100_000, 100_000);
-    assert_eq!(count_new_import_errors(&conn, 0).unwrap(), 2);
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    insert_error(conn, "/x/a.flac", "io", 1, 1);
+    insert_error(conn, "/x/b.flac", "io", 100_000, 100_000);
+    assert_eq!(count_new_import_errors(&db, 0).unwrap(), 2);
 }
 
 /// The subtlest interaction in the badge design (see the task brief): when
@@ -424,9 +445,10 @@ fn count_new_import_errors_zero_last_viewed_treats_every_active_non_hint_row_as_
 /// dismissed episode's `first_seen`) must still count it as new.
 #[test]
 fn count_new_import_errors_recounts_a_reactivated_episode_as_new() {
-    let conn = crate::db::open_migrated(None).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     // Original episode: seen and dismissed long ago.
-    insert_dismissed_error(&conn, "/x/changed.flac", "io", 10, 10, 111, 222);
+    insert_dismissed_error(conn, "/x/changed.flac", "io", 10, 10, 111, 222);
     // The user last viewed the Import errors list well after that original
     // episode — a naive `first_seen > last_viewed` on the STALE first_seen
     // (10) would correctly stay silent here, but the row is about to become
@@ -443,7 +465,7 @@ fn count_new_import_errors_recounts_a_reactivated_episode_as_new() {
     .unwrap();
 
     assert_eq!(
-        count_new_import_errors(&conn, last_viewed).unwrap(),
+        count_new_import_errors(&db, last_viewed).unwrap(),
         1,
         "a reactivated episode (fresh first_seen) must badge again, even \
          though the user viewed the list after the ORIGINAL episode started"

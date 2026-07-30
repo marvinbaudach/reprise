@@ -4,6 +4,7 @@ use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
 
+use reprise_core::db::Db;
 use reprise_core::podcasts;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -139,7 +140,7 @@ pub(in crate::ui) struct PodcastsRuntime {
     subscribers: RefCell<Vec<OnEnabled>>,
 }
 
-fn any_source_dispatchable(conn: &rusqlite::Connection) -> bool {
+fn any_source_dispatchable(conn: &Db) -> bool {
     reprise_core::podcasts::config::source_network_allowed(
         conn,
         reprise_core::podcasts::PodcastKind::Rss,
@@ -153,8 +154,8 @@ fn any_source_dispatchable(conn: &rusqlite::Connection) -> bool {
 }
 
 impl PodcastsRuntime {
-    pub(in crate::ui) fn setup(conn: &rusqlite::Connection) -> Rc<Self> {
-        let (worker, priority_worker) = spawn(reprise_core::db::main_path(conn));
+    pub(in crate::ui) fn setup(conn: &Db) -> Rc<Self> {
+        let (worker, priority_worker) = spawn(conn.path());
         Rc::new(Self {
             enabled: Rc::new(Cell::new(any_source_dispatchable(conn))),
             worker,
@@ -165,7 +166,7 @@ impl PodcastsRuntime {
 
     fn set_module_enabled(
         &self,
-        conn: &rusqlite::Connection,
+        conn: &Db,
         module: &'static reprise_core::modules::ModuleDescriptor,
         enabled: bool,
     ) -> Result<(), rusqlite::Error> {
@@ -176,7 +177,7 @@ impl PodcastsRuntime {
 
     pub(in crate::ui) fn set_podcasts_enabled(
         &self,
-        conn: &rusqlite::Connection,
+        conn: &Db,
         enabled: bool,
     ) -> Result<(), rusqlite::Error> {
         self.set_module_enabled(conn, &reprise_core::modules::PODCASTS_MODULE, enabled)
@@ -184,7 +185,7 @@ impl PodcastsRuntime {
 
     pub(in crate::ui) fn set_youtube_enabled(
         &self,
-        conn: &rusqlite::Connection,
+        conn: &Db,
         enabled: bool,
     ) -> Result<(), rusqlite::Error> {
         self.set_module_enabled(conn, &reprise_core::modules::YOUTUBE_MODULE, enabled)
@@ -193,7 +194,7 @@ impl PodcastsRuntime {
     /// Re-derives `enabled` from persisted state and notifies subscribers on
     /// change. Called after either source module toggles, and after the
     /// global online-sources gate toggles (from the Online sources page).
-    pub(in crate::ui) fn recompute_enabled(&self, conn: &rusqlite::Connection) {
+    pub(in crate::ui) fn recompute_enabled(&self, conn: &Db) {
         let enabled = any_source_dispatchable(conn);
         if self.enabled.replace(enabled) != enabled {
             let subscribers = self.subscribers.borrow().clone();
@@ -301,7 +302,7 @@ fn spawn(
         .spawn(move || {
             let connection = database_path
                 .as_deref()
-                .map(|path| reprise_core::db::open_migrated(Some(path)));
+                .map(|path| reprise_core::db::Db::open_migrated(Some(path)));
             while let Ok(request) = recv_prefer_priority(&priority_receiver, &receiver) {
                 process_request(connection.as_ref(), &request);
             }
@@ -313,7 +314,7 @@ fn spawn(
 }
 
 fn process_request(
-    connection: Option<&Result<rusqlite::Connection, reprise_core::db::DbError>>,
+    connection: Option<&Result<Db, reprise_core::db::DbError>>,
     request: &PodcastsRequest,
 ) {
     let Some(Ok(conn)) = connection else {
@@ -413,7 +414,7 @@ fn send_response(request: &PodcastsRequest, result: Result<PodcastsWorkerResult,
 /// already call. There is no second episode lookup, `NET-1a` check, `.part`
 /// handling, or progress emission here; this just wires up the fetchers and
 /// forwards progress/terminal states onto the response channel.
-fn download_episode(conn: &rusqlite::Connection, request: &PodcastsRequest, episode_id: i64) {
+fn download_episode(conn: &Db, request: &PodcastsRequest, episode_id: i64) {
     let config = match podcasts::config::load(conn) {
         Ok(config) => config,
         Err(error) => {
@@ -458,7 +459,7 @@ fn download_episode(conn: &rusqlite::Connection, request: &PodcastsRequest, epis
 /// `reprise_core::podcasts::queued_downloads::run_queued_downloads`; this
 /// only wires up the fetchers and forwards progress, exactly like
 /// `download_episode` above does for a single episode.
-fn run_queued(conn: &rusqlite::Connection, request: &PodcastsRequest) {
+fn run_queued(conn: &Db, request: &PodcastsRequest) {
     let config = match podcasts::config::load(conn) {
         Ok(config) => config,
         Err(error) => {

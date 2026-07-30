@@ -116,8 +116,8 @@ fn a_stale_leased_job_is_reclaimed_and_finished() {
     // Simulate a worker (token 999) that claimed the job at t=0 with a 1-second
     // lease, then died — the job is left `running` with a long-expired lease.
     {
-        let conn = h.conn();
-        let claimed = reprise_core::ai_jobs::claim_next(&conn, 999, 0, 1)
+        let db = h.db();
+        let claimed = reprise_core::ai_jobs::claim_next(&db, 999, 0, 1)
             .unwrap()
             .expect("seeded worker claims the job");
         assert_eq!(claimed.id, job_id);
@@ -214,10 +214,10 @@ fn the_worker_acks_a_requested_cancel() {
     let job_ids = enqueue_n(&h, &staging, 1);
     let job_id = job_ids[0];
     {
-        let conn = h.conn();
+        let db = h.db();
         // Claim (expired lease) then request cancel: job is running + flagged.
-        reprise_core::ai_jobs::claim_next(&conn, 999, 0, 0).unwrap();
-        let outcome = reprise_core::ai_jobs::request_cancel(&conn, job_id, 0).unwrap();
+        reprise_core::ai_jobs::claim_next(&db, 999, 0, 0).unwrap();
+        let outcome = reprise_core::ai_jobs::request_cancel(&db, job_id, 0).unwrap();
         assert_eq!(
             outcome,
             reprise_core::ai_jobs::CancelOutcome::CancelRequested

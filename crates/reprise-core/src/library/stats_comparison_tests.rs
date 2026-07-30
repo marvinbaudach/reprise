@@ -1,5 +1,5 @@
 use chrono::{TimeZone, Utc};
-use rusqlite::{params, Connection};
+use rusqlite::params;
 
 use super::{compute, ComparisonDirection, ComparisonFactor, ComparisonPresentation};
 use crate::library::stats_period::StatsPeriod;
@@ -90,12 +90,13 @@ fn stats_11a_zero_or_near_zero_baseline_uses_neither_percent_nor_factor() {
 
 fn comparison_snapshot(current_ms: i64, previous_ms: Option<i64>) -> super::StatsSnapshot {
     let conn = migrated_conn();
-    conn.execute(
-        "INSERT INTO tracks (id, path, title, artist, album, duration_ms, added_at) \
+    conn.conn()
+        .execute(
+            "INSERT INTO tracks (id, path, title, artist, album, duration_ms, added_at) \
          VALUES (1, '/music/track.flac', 'Track', 'Artist', 'Album', 4000000, 0)",
-        [],
-    )
-    .unwrap();
+            [],
+        )
+        .unwrap();
     if let Some(previous_ms) = previous_ms {
         insert_event(&conn, timestamp(2025, 3, 1), previous_ms);
     }
@@ -103,18 +104,17 @@ fn comparison_snapshot(current_ms: i64, previous_ms: Option<i64>) -> super::Stat
     compute(&conn, StatsPeriod::YearToDate(2026), NOW_2026_07_19, &Utc).unwrap()
 }
 
-fn migrated_conn() -> Connection {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    conn
+fn migrated_conn() -> crate::db::Db {
+    crate::db::Db::open_in_memory().unwrap()
 }
 
-fn insert_event(conn: &Connection, played_at: i64, ms_played: i64) {
-    conn.execute(
-        "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (1, ?1, ?2)",
-        params![played_at, ms_played],
-    )
-    .unwrap();
+fn insert_event(conn: &crate::db::Db, played_at: i64, ms_played: i64) {
+    conn.conn()
+        .execute(
+            "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (1, ?1, ?2)",
+            params![played_at, ms_played],
+        )
+        .unwrap();
 }
 
 fn timestamp(year: i32, month: u32, day: u32) -> i64 {

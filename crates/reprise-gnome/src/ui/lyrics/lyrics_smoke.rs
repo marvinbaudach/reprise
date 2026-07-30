@@ -1,11 +1,10 @@
 //! Fully synthetic application smoke for played-track lyrics synchronization.
 
-use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
 
 use gtk4::glib;
-use rusqlite::Connection;
+use reprise_core::db::Db;
 
 use super::now_playing::NowPlayingPanel;
 use super::player_controller::PlayerController;
@@ -15,7 +14,7 @@ const SMOKE_ENV: &str = "REPRISE_SMOKE_LYRICS";
 pub(in crate::ui) fn arm(
     player: Option<&Rc<PlayerController>>,
     panel: &Rc<NowPlayingPanel>,
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
 ) {
     if std::env::var(SMOKE_ENV).as_deref() != Ok("1") {
         return;
@@ -28,7 +27,7 @@ pub(in crate::ui) fn arm(
         tracing::error!(%error, "lyrics smoke failed: could not enable the isolated lyrics module");
         return;
     }
-    let ids = match smoke_track_ids(&conn.borrow()) {
+    let ids = match smoke_track_ids(conn) {
         Ok(ids) => ids,
         Err(error) => {
             tracing::error!(%error, "lyrics smoke failed: could not resolve synthetic tracks");
@@ -95,11 +94,8 @@ pub(in crate::ui) fn arm(
     });
 }
 
-fn smoke_track_ids(conn: &Connection) -> rusqlite::Result<std::collections::HashMap<String, i64>> {
-    reprise_core::queries::query_track_ids_by_titles(
-        conn,
-        &["SmokeFirst", "SmokeSlow", "SmokeFast"],
-    )
+fn smoke_track_ids(db: &Db) -> rusqlite::Result<std::collections::HashMap<String, i64>> {
+    reprise_core::queries::query_track_ids_by_titles(db, &["SmokeFirst", "SmokeSlow", "SmokeFast"])
 }
 
 fn log_snapshot(

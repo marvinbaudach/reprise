@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
+use crate::db::Db;
 use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone, Timelike, Weekday};
-use rusqlite::Connection;
 
 /// Length of the rolling window behind [`StatsPeriod::Last30Days`], counted in
 /// whole local calendar days including today.
@@ -178,10 +178,11 @@ impl StatsPeriod {
     /// they cannot make a calendar year selectable. The current year remains
     /// available even before the first Reprise listen event.
     pub fn available<Tz: TimeZone>(
-        conn: &Connection,
+        db: &Db,
         now_year: i32,
         tz: &Tz,
     ) -> Result<Vec<StatsPeriod>, rusqlite::Error> {
+        let conn = db.conn();
         let mut statement = conn.prepare("SELECT played_at FROM listen_events")?;
         let timestamps = statement.query_map([], |row| row.get::<_, i64>(0))?;
         let mut historical_years = BTreeSet::new();

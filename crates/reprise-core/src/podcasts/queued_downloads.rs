@@ -21,6 +21,7 @@ use std::path::Path;
 use rusqlite::Connection;
 
 use crate::connectivity::Connectivity;
+use crate::db::Db;
 
 use super::download_state::DownloadState;
 use super::pipeline::{download_episode, FeedFetcher, PipelineError, YoutubeFetcher};
@@ -29,7 +30,12 @@ use super::pipeline::{download_episode, FeedFetcher, PipelineError, YoutubeFetch
 /// local file, in the stable order they were requested. Episode ids are
 /// assigned in insertion order and a want is never reordered once set, so
 /// ascending id is the same order the episodes were asked for.
-pub fn pending_episode_ids(conn: &Connection) -> Result<Vec<i64>, rusqlite::Error> {
+pub fn pending_episode_ids(db: &Db) -> Result<Vec<i64>, rusqlite::Error> {
+    let conn = db.conn();
+    pending_episode_ids_in(conn)
+}
+
+pub(crate) fn pending_episode_ids_in(conn: &Connection) -> Result<Vec<i64>, rusqlite::Error> {
     let mut statement = conn.prepare(
         "SELECT id FROM podcast_episodes
          WHERE wanted_on_device = 1 AND downloaded_path IS NULL
@@ -51,21 +57,22 @@ pub fn pending_episode_ids(conn: &Connection) -> Result<Vec<i64>, rusqlite::Erro
 /// episode still waiting behind it; any other error stops the run so it is
 /// not silently swallowed.
 pub fn run_queued_downloads(
-    conn: &Connection,
+    db: &Db,
     feed_fetcher: &dyn FeedFetcher,
     youtube_fetcher: &dyn YoutubeFetcher,
     download_root: &Path,
     connectivity: Connectivity,
     mut on_progress: impl FnMut(i64, DownloadState),
 ) -> Result<Vec<i64>, PipelineError> {
+    let conn = db.conn();
     if connectivity.is_offline() {
         return Ok(Vec::new());
     }
-    let pending = pending_episode_ids(conn)?;
+    let pending = pending_episode_ids_in(conn)?;
     let mut ran = Vec::with_capacity(pending.len());
     for episode_id in pending {
         match download_episode(
-            conn,
+            db,
             feed_fetcher,
             youtube_fetcher,
             download_root,
@@ -88,7 +95,6 @@ mod tests {
     use super::*;
     use crate::podcasts::feed::ParsedEpisode;
     use crate::podcasts::store::{self, NewSubscription};
-    use crate::podcasts::wanted_on_device::set_wanted_on_device;
     use crate::podcasts::{PodcastError, PodcastKind};
 
     #[derive(Default)]
@@ -128,14 +134,14 @@ mod tests {
         }
     }
 
-    fn conn() -> Connection {
-        let conn = crate::db::open_migrated(None).unwrap();
-        crate::modules::set_enabled(&conn, &crate::modules::PODCASTS_MODULE, true).unwrap();
-        conn
+    fn conn() -> Db {
+        let db = Db::open_in_memory().unwrap();
+        crate::modules::set_enabled(&db, &crate::modules::PODCASTS_MODULE, true).unwrap();
+        db
     }
 
     fn subscription(conn: &Connection) -> i64 {
-        store::add_or_restore(
+        store::add_or_restore_in(
             conn,
             &NewSubscription {
                 kind: PodcastKind::Rss,
@@ -151,7 +157,7 @@ mod tests {
     }
 
     fn wanted_episode(conn: &Connection, subscription_id: i64, guid: &str) -> i64 {
-        let episode_id = store::upsert_episode(
+        let episode_id = store::upsert_episode_in(
             conn,
             subscription_id,
             &ParsedEpisode {
@@ -167,15 +173,15 @@ mod tests {
         .unwrap()
         .unwrap()
         .episode_id;
-        set_wanted_on_device(conn, episode_id, true).unwrap();
+        crate::podcasts::wanted_on_device::set_wanted_on_device_in(conn, episode_id, true).unwrap();
         episode_id
     }
 
     #[test]
     fn net_3c_offline_runs_nothing_and_leaves_the_queue_untouched() {
         let conn = conn();
-        let subscription_id = subscription(&conn);
-        let episode_id = wanted_episode(&conn, subscription_id, "a");
+        let subscription_id = subscription(conn.conn());
+        let episode_id = wanted_episode(conn.conn(), subscription_id, "a");
         let directory = tempfile::tempdir().unwrap();
         let feed = RecordingFeed::default();
 
@@ -207,8 +213,8 @@ mod tests {
     #[test]
     fn net_3c_a_queued_download_actually_runs_once_connectivity_returns() {
         let conn = conn();
-        let subscription_id = subscription(&conn);
-        let episode_id = wanted_episode(&conn, subscription_id, "a");
+        let subscription_id = subscription(conn.conn());
+        let episode_id = wanted_episode(conn.conn(), subscription_id, "a");
         let directory = tempfile::tempdir().unwrap();
         let feed = RecordingFeed::default();
 
@@ -243,12 +249,12 @@ mod tests {
     #[test]
     fn net_3c_replays_pending_downloads_in_the_order_they_were_requested() {
         let conn = conn();
-        let subscription_id = subscription(&conn);
+        let subscription_id = subscription(conn.conn());
         // "b" is requested (inserted and marked wanted) before "a" gets its
         // own row, so a wrong implementation that replayed alphabetically or
         // in reverse would still be caught here.
-        let episode_b = wanted_episode(&conn, subscription_id, "b");
-        let episode_a = wanted_episode(&conn, subscription_id, "a");
+        let episode_b = wanted_episode(conn.conn(), subscription_id, "b");
+        let episode_a = wanted_episode(conn.conn(), subscription_id, "a");
         let directory = tempfile::tempdir().unwrap();
         let feed = RecordingFeed::default();
 
@@ -279,8 +285,8 @@ mod tests {
     #[test]
     fn net_3c_an_already_local_episode_is_never_replayed() {
         let conn = conn();
-        let subscription_id = subscription(&conn);
-        let episode_id = wanted_episode(&conn, subscription_id, "a");
+        let subscription_id = subscription(conn.conn());
+        let episode_id = wanted_episode(conn.conn(), subscription_id, "a");
         let directory = tempfile::tempdir().unwrap();
         let feed = RecordingFeed::default();
         run_queued_downloads(

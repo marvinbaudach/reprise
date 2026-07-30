@@ -36,38 +36,39 @@ fn seed_missing(conn: &Connection, id: i64, reason: MissingReason, missing_since
 /// missing after arming) and the exact `<=` boundary.
 #[test]
 fn auto_clean_eligible_uses_the_later_of_missing_since_and_armed_at() {
-    let conn = crate::db::open_migrated(None).unwrap();
-    settings::set_missing_auto_clean(&conn, AutoCleanSetting::Days(30)).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    settings::set_missing_auto_clean(&db, AutoCleanSetting::Days(30)).unwrap();
 
     // Track 1 went missing long before the feature was armed — arming, not
     // the ancient missing_since, must anchor its deadline (else turning the
     // setting on over a backlog would delete it instantly).
-    seed_missing(&conn, 1, MissingReason::Deleted, 0);
-    settings::set_auto_clean_armed_at(&conn, 1_000).unwrap();
+    seed_missing(conn, 1, MissingReason::Deleted, 0);
+    settings::set_auto_clean_armed_at(&db, 1_000).unwrap();
 
     let armed_deadline = 1_000 + 30 * DAY;
     assert_eq!(
-        auto_clean_eligible(&conn, armed_deadline - 1).unwrap(),
+        auto_clean_eligible(&db, armed_deadline - 1).unwrap(),
         Vec::<i64>::new(),
         "one second before the deadline: not yet eligible"
     );
     assert_eq!(
-        auto_clean_eligible(&conn, armed_deadline).unwrap(),
+        auto_clean_eligible(&db, armed_deadline).unwrap(),
         vec![1],
         "exactly at the deadline: eligible (<=, not strictly <)"
     );
 
     // Track 2 goes missing well after arming — its own (later) missing_since
     // now anchors its deadline instead of the earlier armed_at.
-    seed_missing(&conn, 2, MissingReason::Deleted, 5_000);
+    seed_missing(conn, 2, MissingReason::Deleted, 5_000);
     let missing_since_deadline = 5_000 + 30 * DAY;
     assert_eq!(
-        auto_clean_eligible(&conn, missing_since_deadline - 1).unwrap(),
+        auto_clean_eligible(&db, missing_since_deadline - 1).unwrap(),
         vec![1],
         "track 2's own later missing_since keeps it ineligible a bit longer"
     );
     assert_eq!(
-        auto_clean_eligible(&conn, missing_since_deadline).unwrap(),
+        auto_clean_eligible(&db, missing_since_deadline).unwrap(),
         vec![1, 2]
     );
 }
@@ -76,17 +77,18 @@ fn auto_clean_eligible_uses_the_later_of_missing_since_and_armed_at() {
 /// matter how long they've sat missing — only `deleted` is provable.
 #[test]
 fn auto_clean_eligible_never_includes_unmounted_or_unknown() {
-    let conn = crate::db::open_migrated(None).unwrap();
-    settings::set_missing_auto_clean(&conn, AutoCleanSetting::Days(30)).unwrap();
-    settings::set_auto_clean_armed_at(&conn, 0).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    settings::set_missing_auto_clean(&db, AutoCleanSetting::Days(30)).unwrap();
+    settings::set_auto_clean_armed_at(&db, 0).unwrap();
 
-    seed_missing(&conn, 1, MissingReason::Unmounted, 0);
-    seed_missing(&conn, 2, MissingReason::Unknown, 0);
-    seed_missing(&conn, 3, MissingReason::Deleted, 0);
+    seed_missing(conn, 1, MissingReason::Unmounted, 0);
+    seed_missing(conn, 2, MissingReason::Unknown, 0);
+    seed_missing(conn, 3, MissingReason::Deleted, 0);
 
     let far_future = 1_000 * DAY;
     assert_eq!(
-        auto_clean_eligible(&conn, far_future).unwrap(),
+        auto_clean_eligible(&db, far_future).unwrap(),
         vec![3],
         "only the deleted row is ever eligible, regardless of the others' age"
     );
@@ -97,21 +99,22 @@ fn auto_clean_eligible_never_includes_unmounted_or_unknown() {
 /// deadline.
 #[test]
 fn auto_clean_eligible_is_empty_when_the_setting_is_off() {
-    let conn = crate::db::open_migrated(None).unwrap();
-    settings::set_auto_clean_armed_at(&conn, 0).unwrap();
-    seed_missing(&conn, 1, MissingReason::Deleted, 0);
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    settings::set_auto_clean_armed_at(&db, 0).unwrap();
+    seed_missing(conn, 1, MissingReason::Deleted, 0);
     let far_future = 1_000 * DAY;
 
     // Never written: the documented Off default.
     assert_eq!(
-        auto_clean_eligible(&conn, far_future).unwrap(),
+        auto_clean_eligible(&db, far_future).unwrap(),
         Vec::<i64>::new()
     );
 
     // Explicitly Off behaves identically to never-written.
-    settings::set_missing_auto_clean(&conn, AutoCleanSetting::Off).unwrap();
+    settings::set_missing_auto_clean(&db, AutoCleanSetting::Off).unwrap();
     assert_eq!(
-        auto_clean_eligible(&conn, far_future).unwrap(),
+        auto_clean_eligible(&db, far_future).unwrap(),
         Vec::<i64>::new()
     );
 }
@@ -120,12 +123,13 @@ fn auto_clean_eligible_is_empty_when_the_setting_is_off() {
 /// direction: "did nothing" is recoverable, "deleted N tracks" is not.
 #[test]
 fn auto_clean_eligible_is_empty_without_an_armed_at() {
-    let conn = crate::db::open_migrated(None).unwrap();
-    settings::set_missing_auto_clean(&conn, AutoCleanSetting::Days(30)).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    settings::set_missing_auto_clean(&db, AutoCleanSetting::Days(30)).unwrap();
     // auto_clean_armed_at deliberately never written.
-    seed_missing(&conn, 1, MissingReason::Deleted, 0);
+    seed_missing(conn, 1, MissingReason::Deleted, 0);
     assert_eq!(
-        auto_clean_eligible(&conn, 1_000 * DAY).unwrap(),
+        auto_clean_eligible(&db, 1_000 * DAY).unwrap(),
         Vec::<i64>::new(),
         "a duration alone, with no arming date, must never run"
     );
@@ -137,13 +141,14 @@ fn auto_clean_eligible_is_empty_without_an_armed_at() {
 /// events are historical facts and are not catalog rows.
 #[test]
 fn run_auto_clean_hard_deletes_eligible_tracks_and_spares_the_rest() {
-    let mut conn = crate::db::open_migrated(None).unwrap();
-    settings::set_missing_auto_clean(&conn, AutoCleanSetting::Days(30)).unwrap();
-    settings::set_auto_clean_armed_at(&conn, 0).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    settings::set_missing_auto_clean(&db, AutoCleanSetting::Days(30)).unwrap();
+    settings::set_auto_clean_armed_at(&db, 0).unwrap();
 
-    seed_missing(&conn, 1, MissingReason::Deleted, 0); // past its deadline
-    seed_missing(&conn, 2, MissingReason::Unmounted, 0); // never eligible
-    seed_missing(&conn, 3, MissingReason::Deleted, 900 * DAY); // too recent
+    seed_missing(conn, 1, MissingReason::Deleted, 0); // past its deadline
+    seed_missing(conn, 2, MissingReason::Unmounted, 0); // never eligible
+    seed_missing(conn, 3, MissingReason::Deleted, 900 * DAY); // too recent
     conn.execute(
         "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (1, 0, 1000)",
         [],
@@ -151,7 +156,7 @@ fn run_auto_clean_hard_deletes_eligible_tracks_and_spares_the_rest() {
     .unwrap();
 
     let now = 30 * DAY;
-    let removed = run_auto_clean(&mut conn, now).unwrap();
+    let removed = run_auto_clean(&db, now).unwrap();
     assert_eq!(removed, vec![1]);
 
     let remaining_ids: Vec<i64> = conn
@@ -207,15 +212,16 @@ fn run_auto_clean_hard_deletes_eligible_tracks_and_spares_the_rest() {
 /// passes against the `RemoveGuard::AutoCleanEligible`-guarded path.
 #[test]
 fn run_auto_clean_survives_a_resurrection_racing_the_delete_itself() {
-    let mut conn = crate::db::open_migrated(None).unwrap();
-    settings::set_missing_auto_clean(&conn, AutoCleanSetting::Days(30)).unwrap();
-    settings::set_auto_clean_armed_at(&conn, 0).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    settings::set_missing_auto_clean(&db, AutoCleanSetting::Days(30)).unwrap();
+    settings::set_auto_clean_armed_at(&db, 0).unwrap();
 
     for id in 1..=3 {
-        seed_missing(&conn, id, MissingReason::Deleted, 0);
+        seed_missing(conn, id, MissingReason::Deleted, 0);
     }
-    let playlist_id = crate::library::playlists::create(&conn, "Race").unwrap();
-    crate::library::playlists::add_tracks(&mut conn, playlist_id, &[1, 2, 3]).unwrap();
+    let playlist_id = crate::library::playlists::create(&db, "Race").unwrap();
+    crate::library::playlists::add_tracks(&db, playlist_id, &[1, 2, 3]).unwrap();
     conn.execute(
         "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (2, 1000, 5000)",
         [],
@@ -223,7 +229,7 @@ fn run_auto_clean_survives_a_resurrection_racing_the_delete_itself() {
     .unwrap();
 
     let now = 30 * DAY;
-    let eligible = auto_clean_eligible(&conn, now).unwrap();
+    let eligible = auto_clean_eligible(&db, now).unwrap();
     assert_eq!(
         eligible,
         vec![1, 2, 3],
@@ -242,7 +248,7 @@ fn run_auto_clean_survives_a_resurrection_racing_the_delete_itself() {
     let stale_snapshot = eligible;
 
     let deleted =
-        remove_tracks_impl(&mut conn, &stale_snapshot, RemoveGuard::AutoCleanEligible).unwrap();
+        remove_tracks_impl(conn, &stale_snapshot, RemoveGuard::AutoCleanEligible).unwrap();
 
     assert_eq!(
         deleted,

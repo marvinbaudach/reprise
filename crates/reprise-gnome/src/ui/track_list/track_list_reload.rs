@@ -361,7 +361,7 @@ fn run_query(shared: &Rc<Shared>) {
     // experimental switch (INST-11). Its sticky state lives in the browse bar.
     let exclude_ai = shared.browse_bar.exclude_ai()
         && matches!(source, ViewSource::Library)
-        && crate::ui::experimental::experimental_enabled(&shared.conn.borrow());
+        && crate::ui::experimental::experimental_enabled(&shared.conn);
     let has_filter = !filter.trim().is_empty() || !browse.is_empty() || exclude_ai;
 
     let is_queue = matches!(source, ViewSource::Queue);
@@ -447,16 +447,15 @@ fn run_query(shared: &Rc<Shared>) {
 #[cfg(test)]
 mod display_tests {
     use super::*;
-    use rusqlite::Connection;
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn tag_1_query_reloading_metadata_save_keeps_the_live_viewport() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
-        let mut conn = Connection::open_in_memory().unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        let tx = conn.transaction().unwrap();
+        let conn = crate::test_db::open().unwrap();
+        let fixture_conn = crate::test_db::connection(&conn);
+        let tx = fixture_conn.unchecked_transaction().unwrap();
         for id in 1..=100 {
             tx.execute(
                 "INSERT INTO tracks (id, path, title, artist, added_at) \
@@ -471,7 +470,7 @@ mod display_tests {
         }
         tx.commit().unwrap();
         let track_list = super::super::TrackList::new(
-            Rc::new(RefCell::new(conn)),
+            Rc::new(conn),
             Box::new(|_, _, _, _| {}),
             |_, _, _, _| {},
             super::super::queue_sections::QueueViewModel::default,

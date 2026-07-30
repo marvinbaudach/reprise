@@ -1,9 +1,7 @@
 use super::*;
 
-fn migrated_conn() -> Connection {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    conn
+fn migrated_conn() -> crate::db::Db {
+    crate::db::Db::open_in_memory().unwrap()
 }
 
 #[test]
@@ -34,6 +32,7 @@ fn set_setting_overwrites_a_previous_value() {
     // Exactly one row for this key — the upsert never leaves a stale
     // duplicate behind.
     let count: i64 = conn
+        .conn()
         .query_row(
             "SELECT count(*) FROM settings WHERE key = ?1",
             rusqlite::params![LIBRARY_ROOT_KEY],
@@ -47,12 +46,13 @@ fn set_setting_overwrites_a_previous_value() {
 fn set_setting_dedups_identical_values_and_logs_only_real_changes() {
     let conn = migrated_conn();
     let change_events = || -> i64 {
-        conn.query_row(
-            "SELECT count(*) FROM change_log WHERE entity = 'settings' AND entity_id = ?1",
-            rusqlite::params![COLOR_SCHEME_KEY],
-            |r| r.get(0),
-        )
-        .unwrap()
+        conn.conn()
+            .query_row(
+                "SELECT count(*) FROM change_log WHERE entity = 'settings' AND entity_id = ?1",
+                rusqlite::params![COLOR_SCHEME_KEY],
+                |r| r.get(0),
+            )
+            .unwrap()
     };
 
     set_setting(&conn, COLOR_SCHEME_KEY, "dark").unwrap();

@@ -13,10 +13,10 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::browser::navigation::NavigationIntent;
 use reprise_core::browser::{AlbumKey, ArtistKey, BrowserPlace};
+use reprise_core::db::Db;
 use reprise_core::library::session::SessionState;
 use reprise_core::library::watcher::WatcherHandle;
 use reprise_core::view_source::ViewSource;
-use rusqlite::Connection;
 
 use super::cover_download_batch::CoverDownloadBatch;
 use super::device_sync_runtime::DeviceSyncRuntime;
@@ -34,7 +34,7 @@ use super::track_list::TrackList;
 pub(in crate::ui) struct RuntimeWiring<'a> {
     pub(in crate::ui) app: &'a adw::Application,
     pub(in crate::ui) window: &'a adw::ApplicationWindow,
-    pub(in crate::ui) conn: &'a Rc<RefCell<Connection>>,
+    pub(in crate::ui) conn: &'a Rc<Db>,
     pub(in crate::ui) db_path: &'a Path,
     pub(in crate::ui) header: &'a adw::HeaderBar,
     pub(in crate::ui) search_entry: &'a gtk4::SearchEntry,
@@ -671,7 +671,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
 }
 
 fn start_persisted_watcher(
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
     db_path: &Path,
     scan_controls: &ScanControls,
     track_list: &Rc<TrackList>,
@@ -679,8 +679,8 @@ fn start_persisted_watcher(
     watcher_state: &Rc<RefCell<Option<WatcherHandle>>>,
 ) {
     let root = {
-        let conn = conn.borrow();
-        reprise_core::library::settings::get_library_root(&conn)
+        let conn = &conn;
+        reprise_core::library::settings::get_library_root(conn)
     };
     match root {
         Ok(Some(root)) => super::scan_flow::start_or_restart_watcher(

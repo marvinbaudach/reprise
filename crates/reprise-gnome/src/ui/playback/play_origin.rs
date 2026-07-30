@@ -6,10 +6,10 @@
 //! and so a session restore never needs a second lookup.
 
 use reprise_core::browser::BrowserPlace;
+use reprise_core::db::Db;
 use reprise_core::library::playlists;
 use reprise_core::library::session::SessionSource;
 use reprise_core::view_source::ViewSource;
-use rusqlite::Connection;
 
 use crate::ui::strings;
 
@@ -36,7 +36,7 @@ impl PlayOrigin {
 /// Builds the origin for a play started from `place`, resolving the display
 /// label once. Queue itself is a projection of the active snapshot rather
 /// than an independent origin, so only that destination collapses to Music.
-pub(crate) fn resolve(conn: &Connection, place: &BrowserPlace) -> PlayOrigin {
+pub(crate) fn resolve(conn: &Db, place: &BrowserPlace) -> PlayOrigin {
     let source = place.view_source();
     match source {
         ViewSource::Queue => PlayOrigin::library(),
@@ -47,7 +47,7 @@ pub(crate) fn resolve(conn: &Connection, place: &BrowserPlace) -> PlayOrigin {
     }
 }
 
-fn resolve_label(conn: &Connection, source: &ViewSource) -> String {
+fn resolve_label(conn: &Db, source: &ViewSource) -> String {
     match source {
         ViewSource::Playlist(id) => playlists::list(conn)
             .ok()
@@ -142,10 +142,8 @@ pub(crate) fn from_session(
 mod tests {
     use super::*;
 
-    fn conn() -> Connection {
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        conn
+    fn conn() -> Db {
+        crate::test_db::open().unwrap()
     }
 
     #[test]

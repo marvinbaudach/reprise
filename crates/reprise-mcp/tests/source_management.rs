@@ -180,9 +180,9 @@ fn edits_and_removes_a_subscription_without_deleting_downloads() {
     let path = fixture_db(&dir);
     let download = dir.path().join("kept-episode.mp3");
     std::fs::write(&download, b"audio").unwrap();
-    let conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
+    let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
     let subscription_id = store::add_or_restore(
-        &conn,
+        &db,
         &NewSubscription {
             kind: PodcastKind::Rss,
             feed_url: "https://feeds.example.test/show".into(),
@@ -195,7 +195,7 @@ fn edits_and_removes_a_subscription_without_deleting_downloads() {
     )
     .unwrap();
     let episode_id = store::upsert_episode(
-        &conn,
+        &db,
         subscription_id,
         &ParsedEpisode {
             guid: "one".into(),
@@ -210,8 +210,8 @@ fn edits_and_removes_a_subscription_without_deleting_downloads() {
     .unwrap()
     .expect("episode should be imported")
     .episode_id;
-    store::set_downloaded_path(&conn, episode_id, download.to_str()).unwrap();
-    drop(conn);
+    store::set_downloaded_path(&db, episode_id, download.to_str()).unwrap();
+    drop(db);
     set_bool_setting(&path, CAP_SOURCES_MANAGE, true);
     let mut client = McpClient::start(&path);
 
@@ -248,9 +248,9 @@ fn refreshes_cached_rss_subscriptions_on_explicit_request() {
 
     let dir = TempDir::new().unwrap();
     let path = fixture_db(&dir);
-    let conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
+    let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
     store::add_or_restore(
-        &conn,
+        &db,
         &NewSubscription {
             kind: PodcastKind::Rss,
             feed_url: "https://feeds.example.test/refresh".into(),
@@ -262,7 +262,7 @@ fn refreshes_cached_rss_subscriptions_on_explicit_request() {
         100,
     )
     .unwrap();
-    drop(conn);
+    drop(db);
     let fixtures = TempDir::new().unwrap();
     std::fs::write(
         fixtures
@@ -440,8 +440,8 @@ fn resolves_a_pls_radio_favorite_before_probing_and_storing_it() {
     assert_eq!(added["bitrate_kbps"], 192);
     server.join().unwrap();
 
-    let conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
-    let station = reprise_core::radio::station::get(&conn, added["id"].as_i64().unwrap())
+    let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
+    let station = reprise_core::radio::station::get(&db, added["id"].as_i64().unwrap())
         .unwrap()
         .unwrap();
     assert_eq!(station.stream_url, format!("http://{address}/live"));

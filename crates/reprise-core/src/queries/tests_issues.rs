@@ -62,9 +62,10 @@ fn seed_missing_track(
 /// card per drive" requirement.
 #[test]
 fn two_unmounted_drives_produce_two_unavailable_groups_sorted_by_mount() {
-    let conn = crate::db::open_migrated(None).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     seed_missing_track(
-        &conn,
+        conn,
         1,
         "A",
         "Alpha",
@@ -73,7 +74,7 @@ fn two_unmounted_drives_produce_two_unavailable_groups_sorted_by_mount() {
         Some("/media/usb-b"),
     );
     seed_missing_track(
-        &conn,
+        conn,
         2,
         "B",
         "Beta",
@@ -82,7 +83,7 @@ fn two_unmounted_drives_produce_two_unavailable_groups_sorted_by_mount() {
         Some("/media/usb-a"),
     );
     seed_missing_track(
-        &conn,
+        conn,
         3,
         "C",
         "Gamma",
@@ -91,7 +92,7 @@ fn two_unmounted_drives_produce_two_unavailable_groups_sorted_by_mount() {
         Some("/media/usb-a"),
     );
 
-    let groups = query_missing_groups(&conn).unwrap();
+    let groups = query_missing_groups(&db).unwrap();
 
     assert_eq!(
         groups,
@@ -118,9 +119,10 @@ fn two_unmounted_drives_produce_two_unavailable_groups_sorted_by_mount() {
 /// group (18a card order: per-mount, then unknown, then deleted).
 #[test]
 fn unknown_reason_forms_its_own_actionless_group_after_unavailable_groups() {
-    let conn = crate::db::open_migrated(None).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     seed_missing_track(
-        &conn,
+        conn,
         1,
         "A",
         "Alpha",
@@ -128,18 +130,10 @@ fn unknown_reason_forms_its_own_actionless_group_after_unavailable_groups() {
         MissingReason::Unmounted,
         Some("/media/usb"),
     );
-    seed_missing_track(&conn, 2, "B", "Beta", Some(1), MissingReason::Unknown, None);
-    seed_missing_track(
-        &conn,
-        3,
-        "C",
-        "Gamma",
-        Some(1),
-        MissingReason::Unknown,
-        None,
-    );
+    seed_missing_track(conn, 2, "B", "Beta", Some(1), MissingReason::Unknown, None);
+    seed_missing_track(conn, 3, "C", "Gamma", Some(1), MissingReason::Unknown, None);
 
-    let groups = query_missing_groups(&conn).unwrap();
+    let groups = query_missing_groups(&db).unwrap();
 
     assert_eq!(
         groups,
@@ -165,28 +159,13 @@ fn unknown_reason_forms_its_own_actionless_group_after_unavailable_groups() {
 /// count backs a bulk hard-delete action.
 #[test]
 fn deleted_group_count_never_includes_unknown_reason_rows() {
-    let conn = crate::db::open_migrated(None).unwrap();
-    seed_missing_track(
-        &conn,
-        1,
-        "A",
-        "Alpha",
-        Some(1),
-        MissingReason::Deleted,
-        None,
-    );
-    seed_missing_track(&conn, 2, "B", "Beta", Some(1), MissingReason::Unknown, None);
-    seed_missing_track(
-        &conn,
-        3,
-        "C",
-        "Gamma",
-        Some(1),
-        MissingReason::Unknown,
-        None,
-    );
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    seed_missing_track(conn, 1, "A", "Alpha", Some(1), MissingReason::Deleted, None);
+    seed_missing_track(conn, 2, "B", "Beta", Some(1), MissingReason::Unknown, None);
+    seed_missing_track(conn, 3, "C", "Gamma", Some(1), MissingReason::Unknown, None);
 
-    let groups = query_missing_groups(&conn).unwrap();
+    let groups = query_missing_groups(&db).unwrap();
 
     assert_eq!(
         groups,
@@ -209,9 +188,10 @@ fn deleted_group_count_never_includes_unknown_reason_rows() {
 /// out of order; two 2-row pages must reconstruct the sorted sequence.
 #[test]
 fn missing_rows_are_paginated_and_ordered_by_artist_album_track_no() {
-    let conn = crate::db::open_migrated(None).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     seed_missing_track(
-        &conn,
+        conn,
         1,
         "Zeta",
         "Album",
@@ -220,7 +200,7 @@ fn missing_rows_are_paginated_and_ordered_by_artist_album_track_no() {
         None,
     );
     seed_missing_track(
-        &conn,
+        conn,
         2,
         "Alpha",
         "Second",
@@ -229,7 +209,7 @@ fn missing_rows_are_paginated_and_ordered_by_artist_album_track_no() {
         None,
     );
     seed_missing_track(
-        &conn,
+        conn,
         3,
         "Alpha",
         "First",
@@ -238,7 +218,7 @@ fn missing_rows_are_paginated_and_ordered_by_artist_album_track_no() {
         None,
     );
     seed_missing_track(
-        &conn,
+        conn,
         4,
         "alpha",
         "First",
@@ -247,8 +227,8 @@ fn missing_rows_are_paginated_and_ordered_by_artist_album_track_no() {
         None,
     );
 
-    let first_page = query_missing_rows(&conn, &MissingGroupKind::Deleted, 0, 2).unwrap();
-    let second_page = query_missing_rows(&conn, &MissingGroupKind::Deleted, 2, 2).unwrap();
+    let first_page = query_missing_rows(&db, &MissingGroupKind::Deleted, 0, 2).unwrap();
+    let second_page = query_missing_rows(&db, &MissingGroupKind::Deleted, 2, 2).unwrap();
 
     assert_eq!(
         first_page.iter().map(|t| t.id).collect::<Vec<_>>(),
@@ -270,10 +250,11 @@ fn missing_rows_are_paginated_and_ordered_by_artist_album_track_no() {
 /// card per drive" feature depends on.
 #[test]
 fn per_mount_rows_query_isolates_to_the_requested_mount_point() {
-    let conn = crate::db::open_migrated(None).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     // Two rows on mount A
     seed_missing_track(
-        &conn,
+        conn,
         1,
         "Alice",
         "AlbumA",
@@ -282,7 +263,7 @@ fn per_mount_rows_query_isolates_to_the_requested_mount_point() {
         Some("/media/nas-a"),
     );
     seed_missing_track(
-        &conn,
+        conn,
         2,
         "Bob",
         "AlbumB",
@@ -292,7 +273,7 @@ fn per_mount_rows_query_isolates_to_the_requested_mount_point() {
     );
     // One row on mount B (different mount point)
     seed_missing_track(
-        &conn,
+        conn,
         3,
         "Charlie",
         "AlbumC",
@@ -302,7 +283,7 @@ fn per_mount_rows_query_isolates_to_the_requested_mount_point() {
     );
     // One `unknown` row (no mount point)
     seed_missing_track(
-        &conn,
+        conn,
         4,
         "Dave",
         "AlbumD",
@@ -312,7 +293,7 @@ fn per_mount_rows_query_isolates_to_the_requested_mount_point() {
     );
     // One `deleted` row
     seed_missing_track(
-        &conn,
+        conn,
         5,
         "Eve",
         "AlbumE",
@@ -323,7 +304,7 @@ fn per_mount_rows_query_isolates_to_the_requested_mount_point() {
 
     // Query for mount A only; must return exactly the two rows on mount A
     let mount_a_rows = query_missing_rows(
-        &conn,
+        &db,
         &MissingGroupKind::Unavailable {
             mount_point: Some("/media/nas-a".into()),
         },
@@ -338,7 +319,7 @@ fn per_mount_rows_query_isolates_to_the_requested_mount_point() {
 
     // Query for mount B; must return only the one row on mount B
     let mount_b_rows = query_missing_rows(
-        &conn,
+        &db,
         &MissingGroupKind::Unavailable {
             mount_point: Some("/media/nas-b".into()),
         },
@@ -360,7 +341,8 @@ fn per_mount_rows_query_isolates_to_the_requested_mount_point() {
 /// returns it.
 #[test]
 fn present_tracks_are_excluded_from_missing_queries() {
-    let conn = crate::db::open_migrated(None).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     // One present track (missing_since = NULL, the default)
     conn.execute(
         "INSERT INTO tracks (id, path, title, artist, album, track_no, added_at) \
@@ -377,7 +359,7 @@ fn present_tracks_are_excluded_from_missing_queries() {
     .unwrap();
     // One missing (deleted) track for comparison
     seed_missing_track(
-        &conn,
+        conn,
         1,
         "Missing",
         "Album",
@@ -387,7 +369,7 @@ fn present_tracks_are_excluded_from_missing_queries() {
     );
 
     // `query_missing_groups` must include only the deleted row's group
-    let groups = query_missing_groups(&conn).unwrap();
+    let groups = query_missing_groups(&db).unwrap();
     assert_eq!(
         groups,
         vec![MissingGroup {
@@ -397,7 +379,7 @@ fn present_tracks_are_excluded_from_missing_queries() {
     );
 
     // `query_missing_rows` for Deleted must return only the missing row
-    let rows = query_missing_rows(&conn, &MissingGroupKind::Deleted, 0, 100).unwrap();
+    let rows = query_missing_rows(&db, &MissingGroupKind::Deleted, 0, 100).unwrap();
     assert_eq!(rows.iter().map(|t| t.id).collect::<Vec<_>>(), vec![1]);
 }
 
@@ -407,7 +389,8 @@ fn present_tracks_are_excluded_from_missing_queries() {
 /// pin explicitly.
 #[test]
 fn empty_missing_groups_when_no_missing_tracks() {
-    let conn = crate::db::open_migrated(None).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     // Insert one present track only
     conn.execute(
         "INSERT INTO tracks (id, path, title, artist, album, track_no, added_at) \
@@ -416,7 +399,7 @@ fn empty_missing_groups_when_no_missing_tracks() {
     )
     .unwrap();
 
-    let groups = query_missing_groups(&conn).unwrap();
+    let groups = query_missing_groups(&db).unwrap();
     assert!(groups.is_empty());
 }
 
@@ -452,23 +435,24 @@ fn removed_at_of(conn: &Connection, id: i64) -> Option<i64> {
 /// test asserts survives.
 #[test]
 fn tombstone_tracks_hides_rows_but_keeps_playlist_membership_and_position() {
-    let mut conn = crate::db::open_migrated(None).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     for id in 1..=3 {
-        seed_live_track(&conn, id);
+        seed_live_track(conn, id);
     }
-    let playlist_id = playlists::create(&conn, "Keep").unwrap();
-    playlists::add_tracks(&mut conn, playlist_id, &[1, 2, 3]).unwrap();
+    let playlist_id = playlists::create(&db, "Keep").unwrap();
+    playlists::add_tracks(&db, playlist_id, &[1, 2, 3]).unwrap();
 
-    let changed = tombstone_tracks(&conn, &[2], 1_000).unwrap();
+    let changed = tombstone_tracks(&db, &[2], 1_000).unwrap();
     assert_eq!(changed, 1);
 
     // Hidden from the library view immediately.
     assert_eq!(
-        query_live_track_ids(&conn).unwrap(),
+        query_live_track_ids(&db).unwrap(),
         std::collections::HashSet::from([1, 3]),
         "a tombstoned row must disappear from PRESENT queries at once"
     );
-    assert_eq!(removed_at_of(&conn, 2), Some(1_000));
+    assert_eq!(removed_at_of(conn, 2), Some(1_000));
 
     // Playlist membership AND position are untouched — this is the whole
     // point of a tombstone over a hard delete-then-restore.
@@ -488,9 +472,9 @@ fn tombstone_tracks_hides_rows_but_keeps_playlist_membership_and_position() {
     // Re-tombstoning an already-tombstoned id is a no-op (the guard is
     // `removed_at IS NULL`) — the toast's countdown must not reset itself
     // if the user clicks "Remove" again during the undo window.
-    assert_eq!(tombstone_tracks(&conn, &[2], 2_000).unwrap(), 0);
+    assert_eq!(tombstone_tracks(&db, &[2], 2_000).unwrap(), 0);
     assert_eq!(
-        removed_at_of(&conn, 2),
+        removed_at_of(conn, 2),
         Some(1_000),
         "a second tombstone call must not overwrite the original timestamp"
     );
@@ -502,26 +486,27 @@ fn tombstone_tracks_hides_rows_but_keeps_playlist_membership_and_position() {
 /// is no longer) changes nothing.
 #[test]
 fn undo_tombstone_clears_removed_at_and_restores_presence() {
-    let conn = crate::db::open_migrated(None).unwrap();
-    seed_live_track(&conn, 1);
-    seed_live_track(&conn, 2);
-    tombstone_tracks(&conn, &[1], 500).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    seed_live_track(conn, 1);
+    seed_live_track(conn, 2);
+    tombstone_tracks(&db, &[1], 500).unwrap();
     assert_eq!(
-        query_live_track_ids(&conn).unwrap(),
+        query_live_track_ids(&db).unwrap(),
         std::collections::HashSet::from([2])
     );
 
-    let restored = undo_tombstone(&conn, &[1]).unwrap();
+    let restored = undo_tombstone(&db, &[1]).unwrap();
     assert_eq!(restored, 1);
-    assert_eq!(removed_at_of(&conn, 1), None);
+    assert_eq!(removed_at_of(conn, 1), None);
     assert_eq!(
-        query_live_track_ids(&conn).unwrap(),
+        query_live_track_ids(&db).unwrap(),
         std::collections::HashSet::from([1, 2]),
         "undo must make the row visible again immediately"
     );
 
     // No-op guard: id 2 was never tombstoned.
-    assert_eq!(undo_tombstone(&conn, &[2]).unwrap(), 0);
+    assert_eq!(undo_tombstone(&db, &[2]).unwrap(), 0);
 }
 
 /// Bullet 3: `purge_tombstones` is where a tombstone finally becomes
@@ -533,15 +518,16 @@ fn undo_tombstone_clears_removed_at_and_restores_presence() {
 /// timeout / app startup) must purge from its in-memory playback queue.
 #[test]
 fn purge_tombstones_hard_deletes_tombstoned_rows_compacts_playlist_and_returns_purged_ids() {
-    let mut conn = crate::db::open_migrated(None).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     for id in 1..=5 {
-        seed_live_track(&conn, id);
+        seed_live_track(conn, id);
     }
-    let playlist_id = playlists::create(&conn, "Purge").unwrap();
-    playlists::add_tracks(&mut conn, playlist_id, &[1, 2, 3, 4, 5]).unwrap();
-    tombstone_tracks(&conn, &[3], 1_000).unwrap();
+    let playlist_id = playlists::create(&db, "Purge").unwrap();
+    playlists::add_tracks(&db, playlist_id, &[1, 2, 3, 4, 5]).unwrap();
+    tombstone_tracks(&db, &[3], 1_000).unwrap();
 
-    let purged = purge_tombstones(&mut conn).unwrap();
+    let purged = purge_tombstones(&db).unwrap();
     assert_eq!(purged, vec![3]);
 
     let track_count: i64 = conn
@@ -563,7 +549,7 @@ fn purge_tombstones_hard_deletes_tombstoned_rows_compacts_playlist_and_returns_p
     );
 
     // Idempotent: nothing left to purge.
-    assert!(purge_tombstones(&mut conn).unwrap().is_empty());
+    assert!(purge_tombstones(&db).unwrap().is_empty());
 }
 
 /// Bullet 4, the scanner-resurrect interop test: a row tombstoned and then
@@ -579,17 +565,18 @@ fn purge_tombstones_hard_deletes_tombstoned_rows_compacts_playlist_and_returns_p
 /// the column on resurrection.
 #[test]
 fn purge_tombstones_skips_a_row_resurrected_before_the_purge_runs() {
-    let mut conn = crate::db::open_migrated(None).unwrap();
-    seed_live_track(&conn, 1);
-    seed_live_track(&conn, 2);
-    tombstone_tracks(&conn, &[1, 2], 1_000).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    seed_live_track(conn, 1);
+    seed_live_track(conn, 2);
+    tombstone_tracks(&db, &[1, 2], 1_000).unwrap();
 
     // The scanner found track 1's file again and resurrected it — exactly
     // the SQL `library::scanner` uses on its fast-path-restore branch.
     conn.execute("UPDATE tracks SET removed_at = NULL WHERE id = 1", [])
         .unwrap();
 
-    let purged = purge_tombstones(&mut conn).unwrap();
+    let purged = purge_tombstones(&db).unwrap();
 
     assert_eq!(
         purged,
@@ -604,7 +591,7 @@ fn purge_tombstones_skips_a_row_resurrected_before_the_purge_runs() {
         "the resurrected row must survive the purge untouched"
     );
     assert_eq!(
-        query_live_track_ids(&conn).unwrap(),
+        query_live_track_ids(&db).unwrap(),
         std::collections::HashSet::from([1]),
         "the resurrected row must be visible again, not silently purged"
     );
@@ -641,19 +628,20 @@ fn purge_tombstones_skips_a_row_resurrected_before_the_purge_runs() {
 /// against that code and passes against the `TombstonedOnly` guard.
 #[test]
 fn purge_tombstones_survives_a_resurrection_racing_the_delete_itself() {
-    let mut conn = crate::db::open_migrated(None).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     for id in 1..=3 {
-        seed_live_track(&conn, id);
+        seed_live_track(conn, id);
     }
-    let playlist_id = playlists::create(&conn, "Race").unwrap();
-    playlists::add_tracks(&mut conn, playlist_id, &[1, 2, 3]).unwrap();
+    let playlist_id = playlists::create(&db, "Race").unwrap();
+    playlists::add_tracks(&db, playlist_id, &[1, 2, 3]).unwrap();
     conn.execute(
         "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (2, 1000, 5000)",
         [],
     )
     .unwrap();
 
-    tombstone_tracks(&conn, &[1, 2, 3], 1_000).unwrap();
+    tombstone_tracks(&db, &[1, 2, 3], 1_000).unwrap();
 
     // Simulate the watcher committing a resurrection of id 2 in the window
     // between `purge_tombstones`'s SELECT and its DELETE reaching that id —
@@ -663,8 +651,7 @@ fn purge_tombstones_survives_a_resurrection_racing_the_delete_itself() {
         .unwrap();
     let stale_snapshot = vec![1, 2, 3];
 
-    let deleted =
-        remove_tracks_impl(&mut conn, &stale_snapshot, RemoveGuard::TombstonedOnly).unwrap();
+    let deleted = remove_tracks_impl(conn, &stale_snapshot, RemoveGuard::TombstonedOnly).unwrap();
 
     assert_eq!(
         deleted,
@@ -680,7 +667,7 @@ fn purge_tombstones_survives_a_resurrection_racing_the_delete_itself() {
         "the mid-purge-resurrected row must survive, not be hard-deleted"
     );
     assert_eq!(
-        removed_at_of(&conn, 2),
+        removed_at_of(conn, 2),
         None,
         "the survivor's resurrected (non-tombstoned) state must be untouched"
     );

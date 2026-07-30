@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use reprise_core::ai_jobs::{self, AiJob};
 use reprise_core::ai_staging::StagingStore;
-use rusqlite::Connection;
+use reprise_core::db::Db;
 use serde_json::{json, Value};
 
 use crate::error::CliError;
@@ -26,20 +26,20 @@ fn percent(progress_permille: u16) -> u16 {
 /// progress; without it, lists every non-cancelled job (the conversion view's
 /// rows).
 pub fn status(
-    conn: &Connection,
+    db: &Db,
     staging_dir: Option<&PathBuf>,
     batch: Option<&str>,
     json_output: bool,
 ) -> Result<(), CliError> {
     let store = staging::resolve(staging_dir);
     match batch {
-        Some(batch_id) => status_batch(conn, &store, batch_id, json_output),
-        None => status_all(conn, &store, json_output),
+        Some(batch_id) => status_batch(db, &store, batch_id, json_output),
+        None => status_all(db, &store, json_output),
     }
 }
 
-fn status_all(conn: &Connection, store: &StagingStore, json_output: bool) -> Result<(), CliError> {
-    let jobs = ai_jobs::list_active_jobs(conn)?;
+fn status_all(db: &Db, store: &StagingStore, json_output: bool) -> Result<(), CliError> {
+    let jobs = ai_jobs::list_active_jobs(db)?;
     if json_output {
         print_json(&Value::Array(job_rows(store, &jobs)));
     } else if jobs.is_empty() {
@@ -53,13 +53,13 @@ fn status_all(conn: &Connection, store: &StagingStore, json_output: bool) -> Res
 }
 
 fn status_batch(
-    conn: &Connection,
+    db: &Db,
     store: &StagingStore,
     batch_id: &str,
     json_output: bool,
 ) -> Result<(), CliError> {
-    let jobs = ai_jobs::list_jobs_in_batch(conn, batch_id)?;
-    let progress = ai_jobs::batch_progress(conn, batch_id)?;
+    let jobs = ai_jobs::list_jobs_in_batch(db, batch_id)?;
+    let progress = ai_jobs::batch_progress(db, batch_id)?;
     if json_output {
         print_json(&json!({
             "batch": json_models::batch_progress(batch_id, &progress),

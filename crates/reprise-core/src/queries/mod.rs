@@ -80,6 +80,7 @@
 //!   task builds ahead of time: a bare count of the existing `import_errors`
 //!   table, for a future sidebar badge.
 
+use crate::db::Db;
 use crate::models::Track;
 use crate::view_source::ViewSource;
 use rusqlite::Connection;
@@ -96,8 +97,9 @@ mod maintenance;
 mod playlist;
 mod queue;
 mod smart;
+mod stats;
 
-pub use artist_context::query_artist_albums;
+pub use artist_context::{query_artist_albums, query_stats_album_target_for_path};
 pub use browse::{query_browse_values, BrowseFacet, BrowseFilter, BrowseValue};
 pub use clauses::build_track_ids_query;
 // Task 1.2: the centralized presence predicate, re-exported so modules
@@ -140,7 +142,7 @@ pub use issues::{mark_mount_unavailable, verify_unmounted_tracks};
 // the same cross-crate reachability reason as `query_missing_groups` above:
 // the GUI (a later task) needs to name both directly as `reprise_core::
 // queries::{auto_clean_eligible, run_auto_clean}`.
-pub use issues::{auto_clean_eligible, run_auto_clean};
+pub use issues::{auto_clean_eligible, run_auto_clean, tombstone_still_deleted};
 // Task 2.4: the grouped import-error read/write queries the ImportErrors
 // triage UI is built against — see `import_errors`'s module doc for the
 // hint contract and the dismiss/restore semantics. `pub use` for the same
@@ -179,6 +181,7 @@ pub use maintenance::{
 pub(crate) use maintenance::{remove_tracks_impl, RemoveGuard};
 pub use playlist::query_playlist_tracks_full;
 pub use queue::{is_queue_capped, query_queue_duration_ms, QUEUE_LIMIT};
+pub use stats::{query_library_stats, query_library_stats_browsed, LibraryStats};
 
 use clauses::build_track_ids_query_browsed;
 use clauses::{build_track_ids_query_base, like_pattern, row_to_id};
@@ -189,15 +192,6 @@ use rusqlite::types::Value;
 /// `LIMIT` as "unlimited", so this also protects against a bad UI-side page
 /// size from turning into a full-table scan. Limits capped.
 const MAX_WINDOW_LIMIT: i64 = 500;
-
-#[derive(Debug)]
-pub struct LibraryStats {
-    pub track_count: i64,
-    pub total_duration_ms: i64,
-    /// `Some(n)` while a search filter is active (status line shows "N of M
-    /// tracks"), `None` when it isn't. See `query_library_stats`.
-    pub filtered_count: Option<i64>,
-}
 
 /// Runs the windowed track query for `source`. `queue_ids` is only read for
 /// `ViewSource::Queue` (see the module doc's `Queue` section); every other
@@ -217,7 +211,7 @@ pub struct LibraryStats {
 /// clearly against this doc comment.
 #[allow(clippy::too_many_arguments)]
 pub fn query_track_window(
-    conn: &mut Connection,
+    db: &Db,
     source: &ViewSource,
     sort_field: &str,
     sort_dir: &str,
@@ -226,7 +220,8 @@ pub fn query_track_window(
     limit: i64,
     queue_ids: &[i64],
 ) -> Result<Vec<Track>, rusqlite::Error> {
-    query_track_window_browsed(
+    let conn = db.conn();
+    query_track_window_browsed_ai_conn(
         conn,
         source,
         sort_field,
@@ -236,12 +231,14 @@ pub fn query_track_window(
         offset,
         limit,
         queue_ids,
+        false,
+        true,
     )
 }
 
 #[allow(clippy::too_many_arguments)]
 pub fn query_track_window_browsed(
-    conn: &mut Connection,
+    db: &Db,
     source: &ViewSource,
     sort_field: &str,
     sort_dir: &str,
@@ -251,7 +248,8 @@ pub fn query_track_window_browsed(
     limit: i64,
     queue_ids: &[i64],
 ) -> Result<Vec<Track>, rusqlite::Error> {
-    query_track_window_browsed_ai(
+    let conn = db.conn();
+    query_track_window_browsed_ai_conn(
         conn, source, sort_field, sort_dir, filter, browse, offset, limit, queue_ids, false, true,
     )
 }
@@ -269,7 +267,28 @@ pub fn query_track_window_browsed(
 ///   any track row). The default entry points above pass `false`/`true`.
 #[allow(clippy::too_many_arguments)]
 pub fn query_track_window_browsed_ai(
-    conn: &mut Connection,
+    db: &Db,
+    source: &ViewSource,
+    sort_field: &str,
+    sort_dir: &str,
+    filter: &str,
+    browse: &BrowseFilter,
+    offset: i64,
+    limit: i64,
+    queue_ids: &[i64],
+    exclude_ai: bool,
+    project_ai: bool,
+) -> Result<Vec<Track>, rusqlite::Error> {
+    let conn = db.conn();
+    query_track_window_browsed_ai_conn(
+        conn, source, sort_field, sort_dir, filter, browse, offset, limit, queue_ids, exclude_ai,
+        project_ai,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn query_track_window_browsed_ai_conn(
+    conn: &Connection,
     source: &ViewSource,
     sort_field: &str,
     sort_dir: &str,
@@ -348,15 +367,27 @@ pub fn query_track_window_browsed_ai(
 /// each source defines "matching". `queue_ids` is only read for
 /// `ViewSource::Queue`.
 pub fn query_track_count(
-    conn: &Connection,
+    db: &Db,
     source: &ViewSource,
     filter: &str,
     queue_ids: &[i64],
 ) -> Result<i64, rusqlite::Error> {
-    query_track_count_browsed(conn, source, filter, &BrowseFilter::default(), queue_ids)
+    let conn = db.conn();
+    query_track_count_browsed_conn(conn, source, filter, &BrowseFilter::default(), queue_ids)
 }
 
 pub fn query_track_count_browsed(
+    db: &Db,
+    source: &ViewSource,
+    filter: &str,
+    browse: &BrowseFilter,
+    queue_ids: &[i64],
+) -> Result<i64, rusqlite::Error> {
+    let conn = db.conn();
+    query_track_count_browsed_conn(conn, source, filter, browse, queue_ids)
+}
+
+fn query_track_count_browsed_conn(
     conn: &Connection,
     source: &ViewSource,
     filter: &str,
@@ -410,9 +441,10 @@ pub fn query_track_count_browsed(
 /// fetching a whole [`maintenance::query_track_summary`], and the seam that
 /// keeps productive frontend code out of assembling SQL.
 pub fn track_source_path(
-    conn: &Connection,
+    db: &Db,
     track_id: i64,
 ) -> Result<Option<std::path::PathBuf>, rusqlite::Error> {
+    let conn = db.conn();
     use rusqlite::OptionalExtension;
     conn.query_row("SELECT path FROM tracks WHERE id = ?1", [track_id], |row| {
         row.get::<_, String>(0)
@@ -427,13 +459,14 @@ pub fn track_source_path(
 /// the cheap `COUNT(*)` the AI-filtered view uses for its total instead of an
 /// id-list length, which would silently cap at `QUEUE_LIMIT`.
 pub fn query_track_count_browsed_ai(
-    conn: &Connection,
+    db: &Db,
     source: &ViewSource,
     filter: &str,
     browse: &BrowseFilter,
     queue_ids: &[i64],
     exclude_ai: bool,
 ) -> Result<i64, rusqlite::Error> {
+    let conn = db.conn();
     match source {
         ViewSource::Library => {
             library::query_track_count_library_ai(conn, filter, browse, exclude_ai)
@@ -450,7 +483,7 @@ pub fn query_track_count_browsed_ai(
             &recently_added_browse(browse),
             exclude_ai,
         ),
-        _ => query_track_count_browsed(conn, source, filter, browse, queue_ids),
+        _ => query_track_count_browsed_conn(conn, source, filter, browse, queue_ids),
     }
 }
 
@@ -465,6 +498,18 @@ pub fn query_track_count_browsed_ai(
 /// truncated by the cap — compare its length with `is_queue_capped` and log
 /// a warning if so.
 pub fn query_track_ids(
+    db: &Db,
+    source: &ViewSource,
+    sort_field: &str,
+    sort_dir: &str,
+    filter: &str,
+    queue_ids: &[i64],
+) -> Result<Vec<i64>, rusqlite::Error> {
+    let conn = db.conn();
+    query_track_ids_in(conn, source, sort_field, sort_dir, filter, queue_ids)
+}
+
+pub(crate) fn query_track_ids_in(
     conn: &Connection,
     source: &ViewSource,
     sort_field: &str,
@@ -472,7 +517,7 @@ pub fn query_track_ids(
     filter: &str,
     queue_ids: &[i64],
 ) -> Result<Vec<i64>, rusqlite::Error> {
-    query_track_ids_browsed(
+    query_track_ids_browsed_ai_conn(
         conn,
         source,
         sort_field,
@@ -480,11 +525,12 @@ pub fn query_track_ids(
         filter,
         &BrowseFilter::default(),
         queue_ids,
+        false,
     )
 }
 
 pub fn query_track_ids_browsed(
-    conn: &Connection,
+    db: &Db,
     source: &ViewSource,
     sort_field: &str,
     sort_dir: &str,
@@ -492,7 +538,8 @@ pub fn query_track_ids_browsed(
     browse: &BrowseFilter,
     queue_ids: &[i64],
 ) -> Result<Vec<i64>, rusqlite::Error> {
-    query_track_ids_browsed_ai(
+    let conn = db.conn();
+    query_track_ids_browsed_ai_conn(
         conn, source, sort_field, sort_dir, filter, browse, queue_ids, false,
     )
 }
@@ -503,6 +550,23 @@ pub fn query_track_ids_browsed(
 /// at-queue-end refill follows the visible view. Only `Library` honors it.
 #[allow(clippy::too_many_arguments)]
 pub fn query_track_ids_browsed_ai(
+    db: &Db,
+    source: &ViewSource,
+    sort_field: &str,
+    sort_dir: &str,
+    filter: &str,
+    browse: &BrowseFilter,
+    queue_ids: &[i64],
+    exclude_ai: bool,
+) -> Result<Vec<i64>, rusqlite::Error> {
+    let conn = db.conn();
+    query_track_ids_browsed_ai_conn(
+        conn, source, sort_field, sort_dir, filter, browse, queue_ids, exclude_ai,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn query_track_ids_browsed_ai_conn(
     conn: &Connection,
     source: &ViewSource,
     sort_field: &str,
@@ -633,7 +697,7 @@ fn query_track_ids_recently_added(
 /// members remain selectable at their durable positions, while playback
 /// continues to seed queues from playable rows only.
 pub fn query_visible_track_ids_browsed(
-    conn: &Connection,
+    db: &Db,
     source: &ViewSource,
     sort_field: &str,
     sort_dir: &str,
@@ -641,12 +705,13 @@ pub fn query_visible_track_ids_browsed(
     browse: &BrowseFilter,
     queue_ids: &[i64],
 ) -> Result<Vec<i64>, rusqlite::Error> {
+    let conn = db.conn();
     match source {
         ViewSource::Playlist(id) => {
             playlist::query_visible_track_ids_playlist(conn, *id, sort_field, sort_dir, filter)
         }
-        _ => query_track_ids_browsed(
-            conn, source, sort_field, sort_dir, filter, browse, queue_ids,
+        _ => query_track_ids_browsed_ai_conn(
+            conn, source, sort_field, sort_dir, filter, browse, queue_ids, false,
         ),
     }
 }
@@ -695,45 +760,6 @@ impl TrackSummary {
             &self.album_artist
         }
     }
-}
-
-/// Aggregates library-wide stats over all non-missing tracks. Powers the
-/// status line (`ui::status_bar`). `track_count`/`total_duration_ms` always
-/// describe the *whole* library, regardless of `filter` — only `filtered_
-/// count` reacts to it, becoming `Some(query_track_count(conn, filter))` when
-/// `filter` is non-empty (trimmed) and `None` otherwise, so a status line
-/// with no active search reads exactly as it did before `filter` existed.
-/// Deliberately library-only, unaffected by `ViewSource` (Stage 3 Task 3):
-/// the status line only ever shows library-wide totals; for non-Library
-/// sources `ui::status_bar` hides the line outright — there the filter
-/// row is the one count on screen.
-pub fn query_library_stats(
-    conn: &Connection,
-    filter: &str,
-) -> Result<LibraryStats, rusqlite::Error> {
-    query_library_stats_browsed(conn, filter, &BrowseFilter::default())
-}
-
-pub fn query_library_stats_browsed(
-    conn: &Connection,
-    filter: &str,
-    browse: &BrowseFilter,
-) -> Result<LibraryStats, rusqlite::Error> {
-    let (track_count, total_duration_ms) = conn.query_row(
-        &format!("SELECT count(*), coalesce(sum(duration_ms),0) FROM tracks WHERE {PRESENT}"),
-        [],
-        |r| Ok((r.get(0)?, r.get(1)?)),
-    )?;
-    let filtered_count = if filter.trim().is_empty() && browse.is_empty() {
-        None
-    } else {
-        Some(library::query_track_count_library(conn, filter, browse)?)
-    };
-    Ok(LibraryStats {
-        track_count,
-        total_duration_ms,
-        filtered_count,
-    })
 }
 
 // `tests.rs` holds the core suite (query-builder/whitelist/LIKE-escaping,

@@ -64,19 +64,19 @@ pub fn channel_detail(
     path: &Path,
     params: &GetChannelDetailParams,
 ) -> Result<ChannelDetailResult, DataError> {
-    let conn = data::open(path)?;
-    data::require_read(&conn)?;
+    let db = data::open(path)?;
+    data::require_read(&db)?;
     if params.subscription_id <= 0 {
         return Err(DataError::InvalidInput(
             "subscription_id must be positive".to_owned(),
         ));
     }
-    let subscription = reprise_core::podcasts::store::subscription(&conn, params.subscription_id)
+    let subscription = reprise_core::podcasts::store::subscription(&db, params.subscription_id)
         .map_err(DataError::Db)?
         .filter(|row| row.removed_at.is_none())
         .ok_or_else(|| DataError::InvalidInput("podcast subscription does not exist".to_owned()))?;
     let episodes =
-        reprise_core::podcasts::query::episodes_for_subscription(&conn, params.subscription_id)
+        reprise_core::podcasts::query::episodes_for_subscription(&db, params.subscription_id)
             .map_err(DataError::Db)?;
 
     let show_shorts = params.show_shorts.unwrap_or(false);
@@ -133,9 +133,9 @@ mod tests {
     use reprise_core::podcasts::PodcastKind;
 
     fn seeded_channel(path: &Path, episode_count: i64) -> i64 {
-        let conn = reprise_core::db::open_migrated(Some(path)).unwrap();
+        let db = reprise_core::db::Db::open_migrated(Some(path)).unwrap();
         let subscription_id = store::add_or_restore(
-            &conn,
+            &db,
             &NewSubscription {
                 kind: PodcastKind::Youtube,
                 feed_url: "https://youtube.test/channel/UC-test".into(),
@@ -149,7 +149,7 @@ mod tests {
         .unwrap();
         for id in 1..=episode_count {
             store::upsert_episode(
-                &conn,
+                &db,
                 subscription_id,
                 &ParsedEpisode {
                     guid: format!("video-{id}"),
@@ -206,17 +206,17 @@ mod tests {
         let path = dir.path().join("reprise.db");
         let subscription_id = seeded_channel(&path, 2);
         let episode_id = {
-            let conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
-            reprise_core::podcasts::query::episodes_for_subscription(&conn, subscription_id)
-                .unwrap()[0]
-                .id
+            let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
+            reprise_core::podcasts::query::episodes_for_subscription(&db, subscription_id).unwrap()
+                [0]
+            .id
         };
         let audio = tempfile::NamedTempFile::new().unwrap();
         std::fs::write(audio.path(), b"twelve-bytes").unwrap();
         {
-            let conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
+            let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
             reprise_core::podcasts::downloads::set_downloaded_file(
-                &conn,
+                &db,
                 episode_id,
                 audio.path().to_str(),
                 Some(12),
@@ -260,7 +260,7 @@ mod tests {
     fn channel_detail_rejects_an_unknown_subscription() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("reprise.db");
-        reprise_core::db::open_migrated(Some(&path)).unwrap();
+        let _db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
 
         let error = channel_detail(
             &path,

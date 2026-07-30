@@ -140,9 +140,11 @@ fn schema_newer_than_supported_is_refused_at_startup() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("reprise.db");
     // Create + migrate, then forge a future schema version.
-    let conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
-    conn.pragma_update(None, "user_version", 9_999_i64).unwrap();
-    drop(conn);
+    let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
+    drop(db);
+    common::fixture_connection(&path)
+        .pragma_update(None, "user_version", 9_999_i64)
+        .unwrap();
 
     let output = Command::new(env!("CARGO_BIN_EXE_reprise-mcp"))
         .arg("--db")

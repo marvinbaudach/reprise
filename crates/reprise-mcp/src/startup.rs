@@ -4,7 +4,8 @@
 
 use std::path::Path;
 
-use reprise_core::db::{self, DbError};
+use reprise_core::db::Db;
+use reprise_core::db::DbError;
 
 use crate::capability;
 
@@ -42,19 +43,19 @@ pub struct StartupCaps {
 /// (`playlist:create`, `playlist:manage`, `ai:create`, `sources:manage`) as they
 /// stood at startup.
 pub fn prepare(db_path: &Path) -> Result<StartupCaps, StartupError> {
-    let conn = match db::open_migrated(Some(db_path)) {
-        Ok(conn) => conn,
+    let db = match Db::open_migrated(Some(db_path)) {
+        Ok(db) => db,
         Err(DbError::SchemaTooNew { found, supported }) => {
             return Err(StartupError::SchemaTooNew { found, supported });
         }
         Err(other) => return Err(StartupError::Open(other)),
     };
     Ok(StartupCaps {
-        playlist_create: capability::playlist_create_granted(&conn).map_err(StartupError::Query)?,
-        playlist_manage: capability::playlist_manage_granted(&conn).map_err(StartupError::Query)?,
-        ai_create: capability::ai_create_granted(&conn).map_err(StartupError::Query)?,
-        sources_manage: capability::sources_manage_granted(&conn).map_err(StartupError::Query)?,
+        playlist_create: capability::playlist_create_granted(&db).map_err(StartupError::Query)?,
+        playlist_manage: capability::playlist_manage_granted(&db).map_err(StartupError::Query)?,
+        ai_create: capability::ai_create_granted(&db).map_err(StartupError::Query)?,
+        sources_manage: capability::sources_manage_granted(&db).map_err(StartupError::Query)?,
         #[cfg(feature = "mpris")]
-        device_sync: capability::device_sync_granted(&conn).map_err(StartupError::Query)?,
+        device_sync: capability::device_sync_granted(&db).map_err(StartupError::Query)?,
     })
 }

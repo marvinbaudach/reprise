@@ -1,6 +1,5 @@
 //! Last.fm preferences: inline expander, desktop authorization, keyring, bootstrap.
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use gtk4::gio;
@@ -9,10 +8,10 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
+use reprise_core::db::Db;
 use reprise_core::scrobbling::{
     LastFmClient, ScrobbleProvider, ScrobblerTransport, TransportError,
 };
-use rusqlite::Connection;
 
 use crate::ui::lastfm_secret::{self, LastFmCredentials};
 use crate::ui::one_shot_task;
@@ -232,10 +231,9 @@ fn build_lastfm_expander(is_enabled: bool, connected: bool, status: &str) -> Las
     }
 }
 
-pub(in crate::ui) fn bootstrap(conn: &Rc<RefCell<Connection>>, runtime: &Rc<ScrobbleRuntime>) {
-    let enabled =
-        reprise_core::modules::is_enabled(&conn.borrow(), &reprise_core::modules::LASTFM_MODULE)
-            .unwrap_or(false);
+pub(in crate::ui) fn bootstrap(conn: &Rc<Db>, runtime: &Rc<ScrobbleRuntime>) {
+    let enabled = reprise_core::modules::is_enabled(conn, &reprise_core::modules::LASTFM_MODULE)
+        .unwrap_or(false);
     if !enabled {
         return;
     }
@@ -283,12 +281,10 @@ fn has_bundled_credentials() -> bool {
         && reprise_core::scrobbling::BUNDLED_SHARED_SECRET.is_some()
 }
 
-fn disable_module(conn: &Rc<RefCell<Connection>>, runtime: &ScrobbleRuntime) {
-    if let Err(error) = reprise_core::modules::set_enabled(
-        &conn.borrow(),
-        &reprise_core::modules::LASTFM_MODULE,
-        false,
-    ) {
+fn disable_module(conn: &Rc<Db>, runtime: &ScrobbleRuntime) {
+    if let Err(error) =
+        reprise_core::modules::set_enabled(conn, &reprise_core::modules::LASTFM_MODULE, false)
+    {
         tracing::warn!(%error, "could not disable Last.fm plugin");
     }
     runtime.disable();
@@ -296,11 +292,9 @@ fn disable_module(conn: &Rc<RefCell<Connection>>, runtime: &ScrobbleRuntime) {
 
 impl PreferencesContext {
     pub(in crate::ui) fn build_lastfm_row(self: &Rc<Self>) -> adw::ExpanderRow {
-        let is_enabled = reprise_core::modules::is_enabled(
-            &self.conn.borrow(),
-            &reprise_core::modules::LASTFM_MODULE,
-        )
-        .unwrap_or(false);
+        let is_enabled =
+            reprise_core::modules::is_enabled(&self.conn, &reprise_core::modules::LASTFM_MODULE)
+                .unwrap_or(false);
         let connected = self.lastfm.is_active();
         let status = status_text(&self.lastfm.status());
         let surface = build_lastfm_expander(is_enabled, connected, &status);
@@ -660,7 +654,7 @@ impl PreferencesContext {
             match lastfm_secret::delete().await {
                 Ok(()) => {
                     if let Err(error) = reprise_core::scrobbling::clear_pending_for(
-                        &context.conn.borrow(),
+                        &context.conn,
                         ScrobbleProvider::LastFm,
                     ) {
                         tracing::warn!(%error, "could not clear Last.fm queue on disconnect");
@@ -680,7 +674,7 @@ impl PreferencesContext {
 
     fn persist_lastfm_enabled(&self, enabled: bool) -> bool {
         reprise_core::modules::set_enabled(
-            &self.conn.borrow(),
+            &self.conn,
             &reprise_core::modules::LASTFM_MODULE,
             enabled,
         )
@@ -721,9 +715,8 @@ fn set_activation_pending(row: &adw::ExpanderRow, pending: bool) {
     row.set_sensitive(!pending);
 }
 
-fn pending_count(conn: &Rc<RefCell<Connection>>) -> usize {
-    reprise_core::scrobbling::pending_count_for(&conn.borrow(), ScrobbleProvider::LastFm)
-        .unwrap_or(0)
+fn pending_count(conn: &Rc<Db>) -> usize {
+    reprise_core::scrobbling::pending_count_for(conn, ScrobbleProvider::LastFm).unwrap_or(0)
 }
 
 fn map_transport_error(error: &TransportError) -> String {

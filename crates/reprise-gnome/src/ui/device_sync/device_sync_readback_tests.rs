@@ -27,7 +27,7 @@ fn mtp_10_success_stays_finishing_until_device_contents_are_verified() {
             Err("device synchronization is active".into())
         );
         assert_eq!(
-            reprise_core::device_sync::settings::load_device_playlists(&conn.borrow(), "a")
+            reprise_core::device_sync::settings::load_device_playlists(&conn, "a")
                 .unwrap()
                 .remove(0)
                 .last_synced_at,
@@ -44,7 +44,7 @@ fn mtp_10_success_stays_finishing_until_device_contents_are_verified() {
         assert_eq!(device.sync_phase, PlannedSyncPhase::Idle);
         assert_eq!(device.verified_managed_track_count, Some(0));
         assert!(
-            reprise_core::device_sync::settings::load_device_playlists(&conn.borrow(), "a")
+            reprise_core::device_sync::settings::load_device_playlists(&conn, "a")
                 .unwrap()
                 .remove(0)
                 .last_synced_at
@@ -59,7 +59,7 @@ fn mtp_10_failed_readback_never_claims_a_successful_sync() {
         let (_temp, conn) = fixture();
         select_road_playlist(&conn, &[1]);
         reprise_core::device_sync::settings::upsert_device_playlist(
-            &conn.borrow(),
+            &conn,
             &reprise_core::device_sync::DevicePlaylistRecord {
                 device_serial: "a".into(),
                 source: SelectionSource::Playlist(10),
@@ -90,7 +90,7 @@ fn mtp_10_failed_readback_never_claims_a_successful_sync() {
             .as_ref()
             .is_some_and(|error| error.message.contains("could not verify device contents")));
         assert_eq!(
-            reprise_core::device_sync::settings::load_device_playlists(&conn.borrow(), "a")
+            reprise_core::device_sync::settings::load_device_playlists(&conn, "a")
                 .unwrap()
                 .remove(0)
                 .last_synced_at,
@@ -111,7 +111,7 @@ fn failed_playlist_timestamp_write_never_claims_a_successful_sync() {
 
         runtime.sync_now("a").unwrap();
         inspection_started.recv().await.unwrap();
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute_batch(
                 "CREATE TRIGGER reject_playlist_sync_timestamp
                  BEFORE UPDATE OF last_synced_at ON device_playlists
@@ -135,7 +135,7 @@ fn failed_playlist_timestamp_write_never_claims_a_successful_sync() {
             .message
             .contains("could not record verified playlist synchronization")));
         assert_eq!(
-            reprise_core::device_sync::settings::load_device_playlists(&conn.borrow(), "a")
+            reprise_core::device_sync::settings::load_device_playlists(&conn, "a")
                 .unwrap()
                 .remove(0)
                 .last_synced_at,

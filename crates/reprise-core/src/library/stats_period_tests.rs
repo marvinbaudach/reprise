@@ -199,20 +199,21 @@ fn year_to_date_of_a_finished_year_compares_against_that_whole_year() {
 
 #[test]
 fn available_periods_include_only_calendar_years_with_detailed_history() {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    conn.execute(
-        "INSERT INTO tracks \
+    let conn = crate::db::Db::open_in_memory().unwrap();
+    conn.conn()
+        .execute(
+            "INSERT INTO tracks \
          (id, path, title, artist, album, duration_ms, play_count, added_at) \
          VALUES (1, '/music/imported.flac', 'Imported', 'Artist', 'Album', 300000, 194, 0)",
-        [],
-    )
-    .unwrap();
-    conn.execute(
-        "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (1, ?1, 200000)",
-        [timestamp(2024, 6, 1, 12, 0)],
-    )
-    .unwrap();
+            [],
+        )
+        .unwrap();
+    conn.conn()
+        .execute(
+            "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (1, ?1, 200000)",
+            [timestamp(2024, 6, 1, 12, 0)],
+        )
+        .unwrap();
 
     assert_eq!(
         StatsPeriod::available(&conn, 2026, &Utc).unwrap(),

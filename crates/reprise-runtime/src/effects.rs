@@ -7,11 +7,11 @@
 //! that reported only the stored value would be telling every surface a
 //! promise nothing kept.
 
+use reprise_core::db::Db;
 use reprise_core::library::settings::ReplayGainMode;
 use reprise_core::library::{audio_effect_settings, settings};
 use reprise_core::playback::{AudioEffects, PlaybackBackend};
 use reprise_runtime_protocol::effects::{EffectsRequest, EffectsSnapshot, EQUALIZER_BAND_COUNT};
-use rusqlite::Connection;
 
 use crate::error::Rejected;
 
@@ -30,8 +30,8 @@ impl Effects {
     /// same choice GTK's `apply_initial` makes, and for the same reason: the
     /// effects are an enhancement, and refusing to play without them would
     /// turn a cosmetic gap into an outage.
-    pub(crate) fn apply_stored(conn: &Connection, backend: &dyn PlaybackBackend) -> Self {
-        let stored = audio_effect_settings::load(conn);
+    pub(crate) fn apply_stored(db: &Db, backend: &dyn PlaybackBackend) -> Self {
+        let stored = audio_effect_settings::load(db);
         if backend.set_audio_effects(stored.clone()).is_ok() {
             return Self {
                 active: stored,
@@ -51,10 +51,10 @@ impl Effects {
         // exactly as they were: they are a curve someone dialled in, and
         // flattening them would quietly destroy work over a missing plugin
         // that may well be installed tomorrow.
-        if let Err(error) = settings::set_equalizer_enabled(conn, false) {
+        if let Err(error) = settings::set_equalizer_enabled(db, false) {
             tracing::warn!(%error, "could not persist the equalizer fallback");
         }
-        if let Err(error) = settings::set_replay_gain_mode(conn, ReplayGainMode::Off) {
+        if let Err(error) = settings::set_replay_gain_mode(db, ReplayGainMode::Off) {
             tracing::warn!(%error, "could not persist the ReplayGain fallback");
         }
         Self {
@@ -71,7 +71,7 @@ impl Effects {
     /// launch later, far from the action that caused it.
     pub(crate) fn set(
         &mut self,
-        conn: &Connection,
+        db: &Db,
         backend: &dyn PlaybackBackend,
         request: &EffectsRequest,
     ) -> Result<(), crate::error::RuntimeError> {
@@ -79,7 +79,7 @@ impl Effects {
         backend
             .set_audio_effects(requested.clone())
             .map_err(|error| crate::transport::backend_failed(&error))?;
-        if let Err(error) = audio_effect_settings::store(conn, &requested) {
+        if let Err(error) = audio_effect_settings::store(db, &requested) {
             // Applied but not stored: the sound is already what was asked
             // for, so reporting a failure would be wrong about the thing the
             // user can hear. It will not survive a restart, which is the part

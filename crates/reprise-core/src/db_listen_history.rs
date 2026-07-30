@@ -67,15 +67,15 @@ mod tests {
 
     #[test]
     fn browse_6_track_deletion_keeps_listen_and_its_metadata_snapshot() {
-        let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
-        conn.execute(
-            "INSERT INTO tracks
+        let db = crate::db::Db::open_in_memory().unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO tracks
              (id,path,title,artist,album,album_artist,genre,duration_ms,added_at)
              VALUES (1,'/music/blue.flac','River','Joni','Blue','Joni','Folk',240000,1)",
-            [],
-        )
-        .unwrap();
+                [],
+            )
+            .unwrap();
         let snapshot = ListenEventSnapshot {
             title: "River".into(),
             artist: "Joni".into(),
@@ -86,12 +86,14 @@ mod tests {
             path: "/music/blue.flac".into(),
             artist_mbid: None,
         };
-        crate::library::stats_screen::record_listen_event(&conn, 1, 100, 200_000, &snapshot)
+        crate::library::stats_screen::record_listen_event(&db, 1, 100, 200_000, &snapshot).unwrap();
+
+        db.conn()
+            .execute("DELETE FROM tracks WHERE id=1", [])
             .unwrap();
 
-        conn.execute("DELETE FROM tracks WHERE id=1", []).unwrap();
-
-        let snapshot: (i64, String, String, String) = conn
+        let snapshot: (i64, String, String, String) = db
+            .conn()
             .query_row(
                 "SELECT track_id,title,artist,album FROM listen_events WHERE id=1",
                 [],
@@ -103,8 +105,7 @@ mod tests {
 
     #[test]
     fn history_2_deleted_during_playback_records_the_owned_snapshot() {
-        let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
+        let db = crate::db::Db::open_in_memory().unwrap();
         let snapshot = ListenEventSnapshot {
             title: "River".into(),
             artist: "Joni".into(),
@@ -116,10 +117,10 @@ mod tests {
             artist_mbid: Some("artist-id".into()),
         };
 
-        crate::library::stats_screen::record_listen_event(&conn, 1, 100, 200_000, &snapshot)
-            .unwrap();
+        crate::library::stats_screen::record_listen_event(&db, 1, 100, 200_000, &snapshot).unwrap();
 
-        let stored: (String, String, i64, Option<String>) = conn
+        let stored: (String, String, i64, Option<String>) = db
+            .conn()
             .query_row(
                 "SELECT title, genre, duration_ms, artist_mbid FROM listen_events WHERE id=1",
                 [],
@@ -140,7 +141,7 @@ mod tests {
     #[test]
     fn history_5_v22_upgrade_backfills_existing_listens_and_is_idempotent() {
         let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
+        crate::db::migrate_connection(&conn).unwrap();
         conn.execute_batch(
             "DROP TRIGGER listen_events_fill_snapshot;
              DROP TABLE listen_events;

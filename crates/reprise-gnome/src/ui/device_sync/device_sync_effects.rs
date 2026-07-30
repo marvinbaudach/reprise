@@ -139,8 +139,8 @@ pub(super) async fn perform(
                 pinned: false,
             };
             let result = {
-                let conn = runtime.conn.borrow();
-                upsert_device_file(&conn, &record)
+                let conn = &runtime.conn;
+                upsert_device_file(conn, &record)
             };
             Event::FileRecorded(result.map_err(|error| {
                 tracing::warn!(track_id = entry.track.id, %error, "could not update device inventory");
@@ -183,7 +183,7 @@ pub(super) async fn perform(
                 device_path: playlist.device_path.clone(),
                 last_synced_at: None,
             };
-            let result = upsert_device_playlist(&runtime.conn.borrow(), &record);
+            let result = upsert_device_playlist(&runtime.conn, &record);
             Event::PlaylistRecorded(result.map_err(|error| {
                 tracing::warn!(playlist = record.source_name, %error, "could not update playlist inventory");
                 error.to_string()
@@ -210,7 +210,7 @@ pub(super) async fn perform(
         }
         Effect::ForgetPlaylist { index } => {
             let source = playlist_removal(work, index).source.clone();
-            let result = delete_device_playlist(&runtime.conn.borrow(), &work.device_id, &source);
+            let result = delete_device_playlist(&runtime.conn, &work.device_id, &source);
             Event::PlaylistForgotten(result.map(|_| ()).map_err(|error| {
                 tracing::warn!(%error, "could not remove playlist inventory");
                 error.to_string()
@@ -251,7 +251,7 @@ pub(super) async fn perform(
             let Some(track_id) = removal_track_id(&removal(work, index)) else {
                 return Event::FileForgotten(Ok(()));
             };
-            let result = delete_device_file(&runtime.conn.borrow(), &work.device_id, track_id);
+            let result = delete_device_file(&runtime.conn, &work.device_id, track_id);
             Event::FileForgotten(result.map(|_| ()).map_err(|error| {
                 tracing::warn!(track_id, %error, "could not remove device inventory row");
                 error.to_string()

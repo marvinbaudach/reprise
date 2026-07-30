@@ -114,8 +114,8 @@ impl PlayerController {
             return;
         }
         let summary = {
-            let conn = self.conn.borrow();
-            reprise_core::queries::query_track_summary(&conn, id)
+            let conn = &self.conn;
+            reprise_core::queries::query_track_summary(conn, id)
         };
         let Ok(Some(summary)) = summary else {
             return;
@@ -306,11 +306,12 @@ impl PlayerController {
         let db_path = reprise_core::db::default_path();
         let track_path = std::path::PathBuf::from(path);
         let Ok(receiver) = one_shot_task::spawn("reprise-waveform", move || {
-            reprise_core::db::open_migrated(Some(&db_path))
+            reprise_core::db::Db::open_migrated(Some(&db_path))
                 .ok()
-                .and_then(|conn| {
+                .and_then(|db| {
+                    let conn = &db;
                     // Try DB first.
-                    if let Some(cached) = reprise_core::db::get_waveform_peaks(&conn, track_id)
+                    if let Some(cached) = reprise_core::db::get_waveform_peaks(conn, track_id)
                         .ok()
                         .flatten()
                     {
@@ -320,7 +321,7 @@ impl PlayerController {
                     let peaks = waveform_backend
                         .extract_peaks(&track_path, STORED_PEAK_COUNT)
                         .ok()?;
-                    reprise_core::db::set_waveform_peaks(&conn, track_id, &peaks).ok();
+                    reprise_core::db::set_waveform_peaks(conn, track_id, &peaks).ok();
                     Some(peaks)
                 })
         }) else {

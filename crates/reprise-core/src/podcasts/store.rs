@@ -2,6 +2,8 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 
+use crate::db::Db;
+
 use super::feed::ParsedEpisode;
 use super::{EpisodeRow, PodcastKind, SubscriptionRow};
 
@@ -36,19 +38,21 @@ pub struct FetchSuccess<'a> {
 }
 
 pub fn add_or_restore(
-    conn: &Connection,
+    db: &Db,
     subscription: &NewSubscription,
     now: i64,
 ) -> Result<i64, rusqlite::Error> {
+    let conn = db.conn();
     add_or_restore_in(conn, subscription, now)
 }
 
 pub fn add_or_restore_with_baseline(
-    conn: &Connection,
+    db: &Db,
     subscription: &NewSubscription,
     now: i64,
     future_only_baseline: Option<&[String]>,
 ) -> Result<i64, rusqlite::Error> {
+    let conn = db.conn();
     let transaction = conn.unchecked_transaction()?;
     let subscription_id = add_or_restore_in(&transaction, subscription, now)?;
     replace_future_only_baseline_in(
@@ -66,7 +70,7 @@ pub fn add_or_restore_with_baseline(
 /// unchanged; a kind change at the same URL is a different content type
 /// under an old sync flag, so both are cleared — this is not RSS/YouTube
 /// special-casing, it is symmetric in the direction of the change.
-fn add_or_restore_in(
+pub(crate) fn add_or_restore_in(
     conn: &Connection,
     subscription: &NewSubscription,
     now: i64,
@@ -118,7 +122,14 @@ fn add_or_restore_in(
     Ok(subscription_id)
 }
 
-pub fn active_subscriptions(conn: &Connection) -> Result<Vec<SubscriptionRow>, rusqlite::Error> {
+pub fn active_subscriptions(db: &Db) -> Result<Vec<SubscriptionRow>, rusqlite::Error> {
+    let conn = db.conn();
+    active_subscriptions_in(conn)
+}
+
+pub(crate) fn active_subscriptions_in(
+    conn: &Connection,
+) -> Result<Vec<SubscriptionRow>, rusqlite::Error> {
     let mut statement = conn.prepare(
         "SELECT id, kind, feed_url, title, author, image_url, etag,
                 last_modified, last_fetch_at, last_outcome, auto_download,
@@ -131,7 +142,12 @@ pub fn active_subscriptions(conn: &Connection) -> Result<Vec<SubscriptionRow>, r
     rows.collect::<Result<Vec<_>, _>>()
 }
 
-pub fn subscription(
+pub fn subscription(db: &Db, id: i64) -> Result<Option<SubscriptionRow>, rusqlite::Error> {
+    let conn = db.conn();
+    subscription_in(conn, id)
+}
+
+pub(crate) fn subscription_in(
     conn: &Connection,
     id: i64,
 ) -> Result<Option<SubscriptionRow>, rusqlite::Error> {
@@ -154,6 +170,14 @@ pub fn subscription(
 /// fallback to the global default (`resolve_latest_per_channel`) is the
 /// only place "no override" is decided.
 pub fn latest_per_channel_overrides(
+    db: &Db,
+    subscription_ids: &[i64],
+) -> Result<std::collections::HashMap<i64, i64>, rusqlite::Error> {
+    let conn = db.conn();
+    latest_per_channel_overrides_in(conn, subscription_ids)
+}
+
+pub(crate) fn latest_per_channel_overrides_in(
     conn: &Connection,
     subscription_ids: &[i64],
 ) -> Result<std::collections::HashMap<i64, i64>, rusqlite::Error> {
@@ -180,10 +204,11 @@ pub fn latest_per_channel_overrides(
 /// 6b's channel page has no control for it) — it exists so the persistence
 /// and the live pipeline can be tested and used independently of that UI.
 pub fn set_latest_per_channel(
-    conn: &Connection,
+    db: &Db,
     id: i64,
     value: Option<i64>,
 ) -> Result<bool, rusqlite::Error> {
+    let conn = db.conn();
     Ok(conn.execute(
         "UPDATE podcast_subscriptions
          SET latest_per_channel = ?2
@@ -199,11 +224,8 @@ pub fn set_latest_per_channel(
 /// `set_latest_per_channel` itself landed: it exists so the persistence and
 /// `podcasts::downloads::enforce_cleanup` can be tested and used
 /// independently of that UI.
-pub fn set_keep_downloaded(
-    conn: &Connection,
-    id: i64,
-    value: Option<i64>,
-) -> Result<bool, rusqlite::Error> {
+pub fn set_keep_downloaded(db: &Db, id: i64, value: Option<i64>) -> Result<bool, rusqlite::Error> {
+    let conn = db.conn();
     Ok(conn.execute(
         "UPDATE podcast_subscriptions
          SET keep_downloaded = ?2
@@ -212,7 +234,8 @@ pub fn set_keep_downloaded(
     )? != 0)
 }
 
-pub fn count_subscriptions(conn: &Connection) -> Result<usize, rusqlite::Error> {
+pub fn count_subscriptions(db: &Db) -> Result<usize, rusqlite::Error> {
+    let conn = db.conn();
     conn.query_row(
         "SELECT COUNT(*) FROM podcast_subscriptions WHERE removed_at IS NULL",
         [],
@@ -222,11 +245,12 @@ pub fn count_subscriptions(conn: &Connection) -> Result<usize, rusqlite::Error> 
 }
 
 pub fn update_subscription_details(
-    conn: &Connection,
+    db: &Db,
     id: i64,
     title: Option<&str>,
     auto_download: Option<bool>,
 ) -> Result<bool, rusqlite::Error> {
+    let conn = db.conn();
     Ok(conn.execute(
         "UPDATE podcast_subscriptions
          SET title = COALESCE(?2, title),
@@ -237,10 +261,11 @@ pub fn update_subscription_details(
 }
 
 pub fn replace_future_only_baseline(
-    conn: &Connection,
+    db: &Db,
     subscription_id: i64,
     guids: &[String],
 ) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
     let transaction = conn.unchecked_transaction()?;
     replace_future_only_baseline_in(&transaction, subscription_id, guids)?;
     transaction.commit()
@@ -267,10 +292,8 @@ fn replace_future_only_baseline_in(
     Ok(())
 }
 
-pub fn clear_future_only_baseline(
-    conn: &Connection,
-    subscription_id: i64,
-) -> Result<(), rusqlite::Error> {
+pub fn clear_future_only_baseline(db: &Db, subscription_id: i64) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
     conn.execute(
         "DELETE FROM podcast_subscription_baselines WHERE subscription_id = ?1",
         [subscription_id],
@@ -278,7 +301,12 @@ pub fn clear_future_only_baseline(
     Ok(())
 }
 
-pub fn future_only_baseline(
+pub fn future_only_baseline(db: &Db, subscription_id: i64) -> Result<Vec<String>, rusqlite::Error> {
+    let conn = db.conn();
+    future_only_baseline_in(conn, subscription_id)
+}
+
+pub(crate) fn future_only_baseline_in(
     conn: &Connection,
     subscription_id: i64,
 ) -> Result<Vec<String>, rusqlite::Error> {
@@ -294,6 +322,16 @@ pub fn future_only_baseline(
 }
 
 pub fn upsert_episode(
+    db: &Db,
+    subscription_id: i64,
+    episode: &ParsedEpisode,
+    now: i64,
+) -> Result<Option<UpsertResult>, rusqlite::Error> {
+    let conn = db.conn();
+    upsert_episode_in(conn, subscription_id, episode, now)
+}
+
+pub(crate) fn upsert_episode_in(
     conn: &Connection,
     subscription_id: i64,
     episode: &ParsedEpisode,
@@ -348,7 +386,15 @@ pub fn upsert_episode(
     }))
 }
 
-pub fn episode(conn: &Connection, id: i64) -> Result<Option<EpisodeRow>, rusqlite::Error> {
+pub fn episode(db: &Db, id: i64) -> Result<Option<EpisodeRow>, rusqlite::Error> {
+    let conn = db.conn();
+    episode_in(conn, id)
+}
+
+pub(crate) fn episode_in(
+    conn: &Connection,
+    id: i64,
+) -> Result<Option<EpisodeRow>, rusqlite::Error> {
     conn.query_row(
         "SELECT e.id, e.subscription_id, e.guid, e.title, s.title,
                 s.image_url, s.kind, e.audio_url, e.page_url, e.published_at,
@@ -364,6 +410,16 @@ pub fn episode(conn: &Connection, id: i64) -> Result<Option<EpisodeRow>, rusqlit
 }
 
 pub fn update_fetch_success(
+    db: &Db,
+    id: i64,
+    now: i64,
+    metadata: FetchSuccess<'_>,
+) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
+    update_fetch_success_in(conn, id, now, metadata)
+}
+
+pub(crate) fn update_fetch_success_in(
     conn: &Connection,
     id: i64,
     now: i64,
@@ -392,7 +448,12 @@ pub fn update_fetch_success(
     Ok(())
 }
 
-pub fn update_fetch_not_modified(
+pub fn update_fetch_not_modified(db: &Db, id: i64, now: i64) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
+    update_fetch_not_modified_in(conn, id, now)
+}
+
+pub(crate) fn update_fetch_not_modified_in(
     conn: &Connection,
     id: i64,
     now: i64,
@@ -406,7 +467,16 @@ pub fn update_fetch_not_modified(
     Ok(())
 }
 
-pub fn update_fetch_failed(conn: &Connection, id: i64, now: i64) -> Result<(), rusqlite::Error> {
+pub fn update_fetch_failed(db: &Db, id: i64, now: i64) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
+    update_fetch_failed_in(conn, id, now)
+}
+
+pub(crate) fn update_fetch_failed_in(
+    conn: &Connection,
+    id: i64,
+    now: i64,
+) -> Result<(), rusqlite::Error> {
     conn.execute(
         "UPDATE podcast_subscriptions
          SET last_fetch_at = ?2, last_outcome = 'failed'
@@ -416,11 +486,8 @@ pub fn update_fetch_failed(conn: &Connection, id: i64, now: i64) -> Result<(), r
     Ok(())
 }
 
-pub fn save_position(
-    conn: &Connection,
-    episode_id: i64,
-    position_ms: i64,
-) -> Result<(), rusqlite::Error> {
+pub fn save_position(db: &Db, episode_id: i64, position_ms: i64) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
     conn.execute(
         "UPDATE podcast_episodes SET position_ms = ?2 WHERE id = ?1",
         params![episode_id, position_ms.max(0)],
@@ -428,11 +495,8 @@ pub fn save_position(
     Ok(())
 }
 
-pub fn save_duration(
-    conn: &Connection,
-    episode_id: i64,
-    duration_secs: i64,
-) -> Result<(), rusqlite::Error> {
+pub fn save_duration(db: &Db, episode_id: i64, duration_secs: i64) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
     conn.execute(
         "UPDATE podcast_episodes
          SET duration_secs = ?2
@@ -442,7 +506,8 @@ pub fn save_duration(
     Ok(())
 }
 
-pub fn mark_played(conn: &Connection, episode_id: i64, now: i64) -> Result<(), rusqlite::Error> {
+pub fn mark_played(db: &Db, episode_id: i64, now: i64) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
     conn.execute(
         "UPDATE podcast_episodes
          SET played_at = ?2, position_ms = 0
@@ -452,7 +517,8 @@ pub fn mark_played(conn: &Connection, episode_id: i64, now: i64) -> Result<(), r
     Ok(())
 }
 
-pub fn mark_unplayed(conn: &Connection, episode_id: i64) -> Result<(), rusqlite::Error> {
+pub fn mark_unplayed(db: &Db, episode_id: i64) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
     conn.execute(
         "UPDATE podcast_episodes SET played_at = NULL WHERE id = ?1",
         [episode_id],
@@ -460,7 +526,8 @@ pub fn mark_unplayed(conn: &Connection, episode_id: i64) -> Result<(), rusqlite:
     Ok(())
 }
 
-pub fn tombstone_episode(conn: &Connection, id: i64, now: i64) -> Result<bool, rusqlite::Error> {
+pub fn tombstone_episode(db: &Db, id: i64, now: i64) -> Result<bool, rusqlite::Error> {
+    let conn = db.conn();
     Ok(conn.execute(
         "UPDATE podcast_episodes
          SET removed_at = ?2
@@ -469,7 +536,8 @@ pub fn tombstone_episode(conn: &Connection, id: i64, now: i64) -> Result<bool, r
     )? != 0)
 }
 
-pub fn undo_remove_episode(conn: &Connection, id: i64) -> Result<bool, rusqlite::Error> {
+pub fn undo_remove_episode(db: &Db, id: i64) -> Result<bool, rusqlite::Error> {
+    let conn = db.conn();
     Ok(conn.execute(
         "UPDATE podcast_episodes
          SET removed_at = NULL
@@ -478,10 +546,8 @@ pub fn undo_remove_episode(conn: &Connection, id: i64) -> Result<bool, rusqlite:
     )? != 0)
 }
 
-pub fn commit_remove_episode(
-    conn: &Connection,
-    id: i64,
-) -> Result<Option<String>, rusqlite::Error> {
+pub fn commit_remove_episode(db: &Db, id: i64) -> Result<Option<String>, rusqlite::Error> {
+    let conn = db.conn();
     let transaction = conn.unchecked_transaction()?;
     let removed = transaction
         .query_row(
@@ -514,7 +580,8 @@ pub fn commit_remove_episode(
     Ok(downloaded_path)
 }
 
-pub fn tombstone_subscription(conn: &Connection, id: i64, now: i64) -> Result<(), rusqlite::Error> {
+pub fn tombstone_subscription(db: &Db, id: i64, now: i64) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
     conn.execute(
         "UPDATE podcast_subscriptions SET removed_at = ?2 WHERE id = ?1",
         params![id, now],
@@ -522,7 +589,8 @@ pub fn tombstone_subscription(conn: &Connection, id: i64, now: i64) -> Result<()
     Ok(())
 }
 
-pub fn undo_remove_subscription(conn: &Connection, id: i64) -> Result<(), rusqlite::Error> {
+pub fn undo_remove_subscription(db: &Db, id: i64) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
     conn.execute(
         "UPDATE podcast_subscriptions SET removed_at = NULL WHERE id = ?1",
         [id],
@@ -530,7 +598,8 @@ pub fn undo_remove_subscription(conn: &Connection, id: i64) -> Result<(), rusqli
     Ok(())
 }
 
-pub fn commit_remove_subscription(conn: &Connection, id: i64) -> Result<(), rusqlite::Error> {
+pub fn commit_remove_subscription(db: &Db, id: i64) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
     conn.execute(
         "DELETE FROM podcast_subscriptions WHERE id = ?1 AND removed_at IS NOT NULL",
         [id],

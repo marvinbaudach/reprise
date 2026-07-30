@@ -12,9 +12,9 @@ use super::clauses::like_pattern;
 use super::*;
 use std::path::Path;
 
-fn seeded_titled_conn() -> Connection {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+fn seeded_titled_conn() -> crate::db::Db {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     for (t, a) in [("Zulu", "AAA"), ("Alpha", "BBB"), ("Mid", "CCC")] {
         conn.execute(
             "INSERT INTO tracks (path, title, artist, added_at) VALUES (?1, ?2, ?3, 0)",
@@ -22,7 +22,7 @@ fn seeded_titled_conn() -> Connection {
         )
         .unwrap();
     }
-    conn
+    db
 }
 
 #[test]
@@ -59,8 +59,8 @@ fn like_pattern_escapes_backslash_first_then_percent_and_underscore() {
 /// `%`, not act as a live wildcard matching everything.
 #[test]
 fn search_filter_treats_a_literal_percent_as_a_literal_not_a_wildcard() {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     for (t, a) in [("A%B", "X"), ("AZB", "Y"), ("Other", "Z")] {
         conn.execute(
             "INSERT INTO tracks (path, title, artist, added_at) VALUES (?1, ?2, ?3, 0)",
@@ -69,18 +69,8 @@ fn search_filter_treats_a_literal_percent_as_a_literal_not_a_wildcard() {
         .unwrap();
     }
 
-    let mut conn = conn;
-    let rows = query_track_window(
-        &mut conn,
-        &ViewSource::Library,
-        "title",
-        "asc",
-        "%",
-        0,
-        10,
-        &[],
-    )
-    .unwrap();
+    let rows =
+        query_track_window(&db, &ViewSource::Library, "title", "asc", "%", 0, 10, &[]).unwrap();
     assert_eq!(
         rows.len(),
         1,
@@ -89,73 +79,54 @@ fn search_filter_treats_a_literal_percent_as_a_literal_not_a_wildcard() {
     assert_eq!(rows[0].title, "A%B");
 
     assert_eq!(
-        query_track_count(&conn, &ViewSource::Library, "%", &[]).unwrap(),
+        query_track_count(&db, &ViewSource::Library, "%", &[]).unwrap(),
         1
     );
 }
 
 #[test]
 fn window_returns_filtered_sorted_tracks() {
-    let mut conn = seeded_titled_conn();
-    let rows = query_track_window(
-        &mut conn,
-        &ViewSource::Library,
-        "title",
-        "asc",
-        "",
-        0,
-        10,
-        &[],
-    )
-    .unwrap();
+    let db = seeded_titled_conn();
+    let rows =
+        query_track_window(&db, &ViewSource::Library, "title", "asc", "", 0, 10, &[]).unwrap();
     assert_eq!(rows[0].title, "Alpha");
-    let rows = query_track_window(
-        &mut conn,
-        &ViewSource::Library,
-        "title",
-        "asc",
-        "zu",
-        0,
-        10,
-        &[],
-    )
-    .unwrap();
+    let rows =
+        query_track_window(&db, &ViewSource::Library, "title", "asc", "zu", 0, 10, &[]).unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].title, "Zulu");
 }
 
 #[test]
 fn count_is_zero_for_empty_db() {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
     assert_eq!(
-        query_track_count(&conn, &ViewSource::Library, "", &[]).unwrap(),
+        query_track_count(&db, &ViewSource::Library, "", &[]).unwrap(),
         0
     );
 }
 
 #[test]
 fn count_matches_inserted_rows() {
-    let conn = seeded_titled_conn();
+    let db = seeded_titled_conn();
     assert_eq!(
-        query_track_count(&conn, &ViewSource::Library, "", &[]).unwrap(),
+        query_track_count(&db, &ViewSource::Library, "", &[]).unwrap(),
         3
     );
 }
 
 #[test]
 fn count_applies_filter() {
-    let conn = seeded_titled_conn();
+    let db = seeded_titled_conn();
     assert_eq!(
-        query_track_count(&conn, &ViewSource::Library, "zu", &[]).unwrap(),
+        query_track_count(&db, &ViewSource::Library, "zu", &[]).unwrap(),
         1
     );
 }
 
 #[test]
 fn count_excludes_missing_rows() {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     conn.execute(
         "INSERT INTO tracks (path, title, artist, added_at, missing_since) \
          VALUES ('/x/a.flac', 'A', '', 0, 1)",
@@ -163,7 +134,7 @@ fn count_excludes_missing_rows() {
     )
     .unwrap();
     assert_eq!(
-        query_track_count(&conn, &ViewSource::Library, "", &[]).unwrap(),
+        query_track_count(&db, &ViewSource::Library, "", &[]).unwrap(),
         0
     );
 }
@@ -175,8 +146,8 @@ fn count_excludes_missing_rows() {
 /// `missing_since`, not `missing`, for presence.
 #[test]
 fn missing_since_excludes_a_row_even_when_the_legacy_missing_column_says_present() {
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     conn.execute(
         "INSERT INTO tracks (path, title, artist, added_at, missing_since) \
          VALUES ('/x/a.flac', 'A', '', 0, 1)",
@@ -184,22 +155,15 @@ fn missing_since_excludes_a_row_even_when_the_legacy_missing_column_says_present
     )
     .unwrap();
     assert_eq!(
-        query_track_count(&conn, &ViewSource::Library, "", &[]).unwrap(),
+        query_track_count(&db, &ViewSource::Library, "", &[]).unwrap(),
         0,
         "a set missing_since must exclude the row from the library"
     );
-    assert!(query_track_window(
-        &mut conn,
-        &ViewSource::Library,
-        "title",
-        "asc",
-        "",
-        0,
-        10,
-        &[],
-    )
-    .unwrap()
-    .is_empty());
+    assert!(
+        query_track_window(&db, &ViewSource::Library, "title", "asc", "", 0, 10, &[],)
+            .unwrap()
+            .is_empty()
+    );
 }
 
 /// `removed_at` (the tombstone column a later task starts writing for the
@@ -209,8 +173,8 @@ fn missing_since_excludes_a_row_even_when_the_legacy_missing_column_says_present
 /// the library window/count.
 #[test]
 fn removed_at_excludes_a_row_from_the_library_even_while_present() {
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     conn.execute(
         "INSERT INTO tracks (path, title, artist, added_at, removed_at) \
          VALUES ('/x/a.flac', 'A', '', 0, 1)",
@@ -218,22 +182,15 @@ fn removed_at_excludes_a_row_from_the_library_even_while_present() {
     )
     .unwrap();
     assert_eq!(
-        query_track_count(&conn, &ViewSource::Library, "", &[]).unwrap(),
+        query_track_count(&db, &ViewSource::Library, "", &[]).unwrap(),
         0,
         "a tombstoned row must not count as present"
     );
-    assert!(query_track_window(
-        &mut conn,
-        &ViewSource::Library,
-        "title",
-        "asc",
-        "",
-        0,
-        10,
-        &[],
-    )
-    .unwrap()
-    .is_empty());
+    assert!(
+        query_track_window(&db, &ViewSource::Library, "title", "asc", "", 0, 10, &[],)
+            .unwrap()
+            .is_empty()
+    );
 }
 
 /// `MissingReason::parse` must never fail to load a row: an unrecognized
@@ -258,8 +215,9 @@ fn missing_reason_parse_falls_back_to_unknown_for_an_unrecognized_value() {
 
 #[test]
 fn track_ids_follow_whitelist_sort_order() {
-    let conn = seeded_titled_conn();
-    let ids = query_track_ids(&conn, &ViewSource::Library, "title", "asc", "", &[]).unwrap();
+    let db = seeded_titled_conn();
+    let conn = db.conn();
+    let ids = query_track_ids(&db, &ViewSource::Library, "title", "asc", "", &[]).unwrap();
     assert_eq!(ids.len(), 3);
 
     // "Alpha" < "Mid" < "Zulu" by title (COLLATE NOCASE) — assert the
@@ -279,8 +237,9 @@ fn track_ids_follow_whitelist_sort_order() {
 
 #[test]
 fn track_ids_apply_filter() {
-    let conn = seeded_titled_conn();
-    let ids = query_track_ids(&conn, &ViewSource::Library, "title", "asc", "zu", &[]).unwrap();
+    let db = seeded_titled_conn();
+    let conn = db.conn();
+    let ids = query_track_ids(&db, &ViewSource::Library, "title", "asc", "zu", &[]).unwrap();
     assert_eq!(ids.len(), 1);
 
     let expected_id: i64 = conn
@@ -293,8 +252,8 @@ fn track_ids_apply_filter() {
 
 #[test]
 fn track_ids_excludes_missing_rows() {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     conn.execute(
         "INSERT INTO tracks (path, title, artist, added_at, missing_since) \
          VALUES ('/x/a.flac', 'A', '', 0, 1)",
@@ -302,7 +261,7 @@ fn track_ids_excludes_missing_rows() {
     )
     .unwrap();
     assert_eq!(
-        query_track_ids(&conn, &ViewSource::Library, "title", "asc", "", &[]).unwrap(),
+        query_track_ids(&db, &ViewSource::Library, "title", "asc", "", &[]).unwrap(),
         Vec::<i64>::new()
     );
 }
@@ -328,8 +287,8 @@ fn is_queue_capped_detects_the_boundary() {
 
 #[test]
 fn track_summary_found_returns_expected_fields() {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     conn.execute(
         "INSERT INTO tracks (path, title, artist, album, year, duration_ms, added_at) \
          VALUES ('/x/a.flac', 'A Title', 'An Artist', 'An Album', 2026, 123456, 0)",
@@ -340,7 +299,7 @@ fn track_summary_found_returns_expected_fields() {
         .query_row("SELECT id FROM tracks", [], |r| r.get(0))
         .unwrap();
 
-    let summary = query_track_summary(&conn, id).unwrap().unwrap();
+    let summary = query_track_summary(&db, id).unwrap().unwrap();
     assert_eq!(summary.path, "/x/a.flac");
     assert_eq!(summary.title, "A Title");
     assert_eq!(summary.artist, "An Artist");
@@ -351,15 +310,14 @@ fn track_summary_found_returns_expected_fields() {
 
 #[test]
 fn track_summary_not_found_returns_none() {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    assert!(query_track_summary(&conn, 999).unwrap().is_none());
+    let db = crate::db::Db::open_in_memory().unwrap();
+    assert!(query_track_summary(&db, 999).unwrap().is_none());
 }
 
 #[test]
 fn mark_track_missing_sets_the_flag() {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     conn.execute(
         "INSERT INTO tracks (path, title, artist, added_at) VALUES ('/x/a.flac', 'A', '', 0)",
         [],
@@ -369,7 +327,7 @@ fn mark_track_missing_sets_the_flag() {
         .query_row("SELECT id FROM tracks", [], |r| r.get(0))
         .unwrap();
 
-    assert!(mark_track_missing_if_current(&conn, id, Path::new("/x/a.flac")).unwrap());
+    assert!(mark_track_missing_if_current(&db, id, Path::new("/x/a.flac")).unwrap());
 
     let (missing_since, missing_reason): (Option<i64>, Option<String>) = conn
         .query_row(
@@ -404,8 +362,8 @@ fn mark_track_missing_classifies_deleted_when_device_matches() {
     let real_dev = std::fs::symlink_metadata(dir.path()).unwrap().dev() as i64;
     let path = dir.path().join("gone.flac");
 
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     conn.execute(
         "INSERT INTO tracks (path, title, artist, added_at, device) VALUES (?1, 'A', '', 0, ?2)",
         rusqlite::params![path.to_string_lossy(), real_dev],
@@ -418,7 +376,7 @@ fn mark_track_missing_classifies_deleted_when_device_matches() {
     // sees a matching device and an absent file — the honest "deleted, not
     // unmounted" verdict.
 
-    assert!(mark_track_missing_if_current(&conn, id, &path).unwrap());
+    assert!(mark_track_missing_if_current(&db, id, &path).unwrap());
 
     let (missing_since, missing_reason): (Option<i64>, Option<String>) = conn
         .query_row(
@@ -444,8 +402,8 @@ fn mark_track_missing_classifies_unmounted_when_device_differs() {
     let real_dev = std::fs::symlink_metadata(dir.path()).unwrap().dev() as i64;
     let path = dir.path().join("gone.flac");
 
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     conn.execute(
         "INSERT INTO tracks (path, title, artist, added_at, device) VALUES (?1, 'A', '', 0, ?2)",
         rusqlite::params![path.to_string_lossy(), real_dev + 99_999],
@@ -455,7 +413,7 @@ fn mark_track_missing_classifies_unmounted_when_device_differs() {
         .query_row("SELECT id FROM tracks", [], |r| r.get(0))
         .unwrap();
 
-    assert!(mark_track_missing_if_current(&conn, id, &path).unwrap());
+    assert!(mark_track_missing_if_current(&db, id, &path).unwrap());
 
     let missing_reason: Option<String> = conn
         .query_row(
@@ -469,8 +427,8 @@ fn mark_track_missing_classifies_unmounted_when_device_differs() {
 
 #[test]
 fn mark_track_missing_excludes_from_count_and_ids() {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     conn.execute(
         "INSERT INTO tracks (path, title, artist, added_at) VALUES ('/x/a.flac', 'A', '', 0)",
         [],
@@ -481,30 +439,30 @@ fn mark_track_missing_excludes_from_count_and_ids() {
         .unwrap();
 
     assert_eq!(
-        query_track_count(&conn, &ViewSource::Library, "", &[]).unwrap(),
+        query_track_count(&db, &ViewSource::Library, "", &[]).unwrap(),
         1
     );
     assert_eq!(
-        query_track_ids(&conn, &ViewSource::Library, "title", "asc", "", &[]).unwrap(),
+        query_track_ids(&db, &ViewSource::Library, "title", "asc", "", &[]).unwrap(),
         vec![id]
     );
 
-    assert!(mark_track_missing_if_current(&conn, id, Path::new("/x/a.flac")).unwrap());
+    assert!(mark_track_missing_if_current(&db, id, Path::new("/x/a.flac")).unwrap());
 
     assert_eq!(
-        query_track_count(&conn, &ViewSource::Library, "", &[]).unwrap(),
+        query_track_count(&db, &ViewSource::Library, "", &[]).unwrap(),
         0
     );
     assert_eq!(
-        query_track_ids(&conn, &ViewSource::Library, "title", "asc", "", &[]).unwrap(),
+        query_track_ids(&db, &ViewSource::Library, "title", "asc", "", &[]).unwrap(),
         Vec::<i64>::new()
     );
 }
 
 #[test]
 fn library_stats_without_filter_has_none_filtered_count_and_full_totals() {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     for (t, a) in [("Zulu", "AAA"), ("Alpha", "BBB"), ("Mid", "CCC")] {
         conn.execute(
             "INSERT INTO tracks (path, title, artist, duration_ms, added_at) \
@@ -514,7 +472,7 @@ fn library_stats_without_filter_has_none_filtered_count_and_full_totals() {
         .unwrap();
     }
 
-    let stats = query_library_stats(&conn, "").unwrap();
+    let stats = query_library_stats(&db, "").unwrap();
     assert_eq!(stats.track_count, 3);
     assert_eq!(stats.total_duration_ms, 3000);
     assert_eq!(stats.filtered_count, None);
@@ -522,8 +480,8 @@ fn library_stats_without_filter_has_none_filtered_count_and_full_totals() {
 
 #[test]
 fn library_stats_with_filter_matches_query_track_count_and_keeps_totals_unfiltered() {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     for (t, a) in [("Zulu", "AAA"), ("Alpha", "BBB"), ("Mid", "CCC")] {
         conn.execute(
             "INSERT INTO tracks (path, title, artist, duration_ms, added_at) \
@@ -533,21 +491,21 @@ fn library_stats_with_filter_matches_query_track_count_and_keeps_totals_unfilter
         .unwrap();
     }
 
-    let stats = query_library_stats(&conn, "zu").unwrap();
+    let stats = query_library_stats(&db, "zu").unwrap();
     // Totals stay unfiltered even though a filter is active.
     assert_eq!(stats.track_count, 3);
     assert_eq!(stats.total_duration_ms, 3000);
     assert_eq!(
         stats.filtered_count,
-        Some(query_track_count(&conn, &ViewSource::Library, "zu", &[]).unwrap())
+        Some(query_track_count(&db, &ViewSource::Library, "zu", &[]).unwrap())
     );
     assert_eq!(stats.filtered_count, Some(1));
 }
 
 #[test]
 fn library_stats_missing_rows_excluded_from_both_counts() {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     conn.execute(
         "INSERT INTO tracks (path, title, artist, duration_ms, added_at, missing_since) \
          VALUES ('/x/a.flac', 'A', '', 1000, 0, 1)",
@@ -555,20 +513,20 @@ fn library_stats_missing_rows_excluded_from_both_counts() {
     )
     .unwrap();
 
-    let unfiltered = query_library_stats(&conn, "").unwrap();
+    let unfiltered = query_library_stats(&db, "").unwrap();
     assert_eq!(unfiltered.track_count, 0);
     assert_eq!(unfiltered.total_duration_ms, 0);
     assert_eq!(unfiltered.filtered_count, None);
 
-    let filtered = query_library_stats(&conn, "A").unwrap();
+    let filtered = query_library_stats(&db, "A").unwrap();
     assert_eq!(filtered.track_count, 0);
     assert_eq!(filtered.filtered_count, Some(0));
 }
 
 #[test]
 fn window_limit_is_clamped() {
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     for t in ["Alpha", "Beta", "Gamma"] {
         conn.execute(
             "INSERT INTO tracks (path, title, artist, added_at) VALUES (?1, ?2, '', 0)",
@@ -579,24 +537,15 @@ fn window_limit_is_clamped() {
 
     // SQLite treats a negative LIMIT as "unlimited"; clamped to 0, a
     // negative caller-supplied limit must return no rows.
-    let rows = query_track_window(
-        &mut conn,
-        &ViewSource::Library,
-        "title",
-        "asc",
-        "",
-        0,
-        -1,
-        &[],
-    )
-    .unwrap();
+    let rows =
+        query_track_window(&db, &ViewSource::Library, "title", "asc", "", 0, -1, &[]).unwrap();
     assert_eq!(rows.len(), 0);
 
     // A limit far above MAX_WINDOW_LIMIT is clamped down to the cap,
     // which still comfortably covers this small fixture set, so all
     // rows are returned rather than the query becoming unbounded.
     let rows = query_track_window(
-        &mut conn,
+        &db,
         &ViewSource::Library,
         "title",
         "asc",
@@ -611,9 +560,9 @@ fn window_limit_is_clamped() {
 
 // -- Missing source -------------------------------------------------
 
-fn seeded_conn_with_missing() -> Connection {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+fn seeded_conn_with_missing() -> crate::db::Db {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     for (t, a, missing_since) in [
         ("Zulu", "AAA", Some(1)),
         ("Alpha", "BBB", None),
@@ -626,12 +575,12 @@ fn seeded_conn_with_missing() -> Connection {
         )
         .unwrap();
     }
-    conn
+    db
 }
 
-fn seeded_browse_conn() -> Connection {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+fn seeded_browse_conn() -> crate::db::Db {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     for (id, title, artist, album, genre) in [
         (1, "Live One", "A", "Stage", "Rock"),
         (2, "Studio One", "A", "Room", "Rock"),
@@ -645,19 +594,19 @@ fn seeded_browse_conn() -> Connection {
         )
         .unwrap();
     }
-    conn
+    db
 }
 
 #[test]
 fn browse_and_text_filter_match_across_window_count_ids_and_stats() {
-    let mut conn = seeded_browse_conn();
+    let db = seeded_browse_conn();
     let browse = BrowseFilter {
         genre: Some("Rock".into()),
         artist: Some("A".into()),
         ..BrowseFilter::default()
     };
     let rows = query_track_window_browsed(
-        &mut conn,
+        &db,
         &ViewSource::Library,
         "title",
         "asc",
@@ -673,12 +622,12 @@ fn browse_and_text_filter_match_across_window_count_ids_and_stats() {
         vec![1]
     );
     assert_eq!(
-        query_track_count_browsed(&conn, &ViewSource::Library, "live", &browse, &[]).unwrap(),
+        query_track_count_browsed(&db, &ViewSource::Library, "live", &browse, &[]).unwrap(),
         1
     );
     assert_eq!(
         query_track_ids_browsed(
-            &conn,
+            &db,
             &ViewSource::Library,
             "title",
             "asc",
@@ -689,14 +638,14 @@ fn browse_and_text_filter_match_across_window_count_ids_and_stats() {
         .unwrap(),
         vec![1]
     );
-    let stats = query_library_stats_browsed(&conn, "live", &browse).unwrap();
+    let stats = query_library_stats_browsed(&db, "live", &browse).unwrap();
     assert_eq!(stats.track_count, 4);
     assert_eq!(stats.filtered_count, Some(1));
 }
 
 #[test]
 fn play_1_scoped_playback_ids_are_the_exact_visible_refined_order() {
-    let mut conn = seeded_browse_conn();
+    let db = seeded_browse_conn();
     let source = ViewSource::Artist("A".into());
     let browse = BrowseFilter {
         genre: Some("Rock".into()),
@@ -704,64 +653,54 @@ fn play_1_scoped_playback_ids_are_the_exact_visible_refined_order() {
     };
 
     let rows =
-        query_track_window_browsed(&mut conn, &source, "title", "desc", "", &browse, 0, 10, &[])
-            .unwrap();
+        query_track_window_browsed(&db, &source, "title", "desc", "", &browse, 0, 10, &[]).unwrap();
     let visible = rows.iter().map(|track| track.id).collect::<Vec<_>>();
     let playback =
-        query_track_ids_browsed(&conn, &source, "title", "desc", "", &browse, &[]).unwrap();
+        query_track_ids_browsed(&db, &source, "title", "desc", "", &browse, &[]).unwrap();
 
     assert_eq!(visible, vec![2, 1]);
     assert_eq!(playback, visible);
     assert_eq!(
-        query_track_count_browsed(&conn, &source, "", &browse, &[]).unwrap(),
+        query_track_count_browsed(&db, &source, "", &browse, &[]).unwrap(),
         2
     );
 }
 
 #[test]
 fn non_library_sources_ignore_browse_filter() {
-    let mut conn = seeded_browse_conn();
-    let playlist = crate::library::playlists::create(&conn, "All").unwrap();
-    crate::library::playlists::add_tracks(&mut conn, playlist, &[1, 2, 3, 4]).unwrap();
+    let db = seeded_browse_conn();
+    let playlist = crate::library::playlists::create(&db, "All").unwrap();
+    crate::library::playlists::add_tracks(&db, playlist, &[1, 2, 3, 4]).unwrap();
     let browse = BrowseFilter {
         genre: Some("Does not exist".into()),
         ..BrowseFilter::default()
     };
     assert_eq!(
-        query_track_count_browsed(&conn, &ViewSource::Playlist(playlist), "", &browse, &[],)
-            .unwrap(),
+        query_track_count_browsed(&db, &ViewSource::Playlist(playlist), "", &browse, &[],).unwrap(),
         4
     );
 }
 
 #[test]
 fn missing_window_and_count_only_include_missing_rows() {
-    let mut conn = seeded_conn_with_missing();
-    let rows = query_track_window(
-        &mut conn,
-        &ViewSource::Missing,
-        "title",
-        "asc",
-        "",
-        0,
-        10,
-        &[],
-    )
-    .unwrap();
+    let db = seeded_conn_with_missing();
+    let rows =
+        query_track_window(&db, &ViewSource::Missing, "title", "asc", "", 0, 10, &[]).unwrap();
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].title, "Mid");
     assert_eq!(rows[1].title, "Zulu");
 
     assert_eq!(
-        query_track_count(&conn, &ViewSource::Missing, "", &[]).unwrap(),
+        query_track_count(&db, &ViewSource::Missing, "", &[]).unwrap(),
         2
     );
 }
 
 #[test]
 fn missing_ids_are_sorted_like_library() {
-    let conn = seeded_conn_with_missing();
-    let ids = query_track_ids(&conn, &ViewSource::Missing, "title", "asc", "", &[]).unwrap();
+    let db = seeded_conn_with_missing();
+    let conn = db.conn();
+    let ids = query_track_ids(&db, &ViewSource::Missing, "title", "asc", "", &[]).unwrap();
     let by_title: Vec<i64> = {
         let mut stmt = conn
             .prepare(&format!(

@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 use gtk4::prelude::*;
 use libadwaita as adw;
-use rusqlite::Connection;
+use reprise_core::db::Db;
 
 use reprise_core::library::settings;
 use reprise_core::library::watcher::WatcherHandle;
@@ -61,23 +61,19 @@ fn build_player_backends(
 }
 
 /// Builds and presents the main window for `app`. `conn` is the shared,
-/// already-migrated database connection; the UI layer owns it single-threaded
-/// (via `Rc<RefCell<_>>`) and reads through it via `track_list::TrackList`.
-/// `db_path` is the same connection's on-disk path; every call site inside
+/// already-migrated database handle; Core owns the connection and the UI
+/// reads through named Core operations. `db_path` is the same database's
+/// on-disk path; every call site inside
 /// this function only ever needs to *clone* it into an owned `PathBuf` for a
-/// scan-worker thread or the watcher (both open their own `Connection` over
-/// it rather than sharing this one across threads — `rusqlite::Connection`
-/// isn't `Send`), so this takes a borrow rather than owning it outright.
-pub fn build(
-    app: &adw::Application,
-    conn: &Rc<RefCell<Connection>>,
-    db_path: &Path,
-) -> FileOpenHandler {
+/// scan-worker thread or the watcher (both open their own `Db` handle over it
+/// rather than sharing this one across threads), so this takes a borrow rather
+/// than owning it outright.
+pub fn build(app: &adw::Application, conn: &Rc<Db>, db_path: &Path) -> FileOpenHandler {
     super::style::install();
     {
-        let conn = conn.borrow();
+        let conn = &conn;
         let stored = reprise_core::library::settings::get_setting(
-            &conn,
+            conn,
             super::style::theme::THEME_SETTING_KEY,
         )
         .ok()
@@ -87,16 +83,12 @@ pub fn build(
             .and_then(super::style::theme::Theme::from_id)
             .unwrap_or(super::style::theme::Theme::DEFAULT);
         super::style::set_theme(theme);
-        let scheme = reprise_core::library::settings::get_color_scheme(&conn);
+        let scheme = reprise_core::library::settings::get_color_scheme(conn);
         super::style::set_color_scheme(scheme);
     }
-    let session_state = {
-        let conn = conn.borrow();
-        super::session_restore::load(&conn)
-    };
-    let first_run_decision = super::first_run::initial_decision(&conn.borrow());
-    let initial_view =
-        super::compact_mode_controls::initial_transition(&conn.borrow(), first_run_decision);
+    let session_state = super::session_restore::load(conn);
+    let first_run_decision = super::first_run::initial_decision(conn);
+    let initial_view = super::compact_mode_controls::initial_transition(conn, first_run_decision);
     let window = adw::ApplicationWindow::builder()
         .application(app)
         .title(strings::text(strings::APP_NAME))
@@ -147,7 +139,7 @@ pub fn build(
     // first frame. If GStreamer is unavailable the app degrades to a library
     // browser: error logged, no player bar, activations warn (fault
     // tolerance: never crash over a missing subsystem).
-    let cover_download = cover_download_worker::setup(&conn.borrow());
+    let cover_download = cover_download_worker::setup(conn);
     let listenbrainz = super::scrobble_runtime::ScrobbleRuntime::new(
         db_path.to_path_buf(),
         reprise_core::scrobbling::ScrobbleProvider::ListenBrainz,
@@ -162,11 +154,10 @@ pub fn build(
     super::preference_listenbrainz::bootstrap(conn, &listenbrainz);
     super::window_smoke::arm_listenbrainz(conn, &listenbrainz);
     super::window_smoke::arm_lastfm(conn, &lastfm);
-    let artist_news = super::artist_news_worker::ArtistNewsRuntime::setup(&conn.borrow());
-    let concerts_runtime = crate::ui::concerts::ConcertsRuntime::setup(&conn.borrow());
-    let podcasts_runtime = crate::ui::podcasts::PodcastsRuntime::setup(&conn.borrow());
-    let artist_portrait =
-        super::artist_portrait_worker::ArtistPortraitRuntime::setup(&conn.borrow());
+    let artist_news = super::artist_news_worker::ArtistNewsRuntime::setup(conn);
+    let concerts_runtime = crate::ui::concerts::ConcertsRuntime::setup(conn);
+    let podcasts_runtime = crate::ui::podcasts::PodcastsRuntime::setup(conn);
+    let artist_portrait = super::artist_portrait_worker::ArtistPortraitRuntime::setup(conn);
     let media = std::env::var(crate::SMOKE_MPRIS_BUS_ENV_VAR).map_or_else(
         |_| reprise_platform_linux::mpris::start(crate::APP_ID),
         |bus_name| reprise_platform_linux::mpris::start_with_bus_name(crate::APP_ID, bus_name),
@@ -234,10 +225,7 @@ pub fn build(
         let conn = conn.clone();
         Box::new(move |track, ids, start_index, place| match &player {
             Some(player) => {
-                let origin = {
-                    let conn = conn.borrow();
-                    crate::ui::playback::play_origin::resolve(&conn, &place)
-                };
+                let origin = crate::ui::playback::play_origin::resolve(&conn, &place);
                 player.play_from_view(ids, start_index, origin);
             }
             None => {
@@ -395,7 +383,7 @@ pub fn build(
     let (podcasts_view, youtube_view, radio_view) = source_views.into_parts();
     super::source_views::wire_update_sidebar_refresh(&concerts_view, &releases_view, &sidebar);
 
-    let bar_position = settings::get_player_bar_position(&conn.borrow());
+    let bar_position = settings::get_player_bar_position(conn);
 
     {
         let overlay = toast_overlay.downgrade();

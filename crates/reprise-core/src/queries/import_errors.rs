@@ -77,6 +77,7 @@
 
 use rusqlite::Connection;
 
+use crate::db::Db;
 use crate::models::ImportErrorKind;
 
 use super::clauses::PRESENT;
@@ -150,8 +151,9 @@ pub struct ImportErrorEntry {
 /// group" entries), matching `query_missing_groups`'s own "a group with
 /// zero matching rows is simply absent" convention (`issues.rs`).
 pub fn query_import_errors_grouped(
-    conn: &Connection,
+    db: &Db,
 ) -> Result<Vec<(ImportErrorKind, Vec<ImportErrorEntry>)>, rusqlite::Error> {
+    let conn = db.conn();
     let sql = format!(
         "{} WHERE {NOT_DISMISSED} \
          ORDER BY CASE reason_kind \
@@ -189,9 +191,8 @@ pub fn query_import_errors_grouped(
 /// "Dismissed" list/tab. See the module doc's "Group and row ordering"
 /// section for why this uses the same `last_seen DESC, path ASC` order as
 /// [`query_import_errors_grouped`]'s rows.
-pub fn query_dismissed_import_errors(
-    conn: &Connection,
-) -> Result<Vec<ImportErrorEntry>, rusqlite::Error> {
+pub fn query_dismissed_import_errors(db: &Db) -> Result<Vec<ImportErrorEntry>, rusqlite::Error> {
+    let conn = db.conn();
     let sql = format!(
         "{} WHERE {DISMISSED} ORDER BY last_seen DESC, path COLLATE NOCASE ASC",
         entry_select()
@@ -203,7 +204,8 @@ pub fn query_dismissed_import_errors(
 
 /// Bare count of dismissed rows — for a "Dismissed (N)" tab label without
 /// loading every row just to measure its length.
-pub fn count_dismissed_import_errors(conn: &Connection) -> Result<u32, rusqlite::Error> {
+pub fn count_dismissed_import_errors(db: &Db) -> Result<u32, rusqlite::Error> {
+    let conn = db.conn();
     let count: i64 = conn.query_row(
         &format!("SELECT count(*) FROM import_errors WHERE {DISMISSED}"),
         [],
@@ -221,6 +223,16 @@ pub fn count_dismissed_import_errors(conn: &Connection) -> Result<u32, rusqlite:
 /// caller races against the scanner clearing the row out from under a
 /// dismiss click more plausibly than most callers in this crate.
 pub fn dismiss_import_error(
+    db: &Db,
+    path: &str,
+    mtime: i64,
+    size: i64,
+) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
+    dismiss_import_error_conn(conn, path, mtime, size)
+}
+
+fn dismiss_import_error_conn(
     conn: &Connection,
     path: &str,
     mtime: i64,
@@ -267,9 +279,10 @@ pub fn dismiss_import_error(
 /// Returns the number of rows actually dismissed (a subset of the
 /// non-dismissed rows that existed when this call started).
 pub fn dismiss_all_import_errors(
-    conn: &Connection,
+    db: &Db,
     now_stat: &dyn Fn(&str) -> Option<(i64, i64)>,
 ) -> Result<u32, rusqlite::Error> {
+    let conn = db.conn();
     let paths: Vec<String> = {
         let mut stmt = conn.prepare(&format!(
             "SELECT path FROM import_errors WHERE {NOT_DISMISSED}"
@@ -284,7 +297,7 @@ pub fn dismiss_all_import_errors(
         let Some((mtime, size)) = now_stat(&path) else {
             continue;
         };
-        dismiss_import_error(conn, &path, mtime, size)?;
+        dismiss_import_error_conn(conn, &path, mtime, size)?;
         dismissed_count += 1;
     }
     Ok(dismissed_count)
@@ -298,7 +311,8 @@ pub fn dismiss_all_import_errors(
 /// immediate retry is the UI's job, not this query's. A path that isn't
 /// currently dismissed (or doesn't exist at all) is a silent no-op, same
 /// convention as [`dismiss_import_error`].
-pub fn restore_import_error(conn: &Connection, path: &str) -> Result<(), rusqlite::Error> {
+pub fn restore_import_error(db: &Db, path: &str) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
     conn.execute(
         "UPDATE import_errors SET dismissed_mtime = NULL, dismissed_size = NULL WHERE path = ?1",
         rusqlite::params![path],
@@ -322,7 +336,8 @@ pub fn restore_import_error(conn: &Connection, path: &str) -> Result<(), rusqlit
 /// dismissed row is excluded: the user already said "stop showing me
 /// this", the same reasoning [`query_import_errors_grouped`]'s own
 /// `NOT_DISMISSED` filter rests on.
-pub fn count_import_errors_active(conn: &Connection) -> Result<u32, rusqlite::Error> {
+pub fn count_import_errors_active(db: &Db) -> Result<u32, rusqlite::Error> {
+    let conn = db.conn();
     let count: i64 = conn.query_row(
         &format!("SELECT count(*) FROM import_errors WHERE {NOT_DISMISSED}"),
         [],
@@ -366,10 +381,8 @@ pub fn count_import_errors_active(conn: &Connection) -> Result<u32, rusqlite::Er
 /// recorded after the row's ORIGINAL `first_seen`. See `tests_import_
 /// errors.rs`'s `count_new_import_errors_recounts_a_reactivated_episode_
 /// as_new` for the regression test pinning this.
-pub fn count_new_import_errors(
-    conn: &Connection,
-    last_viewed: i64,
-) -> Result<u32, rusqlite::Error> {
+pub fn count_new_import_errors(db: &Db, last_viewed: i64) -> Result<u32, rusqlite::Error> {
+    let conn = db.conn();
     let is_hint = is_hint_expr();
     let count: i64 = conn.query_row(
         &format!(

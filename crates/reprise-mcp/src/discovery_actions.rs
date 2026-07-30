@@ -12,7 +12,6 @@
 use std::path::Path;
 
 use rmcp::schemars;
-use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 use crate::data::{self, DataError};
@@ -80,21 +79,21 @@ pub fn search_sources(
     granted_at_startup: bool,
     params: &SearchSourcesParams,
 ) -> Result<SearchSourcesResult, DataError> {
-    let conn = data::open(path)?;
+    let db = data::open(path)?;
     // Search performs network (iTunes, radio-browser) and subprocess
     // (yt-dlp) work, so it is gated at least as strictly as the
     // add/edit/remove/refresh mutations: the same capability, the same
     // startup-snapshot-plus-live-value effective check.
-    let allowed = crate::capability::sources_manage_effective(&conn, granted_at_startup)
+    let allowed = crate::capability::sources_manage_effective(&db, granted_at_startup)
         .map_err(DataError::Db)?;
     if !allowed {
         return Err(DataError::CapabilityDenied("sources:manage"));
     }
     let query = required_nonempty(Some(params.query.as_str()), "query is required")?;
     let candidates = match params.provider.as_str() {
-        "rss" => search_rss(&conn, query)?,
-        "youtube" => search_youtube(&conn, query)?,
-        "radio" => search_radio(&conn, query)?,
+        "rss" => search_rss(&db, query)?,
+        "youtube" => search_youtube(&db, query)?,
+        "radio" => search_radio(&db, query)?,
         other => {
             return Err(DataError::InvalidInput(format!(
                 "unknown provider '{other}'; expected rss, youtube, or radio"
@@ -118,12 +117,15 @@ fn static_provider_name(provider: &str) -> &'static str {
     }
 }
 
-fn search_rss(conn: &Connection, query: &str) -> Result<Vec<DiscoveryCandidateDto>, DataError> {
+fn search_rss(
+    db: &reprise_core::db::Db,
+    query: &str,
+) -> Result<Vec<DiscoveryCandidateDto>, DataError> {
     use reprise_core::podcasts::{discovery, itunes, PodcastKind};
 
     let locale = locale_from_env();
     let rows = itunes::search(query, &locale).map_err(|error| podcast_source_error(&error))?;
-    let subscribed = discovery::active_source_keys(conn);
+    let subscribed = discovery::active_source_keys(db);
     Ok(rows
         .into_iter()
         .filter(|row| {
@@ -140,12 +142,15 @@ fn search_rss(conn: &Connection, query: &str) -> Result<Vec<DiscoveryCandidateDt
         .collect())
 }
 
-fn search_youtube(conn: &Connection, query: &str) -> Result<Vec<DiscoveryCandidateDto>, DataError> {
+fn search_youtube(
+    db: &reprise_core::db::Db,
+    query: &str,
+) -> Result<Vec<DiscoveryCandidateDto>, DataError> {
     use reprise_core::podcasts::{self, discovery, PodcastKind};
 
-    let config = podcasts::config::load(conn).map_err(DataError::Db)?;
+    let config = podcasts::config::load(db).map_err(DataError::Db)?;
     let youtube_allowed =
-        reprise_core::online_sources::network_allowed(conn, &reprise_core::modules::YOUTUBE_MODULE)
+        reprise_core::online_sources::network_allowed(db, &reprise_core::modules::YOUTUBE_MODULE)
             .map_err(DataError::Db)?;
     if !youtube_allowed {
         return Err(DataError::InvalidInput(
@@ -155,7 +160,7 @@ fn search_youtube(conn: &Connection, query: &str) -> Result<Vec<DiscoveryCandida
     let rows = podcasts::ytdlp::YtDlp::discover(config.ytdlp_path.as_deref())
         .search_channels(query)
         .map_err(|error| podcast_source_error(&error))?;
-    let subscribed = discovery::active_source_keys(conn);
+    let subscribed = discovery::active_source_keys(db);
     Ok(rows
         .into_iter()
         .filter(|row| {
@@ -177,13 +182,16 @@ fn search_youtube(conn: &Connection, query: &str) -> Result<Vec<DiscoveryCandida
         .collect())
 }
 
-fn search_radio(conn: &Connection, query: &str) -> Result<Vec<DiscoveryCandidateDto>, DataError> {
+fn search_radio(
+    db: &reprise_core::db::Db,
+    query: &str,
+) -> Result<Vec<DiscoveryCandidateDto>, DataError> {
     use reprise_core::radio;
 
-    let order = radio::config::load(conn).unwrap_or_default().search_order;
+    let order = radio::config::load(db).unwrap_or_default().search_order;
     let candidates =
         radio::search::search(query, order).map_err(|error| radio_source_error(&error))?;
-    let favorites: Vec<(String, String)> = radio::station::list(conn)
+    let favorites: Vec<(String, String)> = radio::station::list(db)
         .map_err(DataError::Db)?
         .into_iter()
         .map(|row| (row.uuid.unwrap_or_default(), row.stream_url))
@@ -281,9 +289,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("reprise.db");
         {
-            let conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
+            let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
             reprise_core::library::settings::set_bool(
-                &conn,
+                &db,
                 crate::capability::CAP_SOURCES_MANAGE,
                 true,
             )
@@ -303,7 +311,7 @@ mod tests {
     fn search_sources_denies_when_the_capability_is_not_granted() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("reprise.db");
-        reprise_core::db::open_migrated(Some(&path)).unwrap();
+        let _db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
         let params = SearchSourcesParams {
             provider: "rss".into(),
             query: "test".into(),

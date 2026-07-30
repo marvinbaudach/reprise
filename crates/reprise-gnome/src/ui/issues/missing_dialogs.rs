@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -7,9 +6,9 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
+use reprise_core::db::Db;
 use reprise_core::library::relink::{self, FolderRelinkReport, RelinkMismatch, RelinkTarget};
 use reprise_core::library::settings;
-use rusqlite::Connection;
 
 use super::missing_progress::{RelinkCancellation, RelinkProgressView};
 use crate::ui::{strings, toasts};
@@ -21,7 +20,7 @@ pub(super) type OnRelinked = Rc<dyn Fn()>;
 
 #[derive(Clone)]
 pub(super) struct LocateContext {
-    pub(super) conn: Rc<RefCell<Connection>>,
+    pub(super) conn: Rc<Db>,
     pub(super) db_path: Option<PathBuf>,
     pub(super) window: glib::WeakRef<adw::ApplicationWindow>,
     pub(super) toast_overlay: glib::WeakRef<adw::ToastOverlay>,
@@ -83,8 +82,8 @@ fn is_outside_library(path: &Path, library_root: Option<&Path>) -> bool {
 }
 
 fn library_root(context: &LocateContext) -> Result<Option<PathBuf>, rusqlite::Error> {
-    let conn = context.conn.borrow();
-    settings::get_library_root(&conn).map(|root| root.map(PathBuf::from))
+    let conn = &context.conn;
+    settings::get_library_root(conn).map(|root| root.map(PathBuf::from))
 }
 
 pub(super) fn locate_file(context: LocateContext, target: RelinkTarget) {
@@ -134,8 +133,8 @@ fn continue_file_relink(context: LocateContext, target: RelinkTarget, new_path: 
     };
     let outside = is_outside_library(&new_path, library_root.as_deref());
     let probe = {
-        let conn = context.conn.borrow();
-        relink::probe_relink(&conn, &target, &new_path)
+        let conn = &context.conn;
+        relink::probe_relink(conn, &target, &new_path)
     };
     let mismatch = match probe {
         Ok(mismatch) => mismatch,
@@ -175,8 +174,8 @@ fn continue_file_relink(context: LocateContext, target: RelinkTarget, new_path: 
 
 fn apply_file_relink(context: &LocateContext, target: &RelinkTarget, new_path: &Path) {
     let result = {
-        let mut conn = context.conn.borrow_mut();
-        relink::relink_track(&mut conn, target, new_path)
+        let conn = &context.conn;
+        relink::relink_track(conn, target, new_path)
     };
     match result {
         Ok(()) => notify_relinked(context),
@@ -281,19 +280,13 @@ fn spawn_folder_relink(context: LocateContext, folder: PathBuf, targets: Vec<Rel
     let (result_sender, result_receiver) = async_channel::bounded(1);
     let (drained_sender, drained_receiver) = async_channel::bounded(1);
     std::thread::spawn(move || {
-        let result = reprise_core::db::open_migrated(Some(&db_path))
+        let result = reprise_core::db::Db::open_migrated(Some(&db_path))
             .map_err(|error| error.to_string())
-            .and_then(|mut conn| {
-                relink::relink_from_folder(
-                    &mut conn,
-                    &folder,
-                    &targets,
-                    &cancel,
-                    |processed, total| {
-                        while stale_receiver.try_recv().is_ok() {}
-                        let _ = progress_sender.try_send((processed, total));
-                    },
-                )
+            .and_then(|db| {
+                relink::relink_from_folder(&db, &folder, &targets, &cancel, |processed, total| {
+                    while stale_receiver.try_recv().is_ok() {}
+                    let _ = progress_sender.try_send((processed, total));
+                })
                 .map_err(|error| error.to_string())
             });
         drop(progress_sender);

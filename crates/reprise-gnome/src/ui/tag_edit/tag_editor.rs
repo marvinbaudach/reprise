@@ -41,11 +41,11 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
+use reprise_core::db::Db;
 use reprise_core::library::tag_edit::{TagBatchReport, TrackWrite};
 use reprise_core::library::tag_edit_session::{
     SessionMode, SessionTrack, TagEditSession, TagField,
 };
-use rusqlite::Connection;
 
 use crate::ui::strings;
 use crate::ui::tag_editor_dirty::parse_number_field;
@@ -78,7 +78,7 @@ impl BrowseSnapshot {
 
 pub(in crate::ui) fn present(
     parent: &adw::ApplicationWindow,
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
     tracks: Vec<SessionTrack>,
     bitrates: &[Option<u32>],
     browse: Option<BrowseSnapshot>,

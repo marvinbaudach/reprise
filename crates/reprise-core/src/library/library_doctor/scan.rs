@@ -2,6 +2,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::Connection;
 
+use crate::db::Db;
+
 use super::local_rules::{self, ReadTrack};
 use super::remote::{self, RemoteProviderError, RemoteResolver};
 use super::scope;
@@ -12,19 +14,21 @@ use super::{
 use crate::fingerprint::FingerprintBackend;
 
 pub struct LibraryDoctor<'connection> {
-    pub(super) conn: &'connection mut Connection,
+    pub(super) db: &'connection Db,
+    pub(super) conn: &'connection Connection,
 }
 
 impl<'connection> LibraryDoctor<'connection> {
-    pub fn new(conn: &'connection mut Connection) -> Self {
-        Self { conn }
+    pub fn new(db: &'connection Db) -> Self {
+        let conn = db.conn();
+        Self { db, conn }
     }
 
     pub fn freeze_scope(
         &mut self,
         request: &DoctorScopeRequest,
     ) -> Result<FrozenScope, DoctorError> {
-        scope::freeze_scope(self.conn, request).map_err(DoctorError::from)
+        scope::freeze_scope(self.db, request).map_err(DoctorError::from)
     }
 
     pub fn scan_local(

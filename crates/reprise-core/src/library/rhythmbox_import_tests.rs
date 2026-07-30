@@ -38,13 +38,13 @@ fn prescan_counts_entries_and_classifies_skips() {
     )
     .unwrap();
 
-    let conn = Connection::open_in_memory().unwrap();
-    crate::db::migrate(&conn).unwrap();
-    conn.execute(
-        "INSERT INTO tracks (path, added_at, rating, play_count) VALUES (?1, 0, 0, 0)",
-        [existing.to_string_lossy()],
-    )
-    .unwrap();
+    let conn = crate::db::Db::open_in_memory().unwrap();
+    conn.conn()
+        .execute(
+            "INSERT INTO tracks (path, added_at, rating, play_count) VALUES (?1, 0, 0, 0)",
+            [existing.to_string_lossy()],
+        )
+        .unwrap();
 
     let library_root = music_dir.to_string_lossy().to_string();
     let result = prescan_rhythmdb(&rhythmdb, &playlists_path, &conn, Some(&library_root)).unwrap();
@@ -62,22 +62,23 @@ fn prescan_counts_entries_and_classifies_skips() {
     assert_eq!(result.playlist_track_count, 2);
 }
 
-fn database(path: &Path, rating: i32, play_count: i64) -> Connection {
-    let conn = Connection::open_in_memory().unwrap();
-    crate::db::migrate(&conn).unwrap();
-    conn.execute(
-        "INSERT INTO tracks (path, added_at, rating, play_count) VALUES (?1, 0, ?2, ?3)",
-        rusqlite::params![path.to_string_lossy(), rating, play_count],
-    )
-    .unwrap();
+fn database(path: &Path, rating: i32, play_count: i64) -> crate::db::Db {
+    let conn = crate::db::Db::open_in_memory().unwrap();
+    conn.conn()
+        .execute(
+            "INSERT INTO tracks (path, added_at, rating, play_count) VALUES (?1, 0, ?2, ?3)",
+            rusqlite::params![path.to_string_lossy(), rating, play_count],
+        )
+        .unwrap();
     conn
 }
 
-fn values(conn: &Connection) -> (i32, i64) {
-    conn.query_row("SELECT rating, play_count FROM tracks", [], |row| {
-        Ok((row.get(0)?, row.get(1)?))
-    })
-    .unwrap()
+fn values(conn: &crate::db::Db) -> (i32, i64) {
+    conn.conn()
+        .query_row("SELECT rating, play_count FROM tracks", [], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .unwrap()
 }
 
 #[test]
@@ -129,9 +130,9 @@ fn parser_skips_invalid_entries_but_rejects_broken_xml() {
 #[test]
 fn merge_preserves_local_rating_and_never_decreases_play_count() {
     let path = PathBuf::from("/music/song.ogg");
-    let mut conn = database(&path, 5, 20);
+    let conn = database(&path, 5, 20);
     let (summary, _) = merge_stats(
-        &mut conn,
+        &conn,
         &[RhythmboxTrackStats {
             path,
             rating: Some(3),
@@ -157,7 +158,7 @@ fn merge_preserves_local_rating_and_never_decreases_play_count() {
 #[test]
 fn merge_imports_missing_rating_and_higher_count_idempotently() {
     let path = PathBuf::from("/music/song.ogg");
-    let mut conn = database(&path, 0, 2);
+    let conn = database(&path, 0, 2);
     let imported = [RhythmboxTrackStats {
         path,
         rating: Some(4),
@@ -171,8 +172,8 @@ fn merge_imports_missing_rating_and_higher_count_idempotently() {
         added_at: false,
     };
 
-    let (first, _) = merge_stats(&mut conn, &imported, choices, None).unwrap();
-    let (second, _) = merge_stats(&mut conn, &imported, choices, None).unwrap();
+    let (first, _) = merge_stats(&conn, &imported, choices, None).unwrap();
+    let (second, _) = merge_stats(&conn, &imported, choices, None).unwrap();
 
     assert_eq!(values(&conn), (4, 11));
     assert_eq!((first.ratings_imported, first.play_counts_raised), (1, 1));
@@ -182,9 +183,9 @@ fn merge_imports_missing_rating_and_higher_count_idempotently() {
 #[test]
 fn merge_respects_choices_and_counts_unmatched_entries() {
     let path = PathBuf::from("/music/song.ogg");
-    let mut conn = database(&path, 0, 1);
+    let conn = database(&path, 0, 1);
     let (summary, _) = merge_stats(
-        &mut conn,
+        &conn,
         &[
             RhythmboxTrackStats {
                 path,
@@ -219,8 +220,10 @@ fn merge_respects_choices_and_counts_unmatched_entries() {
 #[test]
 fn merge_imports_only_an_older_positive_date_added_idempotently() {
     let path = PathBuf::from("/music/song.ogg");
-    let mut conn = database(&path, 0, 0);
-    conn.execute("UPDATE tracks SET added_at=200", []).unwrap();
+    let conn = database(&path, 0, 0);
+    conn.conn()
+        .execute("UPDATE tracks SET added_at=200", [])
+        .unwrap();
     let imported = [RhythmboxTrackStats {
         path,
         rating: None,
@@ -234,10 +237,10 @@ fn merge_imports_only_an_older_positive_date_added_idempotently() {
         added_at: true,
     };
 
-    let (first, _) = merge_stats(&mut conn, &imported, choices, None).unwrap();
-    let (second, _) = merge_stats(&mut conn, &imported, choices, None).unwrap();
+    let (first, _) = merge_stats(&conn, &imported, choices, None).unwrap();
+    let (second, _) = merge_stats(&conn, &imported, choices, None).unwrap();
     let (newer, _) = merge_stats(
-        &mut conn,
+        &conn,
         &[RhythmboxTrackStats {
             path: PathBuf::from("/music/song.ogg"),
             rating: None,
@@ -250,6 +253,7 @@ fn merge_imports_only_an_older_positive_date_added_idempotently() {
     )
     .unwrap();
     let added_at = conn
+        .conn()
         .query_row("SELECT added_at FROM tracks", [], |row| {
             row.get::<_, i64>(0)
         })
@@ -261,9 +265,9 @@ fn merge_imports_only_an_older_positive_date_added_idempotently() {
     assert_eq!(newer.dates_imported, 0);
 
     let missing_path = PathBuf::from("/music/without-date.ogg");
-    let mut missing_conn = database(&missing_path, 0, 0);
+    let missing_conn = database(&missing_path, 0, 0);
     let (missing, _) = merge_stats(
-        &mut missing_conn,
+        &missing_conn,
         &[RhythmboxTrackStats {
             path: missing_path,
             rating: None,
@@ -276,6 +280,7 @@ fn merge_imports_only_an_older_positive_date_added_idempotently() {
     )
     .unwrap();
     let imported_missing = missing_conn
+        .conn()
         .query_row("SELECT added_at FROM tracks", [], |row| {
             row.get::<_, i64>(0)
         })
@@ -287,8 +292,9 @@ fn merge_imports_only_an_older_positive_date_added_idempotently() {
 #[test]
 fn merge_imports_only_a_newer_positive_last_played_idempotently() {
     let path = PathBuf::from("/music/song.ogg");
-    let mut conn = database(&path, 0, 0);
-    conn.execute("UPDATE tracks SET last_played_at=100", [])
+    let conn = database(&path, 0, 0);
+    conn.conn()
+        .execute("UPDATE tracks SET last_played_at=100", [])
         .unwrap();
     let imported = [RhythmboxTrackStats {
         path,
@@ -303,10 +309,10 @@ fn merge_imports_only_a_newer_positive_last_played_idempotently() {
         added_at: false,
     };
 
-    let (first, _) = merge_stats(&mut conn, &imported, choices, None).unwrap();
-    let (second, _) = merge_stats(&mut conn, &imported, choices, None).unwrap();
+    let (first, _) = merge_stats(&conn, &imported, choices, None).unwrap();
+    let (second, _) = merge_stats(&conn, &imported, choices, None).unwrap();
     let (older, _) = merge_stats(
-        &mut conn,
+        &conn,
         &[RhythmboxTrackStats {
             path: PathBuf::from("/music/song.ogg"),
             rating: None,
@@ -319,6 +325,7 @@ fn merge_imports_only_a_newer_positive_last_played_idempotently() {
     )
     .unwrap();
     let last_played_at = conn
+        .conn()
         .query_row("SELECT last_played_at FROM tracks", [], |row| {
             row.get::<_, Option<i64>>(0)
         })
@@ -330,9 +337,9 @@ fn merge_imports_only_a_newer_positive_last_played_idempotently() {
     assert_eq!(older.last_played_imported, 0);
 
     let missing_path = PathBuf::from("/music/never-played.ogg");
-    let mut missing_conn = database(&missing_path, 0, 0);
+    let missing_conn = database(&missing_path, 0, 0);
     let (missing, _) = merge_stats(
-        &mut missing_conn,
+        &missing_conn,
         &[RhythmboxTrackStats {
             path: missing_path,
             rating: None,
@@ -345,6 +352,7 @@ fn merge_imports_only_a_newer_positive_last_played_idempotently() {
     )
     .unwrap();
     let imported_missing = missing_conn
+        .conn()
         .query_row("SELECT last_played_at FROM tracks", [], |row| {
             row.get::<_, Option<i64>>(0)
         })
@@ -356,12 +364,13 @@ fn merge_imports_only_a_newer_positive_last_played_idempotently() {
 #[test]
 fn merge_returns_rollback_and_undo_restores_original_values() {
     let path = PathBuf::from("/music/song.ogg");
-    let mut conn = database(&path, 3, 5);
-    conn.execute("UPDATE tracks SET added_at = 100, last_played_at = 200", [])
+    let conn = database(&path, 3, 5);
+    conn.conn()
+        .execute("UPDATE tracks SET added_at = 100, last_played_at = 200", [])
         .unwrap();
 
     let (summary, rollback) = merge_stats(
-        &mut conn,
+        &conn,
         &[RhythmboxTrackStats {
             path: path.clone(),
             rating: Some(5),
@@ -385,10 +394,11 @@ fn merge_returns_rollback_and_undo_restores_original_values() {
     assert_eq!(values(&conn), (3, 20)); // rating unchanged (was already set)
 
     // Undo
-    let restored = undo_rhythmbox_import(&mut conn, &rollback).unwrap();
+    let restored = undo_rhythmbox_import(&conn, &rollback).unwrap();
     assert_eq!(restored, 1);
     assert_eq!(values(&conn), (3, 5));
     let (added_at, last_played) = conn
+        .conn()
         .query_row("SELECT added_at, last_played_at FROM tracks", [], |row| {
             Ok((row.get::<_, i64>(0)?, row.get::<_, Option<i64>>(1)?))
         })
@@ -401,25 +411,22 @@ fn merge_returns_rollback_and_undo_restores_original_values() {
 fn merge_calls_progress_for_each_track() {
     let path1 = PathBuf::from("/music/a.ogg");
     let path2 = PathBuf::from("/music/b.ogg");
-    let conn_raw = Connection::open_in_memory().unwrap();
-    crate::db::migrate(&conn_raw).unwrap();
-    conn_raw
+    let conn = crate::db::Db::open_in_memory().unwrap();
+    conn.conn()
         .execute(
             "INSERT INTO tracks (path, added_at, rating, play_count) VALUES (?1, 0, 0, 0)",
             [path1.to_string_lossy()],
         )
         .unwrap();
-    conn_raw
+    conn.conn()
         .execute(
             "INSERT INTO tracks (path, added_at, rating, play_count) VALUES (?1, 0, 0, 0)",
             [path2.to_string_lossy()],
         )
         .unwrap();
-    let mut conn = conn_raw;
-
     let progress = std::cell::Cell::new(0usize);
     let (_, _) = merge_stats(
-        &mut conn,
+        &conn,
         &[
             RhythmboxTrackStats {
                 path: path1,

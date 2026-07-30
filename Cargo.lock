@@ -2738,7 +2738,6 @@ dependencies = [
  "reprise-runtime",
  "reprise-runtime-client",
  "reprise-runtime-protocol",
- "rusqlite",
  "rustix",
  "serde",
  "tempfile",

@@ -8,8 +8,8 @@
 //! enforced by combining the live read with a startup snapshot in
 //! [`write_effective`].
 
+use reprise_core::db::Db;
 use reprise_core::library::settings;
-use rusqlite::Connection;
 
 /// Settings key granting the read surface (search + resources).
 pub const CAP_LIBRARY_READ: &str = "agent.capability.library:read";
@@ -49,39 +49,39 @@ const DEVICE_SYNC_DEFAULT: bool = false;
 const PLAYBACK_CONTROL_DEFAULT: bool = true;
 
 /// Whether the read surface is currently granted.
-pub fn library_read_enabled(conn: &Connection) -> Result<bool, rusqlite::Error> {
-    settings::get_bool(conn, CAP_LIBRARY_READ, LIBRARY_READ_DEFAULT)
+pub fn library_read_enabled(db: &Db) -> Result<bool, rusqlite::Error> {
+    settings::get_bool(db, CAP_LIBRARY_READ, LIBRARY_READ_DEFAULT)
 }
 
 /// Whether `playlist:create` is currently granted (the live setting value).
-pub fn playlist_create_granted(conn: &Connection) -> Result<bool, rusqlite::Error> {
-    settings::get_bool(conn, CAP_PLAYLIST_CREATE, PLAYLIST_CREATE_DEFAULT)
+pub fn playlist_create_granted(db: &Db) -> Result<bool, rusqlite::Error> {
+    settings::get_bool(db, CAP_PLAYLIST_CREATE, PLAYLIST_CREATE_DEFAULT)
 }
 
 /// Whether `playlist:manage` is currently granted (the live setting value).
-pub fn playlist_manage_granted(conn: &Connection) -> Result<bool, rusqlite::Error> {
-    settings::get_bool(conn, CAP_PLAYLIST_MANAGE, PLAYLIST_MANAGE_DEFAULT)
+pub fn playlist_manage_granted(db: &Db) -> Result<bool, rusqlite::Error> {
+    settings::get_bool(db, CAP_PLAYLIST_MANAGE, PLAYLIST_MANAGE_DEFAULT)
 }
 
 /// Whether `ai:create` is currently granted (the live setting value).
-pub fn ai_create_granted(conn: &Connection) -> Result<bool, rusqlite::Error> {
-    settings::get_bool(conn, CAP_AI_CREATE, AI_CREATE_DEFAULT)
+pub fn ai_create_granted(db: &Db) -> Result<bool, rusqlite::Error> {
+    settings::get_bool(db, CAP_AI_CREATE, AI_CREATE_DEFAULT)
 }
 
 /// Whether `sources:manage` is currently granted (the live setting value).
-pub fn sources_manage_granted(conn: &Connection) -> Result<bool, rusqlite::Error> {
-    settings::get_bool(conn, CAP_SOURCES_MANAGE, SOURCES_MANAGE_DEFAULT)
+pub fn sources_manage_granted(db: &Db) -> Result<bool, rusqlite::Error> {
+    settings::get_bool(db, CAP_SOURCES_MANAGE, SOURCES_MANAGE_DEFAULT)
 }
 
 /// Whether playback control is currently granted (live setting value).
 #[cfg(feature = "mpris")]
-pub fn playback_control_enabled(conn: &Connection) -> Result<bool, rusqlite::Error> {
-    settings::get_bool(conn, CAP_PLAYBACK_CONTROL, PLAYBACK_CONTROL_DEFAULT)
+pub fn playback_control_enabled(db: &Db) -> Result<bool, rusqlite::Error> {
+    settings::get_bool(db, CAP_PLAYBACK_CONTROL, PLAYBACK_CONTROL_DEFAULT)
 }
 
 #[cfg(feature = "mpris")]
-pub fn device_sync_granted(conn: &Connection) -> Result<bool, rusqlite::Error> {
-    settings::get_bool(conn, CAP_DEVICE_SYNC, DEVICE_SYNC_DEFAULT)
+pub fn device_sync_granted(db: &Db) -> Result<bool, rusqlite::Error> {
+    settings::get_bool(db, CAP_DEVICE_SYNC, DEVICE_SYNC_DEFAULT)
 }
 
 /// Combines a startup snapshot with the live setting value (spec D18 / Beschluss
@@ -99,52 +99,37 @@ fn effective(granted_at_startup: bool, currently_granted: bool) -> bool {
 
 /// Whether a `playlist:create` write is permitted right now, given the startup
 /// snapshot.
-pub fn write_effective(
-    conn: &Connection,
-    granted_at_startup: bool,
-) -> Result<bool, rusqlite::Error> {
-    Ok(effective(
-        granted_at_startup,
-        playlist_create_granted(conn)?,
-    ))
+pub fn write_effective(db: &Db, granted_at_startup: bool) -> Result<bool, rusqlite::Error> {
+    Ok(effective(granted_at_startup, playlist_create_granted(db)?))
 }
 
 /// Whether a `playlist:manage` write is permitted right now, given the startup
 /// snapshot.
 pub fn playlist_manage_effective(
-    conn: &Connection,
+    db: &Db,
     granted_at_startup: bool,
 ) -> Result<bool, rusqlite::Error> {
-    Ok(effective(
-        granted_at_startup,
-        playlist_manage_granted(conn)?,
-    ))
+    Ok(effective(granted_at_startup, playlist_manage_granted(db)?))
 }
 
 /// Whether an `ai:create` write is permitted right now, given the startup
 /// snapshot.
-pub fn ai_create_effective(
-    conn: &Connection,
-    granted_at_startup: bool,
-) -> Result<bool, rusqlite::Error> {
-    Ok(effective(granted_at_startup, ai_create_granted(conn)?))
+pub fn ai_create_effective(db: &Db, granted_at_startup: bool) -> Result<bool, rusqlite::Error> {
+    Ok(effective(granted_at_startup, ai_create_granted(db)?))
 }
 
 /// Whether a podcast/YouTube/radio mutation is permitted right now, given the
 /// startup snapshot.
 pub fn sources_manage_effective(
-    conn: &Connection,
+    db: &Db,
     granted_at_startup: bool,
 ) -> Result<bool, rusqlite::Error> {
-    Ok(effective(granted_at_startup, sources_manage_granted(conn)?))
+    Ok(effective(granted_at_startup, sources_manage_granted(db)?))
 }
 
 #[cfg(feature = "mpris")]
-pub fn device_sync_effective(
-    conn: &Connection,
-    granted_at_startup: bool,
-) -> Result<bool, rusqlite::Error> {
-    Ok(effective(granted_at_startup, device_sync_granted(conn)?))
+pub fn device_sync_effective(db: &Db, granted_at_startup: bool) -> Result<bool, rusqlite::Error> {
+    Ok(effective(granted_at_startup, device_sync_granted(db)?))
 }
 
 #[cfg(all(test, feature = "mpris"))]
@@ -153,20 +138,18 @@ mod tests {
 
     #[test]
     fn playback_control_defaults_on_and_honors_revocation() {
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        assert!(playback_control_enabled(&conn).unwrap());
-        reprise_core::library::settings::set_bool(&conn, CAP_PLAYBACK_CONTROL, false).unwrap();
-        assert!(!playback_control_enabled(&conn).unwrap());
+        let db = reprise_core::db::Db::open_in_memory().unwrap();
+        assert!(playback_control_enabled(&db).unwrap());
+        reprise_core::library::settings::set_bool(&db, CAP_PLAYBACK_CONTROL, false).unwrap();
+        assert!(!playback_control_enabled(&db).unwrap());
     }
 
     #[test]
     fn device_sync_is_fail_closed_and_restart_gated() {
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
-        assert!(!device_sync_granted(&conn).unwrap());
-        reprise_core::library::settings::set_bool(&conn, CAP_DEVICE_SYNC, true).unwrap();
-        assert!(!device_sync_effective(&conn, false).unwrap());
-        assert!(device_sync_effective(&conn, true).unwrap());
+        let db = reprise_core::db::Db::open_in_memory().unwrap();
+        assert!(!device_sync_granted(&db).unwrap());
+        reprise_core::library::settings::set_bool(&db, CAP_DEVICE_SYNC, true).unwrap();
+        assert!(!device_sync_effective(&db, false).unwrap());
+        assert!(device_sync_effective(&db, true).unwrap());
     }
 }

@@ -7,20 +7,21 @@ use rusqlite::Connection;
 use super::{MirrorPlaylistSnapshot, MirrorTrack, SelectionSource, SyncTrack, UnavailableTrack};
 
 pub fn load_mirror_playlist_snapshots(
-    conn: &Connection,
+    db: &crate::db::Db,
 ) -> Result<Vec<MirrorPlaylistSnapshot>, rusqlite::Error> {
+    let conn = db.conn();
     let mut snapshots = Vec::new();
-    for playlist in crate::library::playlists::list(conn)? {
+    for playlist in crate::library::playlists::list(db)? {
         snapshots.push(MirrorPlaylistSnapshot {
             source: SelectionSource::Playlist(playlist.id),
             name: playlist.name,
             entries: load_manual_entries(conn, playlist.id)?,
         });
     }
-    for playlist in crate::library::playlists::list_smart(conn)? {
+    for playlist in crate::library::playlists::list_smart(db)? {
         let source = crate::view_source::ViewSource::Smart(playlist.id);
-        let ids = crate::queries::query_track_ids(conn, &source, "title", "asc", "", &[])?;
-        let tracks = crate::queries::query_sync_tracks(conn, &ids)?;
+        let ids = crate::queries::query_track_ids(db, &source, "title", "asc", "", &[])?;
+        let tracks = crate::queries::query_sync_tracks(db, &ids)?;
         snapshots.push(MirrorPlaylistSnapshot {
             source: SelectionSource::Smart(playlist.id),
             name: playlist.name,

@@ -15,8 +15,8 @@ use gtk4::gio;
 use gtk4::gio::prelude::*;
 use gtk4::glib;
 use libadwaita as adw;
+use reprise_core::db::Db;
 use reprise_core::library::watcher::WatcherHandle;
-use rusqlite::Connection;
 
 use super::scan_flow::ScanControls;
 use super::sidebar::Sidebar;
@@ -44,7 +44,7 @@ enum MountResult {
 
 #[derive(Clone, Copy)]
 pub(in crate::ui) struct MountWiring<'a> {
-    pub(in crate::ui) conn: &'a Rc<RefCell<Connection>>,
+    pub(in crate::ui) conn: &'a Rc<Db>,
     pub(in crate::ui) db_path: &'a Path,
     pub(in crate::ui) controls: &'a ScanControls,
     pub(in crate::ui) toast_overlay: &'a adw::ToastOverlay,
@@ -165,8 +165,8 @@ fn run_worker(
     results: &async_channel::Sender<MountResult>,
 ) {
     while let Ok(command) = commands.recv_blocking() {
-        let result = match reprise_core::db::open_migrated(Some(db_path)) {
-            Ok(conn) => apply_command(&conn, command),
+        let result = match Db::open_migrated(Some(db_path)) {
+            Ok(db) => apply_command(&db, command),
             Err(error) => MountResult::Failed {
                 operation: "open database",
                 error: error.to_string(),
@@ -178,7 +178,8 @@ fn run_worker(
     }
 }
 
-fn apply_command(conn: &Connection, command: MountCommand) -> MountResult {
+fn apply_command(db: &Db, command: MountCommand) -> MountResult {
+    let conn = &db;
     match command {
         MountCommand::Added(root) => match reprise_core::queries::verify_unmounted_tracks(conn) {
             Ok(healed) => MountResult::Added { root, healed },
@@ -209,10 +210,10 @@ fn refresh_views(track_list: &Weak<TrackList>, sidebar: &Weak<Sidebar>, reason: 
     }
 }
 
-fn library_root(conn: &Rc<RefCell<Connection>>) -> Option<PathBuf> {
+fn library_root(conn: &Rc<Db>) -> Option<PathBuf> {
     let result = {
-        let conn = conn.borrow();
-        reprise_core::library::settings::get_library_root(&conn)
+        let conn = &conn;
+        reprise_core::library::settings::get_library_root(conn)
     };
     match result {
         Ok(root) => root.map(PathBuf::from),

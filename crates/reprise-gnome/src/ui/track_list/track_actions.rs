@@ -55,10 +55,9 @@
 //! and nothing is deleted — a remove is all-correct-or-nothing, never a
 //! best-effort guess.
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
-use rusqlite::Connection;
+use reprise_core::db::Db;
 
 use crate::ui::track_list_model::TrackListModel;
 use reprise_core::library::{playlist_membership, playlists};
@@ -102,15 +101,15 @@ pub fn queue_selected_ids(ids: &[i64]) -> Option<Vec<i64>> {
 /// list.rs`) turns either outcome into a toast. A no-op (`Ok(0)`, no
 /// connection borrow taken) for an empty `ids` slice.
 pub fn add_selected_to_playlist(
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
     playlist_id: i64,
     ids: &[i64],
 ) -> Result<u32, rusqlite::Error> {
     if ids.is_empty() {
         return Ok(0);
     }
-    let mut conn = conn.borrow_mut();
-    playlist_membership::add_unique_tracks(&mut conn, playlist_id, ids)
+    let conn = &conn;
+    playlist_membership::add_unique_tracks(conn, playlist_id, ids)
 }
 
 /// Error from [`remove_selected_from_playlist`] — see the module doc's
@@ -136,7 +135,7 @@ pub enum RemoveFromPlaylistError {
 /// success. A no-op (`Ok(0)`, no connection borrow, no model lookups) for an
 /// empty `positions` slice.
 pub fn remove_selected_from_playlist(
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
     playlist_id: i64,
     positions: &[u32],
     model: &TrackListModel,
@@ -163,9 +162,9 @@ pub fn remove_selected_from_playlist(
         true_positions.push(true_position);
     }
 
-    let mut conn = conn.borrow_mut();
+    let conn = &conn;
     Ok(playlists::remove_positions(
-        &mut conn,
+        conn,
         playlist_id,
         &true_positions,
     )?)
@@ -190,12 +189,12 @@ pub fn remove_selected_from_playlist(
 /// `track_list.rs`'s menu only offers this action when the selection is
 /// non-empty.
 pub fn create_playlist_and_add(
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
     name: &str,
     ids: &[i64],
 ) -> Result<(i64, u32), rusqlite::Error> {
-    let mut conn = conn.borrow_mut();
-    let playlist_id = playlists::create_with_tracks(&mut conn, name, ids)?;
+    let conn = &conn;
+    let playlist_id = playlists::create_with_tracks(conn, name, ids)?;
     Ok((playlist_id, ids.len() as u32))
 }
 
@@ -211,18 +210,14 @@ pub fn create_playlist_and_add(
 /// exact ids, not just a count, to purge the same set from the playback
 /// queue via `ui::player_controller::PlayerController::purge_queue_ids`. A
 /// track that somehow wasn't/isn't-anymore missing is silently skipped, not
-/// an error. A no-op (`Ok(vec![])`, no connection borrow) for an empty
-/// `ids` slice. `borrow_mut`, not `borrow`: `remove_missing_tracks` needs
-/// `&mut Connection` to open its own transaction.
-pub fn remove_missing_selected(
-    conn: &Rc<RefCell<Connection>>,
-    ids: &[i64],
-) -> Result<Vec<i64>, rusqlite::Error> {
+/// an error. A no-op (`Ok(vec![])`, with no database operation) for an empty
+/// `ids` slice. Core owns the transaction needed by `remove_missing_tracks`.
+pub fn remove_missing_selected(conn: &Rc<Db>, ids: &[i64]) -> Result<Vec<i64>, rusqlite::Error> {
     if ids.is_empty() {
         return Ok(Vec::new());
     }
-    let mut conn = conn.borrow_mut();
-    reprise_core::queries::remove_missing_tracks(&mut conn, ids)
+    let conn = &conn;
+    reprise_core::queries::remove_missing_tracks(conn, ids)
 }
 
 #[cfg(test)]
@@ -236,21 +231,21 @@ mod tests {
     /// mirrors `track_list_model.rs`'s own `seeded_model` helper, but lives
     /// here too since that helper is private to that module.
     fn seeded_model(count: i64) -> TrackListModel {
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
+        let db = crate::test_db::open().unwrap();
         for id in 1..=count {
-            conn.execute(
-                "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (?1, ?2, ?3, ?4, 0)",
-                params![
-                    id,
-                    format!("/x/{id}.flac"),
-                    format!("Track {id:03}"),
-                    "Artist"
-                ],
-            )
-            .unwrap();
+            crate::test_db::connection(&db)
+                .execute(
+                    "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (?1, ?2, ?3, ?4, 0)",
+                    params![
+                        id,
+                        format!("/x/{id}.flac"),
+                        format!("Track {id:03}"),
+                        "Artist"
+                    ],
+                )
+                .unwrap();
         }
-        let model = TrackListModel::new(Rc::new(RefCell::new(conn)));
+        let model = TrackListModel::new(Rc::new(db));
         model.set_query(
             &reprise_core::view_source::ViewSource::Library,
             "title",
@@ -261,17 +256,17 @@ mod tests {
         model
     }
 
-    fn seeded_conn_with_tracks(count: i64) -> Rc<RefCell<Connection>> {
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
+    fn seeded_conn_with_tracks(count: i64) -> Rc<Db> {
+        let db = crate::test_db::open().unwrap();
         for id in 1..=count {
-            conn.execute(
-                "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (?1, ?2, ?3, ?4, 0)",
-                params![id, format!("/x/{id}.flac"), format!("Track {id}"), "Artist"],
-            )
-            .unwrap();
+            crate::test_db::connection(&db)
+                .execute(
+                    "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (?1, ?2, ?3, ?4, 0)",
+                    params![id, format!("/x/{id}.flac"), format!("Track {id}"), "Artist"],
+                )
+                .unwrap();
         }
-        Rc::new(RefCell::new(conn))
+        Rc::new(db)
     }
 
     #[test]
@@ -308,13 +303,12 @@ mod tests {
     #[test]
     fn add_selected_to_playlist_inserts_and_counts() {
         let conn = seeded_conn_with_tracks(5);
-        let playlist_id = playlists::create(&conn.borrow(), "P1").unwrap();
+        let playlist_id = playlists::create(&conn, "P1").unwrap();
 
         let inserted = add_selected_to_playlist(&conn, playlist_id, &[1, 3, 5]).unwrap();
         assert_eq!(inserted, 3);
 
-        let track_ids: Vec<i64> = conn
-            .borrow()
+        let track_ids: Vec<i64> = crate::test_db::connection(&conn)
             .prepare(
                 "SELECT track_id FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position",
             )
@@ -329,7 +323,7 @@ mod tests {
     #[test]
     fn add_selected_to_playlist_empty_ids_is_a_no_op() {
         let conn = seeded_conn_with_tracks(2);
-        let playlist_id = playlists::create(&conn.borrow(), "P1").unwrap();
+        let playlist_id = playlists::create(&conn, "P1").unwrap();
         let inserted = add_selected_to_playlist(&conn, playlist_id, &[]).unwrap();
         assert_eq!(inserted, 0);
     }
@@ -337,7 +331,7 @@ mod tests {
     #[test]
     fn add_selected_to_playlist_does_not_duplicate_existing_tracks() {
         let conn = seeded_conn_with_tracks(3);
-        let playlist_id = playlists::create(&conn.borrow(), "P1").unwrap();
+        let playlist_id = playlists::create(&conn, "P1").unwrap();
         assert_eq!(
             add_selected_to_playlist(&conn, playlist_id, &[1, 2]).unwrap(),
             2
@@ -346,8 +340,7 @@ mod tests {
             add_selected_to_playlist(&conn, playlist_id, &[2, 3, 3]).unwrap(),
             1
         );
-        let count: i64 = conn
-            .borrow()
+        let count: i64 = crate::test_db::connection(&conn)
             .query_row(
                 "SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id=?1",
                 [playlist_id],
@@ -370,11 +363,11 @@ mod tests {
     #[test]
     fn remove_selected_from_playlist_uses_positions_not_ids_for_duplicates() {
         let conn = seeded_conn_with_tracks(5);
-        let playlist_id = playlists::create(&conn.borrow(), "P1").unwrap();
+        let playlist_id = playlists::create(&conn, "P1").unwrap();
         {
-            let mut conn_mut = conn.borrow_mut();
+            let conn_mut = &conn;
             // Track id 1 appears at both position 0 and position 2.
-            playlists::add_tracks(&mut conn_mut, playlist_id, &[1, 2, 1, 3]).unwrap();
+            playlists::add_tracks(conn_mut, playlist_id, &[1, 2, 1, 3]).unwrap();
         }
         let model = TrackListModel::new(conn.clone());
         model.set_query(
@@ -388,8 +381,7 @@ mod tests {
         let removed = remove_selected_from_playlist(&conn, playlist_id, &[2], &model).unwrap();
         assert_eq!(removed, 1);
 
-        let track_ids: Vec<i64> = conn
-            .borrow()
+        let track_ids: Vec<i64> = crate::test_db::connection(&conn)
             .prepare(
                 "SELECT track_id FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position",
             )
@@ -413,9 +405,8 @@ mod tests {
     /// track C < E < B < D < A — matching this task's bug report's own
     /// repro (`[A,B,C,D,E]` -> `[C,A,E,B,D]` on an Artist header click:
     /// track C lands first either way). Returns `(conn, playlist_id)`.
-    fn seeded_playlist_with_divergent_artist_order() -> (Rc<RefCell<Connection>>, i64) {
-        let conn = reprise_core::db::open(None).unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
+    fn seeded_playlist_with_divergent_artist_order() -> (Rc<Db>, i64) {
+        let db = crate::test_db::open().unwrap();
         let tracks = [
             (1, "A", "Zeta"),
             (2, "B", "Delta"),
@@ -424,27 +415,21 @@ mod tests {
             (5, "E", "Beta"),
         ];
         for (id, title, artist) in tracks {
-            conn.execute(
-                "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (?1, ?2, ?3, ?4, 0)",
-                params![id, format!("/x/{id}.flac"), title, artist],
-            )
-            .unwrap();
+            crate::test_db::connection(&db)
+                .execute(
+                    "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (?1, ?2, ?3, ?4, 0)",
+                    params![id, format!("/x/{id}.flac"), title, artist],
+                )
+                .unwrap();
         }
-        let playlist_id = playlists::create(&conn, "P1").unwrap();
-        let conn = Rc::new(RefCell::new(conn));
-        {
-            let mut conn_mut = conn.borrow_mut();
-            playlists::add_tracks(&mut conn_mut, playlist_id, &[1, 2, 3, 4, 5]).unwrap();
-        }
-        (conn, playlist_id)
+        let playlist_id = playlists::create(&db, "P1").unwrap();
+        playlists::add_tracks(&db, playlist_id, &[1, 2, 3, 4, 5]).unwrap();
+        (Rc::new(db), playlist_id)
     }
 
     /// Current surviving track ids for `playlist_id`, in `pt.position` order.
-    fn playlist_track_ids_in_position_order(
-        conn: &Rc<RefCell<Connection>>,
-        playlist_id: i64,
-    ) -> Vec<i64> {
-        conn.borrow()
+    fn playlist_track_ids_in_position_order(conn: &Rc<Db>, playlist_id: i64) -> Vec<i64> {
+        crate::test_db::connection(conn)
             .prepare(
                 "SELECT track_id FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position",
             )
@@ -616,10 +601,10 @@ mod tests {
     #[test]
     fn remove_selected_from_playlist_empty_positions_is_a_no_op() {
         let conn = seeded_conn_with_tracks(3);
-        let playlist_id = playlists::create(&conn.borrow(), "P1").unwrap();
+        let playlist_id = playlists::create(&conn, "P1").unwrap();
         {
-            let mut conn_mut = conn.borrow_mut();
-            playlists::add_tracks(&mut conn_mut, playlist_id, &[1, 2, 3]).unwrap();
+            let conn_mut = &conn;
+            playlists::add_tracks(conn_mut, playlist_id, &[1, 2, 3]).unwrap();
         }
         // An empty selection never touches the model — a fresh, unqueried
         // one is fine here.
@@ -636,7 +621,7 @@ mod tests {
         assert!(playlist_id > 0);
         assert_eq!(inserted, 2);
 
-        let playlists = playlists::list(&conn.borrow()).unwrap();
+        let playlists = playlists::list(&conn).unwrap();
         let created = playlists.iter().find(|p| p.id == playlist_id).unwrap();
         assert_eq!(created.name, "New Playlist");
         assert_eq!(created.track_count, 2);
@@ -656,12 +641,12 @@ mod tests {
     #[test]
     fn create_playlist_and_add_rolls_back_playlist_row_on_a_bad_track_id() {
         let conn = seeded_conn_with_tracks(3);
-        let before = playlists::list(&conn.borrow()).unwrap().len();
+        let before = playlists::list(&conn).unwrap().len();
 
         let result = create_playlist_and_add(&conn, "Bad Playlist", &[1, 9999]);
         assert!(result.is_err());
 
-        let after = playlists::list(&conn.borrow()).unwrap().len();
+        let after = playlists::list(&conn).unwrap().len();
         assert_eq!(before, after, "no playlist row should survive the rollback");
     }
 
@@ -673,8 +658,8 @@ mod tests {
         assert_eq!(inserted, 0);
     }
 
-    fn mark_missing(conn: &Rc<RefCell<Connection>>, id: i64) {
-        conn.borrow()
+    fn mark_missing(conn: &Rc<Db>, id: i64) {
+        crate::test_db::connection(conn)
             .execute(
                 "UPDATE tracks SET missing_since = 1, missing_reason = 'unknown' WHERE id = ?1",
                 params![id],
@@ -692,8 +677,7 @@ mod tests {
         removed.sort_unstable();
 
         assert_eq!(removed, vec![1, 3]);
-        let count: i64 = conn
-            .borrow()
+        let count: i64 = crate::test_db::connection(&conn)
             .query_row("SELECT count(*) FROM tracks", [], |r| r.get(0))
             .unwrap();
         assert_eq!(count, 1, "only the untouched track (id 2) survives");
@@ -712,8 +696,7 @@ mod tests {
             vec![1],
             "only the actually-missing track is removed"
         );
-        let count: i64 = conn
-            .borrow()
+        let count: i64 = crate::test_db::connection(&conn)
             .query_row("SELECT count(*) FROM tracks", [], |r| r.get(0))
             .unwrap();
         assert_eq!(count, 1);
@@ -735,23 +718,18 @@ mod tests {
     #[test]
     fn remove_missing_selected_compacts_a_playlist_the_removed_track_belonged_to() {
         let conn = seeded_conn_with_tracks(5);
-        let playlist_id = reprise_core::library::playlists::create(&conn.borrow(), "P1").unwrap();
+        let playlist_id = reprise_core::library::playlists::create(&conn, "P1").unwrap();
         {
-            let mut conn_mut = conn.borrow_mut();
-            reprise_core::library::playlists::add_tracks(
-                &mut conn_mut,
-                playlist_id,
-                &[1, 2, 3, 4, 5],
-            )
-            .unwrap();
+            let conn_mut = &conn;
+            reprise_core::library::playlists::add_tracks(conn_mut, playlist_id, &[1, 2, 3, 4, 5])
+                .unwrap();
         }
         mark_missing(&conn, 3); // the middle track
 
         let removed = remove_missing_selected(&conn, &[3]).unwrap();
         assert_eq!(removed, vec![3]);
 
-        let positions: Vec<i64> = conn
-            .borrow()
+        let positions: Vec<i64> = crate::test_db::connection(&conn)
             .prepare(
                 "SELECT position FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position",
             )

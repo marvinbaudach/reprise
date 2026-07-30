@@ -21,12 +21,12 @@ fn scan_persists_musicbrainz_artist_id() {
     tag.save_to_path(&file, lofty::config::WriteOptions::default())
         .unwrap();
 
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    let report = completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    let conn = crate::db::Db::open_in_memory().unwrap();
+    let report = completed(scan_folder(&conn, tmp.path()).unwrap());
     assert_eq!(report.added, 1);
 
     let stored: (Option<String>, i64) = conn
+        .conn()
         .query_row(
             "SELECT artist_mbid, artist_mbid_negative FROM tracks WHERE path = ?1",
             [file.to_string_lossy().to_string()],
@@ -52,10 +52,10 @@ fn scan_persists_disc_number_and_move_reconcile_preserves_it() {
     tag.save_to_path(&original, lofty::config::WriteOptions::default())
         .unwrap();
 
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    let conn = crate::db::Db::open_in_memory().unwrap();
+    completed(scan_folder(&conn, tmp.path()).unwrap());
     let imported_disc: Option<i32> = conn
+        .conn()
         .query_row(
             "SELECT disc_no FROM tracks WHERE path = ?1",
             [original.to_string_lossy().to_string()],
@@ -66,9 +66,10 @@ fn scan_persists_disc_number_and_move_reconcile_preserves_it() {
 
     let moved = tmp.path().join("disc-two-moved.flac");
     std::fs::rename(&original, &moved).unwrap();
-    let report = completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    let report = completed(scan_folder(&conn, tmp.path()).unwrap());
     assert_eq!(report.moved, 1);
     let moved_disc: Option<i32> = conn
+        .conn()
         .query_row(
             "SELECT disc_no FROM tracks WHERE path = ?1",
             [moved.to_string_lossy().to_string()],

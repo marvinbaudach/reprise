@@ -34,7 +34,7 @@ fn insert_event(conn: &Connection, id: i64, dedupe_key: &str) -> rusqlite::Resul
 #[test]
 fn v31_creates_concert_ledger_events_and_indexes() {
     let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    crate::db::migrate_connection(&conn).unwrap();
     conn.pragma_update(None, "user_version", 30).unwrap();
     conn.execute("DROP TABLE IF EXISTS concert_events", [])
         .unwrap();
@@ -63,7 +63,7 @@ fn v31_creates_concert_ledger_events_and_indexes() {
 #[test]
 fn v31_is_idempotent() {
     let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    crate::db::migrate_connection(&conn).unwrap();
 
     crate::db_concerts::migrate_v31(&conn).unwrap();
     crate::db_concerts::migrate_v31(&conn).unwrap();

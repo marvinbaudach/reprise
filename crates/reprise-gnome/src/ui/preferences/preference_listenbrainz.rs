@@ -3,15 +3,14 @@
 //! Presents an inline `adw::ExpanderRow` with an enable switch, token entry,
 //! connect / disconnect controls, and a live connection status subtitle.
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
+use reprise_core::db::Db;
 use reprise_core::scrobbling::{ScrobblerTransport, TransportError};
-use rusqlite::Connection;
 
 use crate::ui::scrobble_runtime::{ConnectionStatus, ScrobbleRuntime};
 use crate::ui::{listenbrainz_secret, one_shot_task, strings};
@@ -208,12 +207,10 @@ fn build_listenbrainz_expander(
     }
 }
 
-pub(in crate::ui) fn bootstrap(conn: &Rc<RefCell<Connection>>, runtime: &Rc<ScrobbleRuntime>) {
-    let enabled = reprise_core::modules::is_enabled(
-        &conn.borrow(),
-        &reprise_core::modules::LISTENBRAINZ_MODULE,
-    )
-    .unwrap_or(false);
+pub(in crate::ui) fn bootstrap(conn: &Rc<Db>, runtime: &Rc<ScrobbleRuntime>) {
+    let enabled =
+        reprise_core::modules::is_enabled(conn, &reprise_core::modules::LISTENBRAINZ_MODULE)
+            .unwrap_or(false);
     if !enabled {
         return;
     }
@@ -233,7 +230,7 @@ pub(in crate::ui) fn bootstrap(conn: &Rc<RefCell<Connection>>, runtime: &Rc<Scro
             }
             Ok(_) => {
                 if let Err(error) = reprise_core::modules::set_enabled(
-                    &conn.borrow(),
+                    &conn,
                     &reprise_core::modules::LISTENBRAINZ_MODULE,
                     false,
                 ) {
@@ -257,7 +254,7 @@ impl PreferencesContext {
     /// Returns the `ExpanderRow` to be added to the plugins group.
     pub(in crate::ui) fn build_listenbrainz_row(self: &Rc<Self>) -> adw::ExpanderRow {
         let is_enabled = reprise_core::modules::is_enabled(
-            &self.conn.borrow(),
+            &self.conn,
             &reprise_core::modules::LISTENBRAINZ_MODULE,
         )
         .unwrap_or(false);
@@ -531,8 +528,8 @@ impl PreferencesContext {
             match listenbrainz_secret::delete().await {
                 Ok(()) => {
                     let cleared = {
-                        let conn = context.conn.borrow();
-                        reprise_core::scrobbling::clear_pending(&conn)
+                        let conn = &context.conn;
+                        reprise_core::scrobbling::clear_pending(conn)
                     };
                     if let Err(error) = cleared {
                         tracing::warn!(%error, "could not clear ListenBrainz queue on disconnect");
@@ -552,7 +549,7 @@ impl PreferencesContext {
 
     fn persist_listenbrainz_enabled(&self, enabled: bool) -> bool {
         match reprise_core::modules::set_enabled(
-            &self.conn.borrow(),
+            &self.conn,
             &reprise_core::modules::LISTENBRAINZ_MODULE,
             enabled,
         ) {
@@ -593,8 +590,8 @@ fn set_activation_pending(row: &adw::ExpanderRow, pending: bool) {
     row.set_sensitive(!pending);
 }
 
-fn pending_count(conn: &Rc<RefCell<Connection>>) -> usize {
-    reprise_core::scrobbling::pending_count(&conn.borrow()).unwrap_or(0)
+fn pending_count(conn: &Rc<Db>) -> usize {
+    reprise_core::scrobbling::pending_count(conn).unwrap_or(0)
 }
 
 fn map_transport_error(error: &TransportError) -> String {

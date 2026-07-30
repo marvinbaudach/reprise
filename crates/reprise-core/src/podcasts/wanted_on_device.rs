@@ -17,6 +17,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use crate::connectivity::{
     deferrable_action_outcome, ActionOutcome, Connectivity, LocalAvailability,
 };
+use crate::db::Db;
 
 /// What happens the instant an episode is marked wanted, given whether it
 /// already has a local file. Composes with `connectivity::
@@ -50,6 +51,15 @@ pub fn want_episode(local: LocalAvailability, connectivity: Connectivity) -> Wan
 /// Persists the wanted flag for one episode. Returns `false` if no episode
 /// with that id exists.
 pub fn set_wanted_on_device(
+    db: &Db,
+    episode_id: i64,
+    wanted: bool,
+) -> Result<bool, rusqlite::Error> {
+    let conn = db.conn();
+    set_wanted_on_device_in(conn, episode_id, wanted)
+}
+
+pub(crate) fn set_wanted_on_device_in(
     conn: &Connection,
     episode_id: i64,
     wanted: bool,
@@ -61,10 +71,8 @@ pub fn set_wanted_on_device(
 }
 
 /// Reads the wanted flag for one episode, or `None` if it does not exist.
-pub fn wanted_on_device(
-    conn: &Connection,
-    episode_id: i64,
-) -> Result<Option<bool>, rusqlite::Error> {
+pub fn wanted_on_device(db: &Db, episode_id: i64) -> Result<Option<bool>, rusqlite::Error> {
+    let conn = db.conn();
     conn.query_row(
         "SELECT wanted_on_device FROM podcast_episodes WHERE id = ?1",
         [episode_id],
@@ -77,8 +85,8 @@ pub fn wanted_on_device(
 mod tests {
     use super::*;
 
-    fn migrated() -> Connection {
-        crate::db::open_migrated(None).unwrap()
+    fn migrated() -> Db {
+        Db::open_in_memory().unwrap()
     }
 
     fn insert_subscription(conn: &Connection, id: i64) {
@@ -104,8 +112,8 @@ mod tests {
     #[test]
     fn mtp_40_wanted_on_device_defaults_to_false_and_persists_when_set() {
         let conn = migrated();
-        insert_subscription(&conn, 1);
-        insert_episode(&conn, 11, 1);
+        insert_subscription(conn.conn(), 1);
+        insert_episode(conn.conn(), 11, 1);
 
         assert_eq!(wanted_on_device(&conn, 11).unwrap(), Some(false));
 

@@ -1,7 +1,6 @@
 use std::path::{Path, PathBuf};
 
 use lofty::prelude::*;
-use rusqlite::Connection;
 
 use super::{
     execute_tag_write_file, prepare_tag_write_job, recover_incomplete_tag_write_jobs,
@@ -17,7 +16,7 @@ fn fixture_copy(dir: &Path, name: &str) -> PathBuf {
     destination
 }
 
-fn seeded_track(dir: &Path, name: &str) -> (Connection, i64, PathBuf) {
+fn seeded_track(dir: &Path, name: &str) -> (crate::db::Db, i64, PathBuf) {
     let path = fixture_copy(dir, name);
     let mut tagged = lofty::read_from_path(&path).unwrap();
     tagged
@@ -37,10 +36,10 @@ fn seeded_track(dir: &Path, name: &str) -> (Connection, i64, PathBuf) {
         .unwrap()
         .save_to_path(&path, lofty::config::WriteOptions::default())
         .unwrap();
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    crate::library::scanner::scan_folder(&mut conn, &path).unwrap();
+    let conn = crate::db::Db::open_in_memory().unwrap();
+    crate::library::scanner::scan_folder(&conn, &path).unwrap();
     let id = conn
+        .conn()
         .query_row(
             "SELECT id FROM tracks WHERE path=?1",
             [path.to_string_lossy().as_ref()],
@@ -51,12 +50,12 @@ fn seeded_track(dir: &Path, name: &str) -> (Connection, i64, PathBuf) {
 }
 
 fn prepared_title_job(
-    conn: &mut Connection,
+    db: &crate::db::Db,
     id: i64,
     path: &Path,
 ) -> super::types::PreparedTagWriteJob {
     let mutation = prepare_tag_mutation(
-        conn,
+        db.conn(),
         id,
         path,
         &TagPatch {
@@ -66,36 +65,40 @@ fn prepared_title_job(
     )
     .unwrap()
     .unwrap();
-    prepare_tag_write_job(conn, TagWriteJobSpec::tag_editor(), &[(0, mutation)]).unwrap()
+    prepare_tag_write_job(db.conn(), TagWriteJobSpec::tag_editor(), &[(0, mutation)]).unwrap()
 }
 
-fn claim_without_write(conn: &Connection, job: &super::types::PreparedTagWriteJob) {
-    conn.execute(
-        "UPDATE tag_write_jobs SET state='running' WHERE id=?1",
-        [job.id],
-    )
-    .unwrap();
-    conn.execute(
-        "UPDATE tag_write_job_files SET state='running' WHERE id=?1",
-        [job.files[0].file_id],
-    )
-    .unwrap();
-    conn.execute(
-        "UPDATE tag_write_journal SET outcome='prepared' WHERE file_id=?1",
-        [job.files[0].file_id],
-    )
-    .unwrap();
+fn claim_without_write(db: &crate::db::Db, job: &super::types::PreparedTagWriteJob) {
+    db.conn()
+        .execute(
+            "UPDATE tag_write_jobs SET state='running' WHERE id=?1",
+            [job.id],
+        )
+        .unwrap();
+    db.conn()
+        .execute(
+            "UPDATE tag_write_job_files SET state='running' WHERE id=?1",
+            [job.files[0].file_id],
+        )
+        .unwrap();
+    db.conn()
+        .execute(
+            "UPDATE tag_write_journal SET outcome='prepared' WHERE file_id=?1",
+            [job.files[0].file_id],
+        )
+        .unwrap();
 }
 
 #[test]
 fn journal_prepare_is_durable_before_any_file_write() {
     let dir = tempfile::tempdir().unwrap();
-    let (mut conn, id, path) = seeded_track(dir.path(), "prepared.flac");
+    let (conn, id, path) = seeded_track(dir.path(), "prepared.flac");
 
-    let job = prepared_title_job(&mut conn, id, &path);
+    let job = prepared_title_job(&conn, id, &path);
 
     assert_eq!(read_editable_tags(&path).unwrap().title, "Before title");
     let row: (String, String, String, i64, i64) = conn
+        .conn()
         .query_row(
             "SELECT j.kind, f.state, v.before_value, v.before_is_null, v.after_is_null \
              FROM tag_write_jobs j \
@@ -125,6 +128,7 @@ fn journal_prepare_is_durable_before_any_file_write() {
         )
     );
     let after: String = conn
+        .conn()
         .query_row(
             "SELECT after_value FROM tag_write_journal v \
              JOIN tag_write_job_files f ON f.id=v.file_id WHERE f.job_id=?1",
@@ -139,19 +143,19 @@ fn journal_prepare_is_durable_before_any_file_write() {
 fn crash_recovery_classifies_without_writing_files() {
     let dir = tempfile::tempdir().unwrap();
 
-    let (mut before_conn, before_id, before_path) = seeded_track(dir.path(), "not-applied.flac");
-    prepared_title_job(&mut before_conn, before_id, &before_path);
+    let (before_conn, before_id, before_path) = seeded_track(dir.path(), "not-applied.flac");
+    prepared_title_job(&before_conn, before_id, &before_path);
     let before_bytes = std::fs::read(&before_path).unwrap();
-    let changes_before_recovery = before_conn.total_changes();
+    let changes_before_recovery = before_conn.conn().total_changes();
     let before_recovery = recover_incomplete_tag_write_jobs(&before_conn).unwrap();
     assert_eq!(before_recovery[0].state, RecoveryState::NotApplied);
     assert_eq!(std::fs::read(&before_path).unwrap(), before_bytes);
-    assert_eq!(before_conn.total_changes(), changes_before_recovery);
+    assert_eq!(before_conn.conn().total_changes(), changes_before_recovery);
 
-    let (mut applied_conn, applied_id, applied_path) = seeded_track(dir.path(), "applied.flac");
-    let applied_job = prepared_title_job(&mut applied_conn, applied_id, &applied_path);
+    let (applied_conn, applied_id, applied_path) = seeded_track(dir.path(), "applied.flac");
+    let applied_job = prepared_title_job(&applied_conn, applied_id, &applied_path);
     execute_tag_write_file(
-        &mut applied_conn,
+        applied_conn.conn(),
         applied_job.id,
         &applied_job.files[0],
         false,
@@ -163,8 +167,8 @@ fn crash_recovery_classifies_without_writing_files() {
     assert!(applied_recovery.is_empty());
     assert_eq!(std::fs::read(&applied_path).unwrap(), applied_bytes);
 
-    let (mut conflict_conn, conflict_id, conflict_path) = seeded_track(dir.path(), "conflict.flac");
-    let conflict_job = prepared_title_job(&mut conflict_conn, conflict_id, &conflict_path);
+    let (conflict_conn, conflict_id, conflict_path) = seeded_track(dir.path(), "conflict.flac");
+    let conflict_job = prepared_title_job(&conflict_conn, conflict_id, &conflict_path);
     claim_without_write(&conflict_conn, &conflict_job);
     apply_tag_patch_to_file(
         &conflict_path,
@@ -177,16 +181,16 @@ fn crash_recovery_classifies_without_writing_files() {
     let conflict_recovery = recover_incomplete_tag_write_jobs(&conflict_conn).unwrap();
     assert_eq!(conflict_recovery[0].state, RecoveryState::Conflict);
 
-    let (mut missing_conn, missing_id, missing_path) = seeded_track(dir.path(), "missing.flac");
-    let missing_job = prepared_title_job(&mut missing_conn, missing_id, &missing_path);
+    let (missing_conn, missing_id, missing_path) = seeded_track(dir.path(), "missing.flac");
+    let missing_job = prepared_title_job(&missing_conn, missing_id, &missing_path);
     claim_without_write(&missing_conn, &missing_job);
     std::fs::remove_file(&missing_path).unwrap();
     let missing_recovery = recover_incomplete_tag_write_jobs(&missing_conn).unwrap();
     assert_eq!(missing_recovery[0].state, RecoveryState::Unavailable);
 
-    let (mut unreadable_conn, unreadable_id, unreadable_path) =
+    let (unreadable_conn, unreadable_id, unreadable_path) =
         seeded_track(dir.path(), "unreadable.flac");
-    let unreadable_job = prepared_title_job(&mut unreadable_conn, unreadable_id, &unreadable_path);
+    let unreadable_job = prepared_title_job(&unreadable_conn, unreadable_id, &unreadable_path);
     claim_without_write(&unreadable_conn, &unreadable_job);
     std::fs::write(&unreadable_path, b"not an audio container").unwrap();
     let unreadable_recovery = recover_incomplete_tag_write_jobs(&unreadable_conn).unwrap();
@@ -197,9 +201,9 @@ fn crash_recovery_classifies_without_writing_files() {
 #[test]
 fn journal_preserves_present_and_absent_numeric_values() {
     let dir = tempfile::tempdir().unwrap();
-    let (mut conn, id, path) = seeded_track(dir.path(), "numbers.flac");
+    let (conn, id, path) = seeded_track(dir.path(), "numbers.flac");
     let mutation = prepare_tag_mutation(
-        &conn,
+        conn.conn(),
         id,
         &path,
         &TagPatch {
@@ -211,10 +215,11 @@ fn journal_preserves_present_and_absent_numeric_values() {
     .unwrap()
     .unwrap();
 
-    let job =
-        prepare_tag_write_job(&mut conn, TagWriteJobSpec::tag_editor(), &[(0, mutation)]).unwrap();
+    let job = prepare_tag_write_job(conn.conn(), TagWriteJobSpec::tag_editor(), &[(0, mutation)])
+        .unwrap();
     let rows = {
         let mut statement = conn
+            .conn()
             .prepare(
                 "SELECT field, before_value, before_is_null, after_value, after_is_null \
                  FROM tag_write_journal v \
@@ -249,25 +254,27 @@ fn journal_preserves_present_and_absent_numeric_values() {
 #[test]
 fn status_update_failure_leaves_after_file_recoverable_and_job_interrupted() {
     let dir = tempfile::tempdir().unwrap();
-    let (mut conn, id, path) = seeded_track(dir.path(), "status-failure.flac");
-    let job = prepared_title_job(&mut conn, id, &path);
-    conn.execute_batch(
-        "CREATE TRIGGER reject_file_completion
+    let (conn, id, path) = seeded_track(dir.path(), "status-failure.flac");
+    let job = prepared_title_job(&conn, id, &path);
+    conn.conn()
+        .execute_batch(
+            "CREATE TRIGGER reject_file_completion
          BEFORE UPDATE OF state ON tag_write_job_files
          WHEN NEW.state='complete'
          BEGIN
            SELECT RAISE(FAIL, 'injected status failure');
          END;",
-    )
-    .unwrap();
+        )
+        .unwrap();
 
     let failure =
-        execute_tag_write_file(&mut conn, job.id, &job.files[0], false, &mut |_, _, _| {})
+        execute_tag_write_file(conn.conn(), job.id, &job.files[0], false, &mut |_, _, _| {})
             .unwrap_err();
     assert!(failure.file_written);
-    super::finish_tag_write_job(&conn, job.id).unwrap();
+    super::finish_tag_write_job(conn.conn(), job.id).unwrap();
 
     let persisted: (String, String, String) = conn
+        .conn()
         .query_row(
             "SELECT j.state, f.state, v.outcome \
              FROM tag_write_jobs j \
@@ -282,10 +289,10 @@ fn status_update_failure_leaves_after_file_recoverable_and_job_interrupted() {
         persisted,
         ("interrupted".into(), "running".into(), "prepared".into())
     );
-    let changes = conn.total_changes();
+    let changes = conn.conn().total_changes();
     let recovery = recover_incomplete_tag_write_jobs(&conn).unwrap();
     assert_eq!(recovery[0].state, RecoveryState::Applied);
-    assert_eq!(conn.total_changes(), changes);
+    assert_eq!(conn.conn().total_changes(), changes);
 }
 
 #[test]
@@ -303,16 +310,17 @@ fn file_only_after_state_survives_close_and_reopens_read_only() {
         .save_to_path(&path, lofty::config::WriteOptions::default())
         .unwrap();
     let database = dir.path().join("recovery.db");
-    let mut conn = crate::db::open_migrated(Some(&database)).unwrap();
-    crate::library::scanner::scan_folder(&mut conn, &path).unwrap();
+    let conn = crate::db::Db::open_migrated(Some(&database)).unwrap();
+    crate::library::scanner::scan_folder(&conn, &path).unwrap();
     let id = conn
+        .conn()
         .query_row(
             "SELECT id FROM tracks WHERE path=?1",
             [path.to_string_lossy().as_ref()],
             |row| row.get(0),
         )
         .unwrap();
-    let job = prepared_title_job(&mut conn, id, &path);
+    let job = prepared_title_job(&conn, id, &path);
     claim_without_write(&conn, &job);
     apply_tag_patch_to_file(
         &path,
@@ -324,32 +332,34 @@ fn file_only_after_state_survives_close_and_reopens_read_only() {
     .unwrap();
     drop(conn);
 
-    let reopened = crate::db::open_migrated(Some(&database)).unwrap();
-    let changes = reopened.total_changes();
+    let reopened = crate::db::Db::open_migrated(Some(&database)).unwrap();
+    let changes = reopened.conn().total_changes();
     let recovery = recover_incomplete_tag_write_jobs(&reopened).unwrap();
     assert_eq!(recovery[0].state, RecoveryState::Applied);
-    assert_eq!(reopened.total_changes(), changes);
+    assert_eq!(reopened.conn().total_changes(), changes);
 }
 
 #[test]
 fn empty_field_set_has_no_uncertain_field_to_recover() {
     let dir = tempfile::tempdir().unwrap();
     let (conn, id, path) = seeded_track(dir.path(), "empty-fields.flac");
-    conn.execute(
-        "INSERT INTO tag_write_jobs \
+    conn.conn()
+        .execute(
+            "INSERT INTO tag_write_jobs \
          (kind, state, created_at, finished_at, total_tracks) \
          VALUES ('tag_editor', 'interrupted', 0, 1, 1)",
-        [],
-    )
-    .unwrap();
-    let job_id = conn.last_insert_rowid();
-    conn.execute(
-        "INSERT INTO tag_write_job_files \
+            [],
+        )
+        .unwrap();
+    let job_id = conn.conn().last_insert_rowid();
+    conn.conn()
+        .execute(
+            "INSERT INTO tag_write_job_files \
          (job_id, position, track_id, path, state, file_written) \
          VALUES (?1, 0, ?2, ?3, 'running', 0)",
-        rusqlite::params![job_id, id, path.to_string_lossy()],
-    )
-    .unwrap();
+            rusqlite::params![job_id, id, path.to_string_lossy()],
+        )
+        .unwrap();
 
     let recovery = recover_incomplete_tag_write_jobs(&conn).unwrap();
     assert!(recovery.is_empty());
@@ -358,7 +368,7 @@ fn empty_field_set_has_no_uncertain_field_to_recover() {
 #[test]
 fn interrupted_recovery_ignores_terminal_siblings_even_if_they_change_later() {
     let dir = tempfile::tempdir().unwrap();
-    let (mut conn, first_id, first_path) = seeded_track(dir.path(), "terminal.flac");
+    let (conn, first_id, first_path) = seeded_track(dir.path(), "terminal.flac");
     let second_path = fixture_copy(dir.path(), "uncertain.flac");
     let mut second_tagged = lofty::read_from_path(&second_path).unwrap();
     second_tagged
@@ -370,8 +380,9 @@ fn interrupted_recovery_ignores_terminal_siblings_even_if_they_change_later() {
         .unwrap()
         .save_to_path(&second_path, lofty::config::WriteOptions::default())
         .unwrap();
-    crate::library::scanner::scan_folder(&mut conn, &second_path).unwrap();
+    crate::library::scanner::scan_folder(&conn, &second_path).unwrap();
     let second_id = conn
+        .conn()
         .query_row(
             "SELECT id FROM tracks WHERE path=?1",
             [second_path.to_string_lossy().as_ref()],
@@ -382,20 +393,20 @@ fn interrupted_recovery_ignores_terminal_siblings_even_if_they_change_later() {
         title: Some("After title".into()),
         ..TagPatch::default()
     };
-    let first = prepare_tag_mutation(&conn, first_id, &first_path, &patch)
+    let first = prepare_tag_mutation(conn.conn(), first_id, &first_path, &patch)
         .unwrap()
         .unwrap();
-    let second = prepare_tag_mutation(&conn, second_id, &second_path, &patch)
+    let second = prepare_tag_mutation(conn.conn(), second_id, &second_path, &patch)
         .unwrap()
         .unwrap();
     let job = prepare_tag_write_job(
-        &mut conn,
+        conn.conn(),
         TagWriteJobSpec::tag_editor(),
         &[(0, first), (1, second)],
     )
     .unwrap();
-    execute_tag_write_file(&mut conn, job.id, &job.files[0], false, &mut |_, _, _| {}).unwrap();
-    super::finish_tag_write_job(&conn, job.id).unwrap();
+    execute_tag_write_file(conn.conn(), job.id, &job.files[0], false, &mut |_, _, _| {}).unwrap();
+    super::finish_tag_write_job(conn.conn(), job.id).unwrap();
     apply_tag_patch_to_file(
         &first_path,
         &TagPatch {
@@ -415,8 +426,8 @@ fn interrupted_recovery_ignores_terminal_siblings_even_if_they_change_later() {
 #[test]
 fn unclaimed_pending_file_is_not_applied_even_when_disk_already_matches_after() {
     let dir = tempfile::tempdir().unwrap();
-    let (mut conn, id, path) = seeded_track(dir.path(), "unclaimed.flac");
-    prepared_title_job(&mut conn, id, &path);
+    let (conn, id, path) = seeded_track(dir.path(), "unclaimed.flac");
+    prepared_title_job(&conn, id, &path);
     apply_tag_patch_to_file(
         &path,
         &TagPatch {
@@ -434,9 +445,9 @@ fn unclaimed_pending_file_is_not_applied_even_when_disk_already_matches_after() 
 #[test]
 fn recovery_classifies_only_uncertain_fields_not_terminal_siblings() {
     let dir = tempfile::tempdir().unwrap();
-    let (mut conn, id, path) = seeded_track(dir.path(), "mixed-siblings.flac");
+    let (conn, id, path) = seeded_track(dir.path(), "mixed-siblings.flac");
     let mutation = prepare_tag_mutation(
-        &conn,
+        conn.conn(),
         id,
         &path,
         &TagPatch {
@@ -447,28 +458,32 @@ fn recovery_classifies_only_uncertain_fields_not_terminal_siblings() {
     )
     .unwrap()
     .unwrap();
-    let job =
-        prepare_tag_write_job(&mut conn, TagWriteJobSpec::tag_editor(), &[(0, mutation)]).unwrap();
-    conn.execute(
-        "UPDATE tag_write_jobs SET state='running' WHERE id=?1",
-        [job.id],
-    )
-    .unwrap();
-    conn.execute(
-        "UPDATE tag_write_job_files SET state='running' WHERE id=?1",
-        [job.files[0].file_id],
-    )
-    .unwrap();
-    conn.execute(
-        "UPDATE tag_write_journal SET outcome='prepared' WHERE file_id=?1",
-        [job.files[0].file_id],
-    )
-    .unwrap();
-    conn.execute(
-        "UPDATE tag_write_journal SET outcome='conflict' WHERE file_id=?1 AND field='title'",
-        [job.files[0].file_id],
-    )
-    .unwrap();
+    let job = prepare_tag_write_job(conn.conn(), TagWriteJobSpec::tag_editor(), &[(0, mutation)])
+        .unwrap();
+    conn.conn()
+        .execute(
+            "UPDATE tag_write_jobs SET state='running' WHERE id=?1",
+            [job.id],
+        )
+        .unwrap();
+    conn.conn()
+        .execute(
+            "UPDATE tag_write_job_files SET state='running' WHERE id=?1",
+            [job.files[0].file_id],
+        )
+        .unwrap();
+    conn.conn()
+        .execute(
+            "UPDATE tag_write_journal SET outcome='prepared' WHERE file_id=?1",
+            [job.files[0].file_id],
+        )
+        .unwrap();
+    conn.conn()
+        .execute(
+            "UPDATE tag_write_journal SET outcome='conflict' WHERE file_id=?1 AND field='title'",
+            [job.files[0].file_id],
+        )
+        .unwrap();
     apply_tag_patch_to_file(
         &path,
         &TagPatch {

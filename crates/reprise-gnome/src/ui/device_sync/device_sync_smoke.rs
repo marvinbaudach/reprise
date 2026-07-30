@@ -15,12 +15,12 @@ use std::time::Duration;
 
 use gtk4::gio;
 use gtk4::gio::prelude::*;
+use reprise_core::db::Db;
 use reprise_core::device_sync::{DeviceStorageInspection, StorageId, SyncTarget};
 use reprise_platform_linux::device_sync::{CopyOutcome, DeviceDescriptor, DeviceStorage};
 use reprise_platform_linux::device_transfer::{
     probe_transcode_capability, transcode_audio, TranscodeProfile, TranscodeRequest, TranscodedFile,
 };
-use rusqlite::Connection;
 
 use super::device_sync_runtime::{BackendFuture, DeviceBackend, DeviceSyncRuntime, Subscription};
 
@@ -198,9 +198,7 @@ impl DeviceBackend for SimulatedMtpDeviceBackend {
     }
 }
 
-pub(in crate::ui) fn runtime_from_env(
-    conn: &Rc<RefCell<Connection>>,
-) -> Option<Rc<DeviceSyncRuntime>> {
+pub(in crate::ui) fn runtime_from_env(conn: &Rc<Db>) -> Option<Rc<DeviceSyncRuntime>> {
     let root = std::env::var_os(ROOT_ENV).map(PathBuf::from)?;
     let backend = Rc::new(SimulatedMtpDeviceBackend::for_root(&root)?);
     Some(DeviceSyncRuntime::with_backend(conn, backend))

@@ -1,9 +1,8 @@
 //! Composition helper for the Podcasts and Radio source views.
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
-use rusqlite::Connection;
+use reprise_core::db::Db;
 
 use super::player_controller::PlayerController;
 use super::sidebar::Sidebar;
@@ -33,7 +32,7 @@ impl SourceViews {
 }
 
 pub(in crate::ui) fn install(
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
     podcasts_runtime: &Rc<crate::ui::podcasts::PodcastsRuntime>,
     player: Option<&Rc<PlayerController>>,
     sidebar: &Rc<Sidebar>,

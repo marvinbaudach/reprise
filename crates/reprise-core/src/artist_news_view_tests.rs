@@ -215,14 +215,13 @@ fn release_sort_keeps_invalid_dates_last_and_uses_title_tiebreak() {
 
 #[test]
 fn persisted_release_filter_tolerates_unknown_type() {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    set_bool(&conn, "releases.filter.not_in_library", true).unwrap();
-    set_bool(&conn, "releases.filter.hidden", true).unwrap();
-    set_setting(&conn, "releases.filter.type", "unexpected").unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    set_bool(&db, "releases.filter.not_in_library", true).unwrap();
+    set_bool(&db, "releases.filter.hidden", true).unwrap();
+    set_setting(&db, "releases.filter.type", "unexpected").unwrap();
 
     assert_eq!(
-        persisted_releases_filter(&conn).unwrap(),
+        persisted_releases_filter(&db).unwrap(),
         ReleasesFilter {
             release_type: None,
             hidden: true,
@@ -232,32 +231,33 @@ fn persisted_release_filter_tolerates_unknown_type() {
 
 #[test]
 fn nr_18_sidebar_badge_count_matches_visible_gap_rows() {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    conn.execute(
-        "INSERT INTO tracks (path, title, artist, album, added_at)
+    let db = crate::db::Db::open_in_memory().unwrap();
+    db.conn()
+        .execute(
+            "INSERT INTO tracks (path, title, artist, album, added_at)
          VALUES ('/music/one.flac', 'Track', 'Artist', 'Local', 0)",
-        [],
-    )
-    .unwrap();
-    conn.execute(
-        "INSERT INTO new_releases (
+            [],
+        )
+        .unwrap();
+    db.conn()
+        .execute(
+            "INSERT INTO new_releases (
            release_group_mbid, artist_name, artist_mbid, title, release_type,
            first_release_date, fetched_at, fallback_accent, first_seen
          ) VALUES
            ('one', 'Artist', 'artist-id', 'One', 'Album', '2026-08-01', 1, '#123456', 1),
            ('two', 'Artist', 'artist-id', 'Two', 'Single', '2026-08-02', 1, '#123456', 1)",
-        [],
-    )
-    .unwrap();
+            [],
+        )
+        .unwrap();
     let filter = ReleasesFilter {
         release_type: Some(ReleaseTypeFilter::Album),
         ..ReleasesFilter::default()
     };
 
-    let rows = query_releases_view(&conn, &filter, today()).unwrap();
+    let rows = query_releases_view(&db, &filter, today()).unwrap();
     assert_eq!(
-        count_releases_view(&conn, &filter, today()).unwrap(),
+        count_releases_view(&db, &filter, today()).unwrap(),
         rows.len() as i64
     );
     assert_eq!(rows[0].release_group_mbid, "one");
@@ -265,16 +265,17 @@ fn nr_18_sidebar_badge_count_matches_visible_gap_rows() {
 
 #[test]
 fn nr_16_releases_view_is_limited_to_current_library_artists() {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    conn.execute(
-        "INSERT INTO tracks (path, title, artist, album_artist, album, added_at)
+    let db = crate::db::Db::open_in_memory().unwrap();
+    db.conn()
+        .execute(
+            "INSERT INTO tracks (path, title, artist, album_artist, album, added_at)
          VALUES ('/music/local.flac', 'Track', 'Guest', 'Library Artist', 'Local', 0)",
-        [],
-    )
-    .unwrap();
-    conn.execute(
-        "INSERT INTO new_releases (
+            [],
+        )
+        .unwrap();
+    db.conn()
+        .execute(
+            "INSERT INTO new_releases (
            release_group_mbid, artist_name, artist_mbid, title, release_type,
            first_release_date, fetched_at, fallback_accent, first_seen
          ) VALUES
@@ -282,11 +283,11 @@ fn nr_16_releases_view_is_limited_to_current_library_artists() {
             '2020-01-01', 1, '#123456', 1),
            ('foreign', 'Former Artist', 'former-id', 'Foreign Album', 'Album',
             '2020-01-01', 1, '#123456', 1)",
-        [],
-    )
-    .unwrap();
+            [],
+        )
+        .unwrap();
 
-    let rows = query_releases_view(&conn, &ReleasesFilter::default(), today()).unwrap();
+    let rows = query_releases_view(&db, &ReleasesFilter::default(), today()).unwrap();
     assert_eq!(
         rows.into_iter()
             .map(|row| row.release_group_mbid)

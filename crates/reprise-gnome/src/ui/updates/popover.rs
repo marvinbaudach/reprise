@@ -129,6 +129,7 @@ fn module_effect(
 /// with their own copy of the same condition.
 use reprise_core::updates::fetch_allowed as periodic_fetch_due;
 
+use reprise_core::db::Db;
 use reprise_core::updates::{Feed, FeedRefresh};
 
 pub(in crate::ui) type OnOpenView = Rc<dyn Fn(reprise_core::browser::navigation::SidebarTarget)>;
@@ -139,7 +140,7 @@ pub(in crate::ui) struct UpdatesCallbacks {
 }
 
 struct NewReleasesPopover {
-    conn: Rc<RefCell<rusqlite::Connection>>,
+    conn: Rc<Db>,
     database_path: PathBuf,
     concerts_runtime: Rc<ConcertsRuntime>,
     button: gtk4::MenuButton,
@@ -174,7 +175,7 @@ struct NewReleasesPopover {
 
 impl NewReleasesPopover {
     fn new(
-        conn: Rc<RefCell<rusqlite::Connection>>,
+        conn: Rc<Db>,
         database_path: PathBuf,
         concerts_runtime: Rc<ConcertsRuntime>,
         on_show_album: release_row::OnShowAlbum,
@@ -291,18 +292,16 @@ impl NewReleasesPopover {
 
     fn render(self: &Rc<Self>, mark_seen: bool, failed: bool) {
         let news_enabled = reprise_core::modules::is_enabled(
-            &self.conn.borrow(),
+            &self.conn,
             &reprise_core::modules::NEW_RELEASES_MODULE,
         )
         .unwrap_or(false);
-        let concerts_enabled = reprise_core::modules::is_enabled(
-            &self.conn.borrow(),
-            &reprise_core::modules::CONCERTS_MODULE,
-        )
-        .unwrap_or(false);
+        let concerts_enabled =
+            reprise_core::modules::is_enabled(&self.conn, &reprise_core::modules::CONCERTS_MODULE)
+                .unwrap_or(false);
         let today = chrono::Local::now().date_naive();
         let all_releases = if news_enabled {
-            match reprise_core::artist_news::query_releases(&self.conn.borrow(), true, today) {
+            match reprise_core::artist_news::query_releases(&self.conn, true, today) {
                 Ok(releases) => releases,
                 Err(error) => {
                     tracing::warn!(%error, "could not query New Releases");
@@ -346,7 +345,7 @@ impl NewReleasesPopover {
             Rc::new(move |mbid: &str| {
                 let Some(state) = weak.upgrade() else { return };
                 if let Err(error) =
-                    reprise_core::artist_news::set_release_hidden(&state.conn.borrow(), mbid, true)
+                    reprise_core::artist_news::set_release_hidden(&state.conn, mbid, true)
                 {
                     tracing::warn!(%error, release_group_mbid = mbid, "could not hide New Release");
                     return;
@@ -367,7 +366,7 @@ impl NewReleasesPopover {
                 &close_popover,
             ));
         }
-        let concerts = feed_snapshot::concerts(&self.conn.borrow(), concerts_enabled, today);
+        let concerts = feed_snapshot::concerts(&self.conn, concerts_enabled, today);
         self.concerts_section.render(
             concerts_enabled,
             concerts.credentials,
@@ -378,7 +377,7 @@ impl NewReleasesPopover {
         self.concerts_jump.set_visible(concerts_enabled);
         self.concerts_jump_label
             .set_label(&strings::updates_show_all_concerts(concerts.count));
-        let releases_count = feed_snapshot::releases_count(&self.conn.borrow(), today);
+        let releases_count = feed_snapshot::releases_count(&self.conn, today);
         self.releases_jump.set_visible(news_enabled);
         self.releases_jump_label
             .set_label(&strings::updates_show_all_releases(releases_count));
@@ -386,22 +385,20 @@ impl NewReleasesPopover {
             let effect = opening_effect(&releases);
             if !effect.seen_ids.is_empty() {
                 let now = chrono::Utc::now().timestamp();
-                if let Err(error) = reprise_core::artist_news::mark_releases_seen(
-                    &self.conn.borrow(),
-                    &effect.seen_ids,
-                    now,
-                ) {
+                if let Err(error) =
+                    reprise_core::artist_news::mark_releases_seen(&self.conn, &effect.seen_ids, now)
+                {
                     tracing::warn!(%error, "could not mark New Releases seen");
                 }
             }
             if concerts_enabled {
-                let conn = self.conn.borrow();
-                let filter = reprise_core::concerts::config::persisted_filter(&conn);
-                let location = reprise_core::concerts::config::location(&conn);
+                let conn = &self.conn;
+                let filter = reprise_core::concerts::config::persisted_filter(conn);
+                let location = reprise_core::concerts::config::location(conn);
                 match (filter, location) {
                     (Ok(filter), Ok(location)) => {
                         if let Err(error) = reprise_core::concerts::mark_scope_seen(
-                            &conn,
+                            conn,
                             &filter,
                             location.as_ref(),
                             today,
@@ -417,8 +414,7 @@ impl NewReleasesPopover {
             }
         }
         let unseen_releases =
-            reprise_core::artist_news::unseen_release_count(&self.conn.borrow(), today)
-                .unwrap_or_default();
+            reprise_core::artist_news::unseen_release_count(&self.conn, today).unwrap_or_default();
         let (_, concerts_ready, unseen_concerts, latest_concerts) =
             self.concerts_badge_state(today);
         match badge::updates_badge(
@@ -446,7 +442,7 @@ impl NewReleasesPopover {
         } else {
             self.new_tag.set_visible(false);
         }
-        let latest_news = reprise_core::artist_news::latest_fetched_at(&self.conn.borrow())
+        let latest_news = reprise_core::artist_news::latest_fetched_at(&self.conn)
             .ok()
             .flatten();
         let latest = oldest_active_feed_timestamp(
@@ -466,19 +462,17 @@ impl NewReleasesPopover {
     }
 
     fn concerts_badge_state(&self, today: chrono::NaiveDate) -> (bool, bool, i64, Option<i64>) {
-        let conn = self.conn.borrow();
-        let credentials = reprise_core::concerts::config::credentials(&conn)
+        let conn = &self.conn;
+        let credentials = reprise_core::concerts::config::credentials(conn)
             .is_ok_and(|credentials| !credentials.is_empty());
-        let latest = reprise_core::concerts::latest_fetch_at(&conn)
-            .ok()
-            .flatten();
+        let latest = reprise_core::concerts::latest_fetch_at(conn).ok().flatten();
         if !credentials {
             return (false, false, 0, latest);
         }
-        let unseen = reprise_core::concerts::config::persisted_filter(&conn)
+        let unseen = reprise_core::concerts::config::persisted_filter(conn)
             .and_then(|filter| {
-                let location = reprise_core::concerts::config::location(&conn)?;
-                reprise_core::concerts::count_unseen(&conn, &filter, location.as_ref(), today)
+                let location = reprise_core::concerts::config::location(conn)?;
+                reprise_core::concerts::count_unseen(conn, &filter, location.as_ref(), today)
             })
             .unwrap_or_else(|error| {
                 tracing::warn!(%error, "could not count unseen Concerts updates");
@@ -494,11 +488,11 @@ impl NewReleasesPopover {
     /// module is off.
     fn maybe_background_refresh(self: &Rc<Self>) {
         let enabled = reprise_core::modules::is_enabled(
-            &self.conn.borrow(),
+            &self.conn,
             &reprise_core::modules::NEW_RELEASES_MODULE,
         )
         .unwrap_or(false);
-        let latest = reprise_core::artist_news::latest_fetched_at(&self.conn.borrow())
+        let latest = reprise_core::artist_news::latest_fetched_at(&self.conn)
             .ok()
             .flatten();
         let now = chrono::Utc::now().timestamp();
@@ -552,8 +546,8 @@ impl NewReleasesPopover {
 
     fn fetch_completed(&self) -> bool {
         let result = {
-            let conn = self.conn.borrow();
-            reprise_core::library::settings::get_new_releases_fetch_completed(&conn)
+            let conn = &self.conn;
+            reprise_core::library::settings::get_new_releases_fetch_completed(conn)
         };
         result.unwrap_or_else(|error| {
             tracing::warn!(%error, "could not read New Releases fetch state");
@@ -580,17 +574,17 @@ impl NewReleasesPopover {
             return;
         }
         let news_enabled = reprise_core::modules::is_enabled(
-            &self.conn.borrow(),
+            &self.conn,
             &reprise_core::modules::NEW_RELEASES_MODULE,
         )
         .unwrap_or(false);
         let concerts_enabled = include_concerts
             && reprise_core::modules::is_enabled(
-                &self.conn.borrow(),
+                &self.conn,
                 &reprise_core::modules::CONCERTS_MODULE,
             )
             .unwrap_or(false)
-            && reprise_core::concerts::config::credentials(&self.conn.borrow())
+            && reprise_core::concerts::config::credentials(&self.conn)
                 .is_ok_and(|credentials| !credentials.is_empty());
         let mut feeds = Vec::new();
         if news_enabled {
@@ -686,8 +680,8 @@ impl NewReleasesPopover {
     fn finish_feed(self: &Rc<Self>, feed: Feed, failed: bool) {
         if matches!(feed, Feed::NewReleases) && !failed {
             let result = {
-                let conn = self.conn.borrow();
-                reprise_core::library::settings::set_new_releases_fetch_completed(&conn, true)
+                let conn = &self.conn;
+                reprise_core::library::settings::set_new_releases_fetch_completed(conn, true)
             };
             if let Err(error) = result {
                 tracing::warn!(%error, "could not save New Releases fetch state");
@@ -748,7 +742,7 @@ fn bind_concerts_runtime(state: &Rc<NewReleasesPopover>, runtime: &Rc<ConcertsRu
 pub(in crate::ui) fn install(
     header: &adw::HeaderBar,
     window: &adw::ApplicationWindow,
-    conn: &Rc<RefCell<rusqlite::Connection>>,
+    conn: &Rc<Db>,
     database_path: &Path,
     runtime: &Rc<ArtistNewsRuntime>,
     concerts_runtime: &Rc<ConcertsRuntime>,
@@ -770,7 +764,7 @@ pub(in crate::ui) fn install(
 fn fetch_from_database(
     database_path: &Path,
 ) -> Result<reprise_core::artist_news::RefreshReport, reprise_core::artist_news::NewsError> {
-    let conn = reprise_core::db::open_migrated(Some(database_path))
+    let conn = reprise_core::db::Db::open_migrated(Some(database_path))
         .map_err(|error| reprise_core::artist_news::NewsError::Database(error.to_string()))?;
     if !reprise_core::modules::is_enabled(&conn, &reprise_core::modules::NEW_RELEASES_MODULE)
         .map_err(|error| reprise_core::artist_news::NewsError::Database(error.to_string()))?

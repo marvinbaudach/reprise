@@ -465,7 +465,7 @@ impl DeviceSyncRuntime {
             device.cancellable = Some(cancellable.clone());
             device.sync_error = None;
             device.mtp_rate.reset();
-            let targets = load_or_create_targets(&self.conn.borrow(), device_id)
+            let targets = load_or_create_targets(&self.conn, device_id)
                 .map_err(|error| SyncStartError::Planning(error.to_string()))?;
             let log = RunLog::open(
                 self,

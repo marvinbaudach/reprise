@@ -237,21 +237,21 @@ fn run_scan(
     folder: &std::path::Path,
     on_progress: impl FnMut(ScanProgress),
 ) -> Result<ProcessedScanOutcome, ScanError> {
-    let mut worker_conn = reprise_core::db::open_migrated(Some(db_path))?;
-    let outcome =
-        library::scanner::scan_folder_with_progress(&mut worker_conn, folder, on_progress)?;
+    let worker_conn = reprise_core::db::Db::open_migrated(Some(db_path))?;
+    let outcome = library::scanner::scan_folder_with_progress(&worker_conn, folder, on_progress)?;
     if let Err(error) = settings::set_library_root(&worker_conn, &folder.to_string_lossy()) {
         tracing::error!(%error, "failed to persist library root after scan");
     }
-    let processed = postprocess_scan_outcome(&mut worker_conn, outcome, now_unix())?;
+    let processed = postprocess_scan_outcome(&worker_conn, outcome, now_unix())?;
     Ok(processed)
 }
 
 fn postprocess_scan_outcome(
-    conn: &mut rusqlite::Connection,
+    conn: &reprise_core::db::Db,
     outcome: ScanOutcome,
     now: i64,
 ) -> Result<ProcessedScanOutcome, ScanError> {
+    let conn = &conn;
     let auto_cleaned_ids = match &outcome {
         ScanOutcome::Completed(report) => {
             library::scanner::finalize_completed_scan(conn, report, now)?
@@ -318,8 +318,8 @@ mod task_5_5_tests {
 
     #[test]
     fn completed_scan_persists_relinks_and_runs_auto_clean_but_unavailable_does_neither() {
-        let mut completed_conn = reprise_core::db::open_migrated(None).unwrap();
-        completed_conn
+        let completed_conn = crate::test_db::open().unwrap();
+        crate::test_db::connection(&completed_conn)
             .execute(
                 "INSERT INTO tracks \
                  (id,path,title,artist,added_at,missing_since,missing_reason) \
@@ -335,16 +335,15 @@ mod task_5_5_tests {
         };
 
         let processed =
-            postprocess_scan_outcome(&mut completed_conn, ScanOutcome::Completed(report), 10)
-                .unwrap();
+            postprocess_scan_outcome(&completed_conn, ScanOutcome::Completed(report), 10).unwrap();
         assert_eq!(processed.auto_cleaned_ids, vec![1]);
         assert_eq!(
             settings::get_last_scan_relinked(&completed_conn).unwrap(),
             Some(3)
         );
 
-        let mut unavailable_conn = reprise_core::db::open_migrated(None).unwrap();
-        unavailable_conn
+        let unavailable_conn = crate::test_db::open().unwrap();
+        crate::test_db::connection(&unavailable_conn)
             .execute(
                 "INSERT INTO tracks \
                  (id,path,title,artist,added_at,missing_since,missing_reason) \
@@ -355,7 +354,7 @@ mod task_5_5_tests {
         settings::set_missing_auto_clean(&unavailable_conn, AutoCleanSetting::Days(0)).unwrap();
         settings::set_auto_clean_armed_at(&unavailable_conn, 0).unwrap();
         let processed = postprocess_scan_outcome(
-            &mut unavailable_conn,
+            &unavailable_conn,
             ScanOutcome::RootUnavailable {
                 root: PathBuf::from("/offline"),
             },
@@ -368,7 +367,7 @@ mod task_5_5_tests {
             None
         );
         assert_eq!(
-            unavailable_conn
+            crate::test_db::connection(&unavailable_conn)
                 .query_row("SELECT count(*) FROM tracks", [], |row| row
                     .get::<_, i64>(0))
                 .unwrap(),

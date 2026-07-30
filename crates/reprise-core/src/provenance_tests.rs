@@ -10,13 +10,11 @@ fn flac_fixture(dir: &Path, name: &str) -> PathBuf {
     destination
 }
 
-fn migrated() -> Connection {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    conn
+fn migrated() -> crate::db::Db {
+    crate::db::Db::open_in_memory().unwrap()
 }
 
-fn seed_track(conn: &Connection, id: i64, path: &str) {
+fn seed_track(conn: &rusqlite::Connection, id: i64, path: &str) {
     conn.execute(
         "INSERT INTO tracks (id, path, title, artist, added_at, file_mtime, file_size) \
          VALUES (?1, ?2, 'T', 'A', 1, 1, 1)",
@@ -126,8 +124,8 @@ fn human_comment_names_the_manipulation() {
 #[test]
 fn provenance_round_trips_through_the_db() {
     let conn = migrated();
-    seed_track(&conn, 1, "/src.flac");
-    seed_track(&conn, 2, "/inst.flac");
+    seed_track(conn.conn(), 1, "/src.flac");
+    seed_track(conn.conn(), 2, "/inst.flac");
     let input = ProvenanceInput {
         kind: KIND_VOCALS_REMOVED.to_string(),
         ai: true,
@@ -153,7 +151,7 @@ fn provenance_round_trips_through_the_db() {
 #[test]
 fn insert_provenance_is_idempotent() {
     let conn = migrated();
-    seed_track(&conn, 2, "/inst.flac");
+    seed_track(conn.conn(), 2, "/inst.flac");
     let mut input = ProvenanceInput {
         kind: KIND_VOCALS_REMOVED.to_string(),
         ai: true,
@@ -167,6 +165,7 @@ fn insert_provenance_is_idempotent() {
     insert_provenance(&conn, 2, &input, 1).unwrap();
 
     let count: i64 = conn
+        .conn()
         .query_row("SELECT COUNT(*) FROM track_provenance", [], |r| r.get(0))
         .unwrap();
     assert_eq!(count, 1);
@@ -183,8 +182,8 @@ fn insert_provenance_is_idempotent() {
 #[test]
 fn deleting_the_original_keeps_textual_provenance() {
     let conn = migrated();
-    seed_track(&conn, 1, "/src.flac");
-    seed_track(&conn, 2, "/inst.flac");
+    seed_track(conn.conn(), 1, "/src.flac");
+    seed_track(conn.conn(), 2, "/inst.flac");
     insert_provenance(
         &conn,
         2,
@@ -200,7 +199,9 @@ fn deleting_the_original_keeps_textual_provenance() {
     )
     .unwrap();
 
-    conn.execute("DELETE FROM tracks WHERE id = 1", []).unwrap();
+    conn.conn()
+        .execute("DELETE FROM tracks WHERE id = 1", [])
+        .unwrap();
 
     let read = get_provenance(&conn, 2).unwrap().unwrap();
     assert_eq!(read.source_track_id, None, "FK nulls the source link");
@@ -223,7 +224,7 @@ fn reconstruct_provenance_rebuilds_from_tags_on_a_fresh_db() {
     )
     .unwrap();
     let conn = migrated();
-    seed_track(&conn, 9, path.to_str().unwrap());
+    seed_track(conn.conn(), 9, path.to_str().unwrap());
 
     assert!(reconstruct_provenance(&conn, 9, &path, 700).unwrap());
 
@@ -241,13 +242,13 @@ fn reconstruct_skips_known_and_non_ai_tracks() {
     let dir = tempfile::tempdir().unwrap();
     let plain = flac_fixture(dir.path(), "plain.flac");
     let conn = migrated();
-    seed_track(&conn, 1, plain.to_str().unwrap());
+    seed_track(conn.conn(), 1, plain.to_str().unwrap());
     // A plain FLAC has no AI tags -> nothing to reconstruct.
     assert!(!reconstruct_provenance(&conn, 1, &plain, 0).unwrap());
     assert!(get_provenance(&conn, 1).unwrap().is_none());
 
     // A track that already has provenance is left untouched.
-    seed_track(&conn, 2, "/inst.flac");
+    seed_track(conn.conn(), 2, "/inst.flac");
     insert_provenance(
         &conn,
         2,
@@ -289,8 +290,8 @@ fn reconstruct_all_missing_sweeps_the_library() {
     .unwrap();
     let plain_path = flac_fixture(dir.path(), "plain.flac");
     let conn = migrated();
-    seed_track(&conn, 1, ai_path.to_str().unwrap());
-    seed_track(&conn, 2, plain_path.to_str().unwrap());
+    seed_track(conn.conn(), 1, ai_path.to_str().unwrap());
+    seed_track(conn.conn(), 2, plain_path.to_str().unwrap());
 
     let reconstructed = reconstruct_all_missing(&conn, 0).unwrap();
 

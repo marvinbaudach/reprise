@@ -4,11 +4,11 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
+use reprise_core::db::Db;
 use reprise_core::library_doctor::{
     scan_summary, DoctorProblemCount, DoctorScan, DoctorScanSummary, DoctorWriteReport,
     ProblemClass,
 };
-use rusqlite::Connection;
 
 use crate::ui::preferences::preference_library_doctor;
 use crate::ui::strings;
@@ -139,7 +139,7 @@ pub(in crate::ui) struct LibraryDoctorPage {
 
 impl LibraryDoctorPage {
     pub(in crate::ui) fn new(
-        conn: &Rc<RefCell<Connection>>,
+        conn: &Rc<Db>,
         parent: &adw::ApplicationWindow,
         fingerprint_available: bool,
         on_remote_changed: Rc<dyn Fn(bool)>,
@@ -330,8 +330,8 @@ impl LibraryDoctorPage {
         self.remote.is_active()
     }
 
-    pub(in crate::ui) fn sync_remote_preference(&self, conn: &Connection) {
-        let active = reprise_core::library_doctor::remote_suggestion_preference(conn)
+    pub(in crate::ui) fn sync_remote_preference(&self, db: &Db) {
+        let active = reprise_core::library_doctor::remote_suggestion_preference(db)
             .is_ok_and(|preference| preference.enabled);
         self.remote.set_active(active);
         self.refresh();

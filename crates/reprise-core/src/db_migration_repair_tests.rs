@@ -31,7 +31,7 @@ fn migrate_repairs_a_foreign_v13_without_the_title_index() {
     )
     .unwrap();
 
-    migrate(&conn).unwrap();
+    migrate_connection(&conn).unwrap();
 
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))

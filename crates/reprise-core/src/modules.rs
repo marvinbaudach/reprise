@@ -161,43 +161,48 @@ pub(crate) fn enabled_key(module: &ModuleDescriptor) -> String {
     format!("module.{}.enabled", module.id)
 }
 
-pub fn is_enabled(conn: &Connection, module: &ModuleDescriptor) -> Result<bool, rusqlite::Error> {
-    settings::get_bool(conn, &enabled_key(module), module.default_enabled)
+pub fn is_enabled(db: &crate::db::Db, module: &ModuleDescriptor) -> Result<bool, rusqlite::Error> {
+    let conn = db.conn();
+    is_enabled_in(conn, module)
+}
+
+pub(crate) fn is_enabled_in(
+    conn: &Connection,
+    module: &ModuleDescriptor,
+) -> Result<bool, rusqlite::Error> {
+    settings::get_bool_in(conn, &enabled_key(module), module.default_enabled)
 }
 
 pub fn set_enabled(
-    conn: &Connection,
+    db: &crate::db::Db,
     module: &ModuleDescriptor,
     value: bool,
 ) -> Result<(), rusqlite::Error> {
-    settings::set_bool(conn, &enabled_key(module), value)
+    let conn = db.conn();
+    settings::set_bool_in(conn, &enabled_key(module), value)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    use rusqlite::Connection;
-
-    fn migrated_conn() -> Connection {
-        let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
-        conn
+    fn migrated_db() -> crate::db::Db {
+        crate::db::Db::open_in_memory().unwrap()
     }
 
     #[test]
     fn modules_default_to_their_declared_default() {
-        let conn = migrated_conn();
-        assert!(is_enabled(&conn, &MPRIS_MODULE).unwrap()); // default_enabled: true
+        let db = migrated_db();
+        assert!(is_enabled(&db, &MPRIS_MODULE).unwrap()); // default_enabled: true
     }
 
     #[test]
     fn set_enabled_persists_and_round_trips() {
-        let conn = migrated_conn();
-        set_enabled(&conn, &MPRIS_MODULE, false).unwrap();
-        assert!(!is_enabled(&conn, &MPRIS_MODULE).unwrap());
-        set_enabled(&conn, &MPRIS_MODULE, true).unwrap();
-        assert!(is_enabled(&conn, &MPRIS_MODULE).unwrap());
+        let db = migrated_db();
+        set_enabled(&db, &MPRIS_MODULE, false).unwrap();
+        assert!(!is_enabled(&db, &MPRIS_MODULE).unwrap());
+        set_enabled(&db, &MPRIS_MODULE, true).unwrap();
+        assert!(is_enabled(&db, &MPRIS_MODULE).unwrap());
     }
 
     #[test]
@@ -221,8 +226,8 @@ mod tests {
 
     #[test]
     fn listenbrainz_defaults_to_disabled_and_has_a_namespaced_key() {
-        let conn = migrated_conn();
-        assert!(!is_enabled(&conn, &LISTENBRAINZ_MODULE).unwrap());
+        let db = migrated_db();
+        assert!(!is_enabled(&db, &LISTENBRAINZ_MODULE).unwrap());
         assert_eq!(
             enabled_key(&LISTENBRAINZ_MODULE),
             "module.listenbrainz.enabled"
@@ -242,27 +247,27 @@ mod tests {
 
     #[test]
     fn listenbrainz_enabled_state_round_trips() {
-        let conn = migrated_conn();
-        set_enabled(&conn, &LISTENBRAINZ_MODULE, true).unwrap();
-        assert!(is_enabled(&conn, &LISTENBRAINZ_MODULE).unwrap());
-        set_enabled(&conn, &LISTENBRAINZ_MODULE, false).unwrap();
-        assert!(!is_enabled(&conn, &LISTENBRAINZ_MODULE).unwrap());
+        let db = migrated_db();
+        set_enabled(&db, &LISTENBRAINZ_MODULE, true).unwrap();
+        assert!(is_enabled(&db, &LISTENBRAINZ_MODULE).unwrap());
+        set_enabled(&db, &LISTENBRAINZ_MODULE, false).unwrap();
+        assert!(!is_enabled(&db, &LISTENBRAINZ_MODULE).unwrap());
     }
 
     #[test]
     fn nr_7_new_releases_is_listed_and_defaults_to_disabled() {
-        let conn = migrated_conn();
+        let db = migrated_db();
         assert!(ALL_MODULES
             .iter()
             .any(|module| module.id == NEW_RELEASES_MODULE.id));
         assert_eq!(NEW_RELEASES_MODULE.id, "new_releases");
         assert_eq!(NEW_RELEASES_MODULE.name, "New Releases");
-        assert!(!is_enabled(&conn, &NEW_RELEASES_MODULE).unwrap());
+        assert!(!is_enabled(&db, &NEW_RELEASES_MODULE).unwrap());
     }
 
     #[test]
     fn concerts_is_a_live_opt_in_module() {
-        let conn = migrated_conn();
+        let db = migrated_db();
         let descriptor = ALL_MODULES
             .iter()
             .copied()
@@ -272,12 +277,12 @@ mod tests {
         assert_eq!(descriptor.name, "Concerts");
         assert!(!descriptor.default_enabled);
         assert!(descriptor.applies_live);
-        assert!(!is_enabled(&conn, &CONCERTS_MODULE).unwrap());
+        assert!(!is_enabled(&db, &CONCERTS_MODULE).unwrap());
     }
 
     #[test]
     fn doc_7a_library_doctor_is_live_local_only_and_always_available() {
-        let conn = migrated_conn();
+        let db = migrated_db();
         let descriptor = ALL_MODULES
             .iter()
             .copied()
@@ -287,21 +292,21 @@ mod tests {
         assert_eq!(descriptor.name, "Library Doctor");
         assert!(descriptor.applies_live);
         assert!(descriptor.default_enabled);
-        assert!(is_enabled(&conn, descriptor).unwrap());
-        assert!(!settings::get_bool(&conn, "library_doctor.remote.enabled", false).unwrap());
+        assert!(is_enabled(&db, descriptor).unwrap());
+        assert!(!settings::get_bool(&db, "library_doctor.remote.enabled", false).unwrap());
 
-        set_enabled(&conn, descriptor, true).unwrap();
-        assert!(is_enabled(&conn, descriptor).unwrap());
-        assert!(!settings::get_bool(&conn, "library_doctor.remote.enabled", false).unwrap());
+        set_enabled(&db, descriptor, true).unwrap();
+        assert!(is_enabled(&db, descriptor).unwrap());
+        assert!(!settings::get_bool(&db, "library_doctor.remote.enabled", false).unwrap());
     }
 
     #[test]
     fn new_releases_round_trips() {
-        let conn = migrated_conn();
-        set_enabled(&conn, &NEW_RELEASES_MODULE, true).unwrap();
-        assert!(is_enabled(&conn, &NEW_RELEASES_MODULE).unwrap());
-        set_enabled(&conn, &NEW_RELEASES_MODULE, false).unwrap();
-        assert!(!is_enabled(&conn, &NEW_RELEASES_MODULE).unwrap());
+        let db = migrated_db();
+        set_enabled(&db, &NEW_RELEASES_MODULE, true).unwrap();
+        assert!(is_enabled(&db, &NEW_RELEASES_MODULE).unwrap());
+        set_enabled(&db, &NEW_RELEASES_MODULE, false).unwrap();
+        assert!(!is_enabled(&db, &NEW_RELEASES_MODULE).unwrap());
     }
 
     #[test]
@@ -313,7 +318,7 @@ mod tests {
 
     #[test]
     fn src_11_all_modules_includes_opt_in_source_images() {
-        let conn = migrated_conn();
+        let db = migrated_db();
         assert!(ALL_MODULES
             .iter()
             .any(|module| module.id == "source_images"));
@@ -321,12 +326,12 @@ mod tests {
             enabled_key(&SOURCE_IMAGES_MODULE),
             "module.source_images.enabled"
         );
-        assert!(!is_enabled(&conn, &SOURCE_IMAGES_MODULE).unwrap());
+        assert!(!is_enabled(&db, &SOURCE_IMAGES_MODULE).unwrap());
     }
 
     #[test]
     fn network_modules_default_off_and_apply_live() {
-        let conn = migrated_conn();
+        let db = migrated_db();
         for module in [
             &COVER_DOWNLOAD_MODULE,
             &ARTIST_PORTRAITS_MODULE,
@@ -335,7 +340,7 @@ mod tests {
         ] {
             assert!(!module.default_enabled, "{} must be opt-in", module.id);
             assert!(module.applies_live, "{} must apply live", module.id);
-            assert!(!is_enabled(&conn, module).unwrap());
+            assert!(!is_enabled(&db, module).unwrap());
             assert_eq!(
                 ALL_MODULES
                     .iter()
@@ -354,8 +359,8 @@ mod tests {
 
     #[test]
     fn lastfm_is_registered_once_default_off_with_namespaced_key() {
-        let conn = migrated_conn();
-        assert!(!is_enabled(&conn, &LASTFM_MODULE).unwrap());
+        let db = migrated_db();
+        assert!(!is_enabled(&db, &LASTFM_MODULE).unwrap());
         assert_eq!(enabled_key(&LASTFM_MODULE), "module.lastfm.enabled");
         assert_eq!(
             ALL_MODULES
@@ -368,7 +373,7 @@ mod tests {
 
     #[test]
     fn ac_23_song_visuals_are_a_live_opt_in_module() {
-        let conn = migrated_conn();
+        let db = migrated_db();
         let descriptor = ALL_MODULES
             .iter()
             .copied()
@@ -378,17 +383,17 @@ mod tests {
         assert_eq!(descriptor.name, "Song Visuals");
         assert!(!descriptor.default_enabled);
         assert!(descriptor.applies_live);
-        assert!(!is_enabled(&conn, descriptor).unwrap());
-        set_enabled(&conn, descriptor, true).unwrap();
-        assert!(is_enabled(&conn, descriptor).unwrap());
+        assert!(!is_enabled(&db, descriptor).unwrap());
+        set_enabled(&db, descriptor, true).unwrap();
+        assert!(is_enabled(&db, descriptor).unwrap());
     }
 
     #[test]
     fn src_1_podcasts_default_off_and_radio_defaults_on() {
-        let conn = migrated_conn();
+        let db = migrated_db();
 
-        assert!(!is_enabled(&conn, &PODCASTS_MODULE).unwrap());
-        assert!(is_enabled(&conn, &RADIO_MODULE).unwrap());
+        assert!(!is_enabled(&db, &PODCASTS_MODULE).unwrap());
+        assert!(is_enabled(&db, &RADIO_MODULE).unwrap());
         for id in ["podcasts", "radio"] {
             let descriptor = ALL_MODULES
                 .iter()
@@ -416,18 +421,18 @@ mod tests {
     /// not only in the presentation.
     #[test]
     fn youtube_is_a_peer_module_independent_of_podcasts() {
-        let conn = migrated_conn();
+        let db = migrated_db();
 
-        assert!(!is_enabled(&conn, &YOUTUBE_MODULE).unwrap());
+        assert!(!is_enabled(&db, &YOUTUBE_MODULE).unwrap());
         assert_eq!(enabled_key(&YOUTUBE_MODULE), "module.youtube.enabled");
         assert!(ALL_MODULES
             .iter()
             .any(|module| module.id == "youtube" && module.applies_live));
 
-        set_enabled(&conn, &YOUTUBE_MODULE, true).unwrap();
-        assert!(is_enabled(&conn, &YOUTUBE_MODULE).unwrap());
+        set_enabled(&db, &YOUTUBE_MODULE, true).unwrap();
+        assert!(is_enabled(&db, &YOUTUBE_MODULE).unwrap());
         assert!(
-            !is_enabled(&conn, &PODCASTS_MODULE).unwrap(),
+            !is_enabled(&db, &PODCASTS_MODULE).unwrap(),
             "Podcasts off + YouTube on must be a valid, independent state"
         );
     }

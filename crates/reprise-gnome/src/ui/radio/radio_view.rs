@@ -5,8 +5,8 @@ use gtk4::gio;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::connectivity::{self, Connectivity};
+use reprise_core::db::Db;
 use reprise_core::radio::{self, StationRow};
-use rusqlite::Connection;
 
 use super::add_dialog::RadioAddDialog;
 use super::radio_columns::{self, LiveState, OnRemove};
@@ -32,7 +32,7 @@ type IdCallback = Rc<dyn Fn(i64)>;
 type Callback = Rc<dyn Fn()>;
 
 struct Shared {
-    conn: Rc<RefCell<Connection>>,
+    conn: Rc<Db>,
     controller: std::rc::Weak<PlayerController>,
     model: Rc<RadioModel>,
     filter_bar: Rc<RadioFilterBar>,
@@ -62,10 +62,7 @@ pub(in crate::ui) struct RadioView {
 }
 
 impl RadioView {
-    pub(in crate::ui) fn new(
-        conn: Rc<RefCell<Connection>>,
-        controller: Option<&Rc<PlayerController>>,
-    ) -> Self {
+    pub(in crate::ui) fn new(conn: Rc<Db>, controller: Option<&Rc<PlayerController>>) -> Self {
         let model = Rc::new(RadioModel::new());
         let filter_bar = RadioFilterBar::new(conn.clone());
         let live = Rc::new(RefCell::new(RadioLiveState::default()));
@@ -284,7 +281,7 @@ impl RadioView {
 }
 
 fn refresh_shared(shared: &Rc<Shared>) {
-    match radio::station::list(&shared.conn.borrow()) {
+    match radio::station::list(&shared.conn) {
         Ok(mut rows) => {
             sort_rows(&mut rows);
             shared.filter_bar.set_rows(&rows);
@@ -425,10 +422,7 @@ fn live_state(
 }
 
 fn remove_station(shared: &Rc<Shared>, id: i64) {
-    let Some(station) = radio::station::get(&shared.conn.borrow(), id)
-        .ok()
-        .flatten()
-    else {
+    let Some(station) = radio::station::get(&shared.conn, id).ok().flatten() else {
         return;
     };
     if shared.live.borrow().station_id == Some(id) {
@@ -436,7 +430,7 @@ fn remove_station(shared: &Rc<Shared>, id: i64) {
             controller.stop_external();
         }
     }
-    match radio::station::tombstone(&shared.conn.borrow(), id, now_unix()) {
+    match radio::station::tombstone(&shared.conn, id, now_unix()) {
         Ok(true) => {}
         Ok(false) => return,
         Err(error) => {
@@ -466,7 +460,7 @@ fn remove_station(shared: &Rc<Shared>, id: i64) {
             let Some(shared) = weak.upgrade() else {
                 return;
             };
-            if let Err(error) = radio::station::undo_remove(&shared.conn.borrow(), id) {
+            if let Err(error) = radio::station::undo_remove(&shared.conn, id) {
                 tracing::warn!(%error, "could not undo radio removal");
             }
             refresh_shared(&shared);
@@ -489,7 +483,7 @@ fn remove_station(shared: &Rc<Shared>, id: i64) {
 }
 
 fn commit_remove(shared: &Rc<Shared>, id: i64) {
-    if let Err(error) = radio::station::commit_remove(&shared.conn.borrow(), id) {
+    if let Err(error) = radio::station::commit_remove(&shared.conn, id) {
         tracing::warn!(%error, "could not commit radio removal");
     }
 }
@@ -500,10 +494,7 @@ fn wire_actions(actions: &gio::SimpleActionGroup, shared: &Rc<Shared>) {
         radio_context_menu::ACTION_PLAY,
         shared,
         |shared, id| {
-            if let Some(station) = radio::station::get(&shared.conn.borrow(), id)
-                .ok()
-                .flatten()
-            {
+            if let Some(station) = radio::station::get(&shared.conn, id).ok().flatten() {
                 activate_station(shared, &station);
             }
         },
@@ -513,10 +504,7 @@ fn wire_actions(actions: &gio::SimpleActionGroup, shared: &Rc<Shared>) {
         radio_context_menu::ACTION_COPY_URL,
         shared,
         |shared, id| {
-            let Some(station) = radio::station::get(&shared.conn.borrow(), id)
-                .ok()
-                .flatten()
-            else {
+            let Some(station) = radio::station::get(&shared.conn, id).ok().flatten() else {
                 return;
             };
             if let Some(display) = gtk4::gdk::Display::default() {
@@ -529,10 +517,7 @@ fn wire_actions(actions: &gio::SimpleActionGroup, shared: &Rc<Shared>) {
         radio_context_menu::ACTION_EDIT,
         shared,
         |shared, id| {
-            let Some(station) = radio::station::get(&shared.conn.borrow(), id)
-                .ok()
-                .flatten()
-            else {
+            let Some(station) = radio::station::get(&shared.conn, id).ok().flatten() else {
                 return;
             };
             let conn = shared.conn.clone();
@@ -619,8 +604,7 @@ mod tests {
     #[ignore = "requires a display; run via xvfb-run"]
     fn src_1_radio_empty_state_offers_add_station_without_playback() {
         gtk4::init().unwrap();
-        let conn = Rc::new(RefCell::new(Connection::open_in_memory().unwrap()));
-        reprise_core::db::migrate(&conn.borrow()).unwrap();
+        let conn = Rc::new(crate::test_db::open().unwrap());
         let view = RadioView::new(conn, None);
         // `SRC-10` moved this action onto the shared empty-state page's own
         // button (`empty_page`) rather than the still-existing
@@ -636,8 +620,7 @@ mod tests {
     #[ignore = "requires a display; run via xvfb-run"]
     fn src_10_radio_empty_state_hides_the_toolbar_and_the_first_station_restores_it() {
         gtk4::init().unwrap();
-        let conn = Rc::new(RefCell::new(Connection::open_in_memory().unwrap()));
-        reprise_core::db::migrate(&conn.borrow()).unwrap();
+        let conn = Rc::new(crate::test_db::open().unwrap());
         let view = RadioView::new(conn.clone(), None);
 
         assert!(!view.shared.filter_bar.widget().is_visible());
@@ -647,7 +630,7 @@ mod tests {
         );
 
         radio::station::add_or_restore(
-            &conn.borrow(),
+            &conn,
             &radio::station::NewStation {
                 uuid: None,
                 name: "Test Station".into(),
@@ -681,8 +664,7 @@ mod tests {
     #[ignore = "requires a display; run via xvfb-run"]
     fn src_10_the_filter_mismatch_state_keeps_the_filter_row_visible_unlike_the_true_empty_state() {
         gtk4::init().unwrap();
-        let conn = Rc::new(RefCell::new(Connection::open_in_memory().unwrap()));
-        reprise_core::db::migrate(&conn.borrow()).unwrap();
+        let conn = Rc::new(crate::test_db::open().unwrap());
         let view = RadioView::new(conn, None);
 
         apply_empty_state(&view.shared, RadioEmptyState::Empty);

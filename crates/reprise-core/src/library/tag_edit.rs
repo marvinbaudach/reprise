@@ -8,6 +8,11 @@ use lofty::prelude::*;
 use lofty::tag::ItemKey;
 use rusqlite::Connection;
 
+use crate::db::Db;
+
+pub use super::tag_edit_seed::{
+    live_track_edit_seed_by_path, track_edit_seed_by_id, TrackEditSeed,
+};
 pub use super::tag_edit_write::{apply_track_writes, TrackWrite};
 pub use super::tag_mutation::{classify_write_error, WriteErrorKind};
 
@@ -184,33 +189,32 @@ fn prepare_tag_reconciliation(conn: &Connection, id: i64, path: &Path) -> Result
 /// batch, so an early file's ignore window can't expire while later files
 /// are still being processed (see `tag_edit_write`'s module doc).
 pub fn apply_patch_batch_ignored(
-    conn: &mut Connection,
+    db: &Db,
     tracks: &[(i64, PathBuf)],
     patch: &TagPatch,
 ) -> TagBatchReport {
+    let conn = db.conn();
     apply_patch_batch_inner(conn, tracks, patch, true)
 }
 
 /// Like `apply_track_edit_batch`, but with watcher-ignore support (see
 /// `apply_patch_batch_ignored`'s doc comment for the per-file timing).
 pub fn apply_track_edit_batch_ignored(
-    conn: &mut Connection,
+    db: &Db,
     tracks: &[(i64, PathBuf)],
     patch: &TrackEditPatch,
 ) -> TagBatchReport {
+    let conn = db.conn();
     apply_track_edit_batch_inner(conn, tracks, patch, true)
 }
 
-pub fn apply_patch_batch(
-    conn: &mut Connection,
-    tracks: &[(i64, PathBuf)],
-    patch: &TagPatch,
-) -> TagBatchReport {
+pub fn apply_patch_batch(db: &Db, tracks: &[(i64, PathBuf)], patch: &TagPatch) -> TagBatchReport {
+    let conn = db.conn();
     apply_patch_batch_inner(conn, tracks, patch, false)
 }
 
 fn apply_patch_batch_inner(
-    conn: &mut Connection,
+    conn: &Connection,
     tracks: &[(i64, PathBuf)],
     patch: &TagPatch,
     ignore_watcher: bool,
@@ -252,15 +256,16 @@ fn apply_patch_batch_inner(
 }
 
 pub fn apply_track_edit_batch(
-    conn: &mut Connection,
+    db: &Db,
     tracks: &[(i64, PathBuf)],
     patch: &TrackEditPatch,
 ) -> TagBatchReport {
+    let conn = db.conn();
     apply_track_edit_batch_inner(conn, tracks, patch, false)
 }
 
 fn apply_track_edit_batch_inner(
-    conn: &mut Connection,
+    conn: &Connection,
     tracks: &[(i64, PathBuf)],
     patch: &TrackEditPatch,
     ignore_watcher: bool,
@@ -297,7 +302,7 @@ fn apply_track_edit_batch_inner(
         .filter(|id| !report.failures.iter().any(|failure| failure.id == *id))
         .collect::<Vec<_>>();
     for id in eligible_ids {
-        match crate::library::stats::set_rating(conn, id, rating) {
+        match crate::library::stats::set_rating_in(conn, id, rating) {
             Ok(()) => {
                 if !report.updated_ids.contains(&id) {
                     report.updated_ids.push(id);
@@ -466,21 +471,22 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = fixture_copy(dir.path(), "batch.flac");
         seed_full_tag(&path);
-        let mut conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
-        crate::library::scanner::scan_folder(&mut conn, &path).unwrap();
+        let conn = crate::db::Db::open_in_memory().unwrap();
+        crate::library::scanner::scan_folder(&conn, &path).unwrap();
         let path_text = path.to_string_lossy().to_string();
         let id: i64 = conn
+            .conn()
             .query_row("SELECT id FROM tracks WHERE path=?1", [&path_text], |row| {
                 row.get(0)
             })
             .unwrap();
-        conn.execute("UPDATE tracks SET rating=4, play_count=9 WHERE id=?1", [id])
+        conn.conn()
+            .execute("UPDATE tracks SET rating=4, play_count=9 WHERE id=?1", [id])
             .unwrap();
 
         let missing = dir.path().join("missing.flac");
         let report = apply_patch_batch(
-            &mut conn,
+            &conn,
             &[(id, path.clone()), (999, missing)],
             &TagPatch {
                 title: Some("Batch title".into()),
@@ -492,6 +498,7 @@ mod tests {
         assert_eq!(report.failures.len(), 1);
         assert_eq!(report.failures[0].id, 999);
         let row: (String, i32, i64) = conn
+            .conn()
             .query_row(
                 "SELECT title, rating, play_count FROM tracks WHERE id=?1",
                 [id],
@@ -508,11 +515,11 @@ mod tests {
         let other = fixture_copy(dir.path(), "other.flac");
         seed_full_tag(&registered);
         seed_full_tag(&other);
-        let mut conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
-        crate::library::scanner::scan_folder(&mut conn, &registered).unwrap();
+        let conn = crate::db::Db::open_in_memory().unwrap();
+        crate::library::scanner::scan_folder(&conn, &registered).unwrap();
         let registered_text = registered.to_string_lossy().to_string();
         let id: i64 = conn
+            .conn()
             .query_row(
                 "SELECT id FROM tracks WHERE path=?1",
                 [&registered_text],
@@ -522,7 +529,7 @@ mod tests {
         let before = std::fs::read(&other).unwrap();
 
         let report = apply_patch_batch(
-            &mut conn,
+            &conn,
             &[(id, other.clone())],
             &TagPatch {
                 title: Some("Must not be written".into()),
@@ -548,18 +555,18 @@ mod tests {
         let path = fixture_copy(dir.path(), "rating-only.flac");
         seed_full_tag(&path);
         let before = std::fs::read(&path).unwrap();
-        let mut conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
-        crate::library::scanner::scan_folder(&mut conn, &path).unwrap();
+        let conn = crate::db::Db::open_in_memory().unwrap();
+        crate::library::scanner::scan_folder(&conn, &path).unwrap();
         let path_text = path.to_string_lossy().to_string();
         let id: i64 = conn
+            .conn()
             .query_row("SELECT id FROM tracks WHERE path=?1", [&path_text], |row| {
                 row.get(0)
             })
             .unwrap();
 
         let report = apply_track_edit_batch(
-            &mut conn,
+            &conn,
             &[(id, path.clone())],
             &TrackEditPatch {
                 rating: Some(5),
@@ -570,6 +577,7 @@ mod tests {
         assert_eq!(report.updated_ids, vec![id]);
         assert!(report.failures.is_empty());
         let rating: i32 = conn
+            .conn()
             .query_row("SELECT rating FROM tracks WHERE id=?1", [id], |row| {
                 row.get(0)
             })
@@ -583,18 +591,18 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = fixture_copy(dir.path(), "tag-and-rating.flac");
         seed_full_tag(&path);
-        let mut conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
-        crate::library::scanner::scan_folder(&mut conn, &path).unwrap();
+        let conn = crate::db::Db::open_in_memory().unwrap();
+        crate::library::scanner::scan_folder(&conn, &path).unwrap();
         let path_text = path.to_string_lossy().to_string();
         let id: i64 = conn
+            .conn()
             .query_row("SELECT id FROM tracks WHERE path=?1", [&path_text], |row| {
                 row.get(0)
             })
             .unwrap();
 
         let report = apply_track_edit_batch(
-            &mut conn,
+            &conn,
             &[(id, path.clone())],
             &TrackEditPatch {
                 tags: TagPatch {
@@ -608,6 +616,7 @@ mod tests {
         assert_eq!(report.updated_ids, vec![id]);
         assert!(report.failures.is_empty());
         let row: (String, i32) = conn
+            .conn()
             .query_row(
                 "SELECT title, rating FROM tracks WHERE id=?1",
                 [id],
@@ -627,18 +636,18 @@ mod tests {
         let path = fixture_copy(dir.path(), "noop-tag-and-rating.flac");
         seed_full_tag(&path);
         let before = std::fs::read(&path).unwrap();
-        let mut conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
-        crate::library::scanner::scan_folder(&mut conn, &path).unwrap();
+        let conn = crate::db::Db::open_in_memory().unwrap();
+        crate::library::scanner::scan_folder(&conn, &path).unwrap();
         let path_text = path.to_string_lossy().to_string();
         let id = conn
+            .conn()
             .query_row("SELECT id FROM tracks WHERE path=?1", [&path_text], |row| {
                 row.get(0)
             })
             .unwrap();
 
         let report = apply_track_edit_batch(
-            &mut conn,
+            &conn,
             &[(id, path.clone())],
             &TrackEditPatch {
                 tags: TagPatch {
@@ -653,6 +662,7 @@ mod tests {
         assert!(report.failures.is_empty());
         assert_eq!(std::fs::read(path).unwrap(), before);
         let rating: i32 = conn
+            .conn()
             .query_row("SELECT rating FROM tracks WHERE id=?1", [id], |row| {
                 row.get(0)
             })

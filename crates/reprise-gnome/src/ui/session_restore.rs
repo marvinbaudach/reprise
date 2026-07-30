@@ -1,16 +1,16 @@
 //! Window, view, and queue session orchestration.
 
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::rc::Rc;
 
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
+use reprise_core::db::Db;
 use reprise_core::library::session::{self, SessionSource, SessionState};
 use reprise_core::media_integration::MprisPlaybackStatus;
 use reprise_core::queue::{QueueSnapshot, Repeat};
 use reprise_core::view_source::ViewSource;
-use rusqlite::Connection;
 
 use crate::ui::player_controller::PlayerController;
 use crate::ui::track_list::TrackList;
@@ -20,7 +20,8 @@ const SEED_ENV: &str = "REPRISE_SMOKE_SESSION_SEED";
 const REPORT_ENV: &str = "REPRISE_SMOKE_SESSION_REPORT";
 const PLAY_ENV: &str = "REPRISE_SMOKE_SESSION_PLAY";
 
-pub(super) fn load(conn: &Connection) -> SessionState {
+pub(super) fn load(db: &Db) -> SessionState {
+    let conn = &db;
     match std::env::var(SEED_ENV) {
         Ok(fixture) => match seeded_state(&fixture) {
             Some(state) => {
@@ -90,7 +91,7 @@ fn arm_play(player: &Rc<PlayerController>) {
 
 pub(super) fn wire_close(
     window: &adw::ApplicationWindow,
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
     track_list: &Rc<TrackList>,
     player: Option<&Rc<PlayerController>>,
     loaded: &SessionState,
@@ -146,7 +147,7 @@ pub(super) fn wire_close(
             state.play_origin_place = origin_place;
         }
 
-        let result = session::save(&conn.borrow(), &state);
+        let result = session::save(&conn, &state);
         match &result {
             Ok(()) => tracing::info!(?state, "application session saved"),
             Err(error) => tracing::error!(%error, "could not save application session"),

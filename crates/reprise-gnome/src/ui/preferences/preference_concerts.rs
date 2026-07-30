@@ -1,13 +1,13 @@
 //! Concerts plugin preferences and pure location-apply decisions.
 
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::rc::Rc;
 
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
-use rusqlite::Connection;
+use reprise_core::db::Db;
 
 use crate::ui::concerts::ConcertsRuntime;
 use crate::ui::{one_shot_task, strings};
@@ -189,7 +189,7 @@ impl ConcertPreferenceRows {
 }
 
 pub(in crate::ui) fn build_page(
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
     runtime: &Rc<ConcertsRuntime>,
 ) -> adw::PreferencesPage {
     let page = adw::PreferencesPage::builder()
@@ -210,7 +210,7 @@ pub(in crate::ui) fn build_page(
 }
 
 pub(in crate::ui) fn build(
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
     runtime: &Rc<ConcertsRuntime>,
     enabled: bool,
 ) -> ConcertPreferenceRows {
@@ -221,7 +221,7 @@ pub(in crate::ui) fn build(
     let (city, location_status) = location_rows(conn, runtime);
     let radius = radius_row(conn, runtime);
     let window_days = window_days_row(conn, runtime);
-    let similar = reprise_core::concerts::config::similar_config(&conn.borrow()).unwrap_or(
+    let similar = reprise_core::concerts::config::similar_config(conn).unwrap_or(
         reprise_core::concerts::config::SimilarConfig {
             enabled: false,
             count: 10,
@@ -296,13 +296,13 @@ pub(in crate::ui) fn build(
 }
 
 fn password_row(
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
     runtime: &Rc<ConcertsRuntime>,
     provider: reprise_core::concerts::ProviderKind,
     key: &'static str,
     title: &'static str,
 ) -> CredentialPreferenceRow {
-    let value = reprise_core::library::settings::get_setting(&conn.borrow(), key)
+    let value = reprise_core::library::settings::get_setting(conn, key)
         .ok()
         .flatten()
         .unwrap_or_default();
@@ -408,11 +408,8 @@ fn start_credential_verification(
     });
 }
 
-fn location_rows(
-    conn: &Rc<RefCell<Connection>>,
-    runtime: &Rc<ConcertsRuntime>,
-) -> (adw::EntryRow, adw::ActionRow) {
-    let stored = reprise_core::concerts::config::location(&conn.borrow())
+fn location_rows(conn: &Rc<Db>, runtime: &Rc<ConcertsRuntime>) -> (adw::EntryRow, adw::ActionRow) {
+    let stored = reprise_core::concerts::config::location(conn)
         .ok()
         .flatten();
     let city = adw::EntryRow::builder()
@@ -511,7 +508,7 @@ fn location_rows(
 
 fn receive_location(
     receiver: std::io::Result<async_channel::Receiver<LocationDecision>>,
-    conn: Rc<RefCell<Connection>>,
+    conn: Rc<Db>,
     runtime: Rc<ConcertsRuntime>,
     status: adw::ActionRow,
     on_complete: Option<Box<dyn FnOnce()>>,
@@ -540,7 +537,7 @@ fn receive_location(
 }
 
 fn apply_location(
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
     runtime: &ConcertsRuntime,
     status: &adw::ActionRow,
     decision: LocationDecision,
@@ -556,7 +553,7 @@ fn apply_location(
             // consented location — Radio's "Near you" chip (`RAD-5`) reads
             // straight through `reprise_core::location`, not a copy.
             let saved = reprise_core::location::store(
-                &conn.borrow(),
+                conn,
                 latitude,
                 longitude,
                 &name,
@@ -576,14 +573,14 @@ fn apply_location(
     }
 }
 
-fn clear_location(conn: &Rc<RefCell<Connection>>, runtime: &ConcertsRuntime) {
-    match reprise_core::location::clear(&conn.borrow()) {
+fn clear_location(conn: &Rc<Db>, runtime: &ConcertsRuntime) {
+    match reprise_core::location::clear(conn) {
         Ok(()) => runtime.notify_settings_changed(),
         Err(error) => tracing::warn!(%error, "could not clear Concerts location"),
     }
 }
 
-fn radius_row(conn: &Rc<RefCell<Connection>>, runtime: &Rc<ConcertsRuntime>) -> adw::ComboRow {
+fn radius_row(conn: &Rc<Db>, runtime: &Rc<ConcertsRuntime>) -> adw::ComboRow {
     let radii = std::iter::once(None)
         .chain(
             reprise_core::concerts::config::RADIUS_PRESETS_KM
@@ -603,7 +600,7 @@ fn radius_row(conn: &Rc<RefCell<Connection>>, runtime: &Rc<ConcertsRuntime>) -> 
     let label_refs = labels.iter().map(String::as_str).collect::<Vec<_>>();
     let model = gtk4::StringList::new(&label_refs);
     let stored = match reprise_core::library::settings::get_setting(
-        &conn.borrow(),
+        conn,
         reprise_core::concerts::config::DEFAULT_RADIUS_KEY,
     )
     .ok()
@@ -640,10 +637,10 @@ fn radius_row(conn: &Rc<RefCell<Connection>>, runtime: &Rc<ConcertsRuntime>) -> 
     row
 }
 
-fn window_days_row(conn: &Rc<RefCell<Connection>>, runtime: &Rc<ConcertsRuntime>) -> adw::SpinRow {
+fn window_days_row(conn: &Rc<Db>, runtime: &Rc<ConcertsRuntime>) -> adw::SpinRow {
     let row = adw::SpinRow::with_range(30.0, 365.0, 1.0);
     row.set_title(&strings::text(strings::CONCERTS_PLAY_WINDOW));
-    row.set_value(reprise_core::concerts::config::window_days(&conn.borrow()).unwrap_or(90) as f64);
+    row.set_value(reprise_core::concerts::config::window_days(conn).unwrap_or(90) as f64);
     let conn = conn.clone();
     let runtime = runtime.clone();
     row.connect_value_notify(move |row| {
@@ -658,8 +655,8 @@ fn window_days_row(conn: &Rc<RefCell<Connection>>, runtime: &Rc<ConcertsRuntime>
     row
 }
 
-fn save_setting(conn: &Rc<RefCell<Connection>>, key: &str, value: &str) -> bool {
-    if let Err(error) = reprise_core::library::settings::set_setting(&conn.borrow(), key, value) {
+fn save_setting(conn: &Rc<Db>, key: &str, value: &str) -> bool {
+    if let Err(error) = reprise_core::library::settings::set_setting(conn, key, value) {
         tracing::warn!(%error, setting = key, "could not save Concerts preference");
         return false;
     }

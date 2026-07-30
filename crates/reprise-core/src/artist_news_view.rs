@@ -10,8 +10,7 @@ use chrono::NaiveDate;
 use rusqlite::Connection;
 
 use crate::artist_news::{normalize, parse_partial_date, LibraryPresence};
-use crate::artist_news_history::{query_history, HistoryEntry};
-use crate::library::settings::{get_bool, get_setting};
+use crate::artist_news_history::{query_history_in, HistoryEntry};
 
 pub const RELEASES_FILTER_TYPE_KEY: &str = "releases.filter.type";
 pub const RELEASES_FILTER_HIDDEN_KEY: &str = "releases.filter.hidden";
@@ -59,12 +58,13 @@ pub enum ReleaseSortDirection {
     Descending,
 }
 
-pub fn persisted_releases_filter(conn: &Connection) -> Result<ReleasesFilter, rusqlite::Error> {
+pub fn persisted_releases_filter(db: &crate::db::Db) -> Result<ReleasesFilter, rusqlite::Error> {
+    let conn = db.conn();
     Ok(ReleasesFilter {
-        release_type: get_setting(conn, RELEASES_FILTER_TYPE_KEY)?
+        release_type: crate::library::settings::get_setting_in(conn, RELEASES_FILTER_TYPE_KEY)?
             .as_deref()
             .and_then(ReleaseTypeFilter::parse),
-        hidden: get_bool(conn, RELEASES_FILTER_HIDDEN_KEY, false)?,
+        hidden: crate::library::settings::get_bool_in(conn, RELEASES_FILTER_HIDDEN_KEY, false)?,
     })
 }
 
@@ -133,12 +133,21 @@ fn compare_release_dates(
 }
 
 pub fn query_releases_view(
+    db: &crate::db::Db,
+    filter: &ReleasesFilter,
+    today: NaiveDate,
+) -> Result<Vec<HistoryEntry>, rusqlite::Error> {
+    let conn = db.conn();
+    query_releases_view_in(conn, filter, today)
+}
+
+fn query_releases_view_in(
     conn: &Connection,
     filter: &ReleasesFilter,
     today: NaiveDate,
 ) -> Result<Vec<HistoryEntry>, rusqlite::Error> {
     let artists = current_library_artist_keys(conn)?;
-    let rows = query_history(conn, today)?
+    let rows = query_history_in(conn, today)?
         .into_iter()
         .filter(|entry| artists.contains(&normalize(&entry.artist_name)))
         .collect();
@@ -172,9 +181,10 @@ fn current_library_artist_keys(
 }
 
 pub fn count_releases_view(
-    conn: &Connection,
+    db: &crate::db::Db,
     filter: &ReleasesFilter,
     today: NaiveDate,
 ) -> Result<i64, rusqlite::Error> {
-    Ok(query_releases_view(conn, filter, today)?.len() as i64)
+    let conn = db.conn();
+    Ok(query_releases_view_in(conn, filter, today)?.len() as i64)
 }

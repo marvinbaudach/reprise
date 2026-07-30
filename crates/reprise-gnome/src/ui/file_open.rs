@@ -2,14 +2,13 @@
 //! single-instance requests. Audio files are deliberately resolved against
 //! existing library rows only; opening a file must never silently import it.
 
-use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use gtk4::gio;
 use gtk4::prelude::*;
 use libadwaita as adw;
-use rusqlite::Connection;
+use reprise_core::db::Db;
 
 use reprise_core::queries;
 
@@ -48,9 +47,9 @@ fn classify_path(path: &Path) -> OpenFileKind {
     }
 }
 
-fn track_id_for_open_path(conn: &Connection, path: &Path) -> Option<i64> {
+fn track_id_for_open_path(db: &Db, path: &Path) -> Option<i64> {
     let path_text = path.to_string_lossy();
-    match queries::track_id_for_path(conn, &path_text) {
+    match queries::track_id_for_path(db, &path_text) {
         Ok(Some(id)) => return Some(id),
         Ok(None) => {}
         Err(error) => {
@@ -66,7 +65,7 @@ fn track_id_for_open_path(conn: &Connection, path: &Path) -> Option<i64> {
         return None;
     }
     let canonical_text = canonical.to_string_lossy();
-    match queries::track_id_for_path(conn, &canonical_text) {
+    match queries::track_id_for_path(db, &canonical_text) {
         Ok(id) => id,
         Err(error) => {
             tracing::error!(
@@ -79,11 +78,11 @@ fn track_id_for_open_path(conn: &Connection, path: &Path) -> Option<i64> {
     }
 }
 
-fn resolve_audio_ids(conn: &Connection, paths: &[PathBuf]) -> AudioResolution {
+fn resolve_audio_ids(db: &Db, paths: &[PathBuf]) -> AudioResolution {
     let mut ids = Vec::with_capacity(paths.len());
     let mut unresolved = Vec::new();
     for path in paths {
-        match track_id_for_open_path(conn, path) {
+        match track_id_for_open_path(db, path) {
             Some(id) => ids.push(id),
             None => unresolved.push(path.clone()),
         }
@@ -94,7 +93,7 @@ fn resolve_audio_ids(conn: &Connection, paths: &[PathBuf]) -> AudioResolution {
 #[derive(Clone)]
 pub(crate) struct FileOpenHandler {
     window: adw::ApplicationWindow,
-    conn: Rc<RefCell<Connection>>,
+    conn: Rc<Db>,
     player: Option<Rc<PlayerController>>,
     toast_overlay: adw::ToastOverlay,
     sidebar: Rc<Sidebar>,
@@ -103,7 +102,7 @@ pub(crate) struct FileOpenHandler {
 impl FileOpenHandler {
     pub(super) fn new(
         window: &adw::ApplicationWindow,
-        conn: Rc<RefCell<Connection>>,
+        conn: Rc<Db>,
         player: Option<Rc<PlayerController>>,
         toast_overlay: &adw::ToastOverlay,
         sidebar: Rc<Sidebar>,
@@ -149,7 +148,7 @@ impl FileOpenHandler {
         }
 
         if !audio_paths.is_empty() {
-            let resolution = resolve_audio_ids(&self.conn.borrow(), &audio_paths);
+            let resolution = resolve_audio_ids(&self.conn, &audio_paths);
             if !resolution.ids.is_empty() {
                 match &self.player {
                     Some(player) => {
@@ -190,8 +189,6 @@ impl FileOpenHandler {
 mod tests {
     use std::path::{Path, PathBuf};
 
-    use reprise_core::db;
-
     use super::{classify_path, resolve_audio_ids, OpenFileKind};
 
     #[test]
@@ -220,8 +217,8 @@ mod tests {
 
     #[test]
     fn audio_resolution_preserves_order_and_canonicalizes_paths_without_inserting() {
-        let conn = rusqlite::Connection::open_in_memory().unwrap();
-        db::migrate(&conn).unwrap();
+        let db = crate::test_db::open().unwrap();
+        let conn = &db;
         let root = std::env::temp_dir().join(format!(
             "reprise-file-open-{}-{}",
             std::process::id(),
@@ -235,12 +232,12 @@ mod tests {
         std::fs::write(&second, b"fixture").unwrap();
         let first_canonical = first.canonicalize().unwrap();
         let second_text = second.to_string_lossy().into_owned();
-        conn.execute(
+        crate::test_db::connection(conn).execute(
             "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (1, ?1, 'First', '', 0)",
             [first_canonical.to_string_lossy().as_ref()],
         )
         .unwrap();
-        conn.execute(
+        crate::test_db::connection(conn).execute(
             "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (2, ?1, 'Second', '', 0)",
             [&second_text],
         )
@@ -248,11 +245,11 @@ mod tests {
 
         let through_parent = nested.join("..").join("first.flac");
         let unknown = root.join("unknown.flac");
-        let result = resolve_audio_ids(&conn, &[second.clone(), through_parent, unknown.clone()]);
+        let result = resolve_audio_ids(conn, &[second.clone(), through_parent, unknown.clone()]);
 
         assert_eq!(result.ids, vec![2, 1]);
         assert_eq!(result.unresolved, vec![unknown]);
-        let count: i64 = conn
+        let count: i64 = crate::test_db::connection(conn)
             .query_row("SELECT COUNT(*) FROM tracks", [], |row| row.get(0))
             .unwrap();
         assert_eq!(count, 2, "opening files must never insert library rows");

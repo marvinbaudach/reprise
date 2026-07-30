@@ -24,7 +24,7 @@ pub(in crate::ui) fn build_page(context: &Rc<PreferencesContext>) -> adw::Prefer
         .title(strings::text(strings::EXPERIMENTAL_PAGE_TITLE))
         .build();
 
-    let enabled = experimental::experimental_enabled(&context.conn.borrow());
+    let enabled = experimental::experimental_enabled(&context.conn);
 
     // INST-11: the master switch.
     let switch_group = adw::PreferencesGroup::builder()
@@ -43,7 +43,7 @@ pub(in crate::ui) fn build_page(context: &Rc<PreferencesContext>) -> adw::Prefer
             let Some(context) = context.upgrade() else {
                 return;
             };
-            let persisted = experimental::set_experimental_enabled(&context.conn.borrow(), active);
+            let persisted = experimental::set_experimental_enabled(&context.conn, active);
             if let Err(error) = persisted {
                 tracing::warn!(%error, "could not save the experimental-features switch");
                 return;
@@ -60,14 +60,12 @@ pub(in crate::ui) fn build_page(context: &Rc<PreferencesContext>) -> adw::Prefer
 
 #[cfg(test)]
 mod tests {
-    use rusqlite::Connection;
 
     // UX INST-11: the master switch persists, defaults off, and reads back — the
     // gate every AI surface consults.
     #[test]
     fn inst_11_experimental_switch_persists_and_defaults_off() {
-        let conn = Connection::open_in_memory().unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
+        let conn = crate::test_db::open().unwrap();
         assert!(
             !crate::ui::experimental::experimental_enabled(&conn),
             "experimental features are off by default"

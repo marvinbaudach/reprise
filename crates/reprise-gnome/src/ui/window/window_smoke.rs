@@ -1,11 +1,10 @@
 //! Small window-level verification hooks kept out of edge-tight `window.rs`.
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
+use reprise_core::db::Db;
 use reprise_core::library::settings;
-use rusqlite::Connection;
 
 const SMOKE_BAR_POSITION_ENV_VAR: &str = "REPRISE_SMOKE_BAR_POSITION";
 const SMOKE_LISTENBRAINZ_ENV_VAR: &str = "REPRISE_SMOKE_LISTENBRAINZ";
@@ -35,7 +34,7 @@ pub(in crate::ui) fn arm_quit(window: &libadwaita::ApplicationWindow) {
 }
 
 pub(in crate::ui) fn arm_bar_position(
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
     library_player_bar: &super::library_player_bar::LibraryPlayerBarShell,
 ) {
     let Ok(value) = std::env::var(SMOKE_BAR_POSITION_ENV_VAR) else {
@@ -47,8 +46,8 @@ pub(in crate::ui) fn arm_bar_position(
         settings::PlayerBarPosition::Bottom
     };
     {
-        let conn = conn.borrow();
-        let _ = settings::set_player_bar_position(&conn, position);
+        let conn = &conn;
+        let _ = settings::set_player_bar_position(conn, position);
     }
     library_player_bar.set_position(position);
     tracing::info!(position = %value, "smoke: applied player bar position");
@@ -59,7 +58,7 @@ pub(in crate::ui) fn arm_bar_position(
 /// metadata never represent user data and the hook cannot redirect a release
 /// build or a real keyring token.
 pub(in crate::ui) fn arm_listenbrainz(
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
     runtime: &Rc<super::scrobble_runtime::ScrobbleRuntime>,
 ) {
     if std::env::var(SMOKE_LISTENBRAINZ_ENV_VAR).as_deref() != Ok("exercise") {
@@ -79,7 +78,7 @@ pub(in crate::ui) fn arm_listenbrainz(
             duration_ms: 120_000,
         },
     };
-    match reprise_core::scrobbling::enqueue(&conn.borrow(), &listen) {
+    match reprise_core::scrobbling::enqueue(conn, &listen) {
         Ok(queue_id) => {
             runtime.configure(
                 "reprise-smoke-token".to_string(),
@@ -96,7 +95,7 @@ pub(in crate::ui) fn arm_listenbrainz(
 /// Exercises Last.fm signing and queue draining only against an explicit
 /// debug-build loopback endpoint with synthetic credentials and metadata.
 pub(in crate::ui) fn arm_lastfm(
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
     runtime: &Rc<super::scrobble_runtime::ScrobbleRuntime>,
 ) {
     if std::env::var(SMOKE_LASTFM_ENV_VAR).as_deref() != Ok("exercise") {
@@ -124,7 +123,7 @@ pub(in crate::ui) fn arm_lastfm(
     );
     match (
         reprise_core::scrobbling::enqueue_for(
-            &conn.borrow(),
+            conn,
             reprise_core::scrobbling::ScrobbleProvider::LastFm,
             &listen,
         ),

@@ -1,6 +1,6 @@
 //! Provider-specific durable scrobble queues.
 
-use rusqlite::{params, Connection};
+use rusqlite::params;
 
 use super::{Listen, QueueError};
 
@@ -37,10 +37,11 @@ impl ScrobbleProvider {
 }
 
 pub fn enqueue_for(
-    conn: &Connection,
+    db: &crate::db::Db,
     provider: ScrobbleProvider,
     listen: &Listen,
 ) -> Result<i64, QueueError> {
+    let conn = db.conn();
     listen.track.validate()?;
     let release_name = listen
         .track
@@ -68,10 +69,11 @@ pub fn enqueue_for(
 }
 
 pub fn pending_for(
-    conn: &Connection,
+    db: &crate::db::Db,
     provider: ScrobbleProvider,
     limit: usize,
 ) -> Result<Vec<Listen>, QueueError> {
+    let conn = db.conn();
     let limit = limit.min(provider.batch_limit());
     if limit == 0 {
         return Ok(Vec::new());
@@ -99,10 +101,11 @@ pub fn pending_for(
 }
 
 pub fn acknowledge_for(
-    conn: &Connection,
+    db: &crate::db::Db,
     provider: ScrobbleProvider,
     ids: &[i64],
 ) -> Result<(), QueueError> {
+    let conn = db.conn();
     if ids.is_empty() {
         return Ok(());
     }
@@ -134,9 +137,10 @@ pub fn acknowledge_for(
 /// Returns the cumulative number of listens submitted to the provider.
 /// Starts at 0 for fresh installs and survives disconnects.
 pub fn submitted_count_for(
-    conn: &Connection,
+    db: &crate::db::Db,
     provider: ScrobbleProvider,
 ) -> Result<usize, QueueError> {
+    let conn = db.conn();
     let key = provider.submitted_key();
     let count: i64 = conn
         .query_row(
@@ -149,17 +153,19 @@ pub fn submitted_count_for(
 }
 
 pub fn clear_pending_for(
-    conn: &Connection,
+    db: &crate::db::Db,
     provider: ScrobbleProvider,
 ) -> Result<usize, QueueError> {
+    let conn = db.conn();
     let sql = format!("DELETE FROM {}", provider.table());
     conn.execute(&sql, []).map_err(QueueError::from)
 }
 
 pub fn pending_count_for(
-    conn: &Connection,
+    db: &crate::db::Db,
     provider: ScrobbleProvider,
 ) -> Result<usize, QueueError> {
+    let conn = db.conn();
     let sql = format!("SELECT COUNT(*) FROM {}", provider.table());
     let count: i64 = conn.query_row(&sql, [], |row| row.get(0))?;
     usize::try_from(count).map_err(|_| QueueError::InvalidCount)
@@ -170,10 +176,8 @@ mod tests {
     use super::*;
     use crate::scrobbling::{Listen, TrackMetadata};
 
-    fn conn() -> rusqlite::Connection {
-        let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
-        conn
+    fn conn() -> crate::db::Db {
+        crate::db::Db::open_in_memory().unwrap()
     }
 
     fn listen(timestamp: i64) -> Listen {
@@ -260,12 +264,10 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("reprise.db");
         {
-            let conn = crate::db::open(Some(&path)).unwrap();
-            crate::db::migrate(&conn).unwrap();
+            let conn = crate::db::Db::open_migrated(Some(&path)).unwrap();
             enqueue_for(&conn, ScrobbleProvider::LastFm, &listen(7)).unwrap();
         }
-        let conn = crate::db::open(Some(&path)).unwrap();
-        crate::db::migrate(&conn).unwrap();
+        let conn = crate::db::Db::open_migrated(Some(&path)).unwrap();
         assert_eq!(
             pending_for(&conn, ScrobbleProvider::LastFm, 10).unwrap()[0].listened_at,
             7

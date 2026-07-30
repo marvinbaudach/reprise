@@ -4,8 +4,8 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::BreakpointBinExt;
+use reprise_core::db::Db;
 use reprise_core::playback::{PlaybackState, SpectrumFrame};
-use rusqlite::Connection;
 
 use super::cover_loader::CoverLoader;
 use super::lyrics_strings;
@@ -54,7 +54,7 @@ struct PanelWidgets {
 fn build_widgets(
     content: &impl IsA<gtk4::Widget>,
     visible: bool,
-    conn: Rc<RefCell<Connection>>,
+    conn: Rc<Db>,
     cover_loader: &Rc<CoverLoader>,
 ) -> PanelWidgets {
     TAB_SESSION
@@ -65,7 +65,7 @@ fn build_widgets_for_session(
     content: &impl IsA<gtk4::Widget>,
     visible: bool,
     session: &Rc<TabSession>,
-    conn: Rc<RefCell<Connection>>,
+    conn: Rc<Db>,
     cover_loader: &Rc<CoverLoader>,
 ) -> PanelWidgets {
     let cover = gtk4::Image::builder()
@@ -283,7 +283,7 @@ fn build_widgets_for_session(
 pub(in crate::ui) struct NowPlayingPanel {
     widgets: PanelWidgets,
     toggle: gtk4::ToggleButton,
-    conn: Rc<RefCell<Connection>>,
+    conn: Rc<Db>,
     cover_loader: Rc<CoverLoader>,
     cover_generation: Rc<Cell<u64>>,
     loaded_track: RefCell<Option<NowPlaying>>,
@@ -302,16 +302,14 @@ pub(in crate::ui) struct NowPlayingPanel {
 impl NowPlayingPanel {
     pub(in crate::ui) fn new(
         content: &impl IsA<gtk4::Widget>,
-        conn: Rc<RefCell<Connection>>,
+        conn: Rc<Db>,
         _runtime: Rc<ArtistNewsRuntime>,
         cover_loader: Rc<CoverLoader>,
     ) -> Rc<Self> {
-        let visible = reprise_core::library::settings::get_info_panel_visible(&conn.borrow());
-        let song_visuals_enabled = reprise_core::modules::is_enabled(
-            &conn.borrow(),
-            &reprise_core::modules::SONG_VISUALS_MODULE,
-        )
-        .unwrap_or(reprise_core::modules::SONG_VISUALS_MODULE.default_enabled);
+        let visible = reprise_core::library::settings::get_info_panel_visible(&conn);
+        let song_visuals_enabled =
+            reprise_core::modules::is_enabled(&conn, &reprise_core::modules::SONG_VISUALS_MODULE)
+                .unwrap_or(reprise_core::modules::SONG_VISUALS_MODULE.default_enabled);
         let panel = Rc::new(Self {
             widgets: build_widgets(content, visible, conn.clone(), &cover_loader),
             toggle: gtk4::ToggleButton::builder()
@@ -557,8 +555,8 @@ impl NowPlayingPanel {
                     return;
                 }
                 let saved = {
-                    let conn = panel.conn.borrow();
-                    reprise_core::library::settings::set_info_panel_visible(&conn, visible)
+                    let conn = &panel.conn;
+                    reprise_core::library::settings::set_info_panel_visible(conn, visible)
                 };
                 if let Err(error) = saved {
                     tracing::warn!(%error, "could not save now-playing panel visibility");

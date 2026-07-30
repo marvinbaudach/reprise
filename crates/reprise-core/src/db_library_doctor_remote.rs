@@ -49,7 +49,7 @@ mod tests {
     #[test]
     fn migration_v20_to_v21_preserves_existing_scans_and_is_idempotent() {
         let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
+        crate::db::migrate_connection(&conn).unwrap();
         conn.execute(
             "INSERT INTO library_doctor_scans \
              (scope_kind, created_at, remote_enabled, checked_tracks, skipped_tracks) \
@@ -119,7 +119,7 @@ mod tests {
     #[test]
     fn migration_v21_to_v22_adds_restart_safe_remote_cache() {
         let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
+        crate::db::migrate_connection(&conn).unwrap();
         conn.execute_batch(
             "DROP TABLE library_doctor_remote_cache;
              PRAGMA user_version = 21;",

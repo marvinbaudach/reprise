@@ -15,10 +15,10 @@ use super::*;
 use crate::library::playlists;
 use std::collections::HashSet;
 
-fn seeded_sync_tracks() -> (tempfile::TempDir, Connection) {
+fn seeded_sync_tracks() -> (tempfile::TempDir, crate::db::Db) {
     let temp = tempfile::tempdir().unwrap();
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     for (id, name, title, artist, duration, bytes) in [
         (1, "one.flac", "One", "First", 11_000, 11_usize),
         (2, "two.mp3", "Two", "Second", 22_000, 22),
@@ -33,12 +33,12 @@ fn seeded_sync_tracks() -> (tempfile::TempDir, Connection) {
         )
         .unwrap();
     }
-    (temp, conn)
+    (temp, db)
 }
 
-fn seeded_conn_with_tracks(count: i64) -> Connection {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+fn seeded_conn_with_tracks(count: i64) -> crate::db::Db {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     for i in 1..=count {
         conn.execute(
             "INSERT INTO tracks (id, path, title, artist, added_at) \
@@ -47,12 +47,13 @@ fn seeded_conn_with_tracks(count: i64) -> Connection {
         )
         .unwrap();
     }
-    conn
+    db
 }
 
 #[test]
 fn filter_present_keeps_present_ids_in_order_and_drops_missing_and_unknown() {
-    let conn = crate::db::open_migrated(None).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     for (id, missing_since) in [(1, None::<i64>), (2, Some(1)), (3, None)] {
         conn.execute(
             "INSERT INTO tracks (id, path, title, artist, added_at, missing_since) \
@@ -63,18 +64,19 @@ fn filter_present_keeps_present_ids_in_order_and_drops_missing_and_unknown() {
     }
     // Input mixes a present id, a missing id (row exists, missing_since set), an
     // unknown id, a duplicate present id, and another present id — out of order.
-    let result = filter_present(&conn, &[3, 2, 999, 1, 1]).unwrap();
+    let result = filter_present(&db, &[3, 2, 999, 1, 1]).unwrap();
     // Only present ids survive (2 is missing, 999 unknown), input order kept and
     // the duplicate 1 collapsed.
     assert_eq!(result, vec![3, 1]);
 
     // Empty input short-circuits with no query.
-    assert!(filter_present(&conn, &[]).unwrap().is_empty());
+    assert!(filter_present(&db, &[]).unwrap().is_empty());
 }
 
 #[test]
 fn feature_queries_filter_and_order_tracks_for_their_consumers() {
-    let conn = crate::db::open_migrated(None).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     for (id, path, title, missing_since) in [
         (1, "/music/b.flac", "SmokeFirst", None),
         (2, "/music/a.flac", "SmokeSlow", None),
@@ -89,12 +91,9 @@ fn feature_queries_filter_and_order_tracks_for_their_consumers() {
         .unwrap();
     }
 
+    assert_eq!(query_live_track_ids(&db).unwrap(), HashSet::from([1, 2, 4]));
     assert_eq!(
-        query_live_track_ids(&conn).unwrap(),
-        HashSet::from([1, 2, 4])
-    );
-    assert_eq!(
-        query_live_track_paths(&conn).unwrap(),
+        query_live_track_paths(&db).unwrap(),
         vec![
             "/music/a.flac".to_string(),
             "/music/b.flac".to_string(),
@@ -102,26 +101,27 @@ fn feature_queries_filter_and_order_tracks_for_their_consumers() {
         ]
     );
     assert_eq!(
-        query_track_ids_by_titles(&conn, &["SmokeFirst", "SmokeFast"])
+        query_track_ids_by_titles(&db, &["SmokeFirst", "SmokeFast"])
             .unwrap()
             .get("SmokeFirst"),
         Some(&1)
     );
     assert_eq!(
-        query_track_ids_by_titles(&conn, &["SmokeFast"])
+        query_track_ids_by_titles(&db, &["SmokeFast"])
             .unwrap()
             .get("SmokeFast"),
         Some(&3)
     );
     assert_eq!(
-        query_track_ids_by_title_desc(&conn).unwrap(),
+        query_track_ids_by_title_desc(&db).unwrap(),
         vec![2, 1, 4, 3]
     );
 }
 
 #[test]
 fn play_9_random_idle_snapshot_contains_only_present_library_tracks() {
-    let conn = crate::db::open_migrated(None).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     for (id, missing_since, removed_at) in [
         (1, None::<i64>, None::<i64>),
         (2, Some(1), None),
@@ -137,23 +137,23 @@ fn play_9_random_idle_snapshot_contains_only_present_library_tracks() {
         .unwrap();
     }
 
-    let snapshot = query_random_live_track_ids(&conn).unwrap();
+    let snapshot = query_random_live_track_ids(&db).unwrap();
 
     assert_eq!(
         snapshot.into_iter().collect::<HashSet<_>>(),
         HashSet::from([1, 4])
     );
-    assert!(query_has_live_tracks(&conn).unwrap());
-    assert!(!query_has_live_tracks(&crate::db::open_migrated(None).unwrap()).unwrap());
+    assert!(query_has_live_tracks(&db).unwrap());
+    assert!(!query_has_live_tracks(&crate::db::Db::open_in_memory().unwrap()).unwrap());
 }
 
 // -- ImportErrors source -------------------------------------------------
 
 #[test]
 fn query_import_error_count_counts_the_table() {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    assert_eq!(query_import_error_count(&conn).unwrap(), 0);
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    assert_eq!(query_import_error_count(&db).unwrap(), 0);
 
     conn.execute(
         "INSERT INTO import_errors (path, reason_kind, reason_detail, first_seen, last_seen) \
@@ -167,7 +167,7 @@ fn query_import_error_count_counts_the_table() {
         [],
     )
     .unwrap();
-    assert_eq!(query_import_error_count(&conn).unwrap(), 2);
+    assert_eq!(query_import_error_count(&db).unwrap(), 2);
 }
 
 // -- remove_missing_tracks (Stage-3 close-out) ----------------------
@@ -183,16 +183,17 @@ fn query_import_error_count_counts_the_table() {
 /// positions come out gapless (`0..n-1`) immediately after the delete.
 #[test]
 fn remove_missing_tracks_compacts_playlist_positions_after_a_middle_row_delete() {
-    let mut conn = seeded_conn_with_tracks(5);
-    let playlist_id = playlists::create(&conn, "P1").unwrap();
-    playlists::add_tracks(&mut conn, playlist_id, &[1, 2, 3, 4, 5]).unwrap();
+    let db = seeded_conn_with_tracks(5);
+    let conn = db.conn();
+    let playlist_id = playlists::create(&db, "P1").unwrap();
+    playlists::add_tracks(&db, playlist_id, &[1, 2, 3, 4, 5]).unwrap();
     conn.execute(
         "UPDATE tracks SET missing_since = 1, missing_reason = 'unknown' WHERE id = 3",
         [],
     )
     .unwrap();
 
-    let removed = remove_missing_tracks(&mut conn, &[3]).unwrap();
+    let removed = remove_missing_tracks(&db, &[3]).unwrap();
     assert_eq!(removed, vec![3]);
 
     let (track_ids, positions): (Vec<i64>, Vec<i64>) = {
@@ -225,7 +226,7 @@ fn remove_missing_tracks_compacts_playlist_positions_after_a_middle_row_delete()
     // The wrong-row-move class this closes: moving the row now at
     // position 2 (track 4) must move track 4, not silently mis-resolve
     // because of a leftover gap.
-    playlists::move_position(&mut conn, playlist_id, 2, 0).unwrap();
+    playlists::move_position(&db, playlist_id, 2, 0).unwrap();
     let after_move: Vec<i64> = conn
         .prepare("SELECT track_id FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position")
         .unwrap()
@@ -242,18 +243,19 @@ fn remove_missing_tracks_compacts_playlist_positions_after_a_middle_row_delete()
 
 #[test]
 fn remove_missing_tracks_compacts_every_affected_playlist_in_one_call() {
-    let mut conn = seeded_conn_with_tracks(4);
-    let p1 = playlists::create(&conn, "P1").unwrap();
-    let p2 = playlists::create(&conn, "P2").unwrap();
-    playlists::add_tracks(&mut conn, p1, &[1, 2, 3]).unwrap();
-    playlists::add_tracks(&mut conn, p2, &[2, 3, 4]).unwrap();
+    let db = seeded_conn_with_tracks(4);
+    let conn = db.conn();
+    let p1 = playlists::create(&db, "P1").unwrap();
+    let p2 = playlists::create(&db, "P2").unwrap();
+    playlists::add_tracks(&db, p1, &[1, 2, 3]).unwrap();
+    playlists::add_tracks(&db, p2, &[2, 3, 4]).unwrap();
     conn.execute(
         "UPDATE tracks SET missing_since = 1, missing_reason = 'unknown' WHERE id IN (2, 3)",
         [],
     )
     .unwrap();
 
-    let mut removed = remove_missing_tracks(&mut conn, &[2, 3]).unwrap();
+    let mut removed = remove_missing_tracks(&db, &[2, 3]).unwrap();
     removed.sort_unstable();
     assert_eq!(removed, vec![2, 3]);
 
@@ -277,7 +279,8 @@ fn remove_missing_tracks_compacts_every_affected_playlist_in_one_call() {
 
 #[test]
 fn remove_missing_tracks_skips_ids_that_are_not_missing() {
-    let mut conn = seeded_conn_with_tracks(3);
+    let db = seeded_conn_with_tracks(3);
+    let conn = db.conn();
     conn.execute(
         "UPDATE tracks SET missing_since = 1, missing_reason = 'unknown' WHERE id = 1",
         [],
@@ -285,7 +288,7 @@ fn remove_missing_tracks_skips_ids_that_are_not_missing() {
     .unwrap();
     // id 2 is left alone (still present, missing_since NULL).
 
-    let removed = remove_missing_tracks(&mut conn, &[1, 2]).unwrap();
+    let removed = remove_missing_tracks(&db, &[1, 2]).unwrap();
 
     assert_eq!(
         removed,
@@ -300,8 +303,9 @@ fn remove_missing_tracks_skips_ids_that_are_not_missing() {
 
 #[test]
 fn remove_missing_tracks_empty_slice_is_a_no_op() {
-    let mut conn = seeded_conn_with_tracks(2);
-    let removed = remove_missing_tracks(&mut conn, &[]).unwrap();
+    let db = seeded_conn_with_tracks(2);
+    let conn = db.conn();
+    let removed = remove_missing_tracks(&db, &[]).unwrap();
     assert!(removed.is_empty());
     let count: i64 = conn
         .query_row("SELECT count(*) FROM tracks", [], |r| r.get(0))
@@ -336,20 +340,21 @@ fn playlist_positions_stay_gapless_and_queue_count_stays_accurate_across_a_mixed
         );
     }
 
-    let mut conn = seeded_conn_with_tracks(8);
-    let playlist_id = playlists::create(&conn, "Mix").unwrap();
+    let db = seeded_conn_with_tracks(8);
+    let conn = db.conn();
+    let playlist_id = playlists::create(&db, "Mix").unwrap();
 
     // 1. add: [1,2,3,4,5,6]
-    playlists::add_tracks(&mut conn, playlist_id, &[1, 2, 3, 4, 5, 6]).unwrap();
-    assert_gapless(&conn, playlist_id);
+    playlists::add_tracks(&db, playlist_id, &[1, 2, 3, 4, 5, 6]).unwrap();
+    assert_gapless(conn, playlist_id);
 
     // 2. remove (positions 1,3 -> ids 2,4): [1,3,5,6]
-    playlists::remove_positions(&mut conn, playlist_id, &[1, 3]).unwrap();
-    assert_gapless(&conn, playlist_id);
+    playlists::remove_positions(&db, playlist_id, &[1, 3]).unwrap();
+    assert_gapless(conn, playlist_id);
 
     // 3. move: [1,3,5,6] -> move index 0 to index 2 -> [3,5,1,6]
-    playlists::move_position(&mut conn, playlist_id, 0, 2).unwrap();
-    assert_gapless(&conn, playlist_id);
+    playlists::move_position(&db, playlist_id, 0, 2).unwrap();
+    assert_gapless(conn, playlist_id);
 
     // A queue holding the same surviving ids, in the same order.
     let mut queue = crate::queue::Queue::new();
@@ -362,9 +367,9 @@ fn playlist_positions_stay_gapless_and_queue_count_stays_accurate_across_a_mixed
         [],
     )
     .unwrap();
-    let removed = remove_missing_tracks(&mut conn, &[1]).unwrap();
+    let removed = remove_missing_tracks(&db, &[1]).unwrap();
     assert_eq!(removed, vec![1]);
-    assert_gapless(&conn, playlist_id);
+    assert_gapless(conn, playlist_id);
 
     // Queue purge (mirrors `PlayerController::purge_queue_ids`) and the
     // count-arm invariant: queue's own resolvable count and `query_
@@ -372,7 +377,7 @@ fn playlist_positions_stay_gapless_and_queue_count_stays_accurate_across_a_mixed
     // in-memory queue purge runs.
     let queue_ids_before_purge = queue.ids_in_order();
     let count_before_purge =
-        query_track_count(&conn, &ViewSource::Queue, "", &queue_ids_before_purge).unwrap();
+        query_track_count(&db, &ViewSource::Queue, "", &queue_ids_before_purge).unwrap();
     assert_eq!(
         count_before_purge as usize,
         queue_ids_before_purge.len() - 1,
@@ -386,7 +391,7 @@ fn playlist_positions_stay_gapless_and_queue_count_stays_accurate_across_a_mixed
         "purged id must be gone from the queue"
     );
     let count_after_purge =
-        query_track_count(&conn, &ViewSource::Queue, "", &queue_ids_after_purge).unwrap();
+        query_track_count(&db, &ViewSource::Queue, "", &queue_ids_after_purge).unwrap();
     assert_eq!(
         count_after_purge as usize,
         queue_ids_after_purge.len(),
@@ -403,7 +408,7 @@ fn playlist_positions_stay_gapless_and_queue_count_stays_accurate_across_a_mixed
         .collect::<Result<_, _>>()
         .unwrap();
     assert_eq!(before_final_move, vec![3, 5, 6]);
-    playlists::move_position(&mut conn, playlist_id, 2, 0).unwrap();
+    playlists::move_position(&db, playlist_id, 2, 0).unwrap();
     let after_final_move: Vec<i64> = conn
         .prepare("SELECT track_id FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position")
         .unwrap()
@@ -416,22 +421,22 @@ fn playlist_positions_stay_gapless_and_queue_count_stays_accurate_across_a_mixed
         vec![6, 3, 5],
         "track 6 (position 2) moved to the front"
     );
-    assert_gapless(&conn, playlist_id);
+    assert_gapless(conn, playlist_id);
 }
 
 // -- track_id_for_path (Stage 3 Task 7) ---
 
 #[test]
 fn track_id_for_path_finds_exact_match() {
-    let conn = seeded_conn_with_tracks(3);
-    let id = track_id_for_path(&conn, "/x/2.flac").unwrap();
+    let db = seeded_conn_with_tracks(3);
+    let id = track_id_for_path(&db, "/x/2.flac").unwrap();
     assert_eq!(id, Some(2));
 }
 
 #[test]
 fn track_id_for_path_returns_none_for_unknown_path() {
-    let conn = seeded_conn_with_tracks(3);
-    let id = track_id_for_path(&conn, "/nowhere/x.flac").unwrap();
+    let db = seeded_conn_with_tracks(3);
+    let id = track_id_for_path(&db, "/nowhere/x.flac").unwrap();
     assert_eq!(id, None);
 }
 
@@ -439,8 +444,8 @@ fn track_id_for_path_returns_none_for_unknown_path() {
 fn track_id_for_path_does_not_substring_match() {
     // A LIKE-style partial match would be wrong here: this must be an
     // exact match only.
-    let conn = seeded_conn_with_tracks(3);
-    let id = track_id_for_path(&conn, "/x/2").unwrap();
+    let db = seeded_conn_with_tracks(3);
+    let id = track_id_for_path(&db, "/x/2").unwrap();
     assert_eq!(id, None);
 }
 
@@ -448,8 +453,8 @@ fn track_id_for_path_does_not_substring_match() {
 
 #[test]
 fn sync_tracks_preserve_input_order_and_deduplicate_ids() {
-    let (_temp, conn) = seeded_sync_tracks();
-    let tracks = query_sync_tracks(&conn, &[3, 1, 3, 2, 1]).unwrap();
+    let (_temp, db) = seeded_sync_tracks();
+    let tracks = query_sync_tracks(&db, &[3, 1, 3, 2, 1]).unwrap();
     assert_eq!(
         tracks.iter().map(|track| track.id).collect::<Vec<_>>(),
         [3, 1, 2]
@@ -458,7 +463,8 @@ fn sync_tracks_preserve_input_order_and_deduplicate_ids() {
 
 #[test]
 fn sync_tracks_exclude_unknown_missing_and_unavailable_paths() {
-    let (temp, conn) = seeded_sync_tracks();
+    let (temp, db) = seeded_sync_tracks();
+    let conn = db.conn();
     conn.execute(
         "UPDATE tracks SET missing_since = 1, missing_reason = 'unknown' WHERE id = 2",
         [],
@@ -466,17 +472,18 @@ fn sync_tracks_exclude_unknown_missing_and_unavailable_paths() {
     .unwrap();
     std::fs::remove_file(temp.path().join("three.ogg")).unwrap();
 
-    let tracks = query_sync_tracks(&conn, &[999, 1, 2, 3]).unwrap();
+    let tracks = query_sync_tracks(&db, &[999, 1, 2, 3]).unwrap();
     assert_eq!(tracks.iter().map(|track| track.id).collect::<Vec<_>>(), [1]);
 }
 
 #[test]
 fn sync_tracks_exclude_tombstoned_rows_even_when_the_file_still_exists() {
-    let (_temp, conn) = seeded_sync_tracks();
+    let (_temp, db) = seeded_sync_tracks();
+    let conn = db.conn();
     conn.execute("UPDATE tracks SET removed_at = 1 WHERE id = 2", [])
         .unwrap();
 
-    let tracks = query_sync_tracks(&conn, &[1, 2, 3]).unwrap();
+    let tracks = query_sync_tracks(&db, &[1, 2, 3]).unwrap();
     assert_eq!(
         tracks.iter().map(|track| track.id).collect::<Vec<_>>(),
         [1, 3]
@@ -485,8 +492,8 @@ fn sync_tracks_exclude_tombstoned_rows_even_when_the_file_still_exists() {
 
 #[test]
 fn sync_tracks_include_copy_metadata_and_actual_file_size() {
-    let (temp, conn) = seeded_sync_tracks();
-    let tracks = query_sync_tracks(&conn, &[2]).unwrap();
+    let (temp, db) = seeded_sync_tracks();
+    let tracks = query_sync_tracks(&db, &[2]).unwrap();
     assert_eq!(tracks.len(), 1);
     let track = &tracks[0];
     assert_eq!(track.source_path, temp.path().join("two.mp3"));
@@ -501,8 +508,8 @@ fn sync_tracks_include_copy_metadata_and_actual_file_size() {
 
 #[test]
 fn track_album_artist_prefers_album_artist_then_falls_back_to_artist() {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     conn.execute(
         "INSERT INTO tracks (id,path,title,artist,album_artist,added_at) VALUES \
          (1,'/a','A','Track Artist','  Album Artist  ',0), \
@@ -515,24 +522,24 @@ fn track_album_artist_prefers_album_artist_then_falls_back_to_artist() {
 
     // Tagged album artist wins, trimmed by the EFFECTIVE_ALBUM_ARTIST fallback.
     assert_eq!(
-        query_track_album_artist(&conn, 1).unwrap().as_deref(),
+        query_track_album_artist(&db, 1).unwrap().as_deref(),
         Some("Album Artist")
     );
     // Empty album artist falls back to the (trimmed) track artist.
     assert_eq!(
-        query_track_album_artist(&conn, 2).unwrap().as_deref(),
+        query_track_album_artist(&db, 2).unwrap().as_deref(),
         Some("Solo Artist")
     );
     // Whitespace-only album artist also falls back to the track artist.
     assert_eq!(
-        query_track_album_artist(&conn, 3).unwrap().as_deref(),
+        query_track_album_artist(&db, 3).unwrap().as_deref(),
         Some("Solo Artist")
     );
     // Neither tagged: SQL yields the empty string (caller treats blank as none).
     assert_eq!(
-        query_track_album_artist(&conn, 4).unwrap().as_deref(),
+        query_track_album_artist(&db, 4).unwrap().as_deref(),
         Some("")
     );
     // Unknown id.
-    assert_eq!(query_track_album_artist(&conn, 99).unwrap(), None);
+    assert_eq!(query_track_album_artist(&db, 99).unwrap(), None);
 }

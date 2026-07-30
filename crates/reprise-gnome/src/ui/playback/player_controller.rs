@@ -165,7 +165,7 @@ use gtk4::gio;
 use gtk4::gio::prelude::*;
 use gtk4::glib;
 use libadwaita as adw;
-use rusqlite::Connection;
+use reprise_core::db::Db;
 
 use crate::ui::compact_player::CompactPlayer;
 use crate::ui::cover_download_worker::CoverDownloadRuntime;
@@ -237,7 +237,7 @@ pub struct PlayerController {
     /// stats::record_play`, and (via `playback_faults.rs`, `pub(in crate::ui)` so
     /// that sibling module can reach it) to resolve/mark tracks on a
     /// playback failure.
-    pub(in crate::ui) conn: Rc<RefCell<Connection>>,
+    pub(in crate::ui) conn: Rc<Db>,
     /// `(track_id, duration_ms)` of the track currently loaded, set by
     /// `play_track_id` and cleared once play tracking has been evaluated for
     /// it (see `evaluate_play_tracking`). `None` when no track is loaded.
@@ -413,7 +413,7 @@ impl PlayerController {
     /// holds, used to record plays. Platform construction failures are handled
     /// before this function is called so feature code only sees core contracts.
     pub(in crate::ui) fn new(
-        conn: Rc<RefCell<Connection>>,
+        conn: Rc<Db>,
         cover_download: CoverDownloadRuntime,
         listenbrainz: Rc<ScrobbleRuntime>,
         lastfm: Rc<ScrobbleRuntime>,
@@ -427,16 +427,15 @@ impl PlayerController {
             waveform,
         } = backends;
         let initial_effects = super::audio_effects::apply_initial(player.as_ref(), &conn);
-        let library_has_tracks =
-            super::queue_transport::initial_library_availability(&conn.borrow());
+        let library_has_tracks = super::queue_transport::initial_library_availability(&conn);
         {
             // Apply the stored transition mode to the backend up front so
             // Gapless/Crossfade is active from the first track (feed_next then
             // pre-feeds once playback starts).
-            let conn_ref = conn.borrow();
+            let conn_ref = &conn;
             player.set_transition(
-                reprise_core::library::settings::get_track_transition(&conn_ref),
-                reprise_core::library::settings::get_crossfade_seconds(&conn_ref),
+                reprise_core::library::settings::get_track_transition(conn_ref),
+                reprise_core::library::settings::get_crossfade_seconds(conn_ref),
             );
         }
 
@@ -449,7 +448,7 @@ impl PlayerController {
         let _device_sync_state = handles.device_sync_state;
         let _device_sync_commands = handles.device_sync_commands;
 
-        let lyrics = PlayerLyrics::new(&conn.borrow());
+        let lyrics = PlayerLyrics::new(&conn);
         let controller = Rc::new(Self {
             player,
             active_audio_effects: RefCell::new(initial_effects),
@@ -506,7 +505,7 @@ impl PlayerController {
         controller.sync_transport_enabled(false);
 
         let song_visuals_enabled = reprise_core::modules::is_enabled(
-            &controller.conn.borrow(),
+            &controller.conn,
             &reprise_core::modules::SONG_VISUALS_MODULE,
         )
         .unwrap_or(reprise_core::modules::SONG_VISUALS_MODULE.default_enabled);
@@ -617,8 +616,8 @@ impl PlayerController {
         self.leave_external_for_queue();
 
         let summary = {
-            let conn = self.conn.borrow();
-            queries::query_track_summary(&conn, id)
+            let conn = &self.conn;
+            queries::query_track_summary(conn, id)
         };
 
         match summary {

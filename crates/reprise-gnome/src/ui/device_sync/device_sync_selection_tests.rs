@@ -9,9 +9,10 @@
 //! caught this.
 
 use super::*;
+use reprise_core::db::Db;
 
-fn insert_enabled_rss_show(conn: &Rc<RefCell<Connection>>, subscription_id: i64, device_id: &str) {
-    conn.borrow()
+fn insert_enabled_rss_show(conn: &Rc<Db>, subscription_id: i64, device_id: &str) {
+    crate::test_db::connection(conn.as_ref())
         .execute(
             "INSERT INTO podcast_subscriptions
              (id, kind, feed_url, title, auto_download, sync_to_phone, added_at)
@@ -22,7 +23,7 @@ fn insert_enabled_rss_show(conn: &Rc<RefCell<Connection>>, subscription_id: i64,
             ],
         )
         .unwrap();
-    conn.borrow()
+    crate::test_db::connection(conn.as_ref())
         .execute(
             "INSERT INTO podcast_subscription_devices (subscription_id, device_id)
              VALUES (?1, ?2)",
@@ -40,7 +41,7 @@ fn mtp_45_a_played_downloaded_episode_is_not_copied_while_an_unplayed_one_from_t
         std::fs::write(&unplayed_path, b"unplayed-audio").unwrap();
         std::fs::write(&played_path, b"played-audio").unwrap();
         insert_enabled_rss_show(&conn, 10, "a");
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute(
                 "INSERT INTO podcast_episodes
                  (id, subscription_id, guid, title, audio_url, downloaded_path, first_seen_at)
@@ -48,7 +49,7 @@ fn mtp_45_a_played_downloaded_episode_is_not_copied_while_an_unplayed_one_from_t
                 [unplayed_path.to_string_lossy().as_ref()],
             )
             .unwrap();
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute(
                 "INSERT INTO podcast_episodes
                  (id, subscription_id, guid, title, audio_url, downloaded_path, played_at,
@@ -84,7 +85,7 @@ fn mtp_45_a_wanted_missing_episode_counts_as_waiting_and_is_never_copyable() {
     run(async {
         let (_downloads, conn) = fixture();
         insert_enabled_rss_show(&conn, 10, "a");
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute(
                 "INSERT INTO podcast_episodes
                  (id, subscription_id, guid, title, audio_url, wanted_on_device, first_seen_at)

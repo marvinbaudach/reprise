@@ -36,34 +36,34 @@ fn tombstoned_row_resurrects_on_fast_path_restore() {
     let tmp = tempfile::tempdir().unwrap();
     let file = fixture_copy(tmp.path(), "track.flac");
 
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    let r1 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    let conn = crate::db::Db::open_in_memory().unwrap();
+    let r1 = completed(scan_folder(&conn, tmp.path()).unwrap());
     assert_eq!(r1.added, 1);
 
     let path_str = file.to_string_lossy().to_string();
-    let (id_before, ..) = row_by_path(&conn, &file);
-    conn.execute(
-        "UPDATE tracks SET removed_at = 1, rating = 4, play_count = 7 WHERE path = ?1",
-        [&path_str],
-    )
-    .unwrap();
+    let (id_before, ..) = row_by_path(conn.conn(), &file);
+    conn.conn()
+        .execute(
+            "UPDATE tracks SET removed_at = 1, rating = 4, play_count = 7 WHERE path = ?1",
+            [&path_str],
+        )
+        .unwrap();
 
     // The file itself is untouched on disk: same path, same mtime — the
     // fast path must take the restore branch on `removed_at` alone, since
     // `missing_since` was never set here.
-    let r2 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    let r2 = completed(scan_folder(&conn, tmp.path()).unwrap());
     assert!(
         r2.updated >= 1,
         "resurrecting a tombstoned row must count as an update"
     );
 
     assert_eq!(
-        removed_at_of(&conn, &file),
+        removed_at_of(conn.conn(), &file),
         None,
         "removed_at must be cleared once the file is proven present again"
     );
-    let (id_after, rating, play_count, _) = row_by_path(&conn, &file);
+    let (id_after, rating, play_count, _) = row_by_path(conn.conn(), &file);
     assert_eq!(id_after, id_before, "resurrect must reuse the same row/id");
     assert_eq!(rating, 4, "rating must survive a resurrect");
     assert_eq!(play_count, 7, "play_count must survive a resurrect");
@@ -79,29 +79,29 @@ fn tombstoned_row_resurrects_on_upsert_when_mtime_changed() {
     let tmp = tempfile::tempdir().unwrap();
     let file = fixture_copy(tmp.path(), "track.flac");
 
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    let r1 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    let conn = crate::db::Db::open_in_memory().unwrap();
+    let r1 = completed(scan_folder(&conn, tmp.path()).unwrap());
     assert_eq!(r1.added, 1);
 
     let path_str = file.to_string_lossy().to_string();
-    let (id_before, ..) = row_by_path(&conn, &file);
-    conn.execute(
-        "UPDATE tracks SET removed_at = 1, rating = 4, play_count = 7, file_mtime = 0 \
+    let (id_before, ..) = row_by_path(conn.conn(), &file);
+    conn.conn()
+        .execute(
+            "UPDATE tracks SET removed_at = 1, rating = 4, play_count = 7, file_mtime = 0 \
          WHERE path = ?1",
-        [&path_str],
-    )
-    .unwrap();
+            [&path_str],
+        )
+        .unwrap();
 
-    let r2 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    let r2 = completed(scan_folder(&conn, tmp.path()).unwrap());
     assert_eq!(r2.updated, 1, "same path re-read must count as an update");
 
     assert_eq!(
-        removed_at_of(&conn, &file),
+        removed_at_of(conn.conn(), &file),
         None,
         "removed_at must be cleared by the upsert arm too"
     );
-    let (id_after, rating, play_count, _) = row_by_path(&conn, &file);
+    let (id_after, rating, play_count, _) = row_by_path(conn.conn(), &file);
     assert_eq!(id_after, id_before, "resurrect must reuse the same row/id");
     assert_eq!(rating, 4, "rating must survive an upsert resurrect");
     assert_eq!(play_count, 7, "play_count must survive an upsert resurrect");
@@ -119,34 +119,34 @@ fn tombstoned_row_resurrects_via_move_with_rating_preserved() {
     let old_path = fixture_copy(tmp.path(), "track.flac");
     tag_file(&old_path, "Tombstoned Song", "Some Artist", "Some Album");
 
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    let r1 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    let conn = crate::db::Db::open_in_memory().unwrap();
+    let r1 = completed(scan_folder(&conn, tmp.path()).unwrap());
     assert_eq!(r1.added, 1);
 
-    conn.execute(
-        "UPDATE tracks SET removed_at = 1, rating = 5, play_count = 9 WHERE path = ?1",
-        [old_path.to_string_lossy().to_string()],
-    )
-    .unwrap();
-    let (old_id, ..) = row_by_path(&conn, &old_path);
+    conn.conn()
+        .execute(
+            "UPDATE tracks SET removed_at = 1, rating = 5, play_count = 9 WHERE path = ?1",
+            [old_path.to_string_lossy().to_string()],
+        )
+        .unwrap();
+    let (old_id, ..) = row_by_path(conn.conn(), &old_path);
 
     let new_dir = tmp.path().join("new_subdir");
     std::fs::create_dir(&new_dir).unwrap();
     let new_path = new_dir.join("track.flac");
     std::fs::rename(&old_path, &new_path).unwrap();
 
-    let r2 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    let r2 = completed(scan_folder(&conn, tmp.path()).unwrap());
     assert_eq!(r2.moved, 1);
     assert_eq!(r2.added, 0);
-    assert_eq!(row_count(&conn), 1);
+    assert_eq!(row_count(conn.conn()), 1);
 
     assert_eq!(
-        removed_at_of(&conn, &new_path),
+        removed_at_of(conn.conn(), &new_path),
         None,
         "removed_at must be cleared by the move arm's apply_file_identity"
     );
-    let (new_id, rating, play_count, _) = row_by_path(&conn, &new_path);
+    let (new_id, rating, play_count, _) = row_by_path(conn.conn(), &new_path);
     assert_eq!(new_id, old_id, "resurrect-via-move must reuse the same id");
     assert_eq!(rating, 5, "rating must survive a resurrect-via-move");
     assert_eq!(
@@ -168,10 +168,9 @@ fn healed_counts_error_row_cleared_by_pass1_success() {
     let path = tmp.path().join("flaky.flac");
     std::fs::write(&path, b"not audio").unwrap();
 
-    let mut conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let conn = crate::db::Db::open_in_memory().unwrap();
 
-    let r1 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    let r1 = completed(scan_folder(&conn, tmp.path()).unwrap());
     assert_eq!(r1.errors, 1);
     assert_eq!(r1.healed, 0, "a fresh error is not a healing");
 
@@ -179,7 +178,7 @@ fn healed_counts_error_row_cleared_by_pass1_success() {
     let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac");
     std::fs::copy(&src, &path).unwrap();
 
-    let r2 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    let r2 = completed(scan_folder(&conn, tmp.path()).unwrap());
     assert_eq!(r2.added, 1);
     assert_eq!(
         r2.healed, 1,
@@ -188,6 +187,6 @@ fn healed_counts_error_row_cleared_by_pass1_success() {
 
     // Nothing changed since: the fast path skips it, and even if it didn't,
     // there is no error row left to delete.
-    let r3 = completed(scan_folder(&mut conn, tmp.path()).unwrap());
+    let r3 = completed(scan_folder(&conn, tmp.path()).unwrap());
     assert_eq!(r3.healed, 0, "no error row remains to heal a second time");
 }

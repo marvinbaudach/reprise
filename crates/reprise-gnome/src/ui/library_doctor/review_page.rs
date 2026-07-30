@@ -8,11 +8,11 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
+use reprise_core::db::Db;
 use reprise_core::library_doctor::{
     DoctorApplyPlan, DoctorReviewFilter, DoctorReviewRowId, DoctorReviewRowState,
     DoctorReviewSession, DoctorScan, DoctorWriteReport, DoctorWriteRowState,
 };
-use rusqlite::Connection;
 
 use super::review_model::{rows_for, ReviewOutcome, ReviewRowModel};
 use crate::ui::preferences::preference_library_doctor;
@@ -226,7 +226,7 @@ pub(super) struct LibraryDoctorReviewPage {
 
 impl LibraryDoctorReviewPage {
     pub(super) fn new(
-        conn: &Rc<RefCell<Connection>>,
+        conn: &Rc<Db>,
         parent: &adw::ApplicationWindow,
         scan: DoctorScan,
         filter: DoctorReviewFilter,
@@ -474,7 +474,7 @@ mod tests {
     #[ignore = "requires a display; run via xvfb-run"]
     fn doc_3b_review_page_virtualizes_rows_without_horizontal_scroll() {
         gtk4::init().unwrap();
-        let conn = Rc::new(RefCell::new(reprise_core::db::open_migrated(None).unwrap()));
+        let conn = Rc::new(crate::test_db::open().unwrap());
         let parent = adw::ApplicationWindow::builder().build();
         let on_edit = Rc::new(|_| {}) as Rc<dyn Fn(i64)>;
 

@@ -4,7 +4,8 @@ use common::{code, parse_json, stdout, Harness};
 use rusqlite::params;
 
 fn seed_concerts(harness: &Harness) {
-    let conn = harness.conn();
+    let db = harness.db();
+    let conn = harness.fixture_connection();
     conn.execute(
         "INSERT INTO concert_artists (
            artist_key, artist_name, last_attempt_at, last_outcome, events_found
@@ -46,7 +47,7 @@ fn seed_concerts(harness: &Harness) {
         .unwrap();
     }
     reprise_core::library::settings::set_setting(
-        &conn,
+        &db,
         reprise_core::concerts::config::FILTER_COUNTRY_KEY,
         "DE",
     )

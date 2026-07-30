@@ -3,17 +3,20 @@ use std::path::PathBuf;
 
 use rusqlite::{Connection, OptionalExtension};
 
+use crate::db::Db;
+
 use super::{DoctorScopeRequest, DoctorTrackRef, DoctorViewSnapshot, FrozenScope};
 
 const PAGE_SIZE: i64 = 200;
 
 pub(super) fn freeze_scope(
-    conn: &mut Connection,
+    db: &Db,
     request: &DoctorScopeRequest,
 ) -> Result<FrozenScope, rusqlite::Error> {
+    let conn = db.conn();
     let tracks = match request {
         DoctorScopeRequest::WholeLibrary => whole_library(conn)?,
-        DoctorScopeRequest::CurrentView(snapshot) => current_view(conn, snapshot)?,
+        DoctorScopeRequest::CurrentView(snapshot) => current_view(db, conn, snapshot)?,
         DoctorScopeRequest::Selection { track_ids } => selection(conn, track_ids)?,
     };
     if !matches!(request, DoctorScopeRequest::WholeLibrary) && tracks.is_empty() {
@@ -34,11 +37,12 @@ fn whole_library(conn: &Connection) -> Result<Vec<DoctorTrackRef>, rusqlite::Err
 }
 
 fn current_view(
-    conn: &mut Connection,
+    db: &Db,
+    conn: &Connection,
     snapshot: &DoctorViewSnapshot,
 ) -> Result<Vec<DoctorTrackRef>, rusqlite::Error> {
     conn.execute_batch("BEGIN DEFERRED")?;
-    let result = current_view_in_transaction(conn, snapshot);
+    let result = current_view_in_transaction(db, conn, snapshot);
     match result {
         Ok(tracks) => {
             conn.execute_batch("COMMIT")?;
@@ -52,14 +56,15 @@ fn current_view(
 }
 
 fn current_view_in_transaction(
-    conn: &mut Connection,
+    db: &Db,
+    conn: &Connection,
     snapshot: &DoctorViewSnapshot,
 ) -> Result<Vec<DoctorTrackRef>, rusqlite::Error> {
     let total = if snapshot.source == crate::view_source::ViewSource::Queue {
         i64::try_from(snapshot.queue_ids.len()).unwrap_or(i64::MAX)
     } else {
         crate::queries::query_track_count_browsed(
-            conn,
+            db,
             &snapshot.source,
             &snapshot.filter,
             &snapshot.browse,
@@ -71,7 +76,7 @@ fn current_view_in_transaction(
     let mut tracks = Vec::with_capacity(usize::try_from(total).unwrap_or_default());
     while offset < total {
         let page = crate::queries::query_track_window_browsed(
-            conn,
+            db,
             &snapshot.source,
             &snapshot.sort_field,
             &snapshot.sort_dir,

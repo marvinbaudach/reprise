@@ -1,5 +1,5 @@
 use chrono::{TimeZone, Utc};
-use rusqlite::{params, Connection};
+use rusqlite::params;
 
 use super::compute;
 use crate::library::stats_period::StatsPeriod;
@@ -37,25 +37,26 @@ fn stats_11_previous_ms_carries_the_seasonal_baseline() {
     assert_eq!(all_time.hero.previous_ms, None);
 }
 
-fn migrated_conn() -> Connection {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    conn.execute(
-        "INSERT INTO tracks \
+fn migrated_conn() -> crate::db::Db {
+    let conn = crate::db::Db::open_in_memory().unwrap();
+    conn.conn()
+        .execute(
+            "INSERT INTO tracks \
          (id, path, title, artist, album, duration_ms, play_count, added_at) \
          VALUES (1, '/music/track.flac', 'Track', 'Artist', 'Album', 1000000, 0, 0)",
-        [],
-    )
-    .unwrap();
+            [],
+        )
+        .unwrap();
     conn
 }
 
-fn insert_event(conn: &Connection, played_at: i64, ms_played: i64) {
-    conn.execute(
-        "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (1, ?1, ?2)",
-        params![played_at, ms_played],
-    )
-    .unwrap();
+fn insert_event(conn: &crate::db::Db, played_at: i64, ms_played: i64) {
+    conn.conn()
+        .execute(
+            "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (1, ?1, ?2)",
+            params![played_at, ms_played],
+        )
+        .unwrap();
 }
 
 fn timestamp(year: i32, month: u32, day: u32) -> i64 {

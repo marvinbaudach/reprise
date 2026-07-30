@@ -8,8 +8,8 @@ use super::*;
 fn track_source_path_returns_the_absolute_path_or_none() {
     // The focused by-id path lookup the instrumental worker resolves a job's
     // source_track_id through (P3b).
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     conn.execute(
         "INSERT INTO tracks (id, path, title, artist, added_at, file_mtime, file_size) \
          VALUES (1, '/music/song.flac', 'S', 'A', 1, 1, 1)",
@@ -17,11 +17,11 @@ fn track_source_path_returns_the_absolute_path_or_none() {
     )
     .unwrap();
     assert_eq!(
-        track_source_path(&conn, 1).unwrap(),
+        track_source_path(&db, 1).unwrap(),
         Some(std::path::PathBuf::from("/music/song.flac"))
     );
     assert_eq!(
-        track_source_path(&conn, 999).unwrap(),
+        track_source_path(&db, 999).unwrap(),
         None,
         "a missing row is None, not an error"
     );
@@ -32,8 +32,8 @@ fn fil_7_count_browsed_ai_excludes_ai_tracks_via_count_star() {
     // The cheap COUNT(*) variant that replaces the QUEUE_LIMIT-capped
     // ids.len() fallback: with exclude_ai it counts only non-AI Library
     // tracks; without it, every present track.
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     conn.execute_batch(
         "INSERT INTO tracks (id, path, title, artist, added_at, file_mtime, file_size) \
            VALUES (1, '/a.flac', 'Original', 'A', 1, 1, 1);
@@ -46,15 +46,15 @@ fn fil_7_count_browsed_ai_excludes_ai_tracks_via_count_star() {
     let browse = BrowseFilter::default();
 
     let all =
-        query_track_count_browsed_ai(&conn, &ViewSource::Library, "", &browse, &[], false).unwrap();
+        query_track_count_browsed_ai(&db, &ViewSource::Library, "", &browse, &[], false).unwrap();
     assert_eq!(all, 2, "without the filter both present tracks count");
     let non_ai =
-        query_track_count_browsed_ai(&conn, &ViewSource::Library, "", &browse, &[], true).unwrap();
+        query_track_count_browsed_ai(&db, &ViewSource::Library, "", &browse, &[], true).unwrap();
     assert_eq!(non_ai, 1, "the AI instrumental is excluded from the count");
 
     // The COUNT(*) agrees with the AI-filtered id list it replaces.
     let ids = query_track_ids_browsed_ai(
-        &conn,
+        &db,
         &ViewSource::Library,
         "title",
         "asc",

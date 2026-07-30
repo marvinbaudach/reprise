@@ -362,8 +362,8 @@ impl PreferencesContext {
         let rhythmdb_path = default_rhythmdb_path();
         let playlists_path = default_playlists_path(&rhythmdb_path);
         let library_root = {
-            let conn = self.conn.borrow();
-            reprise_core::library::settings::get_library_root(&conn)
+            let conn = &self.conn;
+            reprise_core::library::settings::get_library_root(conn)
                 .ok()
                 .flatten()
         };
@@ -372,10 +372,7 @@ impl PreferencesContext {
         let root_clone = library_root.clone();
         let rhythmdb_clone = rhythmdb_path.clone();
         let playlists_clone = playlists_path.clone();
-        let conn_for_prescan = {
-            let conn = self.conn.borrow();
-            conn.path().map(str::to_owned)
-        };
+        let conn_for_prescan = self.conn.path();
 
         let info_subtitle = widgets.info_subtitle.clone();
         let match_label = widgets.match_label.clone();
@@ -392,19 +389,15 @@ impl PreferencesContext {
             let prescan_result = prescan_result.clone();
             async move {
                 let result = gio::spawn_blocking(move || {
-                    let conn_path = conn_for_prescan.unwrap_or_default();
-                    if conn_path.is_empty() {
+                    let Some(conn_path) = conn_for_prescan else {
                         return Err("no database path".to_string());
-                    }
-                    let conn = rusqlite::Connection::open_with_flags(
-                        &conn_path,
-                        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-                    )
-                    .map_err(|e| e.to_string())?;
+                    };
+                    let db = reprise_core::db::Db::open_ready_read_only(&conn_path)
+                        .map_err(|e| e.to_string())?;
                     rhythmbox_import::prescan_rhythmdb(
                         &rhythmdb_clone,
                         &playlists_clone,
-                        &conn,
+                        &db,
                         root_clone.as_deref(),
                     )
                     .map_err(|e| e.to_string())
@@ -556,11 +549,11 @@ impl PreferencesContext {
                 };
 
                 // Merge on main thread (we need conn)
-                let mut conn = context_c.conn.borrow_mut();
+                let conn = &context_c.conn;
                 let total_tracks = parsed.tracks.as_ref().map_or(0usize, Vec::len);
                 let stats = parsed
                     .tracks
-                    .map(|tracks| rhythmbox_import::merge_stats(&mut conn, &tracks, choices, None));
+                    .map(|tracks| rhythmbox_import::merge_stats(conn, &tracks, choices, None));
                 let (summary, rollback) = match stats {
                     Some(Ok((s, r))) => (Some(s), Some(r)),
                     Some(Err(e)) => {
@@ -572,7 +565,7 @@ impl PreferencesContext {
 
                 let playlist_summary = match parsed.playlists {
                     Some(Ok(playlists)) => Some(
-                        rhythmbox_import::merge_playlists(&mut conn, &playlists)
+                        rhythmbox_import::merge_playlists(conn, &playlists)
                             .map_err(|e| e.to_string()),
                     ),
                     Some(Err(e)) => {
@@ -581,8 +574,6 @@ impl PreferencesContext {
                     }
                     None => None,
                 };
-                drop(conn);
-
                 // Update progress to complete
                 progress_bar_c.set_fraction(1.0);
                 progress_label_c.set_label(&strings::rhythmbox_progress_count(
@@ -661,11 +652,10 @@ impl PreferencesContext {
             };
             let rollback = rollback_for_undo.borrow_mut().take();
             if let Some(rollback) = rollback {
-                let mut conn = context.conn.borrow_mut();
-                match rhythmbox_import::undo_rhythmbox_import(&mut conn, &rollback) {
+                let conn = &context.conn;
+                match rhythmbox_import::undo_rhythmbox_import(conn, &rollback) {
                     Ok(restored) => {
                         tracing::info!(restored, "Rhythmbox import undone");
-                        drop(conn);
                         context.track_list.reload();
                     }
                     Err(e) => tracing::warn!(%e, "could not undo Rhythmbox import"),

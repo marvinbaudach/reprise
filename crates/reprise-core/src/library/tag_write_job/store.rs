@@ -51,11 +51,11 @@ fn journal_entries(before: &EditableTags, patch: &TagPatch) -> Vec<JournalEntry>
 }
 
 pub(crate) fn prepare_tag_write_job(
-    conn: &mut Connection,
+    conn: &Connection,
     spec: TagWriteJobSpec,
     mutations: &[(usize, PreparedTagMutation)],
 ) -> Result<PreparedTagWriteJob, rusqlite::Error> {
-    let transaction = conn.transaction()?;
+    let transaction = conn.unchecked_transaction()?;
     let created_at = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
@@ -145,7 +145,7 @@ fn affected_exactly(actual: usize, expected: usize) -> Result<(), rusqlite::Erro
 }
 
 fn claim_tag_write_file(
-    conn: &mut Connection,
+    conn: &Connection,
     job_id: i64,
     file: &JournaledTagMutation,
 ) -> Result<(), TagMutationFailure> {
@@ -157,7 +157,7 @@ fn claim_tag_write_file(
         });
     }
     let transaction = conn
-        .transaction()
+        .unchecked_transaction()
         .map_err(|error| sqlite_failure(&error, false))?;
     let job_changed = transaction
         .execute(
@@ -205,7 +205,7 @@ fn claim_tag_write_file(
 }
 
 fn mark_terminal(
-    conn: &mut Connection,
+    conn: &Connection,
     file: &JournaledTagMutation,
     failure: Option<&TagMutationFailure>,
 ) -> Result<(), TagMutationFailure> {
@@ -219,7 +219,7 @@ fn mark_terminal(
     let kind = failure.map(|failure| error_kind_name(failure.kind));
     let message = failure.map(|failure| failure.error.as_str());
     let transaction = conn
-        .transaction()
+        .unchecked_transaction()
         .map_err(|error| sqlite_failure(&error, file_written))?;
     let file_changed = transaction
         .execute(
@@ -251,7 +251,7 @@ fn mark_terminal(
 }
 
 pub(crate) fn execute_tag_write_file(
-    conn: &mut Connection,
+    conn: &Connection,
     job_id: i64,
     file: &JournaledTagMutation,
     ignore_watcher: bool,

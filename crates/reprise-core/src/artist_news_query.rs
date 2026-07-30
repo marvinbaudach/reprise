@@ -150,6 +150,15 @@ pub(crate) fn release_presence(
 }
 
 pub fn query_releases(
+    db: &crate::db::Db,
+    include_hidden: bool,
+    today: NaiveDate,
+) -> Result<Vec<StoredRelease>, rusqlite::Error> {
+    let conn = db.conn();
+    query_releases_in(conn, include_hidden, today)
+}
+
+pub(crate) fn query_releases_in(
     conn: &Connection,
     include_hidden: bool,
     today: NaiveDate,
@@ -220,8 +229,9 @@ pub fn query_releases(
     Ok(releases)
 }
 
-pub fn unseen_release_count(conn: &Connection, today: NaiveDate) -> Result<i64, rusqlite::Error> {
-    Ok(query_releases(conn, true, today)?
+pub fn unseen_release_count(db: &crate::db::Db, today: NaiveDate) -> Result<i64, rusqlite::Error> {
+    let conn = db.conn();
+    Ok(query_releases_in(conn, true, today)?
         .into_iter()
         .filter(|release| {
             release.seen_at.is_none() && release.presence != LibraryPresence::Complete
@@ -229,7 +239,8 @@ pub fn unseen_release_count(conn: &Connection, today: NaiveDate) -> Result<i64, 
         .count() as i64)
 }
 
-pub fn hidden_release_count(conn: &Connection) -> Result<i64, rusqlite::Error> {
+pub fn hidden_release_count(db: &crate::db::Db) -> Result<i64, rusqlite::Error> {
+    let conn = db.conn();
     conn.query_row(
         "SELECT COUNT(*) FROM new_releases WHERE hidden = 1",
         [],
@@ -238,6 +249,15 @@ pub fn hidden_release_count(conn: &Connection) -> Result<i64, rusqlite::Error> {
 }
 
 pub fn set_release_hidden(
+    db: &crate::db::Db,
+    release_group_mbid: &str,
+    hidden: bool,
+) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
+    set_release_hidden_in(conn, release_group_mbid, hidden)
+}
+
+pub(crate) fn set_release_hidden_in(
     conn: &Connection,
     release_group_mbid: &str,
     hidden: bool,
@@ -253,10 +273,11 @@ pub fn set_release_hidden(
 }
 
 pub fn mark_releases_seen(
-    conn: &Connection,
+    db: &crate::db::Db,
     release_group_mbids: &[String],
     seen_at: i64,
 ) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
     let transaction = conn.unchecked_transaction()?;
     for mbid in release_group_mbids {
         transaction.execute(
@@ -269,11 +290,20 @@ pub fn mark_releases_seen(
 }
 
 pub fn query_artist_news(
+    db: &crate::db::Db,
+    artist_mbid: &str,
+    today: NaiveDate,
+) -> Result<Option<ArtistNews>, rusqlite::Error> {
+    let conn = db.conn();
+    query_artist_news_in(conn, artist_mbid, today)
+}
+
+fn query_artist_news_in(
     conn: &Connection,
     artist_mbid: &str,
     today: NaiveDate,
 ) -> Result<Option<ArtistNews>, rusqlite::Error> {
-    let releases = query_releases(conn, false, today)?
+    let releases = query_releases_in(conn, false, today)?
         .into_iter()
         .filter(|release| release.artist_mbid == artist_mbid)
         .collect::<Vec<_>>();
@@ -317,10 +347,11 @@ pub fn query_artist_news(
 }
 
 pub fn query_artist_news_by_name(
-    conn: &Connection,
+    db: &crate::db::Db,
     artist: &str,
     today: NaiveDate,
 ) -> Result<Option<ArtistNews>, rusqlite::Error> {
+    let conn = db.conn();
     let mut statement = conn.prepare(
         "SELECT artist_mbid FROM tracks
          WHERE lower(trim(artist)) = lower(trim(?1)) AND artist_mbid IS NOT NULL
@@ -332,13 +363,14 @@ pub fn query_artist_news_by_name(
         return Ok(None);
     };
     let artist_mbid = row.get::<_, String>(0)?;
-    query_artist_news(conn, &artist_mbid, today)
+    query_artist_news_in(conn, &artist_mbid, today)
 }
 
 pub fn most_played_album_track_path(
-    conn: &Connection,
+    db: &crate::db::Db,
     artist: &str,
 ) -> Result<Option<PathBuf>, rusqlite::Error> {
+    let conn = db.conn();
     let mut statement = conn.prepare(
         "SELECT MIN(path), SUM(play_count) AS album_plays
          FROM tracks

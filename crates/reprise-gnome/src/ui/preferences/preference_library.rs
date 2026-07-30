@@ -13,8 +13,8 @@ use super::{action_row, PreferencesContext};
 
 fn library_root_text(context: &PreferencesContext) -> String {
     let root = {
-        let conn = context.conn.borrow();
-        settings::get_library_root(&conn)
+        let conn = &context.conn;
+        settings::get_library_root(conn)
     };
     root.ok()
         .flatten()
@@ -56,8 +56,8 @@ impl PreferencesContext {
         group.add(&folder);
 
         let excluded_count = {
-            let conn = self.conn.borrow();
-            reprise_core::library::exclusions::count(&conn).unwrap_or_else(|error| {
+            let conn = &self.conn;
+            reprise_core::library::exclusions::count(conn).unwrap_or_else(|error| {
                 tracing::warn!(%error, "could not count library exclusions");
                 0
             }) as usize
@@ -76,8 +76,8 @@ impl PreferencesContext {
                 return;
             };
             let result = {
-                let conn = context.conn.borrow();
-                reprise_core::library::exclusions::clear(&conn)
+                let conn = &context.conn;
+                reprise_core::library::exclusions::clear(conn)
             };
             match result {
                 Ok(_) => {

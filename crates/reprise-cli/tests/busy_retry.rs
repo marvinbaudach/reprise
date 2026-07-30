@@ -15,10 +15,9 @@ fn create_waits_out_a_briefly_held_foreign_write_transaction() {
     let h = Harness::new();
 
     thread::scope(|s| {
-        let db = &h.db;
+        let fixture = &h;
         let holder = s.spawn(move || {
-            let conn =
-                reprise_core::db::open_migrated(Some(db.as_path())).expect("holder connection");
+            let conn = fixture.fixture_connection();
             // BEGIN IMMEDIATE + a write takes the single WAL writer slot.
             conn.execute_batch("BEGIN IMMEDIATE")
                 .expect("begin immediate");

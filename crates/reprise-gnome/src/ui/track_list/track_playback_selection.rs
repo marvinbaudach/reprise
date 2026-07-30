@@ -86,7 +86,6 @@ pub(in crate::ui) fn context_play_decision(
 
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
     use std::rc::Rc;
 
     use rusqlite::params;
@@ -97,10 +96,9 @@ mod tests {
     use reprise_core::view_source::ViewSource;
 
     fn seeded_playlist_model_with_unmounted_track() -> TrackListModel {
-        let conn = Rc::new(RefCell::new(reprise_core::db::open(None).unwrap()));
-        reprise_core::db::migrate(&conn.borrow()).unwrap();
+        let conn = Rc::new(crate::test_db::open().unwrap());
         for id in 1..=3 {
-            conn.borrow()
+            crate::test_db::connection(&conn)
                 .execute(
                     "INSERT INTO tracks (id, path, title, artist, added_at) \
                      VALUES (?1, ?2, ?3, 'Artist', 0)",
@@ -108,15 +106,15 @@ mod tests {
                 )
                 .unwrap();
         }
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute(
                 "UPDATE tracks SET missing_since = 1000000000, \
                  missing_reason = 'unmounted' WHERE id = 2",
                 [],
             )
             .unwrap();
-        let playlist_id = playlists::create(&conn.borrow(), "P1").unwrap();
-        playlists::add_tracks(&mut conn.borrow_mut(), playlist_id, &[1, 2, 3]).unwrap();
+        let playlist_id = playlists::create(&conn, "P1").unwrap();
+        playlists::add_tracks(&conn, playlist_id, &[1, 2, 3]).unwrap();
 
         let model = TrackListModel::new(conn);
         model.set_query(

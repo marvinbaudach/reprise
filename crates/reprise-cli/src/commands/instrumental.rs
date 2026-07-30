@@ -11,9 +11,9 @@ use std::path::PathBuf;
 use reprise_core::ai_jobs::{self, BatchOutcome, EnqueueOutcome};
 use reprise_core::ai_promotion::{self, PromotionConfig, PromotionError};
 use reprise_core::ai_staging::StagingStore;
+use reprise_core::db::Db;
 use reprise_core::library::settings;
 use reprise_core::queries;
-use rusqlite::Connection;
 use serde_json::{json, Value};
 
 use crate::clock::now_unix;
@@ -90,26 +90,26 @@ impl WaitOptions {
 /// `--wait`, blocks until each job reaches a terminal state (needs a running
 /// worker), promoting finished renders in save mode.
 pub fn create(
-    conn: &mut Connection,
+    db: &Db,
     staging_dir: Option<&PathBuf>,
     track_ids: &[i64],
     mode: SaveMode,
     waiting: WaitOptions,
     json_output: bool,
 ) -> Result<(), CliError> {
-    require_tracks_exist(conn, track_ids)?;
+    require_tracks_exist(db, track_ids)?;
     let store = staging::resolve(staging_dir);
     let now = now_unix();
 
     // In save + wait mode we will promote finished renders, so fail fast if
     // there is nowhere to file them rather than after a long wait.
     let config = if waiting.wait && mode == SaveMode::Save {
-        Some(promotion_config(conn)?)
+        Some(promotion_config(db)?)
     } else {
         None
     };
 
-    let outcome = enqueue(conn, &store, track_ids, mode.auto_promote(), now)?;
+    let outcome = enqueue(db, &store, track_ids, mode.auto_promote(), now)?;
 
     if !waiting.wait {
         if json_output {
@@ -120,7 +120,7 @@ pub fn create(
         return Ok(());
     }
     crate::commands::instrumental_wait::wait_for_jobs(
-        conn,
+        db,
         &store,
         config.as_ref(),
         &outcome,
@@ -146,7 +146,7 @@ pub(crate) struct CreateOutcome {
 /// busy-retry policy — a long foreign write (e.g. a running app's rescan) must
 /// not fail the enqueue.
 fn enqueue(
-    conn: &Connection,
+    db: &Db,
     store: &StagingStore,
     track_ids: &[i64],
     auto_promote: bool,
@@ -155,7 +155,7 @@ fn enqueue(
     let BatchOutcome { batch_id, jobs } = with_retry(
         || {
             ai_jobs::enqueue_instrumental_batch(
-                conn,
+                db,
                 store,
                 track_ids,
                 DEFAULT_INSTRUMENTAL_MODEL,
@@ -175,9 +175,9 @@ fn enqueue(
 /// Fails with [`CliError::NotFound`] if any id has no track row, before any job
 /// is enqueued — a batch is all-or-nothing, so this validates the whole input
 /// up front rather than letting a foreign-key violation surface mid-batch.
-fn require_tracks_exist(conn: &Connection, track_ids: &[i64]) -> Result<(), CliError> {
+fn require_tracks_exist(db: &Db, track_ids: &[i64]) -> Result<(), CliError> {
     for &id in track_ids {
-        if queries::query_track_summary(conn, id)?.is_none() {
+        if queries::query_track_summary(db, id)?.is_none() {
             return Err(CliError::NotFound(format!("track {id}")));
         }
     }
@@ -246,18 +246,18 @@ fn emit_text(outcome: &CreateOutcome, mode: SaveMode) {
 /// are reported together and the process exits non-zero if any job fails, so a
 /// partial "save all" is never silently reported as success.
 pub fn save(
-    conn: &mut Connection,
+    db: &Db,
     staging_dir: Option<&PathBuf>,
     job_ids: &[i64],
     json_output: bool,
 ) -> Result<(), CliError> {
-    let config = promotion_config(conn)?;
+    let config = promotion_config(db)?;
     let store = staging::resolve(staging_dir);
     let now = now_unix();
     let mut rows = Vec::new();
     let mut first_error: Option<CliError> = None;
     for &job_id in job_ids {
-        match ai_promotion::promote(conn, &store, &config, job_id, now) {
+        match ai_promotion::promote(db, &store, &config, job_id, now) {
             Ok(outcome) => {
                 if json_output {
                     rows.push(json!({
@@ -287,7 +287,7 @@ pub fn save(
 /// job out of the conversion view — Beschluss 15). A job that is not a finished,
 /// unsaved render is reported as an error for that id.
 pub fn discard(
-    conn: &mut Connection,
+    db: &Db,
     staging_dir: Option<&PathBuf>,
     job_ids: &[i64],
     json_output: bool,
@@ -298,7 +298,7 @@ pub fn discard(
     let mut first_error: Option<CliError> = None;
     for &job_id in job_ids {
         let discarded = with_retry(
-            || ai_jobs::discard_staged(conn, &store, job_id, now),
+            || ai_jobs::discard_staged(db, &store, job_id, now),
             rusqlite_is_busy,
         );
         match discarded {
@@ -363,8 +363,8 @@ fn finish_per_job(
 
 /// Builds the promotion config from the configured library root, or a clear
 /// error when none is set (promotion has nowhere to file the result).
-fn promotion_config(conn: &Connection) -> Result<PromotionConfig, CliError> {
-    match settings::get_library_root(conn)? {
+fn promotion_config(db: &Db) -> Result<PromotionConfig, CliError> {
+    match settings::get_library_root(db)? {
         Some(root) => Ok(PromotionConfig::new(root)),
         None => Err(CliError::InvalidInput(
             "no library root configured — cannot save instrumentals".to_string(),

@@ -9,26 +9,26 @@ fn flac_fixture(dir: &Path, name: &str) -> PathBuf {
     destination
 }
 
-fn migrated() -> Connection {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    conn
+fn migrated() -> crate::db::Db {
+    crate::db::Db::open_in_memory().unwrap()
 }
 
 /// Seeds a source track and a finished-but-unsaved job for it, plus a staging
 /// render on disk. Returns `(job_id, staging_store)`.
-fn staged_job(conn: &Connection, staging_dir: &Path) -> (i64, StagingStore) {
-    conn.execute(
+fn staged_job(db: &crate::db::Db, staging_dir: &Path) -> (i64, StagingStore) {
+    db.conn()
+        .execute(
         "INSERT INTO tracks (id, path, title, artist, album, album_artist, year, track_no, genre, added_at, file_mtime, file_size) \
          VALUES (1, '/music/creep.flac', 'Creep', 'Radiohead', 'Pablo Honey', 'Radiohead', 1993, 2, 'Alt Rock', 1, 1, 1)",
         [],
     )
     .unwrap();
     let staging = StagingStore::new(staging_dir);
-    let job_id = ai_jobs::enqueue_instrumental(conn, &staging, 1, "htdemucs@4", 0)
+    let job_id = ai_jobs::enqueue_instrumental(db, &staging, 1, "htdemucs@4", 0)
         .unwrap()
         .job_id();
-    conn.execute("UPDATE ai_jobs SET status = 'done' WHERE id = ?1", [job_id])
+    db.conn()
+        .execute("UPDATE ai_jobs SET status = 'done' WHERE id = ?1", [job_id])
         .unwrap();
     // Put a real FLAC render in place for this job.
     staging.ensure_dir().unwrap();
@@ -42,11 +42,11 @@ fn promote_files_tags_registers_and_records_provenance() {
     use lofty::prelude::*;
     let library = tempfile::tempdir().unwrap();
     let staging_dir = tempfile::tempdir().unwrap();
-    let mut conn = migrated();
+    let conn = migrated();
     let (job_id, staging) = staged_job(&conn, staging_dir.path());
     let config = PromotionConfig::new(library.path());
 
-    let outcome = promote(&mut conn, &staging, &config, job_id, 900).unwrap();
+    let outcome = promote(&conn, &staging, &config, job_id, 900).unwrap();
 
     // 1. Filed at <root>/Reprise Instrumentals/<Artist>/<Title> (Instrumental).flac
     let expected = library
@@ -97,21 +97,22 @@ fn promote_files_tags_registers_and_records_provenance() {
 /// live version, or a duplicate import), each with its own finished-but-unsaved
 /// staged render. Both sanitise to the same base destination, so promoting both
 /// exercises the collision path. Returns `([job_a, job_b], staging_store)`.
-fn seed_identical_pair(conn: &Connection, staging_dir: &Path) -> (Vec<i64>, StagingStore) {
+fn seed_identical_pair(db: &crate::db::Db, staging_dir: &Path) -> (Vec<i64>, StagingStore) {
     let staging = StagingStore::new(staging_dir);
     staging.ensure_dir().unwrap();
     let mut jobs = Vec::new();
     for id in [1_i64, 2] {
-        conn.execute(
+        db.conn().execute(
             "INSERT INTO tracks (id, path, title, artist, album, album_artist, added_at, file_mtime, file_size) \
              VALUES (?1, ?2, 'Creep', 'Radiohead', 'Pablo Honey', 'Radiohead', 1, 1, 1)",
             rusqlite::params![id, format!("/music/creep-{id}.flac")],
         )
         .unwrap();
-        let job_id = ai_jobs::enqueue_instrumental(conn, &staging, id, "htdemucs@4", 0)
+        let job_id = ai_jobs::enqueue_instrumental(db, &staging, id, "htdemucs@4", 0)
             .unwrap()
             .job_id();
-        conn.execute("UPDATE ai_jobs SET status = 'done' WHERE id = ?1", [job_id])
+        db.conn()
+            .execute("UPDATE ai_jobs SET status = 'done' WHERE id = ?1", [job_id])
             .unwrap();
         std::fs::copy(
             flac_fixture(staging_dir, &format!("seed-{id}.flac")),
@@ -127,12 +128,12 @@ fn seed_identical_pair(conn: &Connection, staging_dir: &Path) -> (Vec<i64>, Stag
 fn two_sources_with_the_same_name_get_distinct_files_and_provenance() {
     let library = tempfile::tempdir().unwrap();
     let staging_dir = tempfile::tempdir().unwrap();
-    let mut conn = migrated();
+    let conn = migrated();
     let (jobs, staging) = seed_identical_pair(&conn, staging_dir.path());
     let config = PromotionConfig::new(library.path());
 
-    let out_a = promote(&mut conn, &staging, &config, jobs[0], 100).unwrap();
-    let out_b = promote(&mut conn, &staging, &config, jobs[1], 200).unwrap();
+    let out_a = promote(&conn, &staging, &config, jobs[0], 100).unwrap();
+    let out_b = promote(&conn, &staging, &config, jobs[1], 200).unwrap();
 
     // Distinct files on disk — the second promotion must not clobber the first.
     assert_ne!(out_a.path, out_b.path);
@@ -164,17 +165,18 @@ fn two_sources_with_the_same_name_get_distinct_files_and_provenance() {
 fn promote_rejects_a_job_that_is_not_a_finished_unsaved_render() {
     let library = tempfile::tempdir().unwrap();
     let staging_dir = tempfile::tempdir().unwrap();
-    let mut conn = migrated();
+    let conn = migrated();
     let (job_id, staging) = staged_job(&conn, staging_dir.path());
     let config = PromotionConfig::new(library.path());
     // Flip it back to queued: no longer promotable.
-    conn.execute(
-        "UPDATE ai_jobs SET status = 'queued' WHERE id = ?1",
-        [job_id],
-    )
-    .unwrap();
+    conn.conn()
+        .execute(
+            "UPDATE ai_jobs SET status = 'queued' WHERE id = ?1",
+            [job_id],
+        )
+        .unwrap();
 
-    let error = promote(&mut conn, &staging, &config, job_id, 0).unwrap_err();
+    let error = promote(&conn, &staging, &config, job_id, 0).unwrap_err();
     assert!(matches!(error, PromotionError::NotPromotable(_)));
 }
 
@@ -182,12 +184,12 @@ fn promote_rejects_a_job_that_is_not_a_finished_unsaved_render() {
 fn promote_reports_missing_staging_render() {
     let library = tempfile::tempdir().unwrap();
     let staging_dir = tempfile::tempdir().unwrap();
-    let mut conn = migrated();
+    let conn = migrated();
     let (job_id, staging) = staged_job(&conn, staging_dir.path());
     let config = PromotionConfig::new(library.path());
     staging.discard(job_id).unwrap(); // remove the render
 
-    let error = promote(&mut conn, &staging, &config, job_id, 0).unwrap_err();
+    let error = promote(&conn, &staging, &config, job_id, 0).unwrap_err();
     assert!(matches!(error, PromotionError::StagingMissing(_)));
 }
 
@@ -196,7 +198,7 @@ fn promote_falls_back_to_render_tags_when_the_original_is_gone() {
     use lofty::prelude::*;
     let library = tempfile::tempdir().unwrap();
     let staging_dir = tempfile::tempdir().unwrap();
-    let mut conn = migrated();
+    let conn = migrated();
     let (job_id, staging) = staged_job(&conn, staging_dir.path());
     let config = PromotionConfig::new(library.path());
     // Give the render its own tags, then delete the original (nulls the job's
@@ -211,9 +213,11 @@ fn promote_falls_back_to_render_tags_when_the_original_is_gone() {
         },
     )
     .unwrap();
-    conn.execute("DELETE FROM tracks WHERE id = 1", []).unwrap();
+    conn.conn()
+        .execute("DELETE FROM tracks WHERE id = 1", [])
+        .unwrap();
 
-    let outcome = promote(&mut conn, &staging, &config, job_id, 0).unwrap();
+    let outcome = promote(&conn, &staging, &config, job_id, 0).unwrap();
 
     let tagged = lofty::read_from_path(&outcome.path).unwrap();
     assert_eq!(
@@ -232,7 +236,7 @@ fn retry_after_a_failed_copy_does_not_double_the_instrumental_suffix() {
     use lofty::prelude::*;
     let library = tempfile::tempdir().unwrap();
     let staging_dir = tempfile::tempdir().unwrap();
-    let mut conn = migrated();
+    let conn = migrated();
     let (job_id, staging) = staged_job(&conn, staging_dir.path());
     let config = PromotionConfig::new(library.path());
 
@@ -257,15 +261,17 @@ fn retry_after_a_failed_copy_does_not_double_the_instrumental_suffix() {
         .join("Radiohead")
         .join("Creep (Instrumental).flac");
     std::fs::create_dir_all(&destination).unwrap();
-    assert!(promote(&mut conn, &staging, &config, job_id, 100).is_err());
+    assert!(promote(&conn, &staging, &config, job_id, 100).is_err());
 
     // The original is deleted before the retry, so the retry must fall back to
     // the render's own embedded tags. Those must still read "Creep" — the first
     // attempt must not have mutated the staging render in place.
-    conn.execute("DELETE FROM tracks WHERE id = 1", []).unwrap();
+    conn.conn()
+        .execute("DELETE FROM tracks WHERE id = 1", [])
+        .unwrap();
     std::fs::remove_dir_all(&destination).unwrap();
 
-    let outcome = promote(&mut conn, &staging, &config, job_id, 200).unwrap();
+    let outcome = promote(&conn, &staging, &config, job_id, 200).unwrap();
     let tagged = lofty::read_from_path(&outcome.path).unwrap();
     assert_eq!(
         tagged.primary_tag().unwrap().title().as_deref(),
@@ -330,7 +336,7 @@ fn resolve_destination_builds_the_documented_layout() {
     let config = PromotionConfig::new("/library");
     // No jobs exist, so nothing reserves the base name.
     assert_eq!(
-        resolve_destination(&conn, &config, 1, &creep_source()).unwrap(),
+        resolve_destination(conn.conn(), &config, 1, &creep_source()).unwrap(),
         PathBuf::from("/library/Reprise Instrumentals/Radiohead/Creep (Instrumental).flac")
     );
 }
@@ -339,20 +345,20 @@ fn resolve_destination_builds_the_documented_layout() {
 fn resolve_destination_reuses_the_owning_job_and_bumps_a_foreign_one() {
     let library = tempfile::tempdir().unwrap();
     let staging_dir = tempfile::tempdir().unwrap();
-    let mut conn = migrated();
+    let conn = migrated();
     let (jobs, staging) = seed_identical_pair(&conn, staging_dir.path());
     let config = PromotionConfig::new(library.path());
 
     // Promote A: its saved result now sits at the base path.
-    let out_a = promote(&mut conn, &staging, &config, jobs[0], 100).unwrap();
+    let out_a = promote(&conn, &staging, &config, jobs[0], 100).unwrap();
 
     // The owning job re-resolves to its own file — a retry reuses it, no suffix.
     assert_eq!(
-        resolve_destination(&conn, &config, jobs[0], &creep_source()).unwrap(),
+        resolve_destination(conn.conn(), &config, jobs[0], &creep_source()).unwrap(),
         out_a.path
     );
     // A different job must not land on A's result; it is bumped deterministically.
-    let for_b = resolve_destination(&conn, &config, jobs[1], &creep_source()).unwrap();
+    let for_b = resolve_destination(conn.conn(), &config, jobs[1], &creep_source()).unwrap();
     assert_ne!(for_b, out_a.path);
     assert_eq!(
         for_b.file_name().unwrap().to_string_lossy(),
@@ -374,20 +380,20 @@ fn a_custom_subfolder_is_honored() {
 /// it as worker 5, and produces a real FLAC render in staging via the fake
 /// backend — leaving the job `running` and ready for `complete_render`.
 fn running_job_with_render(
-    conn: &Connection,
+    db: &crate::db::Db,
     staging_dir: &Path,
     staging: &StagingStore,
     auto_promote: bool,
 ) -> i64 {
     staging.ensure_dir().unwrap();
-    conn.execute(
+    db.conn().execute(
         "INSERT INTO tracks (id, path, title, artist, album, album_artist, added_at, file_mtime, file_size) \
          VALUES (1, '/music/creep.flac', 'Creep', 'Radiohead', 'Pablo Honey', 'Radiohead', 1, 1, 1)",
         [],
     )
     .unwrap();
     let job_id = ai_jobs::enqueue_instrumental_batch(
-        conn,
+        db,
         staging,
         &[1],
         crate::stem_separation::CURRENT_MODEL_ID,
@@ -397,7 +403,7 @@ fn running_job_with_render(
     .unwrap()
     .jobs[0]
         .job_id();
-    let claimed = ai_jobs::claim_next(conn, 5, 0, 60).unwrap().unwrap();
+    let claimed = ai_jobs::claim_next(db, 5, 0, 60).unwrap().unwrap();
     assert_eq!(claimed.id, job_id);
     // The fake backend copies a real FLAC into the staging render path.
     use crate::stem_separation::StemSeparationBackend;
@@ -414,12 +420,12 @@ fn running_job_with_render(
 fn complete_render_auto_promotes_when_the_intent_is_set() {
     let library = tempfile::tempdir().unwrap();
     let staging_dir = tempfile::tempdir().unwrap();
-    let mut conn = migrated();
+    let conn = migrated();
     let staging = StagingStore::new(staging_dir.path());
     let config = PromotionConfig::new(library.path());
     let job_id = running_job_with_render(&conn, staging_dir.path(), &staging, true);
 
-    let outcome = complete_render(&mut conn, &staging, &config, job_id, 5, 100).unwrap();
+    let outcome = complete_render(&conn, &staging, &config, job_id, 5, 100).unwrap();
 
     let promoted = match outcome {
         CompletionOutcome::Promoted(promoted) => promoted,
@@ -447,12 +453,12 @@ fn complete_render_auto_promotes_when_the_intent_is_set() {
 fn complete_render_leaves_a_no_intent_job_staged() {
     let library = tempfile::tempdir().unwrap();
     let staging_dir = tempfile::tempdir().unwrap();
-    let mut conn = migrated();
+    let conn = migrated();
     let staging = StagingStore::new(staging_dir.path());
     let config = PromotionConfig::new(library.path());
     let job_id = running_job_with_render(&conn, staging_dir.path(), &staging, false);
 
-    let outcome = complete_render(&mut conn, &staging, &config, job_id, 5, 100).unwrap();
+    let outcome = complete_render(&conn, &staging, &config, job_id, 5, 100).unwrap();
 
     assert_eq!(outcome, CompletionOutcome::Staged);
     let job = ai_jobs::get_job(&conn, job_id).unwrap().unwrap();
@@ -468,7 +474,7 @@ fn complete_render_leaves_a_no_intent_job_staged() {
 fn complete_render_keeps_a_failed_auto_promotion_retryable() {
     let library = tempfile::tempdir().unwrap();
     let staging_dir = tempfile::tempdir().unwrap();
-    let mut conn = migrated();
+    let conn = migrated();
     let staging = StagingStore::new(staging_dir.path());
     let config = PromotionConfig::new(library.path());
     let job_id = running_job_with_render(&conn, staging_dir.path(), &staging, true);
@@ -480,7 +486,7 @@ fn complete_render_keeps_a_failed_auto_promotion_retryable() {
         .join("Creep (Instrumental).flac");
     std::fs::create_dir_all(&destination).unwrap();
 
-    let outcome = complete_render(&mut conn, &staging, &config, job_id, 5, 100).unwrap();
+    let outcome = complete_render(&conn, &staging, &config, job_id, 5, 100).unwrap();
     assert!(matches!(
         outcome,
         CompletionOutcome::PromotionDeferred { .. }
@@ -500,7 +506,7 @@ fn complete_render_keeps_a_failed_auto_promotion_retryable() {
 
     // Retryable: clear the blocker and promote directly.
     std::fs::remove_dir_all(&destination).unwrap();
-    let retried = promote(&mut conn, &staging, &config, job_id, 200).unwrap();
+    let retried = promote(&conn, &staging, &config, job_id, 200).unwrap();
     assert!(retried.path.is_file());
     let job = ai_jobs::get_job(&conn, job_id).unwrap().unwrap();
     assert_eq!(job.result_track_id, Some(retried.result_track_id));
@@ -511,21 +517,21 @@ fn complete_render_keeps_a_failed_auto_promotion_retryable() {
 /// Seeds source track 1, enqueues one job with `auto_promote`, and claims it as
 /// `worker` at `now` (lease 60) — leaving it `running`, but with NO render yet.
 fn seed_and_claim(
-    conn: &Connection,
+    db: &crate::db::Db,
     staging: &StagingStore,
     worker: i64,
     auto_promote: bool,
     now: i64,
 ) -> i64 {
     staging.ensure_dir().unwrap();
-    conn.execute(
+    db.conn().execute(
         "INSERT INTO tracks (id, path, title, artist, album, album_artist, added_at, file_mtime, file_size) \
          VALUES (1, '/music/creep.flac', 'Creep', 'Radiohead', 'Pablo Honey', 'Radiohead', 1, 1, 1)",
         [],
     )
     .unwrap();
     let job_id = ai_jobs::enqueue_instrumental_batch(
-        conn,
+        db,
         staging,
         &[1],
         crate::stem_separation::CURRENT_MODEL_ID,
@@ -535,7 +541,7 @@ fn seed_and_claim(
     .unwrap()
     .jobs[0]
         .job_id();
-    let claimed = ai_jobs::claim_next(conn, worker, now, 60).unwrap().unwrap();
+    let claimed = ai_jobs::claim_next(db, worker, now, 60).unwrap().unwrap();
     assert_eq!(claimed.id, job_id);
     job_id
 }
@@ -555,7 +561,7 @@ fn render_temp(staging_dir: &Path, staging: &StagingStore, job_id: i64, worker: 
 #[test]
 fn complete_render_with_publish_publishes_the_temp_render_when_owned() {
     let staging_dir = tempfile::tempdir().unwrap();
-    let mut conn = migrated();
+    let conn = migrated();
     let staging = StagingStore::new(staging_dir.path());
     let job_id = seed_and_claim(&conn, &staging, 5, false, 0);
     let temp = render_temp(staging_dir.path(), &staging, job_id, 5);
@@ -565,7 +571,7 @@ fn complete_render_with_publish_publishes_the_temp_render_when_owned() {
     );
 
     let outcome =
-        complete_render_with_publish(&mut conn, &staging, None, job_id, 5, &temp, 100).unwrap();
+        complete_render_with_publish(&conn, &staging, None, job_id, 5, &temp, 100).unwrap();
 
     assert_eq!(outcome, CompletionOutcome::Staged);
     assert!(
@@ -582,14 +588,14 @@ fn complete_render_with_publish_publishes_the_temp_render_when_owned() {
 fn complete_render_with_publish_promotes_the_published_render_when_intent_set() {
     let library = tempfile::tempdir().unwrap();
     let staging_dir = tempfile::tempdir().unwrap();
-    let mut conn = migrated();
+    let conn = migrated();
     let staging = StagingStore::new(staging_dir.path());
     let config = PromotionConfig::new(library.path());
     let job_id = seed_and_claim(&conn, &staging, 5, true, 0);
     let temp = render_temp(staging_dir.path(), &staging, job_id, 5);
 
     let outcome =
-        complete_render_with_publish(&mut conn, &staging, Some(&config), job_id, 5, &temp, 100)
+        complete_render_with_publish(&conn, &staging, Some(&config), job_id, 5, &temp, 100)
             .unwrap();
 
     let promoted = match outcome {
@@ -614,7 +620,7 @@ fn a_straggler_after_discard_never_resurrects_the_staging_render() {
     // the ownership guard and delete its own temp, never touching the canonical
     // staging path — so no permanent, unlisted, un-GC'd orphan is resurrected.
     let staging_dir = tempfile::tempdir().unwrap();
-    let mut conn = migrated();
+    let conn = migrated();
     let staging = StagingStore::new(staging_dir.path());
 
     // A (5) claims at t=0 with a 60 s lease; B (6) reclaims at t=100 once it
@@ -626,7 +632,7 @@ fn a_straggler_after_discard_never_resurrects_the_staging_render() {
     // B renders and completes: the render is published to its canonical path.
     let temp_b = render_temp(staging_dir.path(), &staging, job_id, 6);
     let done =
-        complete_render_with_publish(&mut conn, &staging, None, job_id, 6, &temp_b, 100).unwrap();
+        complete_render_with_publish(&conn, &staging, None, job_id, 6, &temp_b, 100).unwrap();
     assert_eq!(done, CompletionOutcome::Staged);
     assert!(staging.exists(job_id), "B's render is committed");
 
@@ -637,7 +643,7 @@ fn a_straggler_after_discard_never_resurrects_the_staging_render() {
     // The straggler A finally finishes and tries to complete with its own temp.
     let temp_a = render_temp(staging_dir.path(), &staging, job_id, 5);
     let outcome =
-        complete_render_with_publish(&mut conn, &staging, None, job_id, 5, &temp_a, 300).unwrap();
+        complete_render_with_publish(&conn, &staging, None, job_id, 5, &temp_a, 300).unwrap();
 
     assert_eq!(
         outcome,

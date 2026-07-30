@@ -6,9 +6,9 @@
 
 use super::*;
 
-fn seeded_conn_with_tracks(count: i64) -> Connection {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+fn seeded_conn_with_tracks(count: i64) -> crate::db::Db {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     for i in 1..=count {
         conn.execute(
             "INSERT INTO tracks (id, path, title, artist, added_at) \
@@ -17,7 +17,7 @@ fn seeded_conn_with_tracks(count: i64) -> Connection {
         )
         .unwrap();
     }
-    conn
+    db
 }
 
 fn insert_smart_playlist(
@@ -38,20 +38,20 @@ fn insert_smart_playlist(
 
 #[test]
 fn smart_window_applies_rules_and_own_sort() {
-    let conn = seeded_conn_with_tracks(5);
+    let db = seeded_conn_with_tracks(5);
+    let conn = db.conn();
     conn.execute("UPDATE tracks SET rating = 4 WHERE id IN (2, 4)", [])
         .unwrap();
     let smart_id = insert_smart_playlist(
-        &conn,
+        conn,
         r#"[{"field":"rating","op":">=","value":4}]"#,
         "title",
         "asc",
         None,
     );
 
-    let mut conn = conn;
     let rows = query_track_window(
-        &mut conn,
+        &db,
         &ViewSource::Smart(smart_id),
         "ignored",
         "ignored",
@@ -64,25 +64,25 @@ fn smart_window_applies_rules_and_own_sort() {
     let ids: Vec<i64> = rows.iter().map(|t| t.id).collect();
     assert_eq!(ids, vec![2, 4]);
     assert_eq!(
-        query_track_count(&conn, &ViewSource::Smart(smart_id), "", &[]).unwrap(),
+        query_track_count(&db, &ViewSource::Smart(smart_id), "", &[]).unwrap(),
         2
     );
 }
 
 #[test]
 fn smart_window_keeps_membership_but_honors_the_requested_column_sort() {
-    let conn = seeded_conn_with_tracks(3);
+    let db = seeded_conn_with_tracks(3);
+    let conn = db.conn();
     conn.execute(
         "UPDATE tracks SET artist = CASE id \
          WHEN 1 THEN 'Gamma' WHEN 2 THEN 'Beta' ELSE 'Alpha' END",
         [],
     )
     .unwrap();
-    let smart_id = insert_smart_playlist(&conn, "[]", "title", "asc", Some(2));
+    let smart_id = insert_smart_playlist(conn, "[]", "title", "asc", Some(2));
 
-    let mut conn = conn;
     let rows = query_track_window(
-        &mut conn,
+        &db,
         &ViewSource::Smart(smart_id),
         "artist",
         "asc",
@@ -100,15 +100,7 @@ fn smart_window_keeps_membership_but_honors_the_requested_column_sort() {
         "the smart definition chooses members 1 and 2, then the clicked Artist column sorts them"
     );
     assert_eq!(
-        query_track_ids(
-            &conn,
-            &ViewSource::Smart(smart_id),
-            "artist",
-            "asc",
-            "",
-            &[],
-        )
-        .unwrap(),
+        query_track_ids(&db, &ViewSource::Smart(smart_id), "artist", "asc", "", &[],).unwrap(),
         vec![2, 1],
         "playback snapshots must follow the same visible smart-playlist order"
     );
@@ -116,18 +108,18 @@ fn smart_window_keeps_membership_but_honors_the_requested_column_sort() {
 
 #[test]
 fn smart_window_sorts_the_primary_artist_term_descending() {
-    let conn = seeded_conn_with_tracks(3);
+    let db = seeded_conn_with_tracks(3);
+    let conn = db.conn();
     conn.execute(
         "UPDATE tracks SET artist = CASE id \
          WHEN 1 THEN 'Abyss' WHEN 2 THEN 'Annisokay' ELSE 'Zulu' END",
         [],
     )
     .unwrap();
-    let smart_id = insert_smart_playlist(&conn, "[]", "title", "asc", Some(2));
+    let smart_id = insert_smart_playlist(conn, "[]", "title", "asc", Some(2));
 
-    let mut conn = conn;
     let rows = query_track_window(
-        &mut conn,
+        &db,
         &ViewSource::Smart(smart_id),
         "artist",
         "desc",
@@ -147,19 +139,19 @@ fn smart_window_sorts_the_primary_artist_term_descending() {
 
 #[test]
 fn smart_window_applies_live_search_filter_too() {
-    let conn = seeded_conn_with_tracks(5);
+    let db = seeded_conn_with_tracks(5);
+    let conn = db.conn();
     conn.execute("UPDATE tracks SET rating = 4", []).unwrap();
     let smart_id = insert_smart_playlist(
-        &conn,
+        conn,
         r#"[{"field":"rating","op":">=","value":4}]"#,
         "title",
         "asc",
         None,
     );
 
-    let mut conn = conn;
     let rows = query_track_window(
-        &mut conn,
+        &db,
         &ViewSource::Smart(smart_id),
         "ignored",
         "ignored",
@@ -179,12 +171,12 @@ fn smart_window_offset_within_limit_returns_the_edge_case_slice() {
     // playlist limited to 50 rows, windowed at offset 40/limit 20, must
     // return exactly 10 rows (positions 40..49), never rows beyond the
     // smart playlist's own limit.
-    let conn = seeded_conn_with_tracks(100);
-    let smart_id = insert_smart_playlist(&conn, "[]", "title", "asc", Some(50));
+    let db = seeded_conn_with_tracks(100);
+    let conn = db.conn();
+    let smart_id = insert_smart_playlist(conn, "[]", "title", "asc", Some(50));
 
-    let mut conn = conn;
     let rows = query_track_window(
-        &mut conn,
+        &db,
         &ViewSource::Smart(smart_id),
         "ignored",
         "ignored",
@@ -213,22 +205,24 @@ fn smart_window_offset_within_limit_returns_the_edge_case_slice() {
 
 #[test]
 fn smart_count_is_capped_by_limit_count() {
-    let conn = seeded_conn_with_tracks(100);
-    let smart_id = insert_smart_playlist(&conn, "[]", "title", "asc", Some(50));
+    let db = seeded_conn_with_tracks(100);
+    let conn = db.conn();
+    let smart_id = insert_smart_playlist(conn, "[]", "title", "asc", Some(50));
 
     assert_eq!(
-        query_track_count(&conn, &ViewSource::Smart(smart_id), "", &[]).unwrap(),
+        query_track_count(&db, &ViewSource::Smart(smart_id), "", &[]).unwrap(),
         50
     );
 }
 
 #[test]
 fn smart_ids_are_capped_by_limit_count() {
-    let conn = seeded_conn_with_tracks(100);
-    let smart_id = insert_smart_playlist(&conn, "[]", "title", "asc", Some(50));
+    let db = seeded_conn_with_tracks(100);
+    let conn = db.conn();
+    let smart_id = insert_smart_playlist(conn, "[]", "title", "asc", Some(50));
 
     let ids = query_track_ids(
-        &conn,
+        &db,
         &ViewSource::Smart(smart_id),
         "ignored",
         "ignored",
@@ -245,12 +239,12 @@ fn smart_window_falls_back_to_title_on_tampered_sort_field() {
     // sort_field isn't a whitelisted value — `order_clause` must
     // fall back to title order rather than erroring or (worse)
     // interpolating the value into SQL.
-    let conn = seeded_conn_with_tracks(3);
-    let smart_id = insert_smart_playlist(&conn, "[]", "sneaky; DROP TABLE tracks--", "asc", None);
+    let db = seeded_conn_with_tracks(3);
+    let conn = db.conn();
+    let smart_id = insert_smart_playlist(conn, "[]", "sneaky; DROP TABLE tracks--", "asc", None);
 
-    let mut conn = conn;
     let rows = query_track_window(
-        &mut conn,
+        &db,
         &ViewSource::Smart(smart_id),
         "ignored",
         "ignored",
@@ -266,19 +260,18 @@ fn smart_window_falls_back_to_title_on_tampered_sort_field() {
 
 #[test]
 fn smart_source_not_found_degrades_to_empty() {
-    let conn = seeded_conn_with_tracks(3);
-    let mut conn = conn;
+    let db = seeded_conn_with_tracks(3);
     assert!(
-        query_track_window(&mut conn, &ViewSource::Smart(999), "x", "x", "", 0, 10, &[])
+        query_track_window(&db, &ViewSource::Smart(999), "x", "x", "", 0, 10, &[])
             .unwrap()
             .is_empty()
     );
     assert_eq!(
-        query_track_count(&conn, &ViewSource::Smart(999), "", &[]).unwrap(),
+        query_track_count(&db, &ViewSource::Smart(999), "", &[]).unwrap(),
         0
     );
     assert!(
-        query_track_ids(&conn, &ViewSource::Smart(999), "x", "x", "", &[])
+        query_track_ids(&db, &ViewSource::Smart(999), "x", "x", "", &[])
             .unwrap()
             .is_empty()
     );
@@ -286,7 +279,8 @@ fn smart_source_not_found_degrades_to_empty() {
 
 #[test]
 fn fil_8_recently_added_includes_every_track_from_the_last_seven_days_without_a_50_cap() {
-    let conn = crate::db::open_migrated(None).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -312,18 +306,11 @@ fn fil_8_recently_added_includes_every_track_from_the_last_seven_days_without_a_
     .unwrap();
 
     assert_eq!(
-        query_track_count(&conn, &ViewSource::RecentlyAdded, "", &[]).unwrap(),
+        query_track_count(&db, &ViewSource::RecentlyAdded, "", &[]).unwrap(),
         60
     );
-    let ids = query_track_ids(
-        &conn,
-        &ViewSource::RecentlyAdded,
-        "added_at",
-        "desc",
-        "",
-        &[],
-    )
-    .unwrap();
+    let ids =
+        query_track_ids(&db, &ViewSource::RecentlyAdded, "added_at", "desc", "", &[]).unwrap();
     assert_eq!(ids.len(), 60);
     assert_eq!(ids[0], 1);
     assert!(!ids.contains(&61));
@@ -336,7 +323,7 @@ fn fil_8_recently_added_includes_every_track_from_the_last_seven_days_without_a_
         )
         .unwrap();
     assert_eq!(
-        query_track_count(&conn, &ViewSource::Smart(smart_id), "", &[]).unwrap(),
+        query_track_count(&db, &ViewSource::Smart(smart_id), "", &[]).unwrap(),
         60,
         "legacy sessions and non-GTK consumers must resolve the built-in smart id identically"
     );

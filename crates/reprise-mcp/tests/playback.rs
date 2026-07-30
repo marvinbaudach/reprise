@@ -21,9 +21,9 @@ const CAP_PLAYBACK_CONTROL: &str = "agent.capability.playback:control";
 fn db_with_playlist(dir: &TempDir) -> (std::path::PathBuf, i64) {
     let path = dir.path().join("reprise.db");
     let ids = common::seed_tracks(&path, &[SeedTrack::simple("Track0", "Artist")]);
-    let mut conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
-    let playlist_id = reprise_core::library::playlists::create(&conn, "Roadtrip").unwrap();
-    reprise_core::library::playlists::add_tracks(&mut conn, playlist_id, &ids).unwrap();
+    let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
+    let playlist_id = reprise_core::library::playlists::create(&db, "Roadtrip").unwrap();
+    reprise_core::library::playlists::add_tracks(&db, playlist_id, &ids).unwrap();
     (path, playlist_id)
 }
 
@@ -228,12 +228,12 @@ fn music_queue_rejects_tracks_that_are_absent_or_missing() {
         ],
     );
     {
-        let conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
-        conn.execute(
-            "UPDATE tracks SET missing_since = 1 WHERE id = ?1",
-            [ids[1]],
-        )
-        .unwrap();
+        common::fixture_connection(&path)
+            .execute(
+                "UPDATE tracks SET missing_since = 1 WHERE id = ?1",
+                [ids[1]],
+            )
+            .unwrap();
     }
     let mut client = McpClient::start(&path);
 

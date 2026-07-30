@@ -8,7 +8,7 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
-use rusqlite::Connection;
+use reprise_core::db::Db;
 
 use super::{strings, PreferencesContext};
 
@@ -137,15 +137,16 @@ pub(super) fn remote_suggestions_row(context: &Rc<PreferencesContext>) -> adw::S
 }
 
 pub(in crate::ui) fn remote_suggestions_row_for(
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
     parent: &impl IsA<gtk4::Widget>,
     on_changed: Rc<dyn Fn(bool)>,
 ) -> adw::SwitchRow {
-    let preference = reprise_core::library_doctor::remote_suggestion_preference(&conn.borrow())
-        .unwrap_or(reprise_core::library_doctor::RemoteSuggestionPreference {
+    let preference = reprise_core::library_doctor::remote_suggestion_preference(conn).unwrap_or(
+        reprise_core::library_doctor::RemoteSuggestionPreference {
             enabled: false,
             consent_required: true,
-        });
+        },
+    );
     let row = adw::SwitchRow::builder()
         .title(strings::text(strings::LIBRARY_DOCTOR_REMOTE))
         .subtitle(strings::text(strings::LIBRARY_DOCTOR_REMOTE_DESCRIPTION))
@@ -160,7 +161,7 @@ pub(in crate::ui) fn remote_suggestions_row_for(
         if syncing_notify.get() {
             return;
         }
-        let preference = reprise_core::library_doctor::remote_suggestion_preference(&conn.borrow())
+        let preference = reprise_core::library_doctor::remote_suggestion_preference(&conn)
             .unwrap_or(reprise_core::library_doctor::RemoteSuggestionPreference {
                 enabled: false,
                 consent_required: true,
@@ -168,8 +169,8 @@ pub(in crate::ui) fn remote_suggestions_row_for(
         match remote_toggle_action(row.is_active(), preference) {
             RemoteToggleAction::Disable => {
                 let result = {
-                    let conn = conn.borrow();
-                    reprise_core::library_doctor::disable_remote_suggestions(&conn)
+                    let conn = &conn;
+                    reprise_core::library_doctor::disable_remote_suggestions(conn)
                 };
                 if let Err(error) = result {
                     tracing::warn!(%error, "could not disable Library Doctor remote suggestions");
@@ -180,8 +181,8 @@ pub(in crate::ui) fn remote_suggestions_row_for(
             }
             RemoteToggleAction::Enable => {
                 let result = {
-                    let conn = conn.borrow();
-                    reprise_core::library_doctor::accept_remote_suggestions(&conn)
+                    let conn = &conn;
+                    reprise_core::library_doctor::accept_remote_suggestions(conn)
                 };
                 if let Err(error) = result {
                     tracing::warn!(%error, "could not enable Library Doctor remote suggestions");
@@ -209,7 +210,7 @@ fn set_active_without_notify(row: &adw::SwitchRow, syncing: &Cell<bool>, active:
 }
 
 fn present_remote_confirmation(
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
     parent: &gtk4::Widget,
     row: &adw::SwitchRow,
     syncing: &Rc<Cell<bool>>,
@@ -236,8 +237,8 @@ fn present_remote_confirmation(
             return;
         }
         let result = {
-            let conn = conn.borrow();
-            reprise_core::library_doctor::accept_remote_suggestions(&conn)
+            let conn = &conn;
+            reprise_core::library_doctor::accept_remote_suggestions(conn)
         };
         match result {
             Ok(()) => {
@@ -294,8 +295,8 @@ pub(in crate::ui) fn plugin_row(context: &Rc<PreferencesContext>) -> adw::Expand
     row.add_row(&run_row);
 
     let cleanup_available = {
-        let mut conn = context.conn.borrow_mut();
-        reprise_core::library_doctor::LibraryDoctor::new(&mut conn)
+        let conn = &context.conn;
+        reprise_core::library_doctor::LibraryDoctor::new(conn)
             .last_cleanup()
             .ok()
             .flatten()

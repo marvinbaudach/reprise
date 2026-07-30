@@ -1,7 +1,7 @@
 //! `events tail` — dump the cross-process change log (debugging aid).
 
+use reprise_core::db::Db;
 use reprise_core::events;
-use rusqlite::Connection;
 use serde_json::Value;
 
 use crate::error::CliError;
@@ -12,8 +12,8 @@ use crate::output::{print_json, sanitize_for_terminal};
 /// is a debug window onto the same outbox the running app consumes for live
 /// refresh. `--json` includes each row's per-process writer token (see
 /// `json_models`); the human-readable form stays a compact one line per row.
-pub fn tail(conn: &Connection, since: i64, json_output: bool) -> Result<(), CliError> {
-    let changes = events::read_since(conn, since, None)?;
+pub fn tail(db: &Db, since: i64, json_output: bool) -> Result<(), CliError> {
+    let changes = events::read_since(db, since, None)?;
     if json_output {
         let rows: Vec<Value> = changes.iter().map(json_models::change).collect();
         print_json(&Value::Array(rows));

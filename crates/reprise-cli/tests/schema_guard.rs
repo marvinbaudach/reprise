@@ -9,7 +9,7 @@ const SCHEMA_TOO_NEW_MESSAGE: &str =
 /// Bumps the migrated temp database's `user_version` past what this binary
 /// supports, so `open_migrated` fails the fail-closed guard.
 fn make_schema_too_new(h: &Harness) {
-    h.conn()
+    h.fixture_connection()
         .pragma_update(None, "user_version", 999_i64)
         .expect("bump user_version");
 }

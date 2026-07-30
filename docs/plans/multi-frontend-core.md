@@ -97,10 +97,10 @@ Der Workspace ist real dreigeteilt, die Richtung wird mechanisch erzwungen
 Für Mehrprozess-Betrieb günstig vorgefunden:
 
 - Mehrere Connections über denselben DB-Pfad sind heute schon Alltag
-  **innerhalb** der App: UI hält `Rc<RefCell<Connection>>`; Scan-Worker,
-  Watcher-Thread und Analyse-Worker öffnen je eine **eigene** Connection
-  (dokumentiert in `library/watcher.rs`). Der Schritt zu mehreren Prozessen
-  ist bei SQLite/WAL derselbe Mechanismus.
+  **innerhalb** der App: Die UI hält `Rc<Db>`; Scan-Worker, Watcher-Thread und
+  Analyse-Worker öffnen je einen **eigenen** `Db`-Handle (dokumentiert in
+  `library/watcher.rs`). Der Schritt zu mehreren Prozessen ist bei SQLite/WAL
+  derselbe Mechanismus.
 - `notify` ist bereits Core-Dependency (bewusst als plattformübergreifende
   Abstraktion inotify/FSEvents/ReadDirectoryChangesW).
 - GApplication ist single-instance (`org.reprise.Reprise`); ein zweiter
@@ -290,9 +290,11 @@ höchstens später als zusätzlicher Latenz-Optimierer im Platform-Layer
 
 ### 2.3 Die API-Naht von `reprise-core`
 
-**Position: Die Naht bleibt „Fassaden-Funktionen über `&Connection`“ —
-Commands, Queries (gefenstert), neu: Events. Kein Command-Bus, kein
-Service-Objekt, kein async-Umbau.** Die Fassaden sind bereits die per Gate
+**Position: Die Naht bleibt „Fassaden-Funktionen über `&Db`“ — Commands,
+Queries (gefenstert), neu: Events. Kein Command-Bus, kein Service-Objekt, kein
+async-Umbau.** ADR 002 ersetzt hier die frühere Formulierung mit
+`&Connection`: Öffentliche Fassaden nehmen `&Db`; ihre privaten Query-Helfer
+dürfen weiter `&Connection` verwenden. Die Fassaden sind bereits die per Gate
 erzwungene Grenze, synchron, headless testbar und FFI-tolerant (nur Werte,
 keine GTK-/Runtime-Typen). Ein Command-Bus wäre Spekulation und zwänge die
 GTK-App zum Mitziehen.

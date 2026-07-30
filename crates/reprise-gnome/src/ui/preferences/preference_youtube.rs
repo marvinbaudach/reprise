@@ -4,14 +4,14 @@
 //! (`reprise_core::modules::YOUTUBE_MODULE`), its own rows here, no longer a
 //! switch buried inside the Podcasts block.
 
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
+use reprise_core::db::Db;
 use reprise_core::podcasts::config;
-use rusqlite::Connection;
 
 use crate::ui::{one_shot_task, strings};
 
@@ -61,8 +61,8 @@ impl YoutubePreferenceRows {
     }
 }
 
-pub(in crate::ui) fn build(conn: &Rc<RefCell<Connection>>, enabled: bool) -> YoutubePreferenceRows {
-    let cfg = config::load(&conn.borrow()).unwrap_or(config::PodcastConfig {
+pub(in crate::ui) fn build(conn: &Rc<Db>, enabled: bool) -> YoutubePreferenceRows {
+    let cfg = config::load(conn).unwrap_or(config::PodcastConfig {
         import_count: config::DEFAULT_IMPORT_COUNT,
         auto_download_default: false,
         cleanup_policy: config::CleanupPolicy::KeepAll,
@@ -81,7 +81,7 @@ pub(in crate::ui) fn build(conn: &Rc<RefCell<Connection>>, enabled: bool) -> You
         let conn = conn.clone();
         episode_count.connect_value_notify(move |row| {
             save_or_warn(config::set_youtube_import_count(
-                &conn.borrow(),
+                &conn,
                 row.value().round() as usize,
             ));
         });
@@ -95,7 +95,7 @@ pub(in crate::ui) fn build(conn: &Rc<RefCell<Connection>>, enabled: bool) -> You
         let conn = conn.clone();
         hide_shorts.connect_active_notify(move |row| {
             save_or_warn(config::set_youtube_hide_shorts_default(
-                &conn.borrow(),
+                &conn,
                 row.is_active(),
             ));
         });
@@ -215,7 +215,7 @@ mod tests {
     // covered by `podcasts::config`'s own tests.
     #[test]
     fn youtube_preference_values_round_trip_through_core_config() {
-        let conn = reprise_core::db::open_migrated(None).unwrap();
+        let conn = crate::test_db::open().unwrap();
         config::set_youtube_import_count(&conn, 20).unwrap();
         config::set_youtube_hide_shorts_default(&conn, false).unwrap();
 
@@ -228,7 +228,7 @@ mod tests {
     #[ignore = "requires a display; run via xvfb-run"]
     fn youtube_preference_rows_build_with_every_control() {
         gtk4::init().unwrap();
-        let conn = Rc::new(RefCell::new(reprise_core::db::open_migrated(None).unwrap()));
+        let conn = Rc::new(crate::test_db::open().unwrap());
         let rows = build(&conn, true);
         assert_eq!(rows.inner.rows.len(), 3);
     }

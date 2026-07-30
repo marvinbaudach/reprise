@@ -151,7 +151,7 @@ impl PreferencesContext {
                     strings::text(strings::RESTART_REQUIRED)
                 )
             };
-            let active = reprise_core::modules::is_enabled(&self.conn.borrow(), descriptor)
+            let active = reprise_core::modules::is_enabled(&self.conn, descriptor)
                 .unwrap_or(descriptor.default_enabled);
             let row = adw::SwitchRow::builder()
                 .title(plugin_title(descriptor))
@@ -180,23 +180,17 @@ impl PreferencesContext {
                 }
                 let active = row.is_active();
                 let result = match descriptor.id {
-                    "new_releases" => context
-                        .artist_news
-                        .set_enabled(&context.conn.borrow(), active),
-                    "concerts" => context.concerts.set_enabled(&context.conn.borrow(), active),
-                    "cover_download" => context
-                        .cover_download
-                        .set_enabled(&context.conn.borrow(), active),
-                    "artist_portraits" => context
-                        .artist_portrait
-                        .set_enabled(&context.conn.borrow(), active),
+                    "new_releases" => context.artist_news.set_enabled(&context.conn, active),
+                    "concerts" => context.concerts.set_enabled(&context.conn, active),
+                    "cover_download" => context.cover_download.set_enabled(&context.conn, active),
+                    "artist_portraits" => {
+                        context.artist_portrait.set_enabled(&context.conn, active)
+                    }
                     "online_lyrics" => match &context.player {
                         Some(player) => player.set_online_lyrics_enabled(active),
-                        None => reprise_core::modules::set_enabled(
-                            &context.conn.borrow(),
-                            descriptor,
-                            active,
-                        ),
+                        None => {
+                            reprise_core::modules::set_enabled(&context.conn, descriptor, active)
+                        }
                     },
                     "song_visuals" => {
                         if let Some(player) = &context.player {
@@ -208,11 +202,8 @@ impl PreferencesContext {
                                 return;
                             }
                         }
-                        match reprise_core::modules::set_enabled(
-                            &context.conn.borrow(),
-                            descriptor,
-                            active,
-                        ) {
+                        match reprise_core::modules::set_enabled(&context.conn, descriptor, active)
+                        {
                             Ok(()) => {
                                 context.info_panel.set_song_visuals_enabled(active);
                                 Ok(())
@@ -225,11 +216,7 @@ impl PreferencesContext {
                             }
                         }
                     }
-                    _ => reprise_core::modules::set_enabled(
-                        &context.conn.borrow(),
-                        descriptor,
-                        active,
-                    ),
+                    _ => reprise_core::modules::set_enabled(&context.conn, descriptor, active),
                 };
                 if let Err(error) = result {
                     tracing::warn!(%error, module = descriptor.id, "could not save plugin state");
@@ -247,7 +234,7 @@ impl PreferencesContext {
                 // one settings read per toggle and cannot be forgotten the way
                 // a per-module arm can — the same omission already let a stale
                 // open gate survive a switch-off once.
-                crate::ui::podcasts::source_image::recompute_gate(&context.conn.borrow());
+                crate::ui::podcasts::source_image::recompute_gate(&context.conn);
             });
             if descriptor.id == "new_releases" {
                 let alive = glib::WeakRef::new();

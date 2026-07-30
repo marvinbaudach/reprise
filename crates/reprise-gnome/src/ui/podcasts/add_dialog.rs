@@ -1,17 +1,17 @@
 //! Podcast search-or-URL dialog.
 
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::connectivity::Connectivity;
+use reprise_core::db::Db;
 use reprise_core::podcasts::discovery::{
     active_source_keys, dialog_provider, filter_unsubscribed, source_is_subscribed, Candidate,
 };
 use reprise_core::podcasts::{self, PodcastKind};
-use rusqlite::Connection;
 
 use crate::ui::one_shot_task;
 use crate::ui::source_add_action;
@@ -50,7 +50,7 @@ struct SearchContext<'a> {
     generation: &'a Rc<Cell<u64>>,
     status: &'a gtk4::Label,
     results: &'a gtk4::Box,
-    conn: &'a Rc<RefCell<Connection>>,
+    conn: &'a Rc<Db>,
     on_added: &'a OnAdded,
     preferred_kind: PodcastKind,
 }
@@ -155,7 +155,7 @@ fn build_surface(kind: PodcastKind, connectivity: Connectivity) -> AddDialogSurf
 
 pub(super) fn present(
     parent: &impl IsA<gtk4::Widget>,
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
     preferred_kind: PodcastKind,
     connectivity: Connectivity,
     on_added: impl Fn(bool) + 'static,
@@ -183,7 +183,7 @@ pub(super) fn present(
             let parsed = classify_input(&input);
             // SRC-6, NET-1a and NET-3 point 4 decided in one place, before
             // any provider work.
-            let refusal = submit_refusal(&conn.borrow(), preferred_kind, &parsed, connectivity);
+            let refusal = submit_refusal(&conn, preferred_kind, &parsed, connectivity);
             if let Some(reason) = refusal {
                 status.set_text(&strings::text(reason));
                 return;
@@ -262,7 +262,7 @@ pub(super) fn present(
 }
 
 fn search(request_generation: u64, terms: String, context: &SearchContext<'_>) {
-    let config = podcasts::config::load(&context.conn.borrow()).ok();
+    let config = podcasts::config::load(context.conn).ok();
     let auto_download_default = configured_auto_download_default(config.as_ref());
     let locale = std::env::var("LC_ALL")
         .or_else(|_| std::env::var("LANG"))
@@ -292,7 +292,7 @@ fn search(request_generation: u64, terms: String, context: &SearchContext<'_>) {
         }
         PodcastKind::Youtube => {
             let youtube_allowed = reprise_core::online_sources::network_allowed(
-                &context.conn.borrow(),
+                context.conn,
                 &reprise_core::modules::YOUTUBE_MODULE,
             )
             .unwrap_or(false);
@@ -328,7 +328,7 @@ fn attach_candidates(
     generation: &Rc<Cell<u64>>,
     status: &gtk4::Label,
     results: &gtk4::Box,
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
     on_added: &OnAdded,
     heading: &'static str,
     auto_download_default: bool,
@@ -349,7 +349,7 @@ fn attach_candidates(
         match response.and_then(|value| value) {
             Ok(rows) => {
                 status.set_text("");
-                let subscribed = active_source_keys(&conn.borrow());
+                let subscribed = active_source_keys(&conn);
                 let rows = filter_unsubscribed(rows, &subscribed);
                 if rows.is_empty() {
                     return;
@@ -382,10 +382,10 @@ fn preview(
     generation: &Rc<Cell<u64>>,
     status: &gtk4::Label,
     results: &gtk4::Box,
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
     on_added: &OnAdded,
 ) {
-    let config = podcasts::config::load(&conn.borrow()).ok();
+    let config = podcasts::config::load(conn).ok();
     let import_count = config
         .as_ref()
         .map_or(podcasts::config::DEFAULT_IMPORT_COUNT, |value| {
@@ -465,7 +465,7 @@ fn preview(
         }
         match response.and_then(|value| value) {
             Ok(preview) => {
-                let subscribed = active_source_keys(&conn.borrow());
+                let subscribed = active_source_keys(&conn);
                 if source_is_subscribed(preview.kind, &preview.url, &preview.guids, &subscribed) {
                     status.set_text(&strings::text(strings::PODCAST_ALREADY_SUBSCRIBED));
                     return;
@@ -514,7 +514,7 @@ fn append_heading(parent: &gtk4::Box, text: &str) {
 fn append_candidate(
     parent: &gtk4::Box,
     candidate: Candidate,
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
     on_added: &OnAdded,
     auto_download_default: bool,
 ) {
@@ -523,7 +523,7 @@ fn append_candidate(
         &candidate.subtitle,
         candidate.kind,
         candidate.image_url.as_deref(),
-        images_allowed(&conn.borrow()),
+        images_allowed(conn),
     );
     // SRC-7: the same compact action every discovery row uses.
     let title = candidate.title.clone();
@@ -531,10 +531,7 @@ fn append_candidate(
     let conn = conn.clone();
     let on_added = on_added.clone();
     button.connect_clicked(move |button| {
-        let result = {
-            let conn = conn.borrow();
-            subscribe(&conn, &candidate, auto_download_default, None)
-        };
+        let result = subscribe(&conn, &candidate, auto_download_default, None);
         match result {
             Ok(_) => {
                 on_added(true);
@@ -558,7 +555,7 @@ fn append_preview(
     preview: Preview,
     import_count: usize,
     auto_download_default: bool,
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
     on_added: &OnAdded,
 ) {
     clear(parent);
@@ -568,7 +565,7 @@ fn append_preview(
         &subtitle,
         preview.kind,
         preview.image_url.as_deref(),
-        images_allowed(&conn.borrow()),
+        images_allowed(conn),
     );
     parent.append(&row);
     let import = gtk4::CheckButton::with_label(&strings::podcast_import_latest_count(import_count));
@@ -595,15 +592,12 @@ fn append_preview(
     let parent_weak = parent.downgrade();
     subscribe_button.connect_clicked(move |button| {
         let baseline = baseline_for_import_choice(import.is_active(), &preview_guids);
-        let result = {
-            let conn = conn.borrow();
-            subscribe(
-                &conn,
-                &candidate,
-                auto_download.is_active(),
-                baseline.as_deref(),
-            )
-        };
+        let result = subscribe(
+            &conn,
+            &candidate,
+            auto_download.is_active(),
+            baseline.as_deref(),
+        );
         match result {
             Ok(_) => {
                 on_added(import.is_active());
@@ -621,7 +615,7 @@ fn append_preview(
 /// &modules::SOURCE_IMAGES_MODULE)`, computed once by each caller of
 /// [`candidate_row`] — this dialog never lets the widget read settings
 /// itself.
-fn images_allowed(conn: &Connection) -> bool {
+fn images_allowed(conn: &Db) -> bool {
     reprise_core::online_sources::network_allowed(
         conn,
         &reprise_core::modules::SOURCE_IMAGES_MODULE,
@@ -674,20 +668,14 @@ fn candidate_row(
 fn subscribe_offline(
     kind: PodcastKind,
     url: &str,
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
     status: &gtk4::Label,
     on_added: &OnAdded,
 ) {
-    let auto_download_default = {
-        let conn = conn.borrow();
-        podcasts::config::load(&conn)
-            .ok()
-            .is_some_and(|config| config.auto_download_default)
-    };
-    let outcome = {
-        let conn = conn.borrow();
-        podcasts::offline_add::offline_subscribe(&conn, kind, url, auto_download_default)
-    };
+    let auto_download_default = podcasts::config::load(conn)
+        .ok()
+        .is_some_and(|config| config.auto_download_default);
+    let outcome = podcasts::offline_add::offline_subscribe(conn, kind, url, auto_download_default);
     match outcome {
         Ok(podcasts::offline_add::OfflineSubscribeOutcome::AlreadySubscribed) => {
             status.set_text(&strings::text(strings::PODCAST_ALREADY_SUBSCRIBED));
@@ -704,7 +692,7 @@ fn subscribe_offline(
 }
 
 fn subscribe(
-    conn: &Connection,
+    conn: &Db,
     candidate: &Candidate,
     auto_download: bool,
     future_only_baseline: Option<&[String]>,

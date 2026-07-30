@@ -184,8 +184,8 @@ pub(in crate::ui) fn build_context_menu_model(shared: &Rc<Shared>) -> gio::Menu 
     let summary = summarize_selection(&current_selection_tracks(shared));
     update_menu_action_states(shared, context, &summary);
     let entries = {
-        let conn = shared.conn.borrow();
-        let rows = playlists::list(&conn).unwrap_or_else(|error| {
+        let conn = &shared.conn;
+        let rows = playlists::list(conn).unwrap_or_else(|error| {
             tracing::error!(%error, "context menu: failed to list playlists");
             Vec::new()
         });
@@ -550,8 +550,8 @@ fn handle_play(shared: &Rc<Shared>, first_position: u32, ids: &[i64]) {
 /// generic placeholder if the lookup fails (e.g. the playlist was deleted
 /// out from under a still-open menu) rather than failing the whole toast.
 fn playlist_name_for_toast(shared: &Rc<Shared>, playlist_id: i64) -> String {
-    let conn = shared.conn.borrow();
-    playlists::list(&conn)
+    let conn = &shared.conn;
+    playlists::list(conn)
         .unwrap_or_default()
         .into_iter()
         .find(|p| p.id == playlist_id)

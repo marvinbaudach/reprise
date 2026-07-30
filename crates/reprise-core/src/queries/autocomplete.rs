@@ -13,7 +13,9 @@
 //! LIKE '<input>%'` bucket (0 = prefix, 1 = substring-only) before track
 //! count, so count only breaks ties *within* the same bucket.
 
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::OptionalExtension;
+
+use crate::db::Db;
 
 /// Row cap for the autocomplete dropdown (TAG-6).
 pub const MAX_SUGGESTIONS: usize = 6;
@@ -63,11 +65,12 @@ fn escape_like(input: &str) -> String {
 /// substring-only hits (TAG-6); within a bucket, higher track count first,
 /// then case-insensitive alphabetical. Limited to `limit` results.
 pub fn query_autocomplete_suggestions(
-    conn: &Connection,
+    db: &Db,
     column: AutocompleteColumn,
     input: &str,
     limit: usize,
 ) -> Result<Vec<AutocompleteSuggestion>, rusqlite::Error> {
+    let conn = db.conn();
     let col = column.sql_column();
     let sql = format!(
         "SELECT {col}, COUNT(*) AS cnt \
@@ -102,11 +105,8 @@ pub fn query_autocomplete_suggestions(
 /// empty input, no prefix match, or a query error (logged, not propagated —
 /// callers treat "no ghost" as the safe default rather than surfacing a
 /// query failure to the editing UI).
-pub fn query_ghost_completion(
-    conn: &Connection,
-    column: AutocompleteColumn,
-    input: &str,
-) -> Option<String> {
+pub fn query_ghost_completion(db: &Db, column: AutocompleteColumn, input: &str) -> Option<String> {
+    let conn = db.conn();
     if input.is_empty() {
         return None;
     }
@@ -137,10 +137,11 @@ pub fn query_ghost_completion(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rusqlite::Connection;
 
-    fn seeded_db() -> Connection {
-        let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
+    fn seeded_db() -> crate::db::Db {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        let conn = db.conn();
         for (id, artist, album, album_artist, genre) in [
             (1, "Cogitations", "Relinquished", "Cogitations", "Ambient"),
             (2, "Cogitations", "Relinquished", "Cogitations", "Ambient"),
@@ -169,14 +170,14 @@ mod tests {
             )
             .unwrap();
         }
-        conn
+        db
     }
 
     #[test]
     fn prefix_match_returns_results_sorted_by_track_count() {
-        let conn = seeded_db();
+        let db = seeded_db();
         let results =
-            query_autocomplete_suggestions(&conn, AutocompleteColumn::Artist, "Cog", 8).unwrap();
+            query_autocomplete_suggestions(&db, AutocompleteColumn::Artist, "Cog", 8).unwrap();
         assert_eq!(results.len(), 3);
         assert_eq!(results[0].value, "Cogitations");
         assert_eq!(results[0].track_count, 2);
@@ -188,18 +189,18 @@ mod tests {
 
     #[test]
     fn substring_match_finds_non_prefix_hits() {
-        let conn = seeded_db();
+        let db = seeded_db();
         let results =
-            query_autocomplete_suggestions(&conn, AutocompleteColumn::Artist, "ognac", 8).unwrap();
+            query_autocomplete_suggestions(&db, AutocompleteColumn::Artist, "ognac", 8).unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].value, "Radio Cognac");
     }
 
     #[test]
     fn case_insensitive_matching() {
-        let conn = seeded_db();
+        let db = seeded_db();
         let results =
-            query_autocomplete_suggestions(&conn, AutocompleteColumn::Artist, "cog", 8).unwrap();
+            query_autocomplete_suggestions(&db, AutocompleteColumn::Artist, "cog", 8).unwrap();
         assert!(
             results.len() >= 2,
             "case-insensitive match should find Cog*"
@@ -208,17 +209,17 @@ mod tests {
 
     #[test]
     fn limit_is_respected() {
-        let conn = seeded_db();
+        let db = seeded_db();
         let results =
-            query_autocomplete_suggestions(&conn, AutocompleteColumn::Artist, "Co", 1).unwrap();
+            query_autocomplete_suggestions(&db, AutocompleteColumn::Artist, "Co", 1).unwrap();
         assert_eq!(results.len(), 1);
     }
 
     #[test]
     fn empty_input_returns_all_distinct_values() {
-        let conn = seeded_db();
+        let db = seeded_db();
         let results =
-            query_autocomplete_suggestions(&conn, AutocompleteColumn::Genre, "", 8).unwrap();
+            query_autocomplete_suggestions(&db, AutocompleteColumn::Genre, "", 8).unwrap();
         // Empty input matches all values with pattern "%%" - all rows match
         // Genres: Ambient (rows 1,2,5), Post-Rock (row 3), Jazz (row 4)
         assert_eq!(results.len(), 3);
@@ -228,21 +229,23 @@ mod tests {
 
     #[test]
     fn missing_tracks_are_excluded() {
-        let conn = seeded_db();
+        let db = seeded_db();
+        let conn = db.conn();
         conn.execute(
             "UPDATE tracks SET missing_since = 1, missing_reason = 'unknown' WHERE id = 1",
             [],
         )
         .unwrap();
         let results =
-            query_autocomplete_suggestions(&conn, AutocompleteColumn::Artist, "Cog", 8).unwrap();
+            query_autocomplete_suggestions(&db, AutocompleteColumn::Artist, "Cog", 8).unwrap();
         let cog = results.iter().find(|s| s.value == "Cogitations").unwrap();
         assert_eq!(cog.track_count, 1, "missing track should not be counted");
     }
 
     #[test]
     fn empty_values_are_excluded() {
-        let conn = seeded_db();
+        let db = seeded_db();
+        let conn = db.conn();
         conn.execute(
             "INSERT INTO tracks (id,path,title,artist,album,genre,added_at) \
              VALUES (99,'/x.flac','X','','','',0)",
@@ -250,7 +253,7 @@ mod tests {
         )
         .unwrap();
         let results =
-            query_autocomplete_suggestions(&conn, AutocompleteColumn::Artist, "", 8).unwrap();
+            query_autocomplete_suggestions(&db, AutocompleteColumn::Artist, "", 8).unwrap();
         assert!(
             results.iter().all(|s| !s.value.is_empty()),
             "empty-string values must not appear"
@@ -259,10 +262,9 @@ mod tests {
 
     #[test]
     fn album_artist_column_works() {
-        let conn = seeded_db();
+        let db = seeded_db();
         let results =
-            query_autocomplete_suggestions(&conn, AutocompleteColumn::AlbumArtist, "Cog", 8)
-                .unwrap();
+            query_autocomplete_suggestions(&db, AutocompleteColumn::AlbumArtist, "Cog", 8).unwrap();
         assert!(!results.is_empty());
     }
 
@@ -282,17 +284,17 @@ mod tests {
 
     #[test]
     fn tag_6_prefix_ranks_before_substring() {
-        let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
+        let db = crate::db::Db::open_in_memory().unwrap();
+        let conn = db.conn();
         // "Zzz Cognac Band" only contains "ogn" as a substring, but has far
         // more tracks than "Ognomatic", which is a true prefix match.
         for id in 1..=5 {
-            insert_artist(&conn, id, "Zzz Cognac Band");
+            insert_artist(conn, id, "Zzz Cognac Band");
         }
-        insert_artist(&conn, 6, "Ognomatic");
+        insert_artist(conn, 6, "Ognomatic");
 
         let results =
-            query_autocomplete_suggestions(&conn, AutocompleteColumn::Artist, "ogn", 8).unwrap();
+            query_autocomplete_suggestions(&db, AutocompleteColumn::Artist, "ogn", 8).unwrap();
         assert_eq!(
             results[0].value, "Ognomatic",
             "a prefix match must rank first even with fewer tracks"
@@ -302,17 +304,17 @@ mod tests {
 
     #[test]
     fn tag_6_limit_is_six() {
-        let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
+        let db = crate::db::Db::open_in_memory().unwrap();
+        let conn = db.conn();
         for id in 1..=8 {
-            insert_artist(&conn, id, &format!("Genre Artist {id}"));
+            insert_artist(conn, id, &format!("Genre Artist {id}"));
         }
         let results =
-            query_autocomplete_suggestions(&conn, AutocompleteColumn::Artist, "Genre", 8).unwrap();
+            query_autocomplete_suggestions(&db, AutocompleteColumn::Artist, "Genre", 8).unwrap();
         assert_eq!(results.len(), 8, "sanity: 8 distinct matches exist");
 
         let capped = query_autocomplete_suggestions(
-            &conn,
+            &db,
             AutocompleteColumn::Artist,
             "Genre",
             MAX_SUGGESTIONS,
@@ -324,33 +326,33 @@ mod tests {
 
     #[test]
     fn tag_7a_ghost_is_best_prefix_by_track_count() {
-        let conn = seeded_db();
-        let ghost = query_ghost_completion(&conn, AutocompleteColumn::Artist, "Cog");
+        let db = seeded_db();
+        let ghost = query_ghost_completion(&db, AutocompleteColumn::Artist, "Cog");
         assert_eq!(ghost, Some("Cogitations".into()));
     }
 
     #[test]
     fn tag_7a_ghost_none_without_prefix_match() {
-        let conn = seeded_db();
+        let db = seeded_db();
         // "Radio Cognac" only matches "ognac" as a substring, never a prefix.
-        let ghost = query_ghost_completion(&conn, AutocompleteColumn::Artist, "ognac");
+        let ghost = query_ghost_completion(&db, AutocompleteColumn::Artist, "ognac");
         assert_eq!(ghost, None);
     }
 
     #[test]
     fn ghost_completion_is_none_for_empty_input() {
-        let conn = seeded_db();
+        let db = seeded_db();
         assert_eq!(
-            query_ghost_completion(&conn, AutocompleteColumn::Artist, ""),
+            query_ghost_completion(&db, AutocompleteColumn::Artist, ""),
             None
         );
     }
 
     #[test]
     fn ghost_completion_is_none_without_any_match() {
-        let conn = seeded_db();
+        let db = seeded_db();
         assert_eq!(
-            query_ghost_completion(&conn, AutocompleteColumn::Artist, "Zzzzz"),
+            query_ghost_completion(&db, AutocompleteColumn::Artist, "Zzzzz"),
             None
         );
     }

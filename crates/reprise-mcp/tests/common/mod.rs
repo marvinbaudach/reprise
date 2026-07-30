@@ -21,7 +21,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use rusqlite::params;
+use rusqlite::{params, Connection};
 use serde_json::{json, Value};
 
 /// Generous per-response timeout — long enough to absorb a full 5 s SQLite
@@ -32,6 +32,25 @@ pub const RESPONSE_TIMEOUT: Duration = Duration::from_secs(20);
 /// SDK default). Kept as a fixture so an SDK bump that changes the default is
 /// caught here.
 pub const PROTOCOL_VERSION: &str = "2025-11-25";
+
+/// Opens an independent raw connection to an already-migrated fixture.
+///
+/// Product code must use Core facades; integration tests use this only for
+/// schema/setup assertions that deliberately sit outside the product API.
+pub fn fixture_connection(path: &Path) -> Connection {
+    let connection = Connection::open(path).expect("open independent fixture connection");
+    connection
+        .pragma_update(None, "foreign_keys", "ON")
+        .expect("enable fixture foreign keys");
+    connection
+        .pragma_update(
+            None,
+            "busy_timeout",
+            reprise_core::db::DEFAULT_BUSY_TIMEOUT_MS,
+        )
+        .expect("configure fixture busy timeout");
+    connection
+}
 
 /// A track to seed into a fixture database.
 pub struct SeedTrack {
@@ -65,7 +84,9 @@ impl SeedTrack {
 /// returns the assigned row ids in insertion order. Test-fixture SQL is
 /// explicitly permitted by `scripts/check-architecture.sh`.
 pub fn seed_tracks(path: &Path, tracks: &[SeedTrack]) -> Vec<i64> {
-    let conn = reprise_core::db::open_migrated(Some(path)).expect("open+migrate fixture db");
+    let db = reprise_core::db::Db::open_migrated(Some(path)).expect("open+migrate fixture db");
+    drop(db);
+    let conn = fixture_connection(path);
     let mut ids = Vec::with_capacity(tracks.len());
     for track in tracks {
         conn.execute(
@@ -92,8 +113,8 @@ pub fn seed_tracks(path: &Path, tracks: &[SeedTrack]) -> Vec<i64> {
 /// Sets a boolean setting (e.g. a capability key) on the fixture database via
 /// the core facade.
 pub fn set_bool_setting(path: &Path, key: &str, value: bool) {
-    let conn = reprise_core::db::open_migrated(Some(path)).expect("open fixture db");
-    reprise_core::library::settings::set_bool(&conn, key, value).expect("set setting");
+    let db = reprise_core::db::Db::open_migrated(Some(path)).expect("open fixture db");
+    reprise_core::library::settings::set_bool(&db, key, value).expect("set setting");
 }
 
 // --- AI job (instrumental) fixtures & in-process worker ---------------------
@@ -128,7 +149,9 @@ pub fn seed_real_flac_track(
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac");
     let flac = dir.join(format!("{title}.flac"));
     std::fs::copy(&source, &flac).expect("copy sine.flac fixture");
-    let conn = reprise_core::db::open_migrated(Some(db_path)).expect("open fixture db");
+    let db = reprise_core::db::Db::open_migrated(Some(db_path)).expect("open fixture db");
+    drop(db);
+    let conn = fixture_connection(db_path);
     conn.execute(
         "INSERT INTO tracks \
            (path, title, artist, album, album_artist, year, track_no, genre, added_at) \
@@ -147,27 +170,23 @@ pub fn seed_real_flac_track(
 /// Renders one claimed job into staging with the deterministic fake backend,
 /// posting progress — the shared body of the in-process worker helpers.
 fn render_claimed_job(
-    conn: &rusqlite::Connection,
+    db: &reprise_core::db::Db,
     staging: &reprise_core::ai_staging::StagingStore,
     backend: &reprise_core::stem_separation::FakeStemBackend,
     claimed: &reprise_core::ai_jobs::ClaimedJob,
 ) {
     use reprise_core::stem_separation::StemSeparationBackend;
     let source_id = claimed.source_track_id.expect("job has a source track");
-    let source: String = conn
-        .query_row(
-            "SELECT path FROM tracks WHERE id = ?1",
-            [source_id],
-            |row| row.get(0),
-        )
-        .expect("source path");
+    let source = reprise_core::queries::track_source_path(db, source_id)
+        .expect("resolve source path")
+        .expect("source track exists");
     let output = staging.path_for_job(claimed.id);
     backend
         .separate_instrumental(
-            Path::new(&source),
+            &source,
             &output,
             &mut |permille| {
-                let _ = reprise_core::ai_jobs::set_progress(conn, claimed.id, WORKER, permille);
+                let _ = reprise_core::ai_jobs::set_progress(db, claimed.id, WORKER, permille);
             },
             &|| false,
         )
@@ -178,17 +197,16 @@ fn render_claimed_job(
 /// fake backend, marking each `done` (staged, unsaved) via `mark_done` — the
 /// in-process worker for tests that then drive the save decision themselves.
 pub fn run_worker_until_idle(db_path: &Path, staging_dir: &Path) {
-    let conn = reprise_core::db::open_migrated(Some(db_path)).expect("open fixture db");
+    let db = reprise_core::db::Db::open_migrated(Some(db_path)).expect("open fixture db");
     let staging = reprise_core::ai_staging::StagingStore::new(staging_dir);
     staging.ensure_dir().expect("ensure staging dir");
     let backend = reprise_core::stem_separation::FakeStemBackend::new();
 
-    while let Some(claimed) =
-        reprise_core::ai_jobs::claim_next(&conn, WORKER, WORKER_NOW, LEASE_SECS)
-            .expect("claim next job")
+    while let Some(claimed) = reprise_core::ai_jobs::claim_next(&db, WORKER, WORKER_NOW, LEASE_SECS)
+        .expect("claim next job")
     {
-        render_claimed_job(&conn, &staging, &backend, &claimed);
-        reprise_core::ai_jobs::mark_done(&conn, claimed.id, WORKER, WORKER_NOW).expect("mark done");
+        render_claimed_job(&db, &staging, &backend, &claimed);
+        reprise_core::ai_jobs::mark_done(&db, claimed.id, WORKER, WORKER_NOW).expect("mark done");
     }
 }
 
@@ -197,19 +215,18 @@ pub fn run_worker_until_idle(db_path: &Path, staging_dir: &Path) {
 /// carrying the auto-promote intent (`save=true`) is promoted into `library_root`
 /// on completion with no manual save step, while a no-intent job is left staged.
 pub fn run_worker_completing(db_path: &Path, staging_dir: &Path, library_root: &Path) {
-    let mut conn = reprise_core::db::open_migrated(Some(db_path)).expect("open fixture db");
+    let db = reprise_core::db::Db::open_migrated(Some(db_path)).expect("open fixture db");
     let staging = reprise_core::ai_staging::StagingStore::new(staging_dir);
     staging.ensure_dir().expect("ensure staging dir");
     let config = reprise_core::ai_promotion::PromotionConfig::new(library_root);
     let backend = reprise_core::stem_separation::FakeStemBackend::new();
 
-    while let Some(claimed) =
-        reprise_core::ai_jobs::claim_next(&conn, WORKER, WORKER_NOW, LEASE_SECS)
-            .expect("claim next job")
+    while let Some(claimed) = reprise_core::ai_jobs::claim_next(&db, WORKER, WORKER_NOW, LEASE_SECS)
+        .expect("claim next job")
     {
-        render_claimed_job(&conn, &staging, &backend, &claimed);
+        render_claimed_job(&db, &staging, &backend, &claimed);
         reprise_core::ai_promotion::complete_render(
-            &mut conn, &staging, &config, claimed.id, WORKER, WORKER_NOW,
+            &db, &staging, &config, claimed.id, WORKER, WORKER_NOW,
         )
         .expect("complete render");
     }
@@ -218,25 +235,27 @@ pub fn run_worker_completing(db_path: &Path, staging_dir: &Path, library_root: &
 /// Promotes a finished, staged render into `library_root`, returning the new
 /// library track id.
 pub fn promote_job(db_path: &Path, staging_dir: &Path, library_root: &Path, job_id: i64) -> i64 {
-    let mut conn = reprise_core::db::open_migrated(Some(db_path)).expect("open fixture db");
+    let db = reprise_core::db::Db::open_migrated(Some(db_path)).expect("open fixture db");
     let staging = reprise_core::ai_staging::StagingStore::new(staging_dir);
     let config = reprise_core::ai_promotion::PromotionConfig::new(library_root);
-    reprise_core::ai_promotion::promote(&mut conn, &staging, &config, job_id, WORKER_NOW)
+    reprise_core::ai_promotion::promote(&db, &staging, &config, job_id, WORKER_NOW)
         .expect("promote staged render")
         .result_track_id
 }
 
 /// The number of rows in `ai_jobs`.
 pub fn count_ai_jobs(db_path: &Path) -> i64 {
-    let conn = reprise_core::db::open_migrated(Some(db_path)).expect("open fixture db");
-    conn.query_row("SELECT COUNT(*) FROM ai_jobs", [], |row| row.get(0))
+    let db = reprise_core::db::Db::open_migrated(Some(db_path)).expect("open fixture db");
+    drop(db);
+    fixture_connection(db_path)
+        .query_row("SELECT COUNT(*) FROM ai_jobs", [], |row| row.get(0))
         .expect("count ai_jobs")
 }
 
 /// Reads a job's `(status, result_track_id)` directly via the core facade.
 pub fn job_state(db_path: &Path, job_id: i64) -> (String, Option<i64>) {
-    let conn = reprise_core::db::open_migrated(Some(db_path)).expect("open fixture db");
-    let job = reprise_core::ai_jobs::get_job(&conn, job_id)
+    let db = reprise_core::db::Db::open_migrated(Some(db_path)).expect("open fixture db");
+    let job = reprise_core::ai_jobs::get_job(&db, job_id)
         .expect("get job")
         .expect("job exists");
     (job.state.as_str().to_string(), job.result_track_id)

@@ -9,32 +9,34 @@
 use super::*;
 use reprise_core::device_sync::{CategoryDiff, CategoryReading};
 
-fn insert_show(conn: &Connection, id: i64) {
-    conn.execute(
-        "INSERT INTO podcast_subscriptions
+fn insert_show(db: &Db, id: i64) {
+    crate::test_db::connection(db)
+        .execute(
+            "INSERT INTO podcast_subscriptions
          (id, kind, feed_url, title, auto_download, sync_to_phone, added_at)
          VALUES (?1, 'rss', 'https://example.test/show', 'Show', 0, 0, 1)",
-        rusqlite::params![id],
-    )
-    .unwrap();
+            rusqlite::params![id],
+        )
+        .unwrap();
 }
 
-fn insert_episode(conn: &Connection, id: i64, subscription_id: i64, path: &std::path::Path) {
-    conn.execute(
-        "INSERT INTO podcast_episodes
+fn insert_episode(db: &Db, id: i64, subscription_id: i64, path: &std::path::Path) {
+    crate::test_db::connection(db)
+        .execute(
+            "INSERT INTO podcast_episodes
          (id, subscription_id, guid, title, audio_url, downloaded_path,
           downloaded_bytes, first_seen_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, 5, 1)",
-        rusqlite::params![
-            id,
-            subscription_id,
-            format!("episode-{id}"),
-            format!("Episode {id}"),
-            format!("https://example.test/{id}.mp3"),
-            path.to_string_lossy(),
-        ],
-    )
-    .unwrap();
+            rusqlite::params![
+                id,
+                subscription_id,
+                format!("episode-{id}"),
+                format!("Episode {id}"),
+                format!("https://example.test/{id}.mp3"),
+                path.to_string_lossy(),
+            ],
+        )
+        .unwrap();
 }
 
 fn set_mtime(path: &std::path::Path, when: std::time::SystemTime) {
@@ -73,15 +75,11 @@ fn mtp_37_lowering_the_podcast_cap_evicts_the_older_episode_from_the_next_plan()
         set_mtime(&older, now - std::time::Duration::from_secs(86_400));
         set_mtime(&newer, now);
 
-        {
-            let conn = conn.borrow();
-            insert_show(&conn, 30);
-            insert_episode(&conn, 300, 30, &older);
-            insert_episode(&conn, 301, 30, &newer);
-        }
+        insert_show(&conn, 30);
+        insert_episode(&conn, 300, 30, &older);
+        insert_episode(&conn, 301, 30, &newer);
         disable_auto_start(&conn, "a");
-        reprise_core::podcasts::phone_sync::set_device_enabled(&conn.borrow(), 30, "a", true)
-            .unwrap();
+        reprise_core::podcasts::phone_sync::set_device_enabled(&conn, 30, "a", true).unwrap();
 
         let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());

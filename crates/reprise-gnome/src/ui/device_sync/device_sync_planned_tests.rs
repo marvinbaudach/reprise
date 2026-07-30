@@ -56,7 +56,7 @@ fn connected_device_computes_its_persisted_selection_delta() {
 fn planned_paths_preserve_existing_collision_slots_across_selection_changes() {
     run(async {
         let (_temp, conn) = fixture();
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute(
                 "UPDATE tracks SET title = 'Same', album = 'Album', album_artist = 'Artist', track_no = 1 WHERE id IN (1, 2, 3)",
                 [],
@@ -68,7 +68,7 @@ fn planned_paths_preserve_existing_collision_slots_across_selection_changes() {
             (3, "Artist/Album/01 Same (2).flac", true),
         ] {
             reprise_core::device_sync::settings::upsert_device_file(
-                &conn.borrow(),
+                &conn,
                 &reprise_core::device_sync::DeviceFileRecord {
                     device_serial: "a".into(),
                     track_id,
@@ -126,7 +126,7 @@ fn sync_now_copies_the_selection_and_commits_the_device_inventory() {
         assert!(playlist.contains("Artist/Unknown Album/00 Track 1.opus"));
         assert!(playlist.contains("Artist/Unknown Album/00 Track 2.opus"));
         assert_eq!(
-            reprise_core::device_sync::settings::load_device_files(&conn.borrow(), "a")
+            reprise_core::device_sync::settings::load_device_files(&conn, "a")
                 .unwrap()
                 .len(),
             2
@@ -309,12 +309,12 @@ fn mtp_3_cancelling_one_device_does_not_cancel_an_independent_sync() {
         completed.recv().await.unwrap();
 
         assert!(
-            reprise_core::device_sync::settings::load_device_files(&conn.borrow(), "a")
+            reprise_core::device_sync::settings::load_device_files(&conn, "a")
                 .unwrap()
                 .is_empty()
         );
         assert_eq!(
-            reprise_core::device_sync::settings::load_device_files(&conn.borrow(), "b")
+            reprise_core::device_sync::settings::load_device_files(&conn, "b")
                 .unwrap()
                 .len(),
             1
@@ -329,7 +329,7 @@ fn replacement_inventory_is_committed_before_the_old_device_path_is_deleted() {
         let (_temp, conn) = fixture();
         select_road_playlist(&conn, &[1]);
         reprise_core::device_sync::settings::upsert_device_file(
-            &conn.borrow(),
+            &conn,
             &reprise_core::device_sync::DeviceFileRecord {
                 device_serial: "a".into(),
                 track_id: 1,
@@ -348,15 +348,13 @@ fn replacement_inventory_is_committed_before_the_old_device_path_is_deleted() {
         let observed_paths = paths_at_delete.clone();
         let observed_conn = conn.clone();
         backend.observe_deletes(Rc::new(move |_| {
-            let current = reprise_core::device_sync::settings::load_device_files(
-                &observed_conn.borrow(),
-                "a",
-            )
-            .unwrap()
-            .into_iter()
-            .find(|file| file.track_id == 1)
-            .unwrap()
-            .device_path;
+            let current =
+                reprise_core::device_sync::settings::load_device_files(&observed_conn, "a")
+                    .unwrap()
+                    .into_iter()
+                    .find(|file| file.track_id == 1)
+                    .unwrap()
+                    .device_path;
             observed_paths.borrow_mut().push(current);
         }));
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
@@ -380,7 +378,7 @@ fn failed_replacement_inventory_preserves_the_old_device_path() {
         let (_temp, conn) = fixture();
         select_road_playlist(&conn, &[1]);
         reprise_core::device_sync::settings::upsert_device_file(
-            &conn.borrow(),
+            &conn,
             &reprise_core::device_sync::DeviceFileRecord {
                 device_serial: "a".into(),
                 track_id: 1,
@@ -394,7 +392,7 @@ fn failed_replacement_inventory_preserves_the_old_device_path() {
             },
         )
         .unwrap();
-        conn.borrow()
+        crate::test_db::connection(&conn)
             .execute_batch(
                 "CREATE TRIGGER reject_replacement_inventory
                  BEFORE INSERT ON device_files
@@ -417,8 +415,7 @@ fn failed_replacement_inventory_preserves_the_old_device_path() {
         completed.recv().await.unwrap();
 
         assert!(backend.state.deleted.borrow().is_empty());
-        let files =
-            reprise_core::device_sync::settings::load_device_files(&conn.borrow(), "a").unwrap();
+        let files = reprise_core::device_sync::settings::load_device_files(&conn, "a").unwrap();
         assert_eq!(files[0].device_path, "Old/Track 1.flac");
         assert_eq!(
             runtime.devices()[0]
@@ -460,7 +457,7 @@ fn missing_selected_transcode_capability_blocks_before_any_managed_deletion_or_c
         let (_temp, conn) = fixture();
         select_road_playlist(&conn, &[1]);
         reprise_core::device_sync::settings::upsert_device_file(
-            &conn.borrow(),
+            &conn,
             &reprise_core::device_sync::DeviceFileRecord {
                 device_serial: "a".into(),
                 track_id: 3,
@@ -621,7 +618,7 @@ fn sync_now_mirrors_the_selection_without_legacy_pin_exceptions() {
         for (track_id, path, pinned) in [(3, "Old/Three.flac", false), (4, "Keep/Four.flac", true)]
         {
             reprise_core::device_sync::settings::upsert_device_file(
-                &conn.borrow(),
+                &conn,
                 &reprise_core::device_sync::DeviceFileRecord {
                     device_serial: "a".into(),
                     track_id,
@@ -647,7 +644,7 @@ fn sync_now_mirrors_the_selection_without_legacy_pin_exceptions() {
             backend.state.deleted.borrow().as_slice(),
             ["Old/Three.flac", "Keep/Four.flac"]
         );
-        let ids = reprise_core::device_sync::settings::load_device_files(&conn.borrow(), "a")
+        let ids = reprise_core::device_sync::settings::load_device_files(&conn, "a")
             .unwrap()
             .into_iter()
             .map(|file| file.track_id)

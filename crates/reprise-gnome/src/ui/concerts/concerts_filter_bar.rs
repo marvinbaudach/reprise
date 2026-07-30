@@ -6,7 +6,7 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use reprise_core::concerts::config;
 use reprise_core::concerts::{ConcertFilter, DateHorizon};
-use rusqlite::Connection;
+use reprise_core::db::Db;
 
 use crate::ui::browse::browse_bar::CHIP_CSS_CLASS;
 use crate::ui::strings;
@@ -102,14 +102,14 @@ fn horizon_label(horizon: DateHorizon) -> String {
     })
 }
 
-fn persist_filter(conn: &Connection, filter: &ConcertFilter) -> Result<(), rusqlite::Error> {
+fn persist_filter(db: &Db, filter: &ConcertFilter) -> Result<(), rusqlite::Error> {
     let radius = filter
         .radius_km
         .map(|radius| radius.round().to_string())
         .unwrap_or_default();
-    reprise_core::library::settings::set_setting(conn, config::FILTER_RADIUS_KEY, &radius)?;
+    reprise_core::library::settings::set_setting(db, config::FILTER_RADIUS_KEY, &radius)?;
     reprise_core::library::settings::set_setting(
-        conn,
+        db,
         config::FILTER_COUNTRY_KEY,
         filter.country.as_deref().unwrap_or_default(),
     )?;
@@ -119,9 +119,9 @@ fn persist_filter(conn: &Connection, filter: &ConcertFilter) -> Result<(), rusql
         DateHorizon::Next3Months => "next_3_months",
         DateHorizon::Next6Months => "next_6_months",
     };
-    reprise_core::library::settings::set_setting(conn, config::FILTER_HORIZON_KEY, horizon)?;
+    reprise_core::library::settings::set_setting(db, config::FILTER_HORIZON_KEY, horizon)?;
     reprise_core::library::settings::set_bool(
-        conn,
+        db,
         config::FILTER_INCLUDE_SIMILAR_KEY,
         filter.include_similar,
     )
@@ -129,7 +129,7 @@ fn persist_filter(conn: &Connection, filter: &ConcertFilter) -> Result<(), rusql
 
 pub(super) struct ConcertsFilterBar {
     root: gtk4::Box,
-    conn: Rc<RefCell<Connection>>,
+    conn: Rc<Db>,
     filter: RefCell<ConcertFilter>,
     section_label: gtk4::Label,
     chips: gtk4::FlowBox,
@@ -151,8 +151,8 @@ pub(super) struct ConcertsFilterBar {
 }
 
 impl ConcertsFilterBar {
-    pub(super) fn new(conn: Rc<RefCell<Connection>>) -> Rc<Self> {
-        let filter = config::persisted_filter(&conn.borrow()).unwrap_or_default();
+    pub(super) fn new(conn: Rc<Db>) -> Rc<Self> {
+        let filter = config::persisted_filter(&conn).unwrap_or_default();
         let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 10);
         root.set_margin_top(6);
         root.set_margin_bottom(6);
@@ -269,7 +269,7 @@ impl ConcertsFilterBar {
     }
 
     pub(super) fn reload_persisted(self: &Rc<Self>) -> Result<(), rusqlite::Error> {
-        let filter = config::persisted_filter(&self.conn.borrow())?;
+        let filter = config::persisted_filter(&self.conn)?;
         self.filter.replace(filter);
         self.rebuild();
         Ok(())
@@ -280,7 +280,7 @@ impl ConcertsFilterBar {
     }
 
     fn apply_filter(self: &Rc<Self>, filter: ConcertFilter) {
-        if let Err(error) = persist_filter(&self.conn.borrow(), &filter) {
+        if let Err(error) = persist_filter(&self.conn, &filter) {
             tracing::warn!(%error, "could not persist concerts filter");
             return;
         }
@@ -386,7 +386,7 @@ impl ConcertsFilterBar {
                     }),
                 })
                 .collect(),
-            FilterFacet::Country => countries(&self.conn.borrow())
+            FilterFacet::Country => countries(&self.conn)
                 .into_iter()
                 .map(|country| {
                     let label = country.clone();
@@ -453,8 +453,8 @@ fn chooser_row(label: &str) -> gtk4::ListBoxRow {
     gtk4::ListBoxRow::builder().child(&label).build()
 }
 
-fn countries(conn: &Connection) -> Vec<String> {
-    reprise_core::concerts::known_countries(conn).unwrap_or_default()
+fn countries(db: &Db) -> Vec<String> {
+    reprise_core::concerts::known_countries(db).unwrap_or_default()
 }
 
 fn wire(bar: &Rc<ConcertsFilterBar>) {
@@ -552,8 +552,7 @@ mod tests {
 
     #[test]
     fn persisted_filter_round_trips_every_sticky_facet() {
-        let conn = Connection::open_in_memory().unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
+        let conn = crate::test_db::open().unwrap();
         persist_filter(&conn, &filtered()).unwrap();
         assert_eq!(config::persisted_filter(&conn).unwrap(), filtered());
     }
@@ -562,8 +561,7 @@ mod tests {
     #[ignore = "requires a display; run via xvfb-run"]
     fn conc_2_filter_header_has_fixed_height_and_disabled_radius_hint() {
         gtk4::init().unwrap();
-        let conn = Rc::new(RefCell::new(Connection::open_in_memory().unwrap()));
-        reprise_core::db::migrate(&conn.borrow()).unwrap();
+        let conn = Rc::new(crate::test_db::open().unwrap());
         let bar = ConcertsFilterBar::new(conn);
         assert_eq!(bar.root.height_request(), FILTER_BAR_MIN_HEIGHT);
         let radius = bar.facet_list.row_at_index(0).unwrap();

@@ -7,7 +7,9 @@ use std::path::{Path, PathBuf};
 
 use quick_xml::events::Event;
 use quick_xml::Reader;
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::OptionalExtension;
+
+use crate::db::Db;
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -252,12 +254,13 @@ pub fn parse_rhythmdb(path: &Path) -> Result<Vec<RhythmboxTrackStats>, Rhythmbox
 }
 
 pub fn merge_stats(
-    conn: &mut Connection,
+    db: &Db,
     tracks: &[RhythmboxTrackStats],
     choices: RhythmboxImportChoices,
     on_progress: Option<&dyn Fn(usize)>,
 ) -> Result<(RhythmboxImportSummary, RhythmboxRollback), RhythmboxImportError> {
-    let transaction = conn.transaction()?;
+    let conn = db.conn();
+    let transaction = conn.unchecked_transaction()?;
     let mut summary = RhythmboxImportSummary {
         parsed: tracks.len(),
         ..RhythmboxImportSummary::default()
@@ -361,10 +364,11 @@ pub fn merge_stats(
 }
 
 pub fn undo_rhythmbox_import(
-    conn: &mut Connection,
+    db: &Db,
     rollback: &RhythmboxRollback,
 ) -> Result<usize, RhythmboxImportError> {
-    let transaction = conn.transaction()?;
+    let conn = db.conn();
+    let transaction = conn.unchecked_transaction()?;
     let mut restored = 0usize;
     for entry in &rollback.entries {
         let affected = transaction.execute(
@@ -386,9 +390,10 @@ pub fn undo_rhythmbox_import(
 pub fn prescan_rhythmdb(
     rhythmdb_path: &Path,
     playlists_path: &Path,
-    conn: &Connection,
+    db: &Db,
     library_root: Option<&str>,
 ) -> Result<RhythmboxPrescanResult, RhythmboxImportError> {
+    let conn = db.conn();
     let last_modified = std::fs::metadata(rhythmdb_path)
         .and_then(|m| m.modified())
         .ok();
@@ -616,9 +621,10 @@ pub fn parse_playlists(path: &Path) -> Result<Vec<RhythmboxPlaylist>, RhythmboxI
 }
 
 pub fn merge_playlists(
-    conn: &mut Connection,
+    db: &Db,
     playlists: &[RhythmboxPlaylist],
 ) -> Result<RhythmboxPlaylistSummary, RhythmboxImportError> {
+    let conn = db.conn();
     let mut summary = RhythmboxPlaylistSummary {
         parsed: playlists.len(),
         ..RhythmboxPlaylistSummary::default()
@@ -652,10 +658,10 @@ pub fn merge_playlists(
             )
             .optional()?;
         let added = if let Some(playlist_id) = existing {
-            crate::library::playlist_membership::add_unique_tracks(conn, playlist_id, &track_ids)?
+            crate::library::playlist_membership::add_unique_tracks(db, playlist_id, &track_ids)?
                 as usize
         } else {
-            crate::library::playlists::create_with_tracks(conn, &playlist.name, &track_ids)?;
+            crate::library::playlists::create_with_tracks(db, &playlist.name, &track_ids)?;
             track_ids.len()
         };
         summary.imported += 1;

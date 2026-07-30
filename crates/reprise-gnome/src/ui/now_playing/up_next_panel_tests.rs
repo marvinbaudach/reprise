@@ -148,15 +148,14 @@ fn row_css_and_metrics_match_the_compact_21a_spec() {
 fn up_next_row_click_jumps_to_the_exact_queue_entry() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
-    let conn = reprise_core::db::open(None).unwrap();
-    reprise_core::db::migrate(&conn).unwrap();
-    conn.execute_batch(
-        "INSERT INTO tracks (id, path, title, artist, added_at) VALUES
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    crate::test_db::connection(&conn)
+        .execute_batch(
+            "INSERT INTO tracks (id, path, title, artist, added_at) VALUES
          (20, '/tmp/20.mp3', 'Track 20', 'Artist', 0),
          (40, '/tmp/40.mp3', 'Track 40', 'Artist', 0);",
-    )
-    .unwrap();
-    let conn = Rc::new(RefCell::new(conn));
+        )
+        .unwrap();
     let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
     let panel = UpNextPanel::new(conn, &cover_loader);
     let jumped = Rc::new(RefCell::new(None));
@@ -185,15 +184,14 @@ fn up_next_row_click_jumps_to_the_exact_queue_entry() {
 fn panel_remove_targets_the_exact_queue_entry() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
-    let conn = reprise_core::db::open(None).unwrap();
-    reprise_core::db::migrate(&conn).unwrap();
-    conn.execute_batch(
-        "INSERT INTO tracks (id, path, title, artist, added_at) VALUES
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    crate::test_db::connection(&conn)
+        .execute_batch(
+            "INSERT INTO tracks (id, path, title, artist, added_at) VALUES
          (20, '/tmp/20.mp3', 'Track 20', 'Artist', 0),
          (40, '/tmp/40.mp3', 'Track 40', 'Artist', 0);",
-    )
-    .unwrap();
-    let conn = Rc::new(RefCell::new(conn));
+        )
+        .unwrap();
     let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
     let panel = UpNextPanel::new(conn, &cover_loader);
     let removed = Rc::new(RefCell::new(None));

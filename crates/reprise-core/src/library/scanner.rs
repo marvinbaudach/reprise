@@ -1,4 +1,6 @@
 use rusqlite::Connection;
+
+use crate::db::Db;
 use std::path::Path;
 
 use super::import_errors;
@@ -115,15 +117,21 @@ fn tag_param_values<'a>(
     )
 }
 
-pub fn scan_folder(conn: &mut Connection, root: &Path) -> Result<ScanOutcome, ScanError> {
+pub fn scan_folder(db: &Db, root: &Path) -> Result<ScanOutcome, ScanError> {
+    let conn = db.conn();
+    scan_folder_in(conn, root)
+}
+
+pub(crate) fn scan_folder_in(conn: &Connection, root: &Path) -> Result<ScanOutcome, ScanError> {
     scan_folder_inner(conn, root, None)
 }
 
 pub fn scan_folder_with_progress(
-    conn: &mut Connection,
+    db: &Db,
     root: &Path,
     mut on_progress: impl FnMut(ScanProgress),
 ) -> Result<ScanOutcome, ScanError> {
+    let conn = db.conn();
     on_progress(ScanProgress::Discovering);
     let total = scan_progress::count_audio_files(root);
     let reporter = scan_progress::ScanProgressReporter::new(&mut on_progress, total);
@@ -227,7 +235,7 @@ pub fn scan_folder_with_progress(
 /// deleting it. Only a later scan that achieves a real pass-1 success (the
 /// file got re-tagged) clears it.
 fn scan_folder_inner(
-    conn: &mut Connection,
+    conn: &Connection,
     root: &Path,
     mut progress: Option<scan_progress::ScanProgressReporter<'_>>,
 ) -> Result<ScanOutcome, ScanError> {
@@ -252,7 +260,7 @@ fn scan_folder_inner(
     let mut report = ScanReport::default();
     let mut audio_files_seen: u64 = 0;
     let mut mount_cache = mount::MountPointCache::new();
-    let tx = conn.transaction()?;
+    let tx = conn.unchecked_transaction()?;
     for entry in walkdir::WalkDir::new(root).follow_links(false).into_iter() {
         let entry = match entry {
             Ok(entry) => entry,

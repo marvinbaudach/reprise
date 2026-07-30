@@ -13,7 +13,7 @@ fn table_exists(conn: &Connection, name: &str) -> bool {
 #[test]
 fn v30_creates_ledger_and_backfills_from_new_releases() {
     let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    crate::db::migrate_connection(&conn).unwrap();
     conn.execute(
         "INSERT INTO new_releases (release_group_mbid, artist_name, artist_mbid, title, \
          release_type, first_release_date, fetched_at, fallback_accent, first_seen) \
@@ -66,7 +66,7 @@ fn v30_creates_ledger_and_backfills_from_new_releases() {
 #[test]
 fn v30_is_idempotent() {
     let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    crate::db::migrate_connection(&conn).unwrap();
     crate::db_artist_news_fetch::migrate_v30(&conn).unwrap();
     crate::db_artist_news_fetch::migrate_v30(&conn).unwrap();
     let version: i64 = conn

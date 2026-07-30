@@ -6,7 +6,7 @@ fn playlist_publication_failure_preserves_paths_referenced_by_the_previous_snaps
         let (_temp, conn) = fixture();
         select_road_playlist(&conn, &[1]);
         reprise_core::device_sync::settings::upsert_device_file(
-            &conn.borrow(),
+            &conn,
             &reprise_core::device_sync::DeviceFileRecord {
                 device_serial: "a".into(),
                 track_id: 3,
@@ -39,7 +39,7 @@ fn playlist_publication_failure_preserves_paths_referenced_by_the_previous_snaps
             "old paths must survive until every playlist snapshot is published"
         );
         assert!(
-            reprise_core::device_sync::settings::load_device_files(&conn.borrow(), "a")
+            reprise_core::device_sync::settings::load_device_files(&conn, "a")
                 .unwrap()
                 .iter()
                 .any(|file| file.track_id == 3)
@@ -53,7 +53,7 @@ fn cancellation_during_playlist_publication_skips_later_playlist_deletions() {
         let (_temp, conn) = fixture();
         select_road_playlist(&conn, &[1]);
         reprise_core::device_sync::settings::upsert_device_playlist(
-            &conn.borrow(),
+            &conn,
             &reprise_core::device_sync::DevicePlaylistRecord {
                 device_serial: "a".into(),
                 source: SelectionSource::Smart(99),

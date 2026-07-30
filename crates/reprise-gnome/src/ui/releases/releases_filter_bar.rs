@@ -8,7 +8,7 @@ use reprise_core::artist_news::{
     persisted_releases_filter, ReleaseTypeFilter, ReleasesFilter, RELEASES_FILTER_HIDDEN_KEY,
     RELEASES_FILTER_TYPE_KEY,
 };
-use rusqlite::Connection;
+use reprise_core::db::Db;
 
 use crate::ui::browse::browse_bar::CHIP_CSS_CLASS;
 use crate::ui::strings;
@@ -67,7 +67,8 @@ fn chip_label(filter: &ReleasesFilter, facet: FilterFacet) -> String {
     }
 }
 
-fn persist_filter(conn: &Connection, filter: &ReleasesFilter) -> Result<(), rusqlite::Error> {
+fn persist_filter(db: &Db, filter: &ReleasesFilter) -> Result<(), rusqlite::Error> {
+    let conn = &db;
     reprise_core::library::settings::set_setting(
         conn,
         RELEASES_FILTER_TYPE_KEY,
@@ -80,7 +81,7 @@ fn persist_filter(conn: &Connection, filter: &ReleasesFilter) -> Result<(), rusq
 
 pub(super) struct ReleasesFilterBar {
     root: gtk4::Box,
-    conn: Rc<RefCell<Connection>>,
+    conn: Rc<Db>,
     filter: RefCell<ReleasesFilter>,
     section_label: gtk4::Label,
     chips: gtk4::FlowBox,
@@ -99,8 +100,8 @@ pub(super) struct ReleasesFilterBar {
 }
 
 impl ReleasesFilterBar {
-    pub(super) fn new(conn: Rc<RefCell<Connection>>) -> Rc<Self> {
-        let filter = persisted_releases_filter(&conn.borrow()).unwrap_or_default();
+    pub(super) fn new(conn: Rc<Db>) -> Rc<Self> {
+        let filter = persisted_releases_filter(&conn).unwrap_or_default();
         let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 10);
         root.set_margin_top(6);
         root.set_margin_bottom(6);
@@ -200,7 +201,7 @@ impl ReleasesFilterBar {
     }
 
     fn apply_filter(self: &Rc<Self>, filter: ReleasesFilter) {
-        if let Err(error) = persist_filter(&self.conn.borrow(), &filter) {
+        if let Err(error) = persist_filter(&self.conn, &filter) {
             tracing::warn!(%error, "could not persist Releases filter");
             return;
         }
@@ -404,8 +405,7 @@ mod tests {
 
     #[test]
     fn sticky_release_filter_round_trips_every_facet() {
-        let conn = Connection::open_in_memory().unwrap();
-        reprise_core::db::migrate(&conn).unwrap();
+        let conn = crate::test_db::open().unwrap();
         let filter = ReleasesFilter {
             release_type: Some(ReleaseTypeFilter::Album),
             hidden: true,
@@ -418,8 +418,7 @@ mod tests {
     #[ignore = "requires a display; run via xvfb-run"]
     fn nr_17_filter_header_is_permanent_and_reserves_its_height() {
         gtk4::init().unwrap();
-        let conn = Rc::new(RefCell::new(Connection::open_in_memory().unwrap()));
-        reprise_core::db::migrate(&conn.borrow()).unwrap();
+        let conn = Rc::new(crate::test_db::open().unwrap());
         let bar = ReleasesFilterBar::new(conn);
         assert_eq!(bar.root.height_request(), FILTER_BAR_MIN_HEIGHT);
         assert!(bar.add_filter.is_visible());

@@ -4,8 +4,8 @@ use std::path::Path;
 use super::*;
 use crate::podcasts::store::{self, NewSubscription};
 
-fn conn() -> Connection {
-    let conn = crate::db::open_migrated(None).unwrap();
+fn conn() -> Db {
+    let conn = Db::open_in_memory().unwrap();
     // These tests exercise fetch/parse/store logic, not the NET-1a gate
     // itself (see the dedicated `net_1a_*` tests below), so YouTube starts
     // enabled here.

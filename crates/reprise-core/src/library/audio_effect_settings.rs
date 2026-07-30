@@ -1,24 +1,25 @@
 //! Atomic persistence facade for the complete playback-effects state.
 
-use rusqlite::Connection;
-
+use crate::db::Db;
 use crate::playback::AudioEffects;
 
 use super::settings;
 
-pub fn load(conn: &Connection) -> AudioEffects {
+pub fn load(db: &Db) -> AudioEffects {
+    let conn = db.conn();
     AudioEffects {
-        equalizer_enabled: settings::get_equalizer_enabled(conn),
-        equalizer_bands: settings::get_equalizer_bands(conn),
-        replay_gain: settings::get_replay_gain_mode(conn),
+        equalizer_enabled: settings::get_equalizer_enabled_in(conn),
+        equalizer_bands: settings::get_equalizer_bands_in(conn),
+        replay_gain: settings::get_replay_gain_mode_in(conn),
     }
 }
 
-pub fn store(conn: &Connection, effects: &AudioEffects) -> Result<(), rusqlite::Error> {
+pub fn store(db: &Db, effects: &AudioEffects) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
     let transaction = conn.unchecked_transaction()?;
-    settings::set_equalizer_enabled(&transaction, effects.equalizer_enabled)?;
-    settings::set_equalizer_bands(&transaction, effects.equalizer_bands)?;
-    settings::set_replay_gain_mode(&transaction, effects.replay_gain)?;
+    settings::set_equalizer_enabled_in(&transaction, effects.equalizer_enabled)?;
+    settings::set_equalizer_bands_in(&transaction, effects.equalizer_bands)?;
+    settings::set_replay_gain_mode_in(&transaction, effects.replay_gain)?;
     transaction.commit()
 }
 
@@ -29,15 +30,15 @@ mod tests {
 
     #[test]
     fn complete_effect_state_round_trips_atomically() {
-        let conn = crate::db::open_migrated(None).unwrap();
+        let db = Db::open_in_memory().unwrap();
         let expected = AudioEffects {
             equalizer_enabled: true,
             equalizer_bands: [6.0; 10],
             replay_gain: ReplayGainMode::Track,
         };
 
-        store(&conn, &expected).unwrap();
+        store(&db, &expected).unwrap();
 
-        assert_eq!(load(&conn), expected);
+        assert_eq!(load(&db), expected);
     }
 }

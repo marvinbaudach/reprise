@@ -74,9 +74,9 @@ fn rss_search_hides_an_already_subscribed_feed_and_keeps_a_meaningful_query_stri
 
     let dir = TempDir::new().unwrap();
     let path = fixture_db(&dir);
-    let conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
+    let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
     store::add_or_restore(
-        &conn,
+        &db,
         &NewSubscription {
             kind: PodcastKind::Rss,
             feed_url: "https://feeds.example.test/show".into(),
@@ -88,7 +88,7 @@ fn rss_search_hides_an_already_subscribed_feed_and_keeps_a_meaningful_query_stri
         100,
     )
     .unwrap();
-    drop(conn);
+    drop(db);
 
     let fixtures = TempDir::new().unwrap();
     std::fs::write(
@@ -179,9 +179,9 @@ printf '%s\n' '{"entries":[
 fn radio_search_hides_an_existing_favorite() {
     let dir = TempDir::new().unwrap();
     let path = fixture_db(&dir);
-    let conn = reprise_core::db::open_migrated(Some(&path)).unwrap();
+    let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
     reprise_core::radio::station::add_or_restore(
-        &conn,
+        &db,
         &reprise_core::radio::station::NewStation {
             uuid: Some("existing-uuid".into()),
             name: "Existing Station".into(),
@@ -197,7 +197,7 @@ fn radio_search_hides_an_existing_favorite() {
         100,
     )
     .unwrap();
-    drop(conn);
+    drop(db);
 
     let fixtures = TempDir::new().unwrap();
     std::fs::write(

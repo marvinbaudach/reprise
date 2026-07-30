@@ -35,12 +35,12 @@ fn reset_to_v31(conn: &Connection) {
 #[test]
 fn fresh_and_v31_upgrade_have_identical_source_schema() {
     let fresh = db::open(None).unwrap();
-    db::migrate(&fresh).unwrap();
+    db::migrate_connection(&fresh).unwrap();
     let upgraded = db::open(None).unwrap();
-    db::migrate(&upgraded).unwrap();
+    db::migrate_connection(&upgraded).unwrap();
     reset_to_v31(&upgraded);
 
-    db::migrate(&upgraded).unwrap();
+    db::migrate_connection(&upgraded).unwrap();
 
     for table in [
         "podcast_subscriptions",
@@ -66,7 +66,7 @@ fn fresh_and_v31_upgrade_have_identical_source_schema() {
 #[test]
 fn v33_adds_future_only_guid_baselines_with_subscription_cascade() {
     let conn = db::open(None).unwrap();
-    db::migrate(&conn).unwrap();
+    db::migrate_connection(&conn).unwrap();
     conn.execute(
         "INSERT INTO podcast_subscriptions
          (id, kind, feed_url, title, added_at)
@@ -97,7 +97,7 @@ fn v33_adds_future_only_guid_baselines_with_subscription_cascade() {
 #[test]
 fn v34_adds_episode_tombstones_and_dismissals_with_subscription_cascade() {
     let conn = db::open(None).unwrap();
-    db::migrate(&conn).unwrap();
+    db::migrate_connection(&conn).unwrap();
     conn.execute(
         "INSERT INTO podcast_subscriptions
          (id, kind, feed_url, title, added_at)
@@ -135,7 +135,7 @@ fn v34_adds_episode_tombstones_and_dismissals_with_subscription_cascade() {
 #[test]
 fn v40_adds_download_sizes_and_rss_phone_sync_defaults() {
     let conn = db::open(None).unwrap();
-    db::migrate(&conn).unwrap();
+    db::migrate_connection(&conn).unwrap();
     conn.execute(
         "INSERT INTO podcast_subscriptions
          (id, kind, feed_url, title, added_at)
@@ -173,7 +173,7 @@ fn v40_adds_download_sizes_and_rss_phone_sync_defaults() {
 #[test]
 fn v41_adds_stable_per_device_podcast_selections() {
     let conn = db::open(None).unwrap();
-    db::migrate(&conn).unwrap();
+    db::migrate_connection(&conn).unwrap();
     conn.execute(
         "INSERT INTO podcast_subscriptions
          (id, kind, feed_url, title, added_at)
@@ -210,7 +210,7 @@ fn v41_adds_stable_per_device_podcast_selections() {
 #[test]
 fn v47_adds_a_nullable_per_channel_latest_override_defaulting_to_no_override() {
     let conn = db::open(None).unwrap();
-    db::migrate(&conn).unwrap();
+    db::migrate_connection(&conn).unwrap();
     conn.execute(
         "INSERT INTO podcast_subscriptions
          (id, kind, feed_url, title, added_at)
@@ -254,7 +254,7 @@ fn v47_adds_a_nullable_per_channel_latest_override_defaulting_to_no_override() {
 #[test]
 fn v48_adds_a_nullable_per_channel_keep_downloaded_override_defaulting_to_no_override() {
     let conn = db::open(None).unwrap();
-    db::migrate(&conn).unwrap();
+    db::migrate_connection(&conn).unwrap();
     conn.execute(
         "INSERT INTO podcast_subscriptions
          (id, kind, feed_url, title, added_at)
@@ -298,7 +298,7 @@ fn v48_adds_a_nullable_per_channel_keep_downloaded_override_defaulting_to_no_ove
 #[test]
 fn migration_is_idempotent() {
     let conn = db::open(None).unwrap();
-    db::migrate(&conn).unwrap();
+    db::migrate_connection(&conn).unwrap();
     let before = object_schema(&conn, "podcast_episodes");
 
     migrate_v32(&conn).unwrap();
@@ -315,7 +315,7 @@ fn migration_is_idempotent() {
 #[test]
 fn v39_upgrade_preserves_device_sync_and_discography_before_adding_podcast_sync() {
     let conn = db::open(None).unwrap();
-    db::migrate(&conn).unwrap();
+    db::migrate_connection(&conn).unwrap();
     conn.execute(
         "INSERT INTO device_settings
          (device_serial, device_name, selection_json, transfer_profile,
@@ -333,7 +333,7 @@ fn v39_upgrade_preserves_device_sync_and_discography_before_adding_podcast_sync(
     .unwrap();
     conn.pragma_update(None, "user_version", 39).unwrap();
 
-    db::migrate(&conn).unwrap();
+    db::migrate_connection(&conn).unwrap();
 
     let device_name: String = conn
         .query_row(
@@ -361,7 +361,7 @@ fn v39_upgrade_preserves_device_sync_and_discography_before_adding_podcast_sync(
 #[test]
 fn migration_repairs_the_parallel_v34_device_sync_schema() {
     let conn = db::open(None).unwrap();
-    db::migrate(&conn).unwrap();
+    db::migrate_connection(&conn).unwrap();
     conn.execute_batch(
         "DROP TABLE podcast_episode_dismissals;
          DROP INDEX idx_podcast_episodes_unplayed;
@@ -372,7 +372,7 @@ fn migration_repairs_the_parallel_v34_device_sync_schema() {
     )
     .unwrap();
 
-    db::migrate(&conn).unwrap();
+    db::migrate_connection(&conn).unwrap();
 
     let dismissal_table_exists: bool = conn
         .query_row(
@@ -404,7 +404,7 @@ fn migration_repairs_the_parallel_v34_device_sync_schema() {
 #[test]
 fn podcast_episode_delete_cascades_from_subscription() {
     let conn = db::open(None).unwrap();
-    db::migrate(&conn).unwrap();
+    db::migrate_connection(&conn).unwrap();
     conn.execute(
         "INSERT INTO podcast_subscriptions \
          (id, kind, feed_url, title, added_at) VALUES (1, 'rss', 'https://example.test/feed', 'Show', 1)",
@@ -436,7 +436,7 @@ fn newer_schema_is_refused_before_migration() {
     conn.pragma_update(None, "user_version", SUPPORTED_SCHEMA_VERSION + 1)
         .unwrap();
 
-    let error = db::migrate(&conn).unwrap_err();
+    let error = db::migrate_connection(&conn).unwrap_err();
 
     assert!(matches!(
         error,

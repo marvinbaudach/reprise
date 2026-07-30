@@ -1,13 +1,12 @@
 //! Main library/sidebar composition, including the contextual end panel.
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
-use rusqlite::Connection;
+use reprise_core::db::Db;
 
 use super::artist_news_worker::ArtistNewsRuntime;
 use super::info_panel::InfoPanel;
@@ -163,7 +162,7 @@ pub(in crate::ui) fn wire_source_routing(
     podcasts_view: &Rc<crate::ui::podcasts::PodcastsView>,
     youtube_view: &Rc<crate::ui::podcasts::PodcastsView>,
     radio_view: &Rc<crate::ui::radio::RadioView>,
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
     content_stack: &gtk4::Stack,
     source_title: &adw::WindowTitle,
     show_content: Rc<dyn Fn()>,
@@ -191,9 +190,9 @@ pub(in crate::ui) fn wire_source_routing(
             track_list.browser_place(),
         );
         let viewed = {
-            let conn = conn.borrow();
+            let conn = &conn;
             crate::ui::view_session::record_issue_viewed(
-                &conn,
+                conn,
                 &source,
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -307,7 +306,7 @@ fn scope_title(source: &ViewSource) -> String {
 #[allow(clippy::too_many_arguments)]
 pub(in crate::ui) fn build(
     window: &adw::ApplicationWindow,
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
     sidebar: &Sidebar,
     content: &impl IsA<gtk4::Widget>,
     track_list: &Rc<TrackList>,

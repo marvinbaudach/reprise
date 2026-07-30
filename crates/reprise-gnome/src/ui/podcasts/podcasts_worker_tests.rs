@@ -54,7 +54,7 @@ impl FeedFetcher for ProgressFeed {
 /// regression in the shared path is caught here rather than only in a
 /// GNOME-only copy that could drift from it.
 fn run_download(
-    conn: &rusqlite::Connection,
+    conn: &reprise_core::db::Db,
     episode_id: i64,
     download_root: &std::path::Path,
     feed_fetcher: &dyn podcasts::pipeline::FeedFetcher,
@@ -71,7 +71,7 @@ fn run_download(
     );
 }
 
-fn episode(conn: &rusqlite::Connection) -> i64 {
+fn episode(conn: &reprise_core::db::Db) -> i64 {
     // These tests exercise download-progress plumbing, not the NET-1a
     // gate itself (see the dedicated `net_1a_*` test below).
     reprise_core::modules::set_enabled(conn, &reprise_core::modules::PODCASTS_MODULE, true)
@@ -178,7 +178,7 @@ fn net_3c_run_queued_does_not_invalidate_an_in_flight_refresh() {
 /// fail it, which is exactly what the deadline turns into a clean failure.
 #[test]
 fn net_3c_run_queued_replays_a_pending_episode_through_the_real_worker_dispatch() {
-    let conn = reprise_core::db::open_migrated(None).unwrap();
+    let conn = crate::test_db::open().unwrap();
     let subscription_id = store::add_or_restore(
         &conn,
         &NewSubscription {
@@ -261,7 +261,7 @@ fn net_3c_run_queued_replays_a_pending_episode_through_the_real_worker_dispatch(
 
 #[test]
 fn pod_7_download_worker_emits_ordered_monotone_states_and_persists_after_publish() {
-    let conn = reprise_core::db::open_migrated(None).unwrap();
+    let conn = crate::test_db::open().unwrap();
     let episode_id = episode(&conn);
     let directory = tempfile::tempdir().unwrap();
     let mut states = Vec::new();
@@ -307,7 +307,7 @@ fn pod_7_download_worker_emits_ordered_monotone_states_and_persists_after_publis
 
 #[test]
 fn pod_7_failed_worker_download_emits_failed_and_removes_partial() {
-    let conn = reprise_core::db::open_migrated(None).unwrap();
+    let conn = crate::test_db::open().unwrap();
     let episode_id = episode(&conn);
     let directory = tempfile::tempdir().unwrap();
     let mut states = Vec::new();
@@ -409,7 +409,7 @@ fn pod_7_response_channel_coalesces_progress_but_never_drops_terminal_state() {
 
 #[test]
 fn pod_7_episode_removed_during_download_leaves_no_persisted_or_orphaned_file() {
-    let conn = reprise_core::db::open_migrated(None).unwrap();
+    let conn = crate::test_db::open().unwrap();
     let episode_id = episode(&conn);
     let directory = tempfile::tempdir().unwrap();
     let feed = RemovingFeed {
@@ -437,7 +437,7 @@ fn pod_7_episode_removed_during_download_leaves_no_persisted_or_orphaned_file() 
 }
 
 struct RemovingFeed<'a> {
-    conn: &'a rusqlite::Connection,
+    conn: &'a reprise_core::db::Db,
     episode_id: i64,
 }
 
@@ -498,7 +498,7 @@ fn walk_files(root: &std::path::Path) -> Vec<std::path::PathBuf> {
 /// shared between them.
 #[test]
 fn issue_96_podcasts_off_youtube_on_still_dispatches() {
-    let conn = reprise_core::db::open_migrated(None).unwrap();
+    let conn = crate::test_db::open().unwrap();
     let runtime = PodcastsRuntime::setup(&conn);
     assert!(!runtime.enabled.get(), "both sources start off by default");
 
@@ -526,7 +526,7 @@ fn issue_96_podcasts_off_youtube_on_still_dispatches() {
 /// switch calls after persisting the gate.
 #[test]
 fn net_1a_recompute_enabled_reflects_the_global_gate() {
-    let conn = reprise_core::db::open_migrated(None).unwrap();
+    let conn = crate::test_db::open().unwrap();
     let runtime = PodcastsRuntime::setup(&conn);
     runtime.set_podcasts_enabled(&conn, true).unwrap();
     assert!(runtime.enabled.get());
@@ -547,7 +547,7 @@ fn net_1a_recompute_enabled_reflects_the_global_gate() {
 /// YouTube episode cannot be downloaded while only Podcasts (RSS) is on.
 #[test]
 fn net_1a_download_is_blocked_when_its_source_kind_is_disabled() {
-    let conn = reprise_core::db::open_migrated(None).unwrap();
+    let conn = crate::test_db::open().unwrap();
     reprise_core::modules::set_enabled(&conn, &reprise_core::modules::PODCASTS_MODULE, true)
         .unwrap();
     // YouTube is deliberately left disabled.
@@ -604,7 +604,7 @@ fn net_1a_download_is_blocked_when_its_source_kind_is_disabled() {
 /// re-enters it; this is the regression test for that borrow.
 #[test]
 fn enabled_subscriber_can_register_another_subscriber_during_notification() {
-    let conn = reprise_core::db::open_migrated(None).unwrap();
+    let conn = crate::test_db::open().unwrap();
     let runtime = PodcastsRuntime::setup(&conn);
     let primary_calls = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
     let secondary_calls = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));

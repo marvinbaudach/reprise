@@ -364,7 +364,7 @@ pub(in crate::ui) fn append_title_column(
         // provenance flag, gated on the live experimental switch (INST-11).
         if let Some(ai_badge) = label.next_sibling() {
             let experimental_on =
-                crate::ui::experimental::experimental_enabled(&shared_for_bind.conn.borrow());
+                crate::ui::experimental::experimental_enabled(&shared_for_bind.conn);
             ai_badge.set_visible(ai_badge_visible(experimental_on, track.is_ai));
         }
         now_playing_marker::register_cell(&shared_for_bind, item, {
@@ -699,8 +699,8 @@ fn on_rating_changed(
 ) {
     tracing::debug!(track_id, position, new_rating, "rating changed");
     let result = {
-        let conn = shared.conn.borrow();
-        stats::set_rating(&conn, track_id, new_rating)
+        let conn = &shared.conn;
+        stats::set_rating(conn, track_id, new_rating)
     };
     match result {
         Ok(()) => {

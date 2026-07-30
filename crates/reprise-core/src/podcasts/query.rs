@@ -2,6 +2,8 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 
+use crate::db::Db;
+
 use super::{EpisodeRow, PodcastKind, SourceGroup};
 
 const EPISODE_COLUMNS: &str =
@@ -10,7 +12,12 @@ const EPISODE_COLUMNS: &str =
      e.downloaded_path, e.downloaded_bytes, e.played_at, e.position_ms,
      e.first_seen_at";
 
-pub fn list_episodes(conn: &Connection) -> Result<Vec<EpisodeRow>, rusqlite::Error> {
+pub fn list_episodes(db: &Db) -> Result<Vec<EpisodeRow>, rusqlite::Error> {
+    let conn = db.conn();
+    list_episodes_in(conn)
+}
+
+pub(crate) fn list_episodes_in(conn: &Connection) -> Result<Vec<EpisodeRow>, rusqlite::Error> {
     let sql = format!(
         "SELECT {EPISODE_COLUMNS}
          FROM podcast_episodes e
@@ -24,6 +31,14 @@ pub fn list_episodes(conn: &Connection) -> Result<Vec<EpisodeRow>, rusqlite::Err
 }
 
 pub fn episodes_for_subscription(
+    db: &Db,
+    subscription_id: i64,
+) -> Result<Vec<EpisodeRow>, rusqlite::Error> {
+    let conn = db.conn();
+    episodes_for_subscription_in(conn, subscription_id)
+}
+
+pub(crate) fn episodes_for_subscription_in(
     conn: &Connection,
     subscription_id: i64,
 ) -> Result<Vec<EpisodeRow>, rusqlite::Error> {
@@ -41,11 +56,9 @@ pub fn episodes_for_subscription(
     rows.collect::<Result<Vec<_>, _>>()
 }
 
-pub fn list_source_groups(
-    conn: &Connection,
-    kind: PodcastKind,
-) -> Result<Vec<SourceGroup>, rusqlite::Error> {
-    let subscriptions = super::store::active_subscriptions(conn)?;
+pub fn list_source_groups(db: &Db, kind: PodcastKind) -> Result<Vec<SourceGroup>, rusqlite::Error> {
+    let conn = db.conn();
+    let subscriptions = super::store::active_subscriptions_in(conn)?;
     subscriptions
         .into_iter()
         .filter(|subscription| subscription.kind == kind)
@@ -57,13 +70,14 @@ pub fn list_source_groups(
                 image_url: subscription.image_url,
                 kind: subscription.kind,
                 sync_to_phone: subscription.sync_to_phone,
-                episodes: episodes_for_subscription(conn, subscription.id)?,
+                episodes: episodes_for_subscription_in(conn, subscription.id)?,
             })
         })
         .collect()
 }
 
-pub fn count_unplayed(conn: &Connection) -> Result<usize, rusqlite::Error> {
+pub fn count_unplayed(db: &Db) -> Result<usize, rusqlite::Error> {
+    let conn = db.conn();
     conn.query_row(
         "SELECT COUNT(*)
          FROM podcast_episodes e
@@ -77,10 +91,8 @@ pub fn count_unplayed(conn: &Connection) -> Result<usize, rusqlite::Error> {
     .map(|count| count.max(0) as usize)
 }
 
-pub fn count_unplayed_for_kind(
-    conn: &Connection,
-    kind: PodcastKind,
-) -> Result<usize, rusqlite::Error> {
+pub fn count_unplayed_for_kind(db: &Db, kind: PodcastKind) -> Result<usize, rusqlite::Error> {
+    let conn = db.conn();
     conn.query_row(
         "SELECT COUNT(*)
          FROM podcast_episodes e
@@ -103,10 +115,11 @@ pub fn count_unplayed_for_kind(
 /// A dated reference only admits episodes published later than the reference.
 /// An undated reference starts at the show's oldest known unplayed episode.
 pub fn next_unplayed_of_show(
-    conn: &Connection,
+    db: &Db,
     subscription_id: i64,
     after_published_at: Option<i64>,
 ) -> Result<Option<EpisodeRow>, rusqlite::Error> {
+    let conn = db.conn();
     let sql = format!(
         "SELECT {EPISODE_COLUMNS}
          FROM podcast_episodes e
@@ -132,12 +145,12 @@ mod tests {
     use super::*;
     use crate::podcasts::feed::ParsedEpisode;
     use crate::podcasts::store::{self, NewSubscription};
-    fn conn() -> Connection {
-        crate::db::open_migrated(None).unwrap()
+    fn db() -> Db {
+        Db::open_in_memory().unwrap()
     }
 
     fn add_show(conn: &Connection, url: &str, title: &str) -> i64 {
-        store::add_or_restore(
+        store::add_or_restore_in(
             conn,
             &NewSubscription {
                 kind: PodcastKind::Rss,
@@ -158,7 +171,7 @@ mod tests {
         guid: &str,
         published_at: Option<i64>,
     ) -> i64 {
-        store::upsert_episode(
+        store::upsert_episode_in(
             conn,
             subscription_id,
             &ParsedEpisode {
@@ -178,52 +191,52 @@ mod tests {
 
     #[test]
     fn unplayed_count_includes_new_and_resume_but_not_played_or_removed_shows() {
-        let conn = conn();
-        let active = add_show(&conn, "https://example.test/active", "Active");
-        let removed = add_show(&conn, "https://example.test/removed", "Removed");
-        let new = add_episode(&conn, active, "new", Some(10));
-        let resume = add_episode(&conn, active, "resume", Some(20));
-        let played = add_episode(&conn, active, "played", Some(30));
-        add_episode(&conn, removed, "hidden", Some(40));
-        store::save_position(&conn, resume, 500).unwrap();
-        store::mark_played(&conn, played, 100).unwrap();
-        store::tombstone_subscription(&conn, removed, 100).unwrap();
+        let db = db();
+        let active = add_show(db.conn(), "https://example.test/active", "Active");
+        let removed = add_show(db.conn(), "https://example.test/removed", "Removed");
+        let new = add_episode(db.conn(), active, "new", Some(10));
+        let resume = add_episode(db.conn(), active, "resume", Some(20));
+        let played = add_episode(db.conn(), active, "played", Some(30));
+        add_episode(db.conn(), removed, "hidden", Some(40));
+        store::save_position(&db, resume, 500).unwrap();
+        store::mark_played(&db, played, 100).unwrap();
+        store::tombstone_subscription(&db, removed, 100).unwrap();
 
-        assert_eq!(count_unplayed(&conn).unwrap(), 2);
-        assert!(store::episode(&conn, new).unwrap().is_some());
+        assert_eq!(count_unplayed(&db).unwrap(), 2);
+        assert!(store::episode(&db, new).unwrap().is_some());
     }
 
     #[test]
     fn pod_4_finish_offers_next_unplayed_of_show() {
-        let conn = conn();
-        let show = add_show(&conn, "https://example.test/show", "Show");
-        let other = add_show(&conn, "https://example.test/other", "Other");
-        add_episode(&conn, show, "before", Some(90));
-        let played = add_episode(&conn, show, "played-next", Some(110));
-        add_episode(&conn, other, "other-show", Some(115));
-        let expected = add_episode(&conn, show, "expected", Some(120));
-        add_episode(&conn, show, "later", Some(130));
-        store::mark_played(&conn, played, 200).unwrap();
+        let db = db();
+        let show = add_show(db.conn(), "https://example.test/show", "Show");
+        let other = add_show(db.conn(), "https://example.test/other", "Other");
+        add_episode(db.conn(), show, "before", Some(90));
+        let played = add_episode(db.conn(), show, "played-next", Some(110));
+        add_episode(db.conn(), other, "other-show", Some(115));
+        let expected = add_episode(db.conn(), show, "expected", Some(120));
+        add_episode(db.conn(), show, "later", Some(130));
+        store::mark_played(&db, played, 200).unwrap();
 
-        let next = next_unplayed_of_show(&conn, show, Some(100))
+        let next = next_unplayed_of_show(&db, show, Some(100))
             .unwrap()
             .unwrap();
         assert_eq!(next.id, expected);
         assert_eq!(next.title, "expected");
-        assert!(next_unplayed_of_show(&conn, show, Some(130))
+        assert!(next_unplayed_of_show(&db, show, Some(130))
             .unwrap()
             .is_none());
     }
 
     #[test]
     fn episode_listing_sorts_undated_entries_last() {
-        let conn = conn();
-        let show = add_show(&conn, "https://example.test/show", "Show");
-        add_episode(&conn, show, "undated", None);
-        add_episode(&conn, show, "older", Some(10));
-        add_episode(&conn, show, "newer", Some(20));
+        let db = db();
+        let show = add_show(db.conn(), "https://example.test/show", "Show");
+        add_episode(db.conn(), show, "undated", None);
+        add_episode(db.conn(), show, "older", Some(10));
+        add_episode(db.conn(), show, "newer", Some(20));
 
-        let titles = list_episodes(&conn)
+        let titles = list_episodes(&db)
             .unwrap()
             .into_iter()
             .map(|episode| episode.title)
@@ -233,9 +246,9 @@ mod tests {
 
     #[test]
     fn pod_10_undated_youtube_batch_keeps_provider_source_order() {
-        let conn = conn();
+        let db = db();
         let show = store::add_or_restore(
-            &conn,
+            &db,
             &NewSubscription {
                 kind: PodcastKind::Youtube,
                 feed_url: "https://www.youtube.com/channel/UCorder".into(),
@@ -247,10 +260,10 @@ mod tests {
             1,
         )
         .unwrap();
-        add_episode(&conn, show, "newest", None);
-        add_episode(&conn, show, "older", None);
+        add_episode(db.conn(), show, "newest", None);
+        add_episode(db.conn(), show, "older", None);
 
-        let titles = episodes_for_subscription(&conn, show)
+        let titles = episodes_for_subscription(&db, show)
             .unwrap()
             .into_iter()
             .map(|episode| episode.title)
@@ -261,14 +274,14 @@ mod tests {
 
     #[test]
     fn src_5_groups_episodes_by_source_identity_and_keeps_episode_order() {
-        let conn = conn();
-        let first = add_show(&conn, "https://example.test/first", "Same title");
-        let second = add_show(&conn, "https://example.test/second", "Same title");
-        add_episode(&conn, first, "first-old", Some(10));
-        add_episode(&conn, first, "first-new", Some(20));
-        add_episode(&conn, second, "second", Some(30));
+        let db = db();
+        let first = add_show(db.conn(), "https://example.test/first", "Same title");
+        let second = add_show(db.conn(), "https://example.test/second", "Same title");
+        add_episode(db.conn(), first, "first-old", Some(10));
+        add_episode(db.conn(), first, "first-new", Some(20));
+        add_episode(db.conn(), second, "second", Some(30));
 
-        let groups = list_source_groups(&conn, PodcastKind::Rss).unwrap();
+        let groups = list_source_groups(&db, PodcastKind::Rss).unwrap();
 
         assert_eq!(groups.len(), 2);
         assert_ne!(groups[0].subscription_id, groups[1].subscription_id);
@@ -288,10 +301,10 @@ mod tests {
 
     #[test]
     fn src_5_rss_and_youtube_groups_are_separate_library_queries() {
-        let conn = conn();
-        add_show(&conn, "https://example.test/rss", "RSS");
+        let db = db();
+        add_show(db.conn(), "https://example.test/rss", "RSS");
         store::add_or_restore(
-            &conn,
+            &db,
             &NewSubscription {
                 kind: PodcastKind::Youtube,
                 feed_url: "https://youtube.test/@channel".into(),
@@ -304,14 +317,9 @@ mod tests {
         )
         .unwrap();
 
+        assert_eq!(list_source_groups(&db, PodcastKind::Rss).unwrap().len(), 1);
         assert_eq!(
-            list_source_groups(&conn, PodcastKind::Rss).unwrap().len(),
-            1
-        );
-        assert_eq!(
-            list_source_groups(&conn, PodcastKind::Youtube)
-                .unwrap()
-                .len(),
+            list_source_groups(&db, PodcastKind::Youtube).unwrap().len(),
             1
         );
     }

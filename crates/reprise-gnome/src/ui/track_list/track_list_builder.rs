@@ -6,9 +6,9 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
+use reprise_core::db::Db;
 use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
-use rusqlite::Connection;
 
 use super::browse_bar::BrowseBar;
 use super::column_layout::{self, ColumnId};
@@ -32,7 +32,7 @@ use super::{
 };
 
 pub(in crate::ui) fn build(
-    conn: Rc<RefCell<Connection>>,
+    conn: Rc<Db>,
     on_activate: OnActivate,
     on_reload: impl Fn(&ViewSource, usize, &str, &BrowseFilter) + 'static,
     queue_ids_provider: impl Fn() -> super::queue_sections::QueueViewModel + 'static,
@@ -254,7 +254,7 @@ pub(in crate::ui) fn build(
     let responsive_columns = super::responsive_columns::ResponsiveColumns::new(
         &responsive_columns_host,
         &column_registry,
-        &column_layout::load_layout(&shared.conn.borrow()),
+        &column_layout::load_layout(&shared.conn),
     );
     super::end_of_results::install(&shared, &list_overlay, &scrolled);
     let initial_sort_column = if column_registry.is_visible(ColumnId::Artist) {

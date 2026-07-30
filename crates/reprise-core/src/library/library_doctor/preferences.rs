@@ -1,6 +1,6 @@
 //! Persistent opt-in state shared by every Library Doctor surface.
 
-use rusqlite::Connection;
+use crate::db::Db;
 
 pub const REMOTE_CONSENT_VERSION: u32 = 1;
 const REMOTE_ENABLED_KEY: &str = "library_doctor.remote.enabled";
@@ -13,31 +13,35 @@ pub struct RemoteSuggestionPreference {
 }
 
 pub fn remote_suggestion_preference(
-    conn: &Connection,
+    db: &Db,
 ) -> Result<RemoteSuggestionPreference, rusqlite::Error> {
-    let consented = crate::library::settings::get_setting(conn, REMOTE_CONSENT_VERSION_KEY)?
+    let conn = db.conn();
+    let consented = crate::library::settings::get_setting_in(conn, REMOTE_CONSENT_VERSION_KEY)?
         .and_then(|value| value.parse::<u32>().ok())
         == Some(REMOTE_CONSENT_VERSION);
-    let enabled = consented && crate::library::settings::get_bool(conn, REMOTE_ENABLED_KEY, false)?;
+    let enabled =
+        consented && crate::library::settings::get_bool_in(conn, REMOTE_ENABLED_KEY, false)?;
     Ok(RemoteSuggestionPreference {
         enabled,
         consent_required: !consented,
     })
 }
 
-pub fn accept_remote_suggestions(conn: &Connection) -> Result<(), rusqlite::Error> {
+pub fn accept_remote_suggestions(db: &Db) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
     let transaction = conn.unchecked_transaction()?;
-    crate::library::settings::set_setting(
+    crate::library::settings::set_setting_in(
         &transaction,
         REMOTE_CONSENT_VERSION_KEY,
         &REMOTE_CONSENT_VERSION.to_string(),
     )?;
-    crate::library::settings::set_bool(&transaction, REMOTE_ENABLED_KEY, true)?;
+    crate::library::settings::set_bool_in(&transaction, REMOTE_ENABLED_KEY, true)?;
     transaction.commit()
 }
 
-pub fn disable_remote_suggestions(conn: &Connection) -> Result<(), rusqlite::Error> {
-    crate::library::settings::set_bool(conn, REMOTE_ENABLED_KEY, false)
+pub fn disable_remote_suggestions(db: &Db) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
+    crate::library::settings::set_bool_in(conn, REMOTE_ENABLED_KEY, false)
 }
 
 #[cfg(test)]
@@ -46,8 +50,7 @@ mod tests {
 
     #[test]
     fn doc_7a_remote_opt_in_is_versioned_persistent_and_independent() {
-        let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
+        let conn = Db::open_in_memory().unwrap();
 
         assert_eq!(
             remote_suggestion_preference(&conn).unwrap(),

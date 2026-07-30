@@ -57,7 +57,7 @@ use std::rc::Rc;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
-use rusqlite::Connection;
+use reprise_core::db::Db;
 
 use super::sidebar_activity_slot::SidebarActivitySlot;
 use super::sidebar_boundary_navigation::wire_collection_boundary_navigation;
@@ -89,7 +89,7 @@ use super::sidebar_row_wiring::{wire_focus_leave_resync, wire_row_activated, wir
 /// as `track_list.rs`/`track_list_dnd.rs`. Only the fields that module
 /// actually needs are `pub(in crate::ui)` individually below.
 pub(in crate::ui) struct Shared {
-    pub(in crate::ui) conn: Rc<RefCell<Connection>>,
+    pub(in crate::ui) conn: Rc<Db>,
     pub(in crate::ui) listbox: gtk4::ListBox,
     /// The non-scrolling issue-source list (Import errors / Missing files),
     /// pinned at the very bottom of the Issues section below its shared
@@ -209,7 +209,7 @@ impl Sidebar {
     /// round trip through `on_select` (not yet wired at this point; see
     /// `set_on_select`'s doc comment).
     pub fn new(
-        conn: Rc<RefCell<Connection>>,
+        conn: Rc<Db>,
         window: &adw::ApplicationWindow,
         queue_len_provider: impl Fn() -> usize + 'static,
     ) -> Self {

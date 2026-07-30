@@ -11,21 +11,15 @@ use super::{replay_gain_index, PreferencesContext};
 
 impl PreferencesContext {
     pub(in crate::ui) fn apply_audio_effects(&self) {
-        let effects = {
-            let conn = self.conn.borrow();
-            super::audio_effects::stored(&conn)
-        };
+        let effects = super::audio_effects::stored(&self.conn);
         let Some(player) = &self.player else {
             return;
         };
         if let Err(error) = player.set_audio_effects(effects) {
             tracing::warn!(%error, "could not apply audio effects");
             let active = player.active_audio_effects();
-            {
-                let conn = self.conn.borrow();
-                if let Err(persist_error) = super::audio_effects::persist(&conn, &active) {
-                    tracing::warn!(%persist_error, "could not restore active audio settings");
-                }
+            if let Err(persist_error) = super::audio_effects::persist(&self.conn, &active) {
+                tracing::warn!(%persist_error, "could not restore active audio settings");
             }
             let equalizer_rows = self.equalizer_controls.borrow().clone();
             let equalizer_surfaces = self.equalizer_surfaces.borrow().clone();
@@ -47,8 +41,8 @@ impl PreferencesContext {
 
     pub(in crate::ui) fn set_equalizer_enabled(&self, active: bool) {
         let saved = {
-            let conn = self.conn.borrow();
-            settings::set_equalizer_enabled(&conn, active)
+            let conn = &self.conn;
+            settings::set_equalizer_enabled(conn, active)
         };
         if let Err(error) = saved {
             tracing::warn!(%error, "could not save equalizer state");
@@ -69,8 +63,8 @@ impl PreferencesContext {
 
     pub(in crate::ui) fn set_replay_gain_mode(&self, mode: ReplayGainMode) {
         let saved = {
-            let conn = self.conn.borrow();
-            settings::set_replay_gain_mode(&conn, mode)
+            let conn = &self.conn;
+            settings::set_replay_gain_mode(conn, mode)
         };
         if let Err(error) = saved {
             tracing::warn!(%error, "could not save ReplayGain mode");

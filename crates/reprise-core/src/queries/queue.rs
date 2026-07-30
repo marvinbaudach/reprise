@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 
+use crate::db::Db;
 use crate::models::Track;
 
 use super::clauses::{ai_projection, row_to_track};
@@ -137,10 +138,8 @@ fn query_track_window_queue_with_observer(
 /// Sums the remaining duration for an explicit queue snapshot in one scalar
 /// metadata query. Duplicate queue entries count independently; stale ids
 /// contribute nothing, matching the window query's behavior.
-pub fn query_queue_duration_ms(
-    conn: &Connection,
-    queue_ids: &[i64],
-) -> Result<i64, rusqlite::Error> {
+pub fn query_queue_duration_ms(db: &Db, queue_ids: &[i64]) -> Result<i64, rusqlite::Error> {
+    let conn = db.conn();
     if queue_ids.is_empty() {
         return Ok(0);
     }

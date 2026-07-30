@@ -1,18 +1,18 @@
 //! Rule-named display tests for the My Stats bar-only entrance motion.
 
 use super::*;
+use reprise_core::db::Db;
 
-fn view_and_conn() -> (StatsView, Rc<RefCell<Connection>>) {
+fn view_and_conn() -> (StatsView, Rc<Db>) {
     crate::ui::style::install_css_string_for_test(&crate::ui::stats::stats_css::css());
-    let conn = Rc::new(RefCell::new(reprise_core::db::open(None).unwrap()));
-    reprise_core::db::migrate(&conn.borrow()).unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
     let loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
     (StatsView::new(loader), conn)
 }
 
-fn presented_entrance() -> (StatsView, Rc<RefCell<Connection>>, adw::Window) {
+fn presented_entrance() -> (StatsView, Rc<Db>, adw::Window) {
     let (view, conn) = view_and_conn();
-    seed_current_plays(&conn.borrow(), 10);
+    seed_current_plays(&conn, 10);
     view.wire_year_selector(&conn);
     view.prepare_entrance();
     view.refresh(&conn);
@@ -28,41 +28,45 @@ fn presented_entrance() -> (StatsView, Rc<RefCell<Connection>>, adw::Window) {
     (view, conn, window)
 }
 
-fn seed_current_plays(conn: &Connection, count: i64) {
-    conn.execute(
-        "INSERT INTO tracks \
+fn seed_current_plays(db: &Db, count: i64) {
+    crate::test_db::connection(db)
+        .execute(
+            "INSERT INTO tracks \
          (id, path, title, artist, album, album_artist, genre, duration_ms, \
           play_count, added_at) \
          VALUES (1, '/music/1.flac', 'Current Track', 'Current Artist', \
                  'Current Album', '', 'Rock', 300000, 1, 0)",
-        [],
-    )
-    .unwrap();
-    for offset in 0..count {
-        conn.execute(
-            "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (1, ?1, 200000)",
-            rusqlite::params![now_unix() - offset],
+            [],
         )
         .unwrap();
+    for offset in 0..count {
+        crate::test_db::connection(db)
+            .execute(
+                "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (1, ?1, 200000)",
+                rusqlite::params![now_unix() - offset],
+            )
+            .unwrap();
     }
 }
 
-fn seed_previous_year_track(conn: &Connection, count: i64) {
-    conn.execute(
-        "INSERT INTO tracks \
+fn seed_previous_year_track(db: &Db, count: i64) {
+    crate::test_db::connection(db)
+        .execute(
+            "INSERT INTO tracks \
          (id, path, title, artist, album, album_artist, genre, duration_ms, \
           play_count, added_at) \
          VALUES (2, '/music/2.flac', 'Earlier Track', 'Earlier Artist', \
                  'Earlier Album', '', 'Jazz', 300000, 1, 0)",
-        [],
-    )
-    .unwrap();
-    for offset in 0..count {
-        conn.execute(
-            "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (2, ?1, 200000)",
-            rusqlite::params![now_unix() - 365 * 24 * 60 * 60 - offset],
+            [],
         )
         .unwrap();
+    for offset in 0..count {
+        crate::test_db::connection(db)
+            .execute(
+                "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (2, ?1, 200000)",
+                rusqlite::params![now_unix() - 365 * 24 * 60 * 60 - offset],
+            )
+            .unwrap();
     }
 }
 
@@ -273,7 +277,7 @@ fn stats_17_period_switch_tweens_bars_without_restarting_static_content() {
     gtk4::init().unwrap();
     let (view, conn, window) = presented_entrance();
     wait_for(800);
-    seed_previous_year_track(&conn.borrow(), 20);
+    seed_previous_year_track(&conn, 20);
 
     let all_time = view
         .periods

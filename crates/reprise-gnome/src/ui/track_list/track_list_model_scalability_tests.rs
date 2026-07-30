@@ -29,10 +29,10 @@ fn title(index: u32) -> String {
 }
 
 fn generated_model(count: u32) -> TrackListModel {
-    let mut conn = reprise_core::db::open(None).unwrap();
-    reprise_core::db::migrate(&conn).unwrap();
+    let conn = crate::test_db::open().unwrap();
     {
-        let tx = conn.transaction().unwrap();
+        let fixture_conn = crate::test_db::connection(&conn);
+        let tx = fixture_conn.unchecked_transaction().unwrap();
         {
             let mut insert = tx
                 .prepare_cached(
@@ -53,7 +53,7 @@ fn generated_model(count: u32) -> TrackListModel {
         }
         tx.commit().unwrap();
     }
-    TrackListModel::new(Rc::new(RefCell::new(conn)))
+    TrackListModel::new(Rc::new(conn))
 }
 
 #[test]

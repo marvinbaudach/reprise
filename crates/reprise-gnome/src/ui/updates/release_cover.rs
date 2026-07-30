@@ -6,16 +6,14 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
+use reprise_core::db::Db;
 
 use crate::ui::{artist_avatar, one_shot_task};
 
 const DEFAULT_ACCENT: (u8, u8, u8) = (53, 132, 228);
 
-pub(in crate::ui) fn fallback_accent_for_artist(
-    conn: &rusqlite::Connection,
-    artist: &str,
-) -> Option<String> {
-    let track_path = reprise_core::artist_news::most_played_album_track_path(conn, artist)
+pub(in crate::ui) fn fallback_accent_for_artist(db: &Db, artist: &str) -> Option<String> {
+    let track_path = reprise_core::artist_news::most_played_album_track_path(db, artist)
         .ok()
         .flatten()?;
     let source = reprise_core::cover::resolve_source(&track_path)?;

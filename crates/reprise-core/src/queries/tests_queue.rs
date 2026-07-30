@@ -6,9 +6,9 @@
 
 use super::*;
 
-fn seeded_conn_with_tracks(count: i64) -> Connection {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+fn seeded_conn_with_tracks(count: i64) -> crate::db::Db {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     for i in 1..=count {
         conn.execute(
             "INSERT INTO tracks (id, path, title, artist, added_at) \
@@ -17,17 +17,18 @@ fn seeded_conn_with_tracks(count: i64) -> Connection {
         )
         .unwrap();
     }
-    conn
+    db
 }
 
 #[test]
 fn que_6_metadata_loads_in_one_query() {
-    let conn = seeded_conn_with_tracks(4);
+    let db = seeded_conn_with_tracks(4);
+    let conn = db.conn();
     let queue_ids = vec![4, 2, 3, 1];
     let query_count = std::cell::Cell::new(0);
 
     let rows = super::queue::query_track_window_queue_counted(
-        &conn,
+        conn,
         &queue_ids,
         0,
         queue_ids.len() as i64,
@@ -44,24 +45,24 @@ fn que_6_metadata_loads_in_one_query() {
 
 #[test]
 fn queue_duration_sums_duplicates_and_skips_stale_ids_in_one_batch() {
-    let conn = seeded_conn_with_tracks(2);
+    let db = seeded_conn_with_tracks(2);
+    let conn = db.conn();
     conn.execute("UPDATE tracks SET duration_ms = id * 1000", [])
         .unwrap();
 
     assert_eq!(
-        query_queue_duration_ms(&conn, &[2, 1, 2, 999]).unwrap(),
+        query_queue_duration_ms(&db, &[2, 1, 2, 999]).unwrap(),
         5_000
     );
-    assert_eq!(query_queue_duration_ms(&conn, &[]).unwrap(), 0);
+    assert_eq!(query_queue_duration_ms(&db, &[]).unwrap(), 0);
 }
 
 #[test]
 fn queue_window_follows_the_ids_order_not_id_order() {
-    let conn = seeded_conn_with_tracks(3);
-    let mut conn = conn;
+    let db = seeded_conn_with_tracks(3);
     let queue_ids = vec![3, 1, 2];
     let rows = query_track_window(
-        &mut conn,
+        &db,
         &ViewSource::Queue,
         "ignored",
         "ignored",
@@ -77,11 +78,10 @@ fn queue_window_follows_the_ids_order_not_id_order() {
 
 #[test]
 fn queue_window_skips_ids_with_no_matching_row() {
-    let conn = seeded_conn_with_tracks(3);
-    let mut conn = conn;
+    let db = seeded_conn_with_tracks(3);
     let queue_ids = vec![3, 999, 1];
     let rows = query_track_window(
-        &mut conn,
+        &db,
         &ViewSource::Queue,
         "ignored",
         "ignored",
@@ -97,11 +97,10 @@ fn queue_window_skips_ids_with_no_matching_row() {
 
 #[test]
 fn queue_window_slices_by_offset_and_limit_then_reorders() {
-    let conn = seeded_conn_with_tracks(5);
-    let mut conn = conn;
+    let db = seeded_conn_with_tracks(5);
     let queue_ids = vec![5, 4, 3, 2, 1];
     let rows = query_track_window(
-        &mut conn,
+        &db,
         &ViewSource::Queue,
         "ignored",
         "ignored",
@@ -117,10 +116,10 @@ fn queue_window_slices_by_offset_and_limit_then_reorders() {
 
 #[test]
 fn queue_count_counts_resolvable_ids_regardless_of_filter() {
-    let conn = seeded_conn_with_tracks(3);
+    let db = seeded_conn_with_tracks(3);
     let queue_ids = vec![3, 2, 1];
     assert_eq!(
-        query_track_count(&conn, &ViewSource::Queue, "anything", &queue_ids).unwrap(),
+        query_track_count(&db, &ViewSource::Queue, "anything", &queue_ids).unwrap(),
         3
     );
 }
@@ -131,29 +130,29 @@ fn queue_count_counts_resolvable_ids_regardless_of_filter() {
 /// actually render.
 #[test]
 fn queue_count_excludes_ids_that_no_longer_resolve_to_a_row() {
-    let conn = seeded_conn_with_tracks(3);
+    let db = seeded_conn_with_tracks(3);
     let queue_ids = vec![3, 999, 1]; // 999 was never inserted
     assert_eq!(
-        query_track_count(&conn, &ViewSource::Queue, "", &queue_ids).unwrap(),
+        query_track_count(&db, &ViewSource::Queue, "", &queue_ids).unwrap(),
         2
     );
 }
 
 #[test]
 fn queue_count_counts_each_occurrence_of_a_duplicated_resolvable_id() {
-    let conn = seeded_conn_with_tracks(3);
+    let db = seeded_conn_with_tracks(3);
     let queue_ids = vec![1, 1, 2]; // id 1 queued twice
     assert_eq!(
-        query_track_count(&conn, &ViewSource::Queue, "", &queue_ids).unwrap(),
+        query_track_count(&db, &ViewSource::Queue, "", &queue_ids).unwrap(),
         3
     );
 }
 
 #[test]
 fn queue_count_is_zero_for_an_empty_queue() {
-    let conn = seeded_conn_with_tracks(3);
+    let db = seeded_conn_with_tracks(3);
     assert_eq!(
-        query_track_count(&conn, &ViewSource::Queue, "", &[]).unwrap(),
+        query_track_count(&db, &ViewSource::Queue, "", &[]).unwrap(),
         0
     );
 }
@@ -161,10 +160,9 @@ fn queue_count_is_zero_for_an_empty_queue() {
 #[test]
 fn queue_ids_are_returned_verbatim() {
     let queue_ids = vec![5, 4, 3];
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
     assert_eq!(
-        query_track_ids(&conn, &ViewSource::Queue, "x", "x", "", &queue_ids).unwrap(),
+        query_track_ids(&db, &ViewSource::Queue, "x", "x", "", &queue_ids).unwrap(),
         queue_ids
     );
 }
@@ -175,12 +173,12 @@ fn queue_ids_are_returned_verbatim() {
 /// window` call returns.
 #[test]
 fn queue_count_matches_window_row_count_when_all_ids_resolve() {
-    let mut conn = seeded_conn_with_tracks(5);
+    let db = seeded_conn_with_tracks(5);
     let queue_ids = vec![5, 4, 3, 2, 1];
 
-    let count = query_track_count(&conn, &ViewSource::Queue, "", &queue_ids).unwrap();
+    let count = query_track_count(&db, &ViewSource::Queue, "", &queue_ids).unwrap();
     let rows = query_track_window(
-        &mut conn,
+        &db,
         &ViewSource::Queue,
         "ignored",
         "ignored",
@@ -204,12 +202,12 @@ fn queue_count_matches_window_row_count_when_all_ids_resolve() {
 /// `queue_ids` — the case that's reachable now that hard-delete exists.
 #[test]
 fn queue_count_matches_window_row_count_when_some_ids_do_not_resolve() {
-    let mut conn = seeded_conn_with_tracks(3);
+    let db = seeded_conn_with_tracks(3);
     let queue_ids = vec![3, 999, 1, 2]; // 999 doesn't resolve
 
-    let count = query_track_count(&conn, &ViewSource::Queue, "", &queue_ids).unwrap();
+    let count = query_track_count(&db, &ViewSource::Queue, "", &queue_ids).unwrap();
     let rows = query_track_window(
-        &mut conn,
+        &db,
         &ViewSource::Queue,
         "ignored",
         "ignored",
@@ -235,11 +233,11 @@ fn queue_count_matches_window_row_count_when_some_ids_do_not_resolve() {
 /// independently, in queue order.
 #[test]
 fn queue_window_renders_a_duplicated_id_once_per_occurrence() {
-    let mut conn = seeded_conn_with_tracks(3);
+    let db = seeded_conn_with_tracks(3);
     let queue_ids = vec![1, 2, 1]; // id 1 queued twice, non-adjacent
 
     let rows = query_track_window(
-        &mut conn,
+        &db,
         &ViewSource::Queue,
         "ignored",
         "ignored",
@@ -272,12 +270,12 @@ fn queue_window_renders_a_duplicated_id_once_per_occurrence() {
 /// per-slot, non-draining resolution.
 #[test]
 fn queue_count_matches_window_row_count_with_a_duplicated_id() {
-    let mut conn = seeded_conn_with_tracks(3);
+    let db = seeded_conn_with_tracks(3);
     let queue_ids = vec![1, 2, 1]; // id 1 queued twice
 
-    let count = query_track_count(&conn, &ViewSource::Queue, "", &queue_ids).unwrap();
+    let count = query_track_count(&db, &ViewSource::Queue, "", &queue_ids).unwrap();
     let rows = query_track_window(
-        &mut conn,
+        &db,
         &ViewSource::Queue,
         "ignored",
         "ignored",
@@ -298,8 +296,8 @@ fn queue_count_matches_window_row_count_with_a_duplicated_id() {
 
 #[test]
 fn import_errors_source_is_always_empty_for_now() {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
     conn.execute(
         "INSERT INTO import_errors (path, reason_kind, reason_detail, first_seen, last_seen) \
          VALUES ('/x/a.flac', 'tag', 'bad tag', 0, 0)",
@@ -307,25 +305,17 @@ fn import_errors_source_is_always_empty_for_now() {
     )
     .unwrap();
 
-    let mut conn = conn;
-    assert!(query_track_window(
-        &mut conn,
-        &ViewSource::ImportErrors,
-        "x",
-        "x",
-        "",
-        0,
-        10,
-        &[]
-    )
-    .unwrap()
-    .is_empty());
+    assert!(
+        query_track_window(&db, &ViewSource::ImportErrors, "x", "x", "", 0, 10, &[])
+            .unwrap()
+            .is_empty()
+    );
     assert_eq!(
-        query_track_count(&conn, &ViewSource::ImportErrors, "", &[]).unwrap(),
+        query_track_count(&db, &ViewSource::ImportErrors, "", &[]).unwrap(),
         0
     );
     assert!(
-        query_track_ids(&conn, &ViewSource::ImportErrors, "x", "x", "", &[])
+        query_track_ids(&db, &ViewSource::ImportErrors, "x", "x", "", &[])
             .unwrap()
             .is_empty()
     );

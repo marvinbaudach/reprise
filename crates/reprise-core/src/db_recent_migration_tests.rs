@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn migrate_v23_listen_history_survives_track_delete() {
     let conn = open(None).unwrap();
-    migrate(&conn).unwrap();
+    migrate_connection(&conn).unwrap();
     conn.execute(
         "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (1, '/x/a.flac', 'A', 'B', 0)",
         [],
@@ -41,7 +41,7 @@ fn migrate_v5_to_v6_creates_lastfm_queue_and_preserves_listenbrainz_rows() {
     )
     .unwrap();
     conn.pragma_update(None, "user_version", 5).unwrap();
-    migrate(&conn).unwrap();
+    migrate_connection(&conn).unwrap();
 
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
@@ -66,7 +66,7 @@ fn migrate_v5_to_v6_creates_lastfm_queue_and_preserves_listenbrainz_rows() {
 #[test]
 fn migrate_v7_to_v8_adds_waveform_peaks_column() {
     let conn = open(None).unwrap();
-    migrate(&conn).unwrap();
+    migrate_connection(&conn).unwrap();
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
@@ -104,23 +104,22 @@ fn migrate_v7_to_v8_adds_waveform_peaks_column() {
 
 #[test]
 fn waveform_peaks_crud_round_trips() {
-    let conn = open(None).unwrap();
-    migrate(&conn).unwrap();
-    conn.execute(
+    let db = crate::db::Db::open_in_memory().unwrap();
+    db.conn().execute(
         "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (1, '/t.flac', 'T', 'A', 0)",
         [],
     )
     .unwrap();
-    assert!(get_waveform_peaks(&conn, 1).unwrap().is_none());
+    assert!(get_waveform_peaks(&db, 1).unwrap().is_none());
     let peaks = vec![0, 128, 255, 64, 192];
-    set_waveform_peaks(&conn, 1, &peaks).unwrap();
-    assert_eq!(get_waveform_peaks(&conn, 1).unwrap().unwrap(), peaks);
+    set_waveform_peaks(&db, 1, &peaks).unwrap();
+    assert_eq!(get_waveform_peaks(&db, 1).unwrap().unwrap(), peaks);
 }
 
 #[test]
 fn migrate_v8_to_current_creates_device_sync_tables_and_preserves_managed_files() {
     let conn = open(None).unwrap();
-    migrate(&conn).unwrap();
+    migrate_connection(&conn).unwrap();
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
@@ -153,7 +152,7 @@ fn migrate_v8_to_current_creates_device_sync_tables_and_preserves_managed_files(
         .unwrap();
     assert_eq!(remaining, 1);
 
-    migrate(&conn).unwrap();
+    migrate_connection(&conn).unwrap();
     let settings: (String, i64, i64, i64) = conn
         .query_row(
             "SELECT selection_json, opus_bitrate, ratings_back, remove_deleted \
@@ -167,7 +166,7 @@ fn migrate_v8_to_current_creates_device_sync_tables_and_preserves_managed_files(
 
 /// Builds a v9 database (every schema step through `SCHEMA_V9`, `user_version`
 /// pinned at 9) so v10-specific tests seed rows under the *pre-migration*
-/// shape rather than the shape `migrate()` itself would already have applied.
+/// shape rather than the shape `migrate_connection()` itself would already have applied.
 pub(super) fn open_v9_database() -> Connection {
     let conn = open(None).unwrap();
     conn.execute_batch(SCHEMA_V1).unwrap();
@@ -207,7 +206,7 @@ fn migrate_v9_to_v10_backfills_missing_since_for_missing_tracks() {
     )
     .unwrap();
 
-    migrate(&conn).unwrap();
+    migrate_connection(&conn).unwrap();
 
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
@@ -257,7 +256,7 @@ fn migrate_v9_to_v10_rebuilds_import_errors_table() {
     )
     .unwrap();
 
-    migrate(&conn).unwrap();
+    migrate_connection(&conn).unwrap();
 
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
@@ -312,7 +311,7 @@ fn migrate_v10_to_v11_drops_missing_column_and_preserves_data() {
     )
     .unwrap();
 
-    migrate(&conn).unwrap();
+    migrate_connection(&conn).unwrap();
 
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
@@ -377,7 +376,7 @@ fn net_2_migration_preserves_existing_cover_usage() {
 
     migrate_with_cache_dirs(&conn, cover_cache.path(), portrait_cache.path()).unwrap();
 
-    assert!(crate::modules::is_enabled(&conn, &crate::modules::COVER_DOWNLOAD_MODULE).unwrap());
+    assert!(crate::modules::is_enabled_in(&conn, &crate::modules::COVER_DOWNLOAD_MODULE).unwrap());
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
@@ -393,7 +392,9 @@ fn net_2_migration_preserves_existing_portrait_usage() {
 
     migrate_with_cache_dirs(&conn, cover_cache.path(), portrait_cache.path()).unwrap();
 
-    assert!(crate::modules::is_enabled(&conn, &crate::modules::ARTIST_PORTRAITS_MODULE).unwrap());
+    assert!(
+        crate::modules::is_enabled_in(&conn, &crate::modules::ARTIST_PORTRAITS_MODULE).unwrap()
+    );
 }
 
 #[test]
@@ -404,7 +405,7 @@ fn net_2_migration_preserves_online_lyrics_for_existing_databases() {
 
     migrate_with_cache_dirs(&conn, cover_cache.path(), portrait_cache.path()).unwrap();
 
-    assert!(crate::modules::is_enabled(&conn, &crate::modules::ONLINE_LYRICS_MODULE).unwrap());
+    assert!(crate::modules::is_enabled_in(&conn, &crate::modules::ONLINE_LYRICS_MODULE).unwrap());
 }
 
 #[test]
@@ -420,7 +421,7 @@ fn net_2_migration_carries_artist_news_opt_in_to_new_releases() {
 
     migrate_with_cache_dirs(&conn, cover_cache.path(), portrait_cache.path()).unwrap();
 
-    assert!(crate::modules::is_enabled(&conn, &crate::modules::NEW_RELEASES_MODULE).unwrap());
+    assert!(crate::modules::is_enabled_in(&conn, &crate::modules::NEW_RELEASES_MODULE).unwrap());
 }
 
 #[test]
@@ -433,8 +434,10 @@ fn net_2_migration_ignores_negative_cache_markers() {
 
     migrate_with_cache_dirs(&conn, cover_cache.path(), portrait_cache.path()).unwrap();
 
-    assert!(!crate::modules::is_enabled(&conn, &crate::modules::COVER_DOWNLOAD_MODULE).unwrap());
-    assert!(!crate::modules::is_enabled(&conn, &crate::modules::ARTIST_PORTRAITS_MODULE).unwrap());
+    assert!(!crate::modules::is_enabled_in(&conn, &crate::modules::COVER_DOWNLOAD_MODULE).unwrap());
+    assert!(
+        !crate::modules::is_enabled_in(&conn, &crate::modules::ARTIST_PORTRAITS_MODULE).unwrap()
+    );
 }
 
 #[test]
@@ -467,7 +470,7 @@ fn net_2_migration_preserves_explicit_opt_outs() {
         &crate::modules::ONLINE_LYRICS_MODULE,
         &crate::modules::NEW_RELEASES_MODULE,
     ] {
-        assert!(!crate::modules::is_enabled(&conn, module).unwrap());
+        assert!(!crate::modules::is_enabled_in(&conn, module).unwrap());
     }
 }
 
@@ -534,7 +537,7 @@ fn fresh_database_runs_the_new_releases_migration_sequence() {
         &crate::modules::ONLINE_LYRICS_MODULE,
         &crate::modules::NEW_RELEASES_MODULE,
     ] {
-        assert!(!crate::modules::is_enabled(&conn, module).unwrap());
+        assert!(!crate::modules::is_enabled_in(&conn, module).unwrap());
     }
 }
 
@@ -569,12 +572,12 @@ fn v11_database_runs_the_same_new_releases_migration_sequence() {
         )
         .unwrap();
     assert_eq!(network_settings, 1);
-    assert!(crate::modules::is_enabled(&conn, &crate::modules::ONLINE_LYRICS_MODULE).unwrap());
+    assert!(crate::modules::is_enabled_in(&conn, &crate::modules::ONLINE_LYRICS_MODULE).unwrap());
 }
 
 #[test]
 fn migrate_v12_to_v13_indexes_present_title_order_without_changing_rows() {
-    let mut conn = open_v11_database();
+    let conn = open_v11_database();
     conn.execute_batch(SCHEMA_V12).unwrap();
     conn.pragma_update(None, "user_version", 12).unwrap();
     conn.execute(
@@ -590,7 +593,7 @@ fn migrate_v12_to_v13_indexes_present_title_order_without_changing_rows() {
     )
     .unwrap();
 
-    migrate(&conn).unwrap();
+    migrate_connection(&conn).unwrap();
 
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
@@ -624,8 +627,9 @@ fn migrate_v12_to_v13_indexes_present_title_order_without_changing_rows() {
         .any(|detail| detail.contains("USE TEMP B-TREE FOR ORDER BY")));
     drop(statement);
 
+    let db = crate::db::Db::from_connection(conn);
     let titles = crate::queries::query_track_window(
-        &mut conn,
+        &db,
         &crate::view_source::ViewSource::Library,
         "title",
         "asc",
@@ -643,7 +647,7 @@ fn migrate_v12_to_v13_indexes_present_title_order_without_changing_rows() {
 
 #[test]
 fn migrate_v13_to_v14_indexes_present_album_order_without_changing_rows() {
-    let mut conn = open_v9_database();
+    let conn = open_v9_database();
     conn.execute_batch(SCHEMA_V10).unwrap();
     conn.pragma_update(None, "user_version", 10).unwrap();
     conn.execute_batch(SCHEMA_V11).unwrap();
@@ -665,7 +669,7 @@ fn migrate_v13_to_v14_indexes_present_album_order_without_changing_rows() {
         .unwrap();
     }
 
-    migrate(&conn).unwrap();
+    migrate_connection(&conn).unwrap();
 
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
@@ -723,8 +727,9 @@ fn migrate_v13_to_v14_indexes_present_album_order_without_changing_rows() {
         );
     }
 
+    let db = crate::db::Db::from_connection(conn);
     let titles = crate::queries::query_track_window(
-        &mut conn,
+        &db,
         &crate::view_source::ViewSource::Library,
         "album",
         "asc",
@@ -756,7 +761,7 @@ fn migrate_v14_to_v15_adds_disc_number_without_losing_tracks() {
     )
     .unwrap();
 
-    migrate(&conn).unwrap();
+    migrate_connection(&conn).unwrap();
 
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))

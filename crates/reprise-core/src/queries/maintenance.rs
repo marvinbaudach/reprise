@@ -6,6 +6,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+use crate::db::Db;
 use crate::device_sync::SyncTrack;
 use crate::library::playlists;
 use crate::models::MissingReason;
@@ -21,10 +22,8 @@ use super::TrackSummary;
 /// matching row (e.g. deleted between queueing and playback) — never an
 /// error; the caller decides how to degrade (skip/stop), matching every
 /// other fallible path in this module.
-pub fn query_track_summary(
-    conn: &Connection,
-    id: i64,
-) -> Result<Option<TrackSummary>, rusqlite::Error> {
+pub fn query_track_summary(db: &Db, id: i64) -> Result<Option<TrackSummary>, rusqlite::Error> {
+    let conn = db.conn();
     conn.query_row(
         "SELECT path, title, artist, album, album_artist, genre, artist_mbid,
                 year, duration_ms FROM tracks WHERE id = ?1",
@@ -49,7 +48,8 @@ pub fn query_track_summary(
 /// Returns every non-missing track id for validating persisted playback
 /// queues. A set matches the caller's membership-only use and avoids leaking
 /// query ordering into session semantics.
-pub fn query_live_track_ids(conn: &Connection) -> Result<HashSet<i64>, rusqlite::Error> {
+pub fn query_live_track_ids(db: &Db) -> Result<HashSet<i64>, rusqlite::Error> {
+    let conn = db.conn();
     let mut statement = conn.prepare(&format!("SELECT id FROM tracks WHERE {PRESENT}"))?;
     let ids = statement
         .query_map([], |row| row.get(0))?
@@ -58,7 +58,8 @@ pub fn query_live_track_ids(conn: &Connection) -> Result<HashSet<i64>, rusqlite:
 }
 
 /// Whether at least one present library track can seed playback.
-pub fn query_has_live_tracks(conn: &Connection) -> Result<bool, rusqlite::Error> {
+pub fn query_has_live_tracks(db: &Db) -> Result<bool, rusqlite::Error> {
+    let conn = db.conn();
     conn.query_row(
         &format!("SELECT EXISTS(SELECT 1 FROM tracks WHERE {PRESENT})"),
         [],
@@ -69,7 +70,8 @@ pub fn query_has_live_tracks(conn: &Connection) -> Result<bool, rusqlite::Error>
 /// Returns every present library track in a fresh random order. The idle
 /// transport action uses the first row immediately and retains the rest as
 /// its immutable playback snapshot.
-pub fn query_random_live_track_ids(conn: &Connection) -> Result<Vec<i64>, rusqlite::Error> {
+pub fn query_random_live_track_ids(db: &Db) -> Result<Vec<i64>, rusqlite::Error> {
+    let conn = db.conn();
     let mut statement = conn.prepare(&format!(
         "SELECT id FROM tracks WHERE {PRESENT} ORDER BY RANDOM()"
     ))?;
@@ -85,7 +87,8 @@ pub fn query_random_live_track_ids(conn: &Connection) -> Result<Vec<i64>, rusqli
 /// rejects ids that exist but are currently missing (`missing_since` set), so a
 /// caller can list exactly which ids it must not accept. An empty input is an
 /// empty result with no query issued.
-pub fn filter_present(conn: &Connection, ids: &[i64]) -> Result<Vec<i64>, rusqlite::Error> {
+pub fn filter_present(db: &Db, ids: &[i64]) -> Result<Vec<i64>, rusqlite::Error> {
+    let conn = db.conn();
     if ids.is_empty() {
         return Ok(Vec::new());
     }
@@ -116,7 +119,12 @@ pub fn filter_present(conn: &Connection, ids: &[i64]) -> Result<Vec<i64>, rusqli
 /// unmounted/unknown missing rows stay because their files can return;
 /// proven-deleted and tombstoned rows do not. This is intentionally broader
 /// than [`query_live_track_ids`], which remains the playback predicate.
-pub fn query_queue_retained_track_ids(conn: &Connection) -> Result<HashSet<i64>, rusqlite::Error> {
+pub fn query_queue_retained_track_ids(db: &Db) -> Result<HashSet<i64>, rusqlite::Error> {
+    let conn = db.conn();
+    query_queue_retained_track_ids_conn(conn)
+}
+
+fn query_queue_retained_track_ids_conn(conn: &Connection) -> Result<HashSet<i64>, rusqlite::Error> {
     let mut statement = conn.prepare(
         "SELECT id FROM tracks \
          WHERE removed_at IS NULL \
@@ -132,10 +140,11 @@ pub fn query_queue_retained_track_ids(conn: &Connection) -> Result<HashSet<i64>,
 /// Input order is preserved and duplicate ids are collapsed because callers
 /// pass the result to id-based purge operations, not position-based edits.
 pub fn query_queue_purge_track_ids(
-    conn: &Connection,
+    db: &Db,
     candidates: &[i64],
 ) -> Result<Vec<i64>, rusqlite::Error> {
-    let retained = query_queue_retained_track_ids(conn)?;
+    let conn = db.conn();
+    let retained = query_queue_retained_track_ids_conn(conn)?;
     let mut seen = HashSet::new();
     Ok(candidates
         .iter()
@@ -146,7 +155,8 @@ pub fn query_queue_purge_track_ids(
 
 /// Returns every non-missing media path in stable path order for cover batch
 /// scheduling.
-pub fn query_live_track_paths(conn: &Connection) -> Result<Vec<String>, rusqlite::Error> {
+pub fn query_live_track_paths(db: &Db) -> Result<Vec<String>, rusqlite::Error> {
+    let conn = db.conn();
     let mut statement = conn.prepare(&format!(
         "SELECT path FROM tracks WHERE {PRESENT} ORDER BY path"
     ))?;
@@ -160,9 +170,10 @@ pub fn query_live_track_paths(conn: &Connection) -> Result<Vec<String>, rusqlite
 /// synthetic smoke fixtures, so duplicate titles choose the lowest id and
 /// missing rows remain eligible exactly as they did in the original hook.
 pub fn query_track_ids_by_titles(
-    conn: &Connection,
+    db: &Db,
     titles: &[&str],
 ) -> Result<HashMap<String, i64>, rusqlite::Error> {
+    let conn = db.conn();
     let mut statement =
         conn.prepare("SELECT id FROM tracks WHERE title = ?1 ORDER BY id LIMIT 1")?;
     let mut ids = HashMap::with_capacity(titles.len());
@@ -177,7 +188,8 @@ pub fn query_track_ids_by_titles(
 /// Returns all library ids in descending title order for the playlist smoke
 /// seed. Missing rows are intentionally retained to preserve the hook's
 /// historical behavior.
-pub fn query_track_ids_by_title_desc(conn: &Connection) -> Result<Vec<i64>, rusqlite::Error> {
+pub fn query_track_ids_by_title_desc(db: &Db) -> Result<Vec<i64>, rusqlite::Error> {
+    let conn = db.conn();
     let mut statement = conn.prepare("SELECT id FROM tracks ORDER BY title DESC")?;
     let ids = statement
         .query_map([], |row| row.get(0))?
@@ -193,10 +205,8 @@ pub fn query_track_ids_by_title_desc(conn: &Connection) -> Result<Vec<i64>, rusq
 /// since the now-playing display cache only carries the *track* artist.
 /// `Ok(None)` for an unknown id; the returned string may be empty when neither
 /// tag is set (the caller treats blank as "no artist to navigate to").
-pub fn query_track_album_artist(
-    conn: &Connection,
-    id: i64,
-) -> Result<Option<String>, rusqlite::Error> {
+pub fn query_track_album_artist(db: &Db, id: i64) -> Result<Option<String>, rusqlite::Error> {
+    let conn = db.conn();
     let effective = super::library_views::EFFECTIVE_ALBUM_ARTIST;
     conn.query_row(
         &format!("SELECT {effective} FROM tracks WHERE id = ?1"),
@@ -211,10 +221,8 @@ pub fn query_track_album_artist(
 /// rows that are unknown, marked missing, or no longer regular local files
 /// are omitted. The file size is read at enqueue time so progress totals
 /// describe the bytes that will actually be copied.
-pub fn query_sync_tracks(
-    conn: &Connection,
-    ids: &[i64],
-) -> Result<Vec<SyncTrack>, rusqlite::Error> {
+pub fn query_sync_tracks(db: &Db, ids: &[i64]) -> Result<Vec<SyncTrack>, rusqlite::Error> {
+    let conn = db.conn();
     let mut statement = conn.prepare(&format!(
         "SELECT path,title,artist,album,album_artist,track_no,duration_ms,bitrate_kbps \
          FROM tracks WHERE id = ?1 AND {PRESENT}"
@@ -309,10 +317,11 @@ pub fn query_sync_tracks(
 /// wins the race therefore survives instead of having its new live identity
 /// marked missing by stale fault work. Returns whether one row changed.
 pub fn mark_track_missing_if_current(
-    conn: &Connection,
+    db: &Db,
     track_id: i64,
     expected_path: &Path,
 ) -> Result<bool, rusqlite::Error> {
+    let conn = db.conn();
     let expected_path = expected_path.to_string_lossy();
     let row: Option<(String, Option<i64>)> = conn
         .query_row(
@@ -371,10 +380,8 @@ pub fn mark_track_missing_if_current(
 /// `ids`, in input order; an id that wasn't/isn't-anymore missing is
 /// silently skipped, not an error. A no-op (`Ok(vec![])`, no transaction opened) for an empty
 /// `ids` slice.
-pub fn remove_missing_tracks(
-    conn: &mut Connection,
-    ids: &[i64],
-) -> Result<Vec<i64>, rusqlite::Error> {
+pub fn remove_missing_tracks(db: &Db, ids: &[i64]) -> Result<Vec<i64>, rusqlite::Error> {
+    let conn = db.conn();
     remove_tracks_impl(conn, ids, RemoveGuard::MissingOnly)
 }
 
@@ -384,9 +391,10 @@ pub fn remove_missing_tracks(
 /// be allowed to hit an unrelated replacement row. Playlist compaction and
 /// the identity check share one transaction.
 pub fn remove_tracks_matching_paths(
-    conn: &mut Connection,
+    db: &Db,
     tracks: &[(i64, PathBuf)],
 ) -> Result<Vec<i64>, rusqlite::Error> {
+    let conn = db.conn();
     remove_track_requests_impl(
         conn,
         tracks.iter().map(|(id, path)| (*id, Some(path.as_path()))),
@@ -400,10 +408,11 @@ pub fn remove_tracks_matching_paths(
 /// deliberate Remove-from-Library; Move-to-Trash continues to call
 /// [`remove_tracks_matching_paths`] and therefore creates no exclusion.
 pub fn exclude_tracks_matching_paths(
-    conn: &mut Connection,
+    db: &Db,
     tracks: &[(i64, PathBuf)],
     excluded_at: i64,
 ) -> Result<Vec<i64>, rusqlite::Error> {
+    let conn = db.conn();
     remove_track_requests_impl(
         conn,
         tracks.iter().map(|(id, path)| (*id, Some(path.as_path()))),
@@ -442,7 +451,7 @@ pub(crate) enum RemoveGuard {
 }
 
 pub(crate) fn remove_tracks_impl(
-    conn: &mut Connection,
+    conn: &Connection,
     ids: &[i64],
     guard: RemoveGuard,
 ) -> Result<Vec<i64>, rusqlite::Error> {
@@ -450,7 +459,7 @@ pub(crate) fn remove_tracks_impl(
 }
 
 fn remove_track_requests_impl<'a>(
-    conn: &mut Connection,
+    conn: &Connection,
     requests: impl IntoIterator<Item = (i64, Option<&'a Path>)>,
     guard: RemoveGuard,
     exclusion_time: Option<i64>,
@@ -459,7 +468,15 @@ fn remove_track_requests_impl<'a>(
     if requests.is_empty() {
         return Ok(Vec::new());
     }
-    let tx = conn.transaction()?;
+    // `unchecked_transaction()`: this crate's `Db` handle wraps a plain
+    // `rusqlite::Connection` without interior mutability, so the compile-time
+    // `&mut Connection` transaction guard (`Connection::transaction`) can
+    // never be obtained through it — see `docs/adr/002-core-db-handle.md`.
+    // Nesting is the risk this gives up: verified that neither
+    // `crate::library::exclusions::record_track` nor
+    // `playlists::renumber_positions` — the only two calls made against
+    // `&tx` inside this transaction — open a transaction of their own.
+    let tx = conn.unchecked_transaction()?;
     let mut removed = Vec::with_capacity(requests.len());
     for (id, expected_path) in requests {
         if let (Some(excluded_at), Some(expected_path)) = (exclusion_time, expected_path) {
@@ -534,7 +551,7 @@ fn remove_track_requests_impl<'a>(
 /// monotonic fact here would be redundant, not safer, so do not "fix" this
 /// by adding it back.
 pub(crate) fn remove_auto_clean_eligible_tracks(
-    conn: &mut Connection,
+    conn: &Connection,
     ids: &[i64],
 ) -> Result<Vec<i64>, rusqlite::Error> {
     remove_tracks_impl(conn, ids, RemoveGuard::AutoCleanEligible)
@@ -609,11 +626,8 @@ pub(crate) fn remove_auto_clean_eligible_tracks(
 /// beyond any realistic library removal batch, so the single-statement form
 /// is safe in practice; [`undo_tombstone`] below mirrors the same shape for
 /// the same reason.
-pub fn tombstone_tracks(
-    conn: &Connection,
-    ids: &[i64],
-    now: i64,
-) -> Result<usize, rusqlite::Error> {
+pub fn tombstone_tracks(db: &Db, ids: &[i64], now: i64) -> Result<usize, rusqlite::Error> {
+    let conn = db.conn();
     if ids.is_empty() {
         return Ok(0);
     }
@@ -641,7 +655,8 @@ pub fn tombstone_tracks(
 ///
 /// Returns the number of rows actually restored. `Ok(0)` for an empty `ids`
 /// slice, no query issued.
-pub fn undo_tombstone(conn: &Connection, ids: &[i64]) -> Result<usize, rusqlite::Error> {
+pub fn undo_tombstone(db: &Db, ids: &[i64]) -> Result<usize, rusqlite::Error> {
+    let conn = db.conn();
     if ids.is_empty() {
         return Ok(0);
     }
@@ -693,7 +708,8 @@ pub fn undo_tombstone(conn: &Connection, ids: &[i64]) -> Result<usize, rusqlite:
 /// opposed to the pre-existing `purge_tombstones_skips_a_row_resurrected_
 /// before_the_purge_runs`, which only covers a resurrection that lands
 /// *before* this function is even called — the easy case).
-pub fn purge_tombstones(conn: &mut Connection) -> Result<Vec<i64>, rusqlite::Error> {
+pub fn purge_tombstones(db: &Db) -> Result<Vec<i64>, rusqlite::Error> {
+    let conn = db.conn();
     let ids = {
         let mut statement =
             conn.prepare("SELECT id FROM tracks WHERE removed_at IS NOT NULL ORDER BY id")?;
@@ -709,7 +725,8 @@ pub fn purge_tombstones(conn: &mut Connection) -> Result<Vec<i64>, rusqlite::Err
 /// see the module doc's `ImportErrors` section for why this is the only
 /// piece of that source this task builds. Used by `ui::sidebar` (Task 4) for
 /// the "Import errors" badge count.
-pub fn query_import_error_count(conn: &Connection) -> Result<i64, rusqlite::Error> {
+pub fn query_import_error_count(db: &Db) -> Result<i64, rusqlite::Error> {
+    let conn = db.conn();
     conn.query_row("SELECT count(*) FROM import_errors", [], |r| r.get(0))
 }
 
@@ -718,7 +735,8 @@ pub fn query_import_error_count(conn: &Connection) -> Result<i64, rusqlite::Erro
 /// if no track has that exact path — not an error; the caller (`ui::
 /// playlist_io::import_playlist`) treats an unmatched path as "not found",
 /// counted but not added.
-pub fn track_id_for_path(conn: &Connection, path: &str) -> Result<Option<i64>, rusqlite::Error> {
+pub fn track_id_for_path(db: &Db, path: &str) -> Result<Option<i64>, rusqlite::Error> {
+    let conn = db.conn();
     conn.query_row(
         "SELECT id FROM tracks WHERE path = ?1",
         rusqlite::params![path],

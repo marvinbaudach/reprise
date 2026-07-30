@@ -1,18 +1,17 @@
 //! Window-level scheduling for automatic podcast refreshes.
 
-use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;
 
 use gtk4::gio;
 use gtk4::glib;
 use gtk4::prelude::*;
-use rusqlite::Connection;
+use reprise_core::db::Db;
 
 const REFRESH_TIMER_SECONDS: u32 = 60 * 60;
 
 pub(in crate::ui) fn arm(
-    conn: &Rc<RefCell<Connection>>,
+    conn: &Rc<Db>,
     db_path: &Path,
     runtime: &Rc<crate::ui::podcasts::PodcastsRuntime>,
     view: &Rc<crate::ui::podcasts::PodcastsView>,
@@ -27,7 +26,7 @@ pub(in crate::ui) fn arm(
                 return false;
             };
             let metered = gio::NetworkMonitor::default().is_network_metered();
-            let (subscription_count, due) = decision_inputs(&conn.borrow(), &db_path);
+            let (subscription_count, due) = decision_inputs(&conn, &db_path);
             if runtime.automatic_refresh_allowed(subscription_count, metered, due) {
                 view.request_refresh(false);
             }
@@ -50,15 +49,15 @@ pub(in crate::ui) fn arm(
     });
 }
 
-fn decision_inputs(conn: &Connection, db_path: &Path) -> (usize, bool) {
-    let subscriptions = match reprise_core::podcasts::store::active_subscriptions(conn) {
+fn decision_inputs(db: &Db, db_path: &Path) -> (usize, bool) {
+    let subscriptions = match reprise_core::podcasts::store::active_subscriptions(db) {
         Ok(subscriptions) => subscriptions,
         Err(error) => {
             tracing::warn!(%error, "could not inspect podcast refresh schedule");
             return (0, false);
         }
     };
-    let config = match reprise_core::podcasts::config::load(conn) {
+    let config = match reprise_core::podcasts::config::load(db) {
         Ok(config) => config,
         Err(error) => {
             tracing::warn!(%error, "could not read podcast refresh interval");

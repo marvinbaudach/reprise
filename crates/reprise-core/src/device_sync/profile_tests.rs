@@ -188,18 +188,18 @@ fn playlist_projection_preserves_entries_but_deduplicates_physical_tracks() {
 
 #[test]
 fn sync_query_exposes_source_bitrate_for_profile_planning() {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
+    let conn = crate::db::Db::open_in_memory().unwrap();
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("known.mp3");
     std::fs::write(&path, b"mp3").unwrap();
-    conn.execute(
-        "INSERT INTO tracks (
+    conn.conn()
+        .execute(
+            "INSERT INTO tracks (
              id, path, title, artist, album, duration_ms, bitrate_kbps, added_at
          ) VALUES (1, ?1, 'Known', 'Artist', 'Album', 10000, 192, 0)",
-        [path.to_string_lossy().as_ref()],
-    )
-    .unwrap();
+            [path.to_string_lossy().as_ref()],
+        )
+        .unwrap();
 
     let tracks = crate::queries::query_sync_tracks(&conn, &[1]).unwrap();
 

@@ -12,6 +12,8 @@
 use rusqlite::Connection;
 use std::path::Path;
 
+use crate::db::Db;
+
 /// Ratings are stored as a plain `i32` column with no `CHECK` constraint
 /// (see `db.rs`'s schema); clamping here is the single place that keeps
 /// out-of-range values (a bad click index, corrupt data) from ever reaching
@@ -20,7 +22,16 @@ const RATING_MIN: i32 = 0;
 const RATING_MAX: i32 = 5;
 
 /// Sets `track_id`'s rating, clamped to `RATING_MIN..=RATING_MAX`.
-pub fn set_rating(conn: &Connection, track_id: i64, rating: i32) -> Result<(), rusqlite::Error> {
+pub fn set_rating(db: &Db, track_id: i64, rating: i32) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
+    set_rating_in(conn, track_id, rating)
+}
+
+pub(crate) fn set_rating_in(
+    conn: &Connection,
+    track_id: i64,
+    rating: i32,
+) -> Result<(), rusqlite::Error> {
     let clamped = rating.clamp(RATING_MIN, RATING_MAX);
     conn.execute(
         "UPDATE tracks SET rating = ?1 WHERE id = ?2",
@@ -47,7 +58,8 @@ pub(crate) fn set_rating_for_registered_track(
 /// Increments `track_id`'s play count and sets `last_played_at` to
 /// `now_unix` (seconds since the Unix epoch — the same unit `scanner.rs`
 /// uses for `added_at`/`occurred_at`).
-pub fn record_play(conn: &Connection, track_id: i64, now_unix: i64) -> Result<(), rusqlite::Error> {
+pub fn record_play(db: &Db, track_id: i64, now_unix: i64) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
     conn.execute(
         "UPDATE tracks SET play_count = play_count + 1, last_played_at = ?1 WHERE id = ?2",
         rusqlite::params![now_unix, track_id],
@@ -69,10 +81,10 @@ pub fn should_count_play(max_position_ms: i64, duration_ms: i64) -> bool {
 mod tests {
     use super::*;
 
-    fn seeded_conn() -> Connection {
-        let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
-        conn.execute(
+    fn seeded_conn() -> Db {
+        let conn = Db::open_in_memory().unwrap();
+        conn.conn()
+            .execute(
             "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (1, '/x/a.flac', 'A', 'B', 0)",
             [],
         )
@@ -105,6 +117,7 @@ mod tests {
         let conn = seeded_conn();
         set_rating(&conn, 1, 3).unwrap();
         let rating: i32 = conn
+            .conn()
             .query_row("SELECT rating FROM tracks WHERE id = 1", [], |r| r.get(0))
             .unwrap();
         assert_eq!(rating, 3);
@@ -115,6 +128,7 @@ mod tests {
         let conn = seeded_conn();
         set_rating(&conn, 1, 7).unwrap();
         let rating: i32 = conn
+            .conn()
             .query_row("SELECT rating FROM tracks WHERE id = 1", [], |r| r.get(0))
             .unwrap();
         assert_eq!(rating, 5);
@@ -125,6 +139,7 @@ mod tests {
         let conn = seeded_conn();
         set_rating(&conn, 1, -1).unwrap();
         let rating: i32 = conn
+            .conn()
             .query_row("SELECT rating FROM tracks WHERE id = 1", [], |r| r.get(0))
             .unwrap();
         assert_eq!(rating, 0);
@@ -135,6 +150,7 @@ mod tests {
         let conn = seeded_conn();
         record_play(&conn, 1, 1_700_000_000).unwrap();
         let (count, last_played): (i64, i64) = conn
+            .conn()
             .query_row(
                 "SELECT play_count, last_played_at FROM tracks WHERE id = 1",
                 [],
@@ -146,6 +162,7 @@ mod tests {
 
         record_play(&conn, 1, 1_700_000_100).unwrap();
         let (count, last_played): (i64, i64) = conn
+            .conn()
             .query_row(
                 "SELECT play_count, last_played_at FROM tracks WHERE id = 1",
                 [],

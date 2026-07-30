@@ -68,20 +68,22 @@ fn seed_present_track(conn: &Connection, id: i64) {
 /// one by removing it).
 #[test]
 fn count_missing_counts_every_missing_row_old_and_new_alike() {
-    let conn = crate::db::open_migrated(None).unwrap();
-    seed_missing_track_since(&conn, 1, 10); // old
-    seed_missing_track_since(&conn, 2, 500); // new
-    seed_tombstoned_missing_track(&conn, 3, 500, 600); // must not count
-    seed_present_track(&conn, 4); // present, must not count
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    seed_missing_track_since(conn, 1, 10); // old
+    seed_missing_track_since(conn, 2, 500); // new
+    seed_tombstoned_missing_track(conn, 3, 500, 600); // must not count
+    seed_present_track(conn, 4); // present, must not count
 
-    assert_eq!(count_missing(&conn).unwrap(), 2);
+    assert_eq!(count_missing(&db).unwrap(), 2);
 }
 
 #[test]
 fn count_missing_is_zero_when_nothing_is_missing() {
-    let conn = crate::db::open_migrated(None).unwrap();
-    seed_present_track(&conn, 1);
-    assert_eq!(count_missing(&conn).unwrap(), 0);
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    seed_present_track(conn, 1);
+    assert_eq!(count_missing(&db).unwrap(), 0);
 }
 
 /// The badge itself: only rows that went missing strictly AFTER
@@ -91,12 +93,13 @@ fn count_missing_is_zero_when_nothing_is_missing() {
 /// not the backlog total).
 #[test]
 fn count_new_missing_counts_only_rows_missing_since_after_last_viewed() {
-    let conn = crate::db::open_migrated(None).unwrap();
-    seed_missing_track_since(&conn, 1, 50); // before last_viewed — not new
-    seed_missing_track_since(&conn, 2, 150); // after last_viewed — new
-    seed_missing_track_since(&conn, 3, 200); // after last_viewed — new
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    seed_missing_track_since(conn, 1, 50); // before last_viewed — not new
+    seed_missing_track_since(conn, 2, 150); // after last_viewed — new
+    seed_missing_track_since(conn, 3, 200); // after last_viewed — new
 
-    assert_eq!(count_new_missing(&conn, 100).unwrap(), 2);
+    assert_eq!(count_new_missing(&db, 100).unwrap(), 2);
 }
 
 /// Exact boundary: `missing_since == last_viewed` must NOT count as new —
@@ -105,9 +108,10 @@ fn count_new_missing_counts_only_rows_missing_since_after_last_viewed() {
 /// covers a row that went missing in that same second).
 #[test]
 fn count_new_missing_boundary_equal_to_last_viewed_does_not_count() {
-    let conn = crate::db::open_migrated(None).unwrap();
-    seed_missing_track_since(&conn, 1, 100);
-    assert_eq!(count_new_missing(&conn, 100).unwrap(), 0);
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    seed_missing_track_since(conn, 1, 100);
+    assert_eq!(count_new_missing(&db, 100).unwrap(), 0);
 }
 
 /// `last_viewed = 0` is the "never viewed" sentinel (a missing settings key
@@ -116,10 +120,11 @@ fn count_new_missing_boundary_equal_to_last_viewed_does_not_count() {
 /// is new.
 #[test]
 fn count_new_missing_zero_last_viewed_treats_every_missing_row_as_new() {
-    let conn = crate::db::open_migrated(None).unwrap();
-    seed_missing_track_since(&conn, 1, 1);
-    seed_missing_track_since(&conn, 2, 100_000);
-    assert_eq!(count_new_missing(&conn, 0).unwrap(), 2);
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    seed_missing_track_since(conn, 1, 1);
+    seed_missing_track_since(conn, 2, 100_000);
+    assert_eq!(count_new_missing(&db, 0).unwrap(), 2);
 }
 
 /// A tombstoned row must never badge, even when its `missing_since` is well
@@ -127,7 +132,8 @@ fn count_new_missing_zero_last_viewed_treats_every_missing_row_as_new() {
 /// exclusion above.
 #[test]
 fn count_new_missing_excludes_tombstoned_rows() {
-    let conn = crate::db::open_migrated(None).unwrap();
-    seed_tombstoned_missing_track(&conn, 1, 500, 600);
-    assert_eq!(count_new_missing(&conn, 100).unwrap(), 0);
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    seed_tombstoned_missing_track(conn, 1, 500, 600);
+    assert_eq!(count_new_missing(&db, 100).unwrap(), 0);
 }

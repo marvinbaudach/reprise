@@ -9,7 +9,7 @@
 use std::time::Duration;
 use std::{io::Read, io::Take};
 
-use rusqlite::{params, Connection};
+use rusqlite::params;
 use serde::Serialize;
 
 pub mod lastfm;
@@ -269,7 +269,8 @@ pub trait ScrobblerTransport: Send + 'static {
 
 /// Adds one completed playback session to the durable FIFO. The caller may
 /// safely request a worker flush only after this transaction has returned.
-pub fn enqueue(conn: &Connection, listen: &Listen) -> Result<i64, QueueError> {
+pub fn enqueue(db: &crate::db::Db, listen: &Listen) -> Result<i64, QueueError> {
+    let conn = db.conn();
     listen.track.validate()?;
     let release_name = listen
         .track
@@ -293,7 +294,8 @@ pub fn enqueue(conn: &Connection, listen: &Listen) -> Result<i64, QueueError> {
 }
 
 /// Returns at most one ListenBrainz API batch in stable FIFO order.
-pub fn pending(conn: &Connection, limit: usize) -> Result<Vec<Listen>, QueueError> {
+pub fn pending(db: &crate::db::Db, limit: usize) -> Result<Vec<Listen>, QueueError> {
+    let conn = db.conn();
     let limit = limit.min(MAX_LISTENS_PER_REQUEST);
     if limit == 0 {
         return Ok(Vec::new());
@@ -319,7 +321,8 @@ pub fn pending(conn: &Connection, limit: usize) -> Result<Vec<Listen>, QueueErro
 }
 
 /// Atomically removes only rows included in a confirmed API submission.
-pub fn acknowledge(conn: &Connection, ids: &[i64]) -> Result<(), QueueError> {
+pub fn acknowledge(db: &crate::db::Db, ids: &[i64]) -> Result<(), QueueError> {
+    let conn = db.conn();
     if ids.is_empty() {
         return Ok(());
     }
@@ -331,12 +334,14 @@ pub fn acknowledge(conn: &Connection, ids: &[i64]) -> Result<(), QueueError> {
     Ok(())
 }
 
-pub fn clear_pending(conn: &Connection) -> Result<usize, QueueError> {
+pub fn clear_pending(db: &crate::db::Db) -> Result<usize, QueueError> {
+    let conn = db.conn();
     conn.execute("DELETE FROM listenbrainz_queue", [])
         .map_err(QueueError::from)
 }
 
-pub fn pending_count(conn: &Connection) -> Result<usize, QueueError> {
+pub fn pending_count(db: &crate::db::Db) -> Result<usize, QueueError> {
+    let conn = db.conn();
     let count: i64 = conn.query_row("SELECT COUNT(*) FROM listenbrainz_queue", [], |row| {
         row.get(0)
     })?;
@@ -669,10 +674,8 @@ mod tests {
         );
     }
 
-    fn migrated_conn() -> rusqlite::Connection {
-        let conn = crate::db::open(None).unwrap();
-        crate::db::migrate(&conn).unwrap();
-        conn
+    fn migrated_conn() -> crate::db::Db {
+        crate::db::Db::open_in_memory().unwrap()
     }
 
     #[test]
@@ -739,12 +742,10 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("library.db");
         {
-            let conn = crate::db::open(Some(&path)).unwrap();
-            crate::db::migrate(&conn).unwrap();
+            let conn = crate::db::Db::open_migrated(Some(&path)).unwrap();
             enqueue(&conn, &listen()).unwrap();
         }
-        let conn = crate::db::open(Some(&path)).unwrap();
-        crate::db::migrate(&conn).unwrap();
+        let conn = crate::db::Db::open_migrated(Some(&path)).unwrap();
         assert_eq!(pending(&conn, 100).unwrap(), vec![listen_with_id(1)]);
     }
 

@@ -107,7 +107,7 @@ for pattern in \
   'run_private_scenario_group' \
   'CUA_E2E_PRIVATE_GROUP=' \
   'for scenario_group in' \
-  'dbus-run-session ffmpeg gdbus gnome-keyring-daemon import jq python3 rg timeout wmctrl' \
+  'dbus-run-session ffmpeg gdbus gnome-keyring-daemon import jq python3 rg sqlite3 timeout wmctrl' \
   'CUA_DRIVER_SOCKET=' \
   'CUA_DRIVER_RS_UPDATE_CHECK=0' \
   'CUA_E2E_DRIVER_TIMEOUT_SECS=' \

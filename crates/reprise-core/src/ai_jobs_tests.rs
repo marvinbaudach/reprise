@@ -3,19 +3,18 @@ use crate::ai_staging::StagingStore;
 
 const LEASE_SECS: i64 = 60;
 
-fn migrated() -> Connection {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate(&conn).unwrap();
-    conn
+fn migrated() -> crate::db::Db {
+    crate::db::Db::open_in_memory().unwrap()
 }
 
-fn seed_track(conn: &Connection, id: i64) {
-    conn.execute(
-        "INSERT INTO tracks (id, path, title, artist, added_at, file_mtime, file_size) \
+fn seed_track(db: &crate::db::Db, id: i64) {
+    db.conn()
+        .execute(
+            "INSERT INTO tracks (id, path, title, artist, added_at, file_mtime, file_size) \
          VALUES (?1, ?2, 'T', 'A', 1, 1, 1)",
-        params![id, format!("/music/{id}.flac")],
-    )
-    .unwrap();
+            params![id, format!("/music/{id}.flac")],
+        )
+        .unwrap();
 }
 
 /// A staging store over a temp dir, with a render file present for `job_id`.
@@ -26,8 +25,8 @@ fn staging_with_render(dir: &std::path::Path, job_id: i64) -> StagingStore {
     store
 }
 
-fn job_ops(conn: &Connection) -> Vec<(String, String)> {
-    events::read_since(conn, 0, None)
+fn job_ops(db: &crate::db::Db) -> Vec<(String, String)> {
+    events::read_since(db, 0, None)
         .unwrap()
         .into_iter()
         .filter(|change| change.entity == JOB_ENTITY)
@@ -75,6 +74,7 @@ fn re_enqueuing_an_open_job_dedups_without_a_second_row_or_event() {
         }
     );
     let count: i64 = conn
+        .conn()
         .query_row("SELECT COUNT(*) FROM ai_jobs", [], |r| r.get(0))
         .unwrap();
     assert_eq!(count, 1);
@@ -104,11 +104,12 @@ fn dedup_references_a_saved_result() {
         .unwrap()
         .job_id();
     // Drive it to a saved state.
-    conn.execute(
-        "UPDATE ai_jobs SET status = 'done', result_track_id = 2 WHERE id = ?1",
-        [job_id],
-    )
-    .unwrap();
+    conn.conn()
+        .execute(
+            "UPDATE ai_jobs SET status = 'done', result_track_id = 2 WHERE id = ?1",
+            [job_id],
+        )
+        .unwrap();
 
     let again = enqueue_instrumental(&conn, &empty, 1, "m@1", 10).unwrap();
     assert_eq!(
@@ -130,7 +131,8 @@ fn dedup_references_a_staged_render_only_while_its_file_exists() {
         .unwrap()
         .job_id();
     // Finish it into staging (done, no result yet) and drop the render on disk.
-    conn.execute("UPDATE ai_jobs SET status = 'done' WHERE id = ?1", [job_id])
+    conn.conn()
+        .execute("UPDATE ai_jobs SET status = 'done' WHERE id = ?1", [job_id])
         .unwrap();
     let staging = staging_with_render(dir.path(), job_id);
 
@@ -168,16 +170,18 @@ fn batch_enqueue_shares_a_batch_id_and_aggregates_progress() {
 
     // Move one job to done, one to half progress; the aggregate reflects both.
     let ids: Vec<i64> = batch.jobs.iter().map(|j| j.job_id()).collect();
-    conn.execute(
-        "UPDATE ai_jobs SET status = 'done', progress_permille = 1000 WHERE id = ?1",
-        [ids[0]],
-    )
-    .unwrap();
-    conn.execute(
-        "UPDATE ai_jobs SET status = 'running', progress_permille = 500 WHERE id = ?1",
-        [ids[1]],
-    )
-    .unwrap();
+    conn.conn()
+        .execute(
+            "UPDATE ai_jobs SET status = 'done', progress_permille = 1000 WHERE id = ?1",
+            [ids[0]],
+        )
+        .unwrap();
+    conn.conn()
+        .execute(
+            "UPDATE ai_jobs SET status = 'running', progress_permille = 500 WHERE id = ?1",
+            [ids[1]],
+        )
+        .unwrap();
 
     let progress = batch_progress(&conn, &batch.batch_id).unwrap();
     assert_eq!(progress.total, 3);
@@ -213,9 +217,8 @@ fn claim_marks_running_sets_the_lease_and_logs_start() {
 fn a_valid_lease_blocks_a_second_worker_until_it_expires() {
     // Two connections over one file DB: the exactly-one-claimer guarantee.
     let file = tempfile::NamedTempFile::new().unwrap();
-    let a = crate::db::open(Some(file.path())).unwrap();
-    crate::db::migrate(&a).unwrap();
-    let b = crate::db::open(Some(file.path())).unwrap();
+    let a = crate::db::Db::open_migrated(Some(file.path())).unwrap();
+    let b = crate::db::Db::open_ready(file.path()).unwrap();
     let empty = StagingStore::new("/unused");
     seed_track(&a, 1);
     let job_id = enqueue_instrumental(&a, &empty, 1, "m@1", 0)
@@ -233,6 +236,7 @@ fn a_valid_lease_blocks_a_second_worker_until_it_expires() {
     let reclaimed = claim_next(&b, 2, 1_000, LEASE_SECS).unwrap();
     assert_eq!(reclaimed.map(|j| j.id), Some(job_id));
     let claimed_by: i64 = a
+        .conn()
         .query_row(
             "SELECT claimed_by FROM ai_jobs WHERE id = ?1",
             [job_id],
@@ -261,6 +265,7 @@ fn heartbeat_extends_the_lease_for_the_owner_and_reports_cancel() {
         }
     );
     let lease: i64 = conn
+        .conn()
         .query_row(
             "SELECT lease_expires_at FROM ai_jobs WHERE id = ?1",
             [job_id],
@@ -407,7 +412,8 @@ fn discard_staged_cancels_the_job_deletes_the_file_and_frees_dedup() {
     let job_id = enqueue_instrumental(&conn, &staging, 1, "m@1", 0)
         .unwrap()
         .job_id();
-    conn.execute("UPDATE ai_jobs SET status = 'done' WHERE id = ?1", [job_id])
+    conn.conn()
+        .execute("UPDATE ai_jobs SET status = 'done' WHERE id = ?1", [job_id])
         .unwrap();
     staging.ensure_dir().unwrap();
     std::fs::write(staging.path_for_job(job_id), b"render").unwrap();
@@ -441,9 +447,10 @@ fn count_saved_counts_only_promoted_jobs() {
     assert_eq!(count_saved(&conn).unwrap(), 0);
 
     // Promote it (done + result_track_id) -> counted.
-    conn.execute("UPDATE ai_jobs SET status = 'done' WHERE id = ?1", [job])
+    conn.conn()
+        .execute("UPDATE ai_jobs SET status = 'done' WHERE id = ?1", [job])
         .unwrap();
-    attach_result_track(&conn, job, 2).unwrap();
+    attach_result_track(conn.conn(), job, 2).unwrap();
     assert_eq!(count_saved(&conn).unwrap(), 1, "a promoted job counts");
 }
 
@@ -456,10 +463,11 @@ fn attach_result_track_moves_a_done_job_to_saved() {
     let job_id = enqueue_instrumental(&conn, &empty, 1, "m@1", 0)
         .unwrap()
         .job_id();
-    conn.execute("UPDATE ai_jobs SET status = 'done' WHERE id = ?1", [job_id])
+    conn.conn()
+        .execute("UPDATE ai_jobs SET status = 'done' WHERE id = ?1", [job_id])
         .unwrap();
 
-    assert!(attach_result_track(&conn, job_id, 2).unwrap());
+    assert!(attach_result_track(conn.conn(), job_id, 2).unwrap());
     assert_eq!(
         get_job(&conn, job_id).unwrap().unwrap().result_track_id,
         Some(2)
@@ -509,8 +517,7 @@ fn concurrent_enqueue_and_claim_never_surface_a_raw_busy_error() {
 
     let file = tempfile::NamedTempFile::new().unwrap();
     let path = file.path().to_path_buf();
-    let setup = crate::db::open(Some(&path)).unwrap();
-    crate::db::migrate(&setup).unwrap();
+    let setup = crate::db::Db::open_migrated(Some(&path)).unwrap();
     for id in 1..=SOURCES {
         seed_track(&setup, id);
     }
@@ -523,7 +530,9 @@ fn concurrent_enqueue_and_claim_never_surface_a_raw_busy_error() {
         let barrier = Arc::clone(&barrier);
         handles.push(thread::spawn(
             move || -> Result<Vec<i64>, rusqlite::Error> {
-                let conn = crate::db::open_with_options(Some(&path), BUSY_TIMEOUT_MS).unwrap();
+                let conn = crate::db::Db::from_connection(
+                    crate::db::open_with_options(Some(&path), BUSY_TIMEOUT_MS).unwrap(),
+                );
                 let staging = StagingStore::new("/unused");
                 let mut claimed = Vec::new();
                 barrier.wait();
@@ -557,12 +566,15 @@ fn concurrent_enqueue_and_claim_never_surface_a_raw_busy_error() {
     }
 
     // Drain anything still queued, single-threaded.
-    let drain = crate::db::open_with_options(Some(&path), BUSY_TIMEOUT_MS).unwrap();
+    let drain = crate::db::Db::from_connection(
+        crate::db::open_with_options(Some(&path), BUSY_TIMEOUT_MS).unwrap(),
+    );
     while let Some(job) = claim_next(&drain, 99, 0, BIG_LEASE).unwrap() {
         all_claimed.push(job.id);
     }
 
     let total_jobs: i64 = drain
+        .conn()
         .query_row("SELECT COUNT(*) FROM ai_jobs", [], |r| r.get(0))
         .unwrap();
     all_claimed.sort_unstable();
@@ -578,13 +590,14 @@ fn concurrent_enqueue_and_claim_never_surface_a_raw_busy_error() {
 }
 
 /// Reads the persisted `auto_promote` flag for a job directly.
-fn auto_promote_flag(conn: &Connection, job_id: i64) -> i64 {
-    conn.query_row(
-        "SELECT auto_promote FROM ai_jobs WHERE id = ?1",
-        [job_id],
-        |r| r.get(0),
-    )
-    .unwrap()
+fn auto_promote_flag(db: &crate::db::Db, job_id: i64) -> i64 {
+    db.conn()
+        .query_row(
+            "SELECT auto_promote FROM ai_jobs WHERE id = ?1",
+            [job_id],
+            |r| r.get(0),
+        )
+        .unwrap()
 }
 
 #[test]
@@ -627,6 +640,7 @@ fn dedup_ignores_the_auto_promote_intent() {
         }
     );
     let count: i64 = conn
+        .conn()
         .query_row("SELECT COUNT(*) FROM ai_jobs", [], |r| r.get(0))
         .unwrap();
     assert_eq!(count, 1, "no second row was created");
