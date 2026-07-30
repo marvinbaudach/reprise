@@ -368,6 +368,28 @@ pub fn refresh_to_root(
     )
 }
 
+/// Persists the canonical channel URL a `@handle` resolved to, so later
+/// refreshes skip the yt-dlp round trip entirely.
+///
+/// The write is refused when another subscription already holds that URL. That
+/// is the right outcome — two rows must not share a `feed_url` — but it leaves
+/// the handle subscription resolving forever, so it is worth a line in the log
+/// rather than a discarded `bool`.
+fn adopt_resolved_channel_url(
+    conn: &Connection,
+    subscription_id: i64,
+    channel_url: &str,
+) -> Result<(), rusqlite::Error> {
+    if !super::store::update_feed_url_in(conn, subscription_id, channel_url)? {
+        tracing::warn!(
+            subscription_id,
+            channel_url,
+            "resolved channel URL already belongs to another subscription; keeping the handle URL"
+        );
+    }
+    Ok(())
+}
+
 fn refresh_to_root_with_download_progress(
     conn: &Connection,
     feed_fetcher: &dyn FeedFetcher,
@@ -407,14 +429,34 @@ fn refresh_to_root_with_download_progress(
                 "RSS podcasts are disabled".to_owned(),
             )),
             PodcastKind::Youtube if youtube_allowed => {
-                let channel_url =
-                    if super::youtube::long_form_feed_url(&subscription.feed_url).is_some() {
-                        subscription.feed_url.clone()
-                    } else {
-                        youtube_fetcher
-                            .resolve_channel_url(&subscription.feed_url)?
-                            .unwrap_or_else(|| subscription.feed_url.clone())
-                    };
+                // Resolving a channel identity runs a yt-dlp subprocess, so a
+                // transient failure here is ordinary. It must stay this one
+                // subscription's failure, handled by the shared `Err` arm below
+                // like any fetch or parse failure — propagating it with `?`
+                // would abandon every remaining subscription in the batch and
+                // skip recording the failure on this one.
+                let channel_url = if super::youtube::long_form_feed_url(&subscription.feed_url)
+                    .is_some()
+                {
+                    Ok(subscription.feed_url.clone())
+                } else {
+                    youtube_fetcher
+                        .resolve_channel_url(&subscription.feed_url)
+                        .map(|resolved| resolved.unwrap_or_else(|| subscription.feed_url.clone()))
+                };
+                let channel_url = match channel_url {
+                    Ok(channel_url) => channel_url,
+                    Err(error) => {
+                        tracing::warn!(
+                            subscription_id = subscription.id,
+                            %error,
+                            "could not resolve the YouTube channel identity"
+                        );
+                        super::store::update_fetch_failed_in(conn, subscription.id, now)?;
+                        summary.failed += 1;
+                        continue;
+                    }
+                };
                 if let Some(feed_url) = super::youtube::long_form_feed_url(&channel_url) {
                     if channel_url != subscription.feed_url {
                         resolved_channel_url = Some(channel_url.clone());
@@ -450,7 +492,7 @@ fn refresh_to_root_with_download_progress(
             Ok(result) => result,
             Err(PodcastError::NotModified) => {
                 if let Some(url) = resolved_channel_url.as_deref() {
-                    super::store::update_feed_url_in(conn, subscription.id, url)?;
+                    adopt_resolved_channel_url(conn, subscription.id, url)?;
                 }
                 super::store::update_fetch_not_modified_in(conn, subscription.id, now)?;
                 summary.not_modified += 1;
@@ -469,7 +511,7 @@ fn refresh_to_root_with_download_progress(
         };
 
         if let Some(url) = resolved_channel_url.as_deref() {
-            super::store::update_feed_url_in(conn, subscription.id, url)?;
+            adopt_resolved_channel_url(conn, subscription.id, url)?;
         }
 
         let baseline = super::store::future_only_baseline_in(conn, subscription.id)?
