@@ -18,6 +18,7 @@ pub use api::*;
 /// risking a typo'd duplicate string.
 pub const LIBRARY_ROOT_KEY: &str = "library_root";
 pub const ONBOARDING_COMPLETED_KEY: &str = "onboarding.completed";
+pub const ONLINE_DISCOVERY_BANNER_COMPLETED_KEY: &str = "online_sources.discovery_banner_completed";
 pub const ONLINE_SOURCES_FIRST_ENABLE_COMPLETED_KEY: &str = "online_sources.first_enable_completed";
 pub const NEW_RELEASES_FETCH_COMPLETED_KEY: &str = "new_releases.fetch_completed";
 pub const LAST_SCAN_RELINKED_KEY: &str = "last_scan_relinked";
@@ -146,6 +147,17 @@ fn get_onboarding_completed_in(conn: &Connection) -> Result<bool, rusqlite::Erro
 
 fn set_onboarding_completed_in(conn: &Connection, completed: bool) -> Result<(), rusqlite::Error> {
     set_bool_in(conn, ONBOARDING_COMPLETED_KEY, completed)
+}
+
+fn get_online_discovery_banner_completed_in(conn: &Connection) -> Result<bool, rusqlite::Error> {
+    get_bool_in(conn, ONLINE_DISCOVERY_BANNER_COMPLETED_KEY, false)
+}
+
+fn set_online_discovery_banner_completed_in(
+    conn: &Connection,
+    completed: bool,
+) -> Result<(), rusqlite::Error> {
+    set_bool_in(conn, ONLINE_DISCOVERY_BANNER_COMPLETED_KEY, completed)
 }
 
 fn get_new_releases_fetch_completed_in(conn: &Connection) -> Result<bool, rusqlite::Error> {

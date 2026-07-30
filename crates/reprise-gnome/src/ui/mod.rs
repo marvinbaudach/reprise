@@ -54,6 +54,7 @@ pub(crate) mod nav_history;
 mod notifications;
 pub(crate) mod now_playing;
 mod one_shot_task;
+mod online_discovery_banner;
 mod playback;
 pub(crate) mod player_bar;
 pub(crate) mod playing_marker;

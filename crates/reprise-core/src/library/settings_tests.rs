@@ -136,6 +136,16 @@ fn onboarding_completed_typed_accessors_round_trip() {
 }
 
 #[test]
+fn online_discovery_banner_completed_typed_accessors_round_trip() {
+    let conn = migrated_conn();
+    assert!(!get_online_discovery_banner_completed(&conn).unwrap());
+    set_online_discovery_banner_completed(&conn, true).unwrap();
+    assert!(get_online_discovery_banner_completed(&conn).unwrap());
+    set_online_discovery_banner_completed(&conn, false).unwrap();
+    assert!(!get_online_discovery_banner_completed(&conn).unwrap());
+}
+
+#[test]
 fn new_releases_fetch_completed_defaults_false_and_round_trips() {
     let conn = migrated_conn();
     assert!(!get_new_releases_fetch_completed(&conn).unwrap());
