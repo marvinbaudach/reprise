@@ -3586,32 +3586,6 @@ msgstr "Instrumental · modificado con IA"
 msgid "Hide AI music"
 msgstr "Ocultar música con IA"
 
-#: crates/reprise-gnome/src/ui/strings_instrumental.rs:64
-msgid "Experimental"
-msgstr "Experimental"
-
-#: crates/reprise-gnome/src/ui/strings_instrumental.rs:65
-msgid "Experimental features"
-msgstr "Funciones experimentales"
-
-#: crates/reprise-gnome/src/ui/strings_instrumental.rs:67
-msgid "Unfinished features with rough edges, off by default."
-msgstr ""
-"Funciones inacabadas y con aristas, desactivadas de forma predeterminada."
-
-#: crates/reprise-gnome/src/ui/strings_instrumental.rs:68
-msgid "Enable experimental features"
-msgstr "Activar funciones experimentales"
-
-#: crates/reprise-gnome/src/ui/strings_instrumental.rs:70
-msgid ""
-"Shows AI instrumental versions across the app: the context-menu trigger, the "
-"conversion view, badges, and the \"Hide AI music\" filter."
-msgstr ""
-"Muestra versiones instrumentales con IA en toda la aplicación: el disparador "
-"del menú contextual, la vista de conversión, las insignias y el filtro "
-"«Ocultar música con IA»."
-
 #: crates/reprise-gnome/src/ui/strings_instrumental.rs:74
 msgid ""
 "Downloaded on first use (~316 MB), verified by checksum, with a licence note "

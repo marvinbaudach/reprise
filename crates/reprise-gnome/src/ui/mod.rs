@@ -33,7 +33,6 @@ mod device_sync;
 pub mod dialogs;
 pub(crate) mod ellipsis_tooltip;
 pub(crate) mod eq_bars;
-mod experimental;
 mod external_changes;
 pub(crate) mod external_link;
 pub(crate) mod file_open;

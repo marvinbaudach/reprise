@@ -357,11 +357,9 @@ fn run_query(shared: &Rc<Shared>) {
     } else {
         BrowseFilter::default()
     };
-    // FIL-7: the AI-exclude filter is opt-in, Library-only, and gated on the
-    // experimental switch (INST-11). Its sticky state lives in the browse bar.
-    let exclude_ai = shared.browse_bar.exclude_ai()
-        && matches!(source, ViewSource::Library)
-        && crate::ui::experimental::experimental_enabled(&shared.conn);
+    // FIL-7: the AI-exclude filter is opt-in and Library-only. Its sticky
+    // state lives in the browse bar.
+    let exclude_ai = shared.browse_bar.exclude_ai() && matches!(source, ViewSource::Library);
     let has_filter = !filter.trim().is_empty() || !browse.is_empty() || exclude_ai;
 
     let is_queue = matches!(source, ViewSource::Queue);

@@ -260,11 +260,11 @@ pub fn query_track_window_browsed(
 ///   `track_provenance` are hidden. Only `Library` honors it — that is where
 ///   the browse filter row lives.
 /// - `project_ai` (INST-10 / FIX-4): whether to project the real `is_ai` column
-///   (the correlated provenance `EXISTS`) or a literal `0`. The AI badge only
-///   renders while the experimental switch is on, so the GTK layer passes
-///   `experimental_on` here; when off, every source's window carries no per-row
-///   provenance subquery. Honored by **all** sources (the badge can appear on
-///   any track row). The default entry points above pass `false`/`true`.
+///   (the correlated provenance `EXISTS`) or a literal `0`, which spares the
+///   window a per-row provenance subquery. Honored by **all** sources (the
+///   badge can appear on any track row), so the GTK track list passes `true`;
+///   callers that never read the column pass `false`. The default entry points
+///   above pass `false`/`true`.
 #[allow(clippy::too_many_arguments)]
 pub fn query_track_window_browsed_ai(
     db: &Db,
