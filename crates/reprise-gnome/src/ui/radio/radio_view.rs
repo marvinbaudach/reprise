@@ -8,7 +8,7 @@ use reprise_core::connectivity::{self, Connectivity};
 use reprise_core::db::Db;
 use reprise_core::radio::{self, StationRow};
 use reprise_core::source_error::{
-    source_failure_presentation, FailureAction, SourceError, SourceErrorKind, SourceSurface,
+    source_failure_presentation, SourceError, SourceErrorKind, SourceSurface,
 };
 
 use super::add_dialog::RadioAddDialog;
@@ -24,6 +24,10 @@ use crate::ui::sidebar::sidebar_presentation::NavIcon;
 use crate::ui::source_empty_state::{SourceEmptyState, SourceEmptyStateCopy};
 use crate::ui::source_error_banner::SourceErrorBanner;
 use crate::ui::strings;
+
+#[path = "radio_failure_ui.rs"]
+mod failure_ui;
+use failure_ui::{radio_failure_action, reresolve_station_url, RadioFailureAction};
 
 const LIST_PAGE: &str = "list";
 const STATUS_PAGE: &str = "status";
@@ -468,9 +472,6 @@ fn show_radio_failure(shared: &Rc<Shared>, kind: SourceErrorKind, technical_caus
         &error,
         &chrono::Utc::now().to_rfc3339(),
         move |action| {
-            if !matches!(action, FailureAction::TryAgain | FailureAction::FindNewUrl) {
-                return;
-            }
             let Some(shared) = weak.upgrade() else {
                 return;
             };
@@ -480,7 +481,14 @@ fn show_radio_failure(shared: &Rc<Shared>, kind: SourceErrorKind, technical_caus
             else {
                 return;
             };
-            activate_station(&shared, &station);
+            match radio_failure_action(action, station.uuid.as_deref()) {
+                RadioFailureAction::RetryPlayback => activate_station(&shared, &station),
+                RadioFailureAction::ReresolveDirectoryUrl => {
+                    reresolve_station_url(&shared, &station);
+                }
+                RadioFailureAction::OpenAddDialog => present_add_dialog(&shared),
+                RadioFailureAction::None => {}
+            }
         },
     );
 }
@@ -640,6 +648,7 @@ mod tests {
         ExternalPlaybackSnapshot, RadioPresentation, StreamTags,
     };
     use crate::ui::playback::preview::PlaybackMode;
+    use reprise_core::source_error::FailureAction;
 
     #[test]
     fn rad_1_table_projects_only_connected_radio_snapshots() {
@@ -662,6 +671,22 @@ mod tests {
         assert_eq!(connected.station_id, Some(7));
         assert!(connected.connected);
         assert_eq!(connected.title.as_deref(), Some("Artist — Song"));
+    }
+
+    #[test]
+    fn rad_3_dead_stream_actions_distinguish_retry_from_directory_reresolution() {
+        assert_eq!(
+            radio_failure_action(FailureAction::TryAgain, Some("station-uuid")),
+            RadioFailureAction::RetryPlayback
+        );
+        assert_eq!(
+            radio_failure_action(FailureAction::FindNewUrl, Some("station-uuid")),
+            RadioFailureAction::ReresolveDirectoryUrl
+        );
+        assert_eq!(
+            radio_failure_action(FailureAction::FindNewUrl, None),
+            RadioFailureAction::OpenAddDialog
+        );
     }
 
     #[test]

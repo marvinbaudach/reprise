@@ -12,7 +12,9 @@ impl PodcastsView {
         let previous = self.connectivity.replace(value);
         self.render();
         if value == Connectivity::Offline && !self.groups.borrow().is_empty() {
-            self.show_refresh_failure(1, "NetworkMonitor reports no available connection");
+            self.show_unclassified_refresh_failure(
+                "NetworkMonitor reports no available connection",
+            );
         }
         if previous == Connectivity::Offline && value == Connectivity::Online {
             for action in self.deferred_actions.borrow_mut().drain() {

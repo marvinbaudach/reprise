@@ -96,11 +96,7 @@ impl PodcastsView {
                         if summary.failures.is_empty() {
                             view.clear_fetch_failure();
                         } else {
-                            let failed_sources = summary.failures.len();
-                            view.show_refresh_failure(
-                                failed_sources,
-                                format!("{failed_sources} source refreshes failed"),
-                            );
+                            view.show_refresh_failures(&summary.failures);
                         }
                         (view.callbacks.on_sidebar_refresh)();
                         break;
@@ -123,7 +119,7 @@ impl PodcastsView {
                         view.footer_spinner.stop();
                         view.refresh();
                         tracing::warn!(%error, "podcast refresh failed");
-                        view.show_refresh_failure(1, error);
+                        view.show_unclassified_refresh_failure(error);
                         break;
                     }
                 }

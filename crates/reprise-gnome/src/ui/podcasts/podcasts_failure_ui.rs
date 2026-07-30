@@ -1,5 +1,7 @@
 use std::rc::Rc;
 
+use reprise_core::connectivity::Connectivity;
+use reprise_core::podcasts::pipeline::RefreshFailure;
 use reprise_core::source_error::{
     source_failure_presentation, FailureAction, FailureSurface, SourceError, SourceErrorKind,
     SourceSurface,
@@ -10,6 +12,56 @@ use crate::ui::strings;
 
 fn safe_action_error_message(_technical_error: &str) -> String {
     strings::text(strings::SOURCE_ACTION_FAILED)
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct RefreshFailureNotice {
+    kind: SourceErrorKind,
+    subscription_id: Option<i64>,
+    failed_sources: usize,
+    source_titles: Vec<String>,
+}
+
+fn refresh_failure_notice(
+    connectivity: Connectivity,
+    failures: &[RefreshFailure],
+) -> Option<RefreshFailureNotice> {
+    let first = failures.first()?;
+    Some(RefreshFailureNotice {
+        kind: if connectivity == Connectivity::Offline {
+            SourceErrorKind::Offline
+        } else {
+            first.kind.clone()
+        },
+        subscription_id: Some(first.subscription_id),
+        failed_sources: failures.len(),
+        source_titles: failures
+            .iter()
+            .map(|failure| failure.title.clone())
+            .collect(),
+    })
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FailureActionRoute {
+    Retry,
+    OpenAddDialog,
+    OpenYoutubePreferences,
+    Unsubscribe(i64),
+    None,
+}
+
+fn failure_action_route(action: FailureAction, subscription_id: Option<i64>) -> FailureActionRoute {
+    match action {
+        FailureAction::TryAgain => FailureActionRoute::Retry,
+        FailureAction::CheckSubscription | FailureAction::FindNewUrl => {
+            FailureActionRoute::OpenAddDialog
+        }
+        FailureAction::OpenPreferences => FailureActionRoute::OpenYoutubePreferences,
+        FailureAction::Unsubscribe => {
+            subscription_id.map_or(FailureActionRoute::None, FailureActionRoute::Unsubscribe)
+        }
+    }
 }
 
 impl PodcastsView {
@@ -37,44 +89,73 @@ impl PodcastsView {
         self.render();
     }
 
-    pub(super) fn show_refresh_failure(
+    pub(super) fn show_refresh_failures(self: &Rc<Self>, failures: &[RefreshFailure]) {
+        let Some(notice) = refresh_failure_notice(self.connectivity.get(), failures) else {
+            self.clear_fetch_failure();
+            return;
+        };
+        let technical_cause = format!("Failed sources: {}", notice.source_titles.join(", "));
+        self.show_refresh_failure(notice, technical_cause);
+    }
+
+    pub(super) fn show_unclassified_refresh_failure(
         self: &Rc<Self>,
-        failed_sources: usize,
         technical_cause: impl Into<String>,
     ) {
-        let kind = if self.connectivity.get() == reprise_core::connectivity::Connectivity::Offline {
+        let kind = if self.connectivity.get() == Connectivity::Offline {
             SourceErrorKind::Offline
         } else {
             SourceErrorKind::Unreachable
         };
-        let error = SourceError::new(kind, "Refresh source", technical_cause);
+        self.show_refresh_failure(
+            RefreshFailureNotice {
+                kind,
+                subscription_id: None,
+                failed_sources: 1,
+                source_titles: Vec::new(),
+            },
+            technical_cause,
+        );
+    }
+
+    fn show_refresh_failure(
+        self: &Rc<Self>,
+        notice: RefreshFailureNotice,
+        technical_cause: impl Into<String>,
+    ) {
+        let error = SourceError::new(notice.kind, "Refresh source", technical_cause);
         let cached_items = self.rows.borrow().len();
         let surface = match self.kind {
             reprise_core::podcasts::PodcastKind::Rss => SourceSurface::Podcast,
             reprise_core::podcasts::PodcastKind::Youtube => SourceSurface::Youtube,
         };
         let presentation =
-            source_failure_presentation(surface, error.kind(), cached_items, failed_sources);
+            source_failure_presentation(surface, error.kind(), cached_items, notice.failed_sources);
         self.fetch_failure.replace(Some(error.clone()));
         let occurred_at = chrono::Utc::now().to_rfc3339();
         let last_checked = super::last_updated_text(&self.conn);
+        let subscription_id = notice.subscription_id;
         let weak = Rc::downgrade(self);
         let on_action = move |action| {
             let Some(view) = weak.upgrade() else {
                 return;
             };
-            match action {
-                FailureAction::TryAgain => {
+            match failure_action_route(action, subscription_id) {
+                FailureActionRoute::Retry => {
                     view.request_refresh(true);
                 }
-                FailureAction::OpenPreferences => {
+                FailureActionRoute::OpenYoutubePreferences => {
                     if let Some(callback) = view.on_open_youtube_preferences.borrow().clone() {
                         callback();
                     }
                 }
-                FailureAction::CheckSubscription
-                | FailureAction::Unsubscribe
-                | FailureAction::FindNewUrl => view.open_add_dialog(),
+                FailureActionRoute::OpenAddDialog => {
+                    view.open_add_dialog();
+                }
+                FailureActionRoute::Unsubscribe(subscription_id) => {
+                    view.unsubscribe(subscription_id);
+                }
+                FailureActionRoute::None => {}
             }
         };
         match presentation.surface {
@@ -113,6 +194,8 @@ impl PodcastsView {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use reprise_core::connectivity::Connectivity;
+    use reprise_core::podcasts::pipeline::RefreshFailure;
 
     #[test]
     fn net_3_d_technical_text_never_reaches_the_action_toast() {
@@ -121,5 +204,58 @@ mod tests {
         for forbidden in ["HTTP", "599", "private.example", "/home/", "token"] {
             assert!(!message.contains(forbidden), "{message}");
         }
+    }
+
+    #[test]
+    fn net_3_d_refresh_notice_preserves_each_typed_kind_and_subscription_target() {
+        let cases = [
+            SourceErrorKind::SourceGone,
+            SourceErrorKind::RateLimited { retry_after: None },
+            SourceErrorKind::HelperOutdated,
+        ];
+        for kind in cases {
+            let failure = RefreshFailure {
+                subscription_id: 42,
+                title: "Source title".to_owned(),
+                kind: kind.clone(),
+            };
+
+            let notice = refresh_failure_notice(Connectivity::Online, &[failure]).unwrap();
+
+            assert_eq!(notice.subscription_id, Some(42));
+            assert_eq!(notice.kind, kind);
+            assert_eq!(notice.failed_sources, 1);
+            assert_eq!(notice.source_titles, ["Source title"]);
+        }
+    }
+
+    #[test]
+    fn net_3_offline_connectivity_overrides_request_kind_without_losing_the_target() {
+        let failure = RefreshFailure {
+            subscription_id: 7,
+            title: "Saved show".to_owned(),
+            kind: SourceErrorKind::Unreachable,
+        };
+
+        let notice = refresh_failure_notice(Connectivity::Offline, &[failure]).unwrap();
+
+        assert_eq!(notice.kind, SourceErrorKind::Offline);
+        assert_eq!(notice.subscription_id, Some(7));
+    }
+
+    #[test]
+    fn net_3_d_source_gone_actions_keep_the_subscription_target() {
+        assert_eq!(
+            failure_action_route(FailureAction::CheckSubscription, Some(42)),
+            FailureActionRoute::OpenAddDialog
+        );
+        assert_eq!(
+            failure_action_route(FailureAction::Unsubscribe, Some(42)),
+            FailureActionRoute::Unsubscribe(42)
+        );
+        assert_eq!(
+            failure_action_route(FailureAction::OpenPreferences, Some(42)),
+            FailureActionRoute::OpenYoutubePreferences
+        );
     }
 }
