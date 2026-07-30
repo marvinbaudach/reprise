@@ -20,6 +20,7 @@ pub(super) fn css() -> String {
 }
 .reprise-podcast-episode-row {
   border-bottom: 1px solid alpha(currentColor, 0.06);
+  border-left: 3px solid transparent;
 }
 .reprise-podcast-episode-row:focus-visible {
   outline: 2px solid alpha(@accent_color, 0.65);
@@ -51,7 +52,10 @@ pub(super) fn css() -> String {
   color: @accent_color;
 }
 .reprise-podcast-status-played { opacity: 0.55; }
-.reprise-podcast-playing { background: alpha(@accent_bg_color, 0.07); }
+.reprise-podcast-episode-row.reprise-podcast-playing {
+  border-left-color: @reprise_player_accent;
+  background: alpha(@accent_bg_color, 0.16);
+}
 .reprise-podcast-result { padding: 6px; }
 .reprise-podcast-glyph-tile {
   min-width: 40px;
@@ -70,4 +74,17 @@ pub(super) fn css() -> String {
 }
 "#
     .to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn playing_episode_tint_uses_existing_accent_roles_and_a_visible_edge() {
+        let css = css();
+        assert!(css.contains(".reprise-podcast-episode-row.reprise-podcast-playing"));
+        assert!(css.contains("border-left-color: @reprise_player_accent"));
+        assert!(css.contains("background: alpha(@accent_bg_color, 0.16)"));
+    }
 }

@@ -407,6 +407,7 @@ impl PodcastsView {
             images_allowed,
             self.connectivity.get(),
             self.unavailable_episode.get(),
+            self.playing_episode.get(),
         );
         let download_widgets = podcasts_groups::replace(
             &self.group_container,

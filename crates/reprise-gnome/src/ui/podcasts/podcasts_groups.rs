@@ -21,6 +21,7 @@ use super::podcasts_row_interaction::{
 };
 use super::podcasts_row_state::{download_status, RowNetworkState};
 use super::podcasts_title::TitleParts;
+use crate::ui::playing_marker;
 use crate::ui::strings;
 
 #[derive(Clone)]
@@ -28,6 +29,8 @@ pub(super) struct DownloadRowWidgets {
     pub(super) root: gtk4::Box,
     pub(super) status: gtk4::Box,
     pub(super) action: gtk4::Button,
+    pub(super) marker: gtk4::Box,
+    pub(super) play_glyph: gtk4::Image,
 }
 
 struct GroupRenderContext<'a> {
@@ -293,8 +296,13 @@ fn episode_row(
     root.set_margin_bottom(4);
 
     let (thumbnail, play_glyph) = episode_thumbnail(row, playing, images_allowed);
+    let marker = playing_marker::build();
+    playing_marker::set_playing(&marker, true);
+    marker.set_visible(playing);
+    thumbnail.add_overlay(&marker);
+    thumbnail.add_overlay(&play_glyph);
     root.append(&thumbnail);
-    install_row_activation(&root, row.id, &play_glyph);
+    install_row_activation(&root, row.id, &marker, &play_glyph);
 
     let identity = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     identity.set_hexpand(true);
@@ -330,6 +338,8 @@ fn episode_row(
         root: root.clone(),
         status,
         action: download.clone(),
+        marker,
+        play_glyph,
     };
     update_download_state(&widgets, download_state);
     update_network_state(
@@ -686,6 +696,8 @@ mod tests {
             root: gtk4::Box::new(gtk4::Orientation::Horizontal, 0),
             status: gtk4::Box::new(gtk4::Orientation::Vertical, 0),
             action: gtk4::Button::new(),
+            marker: gtk4::Box::new(gtk4::Orientation::Horizontal, 0),
+            play_glyph: gtk4::Image::new(),
         };
 
         update_download_state(
