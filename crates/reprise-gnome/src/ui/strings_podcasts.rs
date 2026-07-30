@@ -29,7 +29,7 @@ pub const PODCAST_DURATION_UNDER_MINUTE: &str = N_!("< 1 min");
 pub const PODCAST_DURATION_MINUTES: &str = N_!("{minutes} min");
 pub const PODCAST_DURATION_HOURS: &str = N_!("{hours} h {minutes}");
 pub const PODCAST_ADD: &str = N_!("Add podcast");
-pub const YOUTUBE_ADD: &str = N_!("Add YouTube channel");
+pub const YOUTUBE_ADD: &str = N_!("Add channel");
 pub const PODCAST_ADD_FILTER: &str = N_!("Add filter");
 pub const PODCAST_FILTER_UNPLAYED: &str = N_!("Unplayed");
 pub const PODCAST_FILTER_DOWNLOADED: &str = N_!("Downloaded");
@@ -180,6 +180,16 @@ pub fn podcast_episode_count(count: usize) -> String {
     plural(
         "{count} episode",
         "{count} episodes",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+pub fn podcast_show_all_episodes(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "Show all {count} episode",
+        "Show all {count} episodes",
         count,
         &[("count", &count_text)],
     )
@@ -429,6 +439,11 @@ mod tests {
     fn episode_count_uses_singular_and_plural_copy() {
         assert_eq!(podcast_episode_count(1), "1 episode");
         assert_eq!(podcast_episode_count(23), "23 episodes");
+    }
+
+    #[test]
+    fn show_all_episodes_uses_the_full_group_count() {
+        assert_eq!(podcast_show_all_episodes(15), "Show all 15 episodes");
     }
 
     /// `G2` (design 6a): matches the owner's design example verbatim.
