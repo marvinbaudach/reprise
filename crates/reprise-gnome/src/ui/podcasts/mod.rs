@@ -15,6 +15,7 @@ mod podcasts_episode_window;
 mod podcasts_filter_bar;
 mod podcasts_groups;
 mod podcasts_model;
+mod podcasts_playback;
 mod podcasts_presentation;
 mod podcasts_removal;
 mod podcasts_row_interaction;

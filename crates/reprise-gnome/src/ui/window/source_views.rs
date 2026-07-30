@@ -55,6 +55,16 @@ pub(in crate::ui) fn install(
         },
         {
             let player = player.map(Rc::downgrade);
+            move || {
+                if let Some(player) = player.as_ref().and_then(std::rc::Weak::upgrade) {
+                    player.toggle_pause();
+                } else {
+                    tracing::warn!("podcast playback unavailable: player backend is not running");
+                }
+            }
+        },
+        {
+            let player = player.map(Rc::downgrade);
             move |subscription_id| {
                 if let Some(player) = player.as_ref().and_then(std::rc::Weak::upgrade) {
                     player.stop_podcast_subscription(subscription_id);

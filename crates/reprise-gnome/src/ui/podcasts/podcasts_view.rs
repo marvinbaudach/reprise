@@ -64,12 +64,14 @@ const MODULE_OFF_PAGE: &str = "module-off";
 const FAILURE_PAGE: &str = "fetch-failed";
 
 type OnEpisodeActivated = Rc<dyn Fn(EpisodeRow)>;
+type OnPlayPause = Rc<dyn Fn()>;
 type OnSubscriptionRemoved = Rc<dyn Fn(i64)>;
 type OnSidebarRefresh = Rc<dyn Fn()>;
 
 #[derive(Clone)]
 pub(in crate::ui) struct PodcastsCallbacks {
     on_episode_activated: OnEpisodeActivated,
+    on_play_pause: OnPlayPause,
     on_subscription_removed: OnSubscriptionRemoved,
     on_sidebar_refresh: OnSidebarRefresh,
 }
@@ -78,6 +80,7 @@ impl Default for PodcastsCallbacks {
     fn default() -> Self {
         Self {
             on_episode_activated: Rc::new(|_| {}),
+            on_play_pause: Rc::new(|| {}),
             on_subscription_removed: Rc::new(|_| {}),
             on_sidebar_refresh: Rc::new(|| {}),
         }
@@ -87,11 +90,13 @@ impl Default for PodcastsCallbacks {
 impl PodcastsCallbacks {
     pub(in crate::ui) fn new(
         on_episode_activated: impl Fn(EpisodeRow) + 'static,
+        on_play_pause: impl Fn() + 'static,
         on_subscription_removed: impl Fn(i64) + 'static,
         on_sidebar_refresh: impl Fn() + 'static,
     ) -> Self {
         Self {
             on_episode_activated: Rc::new(on_episode_activated),
+            on_play_pause: Rc::new(on_play_pause),
             on_subscription_removed: Rc::new(on_subscription_removed),
             on_sidebar_refresh: Rc::new(on_sidebar_refresh),
         }

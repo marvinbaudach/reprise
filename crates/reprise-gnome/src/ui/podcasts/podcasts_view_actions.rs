@@ -2,13 +2,21 @@
 //! `podcasts_view.rs` to keep it under the file-size gate.
 
 use super::*;
+use crate::ui::podcasts::podcasts_playback::{activation_for_episode, EpisodeActivation};
 
 impl PodcastsView {
     pub(super) fn install_actions(self: &Rc<Self>) {
         let group = gio::SimpleActionGroup::new();
         self.add_target_action(&group, podcasts_context_menu::ACTION_PLAY, |view, id| {
-            if let Ok(Some(row)) = podcasts::store::episode(&view.conn, id) {
-                (view.callbacks.on_episode_activated)(row);
+            match activation_for_episode(view.playing_episode.get(), id) {
+                EpisodeActivation::TogglePlayback => {
+                    (view.callbacks.on_play_pause)();
+                }
+                EpisodeActivation::StartEpisode => {
+                    if let Ok(Some(row)) = podcasts::store::episode(&view.conn, id) {
+                        (view.callbacks.on_episode_activated)(row);
+                    }
+                }
             }
         });
         self.add_target_action(
