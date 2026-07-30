@@ -6,7 +6,11 @@ use crate::db::Db;
 
 use super::{EpisodeRow, PodcastKind, SourceGroup};
 
-const EPISODE_COLUMNS: &str =
+/// The one episode projection every reader selects, in the exact order
+/// [`super::store::episode_from_row`] reads its columns back. Two hand-aligned
+/// copies of this list is how a positional `row.get(N)` silently starts reading
+/// the wrong column the next time a migration adds one.
+pub(crate) const EPISODE_COLUMNS: &str =
     "e.id, e.subscription_id, e.guid, e.title, s.title, s.image_url, e.image_url, s.kind,
      e.audio_url, e.page_url, e.published_at, e.duration_secs,
      e.downloaded_path, e.downloaded_bytes, e.played_at, e.position_ms,
