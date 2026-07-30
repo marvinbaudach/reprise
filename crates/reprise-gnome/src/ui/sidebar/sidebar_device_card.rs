@@ -14,7 +14,7 @@ use crate::ui::device_sync_runtime::{
 };
 use crate::ui::device_sync_strings;
 
-#[path = "sidebar_device_card_menu.rs"]
+#[path = "../device_sync/device_sync_card_menu.rs"]
 mod menu;
 
 type OpenCallback = Rc<dyn Fn(String, String)>;
@@ -780,7 +780,3 @@ mod tests {
 #[cfg(test)]
 #[path = "sidebar_device_card_mirror_tests.rs"]
 mod mirror_tests;
-
-#[cfg(test)]
-#[path = "sidebar_device_card_css_tests.rs"]
-mod css_tests;
