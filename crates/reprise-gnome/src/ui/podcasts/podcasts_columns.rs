@@ -168,20 +168,10 @@ fn unsubscribe_column(view: &gtk4::ColumnView, on_unsubscribe: &OnUnsubscribe) {
             };
             callback(object.row().subscription_id);
         });
-        let motion = gtk4::EventControllerMotion::new();
-        let weak = button.downgrade();
-        motion.connect_enter(move |_, _, _| {
-            if let Some(button) = weak.upgrade() {
-                button.set_opacity(1.0);
-            }
-        });
-        let weak = button.downgrade();
-        motion.connect_leave(move |_| {
-            if let Some(button) = weak.upgrade() {
-                button.set_opacity(0.0);
-            }
-        });
-        button.add_controller(motion);
+        // The same reveal rule as every other row (`SRC-4`), from the same
+        // place: a second hand-rolled hover controller here is how the two
+        // views drifted apart, with this one staying pointer-only.
+        super::podcasts_row_interaction::reveal_unsubscribe_on_hover_or_focus(&button, &button);
         let surface = crate::ui::source_context_surface::wrap(&button);
         podcasts_context_menu::wire_gesture(&surface, item);
         item.set_child(Some(&surface));

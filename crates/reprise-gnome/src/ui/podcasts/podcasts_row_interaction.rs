@@ -7,8 +7,12 @@ use gtk4::glib::variant::ToVariant;
 use gtk4::prelude::*;
 use reprise_core::podcasts::{EpisodeRow, PodcastKind};
 
+/// One reveal rule for the unsubscribe star, shared by every row in both
+/// views: visible while the row is hovered, and visible while the star itself
+/// has keyboard focus — a hover-only star is unreachable without a pointer.
+/// `host` is whatever widget stands for "the row" at that call site.
 pub(super) fn reveal_unsubscribe_on_hover_or_focus(
-    expander: &gtk4::Expander,
+    host: &impl IsA<gtk4::Widget>,
     unsubscribe: &gtk4::Button,
 ) {
     let hovered = Rc::new(Cell::new(false));
@@ -29,7 +33,7 @@ pub(super) fn reveal_unsubscribe_on_hover_or_focus(
             unsubscribe.set_opacity(if unsubscribe.has_focus() { 1.0 } else { 0.0 });
         }
     });
-    expander.add_controller(hover);
+    host.as_ref().add_controller(hover);
 
     unsubscribe.connect_has_focus_notify(move |unsubscribe| {
         unsubscribe.set_opacity(if unsubscribe.has_focus() || hovered.get() {
@@ -78,6 +82,16 @@ pub(super) fn episode_thumbnail(
     (overlay, play)
 }
 
+/// Activating a row is the only way to play it now that the per-row play
+/// button is gone, so a failed activation is a dead row, not a no-op worth
+/// discarding: it happens when the row has lost its action-group ancestor,
+/// which leaves no other trace to debug from.
+fn activate_play(root: &gtk4::Box, episode_id: i64) {
+    if let Err(error) = root.activate_action("podcasts.play", Some(&episode_id.to_variant())) {
+        tracing::debug!(%error, episode_id, "podcast row activation did not reach the action");
+    }
+}
+
 pub(super) fn install_row_activation(root: &gtk4::Box, episode_id: i64, play_glyph: &gtk4::Image) {
     let hover = gtk4::EventControllerMotion::new();
     let hovered_glyph = play_glyph.downgrade();
@@ -101,7 +115,7 @@ pub(super) fn install_row_activation(root: &gtk4::Box, episode_id: i64, play_gly
             return;
         }
         if let Some(root) = clicked_root.upgrade() {
-            let _ = root.activate_action("podcasts.play", Some(&episode_id.to_variant()));
+            activate_play(&root, episode_id);
         }
     });
     root.add_controller(click);
@@ -116,7 +130,7 @@ pub(super) fn install_row_activation(root: &gtk4::Box, episode_id: i64, play_gly
             return gtk4::glib::Propagation::Proceed;
         }
         if let Some(root) = keyed_root.upgrade() {
-            let _ = root.activate_action("podcasts.play", Some(&episode_id.to_variant()));
+            activate_play(&root, episode_id);
         }
         gtk4::glib::Propagation::Stop
     });
