@@ -2,7 +2,11 @@
 
 use std::path::PathBuf;
 
-const MAX_COMPONENT_BYTES: usize = 120;
+/// The longest a single FAT-safe path component may get. `pub(crate)`
+/// rather than `pub(super)` because `podcasts::episode_tags` caps the tag
+/// values it writes at the same number: the tag and the file name a phone
+/// shows are two views of the same episode, so one cap serves both.
+pub(crate) const MAX_COMPONENT_BYTES: usize = 120;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DevicePathMetadata {
@@ -77,7 +81,7 @@ pub fn device_track_path(
     format!("{album_artist}/{album}/{number} {title}{suffix}.{extension}")
 }
 
-fn truncate_utf8(value: &str, max_bytes: usize) -> String {
+pub(crate) fn truncate_utf8(value: &str, max_bytes: usize) -> String {
     if value.len() <= max_bytes {
         return value.to_string();
     }

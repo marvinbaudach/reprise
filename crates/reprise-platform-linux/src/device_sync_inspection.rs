@@ -349,3 +349,14 @@ async fn filesystem_bytes(
         .has_attribute(attribute)
         .then(|| info.attribute_uint64(attribute)))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::managed_audio_file;
+
+    #[test]
+    fn mtp_47_a_podcast_file_named_audio_is_managed_by_the_inventory() {
+        assert!(managed_audio_file("Show/2026-07-28 - Episode.audio"));
+        assert!(!managed_audio_file("Show/2026-07-28 - Episode.audio.part"));
+    }
+}

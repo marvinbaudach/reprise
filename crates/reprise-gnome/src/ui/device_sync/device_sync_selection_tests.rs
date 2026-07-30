@@ -44,8 +44,10 @@ fn mtp_45_a_played_downloaded_episode_is_not_copied_while_an_unplayed_one_from_t
         crate::test_db::connection(&conn)
             .execute(
                 "INSERT INTO podcast_episodes
-                 (id, subscription_id, guid, title, audio_url, downloaded_path, first_seen_at)
-                 VALUES (100, 10, 'rss-100', 'Unplayed', 'https://example.test/u.mp3', ?1, 1)",
+                 (id, subscription_id, guid, title, audio_url, downloaded_path, published_at,
+                  first_seen_at)
+                 VALUES (100, 10, 'rss-100', 'Unplayed', 'https://example.test/u.mp3',
+                         ?1, 1785225600, 1)",
                 [unplayed_path.to_string_lossy().as_ref()],
             )
             .unwrap();
@@ -53,8 +55,9 @@ fn mtp_45_a_played_downloaded_episode_is_not_copied_while_an_unplayed_one_from_t
             .execute(
                 "INSERT INTO podcast_episodes
                  (id, subscription_id, guid, title, audio_url, downloaded_path, played_at,
-                  first_seen_at)
-                 VALUES (101, 10, 'rss-101', 'Played', 'https://example.test/p.mp3', ?1, 1, 1)",
+                  published_at, first_seen_at)
+                 VALUES (101, 10, 'rss-101', 'Played', 'https://example.test/p.mp3',
+                         ?1, 1, 1785225600, 1)",
                 [played_path.to_string_lossy().as_ref()],
             )
             .unwrap();
@@ -71,7 +74,7 @@ fn mtp_45_a_played_downloaded_episode_is_not_copied_while_an_unplayed_one_from_t
             backend.state.managed_copies.borrow().as_slice(),
             [(
                 "/Podcasts/Reprise".to_string(),
-                "RSS Show/100-Unplayed.mp3".to_string()
+                "RSS Show/2026-07-28 - Unplayed.mp3".to_string()
             )],
             "a played, downloaded episode must never be copied even though its show is \
              enabled and it has a local file — the device page states 'Unplayed downloads \
