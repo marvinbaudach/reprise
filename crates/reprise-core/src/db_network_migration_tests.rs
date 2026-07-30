@@ -59,6 +59,15 @@ fn stored_online_gate(conn: &Connection) -> Option<String> {
     .unwrap()
 }
 
+fn first_enable_completed(conn: &Connection) -> bool {
+    crate::library::settings::get_bool_in(
+        conn,
+        crate::library::settings::ONLINE_SOURCES_FIRST_ENABLE_COMPLETED_KEY,
+        false,
+    )
+    .unwrap()
+}
+
 #[test]
 fn online_gate_fresh_database_migration_stores_the_master_off() {
     let conn = open(None).unwrap();
@@ -66,6 +75,7 @@ fn online_gate_fresh_database_migration_stores_the_master_off() {
     migrate_with_empty_caches(&conn);
 
     assert_eq!(stored_online_gate(&conn).as_deref(), Some("0"));
+    assert!(!first_enable_completed(&conn));
 }
 
 #[test]
@@ -81,6 +91,7 @@ fn online_gate_existing_subscription_migration_stores_the_master_on() {
     migrate_with_empty_caches(&conn);
 
     assert_eq!(stored_online_gate(&conn).as_deref(), Some("1"));
+    assert!(first_enable_completed(&conn));
 }
 
 #[test]
@@ -90,6 +101,7 @@ fn online_gate_existing_database_without_use_stores_the_master_off() {
     migrate_with_empty_caches(&conn);
 
     assert_eq!(stored_online_gate(&conn).as_deref(), Some("0"));
+    assert!(!first_enable_completed(&conn));
 }
 
 #[test]
@@ -105,6 +117,7 @@ fn online_gate_explicit_master_value_survives_migration_untouched() {
         migrate_with_empty_caches(&conn);
 
         assert_eq!(stored_online_gate(&conn).as_deref(), Some(value));
+        assert!(first_enable_completed(&conn));
     }
 }
 

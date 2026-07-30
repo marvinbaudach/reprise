@@ -18,6 +18,7 @@ pub use api::*;
 /// risking a typo'd duplicate string.
 pub const LIBRARY_ROOT_KEY: &str = "library_root";
 pub const ONBOARDING_COMPLETED_KEY: &str = "onboarding.completed";
+pub const ONLINE_SOURCES_FIRST_ENABLE_COMPLETED_KEY: &str = "online_sources.first_enable_completed";
 pub const NEW_RELEASES_FETCH_COMPLETED_KEY: &str = "new_releases.fetch_completed";
 pub const LAST_SCAN_RELINKED_KEY: &str = "last_scan_relinked";
 

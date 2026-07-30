@@ -68,15 +68,19 @@ pub(crate) fn grandfather_online_sources_gate(
     cover_cache: &Path,
     portrait_cache: &Path,
 ) -> Result<(), rusqlite::Error> {
-    let (subscription, radio_favourite, downloaded_episode) = tx.query_row(
+    let (subscription, radio_favourite, downloaded_episode, explicit_gate) = tx.query_row(
         "SELECT EXISTS(SELECT 1 FROM podcast_subscriptions), \
                 EXISTS(SELECT 1 FROM radio_stations), \
                 EXISTS( \
                     SELECT 1 FROM podcast_episodes \
                     WHERE downloaded_path IS NOT NULL \
+                ), \
+                EXISTS( \
+                    SELECT 1 FROM settings \
+                    WHERE key = ?1 \
                 )",
-        [],
-        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        [crate::online_sources::ENABLED_KEY],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
     )?;
     let evidence = NetworkUseEvidence {
         subscription,
@@ -97,6 +101,12 @@ pub(crate) fn grandfather_online_sources_gate(
         "INSERT OR IGNORE INTO settings (key, value) VALUES (?1, ?2)",
         rusqlite::params![crate::online_sources::ENABLED_KEY, value],
     )?;
+    if existing_database && (explicit_gate || value == "1") {
+        tx.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES (?1, '1')",
+            [crate::library::settings::ONLINE_SOURCES_FIRST_ENABLE_COMPLETED_KEY],
+        )?;
+    }
     Ok(())
 }
 

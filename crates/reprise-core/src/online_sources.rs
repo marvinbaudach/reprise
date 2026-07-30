@@ -29,7 +29,51 @@ pub fn is_enabled(db: &Db) -> Result<bool, rusqlite::Error> {
 
 pub fn set_enabled(db: &crate::db::Db, value: bool) -> Result<(), rusqlite::Error> {
     let conn = db.conn();
-    settings::set_bool_in(conn, ENABLED_KEY, value)
+    crate::events::in_txn_immediate(conn, |conn| {
+        let current = settings::get_bool_in(conn, ENABLED_KEY, false)?;
+        let first_enable_completed = settings::get_bool_in(
+            conn,
+            settings::ONLINE_SOURCES_FIRST_ENABLE_COMPLETED_KEY,
+            false,
+        )?;
+        if !first_enable_completed {
+            if !current && value {
+                for (module, enabled) in first_enable_source_defaults() {
+                    settings::set_bool_in(conn, &modules::enabled_key(module), enabled)?;
+                }
+                settings::set_bool_in(
+                    conn,
+                    settings::ONLINE_SOURCES_FIRST_ENABLE_COMPLETED_KEY,
+                    true,
+                )?;
+            } else if current {
+                // Databases upgraded with the master already on have enabled
+                // online sources before this one-shot existed. Mark that
+                // history before a later off/on cycle can be mistaken for a
+                // first enable and overwrite their module choices.
+                settings::set_bool_in(
+                    conn,
+                    settings::ONLINE_SOURCES_FIRST_ENABLE_COMPLETED_KEY,
+                    true,
+                )?;
+            }
+        }
+        settings::set_bool_in(conn, ENABLED_KEY, value)
+    })
+}
+
+fn first_enable_source_defaults() -> [(&'static ModuleDescriptor, bool); 9] {
+    [
+        (&modules::NEW_RELEASES_MODULE, false),
+        (&modules::CONCERTS_MODULE, false),
+        (&modules::PODCASTS_MODULE, false),
+        (&modules::YOUTUBE_MODULE, false),
+        (&modules::RADIO_MODULE, true),
+        (&modules::COVER_DOWNLOAD_MODULE, false),
+        (&modules::ARTIST_PORTRAITS_MODULE, false),
+        (&modules::ONLINE_LYRICS_MODULE, false),
+        (&modules::SOURCE_IMAGES_MODULE, false),
+    ]
 }
 
 /// The one authority for "may this module make a network request right
@@ -126,5 +170,96 @@ mod tests {
             !network_allowed(&db, module).unwrap(),
             "module off, global on => blocked"
         );
+    }
+
+    #[test]
+    fn first_enable_turns_every_online_source_off_except_radio() {
+        let db = migrated_db();
+        for module in [
+            &modules::NEW_RELEASES_MODULE,
+            &modules::CONCERTS_MODULE,
+            &modules::PODCASTS_MODULE,
+            &modules::YOUTUBE_MODULE,
+            &modules::RADIO_MODULE,
+            &modules::COVER_DOWNLOAD_MODULE,
+            &modules::ARTIST_PORTRAITS_MODULE,
+            &modules::ONLINE_LYRICS_MODULE,
+            &modules::SOURCE_IMAGES_MODULE,
+        ] {
+            modules::set_enabled(&db, module, true).unwrap();
+        }
+
+        set_enabled(&db, true).unwrap();
+
+        assert!(is_enabled(&db).unwrap());
+        assert!(modules::is_enabled(&db, &modules::RADIO_MODULE).unwrap());
+        for module in [
+            &modules::NEW_RELEASES_MODULE,
+            &modules::CONCERTS_MODULE,
+            &modules::PODCASTS_MODULE,
+            &modules::YOUTUBE_MODULE,
+            &modules::COVER_DOWNLOAD_MODULE,
+            &modules::ARTIST_PORTRAITS_MODULE,
+            &modules::ONLINE_LYRICS_MODULE,
+            &modules::SOURCE_IMAGES_MODULE,
+        ] {
+            assert!(
+                !modules::is_enabled(&db, module).unwrap(),
+                "{} stayed enabled",
+                module.id
+            );
+        }
+        assert!(settings::get_bool(
+            &db,
+            settings::ONLINE_SOURCES_FIRST_ENABLE_COMPLETED_KEY,
+            false
+        )
+        .unwrap());
+    }
+
+    #[test]
+    fn later_master_toggles_preserve_every_per_source_choice() {
+        let db = migrated_db();
+        set_enabled(&db, true).unwrap();
+        modules::set_enabled(&db, &modules::PODCASTS_MODULE, true).unwrap();
+        modules::set_enabled(&db, &modules::RADIO_MODULE, false).unwrap();
+
+        set_enabled(&db, false).unwrap();
+        set_enabled(&db, true).unwrap();
+
+        assert!(modules::is_enabled(&db, &modules::PODCASTS_MODULE).unwrap());
+        assert!(!modules::is_enabled(&db, &modules::RADIO_MODULE).unwrap());
+    }
+
+    #[test]
+    fn an_already_enabled_database_never_reapplies_first_enable_defaults() {
+        let db = migrated_db();
+        settings::set_bool(&db, ENABLED_KEY, true).unwrap();
+        modules::set_enabled(&db, &modules::PODCASTS_MODULE, true).unwrap();
+        modules::set_enabled(&db, &modules::RADIO_MODULE, false).unwrap();
+
+        set_enabled(&db, false).unwrap();
+        set_enabled(&db, true).unwrap();
+
+        assert!(modules::is_enabled(&db, &modules::PODCASTS_MODULE).unwrap());
+        assert!(!modules::is_enabled(&db, &modules::RADIO_MODULE).unwrap());
+    }
+
+    #[test]
+    fn a_previously_used_database_that_is_currently_off_preserves_source_choices() {
+        let db = migrated_db();
+        settings::set_bool(
+            &db,
+            settings::ONLINE_SOURCES_FIRST_ENABLE_COMPLETED_KEY,
+            true,
+        )
+        .unwrap();
+        modules::set_enabled(&db, &modules::PODCASTS_MODULE, true).unwrap();
+        modules::set_enabled(&db, &modules::RADIO_MODULE, false).unwrap();
+
+        set_enabled(&db, true).unwrap();
+
+        assert!(modules::is_enabled(&db, &modules::PODCASTS_MODULE).unwrap());
+        assert!(!modules::is_enabled(&db, &modules::RADIO_MODULE).unwrap());
     }
 }
