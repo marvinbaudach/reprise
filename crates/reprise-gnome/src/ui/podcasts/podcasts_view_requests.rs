@@ -113,10 +113,14 @@ impl PodcastsView {
                     Err(error) => {
                         view.footer_spinner.stop();
                         view.refresh();
-                        view.footer_status.set_text(&format!(
-                            "{} · {error}",
-                            strings::text(strings::PODCAST_REFRESH_FAILED)
-                        ));
+                        // `POD-16`: the same footer, the same rule. The worker
+                        // hands back a plain string that may be a `DbError`'s
+                        // whole failing statement, so it is logged rather than
+                        // appended — the sentence already says what happened
+                        // and that the saved episodes are still shown.
+                        tracing::warn!(%error, "podcast refresh failed");
+                        view.footer_status
+                            .set_text(&strings::text(strings::PODCAST_REFRESH_FAILED));
                         break;
                     }
                 }
