@@ -190,8 +190,9 @@ CREATE TABLE IF NOT EXISTS radio_stations (
 - **Episoden-Identität = GUID (Grill-Beschluss, Reversibilität):** `UNIQUE(subscription_id, guid)`
   ist der EINZIGE stabile Schlüssel — Resume-Position, Played-Zustand und `downloaded_path` hängen
   ausnahmslos am GUID, nie an Datei- oder URL-Schlüsseln; YouTube-GUID = Video-ID. Damit ist die
-  v1.1-Option „Episoden als Queue-Bürger" (12) eine Migration (GUID → Queue-Identität) statt
-  Re-Keying, und Re-Subscribe findet verwaiste Downloads deterministisch wieder (7.4).
+  die umgesetzte Queue-Bürgerschaft ohne Re-Keying möglich: die per GUID upgesertete
+  `podcast_episodes.id` ist die Queue-Identität. Re-Subscribe findet verwaiste Downloads
+  weiterhin deterministisch wieder (7.4).
 - **Settings** (`settings`-Tabelle, `library::settings`): `podcasts.import_count` (25),
   `podcasts.auto_download_default` (false), `podcasts.cleanup_policy` (`keep_all` |
   `delete_played_7d` | `keep_last_5`), `podcasts.youtube_enabled` (true), `podcasts.ytdlp_path`
@@ -377,8 +378,9 @@ aussagekräftiger UA ist radio-browser-Pflicht — der bestehende UA-String erf�
   `attach_bus_watch` erhält einen `MessageView::Tag`-Arm — `gst::tags::Title`/`Organization` aus der
   TagList, nur bei Änderung emittiert (letzter Wert im Watch-State, wie `spectrum_analyzer`).
 - **Gapless-Kontrakt:** External-Play parkt den Pre-Feed (`set_next(None)` im Controller + Reset in
-  `play_uri`) — Radio/YouTube geraten nie in den `about-to-finish`-Handoff (exakt der
-  Preview-Kontrakt).
+  `play_uri`). Auch eine Episode in der manuellen Queue setzt an ihrer Grenze `set_next(None)`;
+  der Outcome bleibt gapless-frei, obwohl sie nach dem Ende über den normalen Queue-Advance
+  fortsetzt. Radio/YouTube geraten nie in den `about-to-finish`-Handoff.
 - **Duration-Probe:** der bestehende Position-Ticker liefert `duration_ms` — kein
   Backend-Sondercode.
 
@@ -394,11 +396,12 @@ lässt **`mpris:length` bei `live_stream` weg**; `metadata_differs` sieht die ne
 
 Drei Schärfungen aus dem Grill (External sieht nach außen nie kaputt aus):
 
-- **Durch POD-20 eingeengt:** `can_go_next`/`can_go_previous` sind nur bei External **ohne**
+- **Durch POD-21 eingeengt:** `can_go_next`/`can_go_previous` sind nur bei External **ohne**
   Episoden-Nachbarn false. Eine Podcast-/YouTube-Session mit eingefrorenem
-  Listen-Kontext meldet die tatsächlich vorhandenen Nachbarn; Radio und
-  kontextlose Episoden bleiben false. So folgen Media Keys denselben
-  Grenzen wie die sichtbaren Buttons, ohne External zu Queue-Mitgliedern zu machen.
+  Listen-Kontext meldet die tatsächlich vorhandenen Nachbarn: bei direktem Start aus der
+  gerenderten Episodenliste, bei Herkunft „manuelle Queue" aus deren typisierter Reihenfolge.
+  Radio und kontextlose Episoden bleiben false. So folgen Media Keys denselben Grenzen wie die
+  sichtbaren Buttons; die Queue-Bürgerschaft selbst regelt QUE-9.
 - **`mpris:artUrl` = Remote-URL-Pass-through:** Podcast → persistierte `image_url`, Radio →
   `favicon_url` (falls vorhanden). GNOME Shell lädt selbst — es gibt weiterhin **keinen
   In-App-Bild-Downloader** (Nicht-Ziel 8 bleibt unangetastet).
@@ -410,7 +413,8 @@ Drei Schärfungen aus dem Grill (External sieht nach außen nie kaputt aus):
 Generalisierung des Preview-Musters (`preview.rs` bleibt funktional, sein Enum wird erweitert):
 
 ```rust
-pub(in crate::ui) enum PlaybackMode { Queue, Preview, Podcast, Radio } // advances_queue_on_finish: nur Queue
+pub(in crate::ui) enum PlaybackMode { Queue, QueuedEpisode, Preview, Podcast, Radio }
+// advances_queue_on_finish: Queue | QueuedEpisode; credits_listening: nur Queue
 pub(in crate::ui) enum ExternalMedia {
     Podcast { episode_id: i64, title: String, show: String,
               source: EpisodeSource /* Url(String) | File(String) */,
@@ -552,9 +556,9 @@ Zustandsmaschine pur: `Idle → Searching → Results | UrlDetected → Previewi
   unplayed` · `Download episode`/`Delete download` · ── · `Unsubscribe from “{show}”` (destructive).
   Station: `Play`/`Stop` · `Copy stream URL` · `Edit station…` (kleiner adw::Dialog: Name/Genre/URL)
   · ── · `Remove favorite` (destructive). CTX-5a-Geist: destruktiv unten, kontextbenannt.
-  **Queue-Einträge fehlen bewusst (Grill-Beschluss):** „Play Next"/„Add to Queue" erscheinen für
-  Episoden und Stationen GAR NICHT — weggelassen, nicht ausgegraut; die Menüs sind eigene Builder,
-  External ist in v1 kein Queue-Bürger.
+  **Queue-Einträge fehlten in v1 bewusst (ersetzter Grill-Beschluss):** Radio behält die
+  Asymmetrie und zeigt „Play Next"/„Add to Queue" weiterhin nie. Episoden sind nun typisierte
+  Bürger der manuellen Queue; ihre Menü- und Tastaturwege landen im separaten Ways-in-Paket.
 - **Hover-Star:** Zelle nach dem `rating.rs`-Rezept — **echte `gtk::Button`s, kein GestureClick in
   ColumnView-Zellen** (dokumentierter Befund), MotionController-Reveal, Re-Bind bei Zell-Recycling.
   Radio: gefüllter Accent-Star = Favorit, Klick entfernt. Podcast-Episode: Star wirkt auf die
@@ -748,10 +752,10 @@ startet das echte yt-dlp.
 3. **Kapitel & Transkripte** — heterogene Datenlage, eigener Player-UI-Teil.
 4. **Playback-Speed** — braucht Rate-Plumbing im Backend + Bar-UI; orthogonal. **Benannter
   v1.1-Kandidat Nr. 1** (Podcast-Hörer wollen das; Grill-Beschluss).
-5. **Auto-Advance zur nächsten Episode** — Ende → Played + Stop + „Play next"-Angebot (6.3);
-  Auto-Play wäre ein neues Queue-Konzept für Nicht-Tracks. **Benannter v1.1-Kandidat** (zusammen
-  mit der Queue-Bürgerschaft der Episoden; die GUID-Identität (3) macht daraus eine Migration
-  statt Re-Keying — Grill-Beschluss zur Reversibilität).
+5. **Auto-Advance zur nächsten Episode derselben Show** bleibt ausgeschlossen: direkte
+  Episoden enden weiterhin mit Played + Stop + manuellem „Play next"-Angebot (6.3). Die
+  inzwischen umgesetzte Queue-Bürgerschaft ist davon getrennt: nur eine ausdrücklich manuell
+  eingereihte Episode setzt mit dem nächsten Queue-Eintrag fort.
 6. **Desktop-Benachrichtigungen** neue Episoden (Parität zur Concerts-Entscheidung).
 7. **CLI/MCP-Surface** — **benannter v1.1-Kandidat** (Grill-Beschluss): read-only `reprise-cli
   podcasts list` / `reprise://podcasts` + `reprise://radio` (reine Cache-Reads, ein Paket-M-Klon

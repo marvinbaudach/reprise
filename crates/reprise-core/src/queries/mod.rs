@@ -57,22 +57,12 @@
 //!   `query_track_count`'s smart arm
 //!   mirrors this with plain arithmetic (`raw_count.min(limit_count)`)
 //!   since a count has no rows to slice.
-//! - **Queue**: ids are supplied by the caller (`queue_ids: &[i64]`, sourced
-//!   from `queue::Queue::ids_in_order` via `ui::player_controller::
-//!   queue_ids_snapshot`) in the queue's current play order (reflecting
-//!   shuffle, if active). Rather than a SQL `CASE`/temp-table trick to make
-//!   `ORDER BY id IN (...)` preserve that order, the window function slices
-//!   `ids[offset..offset+limit]` in Rust first, runs one unordered `id IN
-//!   (...)` query for just that slice, and reorders the results back to the
-//!   slice's order in Rust (an id with no matching row — e.g. deleted since
-//!   being queued — is silently skipped, not an error). This is simpler
-//!   than teaching SQL about an arbitrary Rust-side order and just as fast
-//!   for the bounded (`MAX_WINDOW_LIMIT`) sizes involved. `query_track_ids`
-//!   for `Queue` returns `queue_ids` verbatim (it already *is* "every id in
-//!   the current view, in order" — the reason `query_track_ids` exists at
-//!   all); `query_track_count` is simply `queue_ids.len()`. Both ignore the
-//!   live search filter — searching *within* the queue view is left to a
-//!   later stage; see the module's `ViewSource::Queue` arms.
+//! - **Queue**: typed items are supplied by the caller in manual queue order.
+//!   The window is sliced in Rust, each item kind present is resolved by one
+//!   batched query, and results are restored to occurrence order. Missing
+//!   tracks and unavailable episodes are silently skipped. Track-only query
+//!   surfaces project just the track entries until their callers become
+//!   item-aware. The live search filter is intentionally ignored.
 //! - **ImportErrors**: Task 8 defines the real (non-`tracks`) row shape and
 //!   columns; every query here degrades to an empty window/zero count for
 //!   this source in the meantime (see `ViewSource`'s own doc comment).
@@ -82,6 +72,7 @@
 
 use crate::db::Db;
 use crate::models::Track;
+use crate::up_next::QueueItem;
 use crate::view_source::ViewSource;
 use rusqlite::Connection;
 
@@ -180,7 +171,10 @@ pub use maintenance::{
 #[cfg(test)]
 pub(crate) use maintenance::{remove_tracks_impl, RemoveGuard};
 pub use playlist::query_playlist_tracks_full;
-pub use queue::{is_queue_capped, query_queue_duration_ms, QUEUE_LIMIT};
+pub use queue::{
+    is_queue_capped, query_available_episode_ids, query_queue_duration_ms, query_queue_item_window,
+    QueueItemMetadata, QUEUE_LIMIT,
+};
 pub use stats::{query_library_stats, query_library_stats_browsed, LibraryStats};
 
 use clauses::build_track_ids_query_browsed;
@@ -218,7 +212,7 @@ pub fn query_track_window(
     filter: &str,
     offset: i64,
     limit: i64,
-    queue_ids: &[i64],
+    queue_ids: &[QueueItem],
 ) -> Result<Vec<Track>, rusqlite::Error> {
     let conn = db.conn();
     query_track_window_browsed_ai_conn(
@@ -246,7 +240,7 @@ pub fn query_track_window_browsed(
     browse: &BrowseFilter,
     offset: i64,
     limit: i64,
-    queue_ids: &[i64],
+    queue_ids: &[QueueItem],
 ) -> Result<Vec<Track>, rusqlite::Error> {
     let conn = db.conn();
     query_track_window_browsed_ai_conn(
@@ -275,7 +269,7 @@ pub fn query_track_window_browsed_ai(
     browse: &BrowseFilter,
     offset: i64,
     limit: i64,
-    queue_ids: &[i64],
+    queue_ids: &[QueueItem],
     exclude_ai: bool,
     project_ai: bool,
 ) -> Result<Vec<Track>, rusqlite::Error> {
@@ -296,7 +290,7 @@ fn query_track_window_browsed_ai_conn(
     browse: &BrowseFilter,
     offset: i64,
     limit: i64,
-    queue_ids: &[i64],
+    queue_ids: &[QueueItem],
     exclude_ai: bool,
     project_ai: bool,
 ) -> Result<Vec<Track>, rusqlite::Error> {
@@ -370,7 +364,7 @@ pub fn query_track_count(
     db: &Db,
     source: &ViewSource,
     filter: &str,
-    queue_ids: &[i64],
+    queue_ids: &[QueueItem],
 ) -> Result<i64, rusqlite::Error> {
     let conn = db.conn();
     query_track_count_browsed_conn(conn, source, filter, &BrowseFilter::default(), queue_ids)
@@ -381,7 +375,7 @@ pub fn query_track_count_browsed(
     source: &ViewSource,
     filter: &str,
     browse: &BrowseFilter,
-    queue_ids: &[i64],
+    queue_ids: &[QueueItem],
 ) -> Result<i64, rusqlite::Error> {
     let conn = db.conn();
     query_track_count_browsed_conn(conn, source, filter, browse, queue_ids)
@@ -392,7 +386,7 @@ fn query_track_count_browsed_conn(
     source: &ViewSource,
     filter: &str,
     browse: &BrowseFilter,
-    queue_ids: &[i64],
+    queue_ids: &[QueueItem],
 ) -> Result<i64, rusqlite::Error> {
     match source {
         ViewSource::Library => library::query_track_count_library(conn, filter, browse),
@@ -463,7 +457,7 @@ pub fn query_track_count_browsed_ai(
     source: &ViewSource,
     filter: &str,
     browse: &BrowseFilter,
-    queue_ids: &[i64],
+    queue_ids: &[QueueItem],
     exclude_ai: bool,
 ) -> Result<i64, rusqlite::Error> {
     let conn = db.conn();
@@ -503,7 +497,7 @@ pub fn query_track_ids(
     sort_field: &str,
     sort_dir: &str,
     filter: &str,
-    queue_ids: &[i64],
+    queue_ids: &[QueueItem],
 ) -> Result<Vec<i64>, rusqlite::Error> {
     let conn = db.conn();
     query_track_ids_in(conn, source, sort_field, sort_dir, filter, queue_ids)
@@ -515,7 +509,7 @@ pub(crate) fn query_track_ids_in(
     sort_field: &str,
     sort_dir: &str,
     filter: &str,
-    queue_ids: &[i64],
+    queue_ids: &[QueueItem],
 ) -> Result<Vec<i64>, rusqlite::Error> {
     query_track_ids_browsed_ai_conn(
         conn,
@@ -536,7 +530,7 @@ pub fn query_track_ids_browsed(
     sort_dir: &str,
     filter: &str,
     browse: &BrowseFilter,
-    queue_ids: &[i64],
+    queue_ids: &[QueueItem],
 ) -> Result<Vec<i64>, rusqlite::Error> {
     let conn = db.conn();
     query_track_ids_browsed_ai_conn(
@@ -556,7 +550,7 @@ pub fn query_track_ids_browsed_ai(
     sort_dir: &str,
     filter: &str,
     browse: &BrowseFilter,
-    queue_ids: &[i64],
+    queue_ids: &[QueueItem],
     exclude_ai: bool,
 ) -> Result<Vec<i64>, rusqlite::Error> {
     let conn = db.conn();
@@ -573,7 +567,7 @@ fn query_track_ids_browsed_ai_conn(
     sort_dir: &str,
     filter: &str,
     browse: &BrowseFilter,
-    queue_ids: &[i64],
+    queue_ids: &[QueueItem],
     exclude_ai: bool,
 ) -> Result<Vec<i64>, rusqlite::Error> {
     match source {
@@ -610,7 +604,10 @@ fn query_track_ids_browsed_ai_conn(
         ViewSource::Smart(id) => {
             smart::query_track_ids_smart(conn, *id, sort_field, sort_dir, filter)
         }
-        ViewSource::Queue => Ok(queue_ids.to_vec()),
+        ViewSource::Queue => Ok(queue_ids
+            .iter()
+            .filter_map(|item| item.track_id())
+            .collect()),
         ViewSource::Album {
             album,
             album_artist,
@@ -703,7 +700,7 @@ pub fn query_visible_track_ids_browsed(
     sort_dir: &str,
     filter: &str,
     browse: &BrowseFilter,
-    queue_ids: &[i64],
+    queue_ids: &[QueueItem],
 ) -> Result<Vec<i64>, rusqlite::Error> {
     let conn = db.conn();
     match source {

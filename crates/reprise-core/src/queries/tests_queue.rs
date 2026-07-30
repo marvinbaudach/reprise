@@ -5,6 +5,7 @@
 //! assertion change.
 
 use super::*;
+use crate::up_next::QueueItem;
 
 fn seeded_conn_with_tracks(count: i64) -> crate::db::Db {
     let db = crate::db::Db::open_in_memory().unwrap();
@@ -20,47 +21,111 @@ fn seeded_conn_with_tracks(count: i64) -> crate::db::Db {
     db
 }
 
-#[test]
-fn que_6_metadata_loads_in_one_query() {
-    let db = seeded_conn_with_tracks(4);
+fn track_items(ids: &[i64]) -> Vec<QueueItem> {
+    ids.iter().copied().map(QueueItem::Track).collect()
+}
+
+fn add_episode(db: &crate::db::Db, episode_id: i64, duration_secs: Option<i64>) -> i64 {
     let conn = db.conn();
-    let queue_ids = vec![4, 2, 3, 1];
+    conn.execute(
+        "INSERT INTO podcast_subscriptions
+         (kind, feed_url, title, added_at)
+         VALUES ('rss', 'https://example.test/feed', 'Systems Weekly', 1)",
+        [],
+    )
+    .unwrap();
+    let subscription_id = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO podcast_episodes
+         (id, subscription_id, guid, title, audio_url, duration_secs, first_seen_at)
+         VALUES (?1, ?2, 'episode-guid', 'Queue Citizens', 'https://example.test/episode.mp3', ?3, 2)",
+        rusqlite::params![episode_id, subscription_id, duration_secs],
+    )
+    .unwrap();
+    episode_id
+}
+
+#[test]
+fn que_6_metadata_loads_in_one_batched_query_per_item_kind() {
+    let db = seeded_conn_with_tracks(2);
+    let conn = db.conn();
+    add_episode(&db, 1, Some(90));
+    let queue_items = vec![
+        QueueItem::Track(2),
+        QueueItem::Episode(1),
+        QueueItem::Track(2),
+        QueueItem::Episode(1),
+    ];
     let query_count = std::cell::Cell::new(0);
 
-    let rows = super::queue::query_track_window_queue_counted(
+    let rows = super::queue::query_queue_item_window_counted(
         conn,
-        &queue_ids,
+        &queue_items,
         0,
-        queue_ids.len() as i64,
+        queue_items.len() as i64,
         || query_count.set(query_count.get() + 1),
     )
     .unwrap();
 
-    assert_eq!(query_count.get(), 1);
+    assert_eq!(query_count.get(), 2);
     assert_eq!(
-        rows.into_iter().map(|track| track.id).collect::<Vec<_>>(),
-        queue_ids
+        rows.iter().map(QueueItemMetadata::item).collect::<Vec<_>>(),
+        queue_items
     );
+    assert!(matches!(
+        &rows[1],
+        QueueItemMetadata::Episode(episode)
+            if episode.title == "Queue Citizens" && episode.show == "Systems Weekly"
+    ));
 }
 
 #[test]
-fn queue_duration_sums_duplicates_and_skips_stale_ids_in_one_batch() {
+fn queue_duration_sums_both_kinds_duplicates_and_skips_stale_items() {
     let db = seeded_conn_with_tracks(2);
     let conn = db.conn();
     conn.execute("UPDATE tracks SET duration_ms = id * 1000", [])
         .unwrap();
+    add_episode(&db, 1, Some(3));
 
     assert_eq!(
-        query_queue_duration_ms(&db, &[2, 1, 2, 999]).unwrap(),
-        5_000
+        query_queue_duration_ms(
+            &db,
+            &[
+                QueueItem::Track(2),
+                QueueItem::Episode(1),
+                QueueItem::Track(2),
+                QueueItem::Episode(1),
+                QueueItem::Episode(999),
+            ],
+        )
+        .unwrap(),
+        10_000
     );
     assert_eq!(query_queue_duration_ms(&db, &[]).unwrap(), 0);
 }
 
 #[test]
+fn queue_count_counts_only_resolvable_track_and_active_episode_occurrences() {
+    let db = seeded_conn_with_tracks(1);
+    add_episode(&db, 1, None);
+    let items = [
+        QueueItem::Track(1),
+        QueueItem::Episode(1),
+        QueueItem::Track(99),
+        QueueItem::Episode(99),
+        QueueItem::Episode(1),
+    ];
+
+    assert_eq!(
+        super::queue::query_queue_item_count(db.conn(), &items).unwrap(),
+        3
+    );
+}
+
+#[test]
 fn queue_window_follows_the_ids_order_not_id_order() {
     let db = seeded_conn_with_tracks(3);
-    let queue_ids = vec![3, 1, 2];
+    let queue_ids = track_items(&[3, 1, 2]);
     let rows = query_track_window(
         &db,
         &ViewSource::Queue,
@@ -79,7 +144,7 @@ fn queue_window_follows_the_ids_order_not_id_order() {
 #[test]
 fn queue_window_skips_ids_with_no_matching_row() {
     let db = seeded_conn_with_tracks(3);
-    let queue_ids = vec![3, 999, 1];
+    let queue_ids = track_items(&[3, 999, 1]);
     let rows = query_track_window(
         &db,
         &ViewSource::Queue,
@@ -98,7 +163,7 @@ fn queue_window_skips_ids_with_no_matching_row() {
 #[test]
 fn queue_window_slices_by_offset_and_limit_then_reorders() {
     let db = seeded_conn_with_tracks(5);
-    let queue_ids = vec![5, 4, 3, 2, 1];
+    let queue_ids = track_items(&[5, 4, 3, 2, 1]);
     let rows = query_track_window(
         &db,
         &ViewSource::Queue,
@@ -117,7 +182,7 @@ fn queue_window_slices_by_offset_and_limit_then_reorders() {
 #[test]
 fn queue_count_counts_resolvable_ids_regardless_of_filter() {
     let db = seeded_conn_with_tracks(3);
-    let queue_ids = vec![3, 2, 1];
+    let queue_ids = track_items(&[3, 2, 1]);
     assert_eq!(
         query_track_count(&db, &ViewSource::Queue, "anything", &queue_ids).unwrap(),
         3
@@ -131,7 +196,7 @@ fn queue_count_counts_resolvable_ids_regardless_of_filter() {
 #[test]
 fn queue_count_excludes_ids_that_no_longer_resolve_to_a_row() {
     let db = seeded_conn_with_tracks(3);
-    let queue_ids = vec![3, 999, 1]; // 999 was never inserted
+    let queue_ids = track_items(&[3, 999, 1]); // 999 was never inserted
     assert_eq!(
         query_track_count(&db, &ViewSource::Queue, "", &queue_ids).unwrap(),
         2
@@ -141,7 +206,7 @@ fn queue_count_excludes_ids_that_no_longer_resolve_to_a_row() {
 #[test]
 fn queue_count_counts_each_occurrence_of_a_duplicated_resolvable_id() {
     let db = seeded_conn_with_tracks(3);
-    let queue_ids = vec![1, 1, 2]; // id 1 queued twice
+    let queue_ids = track_items(&[1, 1, 2]); // id 1 queued twice
     assert_eq!(
         query_track_count(&db, &ViewSource::Queue, "", &queue_ids).unwrap(),
         3
@@ -159,11 +224,11 @@ fn queue_count_is_zero_for_an_empty_queue() {
 
 #[test]
 fn queue_ids_are_returned_verbatim() {
-    let queue_ids = vec![5, 4, 3];
+    let queue_ids = track_items(&[5, 4, 3]);
     let db = crate::db::Db::open_in_memory().unwrap();
     assert_eq!(
         query_track_ids(&db, &ViewSource::Queue, "x", "x", "", &queue_ids).unwrap(),
-        queue_ids
+        vec![5, 4, 3]
     );
 }
 
@@ -174,7 +239,7 @@ fn queue_ids_are_returned_verbatim() {
 #[test]
 fn queue_count_matches_window_row_count_when_all_ids_resolve() {
     let db = seeded_conn_with_tracks(5);
-    let queue_ids = vec![5, 4, 3, 2, 1];
+    let queue_ids = track_items(&[5, 4, 3, 2, 1]);
 
     let count = query_track_count(&db, &ViewSource::Queue, "", &queue_ids).unwrap();
     let rows = query_track_window(
@@ -203,7 +268,7 @@ fn queue_count_matches_window_row_count_when_all_ids_resolve() {
 #[test]
 fn queue_count_matches_window_row_count_when_some_ids_do_not_resolve() {
     let db = seeded_conn_with_tracks(3);
-    let queue_ids = vec![3, 999, 1, 2]; // 999 doesn't resolve
+    let queue_ids = track_items(&[3, 999, 1, 2]); // 999 doesn't resolve
 
     let count = query_track_count(&db, &ViewSource::Queue, "", &queue_ids).unwrap();
     let rows = query_track_window(
@@ -234,7 +299,7 @@ fn queue_count_matches_window_row_count_when_some_ids_do_not_resolve() {
 #[test]
 fn queue_window_renders_a_duplicated_id_once_per_occurrence() {
     let db = seeded_conn_with_tracks(3);
-    let queue_ids = vec![1, 2, 1]; // id 1 queued twice, non-adjacent
+    let queue_ids = track_items(&[1, 2, 1]); // id 1 queued twice, non-adjacent
 
     let rows = query_track_window(
         &db,
@@ -271,7 +336,7 @@ fn queue_window_renders_a_duplicated_id_once_per_occurrence() {
 #[test]
 fn queue_count_matches_window_row_count_with_a_duplicated_id() {
     let db = seeded_conn_with_tracks(3);
-    let queue_ids = vec![1, 2, 1]; // id 1 queued twice
+    let queue_ids = track_items(&[1, 2, 1]); // id 1 queued twice
 
     let count = query_track_count(&db, &ViewSource::Queue, "", &queue_ids).unwrap();
     let rows = query_track_window(

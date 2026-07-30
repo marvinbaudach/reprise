@@ -164,7 +164,13 @@ impl UpNextPanel {
         let mut total_duration_ms = 0_i64;
         for offset in (0..upcoming.total_len()).step_by(200) {
             let ids = upcoming.ids_window(offset, 200);
-            let duration = match reprise_core::queries::query_queue_duration_ms(&self.conn, &ids) {
+            let items = ids
+                .iter()
+                .copied()
+                .map(reprise_core::up_next::QueueItem::Track)
+                .collect::<Vec<_>>();
+            let duration = match reprise_core::queries::query_queue_duration_ms(&self.conn, &items)
+            {
                 Ok(duration) => duration,
                 Err(error) => {
                     tracing::warn!(%error, "could not load up-next panel duration window");

@@ -282,6 +282,17 @@ msgstr[3] ""
 msgstr[4] ""
 msgstr[5] ""
 
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:193
+#, rust-format
+msgid "Skipped {count} unplayable episode"
+msgid_plural "Skipped {count} unplayable episodes"
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+msgstr[3] ""
+msgstr[4] ""
+msgstr[5] ""
+
 #: crates/reprise-gnome/src/ui/strings.rs:207
 msgid "Restart required"
 msgstr "إعادة التشغيل مطلوبة"

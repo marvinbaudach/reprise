@@ -146,6 +146,11 @@ pub(in crate::ui) fn queue_ids_for_activation(
     } else {
         Vec::new()
     };
+    let queue_items = queue_ids
+        .iter()
+        .copied()
+        .map(reprise_core::up_next::QueueItem::Track)
+        .collect::<Vec<_>>();
 
     let ids = {
         let conn = &shared.conn;
@@ -156,7 +161,7 @@ pub(in crate::ui) fn queue_ids_for_activation(
             &sort.dir,
             &filter,
             &browse,
-            &queue_ids,
+            &queue_items,
         )
     };
 

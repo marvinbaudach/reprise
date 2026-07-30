@@ -6,7 +6,7 @@
 //! path here plays what it loads.
 
 use reprise_core::queue::{Queue, Repeat};
-use reprise_core::up_next::UpNextQueue;
+use reprise_core::up_next::{QueueItem, UpNextQueue};
 use reprise_runtime_protocol::session::RestoredQueue;
 
 use super::{as_index, Transport};
@@ -43,7 +43,12 @@ impl Transport {
         })?;
         self.queue = restored;
         self.up_next = UpNextQueue::default();
-        self.up_next.append(play_next);
+        let play_next = play_next
+            .iter()
+            .copied()
+            .map(QueueItem::Track)
+            .collect::<Vec<_>>();
+        self.up_next.append(&play_next);
         Ok(())
     }
 }

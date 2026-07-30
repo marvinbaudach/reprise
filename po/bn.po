@@ -3092,6 +3092,13 @@ msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:238
 #, rust-format
+msgid "Skipped {count} unplayable episode"
+msgid_plural "Skipped {count} unplayable episodes"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:193
+#, rust-format
 msgid "Show all {count} episode"
 msgid_plural "Show all {count} episodes"
 msgstr[0] ""

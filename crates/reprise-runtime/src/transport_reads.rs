@@ -29,7 +29,7 @@ impl Transport {
                 .up_next
                 .ids()
                 .iter()
-                .copied()
+                .filter_map(|item| item.track_id())
                 .take(QUEUE_WINDOW)
                 .collect(),
             context_track_ids: self.queue.remaining_window(0, QUEUE_WINDOW),
@@ -52,7 +52,12 @@ impl Transport {
     pub(crate) fn queue_identity(&self) -> QueueIdentity {
         QueueIdentity {
             current: self.current.as_ref().and_then(|loaded| loaded.track_id),
-            play_next: self.up_next.ids().to_vec(),
+            play_next: self
+                .up_next
+                .ids()
+                .iter()
+                .filter_map(|item| item.track_id())
+                .collect(),
             context: self.queue.remaining_after_current(),
         }
     }
@@ -72,7 +77,7 @@ impl Transport {
                     .iter()
                     .skip(offset)
                     .take(limit)
-                    .copied()
+                    .filter_map(|item| item.track_id())
                     .collect(),
                 self.up_next.len(),
             ),

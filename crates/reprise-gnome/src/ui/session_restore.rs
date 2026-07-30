@@ -284,11 +284,15 @@ fn seeded_state(fixture: &str) -> Option<SessionState> {
 fn seeded_up_next_state(value: &str) -> Option<SessionState> {
     let mut fields = value.split(':');
     let context = parse_smoke_ids(fields.next()?)?;
-    let current_up_next = fields.next()?.parse().ok()?;
+    let current_up_next = reprise_core::up_next::QueueItem::Track(fields.next()?.parse().ok()?);
     let pending = parse_smoke_ids(fields.next()?)?;
     if fields.next().is_some() {
         return None;
     }
+    let pending = pending
+        .into_iter()
+        .map(reprise_core::up_next::QueueItem::Track)
+        .collect::<Vec<_>>();
     let mut up_next = reprise_core::up_next::UpNextQueue::default();
     up_next.append(&pending);
     Some(SessionState {
@@ -347,7 +351,10 @@ mod tests {
 
         assert_eq!(state.queue.ids, vec![1, 2]);
         assert_eq!(state.queue.position, Some(0));
-        assert_eq!(state.current_up_next, Some(3));
+        assert_eq!(
+            state.current_up_next,
+            Some(reprise_core::up_next::QueueItem::Track(3))
+        );
         assert_eq!(state.up_next.ids(), &[4, 5]);
         assert_eq!(state.queue.repeat, Repeat::Off);
         assert!(!state.queue.shuffled);

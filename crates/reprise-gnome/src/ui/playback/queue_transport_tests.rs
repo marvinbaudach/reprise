@@ -12,7 +12,12 @@ fn context(ids: &[i64], start_index: usize) -> Queue {
 
 fn pending(ids: &[i64]) -> UpNextQueue {
     let mut up_next = UpNextQueue::default();
-    up_next.append(ids);
+    let items = ids
+        .iter()
+        .copied()
+        .map(QueueItem::Track)
+        .collect::<Vec<_>>();
+    up_next.append(&items);
     up_next
 }
 
@@ -54,7 +59,11 @@ fn queue_purge_without_a_loaded_deleted_track_is_immediate() {
 #[test]
 fn stopped_toggle_starts_current_queue_track_without_autoplay() {
     assert_eq!(
-        toggle_action(MprisPlaybackStatus::Stopped, Some(42), false),
+        toggle_action(
+            MprisPlaybackStatus::Stopped,
+            Some(reprise_core::up_next::QueueItem::Track(42)),
+            false,
+        ),
         ToggleAction::StartCurrent
     );
     assert_eq!(
