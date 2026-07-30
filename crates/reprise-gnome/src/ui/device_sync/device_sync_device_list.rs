@@ -89,7 +89,7 @@ impl DeviceSyncRuntime {
                     state.connected = true;
                     state.session_state = projected.state;
                     if state.session_state.opens_session() && (!was_connected || !owned_session) {
-                        refresh.push((id.clone(), false));
+                        refresh.push(id.clone());
                     }
                 } else {
                     let (settings, targets) = memory::load_device_memory(&self.conn, &descriptor)
@@ -112,7 +112,7 @@ impl DeviceSyncRuntime {
                         projected.state,
                     ));
                     if opens_session {
-                        refresh.push((id, true));
+                        refresh.push(id);
                     }
                 }
             }
@@ -124,24 +124,22 @@ impl DeviceSyncRuntime {
             });
         }
         self.notify();
-        for (id, is_new) in refresh {
+        for id in refresh {
             self.reload_sync_history(&id);
-            if is_new {
-                if let Err(error) = self.recompute_delta_silent(&id) {
-                    tracing::warn!(
-                        device_id = id,
-                        %error,
-                        "could not prepare Android sync playlists before device inspection"
-                    );
-                }
-                if let Some(device) = self
-                    .device_states
-                    .borrow_mut()
-                    .iter_mut()
-                    .find(|device| device.descriptor.id == id)
-                {
-                    device.sync_phase = PlannedSyncPhase::ComputingDelta;
-                }
+            if let Err(error) = self.recompute_delta_silent(&id) {
+                tracing::warn!(
+                    device_id = id,
+                    %error,
+                    "could not prepare Android sync playlists before device inspection"
+                );
+            }
+            if let Some(device) = self
+                .device_states
+                .borrow_mut()
+                .iter_mut()
+                .find(|device| device.descriptor.id == id)
+            {
+                device.sync_phase = PlannedSyncPhase::ComputingDelta;
             }
             self.refresh_contents_on_connect(&id);
         }

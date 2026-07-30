@@ -45,6 +45,15 @@ async fn wait_for_storage(runtime: &Rc<DeviceSyncRuntime>, expected_devices: usi
             && devices
                 .iter()
                 .all(|device| device.sync_phase != PlannedSyncPhase::ComputingDelta)
+            && devices
+                .iter()
+                .filter(|device| {
+                    device.session_state == reprise_core::device_sync::DeviceSessionState::Active
+                })
+                .all(|device| {
+                    device.contents_state
+                        == reprise_core::device_sync::device_view::DeviceContentsState::Verified
+                })
         {
             return;
         }
