@@ -72,7 +72,8 @@ pub(super) fn download_status(state: &DownloadState) -> gtk4::Widget {
     if matches!(state, DownloadState::NotDownloaded) {
         return root.upcast();
     }
-    if let Some(failure) = download_failure_presentation(state) {
+    let failure = download_failure_presentation(state);
+    if let Some(failure) = failure {
         root.set_tooltip_text(Some(failure.tooltip));
     }
     root.set_size_request(110, -1);
@@ -111,6 +112,15 @@ pub(super) fn download_status(state: &DownloadState) -> gtk4::Widget {
         }
         DownloadState::Failed { .. } => {
             label.set_text(&strings::text(strings::PODCAST_DOWNLOAD_FAILED));
+            if let Some(detail) = failure.and_then(|failure| failure.visible_detail) {
+                let reason = gtk4::Label::new(Some(detail));
+                reason.set_xalign(1.0);
+                reason.set_wrap(true);
+                reason.set_justify(gtk4::Justification::Right);
+                reason.add_css_class("caption");
+                reason.add_css_class("dim-label");
+                root.append(&reason);
+            }
         }
     }
     root.prepend(&label);

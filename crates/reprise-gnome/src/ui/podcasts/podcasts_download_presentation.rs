@@ -28,7 +28,7 @@ pub(super) fn download_failure_presentation(
     };
     Some(DownloadFailurePresentation {
         tooltip: message,
-        visible_detail: None,
+        visible_detail: Some(message),
     })
 }
 
@@ -212,7 +212,7 @@ mod tests {
     }
 
     #[test]
-    fn pod_13_download_failure_reason_is_available_only_as_a_tooltip() {
+    fn pod_13_download_failure_reason_stays_visible_and_available_as_a_tooltip() {
         let state = DownloadState::Failed {
             message: "podcast source timed out".into(),
         };
@@ -221,7 +221,7 @@ mod tests {
             download_failure_presentation(&state),
             Some(DownloadFailurePresentation {
                 tooltip: "podcast source timed out",
-                visible_detail: None,
+                visible_detail: Some("podcast source timed out"),
             })
         );
     }
