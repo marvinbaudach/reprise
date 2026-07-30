@@ -5,6 +5,7 @@ use chrono::NaiveDate;
 use super::ytdlp::{YtDlpPlaylist, YtDlpVideo};
 
 const WATCH_URL_PREFIX: &str = "https://www.youtube.com/watch?v=";
+const THUMBNAIL_URL_PREFIX: &str = "https://i.ytimg.com/vi/";
 const CHANNEL_PATH: &str = "/channel/";
 const LONG_FORM_FEED_PREFIX: &str = "https://www.youtube.com/feeds/videos.xml?playlist_id=UULF";
 
@@ -47,6 +48,11 @@ pub fn project_video(video: YtDlpVideo) -> YoutubeEpisode {
     }
 }
 
+#[must_use]
+pub fn thumbnail_url(video_id: &str) -> String {
+    format!("{THUMBNAIL_URL_PREFIX}{video_id}/hqdefault.jpg")
+}
+
 fn upload_date_timestamp(value: Option<&str>) -> Option<i64> {
     NaiveDate::parse_from_str(value?, "%Y%m%d")
         .ok()?
@@ -71,8 +77,42 @@ pub fn long_form_feed_url(channel_url: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{project_playlist, project_video, YoutubeEpisode};
+    use super::{project_playlist, project_video, thumbnail_url, YoutubeEpisode};
     use crate::podcasts::ytdlp::{YtDlpPlaylist, YtDlpVideo};
+
+    #[test]
+    fn src_11_thumbnail_url_uses_the_plain_video_id() {
+        assert_eq!(
+            thumbnail_url("9fCfJzK0ZE4"),
+            "https://i.ytimg.com/vi/9fCfJzK0ZE4/hqdefault.jpg"
+        );
+    }
+
+    #[test]
+    fn src_11_project_video_passes_through_provider_artwork_without_deriving() {
+        let supplied = project_video(YtDlpVideo {
+            id: "supplied".to_owned(),
+            title: "Supplied artwork".to_owned(),
+            duration_secs: None,
+            timestamp: None,
+            upload_date: None,
+            image_url: Some("https://img.test/provider.jpg".to_owned()),
+        });
+        let absent = project_video(YtDlpVideo {
+            id: "absent".to_owned(),
+            title: "Absent artwork".to_owned(),
+            duration_secs: None,
+            timestamp: None,
+            upload_date: None,
+            image_url: None,
+        });
+
+        assert_eq!(
+            supplied.image_url.as_deref(),
+            Some("https://img.test/provider.jpg")
+        );
+        assert_eq!(absent.image_url, None);
+    }
 
     #[test]
     fn flat_playlist_projects_stable_episode_identity_in_source_order() {

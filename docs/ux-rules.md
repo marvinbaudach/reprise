@@ -3506,7 +3506,12 @@ listening statistics.
   and display stay in the GNOME crate. The on-disk cache is limited to
   `MAX_CACHE_ENTRIES` (300) entries and, when exceeded, deterministically
   clears the files untouched for longest first — unlike the unbounded,
-  permanent cover-art cache. Every caller (podcast library view, YouTube
+  permanent cover-art cache. Episodenbilder folgen derselben Regel: Eine
+  gespeicherte Provider-URL gewinnt; fehlt sie bei einer YouTube-Episode,
+  leitet die Leseprojektion
+  `https://i.ytimg.com/vi/<video-id>/hqdefault.jpg` aus ihrer dauerhaften
+  Video-ID ab, ohne einen zweiten Wert zu persistieren, während RSS keine
+  abgeleitete YouTube-URL erhält. Every caller (podcast library view, YouTube
   channel detail, all three add dialogs) computes the gate itself at its own
   connection rather than relying on an upstream checkpoint — the lesson from
   `T6-G1-gap`: a privacy promise in UI copy needs a test per call path, not per
