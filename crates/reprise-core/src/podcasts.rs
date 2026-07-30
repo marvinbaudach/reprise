@@ -122,6 +122,15 @@ pub enum PodcastError {
     /// own module or the global online-sources gate (`NET-1a`).
     #[error("{0}")]
     Disabled(String),
+    /// `POD-17`: the episode arrived, but writing its tags into the file
+    /// failed and may have left it truncated. Not a provider failure at all
+    /// — it lives here because this is the error the download closure has to
+    /// return so `downloads::download_atomically` deletes the destroyed
+    /// temporary instead of publishing it. Deliberately payload-free: there
+    /// is nothing to say about it that `episode_tags::EpisodeTagError`'s own
+    /// classified log line has not already said.
+    #[error("the download could not be tagged")]
+    TagWrite,
 }
 
 impl PodcastError {
@@ -150,6 +159,7 @@ impl PodcastError {
             PodcastError::YtDlp(_) => "YouTube source could not be read with yt-dlp",
             PodcastError::YtDlpTimeout => "YouTube source timed out",
             PodcastError::Disabled(_) => "this source is disabled in Reprise preferences",
+            PodcastError::TagWrite => "podcast download could not be tagged",
         }
     }
 }
@@ -175,6 +185,7 @@ mod tests {
             PodcastError::YtDlp(leaking.to_owned()),
             PodcastError::YtDlpTimeout,
             PodcastError::Disabled(leaking.to_owned()),
+            PodcastError::TagWrite,
         ];
         for error in cases {
             let classified = error.classify();

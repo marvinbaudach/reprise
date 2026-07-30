@@ -841,13 +841,18 @@ human. Rationale for changes lives in the git history.
   positional index would move whenever another episode was deleted and cost a
   delete plus a full re-transfer. When a collision group shrinks to one member,
   that survivor loses its now-unnecessary suffix once; deleting any namesake
-  never renumbers the rest. A file Reprise itself named `.audio` is managed like
-  every other audio file, so it is inventoried, removable and counted instead
-  of being re-copied on every sync. Renaming makes files from an earlier sync
-  look new: with "Remove from phone when deleted or unsubscribed here" on, the
-  old names are removed and the new names copied in one noisy sync; with it off,
-  both remain until the user deletes one. Sorting a show folder by name is now
-  chronological, which the id form never was.
+  never renumbers the rest. Uniqueness is judged on the composed path, never on
+  the bare name, because the suffix becomes part of that name: an episode whose
+  title already ends in `[42]` would otherwise take exactly the path episode 42
+  receives the moment a namesake disambiguates it, and two episodes on one path
+  are both copied and overwrite each other on the phone rather than colliding
+  anywhere Reprise could notice. A file Reprise itself named `.audio` is
+  managed like every other audio file, so it is inventoried, removable and
+  counted instead of being re-copied on every sync. Renaming makes files from
+  an earlier sync look new: with "Remove from phone when deleted or
+  unsubscribed here" on, the old names are removed and the new names copied in
+  one noisy sync; with it off, both remain until the user deletes one. Sorting
+  a show folder by name is now chronological, which the id form never was.
 
 ## F. Settings & modals
 
@@ -3536,18 +3541,30 @@ listening statistics.
   so a phone can name it without Reprise. The container is detected from the
   file's bytes, never its name: the tag is written to the `.part` temporary,
   whose name an extension-based reader would reject. Tags go to the temporary
-  and never to a published file because the tag library rewrites Ogg by
-  truncating first; an interrupted rewrite may therefore destroy only a
-  `.part`, which the next attempt deletes and which `reclaim_existing` refuses
-  to adopt. The size is measured after the tag write, so `downloaded_bytes`
+  and never to a published file because the tag library rewrites Ogg and FLAC
+  by truncating first, so a rewrite that fails part-way leaves a destroyed
+  file; only a `.part` may ever be that file, which the next attempt deletes
+  and which `reclaim_existing` refuses to adopt. Which of the two ways tagging
+  can fail decides the download's fate, and they are never collapsed into one.
+  A container Reprise cannot read or cannot tag is decided before anything is
+  written: the file is untouched and is still published untagged, so an
+  untaggable container never costs a completed download. A failed *write*
+  fails the download: the file may already be truncated, so the temporary is
+  deleted and the episode stays not-downloaded and retryable. Publishing it
+  instead would record the size of the wreckage as the episode's size — device
+  sync only compares the file against exactly that number, so it would agree
+  forever, while the recorded path would stop the episode from ever being
+  downloaded again. Either way only the classified reason may reach a log line
+  (`POD-13`). The size is measured after the tag write, so `downloaded_bytes`
   always equals the published file's size; device sync rejects an episode whose
   file and record differ, so reversing that order would silently remove every
-  tagged episode from future syncs. A container Reprise cannot tag is still
-  published untagged: the failed tag write never costs a completed download,
-  and only its classified reason may reach a log line (`POD-13`). Files
-  downloaded before this rule keep no tags; re-downloading is the remedy. The
-  reclaim path deliberately does not tag because it is the one path that would
-  rewrite an already-published file in place.
+  tagged episode from future syncs. Every written value is capped at the byte
+  length the device path caps its components at (`MTP-47`), because the feed
+  owns these strings and nothing else bounds how much of one reaches the
+  truncate-and-rewrite. Files downloaded before this rule keep no tags;
+  re-downloading is the remedy. The reclaim path deliberately does not tag
+  because it is the one path that would rewrite an already-published file in
+  place.
 - **POD-18** [active] [core] — A YouTube episode carries the upload day yt-dlp
   reports for it. Reprise asks for it explicitly in the channel listing because
   the flat listing otherwise omits dates entirely. The value is day-granular by

@@ -12,6 +12,17 @@ use lofty::file::TaggedFile;
 use lofty::prelude::*;
 use lofty::tag::{ItemKey, Tag};
 
+use crate::device_sync::sanitize::MAX_COMPONENT_BYTES;
+
+/// How long a single tag value may get. A feed owns every string in an
+/// [`EpisodeTagSet`], and the write below is a truncate-then-rewrite of the
+/// whole container, so a hostile or merely broken feed must not be able to
+/// decide how much data goes through it. Deliberately the device path's
+/// component cap (`MTP-47`): the tag and the file name a phone shows are two
+/// views of the same episode, so they are bounded by one number rather than
+/// by two that could drift.
+const MAX_TAG_BYTES: usize = MAX_COMPONENT_BYTES;
+
 /// The facts written into a downloaded episode.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EpisodeTagSet {
@@ -24,14 +35,21 @@ pub struct EpisodeTagSet {
     pub date: String,
 }
 
+/// Why a tag write did not happen — split by the only distinction that
+/// matters to the download: whether the file on disk was touched.
 #[derive(Debug, thiserror::Error)]
 pub enum EpisodeTagError {
     #[error("could not open the download for tagging: {0}")]
     Io(#[from] std::io::Error),
-    #[error("could not tag the download: {0}")]
-    Lofty(#[from] lofty::error::LoftyError),
+    #[error("could not read the download's container: {0}")]
+    Unreadable(lofty::error::LoftyError),
     #[error("the download's container carries no writable tag")]
     NoWritableTag,
+    /// [`lofty::prelude::TagExt::save_to_path`] failed. The Ogg and FLAC
+    /// writers truncate the file before rewriting it, so this is the one
+    /// failure that can leave a destroyed download behind.
+    #[error("could not write the download's tags: {0}")]
+    Write(lofty::error::LoftyError),
 }
 
 impl EpisodeTagError {
@@ -39,7 +57,19 @@ impl EpisodeTagError {
     /// name a path.
     #[must_use]
     pub fn classify(&self) -> &'static str {
-        "unsupported or unreadable audio container"
+        match self {
+            Self::Io(_) | Self::Unreadable(_) | Self::NoWritableTag => {
+                "unsupported or unreadable audio container"
+            }
+            Self::Write(_) => "the download could not be rewritten with its tags",
+        }
+    }
+
+    /// Whether the download may already be destroyed. Every other failure is
+    /// decided while reading, with the file still exactly as it arrived.
+    #[must_use]
+    pub fn may_have_destroyed_the_file(&self) -> bool {
+        matches!(self, Self::Write(_))
     }
 }
 
@@ -62,7 +92,8 @@ pub fn write_episode_tags(path: &Path, tags: &EpisodeTagSet) -> Result<(), Episo
     let mut file = std::fs::File::open(path)?;
     // Content-based detection: extension-based readers refuse the `.part`
     // temporary that production deliberately hands us.
-    let mut tagged = TaggedFile::read_from(&mut file, ParseOptions::new().read_properties(false))?;
+    let mut tagged = TaggedFile::read_from(&mut file, ParseOptions::new().read_properties(false))
+        .map_err(EpisodeTagError::Unreadable)?;
     drop(file);
     if tagged.primary_tag().is_none() {
         tagged.insert_tag(Tag::new(tagged.primary_tag_type()));
@@ -71,28 +102,60 @@ pub fn write_episode_tags(path: &Path, tags: &EpisodeTagSet) -> Result<(), Episo
         .primary_tag_mut()
         .ok_or(EpisodeTagError::NoWritableTag)?;
     set_episode_tags(tag, tags);
-    tag.save_to_path(path, WriteOptions::default())?;
+    // Everything above this line only read. From here the file may change.
+    tag.save_to_path(path, WriteOptions::default())
+        .map_err(EpisodeTagError::Write)?;
     Ok(())
 }
 
+/// The cap sits here rather than at the one caller that builds an
+/// [`EpisodeTagSet`] today, so no future caller can reach the tag write
+/// around it.
 fn set_episode_tags(tag: &mut Tag, tags: &EpisodeTagSet) {
-    tag.set_title(tags.title.clone());
-    tag.set_album(tags.show.clone());
-    tag.set_artist(tags.artist.clone());
-    tag.insert_text(ItemKey::AlbumArtist, tags.show.clone());
-    tag.insert_text(ItemKey::RecordingDate, tags.date.clone());
+    tag.set_title(capped(&tags.title));
+    tag.set_album(capped(&tags.show));
+    tag.set_artist(capped(&tags.artist));
+    tag.insert_text(ItemKey::AlbumArtist, capped(&tags.show));
+    tag.insert_text(ItemKey::RecordingDate, capped(&tags.date));
 }
 
-/// [`write_episode_tags`], with a failure logged and dropped: a container
-/// Reprise cannot tag must still become a usable download.
-pub fn tag_best_effort(path: &Path, tags: &EpisodeTagSet, episode_id: i64) {
-    if let Err(error) = write_episode_tags(path, tags) {
-        tracing::warn!(
-            episode_id,
-            reason = error.classify(),
-            "podcast download could not be tagged"
-        );
+/// [`MAX_TAG_BYTES`] on a character boundary — the same helper the device
+/// path caps its components with, so a title cannot be shortened one way in
+/// the file name and another way in the tag.
+fn capped(value: &str) -> String {
+    crate::device_sync::sanitize::truncate_utf8(value, MAX_TAG_BYTES)
+}
+
+/// [`write_episode_tags`] with its two failure classes told apart (`POD-17`).
+///
+/// A container Reprise cannot read or cannot tag is logged and dropped: that
+/// is decided before anything is written, the download is untouched, and it
+/// must still become a usable file. A failed *write* is returned instead:
+/// the file may already be truncated, and the only honest thing left is to
+/// fail the whole download, so the caller deletes the temporary and the
+/// episode stays downloadable. Publishing it would record the size of the
+/// wreckage as the episode's size — a number nothing downstream can ever
+/// disagree with, on a file that can never be downloaded again.
+///
+/// `POD-13`: only the classified reason reaches the log line, never the
+/// lofty prose or the path.
+pub fn tag_download(
+    path: &Path,
+    tags: &EpisodeTagSet,
+    episode_id: i64,
+) -> Result<(), EpisodeTagError> {
+    let Err(error) = write_episode_tags(path, tags) else {
+        return Ok(());
+    };
+    tracing::warn!(
+        episode_id,
+        reason = error.classify(),
+        "podcast download could not be tagged"
+    );
+    if error.may_have_destroyed_the_file() {
+        return Err(error);
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -101,7 +164,7 @@ mod tests {
 
     use lofty::prelude::*;
 
-    use super::{episode_date, write_episode_tags, EpisodeTagSet};
+    use super::{episode_date, write_episode_tags, EpisodeTagSet, MAX_TAG_BYTES};
 
     fn audio_fixture(dir: &Path, name: &str) -> PathBuf {
         let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac");
@@ -119,9 +182,21 @@ mod tests {
         }
     }
 
+    /// Midnight UTC on 2026-07-28. Every timestamp below is expressed
+    /// relative to it, so the fixture states its own intent.
+    const UTC_MIDNIGHT: i64 = 1_785_196_800;
+
+    /// The day must be the UTC day wherever this runs, so the fixture sits
+    /// minutes away from UTC midnight and asserts from **both** sides: a
+    /// west-of-UTC machine would push the first case back a day, an
+    /// east-of-UTC machine would pull the second case forward. A timestamp
+    /// in the middle of the UTC day (08:00, say) proves nothing — it names
+    /// the same calendar day in every zone this project is ever run in, so
+    /// a `Local` formatter would pass it unnoticed.
     #[test]
     fn pod_17_the_episode_date_is_the_publication_day_in_utc() {
-        assert_eq!(episode_date(Some(1_785_225_600), 1), "2026-07-28");
+        assert_eq!(episode_date(Some(UTC_MIDNIGHT + 60), 1), "2026-07-28");
+        assert_eq!(episode_date(Some(UTC_MIDNIGHT - 60), 1), "2026-07-27");
     }
 
     #[test]
@@ -187,6 +262,51 @@ mod tests {
             "unsupported or unreadable audio container"
         );
         assert_eq!(std::fs::read(&path).unwrap(), original);
+    }
+
+    /// The feed writes these strings, and the tag write is a truncate-then-
+    /// rewrite of the whole container: an uncapped title would push an
+    /// arbitrary amount of feed-supplied data through the most fragile step
+    /// of the download. The device path already caps its components
+    /// (`MTP-47`); the tag must not be the one place a feed's length still
+    /// goes through unchecked.
+    #[test]
+    fn pod_17_a_feeds_endless_title_is_capped_before_it_reaches_the_file() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = audio_fixture(directory.path(), "episode.flac");
+        // One ASCII byte then two-byte characters, so the cap falls in the
+        // middle of a character and a byte-wise cut would corrupt it.
+        let endless = format!("a{}", "ä".repeat(4_000));
+        let tags = EpisodeTagSet {
+            title: endless.clone(),
+            show: endless.clone(),
+            artist: endless,
+            date: "2026-07-28".to_owned(),
+        };
+
+        write_episode_tags(&path, &tags).unwrap();
+
+        let tagged = lofty::read_from_path(&path).unwrap();
+        let tag = tagged.primary_tag().unwrap();
+        let written = [
+            tag.title().map(std::borrow::Cow::into_owned),
+            tag.album().map(std::borrow::Cow::into_owned),
+            tag.artist().map(std::borrow::Cow::into_owned),
+            tag.get_string(lofty::tag::ItemKey::AlbumArtist)
+                .map(str::to_owned),
+        ];
+        for value in written {
+            let value = value.expect("every capped tag is still written");
+            assert!(
+                value.starts_with("aä"),
+                "a long value is shortened, never dropped: {value}"
+            );
+            assert_eq!(
+                value.len(),
+                MAX_TAG_BYTES - 1,
+                "the cap backs off to the character boundary below it"
+            );
+        }
     }
 
     #[test]

@@ -268,9 +268,15 @@ fn download_episode_in(
             }
         }
         // `POD-17`: tag the temporary, never the published file. Lofty
-        // rewrites Ogg by truncating first, so an interrupted write may only
-        // destroy a `.part` file that the next attempt deletes.
-        super::episode_tags::tag_best_effort(temporary, &tag_set, episode_id);
+        // rewrites Ogg and FLAC by truncating first, so a write that fails
+        // part-way destroys the `.part` — which is why a failed write fails
+        // the whole download here: `download_atomically` then deletes the
+        // temporary and the episode stays downloadable, instead of the
+        // truncated file being measured and published as a finished
+        // episode. A container Reprise cannot tag at all is the opposite
+        // case: nothing was written, and the download is published untagged.
+        super::episode_tags::tag_download(temporary, &tag_set, episode_id)
+            .map_err(|_| PodcastError::TagWrite)?;
         Ok(())
     });
     match download {
@@ -692,3 +698,7 @@ mod youtube_tests;
 #[cfg(test)]
 #[path = "pipeline_refresh_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "pipeline_tag_tests.rs"]
+mod tag_tests;

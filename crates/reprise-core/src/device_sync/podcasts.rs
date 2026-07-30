@@ -202,13 +202,10 @@ pub fn query_candidates_for_device(
             device_path: path_parts,
         });
     }
-    let collision_rows = candidates
-        .iter()
-        .map(PreparedCandidate::collision_row)
-        .collect::<Vec<_>>();
+    let chosen_disambiguators = disambiguators(&candidates);
     Ok(candidates
         .into_iter()
-        .zip(disambiguators(&collision_rows))
+        .zip(chosen_disambiguators)
         .map(|(candidate, disambiguator)| candidate.into_candidate(disambiguator))
         .collect())
 }
@@ -361,9 +358,11 @@ impl DevicePathParts {
         )
     }
 
-    /// Builds the case-insensitive device-name key used to find collisions.
-    fn collision_key(&self) -> String {
-        format!("{}\0{}\0{}", self.folder, self.stem, self.extension).to_lowercase()
+    /// The case-insensitive form of [`Self::compose`], which is what two
+    /// candidates actually fight over: the device's file systems are
+    /// case-insensitive, and a sync compares paths, not titles.
+    fn collision_key(&self, disambiguator: Option<i64>) -> String {
+        self.compose(disambiguator).to_lowercase()
     }
 }
 
@@ -381,10 +380,6 @@ struct PreparedCandidate {
 }
 
 impl PreparedCandidate {
-    fn collision_row(&self) -> (i64, String) {
-        (self.episode_id, self.device_path.collision_key())
-    }
-
     fn into_candidate(self, disambiguator: Option<i64>) -> PodcastSyncCandidate {
         PodcastSyncCandidate {
             episode_id: self.episode_id,
@@ -399,17 +394,44 @@ impl PreparedCandidate {
     }
 }
 
-/// Returns the episode id for every row whose collision key is shared.
-fn disambiguators(rows: &[(i64, String)]) -> Vec<Option<i64>> {
-    let mut counts = std::collections::HashMap::new();
-    for (_, key) in rows {
-        *counts.entry(key.as_str()).or_insert(0_usize) += 1;
+/// Returns the episode id for every candidate that needs one to reach a
+/// device path no other candidate has (`MTP-47`).
+///
+/// Judged on the *composed* path rather than on the bare name, because the
+/// suffix is part of the name it has to be unique against: an episode titled
+/// `Weekly Update [42]` occupies exactly the path episode 42 takes the moment
+/// a namesake disambiguates it, and two candidates on one path are not caught
+/// anywhere later — both land in `to_copy` and one overwrites the other on the
+/// phone.
+///
+/// So the pass repeats until every path is unique. It terminates: each round
+/// only ever adds a suffix, never removes one, and two suffixed candidates can
+/// never share a path because their episode ids differ — so at worst every
+/// candidate ends up suffixed and the next round changes nothing.
+fn disambiguators(candidates: &[PreparedCandidate]) -> Vec<Option<i64>> {
+    let mut chosen = vec![None; candidates.len()];
+    loop {
+        let keys = candidates
+            .iter()
+            .zip(&chosen)
+            .map(|(candidate, disambiguator)| candidate.device_path.collision_key(*disambiguator))
+            .collect::<Vec<_>>();
+        let mut counts = std::collections::HashMap::new();
+        for key in &keys {
+            *counts.entry(key.as_str()).or_insert(0_usize) += 1;
+        }
+        let mut resolved_more = false;
+        for (index, key) in keys.iter().enumerate() {
+            if chosen[index].is_none() && counts.get(key.as_str()).copied().unwrap_or_default() > 1
+            {
+                chosen[index] = Some(candidates[index].episode_id);
+                resolved_more = true;
+            }
+        }
+        if !resolved_more {
+            return chosen;
+        }
     }
-    rows.iter()
-        .map(|(episode_id, key)| {
-            (counts.get(key.as_str()).copied().unwrap_or_default() > 1).then_some(*episode_id)
-        })
-        .collect()
 }
 
 fn device_path_parts(show: &str, title: &str, date: &str, source: &Path) -> DevicePathParts {

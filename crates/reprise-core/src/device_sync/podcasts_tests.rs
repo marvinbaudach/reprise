@@ -204,6 +204,68 @@ fn mtp_47_two_episodes_that_would_share_a_name_are_told_apart_by_their_episode_i
     assert_eq!(plan.selected, 2);
 }
 
+/// `MTP-47`: the disambiguator is appended to the *name*, so uniqueness has
+/// to be judged on the composed path and not on the raw title. An episode
+/// literally called `Weekly Update [42]` occupies exactly the name episode 42
+/// receives the moment a namesake forces it to be disambiguated — and two
+/// candidates on one device path do not collide loudly: both are copied, and
+/// one silently overwrites the other on the phone.
+#[test]
+fn mtp_47_a_title_that_already_ends_in_brackets_cannot_take_a_disambiguated_name() {
+    let db = migrated();
+    let downloads = tempfile::tempdir().unwrap();
+    let impostor = downloads.path().join("impostor.mp3");
+    let first = downloads.path().join("first.mp3");
+    let second = downloads.path().join("second.mp3");
+    std::fs::write(&impostor, b"impostor").unwrap();
+    std::fs::write(&first, b"first").unwrap();
+    std::fs::write(&second, b"second").unwrap();
+    insert_subscription(&db, 1, "rss", true, "Show");
+    crate::podcasts::phone_sync::set_device_enabled(&db, 1, "mtp:pixel", true).unwrap();
+    insert_episode(&db, 7, 1, &impostor, 8, Some(1_785_225_600));
+    insert_episode(&db, 42, 1, &first, 5, Some(1_785_225_600));
+    insert_episode(&db, 43, 1, &second, 6, Some(1_785_225_600));
+    db.conn()
+        .execute(
+            "UPDATE podcast_episodes SET title = 'Weekly Update [42]' WHERE id = 7",
+            [],
+        )
+        .unwrap();
+    db.conn()
+        .execute(
+            "UPDATE podcast_episodes SET title = 'Weekly Update' WHERE id IN (42, 43)",
+            [],
+        )
+        .unwrap();
+
+    let candidates = query_candidates_for_device(&db, "mtp:pixel").unwrap();
+
+    let device_path = |episode_id: i64| {
+        candidates
+            .iter()
+            .find(|candidate| candidate.episode_id == episode_id)
+            .unwrap()
+            .device_path
+            .to_lowercase()
+    };
+    assert_eq!(candidates.len(), 3);
+    assert_ne!(
+        device_path(7),
+        device_path(42),
+        "the verbatim title must not land on the disambiguated episode's name"
+    );
+    assert_eq!(
+        candidates
+            .iter()
+            .map(|candidate| candidate.device_path.to_lowercase())
+            .collect::<HashSet<_>>()
+            .len(),
+        3,
+        "every episode selected for a device needs its own path, or a sync \
+         copies both and keeps whichever landed last"
+    );
+}
+
 #[test]
 fn mtp_47_an_episode_without_a_namesake_carries_no_disambiguator() {
     let db = migrated();
