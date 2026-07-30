@@ -64,6 +64,7 @@ fn add_download_with_feed(
         &ParsedEpisode {
             guid: guid.clone(),
             title: guid.clone(),
+            image_url: None,
             audio_url: format!("https://example.test/{guid}.mp3"),
             page_url: None,
             published_at: Some(number),
@@ -183,6 +184,7 @@ fn pod_7_completed_file_is_not_persisted_after_episode_removal() {
         &ParsedEpisode {
             guid: "race".to_owned(),
             title: "Race".to_owned(),
+            image_url: None,
             audio_url: "https://example.test/race.mp3".to_owned(),
             page_url: None,
             published_at: None,
@@ -330,6 +332,7 @@ fn add_undownloaded_episode(conn: &Connection, subscription_id: i64, number: i64
         &ParsedEpisode {
             guid: guid.clone(),
             title: guid,
+            image_url: None,
             audio_url: format!("https://example.test/undownloaded-{number}.mp3"),
             page_url: None,
             published_at: Some(number),

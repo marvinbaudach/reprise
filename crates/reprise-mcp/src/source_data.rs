@@ -240,6 +240,7 @@ mod tests {
             title: "Episode".into(),
             show: "Show".into(),
             show_image_url: None,
+            image_url: None,
             kind: PodcastKind::Rss,
             audio_url: "https://example.test/e.mp3".into(),
             page_url: None,

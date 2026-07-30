@@ -63,6 +63,7 @@ mod tests {
             title: format!("Video {id}"),
             show: "Channel".into(),
             show_image_url: None,
+            image_url: None,
             kind: PodcastKind::Youtube,
             audio_url: format!("https://youtube.test/watch?v={id}"),
             page_url: None,

@@ -358,13 +358,14 @@ pub(crate) fn upsert_episode_in(
         .optional()?;
     let episode_id = conn.query_row(
         "INSERT INTO podcast_episodes
-         (subscription_id, guid, title, audio_url, page_url, published_at,
+         (subscription_id, guid, title, image_url, audio_url, page_url, published_at,
           duration_secs, first_seen_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
          ON CONFLICT(subscription_id, guid) DO UPDATE SET
            title = excluded.title,
            audio_url = excluded.audio_url,
            page_url = excluded.page_url,
+           image_url = COALESCE(excluded.image_url, podcast_episodes.image_url),
            published_at = COALESCE(excluded.published_at, podcast_episodes.published_at),
            duration_secs = COALESCE(excluded.duration_secs, podcast_episodes.duration_secs)
          RETURNING id",
@@ -372,6 +373,7 @@ pub(crate) fn upsert_episode_in(
             subscription_id,
             episode.guid,
             episode.title,
+            episode.image_url,
             episode.audio_url,
             episode.page_url,
             episode.published_at,
@@ -397,7 +399,7 @@ pub(crate) fn episode_in(
 ) -> Result<Option<EpisodeRow>, rusqlite::Error> {
     conn.query_row(
         "SELECT e.id, e.subscription_id, e.guid, e.title, s.title,
-                s.image_url, s.kind, e.audio_url, e.page_url, e.published_at,
+                s.image_url, e.image_url, s.kind, e.audio_url, e.page_url, e.published_at,
                 e.duration_secs, e.downloaded_path, e.downloaded_bytes, e.played_at,
                 e.position_ms, e.first_seen_at
          FROM podcast_episodes e
@@ -484,6 +486,24 @@ pub(crate) fn update_fetch_failed_in(
         params![id, now],
     )?;
     Ok(())
+}
+
+pub(crate) fn update_feed_url_in(
+    conn: &Connection,
+    id: i64,
+    feed_url: &str,
+) -> Result<bool, rusqlite::Error> {
+    Ok(conn.execute(
+        "UPDATE podcast_subscriptions
+         SET feed_url = ?2
+         WHERE id = ?1
+           AND removed_at IS NULL
+           AND NOT EXISTS(
+             SELECT 1 FROM podcast_subscriptions
+             WHERE feed_url = ?2 AND id <> ?1
+           )",
+        params![id, feed_url],
+    )? != 0)
 }
 
 pub fn save_position(db: &Db, episode_id: i64, position_ms: i64) -> Result<(), rusqlite::Error> {
@@ -630,7 +650,7 @@ fn subscription_from_row(row: &rusqlite::Row<'_>) -> Result<SubscriptionRow, rus
 }
 
 pub(crate) fn episode_from_row(row: &rusqlite::Row<'_>) -> Result<EpisodeRow, rusqlite::Error> {
-    let kind: String = row.get(6)?;
+    let kind: String = row.get(7)?;
     Ok(EpisodeRow {
         id: row.get(0)?,
         subscription_id: row.get(1)?,
@@ -638,16 +658,17 @@ pub(crate) fn episode_from_row(row: &rusqlite::Row<'_>) -> Result<EpisodeRow, ru
         title: row.get(3)?,
         show: row.get(4)?,
         show_image_url: row.get(5)?,
+        image_url: row.get(6)?,
         kind: parse_kind(&kind)?,
-        audio_url: row.get(7)?,
-        page_url: row.get(8)?,
-        published_at: row.get(9)?,
-        duration_secs: row.get(10)?,
-        downloaded_path: row.get(11)?,
-        downloaded_bytes: row.get(12)?,
-        played_at: row.get(13)?,
-        position_ms: row.get(14)?,
-        first_seen_at: row.get(15)?,
+        audio_url: row.get(8)?,
+        page_url: row.get(9)?,
+        published_at: row.get(10)?,
+        duration_secs: row.get(11)?,
+        downloaded_path: row.get(12)?,
+        downloaded_bytes: row.get(13)?,
+        played_at: row.get(14)?,
+        position_ms: row.get(15)?,
+        first_seen_at: row.get(16)?,
     })
 }
 
