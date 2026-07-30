@@ -54,8 +54,8 @@ pub const YOUTUBE_NO_CHANNELS_DESCRIPTION: &str = N_!(
     "Subscribe to a channel and its uploads appear here as audio-only episodes — long mixes, sets, instrumentals. Shorts stay hidden."
 );
 /// The empty state's primary button — deliberately shorter than the
-/// toolbar's `YOUTUBE_ADD` ("Add YouTube channel"): the page's own glyph and
-/// title already say YouTube, so the button need not repeat it.
+/// toolbar's `YOUTUBE_ADD`: both read "Add channel" now — the page's own glyph
+/// and title already say YouTube, so neither button repeats it.
 pub const YOUTUBE_NO_CHANNELS_ADD: &str = N_!("Add channel");
 pub const YOUTUBE_NO_CHANNELS_SECONDARY: &str = N_!("or paste a channel URL in the dialog");
 pub const PODCAST_NO_EPISODES: &str = N_!("No episodes yet");
