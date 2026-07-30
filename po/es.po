@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-30 19:54+0200\n"
+"POT-Creation-Date: 2026-07-30 21:30+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Spanish\n"
@@ -205,7 +205,7 @@ msgstr "Normalización del volumen"
 #: crates/reprise-gnome/src/ui/strings.rs:174
 #: crates/reprise-gnome/src/ui/strings.rs:180
 #: crates/reprise-gnome/src/ui/strings_issues.rs:45
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:55
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:63
 msgid "Off"
 msgstr "Apagado"
 
@@ -2084,7 +2084,7 @@ msgid "No upcoming releases from your artists"
 msgstr "No hay próximos lanzamientos de tus artistas"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:68
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:86
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:94
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:177
 msgid "Updated just now"
 msgstr "Actualizado ahora mismo"
@@ -2135,19 +2135,19 @@ msgid "Cached · Updated {date}"
 msgstr "En caché · Actualizado el {date}"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:129
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:90
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:98
 #, rust-format
 msgid "Updated {age} min ago"
 msgstr "Actualizado hace {age} min"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:135
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:96
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:104
 #, rust-format
 msgid "Updated {age} h ago"
 msgstr "Actualizado hace {age} h"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:138
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:101
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:109
 #, rust-format
 msgid "Updated {age} d ago"
 msgstr "Actualizado hace {age} d"
@@ -2365,7 +2365,7 @@ msgid "Date"
 msgstr "Fecha"
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:16
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:46
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:54
 msgid "City"
 msgstr "Ciudad"
 
@@ -2432,7 +2432,7 @@ msgid "Library artists only"
 msgstr "Solo artistas de la biblioteca"
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:32
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:53
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:61
 msgid "Include similar artists"
 msgstr "Incluir artistas similares"
 
@@ -2453,90 +2453,114 @@ msgid "Concerts fetch failed · showing saved concerts"
 msgstr "Error al obtener los conciertos · se muestran los conciertos guardados"
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:37
+msgid "Couldn't refresh concerts"
+msgstr "No se pudieron actualizar los conciertos"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:38
+msgid "Concerts needs provider credentials"
+msgstr "Conciertos necesita credenciales del proveedor"
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:40
+#, rust-format
+msgid ""
+"Showing saved concerts from {time}. Ticket and event links need a connection."
+msgstr "Se muestran los conciertos guardados de {time}. Los enlaces de entradas y eventos necesitan conexión."
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:42
+msgid "There are no saved concerts to show. Your music is unaffected."
+msgstr "No hay conciertos guardados que mostrar. Tu música no se ve afectada."
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:44
+msgid ""
+"Saved concerts stay available. Add credentials in Preferences to refresh "
+"them."
+msgstr "Los conciertos guardados siguen disponibles. Añade credenciales en Preferencias para actualizarlos."
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:45
 msgid "Never updated"
 msgstr "Nunca actualizado"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:38
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:46
 msgid "No ticket or event link available"
 msgstr "No hay enlace de entradas o evento disponible"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:39
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:47
 msgid "Bandsintown app_id"
 msgstr "app_id de Bandsintown"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:40
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:48
 msgid "Saved"
 msgstr "Guardado"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:41
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:49
 msgid "Checking key…"
 msgstr "Verificando clave…"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:42
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:50
 msgid "Key works"
 msgstr "La clave funciona"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:43
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:51
 msgid "Key was rejected"
 msgstr "La clave fue rechazada"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:44
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:52
 msgid "Could not verify"
 msgstr "No se pudo verificar"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:45
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:53
 msgid "Location"
 msgstr "Ubicación"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:47
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:55
 msgid "Use current location"
 msgstr "Usar ubicación actual"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:48
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:56
 msgid "Clear location"
 msgstr "Borrar ubicación"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:49
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:57
 msgid "Current location"
 msgstr "Ubicación actual"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:50
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:58
 msgid "Could not find that place"
 msgstr "No se pudo encontrar ese lugar"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:51
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:59
 msgid "Default radius"
 msgstr "Radio predeterminado"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:52
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:60
 msgid "Consider artists played in the last N days"
 msgstr "Tener en cuenta los artistas escuchados en los últimos N días"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:54
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:62
 msgid "Similar artists per top artist"
 msgstr "Artistas similares por artista principal"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:59
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:67
 #, rust-format
 msgid "{shown} of {total} concerts"
 msgstr "{shown} de {total} conciertos"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:65
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:73
 #, rust-format
 msgid "{total} concerts"
 msgstr "{total} conciertos"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:69
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:77
 #, rust-format
 msgid "similar to {artist}"
 msgstr "similar a {artist}"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:74
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:82
 #, rust-format
 msgid "Show all {total} concerts"
 msgstr "Mostrar los {total} conciertos"
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:80
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:88
 #, rust-format
 msgid "{radius} km"
 msgstr "{radius} km"
@@ -2598,22 +2622,40 @@ msgstr "Aún no hay datos de discografía"
 msgid "No missing albums or EPs"
 msgstr "No faltan álbumes ni EP"
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:37
+#: crates/reprise-gnome/src/ui/strings_releases.rs:34
+msgid "Couldn't refresh new releases"
+msgstr "No se pudieron actualizar los nuevos lanzamientos"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:36
+#, rust-format
+msgid ""
+"Showing saved releases from {time}. Announcement links need a connection."
+msgstr "Se muestran los lanzamientos guardados de {time}. Los enlaces de anuncios necesitan conexión."
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:38
+msgid "There are no saved releases to show. Your library is unaffected."
+msgstr "No hay lanzamientos guardados que mostrar. Tu biblioteca no se ve afectada."
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:39
+msgid "an earlier update"
+msgstr "una actualización anterior"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:43
 #, rust-format
 msgid "{shown} of {total} gaps"
 msgstr "{shown} de {total} faltantes"
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:43
+#: crates/reprise-gnome/src/ui/strings_releases.rs:49
 #, rust-format
 msgid "{total} gaps"
 msgstr "{total} faltantes"
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:48
+#: crates/reprise-gnome/src/ui/strings_releases.rs:54
 #, rust-format
 msgid "Show all {total} gaps"
 msgstr "Mostrar los {total} faltantes"
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:55
+#: crates/reprise-gnome/src/ui/strings_releases.rs:61
 #, rust-format
 msgid "{local} of {total} tracks"
 msgstr "{local} de {total} pistas"
@@ -4124,7 +4166,8 @@ msgstr "Este pódcast se ha mudado o ha terminado"
 
 #: crates/reprise-gnome/src/ui/strings_sources.rs:29
 msgid "YouTube is limiting requests right now — try again in a few minutes"
-msgstr "YouTube está limitando las solicitudes ahora — reinténtalo en unos minutos"
+msgstr ""
+"YouTube está limitando las solicitudes ahora — reinténtalo en unos minutos"
 
 #: crates/reprise-gnome/src/ui/strings_sources.rs:30
 msgid "The YouTube helper needs an update"
@@ -4142,45 +4185,59 @@ msgstr "No se pudieron actualizar {count} fuentes"
 #: crates/reprise-gnome/src/ui/strings_sources.rs:34
 #, rust-format
 msgid "Affected: {sources}. Saved episodes and downloads still work."
-msgstr "Afectadas: {sources}. Los episodios guardados y las descargas siguen funcionando."
+msgstr ""
+"Afectadas: {sources}. Los episodios guardados y las descargas siguen "
+"funcionando."
 
 #: crates/reprise-gnome/src/ui/strings_sources.rs:36
 #, rust-format
 msgid ""
 "Affected: {sources}, and {count} more. Saved episodes and downloads still "
 "work."
-msgstr "Afectadas: {sources} y {count} más. Los episodios guardados y las descargas siguen funcionando."
+msgstr ""
+"Afectadas: {sources} y {count} más. Los episodios guardados y las descargas "
+"siguen funcionando."
 
 #: crates/reprise-gnome/src/ui/strings_sources.rs:38
 #, rust-format
 msgid ""
 "Affected: {sources}. Nothing is downloaded from these sources yet; your "
 "other sources and music are unaffected."
-msgstr "Afectadas: {sources}. Todavía no hay nada descargado de estas fuentes; tus otras fuentes y tu música no se ven afectadas."
+msgstr ""
+"Afectadas: {sources}. Todavía no hay nada descargado de estas fuentes; tus "
+"otras fuentes y tu música no se ven afectadas."
 
 #: crates/reprise-gnome/src/ui/strings_sources.rs:41
 #, rust-format
 msgid ""
 "Affected: {sources}, and {count} more. Nothing is downloaded from these "
 "sources yet; your other sources and music are unaffected."
-msgstr "Afectadas: {sources} y {count} más. Todavía no hay nada descargado de estas fuentes; tus otras fuentes y tu música no se ven afectadas."
+msgstr ""
+"Afectadas: {sources} y {count} más. Todavía no hay nada descargado de estas "
+"fuentes; tus otras fuentes y tu música no se ven afectadas."
 
 #: crates/reprise-gnome/src/ui/strings_sources.rs:44
 #, rust-format
 msgid "Showing the {count} episodes from {time}. Downloads play as usual."
-msgstr "Se muestran los {count} episodios de {time}. Las descargas se reproducen igual."
+msgstr ""
+"Se muestran los {count} episodios de {time}. Las descargas se reproducen "
+"igual."
 
 #: crates/reprise-gnome/src/ui/strings_sources.rs:46
 msgid ""
 "Nothing is downloaded from this channel yet, so there's nothing to show. "
 "Your other channels and your music are unaffected."
-msgstr "Todavía no hay nada descargado de este canal, así que no hay nada que mostrar. Tus otros canales y tu música no se ven afectados."
+msgstr ""
+"Todavía no hay nada descargado de este canal, así que no hay nada que "
+"mostrar. Tus otros canales y tu música no se ven afectados."
 
 #: crates/reprise-gnome/src/ui/strings_sources.rs:49
 msgid ""
 "Nothing is downloaded from this podcast yet, so there's nothing to show. "
 "Your other podcasts and your music are unaffected."
-msgstr "Todavía no hay nada descargado de este pódcast, así que no hay nada que mostrar. Tus otros pódcast y tu música no se ven afectados."
+msgstr ""
+"Todavía no hay nada descargado de este pódcast, así que no hay nada que "
+"mostrar. Tus otros pódcast y tu música no se ven afectados."
 
 #: crates/reprise-gnome/src/ui/strings_sources.rs:52
 #, rust-format
@@ -4194,7 +4251,9 @@ msgstr "No se pudo completar esta acción. Reinténtalo."
 #: crates/reprise-gnome/src/ui/strings_sources.rs:55
 #, rust-format
 msgid "Nothing found for '{query}' — try pasting a feed/channel URL instead"
-msgstr "No se encontró nada para «{query}» — prueba a pegar una dirección de feed o canal"
+msgstr ""
+"No se encontró nada para «{query}» — prueba a pegar una dirección de feed o "
+"canal"
 
 #: crates/reprise-gnome/src/ui/strings_song_visuals.rs:4
 msgid "Visual"

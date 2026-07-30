@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-30 19:54+0200\n"
+"POT-Creation-Date: 2026-07-30 21:30+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -207,7 +207,7 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/strings.rs:174
 #: crates/reprise-gnome/src/ui/strings.rs:180
 #: crates/reprise-gnome/src/ui/strings_issues.rs:45
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:55
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:63
 msgid "Off"
 msgstr ""
 
@@ -2013,7 +2013,7 @@ msgid "No upcoming releases from your artists"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:68
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:86
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:94
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:177
 msgid "Updated just now"
 msgstr ""
@@ -2064,19 +2064,19 @@ msgid "Cached · Updated {date}"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:129
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:90
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:98
 #, rust-format
 msgid "Updated {age} min ago"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:135
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:96
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:104
 #, rust-format
 msgid "Updated {age} h ago"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:138
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:101
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:109
 #, rust-format
 msgid "Updated {age} d ago"
 msgstr ""
@@ -2274,7 +2274,7 @@ msgid "Date"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:16
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:46
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:54
 msgid "City"
 msgstr ""
 
@@ -2341,7 +2341,7 @@ msgid "Library artists only"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:32
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:53
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:61
 msgid "Include similar artists"
 msgstr ""
 
@@ -2362,90 +2362,114 @@ msgid "Concerts fetch failed · showing saved concerts"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:37
-msgid "Never updated"
+msgid "Couldn't refresh concerts"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:38
-msgid "No ticket or event link available"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:39
-msgid "Bandsintown app_id"
+msgid "Concerts needs provider credentials"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:40
-msgid "Saved"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:41
-msgid "Checking key…"
+#, rust-format
+msgid ""
+"Showing saved concerts from {time}. Ticket and event links need a connection."
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:42
-msgid "Key works"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:43
-msgid "Key was rejected"
+msgid "There are no saved concerts to show. Your music is unaffected."
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:44
-msgid "Could not verify"
+msgid ""
+"Saved concerts stay available. Add credentials in Preferences to refresh "
+"them."
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:45
-msgid "Location"
+msgid "Never updated"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:46
+msgid "No ticket or event link available"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:47
-msgid "Use current location"
+msgid "Bandsintown app_id"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:48
-msgid "Clear location"
+msgid "Saved"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:49
-msgid "Current location"
+msgid "Checking key…"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:50
-msgid "Could not find that place"
+msgid "Key works"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:51
-msgid "Default radius"
+msgid "Key was rejected"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:52
-msgid "Consider artists played in the last N days"
+msgid "Could not verify"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:54
-msgid "Similar artists per top artist"
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:53
+msgid "Location"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:55
+msgid "Use current location"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:56
+msgid "Clear location"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:57
+msgid "Current location"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:58
+msgid "Could not find that place"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:59
+msgid "Default radius"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:60
+msgid "Consider artists played in the last N days"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:62
+msgid "Similar artists per top artist"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:67
 #, rust-format
 msgid "{shown} of {total} concerts"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:65
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:73
 #, rust-format
 msgid "{total} concerts"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:69
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:77
 #, rust-format
 msgid "similar to {artist}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:74
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:82
 #, rust-format
 msgid "Show all {total} concerts"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_concerts.rs:80
+#: crates/reprise-gnome/src/ui/strings_concerts.rs:88
 #, rust-format
 msgid "{radius} km"
 msgstr ""
@@ -2507,22 +2531,40 @@ msgstr ""
 msgid "No missing albums or EPs"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:37
+#: crates/reprise-gnome/src/ui/strings_releases.rs:34
+msgid "Couldn't refresh new releases"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:36
 #, rust-format
-msgid "{shown} of {total} gaps"
+msgid ""
+"Showing saved releases from {time}. Announcement links need a connection."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:38
+msgid "There are no saved releases to show. Your library is unaffected."
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:39
+msgid "an earlier update"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_releases.rs:43
 #, rust-format
+msgid "{shown} of {total} gaps"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:49
+#, rust-format
 msgid "{total} gaps"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:48
+#: crates/reprise-gnome/src/ui/strings_releases.rs:54
 #, rust-format
 msgid "Show all {total} gaps"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:55
+#: crates/reprise-gnome/src/ui/strings_releases.rs:61
 #, rust-format
 msgid "{local} of {total} tracks"
 msgstr ""
