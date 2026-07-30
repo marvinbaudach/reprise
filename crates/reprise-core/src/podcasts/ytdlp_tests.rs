@@ -90,7 +90,7 @@ case "$*" in
   "--no-warnings --flat-playlist -J ytsearch5:rust audio")
     printf '%s\n' '{"title":"search","entries":[{"id":"s1","title":"Search hit","duration":30}]}'
     ;;
-  "--no-warnings --flat-playlist -J https://youtube.test/@show")
+  "--no-warnings --flat-playlist --extractor-args youtubetab:approximate_date -J https://youtube.test/@show")
     printf '%s\n' '{"title":"Channel title","channel_url":"https://youtube.test/@show","thumbnail":"https://img.test/channel.jpg","entries":[{"id":"v1","title":"One","duration":12.8,"channel_id":"UC-stable","timestamp":1775001600,"thumbnail":"https://img.test/v1.jpg"},{"id":"","title":"Blank ID"},{"id":"v2","title":"Two","duration":null,"upload_date":"20260730"},{"id":"blank-title","title":"   "}]}'
     ;;
   *) printf '%s\n' "unexpected arguments: $*" >&2; exit 2 ;;
