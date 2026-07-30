@@ -20,6 +20,10 @@ pub(super) enum EpisodeActivation {
     TogglePlayback,
 }
 
+/// `POD-20`: the one place that decides what activating a row means. The
+/// loaded episode toggles; everything else starts. Kept here, off the row
+/// widgets, so the two episode surfaces cannot drift into two answers —
+/// re-deriving it per widget is what made a restart pass for a toggle.
 pub(super) fn activation_for_episode(
     loaded_episode_id: Option<i64>,
     activated_episode_id: i64,
@@ -47,7 +51,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn activating_the_loaded_episode_toggles_without_starting_a_new_session() {
+    fn pod_20_activating_the_loaded_episode_toggles_without_starting_a_new_session() {
         assert_eq!(
             activation_for_episode(Some(41), 41),
             EpisodeActivation::TogglePlayback
@@ -63,7 +67,7 @@ mod tests {
     }
 
     #[test]
-    fn podcast_phase_maps_to_the_visible_playing_state() {
+    fn pod_20_podcast_phase_maps_to_the_visible_playing_state() {
         assert!(podcast_phase_is_playing(Some(PodcastPhase::Resolving)));
         assert!(podcast_phase_is_playing(Some(PodcastPhase::Playing)));
         assert!(!podcast_phase_is_playing(Some(PodcastPhase::Paused)));

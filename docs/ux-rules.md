@@ -3722,6 +3722,13 @@ listening statistics.
   cached or downloaded episode exists, the same information and actions use
   the shared full-area failure state instead. Neither surface renders raw
   provider, transport, database or helper text outside Details.
+- **POD-20** [active] [gtk] — The loaded episode carries the shared
+  playback marker in every episode surface it appears in, and that marker
+  tells running from paused. Activating the loaded row toggles pause and
+  resume; it never reopens the session, because a restart costs an audible
+  gap and resumes from the throttled saved position rather than the live
+  one. Only the context menu restarts an episode. Hovering the loaded row
+  replaces the marker with the glyph for what a click does next.
 - **RAD-1** [active] [gtk] — Only the currently connected station is
   accented in the table; its state icon, name, now-playing, and row
   tint change together. All others, as well as a presented but
