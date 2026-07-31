@@ -73,6 +73,19 @@ fn fixture_candidate_outside_duration_tolerance_is_not_found() {
 }
 
 #[test]
+fn fixture_candidate_with_an_out_of_range_duration_is_rejected() {
+    for duration in [i64::MIN, i64::MAX] {
+        let temp = TempDir::new().unwrap();
+
+        assert_eq!(
+            provider_with_fixtures(temp.path(), &search_body(duration), None),
+            SourceOutcome::NotFound,
+            "an unvalidated duration of {duration} must not pass as a match"
+        );
+    }
+}
+
+#[test]
 fn fixture_empty_search_is_not_found() {
     let temp = TempDir::new().unwrap();
 

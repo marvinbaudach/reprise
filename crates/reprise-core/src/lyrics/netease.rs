@@ -16,7 +16,7 @@ const LYRIC_URL: &str = "https://music.163.com/api/song/lyric";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(8);
 const REQUEST_INTERVAL: Duration = Duration::from_millis(250);
 const FIXTURE_DIR_ENV: &str = "REPRISE_LYRICS_FIXTURE_DIR";
-const DURATION_TOLERANCE_MS: i64 = 3_000;
+const DURATION_TOLERANCE_MS: u64 = 3_000;
 static LAST_REQUEST: LazyLock<Mutex<Option<Instant>>> = LazyLock::new(|| Mutex::new(None));
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -176,11 +176,21 @@ fn parse_search(body: &str, query: &LyricsQuery) -> Result<Option<u64>, ()> {
                     .artists
                     .iter()
                     .any(|candidate| normalized(&candidate.name) == artist)
-                && song.duration.is_some_and(|candidate| {
-                    candidate.saturating_sub(duration).abs() <= DURATION_TOLERANCE_MS
-                })
+                && song
+                    .duration
+                    .is_some_and(|candidate| within_duration_tolerance(candidate, duration))
         })
         .map(|song| song.id))
+}
+
+/// The candidate duration comes straight from an untrusted NetEase response,
+/// so the comparison has to survive every `i64` — a saturating subtraction
+/// followed by `abs()` would panic on `i64::MIN` under `overflow-checks` and,
+/// worse, report the garbage value as being *within* tolerance without them.
+fn within_duration_tolerance(candidate: i64, duration: i64) -> bool {
+    candidate
+        .checked_sub(duration)
+        .is_some_and(|delta| delta.unsigned_abs() <= DURATION_TOLERANCE_MS)
 }
 
 fn parse_lyric(body: &str) -> Result<Option<LyricsBody>, ()> {
