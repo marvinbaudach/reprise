@@ -66,6 +66,24 @@ pub(in crate::ui) fn source_icon(item: &QueueItemMetadata) -> Option<&'static st
     })
 }
 
+/// Whether this row is the one currently playing.
+///
+/// A track id and an episode id are separate primary keys and can be the same
+/// number, so the comparison is made per kind — asking "does the playing track
+/// id equal this row's id" would mark the wrong row the moment
+/// `tracks.id == podcast_episodes.id`. Kept pure and here rather than inline at
+/// the four column call sites so the two halves cannot drift apart.
+pub(in crate::ui) fn is_now_playing(
+    item: &QueueItemMetadata,
+    playing_track_id: Option<i64>,
+    playing_episode_id: Option<i64>,
+) -> bool {
+    match item {
+        QueueItemMetadata::Track(track) => playing_track_id == Some(track.id),
+        QueueItemMetadata::Episode(episode) => playing_episode_id == Some(episode.id),
+    }
+}
+
 pub(in crate::ui) fn rating_track_id(item: &QueueItemMetadata) -> Option<i64> {
     track(item).map(|track| track.id)
 }
@@ -80,7 +98,11 @@ mod tests {
     use reprise_core::queries::QueueItemMetadata;
     use reprise_core::up_next::QueueItem;
 
-    use super::{cell_text, rating_track_id, rating_write_target, source_icon, title};
+    use reprise_core::models::Track;
+
+    use super::{
+        cell_text, is_now_playing, rating_track_id, rating_write_target, source_icon, title,
+    };
 
     fn episode(kind: PodcastKind) -> QueueItemMetadata {
         QueueItemMetadata::Episode(EpisodeRow {
@@ -135,5 +157,59 @@ mod tests {
         assert_eq!(rating_track_id(&rss), None);
         assert_eq!(rating_write_target(QueueItem::Episode(7)), None);
         assert_eq!(rating_write_target(QueueItem::Track(7)), Some(7));
+    }
+
+    /// A track row with the same numeric id as the episode fixture. Built out
+    /// in full because `Track` has no `Default` — the point of the test is the
+    /// shared id, so it must be a real one.
+    fn track_with_colliding_id() -> QueueItemMetadata {
+        QueueItemMetadata::Track(Track {
+            id: 7,
+            path: "/music/seven.flac".into(),
+            title: "Track Seven".into(),
+            artist: "Someone".into(),
+            album: String::new(),
+            album_artist: String::new(),
+            year: None,
+            track_no: None,
+            genre: String::new(),
+            duration_ms: 90_000,
+            bitrate_kbps: None,
+            rating: 0,
+            play_count: 0,
+            last_played_at: None,
+            added_at: 0,
+            file_mtime: 0,
+            missing_since: None,
+            missing_reason: None,
+            untagged: false,
+            file_size: 0,
+            device: None,
+            inode: None,
+            playlist_position: None,
+            is_ai: false,
+        })
+    }
+
+    /// The whole reason `is_now_playing` compares per kind rather than against
+    /// a single id: a track id and an episode id are different keys, and 7 == 7.
+    /// Without the per-kind match, playing episode 7 would light up track 7's
+    /// row instead.
+    #[test]
+    fn que_9_a_colliding_episode_id_never_marks_a_track_row_as_playing() {
+        let track = track_with_colliding_id();
+        let episode = episode(PodcastKind::Youtube);
+
+        // The episode is playing: only the episode row may be marked.
+        assert!(!is_now_playing(&track, None, Some(7)));
+        assert!(is_now_playing(&episode, None, Some(7)));
+
+        // The track is playing: only the track row may be marked.
+        assert!(is_now_playing(&track, Some(7), None));
+        assert!(!is_now_playing(&episode, Some(7), None));
+
+        // Nothing playing marks nothing.
+        assert!(!is_now_playing(&track, None, None));
+        assert!(!is_now_playing(&episode, None, None));
     }
 }

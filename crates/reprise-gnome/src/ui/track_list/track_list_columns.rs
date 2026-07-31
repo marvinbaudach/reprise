@@ -115,8 +115,11 @@ fn apply_now_playing_item(
     shared: &Shared,
     leading: bool,
 ) -> bool {
-    let playing = super::queue_item_presentation::rating_track_id(item)
-        .is_some_and(|track_id| shared.playing_track_id.get() == Some(track_id));
+    let playing = super::queue_item_presentation::is_now_playing(
+        item,
+        shared.playing_track_id.get(),
+        shared.playing_episode_id.get(),
+    );
     toggle_class(cell, NOW_PLAYING_CLASS, playing);
     if leading {
         toggle_class(cell, NOW_PLAYING_LEADING_CLASS, playing);
