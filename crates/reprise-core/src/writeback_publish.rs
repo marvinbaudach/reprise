@@ -93,11 +93,48 @@ fn publish_with(
             remove_temporary(&temporary);
             Ok(Published::AlreadyPresent)
         }
-        Err(error) => {
+        // Anything else means this filesystem would not link the file into
+        // place — see `publish_directly`.
+        Err(_) => {
+            let published = publish_directly(target, payload);
             remove_temporary(&temporary);
-            Err(error)
+            published
         }
     }
+}
+
+/// Publishes `payload` at `target` by creating the target itself with
+/// `O_EXCL`, for filesystems whose VFS has no `->link` at all.
+///
+/// Linux `vfat`, `exfat` and `ntfs3`, and the FUSE MTP/gvfs mounts phones
+/// present, answer `link(2)` with `EPERM`/`EOPNOTSUPP` — and those are
+/// exactly the filesystems external music drives and players use. Without
+/// this, the whole payload was written and fsynced and then thrown away on
+/// every single attempt, forever, with no signal to anyone.
+///
+/// `O_EXCL` is honoured on vfat and exfat, so the one guarantee that matters
+/// survives: an existing file of the user's still cannot be replaced. What is
+/// lost is content atomicity — a crash mid-write can leave a short file
+/// behind. That is the right trade against a feature that is silently inert.
+/// `rename` would have kept atomicity and is *not* an option: it replaces its
+/// destination.
+fn publish_directly(target: &Path, payload: &[u8]) -> io::Result<Published> {
+    let mut file = match OpenOptions::new().write(true).create_new(true).open(target) {
+        Ok(file) => file,
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+            return Ok(Published::AlreadyPresent)
+        }
+        Err(error) => return Err(error),
+    };
+    if let Err(error) = file.write_all(payload).and_then(|()| file.sync_all()) {
+        drop(file);
+        // The half-written file is ours — `create_new` proved nothing was
+        // there — and a truncated cover or sidecar would be served as if it
+        // were the real thing.
+        let _ = fs::remove_file(target);
+        return Err(error);
+    }
+    Ok(Published::Written)
 }
 
 /// Reserves a temporary file beside `target`.

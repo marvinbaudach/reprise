@@ -2180,8 +2180,10 @@ property is set and yet nothing happens.
   network provider is written as standard `.lrc` beside the existing track,
   at the path derived exclusively by replacing the track extension. Plain,
   instrumental, cached, tag, and existing-sidecar results never trigger a
-  write. An existing sidecar is never overwritten; publication is atomic,
-  and every filesystem failure is logged but otherwise silent, so the cache
+  write. An existing sidecar is never overwritten — on filesystems without
+  hard links (FAT, exFAT, NTFS, MTP) the file is created exclusively instead
+  of published atomically, which still cannot replace one. Every filesystem
+  failure is logged but otherwise silent, so the cache
   result and displayed lyrics remain available. The write is invisible to the
   folder watcher — neither the sidecar nor its temporary file triggers a
   library rescan. Device sync copies this
@@ -3107,7 +3109,9 @@ means deterministic and high-confidence, never „without review".
   extension comes from the validated image bytes. If any canonical folder
   image (`cover`, `folder`, `front`, or `album` with a supported image
   extension) already exists there, Reprise writes nothing and never
-  overwrites it. Publication is atomic and every filesystem failure is logged
+  overwrites it — on filesystems without hard links (FAT, exFAT, NTFS, MTP)
+  the file is created exclusively instead of published atomically, which
+  still cannot replace one. Every filesystem failure is logged
   but otherwise silent, so the cached download remains successful. The write
   is invisible to the folder watcher — neither the cover nor its temporary
   file triggers a library rescan. Covers for release groups without a local
