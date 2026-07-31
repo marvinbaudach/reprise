@@ -1,7 +1,7 @@
 ---
 slug: wave-0-agent-handover
-worktree: one per agent, see §2
-branch: one per agent, see §2
+worktree: one per agent, see §3
+branch: one per agent, see §3
 phase: handover
 codex_session:
 created: 2026-07-31
@@ -9,7 +9,7 @@ base: 577765b
 ---
 # Handover — seven agents, running in parallel
 
-Each section in §3 is **self-contained and meant to be pasted as one agent's
+Each section in §4 is **self-contained and meant to be pasted as one agent's
 whole prompt**. An agent needs its own section plus §1; nothing else. The two
 big documents (`architecture-consolidation.md`, `consolidation-plan.md`) are
 background for you, not required reading for them.
@@ -58,12 +58,13 @@ plan documents stay.
 > scripts/check-ux-traceability.sh
 > ```
 >
-> **Two reds you will inherit — do not fix them, they are not yours.**
-> `scripts/check-frontend-thinness.sh` fails on untouched `dev`
-> (`filesystem` 17→19, `threads` 14→15, from `#189`); that is agent 1's task
-> 0.0. And GitHub Actions fails on every branch in this repository including
-> `main` — the job never reaches a runner. The enforcing gate is the local run
-> above.
+> **You start from a green base.** Step 0 below lands on `dev` before any
+> agent branches, so the two reds `#189` left behind — `window.rs` at exactly
+> 600 lines and the thinness budgets — are already gone. If you branched
+> anyway and see either, you branched too early: rebase onto `dev`, do not fix
+> them yourself. One red does remain and is not yours: GitHub Actions fails on
+> every branch in this repository including `main`, because the job never
+> reaches a runner. The enforcing gate is the local run above.
 >
 > **Language.** Code, comments, log/error/UI strings, commit messages and every
 > document in this repository are English. `README.de.md` and `po/` are the
@@ -79,10 +80,38 @@ plan documents stay.
 
 ---
 
-## 2. Who runs when, and who owns what
+## 2. Step 0 — one branch, alone, before anyone fans out
+
+Task 0.0 is not agent 1's. It is everyone's: `dev` fails two gates that every
+agent runs before every commit, so seven agents would otherwise each spend
+their first hour rediscovering the same two failures, and six of them would be
+told to leave a red gate alone for hours — which is exactly the habit the gate
+exists to prevent. It is also ten minutes of work.
+
+Land it on `dev` first, on its own branch, then fan out.
+
+1. **`window.rs` is at exactly 600 and the cap is `>= 600`.** This is the first
+   check in `scripts/check-architecture.sh`, so nothing else in that script is
+   reachable until it passes. `#189` took the file from 597 to 600. Extract a
+   cohesive piece into a sibling module under `ui/window/` — the file is the
+   composition root and holds exactly two items, so the small one is the
+   candidate. Do **not** raise the cap and do **not** trim doc comments to fit;
+   AGENTS.md forbids the second explicitly.
+2. **Then the thinness budgets.** `filesystem` 17→19, `threads` 14→15, from the
+   same commit. Run the script for the numbers rather than copying them.
+   Reason in the commit message. (Moving `lyrics_batch.rs`'s worker into
+   `reprise-core` is the better answer on the merits — record it as a
+   follow-up, do not do it here.)
+
+Two commits, one PR, merged before the seven briefs below start. Agent 1 then
+begins at task 0.1.
+
+---
+
+## 3. Who runs when, and who owns what
 
 ```
-     ┌─ Agent 1  diagnostics chain (0.0 → 0.5)      ── the critical path, sequential
+     ┌─ Agent 1  diagnostics chain (0.1 → 0.5)      ── the critical path, sequential
      │
 start┼─ Agent 2  the missing index (1.1)            ── independent
      ├─ Agent 3  build and shipping (0.6, 0.8)      ── independent
@@ -92,8 +121,8 @@ start┼─ Agent 2  the missing index (1.1)            ── independent
      └─ Agent 7  security debts (2.4a/c/d)          ── independent
 ```
 
-All seven can start at once. Agent 1 is the long pole and the only one whose
-six tasks must run in order.
+All seven start at once, once step 0 is on `dev`. Agent 1 is the long pole and
+the only one whose five tasks must run in order.
 
 **Ownership — no two agents share a file.** Verified against the tree at
 `577765b`.
@@ -115,27 +144,17 @@ block; if both land, the conflict is two additions and both stay.
 
 ---
 
-## 3. The briefs
+## 4. The briefs
 
 ### Agent 1 — diagnostics chain
 
-> **Branch** `feat/wave-0-diagnostics` from `dev`. Six tasks, in this order,
+> **Branch** `feat/wave-0-diagnostics` from `dev`. Five tasks, in this order,
 > one commit each. This is the critical path for opening a test round.
 >
 > **Why this exists.** The app cannot report on itself. A panic in a GTK
 > callback is a process abort with no hook, opening the database is an
 > `expect()`, and 793 `tracing` calls go to stderr where no tester sees them.
 > A tester's crash currently leaves nothing behind at all.
->
-> **0.0 — make the base gate green.** `scripts/check-frontend-thinness.sh`
-> fails on untouched `dev`: `filesystem` grew 17→19, `threads` 14→15. `#189`
-> added `crates/reprise-gnome/src/ui/lyrics/lyrics_batch.rs` with its own
-> worker thread and filesystem access without moving the budgets in the same
-> commit. Raise both budgets to the measured values with the reason in the
-> commit message. Do **not** guess the numbers — run the script, it prints
-> them. (Moving that worker into `reprise-core` would be the better answer on
-> the merits; record it as a follow-up, do not do it here.)
-> Commit: `fix(gates): restore the frontend thinness budgets to the measured values`
 >
 > **0.1 — the diagnostics module.** New `ui/diagnostics/{mod,paths,paths_tests}.rs`,
 > declared in `ui/mod.rs` alphabetically between `device_sync` and `dialogs`.
@@ -571,10 +590,11 @@ block; if both land, the conflict is two additions and both stay.
 
 ---
 
-## 4. What none of them should do
+## 5. What none of them should do
 
-- **Do not fix another agent's inherited red.** If `check-frontend-thinness.sh`
-  fails and you are not agent 1, that is agent 1's task 0.0.
+- **Do not fix an inherited red.** `check-frontend-thinness.sh` and the
+  `window.rs` line cap are step 0's, and step 0 is on `dev` before you start.
+  Seeing either means you branched too early — rebase, do not fix.
 - **Do not chase GitHub Actions.** It fails on every branch in this repository
   including `main`; the job never reaches a runner. The enforcing gate is the
   local run.

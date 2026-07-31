@@ -176,8 +176,10 @@ else, and no other architectural violation can be seen until it is fixed.
        1.1 index (own branch, independent of wave 0)
 ```
 
-0.0 comes first: the base gate is red today and a wave that starts from a red
-base cannot tell its own failures from inherited ones. 0.1 to 0.5 are then a
+0.0 comes first, and when the wave is split across parallel agents it comes
+first *for all of them*, on its own branch merged before anyone fans out: the
+base gate is red today, every agent runs it before every commit, and a wave
+that starts from a red base cannot tell its own failures from inherited ones. 0.1 to 0.5 are then a
 chain, each using the previous one. 0.6 to 0.10 are independent and may run in
 any order or in parallel. Task 1.1 depends on nothing in wave 0 and can go
 first if a quick visible win is wanted.
