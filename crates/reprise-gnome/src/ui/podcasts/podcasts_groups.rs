@@ -300,6 +300,7 @@ fn episode_row(
 
     let (thumbnail, play_glyph) = episode_thumbnail(row, playing, images_allowed);
     let marker = playing_marker::build();
+    marker.add_css_class("reprise-podcast-episode-marker");
     playing_marker::set_playing(&marker, playing);
     marker.set_visible(loaded);
     thumbnail.add_overlay(&marker);

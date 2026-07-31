@@ -586,6 +586,7 @@ impl YoutubeChannelDetail {
         let play_surface = gtk4::Overlay::new();
         play_surface.set_size_request(32, 32);
         let marker = playing_marker::build();
+        marker.add_css_class("reprise-podcast-episode-marker");
         playing_marker::set_playing(&marker, playing);
         marker.set_visible(loaded);
         play_surface.add_overlay(&marker);
