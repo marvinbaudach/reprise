@@ -118,11 +118,22 @@ frontend thinness: filesystem grew from 17 to 19
 frontend thinness: threads   grew from 14 to 15
 ```
 
-`65f0b14` (`#189`, lyrics and covers) added
-`crates/reprise-gnome/src/ui/lyrics/lyrics_batch.rs` with its own worker
-thread and filesystem access, and did not move the budgets in the same commit
-as the convention requires. That script is part of
-`scripts/check-merge-readiness.sh`, so **every** wave-0 PR will hit it.
+And `scripts/check-architecture.sh` fails on the very first check:
+
+```
+window.rs has 600 lines; the composition root must stay below 600
+```
+
+Both come from the same commit. `65f0b14` (`#189`, lyrics and covers) added
+`crates/reprise-gnome/src/ui/lyrics/lyrics_batch.rs` with its own worker thread
+and filesystem access without moving the budgets, and took
+`ui/window/window.rs` from 597 to exactly 600 — the gate is `>= 600`, so the
+composition root is one line over its cap.
+
+Both scripts are part of `scripts/check-merge-readiness.sh`, so **every**
+wave-0 PR hits both. The `window.rs` one is the harder stop: it is the first
+check in the architecture lint, so the script exits before reaching anything
+else, and no other architectural violation can be seen until it is fixed.
 
 ### 1.4 The cycle, per task — no exceptions
 
@@ -182,8 +193,18 @@ inside it. One to two days.
 
 **Goal.** Start wave 0 from a green base, so a later red is information.
 
-`origin/dev` fails `scripts/check-frontend-thinness.sh` (§1.3). Two ways out,
-and the choice is a judgement about `lyrics_batch.rs`:
+`origin/dev` fails **two** gates (§1.3). Do the `window.rs` one first: it is the
+architecture lint's first check, so nothing else in that script is even
+reachable until it passes.
+
+**`window.rs` is at 600 and must be below 600.** Extract three lines' worth of
+cohesive work into a sibling module — the file is the composition root and
+already delegates almost everything, so the candidates are obvious. Do **not**
+raise the cap: 600 is the whole point of that gate, and `#189` did not decide
+to change it, it just landed on the boundary.
+
+Then the thinness budgets. Two ways out, and the choice is a judgement about
+`lyrics_batch.rs`:
 
 - **Raise the budgets to the measured values** (`filesystem=19`, `threads=15`)
   with the reason in the commit message. Correct if the lyrics batch worker

@@ -1102,12 +1102,20 @@ give `msrv.sh` a real build with the declared toolchain, and consider a
 
 ### 9.4 Finding K0 (release blocker) — `dev` is red on its own merge gate
 
-Measured 2026-07-31 against an untouched `origin/dev` checkout:
+Measured 2026-07-31 against an untouched `origin/dev` checkout — **two** gates,
+not one:
 
 ```
 frontend thinness: filesystem grew from 17 to 19
 frontend thinness: threads   grew from 14 to 15
+
+window.rs has 600 lines; the composition root must stay below 600
 ```
+
+The second is the harder stop: it is the *first* check in
+`check-architecture.sh`, so that script exits before reaching any other
+architectural rule. Until it passes, no other violation in the repository can
+even be observed.
 
 `scripts/check-frontend-thinness.sh` treats each budget as a ceiling **and** a
 floor: a commit that adds a use raises the number in the same change, with a
