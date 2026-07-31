@@ -331,12 +331,13 @@ impl Runtime {
             .unwrap_or(usize::MAX)
             .min(QUEUE_WINDOW);
         let offset_index = usize::try_from(offset).unwrap_or(usize::MAX);
-        let (track_ids, total) = self.transport.queue_page(section, offset_index, limit);
+        let (track_ids, items, total) = self.transport.queue_page(section, offset_index, limit);
         Ok(QueuePage {
             revision: self.queue_revision,
             section: section.as_wire().to_owned(),
             offset,
             track_ids,
+            items: Some(items),
             total: total as u64,
         })
     }

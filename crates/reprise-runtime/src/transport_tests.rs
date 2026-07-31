@@ -7,7 +7,7 @@ use reprise_core::playback::{
     AudioEffects, PlaybackBackend, PlaybackError, PlaybackState, PlayerEvent,
 };
 use reprise_runtime_protocol::playback::PlaybackCommand;
-use reprise_runtime_protocol::queue::QueueCommand;
+use reprise_runtime_protocol::queue::{QueueCommand, QueueItem as ProtocolQueueItem, QueueSection};
 
 use super::Transport;
 use crate::error::{Rejected, RuntimeError};
@@ -77,6 +77,32 @@ fn fixture() -> Fixture {
         calls,
         library: FakeLibrary::with_tracks([1, 2, 3]),
     }
+}
+
+#[test]
+fn que_9_runtime_queue_reads_keep_typed_items_beside_track_only_ids() {
+    let mut fixture = fixture();
+    fixture.transport.up_next.append(&[
+        reprise_core::up_next::QueueItem::Track(7),
+        reprise_core::up_next::QueueItem::Episode(7),
+        reprise_core::up_next::QueueItem::Track(8),
+    ]);
+
+    let snapshot = fixture.transport.queue_snapshot();
+    assert_eq!(snapshot.play_next_track_ids, vec![7, 8]);
+    assert_eq!(
+        snapshot.play_next_items,
+        Some(vec![
+            ProtocolQueueItem::track(7),
+            ProtocolQueueItem::episode(7),
+            ProtocolQueueItem::track(8),
+        ])
+    );
+
+    let (track_ids, items, total) = fixture.transport.queue_page(QueueSection::PlayNext, 0, 200);
+    assert_eq!(track_ids, vec![7, 8]);
+    assert_eq!(Some(items), snapshot.play_next_items);
+    assert_eq!(total, 3);
 }
 
 impl Fixture {

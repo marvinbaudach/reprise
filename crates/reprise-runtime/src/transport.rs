@@ -113,7 +113,7 @@ enum Take {
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct QueueIdentity {
     current: Option<i64>,
-    play_next: Vec<i64>,
+    play_next: Vec<QueueItem>,
     context: Vec<i64>,
 }
 

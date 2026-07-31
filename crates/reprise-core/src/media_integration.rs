@@ -16,6 +16,7 @@ use crate::agent_device_sync::{
     AgentDeviceSyncRequest, AgentDeviceSyncState, SharedAgentDeviceSyncState,
 };
 use crate::queue::Repeat;
+use crate::up_next::QueueItem;
 
 /// `MprisState::volume`'s initial value until the bar or an MPRIS `Volume`
 /// write sets a real one — "full volume". `pub(crate)` (Stage-3 close-out:
@@ -65,9 +66,11 @@ pub enum MprisCommand {
     /// Seed the queue from this ordered id list and start playing (empty =
     /// no-op). Carries a `Vec`, so the enum is no longer `Copy`.
     PlayTrackIds(Vec<i64>),
-    /// Prepend ids to the manual Play Next list.
+    /// Prepend track ids to the manual Play Next list. Episodes are not an
+    /// accepted command payload.
     QueueAddNext(Vec<i64>),
-    /// Append ids to the manual Play Next list.
+    /// Append track ids to the manual Play Next list. Episodes are not an
+    /// accepted command payload.
     QueueAddLast(Vec<i64>),
     /// Clear only the manual Play Next list, preserving playback context.
     QueueClear,
@@ -258,8 +261,12 @@ pub type SharedMprisState = Arc<Mutex<MprisState>>;
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AgentQueueState {
     pub current_track_id: Option<i64>,
+    /// Legacy track-only projection. Episodes are intentionally omitted.
     pub play_next_track_ids: Vec<i64>,
+    pub play_next_items: Vec<QueueItem>,
+    /// Legacy track-only projection of the automatic context.
     pub context_track_ids: Vec<i64>,
+    pub context_items: Vec<QueueItem>,
     pub play_next_total: usize,
     pub context_total: usize,
 }

@@ -3,6 +3,36 @@
 use serde::{Deserialize, Serialize};
 use zvariant::{DeserializeDict, SerializeDict, Type};
 
+/// One queue identity with its entity kind kept separate from its numeric id.
+///
+/// `kind` is `track` or `episode`. A string is deliberate on the wire: D-Bus
+/// has no enum primitive, and an unknown future kind can be ignored by an old
+/// client instead of failing to decode the complete queue snapshot.
+#[derive(Debug, Clone, PartialEq, Eq, Default, SerializeDict, DeserializeDict, Type)]
+#[zvariant(signature = "a{sv}")]
+pub struct QueueItem {
+    pub kind: String,
+    pub id: i64,
+}
+
+impl QueueItem {
+    #[must_use]
+    pub fn track(id: i64) -> Self {
+        Self {
+            kind: "track".to_owned(),
+            id,
+        }
+    }
+
+    #[must_use]
+    pub fn episode(id: i64) -> Self {
+        Self {
+            kind: "episode".to_owned(),
+            id,
+        }
+    }
+}
+
 /// Bounded live queue state. The id windows are capped; the totals describe
 /// the complete sections, so a client can say "and 412 more" without the
 /// runtime shipping 412 ids.
@@ -26,10 +56,17 @@ pub struct QueueSnapshot {
     /// client is holding, and has to move the revision like any other.
     pub revision: u64,
     pub current_track_id: Option<i64>,
-    /// Explicitly queued items, in play order.
+    /// Legacy track-only projection of explicitly queued items. Episodes are
+    /// omitted; widening this field would make old clients treat episode ids
+    /// as track ids.
     pub play_next_track_ids: Vec<i64>,
-    /// The surrounding context the queue was started from, in play order.
+    /// Explicitly queued track and episode items, in play order.
+    pub play_next_items: Option<Vec<QueueItem>>,
+    /// Legacy track-only projection of the surrounding context.
     pub context_track_ids: Vec<i64>,
+    /// Typed surrounding context. This is track-only today by design, but it
+    /// uses the same shape so clients never infer an entity kind from an id.
+    pub context_items: Option<Vec<QueueItem>>,
     pub play_next_total: u64,
     pub context_total: u64,
 }
@@ -39,9 +76,11 @@ pub struct QueueSnapshot {
 /// typed method.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum QueueCommand {
-    /// Insert directly after the current item, in the given order.
+    /// Insert track ids directly after the current item, in the given order.
+    /// Adding episodes is not part of this command.
     AddNext(Vec<i64>),
-    /// Append to the end of the explicit queue, in the given order.
+    /// Append track ids to the explicit queue, in the given order. Adding
+    /// episodes is not part of this command.
     AddLast(Vec<i64>),
     /// Drop the explicit queue. The current item keeps playing — clearing a
     /// queue is not a stop command.
@@ -162,7 +201,10 @@ pub struct QueuePage {
     pub section: String,
     /// Where this window starts within its section.
     pub offset: u64,
+    /// Legacy track-only projection. Episodes are omitted.
     pub track_ids: Vec<i64>,
+    /// Typed items in this page, including episodes.
+    pub items: Option<Vec<QueueItem>>,
     /// How long the whole section is, so a view can size its scrollbar
     /// without asking for every page.
     pub total: u64,
