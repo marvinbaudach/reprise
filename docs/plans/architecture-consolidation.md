@@ -72,7 +72,8 @@ quoted from documentation.
 
 - Roughly **24 %** of those lines sit in dedicated test files; over 4,200
   `#[test]` functions.
-- `docs/ux-rules.md`: about 3,950 lines carrying **313** `[active]` markers.
+- `docs/ux-rules.md`: about 3,950 lines; `scripts/check-ux-traceability.sh`
+  reports **298 active rules covered** by rule-named tests.
 - Schema version **50**, eighteen numbered migration steps in `db.rs` plus
   extracted migration modules, each with its own migration tests.
 - 30 scripts under `scripts/`, seventeen of them `check-*`.
@@ -967,7 +968,36 @@ to it (or take `rusqlite`/`libsqlite3-sys` back to a version that holds 1.92),
 give `msrv.sh` a real build with the declared toolchain, and consider a
 `rust-toolchain.toml` so developers and CI see the same one.
 
-### 9.4 Finding K2 — `check-stem-runtime-packaging` is red on the base
+### 9.4 Finding K0 (release blocker) — `dev` is red on its own merge gate
+
+Measured 2026-07-31 against an untouched `origin/dev` checkout:
+
+```
+frontend thinness: filesystem grew from 17 to 19
+frontend thinness: threads   grew from 14 to 15
+```
+
+`scripts/check-frontend-thinness.sh` treats each budget as a ceiling **and** a
+floor: a commit that adds a use raises the number in the same change, with a
+reason. `65f0b14` (`#189`, lyrics and covers) added
+`crates/reprise-gnome/src/ui/lyrics/lyrics_batch.rs` — a batch worker with its
+own thread and filesystem access — and did not.
+
+That script runs inside `scripts/check-merge-readiness.sh`, so the merge gate
+is red on the integration branch right now and every following PR inherits it.
+The mechanism is not broken; it is doing exactly its job and saying so.
+
+Two ways out, and the choice is really about where `lyrics_batch.rs` belongs.
+Raising the budgets to 19 and 15 with a written reason is legitimate if the
+batch worker belongs in the frontend. It probably does not:
+`reprise_core::lyrics` already owns the providers, the cache and the circuit
+breaker, and the batch runs a provider chain and writes `.lrc` sidecars — core
+work by every line this project draws elsewhere. The pragmatic answer for a
+near-term test round is to raise the budgets with the reason recorded and log
+the move as a follow-up; the dangerous answer is to raise them quietly, which
+is how a budget stops meaning anything.
+
+### 9.5 Finding K2 — `check-stem-runtime-packaging` is red on the base
 
 The ledger records it: *"the extra release-only
 `scripts/check-stem-runtime-packaging.sh` probe remains red on the unchanged
@@ -981,7 +1011,7 @@ off for the test round (`-Dstem_backend=false`) and gate the check
 accordingly. For a first round the latter is the smaller bet — an experimental
 ML feature creates support load that distracts from the actual test goal.
 
-### 9.5 Finding K3 — the Flatpak sandbox is strict, and it is the first hurdle
+### 9.6 Finding K3 — the Flatpak sandbox is strict, and it is the first hurdle
 
 `finish-args` contains **no** `--filesystem=home` and no
 `--filesystem=xdg-music`; `check-flatpak-device-permissions.sh` forbids every
@@ -996,7 +1026,7 @@ granted persistently, the app is empty after the first restart, and that is the
 bug report that would dominate a whole test round. `RELEASING.md`'s "Manual
 GNOME QA" already lists the step — it is the most important one on the list.
 
-### 9.6 Further release observations
+### 9.7 Further release observations
 
 - **`reprise-runtime` ships** (Meson target, two `.service` files) and is used
   by nothing (§2.2). For a test round: do not ship it.
@@ -1048,7 +1078,7 @@ the finding, never as a sweep at the end.
    today's number and lowerable only — after the model of
    `check-frontend-thinness.sh` (§4.4).
 5. **Unique section letters in `ux-rules.md`** — one line in
-   `check-ux-traceability.sh` (§9.6).
+   `check-ux-traceability.sh` (§9.7).
 6. **If the runtime ships, someone uses it**: a check that
    `reprise_runtime_client` is referenced outside tests as soon as
    `data/*.service.in` are installed (§2.2).

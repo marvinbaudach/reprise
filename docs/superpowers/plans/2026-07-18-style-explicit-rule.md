@@ -1,70 +1,71 @@
-# STYLE-1 — Wirkung explizit, nicht geerbt (Entwurf, 2026-07-18)
+# STYLE-1 — Effect explicit, not inherited (draft, 2026-07-18)
 
-Fertiger Wortlaut für `docs/ux-rules.md`. **Noch nicht eingetragen:** Die
-Datei gehört gerade dem laufenden Codex-Task (Sektionen Q und J). Nach dessen
-Merge als **Sektion S** anhängen (P ist auf main die letzte, Q und R kommen
-mit `feat/search-and-new-releases`).
+Finished wording for `docs/ux-rules.md`. **Not yet entered:** the file
+currently belongs to the running Codex task (sections Q and J). After its
+merge, append it as **section S** (P is the last one on main, Q and R arrive
+with `feat/search-and-new-releases`).
 
-## Anlass
+## Occasion
 
-Vier Fälle an einem Tag, alle mit grünem Test, alle erst im Screenshot
-aufgefallen:
+Four cases in one day, all with a green test, all noticed only in the
+screenshot:
 
-| Fall | Gesetzt | Tatsächlich gerendert | Ursache |
+| Case | Set | Actually rendered | Cause |
 |---|---|---|---|
-| Headerbar-Fläche | `@headerbar_bg_color` | `#16181b` (Fensterfarbe) | `ToolbarStyle::Flat` schluckt Bar-Hintergründe |
-| Such-Streifen | zweite Top-Bar | wirkt schwebend | dieselbe Flat-Falle |
-| Headerbar-Titel | `set_title_widget(NONE)` | „Reprise" mittig | Adwaita fällt auf den Fenstertitel zurück |
-| Sidebar-Breite | `max-sidebar-width = 240` | 295 px | Label ohne `ellipsize` erzwingt Mindestbreite |
+| Headerbar surface | `@headerbar_bg_color` | `#16181b` (window color) | `ToolbarStyle::Flat` swallows bar backgrounds |
+| Search strip | second top bar | appears to float | the same Flat trap |
+| Headerbar title | `set_title_widget(NONE)` | "Reprise" centered | Adwaita falls back to the window title |
+| Sidebar width | `max-sidebar-width = 240` | 295 px | label without `ellipsize` forces a minimum width |
 
-Gemeinsamer Nenner ist **nicht** `Flat`, sondern: eine gesetzte Property
-bleibt wirkungslos, weil der Default-Zustand etwas anderes tut als erwartet —
-und der Test prüft die Property statt das Ergebnis.
-
----
-
-## Sektion S. Flächen & Geometrie
-
-Was sichtbar wirken soll, muss explizit gesetzt sein. Geerbte oder
-Framework-Defaults zählen nicht als gesetzt: Sie sind der häufigste Grund,
-warum eine Property gesetzt ist und trotzdem nichts passiert.
-
-- **STYLE-1** [geplant] [gtk] — **Wirkung explizit, nicht geerbt.** Jede
-  Fläche, die sich vom Inhalt absetzen soll (Headerbar, eingeblendete
-  Leisten, Sidebar-Kanten, Panels), trägt Hintergrund **und** Trennlinie
-  ausdrücklich; jede Geometrie, die verbindlich ist (feste Breiten,
-  Mindesthöhen), wird gegen ihre tatsächliche Allokation geprüft.
-  `flat` bleibt genau dort, wo bewusst **keine** Abgrenzung gewollt ist.
-  Bekannte Fallen, die diese Regel adressiert: `AdwToolbarView` mit
-  `ToolbarStyle::Flat` unterdrückt Bar-Hintergründe (auch
-  `@headerbar_bg_color`); eine `AdwHeaderBar` ohne Titel-Widget rendert
-  ersatzweise den Fenstertitel (`show-title` muss zusätzlich aus); ein
-  `GtkLabel` ohne `ellipsize` meldet seinen vollen Text als **Mindest**breite
-  und hebelt damit jedes `max-width` des Containers aus;
-  `AdwOverlaySplitView` rechnet ohne `sidebar-width-unit = Px` in `sp`.
-  **Testregel:** Absicht darf geprüft werden, aber bei Flächen und Geometrie
-  muss das **Ergebnis** belegt sein — nicht „Property X ist gesetzt", sondern
-  „die Fläche hat sichtbaren Hintergrund" bzw. „die Spalte bleibt bei
-  schmalem Fenster auf ihrer Breite". Was das Framework garantiert, wird auf
-  Existenz getestet; was ausbleiben kann, auf Wirkung (dieselbe Denkfigur wie
-  TIP-1a/2a und SEARCH-2).
+The common denominator is **not** `Flat`, but: a property that has been set
+stays without effect because the default state does something other than
+expected — and the test checks the property instead of the result.
 
 ---
 
-## Ergänzung für `RELEASING.md`
+## Section S. Surfaces & Geometry
 
-Unter den manuellen Abnahmepunkten:
+Anything meant to be visible must be set explicitly. Inherited or
+framework defaults do not count as set: they are the most common reason a
+property is set and yet nothing happens.
 
-> - **STYLE-1 „Schweben"-Test** [manuell] — Jede einblendbare Leiste
->   (Suchleiste, Banner, Fortschrittskarte) einmal öffnen: Klappt sie flach
->   über den Inhalt, ohne eigene Fläche und Kante, fehlt der Hintergrund —
->   `ToolbarStyle::Flat` hat ihn geschluckt. Gegenprobe in allen drei
->   Dark-Themes, weil die Fensterfarbe je Theme anders danebenliegt.
+- **STYLE-1** [planned] [gtk] — **Effect explicit, not inherited.** Every
+  surface meant to set itself apart from content (headerbar, revealed
+  bars, sidebar edges, panels) carries background **and** separator line
+  explicitly; every binding geometry (fixed widths, minimum heights) is
+  checked against its actual allocation.
+  `flat` stays exactly where **no** separation is deliberately wanted.
+  Known traps this rule addresses: `AdwToolbarView` with
+  `ToolbarStyle::Flat` suppresses bar backgrounds (including
+  `@headerbar_bg_color`); an `AdwHeaderBar` without a title widget renders
+  the window title as a fallback (`show-title` must additionally be off); a
+  `GtkLabel` without `ellipsize` reports its full text as **minimum** width
+  and thereby defeats any `max-width` on the container;
+  `AdwOverlaySplitView` computes in `sp` without `sidebar-width-unit = Px`.
+  **Test rule:** intent may be checked, but for surfaces and geometry the
+  **result** must be proven — not "property X is set", but
+  "the surface has a visible background" or "the column stays at its width
+  in a narrow window". What the framework guarantees is tested for
+  existence; what can fail to appear is tested for effect (the same figure
+  of thought as TIP-1a/2a and SEARCH-2).
 
 ---
 
-## Umsetzungshinweis
+## Addition for `RELEASING.md`
 
-Beim Eintragen: Sektionsbuchstaben gegen den dann aktuellen `main`-Stand
-prüfen (heute wären Q und R durch den Search/NR-Branch belegt, S wäre frei) —
-genau so, wie es der Kommentar am Kopf von Sektion O vormacht.
+Under the manual acceptance points:
+
+> - **STYLE-1 "floating" test** [manual] — Open every revealable bar
+>   (search bar, banner, progress card) once: if it folds flat over the
+>   content without a surface and edge of its own, the background is
+>   missing — `ToolbarStyle::Flat` has swallowed it. Cross-check in all
+>   three dark themes, because the window color is off in a different way
+>   in each theme.
+
+---
+
+## Implementation note
+
+When entering it: check the section letter against the `main` state current
+at that point (today Q and R would be taken by the search/NR branch, S would
+be free) — exactly the way the comment at the head of section O does it.

@@ -7,501 +7,507 @@ phase: ready-for-review
 created: 2026-07-19
 ---
 
-# Klangprofil und agentenfähige Playlistplanung — Implementierungsplan
+# Sound profile and agent-capable playlist planning — implementation plan
 
-Dieser Plan setzt
-[`docs/superpowers/specs/2026-07-19-audio-character-mcp-design.md`](../superpowers/specs/2026-07-19-audio-character-mcp-design.md)
-um. Die Spezifikation ist bindend. Bei Widerspruch gewinnt anschließend
-`docs/ux-rules.md`, dann die Spezifikation, dann dieser Plan.
+This plan implements
+[`docs/superpowers/specs/2026-07-19-audio-character-mcp-design.md`](../superpowers/specs/2026-07-19-audio-character-mcp-design.md).
+The specification is binding. In case of conflict, `docs/ux-rules.md` wins
+next, then the specification, then this plan.
 
-Die Stufen sind absichtlich getrennt:
+The stages are deliberately separated:
 
-- **Stufe 1A** ist der nächste ausführbare Abschnitt und endet mit einer
-  gemeinsamen Review.
-- **Stufe 1B** (nativer Mix-Planer) beginnt nicht automatisch. Sie benötigt
-  nach Stufe 1A eine explizite User-Anweisung.
-- **Stufe 2** (MCP) beginnt nicht automatisch. Sie benötigt nach Stufe 1B eine
-  explizite User-Anweisung.
-- **Stufe 3** (semantische Atmosphäre/Embeddings) ist kein geplanter
-  Implementierungsabschnitt, sondern ein späteres Forschungsziel.
+- **Stage 1A** is the next executable section and ends with a
+  joint review.
+- **Stage 1B** (native mix planner) does not begin automatically. After
+  stage 1A it requires an explicit user instruction.
+- **Stage 2** (MCP) does not begin automatically. After stage 1B it requires
+  an explicit user instruction.
+- **Stage 3** (semantic atmosphere/embeddings) is not a planned
+  implementation section, but a later research goal.
 
-Kein Task greift auf reale Musik, reale Reprise-Datenbank, Live-Desktop,
-Accounts oder Netzservices zu. Audiointegration verwendet ausschließlich
-versionierte redistributable Fixtures.
+No task accesses real music, a real Reprise database, a live desktop,
+accounts or network services. Audio integration uses exclusively
+versioned redistributable fixtures.
 
-## Ausführungsregeln
+## Execution rules
 
-Für jeden Task gilt strikt:
+For every task, strictly:
 
-1. Plan, Spezifikation, betroffene UX-Regeln und aktuellen Git-Stand lesen.
-2. Failing Test schreiben und den erwarteten roten Lauf beobachten.
-3. Kleinste korrekte Implementation schreiben.
-4. Fokustests grün ausführen.
-5. Alle Pflicht-Gates aus `AGENTS.md` ausführen.
-6. Core-Purity nach jeder Core-Änderung beweisen.
-7. Bearbeitete/erzeugte Code-Dateien unter 800 Zeilen halten.
-8. Diff adversarial gegen Spezifikation und Task prüfen; Findings beheben.
-9. Exakt mit der angegebenen Message committen.
-10. `.superpowers/sdd/progress.md` mit Commit und Basis aktualisieren.
-11. Ohne Reviewpause zum nächsten Task derselben Stufe weitergehen.
+1. Read the plan, the specification, the affected UX rules and the current
+   git state.
+2. Write a failing test and observe the expected red run.
+3. Write the smallest correct implementation.
+4. Run the focused tests green.
+5. Run all mandatory gates from `AGENTS.md`.
+6. Prove core purity after every core change.
+7. Keep edited/created code files under 800 lines.
+8. Check the diff adversarially against the specification and the task; fix
+   findings.
+9. Commit with exactly the given message.
+10. Update `.superpowers/sdd/progress.md` with commit and base.
+11. Move on to the next task of the same stage without a review pause.
 
-Die Schema-Versionsnummer wird zu Beginn von Task 2 aus dem dann aktuellen
-`main` ermittelt. Der Plan nennt bewusst nicht „v18", weil parallele Branches
-die Nummer belegen können.
+The schema version number is determined at the beginning of task 2 from the
+`main` current at that time. The plan deliberately does not name "v18",
+because parallel branches can take the number.
 
-## Stufe 1A — Klangprofil-Grundlage
+## Stage 1A — Sound profile foundation
 
-### Task 1 — UX-Vertrag und Test-/Lizenz-Gates
+### Task 1 — UX contract and test/license gates
 
 **Commit:** `docs(ux-rules): define local audio character analysis`
 
-**Ziel:** Die neue sichtbare und rechenintensive Funktion ist normativ
-beschrieben, bevor Produktionscode existiert.
+**Goal:** The new visible and compute-intensive feature is described
+normatively before production code exists.
 
-**Änderungen:**
+**Changes:**
 
-- `docs/ux-rules.md`: neue append-only Sektion mit `[geplant]`-Regeln für
-  lokale/opt-in Analyse, vier Dimensionen, Coverage/Unsicherheit,
-  Background-Steuerung und den Now-Playing-Klangprofil-Tab.
-- Regel-IDs aus dem dann aktuellen Dokument ableiten, nicht vorab erfinden.
-- `scripts/check-ux-traceability.sh`: keine Logikänderung außer ein neuer
-  Präfix würde wider Erwarten nicht automatisch erkannt; dafür zuerst eine
-  rote Negativprobe.
-- `LICENSING.md`: festhalten, dass Audioanalyse im MIT-Enginepfad keine
-  AGPL-/Non-Commercial-Modelle einbinden darf.
-- `TESTING.md`: Fixture-Herkunft und Audioanalyse-Benchmark als künftige Gates
-  dokumentieren.
+- `docs/ux-rules.md`: a new append-only section with `[planned]` rules for
+  local/opt-in analysis, four dimensions, coverage/uncertainty,
+  background control and the Now Playing sound profile tab.
+- Derive rule IDs from the document current at that time, do not invent them
+  in advance.
+- `scripts/check-ux-traceability.sh`: no logic change, unless a new
+  prefix were, contrary to expectation, not detected automatically; for that,
+  a red negative probe first.
+- `LICENSING.md`: record that audio analysis in the MIT engine path must not
+  pull in AGPL/non-commercial models.
+- `TESTING.md`: document fixture provenance and the audio analysis benchmark
+  as future gates.
 
-**Roter Beleg:** Negativfixture mit einer fälschlich `[aktiv]` gesetzten neuen
-Regel ohne regelbenannten Test muss am Traceability-Gate scheitern.
+**Red evidence:** a negative fixture with a new rule wrongly set to
+`[active]` without a rule-named test must fail at the traceability gate.
 
-**Abnahme:** Regeln bleiben `[geplant]`; kein Produktcode oder UI-Schalter wird
-vorgetäuscht.
+**Acceptance:** rules stay `[planned]`; no product code or UI switch is
+faked.
 
-### Task 2 — Versionierte Persistenz und Staleness
+### Task 2 — Versioned persistence and staleness
 
 **Commit:** `feat(core): persist versioned audio character analysis`
 
-**Ziel:** Core kann Audio evidence und Sound profile ohne Decoder speichern,
-invalidieren, laden und als Coverage/Pending-Work projizieren.
+**Goal:** Core can store, invalidate and load audio evidence and sound
+profiles without a decoder and project them as coverage/pending work.
 
-**Failing Tests:**
+**Failing tests:**
 
-- Migration von der live ermittelten Vorgängerversion bewahrt Tracks,
-  Waveforms, Playlists und `listen_events`.
-- Frische DB und Upgrade-DB besitzen dasselbe Analyse-Schema.
-- `save_analysis` round-tripped Evidence, Profil, Versionen, Konfidenzen und
-  Fingerprint.
-- gleiche MTime/Größe/Version ist aktuell; jede relevante Abweichung ist
+- Migration from the predecessor version determined live preserves tracks,
+  waveforms, playlists and `listen_events`.
+- A fresh DB and an upgraded DB have the same analysis schema.
+- `save_analysis` round-trips evidence, profile, versions, confidences and
+  fingerprint.
+- the same mtime/size/version is current; every relevant deviation is
   pending.
-- Pfad-/Inode-Wechsel bei gleicher MTime/Größe invalidiert nicht.
-- missing/removed werden weder pending noch Mix-eligible.
-- Track-Löschung kaskadiert die Analyse.
-- Coverage zählt Nenner und aktuelle Profile korrekt und unterscheidet
-  Library-Tracks von Listen-Events.
-- Failure-Kind und Retry-Zustand round-trippen; unknown Kind fällt sicher auf
-  `unknown` zurück.
+- a path/inode change with the same mtime/size does not invalidate.
+- missing/removed become neither pending nor mix-eligible.
+- Track deletion cascades the analysis.
+- Coverage counts the denominator and current profiles correctly and
+  distinguishes library tracks from listen events.
+- Failure kind and retry state round-trip; an unknown kind falls back safely
+  to `unknown`.
 
 **Implementation:**
 
-- neue fokussierte Core-Module `audio_analysis` und `sound_profile`;
-- Datenwerte als endliche Zahlen validieren; NaN/Inf nie persistieren;
-- `0.0..=1.0` per Konstruktor erzwingen;
-- Pending-/Coverage-Abfragen erhalten passende Partial-/Join-Indizes;
+- new focused core modules `audio_analysis` and `sound_profile`;
+- validate data values as finite numbers; never persist NaN/Inf;
+- enforce `0.0..=1.0` via the constructor;
+- pending/coverage queries get suitable partial/join indexes;
 
-**Adversarial Checks:** manipulierte DB-Werte, negative MTime/Größe,
-unbekannte Version, leere Bibliothek, ausschließlich missing Tracks.
+**Adversarial checks:** manipulated DB values, negative mtime/size,
+unknown version, empty library, exclusively missing tracks.
 
-### Task 3 — Streaming-Akkumulator und reproduzierbare Fixtures
+### Task 3 — Streaming accumulator and reproducible fixtures
 
 **Commit:** `feat(core): extract deterministic audio character evidence`
 
-**Ziel:** Pure Core-Mathematik verarbeitet begrenzte PCM-Chunks und erzeugt
-Waveform-Rohwerte, Evidence und Profile ohne Plattform- oder Dateizugriff.
+**Goal:** Pure core mathematics processes bounded PCM chunks and produces
+raw waveform values, evidence and profiles without platform or file access.
 
-**Failing Tests:**
+**Failing tests:**
 
-- Chunkgrenzen verändern das Resultat nicht innerhalb definierter Toleranzen.
-- Stille, konstantes Signal, tiefer/hoher Sinus, Click-Track, Crescendo und
-  Breitbandrauschen erzeugen erwartete Ordnungen.
-- 60/90/120/180-BPM-Click-Tracks landen im Toleranzfenster; Half-/Double-Tempo
-  wird über Konfidenz beziehungsweise kanonischen Bereich stabil behandelt.
-- Null Chunks, letzter Teilchunk, extrem kurze Datei und sehr langer
-  synthetischer Stream bleiben panic-/NaN-frei.
-- Profile liegen immer in `0..=1` und eine reine Projektionsversionsänderung
-  benötigt kein PCM.
-- Waveform-Ausgabe bleibt exakt 1.000 `u8`-Peaks und kompatibel mit der
-  bestehenden Playerbar.
+- Chunk boundaries do not change the result within defined tolerances.
+- Silence, a constant signal, a low/high sine, a click track, a crescendo and
+  broadband noise produce the expected orderings.
+- 60/90/120/180 BPM click tracks land within the tolerance window; half/double
+  tempo is handled stably via confidence or the canonical range respectively.
+- Zero chunks, a final partial chunk, an extremely short file and a very long
+  synthetic stream stay free of panics/NaN.
+- Profiles always lie in `0..=1` and a pure projection version change
+  needs no PCM.
+- The waveform output stays exactly 1,000 `u8` peaks and compatible with the
+  existing player bar.
 
 **Implementation:**
 
-- `AudioEvidenceAccumulator` nimmt mono PCM plus Sample-Rate blockweise an;
-- feste FFT-/Hop-Größe und begrenzte Ringpuffer;
-- robuste Perzentil-/Histogramm-Aggregation statt vollständiger Samplelisten;
-- Projektion mit benannten Konstanten und dokumentierter Kalibrierung;
-- Fixture-Generator als Code, binäre reale Fixtures nur mit Lizenznotiz.
+- `AudioEvidenceAccumulator` accepts mono PCM plus sample rate block by block;
+- a fixed FFT/hop size and bounded ring buffers;
+- robust percentile/histogram aggregation instead of complete sample lists;
+- projection with named constants and documented calibration;
+- fixture generator as code, real binary fixtures only with a license note.
 
-**Gate:** deterministischer Memory-/Chunk-Test beweist, dass Speicher nicht mit
-Trackdauer wächst.
+**Gate:** a deterministic memory/chunk test proves that memory does not grow
+with track duration.
 
-### Task 4 — Nativer GStreamer-Analyseadapter
+### Task 4 — Native GStreamer analysis adapter
 
 **Commit:** `feat(platform): stream audio into the character analyzer`
 
-**Ziel:** Linux dekodiert unterstützte Formate blockweise, ohne
-`gst-launch-1.0`-Subprozess oder vollständigen stdout-Puffer.
+**Goal:** Linux decodes supported formats block by block, without a
+`gst-launch-1.0` subprocess or a complete stdout buffer.
 
-**Failing Tests:**
+**Failing tests:**
 
-- FLAC-/WAV-Fixtures liefern Evidence und 1.000 Peaks.
-- fehlende, leere und nicht dekodierbare Datei ergeben typisierte Fehler.
-- Abbruch beendet die Pipeline begrenzt und liefert kein partielles Ready-
-  Ergebnis.
-- Produktionsadapter verarbeitet mehrere Chunks; ein Ein-Chunk-Fake kann den
-  Test nicht versehentlich bestehen.
-- bestehende Waveform-Tests bleiben grün und Playerbar-Vertrag unverändert.
+- FLAC/WAV fixtures deliver evidence and 1,000 peaks.
+- a missing, an empty and an undecodable file yield typed errors.
+- Cancellation ends the pipeline in bounded time and delivers no partial
+  ready result.
+- the production adapter processes several chunks; a one-chunk fake cannot
+  pass the test by accident.
+- existing waveform tests stay green and the player bar contract unchanged.
 
 **Implementation:**
 
-- Core-`AudioAnalysisBackend` mit einem `analyze(path, cancellation)`-Aufruf;
-- Linux-`GstreamerAudioAnalysisBackend` über AppSink/Callbacks und begrenzte
-  PCM-Blöcke;
-- interner gemeinsamer Decoderpfad für Analyse und On-Demand-Waveform, ohne
-  beide öffentlichen Fähigkeiten zu koppeln;
-- kein GTK-/GLib-MainContext-Zugriff im Worker.
+- a core `AudioAnalysisBackend` with a single `analyze(path, cancellation)`
+  call;
+- a Linux `GstreamerAudioAnalysisBackend` via AppSink/callbacks and bounded
+  PCM blocks;
+- an internal shared decoder path for analysis and on-demand waveform, without
+  coupling the two public capabilities;
+- no GTK/GLib MainContext access in the worker.
 
-**Benchmark:** Decode/Analysezeit und Peak-RSS für kurze und lange Fixtures;
-Release-Report, kein unkalibrierter Marketingclaim.
+**Benchmark:** decode/analysis time and peak RSS for short and long fixtures;
+a release report, not an uncalibrated marketing claim.
 
-### Task 5 — Dauerhafter, abbrechbarer Ein-Worker-Scheduler
+### Task 5 — Durable, cancellable single-worker scheduler
 
 **Commit:** `feat(gnome): run controllable local audio analysis`
 
-**Ziel:** Aktivierte Analyse arbeitet nach Scan und beim Start fortsetzbar,
-begrenzt und unabhängig von GTK-Borrows.
+**Goal:** Enabled analysis works after a scan and at startup, resumable,
+bounded and independent of GTK borrows.
 
-**Failing Tests:**
+**Failing tests:**
 
-- deaktiviert startet kein **Klangprofil**-Work; der bestehende bedingungslose
-  Waveform-Backfill bleibt funktionsfähig;
-- aktiviert nimmt ausschließlich aktuelle Pending-Tracks;
-- genau ein Track wird gleichzeitig analysiert;
-- Pause stoppt vor dem nächsten Track, Resume setzt fort, Cancel beendet;
-- Fingerprint-Änderung während Arbeit verwirft das Ergebnis;
-- Fehlerzustand verhindert Startup-Retry-Schleife;
-- „Retry failed" setzt nur Failed-Zeilen zurück;
-- ein zweiter Start erzeugt keinen zweiten Worker;
-- Scanabschluss signalisiert neue Arbeit, analysiert aber außerhalb der
-  Scan-Transaktion;
-- fehlen Waveform und Profil bei aktivierter Analyse, entsteht genau ein
-  koordinierter Decode; deaktivierte Analyse erzeugt weiterhin Waveforms;
-- Shutdown joint beziehungsweise cancelt ohne UI-Hang.
+- when disabled, no **sound profile** work starts; the existing unconditional
+  waveform backfill stays functional;
+- when enabled it takes exclusively current pending tracks;
+- exactly one track is analyzed at a time;
+- pause stops before the next track, resume continues, cancel ends it;
+- a fingerprint change during work discards the result;
+- an error state prevents a startup retry loop;
+- "Retry failed" resets only failed rows;
+- a second start does not create a second worker;
+- scan completion signals new work, but analyzes outside the
+  scan transaction;
+- if waveform and profile are missing while analysis is enabled, exactly one
+  coordinated decode arises; disabled analysis still produces waveforms;
+- shutdown joins or cancels without a UI hang.
 
 **Implementation:**
 
-- Schedulerzustand in einem fokussierten Runtime-Modul, nicht in `scanner.rs`;
-- eigene DB-Verbindung pro Worker;
-- Generation/Cancellation-Token;
-- progress coalescing zum GTK-Mainloop;
-- bestehender Vier-Worker-Waveform-Backfill wird auf den gemeinsamen,
-  begrenzten Pfad migriert.
+- scheduler state in a focused runtime module, not in `scanner.rs`;
+- a dedicated DB connection per worker;
+- generation/cancellation token;
+- progress coalescing to the GTK main loop;
+- the existing four-worker waveform backfill is migrated to the shared,
+  bounded path.
 
-### Task 6 — Settings und Analysefortschritt
+### Task 6 — Settings and analysis progress
 
 **Commit:** `feat(gnome): expose local audio analysis controls`
 
-**Ziel:** User kann lokale Analyse verstehen, aktivieren und steuern.
+**Goal:** The user can understand, enable and control local analysis.
 
-**Failing Tests:**
+**Failing tests:**
 
-- Settings-Toggle ist fresh-install off und round-tripped.
-- Aktivierung startet Analyse, Deaktivierung stoppt neue Arbeit und behält
-  Profile.
-- Coverage, Running, Paused, Failed und Complete haben eindeutige Zustände.
-- Retry erscheint nur bei Fehlern; Reanalyze verlangt Bestätigung.
-- UI-Strings nennen lokale Verarbeitung und keinen Upload.
-- RefCell-Borrows überqueren keine Scheduler-/GTK-Callbacks.
-- schmale Breite und Reduced Motion bewahren Bedienbarkeit.
+- The settings toggle is off on a fresh install and round-trips.
+- Enabling starts analysis, disabling stops new work and keeps
+  profiles.
+- Coverage, Running, Paused, Failed and Complete have unambiguous states.
+- Retry appears only on errors; Reanalyze demands confirmation.
+- UI strings name local processing and no upload.
+- RefCell borrows do not cross scheduler/GTK callbacks.
+- narrow width and Reduced Motion preserve operability.
 
-**Implementation:** eigene Preferences-Unterseite unter Library, gettext-
-Strings, shared Sidebar-Aktivität nur falls der bestehende Slot semantisch
-passt; ansonsten kein ungeplanter neuer globaler Progress-Stack.
+**Implementation:** a dedicated Preferences subpage under Library, gettext
+strings, shared sidebar activity only if the existing slot fits semantically;
+otherwise no unplanned new global progress stack.
 
-**UX-Flip:** Regeln für Opt-in, Steuerung und Progress werden mit ihren
-regelbenannten Tests `[aktiv]`.
+**UX flip:** the rules for opt-in, control and progress become `[active]`
+together with their rule-named tests.
 
-### Task 7 — Klangprofil im Now-Playing-Panel
+### Task 7 — Sound profile in the Now Playing panel
 
 **Commit:** `feat(gnome): show audio character in now playing`
 
-**Ziel:** Der User sieht vier Profile, BPM/Konfidenz und Analysezustand ohne
-objektive Mood-Behauptung im vorhandenen rechten Panel des geladenen Tracks.
+**Goal:** The user sees four profiles, BPM/confidence and analysis state
+without an objective mood claim, in the existing right-hand panel of the
+loaded track.
 
-**Failing Tests:**
+**Failing tests:**
 
-- Ready zeigt vier beschriftete Skalen und optionale BPM.
-- Pending/Disabled/Failed/Stale unterscheiden sich textlich.
-- `None`-Tempo zeigt keinen `0 BPM`-Fake.
-- Farbe ist redundant zu Label/Wert/Position.
-- Screenreader-Namen enthalten Dimension und Wert.
-- Trackwechsel verwendet Generation und zeigt nie Profil des vorherigen
-  Tracks.
-- Userpfade und interne Versionen erscheinen nicht.
-- Up Next/Lyrics/Audio Character teilen NPP-11s adaptiven Switcher; der neue
-  Tab bleibt bei icons-only eindeutig beschriftet und per Tastatur erreichbar.
-- Ohne geladenen Track zeigt der Tab einen neutralen Leerzustand.
+- Ready shows four labeled scales and optional BPM.
+- Pending/Disabled/Failed/Stale differ in their wording.
+- A `None` tempo shows no `0 BPM` fake.
+- Color is redundant with label/value/position.
+- Screen reader names contain dimension and value.
+- A track change uses a generation and never shows the profile of the previous
+  track.
+- User paths and internal versions do not appear.
+- Up Next/Lyrics/Audio Character share NPP-11's adaptive switcher; the new
+  tab stays unambiguously labeled in icons-only mode and reachable by keyboard.
+- Without a loaded track the tab shows a neutral empty state.
 
-**Implementation:** wiederverwendbare Profilansicht, aber zunächst nur im
-Now-Playing-Panel verdrahtet; kein neuer Library-Details-Dialog und keine neue
-Kontextmenüaktion.
+**Implementation:** a reusable profile view, but for now wired up only in the
+Now Playing panel; no new library details dialog and no new
+context menu action.
 
-**UX-Flip:** Now-Playing-/Klangprofil-Regeln werden im selben Commit aktiv.
+**UX flip:** the Now Playing/sound profile rules become active in the same
+commit.
 
-### Task 7A — Stufe-1A-Abnahme
+### Task 7A — Stage 1A acceptance
 
-**Commit:** Kein eigener Commit, sofern die Review keine Findings erzeugt.
+**Commit:** No commit of its own, provided the review produces no findings.
 
-Nach Task 7: vollständige Pflicht-Gates, Audiofixture-/Memory-/Performance-
-Report, isolierte Now-Playing-/Settings-Displaytests und adversarial
-Standards-/Spec-Review. Display-Socket-Blocker werden exakt als
-`deferred host check` dokumentiert. Findings erhalten eigene präzise
-Fix-Commits.
+After task 7: the full mandatory gates, audio fixture/memory/performance
+report, isolated Now Playing/settings display tests and an adversarial
+standards/spec review. Display socket blockers are documented exactly as
+`deferred host check`. Findings get their own precise
+fix commits.
 
-**STOP:** Danach gemeinsame Review. Stufe 1B beginnt nicht automatisch.
+**STOP:** A joint review follows. Stage 1B does not begin automatically.
 
-## Stufe 1B — Nativer Mix-Planer (separate Freigabe erforderlich)
+## Stage 1B — Native mix planner (separate approval required)
 
-### Task 8 — Mix-Vertrag und Sicherheitsgrenzen
+### Task 8 — Mix contract and safety boundaries
 
 **Commit:** `docs(ux-rules): define audio character mix planning`
 
-**Ziel:** Mix-Preview, Determinismus, Coverage, Draft-Approval und spätere
-Agenten-Capabilities sind geplant, bevor der Planer Produktionscode erhält.
+**Goal:** Mix preview, determinism, coverage, draft approval and later
+agent capabilities are planned before the planner gets production code.
 
-**Änderungen:** neue `[geplant]`-Regeln in der bestehenden Klangprofil-Sektion;
-`TESTING.md` ergänzt Mix-/MCP-Sicherheitsmatrix; Negativprobe beweist, dass ein
-vorzeitiger `[aktiv]`-Flip ohne regelbenannten Test scheitert.
+**Changes:** new `[planned]` rules in the existing sound profile section;
+`TESTING.md` adds a mix/MCP safety matrix; a negative probe proves that a
+premature `[active]` flip without a rule-named test fails.
 
-### Task 9 — Mix intent und begrenzte Kandidatenabfrage
+### Task 9 — Mix intent and bounded candidate query
 
 **Commit:** `feat(core): validate sound-profile mix intents`
 
-**Ziel:** Core besitzt eine kanonische, serialisierbare Mix intent und eine
-sichere Kandidatenprojektion.
+**Goal:** Core has a canonical, serializable mix intent and a
+safe candidate projection.
 
-**Failing Tests:**
+**Failing tests:**
 
-- JSON/Typ-Roundtrip ist kanonisch und stabil.
-- unbekannte Felder, NaN, Werte außerhalb `0..=1`, Null-/Negativdauer,
-  übergroße ID-Listen und widersprüchliche Bedingungen werden abgelehnt.
-- Library/Playlist/Artist/Album/Track-ID-Quellen verwenden bestehende
-  Gruppierungs-/PRESENT-Semantik.
-- unanalysiert/stale/missing/removed sind ausgeschlossen.
-- minimale Konfidenz und Exclusions greifen vor Scoring.
-- SQL-Vorauswahl liefert höchstens 500 stabile Kandidaten und liest keine
-  Waveform-/PCM-BLOBs.
+- The JSON/type round-trip is canonical and stable.
+- unknown fields, NaN, values outside `0..=1`, zero/negative durations,
+  oversized ID lists and contradictory conditions are rejected.
+- library/playlist/artist/album/track ID sources use the existing
+  grouping/PRESENT semantics.
+- unanalyzed/stale/missing/removed are excluded.
+- minimum confidence and exclusions take effect before scoring.
+- The SQL pre-selection delivers at most 500 stable candidates and reads no
+  waveform/PCM BLOBs.
 
-**Implementation:** typisierte Enums/Validated Scalars; keine freie
-Feld-/Operator-/SQL-Zeichenkette aus MCP oder GTK.
+**Implementation:** typed enums/validated scalars; no free
+field/operator/SQL string from MCP or GTK.
 
-### Task 10 — Deterministische, diverse Mixplanung
+### Task 10 — Deterministic, diverse mix planning
 
 **Commit:** `feat(core): plan deterministic audio-character mixes`
 
-**Ziel:** Ein Pure-/DB-Core-Pfad erzeugt aus Kandidaten einen erklärbaren,
-reproduzierbaren Mix draft.
+**Goal:** A pure/DB core path produces an explainable,
+reproducible mix draft from candidates.
 
-**Failing Tests:**
+**Failing tests:**
 
-- identischer Kandidaten-/Quellsnapshot, Intent und Seed ergibt
-  byte-identischen Draft;
-- gewichtete Profildistanz ordnet erwartbar;
-- stabiler Track-ID-Tiebreak;
-- keine Duplikate;
-- Artist-Abstand vier, wenn erfüllbar, mit Diagnostic wenn nicht;
-- Familiarity-/Variety-Modi verändern nur dokumentierte Score-Anteile;
-- Duration stoppt bei der kleineren Abweichung und überschreitet höchstens um
-  einen letzten Track;
-- rise/fall/arc ordnet die gewählte Mitgliedschaft, ersetzt sie nicht;
-- harte Unmöglichkeit ist Fehler, weiche Unterfüllung partieller Draft;
-- Selection reasons nennen strukturierte Top-Beiträge ohne Freitextlogik;
-- leere/kleine/große Kandidatenmengen bleiben deterministisch.
+- an identical candidate/source snapshot, intent and seed yields a
+  byte-identical draft;
+- the weighted profile distance orders predictably;
+- a stable track ID tiebreak;
+- no duplicates;
+- an artist spacing of four when satisfiable, with a diagnostic when not;
+- familiarity/variety modes change only documented score components;
+- duration stops at the smaller deviation and overshoots by at most
+  one final track;
+- rise/fall/arc orders the chosen membership, it does not replace it;
+- hard impossibility is an error, soft underfill a partial draft;
+- selection reasons name structured top contributions without free-text logic;
+- empty/small/large candidate sets stay deterministic.
 
-**Performance-Gate:** 100.000 Profilzeilen plus SQL-Vorauswahl und Planung
-werden reproduzierbar berichtet; greedy Phase sieht maximal 500 Kandidaten.
+**Performance gate:** 100,000 profile rows plus SQL pre-selection and planning
+are reported reproducibly; the greedy phase sees at most 500 candidates.
 
-### Task 11 — Dauerhafte Drafts und atomare Approval
+### Task 11 — Durable drafts and atomic approval
 
 **Commit:** `feat(core): approve durable mix drafts atomically`
 
-**Ziel:** Preview und Speicherung verwenden nachweislich dieselbe Auswahl.
+**Goal:** Preview and saving demonstrably use the same selection.
 
-**Failing Tests:**
+**Failing tests:**
 
-- Draft-Kopf/Positionen/Reasons round-trippen in Reihenfolge.
-- Draft speichert Fingerprints der Auswahl, harte Quellbedingungen und
-  Profilversion.
-- stale/expired/already-approved wird abgelehnt; ein neuer oder geänderter
-  unbeteiligter Track bleibt folgenlos.
-- Approval revalidiert PRESENT, Fingerprint, Analyse und Quellmitgliedschaft
-  nur für die ausgewählte Menge, ohne neu zu scoren.
-- Approval erzeugt atomar eine manuelle Playlist mit exakt den Draft-IDs.
-- FK-/Insertfehler rollt Playlist und Approval vollständig zurück.
-- derselbe Idempotency-Key liefert dasselbe Playlist-Ergebnis.
-- anderer Key auf approved Draft erzeugt keine zweite Playlist.
-- existierender Name darf nach heutiger manueller Semantik eine zweite
-  Playlist ergeben, überschreibt aber nie die vorhandene.
-- begrenzte Cleanup-Abfrage löscht nur abgelaufene, nicht freigegebene Drafts.
+- Draft head/positions/reasons round-trip in order.
+- The draft stores fingerprints of the selection, hard source conditions and
+  the profile version.
+- stale/expired/already-approved is rejected; a new or changed
+  uninvolved track has no consequences.
+- Approval revalidates PRESENT, fingerprint, analysis and source membership
+  only for the selected set, without rescoring.
+- Approval atomically creates a manual playlist with exactly the draft IDs.
+- An FK/insert error rolls playlist and approval back completely.
+- the same idempotency key delivers the same playlist result.
+- a different key on an approved draft creates no second playlist.
+- an existing name may, under today's manual semantics, yield a second
+  playlist, but never overwrites the existing one.
+- a bounded cleanup query deletes only expired, unapproved drafts.
 
-**Implementation:** `mix_planner` kapselt vorhandenes
-`playlists::create_with_tracks`; Aufrufer dürfen keine Trackliste beim Approval
-mitsenden.
+**Implementation:** `mix_planner` encapsulates the existing
+`playlists::create_with_tracks`; callers must not send a track list along with
+the approval.
 
-### Task 12 — Nativer Mix Builder mit wahrer Preview
+### Task 12 — Native mix builder with a truthful preview
 
 **Commit:** `feat(gnome): build playlists from audio character drafts`
 
-**Ziel:** GTK erstellt und speichert Mixes über dieselben Core-Interfaces wie
-später MCP.
+**Goal:** GTK creates and saves mixes through the same core interfaces as
+MCP later.
 
-**Failing Tests:**
+**Failing tests:**
 
-- Presets setzen editierbare Intent-Werte.
-- Invalid/unerfüllbar zeigt präzise Fehler und erzeugt keinen Draft.
-- Preview zeigt Reihenfolge, Dauer, Coverage und Diagnostics.
-- Save ist ohne/current-stale Draft korrekt enabled/disabled.
-- Save sendet nur `draft_id`, Name und Idempotency-Key.
-- gespeicherte Playlist entspricht exakt sichtbarer Preview.
-- Änderung eines Controls invalidiert den alten Draft.
-- Navigation zur neuen Playlist verwendet normalen Sidebar-/History-Pfad.
-- narrow layout, Tastatur, Screenreader und Reduced Motion sind abgedeckt.
+- Presets set editable intent values.
+- Invalid/unsatisfiable shows precise errors and creates no draft.
+- The preview shows order, duration, coverage and diagnostics.
+- Save is correctly enabled/disabled with no draft/a currently stale draft.
+- Save sends only `draft_id`, name and idempotency key.
+- the saved playlist matches the visible preview exactly.
+- Changing a control invalidates the old draft.
+- Navigation to the new playlist uses the normal sidebar/history path.
+- narrow layout, keyboard, screen reader and Reduced Motion are covered.
 
-**UX-Flip:** Draft-before-save und Mix-Builder-Regeln werden aktiv.
+**UX flip:** the draft-before-save and mix builder rules become active.
 
-### Task 13 — Coverage-ehrliche My-Stats-Projektion und Stufe-1B-Abnahme
+### Task 13 — Coverage-honest My Stats projection and stage 1B acceptance
 
 **Commit:** `feat(stats): summarize listened audio character`
 
-**Ziel:** My Stats gewinnt eine kleine, ehrliche Klangprofil-Auswertung und
-Stufe 1B endet vollständig geprüft.
+**Goal:** My Stats gains a small, honest sound profile evaluation and
+stage 1B ends fully checked.
 
-**Failing Tests:**
+**Failing tests:**
 
-- Aggregat joint ausschließlich aktuelle Profile auf `listen_events` der
-  gewählten Periode.
-- wiederholte Plays gewichten den gehörten Titel entsprechend den Events.
-- Schwellen: mindestens 20 analysierte Plays und 70 % Coverage.
-- darunter kein Insight; darüber Text plus „based on N analyzed plays".
-- period-/timezone-Wechsel folgt bestehenden Stats-Verträgen.
-- Deep-Link öffnet Mix Builder mit der angezeigten Profilrichtung.
-- keine Paths/Modellbegriffe/objektiven Emotionen im UI.
+- The aggregate joins exclusively current profiles onto the `listen_events`
+  of the chosen period.
+- repeated plays weight the listened title according to the events.
+- Thresholds: at least 20 analyzed plays and 70 % coverage.
+- below that no insight; above it text plus "based on N analyzed plays".
+- a period/timezone change follows the existing stats contracts.
+- A deep link opens the mix builder with the displayed profile direction.
+- no paths/model terms/objective emotions in the UI.
 
-**Finale Stufe-1B-Gates:**
+**Final stage 1B gates:**
 
 - `cargo fmt --check`
-- strict workspace Clippy
+- strict workspace clippy
 - workspace tests
-- `cargo doc --workspace --no-deps` mit denied warnings
-- UX-Traceability, Motion-, Architecture-, QA- und File-Size-Gates
-- Core-Purity
-- `cargo audit` nur mit bestehender erlaubter Ausnahme
-- Audiofixture-/Memory-/Performance-Reports
-- isolierte GTK-Displaytests; falls Sandbox-Sockets sie verhindern, exakt
-  `deferred host check` dokumentieren
-- adversarial Standards-/Spec-Review und Fixpass
+- `cargo doc --workspace --no-deps` with denied warnings
+- UX traceability, motion, architecture, QA and file size gates
+- core purity
+- `cargo audit` only with the existing permitted exception
+- audio fixture/memory/performance reports
+- isolated GTK display tests; if sandbox sockets prevent them, document
+  exactly `deferred host check`
+- adversarial standards/spec review and fix pass
 
-**Commit nach Review-Fixes:** Falls Findings Produktionsänderungen benötigen,
-je kohärentem Fix eigener Commit mit präziser Message; nicht in den
-Stufe-1B-Abschlussledger quetschen.
+**Commit after review fixes:** If findings require production changes,
+one commit per coherent fix with a precise message; do not squeeze them into
+the stage 1B closing ledger.
 
-**STOP:** Danach gemeinsame Review. Stufe 2 beginnt nicht automatisch.
+**STOP:** A joint review follows. Stage 2 does not begin automatically.
 
-## Stufe 2 — Lokaler MCP-Adapter (separate Freigabe erforderlich)
+## Stage 2 — Local MCP adapter (separate approval required)
 
-Vor M1 werden stabile MCP-Revision, offizieller Rust-SDK-Stand, dessen Lizenz
-und Conformance-Support live neu geprüft. Planannahme ist stabile Revision
-`2025-11-25`, lokales stdio und gepinnter offizieller Tier-2-Rust-SDK. Falls
-`2026-07-28` dann final und im SDK vollständig unterstützt ist, wird die
-Zielrevision in M1 dokumentiert aktualisiert; die Tool-Domäne ändert sich
-nicht.
+Before M1, the stable MCP revision, the state of the official Rust SDK, its
+license and conformance support are re-checked live. The plan's assumption is
+the stable revision `2025-11-25`, local stdio and a pinned official tier-2
+Rust SDK. If `2026-07-28` is final by then and fully supported in the SDK, the
+target revision is updated in M1 with documentation; the tool domain does not
+change.
 
-### M1 — Separates stdio-Crate und read-only Resources
+### M1 — Separate stdio crate and read-only resources
 
-> **superseded by multi-frontend-core** (2026-07-21): `crates/reprise-mcp` wird
-> dort gegründet (Paket B), das dieses M1 vorzieht und die Tool-Domäne
-> erweitert. Nur dieser M1-Absatz ist abgelöst; M2–M5 und Stufe 1B bleiben
-> unberührt.
+> **superseded by multi-frontend-core** (2026-07-21): `crates/reprise-mcp` is
+> founded there (package B), which brings this M1 forward and extends the
+> tool domain. Only this M1 paragraph is superseded; M2–M5 and stage 1B remain
+> untouched.
 
 **Commit:** `feat(mcp): expose local read-only library resources`
 
-**Failing Tests:** Workspace-/Lizenzgrenze, JSON-RPC-Handshake,
-`resources/list/read`, Pagination, stdout-Protokollreinheit, keine Pfade oder
-Settings-Leaks, unbekannte URI und DB-Fehler.
+**Failing tests:** workspace/license boundary, JSON-RPC handshake,
+`resources/list/read`, pagination, stdout protocol purity, no paths or
+settings leaks, unknown URI and DB errors.
 
-**Implementation:** `crates/reprise-mcp`, Abhängigkeit nur auf Core +
-gepinnten offiziellen SDK, stdio, `stderr`-Logging, Library Summary,
-Klangprofil-Vokabular und Playlistübersicht.
+**Implementation:** `crates/reprise-mcp`, a dependency only on core + the
+pinned official SDK, stdio, `stderr` logging, library summary,
+sound profile vocabulary and playlist overview.
 
-### M2 — Begrenzte read-only Tools
+### M2 — Bounded read-only tools
 
 **Commit:** `feat(mcp): add bounded audio character query tools`
 
-**Failing Tests:** Tool-Discovery und strukturierte Outputs für
-`music_search_tracks` und `music_get_sound_profiles`; Limits 100 IDs,
-Pagination, validierte Sort-/Filterwerte, PRESENT-Semantik und vollständige
-Leak-Negativmatrix.
+**Failing tests:** tool discovery and structured outputs for
+`music_search_tracks` and `music_get_sound_profiles`; limits of 100 IDs,
+pagination, validated sort/filter values, PRESENT semantics and a complete
+leak negative matrix.
 
-### M3 — Mixplanung über den gemeinsamen Core
+### M3 — Mix planning through the shared core
 
 **Commit:** `feat(mcp): plan explainable playlist drafts`
 
-**Failing Tests:** `music_plan_playlist`/`music_get_mix_draft` entsprechen
-direkten Core-Ergebnissen byte-/strukturidentisch; `music_get_mix_draft` ist
-read-only annotiert, `music_plan_playlist` wegen der dauerhaften Draft-Zeile
-bewusst nicht; invalid/stale/partial Diagnostics; keine Mutation an
-Playlist/Queue/Playback; Tool-Schema enthält keine freie SQL- oder
-Promptfläche.
+**Failing tests:** `music_plan_playlist`/`music_get_mix_draft` match
+direct core results byte-for-byte and structurally; `music_get_mix_draft` is
+annotated read-only, `music_plan_playlist` deliberately is not, because of the
+durable draft row; invalid/stale/partial diagnostics; no mutation of
+playlist/queue/playback; the tool schema contains no free SQL or
+prompt surface.
 
-### M4 — Capability-geschützte Playlist-Erzeugung
+### M4 — Capability-guarded playlist creation
 
 **Commit:** `feat(mcp): create playlists from approved mix drafts`
 
-**Failing Tests:** Capability fresh-install off; Tool ist ohne Freigabe nicht
-exponiert oder fail-closed (entsprechend stabiler Spec/SDK-Konvention);
-Aktivierung, laufender Entzug, stale Draft, Idempotency, atomare Erstellung,
-keine Überschreibung/Löschung und korrekte non-destructive/idempotent
-Annotations.
+**Failing tests:** the capability is off on a fresh install; without approval
+the tool is either not exposed or fail-closed (in line with the stable
+spec/SDK convention); activation, revocation while running, a stale draft,
+idempotency, atomic creation, no overwrite/deletion and correct
+non-destructive/idempotent annotations.
 
-GTK-Settings nennt exakt, welche Daten und Operationen der lokale Agentenzugriff
-erhält. Keine HTTP-/OAuth-Oberfläche.
+GTK settings names exactly which data and operations local agent access
+receives. No HTTP/OAuth surface.
 
-### M5 — MCP-Conformance, Packaging und Stufe-2-Abnahme
+### M5 — MCP conformance, packaging and stage 2 acceptance
 
 **Commit:** `test(mcp): gate local agent playlist access`
 
-**Änderungen und Gates:**
+**Changes and gates:**
 
-- versionierte JSON-RPC-Fixtures und offizieller Inspector/Conformance-Pfad;
-- `scripts/check-architecture.sh`: MCP darf nur Core referenzieren;
-- `scripts/check-release.sh`: Binary, Lizenzhinweise und stdio-smoke;
-- Security-Matrix für alle Resources/Tools und Capabilities;
-- 100k-Metadaten-Response-/Pagination-Benchmark;
-- README/README.de: Roadmap-Zeile erst jetzt von geplant auf shipped ändern;
-- kein Agenten-/LLM-Netztest und keine reale Bibliothek.
+- versioned JSON-RPC fixtures and the official inspector/conformance path;
+- `scripts/check-architecture.sh`: MCP may reference only core;
+- `scripts/check-release.sh`: binary, license notices and stdio smoke;
+- a security matrix for all resources/tools and capabilities;
+- a 100k metadata response/pagination benchmark;
+- README/README.de: change the roadmap line from planned to shipped only now;
+- no agent/LLM network test and no real library.
 
-Nach Fixpass endet Stufe 2 zur gemeinsamen Review.
+After the fix pass, stage 2 ends for the joint review.
 
-## Bewusst nicht geplant
+## Deliberately not planned
 
-- semantische happy/sad/aggressive/relaxed-Modelle;
-- Lyrics-Sentiment;
-- CLAP-/Audio-Text-Embeddings;
-- Cloudanalyse oder Modell-Download;
-- „similar to this" über große Embedding-BLOBs;
-- MCP über HTTP/OAuth;
-- Playback-, Queue-, Tag-, Delete-, Trash-, Sync- oder History-Tools;
-- autonome Änderung bestehender Playlists;
-- Lernen aus Userfeedback.
+- semantic happy/sad/aggressive/relaxed models;
+- lyrics sentiment;
+- CLAP/audio-text embeddings;
+- cloud analysis or model download;
+- "similar to this" over large embedding BLOBs;
+- MCP over HTTP/OAuth;
+- playback, queue, tag, delete, trash, sync or history tools;
+- autonomous modification of existing playlists;
+- learning from user feedback.
 
-Diese Punkte benötigen jeweils eine neue Spezifikation beziehungsweise
-Stufenfreigabe und werden durch diesen Plan nicht implizit autorisiert.
+Each of these points needs a new specification or stage approval
+respectively and is not implicitly authorized by this plan.

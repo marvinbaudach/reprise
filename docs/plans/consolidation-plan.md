@@ -109,6 +109,21 @@ Known and accepted:
   markers in `build-aux/meson-cargo-build.sh`). It is not part of the merge
   gate; task 0.8 makes it cleanly switchable.
 
+**Known and NOT accepted — fix this first (task 0.0).**
+`scripts/check-frontend-thinness.sh` is **red on `origin/dev` right now**,
+measured 2026-07-31 against an untouched checkout:
+
+```
+frontend thinness: filesystem grew from 17 to 19
+frontend thinness: threads   grew from 14 to 15
+```
+
+`65f0b14` (`#189`, lyrics and covers) added
+`crates/reprise-gnome/src/ui/lyrics/lyrics_batch.rs` with its own worker
+thread and filesystem access, and did not move the budgets in the same commit
+as the convention requires. That script is part of
+`scripts/check-merge-readiness.sh`, so **every** wave-0 PR will hit it.
+
 ### 1.4 The cycle, per task — no exceptions
 
 1. Write the failing test.
@@ -144,15 +159,17 @@ Known and accepted:
 ### 1.6 Order within wave 0
 
 ```
-0.1 diagnostics ──► 0.2 log file ──► 0.3 panic hook ──► 0.4 copy diagnostics ──► 0.5 startup
-                                                                                    │
-0.6 MSRV · 0.7 AGENTS.md · 0.8 shipped scope · 0.9 MCP · 0.10 ADR  ◄────────────────┘ (free)
-1.1 index (own branch, independent of wave 0)
+0.0 green base ──► 0.1 diagnostics ──► 0.2 log file ──► 0.3 panic hook ──► 0.4 copy ──► 0.5 startup
+                                                                                          │
+       0.6 MSRV · 0.7 AGENTS.md · 0.8 shipped scope · 0.9 MCP · 0.10 ADR  ◄────────────────┘ (free)
+       1.1 index (own branch, independent of wave 0)
 ```
 
-0.1 to 0.5 are a chain; each uses the previous one. 0.6 to 0.10 are independent
-and may run in any order or in parallel. Task 1.1 depends on nothing in wave 0
-and can go first if a quick visible win is wanted.
+0.0 comes first: the base gate is red today and a wave that starts from a red
+base cannot tell its own failures from inherited ones. 0.1 to 0.5 are then a
+chain, each using the previous one. 0.6 to 0.10 are independent and may run in
+any order or in parallel. Task 1.1 depends on nothing in wave 0 and can go
+first if a quick visible win is wanted.
 
 ---
 
@@ -160,6 +177,32 @@ and can go first if a quick visible win is wanted.
 
 Branch `feat/consolidation-wave-0` from `dev`. One squashed PR, ten commits
 inside it. One to two days.
+
+### Task 0.0 — make the base gate green again
+
+**Goal.** Start wave 0 from a green base, so a later red is information.
+
+`origin/dev` fails `scripts/check-frontend-thinness.sh` (§1.3). Two ways out,
+and the choice is a judgement about `lyrics_batch.rs`:
+
+- **Raise the budgets to the measured values** (`filesystem=19`, `threads=15`)
+  with the reason in the commit message. Correct if the lyrics batch worker
+  genuinely belongs in the frontend.
+- **Move the work into `reprise-core`** and leave the budgets. Correct if it
+  does not — the batch runs a provider chain and writes `.lrc` sidecars, which
+  is core-shaped work, and `reprise-core::lyrics` already owns the providers,
+  the cache and the circuit breaker.
+
+The second is the better answer on the merits and the first is the honest one
+for wave 0's timebox. **Pick the first, and record the second as a follow-up**
+— a budget raised with a written reason is the mechanism working, whereas a
+budget quietly raised is the mechanism dying.
+
+Whichever is chosen, this lands **before** task 0.1, because task 0.1 moves the
+`filesystem` budget again and two moves in one number are impossible to read
+afterwards.
+
+**Commit.** `fix(gates): restore the frontend thinness budgets to the measured values`
 
 ### Task 0.1 — `diagnostics`: where the log file lives, and its rotation
 
@@ -217,8 +260,9 @@ it does **not** rotate a second time. A rotation mid-run would hand out half a
 log later, and the log you want in full is the one from the crash.
 
 **Budget.** Run `scripts/check-frontend-thinness.sh` and enter the reported
-actual for `filesystem` (17 today). **Do not guess** — the script names the
-number.
+actual for `filesystem`. **Do not guess** — the script names the number. Note
+that task 0.0 has already moved this budget once; this is the second move, and
+the commit message should say which of the two added what.
 
 **Commit.** `feat(diagnostics): give the app one log file with a bounded size`
 

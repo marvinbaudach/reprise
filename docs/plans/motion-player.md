@@ -6,210 +6,210 @@ phase: planned
 codex_session:
 created: 2026-07-18
 ---
-# MOT-5 Player-Motion (Folge-Branch) — Implementierungsplan
+# MOT-5 player motion (follow-up branch) — implementation plan
 
-**Status:** gegrillt 2026-07-18, bereit für /code (Phase A)
-**Branch:** feat/motion-player (auf origin/main `3d878d4`)
+**Status:** grilled 2026-07-18, ready for /code (Phase A)
+**Branch:** feat/motion-player (on origin/main `3d878d4`)
 
-Ziel: Flip von MOT-5 `[geplant]→[aktiv]` (docs/ux-rules.md, Sektion O) gemäß
-Flip-Kriterium: Scale-Puls, Waveform-Crossfade und Pause-Entsättigung
-implementiert und per `[gtk]`-Test gedeckt.
+Goal: flip MOT-5 `[planned]→[active]` (docs/ux-rules.md, Section O) per the
+flip criterion: scale pulse, waveform crossfade and pause desaturation
+implemented and covered by a `[gtk]` test.
 
-## 1. Gegrillte Beschlüsse (2026-07-18, final)
+## 1. Grilled decisions (2026-07-18, final)
 
-| Nr. | Frage | Beschluss |
+| No. | Question | Decision |
 |---|---|---|
-| G1 | Scale-Puls-Mechanik | **CSS-`@keyframes` one-shot** per Klassen-Toggle beim Play⇄Pause-Wechsel. Dauer/Easing aus `motion::MICRO_MS`/`motion::MICRO_CSS_EASING` per `format!` in den CSS-String (kein rohes Literal im Quelltext). Klasse wird beim State-Wechsel gesetzt und per `glib::timeout_add_local_once(Duration::from_millis(motion::MICRO_MS as u64))` wieder entfernt; erneuter Wechsel während des Pulses: Klasse entfernen → im nächsten Frame neu setzen (sauberer Retrigger). Kein zusätzliches Gating nötig: GTK-CSS respektiert `gtk-enable-animations=false` nachweislich hart (T-V-Sentinel `mot_7_css_honours_enable_animations_setting`). |
-| G2 | Waveform-Crossfade | **Alpha-Crossfade** alt→neu: Zwei-Pass-Draw (alte Display-Bars mit fallendem, neue mit steigendem Alpha) über **Ambient (400 ms)**. Erst-Track (keine alten Peaks) behält den bestehenden Stagger-Build-up. |
-| G3 | Pause-Entsättigung | **OKLCH-Chroma-Reduktion ×0.45** zur Draw-Zeit; die Farbmathematik aus `cover_accent.rs` wird auf `pub(in crate::ui)` geöffnet statt dupliziert. Übergang **animiert über Standard (250 ms)** via `motion::timed` (desaturation_progress 0↔1); `gtk-enable-animations=false` → harter Flip. Die `cover_accent`-Pipeline (globaler `@reprise_player_accent`-Provider) bleibt unberührt — Entsättigung ist rein lokal im Waveform-`draw()`. |
-| G4 | Queue-Animation | **Weggelassen.** Die MOT-4-Ausnahme ist erlaubend, nicht fordernd, und blockiert keinen Flip. Umsetzung erst, wenn der TAG-1-Reload-Pfad in einem eigenen Queue-Branch angefasst wird. |
-| G5 | Sequenzierung | **Zweiphasig.** Phase A sofort (T0, T2 Waveform-Crossfade, T3 Entsättigung — Territorium frei). Phase B erst nach Merge der drei aktiven Player-Bar-Branches (`feat/artist-cover-playerbar-fixes`, `feat/keyboard-nav`, `feat/minor-improvements`): T1 Scale-Puls + T5 Flip. |
+| G1 | Scale-pulse mechanics | **CSS `@keyframes` one-shot** via class toggle on the play⇄pause change. Duration/easing from `motion::MICRO_MS`/`motion::MICRO_CSS_EASING` via `format!` into the CSS string (no raw literal in the source). The class is set on the state change and removed again via `glib::timeout_add_local_once(Duration::from_millis(motion::MICRO_MS as u64))`; another change during the pulse: remove the class → set it again in the next frame (clean retrigger). No additional gating needed: GTK CSS demonstrably honors `gtk-enable-animations=false` hard (T-V sentinel `mot_7_css_honours_enable_animations_setting`). |
+| G2 | Waveform crossfade | **Alpha crossfade** old→new: two-pass draw (old display bars with falling, new ones with rising alpha) over **Ambient (400 ms)**. First track (no old peaks) keeps the existing stagger build-up. |
+| G3 | Pause desaturation | **OKLCH chroma reduction ×0.45** at draw time; the color math from `cover_accent.rs` is opened up to `pub(in crate::ui)` instead of duplicated. The transition is **animated over Standard (250 ms)** via `motion::timed` (desaturation_progress 0↔1); `gtk-enable-animations=false` → hard flip. The `cover_accent` pipeline (global `@reprise_player_accent` provider) stays untouched — desaturation is purely local in the waveform `draw()`. |
+| G4 | Queue animation | **Omitted.** The MOT-4 exception is permissive, not mandatory, and blocks no flip. Implement it only once the TAG-1 reload path is touched in a queue branch of its own. |
+| G5 | Sequencing | **Two-phase.** Phase A immediately (T0, T2 waveform crossfade, T3 desaturation — territory is free). Phase B only after the three active player-bar branches (`feat/artist-cover-playerbar-fixes`, `feat/keyboard-nav`, `feat/minor-improvements`) have been merged: T1 scale pulse + T5 flip. |
 
-## 2. Audit-Kernbefunde (verifiziert)
+## 2. Core audit findings (verified)
 
-- `ui/motion.rs` liefert MICRO/STANDARD/AMBIENT, `half()`, `timed()`
+- `ui/motion.rs` provides MICRO/STANDARD/AMBIENT, `half()`, `timed()`
   (follow-enable-animations), `animations_enabled()`, `replace_animation()`
-  (Skip). Icon-Crossfade (2×75) und Track-Crossfade (2×125) existieren
-  bereits tokenisiert — sie allein flippen MOT-5 nicht.
-- `set_peaks()` überschreibt `raw_peaks`/`display_peaks` hart
-  (`waveform_seek.rs:317-319`); Build-up: `build_progress`/`build_start_us`
-  (`:130-131`), Tick `ensure_tick_callback()` (`:407-449`), Stagger im
-  `draw()` (`:486-504`). Kein Alt-Zustand, kein Opacity-Mechanismus im Draw.
-- `draw()` liest die Fill-Farbe pro Frame via `area.color()` (`:476`) —
-  `.waveform-seek { color: @reprise_player_accent; }`. `WaveformSeek` kennt
-  den Playback-State NICHT (kein Setter); `PlayerBar::set_state()`
-  (`player_bar.rs:370-386`) leitet nicht an die Waveform weiter.
-- OKLCH-Konvertierung liegt in `cover_accent.rs:44-140` (modul-privat);
-  `lerp`-Helfer `cover_accent.rs:309-313`. Kein gemeinsamer State zwischen
-  cover_accent-Provider und Waveform-Draw (Unabhängigkeit bestätigt).
-- Button-CSS: `.player-bar-play` mit `transition: … transform` und
-  `:active { transform: scale(0.94) }` (`player_bar_layout.rs:268-278`) —
-  CSS-Transform auf dem Button ist bewiesen. Keyframes-Präzedenz:
+  (skip). The icon crossfade (2×75) and the track crossfade (2×125) already
+  exist tokenized — on their own they do not flip MOT-5.
+- `set_peaks()` hard-overwrites `raw_peaks`/`display_peaks`
+  (`waveform_seek.rs:317-319`); build-up: `build_progress`/`build_start_us`
+  (`:130-131`), tick `ensure_tick_callback()` (`:407-449`), stagger in the
+  `draw()` (`:486-504`). No previous state, no opacity mechanism in the draw.
+- `draw()` reads the fill color per frame via `area.color()` (`:476`) —
+  `.waveform-seek { color: @reprise_player_accent; }`. `WaveformSeek` does NOT
+  know the playback state (no setter); `PlayerBar::set_state()`
+  (`player_bar.rs:370-386`) does not forward to the waveform.
+- The OKLCH conversion lives in `cover_accent.rs:44-140` (module-private);
+  `lerp` helper `cover_accent.rs:309-313`. No shared state between the
+  cover_accent provider and the waveform draw (independence confirmed).
+- Button CSS: `.player-bar-play` with `transition: … transform` and
+  `:active { transform: scale(0.94) }` (`player_bar_layout.rs:268-278`) — a
+  CSS transform on the button is proven. Keyframes precedent:
   `eq_bars.rs:91-115`, `player_bar_layout.rs:304-312`.
-- Test-Vorbilder: `mot_6_second_track_and_state_changes_finish_the_previous_visual_state`,
+- Test precedents: `mot_6_second_track_and_state_changes_finish_the_previous_visual_state`,
   `mot_7_player_bar_hard_switches_when_system_animations_are_disabled`
   (player_bar_tests.rs), `mot_7_waveform_completes_build_up_when_animations_disabled_mid_build`
-  (waveform_seek_tests.rs). Borrow-Scope-Disziplin vor `window.close()` beachten.
-- Idle bestätigt: kein Dauerloop ohne Wiedergabe (Mini-EQ `.playing`,
-  Trackliste `.playback-paused`, Skeleton statisch, Tick stoppt sich selbst).
+  (waveform_seek_tests.rs). Mind the borrow-scope discipline before `window.close()`.
+- Idle confirmed: no permanent loop without playback (mini EQ `.playing`,
+  track list `.playback-paused`, skeleton static, the tick stops itself).
 
-## 3. Taskplan
+## 3. Task plan
 
-> Ein Commit pro Task, TDD, Commit-Titel trägt die Regel-ID. Gates vor JEDEM
-> Commit: `cargo fmt --check` · `cargo clippy --locked --all-targets
+> One commit per task, TDD, the commit title carries the rule ID. Gates before
+> EVERY commit: `cargo fmt --check` · `cargo clippy --locked --all-targets
 > --workspace -- -D warnings` · `env XDG_DATA_HOME=$(mktemp -d)
 > XDG_CACHE_HOME=$(mktemp -d) cargo test --locked --workspace` ·
 > `scripts/check-ux-traceability.sh` · `scripts/check-motion-tokens.sh` ·
-> `scripts/check-architecture.sh`. Display-Tests headless EINZELN via
+> `scripts/check-architecture.sh`. Display tests headless INDIVIDUALLY via
 > `dbus-run-session -- xvfb-run -a env … cargo test -p reprise-gnome --
-> --ignored --exact <pfad>` (gebündelt in einem Prozess → bekannter SIGSEGV).
-> Statuswechsel `[geplant]→[aktiv]` NUR im benannten Task-Commit (T5, Phase B).
+> --ignored --exact <path>` (bundled in one process → known SIGSEGV).
+> Status change `[planned]→[active]` ONLY in the named task commit (T5, Phase B).
 
-### Phase A — sofort (Waveform-Territorium ist frei)
+### Phase A — immediately (the waveform territory is free)
 
-#### Task 0: Plan committen
+#### Task 0: commit the plan
 
 ```bash
 git commit -m "docs: add MOT-5 player-motion plan (grilled 2026-07-18)"
 ```
 
-#### Task 2: Waveform-Crossfade beim Trackwechsel (nur `waveform_seek.rs` + Tests)
+#### Task 2: waveform crossfade on track change (only `waveform_seek.rs` + tests)
 
-- `State` erweitern: `previous_bars: Vec<…>` (Kopie der zuletzt gezeichneten
-  Display-Bars inkl. deren Höhen), `crossfade_progress: f64` (1.0 = kein
-  Fade), `crossfade_start_us: i64`.
-- `set_peaks()`: Sind alte Display-Bars vorhanden UND `animations_enabled()`,
-  werden sie nach `previous_bars` kopiert und `crossfade_progress = 0.0`
-  gestartet (Dauer `motion::AMBIENT_MS`); der Stagger-Build-up wird in diesem
-  Fall NICHT gestartet (`build_progress = 1.0`). Ohne alte Bars (Erst-Track)
-  bleibt der bestehende Build-up-Pfad unverändert. Disabled →
-  `previous_bars.clear()`, `crossfade_progress = 1.0` (Hard-Switch, Muster
-  des bestehenden disabled-Pfads).
-- Tick (`ensure_tick_callback`): treibt `crossfade_progress` analog zu
-  `build_progress`; settled-Bedingung um den Crossfade erweitert.
-- `draw()`: während `crossfade_progress < 1.0` Zwei-Pass — alte Bars mit
-  Alpha `(1 - p)`, neue mit Alpha `p` (jeweils multipliziert auf die
-  bestehenden Alpha-Konstanten); danach exakt der heutige Ein-Pass-Pfad.
-- Breitenwechsel während des Fades (`ensure_resampled` invalidiert
-  Display-Bars): Fade auf Endzustand skippen (`previous_bars.clear()`,
-  `crossfade_progress = 1.0`) — MOT-6-Geist, kein Resample der alten Bars.
-- Schneller Trackwechsel während laufendem Fade: alter Fade endet hart
-  (neue Bars werden `previous_bars`), neuer Fade startet — kein Stapeln.
-- Tests (waveform_seek_tests.rs, Display-ignored wie Vorbilder):
+- Extend `State`: `previous_bars: Vec<…>` (copy of the most recently drawn
+  display bars including their heights), `crossfade_progress: f64` (1.0 = no
+  fade), `crossfade_start_us: i64`.
+- `set_peaks()`: if old display bars exist AND `animations_enabled()`, they are
+  copied into `previous_bars` and `crossfade_progress = 0.0` is started
+  (duration `motion::AMBIENT_MS`); in that case the stagger build-up is NOT
+  started (`build_progress = 1.0`). Without old bars (first track) the existing
+  build-up path stays unchanged. Disabled →
+  `previous_bars.clear()`, `crossfade_progress = 1.0` (hard switch, the pattern
+  of the existing disabled path).
+- Tick (`ensure_tick_callback`): drives `crossfade_progress` analogously to
+  `build_progress`; the settled condition is extended to cover the crossfade.
+- `draw()`: while `crossfade_progress < 1.0` two passes — old bars with alpha
+  `(1 - p)`, new ones with alpha `p` (each multiplied onto the existing alpha
+  constants); after that exactly today's single-pass path.
+- Width change during the fade (`ensure_resampled` invalidates display bars):
+  skip the fade to its end state (`previous_bars.clear()`,
+  `crossfade_progress = 1.0`) — the spirit of MOT-6, no resample of the old bars.
+- Fast track change during a running fade: the old fade ends hard (the new bars
+  become `previous_bars`), a new fade starts — no stacking.
+- Tests (waveform_seek_tests.rs, display-ignored like the precedents):
   `mot_5_waveform_crossfades_to_the_new_track_instead_of_rebuilding`
-  (alte Bars vorhanden → crossfade_progress startet, build_progress bleibt
-  1.0; Endzustand nach Ablauf) und
+  (old bars present → crossfade_progress starts, build_progress stays
+  1.0; end state after it elapses) and
   `mot_7_waveform_crossfade_hard_switches_when_animations_are_disabled`
-  (disabled → sofort neue Bars, previous leer, kein Tick).
+  (disabled → new bars immediately, previous empty, no tick).
 
 ```bash
 git commit -m "feat(motion): MOT-5 — waveform crossfades to the new track"
 ```
 
-#### Task 3: Pause-Entsättigung (`waveform_seek.rs`, `player_bar.rs`-Wiring, `style/cover_accent.rs` Sichtbarkeit)
+#### Task 3: pause desaturation (`waveform_seek.rs`, `player_bar.rs` wiring, `style/cover_accent.rs` visibility)
 
-- `cover_accent.rs`: die benötigten Konvertierungs-Helfer (RGB↔OKLCH bzw.
-  Chroma-Skalierung; minimal nötige Fläche, z. B. eine neue Funktion
+- `cover_accent.rs`: open up the required conversion helpers (RGB↔OKLCH resp.
+  chroma scaling; the minimum necessary surface, e.g. a new function
   `pub(in crate::ui) fn scale_chroma(r, g, b, factor) -> (f64, f64, f64)`
-  neben den bestehenden privaten Helfern) öffnen — KEINE Änderung an
-  Provider/Slot/Extraktion.
-- `WaveformSeek::set_paused(paused: bool)`: treibt `desaturation_progress`
-  (0.0 = voll gesättigt, 1.0 = entsättigt) via `motion::timed(&area, from,
+  alongside the existing private helpers) — NO change to
+  provider/slot/extraction.
+- `WaveformSeek::set_paused(paused: bool)`: drives `desaturation_progress`
+  (0.0 = fully saturated, 1.0 = desaturated) via `motion::timed(&area, from,
   to, motion::STANDARD, CallbackAnimationTarget{ set progress + queue_draw })`,
-  Slot + `motion::replace_animation` (MOT-6: erneuter Wechsel skippt).
-  `!animations_enabled()` → Wert hart setzen, kein Tick (Vorbild
-  Positions-Glättung).
-- `draw()`/`draw_fallback()`: nach `area.color()` die Fill-Farbe mit
-  `scale_chroma(…, 1.0 - 0.55 * desaturation_progress)` dämpfen — bei
-  `desaturation_progress = 1.0` ist das Chroma ×0.45 (Beschluss G3).
-  Gilt für Played-Fill und Playhead; Unplayed-/Ghost-Alphas unverändert.
-- **Wiring NICHT in Phase A:** `player_bar.rs` ist G5-gesperrt. Phase A
-  liefert die `set_paused`-API + Tests auf Widget-Ebene; der Aufruf aus
-  `PlayerBar::set_state()` (`state != PlaybackState::Playing`, Stopped zählt
-  wie Paused) und die identische Verdrahtung im Compact-Player folgen in
-  Phase B (T1-Commit).
+  slot + `motion::replace_animation` (MOT-6: another change skips).
+  `!animations_enabled()` → set the value hard, no tick (precedent:
+  position smoothing).
+- `draw()`/`draw_fallback()`: after `area.color()`, damp the fill color with
+  `scale_chroma(…, 1.0 - 0.55 * desaturation_progress)` — at
+  `desaturation_progress = 1.0` that is chroma ×0.45 (decision G3).
+  Applies to the played fill and the playhead; unplayed/ghost alphas unchanged.
+- **Wiring NOT in Phase A:** `player_bar.rs` is locked by G5. Phase A
+  delivers the `set_paused` API + tests at widget level; the call from
+  `PlayerBar::set_state()` (`state != PlaybackState::Playing`, Stopped counts
+  like Paused) and the identical wiring in the compact player follow in
+  Phase B (T1 commit).
 - Tests: `mot_5_pause_desaturates_the_waveform_fill_and_play_restores_it`
-  (set_paused(true) → progress-Ziel 1.0, Slot trägt STANDARD_MS +
-  follows_enable_animations; set_paused(false) → zurück) und
+  (set_paused(true) → progress target 1.0, the slot carries STANDARD_MS +
+  follows_enable_animations; set_paused(false) → back again) and
   `mot_7_waveform_desaturation_hard_switches_when_animations_are_disabled`.
-  Zusätzlich eine Unit-Assertion, dass `cover_accent`s Provider-Zustand von
-  `set_paused` unberührt bleibt (kein Aufruf in die Provider-API — reine
-  Draw-Zeit-Rechnung; z. B. per Testkommentar/Design, kein Mock-Zwang).
+  In addition, a unit assertion that `cover_accent`'s provider state stays
+  untouched by `set_paused` (no call into the provider API — pure draw-time
+  computation; e.g. via test comment/design, no forced mock).
 
 ```bash
 git commit -m "feat(motion): MOT-5 — pause desaturates the waveform fill"
 ```
 
-**→ ENDE PHASE A. STOPP. T1/T5 sind gesperrt (Phase-B-Gate unten).**
+**→ END OF PHASE A. STOP. T1/T5 are locked (Phase B gate below).**
 
-### Phase-B-Gate (hartes Kriterium)
+### Phase B gate (hard criterion)
 
-Phase B startet erst, wenn ALLE drei Branches
+Phase B starts only once ALL three branches
 `feat/artist-cover-playerbar-fixes`, `feat/keyboard-nav`,
-`feat/minor-improvements` in origin/main gemergt sind (inhaltlich — bei
-Squash-Merges zählt der Datei-Stand, nicht der Branch-Zeiger), main
-integriert wurde und ein erneuter Ownership-Scan
-(`git diff --name-only origin/main...<branch> | grep player_bar`) für
-player_bar.rs/player_bar_layout.rs leer ist.
+`feat/minor-improvements` are merged into origin/main (by content — with
+squash merges the file state counts, not the branch pointer), main has been
+integrated and a repeated ownership scan
+(`git diff --name-only origin/main...<branch> | grep player_bar`) for
+player_bar.rs/player_bar_layout.rs is empty.
 
-### Phase B — nach dem Gate
+### Phase B — after the gate
 
-#### Task 1: Scale-Puls Play⇄Pause (`player_bar.rs`, `player_bar_layout.rs`)
+#### Task 1: scale pulse play⇄pause (`player_bar.rs`, `player_bar_layout.rs`)
 
 - CSS in `player_bar_layout.rs::css()`: `@keyframes reprise-play-pulse`
-  (`0% scale(1.0)` → `50% scale(0.92)` → `100% scale(1.0)`) + Klasse
+  (`0% scale(1.0)` → `50% scale(0.92)` → `100% scale(1.0)`) + class
   `.player-bar-play.pulsing { animation: reprise-play-pulse {MICRO_MS}ms
-  {MICRO_CSS_EASING} 1; }` — Werte per `format!` aus `motion`-Konstanten.
-- `animate_play_icon_change()` (oder `set_state()`): beim echten
-  State-Wechsel Klasse `pulsing` entfernen und (im Idle/nächsten Frame)
-  neu setzen; Entfernen nach `MICRO_MS` per `timeout_add_local_once`.
-  Koexistenz mit `:active`-Scale (Press) und Icon-Crossfade prüfen.
-- **Entsättigungs-Wiring nachziehen (aus T3 verschoben):**
-  `PlayerBar::set_state()` ruft `self.waveform.set_paused(state !=
-  PlaybackState::Playing)`; Compact-Player identisch verdrahten.
-  Display-Test: Pause über `set_state` → Waveform-Desaturation läuft an.
-- Tests: `mot_5_play_pause_pulses_on_state_change` (Klasse gesetzt nach
-  set_state, nach Ablauf entfernt — Display-Test mit Loop-Pump) +
-  Verifikation, dass bei `gtk-enable-animations=false` der Endzustand
-  identisch ist (Keyframes laufen nicht — T-V-gedeckt, Assertion:
-  Klassen-Logik läuft trotzdem durch, Button-Zustand korrekt).
+  {MICRO_CSS_EASING} 1; }` — values via `format!` from the `motion` constants.
+- `animate_play_icon_change()` (or `set_state()`): on a real state change
+  remove the `pulsing` class and set it again (in idle/the next frame);
+  removal after `MICRO_MS` via `timeout_add_local_once`.
+  Check coexistence with the `:active` scale (press) and the icon crossfade.
+- **Catch up the desaturation wiring (moved out of T3):**
+  `PlayerBar::set_state()` calls `self.waveform.set_paused(state !=
+  PlaybackState::Playing)`; wire the compact player identically.
+  Display test: pause via `set_state` → the waveform desaturation starts.
+- Tests: `mot_5_play_pause_pulses_on_state_change` (class set after
+  set_state, removed after it elapses — display test with loop pump) +
+  verification that with `gtk-enable-animations=false` the end state is
+  identical (the keyframes do not run — covered by T-V, assertion:
+  the class logic still runs through, button state correct).
 
 ```bash
 git commit -m "feat(motion): MOT-5 — play/pause scale pulse"
 ```
 
-#### Task 5: Flip MOT-5 + Abschluss
+#### Task 5: flip MOT-5 + wrap-up
 
-- `docs/ux-rules.md`: MOT-5 `[geplant]→[aktiv]`; Flip-Kriterium-Kommentar
-  entfernen. Vorher gegen main-Stand verifizieren (Ownership: einer
-  integriert, nie zwei parallel).
-- Ledger `.superpowers/sdd/progress.md`: Phase A+B, Beschlüsse G1–G5,
-  Queue-Ausnahme bewusst nicht umgesetzt (G4).
-- Volle Gate-Batterie inkl. aller mot_-Display-Tests einzeln.
+- `docs/ux-rules.md`: MOT-5 `[planned]→[active]`; remove the flip-criterion
+  comment. Verify beforehand against the state of main (ownership: one
+  integrates, never two in parallel).
+- Ledger `.superpowers/sdd/progress.md`: Phase A+B, decisions G1–G5,
+  queue exception deliberately not implemented (G4).
+- Full gate battery including all mot_ display tests individually.
 
 ```bash
 git commit -m "docs: MOT-5 — flip player-bar motion rule to active"
 ```
 
-## 4. Abnahme
+## 4. Acceptance
 
-- [ ] Trackwechsel: Waveform blendet alt→neu über 400 ms (Ambient); kein
-      Absturz auf 0; Erst-Track behält Build-up. (Phase A)
-- [ ] Pause entsättigt den Waveform-Fill sichtbar (Chroma ×0.45), animiert
-      über 250 ms; Play kehrt es um; `cover_accent` unberührt. (Phase A)
-- [ ] `gtk-enable-animations=false` → alles instant (Hard-Switch-Tests
-      grün, kein hängender Tick). (Phase A)
-- [ ] Play⇄Pause pulst 1.0→0.92→1.0 (Micro) zusätzlich zum Icon-Crossfade.
+- [ ] Track change: the waveform fades old→new over 400 ms (Ambient); no
+      collapse to 0; the first track keeps its build-up. (Phase A)
+- [ ] Pause visibly desaturates the waveform fill (chroma ×0.45), animated
+      over 250 ms; play reverses it; `cover_accent` untouched. (Phase A)
+- [ ] `gtk-enable-animations=false` → everything instant (hard-switch tests
+      green, no hanging tick). (Phase A)
+- [ ] Play⇄pause pulses 1.0→0.92→1.0 (Micro) in addition to the icon crossfade.
       (Phase B)
-- [ ] MOT-5 `[aktiv]`; Traceability, Motion-Lint, volle Batterie grün.
+- [ ] MOT-5 `[active]`; traceability, motion lint, full battery green.
       (Phase B)
-- [ ] Kein Eingriff in die drei aktiven Player-Bar-Branches vor deren Merge.
+- [ ] No intervention in the three active player-bar branches before they merge.
 
-## 5. Risiken
+## 5. Risks
 
-1. Crossfade × `ensure_resampled()`: Breitenwechsel während des Fades →
-   Fade skippt auf Endzustand (beschlossen, T2) — kein Resample alter Bars.
-2. Schnelles Play/Pause-Hämmern (Phase B): Klassen-Retrigger muss Style-
-   Invalidierung erzwingen (remove → idle → add).
-3. Player-Bar-Territorium bewegt sich aktiv — Phase-B-Gate mit erneutem
-   Ownership-Scan ist verbindlich.
+1. Crossfade × `ensure_resampled()`: width change during the fade →
+   the fade skips to its end state (decided, T2) — no resample of old bars.
+2. Rapid play/pause hammering (Phase B): the class retrigger must force style
+   invalidation (remove → idle → add).
+3. The player-bar territory is actively moving — the Phase B gate with a
+   repeated ownership scan is binding.
