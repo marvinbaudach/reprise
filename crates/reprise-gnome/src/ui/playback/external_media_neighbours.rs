@@ -5,15 +5,18 @@ use std::rc::Rc;
 use reprise_core::media_integration::MprisPlaybackStatus;
 use reprise_core::playback::PlaybackState;
 use reprise_core::podcasts::EpisodeRow;
+use reprise_core::up_next::QueueItem;
 
+use crate::ui::current_track_selection::CurrentTrackChange;
 use crate::ui::player_controller::PlayerController;
+use crate::ui::player_controller::StartPlayback;
 
 use super::external_media::media_from_episode;
 use super::external_media_state::{
-    AdvanceFailure, AutomaticAdvance, ExternalSession, NeighbourContext, NeighbourDirection,
-    NeighbourTransport, PodcastFailureAction, PodcastPhase,
+    should_skip_manual_queue_after_failure, AdvanceFailure, AutomaticAdvance, ExternalSession,
+    NeighbourContext, NeighbourDirection, NeighbourTransport, PodcastFailureAction, PodcastOrigin,
+    PodcastPhase,
 };
-use super::preview::PlaybackMode;
 
 impl PlayerController {
     pub(in crate::ui) fn play_podcast_episode(
@@ -48,35 +51,69 @@ impl PlayerController {
         };
         match target {
             NeighbourTransport::Queue => false,
-            NeighbourTransport::Episode(neighbours) => {
-                self.play_episode_from_neighbour(neighbours, AutomaticAdvance::new(direction));
+            NeighbourTransport::Item { neighbours, origin } => {
+                self.play_item_from_neighbour(neighbours, AutomaticAdvance::new(direction), origin);
                 true
             }
             NeighbourTransport::Unavailable => true,
         }
     }
 
-    pub(super) fn play_episode_from_neighbour(
+    fn play_item_from_neighbour(
         self: &Rc<Self>,
         neighbours: NeighbourContext,
         automatic_advance: AutomaticAdvance,
+        origin: PodcastOrigin,
     ) {
-        let episode_id = neighbours.current_id();
+        let item = neighbours.current_item();
+        if origin == PodcastOrigin::ManualQueue {
+            self.consume_manual_neighbour(item);
+        }
+        let QueueItem::Episode(episode_id) = item else {
+            self.present_queue_item(
+                item,
+                StartPlayback::Yes,
+                CurrentTrackChange::ExplicitTransport,
+            );
+            return;
+        };
         let episode = reprise_core::podcasts::store::episode(&self.conn, episode_id);
         match episode {
             Ok(Some(episode)) => {
-                let _ = self.play_podcast_row_with_context(episode, neighbours, automatic_advance);
+                let _ = self.play_podcast_row_with_context(
+                    episode,
+                    neighbours,
+                    automatic_advance,
+                    origin,
+                );
             }
             Ok(None) => self.continue_after_advance_failure(
                 &neighbours,
                 automatic_advance,
+                origin,
                 "The neighbouring episode is no longer available",
             ),
             Err(error) => self.continue_after_advance_failure(
                 &neighbours,
                 automatic_advance,
+                origin,
                 &error.to_string(),
             ),
+        }
+    }
+
+    fn consume_manual_neighbour(&self, item: QueueItem) {
+        let removed = {
+            let mut pending = self.up_next.borrow_mut();
+            let position = pending
+                .ids()
+                .iter()
+                .position(|candidate| *candidate == item);
+            position.and_then(|position| pending.take_at(position))
+        };
+        self.current_up_next.set(Some(item));
+        if removed.is_some() {
+            self.notify_queue_changed();
         }
     }
 
@@ -84,11 +121,12 @@ impl PlayerController {
         self: &Rc<Self>,
         neighbours: &NeighbourContext,
         automatic_advance: AutomaticAdvance,
+        origin: PodcastOrigin,
         message: &str,
     ) {
         match automatic_advance.after_failure(neighbours) {
             AdvanceFailure::Retry { neighbours, chain } => {
-                self.play_episode_from_neighbour(neighbours, chain);
+                self.play_item_from_neighbour(neighbours, chain, origin);
             }
             AdvanceFailure::Stop => {
                 self.stop_external();
@@ -98,11 +136,11 @@ impl PlayerController {
     }
 
     pub(super) fn fail_podcast(self: &Rc<Self>, generation: u64, message: &str) {
-        if !self.external_generation_matches(generation, PlaybackMode::Podcast) {
-            return;
-        }
-        let failure_action = {
+        let (failure_action, origin) = {
             let mut external = self.external.borrow_mut();
+            if external.generation != generation {
+                return;
+            }
             let Some(ExternalSession::Podcast(session)) = external.session.as_mut() else {
                 return;
             };
@@ -111,12 +149,13 @@ impl PlayerController {
                 session.phase = PodcastPhase::Failed;
                 session.error = Some(message.to_owned());
             }
-            action
+            (action, session.origin)
         };
+        let skip_manual_queue = should_skip_manual_queue_after_failure(origin, &failure_action);
         if let PodcastFailureAction::Automatic(automatic_failure) = failure_action {
             match automatic_failure {
                 AdvanceFailure::Retry { neighbours, chain } => {
-                    self.play_episode_from_neighbour(neighbours, chain);
+                    self.play_item_from_neighbour(neighbours, chain, origin);
                     return;
                 }
                 AdvanceFailure::Stop => {
@@ -129,6 +168,13 @@ impl PlayerController {
                     }
                 }
             }
+        }
+        if skip_manual_queue {
+            super::playback_faults::note_episode_skip(&self.consecutive_episode_skips);
+            self.external.borrow_mut().clear_session();
+            self.notify_external_changed();
+            self.skip_after_failure();
+            return;
         }
         self.show_toast(message);
         self.sync_state(PlaybackState::Stopped);

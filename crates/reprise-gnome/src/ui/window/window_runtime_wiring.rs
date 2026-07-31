@@ -745,13 +745,8 @@ fn wire_queue_episode_marker(track_list: &Rc<TrackList>, player: Option<&Rc<Play
         let Some(track_list) = track_list.upgrade() else {
             return;
         };
-        let episode_id = snapshot.as_ref().and_then(|snapshot| match snapshot.media {
-            crate::ui::playback::external_media::ExternalMedia::Podcast { episode_id, .. } => {
-                Some(episode_id)
-            }
-            crate::ui::playback::external_media::ExternalMedia::Radio { .. } => None,
-        });
-        track_list.set_playing_episode(episode_id);
+        let episode_mark = crate::ui::podcasts::episode_mark_from_snapshot(snapshot.as_ref());
+        track_list.set_playing_episode(episode_mark);
     });
 }
 

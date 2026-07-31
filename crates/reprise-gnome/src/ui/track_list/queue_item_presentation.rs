@@ -76,11 +76,15 @@ pub(in crate::ui) fn source_icon(item: &QueueItemMetadata) -> Option<&'static st
 pub(in crate::ui) fn is_now_playing(
     item: &QueueItemMetadata,
     playing_track_id: Option<i64>,
-    playing_episode_id: Option<i64>,
+    playing_episode: Option<crate::ui::podcasts::EpisodeMark>,
 ) -> bool {
     match item {
-        QueueItemMetadata::Track(track) => playing_track_id == Some(track.id),
-        QueueItemMetadata::Episode(episode) => playing_episode_id == Some(episode.id),
+        QueueItemMetadata::Track(track) => {
+            playing_episode.is_none() && playing_track_id == Some(track.id)
+        }
+        QueueItemMetadata::Episode(episode) => {
+            playing_episode.map(|mark| mark.id) == Some(episode.id)
+        }
     }
 }
 
@@ -199,10 +203,12 @@ mod tests {
     fn que_9_a_colliding_episode_id_never_marks_a_track_row_as_playing() {
         let track = track_with_colliding_id();
         let episode = episode(PodcastKind::Youtube);
+        let episode_mark = crate::ui::podcasts::EpisodeMark::new(7, false);
 
-        // The episode is playing: only the episode row may be marked.
-        assert!(!is_now_playing(&track, None, Some(7)));
-        assert!(is_now_playing(&episode, None, Some(7)));
+        // The episode is playing: only the episode row may be marked, even
+        // while the previous track marker is still being cleared.
+        assert!(!is_now_playing(&track, Some(7), Some(episode_mark)));
+        assert!(is_now_playing(&episode, Some(7), Some(episode_mark)));
 
         // The track is playing: only the track row may be marked.
         assert!(is_now_playing(&track, Some(7), None));

@@ -118,7 +118,7 @@ fn apply_now_playing_item(
     let playing = super::queue_item_presentation::is_now_playing(
         item,
         shared.playing_track_id.get(),
-        shared.playing_episode_id.get(),
+        shared.playing_episode.get(),
     );
     toggle_class(cell, NOW_PLAYING_CLASS, playing);
     if leading {

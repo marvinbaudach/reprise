@@ -137,6 +137,7 @@ impl PlayerController {
         episode: EpisodeRow,
         neighbours: NeighbourContext,
         automatic_advance: AutomaticAdvance,
+        origin: PodcastOrigin,
     ) -> Result<(), PlaybackError> {
         let media = media_from_episode(&episode);
         self.prepare_external_playback();
@@ -145,7 +146,7 @@ impl PlayerController {
             Some(episode),
             Some(neighbours),
             Some(automatic_advance),
-            PodcastOrigin::Direct,
+            origin,
         )
     }
 
@@ -160,11 +161,20 @@ impl PlayerController {
     }
 
     pub(in crate::ui) fn play_queued_episode(self: &Rc<Self>, episode_id: i64) {
+        let neighbours = {
+            let pending = self.up_next.borrow();
+            NeighbourContext::for_manual_queue(
+                reprise_core::up_next::QueueItem::Episode(episode_id),
+                pending.ids(),
+            )
+        };
         let episode = reprise_core::podcasts::store::episode(&self.conn, episode_id);
         match episode {
             Ok(Some(episode)) => {
-                if let Err(error) = self.play_external_with_origin(
+                if let Err(error) = self.play_external_with_context_and_origin(
                     media_from_episode(&episode),
+                    neighbours,
+                    None,
                     PodcastOrigin::ManualQueue,
                 ) {
                     tracing::error!(%error, episode_id, "queued episode playback failed");
