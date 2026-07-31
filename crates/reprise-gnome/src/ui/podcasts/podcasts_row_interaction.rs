@@ -44,11 +44,7 @@ pub(super) fn reveal_unsubscribe_on_hover_or_focus(
     });
 }
 
-pub(super) fn episode_thumbnail(
-    row: &EpisodeRow,
-    playing: bool,
-    images_allowed: bool,
-) -> (gtk4::Overlay, gtk4::Image) {
+pub(super) fn episode_thumbnail(row: &EpisodeRow, images_allowed: bool) -> gtk4::Overlay {
     let (width, height) = match row.kind {
         PodcastKind::Rss => (32, 32),
         PodcastKind::Youtube => (56, 32),
@@ -69,46 +65,7 @@ pub(super) fn episode_thumbnail(
     let overlay = gtk4::Overlay::new();
     overlay.set_size_request(width, height);
     overlay.set_child(Some(source.widget()));
-    let play = gtk4::Image::from_icon_name(if playing {
-        "media-playback-pause-symbolic"
-    } else {
-        "media-playback-start-symbolic"
-    });
-    play.add_css_class("reprise-podcast-episode-play-glyph");
-    play.set_halign(gtk4::Align::Center);
-    play.set_valign(gtk4::Align::Center);
-    play.set_opacity(0.0);
-    (overlay, play)
-}
-
-pub(super) fn install_playback_hover(
-    host: &impl IsA<gtk4::Widget>,
-    marker: &gtk4::Box,
-    play_glyph: &gtk4::Image,
-    idle_glyph_opacity: f64,
-) {
-    let hover = gtk4::EventControllerMotion::new();
-    let hovered_marker = marker.downgrade();
-    let hovered_glyph = play_glyph.downgrade();
-    hover.connect_enter(move |_, _, _| {
-        if let Some(marker) = hovered_marker.upgrade() {
-            marker.set_opacity(0.0);
-        }
-        if let Some(glyph) = hovered_glyph.upgrade() {
-            glyph.set_opacity(1.0);
-        }
-    });
-    let hovered_marker = marker.downgrade();
-    let hovered_glyph = play_glyph.downgrade();
-    hover.connect_leave(move |_| {
-        if let Some(marker) = hovered_marker.upgrade() {
-            marker.set_opacity(1.0);
-        }
-        if let Some(glyph) = hovered_glyph.upgrade() {
-            glyph.set_opacity(idle_glyph_opacity);
-        }
-    });
-    host.as_ref().add_controller(hover);
+    overlay
 }
 
 /// Activating a row is the only way to play it now that the per-row play
@@ -121,14 +78,7 @@ fn activate_play(root: &gtk4::Box, episode_id: i64) {
     }
 }
 
-pub(super) fn install_row_activation(
-    root: &gtk4::Box,
-    episode_id: i64,
-    marker: &gtk4::Box,
-    play_glyph: &gtk4::Image,
-) {
-    install_playback_hover(root, marker, play_glyph, 0.0);
-
+pub(super) fn install_row_activation(root: &gtk4::Box, episode_id: i64) {
     // input-parity: ACC-8 keyboard=episode-row-enter-space
     let click = gtk4::GestureClick::new();
     let clicked_root = root.downgrade();

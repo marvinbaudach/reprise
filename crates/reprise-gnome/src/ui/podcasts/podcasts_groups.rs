@@ -32,7 +32,6 @@ pub(super) struct DownloadRowWidgets {
     pub(super) status: gtk4::Box,
     pub(super) action: gtk4::Button,
     pub(super) marker: gtk4::Box,
-    pub(super) play_glyph: gtk4::Image,
 }
 
 struct GroupRenderContext<'a> {
@@ -308,6 +307,9 @@ fn episode_row(
     let playing = context.mark.is_some_and(|mark| mark.playing);
     let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
     root.add_css_class("reprise-podcast-episode-row");
+    // `POD-20`: this plain Box needs the shared hover tint that ColumnView
+    // rows receive from the platform stylesheet.
+    root.add_css_class("reprise-hover");
     // a11y-semantics: role=button name=podcast-episode-row state=focusable action=activate
     root.set_focusable(true);
     // input-parity: ACC-8 keyboard=episode-row-enter-space
@@ -332,15 +334,14 @@ fn episode_row(
     );
     root.append(&selected);
 
-    let (thumbnail, play_glyph) = episode_thumbnail(row, playing, context.images_allowed);
+    let thumbnail = episode_thumbnail(row, context.images_allowed);
     let marker = playing_marker::build();
     marker.add_css_class("reprise-podcast-episode-marker");
     playing_marker::set_playing(&marker, playing);
     marker.set_visible(loaded);
     thumbnail.add_overlay(&marker);
-    thumbnail.add_overlay(&play_glyph);
     root.append(&thumbnail);
-    install_row_activation(&root, row.id, &marker, &play_glyph);
+    install_row_activation(&root, row.id);
 
     let identity = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     identity.set_hexpand(true);
@@ -377,7 +378,6 @@ fn episode_row(
         status,
         action: download.clone(),
         marker,
-        play_glyph,
     };
     update_download_state(&widgets, context.download_state);
     update_network_state(
@@ -406,11 +406,6 @@ pub(super) use super::podcasts_row_state::{update_download_state, update_network
 
 pub(super) fn update_playback_state(widgets: &DownloadRowWidgets, playing: bool) {
     playing_marker::set_playing(&widgets.marker, playing);
-    widgets.play_glyph.set_icon_name(Some(if playing {
-        "media-playback-pause-symbolic"
-    } else {
-        "media-playback-start-symbolic"
-    }));
 }
 
 #[cfg(test)]

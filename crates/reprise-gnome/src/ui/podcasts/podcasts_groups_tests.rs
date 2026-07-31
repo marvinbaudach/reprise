@@ -432,7 +432,6 @@ fn pod_13_a_failed_download_offers_a_sensitive_retry_action() {
         status: gtk4::Box::new(gtk4::Orientation::Vertical, 0),
         action: gtk4::Button::new(),
         marker: gtk4::Box::new(gtk4::Orientation::Horizontal, 0),
-        play_glyph: gtk4::Image::new(),
     };
 
     update_download_state(
