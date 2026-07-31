@@ -244,3 +244,12 @@ lock or coordination board exists in this checkout.
 | episodes-as-queue-citizens | Narrow typed-state adapters in the GNOME and runtime crates, podcast playback copy in `strings_podcasts.rs`, and the matching gettext catalogs |
 | episodes-as-queue-citizens | Minimal append-only rule and plan records in `docs/ux-rules.md`, `docs/plans/podcasts-radio.md`, plus `.superpowers/sdd/progress.md` |
 | sibling branches — excluded | `crates/reprise-gnome/src/ui/podcasts/**`, `crates/reprise-core/src/podcasts/store.rs`, `crates/reprise-core/src/podcasts/youtube.rs` |
+
+### Package 3 — mixed queue rendering (active)
+
+| Owner | Files |
+| --- | --- |
+| episodes-as-queue-citizens | `crates/reprise-gnome/src/ui/track_list/{queue_sections,track_list_model,track_list_columns,track_cover,column_layout,track_list_context_menu}.rs`, their focused tests, and cohesive new queue-row presentation/menu siblings |
+| episodes-as-queue-citizens | `crates/reprise-gnome/src/ui/now_playing/up_next_panel.rs`, its focused tests, and the narrow typed projection adapter in `crates/reprise-gnome/src/ui/playback/queue_transport.rs` |
+| episodes-as-queue-citizens | Minimal append-only CTX rule draft in `docs/ux-rules.md` and `.superpowers/sdd/progress.md` |
+| sibling branches — excluded | `crates/reprise-gnome/src/ui/podcasts/**`, `crates/reprise-core/src/podcasts/store.rs`, `crates/reprise-core/src/podcasts/youtube.rs` |

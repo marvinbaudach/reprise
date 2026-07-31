@@ -22,6 +22,13 @@ fn section_for_answers_ranges_and_full_model_fallback() {
 }
 use super::*;
 
+fn track_items(ids: &[i64]) -> Vec<reprise_core::up_next::QueueItem> {
+    ids.iter()
+        .copied()
+        .map(reprise_core::up_next::QueueItem::Track)
+        .collect()
+}
+
 fn seeded_model(rows: &[(&str, &str)]) -> TrackListModel {
     let conn = crate::test_db::open().unwrap();
     for (t, a) in rows {
@@ -75,7 +82,7 @@ fn set_query_updates_n_items_from_count() {
 fn queue_snapshot_defers_metadata_until_a_row_is_requested() {
     let model = seeded_model(&[("One", "A"), ("Two", "B"), ("Three", "C")]);
 
-    let queue = super::super::queue_sections::compose(None, &[3, 1], &[], None);
+    let queue = super::super::queue_sections::compose(None, &track_items(&[3, 1]), &[], None);
     model.set_queue_snapshot(&queue, vec![(0, 2)]);
 
     assert_eq!(model.n_items(), 2);
@@ -83,6 +90,49 @@ fn queue_snapshot_defers_metadata_until_a_row_is_requested() {
     assert_eq!(model.track_at(0).unwrap().id, 3);
     assert_eq!(model.track_at(1).unwrap().id, 1);
     assert_eq!(model.cached_windows(), vec![0]);
+}
+
+#[test]
+fn mixed_queue_snapshot_renders_track_and_episode_with_colliding_ids() {
+    let conn = crate::test_db::open().unwrap();
+    crate::test_db::connection(&conn)
+        .execute_batch(
+            "INSERT INTO tracks (id, path, title, artist, added_at)
+             VALUES (7, '/x/track.flac', 'Library Seven', 'Track Artist', 0);
+             INSERT INTO podcast_subscriptions
+             (id, kind, feed_url, title, added_at)
+             VALUES (1, 'rss', 'https://example.test/feed', 'Systems Weekly', 0);
+             INSERT INTO podcast_episodes
+             (id, subscription_id, guid, title, audio_url, duration_secs, first_seen_at)
+             VALUES
+             (7, 1, 'episode-seven', 'Episode Seven',
+              'https://example.test/seven.mp3', 90, 0);",
+        )
+        .unwrap();
+    let model = TrackListModel::new(Rc::new(conn));
+    let queue = super::super::queue_sections::compose(
+        None,
+        &[
+            reprise_core::up_next::QueueItem::Track(7),
+            reprise_core::up_next::QueueItem::Episode(7),
+        ],
+        &[],
+        None,
+    );
+
+    model.set_queue_snapshot(&queue, vec![(0, 2)]);
+
+    assert!(matches!(
+        model.queue_item_at(0),
+        Some(reprise_core::queries::QueueItemMetadata::Track(track))
+            if track.title == "Library Seven"
+    ));
+    assert!(matches!(
+        model.queue_item_at(1),
+        Some(reprise_core::queries::QueueItemMetadata::Episode(episode))
+            if episode.title == "Episode Seven" && episode.show == "Systems Weekly"
+    ));
+    assert!(model.track_at(1).is_none());
 }
 
 #[test]
@@ -156,7 +206,7 @@ fn advancing_the_queue_emits_one_leading_removal_instead_of_a_full_replace() {
 #[test]
 fn consuming_play_next_preserves_the_remaining_sidebar_rows() {
     let model = seeded_model(&[("One", "A"), ("Two", "B"), ("Three", "C")]);
-    let before = super::super::queue_sections::compose(None, &[1, 2, 3], &[], None);
+    let before = super::super::queue_sections::compose(None, &track_items(&[1, 2, 3]), &[], None);
     model.set_queue_snapshot(&before, vec![(0, 3)]);
 
     let changes = Rc::new(RefCell::new(Vec::new()));
@@ -167,7 +217,7 @@ fn consuming_play_next_preserves_the_remaining_sidebar_rows() {
             .push((position, removed, added));
     });
 
-    let after = super::super::queue_sections::compose(None, &[2, 3], &[], None);
+    let after = super::super::queue_sections::compose(None, &track_items(&[2, 3]), &[], None);
     model.set_queue_snapshot(&after, vec![(0, 2)]);
 
     assert_eq!(
@@ -341,9 +391,13 @@ fn set_query_with_queue_source_follows_queue_ids_order() {
     };
     // ids sorted by title are [Alpha, Mid, Zulu]; reverse them so the
     // Queue order is the opposite of any column sort.
-    let queue_ids: Vec<i64> = ids.into_iter().rev().collect();
+    let queue_items: Vec<_> = ids
+        .into_iter()
+        .rev()
+        .map(reprise_core::up_next::QueueItem::Track)
+        .collect();
 
-    model.set_query(&ViewSource::Queue, "ignored", "ignored", "", &queue_ids);
+    model.set_query(&ViewSource::Queue, "ignored", "ignored", "", &queue_items);
     assert_eq!(model.n_items(), 3);
     assert_eq!(model.track_at(0).unwrap().title, "Zulu");
     assert_eq!(model.track_at(1).unwrap().title, "Mid");

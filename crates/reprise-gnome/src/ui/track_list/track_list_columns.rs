@@ -29,6 +29,8 @@ use crate::ui::track_list_row_interaction;
 use reprise_core::cover::ThumbnailSize;
 use reprise_core::library::stats;
 use reprise_core::models::{MissingReason, Track};
+use reprise_core::queries::QueueItemMetadata;
+use reprise_core::up_next::QueueItem;
 
 /// Marker class carried by every cell of the currently-playing row — drives
 /// the accent row background. See `track_list_row_interaction.rs`'s CSS.
@@ -81,6 +83,12 @@ fn apply_missing_title(label: &gtk4::Label, track: &Track) {
     label.set_tooltip_text(explanation.as_deref());
 }
 
+fn clear_missing_title(label: &gtk4::Label) {
+    toggle_class(label, MISSING_TRACK_TITLE_CLASS, false);
+    label.set_attributes(None);
+    label.set_tooltip_text(None);
+}
+
 /// Toggles the `.now-playing` marker on `cell` by comparing `track_id`
 /// against `shared.playing_track_id`, returning whether this row is the
 /// playing one. Called from every column's `connect_bind` — cells recycle, so
@@ -94,6 +102,21 @@ pub(in crate::ui) fn apply_now_playing(
     leading: bool,
 ) -> bool {
     let playing = shared.playing_track_id.get() == Some(track_id);
+    toggle_class(cell, NOW_PLAYING_CLASS, playing);
+    if leading {
+        toggle_class(cell, NOW_PLAYING_LEADING_CLASS, playing);
+    }
+    playing
+}
+
+fn apply_now_playing_item(
+    cell: &impl gtk4::prelude::IsA<gtk4::Widget>,
+    item: &QueueItemMetadata,
+    shared: &Shared,
+    leading: bool,
+) -> bool {
+    let playing = super::queue_item_presentation::rating_track_id(item)
+        .is_some_and(|track_id| shared.playing_track_id.get() == Some(track_id));
     toggle_class(cell, NOW_PLAYING_CLASS, playing);
     if leading {
         toggle_class(cell, NOW_PLAYING_LEADING_CLASS, playing);
@@ -199,11 +222,14 @@ pub(in crate::ui) fn append_column(
             .item()
             .and_then(|o| o.downcast::<glib::BoxedAnyObject>().ok())
         else {
-            tracing::warn!("track list column bind: item is not a BoxedAnyObject<Track>");
+            tracing::warn!("track list column bind: item is not typed queue metadata");
             return;
         };
-        let track = boxed.borrow::<Track>();
-        let raw = render(&track);
+        let metadata = boxed.borrow::<QueueItemMetadata>();
+        let raw = super::queue_item_presentation::track(&metadata).map_or_else(
+            || super::queue_item_presentation::cell_text(&metadata, sort_id),
+            &render,
+        );
         let markup = if super::match_highlight::is_searchable_column(sort_id) {
             let needle = shared_for_bind.filter.borrow().clone();
             super::match_highlight::highlight_markup(
@@ -218,12 +244,14 @@ pub(in crate::ui) fn append_column(
             Some(markup) => label.set_markup(&markup),
             None => label.set_text(&raw),
         }
-        apply_now_playing(&label, track.id, &shared_for_bind, false);
+        apply_now_playing_item(&label, &metadata, &shared_for_bind, false);
+        let track_id = super::queue_item_presentation::rating_track_id(&metadata);
         now_playing_marker::register_cell(&shared_for_bind, item, {
             let label = label.clone();
-            let track_id = track.id;
             move |shared| {
-                apply_now_playing(&label, track_id, shared, false);
+                let playing = track_id
+                    .is_some_and(|track_id| shared.playing_track_id.get() == Some(track_id));
+                toggle_class(&label, NOW_PLAYING_CLASS, playing);
             }
         });
     });
@@ -330,20 +358,22 @@ pub(in crate::ui) fn append_title_column(
             .item()
             .and_then(|o| o.downcast::<glib::BoxedAnyObject>().ok())
         else {
-            tracing::warn!("title column bind: item is not a BoxedAnyObject<Track>");
+            tracing::warn!("title column bind: item is not typed queue metadata");
             return;
         };
-        let track = boxed.borrow::<Track>();
-        if track.is_missing() {
+        let metadata = boxed.borrow::<QueueItemMetadata>();
+        let track = super::queue_item_presentation::track(&metadata);
+        if track.is_some_and(Track::is_missing) {
+            let track = track.expect("checked above");
             // Missing rows are de-emphasised (grey + strikethrough per the
             // missing rules); the plain title carries no search highlight.
             label.set_text(&track.title);
-            apply_missing_title(&label, &track);
-        } else {
+            apply_missing_title(&label, track);
+        } else if let Some(track) = track {
             // Clear any leftover missing styling from a recycled row FIRST
             // (class off, attributes cleared, tooltip cleared), then let the
             // search-match highlight own the label's final markup.
-            apply_missing_title(&label, &track);
+            apply_missing_title(&label, track);
             let needle = shared_for_bind.filter.borrow().clone();
             match super::match_highlight::highlight_markup(
                 &track.title,
@@ -353,25 +383,30 @@ pub(in crate::ui) fn append_title_column(
                 Some(markup) => label.set_markup(&markup),
                 None => label.set_text(&track.title),
             }
+        } else {
+            clear_missing_title(&label);
+            label.set_text(super::queue_item_presentation::title(&metadata));
         }
         // One comparison drives all three now-playing affordances: the cell
         // background (via `.now-playing` on the row box), the equaliser's
         // visibility, and the bold-accent title.
-        let playing = apply_now_playing(&row, track.id, &shared_for_bind, false);
+        let playing = apply_now_playing_item(&row, &metadata, &shared_for_bind, false);
         eq.set_visible(playing);
         toggle_class(&label, NOW_PLAYING_TITLE_CLASS, playing);
         // INST-10: the AI badge (the label's trailing sibling) follows the row's
         // provenance flag.
         if let Some(ai_badge) = label.next_sibling() {
-            ai_badge.set_visible(ai_badge_visible(track.is_ai));
+            ai_badge.set_visible(track.is_some_and(|track| ai_badge_visible(track.is_ai)));
         }
+        let track_id = super::queue_item_presentation::rating_track_id(&metadata);
         now_playing_marker::register_cell(&shared_for_bind, item, {
             let row = row.clone();
             let eq = eq.clone();
             let label = label.clone();
-            let track_id = track.id;
             move |shared| {
-                let playing = apply_now_playing(&row, track_id, shared, false);
+                let playing = track_id
+                    .is_some_and(|track_id| shared.playing_track_id.get() == Some(track_id));
+                toggle_class(&row, NOW_PLAYING_CLASS, playing);
                 eq.set_visible(playing);
                 toggle_class(&label, NOW_PLAYING_TITLE_CLASS, playing);
             }
@@ -478,21 +513,29 @@ pub(in crate::ui) fn append_cover_column(
                 .item()
                 .and_then(|o| o.downcast::<glib::BoxedAnyObject>().ok())
             else {
-                tracing::warn!("cover column bind: item is not a BoxedAnyObject<Track>");
+                tracing::warn!("cover column bind: item is not typed queue metadata");
                 return;
             };
-            let track = boxed.borrow::<Track>();
-            let accessible_label = crate::ui::strings::formatted(
-                crate::ui::strings::GO_TO_ALBUM_NAMED,
-                &[("album", &track.album)],
+            let metadata = boxed.borrow::<QueueItemMetadata>();
+            let accessible_label = super::queue_item_presentation::track(&metadata).map_or_else(
+                || super::queue_item_presentation::title(&metadata).to_owned(),
+                |track| {
+                    crate::ui::strings::formatted(
+                        crate::ui::strings::GO_TO_ALBUM_NAMED,
+                        &[("album", &track.album)],
+                    )
+                },
             );
             cover.update_property(&[gtk4::accessible::Property::Label(&accessible_label)]);
-            apply_now_playing(&cover, track.id, &shared, true);
+            apply_now_playing_item(&cover, &metadata, &shared, true);
+            let track_id = super::queue_item_presentation::rating_track_id(&metadata);
             now_playing_marker::register_cell(&shared, item, {
                 let cover = cover.clone();
-                let track_id = track.id;
                 move |shared| {
-                    apply_now_playing(&cover, track_id, shared, true);
+                    let playing = track_id
+                        .is_some_and(|track_id| shared.playing_track_id.get() == Some(track_id));
+                    toggle_class(&cover, NOW_PLAYING_CLASS, playing);
+                    toggle_class(&cover, NOW_PLAYING_LEADING_CLASS, playing);
                 }
             });
 
@@ -508,13 +551,17 @@ pub(in crate::ui) fn append_cover_column(
             // previously showed is dropped by `load_into`'s own check.
             let token = generation.get().wrapping_add(1);
             generation.set(token);
-            loader.load_into_track_cover(
-                &cover,
-                &track.path,
-                ThumbnailSize::List,
-                token,
-                &generation,
-            );
+            if let Some(track) = super::queue_item_presentation::track(&metadata) {
+                loader.load_into_track_cover(
+                    &cover,
+                    &track.path,
+                    ThumbnailSize::List,
+                    token,
+                    &generation,
+                );
+            } else if let Some(icon) = super::queue_item_presentation::source_icon(&metadata) {
+                cover.set_icon_name(icon);
+            }
         });
     }
 
@@ -608,10 +655,20 @@ pub(in crate::ui) fn append_rating_column(
                 .item()
                 .and_then(|o| o.downcast::<glib::BoxedAnyObject>().ok())
             else {
-                tracing::warn!("rating column bind: item is not a BoxedAnyObject<Track>");
+                tracing::warn!("rating column bind: item is not typed queue metadata");
                 return;
             };
-            let track = boxed.borrow::<Track>();
+            let metadata = boxed.borrow::<QueueItemMetadata>();
+            rating_widget.set_on_changed(|_| {});
+            rating_cell_refresh::unregister_cell(&shared, item);
+            now_playing_marker::unregister_cell(&shared, item);
+            let Some(track) = super::queue_item_presentation::track(&metadata) else {
+                rating_widget.set_visible(false);
+                rating_widget.set_rating(0);
+                apply_now_playing_item(&rating_widget, &metadata, &shared, false);
+                return;
+            };
+            rating_widget.set_visible(true);
             // Programmatic display update only — `RatingWidget::set_rating`
             // never invokes the `on_changed` callback, so this can never
             // recurse into `on_rating_changed` below (see the module doc
@@ -630,12 +687,12 @@ pub(in crate::ui) fn append_rating_column(
                 }
             });
 
-            let track_id = track.id;
+            let queue_item = metadata.item();
             let title = track.title.clone();
             let position = item.position();
             let shared = shared.clone();
             rating_widget.set_on_changed(move |new_rating| {
-                on_rating_changed(&shared, track_id, &title, position, new_rating);
+                on_rating_changed(&shared, queue_item, &title, position, new_rating);
             });
         });
     }
@@ -690,11 +747,19 @@ pub(in crate::ui) fn append_rating_column(
 /// either way (fault tolerance).
 fn on_rating_changed(
     shared: &Rc<Shared>,
-    track_id: i64,
+    item: QueueItem,
     title: &str,
     position: u32,
     new_rating: i32,
 ) {
+    let Some(track_id) = super::queue_item_presentation::rating_write_target(item) else {
+        tracing::warn!(
+            ?item,
+            position,
+            "rating change rejected for non-track queue row"
+        );
+        return;
+    };
     tracing::debug!(track_id, position, new_rating, "rating changed");
     let result = {
         let conn = &shared.conn;
@@ -726,55 +791,5 @@ fn ai_badge_visible(is_ai: bool) -> bool {
 }
 
 #[cfg(test)]
-mod rating_refresh_tests {
-    use super::*;
-
-    #[test]
-    fn rating_sort_requires_query_reload_but_other_sorts_need_one_row() {
-        assert_eq!(rating_refresh_for_sort("rating"), RatingRefresh::Query);
-        assert_eq!(rating_refresh_for_sort("title"), RatingRefresh::Row);
-    }
-}
-
-#[cfg(test)]
-mod missing_track_tests {
-    use reprise_core::models::MissingReason;
-
-    use super::*;
-
-    #[test]
-    fn missing_track_explanation_distinguishes_unavailable_drive_from_missing_file() {
-        assert_eq!(
-            missing_track_explanation(Some(1_000_000_000), Some(MissingReason::Unmounted)),
-            Some("On unavailable drive — returns when mounted".into())
-        );
-        for reason in [MissingReason::Deleted, MissingReason::Unknown] {
-            assert_eq!(
-                missing_track_explanation(Some(1_000_000_000), Some(reason)),
-                Some("File missing since 2001-09-09 01:46".into())
-            );
-        }
-        assert_eq!(missing_track_explanation(None, None), None);
-    }
-
-    #[test]
-    fn missing_title_css_uses_half_opacity() {
-        let css = crate::ui::track_list_row_interaction::css();
-        assert!(css.contains(".missing-track-title"));
-        assert!(css.contains("opacity: 0.5"));
-    }
-}
-
-#[cfg(test)]
-mod ai_badge_tests {
-    use super::ai_badge_visible;
-
-    // UX INST-10: the AI badge renders for AI-manipulated tracks and never on a
-    // plain one. The provenance flag is the only input — no gate sits in front
-    // of it, so a track the CLI/MCP frontends produced is always marked.
-    #[test]
-    fn inst_10_ai_badge_shows_only_for_ai_tracks() {
-        assert!(ai_badge_visible(true), "an AI track shows the badge");
-        assert!(!ai_badge_visible(false), "a plain track shows no badge");
-    }
-}
+#[path = "track_list_columns_tests.rs"]
+mod tests;

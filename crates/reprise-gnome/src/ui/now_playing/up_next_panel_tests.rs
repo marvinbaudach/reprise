@@ -1,5 +1,13 @@
 use super::*;
 
+fn track(id: i64) -> reprise_core::up_next::QueueItem {
+    reprise_core::up_next::QueueItem::Track(id)
+}
+
+fn tracks(ids: &[i64]) -> Vec<reprise_core::up_next::QueueItem> {
+    ids.iter().copied().map(track).collect()
+}
+
 fn collect_buttons_with_class(widget: &gtk4::Widget, class: &str, buttons: &mut Vec<gtk4::Button>) {
     if let Ok(button) = widget.clone().downcast::<gtk4::Button>() {
         if button.has_css_class(class) {
@@ -13,11 +21,22 @@ fn collect_buttons_with_class(widget: &gtk4::Widget, class: &str, buttons: &mut 
     }
 }
 
+fn collect_label_texts(widget: &gtk4::Widget, labels: &mut Vec<String>) {
+    if let Ok(label) = widget.clone().downcast::<gtk4::Label>() {
+        labels.push(label.text().to_string());
+    }
+    let mut child = widget.first_child();
+    while let Some(widget) = child {
+        collect_label_texts(&widget, labels);
+        child = widget.next_sibling();
+    }
+}
+
 #[test]
 fn upcoming_tracks_are_manual_entries_then_the_snapshot_after_current() {
     let model = crate::ui::track_list::queue_sections::compose(
-        Some(10),
-        &[90, 91],
+        Some(track(10)),
+        &tracks(&[90, 91]),
         &[30, 40],
         Some("Music"),
     )
@@ -37,18 +56,20 @@ fn upcoming_tracks_are_manual_entries_then_the_snapshot_after_current() {
 fn upcoming_tracks_handle_an_empty_queue_and_current_at_the_end() {
     let empty = crate::ui::track_list::queue_sections::compose(None, &[], &[], None);
     assert!(queue_rows(&empty.upcoming()).is_empty());
-    let only_current = crate::ui::track_list::queue_sections::compose(Some(20), &[], &[], None);
+    let only_current =
+        crate::ui::track_list::queue_sections::compose(Some(track(20)), &[], &[], None);
     assert!(queue_rows(&only_current.upcoming()).is_empty());
     let manual =
-        crate::ui::track_list::queue_sections::compose(Some(20), &[90], &[], None).upcoming();
+        crate::ui::track_list::queue_sections::compose(Some(track(20)), &tracks(&[90]), &[], None)
+            .upcoming();
     assert_eq!(queue_rows(&manual), vec![QueueRow::PlayNext(0)]);
 }
 
 #[test]
 fn que_2_two_sections_headers_conditional() {
     let both = crate::ui::track_list::queue_sections::compose(
-        Some(10),
-        &[20, 21],
+        Some(track(10)),
+        &tracks(&[20, 21]),
         &[30],
         Some("Late Night"),
     )
@@ -62,7 +83,7 @@ fn que_2_two_sections_headers_conditional() {
     );
 
     let automatic_only =
-        crate::ui::track_list::queue_sections::compose(Some(10), &[], &[30], Some("Album"))
+        crate::ui::track_list::queue_sections::compose(Some(track(10)), &[], &[30], Some("Album"))
             .upcoming();
     assert_eq!(
         panel_section_headers(&automatic_only),
@@ -70,7 +91,8 @@ fn que_2_two_sections_headers_conditional() {
     );
 
     let manual_only =
-        crate::ui::track_list::queue_sections::compose(Some(10), &[20], &[], None).upcoming();
+        crate::ui::track_list::queue_sections::compose(Some(track(10)), &tracks(&[20]), &[], None)
+            .upcoming();
     assert_eq!(
         panel_section_headers(&manual_only),
         vec![(0, "Next in Queue".to_owned())]
@@ -161,8 +183,12 @@ fn up_next_row_click_jumps_to_the_exact_queue_entry() {
     let jumped = Rc::new(RefCell::new(None));
     let jumped_on_click = jumped.clone();
     panel.set_on_jump(move |row| *jumped_on_click.borrow_mut() = Some(row));
-    let model =
-        crate::ui::track_list::queue_sections::compose(Some(10), &[20], &[40], Some("Music"));
+    let model = crate::ui::track_list::queue_sections::compose(
+        Some(track(10)),
+        &tracks(&[20]),
+        &[40],
+        Some("Music"),
+    );
     panel.set_queue_model(&model);
     let window = gtk4::Window::builder().child(panel.widget()).build();
     window.present();
@@ -197,8 +223,12 @@ fn panel_remove_targets_the_exact_queue_entry() {
     let removed = Rc::new(RefCell::new(None));
     let removed_on_click = removed.clone();
     panel.set_on_remove(move |row| *removed_on_click.borrow_mut() = Some(row));
-    let model =
-        crate::ui::track_list::queue_sections::compose(Some(10), &[20], &[40], Some("Music"));
+    let model = crate::ui::track_list::queue_sections::compose(
+        Some(track(10)),
+        &tracks(&[20]),
+        &[40],
+        Some("Music"),
+    );
     panel.set_queue_model(&model);
     let window = gtk4::Window::builder().child(panel.widget()).build();
     window.present();
@@ -213,4 +243,47 @@ fn panel_remove_targets_the_exact_queue_entry() {
     buttons[1].emit_clicked();
 
     assert_eq!(*removed.borrow(), Some(QueueRow::UpNext(0)));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn mixed_queue_panel_renders_episode_title_and_show() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    crate::test_db::connection(&conn)
+        .execute_batch(
+            "INSERT INTO tracks (id, path, title, artist, added_at)
+             VALUES (7, '/tmp/track-seven.mp3', 'Track Seven', 'Track Artist', 0);
+             INSERT INTO podcast_subscriptions
+             (id, kind, feed_url, title, added_at)
+             VALUES (1, 'rss', 'https://example.test/feed', 'Systems Weekly', 0);
+             INSERT INTO podcast_episodes
+             (id, subscription_id, guid, title, audio_url, duration_secs, first_seen_at)
+             VALUES
+             (7, 1, 'episode-seven', 'Episode Seven',
+              'https://example.test/seven.mp3', 90, 0);",
+        )
+        .unwrap();
+    let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
+    let panel = UpNextPanel::new(conn, &cover_loader);
+    let model = crate::ui::track_list::queue_sections::compose(
+        None,
+        &[
+            reprise_core::up_next::QueueItem::Track(7),
+            reprise_core::up_next::QueueItem::Episode(7),
+        ],
+        &[],
+        None,
+    );
+    panel.set_queue_model(&model);
+    let window = gtk4::Window::builder().child(panel.widget()).build();
+    window.present();
+    while glib::MainContext::default().iteration(false) {}
+
+    let mut labels = Vec::new();
+    collect_label_texts(panel.widget().upcast_ref(), &mut labels);
+    assert!(labels.iter().any(|label| label == "Track Seven"));
+    assert!(labels.iter().any(|label| label == "Episode Seven"));
+    assert!(labels.iter().any(|label| label == "Systems Weekly"));
 }
