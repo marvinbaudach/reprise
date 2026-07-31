@@ -67,6 +67,7 @@ use reprise_runtime_protocol::device_sync::{
     DeviceCategorySnapshot, DeviceChangeCounts, DeviceControls, DeviceProgress, DeviceSnapshot,
     DeviceSourceSelection, DeviceSourceSnapshot, DeviceStorageComposition, DeviceStorageSnapshot,
 };
+use reprise_runtime_protocol::queue::{QueueItem, QueueSnapshot};
 use reprise_runtime_protocol::PROTOCOL_VERSION;
 
 /// Stub for the standard MPRIS `Player` interface. Each Rust method maps to its
@@ -350,6 +351,27 @@ impl RepriseStub {
 
     fn queue_snapshot(&self) -> (i64, Vec<i64>, Vec<i64>, u64, u64) {
         (42, vec![7, 8], vec![9, 10, 11], 2, 3)
+    }
+
+    fn queue_snapshot_v2(&self) -> QueueSnapshot {
+        QueueSnapshot {
+            revision: 0,
+            current_track_id: Some(42),
+            play_next_track_ids: vec![7, 8],
+            play_next_items: Some(vec![
+                QueueItem::track(7),
+                QueueItem::episode(7),
+                QueueItem::track(8),
+            ]),
+            context_track_ids: vec![9, 10, 11],
+            context_items: Some(vec![
+                QueueItem::track(9),
+                QueueItem::track(10),
+                QueueItem::track(11),
+            ]),
+            play_next_total: 3,
+            context_total: 3,
+        }
     }
 
     fn queue_add_next(&self, ids: Vec<i64>) {
@@ -689,7 +711,7 @@ fn music_set_playback_reaches_each_mpris_setting() {
 }
 
 #[test]
-fn music_queue_reads_state_and_dispatches_safe_mutations() {
+fn que_9_music_queue_reads_mixed_state_without_widening_legacy_track_ids() {
     let Some(bus) = PrivateBus::start() else {
         eprintln!("environment-limited: dbus-daemon unavailable; skipping the MPRIS bus roundtrip");
         return;
@@ -713,8 +735,24 @@ fn music_queue_reads_state_and_dispatches_safe_mutations() {
     let body = structured_ok(&status);
     assert_eq!(body["current_track_id"], 42);
     assert_eq!(body["play_next_track_ids"], json!([7, 8]));
+    assert_eq!(
+        body["play_next_items"],
+        json!([
+            { "kind": "track", "id": 7 },
+            { "kind": "episode", "id": 7 },
+            { "kind": "track", "id": 8 }
+        ])
+    );
     assert_eq!(body["context_track_ids"], json!([9, 10, 11]));
-    assert_eq!(body["play_next_total"], 2);
+    assert_eq!(
+        body["context_items"],
+        json!([
+            { "kind": "track", "id": 9 },
+            { "kind": "track", "id": 10 },
+            { "kind": "track", "id": 11 }
+        ])
+    );
+    assert_eq!(body["play_next_total"], 3);
     assert_eq!(body["context_total"], 3);
 
     for params in [

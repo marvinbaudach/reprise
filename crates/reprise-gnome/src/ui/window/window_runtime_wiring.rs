@@ -126,7 +126,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         radio_view,
         device_sync,
     );
-    wire_source_module_recompute(preferences, device_sync);
+    super::source_connectivity::wire_source_module_recompute(preferences, device_sync);
 
     let refresh_doctor_views = {
         let stats = stats_view.clone();
@@ -618,6 +618,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         watcher_state,
     );
     start_external_changes_refresh(db_path, track_list, sidebar);
+    wire_queue_episode_marker(track_list, player.as_ref());
     super::mounts::install(&super::mounts::MountWiring {
         conn,
         db_path,
@@ -727,6 +728,28 @@ fn start_persisted_watcher(
 /// itself — so only foreign writes drive a coarse, silent refresh of the
 /// sidebar and the current track list (UX rules EXT-1a..EXT-4). A notifier that
 /// cannot start just means no live updates; it is never fatal.
+/// Keeps the Queue surfaces' now-playing marker in step with a queued episode.
+///
+/// The track-side marker is driven by `playing_track_id`, written when a track
+/// starts. An episode never goes through that path — it plays through the
+/// external-media controller — so without this the app can be playing a queued
+/// episode while every queue surface shows nothing as playing. The Podcasts and
+/// YouTube views already subscribe to the same signal for their own marker;
+/// this adds the queue's.
+fn wire_queue_episode_marker(track_list: &Rc<TrackList>, player: Option<&Rc<PlayerController>>) {
+    let Some(player) = player else {
+        return;
+    };
+    let track_list = Rc::downgrade(track_list);
+    player.add_on_external_changed(move |snapshot| {
+        let Some(track_list) = track_list.upgrade() else {
+            return;
+        };
+        let episode_mark = crate::ui::podcasts::episode_mark_from_snapshot(snapshot.as_ref());
+        track_list.set_playing_episode(episode_mark);
+    });
+}
+
 fn start_external_changes_refresh(
     db_path: &Path,
     track_list: &Rc<TrackList>,
@@ -758,24 +781,4 @@ fn start_external_changes_refresh(
             }
         }),
     );
-}
-
-/// `MTP-46`/`SET-4`: the two source-module switches live in Preferences but
-/// change what a device may sync, and the device page renders from a snapshot
-/// that only a recompute refreshes. Without this the row of a switched-off
-/// source stays until something unrelated triggers one.
-///
-/// The runtime is held weakly: the preferences context outlives it in no
-/// meaningful sense, and a strong cycle through this closure would keep both
-/// alive for the life of the process.
-pub(in crate::ui) fn wire_source_module_recompute(
-    preferences: &Rc<crate::ui::preferences::PreferencesContext>,
-    device_sync: &Rc<crate::ui::device_sync_runtime::DeviceSyncRuntime>,
-) {
-    let device_sync = Rc::downgrade(device_sync);
-    *preferences.on_source_modules_changed.borrow_mut() = Some(Rc::new(move || {
-        if let Some(device_sync) = device_sync.upgrade() {
-            device_sync.recompute_all_devices();
-        }
-    }));
 }

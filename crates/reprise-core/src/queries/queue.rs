@@ -1,213 +1,308 @@
-//! `ViewSource::Queue` window/count queries — a window over a caller-supplied
-//! id list (the queue's own current play order) rather than a `WHERE`
-//! clause, plus the queue-ids cap (`QUEUE_LIMIT`) and its overflow check
-//! (`is_queue_capped`). Split out of the former single-file `queries.rs`
-//! (Refactoring & Extensibility Task 1) — a pure move, no behavior change.
+//! `ViewSource::Queue` queries over the caller-owned manual queue order.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+
+use rusqlite::Connection;
 
 use crate::db::Db;
 use crate::models::Track;
+use crate::podcasts::EpisodeRow;
+use crate::up_next::QueueItem;
 
 use super::clauses::{ai_projection, row_to_track};
 use super::MAX_WINDOW_LIMIT;
-use rusqlite::Connection;
 
-/// Hard cap on how many track ids `query_track_ids` will ever return in one
-/// call. This is a *separate* constant from `MAX_WINDOW_LIMIT` on purpose:
-/// `query_track_ids` powers the queue (Stage 2 Task 4 — "play this whole
-/// view"), which legitimately wants every matching id, not one `ColumnView`
-/// page. `MAX_WINDOW_LIMIT` (500) is sized for a UI page; a queue is
-/// reasonably built from a much larger library, but still must not turn a
-/// huge/unfiltered library into an unbounded query. 10,000 tracks is a very
-/// large personal library and a small `Vec<i64>` (~80 KB) even at the cap.
-/// Callers should compare the returned `Vec`'s length against this constant
-/// via `is_queue_capped` and log a warning when it's capped, since the `Vec`
-/// alone can't distinguish "capped" from "library has exactly this many
-/// tracks".
+/// Hard cap for playback snapshots and the manual queue.
 pub const QUEUE_LIMIT: i64 = 10_000;
 
-/// Window over an explicit id list, in that list's own order — see the
-/// module doc's `Queue` section for why this slices in Rust rather than
-/// asking SQL to preserve an arbitrary order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum QueueItemMetadata {
+    Track(Track),
+    Episode(EpisodeRow),
+}
+
+impl QueueItemMetadata {
+    pub fn item(&self) -> QueueItem {
+        match self {
+            Self::Track(track) => QueueItem::Track(track.id),
+            Self::Episode(episode) => QueueItem::Episode(episode.id),
+        }
+    }
+
+    pub fn duration_ms(&self) -> i64 {
+        match self {
+            Self::Track(track) => track.duration_ms,
+            Self::Episode(episode) => episode
+                .duration_secs
+                .unwrap_or_default()
+                .saturating_mul(1_000),
+        }
+    }
+}
+
+/// Resolves one bounded queue window with at most one batched query for each
+/// item kind present. Duplicate entries render once per occurrence.
+pub fn query_queue_item_window(
+    db: &Db,
+    items: &[QueueItem],
+    offset: i64,
+    limit: i64,
+) -> Result<Vec<QueueItemMetadata>, rusqlite::Error> {
+    query_queue_item_window_with_observer(db.conn(), items, offset, limit, true, || {})
+}
+
 pub(super) fn query_track_window_queue(
     conn: &Connection,
-    ids: &[i64],
+    items: &[QueueItem],
     offset: i64,
     limit: i64,
     project_ai: bool,
 ) -> Result<Vec<Track>, rusqlite::Error> {
-    query_track_window_queue_with_observer(conn, ids, offset, limit, project_ai, || {})
+    Ok(
+        query_queue_item_window_with_observer(conn, items, offset, limit, project_ai, || {})?
+            .into_iter()
+            .filter_map(|metadata| match metadata {
+                QueueItemMetadata::Track(track) => Some(track),
+                QueueItemMetadata::Episode(_) => None,
+            })
+            .collect(),
+    )
 }
 
 #[cfg(test)]
-pub(super) fn query_track_window_queue_counted(
+pub(super) fn query_queue_item_window_counted(
     conn: &Connection,
-    ids: &[i64],
+    items: &[QueueItem],
     offset: i64,
     limit: i64,
-    on_query: impl FnOnce(),
-) -> Result<Vec<Track>, rusqlite::Error> {
-    query_track_window_queue_with_observer(conn, ids, offset, limit, true, on_query)
+    on_query: impl FnMut(),
+) -> Result<Vec<QueueItemMetadata>, rusqlite::Error> {
+    query_queue_item_window_with_observer(conn, items, offset, limit, true, on_query)
 }
 
-fn query_track_window_queue_with_observer(
+fn query_queue_item_window_with_observer(
     conn: &Connection,
-    ids: &[i64],
+    items: &[QueueItem],
     offset: i64,
     limit: i64,
     project_ai: bool,
-    on_query: impl FnOnce(),
-) -> Result<Vec<Track>, rusqlite::Error> {
+    mut on_query: impl FnMut(),
+) -> Result<Vec<QueueItemMetadata>, rusqlite::Error> {
     let limit = limit.clamp(0, MAX_WINDOW_LIMIT);
     if limit == 0 || offset < 0 {
         return Ok(Vec::new());
     }
     let offset = offset as usize;
-    if offset >= ids.len() {
+    if offset >= items.len() {
         return Ok(Vec::new());
     }
-    let end = (offset + limit as usize).min(ids.len());
-    let slice = &ids[offset..end];
-    if slice.is_empty() {
-        return Ok(Vec::new());
+    let end = offset.saturating_add(limit as usize).min(items.len());
+    let slice = &items[offset..end];
+    let track_ids = distinct_ids(slice.iter().filter_map(|item| item.track_id()));
+    let episode_ids = distinct_ids(slice.iter().filter_map(|item| item.episode_id()));
+
+    let mut resolved = HashMap::with_capacity(track_ids.len() + episode_ids.len());
+    if !track_ids.is_empty() {
+        on_query();
+        for track in query_tracks(conn, &track_ids, project_ai)? {
+            resolved.insert(QueueItem::Track(track.id), QueueItemMetadata::Track(track));
+        }
+    }
+    if !episode_ids.is_empty() {
+        on_query();
+        for episode in query_episodes(conn, &episode_ids)? {
+            resolved.insert(
+                QueueItem::Episode(episode.id),
+                QueueItemMetadata::Episode(episode),
+            );
+        }
     }
 
-    // Resolve each *distinct* id once — a duplicated id must still render
-    // once per occurrence in `slice` (see below), so the id list handed to
-    // `IN (...)` is deduplicated first to keep the query and its parameter
-    // count independent of how many times an id repeats in this page.
-    let distinct_ids: Vec<i64> = slice
+    Ok(slice
         .iter()
-        .copied()
-        .collect::<std::collections::HashSet<_>>()
-        .into_iter()
-        .collect();
-    let placeholders = (1..=distinct_ids.len())
-        .map(|i| format!("?{i}"))
+        .filter_map(|item| resolved.get(item).cloned())
+        .collect())
+}
+
+fn distinct_ids(ids: impl Iterator<Item = i64>) -> Vec<i64> {
+    ids.collect::<HashSet<_>>().into_iter().collect()
+}
+
+fn placeholders(count: usize) -> String {
+    (1..=count)
+        .map(|index| format!("?{index}"))
         .collect::<Vec<_>>()
-        .join(",");
+        .join(",")
+}
+
+fn query_tracks(
+    conn: &Connection,
+    ids: &[i64],
+    project_ai: bool,
+) -> Result<Vec<Track>, rusqlite::Error> {
     let is_ai = ai_projection(project_ai);
     let sql = format!(
         "SELECT id, path, title, artist, album, album_artist, year, track_no, genre, \
          duration_ms, bitrate_kbps, rating, play_count, last_played_at, added_at, \
          file_mtime, missing_since, missing_reason, untagged, file_size, device, inode, \
          {is_ai} AS is_ai \
-         FROM tracks WHERE id IN ({placeholders})"
+         FROM tracks WHERE id IN ({})",
+        placeholders(ids.len())
     );
-    on_query();
-    let mut stmt = conn.prepare(&sql)?;
-    let rows: Vec<Track> = stmt
-        .query_map(
-            rusqlite::params_from_iter(distinct_ids.iter()),
-            row_to_track,
-        )?
-        .collect::<Result<_, _>>()?;
-
-    // invariant: an id in `ids` with no matching `tracks` row is silently
-    // dropped here (via `filter_map`), so this window's row count can be
-    // *less* than `slice.len()`. Stage-3 close-out: hard-delete now exists
-    // (`remove_missing_tracks`), so this is reachable
-    // — a queued id can genuinely stop resolving mid-life. Two things keep
-    // this from desyncing the UI: (1) the queue itself is purged of any
-    // hard-deleted id in lockstep, via `ui::player_controller::
-    // PlayerController::purge_queue_ids`, called from the "Remove from
-    // library" flow (`ui::track_list_context_menu::handle_remove_from_
-    // library`); (2) belt-and-braces, `query_track_count`'s `Queue` arm
-    // (`query_track_count_queue`) counts actually-matched rows rather than
-    // trusting `queue_ids.len()` verbatim, so even an unpurged stale id
-    // can't make a `ColumnView` believe there are more rows than this
-    // function will ever render (see `queue_count_matches_window_row_count_
-    // when_some_ids_do_not_resolve` below).
-    //
-    // A *duplicated* id within `slice` is resolved independently per
-    // occurrence (via `by_id.get(id).cloned()`, never `remove`), so two
-    // copies of the same queued id yield two rows, each in its own slot —
-    // this used to be a `HashMap::remove`-based drain that silently
-    // swallowed every occurrence after the first, desyncing DnD reorder
-    // (which uses view row position as queue index) for every row after the
-    // duplicate. See `queue_window_renders_a_duplicated_id_once_per_
-    // occurrence` below.
-    let by_id: HashMap<i64, Track> = rows.into_iter().map(|t| (t.id, t)).collect();
-    Ok(slice
-        .iter()
-        .filter_map(|id| by_id.get(id).cloned())
-        .collect())
+    let mut statement = conn.prepare(&sql)?;
+    let rows = statement
+        .query_map(rusqlite::params_from_iter(ids), row_to_track)?
+        .collect();
+    rows
 }
 
-/// Sums the remaining duration for an explicit queue snapshot in one scalar
-/// metadata query. Duplicate queue entries count independently; stale ids
-/// contribute nothing, matching the window query's behavior.
-pub fn query_queue_duration_ms(db: &Db, queue_ids: &[i64]) -> Result<i64, rusqlite::Error> {
-    let conn = db.conn();
-    if queue_ids.is_empty() {
+fn query_episodes(conn: &Connection, ids: &[i64]) -> Result<Vec<EpisodeRow>, rusqlite::Error> {
+    let sql = format!(
+        "SELECT {}
+         FROM podcast_episodes e
+         JOIN podcast_subscriptions s ON s.id = e.subscription_id
+         WHERE e.id IN ({})
+           AND e.removed_at IS NULL
+           AND s.removed_at IS NULL",
+        crate::podcasts::query::EPISODE_COLUMNS,
+        placeholders(ids.len())
+    );
+    let mut statement = conn.prepare(&sql)?;
+    let rows = statement
+        .query_map(
+            rusqlite::params_from_iter(ids),
+            crate::podcasts::store::episode_from_row,
+        )?
+        .collect();
+    rows
+}
+
+/// Sums durations in queue order. Missing duration contributes zero.
+pub fn query_queue_duration_ms(db: &Db, items: &[QueueItem]) -> Result<i64, rusqlite::Error> {
+    if items.is_empty() {
         return Ok(0);
     }
-    let distinct_ids: Vec<i64> = queue_ids
-        .iter()
+    let conn = db.conn();
+    let track_ids = distinct_ids(items.iter().filter_map(|item| item.track_id()));
+    let episode_ids = distinct_ids(items.iter().filter_map(|item| item.episode_id()));
+    let tracks = query_durations(conn, "tracks", "id", "duration_ms", "", &track_ids)?;
+    let episodes = query_durations(
+        conn,
+        "podcast_episodes e JOIN podcast_subscriptions s ON s.id = e.subscription_id",
+        "e.id",
+        "COALESCE(e.duration_secs, 0) * 1000",
+        "AND e.removed_at IS NULL AND s.removed_at IS NULL",
+        &episode_ids,
+    )?;
+    Ok(items.iter().fold(0_i64, |total, item| {
+        let duration = match item {
+            QueueItem::Track(id) => tracks.get(id),
+            QueueItem::Episode(id) => episodes.get(id),
+        }
         .copied()
-        .collect::<std::collections::HashSet<_>>()
-        .into_iter()
-        .collect();
-    let placeholders = (1..=distinct_ids.len())
-        .map(|index| format!("?{index}"))
-        .collect::<Vec<_>>()
-        .join(",");
-    let sql = format!("SELECT id, duration_ms FROM tracks WHERE id IN ({placeholders})");
-    let mut statement = conn.prepare(&sql)?;
-    let durations: HashMap<i64, i64> = statement
-        .query_map(rusqlite::params_from_iter(distinct_ids.iter()), |row| {
-            Ok((row.get(0)?, row.get(1)?))
-        })?
-        .collect::<Result<_, _>>()?;
-    Ok(queue_ids.iter().fold(0_i64, |total, id| {
-        total.saturating_add(durations.get(id).copied().unwrap_or(0))
+        .unwrap_or_default();
+        total.saturating_add(duration)
     }))
 }
 
-/// Counts how many of `queue_ids` still resolve to a live `tracks` row —
-/// the `Queue` count arm of `query_track_count` (Stage-3 close-out: hard-
-/// delete now exists — `remove_missing_tracks` — so a
-/// queued id can no longer be assumed to resolve; see that function's doc
-/// comment for the full history). Every occurrence in `queue_ids` is
-/// counted independently (not deduplicated first), matching `query_track_
-/// window_queue`'s own per-slot resolution — a track queued twice that
-/// still exists counts twice, and (Stage-3 close-out, dup-id follow-up)
-/// `query_track_window_queue` now genuinely renders it twice too: it used
-/// to resolve slots via a `HashMap::remove`-based drain, which silently
-/// dropped every occurrence of a duplicated id after the first, so this
-/// invariant held for the count but not for the window it was compared
-/// against. Both are now id-resolution-independent-per-slot, so this count
-/// equals the window's row count for any `queue_ids`, duplicates included
-/// — see `queue_window_renders_a_duplicated_id_once_per_occurrence` and
-/// `queue_count_matches_window_row_count_with_a_duplicated_id` below.
-pub(super) fn query_track_count_queue(
+pub(super) fn query_queue_item_count(
     conn: &Connection,
-    queue_ids: &[i64],
+    items: &[QueueItem],
 ) -> Result<i64, rusqlite::Error> {
-    if queue_ids.is_empty() {
+    if items.is_empty() {
         return Ok(0);
     }
-    let unique_ids: std::collections::HashSet<i64> = queue_ids.iter().copied().collect();
-    let placeholders = (1..=unique_ids.len())
-        .map(|i| format!("?{i}"))
-        .collect::<Vec<_>>()
-        .join(",");
-    let sql = format!("SELECT id FROM tracks WHERE id IN ({placeholders})");
-    let mut stmt = conn.prepare(&sql)?;
-    let existing: std::collections::HashSet<i64> = stmt
-        .query_map(rusqlite::params_from_iter(unique_ids.iter()), |r| r.get(0))?
-        .collect::<Result<_, _>>()?;
-    Ok(queue_ids.iter().filter(|id| existing.contains(id)).count() as i64)
+    let track_ids = distinct_ids(items.iter().filter_map(|item| item.track_id()));
+    let episode_ids = distinct_ids(items.iter().filter_map(|item| item.episode_id()));
+    let tracks = query_existing_ids(conn, "tracks", "id", "", &track_ids)?;
+    let episodes = query_existing_ids(
+        conn,
+        "podcast_episodes e JOIN podcast_subscriptions s ON s.id = e.subscription_id",
+        "e.id",
+        "AND e.removed_at IS NULL AND s.removed_at IS NULL",
+        &episode_ids,
+    )?;
+    Ok(items
+        .iter()
+        .filter(|item| match item {
+            QueueItem::Track(id) => tracks.contains(id),
+            QueueItem::Episode(id) => episodes.contains(id),
+        })
+        .count() as i64)
 }
 
-/// Whether a `query_track_ids` result of this length was (probably) capped
-/// by `QUEUE_LIMIT`. Treats the exact-boundary case (`len == QUEUE_LIMIT`)
-/// as capped: the alternative — a library with *exactly* `QUEUE_LIMIT`
-/// matching tracks — is indistinguishable from a truncated one without a
-/// second `COUNT(*)` query, and logging one harmless extra warning on that
-/// rare exact-fit case is a better tradeoff than silently missing a real
-/// truncation.
+pub(super) fn query_track_count_queue(
+    conn: &Connection,
+    items: &[QueueItem],
+) -> Result<i64, rusqlite::Error> {
+    query_queue_item_count(conn, items)
+}
+
+fn query_existing_ids(
+    conn: &Connection,
+    source: &str,
+    id_column: &str,
+    predicate: &str,
+    ids: &[i64],
+) -> Result<HashSet<i64>, rusqlite::Error> {
+    if ids.is_empty() {
+        return Ok(HashSet::new());
+    }
+    let sql = format!(
+        "SELECT {id_column} FROM {source} WHERE {id_column} IN ({}) {predicate}",
+        placeholders(ids.len())
+    );
+    let mut statement = conn.prepare(&sql)?;
+    let rows = statement
+        .query_map(rusqlite::params_from_iter(ids), |row| row.get(0))?
+        .collect();
+    rows
+}
+
+#[allow(clippy::too_many_arguments)]
+fn query_durations(
+    conn: &Connection,
+    source: &str,
+    id_column: &str,
+    duration_column: &str,
+    predicate: &str,
+    ids: &[i64],
+) -> Result<HashMap<i64, i64>, rusqlite::Error> {
+    if ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let sql = format!(
+        "SELECT {id_column}, {duration_column}
+         FROM {source}
+         WHERE {id_column} IN ({}) {predicate}",
+        placeholders(ids.len())
+    );
+    let mut statement = conn.prepare(&sql)?;
+    let rows = statement
+        .query_map(rusqlite::params_from_iter(ids), |row| {
+            let id = row.get(0)?;
+            let duration: i64 = row.get(1)?;
+            Ok((id, duration))
+        })?
+        .collect();
+    rows
+}
+
+/// Active episode ids eligible to remain in or advance from the manual queue.
+pub fn query_available_episode_ids(db: &Db) -> Result<HashSet<i64>, rusqlite::Error> {
+    let mut statement = db.conn().prepare(
+        "SELECT e.id
+         FROM podcast_episodes e
+         JOIN podcast_subscriptions s ON s.id = e.subscription_id
+         WHERE e.removed_at IS NULL AND s.removed_at IS NULL",
+    )?;
+    let rows = statement
+        .query_map([], |row| row.get(0))?
+        .collect::<Result<_, _>>();
+    rows
+}
+
+/// Whether a `query_track_ids` result probably reached the queue cap.
 pub fn is_queue_capped(len: usize) -> bool {
     len as i64 >= QUEUE_LIMIT
 }

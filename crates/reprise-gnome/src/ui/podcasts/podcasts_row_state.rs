@@ -3,7 +3,8 @@ use reprise_core::connectivity::Connectivity;
 use reprise_core::podcasts::download_state::DownloadState;
 
 use super::podcasts_download_presentation::{
-    download_failure_presentation, episode_network_presentation, EpisodeNetworkPresentation,
+    download_failure_presentation, episode_network_presentation, localized_download_failure_reason,
+    EpisodeNetworkPresentation,
 };
 use super::podcasts_groups::DownloadRowWidgets;
 use crate::ui::strings;
@@ -73,8 +74,15 @@ pub(super) fn download_status(state: &DownloadState) -> gtk4::Widget {
         return root.upcast();
     }
     let failure = download_failure_presentation(state);
-    if let Some(failure) = failure {
-        root.set_tooltip_text(Some(failure.tooltip));
+    let localized_tooltip = failure
+        .as_ref()
+        .map(|failure| localized_download_failure_reason(failure.tooltip));
+    let localized_detail = failure
+        .as_ref()
+        .and_then(|failure| failure.visible_detail)
+        .map(localized_download_failure_reason);
+    if let Some(failure) = localized_tooltip.as_deref() {
+        root.set_tooltip_text(Some(failure));
     }
     root.set_size_request(110, -1);
     let label = gtk4::Label::new(None);
@@ -112,7 +120,7 @@ pub(super) fn download_status(state: &DownloadState) -> gtk4::Widget {
         }
         DownloadState::Failed { .. } => {
             label.set_text(&strings::text(strings::PODCAST_DOWNLOAD_FAILED));
-            if let Some(detail) = failure.and_then(|failure| failure.visible_detail) {
+            if let Some(detail) = localized_detail.as_deref() {
                 let reason = gtk4::Label::new(Some(detail));
                 reason.set_xalign(1.0);
                 reason.set_wrap(true);

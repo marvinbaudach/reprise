@@ -5,6 +5,7 @@ use std::rc::Rc;
 
 use gtk4::gdk;
 use gtk4::prelude::*;
+use reprise_core::up_next::QueueItem;
 use reprise_core::view_source::ViewSource;
 
 use super::track_list_context_menu::{current_selection_ids, current_selection_positions};
@@ -72,7 +73,10 @@ pub(in crate::ui) fn is_available(shared: &Rc<Shared>, direction: ReorderDirecti
                 return false;
             };
             let payload = DragPayload {
-                ids: current_selection_ids(shared),
+                items: current_selection_ids(shared)
+                    .into_iter()
+                    .map(QueueItem::Track)
+                    .collect(),
                 reorder_position: Some(source_position),
             };
             track_list_dnd::resolve_reorder_target(&payload, target_position).is_some()
@@ -100,17 +104,28 @@ pub(in crate::ui) fn perform(shared: &Rc<Shared>, direction: ReorderDirection) -
                 return false;
             };
             let payload = DragPayload {
-                ids: current_selection_ids(shared),
+                items: current_selection_ids(shared)
+                    .into_iter()
+                    .map(QueueItem::Track)
+                    .collect(),
                 reorder_position: Some(source_position),
             };
             track_list_dnd::handle_playlist_reorder_drop(shared, playlist_id, &payload, target)
         }
         ViewSource::Queue => {
-            let payload = DragPayload {
-                ids: current_selection_ids(shared),
-                reorder_position: Some(i64::from(from)),
+            let op = {
+                let sections = shared.queue_sections.borrow();
+                keyboard_queue_op(from, shared.model.n_items(), direction, &sections)
             };
-            track_list_dnd::handle_queue_reorder_drop(shared, &payload, target)
+            let Some(op) = op else {
+                return false;
+            };
+            let callback = shared.on_queue_reorder.borrow().clone();
+            let moved = callback.is_some_and(|callback| callback(op));
+            if moved {
+                super::reload(shared);
+            }
+            moved
         }
         _ => false,
     }
@@ -150,6 +165,7 @@ pub(in crate::ui) fn wire(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use reprise_core::up_next::QueueItem;
 
     #[test]
     fn keyboard_targets_respect_bounds_and_top() {
@@ -189,9 +205,13 @@ mod tests {
 
     #[test]
     fn queue_keyboard_move_is_the_same_operation_as_a_drop() {
-        let sections =
-            super::super::queue_sections::compose(Some(1), &[2, 3], &[4, 5, 6], Some("Music"))
-                .sections;
+        let sections = super::super::queue_sections::compose(
+            Some(QueueItem::Track(1)),
+            &[QueueItem::Track(2), QueueItem::Track(3)],
+            &[4, 5, 6],
+            Some("Music"),
+        )
+        .sections;
         let keyboard = keyboard_queue_op(2, 6, ReorderDirection::Up, &sections);
         let dropped = super::super::queue_row_mapping::reorder_op(2, 1, &sections);
         assert_eq!(keyboard, dropped);
@@ -200,6 +220,22 @@ mod tests {
             Some(
                 super::super::queue_row_mapping::QueueReorderOp::WithinPlayNext { from: 1, to: 0 }
             )
+        );
+    }
+
+    #[test]
+    fn episode_queue_keyboard_move_uses_positions_without_a_track_id_payload() {
+        let sections = super::super::queue_sections::compose(
+            Some(QueueItem::Track(1)),
+            &[QueueItem::Episode(7), QueueItem::Track(8)],
+            &[],
+            None,
+        )
+        .sections;
+
+        assert_eq!(
+            keyboard_queue_op(1, 3, ReorderDirection::Down, &sections),
+            super::super::queue_row_mapping::reorder_op(1, 2, &sections)
         );
     }
 }

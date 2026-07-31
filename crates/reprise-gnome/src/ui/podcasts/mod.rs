@@ -6,10 +6,12 @@ mod add_dialog_input;
 mod add_dialog_results;
 mod css;
 mod podcasts_batch_actions;
+mod podcasts_callbacks;
 mod podcasts_columns;
 mod podcasts_context_menu;
 mod podcasts_deferred_actions;
 mod podcasts_device_sync;
+mod podcasts_dnd;
 mod podcasts_download_presentation;
 mod podcasts_empty_state;
 mod podcasts_episode_window;
@@ -31,8 +33,9 @@ mod podcasts_worker;
 pub(crate) mod source_image;
 mod youtube_channel_detail;
 
-pub(in crate::ui) use podcasts_playback::{podcast_phase_is_playing, EpisodeMark};
-pub(in crate::ui) use podcasts_view::{PodcastsCallbacks, PodcastsView};
+pub(in crate::ui) use podcasts_callbacks::PodcastsCallbacks;
+pub(in crate::ui) use podcasts_playback::{episode_mark_from_snapshot, EpisodeMark};
+pub(in crate::ui) use podcasts_view::PodcastsView;
 // `MTP-43`: the device-sync preparation phase (E9) reuses `MTP-44`'s
 // priority lane instead of a second download path — it needs these to build
 // its own `PodcastsRequest` the same way `podcasts_view.rs` does.

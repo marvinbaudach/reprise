@@ -190,8 +190,9 @@ CREATE TABLE IF NOT EXISTS radio_stations (
 - **Episoden-Identität = GUID (Grill-Beschluss, Reversibilität):** `UNIQUE(subscription_id, guid)`
   ist der EINZIGE stabile Schlüssel — Resume-Position, Played-Zustand und `downloaded_path` hängen
   ausnahmslos am GUID, nie an Datei- oder URL-Schlüsseln; YouTube-GUID = Video-ID. Damit ist die
-  v1.1-Option „Episoden als Queue-Bürger" (12) eine Migration (GUID → Queue-Identität) statt
-  Re-Keying, und Re-Subscribe findet verwaiste Downloads deterministisch wieder (7.4).
+  die umgesetzte Queue-Bürgerschaft ohne Re-Keying möglich: die per GUID upgesertete
+  `podcast_episodes.id` ist die Queue-Identität. Re-Subscribe findet verwaiste Downloads
+  weiterhin deterministisch wieder (7.4).
 - **Settings** (`settings`-Tabelle, `library::settings`): `podcasts.import_count` (25),
   `podcasts.auto_download_default` (false), `podcasts.cleanup_policy` (`keep_all` |
   `delete_played_7d` | `keep_last_5`), `podcasts.youtube_enabled` (true), `podcasts.ytdlp_path`
@@ -264,6 +265,15 @@ Dünner `std::process::Command`-Wrapper, komplett in core (nur std):
   `libexec`-Verzeichnis → `"yt-dlp"` im PATH. `probe_version()` (`--version`, 10 s) speist
   Preferences-Row und Verfügbarkeits-Gate. Release-Pakete behandeln den Helper als
   Laufzeitkomponente, nicht als manuell zu erfüllende Nutzervoraussetzung.
+- **Explizite Browser-Sitzung:** Das persistierte Setting `podcasts.youtube_browser` reicht den
+  im Plugins-Fenster gewählten yt-dlp-Browserbezeichner (z. B. `brave`) als
+  `--cookies-from-browser` an Listing, Suche, Resolve und Download weiter. Ohne diese Auswahl liest
+  Reprise keine Browser-Cookies; der sichtbare Opt-out ist autoritativ und kann nicht von einer
+  Umgebungsvariable überstimmt werden. `REPRISE_YTDLP_COOKIES_FROM_BROWSER` bleibt nur als
+  Low-Level-Seam für explizite Paketdiagnosen und Tests von `YtDlp::discover`, nie als versteckter
+  Fallback eines Produktpfads. Das ist bewusst ein Opt-in: der Aufruf kann als das im Browser
+  angemeldete YouTube-Konto erfolgen; Reprise speichert oder protokolliert weder Cookies noch den
+  Browserprofilpfad.
 - **Aufrufe** (alle `--no-warnings`, stdout=JSON, Timeout mit Kill via `try_wait`-Schleife in
   100-ms-Slices): `list(url)` = `--flat-playlist -J {url}` (60 s, Legacy-Fallback);
   `list_range(url, 40)` = `--flat-playlist -I 1:40 -J {url}` erst bei „Load more";
@@ -368,8 +378,9 @@ aussagekräftiger UA ist radio-browser-Pflicht — der bestehende UA-String erf�
   `attach_bus_watch` erhält einen `MessageView::Tag`-Arm — `gst::tags::Title`/`Organization` aus der
   TagList, nur bei Änderung emittiert (letzter Wert im Watch-State, wie `spectrum_analyzer`).
 - **Gapless-Kontrakt:** External-Play parkt den Pre-Feed (`set_next(None)` im Controller + Reset in
-  `play_uri`) — Radio/YouTube geraten nie in den `about-to-finish`-Handoff (exakt der
-  Preview-Kontrakt).
+  `play_uri`). Auch eine Episode in der manuellen Queue setzt an ihrer Grenze `set_next(None)`;
+  der Outcome bleibt gapless-frei, obwohl sie nach dem Ende über den normalen Queue-Advance
+  fortsetzt. Radio/YouTube geraten nie in den `about-to-finish`-Handoff.
 - **Duration-Probe:** der bestehende Position-Ticker liefert `duration_ms` — kein
   Backend-Sondercode.
 
@@ -378,18 +389,20 @@ aussagekräftiger UA ist radio-browser-Pflicht — der bestehende UA-String erf�
 `MprisState` wächst um `live_stream: bool` und `external_ref: Option<String>` (Kennung
 `podcast/{id}` bzw. `radio/{id}`). Pure Prädikate angepasst + getestet: `can_pause`/`can_play`
 zählen `external_ref` als geladen; **`can_seek` = Track ODER (external ∧ !live_stream)**;
-`build_metadata` baut bei `external_ref` den trackid-Pfad `/org/reprise/Reprise/external/{ref}` und
-lässt **`mpris:length` bei `live_stream` weg**; `metadata_differs` sieht die neuen Felder
+`build_metadata` baut für Podcasts den trackid-Pfad `/org/reprise/Reprise/episode/{id}`, für
+andere externe Medien weiterhin `/org/reprise/Reprise/external/{ref}`, und lässt
+**`mpris:length` bei `live_stream` weg**; `metadata_differs` sieht die neuen Felder
 (ICY-Wechsel → PropertiesChanged). Radio: `xesam:title` = StreamTitle (Fallback Stationsname),
-`xesam:artist` = [Stationsname]; Podcast: Episodentitel / [Show].
+`xesam:artist` = [Stationsname]; Podcast: Episodentitel / [Show] / Länge, ohne Album oder Rating.
 
 Drei Schärfungen aus dem Grill (External sieht nach außen nie kaputt aus):
 
-- **Durch POD-20 eingeengt:** `can_go_next`/`can_go_previous` sind nur bei External **ohne**
+- **Durch POD-21 eingeengt:** `can_go_next`/`can_go_previous` sind nur bei External **ohne**
   Episoden-Nachbarn false. Eine Podcast-/YouTube-Session mit eingefrorenem
-  Listen-Kontext meldet die tatsächlich vorhandenen Nachbarn; Radio und
-  kontextlose Episoden bleiben false. So folgen Media Keys denselben
-  Grenzen wie die sichtbaren Buttons, ohne External zu Queue-Mitgliedern zu machen.
+  Listen-Kontext meldet die tatsächlich vorhandenen Nachbarn: bei direktem Start aus der
+  gerenderten Episodenliste, bei Herkunft „manuelle Queue" aus deren typisierter Reihenfolge.
+  Radio und kontextlose Episoden bleiben false. So folgen Media Keys denselben Grenzen wie die
+  sichtbaren Buttons; die Queue-Bürgerschaft selbst regelt QUE-9.
 - **`mpris:artUrl` = Remote-URL-Pass-through:** Podcast → persistierte `image_url`, Radio →
   `favicon_url` (falls vorhanden). GNOME Shell lädt selbst — es gibt weiterhin **keinen
   In-App-Bild-Downloader** (Nicht-Ziel 8 bleibt unangetastet).
@@ -401,7 +414,8 @@ Drei Schärfungen aus dem Grill (External sieht nach außen nie kaputt aus):
 Generalisierung des Preview-Musters (`preview.rs` bleibt funktional, sein Enum wird erweitert):
 
 ```rust
-pub(in crate::ui) enum PlaybackMode { Queue, Preview, Podcast, Radio } // advances_queue_on_finish: nur Queue
+pub(in crate::ui) enum PlaybackMode { Queue, QueuedEpisode, Preview, Podcast, Radio }
+// advances_queue_on_finish: Queue | QueuedEpisode; credits_listening: nur Queue
 pub(in crate::ui) enum ExternalMedia {
     Podcast { episode_id: i64, title: String, show: String,
               source: EpisodeSource /* Url(String) | File(String) */,
@@ -543,9 +557,10 @@ Zustandsmaschine pur: `Idle → Searching → Results | UrlDetected → Previewi
   unplayed` · `Download episode`/`Delete download` · ── · `Unsubscribe from “{show}”` (destructive).
   Station: `Play`/`Stop` · `Copy stream URL` · `Edit station…` (kleiner adw::Dialog: Name/Genre/URL)
   · ── · `Remove favorite` (destructive). CTX-5a-Geist: destruktiv unten, kontextbenannt.
-  **Queue-Einträge fehlen bewusst (Grill-Beschluss):** „Play Next"/„Add to Queue" erscheinen für
-  Episoden und Stationen GAR NICHT — weggelassen, nicht ausgegraut; die Menüs sind eigene Builder,
-  External ist in v1 kein Queue-Bürger.
+  **Queue-Einträge fehlten in v1 bewusst (ersetzter Grill-Beschluss):** Radio behält die
+  Asymmetrie und zeigt „Play Next"/„Add to Queue" weiterhin nie. Episoden sind nun typisierte
+  Bürger der manuellen Queue: „Play Next"/„Add to Queue" wirken auf die aktuelle Auswahl, und
+  der typisierte Drag-Payload unterscheidet Track- und Episode-IDs auch bei gleichem Zahlenwert.
 - **Hover-Star:** Zelle nach dem `rating.rs`-Rezept — **echte `gtk::Button`s, kein GestureClick in
   ColumnView-Zellen** (dokumentierter Befund), MotionController-Reveal, Re-Bind bei Zell-Recycling.
   Radio: gefüllter Accent-Star = Favorit, Klick entfernt. Podcast-Episode: Star wirkt auf die
@@ -719,8 +734,9 @@ startet das echte yt-dlp.
   -p reprise-gnome <name> -- --ignored --test-threads=1` (MainContext-Races: Display-Tests nie im
   Rudel bewerten).
 - **Regelbenannte Tests** je Flip: `src_2_add_action_is_tinted_button_not_chip`,
-  `src_4_remove_is_tombstone_until_toast_commit`,
-  `src_4_unsubscribe_commit_toast_trashes_never_hard_deletes`, `pod_1_status_matrix`,
+  `src_4a_remove_is_tombstone_until_toast_commit`,
+  `src_4b_unsubscribe_commit_toast_trashes_never_hard_deletes`,
+  `src_4b_podcast_context_menu_exposes_queue_membership_actions`, `pod_1_status_matrix`,
   `pod_3_ytdlp_errors_are_readable_never_panic`, `pod_4_external_session_never_scrobbles`,
   `pod_4_finish_offers_next_unplayed_of_show`,
   `rad_2_live_state_disables_seek_and_reports_no_length`,
@@ -739,10 +755,10 @@ startet das echte yt-dlp.
 3. **Kapitel & Transkripte** — heterogene Datenlage, eigener Player-UI-Teil.
 4. **Playback-Speed** — braucht Rate-Plumbing im Backend + Bar-UI; orthogonal. **Benannter
   v1.1-Kandidat Nr. 1** (Podcast-Hörer wollen das; Grill-Beschluss).
-5. **Auto-Advance zur nächsten Episode** — Ende → Played + Stop + „Play next"-Angebot (6.3);
-  Auto-Play wäre ein neues Queue-Konzept für Nicht-Tracks. **Benannter v1.1-Kandidat** (zusammen
-  mit der Queue-Bürgerschaft der Episoden; die GUID-Identität (3) macht daraus eine Migration
-  statt Re-Keying — Grill-Beschluss zur Reversibilität).
+5. **Auto-Advance zur nächsten Episode derselben Show** bleibt ausgeschlossen: direkte
+  Episoden enden weiterhin mit Played + Stop + manuellem „Play next"-Angebot (6.3). Die
+  inzwischen umgesetzte Queue-Bürgerschaft ist davon getrennt: nur eine ausdrücklich manuell
+  eingereihte Episode setzt mit dem nächsten Queue-Eintrag fort.
 6. **Desktop-Benachrichtigungen** neue Episoden (Parität zur Concerts-Entscheidung).
 7. **CLI/MCP-Surface** — **benannter v1.1-Kandidat** (Grill-Beschluss): read-only `reprise-cli
   podcasts list` / `reprise://podcasts` + `reprise://radio` (reine Cache-Reads, ein Paket-M-Klon
@@ -821,7 +837,7 @@ dev, sobald Concerts gemerged ist; die F-Tasks prüfen beide „nächste freie N
 | 4 | Add-Dialog Podcasts: Suche (iTunes mit `country=` aus der Locale + ytsearch, gruppiert, „audio only"-Label, Quellen-Glyph-Tiles) UND URL-Paste (RSS + YouTube → Preview + Optionen) | Dialog-State-Units, URL-Detect-Units, `locale_country`-Test, Fixture-E2E, Display-Test |
 | 5 | Add-Dialog Radio: Suche by votes mit Add-Buttons; URL-Paste direkte Streams UND M3U/PLS (Downparse) mit ICY-Preview | `rad_4_*`, Playlist-/ICY-Units, Display-Test |
 | 6 | Add-Buttons sind getintete rechteckige Buttons, klar von Chips unterschieden (eigene CSS-Klasse, nie `.reprise-filter-chip`) | `src_2_*`, CSS-Klassen-Test, manueller Optik-Pass |
-| 7 | Kontextmenü-Entfernen + Hover-Star mit Undo-Toast (10 s, tombstone-basiert); Unsubscribe behält Downloads, Commit-Zeit-Toast bietet [Delete files] → Papierkorb (nie hart), Mehrfach-Unsubscribe aggregiert; Menüs zeigen nie Play Next/Add to Queue | `src_4_*` inkl. Trash-Test, Aggregations-Units, Tombstone-Zyklus-Units, Display-Test |
+| 7 | Kontextmenü-Entfernen + Hover-Star mit Undo-Toast (10 s, tombstone-basiert); Unsubscribe behält Downloads, Commit-Zeit-Toast bietet [Delete files] → Papierkorb (nie hart), Mehrfach-Unsubscribe aggregiert; Radio zeigt nie Play Next/Add to Queue, Podcast- und YouTube-Episoden bieten beide Aktionen für die aktuelle Auswahl samt Tastatur- und typisiertem Drag-Weg | `src_4a_*`/`src_4b_*` inkl. Trash-Test, Aggregations-Units, Tombstone-Zyklus-Units, `acc_8_episode_menu_queue_actions_are_the_keyboard_partner_for_drag`, Display-Test |
 | 8 | YouTube: offizieller UULF-Feed liefert das erste Long-Form-Fenster; „Load more" erweitert einmalig per yt-dlp bis Eintrag 40; Audio-only/Opus, bestaudio-Resolve pro Play (nie persistiert), yt-dlp-Fehler lesbar, ohne verwaltete Komponente degradiert als Anzeige (Schalter-Subtitle, Setting nie auto-umgelegt) | `pod_3_*`, `pod_10_*`, Fake-Binary-Tests, Resolve-Generation-Test, Prefs-Decision-Units |
 | 9 | Podcast-Resume: Position persistiert (Pause/Stop/Wechsel/Quit + Drossel), Wiedergabe setzt fort; Ende → Played; Dauer-Probe beim ersten Play | `pod_4_*`-Resume-Units, Store-Roundtrips |
 | 10 | Radio live: ICY-Now-Playing in Tabelle + Player-Bar + MPRIS aus einem Event; kein Seek, keine Dauer, Elapsed-only; Pause = Disconnect-präsentiert-als-Pause (Bar dimmt letzten Titel, Tabelle „—", Reconnect „live now", Fehler → pausiert + Inline-Retry, nie leere Bar); tote Favoriten re-resolven via uuid | `rad_2_*`/`rad_3_*`, Pause-Zustandsmatrix, MPRIS-Matrix, StreamTags-Plumbing-Test |

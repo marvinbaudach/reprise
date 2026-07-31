@@ -8,7 +8,10 @@
 //! one without the other two is how a client ends up holding a position the
 //! runtime no longer agrees about.
 
-use reprise_runtime_protocol::queue::{QueueSection, QueueSnapshot};
+use reprise_core::up_next::QueueItem as CoreQueueItem;
+use reprise_runtime_protocol::queue::{
+    QueueItem as ProtocolQueueItem, QueueSection, QueueSnapshot,
+};
 
 use super::{QueueIdentity, Transport, QUEUE_WINDOW};
 
@@ -29,10 +32,26 @@ impl Transport {
                 .up_next
                 .ids()
                 .iter()
-                .copied()
+                .filter_map(|item| item.track_id())
                 .take(QUEUE_WINDOW)
                 .collect(),
+            play_next_items: Some(
+                self.up_next
+                    .ids()
+                    .iter()
+                    .copied()
+                    .take(QUEUE_WINDOW)
+                    .map(protocol_item)
+                    .collect(),
+            ),
             context_track_ids: self.queue.remaining_window(0, QUEUE_WINDOW),
+            context_items: Some(
+                self.queue
+                    .remaining_window(0, QUEUE_WINDOW)
+                    .into_iter()
+                    .map(ProtocolQueueItem::track)
+                    .collect(),
+            ),
             play_next_total: self.up_next.len() as u64,
             context_total: self.queue.remaining_len() as u64,
         }
@@ -64,22 +83,37 @@ impl Transport {
         section: QueueSection,
         offset: usize,
         limit: usize,
-    ) -> (Vec<i64>, usize) {
+    ) -> (Vec<i64>, Vec<ProtocolQueueItem>, usize) {
         match section {
-            QueueSection::PlayNext => (
-                self.up_next
+            QueueSection::PlayNext => {
+                let items: Vec<CoreQueueItem> = self
+                    .up_next
                     .ids()
                     .iter()
+                    .copied()
                     .skip(offset)
                     .take(limit)
+                    .collect();
+                let track_ids = items.iter().filter_map(|item| item.track_id()).collect();
+                let typed_items = items.into_iter().map(protocol_item).collect();
+                (track_ids, typed_items, self.up_next.len())
+            }
+            QueueSection::Context => {
+                let track_ids = self.queue.remaining_window(offset, limit);
+                let items = track_ids
+                    .iter()
                     .copied()
-                    .collect(),
-                self.up_next.len(),
-            ),
-            QueueSection::Context => (
-                self.queue.remaining_window(offset, limit),
-                self.queue.remaining_len(),
-            ),
+                    .map(ProtocolQueueItem::track)
+                    .collect();
+                (track_ids, items, self.queue.remaining_len())
+            }
         }
+    }
+}
+
+fn protocol_item(item: CoreQueueItem) -> ProtocolQueueItem {
+    match item {
+        CoreQueueItem::Track(id) => ProtocolQueueItem::track(id),
+        CoreQueueItem::Episode(id) => ProtocolQueueItem::episode(id),
     }
 }

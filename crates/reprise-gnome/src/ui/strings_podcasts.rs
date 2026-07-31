@@ -171,6 +171,18 @@ pub const PODCAST_CLEANUP_KEEP_ALL: &str = N_!("Keep all");
 pub const PODCAST_CLEANUP_DELETE_PLAYED: &str = N_!("After 7 days");
 pub const PODCAST_CLEANUP_KEEP_LAST: &str = N_!("Keep last 5 per show");
 pub const YOUTUBE_EPISODES_PER_CHANNEL: &str = N_!("Episodes per channel");
+pub const YOUTUBE_BROWSER: &str = N_!("Signed-in browser");
+pub const YOUTUBE_BROWSER_DESCRIPTION: &str =
+    N_!("Allow yt-dlp to read this browser's YouTube cookies");
+pub const YOUTUBE_BROWSER_NONE: &str = N_!("Do not use browser cookies");
+pub const YOUTUBE_SIGN_IN: &str = N_!("YouTube sign-in");
+pub const YOUTUBE_SIGN_IN_DESCRIPTION: &str =
+    N_!("Sign in with the browser selected above, then retry the download");
+pub const YOUTUBE_OPEN_SIGN_IN: &str = N_!("Open YouTube");
+pub const YOUTUBE_BROWSER_OPEN_FAILED: &str =
+    N_!("Could not open the selected browser — open youtube.com there manually");
+pub const YOUTUBE_BROWSER_RECOVERY: &str =
+    N_!("YouTube needs a signed-in browser — choose one in Plugins");
 pub const PODCAST_YTDLP: &str = N_!("yt-dlp");
 pub const PODCAST_YTDLP_UPDATE: &str = N_!("Update");
 pub const PODCAST_YTDLP_CHECKING: &str = N_!("Checking installed version…");
@@ -216,9 +228,29 @@ pub fn podcast_batch_result(succeeded: usize, failed: usize) -> String {
     )
 }
 
+pub fn episodes_added_to_queue_toast(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "{count} episode added to queue",
+        "{count} episodes added to queue",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
 /// SRC-12: acting on a selection that contains nothing to act on is still an
 /// answer. Staying silent reads as a broken button.
 pub const PODCAST_BATCH_NOTHING_TO_DELETE: &str = N_!("No downloaded files in the selection");
+
+pub fn skipped_unplayable_episodes(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "Skipped {count} unplayable episode",
+        "Skipped {count} unplayable episodes",
+        count,
+        &[("count", &count_text)],
+    )
+}
 
 pub fn podcast_show_all_episodes(count: usize) -> String {
     let count_text = count.to_string();

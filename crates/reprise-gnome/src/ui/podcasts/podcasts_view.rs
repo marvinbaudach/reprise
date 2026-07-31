@@ -13,8 +13,10 @@ use reprise_core::db::Db;
 use reprise_core::podcasts::download_state::DownloadState;
 use reprise_core::podcasts::{self, EpisodeRow, PodcastKind, SourceGroup};
 use reprise_core::source_error::SourceError;
+use reprise_core::up_next::QueueItem;
 
 use super::add_dialog;
+use super::podcasts_callbacks::PodcastsCallbacks;
 use super::podcasts_context_menu;
 use super::podcasts_deferred_actions::{replay_until_refused, DeferredAction, DeferredActions};
 use super::podcasts_device_sync::PodcastDeviceSyncState;
@@ -66,46 +68,6 @@ const EMPTY_PAGE: &str = "empty";
 /// same geometry, "Enable in Preferences" instead of Add.
 const MODULE_OFF_PAGE: &str = "module-off";
 const FAILURE_PAGE: &str = "fetch-failed";
-
-type OnEpisodeActivated = Rc<dyn Fn(EpisodeRow, Vec<i64>)>;
-type OnPlayPause = Rc<dyn Fn()>;
-type OnSubscriptionRemoved = Rc<dyn Fn(i64)>;
-type OnSidebarRefresh = Rc<dyn Fn()>;
-
-#[derive(Clone)]
-pub(in crate::ui) struct PodcastsCallbacks {
-    on_episode_activated: OnEpisodeActivated,
-    on_play_pause: OnPlayPause,
-    on_subscription_removed: OnSubscriptionRemoved,
-    on_sidebar_refresh: OnSidebarRefresh,
-}
-
-impl Default for PodcastsCallbacks {
-    fn default() -> Self {
-        Self {
-            on_episode_activated: Rc::new(|_, _| {}),
-            on_play_pause: Rc::new(|| {}),
-            on_subscription_removed: Rc::new(|_| {}),
-            on_sidebar_refresh: Rc::new(|| {}),
-        }
-    }
-}
-
-impl PodcastsCallbacks {
-    pub(in crate::ui) fn new(
-        on_episode_activated: impl Fn(EpisodeRow, Vec<i64>) + 'static,
-        on_play_pause: impl Fn() + 'static,
-        on_subscription_removed: impl Fn(i64) + 'static,
-        on_sidebar_refresh: impl Fn() + 'static,
-    ) -> Self {
-        Self {
-            on_episode_activated: Rc::new(on_episode_activated),
-            on_play_pause: Rc::new(on_play_pause),
-            on_subscription_removed: Rc::new(on_subscription_removed),
-            on_sidebar_refresh: Rc::new(on_sidebar_refresh),
-        }
-    }
-}
 
 pub(in crate::ui) struct PodcastsView {
     root: gtk4::Box,

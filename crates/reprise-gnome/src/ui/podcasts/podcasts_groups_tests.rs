@@ -111,6 +111,7 @@ fn compact_episode_row_has_no_play_button_and_stays_within_height_budget() {
                 },
                 selection: &Rc::new(RefCell::new(PodcastSelection::default())),
                 selected_ids: &[],
+                unavailable_episode: None,
             },
         );
         let buttons = descendants(&rendered)
@@ -311,11 +312,11 @@ fn src_12_grouped_selection_survives_render_rebuild_with_a_keyboard_checkbox() {
     }
 }
 
-/// `SRC-4`: unsubscribing has exactly one place to operate it — the context
+/// `SRC-4b`: unsubscribing has exactly one place to operate it — the context
 /// menu. The hover star duplicated the same destructive action on this row.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn src_4_the_group_header_offers_no_second_unsubscribe_control() {
+fn src_4b_the_group_header_offers_no_second_unsubscribe_control() {
     gtk4::init().unwrap();
     let group = SourceGroup {
         subscription_id: 7,
@@ -352,10 +353,10 @@ fn src_4_the_group_header_offers_no_second_unsubscribe_control() {
         .is_some());
 }
 
-/// `SRC-4`: source-level unsubscribe lives in the context menu model, and
+/// `SRC-4b`: source-level unsubscribe lives in the context menu model, and
 /// nowhere else in this module.
 #[test]
-fn src_4_unsubscribe_exists_only_as_a_menu_action() {
+fn src_4b_unsubscribe_exists_only_as_a_menu_action() {
     let source = include_str!("podcasts_groups.rs");
 
     assert!(
@@ -432,6 +433,30 @@ fn pod_13_a_failed_download_shows_its_classified_reason_without_hovering() {
         .and_downcast::<gtk4::Label>()
         .expect("the classified reason must be a second visible label");
     assert_eq!(reason.text(), "podcast source could not be reached");
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn pod_22_verification_guidance_is_visible_in_the_failed_episode_row() {
+    gtk4::init().unwrap();
+    let state = DownloadState::Failed {
+        message: reprise_core::podcasts::YOUTUBE_BROWSER_RECOVERY_MESSAGE.into(),
+    };
+
+    let status = download_status(&state).downcast::<gtk4::Box>().unwrap();
+    let heading = status
+        .first_child()
+        .and_downcast::<gtk4::Label>()
+        .expect("the fixed 'Download failed' heading");
+    let reason = heading
+        .next_sibling()
+        .and_downcast::<gtk4::Label>()
+        .expect("the browser recovery must stay visible");
+
+    assert_eq!(
+        reason.text(),
+        strings::text(strings::YOUTUBE_BROWSER_RECOVERY)
+    );
 }
 
 /// `POD-13`: the retry contract must be reachable and distinguishable —

@@ -20,6 +20,7 @@ const PROGRESS_TEMPLATE: &str =
 
 pub(super) fn download(
     binary: &Path,
+    browser_session: Option<&std::ffi::OsStr>,
     timeout: Duration,
     video_url: &str,
     output: &Path,
@@ -35,6 +36,9 @@ pub(super) fn download(
     // prefixed with `output`, so `cleanup_artifacts` still sweeps it.
     let requested_output = reserved_free_output(output);
     let mut command = Command::new(binary);
+    if let Some(browser_session) = browser_session {
+        command.arg("--cookies-from-browser").arg(browser_session);
+    }
     command
         .args([
             OsString::from("--no-warnings"),

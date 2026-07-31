@@ -40,11 +40,12 @@ use crate::ui::sidebar::{rebuild, show_toast, Shared, Sidebar};
 use crate::ui::strings;
 use crate::ui::track_list_dnd;
 use reprise_core::library::playlist_membership;
+use reprise_core::up_next::QueueItem;
 
 /// Callback for a drag-and-drop drop onto the Queue nav row — see
 /// `Shared::on_queue_drop`'s doc comment. Lives beside its drop handler
 /// (relocated from `sidebar.rs`, orchestrator size rule).
-pub(in crate::ui) type OnQueueDrop = std::rc::Rc<dyn Fn(&[i64]) -> bool>;
+pub(in crate::ui) type OnQueueDrop = std::rc::Rc<dyn Fn(&[QueueItem]) -> bool>;
 
 impl Sidebar {
     /// Drives the same drop-handling sequence as the real playlist-row drop
@@ -87,10 +88,17 @@ pub(in crate::ui) fn wire_playlist_drop_target(
         let Some(payload) = track_list_dnd::parse_drag_payload(&payload_str) else {
             return false;
         };
-        handle_playlist_drop(&shared, playlist_id, &playlist_name, &payload.ids)
+        let Some(ids) = playlist_track_ids(&payload.items) else {
+            return false;
+        };
+        handle_playlist_drop(&shared, playlist_id, &playlist_name, &ids)
     });
 
     row.add_controller(drop_target);
+}
+
+fn playlist_track_ids(items: &[QueueItem]) -> Option<Vec<i64>> {
+    items.iter().copied().map(QueueItem::track_id).collect()
 }
 
 /// The actual "add dragged tracks to a playlist" logic — see the module
@@ -157,7 +165,7 @@ pub(in crate::ui) fn handle_playlist_drop(
 
 /// Attaches a `gtk::DropTarget` to the Queue nav row — the Queue-row
 /// analogue of [`wire_playlist_drop_target`], accepting the identical
-/// payload format (only `ids` matters here too). Same silent-no-op-on-parse-
+/// typed payload format. Same silent-no-op-on-parse-
 /// failure contract as the playlist target; everything past parsing is
 /// [`handle_queue_drop`].
 pub(in crate::ui) fn wire_queue_drop_target(shared: &Rc<Shared>, row: &gtk4::ListBoxRow) {
@@ -172,23 +180,23 @@ pub(in crate::ui) fn wire_queue_drop_target(shared: &Rc<Shared>, row: &gtk4::Lis
         let Some(payload) = track_list_dnd::parse_drag_payload(&payload_str) else {
             return false;
         };
-        handle_queue_drop(&shared, &payload.ids)
+        handle_queue_drop(&shared, &payload.items)
     });
 
     row.add_controller(drop_target);
 }
 
-/// The actual "append dropped tracks to the queue" logic — standalone for
+/// The actual "append dropped queue items to the queue" logic — standalone for
 /// the same two-entry-points reason as [`handle_playlist_drop`] (real drop
 /// target here, `Sidebar::handle_queue_drop` for the `REPRISE_SMOKE_DND=
 /// addqueue` smoke hook). Dispatches to `Shared::on_queue_drop` (wired by
 /// `window.rs` to `PlayerController::append_to_queue` — see that field's
-/// doc comment, including why no sidebar `rebuild` runs here) and shows the
-/// same "N tracks added to queue" toast the context-menu action shows.
-/// An empty `ids` is a no-op (`false`, callback never invoked), matching
+/// doc comment, including why no sidebar `rebuild` runs here) and shows
+/// kind-accurate feedback. An empty item slice is a no-op (`false`, callback
+/// never invoked), matching
 /// [`handle_playlist_drop`]'s contract.
-pub(in crate::ui) fn handle_queue_drop(shared: &Rc<Shared>, ids: &[i64]) -> bool {
-    if ids.is_empty() {
+pub(in crate::ui) fn handle_queue_drop(shared: &Rc<Shared>, items: &[QueueItem]) -> bool {
+    if items.is_empty() {
         return false;
     }
 
@@ -197,13 +205,20 @@ pub(in crate::ui) fn handle_queue_drop(shared: &Rc<Shared>, ids: &[i64]) -> bool
         tracing::warn!("queue drop fired but no on_queue_drop callback is wired; ignoring");
         return false;
     };
-    let appended = callback(ids);
+    let appended = callback(items);
     if appended {
         tracing::info!(
-            count = ids.len(),
-            "tracks appended to queue via drag and drop"
+            count = items.len(),
+            "items appended to queue via drag and drop"
         );
-        show_toast(shared, &strings::tracks_added_to_queue_toast(ids.len()));
+        let message = if items.iter().all(|item| item.track_id().is_some()) {
+            strings::tracks_added_to_queue_toast(items.len())
+        } else if items.iter().all(|item| item.episode_id().is_some()) {
+            strings::episodes_added_to_queue_toast(items.len())
+        } else {
+            strings::queue_items_added_to_queue_toast(items.len())
+        };
+        show_toast(shared, &message);
     } else {
         tracing::debug!("queue drop callback reported no-op; skipping toast");
     }
@@ -212,11 +227,25 @@ pub(in crate::ui) fn handle_queue_drop(shared: &Rc<Shared>, ids: &[i64]) -> bool
 
 #[cfg(test)]
 mod tests {
-    use super::drop_added_rows;
+    use super::{drop_added_rows, playlist_track_ids};
+    use reprise_core::up_next::QueueItem;
 
     #[test]
     fn duplicate_only_drop_reports_no_change() {
         assert!(!drop_added_rows(0));
         assert!(drop_added_rows(1));
+    }
+
+    #[test]
+    fn episode_payload_is_never_reinterpreted_as_a_colliding_playlist_track() {
+        assert_eq!(
+            playlist_track_ids(&[QueueItem::Track(7), QueueItem::Track(9)]),
+            Some(vec![7, 9])
+        );
+        assert_eq!(playlist_track_ids(&[QueueItem::Episode(7)]), None);
+        assert_eq!(
+            playlist_track_ids(&[QueueItem::Track(7), QueueItem::Episode(7)]),
+            None
+        );
     }
 }

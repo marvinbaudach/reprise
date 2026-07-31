@@ -84,9 +84,13 @@ impl TrackCover {
     }
 
     pub fn set_placeholder(&self) {
+        self.set_icon_name(PLACEHOLDER_ICON);
+    }
+
+    pub fn set_icon_name(&self, icon_name: &str) {
         let theme = gtk4::IconTheme::for_display(&self.display());
         let icon = theme.lookup_icon(
-            PLACEHOLDER_ICON,
+            icon_name,
             &[],
             24,
             self.scale_factor(),

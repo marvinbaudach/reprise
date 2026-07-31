@@ -275,10 +275,10 @@ mod tests {
         );
     }
 
-    /// `SRC-4`: the radio star was hover-only and not even focusable, so the
+    /// `SRC-4a`: the radio star was hover-only and not even focusable, so the
     /// context menu was already the only reachable path for keyboard users.
     #[test]
-    fn src_4_the_state_cell_offers_no_hover_star() {
+    fn src_4a_the_state_cell_offers_no_hover_star() {
         let source = include_str!("radio_columns.rs");
         let removed_icon = ["starred", "-symbolic"].concat();
 

@@ -119,6 +119,10 @@ pub(in crate::ui) struct Shared {
     /// moves without rebuilding the list. A `Cell` (not `RefCell`) because the
     /// payload is a `Copy` `Option<i64>` read on every bind.
     pub(in crate::ui) playing_track_id: Cell<Option<i64>>,
+    /// POD-20's shared loaded-episode marker. Separate from
+    /// `playing_track_id` because the two id spaces are unrelated and may
+    /// collide numerically; the marker also retains running versus paused.
+    pub(in crate::ui) playing_episode: Cell<Option<crate::ui::podcasts::EpisodeMark>>,
     /// Per-cell now-playing marker re-appliers, keyed by their bound
     /// `ListItem` (see `now_playing_marker`). A playback change runs all of
     /// them so the marker moves to the new row (and off the old one) by
@@ -416,6 +420,21 @@ impl TrackList {
         }
     }
 
+    /// Marks a queued episode as the one currently playing, so the Queue view
+    /// and the Up Next panel show it the way they show a playing track. A
+    /// queued episode is a queue citizen; leaving it unmarked would make the
+    /// playing row indistinguishable from a pending one.
+    pub(in crate::ui) fn set_playing_episode(
+        &self,
+        episode_mark: Option<crate::ui::podcasts::EpisodeMark>,
+    ) {
+        if self.shared.playing_episode.get() == episode_mark {
+            return;
+        }
+        self.shared.playing_episode.set(episode_mark);
+        self.shared.reapply_now_playing_markers();
+    }
+
     pub(in crate::ui) fn set_browse_visible(&self, visible: bool) {
         self.shared.browse_bar.set_preference_visible(visible);
     }
@@ -573,22 +592,5 @@ impl TrackList {
     /// now-playing metadata after successful tag edits.
     pub fn set_player(&self, player: &Rc<crate::ui::player_controller::PlayerController>) {
         *self.shared.player.borrow_mut() = Rc::downgrade(player);
-    }
-}
-
-/// Clone-out-then-call `on_import_errors_mutated` (hoisted per this
-/// project's `RefCell` callback discipline), then `reload` — the panel's own
-/// `refresh()` already updated its rows before this callback fired (see
-/// `import_errors_view.rs`'s `notify_mutated_and_refresh`), but only `reload`
-/// re-derives this `TrackList`'s stack-page decision (e.g. switching to the
-/// "nothing here" empty page once the last error is dismissed).
-pub(in crate::ui) fn notify_import_errors_mutated_and_reload(shared: &Rc<Shared>) {
-    reload(shared);
-    let callback = shared.on_import_errors_mutated.borrow().clone();
-    match callback {
-        Some(callback) => callback(),
-        None => tracing::warn!(
-            "import errors panel: mutated but no on_import_errors_mutated callback is wired"
-        ),
     }
 }

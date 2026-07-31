@@ -9,9 +9,9 @@ use rusqlite::{Connection, OptionalExtension};
 use crate::artist_news::{include_singles, normalize, AlbumNews};
 use crate::artist_news_candidates::{artists_for_fetch, ArtistCandidate, FetchScope};
 use crate::artist_news_parsing::{
-    artist_payload_valid, artist_search_url, parse_artist_mbid, parse_release_group_page,
-    parse_release_track_count, release_group_detail_url, release_groups_page_url,
-    sort_release_groups, ArtistMatch,
+    artist_payload_valid, artist_search_url, parse_artist_mbid,
+    parse_release_group_page_for_primary_artist, parse_release_track_count,
+    release_group_detail_url, release_groups_page_url, sort_release_groups, ArtistMatch,
 };
 use crate::musicbrainz::{self, FetchError};
 use crate::source_error::{SourceError, SourceErrorKind};
@@ -166,8 +166,8 @@ where
                 continue;
             }
         };
-        let items = match fetch_release_discography(&mbid, today, include_singles, fetch) {
-            Ok(items) => items,
+        let discography = match fetch_release_discography(&mbid, today, include_singles, fetch) {
+            Ok(discography) => discography,
             Err(error) => {
                 record_failure(&mut report, error);
                 crate::artist_news_ledger::record_attempt(
@@ -183,12 +183,20 @@ where
             }
         };
         let accent = normalize_fallback_accent(fallback_accent(db, &candidate.name));
-        upsert_releases(conn, &candidate.name, &mbid, now, &accent, &items)
-            .map_err(database_error)?;
+        sync_releases(
+            conn,
+            &candidate.name,
+            &mbid,
+            now,
+            &accent,
+            &discography.items,
+            &discography.excluded_release_group_mbids,
+        )
+        .map_err(database_error)?;
         enrich_local_release_track_counts(
             conn,
             &candidate.name,
-            &items,
+            &discography.items,
             &local_track_counts,
             fetch,
         )
@@ -199,14 +207,19 @@ where
             Some(&mbid),
             now,
             crate::artist_news_ledger::FetchOutcome::Ok,
-            items.len(),
+            discography.items.len(),
         )
         .map_err(database_error)?;
         report.artists_fetched += 1;
-        report.releases_upserted += items.len();
+        report.releases_upserted += discography.items.len();
     }
     crate::artist_news_history::enforce_retention(db, now).map_err(database_error)?;
     Ok(report)
+}
+
+struct FetchedDiscography {
+    items: Vec<AlbumNews>,
+    excluded_release_group_mbids: Vec<String>,
 }
 
 fn fetch_release_discography<F>(
@@ -214,24 +227,28 @@ fn fetch_release_discography<F>(
     today: NaiveDate,
     include_singles: bool,
     fetch: &mut F,
-) -> Result<Vec<AlbumNews>, SourceError>
+) -> Result<FetchedDiscography, SourceError>
 where
     F: FnMut(&str) -> Result<String, FetchError>,
 {
     let mut offset = 0;
     let mut items = Vec::new();
+    let mut excluded_release_group_mbids = Vec::new();
     let mut seen = std::collections::HashSet::new();
     loop {
         let body = fetch(&release_groups_page_url(artist_mbid, offset))
             .map_err(|error| source_error_for_fetch(&error))?;
-        let page = parse_release_group_page(&body, today, include_singles)
-            .ok_or_else(invalid_response_source_error)?;
+        let page =
+            parse_release_group_page_for_primary_artist(&body, today, include_singles, artist_mbid)
+                .ok_or_else(invalid_response_source_error)?;
+        excluded_release_group_mbids.extend(page.excluded_release_group_mbids);
         items.extend(
-            page.items
+            page.page
+                .items
                 .into_iter()
                 .filter(|item| seen.insert(item.release_group_mbid.clone())),
         );
-        let Some(next_offset) = page.next_offset else {
+        let Some(next_offset) = page.page.next_offset else {
             break;
         };
         if next_offset <= offset {
@@ -240,7 +257,10 @@ where
         offset = next_offset;
     }
     sort_release_groups(&mut items);
-    Ok(items)
+    Ok(FetchedDiscography {
+        items,
+        excluded_release_group_mbids,
+    })
 }
 
 fn enrich_local_release_track_counts<F>(
@@ -375,15 +395,23 @@ fn artist_cache_is_fresh(
     Ok(last_attempt.is_some_and(|attempt| now.saturating_sub(attempt).max(0) <= FETCH_TTL_SECONDS))
 }
 
-fn upsert_releases(
+fn sync_releases(
     conn: &Connection,
     artist: &str,
     artist_mbid: &str,
     fetched_at: i64,
     fallback_accent: &str,
     items: &[AlbumNews],
+    excluded_release_group_mbids: &[String],
 ) -> Result<(), rusqlite::Error> {
     let transaction = conn.unchecked_transaction()?;
+    for release_group_mbid in excluded_release_group_mbids {
+        transaction.execute(
+            "DELETE FROM new_releases
+             WHERE release_group_mbid = ?1 AND artist_mbid = ?2",
+            rusqlite::params![release_group_mbid, artist_mbid],
+        )?;
+    }
     for item in items {
         transaction.execute(
             "INSERT INTO new_releases (

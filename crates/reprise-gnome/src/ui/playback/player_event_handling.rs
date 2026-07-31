@@ -74,9 +74,9 @@ impl PlayerController {
             PlayerEvent::StateChanged(state) => {
                 tracing::info!(?state, "player bar: applying state change");
                 match self.playback_mode() {
-                    super::preview::PlaybackMode::Podcast | super::preview::PlaybackMode::Radio => {
-                        self.external_state_changed(state);
-                    }
+                    super::preview::PlaybackMode::Podcast
+                    | super::preview::PlaybackMode::QueuedEpisode
+                    | super::preview::PlaybackMode::Radio => self.external_state_changed(state),
                     super::preview::PlaybackMode::Queue | super::preview::PlaybackMode::Preview => {
                         self.sync_state(state);
                     }
@@ -99,8 +99,9 @@ impl PlayerController {
                     // `current_track_selection::wire`.
                 }
                 match self.playback_mode() {
-                    super::preview::PlaybackMode::Podcast | super::preview::PlaybackMode::Radio => {
-                    }
+                    super::preview::PlaybackMode::Podcast
+                    | super::preview::PlaybackMode::QueuedEpisode
+                    | super::preview::PlaybackMode::Radio => {}
                     super::preview::PlaybackMode::Queue | super::preview::PlaybackMode::Preview => {
                         self.update_mpris_mirror(mpris_status_from_playback_state(state));
                     }
@@ -131,7 +132,10 @@ impl PlayerController {
                 // snapshot can't start playing after it, and no play is credited
                 // to the wrong track); an ordinary queue track advances.
                 let mode = self.playback_mode();
-                if mode.advances_queue_on_finish() {
+                if mode == super::preview::PlaybackMode::QueuedEpisode {
+                    tracing::info!("queued episode finished: advancing queue");
+                    self.finish_external();
+                } else if mode.advances_queue_on_finish() {
                     tracing::info!("track finished: advancing queue");
                     self.advance_playback(super::up_next_transport::AdvanceReason::Automatic);
                 } else {
@@ -173,7 +177,9 @@ impl PlayerController {
                 // attribute it to; otherwise fall back to the pre-Task-5
                 // behavior (log + reset) rather than guessing.
                 match self.playback_mode() {
-                    super::preview::PlaybackMode::Podcast | super::preview::PlaybackMode::Radio => {
+                    super::preview::PlaybackMode::Podcast
+                    | super::preview::PlaybackMode::QueuedEpisode
+                    | super::preview::PlaybackMode::Radio => {
                         tracing::error!(%message, "player error during external playback");
                         self.handle_external_error(message);
                         return;
@@ -215,6 +221,7 @@ impl PlayerController {
         self.leave_external_for_queue();
         self.consecutive_skips.set(0);
         self.failure_skip_limit.set(0);
+        self.consecutive_episode_skips.set(0);
         // QUE-3: the playback snapshot lives exactly as long as playback —
         // a stop clears it (and its origin), leaving only manual Play Next
         // entries behind; QUE-4's empty state then shows once those are

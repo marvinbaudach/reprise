@@ -9,7 +9,7 @@
 
 use reprise_core::playback::{PlaybackBackend, PlaybackState, PlayerEvent, StreamGeneration};
 use reprise_core::queue::{Queue, Repeat};
-use reprise_core::up_next::UpNextQueue;
+use reprise_core::up_next::{QueueItem, UpNextQueue};
 use reprise_runtime_protocol::playback::{PlaybackCommand, PlaybackSnapshot};
 
 use reprise_runtime_protocol::playback::ExternalMedia;
@@ -113,7 +113,7 @@ enum Take {
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct QueueIdentity {
     current: Option<i64>,
-    play_next: Vec<i64>,
+    play_next: Vec<QueueItem>,
     context: Vec<i64>,
 }
 
@@ -484,7 +484,7 @@ impl Transport {
         take: Take,
         stepped_over: &mut Vec<i64>,
     ) -> Option<(i64, Source)> {
-        let mut is_available = |track_id: i64| {
+        let is_track_available = |track_id: i64, stepped_over: &mut Vec<i64>| -> bool {
             let playable = library.resolve(track_id).is_some();
             if !playable {
                 stepped_over.push(track_id);
@@ -497,18 +497,25 @@ impl Transport {
                 .as_ref()
                 .and_then(|loaded| Some((loaded.track_id?, loaded.source)))
             {
-                if is_available(track_id) {
+                if is_track_available(track_id, stepped_over) {
                     return Some((track_id, source));
                 }
             }
         }
-        let queued = match take {
-            Take::Entry => self.up_next.take_first_matching(&mut is_available),
-            Take::Nothing => self.up_next.first_matching(&mut is_available),
+        let queued = {
+            let mut is_available = |item: QueueItem| {
+                item.track_id()
+                    .is_some_and(|track_id| is_track_available(track_id, stepped_over))
+            };
+            match take {
+                Take::Entry => self.up_next.take_first_matching(&mut is_available),
+                Take::Nothing => self.up_next.first_matching(&mut is_available),
+            }
         };
         if let Some(track_id) = queued {
-            return Some((track_id, Source::PlayNext));
+            return Some((track_id.track_id()?, Source::PlayNext));
         }
+        let mut is_available = |track_id| is_track_available(track_id, stepped_over);
         match take {
             Take::Entry => self.queue.advance_auto_matching(&mut is_available),
             Take::Nothing => self.queue.peek_auto_matching(&mut is_available),

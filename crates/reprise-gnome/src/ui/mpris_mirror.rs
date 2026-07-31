@@ -77,8 +77,19 @@ use crate::ui::player_controller::PlayerController;
 use reprise_core::media_integration::{self, MprisCommand, MprisPlaybackStatus, MprisState};
 use reprise_core::playback::PlaybackState;
 use reprise_core::queue::Repeat;
+use reprise_core::up_next::QueueItem;
 
 const AGENT_QUEUE_WINDOW: usize = 200;
+
+fn agent_play_next_projection(items: &[QueueItem]) -> (Vec<i64>, Vec<QueueItem>) {
+    let track_ids = items
+        .iter()
+        .filter_map(|item| item.track_id())
+        .take(AGENT_QUEUE_WINDOW)
+        .collect();
+    let typed_items = items.iter().copied().take(AGENT_QUEUE_WINDOW).collect();
+    (track_ids, typed_items)
+}
 
 /// Spawns the MPRIS-command drain loop: `controller`'s `new` (Stage-3
 /// close-out: moved here from that function to keep `player_controller.rs`
@@ -213,16 +224,17 @@ impl PlayerController {
     pub(super) fn update_agent_queue_mirror(&self) {
         let current_track_id = self.now_playing.borrow().as_ref().map(|track| track.id);
         let play_next_total = self.up_next.borrow().len();
-        let play_next_track_ids = self
-            .up_next
-            .borrow()
-            .ids()
-            .iter()
-            .take(AGENT_QUEUE_WINDOW)
-            .copied()
-            .collect();
+        let (play_next_track_ids, play_next_items) = {
+            let up_next = self.up_next.borrow();
+            agent_play_next_projection(up_next.ids())
+        };
         let context_total = self.queue.borrow().remaining_len();
         let context_track_ids = self.queue.borrow().remaining_window(0, AGENT_QUEUE_WINDOW);
+        let context_items = context_track_ids
+            .iter()
+            .copied()
+            .map(QueueItem::Track)
+            .collect();
 
         let mut mirror = self
             .agent_queue_state
@@ -231,7 +243,9 @@ impl PlayerController {
         *mirror = media_integration::AgentQueueState {
             current_track_id,
             play_next_track_ids,
+            play_next_items,
             context_track_ids,
+            context_items,
             play_next_total,
             context_total,
         };
@@ -406,6 +420,7 @@ impl PlayerController {
                 let current = self
                     .current_up_next
                     .get()
+                    .and_then(reprise_core::up_next::QueueItem::track_id)
                     .or_else(|| self.queue.borrow().current());
                 match current {
                     Some(id) => self.play_track_id_with_change(
@@ -544,5 +559,19 @@ mod tests {
             mpris_status_from_playback_state(PlaybackState::Stopped),
             MprisPlaybackStatus::Stopped
         );
+    }
+
+    #[test]
+    fn que_9_agent_queue_mirror_keeps_typed_items_beside_track_only_ids() {
+        let items = [
+            QueueItem::Track(7),
+            QueueItem::Episode(7),
+            QueueItem::Track(8),
+        ];
+
+        let (track_ids, typed_items) = agent_play_next_projection(&items);
+
+        assert_eq!(track_ids, vec![7, 8]);
+        assert_eq!(typed_items, items);
     }
 }
