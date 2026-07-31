@@ -10,29 +10,23 @@ pub(super) struct ChainReport {
     pub(super) network_consensus_not_found: bool,
 }
 
+/// Runs the network tier. The local tier already ran in [`super::best_local`],
+/// which returns early for a local `Synced` or `Instrumental` hit — so the only
+/// local outcome that can still matter is a plain text, and it arrives here as
+/// `local_plain` instead of being looked up a second time (a local lookup costs
+/// a sidecar read plus a full tag parse per track).
 pub(super) fn run_chain(
     query: &LyricsQuery,
     track_path: Option<&Path>,
-    local_providers: &[&dyn LyricsProvider],
+    local_plain: Option<LyricsHit>,
     network_providers: &[&dyn LyricsProvider],
 ) -> ChainReport {
-    let mut first_plain = None;
-    for provider in local_providers {
-        if let Some(result) =
-            consider_outcome(provider.lookup(query, track_path), &mut first_plain, true)
-        {
-            return ChainReport {
-                result: Ok(result),
-                network_consensus_not_found: false,
-            };
-        }
-    }
-
+    let mut first_plain = local_plain;
     let mut clean_not_found = !network_providers.is_empty();
     for provider in network_providers {
         let outcome = provider.lookup(query, track_path);
         clean_not_found &= matches!(outcome, SourceOutcome::NotFound);
-        if let Some(result) = consider_outcome(outcome, &mut first_plain, false) {
+        if let Some(result) = consider_outcome(outcome, &mut first_plain) {
             return ChainReport {
                 result: Ok(result),
                 network_consensus_not_found: false,
@@ -59,7 +53,6 @@ pub(super) fn run_chain(
 fn consider_outcome(
     outcome: SourceOutcome,
     first_plain: &mut Option<LyricsHit>,
-    local: bool,
 ) -> Option<LyricsHit> {
     let SourceOutcome::Hit(hit) = outcome else {
         return None;
@@ -72,15 +65,10 @@ fn consider_outcome(
             }
             None
         }
-        LyricsBody::Instrumental => {
-            if local {
-                return Some(hit);
-            }
-            match first_plain {
-                Some(plain) if is_local(plain.source) => Some(plain.clone()),
-                _ => Some(hit),
-            }
-        }
+        LyricsBody::Instrumental => match first_plain {
+            Some(plain) if is_local(plain.source) => Some(plain.clone()),
+            _ => Some(hit),
+        },
     }
 }
 

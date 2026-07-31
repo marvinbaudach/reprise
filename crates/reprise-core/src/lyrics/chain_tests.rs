@@ -47,6 +47,21 @@ fn hit(source: LyricsSource, body: LyricsBody) -> SourceOutcome {
     SourceOutcome::Hit(LyricsHit { body, source })
 }
 
+/// Mirrors what `best_local` hands to the chain: only a local *plain* text can
+/// still be open when the network tier starts — a local synced or instrumental
+/// hit is already final and never reaches `run_chain`.
+fn local_plain(provider: &FakeProvider) -> Option<LyricsHit> {
+    match provider.lookup(&query(), None) {
+        SourceOutcome::Hit(
+            hit @ LyricsHit {
+                body: LyricsBody::Plain(_),
+                ..
+            },
+        ) => Some(hit),
+        _ => None,
+    }
+}
+
 #[test]
 fn lyr_5_synced_from_the_third_source_beats_plain_from_the_first() {
     let local = FakeProvider::new(
@@ -62,7 +77,7 @@ fn lyr_5_synced_from_the_third_source_beats_plain_from_the_first() {
         ),
     );
 
-    let report = run_chain(&query(), None, &[&local], &[&lrclib, &netease]);
+    let report = run_chain(&query(), None, local_plain(&local), &[&lrclib, &netease]);
 
     assert_eq!(
         report.result,
@@ -84,7 +99,7 @@ fn first_plain_wins_when_no_provider_has_synced_lyrics() {
         hit(LyricsSource::Lrclib, LyricsBody::Plain("second".into())),
     );
 
-    let report = run_chain(&query(), None, &[&tag], &[&lrclib]);
+    let report = run_chain(&query(), None, local_plain(&tag), &[&lrclib]);
 
     assert_eq!(
         report.result,
@@ -113,7 +128,7 @@ fn instrumental_stops_the_chain_but_does_not_replace_local_text() {
         ),
     );
 
-    let report = run_chain(&query(), None, &[&tag], &[&lrclib, &netease]);
+    let report = run_chain(&query(), None, local_plain(&tag), &[&lrclib, &netease]);
 
     assert_eq!(
         report.result,
@@ -131,7 +146,7 @@ fn all_skipped_or_failed_is_temporary_without_negative_consensus() {
     let lrclib = FakeProvider::new(LyricsSource::Lrclib, SourceOutcome::Failed);
     let netease = FakeProvider::new(LyricsSource::Netease, SourceOutcome::Skipped);
 
-    let report = run_chain(&query(), None, &[&local], &[&lrclib, &netease]);
+    let report = run_chain(&query(), None, local_plain(&local), &[&lrclib, &netease]);
 
     assert_eq!(report.result, Err(LyricsError::Temporary));
     assert!(!report.network_consensus_not_found);
@@ -143,7 +158,7 @@ fn every_network_provider_not_found_is_a_negative_consensus() {
     let lrclib = FakeProvider::new(LyricsSource::Lrclib, SourceOutcome::NotFound);
     let netease = FakeProvider::new(LyricsSource::Netease, SourceOutcome::NotFound);
 
-    let report = run_chain(&query(), None, &[&local], &[&lrclib, &netease]);
+    let report = run_chain(&query(), None, local_plain(&local), &[&lrclib, &netease]);
 
     assert_eq!(report.result, Err(LyricsError::NotFound));
     assert!(report.network_consensus_not_found);
@@ -155,7 +170,7 @@ fn mixed_not_found_and_failed_is_temporary_without_negative_consensus() {
     let lrclib = FakeProvider::new(LyricsSource::Lrclib, SourceOutcome::NotFound);
     let netease = FakeProvider::new(LyricsSource::Netease, SourceOutcome::Failed);
 
-    let report = run_chain(&query(), None, &[&local], &[&lrclib, &netease]);
+    let report = run_chain(&query(), None, local_plain(&local), &[&lrclib, &netease]);
 
     assert_eq!(report.result, Err(LyricsError::Temporary));
     assert!(!report.network_consensus_not_found);

@@ -287,6 +287,34 @@ fn local_synced_hit_never_creates_a_cache_entry() {
 }
 
 #[test]
+fn a_network_lookup_reads_every_local_provider_exactly_once() {
+    let temp = TempDir::new().unwrap();
+    let local = FixedProvider::new(
+        LyricsSource::Tag,
+        hit(LyricsSource::Tag, LyricsBody::Plain("local text".into())),
+    );
+    let network = FixedProvider::new(LyricsSource::Lrclib, SourceOutcome::NotFound);
+
+    let result = load_or_fetch_at(
+        temp.path(),
+        100,
+        &query(),
+        Some(Path::new("/fixture/song.flac")),
+        options(false),
+        &[&local],
+        &[&network],
+    )
+    .unwrap();
+
+    assert_eq!(result.source, LyricsSource::Tag);
+    assert_eq!(
+        local.calls.get(),
+        1,
+        "a sidecar read and a tag parse per track are too expensive to repeat"
+    );
+}
+
+#[test]
 fn local_only_lookup_returns_local_text_and_never_calls_network() {
     let temp = TempDir::new().unwrap();
     let local = FixedProvider::new(

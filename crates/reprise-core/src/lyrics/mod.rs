@@ -108,7 +108,7 @@ fn load_or_fetch_at(
         return local_plain.ok_or(LyricsError::MissingMetadata);
     }
 
-    let report = run_chain(query, track_path, local_providers, network_providers);
+    let report = run_chain(query, track_path, local_plain.clone(), network_providers);
     match report.result {
         Ok(hit) => {
             if is_local(hit.source) {
