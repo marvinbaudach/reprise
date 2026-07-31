@@ -183,6 +183,20 @@ impl PodcastSession {
             _ => PodcastFailureAction::Direct,
         }
     }
+
+    /// Ends the advance chain once playback has genuinely progressed.
+    ///
+    /// It deliberately does *not* end when the pipeline accepts the URI: for a
+    /// resolved YouTube stream `play_uri` returns `Ok` and the HTTP answer —
+    /// often a 403 on a freshly signed googlevideo url — only arrives on the
+    /// bus afterwards. Ending the chain at start time would classify that as a
+    /// direct failure and strand the user on a dead row, which is exactly the
+    /// case this feature exists for.
+    pub(super) fn note_playback_progress(&mut self, position_ms: i64) {
+        if position_ms > 0 {
+            self.automatic_advance = None;
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -515,6 +529,25 @@ mod tests {
             Some(11)
         );
         assert_eq!(middle.next().map(|context| context.current_id()), Some(33));
+    }
+
+    #[test]
+    fn pod_20_a_stream_that_dies_before_playing_stays_on_the_advance_chain() {
+        let neighbours = NeighbourContext::for_episode(&[1, 2, 3], 2).unwrap();
+        let chain = AutomaticAdvance::new(NeighbourDirection::Next);
+        let mut session = podcast_session(Some(neighbours), Some(chain));
+
+        // `play_uri` accepted the URI, so the session is nominally "playing",
+        // but nothing has streamed yet — this is the 403-after-start case.
+        session.note_playback_progress(0);
+        assert!(
+            matches!(session.failure_action(), PodcastFailureAction::Automatic(_)),
+            "a stream that never advanced must keep skipping, not strand the user"
+        );
+
+        // Once it genuinely advances, a later break is a mid-playback break.
+        session.note_playback_progress(4_000);
+        assert_eq!(session.failure_action(), PodcastFailureAction::Direct);
     }
 
     #[test]
