@@ -135,6 +135,29 @@ fn panel_drag_payload_and_edge_autoscroll_are_bounded() {
 }
 
 #[test]
+fn panel_drop_payload_keeps_internal_reorder_and_typed_enqueue_separate() {
+    assert_eq!(
+        decode_drop_payload("manual:3"),
+        Some(PanelDropPayload::Reorder(QueueRow::PlayNext(3)))
+    );
+    let external = crate::ui::track_list_dnd::format_drag_payload(
+        &[
+            reprise_core::up_next::QueueItem::Track(7),
+            reprise_core::up_next::QueueItem::Episode(7),
+        ],
+        None,
+    );
+    assert_eq!(
+        decode_drop_payload(&external),
+        Some(PanelDropPayload::Enqueue(vec![
+            reprise_core::up_next::QueueItem::Track(7),
+            reprise_core::up_next::QueueItem::Episode(7),
+        ]))
+    );
+    assert_eq!(decode_drop_payload("7|-"), None);
+}
+
+#[test]
 fn acc_8_panel_keyboard_reorder_matches_the_drag_rows() {
     let alt = gtk4::gdk::ModifierType::ALT_MASK;
     assert_eq!(

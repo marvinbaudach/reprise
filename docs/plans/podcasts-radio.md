@@ -558,7 +558,8 @@ Zustandsmaschine pur: `Idle → Searching → Results | UrlDetected → Previewi
   · ── · `Remove favorite` (destructive). CTX-5a-Geist: destruktiv unten, kontextbenannt.
   **Queue-Einträge fehlten in v1 bewusst (ersetzter Grill-Beschluss):** Radio behält die
   Asymmetrie und zeigt „Play Next"/„Add to Queue" weiterhin nie. Episoden sind nun typisierte
-  Bürger der manuellen Queue; ihre Menü- und Tastaturwege landen im separaten Ways-in-Paket.
+  Bürger der manuellen Queue: „Play Next"/„Add to Queue" wirken auf die aktuelle Auswahl, und
+  der typisierte Drag-Payload unterscheidet Track- und Episode-IDs auch bei gleichem Zahlenwert.
 - **Hover-Star:** Zelle nach dem `rating.rs`-Rezept — **echte `gtk::Button`s, kein GestureClick in
   ColumnView-Zellen** (dokumentierter Befund), MotionController-Reveal, Re-Bind bei Zell-Recycling.
   Radio: gefüllter Accent-Star = Favorit, Klick entfernt. Podcast-Episode: Star wirkt auf die
@@ -732,8 +733,9 @@ startet das echte yt-dlp.
   -p reprise-gnome <name> -- --ignored --test-threads=1` (MainContext-Races: Display-Tests nie im
   Rudel bewerten).
 - **Regelbenannte Tests** je Flip: `src_2_add_action_is_tinted_button_not_chip`,
-  `src_4_remove_is_tombstone_until_toast_commit`,
-  `src_4_unsubscribe_commit_toast_trashes_never_hard_deletes`, `pod_1_status_matrix`,
+  `src_4a_remove_is_tombstone_until_toast_commit`,
+  `src_4b_unsubscribe_commit_toast_trashes_never_hard_deletes`,
+  `src_4b_podcast_context_menu_exposes_queue_membership_actions`, `pod_1_status_matrix`,
   `pod_3_ytdlp_errors_are_readable_never_panic`, `pod_4_external_session_never_scrobbles`,
   `pod_4_finish_offers_next_unplayed_of_show`,
   `rad_2_live_state_disables_seek_and_reports_no_length`,
@@ -834,7 +836,7 @@ dev, sobald Concerts gemerged ist; die F-Tasks prüfen beide „nächste freie N
 | 4 | Add-Dialog Podcasts: Suche (iTunes mit `country=` aus der Locale + ytsearch, gruppiert, „audio only"-Label, Quellen-Glyph-Tiles) UND URL-Paste (RSS + YouTube → Preview + Optionen) | Dialog-State-Units, URL-Detect-Units, `locale_country`-Test, Fixture-E2E, Display-Test |
 | 5 | Add-Dialog Radio: Suche by votes mit Add-Buttons; URL-Paste direkte Streams UND M3U/PLS (Downparse) mit ICY-Preview | `rad_4_*`, Playlist-/ICY-Units, Display-Test |
 | 6 | Add-Buttons sind getintete rechteckige Buttons, klar von Chips unterschieden (eigene CSS-Klasse, nie `.reprise-filter-chip`) | `src_2_*`, CSS-Klassen-Test, manueller Optik-Pass |
-| 7 | Kontextmenü-Entfernen + Hover-Star mit Undo-Toast (10 s, tombstone-basiert); Unsubscribe behält Downloads, Commit-Zeit-Toast bietet [Delete files] → Papierkorb (nie hart), Mehrfach-Unsubscribe aggregiert; Menüs zeigen nie Play Next/Add to Queue | `src_4_*` inkl. Trash-Test, Aggregations-Units, Tombstone-Zyklus-Units, Display-Test |
+| 7 | Kontextmenü-Entfernen + Hover-Star mit Undo-Toast (10 s, tombstone-basiert); Unsubscribe behält Downloads, Commit-Zeit-Toast bietet [Delete files] → Papierkorb (nie hart), Mehrfach-Unsubscribe aggregiert; Radio zeigt nie Play Next/Add to Queue, Podcast- und YouTube-Episoden bieten beide Aktionen für die aktuelle Auswahl samt Tastatur- und typisiertem Drag-Weg | `src_4a_*`/`src_4b_*` inkl. Trash-Test, Aggregations-Units, Tombstone-Zyklus-Units, `acc_8_episode_menu_queue_actions_are_the_keyboard_partner_for_drag`, Display-Test |
 | 8 | YouTube: offizieller UULF-Feed liefert das erste Long-Form-Fenster; „Load more" erweitert einmalig per yt-dlp bis Eintrag 40; Audio-only/Opus, bestaudio-Resolve pro Play (nie persistiert), yt-dlp-Fehler lesbar, ohne verwaltete Komponente degradiert als Anzeige (Schalter-Subtitle, Setting nie auto-umgelegt) | `pod_3_*`, `pod_10_*`, Fake-Binary-Tests, Resolve-Generation-Test, Prefs-Decision-Units |
 | 9 | Podcast-Resume: Position persistiert (Pause/Stop/Wechsel/Quit + Drossel), Wiedergabe setzt fort; Ende → Played; Dauer-Probe beim ersten Play | `pod_4_*`-Resume-Units, Store-Roundtrips |
 | 10 | Radio live: ICY-Now-Playing in Tabelle + Player-Bar + MPRIS aus einem Event; kein Seek, keine Dauer, Elapsed-only; Pause = Disconnect-präsentiert-als-Pause (Bar dimmt letzten Titel, Tabelle „—", Reconnect „live now", Fehler → pausiert + Inline-Retry, nie leere Bar); tote Favoriten re-resolven via uuid | `rad_2_*`/`rad_3_*`, Pause-Zustandsmatrix, MPRIS-Matrix, StreamTags-Plumbing-Test |

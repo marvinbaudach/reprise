@@ -354,16 +354,19 @@ impl PlayerController {
     /// or starting the hidden playback context. Duplicates remain meaningful
     /// user choices; an empty slice is a no-op.
     pub(in crate::ui) fn append_to_queue(&self, ids: &[i64]) {
-        if ids.is_empty() {
+        self.append_queue_items(&track_items(ids));
+    }
+
+    pub(in crate::ui) fn append_queue_items(&self, items: &[QueueItem]) {
+        if items.is_empty() {
             tracing::debug!("append to queue: nothing to add; ignoring");
             return;
         }
-        let items = track_items(ids);
-        self.up_next.borrow_mut().append(&items);
+        self.up_next.borrow_mut().append(items);
         self.notify_queue_changed();
         let queue_len = self.up_next.borrow().len();
         self.sync_transport_enabled(true);
-        tracing::info!(added = ids.len(), queue_len, "tracks added to queue");
+        tracing::info!(added = items.len(), queue_len, "items added to queue");
     }
 
     /// Starts playback of `ids[start_index]` and loads the rest of `ids` into
@@ -464,15 +467,18 @@ impl PlayerController {
     /// QUE-3's "Play next": the given ids jump the manual line (front of
     /// Play Next), unlike `append_to_queue`'s back-of-line append.
     pub(in crate::ui) fn play_next(&self, ids: &[i64]) {
-        if ids.is_empty() {
+        self.play_next_items(&track_items(ids));
+    }
+
+    pub(in crate::ui) fn play_next_items(&self, items: &[QueueItem]) {
+        if items.is_empty() {
             tracing::debug!("play next: nothing to add; ignoring");
             return;
         }
-        let items = track_items(ids);
-        self.up_next.borrow_mut().prepend(&items);
+        self.up_next.borrow_mut().prepend(items);
         self.notify_queue_changed();
         self.sync_transport_enabled(true);
-        tracing::info!(added = ids.len(), "tracks queued to play next");
+        tracing::info!(added = items.len(), "items queued to play next");
     }
 
     /// Moves selected composite Queue rows to the start of Play Next in

@@ -523,6 +523,13 @@ impl NowPlayingPanel {
         self.widgets.up_next.set_on_reorder(callback);
     }
 
+    pub(in crate::ui) fn set_on_up_next_enqueue(
+        &self,
+        callback: impl Fn(&[reprise_core::up_next::QueueItem]) -> bool + 'static,
+    ) {
+        self.widgets.up_next.set_on_enqueue(callback);
+    }
+
     pub(in crate::ui) fn set_on_up_next_refresh(&self, callback: impl Fn() + 'static) {
         *self.on_up_next_refresh.borrow_mut() = Some(Rc::new(callback));
         self.request_up_next_refresh_if_visible();

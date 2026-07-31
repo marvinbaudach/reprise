@@ -1476,6 +1476,11 @@ own statement).
   „Move to top", positional reorder, and „Remove from queue". Track- or
   podcast-specific actions never apply to a heterogeneous selection.
   <!-- REVIEW: Regelvorschlag -->
+- **CTX-12** [active] [gtk] — If a podcast episode cannot currently be
+  resolved, "Play next" and "Add to queue" stay visible but disabled.
+  Activating either route revalidates every selected episode against the
+  current subscription and tombstone state; a stale or mixed-validity
+  selection is refused as a whole and is never guessed from a numeric ID.
 
 ## O. Motion & Transitions
 
@@ -3432,7 +3437,7 @@ listening statistics.
   through preview and options to a confirmation. Network and
   subprocess work starts only on submit and never runs on the GTK main
   loop.
-- **SRC-4** [active] [gtk] — Removal takes effect immediately, stays
+- **SRC-4** [replaced by SRC-4a/SRC-4b] [gtk] — Removal takes effect immediately, stays
   tombstoned for ten seconds, and is reversible via a high-priority
   undo toast. Context menu and hover star offer the same destructive
   action; "Play Next" and "Add to Queue" are entirely absent. Podcast
@@ -3538,6 +3543,15 @@ listening statistics.
   batch actions. Actions that are meaningless for more than one episode are
   hidden rather than applied to an arbitrary member, and a batch reports
   itself with a single aggregated toast and a single undo.
+- **SRC-4a** [active] [gtk] — Radio keeps SRC-4's removal and undo
+  behavior, and its station menus continue to omit "Play Next" and "Add
+  to Queue". A live stream is deliberately not a citizen of an ordered
+  queue.
+- **SRC-4b** [active] [gtk] — Podcasts and YouTube keep SRC-4's removal,
+  download-preservation, and undo behavior. Their episode menus additionally
+  expose "Play Next" and "Add to Queue" for the current episode selection;
+  the same actions are the keyboard-accessible partner of the typed episode
+  drag source. This asymmetry with radio is deliberate.
 - **POD-1** [active] [core] — Episode status is a pure derivation:
   Played exactly when `played_at` is set, otherwise Resume when
   `position_ms > 0`, otherwise unstarted. The visible New pill is a

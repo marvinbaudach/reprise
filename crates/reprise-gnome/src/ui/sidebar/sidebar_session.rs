@@ -64,7 +64,10 @@ impl crate::ui::sidebar::Sidebar {
     /// Sets the callback invoked when tracks are dropped onto the Queue nav
     /// row — see `Shared::on_queue_drop`'s doc comment. `window.rs` wires
     /// this to `PlayerController::append_to_queue`.
-    pub fn set_on_queue_drop(&self, callback: impl Fn(&[i64]) -> bool + 'static) {
+    pub fn set_on_queue_drop(
+        &self,
+        callback: impl Fn(&[reprise_core::up_next::QueueItem]) -> bool + 'static,
+    ) {
         *self.shared.on_queue_drop.borrow_mut() = Some(Rc::new(callback));
     }
 
@@ -75,8 +78,29 @@ impl crate::ui::sidebar::Sidebar {
     /// `TrackList::set_on_sidebar_queue_drop` for `ui::track_list_dnd_smoke`'s
     /// `REPRISE_SMOKE_DND=addqueue` hook). Returns whether anything was
     /// actually appended.
-    pub fn handle_queue_drop(&self, ids: &[i64]) -> bool {
-        super::sidebar_dnd::handle_queue_drop(&self.shared, ids)
+    pub(in crate::ui) fn handle_queue_drop<T: QueueDropItem>(&self, items: &[T]) -> bool {
+        let items = items
+            .iter()
+            .copied()
+            .map(QueueDropItem::queue_item)
+            .collect::<Vec<_>>();
+        super::sidebar_dnd::handle_queue_drop(&self.shared, &items)
+    }
+}
+
+pub(in crate::ui) trait QueueDropItem: Copy {
+    fn queue_item(self) -> reprise_core::up_next::QueueItem;
+}
+
+impl QueueDropItem for i64 {
+    fn queue_item(self) -> reprise_core::up_next::QueueItem {
+        reprise_core::up_next::QueueItem::Track(self)
+    }
+}
+
+impl QueueDropItem for reprise_core::up_next::QueueItem {
+    fn queue_item(self) -> reprise_core::up_next::QueueItem {
+        self
     }
 }
 

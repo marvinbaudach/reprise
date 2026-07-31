@@ -77,4 +77,12 @@ pub(in crate::ui) fn install(
         };
         player.reorder_queue_rows(op);
     });
+    let player_for_enqueue = Rc::downgrade(player);
+    panel.set_on_up_next_enqueue(move |items| {
+        let Some(player) = player_for_enqueue.upgrade() else {
+            return false;
+        };
+        player.append_queue_items(items);
+        true
+    });
 }

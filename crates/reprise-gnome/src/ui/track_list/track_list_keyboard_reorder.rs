@@ -5,6 +5,7 @@ use std::rc::Rc;
 
 use gtk4::gdk;
 use gtk4::prelude::*;
+use reprise_core::up_next::QueueItem;
 use reprise_core::view_source::ViewSource;
 
 use super::track_list_context_menu::{current_selection_ids, current_selection_positions};
@@ -72,7 +73,10 @@ pub(in crate::ui) fn is_available(shared: &Rc<Shared>, direction: ReorderDirecti
                 return false;
             };
             let payload = DragPayload {
-                ids: current_selection_ids(shared),
+                items: current_selection_ids(shared)
+                    .into_iter()
+                    .map(QueueItem::Track)
+                    .collect(),
                 reorder_position: Some(source_position),
             };
             track_list_dnd::resolve_reorder_target(&payload, target_position).is_some()
@@ -100,7 +104,10 @@ pub(in crate::ui) fn perform(shared: &Rc<Shared>, direction: ReorderDirection) -
                 return false;
             };
             let payload = DragPayload {
-                ids: current_selection_ids(shared),
+                items: current_selection_ids(shared)
+                    .into_iter()
+                    .map(QueueItem::Track)
+                    .collect(),
                 reorder_position: Some(source_position),
             };
             track_list_dnd::handle_playlist_reorder_drop(shared, playlist_id, &payload, target)
