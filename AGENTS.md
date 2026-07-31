@@ -225,7 +225,7 @@ exist.)
 
 ## Completed file ownership — episodes as queue citizens
 
-Packages 1 through 3 are complete and this ownership is released. No repository
+Packages 1 through 4 are complete and this ownership is released. No repository
 lock or coordination board exists in this checkout.
 
 ### Package 1 — typed manual queue
@@ -253,3 +253,13 @@ lock or coordination board exists in this checkout.
 | episodes-as-queue-citizens | `crates/reprise-gnome/src/ui/now_playing/up_next_panel.rs`, its focused tests, and the narrow typed projection adapter in `crates/reprise-gnome/src/ui/playback/queue_transport.rs` |
 | episodes-as-queue-citizens | Minimal append-only CTX rule draft in `docs/ux-rules.md` and `.superpowers/sdd/progress.md` |
 | sibling branches — excluded | `crates/reprise-gnome/src/ui/podcasts/**`, `crates/reprise-core/src/podcasts/store.rs`, `crates/reprise-core/src/podcasts/youtube.rs` |
+
+### Package 4 — queue entry routes (complete; ownership released)
+
+| Owner | Files |
+| --- | --- |
+| episodes-as-queue-citizens | `crates/reprise-gnome/src/ui/track_list/{track_list_dnd,track_list_dnd_smoke,track_list_keyboard_reorder}.rs`, `crates/reprise-gnome/src/ui/sidebar/{sidebar_dnd,sidebar_session}.rs`, their focused tests, and narrow typed callback adapters |
+| episodes-as-queue-citizens | `crates/reprise-gnome/src/ui/now_playing/{up_next_panel,up_next_panel_tests,now_playing}.rs`, `crates/reprise-gnome/src/ui/playback/queue_transport.rs`, and the narrow window wiring for typed queue drops |
+| episodes-as-queue-citizens | `crates/reprise-gnome/src/ui/podcasts/{podcasts_dnd,podcasts_groups,podcasts_groups_tests,podcasts_context_menu,podcasts_view,podcasts_view_actions}.rs`, source-view callbacks, queue-entry copy, and matching gettext catalogs |
+| episodes-as-queue-citizens | Append-only package-4 rule and reversal records in `docs/ux-rules.md`, `docs/plans/podcasts-radio.md`, plus `.superpowers/sdd/progress.md` |
+| sibling branches — excluded | `crates/reprise-core/src/podcasts/store.rs`, `crates/reprise-core/src/podcasts/youtube.rs`, runtime protocol/MCP/MPRIS outward surfaces, and every package-5 file |
