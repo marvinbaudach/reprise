@@ -11,6 +11,10 @@ use reprise_core::db::Db;
 use reprise_core::queries::{self, BrowseFacet, BrowseFilter, BrowseValue};
 use reprise_core::view_source::ViewSource;
 
+use super::browse_bar_chips::{
+    append_chip, apply_selection, available_facets, displayed_value, facet_label, filter_chips,
+    remove_filter, restored_filter, value_matches_search,
+};
 use super::browse_chooser::{
     browse_popup_min_height, build_chooser, chooser_row, load_values, wire_chooser, FACET_PAGE,
     VALUE_PAGE,
@@ -25,26 +29,11 @@ pub(in crate::ui) const CHIP_CSS_CLASS: &str = "reprise-filter-chip";
 const POPOVER_CSS_CLASS: &str = "reprise-filter-popover";
 type OnChanged = Rc<dyn Fn(BrowseFilter)>;
 type OnVoid = Rc<dyn Fn()>;
-const FACETS: [BrowseFacet; 5] = [
-    BrowseFacet::Genre,
-    BrowseFacet::Artist,
-    BrowseFacet::Album,
-    BrowseFacet::Year,
-    BrowseFacet::Rating,
-];
-
 /// Minimum content height (px) of the filter bar. Both the empty state (the
 /// tall "+ Add filter" pill) and the active state (compact chips) are pinned
 /// to this so toggling a filter never changes the bar's height and shifts the
 /// track table (QA #8). Sized to the taller of the two — the pill.
 const FILTER_BAR_MIN_HEIGHT: i32 = 34;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct FilterChip {
-    facet: BrowseFacet,
-    label: String,
-    accessible_remove_label: String,
-}
 
 /// Chip and value-popover rules; installed app-wide by [`super::style`].
 pub(in crate::ui) fn css() -> String {
@@ -56,127 +45,6 @@ pub(in crate::ui) fn css() -> String {
          .{POPOVER_CSS_CLASS} contents {{ min-width: 300px; min-height: {}px; }}",
         browse_popup_min_height(0)
     )
-}
-
-pub(super) fn apply_selection(
-    current: &BrowseFilter,
-    facet: BrowseFacet,
-    value: Option<String>,
-) -> BrowseFilter {
-    match facet {
-        // Genre → Artist → Album cascade: setting a shallower facet clears the
-        // deeper ones, but the standalone Year/Rating constraints survive.
-        BrowseFacet::Genre => BrowseFilter {
-            genre: value,
-            artist: None,
-            album: None,
-            ..current.clone()
-        },
-        BrowseFacet::Artist => BrowseFilter {
-            artist: value,
-            album: None,
-            ..current.clone()
-        },
-        BrowseFacet::Album => BrowseFilter {
-            album: value,
-            ..current.clone()
-        },
-        // Year and Rating are additive: selecting one leaves every other
-        // facet untouched.
-        BrowseFacet::Year => BrowseFilter {
-            year: value,
-            ..current.clone()
-        },
-        BrowseFacet::Rating => BrowseFilter {
-            rating: value,
-            ..current.clone()
-        },
-    }
-}
-
-fn filter_value(filter: &BrowseFilter, facet: BrowseFacet) -> Option<&str> {
-    match facet {
-        BrowseFacet::Genre => filter.genre.as_deref(),
-        BrowseFacet::Artist => filter.artist.as_deref(),
-        BrowseFacet::Album => filter.album.as_deref(),
-        BrowseFacet::Year => filter.year.as_deref(),
-        BrowseFacet::Rating => filter.rating.as_deref(),
-    }
-}
-
-fn facet_label(facet: BrowseFacet) -> String {
-    let message = match facet {
-        BrowseFacet::Genre => filter_strings::BROWSE_GENRE,
-        BrowseFacet::Artist => filter_strings::BROWSE_ARTIST,
-        BrowseFacet::Album => filter_strings::BROWSE_ALBUM,
-        BrowseFacet::Year => filter_strings::BROWSE_YEAR,
-        BrowseFacet::Rating => filter_strings::BROWSE_RATING,
-    };
-    filter_strings::text(message)
-}
-
-fn displayed_value(facet: BrowseFacet, value: &str) -> String {
-    if !value.is_empty() {
-        return value.to_string();
-    }
-    let message = match facet {
-        BrowseFacet::Genre => filter_strings::UNKNOWN_GENRE,
-        BrowseFacet::Artist => filter_strings::UNKNOWN_ARTIST,
-        BrowseFacet::Album => filter_strings::UNKNOWN_ALBUM,
-        BrowseFacet::Year => filter_strings::UNKNOWN_YEAR,
-        BrowseFacet::Rating => filter_strings::UNKNOWN_RATING,
-    };
-    filter_strings::text(message)
-}
-
-fn filter_chips(filter: &BrowseFilter) -> Vec<FilterChip> {
-    FACETS
-        .into_iter()
-        .filter_map(|facet| {
-            let value = displayed_value(facet, filter_value(filter, facet)?);
-            let facet_name = facet_label(facet);
-            Some(FilterChip {
-                facet,
-                label: filter_strings::chip_label(&facet_name, &value),
-                accessible_remove_label: filter_strings::remove_filter_label(&facet_name, &value),
-            })
-        })
-        .collect()
-}
-
-#[cfg(test)]
-pub(in crate::ui) fn chip_labels(
-    search: &str,
-    filter: &BrowseFilter,
-    is_library: bool,
-) -> Vec<String> {
-    let mut labels = Vec::new();
-    if !search.trim().is_empty() {
-        labels.push(filter_strings::search_chip_label(search.trim()));
-    }
-    if is_library {
-        labels.extend(filter_chips(filter).into_iter().map(|chip| chip.label));
-    }
-    labels
-}
-
-fn available_facets(filter: &BrowseFilter) -> Vec<BrowseFacet> {
-    FACETS
-        .into_iter()
-        .filter(|facet| filter_value(filter, *facet).is_none())
-        .collect()
-}
-
-fn remove_filter(filter: &BrowseFilter, facet: BrowseFacet) -> BrowseFilter {
-    apply_selection(filter, facet, None)
-}
-
-fn value_matches_search(value: &str, search: &str) -> bool {
-    value.to_lowercase().contains(&search.trim().to_lowercase())
-}
-
-fn restored_filter(filter: &BrowseFilter) -> BrowseFilter {
-    filter.clone()
 }
 
 pub struct BrowseBar {
@@ -699,17 +567,6 @@ impl BrowseBar {
         }
         self.apply_filter(apply_selection(&filter, facet, Some(value.to_string())));
         true
-    }
-}
-
-fn append_chip(chips: &gtk4::FlowBox, widget: &impl IsA<gtk4::Widget>) {
-    chips.append(widget);
-    if let Some(wrapper) = widget
-        .as_ref()
-        .parent()
-        .and_downcast::<gtk4::FlowBoxChild>()
-    {
-        wrapper.set_focusable(false);
     }
 }
 

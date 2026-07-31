@@ -6,7 +6,8 @@ use gtk4::prelude::*;
 use reprise_core::db::Db;
 use reprise_core::queries::{self, BrowseFacet, BrowseFilter, BrowseValue};
 
-use super::browse_bar::{apply_selection, BrowseBar};
+use super::browse_bar::BrowseBar;
+use super::browse_bar_chips::apply_selection;
 use crate::ui::browse_filter_strings as filter_strings;
 
 pub(super) const POPUP_MIN_HEIGHT: i32 = 200;

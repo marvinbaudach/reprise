@@ -1,6 +1,7 @@
 //! Tests for browse_bar.rs (extracted to keep the source under the 800-line gate).
 
 use super::*;
+use crate::ui::browse::browse_bar_chips::chip_labels;
 
 // UX FIL-1a: chip order is search first, then the facet cascade.
 #[test]
