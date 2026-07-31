@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-31 10:35+0200\n"
+"POT-Creation-Date: 2026-07-31 12:05+0200\n"
 "PO-Revision-Date: 2026-07-20 11:38+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Hindi\n"
@@ -4768,7 +4768,7 @@ msgstr ""
 
 #: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:57
 #, rust-format
-msgid "Leave scope: {scope}"
+msgid "Leave {place}"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:67
