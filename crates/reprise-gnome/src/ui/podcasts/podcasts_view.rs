@@ -22,6 +22,7 @@ use super::podcasts_download_presentation::refreshed_download_states;
 use super::podcasts_empty_state::{podcasts_empty_state_for, PodcastsEmptyState};
 use super::podcasts_filter_bar::PodcastsFilterBar;
 use super::podcasts_groups;
+use super::podcasts_playback::EpisodeMark;
 use super::podcasts_presentation::{
     active as filter_active, apply_filter, library_summary, rendered_source_groups,
     sort_newest_first,
@@ -50,6 +51,8 @@ mod connectivity_ui;
 mod copy;
 #[path = "podcasts_failure_ui.rs"]
 mod failure_ui;
+#[path = "podcasts_view_marker.rs"]
+mod marker;
 #[path = "podcasts_view_requests.rs"]
 mod requests;
 #[cfg(test)]
@@ -65,12 +68,14 @@ const MODULE_OFF_PAGE: &str = "module-off";
 const FAILURE_PAGE: &str = "fetch-failed";
 
 type OnEpisodeActivated = Rc<dyn Fn(EpisodeRow)>;
+type OnPlayPause = Rc<dyn Fn()>;
 type OnSubscriptionRemoved = Rc<dyn Fn(i64)>;
 type OnSidebarRefresh = Rc<dyn Fn()>;
 
 #[derive(Clone)]
 pub(in crate::ui) struct PodcastsCallbacks {
     on_episode_activated: OnEpisodeActivated,
+    on_play_pause: OnPlayPause,
     on_subscription_removed: OnSubscriptionRemoved,
     on_sidebar_refresh: OnSidebarRefresh,
 }
@@ -79,6 +84,7 @@ impl Default for PodcastsCallbacks {
     fn default() -> Self {
         Self {
             on_episode_activated: Rc::new(|_| {}),
+            on_play_pause: Rc::new(|| {}),
             on_subscription_removed: Rc::new(|_| {}),
             on_sidebar_refresh: Rc::new(|| {}),
         }
@@ -88,11 +94,13 @@ impl Default for PodcastsCallbacks {
 impl PodcastsCallbacks {
     pub(in crate::ui) fn new(
         on_episode_activated: impl Fn(EpisodeRow) + 'static,
+        on_play_pause: impl Fn() + 'static,
         on_subscription_removed: impl Fn(i64) + 'static,
         on_sidebar_refresh: impl Fn() + 'static,
     ) -> Self {
         Self {
             on_episode_activated: Rc::new(on_episode_activated),
+            on_play_pause: Rc::new(on_play_pause),
             on_subscription_removed: Rc::new(on_subscription_removed),
             on_sidebar_refresh: Rc::new(on_sidebar_refresh),
         }
@@ -137,7 +145,7 @@ pub(in crate::ui) struct PodcastsView {
     selection: Rc<RefCell<PodcastSelection>>,
     download_states: Rc<RefCell<BTreeMap<i64, DownloadState>>>,
     download_widgets: RefCell<BTreeMap<i64, podcasts_groups::DownloadRowWidgets>>,
-    playing_episode: Cell<Option<i64>>,
+    playing_episode: Cell<Option<EpisodeMark>>,
     unavailable_episode: Cell<Option<i64>>,
     generation: Cell<u64>,
     toast_overlay: glib::WeakRef<adw::ToastOverlay>,
@@ -299,16 +307,6 @@ impl PodcastsView {
         self.toast_overlay.set(Some(overlay));
     }
 
-    pub(in crate::ui) fn set_playing_episode(&self, episode_id: Option<i64>) {
-        self.playing_episode.set(episode_id);
-        self.render();
-    }
-
-    pub(in crate::ui) fn set_unavailable_episode(&self, episode_id: Option<i64>) {
-        self.unavailable_episode.set(episode_id);
-        self.render();
-    }
-
     pub(in crate::ui) fn bind_device_sync(
         self: &Rc<Self>,
         runtime: &Rc<crate::ui::device_sync_runtime::DeviceSyncRuntime>,
@@ -416,6 +414,7 @@ impl PodcastsView {
             images_allowed,
             self.connectivity.get(),
             self.unavailable_episode.get(),
+            self.playing_episode.get(),
         );
         let download_widgets = podcasts_groups::replace(
             &self.group_container,

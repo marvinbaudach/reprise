@@ -102,7 +102,7 @@ fn compact_episode_row_has_no_play_button_and_stays_within_height_budget() {
             },
             &mut widgets,
             &EpisodeRenderContext {
-                playing: false,
+                mark: None,
                 download_state: &DownloadState::NotDownloaded,
                 images_allowed: false,
                 network: RowNetworkState {
@@ -431,6 +431,8 @@ fn pod_13_a_failed_download_offers_a_sensitive_retry_action() {
         root: gtk4::Box::new(gtk4::Orientation::Horizontal, 0),
         status: gtk4::Box::new(gtk4::Orientation::Vertical, 0),
         action: gtk4::Button::new(),
+        marker: gtk4::Box::new(gtk4::Orientation::Horizontal, 0),
+        play_glyph: gtk4::Image::new(),
     };
 
     update_download_state(

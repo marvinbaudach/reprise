@@ -18,10 +18,13 @@ use reprise_core::podcasts::EpisodeRow;
 use super::podcasts_context_menu::PodcastSyncDevice;
 use super::podcasts_download_presentation;
 use super::podcasts_groups::{self, DownloadRowWidgets};
+use super::podcasts_playback::EpisodeMark;
 use super::podcasts_presentation::{
     detail_line, duration, on_phone, relative_date, status_pill, RenderedSourceGroup,
 };
+use super::podcasts_row_interaction::install_playback_hover;
 use super::podcasts_selection;
+use crate::ui::playing_marker;
 use crate::ui::strings;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -167,6 +170,7 @@ pub(super) struct YoutubeChannelDetail {
     images_allowed: Cell<bool>,
     connectivity: Cell<Connectivity>,
     unavailable_episode: Cell<Option<i64>>,
+    playing_episode: Cell<Option<EpisodeMark>>,
 }
 
 impl YoutubeChannelDetail {
@@ -198,6 +202,7 @@ impl YoutubeChannelDetail {
             images_allowed: Cell::new(false),
             connectivity: Cell::new(Connectivity::Online),
             unavailable_episode: Cell::new(None),
+            playing_episode: Cell::new(None),
         })
     }
 
@@ -239,6 +244,7 @@ impl YoutubeChannelDetail {
         images_allowed: bool,
         connectivity: Connectivity,
         unavailable_episode: Option<i64>,
+        playing_episode: Option<EpisodeMark>,
     ) {
         self.groups.replace(groups.to_vec());
         self.download_states.replace(download_states.clone());
@@ -247,6 +253,7 @@ impl YoutubeChannelDetail {
         self.images_allowed.set(images_allowed);
         self.connectivity.set(connectivity);
         self.unavailable_episode.set(unavailable_episode);
+        self.playing_episode.set(playing_episode);
         let active = self.state.borrow().active_channel();
         if active.is_some_and(|id| !groups.iter().any(|group| group.group.subscription_id == id)) {
             self.state.borrow_mut().close_channel();
@@ -273,6 +280,14 @@ impl YoutubeChannelDetail {
                 self.connectivity.get(),
                 self.unavailable_episode.get() == Some(episode_id),
             );
+        }
+    }
+
+    pub(super) fn update_playback_state(&self, mark: EpisodeMark) {
+        self.playing_episode.set(Some(mark));
+        let widgets = self.download_widgets.borrow().get(&mark.id).cloned();
+        if let Some(widgets) = widgets {
+            podcasts_groups::update_playback_state(&widgets, mark.playing);
         }
     }
 
@@ -483,6 +498,15 @@ impl YoutubeChannelDetail {
     ) -> gtk4::Widget {
         let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
         row.add_css_class("reprise-podcast-episode-row");
+        let mark = self
+            .playing_episode
+            .get()
+            .filter(|mark| mark.id == episode.id);
+        let loaded = mark.is_some();
+        let playing = mark.is_some_and(|mark| mark.playing);
+        if loaded {
+            row.add_css_class("reprise-podcast-playing");
+        }
         let selected = gtk4::CheckButton::new();
         let is_selected = self
             .state
@@ -504,10 +528,30 @@ impl YoutubeChannelDetail {
             }
         });
         row.append(&selected);
-        let play = gtk4::Button::from_icon_name("media-playback-start-symbolic");
+        let play = gtk4::Button::new();
         play.add_css_class("flat");
+        play.set_tooltip_text(Some(&strings::text(strings::PLAY_OR_PAUSE)));
+        play.update_property(&[gtk4::accessible::Property::Label(&strings::text(
+            strings::PLAY_OR_PAUSE,
+        ))]);
         play.set_action_name(Some("podcasts.play"));
         play.set_action_target_value(Some(&episode.id.to_variant()));
+        let play_surface = gtk4::Overlay::new();
+        play_surface.set_size_request(32, 32);
+        let marker = playing_marker::build();
+        marker.add_css_class("reprise-podcast-episode-marker");
+        playing_marker::set_playing(&marker, playing);
+        marker.set_visible(loaded);
+        play_surface.add_overlay(&marker);
+        let play_glyph = gtk4::Image::from_icon_name(if playing {
+            "media-playback-pause-symbolic"
+        } else {
+            "media-playback-start-symbolic"
+        });
+        play_glyph.set_opacity(if loaded { 0.0 } else { 1.0 });
+        play_surface.add_overlay(&play_glyph);
+        play.set_child(Some(&play_surface));
+        install_playback_hover(&play, &marker, &play_glyph, if loaded { 0.0 } else { 1.0 });
         row.append(&play);
         let copy = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
         copy.set_hexpand(true);
@@ -538,6 +582,8 @@ impl YoutubeChannelDetail {
             root: row.clone(),
             status,
             action,
+            marker,
+            play_glyph,
         };
         let state = self
             .download_states

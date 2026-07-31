@@ -78,8 +78,37 @@ pub(super) fn episode_thumbnail(
     play.set_halign(gtk4::Align::Center);
     play.set_valign(gtk4::Align::Center);
     play.set_opacity(0.0);
-    overlay.add_overlay(&play);
     (overlay, play)
+}
+
+pub(super) fn install_playback_hover(
+    host: &impl IsA<gtk4::Widget>,
+    marker: &gtk4::Box,
+    play_glyph: &gtk4::Image,
+    idle_glyph_opacity: f64,
+) {
+    let hover = gtk4::EventControllerMotion::new();
+    let hovered_marker = marker.downgrade();
+    let hovered_glyph = play_glyph.downgrade();
+    hover.connect_enter(move |_, _, _| {
+        if let Some(marker) = hovered_marker.upgrade() {
+            marker.set_opacity(0.0);
+        }
+        if let Some(glyph) = hovered_glyph.upgrade() {
+            glyph.set_opacity(1.0);
+        }
+    });
+    let hovered_marker = marker.downgrade();
+    let hovered_glyph = play_glyph.downgrade();
+    hover.connect_leave(move |_| {
+        if let Some(marker) = hovered_marker.upgrade() {
+            marker.set_opacity(1.0);
+        }
+        if let Some(glyph) = hovered_glyph.upgrade() {
+            glyph.set_opacity(idle_glyph_opacity);
+        }
+    });
+    host.as_ref().add_controller(hover);
 }
 
 /// Activating a row is the only way to play it now that the per-row play
@@ -92,21 +121,13 @@ fn activate_play(root: &gtk4::Box, episode_id: i64) {
     }
 }
 
-pub(super) fn install_row_activation(root: &gtk4::Box, episode_id: i64, play_glyph: &gtk4::Image) {
-    let hover = gtk4::EventControllerMotion::new();
-    let hovered_glyph = play_glyph.downgrade();
-    hover.connect_enter(move |_, _, _| {
-        if let Some(glyph) = hovered_glyph.upgrade() {
-            glyph.set_opacity(1.0);
-        }
-    });
-    let hovered_glyph = play_glyph.downgrade();
-    hover.connect_leave(move |_| {
-        if let Some(glyph) = hovered_glyph.upgrade() {
-            glyph.set_opacity(0.0);
-        }
-    });
-    root.add_controller(hover);
+pub(super) fn install_row_activation(
+    root: &gtk4::Box,
+    episode_id: i64,
+    marker: &gtk4::Box,
+    play_glyph: &gtk4::Image,
+) {
+    install_playback_hover(root, marker, play_glyph, 0.0);
 
     // input-parity: ACC-8 keyboard=episode-row-enter-space
     let click = gtk4::GestureClick::new();
