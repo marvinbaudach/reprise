@@ -89,6 +89,15 @@ impl NeighbourContext {
         })
     }
 
+    /// The current episode id, for tests that build episode-only contexts.
+    ///
+    /// Test-only on purpose: a `ManualQueue` context legitimately contains
+    /// `Track` items, so asking a context for "the episode id" is only ever
+    /// meaningful for a show-order one. Production reads `current_item()` and
+    /// matches on the kind. Keeping this compiled out of the binary means a
+    /// future caller cannot reach the panicking path by accident — the
+    /// invariant is enforced by the build, not by discipline.
+    #[cfg(test)]
     pub(super) fn current_id(&self) -> i64 {
         self.current_item()
             .episode_id()

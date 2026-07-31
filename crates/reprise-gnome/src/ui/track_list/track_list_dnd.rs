@@ -245,9 +245,15 @@ pub(in crate::ui) fn resolve_reorder_target(
     payload: &DragPayload,
     target_true_position: i64,
 ) -> Option<ReorderMove> {
-    if payload.items.len() != 1 {
+    let [item] = payload.items.as_slice() else {
         return None;
-    }
+    };
+    // Only a track can be reordered inside a list. Today the sole drag source
+    // that sets `reorder_position` never builds an episode payload, so this is
+    // already true — but that is an invariant of a distant call site, not of
+    // the payload itself. Checking it here means a second reorder-eligible
+    // drag source cannot silently reorder an episode into a track position.
+    item.track_id()?;
     let from = payload.reorder_position?;
     if from == target_true_position {
         return None;
