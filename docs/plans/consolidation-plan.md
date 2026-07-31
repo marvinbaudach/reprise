@@ -919,6 +919,13 @@ One commit each, independent of one another:
 | 2.4d | `image::Limits` (edge length, `max_alloc`) at every decode site | §7.6 |
 | 2.4e | `recv_or_fault` in `one_shot_task`; `delete_tracks.rs` as the first caller | §8.3 |
 | 2.4f | `--cookies-from-browser`: copy in the plugin area, env override debug-only | §7.3 |
+| 2.4g | Bound the watcher's ignore registry, or drop the temporary's entry once the file is gone | §8.5 |
+| 2.4h | Stop sweeping the directory on every publication — once per directory per batch is enough | §6.3.6 |
+
+2.4g and 2.4h both come from `#189` and are worth doing **before** the test
+round rather than in wave 2, because a library-wide lyrics batch is exactly
+the kind of thing a tester will try on their whole collection on day one. They
+are small: one bounded sweep, one moved call.
 
 2.4a and 2.4c are each under an hour and each close a finding completely — good
 entry tasks.

@@ -650,6 +650,26 @@ index, the original justification holds again.
 5. **Five independent rate limiters** (§4.4) are a performance matter too: at
    startup several sources can claim network and CPU at once with no total
    budget anywhere.
+6. **The writeback leftover sweep is O(n²) over a directory.**
+   `writeback_publish::publish` calls `sweep_leftovers(target.parent())` on
+   **every** publication, and that sweep is a full `read_dir` of the directory.
+   For album folders this is free. For a flat music directory — one folder,
+   every track, which plenty of people have — a library-wide lyrics batch reads
+   the whole directory once per file. Measured on a warm tmpfs, replicating the
+   sweep's own logic (`read_dir`, name match, `metadata()` only on matches):
+
+   | Files in the directory | One sweep | A batch over all of them |
+   | ---: | ---: | ---: |
+   | 200 | 0.17 ms | negligible |
+   | 2,000 | 1.20 ms | 2.4 s |
+   | 10,000 | 7.43 ms | **74 s** |
+
+   Seventy-four seconds of pure directory scanning, on the fastest possible
+   filesystem; on a spinning disk or an NFS mount, far worse. The sweep itself
+   is right to exist — an abandoned temporary in someone's album folder is
+   exactly the kind of litter nobody else was looking for. It just does not
+   need to run per file. Once per directory per batch, or once at startup, has
+   the same effect for a fraction of the cost.
 
 ### 6.4 What is already good
 
@@ -885,7 +905,43 @@ machines — different filesystems, full disks, home on NFS, an older file after
 a downgrade — that is the most likely crash source of all, and simultaneously
 the cheapest to fix.
 
-### 8.5 Finding T4 — what does *not* threaten stability today
+### 8.5 Finding T4 — the watcher's ignore registry now grows without bound
+
+`library/watcher.rs` keeps a process-lifetime
+`static IGNORE_LIST: OnceLock<Mutex<HashMap<PathBuf, Instant>>>`. Its only
+pruning is inside `is_ignored`, and only for the exact path being asked about,
+and only once that path's deadline has already passed. There is no sweep. The
+comment justifying that design says so plainly:
+
+> the registry only ever holds a handful of recently-written paths at a time,
+> so a stale entry sitting unpruned until its own path is next checked is not a
+> meaningful leak
+
+That was true when the only caller was the tag editor, writing a handful of
+files the user had just selected. `#189` made it false.
+`writeback_publish::publish` arms an ignore window for **two** paths per
+publication — the target and a temporary named `.reprise-<16 hex>.tmp` — and
+the temporary's name is unique per publication by construction (64 random
+bits).
+
+The target's entry is eventually prunable: that path recurs, so a later
+`is_ignored` on it clears the stale entry. **The temporary's never is.** The
+file is unlinked within the same publication, so no inotify event ever carries
+that path again, so `is_ignored` is never called for it again, so its entry
+stays for the life of the process.
+
+One permanently unprunable entry per published file. A library-wide lyrics
+batch writes one sidecar per track; cover writeback adds one per album. On the
+maintainer's 1,686-track library that is a few hundred kilobytes — nothing. On
+a 100k library it is on the order of 15–20 MB retained in a long-running
+desktop process, and it grows again every time a batch runs.
+
+Severity is low and the fix is small: give the registry a bounded sweep, or
+have `publish` drop the temporary's entry once the file is gone. What matters
+more than the bytes is that the **rationale in the code is now wrong**, and the
+next person to reason about that registry will read it and believe it.
+
+### 8.6 What does *not* threaten stability today
 
 For an honest list, the verified non-findings:
 
