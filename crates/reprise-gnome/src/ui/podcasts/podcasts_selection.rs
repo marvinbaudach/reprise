@@ -58,31 +58,26 @@ pub(super) fn episode_checkbox(episode_id: i64, title: &str, active: bool) -> gt
     checkbox
 }
 
+/// The "N selected / Download selected / Remove selected" trio.
+///
+/// Both episode surfaces show it, so it is built once here. The grouped
+/// library view puts it on a toolbar row of its own; the channel detail view
+/// appends it to the end of the toolbar it already has. Only the container
+/// differs — the widgets, the sensitivity rule and the action targets do not,
+/// which is the whole point of this type existing.
 pub(super) struct SelectionControls {
-    root: gtk4::Box,
     selected: gtk4::Label,
     download: gtk4::Button,
     remove: gtk4::Button,
 }
 
 impl SelectionControls {
-    pub(super) fn new() -> Self {
-        let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-        root.add_css_class("toolbar");
-        root.set_margin_start(12);
-        root.set_margin_end(12);
-        let spacer = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
-        spacer.set_hexpand(true);
-        root.append(&spacer);
+    fn build() -> Self {
         let selected = gtk4::Label::new(None);
-        root.append(&selected);
         let download = gtk4::Button::with_label(&strings::text(strings::YOUTUBE_DOWNLOAD_SELECTED));
-        root.append(&download);
         let remove = gtk4::Button::with_label(&strings::text(strings::YOUTUBE_REMOVE_SELECTED));
         remove.add_css_class("destructive-action");
-        root.append(&remove);
         let controls = Self {
-            root,
             selected,
             download,
             remove,
@@ -91,8 +86,34 @@ impl SelectionControls {
         controls
     }
 
-    pub(super) fn widget(&self) -> &gtk4::Widget {
-        self.root.upcast_ref()
+    /// The trio on a toolbar row of its own, right-aligned — the grouped
+    /// library view, which has no other toolbar to join.
+    pub(super) fn standalone() -> (gtk4::Widget, Self) {
+        let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+        root.add_css_class("toolbar");
+        root.set_margin_start(12);
+        root.set_margin_end(12);
+        let spacer = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+        spacer.set_hexpand(true);
+        root.append(&spacer);
+        let controls = Self::build();
+        controls.append_to(&root);
+        (root.upcast(), controls)
+    }
+
+    /// The trio appended to an existing toolbar — the channel detail view,
+    /// whose bar already carries the window summary, "Load more" and
+    /// "Hide Shorts".
+    pub(super) fn appended_to(container: &gtk4::Box) -> Self {
+        let controls = Self::build();
+        controls.append_to(container);
+        controls
+    }
+
+    fn append_to(&self, container: &gtk4::Box) {
+        container.append(&self.selected);
+        container.append(&self.download);
+        container.append(&self.remove);
     }
 
     pub(super) fn update(&self, episode_ids: &[i64]) {
@@ -137,5 +158,43 @@ mod tests {
         selection.remove_all(&[11, 12]);
 
         assert_eq!(selection.selected_ids(), [21]);
+    }
+
+    /// SRC-12: the two surfaces must reach the same actions with the same
+    /// targets. They do so by construction now — both go through
+    /// `SelectionControls` — and this pins that the standalone and appended
+    /// constructors really do produce the identical wiring, so the channel
+    /// detail cannot quietly drift back to its own copy.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn src_12_both_surfaces_wire_the_same_batch_actions() {
+        gtk4::init().unwrap();
+        let (_bar, standalone) = SelectionControls::standalone();
+        let container = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+        let appended = SelectionControls::appended_to(&container);
+
+        for controls in [&standalone, &appended] {
+            controls.update(&[4, 8]);
+            assert_eq!(
+                controls.download.action_name().as_deref(),
+                Some("podcasts.download-selected")
+            );
+            assert_eq!(
+                controls.remove.action_name().as_deref(),
+                Some("podcasts.remove-selected")
+            );
+            assert_eq!(
+                controls
+                    .remove
+                    .action_target_value()
+                    .and_then(|value| value.get::<Vec<i64>>()),
+                Some(vec![4, 8])
+            );
+            assert!(controls.download.is_sensitive());
+        }
+
+        standalone.update(&[]);
+        assert!(!standalone.download.is_sensitive());
+        assert!(!standalone.remove.is_sensitive());
     }
 }

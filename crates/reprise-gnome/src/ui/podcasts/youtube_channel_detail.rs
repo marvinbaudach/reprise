@@ -15,13 +15,13 @@ use reprise_core::podcasts::channel_window::{
 use reprise_core::podcasts::download_state::DownloadState;
 use reprise_core::podcasts::EpisodeRow;
 
-use super::podcasts_batch_actions;
-use super::podcasts_context_menu::{self, PodcastSyncDevice};
+use super::podcasts_context_menu::PodcastSyncDevice;
 use super::podcasts_download_presentation;
 use super::podcasts_groups::{self, DownloadRowWidgets};
 use super::podcasts_presentation::{
     detail_line, duration, on_phone, relative_date, status_pill, RenderedSourceGroup,
 };
+use super::podcasts_selection;
 use crate::ui::strings;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -468,45 +468,12 @@ impl YoutubeChannelDetail {
             }
         });
         controls.append(&hide_shorts);
-        let selected = gtk4::Label::new(None);
-        let download = gtk4::Button::with_label(&strings::text(strings::YOUTUBE_DOWNLOAD_SELECTED));
-        let remove = gtk4::Button::with_label(&strings::text(strings::YOUTUBE_REMOVE_SELECTED));
-        remove.add_css_class("destructive-action");
-        let state = self.state.borrow().clone();
-        update_batch_controls(&state, subscription_id, &selected, &download, &remove);
-        self.wire_batch_actions(subscription_id, &download, &remove);
-        controls.append(&selected);
-        controls.append(&download);
-        controls.append(&remove);
+        // SRC-12: the same trio the grouped library view shows, built by the
+        // same type rather than a second hand-rolled copy — two copies drifted
+        // apart on sensitivity and wording once already.
+        let selection = podcasts_selection::SelectionControls::appended_to(&controls);
+        selection.update(&self.state.borrow().selected_ids(subscription_id));
         controls.upcast()
-    }
-
-    fn wire_batch_actions(
-        self: &Rc<Self>,
-        subscription_id: i64,
-        download: &gtk4::Button,
-        remove: &gtk4::Button,
-    ) {
-        let weak = Rc::downgrade(self);
-        download.connect_clicked(move |_| {
-            let Some(detail) = weak.upgrade() else { return };
-            let ids = detail.state.borrow().selected_ids(subscription_id);
-            podcasts_batch_actions::dispatch_selected(
-                &detail.host,
-                podcasts_context_menu::ACTION_DOWNLOAD_SELECTED,
-                &ids,
-            );
-        });
-        let weak = Rc::downgrade(self);
-        remove.connect_clicked(move |_| {
-            let Some(detail) = weak.upgrade() else { return };
-            let ids = detail.state.borrow().selected_ids(subscription_id);
-            podcasts_batch_actions::dispatch_selected(
-                &detail.host,
-                podcasts_context_menu::ACTION_REMOVE_SELECTED,
-                &ids,
-            );
-        });
     }
 
     fn build_episode_row(
@@ -590,19 +557,6 @@ impl YoutubeChannelDetail {
         widgets.insert(episode.id, download_widgets);
         row.upcast()
     }
-}
-
-fn update_batch_controls(
-    state: &YoutubeChannelState,
-    subscription_id: i64,
-    selected: &gtk4::Label,
-    download: &gtk4::Button,
-    remove: &gtk4::Button,
-) {
-    let count = state.selected_ids(subscription_id).len();
-    selected.set_text(&strings::youtube_selected_count(count));
-    download.set_sensitive(count > 0);
-    remove.set_sensitive(count > 0);
 }
 
 #[cfg(test)]
