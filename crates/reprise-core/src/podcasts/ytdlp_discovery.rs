@@ -38,6 +38,7 @@ impl YtDlp {
                 setting_path,
             ),
             browser_session: resolve_browser_session(browser_session),
+            metadata_language: None,
             timeouts: YtDlpTimeouts::default(),
         }
     }
