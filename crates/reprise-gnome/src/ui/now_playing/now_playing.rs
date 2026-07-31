@@ -18,6 +18,7 @@ use super::strings;
 use super::up_next_panel::UpNextPanel;
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
 use crate::ui::lyrics_view::LyricsView;
+use crate::ui::playback::external_media::ExternalPlaybackSnapshot;
 use crate::ui::player_controller::NowPlaying;
 use crate::ui::style::tokens;
 
@@ -35,7 +36,10 @@ struct PanelWidgets {
     lyrics: Rc<LyricsView>,
     up_next: Rc<UpNextPanel>,
     visualizer: SongVisualizer,
+    lyrics_page: adw::ViewStackPage,
     visual_page: adw::ViewStackPage,
+    cover_stack: gtk4::Stack,
+    external_cover: gtk4::Box,
     cover: gtk4::Image,
     outgoing_cover: gtk4::Image,
     title: gtk4::Label,
@@ -88,6 +92,17 @@ fn build_widgets_for_session(
     let cover_transition = gtk4::Overlay::new();
     cover_transition.set_child(Some(&cover));
     cover_transition.add_overlay(&outgoing_cover);
+    let external_cover = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    external_cover.set_size_request(
+        tokens::NOW_PLAYING_COVER_SIZE,
+        tokens::NOW_PLAYING_COVER_SIZE,
+    );
+    external_cover.set_halign(gtk4::Align::Center);
+    external_cover.set_valign(gtk4::Align::Center);
+    let cover_stack = gtk4::Stack::new();
+    cover_stack.add_named(&cover_transition, Some("track"));
+    cover_stack.add_named(&external_cover, Some("external"));
+    cover_stack.set_visible_child_name("track");
 
     let title = gtk4::Label::builder()
         .xalign(0.5)
@@ -120,7 +135,7 @@ fn build_widgets_for_session(
     head.add_css_class("reprise-now-playing-head");
     head.set_halign(gtk4::Align::Center);
     head.set_valign(gtk4::Align::Center);
-    head.append(&cover_transition);
+    head.append(&cover_stack);
     head.append(&metadata);
 
     let glow = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
@@ -146,7 +161,7 @@ fn build_widgets_for_session(
         &strings::text(strings::UP_NEXT),
         "view-list-symbolic",
     );
-    tab_stack.add_titled_with_icon(
+    let lyrics_page = tab_stack.add_titled_with_icon(
         lyrics.widget(),
         Some(LYRICS_PAGE),
         &lyrics_strings::text(lyrics_strings::LYRICS),
@@ -265,7 +280,10 @@ fn build_widgets_for_session(
         lyrics,
         up_next,
         visualizer,
+        lyrics_page,
         visual_page,
+        cover_stack,
+        external_cover,
         cover,
         outgoing_cover,
         title,
@@ -287,6 +305,7 @@ pub(in crate::ui) struct NowPlayingPanel {
     cover_loader: Rc<CoverLoader>,
     cover_generation: Rc<Cell<u64>>,
     loaded_track: RefCell<Option<NowPlaying>>,
+    external_snapshot: RefCell<Option<ExternalPlaybackSnapshot>>,
     playback_state: Cell<PlaybackState>,
     syncing_visibility: Cell<bool>,
     on_up_next_refresh: RefCell<Option<OnVoid>>,
@@ -322,6 +341,7 @@ impl NowPlayingPanel {
             cover_loader,
             cover_generation: Rc::new(Cell::new(0)),
             loaded_track: RefCell::new(None),
+            external_snapshot: RefCell::new(None),
             playback_state: Cell::new(PlaybackState::Stopped),
             syncing_visibility: Cell::new(false),
             on_up_next_refresh: RefCell::new(None),
@@ -373,7 +393,11 @@ impl NowPlayingPanel {
     }
 
     pub(in crate::ui) fn show_lyrics(&self) {
-        self.widgets.tab_stack.set_visible_child_name(LYRICS_PAGE);
+        if self.widgets.lyrics_page.is_visible() {
+            self.widgets.tab_stack.set_visible_child_name(LYRICS_PAGE);
+        } else {
+            self.widgets.tab_stack.set_visible_child_name(UP_NEXT_PAGE);
+        }
         self.widgets.column.set_visible(true);
     }
 
@@ -427,6 +451,18 @@ impl NowPlayingPanel {
             return;
         }
         self.animate_cover_change();
+    }
+
+    pub(in crate::ui) fn set_external_snapshot(&self, snapshot: Option<ExternalPlaybackSnapshot>) {
+        let external_active = snapshot.is_some();
+        *self.external_snapshot.borrow_mut() = snapshot;
+        self.widgets.lyrics_page.set_visible(!external_active);
+        if external_active && self.widgets.session.selected.get() == PanelTab::Lyrics {
+            self.widgets.tab_stack.set_visible_child_name(UP_NEXT_PAGE);
+        }
+        let has_media = external_active || self.loaded_track.borrow().is_some();
+        self.widgets.visualizer.set_has_track(has_media);
+        self.render_track();
     }
 
     pub(in crate::ui) fn set_playback_state(&self, state: PlaybackState) {

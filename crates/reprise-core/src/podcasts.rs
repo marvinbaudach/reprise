@@ -29,6 +29,9 @@ pub mod ytdlp;
 mod ytdlp_download;
 pub mod ytdlp_search;
 
+pub const YOUTUBE_BROWSER_RECOVERY_MESSAGE: &str =
+    "YouTube needs a signed-in browser — choose one in Plugins";
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PodcastKind {
     Rss,
@@ -184,6 +187,13 @@ impl PodcastError {
             (SourceErrorKind::Unreachable, PodcastError::NotModified) => {
                 "podcast source was not modified"
             }
+            (
+                SourceErrorKind::RateLimited { .. },
+                PodcastError::YtDlpFailure {
+                    kind: ytdlp::YtDlpFailureKind::VerificationRequired,
+                    ..
+                },
+            ) => YOUTUBE_BROWSER_RECOVERY_MESSAGE,
             (
                 SourceErrorKind::Unreachable
                 | SourceErrorKind::RateLimited { .. }
@@ -344,6 +354,22 @@ mod tests {
             .classify(),
             PodcastError::Disabled(String::new()).classify()
         );
+    }
+
+    #[test]
+    fn pod_22_verification_required_names_the_signed_in_browser_recovery() {
+        let leaking =
+            "Sign in at https://youtube.example.test/watch?v=secret using /home/user/profile";
+        let classified = PodcastError::YtDlpFailure {
+            kind: ytdlp::YtDlpFailureKind::VerificationRequired,
+            stderr: leaking.to_owned(),
+        }
+        .classify();
+
+        assert_eq!(classified, YOUTUBE_BROWSER_RECOVERY_MESSAGE);
+        for raw in ["secret", "youtube.example.test", "/home/", "profile"] {
+            assert!(!classified.contains(raw), "{classified}");
+        }
     }
 
     #[test]

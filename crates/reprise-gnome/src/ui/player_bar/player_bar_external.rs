@@ -38,8 +38,8 @@ impl PlayerBar {
             .set_opacity(if display.live { 0.0 } else { 1.0 });
         self.shuffle_button.set_sensitive(false);
         self.repeat_button.set_sensitive(false);
-        self.prev_button.set_sensitive(false);
-        self.next_button.set_sensitive(false);
+        self.prev_button.set_sensitive(snapshot.can_go_previous);
+        self.next_button.set_sensitive(snapshot.can_go_next);
         let reconnecting = snapshot.radio.as_ref().is_some_and(|radio| {
             radio.phase() == crate::ui::playback::external_media::RadioPhase::Reconnecting
         });

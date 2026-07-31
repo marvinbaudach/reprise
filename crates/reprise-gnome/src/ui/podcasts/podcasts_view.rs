@@ -22,6 +22,7 @@ use super::podcasts_download_presentation::refreshed_download_states;
 use super::podcasts_empty_state::{podcasts_empty_state_for, PodcastsEmptyState};
 use super::podcasts_filter_bar::PodcastsFilterBar;
 use super::podcasts_groups;
+use super::podcasts_playback::EpisodeMark;
 use super::podcasts_presentation::{
     active as filter_active, apply_filter, library_summary, rendered_source_groups,
     sort_newest_first,
@@ -31,7 +32,8 @@ use super::podcasts_removal::{
     DownloadToggleAction, KeptDownloads,
 };
 use super::podcasts_scroller::build_episode_scroller;
-use super::podcasts_view_data::{last_updated_text, unique};
+use super::podcasts_selection::{PodcastSelection, SelectionControls};
+use super::podcasts_view_data::{episode_ids_in_rendered_order, last_updated_text, unique};
 use super::podcasts_worker::{
     podcasts_response_channel, request_generation, PodcastsOperation, PodcastsPriority,
     PodcastsRequest, PodcastsRuntime, PodcastsWorkerResult,
@@ -49,6 +51,8 @@ mod connectivity_ui;
 mod copy;
 #[path = "podcasts_failure_ui.rs"]
 mod failure_ui;
+#[path = "podcasts_view_marker.rs"]
+mod marker;
 #[path = "podcasts_view_requests.rs"]
 mod requests;
 #[cfg(test)]
@@ -63,13 +67,15 @@ const EMPTY_PAGE: &str = "empty";
 const MODULE_OFF_PAGE: &str = "module-off";
 const FAILURE_PAGE: &str = "fetch-failed";
 
-type OnEpisodeActivated = Rc<dyn Fn(EpisodeRow)>;
+type OnEpisodeActivated = Rc<dyn Fn(EpisodeRow, Vec<i64>)>;
+type OnPlayPause = Rc<dyn Fn()>;
 type OnSubscriptionRemoved = Rc<dyn Fn(i64)>;
 type OnSidebarRefresh = Rc<dyn Fn()>;
 
 #[derive(Clone)]
 pub(in crate::ui) struct PodcastsCallbacks {
     on_episode_activated: OnEpisodeActivated,
+    on_play_pause: OnPlayPause,
     on_subscription_removed: OnSubscriptionRemoved,
     on_sidebar_refresh: OnSidebarRefresh,
 }
@@ -77,7 +83,8 @@ pub(in crate::ui) struct PodcastsCallbacks {
 impl Default for PodcastsCallbacks {
     fn default() -> Self {
         Self {
-            on_episode_activated: Rc::new(|_| {}),
+            on_episode_activated: Rc::new(|_, _| {}),
+            on_play_pause: Rc::new(|| {}),
             on_subscription_removed: Rc::new(|_| {}),
             on_sidebar_refresh: Rc::new(|| {}),
         }
@@ -86,12 +93,14 @@ impl Default for PodcastsCallbacks {
 
 impl PodcastsCallbacks {
     pub(in crate::ui) fn new(
-        on_episode_activated: impl Fn(EpisodeRow) + 'static,
+        on_episode_activated: impl Fn(EpisodeRow, Vec<i64>) + 'static,
+        on_play_pause: impl Fn() + 'static,
         on_subscription_removed: impl Fn(i64) + 'static,
         on_sidebar_refresh: impl Fn() + 'static,
     ) -> Self {
         Self {
             on_episode_activated: Rc::new(on_episode_activated),
+            on_play_pause: Rc::new(on_play_pause),
             on_subscription_removed: Rc::new(on_subscription_removed),
             on_sidebar_refresh: Rc::new(on_sidebar_refresh),
         }
@@ -105,6 +114,7 @@ pub(in crate::ui) struct PodcastsView {
     callbacks: PodcastsCallbacks,
     kind: PodcastKind,
     filter_bar: Rc<PodcastsFilterBar>,
+    selection_controls: SelectionControls,
     group_container: gtk4::Box,
     stack: gtk4::Stack,
     youtube_detail: Rc<YoutubeChannelDetail>,
@@ -132,9 +142,10 @@ pub(in crate::ui) struct PodcastsView {
     pub(super) device_sync: PodcastDeviceSyncState,
     expanded_sources: Rc<RefCell<BTreeSet<i64>>>,
     expanded_episode_sources: Rc<RefCell<BTreeSet<i64>>>,
+    selection: Rc<RefCell<PodcastSelection>>,
     download_states: Rc<RefCell<BTreeMap<i64, DownloadState>>>,
     download_widgets: RefCell<BTreeMap<i64, podcasts_groups::DownloadRowWidgets>>,
-    playing_episode: Cell<Option<i64>>,
+    playing_episode: Cell<Option<EpisodeMark>>,
     unavailable_episode: Cell<Option<i64>>,
     generation: Cell<u64>,
     toast_overlay: glib::WeakRef<adw::ToastOverlay>,
@@ -162,7 +173,11 @@ impl PodcastsView {
         group_container.set_margin_start(12);
         group_container.set_margin_end(12);
         group_container.set_hexpand(true);
-        let scroller = build_episode_scroller(group_container.upcast_ref::<gtk4::Widget>());
+        let (selection_bar, selection_controls) = SelectionControls::standalone();
+        let list_content = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
+        list_content.append(&selection_bar);
+        list_content.append(&group_container);
+        let scroller = build_episode_scroller(list_content.upcast_ref::<gtk4::Widget>());
 
         let status = adw::StatusPage::new();
         let status_button = gtk4::Button::new();
@@ -220,6 +235,7 @@ impl PodcastsView {
             callbacks,
             kind,
             filter_bar,
+            selection_controls,
             group_container,
             stack,
             youtube_detail,
@@ -240,6 +256,7 @@ impl PodcastsView {
             device_sync: PodcastDeviceSyncState::default(),
             expanded_sources: Rc::new(RefCell::new(BTreeSet::new())),
             expanded_episode_sources: Rc::new(RefCell::new(BTreeSet::new())),
+            selection: Rc::new(RefCell::new(PodcastSelection::default())),
             download_states: Rc::new(RefCell::new(BTreeMap::new())),
             download_widgets: RefCell::new(BTreeMap::new()),
             playing_episode: Cell::new(None),
@@ -290,16 +307,6 @@ impl PodcastsView {
         self.toast_overlay.set(Some(overlay));
     }
 
-    pub(in crate::ui) fn set_playing_episode(&self, episode_id: Option<i64>) {
-        self.playing_episode.set(episode_id);
-        self.render();
-    }
-
-    pub(in crate::ui) fn set_unavailable_episode(&self, episode_id: Option<i64>) {
-        self.unavailable_episode.set(episode_id);
-        self.render();
-    }
-
     pub(in crate::ui) fn bind_device_sync(
         self: &Rc<Self>,
         runtime: &Rc<crate::ui::device_sync_runtime::DeviceSyncRuntime>,
@@ -321,6 +328,9 @@ impl PodcastsView {
                     .flat_map(|group| group.episodes.iter().cloned())
                     .collect::<Vec<_>>();
                 sort_newest_first(&mut rows);
+                self.selection
+                    .borrow_mut()
+                    .retain_available(rows.iter().map(|row| row.id));
                 let previous = self.download_states.borrow().clone();
                 self.download_states
                     .replace(refreshed_download_states(&rows, &previous));
@@ -376,6 +386,8 @@ impl PodcastsView {
         let rows = self.rows.borrow().clone();
         let groups = self.groups.borrow().clone();
         let download_states = self.download_states.borrow().clone();
+        let selected_ids = self.selection.borrow().selected_ids();
+        self.selection_controls.update(&selected_ids);
         let connected_devices = self.device_sync.connected();
         let selected_devices = self.device_sync.selected();
         let filter = self.filter_bar.filter();
@@ -402,6 +414,7 @@ impl PodcastsView {
             images_allowed,
             self.connectivity.get(),
             self.unavailable_episode.get(),
+            self.playing_episode.get(),
         );
         let download_widgets = podcasts_groups::replace(
             &self.group_container,
@@ -415,6 +428,7 @@ impl PodcastsView {
             images_allowed,
             self.connectivity.get(),
             self.unavailable_episode.get(),
+            &self.selection,
         );
         self.download_widgets.replace(download_widgets);
         // `G2` (design 6a): the header line is a projection over the

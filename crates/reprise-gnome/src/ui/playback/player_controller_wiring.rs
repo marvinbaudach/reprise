@@ -139,7 +139,7 @@ pub(in crate::ui) fn wire_bar_controls(controller: &Rc<PlayerController>) {
         let Some(controller) = weak.upgrade() else {
             return;
         };
-        controller.previous();
+        controller.transport_previous();
     });
 
     let weak = Rc::downgrade(controller);
@@ -147,7 +147,7 @@ pub(in crate::ui) fn wire_bar_controls(controller: &Rc<PlayerController>) {
         let Some(controller) = weak.upgrade() else {
             return;
         };
-        controller.next();
+        controller.transport_next();
     });
 
     let weak = Rc::downgrade(controller);
@@ -253,14 +253,14 @@ pub(in crate::ui) fn wire_compact_controls(controller: &Rc<PlayerController>) {
     let weak = Rc::downgrade(controller);
     controller.compact_player.connect_previous(move || {
         if let Some(controller) = weak.upgrade() {
-            controller.previous();
+            controller.transport_previous();
         }
     });
 
     let weak = Rc::downgrade(controller);
     controller.compact_player.connect_next(move || {
         if let Some(controller) = weak.upgrade() {
-            controller.next();
+            controller.transport_next();
         }
     });
 }

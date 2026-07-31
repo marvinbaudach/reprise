@@ -56,6 +56,38 @@ fn download_passes_audio_only_output_arguments() {
     assert!(!postprocessed.exists());
 }
 
+#[test]
+fn pod_22_download_passes_the_explicit_browser_session_to_ytdlp() {
+    let directory = tempfile::tempdir().unwrap();
+    let output = directory.path().join("episode.audio");
+    let postprocessed = directory.path().join("episode.opus");
+    let log = directory.path().join("args");
+    let binary = fake_binary(
+        directory.path(),
+        &format!(
+            "printf '%s\\n' \"$@\" > '{}'\nprintf downloaded > '{}'\nprintf '%s\\n' '{}'",
+            log.display(),
+            postprocessed.display(),
+            postprocessed.display()
+        ),
+    );
+    let runner =
+        YtDlp::with_binary_and_timeouts(binary, short_timeouts()).with_browser_session("brave");
+
+    runner
+        .download("https://www.youtube.com/watch?v=v1", &output)
+        .unwrap();
+
+    let args = fs::read_to_string(log).unwrap();
+    assert!(
+        args.lines()
+            .collect::<Vec<_>>()
+            .windows(2)
+            .any(|pair| pair == ["--cookies-from-browser", "brave"]),
+        "the explicit browser session was not passed to yt-dlp: {args}"
+    );
+}
+
 /// `POD-13`: a failed YouTube download must not leave a `.part` file or
 /// a yt-dlp postprocessor leftover behind — `output` here already
 /// carries the `.part` suffix `downloads::partial_path` would give it,

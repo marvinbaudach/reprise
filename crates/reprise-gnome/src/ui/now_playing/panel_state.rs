@@ -5,6 +5,7 @@ use reprise_core::playback::PlaybackState;
 
 use super::player_controller::NowPlaying;
 use super::strings;
+use crate::ui::playback::external_media::ExternalPlaybackSnapshot;
 
 pub(super) const UP_NEXT_PAGE: &str = "up-next";
 pub(super) const LYRICS_PAGE: &str = "lyrics";
@@ -83,4 +84,20 @@ pub(super) fn panel_presentation(
         subtitle,
         idle: false,
     }
+}
+
+pub(super) fn panel_presentation_with_external(
+    track: Option<&NowPlaying>,
+    external: Option<&ExternalPlaybackSnapshot>,
+    playback_state: PlaybackState,
+) -> PanelPresentation {
+    if let Some(external) = external {
+        let display = crate::ui::player_bar_state::external_bar_display(external);
+        return PanelPresentation {
+            title: display.title,
+            subtitle: display.subtitle,
+            idle: false,
+        };
+    }
+    panel_presentation(track, playback_state)
 }

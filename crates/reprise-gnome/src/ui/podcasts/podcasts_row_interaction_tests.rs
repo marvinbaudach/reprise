@@ -13,8 +13,9 @@ fn acc_8_row_activation_is_reachable_by_pointer_and_keyboard() {
     root.set_focusable(true);
     root.set_accessible_role(gtk4::AccessibleRole::Button);
     let glyph = gtk4::Image::new();
+    let marker = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
 
-    install_row_activation(&root, 7, &glyph);
+    install_row_activation(&root, 7, &marker, &glyph);
 
     let controllers = root.observe_controllers();
     let mut has_click = false;

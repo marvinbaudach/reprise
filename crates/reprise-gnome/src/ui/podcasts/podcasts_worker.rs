@@ -332,7 +332,10 @@ fn process_request(
             let result = podcasts::config::load(conn)
                 .map_err(|error| error.to_string())
                 .and_then(|config| {
-                    let ytdlp = podcasts::ytdlp::YtDlp::discover(config.ytdlp_path.as_deref());
+                    let ytdlp = podcasts::ytdlp::YtDlp::discover_with_browser(
+                        config.ytdlp_path.as_deref(),
+                        config.youtube_browser,
+                    );
                     podcasts::pipeline::refresh_with_download_progress(
                         conn,
                         &podcasts::pipeline::HttpFeedFetcher,
@@ -358,7 +361,10 @@ fn process_request(
             let result = podcasts::config::load(conn)
                 .map_err(|error| error.to_string())
                 .and_then(|config| {
-                    let ytdlp = podcasts::ytdlp::YtDlp::discover(config.ytdlp_path.as_deref());
+                    let ytdlp = podcasts::ytdlp::YtDlp::discover_with_browser(
+                        config.ytdlp_path.as_deref(),
+                        config.youtube_browser,
+                    );
                     podcasts::pipeline::load_more_youtube(
                         conn,
                         &ytdlp,
@@ -422,7 +428,10 @@ fn download_episode(conn: &Db, request: &PodcastsRequest, episode_id: i64) {
             return;
         }
     };
-    let ytdlp = podcasts::ytdlp::YtDlp::discover(config.ytdlp_path.as_deref());
+    let ytdlp = podcasts::ytdlp::YtDlp::discover_with_browser(
+        config.ytdlp_path.as_deref(),
+        config.youtube_browser,
+    );
     let download_root = podcasts::downloads::default_download_root();
     let result = podcasts::pipeline::download_episode(
         conn,
@@ -467,7 +476,10 @@ fn run_queued(conn: &Db, request: &PodcastsRequest) {
             return;
         }
     };
-    let ytdlp = podcasts::ytdlp::YtDlp::discover(config.ytdlp_path.as_deref());
+    let ytdlp = podcasts::ytdlp::YtDlp::discover_with_browser(
+        config.ytdlp_path.as_deref(),
+        config.youtube_browser,
+    );
     let download_root = podcasts::downloads::default_download_root();
     let result = podcasts::queued_downloads::run_queued_downloads(
         conn,
