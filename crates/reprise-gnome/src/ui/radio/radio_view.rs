@@ -68,6 +68,9 @@ struct Shared {
     on_mutated: RefCell<Option<Callback>>,
     on_activated: RefCell<Option<IdCallback>>,
     on_removed: RefCell<Option<IdCallback>>,
+    /// `SRC-13`: kept so a station change arriving from outside this view
+    /// reaches the same reveal policy that view entry uses.
+    reveal: Rc<super::radio_reveal::RadioReveal>,
 }
 
 pub(in crate::ui) struct RadioView {
@@ -134,7 +137,7 @@ impl RadioView {
         root.append(filter_bar.widget());
         root.append(error_banner.widget());
         root.append(&stack);
-        super::radio_reveal::install(
+        let reveal = super::radio_reveal::install(
             root.upcast_ref(),
             &scrolled,
             &column_view,
@@ -164,6 +167,7 @@ impl RadioView {
             on_mutated: RefCell::new(None),
             on_activated: RefCell::new(None),
             on_removed: RefCell::new(None),
+            reveal,
         });
         let add_dialog = {
             let weak = Rc::downgrade(&shared);
@@ -244,6 +248,11 @@ impl RadioView {
                     .and_then(|snapshot| snapshot.radio.as_ref())
                     .and_then(|radio| radio.inline_error())
                     .map(str::to_owned);
+                // `SRC-13`: the reveal hangs off the connected station's
+                // identity, not off every snapshot — a reconnect or an inline
+                // error arrives here too and must not move the viewport.
+                let previously_connected =
+                    super::radio_reveal::connected_station(&shared.live.borrow());
                 shared.live.replace(live_state(snapshot));
                 if let Some(failure) = failure {
                     show_radio_failure(&shared, SourceErrorKind::Unreachable, failure);
@@ -252,6 +261,12 @@ impl RadioView {
                     shared.error_banner.hide();
                 }
                 render_rows(&shared);
+                let now_connected = super::radio_reveal::connected_station(&shared.live.borrow());
+                if now_connected != previously_connected {
+                    shared
+                        .reveal
+                        .reveal(crate::ui::source_reveal::LoadedItemChange::ChangedElsewhere);
+                }
             });
         }
         refresh_shared(&shared);
