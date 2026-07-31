@@ -192,6 +192,32 @@ fn net_1a_the_batch_gate_follows_the_global_online_sources_switch() {
 }
 
 #[test]
+fn a_synced_retry_only_counts_when_it_actually_improves_the_cached_result() {
+    for (body, expected) in [
+        (LyricsBody::Plain("already cached".into()), 0),
+        (LyricsBody::Synced(vec![]), 1),
+    ] {
+        let (request, receiver) = request(vec![track("One")]);
+        let mut services = services(move |_, _| {
+            Ok(LyricsHit {
+                body: body.clone(),
+                source: LyricsSource::Lrclib,
+            })
+        });
+        services.needs = Arc::new(|_| NeedsFetch::RetryForSynced);
+
+        run_request(&request, &services);
+
+        let progress = progress_events(&receiver).pop().unwrap();
+        assert_eq!(progress.checked, 1);
+        assert_eq!(
+            progress.downloaded, expected,
+            "re-confirming a cached plain result caches nothing new"
+        );
+    }
+}
+
+#[test]
 fn a_dead_progress_subscriber_stops_being_called_and_is_pruned() {
     let conn = Rc::new(crate::test_db::open().unwrap());
     let batch = LyricsBatch::new(&conn);

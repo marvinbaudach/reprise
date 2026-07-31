@@ -8,7 +8,9 @@ use std::sync::Arc;
 
 use gtk4::glib;
 use reprise_core::db::Db;
-use reprise_core::lyrics::{LookupOptions, LyricsError, LyricsHit, LyricsQuery, NeedsFetch};
+use reprise_core::lyrics::{
+    LookupOptions, LyricsBody, LyricsError, LyricsHit, LyricsQuery, NeedsFetch,
+};
 use reprise_core::queries::TrackSummary;
 
 use super::cover_download_batch::{BatchState as CoverBatchState, CoverDownloadBatch};
@@ -333,9 +335,12 @@ fn run_request(request: &WorkerRequest, services: &WorkerServices) {
             let _ = request.events.send_blocking(WorkerEvent::Cancelled);
             return;
         }
-        let outcome = if (services.local)(&track.path)
-            || (services.needs)(&track.query) == NeedsFetch::Skip
-        {
+        let needs = if (services.local)(&track.path) {
+            NeedsFetch::Skip
+        } else {
+            (services.needs)(&track.query)
+        };
+        let outcome = if needs == NeedsFetch::Skip {
             BatchItemOutcome::Skipped
         } else if !request.enabled.load(Ordering::Relaxed) {
             let _ = request.events.send_blocking(WorkerEvent::Cancelled);
@@ -346,13 +351,7 @@ fn run_request(request: &WorkerRequest, services: &WorkerServices) {
                 .send_blocking(WorkerEvent::Progress(progress.fail()));
             return;
         } else {
-            match (services.online)(&track.query, &track.path) {
-                Ok(_) => BatchItemOutcome::Downloaded,
-                Err(LyricsError::NotFound | LyricsError::MissingMetadata) => {
-                    BatchItemOutcome::Unavailable
-                }
-                Err(_) => BatchItemOutcome::Failed,
-            }
+            item_outcome(needs, &(services.online)(&track.query, &track.path))
         };
         progress = progress.advance(outcome);
         if matches!(outcome, BatchItemOutcome::Failed) && (services.all_breakers_open)() {
@@ -367,6 +366,23 @@ fn run_request(request: &WorkerRequest, services: &WorkerServices) {
         {
             return;
         }
+    }
+}
+
+/// A `RetryForSynced` lookup only re-asks the remaining sources for a *synced*
+/// text (`E2`); coming back with plain text re-confirms what the cache already
+/// held, so it must not be reported as a newly cached track.
+fn item_outcome(needs: NeedsFetch, result: &Result<LyricsHit, LyricsError>) -> BatchItemOutcome {
+    match result {
+        Ok(hit) => {
+            if needs == NeedsFetch::RetryForSynced && matches!(hit.body, LyricsBody::Plain(_)) {
+                BatchItemOutcome::Skipped
+            } else {
+                BatchItemOutcome::Downloaded
+            }
+        }
+        Err(LyricsError::NotFound | LyricsError::MissingMetadata) => BatchItemOutcome::Unavailable,
+        Err(_) => BatchItemOutcome::Failed,
     }
 }
 
