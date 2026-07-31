@@ -311,7 +311,7 @@ mod tests {
         ));
         assert!(chrome.search_toggle.is_active());
         assert_eq!(
-            crate::ui::browse::browse_bar::chip_labels(
+            crate::ui::browse::browse_bar_chips::chip_labels(
                 "falling",
                 &reprise_core::queries::BrowseFilter::default(),
                 true,
@@ -333,7 +333,7 @@ mod tests {
 
         chrome.search_toggle.emit_clicked();
 
-        let chips = crate::ui::browse::browse_bar::chip_labels(
+        let chips = crate::ui::browse::browse_bar_chips::chip_labels(
             &entry.text(),
             &reprise_core::queries::BrowseFilter::default(),
             true,
@@ -484,7 +484,7 @@ mod tests {
     #[test]
     fn search_5_collapsing_keeps_query_and_chip() {
         let query = "falling";
-        let chips = crate::ui::browse::browse_bar::chip_labels(
+        let chips = crate::ui::browse::browse_bar_chips::chip_labels(
             query,
             &reprise_core::queries::BrowseFilter::default(),
             true,

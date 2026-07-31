@@ -106,6 +106,68 @@ fn nr_1a_tag_mbid_skips_search_and_persists_releases() {
 }
 
 #[test]
+fn nr_16_refresh_excludes_featured_artist_credits_but_keeps_co_headliners() {
+    let db = migrated_conn();
+    db.conn()
+        .execute(
+            "INSERT INTO tracks (path, title, artist, artist_mbid, album, added_at)
+             VALUES ('/music/track.flac', 'Track', 'The Devil Wears Prada', ?1, 'Local', 0)",
+            [ARTIST_ID],
+        )
+        .unwrap();
+    db.conn()
+        .execute(
+            "INSERT INTO new_releases (
+               release_group_mbid, artist_name, artist_mbid, title, release_type,
+               first_release_date, fetched_at, fallback_accent, first_seen
+             ) VALUES (
+               'guest', 'The Devil Wears Prada', ?1, 'Make Me Believe', 'EP',
+               '2027-01-12', 1, '#3584E4', 1
+             )",
+            [ARTIST_ID],
+        )
+        .unwrap();
+    let releases = format!(
+        r#"{{
+          "release-groups": [
+            {{"id":"own","title":"Own EP","first-release-date":"2027-01-10","primary-type":"EP",
+              "artist-credit":[{{"artist":{{"id":"{ARTIST_ID}"}},"joinphrase":""}}]}},
+            {{"id":"split","title":"Split EP","first-release-date":"2027-01-11","primary-type":"EP",
+              "artist-credit":[
+                {{"artist":{{"id":"ghost-choir"}},"joinphrase":" & "}},
+                {{"artist":{{"id":"{ARTIST_ID}"}},"joinphrase":""}}
+              ]}},
+            {{"id":"guest","title":"Make Me Believe","first-release-date":"2027-01-12","primary-type":"EP",
+              "artist-credit":[
+                {{"artist":{{"id":"ghost-choir"}},"joinphrase":" feat. "}},
+                {{"artist":{{"id":"{ARTIST_ID}"}},"joinphrase":""}}
+              ]}}
+          ]
+        }}"#
+    );
+    let mut fetch = |_url: &str| Ok(releases.clone());
+
+    refresh_with(
+        &db,
+        date(),
+        1_000_000,
+        FetchScope::TopArtists,
+        true,
+        &mut fetch,
+        &mut no_accent,
+    )
+    .unwrap();
+
+    let mut release_ids = query_releases(&db, true, date())
+        .unwrap()
+        .into_iter()
+        .map(|release| release.release_group_mbid)
+        .collect::<Vec<_>>();
+    release_ids.sort_unstable();
+    assert_eq!(release_ids, ["own", "split"]);
+}
+
+#[test]
 fn dg_3_refresh_pages_the_discography_and_enriches_local_matches() {
     let conn = migrated_conn();
     conn.conn()

@@ -229,3 +229,54 @@ exist.)
   shows a stale result (see `cover_loader.rs`).
 - Runtime-optional features are **modules** in `reprise-core::modules` (a descriptor + a
   persisted `module.<id>.enabled` flag); gate the behavior on `modules::is_enabled`.
+
+## Completed file ownership — episodes as queue citizens
+
+Packages 1 through 5 are complete and this ownership is released. No repository
+lock or coordination board exists in this checkout.
+
+### Package 1 — typed manual queue
+
+| Owner | Files |
+| --- | --- |
+| episodes-as-queue-citizens | `crates/reprise-core/src/up_next.rs`, `crates/reprise-core/src/library/session.rs`, `crates/reprise-core/src/queries/queue.rs`, `crates/reprise-core/src/queries/mod.rs`, and directly affected Core/GNOME tests and typed-call-site adapters |
+| episodes-as-queue-citizens | Minimal append-only rule and plan records in `docs/ux-rules.md`, `docs/plans/podcasts-radio.md`, plus `.superpowers/sdd/progress.md` |
+| sibling branches — excluded | `crates/reprise-gnome/src/ui/podcasts/**`, `crates/reprise-core/src/podcasts/store.rs`, `crates/reprise-core/src/podcasts/youtube.rs` |
+
+### Package 2 — queued-episode playback
+
+| Owner | Files |
+| --- | --- |
+| episodes-as-queue-citizens | `crates/reprise-gnome/src/ui/playback/{preview,external_media_state,external_media,external_media_completion,playback_faults,up_next_transport,session_player,queue_transport,player_controller,player_event_handling}.rs` and their directly affected tests |
+| episodes-as-queue-citizens | Narrow typed-state adapters in the GNOME and runtime crates, podcast playback copy in `strings_podcasts.rs`, and the matching gettext catalogs |
+| episodes-as-queue-citizens | Minimal append-only rule and plan records in `docs/ux-rules.md`, `docs/plans/podcasts-radio.md`, plus `.superpowers/sdd/progress.md` |
+| sibling branches — excluded | `crates/reprise-gnome/src/ui/podcasts/**`, `crates/reprise-core/src/podcasts/store.rs`, `crates/reprise-core/src/podcasts/youtube.rs` |
+
+### Package 3 — mixed queue rendering
+
+| Owner | Files |
+| --- | --- |
+| episodes-as-queue-citizens | `crates/reprise-gnome/src/ui/track_list/{queue_sections,track_list_model,track_list_columns,track_cover,column_layout,track_list_context_menu}.rs`, their focused tests, and cohesive new queue-row presentation/menu siblings |
+| episodes-as-queue-citizens | `crates/reprise-gnome/src/ui/now_playing/up_next_panel.rs`, its focused tests, and the narrow typed projection adapter in `crates/reprise-gnome/src/ui/playback/queue_transport.rs` |
+| episodes-as-queue-citizens | Minimal append-only CTX rule draft in `docs/ux-rules.md` and `.superpowers/sdd/progress.md` |
+| sibling branches — excluded | `crates/reprise-gnome/src/ui/podcasts/**`, `crates/reprise-core/src/podcasts/store.rs`, `crates/reprise-core/src/podcasts/youtube.rs` |
+
+### Package 4 — queue entry routes (complete; ownership released)
+
+| Owner | Files |
+| --- | --- |
+| episodes-as-queue-citizens | `crates/reprise-gnome/src/ui/track_list/{track_list_dnd,track_list_dnd_smoke,track_list_keyboard_reorder}.rs`, `crates/reprise-gnome/src/ui/sidebar/{sidebar_dnd,sidebar_session}.rs`, their focused tests, and narrow typed callback adapters |
+| episodes-as-queue-citizens | `crates/reprise-gnome/src/ui/now_playing/{up_next_panel,up_next_panel_tests,now_playing}.rs`, `crates/reprise-gnome/src/ui/playback/queue_transport.rs`, and the narrow window wiring for typed queue drops |
+| episodes-as-queue-citizens | `crates/reprise-gnome/src/ui/podcasts/{podcasts_dnd,podcasts_groups,podcasts_groups_tests,podcasts_context_menu,podcasts_view,podcasts_view_actions}.rs`, source-view callbacks, queue-entry copy, and matching gettext catalogs |
+| episodes-as-queue-citizens | Append-only package-4 rule and reversal records in `docs/ux-rules.md`, `docs/plans/podcasts-radio.md`, plus `.superpowers/sdd/progress.md` |
+| sibling branches — excluded | `crates/reprise-core/src/podcasts/store.rs`, `crates/reprise-core/src/podcasts/youtube.rs`, and runtime protocol/MCP/MPRIS outward surfaces |
+
+### Package 5 — outward-facing surfaces (complete; ownership released)
+
+| Owner | Files |
+| --- | --- |
+| episodes-as-queue-citizens | Runtime-protocol queue DTOs and their runtime/Linux-service projections, including additive typed item lists beside legacy track-only id fields |
+| episodes-as-queue-citizens | MCP queue DTO/read surfaces and validation regressions; `PlayTrackIds`, `QueueAddNext`, and `QueueAddLast` remain track-only |
+| episodes-as-queue-citizens | MPRIS episode identity/metadata, the GNOME agent-queue mirror, and their focused tests |
+| episodes-as-queue-citizens | Append-only package-5 rule, plan, and completion records in `docs/ux-rules.md`, `docs/plans/podcasts-radio.md`, and `.superpowers/sdd/progress.md` |
+| sibling branches — excluded | `crates/reprise-core/src/podcasts/store.rs`, `crates/reprise-core/src/podcasts/youtube.rs`, and unrelated source UI or packaging work |

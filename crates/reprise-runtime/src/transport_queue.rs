@@ -7,7 +7,7 @@
 //! toast and cannot recover from a snapshot afterwards.
 
 use reprise_core::playback::PlaybackBackend;
-use reprise_core::up_next::UpNextQueue;
+use reprise_core::up_next::{QueueItem, UpNextQueue};
 use reprise_runtime_protocol::queue::QueueCommand;
 
 use super::{as_index, Source, Transport};
@@ -31,11 +31,13 @@ impl Transport {
             // Neither touches the surrounding context, which is what makes
             // them undoable by clearing the queue.
             QueueCommand::AddNext(ids) => {
-                self.up_next.prepend(ids);
+                let items = track_items(ids);
+                self.up_next.prepend(&items);
                 ids.len()
             }
             QueueCommand::AddLast(ids) => {
-                self.up_next.append(ids);
+                let items = track_items(ids);
+                self.up_next.append(&items);
                 ids.len()
             }
             // "Clearing a queue is not a stop command" (protocol): only the
@@ -69,10 +71,24 @@ impl Transport {
                 removed
             }
             QueueCommand::PlayNextAt { position, .. } => {
-                let track_id = self
+                let index = as_index(*position);
+                // Look before removing. `take_at` pops unconditionally, so
+                // deciding the kind afterwards would discard an episode and
+                // then report that the position held nothing — the entry is
+                // gone and the caller is told it never existed.
+                let item = self
                     .up_next
-                    .take_at(as_index(*position))
+                    .ids()
+                    .get(index)
+                    .copied()
                     .ok_or(RuntimeError::Rejected(Rejected::NoSuchQueueEntry))?;
+                // This runtime plays library tracks. A queued episode is a
+                // real entry it cannot start, which is `UnsupportedCommand`,
+                // not `NoSuchQueueEntry` — and it stays in the queue.
+                let track_id = item
+                    .track_id()
+                    .ok_or(RuntimeError::Rejected(Rejected::UnsupportedCommand))?;
+                self.up_next.take_at(index);
                 return self
                     .start(backend, library, track_id, Source::PlayNext)
                     .map(|()| 1);
@@ -87,7 +103,8 @@ impl Transport {
                     .map(|()| 1);
             }
             QueueCommand::Purge(ids) => {
-                let from_up_next = self.up_next.remove_ids(ids);
+                let items = track_items(ids);
+                let from_up_next = self.up_next.remove_ids(&items);
                 // `_except_current` deliberately: a track that is playing
                 // when its file is deleted finishes, because stopping the
                 // music is not what deleting a file asked for.
@@ -96,4 +113,8 @@ impl Transport {
         };
         Ok(affected as u64)
     }
+}
+
+fn track_items(ids: &[i64]) -> Vec<QueueItem> {
+    ids.iter().copied().map(QueueItem::Track).collect()
 }

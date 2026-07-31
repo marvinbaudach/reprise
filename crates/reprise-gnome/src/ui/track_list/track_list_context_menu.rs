@@ -49,6 +49,7 @@ use gtk4::glib;
 use gtk4::graphene;
 use gtk4::prelude::*;
 
+use super::queue_item_menu::QueueMenuRoute;
 use super::track_menu::{
     action_states, build_track_menu, playlist_entries, summarize_selection, MenuContext,
     MenuInputs, SelectionSummary,
@@ -183,20 +184,28 @@ pub(in crate::ui) fn build_context_menu_model(shared: &Rc<Shared>) -> gio::Menu 
     let is_missing_view = matches!(&source, ViewSource::Missing);
     let summary = summarize_selection(&current_selection_tracks(shared));
     update_menu_action_states(shared, context, &summary);
-    let entries = {
-        let conn = &shared.conn;
-        let rows = playlists::list(conn).unwrap_or_else(|error| {
+    let queue_items = current_selection_positions(shared)
+        .into_iter()
+        .filter_map(|position| shared.model.queue_item_at(position))
+        .map(|metadata| metadata.item())
+        .collect::<Vec<_>>();
+    let menu = if context == MenuContext::Queue
+        && super::queue_item_menu::route(&queue_items) == QueueMenuRoute::CommonQueueItems
+    {
+        super::queue_item_menu::build_common_queue_menu(queue_items.len())
+    } else {
+        let rows = playlists::list(&shared.conn).unwrap_or_else(|error| {
             tracing::error!(%error, "context menu: failed to list playlists");
             Vec::new()
         });
-        playlist_entries(&rows, &source)
+        let entries = playlist_entries(&rows, &source);
+        build_track_menu(&MenuInputs {
+            context,
+            selection: &summary,
+            playlists: &entries,
+            is_missing_view,
+        })
     };
-    let menu = build_track_menu(&MenuInputs {
-        context,
-        selection: &summary,
-        playlists: &entries,
-        is_missing_view,
-    });
     if matches!(context, MenuContext::Playlist | MenuContext::Queue) {
         let reorder = gio::Menu::new();
         for (label, action) in [

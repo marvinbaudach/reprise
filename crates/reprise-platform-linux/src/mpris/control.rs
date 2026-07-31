@@ -5,6 +5,10 @@ use zbus::interface;
 use reprise_core::media_integration::{
     read_agent_queue_state, MprisCommand, SharedAgentQueueState,
 };
+use reprise_core::up_next::QueueItem as CoreQueueItem;
+use reprise_runtime_protocol::queue::{
+    QueueItem as ProtocolQueueItem, QueueSnapshot as ProtocolQueueSnapshot,
+};
 
 pub(super) struct RepriseControl {
     commands: async_channel::Sender<MprisCommand>,
@@ -50,6 +54,28 @@ impl RepriseControl {
         )
     }
 
+    /// Additive typed queue read. `QueueSnapshot` above stays available with
+    /// its original tuple signature for older clients.
+    fn queue_snapshot_v2(&self) -> ProtocolQueueSnapshot {
+        let state = read_agent_queue_state(&self.queue_state);
+        ProtocolQueueSnapshot {
+            revision: state.revision,
+            current_track_id: state.current_track_id,
+            play_next_track_ids: state.play_next_track_ids,
+            play_next_items: Some(
+                state
+                    .play_next_items
+                    .into_iter()
+                    .map(protocol_item)
+                    .collect(),
+            ),
+            context_track_ids: state.context_track_ids,
+            context_items: Some(state.context_items.into_iter().map(protocol_item).collect()),
+            play_next_total: state.play_next_total as u64,
+            context_total: state.context_total as u64,
+        }
+    }
+
     fn queue_add_next(&self, ids: Vec<i64>) {
         self.dispatch(MprisCommand::QueueAddNext(ids));
     }
@@ -60,6 +86,13 @@ impl RepriseControl {
 
     fn queue_clear(&self) {
         self.dispatch(MprisCommand::QueueClear);
+    }
+}
+
+fn protocol_item(item: CoreQueueItem) -> ProtocolQueueItem {
+    match item {
+        CoreQueueItem::Track(id) => ProtocolQueueItem::track(id),
+        CoreQueueItem::Episode(id) => ProtocolQueueItem::episode(id),
     }
 }
 
@@ -94,17 +127,35 @@ mod tests {
     }
 
     #[test]
-    fn queue_snapshot_and_mutations_keep_the_wire_contract() {
+    fn que_9_queue_snapshot_keeps_legacy_track_ids_beside_typed_items() {
         let (control, receiver, state) = control();
         *state.lock().unwrap() = AgentQueueState {
+            revision: 12,
             current_track_id: Some(4),
             play_next_track_ids: vec![5, 6],
+            play_next_items: vec![
+                CoreQueueItem::Track(5),
+                CoreQueueItem::Episode(5),
+                CoreQueueItem::Track(6),
+            ],
             context_track_ids: vec![7],
-            play_next_total: 2,
+            context_items: vec![CoreQueueItem::Track(7)],
+            play_next_total: 3,
             context_total: 1,
         };
 
-        assert_eq!(control.queue_snapshot(), (4, vec![5, 6], vec![7], 2, 1));
+        assert_eq!(control.queue_snapshot(), (4, vec![5, 6], vec![7], 3, 1));
+        // The revision must be the mirror's, not a constant: a client polls it
+        // to tell "the queue I already have" from "it moved".
+        assert_eq!(control.queue_snapshot_v2().revision, 12);
+        assert_eq!(
+            control.queue_snapshot_v2().play_next_items,
+            Some(vec![
+                ProtocolQueueItem::track(5),
+                ProtocolQueueItem::episode(5),
+                ProtocolQueueItem::track(6),
+            ])
+        );
         control.queue_add_next(vec![8]);
         control.queue_add_last(vec![9]);
         control.queue_clear();

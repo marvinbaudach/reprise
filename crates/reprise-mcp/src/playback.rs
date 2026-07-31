@@ -280,6 +280,40 @@ pub fn set(setting: &PlaybackSetting) -> Result<String, PlaybackError> {
 
 pub fn queue_state() -> Result<QueueStateDto, PlaybackError> {
     let proxy = connect(REPRISE_INTERFACE)?;
+    let snapshot: reprise_runtime_protocol::queue::QueueSnapshot =
+        match proxy.call("QueueSnapshotV2", &()) {
+            Ok(snapshot) => snapshot,
+            Err(error) if is_unknown_method(&error) => return legacy_queue_state(&proxy),
+            Err(error) => return Err(map_zbus_error(&error)),
+        };
+    let play_next_items = snapshot.play_next_items.unwrap_or_else(|| {
+        snapshot
+            .play_next_track_ids
+            .iter()
+            .copied()
+            .map(reprise_runtime_protocol::queue::QueueItem::track)
+            .collect()
+    });
+    let context_items = snapshot.context_items.unwrap_or_else(|| {
+        snapshot
+            .context_track_ids
+            .iter()
+            .copied()
+            .map(reprise_runtime_protocol::queue::QueueItem::track)
+            .collect()
+    });
+    Ok(QueueStateDto {
+        current_track_id: snapshot.current_track_id,
+        play_next_track_ids: snapshot.play_next_track_ids,
+        play_next_items: play_next_items.into_iter().map(Into::into).collect(),
+        context_track_ids: snapshot.context_track_ids,
+        context_items: context_items.into_iter().map(Into::into).collect(),
+        play_next_total: snapshot.play_next_total,
+        context_total: snapshot.context_total,
+    })
+}
+
+fn legacy_queue_state(proxy: &zbus::blocking::Proxy<'_>) -> Result<QueueStateDto, PlaybackError> {
     let (current, play_next, context, play_next_total, context_total): (
         i64,
         Vec<i64>,
@@ -289,13 +323,35 @@ pub fn queue_state() -> Result<QueueStateDto, PlaybackError> {
     ) = proxy
         .call("QueueSnapshot", &())
         .map_err(|error| map_zbus_error(&error))?;
+    let play_next_items = play_next
+        .iter()
+        .copied()
+        .map(reprise_runtime_protocol::queue::QueueItem::track)
+        .map(Into::into)
+        .collect();
+    let context_items = context
+        .iter()
+        .copied()
+        .map(reprise_runtime_protocol::queue::QueueItem::track)
+        .map(Into::into)
+        .collect();
     Ok(QueueStateDto {
         current_track_id: (current > 0).then_some(current),
         play_next_track_ids: play_next,
+        play_next_items,
         context_track_ids: context,
+        context_items,
         play_next_total,
         context_total,
     })
+}
+
+fn is_unknown_method(error: &zbus::Error) -> bool {
+    matches!(
+        error,
+        zbus::Error::MethodError(name, _, _)
+            if name.as_str() == "org.freedesktop.DBus.Error.UnknownMethod"
+    )
 }
 
 pub fn queue_mutate(action: QueueAction) -> Result<String, PlaybackError> {

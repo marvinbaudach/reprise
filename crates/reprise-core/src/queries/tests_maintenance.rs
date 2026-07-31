@@ -388,8 +388,13 @@ fn playlist_positions_stay_gapless_and_queue_count_stays_accurate_across_a_mixed
     // track_count`'s `Queue` arm must agree, both before and after the
     // in-memory queue purge runs.
     let queue_ids_before_purge = queue.ids_in_order();
+    let queue_items_before_purge = queue_ids_before_purge
+        .iter()
+        .copied()
+        .map(crate::up_next::QueueItem::Track)
+        .collect::<Vec<_>>();
     let count_before_purge =
-        query_track_count(&db, &ViewSource::Queue, "", &queue_ids_before_purge).unwrap();
+        query_track_count(&db, &ViewSource::Queue, "", &queue_items_before_purge).unwrap();
     assert_eq!(
         count_before_purge as usize,
         queue_ids_before_purge.len() - 1,
@@ -398,12 +403,17 @@ fn playlist_positions_stay_gapless_and_queue_count_stays_accurate_across_a_mixed
 
     assert!(queue.remove_ids(&removed));
     let queue_ids_after_purge = queue.ids_in_order();
+    let queue_items_after_purge = queue_ids_after_purge
+        .iter()
+        .copied()
+        .map(crate::up_next::QueueItem::Track)
+        .collect::<Vec<_>>();
     assert!(
         !queue_ids_after_purge.contains(&1),
         "purged id must be gone from the queue"
     );
     let count_after_purge =
-        query_track_count(&db, &ViewSource::Queue, "", &queue_ids_after_purge).unwrap();
+        query_track_count(&db, &ViewSource::Queue, "", &queue_items_after_purge).unwrap();
     assert_eq!(
         count_after_purge as usize,
         queue_ids_after_purge.len(),

@@ -58,7 +58,17 @@ pub(super) fn track_object_path(track_id: i64) -> String {
 }
 
 fn external_object_path(external_ref: &str) -> String {
+    if let Some(episode_id) = external_ref.strip_prefix("podcast/") {
+        return format!("/org/reprise/Reprise/episode/{episode_id}");
+    }
     format!("/org/reprise/Reprise/external/{external_ref}")
+}
+
+fn is_episode(state: &MprisState) -> bool {
+    state
+        .external_ref
+        .as_deref()
+        .is_some_and(|external_ref| external_ref.starts_with("podcast/"))
 }
 
 pub(super) fn current_media_object_path(state: &MprisState) -> Option<String> {
@@ -135,11 +145,13 @@ pub(super) fn build_metadata(state: &MprisState) -> HashMap<String, OwnedValue> 
         "xesam:artist",
         Value::from(vec![state.artist.clone()]),
     );
-    insert_owned(
-        &mut metadata,
-        "xesam:album",
-        Value::from(state.album.clone()),
-    );
+    if !is_episode(state) {
+        insert_owned(
+            &mut metadata,
+            "xesam:album",
+            Value::from(state.album.clone()),
+        );
+    }
     if let Some(art_url) = &state.art_url {
         insert_owned(&mut metadata, "mpris:artUrl", Value::from(art_url.clone()));
     }
@@ -284,6 +296,41 @@ mod tests {
     }
 
     #[test]
+    fn que_9_episode_metadata_uses_its_own_namespace_and_track_free_fields() {
+        let state = MprisState {
+            track_id: None,
+            external_ref: Some("podcast/42".into()),
+            live_stream: false,
+            title: "A careful queue".into(),
+            artist: "The Reprise Show".into(),
+            album: "must not escape".into(),
+            duration_ms: 2_400_000,
+            ..playing_state()
+        };
+
+        let metadata = build_metadata(&state);
+        let trackid: ObjectPath = metadata["mpris:trackid"]
+            .clone()
+            .try_into()
+            .expect("episode track id is an object path");
+        assert_eq!(trackid.as_str(), "/org/reprise/Reprise/episode/42");
+        assert_eq!(
+            String::try_from(metadata["xesam:title"].clone()).unwrap(),
+            "A careful queue"
+        );
+        assert_eq!(
+            Vec::<String>::try_from(metadata["xesam:artist"].clone()).unwrap(),
+            vec!["The Reprise Show"]
+        );
+        assert_eq!(
+            i64::try_from(metadata["mpris:length"].clone()).unwrap(),
+            2_400_000_000
+        );
+        assert!(!metadata.contains_key("xesam:album"));
+        assert!(!metadata.contains_key("xesam:userRating"));
+    }
+
+    #[test]
     fn pod_21_podcast_external_transport_forwards_available_neighbours() {
         let state = MprisState {
             track_id: None,
@@ -302,19 +349,11 @@ mod tests {
             Some(MprisCommand::Seek(5_500))
         );
         assert_eq!(
-            set_position_command(
-                &state,
-                "/org/reprise/Reprise/external/podcast/42",
-                42_000_000,
-            ),
+            set_position_command(&state, "/org/reprise/Reprise/episode/42", 42_000_000,),
             Some(MprisCommand::SetPosition(42_000))
         );
         assert_eq!(
-            set_position_command(
-                &state,
-                "/org/reprise/Reprise/external/podcast/41",
-                42_000_000,
-            ),
+            set_position_command(&state, "/org/reprise/Reprise/episode/41", 42_000_000,),
             None
         );
 

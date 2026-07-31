@@ -148,6 +148,7 @@ impl PlayerController {
         let current = self
             .current_up_next
             .get()
+            .and_then(reprise_core::up_next::QueueItem::track_id)
             .or_else(|| self.queue.borrow().current());
         if let Some(track_id) = current {
             self.notify_current_track_changed(track_id, None, change);
@@ -172,6 +173,11 @@ impl super::Shared {
         } else {
             Vec::new()
         };
+        let queue_items = queue_ids
+            .iter()
+            .copied()
+            .map(reprise_core::up_next::QueueItem::Track)
+            .collect::<Vec<_>>();
         let result = {
             let conn = &self.conn;
             queries::query_visible_track_ids_browsed(
@@ -181,7 +187,7 @@ impl super::Shared {
                 &sort.dir,
                 &filter,
                 &browse,
-                &queue_ids,
+                &queue_items,
             )
         };
         result.unwrap_or_else(|error| {

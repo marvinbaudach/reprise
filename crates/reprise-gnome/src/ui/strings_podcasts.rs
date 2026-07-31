@@ -228,9 +228,29 @@ pub fn podcast_batch_result(succeeded: usize, failed: usize) -> String {
     )
 }
 
+pub fn episodes_added_to_queue_toast(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "{count} episode added to queue",
+        "{count} episodes added to queue",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
 /// SRC-12: acting on a selection that contains nothing to act on is still an
 /// answer. Staying silent reads as a broken button.
 pub const PODCAST_BATCH_NOTHING_TO_DELETE: &str = N_!("No downloaded files in the selection");
+
+pub fn skipped_unplayable_episodes(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "Skipped {count} unplayable episode",
+        "Skipped {count} unplayable episodes",
+        count,
+        &[("count", &count_text)],
+    )
+}
 
 pub fn podcast_show_all_episodes(count: usize) -> String {
     let count_text = count.to_string();

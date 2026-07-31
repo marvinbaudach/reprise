@@ -21,6 +21,32 @@
 use super::*;
 use crate::player_pipeline::AUDIO_SINK_ENV_VAR;
 
+/// Starts the real crossfade engine at a deterministic in-window position.
+///
+/// The separate `crossfade_promotes_second_pipeline_and_advances_once` test
+/// owns the 500 ms position-ticker integration. Generation tests must not
+/// duplicate that scheduler dependency: under host load the ticker can miss
+/// their fixed deadline even though promotion and event tagging are correct.
+fn start_crossfade_for_generation_test(player: &Player) {
+    CrossfadeEngine {
+        playbin: player.playbin.clone(),
+        bus_watch: player.bus_watch.clone(),
+        on_event: player.on_event.clone(),
+        effects: player.effects.clone(),
+        next_uri: player.next_uri.clone(),
+        handoff_pending: player.handoff_pending.clone(),
+        transition: player.transition.clone(),
+        crossfading: player.crossfading.clone(),
+        user_volume: player.user_volume.clone(),
+        generation: player.fade_generation.clone(),
+        incoming: player.incoming.clone(),
+        spectrum_enabled: player.spectrum_enabled.clone(),
+        cava_stream_generation: player.cava_stream_generation.clone(),
+        stream_generation: player.stream_generation.clone(),
+    }
+    .maybe_start(0, 1_000);
+}
+
 /// Direct proof of the first required property: calling `play`/`play_uri`
 /// again always produces a strictly greater generation than the call before
 /// it, whether or not anything about the pipeline itself changed.
@@ -214,6 +240,7 @@ fn crossfade_promotion_carries_a_newer_generation_than_the_track_it_replaced() {
         .expect("expected a tagged StateChanged(Playing) for the first stream")
         .generation;
     player.set_next(Some(second));
+    start_crossfade_for_generation_test(&player);
 
     let main_context = gst::glib::MainContext::default();
     let deadline = std::time::Instant::now() + Duration::from_secs(15);

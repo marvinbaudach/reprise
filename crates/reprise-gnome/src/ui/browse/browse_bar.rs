@@ -11,6 +11,10 @@ use reprise_core::db::Db;
 use reprise_core::queries::{self, BrowseFacet, BrowseFilter, BrowseValue};
 use reprise_core::view_source::ViewSource;
 
+use super::browse_bar_chips::{
+    append_chip, apply_selection, available_facets, displayed_value, facet_label, filter_chips,
+    remove_filter, restored_filter, value_matches_search,
+};
 use super::browse_chooser::{
     browse_popup_min_height, build_chooser, chooser_row, load_values, wire_chooser, FACET_PAGE,
     VALUE_PAGE,
@@ -22,29 +26,17 @@ const SMOKE_ENV: &str = "REPRISE_SMOKE_BROWSE";
 /// FIL-7: the sticky settings key for the AI-exclude filter.
 const EXCLUDE_AI_KEY: &str = "filter.exclude_ai";
 pub(in crate::ui) const CHIP_CSS_CLASS: &str = "reprise-filter-chip";
+/// FIL-1c: the place pill's own class — outlined, so a location never reads as
+/// one of the filled filter chips beside it.
+pub(in crate::ui) const PLACE_PILL_CSS_CLASS: &str = "reprise-place-pill";
 const POPOVER_CSS_CLASS: &str = "reprise-filter-popover";
 type OnChanged = Rc<dyn Fn(BrowseFilter)>;
 type OnVoid = Rc<dyn Fn()>;
-const FACETS: [BrowseFacet; 5] = [
-    BrowseFacet::Genre,
-    BrowseFacet::Artist,
-    BrowseFacet::Album,
-    BrowseFacet::Year,
-    BrowseFacet::Rating,
-];
-
 /// Minimum content height (px) of the filter bar. Both the empty state (the
 /// tall "+ Add filter" pill) and the active state (compact chips) are pinned
 /// to this so toggling a filter never changes the bar's height and shifts the
 /// track table (QA #8). Sized to the taller of the two — the pill.
 const FILTER_BAR_MIN_HEIGHT: i32 = 34;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct FilterChip {
-    facet: BrowseFacet,
-    label: String,
-    accessible_remove_label: String,
-}
 
 /// Chip and value-popover rules; installed app-wide by [`super::style`].
 pub(in crate::ui) fn css() -> String {
@@ -53,130 +45,12 @@ pub(in crate::ui) fn css() -> String {
         ".{CHIP_CSS_CLASS} {{ border-radius: 9999px; padding: 2px 8px; \
          background-color: alpha(@accent_bg_color, {CHIP_BG_ALPHA}); color: @accent_color; }} \
          .{CHIP_CSS_CLASS}:hover {{ background-color: alpha(@accent_bg_color, {CHIP_BG_HOVER_ALPHA}); }} \
+         .{PLACE_PILL_CSS_CLASS} {{ border-radius: 9999px; padding: 2px 10px; \
+         border: 1px solid alpha(currentColor, 0.30); background-color: transparent; }} \
+         .{PLACE_PILL_CSS_CLASS}:hover {{ background-color: alpha(currentColor, 0.08); }} \
          .{POPOVER_CSS_CLASS} contents {{ min-width: 300px; min-height: {}px; }}",
         browse_popup_min_height(0)
     )
-}
-
-pub(super) fn apply_selection(
-    current: &BrowseFilter,
-    facet: BrowseFacet,
-    value: Option<String>,
-) -> BrowseFilter {
-    match facet {
-        // Genre → Artist → Album cascade: setting a shallower facet clears the
-        // deeper ones, but the standalone Year/Rating constraints survive.
-        BrowseFacet::Genre => BrowseFilter {
-            genre: value,
-            artist: None,
-            album: None,
-            ..current.clone()
-        },
-        BrowseFacet::Artist => BrowseFilter {
-            artist: value,
-            album: None,
-            ..current.clone()
-        },
-        BrowseFacet::Album => BrowseFilter {
-            album: value,
-            ..current.clone()
-        },
-        // Year and Rating are additive: selecting one leaves every other
-        // facet untouched.
-        BrowseFacet::Year => BrowseFilter {
-            year: value,
-            ..current.clone()
-        },
-        BrowseFacet::Rating => BrowseFilter {
-            rating: value,
-            ..current.clone()
-        },
-    }
-}
-
-fn filter_value(filter: &BrowseFilter, facet: BrowseFacet) -> Option<&str> {
-    match facet {
-        BrowseFacet::Genre => filter.genre.as_deref(),
-        BrowseFacet::Artist => filter.artist.as_deref(),
-        BrowseFacet::Album => filter.album.as_deref(),
-        BrowseFacet::Year => filter.year.as_deref(),
-        BrowseFacet::Rating => filter.rating.as_deref(),
-    }
-}
-
-fn facet_label(facet: BrowseFacet) -> String {
-    let message = match facet {
-        BrowseFacet::Genre => filter_strings::BROWSE_GENRE,
-        BrowseFacet::Artist => filter_strings::BROWSE_ARTIST,
-        BrowseFacet::Album => filter_strings::BROWSE_ALBUM,
-        BrowseFacet::Year => filter_strings::BROWSE_YEAR,
-        BrowseFacet::Rating => filter_strings::BROWSE_RATING,
-    };
-    filter_strings::text(message)
-}
-
-fn displayed_value(facet: BrowseFacet, value: &str) -> String {
-    if !value.is_empty() {
-        return value.to_string();
-    }
-    let message = match facet {
-        BrowseFacet::Genre => filter_strings::UNKNOWN_GENRE,
-        BrowseFacet::Artist => filter_strings::UNKNOWN_ARTIST,
-        BrowseFacet::Album => filter_strings::UNKNOWN_ALBUM,
-        BrowseFacet::Year => filter_strings::UNKNOWN_YEAR,
-        BrowseFacet::Rating => filter_strings::UNKNOWN_RATING,
-    };
-    filter_strings::text(message)
-}
-
-fn filter_chips(filter: &BrowseFilter) -> Vec<FilterChip> {
-    FACETS
-        .into_iter()
-        .filter_map(|facet| {
-            let value = displayed_value(facet, filter_value(filter, facet)?);
-            let facet_name = facet_label(facet);
-            Some(FilterChip {
-                facet,
-                label: filter_strings::chip_label(&facet_name, &value),
-                accessible_remove_label: filter_strings::remove_filter_label(&facet_name, &value),
-            })
-        })
-        .collect()
-}
-
-#[cfg(test)]
-pub(in crate::ui) fn chip_labels(
-    search: &str,
-    filter: &BrowseFilter,
-    is_library: bool,
-) -> Vec<String> {
-    let mut labels = Vec::new();
-    if !search.trim().is_empty() {
-        labels.push(filter_strings::search_chip_label(search.trim()));
-    }
-    if is_library {
-        labels.extend(filter_chips(filter).into_iter().map(|chip| chip.label));
-    }
-    labels
-}
-
-fn available_facets(filter: &BrowseFilter) -> Vec<BrowseFacet> {
-    FACETS
-        .into_iter()
-        .filter(|facet| filter_value(filter, *facet).is_none())
-        .collect()
-}
-
-fn remove_filter(filter: &BrowseFilter, facet: BrowseFacet) -> BrowseFilter {
-    apply_selection(filter, facet, None)
-}
-
-fn value_matches_search(value: &str, search: &str) -> bool {
-    value.to_lowercase().contains(&search.trim().to_lowercase())
-}
-
-fn restored_filter(filter: &BrowseFilter) -> BrowseFilter {
-    filter.clone()
 }
 
 pub struct BrowseBar {
@@ -196,6 +70,10 @@ pub struct BrowseBar {
     pub(super) value_list: gtk4::ListBox,
     result_label: gtk4::Label,
     clear_all: gtk4::Button,
+    /// FIL-1c: the left zone holding the place pill; empty at sidebar places.
+    place_zone: gtk4::Box,
+    /// Divides place zone from filter zone, shown only when both are populated.
+    zone_separator: gtk4::Separator,
     #[cfg_attr(not(test), allow(dead_code))]
     scope_button: RefCell<Option<gtk4::Button>>,
     pub(super) chooser_facets: RefCell<Vec<BrowseFacet>>,
@@ -273,6 +151,15 @@ impl BrowseBar {
         clear_all.add_css_class(CHIP_CSS_CLASS);
         clear_all.set_visible(false);
 
+        // FIL-1c: two zones. The place zone answers "where am I", the filter
+        // zone "what is withheld here" — they never share a shape or a label.
+        let place_zone = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+        place_zone.set_visible(false);
+        let zone_separator = gtk4::Separator::new(gtk4::Orientation::Vertical);
+        zone_separator.set_visible(false);
+
+        root.append(&place_zone);
+        root.append(&zone_separator);
         root.append(&section_label);
         root.append(&chips);
         root.append(&result_label);
@@ -298,6 +185,8 @@ impl BrowseBar {
             value_list,
             result_label,
             clear_all,
+            place_zone,
+            zone_separator,
             scope_button: RefCell::new(None),
             chooser_facets: RefCell::new(Vec::new()),
             chooser_facet: Cell::new(None),
@@ -443,17 +332,27 @@ impl BrowseBar {
         let source = self.source.borrow().clone();
         let filters_restrict =
             super::filter_restriction::filters_restrict(&search, &filter, exclude_ai);
-        let restricted =
-            super::filter_restriction::is_restricted(&search, &filter, exclude_ai, &source);
+        let restricted = super::filter_restriction::is_restricted(&search, &filter, exclude_ai);
+        let has_place_pill = super::filter_restriction::has_place_pill(&source);
         let visible = super::filter_restriction::row_visible(
             self.track_source.get(),
             restricted,
+            has_place_pill,
             self.preference_visible.get(),
         );
         self.root.set_visible(visible);
-        self.section_label.set_visible(restricted);
+        // FIL-1c: the FILTER heading describes the filter zone only — a place
+        // is not a filter and must never be labelled as one.
+        self.section_label.set_visible(filters_restrict);
+        self.zone_separator
+            .set_visible(has_place_pill && filters_restrict);
         self.clear_all.set_visible(filters_restrict);
-        tracing::info!(visible, restricted, "filter row visibility updated");
+        tracing::info!(
+            visible,
+            restricted,
+            has_place_pill,
+            "filter row visibility updated"
+        );
     }
 
     pub fn set_result_count(&self, filtered: usize, total: usize) {
@@ -473,8 +372,18 @@ impl BrowseBar {
     }
 
     #[cfg(test)]
-    pub(in crate::ui) fn scope_button(&self) -> Option<gtk4::Button> {
+    pub(in crate::ui) fn place_button(&self) -> Option<gtk4::Button> {
         self.scope_button.borrow().clone()
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn section_label_visible(&self) -> bool {
+        self.section_label.is_visible()
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn zone_separator_visible(&self) -> bool {
+        self.zone_separator.is_visible()
     }
 
     pub fn hide_result_count(&self) {
@@ -485,8 +394,37 @@ impl BrowseBar {
     pub fn refresh(self: &Rc<Self>) {
         let stored_filter = self.filter();
         let effective_filter = self.effective_filter();
+        self.rebuild_place_zone();
         self.rebuild_chips(&effective_filter);
         self.rebuild_facet_page(&stored_filter);
+    }
+
+    /// FIL-1c: the place zone carries at most one pill, and only where no
+    /// sidebar row already names the location.
+    fn rebuild_place_zone(self: &Rc<Self>) {
+        while let Some(child) = self.place_zone.first_child() {
+            self.place_zone.remove(&child);
+        }
+        self.scope_button.borrow_mut().take();
+        let source = self.source.borrow().clone();
+        let Some(place) = super::filter_restriction::place_pill_label(&source) else {
+            self.place_zone.set_visible(false);
+            return;
+        };
+        let button = super::browse_bar_chips::build_place_pill(&place);
+        let weak = Rc::downgrade(self);
+        button.connect_clicked(move |_| {
+            let Some(bar) = weak.upgrade() else {
+                return;
+            };
+            let callback = bar.on_scope_cleared.borrow().clone();
+            if let Some(callback) = callback {
+                callback();
+            }
+        });
+        self.place_zone.append(&button);
+        self.place_zone.set_visible(true);
+        *self.scope_button.borrow_mut() = Some(button);
     }
 
     pub(super) fn apply_filter(self: &Rc<Self>, next: BrowseFilter) {
@@ -521,30 +459,7 @@ impl BrowseBar {
         {
             wrapper.set_child(gtk4::Widget::NONE);
         }
-        self.scope_button.borrow_mut().take();
         self.chips.remove_all();
-        let source = self.source.borrow().clone();
-        if let Some(scope) = super::filter_restriction::scope_chip_label(&source) {
-            let button = gtk4::Button::with_label(&format!("{scope}  ×"));
-            button.add_css_class("flat");
-            button.add_css_class(CHIP_CSS_CLASS);
-            button.set_size_request(20, 20);
-            let remove_label = filter_strings::remove_scope_label(&scope);
-            button.set_tooltip_text(Some(&remove_label));
-            button.update_property(&[gtk4::accessible::Property::Label(&remove_label)]);
-            let weak = Rc::downgrade(self);
-            button.connect_clicked(move |_| {
-                let Some(bar) = weak.upgrade() else {
-                    return;
-                };
-                let callback = bar.on_scope_cleared.borrow().clone();
-                if let Some(callback) = callback {
-                    callback();
-                }
-            });
-            append_chip(&self.chips, &button);
-            *self.scope_button.borrow_mut() = Some(button);
-        }
         let query = self.search.borrow().trim().to_string();
         if !query.is_empty() {
             let button = gtk4::Button::with_label(&format!(
@@ -698,17 +613,6 @@ impl BrowseBar {
         }
         self.apply_filter(apply_selection(&filter, facet, Some(value.to_string())));
         true
-    }
-}
-
-fn append_chip(chips: &gtk4::FlowBox, widget: &impl IsA<gtk4::Widget>) {
-    chips.append(widget);
-    if let Some(wrapper) = widget
-        .as_ref()
-        .parent()
-        .and_downcast::<gtk4::FlowBoxChild>()
-    {
-        wrapper.set_focusable(false);
     }
 }
 

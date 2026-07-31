@@ -249,7 +249,7 @@ mod tests {
     }
 
     #[test]
-    fn src_4_remove_is_tombstone_until_toast_commit() {
+    fn src_4a_remove_is_tombstone_until_toast_commit() {
         assert_eq!(
             removal_transition(RemovalStage::Visible, RemovalEvent::Remove),
             RemovalStage::Tombstoned

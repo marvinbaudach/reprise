@@ -299,7 +299,7 @@ pub(in crate::ui) fn route_to_place(
 }
 
 fn scope_title(source: &ViewSource) -> String {
-    crate::ui::browse::filter_restriction::scope_chip_label(source)
+    crate::ui::browse::filter_restriction::place_pill_label(source)
         .unwrap_or_else(|| source.label())
 }
 
