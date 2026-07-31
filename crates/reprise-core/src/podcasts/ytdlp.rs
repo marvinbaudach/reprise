@@ -22,6 +22,10 @@ mod failure;
 mod discovery;
 
 pub use discovery::resolve_binary;
+
+#[path = "ytdlp_metadata_language.rs"]
+mod metadata_language;
+
 pub use failure::YtDlpFailureKind;
 use failure::*;
 
@@ -59,6 +63,7 @@ impl Default for YtDlpTimeouts {
 pub struct YtDlp {
     binary: PathBuf,
     browser_session: Option<OsString>,
+    metadata_language: Option<String>,
     timeouts: YtDlpTimeouts,
 }
 
@@ -100,6 +105,7 @@ impl YtDlp {
         Self {
             binary: binary.into(),
             browser_session: None,
+            metadata_language: None,
             timeouts,
         }
     }
@@ -134,18 +140,15 @@ impl YtDlp {
     }
 
     pub fn list(&self, url: &str) -> Result<YtDlpPlaylist, PodcastError> {
-        let output = self.run(
-            "list",
-            [
-                "--no-warnings",
-                "--flat-playlist",
-                "--extractor-args",
-                "youtubetab:approximate_date",
-                "-J",
-                url,
-            ],
-            self.timeouts.list,
-        )?;
+        let mut arguments = vec![
+            OsString::from("--no-warnings"),
+            OsString::from("--flat-playlist"),
+            OsString::from("--extractor-args"),
+            OsString::from("youtubetab:approximate_date"),
+        ];
+        self.append_metadata_language(&mut arguments);
+        arguments.extend([OsString::from("-J"), OsString::from(url)]);
+        let output = self.run("list", arguments, self.timeouts.list)?;
         parse_playlist("list", &output)
     }
 
@@ -153,32 +156,26 @@ impl YtDlp {
         // Search discovers channels; it does not ingest a channel's episodes,
         // so only the channel-listing calls request approximate upload dates.
         let target = format!("ytsearch5:{terms}");
-        let output = self.run(
-            "search",
-            [
-                OsString::from("--no-warnings"),
-                OsString::from("--flat-playlist"),
-                OsString::from("-J"),
-                OsString::from(target),
-            ],
-            self.timeouts.search,
-        )?;
+        let mut arguments = vec![
+            OsString::from("--no-warnings"),
+            OsString::from("--flat-playlist"),
+        ];
+        self.append_metadata_language(&mut arguments);
+        arguments.extend([OsString::from("-J"), OsString::from(target)]);
+        let output = self.run("search", arguments, self.timeouts.search)?;
         parse_playlist("search", &output)
     }
 
     pub fn search_channels(&self, terms: &str) -> Result<Vec<YtDlpChannel>, PodcastError> {
         // This is channel discovery, not an episode listing.
         let target = format!("ytsearch20:{terms}");
-        let output = self.run(
-            "search_channels",
-            [
-                OsString::from("--no-warnings"),
-                OsString::from("--flat-playlist"),
-                OsString::from("-J"),
-                OsString::from(target),
-            ],
-            self.timeouts.search,
-        )?;
+        let mut arguments = vec![
+            OsString::from("--no-warnings"),
+            OsString::from("--flat-playlist"),
+        ];
+        self.append_metadata_language(&mut arguments);
+        arguments.extend([OsString::from("-J"), OsString::from(target)]);
+        let output = self.run("search_channels", arguments, self.timeouts.search)?;
         super::ytdlp_search::parse_search_channels(&output)
             .map_err(|_| response_error("search_channels"))
     }

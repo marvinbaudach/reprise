@@ -3758,6 +3758,15 @@ listening statistics.
   probing or updating yt-dlp does not. Reprise stores only the browser kind,
   and neither cookie contents nor browser-profile paths reach the database,
   UI, or normal-level logs.
+- **POD-23** [active] [core] — YouTube channel listings, extended listings and
+  channel searches ask yt-dlp to prefer metadata in the language actually used
+  by the Reprise interface. Locale fallback follows the installed gettext
+  catalogs, so an unsupported system locale requests English source strings
+  rather than an unrelated provider language; Simplified Chinese is normalized
+  to YouTube's `zh-CN` code. If YouTube does not supply localized metadata, the
+  original title remains unchanged — Reprise never invents a machine
+  translation. Stored episode titles adopt an available localized title on the
+  next source refresh.
 - **RAD-1** [active] [gtk] — Only the currently connected station is
   accented in the table; its state icon, name, now-playing, and row
   tint change together. All others, as well as a presented but
