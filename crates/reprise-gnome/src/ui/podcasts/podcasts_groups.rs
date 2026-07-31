@@ -17,9 +17,7 @@ use super::podcasts_presentation::{
     author_line, detail_line, duration, file_size, on_phone, relative_date, status_pill,
     RenderedSourceGroup, SourceSummary,
 };
-use super::podcasts_row_interaction::{
-    episode_thumbnail, install_row_activation, reveal_unsubscribe_on_hover_or_focus,
-};
+use super::podcasts_row_interaction::{episode_thumbnail, install_row_activation};
 use super::podcasts_row_state::{download_status, RowNetworkState};
 use super::podcasts_selection::{self, PodcastSelection};
 use super::podcasts_title::TitleParts;
@@ -32,7 +30,6 @@ pub(super) struct DownloadRowWidgets {
     pub(super) status: gtk4::Box,
     pub(super) action: gtk4::Button,
     pub(super) marker: gtk4::Box,
-    pub(super) play_glyph: gtk4::Image,
 }
 
 struct GroupRenderContext<'a> {
@@ -128,7 +125,7 @@ fn build_group(
         }
     });
     expander.add_css_class("reprise-podcast-group");
-    let (header, unsubscribe) = group_header(
+    let header = group_header(
         group,
         &rendered.summary,
         context.connected_devices,
@@ -139,7 +136,6 @@ fn build_group(
         context.images_allowed,
     );
     expander.set_label_widget(Some(&header));
-    reveal_unsubscribe_on_hover_or_focus(&expander, &unsubscribe);
 
     let episodes = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     episodes.add_css_class("reprise-podcast-episodes");
@@ -201,7 +197,7 @@ fn group_header(
     connected_devices: &[podcasts_context_menu::PodcastSyncDevice],
     selected_device_ids: &[String],
     images_allowed: bool,
-) -> (gtk4::Widget, gtk4::Button) {
+) -> gtk4::Widget {
     let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
     header.set_hexpand(true);
     header.set_margin_top(10);
@@ -266,16 +262,6 @@ fn group_header(
         open.set_action_target_value(Some(&group.subscription_id.to_variant()));
         header.append(&open);
     }
-    let unsubscribe = gtk4::Button::from_icon_name("starred-symbolic");
-    unsubscribe.add_css_class("flat");
-    unsubscribe.add_css_class("accent");
-    // a11y-semantics: role=button name=unsubscribe-source state=focusable action=activate
-    unsubscribe.set_focusable(true);
-    unsubscribe.set_opacity(0.0);
-    unsubscribe.set_tooltip_text(Some(&strings::text(strings::PODCAST_UNSUBSCRIBE)));
-    unsubscribe.set_action_name(Some("podcasts.unsubscribe"));
-    unsubscribe.set_action_target_value(Some(&group.subscription_id.to_variant()));
-    header.append(&unsubscribe);
     let menu = gtk4::MenuButton::builder()
         .icon_name("view-more-symbolic")
         .menu_model(&podcasts_context_menu::build_source(
@@ -287,7 +273,7 @@ fn group_header(
     menu.add_css_class("flat");
     menu.set_tooltip_text(Some(&strings::text(strings::PODCAST_MORE_SOURCE_OPTIONS)));
     header.append(&menu);
-    (header.upcast(), unsubscribe)
+    header.upcast()
 }
 
 fn group_image_url(group: &SourceGroup) -> Option<&str> {
@@ -310,6 +296,9 @@ fn episode_row(
     let playing = context.mark.is_some_and(|mark| mark.playing);
     let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
     root.add_css_class("reprise-podcast-episode-row");
+    // `POD-20`: this plain Box needs the shared hover tint that ColumnView
+    // rows receive from the platform stylesheet.
+    root.add_css_class("reprise-hover");
     // a11y-semantics: role=button name=podcast-episode-row state=focusable action=activate
     root.set_focusable(true);
     // input-parity: ACC-8 keyboard=episode-row-enter-space
@@ -334,15 +323,14 @@ fn episode_row(
     );
     root.append(&selected);
 
-    let (thumbnail, play_glyph) = episode_thumbnail(row, playing, context.images_allowed);
+    let thumbnail = episode_thumbnail(row, context.images_allowed);
     let marker = playing_marker::build();
     marker.add_css_class("reprise-podcast-episode-marker");
     playing_marker::set_playing(&marker, playing);
     marker.set_visible(loaded);
     thumbnail.add_overlay(&marker);
-    thumbnail.add_overlay(&play_glyph);
     root.append(&thumbnail);
-    install_row_activation(&root, row.id, &marker, &play_glyph);
+    install_row_activation(&root, row.id);
     super::podcasts_dnd::wire_episode_drag_source(&root, row.id, context.selection);
 
     let identity = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
@@ -380,7 +368,6 @@ fn episode_row(
         status,
         action: download.clone(),
         marker,
-        play_glyph,
     };
     update_download_state(&widgets, context.download_state);
     update_network_state(
@@ -410,11 +397,6 @@ pub(super) use super::podcasts_row_state::{update_download_state, update_network
 
 pub(super) fn update_playback_state(widgets: &DownloadRowWidgets, playing: bool) {
     playing_marker::set_playing(&widgets.marker, playing);
-    widgets.play_glyph.set_icon_name(Some(if playing {
-        "media-playback-pause-symbolic"
-    } else {
-        "media-playback-start-symbolic"
-    }));
 }
 
 #[cfg(test)]

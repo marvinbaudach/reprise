@@ -12,10 +12,7 @@ fn acc_8_row_activation_is_reachable_by_pointer_and_keyboard() {
     let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
     root.set_focusable(true);
     root.set_accessible_role(gtk4::AccessibleRole::Button);
-    let glyph = gtk4::Image::new();
-    let marker = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
-
-    install_row_activation(&root, 7, &marker, &glyph);
+    install_row_activation(&root, 7);
 
     let controllers = root.observe_controllers();
     let mut has_click = false;
@@ -35,5 +32,32 @@ fn acc_8_row_activation_is_reachable_by_pointer_and_keyboard() {
     assert!(
         root.is_focusable(),
         "a keyboard user must be able to reach it"
+    );
+}
+
+/// `POD-20`: the marker stays put under the pointer. Swapping it for a glyph
+/// made the loaded row change its content on hover.
+#[test]
+fn pod_20_no_hover_swaps_the_marker_for_a_glyph() {
+    let source = include_str!("podcasts_row_interaction.rs");
+
+    assert!(
+        !source.contains("install_playback_hover"),
+        "the hover glyph swap must be gone, not merely unused"
+    );
+    assert!(
+        !source.contains("media-playback-pause-symbolic"),
+        "no pause glyph is built for grouped episode rows"
+    );
+}
+
+/// `POD-20`: a plain episode Box opts into the app-wide hover feedback.
+#[test]
+fn pod_20_the_episode_row_marks_itself_on_hover_like_a_music_row() {
+    let source = include_str!("podcasts_groups.rs");
+
+    assert!(
+        source.contains("reprise-hover"),
+        "the episode row must carry the app-wide hover tint"
     );
 }

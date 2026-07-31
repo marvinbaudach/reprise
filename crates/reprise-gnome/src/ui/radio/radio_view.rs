@@ -12,7 +12,7 @@ use reprise_core::source_error::{
 };
 
 use super::add_dialog::RadioAddDialog;
-use super::radio_columns::{self, LiveState, OnRemove};
+use super::radio_columns::{self, LiveState};
 use super::radio_context_menu;
 use super::radio_empty_state::{radio_empty_state_for, RadioEmptyState};
 use super::radio_filter_bar::{filter_rows, RadioFilterBar};
@@ -68,6 +68,9 @@ struct Shared {
     on_mutated: RefCell<Option<Callback>>,
     on_activated: RefCell<Option<IdCallback>>,
     on_removed: RefCell<Option<IdCallback>>,
+    /// `SRC-13`: kept so a station change arriving from outside this view
+    /// reaches the same reveal policy that view entry uses.
+    reveal: Rc<super::radio_reveal::RadioReveal>,
 }
 
 pub(in crate::ui) struct RadioView {
@@ -97,18 +100,7 @@ impl RadioView {
         column_view.add_css_class("reprise-radio-table");
         column_view.add_css_class(crate::ui::source_context_surface::TABLE_CSS_CLASS);
 
-        let remove_target = Rc::new(RefCell::new(None::<std::rc::Weak<Shared>>));
-        let remove_shared = remove_target.clone();
-        let on_remove: OnRemove = Rc::new(move |id| {
-            if let Some(shared) = remove_shared
-                .borrow()
-                .as_ref()
-                .and_then(std::rc::Weak::upgrade)
-            {
-                remove_station(&shared, id);
-            }
-        });
-        radio_columns::append_columns(&column_view, &on_remove, &live_source, &connectivity_source);
+        radio_columns::append_columns(&column_view, &live_source, &connectivity_source);
         {
             let live = live_source.clone();
             let connectivity = connectivity_source.clone();
@@ -145,6 +137,13 @@ impl RadioView {
         root.append(filter_bar.widget());
         root.append(error_banner.widget());
         root.append(&stack);
+        let reveal = super::radio_reveal::install(
+            root.upcast_ref(),
+            &scrolled,
+            &column_view,
+            model.clone(),
+            live.clone(),
+        );
 
         let shared = Rc::new(Shared {
             conn: conn.clone(),
@@ -168,9 +167,8 @@ impl RadioView {
             on_mutated: RefCell::new(None),
             on_activated: RefCell::new(None),
             on_removed: RefCell::new(None),
+            reveal,
         });
-        remove_target.replace(Some(Rc::downgrade(&shared)));
-
         let add_dialog = {
             let weak = Rc::downgrade(&shared);
             RadioAddDialog::new(conn, shared.connectivity.clone(), move || {
@@ -250,6 +248,7 @@ impl RadioView {
                     .and_then(|snapshot| snapshot.radio.as_ref())
                     .and_then(|radio| radio.inline_error())
                     .map(str::to_owned);
+                let was_connected = super::radio_reveal::connected_station(&shared.live.borrow());
                 shared.live.replace(live_state(snapshot));
                 if let Some(failure) = failure {
                     show_radio_failure(&shared, SourceErrorKind::Unreachable, failure);
@@ -258,6 +257,7 @@ impl RadioView {
                     shared.error_banner.hide();
                 }
                 render_rows(&shared);
+                shared.reveal.on_external_change(was_connected);
             });
         }
         refresh_shared(&shared);
