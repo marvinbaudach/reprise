@@ -55,3 +55,10 @@ pub(in crate::ui) fn install(
 pub(in crate::ui) fn css() -> String {
     css::css()
 }
+fn metadata_ytdlp(
+    setting_path: Option<&str>,
+    browser: Option<reprise_core::podcasts::config::YoutubeBrowser>,
+) -> reprise_core::podcasts::ytdlp::YtDlp {
+    reprise_core::podcasts::ytdlp::YtDlp::discover_with_browser(setting_path, browser)
+        .with_metadata_language(crate::i18n::active_gui_language())
+}
