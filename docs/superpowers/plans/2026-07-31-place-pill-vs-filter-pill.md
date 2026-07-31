@@ -159,7 +159,7 @@ In `browse_filter_strings.rs`, add the test:
 
 ```bash
 cd /home/marvin/Projects/reprise-place-pill
-cargo test -p reprise-gnome --lib filter_restriction 2>&1 | tail -20
+cargo test -p reprise-gnome filter_restriction 2>&1 | tail -20
 ```
 
 Expected: FAIL — `cannot find function has_place_pill in this scope`, plus arity errors on `is_restricted`/`row_visible`.
@@ -240,8 +240,8 @@ Four call sites reference the removed names. Leave them compiling by mechanical 
 - [ ] **Step 5: Run the tests to verify they pass**
 
 ```bash
-cargo test -p reprise-gnome --lib filter_restriction 2>&1 | tail -10
-cargo test -p reprise-gnome --lib browse_filter_strings 2>&1 | tail -10
+cargo test -p reprise-gnome filter_restriction 2>&1 | tail -10
+cargo test -p reprise-gnome browse_filter_strings 2>&1 | tail -10
 ```
 
 Expected: PASS, `test result: ok`.
@@ -295,7 +295,7 @@ The existing `seeded_conn()` helper must contain at least three tracks by `Alpha
 - [ ] **Step 2: Run the test to verify it fails**
 
 ```bash
-cargo test -p reprise-gnome --lib browse_filter_count 2>&1 | tail -20
+cargo test -p reprise-gnome browse_filter_count 2>&1 | tail -20
 ```
 
 Expected: FAIL — the restricted case returns the library total (e.g. `9`) instead of `3`.
@@ -330,7 +330,7 @@ fn source_total(
 - [ ] **Step 4: Run the test to verify it passes**
 
 ```bash
-cargo test -p reprise-gnome --lib browse_filter_count 2>&1 | tail -10
+cargo test -p reprise-gnome browse_filter_count 2>&1 | tail -10
 ```
 
 Expected: PASS.
@@ -382,7 +382,7 @@ rg "browse_bar::" crates/reprise-gnome/src/ui/browse/
 - [ ] **Step 2: Verify it is a pure move**
 
 ```bash
-cargo test -p reprise-gnome --lib browse 2>&1 | tail -10
+cargo test -p reprise-gnome browse 2>&1 | tail -10
 wc -l crates/reprise-gnome/src/ui/browse/browse_bar.rs crates/reprise-gnome/src/ui/browse/browse_bar_chips.rs
 ```
 
@@ -462,7 +462,7 @@ Add the accessor `pub(in crate::ui) fn section_label_visible(&self) -> bool { se
 - [ ] **Step 2: Run the tests to verify they fail**
 
 ```bash
-xvfb-run -a cargo test -p reprise-gnome --lib place_pill_is_outlined_and_carries_no_remove_cross -- --ignored --exact 2>&1 | tail -20
+xvfb-run -a cargo test -p reprise-gnome place_pill_is_outlined_and_carries_no_remove_cross -- --ignored --exact 2>&1 | tail -20
 ```
 
 Expected: FAIL — `place_button` does not exist; the label still ends in `×`.
@@ -580,8 +580,8 @@ Declare `pub(in crate::ui) const PLACE_PILL_CSS_CLASS: &str = "reprise-place-pil
 Run each individually — the display suite is herd-flaky and batch results are not evidence:
 
 ```bash
-xvfb-run -a cargo test -p reprise-gnome --lib place_pill_is_outlined_and_carries_no_remove_cross -- --ignored --exact 2>&1 | tail -10
-xvfb-run -a cargo test -p reprise-gnome --lib filter_section_label_stays_hidden_at_an_unfiltered_place -- --ignored --exact 2>&1 | tail -10
+xvfb-run -a cargo test -p reprise-gnome place_pill_is_outlined_and_carries_no_remove_cross -- --ignored --exact 2>&1 | tail -10
+xvfb-run -a cargo test -p reprise-gnome filter_section_label_stays_hidden_at_an_unfiltered_place -- --ignored --exact 2>&1 | tail -10
 ```
 
 Expected: `test result: ok. 1 passed` for each.
@@ -644,7 +644,7 @@ Follow the existing fixture pattern in that module for constructing the track li
 - [ ] **Step 2: Run it to verify it fails**
 
 ```bash
-xvfb-run -a cargo test -p reprise-gnome --lib end_of_results_appears_for_a_search_inside_a_place -- --ignored --exact 2>&1 | tail -20
+xvfb-run -a cargo test -p reprise-gnome end_of_results_appears_for_a_search_inside_a_place -- --ignored --exact 2>&1 | tail -20
 ```
 
 Expected: FAIL — the line stays hidden because of the place guard.
@@ -668,7 +668,7 @@ Replace `end_of_results.rs:48-53` with:
 - [ ] **Step 4: Run it to verify it passes**
 
 ```bash
-xvfb-run -a cargo test -p reprise-gnome --lib end_of_results_appears_for_a_search_inside_a_place -- --ignored --exact 2>&1 | tail -10
+xvfb-run -a cargo test -p reprise-gnome end_of_results_appears_for_a_search_inside_a_place -- --ignored --exact 2>&1 | tail -10
 ```
 
 Expected: `test result: ok. 1 passed`.
