@@ -90,6 +90,16 @@ impl RadioReveal {
         });
     }
 
+    /// `SRC-13`: the one place that decides whether an external snapshot is
+    /// worth a reveal. It hangs off the connected station's identity, so a
+    /// reconnect, an inline error or any other snapshot for the same station
+    /// leaves the viewport alone.
+    pub(super) fn on_external_change(self: &Rc<Self>, previously_connected: Option<i64>) {
+        if connected_station(&self.live.borrow()) != previously_connected {
+            self.reveal(LoadedItemChange::ChangedElsewhere);
+        }
+    }
+
     /// Returns whether the centering could be applied. `false` means the
     /// geometry is not usable yet — or the station is not in the visible rows,
     /// in which case there is nothing to wait for either, but the bounded
