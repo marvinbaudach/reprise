@@ -618,6 +618,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         watcher_state,
     );
     start_external_changes_refresh(db_path, track_list, sidebar);
+    wire_queue_episode_marker(track_list, player.as_ref());
     super::mounts::install(&super::mounts::MountWiring {
         conn,
         db_path,
@@ -727,6 +728,33 @@ fn start_persisted_watcher(
 /// itself — so only foreign writes drive a coarse, silent refresh of the
 /// sidebar and the current track list (UX rules EXT-1a..EXT-4). A notifier that
 /// cannot start just means no live updates; it is never fatal.
+/// Keeps the Queue surfaces' now-playing marker in step with a queued episode.
+///
+/// The track-side marker is driven by `playing_track_id`, written when a track
+/// starts. An episode never goes through that path — it plays through the
+/// external-media controller — so without this the app can be playing a queued
+/// episode while every queue surface shows nothing as playing. The Podcasts and
+/// YouTube views already subscribe to the same signal for their own marker;
+/// this adds the queue's.
+fn wire_queue_episode_marker(track_list: &Rc<TrackList>, player: Option<&Rc<PlayerController>>) {
+    let Some(player) = player else {
+        return;
+    };
+    let track_list = Rc::downgrade(track_list);
+    player.add_on_external_changed(move |snapshot| {
+        let Some(track_list) = track_list.upgrade() else {
+            return;
+        };
+        let episode_id = snapshot.as_ref().and_then(|snapshot| match snapshot.media {
+            crate::ui::playback::external_media::ExternalMedia::Podcast { episode_id, .. } => {
+                Some(episode_id)
+            }
+            crate::ui::playback::external_media::ExternalMedia::Radio { .. } => None,
+        });
+        track_list.set_playing_episode(episode_id);
+    });
+}
+
 fn start_external_changes_refresh(
     db_path: &Path,
     track_list: &Rc<TrackList>,

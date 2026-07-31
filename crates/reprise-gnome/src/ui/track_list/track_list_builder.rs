@@ -90,6 +90,7 @@ pub(in crate::ui) fn build(
         selection: selection.clone(),
         column_view: column_view.clone(),
         playing_track_id: Cell::new(None),
+        playing_episode_id: Cell::new(None),
         now_playing_markers: RefCell::new(Vec::new()),
         rating_cells: RefCell::new(Vec::new()),
         last_scroll_activity: Cell::new(None),
