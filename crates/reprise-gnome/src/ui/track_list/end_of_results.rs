@@ -44,12 +44,15 @@ fn recompute(
     };
     let search = shared.filter.borrow().clone();
     // FIL-7: the AI-exclude filter also restricts; the `hidden == 0` guard below
-    // handles the nothing-actually-hidden case.
+    // handles the nothing-actually-hidden case. A place is not a restriction —
+    // but a filter inside one is, and the hidden count it reports is relative
+    // to that place (FIL-2). Suppressing the line for places, as this used to,
+    // hid it exactly where tracks genuinely were being withheld.
     let restricted = crate::ui::browse::filter_restriction::filters_restrict(
         &search,
         &browse,
         shared.browse_bar.exclude_ai(),
-    ) && !crate::ui::browse::filter_restriction::scope_restricts(&source);
+    );
     let counts = shared.browse_bar.result_count();
     let filtered = shared.model.n_items() as usize;
     let Some((_, total)) = counts.filter(|_| restricted && filtered >= 1) else {

@@ -262,7 +262,7 @@ mod tests {
         let scope_chip = track_list
             .shared
             .browse_bar
-            .scope_button()
+            .place_button()
             .expect("the scope chip must survive the refresh");
         assert!(scope_chip
             .label()
@@ -312,7 +312,7 @@ mod tests {
             },
             "test genre navigation",
         );
-        let scope_chip = track_list.shared.browse_bar.scope_button().unwrap();
+        let scope_chip = track_list.shared.browse_bar.place_button().unwrap();
         assert!(scope_chip
             .label()
             .is_some_and(|label| label.contains("Metalcore")));
@@ -335,7 +335,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn fil_8_recently_added_chip_x_returns_to_the_normal_library_with_history() {
+    fn fil_8_recently_added_is_a_sidebar_place_without_a_pill_widget() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let conn = Rc::new(crate::test_db::open().unwrap());
@@ -376,17 +376,10 @@ mod tests {
             ),
             "test recently added navigation",
         );
-        let scope_chip = track_list.shared.browse_bar.scope_button().unwrap();
-        assert!(scope_chip
-            .label()
-            .is_some_and(|label| label.contains("Recently added")));
-
-        scope_chip.emit_clicked();
-
-        assert_eq!(track_list.current_source(), ViewSource::Library);
-        let previous = history
-            .go_back_from(track_list.browser_place())
-            .expect("leaving Recently added must push it onto Back history");
-        assert_eq!(previous.view_source(), ViewSource::RecentlyAdded);
+        // FIL-8 (revised 2026-07-31): Recently added is a sidebar place — the
+        // sidebar row names it, so it carries no place pill. Leaving happens by
+        // selecting another sidebar row, not by dismissing a pill.
+        assert!(track_list.shared.browse_bar.place_button().is_none());
+        assert_eq!(track_list.current_source(), ViewSource::RecentlyAdded);
     }
 }
