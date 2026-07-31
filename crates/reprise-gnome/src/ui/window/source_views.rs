@@ -123,7 +123,20 @@ pub(in crate::ui) fn install(
                 view.set_playing_episode(episode_id);
                 view.set_unavailable_episode(unavailable_episode);
             }
+            tracing::debug!(
+                ?episode_id,
+                phase = ?snapshot.as_ref().and_then(|snapshot| snapshot.podcast_phase),
+                can_go_previous =
+                    snapshot.as_ref().is_some_and(|snapshot| snapshot.can_go_previous),
+                can_go_next = snapshot.as_ref().is_some_and(|snapshot| snapshot.can_go_next),
+                "external session changed"
+            );
         });
+    }
+    super::source_views_smoke::arm_episode_play(&youtube);
+    super::source_views_smoke::arm_episode_play(&podcasts);
+    if let Some(player) = player {
+        super::source_views_smoke::arm_transport(player);
     }
 
     SourceViews {
