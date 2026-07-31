@@ -55,6 +55,7 @@ pub(in crate::ui) fn install(
 pub(in crate::ui) fn css() -> String {
     css::css()
 }
+
 fn metadata_ytdlp(
     setting_path: Option<&str>,
     browser: Option<reprise_core::podcasts::config::YoutubeBrowser>,
