@@ -323,14 +323,18 @@ fn mtp_48_unplugging_the_active_device_mid_transfer_opens_the_waiting_one_exactl
 #[test]
 fn replacement_inventory_is_committed_before_the_old_device_path_is_deleted() {
     run(async {
-        let (_temp, conn) = fixture();
+        let (temp, conn) = fixture();
         select_road_playlist(&conn, &[1]);
+        // The library sidecar has to be there for the device one to be
+        // removable at all (`LYR-7`) — this test is about *when* that
+        // removal happens, not whether.
+        std::fs::write(temp.path().join("1.lrc"), b"[00:01.00]Lyrics\n").unwrap();
         reprise_core::device_sync::settings::upsert_device_file(
             &conn,
             &reprise_core::device_sync::DeviceFileRecord {
                 device_serial: "a".into(),
                 track_id: 1,
-                source_path: "/old/library/1.flac".into(),
+                source_path: temp.path().join("1.flac").to_string_lossy().into_owned(),
                 source_size: 100,
                 source_mtime: 0,
                 device_path: "Old/Track 1.flac".into(),
@@ -641,14 +645,12 @@ fn sync_now_mirrors_the_selection_without_legacy_pin_exceptions() {
         runtime.sync_now("a").unwrap();
         settle().await;
 
+        // Audio only: `/library/3.flac` and `/library/4.flac` have no
+        // sidecar next to them, so `LYR-7` leaves whatever `.lrc` may sit on
+        // the device alone.
         assert_eq!(
             backend.state.deleted.borrow().as_slice(),
-            [
-                "Old/Three.flac",
-                "Old/Three.lrc",
-                "Keep/Four.flac",
-                "Keep/Four.lrc"
-            ]
+            ["Old/Three.flac", "Keep/Four.flac"]
         );
         let ids = reprise_core::device_sync::settings::load_device_files(&conn, "a")
             .unwrap()

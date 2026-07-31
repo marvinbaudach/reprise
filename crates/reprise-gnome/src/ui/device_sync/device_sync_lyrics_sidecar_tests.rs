@@ -85,6 +85,41 @@ fn lyr_7_removing_a_track_removes_its_lrc_without_an_extra_log_entry() {
 }
 
 #[test]
+fn lyr_7_removing_a_track_leaves_an_lrc_reprise_never_mirrored_alone() {
+    run(async {
+        // No `.lrc` in the library: whatever sits beside the audio on the
+        // device is the user's own, hand-authored on a player with no
+        // internet, and may be the only copy in existence.
+        let (_temp, conn) = fixture();
+        select_road_playlist(&conn, &[1]);
+        let first_backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        let first_runtime = DeviceSyncRuntime::with_backend(&conn, first_backend);
+        settle().await;
+        first_runtime.sync_now("a").unwrap();
+        settle().await;
+        drop(first_runtime);
+
+        crate::test_db::connection(&conn)
+            .execute("DELETE FROM playlist_tracks WHERE playlist_id = 10", [])
+            .unwrap();
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        settle().await;
+        runtime.sync_now("a").unwrap();
+        settle().await;
+
+        let deleted = backend.state.managed_deleted.borrow().clone();
+        assert!(deleted
+            .iter()
+            .any(|(_, path)| path.ends_with("Track 1.opus")));
+        assert!(
+            !deleted.iter().any(|(_, path)| path.ends_with(".lrc")),
+            "no library sidecar means Reprise never put one there, got {deleted:?}"
+        );
+    });
+}
+
+#[test]
 fn lyr_7_a_failed_lrc_copy_never_fails_the_track_transfer() {
     run(async {
         let (temp, conn) = fixture();

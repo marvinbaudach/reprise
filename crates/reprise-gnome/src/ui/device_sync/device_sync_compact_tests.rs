@@ -409,9 +409,11 @@ fn deleted_library_rows_are_removed_instead_of_being_retained_as_unavailable() {
         runtime.sync_now("a").unwrap();
         settle().await;
 
+        // No `.lrc` alongside: the library holds none for this track, so
+        // `LYR-7` has nothing it can prove Reprise mirrored to the device.
         assert_eq!(
             backend.state.deleted.borrow().as_slice(),
-            ["Artist/Album/01 Track 1.mp3", "Artist/Album/01 Track 1.lrc"]
+            ["Artist/Album/01 Track 1.mp3"]
         );
     });
 }

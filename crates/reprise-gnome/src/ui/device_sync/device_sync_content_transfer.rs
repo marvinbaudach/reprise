@@ -311,8 +311,15 @@ async fn run_content_removals(
             // `Ok(false)` means the file was already gone, which is the
             // desired state but not a deletion this run performed — counting
             // it would inflate the run log's removal tally (`MTP-20`).
+            //
+            // No `.lrc` removal here, deliberately: a content removal is
+            // planned from the *device* inventory alone (`podcasts.rs`), so
+            // there is no library file to trace the attachment back to, and
+            // `LYR-7` only ever deletes a device-side sidecar it can prove
+            // Reprise mirrored there. A `.lrc` next to an episode is the
+            // user's own — Reprise never writes one beside a podcast
+            // download.
             Ok(was_removed) => {
-                effects::remove_lyrics_sidecar(runtime, work, path, target_path, storage_id).await;
                 if was_removed {
                     removed = removed.saturating_add(1);
                 }

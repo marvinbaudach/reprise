@@ -219,18 +219,15 @@ fn pod_12_planned_sync_copies_selected_rss_and_youtube_each_to_its_own_target() 
                 ),
             ]
         );
+        // Audio only: a content removal is planned from the device
+        // inventory alone, so there is no library file to trace a `.lrc`
+        // back to and `LYR-7` never deletes one here.
         assert_eq!(
             backend.state.managed_deleted.borrow().as_slice(),
-            [
-                (
-                    "/Podcasts/Reprise".to_string(),
-                    "Old Show/99-Old.mp3".to_string()
-                ),
-                (
-                    "/Podcasts/Reprise".to_string(),
-                    "Old Show/99-Old.lrc".to_string()
-                )
-            ]
+            [(
+                "/Podcasts/Reprise".to_string(),
+                "Old Show/99-Old.mp3".to_string()
+            )]
         );
     });
 }

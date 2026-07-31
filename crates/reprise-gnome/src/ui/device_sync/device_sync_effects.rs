@@ -238,6 +238,7 @@ pub(super) async fn perform(
             let managed = removal(work, index);
             let path = removal_path(&managed);
             let track_id = removal_track_id(&managed);
+            let source_path = removal_source_path(&managed);
             let result = runtime
                 .backend
                 .delete_track(
@@ -251,6 +252,7 @@ pub(super) async fn perform(
                 remove_lyrics_sidecar(
                     runtime,
                     work,
+                    source_path.as_deref(),
                     &path,
                     &work.playlists_path,
                     work.playlists_storage,
@@ -288,6 +290,7 @@ pub(super) async fn perform(
         }
         Effect::RemoveReplacedFile { device_path } => {
             let sidecar_is_still_current = replacement_keeps_sidecar(work, &device_path);
+            let source_path = replaced_source_path(work, &device_path);
             let result = runtime
                 .backend
                 .delete_track(
@@ -301,6 +304,7 @@ pub(super) async fn perform(
                 remove_lyrics_sidecar(
                     runtime,
                     work,
+                    source_path.as_deref(),
                     &device_path,
                     &work.playlists_path,
                     work.playlists_storage,
@@ -358,9 +362,19 @@ pub(super) async fn copy_lyrics_sidecar(
     }
 }
 
+/// Removes the `.lrc` that travelled with `device_path` — but only when the
+/// library still holds the sidecar it was mirrored from.
+///
+/// `source_path` is the library file this device file came from; `None` means
+/// the run cannot establish one (an orphan the inventory never recorded), and
+/// then nothing is deleted. A `.lrc` on the device whose library counterpart
+/// does not exist was never put there by Reprise: it is the user's own,
+/// hand-authored on a player that has no internet, and it may well be the
+/// only copy. Leaving a stale attachment behind is the far smaller harm.
 pub(super) async fn remove_lyrics_sidecar(
     runtime: &Rc<DeviceSyncRuntime>,
     work: &PlannedWork,
+    source_path: Option<&Path>,
     device_path: &str,
     target_path: &str,
     storage_id: Option<StorageId>,
@@ -368,12 +382,17 @@ pub(super) async fn remove_lyrics_sidecar(
     if reprise_core::device_sync::lyrics_sidecar::is_sidecar_path(Path::new(device_path)) {
         return;
     }
-    let Some(sidecar) = reprise_core::device_sync::lyrics_sidecar::paths_for_track(
-        Path::new(device_path),
-        device_path,
-    ) else {
+    let Some(source_path) = source_path else {
         return;
     };
+    let Some(sidecar) =
+        reprise_core::device_sync::lyrics_sidecar::paths_for_track(source_path, device_path)
+    else {
+        return;
+    };
+    if !std::fs::metadata(&sidecar.source_path).is_ok_and(|metadata| metadata.is_file()) {
+        return;
+    }
     if let Err(error) = runtime
         .backend
         .delete_track(
@@ -390,6 +409,18 @@ pub(super) async fn remove_lyrics_sidecar(
             "could not remove lyrics sidecar from device"
         );
     }
+}
+
+/// The library file the device file being replaced was mirrored from, taken
+/// from the inventory row the plan carries for it.
+fn replaced_source_path(work: &PlannedWork, replaced_path: &str) -> Option<PathBuf> {
+    work.machine
+        .borrow()
+        .plan()
+        .replace
+        .iter()
+        .find(|replacement| replacement.existing.device_path == replaced_path)
+        .map(|replacement| PathBuf::from(&replacement.existing.source_path))
 }
 
 fn replacement_keeps_sidecar(work: &PlannedWork, replaced_path: &str) -> bool {

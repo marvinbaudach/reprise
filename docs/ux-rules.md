@@ -2189,8 +2189,12 @@ property is set and yet nothing happens.
   library rescan — and sweeps up temporary files an interrupted earlier write
   abandoned in that directory, matching Reprise's own name pattern and
   nothing else. Device sync copies this
-  sidecar under the transferred audio's basename and removes it with that
-  audio; the attachment never counts as another transfer, and its failure
+  sidecar under the transferred audio's basename, and removes it with that
+  audio only when the library still holds the sidecar it was mirrored from —
+  a `.lrc` on the device with no library counterpart, or one beside a file
+  the run cannot trace back to the library at all (an unrecorded orphan, a
+  podcast or YouTube download), is the user's own and stays. The attachment
+  never counts as another transfer, and its failure
   never fails the track transfer.
 - **DISCOVER-1** [replaced by BROWSE-1] — Network features without a
   permanently visible surface of their own get exactly one subtle,
