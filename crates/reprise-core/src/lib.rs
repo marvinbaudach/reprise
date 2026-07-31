@@ -33,6 +33,7 @@ pub mod concerts;
 pub mod connectivity;
 pub mod cover;
 pub mod cover_download;
+pub mod cover_writeback;
 pub mod db;
 mod db_ai_jobs;
 mod db_artist_news_fetch;

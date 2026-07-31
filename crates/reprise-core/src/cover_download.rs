@@ -1,7 +1,8 @@
 //! Automatic online album-cover download. Resolves a MusicBrainz release
 //! and fetches its Cover Art Archive front cover into the `covers/downloaded/`
-//! cache when the local cover pipeline has no usable image. Writes ONLY under
-//! the XDG cover cache.
+//! cache when the local cover pipeline has no usable image. Album downloads
+//! are also published best-effort into the album's local track directories;
+//! release-group covers remain cache-only because they have no local album.
 
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
@@ -193,7 +194,12 @@ pub(crate) fn parse_best_release(json: &str, album_artist: &str, album: &str) ->
     None
 }
 
-pub fn fetch_and_cache(album_artist: &str, album: &str, mbid: Option<&str>) -> Option<PathBuf> {
+pub fn fetch_and_cache(
+    album_artist: &str,
+    album: &str,
+    mbid: Option<&str>,
+    album_dirs: &[PathBuf],
+) -> Option<PathBuf> {
     let key = album_key(album_artist, album);
     // 1. Already resolved (positive or negative) -> no network.
     if let Some(existing) = downloaded_cover_path(&key) {
@@ -225,8 +231,9 @@ pub fn fetch_and_cache(album_artist: &str, album: &str, mbid: Option<&str>) -> O
         }
         CaaFetchResult::TransientFailure => return None,
     };
-    // 4. Publish atomically under the download cache.
-    store_downloaded(&key, &bytes, ext)
+    // 4. Publish atomically under the download cache, then best-effort beside
+    // the album tracks. Folder writeback never changes download success.
+    store_album_downloaded(&key, &bytes, ext, album_dirs)
 }
 
 /// A rate-limited MusicBrainz GET returning the response body as text.
@@ -310,8 +317,21 @@ fn store_downloaded(key: &str, bytes: &[u8], ext: &str) -> Option<PathBuf> {
     Some(out)
 }
 
+fn store_album_downloaded(
+    key: &str,
+    bytes: &[u8],
+    ext: &str,
+    album_dirs: &[PathBuf],
+) -> Option<PathBuf> {
+    let cached = store_downloaded(key, bytes, ext)?;
+    let _ = crate::cover_writeback::write_album_cover(album_dirs, bytes, ext);
+    Some(cached)
+}
+
 #[cfg(test)]
 mod tests {
+    use std::io::Cursor;
+
     use super::*;
     use crate::source_error::{SourceError, SourceErrorKind};
 
@@ -405,7 +425,7 @@ mod tests {
         std::fs::write(&f, b"img").unwrap();
         // Already cached -> must return it, never touching the network.
         assert_eq!(
-            fetch_and_cache("CachedBand", "CachedAlbum", None),
+            fetch_and_cache("CachedBand", "CachedAlbum", None, &[]),
             Some(f.clone())
         );
         std::fs::remove_file(&f).ok();
@@ -417,7 +437,7 @@ mod tests {
         std::fs::create_dir_all(downloaded_dir()).unwrap();
         let marker = negative_marker_path(&key);
         std::fs::write(&marker, b"").unwrap();
-        assert_eq!(fetch_and_cache("MissBand", "MissAlbum", None), None);
+        assert_eq!(fetch_and_cache("MissBand", "MissAlbum", None, &[]), None);
         std::fs::remove_file(&marker).ok();
     }
 
@@ -518,5 +538,49 @@ mod tests {
             .write_to(&mut png, image::ImageFormat::Png)
             .unwrap();
         assert_eq!(validated_image_extension(png.get_ref()), Some("png"));
+    }
+
+    #[test]
+    fn cover_1_publishing_an_album_download_writes_cache_and_album_folder() {
+        let album = tempfile::tempdir().unwrap();
+        let key = format!("writeback-success-{:016x}", fastrand::u64(..));
+        let mut png = Cursor::new(Vec::new());
+        image::DynamicImage::new_rgb8(1, 1)
+            .write_to(&mut png, image::ImageFormat::Png)
+            .unwrap();
+
+        let cached =
+            store_album_downloaded(&key, png.get_ref(), "png", &[album.path().to_path_buf()])
+                .unwrap();
+
+        assert_eq!(std::fs::read(&cached).unwrap(), *png.get_ref());
+        assert_eq!(
+            std::fs::read(album.path().join("cover.png")).unwrap(),
+            *png.get_ref()
+        );
+        std::fs::remove_file(cached).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cover_1_album_write_failure_does_not_fail_the_cached_download() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let album = tempfile::tempdir().unwrap();
+        let key = format!("writeback-failure-{:016x}", fastrand::u64(..));
+        let mut png = Cursor::new(Vec::new());
+        image::DynamicImage::new_rgb8(1, 1)
+            .write_to(&mut png, image::ImageFormat::Png)
+            .unwrap();
+        std::fs::set_permissions(album.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
+
+        let cached =
+            store_album_downloaded(&key, png.get_ref(), "png", &[album.path().to_path_buf()])
+                .unwrap();
+
+        std::fs::set_permissions(album.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(std::fs::read(&cached).unwrap(), *png.get_ref());
+        assert!(!album.path().join("cover.png").exists());
+        std::fs::remove_file(cached).ok();
     }
 }

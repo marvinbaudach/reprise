@@ -46,7 +46,7 @@ pub(in crate::ui) fn setup(conn: &Db) -> CoverDownloadRuntime {
                 &reprise_core::modules::COVER_DOWNLOAD_MODULE,
             ),
         )),
-        worker: spawn(),
+        worker: spawn(conn.path()),
     }
 }
 
@@ -54,7 +54,7 @@ pub(in crate::ui) fn setup(conn: &Db) -> CoverDownloadRuntime {
 pub(in crate::ui) fn setup_for_test() -> CoverDownloadRuntime {
     CoverDownloadRuntime {
         enabled: Rc::new(Cell::new(false)),
-        worker: spawn(),
+        worker: spawn(None),
     }
 }
 
@@ -98,11 +98,20 @@ impl CoverDownloadRuntime {
     }
 }
 
-pub(in crate::ui) fn spawn() -> async_channel::Sender<DownloadRequest> {
+pub(in crate::ui) fn spawn(
+    database_path: Option<PathBuf>,
+) -> async_channel::Sender<DownloadRequest> {
     let (sender, receiver) = async_channel::unbounded::<DownloadRequest>();
     let result = std::thread::Builder::new()
         .name("reprise-cover-download".into())
         .spawn(move || {
+            let db = database_path.as_deref().and_then(|path| {
+                Db::open_ready(path)
+                    .inspect_err(|error| {
+                        tracing::warn!(%error, "could not open library for cover writeback");
+                    })
+                    .ok()
+            });
             let mut attempted = HashMap::new();
             let mut observed_embedded = HashMap::new();
             while let Ok(request) = receiver.recv_blocking() {
@@ -111,6 +120,7 @@ pub(in crate::ui) fn spawn() -> async_channel::Sender<DownloadRequest> {
                     request.skip_if_covered,
                     &mut attempted,
                     &mut observed_embedded,
+                    db.as_ref(),
                 );
                 let _ = request.response.try_send(result);
             }
@@ -126,6 +136,7 @@ fn result_for_path(
     skip_if_covered: bool,
     attempted: &mut HashMap<String, Option<PathBuf>>,
     observed_embedded: &mut HashMap<String, u64>,
+    db: Option<&Db>,
 ) -> DownloadOutcome {
     let tag = read_cover_tag(track_path);
     if skip_if_covered {
@@ -135,7 +146,7 @@ fn result_for_path(
             }
         }
     }
-    match result_for_tag(tag, attempted) {
+    match result_for_tag(tag, attempted, db) {
         Some(path) => DownloadOutcome::Downloaded(path),
         None => DownloadOutcome::Unavailable,
     }
@@ -174,6 +185,7 @@ fn cover_status(
 fn result_for_tag(
     tag: CoverTag,
     attempted: &mut HashMap<String, Option<PathBuf>>,
+    db: Option<&Db>,
 ) -> Option<PathBuf> {
     let (Some(album_artist), Some(album)) = (tag.album_artist, tag.album) else {
         return None;
@@ -185,7 +197,21 @@ fn result_for_tag(
     if let Some(result) = attempted.get(&key) {
         return result.clone();
     }
-    let result = fetch_and_cache(&album_artist, &album, tag.release_mbid.as_deref());
+    let album_dirs = db
+        .map(|db| {
+            reprise_core::queries::query_album_directories(db, &album, &album_artist)
+                .inspect_err(|error| {
+                    tracing::warn!(%error, "could not query album directories for cover writeback");
+                })
+                .unwrap_or_default()
+        })
+        .unwrap_or_default();
+    let result = fetch_and_cache(
+        &album_artist,
+        &album,
+        tag.release_mbid.as_deref(),
+        &album_dirs,
+    );
     attempted.insert(key, result.clone());
     result
 }
@@ -283,7 +309,7 @@ mod tests {
         let mut observed = HashMap::new();
 
         assert_eq!(
-            result_for_path(&track, true, &mut attempted, &mut observed),
+            result_for_path(&track, true, &mut attempted, &mut observed, None),
             DownloadOutcome::AlreadyCovered
         );
         assert!(attempted.is_empty());
@@ -298,7 +324,8 @@ mod tests {
                 std::path::Path::new("/does/not/exist.mp3"),
                 true,
                 &mut attempted,
-                &mut observed
+                &mut observed,
+                None
             ),
             DownloadOutcome::Unavailable
         );
@@ -308,7 +335,10 @@ mod tests {
     #[test]
     fn missing_tags_do_not_create_an_attempted_album() {
         let mut attempted = HashMap::new();
-        assert_eq!(result_for_tag(CoverTag::default(), &mut attempted), None);
+        assert_eq!(
+            result_for_tag(CoverTag::default(), &mut attempted, None),
+            None
+        );
         assert!(attempted.is_empty());
     }
 
@@ -323,7 +353,7 @@ mod tests {
             album: Some("Dedup Album".into()),
             release_mbid: None,
         };
-        assert_eq!(result_for_tag(tag, &mut attempted), Some(cached));
+        assert_eq!(result_for_tag(tag, &mut attempted, None), Some(cached));
         assert_eq!(attempted.len(), 1);
     }
 

@@ -3099,6 +3099,16 @@ means deterministic and high-confidence, never „without review".
   unchanged. With the module disabled or the network unavailable, purely
   local resolution remains in effect.
 
+- **COVER-1** [active] [core] — After a downloaded album cover has been
+  published in the XDG cache, Reprise also writes `cover.<ext>` into every
+  existing directory represented by the live track paths of that album. The
+  extension comes from the validated image bytes. If any canonical folder
+  image (`cover`, `folder`, `front`, or `album` with a supported image
+  extension) already exists there, Reprise writes nothing and never
+  overwrites it. Publication is atomic and every filesystem failure is logged
+  but otherwise silent, so the cached download remains successful. Covers for
+  release groups without a local album remain cache-only.
+
 ## AA. External changes (live refresh from CLI/MCP)
 
 <!-- Section letter: A–Z are already assigned on main (T duplicated);

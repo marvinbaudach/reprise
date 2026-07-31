@@ -1,7 +1,8 @@
-//! Cover-art resolution and thumbnailing (portable, GUI-free). Reads covers
-//! from the user's files (embedded picture, or a sidecar image in the album
-//! folder) and produces cached thumbnails under the XDG cache dir. NEVER
-//! writes into the user's library — see `thumbnail`'s cache path.
+//! Cover-art resolution and thumbnailing (portable, GUI-free). These APIs read
+//! covers from the user's files (embedded picture, or a sidecar image in the
+//! album folder) and produce cached thumbnails under the XDG cache dir. The
+//! separate `cover_writeback` module publishes downloaded covers into album
+//! folders with non-overwriting, best-effort safeguards.
 
 use std::path::{Path, PathBuf};
 
@@ -15,8 +16,8 @@ pub enum CoverSource {
 }
 
 /// Canonical sidecar cover file stems and extensions, in priority order.
-const FOLDER_STEMS: &[&str] = &["cover", "folder", "front", "album"];
-const IMAGE_EXTS: &[&str] = &["jpg", "jpeg", "png", "webp", "gif", "bmp"];
+pub(crate) const FOLDER_STEMS: &[&str] = &["cover", "folder", "front", "album"];
+pub(crate) const IMAGE_EXTS: &[&str] = &["jpg", "jpeg", "png", "webp", "gif", "bmp"];
 
 /// All cover-relevant tag fields, read in ONE lofty pass (so `resolve_source`
 /// and the download worker never open the file twice).
@@ -77,7 +78,7 @@ pub fn resolve_source(track_path: &Path) -> Option<CoverSource> {
 
 /// Finds a sidecar cover image in `dir` by canonical stem + known extension,
 /// case-insensitively, deterministically (stem-then-ext priority).
-fn folder_image(dir: &Path) -> Option<PathBuf> {
+pub(crate) fn folder_image(dir: &Path) -> Option<PathBuf> {
     let entries: Vec<PathBuf> = std::fs::read_dir(dir)
         .ok()?
         .filter_map(|e| e.ok().map(|e| e.path()))
