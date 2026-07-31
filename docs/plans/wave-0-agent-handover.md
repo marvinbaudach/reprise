@@ -5,7 +5,7 @@ branch: one per agent, see §3
 phase: handover
 codex_session:
 created: 2026-07-31
-base: 577765b
+base: 9a2cc57
 ---
 # Handover — seven agents, running in parallel
 
@@ -58,11 +58,11 @@ plan documents stay.
 > scripts/check-ux-traceability.sh
 > ```
 >
-> **You start from a green base.** Step 0 below lands on `dev` before any
-> agent branches, so the two reds `#189` left behind — `window.rs` at exactly
-> 600 lines and the thinness budgets — are already gone. If you branched
-> anyway and see either, you branched too early: rebase onto `dev`, do not fix
-> them yourself. One red does remain and is not yours: GitHub Actions fails on
+> **You start from a green base.** `#196` (`9a2cc57`) cleared the two reds
+> `#189` left behind — `window.rs` at exactly 600 lines and the thinness
+> budgets. Branch from a `dev` at or after that commit; if you see either red,
+> you branched from an older one, so rebase rather than fix. One red does
+> remain and is not yours: GitHub Actions fails on
 > every branch in this repository including `main`, because the job never
 > reaches a runner. The enforcing gate is the local run above.
 >
@@ -80,17 +80,25 @@ plan documents stay.
 
 ---
 
-## 2. Step 0 — one branch, alone, before anyone fans out
+## 2. Step 0 — done, `dev` is green
 
-Task 0.0 is not agent 1's. It is everyone's: `dev` fails two gates that every
-agent runs before every commit, so seven agents would otherwise each spend
-their first hour rediscovering the same two failures, and six of them would be
+**Landed as `#196` (`9a2cc57`) on 2026-07-31. Nothing here is left to do; branch
+from a `dev` at or after that commit and skip to §3.** `build_player_backends`
+moved into `ui/window/player_backends.rs` — declared in `window/mod.rs`, not in
+`window.rs`, whose `#[path = "window.rs"] mod surface;` binding would have
+resolved the submodule to `ui/window/window/` — leaving the composition root at
+579 lines. `threads` went to 15 and `filesystem` to 19, the second for two
+`std::fs::metadata` probes in `device_sync_effects.rs` rather than for the
+lyrics batch. Moving the batch worker into `reprise-core` is recorded as the
+follow-up. The record below is kept because it explains why this ran alone.
+
+Task 0.0 was not agent 1's. It was everyone's: `dev` failed two gates that every
+agent runs before every commit, so seven agents would each have spent their
+first hour rediscovering the same two failures, and six of them would have been
 told to leave a red gate alone for hours — which is exactly the habit the gate
-exists to prevent. It is also ten minutes of work.
+exists to prevent. It was also ten minutes of work.
 
-Land it on `dev` first, on its own branch, then fan out.
-
-1. **`window.rs` is at exactly 600 and the cap is `>= 600`.** This is the first
+1. **`window.rs` sat at exactly 600 and the cap is `>= 600`.** This is the first
    check in `scripts/check-architecture.sh`, so nothing else in that script is
    reachable until it passes. `#189` took the file from 597 to 600. Extract a
    cohesive piece into a sibling module under `ui/window/` — the file is the
@@ -103,8 +111,7 @@ Land it on `dev` first, on its own branch, then fan out.
    `reprise-core` is the better answer on the merits — record it as a
    follow-up, do not do it here.)
 
-Two commits, one PR, merged before the seven briefs below start. Agent 1 then
-begins at task 0.1.
+Agent 1 begins at task 0.1.
 
 ---
 
@@ -121,11 +128,12 @@ start┼─ Agent 2  the missing index (1.1)            ── independent
      └─ Agent 7  security debts (2.4a/c/d)          ── independent
 ```
 
-All seven start at once, once step 0 is on `dev`. Agent 1 is the long pole and
+All seven start at once. Agent 1 is the long pole and
 the only one whose five tasks must run in order.
 
 **Ownership — no two agents share a file.** Verified against the tree at
-`577765b`.
+`577765b`; `#196` since added `ui/window/player_backends.rs`, which is agent
+1's along with the rest of `ui/window/`.
 
 | Agent | Owns | Must not touch |
 | --- | --- | --- |
@@ -593,8 +601,8 @@ block; if both land, the conflict is two additions and both stay.
 ## 5. What none of them should do
 
 - **Do not fix an inherited red.** `check-frontend-thinness.sh` and the
-  `window.rs` line cap are step 0's, and step 0 is on `dev` before you start.
-  Seeing either means you branched too early — rebase, do not fix.
+  `window.rs` line cap were step 0's and landed in `#196`. Seeing either means
+  you branched from a `dev` older than `9a2cc57` — rebase, do not fix.
 - **Do not chase GitHub Actions.** It fails on every branch in this repository
   including `main`; the job never reaches a runner. The enforcing gate is the
   local run.
