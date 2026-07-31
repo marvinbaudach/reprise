@@ -17,7 +17,7 @@ use reprise_runtime_protocol::device_sync::{
 use reprise_runtime_protocol::effects::EffectsSnapshot;
 use reprise_runtime_protocol::jobs::{BatchProgress, JobSnapshot};
 use reprise_runtime_protocol::playback::PlaybackSnapshot;
-use reprise_runtime_protocol::queue::QueueSnapshot;
+use reprise_runtime_protocol::queue::{QueueItem, QueueSnapshot};
 use reprise_runtime_protocol::runtime::RuntimeSnapshot;
 use reprise_runtime_protocol::PROTOCOL_VERSION;
 
@@ -219,7 +219,13 @@ fn playback_queue_and_job_snapshots_survive_a_dbus_round_trip() {
         revision: 9,
         current_track_id: Some(42),
         play_next_track_ids: vec![43, 44],
+        play_next_items: Some(vec![QueueItem::track(43), QueueItem::track(44)]),
         context_track_ids: vec![45, 46, 47],
+        context_items: Some(vec![
+            QueueItem::track(45),
+            QueueItem::track(46),
+            QueueItem::track(47),
+        ]),
         play_next_total: 2,
         context_total: 412,
     };
@@ -568,7 +574,9 @@ fn the_whole_runtime_snapshot_survives_a_dbus_round_trip() {
             revision: 9,
             current_track_id: Some(42),
             play_next_track_ids: vec![43],
+            play_next_items: Some(vec![QueueItem::track(43)]),
             context_track_ids: vec![44, 45],
+            context_items: Some(vec![QueueItem::track(44), QueueItem::track(45)]),
             play_next_total: 1,
             context_total: 2,
         },
@@ -598,7 +606,7 @@ fn the_whole_runtime_snapshot_survives_a_dbus_round_trip() {
 #[test]
 fn the_protocol_version_is_pinned() {
     assert_eq!(PROTOCOL_VERSION.major, 4);
-    assert_eq!(PROTOCOL_VERSION.minor, 2);
+    assert_eq!(PROTOCOL_VERSION.minor, 3);
 }
 
 /// The effects facet, pinned like the others: a client decodes by name, so a
@@ -633,11 +641,99 @@ fn the_queue_page_wire_field_names_are_the_checked_in_contract() {
         section: "context".into(),
         offset: 400,
         track_ids: vec![41, 42, 43],
+        items: Some(vec![
+            QueueItem::track(41),
+            QueueItem::track(42),
+            QueueItem::track(43),
+        ]),
         total: 4_000,
     };
     assert_eq!(round_trip(&page), page);
     assert_eq!(
         field_names(&page),
-        ["offset", "revision", "section", "total", "track_ids"]
+        [
+            "items",
+            "offset",
+            "revision",
+            "section",
+            "total",
+            "track_ids"
+        ]
     );
+}
+
+#[test]
+fn que_9_mixed_queue_adds_typed_items_without_widening_legacy_track_ids() {
+    let queue = QueueSnapshot {
+        revision: 9,
+        current_track_id: Some(42),
+        play_next_track_ids: vec![7, 8],
+        play_next_items: Some(vec![
+            QueueItem::track(7),
+            QueueItem::episode(7),
+            QueueItem::track(8),
+        ]),
+        context_track_ids: vec![9],
+        context_items: Some(vec![QueueItem::track(9)]),
+        play_next_total: 3,
+        context_total: 1,
+    };
+
+    let decoded = round_trip(&queue);
+    assert_eq!(decoded, queue);
+    assert_eq!(decoded.play_next_track_ids, vec![7, 8]);
+    assert_eq!(
+        decoded.play_next_items,
+        Some(vec![
+            QueueItem::track(7),
+            QueueItem::episode(7),
+            QueueItem::track(8),
+        ])
+    );
+    assert_eq!(
+        field_names(&decoded),
+        [
+            "context_items",
+            "context_total",
+            "context_track_ids",
+            "current_track_id",
+            "play_next_items",
+            "play_next_total",
+            "play_next_track_ids",
+            "revision",
+        ]
+    );
+}
+
+#[test]
+fn a_queue_snapshot_from_an_older_peer_decodes_with_empty_typed_items() {
+    #[derive(zvariant::SerializeDict, zvariant::Type)]
+    #[zvariant(signature = "a{sv}")]
+    struct LegacyQueueSnapshot {
+        revision: u64,
+        current_track_id: Option<i64>,
+        play_next_track_ids: Vec<i64>,
+        context_track_ids: Vec<i64>,
+        play_next_total: u64,
+        context_total: u64,
+    }
+
+    let legacy = LegacyQueueSnapshot {
+        revision: 9,
+        current_track_id: Some(42),
+        play_next_track_ids: vec![7, 8],
+        context_track_ids: vec![9],
+        play_next_total: 2,
+        context_total: 1,
+    };
+    let encoded =
+        zvariant::to_bytes(dbus_context(), &legacy).expect("legacy queue snapshot encodes");
+    let (decoded, _) = encoded
+        .deserialize::<QueueSnapshot>()
+        .expect("current queue snapshot decodes an older peer");
+
+    assert_eq!(decoded.play_next_track_ids, vec![7, 8]);
+    assert_eq!(decoded.context_track_ids, vec![9]);
+    assert_eq!(decoded.play_next_items, None);
+    assert_eq!(decoded.context_items, None);
 }

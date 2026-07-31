@@ -249,3 +249,57 @@ fn music_queue_rejects_tracks_that_are_absent_or_missing() {
         );
     }
 }
+
+#[test]
+fn que_9_music_queue_rejects_an_episode_id_as_a_track_id() {
+    use reprise_core::podcasts::feed::ParsedEpisode;
+    use reprise_core::podcasts::store::{self, NewSubscription};
+    use reprise_core::podcasts::PodcastKind;
+
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("reprise.db");
+    common::seed_tracks(&path, &[]);
+    let db = reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
+    let subscription_id = store::add_or_restore(
+        &db,
+        &NewSubscription {
+            kind: PodcastKind::Rss,
+            feed_url: "https://feeds.example.test/queue-validation".into(),
+            title: "Queue validation".into(),
+            author: None,
+            image_url: None,
+            auto_download: false,
+        },
+        100,
+    )
+    .unwrap();
+    let episode_id = store::upsert_episode(
+        &db,
+        subscription_id,
+        &ParsedEpisode {
+            guid: "episode-only-id".into(),
+            title: "Not a track".into(),
+            image_url: None,
+            audio_url: "https://audio.example.test/episode.mp3".into(),
+            page_url: None,
+            published_at: Some(200),
+            duration_secs: Some(1_800),
+        },
+        210,
+    )
+    .unwrap()
+    .expect("episode should be imported")
+    .episode_id;
+    drop(db);
+
+    let mut client = McpClient::start(&path);
+    let response = client.call_tool(
+        "music_queue",
+        json!({ "action": "add_next", "track_ids": [episode_id] }),
+    );
+    let text = tool_error_text(&response);
+    assert!(
+        text.contains("not present") && text.contains(&episode_id.to_string()),
+        "episode-only ids must remain invalid track ids: {text}"
+    );
+}

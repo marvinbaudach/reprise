@@ -1138,7 +1138,11 @@ human. Rationale for changes lives in the git history.
   never enter the automatic "Continuing from …" context, never earn a
   listen, and are never gaplessly pre-fed. POD-20 owns their shared
   playing marker and POD-21 owns their frozen queue-neighbour transport.
-  Radio remains excluded.
+  Radio remains excluded. Outward queue snapshots add typed item lists
+  alongside the legacy `*_track_ids` projections; those legacy fields
+  remain track-only and omit episodes. MPRIS identifies an episode under
+  `/org/reprise/Reprise/episode/{id}` and exposes title, show-as-artist
+  and length, but no album or rating.
 
 ## K. Filter & search visibility
 

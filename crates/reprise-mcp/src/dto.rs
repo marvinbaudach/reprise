@@ -451,14 +451,36 @@ pub struct QueueParams {
     pub track_ids: Option<Vec<i64>>,
 }
 
+/// Collision-safe identity of one item in a live queue response.
+#[cfg(feature = "mpris")]
+#[derive(Debug, Clone, Serialize)]
+pub struct QueueItemDto {
+    pub kind: String,
+    pub id: i64,
+}
+
+#[cfg(feature = "mpris")]
+impl From<reprise_runtime_protocol::queue::QueueItem> for QueueItemDto {
+    fn from(item: reprise_runtime_protocol::queue::QueueItem) -> Self {
+        Self {
+            kind: item.kind,
+            id: item.id,
+        }
+    }
+}
+
 /// Bounded live queue state. Totals describe the complete sections even when
-/// the returned id windows are capped.
+/// the returned item windows are capped.
 #[cfg(feature = "mpris")]
 #[derive(Debug, Clone, Serialize)]
 pub struct QueueStateDto {
     pub current_track_id: Option<i64>,
+    /// Legacy track-only projection. Episodes are omitted.
     pub play_next_track_ids: Vec<i64>,
+    pub play_next_items: Vec<QueueItemDto>,
+    /// Legacy track-only projection of the automatic context.
     pub context_track_ids: Vec<i64>,
+    pub context_items: Vec<QueueItemDto>,
     pub play_next_total: u64,
     pub context_total: u64,
 }

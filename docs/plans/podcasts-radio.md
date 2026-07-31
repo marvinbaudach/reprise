@@ -389,10 +389,11 @@ aussagekräftiger UA ist radio-browser-Pflicht — der bestehende UA-String erf�
 `MprisState` wächst um `live_stream: bool` und `external_ref: Option<String>` (Kennung
 `podcast/{id}` bzw. `radio/{id}`). Pure Prädikate angepasst + getestet: `can_pause`/`can_play`
 zählen `external_ref` als geladen; **`can_seek` = Track ODER (external ∧ !live_stream)**;
-`build_metadata` baut bei `external_ref` den trackid-Pfad `/org/reprise/Reprise/external/{ref}` und
-lässt **`mpris:length` bei `live_stream` weg**; `metadata_differs` sieht die neuen Felder
+`build_metadata` baut für Podcasts den trackid-Pfad `/org/reprise/Reprise/episode/{id}`, für
+andere externe Medien weiterhin `/org/reprise/Reprise/external/{ref}`, und lässt
+**`mpris:length` bei `live_stream` weg**; `metadata_differs` sieht die neuen Felder
 (ICY-Wechsel → PropertiesChanged). Radio: `xesam:title` = StreamTitle (Fallback Stationsname),
-`xesam:artist` = [Stationsname]; Podcast: Episodentitel / [Show].
+`xesam:artist` = [Stationsname]; Podcast: Episodentitel / [Show] / Länge, ohne Album oder Rating.
 
 Drei Schärfungen aus dem Grill (External sieht nach außen nie kaputt aus):
 

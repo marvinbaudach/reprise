@@ -529,8 +529,9 @@ impl RepriseServer {
         description = "Read or update the running Reprise Play Next queue. \
             Actions: status; add_next or add_last with track_ids; clear. Clear \
             removes only manual Play Next entries and preserves the playback \
-            context. Status returns at most 200 ids per section plus complete \
-            totals. Requires the 'playback:control' capability."
+            context. Status returns typed items plus legacy track-only id fields, \
+            at most 200 entries per section, and complete totals. Requires the \
+            'playback:control' capability."
     )]
     async fn music_queue(
         &self,
@@ -549,7 +550,7 @@ impl RepriseServer {
                 .map_err(|error| error::join_error(&error))?;
             return error::playback_structured_outcome(result, |state| {
                 format!(
-                    "{} Play Next and {} context track(s)",
+                    "{} Play Next and {} context item(s)",
                     state.play_next_total, state.context_total
                 )
             });
