@@ -3417,11 +3417,11 @@ listening statistics.
   loop.
 - **SRC-4** [active] [gtk] — Removal takes effect immediately, stays
   tombstoned for ten seconds, and is reversible via a high-priority
-  undo toast. Context menu and hover star offer the same destructive
-  action; "Play Next" and "Add to Queue" are entirely absent. Podcast
-  downloads are never silently deleted on unsubscribe: the commit
-  toast reports the files that were kept and offers only moving them
-  to trash; multiple unsubscribes are aggregated.
+  undo toast. The context menu is the single place to unsubscribe or remove a
+  favorite; there is no hover star. "Play Next" and "Add to Queue" are
+  entirely absent. Podcast downloads are never silently deleted on
+  unsubscribe: the commit toast reports the files that were kept and offers
+  only moving them to trash; multiple unsubscribes are aggregated.
 - **SRC-5** [active] [gtk] — RSS podcasts and YouTube are separate library
   places. Both start with source rows grouped by channel or show which expand
   to their episodes; radio stays a station list. The add dialogs show real
@@ -3521,6 +3521,16 @@ listening statistics.
   batch actions. Actions that are meaningless for more than one episode are
   hidden rather than applied to an arbitrary member, and a batch reports
   itself with a single aggregated toast and a single undo.
+- **SRC-13** [active] [gtk] — **Marking and scrolling are separate in the
+  source lists.** The loaded item carries the shared playback marker in every
+  source list it appears in; setting the marker never moves the viewport. It is
+  revealed — group expanded, row centered — on entering the view and when the
+  loaded item changed outside the view, the latter only if no scroll movement
+  has occurred for 1.5 seconds. Activating a row never reveals, because the row
+  was visible. A reveal changes neither focus nor selection. A collapsed
+  group's ten-episode preview window opens when the loaded episode sits past
+  it; an item hidden by the active filter is not revealed and the filter is
+  never cleared to reach it.
 - **POD-1** [active] [core] — Episode status is a pure derivation:
   Played exactly when `played_at` is set, otherwise Resume when
   `position_ms > 0`, otherwise unstarted. The visible New pill is a
@@ -3737,8 +3747,10 @@ listening statistics.
   tells running from paused. Activating the loaded row toggles pause and
   resume; it never reopens the session, because a restart costs an audible
   gap and resumes from the throttled saved position rather than the live
-  one. Only the context menu restarts an episode. Hovering the loaded row
-  replaces the marker with the glyph for what a click does next.
+  one. Only the context menu restarts an episode. The marker stays put under
+  the pointer: an episode row marks itself on hover the way a music row does,
+  through the shared hover tint alone, and its content does not change while
+  hovered.
 - **POD-21** [active] [gtk] — A playing podcast or YouTube episode has
   neighbours: ⏮/⏭ move to the adjacent row of the list it was started from,
   in rendered order, without wrapping. The neighbour list is frozen when
