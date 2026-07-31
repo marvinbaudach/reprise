@@ -2166,6 +2166,15 @@ property is set and yet nothing happens.
   and 5xx failures open a per-host circuit breaker after three failures for
   five minutes; a user retry bypasses cache and breaker. The Lyrics footer
   names the source and whether the result is synchronized.
+- **LYR-6** [active] [gtk] — With the Online Lyrics module enabled, a
+  cancellable serial background run fills the lyrics cache for the present
+  library after the cover batch and after completed library scans. Tracks
+  with local lyrics, complete positive cache entries, or fresh negative
+  entries are skipped; a cached plain result is retried for synchronized text
+  at most once per seven-day negative-TTL window. Provider requests keep at
+  least 250 ms between calls to the same host. The shared ScanControls card
+  reports checked, cached, and unavailable counts; if every provider breaker
+  is open, the run fails immediately while already cached entries remain.
 - **DISCOVER-1** [replaced by BROWSE-1] — Network features without a
   permanently visible surface of their own get exactly one subtle,
   dismissible inline hint at the location of the visible gap: covers from

@@ -22,16 +22,16 @@ fn cloned_slot<T: Clone>(slot: &RefCell<Option<T>>) -> Option<T> {
 }
 
 #[derive(Clone, Default)]
-pub(in crate::ui) struct ScanCompletion(Rc<RefCell<Option<OnScanComplete>>>);
+pub(in crate::ui) struct ScanCompletion(Rc<RefCell<Vec<OnScanComplete>>>);
 
 impl ScanCompletion {
     pub(in crate::ui) fn set(&self, callback: impl Fn() + 'static) {
-        self.0.borrow_mut().replace(Rc::new(callback));
+        self.0.borrow_mut().push(Rc::new(callback));
     }
 
     pub(in crate::ui) fn notify(&self) {
-        let callback = self.0.borrow().clone();
-        if let Some(callback) = callback {
+        let callbacks = self.0.borrow().clone();
+        for callback in callbacks {
             callback();
         }
     }
@@ -220,7 +220,7 @@ impl ScanControls {
         }
     }
 
-    pub(in crate::ui) fn show_cover_progress(&self, title: &str, detail: &str, fraction: f64) {
+    pub(in crate::ui) fn show_batch_progress(&self, title: &str, detail: &str, fraction: f64) {
         for view in self.live_progress_views() {
             view.show_batch(title, detail, fraction);
         }
@@ -231,6 +231,10 @@ impl ScanControls {
 
     pub(in crate::ui) fn set_on_complete(&self, callback: impl Fn() + 'static) {
         self.completion.set(callback);
+    }
+
+    pub(in crate::ui) fn cancellation(&self) -> ScanCancellation {
+        self.cancellation.clone()
     }
 
     pub(in crate::ui) fn notify_complete(&self) {

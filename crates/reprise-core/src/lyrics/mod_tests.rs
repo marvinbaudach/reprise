@@ -148,6 +148,36 @@ fn incomplete_plain_cache_retries_for_synced_instead_of_becoming_permanent() {
 }
 
 #[test]
+fn attempted_plain_upgrade_is_throttled_even_when_one_provider_fails() {
+    let temp = TempDir::new().unwrap();
+    let cached_plain = LyricsHit {
+        body: LyricsBody::Plain("cached fixture".into()),
+        source: LyricsSource::Lrclib,
+    };
+    cache::write_found(temp.path(), 100, &query(), &cached_plain, false);
+    let local = FixedProvider::new(LyricsSource::Tag, SourceOutcome::Skipped);
+    let lrclib = FixedProvider::new(LyricsSource::Lrclib, SourceOutcome::NotFound);
+    let netease = FixedProvider::new(LyricsSource::Netease, SourceOutcome::Failed);
+
+    assert_eq!(
+        load_or_fetch_at(
+            temp.path(),
+            101,
+            &query(),
+            None,
+            options(false),
+            &[&local],
+            &[&lrclib, &netease],
+        ),
+        Ok(cached_plain)
+    );
+    assert_eq!(
+        cache::needs_fetch_at(temp.path(), 102, &query()),
+        NeedsFetch::Skip
+    );
+}
+
+#[test]
 fn all_network_not_found_writes_negative_cache_but_mixed_failure_does_not() {
     let consensus = TempDir::new().unwrap();
     let local = FixedProvider::new(LyricsSource::Tag, SourceOutcome::Skipped);

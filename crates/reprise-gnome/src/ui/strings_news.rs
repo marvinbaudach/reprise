@@ -195,6 +195,9 @@ pub fn news_timestamp_date(timestamp: i64) -> String {
 pub const COVER_DOWNLOAD_CHECKING: &str = N_!("Checking missing album covers…");
 pub const COVER_DOWNLOAD_COMPLETE: &str = N_!("Cover check complete");
 pub const COVER_DOWNLOAD_FAILED: &str = N_!("Could not check album covers");
+pub const LYRICS_BATCH_CHECKING: &str = N_!("Checking missing lyrics…");
+pub const LYRICS_BATCH_COMPLETE: &str = N_!("Lyrics check complete");
+pub const LYRICS_BATCH_FAILED: &str = N_!("Could not check lyrics");
 
 pub fn cover_download_progress(
     checked: usize,
@@ -213,6 +216,23 @@ pub fn cover_download_progress(
             ("total", &total),
             ("downloaded", &downloaded),
             ("unavailable", &unavailable),
+        ],
+    )
+}
+
+pub fn lyrics_batch_progress(
+    checked: usize,
+    total: usize,
+    cached: usize,
+    unavailable: usize,
+) -> String {
+    formatted(
+        N_!("{checked} of {total} checked · {cached} cached · {unavailable} unavailable"),
+        &[
+            ("checked", &checked.to_string()),
+            ("total", &total.to_string()),
+            ("cached", &cached.to_string()),
+            ("unavailable", &unavailable.to_string()),
         ],
     )
 }

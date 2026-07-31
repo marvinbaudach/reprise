@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-31 09:09+0200\n"
+"POT-Creation-Date: 2026-07-31 09:24+0200\n"
 "PO-Revision-Date: 2026-07-20 11:38+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Bengali\n"
@@ -2155,11 +2155,29 @@ msgstr ""
 msgid "Could not check album covers"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:210
+#: crates/reprise-gnome/src/ui/strings_news.rs:198
+msgid "Checking missing lyrics…"
+msgstr "অনুপস্থিত গানের কথা পরীক্ষা করা হচ্ছে…"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:199
+msgid "Lyrics check complete"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:200
+msgid "Could not check lyrics"
+msgstr "গানের কথা পরীক্ষা করা যায়নি"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:213
 #, rust-format
 msgid ""
 "{checked} of {total} checked · {downloaded} downloaded · {unavailable} "
 "unavailable"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:230
+#, rust-format
+msgid ""
+"{checked} of {total} checked · {cached} cached · {unavailable} unavailable"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_online_sources.rs:12

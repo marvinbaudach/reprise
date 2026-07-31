@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::path::Path;
 
 use tempfile::TempDir;
@@ -139,4 +140,38 @@ fn provider_skips_an_open_breaker_unless_forced() {
         NeteaseProvider::new(&fetcher, &breaker, 4, true).lookup(&query(), None),
         SourceOutcome::Skipped
     );
+}
+
+struct RecordingFetcher {
+    timeouts: RefCell<Vec<Duration>>,
+}
+
+impl NeteaseFetcher for RecordingFetcher {
+    fn search(&self, _query: &LyricsQuery, timeout: Duration) -> FetchOutcome {
+        self.timeouts.borrow_mut().push(timeout);
+        FetchOutcome::Found(search_body(180_000))
+    }
+
+    fn lyric(&self, _id: u64, timeout: Duration) -> FetchOutcome {
+        self.timeouts.borrow_mut().push(timeout);
+        FetchOutcome::NotFound
+    }
+}
+
+#[test]
+fn two_request_lookup_shares_one_eight_second_source_budget() {
+    let fetcher = RecordingFetcher {
+        timeouts: RefCell::new(Vec::new()),
+    };
+    let breaker = Breaker::new(3, 300);
+
+    assert_eq!(
+        NeteaseProvider::new(&fetcher, &breaker, 100, false).lookup(&query(), None),
+        SourceOutcome::NotFound
+    );
+
+    let timeouts = fetcher.timeouts.borrow();
+    assert_eq!(timeouts.len(), 2);
+    assert_eq!(timeouts[0], HTTP_TIMEOUT);
+    assert!(timeouts[1] <= HTTP_TIMEOUT);
 }

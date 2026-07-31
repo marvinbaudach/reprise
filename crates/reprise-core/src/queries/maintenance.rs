@@ -166,6 +166,32 @@ pub fn query_live_track_paths(db: &Db) -> Result<Vec<String>, rusqlite::Error> {
     Ok(paths)
 }
 
+/// Returns the metadata and paths needed by background lyrics scheduling for
+/// every present library track in stable path order.
+pub fn query_live_track_summaries(db: &Db) -> Result<Vec<TrackSummary>, rusqlite::Error> {
+    let conn = db.conn();
+    let mut statement = conn.prepare(&format!(
+        "SELECT path, title, artist, album, album_artist, genre, artist_mbid,
+                year, duration_ms FROM tracks WHERE {PRESENT} ORDER BY path"
+    ))?;
+    let summaries = statement
+        .query_map([], |row| {
+            Ok(TrackSummary {
+                path: row.get(0)?,
+                title: row.get(1)?,
+                artist: row.get(2)?,
+                album: row.get(3)?,
+                album_artist: row.get(4)?,
+                genre: row.get(5)?,
+                artist_mbid: row.get(6)?,
+                year: row.get(7)?,
+                duration_ms: row.get(8)?,
+            })
+        })?
+        .collect();
+    summaries
+}
+
 /// Resolves exact titles to deterministic track ids. This is intended for
 /// synthetic smoke fixtures, so duplicate titles choose the lowest id and
 /// missing rows remain eligible exactly as they did in the original hook.

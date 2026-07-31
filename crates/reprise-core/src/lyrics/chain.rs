@@ -8,7 +8,6 @@ use super::{
 pub(super) struct ChainReport {
     pub(super) result: Result<LyricsHit, LyricsError>,
     pub(super) network_consensus_not_found: bool,
-    pub(super) network_complete: bool,
 }
 
 pub(super) fn run_chain(
@@ -25,22 +24,18 @@ pub(super) fn run_chain(
             return ChainReport {
                 result: Ok(result),
                 network_consensus_not_found: false,
-                network_complete: false,
             };
         }
     }
 
     let mut clean_not_found = !network_providers.is_empty();
-    let mut network_complete = !network_providers.is_empty();
     for provider in network_providers {
         let outcome = provider.lookup(query, track_path);
         clean_not_found &= matches!(outcome, SourceOutcome::NotFound);
-        network_complete &= matches!(outcome, SourceOutcome::Hit(_) | SourceOutcome::NotFound);
         if let Some(result) = consider_outcome(outcome, &mut first_plain, false) {
             return ChainReport {
                 result: Ok(result),
                 network_consensus_not_found: false,
-                network_complete,
             };
         }
     }
@@ -49,7 +44,6 @@ pub(super) fn run_chain(
         return ChainReport {
             result: Ok(hit),
             network_consensus_not_found: clean_not_found,
-            network_complete,
         };
     }
     ChainReport {
@@ -59,7 +53,6 @@ pub(super) fn run_chain(
             LyricsError::Temporary
         }),
         network_consensus_not_found: clean_not_found,
-        network_complete,
     }
 }
 

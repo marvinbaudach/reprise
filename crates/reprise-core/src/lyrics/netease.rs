@@ -27,8 +27,8 @@ enum FetchOutcome {
 }
 
 trait NeteaseFetcher {
-    fn search(&self, query: &LyricsQuery) -> FetchOutcome;
-    fn lyric(&self, id: u64) -> FetchOutcome;
+    fn search(&self, query: &LyricsQuery, timeout: Duration) -> FetchOutcome;
+    fn lyric(&self, id: u64, timeout: Duration) -> FetchOutcome;
 }
 
 struct ProductionFetcher;
@@ -83,7 +83,8 @@ impl LyricsProvider for NeteaseProvider<'_> {
         if !self.breaker.can_attempt(HOST, self.now, self.force) {
             return SourceOutcome::Skipped;
         }
-        let search = match self.fetcher.search(query) {
+        let started = Instant::now();
+        let search = match self.fetcher.search(query, HTTP_TIMEOUT) {
             FetchOutcome::Found(body) => body,
             FetchOutcome::NotFound => return self.not_found(),
             FetchOutcome::Failed(counts) => return self.failed(counts),
@@ -93,7 +94,10 @@ impl LyricsProvider for NeteaseProvider<'_> {
             Ok(None) => return self.not_found(),
             Err(()) => return self.failed(false),
         };
-        let lyric = match self.fetcher.lyric(id) {
+        let Some(remaining) = HTTP_TIMEOUT.checked_sub(started.elapsed()) else {
+            return self.failed(true);
+        };
+        let lyric = match self.fetcher.lyric(id, remaining) {
             FetchOutcome::Found(body) => body,
             FetchOutcome::NotFound => return self.not_found(),
             FetchOutcome::Failed(counts) => return self.failed(counts),
@@ -244,35 +248,38 @@ fn lyric_fixture_filename(id: u64) -> String {
 }
 
 impl NeteaseFetcher for FixtureFetcher<'_> {
-    fn search(&self, query: &LyricsQuery) -> FetchOutcome {
+    fn search(&self, query: &LyricsQuery, _timeout: Duration) -> FetchOutcome {
         read_fixture(self.directory.join(search_fixture_filename(query)))
     }
 
-    fn lyric(&self, id: u64) -> FetchOutcome {
+    fn lyric(&self, id: u64, _timeout: Duration) -> FetchOutcome {
         read_fixture(self.directory.join(lyric_fixture_filename(id)))
     }
 }
 
 impl NeteaseFetcher for ProductionFetcher {
-    fn search(&self, query: &LyricsQuery) -> FetchOutcome {
+    fn search(&self, query: &LyricsQuery, timeout: Duration) -> FetchOutcome {
         fixture_directory().map_or_else(
-            || search_url(query).map_or(FetchOutcome::Failed(false), |url| fetch_url(&url)),
-            |directory| FixtureFetcher::new(&directory).search(query),
+            || {
+                search_url(query)
+                    .map_or(FetchOutcome::Failed(false), |url| fetch_url(&url, timeout))
+            },
+            |directory| FixtureFetcher::new(&directory).search(query, timeout),
         )
     }
 
-    fn lyric(&self, id: u64) -> FetchOutcome {
+    fn lyric(&self, id: u64, timeout: Duration) -> FetchOutcome {
         fixture_directory().map_or_else(
-            || lyric_url(id).map_or(FetchOutcome::Failed(false), |url| fetch_url(&url)),
-            |directory| FixtureFetcher::new(&directory).lyric(id),
+            || lyric_url(id).map_or(FetchOutcome::Failed(false), |url| fetch_url(&url, timeout)),
+            |directory| FixtureFetcher::new(&directory).lyric(id, timeout),
         )
     }
 }
 
-fn fetch_url(url: &str) -> FetchOutcome {
+fn fetch_url(url: &str, timeout: Duration) -> FetchOutcome {
     wait_for_request_slot();
     let response = match ureq::Agent::config_builder()
-        .timeout_global(Some(HTTP_TIMEOUT))
+        .timeout_global(Some(timeout))
         .user_agent(crate::musicbrainz::user_agent())
         .build()
         .new_agent()

@@ -116,16 +116,14 @@ fn load_or_fetch_at(
                     cache::write_not_found(cache_dir, now, query);
                 }
             } else {
-                cache::write_found(cache_dir, now, query, &hit, report.network_complete);
+                cache::write_found(cache_dir, now, query, &hit, true);
             }
             Ok(hit)
         }
         Err(error) => {
             if let Some(CachedResult::Found(hit)) = cached.as_ref().map(|record| &record.result) {
                 let fallback = prefer_local_plain(local_plain, hit.clone());
-                if report.network_complete {
-                    cache::write_found(cache_dir, now, query, &fallback, true);
-                }
+                cache::write_found(cache_dir, now, query, &fallback, true);
                 return Ok(fallback);
             }
             if report.network_consensus_not_found {

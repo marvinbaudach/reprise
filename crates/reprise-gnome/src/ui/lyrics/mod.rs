@@ -1,3 +1,5 @@
+pub(in crate::ui) mod lyrics_batch;
+pub(in crate::ui) mod lyrics_batch_progress;
 pub(in crate::ui) mod lyrics_scroll;
 pub(in crate::ui) mod lyrics_smoke;
 pub(in crate::ui) mod lyrics_state;

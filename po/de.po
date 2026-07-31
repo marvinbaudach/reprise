@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-31 09:09+0200\n"
+"POT-Creation-Date: 2026-07-31 09:24+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Marvin Baudach\n"
 "Language-Team: German\n"
@@ -2224,13 +2224,33 @@ msgstr "Cover-Prüfung abgeschlossen"
 msgid "Could not check album covers"
 msgstr "Albumcover konnten nicht geprüft werden"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:210
+#: crates/reprise-gnome/src/ui/strings_news.rs:198
+msgid "Checking missing lyrics…"
+msgstr "Fehlende Songtexte werden geprüft…"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:199
+msgid "Lyrics check complete"
+msgstr "Songtext-Prüfung abgeschlossen"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:200
+msgid "Could not check lyrics"
+msgstr "Songtexte konnten nicht geprüft werden"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:213
 #, rust-format
 msgid ""
 "{checked} of {total} checked · {downloaded} downloaded · {unavailable} "
 "unavailable"
 msgstr ""
 "{checked} von {total} geprüft · {downloaded} heruntergeladen · {unavailable} "
+"nicht verfügbar"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:230
+#, rust-format
+msgid ""
+"{checked} of {total} checked · {cached} cached · {unavailable} unavailable"
+msgstr ""
+"{checked} von {total} geprüft · {cached} zwischengespeichert · {unavailable} "
 "nicht verfügbar"
 
 #: crates/reprise-gnome/src/ui/strings_online_sources.rs:12

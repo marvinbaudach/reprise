@@ -506,6 +506,7 @@ pub fn build(app: &adw::Application, conn: &Rc<Db>, db_path: &Path) -> FileOpenH
         player.as_ref(),
     );
     super::main_cover_download_progress::install(&scan_controls, &cover_batch);
+    let lyrics_batch = super::lyrics_batch_progress::build(conn, &scan_controls);
     let preferences = super::preferences::PreferencesContext::new(
         &window,
         conn,
@@ -582,6 +583,7 @@ pub fn build(app: &adw::Application, conn: &Rc<Db>, db_path: &Path) -> FileOpenH
         minimal_view: &minimal_view,
         preferences: &preferences,
         cover_batch: &cover_batch,
+        lyrics_batch: &lyrics_batch,
         first_run_decision,
         nav_history: &nav_history,
         content_nav: &content_nav,

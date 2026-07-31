@@ -48,7 +48,7 @@ fn hit(source: LyricsSource, body: LyricsBody) -> SourceOutcome {
 }
 
 #[test]
-fn synced_from_the_third_source_beats_plain_from_the_first() {
+fn lyr_5_synced_from_the_third_source_beats_plain_from_the_first() {
     let local = FakeProvider::new(
         LyricsSource::Tag,
         hit(LyricsSource::Tag, LyricsBody::Plain("tag text".into())),
