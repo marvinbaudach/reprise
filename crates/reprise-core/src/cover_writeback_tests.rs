@@ -100,6 +100,45 @@ fn cover_1_a_write_failure_is_silent_and_leaves_no_temporary_file() {
 }
 
 #[test]
+fn cover_1_an_album_whose_tracks_carry_embedded_art_gets_no_folder_cover() {
+    let album = TempDir::new().unwrap();
+    let track = album.path().join("song.flac");
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac"),
+        &track,
+    )
+    .unwrap();
+    embed_picture(&track);
+
+    assert_eq!(
+        write_album_cover(
+            &[album.path().to_path_buf()],
+            &image_bytes(image::ImageFormat::Jpeg),
+            "jpg"
+        ),
+        vec![CoverWrite::AlreadyPresent]
+    );
+    assert!(!album.path().join("cover.jpg").exists());
+}
+
+fn embed_picture(track: &std::path::Path) {
+    use lofty::prelude::*;
+
+    let mut tagged = lofty::read_from_path(track).unwrap();
+    tagged.primary_tag_mut().unwrap().push_picture(
+        lofty::picture::Picture::unchecked(image_bytes(image::ImageFormat::Png))
+            .pic_type(lofty::picture::PictureType::CoverFront)
+            .mime_type(lofty::picture::MimeType::Png)
+            .build(),
+    );
+    tagged
+        .primary_tag()
+        .unwrap()
+        .save_to_path(track, lofty::config::WriteOptions::default())
+        .unwrap();
+}
+
+#[test]
 fn cover_1_release_group_cover_without_local_album_directories_writes_nothing() {
     assert!(write_album_cover(&[], &image_bytes(image::ImageFormat::Png), "png").is_empty());
 }

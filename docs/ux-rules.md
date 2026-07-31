@@ -3107,11 +3107,17 @@ means deterministic and high-confidence, never „without review".
 
 - **COVER-1** [active] [core] — After a downloaded album cover has been
   published in the XDG cache, Reprise also writes `cover.<ext>` into every
-  existing directory represented by the live track paths of that album. The
-  extension comes from the validated image bytes. If any canonical folder
-  image (`cover`, `folder`, `front`, or `album` with a supported image
-  extension) already exists there, Reprise writes nothing and never
-  overwrites it — on filesystems without hard links (FAT, exFAT, NTFS, MTP)
+  existing directory represented by the live track paths of that album, but
+  only into a directory that holds no other album: in a flat library or a
+  compilation dump, where one folder answers for several albums, nothing is
+  written. The extension comes from the validated image bytes. Reprise only
+  fills gaps, so an album that already has artwork gets no file: if any
+  canonical folder image (`cover`, `folder`, `front`, or `album` with a
+  supported image extension) exists there, or any track in that directory
+  carries an embedded picture — including the differing-embedded-art case of
+  `BROWSE-10`, which is a cache canonicalization, not a missing cover —
+  Reprise writes nothing and never overwrites it. On filesystems without
+  hard links (FAT, exFAT, NTFS, MTP)
   the file is created exclusively instead of published atomically, which
   still cannot replace one. Every filesystem failure is logged
   but otherwise silent, so the cached download remains successful. The write
