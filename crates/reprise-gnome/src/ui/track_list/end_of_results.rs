@@ -49,7 +49,7 @@ fn recompute(
         &search,
         &browse,
         shared.browse_bar.exclude_ai(),
-    ) && !crate::ui::browse::filter_restriction::scope_restricts(&source);
+    ) && !crate::ui::browse::filter_restriction::has_place_pill(&source);
     let counts = shared.browse_bar.result_count();
     let filtered = shared.model.n_items() as usize;
     let Some((_, total)) = counts.filter(|_| restricted && filtered >= 1) else {

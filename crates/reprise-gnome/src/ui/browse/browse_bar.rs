@@ -443,11 +443,12 @@ impl BrowseBar {
         let source = self.source.borrow().clone();
         let filters_restrict =
             super::filter_restriction::filters_restrict(&search, &filter, exclude_ai);
-        let restricted =
-            super::filter_restriction::is_restricted(&search, &filter, exclude_ai, &source);
+        let restricted = super::filter_restriction::is_restricted(&search, &filter, exclude_ai);
+        let has_place_pill = super::filter_restriction::has_place_pill(&source);
         let visible = super::filter_restriction::row_visible(
             self.track_source.get(),
             restricted,
+            has_place_pill,
             self.preference_visible.get(),
         );
         self.root.set_visible(visible);
@@ -524,12 +525,12 @@ impl BrowseBar {
         self.scope_button.borrow_mut().take();
         self.chips.remove_all();
         let source = self.source.borrow().clone();
-        if let Some(scope) = super::filter_restriction::scope_chip_label(&source) {
+        if let Some(scope) = super::filter_restriction::place_pill_label(&source) {
             let button = gtk4::Button::with_label(&format!("{scope}  ×"));
             button.add_css_class("flat");
             button.add_css_class(CHIP_CSS_CLASS);
             button.set_size_request(20, 20);
-            let remove_label = filter_strings::remove_scope_label(&scope);
+            let remove_label = filter_strings::leave_place_label(&scope);
             button.set_tooltip_text(Some(&remove_label));
             button.update_property(&[gtk4::accessible::Property::Label(&remove_label)]);
             let weak = Rc::downgrade(self);

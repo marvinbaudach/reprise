@@ -27,7 +27,7 @@ pub(in crate::ui) fn update(
         bar.hide_result_count();
         return;
     }
-    let restricted = super::filter_restriction::is_restricted(search, browse, exclude_ai, source);
+    let restricted = super::filter_restriction::is_restricted(search, browse, exclude_ai);
     let total = source_total(conn, source, restricted, count, queue_ids);
     match total {
         Ok(total) => bar.set_result_count(count, total),
@@ -48,7 +48,7 @@ fn source_total(
     if !restricted || matches!(source, ViewSource::Queue) {
         return Ok(count);
     }
-    let total_source = if super::filter_restriction::scope_restricts(source) {
+    let total_source = if super::filter_restriction::has_place_pill(source) {
         ViewSource::Library
     } else {
         source.clone()
