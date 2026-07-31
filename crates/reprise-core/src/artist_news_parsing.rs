@@ -98,21 +98,58 @@ pub struct ReleaseGroupPage {
     pub next_offset: Option<usize>,
 }
 
+pub(crate) struct PrimaryArtistReleaseGroupPage {
+    pub page: ReleaseGroupPage,
+    pub excluded_release_group_mbids: Vec<String>,
+}
+
 pub fn parse_release_group_page(
     json: &str,
     today: NaiveDate,
     include_singles: bool,
 ) -> Option<ReleaseGroupPage> {
+    parse_release_group_page_for_artist(json, today, include_singles, None)
+        .map(|parsed| parsed.page)
+}
+
+pub(crate) fn parse_release_group_page_for_primary_artist(
+    json: &str,
+    today: NaiveDate,
+    include_singles: bool,
+    artist_mbid: &str,
+) -> Option<PrimaryArtistReleaseGroupPage> {
+    parse_release_group_page_for_artist(json, today, include_singles, Some(artist_mbid))
+}
+
+fn parse_release_group_page_for_artist(
+    json: &str,
+    today: NaiveDate,
+    include_singles: bool,
+    artist_mbid: Option<&str>,
+) -> Option<PrimaryArtistReleaseGroupPage> {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
         return None;
     };
     let groups = value
         .get("release-groups")
         .and_then(serde_json::Value::as_array)?;
-    let mut items = groups
-        .iter()
-        .filter_map(|group| parse_release_group(group, today, include_singles))
-        .collect::<Vec<_>>();
+    let mut items = Vec::new();
+    let mut excluded_release_group_mbids = Vec::new();
+    for group in groups {
+        let credit_matches = match artist_mbid {
+            Some(artist_mbid) => primary_artist_credit_matches(group, artist_mbid),
+            None => true,
+        };
+        if !credit_matches {
+            if let Some(mbid) = group.get("id").and_then(serde_json::Value::as_str) {
+                excluded_release_group_mbids.push(mbid.to_string());
+            }
+            continue;
+        }
+        if let Some(item) = parse_release_group(group, today, include_singles) {
+            items.push(item);
+        }
+    }
     items.sort_by(|(left, left_date), (right, right_date)| {
         compare_news(left, *left_date, right, *right_date)
     });
@@ -130,7 +167,52 @@ pub fn parse_release_group_page(
             let next = offset.saturating_add(groups.len());
             (next < total && !groups.is_empty()).then_some(next)
         });
-    Some(ReleaseGroupPage { items, next_offset })
+    Some(PrimaryArtistReleaseGroupPage {
+        page: ReleaseGroupPage { items, next_offset },
+        excluded_release_group_mbids,
+    })
+}
+
+fn primary_artist_credit_matches(group: &serde_json::Value, artist_mbid: &str) -> bool {
+    let Some(credits) = group
+        .get("artist-credit")
+        .and_then(serde_json::Value::as_array)
+    else {
+        // A release-group browse is already scoped to the artist. Preserve
+        // compatibility with incomplete responses while using explicit
+        // credits whenever MusicBrainz supplies them.
+        return true;
+    };
+    let mut guest_section = false;
+    for credit in credits {
+        let matches_artist = credit
+            .get("artist")
+            .and_then(|artist| artist.get("id"))
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|id| id.eq_ignore_ascii_case(artist_mbid));
+        if matches_artist {
+            return !guest_section;
+        }
+        if credit
+            .get("joinphrase")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(joinphrase_starts_guest_section)
+        {
+            guest_section = true;
+        }
+    }
+    false
+}
+
+fn joinphrase_starts_guest_section(joinphrase: &str) -> bool {
+    let marker = joinphrase
+        .trim()
+        .trim_start_matches(|character: char| !character.is_ascii_alphabetic())
+        .to_ascii_lowercase();
+    marker.starts_with("feat")
+        || marker == "ft"
+        || marker.starts_with("ft.")
+        || marker.starts_with("ft ")
 }
 
 pub fn parse_release_track_count(json: &str) -> Option<i64> {
