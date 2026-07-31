@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-31 10:35+0200\n"
+"POT-Creation-Date: 2026-07-31 12:05+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Marvin Baudach\n"
 "Language-Team: German\n"
@@ -4946,8 +4946,8 @@ msgstr "Suche entfernen: {query}"
 
 #: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:57
 #, rust-format
-msgid "Leave scope: {scope}"
-msgstr "Filter verlassen: {scope}"
+msgid "Leave {place}"
+msgstr "{place} verlassen"
 
 #: crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs:67
 #, rust-format
@@ -5034,6 +5034,10 @@ msgstr "Chromium (CSD)"
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:18
 msgid "Separate title bar"
 msgstr "Separate Titelleiste"
+
+#, rust-format
+#~ msgid "Leave scope: {scope}"
+#~ msgstr "Filter verlassen: {scope}"
 
 #~ msgid "Experimental"
 #~ msgstr "Experimentell"
