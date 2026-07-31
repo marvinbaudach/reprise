@@ -4,15 +4,95 @@
 
 use super::*;
 use crate::ui::podcasts::podcasts_playback::episode_mark_requires_render;
+use crate::ui::podcasts::podcasts_reveal;
+use crate::ui::source_reveal::{self, LoadedItemChange, RevealPolicy};
 
 impl PodcastsView {
     pub(in crate::ui) fn set_playing_episode(&self, mark: Option<EpisodeMark>) {
         let previous = self.playing_episode.replace(mark);
-        if episode_mark_requires_render(previous, mark) {
-            self.render();
-        } else if previous != mark {
-            self.restyle_playing_episode(mark);
+        if !episode_mark_requires_render(previous, mark) {
+            if previous != mark {
+                self.restyle_playing_episode(mark);
+            }
+            return;
         }
+        self.render();
+        let change = if self.activating_here.get() {
+            LoadedItemChange::ActivatedHere
+        } else {
+            LoadedItemChange::ChangedElsewhere
+        };
+        self.reveal_loaded_episode(change);
+    }
+
+    pub(super) fn install_reveal_tracking(self: &Rc<Self>) {
+        let weak = Rc::downgrade(self);
+        self.scroller.vadjustment().connect_value_changed(move |_| {
+            if let Some(view) = weak.upgrade() {
+                view.last_scroll_activity
+                    .set(Some(std::time::Instant::now()));
+            }
+        });
+
+        let weak = Rc::downgrade(self);
+        self.root.connect_map(move |_| {
+            if let Some(view) = weak.upgrade() {
+                view.reveal_loaded_episode(LoadedItemChange::ViewEntered);
+            }
+        });
+    }
+
+    /// `SRC-13`: expands and centers the loaded episode without changing
+    /// focus or selection.
+    fn reveal_loaded_episode(&self, change: LoadedItemChange) {
+        let user_scrolling = source_reveal::is_user_scrolling(self.last_scroll_activity.get());
+        if source_reveal::reveal_policy(change, user_scrolling) == RevealPolicy::MarkerOnly {
+            return;
+        }
+        let Some(mark) = self.playing_episode.get() else {
+            return;
+        };
+        let window_expanded = {
+            let expanded = self.expanded_episode_sources.borrow();
+            let groups = self.groups.borrow();
+            let Some(target) = podcasts_reveal::reveal_target(&groups, mark.id, false) else {
+                return;
+            };
+            expanded.contains(&target.subscription_id)
+        };
+        let target = {
+            let groups = self.groups.borrow();
+            podcasts_reveal::reveal_target(&groups, mark.id, window_expanded)
+        };
+        let Some(target) = target else {
+            return;
+        };
+        let mut structure_changed = self
+            .expanded_sources
+            .borrow_mut()
+            .insert(target.subscription_id);
+        if target.needs_full_window {
+            structure_changed |= self
+                .expanded_episode_sources
+                .borrow_mut()
+                .insert(target.subscription_id);
+        }
+        if structure_changed {
+            self.render();
+        }
+        let row = self
+            .download_widgets
+            .borrow()
+            .get(&mark.id)
+            .map(|widgets| widgets.root.clone());
+        let Some(row) = row else {
+            return;
+        };
+        podcasts_reveal::center_row(
+            &self.scroller,
+            row.upcast_ref::<gtk4::Widget>(),
+            &self.reveal_animation,
+        );
     }
 
     /// A pause or resume of the episode already on screen: only the marker

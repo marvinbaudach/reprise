@@ -31,6 +31,16 @@ fn episode(id: i64, duration_secs: Option<i64>) -> EpisodeRow {
     }
 }
 
+/// `POD-20`: channel detail keeps its persistent thumbnail play glyph, but
+/// does not swap the loaded marker under the pointer.
+#[test]
+fn pod_20_channel_detail_keeps_its_play_glyph_without_a_hover_swap() {
+    let source = include_str!("youtube_channel_detail.rs");
+
+    assert!(source.contains("media-playback-start-symbolic"));
+    assert!(!source.contains("install_playback_hover"));
+}
+
 #[test]
 fn pod_10_channel_opens_with_latest_ten_long_form_videos() {
     let episodes = (1..=12)

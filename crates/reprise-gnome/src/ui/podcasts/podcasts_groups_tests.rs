@@ -312,9 +312,11 @@ fn src_12_grouped_selection_survives_render_rebuild_with_a_keyboard_checkbox() {
     }
 }
 
+/// `SRC-4b`: unsubscribing has exactly one place to operate it — the context
+/// menu. The hover star duplicated the same destructive action on this row.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn src_4b_grouped_source_keeps_the_hover_star_unsubscribe_action() {
+fn src_4b_the_group_header_offers_no_second_unsubscribe_control() {
     gtk4::init().unwrap();
     let group = SourceGroup {
         subscription_id: 7,
@@ -325,7 +327,7 @@ fn src_4b_grouped_source_keeps_the_hover_star_unsubscribe_action() {
         sync_to_phone: false,
         episodes: Vec::new(),
     };
-    let (header, star) = group_header(
+    let header = group_header(
         &group,
         &SourceSummary {
             episode_count: 0,
@@ -338,21 +340,33 @@ fn src_4b_grouped_source_keeps_the_hover_star_unsubscribe_action() {
         false,
     );
     let header = header.downcast::<gtk4::Box>().unwrap();
-    let menu = header
+    let buttons = descendants(header.upcast_ref())
+        .into_iter()
+        .filter_map(|widget| widget.downcast::<gtk4::Button>().ok())
+        .collect::<Vec<_>>();
+    assert!(buttons
+        .iter()
+        .all(|button| button.action_name().as_deref() != Some("podcasts.unsubscribe")));
+    assert!(header
         .last_child()
         .and_downcast::<gtk4::MenuButton>()
-        .unwrap();
-    assert_eq!(menu.prev_sibling().as_ref(), Some(star.upcast_ref()));
-    let icon = star.child().and_downcast::<gtk4::Image>().unwrap();
-    let expander = gtk4::Expander::new(None);
-    reveal_unsubscribe_on_hover_or_focus(&expander, &star);
+        .is_some());
+}
 
-    assert_eq!(icon.icon_name().as_deref(), Some("starred-symbolic"));
-    assert_eq!(star.opacity(), 0.0);
-    assert!(star.is_focusable());
-    assert!(expander.observe_controllers().n_items() > 0);
-    assert!(star.has_css_class("accent"));
-    assert_eq!(star.action_name().as_deref(), Some("podcasts.unsubscribe"));
+/// `SRC-4b`: source-level unsubscribe lives in the context menu model, and
+/// nowhere else in this module.
+#[test]
+fn src_4b_unsubscribe_exists_only_as_a_menu_action() {
+    let source = include_str!("podcasts_groups.rs");
+
+    assert!(
+        !source.contains("starred-symbolic"),
+        "the hover star is gone from the grouped source header"
+    );
+    assert!(
+        !source.contains("reveal_unsubscribe_on_hover_or_focus"),
+        "with no star there is nothing to reveal on hover"
+    );
 }
 
 /// `SRC-11` / `NET-1a`: the library group header is one of the source
@@ -371,7 +385,7 @@ fn src_11_group_header_stays_on_the_fallback_when_images_are_not_allowed() {
         sync_to_phone: false,
         episodes: Vec::new(),
     };
-    let (header, _) = group_header(
+    let header = group_header(
         &group,
         &SourceSummary {
             episode_count: 0,
@@ -457,7 +471,6 @@ fn pod_13_a_failed_download_offers_a_sensitive_retry_action() {
         status: gtk4::Box::new(gtk4::Orientation::Vertical, 0),
         action: gtk4::Button::new(),
         marker: gtk4::Box::new(gtk4::Orientation::Horizontal, 0),
-        play_glyph: gtk4::Image::new(),
     };
 
     update_download_state(

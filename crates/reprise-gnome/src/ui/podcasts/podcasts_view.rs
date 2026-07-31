@@ -107,6 +107,10 @@ pub(in crate::ui) struct PodcastsView {
     selection: Rc<RefCell<PodcastSelection>>,
     download_states: Rc<RefCell<BTreeMap<i64, DownloadState>>>,
     download_widgets: RefCell<BTreeMap<i64, podcasts_groups::DownloadRowWidgets>>,
+    scroller: gtk4::ScrolledWindow,
+    last_scroll_activity: Cell<Option<std::time::Instant>>,
+    reveal_animation: Rc<RefCell<Option<adw::TimedAnimation>>>,
+    activating_here: Cell<bool>,
     playing_episode: Cell<Option<EpisodeMark>>,
     unavailable_episode: Cell<Option<i64>>,
     generation: Cell<u64>,
@@ -221,6 +225,10 @@ impl PodcastsView {
             selection: Rc::new(RefCell::new(PodcastSelection::default())),
             download_states: Rc::new(RefCell::new(BTreeMap::new())),
             download_widgets: RefCell::new(BTreeMap::new()),
+            scroller,
+            last_scroll_activity: Cell::new(None),
+            reveal_animation: Rc::new(RefCell::new(None)),
+            activating_here: Cell::new(false),
             playing_episode: Cell::new(None),
             unavailable_episode: Cell::new(None),
             generation: Cell::new(0),
@@ -231,6 +239,7 @@ impl PodcastsView {
         });
         view.install_actions();
         view.wire_controls(&refresh);
+        view.install_reveal_tracking();
         let weak = Rc::downgrade(&view);
         view.empty_state.connect_add(move || {
             if let Some(view) = weak.upgrade() {

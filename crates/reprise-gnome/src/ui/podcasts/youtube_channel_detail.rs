@@ -22,7 +22,6 @@ use super::podcasts_playback::EpisodeMark;
 use super::podcasts_presentation::{
     detail_line, duration, on_phone, relative_date, status_pill, RenderedSourceGroup,
 };
-use super::podcasts_row_interaction::install_playback_hover;
 use super::podcasts_selection;
 use crate::ui::playing_marker;
 use crate::ui::strings;
@@ -570,7 +569,6 @@ impl YoutubeChannelDetail {
         play_glyph.set_opacity(if loaded { 0.0 } else { 1.0 });
         play_surface.add_overlay(&play_glyph);
         play.set_child(Some(&play_surface));
-        install_playback_hover(&play, &marker, &play_glyph, if loaded { 0.0 } else { 1.0 });
         row.append(&play);
         let copy = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
         copy.set_hexpand(true);
@@ -602,7 +600,6 @@ impl YoutubeChannelDetail {
             status,
             action,
             marker,
-            play_glyph,
         };
         let state = self
             .download_states

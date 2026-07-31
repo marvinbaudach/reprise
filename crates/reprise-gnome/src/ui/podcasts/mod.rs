@@ -21,6 +21,7 @@ mod podcasts_model;
 mod podcasts_playback;
 mod podcasts_presentation;
 mod podcasts_removal;
+mod podcasts_reveal;
 mod podcasts_row_interaction;
 mod podcasts_row_state;
 mod podcasts_scroller;

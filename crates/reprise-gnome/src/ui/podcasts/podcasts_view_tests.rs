@@ -403,3 +403,38 @@ fn pod_19_an_unreadable_library_says_so_without_printing_the_query() {
         "the failing statement must never reach the footer, got: {status}"
     );
 }
+
+/// `SRC-13`: the reveal must hang off the loaded-episode *identity*, not off
+/// every external snapshot. Phase changes (Resolving → Playing → Paused) all
+/// arrive through the same callback, and centering on each of them would move
+/// the list under the reader on every pause tap.
+#[test]
+fn src_13_reveal_is_driven_by_the_episode_identity_not_the_snapshot() {
+    let source = include_str!("podcasts_view_marker.rs");
+
+    assert!(
+        source.contains("episode_mark_requires_render"),
+        "the reveal must reuse the identity predicate, not re-derive one"
+    );
+    assert!(
+        source.contains("LoadedItemChange::ChangedElsewhere"),
+        "an episode changed outside this view is the reveal case"
+    );
+    assert!(
+        source.contains("source_reveal::reveal_policy"),
+        "the view must ask the shared policy instead of deciding locally"
+    );
+}
+
+/// `SRC-13`: revealing is the shared policy's call. A second predicate in the
+/// view would be the same duplicated-decision class of bug that made a restart
+/// pass for a toggle.
+#[test]
+fn src_13_the_view_holds_no_second_reveal_predicate() {
+    let source = include_str!("podcasts_view_marker.rs");
+
+    assert!(
+        !source.contains("USER_SCROLL_GRACE"),
+        "the grace period belongs to source_reveal, not to this view"
+    );
+}
