@@ -77,7 +77,7 @@ pub(in crate::ui) fn wire(player: Option<&Rc<PlayerController>>, track_list: &Rc
         return;
     };
     let track_list_for_current = Rc::downgrade(track_list);
-    player.set_on_current_track_changed(move |track_id, queue_position, change| {
+    player.add_on_current_track_changed(move |track_id, queue_position, change| {
         match track_list_for_current.upgrade() {
             Some(track_list) => {
                 track_list.update_current_track(track_id, queue_position, change);
@@ -90,7 +90,7 @@ pub(in crate::ui) fn wire(player: Option<&Rc<PlayerController>>, track_list: &Rc
     });
 
     let track_list_for_state = Rc::downgrade(track_list);
-    player.set_on_playback_state_changed(move |state| {
+    player.add_on_playback_state_changed(move |state| {
         if let Some(track_list) = track_list_for_state.upgrade() {
             track_list.on_playback_state(state);
         } else {
@@ -100,11 +100,17 @@ pub(in crate::ui) fn wire(player: Option<&Rc<PlayerController>>, track_list: &Rc
 }
 
 impl PlayerController {
-    pub(in crate::ui) fn set_on_current_track_changed(
+    /// Adds a loaded-track listener. Appends rather than replaces: every
+    /// surface that carries the shared playback marker registers here, and
+    /// NAV-10a requires all of them to be told, not just the last one to
+    /// register.
+    pub(in crate::ui) fn add_on_current_track_changed(
         &self,
         callback: impl Fn(i64, Option<usize>, CurrentTrackChange) + 'static,
     ) {
-        *self.current_track_changed.borrow_mut() = Some(Rc::new(callback));
+        self.current_track_changed
+            .borrow_mut()
+            .push(Rc::new(callback));
     }
 
     pub(in crate::ui) fn notify_current_track_changed(
@@ -113,25 +119,29 @@ impl PlayerController {
         queue_position: Option<usize>,
         change: CurrentTrackChange,
     ) {
-        let callback = self.current_track_changed.borrow().clone();
-        if let Some(callback) = callback {
+        let callbacks = self.current_track_changed.borrow().clone();
+        for callback in callbacks {
             callback(track_id, queue_position, change);
         }
     }
 
-    pub(in crate::ui) fn set_on_playback_state_changed(
+    /// Adds a playback-state listener — the `add_on_current_track_changed`
+    /// counterpart for the running/paused half of the marker.
+    pub(in crate::ui) fn add_on_playback_state_changed(
         &self,
         callback: impl Fn(PlaybackState) + 'static,
     ) {
-        *self.playback_state_changed.borrow_mut() = Some(Rc::new(callback));
+        self.playback_state_changed
+            .borrow_mut()
+            .push(Rc::new(callback));
     }
 
     /// Fans a coarse playback-state change out to registered listeners.
     /// Clones callbacks out of their `RefCell`s before invoking — never holds
     /// borrows across calls — per this project's reentrancy discipline.
     pub(in crate::ui) fn notify_playback_state_changed(&self, state: PlaybackState) {
-        let callback = self.playback_state_changed.borrow().clone();
-        if let Some(callback) = callback {
+        let callbacks = self.playback_state_changed.borrow().clone();
+        for callback in callbacks {
             callback(state);
         }
         let panel_callback = self.now_playing_panel_state_changed.borrow().clone();

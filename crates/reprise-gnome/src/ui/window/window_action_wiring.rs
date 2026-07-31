@@ -167,6 +167,28 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
         });
     }
     {
+        // `STATS-18`: the marked row pauses and resumes through the very
+        // transport the player bar and Space use — no stats-local pause path.
+        let player = player.as_ref().map(Rc::downgrade);
+        stats_view.set_on_toggle_pause(move || {
+            if let Some(player) = player.as_ref().and_then(Weak::upgrade) {
+                player.toggle_pause();
+            }
+        });
+    }
+    if let Some(player) = player.as_ref() {
+        // `STATS-18`/NAV-10a: the songs card is a second surface showing the
+        // loaded track, so it listens on the same fan-out as the track table.
+        let marker = stats_view.playback_marker();
+        player.add_on_current_track_changed(move |track_id, _, _| {
+            marker.set_loaded_track(track_id);
+        });
+        let marker = stats_view.playback_marker();
+        player.add_on_playback_state_changed(move |state| {
+            marker.set_playback_state(state);
+        });
+    }
+    {
         let player = player.as_ref().map(Rc::downgrade);
         stats_view.set_on_play_next(move |track_id| {
             if let Some(player) = player.as_ref().and_then(Weak::upgrade) {

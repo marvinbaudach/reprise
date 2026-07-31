@@ -13,6 +13,7 @@ use reprise_core::library::group_key::GroupKind;
 use reprise_core::library::stats_period::StatsPeriod;
 use reprise_core::library::stats_screen::group_track_ids;
 use reprise_core::library::stats_snapshot::{self, StatsSnapshot};
+use reprise_core::playback::PlaybackState;
 
 use super::stats_band_card::StatsBandCard;
 use super::stats_entrance::{HorizontalBarGroup, StatsEntrance};
@@ -46,6 +47,29 @@ const SECTION_ORDER: [&str; 6] = [
 
 type StringCallback = Rc<RefCell<Option<Rc<dyn Fn(String)>>>>;
 type IdsCallback = Rc<RefCell<Option<Rc<dyn Fn(Vec<i64>)>>>>;
+
+/// The stats page's end of the shared playback marker: what the player's
+/// loaded-track and playback-state fan-outs push into. Weak, so a page that is
+/// gone silently stops being marked instead of being kept alive by the player.
+#[derive(Clone)]
+pub(in crate::ui) struct StatsPlaybackMarker(std::rc::Weak<RenderParts>);
+
+impl StatsPlaybackMarker {
+    /// Moves the marker onto the newly loaded track.
+    pub(in crate::ui) fn set_loaded_track(&self, track_id: i64) {
+        if let Some(render) = self.0.upgrade() {
+            render.songs_card.set_loaded_track(track_id);
+        }
+    }
+
+    /// Freezes the marker on pause, drops it on stop — the same coarse signal
+    /// the track table acts on, so the two surfaces cannot disagree.
+    pub(in crate::ui) fn set_playback_state(&self, state: PlaybackState) {
+        if let Some(render) = self.0.upgrade() {
+            render.songs_card.set_playback_state(state);
+        }
+    }
+}
 #[derive(Clone)]
 pub(in crate::ui) struct StatsView {
     root: gtk4::ScrolledWindow,
@@ -348,6 +372,18 @@ impl StatsView {
 
     pub(in crate::ui) fn set_on_play_track(&self, callback: impl Fn(i64) + 'static) {
         self.render.songs_card.set_on_play_track(callback);
+    }
+
+    pub(in crate::ui) fn set_on_toggle_pause(&self, callback: impl Fn() + 'static) {
+        self.render.songs_card.set_on_toggle_pause(callback);
+    }
+
+    /// A weak, clonable handle for the player's marker fan-out. The view
+    /// itself is borrowed for the duration of wiring only, while the player's
+    /// callbacks outlive that borrow — and holding the page weakly keeps a
+    /// long-lived player callback from owning the whole stats page.
+    pub(in crate::ui) fn playback_marker(&self) -> StatsPlaybackMarker {
+        StatsPlaybackMarker(Rc::downgrade(&self.render))
     }
 
     pub(in crate::ui) fn set_on_play_next(&self, callback: impl Fn(i64) + 'static) {

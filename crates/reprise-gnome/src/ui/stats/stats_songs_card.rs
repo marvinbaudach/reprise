@@ -11,8 +11,10 @@ use reprise_core::cover::ThumbnailSize;
 use reprise_core::format::format_thousands;
 use reprise_core::library::stats_screen::TopTrack;
 use reprise_core::library::stats_snapshot::{SortBy, StatsSnapshot};
+use reprise_core::playback::PlaybackState;
 
 use super::stats_metadata_links::{self, MetadataCallback, StatsMetadataTarget};
+use super::stats_songs_playback::{self, Activation, SongRowPlayback, TrackMark};
 use super::stats_view_widgets::{card, clear, label};
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::strings;
@@ -21,6 +23,12 @@ const SONG_ROW_LIMIT: usize = 6;
 const FULL_TRACK_LIMIT: usize = 10;
 
 type IdCallback = Rc<RefCell<Option<Rc<dyn Fn(i64)>>>>;
+type VoidCallback = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
+/// The loaded track as both song lists see it. Shared by `Rc` so a mark
+/// arriving between renders reaches the rows that already exist and the rows
+/// built afterwards alike — a re-render reads this, it never re-derives it.
+type SharedMark = Rc<Cell<Option<TrackMark>>>;
+type RowPlaybacks = Rc<RefCell<Vec<Rc<SongRowPlayback>>>>;
 
 #[derive(Clone, Default)]
 struct CoverGenerations {
@@ -48,15 +56,19 @@ struct SummaryRenderer {
     generations: CoverGenerations,
     metadata: MetadataCallback,
     on_play_track: IdCallback,
+    on_toggle_pause: VoidCallback,
     on_play_next: IdCallback,
     on_add_to_queue: IdCallback,
     context_actions: Rc<RefCell<Vec<gio::SimpleActionGroup>>>,
+    mark: SharedMark,
+    playbacks: RowPlaybacks,
 }
 
 #[derive(Clone)]
 pub(in crate::ui) struct StatsSongsCard {
     root: gtk4::Box,
     summary: SummaryRenderer,
+    full_playbacks: RowPlaybacks,
     #[cfg_attr(not(test), allow(dead_code))]
     revealer: gtk4::Revealer,
     #[cfg_attr(not(test), allow(dead_code))]
@@ -122,12 +134,15 @@ impl StatsSongsCard {
         let sort_by = Rc::new(Cell::new(SortBy::Plays));
         let cover_generations = CoverGenerations::default();
         let on_play_track: IdCallback = Rc::new(RefCell::new(None));
+        let on_toggle_pause: VoidCallback = Rc::new(RefCell::new(None));
         let on_play_next: IdCallback = Rc::new(RefCell::new(None));
         let on_add_to_queue: IdCallback = Rc::new(RefCell::new(None));
         let context_actions = Rc::new(RefCell::new(Vec::new()));
         let play_buttons = Rc::new(RefCell::new(Vec::new()));
         let summary_bars = Rc::new(RefCell::new(Vec::new()));
         let row_clicks = Rc::new(RefCell::new(Vec::new()));
+        let mark: SharedMark = Rc::new(Cell::new(None));
+        let full_playbacks: RowPlaybacks = Rc::new(RefCell::new(Vec::new()));
         let summary = SummaryRenderer {
             rows,
             play_buttons,
@@ -137,9 +152,12 @@ impl StatsSongsCard {
             generations: cover_generations,
             metadata,
             on_play_track,
+            on_toggle_pause,
             on_play_next,
             on_add_to_queue,
             context_actions,
+            mark,
+            playbacks: Rc::new(RefCell::new(Vec::new())),
         };
 
         reveal_button.connect_clicked(glib::clone!(
@@ -169,6 +187,7 @@ impl StatsSongsCard {
             let snapshot = snapshot.clone();
             let sort_by = sort_by.clone();
             let summary = summary.clone();
+            let full_playbacks = full_playbacks.clone();
             move |toggle| {
                 let active_name = toggle.active_name();
                 let value = sort_for_toggle_name(active_name.as_deref());
@@ -176,14 +195,7 @@ impl StatsSongsCard {
                 let snapshot = snapshot.borrow().clone();
                 if let Some(snapshot) = snapshot {
                     summary.render(&snapshot, value);
-                    render_full_rows(
-                        &full_rows,
-                        &snapshot,
-                        value,
-                        &summary.cover_loader,
-                        &summary.generations,
-                        &summary.metadata,
-                    );
+                    render_full_rows(&full_rows, &snapshot, value, &summary, &full_playbacks);
                 }
             }
         });
@@ -191,6 +203,7 @@ impl StatsSongsCard {
         Self {
             root,
             summary,
+            full_playbacks,
             revealer,
             reveal_button,
             full_rows,
@@ -219,10 +232,41 @@ impl StatsSongsCard {
             &self.full_rows,
             snapshot,
             self.sort_by.get(),
-            &self.summary.cover_loader,
-            &self.summary.generations,
-            &self.summary.metadata,
+            &self.summary,
+            &self.full_playbacks,
         );
+    }
+
+    /// Points the shared playback marker at `mark` (or clears it). Deliberately
+    /// does **not** re-render: a pause tap would otherwise rebuild both lists,
+    /// throwing away the expanded state and scroll position. The already-built
+    /// rows are mutated in place, which is the same viewport-neutral discipline
+    /// NAV-10a imposes on the track table.
+    fn set_mark(&self, mark: Option<TrackMark>) {
+        self.summary.mark.set(mark);
+        for playback in self.summary.playbacks.borrow().iter() {
+            playback.set_mark(mark);
+        }
+        for playback in self.full_playbacks.borrow().iter() {
+            playback.set_mark(mark);
+        }
+    }
+
+    /// A track was loaded — it becomes the marked row and starts out running.
+    pub(super) fn set_loaded_track(&self, track_id: i64) {
+        self.set_mark(Some(TrackMark {
+            track_id,
+            playing: true,
+        }));
+    }
+
+    /// Playback ran, paused, or stopped. Which of those keeps the mark is
+    /// decided in one place, see `stats_songs_playback::mark_for_state`.
+    pub(super) fn set_playback_state(&self, state: PlaybackState) {
+        self.set_mark(stats_songs_playback::mark_for_state(
+            self.summary.mark.get(),
+            state,
+        ));
     }
 }
 
@@ -241,6 +285,7 @@ impl SummaryRenderer {
         self.play_buttons.borrow_mut().clear();
         self.bars.borrow_mut().clear();
         self.row_clicks.borrow_mut().clear();
+        self.playbacks.borrow_mut().clear();
         let tracks = snapshot.top_tracks_sorted(sort_by);
         let leader = tracks.first().map_or(0, |track| metric(track, sort_by));
         let token = self.generations.next_summary();
@@ -276,16 +321,32 @@ impl SummaryRenderer {
         let play = gtk4::Button::from_icon_name("media-playback-start-symbolic");
         play.add_css_class("circular");
         play.add_css_class("stats-song-play");
-        play.set_tooltip_text(Some("Play this track"));
         play.set_visible(false);
         play.connect_clicked({
-            let callback = self.on_play_track.clone();
+            let play_track = self.on_play_track.clone();
+            let toggle_pause = self.on_toggle_pause.clone();
+            let mark = self.mark.clone();
             let track_id = track.track_id;
-            move |_| invoke_id(&callback, track_id)
+            // One predicate decides both this click and the glyph above it —
+            // see `stats_songs_playback::activation_for`.
+            move |_| match stats_songs_playback::activation_for(mark.get(), track_id) {
+                Activation::TogglePause => invoke_void(&toggle_pause),
+                Activation::Start => invoke_id(&play_track, track_id),
+            }
         });
         cover_overlay.add_overlay(&play);
-        install_play_visibility(&row, &play);
-        self.play_buttons.borrow_mut().push(play);
+        self.play_buttons.borrow_mut().push(play.clone());
+        // `STATS-18`: the loaded row carries the shared marker; hover and focus
+        // trade it for the transport button, the row tint stays.
+        let playback = SongRowPlayback::new(
+            &row,
+            &cover_overlay,
+            Some(play),
+            track.track_id,
+            self.mark.get(),
+        );
+        stats_songs_playback::install_reveal(&row, &playback);
+        self.playbacks.borrow_mut().push(playback);
         body.append(&cover_overlay);
 
         let text = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
@@ -412,6 +473,13 @@ impl StatsSongsCard {
         *self.summary.on_play_track.borrow_mut() = Some(Rc::new(callback));
     }
 
+    /// Pauses or resumes the loaded track. Takes no id: the only row that can
+    /// reach this is the one already marked as loaded, so passing one would
+    /// invite a second, driftable answer to "which track is playing".
+    pub(in crate::ui) fn set_on_toggle_pause(&self, callback: impl Fn() + 'static) {
+        *self.summary.on_toggle_pause.borrow_mut() = Some(Rc::new(callback));
+    }
+
     pub(in crate::ui) fn set_on_play_next(&self, callback: impl Fn(i64) + 'static) {
         *self.summary.on_play_next.borrow_mut() = Some(Rc::new(callback));
     }
@@ -423,43 +491,6 @@ impl StatsSongsCard {
     pub(super) fn summary_bars(&self) -> Vec<gtk4::LevelBar> {
         self.summary.bars.borrow().clone()
     }
-}
-
-fn install_play_visibility(row: &gtk4::Box, play: &gtk4::Button) {
-    let hovered = Rc::new(Cell::new(false));
-    let focused = Rc::new(Cell::new(false));
-    let motion = gtk4::EventControllerMotion::new();
-    motion.connect_enter({
-        let play = play.clone();
-        let hovered = hovered.clone();
-        move |_, _, _| {
-            hovered.set(true);
-            play.set_visible(true);
-        }
-    });
-    motion.connect_leave({
-        let play = play.clone();
-        let hovered = hovered.clone();
-        let focused = focused.clone();
-        move |_| {
-            hovered.set(false);
-            play.set_visible(focused.get());
-        }
-    });
-    row.add_controller(motion);
-    play.connect_has_focus_notify({
-        let hovered = hovered.clone();
-        move |button| button.set_visible(button.has_focus() || hovered.get())
-    });
-    let focus = gtk4::EventControllerFocus::new();
-    focus.connect_contains_focus_notify({
-        let play = play.clone();
-        move |focus| {
-            focused.set(focus.contains_focus());
-            play.set_visible(focus.contains_focus() || hovered.get());
-        }
-    });
-    row.add_controller(focus);
 }
 
 fn add_id_action(
@@ -488,11 +519,13 @@ fn render_full_rows(
     container: &gtk4::Box,
     snapshot: &StatsSnapshot,
     sort_by: SortBy,
-    cover_loader: &Rc<CoverLoader>,
-    generations: &CoverGenerations,
-    metadata: &MetadataCallback,
+    summary: &SummaryRenderer,
+    playbacks: &RowPlaybacks,
 ) {
     clear(container);
+    playbacks.borrow_mut().clear();
+    let generations = &summary.generations;
+    let metadata = &summary.metadata;
     let token = generations.next_full();
     let tracks = snapshot.top_tracks_sorted(sort_by);
     let leader = tracks.first().map_or(0, |track| metric(track, sort_by));
@@ -511,14 +544,26 @@ fn render_full_rows(
             .valign(gtk4::Align::Center)
             .build();
         CoverLoader::set_placeholder(&cover);
-        cover_loader.load_into(
+        summary.cover_loader.load_into(
             &cover,
             &track.track_path,
             ThumbnailSize::List,
             token,
             &generations.full,
         );
-        row.append(&cover);
+        // `STATS-18`: NAV-10a wants *every* visible instance of the loaded
+        // track marked, so the expanded ranking carries the marker too. It
+        // stays navigational, though — no transport button is offered here.
+        let cover_overlay = gtk4::Overlay::new();
+        cover_overlay.set_child(Some(&cover));
+        playbacks.borrow_mut().push(SongRowPlayback::new(
+            &row,
+            &cover_overlay,
+            None,
+            track.track_id,
+            summary.mark.get(),
+        ));
+        row.append(&cover_overlay);
         let text = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
         text.set_hexpand(true);
         text.append(&stats_metadata_links::link(
@@ -572,6 +617,13 @@ fn invoke_id(callback: &IdCallback, id: i64) {
     let callback = callback.borrow().clone();
     if let Some(callback) = callback {
         callback(id);
+    }
+}
+
+fn invoke_void(callback: &VoidCallback) {
+    let callback = callback.borrow().clone();
+    if let Some(callback) = callback {
+        callback();
     }
 }
 

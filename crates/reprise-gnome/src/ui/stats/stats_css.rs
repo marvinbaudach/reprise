@@ -115,6 +115,17 @@ pub(in crate::ui) fn css() -> String {
          .stats-song-row:hover {{ background-color: alpha(@window_fg_color, 0.05); }}\n\
          .stats-song-row:focus-visible {{ outline: 2px solid @accent_color; }}\n\
          .stats-song-play {{ background-color: alpha(@card_bg_color, 0.88); }}\n\
+         .stats-song-row.now-playing, .stats-top-track-row.now-playing {{ \
+           background-color: alpha(@reprise_player_accent, 0.12); \
+           border-radius: 6px; \
+           box-shadow: inset 3px 0 0 @reprise_player_accent; }}\n\
+         .stats-song-row.now-playing:hover, \
+         .stats-top-track-row.now-playing:hover {{ \
+           background-color: alpha(@reprise_player_accent, 0.18); }}\n\
+         .stats-song-marker {{ \
+           background-color: alpha(@card_bg_color, 0.88); \
+           border-radius: 99px; \
+           padding: 4px; }}\n\
          .stats-song-bar {{ min-height: 8px; border-radius: 99px; }}\n\
          .stats-song-bar block.filled {{ \
            background-image: linear-gradient(to right, \

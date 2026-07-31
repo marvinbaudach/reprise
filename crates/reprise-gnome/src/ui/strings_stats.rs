@@ -38,6 +38,11 @@ const SPELLINGS_MERGED_ONE: &str = N_!("1 spelling merged \u{2014} unify it in t
 const SPELLINGS_MERGED: &str =
     N_!("{count} spellings merged \u{2014} unify them in the tag editor?");
 pub const STATS_EMPTY: &str = N_!("Start listening to see your stats");
+/// Tooltip of a song row's transport button while that row is not the loaded
+/// track. Its pause counterpart carries no shortcut hint: the row button is
+/// not the Space-bar transport, it acts on this row alone.
+pub const STATS_PLAY_TRACK: &str = N_!("Play this track");
+pub const STATS_PAUSE_TRACK: &str = N_!("Pause this track");
 pub const STATS_UNAVAILABLE: &str = N_!("Your stats could not be read");
 pub const STATS_UNAVAILABLE_DESCRIPTION: &str =
     N_!("Reading the listening history failed. Nothing is missing from it — this view just could not load it.");

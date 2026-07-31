@@ -2644,6 +2644,17 @@ property is set and yet nothing happens.
   content switches immediately to its new final state. With
   `gtk-enable-animations=false`, without exception all bars and the
   best-week label stand immediately in their final state.
+- **STATS-18** [active] [gtk] — The loaded track carries the shared playback
+  marker in every My Stats song list it appears in — the six-row card and the
+  expanded ranking alike — and that marker tells running from paused. The
+  marked row keeps an accent tint that hover does not take away; only the
+  equaliser inside the cover steps aside for the transport button, so a
+  pointer never removes the answer to "what is playing". Activating that
+  button on the marked row pauses and resumes through the same transport as
+  the player bar and Space; it never restarts the track. Every other row
+  starts its track, whether or not something else is playing. Marking never
+  re-renders either list: the expanded state and the scroll position survive a
+  pause tap, exactly as NAV-10a requires of the track table.
 ## W. Buttons & interaction states
 
 <!-- Section letter: V (My Stats) is the last section assigned on main;
