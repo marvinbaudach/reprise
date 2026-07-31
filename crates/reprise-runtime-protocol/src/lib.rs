@@ -133,7 +133,10 @@ impl std::fmt::Display for ProtocolVersion {
 /// virtual tail reads windows the 200-row snapshot does not carry, and a
 /// scrubber says where the user let go rather than how far to move from
 /// wherever the playhead had reached. Both additive.
-pub const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 4, minor: 2 };
+/// Minor 3 adds typed queue-item windows beside the legacy track-only id
+/// projections. Existing `*_track_ids` fields deliberately keep their exact
+/// meaning; episodes appear only in the new item fields.
+pub const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 4, minor: 3 };
 
 #[cfg(test)]
 mod tests {
@@ -167,6 +170,6 @@ mod tests {
     #[test]
     fn the_shipped_version_is_compatible_with_itself() {
         assert!(PROTOCOL_VERSION.is_compatible_with(PROTOCOL_VERSION));
-        assert_eq!(PROTOCOL_VERSION.to_string(), "4.2");
+        assert_eq!(PROTOCOL_VERSION.to_string(), "4.3");
     }
 }

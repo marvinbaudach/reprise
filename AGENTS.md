@@ -225,7 +225,7 @@ exist.)
 
 ## Completed file ownership — episodes as queue citizens
 
-Packages 1 through 4 are complete and this ownership is released. No repository
+Packages 1 through 5 are complete and this ownership is released. No repository
 lock or coordination board exists in this checkout.
 
 ### Package 1 — typed manual queue
@@ -262,4 +262,14 @@ lock or coordination board exists in this checkout.
 | episodes-as-queue-citizens | `crates/reprise-gnome/src/ui/now_playing/{up_next_panel,up_next_panel_tests,now_playing}.rs`, `crates/reprise-gnome/src/ui/playback/queue_transport.rs`, and the narrow window wiring for typed queue drops |
 | episodes-as-queue-citizens | `crates/reprise-gnome/src/ui/podcasts/{podcasts_dnd,podcasts_groups,podcasts_groups_tests,podcasts_context_menu,podcasts_view,podcasts_view_actions}.rs`, source-view callbacks, queue-entry copy, and matching gettext catalogs |
 | episodes-as-queue-citizens | Append-only package-4 rule and reversal records in `docs/ux-rules.md`, `docs/plans/podcasts-radio.md`, plus `.superpowers/sdd/progress.md` |
-| sibling branches — excluded | `crates/reprise-core/src/podcasts/store.rs`, `crates/reprise-core/src/podcasts/youtube.rs`, runtime protocol/MCP/MPRIS outward surfaces, and every package-5 file |
+| sibling branches — excluded | `crates/reprise-core/src/podcasts/store.rs`, `crates/reprise-core/src/podcasts/youtube.rs`, and runtime protocol/MCP/MPRIS outward surfaces |
+
+### Package 5 — outward-facing surfaces (complete; ownership released)
+
+| Owner | Files |
+| --- | --- |
+| episodes-as-queue-citizens | Runtime-protocol queue DTOs and their runtime/Linux-service projections, including additive typed item lists beside legacy track-only id fields |
+| episodes-as-queue-citizens | MCP queue DTO/read surfaces and validation regressions; `PlayTrackIds`, `QueueAddNext`, and `QueueAddLast` remain track-only |
+| episodes-as-queue-citizens | MPRIS episode identity/metadata, the GNOME agent-queue mirror, and their focused tests |
+| episodes-as-queue-citizens | Append-only package-5 rule, plan, and completion records in `docs/ux-rules.md`, `docs/plans/podcasts-radio.md`, and `.superpowers/sdd/progress.md` |
+| sibling branches — excluded | `crates/reprise-core/src/podcasts/store.rs`, `crates/reprise-core/src/podcasts/youtube.rs`, and unrelated source UI or packaging work |
