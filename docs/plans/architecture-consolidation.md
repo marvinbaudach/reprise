@@ -973,6 +973,14 @@ cannot come back. How many sites the lint actually flags is unverified here —
 this checkout cannot build the workspace (§9.3), so the 72 come from a
 structural scan, not from clippy.
 
+That scan is `scripts/tests/scan-scrutinee-borrows.py`, kept so the number can
+be re-derived rather than trusted: run it from the repository root, and it
+prints every site with its construct and its line. It is a text scan, not a
+borrow checker — it reports the shapes above, and deciding whether a given body
+can re-enter is still a reading job. It also lists the 153 explicitly bound
+guards (`let g = cell.borrow_mut();`) by file, which are the other way a borrow
+reaches a call and are not classified here.
+
 ### 8.6 Finding T5 — the watcher's ignore registry now grows without bound
 
 `library/watcher.rs` keeps a process-lifetime

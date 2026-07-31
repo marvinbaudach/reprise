@@ -26,7 +26,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROOT = Path("/home/user/reprise/crates/reprise-gnome/src")
+ROOT = Path("crates/reprise-gnome/src")
 BORROW = re.compile(r"\.borrow(_mut)?\(\)")
 SCRUTINEE = re.compile(r"^\s*(?:\}\s*)?(if let|while let|match|for)\b.*")
 LET_GUARD = re.compile(r"^\s*let\s+(?:mut\s+)?(\w+)\s*=\s*[^;]*\.borrow(_mut)?\(\)\s*;")
@@ -66,7 +66,7 @@ def main():
             elif LET_GUARD.match(text):
                 guard_hits.append((path, n, text.strip()))
 
-    rel = lambda p: str(p).replace("/home/user/reprise/", "")
+    rel = str
     print(f"=== scrutinee borrows: Ref alive through the block body ({len(scrutinee_hits)}) ===")
     for p, n, kind, text in scrutinee_hits:
         print(f"{rel(p)}:{n}  [{kind}]")
