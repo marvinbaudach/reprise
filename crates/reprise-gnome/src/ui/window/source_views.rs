@@ -79,6 +79,26 @@ pub(in crate::ui) fn install(
                 }
             }
         },
+        {
+            let player = player.map(Rc::downgrade);
+            move |items| {
+                let Some(player) = player.as_ref().and_then(std::rc::Weak::upgrade) else {
+                    return false;
+                };
+                player.play_next_items(items);
+                true
+            }
+        },
+        {
+            let player = player.map(Rc::downgrade);
+            move |items| {
+                let Some(player) = player.as_ref().and_then(std::rc::Weak::upgrade) else {
+                    return false;
+                };
+                player.append_queue_items(items);
+                true
+            }
+        },
     );
     let podcasts = crate::ui::podcasts::install(
         conn.clone(),

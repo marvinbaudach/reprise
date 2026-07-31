@@ -8,7 +8,7 @@
 //! 1. **Drag source** (every track-list cell, wired from `track_list.rs`'s
 //!    `append_column`/`append_rating_column` factories, same call site as
 //!    `track_list_context_menu::wire_context_menu_gesture`): starts a drag
-//!    carrying the current selection's track ids (or, if the pressed row
+//!    carrying the current selection's typed track items (or, if the pressed row
 //!    isn't part of the current selection, just that one row — see
 //!    [`wire_drag_source`]'s doc comment for why that mirrors the context
 //!    menu's own reselect convention in spirit but not in effect).
@@ -37,9 +37,12 @@
 //! `#[boxed_type]` registration, no extra dependency, and round-trip through
 //! a single `GValue` exactly as reliably as a registered boxed type would —
 //! for a handful of `i64`s, the simplicity is worth more than the type
-//! safety a bespoke boxed type would add. The format is `"<id>,<id>,…|<pos>"`
-//! (see [`format_drag_payload`]/[`parse_drag_payload`]): the ids half is what
-//! `ui::sidebar`'s "add to playlist" drop needs, and the `|<pos>` half is
+//! safety a bespoke boxed type would add. The format is
+//! `"t<id>,e<id>,…|<pos>"` (see
+//! [`format_drag_payload`]/[`parse_drag_payload`]): the prefixed item half
+//! prevents colliding track and episode primary keys from being confused;
+//! `ui::sidebar`'s "add to playlist" target accepts only `t` items, and the
+//! `|<pos>` half is
 //! what a same-list reorder drop needs — see the next section for why a
 //! single field can serve both a `Playlist`'s `pt.position` and a `Queue`'s
 //! play-order index without the two ever being confused.
@@ -85,12 +88,12 @@
 //!
 //! ## Single-row reorder-drag only (multi-row deferred)
 //!
-//! [`resolve_reorder_target`] refuses any payload carrying more than one id:
+//! [`resolve_reorder_target`] refuses any payload carrying more than one item:
 //! reordering several rows at once via one drag has no single obviously
 //! "correct" target-position semantics (does row 2 of 3 land immediately
 //! before or after the drop point? do the others keep their relative order?)
 //! and the brief explicitly defers it rather than pick an answer under time
-//! pressure. A multi-row drag still carries every selected id (so it can
+//! pressure. A multi-row drag still carries every selected item (so tracks can
 //! still be dropped on a sidebar playlist row to *add* them all), it simply
 //! never carries a `reorder_position` — see [`format_drag_payload`]'s doc
 //! comment.
@@ -119,15 +122,15 @@ use crate::ui::track_list_context_menu;
 use crate::ui::track_list_model::TrackListModel;
 use crate::ui::track_list_row_interaction;
 use reprise_core::library::playlists;
+use reprise_core::up_next::QueueItem;
 use reprise_core::view_source::ViewSource;
 
 /// A parsed drag payload — see the module doc's `## Content payload format`
 /// section.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(in crate::ui) struct DragPayload {
-    /// Every dragged track's id, in drag order (selection order, or a single
-    /// id for a lone-row drag).
-    pub ids: Vec<i64>,
+    /// Every dragged queue item, in drag order.
+    pub items: Vec<QueueItem>,
     /// `Some(true_position)` only for a single-row drag that started in a
     /// reorder-eligible state (see [`reorder_position_for_drag`]) — `None`
     /// for every multi-row drag and every drag that isn't currently reorder-
@@ -135,14 +138,25 @@ pub(in crate::ui) struct DragPayload {
     pub reorder_position: Option<i64>,
 }
 
-/// Formats a drag payload: `ids` joined by commas, then `|`, then either the
-/// reorder position or `-` for "not a reorder-eligible drag" — see the
+/// Formats a drag payload: type-prefixed queue items joined by commas, then
+/// `|`, then either the reorder position or `-` for "not a reorder-eligible
+/// drag" — see the
 /// module doc's `## Content payload format` section for why a single string
 /// field serves both `ui::sidebar`'s "add to playlist" drop (only reads
-/// `ids`) and this module's own same-list reorder drop (reads `reorder_
+/// track items) and this module's own same-list reorder drop (reads `reorder_
 /// position` too).
-pub(in crate::ui) fn format_drag_payload(ids: &[i64], reorder_position: Option<i64>) -> String {
-    let ids_part = ids.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
+pub(in crate::ui) fn format_drag_payload(
+    items: &[QueueItem],
+    reorder_position: Option<i64>,
+) -> String {
+    let ids_part = items
+        .iter()
+        .map(|item| match item {
+            QueueItem::Track(id) => format!("t{id}"),
+            QueueItem::Episode(id) => format!("e{id}"),
+        })
+        .collect::<Vec<_>>()
+        .join(",");
     match reorder_position {
         Some(pos) => format!("{ids_part}|{pos}"),
         None => format!("{ids_part}|-"),
@@ -150,7 +164,7 @@ pub(in crate::ui) fn format_drag_payload(ids: &[i64], reorder_position: Option<i
 }
 
 /// Parses a drag payload built by [`format_drag_payload`]. `None` for
-/// anything malformed: no `|` separator, an empty/all-unparseable ids half,
+/// anything malformed: no `|` separator, an empty or unparseable item half,
 /// or a position half that's neither `-` nor a valid `i64` — a corrupt/
 /// foreign payload (e.g. a drop from outside this app that happens to offer
 /// a `text/plain` string) must never be guessed at, only rejected. `pub(in crate::ui)`
@@ -159,12 +173,20 @@ pub(in crate::ui) fn format_drag_payload(ids: &[i64], reorder_position: Option<i
 pub(in crate::ui) fn parse_drag_payload(payload: &str) -> Option<DragPayload> {
     let (ids_part, pos_part) = payload.split_once('|')?;
 
-    let ids: Vec<i64> = ids_part
+    let items: Vec<QueueItem> = ids_part
         .split(',')
-        .map(str::parse::<i64>)
+        .map(|item| {
+            let (kind, id) = item.split_at_checked(1).ok_or(())?;
+            let id = id.parse::<i64>().map_err(|_| ())?;
+            match kind {
+                "t" => Ok(QueueItem::Track(id)),
+                "e" => Ok(QueueItem::Episode(id)),
+                _ => Err(()),
+            }
+        })
         .collect::<Result<_, _>>()
         .ok()?;
-    if ids.is_empty() {
+    if items.is_empty() {
         return None;
     }
 
@@ -175,7 +197,7 @@ pub(in crate::ui) fn parse_drag_payload(payload: &str) -> Option<DragPayload> {
     };
 
     Some(DragPayload {
-        ids,
+        items,
         reorder_position,
     })
 }
@@ -223,7 +245,7 @@ pub(in crate::ui) fn resolve_reorder_target(
     payload: &DragPayload,
     target_true_position: i64,
 ) -> Option<ReorderMove> {
-    if payload.ids.len() != 1 {
+    if payload.items.len() != 1 {
         return None;
     }
     let from = payload.reorder_position?;
@@ -294,8 +316,11 @@ fn wire_drag_source(widget: &impl IsA<gtk4::Widget>, item: &gtk4::ListItem, shar
                 vec![position]
             };
 
-            let ids = track_actions::selected_track_ids(&dragged_positions, &shared.model);
-            if ids.is_empty() {
+            let items = track_actions::selected_track_ids(&dragged_positions, &shared.model)
+                .into_iter()
+                .map(QueueItem::Track)
+                .collect::<Vec<_>>();
+            if items.is_empty() {
                 return None;
             }
 
@@ -310,9 +335,13 @@ fn wire_drag_source(widget: &impl IsA<gtk4::Widget>, item: &gtk4::ListItem, shar
                 .active_reorder_drag_from
                 .set(reorder_position.is_some().then_some(dragged_positions[0]));
 
-            last_drag_count.set(ids.len());
-            let payload = format_drag_payload(&ids, reorder_position);
-            tracing::debug!(count = ids.len(), ?reorder_position, "track drag prepared");
+            last_drag_count.set(items.len());
+            let payload = format_drag_payload(&items, reorder_position);
+            tracing::debug!(
+                count = items.len(),
+                ?reorder_position,
+                "track drag prepared"
+            );
             Some(gdk::ContentProvider::for_value(&payload.to_value()))
         });
     }
@@ -584,197 +613,5 @@ pub(in crate::ui) fn handle_queue_reorder_drop(
 // the real drop targets wired by [`wire_row_dnd`] call.
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    // ## format_drag_payload / parse_drag_payload round trips.
-
-    #[test]
-    fn round_trips_multi_id_payload_without_reorder_position() {
-        let payload = format_drag_payload(&[1, 2, 3], None);
-        assert_eq!(payload, "1,2,3|-");
-        let parsed = parse_drag_payload(&payload).unwrap();
-        assert_eq!(parsed.ids, vec![1, 2, 3]);
-        assert_eq!(parsed.reorder_position, None);
-    }
-
-    #[test]
-    fn round_trips_single_id_payload_with_reorder_position() {
-        let payload = format_drag_payload(&[42], Some(7));
-        assert_eq!(payload, "42|7");
-        let parsed = parse_drag_payload(&payload).unwrap();
-        assert_eq!(parsed.ids, vec![42]);
-        assert_eq!(parsed.reorder_position, Some(7));
-    }
-
-    #[test]
-    fn parse_rejects_payload_with_no_separator() {
-        assert!(parse_drag_payload("1,2,3").is_none());
-    }
-
-    #[test]
-    fn parse_rejects_empty_ids_half() {
-        assert!(parse_drag_payload("|-").is_none());
-    }
-
-    #[test]
-    fn parse_rejects_non_numeric_ids() {
-        assert!(parse_drag_payload("abc|-").is_none());
-    }
-
-    #[test]
-    fn parse_rejects_non_numeric_non_dash_position() {
-        assert!(parse_drag_payload("1|abc").is_none());
-    }
-
-    #[test]
-    fn parse_rejects_a_foreign_plain_string_without_a_pipe() {
-        // Guards against a drop from outside this app (e.g. a browser tab's
-        // dragged link text) being misread as a valid payload.
-        assert!(parse_drag_payload("https://example.com/").is_none());
-    }
-
-    // ## reorder_position_for_drag
-
-    fn seeded_playlist_model(track_ids_in_order: &[i64]) -> (TrackListModel, i64) {
-        let conn = crate::test_db::open().unwrap();
-        for id in track_ids_in_order {
-            crate::test_db::connection(&conn)
-                .execute(
-                    "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (?1, ?2, ?3, '', 0)",
-                    rusqlite::params![id, format!("/x/{id}.flac"), format!("Track {id}")],
-                )
-                .unwrap();
-        }
-        let conn = std::rc::Rc::new(conn);
-        let playlist_id = playlists::create(&conn, "P1").unwrap();
-        playlists::add_tracks(&conn, playlist_id, track_ids_in_order).unwrap();
-        let model = TrackListModel::new(conn);
-        model.set_query(
-            &ViewSource::Playlist(playlist_id),
-            "playlist_order",
-            "asc",
-            "",
-            &[],
-        );
-        (model, playlist_id)
-    }
-
-    #[test]
-    fn reorder_position_for_queue_is_always_the_view_position() {
-        let (model, _) = seeded_playlist_model(&[10, 20, 30]);
-        // Queue never reads `model` at all for this decision — any model
-        // works, including one queried over an unrelated playlist.
-        assert_eq!(
-            reorder_position_for_drag(&model, &ViewSource::Queue, false, 5),
-            Some(5)
-        );
-        assert_eq!(
-            reorder_position_for_drag(&model, &ViewSource::Queue, true, 0),
-            Some(0)
-        );
-    }
-
-    #[test]
-    fn reorder_position_for_playlist_reads_true_position_when_allowed() {
-        let (model, playlist_id) = seeded_playlist_model(&[10, 20, 30]);
-        // pt.position 1 holds track id 20 (0-indexed insertion order).
-        let pos = reorder_position_for_drag(&model, &ViewSource::Playlist(playlist_id), true, 1);
-        assert_eq!(pos, Some(1));
-    }
-
-    #[test]
-    fn reorder_position_for_playlist_is_none_when_not_allowed() {
-        let (model, playlist_id) = seeded_playlist_model(&[10, 20, 30]);
-        let pos = reorder_position_for_drag(&model, &ViewSource::Playlist(playlist_id), false, 1);
-        assert_eq!(
-            pos, None,
-            "a sorted/filtered playlist view must never resolve a reorder position"
-        );
-    }
-
-    #[test]
-    fn reorder_position_for_library_is_always_none() {
-        let (model, _) = seeded_playlist_model(&[10, 20, 30]);
-        assert_eq!(
-            reorder_position_for_drag(&model, &ViewSource::Library, true, 0),
-            None
-        );
-    }
-
-    /// Proof this doesn't regress into Task 5's bug: under a divergent
-    /// (artist-sorted) view, `reorder_position_for_drag` must still return
-    /// the TRUE `pt.position` when `playlist_reorder_allowed` is (falsely)
-    /// passed as `true` — asserting the raw view index is never silently
-    /// substituted. The caller (`playlist_reorder_allowed`) is what's
-    /// actually responsible for passing `false` in that state; this test
-    /// pins the position-lookup half of the contract in isolation.
-    #[test]
-    fn reorder_position_for_playlist_uses_true_position_not_view_index_under_a_sort() {
-        let conn = crate::test_db::open().unwrap();
-        // Insertion order (== pt.position order) is A, B, C; artist-ascending
-        // view order is C, A, B (artists Alpha, Zeta, ... chosen to diverge).
-        let tracks = [(1, "A", "Zeta"), (2, "B", "Theta"), (3, "C", "Alpha")];
-        for (id, title, artist) in tracks {
-            crate::test_db::connection(&conn)
-                .execute(
-                    "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (?1, ?2, ?3, ?4, 0)",
-                    rusqlite::params![id, format!("/x/{id}.flac"), title, artist],
-                )
-                .unwrap();
-        }
-        let playlist_id = playlists::create(&conn, "P1").unwrap();
-        let conn = std::rc::Rc::new(conn);
-        playlists::add_tracks(&conn, playlist_id, &[1, 2, 3]).unwrap();
-        let model = TrackListModel::new(conn);
-        model.set_query(&ViewSource::Playlist(playlist_id), "artist", "asc", "", &[]);
-        // View row 0 is track C (id 3), whose true pt.position is 2.
-        assert_eq!(model.track_at(0).unwrap().id, 3);
-
-        let pos = reorder_position_for_drag(&model, &ViewSource::Playlist(playlist_id), true, 0);
-        assert_eq!(
-            pos,
-            Some(2),
-            "must resolve track C's true pt.position (2), not its view index (0)"
-        );
-    }
-
-    // ## resolve_reorder_target
-
-    #[test]
-    fn resolve_reorder_target_single_row_different_position() {
-        let payload = DragPayload {
-            ids: vec![7],
-            reorder_position: Some(2),
-        };
-        let result = resolve_reorder_target(&payload, 5).unwrap();
-        assert_eq!(result, ReorderMove { from: 2, to: 5 });
-    }
-
-    #[test]
-    fn resolve_reorder_target_rejects_multi_row_payload() {
-        let payload = DragPayload {
-            ids: vec![7, 8],
-            reorder_position: None,
-        };
-        assert!(resolve_reorder_target(&payload, 5).is_none());
-    }
-
-    #[test]
-    fn resolve_reorder_target_rejects_a_payload_with_no_reorder_position() {
-        let payload = DragPayload {
-            ids: vec![7],
-            reorder_position: None,
-        };
-        assert!(resolve_reorder_target(&payload, 5).is_none());
-    }
-
-    #[test]
-    fn resolve_reorder_target_rejects_dropping_a_row_onto_itself() {
-        let payload = DragPayload {
-            ids: vec![7],
-            reorder_position: Some(3),
-        };
-        assert!(resolve_reorder_target(&payload, 3).is_none());
-    }
-}
+#[path = "track_list_dnd_tests.rs"]
+mod tests;

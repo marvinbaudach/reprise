@@ -1,4 +1,4 @@
-//! Podcast episode context menu. External media intentionally has no queue actions.
+//! Podcast episode context menu, including typed manual-queue actions.
 
 use gtk4::gio;
 use gtk4::glib::variant::ToVariant;
@@ -9,6 +9,10 @@ use crate::ui::strings;
 
 pub(super) const ACTION_PLAY: &str = "play";
 pub(super) const ACTION_COPY_URL: &str = "copy-url";
+pub(super) const ACTION_PLAY_NEXT: &str = "play-next";
+pub(super) const ACTION_ADD_TO_QUEUE: &str = "add-to-queue";
+pub(super) const ACTION_PLAY_NEXT_UNAVAILABLE: &str = "play-next-unavailable";
+pub(super) const ACTION_ADD_TO_QUEUE_UNAVAILABLE: &str = "add-to-queue-unavailable";
 pub(super) const ACTION_TOGGLE_PLAYED: &str = "toggle-played";
 pub(super) const ACTION_TOGGLE_DOWNLOAD: &str = "toggle-download";
 pub(super) const ACTION_REMOVE_EPISODE: &str = "remove-episode";
@@ -22,6 +26,10 @@ pub(super) const ACTION_TOGGLE_PHONE_SYNC: &str = "toggle-phone-sync";
 const ACTIONS: &[&str] = &[
     ACTION_PLAY,
     ACTION_COPY_URL,
+    ACTION_PLAY_NEXT,
+    ACTION_ADD_TO_QUEUE,
+    ACTION_PLAY_NEXT_UNAVAILABLE,
+    ACTION_ADD_TO_QUEUE_UNAVAILABLE,
     ACTION_TOGGLE_PLAYED,
     ACTION_TOGGLE_DOWNLOAD,
     ACTION_REMOVE_EPISODE,
@@ -54,6 +62,8 @@ fn entry(label: &'static str, action: &'static str) -> SelectionMenuEntry {
 /// gains or reorders one.
 fn multi_selection_primary_entries() -> Vec<SelectionMenuEntry> {
     vec![
+        entry(strings::CONTEXT_MENU_PLAY_NEXT, ACTION_PLAY_NEXT),
+        entry(strings::CONTEXT_MENU_ADD_TO_QUEUE, ACTION_ADD_TO_QUEUE),
         entry(strings::PODCAST_MARK_PLAYED, ACTION_MARK_PLAYED_SELECTED),
         entry(
             strings::PODCAST_MARK_UNPLAYED,
@@ -117,6 +127,46 @@ pub(super) fn sync_control(
 }
 
 pub(super) fn build(row: &EpisodeRow) -> gio::Menu {
+    build_for_selection(row, &[row.id], None)
+}
+
+pub(super) fn build_for_selection(
+    row: &EpisodeRow,
+    selected_ids: &[i64],
+    unavailable_episode: Option<i64>,
+) -> gio::Menu {
+    let target_ids = if selected_ids.len() <= 1 {
+        vec![row.id]
+    } else {
+        selected_ids.to_vec()
+    };
+    let queue_available = !target_ids
+        .iter()
+        .any(|episode_id| Some(*episode_id) == unavailable_episode);
+    if selected_ids.len() <= 1 {
+        return build_single(row, &target_ids, queue_available);
+    }
+    let menu = gio::Menu::new();
+    let primary = gio::Menu::new();
+    for mut entry in multi_selection_primary_entries() {
+        if !queue_available {
+            entry.action = match entry.action {
+                ACTION_PLAY_NEXT => ACTION_PLAY_NEXT_UNAVAILABLE,
+                ACTION_ADD_TO_QUEUE => ACTION_ADD_TO_QUEUE_UNAVAILABLE,
+                other => other,
+            };
+        }
+        append_selected(&primary, &entry.label, entry.action, &target_ids);
+    }
+    menu.append_section(None, &primary);
+    let destructive = gio::Menu::new();
+    let remove = multi_selection_destructive_entry();
+    append_selected(&destructive, &remove.label, remove.action, &target_ids);
+    menu.append_section(None, &destructive);
+    menu
+}
+
+fn build_single(row: &EpisodeRow, target_ids: &[i64], queue_available: bool) -> gio::Menu {
     let menu = gio::Menu::new();
     let primary = gio::Menu::new();
     append_targeted(
@@ -130,6 +180,26 @@ pub(super) fn build(row: &EpisodeRow) -> gio::Menu {
         row.id,
     );
     append_targeted(&primary, strings::PODCAST_COPY_URL, ACTION_COPY_URL, row.id);
+    append_selected(
+        &primary,
+        &strings::text(strings::CONTEXT_MENU_PLAY_NEXT),
+        if queue_available {
+            ACTION_PLAY_NEXT
+        } else {
+            ACTION_PLAY_NEXT_UNAVAILABLE
+        },
+        target_ids,
+    );
+    append_selected(
+        &primary,
+        &strings::text(strings::CONTEXT_MENU_ADD_TO_QUEUE),
+        if queue_available {
+            ACTION_ADD_TO_QUEUE
+        } else {
+            ACTION_ADD_TO_QUEUE_UNAVAILABLE
+        },
+        target_ids,
+    );
     append_targeted(
         &primary,
         if row.played_at.is_some() {
@@ -169,21 +239,15 @@ pub(super) fn build(row: &EpisodeRow) -> gio::Menu {
     menu
 }
 
-pub(super) fn build_for_selection(row: &EpisodeRow, selected_ids: &[i64]) -> gio::Menu {
-    if selected_ids.len() <= 1 {
-        return build(row);
+pub(super) fn install_disabled_queue_actions(group: &gio::SimpleActionGroup) {
+    for name in [
+        ACTION_PLAY_NEXT_UNAVAILABLE,
+        ACTION_ADD_TO_QUEUE_UNAVAILABLE,
+    ] {
+        let action = gio::SimpleAction::new(name, Some(&Vec::<i64>::static_variant_type()));
+        action.set_enabled(false);
+        group.add_action(&action);
     }
-    let menu = gio::Menu::new();
-    let primary = gio::Menu::new();
-    for entry in multi_selection_primary_entries() {
-        append_selected(&primary, &entry.label, entry.action, selected_ids);
-    }
-    menu.append_section(None, &primary);
-    let destructive = gio::Menu::new();
-    let remove = multi_selection_destructive_entry();
-    append_selected(&destructive, &remove.label, remove.action, selected_ids);
-    menu.append_section(None, &destructive);
-    menu
 }
 
 /// Builds the source-level context menu, including the phone-sync section.
@@ -368,10 +432,10 @@ mod tests {
     }
 
     #[test]
-    fn src_12_single_selection_keeps_the_previous_actions_and_wording_byte_for_byte() {
+    fn src_4b_single_selection_keeps_existing_actions_and_adds_queue_routes() {
         let row = episode(1, false);
 
-        let entries = menu_entries(&build_for_selection(&row, &[row.id]));
+        let entries = menu_entries(&build_for_selection(&row, &[row.id], None));
 
         assert_eq!(
             entries,
@@ -380,6 +444,14 @@ mod tests {
                 (
                     strings::text(strings::PODCAST_COPY_URL),
                     "podcasts.copy-url".into(),
+                ),
+                (
+                    strings::text(strings::CONTEXT_MENU_PLAY_NEXT),
+                    "podcasts.play-next".into(),
+                ),
+                (
+                    strings::text(strings::CONTEXT_MENU_ADD_TO_QUEUE),
+                    "podcasts.add-to-queue".into(),
                 ),
                 (
                     strings::text(strings::PODCAST_MARK_PLAYED),
@@ -433,12 +505,46 @@ mod tests {
     }
 
     #[test]
-    fn context_menu_never_exposes_queue_membership_actions() {
-        assert!(ACTIONS.iter().all(|action| {
-            !action.contains("queue")
-                && !action.contains("play-next")
-                && !action.contains("play_next")
-        }));
+    fn src_4b_podcast_context_menu_exposes_queue_membership_actions() {
+        assert!(ACTIONS.contains(&ACTION_PLAY_NEXT));
+        assert!(ACTIONS.contains(&ACTION_ADD_TO_QUEUE));
+    }
+
+    #[test]
+    fn acc_8_episode_menu_queue_actions_are_the_keyboard_partner_for_drag() {
+        let row = episode(1, false);
+        let entries = menu_entries(&build_for_selection(&row, &[1, 2], None));
+        let actions = entries
+            .iter()
+            .map(|(_, action)| action.as_str())
+            .collect::<Vec<_>>();
+
+        assert!(actions.contains(&"podcasts.play-next"));
+        assert!(actions.contains(&"podcasts.add-to-queue"));
+    }
+
+    #[test]
+    fn ctx_12_unresolvable_episode_routes_to_disabled_queue_actions() {
+        let row = episode(1, false);
+        let entries = menu_entries(&build_for_selection(&row, &[1, 2], Some(2)));
+        let actions = entries
+            .iter()
+            .map(|(_, action)| action.as_str())
+            .collect::<Vec<_>>();
+
+        assert!(actions.contains(&"podcasts.play-next-unavailable"));
+        assert!(actions.contains(&"podcasts.add-to-queue-unavailable"));
+
+        let group = gio::SimpleActionGroup::new();
+        install_disabled_queue_actions(&group);
+        assert!(!group
+            .lookup_action(ACTION_PLAY_NEXT_UNAVAILABLE)
+            .expect("play-next unavailable action")
+            .is_enabled());
+        assert!(!group
+            .lookup_action(ACTION_ADD_TO_QUEUE_UNAVAILABLE)
+            .expect("add-to-queue unavailable action")
+            .is_enabled());
     }
 
     #[test]

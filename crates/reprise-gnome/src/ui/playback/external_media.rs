@@ -662,6 +662,15 @@ impl PlayerController {
         external.generation == generation && external.mode() == mode
     }
 
+    fn external_generation_matches_podcast(&self, generation: u64) -> bool {
+        let external = self.external.borrow();
+        external.generation == generation
+            && matches!(
+                external.mode(),
+                PlaybackMode::Podcast | PlaybackMode::QueuedEpisode
+            )
+    }
+
     pub(super) fn notify_external_changed(&self) {
         let (snapshot, callbacks) = {
             let external = self.external.borrow();

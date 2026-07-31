@@ -123,9 +123,9 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
         // decoupling-via-closure seam, same degraded-no-op convention (no
         // player at all reports `false` rather than a false "appended").
         let player = player.clone();
-        sidebar.set_on_queue_drop(move |ids| match &player {
+        sidebar.set_on_queue_drop(move |items| match &player {
             Some(player) => {
-                player.append_to_queue(ids);
+                player.append_queue_items(items);
                 true
             }
             None => {

@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-31 09:20+0200\n"
+"POT-Creation-Date: 2026-07-31 10:35+0200\n"
 "PO-Revision-Date: 2026-07-20 11:38+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Bengali\n"
@@ -3086,113 +3086,120 @@ msgid_plural "{succeeded} episodes updated; {failed} failed"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:233
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:234
+#, rust-format
+msgid "{count} episode added to queue"
+msgid_plural "{count} episodes added to queue"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:243
 msgid "No downloaded files in the selection"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:238
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:248
 #, rust-format
 msgid "Skipped {count} unplayable episode"
 msgid_plural "Skipped {count} unplayable episodes"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:193
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:258
 #, rust-format
 msgid "Show all {count} episode"
 msgid_plural "Show all {count} episodes"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:275
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:295
 #, rust-format
 msgid "{shows} · {episodes} · {new} new"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:284
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:304
 #, rust-format
 msgid "{shows} show"
 msgid_plural "{shows} shows"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:298
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:318
 #, rust-format
 msgid "{channels} channel"
 msgid_plural "{channels} channels"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:319
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:339
 #, rust-format
 msgid "{visible} of {total} episodes"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:334
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:354
 #, rust-format
 msgid "Unsubscribe from “{show}”"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:339
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:359
 #, rust-format
 msgid "Sync downloaded episodes to “{device}”"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:355
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:375
 #, rust-format
 msgid "{shown} of {available} · {downloaded} downloaded · {size}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:366
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:386
 #, rust-format
 msgid "{count} selected"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:371
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:391
 #, rust-format
 msgid "Stop syncing episodes to “{device}”"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:377
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:397
 #, rust-format
 msgid "Removed “{title}”"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:384
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:404
 #, rust-format
 msgid "Select “{title}”"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:388
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:408
 #, rust-format
 msgid "Play next: “{title}”"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:396
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:416
 #, rust-format
 msgid "{downloads} download kept"
 msgid_plural "{downloads} downloads kept"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:403
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:423
 #, rust-format
 msgid "{shows} shows — {downloads} downloads kept"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:410
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:430
 #, rust-format
 msgid "Import the latest {count} episodes"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:418
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:438
 #, rust-format
 msgid "{count} matching video · audio only"
 msgid_plural "{count} matching videos · audio only"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:427
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:447
 #, rust-format
 msgid "Updated {minutes} min ago"
 msgstr ""
@@ -4407,34 +4414,41 @@ msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:20
 #, rust-format
+msgid "{count} item added to queue"
+msgid_plural "{count} items added to queue"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/strings_track_menu.rs:31
+#, rust-format
 msgid "Remove {count} from playlist"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_track_menu.rs:27
+#: crates/reprise-gnome/src/ui/strings_track_menu.rs:38
 msgid "Remove from queue"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_track_menu.rs:28
+#: crates/reprise-gnome/src/ui/strings_track_menu.rs:39
 #, rust-format
 msgid "Remove {count} from queue"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_track_menu.rs:36
+#: crates/reprise-gnome/src/ui/strings_track_menu.rs:47
 #, rust-format
 msgid "Remove {count} from library…"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_track_menu.rs:41
+#: crates/reprise-gnome/src/ui/strings_track_menu.rs:52
 #, rust-format
 msgid "Move {count} to Trash…"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_track_menu.rs:60
+#: crates/reprise-gnome/src/ui/strings_track_menu.rs:71
 #, rust-format
 msgid "Moved {count} track to top"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_track_menu.rs:61
+#: crates/reprise-gnome/src/ui/strings_track_menu.rs:72
 #, rust-format
 msgid "Moved {count} tracks to top"
 msgstr ""
