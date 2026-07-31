@@ -4,9 +4,22 @@
 //! decided in `crate::ui::source_reveal`; this module answers where the
 //! episode is and what has to open before it exists as a widget at all.
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use gtk4::prelude::*;
+use libadwaita as adw;
+use libadwaita::prelude::AnimationExt;
 use reprise_core::podcasts::SourceGroup;
 
 use super::podcasts_episode_window::visible_count;
+
+/// Frames to wait for the freshly rebuilt tree to allocate before giving up.
+/// A `render()` replaces every widget, so the first frames report zero
+/// geometry; bailing out after a bounded number of frames keeps a row that
+/// never allocates (filtered away mid-flight, view hidden again) from leaving
+/// a tick callback spinning for the process lifetime.
+const MAX_LAYOUT_FRAMES: u32 = 60;
 
 /// What has to change about the list's expansion state before the loaded
 /// episode is a rendered row that can be scrolled to.
@@ -36,6 +49,101 @@ pub(super) fn reveal_target(
         subscription_id: group.subscription_id,
         needs_full_window: index >= rendered,
     })
+}
+
+/// Adjustment value that vertically centers a row spanning
+/// `row_top..row_top + row_height` in the scrolled content. `row_top` is
+/// measured against the content, not the viewport. Returns `None` while the
+/// geometry is not usable yet — nothing allocated, or the content fits the
+/// viewport entirely, in which case there is nothing to center.
+pub(super) fn centered_value(
+    row_top: f64,
+    row_height: f64,
+    page_size: f64,
+    upper: f64,
+) -> Option<f64> {
+    if row_height <= 0.0 || page_size <= 0.0 || upper <= page_size {
+        return None;
+    }
+    let target = row_top + row_height / 2.0 - page_size / 2.0;
+    Some(target.clamp(0.0, upper - page_size))
+}
+
+fn centered_target(scroller: &gtk4::ScrolledWindow, row: &gtk4::Widget) -> Option<f64> {
+    let adjustment = scroller.vadjustment();
+    let point = row.compute_point(scroller, &gtk4::graphene::Point::new(0.0, 0.0))?;
+    // `compute_point` gives the row's offset inside the *viewport*; adding the
+    // current scroll offset lifts it into content coordinates, which is what
+    // the adjustment speaks.
+    let row_top = f64::from(point.y()) + adjustment.value();
+    centered_value(
+        row_top,
+        f64::from(row.height()),
+        adjustment.page_size(),
+        adjustment.upper(),
+    )
+}
+
+fn apply(
+    scroller: &gtk4::ScrolledWindow,
+    target: f64,
+    animation_slot: &Rc<RefCell<Option<adw::TimedAnimation>>>,
+) {
+    let adjustment = scroller.vadjustment();
+    // `MOT-7`: the animation gate is honoured by jumping, not by animating
+    // faster.
+    if !crate::ui::motion::animations_enabled() {
+        adjustment.set_value(target);
+        return;
+    }
+    if (adjustment.value() - target).abs() < f64::EPSILON {
+        return;
+    }
+    let animation_target = adw::CallbackAnimationTarget::new({
+        let adjustment = adjustment.clone();
+        move |value| adjustment.set_value(value)
+    });
+    let animation = crate::ui::motion::timed(
+        scroller,
+        adjustment.value(),
+        target,
+        crate::ui::motion::STANDARD,
+        animation_target,
+    );
+    // The animation must outlive this call, and a second reveal must replace
+    // the first rather than race it.
+    crate::ui::motion::replace_animation(animation_slot, animation.clone());
+    animation.play();
+}
+
+/// Centers `row` in `scroller` once the layout after a `render()` has settled.
+/// Never touches focus or selection — `SRC-12` reveals the viewport only.
+pub(super) fn center_row(
+    scroller: &gtk4::ScrolledWindow,
+    row: &gtk4::Widget,
+    animation_slot: &Rc<RefCell<Option<adw::TimedAnimation>>>,
+) {
+    let scroller = scroller.clone();
+    let row = row.clone();
+    let animation_slot = animation_slot.clone();
+    // Out of the caller's signal handler first: `render()` has only just
+    // rebuilt the tree, so nothing is allocated in this main-loop turn.
+    gtk4::glib::idle_add_local_once(move || {
+        let frames = std::cell::Cell::new(0_u32);
+        let target_scroller = scroller.clone();
+        scroller.add_tick_callback(move |_, _| {
+            if let Some(value) = centered_target(&target_scroller, &row) {
+                apply(&target_scroller, value, &animation_slot);
+                return gtk4::glib::ControlFlow::Break;
+            }
+            let seen = frames.replace(frames.get() + 1);
+            if seen >= MAX_LAYOUT_FRAMES {
+                tracing::debug!("episode reveal gave up waiting for layout");
+                return gtk4::glib::ControlFlow::Break;
+            }
+            gtk4::glib::ControlFlow::Continue
+        });
+    });
 }
 
 #[cfg(test)]
@@ -139,5 +247,28 @@ mod tests {
 
         assert_eq!(reveal_target(&groups, 99, false), None);
         assert_eq!(reveal_target(&[], 1, false), None);
+    }
+
+    #[test]
+    fn centering_puts_the_row_middle_at_the_viewport_middle() {
+        // Row spans 500..540 in a 1000px-tall content, 200px viewport.
+        // Its middle is 520; centering puts the viewport at 520 - 100 = 420.
+        assert_eq!(centered_value(500.0, 40.0, 200.0, 1000.0), Some(420.0));
+    }
+
+    #[test]
+    fn centering_clamps_at_both_ends_instead_of_overscrolling() {
+        assert_eq!(centered_value(0.0, 40.0, 200.0, 1000.0), Some(0.0));
+        assert_eq!(centered_value(960.0, 40.0, 200.0, 1000.0), Some(800.0));
+    }
+
+    #[test]
+    fn centering_skips_geometry_that_is_not_ready_or_not_scrollable() {
+        // Not allocated yet.
+        assert_eq!(centered_value(0.0, 0.0, 0.0, 0.0), None);
+        // Row not allocated yet, viewport is.
+        assert_eq!(centered_value(100.0, 0.0, 200.0, 1000.0), None);
+        // Whole list fits: nothing to scroll.
+        assert_eq!(centered_value(10.0, 40.0, 1000.0, 500.0), None);
     }
 }
