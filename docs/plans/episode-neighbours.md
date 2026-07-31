@@ -2,7 +2,7 @@
 slug: episode-neighbours
 worktree: /home/marvin/Projects/reprise-episode-neighbours
 branch: feature/episode-neighbours
-phase: coded
+phase: shipped
 codex_session:
 created: 2026-07-30
 base: origin/dev @ 31d8fa062a
