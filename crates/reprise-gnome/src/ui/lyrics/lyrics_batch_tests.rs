@@ -191,6 +191,43 @@ fn net_1a_the_batch_gate_follows_the_global_online_sources_switch() {
     assert!(batch.enabled.load(Ordering::Relaxed));
 }
 
+/// `LYR-6`: the module switch has to start the run itself — before this the
+/// batch only ever started at window construction and after a completed
+/// library scan, so enabling Online Lyrics did nothing visible until the next
+/// app start. `generation` counts starts: it is bumped once per run, before
+/// any early return for an empty library.
+#[test]
+fn lyr_6_enabling_the_module_starts_the_batch_once_and_nothing_else_does() {
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let batch = LyricsBatch::new(&conn);
+    let starts = || batch.generation.load(Ordering::Relaxed);
+    assert!(!batch.enabled.load(Ordering::Relaxed));
+
+    batch.recompute_enabled();
+    assert_eq!(
+        starts(),
+        0,
+        "a settings change with the module off starts nothing"
+    );
+
+    reprise_core::modules::set_enabled(&conn, &reprise_core::modules::ONLINE_LYRICS_MODULE, true)
+        .unwrap();
+    batch.recompute_enabled();
+    assert_eq!(starts(), 1, "enabling the module must start the run");
+
+    batch.recompute_enabled();
+    assert_eq!(
+        starts(),
+        1,
+        "a settings change while already enabled must not restart a run in progress"
+    );
+
+    reprise_core::modules::set_enabled(&conn, &reprise_core::modules::ONLINE_LYRICS_MODULE, false)
+        .unwrap();
+    batch.recompute_enabled();
+    assert_eq!(starts(), 1, "switching the module off must not start a run");
+}
+
 #[test]
 fn a_synced_retry_only_counts_when_it_actually_improves_the_cached_result() {
     for (body, expected) in [

@@ -2169,7 +2169,10 @@ property is set and yet nothing happens.
   names the source and whether the result is synchronized.
 - **LYR-6** [active] [gtk] — With the Online Lyrics module enabled, a
   cancellable serial background run fills the lyrics cache for the present
-  library after the cover batch and after completed library scans. Tracks
+  library after the cover batch, after completed library scans, and the moment
+  the module is switched on — switching it on starts the run once; a further
+  settings change while it is already on never restarts a run in progress, and
+  switching it off only stops one. Tracks
   with local lyrics, complete positive cache entries, or fresh negative
   entries are skipped; a cached plain result is retried for synchronized text
   at most once per seven-day negative-TTL window. Provider requests keep at

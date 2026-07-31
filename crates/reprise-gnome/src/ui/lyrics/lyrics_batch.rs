@@ -211,9 +211,23 @@ impl LyricsBatch {
     /// `preferences::refresh_online_module_state` on every settings change, so
     /// a run that is already walking the library stops at the next track
     /// instead of finishing on the network.
-    pub(in crate::ui) fn recompute_enabled(&self) {
-        self.enabled
-            .store(network_allowed(&self.conn), Ordering::Relaxed);
+    ///
+    /// `LYR-6`: the off → on transition also *starts* the run. The batch is
+    /// otherwise only started at window construction and after a completed
+    /// library scan, so switching the module on used to visibly do nothing
+    /// until the next app start. Only the transition starts it: a settings
+    /// change while the module is already on must not restart a run in
+    /// progress, and switching it off must not start one at all.
+    pub(in crate::ui) fn recompute_enabled(self: &Rc<Self>) {
+        if self.store_enabled() {
+            self.start();
+        }
+    }
+
+    /// Stores the freshly derived gate and reports whether it just turned on.
+    fn store_enabled(&self) -> bool {
+        let allowed = network_allowed(&self.conn);
+        !self.enabled.swap(allowed, Ordering::Relaxed) && allowed
     }
 
     /// Stops a running batch. The scan card routes its cancel gesture here
@@ -237,7 +251,7 @@ impl LyricsBatch {
     }
 
     pub(in crate::ui) fn start(self: &Rc<Self>) {
-        self.recompute_enabled();
+        self.store_enabled();
         if !self.enabled.load(Ordering::Relaxed) {
             self.set_progress(LyricsBatchProgress::idle());
             return;
