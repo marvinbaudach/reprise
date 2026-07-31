@@ -234,6 +234,71 @@ fn pod_22_explicit_browser_opt_out_ignores_the_environment_override() {
 }
 
 #[test]
+fn pod_23_youtube_metadata_calls_prefer_the_requested_language() {
+    let directory = tempfile::tempdir().unwrap();
+    let log = directory.path().join("args");
+    let binary = fake_binary(
+        directory.path(),
+        &format!(
+            "printf '%s\\n' \"$@\" > '{}'\nprintf '%s\\n' '{{\"entries\":[]}}'",
+            log.display()
+        ),
+    );
+    let runner = YtDlp::with_binary_and_timeouts(binary, short_timeouts())
+        .with_metadata_language(Some("de"));
+
+    runner.list("https://youtube.test/@show").unwrap();
+    assert_eq!(
+        fs::read_to_string(&log)
+            .unwrap()
+            .lines()
+            .collect::<Vec<_>>(),
+        [
+            "--no-warnings",
+            "--flat-playlist",
+            "--extractor-args",
+            "youtubetab:approximate_date",
+            "--extractor-args",
+            "youtube:lang=de",
+            "-J",
+            "https://youtube.test/@show",
+        ]
+    );
+
+    runner.search_channels("metal").unwrap();
+    assert_eq!(
+        fs::read_to_string(log).unwrap().lines().collect::<Vec<_>>(),
+        [
+            "--no-warnings",
+            "--flat-playlist",
+            "--extractor-args",
+            "youtube:lang=de",
+            "-J",
+            "ytsearch20:metal",
+        ]
+    );
+
+    let runner = runner.with_metadata_language(Some("zh_CN"));
+    runner.list("https://youtube.test/@show").unwrap();
+    assert_eq!(
+        fs::read_to_string(directory.path().join("args"))
+            .unwrap()
+            .lines()
+            .collect::<Vec<_>>(),
+        [
+            "--no-warnings",
+            "--flat-playlist",
+            "--extractor-args",
+            "youtubetab:approximate_date",
+            "--extractor-args",
+            "youtube:lang=zh-CN",
+            "-J",
+            "https://youtube.test/@show",
+        ]
+    );
+}
+
+#[test]
 fn fake_binary_reports_version_and_projects_flat_playlist() {
     let directory = tempfile::tempdir().unwrap();
     let binary = fake_binary(
