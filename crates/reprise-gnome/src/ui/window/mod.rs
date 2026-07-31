@@ -3,6 +3,7 @@ pub(in crate::ui) mod focus_evidence;
 pub(in crate::ui) mod library_chrome;
 pub(in crate::ui) mod library_shell;
 pub(in crate::ui) mod metadata_navigation;
+mod player_backends;
 pub(in crate::ui) mod podcast_refresh_scheduler;
 pub(in crate::ui) mod responsive_side_panels;
 mod source_connectivity;

@@ -23,14 +23,12 @@ use reprise_core::db::Db;
 
 use reprise_core::library::settings;
 use reprise_core::library::watcher::WatcherHandle;
-use reprise_core::playback::{PlaybackError, PlayerEvent};
 use reprise_core::view_source::ViewSource;
 use reprise_core::waveform::WaveformBackend;
-use reprise_platform_linux::player::Player;
 
 use super::cover_download_worker;
 use super::file_open::FileOpenHandler;
-use super::player_controller::{PlayerController, PlayerControllerBackends};
+use super::player_controller::PlayerController;
 use super::scan_progress::ScanProgressView;
 use super::sidebar::Sidebar;
 use super::status_bar::StatusBar;
@@ -40,25 +38,6 @@ use super::track_list::{OnActivate, TrackList};
 
 const MIN_WIDTH: i32 = 600;
 const MIN_HEIGHT: i32 = 400;
-
-fn build_player_backends(
-    waveform: Arc<dyn WaveformBackend>,
-    media: reprise_core::media_integration::MediaIntegrationHandles,
-) -> Result<PlayerControllerBackends, PlaybackError> {
-    let (sender, playback_events) = async_channel::unbounded::<PlayerEvent>();
-    let player = Player::new(Box::new(move |event| {
-        if let Err(error) = sender.try_send(event) {
-            tracing::warn!(%error, "player event dropped: UI receiver is gone");
-        }
-    }))?;
-
-    Ok(PlayerControllerBackends {
-        playback: Box::new(player),
-        playback_events,
-        media,
-        waveform,
-    })
-}
 
 /// Builds and presents the main window for `app`. `conn` is the shared,
 /// already-migrated database handle; Core owns the connection and the UI
@@ -172,7 +151,7 @@ pub fn build(app: &adw::Application, conn: &Rc<Db>, db_path: &Path) -> FileOpenH
         .bind_agent_device_sync(&media.device_sync_state, media.device_sync_commands.clone());
     device_sync.bind_preparation_downloader(&podcasts_runtime);
     super::device_sync_smoke::arm(&device_sync);
-    let player = match build_player_backends(waveform_backend.clone(), media) {
+    let player = match super::player_backends::build(waveform_backend.clone(), media) {
         Ok(backends) => Some(PlayerController::new(
             conn.clone(),
             cover_download.clone(),
