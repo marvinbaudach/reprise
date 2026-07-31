@@ -216,9 +216,8 @@ Ort und Stelle (MOT-2, die Motion-Lesart von P-4).
 
 ## 4. Taskplan — zwei Phasen
 
-> Format wie `docs/superpowers/plans/2026-07-17-ux-tooltips-taskplan.md`:
-> ein Commit pro Task, TDD wo ein Test benannt ist, Flips nur im benannten
-> Task-Commit, Commit-Titel trägt die Regel-ID.
+> Format: ein Commit pro Task, TDD wo ein Test benannt ist, Flips nur im
+> benannten Task-Commit, Commit-Titel trägt die Regel-ID.
 >
 > **HARTE ANWEISUNG AN DIE CODE-PHASE: Implementiere NUR Phase 1
 > (T0, T2, T7, T8, T3 in dieser Reihenfolge/Wellung), dann STOPP.**
