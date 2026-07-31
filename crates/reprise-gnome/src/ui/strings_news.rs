@@ -42,7 +42,8 @@ pub const COVER_DOWNLOAD_DESCRIPTION: &str =
 pub const ARTIST_PORTRAITS: &str = N_!("Artist Portraits");
 pub const ARTIST_PORTRAITS_DESCRIPTION: &str = N_!("Show artist images · contacts Deezer");
 pub const ONLINE_LYRICS: &str = N_!("Online Lyrics");
-pub const ONLINE_LYRICS_DESCRIPTION: &str = N_!("Load missing lyrics · contacts LRCLIB");
+pub const ONLINE_LYRICS_DESCRIPTION: &str =
+    N_!("Load missing lyrics · contacts LRCLIB and NetEase");
 pub const ENABLE_ALBUM_COVERS: &str = N_!("Enable album cover downloads →");
 pub const ENABLE_ARTIST_PORTRAITS: &str = N_!("Enable artist images →");
 pub const ENABLE_NEW_RELEASES: &str = N_!("Enable new releases →");

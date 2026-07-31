@@ -2135,13 +2135,14 @@ property is set and yet nothing happens.
   refresh interval. A successful fetch removes the banner silently; cached
   content is never replaced, and three or more failures become one collected
   notice.
-- **LYR-1** [planned] [core] — Local embedded lyrics and `.lrc` sidecars
-  are shown independently of the Online Lyrics module. Reprise does not
-  yet read these local formats today; the rule stays planned until this
-  dedicated format feature exists.
-- **LYR-2** [active] [gtk] — LRCLIB is contacted only when the Lyrics tab
-  is open, local text is missing, and the Online Lyrics module is switched
-  on. There is neither prefetch nor batch fetch for upcoming queue entries.
+- **LYR-1** [active] [core] — Local embedded lyrics and `.lrc` sidecars
+  are shown independently of the Online Lyrics module. Sidecars take
+  precedence over embedded tags; synchronized text takes precedence over
+  plain text. Local files are read but never changed.
+- **LYR-2** [active] [gtk] — An interactive online lyrics lookup starts only
+  when the Lyrics tab is open, local synchronized text is missing, and the
+  Online Lyrics module is switched on. Local plain text is shown immediately
+  while the provider chain continues looking for synchronized text.
   What matters is the loaded track, not the playback state: a track
   restored from the session that sits in the player bar shows its lyrics
   without a prior start. The empty state "Play a track to see its lyrics"
@@ -2150,14 +2151,21 @@ property is set and yet nothing happens.
   the module switched off, a centered StatusPage shows an icon, the title
   "Online lyrics are disabled", the subtitle "Enable them to load missing
   lyrics automatically", and "Enable in Settings" as a deep link to the
-  briefly highlighted Plugins row. As long as LYR-1 stays planned, this
-  state promises no local embedded lyrics. A switched-on module with no
-  match shows "No lyrics found" instead.
+  briefly highlighted Plugins row. This state appears only after the always-on
+  local lookup found nothing. A switched-on module with no match shows "No
+  lyrics found" instead.
   A distinction from `NET-3`: this rule handles the **switched-off** module
   (the `NET-1a` family — a deliberate user decision, not connectivity) and
   stays `[active]` unchanged for it. The case "module on, but offline" is not
   specified for lyrics today; were it to arise, `NET-3` would govern it, not
   this rule — the two states must not be confused.
+- **LYR-5** [active] [core] — Lyrics providers run in this order: embedded
+  tags and `.lrc` sidecar locally, then LRCLIB, then NetEase. The first
+  synchronized result wins; the first plain result remains the fallback.
+  Instrumental stops the chain unless local text was already found. Transport
+  and 5xx failures open a per-host circuit breaker after three failures for
+  five minutes; a user retry bypasses cache and breaker. The Lyrics footer
+  names the source and whether the result is synchronized.
 - **DISCOVER-1** [replaced by BROWSE-1] — Network features without a
   permanently visible surface of their own get exactly one subtle,
   dismissible inline hint at the location of the visible gap: covers from

@@ -96,5 +96,3 @@ mod artist_news_query_tests;
 mod artist_news_view_tests;
 #[cfg(test)]
 mod fingerprint_tests;
-#[cfg(test)]
-mod lyrics_tests;

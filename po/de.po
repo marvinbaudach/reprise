@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-30 21:39+0200\n"
+"POT-Creation-Date: 2026-07-31 09:09+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Marvin Baudach\n"
 "Language-Team: German\n"
@@ -775,7 +775,7 @@ msgid "Retry"
 msgstr "Erneut versuchen"
 
 #: crates/reprise-gnome/src/ui/strings.rs:559
-#: crates/reprise-gnome/src/ui/strings_news.rs:51
+#: crates/reprise-gnome/src/ui/strings_news.rs:52
 msgid "Dismiss"
 msgstr "Schließen"
 
@@ -1966,7 +1966,7 @@ msgid "Open in MusicBrainz"
 msgstr "In MusicBrainz öffnen"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:36
-#: crates/reprise-gnome/src/ui/strings_news.rs:146
+#: crates/reprise-gnome/src/ui/strings_news.rs:147
 msgid "New Releases"
 msgstr "Neue Veröffentlichungen"
 
@@ -1999,232 +1999,232 @@ msgstr "Interpretenbilder anzeigen · kontaktiert Deezer"
 msgid "Online Lyrics"
 msgstr "Online-Songtexte"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:45
-msgid "Load missing lyrics · contacts LRCLIB"
-msgstr "Fehlende Songtexte laden · kontaktiert LRCLIB"
-
 #: crates/reprise-gnome/src/ui/strings_news.rs:46
+msgid "Load missing lyrics · contacts LRCLIB and NetEase"
+msgstr "Fehlende Songtexte laden · kontaktiert LRCLIB und NetEase"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:47
 msgid "Enable album cover downloads →"
 msgstr "Albumcover-Downloads aktivieren →"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:47
+#: crates/reprise-gnome/src/ui/strings_news.rs:48
 msgid "Enable artist images →"
 msgstr "Interpretenbilder aktivieren →"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:48
+#: crates/reprise-gnome/src/ui/strings_news.rs:49
 msgid "Enable new releases →"
 msgstr "Neue Veröffentlichungen aktivieren →"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:50
+#: crates/reprise-gnome/src/ui/strings_news.rs:51
 msgid "Enable network features for artists (images & new releases) →"
 msgstr ""
 "Netz-Features für Interpreten aktivieren (Bilder & neue Veröffentlichungen) →"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:52
+#: crates/reprise-gnome/src/ui/strings_news.rs:53
 msgid "Artists"
 msgstr "Interpreten"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:53
+#: crates/reprise-gnome/src/ui/strings_news.rs:54
 msgid "Top artists only"
 msgstr "Nur meistgehörte Interpreten"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:54
+#: crates/reprise-gnome/src/ui/strings_news.rs:55
 msgid "All artists"
 msgstr "Alle Interpreten"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:55
+#: crates/reprise-gnome/src/ui/strings_news.rs:56
 msgid "Include Singles"
 msgstr "Auch Singles einschließen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:57
+#: crates/reprise-gnome/src/ui/strings_news.rs:58
 msgid "Also report singles that have already been released"
 msgstr "Auch bereits veröffentlichte Singles melden"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:58
+#: crates/reprise-gnome/src/ui/strings_news.rs:59
 msgid "Fetch now"
 msgstr "Jetzt abrufen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:59
+#: crates/reprise-gnome/src/ui/strings_news.rs:60
 msgid "Refresh failed · showing saved releases"
 msgstr "Aktualisierung fehlgeschlagen · zeigt gespeicherte Veröffentlichungen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:60
+#: crates/reprise-gnome/src/ui/strings_news.rs:61
 msgid "UPDATES"
 msgstr "AKTUALISIERUNGEN"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:61
+#: crates/reprise-gnome/src/ui/strings_news.rs:62
 msgid "NEW RELEASES"
 msgstr "NEUE VERÖFFENTLICHUNGEN"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:62
+#: crates/reprise-gnome/src/ui/strings_news.rs:63
 msgid "CONCERTS"
 msgstr "KONZERTE"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:63
+#: crates/reprise-gnome/src/ui/strings_news.rs:64
 msgid "new near you"
 msgstr "neu in der Nähe"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:64
+#: crates/reprise-gnome/src/ui/strings_news.rs:65
 msgid "newly announced"
 msgstr "neu angekündigt"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:65
+#: crates/reprise-gnome/src/ui/strings_news.rs:66
 msgid "Concerts fetch failed"
 msgstr "Abrufen der Konzerte fehlgeschlagen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:66
+#: crates/reprise-gnome/src/ui/strings_news.rs:67
 msgid "Checking for new releases…"
 msgstr "Suche nach neuen Veröffentlichungen…"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:67
+#: crates/reprise-gnome/src/ui/strings_news.rs:68
 msgid "No upcoming releases from your artists"
 msgstr "Keine bevorstehenden Veröffentlichungen Ihrer Interpreten"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:68
+#: crates/reprise-gnome/src/ui/strings_news.rs:69
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:94
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:177
 msgid "Updated just now"
 msgstr "Gerade aktualisiert"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:69
+#: crates/reprise-gnome/src/ui/strings_news.rs:70
 msgid "See all"
 msgstr "Alle anzeigen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:70
+#: crates/reprise-gnome/src/ui/strings_news.rs:71
 #: crates/reprise-gnome/src/ui/strings_releases.rs:33
 msgid "Hide"
 msgstr "Ausblenden"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:75
+#: crates/reprise-gnome/src/ui/strings_news.rs:76
 #, rust-format
 msgid "{count} track selected"
 msgid_plural "{count} tracks selected"
 msgstr[0] "{count} Titel ausgewählt"
 msgstr[1] "{count} Titel ausgewählt"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:86
+#: crates/reprise-gnome/src/ui/strings_news.rs:87
 #, rust-format
 msgid "{count} track · {duration}"
 msgid_plural "{count} tracks · {duration}"
 msgstr[0] "{count} Titel · {duration}"
 msgstr[1] "{count} Titel · {duration}"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:97
+#: crates/reprise-gnome/src/ui/strings_news.rs:98
 #, rust-format
 msgid "Playing from {source} · {count} track"
 msgid_plural "Playing from {source} · {count} tracks"
 msgstr[0] "Wiedergabe aus {source} · {count} Titel"
 msgstr[1] "Wiedergabe aus {source} · {count} Titel"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:106
+#: crates/reprise-gnome/src/ui/strings_news.rs:107
 #, rust-format
 msgid "{type} · {date}"
 msgstr "{type} · {date}"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:113
+#: crates/reprise-gnome/src/ui/strings_news.rs:114
 #, rust-format
 msgid "MusicBrainz · Updated {date}"
 msgstr "MusicBrainz · Aktualisiert am {date}"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:118
+#: crates/reprise-gnome/src/ui/strings_news.rs:119
 #, rust-format
 msgid "Cached · Updated {date}"
 msgstr "Zwischengespeichert · Aktualisiert am {date}"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:129
+#: crates/reprise-gnome/src/ui/strings_news.rs:130
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:98
 #, rust-format
 msgid "Updated {age} min ago"
 msgstr "Vor {age} Min. aktualisiert"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:135
+#: crates/reprise-gnome/src/ui/strings_news.rs:136
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:104
 #, rust-format
 msgid "Updated {age} h ago"
 msgstr "Vor {age} Std. aktualisiert"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:138
+#: crates/reprise-gnome/src/ui/strings_news.rs:139
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:109
 #, rust-format
 msgid "Updated {age} d ago"
 msgstr "Vor {age} Tg. aktualisiert"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:143
+#: crates/reprise-gnome/src/ui/strings_news.rs:144
 #, rust-format
 msgid "{count} hidden · Show"
 msgstr "{count} ausgeblendet · Anzeigen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:147
+#: crates/reprise-gnome/src/ui/strings_news.rs:148
 msgid "released"
 msgstr "veröffentlicht"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:148
+#: crates/reprise-gnome/src/ui/strings_news.rs:149
 #: crates/reprise-gnome/src/ui/strings_releases.rs:27
 msgid "In library"
 msgstr "In der Musiksammlung"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:149
+#: crates/reprise-gnome/src/ui/strings_news.rs:150
 msgid "Single in library"
 msgstr "Single in der Musiksammlung"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:150
+#: crates/reprise-gnome/src/ui/strings_news.rs:151
 msgid "Show in library"
 msgstr "In der Musiksammlung anzeigen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:151
+#: crates/reprise-gnome/src/ui/strings_news.rs:152
 msgid "Open announcement"
 msgstr "Ankündigung öffnen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:152
+#: crates/reprise-gnome/src/ui/strings_news.rs:153
 msgid "Show again"
 msgstr "Erneut anzeigen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:153
+#: crates/reprise-gnome/src/ui/strings_news.rs:154
 msgid "All caught up"
 msgstr "Alles aktuell"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:154
+#: crates/reprise-gnome/src/ui/strings_news.rs:155
 msgid "Retention: 6 months"
 msgstr "Aufbewahrung: 6 Monate"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:160
+#: crates/reprise-gnome/src/ui/strings_news.rs:161
 #, rust-format
 msgid "in {days} d"
 msgstr "in {days} Tg."
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:166
+#: crates/reprise-gnome/src/ui/strings_news.rs:167
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:39
 #, rust-format
 msgid "{count} new"
 msgstr "{count} neu"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:171
+#: crates/reprise-gnome/src/ui/strings_news.rs:172
 #, rust-format
 msgid "Show all concerts ({count}) →"
 msgstr "Alle Konzerte anzeigen ({count}) →"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:178
+#: crates/reprise-gnome/src/ui/strings_news.rs:179
 #, rust-format
 msgid "Show all releases ({count}) →"
 msgstr "Alle Veröffentlichungen anzeigen ({count}) →"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:185
+#: crates/reprise-gnome/src/ui/strings_news.rs:186
 msgid "unknown date"
 msgstr "unbekanntes Datum"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:194
+#: crates/reprise-gnome/src/ui/strings_news.rs:195
 msgid "Checking missing album covers…"
 msgstr "Fehlende Albumcover werden geprüft…"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:195
+#: crates/reprise-gnome/src/ui/strings_news.rs:196
 msgid "Cover check complete"
 msgstr "Cover-Prüfung abgeschlossen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:196
+#: crates/reprise-gnome/src/ui/strings_news.rs:197
 msgid "Could not check album covers"
 msgstr "Albumcover konnten nicht geprüft werden"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:209
+#: crates/reprise-gnome/src/ui/strings_news.rs:210
 #, rust-format
 msgid ""
 "{checked} of {total} checked · {downloaded} downloaded · {unavailable} "
@@ -4907,22 +4907,46 @@ msgid "Could not load lyrics"
 msgstr "Songtext konnte nicht geladen werden"
 
 #: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs:16
+msgid "synced · tags"
+msgstr "synchron · Tags"
+
+#: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs:17
+msgid "synced · .lrc"
+msgstr "synchron · .lrc"
+
+#: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs:18
+msgid "lyrics · .lrc"
+msgstr "Songtext · .lrc"
+
+#: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs:19
 msgid "synced · LRCLIB"
 msgstr "synchron · LRCLIB"
 
-#: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs:17
+#: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs:20
+msgid "lyrics · LRCLIB"
+msgstr "Songtext · LRCLIB"
+
+#: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs:21
+msgid "synced · NetEase"
+msgstr "synchron · NetEase"
+
+#: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs:22
+msgid "lyrics · NetEase"
+msgstr "Songtext · NetEase"
+
+#: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs:23
 msgid "lyrics · tags"
 msgstr "Songtext · Tags"
 
-#: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs:18
+#: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs:24
 msgid "Online lyrics are disabled"
 msgstr "Online-Songtexte sind deaktiviert"
 
-#: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs:20
+#: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs:26
 msgid "Enable them to load missing lyrics automatically"
 msgstr "Aktiviere sie, um fehlende Songtexte automatisch zu laden"
 
-#: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs:21
+#: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs:27
 msgid "Enable in Settings"
 msgstr "In den Einstellungen aktivieren"
 

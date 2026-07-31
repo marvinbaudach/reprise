@@ -2,7 +2,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
-use reprise_core::lyrics::{LyricsBody, LyricsError, TimedLine};
+use reprise_core::lyrics::{LyricsBody, LyricsError, LyricsHit, LyricsSource, TimedLine};
 
 use super::lyrics_scroll::{content_margins, ManualScrollTimer, ScrollMode};
 use super::lyrics_view::{
@@ -16,6 +16,14 @@ use super::lyrics_view::{
 /// stays generous enough for other themes while still rejecting a centered
 /// line (which lands ~120 px down) and the `f64::INFINITY` failure sentinel.
 const MAX_THEME_ROW_PADDING: f64 = 24.0;
+
+fn hit(body: LyricsBody, source: LyricsSource) -> LyricsHit {
+    LyricsHit { body, source }
+}
+
+fn lrclib(body: LyricsBody) -> LyricsHit {
+    hit(body, LyricsSource::Lrclib)
+}
 
 /// Pumps the main loop until `predicate` holds or the deadline passes.
 /// A single non-blocking iteration does not let GTK allocate a freshly
@@ -101,13 +109,45 @@ fn lyr_3_disabled_state_offers_activation() {
 }
 
 #[test]
-fn npp_9_fallbacks_keep_source_and_instrumental_gap_semantics() {
-    let synced = LyricsBody::Synced(vec![TimedLine::new(1_000, "synthetic line")]);
-    let plain = LyricsBody::Plain("synthetic plain text".into());
+fn lyr_5_source_labels_cover_every_provider_and_body_kind() {
+    let synced = |source| {
+        hit(
+            LyricsBody::Synced(vec![TimedLine::new(1_000, "synthetic line")]),
+            source,
+        )
+    };
+    let plain = |source| hit(LyricsBody::Plain("synthetic plain text".into()), source);
 
-    assert_eq!(lyrics_footer(&synced), "synced · LRCLIB");
-    assert_eq!(lyrics_footer(&plain), "lyrics · tags");
-    assert_eq!(lyrics_footer(&LyricsBody::Instrumental), "");
+    assert_eq!(lyrics_footer(&synced(LyricsSource::Tag)), "synced · tags");
+    assert_eq!(lyrics_footer(&plain(LyricsSource::Tag)), "lyrics · tags");
+    assert_eq!(
+        lyrics_footer(&synced(LyricsSource::Sidecar)),
+        "synced · .lrc"
+    );
+    assert_eq!(
+        lyrics_footer(&plain(LyricsSource::Sidecar)),
+        "lyrics · .lrc"
+    );
+    assert_eq!(
+        lyrics_footer(&synced(LyricsSource::Lrclib)),
+        "synced · LRCLIB"
+    );
+    assert_eq!(
+        lyrics_footer(&plain(LyricsSource::Lrclib)),
+        "lyrics · LRCLIB"
+    );
+    assert_eq!(
+        lyrics_footer(&synced(LyricsSource::Netease)),
+        "synced · NetEase"
+    );
+    assert_eq!(
+        lyrics_footer(&plain(LyricsSource::Netease)),
+        "lyrics · NetEase"
+    );
+    assert_eq!(
+        lyrics_footer(&hit(LyricsBody::Instrumental, LyricsSource::Lrclib)),
+        ""
+    );
     assert_eq!(active_line_alpha(1_000, 11_000), 100);
     assert_eq!(active_line_alpha(1_000, 11_001), 60);
     assert!(css().contains("color: alpha(#ffffff, 0.65)"));
@@ -131,11 +171,11 @@ fn lyrics_padding_only_synthesizes_trailing_context() {
 fn lyrics_bodies_are_not_selectable_and_only_one_timed_line_is_active() {
     gtk4::init().unwrap();
     let view = LyricsView::new();
-    view.show_result(&LyricsBody::Synced(vec![
+    view.show_result(&lrclib(LyricsBody::Synced(vec![
         TimedLine::new(1_000, "first synthetic line"),
         TimedLine::new(2_000, "second synthetic line"),
         TimedLine::new(3_000, "third synthetic line"),
-    ]));
+    ])));
     let labels = view.line_labels();
     assert_eq!(labels.len(), 3);
     assert!(labels.iter().all(|label| !label.is_selectable()));
@@ -160,13 +200,13 @@ fn lyrics_bodies_are_not_selectable_and_only_one_timed_line_is_active() {
     view.show_loading("Another synthetic title", "Synthetic artist");
     assert!(view.line_labels().is_empty());
 
-    view.show_result(&LyricsBody::Plain("synthetic plain text".into()));
+    view.show_result(&lrclib(LyricsBody::Plain("synthetic plain text".into())));
     let plain = view.line_labels();
     assert_eq!(plain.len(), 1);
     assert!(!plain[0].is_selectable());
     assert!(plain[0].wraps());
 
-    view.show_result(&LyricsBody::Instrumental);
+    view.show_result(&lrclib(LyricsBody::Instrumental));
     assert_eq!(view.visible_state_name().as_deref(), Some("status"));
     assert_eq!(view.status_text(), "Instrumental");
 }
@@ -206,10 +246,10 @@ fn npp_7_user_scroll_pauses_autoscroll() {
     gtk4::init().unwrap();
     let timer = ManualScrollTimer::new();
     let view = LyricsView::new_with_timer(timer.clone());
-    view.show_result(&LyricsBody::Synced(vec![TimedLine::new(
+    view.show_result(&lrclib(LyricsBody::Synced(vec![TimedLine::new(
         1_000,
         "synthetic line",
-    )]));
+    )])));
     view.set_active_line(Some(0));
 
     view.simulate_user_scroll();
@@ -240,10 +280,10 @@ fn npp_8_line_click_seeks() {
     gtk4::init().unwrap();
     let timer = ManualScrollTimer::new();
     let view = LyricsView::new_with_timer(timer.clone());
-    view.show_result(&LyricsBody::Synced(vec![
+    view.show_result(&lrclib(LyricsBody::Synced(vec![
         TimedLine::new(1_000, "first synthetic line"),
         TimedLine::new(2_500, "second synthetic line"),
-    ]));
+    ])));
     let sought = Rc::new(Cell::new(None));
     let sought_for_callback = sought.clone();
     view.set_on_seek(move |position_ms| sought_for_callback.set(Some(position_ms)));
@@ -265,12 +305,14 @@ fn npp_8_line_click_seeks() {
 fn synced_lyrics_are_roving_rows_and_plain_lyrics_are_not_actions() {
     gtk4::init().unwrap();
     let view = LyricsView::new();
-    view.show_result(&LyricsBody::Synced(vec![TimedLine::new(1_000, "synced")]));
+    view.show_result(&lrclib(LyricsBody::Synced(vec![TimedLine::new(
+        1_000, "synced",
+    )])));
     let synced = view.line_rows_for_test();
     assert_eq!(synced.len(), 1);
     assert!(synced[0].is_activatable());
 
-    view.show_result(&LyricsBody::Plain("plain".into()));
+    view.show_result(&lrclib(LyricsBody::Plain("plain".into())));
     let plain = view.line_rows_for_test();
     assert_eq!(plain.len(), 1);
     assert!(!plain[0].is_activatable());
@@ -290,7 +332,7 @@ fn active_lines_center_and_clamp_in_a_mapped_panel() {
             )
         })
         .collect();
-    view.show_result(&LyricsBody::Synced(lines));
+    view.show_result(&lrclib(LyricsBody::Synced(lines)));
     let window = gtk4::Window::builder()
         .default_width(340)
         .default_height(240)
@@ -324,7 +366,7 @@ fn npp_6_highlight_reflow_does_not_snap_after_centering() {
     let lines = (0..40)
         .map(|index| TimedLine::new(i64::from(index) * 1_000, "short synthetic line"))
         .collect();
-    view.show_result(&LyricsBody::Synced(lines));
+    view.show_result(&lrclib(LyricsBody::Synced(lines)));
     let window = gtk4::Window::builder()
         .default_width(300)
         .default_height(240)
@@ -420,7 +462,7 @@ fn lyr_4_start_of_song_is_not_centered() {
     let lines = (0..20)
         .map(|index| TimedLine::new(i64::from(index) * 1_000, format!("line {index}")))
         .collect();
-    view.show_result(&LyricsBody::Synced(lines));
+    view.show_result(&lrclib(LyricsBody::Synced(lines)));
     let window = gtk4::Window::builder()
         .default_width(300)
         .default_height(240)
@@ -457,7 +499,7 @@ fn npp_13_new_lyrics_begin_at_line_zero() {
     let lines = (0..20)
         .map(|index| TimedLine::new(i64::from(index) * 1_000, format!("line {index}")))
         .collect();
-    view.show_result(&LyricsBody::Synced(lines));
+    view.show_result(&lrclib(LyricsBody::Synced(lines)));
     let window = gtk4::Window::builder()
         .default_width(300)
         .default_height(240)

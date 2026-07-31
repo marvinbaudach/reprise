@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 use libadwaita as adw;
-use reprise_core::lyrics::{LyricsBody, LyricsError};
+use reprise_core::lyrics::{LyricsBody, LyricsError, LyricsHit, LyricsSource};
 
 pub(in crate::ui) use super::lyrics_scroll::centered_scroll_value;
 use super::lyrics_scroll::{GlibScrollTimer, LyricsScrollState, ScrollTimer, ScrollTimerHandle};
@@ -233,10 +233,10 @@ impl LyricsView {
         self.set_feedback(false, false);
     }
 
-    pub(in crate::ui) fn show_result(self: &Rc<Self>, body: &LyricsBody) {
+    pub(in crate::ui) fn show_result(self: &Rc<Self>, hit: &LyricsHit) {
         self.clear_lines();
-        self.set_footer(&lyrics_strings::text(lyrics_footer(body)));
-        match body {
+        self.set_footer(&lyrics_strings::text(lyrics_footer(hit)));
+        match &hit.body {
             LyricsBody::Synced(lines) => {
                 for line in lines {
                     self.append_line(&line.text, Some(line.start_ms));
@@ -678,11 +678,17 @@ pub(in crate::ui) fn active_line_alpha(timestamp_ms: i64, position_ms: i64) -> u
     }
 }
 
-pub(in crate::ui) fn lyrics_footer(body: &LyricsBody) -> &'static str {
-    match body {
-        LyricsBody::Synced(_) => lyrics_strings::SYNCED_LRCLIB,
-        LyricsBody::Plain(_) => lyrics_strings::LYRICS_TAGS,
-        LyricsBody::Instrumental => "",
+pub(in crate::ui) fn lyrics_footer(hit: &LyricsHit) -> &'static str {
+    match (&hit.body, hit.source) {
+        (LyricsBody::Instrumental, _) => "",
+        (LyricsBody::Synced(_), LyricsSource::Tag) => lyrics_strings::SYNCED_TAGS,
+        (LyricsBody::Plain(_), LyricsSource::Tag) => lyrics_strings::LYRICS_TAGS,
+        (LyricsBody::Synced(_), LyricsSource::Sidecar) => lyrics_strings::SYNCED_SIDECAR,
+        (LyricsBody::Plain(_), LyricsSource::Sidecar) => lyrics_strings::LYRICS_SIDECAR,
+        (LyricsBody::Synced(_), LyricsSource::Lrclib) => lyrics_strings::SYNCED_LRCLIB,
+        (LyricsBody::Plain(_), LyricsSource::Lrclib) => lyrics_strings::LYRICS_LRCLIB,
+        (LyricsBody::Synced(_), LyricsSource::Netease) => lyrics_strings::SYNCED_NETEASE,
+        (LyricsBody::Plain(_), LyricsSource::Netease) => lyrics_strings::LYRICS_NETEASE,
     }
 }
 
