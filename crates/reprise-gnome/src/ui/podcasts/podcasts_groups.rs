@@ -20,6 +20,7 @@ use super::podcasts_row_interaction::{
     episode_thumbnail, install_row_activation, reveal_unsubscribe_on_hover_or_focus,
 };
 use super::podcasts_row_state::{download_status, RowNetworkState};
+use super::podcasts_selection::{self, PodcastSelection};
 use super::podcasts_title::TitleParts;
 use crate::ui::strings;
 
@@ -43,6 +44,17 @@ struct GroupRenderContext<'a> {
     images_allowed: bool,
     connectivity: Connectivity,
     unavailable_episode: Option<i64>,
+    selection: &'a Rc<RefCell<PodcastSelection>>,
+    selected_ids: Vec<i64>,
+}
+
+struct EpisodeRenderContext<'a> {
+    playing: bool,
+    download_state: &'a DownloadState,
+    images_allowed: bool,
+    network: RowNetworkState,
+    selection: &'a Rc<RefCell<PodcastSelection>>,
+    selected_ids: &'a [i64],
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -58,11 +70,13 @@ pub(super) fn replace(
     images_allowed: bool,
     connectivity: Connectivity,
     unavailable_episode: Option<i64>,
+    selection: &Rc<RefCell<PodcastSelection>>,
 ) -> BTreeMap<i64, DownloadRowWidgets> {
     while let Some(child) = container.first_child() {
         container.remove(&child);
     }
     let mut download_widgets = BTreeMap::new();
+    let selected_ids = selection.borrow().selected_ids();
     let context = GroupRenderContext {
         playing_episode,
         expanded_sources,
@@ -73,6 +87,8 @@ pub(super) fn replace(
         images_allowed,
         connectivity,
         unavailable_episode,
+        selection,
+        selected_ids,
     };
     for rendered in groups {
         container.append(&build_group(rendered, &context, &mut download_widgets));
@@ -147,13 +163,17 @@ fn build_group(
         episodes.append(&episode_row(
             episode,
             &title_parts,
-            context.playing_episode == Some(episode.id),
-            &state,
             download_widgets,
-            context.images_allowed,
-            RowNetworkState {
-                connectivity: context.connectivity,
-                unavailable_now: context.unavailable_episode == Some(episode.id),
+            &EpisodeRenderContext {
+                playing: context.playing_episode == Some(episode.id),
+                download_state: &state,
+                images_allowed: context.images_allowed,
+                network: RowNetworkState {
+                    connectivity: context.connectivity,
+                    unavailable_now: context.unavailable_episode == Some(episode.id),
+                },
+                selection: context.selection,
+                selected_ids: &context.selected_ids,
             },
         ));
     }
@@ -277,11 +297,8 @@ fn group_image_url(group: &SourceGroup) -> Option<&str> {
 fn episode_row(
     row: &EpisodeRow,
     title_parts: &TitleParts,
-    playing: bool,
-    download_state: &DownloadState,
     download_widgets: &mut BTreeMap<i64, DownloadRowWidgets>,
-    images_allowed: bool,
-    network: RowNetworkState,
+    context: &EpisodeRenderContext<'_>,
 ) -> gtk4::Widget {
     let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
     root.add_css_class("reprise-podcast-episode-row");
@@ -294,7 +311,7 @@ fn episode_row(
         strings::PLAY_OR_PAUSE,
     ))]);
     root.set_valign(gtk4::Align::Center);
-    if playing {
+    if context.playing {
         root.add_css_class("reprise-podcast-playing");
     }
     root.set_margin_start(12);
@@ -302,7 +319,14 @@ fn episode_row(
     root.set_margin_top(4);
     root.set_margin_bottom(4);
 
-    let (thumbnail, play_glyph) = episode_thumbnail(row, playing, images_allowed);
+    let selected = podcasts_selection::episode_checkbox(
+        row.id,
+        &row.title,
+        context.selection.borrow().contains(row.id),
+    );
+    root.append(&selected);
+
+    let (thumbnail, play_glyph) = episode_thumbnail(row, context.playing, context.images_allowed);
     root.append(&thumbnail);
     install_row_activation(&root, row.id, &play_glyph);
 
@@ -329,7 +353,7 @@ fn episode_row(
     root.append(&identity);
 
     let status = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    status.append(&download_status(download_state));
+    status.append(&download_status(context.download_state));
     root.append(&status);
 
     let download = gtk4::Button::new();
@@ -341,19 +365,22 @@ fn episode_row(
         status,
         action: download.clone(),
     };
-    update_download_state(&widgets, download_state);
+    update_download_state(&widgets, context.download_state);
     update_network_state(
         &widgets,
-        download_state,
-        network.connectivity,
-        network.unavailable_now,
+        context.download_state,
+        context.network.connectivity,
+        context.network.unavailable_now,
     );
     download_widgets.insert(row.id, widgets);
     root.append(&download);
 
     let menu = gtk4::MenuButton::builder()
         .icon_name("view-more-symbolic")
-        .menu_model(&podcasts_context_menu::build(row))
+        .menu_model(&podcasts_context_menu::build_for_selection(
+            row,
+            context.selected_ids,
+        ))
         .build();
     menu.add_css_class("flat");
     menu.set_tooltip_text(Some(&strings::text(strings::PODCAST_MORE_OPTIONS)));
@@ -468,13 +495,17 @@ mod tests {
                     distinct: row.title.clone(),
                     dimmed: None,
                 },
-                false,
-                &DownloadState::NotDownloaded,
                 &mut widgets,
-                false,
-                RowNetworkState {
-                    connectivity: Connectivity::Online,
-                    unavailable_now: false,
+                &EpisodeRenderContext {
+                    playing: false,
+                    download_state: &DownloadState::NotDownloaded,
+                    images_allowed: false,
+                    network: RowNetworkState {
+                        connectivity: Connectivity::Online,
+                        unavailable_now: false,
+                    },
+                    selection: &Rc::new(RefCell::new(PodcastSelection::default())),
+                    selected_ids: &[],
                 },
             );
             let buttons = descendants(&rendered)
@@ -549,6 +580,7 @@ mod tests {
             false,
             Connectivity::Online,
             None,
+            &Rc::new(RefCell::new(PodcastSelection::default())),
         );
 
         let rows = container
@@ -607,6 +639,7 @@ mod tests {
             false,
             Connectivity::Online,
             None,
+            &Rc::new(RefCell::new(PodcastSelection::default())),
         );
         assert!(widgets.is_empty());
         assert!(container.first_child().is_some());
@@ -614,6 +647,64 @@ mod tests {
             .first_child()
             .and_downcast::<gtk4::Expander>()
             .is_some());
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn src_12_grouped_selection_survives_render_rebuild_with_a_keyboard_checkbox() {
+        gtk4::init().unwrap();
+        let mut selection = PodcastSelection::default();
+        selection.set_selected(1, true);
+        let selection = Rc::new(RefCell::new(selection));
+        let expanded_sources = Rc::new(RefCell::new(BTreeSet::from([1])));
+        let group = SourceGroup {
+            subscription_id: 1,
+            title: "Show".into(),
+            author: None,
+            image_url: None,
+            kind: PodcastKind::Rss,
+            sync_to_phone: false,
+            episodes: vec![episode(None)],
+        };
+        let rendered = RenderedSourceGroup {
+            summary: SourceSummary {
+                episode_count: 1,
+                new_count: 0,
+                downloaded_bytes: 0,
+                latest_published_at: None,
+            },
+            group,
+        };
+        let container = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+
+        for _ in 0..2 {
+            replace(
+                &container,
+                std::slice::from_ref(&rendered),
+                None,
+                &expanded_sources,
+                &Rc::new(RefCell::new(BTreeSet::new())),
+                &BTreeMap::new(),
+                &[],
+                &BTreeMap::new(),
+                false,
+                Connectivity::Online,
+                None,
+                &selection,
+            );
+            let checkbox = container
+                .first_child()
+                .and_downcast::<gtk4::Expander>()
+                .and_then(|expander| expander.child())
+                .and_downcast::<gtk4::Box>()
+                .and_then(|episodes| episodes.first_child())
+                .and_downcast::<gtk4::Box>()
+                .and_then(|row| row.first_child())
+                .and_downcast::<gtk4::CheckButton>()
+                .expect("selected episode checkbox");
+            assert!(checkbox.is_active());
+            assert!(checkbox.is_focusable());
+        }
     }
 
     #[test]

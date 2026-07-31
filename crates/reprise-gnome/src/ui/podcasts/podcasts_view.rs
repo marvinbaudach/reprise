@@ -31,6 +31,7 @@ use super::podcasts_removal::{
     DownloadToggleAction, KeptDownloads,
 };
 use super::podcasts_scroller::build_episode_scroller;
+use super::podcasts_selection::{PodcastSelection, SelectionControls};
 use super::podcasts_view_data::{last_updated_text, unique};
 use super::podcasts_worker::{
     podcasts_response_channel, request_generation, PodcastsOperation, PodcastsPriority,
@@ -105,6 +106,7 @@ pub(in crate::ui) struct PodcastsView {
     callbacks: PodcastsCallbacks,
     kind: PodcastKind,
     filter_bar: Rc<PodcastsFilterBar>,
+    selection_controls: SelectionControls,
     group_container: gtk4::Box,
     stack: gtk4::Stack,
     youtube_detail: Rc<YoutubeChannelDetail>,
@@ -132,6 +134,7 @@ pub(in crate::ui) struct PodcastsView {
     pub(super) device_sync: PodcastDeviceSyncState,
     expanded_sources: Rc<RefCell<BTreeSet<i64>>>,
     expanded_episode_sources: Rc<RefCell<BTreeSet<i64>>>,
+    selection: Rc<RefCell<PodcastSelection>>,
     download_states: Rc<RefCell<BTreeMap<i64, DownloadState>>>,
     download_widgets: RefCell<BTreeMap<i64, podcasts_groups::DownloadRowWidgets>>,
     playing_episode: Cell<Option<i64>>,
@@ -162,7 +165,11 @@ impl PodcastsView {
         group_container.set_margin_start(12);
         group_container.set_margin_end(12);
         group_container.set_hexpand(true);
-        let scroller = build_episode_scroller(group_container.upcast_ref::<gtk4::Widget>());
+        let (selection_bar, selection_controls) = SelectionControls::standalone();
+        let list_content = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
+        list_content.append(&selection_bar);
+        list_content.append(&group_container);
+        let scroller = build_episode_scroller(list_content.upcast_ref::<gtk4::Widget>());
 
         let status = adw::StatusPage::new();
         let status_button = gtk4::Button::new();
@@ -220,6 +227,7 @@ impl PodcastsView {
             callbacks,
             kind,
             filter_bar,
+            selection_controls,
             group_container,
             stack,
             youtube_detail,
@@ -240,6 +248,7 @@ impl PodcastsView {
             device_sync: PodcastDeviceSyncState::default(),
             expanded_sources: Rc::new(RefCell::new(BTreeSet::new())),
             expanded_episode_sources: Rc::new(RefCell::new(BTreeSet::new())),
+            selection: Rc::new(RefCell::new(PodcastSelection::default())),
             download_states: Rc::new(RefCell::new(BTreeMap::new())),
             download_widgets: RefCell::new(BTreeMap::new()),
             playing_episode: Cell::new(None),
@@ -321,6 +330,9 @@ impl PodcastsView {
                     .flat_map(|group| group.episodes.iter().cloned())
                     .collect::<Vec<_>>();
                 sort_newest_first(&mut rows);
+                self.selection
+                    .borrow_mut()
+                    .retain_available(rows.iter().map(|row| row.id));
                 let previous = self.download_states.borrow().clone();
                 self.download_states
                     .replace(refreshed_download_states(&rows, &previous));
@@ -376,6 +388,8 @@ impl PodcastsView {
         let rows = self.rows.borrow().clone();
         let groups = self.groups.borrow().clone();
         let download_states = self.download_states.borrow().clone();
+        let selected_ids = self.selection.borrow().selected_ids();
+        self.selection_controls.update(&selected_ids);
         let connected_devices = self.device_sync.connected();
         let selected_devices = self.device_sync.selected();
         let filter = self.filter_bar.filter();
@@ -415,6 +429,7 @@ impl PodcastsView {
             images_allowed,
             self.connectivity.get(),
             self.unavailable_episode.get(),
+            &self.selection,
         );
         self.download_widgets.replace(download_widgets);
         // `G2` (design 6a): the header line is a projection over the
