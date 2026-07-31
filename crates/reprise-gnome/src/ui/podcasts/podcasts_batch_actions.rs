@@ -3,8 +3,6 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use gtk4::glib::variant::ToVariant;
-use gtk4::prelude::*;
 use reprise_core::podcasts::download_state::DownloadState;
 
 /// `#[must_use]`: a dropped `BatchResult` is a batch whose partial failures
@@ -79,19 +77,8 @@ pub(super) fn downloadable_ids(
         .collect()
 }
 
-pub(super) fn dispatch_selected(host: &impl IsA<gtk4::Widget>, action: &str, episode_ids: &[i64]) {
-    let _ = host.activate_action(
-        &format!("podcasts.{action}"),
-        Some(&episode_ids.to_variant()),
-    );
-}
-
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
-    use std::rc::Rc;
-
-    use gtk4::gio;
 
     use super::*;
 
@@ -161,36 +148,5 @@ mod tests {
         assert_eq!(restored, [11, 12, 21]);
         assert_eq!(result.succeeded_ids, [11, 12, 21]);
         assert_eq!(result.failed, 0);
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn src_12_shared_batch_dispatch_reaches_library_and_channel_hosts() {
-        gtk4::init().unwrap();
-        fn host(seen: &Rc<RefCell<Vec<Vec<i64>>>>) -> gtk4::Box {
-            let host = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-            let group = gio::SimpleActionGroup::new();
-            let action =
-                gio::SimpleAction::new("remove-selected", Some(&Vec::<i64>::static_variant_type()));
-            let seen = seen.clone();
-            action.connect_activate(move |_, target| {
-                seen.borrow_mut().push(
-                    target
-                        .and_then(gtk4::glib::Variant::get::<Vec<i64>>)
-                        .expect("batch target"),
-                );
-            });
-            group.add_action(&action);
-            host.insert_action_group("podcasts", Some(&group));
-            host
-        }
-        let seen = Rc::new(RefCell::new(Vec::new()));
-        let library = host(&seen);
-        let channel = host(&seen);
-
-        dispatch_selected(&library, "remove-selected", &[1, 2]);
-        dispatch_selected(&channel, "remove-selected", &[7, 8]);
-
-        assert_eq!(*seen.borrow(), [vec![1, 2], vec![7, 8]]);
     }
 }

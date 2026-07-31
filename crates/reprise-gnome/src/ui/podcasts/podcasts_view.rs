@@ -165,9 +165,9 @@ impl PodcastsView {
         group_container.set_margin_start(12);
         group_container.set_margin_end(12);
         group_container.set_hexpand(true);
-        let selection_controls = SelectionControls::new();
+        let (selection_bar, selection_controls) = SelectionControls::standalone();
         let list_content = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
-        list_content.append(selection_controls.widget());
+        list_content.append(&selection_bar);
         list_content.append(&group_container);
         let scroller = build_episode_scroller(list_content.upcast_ref::<gtk4::Widget>());
 
