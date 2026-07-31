@@ -55,8 +55,7 @@ pub(in crate::ui) mod view_state_memory;
 use super::*;
 pub(in crate::ui) use playlist_reorder_guard::playlist_reorder_allowed;
 pub(in crate::ui) use surface::{
-    notify_import_errors_mutated_and_reload, reload, set_filter_and_reload, set_source_and_reload,
-    show_toast, OnActivate, Shared, TrackList,
+    reload, set_filter_and_reload, set_source_and_reload, show_toast, OnActivate, Shared, TrackList,
 };
 pub(in crate::ui) use track_list_layout::{
     STACK_PAGE_EMPTY, STACK_PAGE_IMPORT_ERRORS, STACK_PAGE_LIST, STACK_PAGE_MISSING,

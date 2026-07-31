@@ -591,20 +591,3 @@ impl TrackList {
         *self.shared.player.borrow_mut() = Rc::downgrade(player);
     }
 }
-
-/// Clone-out-then-call `on_import_errors_mutated` (hoisted per this
-/// project's `RefCell` callback discipline), then `reload` — the panel's own
-/// `refresh()` already updated its rows before this callback fired (see
-/// `import_errors_view.rs`'s `notify_mutated_and_refresh`), but only `reload`
-/// re-derives this `TrackList`'s stack-page decision (e.g. switching to the
-/// "nothing here" empty page once the last error is dismissed).
-pub(in crate::ui) fn notify_import_errors_mutated_and_reload(shared: &Rc<Shared>) {
-    reload(shared);
-    let callback = shared.on_import_errors_mutated.borrow().clone();
-    match callback {
-        Some(callback) => callback(),
-        None => tracing::warn!(
-            "import errors panel: mutated but no on_import_errors_mutated callback is wired"
-        ),
-    }
-}

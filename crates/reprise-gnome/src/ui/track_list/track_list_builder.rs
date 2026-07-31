@@ -27,8 +27,8 @@ use super::track_list_smoke::{
 };
 use super::track_list_sort::{sort_by_column, wire_sort_clicks, SortState};
 use super::{
-    notify_import_errors_mutated_and_reload, OnActivate, Shared, TrackList, STACK_PAGE_EMPTY,
-    STACK_PAGE_IMPORT_ERRORS, STACK_PAGE_LIST, STACK_PAGE_MISSING,
+    OnActivate, Shared, TrackList, STACK_PAGE_EMPTY, STACK_PAGE_IMPORT_ERRORS, STACK_PAGE_LIST,
+    STACK_PAGE_MISSING,
 };
 
 pub(in crate::ui) fn build(
@@ -293,5 +293,22 @@ pub(in crate::ui) fn build(
         root,
         column_registry,
         responsive_columns,
+    }
+}
+
+/// Clone-out-then-call `on_import_errors_mutated` (hoisted per this
+/// project's `RefCell` callback discipline), then `reload` — the panel's own
+/// `refresh()` already updated its rows before this callback fired (see
+/// `import_errors_view.rs`'s `notify_mutated_and_refresh`), but only `reload`
+/// re-derives this `TrackList`'s stack-page decision (e.g. switching to the
+/// "nothing here" empty page once the last error is dismissed).
+fn notify_import_errors_mutated_and_reload(shared: &Rc<Shared>) {
+    reload(shared);
+    let callback = shared.on_import_errors_mutated.borrow().clone();
+    match callback {
+        Some(callback) => callback(),
+        None => tracing::warn!(
+            "import errors panel: mutated but no on_import_errors_mutated callback is wired"
+        ),
     }
 }
