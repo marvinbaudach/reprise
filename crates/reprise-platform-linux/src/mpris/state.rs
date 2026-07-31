@@ -284,7 +284,7 @@ mod tests {
     }
 
     #[test]
-    fn pod_20_podcast_external_transport_forwards_available_neighbours() {
+    fn pod_21_podcast_external_transport_forwards_available_neighbours() {
         let state = MprisState {
             track_id: None,
             external_ref: Some("podcast/42".into()),

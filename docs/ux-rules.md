@@ -3506,11 +3506,21 @@ listening statistics.
   and display stay in the GNOME crate. The on-disk cache is limited to
   `MAX_CACHE_ENTRIES` (300) entries and, when exceeded, deterministically
   clears the files untouched for longest first — unlike the unbounded,
-  permanent cover-art cache. Every caller (podcast library view, YouTube
-  channel detail, all three add dialogs) computes the gate itself at its own
-  connection rather than relying on an upstream checkpoint — the lesson from
-  `T6-G1-gap`: a privacy promise in UI copy needs a test per call path, not per
-  feature.
+  permanent cover-art cache. Episode images follow the same rule: a stored
+  provider URL wins, and when a YouTube episode has none, the read projection
+  derives `https://i.ytimg.com/vi/<video-id>/hqdefault.jpg` from its durable
+  video id without persisting a second value, while RSS never receives a
+  derived YouTube URL. When a YouTube channel itself has no image, its library
+  group header shows the newest episode's image; RSS group headers never borrow
+  an episode image. Every caller (podcast library view, YouTube channel detail,
+  all three add dialogs) computes the gate itself at its own connection rather
+  than relying on an upstream checkpoint — the lesson from `T6-G1-gap`: a
+  privacy promise in UI copy needs a test per call path, not per feature.
+- **SRC-12** [active] [gtk] — Episodes can be selected in bulk in both the
+  grouped library view and the channel detail view, with one shared set of
+  batch actions. Actions that are meaningless for more than one episode are
+  hidden rather than applied to an arbitrary member, and a batch reports
+  itself with a single aggregated toast and a single undo.
 - **POD-1** [active] [core] — Episode status is a pure derivation:
   Played exactly when `played_at` is set, otherwise Resume when
   `position_ms > 0`, otherwise unstarted. The visible New pill is a
@@ -3722,7 +3732,14 @@ listening statistics.
   cached or downloaded episode exists, the same information and actions use
   the shared full-area failure state instead. Neither surface renders raw
   provider, transport, database or helper text outside Details.
-- **POD-20** [active] [gtk] — A playing podcast or YouTube episode has
+- **POD-20** [active] [gtk] — The loaded episode carries the shared
+  playback marker in every episode surface it appears in, and that marker
+  tells running from paused. Activating the loaded row toggles pause and
+  resume; it never reopens the session, because a restart costs an audible
+  gap and resumes from the throttled saved position rather than the live
+  one. Only the context menu restarts an episode. Hovering the loaded row
+  replaces the marker with the glyph for what a click does next.
+- **POD-21** [active] [gtk] — A playing podcast or YouTube episode has
   neighbours: ⏮/⏭ move to the adjacent row of the list it was started from,
   in rendered order, without wrapping. The neighbour list is frozen when
   playback starts. Radio has no neighbours. While any external session is

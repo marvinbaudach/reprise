@@ -64,7 +64,7 @@ mod tests {
     }
 
     #[test]
-    fn pod_20_neighbour_snapshot_flattens_every_group_and_collapsed_episode() {
+    fn pod_21_neighbour_snapshot_flattens_every_group_and_collapsed_episode() {
         let groups = vec![group(1, &[3, 2]), group(2, &[9, 8, 7])];
 
         assert_eq!(episode_ids_in_rendered_order(&groups), vec![3, 2, 9, 8, 7]);

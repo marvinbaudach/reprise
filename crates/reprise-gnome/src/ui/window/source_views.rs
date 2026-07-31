@@ -55,6 +55,16 @@ pub(in crate::ui) fn install(
         },
         {
             let player = player.map(Rc::downgrade);
+            move || {
+                if let Some(player) = player.as_ref().and_then(std::rc::Weak::upgrade) {
+                    player.toggle_pause();
+                } else {
+                    tracing::warn!("podcast playback unavailable: player backend is not running");
+                }
+            }
+        },
+        {
+            let player = player.map(Rc::downgrade);
             move |subscription_id| {
                 if let Some(player) = player.as_ref().and_then(std::rc::Weak::upgrade) {
                     player.stop_podcast_subscription(subscription_id);
@@ -100,31 +110,34 @@ pub(in crate::ui) fn install(
         let podcasts = Rc::downgrade(&podcasts);
         let youtube = Rc::downgrade(&youtube);
         player.add_on_external_changed(move |snapshot| {
-            let episode_id = snapshot.as_ref().and_then(|snapshot| match snapshot.media {
+            let episode_mark = snapshot.as_ref().and_then(|snapshot| match snapshot.media {
                 crate::ui::playback::external_media::ExternalMedia::Podcast {
                     episode_id, ..
-                } => Some(episode_id),
+                } => Some(crate::ui::podcasts::EpisodeMark::new(
+                    episode_id,
+                    crate::ui::podcasts::podcast_phase_is_playing(snapshot.podcast_phase),
+                )),
                 crate::ui::playback::external_media::ExternalMedia::Radio { .. } => None,
             });
             let unavailable_episode = snapshot.as_ref().and_then(|snapshot| {
                 if snapshot.podcast_phase
                     == Some(crate::ui::playback::external_media::PodcastPhase::Failed)
                 {
-                    episode_id
+                    episode_mark.map(|mark| mark.id)
                 } else {
                     None
                 }
             });
             if let Some(view) = podcasts.upgrade() {
-                view.set_playing_episode(episode_id);
+                view.set_playing_episode(episode_mark);
                 view.set_unavailable_episode(unavailable_episode);
             }
             if let Some(view) = youtube.upgrade() {
-                view.set_playing_episode(episode_id);
+                view.set_playing_episode(episode_mark);
                 view.set_unavailable_episode(unavailable_episode);
             }
             tracing::debug!(
-                ?episode_id,
+                episode_id = ?episode_mark.map(|mark| mark.id),
                 phase = ?snapshot.as_ref().and_then(|snapshot| snapshot.podcast_phase),
                 can_go_previous =
                     snapshot.as_ref().is_some_and(|snapshot| snapshot.can_go_previous),

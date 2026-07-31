@@ -423,6 +423,50 @@ fn focus_driven_selection_browses_without_routing_but_activation_routes() {
     window.close();
 }
 
+/// UX FIL-1c: an album/artist/genre scope is opened through in-view
+/// navigation and has no sidebar row of its own. A routine counts refresh —
+/// the one every queue mutation fires ("up next changed"), i.e. every single
+/// play started from inside the scope — must not read that missing row as a
+/// vanished source and route the user back to the whole library, which is
+/// what dropped the scope chip and re-showed every artist.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn fil_1c_scope_view_survives_the_queue_refresh_a_play_triggers() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let shared = test_shared();
+    wire_row_selected(&shared);
+    rebuild(&shared, None, "test build");
+    let routed: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
+    {
+        let routed = routed.clone();
+        *shared.on_select.borrow_mut() = Some(Rc::new(move |source: ViewSource, _title| {
+            routed.borrow_mut().push(source.label());
+        }));
+    }
+    // `route_to_place`'s scope arm re-baselines `current_source` to the
+    // artist it just opened in the track list.
+    let scope = ViewSource::Artist("Lorna Shore".into());
+    *shared.current_source.borrow_mut() = scope.clone();
+
+    rebuild(&shared, None, "up next changed");
+
+    assert!(
+        routed.borrow().is_empty(),
+        "a counts refresh inside an artist scope must not route anywhere; routed to {:?}",
+        routed.borrow()
+    );
+    assert_eq!(
+        *shared.current_source.borrow(),
+        scope,
+        "the scope must stay the current source across a refresh"
+    );
+    assert!(
+        shared.listbox.selected_row().is_none(),
+        "no sidebar row represents a scope view, so none may be selected"
+    );
+}
+
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn acc_3_focus_transfer_between_sidebar_collections_does_not_resync_mid_flight() {
@@ -597,6 +641,31 @@ fn falls_back_to_library_when_a_smart_list_vanished() {
     let (source, fell_back) = resolve_select_source(ViewSource::Smart(7), false);
     assert_eq!(source, ViewSource::Library);
     assert!(fell_back);
+}
+
+#[test]
+fn scope_views_are_not_backed_by_a_sidebar_row() {
+    for scope in [
+        ViewSource::Artist("Lorna Shore".into()),
+        ViewSource::Genre("Metalcore".into()),
+        ViewSource::Album {
+            album: "Pain Remains".into(),
+            album_artist: "Lorna Shore".into(),
+        },
+    ] {
+        assert!(!has_sidebar_row(&scope));
+    }
+    for row_backed in [
+        ViewSource::Library,
+        ViewSource::Queue,
+        ViewSource::RecentlyAdded,
+        ViewSource::Playlist(3),
+        ViewSource::Smart(7),
+        ViewSource::Missing,
+        ViewSource::MyStats,
+    ] {
+        assert!(has_sidebar_row(&row_backed));
+    }
 }
 
 #[test]

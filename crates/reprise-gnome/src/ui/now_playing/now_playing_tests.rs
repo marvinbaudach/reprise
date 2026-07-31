@@ -110,7 +110,7 @@ fn no_loaded_track_uses_the_idle_presentation() {
 }
 
 #[test]
-fn pod_20_external_episode_uses_the_shared_bar_identity_instead_of_idle_copy() {
+fn pod_21_external_episode_uses_the_shared_bar_identity_instead_of_idle_copy() {
     let snapshot = external_episode_snapshot();
 
     let presentation =
@@ -123,7 +123,7 @@ fn pod_20_external_episode_uses_the_shared_bar_identity_instead_of_idle_copy() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn pod_20_external_header_uses_episode_identity_and_source_tile() {
+fn pod_21_external_header_uses_episode_identity_and_source_tile() {
     gtk4::init().unwrap();
     let (_window, panel) = test_panel("org.reprise.Reprise.ExternalPanelHeaderTest");
     panel.set_external_snapshot(Some(external_episode_snapshot()));
@@ -144,7 +144,7 @@ fn pod_20_external_header_uses_episode_identity_and_source_tile() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn pod_20_lyrics_falls_back_and_stays_hidden_for_podcast_youtube_and_radio() {
+fn pod_21_lyrics_falls_back_and_stays_hidden_for_podcast_youtube_and_radio() {
     gtk4::init().unwrap();
     let (_window, panel) = test_panel("org.reprise.Reprise.ExternalLyricsTest");
     let mut youtube = external_episode_snapshot();

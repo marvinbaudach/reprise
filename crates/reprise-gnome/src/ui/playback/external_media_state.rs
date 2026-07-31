@@ -505,7 +505,7 @@ mod tests {
     }
 
     #[test]
-    fn pod_20_neighbours_follow_the_frozen_rendered_order_without_wrapping() {
+    fn pod_21_neighbours_follow_the_frozen_rendered_order_without_wrapping() {
         let mut rendered_ids = vec![11, 22, 33];
         let middle = NeighbourContext::for_episode(&rendered_ids, 22).unwrap();
 
@@ -532,7 +532,7 @@ mod tests {
     }
 
     #[test]
-    fn pod_20_a_stream_that_dies_before_playing_stays_on_the_advance_chain() {
+    fn pod_21_a_stream_that_dies_before_playing_stays_on_the_advance_chain() {
         let neighbours = NeighbourContext::for_episode(&[1, 2, 3], 2).unwrap();
         let chain = AutomaticAdvance::new(NeighbourDirection::Next);
         let mut session = podcast_session(Some(neighbours), Some(chain));

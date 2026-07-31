@@ -41,6 +41,8 @@ mod tests {
         for source in [
             include_str!("track_list/track_list_columns.rs"),
             include_str!("player_bar/player_bar_layout.rs"),
+            include_str!("podcasts/podcasts_groups.rs"),
+            include_str!("podcasts/youtube_channel_detail.rs"),
         ] {
             assert!(source.contains("playing_marker::build"));
             assert!(!source.contains("eq_bars::build(EqVariant::Animated)"));

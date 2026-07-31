@@ -515,7 +515,7 @@ mod tests {
     }
 
     #[test]
-    fn pod_20_external_episode_neighbours_are_mpris_transport_capabilities() {
+    fn pod_21_external_episode_neighbours_are_mpris_transport_capabilities() {
         let podcast = MprisState {
             track_id: None,
             external_ref: Some("podcast/42".into()),

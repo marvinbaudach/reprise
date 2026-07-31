@@ -2,7 +2,7 @@
 //!
 //! Same shape as the other `REPRISE_SMOKE_*` hooks (`window_smoke.rs`,
 //! `track_list_smoke.rs`): permanent, env-gated, inert unless the variable is
-//! set. POD-20's neighbour transport had no headless route at all — none of the
+//! set. POD-21's neighbour transport had no headless route at all — none of the
 //! existing hooks can start an episode or press ⏮/⏭ — so the path could only be
 //! covered by unit tests, never by a run of the real application.
 

@@ -56,7 +56,7 @@ fn play_9_idle_play_is_reachable_without_enabling_queue_navigation() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn pod_20_external_transport_sensitivity_matches_neighbour_edges_and_radio() {
+fn pod_21_external_transport_sensitivity_matches_neighbour_edges_and_radio() {
     use crate::ui::playback::external_media::{
         EpisodeSource, ExternalMedia, ExternalPlaybackSnapshot, PodcastPhase, RadioPresentation,
         StreamTags,
