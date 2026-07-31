@@ -518,7 +518,7 @@ cargo audit
 scripts/check-architecture.sh
 scripts/check-ux-traceability.sh
 scripts/check-display-tests.sh --rule-named
-scripts/check-input-parity.sh          # ab KBD-8
+scripts/check-input-parity.sh          # from KBD-8
 git diff --check
 ```
 
