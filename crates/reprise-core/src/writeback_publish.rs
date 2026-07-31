@@ -22,6 +22,10 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 const TEMP_CREATE_ATTEMPTS: usize = 16;
+/// Reprise's own temporary files, and nothing else, are named
+/// `.reprise-<16 hex digits>.tmp`.
+const TEMP_PREFIX: &str = ".reprise-";
+const TEMP_SUFFIX: &str = ".tmp";
 
 /// How long a writeback suppresses the library watcher for the paths it
 /// touches (`library::watcher::ignore_path`).
@@ -96,14 +100,17 @@ fn publish_with(
     }
 }
 
+/// Reserves a temporary file beside `target`.
+///
+/// The name is a fixed 29 bytes and deliberately carries nothing of the
+/// target's own name: prefixing it made the temporary ~30 bytes longer than
+/// the target, so any track whose filename ran past ~225 bytes — routine for
+/// classical and live-set names — failed the very first `open` with
+/// `ENAMETOOLONG` and could never receive a sidecar at all. Uniqueness comes
+/// from the 64 random bits plus `create_new`, not from the target's name.
 fn create_temporary(target: &Path) -> io::Result<(PathBuf, File)> {
-    let name = target
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("writeback");
     for _ in 0..TEMP_CREATE_ATTEMPTS {
-        let temporary =
-            target.with_file_name(format!(".{name}.reprise-{:016x}.tmp", fastrand::u64(..)));
+        let temporary = target.with_file_name(temporary_name(fastrand::u64(..)));
         // Armed *before* the create, never after: the inotify event exists
         // from the moment the file does.
         ignore(&temporary);
@@ -121,6 +128,10 @@ fn create_temporary(target: &Path) -> io::Result<(PathBuf, File)> {
         io::ErrorKind::AlreadyExists,
         "could not reserve a unique writeback temporary file",
     ))
+}
+
+fn temporary_name(token: u64) -> String {
+    format!("{TEMP_PREFIX}{token:016x}{TEMP_SUFFIX}")
 }
 
 fn ignore(path: &Path) {

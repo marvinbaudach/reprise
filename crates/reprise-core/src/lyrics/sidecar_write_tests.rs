@@ -52,6 +52,19 @@ fn lyr_7_a_missing_music_file_is_not_an_applicable_write_target() {
     assert!(!track.with_extension("lrc").exists());
 }
 
+#[test]
+fn lyr_7_a_track_with_a_very_long_filename_still_gets_a_sidecar() {
+    let temp = TempDir::new().unwrap();
+    let track = temp.path().join(format!("{}.flac", "a".repeat(245)));
+    fs::write(&track, b"fixture").unwrap();
+
+    assert_eq!(
+        write_sidecar(&track, &[TimedLine::new(1_000, "Network text")]),
+        SidecarWrite::Written
+    );
+    assert!(track.with_extension("lrc").is_file());
+}
+
 #[cfg(unix)]
 #[test]
 fn lyr_7_a_write_failure_leaves_no_temporary_file() {

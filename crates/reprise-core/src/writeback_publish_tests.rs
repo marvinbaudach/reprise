@@ -29,6 +29,17 @@ fn publication_never_replaces_a_file_that_appeared_after_the_check() {
 }
 
 #[test]
+fn a_long_target_name_still_leaves_room_for_the_temporary_file() {
+    let dir = TempDir::new().unwrap();
+    // 249 bytes: inside NAME_MAX, and an ordinary length for a classical or
+    // live-set track. A temporary derived from this name would not be.
+    let target = dir.path().join(format!("{}.lrc", "a".repeat(245)));
+
+    assert_eq!(publish(&target, b"payload").unwrap(), Published::Written);
+    assert_eq!(fs::read(&target).unwrap(), b"payload");
+}
+
+#[test]
 fn a_publication_suppresses_the_library_watcher_for_every_path_it_touches() {
     let dir = TempDir::new().unwrap();
     let target = dir.path().join("cover.jpg");
