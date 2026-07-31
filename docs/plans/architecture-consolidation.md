@@ -7,285 +7,279 @@ codex_session:
 created: 2026-07-31
 base: 577765b (origin/dev)
 ---
-# Projekt-Review & Konsolidierungsplan vor der Testfreigabe
+# Project review — findings before the test release
 
-Auftrag: Gesamtreview nach vielen Features, Spec- und Design-Änderungen. Ziele
-des Reviews: (a) saubere Architektur, damit mehrere Apps auf demselben Kern
-bauen, (b) saubere Fehlerbehandlung und Logging fürs Debugging, (c) Suche nach
-Doppelentwicklung — besonders Radio, Podcast, YouTube und normale Playlisten,
-(d) Klärung, ob Playlist-Filter und Interpretenseiten-Pillen sauber getrennt
-sind, (e) Performance-Potenziale, (f) Abwärtskompatibilität für eine baldige
-Testfreigabe.
+A full review after a long run of features, spec revisions and design changes.
+It answers seven questions: does the core carry more than one app, is error
+handling and logging good enough to debug from the field, was anything built
+twice (radio, podcasts, YouTube, ordinary playlists), are playlist filters and
+artist-page pills cleanly separated, where is performance actually lost, how
+safe is the app, and how stable is it — and what any of that means for opening
+a test round.
 
-Dieses Dokument ist Befund **und** Plan. Es ersetzt keine bestehende Regel:
-`docs/ux-rules.md` bleibt der UX-Vertrag, `docs/plans/multi-frontend-core.md`
-die Architekturgrundlage. Es benennt, was von diesen Plänen unvollendet blieb,
-und was seither ungeplant nebeneinander gewachsen ist.
+This document is the *findings*. `docs/plans/consolidation-plan.md` is how the
+work gets done. Neither replaces an existing contract: `docs/ux-rules.md` stays
+the UX source of truth, `docs/plans/multi-frontend-core.md` the architectural
+foundation. What this adds is what those plans left unfinished, and what has
+grown alongside them unplanned.
 
 ---
 
-## 0. Kurzurteil
+## 0. Verdict
 
-| Bereich | Urteil | Nächster Schritt |
+| Area | Verdict | Next step |
 | --- | --- | --- |
-| Kern-Wiederverwendbarkeit | **gut** — `Db`-Handle sitzt, Purity ist mechanisch geprüft | `rusqlite::Error` aus der öffentlichen API entfernen |
-| Zweite Laufzeit (`reprise-runtime`) | **kritisch** — ~14.500 Zeilen gebaut, verpackt, von keiner Oberfläche benutzt | Entscheidung erzwingen: cutover oder ausbauen |
-| Fehlerbehandlung | **sehr gut** im Kern, **eine harte Lücke** beim Start | `expect` in `main.rs` durch Fehlerdialog ersetzen |
-| Logging | **ausreichend zum Entwickeln, zu dünn für Tester** | Log-Datei + „Diagnose kopieren" |
-| Doppelentwicklung Quellen | **real, aber begrenzt und benannt** | zugesagten Konsolidierungs-Task einlösen |
-| Filter vs. Ort | **seit `c565671` sauber** | eine Wahrheit für „hat Sidebar-Zeile" (§5.3) |
-| Performance | **eine messbar teure Stelle** (Default-Sortierung ohne Index) | ein Index, eine Migration |
-| Sicherheit | **überdurchschnittlich** — keine Injektion, keine Traversierung, Bomben abgedeckt | `--` vor der yt-dlp-URL, Bild-`Limits` |
-| Stabilität | **erarbeitet panikarm — aber eine Panik ist ein stiller Abbruch** | `panic::set_hook` + Absturzmarker |
-| Abwärtskompatibilität | **Schema ja, Toolchain nein** | MSRV/Toolchain-Befund §9.3 |
+| Core reusability | **good** — the `Db` handle landed, purity is checked mechanically | get `rusqlite::Error` out of the public API |
+| Second runtime (`reprise-runtime`) | **critical** — ~15k lines built and packaged, used by no surface | force the decision: cut over or shelve |
+| Error handling | **very good** in the core, **one hard gap** at startup | replace the `expect` in `main.rs` with a reported failure |
+| Logging | **fine for developing, too thin for testers** | log file plus "Copy Diagnostics" |
+| Duplication across sources | **real, but bounded and already named** | redeem the promised consolidation task |
+| Place vs. filter | **clean since `c565671`** | one truth for "has a sidebar row" (§5.3) |
+| Performance | **one measurably expensive spot** (default sort has no index) | one index, one migration |
+| Security | **above average** — no injection, no traversal, bombs covered | `--` before the yt-dlp URL, image `Limits` |
+| Stability | **hard-won panic discipline — but a panic is a silent abort** | `panic::set_hook` plus a crash marker |
+| Backwards compatibility | **schema yes, toolchain no** | the MSRV finding (§9.3) |
 
-**Freigabeempfehlung:** Die App ist inhaltlich testreif. Die Punkte aus §10,
-Welle 0 sollten vor dem Öffnen erledigt sein. Sie sind zusammen klein (geschätzt
-1–2 Arbeitstage) und fast alle sind Dinge, die ein Tester sonst als „stürzt ab"
-oder „ich kann nichts berichten" zurückmeldet.
+**Release recommendation.** The app is ready to be tested on its merits. The
+items in wave 0 of the plan should land first; together they are small (one to
+two days) and almost all of them are things a tester would otherwise report as
+"it crashes" or "I have nothing to send you".
 
-Der rote Faden durch die drei kritischen Befunde ist derselbe: **das Produkt ist
-gut gebaut, aber es kann nicht über sich selbst berichten.** Ein Absturz ist
-still (§8.2), ein Startfehler ist eine Panik (§3.2), und die 793
-`tracing`-Aufrufe des GTK-Crates erreichen niemanden (§3.3). Genau diese drei
-Punkte entscheiden, ob eine Testrunde Erkenntnisse liefert oder nur Frust.
+The three critical findings share one thread: **the product is well built but
+cannot report on itself.** A crash is silent (§8.2), a startup failure is a
+panic (§3.2), and the GTK crate's 793 `tracing` calls reach nobody (§3.3).
+Those three decide whether a test round produces findings or frustration.
 
 ---
 
-## 1. Messgrundlage
+## 1. What was measured
 
-Stand `577765b` (`origin/dev`, 2026-07-31). Alle Zahlen selbst gemessen, nicht
-aus Docs übernommen.
+State `577765b` (`origin/dev`, 2026-07-31). Every number measured here, not
+quoted from documentation.
 
-| Crate | Dateien | Zeilen |
+| Crate | Files | Lines |
 | --- | ---: | ---: |
-| `reprise-gnome` | 528 | 140.678 |
-| `reprise-core` | 381 | 108.043 |
-| `reprise-mcp` | 41 | 12.009 |
-| `reprise-platform-linux` | 38 | 11.607 |
-| `reprise-runtime` | 35 | 9.337 |
-| `reprise-cli` | 37 | 5.181 |
-| `reprise-stems` | 11 | 2.755 |
-| `reprise-runtime-client` | 5 | 1.879 |
-| `reprise-runtime-protocol` | 12 | 1.773 |
-| **Summe** | **1.088** | **293.262** |
+| `reprise-gnome` | 528 | 140,678 |
+| `reprise-core` | 381 | 108,043 |
+| `reprise-mcp` | 41 | 12,009 |
+| `reprise-platform-linux` | 38 | 11,607 |
+| `reprise-runtime` | 35 | 9,337 |
+| `reprise-cli` | 37 | 5,181 |
+| `reprise-stems` | 11 | 2,755 |
+| `reprise-runtime-client` | 5 | 1,879 |
+| `reprise-runtime-protocol` | 12 | 1,773 |
+| **Total** | **1,088** | **293,262** |
 
-- Testanteil rund **24 %** in dedizierten Testdateien; über 4.200
-  `#[test]`-Funktionen.
-- `docs/ux-rules.md`: rund 3.950 Zeilen, **313** `[active]`-Marker.
-- Schema-Version **50**, 18 nummerierte Migrationsschritte in `db.rs` plus
-  ausgelagerte Migrationsmodule; eigene Migrationstestdateien je Bereich.
-- Gate-Skripte: 30 unter `scripts/`, davon 17 `check-*`.
+- Roughly **24 %** of those lines sit in dedicated test files; over 4,200
+  `#[test]` functions.
+- `docs/ux-rules.md`: about 3,950 lines carrying **313** `[active]` markers.
+- Schema version **50**, eighteen numbered migration steps in `db.rs` plus
+  extracted migration modules, each with its own migration tests.
+- 30 scripts under `scripts/`, seventeen of them `check-*`.
 
-Das ist ein reifes, stark abgesichertes Repository. Die Befunde unten sind
-Konsolidierungsarbeit, keine Sanierung.
+This is a mature, heavily guarded repository. Everything below is
+consolidation, not repair.
 
-**Hinweis zur Basis:** `origin/main` steht bei `de4138a`, `origin/dev` zwei
-Commits weiter bei `577765b` (`#189` Lyrics/Cover-Robustheit, `#193`
-Reveal-Verhalten der Quellenlisten). Gemessen und geprüft wurde gegen `dev` —
-`main` ist darin vollständig enthalten. Wo die beiden jüngsten Commits einen
-Befund verändern, steht es an der jeweiligen Stelle; §1.1 fasst es zusammen.
+### 1.1 What the two newest commits change
 
-### 1.1 Was die zwei jüngsten Commits am Befund ändern
+`origin/main` sits at `de4138a`; `origin/dev` two commits further at `577765b`
+(`#189` lyrics/cover robustness, `#193` reveal behaviour for the source lists).
+Measurements were taken against `dev`, which fully contains `main`.
 
-- **`#193` bestätigt die Konsolidierungsrichtung.** Der Commit legt
-  `crates/reprise-gnome/src/ui/source_reveal.rs` an — eine *geteilte*,
-  GTK-freie Entscheidung „wann bewegt sich der Viewport", mit der ausdrücklichen
-  Begründung, dass Podcasts, YouTube und Radio „nicht in drei Antworten
-  auseinanderdriften" dürfen, während das *Wie* je Ansicht bleibt. Das ist
-  exakt das Muster, das §4.2 und §4.3 für Filterleiste und Add-Dialog
-  vorschlagen. Der Weg ist also nicht neu, sondern schon eingeschlagen.
-- **`#189` verschärft Befund D3.** Der Lyrics-Pfad wurde in ein `lyrics/`-Modul
-  zerlegt und um **zwei weitere** eigene `ureq`-Agenten ergänzt (`lrclib.rs`,
-  `netease.rs`). Damit stehen im Kern jetzt **16** statt 13
-  HTTP-Boundary-Konstruktionen. Die Duplikation wächst weiter, solange die
-  gemeinsame Boundary fehlt.
-- **`#189` liefert zugleich den besten Baustein dafür.**
-  `lyrics/breaker.rs` ist ein **host-basierter** Circuit Breaker (3 Fehler →
-  5 Minuten offen, `LazyLock<Breaker>` über eine Host-Map). Das ist die
-  richtige Schlüsselung — pro Host, nicht pro Modul — und damit der natürliche
-  Kern des in §4.4 vorgeschlagenen `SourceClient`. Die Empfehlung lautet
-  deshalb: nicht neu erfinden, sondern `breaker.rs` herausheben und alle
-  Quellen daran anschließen.
-- **`#189` öffnet einen neuen Schreibpfad in die Musiksammlung**
+- **`#193` confirms the consolidation direction.** It adds
+  `crates/reprise-gnome/src/ui/source_reveal.rs`: a *shared*, GTK-free decision
+  about when the viewport moves, with the explicit reasoning that podcasts,
+  YouTube and radio must not "drift into three answers", while *how* each
+  surface reveals stays local. That is exactly the cut §4.2 and §4.3 propose
+  for the filter bar and the add dialog. The road is already taken.
+- **`#189` sharpens finding D3.** The lyrics path was split into a `lyrics/`
+  module and gained **two more** `ureq` agents of its own (`lrclib.rs`,
+  `netease.rs`). The core now constructs **16** HTTP boundaries where it built
+  thirteen two commits ago. The duplication keeps growing while the shared
+  boundary is missing.
+- **`#189` also supplies the best building block for fixing it.**
+  `lyrics/breaker.rs` is a **host-keyed** circuit breaker (three failures →
+  five minutes open, a `LazyLock<Breaker>` over a host map). That is the right
+  key — per host, not per module — and the natural nucleus of the
+  `SourceClient` §4.4 proposes. Lift it; do not reinvent it.
+- **`#189` opens a new write path into the music collection**
   (`cover_writeback.rs`, `lyrics/sidecar_write.rs`, `writeback_publish.rs`):
-  Reprise schreibt jetzt `cover.<ext>` und `.lrc` neben vorhandene Titel.
-  `AGENTS.md` wurde im selben Commit um die genaue Regel ergänzt (nur aus
-  Trackpfaden abgeleitet, nie eine bestehende Datei überschreiben, exakt ein
-  Aufräummuster für eigene Temporärdateien). Sicherheitsseitig sauber gelöst —
-  §7.1 bewertet es; für die Testfreigabe ist es der Pfad mit dem höchsten
-  „fasst fremde Dateien an"-Risiko und gehört auf die manuelle QA-Liste.
-- **Unverändert offen:** `AGENTS.md` sagt weiterhin „Three-crate Cargo
-  workspace" (§2.5) und trägt weiterhin den Abschnitt „Not released yet — no
-  backwards compatibility" (§9.1).
+  Reprise now writes `cover.<ext>` and `.lrc` next to existing tracks.
+  `AGENTS.md` gained the exact rule in the same commit — derived only from
+  track paths, never overwriting an existing file, one precise sweep pattern
+  for its own temporaries. Soundly built (§7.1); for the test round it is the
+  highest "touches foreign files" risk and belongs on the manual QA list.
+- **Still open:** `AGENTS.md` claims a "Three-crate Cargo workspace" (§2.5) and
+  still carries the "Not released yet — no backwards compatibility" section
+  (§9.1).
 
 ---
 
-## 2. Architektur — trägt der Kern mehrere Apps?
+## 2. Architecture — does the core carry more than one app?
 
-### 2.1 Was bereits trägt
+### 2.1 What already holds
 
-Vier Dinge sind richtig gelöst und sollten nicht angefasst werden:
+Four things are right and should not be touched:
 
-1. **`Db`-Handle statt `Connection`** (ADR 002, gelandet in `#173`).
-   `Db::conn()` ist `pub(crate)`; keine einzige öffentliche Kernfunktion nimmt
-   noch `&Connection`. Damit ist die Grenze ein Typ und keine Konvention mehr,
-   und die 575 `borrow()`-Stellen der häufigsten Panik-Klasse sind ersatzlos
-   weg. Das ist die wichtigste Einzelvoraussetzung für eine zweite App — sie
-   ist erfüllt.
-2. **Mechanisch geprüfte Abhängigkeitsrichtung.**
-   `scripts/check-architecture.sh` prüft je Crate mit `cargo tree --target all
-   -e normal`, dass keine GTK/GLib/GStreamer/zbus-Familie in `reprise-cli`,
-   `reprise-mcp`, `reprise-stems`, `reprise-runtime` landet, und dass kein
-   Fremd-Workspace-Edge entsteht. Der Probe-Wrapper `run_dependency_probe`
-   schließt **fail-closed** — ein kaputtes `cargo tree` bricht das Gate ab,
-   statt still zu bestehen. Das ist besser als die meisten Projekte es machen.
-3. **Kein SQL außerhalb des Kerns**, für GTK *und* die headless-Oberflächen
-   getrennt geprüft (mehrzeiliges `rg -U` fängt umgebrochene Statements).
-4. **`change_log`-Outbox + `Notifier`.** Prozessübergreifende Sichtbarkeit von
-   Fremdänderungen ohne Daemon, mit Degradation auf 2-Sekunden-Polling. Genau
-   die richtige Wahl für „mehrere Prozesse auf einer SQLite".
+1. **A `Db` handle instead of a `Connection`** (ADR 002, landed in `#173`).
+   `Db::conn()` is `pub(crate)`; no public core function takes `&Connection`
+   any more. The boundary is a type rather than a convention, and the 575
+   `borrow()` sites of the project's most common panic class are gone rather
+   than hidden. This is the single most important precondition for a second
+   app, and it is met.
+2. **Mechanically checked dependency direction.**
+   `scripts/check-architecture.sh` probes each crate with
+   `cargo tree --target all -e normal` so no GTK/GLib/GStreamer/zbus family
+   reaches `reprise-cli`, `reprise-mcp`, `reprise-stems` or `reprise-runtime`,
+   and no stray workspace edge appears. The `run_dependency_probe` wrapper
+   fails **closed** — a broken `cargo tree` aborts the gate instead of passing
+   silently. That is better than most projects manage.
+3. **No SQL outside the core**, checked separately for GTK and for the headless
+   surfaces, with a multiline `rg -U` that catches statements split across
+   lines.
+4. **The `change_log` outbox plus the `Notifier`.** Cross-process visibility of
+   foreign changes without a daemon, degrading to two-second polling when no
+   filesystem watch can be armed. Exactly the right call for several processes
+   on one SQLite file.
 
-### 2.2 Befund A1 (kritisch) — die zweite Laufzeit ist gebaut, aber nirgends verdrahtet
+### 2.2 Finding A1 (critical) — the second runtime is built but wired to nothing
 
-`docs/plans/multi-frontend-core.md` §9.1 zieht eine Linie: alles in SQLite
-bleibt eingebettet, alles *nicht* in SQLite (Audio-Pipeline, In-Memory-Queue,
-Gerätelauf, Jobfortschritt) bekommt genau einen Besitzer — `reprise-runtime`.
-Dieser Besitzer existiert vollständig:
+`docs/plans/multi-frontend-core.md` §9.1 draws a line: everything in SQLite
+stays embedded, and everything *not* in SQLite — the audio pipeline, the
+in-memory queue, a device run, a job's progress — gets exactly one owner,
+`reprise-runtime`. That owner exists in full:
 
-| Bestandteil | Zeilen | Zustand |
+| Part | Lines | State |
 | --- | ---: | --- |
-| `reprise-runtime` (Reducer + Ports + Fakes) | 9.337 | fertig, getestet |
-| `reprise-runtime-protocol` (Wire-Vertrag) | 1.773 | fertig, versioniert |
-| `reprise-runtime-client` (Transport + Mirror) | 1.879 | fertig, getestet |
-| `platform-linux/src/runtime_service/` (D-Bus, Lease) | 1.580 | fertig |
-| `crates/reprise-gnome/src/ui/runtime/` (GTK-Sitzung) | 809 | **`#![allow(dead_code)]`** |
-| **Summe** | **≈ 15.400** | |
+| `reprise-runtime` (reducer, ports, fakes) | 9,337 | complete, tested |
+| `reprise-runtime-protocol` (wire contract) | 1,773 | complete, versioned |
+| `reprise-runtime-client` (transport, mirror) | 1,879 | complete, tested |
+| `platform-linux/src/runtime_service/` (D-Bus, lease) | 1,580 | complete |
+| `crates/reprise-gnome/src/ui/runtime/` (GTK session) | 809 | **`#![allow(dead_code)]`** |
+| **Total** | **≈ 15,400** | |
 
-Dazu ausgeliefert: `data/org.reprise.Reprise1.service.in`,
-`data/reprise-runtime.service.in`, ein eigenes Meson-Target, und
-`scripts/check-runtime-service-install.sh`, das die Installation beider
-Artefakte in zwei Präfixen prüft.
+Shipped alongside: `data/org.reprise.Reprise1.service.in`,
+`data/reprise-runtime.service.in`, its own Meson target, and
+`scripts/check-runtime-service-install.sh`, which verifies both artefacts land
+correctly under two prefixes.
 
-Verdrahtet ist davon **nichts**. `crates/reprise-gnome/src/ui/runtime/mod.rs`
-sagt es selbst: *„This module is not that migration — nothing here is wired
-into `PlayerController` or the window yet, on purpose."* `reprise_runtime_client`
-wird ausschließlich von diesem toten Modul und von Tests in
-`reprise-platform-linux` benutzt. `reprise-mcp` und `reprise-cli` steuern die
-Wiedergabe weiterhin über MPRIS (`org.mpris.MediaPlayer2.reprise` +
-`org.reprise.Player1`), nicht über `org.reprise.Reprise1`.
+None of it is wired. `crates/reprise-gnome/src/ui/runtime/mod.rs` says so
+itself: *"This module is not that migration — nothing here is wired into
+`PlayerController` or the window yet, on purpose."* `reprise_runtime_client` is
+referenced only by that dead module and by tests in `reprise-platform-linux`.
+`reprise-mcp` and `reprise-cli` still drive playback over MPRIS
+(`org.mpris.MediaPlayer2.reprise` plus `org.reprise.Player1`), not over
+`org.reprise.Reprise1`.
 
-Gleichzeitig lebt der produktive Zustand weiter in
-`crates/reprise-gnome/src/ui/playback/` (6.916 Zeilen; `player_controller.rs`
+Meanwhile the productive state still lives in
+`crates/reprise-gnome/src/ui/playback/` (6,916 lines; `player_controller.rs`
 792, `queue_transport.rs` 753, `up_next_transport.rs` 639).
 
-**Warum das ein Architekturbefund ist und nicht nur unfertige Arbeit:**
+**Why this is an architectural finding and not merely unfinished work:**
 
-- Es sind heute **zwei Kommandoflächen für dieselbe Fachlichkeit**. Beide
-  wrappen dieselben Kerntypen (`reprise_core::queue::Queue`,
-  `up_next::UpNextQueue`) — das ist gut —, aber die *Bindung* zwischen beiden
-  ist zweimal geschrieben. `crates/reprise-runtime/src/transport_parity_tests.rs`
-  sagt das wörtlich: *„what lived in the controller was the binding between the
-  two, and that is what these tests pin."* Jede künftige Queue-Regel muss an
-  zwei Stellen implementiert und über Paritätstests zusammengehalten werden.
-- Es sind **zwei Steuerebenen ausgeliefert**. Ein Agent kann `reprise-runtime`
-  über Bus-Aktivierung starten, während die GTK-App läuft. Dann besitzen zwei
-  Prozesse eine Wiedergabe. Der Single-Owner-Lease
-  (`runtime_service/lease.rs`) schützt die *Runtime* vor sich selbst, nicht vor
-  der GTK-App, die den Lease gar nicht nimmt.
-- Für die Testfreigabe heißt das: ein Dienst mit systemd-Unit und D-Bus-Namen
-  geht mit aus, den kein Produktpfad benutzt. Das ist Angriffsfläche und
-  Supportlast ohne Gegenwert.
+- There are **two command surfaces for one domain**. Both wrap the same core
+  types (`reprise_core::queue::Queue`, `up_next::UpNextQueue`) — that part is
+  good — but the *binding* between them is written twice.
+  `crates/reprise-runtime/src/transport_parity_tests.rs` says it outright:
+  *"what lived in the controller was the binding between the two, and that is
+  what these tests pin."* Every future queue rule has to be implemented twice
+  and held together by parity tests.
+- There are **two control planes shipped**. An agent can bus-activate
+  `reprise-runtime` while the GTK app runs, and then two processes own a
+  playback. The single-owner lease (`runtime_service/lease.rs`) protects the
+  *runtime* from itself, not from the GTK app, which never takes the lease.
+- For the test release it means a service with a systemd unit and a D-Bus name
+  ships that no product path reaches — attack surface and support load with no
+  return.
 
-**Empfehlung — eine von zwei, nicht beide:**
+**Recommendation — one of two, not both:**
 
-- **(A) Cutover ziehen.** `PlayerController` wird Client von `RuntimeSession`;
-  `queue_transport`/`up_next_transport` werden zu Kommandos + Snapshot-Rendering.
-  Ergebnis: eine Fachlichkeit, ein Besitzer, MCP/CLI verlieren die
-  MPRIS-Krücke. Aufwand groß (Schätzung: 3–5 Pakete auf Ebene der
-  „episodes-as-queue-citizens"-Pakete), Risiko hoch, Nutzen groß und dauerhaft.
-- **(B) Zurückstellen und ausbauen.** `ui/runtime/` löschen, Runtime-Crates auf
-  einem Branch parken, die beiden `.service`-Dateien und das Meson-Target aus
-  der Auslieferung nehmen, `check-runtime-service-install.sh` mitnehmen.
-  Aufwand klein, Risiko klein, gewinnt die ~15.000 Zeilen Pflegelast zurück.
+- **(A) Cut over.** `PlayerController` becomes a client of `RuntimeSession`;
+  `queue_transport`/`up_next_transport` become commands plus snapshot
+  rendering. One domain, one owner, and MCP/CLI lose the MPRIS crutch. Large
+  effort (three to five packages on the scale of "episodes as queue citizens"),
+  high risk, large and lasting payoff.
+- **(B) Shelve and unship.** Delete `ui/runtime/`, park the runtime crates on a
+  branch, take the two `.service` files and the Meson target out of the
+  install, and take `check-runtime-service-install.sh` with them. Small effort,
+  small risk, recovers roughly 15,000 lines of maintenance load.
 
-**Nicht empfohlen: den Zustand über die Testfreigabe hinweg lassen.** Der
-Schwebezustand ist die einzige Variante, die alle Kosten beider Optionen trägt.
-Für eine baldige Freigabe ist **(B) mit dokumentierter Wiederaufnahme** der
-ehrlichere Weg; **(A)** ist die richtige Antwort auf „mehrere Apps auf demselben
-Kern", aber nicht in denselben Wochen wie eine erste Testrunde.
+**Not recommended: carrying the limbo through the test release.** It is the one
+option that pays the costs of both. For a near-term test round, **(B) with a
+documented resumption trigger** is the honest choice; **(A)** is the right
+answer to "several apps on one core", but not in the same weeks as a first test
+round.
 
-### 2.3 Befund A2 — `rusqlite::Error` ist der Fehlertyp der öffentlichen Kern-API
+### 2.3 Finding A2 — `rusqlite::Error` is the core's public error type
 
-858 öffentliche Kernsignaturen geben `Result<_, rusqlite::Error>` zurück. Folge:
-**jede** Oberfläche muss `rusqlite` als direkte Abhängigkeit führen, nur um
-Kernfehler benennen zu können. Die Manifeste sagen es selbst — `reprise-mcp`:
-*„`rusqlite` is a direct dependency only because the core facades surface
-`rusqlite::Error` in their signatures."*
+858 public core signatures return `Result<_, rusqlite::Error>`. Every surface
+therefore has to depend on `rusqlite` just to name a core error. The manifests
+admit it — `reprise-mcp`: *"`rusqlite` is a direct dependency only because the
+core facades surface `rusqlite::Error` in their signatures."*
 
-Das ist die letzte verbliebene Persistenz-Leckage nach ADR 002. Für eine
-zweite App (KDE/Qt, Android, iOS) bedeutet sie: das Frontend kompiliert SQLite
-mit, obwohl es nie SQL sieht, und muss auf einen Fremdfehlertyp matchen, dessen
-Varianten nichts über die Fachlichkeit sagen.
+This is the last persistence leak after ADR 002. For a second app (KDE/Qt,
+Android, iOS) it means compiling SQLite while never seeing SQL, and matching on
+a foreign error type whose variants say nothing about the domain.
 
-**Empfehlung:** ein `reprise_core::CoreError` (thiserror) mit den wenigen
-Klassen, die Aufrufer wirklich unterscheiden — `NotFound`, `Conflict`,
-`Busy` (SQLITE_BUSY, für Retry-Entscheidungen), `Invalid`, `Backend(String)`.
-`rusqlite::Error` wird `#[from]` gefaltet und nie durchgereicht. Umstellung
-mechanisch und schrittweise möglich (Modul für Modul, `From`-Impl trägt die
-Zwischenstände). Erst danach kann `rusqlite` aus `reprise-cli`/`reprise-mcp`
-verschwinden — was das Gate in `check-architecture.sh` dann sogar prüfen kann.
+**Recommendation.** A `reprise_core::CoreError` (thiserror) with the few
+classes callers actually distinguish: `NotFound`, `Conflict`, `Busy`
+(SQLITE_BUSY, for retry decisions), `Invalid`, `Backend(String)`.
+`rusqlite::Error` folds in via `#[from]` and is never handed out. The migration
+is mechanical and incremental — module by module, with the `From` impl carrying
+the intermediate states. Only afterwards can `rusqlite` leave
+`reprise-cli`/`reprise-mcp`, which the architecture gate can then enforce.
 
-### 2.4 Befund A3 — die Kompositionswurzel kennt jede Ansicht
+### 2.4 Finding A3 — the composition root knows every view
 
-`crates/reprise-gnome/src/ui/window/window_runtime_wiring.rs` definiert
-`RuntimeWiring` mit **über 40 Feldern**: jede Ansicht, jeder Runtime, jedes
-Widget der Fensterdekoration. `window.rs` selbst ist diszipliniert klein (597
-Zeilen, Gate bei 600), aber die Verdrahtung ist nur verschoben, nicht aufgelöst.
+`crates/reprise-gnome/src/ui/window/window_runtime_wiring.rs` defines
+`RuntimeWiring` with **over 40 fields**: every view, every runtime, every
+window-decoration widget. `window.rs` itself stays disciplined (597 lines
+against a 600 gate), but the wiring is displaced rather than dissolved.
 
-Für „mehrere Apps" ist das die praktische Bremse: keine Ansicht lässt sich
-einzeln in einer anderen Schale hochziehen, weil ihre Verdrahtung nur als
-Gesamtpaket existiert. Für die *heutige* App ist es tragbar — deshalb steht
-dieser Punkt in Welle 2, nicht in Welle 0.
+For "several apps" this is the practical brake: no view can be raised in a
+different shell on its own, because its wiring exists only as one package. For
+*today's* app it is bearable, which is why this sits in wave 3 rather than wave
+0.
 
-**Empfehlung:** nicht das Struct aufteilen (das verschiebt nur wieder), sondern
-pro Ansicht ein schmales `…Ports`-Struct einführen, das genau die Kollaborateure
-nennt, die sie braucht. `RuntimeWiring` baut diese Ports und übergibt sie; die
-Ansicht kennt `RuntimeWiring` nicht mehr. Das ist inkrementell pro Ansicht
-machbar und jede Etappe kompiliert.
+**Recommendation.** Do not split the struct — that just displaces it again.
+Introduce a narrow `…Ports` struct per view naming exactly the collaborators it
+needs. `RuntimeWiring` builds those ports and hands them over; the view stops
+knowing `RuntimeWiring` at all. Incremental per view, every stage compiles.
 
-### 2.5 Befund A4 — `AGENTS.md` beschreibt das Projekt von vor drei Crates
+### 2.5 Finding A4 — `AGENTS.md` describes the project from three crates ago
 
-`AGENTS.md` sagt „Three-crate Cargo workspace" und listet drei Crates. Es sind
-neun. Die Roadmap dort endet bei „GUI-A2 (Cover-Download)"; tatsächlich sind
-Podcasts, YouTube, Radio, Concerts, New Releases, Device-Sync, Library Doctor,
-My Stats, Stems und die Runtime gelandet. Der Abschnitt „Not released yet — no
-backwards compatibility" ist die Regel, die mit der Testfreigabe **kippt**
-(§9.1).
+`AGENTS.md` says "Three-crate Cargo workspace" and lists three. There are nine.
+Its roadmap ends at "GUI-A2 (cover download)"; since then podcasts, YouTube,
+radio, concerts, new releases, device sync, library doctor, my stats, the tag
+editor, stems and the runtime have landed. The "Not released yet — no backwards
+compatibility" section is the rule that **flips** with the test release (§9.1).
+And it claims `docs/ux-rules.md` is written in German — that document is
+English throughout.
 
-Das ist kein Kosmetikpunkt: `AGENTS.md` ist laut eigener Ansage das erste, was
-ein Agent liest. Ein falsches Weltbild an dieser Stelle erzeugt genau die Art
-von Fehlentscheidung, die dieses Review sucht.
+This is not cosmetic: `AGENTS.md` is by its own account the first thing an
+agent reads. A wrong model there produces exactly the class of mistake this
+review is looking for.
 
 ---
 
-## 3. Fehlerbehandlung und Logging
+## 3. Error handling and logging
 
-### 3.1 Was trägt
+### 3.1 What holds
 
-- **Panikfreiheit ist praktisch erreicht.** In Produktionscode (ohne Testdateien
-  und ohne `#[cfg(test)]`-Blöcke) stehen: `reprise-core` 1 `unwrap`,
-  `reprise-gnome` ~20 verteilt auf Einzelstellen, `reprise-runtime`/
-  `-client`/`-protocol` **0**. Das ist für 287k Zeilen außergewöhnlich.
-- **`reprise_core::source_error`** ist eine vorbildliche Fehlerprojektion:
-  `Display` trägt nur sichere Sätze, technische Nutzlast ausschließlich über
-  `details()`, und es gibt Tests, die beweisen, dass weder `Display` noch
-  `Debug` Host, Token oder Statuscode ausplaudern. Dazu eine geteilte
-  Präsentationsentscheidung (Banner vs. Vollfläche, Aktionen je Quelle,
-  Sammelmeldung ab drei Fehlern).
-- 54 `thiserror`-Enums mit sprechenden Meldungen.
+- **Panic freedom is effectively achieved.** In production code (excluding test
+  files and `#[cfg(test)]` blocks): `reprise-core` **1** `unwrap`,
+  `reprise-gnome` about twenty at narrowly argued single sites,
+  `reprise-runtime`/`-client`/`-protocol` **zero**. For 293k lines that is
+  exceptional.
+- **`reprise_core::source_error` is a model error projection.** `Display`
+  carries only safe sentences, technical payload is reachable only through
+  `details()`, and tests prove that neither `Display` nor `Debug` leaks a host,
+  a token or a status code. On top of it sits a shared presentation decision
+  (banner versus full area, per-source actions, one collected notice from three
+  failures on).
+- 54 `thiserror` enums with speaking messages.
 
-### 3.2 Befund E1 (Freigabe-Blocker) — Panik beim Datenbankstart
+### 3.2 Finding E1 (release blocker) — the database opens or the app panics
 
 `crates/reprise-gnome/src/main.rs`:
 
@@ -293,116 +287,98 @@ von Fehlentscheidung, die dieses Review sucht.
 let conn = db::Db::open_migrated(Some(&path)).expect("failed to open or migrate database");
 ```
 
-Das ist der einzige Weg in die App. `DbError` kennt vier Fälle, und drei davon
-sind für einen Tester realistisch:
+That is the only way into the app. `DbError` has four cases and three of them
+are realistic for a tester:
 
-- `SchemaTooNew` — Tester hat einen neueren Build ausprobiert und geht zurück.
-  **Das ist der Downgrade-Fall, den `db.rs` bewusst erkennt** — und die GUI
-  wirft ihn weg.
-- `Io` — Platte voll, `~/.local/share` nicht schreibbar, Home auf Netzlaufwerk.
-- `Sqlite` — beschädigte Datei nach hartem Ausschalten.
+- `SchemaTooNew` — the tester tried a newer build and went back. **This is the
+  downgrade case `db.rs` deliberately detects** — and the GUI throws the
+  detection away.
+- `Io` — disk full, `~/.local/share` not writable, home on a network mount.
+- `Sqlite` — a file damaged by a hard power-off.
 
-In allen drei Fällen: Prozess bricht mit Panikmeldung auf stderr ab, kein
-Fenster, keine Meldung. Der Tester meldet „startet nicht".
+In all three the process aborts with a panic message on stderr: no window, no
+message. The tester reports "it does not start".
 
-**Empfehlung:** `open_migrated` behandeln und im Fehlerfall einen
-`adw::AlertDialog` (bzw. bei fehlender GTK-Initialisierung eine
-`g_printerr`-Meldung + Exitcode) zeigen, der je Fall etwas Handhabbares
-anbietet: bei `SchemaTooNew` „Diese Bibliothek wurde mit einer neueren Version
-angelegt" + Pfad, bei `Io`/`Sqlite` Pfad + „Diagnose kopieren". Klein, aber es
-entscheidet, ob eine Testrunde brauchbare Rückmeldungen liefert.
+**Recommendation.** Handle `open_migrated` and present the failure — see the
+plan for the shape. Small, but it decides whether a test round produces usable
+reports.
 
-### 3.3 Befund E2 (Freigabe-Blocker) — Logging erreicht den Tester nicht
+### 3.3 Finding E2 (release blocker) — logging never reaches the tester
 
-`init_logging()` schreibt ausschließlich nach **stderr**, Filter über
-`REPRISE_LOG`, Default `info,lofty=error`. Es gibt:
+`init_logging()` writes to **stderr** only, filtered by `REPRISE_LOG`,
+defaulting to `info,lofty=error`. There is no log file, no rotation, no in-app
+export, and no line in `README.md` telling a tester how to get logs. Under
+Flatpak stderr goes to the journal; someone launching from the overview has no
+visible path there. 793 `tracing` calls in the GTK crate exist and are
+effectively unreachable.
 
-- keine Logdatei,
-- keine Rotation,
-- keine In-App-Ausleitung („Diagnose kopieren", „Logordner öffnen"),
-- keinen Hinweis in `README.md`, wie man Logs bekommt.
+Two smaller points of the same family:
 
-Unter Flatpak landet stderr im Journal; ein Tester, der die App aus der
-Übersicht startet, hat keinen sichtbaren Weg dorthin. 793 `tracing`-Aufrufe im
-GTK-Crate sind also vorhanden und praktisch unerreichbar.
+- **No correlation.** Zero `tracing::trace!`, no spans. A podcast refresh
+  crossing worker thread, HTTP boundary, store and view leaves lines with no
+  common thread. `#[tracing::instrument]` on the few entry points (scan,
+  refresh per source, device run, job) would fix that without touching call
+  sites.
+- **Skewed levels.** 559 `warn!` against 138 `info!` and 105 `debug!`. When
+  `warn` is the default shelf for "unexpected but harmless" it stops being a
+  signal. Worth one reclassification pass while the log export is built.
 
-Zwei kleinere Punkte derselben Familie:
+### 3.4 Finding E3 — 54 error types with no common axis
 
-- **Kein Korrelationsbegriff.** 0 `tracing::trace!`, keine Spans. Ein
-  Podcast-Refresh, der über Worker-Thread, HTTP-Boundary, Store und View läuft,
-  hinterlässt Zeilen ohne gemeinsamen Faden. `#[tracing::instrument]` an den
-  wenigen Einstiegspunkten (Scan, Refresh je Quelle, Device-Run, Job) würde
-  das lösen, ohne Aufrufstellen anzufassen.
-- **Verteilung schief.** 559 `warn!` gegen 138 `info!` und 105 `debug!`. Wenn
-  `warn` die Standardablage für „unerwartet, aber egal" ist, verliert es seine
-  Bedeutung als Signal. Beim Durchsehen der Logausleitung lohnt eine Runde
-  Reklassifizierung.
+The enums are individually clean but share no axis. Two questions every surface
+asks are answered per-enum today: *is this user-visible or diagnostic?* and *is
+retrying meaningful?*
 
-**Empfehlung:** `tracing_subscriber` um einen zweiten Layer auf
-`$XDG_STATE_HOME/reprise/reprise.log` ergänzen (eine Datei, beim Start rotiert,
-Größe gedeckelt), plus einen Menüeintrag „Diagnose kopieren", der die letzten N
-KB Log + Version + Schema-Version + aktive Module in die Zwischenablage legt.
-Die Redaktionsregel steht schon: technische Nutzlast wie in `SourceError`
-behandeln, keine Pfade aus dem Musikordner ins Log.
-
-### 3.4 Befund E3 — 54 Fehlertypen ohne gemeinsame Ebene
-
-Die Enums sind einzeln sauber, aber es gibt keine gemeinsame Achse. Konkret
-fehlen zwei Fragen, die jede Oberfläche stellt und heute je Enum neu beantwortet
-bekommt: *Ist das für den Nutzer sichtbar oder Diagnose?* und *Ist Wiederholen
-sinnvoll?*
-
-`source_error` beantwortet beides — aber nur für Netzquellen. `PodcastError`,
+`source_error` answers both — but only for network sources. `PodcastError`,
 `RadioError`, `ConcertError`, `ProviderError`, `NewsError`, `LyricsError`,
-`FetchError`, `PortraitError`, `RemoteStatsError` bilden jeweils eigene
-Varianten für dieselben HTTP-Zustände (Timeout, Transport, Status, RateLimited,
-Parse) und werden dann nach `SourceErrorKind` gefaltet.
+`FetchError`, `PortraitError` and `RemoteStatsError` each model the same HTTP
+states (timeout, transport, status, rate-limited, parse) and are then folded
+into `SourceErrorKind`.
 
-**Empfehlung (klein, hoher Ertrag):** einen `SourceTransportError` als
-gemeinsamen Rückgabetyp der HTTP-Boundary einführen (siehe §4.4) und die
-domänenspezifischen Enums nur noch die *fachlichen* Fälle tragen lassen. Das
-löst Befund D3 und E3 in einem Zug.
+**Recommendation.** Introduce a `SourceTransportError` as the shared return of
+the HTTP boundary (§4.4) and let the domain enums carry only *domain* cases.
+That closes D3 and E3 in one move.
 
-### 3.5 Befund E4 — verschluckte Fehler
+### 3.5 Finding E4 — swallowed errors
 
-~330 `let _ = …` / `.ok();` in Produktionscode über den Workspace. Stichproben
-zeigen überwiegend legitime Fälle (Best-Effort-Cleanup, GTK-Rückgabewerte). Es
-ist kein Gate-Thema, aber ein guter Kandidat für eine einmalige Durchsicht der
-Kern- und Worker-Pfade mit der Frage: „Würde ich diesen Fehler im Bugreport
-sehen wollen?" — und falls ja, `tracing::debug!` statt Schweigen.
+About 330 `let _ = …` / `.ok();` in production code across the workspace.
+Samples are mostly legitimate (best-effort cleanup, GTK return values). Not a
+gate matter, but a good candidate for one pass over the core and worker paths
+asking: "would I want this error in a bug report?" — and if so, `tracing::debug!`
+instead of silence.
 
 ---
 
-## 4. Doppelentwicklung: Radio, Podcast, YouTube, Playlisten
+## 4. Duplication: radio, podcasts, YouTube, playlists
 
-Kurzantwort: **Ja, aber weniger und gezielter, als die Fragestellung
-befürchtet.** Die großen Achsen sind richtig geteilt; dupliziert ist die
-Schale drumherum.
+Short answer: **yes, but less and more specifically than the question fears.**
+The large axes are shared correctly; what is duplicated is the shell around
+them.
 
-### 4.1 Was bereits richtig geteilt ist — nicht anfassen
+### 4.1 Already shared correctly — leave alone
 
-- **YouTube ist kein zweites Podcast-System.** Ein `PodcastKind { Rss, Youtube }`
-  in einem Store, einer Pipeline, einem Datenmodell (`SubscriptionRow`,
-  `EpisodeRow`); YouTube unterscheidet sich nur im Fetcher (`YoutubeFetcher`
-  gegen `FeedFetcher`) und in den Projektionen (`podcasts/youtube.rs`, 245
-  Zeilen). Die GTK-Seite teilt sich sogar den Typ: `RuntimeWiring` hält
-  `podcasts_view` **und** `youtube_view` beide als `Rc<PodcastsView>`. Das ist
-  vorbildlich gelöst.
-- **Ein Track-List-Modell für alle lokalen Quellen.** `ViewSource` hat 17
-  Varianten; Library, RecentlyAdded, Playlist, Smart, Queue, Missing, Album,
-  Artist, Genre laufen alle über ein `TrackListModel` und eine `ColumnView`.
-  Es gibt kein zweites Playlist-Widget.
-- **Geteilte Quellen-Oberflächen:** `source_error.rs` (Fehlerpräsentation),
-  `source_empty_state.rs` (Leerzustand für Podcasts/YouTube/Radio),
-  `source_error_banner.rs`, `source_context_surface.rs` (die Zellen-Trefferfläche
-  für Kontextmenüs), `source_add_action.rs`, `one_shot_task.rs`.
-- **Eine Queue-Engine.** GTK-Controller und Runtime wrappen dieselben
-  `Queue`/`UpNextQueue` aus dem Kern (die *Bindung* ist doppelt — §2.2, das ist
-  ein Runtime-Befund, kein Quellen-Befund).
+- **YouTube is not a second podcast system.** One `PodcastKind { Rss, Youtube }`
+  over one store, one pipeline, one data model (`SubscriptionRow`,
+  `EpisodeRow`); YouTube differs only in its fetcher (`YoutubeFetcher` against
+  `FeedFetcher`) and its projections (`podcasts/youtube.rs`, 245 lines). The
+  GTK side even shares the type: `RuntimeWiring` holds `podcasts_view` **and**
+  `youtube_view` as `Rc<PodcastsView>`. Exemplary.
+- **One track-list model for every local source.** `ViewSource` has 17
+  variants; Library, RecentlyAdded, Playlist, Smart, Queue, Missing, Album,
+  Artist and Genre all run through one `TrackListModel` and one `ColumnView`.
+  There is no second playlist widget.
+- **Shared source surfaces:** `source_error.rs` (failure presentation),
+  `source_empty_state.rs` (empty state for podcasts/YouTube/radio),
+  `source_error_banner.rs`, `source_context_surface.rs` (the full-cell hit area
+  for context menus), `source_add_action.rs`, `one_shot_task.rs`, and since
+  `#193` `source_reveal.rs`.
+- **One queue engine.** The GTK controller and the runtime wrap the same
+  `Queue`/`UpNextQueue` from the core. (The *binding* is doubled — §2.2 — which
+  is a runtime finding, not a source finding.)
 
-### 4.2 Befund D1 — fünf Filterleisten
+### 4.2 Finding D1 — five filter bars
 
-| Datei | Zeilen |
+| File | Lines |
 | --- | ---: |
 | `ui/browse/browse_bar.rs` (+ `_chips`, `_chooser`, `_count`, `_strings`) | 692 (+638) |
 | `ui/concerts/concerts_filter_bar.rs` | 574 |
@@ -410,229 +386,218 @@ Schale drumherum.
 | `ui/radio/radio_filter_bar.rs` | 416 |
 | `ui/podcasts/podcasts_filter_bar.rs` | 313 |
 
-Geteilt wird davon exakt **eine CSS-Klasse** (`browse_bar::CHIP_CSS_CLASS`).
-Alles andere ist fünfmal geschrieben: eigenes Facetten-Enum, eigenes
-`remove_filter`, eigener Popover mit Facetten-/Werte-Seite, eigene
-Ergebniszeile, eigene Persistenz-Keys. Die Kopiergrade sind bis in die
-Konstanten sichtbar:
+Exactly **one CSS class** is shared (`browse_bar::CHIP_CSS_CLASS`). Everything
+else is written five times: its own facet enum, its own `remove_filter`, its
+own popover with facet and value pages, its own result line, its own
+persistence keys. The copying shows down to the constants:
 
-- `const FILTER_BAR_MIN_HEIGHT: i32 = 34;` — **5×** identisch.
-- `const FACET_PAGE: &str = "facets"; const VALUE_PAGE: &str = "values";` — **3×**.
+- `const FILTER_BAR_MIN_HEIGHT: i32 = 34;` — **five times**, identical.
+- `const FACET_PAGE: &str = "facets"; const VALUE_PAGE: &str = "values";` —
+  **three times**.
 
-Konsequenz: Die Filter-Regeln aus `docs/ux-rules.md` Abschnitt K gelten faktisch
-nur für `browse_bar`. Die gerade beschlossene Trennung Ort/Filter (§5) ist in
-den vier anderen Leisten nicht abgebildet, weil sie deren Code nie erreicht hat.
+The consequence is that the filter rules in `docs/ux-rules.md` section K apply
+in practice only to `browse_bar`. The freshly decided place/filter separation
+(§5) is absent from the other four bars because it never reached their code.
 
-**Empfehlung:** eine generische `FilterBar<F: FilterModel>` in `ui/browse/`, die
-Geometrie, Chip-Aufbau, Popover-Navigation, „Alle löschen" und die Zählzeile
-besitzt. Je Quelle bleibt ein kleines `FilterModel`-Impl (Facetten, Labels,
-Werte, Persistenz-Key) — realistisch 60–120 Zeilen statt 300–570. Erwartete
-Netto-Reduktion: ~1.200 Zeilen, und Abschnitt K wird zum ersten Mal für alle
-Quellen wahr.
+**Recommendation.** A generic `FilterBar<F: FilterModel>` in `ui/browse/`
+owning geometry, chip construction, popover navigation, "Clear all" and the
+counting line. Each source keeps a small `FilterModel` impl (facets, labels,
+values, persistence key) — realistically 60 to 120 lines instead of 300 to 570.
+Expected net reduction around 1,200 lines, and section K becomes true for every
+source for the first time.
 
-### 4.3 Befund D2 — zwei „Suche-oder-URL"-Dialoge
+### 4.3 Finding D2 — two "search or URL" dialogs
 
-`ui/podcasts/add_dialog.rs` (754) + `add_dialog_input.rs` (430) +
-`add_dialog_results.rs` (95) gegen `ui/radio/add_dialog.rs` (788) +
-`radio_add_input.rs` (18) + `station_preview.rs` (79). Beide haben:
+`ui/podcasts/add_dialog.rs` (754) plus `add_dialog_input.rs` (430) plus
+`add_dialog_results.rs` (95), against `ui/radio/add_dialog.rs` (788) plus
+`radio_add_input.rs` (18) plus `station_preview.rs` (79). Both have:
 
-- dieselbe Phasenmaschine — `Idle → Searching → Results → Previewing → Preview
+- the same phase machine — `Idle → Searching → Results → Previewing → Preview
   → Error`,
-- dasselbe `classify_input` → `AddInput` (Suchbegriff vs. URL),
-- denselben Generationszähler gegen veraltete Ergebnisse,
-- dieselbe `one_shot_task` + `source_add_action`-Verdrahtung,
-- dieselbe Connectivity-Abfrage vor dem Absenden.
+- the same `classify_input` → `AddInput` split (search term versus URL),
+- the same generation counter guarding against stale results,
+- the same `one_shot_task` plus `source_add_action` wiring,
+- the same connectivity check before submitting.
 
-`docs/plans/podcasts-radio.md` §9.3 hat „`add_dialog.rs` je Feature" bewusst so
-geplant. Nach der Landung ist der Beleg da, dass die Gemeinsamkeit größer ist
-als angenommen.
+`docs/plans/podcasts-radio.md` §7.3 deliberately planned "an `add_dialog.rs`
+per feature". After landing, the evidence says the commonality is larger than
+assumed.
 
-**Empfehlung:** `ui/source_add_dialog.rs` mit der Phasenmaschine und der
-Ergebnisliste; je Quelle ein Trait mit `classify_input`, `search`, `preview`,
-`commit` und den Copy-Identitäten. Mittlere Größe, klarer Ertrag, geringes
-Risiko (der Dialog hat eigene Tests auf beiden Seiten, die als Netz dienen).
+**Recommendation.** A `ui/source_add_dialog.rs` holding the phase machine and
+the result list; a trait per source with `classify_input`, `search`, `preview`,
+`commit` and the copy identities. Medium size, clear payoff, low risk — both
+dialogs have their own tests to serve as the net.
 
-### 4.4 Befund D3 — 16 HTTP-Boundaries, und der zugesagte Konsolidierungs-Task
+### 4.4 Finding D3 — 16 HTTP boundaries, and the consolidation task already promised
 
-`ureq::Agent::config_builder()` wird an **16** Stellen im Kern konstruiert:
+`ureq::Agent::config_builder()` is constructed at **16** places in the core:
 `artist_portrait/deezer.rs`, `concerts/http.rs`, `cover_download.rs`,
 `library/lastfm_stats.rs`, `library/library_doctor/remote/network.rs`,
 `library/listenbrainz.rs`, `lyrics/lrclib.rs`, `lyrics/netease.rs`,
-`musicbrainz.rs`, `podcasts/http.rs` (2×), `podcasts/source_artwork.rs`,
-`radio/http.rs` (2×), `scrobbling.rs`, `scrobbling/lastfm.rs`. Es waren dreizehn
-vor zwei Commits — die Zahl wächst, solange die gemeinsame Boundary fehlt
-(§1.1).
+`musicbrainz.rs`, `podcasts/http.rs` (×2), `podcasts/source_artwork.rs`,
+`radio/http.rs` (×2), `scrobbling.rs`, `scrobbling/lastfm.rs`. It was thirteen
+two commits ago — the number grows while the shared boundary is missing.
 
-`podcasts/http.rs` und `radio/http.rs` sind strukturell fast Zeile für Zeile
-identisch: gleicher `static LAST_REQUEST: Mutex<Option<Instant>>`, gleiches
-`MIN_REQUEST_INTERVAL`, gleicher `FIXTURE_DIR_ENV`-Mechanismus mit
-`thread_local`-Override, gleiche `classify_transport`-Faltung nach
+`podcasts/http.rs` and `radio/http.rs` are near-identical line for line: the
+same `static LAST_REQUEST: Mutex<Option<Instant>>`, the same
+`MIN_REQUEST_INTERVAL`, the same `FIXTURE_DIR_ENV` mechanism with a
+`thread_local` override, the same `classify_transport` fold into
 `SourceErrorKind`.
 
-Die Ratenbegrenzung ist **fünfmal getrennt** implementiert (`radio`, `podcasts`,
-`concerts`, `musicbrainz`, `artist_portrait/deezer`), jede mit eigenem
-prozessweitem Mutex. Es gibt damit *kein* gemeinsames Anfragebudget: fünf
-Quellen dürfen parallel je einmal pro Sekunde feuern. Für „Netzwerk aus",
-„gemessene Verbindung" und Backoff bedeutet das fünf Orte, an denen eine
-Richtlinie eingehalten werden muss.
+Rate limiting is implemented **five times** separately (`radio`, `podcasts`,
+`concerts`, `musicbrainz`, `artist_portrait/deezer`), each with its own
+process-wide mutex. There is therefore *no* shared request budget: five sources
+may each fire once per second in parallel. For "network off", "metered
+connection" and backoff, that is five places a policy has to be honoured.
 
-Fünf getrennte Fixture-Verzeichnis-Variablen (`REPRISE_RADIO_FIXTURE_DIR`,
+Five separate fixture-directory variables (`REPRISE_RADIO_FIXTURE_DIR`,
 `REPRISE_PODCASTS_FIXTURE_DIR`, `REPRISE_CONCERTS_FIXTURE_DIR`,
-`REPRISE_MUSICBRAINZ_FIXTURE_DIR`, `REPRISE_LRCLIB_FIXTURE_DIR`) sind die
-Testseite desselben Musters.
+`REPRISE_MUSICBRAINZ_FIXTURE_DIR`, `REPRISE_LRCLIB_FIXTURE_DIR`) are the test
+side of the same pattern.
 
-**Das ist bereits beschlossene Arbeit.** `docs/plans/podcasts-radio.md`, Zeile
-der Grill-Beschlüsse: *„Boundary-Klone bestätigt + fester Konsolidierungs-Task
-nach Landung beider Features."* Beide sind gelandet. Der Task ist fällig.
+**This is already agreed work.** `docs/plans/podcasts-radio.md`, in its grilled
+decisions: *"Boundary-Klone bestätigt + fester Konsolidierungs-Task nach
+Landung beider Features."* Both landed. The task is due.
 
-**Empfehlung:** `reprise_core::net` mit
-- einem `SourceClient { agent, user_agent, timeout, rate: &'static RateLimiter }`,
-- **einem** Ratenbegrenzer mit Budget pro Host statt pro Modul,
-- einer `SourceTransportError`-Faltung (löst zugleich E3),
-- **einer** Fixture-Variable `REPRISE_HTTP_FIXTURE_DIR` mit Unterordner je
-  Provider.
+**Recommendation.** A `reprise_core::net` with a
+`SourceClient { agent, user_agent, timeout }`, **one** rate limiter budgeted per
+host rather than per module, the host-keyed circuit breaker lifted out of
+`lyrics/breaker.rs`, a `SourceTransportError` fold (which also closes E3), and
+**one** fixture variable with a subdirectory per provider. Core-only, GUI-free,
+testable without a network — precisely the kind of work that serves the
+multi-app goal, because a second app would otherwise rebuild these policies.
 
-Kern-only, GUI-frei, testbar ohne Netz — genau die Sorte Arbeit, die dem
-Mehr-App-Ziel direkt dient, weil eine zweite App diese Richtlinien sonst
-neu bauen müsste.
+### 4.5 Finding D4 — five parallel table pages
 
-### 4.5 Befund D4 — fünf parallele Tabellenseiten
-
-`track_list`, `podcasts`, `radio`, `releases`, `concerts` haben jeweils
+`track_list`, `podcasts`, `radio`, `releases` and `concerts` each have
 `*_view.rs`, `*_columns.rs`, `*_model.rs`, `*_presentation.rs`,
-`*_empty_state.rs`, `*_failure_ui.rs`, `*_filter_bar.rs`, `css.rs` — dieselbe
-Dateigrammatik, fünfmal ausgeschrieben. Vier eigene `ColumnView`-Konstruktionen
-plus vier eigene `SignalListItemFactory`-Sätze.
+`*_empty_state.rs`, `*_failure_ui.rs`, `*_filter_bar.rs` and `css.rs` — the
+same file grammar written five times, with four separate `ColumnView`
+constructions and four separate `SignalListItemFactory` sets.
 
-Das ist ein bewusst gewachsenes Muster und funktioniert. Ich empfehle hier
-**keine große Vereinheitlichung**: die Zeilenformen unterscheiden sich real
-(Track-Zeile mit Rating und Cover; Episodenzeile mit Downloadzustand;
-Stationszeile mit Favoritenstern; Release-Zeile mit Cover und Affiliate-Link).
-Eine gemeinsame `SourceTablePage`-Abstraktion würde vor allem Konfiguration
-statt Code erzeugen.
+This grew deliberately and it works. I recommend **no** large unification here:
+the row shapes genuinely differ (a track row with rating and cover; an episode
+row with download state; a station row with a favourite star; a release row
+with cover and affiliate link). A shared `SourceTablePage` abstraction would
+mostly produce configuration instead of code.
 
-Was sich lohnt, ist der schmale Teil: Filterleiste (D1), Leerzustand (bereits
-geteilt), Fehlerbanner (bereits geteilt), Kontextflächen (bereits geteilt) —
-also genau das, was nicht die Zeilenform ist.
+What is worth sharing is the narrow part: the filter bar (D1), the empty state
+(already shared), the error banner (already shared), the context surfaces
+(already shared) — that is, everything that is not the row shape.
 
-### 4.6 Befund D5 — zwei Queue-Kommandoflächen
+### 4.6 Finding D5 — two queue command surfaces
 
-Siehe §2.2. Wird durch die Runtime-Entscheidung mit erledigt und ist kein
-eigener Task.
+See §2.2. Resolved by the runtime decision; not a task of its own.
 
 ---
 
-## 5. Filter auf Playlisten vs. Filterpillen auf Interpretenseiten
+## 5. Playlist filters versus artist-page pills
 
-### 5.1 Antwort
+### 5.1 The answer
 
-**Ja, die Trennung ist sauber — seit `c565671` (heute, 2026-07-31).** Vorher war
-sie es nicht, und die Frage trifft genau die Stelle, an der es klemmte.
+**Yes, the separation is clean — since `c565671` (2026-07-31).** Before that it
+was not, and the question lands exactly where it was stuck.
 
-Das Modell steht jetzt in
-`crates/reprise-gnome/src/ui/browse/filter_restriction.rs` als reine, GTK-freie
-Entscheidungsschicht:
+The model now lives in `crates/reprise-gnome/src/ui/browse/filter_restriction.rs`
+as a pure, GTK-free decision layer:
 
-| | **Ort** (place) | **Filter** |
+| | **Place** | **Filter** |
 | --- | --- | --- |
-| Bedeutung | wo man ist | was innerhalb davon zurückgehalten wird |
-| Betreten/Verlassen | Navigation, History-Push | Zustandsänderung am selben Ort |
-| Angezeigt durch | Sidebar-Zeile — oder, wenn keine existiert, die **Ortspille** | Chips + „Alle löschen" |
-| Gilt für | Artist, Album, Genre | Suche, Facetten, „KI-Musik ausblenden" |
+| Meaning | where you are | what is withheld inside it |
+| Entered/left by | navigation, history push | state change at the same place |
+| Shown by | sidebar row — or, where none exists, the **place pill** | chips plus "Clear all" |
+| Applies to | Artist, Album, Genre | search, facets, "Hide AI music" |
 
-Die drei tragenden Funktionen:
+Three functions carry it:
 
-- `has_place_pill(source)` — wahr **nur** für `Artist`/`Album`/`Genre`, also
-  genau die Orte, die man aus der Trackliste heraus betritt und die keine
-  Sidebar-Zeile haben.
-- `is_restricted(search, browse, exclude_ai)` — ein Ort ist **nie** eine
-  Einschränkung. Nur Suche, Facetten und der KI-Ausschluss schränken ein.
+- `has_place_pill(source)` — true **only** for `Artist`/`Album`/`Genre`, the
+  places entered from inside the track list that have no sidebar row.
+- `is_restricted(search, browse, exclude_ai)` — a place is **never** a
+  restriction. Only search, facets and the AI exclusion withhold rows.
 - `row_visible(is_track_source, restricted, has_place_pill, preference_visible)`
-  — die Zeile erscheint, wenn eingeschränkt **oder** eine Ortspille fällig ist
-  **oder** die Einstellung sie will.
+  — the row appears when restricted **or** a place pill is due **or** the
+  preference asks for it.
 
-Das Wegklick-Verhalten ist damit strukturell verschieden, nicht nur optisch:
+Dismissal behaviour is therefore structurally different, not merely visually:
 
-- **Playlist mit Filter** → Chip trägt ein `×`. Klick entfernt den Filter,
-  der Ort bleibt die Playlist. Die Zählung bleibt „X von Y" relativ zur
-  Playlist.
-- **Interpretenseite** → Ortspille, **ohne** `×`, mit vorangestelltem `‹`, ganze
-  Pille ist Klickziel, Tooltip und Accessible-Label nennen ein Ziel
-  („Interpretenseite verlassen"), nicht eine Entfernung. Klick ist eine
-  NAV-2-Navigation mit History-Push. Die Wiedergabe bleibt unberührt (PLAY-8).
-- **Interpretenseite mit Filter** → beide Zonen nebeneinander, durch einen
-  Separator getrennt; Zählung „2 von 3 Titeln" relativ zum **Ort**, nie zur
-  Bibliothek.
+- **Playlist with a filter** → the chip carries a `×`. Clicking removes the
+  filter; the place stays the playlist, and the count stays "X of Y" relative
+  to it.
+- **Artist page** → a place pill, **without** a `×`, prefixed with `‹`, the
+  whole pill a click target, tooltip and accessible name naming a destination
+  ("Leave the artist page") rather than a removal. The click is a NAV-2
+  navigation with a history push. Playback is untouched (PLAY-8).
+- **Artist page with a filter** → both zones side by side with a separator, and
+  the count reads "2 of 3 tracks" relative to the **place**, never to the
+  library.
 
-Das ist gut gebaut: die Entscheidung liegt in reinen Funktionen mit
-regelbenannten Tests (`fil_1c_places_carry_a_pill_without_restricting`,
-`fil_1c_sidebar_places_carry_no_pill`, `fil_8_recently_added_is_a_sidebar_place_without_a_pill`,
-`fil_2_row_shows_for_a_place_pill_without_any_filter`), nicht in Widget-Code.
+It is well built: the decision sits in pure functions with rule-named tests
+(`fil_1c_places_carry_a_pill_without_restricting`,
+`fil_1c_sidebar_places_carry_no_pill`,
+`fil_8_recently_added_is_a_sidebar_place_without_a_pill`,
+`fil_2_row_shows_for_a_place_pill_without_any_filter`), not in widget code.
 
-### 5.2 Wie es vorher falsch war — für den Rückblick
+### 5.2 How it was wrong before — for the record
 
-Die Design-Datei `docs/superpowers/specs/2026-07-31-place-pill-vs-filter-pill-design.md`
-hält die Messung fest: Interpretenseite zeigte `FILTER`, Pille `Alpha Artist ×`,
-Zähler `3 of 9 tracks` — optisch nicht von einem Facetten-Chip zu unterscheiden,
-aber das `×` verließ den Ort statt einen Filter zu entfernen. Gleiche Form,
-gleiche Überschrift, gleiche Zählvokabel; andere Bedeutung, andere Geste,
-andere Folge. Genau der Verdacht aus der Fragestellung.
+`docs/superpowers/specs/2026-07-31-place-pill-vs-filter-pill-design.md` records
+the measurement: an artist page showed `FILTER`, a pill `Alpha Artist ×` and a
+count `3 of 9 tracks` — visually indistinguishable from a facet chip, yet the
+`×` left the place instead of removing a filter. Same shape, same heading, same
+counting vocabulary; different meaning, different gesture, different
+consequence. Exactly the suspicion behind the question.
 
-### 5.3 Restrisiken
+### 5.3 What remains
 
-1. **Die vier anderen Filterleisten kennen die Unterscheidung nicht** (§4.2).
-   Podcasts, Radio, Releases, Concerts bauen ihre Chips selbst. Sie haben heute
-   keine Orte im Sinne von Artist/Album/Genre, also ist es kein aktiver Fehler —
-   aber `youtube_channel_detail.rs` (629 Zeilen) *ist* ein Ort innerhalb einer
-   Quelle. Ob dessen Rücksprung derselben Grammatik folgt, sollte gegen FIL-1c
-   geprüft werden.
-2. **Der Nachbar-Bug ist gefixt — geprüft, nicht angenommen.** Die Design-Datei
-   nennt ihn ausdrücklich: jede Queue-Mutation löste einen Sidebar-Refresh aus,
-   und `resolve_select_source` fiel auf Library zurück, weil Artist/Album/Genre
-   keine Sidebar-Zeile haben — die Interpretenseite sprang also beim
-   Doppelklick auf einen Track weg. Der Guard ist auf `dev` **und** auf `main`
-   vorhanden: `sidebar/sidebar.rs:466` definiert `has_sidebar_row`,
-   `sidebar_rebuild.rs:370` benutzt es, `sidebar_tests.rs:663/674` deckt beide
-   Seiten ab. Damit ist kein Restrisiko mehr offen; der Punkt bleibt hier nur
-   als Beleg stehen.
-3. **Zwei Wahrheiten für „hat eine Sidebar-Zeile" — und die bleibt offen.**
-   `has_place_pill()` (`browse/filter_restriction.rs`) und `has_sidebar_row()`
-   (`sidebar/sidebar.rs`) ziehen dieselbe Unterscheidung in zwei getrennten
-   `matches!`-Ausdrücken in zwei Modulen. Heute sind sie einig; nichts hält sie
-   dabei. Der nächste Ort, der hinzukommt, wird in genau einem der beiden
-   ergänzt. **Eine Funktion, zwei Aufrufer** — das ist der billigste Fix im
-   ganzen Dokument.
+1. **The other four filter bars do not know the distinction** (§4.2). Podcasts,
+   radio, releases and concerts build their chips themselves. They have no
+   places in the Artist/Album/Genre sense today, so it is not an active bug —
+   but `youtube_channel_detail.rs` (629 lines) *is* a place inside a source.
+   Whether its way back follows the same grammar should be checked against
+   FIL-1c.
+2. **The neighbouring bug is fixed — verified, not assumed.** The design
+   document names it: every queue mutation triggered a sidebar refresh, and
+   `resolve_select_source` fell back to Library because Artist/Album/Genre have
+   no sidebar row, so the artist page jumped away on a double-click. The guard
+   is present on `dev` **and** `main`: `sidebar/sidebar.rs:466` defines
+   `has_sidebar_row`, `sidebar_rebuild.rs:370` uses it, `sidebar_tests.rs:663`
+   and `:674` cover both sides. Nothing open; kept here as evidence.
+3. **Two truths for "has a sidebar row" — and this one is open.**
+   `has_place_pill()` (`browse/filter_restriction.rs`) and `has_sidebar_row()`
+   (`sidebar/sidebar.rs`) draw the same distinction in two separate `matches!`
+   expressions in two modules. They agree today; nothing keeps them agreeing.
+   The next place added will be added to exactly one of them. **One function,
+   two callers** — the cheapest fix in this document.
 
 ---
 
 ## 6. Performance
 
-### 6.1 Messung — Standardsortierung läuft ohne Index
+### 6.1 Measurement — the default sort runs without an index
 
-Nachgestellt mit dem echten Tabellen- und Indexstand aus `db.rs` und den echten
-Query-Strings aus `queries/clauses.rs`, 100.000 Zeilen, `ANALYZE` gelaufen,
-SQLite 3.45.1. `EXPLAIN QUERY PLAN` je Sortierfeld:
+Reproduced against a replica of the real table and index set from `db.rs`,
+using the real query strings from `queries/clauses.rs`, 100,000 rows, `ANALYZE`
+run, SQLite 3.45.1. `EXPLAIN QUERY PLAN` per sort field:
 
-| Sortierung | Plan |
+| Sort | Plan |
 | --- | --- |
-| `artist` (**Standardansicht**) | `SCAN tracks` + `USE TEMP B-TREE FOR ORDER BY` |
+| `artist` (**default view**) | `SCAN tracks` + `USE TEMP B-TREE FOR ORDER BY` |
 | `title` | `SCAN tracks USING INDEX idx_tracks_present_title_nocase` |
 | `album` | `SCAN tracks USING INDEX idx_tracks_present_album_order` |
-| `genre`, `year`, `added_at`, `rating`, `play_count`, `duration_ms` | `SCAN` + Temp-B-Tree |
+| `genre`, `year`, `added_at`, `rating`, `play_count`, `duration_ms` | `SCAN` + temp B-tree |
 
-Nur `title` und `album` haben passende partielle NOCASE-Indizes. Die
-Standardsortierung `artist COLLATE NOCASE, year, album COLLATE NOCASE, track_no`
-hat keinen — `idx_tracks_artist ON tracks(artist)` ist weder NOCASE noch
-partiell und kann die Ordnung nicht liefern.
+Only `title` and `album` have matching partial NOCASE indexes. The default sort
+`artist COLLATE NOCASE, year, album COLLATE NOCASE, track_no` has none —
+`idx_tracks_artist ON tracks(artist)` is neither NOCASE nor partial and cannot
+deliver the ordering.
 
-Laufzeiten desselben Fensters (LIMIT 200), Median aus 9 Läufen:
+Timings for the same 200-row window, median of nine runs:
 
-| Fall | offset 0 | offset 50.000 | offset 99.800 |
+| Case | offset 0 | offset 50,000 | offset 99,800 |
 | --- | ---: | ---: | ---: |
-| `artist`, ohne Index (**heute**) | 14,9 ms | **312 ms** | **380 ms** |
-| `artist`, mit Kandidatenindex | 0,44 ms | 1,95 ms | 3,37 ms |
+| `artist`, no index (**today**) | 14.9 ms | **312 ms** | **380 ms** |
+| `artist`, with the candidate index | 0.44 ms | 1.95 ms | 3.37 ms |
 
-Der Kandidat:
+The candidate:
 
 ```sql
 CREATE INDEX idx_tracks_present_artist_order
@@ -640,363 +605,344 @@ ON tracks(artist COLLATE NOCASE, year, album COLLATE NOCASE, track_no)
 WHERE missing_since IS NULL AND removed_at IS NULL;
 ```
 
-Das ist die mit Abstand größte Einzelwirkung im ganzen Review: **eine Migration,
-eine Indexzeile, Faktor 30–100 auf dem meistbenutzten Pfad der App.**
+By a wide margin the largest single effect in this review: **one migration, one
+index line, a factor of 30 to 100 on the app's most-used path.**
 
-Einschränkung, ehrlich benannt: in-memory-DB, synthetische Daten, Python-SQLite.
-Absolutwerte auf echter Hardware und echter Datei werden abweichen; das
-Planverhalten und das Verhältnis nicht.
+Stated limitation: an in-memory database, synthetic rows, Python's SQLite.
+Absolute numbers on real hardware against a real file will differ; the plan
+shapes and the ratio will not.
 
-### 6.2 Warum es sich als Ruckeln zeigt
+### 6.2 Why it shows up as stutter
 
-`TrackListModel::item()` führt die Fensterabfrage **synchron auf dem GTK-Thread**
-aus, wenn der Cache verfehlt (dokumentiert in `track_list_model.rs`, bewusst so
-entschieden). Bei 0,4 ms ist das richtig. Bei 312 ms ist es ein sichtbarer
-Frame-Aussetzer beim Scrollen. Der Cache (8 Fenster à 200 Zeilen) hilft nur bei
-Rückwärtsbewegung im selben Bereich.
+`TrackListModel::item()` runs the window query **synchronously on the GTK
+thread** on a cache miss — documented and deliberately so. At 0.4 ms that is
+right. At 312 ms it is a visible frame drop while scrolling. The cache (eight
+windows of 200 rows) only helps moving back through the same region. After the
+index, the original justification holds again.
 
-Nach dem Index gilt wieder, was die Entscheidung ursprünglich rechtfertigte.
+### 6.3 Further findings, by payoff
 
-### 6.3 Weitere Befunde, nach Ertrag sortiert
+1. **Search without a full-text index.** `filter_clause` builds
+   `title LIKE '%x%' OR artist LIKE … OR album LIKE … OR genre LIKE …` — no
+   index can serve it. Measured: 28 ms for the window plus 29 ms for
+   `COUNT(*)` per keystroke at 100k tracks, roughly 57 ms on the UI thread.
+   A 200 ms debounce (`window.rs`) saves typing, but every character still
+   costs two full scans.
+   **Staged recommendation:** first, stop counting exactly where the total only
+   feeds "X of Y" — a `LIMIT`-based "more than N" suffices above a threshold.
+   Then an FTS5 contentless table over `(title, artist, album, genre)`,
+   maintained by triggers. FTS5 ships inside `rusqlite`'s `bundled`, so no new
+   dependency.
+2. **`OFFSET` paging.** Even with the index, `OFFSET 99,800` is linear (3.4 ms
+   against 0.4 ms). Fine for 100k, not for "a library of any size". Keyset
+   paging is the clean answer but a larger change: the sort whitelist would
+   have to guarantee stable tiebreakers. **Re-evaluate after the index, not
+   before.**
+3. **Missing indexes for the remaining sort fields.** `genre`, `year`,
+   `added_at`, `rating` and `play_count` all go through a temp B-tree.
+   `added_at DESC` backs "Recently added" and is probably worth a second index;
+   the rest only after measuring which columns users actually sort by — every
+   index costs write load during a scan.
+4. **`ANALYZE` never runs.** Neither on open nor after a scan, so SQLite plans
+   heuristically. One `PRAGMA optimize` after a large scan (cheap, a no-op when
+   there is nothing to do) is the conventional answer.
+5. **Five independent rate limiters** (§4.4) are a performance matter too: at
+   startup several sources can claim network and CPU at once with no total
+   budget anywhere.
 
-1. **Suche ohne Volltextindex.** `filter_clause` baut
-   `title LIKE '%x%' OR artist LIKE … OR album LIKE … OR genre LIKE …` — kein
-   Index kann das bedienen. Gemessen: 28 ms Fenster + 29 ms `COUNT(*)` je
-   Tastendruck bei 100k Titeln, also ~57 ms auf dem UI-Thread. Es gibt einen
-   200-ms-Debounce (`window.rs`), das rettet die Eingabe, aber jedes Zeichen
-   kostet weiterhin zwei volle Scans.
-   **Empfehlung, gestaffelt:** (a) kurzfristig `COUNT(*)` und Fenster nicht
-   getrennt zählen lassen, wo die Gesamtzahl nur für „X von Y" gebraucht wird —
-   ein `LIMIT`-basiertes „mehr als N" reicht für die Anzeige oberhalb einer
-   Schwelle; (b) mittelfristig eine FTS5-Contentless-Tabelle über
-   `(title, artist, album, genre)`, per Trigger gepflegt. FTS5 ist in
-   `rusqlite`s `bundled` enthalten, also keine neue Abhängigkeit.
-2. **`OFFSET`-Paginierung.** Auch mit Index ist `OFFSET 99.800` linear (3,4 ms
-   gegen 0,4 ms). Für 100k tragbar, für „beliebig große Bibliothek" nicht.
-   Keyset-Paginierung wäre die saubere Antwort, ist aber ein größerer Eingriff
-   (die Sortier-Whitelist müsste stabile Tiebreaker garantieren). **Nach dem
-   Index neu bewerten, nicht vorher.**
-3. **Fehlende Indizes für die übrigen Sortierfelder.** `genre`, `year`,
-   `added_at`, `rating`, `play_count` laufen alle über Temp-B-Tree.
-   `added_at DESC` ist der Standard für „Zuletzt hinzugefügt" und lohnt
-   wahrscheinlich als zweiter Index; die restlichen erst nach Messung, welche
-   Spalten Nutzer wirklich sortieren — jeder Index kostet Schreiblast beim Scan.
-4. **`ANALYZE` läuft nie.** Weder beim Öffnen noch nach einem Scan. SQLite
-   plant dann nach Heuristik. Nach großen Scans einmal `PRAGMA optimize`
-   (billig, no-op wenn nichts zu tun) wäre die konventionelle Antwort.
-5. **Fünf unabhängige Ratenbegrenzer** (§4.4) sind auch ein Performance-Thema:
-   beim Start können mehrere Quellen gleichzeitig Netz und CPU belegen, ohne
-   dass irgendwo ein Gesamtbudget existiert.
+### 6.4 What is already good
 
-### 6.4 Was bereits gut ist
-
-Nicht übersehen: Fenster-Virtualisierung von Widgets **und** Daten,
-gedeckelter Fenstercache, Generationstoken gegen veraltete Async-Ergebnisse,
-`REPRISE_PERF_RUNTIME_REPORT` als eingebaute Widget-/Cache-Messung,
-`scripts/performance-baseline.sh` mit 10k-/100k-Profilen. Die Infrastruktur, um
-diese Verbesserungen zu belegen, ist bereits da — sie sollte für den Index-Fix
-auch benutzt werden.
+Worth not overlooking: widget **and** data virtualization, a bounded window
+cache, generation tokens against stale async results,
+`REPRISE_PERF_RUNTIME_REPORT` as a built-in widget/cache measurement, and
+`scripts/performance-baseline.sh` with 10k and 100k profiles. The
+infrastructure to prove these improvements is already there and should be used
+for the index fix.
 
 ---
 
-## 7. Sicherheit
+## 7. Security
 
-Reprise ist ein lokaler Desktop-Player, aber es gibt drei echte
-Vertrauensgrenzen: **fremde Feeds** (RSS/YouTube/radio-browser liefern Text,
-URLs und Bilder von Dritten), **ein Subprozess** (`yt-dlp`), und **die
-Agenten-Oberfläche** (MCP/CLI schreiben in dieselbe Datenbank). Das Review hat
-sie einzeln durchgesehen.
+Reprise is a local desktop player, but it has three real trust boundaries:
+**foreign feeds** (RSS/YouTube/radio-browser deliver third-party text, URLs and
+images), **a subprocess** (`yt-dlp`), and **the agent surface** (MCP/CLI write
+into the same database). Each was reviewed separately.
 
-### 7.1 Was bereits richtig gebaut ist
+### 7.1 What is already right
 
-Diese Punkte sind bemerkenswert sorgfältig gelöst und sollten so bleiben:
+Notably careful, and should stay:
 
-- **Keine SQL-Injektion durch Sortierparameter.** `SORT_WHITELIST` in
-  `queries/clauses.rs` ist eine Nachschlagetabelle; `sort_field` wird
-  ausschließlich als Schlüssel benutzt, nie interpoliert. Unbekannte Werte
-  fallen still auf `title` zurück. Alle Nutzereingaben laufen als gebundene
-  Parameter.
-- **Keine Pfad-Traversierung aus fremden Daten.** Podcast-Downloads landen
-  unter `fnv1a_64(feed_url)/fnv1a_64(guid).ext` (`podcasts/downloads.rs`) —
-  ein Feed kann seinen Dateinamen also gar nicht wählen. Ein `../..` im GUID
-  ist nach dem Hash ein Hexwort.
-- **Der neue Schreibpfad in die Musiksammlung ist eng gefasst.** Seit `#189`
-  schreibt Reprise `cover.<ext>` und `.lrc` neben vorhandene Titel
+- **No SQL injection through sort parameters.** `SORT_WHITELIST` in
+  `queries/clauses.rs` is a lookup table; `sort_field` is only ever a key,
+  never interpolated, and unknown values fall back to `title` silently. All
+  user input is bound.
+- **No path traversal from foreign data.** Podcast downloads land under
+  `fnv1a_64(feed_url)/fnv1a_64(guid).ext` (`podcasts/downloads.rs`), so a feed
+  cannot choose its filename at all. A `../..` in a GUID becomes a hex word.
+- **The new write path into the music collection is tightly scoped.** Since
+  `#189`, Reprise writes `cover.<ext>` and `.lrc` beside existing tracks
   (`cover_writeback.rs`, `lyrics/sidecar_write.rs`, `writeback_publish.rs`).
-  Das Ziel wird ausschließlich aus dem *Trackpfad* abgeleitet, nie aus
-  Providerdaten; `write_album_cover` prüft zusätzlich, dass die Bytes wirklich
-  das behauptete Bildformat sind (`validated_image_extension`), dass die
-  Endung in `cover::IMAGE_EXTS` steht, und bricht ab, wenn das Album bereits
-  Artwork hat. Eine bestehende Datei wird nie überschrieben. Das ist die
-  richtige Konstruktion für die riskanteste Operation der App.
-- **Antwortgrößen sind gedeckelt.** `http_body::read_bounded_string` bei 2 MB
-  für Feeds und JSON, `cover_download::MAX_IMAGE_BYTES` bei 20 MB,
-  `source_artwork::MAX_IMAGE_BYTES` bei 4 MB — jeweils mit `take(N+1)` und
-  Prüfung, also kein unbegrenzter Speicherfraß durch einen bösartigen Server.
-- **XML-Bomben sind ausgeschlossen.** `podcasts/feed.rs` benutzt `quick-xml`
-  mit `check_end_names = true` und **expandiert keine Entities**: eine
-  undeklarierte Entity wird verbatim übernommen und geloggt, nie aufgelöst.
-  Billion Laughs ist damit strukturell unmöglich, nicht nur unwahrscheinlich.
-- **Fehlermeldungen lecken nichts.** `SourceError` trennt sichere Anzeige von
-  technischer Nutzlast, und drei Tests beweisen, dass weder `Display` noch
-  `Debug` Host, Token, Statuscode oder Pfad ausgeben.
-- **`unsafe` ist auf eine Stelle beschränkt** mit begründetem SAFETY-Kommentar
-  (`kill(-pgid, SIGKILL)` in `podcasts/ytdlp.rs`); im GTK-Crate ist `unsafe`
-  per Gate auf genau eine Allowlist-Datei begrenzt.
-- **Bild-IDs werden validiert, nicht vertraut.** `youtube.rs` lässt nur das
-  YouTube-ID-Alphabet in die Thumbnail-URL — mit einer Begründung im Code, die
-  genau die richtige ist („turns an implicit assumption into a checked one").
-- **Der Flatpak-Sandkasten ist eng und mechanisch bewacht.** Kein
-  `--filesystem=home`, kein `--device=all`, kein Session-Bus;
-  `check-flatpak-device-permissions.sh` lässt außer `xdg-run/gvfsd` gar keine
-  `--filesystem=`-Zeile zu und bricht sonst ab.
-- **Zugangsdaten liegen im Keyring** (`oo7`), nicht in der Datenbank; die
-  gebündelte Ticketmaster-Kennung ist in `RELEASING.md` ausdrücklich als „aus
-  einer veröffentlichten Binary extrahierbar" markiert statt als Geheimnis
-  behandelt.
+  The target is derived from the *track path* only, never from provider data;
+  `write_album_cover` additionally checks that the bytes really are the claimed
+  image format (`validated_image_extension`), that the extension is in
+  `cover::IMAGE_EXTS`, and bails out when the album already has artwork. An
+  existing file is never overwritten. The right construction for the riskiest
+  operation the app performs.
+- **Response sizes are capped.** `http_body::read_bounded_string` at 2 MB for
+  feeds and JSON, `cover_download::MAX_IMAGE_BYTES` at 20 MB,
+  `source_artwork::MAX_IMAGE_BYTES` at 4 MB — each with `take(N+1)` and a
+  check, so a hostile server cannot exhaust memory.
+- **XML bombs are excluded.** `podcasts/feed.rs` uses `quick-xml` with
+  `check_end_names = true` and **expands no entities**: an undeclared entity is
+  kept verbatim and logged, never resolved. Billion Laughs is structurally
+  impossible rather than merely unlikely.
+- **Errors leak nothing.** `SourceError` separates safe display from technical
+  payload, with three tests proving neither `Display` nor `Debug` emits a host,
+  token, status code or path.
+- **`unsafe` is confined to one site** with a reasoned SAFETY comment
+  (`kill(-pgid, SIGKILL)` in `podcasts/ytdlp.rs`); in the GTK crate a gate
+  limits `unsafe` to exactly one allow-listed file.
+- **Image IDs are validated, not trusted.** `youtube.rs` admits only the
+  YouTube ID alphabet into the thumbnail URL, with reasoning in the code that
+  is exactly right ("turns an implicit assumption into a checked one").
+- **The Flatpak sandbox is narrow and mechanically guarded.** No
+  `--filesystem=home`, no `--device=all`, no session bus;
+  `check-flatpak-device-permissions.sh` admits no `--filesystem=` line beyond
+  `xdg-run/gvfsd` and aborts otherwise.
+- **Credentials live in the keyring** (`oo7`), not the database, and the
+  bundled Ticketmaster key is explicitly marked in `RELEASING.md` as
+  extractable from a published binary rather than treated as a secret.
 
-### 7.2 Befund S1 — kein `--` vor der URL beim yt-dlp-Aufruf
+### 7.2 Finding S1 — no `--` before the URL in yt-dlp calls
 
-`ytdlp.rs::list/resolve` und `ytdlp_download.rs` hängen die URL als letztes
-Positionsargument an, **ohne** vorangestelltes `--`. yt-dlp wertet Optionen an
-jeder Position aus, also entscheidet allein der Inhalt der Zeichenkette, ob sie
-als URL oder als Option gelesen wird.
+`ytdlp.rs::list/resolve` and `ytdlp_download.rs` append the URL as the last
+positional argument **without** a preceding `--`. yt-dlp parses options at any
+position, so the string's content alone decides whether it is read as a URL or
+as an option.
 
-Heute ist das **nicht ausnutzbar**, und zwar aus drei voneinander unabhängigen
-Gründen — die aber alle zufällig sind, nicht zugesichert:
+It is **not exploitable today**, for three independent reasons — all of which
+are accidental rather than guaranteed:
 
-1. Nutzer- und Agenteneingaben laufen durch `url_detect::detect`, das nur
-   `http`/`https` durchlässt; eine Zeichenkette mit `-` am Anfang parst nicht
-   als URL und wird zur Suche.
-2. Episoden-URLs entstehen als `format!("https://www.youtube.com/watch?v={id}")`
-   — der Präfix ist ein Literal.
-3. Suchbegriffe werden zu `ytsearch5:{terms}` und beginnen damit nie mit `-`.
+1. User and agent input goes through `url_detect::detect`, which admits only
+   `http`/`https`; a string starting with `-` does not parse as a URL and
+   becomes a search.
+2. Episode URLs are built as `format!("https://www.youtube.com/watch?v={id}")`
+   — the prefix is a literal.
+3. Search terms become `ytsearch5:{terms}` and therefore never start with `-`.
 
-Es gibt aber keine Stelle, die diese Invariante *hält*. Ein künftiger Aufrufer,
-der eine gespeicherte `feed_url` direkt weiterreicht (etwa nach einem Import
-oder aus einer Migration), hebt sie auf, und der Compiler sagt nichts.
+Nothing *holds* that invariant. A future caller passing a stored `feed_url`
+straight through — after an import, say, or a migration — breaks it, and the
+compiler will not say a word.
 
-**Empfehlung (klein, defensiv):** in `run()` und im Download-Pfad ein `--`
-unmittelbar vor dem ersten Positionsargument einfügen, plus eine
-Debug-Assertion, dass die URL mit `http://` oder `https://` beginnt. Zwei
-Zeilen, und die Invariante steht im Code statt in drei getrennten Zufällen.
+**Recommendation (small, defensive).** Insert a `--` immediately before the
+first positional argument in `run()` and the download path, plus a debug
+assertion that the URL starts with `http://` or `https://`. Two lines, and the
+invariant moves from three separate accidents into the code.
 
-### 7.3 Befund S2 — `--cookies-from-browser` gibt Cookies an einen fremden Prozess
+### 7.3 Finding S2 — `--cookies-from-browser` hands cookies to a foreign process
 
-Ist eine Browser-Sitzung konfiguriert, hängt jeder yt-dlp-Aufruf
-`--cookies-from-browser <browser>` an — yt-dlp liest dann die Cookie-Datenbank
-des Browsers und schickt die Cookies an YouTube. Das ist die vom Feature
-gewollte Funktion (POD-22, „YouTube braucht einen angemeldeten Browser"), und
-`resolve_browser_session` beschränkt den Wert auf unterstützte Browser
-(`config.rs`-Test `pod_22_browser_session_round_trips_only_supported_browsers`).
+With a browser session configured, every yt-dlp call appends
+`--cookies-from-browser <browser>`; yt-dlp then reads the browser's cookie
+database and sends those cookies to YouTube. That is the feature working as
+intended (POD-22, "YouTube needs a signed-in browser"), and
+`resolve_browser_session` restricts the value to supported browsers (covered by
+`pod_22_browser_session_round_trips_only_supported_browsers`).
 
-Trotzdem ist es die weitreichendste Berechtigung, die die App überhaupt
-ausübt: der Zugriff auf die Anmeldedaten eines anderen Programms. Zwei
-Beobachtungen:
+It is nonetheless the broadest permission the app ever exercises: access to
+another program's credentials. Two observations:
 
-- **Unter Flatpak funktioniert es ohnehin nicht** — der Sandkasten sieht das
-  Browserprofil nicht. Das ist gut, sollte aber als Verhalten *erklärt* werden,
-  sonst wird es als Bug gemeldet.
-- **`REPRISE_YTDLP_COOKIES_FROM_BROWSER`** (`ytdlp_discovery.rs`) umgeht die
-  Einstellung per Umgebungsvariable. Für Entwicklung sinnvoll; in einem
-  Release-Build sollte diese Variable ignoriert werden, damit die einzige
-  Quelle für diese Entscheidung die sichtbare Einstellung bleibt.
+- **Under Flatpak it cannot work anyway** — the sandbox cannot see the browser
+  profile. Good, but it should be *explained*, or it gets reported as a bug.
+- **`REPRISE_YTDLP_COOKIES_FROM_BROWSER`** (`ytdlp_discovery.rs`) overrides the
+  setting from the environment. Sensible for development; in a release build
+  the variable should be ignored so the visible setting is the only source of
+  that decision.
 
-**Empfehlung:** Copy im Plugin-Bereich, die benennt, was der Schalter tut („liest
-die YouTube-Cookies deines Browsers"), und den Umgebungs-Override auf
-Debug-Builds beschränken.
+### 7.4 Finding S3 — redirects without target checks (SSRF, low severity)
 
-### 7.4 Befund S3 — Weiterleitungen ohne Zielprüfung (SSRF, geringe Schwere)
+`ureq` follows redirects (default up to ten) with no check on the target, so a
+hostile feed can point at `http://127.0.0.1:…` or an address on the local
+network and Reprise will fetch it.
 
-`ureq` folgt Weiterleitungen (Standard: bis zu 10). Es gibt keine Prüfung des
-Weiterleitungsziels — ein bösartiger Feed kann also auf `http://127.0.0.1:…`
-oder eine Adresse im lokalen Netz zeigen, und Reprise holt sie ab.
+Severity is low: the response is parsed as a feed, JSON or image, the result
+never reaches the attacker, and a desktop client is not an interesting SSRF
+pivot. Worth noting anyway, because a user subscribes to a URL and does not
+expect their machine to probe their own network as a result.
 
-Schwere ist gering: die Antwort wird als Feed/JSON/Bild geparst, das Ergebnis
-erreicht den Angreifer nicht zurück, und ein Desktop-Client ist kein
-interessanter SSRF-Pivot. Erwähnenswert ist es trotzdem, weil ein Nutzer eine
-URL abonniert und nicht erwartet, dass sein Rechner dadurch sein eigenes
-Netzwerk abklopft.
+**Recommendation.** No custom resolver. A small check inside the shared
+`SourceClient` (§4.4) suffices: reject redirects to loopback, link-local and
+private ranges and report `SourceErrorKind::Unreachable`. The shared HTTP
+boundary is exactly the right place — today it would have to be built five
+times.
 
-**Empfehlung:** kein eigener Resolver-Umbau. Eine kleine Prüfung im gemeinsamen
-`SourceClient` (Welle 2, §4.4) reicht: Weiterleitungen auf Loopback-,
-Link-Local- und private Adressbereiche ablehnen und als
-`SourceErrorKind::Unreachable` melden. Genau dafür ist die gemeinsame
-HTTP-Boundary die richtige Stelle — heute müsste man es fünfmal einbauen.
+### 7.5 Finding S4 — the agent surface writes into the same database
 
-### 7.5 Befund S4 — die Agenten-Oberfläche schreibt in dieselbe Datenbank
+`reprise-mcp` is designed as "read-only resources plus capability-gated create
+tools" and holds that line: `PlayTrackIds`, `QueueAddNext` and `QueueAddLast`
+stay track-only and validate against existing IDs, and there are no delete, tag
+or playback tools beyond the intended scope. `capability.rs` is the gate.
 
-`reprise-mcp` ist als „read-only Ressourcen + capability-gated create tools"
-entworfen und hält das auch: `PlayTrackIds`, `QueueAddNext`, `QueueAddLast`
-bleiben track-only und validieren gegen vorhandene IDs; es gibt keine
-Lösch-, Tag- oder Playback-Werkzeuge über den vorgesehenen Umfang hinaus.
-`capability.rs` ist die Torkontrolle.
+Two things should be clear before a release with MCP enabled:
 
-Zwei Dinge, die vor einer Freigabe mit aktivem MCP klar sein sollten:
+- **Capability grants are invisible in the app.** Someone who sets up the MCP
+  server cannot see inside Reprise which classes of operation an agent
+  currently holds.
+- **`source_actions.rs` accepts URLs from agents** and creates subscriptions.
+  The path goes through `url_detect`, so it is as narrow as the GUI path — but
+  an agent can trigger unattended network connections to hosts of its own
+  choosing. That is intended (hence capability-gated), but it belongs in the
+  test-round documentation rather than in a tester's discovery.
 
-- **Die Capability-Erteilung ist nicht sichtbar in der App.** Ein Nutzer, der
-  den MCP-Server einrichtet, sieht in Reprise selbst nicht, welche Klassen von
-  Operationen ein Agent gerade darf.
-- **`source_actions.rs` nimmt URLs von Agenten** und legt Abos an. Der Pfad
-  geht durch `url_detect`, ist also so eng wie der GUI-Pfad — aber ein Agent
-  kann damit unbeaufsichtigt Netzverbindungen zu selbstgewählten Hosts
-  auslösen. Das ist gewollt (deshalb capability-gated), gehört aber in die
-  Testrunden-Dokumentation, nicht in die Entdeckung durch einen Tester.
+**Recommendation for the test round.** MCP off by default, and when on, a
+visible line in preferences naming the granted capabilities.
 
-**Empfehlung für die Testrunde:** MCP standardmäßig aus, und wenn an, mit einer
-sichtbaren Zeile in den Einstellungen, welche Capabilities erteilt sind.
+### 7.6 Still to check, not conclusively assessable here
 
-### 7.6 Was noch geprüft gehört, hier aber nicht abschließend bewertbar
-
-- `cargo audit` läuft im Gate mit genau einer akzeptierten Advisory
-  (RUSTSEC-2024-0436, `paste` über `lofty`). Die Regel „eine neue Advisory =
-  STOP" ist die richtige; für ein Release sollte zusätzlich `cargo deny`
-  (Lizenzen + Duplikate) einmal laufen, weil `LICENSING.md` Aussagen macht, die
-  heute niemand mechanisch prüft.
-- Die `image`-Dekodierung nutzt `image::load_from_memory` ohne explizite
-  `Limits`. Die Byte-Obergrenze davor deckt den einfachen Fall ab; eine
-  Dekompressionsbombe (kleines PNG, riesige Pixelfläche) ist damit **nicht**
-  abgedeckt. `image::Limits` mit `max_alloc` und maximaler Kantenlänge zu
-  setzen ist eine Zeile pro Dekodierstelle und schließt die Lücke.
+- `cargo audit` runs in the gate with exactly one accepted advisory
+  (RUSTSEC-2024-0436, `paste` via `lofty`). The "a new advisory means STOP"
+  rule is right; for a release, `cargo deny` (licences plus duplicates) should
+  also run once, because `LICENSING.md` makes claims nothing checks today.
+- Image decoding uses `image::load_from_memory` without explicit `Limits`. The
+  byte cap in front covers the simple case; a decompression bomb (a small PNG
+  with an enormous pixel area) is **not** covered. Setting `image::Limits` with
+  `max_alloc` and a maximum edge length is one line per decode site.
 
 ---
 
-## 8. Stabilität
+## 8. Stability
 
-Die Frage „stürzt die App im Feld ab?" hat hier eine ungewöhnlich gute und eine
-ungewöhnlich schlechte Antwort — beide messbar.
+"Does the app crash in the field?" has an unusually good and an unusually bad
+answer here — both measurable.
 
-### 8.1 Die gute Hälfte: Panikfreiheit ist erarbeitet, nicht behauptet
+### 8.1 The good half: panic discipline is earned, not claimed
 
-- Produktionscode enthält praktisch keine `unwrap`/`expect` (§3.1): Kern **1**,
-  Runtime-Crates **0**, GTK ~20 an eng begründeten Einzelstellen.
-- `TrackListModel` degradiert bei jedem Datenbankfehler zu `None`/`0` und
-  loggt, statt zu panicken — ausdrücklich dokumentiert: *„a broken DB
-  connection must never crash the UI thread."*
-- Generationstoken verhindern, dass verspätete Cover, Metadaten, Lyrics oder
-  Fortschrittswerte in eine recycelte Zeile schreiben.
-- `one_shot_task` benennt jeden Worker-Thread (auffindbar im Backtrace) und ist
-  abbruchsicher: ein weggeworfener Empfänger verwirft nur das Ergebnis.
-- Die `Db`-Handle-Migration hat **575** `RefCell`-Borrows auf dem Datenbankpfad
-  ersatzlos entfernt — die häufigste Panik-Klasse des Projekts ist dort
-  strukturell ausgeschlossen.
-- Der Ledger zeigt, dass diese Klasse aktiv gejagt wird (Task 0.4: ein
-  reentranter Subscriber-Borrow im Podcast-Runtime, mit rot-grün-Regression
-  geschlossen).
+- Production code holds effectively no `unwrap`/`expect` (§3.1): core **1**,
+  runtime crates **0**, GTK about twenty at narrowly argued sites.
+- `TrackListModel` degrades to `None`/`0` and logs on any database error rather
+  than panicking — stated explicitly: *"a broken DB connection must never crash
+  the UI thread."*
+- Generation tokens stop late covers, metadata, lyrics or progress values from
+  writing into a recycled row.
+- `one_shot_task` names every worker thread (findable in a backtrace) and is
+  cancellation-safe: a dropped receiver simply discards the result.
+- The `Db` handle migration removed **575** `RefCell` borrows on the database
+  path outright — that panic class is structurally excluded there.
+- The ledger shows the class being actively hunted (task 0.4: a re-entrant
+  subscriber borrow in the podcast runtime, closed with a red-green
+  regression).
 
-### 8.2 Befund T1 (kritisch) — eine Panik ist ein stiller Abbruch
+### 8.2 Finding T1 (critical) — a panic is a silent abort
 
-Trotzdem stehen im GTK-Crate weiterhin **1.633** `borrow()`/`borrow_mut()` über
-rund 160 `Rc<RefCell<…>>`-Zellen. `AGENTS.md` nennt genau das „the #1 recurring
-panic class". Was passiert, wenn eine davon zuschlägt:
+The GTK crate nonetheless still holds **1,633** `borrow()`/`borrow_mut()` calls
+across roughly 160 `Rc<RefCell<…>>` cells. `AGENTS.md` calls exactly that "the
+#1 recurring panic class". What happens when one fires:
 
-1. Der `BorrowMutError` paniert in einem GTK-Callback.
-2. Der Callback wird über die C-Grenze aufgerufen; ein Unwind über `extern "C"`
-   ist in heutigem Rust ein **Abbruch**, kein Fehlerpfad. Der Prozess ist weg.
-3. Die Panikmeldung geht nach **stderr** — und dort erreicht sie den Tester
-   nicht (§3.3).
-4. Es gibt **keinen `panic::set_hook`** irgendwo im Workspace.
+1. A `BorrowMutError` panics inside a GTK callback.
+2. The callback was invoked across the C boundary; unwinding through
+   `extern "C"` is an **abort** in current Rust, not an error path. The process
+   is gone.
+3. The panic message goes to **stderr** — where the tester never sees it
+   (§3.3).
+4. There is **no `panic::set_hook`** anywhere in the workspace.
 
-Damit ist der schlimmste Fehlerfall zugleich der am schlechtesten
-diagnostizierbare: Fenster verschwindet, keine Meldung, kein Artefakt, kein
-Bugreport, der mehr sagt als „war plötzlich weg".
+So the worst failure mode is also the least diagnosable: the window vanishes,
+with no message, no artefact, and no bug report saying more than "it suddenly
+disappeared".
 
-**Empfehlung (gehört in Welle 0, zusammen mit 0.2):** ein
-`std::panic::set_hook`, der Panik-Nachricht, Ort und Backtrace in die Logdatei
-schreibt, bevor der Prozess endet, plus eine Markerdatei
-(`$XDG_STATE_HOME/reprise/last-crash`), die beim nächsten Start eine Zeile
-anbietet: „Reprise wurde beim letzten Mal unerwartet beendet — Diagnose
-kopieren?". Das ist wenig Code und verwandelt die schlimmste Fehlerklasse von
-unsichtbar in berichtbar. `RUST_BACKTRACE=1` sollte der Hook selbst setzen, weil
-ein Tester es nie setzt.
+**Recommendation (wave 0, together with the log file).** A
+`std::panic::set_hook` that writes message, location and backtrace to the log
+file before the process ends, plus a marker file that lets the next start offer
+"Reprise closed unexpectedly last time — copy diagnostics?" exactly once. Little
+code, and it turns the worst failure class from invisible into reportable. The
+hook should force its own backtrace capture, because a tester never sets
+`RUST_BACKTRACE`.
 
-### 8.3 Befund T2 — ein gestorbener Worker wird nicht überall bemerkt
+### 8.3 Finding T2 — a dead worker is not noticed everywhere
 
-`one_shot_task` liefert sein Ergebnis über einen Kanal. Panik der Aufgabe →
-Sender fällt → Empfänger bekommt `Err(RecvError)`. Die Aufrufer behandeln das
-uneinheitlich:
+`one_shot_task` delivers its result over a channel. If the task panics the
+sender drops and the receiver gets `Err(RecvError)`. Callers handle that
+inconsistently:
 
-- **Vorbildlich:** `tag_edit/tag_edit_flow.rs` hat einen eigenen `Err`-Arm,
-  loggt „worker channel closed unexpectedly", reaktiviert die Dialogknöpfe und
-  zeigt eine Meldung.
-- **Lücke:** `delete_tracks.rs` macht
-  `let Ok(result) = receiver.recv().await else { return; };` — der Dialog
-  bleibt, wie er ist, ohne Meldung und ohne Log.
+- **Exemplary:** `tag_edit/tag_edit_flow.rs` has its own `Err` arm, logs
+  "worker channel closed unexpectedly", re-enables the dialog buttons and shows
+  a message.
+- **Gap:** `delete_tracks.rs` does
+  `let Ok(result) = receiver.recv().await else { return; };` — the dialog stays
+  as it was, with no message and no log line.
 
-**Empfehlung:** die Konvention in `one_shot_task` verankern, statt sie je
-Aufrufer zu wiederholen — etwa ein `recv_or_fault(&receiver, "delete tracks")`,
-das im Fehlerfall loggt und einen typisierten Fehlgrund zurückgibt. Danach ist
-„Worker gestorben" ein Zustand mit Namen und nicht ein `return`.
+**Recommendation.** Anchor the convention in `one_shot_task` rather than
+repeating it per caller — a `recv_or_fault(&receiver, "delete tracks")` that
+logs and returns a typed reason. After that, "the worker died" is a state with
+a name instead of a `return`.
 
-### 8.4 Befund T3 — Startpfad ohne Rückfallebene
+### 8.4 Finding T3 — the startup path has no fallback
 
-Zusammengefasst aus §3.2, hier unter dem Stabilitätsaspekt: die App hat
-**genau einen** Weg zu starten, und der endet bei Problemen in einer Panik.
-Kein Fehlerdialog, kein Read-only-Modus, kein „Bibliothek an anderem Ort
-öffnen". Für eine Testrunde auf fremden Rechnern — anderes Dateisystem,
-volle Platte, Home auf NFS, ältere Datei nach Downgrade — ist das die
-wahrscheinlichste Absturzquelle überhaupt, und sie ist gleichzeitig die
-billigste zu beheben.
+Summarised from §3.2 under the stability lens: the app has **exactly one** way
+to start, and it ends in a panic on trouble. No error dialog, no read-only
+mode, no "open a library elsewhere". For a test round on other people's
+machines — different filesystems, full disks, home on NFS, an older file after
+a downgrade — that is the most likely crash source of all, and simultaneously
+the cheapest to fix.
 
-### 8.5 Befund T4 — was Stabilität heute *nicht* gefährdet
+### 8.5 Finding T4 — what does *not* threaten stability today
 
-Damit die Liste ehrlich bleibt, auch die geprüften Nicht-Befunde:
+For an honest list, the verified non-findings:
 
-- **Threading:** wenige, benannte Threads; GStreamer-Ereignisse überqueren die
-  Threadgrenze ausschließlich als `Send`-Daten über einen `async-channel`, den
-  eine einzige langlebige Schleife auf dem Hauptkontext leert. Der Drain hält
-  nur ein `Weak`, kann den Controller also nicht am Leben halten.
-- **Datenbank-Nebenläufigkeit:** WAL, `busy_timeout` 5 s als benannte
-  Konstante, Worker öffnen eigene Handles statt eine Connection zu teilen,
-  Migrationen laufen transaktional zusammen mit dem `user_version`-Bump.
-- **Subprozess-Aufräumen:** yt-dlp läuft in einer eigenen Prozessgruppe mit
-  Deadline; Timeout und Fehlerpfad killen die ganze Gruppe, kein verwaister
-  Downloader.
-- **Bekannte Fremdfehler sind dokumentiert** statt umschifft
-  (`docs/upstream/`), inklusive Repro-Skripten.
+- **Threading:** few, named threads; GStreamer events cross the thread boundary
+  only as `Send` data over an `async-channel` drained by a single long-lived
+  loop on the main context. The drain holds only a `Weak`, so it cannot keep
+  the controller alive.
+- **Database concurrency:** WAL, a named 5 s `busy_timeout`, workers opening
+  their own handles instead of sharing a connection, migrations running
+  transactionally together with the `user_version` bump.
+- **Subprocess cleanup:** yt-dlp runs in its own process group with a deadline;
+  timeout and failure paths kill the whole group, leaving no orphaned
+  downloader.
+- **Known upstream bugs are documented** rather than worked around
+  (`docs/upstream/`), including reproduction scripts.
 
 ---
 
-## 9. Abwärtskompatibilität und Testfreigabe
+## 9. Backwards compatibility and the test release
 
-### 9.1 Die Regel kippt mit der Freigabe
+### 9.1 The rule flips with the release
 
-`AGENTS.md` sagt heute:
+`AGENTS.md` says today:
 
 > **Not released yet — no backwards compatibility.** Reprise has **not** shipped
 > and there are **no existing installations**.
 
-Ab dem Tag, an dem der erste Tester installiert, ist dieser Satz falsch, und die
-darauf gebaute Erlaubnis („wo sauberes und abwärtskompatibles Datenmodell
-kollidieren, nimm das saubere und lösche die alte Form") wird zu einem
-Datenverlustrisiko in fremden Bibliotheken.
+From the day the first tester installs, that sentence is false, and the
+permission built on it ("where a clean and a backwards-compatible data model
+collide, take the clean one and delete the old shape outright") becomes a
+data-loss risk in other people's libraries.
 
-**Empfehlung, im selben Commit wie die Freigabe:** Abschnitt ersetzen durch eine
-Regel mit Stichtag, etwa: *ab Schema 50 / Version 0.1.1 gilt: Migrationen sind
-vorwärtsgerichtet und verlustfrei; ein Feld darf entfallen, sobald eine
-Migration seinen Inhalt überführt hat; Settings-Keys werden migriert, nicht
-verworfen.* Ohne diese Änderung wird die nächste „saubere Umstellung"
-regelkonform Testerdaten löschen.
+**Recommendation, in the same commit as the release:** replace the section with
+a cut-off rule — *from schema 50 / version 0.1.1 onward installations exist;
+migrations are forward-only and lossless; a field may disappear once a
+migration has carried its content over; settings keys are migrated, not
+discarded.* Without that change, the next rule-abiding "clean rewrite" will
+delete tester data.
 
-### 9.2 Was schon abwärtskompatibel ist — gut
+### 9.2 What is already compatible — good
 
-- **Schema 50, vorwärtsgerichtete Migrationen**, jeder Schritt in einer
-  Transaktion zusammen mit dem `user_version`-Bump (der Kommentar in `db.rs`
-  erklärt, warum das nach einem Crash-Fall so gebaut wurde).
-- **`SchemaTooNew` wird erkannt** — Downgrade wird nicht stillschweigend auf
-  einer neueren Datei gefahren. (Die GUI wirft die Information weg — §3.2.)
-- **`db_grandfather.rs`** ist bereits ein echter Kompatibilitätsmechanismus:
-  bestehende Datenbanken behalten Netzfunktionen, die sie vor der Einführung des
-  Modul-Gates schon hatten, entschieden anhand von Belegen in den Daten (Abos,
-  Radio-Favoriten, Downloads, Cover-Cache), nicht anhand einer Pauschale.
-- **Protokoll-Kompatibilitätstest** im Runtime-Protokoll: ein älteres Dictionary
-  ohne typisierte Felder wird weiterhin dekodiert (Ledger, Paket 5).
-- **Eigene Migrationstestdateien** je Bereich (`db_recent_migration_tests.rs`,
+- **Schema 50 with forward migrations**, each step in a transaction together
+  with its `user_version` bump (the comment in `db.rs` explains the crash case
+  that shaped it).
+- **`SchemaTooNew` is detected** — a downgrade never silently runs against a
+  newer file. (The GUI throws the information away — §3.2.)
+- **`db_grandfather.rs` is already a real compatibility mechanism:** existing
+  databases keep the network features they had before the module gate existed,
+  decided from evidence in the data (subscriptions, radio favourites,
+  downloads, cover cache) rather than a blanket assumption.
+- **A protocol compatibility test** in the runtime protocol: an older
+  dictionary without typed fields still decodes.
+- **Dedicated migration test files** per area (`db_recent_migration_tests.rs`,
   `db_podcasts_radio_migration_tests.rs`, `db_network_migration_tests.rs`, …).
 
-### 9.3 Befund K1 (Freigabe-Blocker) — die deklarierte MSRV ist nicht erreichbar
+### 9.3 Finding K1 (release blocker) — the declared MSRV is unreachable
 
-Reproduziert in dieser Umgebung mit `cargo build -p reprise-core --locked`:
+Reproduced here with `cargo build -p reprise-core --locked`:
 
 ```
 Compiling libsqlite3-sys v0.38.1
@@ -1004,282 +950,170 @@ error[E0658]: use of unstable library feature `cfg_select`
   --> libsqlite3-sys-0.38.1/build.rs:110:9
 ```
 
-Also: der **gepinnte** Abhängigkeitsgraph baut mit `rustc 1.94.1` nicht, während
-jedes Workspace-Manifest `rust-version = "1.92"` deklariert.
-`scripts/tests/msrv.sh` kann das nicht fangen — es liest ausschließlich
-`cargo metadata` und prüft, dass das *Feld* überall `1.92` sagt. Es baut nie mit
-dieser Toolchain.
+The **pinned** dependency graph does not build with `rustc 1.94.1`, while every
+workspace manifest declares `rust-version = "1.92"`. `scripts/tests/msrv.sh`
+cannot catch this: it reads `cargo metadata` and checks that the *field* says
+`1.92` everywhere. It never builds.
 
-Warum das für die Freigabe zählt: `org.reprise.Reprise.yml` baut mit
-`org.freedesktop.Sdk.Extension.rust-stable` unter GNOME-Runtime 50 und
-`CARGO_NET_OFFLINE=true` gegen `flatpak/cargo-sources.json` — also exakt gegen
-diese gepinnten Versionen. Ob die rustc-Version dieser SDK-Extension neu genug
-ist, entscheidet, ob das Flatpak überhaupt baut. Die CI baut auf Arch-Rolling
-und beantwortet die Frage nicht.
+This matters for the release because `org.reprise.Reprise.yml` builds with
+`org.freedesktop.Sdk.Extension.rust-stable` under GNOME runtime 50 and
+`CARGO_NET_OFFLINE=true` against `flatpak/cargo-sources.json` — that is,
+against exactly these pinned versions. Whether that SDK extension's rustc is
+new enough decides whether the Flatpak builds at all. CI builds on rolling Arch
+and does not answer the question.
 
-**Empfehlung:**
-1. Die tatsächlich nötige rustc-Version bestimmen (`cargo build --locked` mit
-   der SDK-Toolchain oder in einem `flatpak-builder`-Lauf).
-2. `rust-version` im Workspace darauf setzen — oder `rusqlite`/`libsqlite3-sys`
-   auf eine Version zurücknehmen, die 1.92 hält.
-3. `scripts/tests/msrv.sh` um einen echten Build mit der deklarierten Toolchain
-   ergänzen, sonst misst der Check weiterhin etwas anderes als sein Name sagt.
-4. Ein `rust-toolchain.toml` erwägen, damit Entwickler und CI dieselbe Toolchain
-   sehen.
+**Recommendation.** Determine the version actually required, set `rust-version`
+to it (or take `rusqlite`/`libsqlite3-sys` back to a version that holds 1.92),
+give `msrv.sh` a real build with the declared toolchain, and consider a
+`rust-toolchain.toml` so developers and CI see the same one.
 
-### 9.4 Befund K2 — `check-stem-runtime-packaging` ist rot auf der Basis
+### 9.4 Finding K2 — `check-stem-runtime-packaging` is red on the base
 
-Der Ledger hält es fest: *„the extra release-only
+The ledger records it: *"the extra release-only
 `scripts/check-stem-runtime-packaging.sh` probe remains red on the unchanged
 base because `build-aux/meson-cargo-build.sh` lacks the two ONNX runtime
-environment markers the check requires."* Dieser Check ist Teil von
-`scripts/check-release.sh`, nicht von `check-merge-readiness.sh` — er ist also
-korrekt nicht als Merge-Blocker aufgetreten, wird aber jede Release-Prüfung
-stoppen.
+environment markers the check requires."* It belongs to
+`scripts/check-release.sh`, not to `check-merge-readiness.sh`, so it correctly
+never blocked a merge — but it will stop every release check.
 
-**Empfehlung:** vor der Freigabe entweder reparieren oder das Stem-Feature für
-die Testrunde ausschalten (`-Dstem_backend=false`) und den Check entsprechend
-gaten. Für eine erste Testrunde ist Letzteres die kleinere Wette — ein
-experimentelles ML-Feature erzeugt Supportlast, die vom eigentlichen Testziel
-ablenkt.
+**Recommendation.** Before the release, either fix it or turn the stem feature
+off for the test round (`-Dstem_backend=false`) and gate the check
+accordingly. For a first round the latter is the smaller bet — an experimental
+ML feature creates support load that distracts from the actual test goal.
 
-### 9.5 Befund K3 — der Flatpak-Sandkasten ist streng, und das ist der erste Stolperstein
+### 9.5 Finding K3 — the Flatpak sandbox is strict, and it is the first hurdle
 
-`finish-args` enthält **kein** `--filesystem=home` und kein `--filesystem=xdg-music`;
-`check-flatpak-device-permissions.sh` verbietet jede `--filesystem=`-Zeile außer
-`xdg-run/gvfsd`. Bibliothekszugriff läuft also ausschließlich über den
-Portal-Ordnerdialog. Das ist eine gute, bewusste Entscheidung — und zugleich das
-Erste, was jeder Tester berührt.
+`finish-args` contains **no** `--filesystem=home` and no
+`--filesystem=xdg-music`; `check-flatpak-device-permissions.sh` forbids every
+`--filesystem=` line except `xdg-run/gvfsd`. Library access therefore runs
+exclusively through the portal folder chooser. A good, deliberate decision —
+and simultaneously the first thing every tester touches.
 
-**Empfehlung:** genau diesen Pfad vor der Freigabe manuell verifizieren, in
-einem echten Flatpak, nicht in einem Dev-Build: Ordner wählen → scannen →
-**App beenden** → neu starten → sind die Titel noch spielbar? Wenn die
-Portalberechtigung nicht persistent gewährt ist, ist die App nach dem ersten
-Neustart leer, und das ist der Bugreport, der eine ganze Testrunde dominiert.
-`RELEASING.md` §„Manual GNOME QA" führt den Schritt bereits — er ist der
-wichtigste der Liste.
+**Recommendation.** Verify exactly that path before the release, in a real
+Flatpak rather than a dev build: choose a folder → scan → **quit the app** →
+restart → are the tracks still playable? If the portal permission is not
+granted persistently, the app is empty after the first restart, and that is the
+bug report that would dominate a whole test round. `RELEASING.md`'s "Manual
+GNOME QA" already lists the step — it is the most important one on the list.
 
-### 9.6 Weitere Freigabe-Beobachtungen
+### 9.6 Further release observations
 
-- **`reprise-runtime` geht mit aus** (Meson-Target, zwei `.service`-Dateien) und
-  wird von nichts benutzt (§2.2). Für eine Testrunde: nicht ausliefern.
-- **`AGENTS.md`** ist inhaltlich veraltet (§2.5).
-- **`docs/ux-rules.md`** hat zwei Abschnitte mit dem Buchstaben `T`
-  (Zeile 1921 „T. Accessibility & Keyboard", Zeile 1995 „T. Network features
-  opt-in") und keinen Abschnitt `AC`. Bei 307 aktiven Regeln, die per
-  `check-ux-traceability.sh` auf Tests abgebildet werden, ist eine doppelte
-  Sektionskennung eine Falle für die nächste Regelnummer.
+- **`reprise-runtime` ships** (Meson target, two `.service` files) and is used
+  by nothing (§2.2). For a test round: do not ship it.
+- **`AGENTS.md` is out of date** (§2.5).
+- **`docs/ux-rules.md` has two sections lettered `T`** (line 1921
+  "T. Accessibility & Keyboard", line 1995 "T. Network features opt-in") and no
+  section `AC`. With 313 active rules mapped to tests by
+  `check-ux-traceability.sh`, a duplicate section letter is a trap for the next
+  rule number.
 
 ---
 
-## 10. Refactoring-Plan
+## 10. What is explicitly *not* recommended
 
-> **Ausführung:** `docs/plans/consolidation-implementation.md` schreibt diese
-> Wellen task-genau aus — roter Test, Dateien, Gate, Commit-Titel je Task für
-> Welle 0 und 1, Paketebene mit Datei-Ownership für Welle 2 bis 5. Dieser
-> Abschnitt bleibt die Übersicht; dort steht, wie es gebaut wird.
+So that later sessions do not walk into the same temptations:
 
-Priorisiert nach *Ertrag pro Risiko*, in Wellen, die einzeln landbar sind. Jede
-Welle ist ein eigener Branch mit squashed PR gegen `dev`, nach der Methode aus
-`AGENTS.md` (Test zuerst, volle Gate-Batterie, Ledger-Zeile).
-
-### Welle 0 — Freigabe-Blocker (vor dem Öffnen der Testrunde)
-
-| # | Task | Aufwand | Risiko |
-| --- | --- | --- | --- |
-| 0.1 | `main.rs`: `open_migrated` behandeln statt `expect`; Fehlerdialog je `DbError`-Fall (§3.2) | S | niedrig |
-| 0.2 | Logdatei unter `$XDG_STATE_HOME/reprise/` + „Diagnose kopieren" im Hauptmenü (§3.3) | M | niedrig |
-| 0.3 | MSRV/Toolchain klären, `msrv.sh` zu einem echten Build machen (§9.3) | S–M | niedrig |
-| 0.4 | `AGENTS.md`: Crate-Liste, Roadmap, und **die Kompatibilitätsregel** auf den Stichtag umstellen (§9.1, §2.5) | S | niedrig |
-| 0.5 | Entscheidung Runtime: ausliefern oder ausbauen — für die Testrunde: nicht ausliefern (§2.2) | S (Variante B) | niedrig |
-| 0.6 | Flatpak-Portalpfad manuell verifizieren: Ordner wählen → scannen → Neustart → spielbar? (§9.5) | S | — |
-| 0.7 | `check-stem-runtime-packaging` reparieren **oder** Stem-Feature für die Testrunde aus (§9.4) | S | niedrig |
-| 0.8 | `std::panic::set_hook`: Panik + Backtrace in die Logdatei, Absturzmarker, beim nächsten Start „Diagnose kopieren?" (§8.2) | S | niedrig |
-| 0.9 | Cover-/Lyrics-Writeback in die manuelle QA aufnehmen: schreibt nur wo erlaubt, überschreibt nie, Temp-Sweep greift (§7.1, §1.1) | S | — |
-| 0.10 | MCP für die Testrunde standardmäßig aus; erteilte Capabilities in den Einstellungen sichtbar (§7.5) | S | niedrig |
-
-Zusammen realistisch 1–2 Arbeitstage. Danach ist eine Testrunde belastbar:
-Abstürze werden zu Meldungen, Meldungen kommen mit Logs, und was ausgeliefert
-wird, wird auch benutzt.
-
-**Reihenfolge innerhalb der Welle:** 0.2 und 0.8 zuerst und zusammen — sie
-teilen sich dieselbe Logdatei, und ohne sie ist jede spätere Testrückmeldung
-blind. Danach 0.1 (der Startpfad ist die wahrscheinlichste Absturzquelle
-überhaupt), dann der Rest in beliebiger Folge.
-
-### Welle 1 — Performance, mit Beleg
-
-| # | Task | Aufwand | Risiko |
-| --- | --- | --- | --- |
-| 1.1 | Migration 51: `idx_tracks_present_artist_order` (§6.1) | S | niedrig |
-| 1.2 | `scripts/performance-query-compare.sh` vorher/nachher für 10k und 100k festhalten | S | — |
-| 1.3 | `PRAGMA optimize` nach großem Scan (§6.3.4) | S | niedrig |
-| 1.4 | `added_at`-Index prüfen und ggf. mitnehmen | S | niedrig |
-
-Welle 1 ist bewusst klein und vor Welle 2 einsortiert: sie ist die einzige
-Änderung mit sofortiger, für Tester spürbarer Wirkung.
-
-### Welle 2 — Quellen-Grammatik konsolidieren
-
-| # | Task | Aufwand | Risiko |
-| --- | --- | --- | --- |
-| 2.1 | `reprise_core::net`: ein `SourceClient`, **ein** Ratenbegrenzer, eine Fixture-Variable, `SourceTransportError` (§4.4, §3.4) — der 2026-07-26 zugesagte Konsolidierungs-Task | L | mittel |
-| 2.2 | Generische `FilterBar<F: FilterModel>`; die vier Quellen-Leisten darauf umstellen (§4.2) | L | mittel |
-| 2.3 | `ui/source_add_dialog.rs`: eine Phasenmaschine für Podcasts und Radio (§4.3) | M | mittel |
-| 2.4 | `has_place_pill()` / `has_sidebar_row()` zu einer Wahrheit zusammenführen (§5.3.3) | S | niedrig |
-| 2.5 | `youtube_channel_detail` gegen FIL-1c prüfen (§5.3.1) | S | niedrig |
-| 2.6 | `--` vor jedes yt-dlp-Positionsargument + Debug-Assertion auf `http(s)://` (§7.2) | S | niedrig |
-| 2.7 | `image::Limits` (max. Kantenlänge, `max_alloc`) an jeder Dekodierstelle (§7.6) | S | niedrig |
-| 2.8 | `recv_or_fault` in `one_shot_task`: „Worker gestorben" bekommt einen Namen (§8.3) | S | niedrig |
-
-Die drei Sicherheits-/Stabilitätspunkte hängen an Welle 2, weil 2.1 die
-gemeinsame HTTP-Boundary schafft — dort gehören auch die Weiterleitungsprüfung
-(§7.4) und der aus `lyrics/breaker.rs` herausgehobene Circuit Breaker hin. Vor
-2.1 müsste man jede dieser Regeln fünf- bis sechzehnmal einbauen.
-
-Erwartete Netto-Reduktion Welle 2: grob 1.500–2.000 Zeilen, bei gleichzeitig
-*strengeren* Garantien (ein Netzbudget statt fünf, Abschnitt K für alle
-Quellen).
-
-### Welle 3 — Kern-API für die zweite App
-
-| # | Task | Aufwand | Risiko |
-| --- | --- | --- | --- |
-| 3.1 | `CoreError` einführen, `rusqlite::Error` aus öffentlichen Signaturen entfernen (§2.3) | L | mittel |
-| 3.2 | `rusqlite` aus `reprise-cli`/`reprise-mcp` entfernen; Gate ergänzen | S | niedrig |
-| 3.3 | Parameterobjekte statt der `query_track_window*`-Überladungen (7× `too_many_arguments` allein in `queries/mod.rs`) | M | niedrig |
-| 3.4 | Pro Ansicht ein `…Ports`-Struct; `RuntimeWiring` verliert seine Rolle als Universalkontext (§2.4) | L | mittel |
-
-Erst nach Welle 3 ist die Aussage „ein zweites Frontend erbt die Fachlichkeit"
-mehr als eine Behauptung: dann kann eine zweite App den Kern nehmen, ohne SQLite
-zu übersetzen und ohne die GTK-Verdrahtung nachzubauen.
-
-### Welle 4 — die Runtime-Entscheidung ausführen
-
-Nur wenn Welle 0.5 auf **(A) Cutover** entschieden wurde. Dann in Paketen wie
-bei „episodes as queue citizens": Ports verdrahten → `PlayerController` auf
-Snapshots umstellen → Queue-Kommandos umleiten → MPRIS-Spiegel vom Runtime
-speisen → MCP/CLI von MPRIS auf `org.reprise.Reprise1` umstellen →
-`transport_parity_tests` von Netz zu Vertrag befördern.
-
-### Welle 5 — nur nach Messung
-
-`OFFSET` → Keyset-Paginierung (§6.3.2) und FTS5-Suche (§6.3.1). Beide sind echte
-Verbesserungen, aber beide sind erst nach Welle 1 ehrlich zu bewerten: der Index
-verschiebt die Grenze so weit, dass die restlichen Kosten möglicherweise unter
-der Wahrnehmungsschwelle liegen.
+- **No universal `SourceTablePage` abstraction** across the track list,
+  podcasts, radio, releases and concerts (§4.5). The row shapes genuinely
+  differ; a shared table would replace code with configuration and turn special
+  cases into flags. Only the frame (filter bar, empty state, error banner)
+  belongs shared — and three of those four already are.
+- **No merging of radio and podcasts in the core.** Stations are not episodes:
+  no feed, no GUID, no resume position, no download. The commonality is the
+  HTTP boundary and the UI shell, not the data model.
+- **No splitting `reprise-core` into several crates.** 108k lines is a lot, but
+  the module boundaries are clean, purity is checked mechanically, and several
+  crates would mostly generate feature-flag combinatorics.
+- **No move to async/tokio.** Blocking HTTP on worker threads plus
+  `async-channel` at the GTK boundary is the simpler and already proven
+  solution for this program. `tokio` correctly lives only in `reprise-mcp`,
+  where the SDK forces it.
+- **No lowering of gates to land waves faster.** The 800-line limit, the
+  orchestrator caps and the frontend thinness budgets are why this repository
+  is still navigable at 293k lines.
 
 ---
 
-## 11. Ausdrücklich **nicht** empfohlen
+## 11. Proposed gate additions
 
-Damit spätere Sessions nicht in dieselben Versuchungen laufen:
+Each line makes one finding unrepeatable. They land with the task that closes
+the finding, never as a sweep at the end.
 
-- **Keine `SourceTablePage`-Universalabstraktion** über Trackliste, Podcasts,
-  Radio, Releases, Concerts (§4.5). Die Zeilenformen sind real verschieden;
-  eine gemeinsame Tabelle würde Code durch Konfiguration ersetzen und
-  Sonderfälle in Flags verwandeln. Nur der Rahmen (Filterleiste, Leerzustand,
-  Fehlerbanner) gehört geteilt — und drei von vier sind es bereits.
-- **Kein Zusammenlegen von Radio und Podcasts im Kern.** Stationen sind keine
-  Episoden: kein Feed, keine GUID, keine Resume-Position, kein Download. Die
-  Gemeinsamkeit liegt in der HTTP-Boundary und der UI-Schale, nicht im
-  Datenmodell.
-- **Keine Aufteilung von `reprise-core` in mehrere Crates.** 104k Zeilen sind
-  viel, aber die Modulgrenzen sind sauber, die Purity ist mechanisch geprüft,
-  und mehrere Crates würden vor allem Feature-Flag-Kombinatorik erzeugen.
-- **Keine Umstellung auf async/tokio.** Blockierendes HTTP auf Worker-Threads
-  plus `async-channel` an der GTK-Grenze ist für dieses Programm die einfachere
-  und bereits bewährte Lösung. `tokio` lebt korrekt nur in `reprise-mcp`, weil
-  das SDK es erzwingt.
-- **Kein Absenken von Gates, um Wellen schneller zu landen.** Die
-  800-Zeilen-Grenze, die Orchestrator-Deckel und die
-  Frontend-Thinness-Budgets sind die Gründe, warum dieses Repo bei 287k Zeilen
-  noch navigierbar ist.
-
----
-
-## 12. Vorgeschlagene Gate-Ergänzungen
-
-Jede dieser Zeilen macht einen Befund oben unwiederholbar:
-
-1. **`msrv.sh` baut wirklich** mit der deklarierten Toolchain (§9.3).
-2. **Kein `expect`/`unwrap` in `main.rs`** — ein `rg`-Verbot in
-   `check-architecture.sh`, drei Zeilen (§3.2).
-3. **Duplizierte UI-Konstanten** — `FILTER_BAR_MIN_HEIGHT`, `FACET_PAGE`,
-   `VALUE_PAGE` dürfen genau einmal definiert sein (§4.2).
-4. **Ein `ureq::Agent::config_builder()`-Budget** in `reprise-core`, gedeckelt
-   auf die aktuelle Zahl und nur senkbar — nach dem Vorbild von
+1. **`msrv.sh` actually builds** with the declared toolchain (§9.3).
+2. **No `expect`/`unwrap` in `main.rs`** — an `rg` ban in
+   `check-architecture.sh`, three lines (§3.2).
+3. **Duplicated UI constants** — `FILTER_BAR_MIN_HEIGHT`, `FACET_PAGE`,
+   `VALUE_PAGE` may be defined exactly once (§4.2).
+4. **A `ureq::Agent::config_builder()` budget** in `reprise-core`, capped at
+   today's number and lowerable only — after the model of
    `check-frontend-thinness.sh` (§4.4).
-5. **Sektionsbuchstaben in `ux-rules.md` sind eindeutig** — eine Zeile in
+5. **Unique section letters in `ux-rules.md`** — one line in
    `check-ux-traceability.sh` (§9.6).
-6. **Wenn die Runtime ausgeliefert wird, benutzt sie auch jemand**: ein Check,
-   dass `reprise_runtime_client` außerhalb von Tests referenziert wird, sobald
-   `data/*.service.in` installiert werden (§2.2).
-7. **Jedes yt-dlp-Positionsargument steht hinter `--`** — ein `rg`-Verbot auf
-   `Command::new(&self.binary)`-Pfaden ohne Separator (§7.2).
-8. **`cargo deny` im Release-Gate** für Lizenzen und Duplikate, weil
-   `LICENSING.md` Aussagen macht, die heute niemand mechanisch prüft (§7.6).
+6. **If the runtime ships, someone uses it**: a check that
+   `reprise_runtime_client` is referenced outside tests as soon as
+   `data/*.service.in` are installed (§2.2).
+7. **Every yt-dlp positional argument sits behind `--`** (§7.2).
+8. **`cargo deny` in the release gate** for licences and duplicates, because
+   `LICENSING.md` makes claims nothing checks today (§7.6).
 
 ---
 
-## 13. Antworten auf die gestellten Fragen, kompakt
+## 12. The questions, answered compactly
 
-**„Saubere Architektur, um mehrere Apps auf demselben Kern zu bauen?"**
-Die Grundlage steht (Db-Handle, geprüfte Purity, kein SQL außerhalb des Kerns).
-Drei Dinge fehlen: `rusqlite::Error` aus der öffentlichen API (§2.3), eine
-Entscheidung über die zweite Laufzeit (§2.2), und ansichtsweise Ports statt
-einer 40-Feld-Kompositionswurzel (§2.4).
+**"Clean architecture so several apps can build on one core?"**
+The foundation holds: the `Db` handle, checked purity, no SQL outside the core.
+Three things are missing: `rusqlite::Error` out of the public API (§2.3), a
+decision about the second runtime (§2.2), and per-view ports instead of a
+40-field composition root (§2.4).
 
-**„Saubere Fehlerbehandlung und Logging zum Debuggen?"**
-Fehlerbehandlung: sehr gut, mit **einer** harten Lücke — die App paniert beim
-Datenbankstart (§3.2). Logging: zum Entwickeln brauchbar, für Tester unbrauchbar,
-weil es nur nach stderr geht (§3.3).
+**"Clean error handling and logging for debugging?"**
+Error handling: very good, with **one** hard gap — the app panics when opening
+the database (§3.2). Logging: usable for developing, unusable for testers,
+because it only reaches stderr (§3.3).
 
-**„Haben wir Dinge doppelt entwickelt — Radio, Podcast, YouTube, Playlisten?"**
-YouTube und Podcasts: nein, vorbildlich geteilt. Playlisten: nein, ein Modell für
-alle lokalen Quellen. Doppelt sind die *Schalen*: fünf Filterleisten (§4.2), zwei
-Add-Dialoge (§4.3), dreizehn HTTP-Boundaries mit fünf Ratenbegrenzern (§4.4).
-Für Letzteres existiert bereits ein zugesagter, fälliger Konsolidierungs-Task.
-Die größte Doppelentwicklung liegt woanders: zwei Kommandoflächen für Wiedergabe
-und Queue (§2.2).
+**"Did we build things twice — radio, podcasts, YouTube, playlists?"**
+YouTube and podcasts: no, exemplarily shared. Playlists: no, one model for all
+local sources. What is doubled is the *shells*: five filter bars (§4.2), two add
+dialogs (§4.3), sixteen HTTP boundaries with five rate limiters (§4.4) — and
+for the last of those a consolidation task was already promised and is now due.
+The largest duplication is elsewhere: two command surfaces for playback and the
+queue (§2.2).
 
-**„Sind Playlist-Filter und Interpretenseiten-Pillen sauber zu unterscheiden?"**
-Seit `c565671` ja — Ort und Filter haben getrennte Form, Position, Geste und
-Zählvokabel, und die Entscheidung liegt in reinen, regelbenannten Funktionen.
-Drei Restpunkte in §5.3, davon einer wichtig: der Sidebar-Refresh-Fix muss auf
-`dev` sein, sonst verschwindet die Ortspille beim ersten Abspielen.
+**"Are playlist filters and artist-page pills cleanly distinguishable?"**
+Since `c565671`, yes — place and filter differ in shape, position, gesture and
+counting vocabulary, and the decision lives in pure, rule-named functions. Three
+residual points in §5.3, one of them worth doing today: `has_place_pill` and
+`has_sidebar_row` should be one function.
 
-**„Performance-Optimierungen?"**
-Eine sticht heraus: die Standardsortierung der Bibliothek hat keinen Index und
-kostet gemessen bis zu 380 ms je Fenster bei 100k Titeln — auf dem UI-Thread.
-Ein Index bringt das auf 3,4 ms (§6.1). Danach: Suche ohne FTS und
-OFFSET-Paginierung, beide erst nach dieser Messung neu bewerten.
+**"Performance optimisations?"**
+One stands out: the library's default sort has no index and costs up to 380 ms
+per window at 100k tracks — on the UI thread. An index brings that to 3.4 ms
+(§6.1). After that: search without FTS and `OFFSET` paging, both to be
+re-evaluated once that measurement exists.
 
-**„Wie steht es um die Sicherheit?"**
-Überdurchschnittlich. Keine SQL-Injektion (Whitelist statt Interpolation), keine
-Pfad-Traversierung (Downloads unter Hashwerten), Antwortgrößen gedeckelt,
-XML-Bomben strukturell ausgeschlossen, Fehlermeldungen mit getesteter
-Redaktionsgrenze, `unsafe` auf eine begründete Stelle beschränkt, Flatpak-Sandkasten
-eng und mechanisch bewacht. Drei defensive Lücken: kein `--` vor der yt-dlp-URL
-(§7.2, heute nur durch Zufall nicht ausnutzbar), Weiterleitungen ohne Zielprüfung
-(§7.4, geringe Schwere), und Bilddekodierung ohne `Limits` (§7.6). Alle drei sind
-klein und gehören in Welle 2, wo die gemeinsame HTTP-Boundary entsteht.
+**"How is security?"**
+Above average. No SQL injection (whitelisted keys), no path traversal (hashed
+download paths), bounded bodies, no entity expansion, a redaction-tested error
+type, one justified `unsafe`, a narrow Flatpak sandbox. Three defensive gaps:
+no `--` before the yt-dlp URL (§7.2, unexploitable today only by accident),
+redirects without target checks (§7.4, low severity), and image decoding
+without limits (§7.6). All three are small and belong in the wave that builds
+the shared HTTP boundary.
 
-**„Wie stabil ist die App?"**
-Die Panikfreiheit ist erarbeitet, nicht behauptet: praktisch keine `unwrap` im
-Produktionscode, Generationstoken gegen veraltete Async-Ergebnisse, benannte
-Worker-Threads, und die `Db`-Migration hat 575 Borrows der häufigsten
-Panik-Klasse ersatzlos entfernt. Das Problem ist nicht die Häufigkeit von
-Abstürzen, sondern ihre **Unsichtbarkeit**: 1.633 verbleibende `RefCell`-Borrows,
-eine Panik im GTK-Callback ist ein Prozessabbruch, es gibt keinen `panic::set_hook`,
-und die Meldung geht nach stderr, wo kein Tester sie sieht (§8.2). Ein Absturz
-hinterlässt heute nichts. Das ist der wichtigste kleine Fix im ganzen Dokument.
+**"How stable is the app?"**
+Panic discipline is earned, not claimed: effectively no `unwrap` in production,
+generation tokens against stale async results, named worker threads, and 575
+borrows of the most common panic class removed by the `Db` migration. The
+problem is not how often it crashes but how **invisibly**: 1,633 remaining
+`RefCell` borrows, a panic in a GTK callback is a process abort, there is no
+`panic::set_hook`, and the message goes to stderr where no tester sees it
+(§8.2). A crash leaves nothing behind today. That is the most valuable small
+fix in this document.
 
-**„Ist es abwärtskompatibel?"**
-Datenmodell: ja — vorwärtsgerichtete, transaktionale Migrationen bis Schema 50,
-Downgrade wird erkannt, Grandfathering existiert. Aber die Projektregel sagt
-heute noch ausdrücklich „keine Abwärtskompatibilität nötig", und die muss mit der
-Freigabe kippen (§9.1), sonst löscht die nächste regelkonforme „saubere
-Umstellung" Testerdaten. Nicht kompatibel ist derzeit die **Build**-Seite: die
-deklarierte MSRV 1.92 ist mit dem gepinnten Abhängigkeitsgraphen nicht
-erreichbar (§9.3).
+**"Is it backwards compatible?"**
+Data model: yes — forward-only transactional migrations up to schema 50, a
+detected downgrade, real grandfathering. But the project rule still says
+explicitly "no backwards compatibility needed", and that has to flip with the
+release (§9.1), or the next rule-abiding "clean rewrite" deletes tester data.
+What is *not* compatible right now is the **build** side: the declared MSRV of
+1.92 is unreachable with the pinned dependency graph (§9.3).
