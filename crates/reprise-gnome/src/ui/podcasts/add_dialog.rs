@@ -305,13 +305,10 @@ fn search(request_generation: u64, terms: String, context: &SearchContext<'_>) {
             let youtube_browser = config.and_then(|value| value.youtube_browser);
             let query = terms.clone();
             let task = one_shot_task::spawn("reprise-youtube-search", move || {
-                podcasts::ytdlp::YtDlp::discover_with_browser(
-                    ytdlp_path.as_deref(),
-                    youtube_browser,
-                )
-                .search_channels(&terms)
-                .map(|rows| rows.into_iter().map(youtube_candidate).collect::<Vec<_>>())
-                .map_err(|error| preview_error(&error))
+                super::metadata_ytdlp(ytdlp_path.as_deref(), youtube_browser)
+                    .search_channels(&terms)
+                    .map(|rows| rows.into_iter().map(youtube_candidate).collect::<Vec<_>>())
+                    .map_err(|error| preview_error(&error))
             });
             attach_candidates(
                 task,
@@ -445,12 +442,9 @@ fn preview(
                     // POD-13: yt-dlp's raw stderr line can carry a URL, a
                     // query token or a local path — classify it the same way
                     // the download and MCP paths do rather than showing it.
-                    let listing = podcasts::ytdlp::YtDlp::discover_with_browser(
-                        ytdlp_path.as_deref(),
-                        youtube_browser,
-                    )
-                    .list(&task_url)
-                    .map_err(|error| preview_error(&error))?;
+                    let listing = super::metadata_ytdlp(ytdlp_path.as_deref(), youtube_browser)
+                        .list(&task_url)
+                        .map_err(|error| preview_error(&error))?;
                     let count = listing.entries.len();
                     let guids = listing
                         .entries
