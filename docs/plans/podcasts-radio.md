@@ -808,8 +808,8 @@ starts the real yt-dlp.
 
 ## 13. Coordination with the parallel Concerts feature
 
-Concerts (docs/plans/concerts.md, branch feature/concerts, phase planned) touches the same
-seams:
+Concerts (branch `feature/concerts`, phase planned at the time; its plan was held in-session
+and never committed, so there is no file to link) touches the same seams:
 
 | Seam | Concerts | This feature | Strategy |
 |---|---|---|---|

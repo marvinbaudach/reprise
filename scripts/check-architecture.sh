@@ -226,6 +226,69 @@ for feature in \
   fi
 done
 
+echo "== Engine HTTP boundaries =="
+
+# One shared HTTP boundary is the plan (docs/plans/architecture-consolidation.md
+# §4.4, docs/plans/consolidation-plan.md package 2.1). Until it exists, this
+# budget stops the problem from growing while the waves run: every
+# `ureq::Agent::config_builder()` in the engine is a separate agent, and
+# therefore a separate timeout, user agent, rate limiter and error fold.
+#
+# The number is a CEILING and a FLOOR, exactly like the frontend-thinness
+# budgets. Adding a boundary fails here; removing one fails here too until the
+# budget comes down in the same commit. A budget nobody lowers is a budget
+# nobody believes.
+#
+# This is not theoretical: the count went from 13 to 16 in two commits when the
+# lyrics path grew its own lrclib and netease agents, and nothing said a word.
+http_boundary_budget=16
+http_boundaries=$(rg --count-matches 'ureq::Agent::config_builder' \
+  crates/reprise-core/src --glob '*.rs' 2>/dev/null \
+  | awk -F: '{ total += $2 } END { print total + 0 }')
+if (( http_boundaries > http_boundary_budget )); then
+  echo "engine HTTP boundaries grew from $http_boundary_budget to $http_boundaries" >&2
+  echo "  route the new fetch through the shared boundary instead of building a second agent" >&2
+  echo "  (docs/plans/consolidation-plan.md, package 2.1)" >&2
+  exit 1
+elif (( http_boundaries < http_boundary_budget )); then
+  echo "engine HTTP boundaries are down to $http_boundaries (budget still says $http_boundary_budget)" >&2
+  echo "  lower http_boundary_budget in scripts/check-architecture.sh to $http_boundaries" >&2
+  exit 1
+else
+  echo "  ureq agents in reprise-core: $http_boundaries (at budget)"
+fi
+
+echo "== Documentation references from code =="
+
+# Source and scripts cite design documents by path — reprise-runtime/src/lib.rs
+# points at multi-frontend-core.md, reprise-stems at the stem-separation
+# report, queries/maintenance.rs at ADR 002. A doc deletion that leaves those
+# pointing at nothing is silent rot: nothing compiles differently, and the next
+# reader follows a path that is not there.
+#
+# Deliberately narrow. Markdown-to-markdown links are NOT checked, because two
+# legitimate cases would need carve-outs and a gate whose exception list is as
+# interesting as its rule does not survive contact: the append-only ledger
+# records plans that have since been deleted, and a plan may forward-declare
+# the file it is going to create. Code has neither excuse.
+missing_doc_reference=0
+while IFS= read -r reference; do
+  source_file=${reference%%:*}
+  doc_path=${reference#*:}
+  if [[ ! -f $doc_path ]]; then
+    echo "$source_file cites $doc_path, which does not exist" >&2
+    missing_doc_reference=1
+  fi
+done < <(
+  rg --only-matching --no-line-number --with-filename \
+    'docs/[A-Za-z0-9._/-]+\.md' crates scripts 2>/dev/null | sort -u
+)
+if (( missing_doc_reference != 0 )); then
+  echo "  update the citation or restore the document" >&2
+  exit 1
+fi
+echo "  every documentation path cited from code and scripts resolves"
+
 echo "== Frontend lint =="
 
 # Keep known frontend debt explicit and prevent it from spreading. Refactoring

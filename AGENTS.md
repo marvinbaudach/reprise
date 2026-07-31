@@ -19,8 +19,9 @@ successor. **Nine-crate** Cargo workspace:
 - `crates/reprise-gnome` — the GTK4/libadwaita frontend. Binary name stays `reprise`.
 - `crates/reprise-runtime` — the toolkit-neutral single-owner runtime for playback, queue,
   jobs and device runs. **Built and tested, but no shipped surface uses it yet** — see
-  `docs/plans/architecture-consolidation.md` §2.2 and the decision recorded in
-  `docs/adr/003-runtime-ownership.md`.
+  `docs/plans/architecture-consolidation.md` §2.2. Whether it is cut over to or shelved is
+  still open; `docs/plans/consolidation-plan.md` task 0.10 is where that decision gets
+  written down.
 - `crates/reprise-runtime-protocol` — the versioned command/snapshot contract between the
   runtime and its clients.
 - `crates/reprise-runtime-client` — the client every surface would use to reach the runtime.

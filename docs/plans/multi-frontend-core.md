@@ -1061,10 +1061,13 @@ the running text above — this list is the compact reference.
 
 ## 9. Runtime service — binding design
 
-Addendum of 2026-07-28, execution document
-`docs/plans/thin-core-headless-mcp.md`, stage 1 task 1.1. This section is
-from here on the truth about ownership of runtime state; it supplements decision 1
-(2.1) and does not replace it.
+Addendum of 2026-07-28, from the thin-core headless-MCP execution plan, stage 1
+task 1.1. That plan was held in-session and never committed, per the convention
+in `AGENTS.md` that per-stage implementation plans stay out of the repository —
+so there is no file to follow the reference to; `git log` and the ledger are
+the record of what it produced. This section is from here on the truth about
+ownership of runtime state; it supplements decision 1 (2.1) and does not
+replace it.
 
 ### 9.1 Relationship to decision 1 — what stays, what is added
 

@@ -1069,21 +1069,39 @@ So that later sessions do not walk into the same temptations:
 Each line makes one finding unrepeatable. They land with the task that closes
 the finding, never as a sweep at the end.
 
+**Two of these already landed**, because they were green the day they were
+written — a gate that fails on arrival teaches everyone to run the suite with
+one known red, which is how a gate dies:
+
+- ✅ **The engine HTTP-boundary budget** (gate 4 below), capped at today's 16
+  and lowerable only. Proven in both directions: a 17th
+  `ureq::Agent::config_builder()` fails it, and removing one without lowering
+  the budget fails it too.
+- ✅ **Documentation paths cited from code resolve** — deliberately narrow.
+  Markdown-to-markdown links are *not* checked, because two legitimate cases
+  would need carve-outs: the append-only ledger names plans that have since
+  been deleted, and a plan may forward-declare the file it creates. A gate
+  whose exception list is as interesting as its rule does not survive contact.
+  Code has neither excuse, so code is what it checks.
+
+The rest stay proposals, because each would be red until its own fix lands:
+
 1. **`msrv.sh` actually builds** with the declared toolchain (§9.3).
 2. **No `expect`/`unwrap` in `main.rs`** — an `rg` ban in
    `check-architecture.sh`, three lines (§3.2).
 3. **Duplicated UI constants** — `FILTER_BAR_MIN_HEIGHT`, `FACET_PAGE`,
    `VALUE_PAGE` may be defined exactly once (§4.2).
-4. **A `ureq::Agent::config_builder()` budget** in `reprise-core`, capped at
-   today's number and lowerable only — after the model of
-   `check-frontend-thinness.sh` (§4.4).
-5. **Unique section letters in `ux-rules.md`** — one line in
-   `check-ux-traceability.sh` (§9.7).
-6. **If the runtime ships, someone uses it**: a check that
+4. **Unique section letters in `ux-rules.md`** — one line in
+   `check-ux-traceability.sh`. Needs its fix first: there are two sections
+   lettered `T` and no `AC` (§9.7). Renaming is safe — nothing reads a section
+   letter programmatically, and rule IDs do not derive from it — but it moves
+   a heading in the binding contract, so it is the maintainer's call, not a
+   drive-by.
+5. **If the runtime ships, someone uses it**: a check that
    `reprise_runtime_client` is referenced outside tests as soon as
    `data/*.service.in` are installed (§2.2).
-7. **Every yt-dlp positional argument sits behind `--`** (§7.2).
-8. **`cargo deny` in the release gate** for licences and duplicates, because
+6. **Every yt-dlp positional argument sits behind `--`** (§7.2).
+7. **`cargo deny` in the release gate** for licences and duplicates, because
    `LICENSING.md` makes claims nothing checks today (§7.6).
 
 ---
