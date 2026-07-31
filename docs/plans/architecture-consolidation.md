@@ -905,7 +905,75 @@ machines — different filesystems, full disks, home on NFS, an older file after
 a downgrade — that is the most likely crash source of all, and simultaneously
 the cheapest to fix.
 
-### 8.5 Finding T4 — the watcher's ignore registry now grows without bound
+### 8.5 Finding T4 — 72 borrows that outlive their block, and the idiom that hides it
+
+`AGENTS.md` names the rule: *never hold a `Ref`/`RefMut` across a call that can
+re-enter GTK/callbacks — clone/copy the value out in its own statement first.*
+The GTK crate has 1,633 borrows over 426 cells, and almost all of them are
+fine: a borrow in its own statement drops at the semicolon.
+
+The dangerous shape is a borrow used as a **scrutinee**, because Rust keeps
+scrutinee temporaries alive until the end of the whole statement — body
+included. Measured with `rustc 1.94.1`, using `try_borrow_mut().is_err()`
+inside each body to ask directly whether the borrow is still held:
+
+| Shape | edition 2021 | edition 2024 |
+| --- | --- | --- |
+| `if let Some(v) = c.borrow().clone() { … }` — then body | **held** | **held** |
+| the same, `else` body | **held** | released |
+| `match c.borrow_mut().take() { … }` — arms | **held** | **held** |
+| `for x in c.borrow().iter() { … }` — loop body | **held** | **held** |
+| `let v = c.borrow().clone();` then `if let` | released | released |
+
+Two things that look like protection are not:
+
+- **`.clone()` and `.take()` in the scrutinee do not release the borrow.**
+  This is the trap. The value is owned, so the code reads as if the cell were
+  released, and the `Ref` is still alive through the body. Every one of the 72
+  sites below is written this way.
+- **Migrating to edition 2024 would not fix it.** That change shortened `if
+  let` temporaries only for the `else` branch — measured above. The then-body,
+  match arms and loop bodies are unchanged.
+
+Only the project's own prescription works: hoist the borrow into its own
+statement.
+
+**The 72 sites, by what the body does while the borrow is alive:**
+
+| Class | Count | Why it matters |
+| --- | ---: | --- |
+| **Invokes a user-supplied callback** | 19 | The cell holds a callback, the body calls it while borrowing the cell that holds it. Code the owner does not control runs inside the borrow. |
+| Calls into GTK (`dismiss`, `set_*`, `remove`, `present`) | 22 | GTK emits signals synchronously; any handler is a re-entry candidate. |
+| Plain data manipulation | 31 | Safe unless the body grows a call later. |
+
+The 19 are the interesting ones, and the project has already been bitten by
+exactly this shape: the ledger records *"released the podcast runtime's
+subscriber `RefCell` borrow before invoking callbacks so a callback can safely
+register another subscriber during notification without a reentrant panic"*.
+That was fixed in one place; the same construction stands in nineteen others,
+including `view_session.rs:138`, whose callback calls
+`GtkSearchEntry::set_text` — GTK signal emission — while the borrow is live.
+
+**Honest severity: latent, not demonstrably live.** Every callback slot has
+exactly one writer, a `set_on_*` method, and every call to those setters is in
+window construction or view wiring. So no current path re-enters, and I could
+not produce a reachable panic by reading. What makes it worth fixing anyway is
+the combination: the guard is convention rather than compiler-enforced, the
+idiom that violates it looks correct, a panic in a GTK callback is a process
+abort, and that abort currently leaves nothing behind (§8.2). One new callback
+registration inside a handler turns a latent site into a silent crash for a
+tester.
+
+**Remedy.** `clippy::significant_drop_in_scrutinee` targets precisely this
+class and would make it mechanical instead of a review habit. It is a nursery
+lint, so it needs enabling deliberately — and it cannot simply be switched on
+today, because it would fire on all 72 at once. The order is: fix the 19
+callback sites, then the 22 GTK ones, then turn the lint on so the class
+cannot come back. How many sites the lint actually flags is unverified here —
+this checkout cannot build the workspace (§9.3), so the 72 come from a
+structural scan, not from clippy.
+
+### 8.6 Finding T5 — the watcher's ignore registry now grows without bound
 
 `library/watcher.rs` keeps a process-lifetime
 `static IGNORE_LIST: OnceLock<Mutex<HashMap<PathBuf, Instant>>>`. Its only
@@ -941,7 +1009,7 @@ have `publish` drop the temporary's entry once the file is gone. What matters
 more than the bytes is that the **rationale in the code is now wrong**, and the
 next person to reason about that registry will read it and believe it.
 
-### 8.6 What does *not* threaten stability today
+### 8.7 What does *not* threaten stability today
 
 For an honest list, the verified non-findings:
 
