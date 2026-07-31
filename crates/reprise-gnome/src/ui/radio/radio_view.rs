@@ -145,6 +145,13 @@ impl RadioView {
         root.append(filter_bar.widget());
         root.append(error_banner.widget());
         root.append(&stack);
+        super::radio_reveal::install(
+            root.upcast_ref(),
+            &scrolled,
+            &column_view,
+            model.clone(),
+            live.clone(),
+        );
 
         let shared = Rc::new(Shared {
             conn: conn.clone(),

@@ -12,6 +12,7 @@ mod radio_empty_state;
 mod radio_filter_bar;
 mod radio_model;
 mod radio_presentation;
+mod radio_reveal;
 mod radio_view;
 mod station_preview;
 
