@@ -59,7 +59,7 @@ impl RepriseControl {
     fn queue_snapshot_v2(&self) -> ProtocolQueueSnapshot {
         let state = read_agent_queue_state(&self.queue_state);
         ProtocolQueueSnapshot {
-            revision: 0,
+            revision: state.revision,
             current_track_id: state.current_track_id,
             play_next_track_ids: state.play_next_track_ids,
             play_next_items: Some(
@@ -130,6 +130,7 @@ mod tests {
     fn que_9_queue_snapshot_keeps_legacy_track_ids_beside_typed_items() {
         let (control, receiver, state) = control();
         *state.lock().unwrap() = AgentQueueState {
+            revision: 12,
             current_track_id: Some(4),
             play_next_track_ids: vec![5, 6],
             play_next_items: vec![
@@ -144,6 +145,9 @@ mod tests {
         };
 
         assert_eq!(control.queue_snapshot(), (4, vec![5, 6], vec![7], 3, 1));
+        // The revision must be the mirror's, not a constant: a client polls it
+        // to tell "the queue I already have" from "it moved".
+        assert_eq!(control.queue_snapshot_v2().revision, 12);
         assert_eq!(
             control.queue_snapshot_v2().play_next_items,
             Some(vec![
