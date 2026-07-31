@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex};
 
 use reprise_core::lyrics::{LyricsBody, LyricsHit, LyricsSource};
@@ -19,12 +19,20 @@ fn track(title: &str) -> BatchTrack {
 }
 
 fn request(tracks: Vec<BatchTrack>) -> (WorkerRequest, async_channel::Receiver<WorkerEvent>) {
+    request_with_gate(tracks, Arc::new(AtomicBool::new(true)))
+}
+
+fn request_with_gate(
+    tracks: Vec<BatchTrack>,
+    enabled: Arc<AtomicBool>,
+) -> (WorkerRequest, async_channel::Receiver<WorkerEvent>) {
     let (events, receiver) = async_channel::unbounded();
     (
         WorkerRequest {
             generation: 1,
             generation_source: Arc::new(AtomicU64::new(1)),
             cancellation: ScanCancellation::default(),
+            enabled,
             tracks,
             events,
         },
@@ -126,6 +134,61 @@ fn cancellation_keeps_the_first_completed_lookup_and_never_starts_the_second() {
         }))
     ));
     assert!(matches!(receiver.try_recv(), Ok(WorkerEvent::Cancelled)));
+}
+
+#[test]
+fn net_1a_switching_the_module_off_mid_run_stops_before_the_next_request() {
+    let enabled = Arc::new(AtomicBool::new(true));
+    let calls = Arc::new(Mutex::new(0));
+    let (request, receiver) = request_with_gate(vec![track("One"), track("Two")], enabled.clone());
+    let services = services({
+        let calls = calls.clone();
+        let enabled = enabled.clone();
+        move |_, _| {
+            *calls.lock().unwrap() += 1;
+            enabled.store(false, Ordering::Relaxed);
+            Ok(LyricsHit {
+                body: LyricsBody::Synced(Vec::new()),
+                source: LyricsSource::Lrclib,
+            })
+        }
+    });
+
+    run_request(&request, &services);
+
+    assert_eq!(
+        *calls.lock().unwrap(),
+        1,
+        "the rest of the library must not keep hitting the network"
+    );
+    assert!(matches!(
+        receiver.try_recv(),
+        Ok(WorkerEvent::Progress(LyricsBatchProgress {
+            checked: 1,
+            ..
+        }))
+    ));
+    assert!(matches!(receiver.try_recv(), Ok(WorkerEvent::Cancelled)));
+}
+
+#[test]
+fn net_1a_the_batch_gate_follows_the_global_online_sources_switch() {
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    reprise_core::modules::set_enabled(&conn, &reprise_core::modules::ONLINE_LYRICS_MODULE, true)
+        .unwrap();
+    let batch = LyricsBatch::new(&conn, ScanCancellation::default());
+    assert!(batch.enabled.load(Ordering::Relaxed));
+
+    reprise_core::online_sources::set_enabled(&conn, false).unwrap();
+    batch.recompute_enabled();
+    assert!(
+        !batch.enabled.load(Ordering::Relaxed),
+        "the global gate going off must stop a running batch"
+    );
+
+    reprise_core::online_sources::set_enabled(&conn, true).unwrap();
+    batch.recompute_enabled();
+    assert!(batch.enabled.load(Ordering::Relaxed));
 }
 
 #[test]

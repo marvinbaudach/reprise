@@ -3,7 +3,7 @@
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use gtk4::glib;
@@ -126,6 +126,11 @@ struct WorkerRequest {
     generation: u64,
     generation_source: Arc<AtomicU64>,
     cancellation: ScanCancellation,
+    /// `NET-1a`: the live online-lyrics gate, shared with the main thread. The
+    /// worker re-reads it before every network request, so switching the module
+    /// (or the global online-sources gate) off stops the run instead of letting
+    /// it keep fetching for the rest of the library.
+    enabled: Arc<AtomicBool>,
     tracks: Vec<BatchTrack>,
     events: async_channel::Sender<WorkerEvent>,
 }
@@ -178,6 +183,7 @@ pub(in crate::ui) struct LyricsBatch {
     conn: Rc<Db>,
     worker: LyricsBatchWorker,
     cancellation: ScanCancellation,
+    enabled: Arc<AtomicBool>,
     generation: Arc<AtomicU64>,
     progress: Cell<LyricsBatchProgress>,
     subscribers: RefCell<Vec<ProgressCallback>>,
@@ -189,10 +195,21 @@ impl LyricsBatch {
             conn: conn.clone(),
             worker: LyricsBatchWorker::production(),
             cancellation,
+            enabled: Arc::new(AtomicBool::new(network_allowed(conn))),
             generation: Arc::new(AtomicU64::new(0)),
             progress: Cell::new(LyricsBatchProgress::idle()),
             subscribers: RefCell::new(Vec::new()),
         })
+    }
+
+    /// `NET-1a`: re-derives the live gate from the module registry and the
+    /// global online-sources switch — called from
+    /// `preferences::refresh_online_module_state` on every settings change, so
+    /// a run that is already walking the library stops at the next track
+    /// instead of finishing on the network.
+    pub(in crate::ui) fn recompute_enabled(&self) {
+        self.enabled
+            .store(network_allowed(&self.conn), Ordering::Relaxed);
     }
 
     pub(in crate::ui) fn subscribe_progress(
@@ -205,10 +222,8 @@ impl LyricsBatch {
     }
 
     pub(in crate::ui) fn start(self: &Rc<Self>) {
-        if !reprise_core::online_sources::network_allowed_or_off(
-            &self.conn,
-            &reprise_core::modules::ONLINE_LYRICS_MODULE,
-        ) {
+        self.recompute_enabled();
+        if !self.enabled.load(Ordering::Relaxed) {
             self.set_progress(LyricsBatchProgress::idle());
             return;
         }
@@ -235,6 +250,7 @@ impl LyricsBatch {
                 generation,
                 generation_source: self.generation.clone(),
                 cancellation: self.cancellation.clone(),
+                enabled: self.enabled.clone(),
                 tracks: summaries.into_iter().map(BatchTrack::from).collect(),
                 events,
             })
@@ -311,6 +327,9 @@ fn run_request(request: &WorkerRequest, services: &WorkerServices) {
             || (services.needs)(&track.query) == NeedsFetch::Skip
         {
             BatchItemOutcome::Skipped
+        } else if !request.enabled.load(Ordering::Relaxed) {
+            let _ = request.events.send_blocking(WorkerEvent::Cancelled);
+            return;
         } else if (services.all_breakers_open)() {
             let _ = request
                 .events
@@ -339,6 +358,13 @@ fn run_request(request: &WorkerRequest, services: &WorkerServices) {
             return;
         }
     }
+}
+
+fn network_allowed(conn: &Db) -> bool {
+    reprise_core::online_sources::network_allowed_or_off(
+        conn,
+        &reprise_core::modules::ONLINE_LYRICS_MODULE,
+    )
 }
 
 fn cancelled(request: &WorkerRequest) -> bool {

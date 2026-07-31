@@ -526,6 +526,7 @@ pub fn build(app: &adw::Application, conn: &Rc<Db>, db_path: &Path) -> FileOpenH
         &concerts_runtime,
         &podcasts_runtime,
         &cover_download,
+        &lyrics_batch,
         &artist_portrait,
         &decorations,
     );
