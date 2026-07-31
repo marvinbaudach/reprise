@@ -67,7 +67,7 @@ fn lyr_6_scan_controls_show_live_lyrics_batch_progress() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn lyr_6a_the_card_cancel_stops_the_batch_without_sharing_the_scan_flag() {
+fn lyr_6_the_card_cancel_stops_the_batch_without_sharing_the_scan_flag() {
     gtk4::init().unwrap();
     let button = gtk4::Button::new();
     let view = crate::ui::scan_progress::ScanProgressView::new();
