@@ -457,8 +457,8 @@ Five separate fixture-directory variables (`REPRISE_RADIO_FIXTURE_DIR`,
 side of the same pattern.
 
 **This is already agreed work.** `docs/plans/podcasts-radio.md`, in its grilled
-decisions: *"Boundary-Klone bestätigt + fester Konsolidierungs-Task nach
-Landung beider Features."* Both landed. The task is due.
+decisions: *"boundary clones confirmed + a fixed consolidation task once both
+features have landed."* Both landed. The task is due.
 
 **Recommendation.** A `reprise_core::net` with a
 `SourceClient { agent, user_agent, timeout }`, **one** rate limiter budgeted per
