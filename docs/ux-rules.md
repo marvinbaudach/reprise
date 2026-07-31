@@ -2138,7 +2138,8 @@ property is set and yet nothing happens.
 - **LYR-1** [active] [core] — Local embedded lyrics and `.lrc` sidecars
   are shown independently of the Online Lyrics module. Sidecars take
   precedence over embedded tags; synchronized text takes precedence over
-  plain text. Local files are read but never changed.
+  plain text. Local lookup itself never changes files; only LYR-7 may create a
+  previously absent sidecar after a network result.
 - **LYR-2** [active] [gtk] — An interactive online lyrics lookup starts only
   when the Lyrics tab is open, local synchronized text is missing, and the
   Online Lyrics module is switched on. Local plain text is shown immediately
@@ -2175,6 +2176,16 @@ property is set and yet nothing happens.
   least 250 ms between calls to the same host. The shared ScanControls card
   reports checked, cached, and unavailable counts; if every provider breaker
   is open, the run fails immediately while already cached entries remain.
+- **LYR-7** [active] [core] — A synchronized lyrics result obtained from a
+  network provider is written as standard `.lrc` beside the existing track,
+  at the path derived exclusively by replacing the track extension. Plain,
+  instrumental, cached, tag, and existing-sidecar results never trigger a
+  write. An existing sidecar is never overwritten; publication is atomic,
+  and every filesystem failure is logged but otherwise silent, so the cache
+  result and displayed lyrics remain available. Device sync copies this
+  sidecar under the transferred audio's basename and removes it with that
+  audio; the attachment never counts as another transfer, and its failure
+  never fails the track transfer.
 - **DISCOVER-1** [replaced by BROWSE-1] — Network features without a
   permanently visible surface of their own get exactly one subtle,
   dismissible inline hint at the location of the visible gap: covers from

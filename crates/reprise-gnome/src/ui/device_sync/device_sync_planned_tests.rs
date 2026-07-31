@@ -364,7 +364,11 @@ fn replacement_inventory_is_committed_before_the_old_device_path_is_deleted() {
 
         assert_eq!(
             paths_at_delete.borrow().as_slice(),
-            ["Artist/Unknown Album/00 Track 1.opus"]
+            [
+                "Artist/Unknown Album/00 Track 1.opus",
+                "Artist/Unknown Album/00 Track 1.opus"
+            ],
+            "both the old audio and its sidecar are removed only after the replacement inventory is current"
         );
     });
 }
@@ -639,7 +643,12 @@ fn sync_now_mirrors_the_selection_without_legacy_pin_exceptions() {
 
         assert_eq!(
             backend.state.deleted.borrow().as_slice(),
-            ["Old/Three.flac", "Keep/Four.flac"]
+            [
+                "Old/Three.flac",
+                "Old/Three.lrc",
+                "Keep/Four.flac",
+                "Keep/Four.lrc"
+            ]
         );
         let ids = reprise_core::device_sync::settings::load_device_files(&conn, "a")
             .unwrap()

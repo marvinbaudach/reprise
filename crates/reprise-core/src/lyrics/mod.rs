@@ -1,8 +1,11 @@
 //! Local-first, provider-neutral lyrics lookup and cache boundary.
 //!
 //! Frontends call [`load_or_fetch`] from a worker thread. Local tag and
-//! sidecar reads always run before the cache and online providers; this module
-//! never writes beside music files.
+//! sidecar reads always run before the cache and online providers. A
+//! synchronized network hit is also written best-effort to a new `.lrc`
+//! derived from an existing track path: publication is atomic, an existing
+//! sidecar is never overwritten, and every write failure leaves lookup and
+//! cache results unchanged.
 
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -15,6 +18,7 @@ mod lrc;
 mod lrclib;
 mod model;
 mod netease;
+mod sidecar_write;
 
 pub use cache::{needs_fetch, NeedsFetch};
 pub use local::local_hit;
@@ -117,6 +121,9 @@ fn load_or_fetch_at(
                 }
             } else {
                 cache::write_found(cache_dir, now, query, &hit, true);
+                if let (Some(track_path), LyricsBody::Synced(lines)) = (track_path, &hit.body) {
+                    sidecar_write::write_sidecar(track_path, lines);
+                }
             }
             Ok(hit)
         }

@@ -265,3 +265,52 @@ fn local_and_cache_hits_skip_network_but_still_advance_progress() {
     assert_eq!(progress.checked, 2);
     assert_eq!(progress.downloaded, 0);
 }
+
+#[test]
+fn lyr_7_the_batch_runs_the_sidecar_writing_lookup_for_the_whole_library() {
+    let temp = tempfile::tempdir().unwrap();
+    let tracks = ["One", "Two"]
+        .into_iter()
+        .map(|title| {
+            let path = temp.path().join(format!("{title}.flac"));
+            std::fs::write(&path, b"fixture").unwrap();
+            BatchTrack {
+                query: LyricsQuery {
+                    title: title.into(),
+                    artist: "Synthetic Artist".into(),
+                    album: "Synthetic Album".into(),
+                    duration_ms: 10_000,
+                },
+                path,
+            }
+        })
+        .collect::<Vec<_>>();
+    let (request, receiver) = request(tracks);
+    let services = services(|query, path| {
+        std::fs::write(
+            path.with_extension("lrc"),
+            format!("[00:01.00]{} lyrics\n", query.title),
+        )
+        .unwrap();
+        Ok(LyricsHit {
+            body: LyricsBody::Synced(vec![reprise_core::lyrics::TimedLine::new(
+                1_000,
+                format!("{} lyrics", query.title),
+            )]),
+            source: LyricsSource::Lrclib,
+        })
+    });
+
+    run_request(&request, &services);
+
+    for title in ["One", "Two"] {
+        assert_eq!(
+            std::fs::read_to_string(temp.path().join(format!("{title}.lrc"))).unwrap(),
+            format!("[00:01.00]{title} lyrics\n")
+        );
+    }
+    let progress = progress_events(&receiver).pop().unwrap();
+    assert_eq!(progress.state, LyricsBatchState::Complete);
+    assert_eq!(progress.checked, 2);
+    assert_eq!(progress.downloaded, 2);
+}

@@ -340,3 +340,193 @@ fn local_only_lookup_returns_local_text_and_never_calls_network() {
     assert_eq!(result.source, LyricsSource::Tag);
     assert_eq!(network.calls.get(), 0);
 }
+
+#[test]
+fn lyr_7_a_synchronized_network_hit_writes_a_sidecar_beside_the_track() {
+    let temp = TempDir::new().unwrap();
+    let track = temp.path().join("song.flac");
+    std::fs::write(&track, b"fixture").unwrap();
+    let local = FixedProvider::new(LyricsSource::Tag, SourceOutcome::Skipped);
+    let lines = vec![TimedLine::new(1_230, "Downloaded line")];
+    let network = FixedProvider::new(
+        LyricsSource::Lrclib,
+        hit(LyricsSource::Lrclib, LyricsBody::Synced(lines.clone())),
+    );
+
+    let result = load_or_fetch_at(
+        temp.path(),
+        100,
+        &query(),
+        Some(&track),
+        options(false),
+        &[&local],
+        &[&network],
+    )
+    .unwrap();
+
+    assert_eq!(result.body, LyricsBody::Synced(lines.clone()));
+    assert_eq!(
+        parse_lrc(&std::fs::read_to_string(track.with_extension("lrc")).unwrap()),
+        lines
+    );
+}
+
+#[test]
+fn lyr_7_plain_instrumental_and_local_hits_never_write_a_sidecar() {
+    for body in [
+        LyricsBody::Plain("Plain network text".into()),
+        LyricsBody::Instrumental,
+    ] {
+        let temp = TempDir::new().unwrap();
+        let track = temp.path().join("song.flac");
+        std::fs::write(&track, b"fixture").unwrap();
+        let local = FixedProvider::new(LyricsSource::Tag, SourceOutcome::Skipped);
+        let network = FixedProvider::new(LyricsSource::Lrclib, hit(LyricsSource::Lrclib, body));
+
+        load_or_fetch_at(
+            temp.path(),
+            100,
+            &query(),
+            Some(&track),
+            options(false),
+            &[&local],
+            &[&network],
+        )
+        .unwrap();
+
+        assert!(!track.with_extension("lrc").exists());
+    }
+
+    let temp = TempDir::new().unwrap();
+    let track = temp.path().join("local.flac");
+    std::fs::write(&track, b"fixture").unwrap();
+    let local = FixedProvider::new(
+        LyricsSource::Tag,
+        hit(
+            LyricsSource::Tag,
+            LyricsBody::Synced(vec![TimedLine::new(1_000, "Local text")]),
+        ),
+    );
+
+    load_or_fetch_at(
+        temp.path(),
+        100,
+        &query(),
+        Some(&track),
+        options(false),
+        &[&local],
+        &[],
+    )
+    .unwrap();
+
+    assert!(!track.with_extension("lrc").exists());
+}
+
+#[test]
+fn lyr_7_a_network_hit_without_a_track_path_remains_cache_only() {
+    let temp = TempDir::new().unwrap();
+    let local = FixedProvider::new(LyricsSource::Tag, SourceOutcome::Skipped);
+    let network = FixedProvider::new(
+        LyricsSource::Lrclib,
+        hit(
+            LyricsSource::Lrclib,
+            LyricsBody::Synced(vec![TimedLine::new(1_000, "Network text")]),
+        ),
+    );
+
+    let result = load_or_fetch_at(
+        temp.path(),
+        100,
+        &query(),
+        None,
+        options(false),
+        &[&local],
+        &[&network],
+    );
+
+    assert!(result.is_ok());
+    assert!(cache::cache_file(temp.path(), &query()).exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn lyr_7_a_sidecar_write_failure_never_changes_the_lookup_result() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp = TempDir::new().unwrap();
+    let cache_dir = temp.path().join("cache");
+    let music_dir = temp.path().join("music");
+    std::fs::create_dir(&cache_dir).unwrap();
+    std::fs::create_dir(&music_dir).unwrap();
+    let track = music_dir.join("song.flac");
+    std::fs::write(&track, b"fixture").unwrap();
+    std::fs::set_permissions(&music_dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let local = FixedProvider::new(LyricsSource::Tag, SourceOutcome::Skipped);
+    let expected = LyricsHit {
+        body: LyricsBody::Synced(vec![TimedLine::new(1_000, "Network text")]),
+        source: LyricsSource::Lrclib,
+    };
+    let network = FixedProvider::new(LyricsSource::Lrclib, SourceOutcome::Hit(expected.clone()));
+
+    let result = load_or_fetch_at(
+        &cache_dir,
+        100,
+        &query(),
+        Some(&track),
+        options(false),
+        &[&local],
+        &[&network],
+    );
+
+    std::fs::set_permissions(&music_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(result, Ok(expected));
+    assert!(cache::cache_file(&cache_dir, &query()).exists());
+    assert!(!track.with_extension("lrc").exists());
+}
+
+#[test]
+fn lyr_7_the_next_lookup_finds_the_written_sidecar_without_network() {
+    let temp = TempDir::new().unwrap();
+    let track = temp.path().join("song.flac");
+    std::fs::write(&track, b"fixture").unwrap();
+    let skipped_local = FixedProvider::new(LyricsSource::Tag, SourceOutcome::Skipped);
+    let lines = vec![TimedLine::new(1_230, "Downloaded line")];
+    let network = FixedProvider::new(
+        LyricsSource::Lrclib,
+        hit(LyricsSource::Lrclib, LyricsBody::Synced(lines.clone())),
+    );
+    load_or_fetch_at(
+        temp.path(),
+        100,
+        &query(),
+        Some(&track),
+        options(false),
+        &[&skipped_local],
+        &[&network],
+    )
+    .unwrap();
+    let local = LocalProvider;
+
+    let result = load_or_fetch_at(
+        temp.path(),
+        101,
+        &query(),
+        Some(&track),
+        LookupOptions {
+            allow_network: false,
+            force: false,
+        },
+        &[&local],
+        &[&network],
+    )
+    .unwrap();
+
+    assert_eq!(
+        result,
+        LyricsHit {
+            body: LyricsBody::Synced(lines),
+            source: LyricsSource::Sidecar,
+        }
+    );
+    assert_eq!(network.calls.get(), 1);
+}

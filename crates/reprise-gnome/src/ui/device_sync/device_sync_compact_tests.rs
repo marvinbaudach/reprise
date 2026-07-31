@@ -411,7 +411,7 @@ fn deleted_library_rows_are_removed_instead_of_being_retained_as_unavailable() {
 
         assert_eq!(
             backend.state.deleted.borrow().as_slice(),
-            ["Artist/Album/01 Track 1.mp3"]
+            ["Artist/Album/01 Track 1.mp3", "Artist/Album/01 Track 1.lrc"]
         );
     });
 }
