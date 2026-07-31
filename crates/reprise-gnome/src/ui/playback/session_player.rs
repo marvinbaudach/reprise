@@ -5,23 +5,31 @@ use std::collections::HashSet;
 use reprise_core::media_integration::MprisPlaybackStatus;
 use reprise_core::playback::PlaybackState;
 use reprise_core::queue::{Queue, QueueSnapshot};
-use reprise_core::up_next::UpNextQueue;
+use reprise_core::up_next::{QueueItem, UpNextQueue};
 
 use crate::ui::player_controller::{NowPlaying, PlayerController};
 
 fn validated_up_next(
     mut up_next: UpNextQueue,
-    current: Option<i64>,
-    existing: &HashSet<i64>,
-) -> (UpNextQueue, Option<i64>) {
+    current: Option<QueueItem>,
+    existing_tracks: &HashSet<i64>,
+    existing_episodes: &HashSet<i64>,
+) -> (UpNextQueue, Option<QueueItem>) {
     let missing: Vec<_> = up_next
         .ids()
         .iter()
         .copied()
-        .filter(|id| !existing.contains(id))
+        .filter(|item| match item {
+            QueueItem::Track(id) => !existing_tracks.contains(id),
+            QueueItem::Episode(id) => !existing_episodes.contains(id),
+        })
         .collect();
     up_next.remove_ids(&missing);
-    (up_next, current.filter(|id| existing.contains(id)))
+    let current = current.filter(|item| match item {
+        QueueItem::Track(id) => existing_tracks.contains(id),
+        QueueItem::Episode(id) => existing_episodes.contains(id),
+    });
+    (up_next, current)
 }
 
 #[allow(dead_code)] // Called through the Task 5 session orchestration.
@@ -35,7 +43,7 @@ impl PlayerController {
         self.queue.borrow().snapshot()
     }
 
-    pub(in crate::ui) fn session_up_next_snapshot(&self) -> (UpNextQueue, Option<i64>) {
+    pub(in crate::ui) fn session_up_next_snapshot(&self) -> (UpNextQueue, Option<QueueItem>) {
         (self.up_next.borrow().clone(), self.current_up_next.get())
     }
 
@@ -44,7 +52,7 @@ impl PlayerController {
         &self,
         snapshot: QueueSnapshot,
         up_next: UpNextQueue,
-        current_up_next: Option<i64>,
+        current_up_next: Option<QueueItem>,
         play_origin: Option<super::play_origin::PlayOrigin>,
     ) {
         debug_assert!(!restore_should_start_playback());
@@ -56,6 +64,14 @@ impl PlayerController {
                     tracing::warn!(%error, "could not validate restored queue IDs");
                     return;
                 }
+            }
+        };
+        let retained_episodes = match reprise_core::queries::query_available_episode_ids(&self.conn)
+        {
+            Ok(ids) => ids,
+            Err(error) => {
+                tracing::warn!(%error, "could not validate restored episode queue entries");
+                return;
             }
         };
 
@@ -71,7 +87,8 @@ impl PlayerController {
             .filter(|id| !retained.contains(id))
             .collect();
         queue.remove_ids(&missing);
-        let (up_next, current_up_next) = validated_up_next(up_next, current_up_next, &retained);
+        let (up_next, current_up_next) =
+            validated_up_next(up_next, current_up_next, &retained, &retained_episodes);
         *self.queue.borrow_mut() = queue;
         *self.up_next.borrow_mut() = up_next;
         self.current_up_next.set(current_up_next);
@@ -86,13 +103,15 @@ impl PlayerController {
             || current_up_next.is_some();
         let shuffled = self.queue.borrow().is_shuffled();
         let repeat = self.queue.borrow().repeat();
-        let current = current_up_next.or_else(|| self.queue.borrow().current());
+        let current =
+            current_up_next.or_else(|| self.queue.borrow().current().map(QueueItem::Track));
         self.sync_transport_enabled(queue_has_tracks);
         self.sync_shuffle_indicator(shuffled);
         self.sync_repeat_indicator(repeat);
         self.sync_state(PlaybackState::Stopped);
 
-        let summary = current.and_then(|id| {
+        let summary = current.and_then(|item| {
+            let id = item.track_id()?;
             let conn = &self.conn;
             reprise_core::queries::query_track_summary(conn, id)
                 .inspect_err(
@@ -138,8 +157,8 @@ impl PlayerController {
         tracing::info!(
             queue_len = self.queue.borrow().len(),
             up_next_len = self.up_next.borrow().len(),
-            current_up_next,
-            current,
+            ?current_up_next,
+            ?current,
             playback = "Stopped",
             "session queue restored"
         );
@@ -166,12 +185,52 @@ mod tests {
     fn restored_pending_and_current_ids_are_validated_together() {
         let existing = HashSet::from([1, 3]);
         let mut pending = UpNextQueue::default();
-        pending.append(&[1, 2, 3, 2]);
-        let (pending, current) = validated_up_next(pending, Some(2), &existing);
+        pending.append(&[
+            QueueItem::Track(1),
+            QueueItem::Track(2),
+            QueueItem::Track(3),
+            QueueItem::Track(2),
+        ]);
+        let episodes = HashSet::new();
+        let (pending, current) =
+            validated_up_next(pending, Some(QueueItem::Track(2)), &existing, &episodes);
         assert_eq!(pending.ids(), &[1, 3]);
         assert_eq!(current, None);
 
-        let (_, current) = validated_up_next(UpNextQueue::default(), Some(3), &existing);
-        assert_eq!(current, Some(3));
+        let (_, current) = validated_up_next(
+            UpNextQueue::default(),
+            Some(QueueItem::Track(3)),
+            &existing,
+            &episodes,
+        );
+        assert_eq!(current, Some(QueueItem::Track(3)));
+    }
+
+    #[test]
+    fn play_5c_unsubscribed_episode_is_removed_from_a_restored_manual_queue() {
+        let tracks = HashSet::from([1]);
+        let episodes = HashSet::from([7]);
+        let mut pending = UpNextQueue::default();
+        pending.append(&[
+            reprise_core::up_next::QueueItem::Track(1),
+            reprise_core::up_next::QueueItem::Episode(7),
+            reprise_core::up_next::QueueItem::Episode(8),
+        ]);
+
+        let (pending, current) = validated_up_next(
+            pending,
+            Some(reprise_core::up_next::QueueItem::Episode(8)),
+            &tracks,
+            &episodes,
+        );
+
+        assert_eq!(
+            pending.ids(),
+            &[
+                reprise_core::up_next::QueueItem::Track(1),
+                reprise_core::up_next::QueueItem::Episode(7),
+            ]
+        );
+        assert_eq!(current, None);
     }
 }

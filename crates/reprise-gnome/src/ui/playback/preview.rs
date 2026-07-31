@@ -11,6 +11,7 @@ use crate::ui::player_controller::PlayerController;
 pub(in crate::ui) enum PlaybackMode {
     #[default]
     Queue,
+    QueuedEpisode,
     Preview,
     Podcast,
     Radio,
@@ -20,7 +21,7 @@ impl PlaybackMode {
     /// Whether a `TrackFinished` event in this mode should advance the queue.
     /// Only a queue track does; a finished external-media session stops instead.
     pub(in crate::ui) fn advances_queue_on_finish(self) -> bool {
-        matches!(self, PlaybackMode::Queue)
+        matches!(self, PlaybackMode::Queue | PlaybackMode::QueuedEpisode)
     }
 
     pub(in crate::ui) fn credits_listening(self) -> bool {
@@ -73,8 +74,15 @@ mod tests {
     #[test]
     fn pod_4_external_session_never_scrobbles() {
         assert!(PlaybackMode::Queue.credits_listening());
+        assert!(!PlaybackMode::QueuedEpisode.credits_listening());
         assert!(!PlaybackMode::Preview.credits_listening());
         assert!(!PlaybackMode::Podcast.credits_listening());
+    }
+
+    #[test]
+    fn que_9_queued_episode_advances_without_earning_a_listen() {
+        assert!(PlaybackMode::QueuedEpisode.advances_queue_on_finish());
+        assert!(!PlaybackMode::QueuedEpisode.credits_listening());
     }
 
     #[test]

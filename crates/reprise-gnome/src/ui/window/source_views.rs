@@ -79,6 +79,26 @@ pub(in crate::ui) fn install(
                 }
             }
         },
+        {
+            let player = player.map(Rc::downgrade);
+            move |items| {
+                let Some(player) = player.as_ref().and_then(std::rc::Weak::upgrade) else {
+                    return false;
+                };
+                player.play_next_items(items);
+                true
+            }
+        },
+        {
+            let player = player.map(Rc::downgrade);
+            move |items| {
+                let Some(player) = player.as_ref().and_then(std::rc::Weak::upgrade) else {
+                    return false;
+                };
+                player.append_queue_items(items);
+                true
+            }
+        },
     );
     let podcasts = crate::ui::podcasts::install(
         conn.clone(),
@@ -110,15 +130,7 @@ pub(in crate::ui) fn install(
         let podcasts = Rc::downgrade(&podcasts);
         let youtube = Rc::downgrade(&youtube);
         player.add_on_external_changed(move |snapshot| {
-            let episode_mark = snapshot.as_ref().and_then(|snapshot| match snapshot.media {
-                crate::ui::playback::external_media::ExternalMedia::Podcast {
-                    episode_id, ..
-                } => Some(crate::ui::podcasts::EpisodeMark::new(
-                    episode_id,
-                    crate::ui::podcasts::podcast_phase_is_playing(snapshot.podcast_phase),
-                )),
-                crate::ui::playback::external_media::ExternalMedia::Radio { .. } => None,
-            });
+            let episode_mark = crate::ui::podcasts::episode_mark_from_snapshot(snapshot.as_ref());
             let unavailable_episode = snapshot.as_ref().and_then(|snapshot| {
                 if snapshot.podcast_phase
                     == Some(crate::ui::playback::external_media::PodcastPhase::Failed)

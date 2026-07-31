@@ -59,6 +59,7 @@ struct EpisodeRenderContext<'a> {
     network: RowNetworkState,
     selection: &'a Rc<RefCell<PodcastSelection>>,
     selected_ids: &'a [i64],
+    unavailable_episode: Option<i64>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -178,6 +179,7 @@ fn build_group(
                 },
                 selection: context.selection,
                 selected_ids: &context.selected_ids,
+                unavailable_episode: context.unavailable_episode,
             },
         ));
     }
@@ -341,6 +343,7 @@ fn episode_row(
     thumbnail.add_overlay(&play_glyph);
     root.append(&thumbnail);
     install_row_activation(&root, row.id, &marker, &play_glyph);
+    super::podcasts_dnd::wire_episode_drag_source(&root, row.id, context.selection);
 
     let identity = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     identity.set_hexpand(true);
@@ -394,6 +397,7 @@ fn episode_row(
         .menu_model(&podcasts_context_menu::build_for_selection(
             row,
             context.selected_ids,
+            context.unavailable_episode,
         ))
         .build();
     menu.add_css_class("flat");

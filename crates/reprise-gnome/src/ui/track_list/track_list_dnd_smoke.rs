@@ -55,6 +55,7 @@ use crate::ui::track_list_dnd::{
     handle_playlist_reorder_drop, handle_queue_reorder_drop, reorder_position_for_drag, DragPayload,
 };
 use reprise_core::library::playlists;
+use reprise_core::up_next::QueueItem;
 use reprise_core::view_source::ViewSource;
 
 const SMOKE_DND_ENV_VAR: &str = "REPRISE_SMOKE_DND";
@@ -185,7 +186,7 @@ fn smoke_reorder_playlist(shared: &Rc<Shared>, range: &str) {
     let source = shared.source.borrow().clone();
     let reorder_position = reorder_position_for_drag(&shared.model, &source, allowed, from);
     let payload = DragPayload {
-        ids: vec![dragged_id],
+        items: vec![QueueItem::Track(dragged_id)],
         reorder_position,
     };
     let moved = handle_playlist_reorder_drop(shared, playlist_id, &payload, to);
@@ -219,7 +220,7 @@ fn smoke_reorder_queue(shared: &Rc<Shared>, range: &str) {
         return;
     };
     let payload = DragPayload {
-        ids: vec![dragged_id],
+        items: vec![QueueItem::Track(dragged_id)],
         reorder_position: Some(i64::from(from)),
     };
     let moved = handle_queue_reorder_drop(shared, &payload, to);

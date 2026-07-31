@@ -111,6 +111,7 @@ fn compact_episode_row_has_no_play_button_and_stays_within_height_budget() {
                 },
                 selection: &Rc::new(RefCell::new(PodcastSelection::default())),
                 selected_ids: &[],
+                unavailable_episode: None,
             },
         );
         let buttons = descendants(&rendered)
@@ -313,7 +314,7 @@ fn src_12_grouped_selection_survives_render_rebuild_with_a_keyboard_checkbox() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn src_4_grouped_source_keeps_the_hover_star_unsubscribe_action() {
+fn src_4b_grouped_source_keeps_the_hover_star_unsubscribe_action() {
     gtk4::init().unwrap();
     let group = SourceGroup {
         subscription_id: 7,

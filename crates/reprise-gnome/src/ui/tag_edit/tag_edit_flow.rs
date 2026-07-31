@@ -236,6 +236,11 @@ fn browsable_snapshot(shared: &Rc<Shared>) -> Option<tag_editor::BrowseSnapshot>
     } else {
         Vec::new()
     };
+    let queue_items = queue_ids
+        .iter()
+        .copied()
+        .map(reprise_core::up_next::QueueItem::Track)
+        .collect::<Vec<_>>();
     let total = match i64::try_from(ids.len()) {
         Ok(total) => total,
         Err(error) => {
@@ -254,7 +259,7 @@ fn browsable_snapshot(shared: &Rc<Shared>) -> Option<tag_editor::BrowseSnapshot>
             &browse_filter,
             0,
             total,
-            &queue_ids,
+            &queue_items,
         )
     };
     let by_id: std::collections::HashMap<i64, reprise_core::models::Track> = match rows {

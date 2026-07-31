@@ -13,6 +13,7 @@ use std::fmt;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
+use reprise_core::up_next::QueueItem;
 
 use crate::ui::strings;
 use crate::ui::track_list::Shared;
@@ -40,7 +41,7 @@ pub(crate) struct QueueSection {
 pub(crate) struct QueueViewModel {
     /// Materialized prefix only: optional Now Playing followed by manual
     /// entries. Context rows are supplied window-by-window by `context`.
-    pub ids: Vec<i64>,
+    pub items: Vec<QueueItem>,
     pub sections: Vec<QueueSection>,
     context: Option<VirtualContextTail>,
 }
@@ -86,7 +87,7 @@ impl fmt::Debug for QueueViewModel {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("QueueViewModel")
-            .field("ids", &self.ids)
+            .field("items", &self.items)
             .field("sections", &self.sections)
             .field(
                 "context_count",
@@ -98,7 +99,7 @@ impl fmt::Debug for QueueViewModel {
 
 impl PartialEq for QueueViewModel {
     fn eq(&self, other: &Self) -> bool {
-        self.ids == other.ids
+        self.items == other.items
             && self.sections == other.sections
             && self.context.as_ref().map(|tail| tail.count)
                 == other.context.as_ref().map(|tail| tail.count)
@@ -115,8 +116,8 @@ impl QueueViewModel {
             .first()
             .filter(|section| section.kind == QueueSectionKind::NowPlaying)
             .map_or(0, |section| section.len);
-        let skip = usize::try_from(now_playing_len).unwrap_or(self.ids.len());
-        let ids = self.ids.get(skip..).unwrap_or_default().to_vec();
+        let skip = usize::try_from(now_playing_len).unwrap_or(self.items.len());
+        let items = self.items.get(skip..).unwrap_or_default().to_vec();
         let sections = self
             .sections
             .iter()
@@ -128,7 +129,7 @@ impl QueueViewModel {
             })
             .collect();
         Self {
-            ids,
+            items,
             sections,
             context: self.context.clone(),
         }
@@ -142,33 +143,37 @@ impl QueueViewModel {
     }
 
     pub(crate) fn total_len(&self) -> usize {
-        self.ids.len() + self.context.as_ref().map_or(0, |tail| tail.count)
+        self.items.len() + self.context.as_ref().map_or(0, |tail| tail.count)
     }
 
-    pub(crate) fn ids_window(&self, offset: usize, limit: usize) -> Vec<i64> {
+    pub(crate) fn items_window(&self, offset: usize, limit: usize) -> Vec<QueueItem> {
         if limit == 0 || offset >= self.total_len() {
             return Vec::new();
         }
-        let mut ids = Vec::with_capacity(limit.min(self.total_len() - offset));
-        if offset < self.ids.len() {
-            let end = offset.saturating_add(limit).min(self.ids.len());
-            ids.extend_from_slice(&self.ids[offset..end]);
+        let mut items = Vec::with_capacity(limit.min(self.total_len() - offset));
+        if offset < self.items.len() {
+            let end = offset.saturating_add(limit).min(self.items.len());
+            items.extend_from_slice(&self.items[offset..end]);
         }
-        let remaining = limit.saturating_sub(ids.len());
+        let remaining = limit.saturating_sub(items.len());
         if remaining == 0 {
-            return ids;
+            return items;
         }
         let Some(context) = &self.context else {
-            return ids;
+            return items;
         };
-        let context_offset = offset.saturating_sub(self.ids.len());
+        let context_offset = offset.saturating_sub(self.items.len());
         let context_limit = remaining.min(context.count.saturating_sub(context_offset));
-        ids.extend((context.window)(context_offset, context_limit));
-        ids
+        items.extend(
+            (context.window)(context_offset, context_limit)
+                .into_iter()
+                .map(QueueItem::Track),
+        );
+        items
     }
 
-    pub(crate) fn all_ids(&self) -> Vec<i64> {
-        self.ids_window(0, self.total_len())
+    pub(crate) fn all_items(&self) -> Vec<QueueItem> {
+        self.items_window(0, self.total_len())
     }
 
     /// Exact O(1) model delta for the two normal forward-playback shapes:
@@ -176,7 +181,7 @@ impl QueueViewModel {
     /// an unchanged virtual context. The lazy tail closure is live, so its
     /// frozen sequence/start identity is the proof for the virtual case.
     pub(crate) fn leading_removal_change_from(&self, old: &Self) -> Option<(u32, u32, u32)> {
-        let material_removed = old.ids.len().checked_sub(self.ids.len())?;
+        let material_removed = old.items.len().checked_sub(self.items.len())?;
         let context_unchanged = match (&old.context, &self.context) {
             (None, None) => true,
             (Some(old), Some(new)) => {
@@ -186,7 +191,7 @@ impl QueueViewModel {
         };
         if material_removed > 0
             && context_unchanged
-            && old.ids.get(material_removed..) == Some(self.ids.as_slice())
+            && old.items.get(material_removed..) == Some(self.items.as_slice())
         {
             return Some((0, u32::try_from(material_removed).unwrap_or(u32::MAX), 0));
         }
@@ -207,7 +212,7 @@ impl QueueViewModel {
             return Some((0, 0, 0));
         }
         Some((
-            u32::try_from(self.ids.len()).unwrap_or(u32::MAX),
+            u32::try_from(self.items.len()).unwrap_or(u32::MAX),
             u32::try_from(removed).unwrap_or(u32::MAX),
             0,
         ))
@@ -220,8 +225,8 @@ impl QueueViewModel {
 /// the QUE-4 StatusPage.
 #[cfg(test)]
 pub(crate) fn compose(
-    now_playing: Option<i64>,
-    play_next: &[i64],
+    now_playing: Option<QueueItem>,
+    play_next: &[QueueItem],
     up_next_rest: &[i64],
     origin_label: Option<&str>,
 ) -> QueueViewModel {
@@ -243,12 +248,12 @@ pub(crate) fn compose(
 }
 
 pub(crate) fn compose_virtual(
-    now_playing: Option<i64>,
-    play_next: &[i64],
+    now_playing: Option<QueueItem>,
+    play_next: &[QueueItem],
     context: Option<VirtualContextTail>,
     origin_label: Option<&str>,
 ) -> QueueViewModel {
-    let mut ids = Vec::with_capacity(usize::from(now_playing.is_some()) + play_next.len());
+    let mut items = Vec::with_capacity(usize::from(now_playing.is_some()) + play_next.len());
     let mut sections = Vec::new();
 
     if let Some(current) = now_playing {
@@ -257,20 +262,20 @@ pub(crate) fn compose_virtual(
             len: 1,
             kind: QueueSectionKind::NowPlaying,
         });
-        ids.push(current);
+        items.push(current);
     }
     if !play_next.is_empty() {
         sections.push(QueueSection {
-            start: u32::try_from(ids.len()).unwrap_or(u32::MAX),
+            start: u32::try_from(items.len()).unwrap_or(u32::MAX),
             len: u32::try_from(play_next.len()).unwrap_or(u32::MAX),
             kind: QueueSectionKind::PlayNext,
         });
-        ids.extend_from_slice(play_next);
+        items.extend_from_slice(play_next);
     }
     let context_count = context.as_ref().map_or(0, |tail| tail.count);
     if context_count > 0 {
         sections.push(QueueSection {
-            start: u32::try_from(ids.len()).unwrap_or(u32::MAX),
+            start: u32::try_from(items.len()).unwrap_or(u32::MAX),
             len: u32::try_from(context_count).unwrap_or(u32::MAX),
             kind: QueueSectionKind::UpNext {
                 source_label: origin_label
@@ -280,7 +285,7 @@ pub(crate) fn compose_virtual(
     }
 
     QueueViewModel {
-        ids,
+        items,
         sections,
         context,
     }
@@ -293,10 +298,19 @@ mod que_7_tests {
 
     use super::*;
 
+    fn tracks(ids: &[i64]) -> Vec<QueueItem> {
+        ids.iter().copied().map(QueueItem::Track).collect()
+    }
+
     #[test]
     fn que_7_sidebar_counts_only_the_manual_queue() {
         let context = VirtualContextTail::new(1_638, Rc::new(|_, _| Vec::new()));
-        let model = compose_virtual(Some(1), &[10, 11], Some(context), Some("Music"));
+        let model = compose_virtual(
+            Some(QueueItem::Track(1)),
+            &tracks(&[10, 11]),
+            Some(context),
+            Some("Music"),
+        );
 
         assert_eq!(model.sidebar_count(), 2);
     }
@@ -314,13 +328,18 @@ mod que_7_tests {
                     .collect()
             }),
         );
-        let model = compose_virtual(Some(1), &[10, 11], Some(context), Some("Music"));
+        let model = compose_virtual(
+            Some(QueueItem::Track(1)),
+            &tracks(&[10, 11]),
+            Some(context),
+            Some("Music"),
+        );
 
-        assert_eq!(model.ids, [1, 10, 11]);
+        assert_eq!(model.items, tracks(&[1, 10, 11]));
         assert_eq!(model.total_len(), 1_641);
         assert_eq!(requested.get(), 0);
 
-        let window = model.ids_window(203, 20);
+        let window = model.items_window(203, 20);
         assert_eq!(window.len(), 20);
         assert_eq!(requested.get(), 20);
     }
@@ -442,11 +461,54 @@ pub(in crate::ui) fn apply_queue_header_factory(shared: &Rc<Shared>, is_queue: b
 mod tests {
     use super::*;
 
+    fn tracks(ids: &[i64]) -> Vec<QueueItem> {
+        ids.iter().copied().map(QueueItem::Track).collect()
+    }
+
+    #[test]
+    fn mixed_manual_queue_preserves_item_kind_when_numeric_ids_collide() {
+        let model = compose(
+            Some(reprise_core::up_next::QueueItem::Track(1)),
+            &[
+                reprise_core::up_next::QueueItem::Track(7),
+                reprise_core::up_next::QueueItem::Episode(7),
+            ],
+            &[],
+            Some("Late Night"),
+        );
+
+        assert_eq!(
+            model.all_items(),
+            vec![
+                reprise_core::up_next::QueueItem::Track(1),
+                reprise_core::up_next::QueueItem::Track(7),
+                reprise_core::up_next::QueueItem::Episode(7),
+            ]
+        );
+    }
+
     #[test]
     fn compose_builds_three_sections_in_display_order() {
-        let model = compose(Some(1), &[2, 3], &[4, 5, 6], Some("Late Night"));
-        assert_eq!(model.ids, vec![1, 2, 3]);
-        assert_eq!(model.all_ids(), vec![1, 2, 3, 4, 5, 6]);
+        let model = compose(
+            Some(QueueItem::Track(1)),
+            &tracks(&[2, 3]),
+            &[4, 5, 6],
+            Some("Late Night"),
+        );
+        assert_eq!(
+            model.items,
+            [1, 2, 3]
+                .into_iter()
+                .map(QueueItem::Track)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            model.all_items(),
+            [1, 2, 3, 4, 5, 6]
+                .into_iter()
+                .map(QueueItem::Track)
+                .collect::<Vec<_>>()
+        );
         assert_eq!(model.sections.len(), 3);
         assert_eq!(model.sections[0].kind, QueueSectionKind::NowPlaying);
         assert_eq!((model.sections[0].start, model.sections[0].len), (0, 1));
@@ -467,10 +529,25 @@ mod tests {
 
     #[test]
     fn upcoming_reuses_the_composition_without_the_now_playing_prefix() {
-        let model = compose(Some(1), &[2, 3], &[4, 5], Some("Late Night")).upcoming();
+        let model = compose(
+            Some(QueueItem::Track(1)),
+            &tracks(&[2, 3]),
+            &[4, 5],
+            Some("Late Night"),
+        )
+        .upcoming();
 
-        assert_eq!(model.ids, vec![2, 3]);
-        assert_eq!(model.all_ids(), vec![2, 3, 4, 5]);
+        assert_eq!(
+            model.items,
+            [2, 3].into_iter().map(QueueItem::Track).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            model.all_items(),
+            [2, 3, 4, 5]
+                .into_iter()
+                .map(QueueItem::Track)
+                .collect::<Vec<_>>()
+        );
         assert_eq!(section_ranges(&model.sections), vec![(0, 2), (2, 4)]);
         assert_eq!(model.sections[0].kind, QueueSectionKind::PlayNext);
         assert_eq!(
@@ -483,9 +560,12 @@ mod tests {
 
     #[test]
     fn compose_omits_empty_play_next_per_que1() {
-        let model = compose(Some(9), &[], &[10], Some("Neverbloom"));
-        assert_eq!(model.ids, vec![9]);
-        assert_eq!(model.all_ids(), vec![9, 10]);
+        let model = compose(Some(QueueItem::Track(9)), &[], &[10], Some("Neverbloom"));
+        assert_eq!(model.items, vec![QueueItem::Track(9)]);
+        assert_eq!(
+            model.all_items(),
+            vec![QueueItem::Track(9), QueueItem::Track(10)]
+        );
         assert_eq!(model.sections.len(), 2);
         assert_eq!(model.sections[1].start, 1);
     }
@@ -495,8 +575,8 @@ mod tests {
         // Stopped but manually queued tracks exist: no Now Playing row, the
         // pending section still shows (QUE-4's StatusPage is only for the
         // fully empty case).
-        let model = compose(None, &[7], &[], None);
-        assert_eq!(model.ids, vec![7]);
+        let model = compose(None, &tracks(&[7]), &[], None);
+        assert_eq!(model.items, vec![QueueItem::Track(7)]);
         assert_eq!(model.sections.len(), 1);
         assert_eq!(model.sections[0].kind, QueueSectionKind::PlayNext);
     }
@@ -504,13 +584,13 @@ mod tests {
     #[test]
     fn compose_fully_empty_yields_the_empty_model() {
         let model = compose(None, &[], &[], None);
-        assert!(model.ids.is_empty());
+        assert!(model.items.is_empty());
         assert!(model.sections.is_empty());
     }
 
     #[test]
     fn header_title_resolves_up_next_label_and_unknown_start_degrades() {
-        let model = compose(Some(1), &[], &[2], Some("Neverbloom"));
+        let model = compose(Some(QueueItem::Track(1)), &[], &[2], Some("Neverbloom"));
         assert_eq!(
             header_title(&model.sections, 1),
             "Playing from Neverbloom · 1 track"

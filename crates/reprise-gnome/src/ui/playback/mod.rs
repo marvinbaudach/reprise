@@ -1,6 +1,7 @@
 pub(crate) mod album_identity;
 pub(in crate::ui) mod audio_effects;
 pub(in crate::ui) mod external_media;
+mod external_media_completion;
 mod external_media_mpris;
 mod external_media_neighbours;
 mod external_media_position;

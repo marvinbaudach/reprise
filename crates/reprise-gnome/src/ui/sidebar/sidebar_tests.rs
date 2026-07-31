@@ -98,17 +98,21 @@ fn queue_row_installs_a_drop_target_but_library_row_does_not() {
 fn handle_queue_drop_dispatches_ids_to_the_wired_callback() {
     gtk4::init().unwrap();
     let shared = test_shared();
-    let seen: Rc<RefCell<Vec<i64>>> = Rc::new(RefCell::new(Vec::new()));
+    let seen = Rc::new(RefCell::new(Vec::new()));
     {
         let seen = seen.clone();
-        *shared.on_queue_drop.borrow_mut() = Some(Rc::new(move |ids: &[i64]| {
-            seen.borrow_mut().extend_from_slice(ids);
+        *shared.on_queue_drop.borrow_mut() = Some(Rc::new(move |items| {
+            seen.borrow_mut().extend_from_slice(items);
             true
         }));
     }
 
-    assert!(crate::ui::sidebar_dnd::handle_queue_drop(&shared, &[7, 9]));
-    assert_eq!(*seen.borrow(), vec![7, 9]);
+    let items = [
+        reprise_core::up_next::QueueItem::Track(7),
+        reprise_core::up_next::QueueItem::Episode(7),
+    ];
+    assert!(crate::ui::sidebar_dnd::handle_queue_drop(&shared, &items));
+    assert_eq!(*seen.borrow(), items);
 }
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
@@ -116,13 +120,16 @@ fn handle_queue_drop_is_a_noop_without_ids_or_callback() {
     gtk4::init().unwrap();
     let shared = test_shared();
     // No callback wired at all: report failure, don't panic.
-    assert!(!crate::ui::sidebar_dnd::handle_queue_drop(&shared, &[7]));
+    assert!(!crate::ui::sidebar_dnd::handle_queue_drop(
+        &shared,
+        &[reprise_core::up_next::QueueItem::Track(7)]
+    ));
 
     // Callback wired but empty ids: never invoked, reports failure.
     let invoked = Rc::new(Cell::new(false));
     {
         let invoked = invoked.clone();
-        *shared.on_queue_drop.borrow_mut() = Some(Rc::new(move |_: &[i64]| {
+        *shared.on_queue_drop.borrow_mut() = Some(Rc::new(move |_| {
             invoked.set(true);
             true
         }));

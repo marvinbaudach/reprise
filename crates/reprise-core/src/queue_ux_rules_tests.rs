@@ -122,8 +122,15 @@ fn play_4a_list_playback_and_queue_advance_skip_missing_silently() {
     );
 
     let mut pending = crate::up_next::UpNextQueue::default();
-    pending.append(&[2, 2, 3]);
-    assert_eq!(pending.take_first_matching(|id| id != 2), Some(3));
+    pending.append(&[
+        crate::up_next::QueueItem::Track(2),
+        crate::up_next::QueueItem::Track(2),
+        crate::up_next::QueueItem::Track(3),
+    ]);
+    assert_eq!(
+        pending.take_first_matching(|item| item != 2),
+        Some(crate::up_next::QueueItem::Track(3))
+    );
     assert_eq!(pending.ids(), &[2, 2]);
 }
 
@@ -218,13 +225,21 @@ fn play_5a_scan_detection_purges_deleted_but_retains_unmounted_and_playing_track
     let mut queue = Queue::new();
     queue.set_tracks(vec![playing_id, deleted_id, unmounted_id], 0);
     let mut pending = crate::up_next::UpNextQueue::default();
-    pending.append(&[deleted_id, unmounted_id]);
+    pending.append(&[
+        crate::up_next::QueueItem::Track(deleted_id),
+        crate::up_next::QueueItem::Track(unmounted_id),
+    ]);
     let mut candidates = queue.ids_in_order();
-    candidates.extend_from_slice(pending.ids());
+    candidates.extend(pending.ids().iter().filter_map(|item| item.track_id()));
     let mut purge = auto_cleaned;
     purge.extend(crate::queries::query_queue_purge_track_ids(&db, &candidates).unwrap());
     queue.remove_ids(&purge);
-    pending.remove_ids(&purge);
+    let purge_items = purge
+        .iter()
+        .copied()
+        .map(crate::up_next::QueueItem::Track)
+        .collect::<Vec<_>>();
+    pending.remove_ids(&purge_items);
 
     assert_eq!(queue.ids_in_order(), vec![playing_id, unmounted_id]);
     assert_eq!(pending.ids(), &[unmounted_id]);

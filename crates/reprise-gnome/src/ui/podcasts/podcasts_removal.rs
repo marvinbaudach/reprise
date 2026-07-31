@@ -85,7 +85,7 @@ mod tests {
     }
 
     #[test]
-    fn src_4_unsubscribe_commit_toast_trashes_never_hard_deletes() {
+    fn src_4b_unsubscribe_commit_toast_trashes_never_hard_deletes() {
         assert_eq!(download_commit_action(false), DownloadCommitAction::Keep);
         assert_eq!(download_commit_action(true), DownloadCommitAction::Trash);
     }
