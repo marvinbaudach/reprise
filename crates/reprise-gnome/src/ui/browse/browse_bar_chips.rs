@@ -143,6 +143,21 @@ pub(super) fn restored_filter(filter: &BrowseFilter) -> BrowseFilter {
     filter.clone()
 }
 
+/// The place pill: outlined, prefixed with a back chevron, and deliberately
+/// without a `×`. Its whole surface is the click target rather than a 20 px
+/// cross, because leaving a location is a navigation, not a removal
+/// (docs/ux-rules.md K, FIL-1c).
+pub(super) fn build_place_pill(place: &str) -> gtk4::Button {
+    let button = gtk4::Button::with_label(&format!("‹  {place}"));
+    button.add_css_class("flat");
+    button.add_css_class(super::browse_bar::PLACE_PILL_CSS_CLASS);
+    button.set_size_request(20, 20);
+    let leave_label = filter_strings::leave_place_label(place);
+    button.set_tooltip_text(Some(&leave_label));
+    button.update_property(&[gtk4::accessible::Property::Label(&leave_label)]);
+    button
+}
+
 pub(super) fn append_chip(chips: &gtk4::FlowBox, widget: &impl IsA<gtk4::Widget>) {
     chips.append(widget);
     if let Some(wrapper) = widget

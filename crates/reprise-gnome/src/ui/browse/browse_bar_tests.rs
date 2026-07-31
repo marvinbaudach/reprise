@@ -3,6 +3,77 @@
 use super::*;
 use crate::ui::browse::browse_bar_chips::chip_labels;
 
+#[cfg(test)]
+fn test_bar() -> Rc<BrowseBar> {
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    BrowseBar::new(conn)
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn place_pill_is_outlined_and_carries_no_remove_cross() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let bar = test_bar();
+    bar.set_source_context(&ViewSource::Artist("Alpha Artist".into()));
+
+    let pill = bar.place_button().expect("an artist place shows a pill");
+    let label = pill.label().expect("the pill is labelled").to_string();
+    assert!(label.contains("Alpha Artist"), "label was {label}");
+    assert!(
+        !label.contains('×'),
+        "a place is left, not removed: {label}"
+    );
+    assert!(pill.has_css_class(PLACE_PILL_CSS_CLASS));
+    assert!(!pill.has_css_class(CHIP_CSS_CLASS));
+    assert!(
+        pill.tooltip_text()
+            .is_some_and(|tooltip| tooltip.contains("Leave")),
+        "the tooltip names leaving, not removing"
+    );
+    assert!(pill.width_request() >= 20 && pill.height_request() >= 20);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn filter_section_label_stays_hidden_at_an_unfiltered_place() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let bar = test_bar();
+    bar.set_source_context(&ViewSource::Artist("Alpha Artist".into()));
+
+    assert!(bar.widget().is_visible(), "the pill forces the row visible");
+    assert!(
+        !bar.section_label_visible(),
+        "an unfiltered place must not claim FILTER"
+    );
+    assert!(
+        !bar.zone_separator_visible(),
+        "no separator without a filter zone to separate"
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn sidebar_places_show_no_place_pill() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let bar = test_bar();
+
+    for source in [
+        ViewSource::Library,
+        ViewSource::RecentlyAdded,
+        ViewSource::Playlist(7),
+        ViewSource::Queue,
+    ] {
+        bar.set_source_context(&source);
+        assert!(
+            bar.place_button().is_none(),
+            "{source:?} is named by its sidebar row"
+        );
+    }
+}
+
 // UX FIL-1a: chip order is search first, then the facet cascade.
 #[test]
 fn fil_1a_search_appears_as_chip_before_facet_chips() {

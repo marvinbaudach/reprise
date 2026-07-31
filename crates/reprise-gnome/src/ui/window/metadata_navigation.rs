@@ -262,7 +262,7 @@ mod tests {
         let scope_chip = track_list
             .shared
             .browse_bar
-            .scope_button()
+            .place_button()
             .expect("the scope chip must survive the refresh");
         assert!(scope_chip
             .label()
@@ -312,7 +312,7 @@ mod tests {
             },
             "test genre navigation",
         );
-        let scope_chip = track_list.shared.browse_bar.scope_button().unwrap();
+        let scope_chip = track_list.shared.browse_bar.place_button().unwrap();
         assert!(scope_chip
             .label()
             .is_some_and(|label| label.contains("Metalcore")));
@@ -379,7 +379,7 @@ mod tests {
         // FIL-8 (revised 2026-07-31): Recently added is a sidebar place — the
         // sidebar row names it, so it carries no place pill. Leaving happens by
         // selecting another sidebar row, not by dismissing a pill.
-        assert!(track_list.shared.browse_bar.scope_button().is_none());
+        assert!(track_list.shared.browse_bar.place_button().is_none());
         assert_eq!(track_list.current_source(), ViewSource::RecentlyAdded);
     }
 }

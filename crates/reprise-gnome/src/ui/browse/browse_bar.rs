@@ -26,6 +26,9 @@ const SMOKE_ENV: &str = "REPRISE_SMOKE_BROWSE";
 /// FIL-7: the sticky settings key for the AI-exclude filter.
 const EXCLUDE_AI_KEY: &str = "filter.exclude_ai";
 pub(in crate::ui) const CHIP_CSS_CLASS: &str = "reprise-filter-chip";
+/// FIL-1c: the place pill's own class — outlined, so a location never reads as
+/// one of the filled filter chips beside it.
+pub(in crate::ui) const PLACE_PILL_CSS_CLASS: &str = "reprise-place-pill";
 const POPOVER_CSS_CLASS: &str = "reprise-filter-popover";
 type OnChanged = Rc<dyn Fn(BrowseFilter)>;
 type OnVoid = Rc<dyn Fn()>;
@@ -42,6 +45,9 @@ pub(in crate::ui) fn css() -> String {
         ".{CHIP_CSS_CLASS} {{ border-radius: 9999px; padding: 2px 8px; \
          background-color: alpha(@accent_bg_color, {CHIP_BG_ALPHA}); color: @accent_color; }} \
          .{CHIP_CSS_CLASS}:hover {{ background-color: alpha(@accent_bg_color, {CHIP_BG_HOVER_ALPHA}); }} \
+         .{PLACE_PILL_CSS_CLASS} {{ border-radius: 9999px; padding: 2px 10px; \
+         border: 1px solid alpha(currentColor, 0.30); background-color: transparent; }} \
+         .{PLACE_PILL_CSS_CLASS}:hover {{ background-color: alpha(currentColor, 0.08); }} \
          .{POPOVER_CSS_CLASS} contents {{ min-width: 300px; min-height: {}px; }}",
         browse_popup_min_height(0)
     )
@@ -64,6 +70,10 @@ pub struct BrowseBar {
     pub(super) value_list: gtk4::ListBox,
     result_label: gtk4::Label,
     clear_all: gtk4::Button,
+    /// FIL-1c: the left zone holding the place pill; empty at sidebar places.
+    place_zone: gtk4::Box,
+    /// Divides place zone from filter zone, shown only when both are populated.
+    zone_separator: gtk4::Separator,
     #[cfg_attr(not(test), allow(dead_code))]
     scope_button: RefCell<Option<gtk4::Button>>,
     pub(super) chooser_facets: RefCell<Vec<BrowseFacet>>,
@@ -141,6 +151,15 @@ impl BrowseBar {
         clear_all.add_css_class(CHIP_CSS_CLASS);
         clear_all.set_visible(false);
 
+        // FIL-1c: two zones. The place zone answers "where am I", the filter
+        // zone "what is withheld here" — they never share a shape or a label.
+        let place_zone = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+        place_zone.set_visible(false);
+        let zone_separator = gtk4::Separator::new(gtk4::Orientation::Vertical);
+        zone_separator.set_visible(false);
+
+        root.append(&place_zone);
+        root.append(&zone_separator);
         root.append(&section_label);
         root.append(&chips);
         root.append(&result_label);
@@ -166,6 +185,8 @@ impl BrowseBar {
             value_list,
             result_label,
             clear_all,
+            place_zone,
+            zone_separator,
             scope_button: RefCell::new(None),
             chooser_facets: RefCell::new(Vec::new()),
             chooser_facet: Cell::new(None),
@@ -320,9 +341,18 @@ impl BrowseBar {
             self.preference_visible.get(),
         );
         self.root.set_visible(visible);
-        self.section_label.set_visible(restricted);
+        // FIL-1c: the FILTER heading describes the filter zone only — a place
+        // is not a filter and must never be labelled as one.
+        self.section_label.set_visible(filters_restrict);
+        self.zone_separator
+            .set_visible(has_place_pill && filters_restrict);
         self.clear_all.set_visible(filters_restrict);
-        tracing::info!(visible, restricted, "filter row visibility updated");
+        tracing::info!(
+            visible,
+            restricted,
+            has_place_pill,
+            "filter row visibility updated"
+        );
     }
 
     pub fn set_result_count(&self, filtered: usize, total: usize) {
@@ -342,8 +372,18 @@ impl BrowseBar {
     }
 
     #[cfg(test)]
-    pub(in crate::ui) fn scope_button(&self) -> Option<gtk4::Button> {
+    pub(in crate::ui) fn place_button(&self) -> Option<gtk4::Button> {
         self.scope_button.borrow().clone()
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn section_label_visible(&self) -> bool {
+        self.section_label.is_visible()
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn zone_separator_visible(&self) -> bool {
+        self.zone_separator.is_visible()
     }
 
     pub fn hide_result_count(&self) {
@@ -354,8 +394,37 @@ impl BrowseBar {
     pub fn refresh(self: &Rc<Self>) {
         let stored_filter = self.filter();
         let effective_filter = self.effective_filter();
+        self.rebuild_place_zone();
         self.rebuild_chips(&effective_filter);
         self.rebuild_facet_page(&stored_filter);
+    }
+
+    /// FIL-1c: the place zone carries at most one pill, and only where no
+    /// sidebar row already names the location.
+    fn rebuild_place_zone(self: &Rc<Self>) {
+        while let Some(child) = self.place_zone.first_child() {
+            self.place_zone.remove(&child);
+        }
+        self.scope_button.borrow_mut().take();
+        let source = self.source.borrow().clone();
+        let Some(place) = super::filter_restriction::place_pill_label(&source) else {
+            self.place_zone.set_visible(false);
+            return;
+        };
+        let button = super::browse_bar_chips::build_place_pill(&place);
+        let weak = Rc::downgrade(self);
+        button.connect_clicked(move |_| {
+            let Some(bar) = weak.upgrade() else {
+                return;
+            };
+            let callback = bar.on_scope_cleared.borrow().clone();
+            if let Some(callback) = callback {
+                callback();
+            }
+        });
+        self.place_zone.append(&button);
+        self.place_zone.set_visible(true);
+        *self.scope_button.borrow_mut() = Some(button);
     }
 
     pub(super) fn apply_filter(self: &Rc<Self>, next: BrowseFilter) {
@@ -390,30 +459,7 @@ impl BrowseBar {
         {
             wrapper.set_child(gtk4::Widget::NONE);
         }
-        self.scope_button.borrow_mut().take();
         self.chips.remove_all();
-        let source = self.source.borrow().clone();
-        if let Some(scope) = super::filter_restriction::place_pill_label(&source) {
-            let button = gtk4::Button::with_label(&format!("{scope}  ×"));
-            button.add_css_class("flat");
-            button.add_css_class(CHIP_CSS_CLASS);
-            button.set_size_request(20, 20);
-            let remove_label = filter_strings::leave_place_label(&scope);
-            button.set_tooltip_text(Some(&remove_label));
-            button.update_property(&[gtk4::accessible::Property::Label(&remove_label)]);
-            let weak = Rc::downgrade(self);
-            button.connect_clicked(move |_| {
-                let Some(bar) = weak.upgrade() else {
-                    return;
-                };
-                let callback = bar.on_scope_cleared.borrow().clone();
-                if let Some(callback) = callback {
-                    callback();
-                }
-            });
-            append_chip(&self.chips, &button);
-            *self.scope_button.borrow_mut() = Some(button);
-        }
         let query = self.search.borrow().trim().to_string();
         if !query.is_empty() {
             let button = gtk4::Button::with_label(&format!(
