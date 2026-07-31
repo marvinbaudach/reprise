@@ -48,10 +48,16 @@ assert "/app/lib/reprise" in commands
 assert "/app/share/licenses/org.reprise.Reprise/onnxruntime" in commands
 PY
 
+# Only the worker build passes the bundled runtime through. The GTK build is
+# deliberately NOT checked for it: `feat(gnome): remove instrumental frontend`
+# took the instrumental surface out of the frontend, so `reprise-gnome` links
+# neither `reprise-stems` nor `ort` and has nothing to point at a dylib with.
+# `scripts/check-stem-worker-isolation.sh` enforces exactly that separation.
+# Requiring the marker in `build-aux/meson-cargo-build.sh` would demand the
+# coupling its sibling gate forbids, so do not add it back — the two checks
+# would contradict each other and this one would fail on every commit.
 rg --quiet 'REPRISE_BUNDLED_ORT_DYLIB' build-aux/meson-cargo-worker-build.sh
 rg --quiet 'REPRISE_BUNDLED_ORT_DYLIB_SHA256' build-aux/meson-cargo-worker-build.sh
-rg --quiet 'REPRISE_BUNDLED_ORT_DYLIB' build-aux/meson-cargo-build.sh
-rg --quiet 'REPRISE_BUNDLED_ORT_DYLIB_SHA256' build-aux/meson-cargo-build.sh
 rg --quiet 'option_env!\("REPRISE_BUNDLED_ORT_DYLIB"\)' \
   crates/reprise-stems/src/provision.rs
 rg --quiet 'option_env!\("REPRISE_BUNDLED_ORT_DYLIB_SHA256"\)' \
