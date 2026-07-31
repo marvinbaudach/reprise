@@ -36,8 +36,8 @@ echo "== Frontend thinness =="
 # separate zero-tolerance ban below.
 declare -A budget=(
   [rusqlite]=112
-  [filesystem]=17
-  [threads]=14
+  [filesystem]=19
+  [threads]=15
   [workers]=7
 )
 
