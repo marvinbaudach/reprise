@@ -17,9 +17,7 @@ use super::podcasts_presentation::{
     author_line, detail_line, duration, file_size, on_phone, relative_date, status_pill,
     RenderedSourceGroup, SourceSummary,
 };
-use super::podcasts_row_interaction::{
-    episode_thumbnail, install_row_activation, reveal_unsubscribe_on_hover_or_focus,
-};
+use super::podcasts_row_interaction::{episode_thumbnail, install_row_activation};
 use super::podcasts_row_state::{download_status, RowNetworkState};
 use super::podcasts_selection::{self, PodcastSelection};
 use super::podcasts_title::TitleParts;
@@ -126,7 +124,7 @@ fn build_group(
         }
     });
     expander.add_css_class("reprise-podcast-group");
-    let (header, unsubscribe) = group_header(
+    let header = group_header(
         group,
         &rendered.summary,
         context.connected_devices,
@@ -137,7 +135,6 @@ fn build_group(
         context.images_allowed,
     );
     expander.set_label_widget(Some(&header));
-    reveal_unsubscribe_on_hover_or_focus(&expander, &unsubscribe);
 
     let episodes = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     episodes.add_css_class("reprise-podcast-episodes");
@@ -198,7 +195,7 @@ fn group_header(
     connected_devices: &[podcasts_context_menu::PodcastSyncDevice],
     selected_device_ids: &[String],
     images_allowed: bool,
-) -> (gtk4::Widget, gtk4::Button) {
+) -> gtk4::Widget {
     let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
     header.set_hexpand(true);
     header.set_margin_top(10);
@@ -263,16 +260,6 @@ fn group_header(
         open.set_action_target_value(Some(&group.subscription_id.to_variant()));
         header.append(&open);
     }
-    let unsubscribe = gtk4::Button::from_icon_name("starred-symbolic");
-    unsubscribe.add_css_class("flat");
-    unsubscribe.add_css_class("accent");
-    // a11y-semantics: role=button name=unsubscribe-source state=focusable action=activate
-    unsubscribe.set_focusable(true);
-    unsubscribe.set_opacity(0.0);
-    unsubscribe.set_tooltip_text(Some(&strings::text(strings::PODCAST_UNSUBSCRIBE)));
-    unsubscribe.set_action_name(Some("podcasts.unsubscribe"));
-    unsubscribe.set_action_target_value(Some(&group.subscription_id.to_variant()));
-    header.append(&unsubscribe);
     let menu = gtk4::MenuButton::builder()
         .icon_name("view-more-symbolic")
         .menu_model(&podcasts_context_menu::build_source(
@@ -284,7 +271,7 @@ fn group_header(
     menu.add_css_class("flat");
     menu.set_tooltip_text(Some(&strings::text(strings::PODCAST_MORE_SOURCE_OPTIONS)));
     header.append(&menu);
-    (header.upcast(), unsubscribe)
+    header.upcast()
 }
 
 fn group_image_url(group: &SourceGroup) -> Option<&str> {

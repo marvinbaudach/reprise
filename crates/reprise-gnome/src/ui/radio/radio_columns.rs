@@ -11,7 +11,6 @@ use super::radio_presentation::{
 };
 use crate::ui::strings;
 
-pub(super) type OnRemove = Rc<dyn Fn(i64)>;
 pub(super) type LiveState = Rc<dyn Fn() -> RadioLiveState>;
 /// `NET-3b`: read at right-click/context-menu-key time so the Play entry's
 /// label always reflects current connectivity, never a stale snapshot.
@@ -99,12 +98,10 @@ fn text_column(
 
 fn state_column(
     view: &gtk4::ColumnView,
-    on_remove: &OnRemove,
     live_state: &LiveState,
     connectivity: &ConnectivitySource,
 ) {
     let factory = gtk4::SignalListItemFactory::new();
-    let callback = on_remove.clone();
     let live_for_gesture = live_state.clone();
     let connectivity_for_gesture = connectivity.clone();
     factory.connect_setup(move |_, object| {
@@ -114,38 +111,7 @@ fn state_column(
         let cell = gtk4::Box::new(gtk4::Orientation::Horizontal, 2);
         let icon = gtk4::Image::new();
         icon.set_pixel_size(24);
-        let star = gtk4::Button::from_icon_name("starred-symbolic");
-        star.add_css_class("flat");
-        star.add_css_class("accent");
-        star.set_focusable(false);
-        star.set_opacity(0.0);
-        let item_weak = item.downgrade();
-        let callback = callback.clone();
-        star.connect_clicked(move |_| {
-            let Some(item) = item_weak.upgrade() else {
-                return;
-            };
-            let Some(object) = item.item().and_downcast::<RadioObject>() else {
-                return;
-            };
-            callback(object.row().id);
-        });
-        let motion = gtk4::EventControllerMotion::new();
-        let weak = star.downgrade();
-        motion.connect_enter(move |_, _, _| {
-            if let Some(star) = weak.upgrade() {
-                star.set_opacity(1.0);
-            }
-        });
-        let weak = star.downgrade();
-        motion.connect_leave(move |_| {
-            if let Some(star) = weak.upgrade() {
-                star.set_opacity(0.0);
-            }
-        });
-        cell.add_controller(motion);
         cell.append(&icon);
-        cell.append(&star);
         let live = live_for_gesture.clone();
         let connectivity = connectivity_for_gesture.clone();
         let surface = crate::ui::source_context_surface::wrap(&cell);
@@ -171,9 +137,6 @@ fn state_column(
         let Some(icon) = cell.first_child().and_downcast::<gtk4::Image>() else {
             return;
         };
-        let Some(star) = icon.next_sibling().and_downcast::<gtk4::Button>() else {
-            return;
-        };
         let Some(object) = item.item().and_downcast::<RadioObject>() else {
             return;
         };
@@ -186,7 +149,6 @@ fn state_column(
             "network-wireless-symbolic"
         }));
         apply_playing_style(cell.upcast_ref(), playing);
-        star.set_tooltip_text(Some(&strings::radio_remove_named(&row.name)));
     });
     factory.connect_unbind(|_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
@@ -209,11 +171,10 @@ fn state_column(
 
 pub(super) fn append_columns(
     view: &gtk4::ColumnView,
-    on_remove: &OnRemove,
     live_state: &LiveState,
     connectivity: &ConnectivitySource,
 ) {
-    state_column(view, on_remove, live_state, connectivity);
+    state_column(view, live_state, connectivity);
     text_column(
         view,
         &strings::text(strings::RADIO_STATION),
@@ -293,14 +254,13 @@ mod tests {
         store.append(&RadioObject::new(station()));
         let view = gtk4::ColumnView::new(Some(gtk4::SingleSelection::new(Some(store))));
         view.add_css_class(source_context_surface::TABLE_CSS_CLASS);
-        let on_remove: OnRemove = Rc::new(|_| {});
         let live_state: LiveState = Rc::new(RadioLiveState::default);
         // NET-3b made connectivity an explicit input; this coverage test only
         // cares that every row is wrapped in a context surface, so it reports
         // the default Online.
         let connectivity: Rc<dyn Fn() -> reprise_core::connectivity::Connectivity> =
             Rc::new(|| reprise_core::connectivity::Connectivity::Online);
-        append_columns(&view, &on_remove, &live_state, &connectivity);
+        append_columns(&view, &live_state, &connectivity);
 
         let window = gtk4::Window::new();
         window.set_default_size(1200, 400);
@@ -312,6 +272,19 @@ mod tests {
         assert!(
             uncovered.is_empty(),
             "radio row points without a context surface: {uncovered:?}"
+        );
+    }
+
+    /// `SRC-4`: the radio star was hover-only and not even focusable, so the
+    /// context menu was already the only reachable path for keyboard users.
+    #[test]
+    fn src_4_the_state_cell_offers_no_hover_star() {
+        let source = include_str!("radio_columns.rs");
+        let removed_icon = ["starred", "-symbolic"].concat();
+
+        assert!(
+            !source.contains(&removed_icon),
+            "the hover star is gone from the radio state cell"
         );
     }
 }
