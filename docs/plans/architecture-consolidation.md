@@ -1074,6 +1074,11 @@ wichtigste der Liste.
 
 ## 10. Refactoring-Plan
 
+> **Ausführung:** `docs/plans/consolidation-implementation.md` schreibt diese
+> Wellen task-genau aus — roter Test, Dateien, Gate, Commit-Titel je Task für
+> Welle 0 und 1, Paketebene mit Datei-Ownership für Welle 2 bis 5. Dieser
+> Abschnitt bleibt die Übersicht; dort steht, wie es gebaut wird.
+
 Priorisiert nach *Ertrag pro Risiko*, in Wellen, die einzeln landbar sind. Jede
 Welle ist ein eigener Branch mit squashed PR gegen `dev`, nach der Methode aus
 `AGENTS.md` (Test zuerst, volle Gate-Batterie, Ledger-Zeile).
