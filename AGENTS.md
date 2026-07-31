@@ -225,7 +225,7 @@ exist.)
 
 ## Completed file ownership — episodes as queue citizens
 
-Packages 1 and 2 are complete and this ownership is released. No repository
+Packages 1 through 3 are complete and this ownership is released. No repository
 lock or coordination board exists in this checkout.
 
 ### Package 1 — typed manual queue
@@ -245,7 +245,7 @@ lock or coordination board exists in this checkout.
 | episodes-as-queue-citizens | Minimal append-only rule and plan records in `docs/ux-rules.md`, `docs/plans/podcasts-radio.md`, plus `.superpowers/sdd/progress.md` |
 | sibling branches — excluded | `crates/reprise-gnome/src/ui/podcasts/**`, `crates/reprise-core/src/podcasts/store.rs`, `crates/reprise-core/src/podcasts/youtube.rs` |
 
-### Package 3 — mixed queue rendering (active)
+### Package 3 — mixed queue rendering
 
 | Owner | Files |
 | --- | --- |
