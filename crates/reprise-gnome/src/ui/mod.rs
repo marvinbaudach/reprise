@@ -62,6 +62,7 @@ pub(crate) mod podcasts;
 mod popover_lifecycle;
 pub(crate) mod preferences;
 pub mod primary_menu;
+pub(in crate::ui) mod progress_subscribers;
 pub(crate) mod radio;
 mod releases;
 pub(crate) mod runtime;

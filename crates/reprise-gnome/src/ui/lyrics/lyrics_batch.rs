@@ -1,6 +1,6 @@
 //! Serial, cancellable library-wide lyrics cache population.
 
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -12,6 +12,7 @@ use reprise_core::lyrics::{LookupOptions, LyricsError, LyricsHit, LyricsQuery, N
 use reprise_core::queries::TrackSummary;
 
 use super::cover_download_batch::{BatchState as CoverBatchState, CoverDownloadBatch};
+use super::progress_subscribers::ProgressSubscribers;
 use super::scan_flow::ScanCancellation;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -177,8 +178,6 @@ impl LyricsBatchWorker {
     }
 }
 
-type ProgressCallback = Rc<dyn Fn(LyricsBatchProgress)>;
-
 pub(in crate::ui) struct LyricsBatch {
     conn: Rc<Db>,
     worker: LyricsBatchWorker,
@@ -189,7 +188,7 @@ pub(in crate::ui) struct LyricsBatch {
     enabled: Arc<AtomicBool>,
     generation: Arc<AtomicU64>,
     progress: Cell<LyricsBatchProgress>,
-    subscribers: RefCell<Vec<ProgressCallback>>,
+    subscribers: ProgressSubscribers<LyricsBatchProgress>,
 }
 
 impl LyricsBatch {
@@ -201,7 +200,7 @@ impl LyricsBatch {
             enabled: Arc::new(AtomicBool::new(network_allowed(conn))),
             generation: Arc::new(AtomicU64::new(0)),
             progress: Cell::new(LyricsBatchProgress::idle()),
-            subscribers: RefCell::new(Vec::new()),
+            subscribers: ProgressSubscribers::default(),
         })
     }
 
@@ -228,11 +227,11 @@ impl LyricsBatch {
 
     pub(in crate::ui) fn subscribe_progress(
         &self,
+        is_alive: impl Fn() -> bool + 'static,
         callback: impl Fn(LyricsBatchProgress) + 'static,
     ) {
-        let callback: ProgressCallback = Rc::new(callback);
-        callback(self.progress.get());
-        self.subscribers.borrow_mut().push(callback);
+        self.subscribers
+            .subscribe(self.progress.get(), is_alive, callback);
     }
 
     pub(in crate::ui) fn start(self: &Rc<Self>) {
@@ -310,10 +309,7 @@ impl LyricsBatch {
 
     fn set_progress(&self, progress: LyricsBatchProgress) {
         self.progress.set(progress);
-        let subscribers = self.subscribers.borrow().clone();
-        for callback in subscribers {
-            callback(progress);
-        }
+        self.subscribers.notify(progress);
     }
 
     #[cfg(test)]

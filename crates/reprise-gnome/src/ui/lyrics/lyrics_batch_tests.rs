@@ -192,6 +192,26 @@ fn net_1a_the_batch_gate_follows_the_global_online_sources_switch() {
 }
 
 #[test]
+fn a_dead_progress_subscriber_stops_being_called_and_is_pruned() {
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let batch = LyricsBatch::new(&conn);
+    let alive = Rc::new(std::cell::Cell::new(true));
+    let calls = Rc::new(std::cell::Cell::new(0));
+    let alive_for_probe = alive.clone();
+    let calls_for_callback = calls.clone();
+    batch.subscribe_progress(
+        move || alive_for_probe.get(),
+        move |_| calls_for_callback.set(calls_for_callback.get() + 1),
+    );
+
+    alive.set(false);
+    batch.set_progress_for_test(LyricsBatchProgress::running(2));
+
+    assert_eq!(calls.get(), 1, "a dead surface must not be called again");
+    assert_eq!(batch.subscribers.len(), 0);
+}
+
+#[test]
 fn local_and_cache_hits_skip_network_but_still_advance_progress() {
     let calls = Arc::new(Mutex::new(0));
     let (request, receiver) = request(vec![track("Local"), track("Cached")]);

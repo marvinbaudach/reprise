@@ -69,7 +69,7 @@ pub(in crate::ui) fn install(scan_controls: &ScanControls, batch: &Rc<LyricsBatc
             }
         }
     });
-    batch.subscribe_progress({
+    batch.subscribe_progress(|| true, {
         let controls = controls.clone();
         let hide_generation = hide_generation.clone();
         move |progress| {
