@@ -1,6 +1,6 @@
 //! One safe projection for failures from every network-backed source.
 //!
-//! [`SourceError`] deliberately separates its human-facing [`Display`]
+//! [`SourceError`] deliberately separates its human-facing [`std::fmt::Display`]
 //! implementation from the technical payload exposed by [`SourceError::details`].
 
 use std::fmt;

@@ -673,6 +673,9 @@ mod tests {
                 stream_url: "https://radio.example/live".into(),
                 uuid: None,
             },
+            art_url: None,
+            can_go_previous: false,
+            can_go_next: false,
             stream_tags: StreamTags {
                 title: Some("Artist — Song".into()),
                 organization: None,

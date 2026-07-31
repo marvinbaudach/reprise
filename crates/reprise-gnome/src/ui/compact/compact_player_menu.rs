@@ -133,11 +133,17 @@ impl CompactMenu {
     }
 
     pub(in crate::ui) fn set_queue_navigation_enabled(&self, enabled: bool) {
-        for name in [ACTION_PREVIOUS, ACTION_NEXT] {
-            if let Some(action) = self.action_group.lookup_action(name) {
-                if let Ok(action) = action.downcast::<gio::SimpleAction>() {
-                    action.set_enabled(enabled);
-                }
+        self.set_navigation_enabled(enabled, enabled);
+    }
+
+    pub(in crate::ui) fn set_navigation_enabled(&self, previous: bool, next: bool) {
+        for (name, enabled) in [(ACTION_PREVIOUS, previous), (ACTION_NEXT, next)] {
+            if let Some(action) = self
+                .action_group
+                .lookup_action(name)
+                .and_downcast::<gio::SimpleAction>()
+            {
+                action.set_enabled(enabled);
             }
         }
     }
