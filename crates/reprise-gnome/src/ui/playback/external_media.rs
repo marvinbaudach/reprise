@@ -197,11 +197,12 @@ impl PlayerController {
             self.fail_podcast(generation, "YouTube episodes require a video URL");
             return;
         };
-        let setting = reprise_core::podcasts::config::load(&self.conn)
-            .ok()
-            .and_then(|config| config.ytdlp_path);
+        let config = reprise_core::podcasts::config::load(&self.conn).ok();
+        let setting = config.as_ref().and_then(|config| config.ytdlp_path.clone());
+        let browser = config.and_then(|config| config.youtube_browser);
         let result = crate::ui::one_shot_task::spawn("reprise-youtube-resolve", move || {
-            reprise_core::podcasts::ytdlp::YtDlp::discover(setting.as_deref()).resolve(&video_url)
+            reprise_core::podcasts::ytdlp::YtDlp::discover_with_browser(setting.as_deref(), browser)
+                .resolve(&video_url)
         });
         let receiver = match result {
             Ok(receiver) => receiver,

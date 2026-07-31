@@ -10,6 +10,7 @@ pub const AUTO_DOWNLOAD_DEFAULT_KEY: &str = "podcasts.auto_download_default";
 pub const CLEANUP_POLICY_KEY: &str = "podcasts.cleanup_policy";
 pub const YOUTUBE_IMPORT_COUNT_KEY: &str = "podcasts.youtube_import_count";
 pub const YOUTUBE_HIDE_SHORTS_DEFAULT_KEY: &str = "podcasts.youtube_hide_shorts_default";
+pub const YOUTUBE_BROWSER_KEY: &str = "podcasts.youtube_browser";
 pub const YTDLP_PATH_KEY: &str = "podcasts.ytdlp_path";
 pub const REFRESH_HOURS_KEY: &str = "sources.refresh_hours";
 pub const FILTER_UNPLAYED_KEY: &str = "podcasts.filter.unplayed";
@@ -79,6 +80,56 @@ impl CleanupPolicy {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum YoutubeBrowser {
+    Brave,
+    Firefox,
+    Chrome,
+    Chromium,
+    Edge,
+    Opera,
+    Vivaldi,
+}
+
+impl YoutubeBrowser {
+    pub const ALL: [Self; 7] = [
+        Self::Brave,
+        Self::Firefox,
+        Self::Chrome,
+        Self::Chromium,
+        Self::Edge,
+        Self::Opera,
+        Self::Vivaldi,
+    ];
+
+    #[must_use]
+    pub const fn as_setting(self) -> &'static str {
+        match self {
+            Self::Brave => "brave",
+            Self::Firefox => "firefox",
+            Self::Chrome => "chrome",
+            Self::Chromium => "chromium",
+            Self::Edge => "edge",
+            Self::Opera => "opera",
+            Self::Vivaldi => "vivaldi",
+        }
+    }
+
+    #[must_use]
+    pub fn from_setting(value: &str) -> Option<Self> {
+        match value {
+            "brave" => Some(Self::Brave),
+            "firefox" => Some(Self::Firefox),
+            "chrome" => Some(Self::Chrome),
+            "chromium" => Some(Self::Chromium),
+            "edge" => Some(Self::Edge),
+            "opera" => Some(Self::Opera),
+            "vivaldi" => Some(Self::Vivaldi),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PodcastConfig {
     pub import_count: usize,
@@ -91,6 +142,9 @@ pub struct PodcastConfig {
     /// Seeds new/untouched YouTube channels' Shorts visibility; a channel's
     /// own explicit override (see `youtube_channel_detail`) always wins.
     pub youtube_hide_shorts_default: bool,
+    /// Browser whose signed-in YouTube session yt-dlp may read. `None` is the
+    /// privacy-preserving default and never reads browser cookies.
+    pub youtube_browser: Option<YoutubeBrowser>,
     pub ytdlp_path: Option<String>,
     pub refresh_hours: i64,
     /// `MTP-36`: the global "latest N per channel" default for YouTube
@@ -142,6 +196,9 @@ pub(crate) fn load_in(conn: &Connection) -> Result<PodcastConfig, rusqlite::Erro
             YOUTUBE_HIDE_SHORTS_DEFAULT_KEY,
             true,
         )?,
+        youtube_browser: non_empty_setting(conn, YOUTUBE_BROWSER_KEY)?
+            .as_deref()
+            .and_then(YoutubeBrowser::from_setting),
         ytdlp_path: non_empty_setting(conn, YTDLP_PATH_KEY)?,
         refresh_hours: integer_setting(conn, REFRESH_HOURS_KEY)?
             .unwrap_or(DEFAULT_REFRESH_HOURS)
@@ -214,6 +271,19 @@ pub fn set_youtube_hide_shorts_default(db: &Db, value: bool) -> Result<(), rusql
     crate::library::settings::set_bool_in(conn, YOUTUBE_HIDE_SHORTS_DEFAULT_KEY, value)
 }
 
+/// Selects the browser session yt-dlp may read for YouTube requests.
+///
+/// `None` stores the privacy-preserving default and keeps browser cookies out
+/// of every provider invocation.
+pub fn set_youtube_browser(db: &Db, value: Option<YoutubeBrowser>) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
+    crate::library::settings::set_setting_in(
+        conn,
+        YOUTUBE_BROWSER_KEY,
+        value.map(YoutubeBrowser::as_setting).unwrap_or_default(),
+    )
+}
+
 /// Persists the whole podcast filter — the exact inverse of [`load_filter`],
 /// and kept adjacent to it so the two cannot drift. `None` is stored as the
 /// empty string, which is what [`load_filter`] reads back as `None`.
@@ -284,10 +354,27 @@ mod tests {
         assert_eq!(config.cleanup_policy, CleanupPolicy::KeepAll);
         assert_eq!(config.youtube_import_count, 10);
         assert!(config.youtube_hide_shorts_default);
+        assert_eq!(config.youtube_browser, None);
         assert_eq!(config.ytdlp_path, None);
         assert_eq!(config.refresh_hours, 6);
         assert_eq!(config.latest_per_channel_default, 5);
         assert_eq!(config.keep_downloaded_default, 5);
+    }
+
+    #[test]
+    fn pod_22_browser_session_round_trips_only_supported_browsers() {
+        let db = db();
+
+        for browser in YoutubeBrowser::ALL {
+            set_youtube_browser(&db, Some(browser)).unwrap();
+            assert_eq!(load(&db).unwrap().youtube_browser, Some(browser));
+        }
+
+        crate::library::settings::set_setting(&db, YOUTUBE_BROWSER_KEY, "unknown-browser").unwrap();
+        assert_eq!(load(&db).unwrap().youtube_browser, None);
+
+        set_youtube_browser(&db, None).unwrap();
+        assert_eq!(load(&db).unwrap().youtube_browser, None);
     }
 
     #[test]
