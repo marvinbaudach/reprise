@@ -105,13 +105,7 @@ pub(in crate::ui) fn spawn(
     let result = std::thread::Builder::new()
         .name("reprise-cover-download".into())
         .spawn(move || {
-            let db = database_path.as_deref().and_then(|path| {
-                Db::open_ready(path)
-                    .inspect_err(|error| {
-                        tracing::warn!(%error, "could not open library for cover writeback");
-                    })
-                    .ok()
-            });
+            let db = open_library(database_path.as_deref());
             let mut attempted = HashMap::new();
             let mut observed_embedded = HashMap::new();
             while let Ok(request) = receiver.recv_blocking() {
@@ -129,6 +123,20 @@ pub(in crate::ui) fn spawn(
         tracing::warn!(%error, "could not start cover-download worker");
     }
     sender
+}
+
+/// Opens the live library for this worker's one `SELECT` over the album's
+/// track directories. Read-only on purpose: nothing here writes, and a
+/// background thread holding a writable handle on the user's real library is
+/// a hazard the type system can rule out for free.
+fn open_library(database_path: Option<&Path>) -> Option<Db> {
+    database_path.and_then(|path| {
+        Db::open_ready_read_only(path)
+            .inspect_err(|error| {
+                tracing::warn!(%error, "could not open library for cover writeback");
+            })
+            .ok()
+    })
 }
 
 fn result_for_path(
@@ -230,9 +238,32 @@ mod tests {
     use reprise_core::cover_download::album_key;
 
     use super::{
-        cover_status, result_for_path, result_for_tag, setup, CoverDownloadRuntime, CoverStatus,
-        DownloadOutcome, DownloadRequest,
+        cover_status, open_library, result_for_path, result_for_tag, setup, CoverDownloadRuntime,
+        CoverStatus, DownloadOutcome, DownloadRequest,
     };
+
+    #[test]
+    fn cover_1_the_writeback_worker_holds_the_library_read_only() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("library.db");
+        reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
+
+        let db = open_library(Some(path.as_path())).expect("the worker opens the library");
+
+        assert!(
+            reprise_core::queries::query_album_directories(&db, "Album", "Album Artist").is_ok(),
+            "the one SELECT this worker runs must still work"
+        );
+        assert!(
+            reprise_core::modules::set_enabled(
+                &db,
+                &reprise_core::modules::COVER_DOWNLOAD_MODULE,
+                true
+            )
+            .is_err(),
+            "a background worker that only reads must be unable to write"
+        );
+    }
 
     #[test]
     fn net_1a_cover_download_respects_the_module() {
