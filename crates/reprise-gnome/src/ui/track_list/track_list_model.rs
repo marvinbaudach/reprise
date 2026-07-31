@@ -41,7 +41,8 @@ use gtk4::glib::subclass::prelude::ObjectSubclassIsExt;
 use reprise_core::db::Db;
 
 use reprise_core::models::Track;
-use reprise_core::queries::{self, BrowseFilter};
+use reprise_core::queries::{self, BrowseFilter, QueueItemMetadata};
+use reprise_core::up_next::QueueItem;
 use reprise_core::view_source::ViewSource;
 
 /// Row count per lazily-loaded window. Carried over from the stage-1 fixed
@@ -73,11 +74,11 @@ mod imp {
         /// Only meaningful when `source == ViewSource::Queue` — see
         /// `TrackListModel::set_query`'s doc comment. Empty (and ignored)
         /// for every other source.
-        pub queue_ids: Vec<i64>,
+        pub queue_items: Vec<QueueItem>,
         /// QUE-7 queue projection whose context tail is fetched by bounded
         /// windows instead of retained as one id per context row.
         pub(super) virtual_queue: Option<super::super::queue_sections::QueueViewModel>,
-        pub cache: BTreeMap<u32, Vec<Track>>,
+        pub cache: BTreeMap<u32, Vec<QueueItemMetadata>>,
         /// QUE-1 section ranges (half-open, model coordinates) for the
         /// Queue source; empty = the whole model is one section. Set via
         /// `TrackListModel::set_sections` BEFORE the query swap whose
@@ -157,8 +158,8 @@ mod imp {
 
         fn item(&self, position: u32) -> Option<glib::Object> {
             self.obj()
-                .track_at(position)
-                .map(|track| glib::BoxedAnyObject::new(track).upcast())
+                .queue_item_at(position)
+                .map(|item| glib::BoxedAnyObject::new(item).upcast())
         }
     }
 }
@@ -201,7 +202,7 @@ impl TrackListModel {
 
     /// Re-counts rows for `(source, sort_field, sort_dir, filter)`, clears
     /// the window cache, and fires `items_changed(0, old_total, new_total)`.
-    /// `queue_ids` is only meaningful (and only read) when `source ==
+    /// `queue_items` is only meaningful (and only read) when `source ==
     /// ViewSource::Queue` (see `queries::query_track_window`'s doc comment
     /// for why the Queue source needs an explicit id list rather than a
     /// `WHERE` clause); every other source ignores it, so callers may pass
@@ -240,7 +241,7 @@ impl TrackListModel {
             state.sort_dir.clear();
             state.filter.clear();
             state.browse = BrowseFilter::default();
-            state.queue_ids.clear();
+            state.queue_items.clear();
             state.virtual_queue = Some(queue.clone());
             state.sections = sections;
             state.total = new_total;
@@ -262,7 +263,7 @@ impl TrackListModel {
         sort_field: &str,
         sort_dir: &str,
         filter: &str,
-        queue_ids: &[i64],
+        queue_items: &[QueueItem],
     ) {
         self.set_query_browsed(
             source,
@@ -270,7 +271,7 @@ impl TrackListModel {
             sort_dir,
             filter,
             &BrowseFilter::default(),
-            queue_ids,
+            queue_items,
         );
     }
 
@@ -281,10 +282,16 @@ impl TrackListModel {
         sort_dir: &str,
         filter: &str,
         browse: &BrowseFilter,
-        queue_ids: &[i64],
+        queue_items: &[QueueItem],
     ) {
         self.set_query_browsed_ai(
-            source, sort_field, sort_dir, filter, browse, queue_ids, false,
+            source,
+            sort_field,
+            sort_dir,
+            filter,
+            browse,
+            queue_items,
+            false,
         );
     }
 
@@ -303,7 +310,7 @@ impl TrackListModel {
         sort_dir: &str,
         filter: &str,
         browse: &BrowseFilter,
-        queue_ids: &[i64],
+        queue_items: &[QueueItem],
         exclude_ai: bool,
     ) {
         let old_total = self.imp().state.borrow().total;
@@ -312,12 +319,6 @@ impl TrackListModel {
             tracing::error!("TrackListModel::set_query: connection not set");
             return;
         };
-        let queue_items = queue_ids
-            .iter()
-            .copied()
-            .map(reprise_core::up_next::QueueItem::Track)
-            .collect::<Vec<_>>();
-
         let new_total = if exclude_ai {
             let conn_ref = &conn;
             queries::query_track_count_browsed_ai(
@@ -325,7 +326,7 @@ impl TrackListModel {
                 source,
                 filter,
                 browse,
-                &queue_items,
+                queue_items,
                 true,
             )
             .map_or_else(
@@ -350,7 +351,7 @@ impl TrackListModel {
             )
         } else {
             let conn_ref = &conn;
-            queries::query_track_count_browsed(conn_ref, source, filter, browse, &queue_items)
+            queries::query_track_count_browsed(conn_ref, source, filter, browse, queue_items)
                 .map_or_else(
                     |error| {
                         tracing::error!(%error, source = %source.label(), "failed to count tracks for query");
@@ -368,7 +369,7 @@ impl TrackListModel {
             state.filter = filter.to_string();
             state.browse = browse.clone();
             state.exclude_ai = exclude_ai;
-            state.queue_ids = queue_ids.to_vec();
+            state.queue_items = queue_items.to_vec();
             state.virtual_queue = None;
             state.total = new_total;
             state.cache.clear();
@@ -391,7 +392,7 @@ impl TrackListModel {
     /// later, rating updates), loading its window from `queries` on a cache
     /// miss. `None` on an out-of-range position or a query failure — never
     /// panics.
-    pub fn track_at(&self, position: u32) -> Option<Track> {
+    pub fn queue_item_at(&self, position: u32) -> Option<QueueItemMetadata> {
         let total = self.imp().state.borrow().total;
         if position >= total {
             return None;
@@ -400,7 +401,7 @@ impl TrackListModel {
         let window_start = (position / WINDOW_SIZE) * WINDOW_SIZE;
         let offset_in_window = (position - window_start) as usize;
 
-        if let Some(track) = self
+        if let Some(item) = self
             .imp()
             .state
             .borrow()
@@ -408,7 +409,7 @@ impl TrackListModel {
             .get(&window_start)
             .and_then(|window| window.get(offset_in_window))
         {
-            return Some(track.clone());
+            return Some(item.clone());
         }
 
         let Some(conn) = self.imp().conn.borrow().clone() else {
@@ -416,7 +417,7 @@ impl TrackListModel {
             return None;
         };
 
-        let (source, sort_field, sort_dir, filter, browse, exclude_ai, queue_ids, virtual_queue) = {
+        let (source, sort_field, sort_dir, filter, browse, exclude_ai, queue_items, virtual_queue) = {
             let state = self.imp().state.borrow();
             (
                 state.source.clone(),
@@ -425,33 +426,34 @@ impl TrackListModel {
                 state.filter.clone(),
                 state.browse.clone(),
                 state.exclude_ai,
-                state.queue_ids.clone(),
+                state.queue_items.clone(),
                 state.virtual_queue.clone(),
             )
         };
 
-        let (query_offset, queue_ids) = if source == ViewSource::Queue {
+        let (query_offset, queue_items) = if source == ViewSource::Queue {
             if let Some(queue) = virtual_queue {
                 (
                     0,
-                    queue.ids_window(window_start as usize, WINDOW_SIZE as usize),
+                    queue.items_window(window_start as usize, WINDOW_SIZE as usize),
                 )
             } else {
-                (i64::from(window_start), queue_ids)
+                (i64::from(window_start), queue_items)
             }
         } else {
-            (i64::from(window_start), queue_ids)
+            (i64::from(window_start), queue_items)
         };
 
-        let rows = {
-            let conn = &conn;
-            let queue_items = queue_ids
-                .iter()
-                .copied()
-                .map(reprise_core::up_next::QueueItem::Track)
-                .collect::<Vec<_>>();
+        let rows = if source == ViewSource::Queue {
+            queries::query_queue_item_window(
+                &conn,
+                &queue_items,
+                query_offset,
+                i64::from(WINDOW_SIZE),
+            )
+        } else {
             queries::query_track_window_browsed_ai(
-                conn,
+                &conn,
                 &source,
                 &sort_field,
                 &sort_dir,
@@ -465,6 +467,7 @@ impl TrackListModel {
                 // windowed query always projects the real `is_ai` column.
                 true,
             )
+            .map(|tracks| tracks.into_iter().map(QueueItemMetadata::Track).collect())
         };
 
         let rows = match rows {
@@ -475,7 +478,7 @@ impl TrackListModel {
             }
         };
 
-        let track = rows.get(offset_in_window).cloned();
+        let item = rows.get(offset_in_window).cloned();
 
         let mut state = self.imp().state.borrow_mut();
         if !state.cache.contains_key(&window_start) && state.cache.len() >= MAX_CACHED_WINDOWS {
@@ -490,7 +493,14 @@ impl TrackListModel {
         }
         state.cache.insert(window_start, rows);
 
-        track
+        item
+    }
+
+    pub fn track_at(&self, position: u32) -> Option<Track> {
+        match self.queue_item_at(position)? {
+            QueueItemMetadata::Track(track) => Some(track),
+            QueueItemMetadata::Episode(_) => None,
+        }
     }
 
     /// Patches the cached `Track`'s rating at `position` IN PLACE, emitting no
@@ -505,7 +515,7 @@ impl TrackListModel {
         let window_start = (position / WINDOW_SIZE) * WINDOW_SIZE;
         let offset_in_window = (position - window_start) as usize;
         let mut state = self.imp().state.borrow_mut();
-        if let Some(track) = state
+        if let Some(QueueItemMetadata::Track(track)) = state
             .cache
             .get_mut(&window_start)
             .and_then(|window| window.get_mut(offset_in_window))

@@ -8,7 +8,7 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use reprise_core::cover::ThumbnailSize;
 use reprise_core::db::Db;
-use reprise_core::models::Track;
+use reprise_core::queries::QueueItemMetadata;
 
 use super::cover_loader::CoverLoader;
 use crate::ui::track_list::queue_row_mapping::{classify, QueueRow};
@@ -163,12 +163,7 @@ impl UpNextPanel {
             });
         let mut total_duration_ms = 0_i64;
         for offset in (0..upcoming.total_len()).step_by(200) {
-            let ids = upcoming.ids_window(offset, 200);
-            let items = ids
-                .iter()
-                .copied()
-                .map(reprise_core::up_next::QueueItem::Track)
-                .collect::<Vec<_>>();
+            let items = upcoming.items_window(offset, 200);
             let duration = match reprise_core::queries::query_queue_duration_ms(&self.conn, &items)
             {
                 Ok(duration) => duration,
@@ -178,7 +173,7 @@ impl UpNextPanel {
                 }
             };
             total_duration_ms = total_duration_ms.saturating_add(duration);
-            if ids.is_empty() {
+            if items.is_empty() {
                 break;
             }
         }
@@ -360,9 +355,17 @@ fn build_factory(
             else {
                 return;
             };
-            let track = boxed.borrow::<Track>();
-            widgets.title.set_label(&track.title);
-            widgets.artist.set_label(&track.artist);
+            let metadata = boxed.borrow::<QueueItemMetadata>();
+            widgets
+                .title
+                .set_label(crate::ui::track_list::queue_item_presentation::title(
+                    &metadata,
+                ));
+            widgets
+                .artist
+                .set_label(&crate::ui::track_list::queue_item_presentation::cell_text(
+                    &metadata, "artist",
+                ));
             let row = classify(item.position(), &queue_sections.borrow());
             widgets.row.set(row);
             widgets
@@ -375,13 +378,20 @@ fn build_factory(
             let generation = widgets.generation.get().wrapping_add(1);
             widgets.generation.set(generation);
             CoverLoader::set_placeholder(&widgets.cover);
-            cover_loader.load_into(
-                &widgets.cover,
-                &track.path,
-                ThumbnailSize::List,
-                generation,
-                &widgets.generation,
-            );
+            if let Some(track) = crate::ui::track_list::queue_item_presentation::track(&metadata) {
+                cover_loader.load_into(
+                    &widgets.cover,
+                    &track.path,
+                    ThumbnailSize::List,
+                    generation,
+                    &widgets.generation,
+                );
+            } else if let Some(icon) =
+                crate::ui::track_list::queue_item_presentation::source_icon(&metadata)
+            {
+                // Follow-up: use episode artwork after podcast-remote-artwork merges.
+                widgets.cover.set_icon_name(Some(icon));
+            }
         });
     }
     {

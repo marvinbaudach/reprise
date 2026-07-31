@@ -418,19 +418,18 @@ impl PlayerController {
     /// play-order tail. The tail provider clones only requested windows.
     pub(in crate::ui) fn queue_view_model(self: &Rc<Self>) -> QueueViewModel {
         let deferred = self.deferred_queue_purge_id.get();
-        let now_playing = self
-            .now_playing
-            .borrow()
-            .as_ref()
-            .map(|np| np.id)
-            .filter(|id| Some(*id) != deferred);
-        let play_next = self
-            .up_next
-            .borrow()
-            .ids()
-            .iter()
-            .filter_map(|item| item.track_id())
-            .collect::<Vec<_>>();
+        let now_playing = match self.playback_mode() {
+            super::preview::PlaybackMode::Queue => self
+                .current_up_next
+                .get()
+                .or_else(|| self.queue.borrow().current().map(QueueItem::Track)),
+            super::preview::PlaybackMode::QueuedEpisode => self.current_up_next.get(),
+            super::preview::PlaybackMode::Preview
+            | super::preview::PlaybackMode::Podcast
+            | super::preview::PlaybackMode::Radio => None,
+        }
+        .filter(|item| item.track_id().is_none_or(|id| Some(id) != deferred));
+        let play_next = self.up_next.borrow().ids().to_vec();
         let (context_count, context_sequence, context_start) = {
             let queue = self.queue.borrow();
             (

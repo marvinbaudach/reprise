@@ -49,6 +49,14 @@ impl super::TrackList {
 pub(in crate::ui) fn wire_activate(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
     let shared = shared.clone();
     column_view.connect_activate(move |_view, position| {
+        if matches!(*shared.source.borrow(), ViewSource::Queue) {
+            if shared.model.queue_item_at(position).is_none() {
+                tracing::warn!(position, "queue activate: no item at position");
+                return;
+            }
+            activate_queue_position(&shared, position);
+            return;
+        }
         let Some(track) = shared.model.track_at(position) else {
             tracing::warn!(position, "track list activate: no item at position");
             return;
@@ -62,25 +70,32 @@ pub(in crate::ui) fn activate_track(shared: &Rc<Shared>, position: u32, track: &
     if explain_missing_track(shared, track) {
         return;
     }
-    if matches!(*shared.source.borrow(), ViewSource::Queue) {
-        let row = {
-            let sections = shared.queue_sections.borrow();
-            crate::ui::track_list::queue_row_mapping::classify(position, &sections)
-        };
-        let Some(row) = row else {
-            tracing::warn!(position, "queue activation outside every section; ignoring");
-            return;
-        };
-        let callback = shared.on_queue_activate.borrow().clone();
-        match callback {
-            Some(callback) => callback(row),
-            None => tracing::warn!("queue activation callback is not wired"),
-        }
+    if activate_queue_position(shared, position) {
         return;
     }
     let (ids, start_index) = queue_ids_for_activation(shared, position, track.id);
     let place = super::track_list::view_state_memory::capture_place(shared);
     (shared.on_activate)(track, ids, start_index, place);
+}
+
+fn activate_queue_position(shared: &Rc<Shared>, position: u32) -> bool {
+    if !matches!(*shared.source.borrow(), ViewSource::Queue) {
+        return false;
+    }
+    let row = {
+        let sections = shared.queue_sections.borrow();
+        crate::ui::track_list::queue_row_mapping::classify(position, &sections)
+    };
+    let Some(row) = row else {
+        tracing::warn!(position, "queue activation outside every section; ignoring");
+        return true;
+    };
+    let callback = shared.on_queue_activate.borrow().clone();
+    match callback {
+        Some(callback) => callback(row),
+        None => tracing::warn!("queue activation callback is not wired"),
+    }
+    true
 }
 
 pub(in crate::ui) fn explain_missing_track(shared: &Rc<Shared>, track: &Track) -> bool {
@@ -192,5 +207,9 @@ pub(in crate::ui) fn queue_ids_for_activation(
 /// already checks `source` first, so this is only ever invoked when a fresh
 /// snapshot is actually needed.
 pub(in crate::ui) fn current_queue_ids(shared: &Shared) -> Vec<i64> {
-    (shared.queue_ids_provider)().all_ids()
+    (shared.queue_ids_provider)()
+        .all_items()
+        .into_iter()
+        .filter_map(reprise_core::up_next::QueueItem::track_id)
+        .collect()
 }

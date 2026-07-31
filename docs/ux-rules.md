@@ -1470,6 +1470,12 @@ own statement).
 - **CTX-10** [active] [gtk] — „Show in Files" is active when all
   selected files exist and are in the same folder (a single Nautilus
   multi-selection in one window), otherwise grayed out.
+- **CTX-11** [planned] [gtk] — A Queue selection containing only tracks
+  keeps using the CTX-1 track-menu builder. As soon as the selection
+  contains an episode, the Queue routes to a typed common-action menu:
+  „Move to top", positional reorder, and „Remove from queue". Track- or
+  podcast-specific actions never apply to a heterogeneous selection.
+  <!-- REVIEW: Regelvorschlag -->
 
 ## O. Motion & Transitions
 
