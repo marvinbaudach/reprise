@@ -260,6 +260,13 @@ pub type SharedMprisState = Arc<Mutex<MprisState>>;
 /// Bounded, path-free mirror of the live queue exposed to local agents.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AgentQueueState {
+    /// Counts changes to the published queue, so a client can tell "the same
+    /// queue I already have" from "it moved" without diffing the lists.
+    ///
+    /// Bumped by the writer only when the content it is about to publish
+    /// differs from what it published last — a mirror refresh triggered by an
+    /// unrelated playback tick must not look like a queue edit.
+    pub revision: u64,
     pub current_track_id: Option<i64>,
     /// Legacy track-only projection. Episodes are intentionally omitted.
     pub play_next_track_ids: Vec<i64>,
