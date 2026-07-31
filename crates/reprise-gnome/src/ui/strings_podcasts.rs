@@ -187,6 +187,39 @@ pub fn podcast_episode_count(count: usize) -> String {
     )
 }
 
+/// SRC-12 batch feedback. One message per batch, never one per episode, and
+/// never assembled by concatenating two separately translated fragments —
+/// word order and punctuation around "N done, M failed" differ per language,
+/// so both numbers live in one msgid, pluralised on the successful count.
+/// This mirrors `strings::library_doctor_remove_result` rather than inventing
+/// a second shape.
+pub fn podcast_batch_result(succeeded: usize, failed: usize) -> String {
+    let succeeded_text = succeeded.to_string();
+    let failed_text = failed.to_string();
+    let values = [
+        ("succeeded", succeeded_text.as_str()),
+        ("failed", failed_text.as_str()),
+    ];
+    if failed == 0 {
+        return plural(
+            "{succeeded} episode updated",
+            "{succeeded} episodes updated",
+            succeeded,
+            &values,
+        );
+    }
+    plural(
+        "{succeeded} episode updated; {failed} failed",
+        "{succeeded} episodes updated; {failed} failed",
+        succeeded,
+        &values,
+    )
+}
+
+/// SRC-12: acting on a selection that contains nothing to act on is still an
+/// answer. Staying silent reads as a broken button.
+pub const PODCAST_BATCH_NOTHING_TO_DELETE: &str = N_!("No downloaded files in the selection");
+
 pub fn podcast_show_all_episodes(count: usize) -> String {
     let count_text = count.to_string();
     plural(
@@ -330,6 +363,13 @@ pub fn podcast_stop_sync_device(device: &str) -> String {
 
 pub fn podcast_removed_episode(title: &str) -> String {
     formatted(N_!("Removed “{title}”"), &[("title", title)])
+}
+
+/// SRC-12 / ACC: every selection checkbox in the list needs its own
+/// accessible name. A shared "Select episodes" label leaves a screen-reader
+/// user hearing the same thing on every row with no way to tell them apart.
+pub fn podcast_select_episode(title: &str) -> String {
+    formatted(N_!("Select “{title}”"), &[("title", title)])
 }
 
 pub fn podcast_play_next(title: &str) -> String {
