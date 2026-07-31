@@ -7,6 +7,8 @@ use reprise_core::podcasts::channel_window;
 use reprise_core::podcasts::download_state::{self, DownloadState};
 use reprise_core::podcasts::EpisodeRow;
 
+use crate::ui::strings;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum EpisodeNetworkPresentation {
     Normal,
@@ -30,6 +32,14 @@ pub(super) fn download_failure_presentation(
         tooltip: message,
         visible_detail: Some(message),
     })
+}
+
+pub(super) fn localized_download_failure_reason(reason: &str) -> String {
+    if reason == reprise_core::podcasts::YOUTUBE_BROWSER_RECOVERY_MESSAGE {
+        strings::text(strings::YOUTUBE_BROWSER_RECOVERY)
+    } else {
+        reason.to_owned()
+    }
 }
 
 pub(super) fn episode_network_presentation(
@@ -223,6 +233,16 @@ mod tests {
                 tooltip: "podcast source timed out",
                 visible_detail: Some("podcast source timed out"),
             })
+        );
+    }
+
+    #[test]
+    fn pod_22_verification_guidance_uses_the_translated_visible_row_string() {
+        assert_eq!(
+            localized_download_failure_reason(
+                reprise_core::podcasts::YOUTUBE_BROWSER_RECOVERY_MESSAGE
+            ),
+            strings::text(strings::YOUTUBE_BROWSER_RECOVERY)
         );
     }
 }

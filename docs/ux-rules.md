@@ -3523,11 +3523,21 @@ listening statistics.
   and display stay in the GNOME crate. The on-disk cache is limited to
   `MAX_CACHE_ENTRIES` (300) entries and, when exceeded, deterministically
   clears the files untouched for longest first — unlike the unbounded,
-  permanent cover-art cache. Every caller (podcast library view, YouTube
-  channel detail, all three add dialogs) computes the gate itself at its own
-  connection rather than relying on an upstream checkpoint — the lesson from
-  `T6-G1-gap`: a privacy promise in UI copy needs a test per call path, not per
-  feature.
+  permanent cover-art cache. Episode images follow the same rule: a stored
+  provider URL wins, and when a YouTube episode has none, the read projection
+  derives `https://i.ytimg.com/vi/<video-id>/hqdefault.jpg` from its durable
+  video id without persisting a second value, while RSS never receives a
+  derived YouTube URL. When a YouTube channel itself has no image, its library
+  group header shows the newest episode's image; RSS group headers never borrow
+  an episode image. Every caller (podcast library view, YouTube channel detail,
+  all three add dialogs) computes the gate itself at its own connection rather
+  than relying on an upstream checkpoint — the lesson from `T6-G1-gap`: a
+  privacy promise in UI copy needs a test per call path, not per feature.
+- **SRC-12** [active] [gtk] — Episodes can be selected in bulk in both the
+  grouped library view and the channel detail view, with one shared set of
+  batch actions. Actions that are meaningless for more than one episode are
+  hidden rather than applied to an arbitrary member, and a batch reports
+  itself with a single aggregated toast and a single undo.
 - **POD-1** [active] [core] — Episode status is a pure derivation:
   Played exactly when `played_at` is set, otherwise Resume when
   `position_ms > 0`, otherwise unstarted. The visible New pill is a
@@ -3739,6 +3749,32 @@ listening statistics.
   cached or downloaded episode exists, the same information and actions use
   the shared full-area failure state instead. Neither surface renders raw
   provider, transport, database or helper text outside Details.
+- **POD-20** [active] [gtk] — The loaded episode carries the shared
+  playback marker in every episode surface it appears in, and that marker
+  tells running from paused. Activating the loaded row toggles pause and
+  resume; it never reopens the session, because a restart costs an audible
+  gap and resumes from the throttled saved position rather than the live
+  one. Only the context menu restarts an episode. Hovering the loaded row
+  replaces the marker with the glyph for what a click does next.
+- **POD-21** [active] [gtk] — A playing podcast or YouTube episode has
+  neighbours: ⏮/⏭ move to the adjacent row of the list it was started from,
+  in rendered order, without wrapping. The neighbour list is frozen when
+  playback starts. Radio has no neighbours. While any external session is
+  active the lyrics tab is hidden and the panel header shows the episode
+  instead of "Nothing playing".
+- **POD-22** [active] [core] [gtk] — When yt-dlp classifies a YouTube
+  failure as requiring verification, the failed episode row keeps its normal
+  retry action and replaces the generic provider reason with the fixed,
+  leak-safe guidance "YouTube needs a signed-in browser — choose one in
+  Plugins". The YouTube section on the Plugins page offers an explicit browser
+  selector and a separate "Open YouTube" sign-in action. The selector defaults
+  to "Do not use browser cookies"; Reprise never infers a browser, reads a
+  profile, or enables cookie access automatically. After the user selects a
+  supported browser and signs in there, every YouTube listing, search,
+  playback-resolution and download path passes that browser choice to yt-dlp;
+  probing or updating yt-dlp does not. Reprise stores only the browser kind,
+  and neither cookie contents nor browser-profile paths reach the database,
+  UI, or normal-level logs.
 - **RAD-1** [active] [gtk] — Only the currently connected station is
   accented in the table; its state icon, name, now-playing, and row
   tint change together. All others, as well as a presented but

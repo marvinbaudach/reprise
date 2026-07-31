@@ -44,6 +44,7 @@ pub(in crate::ui) fn build(conn: &Rc<Db>, enabled: bool) -> PodcastPreferenceRow
         cleanup_policy: CleanupPolicy::KeepAll,
         youtube_import_count: config::DEFAULT_YOUTUBE_IMPORT_COUNT,
         youtube_hide_shorts_default: true,
+        youtube_browser: None,
         ytdlp_path: None,
         refresh_hours: config::DEFAULT_REFRESH_HOURS,
         latest_per_channel_default: config::DEFAULT_LATEST_PER_CHANNEL,

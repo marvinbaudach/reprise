@@ -55,9 +55,114 @@ pub(in crate::ui) enum PodcastPhase {
     Failed,
 }
 
+/// Episode ids in rendered order, plus this session's index in them.
+/// Frozen at start: a feed refresh must not move the user's neighbours.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct NeighbourContext {
+    episode_ids: Vec<i64>,
+    index: usize,
+}
+
+impl NeighbourContext {
+    pub(super) fn for_episode(episode_ids: &[i64], episode_id: i64) -> Option<Self> {
+        let index = episode_ids.iter().position(|id| *id == episode_id)?;
+        Some(Self {
+            episode_ids: episode_ids.to_vec(),
+            index,
+        })
+    }
+
+    pub(super) fn current_id(&self) -> i64 {
+        self.episode_ids[self.index]
+    }
+
+    pub(super) fn previous(&self) -> Option<Self> {
+        self.shifted(self.index.checked_sub(1)?)
+    }
+
+    pub(super) fn next(&self) -> Option<Self> {
+        self.shifted(self.index.checked_add(1)?)
+    }
+
+    pub(super) fn has_previous(&self) -> bool {
+        self.index > 0
+    }
+
+    pub(super) fn has_next(&self) -> bool {
+        self.index
+            .checked_add(1)
+            .is_some_and(|index| index < self.episode_ids.len())
+    }
+
+    fn shifted(&self, index: usize) -> Option<Self> {
+        (index < self.episode_ids.len()).then(|| Self {
+            episode_ids: self.episode_ids.clone(),
+            index,
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum NeighbourDirection {
+    Previous,
+    Next,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct AutomaticAdvance {
+    direction: NeighbourDirection,
+    failures: u8,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum AdvanceFailure {
+    Retry {
+        neighbours: NeighbourContext,
+        chain: AutomaticAdvance,
+    },
+    Stop,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum PodcastFailureAction {
+    Direct,
+    Automatic(AdvanceFailure),
+}
+
+impl AutomaticAdvance {
+    const MAX_FAILURES: u8 = 3;
+
+    pub(super) fn new(direction: NeighbourDirection) -> Self {
+        Self {
+            direction,
+            failures: 0,
+        }
+    }
+
+    pub(super) fn after_failure(self, current: &NeighbourContext) -> AdvanceFailure {
+        let failures = self.failures.saturating_add(1);
+        if failures >= Self::MAX_FAILURES {
+            return AdvanceFailure::Stop;
+        }
+        let neighbours = match self.direction {
+            NeighbourDirection::Previous => current.previous(),
+            NeighbourDirection::Next => current.next(),
+        };
+        neighbours.map_or(AdvanceFailure::Stop, |neighbours| AdvanceFailure::Retry {
+            neighbours,
+            chain: Self {
+                direction: self.direction,
+                failures,
+            },
+        })
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct PodcastSession {
     pub(super) media: ExternalMedia,
+    pub(super) neighbours: Option<NeighbourContext>,
+    pub(super) automatic_advance: Option<AutomaticAdvance>,
     pub(super) subscription_id: i64,
     pub(super) published_at: Option<i64>,
     pub(super) art_url: Option<String>,
@@ -67,6 +172,31 @@ pub(super) struct PodcastSession {
     pub(super) last_persisted_ms: i64,
     pub(super) duration_known: bool,
     pub(super) error: Option<String>,
+}
+
+impl PodcastSession {
+    pub(super) fn failure_action(&self) -> PodcastFailureAction {
+        match (&self.neighbours, self.automatic_advance) {
+            (Some(neighbours), Some(automatic_advance)) => {
+                PodcastFailureAction::Automatic(automatic_advance.after_failure(neighbours))
+            }
+            _ => PodcastFailureAction::Direct,
+        }
+    }
+
+    /// Ends the advance chain once playback has genuinely progressed.
+    ///
+    /// It deliberately does *not* end when the pipeline accepts the URI: for a
+    /// resolved YouTube stream `play_uri` returns `Ok` and the HTTP answer —
+    /// often a 403 on a freshly signed googlevideo url — only arrives on the
+    /// bus afterwards. Ending the chain at start time would classify that as a
+    /// direct failure and strand the user on a dead row, which is exactly the
+    /// case this feature exists for.
+    pub(super) fn note_playback_progress(&mut self, position_ms: i64) {
+        if position_ms > 0 {
+            self.automatic_advance = None;
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -87,6 +217,9 @@ pub(super) enum ExternalSession {
 pub(in crate::ui) struct ExternalPlaybackSnapshot {
     pub(in crate::ui) mode: PlaybackMode,
     pub(in crate::ui) media: ExternalMedia,
+    pub(in crate::ui) art_url: Option<String>,
+    pub(in crate::ui) can_go_previous: bool,
+    pub(in crate::ui) can_go_next: bool,
     pub(in crate::ui) stream_tags: StreamTags,
     pub(in crate::ui) podcast_phase: Option<PodcastPhase>,
     pub(in crate::ui) radio: Option<RadioPresentation>,
@@ -109,6 +242,13 @@ pub(in crate::ui) struct ExternalPlaybackState {
     pub(super) play_next_callbacks: Vec<PlayNextCallback>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum NeighbourTransport {
+    Queue,
+    Episode(NeighbourContext),
+    Unavailable,
+}
+
 impl ExternalPlaybackState {
     pub(in crate::ui) fn mode(&self) -> PlaybackMode {
         match self.session {
@@ -125,6 +265,22 @@ impl ExternalPlaybackState {
             Some(ExternalSession::Podcast(session))
                 if session.subscription_id == subscription_id
         )
+    }
+
+    pub(super) fn transport_target(&self, direction: NeighbourDirection) -> NeighbourTransport {
+        match self.session.as_ref() {
+            Some(ExternalSession::Podcast(session)) => session
+                .neighbours
+                .as_ref()
+                .and_then(|neighbours| match direction {
+                    NeighbourDirection::Previous => neighbours.previous(),
+                    NeighbourDirection::Next => neighbours.next(),
+                })
+                .map_or(NeighbourTransport::Unavailable, NeighbourTransport::Episode),
+            Some(ExternalSession::Radio(_)) => NeighbourTransport::Unavailable,
+            None if self.preview_path.is_some() => NeighbourTransport::Unavailable,
+            None => NeighbourTransport::Queue,
+        }
     }
 
     pub(in crate::ui) fn begin_preview(&mut self, path: String) {
@@ -166,6 +322,15 @@ impl ExternalPlaybackState {
             ExternalSession::Podcast(session) => Some(ExternalPlaybackSnapshot {
                 mode: PlaybackMode::Podcast,
                 media: session.media.clone(),
+                art_url: session.art_url.clone(),
+                can_go_previous: session
+                    .neighbours
+                    .as_ref()
+                    .is_some_and(NeighbourContext::has_previous),
+                can_go_next: session
+                    .neighbours
+                    .as_ref()
+                    .is_some_and(NeighbourContext::has_next),
                 stream_tags: self.stream_tags.clone(),
                 podcast_phase: Some(session.phase),
                 radio: None,
@@ -174,6 +339,9 @@ impl ExternalPlaybackState {
             ExternalSession::Radio(session) => Some(ExternalPlaybackSnapshot {
                 mode: PlaybackMode::Radio,
                 media: session.media.clone(),
+                art_url: session.art_url.clone(),
+                can_go_previous: false,
+                can_go_next: false,
                 stream_tags: self.stream_tags.clone(),
                 podcast_phase: None,
                 radio: Some(session.presentation.clone()),
@@ -309,6 +477,134 @@ impl RadioPresentation {
 mod tests {
     use super::*;
 
+    fn podcast_session(
+        neighbours: Option<NeighbourContext>,
+        automatic_advance: Option<AutomaticAdvance>,
+    ) -> PodcastSession {
+        PodcastSession {
+            media: ExternalMedia::Podcast {
+                episode_id: 7,
+                title: "Episode".into(),
+                show: "Show".into(),
+                source: EpisodeSource::Url("https://example.test/episode.mp3".into()),
+                resume_ms: 0,
+                duration_ms: None,
+            },
+            neighbours,
+            automatic_advance,
+            subscription_id: 42,
+            published_at: None,
+            art_url: None,
+            phase: PodcastPhase::Playing,
+            resume: ResumePolicy::new(0),
+            position_ms: 0,
+            last_persisted_ms: 0,
+            duration_known: false,
+            error: None,
+        }
+    }
+
+    #[test]
+    fn pod_21_neighbours_follow_the_frozen_rendered_order_without_wrapping() {
+        let mut rendered_ids = vec![11, 22, 33];
+        let middle = NeighbourContext::for_episode(&rendered_ids, 22).unwrap();
+
+        assert_eq!(
+            middle.previous().map(|context| context.current_id()),
+            Some(11)
+        );
+        assert_eq!(middle.next().map(|context| context.current_id()), Some(33));
+        assert!(NeighbourContext::for_episode(&rendered_ids, 11)
+            .unwrap()
+            .previous()
+            .is_none());
+        assert!(NeighbourContext::for_episode(&rendered_ids, 33)
+            .unwrap()
+            .next()
+            .is_none());
+
+        rendered_ids.clear();
+        assert_eq!(
+            middle.previous().map(|context| context.current_id()),
+            Some(11)
+        );
+        assert_eq!(middle.next().map(|context| context.current_id()), Some(33));
+    }
+
+    #[test]
+    fn pod_21_a_stream_that_dies_before_playing_stays_on_the_advance_chain() {
+        let neighbours = NeighbourContext::for_episode(&[1, 2, 3], 2).unwrap();
+        let chain = AutomaticAdvance::new(NeighbourDirection::Next);
+        let mut session = podcast_session(Some(neighbours), Some(chain));
+
+        // `play_uri` accepted the URI, so the session is nominally "playing",
+        // but nothing has streamed yet — this is the 403-after-start case.
+        session.note_playback_progress(0);
+        assert!(
+            matches!(session.failure_action(), PodcastFailureAction::Automatic(_)),
+            "a stream that never advanced must keep skipping, not strand the user"
+        );
+
+        // Once it genuinely advances, a later break is a mid-playback break.
+        session.note_playback_progress(4_000);
+        assert_eq!(session.failure_action(), PodcastFailureAction::Direct);
+    }
+
+    #[test]
+    fn automatic_advance_skips_two_failures_and_stops_on_the_third() {
+        let first_target = NeighbourContext::for_episode(&[1, 2, 3, 4, 5], 2).unwrap();
+        let chain = AutomaticAdvance::new(NeighbourDirection::Next);
+
+        let AdvanceFailure::Retry {
+            neighbours: second_target,
+            chain,
+        } = chain.after_failure(&first_target)
+        else {
+            panic!("the first failure should skip to the next neighbour");
+        };
+        assert_eq!(second_target.current_id(), 3);
+
+        let AdvanceFailure::Retry {
+            neighbours: third_target,
+            chain,
+        } = chain.after_failure(&second_target)
+        else {
+            panic!("the second failure should skip to the next neighbour");
+        };
+        assert_eq!(third_target.current_id(), 4);
+        assert_eq!(chain.after_failure(&third_target), AdvanceFailure::Stop);
+    }
+
+    #[test]
+    fn direct_failure_stops_on_the_clicked_episode_without_skipping() {
+        let neighbours = NeighbourContext::for_episode(&[6, 7, 8], 7).unwrap();
+        let session = podcast_session(Some(neighbours), None);
+
+        assert_eq!(session.failure_action(), PodcastFailureAction::Direct);
+    }
+
+    #[test]
+    fn queue_navigation_is_selected_only_by_the_session_not_the_open_view() {
+        let queue = ExternalPlaybackState::default();
+        assert_eq!(
+            queue.transport_target(NeighbourDirection::Next),
+            NeighbourTransport::Queue
+        );
+
+        let neighbours = NeighbourContext::for_episode(&[6, 7, 8], 7).unwrap();
+        let podcast = ExternalPlaybackState {
+            session: Some(ExternalSession::Podcast(podcast_session(
+                Some(neighbours),
+                None,
+            ))),
+            ..ExternalPlaybackState::default()
+        };
+        assert!(matches!(
+            podcast.transport_target(NeighbourDirection::Next),
+            NeighbourTransport::Episode(context) if context.current_id() == 8
+        ));
+    }
+
     #[test]
     fn failed_early_resume_is_retried_once_after_duration_arrives() {
         let mut resume = ResumePolicy::new(42_000);
@@ -406,25 +702,7 @@ mod tests {
 
     #[test]
     fn removing_a_show_matches_only_its_active_podcast_session() {
-        let session = PodcastSession {
-            media: ExternalMedia::Podcast {
-                episode_id: 7,
-                title: "Episode".into(),
-                show: "Show".into(),
-                source: EpisodeSource::Url("https://example.test/episode.mp3".into()),
-                resume_ms: 0,
-                duration_ms: None,
-            },
-            subscription_id: 42,
-            published_at: None,
-            art_url: None,
-            phase: PodcastPhase::Playing,
-            resume: ResumePolicy::new(0),
-            position_ms: 0,
-            last_persisted_ms: 0,
-            duration_known: false,
-            error: None,
-        };
+        let session = podcast_session(None, None);
         let state = ExternalPlaybackState {
             session: Some(ExternalSession::Podcast(session)),
             ..ExternalPlaybackState::default()

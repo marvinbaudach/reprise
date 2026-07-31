@@ -12,6 +12,11 @@ pub(super) const ACTION_COPY_URL: &str = "copy-url";
 pub(super) const ACTION_TOGGLE_PLAYED: &str = "toggle-played";
 pub(super) const ACTION_TOGGLE_DOWNLOAD: &str = "toggle-download";
 pub(super) const ACTION_REMOVE_EPISODE: &str = "remove-episode";
+pub(super) const ACTION_MARK_PLAYED_SELECTED: &str = "mark-played-selected";
+pub(super) const ACTION_MARK_UNPLAYED_SELECTED: &str = "mark-unplayed-selected";
+pub(super) const ACTION_DOWNLOAD_SELECTED: &str = "download-selected";
+pub(super) const ACTION_DELETE_DOWNLOADS_SELECTED: &str = "delete-downloads-selected";
+pub(super) const ACTION_REMOVE_SELECTED: &str = "remove-selected";
 pub(super) const ACTION_UNSUBSCRIBE: &str = "unsubscribe";
 pub(super) const ACTION_TOGGLE_PHONE_SYNC: &str = "toggle-phone-sync";
 const ACTIONS: &[&str] = &[
@@ -20,9 +25,52 @@ const ACTIONS: &[&str] = &[
     ACTION_TOGGLE_PLAYED,
     ACTION_TOGGLE_DOWNLOAD,
     ACTION_REMOVE_EPISODE,
+    ACTION_MARK_PLAYED_SELECTED,
+    ACTION_MARK_UNPLAYED_SELECTED,
+    ACTION_DOWNLOAD_SELECTED,
+    ACTION_DELETE_DOWNLOADS_SELECTED,
+    ACTION_REMOVE_SELECTED,
     ACTION_UNSUBSCRIBE,
     ACTION_TOGGLE_PHONE_SYNC,
 ];
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SelectionMenuEntry {
+    label: String,
+    action: &'static str,
+}
+
+fn entry(label: &'static str, action: &'static str) -> SelectionMenuEntry {
+    SelectionMenuEntry {
+        label: strings::text(label),
+        action,
+    }
+}
+
+/// The non-destructive half of a multi-selection menu. The split between this
+/// and [`multi_selection_destructive_entry`] is expressed here, at the
+/// definition, rather than as a slice bound at the call site: an index-based
+/// split silently reassigns entries to the wrong section the moment this list
+/// gains or reorders one.
+fn multi_selection_primary_entries() -> Vec<SelectionMenuEntry> {
+    vec![
+        entry(strings::PODCAST_MARK_PLAYED, ACTION_MARK_PLAYED_SELECTED),
+        entry(
+            strings::PODCAST_MARK_UNPLAYED,
+            ACTION_MARK_UNPLAYED_SELECTED,
+        ),
+        entry(strings::YOUTUBE_DOWNLOAD_SELECTED, ACTION_DOWNLOAD_SELECTED),
+        entry(
+            strings::PODCAST_DELETE_FILES,
+            ACTION_DELETE_DOWNLOADS_SELECTED,
+        ),
+    ]
+}
+
+/// The destructive entry, kept last in its own section (CTX convention).
+fn multi_selection_destructive_entry() -> SelectionMenuEntry {
+    entry(strings::YOUTUBE_REMOVE_SELECTED, ACTION_REMOVE_SELECTED)
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct PodcastSyncDevice {
@@ -121,6 +169,23 @@ pub(super) fn build(row: &EpisodeRow) -> gio::Menu {
     menu
 }
 
+pub(super) fn build_for_selection(row: &EpisodeRow, selected_ids: &[i64]) -> gio::Menu {
+    if selected_ids.len() <= 1 {
+        return build(row);
+    }
+    let menu = gio::Menu::new();
+    let primary = gio::Menu::new();
+    for entry in multi_selection_primary_entries() {
+        append_selected(&primary, &entry.label, entry.action, selected_ids);
+    }
+    menu.append_section(None, &primary);
+    let destructive = gio::Menu::new();
+    let remove = multi_selection_destructive_entry();
+    append_selected(&destructive, &remove.label, remove.action, selected_ids);
+    menu.append_section(None, &destructive);
+    menu
+}
+
 /// Builds the source-level context menu, including the phone-sync section.
 /// RSS and YouTube sources get the same sync section (`POD-12`) — each
 /// lands on its own device target folder (`MTP-38`), a routing decision
@@ -175,6 +240,15 @@ fn append_device_targeted(menu: &gio::Menu, subscription_id: i64, choice: &Devic
 fn append_targeted(menu: &gio::Menu, label: &str, action: &str, id: i64) {
     let item = gio::MenuItem::new(Some(&strings::text(label)), None);
     item.set_action_and_target_value(Some(&format!("podcasts.{action}")), Some(&id.to_variant()));
+    menu.append_item(&item);
+}
+
+fn append_selected(menu: &gio::Menu, label: &str, action: &str, episode_ids: &[i64]) {
+    let item = gio::MenuItem::new(Some(label), None);
+    item.set_action_and_target_value(
+        Some(&format!("podcasts.{action}")),
+        Some(&episode_ids.to_variant()),
+    );
     menu.append_item(&item);
 }
 
@@ -242,9 +316,121 @@ fn popup_at(row: &EpisodeRow, parent: &gtk4::Widget, x: i32, y: i32) {
 
 #[cfg(test)]
 mod tests {
+    use gtk4::glib;
     use reprise_core::podcasts::PodcastKind;
 
     use super::*;
+
+    fn episode(id: i64, played: bool) -> EpisodeRow {
+        EpisodeRow {
+            id,
+            subscription_id: 7,
+            guid: format!("episode-{id}"),
+            title: format!("Episode {id}"),
+            show: "Show".into(),
+            show_image_url: None,
+            image_url: None,
+            kind: PodcastKind::Rss,
+            audio_url: format!("https://example.test/{id}.mp3"),
+            page_url: None,
+            published_at: None,
+            duration_secs: None,
+            downloaded_path: None,
+            downloaded_bytes: None,
+            played_at: played.then_some(10),
+            position_ms: 0,
+            first_seen_at: 1,
+            is_new: false,
+        }
+    }
+
+    fn collect_entries(model: &gio::MenuModel, entries: &mut Vec<(String, String)>) {
+        for item in 0..model.n_items() {
+            let label = model
+                .item_attribute_value(item, "label", Some(glib::VariantTy::STRING))
+                .and_then(|value| value.get::<String>());
+            let action = model
+                .item_attribute_value(item, "action", Some(glib::VariantTy::STRING))
+                .and_then(|value| value.get::<String>());
+            if let (Some(label), Some(action)) = (label, action) {
+                entries.push((label, action));
+            }
+            if let Some(section) = model.item_link(item, "section") {
+                collect_entries(&section, entries);
+            }
+        }
+    }
+
+    fn menu_entries(menu: &gio::Menu) -> Vec<(String, String)> {
+        let mut entries = Vec::new();
+        collect_entries(menu.upcast_ref(), &mut entries);
+        entries
+    }
+
+    #[test]
+    fn src_12_single_selection_keeps_the_previous_actions_and_wording_byte_for_byte() {
+        let row = episode(1, false);
+
+        let entries = menu_entries(&build_for_selection(&row, &[row.id]));
+
+        assert_eq!(
+            entries,
+            vec![
+                (strings::text(strings::PODCAST_PLAY), "podcasts.play".into()),
+                (
+                    strings::text(strings::PODCAST_COPY_URL),
+                    "podcasts.copy-url".into(),
+                ),
+                (
+                    strings::text(strings::PODCAST_MARK_PLAYED),
+                    "podcasts.toggle-played".into(),
+                ),
+                (
+                    strings::text(strings::PODCAST_DOWNLOAD),
+                    "podcasts.toggle-download".into(),
+                ),
+                (
+                    strings::text(strings::PODCAST_REMOVE_EPISODE),
+                    "podcasts.remove-episode".into(),
+                ),
+                (
+                    strings::podcast_unsubscribe_from("Show"),
+                    "podcasts.unsubscribe".into(),
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn src_12_multi_selection_hides_single_targets_and_offers_explicit_played_states() {
+        let mut entries = multi_selection_primary_entries();
+        entries.push(multi_selection_destructive_entry());
+        let actions = entries.iter().map(|entry| entry.action).collect::<Vec<_>>();
+
+        assert!(!actions.contains(&ACTION_PLAY));
+        assert!(!actions.contains(&ACTION_COPY_URL));
+        assert!(entries.iter().any(|entry| {
+            entry.action == ACTION_MARK_PLAYED_SELECTED
+                && entry.label == strings::text(strings::PODCAST_MARK_PLAYED)
+        }));
+        assert!(entries.iter().any(|entry| {
+            entry.action == ACTION_MARK_UNPLAYED_SELECTED
+                && entry.label == strings::text(strings::PODCAST_MARK_UNPLAYED)
+        }));
+        assert!(actions.contains(&ACTION_DOWNLOAD_SELECTED));
+        assert!(actions.contains(&ACTION_DELETE_DOWNLOADS_SELECTED));
+        assert!(actions.contains(&ACTION_REMOVE_SELECTED));
+        assert!(!actions.contains(&ACTION_UNSUBSCRIBE));
+        // The destructive entry is the last one and sits alone in its section;
+        // the split is a property of the two builders, not of an index.
+        assert_eq!(
+            multi_selection_destructive_entry().action,
+            ACTION_REMOVE_SELECTED
+        );
+        assert!(!multi_selection_primary_entries()
+            .iter()
+            .any(|entry| entry.action == ACTION_REMOVE_SELECTED));
+    }
 
     #[test]
     fn context_menu_never_exposes_queue_membership_actions() {

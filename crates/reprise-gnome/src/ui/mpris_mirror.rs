@@ -366,8 +366,8 @@ impl PlayerController {
                 self.stop_external();
             }
             MprisCommand::Stop => self.reset_to_stopped(),
-            MprisCommand::Next => self.next(),
-            MprisCommand::Previous => self.previous(),
+            MprisCommand::Next => self.transport_next(),
+            MprisCommand::Previous => self.transport_previous(),
             MprisCommand::Seek(offset_ms) => self.mpris_seek_relative(offset_ms),
             MprisCommand::SetPosition(position_ms) => self.seek(position_ms),
             MprisCommand::SetShuffle(on) => self.mpris_set_shuffle(on),

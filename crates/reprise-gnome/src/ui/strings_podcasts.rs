@@ -171,6 +171,18 @@ pub const PODCAST_CLEANUP_KEEP_ALL: &str = N_!("Keep all");
 pub const PODCAST_CLEANUP_DELETE_PLAYED: &str = N_!("After 7 days");
 pub const PODCAST_CLEANUP_KEEP_LAST: &str = N_!("Keep last 5 per show");
 pub const YOUTUBE_EPISODES_PER_CHANNEL: &str = N_!("Episodes per channel");
+pub const YOUTUBE_BROWSER: &str = N_!("Signed-in browser");
+pub const YOUTUBE_BROWSER_DESCRIPTION: &str =
+    N_!("Allow yt-dlp to read this browser's YouTube cookies");
+pub const YOUTUBE_BROWSER_NONE: &str = N_!("Do not use browser cookies");
+pub const YOUTUBE_SIGN_IN: &str = N_!("YouTube sign-in");
+pub const YOUTUBE_SIGN_IN_DESCRIPTION: &str =
+    N_!("Sign in with the browser selected above, then retry the download");
+pub const YOUTUBE_OPEN_SIGN_IN: &str = N_!("Open YouTube");
+pub const YOUTUBE_BROWSER_OPEN_FAILED: &str =
+    N_!("Could not open the selected browser — open youtube.com there manually");
+pub const YOUTUBE_BROWSER_RECOVERY: &str =
+    N_!("YouTube needs a signed-in browser — choose one in Plugins");
 pub const PODCAST_YTDLP: &str = N_!("yt-dlp");
 pub const PODCAST_YTDLP_UPDATE: &str = N_!("Update");
 pub const PODCAST_YTDLP_CHECKING: &str = N_!("Checking installed version…");
@@ -186,6 +198,39 @@ pub fn podcast_episode_count(count: usize) -> String {
         &[("count", &count_text)],
     )
 }
+
+/// SRC-12 batch feedback. One message per batch, never one per episode, and
+/// never assembled by concatenating two separately translated fragments —
+/// word order and punctuation around "N done, M failed" differ per language,
+/// so both numbers live in one msgid, pluralised on the successful count.
+/// This mirrors `strings::library_doctor_remove_result` rather than inventing
+/// a second shape.
+pub fn podcast_batch_result(succeeded: usize, failed: usize) -> String {
+    let succeeded_text = succeeded.to_string();
+    let failed_text = failed.to_string();
+    let values = [
+        ("succeeded", succeeded_text.as_str()),
+        ("failed", failed_text.as_str()),
+    ];
+    if failed == 0 {
+        return plural(
+            "{succeeded} episode updated",
+            "{succeeded} episodes updated",
+            succeeded,
+            &values,
+        );
+    }
+    plural(
+        "{succeeded} episode updated; {failed} failed",
+        "{succeeded} episodes updated; {failed} failed",
+        succeeded,
+        &values,
+    )
+}
+
+/// SRC-12: acting on a selection that contains nothing to act on is still an
+/// answer. Staying silent reads as a broken button.
+pub const PODCAST_BATCH_NOTHING_TO_DELETE: &str = N_!("No downloaded files in the selection");
 
 pub fn podcast_show_all_episodes(count: usize) -> String {
     let count_text = count.to_string();
@@ -330,6 +375,13 @@ pub fn podcast_stop_sync_device(device: &str) -> String {
 
 pub fn podcast_removed_episode(title: &str) -> String {
     formatted(N_!("Removed “{title}”"), &[("title", title)])
+}
+
+/// SRC-12 / ACC: every selection checkbox in the list needs its own
+/// accessible name. A shared "Select episodes" label leaves a screen-reader
+/// user hearing the same thing on every row with no way to tell them apart.
+pub fn podcast_select_episode(title: &str) -> String {
+    formatted(N_!("Select “{title}”"), &[("title", title)])
 }
 
 pub fn podcast_play_next(title: &str) -> String {

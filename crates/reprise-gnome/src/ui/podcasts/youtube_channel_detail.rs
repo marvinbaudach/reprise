@@ -18,9 +18,13 @@ use reprise_core::podcasts::EpisodeRow;
 use super::podcasts_context_menu::PodcastSyncDevice;
 use super::podcasts_download_presentation;
 use super::podcasts_groups::{self, DownloadRowWidgets};
+use super::podcasts_playback::EpisodeMark;
 use super::podcasts_presentation::{
     detail_line, duration, on_phone, relative_date, status_pill, RenderedSourceGroup,
 };
+use super::podcasts_row_interaction::install_playback_hover;
+use super::podcasts_selection;
+use crate::ui::playing_marker;
 use crate::ui::strings;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -129,10 +133,6 @@ impl YoutubeChannelState {
             self.selected.remove(&subscription_id);
         }
     }
-
-    fn clear_selected(&mut self, subscription_id: i64) {
-        self.selected.remove(&subscription_id);
-    }
 }
 
 fn project_channel(
@@ -170,6 +170,7 @@ pub(super) struct YoutubeChannelDetail {
     images_allowed: Cell<bool>,
     connectivity: Cell<Connectivity>,
     unavailable_episode: Cell<Option<i64>>,
+    playing_episode: Cell<Option<EpisodeMark>>,
 }
 
 impl YoutubeChannelDetail {
@@ -201,6 +202,7 @@ impl YoutubeChannelDetail {
             images_allowed: Cell::new(false),
             connectivity: Cell::new(Connectivity::Online),
             unavailable_episode: Cell::new(None),
+            playing_episode: Cell::new(None),
         })
     }
 
@@ -242,6 +244,7 @@ impl YoutubeChannelDetail {
         images_allowed: bool,
         connectivity: Connectivity,
         unavailable_episode: Option<i64>,
+        playing_episode: Option<EpisodeMark>,
     ) {
         self.groups.replace(groups.to_vec());
         self.download_states.replace(download_states.clone());
@@ -250,6 +253,7 @@ impl YoutubeChannelDetail {
         self.images_allowed.set(images_allowed);
         self.connectivity.set(connectivity);
         self.unavailable_episode.set(unavailable_episode);
+        self.playing_episode.set(playing_episode);
         let active = self.state.borrow().active_channel();
         if active.is_some_and(|id| !groups.iter().any(|group| group.group.subscription_id == id)) {
             self.state.borrow_mut().close_channel();
@@ -261,6 +265,25 @@ impl YoutubeChannelDetail {
 
     pub(super) fn is_active(&self) -> bool {
         self.state.borrow().active_channel().is_some()
+    }
+
+    pub(super) fn neighbour_ids_for_episode(&self, episode_id: i64) -> Option<Vec<i64>> {
+        let subscription_id = self.state.borrow().active_channel()?;
+        let rendered = self
+            .groups
+            .borrow()
+            .iter()
+            .find(|group| group.group.subscription_id == subscription_id)
+            .cloned()?;
+        let state = self.state.borrow().clone();
+        let projected = project_channel(&rendered, &state);
+        let ids = projected
+            .group
+            .episodes
+            .iter()
+            .map(|episode| episode.id)
+            .collect::<Vec<_>>();
+        ids.contains(&episode_id).then_some(ids)
     }
 
     pub(super) fn update_download_state(&self, episode_id: i64, state: &DownloadState) {
@@ -276,6 +299,14 @@ impl YoutubeChannelDetail {
                 self.connectivity.get(),
                 self.unavailable_episode.get() == Some(episode_id),
             );
+        }
+    }
+
+    pub(super) fn update_playback_state(&self, mark: EpisodeMark) {
+        self.playing_episode.set(Some(mark));
+        let widgets = self.download_widgets.borrow().get(&mark.id).cloned();
+        if let Some(widgets) = widgets {
+            podcasts_groups::update_playback_state(&widgets, mark.playing);
         }
     }
 
@@ -471,56 +502,12 @@ impl YoutubeChannelDetail {
             }
         });
         controls.append(&hide_shorts);
-        let selected = gtk4::Label::new(None);
-        let download = gtk4::Button::with_label(&strings::text(strings::YOUTUBE_DOWNLOAD_SELECTED));
-        let remove = gtk4::Button::with_label(&strings::text(strings::YOUTUBE_REMOVE_SELECTED));
-        remove.add_css_class("destructive-action");
-        let state = self.state.borrow().clone();
-        update_batch_controls(&state, subscription_id, &selected, &download, &remove);
-        self.wire_batch_actions(subscription_id, &download, &remove);
-        controls.append(&selected);
-        controls.append(&download);
-        controls.append(&remove);
+        // SRC-12: the same trio the grouped library view shows, built by the
+        // same type rather than a second hand-rolled copy — two copies drifted
+        // apart on sensitivity and wording once already.
+        let selection = podcasts_selection::SelectionControls::appended_to(&controls);
+        selection.update(&self.state.borrow().selected_ids(subscription_id));
         controls.upcast()
-    }
-
-    fn wire_batch_actions(
-        self: &Rc<Self>,
-        subscription_id: i64,
-        download: &gtk4::Button,
-        remove: &gtk4::Button,
-    ) {
-        let weak = Rc::downgrade(self);
-        download.connect_clicked(move |_| {
-            let Some(detail) = weak.upgrade() else { return };
-            let ids = detail.state.borrow().selected_ids(subscription_id);
-            let states = detail.download_states.borrow().clone();
-            for id in ids {
-                if !matches!(
-                    states.get(&id),
-                    Some(
-                        DownloadState::Queued
-                            | DownloadState::Downloading { .. }
-                            | DownloadState::Downloaded { .. }
-                    )
-                ) {
-                    let _ = detail
-                        .host
-                        .activate_action("podcasts.toggle-download", Some(&id.to_variant()));
-                }
-            }
-        });
-        let weak = Rc::downgrade(self);
-        remove.connect_clicked(move |_| {
-            let Some(detail) = weak.upgrade() else { return };
-            let ids = detail.state.borrow().selected_ids(subscription_id);
-            detail.state.borrow_mut().clear_selected(subscription_id);
-            for id in ids {
-                let _ = detail
-                    .host
-                    .activate_action("podcasts.remove-episode", Some(&id.to_variant()));
-            }
-        });
     }
 
     fn build_episode_row(
@@ -530,6 +517,15 @@ impl YoutubeChannelDetail {
     ) -> gtk4::Widget {
         let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
         row.add_css_class("reprise-podcast-episode-row");
+        let mark = self
+            .playing_episode
+            .get()
+            .filter(|mark| mark.id == episode.id);
+        let loaded = mark.is_some();
+        let playing = mark.is_some_and(|mark| mark.playing);
+        if loaded {
+            row.add_css_class("reprise-podcast-playing");
+        }
         let selected = gtk4::CheckButton::new();
         let is_selected = self
             .state
@@ -551,10 +547,30 @@ impl YoutubeChannelDetail {
             }
         });
         row.append(&selected);
-        let play = gtk4::Button::from_icon_name("media-playback-start-symbolic");
+        let play = gtk4::Button::new();
         play.add_css_class("flat");
+        play.set_tooltip_text(Some(&strings::text(strings::PLAY_OR_PAUSE)));
+        play.update_property(&[gtk4::accessible::Property::Label(&strings::text(
+            strings::PLAY_OR_PAUSE,
+        ))]);
         play.set_action_name(Some("podcasts.play"));
         play.set_action_target_value(Some(&episode.id.to_variant()));
+        let play_surface = gtk4::Overlay::new();
+        play_surface.set_size_request(32, 32);
+        let marker = playing_marker::build();
+        marker.add_css_class("reprise-podcast-episode-marker");
+        playing_marker::set_playing(&marker, playing);
+        marker.set_visible(loaded);
+        play_surface.add_overlay(&marker);
+        let play_glyph = gtk4::Image::from_icon_name(if playing {
+            "media-playback-pause-symbolic"
+        } else {
+            "media-playback-start-symbolic"
+        });
+        play_glyph.set_opacity(if loaded { 0.0 } else { 1.0 });
+        play_surface.add_overlay(&play_glyph);
+        play.set_child(Some(&play_surface));
+        install_playback_hover(&play, &marker, &play_glyph, if loaded { 0.0 } else { 1.0 });
         row.append(&play);
         let copy = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
         copy.set_hexpand(true);
@@ -585,6 +601,8 @@ impl YoutubeChannelDetail {
             root: row.clone(),
             status,
             action,
+            marker,
+            play_glyph,
         };
         let state = self
             .download_states
@@ -604,19 +622,6 @@ impl YoutubeChannelDetail {
         widgets.insert(episode.id, download_widgets);
         row.upcast()
     }
-}
-
-fn update_batch_controls(
-    state: &YoutubeChannelState,
-    subscription_id: i64,
-    selected: &gtk4::Label,
-    download: &gtk4::Button,
-    remove: &gtk4::Button,
-) {
-    let count = state.selected_ids(subscription_id).len();
-    selected.set_text(&strings::youtube_selected_count(count));
-    download.set_sensitive(count > 0);
-    remove.set_sensitive(count > 0);
 }
 
 #[cfg(test)]

@@ -18,6 +18,10 @@ mod range;
 #[path = "ytdlp_failure.rs"]
 mod failure;
 
+#[path = "ytdlp_discovery.rs"]
+mod discovery;
+
+pub use discovery::resolve_binary;
 pub use failure::YtDlpFailureKind;
 use failure::*;
 
@@ -25,6 +29,8 @@ pub use super::ytdlp_search::YtDlpChannel;
 use super::PodcastError;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
+const EXECUTABLE_BUSY_RETRIES: usize = 4;
+const EXECUTABLE_BUSY_RETRY_DELAY: Duration = Duration::from_millis(10);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct YtDlpTimeouts {
@@ -52,6 +58,7 @@ impl Default for YtDlpTimeouts {
 #[derive(Clone, Debug)]
 pub struct YtDlp {
     binary: PathBuf,
+    browser_session: Option<OsString>,
     timeouts: YtDlpTimeouts,
 }
 
@@ -81,14 +88,6 @@ pub struct ResolvedAudio {
 }
 
 impl YtDlp {
-    /// Discovers the executable without probing it.
-    pub fn discover(setting_path: Option<&str>) -> Self {
-        Self::with_binary(resolve_binary(
-            std::env::var_os("REPRISE_YTDLP_BIN").as_deref(),
-            setting_path,
-        ))
-    }
-
     pub fn with_binary(binary: impl Into<PathBuf>) -> Self {
         Self::with_binary_and_timeouts(binary, YtDlpTimeouts::default())
     }
@@ -100,8 +99,19 @@ impl YtDlp {
     pub fn with_binary_and_timeouts(binary: impl Into<PathBuf>, timeouts: YtDlpTimeouts) -> Self {
         Self {
             binary: binary.into(),
+            browser_session: None,
             timeouts,
         }
+    }
+
+    /// Uses an explicitly selected browser session for yt-dlp authentication.
+    ///
+    /// Reprise never selects a browser implicitly: loading its cookies may
+    /// authenticate provider requests as the user's browser account.
+    #[cfg(test)]
+    fn with_browser_session(mut self, browser: impl AsRef<OsStr>) -> Self {
+        self.browser_session = discovery::resolve_browser_session(Some(browser.as_ref()));
+        self
     }
 
     pub fn probe_version(&self) -> Result<String, PodcastError> {
@@ -194,6 +204,7 @@ impl YtDlp {
     ) -> Result<(), PodcastError> {
         super::ytdlp_download::download(
             &self.binary,
+            self.browser_session.as_deref(),
             self.timeouts.download,
             video_url,
             output,
@@ -212,15 +223,31 @@ impl YtDlp {
         S: AsRef<OsStr>,
     {
         let mut command = Command::new(&self.binary);
+        if !matches!(operation, "probe_version" | "update") {
+            if let Some(browser_session) = &self.browser_session {
+                command.arg("--cookies-from-browser").arg(browser_session);
+            }
+        }
         command
             .args(arguments)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         configure_process_group(&mut command);
-        let mut child = command
-            .spawn()
-            .map_err(|error| logged_spawn_error(operation, &error))?;
+        let mut busy_retries = EXECUTABLE_BUSY_RETRIES;
+        let mut child = loop {
+            match command.spawn() {
+                Ok(child) => break child,
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::ExecutableFileBusy
+                        && busy_retries > 0 =>
+                {
+                    busy_retries -= 1;
+                    thread::sleep(EXECUTABLE_BUSY_RETRY_DELAY);
+                }
+                Err(error) => return Err(logged_spawn_error(operation, &error)),
+            }
+        };
 
         let process_group = child.id();
         let stdout = read_in_background(child.stdout.take().expect("piped stdout"));
@@ -258,19 +285,6 @@ impl YtDlp {
             })?;
         output_from_status(operation, status, &stdout, &stderr)
     }
-}
-
-pub fn resolve_binary(environment_override: Option<&OsStr>, setting_path: Option<&str>) -> PathBuf {
-    environment_override
-        .filter(|path| !path.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| {
-            setting_path
-                .map(str::trim)
-                .filter(|path| !path.is_empty())
-                .map(PathBuf::from)
-        })
-        .unwrap_or_else(|| PathBuf::from("yt-dlp"))
 }
 
 /// Maps yt-dlp's unstable diagnostic text to a short message suitable for UI use.
