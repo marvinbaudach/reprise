@@ -458,6 +458,18 @@ pub(in crate::ui) fn resolve_select_source(
     }
 }
 
+/// Whether `source` is one the sidebar ever builds a row for. Album, artist,
+/// and genre scopes are opened from inside the track list (metadata links,
+/// the stats page) and deliberately have no row — so their absence from the
+/// row set is the normal state, not a vanished row, and must never trigger
+/// [`resolve_select_source`]'s Library fallback.
+pub(in crate::ui) fn has_sidebar_row(source: &ViewSource) -> bool {
+    !matches!(
+        source,
+        ViewSource::Album { .. } | ViewSource::Artist(_) | ViewSource::Genre(_)
+    )
+}
+
 /// Looks up the row currently backing `source` in `shared.rows` (rebuilt on
 /// every `rebuild` call, so this only ever searches the *current* row set).
 pub(in crate::ui) fn find_row(

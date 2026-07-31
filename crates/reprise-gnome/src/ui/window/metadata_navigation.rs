@@ -199,6 +199,76 @@ mod tests {
         assert_eq!(source_title.title(), "Lorna Shore");
     }
 
+    /// UX FIL-1c, end to end: starting playback from inside an artist scope
+    /// mutates the queue, and `window.rs`'s `on_queue_changed` hook answers
+    /// that with `sidebar.refresh("up next changed")`. That refresh must not
+    /// route the view anywhere — the scope, its chip, and its filtered rows
+    /// have to survive the play the user just started.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn fil_1c_playing_inside_a_scope_keeps_the_scope_and_its_chip() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let conn = Rc::new(crate::test_db::open().unwrap());
+        let app = adw::Application::builder()
+            .application_id("org.reprise.Reprise.ScopeSurvivesRefreshTest")
+            .build();
+        app.register(None::<&gtk4::gio::Cancellable>).unwrap();
+        let window = adw::ApplicationWindow::new(&app);
+        let sidebar = Rc::new(Sidebar::new(conn.clone(), &window, || 0));
+        let track_list = Rc::new(TrackList::new(
+            conn,
+            Box::new(|_, _, _, _| {}),
+            |_, _, _, _| {},
+            crate::ui::track_list::queue_sections::QueueViewModel::default,
+            crate::ui::cover_download_worker::setup_for_test(),
+        ));
+        let content_stack = gtk4::Stack::new();
+        content_stack.add_named(&gtk4::Box::default(), Some("library"));
+        let source_title = adw::WindowTitle::new("My Stats", "");
+        let history = Rc::new(NavHistory::default());
+        let library = BrowserPlace::from(ViewSource::Library);
+        history.restore(library.clone(), library);
+        let navigator = MetadataNavigator::new(
+            history,
+            &sidebar,
+            &track_list,
+            content_stack.clone(),
+            source_title.clone(),
+            ActiveContentFocus::new(&content_stack, &track_list),
+        );
+        // The routing half of `library_shell::wire_source_routing` that a
+        // sidebar selection drives — the seam this bug travelled through.
+        sidebar.set_on_select({
+            let track_list = track_list.clone();
+            move |source, _title| track_list.set_source(source)
+        });
+
+        navigator.navigate(
+            NavigationIntent::OpenArtist {
+                artist: ArtistKey::new("Lorna Shore"),
+                anchor_track_id: None,
+            },
+            "test artist navigation",
+        );
+        sidebar.refresh("up next changed");
+
+        assert_eq!(
+            track_list.current_source(),
+            ViewSource::Artist("Lorna Shore".into()),
+            "the queue refresh a play triggers must not drop the artist scope"
+        );
+        assert_eq!(source_title.title(), "Lorna Shore");
+        let scope_chip = track_list
+            .shared
+            .browse_bar
+            .scope_button()
+            .expect("the scope chip must survive the refresh");
+        assert!(scope_chip
+            .label()
+            .is_some_and(|label| label.contains("Lorna Shore")));
+    }
+
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn fil_1c_genre_scope_chip_x_returns_to_the_library_with_history() {
