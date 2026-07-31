@@ -201,3 +201,24 @@ fn resolve_reorder_target_rejects_dropping_a_row_onto_itself() {
     };
     assert!(resolve_reorder_target(&payload, 3).is_none());
 }
+
+/// The reorder path is track-only. Nothing builds this payload today — the one
+/// drag source that sets a reorder position never carries an episode — but the
+/// guard belongs to the payload, not to that distant call site.
+#[test]
+fn resolve_reorder_target_refuses_an_episode_even_with_a_reorder_position() {
+    let payload = DragPayload {
+        items: vec![QueueItem::Episode(7)],
+        reorder_position: Some(2),
+    };
+
+    assert_eq!(resolve_reorder_target(&payload, 5), None);
+
+    // The same shape with a track is accepted, so the rejection above is the
+    // kind check and not an accident of the fixture.
+    let track = DragPayload {
+        items: vec![QueueItem::Track(7)],
+        reorder_position: Some(2),
+    };
+    assert!(resolve_reorder_target(&track, 5).is_some());
+}
