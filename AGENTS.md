@@ -144,7 +144,9 @@ Markdown is exempt: docs are split by subject, never by line count.
   album directory after downloading a cover when no known folder image exists. Sidecars and cover
   targets are derived only from track paths and never overwrite an existing file. Reprise writes
   nothing else beside music files; deletes are DB-only or trash-with-confirmation, never silent
-  file ops.
+  file ops. The single exception is its own abandoned writeback temporary —
+  `.reprise-<16 hex digits>.tmp`, a regular file untouched for an hour — which a later write in
+  that same directory sweeps up. Nothing else is ever matched.
   The real DB is `~/.local/share/reprise/reprise.db` (1686 real tracks; library root
   `/home/marvin/Music`). Do not scan, mutate, or point tooling at it.
 - **Headless verification MUST be fully isolated** — this bit us twice. Never run the app on the

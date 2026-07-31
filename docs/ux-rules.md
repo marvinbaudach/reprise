@@ -2186,7 +2186,9 @@ property is set and yet nothing happens.
   failure is logged but otherwise silent, so the cache
   result and displayed lyrics remain available. The write is invisible to the
   folder watcher — neither the sidecar nor its temporary file triggers a
-  library rescan. Device sync copies this
+  library rescan — and sweeps up temporary files an interrupted earlier write
+  abandoned in that directory, matching Reprise's own name pattern and
+  nothing else. Device sync copies this
   sidecar under the transferred audio's basename and removes it with that
   audio; the attachment never counts as another transfer, and its failure
   never fails the track transfer.
@@ -3114,8 +3116,10 @@ means deterministic and high-confidence, never „without review".
   still cannot replace one. Every filesystem failure is logged
   but otherwise silent, so the cached download remains successful. The write
   is invisible to the folder watcher — neither the cover nor its temporary
-  file triggers a library rescan. Covers for release groups without a local
-  album remain cache-only.
+  file triggers a library rescan — and sweeps up temporary files an
+  interrupted earlier write abandoned in that directory, matching Reprise's
+  own name pattern and nothing else. Covers for release groups without a
+  local album remain cache-only.
 
 ## AA. External changes (live refresh from CLI/MCP)
 

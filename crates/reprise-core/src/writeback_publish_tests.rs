@@ -1,4 +1,5 @@
 use std::fs;
+use std::time::Duration;
 
 use tempfile::TempDir;
 
@@ -109,6 +110,64 @@ fn a_failing_publication_leaves_no_temporary_file() {
     fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o755)).unwrap();
     assert!(result.is_err());
     assert!(directory_entries(dir.path()).is_empty());
+}
+
+#[test]
+fn a_publication_sweeps_abandoned_temporary_files_it_left_behind() {
+    let dir = TempDir::new().unwrap();
+    let abandoned = dir.path().join(".reprise-00000000deadbeef.tmp");
+    fs::write(&abandoned, b"a process that died mid-write").unwrap();
+    backdate(&abandoned, Duration::from_secs(3 * 60 * 60));
+    // Everything that merely looks similar stays: this deletes files inside
+    // the user's collection, so the pattern match has to be exact.
+    let bystanders = [
+        ".reprise-not-hexadecimal.tmp",
+        ".reprise-00000000deadbeef.tmp.bak",
+        ".reprise-deadbeef.tmp",
+        "cover.jpg.tmp",
+        "notes.tmp",
+    ];
+    for bystander in bystanders {
+        let path = dir.path().join(bystander);
+        fs::write(&path, b"not ours").unwrap();
+        backdate(&path, Duration::from_secs(3 * 60 * 60));
+    }
+
+    assert_eq!(
+        publish(&dir.path().join("cover.jpg"), b"payload").unwrap(),
+        Published::Written
+    );
+
+    assert!(!abandoned.exists(), "the abandoned temporary must be gone");
+    let mut expected = bystanders.to_vec();
+    expected.push("cover.jpg");
+    expected.sort_unstable();
+    assert_eq!(directory_entries(dir.path()), expected);
+}
+
+#[test]
+fn a_recent_temporary_file_of_a_concurrent_writer_is_left_alone() {
+    let dir = TempDir::new().unwrap();
+    let in_flight = dir.path().join(".reprise-00000000deadbeef.tmp");
+    fs::write(&in_flight, b"another writer is still filling this").unwrap();
+
+    assert_eq!(
+        publish(&dir.path().join("cover.jpg"), b"payload").unwrap(),
+        Published::Written
+    );
+
+    assert_eq!(
+        fs::read(&in_flight).unwrap(),
+        b"another writer is still filling this"
+    );
+}
+
+/// Moves a file's modification time `by` into the past.
+fn backdate(path: &std::path::Path, by: Duration) {
+    let file = fs::File::options().write(true).open(path).unwrap();
+    let when = std::time::SystemTime::now() - by;
+    file.set_times(fs::FileTimes::new().set_modified(when))
+        .unwrap();
 }
 
 fn directory_entries(dir: &std::path::Path) -> Vec<String> {

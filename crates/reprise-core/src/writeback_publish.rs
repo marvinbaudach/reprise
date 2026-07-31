@@ -44,6 +44,12 @@ const TEMP_SUFFIX: &str = ".tmp";
 /// open when the *last* event of that write reaches the watcher thread.
 const WATCHER_IGNORE: Duration = Duration::from_secs(60);
 
+/// How long a temporary file has to sit untouched before [`sweep_leftovers`]
+/// treats it as abandoned. An hour is far beyond any single publication —
+/// even 20 MB onto a slow USB stick — so a live writer's file can never be
+/// mistaken for a leftover, in this process or another.
+const LEFTOVER_MAX_AGE: Duration = Duration::from_secs(60 * 60);
+
 /// What a publication did. A refused publication (target already there) is a
 /// normal outcome, not an error — see the module doc.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,6 +77,9 @@ fn publish_with(
     link: impl Fn(&Path, &Path) -> io::Result<()>,
 ) -> io::Result<Published> {
     ignore(target);
+    if let Some(directory) = target.parent() {
+        sweep_leftovers(directory, LEFTOVER_MAX_AGE);
+    }
     let (temporary, mut file) = create_temporary(target)?;
     if let Err(error) = file.write_all(payload).and_then(|()| file.sync_all()) {
         drop(file);
@@ -169,6 +178,58 @@ fn create_temporary(target: &Path) -> io::Result<(PathBuf, File)> {
 
 fn temporary_name(token: u64) -> String {
     format!("{TEMP_PREFIX}{token:016x}{TEMP_SUFFIX}")
+}
+
+/// Removes Reprise's own abandoned temporary files from `directory`.
+///
+/// The happy path and every error path unlink the temporary themselves, but
+/// a process that dies in between — the window is seconds for a 20 MB cover
+/// on USB or NFS — leaves one lying in the user's album folder, and nothing
+/// else in the crate ever looked for them. On FAT and NTFS the leading dot
+/// carries no hidden semantics, so they are plainly visible junk.
+///
+/// Two deliberate narrowings, because this deletes files inside the
+/// collection: only names matching Reprise's own exact pattern
+/// ([`is_temporary_name`]) are ever considered, and only regular files
+/// (`DirEntry::metadata` does not follow symlinks) that have not been
+/// modified for `max_age` — long enough that no live writer, in this process
+/// or another, can still own them.
+fn sweep_leftovers(directory: &Path, max_age: Duration) {
+    let Ok(entries) = fs::read_dir(directory) else {
+        return;
+    };
+    let now = std::time::SystemTime::now();
+    for entry in entries.flatten() {
+        if !entry.file_name().to_str().is_some_and(is_temporary_name) {
+            continue;
+        }
+        let is_abandoned = entry.metadata().is_ok_and(|metadata| {
+            metadata.is_file()
+                && metadata
+                    .modified()
+                    .ok()
+                    .and_then(|modified| now.duration_since(modified).ok())
+                    .is_some_and(|age| age >= max_age)
+        });
+        if !is_abandoned {
+            continue;
+        }
+        if let Err(error) = fs::remove_file(entry.path()) {
+            tracing::warn!(
+                path = %entry.path().display(),
+                %error,
+                "could not sweep an abandoned writeback temporary file"
+            );
+        }
+    }
+}
+
+fn is_temporary_name(name: &str) -> bool {
+    name.strip_prefix(TEMP_PREFIX)
+        .and_then(|rest| rest.strip_suffix(TEMP_SUFFIX))
+        .is_some_and(|token| {
+            token.len() == 16 && token.bytes().all(|byte| byte.is_ascii_hexdigit())
+        })
 }
 
 fn ignore(path: &Path) {
