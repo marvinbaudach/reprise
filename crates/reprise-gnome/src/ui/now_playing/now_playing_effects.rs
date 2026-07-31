@@ -14,6 +14,8 @@ use reprise_core::cover::ThumbnailSize;
 
 use crate::ui::now_playing::cover_loader::CoverLoader;
 use crate::ui::now_playing::panel_state::*;
+use crate::ui::playback::external_media::ExternalMedia;
+use crate::ui::style::tokens;
 
 impl super::NowPlayingPanel {
     pub(super) fn render_track(&self) {
@@ -25,11 +27,21 @@ impl super::NowPlayingPanel {
         on_cover_resolved: impl Fn(Option<std::path::PathBuf>) + 'static,
     ) {
         let track = self.loaded_track.borrow().clone();
-        let presentation = panel_presentation(track.as_ref(), self.playback_state.get());
+        let external = self.external_snapshot.borrow().clone();
+        let presentation = panel_presentation_with_external(
+            track.as_ref(),
+            external.as_ref(),
+            self.playback_state.get(),
+        );
         self.widgets.title.set_label(&presentation.title);
-        let (artist, album) = track.as_ref().map_or(("", ""), |track| {
-            (track.artist.as_str(), track.album.as_str())
-        });
+        let (artist, album) = external.as_ref().map_or_else(
+            || {
+                track.as_ref().map_or(("", ""), |track| {
+                    (track.artist.as_str(), track.album.as_str())
+                })
+            },
+            |_| (presentation.subtitle.as_str(), ""),
+        );
         self.widgets.artist.set_label(artist);
         self.widgets.album.set_label(album);
         self.widgets.artist.set_visible(!artist.trim().is_empty());
@@ -43,6 +55,35 @@ impl super::NowPlayingPanel {
         }
         let generation = self.cover_generation.get().wrapping_add(1);
         self.cover_generation.set(generation);
+        if let Some(external) = external {
+            self.widgets.cover_stack.set_visible_child_name("external");
+            while let Some(child) = self.widgets.external_cover.first_child() {
+                self.widgets.external_cover.remove(&child);
+            }
+            let fallback_icon = match external.media {
+                ExternalMedia::Podcast { .. } => "audio-input-microphone-symbolic",
+                ExternalMedia::Radio { .. } => "audio-volume-high-symbolic",
+            };
+            let images_allowed = reprise_core::online_sources::network_allowed(
+                &self.conn,
+                &reprise_core::modules::SOURCE_IMAGES_MODULE,
+            )
+            .unwrap_or(false);
+            let source_image = crate::ui::podcasts::source_image::SourceImage::new(
+                external.art_url.as_deref(),
+                fallback_icon,
+                tokens::NOW_PLAYING_COVER_SIZE,
+                images_allowed,
+            );
+            source_image
+                .widget()
+                .add_css_class("reprise-now-playing-cover");
+            self.widgets.external_cover.append(source_image.widget());
+            self.widgets.visualizer.set_cover(None);
+            on_cover_resolved(None);
+            return;
+        }
+        self.widgets.cover_stack.set_visible_child_name("track");
         CoverLoader::set_placeholder(&self.widgets.cover);
         // Revert the visualizer's cover-derived accent up front, same reason
         // `PlayerController::sync_cover`'s `reset_cover_accent` does for the

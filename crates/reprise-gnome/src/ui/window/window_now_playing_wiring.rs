@@ -25,6 +25,12 @@ pub(in crate::ui) fn install(
         }
     });
     let panel_weak = Rc::downgrade(panel);
+    player.add_on_external_changed(move |snapshot| {
+        if let Some(panel) = panel_weak.upgrade() {
+            panel.set_external_snapshot(snapshot);
+        }
+    });
+    let panel_weak = Rc::downgrade(panel);
     player.set_on_song_visual_spectrum_changed(move |frame| {
         if let Some(panel) = panel_weak.upgrade() {
             panel.set_spectrum(frame);

@@ -220,7 +220,9 @@ impl CompactPlayer {
             .waveform
             .widget()
             .set_opacity(if display.live { 0.0 } else { 1.0 });
-        self.0.menu.set_queue_navigation_enabled(false);
+        self.0
+            .menu
+            .set_navigation_enabled(snapshot.can_go_previous, snapshot.can_go_next);
         if display.title_dimmed {
             self.0.widgets.title_label.add_css_class("dim-label");
         } else {

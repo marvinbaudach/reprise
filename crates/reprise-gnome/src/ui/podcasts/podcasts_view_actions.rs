@@ -15,7 +15,8 @@ impl PodcastsView {
                 }
                 EpisodeActivation::StartEpisode => {
                     if let Ok(Some(row)) = podcasts::store::episode(&view.conn, id) {
-                        (view.callbacks.on_episode_activated)(row);
+                        let episode_ids = view.neighbour_ids_for_episode(id);
+                        (view.callbacks.on_episode_activated)(row, episode_ids);
                     }
                 }
             }
@@ -152,6 +153,23 @@ impl PodcastsView {
             callback(&view, id);
         });
         group.add_action(&action);
+    }
+
+    fn neighbour_ids_for_episode(&self, episode_id: i64) -> Vec<i64> {
+        if let Some(ids) = self.youtube_detail.neighbour_ids_for_episode(episode_id) {
+            return ids;
+        }
+        episode_ids_in_rendered_order(&self.groups.borrow())
+    }
+
+    /// Whether this view currently renders the episode at all. Only the
+    /// headless `REPRISE_SMOKE_EPISODE_PLAY` hook needs this: both source views
+    /// arm it, and without the check the one that does *not* show the episode
+    /// would still start it — neighbourless, since it is absent from that
+    /// view's own rendered order — and overwrite the correct session.
+    pub(in crate::ui) fn renders_episode(&self, episode_id: i64) -> bool {
+        self.neighbour_ids_for_episode(episode_id)
+            .contains(&episode_id)
     }
 
     fn add_selected_action(

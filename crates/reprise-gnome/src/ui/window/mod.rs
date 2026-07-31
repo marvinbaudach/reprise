@@ -7,6 +7,7 @@ pub(in crate::ui) mod podcast_refresh_scheduler;
 pub(in crate::ui) mod responsive_side_panels;
 mod source_connectivity;
 pub(in crate::ui) mod source_views;
+mod source_views_smoke;
 #[path = "window.rs"]
 mod surface;
 pub(in crate::ui) mod window_action_wiring;

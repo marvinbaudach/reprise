@@ -22,6 +22,56 @@ fn loaded_track() -> NowPlaying {
     }
 }
 
+fn external_episode_snapshot() -> crate::ui::playback::external_media::ExternalPlaybackSnapshot {
+    use crate::ui::playback::external_media::{
+        EpisodeSource, ExternalMedia, ExternalPlaybackSnapshot, PodcastPhase, StreamTags,
+    };
+    use crate::ui::playback::preview::PlaybackMode;
+
+    ExternalPlaybackSnapshot {
+        mode: PlaybackMode::Podcast,
+        media: ExternalMedia::Podcast {
+            episode_id: 42,
+            title: "External episode".into(),
+            show: "External show".into(),
+            source: EpisodeSource::Url("https://example.test/episode.mp3".into()),
+            resume_ms: 0,
+            duration_ms: Some(180_000),
+        },
+        art_url: Some("https://images.test/show.jpg".into()),
+        can_go_previous: true,
+        can_go_next: false,
+        stream_tags: StreamTags::default(),
+        podcast_phase: Some(PodcastPhase::Playing),
+        radio: None,
+        error: None,
+    }
+}
+
+fn external_radio_snapshot() -> crate::ui::playback::external_media::ExternalPlaybackSnapshot {
+    use crate::ui::playback::external_media::{
+        ExternalMedia, ExternalPlaybackSnapshot, RadioPresentation, StreamTags,
+    };
+    use crate::ui::playback::preview::PlaybackMode;
+
+    ExternalPlaybackSnapshot {
+        mode: PlaybackMode::Radio,
+        media: ExternalMedia::Radio {
+            station_id: 7,
+            name: "External radio".into(),
+            stream_url: "https://radio.test/live".into(),
+            uuid: None,
+        },
+        art_url: Some("https://images.test/radio.jpg".into()),
+        can_go_previous: false,
+        can_go_next: false,
+        stream_tags: StreamTags::default(),
+        podcast_phase: None,
+        radio: Some(RadioPresentation::connected()),
+        error: None,
+    }
+}
+
 fn test_widgets(content: &impl IsA<gtk4::Widget>, visible: bool) -> PanelWidgets {
     let conn = crate::test_db::open().unwrap();
     let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
@@ -57,6 +107,80 @@ fn no_loaded_track_uses_the_idle_presentation() {
     assert_eq!(presentation.title, "Nothing playing");
     assert_eq!(presentation.subtitle, "");
     assert!(presentation.idle);
+}
+
+#[test]
+fn pod_21_external_episode_uses_the_shared_bar_identity_instead_of_idle_copy() {
+    let snapshot = external_episode_snapshot();
+
+    let presentation =
+        panel_presentation_with_external(None, Some(&snapshot), PlaybackState::Playing);
+
+    assert_eq!(presentation.title, "External episode");
+    assert_eq!(presentation.subtitle, "External show");
+    assert!(!presentation.idle);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn pod_21_external_header_uses_episode_identity_and_source_tile() {
+    gtk4::init().unwrap();
+    let (_window, panel) = test_panel("org.reprise.Reprise.ExternalPanelHeaderTest");
+    panel.set_external_snapshot(Some(external_episode_snapshot()));
+
+    assert_eq!(panel.widgets.title.text(), "External episode");
+    assert_eq!(panel.widgets.artist.text(), "External show");
+    assert!(panel.widgets.album.text().is_empty());
+    assert_eq!(
+        panel.widgets.cover_stack.visible_child_name().as_deref(),
+        Some("external")
+    );
+    assert!(panel.widgets.external_cover.first_child().is_some());
+    assert!(!panel
+        .widgets
+        .stage
+        .has_css_class("reprise-now-playing-idle"));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn pod_21_lyrics_falls_back_and_stays_hidden_for_podcast_youtube_and_radio() {
+    gtk4::init().unwrap();
+    let (_window, panel) = test_panel("org.reprise.Reprise.ExternalLyricsTest");
+    let mut youtube = external_episode_snapshot();
+    if let crate::ui::playback::external_media::ExternalMedia::Podcast { title, source, .. } =
+        &mut youtube.media
+    {
+        *title = "YouTube episode".into();
+        *source = crate::ui::playback::external_media::EpisodeSource::Url(
+            "https://youtube.test/watch?v=42".into(),
+        );
+    }
+
+    for snapshot in [
+        external_episode_snapshot(),
+        youtube,
+        external_radio_snapshot(),
+    ] {
+        panel.widgets.tab_stack.set_visible_child_name(LYRICS_PAGE);
+        assert_eq!(panel.widgets.session.selected.get(), PanelTab::Lyrics);
+
+        panel.set_external_snapshot(Some(snapshot));
+
+        assert!(!panel.widgets.lyrics_page.is_visible());
+        assert_eq!(panel.widgets.session.selected.get(), PanelTab::UpNext);
+        assert_eq!(
+            panel.widgets.tab_stack.visible_child_name().as_deref(),
+            Some(UP_NEXT_PAGE)
+        );
+        assert_eq!(
+            panel.widgets.footer.text(),
+            panel.widgets.footers.borrow().up_next
+        );
+
+        panel.set_external_snapshot(None);
+        assert!(panel.widgets.lyrics_page.is_visible());
+    }
 }
 
 #[test]

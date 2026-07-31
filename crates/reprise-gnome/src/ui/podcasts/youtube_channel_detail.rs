@@ -267,6 +267,25 @@ impl YoutubeChannelDetail {
         self.state.borrow().active_channel().is_some()
     }
 
+    pub(super) fn neighbour_ids_for_episode(&self, episode_id: i64) -> Option<Vec<i64>> {
+        let subscription_id = self.state.borrow().active_channel()?;
+        let rendered = self
+            .groups
+            .borrow()
+            .iter()
+            .find(|group| group.group.subscription_id == subscription_id)
+            .cloned()?;
+        let state = self.state.borrow().clone();
+        let projected = project_channel(&rendered, &state);
+        let ids = projected
+            .group
+            .episodes
+            .iter()
+            .map(|episode| episode.id)
+            .collect::<Vec<_>>();
+        ids.contains(&episode_id).then_some(ids)
+    }
+
     pub(super) fn update_download_state(&self, episode_id: i64, state: &DownloadState) {
         self.download_states
             .borrow_mut()

@@ -284,7 +284,7 @@ mod tests {
     }
 
     #[test]
-    fn podcast_external_transport_keeps_seek_and_blocks_queue_navigation() {
+    fn pod_21_podcast_external_transport_forwards_available_neighbours() {
         let state = MprisState {
             track_id: None,
             external_ref: Some("podcast/42".into()),
@@ -295,8 +295,8 @@ mod tests {
             ..playing_state()
         };
 
-        assert_eq!(next_command(&state), None);
-        assert_eq!(previous_command(&state), None);
+        assert_eq!(next_command(&state), Some(MprisCommand::Next));
+        assert_eq!(previous_command(&state), Some(MprisCommand::Previous));
         assert_eq!(
             seek_command(&state, 5_500_000),
             Some(MprisCommand::Seek(5_500))
@@ -317,6 +317,14 @@ mod tests {
             ),
             None
         );
+
+        let without_neighbours = MprisState {
+            can_next: false,
+            can_prev: false,
+            ..state
+        };
+        assert_eq!(next_command(&without_neighbours), None);
+        assert_eq!(previous_command(&without_neighbours), None);
     }
 
     #[test]
