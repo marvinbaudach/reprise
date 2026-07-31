@@ -116,20 +116,25 @@ run_source_youtube_scenario() {
     -metadata title="Source YouTube Track" -metadata artist="Reprise E2E" \
     -c:a flac "$music/source_youtube.flac"
   # `REPRISE_YTDLP_BIN` needs no cargo feature — unlike the podcast and radio
-  # routers, `ytdlp.rs` reads it unconditionally. A resolve is invoked as
-  # `--no-warnings --flat-playlist -J <url>` and must answer with the
-  # channel's own title plus its entries.
+  # routers, `ytdlp.rs` reads it unconditionally. The fake exposes its
+  # localized channel title only when the metadata listing requests the
+  # English language used by this isolated GUI session.
   cat >"$ytdlp" <<'YTDLP'
 #!/bin/sh
-printf '%s\n' '{"title":"Reprise Test Channel","entries":[
-  {"id":"vid-one","title":"Long Mix One","duration":3600},
-  {"id":"vid-two","title":"Long Mix Two","duration":2400}
-]}'
+case "$(printf '%s\n' "$@")" in
+  *"youtube:lang=en"*) channel_title="Reprise English Channel" ;;
+  *) channel_title="Wrong Provider Language" ;;
+esac
+printf '%s\n' "{\"title\":\"$channel_title\",\"entries\":[
+  {\"id\":\"vid-one\",\"title\":\"Long Mix One\",\"duration\":3600},
+  {\"id\":\"vid-two\",\"title\":\"Long Mix Two\",\"duration\":2400}
+]}"
 YTDLP
   chmod +x "$ytdlp"
 
   # Phase 1: opt-in, so the page is unreachable while the module is off.
-  source_content_start youtube "$music" "$fixtures" off 25 "$ytdlp"
+  LC_ALL=C.UTF-8 LANGUAGE= \
+    source_content_start youtube "$music" "$fixtures" off 25 "$ytdlp"
   snapshot=$(cua_snapshot "$APP_PID" "$WINDOW_ID" sy-off)
   assert_snapshot_absent "$snapshot" "No channels yet"
   assert_snapshot_absent "$snapshot" "Add channel"
@@ -137,7 +142,8 @@ YTDLP
 
   # Phase 2: switched on, a channel URL resolves through the fake binary.
   source_content_set_setting youtube module.youtube.enabled 1
-  source_content_start youtube "$music" "$fixtures" on 45 "$ytdlp"
+  LC_ALL=C.UTF-8 LANGUAGE= \
+    source_content_start youtube "$music" "$fixtures" on 45 "$ytdlp"
   snapshot=$(wait_for_label "$APP_PID" "$WINDOW_ID" "No channels yet" sy-empty)
   assert_snapshot_contains "$snapshot" "Add channel"
 
@@ -157,12 +163,13 @@ YTDLP
     "$APP_PID" "$WINDOW_ID" "https://www.youtube.com/@reprisetest" sy-url
   wait_for_label "$APP_PID" "$WINDOW_ID" "Preview" sy-preview-offered >/dev/null
   cua_click_label "$APP_PID" "$WINDOW_ID" "Preview" sy-preview
-  wait_for_label "$APP_PID" "$WINDOW_ID" "Reprise Test Channel" sy-preview-shown >/dev/null
+  wait_for_label \
+    "$APP_PID" "$WINDOW_ID" "Reprise English Channel" sy-preview-shown >/dev/null
   cua_click_label "$APP_PID" "$WINDOW_ID" "Subscribe" sy-subscribe
 
   # Two entries in, two episodes out: the count can only come from the fake
   # binary's answer, where the channel's name could have come from the URL.
-  snapshot=$(wait_for_label "$APP_PID" "$WINDOW_ID" "Reprise Test Channel" sy-channel)
+  snapshot=$(wait_for_label "$APP_PID" "$WINDOW_ID" "Reprise English Channel" sy-channel)
   assert_snapshot_contains "$snapshot" "1 channel · 2 episodes · 0 new"
   assert_snapshot_absent "$snapshot" "No channels yet"
 

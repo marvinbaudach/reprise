@@ -37,7 +37,8 @@ fn pod_10_extended_listing_requests_the_first_forty_provider_items() {
             log.display()
         ),
     );
-    let runner = YtDlp::with_binary_and_timeouts(binary, short_timeouts());
+    let runner = YtDlp::with_binary_and_timeouts(binary, short_timeouts())
+        .with_metadata_language(Some("de"));
 
     runner
         .list_range("https://www.youtube.com/channel/UCmore", 40)
@@ -50,6 +51,8 @@ fn pod_10_extended_listing_requests_the_first_forty_provider_items() {
             "--flat-playlist",
             "--extractor-args",
             "youtubetab:approximate_date",
+            "--extractor-args",
+            "youtube:lang=de",
             "-I",
             "1:40",
             "-J",

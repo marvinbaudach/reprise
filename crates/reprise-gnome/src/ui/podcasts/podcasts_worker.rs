@@ -332,10 +332,8 @@ fn process_request(
             let result = podcasts::config::load(conn)
                 .map_err(|error| error.to_string())
                 .and_then(|config| {
-                    let ytdlp = podcasts::ytdlp::YtDlp::discover_with_browser(
-                        config.ytdlp_path.as_deref(),
-                        config.youtube_browser,
-                    );
+                    let ytdlp =
+                        super::metadata_ytdlp(config.ytdlp_path.as_deref(), config.youtube_browser);
                     podcasts::pipeline::refresh_with_download_progress(
                         conn,
                         &podcasts::pipeline::HttpFeedFetcher,
@@ -361,10 +359,8 @@ fn process_request(
             let result = podcasts::config::load(conn)
                 .map_err(|error| error.to_string())
                 .and_then(|config| {
-                    let ytdlp = podcasts::ytdlp::YtDlp::discover_with_browser(
-                        config.ytdlp_path.as_deref(),
-                        config.youtube_browser,
-                    );
+                    let ytdlp =
+                        super::metadata_ytdlp(config.ytdlp_path.as_deref(), config.youtube_browser);
                     podcasts::pipeline::load_more_youtube(
                         conn,
                         &ytdlp,
