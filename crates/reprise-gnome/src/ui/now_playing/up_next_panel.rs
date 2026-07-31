@@ -8,7 +8,8 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use reprise_core::cover::ThumbnailSize;
 use reprise_core::db::Db;
-use reprise_core::models::Track;
+use reprise_core::queries::QueueItemMetadata;
+use reprise_core::up_next::QueueItem;
 
 use super::cover_loader::CoverLoader;
 use crate::ui::track_list::queue_row_mapping::{classify, QueueRow};
@@ -61,6 +62,7 @@ fn format_up_next_footer_total(count: usize, total_duration_ms: i64) -> String {
 type OnJump = Rc<dyn Fn(QueueRow)>;
 type OnRemove = Rc<dyn Fn(QueueRow)>;
 type OnReorder = Rc<dyn Fn(QueueRow, QueueRow)>;
+type OnEnqueue = Rc<dyn Fn(&[QueueItem]) -> bool>;
 
 struct RowWidgets {
     cover: gtk4::Image,
@@ -79,6 +81,7 @@ pub(in crate::ui) struct UpNextPanel {
     on_jump: Rc<RefCell<Option<OnJump>>>,
     on_remove: Rc<RefCell<Option<OnRemove>>>,
     on_reorder: Rc<RefCell<Option<OnReorder>>>,
+    on_enqueue: Rc<RefCell<Option<OnEnqueue>>>,
     conn: Rc<Db>,
 }
 
@@ -90,12 +93,14 @@ impl UpNextPanel {
         let on_jump = Rc::new(RefCell::new(None));
         let on_remove = Rc::new(RefCell::new(None));
         let on_reorder = Rc::new(RefCell::new(None));
+        let on_enqueue = Rc::new(RefCell::new(None));
         let factory = build_factory(
             cover_loader,
             &queue_sections,
             &on_jump,
             &on_remove,
             &on_reorder,
+            &on_enqueue,
         );
         let selection = gtk4::NoSelection::new(Some(model.clone()));
         let rows = gtk4::ListView::new(Some(selection), Some(factory));
@@ -129,6 +134,7 @@ impl UpNextPanel {
             on_jump,
             on_remove,
             on_reorder,
+            on_enqueue,
             conn,
         })
     }
@@ -149,6 +155,10 @@ impl UpNextPanel {
         *self.on_reorder.borrow_mut() = Some(Rc::new(callback));
     }
 
+    pub(in crate::ui) fn set_on_enqueue(&self, callback: impl Fn(&[QueueItem]) -> bool + 'static) {
+        *self.on_enqueue.borrow_mut() = Some(Rc::new(callback));
+    }
+
     pub(in crate::ui) fn set_queue_model(&self, model: &QueueViewModel) -> String {
         let upcoming = model.upcoming();
         *self.queue_sections.borrow_mut() = upcoming.sections.clone();
@@ -163,8 +173,9 @@ impl UpNextPanel {
             });
         let mut total_duration_ms = 0_i64;
         for offset in (0..upcoming.total_len()).step_by(200) {
-            let ids = upcoming.ids_window(offset, 200);
-            let duration = match reprise_core::queries::query_queue_duration_ms(&self.conn, &ids) {
+            let items = upcoming.items_window(offset, 200);
+            let duration = match reprise_core::queries::query_queue_duration_ms(&self.conn, &items)
+            {
                 Ok(duration) => duration,
                 Err(error) => {
                     tracing::warn!(%error, "could not load up-next panel duration window");
@@ -172,7 +183,7 @@ impl UpNextPanel {
                 }
             };
             total_duration_ms = total_duration_ms.saturating_add(duration);
-            if ids.is_empty() {
+            if items.is_empty() {
                 break;
             }
         }
@@ -222,6 +233,7 @@ fn build_factory(
     on_jump: &Rc<RefCell<Option<OnJump>>>,
     on_remove: &Rc<RefCell<Option<OnRemove>>>,
     on_reorder: &Rc<RefCell<Option<OnReorder>>>,
+    on_enqueue: &Rc<RefCell<Option<OnEnqueue>>>,
 ) -> gtk4::SignalListItemFactory {
     let factory = gtk4::SignalListItemFactory::new();
     let states: Rc<RefCell<HashMap<usize, Rc<RowWidgets>>>> = Rc::new(RefCell::new(HashMap::new()));
@@ -231,6 +243,7 @@ fn build_factory(
         let on_jump = on_jump.clone();
         let on_remove = on_remove.clone();
         let on_reorder = on_reorder.clone();
+        let on_enqueue = on_enqueue.clone();
         factory.connect_setup(move |_, object| {
             let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
                 return;
@@ -300,36 +313,44 @@ fn build_factory(
             row_widget.add_controller(drag_source);
 
             let widgets_for_enter = widgets.clone();
-            widgets.drop_target.connect_enter(move |_, _, _| {
-                if matches!(widgets_for_enter.row.get(), Some(QueueRow::PlayNext(_))) {
-                    gtk4::gdk::DragAction::MOVE
-                } else {
-                    gtk4::gdk::DragAction::empty()
-                }
-            });
+            widgets
+                .drop_target
+                .connect_enter(move |_, _, _| match widgets_for_enter.row.get() {
+                    Some(QueueRow::PlayNext(_)) => {
+                        gtk4::gdk::DragAction::COPY | gtk4::gdk::DragAction::MOVE
+                    }
+                    Some(_) => gtk4::gdk::DragAction::COPY,
+                    None => gtk4::gdk::DragAction::empty(),
+                });
             let widgets_for_drop = widgets.clone();
             let on_reorder = on_reorder.clone();
+            let on_enqueue = on_enqueue.clone();
             widgets.drop_target.connect_drop(move |_, value, _, _| {
                 let Ok(payload) = value.get::<String>() else {
                     return false;
                 };
-                let (Some(from), Some(to)) =
-                    (decode_drag_row(&payload), widgets_for_drop.row.get())
-                else {
-                    return false;
-                };
-                if !matches!(to, QueueRow::PlayNext(_)) {
-                    return false;
-                }
-                if crate::ui::track_list::queue_row_mapping::reorder_rows(from, to).is_none() {
-                    return false;
-                }
-                let callback = on_reorder.borrow().clone();
-                if let Some(callback) = callback {
-                    callback(from, to);
-                    true
-                } else {
-                    false
+                match decode_drop_payload(&payload) {
+                    Some(PanelDropPayload::Reorder(from)) => {
+                        let Some(to) = widgets_for_drop.row.get() else {
+                            return false;
+                        };
+                        if !matches!(to, QueueRow::PlayNext(_))
+                            || crate::ui::track_list::queue_row_mapping::reorder_rows(from, to)
+                                .is_none()
+                        {
+                            return false;
+                        }
+                        let callback = on_reorder.borrow().clone();
+                        callback.is_some_and(|callback| {
+                            callback(from, to);
+                            true
+                        })
+                    }
+                    Some(PanelDropPayload::Enqueue(items)) => on_enqueue
+                        .borrow()
+                        .clone()
+                        .is_some_and(|callback| callback(&items)),
+                    None => false,
                 }
             });
             row_widget.add_controller(widgets.drop_target.clone());
@@ -354,28 +375,43 @@ fn build_factory(
             else {
                 return;
             };
-            let track = boxed.borrow::<Track>();
-            widgets.title.set_label(&track.title);
-            widgets.artist.set_label(&track.artist);
+            let metadata = boxed.borrow::<QueueItemMetadata>();
+            widgets
+                .title
+                .set_label(crate::ui::track_list::queue_item_presentation::title(
+                    &metadata,
+                ));
+            widgets
+                .artist
+                .set_label(&crate::ui::track_list::queue_item_presentation::cell_text(
+                    &metadata, "artist",
+                ));
             let row = classify(item.position(), &queue_sections.borrow());
             widgets.row.set(row);
-            widgets
-                .drop_target
-                .set_actions(if matches!(row, Some(QueueRow::PlayNext(_))) {
-                    gtk4::gdk::DragAction::MOVE
-                } else {
-                    gtk4::gdk::DragAction::empty()
-                });
+            widgets.drop_target.set_actions(match row {
+                Some(QueueRow::PlayNext(_)) => {
+                    gtk4::gdk::DragAction::COPY | gtk4::gdk::DragAction::MOVE
+                }
+                Some(_) => gtk4::gdk::DragAction::COPY,
+                None => gtk4::gdk::DragAction::empty(),
+            });
             let generation = widgets.generation.get().wrapping_add(1);
             widgets.generation.set(generation);
             CoverLoader::set_placeholder(&widgets.cover);
-            cover_loader.load_into(
-                &widgets.cover,
-                &track.path,
-                ThumbnailSize::List,
-                generation,
-                &widgets.generation,
-            );
+            if let Some(track) = crate::ui::track_list::queue_item_presentation::track(&metadata) {
+                cover_loader.load_into(
+                    &widgets.cover,
+                    &track.path,
+                    ThumbnailSize::List,
+                    generation,
+                    &widgets.generation,
+                );
+            } else if let Some(icon) =
+                crate::ui::track_list::queue_item_presentation::source_icon(&metadata)
+            {
+                // Follow-up: use episode artwork after podcast-remote-artwork merges.
+                widgets.cover.set_icon_name(Some(icon));
+            }
         });
     }
     {
@@ -486,6 +522,20 @@ fn decode_drag_row(payload: &str) -> Option<QueueRow> {
         "context" => Some(QueueRow::UpNext(index)),
         _ => None,
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum PanelDropPayload {
+    Reorder(QueueRow),
+    Enqueue(Vec<QueueItem>),
+}
+
+fn decode_drop_payload(payload: &str) -> Option<PanelDropPayload> {
+    if let Some(row) = decode_drag_row(payload) {
+        return Some(PanelDropPayload::Reorder(row));
+    }
+    crate::ui::track_list_dnd::parse_drag_payload(payload)
+        .map(|payload| PanelDropPayload::Enqueue(payload.items))
 }
 
 fn keyboard_reorder_rows(

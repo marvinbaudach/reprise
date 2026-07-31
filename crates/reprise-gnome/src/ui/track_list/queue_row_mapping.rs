@@ -98,10 +98,21 @@ pub(crate) fn reorder_rows(from_row: QueueRow, to_row: QueueRow) -> Option<Queue
 mod tests {
     use super::*;
     use crate::ui::track_list::queue_sections::compose;
+    use reprise_core::up_next::QueueItem;
+
+    fn tracks(ids: &[i64]) -> Vec<QueueItem> {
+        ids.iter().copied().map(QueueItem::Track).collect()
+    }
 
     fn sections() -> Vec<QueueSection> {
         // View: [1] now playing | [2,3] play next | [4,5,6] up next
-        compose(Some(1), &[2, 3], &[4, 5, 6], Some("Music")).sections
+        compose(
+            Some(QueueItem::Track(1)),
+            &tracks(&[2, 3]),
+            &[4, 5, 6],
+            Some("Music"),
+        )
+        .sections
     }
 
     #[test]
@@ -191,7 +202,7 @@ mod tests {
     #[test]
     fn without_play_next_has_no_drop_target() {
         // View: [1] now playing | [4,5] up next — no Play Next section.
-        let s = compose(Some(1), &[], &[4, 5], Some("Music")).sections;
+        let s = compose(Some(QueueItem::Track(1)), &[], &[4, 5], Some("Music")).sections;
         assert_eq!(reorder_op(2, 1, &s), None);
         assert_eq!(reorder_op(1, 2, &s), None);
         assert_eq!(reorder_op(2, 0, &s), None);

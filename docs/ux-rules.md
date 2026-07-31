@@ -202,7 +202,7 @@ human. Rationale for changes lives in the git history.
 - **PLAY-4b** [active] [gtk] — Double-click on a concrete Missing row:
   toast "File missing since …" + button "Show in Missing files".
   Enqueueing (Play next/Add to queue) is disabled for Missing.
-- **PLAY-5** [replaced by PLAY-5a/PLAY-5b] — Original queue-hygiene
+- **PLAY-5** [replaced by PLAY-5a/PLAY-5b/PLAY-5c] — Original queue-hygiene
   umbrella rule; split during hardening into the sub-rules deleted (5a)
   and unmounted (5b).
 - **PLAY-5a** [active] [core] — Deleted hygiene: externally deleted
@@ -214,6 +214,9 @@ human. Rationale for changes lives in the git history.
   (P-6). No background event (deleted, unmounted, sync removal, watcher)
   stops the playing track — explicit user actions (double-click, Play
   all, OS-open) naturally change playback.
+- **PLAY-5c** [active] [core] — Unsubscribed episode hygiene: an episode
+  whose show is no longer subscribed leaves the manual queue silently,
+  including during session restoration and before queue advance.
 - **PLAY-6** [planned] [gtk] — Shuffle/Repeat are global player states
   (player bar), not view states. Repeat cycles: off → all → one.
 - **PLAY-7** [replaced by PLAY-7a] — The player bar is a structural
@@ -233,12 +236,13 @@ human. Rationale for changes lives in the git history.
   runs under or behind it. Its background is opaque.
 
 - **PLAY-8** [active] [core] — **Playback is an immutable snapshot.** At
-  start, ordered track IDs, cursor, complete browser origin, and its
-  display name are frozen. Later navigation, search, facets, or even
-  refining down to zero hits change neither the snapshot nor the running
-  track. After the last track, playback ends with Repeat off, unless an
-  explicit Up Next entry follows; deletion hygiene is governed by
-  PLAY-5a/5b.
+  start, the automatic context's ordered track IDs, cursor, complete
+  browser origin, and its display name are frozen; typed manual queue
+  items remain a separate ordered line in front. Later navigation,
+  search, facets, or even refining down to zero hits change neither the
+  snapshot nor the running item. After the last context track, playback
+  ends with Repeat off unless an explicit manual entry follows; queue
+  hygiene is governed by PLAY-5a/5b/5c.
 - **PLAY-9** [active] [gtk] — Play/Pause, with playback stopped and no
   loaded title, queue snapshot, or "Play Next", immediately starts a
   randomly chosen existing library title. For this, an immutable
@@ -1028,7 +1032,9 @@ human. Rationale for changes lives in the git history.
 - **FB-6** [active] [core] — File deleted (externally, watcher): no
   toast per file (noise) — row turns gray/disappears per the Missing
   rules, the ISSUES badge counts up. Exception: the currently playing
-  track faults → skip + one toast "Track unavailable — skipped".
+  queue item faults → skip. A track shows one toast "Track unavailable
+  — skipped"; consecutive unplayable queued episodes collapse into one
+  "Skipped N unplayable episodes" toast instead of one toast per skip.
 - **FB-7** [active] [core] — "Remove from library" does not delete but
   sets `removed_at` (tombstone); the row with ratings, play counts and
   playlist positions stays fully intact for 10 s, Undo only resets
@@ -1108,7 +1114,7 @@ human. Rationale for changes lives in the git history.
   Their visible order is also the playback order; as long as something
   is playing, the queue never shows two empty sections.
 - **QUE-3** [active] [core] — Played manual entries silently disappear
-  from "Next in Queue" on track change: no strikethrough and no
+  from "Next in Queue" on queue-item change: no strikethrough and no
   lingering. The section contains only the still-pending future.
   "Remove" in the panel removes exactly that entry from the queue,
   never from the library.
@@ -1121,11 +1127,18 @@ human. Rationale for changes lives in the git history.
   neither silent discarding nor a dialog nor a queue history. "Remove"
   removes from the queue, never from the library.
 - **QUE-6** [active] [core] — Both surfaces read a shared queue model.
-  Metadata comes from a single batched query over the queue IDs, never a
-  per-row query; row recycling and loading only the visible window
-  bound widgets and work independent of queue length. With the panel
-  closed or another tab active, track changes and reorders only update
-  the model and render no panel rows.
+  Metadata comes from one batched query per item kind present in the
+  visible window, never a per-row query; row recycling and loading only
+  the visible window bound widgets and work independent of queue length.
+  With the panel closed or another tab active, item changes and reorders
+  only update the model and render no panel rows.
+- **QUE-9** [active] [core] — The manual queue stores typed track and
+  episode entries and preserves their identity even when their numeric
+  IDs collide. RSS and YouTube episodes advance in manual queue order,
+  never enter the automatic "Continuing from …" context, never earn a
+  listen, and are never gaplessly pre-fed. POD-20 owns their shared
+  playing marker and POD-21 owns their frozen queue-neighbour transport.
+  Radio remains excluded.
 
 ## K. Filter & search visibility
 
@@ -1459,6 +1472,17 @@ own statement).
 - **CTX-10** [active] [gtk] — „Show in Files" is active when all
   selected files exist and are in the same folder (a single Nautilus
   multi-selection in one window), otherwise grayed out.
+- **CTX-11** [planned] [gtk] — A Queue selection containing only tracks
+  keeps using the CTX-1 track-menu builder. As soon as the selection
+  contains an episode, the Queue routes to a typed common-action menu:
+  „Move to top", positional reorder, and „Remove from queue". Track- or
+  podcast-specific actions never apply to a heterogeneous selection.
+  <!-- REVIEW: Regelvorschlag -->
+- **CTX-12** [active] [gtk] — If a podcast episode cannot currently be
+  resolved, "Play next" and "Add to queue" stay visible but disabled.
+  Activating either route revalidates every selected episode against the
+  current subscription and tombstone state; a stale or mixed-validity
+  selection is refused as a whole and is never guessed from a numeric ID.
 
 ## O. Motion & Transitions
 
@@ -3415,7 +3439,7 @@ listening statistics.
   through preview and options to a confirmation. Network and
   subprocess work starts only on submit and never runs on the GTK main
   loop.
-- **SRC-4** [active] [gtk] — Removal takes effect immediately, stays
+- **SRC-4** [replaced by SRC-4a/SRC-4b] [gtk] — Removal takes effect immediately, stays
   tombstoned for ten seconds, and is reversible via a high-priority
   undo toast. Context menu and hover star offer the same destructive
   action; "Play Next" and "Add to Queue" are entirely absent. Podcast
@@ -3521,6 +3545,15 @@ listening statistics.
   batch actions. Actions that are meaningless for more than one episode are
   hidden rather than applied to an arbitrary member, and a batch reports
   itself with a single aggregated toast and a single undo.
+- **SRC-4a** [active] [gtk] — Radio keeps SRC-4's removal and undo
+  behavior, and its station menus continue to omit "Play Next" and "Add
+  to Queue". A live stream is deliberately not a citizen of an ordered
+  queue.
+- **SRC-4b** [active] [gtk] — Podcasts and YouTube keep SRC-4's removal,
+  download-preservation, and undo behavior. Their episode menus additionally
+  expose "Play Next" and "Add to Queue" for the current episode selection;
+  the same actions are the keyboard-accessible partner of the typed episode
+  drag source. This asymmetry with radio is deliberate.
 - **POD-1** [active] [core] — Episode status is a pure derivation:
   Played exactly when `played_at` is set, otherwise Resume when
   `position_ms > 0`, otherwise unstarted. The visible New pill is a

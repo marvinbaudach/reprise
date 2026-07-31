@@ -30,6 +30,17 @@ impl PodcastsView {
                 }
             },
         );
+        self.add_selected_action(
+            &group,
+            podcasts_context_menu::ACTION_PLAY_NEXT,
+            |view, ids| view.queue_selected_episodes(&ids, QueuePlacement::PlayNext),
+        );
+        self.add_selected_action(
+            &group,
+            podcasts_context_menu::ACTION_ADD_TO_QUEUE,
+            |view, ids| view.queue_selected_episodes(&ids, QueuePlacement::End),
+        );
+        podcasts_context_menu::install_disabled_queue_actions(&group);
         self.add_target_action(
             &group,
             podcasts_context_menu::ACTION_TOGGLE_PLAYED,
@@ -209,6 +220,20 @@ impl PodcastsView {
         if result.succeeded() > 0 {
             self.refresh();
             (self.callbacks.on_sidebar_refresh)();
+        }
+    }
+
+    fn queue_selected_episodes(&self, episode_ids: &[i64], placement: QueuePlacement) {
+        let Some(items) = available_episode_items(&self.conn, episode_ids) else {
+            tracing::warn!("refused stale or unavailable podcast queue selection");
+            return;
+        };
+        let queued = match placement {
+            QueuePlacement::PlayNext => (self.callbacks.on_play_next)(&items),
+            QueuePlacement::End => (self.callbacks.on_add_to_queue)(&items),
+        };
+        if queued {
+            self.show_batch_toast(&strings::episodes_added_to_queue_toast(items.len()));
         }
     }
 
@@ -403,6 +428,27 @@ impl PodcastsView {
     }
 }
 
+#[derive(Clone, Copy)]
+enum QueuePlacement {
+    PlayNext,
+    End,
+}
+
+fn available_episode_items(db: &Db, episode_ids: &[i64]) -> Option<Vec<QueueItem>> {
+    if episode_ids.is_empty() {
+        return None;
+    }
+    episode_ids
+        .iter()
+        .map(|episode_id| {
+            podcasts::store::episode(db, *episode_id)
+                .ok()
+                .flatten()
+                .map(|_| QueueItem::Episode(*episode_id))
+        })
+        .collect()
+}
+
 fn batch_result_text(result: &BatchResult) -> String {
     strings::podcast_batch_result(result.succeeded(), result.failed)
 }
@@ -410,6 +456,8 @@ fn batch_result_text(result: &BatchResult) -> String {
 #[cfg(test)]
 mod batch_tests {
     use super::*;
+    use reprise_core::podcasts::feed::ParsedEpisode;
+    use reprise_core::podcasts::store::NewSubscription;
 
     #[test]
     fn src_12_partial_batch_feedback_reports_every_success_and_failure_once() {
@@ -435,5 +483,46 @@ mod batch_tests {
         };
 
         assert_eq!(batch_result_text(&result), "3 episodes updated");
+    }
+
+    #[test]
+    fn ctx_12_queue_activation_revalidates_every_selected_episode() {
+        let db = Db::open_in_memory().unwrap();
+        let subscription_id = podcasts::store::add_or_restore(
+            &db,
+            &NewSubscription {
+                kind: PodcastKind::Rss,
+                feed_url: "https://example.test/feed".into(),
+                title: "Show".into(),
+                author: None,
+                image_url: None,
+                auto_download: false,
+            },
+            1,
+        )
+        .unwrap();
+        let episode_id = podcasts::store::upsert_episode(
+            &db,
+            subscription_id,
+            &ParsedEpisode {
+                guid: "episode".into(),
+                title: "Episode".into(),
+                image_url: None,
+                audio_url: "https://example.test/episode.mp3".into(),
+                page_url: None,
+                published_at: None,
+                duration_secs: None,
+            },
+            2,
+        )
+        .unwrap()
+        .unwrap()
+        .episode_id;
+
+        assert_eq!(
+            available_episode_items(&db, &[episode_id]),
+            Some(vec![QueueItem::Episode(episode_id)])
+        );
+        assert_eq!(available_episode_items(&db, &[episode_id, i64::MAX]), None);
     }
 }

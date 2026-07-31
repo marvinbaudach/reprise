@@ -75,6 +75,26 @@ pub(super) fn wire(
     });
 }
 
+/// `MTP-46`/`SET-4`: the two source-module switches live in Preferences but
+/// change what a device may sync, and the device page renders from a snapshot
+/// that only a recompute refreshes. Without this the row of a switched-off
+/// source stays until something unrelated triggers one.
+///
+/// The runtime is held weakly: the preferences context outlives it in no
+/// meaningful sense, and a strong cycle through this closure would keep both
+/// alive for the life of the process.
+pub(super) fn wire_source_module_recompute(
+    preferences: &Rc<crate::ui::preferences::PreferencesContext>,
+    device_sync: &Rc<crate::ui::device_sync_runtime::DeviceSyncRuntime>,
+) {
+    let device_sync = Rc::downgrade(device_sync);
+    *preferences.on_source_modules_changed.borrow_mut() = Some(Rc::new(move || {
+        if let Some(device_sync) = device_sync.upgrade() {
+            device_sync.recompute_all_devices();
+        }
+    }));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

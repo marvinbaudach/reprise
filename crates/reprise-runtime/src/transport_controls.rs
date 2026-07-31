@@ -47,6 +47,7 @@ impl Transport {
                     .or_else(|| {
                         self.up_next
                             .pop_front()
+                            .and_then(reprise_core::up_next::QueueItem::track_id)
                             .map(|track_id| (track_id, Source::PlayNext))
                     })
                     .ok_or(RuntimeError::Rejected(Rejected::NothingToPlay))?;
@@ -155,6 +156,7 @@ impl Transport {
         let next = self
             .up_next
             .pop_front()
+            .and_then(reprise_core::up_next::QueueItem::track_id)
             .map(|track_id| (track_id, Source::PlayNext))
             .or_else(|| {
                 self.queue

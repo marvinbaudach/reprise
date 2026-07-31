@@ -53,10 +53,21 @@ fn source_total(
     } else {
         source.clone()
     };
-    queries::query_track_count_browsed(conn, &total_source, "", &BrowseFilter::default(), queue_ids)
-        .and_then(|value| {
-            usize::try_from(value).map_err(|_| rusqlite::Error::IntegralValueOutOfRange(0, value))
-        })
+    let queue_items = queue_ids
+        .iter()
+        .copied()
+        .map(reprise_core::up_next::QueueItem::Track)
+        .collect::<Vec<_>>();
+    queries::query_track_count_browsed(
+        conn,
+        &total_source,
+        "",
+        &BrowseFilter::default(),
+        &queue_items,
+    )
+    .and_then(|value| {
+        usize::try_from(value).map_err(|_| rusqlite::Error::IntegralValueOutOfRange(0, value))
+    })
 }
 
 #[cfg(test)]

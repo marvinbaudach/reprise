@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use rusqlite::{Connection, OptionalExtension};
 
 use crate::db::Db;
+use crate::up_next::QueueItem;
 
 use super::{DoctorScopeRequest, DoctorTrackRef, DoctorViewSnapshot, FrozenScope};
 
@@ -60,6 +61,12 @@ fn current_view_in_transaction(
     conn: &Connection,
     snapshot: &DoctorViewSnapshot,
 ) -> Result<Vec<DoctorTrackRef>, rusqlite::Error> {
+    let queue_items = snapshot
+        .queue_ids
+        .iter()
+        .copied()
+        .map(QueueItem::Track)
+        .collect::<Vec<_>>();
     let total = if snapshot.source == crate::view_source::ViewSource::Queue {
         i64::try_from(snapshot.queue_ids.len()).unwrap_or(i64::MAX)
     } else {
@@ -68,7 +75,7 @@ fn current_view_in_transaction(
             &snapshot.source,
             &snapshot.filter,
             &snapshot.browse,
-            &snapshot.queue_ids,
+            &queue_items,
         )?
     };
     let mut offset = 0;
@@ -84,7 +91,7 @@ fn current_view_in_transaction(
             &snapshot.browse,
             offset,
             PAGE_SIZE,
-            &snapshot.queue_ids,
+            &queue_items,
         )?;
         offset = offset.saturating_add(PAGE_SIZE);
         for track in page {

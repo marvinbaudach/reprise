@@ -219,7 +219,7 @@ impl PlayerController {
             .ids()
             .iter()
             .take(AGENT_QUEUE_WINDOW)
-            .copied()
+            .filter_map(|item| item.track_id())
             .collect();
         let context_total = self.queue.borrow().remaining_len();
         let context_track_ids = self.queue.borrow().remaining_window(0, AGENT_QUEUE_WINDOW);
@@ -406,6 +406,7 @@ impl PlayerController {
                 let current = self
                     .current_up_next
                     .get()
+                    .and_then(reprise_core::up_next::QueueItem::track_id)
                     .or_else(|| self.queue.borrow().current());
                 match current {
                     Some(id) => self.play_track_id_with_change(
