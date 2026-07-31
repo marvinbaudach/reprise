@@ -1,6 +1,6 @@
 //! Shared "should this move the viewport?" decision for the source lists.
 //!
-//! `SRC-12`: marking and scrolling are separate. Podcasts, YouTube and Radio
+//! `SRC-13`: marking and scrolling are separate. Podcasts, YouTube and Radio
 //! all answer "when do we reveal the loaded item" here, so the three surfaces
 //! cannot drift into three answers. How a surface reveals differs (a grouped
 //! expander tree versus a flat uniform table) and lives in each view's own
@@ -40,7 +40,7 @@ pub(in crate::ui) fn is_user_scrolling(last_activity: Option<Instant>) -> bool {
     last_activity.is_some_and(|last| last.elapsed() < USER_SCROLL_GRACE)
 }
 
-/// `SRC-12`: activating a row never moves the viewport, because the row was
+/// `SRC-13`: activating a row never moves the viewport, because the row was
 /// visible; a change caused elsewhere yields to recent scrolling; entering the
 /// view always reveals.
 pub(in crate::ui) fn reveal_policy(change: LoadedItemChange, user_scrolling: bool) -> RevealPolicy {
@@ -57,7 +57,7 @@ mod tests {
     use std::time::{Duration, Instant};
 
     #[test]
-    fn src_12_activating_a_row_never_moves_the_viewport() {
+    fn src_13_activating_a_row_never_moves_the_viewport() {
         // The row was visible — that is what made it activatable.
         assert_eq!(
             reveal_policy(LoadedItemChange::ActivatedHere, false),
@@ -70,7 +70,7 @@ mod tests {
     }
 
     #[test]
-    fn src_12_a_change_from_elsewhere_yields_to_recent_scrolling() {
+    fn src_13_a_change_from_elsewhere_yields_to_recent_scrolling() {
         assert_eq!(
             reveal_policy(LoadedItemChange::ChangedElsewhere, true),
             RevealPolicy::MarkerOnly
@@ -82,7 +82,7 @@ mod tests {
     }
 
     #[test]
-    fn src_12_entering_the_view_always_reveals() {
+    fn src_13_entering_the_view_always_reveals() {
         assert_eq!(
             reveal_policy(LoadedItemChange::ViewEntered, true),
             RevealPolicy::Reveal
@@ -94,7 +94,7 @@ mod tests {
     }
 
     #[test]
-    fn src_12_scroll_grace_matches_the_track_list_and_expires() {
+    fn src_13_scroll_grace_matches_the_track_list_and_expires() {
         assert_eq!(USER_SCROLL_GRACE, Duration::from_millis(1_500));
         assert!(!is_user_scrolling(None));
         assert!(is_user_scrolling(Some(Instant::now())));

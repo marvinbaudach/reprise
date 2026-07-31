@@ -1,6 +1,6 @@
 //! Revealing the loaded episode in the grouped list.
 //!
-//! `SRC-12`'s "how" for the podcast/YouTube surface. *Whether* to reveal is
+//! `SRC-13`'s "how" for the podcast/YouTube surface. *Whether* to reveal is
 //! decided in `crate::ui::source_reveal`; this module answers where the
 //! episode is and what has to open before it exists as a widget at all.
 
@@ -117,7 +117,7 @@ fn apply(
 }
 
 /// Centers `row` in `scroller` once the layout after a `render()` has settled.
-/// Never touches focus or selection — `SRC-12` reveals the viewport only.
+/// Never touches focus or selection — `SRC-13` reveals the viewport only.
 pub(super) fn center_row(
     scroller: &gtk4::ScrolledWindow,
     row: &gtk4::Widget,

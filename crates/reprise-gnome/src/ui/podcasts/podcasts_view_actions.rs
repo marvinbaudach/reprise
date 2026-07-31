@@ -16,7 +16,9 @@ impl PodcastsView {
                 EpisodeActivation::StartEpisode => {
                     if let Ok(Some(row)) = podcasts::store::episode(&view.conn, id) {
                         let episode_ids = view.neighbour_ids_for_episode(id);
+                        view.activating_here.set(true);
                         (view.callbacks.on_episode_activated)(row, episode_ids);
+                        view.activating_here.set(false);
                     }
                 }
             }

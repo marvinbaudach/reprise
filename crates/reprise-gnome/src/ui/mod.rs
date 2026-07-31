@@ -78,8 +78,6 @@ mod source_context_surface;
 mod source_empty_state;
 mod source_error_banner;
 mod source_error_details;
-// Wired into the source views in Task 4 of the source-list reveal plan.
-#[allow(dead_code)]
 mod source_reveal;
 mod stats;
 pub mod status_bar;
