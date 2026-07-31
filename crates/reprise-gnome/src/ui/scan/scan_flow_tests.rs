@@ -37,6 +37,20 @@ fn scan_completion_callback_runs_without_holding_its_refcell_borrow() {
 }
 
 #[test]
+fn scan_completion_notifies_every_registered_follow_up() {
+    let completion = ScanCompletion::default();
+    let calls = Rc::new(Cell::new(0));
+    for _ in 0..2 {
+        let calls = calls.clone();
+        completion.set(move || calls.set(calls.get() + 1));
+    }
+
+    completion.notify();
+
+    assert_eq!(calls.get(), 2);
+}
+
+#[test]
 fn progress_channel_keeps_only_the_latest_pending_update() {
     let (sender, receiver) = async_channel::bounded(1);
     publish_latest_progress(&sender, &receiver, ScanProgress::Discovering);

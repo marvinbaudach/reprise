@@ -138,8 +138,15 @@ Markdown is exempt: docs are split by subject, never by line count.
   — deliberately, it is the project's working language. Tests and shell scripts are code, so
   they stay English even when they enforce a German doc; rule IDs and status tokens
   (`[active]`, `[planned]`) are quoted verbatim and stay German.
-- **Never touch the user's music files or real database unasked.** Reprise only ever *reads*
-  the user's audio files; deletes are DB-only or trash-with-confirmation, never silent file ops.
+- **Never touch the user's music files or real database unasked.** Reprise writes inside the
+  music collection only in three cases: tags through an explicit Tag Editor action, a new `.lrc`
+  beside an existing track after downloading synchronized lyrics, and a new `cover.<ext>` in an
+  album directory after downloading a cover when no known folder image exists. Sidecars and cover
+  targets are derived only from track paths and never overwrite an existing file. Reprise writes
+  nothing else beside music files; deletes are DB-only or trash-with-confirmation, never silent
+  file ops. The single exception is its own abandoned writeback temporary —
+  `.reprise-<16 hex digits>.tmp`, a regular file untouched for an hour — which a later write in
+  that same directory sweeps up. Nothing else is ever matched.
   The real DB is `~/.local/share/reprise/reprise.db` (1686 real tracks; library root
   `/home/marvin/Music`). Do not scan, mutate, or point tooling at it.
 - **Headless verification MUST be fully isolated** — this bit us twice. Never run the app on the

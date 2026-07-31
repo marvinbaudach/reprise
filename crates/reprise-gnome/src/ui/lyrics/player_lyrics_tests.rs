@@ -3,10 +3,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use gtk4::prelude::*;
-use reprise_core::lyrics::{LyricsBody, LyricsQuery, TimedLine};
+use reprise_core::lyrics::{
+    LookupOptions, LyricsBody, LyricsHit, LyricsQuery, LyricsSource, TimedLine,
+};
 use reprise_core::playback::{AudioEffects, PlaybackBackend, PlaybackError, PlaybackState};
 use reprise_core::queries::TrackSummary;
 
+use super::lyrics_state::LyricsTrack;
 use super::lyrics_view::{LyricsView, ACTIVE_LINE_CLASS};
 use super::lyrics_worker::LyricsRuntime;
 use super::player_lyrics::{start_track_for_lyrics, PlayerLyrics};
@@ -93,24 +96,41 @@ fn lyrics_query(title: &str) -> LyricsQuery {
     }
 }
 
+fn lyrics_track(title: &str) -> LyricsTrack {
+    LyricsTrack {
+        query: lyrics_query(title),
+        track_path: Some(format!("/synthetic/{title}.flac").into()),
+    }
+}
+
+fn hit(body: LyricsBody, source: LyricsSource) -> LyricsHit {
+    LyricsHit { body, source }
+}
+
 #[test]
-fn lyr_2_fetch_only_when_enabled() {
+fn lyr_2_interactive_online_lookup_respects_tab_and_module_gates() {
     let calls = Arc::new(AtomicUsize::new(0));
+    let options = Arc::new(std::sync::Mutex::new(Vec::new()));
     let runtime = LyricsRuntime::setup_with_lookup(Arc::new({
         let calls = calls.clone();
-        move |_| {
+        let options = options.clone();
+        move |_, _, lookup_options| {
             calls.fetch_add(1, Ordering::SeqCst);
-            Ok(LyricsBody::Plain("synthetic lyrics".into()))
+            options.lock().unwrap().push(lookup_options);
+            Ok(hit(
+                LyricsBody::Plain("synthetic lyrics".into()),
+                if lookup_options.allow_network {
+                    LyricsSource::Lrclib
+                } else {
+                    LyricsSource::Tag
+                },
+            ))
         }
     }));
     let lyrics = PlayerLyrics::setup_with_runtime(runtime, false);
     lyrics.set_tab_open(true);
 
-    lyrics.set_track(Some(lyrics_query("Disabled")));
-    std::thread::sleep(std::time::Duration::from_millis(20));
-    assert_eq!(calls.load(Ordering::SeqCst), 0);
-
-    lyrics.set_enabled(true);
+    lyrics.set_track(Some(lyrics_track("Disabled")));
     for _ in 0..20 {
         if calls.load(Ordering::SeqCst) == 1 {
             break;
@@ -118,13 +138,15 @@ fn lyr_2_fetch_only_when_enabled() {
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
     assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        options.lock().unwrap().as_slice(),
+        &[LookupOptions {
+            allow_network: false,
+            force: false
+        }]
+    );
 
-    lyrics.set_tab_open(false);
-    lyrics.set_track(Some(lyrics_query("Closed")));
-    std::thread::sleep(std::time::Duration::from_millis(20));
-    assert_eq!(calls.load(Ordering::SeqCst), 1);
-
-    lyrics.set_tab_open(true);
+    lyrics.set_enabled(true);
     for _ in 0..20 {
         if calls.load(Ordering::SeqCst) == 2 {
             break;
@@ -132,6 +154,21 @@ fn lyr_2_fetch_only_when_enabled() {
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
     assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert!(options.lock().unwrap()[1].allow_network);
+
+    lyrics.set_tab_open(false);
+    lyrics.set_track(Some(lyrics_track("Closed")));
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+
+    lyrics.set_tab_open(true);
+    for _ in 0..20 {
+        if calls.load(Ordering::SeqCst) >= 3 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert_eq!(calls.load(Ordering::SeqCst), 3);
 }
 
 /// A restored session shows title and artist in the bar without playing
@@ -142,16 +179,19 @@ fn a_loaded_track_fetches_lyrics_before_playback_starts() {
     let calls = Arc::new(AtomicUsize::new(0));
     let runtime = LyricsRuntime::setup_with_lookup(Arc::new({
         let calls = calls.clone();
-        move |_| {
+        move |_, _, _| {
             calls.fetch_add(1, Ordering::SeqCst);
-            Ok(LyricsBody::Plain("synthetic lyrics".into()))
+            Ok(hit(
+                LyricsBody::Plain("synthetic lyrics".into()),
+                LyricsSource::Lrclib,
+            ))
         }
     }));
     let lyrics = PlayerLyrics::setup_with_runtime(runtime, true);
     lyrics.set_tab_open(true);
     lyrics.set_playback_state(PlaybackState::Stopped);
 
-    lyrics.set_track(Some(lyrics_query("Restored")));
+    lyrics.set_track(Some(lyrics_track("Restored")));
 
     for _ in 0..20 {
         if calls.load(Ordering::SeqCst) == 1 {
@@ -168,10 +208,14 @@ fn successful_backend_start_builds_one_exact_lyrics_query() {
     let query = start_track_for_lyrics(&backend, &summary()).unwrap();
 
     assert_eq!(backend.play_calls.get(), 1);
-    assert_eq!(query.title, "Exact title");
-    assert_eq!(query.artist, "Exact artist");
-    assert_eq!(query.album, "Exact album");
-    assert_eq!(query.duration_ms, 123_456);
+    assert_eq!(query.query.title, "Exact title");
+    assert_eq!(query.query.artist, "Exact artist");
+    assert_eq!(query.query.album, "Exact album");
+    assert_eq!(query.query.duration_ms, 123_456);
+    assert_eq!(
+        query.track_path.as_deref(),
+        Some(std::path::Path::new("/synthetic/song.flac"))
+    );
 }
 
 #[test]
@@ -186,22 +230,20 @@ fn failed_backend_start_never_produces_a_lyrics_query() {
 fn runtime_result_tracks_position_and_stop_clears_the_view() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
-    let runtime = LyricsRuntime::setup_with_lookup(Arc::new(|_| {
-        Ok(LyricsBody::Synced(vec![
-            TimedLine::new(1_000, "first synthetic line"),
-            TimedLine::new(2_000, "second synthetic line"),
-        ]))
+    let runtime = LyricsRuntime::setup_with_lookup(Arc::new(|_, _, _| {
+        Ok(hit(
+            LyricsBody::Synced(vec![
+                TimedLine::new(1_000, "first synthetic line"),
+                TimedLine::new(2_000, "second synthetic line"),
+            ]),
+            LyricsSource::Lrclib,
+        ))
     }));
     let lyrics = PlayerLyrics::setup_with_runtime(runtime, true);
     let view = LyricsView::new();
     view.set_tab_open(true);
     lyrics.set_view(&view);
-    lyrics.set_track(Some(LyricsQuery {
-        title: "Synthetic title".into(),
-        artist: "Synthetic artist".into(),
-        album: "Synthetic album".into(),
-        duration_ms: 10_000,
-    }));
+    lyrics.set_track(Some(lyrics_track("Synthetic title")));
 
     for _ in 0..100 {
         while gtk4::glib::MainContext::default().iteration(false) {}
@@ -230,17 +272,20 @@ fn runtime_result_tracks_position_and_stop_clears_the_view() {
 fn playing_synced_lyrics_advance_at_the_line_boundary_without_a_player_tick() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
-    let runtime = LyricsRuntime::setup_with_lookup(Arc::new(|_| {
-        Ok(LyricsBody::Synced(vec![
-            TimedLine::new(0, "first synthetic line"),
-            TimedLine::new(120, "second synthetic line"),
-        ]))
+    let runtime = LyricsRuntime::setup_with_lookup(Arc::new(|_, _, _| {
+        Ok(hit(
+            LyricsBody::Synced(vec![
+                TimedLine::new(0, "first synthetic line"),
+                TimedLine::new(120, "second synthetic line"),
+            ]),
+            LyricsSource::Lrclib,
+        ))
     }));
     let lyrics = PlayerLyrics::setup_with_runtime(runtime, true);
     let view = LyricsView::new();
     view.set_tab_open(true);
     lyrics.set_view(&view);
-    lyrics.set_track(Some(lyrics_query("Precisely timed")));
+    lyrics.set_track(Some(lyrics_track("Precisely timed")));
 
     let load_deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
     while view.line_labels().len() != 2 && std::time::Instant::now() < load_deadline {
@@ -268,17 +313,20 @@ fn playing_synced_lyrics_advance_at_the_line_boundary_without_a_player_tick() {
 fn paused_synced_lyrics_do_not_advance_at_a_scheduled_line_boundary() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
-    let runtime = LyricsRuntime::setup_with_lookup(Arc::new(|_| {
-        Ok(LyricsBody::Synced(vec![
-            TimedLine::new(0, "first synthetic line"),
-            TimedLine::new(150, "second synthetic line"),
-        ]))
+    let runtime = LyricsRuntime::setup_with_lookup(Arc::new(|_, _, _| {
+        Ok(hit(
+            LyricsBody::Synced(vec![
+                TimedLine::new(0, "first synthetic line"),
+                TimedLine::new(150, "second synthetic line"),
+            ]),
+            LyricsSource::Lrclib,
+        ))
     }));
     let lyrics = PlayerLyrics::setup_with_runtime(runtime, true);
     let view = LyricsView::new();
     view.set_tab_open(true);
     lyrics.set_view(&view);
-    lyrics.set_track(Some(lyrics_query("Paused timing")));
+    lyrics.set_track(Some(lyrics_track("Paused timing")));
 
     let load_deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
     while view.line_labels().len() != 2 && std::time::Instant::now() < load_deadline {

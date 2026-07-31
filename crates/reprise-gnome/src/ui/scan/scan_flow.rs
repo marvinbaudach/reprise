@@ -12,9 +12,9 @@ use reprise_core::db::Db;
 use reprise_core::library::settings;
 use reprise_core::library::watcher::WatcherHandle;
 
-pub(in crate::ui) use super::scan_controls::ScanControls;
 #[cfg(test)]
-pub(in crate::ui) use super::scan_controls::{ScanCancellation, ScanCompletion};
+pub(in crate::ui) use super::scan_controls::ScanCompletion;
+pub(in crate::ui) use super::scan_controls::{ScanCancellation, ScanControls};
 pub(in crate::ui) use super::scan_watcher::start_or_restart_watcher;
 #[cfg(test)]
 pub(in crate::ui) use super::scan_worker::publish_latest_progress;

@@ -397,6 +397,21 @@ pub fn is_ignored(path: &Path) -> bool {
     }
 }
 
+/// Test-only snapshot of the paths with an ignore window still open, so a
+/// self-writing module can prove it suppressed the watcher for *every* path
+/// its write touches — not only the final one.
+#[cfg(test)]
+pub(crate) fn ignored_paths() -> Vec<PathBuf> {
+    let now = Instant::now();
+    ignore_list()
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .iter()
+        .filter(|(_, deadline)| **deadline > now)
+        .map(|(path, _)| path.clone())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

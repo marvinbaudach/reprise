@@ -76,6 +76,7 @@ use crate::up_next::QueueItem;
 use crate::view_source::ViewSource;
 use rusqlite::Connection;
 
+mod album_directories;
 mod artist_context;
 pub mod autocomplete;
 mod browse;
@@ -90,6 +91,7 @@ mod queue;
 mod smart;
 mod stats;
 
+pub use album_directories::query_album_directories;
 pub use artist_context::{query_artist_albums, query_stats_album_target_for_path};
 pub use browse::{query_browse_values, BrowseFacet, BrowseFilter, BrowseValue};
 pub use clauses::build_track_ids_query;
@@ -156,10 +158,11 @@ pub use library_views::{
 pub use maintenance::{
     exclude_tracks_matching_paths, filter_present, mark_track_missing_if_current, purge_tombstones,
     query_has_live_tracks, query_import_error_count, query_live_track_ids, query_live_track_paths,
-    query_queue_purge_track_ids, query_queue_retained_track_ids, query_random_live_track_ids,
-    query_sync_tracks, query_track_album_artist, query_track_ids_by_title_desc,
-    query_track_ids_by_titles, query_track_summary, remove_missing_tracks,
-    remove_tracks_matching_paths, tombstone_tracks, track_id_for_path, undo_tombstone,
+    query_live_track_summaries, query_queue_purge_track_ids, query_queue_retained_track_ids,
+    query_random_live_track_ids, query_sync_tracks, query_track_album_artist,
+    query_track_ids_by_title_desc, query_track_ids_by_titles, query_track_summary,
+    remove_missing_tracks, remove_tracks_matching_paths, tombstone_tracks, track_id_for_path,
+    undo_tombstone,
 };
 // `remove_tracks_impl`/`RemoveGuard` are the internal shared deletion path
 // `remove_missing_tracks`/`purge_tombstones`/`remove_tracks_matching_paths` all funnel

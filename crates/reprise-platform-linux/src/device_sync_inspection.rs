@@ -236,6 +236,7 @@ async fn other_music_bytes(storage: &gio::File, excluded: &[String]) -> Result<u
 fn is_managed_item_file(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
     !name.ends_with(".part")
+        && !reprise_core::device_sync::lyrics_sidecar::is_sidecar_path(std::path::Path::new(&name))
 }
 
 /// The accept predicate for the YouTube-audio and podcast-episode targets:
@@ -352,11 +353,17 @@ async fn filesystem_bytes(
 
 #[cfg(test)]
 mod tests {
-    use super::managed_audio_file;
+    use super::{is_managed_item_file, managed_audio_file};
 
     #[test]
     fn mtp_47_a_podcast_file_named_audio_is_managed_by_the_inventory() {
         assert!(managed_audio_file("Show/2026-07-28 - Episode.audio"));
         assert!(!managed_audio_file("Show/2026-07-28 - Episode.audio.part"));
+    }
+
+    #[test]
+    fn lyr_7_lrc_attachments_are_not_independent_managed_inventory_entries() {
+        assert!(!is_managed_item_file("Artist/Album/Song.lrc"));
+        assert!(is_managed_item_file("Artist/Album/Song.opus"));
     }
 }

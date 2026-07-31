@@ -15,6 +15,7 @@ use crate::ui::artist_portrait_worker::ArtistPortraitRuntime;
 use crate::ui::concerts::ConcertsRuntime;
 use crate::ui::cover_download_worker::CoverDownloadRuntime;
 use crate::ui::library_player_bar::LibraryPlayerBarShell;
+use crate::ui::lyrics_batch::LyricsBatch;
 use crate::ui::now_playing::NowPlayingPanel;
 use crate::ui::player_controller::PlayerController;
 use crate::ui::podcasts::PodcastsRuntime;
@@ -132,6 +133,7 @@ pub(in crate::ui) struct PreferencesContext {
     pub(in crate::ui) concerts: Rc<ConcertsRuntime>,
     pub(in crate::ui) podcasts: Rc<PodcastsRuntime>,
     pub(in crate::ui) cover_download: CoverDownloadRuntime,
+    pub(in crate::ui) lyrics_batch: Rc<LyricsBatch>,
     pub(in crate::ui) artist_portrait: Rc<ArtistPortraitRuntime>,
     pub(in crate::ui) decorations: Rc<WindowDecorations>,
     preferences_dialog: RefCell<glib::WeakRef<adw::Dialog>>,
@@ -182,6 +184,7 @@ impl PreferencesContext {
         concerts: &Rc<ConcertsRuntime>,
         podcasts: &Rc<PodcastsRuntime>,
         cover_download: &CoverDownloadRuntime,
+        lyrics_batch: &Rc<LyricsBatch>,
         artist_portrait: &Rc<ArtistPortraitRuntime>,
         decorations: &Rc<WindowDecorations>,
     ) -> Rc<Self> {
@@ -213,6 +216,7 @@ impl PreferencesContext {
             concerts: concerts.clone(),
             podcasts: podcasts.clone(),
             cover_download: cover_download.clone(),
+            lyrics_batch: lyrics_batch.clone(),
             artist_portrait: artist_portrait.clone(),
             decorations: decorations.clone(),
             preferences_dialog: RefCell::new(glib::WeakRef::new()),
@@ -466,6 +470,10 @@ impl PreferencesContext {
         if let Some(player) = &self.player {
             player.recompute_lyrics_enabled();
         }
+        // `NET-1a`: the library-wide lyrics batch runs on its own thread and
+        // reads a shared gate — without this republish a run started before
+        // the switch would keep fetching for the rest of the library.
+        self.lyrics_batch.recompute_enabled();
         self.sidebar.refresh(reason);
         self.notify_source_modules_changed();
         // TODO(package-B): replace this fan-out and consumer-side database

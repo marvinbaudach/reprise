@@ -40,7 +40,7 @@ fn presentation(progress: BatchProgress) -> ProgressPresentation {
 }
 
 /// Subscribes to cover-download batch progress and projects it onto the
-/// sidebar scan card (via `ScanControls::show_cover_progress`). Terminal
+/// sidebar scan card (via `ScanControls::show_batch_progress`). Terminal
 /// states (complete/failed) remain visible briefly and then hide
 /// automatically, matching the old headerbar banner's behaviour.
 pub(in crate::ui) fn install(scan_controls: &ScanControls, batch: &Rc<CoverDownloadBatch>) {
@@ -61,11 +61,11 @@ pub(in crate::ui) fn install(scan_controls: &ScanControls, batch: &Rc<CoverDownl
                 return;
             }
 
-            controls.show_cover_progress(&pres.title, &pres.detail, pres.fraction);
+            controls.show_batch_progress(&pres.title, &pres.detail, pres.fraction);
 
+            let generation = hide_generation.get().wrapping_add(1);
+            hide_generation.set(generation);
             if pres.auto_hide {
-                let generation = hide_generation.get().wrapping_add(1);
-                hide_generation.set(generation);
                 let controls = controls.clone();
                 let hide_generation = hide_generation.clone();
                 glib::timeout_add_seconds_local_once(TERMINAL_HIDE_DELAY_SECS, move || {

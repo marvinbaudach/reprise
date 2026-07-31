@@ -2178,13 +2178,15 @@ property is set and yet nothing happens.
   refresh interval. A successful fetch removes the banner silently; cached
   content is never replaced, and three or more failures become one collected
   notice.
-- **LYR-1** [planned] [core] — Local embedded lyrics and `.lrc` sidecars
-  are shown independently of the Online Lyrics module. Reprise does not
-  yet read these local formats today; the rule stays planned until this
-  dedicated format feature exists.
-- **LYR-2** [active] [gtk] — LRCLIB is contacted only when the Lyrics tab
-  is open, local text is missing, and the Online Lyrics module is switched
-  on. There is neither prefetch nor batch fetch for upcoming queue entries.
+- **LYR-1** [active] [core] — Local embedded lyrics and `.lrc` sidecars
+  are shown independently of the Online Lyrics module. Sidecars take
+  precedence over embedded tags; synchronized text takes precedence over
+  plain text. Local lookup itself never changes files; only LYR-7 may create a
+  previously absent sidecar after a network result.
+- **LYR-2** [active] [gtk] — An interactive online lyrics lookup starts only
+  when the Lyrics tab is open, local synchronized text is missing, and the
+  Online Lyrics module is switched on. Local plain text is shown immediately
+  while the provider chain continues looking for synchronized text.
   What matters is the loaded track, not the playback state: a track
   restored from the session that sits in the player bar shows its lyrics
   without a prior start. The empty state "Play a track to see its lyrics"
@@ -2193,14 +2195,53 @@ property is set and yet nothing happens.
   the module switched off, a centered StatusPage shows an icon, the title
   "Online lyrics are disabled", the subtitle "Enable them to load missing
   lyrics automatically", and "Enable in Settings" as a deep link to the
-  briefly highlighted Plugins row. As long as LYR-1 stays planned, this
-  state promises no local embedded lyrics. A switched-on module with no
-  match shows "No lyrics found" instead.
+  briefly highlighted Plugins row. This state appears only after the always-on
+  local lookup found nothing. A switched-on module with no match shows "No
+  lyrics found" instead.
   A distinction from `NET-3`: this rule handles the **switched-off** module
   (the `NET-1a` family — a deliberate user decision, not connectivity) and
   stays `[active]` unchanged for it. The case "module on, but offline" is not
   specified for lyrics today; were it to arise, `NET-3` would govern it, not
   this rule — the two states must not be confused.
+- **LYR-5** [active] [core] — Lyrics providers run in this order: embedded
+  tags and `.lrc` sidecar locally, then LRCLIB, then NetEase. The first
+  synchronized result wins; the first plain result remains the fallback.
+  Instrumental stops the chain unless local text was already found. Transport
+  and 5xx failures open a per-host circuit breaker after three failures for
+  five minutes; a user retry bypasses cache and breaker. The Lyrics footer
+  names the source and whether the result is synchronized.
+- **LYR-6** [active] [gtk] — With the Online Lyrics module enabled, a
+  cancellable serial background run fills the lyrics cache for the present
+  library after the cover batch, after completed library scans, and the moment
+  the module is switched on — switching it on starts the run once; a further
+  settings change while it is already on never restarts a run in progress, and
+  switching it off only stops one. Tracks
+  with local lyrics, complete positive cache entries, or fresh negative
+  entries are skipped; a cached plain result is retried for synchronized text
+  at most once per seven-day negative-TTL window. Provider requests keep at
+  least 250 ms between calls to the same host. The shared ScanControls card
+  reports checked, cached, and unavailable counts; if every provider breaker
+  is open, the run fails immediately while already cached entries remain.
+- **LYR-7** [active] [core] — A synchronized lyrics result obtained from a
+  network provider is written as standard `.lrc` beside the existing track,
+  at the path derived exclusively by replacing the track extension. Plain,
+  instrumental, cached, tag, and existing-sidecar results never trigger a
+  write. An existing sidecar is never overwritten — on filesystems without
+  hard links (FAT, exFAT, NTFS, MTP) the file is created exclusively instead
+  of published atomically, which still cannot replace one. Every filesystem
+  failure is logged but otherwise silent, so the cache
+  result and displayed lyrics remain available. The write is invisible to the
+  folder watcher — neither the sidecar nor its temporary file triggers a
+  library rescan — and sweeps up temporary files an interrupted earlier write
+  abandoned in that directory, matching Reprise's own name pattern and
+  nothing else. Device sync copies this
+  sidecar under the transferred audio's basename, and removes it with that
+  audio only when the library still holds the sidecar it was mirrored from —
+  a `.lrc` on the device with no library counterpart, or one beside a file
+  the run cannot trace back to the library at all (an unrecorded orphan, a
+  podcast or YouTube download), is the user's own and stays. The attachment
+  never counts as another transfer, and its failure
+  never fails the track transfer.
 - **DISCOVER-1** [replaced by BROWSE-1] — Network features without a
   permanently visible surface of their own get exactly one subtle,
   dismissible inline hint at the location of the visible gap: covers from
@@ -3113,6 +3154,28 @@ means deterministic and high-confidence, never „without review".
   then wins for all tracks of the album identity; the music files remain
   unchanged. With the module disabled or the network unavailable, purely
   local resolution remains in effect.
+
+- **COVER-1** [active] [core] — After a downloaded album cover has been
+  published in the XDG cache, Reprise also writes `cover.<ext>` into every
+  existing directory represented by the live track paths of that album, but
+  only into a directory that holds no other album: in a flat library or a
+  compilation dump, where one folder answers for several albums, nothing is
+  written. The extension comes from the validated image bytes. Reprise only
+  fills gaps, so an album that already has artwork gets no file: if any
+  canonical folder image (`cover`, `folder`, `front`, or `album` with a
+  supported image extension) exists there, or any track in that directory
+  carries an embedded picture — including the differing-embedded-art case of
+  `BROWSE-10`, which is a cache canonicalization, not a missing cover —
+  Reprise writes nothing and never overwrites it. On filesystems without
+  hard links (FAT, exFAT, NTFS, MTP)
+  the file is created exclusively instead of published atomically, which
+  still cannot replace one. Every filesystem failure is logged
+  but otherwise silent, so the cached download remains successful. The write
+  is invisible to the folder watcher — neither the cover nor its temporary
+  file triggers a library rescan — and sweeps up temporary files an
+  interrupted earlier write abandoned in that directory, matching Reprise's
+  own name pattern and nothing else. Covers for release groups without a
+  local album remain cache-only.
 
 ## AA. External changes (live refresh from CLI/MCP)
 

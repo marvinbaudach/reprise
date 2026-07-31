@@ -101,6 +101,18 @@ fn feature_queries_filter_and_order_tracks_for_their_consumers() {
         ]
     );
     assert_eq!(
+        query_live_track_summaries(&db)
+            .unwrap()
+            .into_iter()
+            .map(|summary| summary.path)
+            .collect::<Vec<_>>(),
+        vec![
+            "/music/a.flac".to_string(),
+            "/music/b.flac".to_string(),
+            "/music/c.flac".to_string()
+        ]
+    );
+    assert_eq!(
         query_track_ids_by_titles(&db, &["SmokeFirst", "SmokeFast"])
             .unwrap()
             .get("SmokeFirst"),
