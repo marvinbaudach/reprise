@@ -19,7 +19,9 @@ use super::sidebar_issue_cleanup;
 use super::sidebar_presentation::{self, NavIcon};
 use super::strings;
 use super::surface::remember_issue_focus_entry;
-use super::{find_row, resolve_select_source, select_row_in_its_listbox, RowEntry, Shared};
+use super::{
+    find_row, has_sidebar_row, resolve_select_source, select_row_in_its_listbox, RowEntry, Shared,
+};
 
 pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, reason: &str) {
     let refresh_number = shared.refresh_count.get() + 1;
@@ -365,6 +367,20 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
     );
 
     let requested_source = force_select.unwrap_or_else(|| shared.current_source.borrow().clone());
+    if !has_sidebar_row(&requested_source) {
+        // UX FIL-1c: album/artist/genre scopes are opened from inside the
+        // track list and never get a row. Their absence from the row set is
+        // the normal state, so falling back to Library here would route the
+        // user out of the scope they are looking at — which is exactly what
+        // every queue mutation ("up next changed", i.e. every play started
+        // from a scope) used to do, dropping the scope chip and re-showing
+        // the whole library. Leave the selection empty instead.
+        tracing::debug!(
+            scope = %requested_source.label(),
+            "scope view has no sidebar row; leaving the selection empty"
+        );
+        return;
+    }
     let requested_row = find_row(shared, &requested_source);
     let (select_source, fell_back) =
         resolve_select_source(requested_source.clone(), requested_row.is_some());
