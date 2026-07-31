@@ -298,7 +298,10 @@ fn refresh_podcasts(
     db: &reprise_core::db::Db,
 ) -> Result<PodcastRefreshResult, DataError> {
     let config = reprise_core::podcasts::config::load(db).map_err(DataError::Db)?;
-    let ytdlp = reprise_core::podcasts::ytdlp::YtDlp::discover(config.ytdlp_path.as_deref());
+    let ytdlp = reprise_core::podcasts::ytdlp::YtDlp::discover_with_browser(
+        config.ytdlp_path.as_deref(),
+        config.youtube_browser,
+    );
     let download_root = db_path
         .parent()
         .unwrap_or_else(|| Path::new("."))
@@ -429,10 +432,13 @@ fn add_podcast(
             )
             .unwrap_or(false) =>
         {
-            let listing = podcasts::ytdlp::YtDlp::discover(config.ytdlp_path.as_deref())
-                .list(url)
-                .map(podcasts::youtube::project_playlist)
-                .map_err(|error| podcast_source_error(&error))?;
+            let listing = podcasts::ytdlp::YtDlp::discover_with_browser(
+                config.ytdlp_path.as_deref(),
+                config.youtube_browser,
+            )
+            .list(url)
+            .map(podcasts::youtube::project_playlist)
+            .map_err(|error| podcast_source_error(&error))?;
             (
                 podcasts::pipeline::project_youtube_feed(listing, config.import_count),
                 None,

@@ -1,7 +1,13 @@
-use std::{ffi::OsStr, fs, path::PathBuf};
+use std::{
+    ffi::OsStr,
+    fs,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 use super::test_support::{fake_binary, short_timeouts, CapturedLogs, LogCapture};
 use super::{classify_stderr, finalize_download, resolve_binary, YtDlp, YtDlpFailureKind};
+use crate::podcasts::config::YoutubeBrowser;
 
 #[test]
 fn pod_3_ytdlp_errors_are_actionable_and_never_expose_provider_details() {
@@ -80,6 +86,154 @@ fn binary_discovery_prefers_environment_then_setting_then_path() {
 }
 
 #[test]
+fn browser_session_discovery_requires_an_explicit_nonempty_override() {
+    assert_eq!(super::discovery::resolve_browser_session(None), None);
+    assert_eq!(
+        super::discovery::resolve_browser_session(Some(OsStr::new(" \t"))),
+        None
+    );
+    assert_eq!(
+        super::discovery::resolve_browser_session(Some(OsStr::new(" brave "))),
+        Some("brave".into())
+    );
+}
+
+#[test]
+fn discover_forwards_the_environment_browser_session_to_download() {
+    const CHILD_OUTPUT: &str = "REPRISE_YTDLP_DISCOVERY_TEST_OUTPUT";
+    if let Some(output) = std::env::var_os(CHILD_OUTPUT) {
+        YtDlp::discover(None)
+            .download("https://www.youtube.com/watch?v=v1", Path::new(&output))
+            .unwrap();
+        return;
+    }
+
+    let directory = tempfile::tempdir().unwrap();
+    let output = directory.path().join("episode.audio");
+    let postprocessed = directory.path().join("episode.opus");
+    let log = directory.path().join("args");
+    let binary = fake_binary(
+        directory.path(),
+        &format!(
+            "printf '%s\\n' \"$@\" > '{}'\nprintf downloaded > '{}'\nprintf '%s\\n' '{}'",
+            log.display(),
+            postprocessed.display(),
+            postprocessed.display()
+        ),
+    );
+    let status = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "podcasts::ytdlp::tests::discover_forwards_the_environment_browser_session_to_download",
+            "--nocapture",
+        ])
+        .env("REPRISE_YTDLP_BIN", binary)
+        .env("REPRISE_YTDLP_COOKIES_FROM_BROWSER", "brave")
+        .env(CHILD_OUTPUT, &output)
+        .status()
+        .unwrap();
+
+    assert!(status.success(), "isolated discovery child failed");
+    let args = fs::read_to_string(log).unwrap();
+    assert!(
+        args.lines()
+            .collect::<Vec<_>>()
+            .windows(2)
+            .any(|pair| pair == ["--cookies-from-browser", "brave"]),
+        "discover did not forward the environment browser session: {args}"
+    );
+}
+
+#[test]
+fn pod_22_discover_forwards_the_configured_browser_session_to_download() {
+    const CHILD_OUTPUT: &str = "REPRISE_YTDLP_CONFIG_DISCOVERY_TEST_OUTPUT";
+    if let Some(output) = std::env::var_os(CHILD_OUTPUT) {
+        YtDlp::discover_with_browser(None, Some(YoutubeBrowser::Brave))
+            .download("https://www.youtube.com/watch?v=v1", Path::new(&output))
+            .unwrap();
+        return;
+    }
+
+    let directory = tempfile::tempdir().unwrap();
+    let output = directory.path().join("episode.audio");
+    let postprocessed = directory.path().join("episode.opus");
+    let log = directory.path().join("args");
+    let binary = fake_binary(
+        directory.path(),
+        &format!(
+            "printf '%s\\n' \"$@\" > '{}'\nprintf downloaded > '{}'\nprintf '%s\\n' '{}'",
+            log.display(),
+            postprocessed.display(),
+            postprocessed.display()
+        ),
+    );
+    let status = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "podcasts::ytdlp::tests::pod_22_discover_forwards_the_configured_browser_session_to_download",
+            "--nocapture",
+        ])
+        .env("REPRISE_YTDLP_BIN", binary)
+        .env_remove("REPRISE_YTDLP_COOKIES_FROM_BROWSER")
+        .env(CHILD_OUTPUT, &output)
+        .status()
+        .unwrap();
+
+    assert!(status.success(), "isolated discovery child failed");
+    let args = fs::read_to_string(log).unwrap();
+    assert!(
+        args.lines()
+            .collect::<Vec<_>>()
+            .windows(2)
+            .any(|pair| pair == ["--cookies-from-browser", "brave"]),
+        "discover did not forward the configured browser session: {args}"
+    );
+}
+
+#[test]
+fn pod_22_explicit_browser_opt_out_ignores_the_environment_override() {
+    const CHILD_OUTPUT: &str = "REPRISE_YTDLP_CONFIG_OPTOUT_TEST_OUTPUT";
+    if let Some(output) = std::env::var_os(CHILD_OUTPUT) {
+        YtDlp::discover_with_browser(None, None)
+            .download("https://www.youtube.com/watch?v=v1", Path::new(&output))
+            .unwrap();
+        return;
+    }
+
+    let directory = tempfile::tempdir().unwrap();
+    let output = directory.path().join("episode.audio");
+    let postprocessed = directory.path().join("episode.opus");
+    let log = directory.path().join("args");
+    let binary = fake_binary(
+        directory.path(),
+        &format!(
+            "printf '%s\\n' \"$@\" > '{}'\nprintf downloaded > '{}'\nprintf '%s\\n' '{}'",
+            log.display(),
+            postprocessed.display(),
+            postprocessed.display()
+        ),
+    );
+    let status = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "podcasts::ytdlp::tests::pod_22_explicit_browser_opt_out_ignores_the_environment_override",
+            "--nocapture",
+        ])
+        .env("REPRISE_YTDLP_BIN", binary)
+        .env("REPRISE_YTDLP_COOKIES_FROM_BROWSER", "brave")
+        .env(CHILD_OUTPUT, &output)
+        .status()
+        .unwrap();
+
+    assert!(status.success(), "isolated discovery child failed");
+    let args = fs::read_to_string(log).unwrap();
+    assert!(
+        !args.contains("--cookies-from-browser"),
+        "the explicit privacy opt-out was overridden: {args}"
+    );
+}
+
+#[test]
 fn fake_binary_reports_version_and_projects_flat_playlist() {
     let directory = tempfile::tempdir().unwrap();
     let binary = fake_binary(
@@ -145,6 +299,64 @@ printf '%s\n' '{"url":"https://googlevideo.test/ephemeral","duration":93.4}'
 
     assert_eq!(resolved.stream_url, "https://googlevideo.test/ephemeral");
     assert_eq!(resolved.duration_secs, Some(93));
+}
+
+#[test]
+fn pod_22_listing_search_and_resolve_pass_the_explicit_browser_session_to_ytdlp() {
+    let directory = tempfile::tempdir().unwrap();
+    let binary = fake_binary(
+        directory.path(),
+        r#"
+case "$*" in
+  "--cookies-from-browser brave --no-warnings --flat-playlist --extractor-args youtubetab:approximate_date -J https://youtube.test/@show")
+    printf '%s\n' '{"title":"Channel","entries":[{"id":"v1","title":"One"}]}'
+    ;;
+  "--cookies-from-browser brave --no-warnings --flat-playlist --extractor-args youtubetab:approximate_date -I 1:40 -J https://youtube.test/@show")
+    printf '%s\n' '{"title":"Channel","entries":[{"id":"v1","title":"One"}]}'
+    ;;
+  "--cookies-from-browser brave --no-warnings --flat-playlist -J ytsearch5:rust")
+    printf '%s\n' '{"title":"Search","entries":[{"id":"v1","title":"One"}]}'
+    ;;
+  "--cookies-from-browser brave --no-warnings --flat-playlist -J ytsearch20:rust")
+    printf '%s\n' '{"entries":[{"id":"v1","channel_id":"UC1","channel":"Channel"}]}'
+    ;;
+  "--cookies-from-browser brave --no-warnings -f bestaudio -j https://www.youtube.com/watch?v=v1")
+    printf '%s\n' '{"url":"https://googlevideo.test/ephemeral","duration":93.4}'
+    ;;
+  *) printf '%s\n' "unexpected arguments: $*" >&2; exit 2 ;;
+esac
+"#,
+    );
+    let runner =
+        YtDlp::with_binary_and_timeouts(binary, short_timeouts()).with_browser_session("brave");
+
+    runner.list("https://youtube.test/@show").unwrap();
+    runner.list_range("https://youtube.test/@show", 40).unwrap();
+    runner.search("rust").unwrap();
+    runner.search_channels("rust").unwrap();
+    runner
+        .resolve("https://www.youtube.com/watch?v=v1")
+        .unwrap();
+}
+
+#[test]
+fn pod_22_probe_and_update_do_not_read_the_browser_session() {
+    let directory = tempfile::tempdir().unwrap();
+    let binary = fake_binary(
+        directory.path(),
+        r#"
+case "$*" in
+  "--no-warnings --version") printf '%s\n' '2026.07.26' ;;
+  "--no-warnings -U") printf '%s\n' 'yt-dlp is up to date' ;;
+  *) printf '%s\n' "unexpected arguments: $*" >&2; exit 2 ;;
+esac
+"#,
+    );
+    let runner =
+        YtDlp::with_binary_and_timeouts(binary, short_timeouts()).with_browser_session("brave");
+
+    assert_eq!(runner.probe_version().unwrap(), "2026.07.26");
+    assert_eq!(runner.update().unwrap(), "yt-dlp is up to date");
 }
 
 #[test]

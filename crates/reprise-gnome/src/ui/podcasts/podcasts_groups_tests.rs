@@ -420,6 +420,30 @@ fn pod_13_a_failed_download_shows_its_classified_reason_without_hovering() {
     assert_eq!(reason.text(), "podcast source could not be reached");
 }
 
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn pod_22_verification_guidance_is_visible_in_the_failed_episode_row() {
+    gtk4::init().unwrap();
+    let state = DownloadState::Failed {
+        message: reprise_core::podcasts::YOUTUBE_BROWSER_RECOVERY_MESSAGE.into(),
+    };
+
+    let status = download_status(&state).downcast::<gtk4::Box>().unwrap();
+    let heading = status
+        .first_child()
+        .and_downcast::<gtk4::Label>()
+        .expect("the fixed 'Download failed' heading");
+    let reason = heading
+        .next_sibling()
+        .and_downcast::<gtk4::Label>()
+        .expect("the browser recovery must stay visible");
+
+    assert_eq!(
+        reason.text(),
+        strings::text(strings::YOUTUBE_BROWSER_RECOVERY)
+    );
+}
+
 /// `POD-13`: the retry contract must be reachable and distinguishable —
 /// the action stays clickable (not stuck disabled) and its affordance
 /// reads as "try again" rather than the plain first-download button.
