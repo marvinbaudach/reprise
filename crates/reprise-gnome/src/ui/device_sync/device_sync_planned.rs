@@ -173,6 +173,19 @@ fn removal_track_id(removal: &ManagedRemoval) -> Option<i64> {
     }
 }
 
+/// The library file this removal mirrored, when the inventory knows it.
+///
+/// An orphan is a file on the device that no inventory row accounts for, so
+/// there is nothing to trace it back to — and `LYR-7` only ever removes a
+/// device-side `.lrc` it can prove Reprise put there (see
+/// `effects::remove_lyrics_sidecar`).
+fn removal_source_path(removal: &ManagedRemoval) -> Option<PathBuf> {
+    match removal {
+        ManagedRemoval::Inventory(file) => Some(PathBuf::from(&file.source_path)),
+        ManagedRemoval::Orphan(_) => None,
+    }
+}
+
 /// Drives one run to its end.
 ///
 /// The machine emits at most one actionable effect at a time, so this is a

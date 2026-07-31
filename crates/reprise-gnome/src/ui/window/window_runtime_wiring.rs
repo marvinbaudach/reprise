@@ -22,6 +22,7 @@ use super::cover_download_batch::CoverDownloadBatch;
 use super::device_sync_runtime::DeviceSyncRuntime;
 use super::first_run::FirstRunDecision;
 use super::library_player_bar::LibraryPlayerBarShell;
+use super::lyrics_batch::LyricsBatch;
 use super::minimal_view::MinimalView;
 use super::now_playing::NowPlayingPanel;
 use super::player_controller::PlayerController;
@@ -67,6 +68,7 @@ pub(in crate::ui) struct RuntimeWiring<'a> {
     pub(in crate::ui) minimal_view: &'a Rc<MinimalView>,
     pub(in crate::ui) preferences: &'a Rc<PreferencesContext>,
     pub(in crate::ui) cover_batch: &'a Rc<CoverDownloadBatch>,
+    pub(in crate::ui) lyrics_batch: &'a Rc<LyricsBatch>,
     pub(in crate::ui) first_run_decision: FirstRunDecision,
     pub(in crate::ui) nav_history: &'a Rc<crate::ui::nav_history::NavHistory>,
     pub(in crate::ui) content_nav: &'a adw::NavigationView,
@@ -111,6 +113,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         minimal_view,
         preferences,
         cover_batch,
+        lyrics_batch,
         first_run_decision,
         nav_history,
         content_nav,
@@ -515,7 +518,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         });
     }
 
-    cover_batch.start();
+    lyrics_batch.start_after_cover(cover_batch);
     app.set_accels_for_action("win.toggle-minimal-view", &["<Control>m"]);
     app.set_accels_for_action("win.preferences", &["<Control>comma"]);
     app.set_accels_for_action("win.keyboard-shortcuts", &["<Control>question"]);

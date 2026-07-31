@@ -15,6 +15,7 @@ use super::scan_progress::{
 use super::strings;
 
 type OnScanComplete = Rc<dyn Fn()>;
+type OnCancelRequested = Rc<dyn Fn()>;
 type OnScanStateChanged = Rc<dyn Fn(bool)>;
 
 fn cloned_slot<T: Clone>(slot: &RefCell<Option<T>>) -> Option<T> {
@@ -22,16 +23,16 @@ fn cloned_slot<T: Clone>(slot: &RefCell<Option<T>>) -> Option<T> {
 }
 
 #[derive(Clone, Default)]
-pub(in crate::ui) struct ScanCompletion(Rc<RefCell<Option<OnScanComplete>>>);
+pub(in crate::ui) struct ScanCompletion(Rc<RefCell<Vec<OnScanComplete>>>);
 
 impl ScanCompletion {
     pub(in crate::ui) fn set(&self, callback: impl Fn() + 'static) {
-        self.0.borrow_mut().replace(Rc::new(callback));
+        self.0.borrow_mut().push(Rc::new(callback));
     }
 
     pub(in crate::ui) fn notify(&self) {
-        let callback = self.0.borrow().clone();
-        if let Some(callback) = callback {
+        let callbacks = self.0.borrow().clone();
+        for callback in callbacks {
             callback();
         }
     }
@@ -62,6 +63,7 @@ pub(in crate::ui) struct ScanControls {
     current_progress: Rc<RefCell<Option<ScanProgress>>>,
     completion: ScanCompletion,
     cancellation: ScanCancellation,
+    on_cancel_requested: Rc<RefCell<Vec<OnCancelRequested>>>,
     on_scan_state_changed: Rc<RefCell<Option<OnScanStateChanged>>>,
     empty_indicator: Rc<RefCell<Option<WeakEmptyScanIndicator>>>,
     sidebar_toggle: Rc<RefCell<Option<glib::WeakRef<gtk4::ToggleButton>>>>,
@@ -77,6 +79,7 @@ impl ScanControls {
             current_progress: Rc::new(RefCell::new(None)),
             completion: ScanCompletion::default(),
             cancellation: ScanCancellation::default(),
+            on_cancel_requested: Rc::new(RefCell::new(Vec::new())),
             on_scan_state_changed: Rc::new(RefCell::new(None)),
             empty_indicator: Rc::new(RefCell::new(None)),
             sidebar_toggle: Rc::new(RefCell::new(None)),
@@ -108,6 +111,20 @@ impl ScanControls {
 
     pub(in crate::ui) fn request_cancel(&self) {
         self.cancellation.request();
+        let observers = self.on_cancel_requested.borrow().clone();
+        for observer in observers {
+            observer();
+        }
+    }
+
+    /// Registers a background job that the scan card's cancel gesture should
+    /// also stop. The observer owns the decision whether the gesture was meant
+    /// for it — the scan's own cancellation flag stays private to the scan, so
+    /// a batch never cancels a scan and a scan never cancels a batch.
+    pub(in crate::ui) fn add_on_cancel_requested(&self, callback: impl Fn() + 'static) {
+        self.on_cancel_requested
+            .borrow_mut()
+            .push(Rc::new(callback));
     }
 
     pub(in crate::ui) fn reset_cancel(&self) {
@@ -220,7 +237,7 @@ impl ScanControls {
         }
     }
 
-    pub(in crate::ui) fn show_cover_progress(&self, title: &str, detail: &str, fraction: f64) {
+    pub(in crate::ui) fn show_batch_progress(&self, title: &str, detail: &str, fraction: f64) {
         for view in self.live_progress_views() {
             view.show_batch(title, detail, fraction);
         }

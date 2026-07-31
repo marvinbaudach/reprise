@@ -109,6 +109,15 @@ pub(super) async fn perform(
             }
             match result {
                 Ok(_) => {
+                    copy_lyrics_sidecar(
+                        runtime,
+                        work,
+                        &entry.track.source_path,
+                        &entry.device_path,
+                        &work.playlists_path,
+                        work.playlists_storage,
+                    )
+                    .await;
                     work.log.copied(bytes);
                     Event::TrackCopied(Ok(bytes))
                 }
@@ -229,6 +238,7 @@ pub(super) async fn perform(
             let managed = removal(work, index);
             let path = removal_path(&managed);
             let track_id = removal_track_id(&managed);
+            let source_path = removal_source_path(&managed);
             let result = runtime
                 .backend
                 .delete_track(
@@ -239,6 +249,15 @@ pub(super) async fn perform(
                 )
                 .await;
             if result.is_ok() {
+                remove_lyrics_sidecar(
+                    runtime,
+                    work,
+                    source_path.as_deref(),
+                    &path,
+                    &work.playlists_path,
+                    work.playlists_storage,
+                )
+                .await;
                 work.log.deleted();
                 // Deletions are recorded individually: the mirror owns
                 // Music/Reprise, so "what did it remove" is exactly the
@@ -270,21 +289,158 @@ pub(super) async fn perform(
             }))
         }
         Effect::RemoveReplacedFile { device_path } => {
+            let sidecar_is_still_current = replacement_keeps_sidecar(work, &device_path);
+            let source_path = replaced_source_path(work, &device_path);
             let result = runtime
                 .backend
                 .delete_track(
                     work.root_uri.clone(),
                     work.playlists_path.clone(),
                     work.playlists_storage,
-                    device_path,
+                    device_path.clone(),
                 )
                 .await;
+            if result.is_ok() && !sidecar_is_still_current {
+                remove_lyrics_sidecar(
+                    runtime,
+                    work,
+                    source_path.as_deref(),
+                    &device_path,
+                    &work.playlists_path,
+                    work.playlists_storage,
+                )
+                .await;
+            }
             Event::ReplacedFileRemoved(result.map(|_| ()).map_err(|error| {
                 tracing::warn!(%error, "could not remove replaced device track");
                 error
             }))
         }
     }
+}
+
+pub(super) async fn copy_lyrics_sidecar(
+    runtime: &Rc<DeviceSyncRuntime>,
+    work: &PlannedWork,
+    source_path: &Path,
+    device_path: &str,
+    target_path: &str,
+    storage_id: Option<StorageId>,
+) {
+    let Some(sidecar) =
+        reprise_core::device_sync::lyrics_sidecar::paths_for_track(source_path, device_path)
+    else {
+        return;
+    };
+    let Ok(metadata) = std::fs::metadata(&sidecar.source_path) else {
+        return;
+    };
+    if !metadata.is_file() {
+        return;
+    }
+    let result = runtime
+        .backend
+        .replace_track(
+            work.device_id.clone(),
+            work.root_uri.clone(),
+            target_path.to_string(),
+            storage_id,
+            sidecar.source_path.clone(),
+            sidecar.device_path.clone(),
+            metadata.len(),
+            work.cancellable.clone(),
+            Rc::new(|_, _| {}),
+        )
+        .await;
+    if let Err(error) = result {
+        tracing::warn!(
+            source_path = %sidecar.source_path.display(),
+            device_path = sidecar.device_path,
+            %error,
+            "could not copy lyrics sidecar to device"
+        );
+    }
+}
+
+/// Removes the `.lrc` that travelled with `device_path` — but only when the
+/// library still holds the sidecar it was mirrored from.
+///
+/// `source_path` is the library file this device file came from; `None` means
+/// the run cannot establish one (an orphan the inventory never recorded), and
+/// then nothing is deleted. A `.lrc` on the device whose library counterpart
+/// does not exist was never put there by Reprise: it is the user's own,
+/// hand-authored on a player that has no internet, and it may well be the
+/// only copy. Leaving a stale attachment behind is the far smaller harm.
+pub(super) async fn remove_lyrics_sidecar(
+    runtime: &Rc<DeviceSyncRuntime>,
+    work: &PlannedWork,
+    source_path: Option<&Path>,
+    device_path: &str,
+    target_path: &str,
+    storage_id: Option<StorageId>,
+) {
+    if reprise_core::device_sync::lyrics_sidecar::is_sidecar_path(Path::new(device_path)) {
+        return;
+    }
+    let Some(source_path) = source_path else {
+        return;
+    };
+    let Some(sidecar) =
+        reprise_core::device_sync::lyrics_sidecar::paths_for_track(source_path, device_path)
+    else {
+        return;
+    };
+    if !std::fs::metadata(&sidecar.source_path).is_ok_and(|metadata| metadata.is_file()) {
+        return;
+    }
+    if let Err(error) = runtime
+        .backend
+        .delete_track(
+            work.root_uri.clone(),
+            target_path.to_string(),
+            storage_id,
+            sidecar.device_path.clone(),
+        )
+        .await
+    {
+        tracing::warn!(
+            device_path = sidecar.device_path,
+            %error,
+            "could not remove lyrics sidecar from device"
+        );
+    }
+}
+
+/// The library file the device file being replaced was mirrored from, taken
+/// from the inventory row the plan carries for it.
+fn replaced_source_path(work: &PlannedWork, replaced_path: &str) -> Option<PathBuf> {
+    work.machine
+        .borrow()
+        .plan()
+        .replace
+        .iter()
+        .find(|replacement| replacement.existing.device_path == replaced_path)
+        .map(|replacement| PathBuf::from(&replacement.existing.source_path))
+}
+
+fn replacement_keeps_sidecar(work: &PlannedWork, replaced_path: &str) -> bool {
+    let Some(replaced_sidecar) =
+        reprise_core::device_sync::lyrics_sidecar::device_path_for_track(replaced_path)
+    else {
+        return false;
+    };
+    work.machine
+        .borrow()
+        .plan()
+        .replace
+        .iter()
+        .find(|replacement| replacement.existing.device_path == replaced_path)
+        .and_then(|replacement| {
+            reprise_core::device_sync::lyrics_sidecar::device_path_for_track(
+                &replacement.desired.device_path,
+            )
+        })
+        .is_some_and(|desired_sidecar| desired_sidecar == replaced_sidecar)
 }
 
 fn transfer(work: &PlannedWork, index: usize) -> TransferOperation {

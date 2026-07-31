@@ -91,6 +91,7 @@ pub(super) struct FakeState {
     /// `cleanup_error` below. Used to prove a failed podcast/YouTube copy
     /// must stop the run before later removals (`MTP-23`).
     replace_track_error: RefCell<Option<String>>,
+    sidecar_replace_error: RefCell<Option<String>>,
     copy_gate: RefCell<Option<CopyGate>>,
     playlist_error: RefCell<Option<String>>,
     playlist_gate: RefCell<Option<PlaylistGate>>,
@@ -158,6 +159,11 @@ impl FakeBackend {
     /// never calls `replace_track` itself (see the content-phase tests).
     pub(super) fn with_replace_track_error(self, error: &str) -> Self {
         self.state.replace_track_error.replace(Some(error.into()));
+        self
+    }
+
+    pub(super) fn with_sidecar_replace_error(self, error: &str) -> Self {
+        self.state.sidecar_replace_error.replace(Some(error.into()));
         self
     }
 
@@ -326,6 +332,13 @@ impl DeviceBackend for FakeBackend {
             .borrow_mut()
             .push((target_path.clone(), storage_id));
         Box::pin(async move {
+            if reprise_core::device_sync::lyrics_sidecar::is_sidecar_path(std::path::Path::new(
+                &relative_target,
+            )) {
+                if let Some(error) = state.sidecar_replace_error.borrow().clone() {
+                    return Err(error);
+                }
+            }
             if let Some(error) = state.replace_track_error.borrow().clone() {
                 return Err(error);
             }

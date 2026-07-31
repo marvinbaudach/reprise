@@ -6,11 +6,11 @@ use std::time::Duration;
 
 use gtk4::glib;
 use reprise_core::db::Db;
-use reprise_core::lyrics::{LyricsBody, LyricsQuery};
+use reprise_core::lyrics::{LookupOptions, LyricsHit, LyricsQuery};
 use reprise_core::playback::{PlaybackBackend, PlaybackError, PlaybackState};
 use reprise_core::queries::TrackSummary;
 
-use super::lyrics_state::{LyricsState, RequestIntent};
+use super::lyrics_state::{LyricsState, LyricsTrack, RequestIntent};
 use super::lyrics_view::LyricsView;
 use super::lyrics_worker::{LyricsRequest, LyricsResponse, LyricsRuntime};
 use super::player_controller::PlayerController;
@@ -81,9 +81,12 @@ impl PlayerLyrics {
         if self.enabled.replace(enabled) == enabled {
             return;
         }
-        if !enabled {
-            self.cancel_line_timer();
-        } else if self.tab_open.get() {
+        if !self.tab_open.get() {
+            return;
+        }
+        if enabled {
+            self.request_online(false);
+        } else if self.state.borrow().hit().is_none() {
             self.request_current();
         }
     }
@@ -100,11 +103,11 @@ impl PlayerLyrics {
         self.schedule_next_line();
     }
 
-    pub(in crate::ui) fn set_track(self: &Rc<Self>, query: Option<LyricsQuery>) {
+    pub(in crate::ui) fn set_track(self: &Rc<Self>, track: Option<LyricsTrack>) {
         self.cancel_line_timer();
         self.position_ms.set(0);
-        let clear = query.is_none();
-        let intent = self.state.borrow_mut().set_track(query);
+        let clear = track.is_none();
+        let intent = self.state.borrow_mut().set_track(track);
         if clear {
             if let Some(view) = self.view() {
                 view.show_empty();
@@ -112,7 +115,7 @@ impl PlayerLyrics {
             return;
         }
         if let Some(intent) = intent {
-            self.start_request(intent);
+            self.start_request(intent, false);
         } else {
             self.schedule_next_line();
         }
@@ -157,27 +160,26 @@ impl PlayerLyrics {
     fn retry(self: &Rc<Self>) {
         let intent = self.state.borrow_mut().retry();
         if let Some(intent) = intent {
-            self.start_request(intent);
+            self.start_request(intent, self.enabled.get());
         }
     }
 
-    fn start_request(self: &Rc<Self>, intent: RequestIntent) {
+    fn start_request(self: &Rc<Self>, intent: RequestIntent, allow_network: bool) {
         if !self.tab_open.get() {
             return;
         }
-        if !self.enabled.get() {
-            if let Some(view) = self.view() {
-                view.show_disabled();
-            }
-            return;
-        }
         if let Some(view) = self.view() {
-            view.show_loading(&intent.query.title, &intent.query.artist);
+            view.show_loading(&intent.track.query.title, &intent.track.query.artist);
         }
         let (sender, receiver) = async_channel::bounded(1);
         self.runtime.request(LyricsRequest {
             generation: intent.generation,
-            query: intent.query,
+            query: intent.track.query,
+            track_path: intent.track.track_path,
+            options: LookupOptions {
+                allow_network,
+                force: intent.force,
+            },
             response: sender,
         });
         let lyrics = Rc::downgrade(self);
@@ -192,23 +194,27 @@ impl PlayerLyrics {
     }
 
     fn request_current(self: &Rc<Self>) {
-        let (has_query, has_body) = {
+        let (has_query, has_hit) = {
             let state = self.state.borrow();
-            (state.query().is_some(), state.body().is_some())
+            (state.query().is_some(), state.hit().is_some())
         };
-        if !has_query || has_body {
+        if !has_query || has_hit {
             self.render_current();
-            return;
-        }
-        if !self.enabled.get() {
-            if let Some(view) = self.view() {
-                view.show_disabled();
-            }
             return;
         }
         let intent = self.state.borrow_mut().request_missing();
         if let Some(intent) = intent {
-            self.start_request(intent);
+            self.start_request(intent, false);
+        }
+    }
+
+    fn request_online(self: &Rc<Self>, force: bool) {
+        if !self.tab_open.get() || !self.enabled.get() {
+            return;
+        }
+        let intent = self.state.borrow_mut().request_upgrade(force);
+        if let Some(intent) = intent {
+            self.start_request(intent, true);
         }
     }
 
@@ -222,20 +228,38 @@ impl PlayerLyrics {
             return;
         }
         match response.result {
-            Ok(body) => self.apply_body(&body),
+            Ok(hit) => {
+                let needs_upgrade = !response.options.allow_network
+                    && matches!(hit.body, reprise_core::lyrics::LyricsBody::Plain(_));
+                self.apply_hit(&hit);
+                if needs_upgrade && self.enabled.get() {
+                    self.request_online(response.options.force);
+                }
+            }
             Err(error) => {
+                if !response.options.allow_network
+                    && self.enabled.get()
+                    && matches!(error, reprise_core::lyrics::LyricsError::Temporary)
+                {
+                    self.request_online(response.options.force);
+                    return;
+                }
                 self.cancel_line_timer();
                 if let Some(view) = self.view() {
-                    view.show_error(&error);
+                    if self.enabled.get() {
+                        view.show_error(&error);
+                    } else {
+                        view.show_disabled();
+                    }
                 }
             }
         }
     }
 
-    fn apply_body(self: &Rc<Self>, body: &LyricsBody) {
-        self.state.borrow_mut().set_body(body.clone());
+    fn apply_hit(self: &Rc<Self>, hit: &LyricsHit) {
+        self.state.borrow_mut().set_hit(hit.clone());
         if let Some(view) = self.view() {
-            view.show_result(body);
+            view.show_result(hit);
         }
         let (active, timestamp_ms) = {
             let mut state = self.state.borrow_mut();
@@ -249,11 +273,11 @@ impl PlayerLyrics {
     }
 
     fn render_current(self: &Rc<Self>) {
-        let (query, body, active, timestamp_ms) = {
+        let (query, hit, active, timestamp_ms) = {
             let state = self.state.borrow();
             (
                 state.query().cloned(),
-                state.body().cloned(),
+                state.hit().cloned(),
                 state.active_line(),
                 state.active_line_timestamp_ms(),
             )
@@ -261,9 +285,9 @@ impl PlayerLyrics {
         let Some(view) = self.view() else {
             return;
         };
-        match (query, body) {
-            (_, Some(body)) => {
-                view.show_result(&body);
+        match (query, hit) {
+            (_, Some(hit)) => {
+                view.show_result(&hit);
                 view.set_active_line_at(active, timestamp_ms, self.position_ms.get());
             }
             (Some(_), None) if !self.enabled.get() => view.show_disabled(),
@@ -275,10 +299,7 @@ impl PlayerLyrics {
 
     fn schedule_next_line(self: &Rc<Self>) {
         self.cancel_line_timer();
-        if !self.enabled.get()
-            || !self.tab_open.get()
-            || self.playback_state.get() != PlaybackState::Playing
-        {
+        if !self.tab_open.get() || self.playback_state.get() != PlaybackState::Playing {
             return;
         }
         let position_ms = self.position_ms.get();
@@ -320,19 +341,22 @@ impl PlayerLyrics {
 /// Builds the lyrics lookup key for `summary` without touching playback. Used
 /// on the gapless hand-off path, where the audio is already rolling and only
 /// the UI/lyrics need to catch up (no `play()` call).
-pub(in crate::ui) fn lyrics_query_for(summary: &TrackSummary) -> LyricsQuery {
-    LyricsQuery {
-        title: summary.title.clone(),
-        artist: summary.artist.clone(),
-        album: summary.album.clone(),
-        duration_ms: summary.duration_ms,
+pub(in crate::ui) fn lyrics_query_for(summary: &TrackSummary) -> LyricsTrack {
+    LyricsTrack {
+        query: LyricsQuery {
+            title: summary.title.clone(),
+            artist: summary.artist.clone(),
+            album: summary.album.clone(),
+            duration_ms: summary.duration_ms,
+        },
+        track_path: Some(summary.path.clone().into()),
     }
 }
 
 pub(in crate::ui) fn start_track_for_lyrics(
     player: &dyn PlaybackBackend,
     summary: &TrackSummary,
-) -> Result<LyricsQuery, PlaybackError> {
+) -> Result<LyricsTrack, PlaybackError> {
     player.play(&summary.path)?;
     Ok(lyrics_query_for(summary))
 }
@@ -348,8 +372,8 @@ impl PlayerController {
         });
     }
 
-    pub(in crate::ui) fn sync_lyrics_track(&self, query: Option<LyricsQuery>) {
-        self.lyrics.set_track(query);
+    pub(in crate::ui) fn sync_lyrics_track(&self, track: Option<LyricsTrack>) {
+        self.lyrics.set_track(track);
     }
 
     pub(in crate::ui) fn sync_lyrics_position(&self, position_ms: i64) {

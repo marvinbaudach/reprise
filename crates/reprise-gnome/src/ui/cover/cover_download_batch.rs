@@ -1,4 +1,4 @@
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -7,6 +7,7 @@ use reprise_core::db::Db;
 
 use super::cover_download_worker::{CoverDownloadRuntime, DownloadOutcome, DownloadRequest};
 use super::player_controller::PlayerController;
+use super::progress_subscribers::ProgressSubscribers;
 use super::track_list::TrackList;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -80,79 +81,6 @@ impl BatchProgress {
     }
 }
 
-type IsAlive = Rc<dyn Fn() -> bool>;
-type OnProgress = Rc<dyn Fn(BatchProgress)>;
-
-#[derive(Clone)]
-struct ProgressSubscriber {
-    id: u64,
-    is_alive: IsAlive,
-    callback: OnProgress,
-}
-
-#[derive(Default)]
-struct ProgressSubscribers {
-    next_id: Cell<u64>,
-    entries: RefCell<Vec<ProgressSubscriber>>,
-}
-
-impl ProgressSubscribers {
-    fn subscribe(
-        &self,
-        current: BatchProgress,
-        is_alive: impl Fn() -> bool + 'static,
-        callback: impl Fn(BatchProgress) + 'static,
-    ) {
-        self.prune();
-        let is_alive: IsAlive = Rc::new(is_alive);
-        if !is_alive() {
-            return;
-        }
-        let callback: OnProgress = Rc::new(callback);
-        callback(current);
-        if !is_alive() {
-            return;
-        }
-        let id = self.next_id.get().wrapping_add(1);
-        self.next_id.set(id);
-        self.entries.borrow_mut().push(ProgressSubscriber {
-            id,
-            is_alive,
-            callback,
-        });
-    }
-
-    fn notify(&self, progress: BatchProgress) {
-        self.prune();
-        let entries = self.entries.borrow().clone();
-        for entry in entries {
-            if (entry.is_alive)() {
-                (entry.callback)(progress);
-            }
-        }
-        self.prune();
-    }
-
-    fn prune(&self) {
-        let entries = self.entries.borrow().clone();
-        let dead: Vec<u64> = entries
-            .iter()
-            .filter_map(|entry| (!(entry.is_alive)()).then_some(entry.id))
-            .collect();
-        if dead.is_empty() {
-            return;
-        }
-        self.entries
-            .borrow_mut()
-            .retain(|entry| !dead.contains(&entry.id));
-    }
-
-    #[cfg(test)]
-    fn len(&self) -> usize {
-        self.entries.borrow().len()
-    }
-}
-
 pub(in crate::ui) struct CoverDownloadBatch {
     conn: Rc<Db>,
     runtime: CoverDownloadRuntime,
@@ -160,7 +88,7 @@ pub(in crate::ui) struct CoverDownloadBatch {
     player: Option<Rc<PlayerController>>,
     generation: Cell<u64>,
     progress: Cell<BatchProgress>,
-    progress_subscribers: ProgressSubscribers,
+    progress_subscribers: ProgressSubscribers<BatchProgress>,
 }
 
 impl CoverDownloadBatch {
@@ -264,11 +192,9 @@ impl CoverDownloadBatch {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::{Cell, RefCell};
     use std::path::PathBuf;
-    use std::rc::Rc;
 
-    use super::{BatchProgress, BatchState, ProgressSubscribers};
+    use super::{BatchProgress, BatchState};
     use crate::ui::cover_download_worker::DownloadOutcome;
 
     #[test]
@@ -316,64 +242,5 @@ mod tests {
             reprise_core::queries::query_live_track_paths(&conn).unwrap(),
             vec!["/music/a.mp3".to_string(), "/music/b.mp3".to_string()]
         );
-    }
-
-    #[test]
-    fn multiple_progress_subscribers_receive_current_and_future_state() {
-        let subscribers = ProgressSubscribers::default();
-        let first = Rc::new(RefCell::new(Vec::new()));
-        let second = Rc::new(RefCell::new(Vec::new()));
-
-        for received in [&first, &second] {
-            let received = received.clone();
-            subscribers.subscribe(
-                BatchProgress::idle(),
-                || true,
-                move |progress| {
-                    received.borrow_mut().push(progress);
-                },
-            );
-        }
-        let running = BatchProgress::running(4);
-        subscribers.notify(running);
-
-        assert_eq!(*first.borrow(), vec![BatchProgress::idle(), running]);
-        assert_eq!(*second.borrow(), vec![BatchProgress::idle(), running]);
-    }
-
-    #[test]
-    fn dead_subscriber_is_removed_without_replaying_state_to_live_ones() {
-        let subscribers = ProgressSubscribers::default();
-        let calls = Rc::new(Cell::new(0));
-        let alive = Rc::new(Cell::new(true));
-        let calls_for_callback = calls.clone();
-        let alive_for_probe = alive.clone();
-        subscribers.subscribe(
-            BatchProgress::idle(),
-            move || alive_for_probe.get(),
-            move |_| calls_for_callback.set(calls_for_callback.get() + 1),
-        );
-
-        alive.set(false);
-        subscribers.subscribe(BatchProgress::idle(), || true, |_| {});
-        subscribers.notify(BatchProgress::running(2));
-
-        assert_eq!(calls.get(), 1);
-        assert_eq!(subscribers.len(), 1);
-    }
-
-    #[test]
-    fn subscriber_destroyed_by_initial_callback_is_not_retained() {
-        let subscribers = ProgressSubscribers::default();
-        let alive = Rc::new(Cell::new(true));
-        let alive_for_probe = alive.clone();
-        let alive_for_callback = alive.clone();
-        subscribers.subscribe(
-            BatchProgress::idle(),
-            move || alive_for_probe.get(),
-            move |_| alive_for_callback.set(false),
-        );
-
-        assert_eq!(subscribers.len(), 0);
     }
 }

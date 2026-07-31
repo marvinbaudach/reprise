@@ -1,0 +1,417 @@
+//! Serial, cancellable library-wide lyrics cache population.
+
+use std::cell::Cell;
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
+
+use gtk4::glib;
+use reprise_core::db::Db;
+use reprise_core::lyrics::{
+    LookupOptions, LyricsBody, LyricsError, LyricsHit, LyricsQuery, NeedsFetch,
+};
+use reprise_core::queries::TrackSummary;
+
+use super::cover_download_batch::{BatchState as CoverBatchState, CoverDownloadBatch};
+use super::progress_subscribers::ProgressSubscribers;
+use super::scan_flow::ScanCancellation;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::ui) enum LyricsBatchState {
+    Idle,
+    Running,
+    Complete,
+    Failed,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::ui) struct LyricsBatchProgress {
+    pub(in crate::ui) state: LyricsBatchState,
+    pub(in crate::ui) checked: usize,
+    pub(in crate::ui) total: usize,
+    pub(in crate::ui) downloaded: usize,
+    pub(in crate::ui) unavailable: usize,
+}
+
+impl LyricsBatchProgress {
+    fn idle() -> Self {
+        Self {
+            state: LyricsBatchState::Idle,
+            checked: 0,
+            total: 0,
+            downloaded: 0,
+            unavailable: 0,
+        }
+    }
+
+    fn running(total: usize) -> Self {
+        Self {
+            state: if total == 0 {
+                LyricsBatchState::Complete
+            } else {
+                LyricsBatchState::Running
+            },
+            total,
+            ..Self::idle()
+        }
+    }
+
+    fn advance(mut self, outcome: BatchItemOutcome) -> Self {
+        self.checked = self.checked.saturating_add(1).min(self.total);
+        match outcome {
+            BatchItemOutcome::Skipped | BatchItemOutcome::Failed => {}
+            BatchItemOutcome::Downloaded => self.downloaded += 1,
+            BatchItemOutcome::Unavailable => self.unavailable += 1,
+        }
+        if self.checked == self.total {
+            self.state = LyricsBatchState::Complete;
+        }
+        self
+    }
+
+    fn fail(mut self) -> Self {
+        self.state = LyricsBatchState::Failed;
+        self
+    }
+
+    pub(in crate::ui) fn fraction(self) -> f64 {
+        if self.total == 0 {
+            return f64::from(self.state == LyricsBatchState::Complete);
+        }
+        self.checked as f64 / self.total as f64
+    }
+}
+
+#[derive(Clone, Copy)]
+enum BatchItemOutcome {
+    Skipped,
+    Downloaded,
+    Unavailable,
+    Failed,
+}
+
+#[derive(Clone)]
+struct BatchTrack {
+    query: LyricsQuery,
+    path: PathBuf,
+}
+
+impl From<TrackSummary> for BatchTrack {
+    fn from(summary: TrackSummary) -> Self {
+        Self {
+            query: LyricsQuery {
+                title: summary.title,
+                artist: summary.artist,
+                album: summary.album,
+                duration_ms: summary.duration_ms,
+            },
+            path: summary.path.into(),
+        }
+    }
+}
+
+type LocalLookup = Arc<dyn Fn(&Path) -> bool + Send + Sync>;
+type NeedsLookup = Arc<dyn Fn(&LyricsQuery) -> NeedsFetch + Send + Sync>;
+type OnlineLookup =
+    Arc<dyn Fn(&LyricsQuery, &Path) -> Result<LyricsHit, LyricsError> + Send + Sync>;
+type AllBreakersOpen = Arc<dyn Fn() -> bool + Send + Sync>;
+
+#[derive(Clone)]
+struct WorkerServices {
+    local: LocalLookup,
+    needs: NeedsLookup,
+    online: OnlineLookup,
+    all_breakers_open: AllBreakersOpen,
+}
+
+struct WorkerRequest {
+    generation: u64,
+    generation_source: Arc<AtomicU64>,
+    cancellation: ScanCancellation,
+    /// `NET-1a`: the live online-lyrics gate, shared with the main thread. The
+    /// worker re-reads it before every network request, so switching the module
+    /// (or the global online-sources gate) off stops the run instead of letting
+    /// it keep fetching for the rest of the library.
+    enabled: Arc<AtomicBool>,
+    tracks: Vec<BatchTrack>,
+    events: async_channel::Sender<WorkerEvent>,
+}
+
+enum WorkerEvent {
+    Progress(LyricsBatchProgress),
+    Cancelled,
+}
+
+#[derive(Clone)]
+struct LyricsBatchWorker {
+    sender: async_channel::Sender<WorkerRequest>,
+}
+
+impl LyricsBatchWorker {
+    fn production() -> Self {
+        Self::spawn(WorkerServices {
+            local: Arc::new(|path| reprise_core::lyrics::local_hit(path).is_some()),
+            needs: Arc::new(reprise_core::lyrics::needs_fetch),
+            online: Arc::new(|query, path| {
+                reprise_core::lyrics::load_or_fetch_with_options(
+                    query,
+                    Some(path),
+                    LookupOptions::default(),
+                )
+            }),
+            all_breakers_open: Arc::new(reprise_core::lyrics::all_network_breakers_open),
+        })
+    }
+
+    fn spawn(services: WorkerServices) -> Self {
+        let (sender, receiver) = async_channel::unbounded();
+        let result = std::thread::Builder::new()
+            .name("reprise-lyrics-batch".into())
+            .spawn(move || {
+                while let Ok(request) = receiver.recv_blocking() {
+                    run_request(&request, &services);
+                }
+            });
+        if let Err(error) = result {
+            tracing::warn!(%error, "could not start lyrics batch worker");
+        }
+        Self { sender }
+    }
+}
+
+pub(in crate::ui) struct LyricsBatch {
+    conn: Rc<Db>,
+    worker: LyricsBatchWorker,
+    /// Private to the batch. Sharing `ScanControls`' flag made a scan start
+    /// clear a pending batch cancel, a batch start un-cancel a running scan,
+    /// and a cancelled scan silently abort the batch.
+    cancellation: ScanCancellation,
+    enabled: Arc<AtomicBool>,
+    generation: Arc<AtomicU64>,
+    progress: Cell<LyricsBatchProgress>,
+    subscribers: ProgressSubscribers<LyricsBatchProgress>,
+}
+
+impl LyricsBatch {
+    pub(in crate::ui) fn new(conn: &Rc<Db>) -> Rc<Self> {
+        Rc::new(Self {
+            conn: conn.clone(),
+            worker: LyricsBatchWorker::production(),
+            cancellation: ScanCancellation::default(),
+            enabled: Arc::new(AtomicBool::new(network_allowed(conn))),
+            generation: Arc::new(AtomicU64::new(0)),
+            progress: Cell::new(LyricsBatchProgress::idle()),
+            subscribers: ProgressSubscribers::default(),
+        })
+    }
+
+    /// `NET-1a`: re-derives the live gate from the module registry and the
+    /// global online-sources switch — called from
+    /// `preferences::refresh_online_module_state` on every settings change, so
+    /// a run that is already walking the library stops at the next track
+    /// instead of finishing on the network.
+    ///
+    /// `LYR-6`: the off → on transition also *starts* the run. The batch is
+    /// otherwise only started at window construction and after a completed
+    /// library scan, so switching the module on used to visibly do nothing
+    /// until the next app start. Only the transition starts it: a settings
+    /// change while the module is already on must not restart a run in
+    /// progress, and switching it off must not start one at all.
+    pub(in crate::ui) fn recompute_enabled(self: &Rc<Self>) {
+        if self.store_enabled() {
+            self.start();
+        }
+    }
+
+    /// Stores the freshly derived gate and reports whether it just turned on.
+    fn store_enabled(&self) -> bool {
+        let allowed = network_allowed(&self.conn);
+        !self.enabled.swap(allowed, Ordering::Relaxed) && allowed
+    }
+
+    /// Stops a running batch. The scan card routes its cancel gesture here
+    /// while it is showing the batch rather than the scan.
+    pub(in crate::ui) fn cancel(&self) {
+        self.cancellation.request();
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn is_cancel_requested(&self) -> bool {
+        self.cancellation.is_requested()
+    }
+
+    pub(in crate::ui) fn subscribe_progress(
+        &self,
+        is_alive: impl Fn() -> bool + 'static,
+        callback: impl Fn(LyricsBatchProgress) + 'static,
+    ) {
+        self.subscribers
+            .subscribe(self.progress.get(), is_alive, callback);
+    }
+
+    pub(in crate::ui) fn start(self: &Rc<Self>) {
+        self.store_enabled();
+        if !self.enabled.load(Ordering::Relaxed) {
+            self.set_progress(LyricsBatchProgress::idle());
+            return;
+        }
+        let summaries = match reprise_core::queries::query_live_track_summaries(&self.conn) {
+            Ok(summaries) => summaries,
+            Err(error) => {
+                tracing::warn!(%error, "could not query tracks for lyrics batch");
+                self.set_progress(LyricsBatchProgress::idle().fail());
+                return;
+            }
+        };
+        self.cancellation.reset();
+        let generation = self.generation.fetch_add(1, Ordering::Relaxed) + 1;
+        let progress = LyricsBatchProgress::running(summaries.len());
+        self.set_progress(progress);
+        if progress.state == LyricsBatchState::Complete {
+            return;
+        }
+        let (events, receiver) = async_channel::unbounded();
+        if self
+            .worker
+            .sender
+            .try_send(WorkerRequest {
+                generation,
+                generation_source: self.generation.clone(),
+                cancellation: self.cancellation.clone(),
+                enabled: self.enabled.clone(),
+                tracks: summaries.into_iter().map(BatchTrack::from).collect(),
+                events,
+            })
+            .is_err()
+        {
+            self.set_progress(progress.fail());
+            return;
+        }
+        let batch = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            while let Ok(event) = receiver.recv().await {
+                let Some(batch) = batch.upgrade() else {
+                    return;
+                };
+                if batch.generation.load(Ordering::Relaxed) != generation {
+                    return;
+                }
+                match event {
+                    WorkerEvent::Progress(progress) => batch.set_progress(progress),
+                    WorkerEvent::Cancelled => {
+                        batch.set_progress(LyricsBatchProgress::idle());
+                        return;
+                    }
+                }
+            }
+        });
+    }
+
+    pub(in crate::ui) fn start_after_cover(self: &Rc<Self>, cover_batch: &Rc<CoverDownloadBatch>) {
+        let lyrics_batch = self.clone();
+        let armed = Rc::new(Cell::new(false));
+        cover_batch.subscribe_progress(|| true, {
+            let armed = armed.clone();
+            move |progress| {
+                if cover_batch_finished(armed.get(), progress.state) {
+                    lyrics_batch.start();
+                }
+            }
+        });
+        armed.set(true);
+        cover_batch.start();
+    }
+
+    fn set_progress(&self, progress: LyricsBatchProgress) {
+        self.progress.set(progress);
+        self.subscribers.notify(progress);
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn set_progress_for_test(&self, progress: LyricsBatchProgress) {
+        self.set_progress(progress);
+    }
+}
+
+fn cover_batch_finished(armed: bool, state: CoverBatchState) -> bool {
+    armed
+        && matches!(
+            state,
+            CoverBatchState::Idle | CoverBatchState::Complete | CoverBatchState::Failed
+        )
+}
+
+fn run_request(request: &WorkerRequest, services: &WorkerServices) {
+    let mut progress = LyricsBatchProgress::running(request.tracks.len());
+    for track in &request.tracks {
+        if cancelled(request) {
+            let _ = request.events.send_blocking(WorkerEvent::Cancelled);
+            return;
+        }
+        let needs = if (services.local)(&track.path) {
+            NeedsFetch::Skip
+        } else {
+            (services.needs)(&track.query)
+        };
+        let outcome = if needs == NeedsFetch::Skip {
+            BatchItemOutcome::Skipped
+        } else if !request.enabled.load(Ordering::Relaxed) {
+            let _ = request.events.send_blocking(WorkerEvent::Cancelled);
+            return;
+        } else if (services.all_breakers_open)() {
+            let _ = request
+                .events
+                .send_blocking(WorkerEvent::Progress(progress.fail()));
+            return;
+        } else {
+            item_outcome(needs, &(services.online)(&track.query, &track.path))
+        };
+        progress = progress.advance(outcome);
+        if matches!(outcome, BatchItemOutcome::Failed) && (services.all_breakers_open)() {
+            progress = progress.fail();
+        }
+        let terminal = progress.state != LyricsBatchState::Running;
+        if request
+            .events
+            .send_blocking(WorkerEvent::Progress(progress))
+            .is_err()
+            || terminal
+        {
+            return;
+        }
+    }
+}
+
+/// A `RetryForSynced` lookup only re-asks the remaining sources for a *synced*
+/// text (`E2`); coming back with plain text re-confirms what the cache already
+/// held, so it must not be reported as a newly cached track.
+fn item_outcome(needs: NeedsFetch, result: &Result<LyricsHit, LyricsError>) -> BatchItemOutcome {
+    match result {
+        Ok(hit) => {
+            if needs == NeedsFetch::RetryForSynced && matches!(hit.body, LyricsBody::Plain(_)) {
+                BatchItemOutcome::Skipped
+            } else {
+                BatchItemOutcome::Downloaded
+            }
+        }
+        Err(LyricsError::NotFound | LyricsError::MissingMetadata) => BatchItemOutcome::Unavailable,
+        Err(_) => BatchItemOutcome::Failed,
+    }
+}
+
+fn network_allowed(conn: &Db) -> bool {
+    reprise_core::online_sources::network_allowed_or_off(
+        conn,
+        &reprise_core::modules::ONLINE_LYRICS_MODULE,
+    )
+}
+
+fn cancelled(request: &WorkerRequest) -> bool {
+    request.generation_source.load(Ordering::Relaxed) != request.generation
+        || request.cancellation.is_requested()
+}
+
+#[cfg(test)]
+#[path = "lyrics_batch_tests.rs"]
+mod tests;

@@ -1,22 +1,29 @@
 //! Serial off-main lyrics lookup worker.
 
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
 
-use reprise_core::lyrics::{LyricsBody, LyricsError, LyricsQuery};
+use reprise_core::lyrics::{LookupOptions, LyricsError, LyricsHit, LyricsQuery};
 
-pub(in crate::ui) type Lookup =
-    Arc<dyn Fn(&LyricsQuery) -> Result<LyricsBody, LyricsError> + Send + Sync>;
+pub(in crate::ui) type Lookup = Arc<
+    dyn Fn(&LyricsQuery, Option<&Path>, LookupOptions) -> Result<LyricsHit, LyricsError>
+        + Send
+        + Sync,
+>;
 
 pub(in crate::ui) struct LyricsRequest {
     pub(in crate::ui) generation: u64,
     pub(in crate::ui) query: LyricsQuery,
+    pub(in crate::ui) track_path: Option<PathBuf>,
+    pub(in crate::ui) options: LookupOptions,
     pub(in crate::ui) response: async_channel::Sender<LyricsResponse>,
 }
 
 pub(in crate::ui) struct LyricsResponse {
     pub(in crate::ui) generation: u64,
-    pub(in crate::ui) result: Result<LyricsBody, LyricsError>,
+    pub(in crate::ui) options: LookupOptions,
+    pub(in crate::ui) result: Result<LyricsHit, LyricsError>,
 }
 
 pub(in crate::ui) struct LyricsRuntime {
@@ -25,7 +32,9 @@ pub(in crate::ui) struct LyricsRuntime {
 
 impl LyricsRuntime {
     pub(in crate::ui) fn setup() -> Rc<Self> {
-        Self::from_lookup(Arc::new(reprise_core::lyrics::load_or_fetch))
+        Self::from_lookup(Arc::new(|query, track_path, options| {
+            reprise_core::lyrics::load_or_fetch_with_options(query, track_path, options)
+        }))
     }
 
     #[cfg(test)]
@@ -54,9 +63,14 @@ fn run(receiver: &async_channel::Receiver<LyricsRequest>, lookup: &Lookup) {
         while let Ok(newer) = receiver.try_recv() {
             request = newer;
         }
-        let result = lookup(&request.query);
+        let result = lookup(
+            &request.query,
+            request.track_path.as_deref(),
+            request.options,
+        );
         let response = LyricsResponse {
             generation: request.generation,
+            options: request.options,
             result,
         };
         if request.response.send_blocking(response).is_err() {
@@ -74,7 +88,7 @@ mod tests {
     use std::sync::{Arc, Barrier, Mutex};
     use std::time::Duration;
 
-    use reprise_core::lyrics::{LyricsBody, LyricsQuery};
+    use reprise_core::lyrics::{LookupOptions, LyricsBody, LyricsHit, LyricsQuery, LyricsSource};
 
     use super::*;
 
@@ -84,6 +98,27 @@ mod tests {
             artist: "Synthetic Artist".into(),
             album: "Synthetic Album".into(),
             duration_ms: 10_000,
+        }
+    }
+
+    fn hit(title: &str) -> LyricsHit {
+        LyricsHit {
+            body: LyricsBody::Plain(format!("{title} text")),
+            source: LyricsSource::Lrclib,
+        }
+    }
+
+    fn request(
+        generation: u64,
+        title: &str,
+        response: async_channel::Sender<LyricsResponse>,
+    ) -> LyricsRequest {
+        LyricsRequest {
+            generation,
+            query: query(title),
+            track_path: Some(PathBuf::from(format!("/music/{title}.flac"))),
+            options: LookupOptions::default(),
+            response,
         }
     }
 
@@ -100,7 +135,7 @@ mod tests {
             let order = order.clone();
             let started = started.clone();
             let release = release.clone();
-            move |request: &LyricsQuery| {
+            move |request: &LyricsQuery, _track_path, _options| {
                 let now = active.fetch_add(1, Ordering::SeqCst) + 1;
                 maximum.fetch_max(now, Ordering::SeqCst);
                 order.lock().unwrap().push(request.title.clone());
@@ -110,31 +145,23 @@ mod tests {
                 }
                 std::thread::sleep(Duration::from_millis(10));
                 active.fetch_sub(1, Ordering::SeqCst);
-                Ok(LyricsBody::Plain(format!("{} text", request.title)))
+                Ok(hit(&request.title))
             }
         }));
 
         let (first_tx, first_rx) = async_channel::bounded(1);
         let (second_tx, second_rx) = async_channel::bounded(1);
-        runtime.request(LyricsRequest {
-            generation: 7,
-            query: query("First"),
-            response: first_tx,
-        });
+        runtime.request(request(7, "First", first_tx));
         started.wait();
-        runtime.request(LyricsRequest {
-            generation: 8,
-            query: query("Second"),
-            response: second_tx,
-        });
+        runtime.request(request(8, "Second", second_tx));
         release.wait();
 
         let first = first_rx.recv_blocking().unwrap();
         let second = second_rx.recv_blocking().unwrap();
         assert_eq!(first.generation, 7);
-        assert_eq!(first.result, Ok(LyricsBody::Plain("First text".into())));
+        assert_eq!(first.result, Ok(hit("First")));
         assert_eq!(second.generation, 8);
-        assert_eq!(second.result, Ok(LyricsBody::Plain("Second text".into())));
+        assert_eq!(second.result, Ok(hit("Second")));
         assert_eq!(maximum.load(Ordering::SeqCst), 1);
         assert_eq!(&*order.lock().unwrap(), &["First", "Second"]);
     }
@@ -148,36 +175,24 @@ mod tests {
             let started = started.clone();
             let release = release.clone();
             let order = order.clone();
-            move |request: &LyricsQuery| {
+            move |request: &LyricsQuery, _track_path, _options| {
                 order.lock().unwrap().push(request.title.clone());
                 if request.title == "First" {
                     started.wait();
                     release.wait();
                 }
-                Ok(LyricsBody::Plain(format!("{} text", request.title)))
+                Ok(hit(&request.title))
             }
         }));
 
         let (first_tx, first_rx) = async_channel::bounded(1);
-        runtime.request(LyricsRequest {
-            generation: 1,
-            query: query("First"),
-            response: first_tx,
-        });
+        runtime.request(request(1, "First", first_tx));
         started.wait();
 
         let (second_tx, second_rx) = async_channel::bounded(1);
         let (third_tx, third_rx) = async_channel::bounded(1);
-        runtime.request(LyricsRequest {
-            generation: 2,
-            query: query("Second"),
-            response: second_tx,
-        });
-        runtime.request(LyricsRequest {
-            generation: 3,
-            query: query("Third"),
-            response: third_tx,
-        });
+        runtime.request(request(2, "Second", second_tx));
+        runtime.request(request(3, "Third", third_tx));
         release.wait();
 
         assert_eq!(first_rx.recv_blocking().unwrap().generation, 1);

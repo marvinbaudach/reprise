@@ -46,7 +46,7 @@ pub(in crate::ui) fn setup(conn: &Db) -> CoverDownloadRuntime {
                 &reprise_core::modules::COVER_DOWNLOAD_MODULE,
             ),
         )),
-        worker: spawn(),
+        worker: spawn(conn.path()),
     }
 }
 
@@ -54,7 +54,7 @@ pub(in crate::ui) fn setup(conn: &Db) -> CoverDownloadRuntime {
 pub(in crate::ui) fn setup_for_test() -> CoverDownloadRuntime {
     CoverDownloadRuntime {
         enabled: Rc::new(Cell::new(false)),
-        worker: spawn(),
+        worker: spawn(None),
     }
 }
 
@@ -98,11 +98,14 @@ impl CoverDownloadRuntime {
     }
 }
 
-pub(in crate::ui) fn spawn() -> async_channel::Sender<DownloadRequest> {
+pub(in crate::ui) fn spawn(
+    database_path: Option<PathBuf>,
+) -> async_channel::Sender<DownloadRequest> {
     let (sender, receiver) = async_channel::unbounded::<DownloadRequest>();
     let result = std::thread::Builder::new()
         .name("reprise-cover-download".into())
         .spawn(move || {
+            let db = open_library(database_path.as_deref());
             let mut attempted = HashMap::new();
             let mut observed_embedded = HashMap::new();
             while let Ok(request) = receiver.recv_blocking() {
@@ -111,6 +114,7 @@ pub(in crate::ui) fn spawn() -> async_channel::Sender<DownloadRequest> {
                     request.skip_if_covered,
                     &mut attempted,
                     &mut observed_embedded,
+                    db.as_ref(),
                 );
                 let _ = request.response.try_send(result);
             }
@@ -121,11 +125,26 @@ pub(in crate::ui) fn spawn() -> async_channel::Sender<DownloadRequest> {
     sender
 }
 
+/// Opens the live library for this worker's one `SELECT` over the album's
+/// track directories. Read-only on purpose: nothing here writes, and a
+/// background thread holding a writable handle on the user's real library is
+/// a hazard the type system can rule out for free.
+fn open_library(database_path: Option<&Path>) -> Option<Db> {
+    database_path.and_then(|path| {
+        Db::open_ready_read_only(path)
+            .inspect_err(|error| {
+                tracing::warn!(%error, "could not open library for cover writeback");
+            })
+            .ok()
+    })
+}
+
 fn result_for_path(
     track_path: &Path,
     skip_if_covered: bool,
     attempted: &mut HashMap<String, Option<PathBuf>>,
     observed_embedded: &mut HashMap<String, u64>,
+    db: Option<&Db>,
 ) -> DownloadOutcome {
     let tag = read_cover_tag(track_path);
     if skip_if_covered {
@@ -135,7 +154,7 @@ fn result_for_path(
             }
         }
     }
-    match result_for_tag(tag, attempted) {
+    match result_for_tag(tag, attempted, db) {
         Some(path) => DownloadOutcome::Downloaded(path),
         None => DownloadOutcome::Unavailable,
     }
@@ -174,6 +193,7 @@ fn cover_status(
 fn result_for_tag(
     tag: CoverTag,
     attempted: &mut HashMap<String, Option<PathBuf>>,
+    db: Option<&Db>,
 ) -> Option<PathBuf> {
     let (Some(album_artist), Some(album)) = (tag.album_artist, tag.album) else {
         return None;
@@ -185,7 +205,21 @@ fn result_for_tag(
     if let Some(result) = attempted.get(&key) {
         return result.clone();
     }
-    let result = fetch_and_cache(&album_artist, &album, tag.release_mbid.as_deref());
+    let album_dirs = db
+        .map(|db| {
+            reprise_core::queries::query_album_directories(db, &album, &album_artist)
+                .inspect_err(|error| {
+                    tracing::warn!(%error, "could not query album directories for cover writeback");
+                })
+                .unwrap_or_default()
+        })
+        .unwrap_or_default();
+    let result = fetch_and_cache(
+        &album_artist,
+        &album,
+        tag.release_mbid.as_deref(),
+        &album_dirs,
+    );
     attempted.insert(key, result.clone());
     result
 }
@@ -204,9 +238,32 @@ mod tests {
     use reprise_core::cover_download::album_key;
 
     use super::{
-        cover_status, result_for_path, result_for_tag, setup, CoverDownloadRuntime, CoverStatus,
-        DownloadOutcome, DownloadRequest,
+        cover_status, open_library, result_for_path, result_for_tag, setup, CoverDownloadRuntime,
+        CoverStatus, DownloadOutcome, DownloadRequest,
     };
+
+    #[test]
+    fn cover_1_the_writeback_worker_holds_the_library_read_only() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("library.db");
+        reprise_core::db::Db::open_migrated(Some(&path)).unwrap();
+
+        let db = open_library(Some(path.as_path())).expect("the worker opens the library");
+
+        assert!(
+            reprise_core::queries::query_album_directories(&db, "Album", "Album Artist").is_ok(),
+            "the one SELECT this worker runs must still work"
+        );
+        assert!(
+            reprise_core::modules::set_enabled(
+                &db,
+                &reprise_core::modules::COVER_DOWNLOAD_MODULE,
+                true
+            )
+            .is_err(),
+            "a background worker that only reads must be unable to write"
+        );
+    }
 
     #[test]
     fn net_1a_cover_download_respects_the_module() {
@@ -283,7 +340,7 @@ mod tests {
         let mut observed = HashMap::new();
 
         assert_eq!(
-            result_for_path(&track, true, &mut attempted, &mut observed),
+            result_for_path(&track, true, &mut attempted, &mut observed, None),
             DownloadOutcome::AlreadyCovered
         );
         assert!(attempted.is_empty());
@@ -298,7 +355,8 @@ mod tests {
                 std::path::Path::new("/does/not/exist.mp3"),
                 true,
                 &mut attempted,
-                &mut observed
+                &mut observed,
+                None
             ),
             DownloadOutcome::Unavailable
         );
@@ -308,7 +366,10 @@ mod tests {
     #[test]
     fn missing_tags_do_not_create_an_attempted_album() {
         let mut attempted = HashMap::new();
-        assert_eq!(result_for_tag(CoverTag::default(), &mut attempted), None);
+        assert_eq!(
+            result_for_tag(CoverTag::default(), &mut attempted, None),
+            None
+        );
         assert!(attempted.is_empty());
     }
 
@@ -323,7 +384,7 @@ mod tests {
             album: Some("Dedup Album".into()),
             release_mbid: None,
         };
-        assert_eq!(result_for_tag(tag, &mut attempted), Some(cached));
+        assert_eq!(result_for_tag(tag, &mut attempted, None), Some(cached));
         assert_eq!(attempted.len(), 1);
     }
 

@@ -311,8 +311,19 @@ async fn run_content_removals(
             // `Ok(false)` means the file was already gone, which is the
             // desired state but not a deletion this run performed — counting
             // it would inflate the run log's removal tally (`MTP-20`).
-            Ok(true) => removed = removed.saturating_add(1),
-            Ok(false) => {}
+            //
+            // No `.lrc` removal here, deliberately: a content removal is
+            // planned from the *device* inventory alone (`podcasts.rs`), so
+            // there is no library file to trace the attachment back to, and
+            // `LYR-7` only ever deletes a device-side sidecar it can prove
+            // Reprise mirrored there. A `.lrc` next to an episode is the
+            // user's own — Reprise never writes one beside a podcast
+            // download.
+            Ok(was_removed) => {
+                if was_removed {
+                    removed = removed.saturating_add(1);
+                }
+            }
             Err(error) => {
                 tracing::warn!(device_path = path, target_path, %error, "could not remove device content file");
                 deviations.push(ContentDeviation {
@@ -421,7 +432,18 @@ async fn run_content_transfers(
             )
             .await;
         match result {
-            Ok(_) => copied.push(episode.size_bytes),
+            Ok(_) => {
+                effects::copy_lyrics_sidecar(
+                    runtime,
+                    work,
+                    &episode.source_path,
+                    &episode.device_path,
+                    target_path,
+                    storage_id,
+                )
+                .await;
+                copied.push(episode.size_bytes);
+            }
             Err(error) => {
                 tracing::warn!(
                     episode_id = episode.episode_id,

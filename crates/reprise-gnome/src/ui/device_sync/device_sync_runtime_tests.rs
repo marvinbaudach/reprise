@@ -219,6 +219,9 @@ fn pod_12_planned_sync_copies_selected_rss_and_youtube_each_to_its_own_target() 
                 ),
             ]
         );
+        // Audio only: a content removal is planned from the device
+        // inventory alone, so there is no library file to trace a `.lrc`
+        // back to and `LYR-7` never deletes one here.
         assert_eq!(
             backend.state.managed_deleted.borrow().as_slice(),
             [(
@@ -764,6 +767,8 @@ mod compact_tests;
 mod content_transfer_tests;
 #[path = "device_sync_inflight_tests.rs"]
 mod inflight_tests;
+#[path = "device_sync_lyrics_sidecar_tests.rs"]
+mod lyrics_sidecar_tests;
 #[path = "device_sync_picker_tests.rs"]
 mod picker_tests;
 #[path = "device_sync_planned_tests.rs"]

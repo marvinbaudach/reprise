@@ -62,6 +62,7 @@ pub(crate) mod podcasts;
 mod popover_lifecycle;
 pub(crate) mod preferences;
 pub mod primary_menu;
+pub(in crate::ui) mod progress_subscribers;
 pub(crate) mod radio;
 mod releases;
 pub(crate) mod runtime;
@@ -125,7 +126,8 @@ use device_sync::{
 use library_views::artist_avatar;
 #[allow(unused_imports)]
 use lyrics::{
-    lyrics_smoke, lyrics_state, lyrics_strings, lyrics_view, lyrics_worker, player_lyrics,
+    lyrics_batch, lyrics_batch_progress, lyrics_smoke, lyrics_state, lyrics_strings, lyrics_view,
+    lyrics_worker, player_lyrics,
 };
 #[allow(unused_imports)]
 use now_playing::{artist_portrait_worker, now_playing_column};
