@@ -19,8 +19,26 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 const TEMP_CREATE_ATTEMPTS: usize = 16;
+
+/// How long a writeback suppresses the library watcher for the paths it
+/// touches (`library::watcher::ignore_path`).
+///
+/// Both targets live *inside* the watched library root, so without this every
+/// publication emits four relevant inotify events — temporary create,
+/// temporary modify, target create, temporary delete — and each one re-arms
+/// the watcher's two-second debounce into another full
+/// `scanner::scan_folder(root)` over the whole collection. A library-wide
+/// lyrics batch would turn into a rescan storm.
+///
+/// Deliberately far longer than the tag editor's five seconds
+/// (`library::tag_mutation::IGNORE_DURATION`): that writer touches one file
+/// it already has open, while a cover payload runs up to `MAX_IMAGE_BYTES`
+/// and may land on a USB disk or an NFS mount. The window has to still be
+/// open when the *last* event of that write reaches the watcher thread.
+const WATCHER_IGNORE: Duration = Duration::from_secs(60);
 
 /// What a publication did. A refused publication (target already there) is a
 /// normal outcome, not an error — see the module doc.
@@ -48,6 +66,7 @@ fn publish_with(
     payload: &[u8],
     link: impl Fn(&Path, &Path) -> io::Result<()>,
 ) -> io::Result<Published> {
+    ignore(target);
     let (temporary, mut file) = create_temporary(target)?;
     if let Err(error) = file.write_all(payload).and_then(|()| file.sync_all()) {
         drop(file);
@@ -56,6 +75,11 @@ fn publish_with(
     }
     drop(file);
 
+    // Re-armed rather than relied upon from above: the payload write itself
+    // may have taken longer than one window on slow media, and the link and
+    // the unlink still have to be invisible to the watcher.
+    ignore(target);
+    ignore(&temporary);
     match link(&temporary, target) {
         Ok(()) => {
             remove_temporary(&temporary);
@@ -80,6 +104,9 @@ fn create_temporary(target: &Path) -> io::Result<(PathBuf, File)> {
     for _ in 0..TEMP_CREATE_ATTEMPTS {
         let temporary =
             target.with_file_name(format!(".{name}.reprise-{:016x}.tmp", fastrand::u64(..)));
+        // Armed *before* the create, never after: the inotify event exists
+        // from the moment the file does.
+        ignore(&temporary);
         match OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -94,6 +121,10 @@ fn create_temporary(target: &Path) -> io::Result<(PathBuf, File)> {
         io::ErrorKind::AlreadyExists,
         "could not reserve a unique writeback temporary file",
     ))
+}
+
+fn ignore(path: &Path) {
+    crate::library::watcher::ignore_path(path, WATCHER_IGNORE);
 }
 
 fn remove_temporary(temporary: &Path) {

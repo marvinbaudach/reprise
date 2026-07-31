@@ -28,6 +28,28 @@ fn publication_never_replaces_a_file_that_appeared_after_the_check() {
     assert_eq!(directory_entries(dir.path()), ["cover.jpg"]);
 }
 
+#[test]
+fn a_publication_suppresses_the_library_watcher_for_every_path_it_touches() {
+    let dir = TempDir::new().unwrap();
+    let target = dir.path().join("cover.jpg");
+
+    assert_eq!(publish(&target, b"payload").unwrap(), Published::Written);
+
+    assert!(
+        crate::library::watcher::is_ignored(&target),
+        "the published file must not re-arm the watcher's debounce"
+    );
+    let temporaries = crate::library::watcher::ignored_paths()
+        .into_iter()
+        .filter(|path| path.parent() == Some(dir.path()) && path != &target)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        temporaries.len(),
+        1,
+        "the temporary file's create/modify/delete events must be ignored too, got {temporaries:?}"
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn a_failing_publication_leaves_no_temporary_file() {
