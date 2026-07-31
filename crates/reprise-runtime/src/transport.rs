@@ -757,6 +757,10 @@ pub(crate) fn backend_failed(error: &reprise_core::playback::PlaybackError) -> R
 #[path = "transport_tests.rs"]
 mod transport_tests;
 
+#[cfg(test)]
+#[path = "transport_queue_position_tests.rs"]
+mod transport_queue_position_tests;
+
 #[path = "transport_queue.rs"]
 mod queue_editing;
 

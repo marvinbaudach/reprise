@@ -71,11 +71,24 @@ impl Transport {
                 removed
             }
             QueueCommand::PlayNextAt { position, .. } => {
-                let track_id = self
+                let index = as_index(*position);
+                // Look before removing. `take_at` pops unconditionally, so
+                // deciding the kind afterwards would discard an episode and
+                // then report that the position held nothing — the entry is
+                // gone and the caller is told it never existed.
+                let item = self
                     .up_next
-                    .take_at(as_index(*position))
-                    .and_then(QueueItem::track_id)
+                    .ids()
+                    .get(index)
+                    .copied()
                     .ok_or(RuntimeError::Rejected(Rejected::NoSuchQueueEntry))?;
+                // This runtime plays library tracks. A queued episode is a
+                // real entry it cannot start, which is `UnsupportedCommand`,
+                // not `NoSuchQueueEntry` — and it stays in the queue.
+                let track_id = item
+                    .track_id()
+                    .ok_or(RuntimeError::Rejected(Rejected::UnsupportedCommand))?;
+                self.up_next.take_at(index);
                 return self
                     .start(backend, library, track_id, Source::PlayNext)
                     .map(|()| 1);
