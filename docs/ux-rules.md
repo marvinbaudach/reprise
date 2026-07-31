@@ -317,8 +317,9 @@ human. Rationale for changes lives in the git history.
 - **ART-2** [planned] [gtk] — Artist detail: hero glow (precomputed
   texture, 250 ms crossfade on change), album row (hover like ALB-1),
   Top Tracks (double-click plays per PLAY-2 in the context of "Top
-  Tracks"). "Show all N tracks ›" → Tracks mode in the artist scope; its
-  visible and, via ×, removable scope chip is already active via FIL-1c.
+  Tracks"). "Show all N tracks ›" → Tracks mode in the artist place; its
+  visible place pill, which leaves the place on click, is already active
+  via FIL-1c.
 - **FX-1** [planned] [manual] — All effects respect
   `gtk-enable-animations=false` (hard switch) and only run GPU-cheap
   (opacity/transform, pre-rendered glows). No live blurs in lists.
@@ -1163,16 +1164,23 @@ human. Rationale for changes lives in the git history.
   counting and "Clear all" will follow there per the pattern of
   FIL-1a/FIL-2. Until then, the gap is named here instead of silently
   broken.
-- **FIL-1c** [active] [gtk] — Artist, Album and Genre scopes of the
-  track list carry their own scope-chip class in the filter row
-  alongside search and facet chips: "<Artist>", "<Album> — <Artist>" or
-  "<Genre>" respectively, with its own ×-click target of at least
-  20 px. The × leaves the scope via a regular NAV-2 history push to the
-  Library; there, its remembered search and facets are restored. The
-  counting follows FIL-2 and puts the scope hits in relation to the
-  whole library. Playlist, Smart, Queue, Missing and standalone panels
-  carry no scope chip. "Clear all" still only clears search and filters
-  and never changes location.
+- **FIL-1c** [active] [gtk] — Artist, Album and Genre pages are
+  **places**, not filters, and are marked as such: a place pill sits in
+  the filter row's own left zone, outlined rather than filled, prefixed
+  with "‹", and without a × — its whole surface is the click target
+  (≥ 20 px), and its tooltip and accessible name say leaving
+  ("Leave <place>"), never removing. Leaving happens through the regular
+  NAV-2 history push to the Library; there, its remembered search and
+  facets are restored. A place carries a pill exactly when no sidebar
+  row already names it: Artist, Album and Genre pages qualify; Library,
+  Recently added, Playlist, Smart, Queue, Missing and standalone panels
+  do not. The "FILTER" heading, the chips and "Clear all" describe the
+  filter zone only and never appear for a place alone; "Clear all" still
+  clears search and filters and never changes location. Counting follows
+  FIL-2. (Revised 2026-07-31: the original rule rendered places as
+  removable scope chips under the FILTER heading — one shape for two
+  meanings, which measurably read as a filter that turned out to be a
+  navigation.)
 - **FIL-2** [active] [gtk] — Counting is state: the filter row is the
   permanent list header of every track source — it never appears or
   disappears (no layout shift by design, P-4). Idle as quiet as
@@ -1188,7 +1196,13 @@ human. Rationale for changes lives in the git history.
   statistic; its "X of Y" variant is dropped — the filter row speaks
   about the view, the overlay about the library. Clarification: outside
   the Library the overlay doesn't appear at all — there the filter row
-  is the only counting (decided 2026-07-17).
+  is the only counting (decided 2026-07-17). The counting base is always
+  the current place: inside an Artist, Album or Genre page "X of Y"
+  relates to that place's own total, never to the whole library — the
+  same way a playlist reports its own length. The row is visible when a
+  filter is active, when a place pill is due (FIL-1c), or when the
+  preference asks for it. (Counting base revised 2026-07-31 together
+  with FIL-1c.)
 - **FIL-3** [active] [gtk] — End-of-results row: below the last row of
   a restricted list (≥ 1 hit) sits, centered, "End of results — 1,649
   tracks hidden by search "falling"" + pill "Show all 1,664 tracks"
@@ -1233,9 +1247,10 @@ human. Rationale for changes lives in the git history.
 - **FIL-8** [active] [core] [gtk] — "Recently added" is its own library
   scope over all currently existing tracks whose `added_at` is at most
   seven days ago; there is no 50-track limit. The source initially
-  sorts by `added_at` descending and carries a dismissible scope pill
-  in the filter row per FIL-1c. Its × leaves the scope via the normal
-  history push and restores the remembered, unrestricted library.
+  sorts by `added_at` descending and carries no place pill: it is a
+  sidebar place, and the sidebar row already names it (FIL-1c, revised
+  2026-07-31). Selecting another sidebar row leaves it, like any other
+  sidebar place.
 - **FIL-9** [active] [gtk] — When a search or facet filter is set,
   changed or removed and the loaded track belongs to the new result
   set, its marked row is vertically centered instead of anchored to the

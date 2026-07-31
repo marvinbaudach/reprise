@@ -53,8 +53,8 @@ pub(in crate::ui) fn remove_search_label(query: &str) -> String {
     formatted(N_!("Remove search: {query}"), &[("query", query)])
 }
 
-pub(in crate::ui) fn remove_scope_label(scope: &str) -> String {
-    formatted(N_!("Leave scope: {scope}"), &[("scope", scope)])
+pub(in crate::ui) fn leave_place_label(place: &str) -> String {
+    formatted(N_!("Leave {place}"), &[("place", place)])
 }
 
 pub(in crate::ui) fn result_count(filtered: usize, total: usize) -> String {
@@ -109,6 +109,12 @@ fn formatted(message: &str, values: &[(&str, &str)]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // UX FIL-1c: the place pill's accessible name says leaving, not removing.
+    #[test]
+    fn fil_1c_place_pill_label_says_leave_not_remove() {
+        assert_eq!(leave_place_label("Lorna Shore"), "Leave Lorna Shore");
+    }
 
     // UX FIL-1a: the headerbar search renders as the first chip.
     #[test]

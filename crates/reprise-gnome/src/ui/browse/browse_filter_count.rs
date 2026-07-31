@@ -27,7 +27,7 @@ pub(in crate::ui) fn update(
         bar.hide_result_count();
         return;
     }
-    let restricted = super::filter_restriction::is_restricted(search, browse, exclude_ai, source);
+    let restricted = super::filter_restriction::is_restricted(search, browse, exclude_ai);
     let total = source_total(conn, source, restricted, count, queue_ids);
     match total {
         Ok(total) => bar.set_result_count(count, total),
@@ -48,26 +48,18 @@ fn source_total(
     if !restricted || matches!(source, ViewSource::Queue) {
         return Ok(count);
     }
-    let total_source = if super::filter_restriction::scope_restricts(source) {
-        ViewSource::Library
-    } else {
-        source.clone()
-    };
+    // The counting base is always the current place. Substituting the library
+    // here is what made an artist page read "3 of 9 tracks" — filter vocabulary
+    // at a location that is not a filter (FIL-2).
     let queue_items = queue_ids
         .iter()
         .copied()
         .map(reprise_core::up_next::QueueItem::Track)
         .collect::<Vec<_>>();
-    queries::query_track_count_browsed(
-        conn,
-        &total_source,
-        "",
-        &BrowseFilter::default(),
-        &queue_items,
-    )
-    .and_then(|value| {
-        usize::try_from(value).map_err(|_| rusqlite::Error::IntegralValueOutOfRange(0, value))
-    })
+    queries::query_track_count_browsed(conn, source, "", &BrowseFilter::default(), &queue_items)
+        .and_then(|value| {
+            usize::try_from(value).map_err(|_| rusqlite::Error::IntegralValueOutOfRange(0, value))
+        })
 }
 
 #[cfg(test)]
@@ -116,13 +108,18 @@ mod tests {
         );
     }
 
+    // UX FIL-2: inside a place the counter relates to that place, never to the
+    // whole library — a playlist reporting its own length is the precedent.
     #[test]
-    fn fil_1c_scope_total_is_the_whole_library_count() {
+    fn fil_2_place_counts_against_itself_not_the_library() {
         let conn = seeded_conn();
+        let artist = ViewSource::Artist("Caskets".into());
 
+        assert_eq!(source_total(&conn, &artist, true, 1, &[]).unwrap(), 1);
         assert_eq!(
-            source_total(&conn, &ViewSource::Artist("Caskets".into()), true, 1, &[]).unwrap(),
-            3
+            source_total(&conn, &ViewSource::Library, true, 1, &[]).unwrap(),
+            3,
+            "the library still counts against itself"
         );
     }
 

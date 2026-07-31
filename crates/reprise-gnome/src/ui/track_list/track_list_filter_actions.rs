@@ -83,7 +83,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn fil_1c_clear_all_keeps_the_genre_scope_and_counts_against_the_library() {
+    fn fil_1c_clear_all_keeps_the_genre_place_and_counts_against_it() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let conn = crate::test_db::open().unwrap();
@@ -124,7 +124,10 @@ mod tests {
             reprise_core::view_source::ViewSource::Genre("Metalcore".into())
         );
         assert_eq!(track_list.shared.model.n_items(), 2);
-        assert_eq!(track_list.shared.browse_bar.result_count(), Some((2, 3)));
+        // FIL-2 (revised 2026-07-31): the place is the counting base, so the
+        // genre reports its own two tracks rather than "2 of 3" against the
+        // library — and with the year filter cleared nothing restricts at all.
+        assert_eq!(track_list.shared.browse_bar.result_count(), Some((2, 2)));
     }
 
     // UX FIL-7: the "Hide AI music" filter hides AI-flagged tracks and the
