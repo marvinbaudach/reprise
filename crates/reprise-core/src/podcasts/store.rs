@@ -654,15 +654,23 @@ fn subscription_from_row(row: &rusqlite::Row<'_>) -> Result<SubscriptionRow, rus
 
 pub(crate) fn episode_from_row(row: &rusqlite::Row<'_>) -> Result<EpisodeRow, rusqlite::Error> {
     let kind: String = row.get(7)?;
+    let kind = parse_kind(&kind)?;
+    let guid: String = row.get(2)?;
+    let image_url: Option<String> = row.get(6)?;
+    let image_url = image_url.or_else(|| {
+        (kind == PodcastKind::Youtube)
+            .then(|| super::youtube::thumbnail_url(&guid))
+            .flatten()
+    });
     Ok(EpisodeRow {
         id: row.get(0)?,
         subscription_id: row.get(1)?,
-        guid: row.get(2)?,
+        guid,
         title: row.get(3)?,
         show: row.get(4)?,
         show_image_url: row.get(5)?,
-        image_url: row.get(6)?,
-        kind: parse_kind(&kind)?,
+        image_url,
+        kind,
         audio_url: row.get(8)?,
         page_url: row.get(9)?,
         published_at: row.get(10)?,
@@ -692,6 +700,78 @@ fn parse_kind(value: &str) -> Result<PodcastKind, rusqlite::Error> {
             rusqlite::types::Type::Text,
             format!("unknown podcast kind {other}").into(),
         )),
+    }
+}
+
+#[cfg(test)]
+mod remote_artwork_tests {
+    use super::*;
+
+    fn stored_episode(guid: &str) -> ParsedEpisode {
+        ParsedEpisode {
+            guid: guid.to_owned(),
+            title: "Episode".to_owned(),
+            image_url: None,
+            audio_url: format!("https://example.test/{guid}"),
+            page_url: None,
+            published_at: None,
+            duration_secs: None,
+        }
+    }
+
+    fn read_episode(kind: PodcastKind, guid: &str, image_url: Option<&str>) -> EpisodeRow {
+        let db = Db::open_in_memory().unwrap();
+        let subscription_id = add_or_restore(
+            &db,
+            &NewSubscription {
+                kind,
+                feed_url: "https://example.test/source".to_owned(),
+                title: "Source".to_owned(),
+                author: None,
+                image_url: None,
+                auto_download: false,
+            },
+            10,
+        )
+        .unwrap();
+        let mut stored = stored_episode(guid);
+        stored.image_url = image_url.map(str::to_owned);
+        let episode_id = upsert_episode(&db, subscription_id, &stored, 20)
+            .unwrap()
+            .expect("episode should be imported")
+            .episode_id;
+        episode(&db, episode_id).unwrap().unwrap()
+    }
+
+    #[test]
+    fn src_11_youtube_episode_without_stored_artwork_derives_it_when_read() {
+        let row = read_episode(PodcastKind::Youtube, "9fCfJzK0ZE4", None);
+
+        assert_eq!(
+            row.image_url.as_deref(),
+            Some("https://i.ytimg.com/vi/9fCfJzK0ZE4/hqdefault.jpg")
+        );
+    }
+
+    #[test]
+    fn src_11_rss_episode_without_stored_artwork_stays_without_episode_artwork() {
+        let row = read_episode(PodcastKind::Rss, "rss-guid", None);
+
+        assert_eq!(row.image_url, None);
+    }
+
+    #[test]
+    fn src_11_stored_youtube_episode_artwork_wins_over_the_derived_fallback() {
+        let row = read_episode(
+            PodcastKind::Youtube,
+            "provider-knows-best",
+            Some("https://img.test/provider.jpg"),
+        );
+
+        assert_eq!(
+            row.image_url.as_deref(),
+            Some("https://img.test/provider.jpg")
+        );
     }
 }
 

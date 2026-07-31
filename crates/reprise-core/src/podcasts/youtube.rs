@@ -5,6 +5,7 @@ use chrono::NaiveDate;
 use super::ytdlp::{YtDlpPlaylist, YtDlpVideo};
 
 const WATCH_URL_PREFIX: &str = "https://www.youtube.com/watch?v=";
+const THUMBNAIL_URL_PREFIX: &str = "https://i.ytimg.com/vi/";
 const CHANNEL_PATH: &str = "/channel/";
 const LONG_FORM_FEED_PREFIX: &str = "https://www.youtube.com/feeds/videos.xml?playlist_id=UULF";
 
@@ -47,6 +48,28 @@ pub fn project_video(video: YtDlpVideo) -> YoutubeEpisode {
     }
 }
 
+/// The thumbnail URL for a video id, or `None` when the id is not shaped like
+/// one.
+///
+/// The id reaches this function from a remote feed by way of yt-dlp, so it is
+/// validated rather than trusted: only the YouTube id alphabet is admitted, so
+/// a `/`, `?`, `..` or whitespace can never reshape the path this builds. The
+/// origin is a hardcoded literal, so a malformed id could not have redirected
+/// the fetch to another host either way — this keeps a bad id from becoming a
+/// pointless request and a wasted cache entry, and turns "yt-dlp's `id` really
+/// is a video id" from an implicit assumption into a checked one.
+#[must_use]
+pub fn thumbnail_url(video_id: &str) -> Option<String> {
+    if video_id.is_empty()
+        || !video_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return None;
+    }
+    Some(format!("{THUMBNAIL_URL_PREFIX}{video_id}/hqdefault.jpg"))
+}
+
 fn upload_date_timestamp(value: Option<&str>) -> Option<i64> {
     NaiveDate::parse_from_str(value?, "%Y%m%d")
         .ok()?
@@ -71,8 +94,58 @@ pub fn long_form_feed_url(channel_url: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{project_playlist, project_video, YoutubeEpisode};
+    use super::{project_playlist, project_video, thumbnail_url, YoutubeEpisode};
     use crate::podcasts::ytdlp::{YtDlpPlaylist, YtDlpVideo};
+
+    #[test]
+    fn src_11_thumbnail_url_uses_the_plain_video_id() {
+        assert_eq!(
+            thumbnail_url("9fCfJzK0ZE4").as_deref(),
+            Some("https://i.ytimg.com/vi/9fCfJzK0ZE4/hqdefault.jpg")
+        );
+    }
+
+    #[test]
+    fn src_11_thumbnail_url_rejects_an_id_that_could_reshape_the_path() {
+        // The id arrives from a remote feed via yt-dlp; anything outside the
+        // YouTube id alphabet must not be interpolated into the URL.
+        for bogus in [
+            "",
+            "../../etc/passwd",
+            "abc/def",
+            "abc?x=1",
+            "abc def",
+            "abc#frag",
+        ] {
+            assert_eq!(thumbnail_url(bogus), None, "must reject {bogus:?}");
+        }
+    }
+
+    #[test]
+    fn src_11_project_video_passes_through_provider_artwork_without_deriving() {
+        let supplied = project_video(YtDlpVideo {
+            id: "supplied".to_owned(),
+            title: "Supplied artwork".to_owned(),
+            duration_secs: None,
+            timestamp: None,
+            upload_date: None,
+            image_url: Some("https://img.test/provider.jpg".to_owned()),
+        });
+        let absent = project_video(YtDlpVideo {
+            id: "absent".to_owned(),
+            title: "Absent artwork".to_owned(),
+            duration_secs: None,
+            timestamp: None,
+            upload_date: None,
+            image_url: None,
+        });
+
+        assert_eq!(
+            supplied.image_url.as_deref(),
+            Some("https://img.test/provider.jpg")
+        );
+        assert_eq!(absent.image_url, None);
+    }
 
     #[test]
     fn flat_playlist_projects_stable_episode_identity_in_source_order() {

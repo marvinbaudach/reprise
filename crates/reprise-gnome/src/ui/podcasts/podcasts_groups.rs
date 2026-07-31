@@ -21,6 +21,7 @@ use super::podcasts_row_interaction::{
     episode_thumbnail, install_row_activation, reveal_unsubscribe_on_hover_or_focus,
 };
 use super::podcasts_row_state::{download_status, RowNetworkState};
+use super::podcasts_selection::{self, PodcastSelection};
 use super::podcasts_title::TitleParts;
 use crate::ui::playing_marker;
 use crate::ui::strings;
@@ -47,6 +48,17 @@ struct GroupRenderContext<'a> {
     images_allowed: bool,
     connectivity: Connectivity,
     unavailable_episode: Option<i64>,
+    selection: &'a Rc<RefCell<PodcastSelection>>,
+    selected_ids: Vec<i64>,
+}
+
+struct EpisodeRenderContext<'a> {
+    mark: Option<EpisodeMark>,
+    download_state: &'a DownloadState,
+    images_allowed: bool,
+    network: RowNetworkState,
+    selection: &'a Rc<RefCell<PodcastSelection>>,
+    selected_ids: &'a [i64],
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -62,11 +74,13 @@ pub(super) fn replace(
     images_allowed: bool,
     connectivity: Connectivity,
     unavailable_episode: Option<i64>,
+    selection: &Rc<RefCell<PodcastSelection>>,
 ) -> BTreeMap<i64, DownloadRowWidgets> {
     while let Some(child) = container.first_child() {
         container.remove(&child);
     }
     let mut download_widgets = BTreeMap::new();
+    let selected_ids = selection.borrow().selected_ids();
     let context = GroupRenderContext {
         playing_episode,
         expanded_sources,
@@ -77,6 +91,8 @@ pub(super) fn replace(
         images_allowed,
         connectivity,
         unavailable_episode,
+        selection,
+        selected_ids,
     };
     for rendered in groups {
         container.append(&build_group(rendered, &context, &mut download_widgets));
@@ -151,13 +167,17 @@ fn build_group(
         episodes.append(&episode_row(
             episode,
             &title_parts,
-            context.playing_episode.filter(|mark| mark.id == episode.id),
-            &state,
             download_widgets,
-            context.images_allowed,
-            RowNetworkState {
-                connectivity: context.connectivity,
-                unavailable_now: context.unavailable_episode == Some(episode.id),
+            &EpisodeRenderContext {
+                mark: context.playing_episode.filter(|mark| mark.id == episode.id),
+                download_state: &state,
+                images_allowed: context.images_allowed,
+                network: RowNetworkState {
+                    connectivity: context.connectivity,
+                    unavailable_now: context.unavailable_episode == Some(episode.id),
+                },
+                selection: context.selection,
+                selected_ids: &context.selected_ids,
             },
         ));
     }
@@ -188,7 +208,7 @@ fn group_header(
     header.set_margin_end(6);
 
     let artwork = super::source_image::SourceImage::new(
-        group.image_url.as_deref(),
+        group_image_url(group),
         match group.kind {
             PodcastKind::Rss => "audio-input-microphone-symbolic",
             PodcastKind::Youtube => "video-x-generic-symbolic",
@@ -268,17 +288,24 @@ fn group_header(
     (header.upcast(), unsubscribe)
 }
 
+fn group_image_url(group: &SourceGroup) -> Option<&str> {
+    group.image_url.as_deref().or_else(|| match group.kind {
+        PodcastKind::Rss => None,
+        PodcastKind::Youtube => group
+            .episodes
+            .first()
+            .and_then(|episode| episode.image_url.as_deref()),
+    })
+}
+
 fn episode_row(
     row: &EpisodeRow,
     title_parts: &TitleParts,
-    mark: Option<EpisodeMark>,
-    download_state: &DownloadState,
     download_widgets: &mut BTreeMap<i64, DownloadRowWidgets>,
-    images_allowed: bool,
-    network: RowNetworkState,
+    context: &EpisodeRenderContext<'_>,
 ) -> gtk4::Widget {
-    let loaded = mark.is_some();
-    let playing = mark.is_some_and(|mark| mark.playing);
+    let loaded = context.mark.is_some();
+    let playing = context.mark.is_some_and(|mark| mark.playing);
     let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
     root.add_css_class("reprise-podcast-episode-row");
     // a11y-semantics: role=button name=podcast-episode-row state=focusable action=activate
@@ -298,7 +325,14 @@ fn episode_row(
     root.set_margin_top(4);
     root.set_margin_bottom(4);
 
-    let (thumbnail, play_glyph) = episode_thumbnail(row, playing, images_allowed);
+    let selected = podcasts_selection::episode_checkbox(
+        row.id,
+        &row.title,
+        context.selection.borrow().contains(row.id),
+    );
+    root.append(&selected);
+
+    let (thumbnail, play_glyph) = episode_thumbnail(row, playing, context.images_allowed);
     let marker = playing_marker::build();
     marker.add_css_class("reprise-podcast-episode-marker");
     playing_marker::set_playing(&marker, playing);
@@ -331,7 +365,7 @@ fn episode_row(
     root.append(&identity);
 
     let status = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    status.append(&download_status(download_state));
+    status.append(&download_status(context.download_state));
     root.append(&status);
 
     let download = gtk4::Button::new();
@@ -345,19 +379,22 @@ fn episode_row(
         marker,
         play_glyph,
     };
-    update_download_state(&widgets, download_state);
+    update_download_state(&widgets, context.download_state);
     update_network_state(
         &widgets,
-        download_state,
-        network.connectivity,
-        network.unavailable_now,
+        context.download_state,
+        context.network.connectivity,
+        context.network.unavailable_now,
     );
     download_widgets.insert(row.id, widgets);
     root.append(&download);
 
     let menu = gtk4::MenuButton::builder()
         .icon_name("view-more-symbolic")
-        .menu_model(&podcasts_context_menu::build(row))
+        .menu_model(&podcasts_context_menu::build_for_selection(
+            row,
+            context.selected_ids,
+        ))
         .build();
     menu.add_css_class("flat");
     menu.set_tooltip_text(Some(&strings::text(strings::PODCAST_MORE_OPTIONS)));
@@ -377,357 +414,5 @@ pub(super) fn update_playback_state(widgets: &DownloadRowWidgets, playing: bool)
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn episode(image_url: Option<&str>) -> EpisodeRow {
-        EpisodeRow {
-            id: 1,
-            subscription_id: 1,
-            guid: "episode".into(),
-            title: "A compact episode title".into(),
-            show: "Show".into(),
-            show_image_url: None,
-            image_url: image_url.map(str::to_owned),
-            kind: PodcastKind::Rss,
-            audio_url: "https://example.test/episode.mp3".into(),
-            page_url: None,
-            published_at: None,
-            duration_secs: Some(3_180),
-            downloaded_path: None,
-            downloaded_bytes: None,
-            played_at: None,
-            position_ms: 0,
-            first_seen_at: 1,
-            is_new: false,
-        }
-    }
-
-    fn descendants(widget: &gtk4::Widget) -> Vec<gtk4::Widget> {
-        let mut found = Vec::new();
-        let mut child = widget.first_child();
-        while let Some(current) = child {
-            found.push(current.clone());
-            found.extend(descendants(&current));
-            child = current.next_sibling();
-        }
-        found
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn compact_episode_row_has_no_play_button_and_stays_within_height_budget() {
-        gtk4::init().unwrap();
-        let bytes = gtk4::glib::Bytes::from_owned(vec![0x66_u8; 64 * 64 * 4]);
-        let texture: gtk4::gdk::Texture = gtk4::gdk::MemoryTexture::new(
-            64,
-            64,
-            gtk4::gdk::MemoryFormat::R8g8b8a8,
-            &bytes,
-            64 * 4,
-        )
-        .upcast();
-        super::super::source_image::remember_texture(
-            "https://img.test/episode.jpg".to_owned(),
-            32,
-            32,
-            texture,
-        );
-        for row in [episode(None), episode(Some("https://img.test/episode.jpg"))] {
-            let mut widgets = BTreeMap::new();
-            let rendered = episode_row(
-                &row,
-                &TitleParts {
-                    distinct: row.title.clone(),
-                    dimmed: None,
-                },
-                None,
-                &DownloadState::NotDownloaded,
-                &mut widgets,
-                false,
-                RowNetworkState {
-                    connectivity: Connectivity::Online,
-                    unavailable_now: false,
-                },
-            );
-            let buttons = descendants(&rendered)
-                .into_iter()
-                .filter_map(|widget| widget.downcast::<gtk4::Button>().ok())
-                .collect::<Vec<_>>();
-
-            assert!(
-                buttons
-                    .iter()
-                    .all(|button| button.action_name().as_deref() != Some("podcasts.play")),
-                "row activation replaces the per-row play button"
-            );
-            let (_, natural, _, _) = rendered.measure(gtk4::Orientation::Vertical, -1);
-            assert!(natural <= 52, "natural row height was {natural}px");
-        }
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn not_downloaded_has_no_redundant_status_label() {
-        gtk4::init().unwrap();
-
-        let status = download_status(&DownloadState::NotDownloaded)
-            .downcast::<gtk4::Box>()
-            .unwrap();
-
-        assert!(status.first_child().is_none());
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn collapsed_group_renders_ten_episodes_and_one_show_all_action() {
-        gtk4::init().unwrap();
-        let episodes = (1..=15)
-            .map(|id| {
-                let mut row = episode(None);
-                row.id = id;
-                row.guid = format!("episode-{id}");
-                row.title = format!("Episode {id}");
-                row
-            })
-            .collect::<Vec<_>>();
-        let group = SourceGroup {
-            subscription_id: 1,
-            title: "Show".into(),
-            author: None,
-            image_url: None,
-            kind: PodcastKind::Rss,
-            sync_to_phone: false,
-            episodes,
-        };
-        let rendered = RenderedSourceGroup {
-            summary: SourceSummary {
-                episode_count: 15,
-                new_count: 0,
-                downloaded_bytes: 0,
-                latest_published_at: None,
-            },
-            group,
-        };
-        let container = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-        replace(
-            &container,
-            &[rendered],
-            None,
-            &Rc::new(RefCell::new(BTreeSet::new())),
-            &Rc::new(RefCell::new(BTreeSet::new())),
-            &BTreeMap::new(),
-            &[],
-            &BTreeMap::new(),
-            false,
-            Connectivity::Online,
-            None,
-        );
-
-        let rows = container
-            .first_child()
-            .and_downcast::<gtk4::Expander>()
-            .and_then(|expander| expander.child())
-            .and_downcast::<gtk4::Box>()
-            .expect("episode rows");
-        let child_count =
-            std::iter::successors(rows.first_child(), gtk4::prelude::WidgetExt::next_sibling)
-                .count();
-        assert_eq!(child_count, 11);
-        let show_all = rows
-            .last_child()
-            .and_downcast::<gtk4::Button>()
-            .expect("show-all action");
-        assert_eq!(show_all.label().as_deref(), Some("Show all 15 episodes"));
-        assert_eq!(
-            show_all.action_name().as_deref(),
-            Some("podcasts.show-all-episodes")
-        );
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn src_5_one_expander_is_rendered_per_source_group() {
-        gtk4::init().unwrap();
-        let container = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-        let group = SourceGroup {
-            subscription_id: 1,
-            title: "Show".into(),
-            author: None,
-            image_url: None,
-            kind: PodcastKind::Rss,
-            sync_to_phone: false,
-            episodes: Vec::new(),
-        };
-        let rendered = RenderedSourceGroup {
-            summary: SourceSummary {
-                episode_count: 0,
-                new_count: 0,
-                downloaded_bytes: 0,
-                latest_published_at: None,
-            },
-            group,
-        };
-        let widgets = replace(
-            &container,
-            &[rendered],
-            None,
-            &Rc::new(RefCell::new(BTreeSet::new())),
-            &Rc::new(RefCell::new(BTreeSet::new())),
-            &BTreeMap::new(),
-            &[],
-            &BTreeMap::new(),
-            false,
-            Connectivity::Online,
-            None,
-        );
-        assert!(widgets.is_empty());
-        assert!(container.first_child().is_some());
-        assert!(container
-            .first_child()
-            .and_downcast::<gtk4::Expander>()
-            .is_some());
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn src_4_grouped_source_keeps_the_hover_star_unsubscribe_action() {
-        gtk4::init().unwrap();
-        let group = SourceGroup {
-            subscription_id: 7,
-            title: "Show".into(),
-            author: None,
-            image_url: None,
-            kind: PodcastKind::Rss,
-            sync_to_phone: false,
-            episodes: Vec::new(),
-        };
-        let (header, star) = group_header(
-            &group,
-            &SourceSummary {
-                episode_count: 0,
-                new_count: 0,
-                downloaded_bytes: 0,
-                latest_published_at: None,
-            },
-            &[],
-            &[],
-            false,
-        );
-        let header = header.downcast::<gtk4::Box>().unwrap();
-        let menu = header
-            .last_child()
-            .and_downcast::<gtk4::MenuButton>()
-            .unwrap();
-        assert_eq!(menu.prev_sibling().as_ref(), Some(star.upcast_ref()));
-        let icon = star.child().and_downcast::<gtk4::Image>().unwrap();
-        let expander = gtk4::Expander::new(None);
-        reveal_unsubscribe_on_hover_or_focus(&expander, &star);
-
-        assert_eq!(icon.icon_name().as_deref(), Some("starred-symbolic"));
-        assert_eq!(star.opacity(), 0.0);
-        assert!(star.is_focusable());
-        assert!(expander.observe_controllers().n_items() > 0);
-        assert!(star.has_css_class("accent"));
-        assert_eq!(star.action_name().as_deref(), Some("podcasts.unsubscribe"));
-    }
-
-    /// `SRC-11` / `NET-1a`: the library group header is one of the source
-    /// image entry points — with `images_allowed: false` it must stay on the
-    /// glyph fallback even though the group carries a real `image_url`.
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn src_11_group_header_stays_on_the_fallback_when_images_are_not_allowed() {
-        gtk4::init().unwrap();
-        let group = SourceGroup {
-            subscription_id: 9,
-            title: "Show".into(),
-            author: None,
-            image_url: Some("https://images.test/net-1a-group-header.jpg".into()),
-            kind: PodcastKind::Rss,
-            sync_to_phone: false,
-            episodes: Vec::new(),
-        };
-        let (header, _) = group_header(
-            &group,
-            &SourceSummary {
-                episode_count: 0,
-                new_count: 0,
-                downloaded_bytes: 0,
-                latest_published_at: None,
-            },
-            &[],
-            &[],
-            false,
-        );
-        let header = header.downcast::<gtk4::Box>().unwrap();
-        let artwork = header
-            .first_child()
-            .and_downcast::<gtk4::Stack>()
-            .expect("source image stack");
-        assert_eq!(artwork.visible_child_name().as_deref(), Some("fallback"));
-    }
-
-    /// `POD-13`: the classified reason must be a second, always-visible
-    /// label sitting next to the "Download failed" heading — not hidden
-    /// behind `set_tooltip_text`, which a keyboard or touch user can never
-    /// trigger.
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn pod_13_a_failed_download_shows_its_classified_reason_without_hovering() {
-        gtk4::init().unwrap();
-        let state = DownloadState::Failed {
-            message: "podcast source could not be reached".into(),
-        };
-
-        let status = download_status(&state).downcast::<gtk4::Box>().unwrap();
-
-        let heading = status
-            .first_child()
-            .and_downcast::<gtk4::Label>()
-            .expect("the fixed 'Download failed' heading");
-        assert_eq!(
-            heading.text(),
-            strings::text(strings::PODCAST_DOWNLOAD_FAILED)
-        );
-
-        let reason = heading
-            .next_sibling()
-            .and_downcast::<gtk4::Label>()
-            .expect("the classified reason must be a second visible label");
-        assert_eq!(reason.text(), "podcast source could not be reached");
-    }
-
-    /// `POD-13`: the retry contract must be reachable and distinguishable —
-    /// the action stays clickable (not stuck disabled) and its affordance
-    /// reads as "try again" rather than the plain first-download button.
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn pod_13_a_failed_download_offers_a_sensitive_retry_action() {
-        gtk4::init().unwrap();
-        let widgets = DownloadRowWidgets {
-            root: gtk4::Box::new(gtk4::Orientation::Horizontal, 0),
-            status: gtk4::Box::new(gtk4::Orientation::Vertical, 0),
-            action: gtk4::Button::new(),
-            marker: gtk4::Box::new(gtk4::Orientation::Horizontal, 0),
-            play_glyph: gtk4::Image::new(),
-        };
-
-        update_download_state(
-            &widgets,
-            &DownloadState::Failed {
-                message: "podcast source could not be reached".into(),
-            },
-        );
-
-        assert!(widgets.action.is_sensitive());
-        assert_eq!(
-            widgets.action.icon_name().as_deref(),
-            Some("view-refresh-symbolic")
-        );
-        assert_eq!(
-            widgets.action.tooltip_text().as_deref(),
-            Some(strings::text(strings::PODCAST_RETRY_DOWNLOAD)).as_deref()
-        );
-    }
-}
+#[path = "podcasts_groups_tests.rs"]
+mod tests;
