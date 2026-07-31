@@ -1,10 +1,9 @@
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::io;
+use std::path::Path;
+
+use crate::writeback_publish::{publish, Published};
 
 use super::TimedLine;
-
-const TEMP_CREATE_ATTEMPTS: usize = 16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SidecarWrite {
@@ -22,38 +21,13 @@ pub(super) fn write_sidecar(track_path: &Path, lines: &[TimedLine]) -> SidecarWr
     match target.try_exists() {
         Ok(true) => return SidecarWrite::AlreadyPresent,
         Ok(false) => {}
-        Err(error) => return failed(&target, None, &error),
+        Err(error) => return failed(&target, &error),
     }
 
-    let contents = render_lrc(lines);
-    let (temporary, mut file) = match create_temporary(&target) {
-        Ok(temporary) => temporary,
-        Err(error) => return failed(&target, None, &error),
-    };
-    if let Err(error) = file
-        .write_all(contents.as_bytes())
-        .and_then(|()| file.sync_all())
-    {
-        return failed(&target, Some(&temporary), &error);
-    }
-    drop(file);
-
-    match fs::hard_link(&temporary, &target) {
-        Ok(()) => {
-            if let Err(error) = fs::remove_file(&temporary) {
-                tracing::warn!(
-                    path = %temporary.display(),
-                    %error,
-                    "could not remove published lyrics sidecar temporary file"
-                );
-            }
-            SidecarWrite::Written
-        }
-        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
-            let _ = fs::remove_file(&temporary);
-            SidecarWrite::AlreadyPresent
-        }
-        Err(error) => failed(&target, Some(&temporary), &error),
+    match publish(&target, render_lrc(lines).as_bytes()) {
+        Ok(Published::Written) => SidecarWrite::Written,
+        Ok(Published::AlreadyPresent) => SidecarWrite::AlreadyPresent,
+        Err(error) => failed(&target, &error),
     }
 }
 
@@ -72,34 +46,7 @@ fn render_lrc(lines: &[TimedLine]) -> String {
     output
 }
 
-fn create_temporary(target: &Path) -> io::Result<(PathBuf, File)> {
-    let name = target
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("lyrics.lrc");
-    for _ in 0..TEMP_CREATE_ATTEMPTS {
-        let temporary =
-            target.with_file_name(format!(".{name}.reprise-{:016x}.tmp", fastrand::u64(..)));
-        match OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temporary)
-        {
-            Ok(file) => return Ok((temporary, file)),
-            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
-            Err(error) => return Err(error),
-        }
-    }
-    Err(io::Error::new(
-        io::ErrorKind::AlreadyExists,
-        "could not reserve a unique lyrics sidecar temporary file",
-    ))
-}
-
-fn failed(target: &Path, temporary: Option<&Path>, error: &io::Error) -> SidecarWrite {
-    if let Some(temporary) = temporary {
-        let _ = fs::remove_file(temporary);
-    }
+fn failed(target: &Path, error: &io::Error) -> SidecarWrite {
     tracing::warn!(
         path = %target.display(),
         %error,

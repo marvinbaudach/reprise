@@ -84,6 +84,7 @@ pub mod updates;
 pub mod view_source;
 pub mod visuals;
 pub mod waveform;
+mod writeback_publish;
 
 #[cfg(test)]
 mod artist_news_candidates_tests;
