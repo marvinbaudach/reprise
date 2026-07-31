@@ -119,10 +119,10 @@ pub(in crate::ui) struct Shared {
     /// moves without rebuilding the list. A `Cell` (not `RefCell`) because the
     /// payload is a `Copy` `Option<i64>` read on every bind.
     pub(in crate::ui) playing_track_id: Cell<Option<i64>>,
-    /// The episode currently playing, when a queued episode is what the
-    /// player is on. Separate from `playing_track_id` because the two id
-    /// spaces are unrelated and may collide numerically.
-    pub(in crate::ui) playing_episode_id: Cell<Option<i64>>,
+    /// POD-20's shared loaded-episode marker. Separate from
+    /// `playing_track_id` because the two id spaces are unrelated and may
+    /// collide numerically; the marker also retains running versus paused.
+    pub(in crate::ui) playing_episode: Cell<Option<crate::ui::podcasts::EpisodeMark>>,
     /// Per-cell now-playing marker re-appliers, keyed by their bound
     /// `ListItem` (see `now_playing_marker`). A playback change runs all of
     /// them so the marker moves to the new row (and off the old one) by
@@ -424,11 +424,14 @@ impl TrackList {
     /// and the Up Next panel show it the way they show a playing track. A
     /// queued episode is a queue citizen; leaving it unmarked would make the
     /// playing row indistinguishable from a pending one.
-    pub(in crate::ui) fn set_playing_episode(&self, episode_id: Option<i64>) {
-        if self.shared.playing_episode_id.get() == episode_id {
+    pub(in crate::ui) fn set_playing_episode(
+        &self,
+        episode_mark: Option<crate::ui::podcasts::EpisodeMark>,
+    ) {
+        if self.shared.playing_episode.get() == episode_mark {
             return;
         }
-        self.shared.playing_episode_id.set(episode_id);
+        self.shared.playing_episode.set(episode_mark);
         self.shared.reapply_now_playing_markers();
     }
 

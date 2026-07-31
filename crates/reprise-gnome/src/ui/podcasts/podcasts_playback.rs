@@ -1,6 +1,6 @@
 //! Pure playback decisions shared by the podcast episode surfaces.
 
-use crate::ui::playback::external_media::PodcastPhase;
+use crate::ui::playback::external_media::{ExternalMedia, ExternalPlaybackSnapshot, PodcastPhase};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::ui) struct EpisodeMark {
@@ -37,6 +37,19 @@ pub(super) fn activation_for_episode(
 
 pub(in crate::ui) fn podcast_phase_is_playing(phase: Option<PodcastPhase>) -> bool {
     matches!(phase, Some(PodcastPhase::Resolving | PodcastPhase::Playing))
+}
+
+pub(in crate::ui) fn episode_mark_from_snapshot(
+    snapshot: Option<&ExternalPlaybackSnapshot>,
+) -> Option<EpisodeMark> {
+    let snapshot = snapshot?;
+    let ExternalMedia::Podcast { episode_id, .. } = snapshot.media else {
+        return None;
+    };
+    Some(EpisodeMark::new(
+        episode_id,
+        podcast_phase_is_playing(snapshot.podcast_phase),
+    ))
 }
 
 pub(super) fn episode_mark_requires_render(

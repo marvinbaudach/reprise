@@ -1136,7 +1136,9 @@ human. Rationale for changes lives in the git history.
   episode entries and preserves their identity even when their numeric
   IDs collide. RSS and YouTube episodes advance in manual queue order,
   never enter the automatic "Continuing from …" context, never earn a
-  listen, and are never gaplessly pre-fed. Radio remains excluded.
+  listen, and are never gaplessly pre-fed. POD-20 owns their shared
+  playing marker and POD-21 owns their frozen queue-neighbour transport.
+  Radio remains excluded.
 
 ## K. Filter & search visibility
 

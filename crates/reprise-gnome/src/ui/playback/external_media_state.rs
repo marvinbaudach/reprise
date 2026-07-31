@@ -7,6 +7,7 @@
 use std::rc::Rc;
 
 use reprise_core::podcasts::{EpisodeRow, PodcastKind};
+use reprise_core::up_next::QueueItem;
 
 use super::preview::PlaybackMode;
 
@@ -55,25 +56,47 @@ pub(in crate::ui) enum PodcastPhase {
     Failed,
 }
 
-/// Episode ids in rendered order, plus this session's index in them.
+/// Queue items in rendered order, plus this session's index in them.
 /// Frozen at start: a feed refresh must not move the user's neighbours.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct NeighbourContext {
-    episode_ids: Vec<i64>,
+    items: Vec<QueueItem>,
     index: usize,
 }
 
 impl NeighbourContext {
     pub(super) fn for_episode(episode_ids: &[i64], episode_id: i64) -> Option<Self> {
-        let index = episode_ids.iter().position(|id| *id == episode_id)?;
+        let items = episode_ids
+            .iter()
+            .copied()
+            .map(QueueItem::Episode)
+            .collect::<Vec<_>>();
+        Self::for_item(&items, QueueItem::Episode(episode_id))
+    }
+
+    pub(super) fn for_manual_queue(current: QueueItem, pending: &[QueueItem]) -> Option<Self> {
+        let mut items = Vec::with_capacity(pending.len().saturating_add(1));
+        items.push(current);
+        items.extend_from_slice(pending);
+        Self::for_item(&items, current)
+    }
+
+    fn for_item(items: &[QueueItem], current: QueueItem) -> Option<Self> {
+        let index = items.iter().position(|item| *item == current)?;
         Some(Self {
-            episode_ids: episode_ids.to_vec(),
+            items: items.to_vec(),
             index,
         })
     }
 
     pub(super) fn current_id(&self) -> i64 {
-        self.episode_ids[self.index]
+        self.current_item()
+            .episode_id()
+            .expect("episode-only neighbour context must contain episodes")
+    }
+
+    pub(super) fn current_item(&self) -> QueueItem {
+        self.items[self.index]
     }
 
     pub(super) fn previous(&self) -> Option<Self> {
@@ -91,12 +114,12 @@ impl NeighbourContext {
     pub(super) fn has_next(&self) -> bool {
         self.index
             .checked_add(1)
-            .is_some_and(|index| index < self.episode_ids.len())
+            .is_some_and(|index| index < self.items.len())
     }
 
     fn shifted(&self, index: usize) -> Option<Self> {
-        (index < self.episode_ids.len()).then(|| Self {
-            episode_ids: self.episode_ids.clone(),
+        (index < self.items.len()).then(|| Self {
+            items: self.items.clone(),
             index,
         })
     }
@@ -127,6 +150,13 @@ pub(super) enum AdvanceFailure {
 pub(super) enum PodcastFailureAction {
     Direct,
     Automatic(AdvanceFailure),
+}
+
+pub(super) fn should_skip_manual_queue_after_failure(
+    origin: PodcastOrigin,
+    action: &PodcastFailureAction,
+) -> bool {
+    origin == PodcastOrigin::ManualQueue && matches!(action, PodcastFailureAction::Direct)
 }
 
 impl AutomaticAdvance {
@@ -252,7 +282,10 @@ pub(in crate::ui) struct ExternalPlaybackState {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum NeighbourTransport {
     Queue,
-    Episode(NeighbourContext),
+    Item {
+        neighbours: NeighbourContext,
+        origin: PodcastOrigin,
+    },
     Unavailable,
 }
 
@@ -286,7 +319,12 @@ impl ExternalPlaybackState {
                     NeighbourDirection::Previous => neighbours.previous(),
                     NeighbourDirection::Next => neighbours.next(),
                 })
-                .map_or(NeighbourTransport::Unavailable, NeighbourTransport::Episode),
+                .map_or(NeighbourTransport::Unavailable, |neighbours| {
+                    NeighbourTransport::Item {
+                        neighbours,
+                        origin: session.origin,
+                    }
+                }),
             Some(ExternalSession::Radio(_)) => NeighbourTransport::Unavailable,
             None if self.preview_path.is_some() => NeighbourTransport::Unavailable,
             None => NeighbourTransport::Queue,
@@ -487,6 +525,10 @@ impl RadioPresentation {
 }
 
 #[cfg(test)]
+#[path = "external_media_state_queue_tests.rs"]
+mod queue_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -615,7 +657,10 @@ mod tests {
         };
         assert!(matches!(
             podcast.transport_target(NeighbourDirection::Next),
-            NeighbourTransport::Episode(context) if context.current_id() == 8
+            NeighbourTransport::Item {
+                neighbours: context,
+                origin: PodcastOrigin::Direct,
+            } if context.current_id() == 8
         ));
     }
 
