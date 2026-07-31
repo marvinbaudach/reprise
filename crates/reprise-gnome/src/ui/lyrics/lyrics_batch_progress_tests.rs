@@ -1,3 +1,5 @@
+use gtk4::prelude::*;
+
 use super::*;
 
 fn progress(state: LyricsBatchState, checked: usize, total: usize) -> LyricsBatchProgress {
@@ -49,7 +51,7 @@ fn lyr_6_scan_controls_show_live_lyrics_batch_progress() {
     let view = crate::ui::scan_progress::ScanProgressView::new();
     let controls = ScanControls::new(&button, &view);
     let db = Rc::new(crate::test_db::open().unwrap());
-    let batch = LyricsBatch::new(&db, controls.cancellation());
+    let batch = LyricsBatch::new(&db);
     install(&controls, &batch);
 
     batch.set_progress_for_test(LyricsBatchProgress {
@@ -61,4 +63,39 @@ fn lyr_6_scan_controls_show_live_lyrics_batch_progress() {
     });
 
     assert!(view.widget().reveals_child());
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn lyr_6a_the_card_cancel_stops_the_batch_without_sharing_the_scan_flag() {
+    gtk4::init().unwrap();
+    let button = gtk4::Button::new();
+    let view = crate::ui::scan_progress::ScanProgressView::new();
+    let controls = ScanControls::new(&button, &view);
+    let db = Rc::new(crate::test_db::open().unwrap());
+    let batch = LyricsBatch::new(&db);
+    install(&controls, &batch);
+
+    // While a real scan owns the card, its cancel belongs to the scan alone.
+    button.set_sensitive(false);
+    controls.request_cancel();
+    assert!(
+        !batch.is_cancel_requested(),
+        "cancelling a library scan must not abort the lyrics batch"
+    );
+
+    // With the card showing the batch, the same gesture stops the batch.
+    button.set_sensitive(true);
+    controls.request_cancel();
+    assert!(
+        batch.is_cancel_requested(),
+        "the card's cancel gesture must still stop the lyrics batch"
+    );
+
+    // A scan starting resets its own cancel flag — never the batch's.
+    controls.reset_cancel();
+    assert!(
+        batch.is_cancel_requested(),
+        "starting a scan must not clear a pending lyrics-batch cancel"
+    );
 }

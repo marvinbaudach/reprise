@@ -15,6 +15,7 @@ use super::scan_progress::{
 use super::strings;
 
 type OnScanComplete = Rc<dyn Fn()>;
+type OnCancelRequested = Rc<dyn Fn()>;
 type OnScanStateChanged = Rc<dyn Fn(bool)>;
 
 fn cloned_slot<T: Clone>(slot: &RefCell<Option<T>>) -> Option<T> {
@@ -62,6 +63,7 @@ pub(in crate::ui) struct ScanControls {
     current_progress: Rc<RefCell<Option<ScanProgress>>>,
     completion: ScanCompletion,
     cancellation: ScanCancellation,
+    on_cancel_requested: Rc<RefCell<Vec<OnCancelRequested>>>,
     on_scan_state_changed: Rc<RefCell<Option<OnScanStateChanged>>>,
     empty_indicator: Rc<RefCell<Option<WeakEmptyScanIndicator>>>,
     sidebar_toggle: Rc<RefCell<Option<glib::WeakRef<gtk4::ToggleButton>>>>,
@@ -77,6 +79,7 @@ impl ScanControls {
             current_progress: Rc::new(RefCell::new(None)),
             completion: ScanCompletion::default(),
             cancellation: ScanCancellation::default(),
+            on_cancel_requested: Rc::new(RefCell::new(Vec::new())),
             on_scan_state_changed: Rc::new(RefCell::new(None)),
             empty_indicator: Rc::new(RefCell::new(None)),
             sidebar_toggle: Rc::new(RefCell::new(None)),
@@ -108,6 +111,20 @@ impl ScanControls {
 
     pub(in crate::ui) fn request_cancel(&self) {
         self.cancellation.request();
+        let observers = self.on_cancel_requested.borrow().clone();
+        for observer in observers {
+            observer();
+        }
+    }
+
+    /// Registers a background job that the scan card's cancel gesture should
+    /// also stop. The observer owns the decision whether the gesture was meant
+    /// for it — the scan's own cancellation flag stays private to the scan, so
+    /// a batch never cancels a scan and a scan never cancels a batch.
+    pub(in crate::ui) fn add_on_cancel_requested(&self, callback: impl Fn() + 'static) {
+        self.on_cancel_requested
+            .borrow_mut()
+            .push(Rc::new(callback));
     }
 
     pub(in crate::ui) fn reset_cancel(&self) {
@@ -231,10 +248,6 @@ impl ScanControls {
 
     pub(in crate::ui) fn set_on_complete(&self, callback: impl Fn() + 'static) {
         self.completion.set(callback);
-    }
-
-    pub(in crate::ui) fn cancellation(&self) -> ScanCancellation {
-        self.cancellation.clone()
     }
 
     pub(in crate::ui) fn notify_complete(&self) {

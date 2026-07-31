@@ -46,7 +46,7 @@ fn presentation(progress: LyricsBatchProgress) -> ProgressPresentation {
 }
 
 pub(in crate::ui) fn build(conn: &Rc<Db>, scan_controls: &ScanControls) -> Rc<LyricsBatch> {
-    let batch = LyricsBatch::new(conn, scan_controls.cancellation());
+    let batch = LyricsBatch::new(conn);
     install(scan_controls, &batch);
     batch
 }
@@ -54,6 +54,21 @@ pub(in crate::ui) fn build(conn: &Rc<Db>, scan_controls: &ScanControls) -> Rc<Ly
 pub(in crate::ui) fn install(scan_controls: &ScanControls, batch: &Rc<LyricsBatch>) {
     let controls = scan_controls.clone();
     let hide_generation = Rc::new(Cell::new(0u64));
+    // The card's cancel gesture belongs to whatever the card is showing. A
+    // real scan owns it while one is running; only otherwise does it reach the
+    // batch — and it never touches the scan's own cancellation flag.
+    scan_controls.add_on_cancel_requested({
+        let controls = controls.clone();
+        let batch = Rc::downgrade(batch);
+        move || {
+            if controls.is_scanning() {
+                return;
+            }
+            if let Some(batch) = batch.upgrade() {
+                batch.cancel();
+            }
+        }
+    });
     batch.subscribe_progress({
         let controls = controls.clone();
         let hide_generation = hide_generation.clone();

@@ -182,6 +182,9 @@ type ProgressCallback = Rc<dyn Fn(LyricsBatchProgress)>;
 pub(in crate::ui) struct LyricsBatch {
     conn: Rc<Db>,
     worker: LyricsBatchWorker,
+    /// Private to the batch. Sharing `ScanControls`' flag made a scan start
+    /// clear a pending batch cancel, a batch start un-cancel a running scan,
+    /// and a cancelled scan silently abort the batch.
     cancellation: ScanCancellation,
     enabled: Arc<AtomicBool>,
     generation: Arc<AtomicU64>,
@@ -190,11 +193,11 @@ pub(in crate::ui) struct LyricsBatch {
 }
 
 impl LyricsBatch {
-    pub(in crate::ui) fn new(conn: &Rc<Db>, cancellation: ScanCancellation) -> Rc<Self> {
+    pub(in crate::ui) fn new(conn: &Rc<Db>) -> Rc<Self> {
         Rc::new(Self {
             conn: conn.clone(),
             worker: LyricsBatchWorker::production(),
-            cancellation,
+            cancellation: ScanCancellation::default(),
             enabled: Arc::new(AtomicBool::new(network_allowed(conn))),
             generation: Arc::new(AtomicU64::new(0)),
             progress: Cell::new(LyricsBatchProgress::idle()),
@@ -210,6 +213,17 @@ impl LyricsBatch {
     pub(in crate::ui) fn recompute_enabled(&self) {
         self.enabled
             .store(network_allowed(&self.conn), Ordering::Relaxed);
+    }
+
+    /// Stops a running batch. The scan card routes its cancel gesture here
+    /// while it is showing the batch rather than the scan.
+    pub(in crate::ui) fn cancel(&self) {
+        self.cancellation.request();
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn is_cancel_requested(&self) -> bool {
+        self.cancellation.is_requested()
     }
 
     pub(in crate::ui) fn subscribe_progress(

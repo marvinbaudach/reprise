@@ -176,7 +176,7 @@ fn net_1a_the_batch_gate_follows_the_global_online_sources_switch() {
     let conn = Rc::new(crate::test_db::open().unwrap());
     reprise_core::modules::set_enabled(&conn, &reprise_core::modules::ONLINE_LYRICS_MODULE, true)
         .unwrap();
-    let batch = LyricsBatch::new(&conn, ScanCancellation::default());
+    let batch = LyricsBatch::new(&conn);
     assert!(batch.enabled.load(Ordering::Relaxed));
 
     reprise_core::online_sources::set_enabled(&conn, false).unwrap();
