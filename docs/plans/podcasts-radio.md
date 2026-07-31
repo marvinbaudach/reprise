@@ -264,6 +264,15 @@ Dünner `std::process::Command`-Wrapper, komplett in core (nur std):
   `libexec`-Verzeichnis → `"yt-dlp"` im PATH. `probe_version()` (`--version`, 10 s) speist
   Preferences-Row und Verfügbarkeits-Gate. Release-Pakete behandeln den Helper als
   Laufzeitkomponente, nicht als manuell zu erfüllende Nutzervoraussetzung.
+- **Explizite Browser-Sitzung:** Das persistierte Setting `podcasts.youtube_browser` reicht den
+  im Plugins-Fenster gewählten yt-dlp-Browserbezeichner (z. B. `brave`) als
+  `--cookies-from-browser` an Listing, Suche, Resolve und Download weiter. Ohne diese Auswahl liest
+  Reprise keine Browser-Cookies; der sichtbare Opt-out ist autoritativ und kann nicht von einer
+  Umgebungsvariable überstimmt werden. `REPRISE_YTDLP_COOKIES_FROM_BROWSER` bleibt nur als
+  Low-Level-Seam für explizite Paketdiagnosen und Tests von `YtDlp::discover`, nie als versteckter
+  Fallback eines Produktpfads. Das ist bewusst ein Opt-in: der Aufruf kann als das im Browser
+  angemeldete YouTube-Konto erfolgen; Reprise speichert oder protokolliert weder Cookies noch den
+  Browserprofilpfad.
 - **Aufrufe** (alle `--no-warnings`, stdout=JSON, Timeout mit Kill via `try_wait`-Schleife in
   100-ms-Slices): `list(url)` = `--flat-playlist -J {url}` (60 s, Legacy-Fallback);
   `list_range(url, 40)` = `--flat-playlist -I 1:40 -J {url}` erst bei „Load more";

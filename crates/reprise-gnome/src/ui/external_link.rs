@@ -42,3 +42,22 @@ pub(in crate::ui) fn launch(url: &str, context: &'static str, on_error: Option<&
         },
     );
 }
+
+/// Opens a validated web URL with a specific installed application.
+///
+/// Returns `false` after a refused URL or launch failure so the caller can
+/// show fixed, context-specific recovery copy without exposing raw launcher
+/// diagnostics.
+pub(in crate::ui) fn launch_in_app(url: &str, context: &'static str, app: &gio::AppInfo) -> bool {
+    if !reprise_core::external_link::is_launchable_url(url) {
+        tracing::warn!(url, context, "refused to open a URL that is not a web link");
+        return false;
+    }
+    match gio::prelude::AppInfoExt::launch_uris(app, &[url], None::<&gio::AppLaunchContext>) {
+        Ok(()) => true,
+        Err(error) => {
+            tracing::warn!(%error, url, context, "could not open URL in selected application");
+            false
+        }
+    }
+}

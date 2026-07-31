@@ -1,9 +1,10 @@
 //! Subprocess lifetime: deadlines, reader failures, and orphaned pipes.
 
 use std::{
-    fs,
+    fs::{self, OpenOptions},
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
+    thread,
     time::{Duration, Instant},
 };
 
@@ -103,6 +104,24 @@ fn unexecutable_component_is_actionable_and_logged_without_its_path() {
             "yt-dlp start log leaked {private:?}: {logged}"
         );
     }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn executable_file_busy_is_retried_before_reporting_a_start_failure() {
+    let directory = tempfile::tempdir().unwrap();
+    let binary = fake_binary(directory.path(), "printf '%s\\n' '2026.07.26'");
+    let writer = OpenOptions::new().write(true).open(&binary).unwrap();
+    let release = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(25));
+        drop(writer);
+    });
+    let runner = YtDlp::with_binary_and_timeouts(binary, short_timeouts());
+
+    let version = runner.probe_version();
+
+    release.join().unwrap();
+    assert_eq!(version.unwrap(), "2026.07.26");
 }
 
 #[test]

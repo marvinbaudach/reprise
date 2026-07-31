@@ -3745,6 +3745,19 @@ listening statistics.
   playback starts. Radio has no neighbours. While any external session is
   active the lyrics tab is hidden and the panel header shows the episode
   instead of "Nothing playing".
+- **POD-22** [active] [core] [gtk] — When yt-dlp classifies a YouTube
+  failure as requiring verification, the failed episode row keeps its normal
+  retry action and replaces the generic provider reason with the fixed,
+  leak-safe guidance "YouTube needs a signed-in browser — choose one in
+  Plugins". The YouTube section on the Plugins page offers an explicit browser
+  selector and a separate "Open YouTube" sign-in action. The selector defaults
+  to "Do not use browser cookies"; Reprise never infers a browser, reads a
+  profile, or enables cookie access automatically. After the user selects a
+  supported browser and signs in there, every YouTube listing, search,
+  playback-resolution and download path passes that browser choice to yt-dlp;
+  probing or updating yt-dlp does not. Reprise stores only the browser kind,
+  and neither cookie contents nor browser-profile paths reach the database,
+  UI, or normal-level logs.
 - **RAD-1** [active] [gtk] — Only the currently connected station is
   accented in the table; its state icon, name, now-playing, and row
   tint change together. All others, as well as a presented but

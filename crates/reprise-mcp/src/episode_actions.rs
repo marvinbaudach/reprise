@@ -147,8 +147,8 @@ fn download_one(
             error: Some("this source is disabled in Reprise preferences".to_owned()),
         };
     }
-    let ytdlp_path = match reprise_core::podcasts::config::load(db) {
-        Ok(config) => config.ytdlp_path,
+    let config = match reprise_core::podcasts::config::load(db) {
+        Ok(config) => config,
         Err(error) => {
             return EpisodeOutcome {
                 episode_id,
@@ -158,7 +158,10 @@ fn download_one(
             }
         }
     };
-    let ytdlp = reprise_core::podcasts::ytdlp::YtDlp::discover(ytdlp_path.as_deref());
+    let ytdlp = reprise_core::podcasts::ytdlp::YtDlp::discover_with_browser(
+        config.ytdlp_path.as_deref(),
+        config.youtube_browser,
+    );
     let feed_fetcher = reprise_core::podcasts::pipeline::HttpFeedFetcher;
     let result = reprise_core::podcasts::pipeline::download_episode(
         db,
