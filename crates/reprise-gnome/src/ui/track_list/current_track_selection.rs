@@ -34,11 +34,13 @@ enum TrackRevealPolicy {
 
 fn reveal_policy(change: CurrentTrackChange, user_scrolling: bool) -> TrackRevealPolicy {
     match change {
-        CurrentTrackChange::PlaybackStarted => TrackRevealPolicy::MarkerOnly,
+        CurrentTrackChange::PlaybackStarted | CurrentTrackChange::SessionRestore => {
+            TrackRevealPolicy::MarkerOnly
+        }
         CurrentTrackChange::AutomaticAdvance if user_scrolling => TrackRevealPolicy::MarkerOnly,
-        CurrentTrackChange::AutomaticAdvance
-        | CurrentTrackChange::ExplicitTransport
-        | CurrentTrackChange::SessionRestore => TrackRevealPolicy::Center,
+        CurrentTrackChange::AutomaticAdvance | CurrentTrackChange::ExplicitTransport => {
+            TrackRevealPolicy::Center
+        }
     }
 }
 
@@ -229,13 +231,18 @@ impl TrackList {
         let ids = self.shared.current_view_ids();
         let is_queue = matches!(*self.shared.source.borrow(), ViewSource::Queue);
 
-        if matches!(
-            change,
-            CurrentTrackChange::PlaybackStarted
-                | CurrentTrackChange::AutomaticAdvance
-                | CurrentTrackChange::ExplicitTransport
-        ) {
-            self.shared.playing_track_id.set(Some(track_id));
+        // Every change carries a loaded track, including the session restore:
+        // NAV-10a asks for the marker on every visible instance of the
+        // *loaded* track, not only the running one.
+        self.shared.playing_track_id.set(Some(track_id));
+        if change == CurrentTrackChange::SessionRestore {
+            // START-1: a restored track is loaded but not running, so its row
+            // must look exactly like a mid-session pause — same marker, same
+            // frozen equaliser. `restore_session_queue` fans out a
+            // `Stopped` before this runs (session_player.rs), which is why
+            // the class is set here and not earlier. The first real `Playing`
+            // drops it again (`on_playback_state`).
+            self.set_playback_paused(true);
         }
         let Some(position) =
             visible_position_for_track_in_source(&ids, track_id, queue_position, is_queue)
@@ -710,6 +717,21 @@ mod tests {
         assert_eq!(
             visible_position_for_track_in_source(&[7, 8, 7], 7, None, false),
             Some(0)
+        );
+    }
+
+    /// START-1: the restored track is loaded, not running. It gets the marker,
+    /// but the viewport belongs to the startup centering — never to this
+    /// callback, which fires before the target view even exists.
+    #[test]
+    fn start_1_session_restore_marks_without_moving_the_viewport() {
+        assert_eq!(
+            reveal_policy(CurrentTrackChange::SessionRestore, false),
+            TrackRevealPolicy::MarkerOnly
+        );
+        assert_eq!(
+            reveal_policy(CurrentTrackChange::SessionRestore, true),
+            TrackRevealPolicy::MarkerOnly
         );
     }
 }
