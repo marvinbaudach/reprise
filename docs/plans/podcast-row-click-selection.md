@@ -903,11 +903,19 @@ git commit -m "feat(podcasts): Space selects the focused episode row, Enter play
 - Consumes: `PodcastsView::select_row`, `SelectMode::Only`.
 - Produces: nothing new.
 
-**The defect:** `podcasts_context_menu::build_for_selection` targets the whole
-selection whenever more than one episode is selected
-(`podcasts_context_menu.rs:135-146`) — including a right-click on a row that is
-not part of it. Three rows selected, right-click a fourth, "Remove" removes the
-three. `podcasts_dnd::drag_items` already resolves this correctly for drags.
+**The defect, and what is already done:** `build_for_selection` targeted the
+whole selection whenever more than one episode was selected — including a menu
+opened on a row outside it. **The targeting half shipped separately in PR #203**
+(`fix/podcast-menu-target`): the menu now widens only when the row is a member
+of the selection, so no action can reach rows the pointer is not on. **Rebase
+this branch onto `dev` once #203 lands** and do not re-fix it.
+
+What remains here is the visible half: with three rows selected and the menu
+opened on a fourth, the menu is correctly a single-row menu, but three rows
+still *look* selected. Making the pointed-at row the selection resolves that
+mismatch — and once it does, `build_for_selection`'s membership test is a
+belt-and-braces guard rather than the only thing standing between the user and
+a wrong "Remove". Keep both.
 
 - [ ] **Step 1: Write the failing test**
 
