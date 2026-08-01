@@ -297,14 +297,58 @@ angesprochen werden.
 überhaupt zu stellen — nachgewiesen im Focus-Stack des Systems, nicht nur im
 App-Code.
 
-### Offen, weil ein Handgriff am Gerät nötig ist
+### Die drei Handgriffe am Gerät — nachgeholt
 
-- **Focus-Verlust und Ducking**: Der Stack zeigt `loss: none` — die
-  *Reaktion* auf einen Anruf oder eine fremde Medienquelle ist ungeprüft.
-  Genau hier hängt die Anschlussfrage, ob `reprise-runtime` einen neuen
-  Zustandsübergang braucht.
-- **`ACTION_AUDIO_BECOMING_NOISY`**: braucht ein echtes Abziehen.
-- **Aus Recents gewischt** (`onTaskRemoved`) und **Doze**.
+**Focus-Verlust: die Runtime erfährt davon.** Eine fremde App mit Ton
+gestartet, und der Listener feuerte:
+
+```text
+19:14:44.288  EVENT isPlaying=false
+```
+
+**Das ist der wertvollste Einzelbefund dieses Spikes.** Media3 pausiert nicht
+still hinter dem Rücken der Anwendung — der Zustandswechsel läuft über
+`onIsPlayingChanged`, also über denselben Rückruf, den `reprise-runtime`
+ohnehin abonnieren wird. Die befürchtete Konsequenz aus B7 (ein neu zu
+erfindender Zustandsübergang) **entfällt**.
+
+Bemerkenswert und regelkonform: **kein Auto-Resume** nach dem Ende der
+Störung. Das entspricht `AUD-2` — bei dauerhaftem Verlust ist
+Nicht-Fortsetzen das richtige Verhalten, kein Versäumnis.
+
+**`ACTION_AUDIO_BECOMING_NOISY`: greift.** Manuell beobachtet (Kopfhörer im
+USB-C-Port, deshalb ohne adb): „beim Abziehen stoppt der Ton". Für diese
+Frage ist die Wahrnehmung das Kriterium; `setHandleAudioBecomingNoisy(true)`
+tut, was es soll.
+
+**Aus Recents gewischt:**
+
+```text
+19:16:28.570  LIFECYCLE onTaskRemoved
+19:16:28.620  LIFECYCLE onDestroy
+```
+
+Der Service wurde beendet — **weil die Wiedergabe zu diesem Zeitpunkt
+pausiert war**. Media3s Standard ist genau diese Unterscheidung: laufende
+Wiedergabe überlebt das Wischen, pausierte nicht.
+
+Das ist dieselbe Frage, die `RUN-6` auf dem Desktop stellt („Fensterschließen
+beendet die Wiedergabe, die dieses Fenster gestartet hat"). Androids
+Standardantwort deckt sich mit der Regel — P4a muss hier nichts erfinden,
+nur bewusst bestätigen.
+
+### Weiterhin offen
+
+**Doze.** Braucht eine lange Leerlaufphase; nicht gemessen.
+
+### Betriebsnotiz für künftige Gerätearbeit
+
+Drahtloses adb war in diesem Netz **nicht** herstellbar. Ursache ist nicht
+das VPN des Telefons — mit abgeschaltetem NordVPN blieb der Ping bei 100 %
+Verlust —, sondern die **Client-Isolation des WLAN-Routers**. Zwei
+WLAN-Geräte dürfen dort nicht miteinander sprechen. Für Tests, die den
+USB-C-Port brauchen (Kopfhörer), heißt das: entweder ein anderes Netz oder
+manuelle Beobachtung.
 
 ## Frage 4 — Trägt SAF den Scanner?
 
