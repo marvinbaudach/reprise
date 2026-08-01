@@ -21,6 +21,7 @@ pub const ONBOARDING_COMPLETED_KEY: &str = "onboarding.completed";
 pub const ONLINE_DISCOVERY_BANNER_COMPLETED_KEY: &str = "online_sources.discovery_banner_completed";
 pub const ONLINE_SOURCES_FIRST_ENABLE_COMPLETED_KEY: &str = "online_sources.first_enable_completed";
 pub const NEW_RELEASES_FETCH_COMPLETED_KEY: &str = "new_releases.fetch_completed";
+pub const NEW_RELEASES_LAST_COMPLETED_AT_KEY: &str = "new_releases.last_completed_at";
 pub const LAST_SCAN_RELINKED_KEY: &str = "last_scan_relinked";
 
 /// Reads `key`'s current value, if any has ever been set. `Ok(None)` — not
@@ -169,6 +170,24 @@ fn set_new_releases_fetch_completed_in(
     completed: bool,
 ) -> Result<(), rusqlite::Error> {
     set_bool_in(conn, NEW_RELEASES_FETCH_COMPLETED_KEY, completed)
+}
+
+fn get_new_releases_last_completed_at_in(
+    conn: &Connection,
+) -> Result<Option<i64>, rusqlite::Error> {
+    Ok(get_setting_in(conn, NEW_RELEASES_LAST_COMPLETED_AT_KEY)?
+        .and_then(|value| value.parse::<i64>().ok()))
+}
+
+fn set_new_releases_last_completed_at_in(
+    conn: &Connection,
+    completed_at: i64,
+) -> Result<(), rusqlite::Error> {
+    set_setting_in(
+        conn,
+        NEW_RELEASES_LAST_COMPLETED_AT_KEY,
+        &completed_at.to_string(),
+    )
 }
 
 pub const PLAYER_BAR_POSITION_KEY: &str = "player_bar_position";

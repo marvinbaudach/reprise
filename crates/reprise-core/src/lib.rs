@@ -93,6 +93,8 @@ mod artist_news_parsing_tests;
 #[cfg(test)]
 mod artist_news_pipeline_tests;
 #[cfg(test)]
+mod artist_news_progress_tests;
+#[cfg(test)]
 mod artist_news_query_tests;
 #[cfg(test)]
 mod artist_news_view_tests;

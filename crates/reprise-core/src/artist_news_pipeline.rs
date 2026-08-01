@@ -29,6 +29,22 @@ pub struct RefreshReport {
     pub failures: Vec<SourceError>,
 }
 
+/// Completed artist candidates within one bounded New Releases refresh.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RefreshProgress {
+    /// Candidates whose refresh attempt or cache check has finished.
+    pub checked: usize,
+    /// Candidates selected for this refresh run.
+    pub total: usize,
+}
+
+pub(crate) struct RefreshHooks<'a, F, A, P, C> {
+    pub fetch: &'a mut F,
+    pub fallback_accent: &'a mut A,
+    pub on_progress: &'a mut P,
+    pub completion_time: &'a mut C,
+}
+
 /// Outcome of resolving an artist's MBID for a refresh attempt. Distinct from
 /// `ArtistMatch` (which only describes what a *successful* search response
 /// contained): this also carries the "the search request itself failed or
@@ -76,22 +92,44 @@ pub fn refresh<A>(
     today: NaiveDate,
     scope: FetchScope,
     force: bool,
-    mut fallback_accent: A,
+    fallback_accent: A,
 ) -> Result<RefreshReport, NewsError>
 where
     A: FnMut(&crate::db::Db, &str) -> Option<String>,
 {
-    refresh_with(
+    refresh_with_progress(db, today, scope, force, fallback_accent, |_| {})
+}
+
+pub fn refresh_with_progress<A, P>(
+    db: &crate::db::Db,
+    today: NaiveDate,
+    scope: FetchScope,
+    force: bool,
+    mut fallback_accent: A,
+    mut on_progress: P,
+) -> Result<RefreshReport, NewsError>
+where
+    A: FnMut(&crate::db::Db, &str) -> Option<String>,
+    P: FnMut(RefreshProgress),
+{
+    let started_at = chrono::Utc::now().timestamp();
+    let mut completion_time = || chrono::Utc::now().timestamp();
+    refresh_with_progress_at(
         db,
         today,
-        chrono::Utc::now().timestamp(),
+        started_at,
         scope,
         force,
-        &mut musicbrainz::get,
-        &mut fallback_accent,
+        &mut RefreshHooks {
+            fetch: &mut musicbrainz::get,
+            fallback_accent: &mut fallback_accent,
+            on_progress: &mut on_progress,
+            completion_time: &mut completion_time,
+        },
     )
 }
 
+#[cfg(test)]
 pub(crate) fn refresh_with<F, A>(
     db: &crate::db::Db,
     today: NaiveDate,
@@ -105,115 +143,161 @@ where
     F: FnMut(&str) -> Result<String, FetchError>,
     A: FnMut(&crate::db::Db, &str) -> Option<String>,
 {
+    let mut on_progress = |_| {};
+    let mut completion_time = || now;
+    refresh_with_progress_at(
+        db,
+        today,
+        now,
+        scope,
+        force,
+        &mut RefreshHooks {
+            fetch,
+            fallback_accent,
+            on_progress: &mut on_progress,
+            completion_time: &mut completion_time,
+        },
+    )
+}
+
+pub(crate) fn refresh_with_progress_at<F, A, P, C>(
+    db: &crate::db::Db,
+    today: NaiveDate,
+    now: i64,
+    scope: FetchScope,
+    force: bool,
+    hooks: &mut RefreshHooks<'_, F, A, P, C>,
+) -> Result<RefreshReport, NewsError>
+where
+    F: FnMut(&str) -> Result<String, FetchError>,
+    A: FnMut(&crate::db::Db, &str) -> Option<String>,
+    P: FnMut(RefreshProgress),
+    C: FnMut() -> i64,
+{
     let conn = db.conn();
+    crate::artist_news_refresh::seed_completion_from_legacy_ledger(db).map_err(database_error)?;
     let candidates = artists_for_fetch(conn, scope).map_err(database_error)?;
+    let total = candidates.len();
     let mut report = RefreshReport {
-        artists_queued: candidates.len(),
+        artists_queued: total,
         ..RefreshReport::default()
     };
+    (hooks.on_progress)(RefreshProgress { checked: 0, total });
     let include_singles = include_singles(db).map_err(database_error)?;
     let local_track_counts =
         crate::artist_news_query::local_album_track_counts(conn).map_err(database_error)?;
-    for candidate in candidates {
-        // `normalize()` is the authoritative form of the ledger key: every
-        // runtime read and write (`record_attempt`, `last_attempt_at`,
-        // `artist_cache_is_fresh`) goes through it, and it collapses *inner*
-        // whitespace runs via `split_whitespace` in addition to trimming and
-        // lowercasing. The migration's SQL backfill
-        // (`db_artist_news_fetch.rs`) seeded the same table with
-        // `lower(trim(artist_name))` instead, which SQLite cannot make
-        // collapse inner runs generically. So "Pink   Floyd" backfills as
-        // "pink   floyd" but normalizes here to "pink floyd" — the keys
-        // differ and the backfilled row is never matched. The practical
-        // effect is that such an artist is treated as "never checked" once,
-        // costs one extra fetch, and then the runtime key is what every
-        // later run reads and writes, so the mismatch cannot recur. That
-        // one-time, self-healing cost for a rare edge case (multiple inner
-        // spaces in an artist name) is why this divergence is accepted
-        // rather than chasing exact parity in raw SQL.
-        let artist_key = normalize(&candidate.name);
-        // Checked before resolving the MBID: a fresh artist must cost zero
-        // requests, and the search request would otherwise be spent before
-        // we ever consult the cache.
-        if !force && artist_cache_is_fresh(conn, &artist_key, now).map_err(database_error)? {
-            continue;
+    for (index, candidate) in candidates.into_iter().enumerate() {
+        let completed = RefreshProgress {
+            checked: index + 1,
+            total,
+        };
+        'candidate: {
+            // `normalize()` is the authoritative form of the ledger key: every
+            // runtime read and write (`record_attempt`, `last_attempt_at`,
+            // `artist_cache_is_fresh`) goes through it, and it collapses *inner*
+            // whitespace runs via `split_whitespace` in addition to trimming and
+            // lowercasing. The migration's SQL backfill
+            // (`db_artist_news_fetch.rs`) seeded the same table with
+            // `lower(trim(artist_name))` instead, which SQLite cannot make
+            // collapse inner runs generically. So "Pink   Floyd" backfills as
+            // "pink   floyd" but normalizes here to "pink floyd" — the keys
+            // differ and the backfilled row is never matched. The practical
+            // effect is that such an artist is treated as "never checked" once,
+            // costs one extra fetch, and then the runtime key is what every
+            // later run reads and writes, so the mismatch cannot recur. That
+            // one-time, self-healing cost for a rare edge case (multiple inner
+            // spaces in an artist name) is why this divergence is accepted
+            // rather than chasing exact parity in raw SQL.
+            let artist_key = normalize(&candidate.name);
+            // Checked before resolving the MBID: a fresh artist must cost zero
+            // requests, and the search request would otherwise be spent before
+            // we ever consult the cache.
+            if !force && artist_cache_is_fresh(conn, &artist_key, now).map_err(database_error)? {
+                break 'candidate;
+            }
+            let mbid = match resolve_artist_mbid(conn, &candidate, hooks.fetch, &mut report)? {
+                MbidResolution::Found(mbid) => mbid,
+                MbidResolution::Failed(error) => {
+                    record_failure(&mut report, error);
+                    crate::artist_news_ledger::record_attempt(
+                        conn,
+                        &artist_key,
+                        None,
+                        now,
+                        crate::artist_news_ledger::FetchOutcome::Failed,
+                        0,
+                    )
+                    .map_err(database_error)?;
+                    break 'candidate;
+                }
+                MbidResolution::Unmatched => {
+                    crate::artist_news_ledger::record_attempt(
+                        conn,
+                        &artist_key,
+                        None,
+                        now,
+                        crate::artist_news_ledger::FetchOutcome::Unmatched,
+                        0,
+                    )
+                    .map_err(database_error)?;
+                    break 'candidate;
+                }
+            };
+            let discography =
+                match fetch_release_discography(&mbid, today, include_singles, hooks.fetch) {
+                    Ok(discography) => discography,
+                    Err(error) => {
+                        record_failure(&mut report, error);
+                        crate::artist_news_ledger::record_attempt(
+                            conn,
+                            &artist_key,
+                            Some(&mbid),
+                            now,
+                            crate::artist_news_ledger::FetchOutcome::Failed,
+                            0,
+                        )
+                        .map_err(database_error)?;
+                        break 'candidate;
+                    }
+                };
+            let accent = normalize_fallback_accent((hooks.fallback_accent)(db, &candidate.name));
+            sync_releases(
+                conn,
+                &candidate.name,
+                &mbid,
+                now,
+                &accent,
+                &discography.items,
+                &discography.excluded_release_group_mbids,
+            )
+            .map_err(database_error)?;
+            enrich_local_release_track_counts(
+                conn,
+                &candidate.name,
+                &discography.items,
+                &local_track_counts,
+                hooks.fetch,
+            )
+            .map_err(database_error)?;
+            crate::artist_news_ledger::record_attempt(
+                conn,
+                &artist_key,
+                Some(&mbid),
+                now,
+                crate::artist_news_ledger::FetchOutcome::Ok,
+                discography.items.len(),
+            )
+            .map_err(database_error)?;
+            report.artists_fetched += 1;
+            report.releases_upserted += discography.items.len();
         }
-        let mbid = match resolve_artist_mbid(conn, &candidate, fetch, &mut report)? {
-            MbidResolution::Found(mbid) => mbid,
-            MbidResolution::Failed(error) => {
-                record_failure(&mut report, error);
-                crate::artist_news_ledger::record_attempt(
-                    conn,
-                    &artist_key,
-                    None,
-                    now,
-                    crate::artist_news_ledger::FetchOutcome::Failed,
-                    0,
-                )
-                .map_err(database_error)?;
-                continue;
-            }
-            MbidResolution::Unmatched => {
-                crate::artist_news_ledger::record_attempt(
-                    conn,
-                    &artist_key,
-                    None,
-                    now,
-                    crate::artist_news_ledger::FetchOutcome::Unmatched,
-                    0,
-                )
-                .map_err(database_error)?;
-                continue;
-            }
-        };
-        let discography = match fetch_release_discography(&mbid, today, include_singles, fetch) {
-            Ok(discography) => discography,
-            Err(error) => {
-                record_failure(&mut report, error);
-                crate::artist_news_ledger::record_attempt(
-                    conn,
-                    &artist_key,
-                    Some(&mbid),
-                    now,
-                    crate::artist_news_ledger::FetchOutcome::Failed,
-                    0,
-                )
-                .map_err(database_error)?;
-                continue;
-            }
-        };
-        let accent = normalize_fallback_accent(fallback_accent(db, &candidate.name));
-        sync_releases(
-            conn,
-            &candidate.name,
-            &mbid,
-            now,
-            &accent,
-            &discography.items,
-            &discography.excluded_release_group_mbids,
-        )
-        .map_err(database_error)?;
-        enrich_local_release_track_counts(
-            conn,
-            &candidate.name,
-            &discography.items,
-            &local_track_counts,
-            fetch,
-        )
-        .map_err(database_error)?;
-        crate::artist_news_ledger::record_attempt(
-            conn,
-            &artist_key,
-            Some(&mbid),
-            now,
-            crate::artist_news_ledger::FetchOutcome::Ok,
-            discography.items.len(),
-        )
-        .map_err(database_error)?;
-        report.artists_fetched += 1;
-        report.releases_upserted += discography.items.len();
+        (hooks.on_progress)(completed);
     }
     crate::artist_news_history::enforce_retention(db, now).map_err(database_error)?;
+    if report.failures.is_empty() {
+        crate::library::settings::set_new_releases_last_completed_at(db, (hooks.completion_time)())
+            .map_err(database_error)?;
+    }
     Ok(report)
 }
 
