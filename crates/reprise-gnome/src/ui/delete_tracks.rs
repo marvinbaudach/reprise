@@ -277,6 +277,10 @@ fn finish(shared: &Rc<Shared>, report: &DeleteReport, mode: DeleteMode) {
     if let Some(callback) = callback {
         callback(&report.removed_ids);
     }
+    let player = shared.player.borrow().upgrade();
+    if let Some(player) = player {
+        player.advance_after_user_catalog_delete(&report.removed_ids);
+    }
     shared.browse_bar.refresh();
     reload_after_catalog_delete(shared);
     tracing::info!(
@@ -469,7 +473,7 @@ mod tests {
     }
 
     #[test]
-    fn browse_8_deletion_focus_uses_survivor_then_next_then_previous() {
+    fn browse_11_deletion_focus_uses_survivor_then_next_then_previous() {
         assert_eq!(deletion_focus_position(&[4, 5], &[4], 8), Some(4));
         assert_eq!(deletion_focus_position(&[4, 5], &[], 6), Some(4));
         assert_eq!(deletion_focus_position(&[6, 7], &[], 6), Some(5));

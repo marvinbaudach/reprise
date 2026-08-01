@@ -56,6 +56,10 @@ fn queue_purge_plan(ids: &[i64], loaded: Option<i64>) -> QueuePurgePlan {
     }
 }
 
+fn should_advance_after_user_delete(ids: &[i64], loaded: Option<i64>) -> bool {
+    loaded.is_some_and(|id| ids.contains(&id))
+}
+
 fn toggle_action(
     status: MprisPlaybackStatus,
     current_track: Option<QueueItem>,
@@ -741,6 +745,18 @@ impl PlayerController {
                 "loaded track left playing from its owned snapshot after catalog deletion"
             );
         }
+    }
+
+    /// Explicit Remove/Trash is a transport action when it deleted the
+    /// loaded track. Background purge callers intentionally use only
+    /// `purge_queue_ids`, preserving PLAY-5a/PLAY-5b's no-interruption rule.
+    pub(in crate::ui) fn advance_after_user_catalog_delete(self: &Rc<Self>, ids: &[i64]) {
+        let loaded = self.now_playing.borrow().as_ref().map(|track| track.id);
+        if !should_advance_after_user_delete(ids, loaded) {
+            return;
+        }
+        tracing::info!(deleted = ?loaded, "user deleted the loaded track; advancing playback");
+        self.advance_playback(AdvanceReason::Automatic);
     }
 }
 

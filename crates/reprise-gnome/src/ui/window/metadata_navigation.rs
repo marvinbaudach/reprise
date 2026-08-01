@@ -114,7 +114,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn browse_8_deleted_track_links_do_not_open_phantoms_but_scopes_survive() {
+    fn browse_11_deleted_track_links_do_not_open_phantoms_but_scopes_survive() {
         let track = NavigationIntent::RevealTrack {
             origin: Box::new(BrowserPlace::from(ViewSource::Library)),
             track_id: 42,

@@ -3187,20 +3187,8 @@ means deterministic and high-confidence, never „without review".
   only that list. The long-lived listening history always follows
   BROWSE-6.
 
-- **BROWSE-8** [active] [gtk] — **Catalog deletion does not interrupt
-  the loaded track.** If the currently loaded track is removed, trashed,
-  or hard-deleted by maintenance, its player-owned metadata snapshot and
-  the already-open audio file keep running until the natural or
-  explicit transport change. All future occurrences of deleted IDs
-  disappear immediately from Queue and Up Next; Repeat One cannot
-  restart a deleted track. After the change, the loaded queue tombstone
-  is also removed. A track link to an ID that no longer exists stays at
-  its point of origin and explains this via toast; album and artist
-  links continue to open the snapshot scope, but without a phantom
-  anchor. After a deletion series, surviving selected rows remain
-  focused; otherwise selection and focus fall to the next row, to the
-  previous row at the end of the list, and to the stable content
-  container when the list is empty.
+- **BROWSE-8** [replaced by BROWSE-11] — Catalog deletion originally kept
+  the loaded track playing until a later transport change.
 
 - **BROWSE-9** [active] [gtk] — **The date added is a normal library
   column.** "Added" is selectable in the column editor, movable,
@@ -3216,6 +3204,23 @@ means deterministic and high-confidence, never „without review".
   then wins for all tracks of the album identity; the music files remain
   unchanged. With the module disabled or the network unavailable, purely
   local resolution remains in effect.
+
+- **BROWSE-11** [active] [gtk] — **A user deletion advances the loaded
+  track.** When an explicit "Remove from library" or "Move to Trash"
+  action successfully deletes the loaded track, playback immediately uses
+  the normal automatic queue advance: Play Next entries win, unavailable
+  entries are skipped, then the frozen playback snapshot continues. Repeat
+  One cannot restart the deleted track; if nothing survives, playback stops.
+  Only IDs reported as successfully deleted can trigger this. Background
+  watcher, scanner, startup, and maintenance purges continue to follow
+  PLAY-5a/PLAY-5b and never interrupt the open audio stream, while all future
+  occurrences of deleted IDs disappear from Queue and Up Next. A track link
+  to an ID that no longer exists stays at its point of origin and explains
+  this via toast; album and artist links continue to open the snapshot scope,
+  but without a phantom anchor. After a deletion series, surviving selected
+  rows remain focused; otherwise selection and focus fall to the next row, to
+  the previous row at the end of the list, and to the stable content
+  container when the list is empty.
 
 - **COVER-1** [active] [core] — After a downloaded album cover has been
   published in the XDG cache, Reprise also writes `cover.<ext>` into every
