@@ -49,7 +49,12 @@ impl StatsBandTile {
         root.set_hexpand(true);
         root.set_valign(gtk4::Align::Start);
         root.set_overflow(gtk4::Overflow::Hidden);
+        crate::ui::style::buttons::arm_cursor(&root);
 
+        // STATS-21: same hover as the leader card and the song rows. The tile
+        // wears it as an overlay for the same reason the leader does — its
+        // artwork covers the button ground a background hover would paint.
+        let stack = gtk4::Overlay::new();
         let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
 
         let image_slot = gtk4::Overlay::new();
@@ -95,7 +100,9 @@ impl StatsBandTile {
         bar.set_valign(gtk4::Align::Center);
         body.append(&bar);
         content.append(&body);
-        root.set_child(Some(&content));
+        stack.set_child(Some(&content));
+        stack.add_overlay(&super::stats_band_card::hover_wash());
+        root.set_child(Some(&stack));
 
         let current_artist = Rc::new(RefCell::new(String::new()));
         let current_key = Rc::new(RefCell::new(String::new()));

@@ -74,6 +74,51 @@ fn stats_19_a_short_ranking_leaves_the_tail_empty() {
     );
 }
 
+/// STATS-21: every band surface answers the pointer, and it answers the same
+/// way — a wash above its artwork plus the pointer cursor. Artwork covers the
+/// card ground, so a background hover alone would be invisible here.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_21_every_band_surface_carries_the_hover_wash_and_pointer() {
+    gtk4::init().unwrap();
+    let row = StatsBandsRow::new();
+    row.set_data(&fixture(4));
+
+    let mut surfaces: Vec<gtk4::Widget> = vec![row.leader().widget().clone().upcast()];
+    surfaces.extend(
+        row.tiles()
+            .iter()
+            .map(|tile| tile.widget().clone().upcast::<gtk4::Widget>()),
+    );
+    for surface in &surfaces {
+        let washes = descendants(surface)
+            .into_iter()
+            .filter(|widget| widget.has_css_class("stats-band-hover"))
+            .collect::<Vec<_>>();
+        assert_eq!(washes.len(), 1, "each band surface owns exactly one wash");
+        assert!(
+            !washes[0].can_target(),
+            "the wash must not swallow the click it advertises"
+        );
+        assert_eq!(
+            surface.cursor().and_then(|cursor| cursor.name()).as_deref(),
+            Some("pointer"),
+            "a clickable band surface has to say so under the cursor"
+        );
+    }
+}
+
+fn descendants(widget: &gtk4::Widget) -> Vec<gtk4::Widget> {
+    let mut found = Vec::new();
+    let mut child = widget.first_child();
+    while let Some(current) = child {
+        found.push(current.clone());
+        found.extend(descendants(&current));
+        child = current.next_sibling();
+    }
+    found
+}
+
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn stats_19_leader_and_tiles_share_one_navigation_callback() {

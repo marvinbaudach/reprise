@@ -2671,7 +2671,10 @@ property is set and yet nothing happens.
   width with its image bleeding into the card ground, four runners-up beside
   it with a bar relative to the leader; a band without artwork shows its
   initials on a tinted ground, never an empty frame. Songs follow as a full
-  top ten in two columns, and genres close as a strip of roughly 90 px: one
+  top ten in two columns, with an expander that *continues* the ranking from
+  rank 11 rather than restating the rows already on screen — it is offered only
+  when there is something past the visible ten. Genres close as a strip of
+  roughly 90 px: one
   stacked bar plus a single-line legend, with duration and leading artist in
   the segment's tooltip rather than on screen. Activating a band, a segment or
   a legend entry scopes the library to it. My Stats still stands fully in
@@ -2684,6 +2687,21 @@ property is set and yet nothing happens.
   choreography and only interpolates bar values over 250 ms; everything else
   switches straight to its new final state. With `gtk-enable-animations=false`
   every bar stands immediately at its target.
+- **STATS-21** [active] [gtk] — My Stats behaves like the rest of the app under
+  the pointer and after a click. **Hover:** every activatable surface of the
+  page answers with the same wash — the shared button hover alpha over
+  `currentColor` (BTN-1/BTN-4) — and with the pointer cursor. Song rows paint
+  it on their own ground; the band cards cannot, because their artwork covers
+  that ground, so they wear the identical wash as an overlay above the image
+  and below their text, never targetable and never a second, hand-picked tint.
+  **Playback:** starting a song from the ranking seeds the queue with that
+  ranking — the visible top ten in the sort currently selected — beginning at
+  the activated row, exactly as a row activated in the track table plays inside
+  the visible view. Previous, Next and Shuffle therefore have a context, and
+  the Queue shows what follows instead of one orphaned track. The context's
+  origin is My Stats itself: the queue's context tail carries that name and
+  jumps back to this page, rather than borrowing the name of one artist out of
+  a ranking that spans many.
 ## W. Buttons & interaction states
 
 <!-- Section letter: V (My Stats) is the last section assigned on main;
