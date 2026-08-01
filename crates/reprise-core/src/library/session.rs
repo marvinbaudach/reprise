@@ -411,7 +411,7 @@ mod tests {
     }
 
     #[test]
-    fn browse_5_session_round_trips_current_root_and_structured_play_origin() {
+    fn session_persistence_round_trips_current_root_and_structured_play_origin() {
         let conn = conn();
         let mut state = full_state();
         let mut current = crate::browser::BrowserPlace::fresh_album("Blue", "Joni Mitchell");
@@ -422,6 +422,7 @@ mod tests {
         state.library_root = Some(root.clone());
         state.play_origin_place = Some(current.clone());
 
+        // This persistence survives while START-1 decides where startup lands.
         save(&conn, &state).unwrap();
         let restored = load(&conn);
 
@@ -443,7 +444,7 @@ mod tests {
     }
 
     #[test]
-    fn browse_5_unresolvable_places_fall_back_to_the_remembered_library_root() {
+    fn session_place_resolution_falls_back_to_the_remembered_library_root() {
         let conn = conn();
         let mut state = full_state();
         let mut root = BrowserPlace::from(ViewSource::Library);
@@ -454,6 +455,7 @@ mod tests {
         state.play_origin_place = Some(BrowserPlace::from(ViewSource::Playlist(9999)));
         state.play_origin_label = Some("Deleted".into());
 
+        // This persistence survives while START-1 decides where startup lands.
         save(&conn, &state).unwrap();
         let restored = load(&conn);
 

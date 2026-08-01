@@ -59,10 +59,10 @@ fetch existed (NR-8). Both times every individual test was green — the
 bug sat between the rules, because each test pre-established the target
 state.
 
-**Language.** This document and the design docs are German — the
-project's working language. Tests and scripts are code and therefore
-English (AGENTS.md); rule IDs and status tokens are quoted verbatim
-there.
+**Language.** This rulebook is English. Design docs and specs under
+`docs/superpowers/` remain German as the project's working language.
+Tests and scripts are code and therefore English (AGENTS.md); rule IDs
+and status tokens are quoted verbatim there.
 
 **Changes.** If you encounter a case while implementing or testing that no
 rule covers: **add a rule, don't decide locally.** Agents do this by
@@ -115,7 +115,8 @@ human. Rationale for changes lives in the git history.
   topmost stack entry — if the stack shows Artist detail after a Queue
   click, "Music" is highlighted.
 - **NAV-2a** [planned] [core] — The stack does not survive the session
-  (session restore only restores the topmost view, START-1 unchanged);
+  (session restore no longer restores any prior view — see START-1 and
+  BROWSE-5);
   Back with no stack entries is disabled, never a no-op.
 - **NAV-3** [planned] [e2e] — Clickable metadata is the same everywhere:
   in every track list (Library, Playlist, Queue, Album detail, Top
@@ -1089,9 +1090,13 @@ human. Rationale for changes lives in the git history.
 
 ## I. Start state
 
-- **START-1** [planned] [e2e] — Normal start: last view + scroll
-  position, playback paused on the last track (position restored),
-  startup reconcile runs silently (card only for actual work).
+- **START-1** [active] [gtk] — Normal start: always the library view with
+  the remembered sorting, without search text or facets. The loaded track is
+  centered and marked there, its equaliser frozen as if paused; selection and
+  focus stay untouched (NAV-10a). If the track is not in the library, the list
+  starts at the top. Playback stays paused on the last track with its position
+  restored; startup reconcile runs silently (a card appears only for actual
+  work).
 - **START-2** [planned] [gtk] — Start with an unavailable library root:
   StatusPage per Root-Guard, no mass Missing marking; library views
   show the last known holdings normally (Root-Guard hasn't marked
@@ -3159,11 +3164,10 @@ means deterministic and high-confidence, never „without review".
   centers the anchor track; Back restores the point of origin.
 
 - **BROWSE-5** [active] [core] — **Session restore is limited.** The
-  current browser location, the remembered library root, and the
-  structured playback origin are restored. History, open search
-  surfaces, utilities, and raw widget focus do not survive a restart.
-  Destinations that can no longer be resolved fall back to the library
-  root.
+  remembered sorting and the structured playback origin are restored; the
+  start always opens the library root (START-1). The last visited location,
+  history, open search surfaces, utilities, and raw widget focus do not
+  survive a restart.
 
 - **BROWSE-6** [active] [core] — **Listening events are historical
   facts.** Every qualified play stores the title, album, artist, genre,
