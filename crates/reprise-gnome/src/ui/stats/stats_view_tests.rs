@@ -247,6 +247,29 @@ fn seed_one_play(db: &Db) {
     seed_play_at(db, now_unix());
 }
 
+/// Seeds `count` distinct tracks with one qualifying play each — enough to
+/// push the songs card past its visible ten and offer the expander.
+fn seed_distinct_tracks(db: &Db, count: i64) {
+    let now = now_unix();
+    for id in 1..=count {
+        crate::test_db::connection(db)
+            .execute(
+                "INSERT INTO tracks \
+                 (id, path, title, artist, album, album_artist, genre, duration_ms, added_at) \
+                 VALUES (?1, ?2, ?3, 'Artist', 'Album', '', 'Rock', 300000, 0)",
+                rusqlite::params![id, format!("/music/{id}.flac"), format!("Track {id}")],
+            )
+            .unwrap();
+        crate::test_db::connection(db)
+            .execute(
+                "INSERT INTO listen_events (track_id, played_at, ms_played) \
+                 VALUES (?1, ?2, 250000)",
+                rusqlite::params![id, now - id],
+            )
+            .unwrap();
+    }
+}
+
 fn seed_previous_year_play(db: &Db) {
     crate::test_db::connection(db)
         .execute(
@@ -306,8 +329,18 @@ fn descendant_copy(root: &gtk4::Widget) -> Vec<String> {
 }
 
 fn presented(width: i32) -> (StatsView, adw::Window) {
+    presented_with_tracks(width, 0)
+}
+
+/// `tracks` of 0 keeps the single-play library; anything else seeds that many
+/// distinct tracks instead, which is what the expander needs to appear.
+fn presented_with_tracks(width: i32, tracks: i64) -> (StatsView, adw::Window) {
     let (view, conn) = view_and_conn();
-    seed_one_play(&conn);
+    if tracks == 0 {
+        seed_one_play(&conn);
+    } else {
+        seed_distinct_tracks(&conn, tracks);
+    }
     view.wire_year_selector(&conn);
     assert_eq!(
         view.page_stack.visible_child_name().as_deref(),
@@ -561,7 +594,8 @@ fn stats_11a_zero_baseline_shows_new_badge_not_a_delta() {
 fn stats_10_section_gaps_stay_equal_when_top_tracks_expand_and_collapse() {
     gtk4::init().unwrap();
     crate::ui::style::install_css_string_for_test(&super::super::stats_css::css());
-    let (view, window) = presented(1_000);
+    // Twelve tracks: ten fill the card, so the expander has two left to add.
+    let (view, window) = presented_with_tracks(1_000, 12);
     let sections = view
         .page_stack
         .child_by_name("sections")
@@ -574,7 +608,7 @@ fn stats_10_section_gaps_stay_equal_when_top_tracks_expand_and_collapse() {
 
     let reveal = descendant_button(
         view.render.songs_card.widget().upcast_ref(),
-        "Show all top tracks",
+        "Show more top tracks",
     );
     reveal.emit_clicked();
     wait_for(400);
