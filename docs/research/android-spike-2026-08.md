@@ -419,3 +419,43 @@ bevor daraus ein Paket wird.
 unerreichbar" gegen „endgültig weg" ist auf dem Desktop bereits als Konzept
 vorhanden (`MissingReason::Unmounted` / `Deleted` / `Unknown`). Sie trägt auf
 Android weiter, nur die Feststellung braucht einen anderen Weg als `st_dev`.
+
+## Frage 6 — Läuft gettext auf Android? (nachgetragen 2026-08-02)
+
+**Urteil: JA, statisch, für 24 kB je ABI.** Der Befund gehört zu Spec-Punkt
+O2 und wurde beim Ausmessen von Welle 1 nötig, weil die Strings an
+`crate::i18n::gettext` hängen.
+
+Ausgangslage: `reprise-gnome` bindet `gettext-rs 0.7.7` mit
+`features = ["gettext-system"]`, also gegen die **System**-libintl. Bionic hat
+keine — die Annahme „Strings ziehen einfach nach `reprise-view`" trägt so
+nicht.
+
+Gemessen an einer `cdylib`-Probe gegen `aarch64-linux-android`, NDK r29,
+`cargo-ndk`, `gettext-rs` mit `default-features = false`:
+
+| Prüfung | Ergebnis |
+| --- | --- |
+| `gettext-sys` baut libintl aus Quellen | **OK** — `libintl.a` mit NDK-Clang, ~28 s |
+| Link einer `cdylib` | **OK**, Exit 0 |
+| `NEEDED` der erzeugten `.so` | nur `libdl.so`, `libc.so` — **kein externes libintl** |
+| undefinierte `gettext`/`intl`-Symbole | **keine**, statisch aufgelöst |
+| `libintl_gettext`, `_libintl_gettext_extract_plural`, `_nl_expand_alias` | im Binary vorhanden; Referenzprobe ohne gettext: null Treffer |
+| Größe gestrippt, release | 331.664 B mit gettext gegen 307.584 B ohne → **+24.080 B je ABI** |
+
+**Messfalle, die zweimal zuschlug:** Eine `rlib` wird nicht gelinkt, beweist
+also nichts über fehlende Symbole. Und eine `cdylib` exportiert nur
+`#[no_mangle] extern "C"`-Symbole — ein bloßes `pub fn` wird samt gettext
+wegoptimiert, worauf beide Proben byte-identisch herauskamen. Erst der echte
+C-Export macht die Messung gültig.
+
+**Was damit noch nicht entschieden ist:** nur die Bauseite. Wie Compose und
+Tauri die `po`-Kataloge konsumieren — Katalog in `reprise-view` gegen
+`strings.xml`-Erzeugung aus `po` — bleibt offen. Der Unterschied ist ab jetzt
+eine Werkzeug- und Übersetzer-Workflow-Frage, kein Build-Hindernis.
+
+**Auflage für die Welle, die `strings.rs` bewegt:** `reprise-view` darf
+`gettext-rs` nur ohne `gettext-system` führen, sonst bricht der Android-Build.
+Das Architektur-Gate fängt das nicht ab — es verbietet `gtk4|libadwaita|glib|
+gstreamer|zbus` und fremde `reprise-*`-Kanten, und `gettext-rs` ist keins von
+beidem.
