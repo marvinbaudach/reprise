@@ -46,6 +46,34 @@ pub(super) fn apply_initial_geometry(window: &adw::ApplicationWindow, state: &Se
     }
 }
 
+/// The place a normal start routes to (START-1): always the library root,
+/// carrying only the remembered sort.
+///
+/// Where the last session ended — a playlist, the queue, a podcast channel —
+/// is deliberately not restored, and neither is a leftover search or facet.
+/// On a cold start a stale refinement does not read as "the filter I chose"
+/// but as "my library is gone", and the player is opened to hear music, so
+/// the library is the honest destination. The sort survives because it is a
+/// preference rather than a refinement.
+pub(super) fn startup_place(state: &SessionState) -> reprise_core::browser::BrowserPlace {
+    use reprise_core::browser::{
+        BrowserPlace, LibraryScope, SortDirection, TrackCollection, TrackSort, TrackViewState,
+    };
+
+    let direction = if state.sort_dir == "desc" {
+        SortDirection::Descending
+    } else {
+        SortDirection::Ascending
+    };
+    BrowserPlace::tracks(
+        TrackCollection::Library(LibraryScope::All),
+        TrackViewState {
+            sort: TrackSort::new(state.sort_field.clone(), direction),
+            ..TrackViewState::default()
+        },
+    )
+}
+
 pub(super) fn restore_runtime(player: Option<&Rc<PlayerController>>, state: &SessionState) {
     if let Some(player) = player {
         player.restore_session_queue(
@@ -393,5 +421,49 @@ mod tests {
         );
 
         assert_eq!(state.source, SessionSource::Library);
+    }
+
+    #[test]
+    fn start_1_startup_place_is_always_the_library_root() {
+        use reprise_core::browser::{LibraryScope, SortDirection, TrackCollection};
+
+        let state = SessionState {
+            source: SessionSource::Playlist(7),
+            search: "leftover".into(),
+            browse: reprise_core::queries::BrowseFilter {
+                genre: Some("Metal".into()),
+                ..reprise_core::queries::BrowseFilter::default()
+            },
+            sort_field: "year".into(),
+            sort_dir: "desc".into(),
+            browser_place: Some(reprise_core::browser::BrowserPlace::from(
+                ViewSource::Playlist(7),
+            )),
+            library_root: Some(reprise_core::browser::BrowserPlace::from(ViewSource::Queue)),
+            ..SessionState::default()
+        };
+
+        let place = startup_place(&state);
+
+        let reprise_core::browser::BrowserPlace::Tracks(track_place) = &place else {
+            panic!("a normal start must route into the track list");
+        };
+        assert_eq!(
+            track_place.collection,
+            TrackCollection::Library(LibraryScope::All),
+            "where the last session ended is deliberately not restored"
+        );
+        assert_eq!(track_place.state.sort.field, "year");
+        assert_eq!(track_place.state.sort.direction, SortDirection::Descending);
+        assert!(
+            track_place.state.search.is_empty(),
+            "a stale search reads as a lost library on a cold start"
+        );
+        assert_eq!(
+            track_place.state.browse,
+            reprise_core::queries::BrowseFilter::default()
+        );
+        assert!(track_place.state.anchor.is_none());
+        assert!(track_place.state.selected_ids.is_empty());
     }
 }

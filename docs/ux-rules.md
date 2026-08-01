@@ -3159,11 +3159,10 @@ means deterministic and high-confidence, never „without review".
   centers the anchor track; Back restores the point of origin.
 
 - **BROWSE-5** [active] [core] — **Session restore is limited.** The
-  current browser location, the remembered library root, and the
-  structured playback origin are restored. History, open search
-  surfaces, utilities, and raw widget focus do not survive a restart.
-  Destinations that can no longer be resolved fall back to the library
-  root.
+  remembered sorting and the structured playback origin are restored; the
+  start always opens the library root (START-1). The last visited location,
+  history, open search surfaces, utilities, and raw widget focus do not
+  survive a restart.
 
 - **BROWSE-6** [active] [core] — **Listening events are historical
   facts.** Every qualified play stores the title, album, artist, genre,
