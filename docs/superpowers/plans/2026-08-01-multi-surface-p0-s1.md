@@ -20,6 +20,11 @@ Untersuchungsgegenstand der Aufgabe.
 
 **Spec:** `docs/superpowers/specs/2026-08-01-multi-surface-frontends-design.md`
 
+**Nicht Teil dieses Plans, aber ab jetzt parallel laufend:** Das
+Play-Entwicklerkonto (Spec §4/P0) ist Aufgabe des Autors. Es hat wegen der
+Testphase über 14 Tage die längste Vorlaufzeit im gesamten Vorhaben und ist
+der einzige Punkt, den kein Agent übernehmen kann.
+
 **Worktree:** `.worktrees/multi-surface`, Branch `feature/multi-surface-frontends`
 
 ## Global Constraints

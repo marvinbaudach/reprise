@@ -310,6 +310,11 @@ Wahrscheinlichkeit mehrere, wellenweise nach Dateibesitz geschnitten.
   `ux-rules-motion` (reviewed), `podcast-row-click-selection` (coded).
 - Dateibesitz für die Umbauwellen in `AGENTS.md` verankern, nicht nur im Plan.
 - `reprise-view` als leere Crate anlegen, MIT, mit `cargo tree`-Gate.
+- **Play-Entwicklerkonto anlegen — Aufgabe des Autors, nicht eines Agenten.**
+  Neue Privatkonten müssen vor der ersten Produktionsveröffentlichung eine
+  Testphase mit 20 Testern über 14 Tage durchlaufen. Das ist der einzige
+  Punkt dieses Designs mit einer Wartezeit, die sich nicht parallelisieren
+  lässt, und er läuft deshalb ab P0 nebenher — nicht erst bei P8.
 
 ### S1 — Android-Spike (vor allem anderen Code, siehe B10)
 
