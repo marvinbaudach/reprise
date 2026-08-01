@@ -45,3 +45,7 @@ pub(in crate::ui) fn refresh_after_tag_mutation_with_anchor(
         callback(paths);
     }
 }
+
+#[cfg(test)]
+#[path = "tag_mutation_refresh_display_tests.rs"]
+mod display_tests;
