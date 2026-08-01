@@ -285,6 +285,39 @@ Prüfobjekt ist stattdessen `ui/track_list/queue_sections.rs` mit
 `VirtualContextTail` — dieselben FFI-kritischen Formen, aber im
 Mobil-Zuschnitt und damit tatsächlich grenzüberschreitend.
 
+**B14 — Designrichtung Android: „1a Cover First".** Gewählt am 2026-08-01 aus
+`claude.ai/design/p/89a8e3a7-2b40-407f-990c-258502b0b47d` („Reprise Mobile App
+Design", drei Richtungen). Material-3-Struktur auf dunklem Grund; der
+Visualizer lebt im Scrubber statt das Interface zu übernehmen; die ruhigste
+und nativste der drei Varianten.
+
+Tokens, die daraus verbindlich werden (toolkit-unabhängig, später ein
+Compose-Theme):
+
+| Rolle | Wert |
+| --- | --- |
+| Ruhe-Akzent (Reprise-Teal) | `#20B2AA` |
+| Playback-Glow (Nocturne-Blurple) | `#9184D9` |
+| Grund | `#0B0C12` |
+| Fläche | `#101219` |
+| Text auf Teal | `#8FDCD7` |
+| Schrift | Inter |
+| Icons | Phosphor Icons — MIT, erfüllt B11.1 |
+
+**Das Mockup zeichnet v2, nicht v1.** Es zeigt einen Sync-Chip („Wi-Fi
+gekoppelt · Sync vor 2 Min"), Sterne-Bewertungen, Favoriten-Herz und
+Abspielzähler — nichts davon steht im Mobil-Zuschnitt (3.1). Verbindlich für
+v1 ist der Zuschnitt, nicht das Mockup. Zwei Korrekturen sind dabei benannt:
+
+1. **Der Sync-Chip wird zum Bibliotheks-Chip.** Die App kann einen Sync gar
+   nicht beobachten: MTP läuft desktopseitig über GVfs (`mtp://` in
+   `reprise-platform-linux`), das Telefon ist der passive Teil, und es gibt
+   weder Pairing noch Sync-Ereignis. Ehrlich anzeigbar ist Bibliothekszustand
+   („1.284 Titel · 12 neu"), abgeleitet aus dem Scanner. Dieselbe Stelle im
+   Layout, eine Aussage, die stimmt.
+2. **Bewertungen, Favoriten und Abspielzähler bleiben v2**, zusammen mit den
+   Statistiken (3.1).
+
 ### 3.1 Zuschnitte
 
 Zwei Zuschnitte, beide deutlich enger als das GTK-Vollprodukt.
@@ -509,3 +542,21 @@ Jedes Paket ist an ein mechanisches Tor gebunden, nicht an eine Zusage:
   unter Android-Storage nicht selbstverständlich. Klärung in S1 oder P4a.
 - **O4 — APK-Größe.** Rust plus gebündeltes SQLite über vier ABIs. Ob
   ABI-Splits reichen oder eine ABI-Auswahl nötig wird, entscheidet P8.
+
+## 9. Parkplatz — notiert, nicht gebaut
+
+Nichts hiervon ist Teil dieses Designs. Der Zweck der Liste ist, dass diese
+Ideen nicht als stille Annahmen in die Pakete sickern.
+
+- **Wi-Fi-Sync zwischen Desktop und Telefon.** Für v1 bleibt es beim
+  bestehenden MTP-Weg über Kabel, der desktopseitig vollständig existiert und
+  auf der Android-Seite **keine Arbeit** erfordert (B14). Ein
+  Wi-Fi-Sync wäre ein eigenes Paket mit Pairing, Übertragungsprotokoll und
+  Konfliktauflösung — und erst dann trägt der Sync-Chip aus dem Mockup seine
+  ursprüngliche Beschriftung.
+- **Echte Desktop-Verzahnung.** Geteilte Playlists, Hörstand und Statistiken
+  (B12). Setzt den vorigen Punkt voraus.
+- **Statistiken, Bewertungen, Favoriten und Abspielzähler auf Mobil** (B14,
+  3.1). Erster Kandidat für v2, sobald v1 steht.
+- **iOS.** Nicht-Ziel (B8, Sektion 6); hier nur notiert, weil es die einzige
+  Bedingung ist, unter der KMP/CMP richtig würde.
