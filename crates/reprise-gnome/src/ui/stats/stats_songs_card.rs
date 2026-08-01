@@ -1,4 +1,4 @@
-//! Six-track songs card and its expandable sortable full ranking.
+//! Full-width songs card: a two-column top ten and its expandable ranking.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -14,16 +14,20 @@ use reprise_core::library::stats_snapshot::{SortBy, StatsSnapshot};
 use reprise_core::playback::PlaybackState;
 
 use super::stats_metadata_links::{self, MetadataCallback, StatsMetadataTarget};
-use super::stats_songs_playback::{self, Activation, SongRowPlayback, TrackMark};
+use super::stats_songs_playback::{SongRowPlayback, TrackMark};
 use super::stats_view_widgets::{card, clear, label};
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::strings;
 
-const SONG_ROW_LIMIT: usize = 6;
-const FULL_TRACK_LIMIT: usize = 10;
+/// The card shows a full top ten split over two columns, so the ranking a
+/// user actually reads no longer needs the expander.
+const SONG_ROW_LIMIT: usize = 10;
+const SUMMARY_COLUMN_ROWS: usize = 5;
+/// The expander now has to earn its place beside a visible top ten, so it
+/// reaches well past it rather than repeating the same rows.
+const FULL_TRACK_LIMIT: usize = 25;
 
 type IdCallback = Rc<RefCell<Option<Rc<dyn Fn(i64)>>>>;
-type VoidCallback = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
 /// The loaded track as both song lists see it. Shared by `Rc` so a mark
 /// arriving between renders reaches the rows that already exist and the rows
 /// built afterwards alike — a re-render reads this, it never re-derives it.
@@ -48,15 +52,15 @@ impl CoverGenerations {
 
 #[derive(Clone)]
 struct SummaryRenderer {
+    #[cfg_attr(not(test), allow(dead_code))]
     rows: gtk4::Box,
-    play_buttons: Rc<RefCell<Vec<gtk4::Button>>>,
+    columns: [gtk4::Box; 2],
     bars: Rc<RefCell<Vec<gtk4::LevelBar>>>,
     row_clicks: Rc<RefCell<Vec<gtk4::GestureClick>>>,
     cover_loader: Rc<CoverLoader>,
     generations: CoverGenerations,
     metadata: MetadataCallback,
     on_play_track: IdCallback,
-    on_toggle_pause: VoidCallback,
     on_play_next: IdCallback,
     on_add_to_queue: IdCallback,
     context_actions: Rc<RefCell<Vec<gio::SimpleActionGroup>>>,
@@ -106,7 +110,19 @@ impl StatsSongsCard {
         header.append(&sort_toggle);
         root.append(&header);
 
-        let rows = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
+        // Two columns rather than one long list: at full width a single
+        // ten-row column would leave most of the card empty and push the
+        // genres below the fold.
+        let rows = gtk4::Box::new(gtk4::Orientation::Horizontal, 24);
+        rows.set_homogeneous(true);
+        let columns = [
+            gtk4::Box::new(gtk4::Orientation::Vertical, 2),
+            gtk4::Box::new(gtk4::Orientation::Vertical, 2),
+        ];
+        for column in &columns {
+            column.set_hexpand(true);
+            rows.append(column);
+        }
         root.append(&rows);
 
         let reveal_button = gtk4::Button::with_label("Show all top tracks");
@@ -134,29 +150,25 @@ impl StatsSongsCard {
         let sort_by = Rc::new(Cell::new(SortBy::Plays));
         let cover_generations = CoverGenerations::default();
         let on_play_track: IdCallback = Rc::new(RefCell::new(None));
-        let on_toggle_pause: VoidCallback = Rc::new(RefCell::new(None));
         let on_play_next: IdCallback = Rc::new(RefCell::new(None));
         let on_add_to_queue: IdCallback = Rc::new(RefCell::new(None));
         let context_actions = Rc::new(RefCell::new(Vec::new()));
-        let play_buttons = Rc::new(RefCell::new(Vec::new()));
         let summary_bars = Rc::new(RefCell::new(Vec::new()));
         let row_clicks = Rc::new(RefCell::new(Vec::new()));
-        let mark: SharedMark = Rc::new(Cell::new(None));
         let full_playbacks: RowPlaybacks = Rc::new(RefCell::new(Vec::new()));
         let summary = SummaryRenderer {
             rows,
-            play_buttons,
+            columns,
             bars: summary_bars,
             row_clicks,
             cover_loader,
             generations: cover_generations,
             metadata,
             on_play_track,
-            on_toggle_pause,
             on_play_next,
             on_add_to_queue,
             context_actions,
-            mark,
+            mark: Rc::new(Cell::new(None)),
             playbacks: Rc::new(RefCell::new(Vec::new())),
         };
 
@@ -238,10 +250,10 @@ impl StatsSongsCard {
     }
 
     /// Points the shared playback marker at `mark` (or clears it). Deliberately
-    /// does **not** re-render: a pause tap would otherwise rebuild both lists,
-    /// throwing away the expanded state and scroll position. The already-built
-    /// rows are mutated in place, which is the same viewport-neutral discipline
-    /// NAV-10a imposes on the track table.
+    /// does **not** re-render: a track change would otherwise rebuild both
+    /// lists, throwing away the expanded state and scroll position. The
+    /// already-built rows are mutated in place, which is the same
+    /// viewport-neutral discipline NAV-10a imposes on the track table.
     fn set_mark(&self, mark: Option<TrackMark>) {
         self.summary.mark.set(mark);
         for playback in self.summary.playbacks.borrow().iter() {
@@ -263,7 +275,7 @@ impl StatsSongsCard {
     /// Playback ran, paused, or stopped. Which of those keeps the mark is
     /// decided in one place, see `stats_songs_playback::mark_for_state`.
     pub(super) fn set_playback_state(&self, state: PlaybackState) {
-        self.set_mark(stats_songs_playback::mark_for_state(
+        self.set_mark(super::stats_songs_playback::mark_for_state(
             self.summary.mark.get(),
             state,
         ));
@@ -280,35 +292,59 @@ fn sort_for_toggle_name(name: Option<&str>) -> SortBy {
 
 impl SummaryRenderer {
     fn render(&self, snapshot: &StatsSnapshot, sort_by: SortBy) {
-        clear(&self.rows);
+        for column in &self.columns {
+            clear(column);
+        }
         self.context_actions.borrow_mut().clear();
-        self.play_buttons.borrow_mut().clear();
         self.bars.borrow_mut().clear();
         self.row_clicks.borrow_mut().clear();
         self.playbacks.borrow_mut().clear();
         let tracks = snapshot.top_tracks_sorted(sort_by);
         let leader = tracks.first().map_or(0, |track| metric(track, sort_by));
         let token = self.generations.next_summary();
-        for track in tracks.iter().take(SONG_ROW_LIMIT) {
-            let row = self.song_row(track, leader, sort_by, token);
-            self.rows.append(&row);
+        for (index, track) in tracks.iter().take(SONG_ROW_LIMIT).enumerate() {
+            let row = self.song_row(track, index, leader, sort_by, token);
+            self.columns[index / SUMMARY_COLUMN_ROWS].append(&row);
         }
     }
 
-    fn song_row(&self, track: &TopTrack, leader: i64, sort_by: SortBy, token: u64) -> gtk4::Box {
-        let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+    fn song_row(
+        &self,
+        track: &TopTrack,
+        index: usize,
+        leader: i64,
+        sort_by: SortBy,
+        token: u64,
+    ) -> gtk4::Box {
+        let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
         row.add_css_class("stats-song-row");
         row.set_hexpand(true);
-        // a11y-semantics: role=group name=track-row state=focusable action=enter/shift-f10
+        // a11y-semantics: role=button name=track-row state=focusable action=enter/shift-f10
         row.set_focusable(true);
+        row.set_accessible_role(gtk4::AccessibleRole::Button);
+        row.set_cursor_from_name(Some("pointer"));
+        row.update_property(&[gtk4::accessible::Property::Label(&strings::text(
+            strings::STATS_PLAY_TRACK,
+        ))]);
 
-        let body = gtk4::Box::new(gtk4::Orientation::Horizontal, 10);
-        let cover_overlay = gtk4::Overlay::new();
+        // `STATS-18`: the rank slot is the marker slot — the loaded row shows
+        // the shared equaliser where every other row shows its number.
+        let rank_slot = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+        rank_slot.add_css_class("stats-song-rank-slot");
+        rank_slot.set_size_request(22, 16);
+        rank_slot.set_halign(gtk4::Align::End);
+        rank_slot.set_valign(gtk4::Align::Center);
+        let rank = label(&(index + 1).to_string(), "stats-rank");
+        rank.set_xalign(1.0);
+        rank_slot.append(&rank);
+        row.append(&rank_slot);
+
         let cover = gtk4::Image::builder()
-            .pixel_size(40)
-            .width_request(40)
-            .height_request(40)
+            .pixel_size(42)
+            .width_request(42)
+            .height_request(42)
             .build();
+        cover.add_css_class("stats-song-cover");
         CoverLoader::set_placeholder(&cover);
         self.cover_loader.load_into(
             &cover,
@@ -317,43 +353,33 @@ impl SummaryRenderer {
             token,
             &self.generations.summary,
         );
-        cover_overlay.set_child(Some(&cover));
-        let play = gtk4::Button::from_icon_name("media-playback-start-symbolic");
-        play.add_css_class("circular");
-        play.add_css_class("stats-song-play");
-        play.set_visible(false);
-        play.connect_clicked({
-            let play_track = self.on_play_track.clone();
-            let toggle_pause = self.on_toggle_pause.clone();
-            let mark = self.mark.clone();
-            let track_id = track.track_id;
-            // One predicate decides both this click and the glyph above it —
-            // see `stats_songs_playback::activation_for`.
-            move |_| match stats_songs_playback::activation_for(mark.get(), track_id) {
-                Activation::TogglePause => invoke_void(&toggle_pause),
-                Activation::Start => invoke_id(&play_track, track_id),
-            }
-        });
-        cover_overlay.add_overlay(&play);
-        self.play_buttons.borrow_mut().push(play.clone());
-        // `STATS-18`: the loaded row carries the shared marker; hover and focus
-        // trade it for the transport button, the row tint stays.
-        let playback = SongRowPlayback::new(
-            &row,
-            &cover_overlay,
-            Some(play),
-            track.track_id,
-            self.mark.get(),
-        );
-        stats_songs_playback::install_reveal(&row, &playback);
-        self.playbacks.borrow_mut().push(playback);
-        body.append(&cover_overlay);
+        row.append(&cover);
 
-        let text = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
+        let text = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         text.set_hexpand(true);
-        text.append(&label(&track.title, "stats-item-title"));
-        text.append(&label(&track.artist, "stats-item-subtitle"));
-        body.append(&text);
+        text.set_valign(gtk4::Align::Center);
+        // The row plays; the two labels stay the way into the library, so a
+        // list that starts playback does not also lose its navigation.
+        let title = stats_metadata_links::link(
+            &track.title,
+            "stats-item-title",
+            StatsMetadataTarget::Track(track.track_id),
+            &self.metadata,
+        );
+        title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+        text.append(&title);
+        let artist = stats_metadata_links::link(
+            &track.artist,
+            "stats-item-subtitle",
+            StatsMetadataTarget::Artist {
+                track_id: track.track_id,
+                artist: track.effective_artist.clone(),
+            },
+            &self.metadata,
+        );
+        artist.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+        text.append(&artist);
+        row.append(&text);
 
         let bar = gtk4::LevelBar::new();
         bar.add_css_class("stats-song-bar");
@@ -364,27 +390,29 @@ impl SummaryRenderer {
         bar.set_height_request(8);
         bar.set_valign(gtk4::Align::Center);
         self.bars.borrow_mut().push(bar.clone());
-        body.append(&bar);
-        let plays = label(
-            &format!("{} plays", format_thousands(track.play_count)),
-            "stats-play-count",
-        );
-        plays.set_xalign(1.0);
-        body.append(&plays);
-        row.append(&body);
+        row.append(&bar);
+
+        let value = label(&metric_text(track, sort_by), "stats-play-count");
+        value.set_xalign(1.0);
+        value.set_width_request(72);
+        row.append(&value);
+
         // input-parity: ACC-8 keyboard=enter-row
         let activate = gtk4::GestureClick::new();
         activate.set_button(1);
         activate.connect_released({
-            let callback = self.metadata.clone();
-            let target = StatsMetadataTarget::Artist {
-                track_id: track.track_id,
-                artist: track.effective_artist.clone(),
-            };
-            move |_, _, _, _| invoke_metadata(&callback, target.clone())
+            let callback = self.on_play_track.clone();
+            let track_id = track.track_id;
+            move |_, _, _, _| invoke_id(&callback, track_id)
         });
         row.add_controller(activate.clone());
         self.row_clicks.borrow_mut().push(activate);
+        install_row_keys(&row, &self.on_play_track, track.track_id);
+
+        let playback = SongRowPlayback::new(&row, &rank_slot, &rank, &title, &bar, track.track_id);
+        playback.set_mark(self.mark.get());
+        self.playbacks.borrow_mut().push(playback);
+
         self.install_context_menu(&row, track);
         row
     }
@@ -434,16 +462,7 @@ impl SummaryRenderer {
         let keys = gtk4::EventControllerKey::new();
         keys.connect_key_pressed({
             let popover = popover.downgrade();
-            let metadata = self.metadata.clone();
-            let artist_target = StatsMetadataTarget::Artist {
-                track_id: track.track_id,
-                artist: track.effective_artist.clone(),
-            };
             move |controller, key, _, modifiers| {
-                if key == gtk4::gdk::Key::Return || key == gtk4::gdk::Key::KP_Enter {
-                    invoke_metadata(&metadata, artist_target.clone());
-                    return glib::Propagation::Stop;
-                }
                 if !crate::ui::track_list::track_list_context_keys::is_context_menu_shortcut(
                     key, modifiers,
                 ) {
@@ -473,13 +492,6 @@ impl StatsSongsCard {
         *self.summary.on_play_track.borrow_mut() = Some(Rc::new(callback));
     }
 
-    /// Pauses or resumes the loaded track. Takes no id: the only row that can
-    /// reach this is the one already marked as loaded, so passing one would
-    /// invite a second, driftable answer to "which track is playing".
-    pub(in crate::ui) fn set_on_toggle_pause(&self, callback: impl Fn() + 'static) {
-        *self.summary.on_toggle_pause.borrow_mut() = Some(Rc::new(callback));
-    }
-
     pub(in crate::ui) fn set_on_play_next(&self, callback: impl Fn(i64) + 'static) {
         *self.summary.on_play_next.borrow_mut() = Some(Rc::new(callback));
     }
@@ -491,6 +503,25 @@ impl StatsSongsCard {
     pub(super) fn summary_bars(&self) -> Vec<gtk4::LevelBar> {
         self.summary.bars.borrow().clone()
     }
+}
+
+/// Enter and Space start the row's track, matching the pointer. Return
+/// `Proceed` for everything else so the context-menu shortcut still reaches
+/// its own controller.
+fn install_row_keys(row: &gtk4::Box, callback: &IdCallback, track_id: i64) {
+    let keys = gtk4::EventControllerKey::new();
+    let callback = callback.clone();
+    keys.connect_key_pressed(move |_, key, _, _| {
+        if matches!(
+            key,
+            gtk4::gdk::Key::Return | gtk4::gdk::Key::KP_Enter | gtk4::gdk::Key::space
+        ) {
+            invoke_id(&callback, track_id);
+            return glib::Propagation::Stop;
+        }
+        glib::Propagation::Proceed
+    });
+    row.add_controller(keys);
 }
 
 fn add_id_action(
@@ -533,16 +564,24 @@ fn render_full_rows(
         let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 10);
         row.add_css_class("stats-top-track-row");
         row.set_height_request(56);
+        // `STATS-18`: NAV-10a wants *every* visible instance of the loaded
+        // track marked, so the expanded ranking marks its rank slot too.
+        let rank_slot = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+        rank_slot.add_css_class("stats-song-rank-slot");
+        rank_slot.set_size_request(24, 16);
+        rank_slot.set_halign(gtk4::Align::End);
+        rank_slot.set_valign(gtk4::Align::Center);
         let rank = label(&(index + 1).to_string(), "stats-rank");
-        rank.set_width_request(24);
         rank.set_xalign(1.0);
-        row.append(&rank);
+        rank_slot.append(&rank);
+        row.append(&rank_slot);
         let cover = gtk4::Image::builder()
             .pixel_size(42)
             .width_request(42)
             .height_request(42)
             .valign(gtk4::Align::Center)
             .build();
+        cover.add_css_class("stats-song-cover");
         CoverLoader::set_placeholder(&cover);
         summary.cover_loader.load_into(
             &cover,
@@ -551,27 +590,16 @@ fn render_full_rows(
             token,
             &generations.full,
         );
-        // `STATS-18`: NAV-10a wants *every* visible instance of the loaded
-        // track marked, so the expanded ranking carries the marker too. It
-        // stays navigational, though — no transport button is offered here.
-        let cover_overlay = gtk4::Overlay::new();
-        cover_overlay.set_child(Some(&cover));
-        playbacks.borrow_mut().push(SongRowPlayback::new(
-            &row,
-            &cover_overlay,
-            None,
-            track.track_id,
-            summary.mark.get(),
-        ));
-        row.append(&cover_overlay);
+        row.append(&cover);
         let text = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
         text.set_hexpand(true);
-        text.append(&stats_metadata_links::link(
+        let title = stats_metadata_links::link(
             &track.title,
             "stats-item-title",
             StatsMetadataTarget::Track(track.track_id),
             metadata,
-        ));
+        );
+        text.append(&title);
         text.append(&stats_metadata_links::link(
             &track.artist,
             "stats-item-subtitle",
@@ -603,6 +631,9 @@ fn render_full_rows(
             ),
             "stats-play-count",
         ));
+        let playback = SongRowPlayback::new(&row, &rank_slot, &rank, &title, &bar, track.track_id);
+        playback.set_mark(summary.mark.get());
+        playbacks.borrow_mut().push(playback);
         container.append(&row);
     }
 }
@@ -620,13 +651,6 @@ fn invoke_id(callback: &IdCallback, id: i64) {
     }
 }
 
-fn invoke_void(callback: &VoidCallback) {
-    let callback = callback.borrow().clone();
-    if let Some(callback) = callback {
-        callback();
-    }
-}
-
 fn invoke_metadata(callback: &MetadataCallback, target: StatsMetadataTarget) {
     let callback = callback.borrow().clone();
     if let Some(callback) = callback {
@@ -638,6 +662,16 @@ fn metric(track: &TopTrack, sort_by: SortBy) -> i64 {
     match sort_by {
         SortBy::Plays => track.play_count,
         SortBy::Time => track.total_ms,
+    }
+}
+
+/// The value column follows the sort: counting by plays prints plays, ranking
+/// by time prints time. Printing plays under a time sort would leave the
+/// column unrelated to the bar beside it.
+fn metric_text(track: &TopTrack, sort_by: SortBy) -> String {
+    match sort_by {
+        SortBy::Plays => format!("{} plays", format_thousands(track.play_count)),
+        SortBy::Time => strings::stats_duration(track.total_ms),
     }
 }
 

@@ -74,82 +74,6 @@ fn wait_for(milliseconds: u64) {
     crate::ui::test_settle::settle_for(std::time::Duration::from_millis(milliseconds));
 }
 
-/// Wall-clock budget for a frame-driven animation to reach a state.
-///
-/// Both polls below exit the moment their condition holds, so a generous
-/// budget costs a healthy run nothing — while a tight one fails a correct
-/// animation whenever frames arrive more slowly, which is what parallel
-/// display-test workers cause.
-const ANIMATION_BUDGET_MS: u64 = 5_000;
-
-fn wait_until(milliseconds: u64, condition: impl Fn() -> bool + 'static) -> bool {
-    let main_loop = gtk4::glib::MainLoop::new(None, false);
-    let quit = main_loop.clone();
-    let reached = Rc::new(Cell::new(false));
-    let reached_in_poll = reached.clone();
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(milliseconds);
-    gtk4::glib::timeout_add_local(std::time::Duration::from_millis(10), move || {
-        if condition() {
-            reached_in_poll.set(true);
-            quit.quit();
-            gtk4::glib::ControlFlow::Break
-        } else if std::time::Instant::now() >= deadline {
-            quit.quit();
-            gtk4::glib::ControlFlow::Break
-        } else {
-            gtk4::glib::ControlFlow::Continue
-        }
-    });
-    main_loop.run();
-    reached.get()
-}
-
-#[derive(Default)]
-struct BestWeekOrder {
-    saw_reset: Cell<bool>,
-    saw_growth: Cell<bool>,
-    finished: Cell<bool>,
-    label_appeared_while_growing: Cell<bool>,
-}
-
-fn observe_best_week_order(ribbon: StatsRibbon, milliseconds: u64) -> Rc<BestWeekOrder> {
-    let best_index = ribbon
-        .best_week_index()
-        .expect("the fixture must identify its best-week bar");
-    let order = Rc::new(BestWeekOrder::default());
-    let observed = order.clone();
-    let main_loop = gtk4::glib::MainLoop::new(None, false);
-    let quit = main_loop.clone();
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(milliseconds);
-    gtk4::glib::timeout_add_local(std::time::Duration::from_millis(10), move || {
-        let fraction = ribbon.bar_fractions()[best_index];
-        let label_opacity = ribbon.best_week_label_opacity();
-        if fraction == 0.0 {
-            observed.saw_reset.set(true);
-        } else if fraction < 1.0 {
-            observed.saw_growth.set(true);
-            if label_opacity > 0.0 {
-                observed.label_appeared_while_growing.set(true);
-                quit.quit();
-                return gtk4::glib::ControlFlow::Break;
-            }
-        } else if observed.saw_growth.get() {
-            observed.finished.set(true);
-            quit.quit();
-            return gtk4::glib::ControlFlow::Break;
-        }
-
-        if std::time::Instant::now() >= deadline {
-            quit.quit();
-            gtk4::glib::ControlFlow::Break
-        } else {
-            gtk4::glib::ControlFlow::Continue
-        }
-    });
-    main_loop.run();
-    order
-}
-
 struct AnimationSettingGuard {
     settings: gtk4::Settings,
     previous: bool,
@@ -172,89 +96,11 @@ impl Drop for AnimationSettingGuard {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn stats_17_entrance_keeps_copy_static_while_sparse_week_bars_grow() {
-    gtk4::init().unwrap();
-    let (view, _conn, window) = presented_entrance();
-    let final_copy = strings::stats_duration(
-        view.current_snapshot
-            .borrow()
-            .as_ref()
-            .unwrap()
-            .hero
-            .total_ms,
-    );
-
-    assert_eq!(
-        view.render.hero.time.label(),
-        final_copy,
-        "the mapped hero copy must be final from its first presented frame"
-    );
-    assert!(view.render.ribbon.is_sparse());
-    let order = observe_best_week_order(view.render.ribbon.clone(), ANIMATION_BUDGET_MS);
-    assert!(
-        order.saw_reset.get(),
-        "the best-week bar must start from the baseline"
-    );
-    assert!(
-        order.saw_growth.get(),
-        "the best-week bar must visibly grow after the calm frame"
-    );
-    assert!(
-        !order.label_appeared_while_growing.get(),
-        "the best-week label must remain invisible for every observed growth frame"
-    );
-    assert!(
-        order.finished.get(),
-        "the best-week bar must finish within the bounded poll"
-    );
-
-    let ribbon = view.render.ribbon.clone();
-    assert!(
-        wait_until(ANIMATION_BUDGET_MS, move || (0.0..1.0)
-            .contains(&ribbon.best_week_label_opacity())),
-        "the best-week label must fade only after its own bar reaches full height"
-    );
-    let best_index = view.render.ribbon.best_week_index().unwrap();
-    assert_eq!(
-        view.render.ribbon.bar_fractions()[best_index],
-        1.0,
-        "the label fade must never overtake its own bar"
-    );
-    assert_eq!(view.render.hero.time.label(), final_copy);
-    assert_eq!(view.render.header.root.opacity(), 1.0);
-    assert_eq!(view.render.hero.root.opacity(), 1.0);
-    assert_eq!(view.render.band_section.opacity(), 1.0);
-    assert_eq!(view.render.songs_section.opacity(), 1.0);
-
-    let song_bar = view
-        .render
-        .songs_card
-        .summary_bars()
-        .into_iter()
-        .next()
-        .expect("the fixture renders one song bar");
-    let requested_width = song_bar.measure(gtk4::Orientation::Horizontal, -1).0;
-    assert!(
-        requested_width > 0,
-        "the mapped song bar must retain a real width requirement while its fill grows"
-    );
-    window.close();
-}
-
-#[test]
-#[ignore = "requires a display; run via xvfb-run"]
-fn stats_17_reduced_motion_puts_every_bar_at_its_target_immediately() {
+fn stats_19_reduced_motion_puts_every_bar_at_its_target_immediately() {
     gtk4::init().unwrap();
     let _setting_guard = AnimationSettingGuard::disable();
     let (view, _conn, window) = presented_entrance();
 
-    assert!(view
-        .render
-        .ribbon
-        .bar_fractions()
-        .iter()
-        .all(|fraction| *fraction == 1.0));
-    assert_eq!(view.render.ribbon.best_week_label_opacity(), 1.0);
     assert!(view
         .render
         .songs_card
@@ -273,7 +119,7 @@ fn stats_17_reduced_motion_puts_every_bar_at_its_target_immediately() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn stats_17_period_switch_tweens_bars_without_restarting_static_content() {
+fn stats_19_period_switch_tweens_bars_without_restarting_static_content() {
     gtk4::init().unwrap();
     let (view, conn, window) = presented_entrance();
     wait_for(800);
@@ -336,9 +182,8 @@ fn stats_17_period_switch_tweens_bars_without_restarting_static_content() {
     );
     assert_eq!(view.render.header.root.opacity(), 1.0);
     assert_eq!(view.render.hero.root.opacity(), 1.0);
-    assert_eq!(view.render.band_section.opacity(), 1.0);
+    assert_eq!(view.render.bands_row.widget().opacity(), 1.0);
     assert_eq!(view.render.songs_section.opacity(), 1.0);
-    assert_eq!(view.render.ribbon.best_week_label_opacity(), 1.0);
 
     wait_for(300);
     let final_value = view

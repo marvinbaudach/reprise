@@ -1,11 +1,10 @@
-//! Now-playing marking and play/pause activation for the My Stats song rows.
+//! Now-playing marking for the My Stats song rows.
 //!
-//! Split out of `stats_songs_card.rs` so the card keeps rendering rows and this
-//! module keeps the single answer to "is *this* row the loaded track, and what
-//! does activating it do". Both the glyph a row shows and the callback it fires
-//! are derived here from the same [`TrackMark`] — a row can therefore never
-//! show a pause glyph while its click restarts the track, which is the
-//! duplicate-predicate drift this project has already paid for twice.
+//! Split out of `stats_songs_card.rs` so the card keeps rendering rows and
+//! this module keeps the single answer to "is *this* row the loaded track".
+//! Every visual consequence of that answer — rank slot, title, bar, row tint —
+//! is applied from one function, so no two of them can disagree about which
+//! row is playing.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -13,10 +12,9 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 
 use crate::ui::playing_marker;
-use crate::ui::strings;
 
-const PLAY_ICON: &str = "media-playback-start-symbolic";
-const PAUSE_ICON: &str = "media-playback-pause-symbolic";
+/// Set on the row, the title and the bar while that row is the loaded track.
+const NOW_PLAYING_CLASS: &str = "now-playing";
 
 /// The loaded track as the stats page knows it: which track, and whether it is
 /// running rather than paused. `None` means nothing is loaded.
@@ -24,25 +22,6 @@ const PAUSE_ICON: &str = "media-playback-pause-symbolic";
 pub(super) struct TrackMark {
     pub(super) track_id: i64,
     pub(super) playing: bool,
-}
-
-/// What activating a song row's transport button does.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(super) enum Activation {
-    /// The row is the loaded track — pause it, or resume it if paused.
-    TogglePause,
-    /// Any other row — start it from the stats page.
-    Start,
-}
-
-/// The one predicate behind both the glyph and the click. Only the loaded
-/// track toggles; everything else starts, whether or not something else is
-/// currently playing.
-pub(super) fn activation_for(mark: Option<TrackMark>, target: i64) -> Activation {
-    match mark {
-        Some(mark) if mark.track_id == target => Activation::TogglePause,
-        _ => Activation::Start,
-    }
 }
 
 /// Folds a coarse playback-state change into the current mark. Pausing keeps
@@ -65,125 +44,79 @@ pub(super) fn mark_for_state(
     }
 }
 
-/// The playback-visible widgets of one song row. `refresh` is the only writer:
-/// every input (mark, hover, focus) lands in a `Cell` and then re-derives the
-/// full visual state, so no two paths can disagree about what the row shows.
+/// The playback-visible widgets of one song row.
 ///
-/// `play` is `None` for the expanded "all top tracks" list, which carries the
-/// marker (NAV-10a wants every visible instance marked) but keeps its rows
-/// purely navigational — no transport affordance was ever offered there.
+/// The marker takes the rank slot rather than overlaying the cover: a row
+/// whose number is replaced by a moving equaliser reads as playing at a
+/// glance, and the cover stays a cover. `apply` is the only writer, so the
+/// four affected widgets are always in one consistent state.
 pub(super) struct SongRowPlayback {
-    row: gtk4::Box,
+    row: gtk4::Widget,
+    rank_slot: gtk4::Box,
+    rank: gtk4::Label,
+    title: gtk4::Widget,
+    bar: gtk4::Widget,
     marker: gtk4::Box,
-    play: Option<gtk4::Button>,
     track_id: i64,
     mark: Cell<Option<TrackMark>>,
-    revealed: Cell<bool>,
 }
 
 impl SongRowPlayback {
     pub(super) fn new(
-        row: &gtk4::Box,
-        overlay: &gtk4::Overlay,
-        play: Option<gtk4::Button>,
+        row: &impl IsA<gtk4::Widget>,
+        rank_slot: &gtk4::Box,
+        rank: &gtk4::Label,
+        title: &impl IsA<gtk4::Widget>,
+        bar: &impl IsA<gtk4::Widget>,
         track_id: i64,
-        mark: Option<TrackMark>,
     ) -> Rc<Self> {
         let marker = playing_marker::build();
         marker.add_css_class("stats-song-marker");
-        overlay.add_overlay(&marker);
+        marker.set_visible(false);
+        rank_slot.append(&marker);
         let playback = Rc::new(Self {
-            row: row.clone(),
+            row: row.clone().upcast(),
+            rank_slot: rank_slot.clone(),
+            rank: rank.clone(),
+            title: title.clone().upcast(),
+            bar: bar.clone().upcast(),
             marker,
-            play,
             track_id,
-            mark: Cell::new(mark),
-            revealed: Cell::new(false),
+            mark: Cell::new(None),
         });
-        playback.refresh();
+        playback.apply();
         playback
     }
 
     pub(super) fn set_mark(&self, mark: Option<TrackMark>) {
         self.mark.set(mark);
-        self.refresh();
+        self.apply();
     }
 
-    /// Hover or keyboard focus reached (or left) the row: the transport button
-    /// is offered, and the equaliser steps aside for it because both want the
-    /// same 40×40 cover. The row's persistent accent tint stays put, so the
-    /// loaded row is still marked while the pointer is on it.
-    fn set_revealed(&self, revealed: bool) {
-        self.revealed.set(revealed);
-        self.refresh();
-    }
-
-    fn refresh(&self) {
+    fn apply(&self) {
         let mark = self.mark.get();
         let loaded = mark.is_some_and(|mark| mark.track_id == self.track_id);
         let playing = loaded && mark.is_some_and(|mark| mark.playing);
-        let revealed = self.revealed.get();
 
-        if loaded {
-            self.row.add_css_class("now-playing");
-        } else {
-            self.row.remove_css_class("now-playing");
-        }
-
-        playing_marker::set_playing(&self.marker, playing);
-        self.marker.set_visible(loaded && !revealed);
-
-        if let Some(play) = &self.play {
-            play.set_visible(revealed);
-            let (icon, tooltip) = if playing {
-                (PAUSE_ICON, strings::STATS_PAUSE_TRACK)
+        for widget in [&self.row, &self.title, &self.bar] {
+            if loaded {
+                widget.add_css_class(NOW_PLAYING_CLASS);
             } else {
-                (PLAY_ICON, strings::STATS_PLAY_TRACK)
-            };
-            play.set_icon_name(icon);
-            play.set_tooltip_text(Some(&strings::text(tooltip)));
+                widget.remove_css_class(NOW_PLAYING_CLASS);
+            }
         }
+        if loaded {
+            self.rank_slot.add_css_class(NOW_PLAYING_CLASS);
+        } else {
+            self.rank_slot.remove_css_class(NOW_PLAYING_CLASS);
+        }
+
+        // The number and the equaliser share one slot: exactly one of them is
+        // ever visible, so the row's width never shifts when playback moves.
+        playing_marker::set_playing(&self.marker, playing);
+        self.marker.set_visible(loaded);
+        self.rank.set_visible(!loaded);
     }
-}
-
-/// Reveals the transport button on hover and on keyboard focus, hiding the
-/// equaliser underneath it for as long as it shows. Replaces the card's former
-/// standalone visibility wiring so button and marker are switched by one
-/// writer instead of two.
-pub(super) fn install_reveal(row: &gtk4::Box, playback: &Rc<SongRowPlayback>) {
-    let hovered = Rc::new(Cell::new(false));
-    let focused = Rc::new(Cell::new(false));
-
-    let motion = gtk4::EventControllerMotion::new();
-    motion.connect_enter({
-        let playback = playback.clone();
-        let hovered = hovered.clone();
-        move |_, _, _| {
-            hovered.set(true);
-            playback.set_revealed(true);
-        }
-    });
-    motion.connect_leave({
-        let playback = playback.clone();
-        let hovered = hovered.clone();
-        let focused = focused.clone();
-        move |_| {
-            hovered.set(false);
-            playback.set_revealed(focused.get());
-        }
-    });
-    row.add_controller(motion);
-
-    let focus = gtk4::EventControllerFocus::new();
-    focus.connect_contains_focus_notify({
-        let playback = playback.clone();
-        let hovered = hovered.clone();
-        move |focus| {
-            focused.set(focus.contains_focus());
-            playback.set_revealed(focus.contains_focus() || hovered.get());
-        }
-    });
-    row.add_controller(focus);
 }
 
 #[cfg(test)]

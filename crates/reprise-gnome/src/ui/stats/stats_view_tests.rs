@@ -13,13 +13,12 @@ fn view_and_conn() -> (StatsView, Rc<Db>) {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn stats_10_page_orders_header_hero_chart_row_genres() {
+fn stats_19_page_orders_header_hero_bands_songs_genres() {
     gtk4::init().unwrap();
     let (view, _) = view_and_conn();
 
     assert_eq!(view.section_order(), SECTION_ORDER);
     assert!(!view.page_stack.is_vhomogeneous());
-    assert!(!view.render.trend_stack.is_vhomogeneous());
 }
 
 #[test]
@@ -58,11 +57,43 @@ fn stats_6c_fresh_library_without_counters_keeps_plain_empty_state() {
         .downcast::<adw::StatusPage>()
         .unwrap();
     assert_eq!(empty.title(), "Start listening to see your stats");
-    // The ribbon is not hidden, it is simply on the page the stack is not
-    // showing — which is what actually keeps it off screen.
+    // The sections are not hidden, they are simply on the page the stack is
+    // not showing — which is what actually keeps them off screen.
     let sections = view.page_stack.child_by_name("sections").unwrap();
-    assert!(view.render.ribbon.widget().is_ancestor(&sections));
+    assert!(view.render.bands_row.widget().is_ancestor(&sections));
     assert_ne!(view.page_stack.visible_child(), Some(sections));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_20_a_thin_period_keeps_real_numbers_and_hides_only_empty_sections() {
+    gtk4::init().unwrap();
+    let (view, conn) = view_and_conn();
+    // One play is far under the old ten-play "too thin for a trend" cutoff.
+    seed_one_play(&conn);
+    view.wire_year_selector(&conn);
+
+    // The hero reports what actually happened rather than a placeholder.
+    assert!(view.render.hero.subline.label().starts_with("1 plays"));
+    assert_eq!(
+        view.page_stack.visible_child_name().as_deref(),
+        Some("sections"),
+        "a thin period still shows its sections"
+    );
+    // A single play has a song and a band but no genre in the fixture.
+    assert!(view.render.songs_section.is_visible());
+    assert_eq!(
+        view.render.genres_section.is_visible(),
+        !view
+            .current_snapshot
+            .borrow()
+            .as_ref()
+            .unwrap()
+            .genres
+            .segments
+            .is_empty(),
+        "a section is visible exactly when it has data"
+    );
 }
 
 #[test]
@@ -214,18 +245,6 @@ fn wait_for(milliseconds: u64) {
 /// allocated, and an unallocated row cannot prove responsive wrapping.
 fn seed_one_play(db: &Db) {
     seed_play_at(db, now_unix());
-}
-
-fn seed_plays(db: &Db, count: i64) {
-    seed_play_at(db, now_unix());
-    for offset in 1..count {
-        crate::test_db::connection(db)
-            .execute(
-                "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (1, ?1, 200000)",
-                rusqlite::params![now_unix() - offset],
-            )
-            .unwrap();
-    }
 }
 
 fn seed_previous_year_play(db: &Db) {
@@ -411,68 +430,6 @@ fn stats_11_trend_tooltip_names_the_seasonally_congruent_compared_span() {
     );
 }
 
-/// The natural wrap point must never under-allocate either story card.
-#[test]
-#[ignore = "requires a display; run via xvfb-run"]
-fn story_row_minimums_fit_the_natural_line_length() {
-    gtk4::init().unwrap();
-    crate::ui::style::install_css_string_for_test(&super::super::stats_css::css());
-    let (view, _) = view_and_conn();
-    let (band_minimum, _, _, _) = view
-        .render
-        .band_section
-        .measure(gtk4::Orientation::Horizontal, -1);
-    let (songs_minimum, _, _, _) = view
-        .render
-        .songs_section
-        .measure(gtk4::Orientation::Horizontal, -1);
-    let minimum = band_minimum + songs_minimum + STORY_SPACING;
-
-    assert!(
-        minimum <= STORY_NATURAL_LINE_LENGTH,
-        "measured side-by-side minimum {minimum} exceeds the natural line length \
-         {STORY_NATURAL_LINE_LENGTH} (band {band_minimum}, songs {songs_minimum})"
-    );
-}
-
-#[test]
-#[ignore = "requires a display; run via xvfb-run"]
-fn stats_10_narrow_window_stacks_band_before_songs() {
-    gtk4::init().unwrap();
-    let (view, window) = presented(600);
-    let story_row = view.story_row.upgrade().unwrap();
-
-    assert!(story_row.width() > 0);
-    assert_ne!(
-        view.render
-            .band_section
-            .compute_bounds(&story_row)
-            .unwrap()
-            .y(),
-        view.render
-            .songs_section
-            .compute_bounds(&story_row)
-            .unwrap()
-            .y(),
-        "narrow story cards must wrap onto separate lines"
-    );
-    assert!(
-        view.render
-            .band_section
-            .compute_bounds(&story_row)
-            .unwrap()
-            .y()
-            < view
-                .render
-                .songs_section
-                .compute_bounds(&story_row)
-                .unwrap()
-                .y(),
-        "the band card must remain before the songs card"
-    );
-    window.close();
-}
-
 /// STATS-11: a realistic Stats-pane allocation must reflow the KPI row before
 /// the listening-time anchor or trend reference ellipsizes.
 #[test]
@@ -564,8 +521,9 @@ fn stats_11_hero_renders_kpi_pairs_without_placeholders() {
 
     assert!(view.render.hero.kpis.per_day.root.is_visible());
     assert!(view.render.hero.kpis.trend.root.is_visible());
-    assert!(view.render.hero.kpis.pace.root.is_visible());
-    assert!(view.render.hero.kpis.best_week.root.is_visible());
+    // STATS-19: the chart's two readings were reduced to one KPI; pace and
+    // best week went with it.
+    assert!(view.render.hero.kpis.this_week.root.is_visible());
     assert!(view.render.hero.subline.label().contains("plays"));
     assert!(view.render.hero.subline.label().contains("artists"));
 
@@ -579,9 +537,10 @@ fn stats_11_hero_renders_kpi_pairs_without_placeholders() {
     while glib::MainContext::default().iteration(false) {}
 
     assert!(!view.render.hero.kpis.trend.root.is_visible());
-    assert!(!view.render.hero.kpis.pace.root.is_visible());
     assert!(view.render.hero.kpis.per_day.root.is_visible());
-    assert!(view.render.hero.kpis.best_week.root.is_visible());
+    // All time still contains today, so the current week is still a question
+    // worth answering.
+    assert!(view.render.hero.kpis.this_week.root.is_visible());
 }
 
 #[test]
@@ -595,57 +554,6 @@ fn stats_11a_zero_baseline_shows_new_badge_not_a_delta() {
     assert!(view.render.header.new_badge.is_visible());
     assert_eq!(view.render.header.new_badge.label(), "New this year");
     assert!(!view.render.hero.kpis.trend.root.is_visible());
-}
-
-#[test]
-#[ignore = "requires a display; run via xvfb-run"]
-fn stats_16_thin_history_swaps_chart_for_hint() {
-    gtk4::init().unwrap();
-    let (view, conn) = view_and_conn();
-    seed_plays(&conn, 9);
-    view.wire_year_selector(&conn);
-
-    assert_eq!(
-        view.render.trend_stack.visible_child_name().as_deref(),
-        Some("hint")
-    );
-    assert!(view.render.hero.subline.label().starts_with("9 plays"));
-
-    crate::test_db::connection(&conn)
-        .execute(
-            "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (1, ?1, 200000)",
-            rusqlite::params![now_unix() - 10],
-        )
-        .unwrap();
-    view.refresh(&conn);
-
-    assert_eq!(
-        view.render.trend_stack.visible_child_name().as_deref(),
-        Some("chart")
-    );
-}
-
-#[test]
-#[ignore = "requires a display; run via xvfb-run"]
-fn stats_10_wide_window_keeps_band_and_songs_side_by_side() {
-    gtk4::init().unwrap();
-    let (view, window) = presented(1_000);
-    let story_row = view.story_row.upgrade().unwrap();
-
-    assert_eq!(
-        view.render
-            .band_section
-            .compute_bounds(&story_row)
-            .unwrap()
-            .y(),
-        view.render
-            .songs_section
-            .compute_bounds(&story_row)
-            .unwrap()
-            .y(),
-        "wide story cards must remain side by side"
-    );
-    window.close();
 }
 
 #[test]
