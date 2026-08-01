@@ -14,7 +14,7 @@ pub enum NeedsFetch {
     RetryForSynced,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) struct CacheRecord {
     version: u32,
     query: LyricsQuery,
@@ -24,37 +24,66 @@ pub(super) struct CacheRecord {
     synced_retry_at: Option<i64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) enum CachedResult {
     Found(LyricsHit),
     NotFound,
 }
 
-pub fn needs_fetch(query: &LyricsQuery) -> NeedsFetch {
-    needs_fetch_at(&cache_dir(), super::unix_timestamp(), query)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct CacheDecision {
+    record: Option<CacheRecord>,
+    classification: NeedsFetch,
+    classified_at: i64,
 }
 
+impl CacheDecision {
+    pub(super) fn classification(&self) -> NeedsFetch {
+        self.classification
+    }
+
+    pub(super) fn still_applies_to(&self, record: Option<&CacheRecord>, now: i64) -> bool {
+        self.classified_at == now && self.record.as_ref() == record
+    }
+}
+
+pub(super) fn decision(query: &LyricsQuery) -> CacheDecision {
+    decision_at(&cache_dir(), super::unix_timestamp(), query)
+}
+
+#[cfg(test)]
 pub(super) fn needs_fetch_at(cache_dir: &Path, now: i64, query: &LyricsQuery) -> NeedsFetch {
-    let Some(record) = read_cache(cache_dir, query) else {
-        return NeedsFetch::Fetch;
-    };
-    match &record.result {
-        CachedResult::NotFound if negative_is_fresh(&record, now) => NeedsFetch::Skip,
-        CachedResult::NotFound => NeedsFetch::Fetch,
-        CachedResult::Found(LyricsHit {
+    decision_at(cache_dir, now, query).classification()
+}
+
+pub(super) fn decision_at(cache_dir: &Path, now: i64, query: &LyricsQuery) -> CacheDecision {
+    let record = read_cache(cache_dir, query);
+    let classification = classify(record.as_ref(), now);
+    CacheDecision {
+        record,
+        classification,
+        classified_at: now,
+    }
+}
+
+pub(super) fn classify(record: Option<&CacheRecord>, now: i64) -> NeedsFetch {
+    match record.map(|record| &record.result) {
+        None => NeedsFetch::Fetch,
+        Some(CachedResult::NotFound)
+            if record.is_some_and(|record| negative_is_fresh(record, now)) =>
+        {
+            NeedsFetch::Skip
+        }
+        Some(CachedResult::NotFound) => NeedsFetch::Fetch,
+        Some(CachedResult::Found(LyricsHit {
             body: LyricsBody::Plain(_),
             ..
-        }) => {
-            if record
-                .synced_retry_at
-                .is_some_and(|retried_at| is_fresh(retried_at, now))
-            {
-                NeedsFetch::Skip
-            } else {
-                NeedsFetch::RetryForSynced
-            }
-        }
-        CachedResult::Found(_) => NeedsFetch::Skip,
+        })) if record.is_some_and(|record| plain_retry_is_fresh(record, now)) => NeedsFetch::Skip,
+        Some(CachedResult::Found(LyricsHit {
+            body: LyricsBody::Plain(_),
+            ..
+        })) => NeedsFetch::RetryForSynced,
+        Some(CachedResult::Found(_)) => NeedsFetch::Skip,
     }
 }
 

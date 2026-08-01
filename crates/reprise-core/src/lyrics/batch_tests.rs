@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use super::*;
-use crate::lyrics::{LyricsSource, TimedLine};
+use crate::lyrics::{cache, LyricsSource, TimedLine};
 
 fn track(title: &str) -> BatchTrack {
     BatchTrack {
@@ -22,10 +22,31 @@ fn services(
 ) -> BatchServices {
     BatchServices {
         local: Arc::new(|_| false),
-        needs: Arc::new(|_| NeedsFetch::Fetch),
-        online: Arc::new(online),
+        needs: Arc::new(|query| cache_decision(query, NeedsFetch::Fetch)),
+        online: Arc::new(move |query, path, _| online(query, path)),
         all_breakers_open: Arc::new(|| false),
     }
+}
+
+fn cache_decision(query: &LyricsQuery, expected: NeedsFetch) -> CacheDecision {
+    let temp = tempfile::tempdir().unwrap();
+    match expected {
+        NeedsFetch::Fetch => {}
+        NeedsFetch::Skip => cache::write_not_found(temp.path(), 100, query),
+        NeedsFetch::RetryForSynced => cache::write_found(
+            temp.path(),
+            100,
+            query,
+            &LyricsHit {
+                body: LyricsBody::Plain("cached".into()),
+                source: LyricsSource::Lrclib,
+            },
+            false,
+        ),
+    }
+    let decision = cache::decision_at(temp.path(), 101, query);
+    assert_eq!(decision.classification(), expected);
+    decision
 }
 
 fn run(
@@ -153,13 +174,34 @@ fn a_synced_retry_only_counts_when_it_actually_improves_the_cached_result() {
                 source: LyricsSource::Lrclib,
             })
         });
-        services.needs = Arc::new(|_| NeedsFetch::RetryForSynced);
+        services.needs = Arc::new(|query| cache_decision(query, NeedsFetch::RetryForSynced));
 
         let (_, progress) = run(&[track("One")], &services, || false, || true);
 
         assert_eq!(progress[0].checked, 1);
         assert_eq!(progress[0].downloaded, expected);
     }
+}
+
+#[test]
+fn batch_passes_its_precomputed_classification_to_the_lookup() {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let mut services = services(|_, _| Err(LyricsError::Temporary));
+    services.needs = Arc::new(|query| cache_decision(query, NeedsFetch::RetryForSynced));
+    services.online = Arc::new({
+        let seen = seen.clone();
+        move |_, _, decision| {
+            seen.lock().unwrap().push(decision.classification());
+            Ok(LyricsHit {
+                body: LyricsBody::Plain("already cached".into()),
+                source: LyricsSource::Lrclib,
+            })
+        }
+    });
+
+    let _ = run(&[track("One")], &services, || false, || true);
+
+    assert_eq!(&*seen.lock().unwrap(), &[NeedsFetch::RetryForSynced]);
 }
 
 #[test]
@@ -174,11 +216,14 @@ fn lyr_6_local_and_cache_hits_skip_network_but_still_advance_progress() {
     });
     services.local = Arc::new(|path| path.ends_with("Local.flac"));
     services.needs = Arc::new(|query| {
-        if query.title == "Cached" {
-            NeedsFetch::Skip
-        } else {
-            NeedsFetch::Fetch
-        }
+        cache_decision(
+            query,
+            if query.title == "Cached" {
+                NeedsFetch::Skip
+            } else {
+                NeedsFetch::Fetch
+            },
+        )
     });
 
     let (_, progress) = run(

@@ -5,7 +5,8 @@ use std::sync::Arc;
 
 use crate::queries::TrackSummary;
 
-use super::{LookupOptions, LyricsBody, LyricsError, LyricsHit, LyricsQuery, NeedsFetch};
+use super::cache::CacheDecision;
+use super::{LyricsBody, LyricsError, LyricsHit, LyricsQuery, NeedsFetch};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BatchState {
@@ -111,9 +112,10 @@ enum BatchItemOutcome {
 }
 
 type LocalLookup = Arc<dyn Fn(&Path) -> bool + Send + Sync>;
-type NeedsLookup = Arc<dyn Fn(&LyricsQuery) -> NeedsFetch + Send + Sync>;
-type OnlineLookup =
-    Arc<dyn Fn(&LyricsQuery, &Path) -> Result<LyricsHit, LyricsError> + Send + Sync>;
+type NeedsLookup = Arc<dyn Fn(&LyricsQuery) -> CacheDecision + Send + Sync>;
+type OnlineLookup = Arc<
+    dyn Fn(&LyricsQuery, &Path, &CacheDecision) -> Result<LyricsHit, LyricsError> + Send + Sync,
+>;
 type AllBreakersOpen = Arc<dyn Fn() -> bool + Send + Sync>;
 
 #[derive(Clone)]
@@ -128,9 +130,9 @@ impl BatchServices {
     fn production() -> Self {
         Self {
             local: Arc::new(|path| super::local_hit(path).is_some()),
-            needs: Arc::new(super::needs_fetch),
-            online: Arc::new(|query, path| {
-                super::load_or_fetch_with_options(query, Some(path), LookupOptions::default())
+            needs: Arc::new(super::cache::decision),
+            online: Arc::new(|query, path, decision| {
+                super::load_or_fetch_with_cache_decision(query, Some(path), decision)
             }),
             all_breakers_open: Arc::new(super::all_network_breakers_open),
         }
@@ -169,11 +171,10 @@ fn run_batch_with_services(
         if is_cancelled() {
             return BatchRunStatus::Cancelled;
         }
-        let needs = if (services.local)(&track.path) {
-            NeedsFetch::Skip
-        } else {
-            (services.needs)(&track.query)
-        };
+        let decision = (!(services.local)(&track.path)).then(|| (services.needs)(&track.query));
+        let needs = decision
+            .as_ref()
+            .map_or(NeedsFetch::Skip, CacheDecision::classification);
         let outcome = if needs == NeedsFetch::Skip {
             BatchItemOutcome::Skipped
         } else if !network_allowed() {
@@ -182,7 +183,16 @@ fn run_batch_with_services(
             let _ = on_progress(progress.fail());
             return BatchRunStatus::Finished;
         } else {
-            item_outcome(needs, &(services.online)(&track.query, &track.path))
+            item_outcome(
+                needs,
+                &(services.online)(
+                    &track.query,
+                    &track.path,
+                    decision
+                        .as_ref()
+                        .expect("a non-skipped cache decision should exist"),
+                ),
+            )
         };
         progress = progress.advance(outcome);
         if matches!(outcome, BatchItemOutcome::Failed) && (services.all_breakers_open)() {
