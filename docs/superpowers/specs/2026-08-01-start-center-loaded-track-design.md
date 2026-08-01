@@ -68,8 +68,12 @@ Selektion, `TrackFocus::Content`. Display-frei testbar.
 
 `window_runtime_wiring.rs` benutzt sie statt `session_state.browser_place`
 und `session_state.library_root`; aktuelles Place und Bibliotheks-Wurzel sind
-beim Start dasselbe. Beide Felder werden weiterhin **gespeichert** (Schema
-unverändert, Rückweg offen), aber beim Start nicht mehr gelesen.
+beim Start dasselbe. Die GNOME-Schicht konsultiert beide Felder nicht mehr für
+das Routing. `reprise_core::library::session::load()` liest, normalisiert und
+validiert sie bei jedem Start weiterhin, einschliesslich der `SELECT EXISTS`-
+Abfragen in `resolve_persisted_places`; das Ergebnis wird für die Startroute
+verworfen. Beide Felder werden weiterhin **gespeichert** (Schema unverändert,
+Rückweg offen).
 
 ### 2. Marker beim Restore
 
@@ -172,8 +176,9 @@ Regel-benannt gemäß `AGENTS.md`.
   `SessionRestore` plus `center_loaded_track` steht der Viewport auf dem
   zentrierten Wert, die Zeile trägt den Marker, der `ColumnView` trägt
   `.playback-paused`, und nichts ist selektiert.
-* `start_1_absent_loaded_track_leaves_the_list_at_the_top` — ein geladener
-  Track, den die Ansicht nicht enthält, bewegt den Viewport nicht.
+* `start_1_absent_loaded_track_does_not_move_the_live_viewport` — ein geladener
+  Track, den die Ansicht nicht enthält, bewegt einen bereits von oben
+  weggescrollten Viewport nicht.
 
 Der bestehende Test
 `nav_10a_row_activation_marker_does_not_move_selection_or_viewport` bleibt

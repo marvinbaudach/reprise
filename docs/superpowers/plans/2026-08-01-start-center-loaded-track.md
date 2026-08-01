@@ -34,7 +34,7 @@ startup place carries no anchor, no second scroller competes.
 - Base branch: `origin/dev`. Work in a worktree under `.worktrees/`, never
   under `/tmp` (`/tmp` is a 16G tmpfs; a cargo `target/` there lives in RAM).
 - **English everywhere** in code, comments, log strings and commit messages.
-  Design docs and specs stay German; `docs/ux-rules.md` is German.
+  Design docs and specs stay German; `docs/ux-rules.md` is English.
 - Tests that gate a binding rule are **rule-named**: `fn start_1_…`.
 - Display tests carry `#[ignore = "requires a display; run via xvfb-run"]`.
 - Gates — ALL must pass before every commit, from the repo root:
@@ -501,10 +501,25 @@ fn start_1_loaded_track_is_centered_and_marked_paused() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn start_1_absent_loaded_track_leaves_the_list_at_the_top() {
+fn start_1_absent_loaded_track_does_not_move_the_live_viewport() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let (track_list, window) = synthetic_track_list(100);
+
+    let position = 60;
+    track_list
+        .shared
+        .column_view
+        .scroll_to(position, None, gtk4::ListScrollFlags::FOCUS, None);
+    let adjustment = track_list.shared.column_view.vadjustment().unwrap();
+    crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
+        adjustment.value() > 0.0
+    });
+    let before = adjustment.value();
+    assert!(
+        before > 0.0,
+        "precondition: the list must be scrolled away from the top"
+    );
 
     // A loaded id the library view does not contain — the session ended on a
     // podcast episode, or the track was removed since.
@@ -512,10 +527,9 @@ fn start_1_absent_loaded_track_leaves_the_list_at_the_top() {
     track_list.center_loaded_track();
     crate::ui::test_settle::settle_for(Duration::from_millis(200));
 
-    let adjustment = track_list.shared.column_view.vadjustment().unwrap();
     assert!(
-        adjustment.value().abs() < 0.5,
-        "an unresolvable loaded track must leave the list at the top, actual {}",
+        (adjustment.value() - before).abs() < 1.0,
+        "an unresolvable loaded track moved the viewport: before={before}, after={}",
         adjustment.value()
     );
 
@@ -592,7 +606,7 @@ directly below `restore_browser_place`:
 
 ```bash
 xvfb-run -a cargo test -p reprise-gnome start_1_loaded_track_is_centered_and_marked_paused -- --ignored --exact --test-threads=1
-xvfb-run -a cargo test -p reprise-gnome start_1_absent_loaded_track_leaves_the_list_at_the_top -- --ignored --exact --test-threads=1
+xvfb-run -a cargo test -p reprise-gnome start_1_absent_loaded_track_does_not_move_the_live_viewport -- --ignored --exact --test-threads=1
 ```
 Expected: PASS, one test each. Run them **one process at a time** — this
 project's display suite is unreliable when a whole batch shares a process.
@@ -662,10 +676,10 @@ rather than reporting the task as done.
 for t in start_1_startup_place_is_always_the_library_root \
          start_1_session_restore_marks_without_moving_the_viewport \
          start_1_loaded_track_is_centered_and_marked_paused \
-         start_1_absent_loaded_track_leaves_the_list_at_the_top; do
+         start_1_absent_loaded_track_does_not_move_the_live_viewport; do
   echo "== $t"
-  xvfb-run -a cargo test -p reprise-gnome "$t" -- --ignored --exact --test-threads=1 \
-    || xvfb-run -a cargo test -p reprise-gnome "$t" -- --exact --test-threads=1
+  xvfb-run -a cargo test -p reprise-gnome "$t" -- --ignored --test-threads=1 \
+    || xvfb-run -a cargo test -p reprise-gnome "$t" -- --test-threads=1
 done
 ```
 Expected: each run reports `1 passed`.
