@@ -5,7 +5,7 @@ branch: one per agent, see §3
 phase: handover
 codex_session:
 created: 2026-07-31
-base: 9a2cc57
+base: da20e55
 ---
 # Handover — seven agents, running in parallel
 
@@ -133,9 +133,12 @@ start┼─ Agent 2  the missing index (1.1)            ── independent
 All seven start at once. Agent 1 is the long pole and the only one whose five
 tasks must run in order.
 
-**Ownership — no two agents share a file.** Verified against the tree at
-`577765b`; `#196` since added `ui/window/player_backends.rs`, which is agent
-1's along with the rest of `ui/window/`.
+**Ownership — no two agents share a file.** Verified against `577765b` and
+re-checked against `da20e55`: every file listed below still exists, and the
+three pull requests since — `#196`, `#197`, `#199` — touched nothing any agent
+owns except `docs/ux-rules.md`. `#196` added `ui/window/player_backends.rs`,
+which is agent 1's along with the rest of `ui/window/`. `#199` rebuilt
+`ui/stats/**`, which no brief owns.
 
 | Agent | Owns | Must not touch |
 | --- | --- | --- |
