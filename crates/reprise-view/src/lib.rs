@@ -15,3 +15,4 @@
 //! zuerst hier einzieht.
 
 pub mod playlists;
+pub mod strings;
