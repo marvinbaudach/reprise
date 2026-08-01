@@ -33,8 +33,9 @@ use super::podcasts_removal::{
     download_commit_action, download_request_allowed, download_toggle_action, DownloadCommitAction,
     DownloadToggleAction, KeptDownloads,
 };
+use super::podcasts_rendered_order;
 use super::podcasts_scroller::build_episode_scroller;
-use super::podcasts_selection::{PodcastSelection, SelectionControls};
+use super::podcasts_selection::{PodcastSelection, SelectMode, SelectionControls};
 use super::podcasts_view_data::{episode_ids_in_rendered_order, last_updated_text, unique};
 use super::podcasts_worker::{
     podcasts_response_channel, request_generation, PodcastsOperation, PodcastsPriority,
@@ -57,6 +58,8 @@ mod failure_ui;
 mod marker;
 #[path = "podcasts_view_requests.rs"]
 mod requests;
+#[path = "podcasts_view_selection.rs"]
+mod selection;
 #[cfg(test)]
 #[path = "podcasts_view_tests.rs"]
 mod tests;
@@ -107,6 +110,7 @@ pub(in crate::ui) struct PodcastsView {
     selection: Rc<RefCell<PodcastSelection>>,
     download_states: Rc<RefCell<BTreeMap<i64, DownloadState>>>,
     download_widgets: RefCell<BTreeMap<i64, podcasts_groups::DownloadRowWidgets>>,
+    selection_widgets: RefCell<BTreeMap<i64, podcasts_groups::SelectionRowWidgets>>,
     scroller: gtk4::ScrolledWindow,
     last_scroll_activity: Cell<Option<std::time::Instant>>,
     reveal_animation: Rc<RefCell<Option<adw::TimedAnimation>>>,
@@ -225,6 +229,7 @@ impl PodcastsView {
             selection: Rc::new(RefCell::new(PodcastSelection::default())),
             download_states: Rc::new(RefCell::new(BTreeMap::new())),
             download_widgets: RefCell::new(BTreeMap::new()),
+            selection_widgets: RefCell::new(BTreeMap::new()),
             scroller,
             last_scroll_activity: Cell::new(None),
             reveal_animation: Rc::new(RefCell::new(None)),
@@ -387,7 +392,7 @@ impl PodcastsView {
             self.unavailable_episode.get(),
             self.playing_episode.get(),
         );
-        let download_widgets = podcasts_groups::replace(
+        let rendered_widgets = podcasts_groups::replace(
             &self.group_container,
             &rendered_groups,
             self.playing_episode.get(),
@@ -401,7 +406,8 @@ impl PodcastsView {
             self.unavailable_episode.get(),
             &self.selection,
         );
-        self.download_widgets.replace(download_widgets);
+        self.download_widgets.replace(rendered_widgets.downloads);
+        self.selection_widgets.replace(rendered_widgets.selection);
         // `G2` (design 6a): the header line is a projection over the
         // unfiltered `groups`, not `rendered_groups` — it stays a stable
         // library overview instead of jittering with the active filter.

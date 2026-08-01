@@ -12,7 +12,7 @@ fn acc_8_row_activation_is_reachable_by_pointer_and_keyboard() {
     let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
     root.set_focusable(true);
     root.set_accessible_role(gtk4::AccessibleRole::Button);
-    install_row_activation(&root, 7);
+    install_row_interaction(&root, 7, "podcasts.select-row");
 
     let controllers = root.observe_controllers();
     let mut has_click = false;
@@ -32,6 +32,77 @@ fn acc_8_row_activation_is_reachable_by_pointer_and_keyboard() {
     assert!(
         root.is_focusable(),
         "a keyboard user must be able to reach it"
+    );
+}
+
+/// `SRC-14`: what a press on a row means. Kept a pure decision so the mapping
+/// is pinned without synthesising GTK events — the gesture handler does
+/// nothing but call this and dispatch.
+#[test]
+fn src_14_a_plain_click_selects_and_a_double_click_plays() {
+    use gtk4::gdk::ModifierType;
+
+    assert_eq!(
+        pointer_intent(1, ModifierType::empty()),
+        RowIntent::Select(SelectMode::Only),
+        "a single click selects instead of playing"
+    );
+    assert_eq!(pointer_intent(2, ModifierType::empty()), RowIntent::Play);
+    assert_eq!(
+        pointer_intent(3, ModifierType::empty()),
+        RowIntent::Play,
+        "a third press stays on the play the second one started"
+    );
+}
+
+/// `SRC-14`: the modifiers choose the selection mode, exactly as in the track
+/// list.
+#[test]
+fn src_14_modifiers_choose_the_selection_mode() {
+    use gtk4::gdk::ModifierType;
+
+    assert_eq!(
+        pointer_intent(1, ModifierType::CONTROL_MASK),
+        RowIntent::Select(SelectMode::Toggle)
+    );
+    assert_eq!(
+        pointer_intent(1, ModifierType::SHIFT_MASK),
+        RowIntent::Select(SelectMode::Range)
+    );
+    assert_eq!(
+        pointer_intent(2, ModifierType::CONTROL_MASK),
+        RowIntent::Play,
+        "a double click plays whatever is held down"
+    );
+}
+
+/// `SRC-14` / `ACC-8`: Space is the keyboard partner for Ctrl-click and
+/// Shift+Space for Shift-click, which is what lets a keyboard user build a
+/// multi-selection at all. Enter keeps playing.
+#[test]
+fn src_14_space_selects_and_enter_plays() {
+    use gtk4::gdk::{Key, ModifierType};
+
+    assert_eq!(
+        key_intent(Key::space, ModifierType::empty()),
+        Some(RowIntent::Select(SelectMode::Toggle))
+    );
+    assert_eq!(
+        key_intent(Key::space, ModifierType::SHIFT_MASK),
+        Some(RowIntent::Select(SelectMode::Range))
+    );
+    assert_eq!(
+        key_intent(Key::Return, ModifierType::empty()),
+        Some(RowIntent::Play)
+    );
+    assert_eq!(
+        key_intent(Key::KP_Enter, ModifierType::empty()),
+        Some(RowIntent::Play)
+    );
+    assert_eq!(
+        key_intent(Key::a, ModifierType::empty()),
+        None,
+        "everything else keeps propagating"
     );
 }
 

@@ -2663,6 +2663,19 @@ msgstr ""
 msgid "an earlier update"
 msgstr "einer früheren Aktualisierung"
 
+#: crates/reprise-gnome/src/ui/strings_releases.rs:40
+msgid "Fetching releases…"
+msgstr "Veröffentlichungen werden abgerufen…"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:41
+msgid "Preparing release check…"
+msgstr "Veröffentlichungsabgleich wird vorbereitet…"
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:74
+#, rust-format
+msgid "Checked {checked} of {total} artists"
+msgstr "{checked} von {total} Interpreten geprüft"
+
 #: crates/reprise-gnome/src/ui/strings_releases.rs:43
 #, rust-format
 msgid "{shown} of {total} gaps"

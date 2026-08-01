@@ -109,6 +109,8 @@ mod tests {
     use std::rc::Rc;
 
     use super::ProgressSubscribers;
+    use crate::ui::cover_download_batch::{BatchProgress, BatchState};
+    use crate::ui::lyrics_batch::start_after_cover_callback;
 
     #[test]
     fn multiple_progress_subscribers_receive_current_and_future_state() {
@@ -166,5 +168,40 @@ mod tests {
         );
 
         assert_eq!(subscribers.len(), 0);
+    }
+
+    #[test]
+    fn lyr_6_cover_completion_subscription_rearms_for_later_library_scans() {
+        let subscribers = ProgressSubscribers::default();
+        let armed = Rc::new(Cell::new(false));
+        let starts = Rc::new(Cell::new(0));
+        let starts_for_callback = starts.clone();
+        subscribers.subscribe(
+            BatchProgress {
+                state: BatchState::Running,
+                checked: 0,
+                total: 1,
+                downloaded: 0,
+                unavailable: 0,
+            },
+            || true,
+            start_after_cover_callback(armed.clone(), move || {
+                starts_for_callback.set(starts_for_callback.get() + 1);
+            }),
+        );
+        armed.set(true);
+        let terminal = BatchProgress {
+            state: BatchState::Complete,
+            checked: 1,
+            total: 1,
+            downloaded: 0,
+            unavailable: 1,
+        };
+
+        subscribers.notify(terminal);
+        subscribers.notify(terminal);
+
+        assert_eq!(starts.get(), 2);
+        assert_eq!(subscribers.len(), 1);
     }
 }

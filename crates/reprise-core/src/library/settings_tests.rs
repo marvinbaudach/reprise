@@ -154,6 +154,24 @@ fn new_releases_fetch_completed_defaults_false_and_round_trips() {
 }
 
 #[test]
+fn new_releases_last_completed_at_defaults_none_and_round_trips() {
+    let conn = migrated_conn();
+    assert_eq!(get_new_releases_last_completed_at(&conn).unwrap(), None);
+    set_new_releases_last_completed_at(&conn, 1_000_360).unwrap();
+    assert_eq!(
+        get_new_releases_last_completed_at(&conn).unwrap(),
+        Some(1_000_360)
+    );
+}
+
+#[test]
+fn new_releases_last_completed_at_tolerates_an_invalid_stored_value() {
+    let conn = migrated_conn();
+    set_setting(&conn, NEW_RELEASES_LAST_COMPLETED_AT_KEY, "invalid").unwrap();
+    assert_eq!(get_new_releases_last_completed_at(&conn).unwrap(), None);
+}
+
+#[test]
 fn player_bar_position_defaults_to_bottom() {
     let conn = migrated_conn();
     assert_eq!(get_player_bar_position(&conn), PlayerBarPosition::Bottom);

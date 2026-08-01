@@ -46,12 +46,16 @@ pub use crate::artist_news_candidates::{
 #[cfg(test)]
 pub(crate) use crate::artist_news_candidates::artists_for_fetch;
 
-#[cfg(test)]
-pub(crate) use crate::artist_news_pipeline::refresh_with;
 /// The refresh pipeline that talks to MusicBrainz and writes the database
 /// lives in `artist_news_pipeline`; re-exported here so existing callers
 /// keep using `artist_news::{refresh, RefreshReport, NewsError}`.
-pub use crate::artist_news_pipeline::{refresh, NewsError, RefreshReport};
+pub use crate::artist_news_pipeline::{
+    refresh, refresh_with_progress, NewsError, RefreshProgress, RefreshReport,
+};
+#[cfg(test)]
+pub(crate) use crate::artist_news_pipeline::{
+    refresh_with, refresh_with_progress_at, RefreshHooks,
+};
 
 pub(crate) use crate::artist_news_parsing::parse_partial_date;
 /// MusicBrainz JSON parsing and the URL builders live in

@@ -7,12 +7,100 @@ use gtk4::prelude::*;
 
 use crate::ui::strings;
 
+/// What a click means for the selection. It crosses the action boundary as a
+/// `u8`, which keeps one action where three near-identical ones would
+/// otherwise be needed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum SelectMode {
+    Only,
+    Toggle,
+    Range,
+}
+
+impl SelectMode {
+    pub(super) const fn as_u8(self) -> u8 {
+        match self {
+            SelectMode::Only => 0,
+            SelectMode::Toggle => 1,
+            SelectMode::Range => 2,
+        }
+    }
+
+    pub(super) const fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            0 => Some(SelectMode::Only),
+            1 => Some(SelectMode::Toggle),
+            2 => Some(SelectMode::Range),
+            _ => None,
+        }
+    }
+}
+
+/// `SRC-14`: the selection mechanics both episode surfaces share.
+///
+/// `order` is the episode ids as they are rendered right now, top to bottom
+/// and across group boundaries. A range is defined only over that order:
+/// episodes inside a collapsed group, behind a "Show all N" window, or hidden
+/// by the active filter are not rendered, so a Shift-click never sweeps them
+/// up. The grouped view and the channel detail view own their state
+/// differently — one flat set, one set per channel — which is why this takes
+/// the pieces rather than a receiver.
+pub(super) fn apply_select(
+    selected: &mut BTreeSet<i64>,
+    anchor: &mut Option<i64>,
+    order: &[i64],
+    episode_id: i64,
+    mode: SelectMode,
+) {
+    match mode {
+        SelectMode::Only => {
+            selected.clear();
+            selected.insert(episode_id);
+            *anchor = Some(episode_id);
+        }
+        SelectMode::Toggle => {
+            if !selected.remove(&episode_id) {
+                selected.insert(episode_id);
+            }
+            *anchor = Some(episode_id);
+        }
+        SelectMode::Range => {
+            let span = anchor
+                .and_then(|anchor| position(order, anchor))
+                .zip(position(order, episode_id));
+            let Some((from, to)) = span else {
+                // No anchor, or an anchor that is no longer on screen: the
+                // honest fallback is the row the user actually clicked.
+                apply_select(selected, anchor, order, episode_id, SelectMode::Only);
+                return;
+            };
+            selected.clear();
+            selected.extend(order[from.min(to)..=from.max(to)].iter().copied());
+        }
+    }
+}
+
+fn position(order: &[i64], episode_id: i64) -> Option<usize> {
+    order.iter().position(|candidate| *candidate == episode_id)
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(super) struct PodcastSelection {
     selected: BTreeSet<i64>,
+    anchor: Option<i64>,
 }
 
 impl PodcastSelection {
+    pub(super) fn apply(&mut self, order: &[i64], episode_id: i64, mode: SelectMode) {
+        apply_select(
+            &mut self.selected,
+            &mut self.anchor,
+            order,
+            episode_id,
+            mode,
+        );
+    }
+
     pub(super) fn set_selected(&mut self, episode_id: i64, selected: bool) {
         if selected {
             self.selected.insert(episode_id);
@@ -42,7 +130,17 @@ impl PodcastSelection {
     }
 }
 
-pub(super) fn episode_checkbox(episode_id: i64, title: &str, active: bool) -> gtk4::CheckButton {
+/// The row's checkbox, with the handler id of its own `toggled` connection.
+///
+/// The caller needs that id: pushing the current selection back onto the
+/// checkbox would otherwise re-enter through `podcasts.set-selected`. Blocking
+/// the handler for the duration of the push states that intent where it
+/// applies, which a re-entrancy flag on the view would not.
+pub(super) fn episode_checkbox(
+    episode_id: i64,
+    title: &str,
+    active: bool,
+) -> (gtk4::CheckButton, gtk4::glib::SignalHandlerId) {
     let checkbox = gtk4::CheckButton::new();
     checkbox.set_active(active);
     checkbox.set_tooltip_text(Some(&strings::text(strings::YOUTUBE_SELECT_EPISODES)));
@@ -51,11 +149,11 @@ pub(super) fn episode_checkbox(episode_id: i64, title: &str, active: bool) -> gt
     checkbox.update_property(&[gtk4::accessible::Property::Label(
         &strings::podcast_select_episode(title),
     )]);
-    checkbox.connect_toggled(move |checkbox| {
+    let toggled = checkbox.connect_toggled(move |checkbox| {
         let target = (episode_id, checkbox.is_active()).to_variant();
         let _ = checkbox.activate_action("podcasts.set-selected", Some(&target));
     });
-    checkbox
+    (checkbox, toggled)
 }
 
 /// The "N selected / Download selected / Remove selected" trio.
@@ -136,6 +234,119 @@ impl SelectionControls {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn ids(selected: &BTreeSet<i64>) -> Vec<i64> {
+        selected.iter().copied().collect()
+    }
+
+    #[test]
+    fn src_14_only_replaces_the_selection_and_moves_the_anchor() {
+        let mut selected = BTreeSet::from([7, 8]);
+        let mut anchor = Some(7);
+
+        apply_select(&mut selected, &mut anchor, &[7, 8, 9], 9, SelectMode::Only);
+
+        assert_eq!(ids(&selected), vec![9]);
+        assert_eq!(anchor, Some(9));
+    }
+
+    #[test]
+    fn src_14_toggle_adds_then_removes_and_moves_the_anchor() {
+        let mut selected = BTreeSet::new();
+        let mut anchor = None;
+
+        apply_select(
+            &mut selected,
+            &mut anchor,
+            &[7, 8, 9],
+            8,
+            SelectMode::Toggle,
+        );
+        assert_eq!(ids(&selected), vec![8]);
+        assert_eq!(anchor, Some(8));
+
+        apply_select(
+            &mut selected,
+            &mut anchor,
+            &[7, 8, 9],
+            8,
+            SelectMode::Toggle,
+        );
+        assert!(selected.is_empty());
+        assert_eq!(anchor, Some(8));
+    }
+
+    #[test]
+    fn src_14_range_spans_the_rendered_order_in_both_directions() {
+        let order = [1, 2, 3, 4, 5];
+        let mut selected = BTreeSet::new();
+        let mut anchor = None;
+
+        apply_select(&mut selected, &mut anchor, &order, 4, SelectMode::Only);
+        apply_select(&mut selected, &mut anchor, &order, 2, SelectMode::Range);
+        assert_eq!(
+            ids(&selected),
+            vec![2, 3, 4],
+            "a backwards range still spans"
+        );
+        assert_eq!(anchor, Some(4), "a range never moves the anchor");
+
+        apply_select(&mut selected, &mut anchor, &order, 5, SelectMode::Range);
+        assert_eq!(
+            ids(&selected),
+            vec![4, 5],
+            "the range is re-taken from the anchor, not added to"
+        );
+    }
+
+    #[test]
+    fn src_14_range_without_a_usable_anchor_selects_only_the_clicked_row() {
+        let mut selected = BTreeSet::from([1]);
+        let mut anchor = None;
+
+        apply_select(&mut selected, &mut anchor, &[1, 2, 3], 3, SelectMode::Range);
+
+        assert_eq!(ids(&selected), vec![3]);
+        assert_eq!(anchor, Some(3));
+
+        // An anchor that is no longer rendered — its group was collapsed — is
+        // not a usable anchor either.
+        let mut selected = BTreeSet::from([9]);
+        let mut anchor = Some(9);
+
+        apply_select(&mut selected, &mut anchor, &[1, 2, 3], 2, SelectMode::Range);
+
+        assert_eq!(ids(&selected), vec![2]);
+        assert_eq!(anchor, Some(2));
+    }
+
+    #[test]
+    fn src_14_a_row_outside_the_rendered_order_is_still_selectable() {
+        let mut selected = BTreeSet::new();
+        let mut anchor = None;
+
+        apply_select(&mut selected, &mut anchor, &[1, 2], 99, SelectMode::Only);
+
+        assert_eq!(ids(&selected), vec![99]);
+    }
+
+    #[test]
+    fn src_14_select_modes_survive_the_action_round_trip() {
+        for mode in [SelectMode::Only, SelectMode::Toggle, SelectMode::Range] {
+            assert_eq!(SelectMode::from_u8(mode.as_u8()), Some(mode));
+        }
+        assert_eq!(SelectMode::from_u8(3), None);
+    }
+
+    #[test]
+    fn src_14_the_selection_applies_the_shared_mechanics() {
+        let mut selection = PodcastSelection::default();
+
+        selection.apply(&[1, 2, 3], 1, SelectMode::Only);
+        selection.apply(&[1, 2, 3], 3, SelectMode::Range);
+
+        assert_eq!(selection.selected_ids(), vec![1, 2, 3]);
+    }
 
     #[test]
     fn src_12_selection_survives_a_widget_rebuild_and_spans_shows() {

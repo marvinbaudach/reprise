@@ -37,6 +37,8 @@ pub const RELEASES_CACHED_FAILURE_DESCRIPTION: &str =
 pub const RELEASES_EMPTY_FAILURE_DESCRIPTION: &str =
     N_!("There are no saved releases to show. Your library is unaffected.");
 pub const RELEASES_SAVED_CACHE_TIME: &str = N_!("an earlier update");
+pub const RELEASES_FETCHING: &str = N_!("Fetching releases…");
+pub const RELEASES_FETCH_PREPARING: &str = N_!("Preparing release check…");
 
 pub fn release_count_line(shown: usize, total: usize) -> String {
     formatted(
@@ -67,6 +69,16 @@ pub fn releases_cached_failure_description(time: &str) -> String {
     formatted(RELEASES_CACHED_FAILURE_DESCRIPTION, &[("time", time)])
 }
 
+pub fn releases_fetch_progress(checked: usize, total: usize) -> String {
+    formatted(
+        N_!("Checked {checked} of {total} artists"),
+        &[
+            ("checked", &checked.to_string()),
+            ("total", &total.to_string()),
+        ],
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -85,5 +97,10 @@ mod tests {
     fn nr_17_release_counts_name_discography_gaps() {
         assert_eq!(release_count_line(8, 19), "8 of 19 gaps");
         assert_eq!(release_total_line(19), "19 gaps");
+    }
+
+    #[test]
+    fn release_fetch_progress_formats_both_counts() {
+        assert_eq!(releases_fetch_progress(2, 5), "Checked 2 of 5 artists");
     }
 }

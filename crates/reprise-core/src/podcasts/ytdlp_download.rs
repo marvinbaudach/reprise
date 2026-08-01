@@ -43,6 +43,12 @@ pub(super) fn download(
         .args([
             OsString::from("--no-warnings"),
             OsString::from("--newline"),
+            // `--print after_move:filepath` below implies `--quiet`, and a
+            // quiet yt-dlp suppresses progress reporting entirely — the
+            // template was honoured but never printed, so a download sat at
+            // `0 B` until its finished size replaced it. `--progress` prints
+            // progress even in quiet mode.
+            OsString::from("--progress"),
             OsString::from("--progress-template"),
             OsString::from(PROGRESS_TEMPLATE),
             OsString::from("-f"),

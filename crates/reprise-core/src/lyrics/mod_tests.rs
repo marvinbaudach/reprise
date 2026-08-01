@@ -148,6 +148,60 @@ fn incomplete_plain_cache_retries_for_synced_instead_of_becoming_permanent() {
 }
 
 #[test]
+fn precomputed_classification_rechecks_a_cache_entry_that_changed_before_lookup() {
+    let temp = TempDir::new().unwrap();
+    let local = FixedProvider::new(LyricsSource::Tag, SourceOutcome::Skipped);
+    let network = FixedProvider::new(LyricsSource::Lrclib, SourceOutcome::Failed);
+    let decision = cache::decision_at(temp.path(), 99, &query());
+    cache::write_not_found(temp.path(), 100, &query());
+
+    let result = load_or_fetch_with_cache_context_at(
+        temp.path(),
+        101,
+        &query(),
+        None,
+        options(false),
+        Some(&decision),
+        LookupProviders {
+            local: &[&local],
+            network: &[&network],
+        },
+    );
+
+    assert_eq!(result, Err(LyricsError::NotFound));
+    assert_eq!(network.calls.get(), 0);
+}
+
+#[test]
+fn precomputed_classification_rechecks_an_unchanged_record_after_its_ttl_expires() {
+    let temp = TempDir::new().unwrap();
+    let local = FixedProvider::new(LyricsSource::Tag, SourceOutcome::Skipped);
+    let expected = LyricsHit {
+        body: LyricsBody::Synced(vec![TimedLine::new(1_000, "fresh")]),
+        source: LyricsSource::Lrclib,
+    };
+    let network = FixedProvider::new(LyricsSource::Lrclib, SourceOutcome::Hit(expected.clone()));
+    cache::write_not_found(temp.path(), 100, &query());
+    let decision = cache::decision_at(temp.path(), 100 + cache::NEGATIVE_TTL_SECONDS, &query());
+
+    let result = load_or_fetch_with_cache_context_at(
+        temp.path(),
+        101 + cache::NEGATIVE_TTL_SECONDS,
+        &query(),
+        None,
+        options(false),
+        Some(&decision),
+        LookupProviders {
+            local: &[&local],
+            network: &[&network],
+        },
+    );
+
+    assert_eq!(result, Ok(expected));
+    assert_eq!(network.calls.get(), 1);
+}
+
+#[test]
 fn attempted_plain_upgrade_is_throttled_even_when_one_provider_fails() {
     let temp = TempDir::new().unwrap();
     let cached_plain = LyricsHit {

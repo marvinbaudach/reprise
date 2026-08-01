@@ -48,7 +48,7 @@ fn nr_9a_opening_stamps_every_listed_release_seen() {
 }
 
 #[test]
-fn nr_6_failure_keeps_updated_age_with_an_inline_cached_hint() {
+fn nr_22_failure_keeps_updated_age_with_an_inline_cached_hint() {
     let presentation = footer_presentation(Some(100), 3_700, true);
 
     assert_eq!(presentation.updated, "Updated 1 h ago");
