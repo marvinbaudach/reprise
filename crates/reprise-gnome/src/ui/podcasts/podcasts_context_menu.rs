@@ -135,15 +135,21 @@ pub(super) fn build_for_selection(
     selected_ids: &[i64],
     unavailable_episode: Option<i64>,
 ) -> gio::Menu {
-    let target_ids = if selected_ids.len() <= 1 {
-        vec![row.id]
-    } else {
+    // A menu acts on the row it was opened on. It widens to the whole
+    // selection only when that row is part of it — the same rule
+    // `podcasts_dnd::drag_items` applies to a drag. Without the membership
+    // test, opening the menu on an unselected row while several others are
+    // selected offers "Remove" for those others, and the row under the
+    // pointer is not among them.
+    let target_ids = if selected_ids.len() > 1 && selected_ids.contains(&row.id) {
         selected_ids.to_vec()
+    } else {
+        vec![row.id]
     };
     let queue_available = !target_ids
         .iter()
         .any(|episode_id| Some(*episode_id) == unavailable_episode);
-    if selected_ids.len() <= 1 {
+    if target_ids.len() <= 1 {
         return build_single(row, &target_ids, queue_available);
     }
     let menu = gio::Menu::new();
@@ -429,6 +435,87 @@ mod tests {
         let mut entries = Vec::new();
         collect_entries(menu.upcast_ref(), &mut entries);
         entries
+    }
+
+    fn collect_targets(model: &gio::MenuModel, targets: &mut Vec<(String, Vec<i64>)>) {
+        for item in 0..model.n_items() {
+            let action = model
+                .item_attribute_value(item, "action", Some(glib::VariantTy::STRING))
+                .and_then(|value| value.get::<String>());
+            // Single-episode actions carry a bare `i64`, batch actions an
+            // array of them. Both answer the same question here: which
+            // episodes would this entry act on?
+            let target = model
+                .item_attribute_value(item, "target", None)
+                .and_then(|target| {
+                    target
+                        .get::<i64>()
+                        .map(|episode_id| vec![episode_id])
+                        .or_else(|| target.get::<Vec<i64>>())
+                });
+            if let (Some(action), Some(target)) = (action, target) {
+                targets.push((action, target));
+            }
+            if let Some(section) = model.item_link(item, "section") {
+                collect_targets(&section, targets);
+            }
+        }
+    }
+
+    /// Every menu entry that acts on episodes, with the episodes it acts on.
+    /// The source-level entries — unsubscribe, phone sync — are excluded:
+    /// their target is a `subscription_id`, which is a different thing that
+    /// happens to be an `i64`.
+    fn episode_targets(menu: &gio::Menu) -> Vec<(String, Vec<i64>)> {
+        let mut targets = Vec::new();
+        collect_targets(menu.upcast_ref(), &mut targets);
+        targets
+            .retain(|(action, _)| !action.contains(ACTION_UNSUBSCRIBE) && !action.contains("sync"));
+        targets
+    }
+
+    #[test]
+    fn src_12_a_menu_on_a_row_outside_the_selection_acts_on_that_row_alone() {
+        let row = episode(3, false);
+
+        let menu = build_for_selection(&row, &[1, 2], None);
+
+        let actions = menu_entries(&menu)
+            .into_iter()
+            .map(|(_, action)| action)
+            .collect::<Vec<_>>();
+        assert!(
+            actions.contains(&"podcasts.play".to_owned()),
+            "a row outside the selection gets its own single-row menu: {actions:?}"
+        );
+        let targets = episode_targets(&menu);
+        assert!(
+            !targets.is_empty(),
+            "the menu carries episode targets at all"
+        );
+        for (action, target) in targets {
+            assert_eq!(
+                target,
+                vec![3],
+                "`{action}` must never reach episodes the menu was not opened on"
+            );
+        }
+    }
+
+    #[test]
+    fn src_12_a_menu_on_a_selected_row_acts_on_the_whole_selection() {
+        let row = episode(2, false);
+
+        let menu = build_for_selection(&row, &[1, 2, 3], None);
+
+        let targets = episode_targets(&menu);
+        assert!(
+            !targets.is_empty(),
+            "the menu carries episode targets at all"
+        );
+        for (action, target) in targets {
+            assert_eq!(target, vec![1, 2, 3], "`{action}` acts on the selection");
+        }
     }
 
     #[test]
