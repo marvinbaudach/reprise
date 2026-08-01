@@ -107,6 +107,25 @@ pub(in crate::ui) fn selected_rows(
         .collect()
 }
 
+pub(in crate::ui) fn selection_has_read_only_episode_projection(shared: &Rc<Shared>) -> bool {
+    if !matches!(*shared.source.borrow(), ViewSource::Queue) {
+        return false;
+    }
+    let sections = shared.queue_sections.borrow();
+    current_selection_positions(shared)
+        .into_iter()
+        .any(|position| {
+            let row = crate::ui::track_list::queue_row_mapping::classify(position, &sections);
+            let item = shared
+                .model
+                .queue_item_at(position)
+                .map(|metadata| metadata.item());
+            row.zip(item).is_some_and(|(row, item)| {
+                crate::ui::track_list::queue_row_mapping::is_read_only_episode_projection(row, item)
+            })
+        })
+}
+
 pub(in crate::ui) fn remove_selected(shared: &Rc<Shared>) {
     if !matches!(*shared.source.borrow(), ViewSource::Queue) {
         tracing::warn!("remove-from-queue fired outside the Queue source");

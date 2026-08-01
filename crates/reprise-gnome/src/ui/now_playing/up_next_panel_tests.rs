@@ -66,6 +66,22 @@ fn upcoming_tracks_handle_an_empty_queue_and_current_at_the_end() {
 }
 
 #[test]
+fn episode_context_rows_hide_remove_and_reorder_but_manual_episodes_do_not() {
+    assert!(!row_is_editable(
+        Some(QueueRow::UpNext(0)),
+        reprise_core::up_next::QueueItem::Episode(8)
+    ));
+    assert!(row_is_editable(
+        Some(QueueRow::PlayNext(0)),
+        reprise_core::up_next::QueueItem::Episode(8)
+    ));
+    assert!(row_is_editable(
+        Some(QueueRow::UpNext(0)),
+        reprise_core::up_next::QueueItem::Track(8)
+    ));
+}
+
+#[test]
 fn que_2_two_sections_headers_conditional() {
     let both = crate::ui::track_list::queue_sections::compose(
         Some(track(10)),

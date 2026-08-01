@@ -59,6 +59,35 @@ impl PlayerController {
         }
     }
 
+    pub(super) fn jump_to_direct_episode_context(self: &Rc<Self>, offset: usize) -> bool {
+        let target = {
+            let external = self.external.borrow();
+            let Some(ExternalSession::Podcast(session)) = external.session.as_ref() else {
+                return false;
+            };
+            if session.origin != PodcastOrigin::Direct {
+                return false;
+            }
+            session
+                .neighbours
+                .as_ref()
+                .and_then(|neighbours| neighbours.upcoming_context(offset))
+        };
+        let Some(neighbours) = target else {
+            tracing::debug!(
+                offset,
+                "direct episode context jump target vanished; ignoring"
+            );
+            return true;
+        };
+        self.play_item_from_neighbour(
+            neighbours,
+            AutomaticAdvance::new(NeighbourDirection::Next),
+            PodcastOrigin::Direct,
+        );
+        true
+    }
+
     fn play_item_from_neighbour(
         self: &Rc<Self>,
         neighbours: NeighbourContext,

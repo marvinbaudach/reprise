@@ -22,8 +22,11 @@ pub(in crate::ui) fn route(items: &[QueueItem]) -> QueueMenuRoute {
     }
 }
 
-pub(in crate::ui) fn build_common_queue_menu(count: usize) -> gio::Menu {
+pub(in crate::ui) fn build_common_queue_menu(count: usize, editable: bool) -> gio::Menu {
     let menu = gio::Menu::new();
+    if !editable {
+        return menu;
+    }
     let primary = gio::Menu::new();
     primary.append(
         Some(&strings::text(strings::CONTEXT_MENU_MOVE_TO_TOP)),
@@ -77,7 +80,8 @@ mod tests {
             QueueMenuRoute::CommonQueueItems
         );
 
-        let labels = labels(&build_common_queue_menu(2));
-        assert_eq!(labels, ["Move to top", "Remove 2 from queue"]);
+        let editable_labels = labels(&build_common_queue_menu(2, true));
+        assert_eq!(editable_labels, ["Move to top", "Remove 2 from queue"]);
+        assert!(labels(&build_common_queue_menu(1, false)).is_empty());
     }
 }

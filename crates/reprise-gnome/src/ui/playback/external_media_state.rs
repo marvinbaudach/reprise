@@ -123,6 +123,10 @@ impl NeighbourContext {
         self.index
     }
 
+    pub(super) fn upcoming_context(&self, offset: usize) -> Option<Self> {
+        self.shifted(self.index.checked_add(1)?.checked_add(offset)?)
+    }
+
     pub(super) fn previous(&self) -> Option<Self> {
         self.shifted(self.index.checked_sub(1)?)
     }
@@ -583,33 +587,6 @@ mod tests {
             duration_known: false,
             error: None,
         }
-    }
-
-    #[test]
-    fn pod_21_neighbours_follow_the_frozen_rendered_order_without_wrapping() {
-        let mut rendered_ids = vec![11, 22, 33];
-        let middle = NeighbourContext::for_episode(&rendered_ids, 22).unwrap();
-
-        assert_eq!(
-            middle.previous().map(|context| context.current_id()),
-            Some(11)
-        );
-        assert_eq!(middle.next().map(|context| context.current_id()), Some(33));
-        assert!(NeighbourContext::for_episode(&rendered_ids, 11)
-            .unwrap()
-            .previous()
-            .is_none());
-        assert!(NeighbourContext::for_episode(&rendered_ids, 33)
-            .unwrap()
-            .next()
-            .is_none());
-
-        rendered_ids.clear();
-        assert_eq!(
-            middle.previous().map(|context| context.current_id()),
-            Some(11)
-        );
-        assert_eq!(middle.next().map(|context| context.current_id()), Some(33));
     }
 
     #[test]

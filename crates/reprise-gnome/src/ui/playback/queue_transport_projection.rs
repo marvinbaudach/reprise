@@ -1,8 +1,12 @@
-use super::{compose_virtual, QueueItem, QueueViewModel, VirtualContextTail};
+use std::rc::Rc;
+
 use crate::ui::playback::external_media_state::{
     ExternalMedia, ExternalPlaybackState, ExternalSession, PodcastOrigin,
 };
 use crate::ui::playback::preview::PlaybackMode;
+use crate::ui::player_controller::PlayerController;
+use crate::ui::track_list::queue_sections::{compose_virtual, QueueViewModel, VirtualContextTail};
+use reprise_core::up_next::QueueItem;
 
 pub(super) fn compose_queue_view_model(
     mode: PlaybackMode,
@@ -63,6 +67,75 @@ fn direct_podcast_model(
         })
     });
     compose_virtual(Some(now_playing), play_next, context, Some(show))
+}
+
+pub(super) fn has_direct_episode_projection(external: &ExternalPlaybackState) -> bool {
+    matches!(
+        external.session.as_ref(),
+        Some(ExternalSession::Podcast(session)) if session.origin == PodcastOrigin::Direct
+    )
+}
+
+impl PlayerController {
+    /// The Queue view's three parts in display order (QUE-1): the playing
+    /// item, pending manual entries, and virtual context tail.
+    pub(in crate::ui) fn queue_view_model(self: &Rc<Self>) -> QueueViewModel {
+        let deferred = self.deferred_queue_purge_id.get();
+        let mode = self.playback_mode();
+        let current_up_next = self
+            .current_up_next
+            .get()
+            .filter(|item| item.track_id().is_none_or(|id| Some(id) != deferred));
+        let queue_current = self
+            .queue
+            .borrow()
+            .current()
+            .filter(|id| Some(*id) != deferred);
+        let play_next = self.up_next.borrow().ids().to_vec();
+        let (context_count, context_sequence, context_start) = {
+            let queue = self.queue.borrow();
+            (
+                queue.remaining_len(),
+                queue.sequence_identity(),
+                queue
+                    .current_order_position()
+                    .map_or(0, |position| position + 1),
+            )
+        };
+        let origin_label = self
+            .play_origin
+            .borrow()
+            .as_ref()
+            .map(|origin| origin.label.clone());
+        let player = Rc::downgrade(self);
+        let context = (context_count > 0).then(|| {
+            VirtualContextTail::identified(
+                context_count,
+                context_sequence,
+                context_start,
+                Rc::new(move |offset, limit| {
+                    player.upgrade().map_or_else(Vec::new, |player| {
+                        player
+                            .queue
+                            .borrow()
+                            .remaining_window(offset, limit)
+                            .into_iter()
+                            .map(QueueItem::Track)
+                            .collect()
+                    })
+                }),
+            )
+        });
+        compose_queue_view_model(
+            mode,
+            queue_current,
+            current_up_next,
+            &play_next,
+            context,
+            origin_label.as_deref(),
+            &self.external.borrow(),
+        )
+    }
 }
 
 #[cfg(test)]
@@ -225,5 +298,22 @@ mod tests {
                 QueueItem::Track(3),
             ]
         );
+    }
+
+    #[test]
+    fn only_a_direct_podcast_session_has_a_read_only_episode_projection() {
+        assert!(has_direct_episode_projection(&podcast_state(
+            PodcastOrigin::Direct,
+            7,
+            Some(&[7, 8])
+        )));
+        assert!(!has_direct_episode_projection(&podcast_state(
+            PodcastOrigin::ManualQueue,
+            7,
+            Some(&[7, 8])
+        )));
+        assert!(!has_direct_episode_projection(
+            &ExternalPlaybackState::default()
+        ));
     }
 }
