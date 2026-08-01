@@ -5,7 +5,7 @@ branch: one per agent, see §3
 phase: handover
 codex_session:
 created: 2026-07-31
-base: da20e55
+base: 07f4c79
 ---
 # Handover — seven agents, running in parallel
 
@@ -137,11 +137,17 @@ All seven start at once. Agent 1 is the long pole and the only one whose five
 tasks must run in order.
 
 **Ownership — no two agents share a file.** Verified against `577765b` and
-re-checked against `da20e55`: every file listed below still exists, and the
-three pull requests since — `#196`, `#197`, `#199` — touched nothing any agent
-owns except `docs/ux-rules.md`. `#196` added `ui/window/player_backends.rs`,
-which is agent 1's along with the rest of `ui/window/`. `#199` rebuilt
-`ui/stats/**`, which no brief owns.
+re-checked against `07f4c79`: every file listed below still exists. `#196`
+added `ui/window/player_backends.rs`, which is agent 1's along with the rest of
+`ui/window/`. `#199`, `#201`, `#202` and `#204` rebuilt `ui/stats/**`, which no
+brief owns.
+
+**Two agents inherit moved ground.** `#200`, `#203` and `#205` reworked the
+podcast view and `#206` gutted `ui/lyrics/lyrics_batch.rs`, so agent 6's
+`podcasts_view.rs` line and agent 7's `core/src/podcasts/ytdlp_download.rs`
+sit in code that changed after their briefs were written. The briefs are still
+correct about *what* to do; re-derive *where* before you edit, and treat any
+line number as a hint.
 
 | Agent | Owns | Must not touch |
 | --- | --- | --- |
@@ -540,13 +546,15 @@ block; if both land, the conflict is two additions and both stay.
 > control runs inside the borrow:
 > `device_sync/device_sync_target_browser.rs` 239, 251, 279, 318, 455 ·
 > `library_doctor/progress_card.rs` 115, 126, 138 ·
-> `podcasts/podcasts_failure_ui.rs` 168 · `podcasts/podcasts_view.rs` 252 ·
+> `podcasts/podcasts_failure_ui.rs` 168 · `podcasts/podcasts_view.rs` 257 ·
 > `radio/add_dialog.rs` 458 · `radio/radio_filter_bar.rs` 228 ·
 > `radio/radio_view.rs` 411, 528, 646 · `releases/releases_filter_bar.rs` 211 ·
-> `releases/releases_view.rs` 320 · `track_list/track_list_reload.rs` 306 ·
-> `view_session.rs` 138. (Line numbers are from `577765b`; re-run
-> `python3 scripts/tests/scan-scrutinee-borrows.py` from the repository root
-> for the current list.)
+> `releases/releases_view.rs` 337 · `track_list/track_list_reload.rs` 306 ·
+> `view_session.rs` 138. (Refreshed against `07f4c79`; two moved since
+> `577765b`, `podcasts_view.rs` by `#203`/`#205` and `releases_view.rs` by
+> `#207`. Re-run `python3 scripts/tests/scan-scrutinee-borrows.py` from the
+> repository root before you start — it reports 77 scrutinee borrows in total,
+> of which these nineteen are the callback-invoking subset that is your task.)
 >
 > **This is latent, not a live crash** — every callback slot has one writer, a
 > `set_on_*` method, and all of those run in window construction or view
