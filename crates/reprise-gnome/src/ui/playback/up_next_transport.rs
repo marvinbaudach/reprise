@@ -557,7 +557,7 @@ mod tests {
     }
 
     #[test]
-    fn browse_8_repeat_one_cannot_repeat_a_loaded_catalog_tombstone() {
+    fn browse_11_repeat_one_cannot_repeat_a_loaded_catalog_tombstone() {
         let mut context = context(&[1, 2]);
         context.set_repeat(Repeat::One);
         let mut pending = pending(&[]);
