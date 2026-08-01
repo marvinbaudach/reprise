@@ -328,10 +328,11 @@ schon hat.
 
 Dreistufig:
 
-1. **Der Desktop exportiert die Peaks neben die Datei**, und der Geräte-Sync
-   nimmt sie mit. Das ist keine neue Maschinerie: `device_sync` schreibt
-   heute schon Nicht-Audio-Artefakte aufs Gerät (M3U-Playlists über
-   `PlaylistWrite`).
+1. **Der Geräte-Sync schreibt die Peaks aufs Gerät**, gelesen aus
+   `tracks.waveform_peaks`. Das ist keine neue Maschinerie: `device_sync`
+   schreibt heute schon Nicht-Audio-Artefakte dorthin (M3U-Playlists über
+   `PlaylistWrite`). Die Peaks werden dabei **nie in der Musiksammlung
+   materialisiert** — siehe die Trägerbegründung unten.
 2. **Android liest sie, wenn vorhanden** — dann ist die Waveform gratis und
    `reprise-android` braucht **keine** `WaveformBackend`-Implementierung.
    Das streicht einen Posten aus P4a.
@@ -340,13 +341,50 @@ Dreistufig:
    der nie synchronisiert — er bekommt einen Scrubber, aber keinen
    Akkufresser.
 
-**Träger: Sidecar-Datei, nicht Tag im Audio** — zu bestätigen in P4a.
-Begründung: Das Projekt hat mit den LRC-Lyrics bereits ein Sidecar-Muster
-samt Writeback-Spec, und 1 KB Peaks rechtfertigen kein Umschreiben großer
-Audiodateien mit der zugehörigen `mtime`-Unruhe und Rescan-Last. Der
-Gegenvorschlag (Custom-Tag über `lofty`) reist zwar bei jedem Dateikopieren
-automatisch mit und bräuchte gar keine Sync-Änderung — er wird in P4a gegen
-diese Begründung geprüft, nicht stillschweigend verworfen.
+**Träger: Bytes direkt aufs Gerät, wie bei Playlists.** Nicht als Datei in
+der Musiksammlung und nicht als Tag im Audio. Die erste Fassung dieses
+Beschlusses empfahl „Sidecar wie bei den LRC-Lyrics"; eine Code-Analyse hat
+das widerlegt, und die Begründung ist es wert, festgehalten zu werden:
+
+- **`device_sync` hat zwei verschiedene Transportwege, nicht einen.**
+  `PlaylistWrite` (`device_sync/mirror.rs:90`, ausgeführt über
+  `replace_playlist` in `platform-linux/device_sync.rs:495`) schreibt **Bytes
+  aus dem Speicher** aufs Gerät und braucht keine Quelldatei. Das
+  LRC-Sidecar (`device_sync/lyrics_sidecar.rs`, ausgeführt in
+  `device_sync_effects.rs:322`) **kopiert eine Datei von der Platte**. Peaks
+  sind ein DB-Blob und haben keine Datei — für sie passt der erste Weg.
+- **Das LRC-Muster taugt hier nicht als Vorbild.** Es schreibt in die
+  Sammlung des Nutzers, weil `.lrc` ein universelles Format ist, das *jeder*
+  Player lesen kann — das ist die Rechtfertigung. Peaks im Reprise-eigenen
+  Byteformat (1000 Buckets, sqrt-normalisiert, `core/waveform.rs`) sind für
+  kein anderes Programm lesbar. Man zöge die gesamte Sicherheitsmaschinerie
+  von `writeback_publish.rs` (atomarer Hardlink-Publish, `ignore_path` gegen
+  Rescan-Stürme, Leftover-Sweep) mit, ohne den Nutzen zu bekommen, für den
+  sie gebaut wurde — und erbte das dort bewusst akzeptierte Waisen-Risiko bei
+  Umbenennungen.
+- **Der Custom-Tag scheitert am Transcode.** `AudioMetadata`
+  (`platform-linux/device_transfer.rs:70`) trägt exakt fünf Felder plus
+  Cover; der GStreamer-Transcode nach Opus oder MP3 setzt nur diese. Ein
+  Peaks-Tag in einer FLAC-Quelle existierte in der transkodierten Kopie
+  schlicht nicht mehr — und der Sync transkodiert.
+
+Übernommen wird also die **Verdrahtungsform** von LRC (außerhalb des reinen
+Reducers, an den bestehenden Aufrufstellen in `device_sync_effects.rs`) mit
+der **Schreibmechanik** von `replace_playlist`. `mirror.rs` und `machine.rs`
+bleiben unberührt, es braucht keine DB-Migration und keine neuen
+`Effect`-Varianten.
+
+**Zwei Punkte, die vor dem Bauen zu entscheiden sind:**
+
+1. **Peaks entstehen heute nur beim Abspielen**, nicht beim Scan
+   (`ui/playback/now_playing_wiring.rs:299`). Die vorbereitete
+   Backfill-Abfrage `pending_waveform_tracks` (`core/db.rs:755`) hat **keinen
+   Aufrufer**. Ohne einen Backfill-Worker bekommt das Telefon nur Waveforms
+   für Titel, die am Desktop schon einmal liefen — eine Produktentscheidung,
+   keine Implementierungsfrage.
+2. **Eine Datei je Titel oder ein gebündeltes Manifest je Sync-Lauf.** MTP
+   hat feste Latenz je Schreibvorgang; 1 KB pro Titel ist datenmäßig nichts,
+   aber ein zusätzlicher Aufruf je Titel ist auf manchen Geräten spürbar.
 
 Die Song-Analyse (`track_audio_analysis`) ist hiervon **nicht** betroffen:
 sie wurde entfernt (`db_drop_audio_analysis_mix.rs`) und kommt nicht zurück.
@@ -480,10 +518,15 @@ Umsetzung des in S1 bestätigten Weges gegen die bestehenden Core-Verträge
 (B15); nur der Notfallpfad für den laufenden Titel braucht Dekodierung, und
 die liefert Media3 ohnehin.
 
-**Die Desktop-Hälfte von B15** — Peaks neben die Datei exportieren und im
-Geräte-Sync mitnehmen — ist Arbeit an `reprise-core` und
-`reprise-platform-linux`, nicht an Android. Sie hängt an keinem
-Spike-Befund, kann unabhängig von P7 landen und nützt sofort.
+**Die Desktop-Hälfte von B15** — die Peaks im Geräte-Sync mitschreiben — ist
+Arbeit an `reprise-core`, `reprise-platform-linux` und der
+`device_sync`-Verdrahtung im GTK-Frontend, nicht an Android. Sie hängt an
+keinem Spike-Befund, kann unabhängig von P7 landen und nützt sofort.
+Umfang laut Code-Analyse: eine neue Pfad-Projektion neben
+`device_sync/lyrics_sidecar.rs`, eine verallgemeinerte Bytes-Schreibmethode
+statt des auf `.m3u8` festgelegten `replace_playlist`, die zugehörige
+Trait- und Backend-Ergänzung, und Kopier-/Entfernen-Funktionen an den drei
+bestehenden Aufrufstellen. Keine DB-Migration.
 
 ### P4b — Plattform-Backends Windows und macOS
 
