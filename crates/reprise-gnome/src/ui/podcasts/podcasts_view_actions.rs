@@ -138,6 +138,21 @@ impl PodcastsView {
             view.apply_selection();
         });
         group.add_action(&set_selected);
+        let select_row =
+            gio::SimpleAction::new("select-row", Some(&<(i64, u8)>::static_variant_type()));
+        let weak = Rc::downgrade(self);
+        select_row.connect_activate(move |_, target| {
+            let Some(view) = weak.upgrade() else { return };
+            let Some((episode_id, mode)) = target.and_then(glib::Variant::get::<(i64, u8)>) else {
+                return;
+            };
+            let Some(mode) = SelectMode::from_u8(mode) else {
+                tracing::debug!(mode, "unknown podcast selection mode");
+                return;
+            };
+            view.select_row(episode_id, mode);
+        });
+        group.add_action(&select_row);
         self.youtube_detail.install_actions(&group);
         let add = gio::SimpleAction::new("open-add", None);
         let weak = Rc::downgrade(self);

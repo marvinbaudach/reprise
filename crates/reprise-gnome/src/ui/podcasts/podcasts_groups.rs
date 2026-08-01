@@ -17,7 +17,7 @@ use super::podcasts_presentation::{
     author_line, detail_line, duration, file_size, on_phone, relative_date, status_pill,
     RenderedSourceGroup, SourceSummary,
 };
-use super::podcasts_row_interaction::{episode_thumbnail, install_row_activation};
+use super::podcasts_row_interaction::{episode_thumbnail, install_row_interaction};
 use super::podcasts_row_state::{download_status, RowNetworkState};
 use super::podcasts_selection::{self, PodcastSelection};
 use super::podcasts_title::TitleParts;
@@ -362,7 +362,7 @@ fn episode_row(
     marker.set_visible(loaded);
     thumbnail.add_overlay(&marker);
     root.append(&thumbnail);
-    install_row_activation(&root, row.id);
+    install_row_interaction(&root, row.id);
     super::podcasts_dnd::wire_episode_drag_source(&root, row.id, context.selection);
 
     let identity = gtk4::Box::new(gtk4::Orientation::Vertical, 0);

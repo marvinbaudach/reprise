@@ -3706,6 +3706,16 @@ listening statistics.
   group's ten-episode preview window opens when the loaded episode sits past
   it; an item hidden by the active filter is not revealed and the filter is
   never cleared to reach it.
+- **SRC-14** [active] [gtk] — **Episode rows select like track rows.** A click
+  selects the row alone, Ctrl-click toggles it, Shift-click extends the
+  selection from the anchor across the rendered order, and playback takes a
+  double click or Enter. Space toggles the focused row's selection and
+  Shift+Space extends from the anchor. A secondary click on a row outside the
+  selection makes that row the selection before the menu opens, so a menu never
+  acts on rows the pointer is not on. A range covers only rendered rows: a
+  collapsed group, the episodes past a preview window and rows hidden by the
+  filter stay out of it. Applying a selection never rebuilds the list, so
+  keyboard focus survives it.
 - **POD-1** [active] [core] — Episode status is a pure derivation:
   Played exactly when `played_at` is set, otherwise Resume when
   `position_ms > 0`, otherwise unstarted. The visible New pill is a
