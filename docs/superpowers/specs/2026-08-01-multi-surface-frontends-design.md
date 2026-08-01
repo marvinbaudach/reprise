@@ -299,18 +299,27 @@ Design", drei Richtungen). Material-3-Struktur auf dunklem Grund; der
 Visualizer lebt im Scrubber statt das Interface zu übernehmen; die ruhigste
 und nativste der drei Varianten.
 
-Tokens, die daraus verbindlich werden (toolkit-unabhängig, später ein
-Compose-Theme):
+**Überarbeitung 2026-08-01 (Turn 2 derselben Design-Datei):** Dasselbe
+Konzept, aber auf **echten Material-3-Primitiven** statt frei gezeichnet.
+Das ist für P7 eine spürbare Verbilligung — die Compose-Umsetzung wird
+Übersetzung statt Neuinterpretation, weil jedes Element eine M3-Entsprechung
+hat.
 
 | Rolle | Wert |
 | --- | --- |
-| Ruhe-Akzent (Reprise-Teal) | `#20B2AA` |
-| Playback-Glow (Nocturne-Blurple) | `#9184D9` |
-| Grund | `#0B0C12` |
-| Fläche | `#101219` |
-| Text auf Teal | `#8FDCD7` |
-| Schrift | Inter |
-| Icons | Phosphor Icons — MIT, erfüllt B11.1 |
+| Bezugsfläche | 412 × 916 dp |
+| Farbrollen | M3 (`surface-container`-Stufen, primary/secondary/tertiary container) |
+| Reprise-Teal `#20B2AA` | die **primary**-Rolle |
+| Nocturne-Blurple `#9184D9` | die **tertiary**-Rolle |
+| Shape Scale | M3: 4 / 8 / 12 / 16 / 28 |
+| Schrift | Roboto Flex im M3-Typescale |
+| Icons | **Material Symbols Rounded** |
+| Trefferflächen | 48 dp |
+| Navigation Bar | 80 dp |
+
+Der Wechsel von Phosphor Icons auf Material Symbols Rounded ist auch
+lizenzrechtlich die bessere Wahl: Apache-2.0, in Compose Material ohnehin
+vorhanden, also eine Abhängigkeit weniger und weiterhin B11.1-konform.
 
 **Das Mockup zeichnet v2, nicht v1.** Es zeigt einen Sync-Chip („Wi-Fi
 gekoppelt · Sync vor 2 Min"), Sterne-Bewertungen, Favoriten-Herz und
