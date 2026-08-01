@@ -12,7 +12,7 @@ fn acc_8_row_activation_is_reachable_by_pointer_and_keyboard() {
     let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
     root.set_focusable(true);
     root.set_accessible_role(gtk4::AccessibleRole::Button);
-    install_row_interaction(&root, 7);
+    install_row_interaction(&root, 7, "podcasts.select-row");
 
     let controllers = root.observe_controllers();
     let mut has_click = false;

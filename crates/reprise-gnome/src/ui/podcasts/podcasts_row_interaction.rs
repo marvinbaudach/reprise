@@ -80,6 +80,13 @@ fn activate_play(root: &gtk4::Box, episode_id: i64) {
     }
 }
 
+/// The grouped library view's selection action. Registered as `select-row` in
+/// the `podcasts` group (`podcasts_view_actions.rs`).
+pub(super) const SELECT_ROW_ACTION: &str = "podcasts.select-row";
+/// The channel detail view's own, because its selection is per channel.
+/// Registered as `select-channel-row` in `youtube_channel_detail.rs`.
+pub(super) const SELECT_CHANNEL_ROW_ACTION: &str = "podcasts.select-channel-row";
+
 /// What an input on a row asks for. Deciding this in a pure function keeps the
 /// mapping testable without synthesising GTK events, and leaves the handlers
 /// with nothing but dispatch.
@@ -123,19 +130,27 @@ pub(super) fn key_intent(key: gtk4::gdk::Key, state: gtk4::gdk::ModifierType) ->
     }
 }
 
-fn dispatch(root: &gtk4::Box, episode_id: i64, intent: RowIntent) {
+fn dispatch(root: &gtk4::Box, episode_id: i64, intent: RowIntent, select_action: &str) {
     match intent {
         RowIntent::Play => activate_play(root, episode_id),
         RowIntent::Select(mode) => {
             let target = (episode_id, mode.as_u8()).to_variant();
-            if let Err(error) = root.activate_action("podcasts.select-row", Some(&target)) {
+            if let Err(error) = root.activate_action(select_action, Some(&target)) {
                 tracing::debug!(%error, episode_id, "podcast row selection did not reach the action");
             }
         }
     }
 }
 
-pub(super) fn install_row_interaction(root: &gtk4::Box, episode_id: i64) {
+/// `select_action` differs per surface: the grouped library view owns one flat
+/// selection, the channel detail view one per channel, so each routes to its
+/// own action. Everything else about a row's input behaviour is identical, and
+/// deliberately lives here once.
+pub(super) fn install_row_interaction(
+    root: &gtk4::Box,
+    episode_id: i64,
+    select_action: &'static str,
+) {
     // input-parity: ACC-8 keyboard=episode-row-enter-space
     let click = gtk4::GestureClick::new();
     let clicked_root = root.downgrade();
@@ -148,6 +163,7 @@ pub(super) fn install_row_interaction(root: &gtk4::Box, episode_id: i64) {
                 &root,
                 episode_id,
                 pointer_intent(n_press, gesture.current_event_state()),
+                select_action,
             );
         }
     });
@@ -160,7 +176,7 @@ pub(super) fn install_row_interaction(root: &gtk4::Box, episode_id: i64) {
             return gtk4::glib::Propagation::Proceed;
         };
         if let Some(root) = keyed_root.upgrade() {
-            dispatch(&root, episode_id, intent);
+            dispatch(&root, episode_id, intent, select_action);
         }
         gtk4::glib::Propagation::Stop
     });
