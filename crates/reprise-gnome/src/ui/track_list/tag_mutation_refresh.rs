@@ -27,15 +27,19 @@ pub(in crate::ui) fn refresh_after_tag_mutation_with_anchor(
     if let Some(player) = shared.player.borrow().upgrade() {
         player.refresh_edited_metadata(ids);
     }
-    reload_with_anchor(shared, &anchor);
-    // The tag editor is a dialog whose save completes on the main loop just as
-    // the dialog is animating shut, so the `ColumnView` behind it can still be
-    // obscured / not yet re-mapped when this first `reload`'s `items_changed`
-    // fires — and GTK then skips rebinding the not-yet-visible rows, leaving the
-    // live view showing the PRE-EDIT tags until the next manual reload (a header
-    // click / new search). Schedule one more reload on idle, after the dialog
-    // has closed and the table is mapped again, so the edited rows are
-    // guaranteed to rebind. Cheap (a single re-query) and idempotent.
+    // One reload, on idle. The tag editor is a dialog whose save completes on
+    // the main loop just as the dialog is animating shut, so the `ColumnView`
+    // behind it can still be obscured / not yet re-mapped: GTK then skips
+    // rebinding the not-yet-visible rows and the live view keeps showing the
+    // PRE-EDIT tags until the next manual reload (a header click / new
+    // search). Deferring past the current main-loop turn is what makes the
+    // edited rows rebind.
+    //
+    // This used to run *twice* — once synchronously here and once on idle —
+    // and the synchronous one is the one that cannot be trusted to rebind. It
+    // was not free either: every `reload` is a sorted full-table id query plus
+    // an `items_changed(0, old, new)` that collapses selection and scroll for
+    // `track_list_reload`'s restore to put back again.
     {
         let shared = shared.clone();
         gtk4::glib::idle_add_local_once(move || reload_with_anchor(&shared, &anchor));
@@ -45,3 +49,7 @@ pub(in crate::ui) fn refresh_after_tag_mutation_with_anchor(
         callback(paths);
     }
 }
+
+#[cfg(test)]
+#[path = "tag_mutation_refresh_display_tests.rs"]
+mod display_tests;
