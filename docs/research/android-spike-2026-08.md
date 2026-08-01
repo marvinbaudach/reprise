@@ -248,11 +248,63 @@ Dimensionierung.
 
 ## Frage 1 — Erfüllt Media3 den playback-Vertrag?
 
-Offen. Braucht den lokalen Prototyp (Plan Task 7).
+**Urteil: TRÄGT**, mit einer benannten Lücke.
+
+Gemessen am 2026-08-01 auf einem **Pixel 10 Pro XL, Android 17 (API 37)** —
+also am strengsten verfügbaren API-Level — mit Media3 1.10.1, gegen zwei
+fünfminütige FLAC-Proben.
+
+| Vertragsteil | Beleg |
+| --- | --- |
+| Laden | `existiert=true bytes=10066662`, dann `BUFFERING → READY` |
+| Dauer | `dur=300000` — korrekt aus der Datei, nicht geraten |
+| Abspielen | `isPlaying=true`, `pos` wächst |
+| Position lesen | `pos=4667`, später `pos=38325` |
+| Suchen | `BUFFERING pos=35989 → READY pos=36048`, Wiedergabe läuft weiter |
+| Pausieren | `isPlaying=false`, `pos=39512` eingefroren |
+| **Gapless** | `itemTransition reason=1` (`AUTO`) bei `pos=283873`, direkt gefolgt von `pos=20164` im nächsten Titel — **ohne** `BUFFERING` und **ohne** `ENDED` dazwischen |
+
+Der Gapless-Beleg ist der wertvollste: Media3 wechselt automatisch und ohne
+Pufferstillstand. Ein Zwischenzustand hätte sich im Log gezeigt.
+
+**Die Lücke: Crossfade.** ExoPlayer bringt kein Überblenden mit; das
+GTK-Frontend kann es. Für P4a heißt das entweder Eigenbau über zwei
+Player-Instanzen oder ein bewusster Verzicht auf Android. **Nicht gemessen**,
+weil es nichts zu messen gab — die Funktion existiert schlicht nicht.
+
+**Ebenfalls nicht gemessen:** `STATE_ENDED` am Ende der letzten Queue-Position
+(der Lauf endete vorher).
 
 ## Frage 2 — Kann ein MediaSessionService die Runtime beherbergen?
 
-Offen. Braucht ein echtes Gerät (Plan Task 8).
+**Urteil: TRÄGT** für alles, was ohne Handgriff am Gerät prüfbar war.
+
+Ein Befund vorweg, der B7 stützt: **Service und Activity laufen im selben
+Prozess** (dieselbe PID im Log). Der Service ist damit ein tragfähiger Wirt
+für eine eingebettete Runtime — sie müsste nicht über eine Prozessgrenze
+angesprochen werden.
+
+| Prüfung | Ergebnis |
+| --- | --- |
+| Foreground-Service-Typ (AUD-8) | `isForeground=true`, `types=0x00000002` = `MEDIA_PLAYBACK`. Auf API 37 ist das die Pflichtangabe, ohne die `startForeground()` abstürzt |
+| Medienbenachrichtigung | `category=transport`, `actions=2`, `NO_CLEAR｜FOREGROUND_SERVICE`, `vis=PUBLIC` |
+| Audio-Focus angefordert | Im System-Focus-Stack: `pack: dev.reprise.spike`, `gain: GAIN`, `loss: none`, `usage=USAGE_MEDIA`, angefordert durch `androidx.media3.common.audio.AudioFocusManager` |
+| Hintergrundwiedergabe | 60 s Bildschirm aus: **null Ereignisse**, Prozess lebt, Wiedergabe ununterbrochen |
+| `POST_NOTIFICATIONS` | erteilt; die Wiedergabe hing zu keinem Zeitpunkt daran (AUD-13) |
+
+`setAudioAttributes(…, handleAudioFocus = true)` und
+`setHandleAudioBecomingNoisy(true)` genügen also, um die Anforderung
+überhaupt zu stellen — nachgewiesen im Focus-Stack des Systems, nicht nur im
+App-Code.
+
+### Offen, weil ein Handgriff am Gerät nötig ist
+
+- **Focus-Verlust und Ducking**: Der Stack zeigt `loss: none` — die
+  *Reaktion* auf einen Anruf oder eine fremde Medienquelle ist ungeprüft.
+  Genau hier hängt die Anschlussfrage, ob `reprise-runtime` einen neuen
+  Zustandsübergang braucht.
+- **`ACTION_AUDIO_BECOMING_NOISY`**: braucht ein echtes Abziehen.
+- **Aus Recents gewischt** (`onTaskRemoved`) und **Doze**.
 
 ## Frage 4 — Trägt SAF den Scanner?
 
