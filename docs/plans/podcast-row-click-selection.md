@@ -2,7 +2,7 @@
 slug: podcast-row-click-selection
 worktree: /home/marvin/Projects/reprise-row-selection
 branch: feature/podcast-row-click-selection
-phase: planned
+phase: coded
 codex_session:
 created: 2026-08-01
 spec: docs/superpowers/specs/2026-08-01-podcast-row-click-selection-design.md
