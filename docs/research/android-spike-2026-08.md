@@ -459,3 +459,35 @@ eine Werkzeug- und Übersetzer-Workflow-Frage, kein Build-Hindernis.
 Das Architektur-Gate fängt das nicht ab — es verbietet `gtk4|libadwaita|glib|
 gstreamer|zbus` und fremde `reprise-*`-Kanten, und `gettext-rs` ist keins von
 beidem.
+
+## Frage 0b — Läuft der Spike auf dem Emulator? (nachgetragen 2026-08-02)
+
+**Urteil: JA — und das war vorher nicht bewiesen.** Frage 0 hat gezeigt, dass
+`reprise-core` für alle drei Android-ABIs *baut*. Was danach tatsächlich lief,
+war die arm64-Variante auf dem angeschlossenen Pixel. Der headless-Emulator
+aus der Betriebsnotiz ist `x86_64` — der Spike trug diese ABI gar nicht
+(`abiFilters += "arm64-v8a"`, eine ABI, um die APK-Größe ehrlich zu messen).
+Ein Start dort wäre am `UnsatisfiedLinkError` gescheitert.
+
+Behoben und gemessen auf `emulator-5554` (`pixel10xl_api37`, Android 17,
+x86_64, headless, Software-Rendering):
+
+| Schritt | Ergebnis |
+| --- | --- |
+| `cargo ndk -t x86_64 build --release -p reprise-android-ffi` | **OK**, 3 min 59 s kalt |
+| `libreprise_android_ffi.so` x86_64 | 5.272.992 B (arm64 zum Vergleich: 5.508.168 B) |
+| APK mit beiden ABIs | 22.730.147 B debug; `lib/x86_64/` und `lib/arm64-v8a/` beide enthalten |
+| Installation und Start | **OK**, Prozess lebt, **kein `UnsatisfiedLinkError`, kein FATAL** |
+| `reprise-core` im App-Sandbox | DB öffnen + migrieren **157 ms**, Scan 4 ms, Count 1 ms, Fenster 1 ms |
+| Scan-Ergebnis | `added=3 errors=0`, Bibliothek hält 3 Tracks |
+| UniFFI → Compose | Titelliste als **Text** im Accessibility-Baum gelesen, nicht als Pixel |
+
+Damit ist die Kette lückenlos: Rust-Kern über NDK gebaut, per UniFFI nach
+Kotlin, von Compose gerendert, auf einem Gerät, das niemand bereithalten muss.
+Die 157 ms für Öffnen und Migrieren sind unter Software-Rendering gemessen und
+damit eine Obergrenze, keine Zielgröße.
+
+**Betriebsfolge:** Der Emulator ist ab jetzt ein vollwertiges Testziel für
+Android-Arbeit an Reprise, nicht nur für Fremd-Apps. Wer eine ABI hinzufügt,
+muss `abiFilters` mitziehen — der Build schlägt sonst nicht fehl, die App
+stürzt erst beim Start ab.
