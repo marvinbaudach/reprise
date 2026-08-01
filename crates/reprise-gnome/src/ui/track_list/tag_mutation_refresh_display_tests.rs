@@ -5,13 +5,12 @@
 //! the user reported — they see the table snap to the very top and come back
 //! a moment later, which an end-state assertion cannot catch.
 //!
-//! These tests therefore sample the vertical adjustment once per rendered
-//! frame (a tick callback runs right before each frame is drawn), so a
-//! transient top-of-table state that survives even one frame is visible to
-//! the assertion. A dip that happens and is undone within a single main-loop
-//! turn is never painted and is deliberately not failed here.
+//! These tests therefore sample the vertical adjustment on a timer while the
+//! save runs, so a top-of-table state that lasts longer than one sample
+//! interval fails the assertion. A dip that happens and is undone inside a
+//! single main-loop turn is never on screen and is deliberately not failed.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
@@ -29,9 +28,14 @@ const ANCHOR_ROW: u32 = 200;
 /// "flies to the top of the library" — the same threshold
 /// `track_list_builder`'s `REPRISE_DEBUG_SCROLL` diagnostic uses.
 const VISIBLE_JUMP_PX: f64 = 80.0;
-/// Long enough for both save reloads, their scroll restores, and ~30 drawn
-/// frames over them.
+/// Long enough for the deferred save reload, its scroll restore, the dialog's
+/// focus handover, and dozens of viewport samples over them.
 const SETTLE: Duration = Duration::from_millis(500);
+
+/// The edited value the test looks for on screen. Album, not genre: the
+/// genre column is hidden in the default layout, so a genre edit proves
+/// nothing about what reached the cells.
+const EDITED_ALBUM: &str = "Edited Album";
 
 struct Fixture {
     track_list: TrackList,
@@ -40,6 +44,9 @@ struct Fixture {
     /// Stands in for the open Tag Editor dialog: something else in the window
     /// that can hold keyboard focus while the table does not.
     elsewhere: gtk4::Button,
+    /// How often the view re-ran its query — one per `run_query`, which is one
+    /// `items_changed(0, old, new)` and one full window re-read each.
+    queries: Rc<Cell<usize>>,
 }
 
 /// A mapped library table of `ROWS` synthetic tracks, scrolled to
@@ -70,10 +77,12 @@ fn scrolled_library() -> Fixture {
     }
     tx.commit().unwrap();
 
+    let queries = Rc::new(Cell::new(0usize));
+    let counted = queries.clone();
     let track_list = TrackList::new(
         Rc::new(conn),
         Box::new(|_, _, _, _| {}),
-        |_, _, _, _| {},
+        move |_, _, _, _| counted.set(counted.get() + 1),
         super::super::queue_sections::QueueViewModel::default,
         crate::ui::cover_download_worker::setup_for_test(),
     );
@@ -112,25 +121,67 @@ fn scrolled_library() -> Fixture {
         window,
         adjustment,
         elsewhere,
+        queries,
     }
 }
 
-/// Records the adjustment value of every frame drawn from now on. The tick
-/// callback also keeps the frame clock running, so the samples stay dense
-/// even while nothing else asks for a redraw.
-fn record_painted_frames(fixture: &Fixture) -> Rc<RefCell<Vec<f64>>> {
-    let frames = Rc::new(RefCell::new(Vec::<f64>::new()));
-    let collected = frames.clone();
-    let adjustment = fixture.adjustment.clone();
-    fixture
+/// Every `GtkLabel` text currently realised under the table — what the user
+/// can actually read on screen, as opposed to what the model holds.
+fn visible_labels(fixture: &Fixture) -> Vec<String> {
+    fn collect(widget: &gtk4::Widget, out: &mut Vec<String>) {
+        if let Some(label) = widget.downcast_ref::<gtk4::Label>() {
+            out.push(label.text().to_string());
+        }
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            collect(&current, out);
+            child = current.next_sibling();
+        }
+    }
+    let mut out = Vec::new();
+    collect(fixture.track_list.shared.column_view.upcast_ref(), &mut out);
+    out
+}
+
+/// Writes the new album the way a successful tag write does: into the
+/// database, behind the view's back. Only a re-query (or a cell patch) can
+/// bring it on screen.
+fn write_album_to_db(fixture: &Fixture) {
+    let conn = crate::test_db::connection(&fixture.track_list.shared.conn);
+    let track = fixture
         .track_list
         .shared
-        .column_view
-        .add_tick_callback(move |_, _| {
-            collected.borrow_mut().push(adjustment.value());
-            gtk4::glib::ControlFlow::Continue
-        });
-    frames
+        .model
+        .track_at(ANCHOR_ROW)
+        .unwrap();
+    conn.execute(
+        "UPDATE tracks SET album = ?1 WHERE id = ?2",
+        (EDITED_ALBUM, track.id),
+    )
+    .unwrap();
+}
+
+/// How often the viewport is sampled. Roughly half a 60 Hz frame: a position
+/// the viewport holds for longer than this had a frame drawn on it.
+const SAMPLE_INTERVAL: Duration = Duration::from_millis(8);
+
+/// Samples the viewport position every [`SAMPLE_INTERVAL`] from now on.
+///
+/// Sampling on the frame clock (`add_tick_callback`) would be the more direct
+/// question — "was this ever painted?" — but it is not a reliable instrument
+/// here: with nothing damaging the widget GTK draws no frames at all, and an
+/// empty sample set makes the assertion below vacuously true rather than
+/// failing loudly. A timer always fires, so a jump that survives longer than
+/// one sample interval is caught whether or not GTK happened to redraw.
+fn record_viewport(fixture: &Fixture) -> Rc<RefCell<Vec<f64>>> {
+    let samples = Rc::new(RefCell::new(Vec::<f64>::new()));
+    let collected = samples.clone();
+    let adjustment = fixture.adjustment.clone();
+    gtk4::glib::timeout_add_local(SAMPLE_INTERVAL, move || {
+        collected.borrow_mut().push(adjustment.value());
+        gtk4::glib::ControlFlow::Continue
+    });
+    samples
 }
 
 /// Runs the same refresh a successful tag write triggers, with the anchor
@@ -152,17 +203,18 @@ fn save_refresh(fixture: &Fixture) {
     );
 }
 
-fn assert_no_painted_jump(frames: &Rc<RefCell<Vec<f64>>>, reference: f64, what: &str) {
-    let painted = frames.borrow().clone();
+fn assert_no_visible_jump(samples: &Rc<RefCell<Vec<f64>>>, reference: f64, what: &str) {
+    let seen = samples.borrow().clone();
     assert!(
-        !painted.is_empty(),
-        "precondition: the frame clock must have drawn during {what}"
+        !seen.is_empty(),
+        "precondition: the viewport must have been sampled during {what}"
     );
-    let lowest = painted.iter().copied().fold(f64::MAX, f64::min);
+    let lowest = seen.iter().copied().fold(f64::MAX, f64::min);
     assert!(
         lowest > reference - VISIBLE_JUMP_PX,
-        "a painted frame showed the table jumped to the top during {what}: \
-         reference={reference}, lowest painted={lowest}"
+        "the table stood jumped to the top during {what}: \
+         reference={reference}, lowest sampled={lowest} over {} samples",
+        seen.len()
     );
 }
 
@@ -177,14 +229,73 @@ fn tag_1_tag_save_refresh_paints_no_frame_at_the_table_top() {
         "precondition: the list must be scrolled well away from the top, got {before}"
     );
 
-    let frames = record_painted_frames(&fixture);
+    let samples = record_viewport(&fixture);
     crate::ui::test_settle::settle_for(Duration::from_millis(120));
-    frames.borrow_mut().clear();
+    samples.borrow_mut().clear();
 
+    // A save that changes nothing gives GTK nothing to redraw, and the
+    // assertion below would then pass on an empty sample set. Write the tag
+    // the real save writes.
+    write_album_to_db(&fixture);
     save_refresh(&fixture);
     crate::ui::test_settle::settle_for(SETTLE);
 
-    assert_no_painted_jump(&frames, before, "the save refresh");
+    assert_no_visible_jump(&samples, before, "the save refresh");
+    fixture.window.close();
+}
+
+/// The whole point of the save refresh: the edited value has to become
+/// visible. `TrackListModel` windows its rows from SQL and caches them, so a
+/// row already on screen keeps showing the pre-edit tags until something
+/// re-reads it.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn tag_1_save_refresh_shows_the_written_tag_on_screen() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    let fixture = scrolled_library();
+    assert!(
+        !visible_labels(&fixture).iter().any(|t| t == EDITED_ALBUM),
+        "precondition: the new album must not be on screen before the save"
+    );
+
+    write_album_to_db(&fixture);
+    save_refresh(&fixture);
+    crate::ui::test_settle::settle_for(SETTLE);
+
+    let labels = visible_labels(&fixture);
+    assert!(
+        labels.iter().any(|t| t == EDITED_ALBUM),
+        "the saved album never reached the visible cells; on screen: {:?}",
+        labels
+            .iter()
+            .filter(|t| !t.is_empty())
+            .take(40)
+            .collect::<Vec<_>>()
+    );
+    fixture.window.close();
+}
+
+/// One save is one re-query. A second one costs a full sorted window read
+/// plus another `items_changed(0, old, new)` — the signal every scroll and
+/// selection restore in this module then has to undo — for a result the first
+/// one already produced.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn tag_1_save_refresh_requeries_the_view_once() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    let fixture = scrolled_library();
+
+    write_album_to_db(&fixture);
+    fixture.queries.set(0);
+    save_refresh(&fixture);
+    crate::ui::test_settle::settle_for(SETTLE);
+
+    assert_eq!(
+        fixture.queries.get(),
+        1,
+        "the save re-ran the view's query {} times",
+        fixture.queries.get()
+    );
     fixture.window.close();
 }
 
@@ -216,7 +327,7 @@ fn tag_1_restoring_dialog_focus_after_a_save_keeps_the_viewport() {
         focused.type_()
     );
     let guard = crate::ui::transient_focus::TransientFocusGuard::capture(&fixture.window);
-    let frames = record_painted_frames(&fixture);
+    let samples = record_viewport(&fixture);
 
     save_refresh(&fixture);
     crate::ui::test_settle::settle_for(SETTLE);
@@ -231,7 +342,7 @@ fn tag_1_restoring_dialog_focus_after_a_save_keeps_the_viewport() {
     guard.restore();
     crate::ui::test_settle::settle_for(SETTLE);
 
-    assert_no_painted_jump(&frames, before, "the dialog's focus restore");
+    assert_no_visible_jump(&samples, before, "the dialog's focus restore");
     assert!(
         (fixture.adjustment.value() - before).abs() < VISIBLE_JUMP_PX,
         "restoring the dialog's focus moved the viewport: before={before}, after={}",
@@ -267,13 +378,13 @@ fn tag_1_focus_returning_to_the_table_after_a_save_keeps_the_viewport() {
          before={before}, restored={restored}"
     );
 
-    let frames = record_painted_frames(&fixture);
+    let samples = record_viewport(&fixture);
     // The dialog closes and focus returns to the library table.
     fixture.track_list.shared.column_view.grab_focus();
     crate::ui::test_settle::settle_for(SETTLE);
 
-    assert_no_painted_jump(
-        &frames,
+    assert_no_visible_jump(
+        &samples,
         restored,
         "the focus handover after the dialog closed",
     );

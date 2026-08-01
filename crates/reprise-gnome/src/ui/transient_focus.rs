@@ -79,10 +79,19 @@ impl TransientFocusGuard {
 
     /// Schedules restoration outside the current response/close signal so
     /// GTK can finish removing the transient from the focus chain first.
+    ///
+    /// Restoring focus must not move what the user is looking at, which is
+    /// why a list view is focused through [`focus_visible_row`] rather than
+    /// through plain `set_focus`.
     pub(super) fn restore(&self) {
         let guard = self.clone();
         glib::idle_add_local_once(move || {
-            if try_focus(&guard.invoker) {
+            let landed_on_a_row = guard
+                .invoker
+                .upgrade()
+                .filter(|invoker| invoker.is_visible() && invoker.is_sensitive())
+                .is_some_and(|invoker| focus_visible_row(&invoker));
+            if landed_on_a_row || try_focus(&guard.invoker) {
                 return;
             }
             if let Some(fallback) = guard.fallback.upgrade() {
@@ -125,6 +134,75 @@ fn stable_focus_target(focused: &gtk4::Widget) -> gtk4::Widget {
         node = current.parent();
     }
     list.unwrap_or_else(|| focused.clone())
+}
+
+/// Where `target` is scrolled to vertically — `None` when it does not
+/// scroll, which is every transient invoker that is a plain button or row.
+fn scroll_position(target: &gtk4::Widget) -> Option<(gtk4::Adjustment, f64)> {
+    let scrollable = target.dynamic_cast_ref::<gtk4::Scrollable>()?;
+    let adjustment = gtk4::prelude::ScrollableExt::vadjustment(scrollable)?;
+    let value = adjustment.value();
+    Some((adjustment, value))
+}
+
+/// How many rows `view` holds, if it is one of the list views.
+fn row_count(view: &gtk4::Widget) -> Option<u32> {
+    if let Some(view) = view.downcast_ref::<gtk4::ColumnView>() {
+        return view.model().map(|model| model.n_items());
+    }
+    if let Some(view) = view.downcast_ref::<gtk4::ListView>() {
+        return view.model().map(|model| model.n_items());
+    }
+    view.downcast_ref::<gtk4::GridView>()?
+        .model()
+        .map(|model| model.n_items())
+}
+
+/// Moves keyboard focus onto the row `view` is currently showing at its top
+/// edge, and reports whether that worked.
+///
+/// Plain `set_focus` on a list view is not enough, and is in fact the whole
+/// problem: the view hands focus to *its* focus row, and a view whose model
+/// was replaced while the transient was open (`items_changed(0, old, new)`,
+/// which is what every re-query emits) has that row reset to the top. GTK
+/// then dutifully reveals row zero and the library jumps — TAG-1's "a save
+/// moves neither scroll nor view", violated by the focus restore rather than
+/// by the save.
+///
+/// Focusing a row that is already on screen keeps the viewport exactly where
+/// it is, because there is nothing to reveal.
+fn focus_visible_row(view: &gtk4::Widget) -> bool {
+    let Some(rows) = row_count(view).filter(|rows| *rows > 0) else {
+        return false;
+    };
+    let Some((adjustment, value)) = scroll_position(view) else {
+        return false;
+    };
+    let upper = adjustment.upper();
+    if upper <= 0.0 {
+        return false;
+    }
+    let row_height = upper / f64::from(rows);
+    if row_height <= 0.0 {
+        return false;
+    }
+    let position = (value / row_height).floor().max(0.0) as u32;
+    let position = position.min(rows - 1);
+    let scroll = gtk4::ScrollInfo::new();
+    scroll.set_enable_vertical(false);
+    if let Some(view) = view.downcast_ref::<gtk4::ColumnView>() {
+        view.scroll_to(position, None, gtk4::ListScrollFlags::FOCUS, Some(scroll));
+        return true;
+    }
+    if let Some(view) = view.downcast_ref::<gtk4::ListView>() {
+        view.scroll_to(position, gtk4::ListScrollFlags::FOCUS, Some(scroll));
+        return true;
+    }
+    if let Some(view) = view.downcast_ref::<gtk4::GridView>() {
+        view.scroll_to(position, gtk4::ListScrollFlags::FOCUS, Some(scroll));
+        return true;
+    }
+    false
 }
 
 fn try_focus(target: &glib::WeakRef<gtk4::Widget>) -> bool {
