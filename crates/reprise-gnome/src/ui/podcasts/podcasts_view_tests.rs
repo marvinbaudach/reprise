@@ -134,8 +134,8 @@ fn src_14_selecting_a_row_does_not_rebuild_it() {
     let row = after.unwrap();
     assert!(row.has_css_class("reprise-podcast-episode-selected"));
     assert!(
-        widgets[&episode_id].checkbox.is_active(),
-        "the checkbox mirrors the selection it did not make"
+        gtk4::test_accessible_has_state(&row, gtk4::AccessibleState::Selected),
+        "the row exposes its selected state to assistive technology"
     );
 }
 
@@ -166,7 +166,7 @@ fn src_14_a_range_selects_every_row_between_anchor_and_target() {
     assert!(!widgets[&order[0]]
         .row
         .has_css_class("reprise-podcast-episode-selected"));
-    assert!(!widgets[&order[0]].checkbox.is_active());
+    assert!(!view.selection.borrow().contains(order[0]));
 }
 
 #[test]
@@ -178,13 +178,12 @@ fn src_12_escape_clears_episode_selection_and_a_second_escape_proceeds() {
     for episode_id in &order[..2] {
         view.root()
             .activate_action(
-                "podcasts.set-selected",
-                Some(&(*episode_id, true).to_variant()),
+                "podcasts.select-row",
+                Some(&(*episode_id, SelectMode::Toggle.as_u8()).to_variant()),
             )
             .unwrap();
     }
     assert_eq!(view.selection.borrow().selected_ids().len(), 2);
-    assert!(view.selection_controls.actions_sensitive());
 
     let controllers = view.root.observe_controllers();
     let key_controller = (0..controllers.n_items())
@@ -210,7 +209,6 @@ fn src_12_escape_clears_episode_selection_and_a_second_escape_proceeds() {
     );
     assert!(first_consumed);
     assert!(view.selection.borrow().selected_ids().is_empty());
-    assert!(!view.selection_controls.actions_sensitive());
 
     let second_consumed = key_controller.emit_by_name::<bool>(
         "key-pressed",

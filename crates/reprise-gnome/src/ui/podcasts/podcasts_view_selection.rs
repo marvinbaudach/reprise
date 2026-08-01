@@ -34,15 +34,12 @@ impl PodcastsView {
                     .row
                     .remove_css_class(podcasts_groups::SELECTED_ROW_CLASS);
             }
-            if widgets.checkbox.is_active() != selected {
-                // The checkbox's own handler fires `podcasts.set-selected`,
-                // which lands back here. Blocking it keeps this a one-way push.
-                widgets.checkbox.block_signal(&widgets.toggled);
-                widgets.checkbox.set_active(selected);
-                widgets.checkbox.unblock_signal(&widgets.toggled);
-            }
+            widgets
+                .row
+                .update_state(&[gtk4::accessible::State::Selected(Some(selected))]);
         }
-        self.selection_controls.update(&selection.selected_ids());
+        self.filter_bar
+            .set_selection_count(selection.selected_ids().len());
     }
 
     pub(super) fn select_row(&self, episode_id: i64, mode: SelectMode) {
