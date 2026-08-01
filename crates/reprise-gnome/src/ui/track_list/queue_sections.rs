@@ -17,10 +17,11 @@ use reprise_core::up_next::QueueItem;
 use crate::ui::strings;
 use crate::ui::track_list::Shared;
 
-/// P1a's binding rule: no view model may hold a closure, because UniFFI
-/// cannot carry one across an FFI boundary — it rejects
-/// `Rc<dyn Fn(usize, usize) -> Vec<i64>>` with three trait errors
-/// (`TypeId`, `Lower`, `Lift`; see docs/research/android-spike-2026-08.md).
+/// P1a's binding rule: no view model may hold a closure, because a planned
+/// Android surface reaches this type through UniFFI, and UniFFI cannot carry
+/// a closure across an FFI boundary. `Rc<dyn Fn(usize, usize) -> Vec<i64>>`
+/// is rejected there with `TypeId`, `Lower` and `Lift` trait-bound errors —
+/// measured against UniFFI 0.29, not assumed.
 ///
 /// `Rc<dyn Fn>` is neither `Send` nor `Sync` while every other field here is,
 /// so this assertion fails to compile the moment a closure comes back. It is
