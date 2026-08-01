@@ -222,9 +222,17 @@ Randbedingungen, die jede spätere Entscheidung überstimmen:
 1. **Keine proprietären Abhängigkeiten.** Keine Google Play Services, keine
    Firebase, keine Closed-Source-SDKs. Media3/ExoPlayer und Compose erfüllen
    das (Apache-2.0); der Rust-Baum ebenfalls (2.1).
-2. **F-Droid baut selbst aus den Quellen.** Die Rust-plus-NDK-Toolchain muss
-   im F-Droid-Buildserver funktionieren. Das ist die **einzige Unbekannte mit
-   Show-Stopper-Charakter** und deshalb Frage 5 des Spikes.
+2. **F-Droid baut selbst aus den Quellen — und kann es.** Beantwortet am
+   2026-08-01, Befund in `docs/research/android-spike-2026-08.md`:
+   **TRÄGT MIT AUFLAGEN.** Delta Chat (`com.b44t.messenger`) baut eine
+   Rust-Kernbibliothek über das NDK aus einem produktiven Rezept, zuletzt
+   veröffentlicht am 2026-07-31. `rustup` ist erlaubt, Netzzugang während
+   des Builds vorhanden (also kein `cargo vendor` nötig), das Timeout ist
+   konfigurierbar. Auflagen: ein Build-Eintrag **je ABI** mit eigenem
+   `versionCode` (F-Droid kennt keine App Bundles), großzügiges `timeout:`,
+   NDK r27 als Rückfallebene neben der aktuellen Version, und die
+   Erstaufnahme-Pipeline früh mit den Maintainern klären. Die
+   Abbruchbedingung aus B10 ist damit aufgehoben.
 3. **Nicht-freie Netzdienste werden gekennzeichnet, nicht versteckt.**
    Last.fm und die Cover-/News-Quellen führen zu einem `NonFreeNet`-
    Anti-Feature. Kein Ausschlussgrund; MusicBrainz ist frei und
@@ -604,7 +612,8 @@ Jedes Paket ist an ein mechanisches Tor gebunden, nicht an eine Zusage:
 
 | Risiko | Wirkung | Gegenmittel |
 | --- | --- | --- |
-| **F-Droid kann die Rust-NDK-Toolchain nicht bauen** | das gesamte Android-Vorhaben ist tot | S1-Frage 5, **zuerst** beantwortet, vor jedem anderen Aufwand |
+| ~~F-Droid kann die Rust-NDK-Toolchain nicht bauen~~ | **entschärft 2026-08-01** | Präzedenzfall Delta Chat; Befund in `docs/research/android-spike-2026-08.md` |
+| Erstaufnahme in `fdroiddata` scheitert an der CI-Pipeline | P8 verzögert sich, Veröffentlichung blockiert | Bei vergleichbaren Projekten real aufgetreten; früh mit den Maintainern klären, nicht erst beim Einreichen |
 | Android ist teurer als gedacht (Media3, Service, UniFFI, SAF) | P7 sprengt den Rahmen | S1 vor allem anderen (B10); Befund kann B6 kippen |
 | P4a + P4b wachsen mit jeder Plattform | drei Backends statt einem | Zuschnitt (3.1) hält die Backends klein; O1 vor P4b |
 | P1a verzögert sich und blockiert P7 | Android rückt weg | Ausschnitt ist nach Mobil-Zuschnitt geschnitten, also der kleinstmögliche für ein auslieferbares Produkt |

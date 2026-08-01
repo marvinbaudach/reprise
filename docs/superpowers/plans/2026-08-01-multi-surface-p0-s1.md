@@ -1,3 +1,11 @@
+---
+slug: multi-surface-p0-s1
+worktree: /home/marvin/Projects/reprise/.worktrees/multi-surface
+branch: feature/multi-surface-frontends
+phase: planned
+codex_session:
+created: 2026-08-01
+---
 # P0 (Vorlauf) und S1 (Android-Spike) — Implementierungsplan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
