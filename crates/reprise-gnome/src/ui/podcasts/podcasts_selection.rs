@@ -113,6 +113,12 @@ impl PodcastSelection {
         self.selected.iter().copied().collect()
     }
 
+    /// Drops every selected episode. Returns whether anything was selected —
+    /// the caller uses this to decide whether Escape was consumed.
+    pub(super) fn clear(&mut self) -> bool {
+        !std::mem::take(&mut self.selected).is_empty()
+    }
+
     pub(super) fn contains(&self, episode_id: i64) -> bool {
         self.selected.contains(&episode_id)
     }
@@ -228,6 +234,11 @@ impl SelectionControls {
             .set_action_name(Some("podcasts.remove-selected"));
         self.remove
             .set_action_target_value(Some(&episode_ids.to_variant()));
+    }
+
+    #[cfg(test)]
+    pub(super) fn actions_sensitive(&self) -> bool {
+        self.download.is_sensitive() && self.remove.is_sensitive()
     }
 }
 
@@ -357,6 +368,24 @@ mod tests {
         selection.retain_available([11, 12, 21, 22]);
 
         assert_eq!(selection.selected_ids(), [11, 21]);
+    }
+
+    #[test]
+    fn src_12_clear_reports_and_drops_a_non_empty_selection() {
+        let mut selection = PodcastSelection::default();
+        selection.set_selected(11, true);
+        selection.set_selected(21, true);
+
+        assert!(selection.clear());
+        assert!(selection.selected_ids().is_empty());
+    }
+
+    #[test]
+    fn src_12_clear_reports_an_already_empty_selection() {
+        let mut selection = PodcastSelection::default();
+
+        assert!(!selection.clear());
+        assert!(selection.selected_ids().is_empty());
     }
 
     #[test]

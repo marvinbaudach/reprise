@@ -146,6 +146,10 @@ impl YoutubeChannelState {
             .map_or_else(Vec::new, |selected| selected.iter().copied().collect())
     }
 
+    pub(super) fn clear_selected(&mut self) -> bool {
+        !std::mem::take(&mut self.selected).is_empty()
+    }
+
     fn hide_shorts(&self, subscription_id: i64) -> bool {
         !self.effective_shows_shorts(subscription_id)
     }
@@ -320,6 +324,14 @@ impl YoutubeChannelDetail {
 
     pub(super) fn is_active(&self) -> bool {
         self.state.borrow().active_channel().is_some()
+    }
+
+    pub(super) fn clear_selection(self: &Rc<Self>) -> bool {
+        let cleared = self.state.borrow_mut().clear_selected();
+        if cleared {
+            self.render_active();
+        }
+        cleared
     }
 
     pub(super) fn neighbour_ids_for_episode(&self, episode_id: i64) -> Option<Vec<i64>> {

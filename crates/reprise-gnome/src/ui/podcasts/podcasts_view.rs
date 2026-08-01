@@ -60,6 +60,8 @@ mod marker;
 mod requests;
 #[path = "podcasts_view_selection.rs"]
 mod selection;
+#[path = "podcasts_view_shortcuts.rs"]
+mod shortcuts;
 #[cfg(test)]
 #[path = "podcasts_view_tests.rs"]
 mod tests;
@@ -244,6 +246,7 @@ impl PodcastsView {
         });
         view.install_actions();
         view.wire_controls(&refresh);
+        view.install_selection_shortcuts();
         view.install_reveal_tracking();
         let weak = Rc::downgrade(&view);
         view.empty_state.connect_add(move || {
