@@ -199,13 +199,16 @@ Do not point development hooks at the maintainer's real library.
 - Check English and German UI for clipping, untranslated text, natural plurals,
   keyboard mnemonics, narrow-window adaptation, touch/pointer interaction, and
   light/dark appearance.
-- My Stats editorial pass (UX STATS-10 through STATS-16): open My Stats
-  on a populated library. Hero time and play count must agree with the top-track
-  list; the ribbon axis must match the selected period with the running bucket
-  drawn open and the peak marked; hover must name an exact value. Play the
-  top song and follow its band to the artist, then use Back. Check that axis
-  labels, eyebrows and sublines stay readable against the view background in all
-  three dark themes, and narrow the window until the band/songs row stacks.
+- My Stats editorial pass (UX STATS-10 through STATS-15, STATS-18 through
+  STATS-20): open My Stats on a populated library. The page must read hours →
+  bands → songs → genres, each at full width. Hero time and play count must
+  agree with the top-track list, and the "This week" KPI with what the current
+  week actually holds. Click a song row: it starts playing and its rank turns
+  into the equaliser, while its title and artist stay links into the library.
+  Follow the leading band to the artist, then use Back. Hover a genre segment
+  and check the tooltip names share, duration and leading artist. Check that
+  eyebrows, legend and sublines stay readable against the view background in
+  all three dark themes.
 - My Stats grouping (UX STATS-9): on a library with a deliberately mis-tagged
   artist ("Lorna Shore" / "lorna shore" / "Lorna Shore "), Top Artists must show
   one entry with the summed plays and hours, labelled in the clean spelling, and

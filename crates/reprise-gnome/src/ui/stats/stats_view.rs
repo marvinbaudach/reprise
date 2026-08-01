@@ -13,14 +13,14 @@ use reprise_core::library::group_key::GroupKind;
 use reprise_core::library::stats_period::StatsPeriod;
 use reprise_core::library::stats_screen::group_track_ids;
 use reprise_core::library::stats_snapshot::{self, StatsSnapshot};
+use reprise_core::playback::PlaybackState;
 
-use super::stats_band_card::StatsBandCard;
+use super::stats_bands_row::StatsBandsRow;
 use super::stats_entrance::{HorizontalBarGroup, StatsEntrance};
 use super::stats_genre_card::StatsGenreCard;
 use super::stats_header::StatsHeader;
 use super::stats_hero::StatsHero;
 use super::stats_metadata_links::{MetadataCallback, StatsMetadataTarget};
-use super::stats_ribbon::StatsRibbon;
 use super::stats_songs_card::StatsSongsCard;
 use super::stats_view_widgets::card;
 use crate::ui::cover_loader::CoverLoader;
@@ -28,24 +28,36 @@ use crate::ui::strings;
 
 const CONTENT_MAX_WIDTH: i32 = 1120;
 const SECTION_SPACING: i32 = 20;
-const STORY_NATURAL_LINE_LENGTH: i32 = 960;
-const STORY_SPACING: i32 = 20;
-const SONGS_WIDTH: i32 = 490;
-const MIN_PLAYS_FOR_TREND: i64 = 10;
 /// The fixed editorial order of the page's sections (STATS-10). The test reads
 /// the real widget tree and compares against this.
 #[cfg(test)]
-const SECTION_ORDER: [&str; 6] = [
-    "header",
-    "hero",
-    "chart",
-    "band-songs",
-    "top-tracks",
-    "genres",
-];
+const SECTION_ORDER: [&str; 6] = ["header", "hero", "bands", "songs", "top-tracks", "genres"];
 
 type StringCallback = Rc<RefCell<Option<Rc<dyn Fn(String)>>>>;
 type IdsCallback = Rc<RefCell<Option<Rc<dyn Fn(Vec<i64>)>>>>;
+
+/// The stats page's end of the shared playback marker: what the player's
+/// loaded-track and playback-state fan-outs push into. Weak, so a page that is
+/// gone silently stops being marked instead of being kept alive by the player.
+#[derive(Clone)]
+pub(in crate::ui) struct StatsPlaybackMarker(std::rc::Weak<RenderParts>);
+
+impl StatsPlaybackMarker {
+    /// Moves the marker onto the newly loaded track.
+    pub(in crate::ui) fn set_loaded_track(&self, track_id: i64) {
+        if let Some(render) = self.0.upgrade() {
+            render.songs_card.set_loaded_track(track_id);
+        }
+    }
+
+    /// Freezes the marker on pause, drops it on stop — the same coarse signal
+    /// the track table acts on, so the two surfaces cannot disagree.
+    pub(in crate::ui) fn set_playback_state(&self, state: PlaybackState) {
+        if let Some(render) = self.0.upgrade() {
+            render.songs_card.set_playback_state(state);
+        }
+    }
+}
 #[derive(Clone)]
 pub(in crate::ui) struct StatsView {
     root: gtk4::ScrolledWindow,
@@ -59,7 +71,6 @@ pub(in crate::ui) struct StatsView {
     #[cfg_attr(not(test), allow(dead_code))]
     page: glib::WeakRef<gtk4::Box>,
     #[cfg_attr(not(test), allow(dead_code))]
-    story_row: glib::WeakRef<adw::WrapBox>,
     #[cfg_attr(not(test), allow(dead_code))]
     hero_row: glib::WeakRef<adw::WrapBox>,
     #[cfg_attr(not(test), allow(dead_code))]
@@ -80,45 +91,24 @@ impl StatsView {
         let period_dropdown = header.period_dropdown.clone();
         let period_model = header.period_model.clone();
 
-        let ribbon = StatsRibbon::new();
-        let band_card = StatsBandCard::new();
-        band_card.set_cover_loader(cover_loader.clone());
-        let genres = StatsGenreCard::new(cover_loader.clone());
+        let bands_row = StatsBandsRow::new();
+        bands_row.set_cover_loader(&cover_loader);
+        let genres = StatsGenreCard::new();
         let genres_section = card(genres.widget());
 
         let current_snapshot = Rc::new(RefCell::new(None::<StatsSnapshot>));
         let on_metadata_activate: MetadataCallback = Rc::new(RefCell::new(None));
         let songs_card = StatsSongsCard::new(cover_loader, on_metadata_activate.clone());
-        let band_section = card(band_card.widget());
-        band_section.set_hexpand(true);
         let songs_section = card(songs_card.widget());
-        songs_section.set_width_request(SONGS_WIDTH);
         songs_section.set_hexpand(true);
-        let story_row = adw::WrapBox::new();
-        story_row.set_child_spacing(STORY_SPACING);
-        story_row.set_line_spacing(STORY_SPACING);
-        story_row.set_natural_line_length(STORY_NATURAL_LINE_LENGTH);
-        story_row.set_wrap_policy(adw::WrapPolicy::Natural);
-        story_row.set_justify(adw::JustifyMode::Fill);
-        story_row.set_justify_last_line(true);
-        story_row.set_hexpand(true);
-        story_row.append(&band_section);
-        story_row.append(&songs_section);
 
+        // STATS-19: hours → bands → songs → genres, each at full width. The
+        // weekly chart that used to open the page is gone; its two readings
+        // live in the hero's KPI row, where they cost a line instead of a
+        // half-empty diagram.
         let sections = gtk4::Box::new(gtk4::Orientation::Vertical, SECTION_SPACING);
-        let chart_card = card(ribbon.widget());
-        let thin_hint = gtk4::Label::new(Some(strings::stats_thin_history_hint().as_str()));
-        thin_hint.add_css_class("stats-thin-history");
-        thin_hint.set_wrap(true);
-        thin_hint.set_xalign(0.0);
-        let hint_card = card(&thin_hint);
-        let trend_stack = gtk4::Stack::new();
-        trend_stack.set_vhomogeneous(false);
-        trend_stack.add_named(&chart_card, Some("chart"));
-        trend_stack.add_named(&hint_card, Some("hint"));
-        trend_stack.set_visible_child_name("chart");
-        sections.append(&trend_stack);
-        sections.append(&story_row);
+        sections.append(bands_row.widget());
+        sections.append(&songs_section);
         sections.append(songs_card.expanded_widget());
         sections.append(&genres_section);
 
@@ -174,7 +164,7 @@ impl StatsView {
         let entrance_pending = Rc::new(Cell::new(false));
         let entrance = StatsEntrance::default();
 
-        band_card.set_on_open_artist({
+        bands_row.set_on_open_artist({
             let callback = on_go_to_artist.clone();
             move |artist| {
                 let callback = callback.borrow().clone();
@@ -183,17 +173,14 @@ impl StatsView {
                 }
             }
         });
-        wire_unify(&band_card, &genres, &connection, &on_unify_spellings);
+        wire_unify(&bands_row, &genres, &connection, &on_unify_spellings);
 
         let render = Rc::new(RenderParts {
             header: header.clone(),
             hero: hero.clone(),
-            ribbon: ribbon.clone(),
-            band_card: band_card.clone(),
+            bands_row: bands_row.clone(),
             genres_section_data: genres.clone(),
             songs_card: songs_card.clone(),
-            trend_stack: trend_stack.clone(),
-            band_section: band_section.clone(),
             songs_section: songs_section.clone(),
             top_tracks_section: songs_card.expanded_widget().clone(),
             genres_section: genres_section.clone(),
@@ -236,7 +223,6 @@ impl StatsView {
             entrance_pending,
             connection,
             page: page.downgrade(),
-            story_row: story_row.downgrade(),
             hero_row: hero.root.downgrade(),
             hero_time_row: hero.time_block.downgrade(),
             current_snapshot,
@@ -350,18 +336,20 @@ impl StatsView {
         self.render.songs_card.set_on_play_track(callback);
     }
 
+    /// A weak, clonable handle for the player's marker fan-out. The view
+    /// itself is borrowed for the duration of wiring only, while the player's
+    /// callbacks outlive that borrow — and holding the page weakly keeps a
+    /// long-lived player callback from owning the whole stats page.
+    pub(in crate::ui) fn playback_marker(&self) -> StatsPlaybackMarker {
+        StatsPlaybackMarker(Rc::downgrade(&self.render))
+    }
+
     pub(in crate::ui) fn set_on_play_next(&self, callback: impl Fn(i64) + 'static) {
         self.render.songs_card.set_on_play_next(callback);
     }
 
     pub(in crate::ui) fn set_on_add_to_queue(&self, callback: impl Fn(i64) + 'static) {
         self.render.songs_card.set_on_add_to_queue(callback);
-    }
-
-    pub(in crate::ui) fn set_on_genre_album(&self, callback: impl Fn(String) + 'static) {
-        self.render
-            .genres_section_data
-            .set_on_open_album_path(callback);
     }
 
     pub(in crate::ui) fn set_on_go_to_genre(&self, callback: impl Fn(String) + 'static) {
@@ -393,12 +381,20 @@ impl StatsView {
             .expect("stats content stack must own its sections page");
         let mut child = sections.first_child();
         while let Some(widget) = child {
-            if self.render.ribbon.widget().is_ancestor(&widget) {
-                order.push("chart");
-            } else if self.render.band_section.is_ancestor(&widget)
-                && self.render.songs_section.is_ancestor(&widget)
+            // Both sections are the section child itself now, not a card
+            // wrapped around one — `is_ancestor` is false for a widget
+            // against itself, so these compare by identity.
+            if widget
+                == self
+                    .render
+                    .bands_row
+                    .widget()
+                    .clone()
+                    .upcast::<gtk4::Widget>()
             {
-                order.push("band-songs");
+                order.push("bands");
+            } else if widget == self.render.songs_section.clone().upcast::<gtk4::Widget>() {
+                order.push("songs");
             } else if widget
                 == self
                     .render
@@ -427,12 +423,9 @@ impl StatsView {
 struct RenderParts {
     header: StatsHeader,
     hero: StatsHero,
-    ribbon: StatsRibbon,
-    band_card: StatsBandCard,
+    bands_row: StatsBandsRow,
     genres_section_data: StatsGenreCard,
     songs_card: StatsSongsCard,
-    trend_stack: gtk4::Stack,
-    band_section: gtk4::Box,
     songs_section: gtk4::Box,
     #[cfg_attr(not(test), allow(dead_code))]
     top_tracks_section: gtk4::Revealer,
@@ -481,22 +474,12 @@ fn refresh_parts(
 }
 
 fn render_snapshot(render: &RenderParts, snapshot: &StatsSnapshot, entrance: bool) {
-    let ribbon_values = snapshot
-        .ribbon
-        .iter()
-        .map(|point| point.total_ms)
-        .collect::<Vec<_>>();
-    render.ribbon.set_data(
-        &snapshot.period,
-        &ribbon_values,
-        snapshot.best_week.as_ref(),
-    );
     if let Some(spotlight) = &snapshot.spotlight {
-        render.band_card.set_data(spotlight);
-        render.band_section.set_visible(true);
+        render.bands_row.set_data(spotlight);
+        render.bands_row.widget().set_visible(true);
     } else {
-        render.band_card.clear_data();
-        render.band_section.set_visible(false);
+        render.bands_row.clear_data();
+        render.bands_row.widget().set_visible(false);
     }
     render.genres_section_data.set_data(&snapshot.genres);
     render
@@ -506,30 +489,23 @@ fn render_snapshot(render: &RenderParts, snapshot: &StatsSnapshot, entrance: boo
         .songs_section
         .set_visible(!snapshot.top_tracks.is_empty());
     render.songs_card.set_data(snapshot);
-    let thin = snapshot.hero.plays < MIN_PLAYS_FOR_TREND;
-    render
-        .trend_stack
-        .set_visible_child_name(if thin { "hint" } else { "chart" });
     let groups = [
-        HorizontalBarGroup::new(render.band_card.bars(), Vec::new()),
+        HorizontalBarGroup::new(render.bands_row.bars(), Vec::new()),
         HorizontalBarGroup::new(render.songs_card.summary_bars(), Vec::new()),
         HorizontalBarGroup::new(Vec::new(), render.genres_section_data.segment_reveals()),
     ];
-    render.entrance.update(
-        &render.ribbon,
-        &groups,
-        &render.genres_section_data,
-        entrance,
-    );
+    render
+        .entrance
+        .update(&groups, &render.genres_section_data, entrance);
 }
 
 fn wire_unify(
-    band_card: &StatsBandCard,
+    bands_row: &StatsBandsRow,
     genres: &StatsGenreCard,
     connection: &Rc<RefCell<Option<Rc<Db>>>>,
     callback: &IdsCallback,
 ) {
-    band_card.set_on_unify({
+    bands_row.set_on_unify({
         let connection = connection.clone();
         let callback = callback.clone();
         move |key| resolve_unify(&connection, &callback, GroupKind::Artist, &key)

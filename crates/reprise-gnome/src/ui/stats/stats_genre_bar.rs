@@ -9,7 +9,9 @@ use gtk4::prelude::*;
 use crate::ui::motion_reveal::HorizontalReveal;
 
 const SEGMENT_GAP: i32 = 2;
-const BAR_HEIGHT: i32 = 22;
+/// STATS-19 demotes genres to a secondary reading: the strip is thinner than
+/// the bar it replaces, so the whole card fits in roughly 90 px.
+const BAR_HEIGHT: i32 = 14;
 
 mod imp {
     use super::*;

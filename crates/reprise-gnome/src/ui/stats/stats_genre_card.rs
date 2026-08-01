@@ -1,15 +1,18 @@
-//! Genre share card with display-only segments and album-cover tile actions.
+//! Genre share strip: one stacked bar plus a single-line legend.
+//!
+//! STATS-19 demotes genres to a secondary reading, so the card is a ~90px
+//! strip rather than a column of cover tiles. Everything a tile used to spell
+//! out — duration, leading artist — now lives in the segment's tooltip, where
+//! it costs no height until asked for.
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
-use reprise_core::cover::ThumbnailSize;
 use reprise_core::library::stats_snapshot::{GenreSection, GenreSegment};
 
 use super::stats_genre_bar::StatsGenreBar;
 use super::stats_view_widgets::label;
-use crate::ui::cover_loader::CoverLoader;
 use crate::ui::motion_reveal::HorizontalReveal;
 use crate::ui::strings;
 
@@ -19,45 +22,32 @@ type StringCallback = Rc<RefCell<Option<Rc<dyn Fn(String)>>>>;
 pub(in crate::ui) struct StatsGenreCard {
     root: gtk4::Box,
     segments: StatsGenreBar,
-    tiles: gtk4::Grid,
-    cover_loader: Rc<CoverLoader>,
-    cover_generation: Rc<Cell<u64>>,
+    legend: gtk4::Box,
     on_unify: StringCallback,
-    on_open_album_path: StringCallback,
     on_open_genre: StringCallback,
     segment_reveals: Rc<RefCell<Vec<HorizontalReveal>>>,
-    #[cfg_attr(not(test), allow(dead_code))]
-    cover_buttons: Rc<RefCell<Vec<gtk4::Button>>>,
     #[cfg_attr(not(test), allow(dead_code))]
     genre_buttons: Rc<RefCell<Vec<gtk4::Button>>>,
 }
 
 impl StatsGenreCard {
-    pub(in crate::ui) fn new(cover_loader: Rc<CoverLoader>) -> Self {
-        let root = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
+    pub(in crate::ui) fn new() -> Self {
+        let root = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
         root.add_css_class("stats-genre-card");
         root.append(&label("GENRES", "stats-eyebrow"));
         let segments = StatsGenreBar::new();
         root.append(&segments);
-        let tiles = gtk4::Grid::builder()
-            .column_spacing(16)
-            .row_spacing(10)
-            .column_homogeneous(true)
-            .build();
-        tiles.add_css_class("stats-genre-tiles");
-        root.append(&tiles);
+        let legend = gtk4::Box::new(gtk4::Orientation::Horizontal, 20);
+        legend.add_css_class("stats-genre-legend");
+        root.append(&legend);
         let segment_reveals = Rc::new(RefCell::new(Vec::new()));
         Self {
             root,
             segments,
-            tiles,
-            cover_loader,
-            cover_generation: Rc::new(Cell::new(0)),
+            legend,
             on_unify: Rc::new(RefCell::new(None)),
-            on_open_album_path: Rc::new(RefCell::new(None)),
             on_open_genre: Rc::new(RefCell::new(None)),
             segment_reveals,
-            cover_buttons: Rc::new(RefCell::new(Vec::new())),
             genre_buttons: Rc::new(RefCell::new(Vec::new())),
         }
     }
@@ -68,21 +58,14 @@ impl StatsGenreCard {
 
     pub(in crate::ui) fn set_data(&self, section: &GenreSection) {
         self.segment_reveals.borrow_mut().clear();
-        clear_grid(&self.tiles);
-        self.cover_buttons.borrow_mut().clear();
         self.genre_buttons.borrow_mut().clear();
-        let token = self.cover_generation.get().wrapping_add(1);
-        self.cover_generation.set(token);
+        while let Some(child) = self.legend.first_child() {
+            self.legend.remove(&child);
+        }
         self.render_segments(section);
-        for (index, segment) in section
-            .segments
-            .iter()
-            .filter(|segment| has_genre_tile(segment))
-            .take(4)
-            .enumerate()
-        {
-            self.tiles
-                .attach(&self.tile(segment, token), index as i32, 0, 1, 1);
+        for (index, segment) in section.segments.iter().enumerate() {
+            self.legend
+                .append(&self.legend_entry(segment, index, section));
         }
     }
 
@@ -100,17 +83,12 @@ impl StatsGenreCard {
             bar.add_css_class("stats-genre-segment");
             bar.add_css_class(&segment_css_class(segment, index, index == last_index));
             bar.set_hexpand(true);
-            bar.set_height_request(22);
+            bar.set_height_request(14);
             bar.update_property(&[gtk4::accessible::Property::Label(&format!(
                 "Open {} in the Library",
                 segment.label
             ))]);
-            bar.set_tooltip_text(Some(&format!(
-                "{} · {} % · {}",
-                segment.label,
-                segment.share_percent,
-                strings::stats_duration(segment.total_ms)
-            )));
+            bar.set_tooltip_text(Some(&segment_tooltip(segment)));
             if has_genre_tile(segment) {
                 bar.connect_clicked({
                     let callback = self.on_open_genre.clone();
@@ -128,82 +106,70 @@ impl StatsGenreCard {
         self.segment_reveals.replace(reveals);
     }
 
-    fn tile(&self, segment: &GenreSegment, token: u64) -> gtk4::Box {
-        let tile = gtk4::Box::new(gtk4::Orientation::Horizontal, 9);
-        tile.add_css_class("stats-genre-tile");
-        let cover = gtk4::Image::builder()
-            .pixel_size(40)
-            .width_request(40)
-            .height_request(40)
-            .build();
-        CoverLoader::set_placeholder(&cover);
-        if segment.representative_track_path.is_empty() {
-            tile.append(&cover);
-        } else {
-            self.cover_loader.load_into(
-                &cover,
-                &segment.representative_track_path,
-                ThumbnailSize::List,
-                token,
-                &self.cover_generation,
-            );
-            let cover_button = gtk4::Button::new();
-            cover_button.add_css_class("flat");
-            cover_button.add_css_class("stats-genre-cover");
-            cover_button.set_tooltip_text(Some("Go to album"));
-            cover_button.set_child(Some(&cover));
-            cover_button.connect_clicked({
-                let callback = self.on_open_album_path.clone();
-                let path = segment.representative_track_path.clone();
-                move |_| invoke(&callback, path.clone())
+    /// One legend entry: a colour dot matching its segment, the label and the
+    /// share. Everything else the old tile carried is in the tooltip.
+    fn legend_entry(
+        &self,
+        segment: &GenreSegment,
+        index: usize,
+        section: &GenreSection,
+    ) -> gtk4::Box {
+        let entry = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+        entry.add_css_class("stats-genre-legend-entry");
+
+        let dot = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+        dot.add_css_class("stats-genre-legend-dot");
+        dot.add_css_class(&segment_css_class(
+            segment,
+            index,
+            index == section.segments.len().saturating_sub(1),
+        ));
+        dot.set_size_request(7, 7);
+        dot.set_valign(gtk4::Align::Center);
+        dot.set_accessible_role(gtk4::AccessibleRole::Presentation);
+        entry.append(&dot);
+
+        let text = label(
+            &format!("{} {} %", segment.label, segment.share_percent),
+            "stats-genre-legend-label",
+        );
+        if has_genre_tile(segment) {
+            let button = gtk4::Button::new();
+            button.add_css_class("flat");
+            button.add_css_class("stats-genre-legend-button");
+            button.set_child(Some(&text));
+            button.set_tooltip_text(Some(&segment_tooltip(segment)));
+            button.update_property(&[gtk4::accessible::Property::Label(&format!(
+                "Open {} in the Library",
+                segment.label
+            ))]);
+            button.connect_clicked({
+                let callback = self.on_open_genre.clone();
+                let genre = segment.label.clone();
+                move |_| invoke(&callback, genre.clone())
             });
-            self.cover_buttons.borrow_mut().push(cover_button.clone());
-            tile.append(&cover_button);
+            self.genre_buttons.borrow_mut().push(button.clone());
+            entry.append(&button);
+        } else {
+            entry.append(&text);
         }
 
-        let right = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
-        right.set_hexpand(true);
-        let copy = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
-        copy.append(&label(
-            &format!("{} · {} %", segment.label, segment.share_percent),
-            "stats-item-title",
-        ));
-        copy.append(&label(
-            &format!(
-                "{} · top: {}",
-                strings::stats_duration(segment.total_ms),
-                segment.top_artist.as_deref().unwrap_or("Unknown artist")
-            ),
-            "stats-item-subtitle",
-        ));
-        let genre_button = gtk4::Button::new();
-        genre_button.add_css_class("flat");
-        genre_button.add_css_class("stats-genre-link");
-        genre_button.set_hexpand(true);
-        genre_button.set_child(Some(&copy));
-        genre_button.set_tooltip_text(Some(&format!("Open {} in the Library", segment.label)));
-        genre_button.connect_clicked({
-            let callback = self.on_open_genre.clone();
-            let genre = segment.label.clone();
-            move |_| invoke(&callback, genre.clone())
-        });
-        self.genre_buttons.borrow_mut().push(genre_button.clone());
-        right.append(&genre_button);
+        // The spelling-merge affordance moved here with the tiles it used to
+        // live in; without it a merged genre would have no way back into the
+        // tag editor.
         if segment.variant_count >= 2 {
-            let hint = gtk4::Button::with_label("Tag spellings");
+            let hint = gtk4::Button::from_icon_name("document-edit-symbolic");
             hint.add_css_class("flat");
-            hint.add_css_class("stats-unify-hint");
-            hint.set_halign(gtk4::Align::Start);
+            hint.add_css_class("stats-genre-legend-unify");
             hint.set_tooltip_text(Some(&strings::spellings_merged_hint(segment.variant_count)));
             hint.connect_clicked({
                 let callback = self.on_unify.clone();
                 let key = segment.key.clone();
                 move |_| invoke(&callback, key.clone())
             });
-            right.append(&hint);
+            entry.append(&hint);
         }
-        tile.append(&right);
-        tile
+        entry
     }
 
     pub(in crate::ui) fn set_on_unify(&self, callback: impl Fn(String) + 'static) {
@@ -213,10 +179,6 @@ impl StatsGenreCard {
     #[cfg(test)]
     pub(super) fn emit_unify(&self, key: &str) {
         invoke(&self.on_unify, key.to_string());
-    }
-
-    pub(in crate::ui) fn set_on_open_album_path(&self, callback: impl Fn(String) + 'static) {
-        *self.on_open_album_path.borrow_mut() = Some(Rc::new(callback));
     }
 
     pub(in crate::ui) fn set_on_open_genre(&self, callback: impl Fn(String) + 'static) {
@@ -262,10 +224,15 @@ fn segment_css_class(segment: &GenreSegment, index: usize, is_last: bool) -> Str
     }
 }
 
-fn clear_grid(container: &gtk4::Grid) {
-    while let Some(child) = container.first_child() {
-        container.remove(&child);
-    }
+/// Everything the removed tile spelled out, on hover instead of on screen.
+fn segment_tooltip(segment: &GenreSegment) -> String {
+    format!(
+        "{} · {} % · {} · top: {}",
+        segment.label,
+        segment.share_percent,
+        strings::stats_duration(segment.total_ms),
+        segment.top_artist.as_deref().unwrap_or("Unknown artist")
+    )
 }
 
 fn invoke(callback: &StringCallback, value: String) {
@@ -310,18 +277,12 @@ mod tests {
     }
 
     fn card() -> StatsGenreCard {
-        StatsGenreCard::new(CoverLoader::new(
-            crate::ui::cover_download_worker::setup_for_test(),
-        ))
+        StatsGenreCard::new()
     }
 
     #[test]
-    fn genre_style_and_tile_eligibility_follow_the_semantic_key() {
+    fn segment_classes_rank_and_terminate() {
         let mut genre = fixture().segments.remove(0);
-        genre.label = "Other".into();
-        assert_eq!(segment_css_class(&genre, 0, false), "stats-genre-rank-0");
-        assert!(has_genre_tile(&genre));
-
         assert_eq!(
             segment_css_class(&genre, 1, true),
             "stats-genre-segment-last",
@@ -352,37 +313,41 @@ mod tests {
         section.segments[0].share_percent = 55;
         card.set_data(&section);
 
-        assert_eq!(card.widget().spacing(), 12);
+        assert_eq!(card.widget().spacing(), 8);
         assert_eq!(
             card.segment_buttons()
                 .first()
                 .expect("the fixture must render a genre segment")
                 .tooltip_text()
                 .as_deref(),
-            Some("Metalcore · 55 % · 6 h 58")
+            Some("Metalcore · 55 % · 6 h 58 · top: Lorna Shore")
         );
     }
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn stats_15_tiles_show_cover_share_and_top_artist() {
+    fn stats_19_legend_names_every_segment_and_defers_the_rest_to_the_tooltip() {
         gtk4::init().unwrap();
         let card = card();
         card.set_data(&fixture());
 
-        assert_eq!(card.tiles.observe_children().n_items(), 1);
-        let tile = card.tiles.first_child().unwrap();
-        assert!(descendant_labels(&tile)
-            .iter()
-            .any(|copy| copy == "Metalcore · 70 %"));
-        assert!(descendant_labels(&tile)
-            .iter()
-            .any(|copy| copy.contains("top: Lorna Shore")));
+        // One entry per segment, including the aggregate the old tile grid
+        // filtered out — the strip is the whole reading now.
+        assert_eq!(card.legend.observe_children().n_items(), 2);
+        let labels = descendant_labels(card.legend.upcast_ref());
+        assert!(labels.iter().any(|copy| copy == "Metalcore 70 %"));
+        assert!(labels.iter().any(|copy| copy == "Other 30 %"));
+        // Duration and leading artist cost no height until hovered.
+        assert!(labels.iter().all(|copy| !copy.contains("top:")));
+        assert_eq!(
+            segment_tooltip(&fixture().segments[0]),
+            "Metalcore · 70 % · 6 h 50 · top: Lorna Shore"
+        );
     }
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn stats_15_genre_segments_fill_the_22px_bar() {
+    fn stats_19_genre_segments_fill_the_14px_bar() {
         gtk4::init().unwrap();
         crate::ui::style::install_css_string_for_test(&crate::ui::stats::stats_css::css());
         let card = card();
@@ -403,8 +368,8 @@ mod tests {
             .sum::<i32>()
             + (segments.len().saturating_sub(1) as i32 * 2);
 
-        assert_eq!(segment_grid.height(), 22);
-        assert!(segments.iter().all(|segment| segment.height() == 22));
+        assert_eq!(segment_grid.height(), 14);
+        assert!(segments.iter().all(|segment| segment.height() == 14));
         assert!(
             segment_grid.width() >= 500,
             "the stacked bar collapsed to {} px",
@@ -426,7 +391,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn stats_15_segment_and_tile_request_the_genre_scope() {
+    fn stats_19_segment_and_legend_request_the_genre_scope() {
         gtk4::init().unwrap();
         let card = card();
         let opened = Rc::new(RefCell::new(Vec::new()));
@@ -443,42 +408,6 @@ mod tests {
             *opened.borrow(),
             vec!["Metalcore".to_string(), "Metalcore".to_string()]
         );
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn stats_15_cover_click_requests_the_representative_album() {
-        gtk4::init().unwrap();
-        let card = card();
-        let opened = Rc::new(RefCell::new(None));
-        let opened_genres = Rc::new(RefCell::new(Vec::new()));
-        card.set_on_open_album_path({
-            let opened = opened.clone();
-            move |path| *opened.borrow_mut() = Some(path)
-        });
-        card.set_on_open_genre({
-            let opened_genres = opened_genres.clone();
-            move |genre| opened_genres.borrow_mut().push(genre)
-        });
-        card.set_data(&fixture());
-
-        card.cover_buttons.borrow()[0].emit_clicked();
-
-        assert_eq!(opened.borrow().as_deref(), Some("/music/track.flac"));
-        assert!(opened_genres.borrow().is_empty());
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn genre_without_a_representative_path_has_no_cover_action() {
-        gtk4::init().unwrap();
-        let card = card();
-        let mut section = fixture();
-        section.segments[0].representative_track_path.clear();
-
-        card.set_data(&section);
-
-        assert!(card.cover_buttons.borrow().is_empty());
     }
 
     fn descendant_labels(root: &gtk4::Widget) -> Vec<String> {
