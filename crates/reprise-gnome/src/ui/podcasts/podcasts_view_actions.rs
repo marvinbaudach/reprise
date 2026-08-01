@@ -133,7 +133,9 @@ impl PodcastsView {
             view.selection
                 .borrow_mut()
                 .set_selected(episode_id, selected);
-            view.render();
+            // `SRC-14`: not a `render()` — rebuilding every row would drop the
+            // focus off the checkbox the user just operated.
+            view.apply_selection();
         });
         group.add_action(&set_selected);
         self.youtube_detail.install_actions(&group);

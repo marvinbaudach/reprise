@@ -62,6 +62,113 @@ fn subscribe_one_episode_of_kind(conn: &Db, kind: PodcastKind) -> i64 {
     .episode_id
 }
 
+/// A subscription with `count` episodes, plus a view showing them with the
+/// group expanded — the state a user clicks rows in.
+fn view_with_expanded_episodes(count: usize) -> (Rc<PodcastsView>, i64) {
+    let conn = crate::test_db::open().unwrap();
+    let subscription_id = store::add_or_restore(
+        &conn,
+        &NewSubscription {
+            kind: PodcastKind::Rss,
+            feed_url: "https://example.test/feed".to_owned(),
+            title: "Show".to_owned(),
+            author: None,
+            image_url: None,
+            auto_download: false,
+        },
+        1,
+    )
+    .unwrap();
+    for index in 0..count {
+        store::upsert_episode(
+            &conn,
+            subscription_id,
+            &ParsedEpisode {
+                guid: format!("episode-{index}"),
+                title: format!("Episode {index}"),
+                image_url: None,
+                audio_url: format!("https://example.test/{index}.mp3"),
+                page_url: None,
+                published_at: Some(1_000 + index as i64),
+                duration_secs: None,
+            },
+            2,
+        )
+        .unwrap()
+        .unwrap();
+    }
+    let view = view(conn, PodcastKind::Rss);
+    view.expanded_sources.borrow_mut().insert(subscription_id);
+    view.render();
+    (view, subscription_id)
+}
+
+/// `SRC-14`: the row widget a user is pointing at (and may have focused) has
+/// to survive being selected. Before this, every selection change went through
+/// `render()`, which rebuilds every row — fine for a mouse, fatal for the
+/// keyboard, where the second `Space` would have nothing left to act on.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_14_selecting_a_row_does_not_rebuild_it() {
+    gtk4::init().unwrap();
+    let (view, _) = view_with_expanded_episodes(3);
+    let order = view.rendered_order();
+    let episode_id = order[0];
+
+    let before = view
+        .selection_widgets
+        .borrow()
+        .get(&episode_id)
+        .map(|widgets| widgets.row.clone());
+    assert!(
+        before.is_some(),
+        "the row is registered for in-place updates"
+    );
+
+    view.select_row(episode_id, SelectMode::Toggle);
+
+    let widgets = view.selection_widgets.borrow();
+    let after = widgets.get(&episode_id).map(|widgets| widgets.row.clone());
+    assert_eq!(before, after, "selecting must not rebuild the row");
+    assert!(view.selection.borrow().contains(episode_id));
+    let row = after.unwrap();
+    assert!(row.has_css_class("reprise-podcast-episode-selected"));
+    assert!(
+        widgets[&episode_id].checkbox.is_active(),
+        "the checkbox mirrors the selection it did not make"
+    );
+}
+
+/// `SRC-14`: a range runs over the rendered order, and unselecting clears the
+/// row's look again.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_14_a_range_selects_every_row_between_anchor_and_target() {
+    gtk4::init().unwrap();
+    let (view, _) = view_with_expanded_episodes(4);
+    let order = view.rendered_order();
+    assert_eq!(order.len(), 4, "all four rows are rendered");
+
+    view.select_row(order[0], SelectMode::Only);
+    view.select_row(order[2], SelectMode::Range);
+
+    let mut expected = order[..3].to_vec();
+    expected.sort_unstable();
+    assert_eq!(view.selection.borrow().selected_ids(), expected);
+    assert!(
+        !view.selection.borrow().contains(order[3]),
+        "the row past the target stays out"
+    );
+
+    view.select_row(order[3], SelectMode::Only);
+
+    let widgets = view.selection_widgets.borrow();
+    assert!(!widgets[&order[0]]
+        .row
+        .has_css_class("reprise-podcast-episode-selected"));
+    assert!(!widgets[&order[0]].checkbox.is_active());
+}
+
 /// `SRC-10`: the genuine "nothing subscribed yet" empty state hides the
 /// filter row and the footer — would go red if either stayed visible over
 /// zero subscriptions.

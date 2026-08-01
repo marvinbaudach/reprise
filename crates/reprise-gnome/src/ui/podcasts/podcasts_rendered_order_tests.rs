@@ -71,12 +71,18 @@ fn src_14_the_order_runs_across_groups_in_render_order() {
 
 #[test]
 fn src_14_a_windowed_group_contributes_only_its_visible_ten() {
-    let episodes = (0..12).map(|index| episode(100 + index)).collect::<Vec<_>>();
+    let episodes = (0..12)
+        .map(|index| episode(100 + index))
+        .collect::<Vec<_>>();
     let groups = vec![group(1, episodes)];
     let expanded = BTreeSet::from([1]);
 
     let windowed = rendered_episode_ids(&groups, &expanded, &BTreeSet::new());
-    assert_eq!(windowed.len(), 10, "the preview window caps the group at ten");
+    assert_eq!(
+        windowed.len(),
+        10,
+        "the preview window caps the group at ten"
+    );
     assert_eq!(windowed.first(), Some(&100));
     assert_eq!(windowed.last(), Some(&109));
 

@@ -130,7 +130,17 @@ impl PodcastSelection {
     }
 }
 
-pub(super) fn episode_checkbox(episode_id: i64, title: &str, active: bool) -> gtk4::CheckButton {
+/// The row's checkbox, with the handler id of its own `toggled` connection.
+///
+/// The caller needs that id: pushing the current selection back onto the
+/// checkbox would otherwise re-enter through `podcasts.set-selected`. Blocking
+/// the handler for the duration of the push states that intent where it
+/// applies, which a re-entrancy flag on the view would not.
+pub(super) fn episode_checkbox(
+    episode_id: i64,
+    title: &str,
+    active: bool,
+) -> (gtk4::CheckButton, gtk4::glib::SignalHandlerId) {
     let checkbox = gtk4::CheckButton::new();
     checkbox.set_active(active);
     checkbox.set_tooltip_text(Some(&strings::text(strings::YOUTUBE_SELECT_EPISODES)));
@@ -139,11 +149,11 @@ pub(super) fn episode_checkbox(episode_id: i64, title: &str, active: bool) -> gt
     checkbox.update_property(&[gtk4::accessible::Property::Label(
         &strings::podcast_select_episode(title),
     )]);
-    checkbox.connect_toggled(move |checkbox| {
+    let toggled = checkbox.connect_toggled(move |checkbox| {
         let target = (episode_id, checkbox.is_active()).to_variant();
         let _ = checkbox.activate_action("podcasts.set-selected", Some(&target));
     });
-    checkbox
+    (checkbox, toggled)
 }
 
 /// The "N selected / Download selected / Remove selected" trio.
@@ -245,11 +255,23 @@ mod tests {
         let mut selected = BTreeSet::new();
         let mut anchor = None;
 
-        apply_select(&mut selected, &mut anchor, &[7, 8, 9], 8, SelectMode::Toggle);
+        apply_select(
+            &mut selected,
+            &mut anchor,
+            &[7, 8, 9],
+            8,
+            SelectMode::Toggle,
+        );
         assert_eq!(ids(&selected), vec![8]);
         assert_eq!(anchor, Some(8));
 
-        apply_select(&mut selected, &mut anchor, &[7, 8, 9], 8, SelectMode::Toggle);
+        apply_select(
+            &mut selected,
+            &mut anchor,
+            &[7, 8, 9],
+            8,
+            SelectMode::Toggle,
+        );
         assert!(selected.is_empty());
         assert_eq!(anchor, Some(8));
     }
@@ -262,7 +284,11 @@ mod tests {
 
         apply_select(&mut selected, &mut anchor, &order, 4, SelectMode::Only);
         apply_select(&mut selected, &mut anchor, &order, 2, SelectMode::Range);
-        assert_eq!(ids(&selected), vec![2, 3, 4], "a backwards range still spans");
+        assert_eq!(
+            ids(&selected),
+            vec![2, 3, 4],
+            "a backwards range still spans"
+        );
         assert_eq!(anchor, Some(4), "a range never moves the anchor");
 
         apply_select(&mut selected, &mut anchor, &order, 5, SelectMode::Range);

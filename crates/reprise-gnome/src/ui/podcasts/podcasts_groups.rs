@@ -24,12 +24,33 @@ use super::podcasts_title::TitleParts;
 use crate::ui::playing_marker;
 use crate::ui::strings;
 
+/// `SRC-14`: the look of a selected row. Applied here at build time and by
+/// `PodcastsView::apply_selection` afterwards.
+pub(super) const SELECTED_ROW_CLASS: &str = "reprise-podcast-episode-selected";
+
 #[derive(Clone)]
 pub(super) struct DownloadRowWidgets {
     pub(super) root: gtk4::Box,
     pub(super) status: gtk4::Box,
     pub(super) action: gtk4::Button,
     pub(super) marker: gtk4::Box,
+}
+
+/// The widgets a selection change has to touch on one row, held per episode so
+/// a selection can be applied without rebuilding the list — see
+/// `PodcastsView::apply_selection`. `toggled` is the checkbox's own handler id,
+/// blocked while the state is pushed back into it so the push cannot re-enter
+/// through `podcasts.set-selected`.
+pub(super) struct SelectionRowWidgets {
+    pub(super) row: gtk4::Box,
+    pub(super) checkbox: gtk4::CheckButton,
+    pub(super) toggled: gtk4::glib::SignalHandlerId,
+}
+
+/// Everything `replace` hands back for later targeted updates.
+pub(super) struct RenderedRowWidgets {
+    pub(super) downloads: BTreeMap<i64, DownloadRowWidgets>,
+    pub(super) selection: BTreeMap<i64, SelectionRowWidgets>,
 }
 
 struct GroupRenderContext<'a> {
@@ -73,11 +94,14 @@ pub(super) fn replace(
     connectivity: Connectivity,
     unavailable_episode: Option<i64>,
     selection: &Rc<RefCell<PodcastSelection>>,
-) -> BTreeMap<i64, DownloadRowWidgets> {
+) -> RenderedRowWidgets {
     while let Some(child) = container.first_child() {
         container.remove(&child);
     }
-    let mut download_widgets = BTreeMap::new();
+    let mut widgets = RenderedRowWidgets {
+        downloads: BTreeMap::new(),
+        selection: BTreeMap::new(),
+    };
     let selected_ids = selection.borrow().selected_ids();
     let context = GroupRenderContext {
         playing_episode,
@@ -93,15 +117,15 @@ pub(super) fn replace(
         selected_ids,
     };
     for rendered in groups {
-        container.append(&build_group(rendered, &context, &mut download_widgets));
+        container.append(&build_group(rendered, &context, &mut widgets));
     }
-    download_widgets
+    widgets
 }
 
 fn build_group(
     rendered: &RenderedSourceGroup,
     context: &GroupRenderContext<'_>,
-    download_widgets: &mut BTreeMap<i64, DownloadRowWidgets>,
+    widgets: &mut RenderedRowWidgets,
 ) -> gtk4::Expander {
     let group = &rendered.group;
     let expander = gtk4::Expander::new(None);
@@ -164,7 +188,7 @@ fn build_group(
         episodes.append(&episode_row(
             episode,
             &title_parts,
-            download_widgets,
+            widgets,
             &EpisodeRenderContext {
                 mark: context.playing_episode.filter(|mark| mark.id == episode.id),
                 download_state: &state,
@@ -289,7 +313,7 @@ fn group_image_url(group: &SourceGroup) -> Option<&str> {
 fn episode_row(
     row: &EpisodeRow,
     title_parts: &TitleParts,
-    download_widgets: &mut BTreeMap<i64, DownloadRowWidgets>,
+    widgets: &mut RenderedRowWidgets,
     context: &EpisodeRenderContext<'_>,
 ) -> gtk4::Widget {
     let loaded = context.mark.is_some();
@@ -316,12 +340,20 @@ fn episode_row(
     root.set_margin_top(4);
     root.set_margin_bottom(4);
 
-    let selected = podcasts_selection::episode_checkbox(
-        row.id,
-        &row.title,
-        context.selection.borrow().contains(row.id),
-    );
+    let is_selected = context.selection.borrow().contains(row.id);
+    if is_selected {
+        root.add_css_class(SELECTED_ROW_CLASS);
+    }
+    let (selected, toggled) = podcasts_selection::episode_checkbox(row.id, &row.title, is_selected);
     root.append(&selected);
+    widgets.selection.insert(
+        row.id,
+        SelectionRowWidgets {
+            row: root.clone(),
+            checkbox: selected.clone(),
+            toggled,
+        },
+    );
 
     let thumbnail = episode_thumbnail(row, context.images_allowed);
     let marker = playing_marker::build();
@@ -363,20 +395,20 @@ fn episode_row(
     download.add_css_class("flat");
     download.set_action_name(Some("podcasts.toggle-download"));
     download.set_action_target_value(Some(&row.id.to_variant()));
-    let widgets = DownloadRowWidgets {
+    let download_row = DownloadRowWidgets {
         root: root.clone(),
         status,
         action: download.clone(),
         marker,
     };
-    update_download_state(&widgets, context.download_state);
+    update_download_state(&download_row, context.download_state);
     update_network_state(
-        &widgets,
+        &download_row,
         context.download_state,
         context.network.connectivity,
         context.network.unavailable_now,
     );
-    download_widgets.insert(row.id, widgets);
+    widgets.downloads.insert(row.id, download_row);
     root.append(&download);
 
     let menu = gtk4::MenuButton::builder()
