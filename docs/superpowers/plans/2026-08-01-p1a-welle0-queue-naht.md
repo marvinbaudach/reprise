@@ -2,7 +2,7 @@
 slug: p1a-welle0-queue-naht
 worktree: /home/marvin/Projects/reprise-p1a-welle0-queue-naht
 branch: feature/p1a-welle0-queue-naht
-phase: coded
+phase: reviewed
 codex_session:
 created: 2026-08-01
 ---
