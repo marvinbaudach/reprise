@@ -10,6 +10,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gtk4::prelude::*;
+use reprise_core::browser::{BrowserPlace, LibraryScope, TrackCollection, TrackViewState};
 
 use super::*;
 
@@ -74,10 +75,24 @@ fn start_1_loaded_track_is_centered_and_marked_paused() {
 
     let position = 60_u32;
     let track_id = track_list.shared.model.track_at(position).unwrap().id;
+    let sort = track_list
+        .browser_place()
+        .track_state()
+        .expect("the synthetic table must expose track view state")
+        .sort
+        .clone();
 
-    // Exactly what a normal start does, in order: the session restore marks
-    // the loaded track, then the startup routing hands the viewport over.
+    // Exactly what a normal start does, in order: session restore marks the
+    // loaded track, then anchor-free library routing hands the viewport over.
     track_list.update_current_track(track_id, None, CurrentTrackChange::SessionRestore);
+    let startup_place = BrowserPlace::tracks(
+        TrackCollection::Library(LibraryScope::All),
+        TrackViewState {
+            sort,
+            ..TrackViewState::default()
+        },
+    );
+    assert!(track_list.restore_browser_place(&startup_place));
     track_list.center_loaded_track();
 
     let adjustment = track_list.shared.column_view.vadjustment().unwrap();
@@ -111,10 +126,25 @@ fn start_1_loaded_track_is_centered_and_marked_paused() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn start_1_absent_loaded_track_leaves_the_list_at_the_top() {
+fn start_1_absent_loaded_track_does_not_move_the_live_viewport() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let (track_list, window) = synthetic_track_list(100);
+
+    let position = 60;
+    track_list
+        .shared
+        .column_view
+        .scroll_to(position, None, gtk4::ListScrollFlags::FOCUS, None);
+    let adjustment = track_list.shared.column_view.vadjustment().unwrap();
+    crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
+        adjustment.value() > 0.0
+    });
+    let before = adjustment.value();
+    assert!(
+        before > 0.0,
+        "precondition: the list must be scrolled away from the top"
+    );
 
     // A loaded id the library view does not contain — the session ended on a
     // podcast episode, or the track was removed since.
@@ -122,10 +152,9 @@ fn start_1_absent_loaded_track_leaves_the_list_at_the_top() {
     track_list.center_loaded_track();
     crate::ui::test_settle::settle_for(Duration::from_millis(200));
 
-    let adjustment = track_list.shared.column_view.vadjustment().unwrap();
     assert!(
-        adjustment.value().abs() < 0.5,
-        "an unresolvable loaded track must leave the list at the top, actual {}",
+        (adjustment.value() - before).abs() < 1.0,
+        "an unresolvable loaded track moved the viewport: before={before}, after={}",
         adjustment.value()
     );
 

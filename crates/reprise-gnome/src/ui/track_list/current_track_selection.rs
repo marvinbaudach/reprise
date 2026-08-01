@@ -236,6 +236,7 @@ impl TrackList {
         // *loaded* track, not only the running one.
         self.shared.playing_track_id.set(Some(track_id));
         if change == CurrentTrackChange::SessionRestore {
+            // Intentionally set before lookup: the class is inert without a matching row.
             // START-1: a restored track is loaded but not running, so its row
             // must look exactly like a mid-session pause — same marker, same
             // frozen equaliser. `restore_session_queue` fans out a

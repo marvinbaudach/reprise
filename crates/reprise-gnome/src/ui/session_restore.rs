@@ -466,4 +466,49 @@ mod tests {
         assert!(track_place.state.anchor.is_none());
         assert!(track_place.state.selected_ids.is_empty());
     }
+
+    #[test]
+    fn browse_5_restart_restores_sort_and_playback_origin_without_last_location() {
+        use reprise_core::browser::{BrowserPlace, LibraryScope, SortDirection, TrackCollection};
+
+        let db = crate::test_db::open().unwrap();
+        crate::test_db::connection(&db)
+            .execute(
+                "INSERT INTO playlists (id, name, position) VALUES (7, 'Road', 0)",
+                [],
+            )
+            .unwrap();
+        let last_location = BrowserPlace::from(ViewSource::Playlist(7));
+        let mut play_origin = BrowserPlace::from(ViewSource::Library);
+        play_origin.track_state_mut().unwrap().search = "origin query".into();
+        let state = SessionState {
+            sort_field: "year".into(),
+            sort_dir: "desc".into(),
+            browser_place: Some(last_location.clone()),
+            play_origin: Some(SessionSource::Playlist(7)),
+            play_origin_place: Some(play_origin.clone()),
+            ..SessionState::default()
+        };
+
+        session::save(&db, &state).unwrap();
+        let restored = session::load(&db);
+
+        assert_eq!(restored.sort_field, "year");
+        assert_eq!(restored.sort_dir, "desc");
+        assert_eq!(restored.play_origin, Some(SessionSource::Playlist(7)));
+        assert_eq!(restored.play_origin_place, Some(play_origin));
+        assert_eq!(restored.browser_place, Some(last_location.clone()));
+
+        let startup = startup_place(&restored);
+        let BrowserPlace::Tracks(track_place) = startup else {
+            panic!("session startup must route into the track list");
+        };
+        assert_eq!(
+            track_place.collection,
+            TrackCollection::Library(LibraryScope::All)
+        );
+        assert_eq!(track_place.state.sort.field, "year");
+        assert_eq!(track_place.state.sort.direction, SortDirection::Descending);
+        assert_ne!(BrowserPlace::Tracks(track_place), last_location);
+    }
 }
