@@ -49,7 +49,7 @@ pub(crate) struct QueueViewModel {
 #[derive(Clone)]
 pub(crate) struct VirtualContextTail {
     count: usize,
-    window: Rc<dyn Fn(usize, usize) -> Vec<i64>>,
+    window: Rc<dyn Fn(usize, usize) -> Vec<QueueItem>>,
     identity: Option<VirtualContextIdentity>,
 }
 
@@ -61,7 +61,7 @@ pub(crate) struct VirtualContextIdentity {
 
 impl VirtualContextTail {
     #[cfg(test)]
-    pub(crate) fn new(count: usize, window: Rc<dyn Fn(usize, usize) -> Vec<i64>>) -> Self {
+    pub(crate) fn new(count: usize, window: Rc<dyn Fn(usize, usize) -> Vec<QueueItem>>) -> Self {
         Self {
             count,
             window,
@@ -73,13 +73,27 @@ impl VirtualContextTail {
         count: usize,
         sequence: (u64, u64),
         start: usize,
-        window: Rc<dyn Fn(usize, usize) -> Vec<i64>>,
+        window: Rc<dyn Fn(usize, usize) -> Vec<QueueItem>>,
     ) -> Self {
         Self {
             count,
             window,
             identity: Some(VirtualContextIdentity { sequence, start }),
         }
+    }
+
+    pub(crate) fn materialised(items: Vec<QueueItem>, sequence: (u64, u64), start: usize) -> Self {
+        let items: Rc<[QueueItem]> = Rc::from(items);
+        let count = items.len();
+        Self::identified(
+            count,
+            sequence,
+            start,
+            Rc::new(move |offset, limit| {
+                let end = offset.saturating_add(limit).min(items.len());
+                items.get(offset..end).unwrap_or_default().to_vec()
+            }),
+        )
     }
 }
 
@@ -164,11 +178,7 @@ impl QueueViewModel {
         };
         let context_offset = offset.saturating_sub(self.items.len());
         let context_limit = remaining.min(context.count.saturating_sub(context_offset));
-        items.extend(
-            (context.window)(context_offset, context_limit)
-                .into_iter()
-                .map(QueueItem::Track),
-        );
+        items.extend((context.window)(context_offset, context_limit));
         items
     }
 
@@ -240,7 +250,10 @@ pub(crate) fn compose(
                 context_for_window
                     .get(offset..end)
                     .unwrap_or_default()
-                    .to_vec()
+                    .iter()
+                    .copied()
+                    .map(QueueItem::Track)
+                    .collect()
             }),
         )
     });
@@ -324,7 +337,7 @@ mod que_7_tests {
             Rc::new(move |offset, limit| {
                 requested_for_window.set(limit);
                 (offset..offset + limit)
-                    .map(|position| i64::try_from(position).unwrap())
+                    .map(|position| QueueItem::Track(i64::try_from(position).unwrap()))
                     .collect()
             }),
         );
@@ -342,6 +355,60 @@ mod que_7_tests {
         let window = model.items_window(203, 20);
         assert_eq!(window.len(), 20);
         assert_eq!(requested.get(), 20);
+    }
+
+    #[test]
+    fn typed_materialised_context_windows_across_the_manual_boundary() {
+        let context = VirtualContextTail::materialised(
+            vec![QueueItem::Episode(20), QueueItem::Episode(21)],
+            (42, 7),
+            0,
+        );
+        let model = compose_virtual(
+            Some(QueueItem::Episode(19)),
+            &[QueueItem::Track(10)],
+            Some(context),
+            Some("VOID PREACHER"),
+        );
+
+        assert_eq!(model.total_len(), 4);
+        assert_eq!(
+            model.items_window(1, 3),
+            vec![
+                QueueItem::Track(10),
+                QueueItem::Episode(20),
+                QueueItem::Episode(21),
+            ]
+        );
+        assert_eq!(model.sidebar_count(), 1);
+    }
+
+    #[test]
+    fn episode_context_skip_is_one_leading_removal() {
+        let old = compose_virtual(
+            Some(QueueItem::Episode(19)),
+            &[QueueItem::Track(10)],
+            Some(VirtualContextTail::materialised(
+                vec![QueueItem::Episode(20), QueueItem::Episode(21)],
+                (42, 7),
+                0,
+            )),
+            Some("VOID PREACHER"),
+        )
+        .upcoming();
+        let new = compose_virtual(
+            Some(QueueItem::Episode(20)),
+            &[QueueItem::Track(10)],
+            Some(VirtualContextTail::materialised(
+                vec![QueueItem::Episode(21)],
+                (42, 7),
+                1,
+            )),
+            Some("VOID PREACHER"),
+        )
+        .upcoming();
+
+        assert_eq!(new.leading_removal_change_from(&old), Some((1, 1, 0)));
     }
 }
 

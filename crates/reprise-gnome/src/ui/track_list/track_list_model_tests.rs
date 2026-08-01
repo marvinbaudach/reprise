@@ -193,6 +193,7 @@ fn advancing_the_queue_emits_one_leading_removal_instead_of_a_full_replace() {
                         .skip(offset)
                         .take(limit)
                         .copied()
+                        .map(QueueItem::Track)
                         .collect()
                 }),
             ),
@@ -226,6 +227,7 @@ fn advancing_the_queue_emits_one_leading_removal_instead_of_a_full_replace() {
                         .skip(offset)
                         .take(limit)
                         .copied()
+                        .map(QueueItem::Track)
                         .collect()
                 }),
             ),

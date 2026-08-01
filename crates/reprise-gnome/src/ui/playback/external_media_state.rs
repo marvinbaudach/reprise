@@ -5,6 +5,7 @@
 #![allow(dead_code)]
 
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use reprise_core::podcasts::{EpisodeRow, PodcastKind};
 use reprise_core::up_next::QueueItem;
@@ -62,7 +63,10 @@ pub(in crate::ui) enum PodcastPhase {
 pub(super) struct NeighbourContext {
     items: Vec<QueueItem>,
     index: usize,
+    pub(super) sequence: u64,
 }
+
+static NEXT_NEIGHBOUR_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 impl NeighbourContext {
     pub(super) fn for_episode(episode_ids: &[i64], episode_id: i64) -> Option<Self> {
@@ -86,6 +90,7 @@ impl NeighbourContext {
         Some(Self {
             items: items.to_vec(),
             index,
+            sequence: NEXT_NEIGHBOUR_SEQUENCE.fetch_add(1, Ordering::Relaxed),
         })
     }
 
@@ -106,6 +111,16 @@ impl NeighbourContext {
 
     pub(super) fn current_item(&self) -> QueueItem {
         self.items[self.index]
+    }
+
+    /// The items after the current one, in frozen show order.
+    pub(super) fn upcoming(&self) -> &[QueueItem] {
+        &self.items[self.index.saturating_add(1)..]
+    }
+
+    /// Position of the current item — the stable `start` for the tail identity.
+    pub(super) fn position(&self) -> usize {
+        self.index
     }
 
     pub(super) fn previous(&self) -> Option<Self> {
@@ -130,6 +145,7 @@ impl NeighbourContext {
         (index < self.items.len()).then(|| Self {
             items: self.items.clone(),
             index,
+            sequence: self.sequence,
         })
     }
 }

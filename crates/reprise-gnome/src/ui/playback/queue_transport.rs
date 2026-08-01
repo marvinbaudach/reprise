@@ -23,6 +23,9 @@ use reprise_core::media_integration::MprisPlaybackStatus;
 use reprise_core::queue::Queue;
 use reprise_core::up_next::{QueueItem, UpNextQueue};
 
+#[path = "queue_transport_projection.rs"]
+mod projection;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ToggleAction {
     StartCurrent,
@@ -425,17 +428,16 @@ impl PlayerController {
     /// play-order tail. The tail provider clones only requested windows.
     pub(in crate::ui) fn queue_view_model(self: &Rc<Self>) -> QueueViewModel {
         let deferred = self.deferred_queue_purge_id.get();
-        let now_playing = match self.playback_mode() {
-            super::preview::PlaybackMode::Queue => self
-                .current_up_next
-                .get()
-                .or_else(|| self.queue.borrow().current().map(QueueItem::Track)),
-            super::preview::PlaybackMode::QueuedEpisode => self.current_up_next.get(),
-            super::preview::PlaybackMode::Preview
-            | super::preview::PlaybackMode::Podcast
-            | super::preview::PlaybackMode::Radio => None,
-        }
-        .filter(|item| item.track_id().is_none_or(|id| Some(id) != deferred));
+        let mode = self.playback_mode();
+        let current_up_next = self
+            .current_up_next
+            .get()
+            .filter(|item| item.track_id().is_none_or(|id| Some(id) != deferred));
+        let queue_current = self
+            .queue
+            .borrow()
+            .current()
+            .filter(|id| Some(*id) != deferred);
         let play_next = self.up_next.borrow().ids().to_vec();
         let (context_count, context_sequence, context_start) = {
             let queue = self.queue.borrow();
@@ -460,12 +462,26 @@ impl PlayerController {
                 context_start,
                 Rc::new(move |offset, limit| {
                     player.upgrade().map_or_else(Vec::new, |player| {
-                        player.queue.borrow().remaining_window(offset, limit)
+                        player
+                            .queue
+                            .borrow()
+                            .remaining_window(offset, limit)
+                            .into_iter()
+                            .map(QueueItem::Track)
+                            .collect()
                     })
                 }),
             )
         });
-        compose_virtual(now_playing, &play_next, context, origin_label.as_deref())
+        projection::compose_queue_view_model(
+            mode,
+            queue_current,
+            current_up_next,
+            &play_next,
+            context,
+            origin_label.as_deref(),
+            &self.external.borrow(),
+        )
     }
 
     /// QUE-3's "Play next": the given ids jump the manual line (front of
