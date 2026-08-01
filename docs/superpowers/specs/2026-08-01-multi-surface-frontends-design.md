@@ -257,6 +257,34 @@ Verzahnung (geteilte Playlists, Hörstand, Statistiken) ist eine eigene,
 spätere Funktion und **nicht Teil von P7**. Für v1 gilt: eigenständiger
 Player, der denselben Kern hat wie der Desktop.
 
+**B13 — Podcasts und Radio verlassen `reprise-gnome` nie.** Ihre
+Präsentationslogik wandert **nicht** nach `reprise-view`, auch nicht in P1b.
+Beide Oberflächen bieten sie nicht an (3.1), also hätte die geteilte Crate
+für diesen Code keinen zweiten Konsumenten — sie zu migrieren wäre Arbeit
+ohne Gegenwert und würde die Crate aufblähen, die B4 klein halten soll.
+
+Gemessen (`origin/dev`, 2026-08-01): 58 Dateien mit 14.902 LOC unter
+`ui/podcasts/**`, `ui/radio/**` und `strings_podcasts.rs`, davon **33
+Dateien mit 5.593 LOC toolkit-frei** — genau der Anteil, der sonst
+mitgezogen worden wäre.
+
+**YouTube ist davon ausgenommen, weil es kein Subsystem ist.** Es ist eine
+Variante im Kern-Datenmodell (`ViewSource::Youtube`), ein persistiertes
+Feature-Flag (`modules::YOUTUBE_MODULE`) und ein `BrowserPlace::Youtube` in
+`nav_history.rs` — einer Datei, die im Mobil-Zuschnitt liegt und migrieren
+muss. Die neuen Oberflächen lassen das Modul aus und zeigen keine
+YouTube-Ansichten; die Enum-Varianten reisen im geteilten Code mit. Das ist
+ein Ausschluss auf der Oberfläche, nicht im Code, und kostet eine Handvoll
+Match-Arme.
+
+**Rückwirkung auf S1:** Der Spike-Task zu UniFFI (Frage 3) hatte
+`podcasts_presentation.rs` als Prüfobjekt gewählt, weil er verschachtelte
+Strukturen, ein Enum und `BTreeMap` enthält. Diese Datei migriert nun nie.
+Prüfobjekt ist stattdessen `ui/track_list/queue_sections.rs` mit
+`QueueViewModel`, `QueueSection`, `QueueSectionKind` und
+`VirtualContextTail` — dieselben FFI-kritischen Formen, aber im
+Mobil-Zuschnitt und damit tatsächlich grenzüberschreitend.
+
 ### 3.1 Zuschnitte
 
 Zwei Zuschnitte, beide deutlich enger als das GTK-Vollprodukt.
@@ -356,6 +384,10 @@ zugehörigen Strings.
 Die verbleibende toolkit-freie und leicht gekoppelte Logik aus
 `reprise-gnome`, inklusive der Flächen, die nur das GTK-Vollprodukt hat.
 Der Widget-Code (55.651 LOC in 129 Dateien) bleibt in `reprise-gnome`.
+
+**Ausgenommen (B13):** Podcasts und Radio bleiben vollständig in
+`reprise-gnome` — 5.593 LOC toolkit-freier Code, der ohne zweiten
+Konsumenten nichts in einer geteilten Crate zu suchen hat.
 
 **Nebeneffekt beider Pakete:** Jeder Test, der nach `reprise-view` mitwandert,
 läuft ohne Display und deterministisch.
