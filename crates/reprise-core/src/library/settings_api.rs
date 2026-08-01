@@ -6,7 +6,8 @@ use super::{
     get_equalizer_bands_in, get_equalizer_enabled_in, get_gapless_enabled_in,
     get_info_panel_visible_in, get_last_scan_relinked_in, get_last_viewed_import_errors_in,
     get_last_viewed_missing_in, get_library_root_in, get_list_density_in,
-    get_missing_auto_clean_in, get_new_releases_fetch_completed_in, get_onboarding_completed_in,
+    get_missing_auto_clean_in, get_new_releases_fetch_completed_in,
+    get_new_releases_last_completed_at_in, get_onboarding_completed_in,
     get_online_discovery_banner_completed_in, get_player_bar_position_in, get_replay_gain_mode_in,
     get_setting_in, get_sidebar_collapsed_in, get_sidebar_visible_in, get_status_visible_in,
     get_track_transition_in, get_window_decoration_mode_in, get_window_view_mode_in,
@@ -15,7 +16,8 @@ use super::{
     set_equalizer_bands_in, set_equalizer_enabled_in, set_gapless_enabled_in,
     set_info_panel_visible_in, set_last_scan_relinked_in, set_last_viewed_import_errors_in,
     set_last_viewed_missing_in, set_library_root_in, set_list_density_in,
-    set_missing_auto_clean_in, set_new_releases_fetch_completed_in, set_onboarding_completed_in,
+    set_missing_auto_clean_in, set_new_releases_fetch_completed_in,
+    set_new_releases_last_completed_at_in, set_onboarding_completed_in,
     set_online_discovery_banner_completed_in, set_player_bar_position_in, set_replay_gain_mode_in,
     set_setting_in, set_sidebar_collapsed_in, set_sidebar_visible_in, set_status_visible_in,
     set_window_decoration_mode_in, set_window_view_mode_in, AutoCleanSetting, CompactLayout,
@@ -94,6 +96,19 @@ pub fn get_new_releases_fetch_completed(db: &Db) -> Result<bool, rusqlite::Error
 pub fn set_new_releases_fetch_completed(db: &Db, completed: bool) -> Result<(), rusqlite::Error> {
     let conn = db.conn();
     set_new_releases_fetch_completed_in(conn, completed)
+}
+
+pub fn get_new_releases_last_completed_at(db: &Db) -> Result<Option<i64>, rusqlite::Error> {
+    let conn = db.conn();
+    get_new_releases_last_completed_at_in(conn)
+}
+
+pub fn set_new_releases_last_completed_at(
+    db: &Db,
+    completed_at: i64,
+) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
+    set_new_releases_last_completed_at_in(conn, completed_at)
 }
 
 pub fn get_player_bar_position(db: &Db) -> PlayerBarPosition {

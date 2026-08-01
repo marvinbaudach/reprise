@@ -22,7 +22,9 @@ use super::releases_failure_ui::{
 };
 use super::releases_filter_bar::ReleasesFilterBar;
 use super::releases_model::{ReleaseObject, ReleasesModel};
-use super::releases_presentation::{releases_row_action, ReleasesRowAction};
+use super::releases_presentation::{
+    releases_footer_presentation, releases_row_action, ReleasesFooterState, ReleasesRowAction,
+};
 use crate::ui::external_link::{self, LaunchErrorSlot};
 use crate::ui::source_empty_state::SourceFailureState;
 use crate::ui::source_error_banner::SourceErrorBanner;
@@ -35,6 +37,15 @@ const FETCH_ICON_PAGE: &str = "icon";
 const FETCH_SPINNER_PAGE: &str = "spinner";
 
 type Callback = Rc<dyn Fn()>;
+#[cfg(test)]
+type FetchOverride = std::sync::Arc<
+    dyn Fn(
+            &Path,
+            &mut dyn FnMut(artist_news::RefreshProgress),
+        ) -> Result<artist_news::RefreshReport, artist_news::NewsError>
+        + Send
+        + Sync,
+>;
 
 struct Shared {
     conn: Rc<Db>,
@@ -50,7 +61,9 @@ struct Shared {
     fetch_button: gtk4::Button,
     fetch_stack: gtk4::Stack,
     spinner: gtk4::Spinner,
+    fetch_label: gtk4::Label,
     updated: gtk4::Label,
+    progress: gtk4::ProgressBar,
     error_banner: SourceErrorBanner,
     failure_state: SourceFailureState,
     fetch_failure: RefCell<Option<SourceError>>,
@@ -60,6 +73,8 @@ struct Shared {
     empty_state: Cell<ReleasesEmptyState>,
     on_launch_error: LaunchErrorSlot,
     on_refreshed: RefCell<Option<Callback>>,
+    #[cfg(test)]
+    fetch_override: RefCell<Option<FetchOverride>>,
 }
 
 pub(in crate::ui) struct ReleasesView {
@@ -119,7 +134,8 @@ impl ReleasesView {
         let failure_state = SourceFailureState::new("star-new-symbolic");
         stack.add_named(failure_state.widget(), Some(FAILURE_PAGE));
 
-        let (footer, fetch_button, fetch_stack, spinner, updated) = build_footer();
+        let (footer, fetch_button, fetch_stack, spinner, fetch_label, updated, progress) =
+            build_footer();
         let error_banner = SourceErrorBanner::new();
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         root.add_css_class("reprise-releases-view");
@@ -142,7 +158,9 @@ impl ReleasesView {
             fetch_button: fetch_button.clone(),
             fetch_stack,
             spinner,
+            fetch_label,
             updated,
+            progress,
             error_banner,
             failure_state,
             fetch_failure: RefCell::new(None),
@@ -152,6 +170,8 @@ impl ReleasesView {
             empty_state: Cell::new(ReleasesEmptyState::NeverFetched),
             on_launch_error: Rc::new(RefCell::new(None)),
             on_refreshed: RefCell::new(None),
+            #[cfg(test)]
+            fetch_override: RefCell::new(None),
         });
         shared_target.replace(Some(Rc::downgrade(&shared)));
         {
@@ -247,12 +267,9 @@ fn render_cache(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
         ),
         total,
     );
-    shared
-        .updated
-        .set_label(&latest.map_or_else(String::new, |timestamp| {
-            strings::new_releases_updated_ago(timestamp, chrono::Utc::now().timestamp())
-        }));
-    shared.updated.set_visible(latest.is_some());
+    if !shared.fetching.get() {
+        apply_footer(shared, ReleasesFooterState::Idle { latest });
+    }
     render_current_failure(shared);
     Ok(())
 }
@@ -328,6 +345,8 @@ fn build_footer() -> (
     gtk4::Stack,
     gtk4::Spinner,
     gtk4::Label,
+    gtk4::Label,
+    gtk4::ProgressBar,
 ) {
     let footer = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
     for (property, value) in [
@@ -341,8 +360,14 @@ fn build_footer() -> (
     let updated = gtk4::Label::new(None);
     updated.add_css_class("dim-label");
     updated.add_css_class("caption");
-    updated.set_hexpand(true);
-    footer.append(&updated);
+    let progress = gtk4::ProgressBar::new();
+    progress.set_show_text(true);
+    progress.set_visible(false);
+    let status = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
+    status.set_hexpand(true);
+    status.append(&updated);
+    status.append(&progress);
+    footer.append(&status);
     let icon = gtk4::Image::from_icon_name("view-refresh-symbolic");
     let spinner = gtk4::Spinner::new();
     let fetch_stack = gtk4::Stack::new();
@@ -358,7 +383,35 @@ fn build_footer() -> (
         .css_classes(["flat", "new-release-ghost"])
         .build();
     footer.append(&fetch_button);
-    (footer, fetch_button, fetch_stack, spinner, updated)
+    (
+        footer,
+        fetch_button,
+        fetch_stack,
+        spinner,
+        label,
+        updated,
+        progress,
+    )
+}
+
+fn apply_footer(shared: &Shared, state: ReleasesFooterState) {
+    let presentation = releases_footer_presentation(state, chrono::Utc::now().timestamp());
+    shared.fetch_label.set_label(&presentation.fetch_label);
+    match presentation.updated {
+        Some(updated) => {
+            shared.updated.set_label(&updated);
+            shared.updated.set_visible(true);
+        }
+        None => shared.updated.set_visible(false),
+    }
+    match presentation.progress {
+        Some(progress) => {
+            shared.progress.set_text(Some(&progress.text));
+            shared.progress.set_fraction(progress.fraction);
+            shared.progress.set_visible(true);
+        }
+        None => shared.progress.set_visible(false),
+    }
 }
 
 fn request_fetch(shared: &Rc<Shared>) {
@@ -370,9 +423,18 @@ fn request_fetch(shared: &Rc<Shared>) {
         .fetch_stack
         .set_visible_child_name(FETCH_SPINNER_PAGE);
     shared.spinner.start();
+    apply_footer(shared, ReleasesFooterState::Starting);
     let path = shared.database_path.clone();
-    let result = one_shot_task::spawn("reprise-releases", move || fetch_from_database(&path));
-    let Ok(receiver) = result else {
+    #[cfg(test)]
+    let fetch_override = shared.fetch_override.borrow().clone();
+    let result = one_shot_task::spawn_with_progress("reprise-releases", move |publish| {
+        #[cfg(test)]
+        if let Some(fetch_override) = fetch_override {
+            return fetch_override(&path, publish);
+        }
+        fetch_from_database(&path, publish)
+    });
+    let Ok((progress, receiver)) = result else {
         finish_fetch(
             shared,
             Some(SourceError::new(
@@ -383,6 +445,18 @@ fn request_fetch(shared: &Rc<Shared>) {
         );
         return;
     };
+    let weak = Rc::downgrade(shared);
+    gtk4::glib::spawn_future_local(async move {
+        while let Ok(progress) = progress.recv().await {
+            let Some(shared) = weak.upgrade() else {
+                return;
+            };
+            if !shared.fetching.get() {
+                return;
+            }
+            apply_footer(&shared, ReleasesFooterState::Running(progress));
+        }
+    });
     let weak = Rc::downgrade(shared);
     gtk4::glib::spawn_future_local(async move {
         let failure = match receiver.recv().await {
@@ -406,7 +480,10 @@ fn request_fetch(shared: &Rc<Shared>) {
     });
 }
 
-fn fetch_from_database(path: &Path) -> Result<artist_news::RefreshReport, artist_news::NewsError> {
+fn fetch_from_database(
+    path: &Path,
+    on_progress: &mut dyn FnMut(artist_news::RefreshProgress),
+) -> Result<artist_news::RefreshReport, artist_news::NewsError> {
     let conn = reprise_core::db::Db::open_migrated(Some(path))
         .map_err(|error| artist_news::NewsError::Database(error.to_string()))?;
     if !reprise_core::modules::is_enabled(&conn, &reprise_core::modules::NEW_RELEASES_MODULE)
@@ -417,12 +494,13 @@ fn fetch_from_database(path: &Path) -> Result<artist_news::RefreshReport, artist
     let today = Local::now().date_naive();
     let scope = artist_news::configured_fetch_scope(&conn)
         .map_err(|error| artist_news::NewsError::Database(error.to_string()))?;
-    artist_news::refresh(
+    artist_news::refresh_with_progress(
         &conn,
         today,
         scope,
         true,
         crate::ui::updates::release_cover::fallback_accent_for_artist,
+        on_progress,
     )
 }
 
@@ -443,6 +521,7 @@ fn finish_fetch(shared: &Rc<Shared>, failure: Option<SourceError>) {
         *shared.failure_occurred_at.borrow_mut() = chrono::Utc::now().to_rfc3339();
     }
     if let Err(error) = render_cache(shared) {
+        apply_footer(shared, ReleasesFooterState::Idle { latest: None });
         tracing::warn!(%error, "could not reload Releases after fetch");
     }
     notify_refreshed(shared);
@@ -522,6 +601,15 @@ fn wire_sorting(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
 mod tests {
     use super::*;
 
+    fn pump_until(label: &str, condition: impl Fn() -> bool) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !condition() {
+            while gtk4::glib::MainContext::default().iteration(false) {}
+            assert!(std::time::Instant::now() < deadline, "timed out: {label}");
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn nr_20_releases_view_exposes_filters_six_columns_and_footer() {
@@ -552,6 +640,76 @@ mod tests {
                 .id()
                 .as_deref(),
             Some("date")
+        );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn nr_22_fetch_action_replaces_stale_age_with_progress_then_updates_completion_age() {
+        gtk4::init().unwrap();
+        let conn = Rc::new(crate::test_db::open().unwrap());
+        reprise_core::modules::set_enabled(
+            &conn,
+            &reprise_core::modules::NEW_RELEASES_MODULE,
+            true,
+        )
+        .unwrap();
+        reprise_core::library::settings::set_new_releases_last_completed_at(
+            &conn,
+            chrono::Utc::now().timestamp() - 360,
+        )
+        .unwrap();
+
+        let path = conn.path().unwrap();
+        let view = ReleasesView::new(conn, path);
+        view.shared
+            .fetch_override
+            .replace(Some(std::sync::Arc::new(|path, publish| {
+                publish(artist_news::RefreshProgress {
+                    checked: 0,
+                    total: 1,
+                });
+                std::thread::sleep(std::time::Duration::from_millis(250));
+                let db = Db::open_migrated(Some(path))
+                    .map_err(|error| artist_news::NewsError::Database(error.to_string()))?;
+                reprise_core::library::settings::set_new_releases_last_completed_at(
+                    &db,
+                    chrono::Utc::now().timestamp(),
+                )
+                .map_err(|error| artist_news::NewsError::Database(error.to_string()))?;
+                publish(artist_news::RefreshProgress {
+                    checked: 1,
+                    total: 1,
+                });
+                Ok(artist_news::RefreshReport {
+                    artists_queued: 1,
+                    artists_fetched: 1,
+                    ..artist_news::RefreshReport::default()
+                })
+            })));
+        view.refresh();
+        let stale_age = view.shared.updated.text();
+        assert!(stale_age.contains("6 min ago"), "{stale_age}");
+
+        view.shared.fetch_button.emit_clicked();
+        assert!(!view.shared.updated.is_visible());
+        assert_eq!(
+            view.shared.fetch_stack.visible_child_name().as_deref(),
+            Some(FETCH_SPINNER_PAGE)
+        );
+        pump_until("determinate release progress", || {
+            view.shared.progress.text().as_deref() == Some("Checked 0 of 1 artists")
+        });
+        assert!(view.shared.progress.is_visible());
+
+        pump_until("release fetch completion", || !view.shared.fetching.get());
+        assert!(!view.shared.progress.is_visible());
+        assert!(view.shared.updated.is_visible());
+        assert_eq!(view.shared.updated.text().as_str(), "Updated just now");
+        assert!(view.shared.fetch_button.is_sensitive());
+        assert_eq!(
+            view.shared.fetch_stack.visible_child_name().as_deref(),
+            Some(FETCH_ICON_PAGE)
         );
     }
 }

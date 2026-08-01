@@ -1749,11 +1749,9 @@ the panel).
   row actions (Show in library) navigate normally and close the
   popover; the history is a popover-internal subpage without
   navigation.
-- **NR-6** [active] [gtk] — „Fetch now" replaces its refresh icon with
-  a spinner during the fetch and otherwise shows the age of the last
+- **NR-6** [replaced by NR-22] [gtk] — „Fetch now" replaces its refresh icon
+  with a spinner during the fetch and otherwise shows the age of the last
   update. Offline or error still show the last cache along with its age.
-  The shared failure surface is specified by NR-21; this rule remains the
-  authoritative version for New Releases' own spinner mechanics.
 - **NR-7** [active] [gtk] — New Releases is a plugin on the plugins
   page, off by default, with the privacy subtitle „contacts
   MusicBrainz" and a choice of „Top artists only / all artists". With
@@ -1886,8 +1884,14 @@ the panel).
   only there. Offline is written from the window's explicit connectivity
   value, dims the remote-action rows, and never overwrites a provider
   failure already on screen; reconnect removes only an offline-authored
-  notice. A successful fetch removes the notice silently. NR-6's spinner
+  notice. A successful fetch removes the notice silently. NR-22's spinner
   and NR-8's consent and first-fetch loop remain unchanged.
+- **NR-22** [active] [core] [gtk] — „Fetch now" replaces its refresh icon with
+  a spinner during the fetch. The Releases footer replaces the stale update
+  age with determinate checked/total artist progress for that run, then shows
+  the age measured from the completed update again, including a successful run
+  with no queued artists. Offline or error still show the last cache and its
+  previous age. The shared failure surface remains specified by NR-21.
 ## S. Surfaces & Geometry
 
 <!-- Section letter: R (New Releases) is the last one assigned; S follows
@@ -2085,7 +2089,7 @@ property is set and yet nothing happens.
 
   This rule is active because all lettered sub-rules and their GTK
   presentation are wired. It consolidates the shared "a cache is never an
-  error" principle that `NR-6`, `NR-8` and `CONC-4b` each already state in
+  error" principle that `NR-22`, `NR-8` and `CONC-4b` each already state in
   their own words for their own surface. NR-21 and CONC-11 now specify their
   shared banner, Details, and explicit-connectivity rendering without changing
   the existing fetch, consent, credential, or filter mechanics. `INST-12`
