@@ -294,7 +294,7 @@ rebase onto this branch first, not merge past it.
 | Owner | Files |
 | --- | --- |
 | multi-surface-frontends | `crates/reprise-view/**`, the `members` list in the workspace `Cargo.toml`, `scripts/check-architecture.sh` |
-| multi-surface-frontends | `docs/superpowers/specs/2026-08-01-multi-surface-frontends-design.md`, `docs/superpowers/plans/2026-08-01-multi-surface-p0-s1.md`, this section of `AGENTS.md` |
+| multi-surface-frontends | `docs/superpowers/specs/2026-08-01-multi-surface-frontends-design.md`, `docs/superpowers/plans/2026-08-01-multi-surface-p0-s1.md`, `docs/research/android-spike-2026-08.md`, this section of `AGENTS.md` |
 | sibling branches — excluded | everything under `crates/reprise-gnome/**` until P1a opens |
 
 ### P1a — the mobile slice of reprise-view (not yet open)
@@ -304,15 +304,15 @@ land. Until then no `reprise-gnome` path is owned by this branch.
 
 ### Plans parked for P0
 
-These carried an unfinished phase when P0 started (2026-08-01). Each must
-land or be explicitly parked before P1a opens, because P1a moves files they
-touch:
+These carried an unfinished phase when P0 started (2026-08-01). Those marked
+BLOCKING must land or be explicitly parked before P1a opens, because P1a
+moves files they touch:
 
-| Plan | Phase at P0 start |
-| --- | --- |
-| `docs/plans/podcasts-radio.md` | planned |
-| `docs/plans/motion-player.md` | planned |
-| `docs/plans/audio-character-mcp.md` | ready-for-review |
-| `docs/plans/list-views-fixes.md` | refactored |
-| `docs/plans/ux-rules-motion.md` | reviewed |
-| `docs/plans/podcast-row-click-selection.md` | coded |
+| Plan | Phase at P0 start | P1a |
+| --- | --- | --- |
+| `docs/plans/motion-player.md` | planned | **BLOCKING** — player surface is in the mobile cut |
+| `docs/plans/audio-character-mcp.md` | ready-for-review | **BLOCKING** |
+| `docs/plans/list-views-fixes.md` | refactored | **BLOCKING** — track-list surface is in the mobile cut |
+| `docs/plans/ux-rules-motion.md` | reviewed | **BLOCKING** |
+| `docs/plans/podcasts-radio.md` | planned | clear — spec B13 keeps podcasts and radio out of `reprise-view` entirely, so P1a never touches their files |
+| `docs/plans/podcast-row-click-selection.md` | coded | clear — same reason (B13) |
