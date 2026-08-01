@@ -61,13 +61,17 @@ over `(&mut BTreeSet<i64>, &mut Option<i64>, &[i64], i64)`, and both
 `PodcastSelection` and `YoutubeChannelState` call them. One implementation, two
 owners of state.
 
-### 2. Rendered order in view state
+### 2. Rendered order, derived not cached
 
-`podcasts_view` already computes the rendered groups. Rendering records the
-visible episode ids into an `Rc<RefCell<Vec<i64>>>` held by the view, in render
-order across all groups, replacing the previous contents. Shift-click reads it.
-The existing `retain_available` call keeps the selection itself pruned; the
-order vector is rebuilt wholesale and needs no pruning.
+The order is a pure function of the data the view already holds: the groups,
+the set of expanded groups, and the set of groups showing all their episodes.
+It is computed on each selection rather than recorded at render time, because
+expanding a group writes `expanded_sources` straight from the expander's
+`notify` handler without re-rendering — a cached order would be wrong as soon
+as a user opened a group. The walk is over ids and runs once per click.
+
+Because the function reads the same inputs the render path reads, the two
+cannot disagree about what is on screen.
 
 ### 3. Pointer semantics
 
@@ -95,8 +99,15 @@ single click that both selects and plays cannot express "select these four".
 
 Enter and KP_Enter keep playing the focused row. **Space stops playing and
 toggles the focused row's selection** — the keyboard partner for Ctrl-click, and
-what `ColumnView` does. Shift+Up/Down extends the selection along the same
-rendered order, moving focus with it.
+what `ColumnView` does. **Shift+Space** takes the range from the anchor to the
+focused row, the partner for Shift-click.
+
+Shift+Arrow is deliberately not used. It would have to move focus between row
+widgets this view rebuilds on every data change, which needs focus bookkeeping
+that Shift+Space does not: the anchor already lives in the selection state, and
+focus travels by ordinary arrow/Tab navigation.
+
+This only works because applying a selection no longer re-renders (§7).
 
 `scripts/check-input-parity.sh` requires every new gesture to name a tested
 keyboard partner in an `// input-parity: ACC-8 keyboard=<partner>` marker, and
@@ -121,6 +132,21 @@ from both the hover tint (`reprise-hover`) and the loaded-row treatment, since a
 row can be selected, hovered and loaded at once. Selection uses the platform
 accent fill; the loaded row keeps its existing marker and dimmed thumbnail.
 
+### 7. Applying a selection stops rebuilding the list
+
+Every selection change currently ends in `render()`, which rebuilds every row
+widget. Nothing restores keyboard focus afterwards (there is no `grab_focus`
+anywhere in the podcasts UI), so the focused row ceases to exist on each change.
+That is survivable while selection is checkbox-and-mouse only; it makes keyboard
+selection impossible, because the second `Space` has nothing to land on.
+
+The view therefore holds the per-episode row widgets — the same pattern
+`download_widgets` already uses — and pushes the selection onto them directly:
+CSS class, checkbox state, and the selected-count label. The checkbox's own
+`toggled` handler is blocked during that push so it cannot re-enter through
+`podcasts.set-selected`. `render()` keeps rebuilding on real data changes;
+it just is not how a selection is shown any more.
+
 ## Rules and tests
 
 New rule, next free id (`SRC-13` is the highest in use):
@@ -128,10 +154,11 @@ New rule, next free id (`SRC-13` is the highest in use):
 > **SRC-14** [active] [gtk] — Episode rows select like track rows: a click
 > selects the row alone, Ctrl-click toggles it, Shift-click extends the
 > selection across the rendered order, and playback needs a double click or
-> Enter. Space toggles the focused row. A secondary click on a row outside the
-> selection makes that row the selection before the menu opens, so a menu never
-> acts on rows the pointer is not on. Range selection covers only rows that are
-> actually rendered.
+> Enter. Space toggles the focused row and Shift+Space extends from the anchor.
+> A secondary click on a row outside the selection makes that row the selection
+> before the menu opens, so a menu never acts on rows the pointer is not on.
+> Range selection covers only rows that are actually rendered. Applying a
+> selection never rebuilds the list, so keyboard focus survives it.
 
 `scripts/check-ux-traceability.sh` fails an `[active]` rule with no test naming
 its id, and the rule and its implementation must land in one commit.
