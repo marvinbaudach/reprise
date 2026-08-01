@@ -1,8 +1,8 @@
 ---
 slug: start-center-loaded-track
-worktree: /home/marvin/Projects/reprise-start-center-loaded-track
-branch: feature/start-center-loaded-track
-phase: planned
+worktree:
+branch:
+phase: shipped
 codex_session:
 created: 2026-08-01
 ---
