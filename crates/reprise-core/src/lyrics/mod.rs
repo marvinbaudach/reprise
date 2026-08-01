@@ -10,6 +10,7 @@
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+mod batch;
 mod breaker;
 mod cache;
 mod chain;
@@ -20,7 +21,8 @@ mod model;
 mod netease;
 mod sidecar_write;
 
-pub use cache::{needs_fetch, NeedsFetch};
+pub use batch::{run_batch, BatchProgress, BatchRunStatus, BatchState, BatchTrack};
+pub use cache::NeedsFetch;
 pub use local::local_hit;
 pub use lrc::{active_line_index, parse_lrc};
 pub use lrclib::request_url;
@@ -60,6 +62,23 @@ pub fn load_or_fetch_with_options(
     track_path: Option<&Path>,
     options: LookupOptions,
 ) -> Result<LyricsHit, LyricsError> {
+    load_or_fetch_with_cache_context(query, track_path, options, None)
+}
+
+fn load_or_fetch_with_cache_decision(
+    query: &LyricsQuery,
+    track_path: Option<&Path>,
+    decision: &cache::CacheDecision,
+) -> Result<LyricsHit, LyricsError> {
+    load_or_fetch_with_cache_context(query, track_path, LookupOptions::default(), Some(decision))
+}
+
+fn load_or_fetch_with_cache_context(
+    query: &LyricsQuery,
+    track_path: Option<&Path>,
+    options: LookupOptions,
+    cache_decision: Option<&cache::CacheDecision>,
+) -> Result<LyricsHit, LyricsError> {
     let now = unix_timestamp();
     let local = LocalProvider;
     let lrclib = lrclib::production_provider(now, options.force);
@@ -70,14 +89,17 @@ pub fn load_or_fetch_with_options(
     } else {
         &[]
     };
-    load_or_fetch_at(
+    load_or_fetch_with_cache_context_at(
         &cache::cache_dir(),
         now,
         query,
         track_path,
         options,
-        &[&local],
-        network,
+        cache_decision,
+        LookupProviders {
+            local: &[&local],
+            network,
+        },
     )
 }
 
@@ -85,6 +107,7 @@ pub fn all_network_breakers_open() -> bool {
     breaker::HOST_BREAKER.all_open(&[lrclib::HOST, netease::HOST], unix_timestamp())
 }
 
+#[cfg(test)]
 fn load_or_fetch_at(
     cache_dir: &Path,
     now: i64,
@@ -94,15 +117,46 @@ fn load_or_fetch_at(
     local_providers: &[&dyn LyricsProvider],
     network_providers: &[&dyn LyricsProvider],
 ) -> Result<LyricsHit, LyricsError> {
-    let local_plain = match best_local(query, track_path, local_providers) {
+    load_or_fetch_with_cache_context_at(
+        cache_dir,
+        now,
+        query,
+        track_path,
+        options,
+        None,
+        LookupProviders {
+            local: local_providers,
+            network: network_providers,
+        },
+    )
+}
+
+fn load_or_fetch_with_cache_context_at(
+    cache_dir: &Path,
+    now: i64,
+    query: &LyricsQuery,
+    track_path: Option<&Path>,
+    options: LookupOptions,
+    cache_decision: Option<&cache::CacheDecision>,
+    providers: LookupProviders<'_>,
+) -> Result<LyricsHit, LyricsError> {
+    let local_plain = match best_local(query, track_path, providers.local) {
         LocalLookup::Final(hit) => return Ok(hit),
         LocalLookup::Plain(hit) => hit,
     };
     let cached = cache::read_cache(cache_dir, query);
 
     if !options.force {
-        if let Some(result) = cached_result(cached.as_ref(), local_plain.as_ref(), now) {
-            return result;
+        let classification = cache_decision
+            .filter(|decision| decision.still_applies_to(cached.as_ref(), now))
+            .map_or_else(
+                || cache::classify(cached.as_ref(), now),
+                cache::CacheDecision::classification,
+            );
+        if classification == NeedsFetch::Skip {
+            if let Some(result) = skipped_result(cached.as_ref(), local_plain.as_ref()) {
+                return result;
+            }
         }
     }
     if !options.allow_network {
@@ -112,7 +166,7 @@ fn load_or_fetch_at(
         return local_plain.ok_or(LyricsError::MissingMetadata);
     }
 
-    let report = run_chain(query, track_path, local_plain.clone(), network_providers);
+    let report = run_chain(query, track_path, local_plain.clone(), providers.network);
     match report.result {
         Ok(hit) => {
             if is_local(hit.source) {
@@ -141,6 +195,12 @@ fn load_or_fetch_at(
     }
 }
 
+#[derive(Clone, Copy)]
+struct LookupProviders<'a> {
+    local: &'a [&'a dyn LyricsProvider],
+    network: &'a [&'a dyn LyricsProvider],
+}
+
 enum LocalLookup {
     Final(LyricsHit),
     Plain(Option<LyricsHit>),
@@ -167,30 +227,13 @@ fn best_local(
     LocalLookup::Plain(plain)
 }
 
-fn cached_result(
+fn skipped_result(
     cached: Option<&cache::CacheRecord>,
     local_plain: Option<&LyricsHit>,
-    now: i64,
 ) -> Option<Result<LyricsHit, LyricsError>> {
-    match cached.map(|record| &record.result) {
-        Some(CachedResult::Found(
-            hit @ LyricsHit {
-                body: LyricsBody::Synced(_) | LyricsBody::Instrumental,
-                ..
-            },
-        )) => Some(Ok(prefer_local_plain(local_plain.cloned(), hit.clone()))),
-        Some(CachedResult::Found(hit))
-            if cached.is_some_and(|record| cache::plain_retry_is_fresh(record, now)) =>
-        {
-            Some(Ok(prefer_local_plain(local_plain.cloned(), hit.clone())))
-        }
-        Some(CachedResult::Found(_)) => None,
-        Some(CachedResult::NotFound)
-            if cached.is_some_and(|record| cache::negative_is_fresh(record, now)) =>
-        {
-            Some(local_plain.cloned().ok_or(LyricsError::NotFound))
-        }
-        _ => None,
+    match &cached?.result {
+        CachedResult::Found(hit) => Some(Ok(prefer_local_plain(local_plain.cloned(), hit.clone()))),
+        CachedResult::NotFound => Some(local_plain.cloned().ok_or(LyricsError::NotFound)),
     }
 }
 
