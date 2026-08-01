@@ -318,6 +318,39 @@ v1 ist der Zuschnitt, nicht das Mockup. Zwei Korrekturen sind dabei benannt:
 2. **Bewertungen, Favoriten und Abspielzähler bleiben v2**, zusammen mit den
    Statistiken (3.1).
 
+**B15 — Waveform-Peaks reisen mit der Datei; Android rechnet nur im
+Notfall.** Die Scrubber-Waveform aus Design 1a ist `tracks.waveform_peaks`
+(1000 `u8` je Titel), heute berechnet aus dekodiertem Audio über den
+Core-Vertrag `WaveformBackend` — mit genau einer Implementierung
+(`reprise-platform-linux`, GStreamer). Eine ganze Bibliothek auf dem Telefon
+zu dekodieren ist akkufeindlich und unnötig, weil der Desktop das Ergebnis
+schon hat.
+
+Dreistufig:
+
+1. **Der Desktop exportiert die Peaks neben die Datei**, und der Geräte-Sync
+   nimmt sie mit. Das ist keine neue Maschinerie: `device_sync` schreibt
+   heute schon Nicht-Audio-Artefakte aufs Gerät (M3U-Playlists über
+   `PlaylistWrite`).
+2. **Android liest sie, wenn vorhanden** — dann ist die Waveform gratis und
+   `reprise-android` braucht **keine** `WaveformBackend`-Implementierung.
+   Das streicht einen Posten aus P4a.
+3. **Fehlen sie, rechnet Android nur für den laufenden Titel**, nie als
+   Bibliotheks-Durchlauf. Das ist der Fall des eigenständigen Nutzers (B12),
+   der nie synchronisiert — er bekommt einen Scrubber, aber keinen
+   Akkufresser.
+
+**Träger: Sidecar-Datei, nicht Tag im Audio** — zu bestätigen in P4a.
+Begründung: Das Projekt hat mit den LRC-Lyrics bereits ein Sidecar-Muster
+samt Writeback-Spec, und 1 KB Peaks rechtfertigen kein Umschreiben großer
+Audiodateien mit der zugehörigen `mtime`-Unruhe und Rescan-Last. Der
+Gegenvorschlag (Custom-Tag über `lofty`) reist zwar bei jedem Dateikopieren
+automatisch mit und bräuchte gar keine Sync-Änderung — er wird in P4a gegen
+diese Begründung geprüft, nicht stillschweigend verworfen.
+
+Die Song-Analyse (`track_audio_analysis`) ist hiervon **nicht** betroffen:
+sie wurde entfernt (`db_drop_audio_analysis_mix.rs`) und kommt nicht zurück.
+
 ### 3.1 Zuschnitte
 
 Zwei Zuschnitte, beide deutlich enger als das GTK-Vollprodukt.
@@ -442,6 +475,15 @@ Implementierungen: `zbus` (Linux) und in-process (Android, Windows, macOS).
 
 Umsetzung des in S1 bestätigten Weges gegen die bestehenden Core-Verträge
 (`playback`, `media_integration`); es entstehen keine neuen Verträge.
+
+**Ohne `WaveformBackend`** im Normalfall — die Peaks reisen mit der Datei
+(B15); nur der Notfallpfad für den laufenden Titel braucht Dekodierung, und
+die liefert Media3 ohnehin.
+
+**Die Desktop-Hälfte von B15** — Peaks neben die Datei exportieren und im
+Geräte-Sync mitnehmen — ist Arbeit an `reprise-core` und
+`reprise-platform-linux`, nicht an Android. Sie hängt an keinem
+Spike-Befund, kann unabhängig von P7 landen und nützt sofort.
 
 ### P4b — Plattform-Backends Windows und macOS
 
