@@ -10,6 +10,7 @@
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+mod batch;
 mod breaker;
 mod cache;
 mod chain;
@@ -20,6 +21,7 @@ mod model;
 mod netease;
 mod sidecar_write;
 
+pub use batch::{run_batch, BatchProgress, BatchRunStatus, BatchState, BatchTrack};
 pub use cache::{needs_fetch, NeedsFetch};
 pub use local::local_hit;
 pub use lrc::{active_line_index, parse_lrc};

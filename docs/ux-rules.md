@@ -2210,7 +2210,7 @@ property is set and yet nothing happens.
   and 5xx failures open a per-host circuit breaker after three failures for
   five minutes; a user retry bypasses cache and breaker. The Lyrics footer
   names the source and whether the result is synchronized.
-- **LYR-6** [active] [gtk] — With the Online Lyrics module enabled, a
+- **LYR-6** [active] [core] [gtk] — With the Online Lyrics module enabled, a
   cancellable serial background run fills the lyrics cache for the present
   library after the cover batch, after completed library scans, and the moment
   the module is switched on — switching it on starts the run once; a further
