@@ -302,17 +302,24 @@ rebase onto this branch first, not merge past it.
 Package boundaries are drawn when P1a is planned, after the S1 findings
 land. Until then no `reprise-gnome` path is owned by this branch.
 
-### Plans parked for P0
+### Plans checked before P1a — all resolved (2026-08-01)
 
-These carried an unfinished phase when P0 started (2026-08-01). Those marked
-BLOCKING must land or be explicitly parked before P1a opens, because P1a
-moves files they touch:
+Four plans carried an unfinished `phase:` when P0 started. None of their
+branches still existed, and a check against `origin/dev` found the work
+finished in every case. The fields were stale, not the work.
 
-| Plan | Phase at P0 start | P1a |
-| --- | --- | --- |
-| `docs/plans/motion-player.md` | planned | **BLOCKING** — player surface is in the mobile cut |
-| `docs/plans/audio-character-mcp.md` | ready-for-review | **BLOCKING** |
-| `docs/plans/list-views-fixes.md` | refactored | **BLOCKING** — track-list surface is in the mobile cut |
-| `docs/plans/ux-rules-motion.md` | reviewed | **BLOCKING** |
-| `docs/plans/podcasts-radio.md` | planned | clear — spec B13 keeps podcasts and radio out of `reprise-view` entirely, so P1a never touches their files |
-| `docs/plans/podcast-row-click-selection.md` | coded | clear — same reason (B13) |
+| Plan | was | is | Evidence |
+| --- | --- | --- | --- |
+| `docs/plans/motion-player.md` | planned | **shipped** | MOT-5 `[active]`; `waveform_seek.rs` carries `crossfade_progress`/`desaturation_progress`, `player_bar.rs` carries `animate_play_pulse()` |
+| `docs/plans/ux-rules-motion.md` | reviewed | **shipped** | both phases merged; `ui/motion.rs` exists with the planned tokens; `check-motion-tokens.sh` has an empty phase-two allowlist |
+| `docs/plans/list-views-fixes.md` | refactored | **shipped** | every measure verified in code (cover centring, duration format, episode window of 10, title tail dedup, `image_url` migration) |
+| `docs/plans/audio-character-mcp.md` | ready-for-review | **reverted** | shipped 2026-07-19/20, then removed wholesale by `eda0edaebb`; migration v27 drops its tables. No production code remains |
+
+`reverted` is a new value in the pipeline's status vocabulary. It was
+introduced deliberately: neither `shipped` (nothing is left) nor `planned`
+(it went much further) would have been honest.
+
+**Consequence: P1a is not blocked.** No open plan work touches its target
+areas (`track_list`, `playback`, `now_playing`, `lyrics`, playlists, search,
+scan). The motion work sits *in* those areas but is finished — P1a moves it
+like any other code.

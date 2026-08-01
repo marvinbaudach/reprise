@@ -2,7 +2,7 @@
 slug: ux-rules-motion
 worktree: /home/marvin/Projects/reprise/.worktrees/transitions
 branch: feat/ux-rules-motion
-phase: reviewed
+phase: shipped
 codex_session:
 created: 2026-07-17
 ---
