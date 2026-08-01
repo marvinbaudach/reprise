@@ -23,6 +23,8 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$repo_root"
 
 frontend=crates/reprise-gnome/src
+shared_view=crates/reprise-view/src
+view_floor=0
 
 echo "== Frontend thinness =="
 
@@ -133,6 +135,40 @@ elif (( worker_files < budget[workers] )); then
   failed=1
 else
   echo "  workers: ${worker_files} files (at budget)"
+fi
+
+echo "== Shared view layer =="
+
+# P1a moves production presentation logic from reprise-gnome into
+# reprise-view. Unlike the frontend budgets above, this number is a floor:
+# every migration wave raises it in the same commit that moves code. Tests,
+# blank lines and comment-only lines do not count.
+shared_view_code() {
+  local file
+  while IFS= read -r file; do
+    awk '
+      /^#\[cfg\(test\)\]/ { skipping = 1; next }
+      skipping && /^\}/      { skipping = 0; next }
+      skipping                { next }
+      /^[[:space:]]*$/        { next }
+      /^[[:space:]]*(\/\/|\/\*|\*)/ { next }
+      { print }
+    ' "$file"
+  done < <(find "$shared_view" -name '*.rs' -type f | sort)
+}
+
+view_lines=$(shared_view_code | wc -l)
+view_lines=${view_lines//[[:space:]]/}
+if (( view_lines < view_floor )); then
+  echo "shared view layer: production lines fell from $view_floor to $view_lines" >&2
+  echo "  the shared view layer must grow, not shrink — move presentation logic into reprise-view" >&2
+  failed=1
+elif (( view_lines > view_floor )); then
+  echo "shared view layer: production lines are up to $view_lines (floor still says $view_floor)" >&2
+  echo "  raise view_floor in scripts/check-frontend-thinness.sh to $view_lines" >&2
+  failed=1
+else
+  echo "  production lines: $view_lines (at floor)"
 fi
 
 echo "== Dead-code allowlist =="
