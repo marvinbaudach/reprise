@@ -722,14 +722,33 @@ Prüfe und protokolliere je Szenario, ob Wiedergabe und Runtime überleben:
 - Systemseitiger Speicherdruck
 - Doze-Modus
 
-- [ ] **Step 3: Die Lease-Frage klären**
+- [ ] **Step 3: Die zwei Grundpflichten mitprüfen**
+
+Der Service läuft ohnehin — dann kann er gleich zeigen, ob er sich wie ein
+Musikplayer benimmt. Beides ist auf Android nicht optional, und beides
+fällt später teuer auf, wenn es die Architektur nicht hergibt:
+
+1. **Audio-Focus.** Ein eingehender Anruf pausiert, eine Benachrichtigung
+   duckt, danach wird korrekt fortgesetzt. Halte fest, ob Media3 das
+   selbst erledigt oder ob der Runtime-Transport davon erfahren muss —
+   das entscheidet, ob `reprise-runtime` einen neuen Zustandsübergang
+   braucht.
+2. **`ACTION_AUDIO_BECOMING_NOISY`.** Kopfhörer abgezogen oder
+   Bluetooth getrennt → pausieren, nicht über den Lautsprecher
+   weiterdröhnen.
+
+Diese beiden sind Wiedergabeverhalten, keine Oberflächenregeln — sie
+gehören zu P4a und nicht zu P7. Der Spike klärt hier nur, ob die
+Architektur sie überhaupt trägt.
+
+- [ ] **Step 4: Die Lease-Frage klären**
 
 Spec §9.3 des Multi-Frontend-Plans verlangt eine Single-Owner-Lease über
 eine Dateisperre unter `XDG_RUNTIME_DIR`. Auf Android gibt es das nicht.
 Halte fest, was an dessen Stelle tritt — und ob überhaupt etwas nötig ist,
 wenn der Service per Konstruktion der einzige Wirt ist.
 
-- [ ] **Step 4: Befund und Urteil schreiben**
+- [ ] **Step 5: Befund und Urteil schreiben**
 
 ```markdown
 ## Frage 2 — Kann ein MediaSessionService die Runtime beherbergen?
@@ -738,6 +757,8 @@ Hintergrund + Bildschirm aus:
 Aus Recents gewischt:
 Speicherdruck:
 Doze:
+Audio-Focus (Anruf/Ducking/Fortsetzen), und ob die Runtime davon erfahren muss:
+ACTION_AUDIO_BECOMING_NOISY:
 Ersatz für die Single-Owner-Lease:
 
 **Urteil:**

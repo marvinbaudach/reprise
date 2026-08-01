@@ -535,6 +535,16 @@ Umsetzung des in S1 bestätigten Weges gegen die bestehenden Core-Verträge
 (B15); nur der Notfallpfad für den laufenden Titel braucht Dekodierung, und
 die liefert Media3 ohnehin.
 
+**Die mobilen Grundpflichten gehören hierher, nicht zu P7.** Audio-Focus
+(Anruf pausiert, Benachrichtigung duckt, danach fortsetzen),
+`ACTION_AUDIO_BECOMING_NOISY` (Kopfhörer ab → pausieren), MediaSession mit
+Sperrbildschirm- und Benachrichtigungssteuerung, Verhalten unter Doze. Das
+ist Wiedergabeverhalten, kein Aussehen — es hängt an keiner
+Designentscheidung und darf nicht auf P7 warten. Das heutige Regelwerk hat
+dazu **null** Regeln (gemessen 2026-08-01), weil eine Desktop-App nichts
+davon braucht; sie werden mit P4a als `[planned]`-Entwürfe angelegt, nach
+dem in den Process rules beschriebenen Weg.
+
 **Die Desktop-Hälfte von B15** — die Peaks im Geräte-Sync mitschreiben — ist
 Arbeit an `reprise-core`, `reprise-platform-linux` und der
 `device_sync`-Verdrahtung im GTK-Frontend, nicht an Android. Sie hängt an
