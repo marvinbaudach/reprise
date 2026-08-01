@@ -46,13 +46,30 @@ pub(crate) fn fnv1a_64(bytes: &[u8]) -> u64 {
     })
 }
 
-/// The most recent attempt across all artists, or `None` if no artist has
-/// ever been attempted. Reads the ledger rather than `new_releases`: a
-/// library whose artists simply have no news would otherwise look like it
-/// had never refreshed, and `refresh_due` would fire on every timer tick.
+/// The most recent successful refresh completion or artist attempt, or `None`
+/// if neither exists. A separate completion timestamp covers an empty library
+/// and starts the displayed age when the whole run finishes. The artist ledger
+/// remains the compatibility fallback for databases refreshed before that
+/// timestamp existed.
 pub fn latest_fetched_at(db: &crate::db::Db) -> Result<Option<i64>, rusqlite::Error> {
     let conn = db.conn();
-    crate::artist_news_ledger::latest_attempt(conn)
+    let latest_attempt = crate::artist_news_ledger::latest_attempt(conn)?;
+    let latest_completion = crate::library::settings::get_new_releases_last_completed_at(db)?;
+    Ok(latest_completion.or(latest_attempt))
+}
+
+/// Captures the old ledger-derived age before a refresh can append a failed
+/// attempt. Once seeded, only successful whole runs move this timestamp.
+pub(crate) fn seed_completion_from_legacy_ledger(
+    db: &crate::db::Db,
+) -> Result<(), rusqlite::Error> {
+    if crate::library::settings::get_new_releases_last_completed_at(db)?.is_some() {
+        return Ok(());
+    }
+    let Some(latest_attempt) = crate::artist_news_ledger::latest_attempt(db.conn())? else {
+        return Ok(());
+    };
+    crate::library::settings::set_new_releases_last_completed_at(db, latest_attempt)
 }
 
 #[cfg(test)]

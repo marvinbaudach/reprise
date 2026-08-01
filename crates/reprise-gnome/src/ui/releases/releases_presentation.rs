@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use chrono::NaiveDate;
-use reprise_core::artist_news::{release_status, ReleaseStatus};
+use reprise_core::artist_news::{release_status, RefreshProgress, ReleaseStatus};
 use reprise_core::artist_news_history::HistoryEntry;
 
 use crate::ui::strings;
@@ -10,6 +10,59 @@ use crate::ui::strings;
 pub(super) enum ReleasesRowAction {
     Restore,
     OpenAnnouncement(String),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum ReleasesFooterState {
+    Idle { latest: Option<i64> },
+    Starting,
+    Running(RefreshProgress),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct ReleasesProgressPresentation {
+    pub text: String,
+    pub fraction: f64,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct ReleasesFooterPresentation {
+    pub fetch_label: String,
+    pub updated: Option<String>,
+    pub progress: Option<ReleasesProgressPresentation>,
+}
+
+pub(super) fn releases_footer_presentation(
+    state: ReleasesFooterState,
+    now: i64,
+) -> ReleasesFooterPresentation {
+    match state {
+        ReleasesFooterState::Idle { latest } => ReleasesFooterPresentation {
+            fetch_label: strings::text(strings::FETCH_NOW),
+            updated: latest.map(|timestamp| strings::new_releases_updated_ago(timestamp, now)),
+            progress: None,
+        },
+        ReleasesFooterState::Starting => ReleasesFooterPresentation {
+            fetch_label: strings::text(strings::RELEASES_FETCHING),
+            updated: None,
+            progress: Some(ReleasesProgressPresentation {
+                text: strings::text(strings::RELEASES_FETCH_PREPARING),
+                fraction: 0.0,
+            }),
+        },
+        ReleasesFooterState::Running(progress) => ReleasesFooterPresentation {
+            fetch_label: strings::text(strings::RELEASES_FETCHING),
+            updated: None,
+            progress: Some(ReleasesProgressPresentation {
+                text: strings::releases_fetch_progress(progress.checked, progress.total),
+                fraction: if progress.total == 0 {
+                    0.0
+                } else {
+                    (progress.checked as f64 / progress.total as f64).clamp(0.0, 1.0)
+                },
+            }),
+        },
+    }
 }
 
 pub(super) fn format_release_date(raw: &str, _today: NaiveDate) -> String {
@@ -87,6 +140,48 @@ mod tests {
             track_count: None,
             local_track_count: 0,
         }
+    }
+
+    #[test]
+    fn fetch_footer_replaces_stale_age_with_determinate_progress() {
+        let idle = releases_footer_presentation(
+            ReleasesFooterState::Idle {
+                latest: Some(1_000),
+            },
+            1_360,
+        );
+        assert_eq!(idle.fetch_label, "Fetch now");
+        assert_eq!(idle.updated.as_deref(), Some("Updated 6 min ago"));
+        assert!(idle.progress.is_none());
+
+        let starting = releases_footer_presentation(ReleasesFooterState::Starting, 1_360);
+        assert_eq!(starting.fetch_label, "Fetching releases…");
+        assert!(starting.updated.is_none());
+        let progress = starting.progress.unwrap();
+        assert_eq!(progress.text, "Preparing release check…");
+        assert_eq!(progress.fraction, 0.0);
+
+        let running = releases_footer_presentation(
+            ReleasesFooterState::Running(RefreshProgress {
+                checked: 2,
+                total: 5,
+            }),
+            1_360,
+        );
+        assert!(running.updated.is_none());
+        let progress = running.progress.unwrap();
+        assert_eq!(progress.text, "Checked 2 of 5 artists");
+        assert_eq!(progress.fraction, 0.4);
+
+        let complete = releases_footer_presentation(
+            ReleasesFooterState::Idle {
+                latest: Some(1_360),
+            },
+            1_360,
+        );
+        assert_eq!(complete.fetch_label, "Fetch now");
+        assert_eq!(complete.updated.as_deref(), Some("Updated just now"));
+        assert!(complete.progress.is_none());
     }
 
     #[test]
