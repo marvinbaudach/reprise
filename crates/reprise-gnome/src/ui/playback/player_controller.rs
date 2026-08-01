@@ -284,14 +284,18 @@ pub struct PlayerController {
     /// Queue-change fan-out for the sidebar/Queue view and the Now Playing
     /// panel. Callbacks are cloned out before invocation for reentrancy.
     pub(in crate::ui) queue_changed: RefCell<Vec<Rc<dyn Fn()>>>,
+    /// Loaded-track fan-out for every surface that carries the shared
+    /// playback marker — the track table and the My Stats songs card. A list,
+    /// not a slot: NAV-10a wants *every* visible instance marked, so a second
+    /// listener must not silently evict the first.
     pub(in crate::ui) current_track_changed:
-        RefCell<Option<super::current_track_selection::OnCurrentTrackChanged>>,
-    /// Fans coarse playback-state changes to the track list's now-playing
-    /// equaliser (freeze on pause, drop the marker on stop) — see `current_
-    /// track_selection.rs`. Same callback seam as `current_track_changed`,
-    /// invoked from `now_playing_wiring.rs`'s `sync_state`.
+        RefCell<Vec<super::current_track_selection::OnCurrentTrackChanged>>,
+    /// Fans coarse playback-state changes to the same marker surfaces (freeze
+    /// on pause, drop the marker on stop) — see `current_track_selection.rs`.
+    /// Same fan-out seam as `current_track_changed`, invoked from
+    /// `now_playing_wiring.rs`'s `sync_state`.
     pub(in crate::ui) playback_state_changed:
-        RefCell<Option<super::current_track_selection::OnPlaybackStateChanged>>,
+        RefCell<Vec<super::current_track_selection::OnPlaybackStateChanged>>,
     /// Independent loaded-track feed for the right Now Playing panel. This
     /// follows the player's cache, never the library selection.
     pub(in crate::ui) now_playing_panel_track_changed:
@@ -472,8 +476,8 @@ impl PlayerController {
             reload_track_list: RefCell::new(None),
             listen_event_recorded: RefCell::new(None),
             queue_changed: RefCell::new(Vec::new()),
-            current_track_changed: RefCell::new(None),
-            playback_state_changed: RefCell::new(None),
+            current_track_changed: RefCell::new(Vec::new()),
+            playback_state_changed: RefCell::new(Vec::new()),
             now_playing_panel_track_changed: RefCell::new(None),
             now_playing_panel_state_changed: RefCell::new(None),
             song_visual_spectrum_changed: RefCell::new(None),

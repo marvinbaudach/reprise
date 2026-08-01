@@ -1,4 +1,6 @@
-//! Most-played-band card with a local cover hero and ranked runners-up.
+//! The most-played band's hero card — the double-width leader of the bands
+//! row. Its runners-up are separate tiles (`stats_band_tile.rs`), composed
+//! beside it by `stats_bands_row.rs`.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -8,14 +10,10 @@ use reprise_core::cover::ThumbnailSize;
 use reprise_core::format::format_thousands;
 use reprise_core::library::stats_snapshot::SpotlightSection;
 
-use super::stats_view_widgets::label;
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::strings;
 
 type StringCallback = Rc<RefCell<Option<Rc<dyn Fn(String)>>>>;
-
-const RANK_NUMBER_WIDTH: i32 = 24;
-const RANK_NAME_WIDTH: i32 = 180;
 
 #[derive(Clone)]
 pub(in crate::ui) struct StatsBandCard {
@@ -24,10 +22,8 @@ pub(in crate::ui) struct StatsBandCard {
     card_click: gtk4::GestureClick,
     picture: gtk4::Picture,
     fallback: gtk4::Label,
-    name_button: gtk4::Button,
+    pub(super) name_button: gtk4::Button,
     summary: gtk4::Label,
-    ranks: gtk4::Grid,
-    rank_bars: Rc<RefCell<Vec<gtk4::LevelBar>>>,
     unify_hint: gtk4::Button,
     current_artist: Rc<RefCell<String>>,
     current_key: Rc<RefCell<String>>,
@@ -41,7 +37,11 @@ impl StatsBandCard {
     pub(in crate::ui) fn new() -> Self {
         let root = gtk4::Overlay::new();
         root.add_css_class("stats-band-card");
-        root.set_size_request(380, 420);
+        // The row's grid hands out the width; only the height is the card's
+        // own business, and it matches the runner-up tiles beside it.
+        root.set_size_request(-1, 250);
+        root.set_hexpand(true);
+        root.set_valign(gtk4::Align::Start);
         root.set_overflow(gtk4::Overflow::Hidden);
 
         let picture = gtk4::Picture::new();
@@ -94,12 +94,6 @@ impl StatsBandCard {
         unify_hint.set_halign(gtk4::Align::Start);
         unify_hint.set_visible(false);
         content.append(&unify_hint);
-
-        let ranks = gtk4::Grid::new();
-        ranks.set_column_spacing(4);
-        ranks.set_row_spacing(5);
-        ranks.set_hexpand(true);
-        content.append(&ranks);
         root.add_overlay(&content);
 
         let current_artist = Rc::new(RefCell::new(String::new()));
@@ -142,8 +136,6 @@ impl StatsBandCard {
             fallback,
             name_button,
             summary,
-            ranks,
-            rank_bars: Rc::new(RefCell::new(Vec::new())),
             unify_hint,
             current_artist,
             current_key,
@@ -176,61 +168,25 @@ impl StatsBandCard {
             strings::stats_duration(leader.ms),
             section.share_percent
         ));
-        self.render_ranks(section);
         self.set_unify_hint(leader.variant_count);
         self.load_cover(&section.artist.representative_track_path);
     }
 
-    fn render_ranks(&self, section: &SpotlightSection) {
-        clear(&self.ranks);
-        self.rank_bars.borrow_mut().clear();
-        let leader_ms = section.artist.group.ms.max(0);
-        for (index, ranked) in section.also.iter().take(4).enumerate() {
-            let artist = gtk4::Button::new();
-            artist.add_css_class("flat");
-            artist.add_css_class("stats-band-rank");
-            artist.set_hexpand(true);
-            let body = gtk4::Grid::new();
-            body.set_column_spacing(8);
-            let rank = label(&format!("#{}", index + 2), "stats-item-title");
-            rank.set_width_request(RANK_NUMBER_WIDTH);
-            rank.set_xalign(1.0);
-            let name = label(&ranked.group.label, "stats-item-title");
-            name.set_width_request(RANK_NAME_WIDTH);
-            name.set_width_chars(20);
-            name.set_max_width_chars(20);
-            let bar = gtk4::LevelBar::new();
-            bar.add_css_class("stats-band-rank-bar");
-            bar.set_min_value(0.0);
-            bar.set_max_value(1.0);
-            bar.set_value(relative_value(ranked.group.ms, leader_ms));
-            bar.set_hexpand(true);
-            bar.set_valign(gtk4::Align::Center);
-            body.attach(&rank, 0, 0, 1, 1);
-            body.attach(&name, 1, 0, 1, 1);
-            body.attach(&bar, 2, 0, 1, 1);
-            artist.set_child(Some(&body));
-            artist.connect_clicked({
-                let label = ranked.group.label.clone();
-                let callback = self.on_open_artist.clone();
-                move |_| invoke(&callback, label.clone())
-            });
-            self.ranks.attach(&artist, 0, index as i32, 1, 1);
-            if ranked.group.variant_count >= 2 {
-                let unify = gtk4::Button::from_icon_name("document-edit-symbolic");
-                unify.add_css_class("flat");
-                unify.set_tooltip_text(Some(&strings::spellings_merged_hint(
-                    ranked.group.variant_count,
-                )));
-                unify.connect_clicked({
-                    let key = ranked.group.key.clone();
-                    let callback = self.on_unify.clone();
-                    move |_| invoke(&callback, key.clone())
-                });
-                self.ranks.attach(&unify, 1, index as i32, 1, 1);
-            }
-            self.rank_bars.borrow_mut().push(bar);
-        }
+    /// Routes this card's activations into the row's shared callbacks, so the
+    /// leader and the runner-up tiles reach the same navigation.
+    pub(super) fn forward_callbacks(
+        &self,
+        on_open_artist: &StringCallback,
+        on_unify: &StringCallback,
+    ) {
+        *self.on_open_artist.borrow_mut() = Some({
+            let outer = on_open_artist.clone();
+            Rc::new(move |artist| invoke(&outer, artist))
+        });
+        *self.on_unify.borrow_mut() = Some({
+            let outer = on_unify.clone();
+            Rc::new(move |key| invoke(&outer, key))
+        });
     }
 
     fn set_unify_hint(&self, variants: usize) {
@@ -280,34 +236,14 @@ impl StatsBandCard {
         self.fallback.set_label("");
         self.name_button.set_label("");
         self.summary.set_label("");
-        clear(&self.ranks);
-        self.rank_bars.borrow_mut().clear();
         self.set_unify_hint(0);
         self.current_artist.borrow_mut().clear();
         self.current_key.borrow_mut().clear();
     }
 
-    pub(in crate::ui) fn set_on_open_artist(&self, callback: impl Fn(String) + 'static) {
-        *self.on_open_artist.borrow_mut() = Some(Rc::new(callback));
-    }
-
-    pub(in crate::ui) fn set_on_unify(&self, callback: impl Fn(String) + 'static) {
-        *self.on_unify.borrow_mut() = Some(Rc::new(callback));
-    }
-
     #[cfg(test)]
     pub(super) fn emit_unify(&self, key: &str) {
         invoke(&self.on_unify, key.to_string());
-    }
-
-    pub(super) fn bars(&self) -> Vec<gtk4::LevelBar> {
-        self.rank_bars.borrow().clone()
-    }
-}
-
-fn clear(container: &gtk4::Grid) {
-    while let Some(child) = container.first_child() {
-        container.remove(&child);
     }
 }
 
@@ -320,7 +256,7 @@ fn invoke(callback: &StringCallback, value: String) {
     }
 }
 
-fn initials(label: &str) -> String {
+pub(super) fn initials(label: &str) -> String {
     label
         .split_whitespace()
         .filter_map(|part| part.chars().next())
@@ -330,14 +266,6 @@ fn initials(label: &str) -> String {
         .chars()
         .take(2)
         .collect::<String>()
-}
-
-fn relative_value(value: i64, leader: i64) -> f64 {
-    if leader <= 0 {
-        0.0
-    } else {
-        value.max(0) as f64 / leader as f64
-    }
 }
 
 #[cfg(test)]
@@ -381,69 +309,6 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn stats_13_band_card_shows_ranks_relative_to_leader() {
-        gtk4::init().unwrap();
-        crate::ui::style::install_css_string_for_test(&crate::ui::stats::stats_css::css());
-        let card = StatsBandCard::new();
-        card.set_data(&fixture(1));
-        let window = gtk4::Window::builder()
-            .default_width(440)
-            .child(card.widget())
-            .build();
-        window.present();
-        run_main_loop_for_layout();
-
-        let values = card
-            .rank_bars
-            .borrow()
-            .iter()
-            .map(gtk4::LevelBar::value)
-            .collect::<Vec<_>>();
-        assert_eq!(values, vec![0.5, 0.25, 0.1, 0.05]);
-        let starts = card
-            .rank_bars
-            .borrow()
-            .iter()
-            .map(|bar| bar.compute_bounds(card.widget()).unwrap().x())
-            .collect::<Vec<_>>();
-        assert!(starts.iter().all(|start| *start == starts[0]));
-        let ends = card
-            .rank_bars
-            .borrow()
-            .iter()
-            .map(|bar| {
-                let bounds = bar.compute_bounds(card.widget()).unwrap();
-                bounds.x() + bounds.width()
-            })
-            .collect::<Vec<_>>();
-        assert!(
-            ends.iter().all(|end| *end == ends[0]),
-            "rank tracks must share one right edge even when only one row has an action: {ends:?}"
-        );
-        let widths = card
-            .rank_bars
-            .borrow()
-            .iter()
-            .map(gtk4::prelude::WidgetExt::width)
-            .collect::<Vec<_>>();
-        assert!(
-            widths[0] >= 100,
-            "the leading runner-up track collapsed to {} px",
-            widths[0]
-        );
-        assert!(
-            widths.iter().all(|width| *width == widths[0]),
-            "rank tracks must share the remaining row width: {widths:?}"
-        );
-        assert!(
-            values.windows(2).all(|pair| pair[0] > pair[1]),
-            "rank fills must remain ordered by listening time: {values:?}"
-        );
-        window.close();
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
     fn stats_13_missing_cover_falls_back_to_initials() {
         gtk4::init().unwrap();
         let card = StatsBandCard::new();
@@ -471,10 +336,11 @@ mod tests {
         gtk4::init().unwrap();
         let card = StatsBandCard::new();
         let opened = Rc::new(RefCell::new(None));
-        card.set_on_open_artist({
+        let outer: StringCallback = Rc::new(RefCell::new(Some(Rc::new({
             let opened = opened.clone();
-            move |artist| *opened.borrow_mut() = Some(artist)
-        });
+            move |artist: String| *opened.borrow_mut() = Some(artist)
+        }))));
+        card.forward_callbacks(&outer, &Rc::new(RefCell::new(None)));
         card.set_data(&fixture(1));
 
         assert_eq!(card.card_click.button(), gtk4::gdk::BUTTON_PRIMARY);
@@ -490,22 +356,14 @@ mod tests {
         gtk4::init().unwrap();
         let card = StatsBandCard::new();
         *card.current_artist.borrow_mut() = "Current artist".into();
-        card.set_on_open_artist({
+        let outer: StringCallback = Rc::new(RefCell::new(Some(Rc::new({
             let current_artist = card.current_artist.clone();
-            move |_| *current_artist.borrow_mut() = "Refreshed artist".into()
-        });
+            move |_: String| *current_artist.borrow_mut() = "Refreshed artist".into()
+        }))));
+        card.forward_callbacks(&outer, &Rc::new(RefCell::new(None)));
 
         card.name_button.emit_clicked();
 
         assert_eq!(&*card.current_artist.borrow(), "Refreshed artist");
-    }
-
-    fn run_main_loop_for_layout() {
-        let main_loop = gtk4::glib::MainLoop::new(None, false);
-        let quit = main_loop.clone();
-        gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(50), move || {
-            quit.quit();
-        });
-        main_loop.run();
     }
 }

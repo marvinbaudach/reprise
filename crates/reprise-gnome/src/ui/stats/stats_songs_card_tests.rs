@@ -5,8 +5,11 @@ use reprise_core::library::stats_snapshot;
 use super::*;
 
 #[test]
-fn compact_card_fills_six_song_rows() {
-    assert_eq!(SONG_ROW_LIMIT, 6);
+fn stats_19_the_card_shows_a_full_top_ten_over_two_columns() {
+    assert_eq!(SONG_ROW_LIMIT, 10);
+    assert_eq!(SUMMARY_COLUMN_ROWS, 5);
+    // The expander must reach past the ten rows already on screen.
+    assert_eq!(FULL_TRACK_LIMIT, 25);
 }
 
 #[test]
@@ -69,7 +72,7 @@ fn card_and_snapshot(metadata: MetadataCallback) -> (StatsSongsCard, StatsSnapsh
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn stats_14_song_row_focuses_track_in_artist_scope() {
+fn stats_19_the_row_plays_and_its_labels_navigate() {
     gtk4::init().unwrap();
     let target = Rc::new(RefCell::new(None));
     let metadata: MetadataCallback = Rc::new(RefCell::new(Some({
@@ -77,23 +80,26 @@ fn stats_14_song_row_focuses_track_in_artist_scope() {
         Rc::new(move |value| *target.borrow_mut() = Some(value))
     })));
     let (card, snapshot) = card_and_snapshot(metadata);
+    let played = Rc::new(RefCell::new(Vec::new()));
+    card.set_on_play_track({
+        let played = played.clone();
+        move |id| played.borrow_mut().push(id)
+    });
     card.set_data(&snapshot);
 
+    // The row itself is the play affordance.
     card.summary.row_clicks.borrow()[0]
         .emit_by_name::<()>("released", &[&1_i32, &0.0_f64, &0.0_f64]);
-
-    assert!(matches!(
-        target.borrow().as_ref(),
-        Some(StatsMetadataTarget::Artist {
-            track_id: 1,
-            artist
-        }) if artist == "Artist 1"
-    ));
+    assert_eq!(*played.borrow(), vec![1]);
+    assert!(
+        target.borrow().is_none(),
+        "playing a row must not also navigate away from it"
+    );
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn stats_14_hover_play_targets_exactly_one_track() {
+fn stats_19_a_row_click_targets_exactly_one_track() {
     gtk4::init().unwrap();
     crate::ui::style::install_css_string_for_test(&crate::ui::stats::stats_css::css());
     let metadata: MetadataCallback = Rc::new(RefCell::new(None));
@@ -105,14 +111,15 @@ fn stats_14_hover_play_targets_exactly_one_track() {
     });
     card.set_data(&snapshot);
 
-    card.summary.play_buttons.borrow()[2].emit_clicked();
+    card.summary.row_clicks.borrow()[2]
+        .emit_by_name::<()>("released", &[&1_i32, &0.0_f64, &0.0_f64]);
 
     assert_eq!(*played.borrow(), vec![3]);
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn stats_14_compact_toggle_sorts_six_rows_and_show_all_reveals_the_full_list() {
+fn stats_19_toggle_sorts_both_columns_and_show_all_reveals_the_full_list() {
     gtk4::init().unwrap();
     crate::ui::style::install_css_string_for_test(&crate::ui::stats::stats_css::css());
     let metadata: MetadataCallback = Rc::new(RefCell::new(None));
@@ -150,17 +157,26 @@ fn stats_14_compact_toggle_sorts_six_rows_and_show_all_reveals_the_full_list() {
         card.reveal_button.label().as_deref(),
         Some("Show all top tracks")
     );
-    assert_eq!(card.summary.rows.observe_children().n_items(), 6);
+    // Two columns; the fixture's six tracks fill the first and spill one row
+    // into the second.
+    assert_eq!(card.summary.rows.observe_children().n_items(), 2);
+    assert_eq!(card.summary.columns[0].observe_children().n_items(), 5);
+    assert_eq!(card.summary.columns[1].observe_children().n_items(), 1);
     card.sort_toggle.set_active_name(Some("time"));
     assert_eq!(card.sort_by.get(), SortBy::Time);
     assert_eq!(
-        descendant_labels(&card.summary.rows.first_child().unwrap())[0],
-        "Track 3"
+        descendant_labels(&card.summary.columns[0].first_child().unwrap())[1],
+        "Track 3",
+        "the rank slot prints first, then the title"
     );
 
     card.reveal_button.emit_clicked();
     assert!(card.revealer.reveals_child());
     assert_eq!(card.full_rows.observe_children().n_items(), 6);
+    assert!(
+        card.summary.playbacks.borrow().len() == 6 && card.full_playbacks.borrow().len() == 6,
+        "STATS-18: both lists register every row for the shared marker"
+    );
     card.sort_toggle.set_active_name(Some("plays"));
     assert_eq!(card.sort_by.get(), SortBy::Plays);
     run_main_loop_for_layout();
@@ -228,7 +244,7 @@ fn discarded_song_rows_release_their_context_widgets() {
     let metadata: MetadataCallback = Rc::new(RefCell::new(None));
     let (card, snapshot) = card_and_snapshot(metadata);
     card.set_data(&snapshot);
-    let old_row = card.summary.rows.first_child().unwrap();
+    let old_row = card.summary.columns[0].first_child().unwrap();
     let old_row = old_row.downcast::<gtk4::Box>().unwrap();
     let weak_row = old_row.downgrade();
     drop(old_row);

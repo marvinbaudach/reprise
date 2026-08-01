@@ -2621,13 +2621,20 @@ property is set and yet nothing happens.
   respective genre.
   Tracks without a genre continue to count neither as a segment nor as
   "Other".
-- **STATS-16** [active] [gtk] — Under ten plays in the chosen period, the
-  data situation is too thin for a trend: instead of the chart, the hint
-  "Keep listening — stats grow with you" appears; hero numbers stay real,
+- **STATS-16** [replaced by STATS-20] [gtk] — Under ten plays in the chosen
+  period, the data situation is too thin for a trend: instead of the chart, the
+  hint "Keep listening — stats grow with you" appears; hero numbers stay real,
   and only cards with data are rendered — never placeholder cards. Without
   any play at all, the empty state from STATS-6/STATS-6c still applies,
   including operable period selection.
-- **STATS-17** [active] [gtk] — My Stats stands fully in place from the
+- **STATS-20** [active] [gtk] — Replaces STATS-16, whose thin-history hint
+  existed only to stand in for the chart STATS-19 removed. A thin period is no
+  longer a special case: hero numbers stay real at any play count, and a
+  section renders exactly when it has data — a period without bands, without
+  songs, or without genres hides that section rather than showing an empty
+  frame or a placeholder card. Without any play at all the empty state from
+  STATS-6/STATS-6c still applies, including operable period selection.
+- **STATS-17** [replaced by STATS-19] [gtk] — My Stats stands fully in place from the
   first frame on: cards, hero number, KPIs, texts, cover, and images do
   not fade, do not slide, and do not count up. Only bars move, together
   after a calm start frame of approximately 100 ms and with ease-out
@@ -2644,6 +2651,39 @@ property is set and yet nothing happens.
   content switches immediately to its new final state. With
   `gtk-enable-animations=false`, without exception all bars and the
   best-week label stand immediately in their final state.
+- **STATS-18** [active] [gtk] — The loaded track carries the shared playback
+  marker in every My Stats song list it appears in — the top-ten card and the
+  expanded ranking alike — and that marker tells running from paused. It takes
+  the row's rank slot: where every other row prints its number, the loaded one
+  shows the equaliser, so the marking costs no width and the row never shifts
+  when playback moves. Title and bar take the playback accent with it, and the
+  row keeps a tint that hover does not remove. Marking never re-renders either
+  list: the expanded state and the scroll position survive a track change,
+  exactly as NAV-10a requires of the track table. Pausing is the transport's
+  job, not the row's — the marker reports the state, the player bar and Space
+  change it.
+- **STATS-19** [active] [gtk] — Replaces STATS-17. **The page reads hours →
+  bands → songs → genres, and every section owns the full width.** The weekly
+  chart is gone: it held the largest area and said the least, and the one
+  reading worth keeping is a number in the hero's KPI row ("This week"),
+  alongside "Per day" and the period comparison. Pace and best week went with
+  the chart. Bands come first as a 2 : 1 : 1 : 1 : 1 row — the leader double
+  width with its image bleeding into the card ground, four runners-up beside
+  it with a bar relative to the leader; a band without artwork shows its
+  initials on a tinted ground, never an empty frame. Songs follow as a full
+  top ten in two columns, and genres close as a strip of roughly 90 px: one
+  stacked bar plus a single-line legend, with duration and leading artist in
+  the segment's tooltip rather than on screen. Activating a band, a segment or
+  a legend entry scopes the library to it. My Stats still stands fully in
+  place from the first frame: cards, hero number, KPIs, texts and images do
+  not fade, slide, or count up. Only horizontal bars move — band ranks 2–5,
+  song bars, genre segments — growing in 450 ms from the left with 40 ms
+  stagger after a calm start frame of approximately 100 ms, ease-out
+  `cubic-bezier(0.16, 1, 0.3, 1)`, genre segments in reading direction. Bars
+  below the fold follow the same start. A period change never restarts the
+  choreography and only interpolates bar values over 250 ms; everything else
+  switches straight to its new final state. With `gtk-enable-animations=false`
+  every bar stands immediately at its target.
 ## W. Buttons & interaction states
 
 <!-- Section letter: V (My Stats) is the last section assigned on main;

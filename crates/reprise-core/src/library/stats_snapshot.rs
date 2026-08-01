@@ -59,6 +59,11 @@ pub struct HeroSection {
     pub average_ms_per_day: i64,
     pub artists: i64,
     pub previous_ms: Option<i64>,
+    /// Listening time in the calendar week `now` falls in, or `None` when the
+    /// selected period does not contain today at all — a historical year has
+    /// no "this week", and reporting zero there would read as a quiet week
+    /// rather than an inapplicable question.
+    pub this_week_ms: Option<i64>,
     pub pace_projection_ms: Option<i64>,
     pub comparison_percent: Option<i64>,
     pub comparison_presentation: Option<ComparisonPresentation>,
@@ -212,6 +217,7 @@ pub fn compute<Tz: TimeZone>(
         average_ms_per_day: total_ms / elapsed_days,
         artists: top_artists.len() as i64,
         previous_ms,
+        this_week_ms: this_week_ms(&listen_rows, tz, now_unix, &range),
         pace_projection_ms,
         comparison_percent,
         comparison_presentation: previous_ms
@@ -246,6 +252,28 @@ pub fn compute<Tz: TimeZone>(
         top_albums,
         top_tracks,
     })
+}
+
+/// Sums the current calendar week out of the period's own rows. Deliberately
+/// not read off the ribbon: that series is bucketed by
+/// [`apply_activity_granularity`] and is only weekly for some periods, so the
+/// same figure would silently change meaning with the selected range.
+fn this_week_ms<Tz: TimeZone>(
+    rows: &[super::stats_screen::ListenRow],
+    tz: &Tz,
+    now_unix: i64,
+    range: &PeriodRange,
+) -> Option<i64> {
+    if now_unix < range.start_unix || now_unix >= range.end_unix {
+        return None;
+    }
+    let current = week_start(tz, now_unix)?;
+    Some(
+        rows.iter()
+            .filter(|row| week_start(tz, row.played_at) == Some(current))
+            .map(|row| row.ms)
+            .sum(),
+    )
 }
 
 fn best_week<Tz: TimeZone>(rows: &[super::stats_screen::ListenRow], tz: &Tz) -> Option<BestWeek> {

@@ -110,11 +110,43 @@ pub(in crate::ui) fn css() -> String {
          .stats-band-rank-bar block.empty {{ \
            background-color: alpha(@window_fg_color, 0.06); \
            min-height: 4px; }}\n\
+         .stats-bands-row {{ margin: 0; }}\n\
+         .stats-band-tile {{ \
+           padding: 0; \
+           border-radius: {radius}; \
+           background-color: @card_bg_color; }}\n\
+         .stats-band-tile:hover {{ \
+           background-color: shade(@card_bg_color, 1.08); }}\n\
+         .stats-band-tile-fade {{ \
+           background-image: linear-gradient(to top, @card_bg_color 4%, \
+             alpha(@card_bg_color, 0) 62%); }}\n\
+         .stats-band-tile-initials {{ \
+           font-size: 24px; \
+           font-weight: 700; \
+           color: @accent_color; \
+           background-image: linear-gradient(155deg, \
+             alpha(@accent_bg_color, 0.22), alpha(@window_fg_color, 0.05)); }}\n\
+         .stats-band-tile-body {{ padding: 0 14px 14px; }}\n\
+         .stats-band-tile-rank {{ font-size: 12px; color: @accent_color; }}\n\
+         .stats-band-tile-name {{ font-size: 15px; font-weight: 700; }}\n\
+         .stats-band-tile-unify {{ margin: 4px; }}\n\
          .stats-songs-card {{ padding: 8px; }}\n\
          .stats-song-row {{ padding: 5px; }}\n\
          .stats-song-row:hover {{ background-color: alpha(@window_fg_color, 0.05); }}\n\
          .stats-song-row:focus-visible {{ outline: 2px solid @accent_color; }}\n\
          .stats-song-play {{ background-color: alpha(@card_bg_color, 0.88); }}\n\
+         .stats-song-row.now-playing, .stats-top-track-row.now-playing {{ \
+           background-color: alpha(@reprise_player_accent, 0.10); }}\n\
+         .stats-song-row.now-playing:hover, \
+         .stats-top-track-row.now-playing:hover {{ \
+           background-color: alpha(@reprise_player_accent, 0.16); }}\n\
+         .stats-item-title.now-playing {{ color: @reprise_player_accent; }}\n\
+         .stats-song-bar.now-playing block.filled {{ \
+           background-image: none; \
+           background-color: @reprise_player_accent; }}\n\
+         .stats-compact-song-bar.now-playing .stats-compact-song-bar-fill {{ \
+           background-color: @reprise_player_accent; }}\n\
+         .stats-song-cover {{ border-radius: 4px; }}\n\
          .stats-song-bar {{ min-height: 8px; border-radius: 99px; }}\n\
          .stats-song-bar block.filled {{ \
            background-image: linear-gradient(to right, \
@@ -161,6 +193,11 @@ pub(in crate::ui) fn css() -> String {
          .stats-genre-rank-4:hover {{ background-color: alpha(@window_fg_color, 0.32); }}\n\
          .stats-genre-segment-last {{ background-color: alpha(@window_fg_color, 0.25); }}\n\
          .stats-genre-tile {{ padding: 4px; }}\n\
+         .stats-genre-legend {{ padding: 0 2px; }}\n\
+         .stats-genre-legend-label {{ font-size: 12px; opacity: 0.75; }}\n\
+         .stats-genre-legend-button {{ padding: 0 2px; min-height: 0; }}\n\
+         .stats-genre-legend-dot {{ border-radius: 2px; }}\n\
+         .stats-genre-legend-unify {{ padding: 0 2px; min-height: 0; }}\n\
          .stats-genre-cover:focus-visible {{ outline: 2px solid @accent_color; }}\n\
          .stats-highlight-value {{ font-size: 18px; font-weight: 700; }}\n\
          .stats-top-track-row {{ padding: 5px; }}",
