@@ -10,6 +10,7 @@ use std::rc::Rc;
 
 use libadwaita as adw;
 
+use crate::ui::playback::queue_transport::QueueContextWindow;
 use crate::ui::strings;
 use crate::ui::track_list::Shared;
 use crate::ui::track_list_columns::missing_track_explanation;
@@ -207,8 +208,11 @@ pub(in crate::ui) fn queue_ids_for_activation(
 /// already checks `source` first, so this is only ever invoked when a fresh
 /// snapshot is actually needed.
 pub(in crate::ui) fn current_queue_ids(shared: &Shared) -> Vec<i64> {
-    (shared.queue_ids_provider)()
-        .all_items()
+    let model = (shared.queue_ids_provider)();
+    let player = shared.player.borrow().clone();
+    let context_window = QueueContextWindow::from_player(player);
+    model
+        .all_items(&context_window)
         .into_iter()
         .filter_map(reprise_core::up_next::QueueItem::track_id)
         .collect()

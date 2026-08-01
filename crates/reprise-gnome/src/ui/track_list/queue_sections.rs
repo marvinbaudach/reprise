@@ -97,6 +97,14 @@ pub(crate) trait ContextWindow {
     fn rows(&self, offset: usize, limit: usize) -> Vec<i64>;
 }
 
+#[cfg(test)]
+impl ContextWindow for Vec<i64> {
+    fn rows(&self, offset: usize, limit: usize) -> Vec<i64> {
+        let end = offset.saturating_add(limit).min(self.len());
+        self.get(offset..end).unwrap_or_default().to_vec()
+    }
+}
+
 impl QueueViewModel {
     /// The shared queue projection used by the compact panel: the exact same
     /// model with the optional Now Playing prefix removed and section offsets

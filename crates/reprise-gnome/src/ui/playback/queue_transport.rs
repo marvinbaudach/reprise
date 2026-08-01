@@ -13,10 +13,12 @@
 //! its own statement/block, dropped before any call that could re-enter this
 //! controller.
 
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 use crate::ui::player_controller::PlayerController;
-use crate::ui::track_list::queue_sections::{compose_virtual, QueueViewModel, VirtualContextTail};
+use crate::ui::track_list::queue_sections::{
+    compose_virtual, ContextWindow, QueueViewModel, VirtualContext,
+};
 use crate::ui::up_next_transport::AdvanceReason;
 use reprise_core::db::Db;
 use reprise_core::media_integration::MprisPlaybackStatus;
@@ -35,6 +37,28 @@ enum ToggleAction {
 struct QueuePurgePlan {
     immediate: Vec<i64>,
     after_loaded_track: Option<i64>,
+}
+
+/// Resolves the context tail through the same windowed query the closure
+/// used to hold. Lives on the GTK side because the query needs the
+/// frontend's player state; the view model only ever sees the trait.
+#[derive(Clone, Default)]
+pub(in crate::ui) struct QueueContextWindow {
+    player: Weak<PlayerController>,
+}
+
+impl QueueContextWindow {
+    pub(in crate::ui) fn from_player(player: Weak<PlayerController>) -> Self {
+        Self { player }
+    }
+}
+
+impl ContextWindow for QueueContextWindow {
+    fn rows(&self, offset: usize, limit: usize) -> Vec<i64> {
+        self.player.upgrade().map_or_else(Vec::new, |player| {
+            player.queue.borrow().remaining_window(offset, limit)
+        })
+    }
 }
 
 /// Separates a loaded catalog tombstone from every future deletion. The
@@ -452,19 +476,8 @@ impl PlayerController {
             .borrow()
             .as_ref()
             .map(|origin| origin.label.clone());
-        let player = Rc::downgrade(self);
-        let context = (context_count > 0).then(|| {
-            VirtualContextTail::identified(
-                context_count,
-                context_sequence,
-                context_start,
-                Rc::new(move |offset, limit| {
-                    player.upgrade().map_or_else(Vec::new, |player| {
-                        player.queue.borrow().remaining_window(offset, limit)
-                    })
-                }),
-            )
-        });
+        let context = (context_count > 0)
+            .then(|| VirtualContext::identified(context_count, context_sequence, context_start));
         compose_virtual(now_playing, &play_next, context, origin_label.as_deref())
     }
 

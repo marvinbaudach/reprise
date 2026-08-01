@@ -7,6 +7,10 @@ fn wait_for_layout(milliseconds: u64) {
     crate::ui::test_settle::settle_for(Duration::from_millis(milliseconds));
 }
 
+fn context_window(ids: &[i64]) -> Rc<dyn crate::ui::track_list::queue_sections::ContextWindow> {
+    Rc::new(ids.to_vec())
+}
+
 fn loaded_track() -> NowPlaying {
     NowPlaying {
         id: 7,
@@ -306,7 +310,7 @@ fn npp_1_long_queue_source_cannot_resize_the_fixed_sidebar() {
 
     let short =
         crate::ui::track_list::queue_sections::compose(None, &[], &[1], Some("Popular Monster"));
-    panel.set_up_next_model(&short);
+    panel.set_up_next_model(&short, &context_window(&[1]));
     wait_for_layout(100);
     let short_width = panel.widgets.stage.width();
 
@@ -316,7 +320,7 @@ fn npp_1_long_queue_source_cannot_resize_the_fixed_sidebar() {
         &[1],
         Some("I Feel The Everblack Festering Within Me"),
     );
-    panel.set_up_next_model(&long);
+    panel.set_up_next_model(&long, &context_window(&[1]));
     wait_for_layout(100);
 
     let expected_header = "Playing from I Feel The Everblack Festering Within Me · 1 track";
