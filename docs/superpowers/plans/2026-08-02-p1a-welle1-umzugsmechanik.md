@@ -53,10 +53,16 @@ ist das Gegenteil von dem, wozu Welle 1 da ist.
 **Warum `strings_scan.rs` trotzdem hinein muss:** `strings.rs` re-exportiert
 seine Geschwister per Glob (`#[path = "strings_scan.rs"] mod scan; pub use
 scan::*;`). Dadurch hat allein die Konstante `RETRY` aus dieser Datei
-**26 Aufrufstellen** quer durchs Frontend. Genau daran hängt die Frage, die
-jede Folgewelle stellt: Wie konsumiert `reprise-gnome` die neue Crate, ohne
+**4 Aufrufstellen** außerhalb ihrer eigenen Datei. Genau daran hängt die Frage,
+die jede Folgewelle stellt: Wie konsumiert `reprise-gnome` die neue Crate, ohne
 dass Aufrufstellen brechen? Eine Datei ohne diese Eigenschaft würde die Frage
 nicht beantworten.
+
+> **Korrektur (2026-08-02, nach der Umsetzung):** Hier stand zuerst „26
+> Aufrufstellen". Das war eine Substring-Zählung, die `INLINE_RETRY_CLASS`,
+> `RADIO_NO_CONNECTION_RETRY`, `PODCAST_RETRY_DOWNLOAD` und weitere mitzählte.
+> `\bRETRY\b` ergibt **4**. Am Zuschnitt ändert das nichts — die Re-Export-Naht
+> ist bei 4 dieselbe Frage wie bei 26 —, aber die Zahl war falsch.
 
 ## Entschiedene Vorfragen
 
