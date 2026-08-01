@@ -1,0 +1,14 @@
+[package]
+name = "reprise-view"
+description = "Toolkit-freie Präsentationsschicht: ViewModels, Formatierung, Filterung, Sortierung und Zustandsmaschinen, geteilt von allen Reprise-Oberflächen"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+reprise-core = { path = "../reprise-core" }
+
+[lints]
+workspace = true

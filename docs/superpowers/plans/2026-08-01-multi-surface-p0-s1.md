@@ -83,7 +83,13 @@ cargo test --workspace 2>&1 | tail -20
 Notiere die Gesamtzahl („N passed; M ignored") hier im Plan unter dieser
 Zeile. Diese Zahl ist ab jetzt die Referenz für jeden Task dieses Plans.
 
-Baseline: `________ passed; ________ ignored`
+Baseline: `3490 passed; 378 ignored` (die 378 Display-gebundenen GTK-Tests
+bleiben ohne Display ignoriert). Die Sandbox-Rauschuntergrenze umfasst
+außerdem die beiden intermittierenden Fehler
+`adds_a_url_only_radio_favorite_from_icy_metadata` und
+`resolves_a_pls_radio_favorite_before_probing_and_storing_it`; wenn ihr
+Socket-Bind blockiert wird, lautet derselbe Lauf `3488 passed; 2 failed; 378
+ignored`.
 
 - [ ] **Step 2: Die Crate anlegen**
 
