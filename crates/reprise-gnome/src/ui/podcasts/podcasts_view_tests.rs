@@ -169,6 +169,67 @@ fn src_14_a_range_selects_every_row_between_anchor_and_target() {
     assert!(!widgets[&order[0]].checkbox.is_active());
 }
 
+/// A popover needs a real toplevel to attach to, so a menu test has to put the
+/// view in a window first.
+fn present(view: &Rc<PodcastsView>) -> gtk4::Window {
+    let window = gtk4::Window::new();
+    window.set_default_size(968, 800);
+    window.set_child(Some(view.root()));
+    window.present();
+    window
+}
+
+/// The row's three-dot menu button, which is its last child.
+fn row_menu_button(view: &Rc<PodcastsView>, episode_id: i64) -> gtk4::MenuButton {
+    let widgets = view.selection_widgets.borrow();
+    let row = &widgets[&episode_id].row;
+    let mut child = row.last_child();
+    while let Some(candidate) = child {
+        if let Ok(menu) = candidate.clone().downcast::<gtk4::MenuButton>() {
+            return menu;
+        }
+        child = candidate.prev_sibling();
+    }
+    panic!("the episode row has no menu button");
+}
+
+/// `SRC-14`: opening a row's menu while other rows are selected must not offer
+/// actions for those other rows. The row becomes the selection first, so the
+/// menu and the highlighted rows agree.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_14_opening_a_menu_outside_the_selection_takes_the_selection_over() {
+    gtk4::init().unwrap();
+    let (view, _) = view_with_expanded_episodes(3);
+    let _window = present(&view);
+    let order = view.rendered_order();
+    view.select_row(order[0], SelectMode::Only);
+    view.select_row(order[1], SelectMode::Toggle);
+
+    row_menu_button(&view, order[2]).popup();
+
+    assert_eq!(view.selection.borrow().selected_ids(), vec![order[2]]);
+}
+
+/// `SRC-14`: the other half — a menu opened on a row inside the selection is
+/// how a batch action is reached, so it leaves the selection alone.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_14_opening_a_menu_inside_the_selection_keeps_it() {
+    gtk4::init().unwrap();
+    let (view, _) = view_with_expanded_episodes(3);
+    let _window = present(&view);
+    let order = view.rendered_order();
+    view.select_row(order[0], SelectMode::Only);
+    view.select_row(order[1], SelectMode::Toggle);
+    let mut expected = vec![order[0], order[1]];
+    expected.sort_unstable();
+
+    row_menu_button(&view, order[1]).popup();
+
+    assert_eq!(view.selection.borrow().selected_ids(), expected);
+}
+
 /// `SRC-10`: the genuine "nothing subscribed yet" empty state hides the
 /// filter row and the footer — would go red if either stayed visible over
 /// zero subscriptions.

@@ -19,7 +19,7 @@ use super::podcasts_presentation::{
 };
 use super::podcasts_row_interaction::{episode_thumbnail, install_row_interaction};
 use super::podcasts_row_state::{download_status, RowNetworkState};
-use super::podcasts_selection::{self, PodcastSelection};
+use super::podcasts_selection::{self, PodcastSelection, SelectMode};
 use super::podcasts_title::TitleParts;
 use crate::ui::playing_marker;
 use crate::ui::strings;
@@ -413,12 +413,29 @@ fn episode_row(
 
     let menu = gtk4::MenuButton::builder()
         .icon_name("view-more-symbolic")
-        .menu_model(&podcasts_context_menu::build_for_selection(
-            row,
-            context.selected_ids,
-            context.unavailable_episode,
-        ))
         .build();
+    // `SRC-14`: built when it opens, not when the row is rendered. A selection
+    // change no longer re-renders (that is what keeps keyboard focus alive), so
+    // a model built here would describe a selection that has since moved on.
+    // Opening it also makes the row the selection when it was outside it, so
+    // the menu and the highlighted rows agree on what is about to be acted on.
+    let menu_row = row.clone();
+    let menu_selection = context.selection.clone();
+    let unavailable_episode = context.unavailable_episode;
+    menu.set_create_popup_func(move |menu| {
+        if !menu_selection.borrow().contains(menu_row.id) {
+            let target = (menu_row.id, SelectMode::Only.as_u8()).to_variant();
+            if let Err(error) = menu.activate_action("podcasts.select-row", Some(&target)) {
+                tracing::debug!(%error, "podcast row menu could not take over the selection");
+            }
+        }
+        let selected_ids = menu_selection.borrow().selected_ids();
+        menu.set_menu_model(Some(&podcasts_context_menu::build_for_selection(
+            &menu_row,
+            &selected_ids,
+            unavailable_episode,
+        )));
+    });
     menu.add_css_class("flat");
     menu.set_tooltip_text(Some(&strings::text(strings::PODCAST_MORE_OPTIONS)));
     root.append(&menu);
