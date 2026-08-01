@@ -13,8 +13,6 @@ const HERO_NATURAL_LINE_LENGTH: i32 = 900;
 #[derive(Clone)]
 pub(super) struct StatsKpi {
     pub(super) root: gtk4::Box,
-    #[allow(dead_code)]
-    pub(super) label: gtk4::Label,
     pub(super) value: gtk4::Label,
     pub(super) reference: gtk4::Label,
     pub(super) icon: gtk4::Image,
@@ -42,7 +40,6 @@ impl StatsKpi {
         root.append(&reference);
         Self {
             root,
-            label: title,
             value,
             reference,
             icon,
