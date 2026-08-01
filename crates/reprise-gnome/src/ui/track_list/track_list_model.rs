@@ -190,6 +190,34 @@ fn queue_snapshot_change(
     ))
 }
 
+/// An `items-changed` span `(position, removed, added)` paired with a
+/// `sections-changed` range `(position, n_items)`; either is `None` when
+/// that signal must not be emitted.
+type QueueSnapshotSignals = (Option<(u32, u32, u32)>, Option<(u32, u32)>);
+
+/// The signals a queue snapshot swap has to emit.
+///
+/// GTK's contract (`gtk_section_model_sections_changed`): `items-changed`
+/// implies re-sectioning ONLY for the items it covers. The O(1) advance
+/// shape `items_changed(0, 1, 0)` covers no surviving row, so without an
+/// explicit `sections-changed` GTK keeps its cached header tiles and merely
+/// shifts their bounds by the delta — the Play Next header is dropped and
+/// its rows end up titled "Now Playing" (reproduced live by
+/// `examples/queue_section_shift_repro.rs`). A full-range `items-changed`
+/// already re-matches every header, so it needs no second signal.
+fn queue_snapshot_emissions(
+    change: (u32, u32, u32),
+    sections_changed: bool,
+    new_total: u32,
+) -> QueueSnapshotSignals {
+    let (position, removed, added) = change;
+    let items = (removed != 0 || added != 0).then_some(change);
+    let covers_every_row = items.is_some() && position == 0 && added >= new_total;
+    let sections =
+        (sections_changed && !covers_every_row && new_total > 0).then_some((0, new_total));
+    (items, sections)
+}
+
 impl TrackListModel {
     /// Builds an empty model (`n_items() == 0`) bound to `conn`. Call
     /// `set_query` to load the initial sort/filter — the model does not
@@ -227,7 +255,7 @@ impl TrackListModel {
         sections: Vec<(u32, u32)>,
     ) {
         let new_total = u32::try_from(queue.total_len()).unwrap_or(u32::MAX);
-        let (position, removed, added) = {
+        let (change, sections_changed) = {
             let mut state = self.imp().state.borrow_mut();
             let change = state
                 .virtual_queue
@@ -246,15 +274,22 @@ impl TrackListModel {
             state.sections = sections;
             state.total = new_total;
             state.cache.clear();
-            if change == (0, 0, 0) && sections_changed {
-                (0, new_total, new_total)
-            } else {
-                change
-            }
+            (change, sections_changed)
         };
-        if removed != 0 || added != 0 {
+        let (items, sections) = queue_snapshot_emissions(change, sections_changed, new_total);
+        if let Some((position, removed, added)) = items {
             self.items_changed(position, removed, added);
         }
+        // The `SectionModel` interface is test-gated off (see `Interfaces`
+        // in `imp`), so the emission itself only exists in the real build;
+        // `queue_snapshot_emissions` keeps the decision unit-testable.
+        #[cfg(not(test))]
+        if let Some((position, n_items)) = sections {
+            use gtk4::prelude::SectionModelExt;
+            self.sections_changed(position, n_items);
+        }
+        #[cfg(test)]
+        let _ = sections;
     }
 
     pub fn set_query(
