@@ -2684,6 +2684,21 @@ property is set and yet nothing happens.
   choreography and only interpolates bar values over 250 ms; everything else
   switches straight to its new final state. With `gtk-enable-animations=false`
   every bar stands immediately at its target.
+- **STATS-21** [active] [gtk] — My Stats behaves like the rest of the app under
+  the pointer and after a click. **Hover:** every activatable surface of the
+  page answers with the same wash — the shared button hover alpha over
+  `currentColor` (BTN-1/BTN-4) — and with the pointer cursor. Song rows paint
+  it on their own ground; the band cards cannot, because their artwork covers
+  that ground, so they wear the identical wash as an overlay above the image
+  and below their text, never targetable and never a second, hand-picked tint.
+  **Playback:** starting a song from the ranking seeds the queue with that
+  ranking — the visible top ten in the sort currently selected — beginning at
+  the activated row, exactly as a row activated in the track table plays inside
+  the visible view. Previous, Next and Shuffle therefore have a context, and
+  the Queue shows what follows instead of one orphaned track. The context's
+  origin is My Stats itself: the queue's context tail carries that name and
+  jumps back to this page, rather than borrowing the name of one artist out of
+  a ranking that spans many.
 ## W. Buttons & interaction states
 
 <!-- Section letter: V (My Stats) is the last section assigned on main;

@@ -332,7 +332,9 @@ impl StatsView {
         *self.on_metadata_activate.borrow_mut() = Some(Rc::new(callback));
     }
 
-    pub(in crate::ui) fn set_on_play_track(&self, callback: impl Fn(i64) + 'static) {
+    /// The callback receives the ranking the activated row sits in and that
+    /// row's position in it, so playback starts with a real context (STATS-21).
+    pub(in crate::ui) fn set_on_play_track(&self, callback: impl Fn(&[i64], usize) + 'static) {
         self.render.songs_card.set_on_play_track(callback);
     }
 

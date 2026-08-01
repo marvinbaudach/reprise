@@ -148,21 +148,19 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
         });
     }
     {
+        // STATS-21: a song started here plays *inside* the ranking it was
+        // read in, exactly like a row activated in the track table plays
+        // inside the visible view. The origin is My Stats — the page the
+        // context came from — rather than the first track's artist, which a
+        // ranking spanning many artists would misname.
         let player = player.as_ref().map(Rc::downgrade);
         let conn = conn.clone();
-        stats_view.set_on_play_track(move |track_id| {
+        stats_view.set_on_play_track(move |ids, index| {
             let Some(player) = player.as_ref().and_then(Weak::upgrade) else {
                 return;
             };
-            let artist = {
-                let conn = &conn;
-                reprise_core::queries::query_track_summary(conn, track_id)
-                    .ok()
-                    .flatten()
-                    .map(|track| track.artist)
-            }
-            .unwrap_or_else(|| "My Stats".to_string());
-            player.play_from_view(vec![track_id], 0, play_origin::from_artist(&artist));
+            let origin = play_origin::resolve(&conn, &reprise_core::browser::BrowserPlace::MyStats);
+            player.play_from_view(ids.to_vec(), index, origin);
         });
     }
     if let Some(player) = player.as_ref() {
