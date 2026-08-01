@@ -406,6 +406,23 @@ bleiben unberührt, es braucht keine DB-Migration und keine neuen
 Die Song-Analyse (`track_audio_analysis`) ist hiervon **nicht** betroffen:
 sie wurde entfernt (`db_drop_audio_analysis_mix.rs`) und kommt nicht zurück.
 
+**B16 — Kein Crossfade auf Android.** ExoPlayer bringt kein Überblenden mit;
+es selbst zu bauen hieße, eine zweite Wiedergabemaschinerie aus zwei
+Player-Instanzen neben die Runtime zu stellen. Für den Mobil-Zuschnitt lohnt
+das nicht. Crossfade bleibt ein Merkmal des GTK-Vollprodukts.
+
+**Das kostet architektonisch nichts**, weil der Core-Vertrag genau diesen Fall
+vorgesehen hat (`playback.rs`, `set_transition`):
+
+> „A backend that does not support crossfade may treat that mode as `Gapless`
+> (documented degradation, never a failure)."
+
+Das Android-Backend meldet den Modus also als Gapless zurück — kein
+Vertragsumbau, keine Fähigkeitsabfrage, keine Sonderbehandlung. Gapless selbst
+ist auf Media3 nachgewiesen (Befund zu Frage 1). Dasselbe Muster trägt der
+Vertrag an weiteren Stellen (`current_generation`), was P4a erlaubt, ein
+bewusst unvollständiges Backend zu sein, ohne etwas zu verletzen.
+
 ### 3.1 Zuschnitte
 
 Zwei Zuschnitte, beide deutlich enger als das GTK-Vollprodukt.
