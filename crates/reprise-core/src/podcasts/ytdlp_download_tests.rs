@@ -32,6 +32,10 @@ fn download_passes_audio_only_output_arguments() {
         vec![
             "--no-warnings",
             "--newline",
+            // `--print` below implies `--quiet`, and a quiet yt-dlp emits no
+            // progress at all — the UI then sat at `0 B` until the finished
+            // size appeared. `--progress` prints it even when quiet.
+            "--progress",
             "--progress-template",
             "download:reprise-progress:%(progress.downloaded_bytes)s\t%(progress.total_bytes)s\t%(progress.total_bytes_estimate)s",
             "-f",
