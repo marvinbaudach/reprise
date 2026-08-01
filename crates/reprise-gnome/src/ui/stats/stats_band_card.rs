@@ -43,6 +43,9 @@ impl StatsBandCard {
         root.set_hexpand(true);
         root.set_valign(gtk4::Align::Start);
         root.set_overflow(gtk4::Overflow::Hidden);
+        // The card is one activation target (BTN-1): pointer cursor, like the
+        // song rows below it. GTK4 CSS has no `cursor`, so it is set here.
+        crate::ui::style::buttons::arm_cursor(&root);
 
         let picture = gtk4::Picture::new();
         picture.set_content_fit(gtk4::ContentFit::Cover);
@@ -61,6 +64,13 @@ impl StatsBandCard {
         fade.set_hexpand(true);
         fade.set_vexpand(true);
         root.add_overlay(&fade);
+
+        // STATS-21: the whole card activates, so the whole card lights up —
+        // and it has to do that *over* the artwork, which covers the card's
+        // own background. Added before the content so the wash never dims the
+        // text, and untargetable so it never eats the click it advertises.
+        let hover = hover_wash();
+        root.add_overlay(&hover);
 
         let content = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
         content.add_css_class("stats-band-content");
@@ -254,6 +264,17 @@ fn invoke(callback: &StringCallback, value: String) {
             callback(value);
         }
     }
+}
+
+/// The hover surface both band surfaces wear (STATS-21). One builder, so the
+/// leader and its runner-up tiles can never drift into two different hovers.
+pub(super) fn hover_wash() -> gtk4::Box {
+    let wash = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    wash.add_css_class("stats-band-hover");
+    wash.set_can_target(false);
+    wash.set_hexpand(true);
+    wash.set_vexpand(true);
+    wash
 }
 
 pub(super) fn initials(label: &str) -> String {

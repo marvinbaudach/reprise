@@ -29,6 +29,13 @@ const SUMMARY_COLUMN_ROWS: usize = 5;
 const FULL_TRACK_EXTRA: usize = 15;
 
 type IdCallback = Rc<RefCell<Option<Rc<dyn Fn(i64)>>>>;
+/// Starting playback hands over the *ranking* the row sits in, not just the
+/// row: `(ids, index)` is the same shape the track table activates with, so
+/// the queue, Previous/Next and Shuffle get a context to work on instead of a
+/// single orphaned track (STATS-21).
+type PlayCallback = Rc<RefCell<Option<Rc<dyn Fn(&[i64], usize)>>>>;
+/// The visible ranking behind one render, shared by every row it built.
+type PlayContext = Rc<Vec<i64>>;
 /// The loaded track as both song lists see it. Shared by `Rc` so a mark
 /// arriving between renders reaches the rows that already exist and the rows
 /// built afterwards alike — a re-render reads this, it never re-derives it.
@@ -61,7 +68,7 @@ struct SummaryRenderer {
     cover_loader: Rc<CoverLoader>,
     generations: CoverGenerations,
     metadata: MetadataCallback,
-    on_play_track: IdCallback,
+    on_play_track: PlayCallback,
     on_play_next: IdCallback,
     on_add_to_queue: IdCallback,
     context_actions: Rc<RefCell<Vec<gio::SimpleActionGroup>>>,
@@ -150,7 +157,7 @@ impl StatsSongsCard {
         let snapshot = Rc::new(RefCell::new(None::<StatsSnapshot>));
         let sort_by = Rc::new(Cell::new(SortBy::Plays));
         let cover_generations = CoverGenerations::default();
-        let on_play_track: IdCallback = Rc::new(RefCell::new(None));
+        let on_play_track: PlayCallback = Rc::new(RefCell::new(None));
         let on_play_next: IdCallback = Rc::new(RefCell::new(None));
         let on_add_to_queue: IdCallback = Rc::new(RefCell::new(None));
         let context_actions = Rc::new(RefCell::new(Vec::new()));
@@ -308,8 +315,19 @@ impl SummaryRenderer {
         let tracks = snapshot.top_tracks_sorted(sort_by);
         let leader = tracks.first().map_or(0, |track| metric(track, sort_by));
         let token = self.generations.next_summary();
+        // Built once per render and shared by every row: the play context is
+        // the ranking as it currently stands on screen — the same ten rows,
+        // in the sort the user picked. Re-sorting rebuilds it, so a play
+        // never seeds a queue in yesterday's order.
+        let context: PlayContext = Rc::new(
+            tracks
+                .iter()
+                .take(SONG_ROW_LIMIT)
+                .map(|track| track.track_id)
+                .collect(),
+        );
         for (index, track) in tracks.iter().take(SONG_ROW_LIMIT).enumerate() {
-            let row = self.song_row(track, index, leader, sort_by, token);
+            let row = self.song_row(track, index, leader, sort_by, token, &context);
             self.columns[index / SUMMARY_COLUMN_ROWS].append(&row);
         }
     }
@@ -321,6 +339,7 @@ impl SummaryRenderer {
         leader: i64,
         sort_by: SortBy,
         token: u64,
+        context: &PlayContext,
     ) -> gtk4::Box {
         let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
         row.add_css_class("stats-song-row");
@@ -409,12 +428,12 @@ impl SummaryRenderer {
         activate.set_button(1);
         activate.connect_released({
             let callback = self.on_play_track.clone();
-            let track_id = track.track_id;
-            move |_, _, _, _| invoke_id(&callback, track_id)
+            let context = context.clone();
+            move |_, _, _, _| invoke_play(&callback, &context, index)
         });
         row.add_controller(activate.clone());
         self.row_clicks.borrow_mut().push(activate);
-        install_row_keys(&row, &self.on_play_track, track.track_id);
+        install_row_keys(&row, &self.on_play_track, context, index);
 
         let playback = SongRowPlayback::new(&row, &rank_slot, &rank, &title, &bar, track.track_id);
         playback.set_mark(self.mark.get());
@@ -495,7 +514,7 @@ impl SummaryRenderer {
 }
 
 impl StatsSongsCard {
-    pub(in crate::ui) fn set_on_play_track(&self, callback: impl Fn(i64) + 'static) {
+    pub(in crate::ui) fn set_on_play_track(&self, callback: impl Fn(&[i64], usize) + 'static) {
         *self.summary.on_play_track.borrow_mut() = Some(Rc::new(callback));
     }
 
@@ -515,15 +534,16 @@ impl StatsSongsCard {
 /// Enter and Space start the row's track, matching the pointer. Return
 /// `Proceed` for everything else so the context-menu shortcut still reaches
 /// its own controller.
-fn install_row_keys(row: &gtk4::Box, callback: &IdCallback, track_id: i64) {
+fn install_row_keys(row: &gtk4::Box, callback: &PlayCallback, context: &PlayContext, index: usize) {
     let keys = gtk4::EventControllerKey::new();
     let callback = callback.clone();
+    let context = context.clone();
     keys.connect_key_pressed(move |_, key, _, _| {
         if matches!(
             key,
             gtk4::gdk::Key::Return | gtk4::gdk::Key::KP_Enter | gtk4::gdk::Key::space
         ) {
-            invoke_id(&callback, track_id);
+            invoke_play(&callback, &context, index);
             return glib::Propagation::Stop;
         }
         glib::Propagation::Proceed
@@ -656,6 +676,19 @@ fn next_generation(generation: &Cell<u64>) -> u64 {
     let token = generation.get().wrapping_add(1);
     generation.set(token);
     token
+}
+
+/// Starts the row at `index` of `context`. An index the context cannot answer
+/// for would seed the queue at the wrong track, so it plays nothing instead.
+fn invoke_play(callback: &PlayCallback, context: &PlayContext, index: usize) {
+    let callback = callback.borrow().clone();
+    if index >= context.len() {
+        tracing::warn!(index, len = context.len(), "stale stats row; not playing");
+        return;
+    }
+    if let Some(callback) = callback {
+        callback(context, index);
+    }
 }
 
 fn invoke_id(callback: &IdCallback, id: i64) {

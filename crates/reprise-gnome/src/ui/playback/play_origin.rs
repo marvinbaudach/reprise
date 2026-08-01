@@ -69,23 +69,17 @@ fn resolve_label(conn: &Db, source: &ViewSource) -> String {
         ViewSource::RecentlyAdded => strings::text(strings::SIDEBAR_RECENTLY_ADDED),
         ViewSource::Missing => strings::text(strings::SIDEBAR_MISSING_FILES),
         ViewSource::ImportErrors => strings::text(strings::SIDEBAR_IMPORT_ERRORS),
+        // My Stats seeds the queue from its own ranking (STATS-21), so the
+        // context tail is named after the page the user pressed play on.
+        ViewSource::MyStats => strings::text(strings::SIDEBAR_MY_STATS),
         ViewSource::Library
         | ViewSource::Queue
-        | ViewSource::MyStats
         | ViewSource::Releases
         | ViewSource::Concerts
         | ViewSource::Podcasts
         | ViewSource::Youtube
         | ViewSource::Radio
         | ViewSource::Conversions => strings::text(strings::SIDEBAR_MUSIC),
-    }
-}
-
-/// Origin for a container-play from an artist hero ("Play all"/"Shuffle").
-pub(crate) fn from_artist(artist: &str) -> PlayOrigin {
-    PlayOrigin {
-        place: BrowserPlace::from(ViewSource::Artist(artist.to_string())),
-        label: artist.to_string(),
     }
 }
 
@@ -200,6 +194,13 @@ mod tests {
         let stats = reprise_core::browser::BrowserPlace::MyStats;
         let stats_origin = resolve(&conn, &stats);
         assert_eq!(stats_origin.place, stats);
+        // STATS-21: unlike Queue, My Stats is a real context to go back to,
+        // so the queue tail names it instead of collapsing to "Music".
+        assert_eq!(
+            stats_origin.label,
+            strings::text(strings::SIDEBAR_MY_STATS),
+            "a queue seeded from My Stats must say so"
+        );
     }
 
     #[test]

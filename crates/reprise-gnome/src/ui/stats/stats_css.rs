@@ -115,8 +115,6 @@ pub(in crate::ui) fn css() -> String {
            padding: 0; \
            border-radius: {radius}; \
            background-color: @card_bg_color; }}\n\
-         .stats-band-tile:hover {{ \
-           background-color: shade(@card_bg_color, 1.08); }}\n\
          .stats-band-tile-fade {{ \
            background-image: linear-gradient(to top, @card_bg_color 4%, \
              alpha(@card_bg_color, 0) 62%); }}\n\
@@ -130,9 +128,23 @@ pub(in crate::ui) fn css() -> String {
          .stats-band-tile-rank {{ font-size: 12px; color: @accent_color; }}\n\
          .stats-band-tile-name {{ font-size: 15px; font-weight: 700; }}\n\
          .stats-band-tile-unify {{ margin: 4px; }}\n\
+         /* One hover for every activatable My Stats surface: the same alpha \
+            over `currentColor` the button tiers use (BTN-1/BTN-4). A band \
+            card cannot show it on its own ground — artwork covers that — so \
+            it wears the wash as an overlay above the image and below the \
+            text, while a song row paints it straight onto the row. */\n\
+         .stats-band-hover {{ \
+           background-color: transparent; \
+           transition: background-color {transition}; }}\n\
+         .stats-band-card:hover .stats-band-hover, \
+         .stats-band-tile:hover .stats-band-hover {{ \
+           background-color: alpha(currentColor, {hover_alpha}); }}\n\
          .stats-songs-card {{ padding: 8px; }}\n\
-         .stats-song-row {{ padding: 5px; }}\n\
-         .stats-song-row:hover {{ background-color: alpha(@window_fg_color, 0.05); }}\n\
+         .stats-song-row {{ \
+           padding: 5px; \
+           transition: background-color {transition}; }}\n\
+         .stats-song-row:hover {{ \
+           background-color: alpha(currentColor, {hover_alpha}); }}\n\
          .stats-song-row:focus-visible {{ outline: 2px solid @accent_color; }}\n\
          .stats-song-play {{ background-color: alpha(@card_bg_color, 0.88); }}\n\
          .stats-song-row.now-playing, .stats-top-track-row.now-playing {{ \
@@ -203,6 +215,8 @@ pub(in crate::ui) fn css() -> String {
          .stats-top-track-row {{ padding: 5px; }}",
         radius = tokens::RADIUS_SURFACE,
         border_alpha = tokens::SURFACE_BORDER_ALPHA,
+        hover_alpha = tokens::BTN_HOVER_ALPHA,
+        transition = tokens::TRANSITION,
     )
 }
 
@@ -242,6 +256,36 @@ mod tests {
         assert!(css.contains(".stats-pill"));
         assert!(css.contains(".stats-band-card"));
         assert!(css.contains("@card_bg_color"));
+    }
+
+    /// STATS-21: bands and songs hover with one wash, at the shared button
+    /// alpha over `currentColor` — not two hand-picked tints.
+    #[test]
+    fn stats_21_bands_and_songs_share_one_hover_wash() {
+        use crate::ui::style::tokens;
+
+        let css = super::css();
+        let wash = format!(
+            "background-color: alpha(currentColor, {});",
+            tokens::BTN_HOVER_ALPHA
+        );
+        assert!(
+            css.contains(&format!(
+                ".stats-band-card:hover .stats-band-hover, \
+                 .stats-band-tile:hover .stats-band-hover {{ {wash} }}"
+            )),
+            "the band surfaces lost the shared hover wash"
+        );
+        assert!(
+            css.contains(&format!(".stats-song-row:hover {{ {wash} }}")),
+            "the song row no longer hovers with the shared wash"
+        );
+        assert!(
+            !css.contains("shade(@card_bg_color, 1.08)"),
+            "the band tile's private hover tint must be gone"
+        );
+        // The wash must not swallow the click it decorates.
+        assert!(css.contains(".stats-band-hover { background-color: transparent;"));
     }
 
     #[test]

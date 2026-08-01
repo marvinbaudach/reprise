@@ -88,41 +88,81 @@ fn stats_19_the_row_plays_and_its_labels_navigate() {
         Rc::new(move |value| *target.borrow_mut() = Some(value))
     })));
     let (card, snapshot) = card_and_snapshot(metadata);
-    let played = Rc::new(RefCell::new(Vec::new()));
-    card.set_on_play_track({
-        let played = played.clone();
-        move |id| played.borrow_mut().push(id)
-    });
+    let played = recorder(&card);
     card.set_data(&snapshot);
 
     // The row itself is the play affordance.
     card.summary.row_clicks.borrow()[0]
         .emit_by_name::<()>("released", &[&1_i32, &0.0_f64, &0.0_f64]);
-    assert_eq!(*played.borrow(), vec![1]);
+    assert_eq!(*played.borrow(), vec![(vec![1, 2, 3, 4, 5, 6], 0)]);
     assert!(
         target.borrow().is_none(),
         "playing a row must not also navigate away from it"
     );
 }
 
+/// STATS-21: the row starts *its* track — and hands over the ranking around
+/// it, so Previous/Next, Shuffle and the Queue have a context to work with
+/// instead of one orphaned track.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn stats_19_a_row_click_targets_exactly_one_track() {
+fn stats_21_a_row_click_starts_its_track_inside_the_visible_ranking() {
     gtk4::init().unwrap();
     crate::ui::style::install_css_string_for_test(&crate::ui::stats::stats_css::css());
     let metadata: MetadataCallback = Rc::new(RefCell::new(None));
     let (card, snapshot) = card_and_snapshot(metadata);
-    let played = Rc::new(RefCell::new(Vec::new()));
-    card.set_on_play_track({
-        let played = played.clone();
-        move |id| played.borrow_mut().push(id)
-    });
+    let played = recorder(&card);
     card.set_data(&snapshot);
 
     card.summary.row_clicks.borrow()[2]
         .emit_by_name::<()>("released", &[&1_i32, &0.0_f64, &0.0_f64]);
 
-    assert_eq!(*played.borrow(), vec![3]);
+    let calls = played.borrow();
+    let (ids, index) = calls.first().expect("the row started playback");
+    assert_eq!(*ids, vec![1, 2, 3, 4, 5, 6], "the whole visible ranking");
+    assert_eq!(*index, 2, "starting at the row that was clicked");
+    assert_eq!(ids[*index], 3, "which is still exactly that row's track");
+}
+
+/// The context follows the sort the user is looking at: re-sorting rebuilds
+/// the rows, so a play never seeds the queue in the previous order.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_21_the_play_context_follows_the_active_sort() {
+    gtk4::init().unwrap();
+    crate::ui::style::install_css_string_for_test(&crate::ui::stats::stats_css::css());
+    let metadata: MetadataCallback = Rc::new(RefCell::new(None));
+    let (card, snapshot) = card_and_snapshot(metadata);
+    let played = recorder(&card);
+    card.set_data(&snapshot);
+
+    card.sort_toggle.set_active_name(Some("time"));
+    card.summary.row_clicks.borrow()[0]
+        .emit_by_name::<()>("released", &[&1_i32, &0.0_f64, &0.0_f64]);
+
+    let calls = played.borrow();
+    let (ids, index) = calls.first().expect("the row started playback");
+    let by_time = snapshot
+        .top_tracks_sorted(SortBy::Time)
+        .iter()
+        .map(|track| track.track_id)
+        .collect::<Vec<_>>();
+    assert_eq!(*ids, by_time, "the queue follows the ranking on screen");
+    assert_eq!(*index, 0);
+}
+
+/// One recorded activation: the context handed over and the row inside it.
+type PlayCalls = Rc<RefCell<Vec<(Vec<i64>, usize)>>>;
+
+/// Records `(ids, index)` per activation, so a test can assert the whole
+/// context and not just the track that starts.
+fn recorder(card: &StatsSongsCard) -> PlayCalls {
+    let played = Rc::new(RefCell::new(Vec::new()));
+    card.set_on_play_track({
+        let played = played.clone();
+        move |ids: &[i64], index| played.borrow_mut().push((ids.to_vec(), index))
+    });
+    played
 }
 
 #[test]
