@@ -654,7 +654,8 @@ Jedes Paket ist an ein mechanisches Tor gebunden, nicht an eine Zusage:
 | --- | --- | --- |
 | ~~F-Droid kann die Rust-NDK-Toolchain nicht bauen~~ | **entschärft 2026-08-01** | Präzedenzfall Delta Chat; Befund in `docs/research/android-spike-2026-08.md` |
 | Erstaufnahme in `fdroiddata` scheitert an der CI-Pipeline | P8 verzögert sich, Veröffentlichung blockiert | Bei vergleichbaren Projekten real aufgetreten; früh mit den Maintainern klären, nicht erst beim Einreichen |
-| Android ist teurer als gedacht (Media3, Service, UniFFI, SAF) | P7 sprengt den Rahmen | S1 vor allem anderen (B10); Befund kann B6 kippen |
+| **SAF schneidet tief in `reprise-core`** | eine Storage-Abstraktion vor P4a, quer durch Scanner, Mount-Klassifikation und drei Writeback-Pfade | **Eingetreten** (Code-Analyse 2026-08-01, `docs/research/android-spike-2026-08.md`). Größe erst nach Task 9 schätzbar |
+| Android ist teurer als gedacht (Media3, Service, UniFFI) | P7 sprengt den Rahmen | S1 vor allem anderen (B10); Befund kann B6 kippen |
 | P4a + P4b wachsen mit jeder Plattform | drei Backends statt einem | Zuschnitt (3.1) hält die Backends klein; O1 vor P4b |
 | P1a verzögert sich und blockiert P7 | Android rückt weg | Ausschnitt ist nach Mobil-Zuschnitt geschnitten, also der kleinstmögliche für ein auslieferbares Produkt |
 | Der Mobil-Zuschnitt wächst weiter | P1a und P7 laufen davon | 3.1 ist bindend; Statistiken sind ausdrücklich v2. Jede Erweiterung ist eine Spec-Änderung |

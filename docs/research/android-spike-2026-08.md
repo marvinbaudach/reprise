@@ -198,4 +198,46 @@ Offen. Braucht ein echtes Gerät (Plan Task 8).
 
 ## Frage 4 — Trägt SAF den Scanner?
 
-Offen. Braucht den lokalen Prototyp (Plan Task 9).
+**Zwischenstand aus Code-Analyse (2026-08-01): TRÄGT NICHT ohne
+Storage-Abstraktion.** Der Prototyp aus Plan Task 9 steht noch aus und muss
+das Ausmaß bestätigen — die Richtung ist aber bereits klar, und sie ist die
+teuerste Nachricht dieses Spikes.
+
+Vier Mechanismen in `reprise-core` hängen strukturell an einem echten
+Dateipfad:
+
+1. **Der Scanner selbst.** `walkdir::WalkDir::new(root)` in
+   `library/scanner.rs:264` und `library/scanner_progress.rs:15` — beide über
+   `&Path`.
+2. **Die Unmounted-gegen-Deleted-Klassifikation.** `library/mounts.rs` ist der
+   heikelste Punkt: sein Modulkommentar hält ausdrücklich fest, der
+   Mechanismus komme *„without any platform trait, GVolumeMonitor, or
+   `/proc/mounts` parsing"* aus. Er ruht ganz auf `tracks.device` — dem
+   `st_dev` der Datei aus Schema v2. Auf SAF gibt es kein `st_dev`. Das ist
+   keine Lücke, sondern eine **bewusste Architekturentscheidung, die Android
+   zunichtemacht**.
+3. **Geschwisterdateien und alle drei Writeback-Pfade** (Cover, Tags,
+   `.lrc`-Sidecars). Gemessen: **49 Produktivdateien** in
+   `crates/reprise-core/src` nutzen `std::fs` direkt (90 inklusive Tests).
+4. **Der `notify`-Watcher.** Auf SAF gibt es keine Entsprechung — das ist
+   zugleich die Antwort auf offenen Punkt O3.
+
+### Was daraus folgt
+
+Eine Android-Oberfläche über unverändertem Core reicht nicht. Es braucht eine
+echte **Storage-Abstraktion** — ein `LibrarySource`-artiges Trait mit
+Auflisten, Lesen, Schreiben und Erreichbarkeitsprüfung — mit zwei
+Implementierungen, durchgezogen durch Scanner, Mount-Klassifikation und alle
+Writeback-Pfade. Dazu ein Ersatz für die `tracks.device`-Spalte, weil SAF
+kein `st_dev` kennt.
+
+**Rückwirkung auf die Planung:** Das ist Arbeit an `reprise-core`, nicht an
+Android — sie gehört damit vor P4a und berührt Code, den auch P1a anfasst.
+Die Größenordnung ist noch nicht seriös schätzbar; Task 9 muss den
+Übergabemechanismus (Dateideskriptoren nach Rust gegen Pfad-Trait) klären,
+bevor daraus ein Paket wird.
+
+**Was dabei nicht verlorengeht:** Die Zweiteilung „vorübergehend
+unerreichbar" gegen „endgültig weg" ist auf dem Desktop bereits als Konzept
+vorhanden (`MissingReason::Unmounted` / `Deleted` / `Unknown`). Sie trägt auf
+Android weiter, nur die Feststellung braucht einen anderen Weg als `st_dev`.
