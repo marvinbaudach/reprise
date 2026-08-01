@@ -9,7 +9,6 @@ use libadwaita as adw;
 use libadwaita::prelude::AnimationExt;
 
 use super::stats_genre_card::StatsGenreCard;
-use super::stats_ribbon::StatsRibbon;
 use crate::ui::motion;
 use crate::ui::motion_reveal::HorizontalReveal;
 
@@ -63,7 +62,6 @@ pub(super) struct StatsEntrance {
     animations: Rc<RefCell<Vec<adw::TimedAnimation>>>,
     generation: Rc<Cell<u64>>,
     initialized: Rc<Cell<bool>>,
-    previous_ribbon_values: Rc<RefCell<Vec<f64>>>,
     previous_group_values: Rc<RefCell<Vec<Vec<f64>>>>,
     previous_genre_shares: Rc<RefCell<Vec<f64>>>,
 }
@@ -71,36 +69,30 @@ pub(super) struct StatsEntrance {
 impl StatsEntrance {
     pub(super) fn update(
         &self,
-        ribbon: &StatsRibbon,
         groups: &[HorizontalBarGroup],
         genres: &StatsGenreCard,
         entrance: bool,
     ) {
         self.next_generation();
-        let ribbon_targets = ribbon.target_values();
         let group_targets = groups
             .iter()
             .map(HorizontalBarGroup::target_values)
             .collect::<Vec<_>>();
-        let previous_ribbon = self.previous_ribbon_values.replace(ribbon_targets.clone());
         let previous_groups = self.previous_group_values.replace(group_targets.clone());
         let genre_targets = genres.target_segment_shares();
         let previous_genres = self.previous_genre_shares.replace(genre_targets.clone());
         let was_initialized = self.initialized.replace(true);
 
         if !motion::animations_enabled() {
-            land_in_end_state(ribbon, groups, &group_targets, genres, &genre_targets);
+            land_in_end_state(groups, &group_targets, genres, &genre_targets);
             return;
         }
 
         if entrance {
-            self.run_entrance(ribbon, groups, &group_targets);
+            self.run_entrance(groups, &group_targets);
         } else if was_initialized {
             self.run_period_tween(
-                ribbon,
                 groups,
-                &previous_ribbon,
-                &ribbon_targets,
                 &previous_groups,
                 &group_targets,
                 genres,
@@ -108,29 +100,13 @@ impl StatsEntrance {
                 &genre_targets,
             );
         } else {
-            land_in_end_state(ribbon, groups, &group_targets, genres, &genre_targets);
+            land_in_end_state(groups, &group_targets, genres, &genre_targets);
         }
     }
 
-    fn run_entrance(
-        &self,
-        ribbon: &StatsRibbon,
-        groups: &[HorizontalBarGroup],
-        group_targets: &[Vec<f64>],
-    ) {
-        ribbon.prepare_entrance();
-        if ribbon.is_sparse() {
-            let best_index = ribbon.best_week_index();
-            for index in 0..ribbon.bar_count() {
-                let delay = motion::STATS_ENTRANCE_DELAY_MS
-                    .saturating_add(motion::STATS_CHART_STAGGER_MS.saturating_mul(index as u32));
-                self.animate_ribbon_bar_at(ribbon, index, delay, Some(index) == best_index);
-            }
-            if best_index.is_none() {
-                ribbon.set_best_week_label_opacity(1.0);
-            }
-        }
-
+    /// STATS-19: only horizontal bars move — band ranks, song bars and genre
+    /// segments. The weekly chart that used to open the choreography is gone.
+    fn run_entrance(&self, groups: &[HorizontalBarGroup], group_targets: &[Vec<f64>]) {
         for (group, targets) in groups.iter().zip(group_targets) {
             self.animate_group_at(
                 group,
@@ -143,26 +119,15 @@ impl StatsEntrance {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn run_period_tween(
         &self,
-        ribbon: &StatsRibbon,
         groups: &[HorizontalBarGroup],
-        previous_ribbon: &[f64],
-        ribbon_targets: &[f64],
         previous_groups: &[Vec<f64>],
         group_targets: &[Vec<f64>],
         genres: &StatsGenreCard,
         previous_genres: &[f64],
         genre_targets: &[f64],
     ) {
-        ribbon.land_in_end_state();
-        if ribbon.is_sparse() {
-            let from = align_from_right(previous_ribbon, ribbon_targets.len());
-            ribbon.set_display_values(&from);
-            self.animate_ribbon_values(ribbon, &from, ribbon_targets);
-        }
-
         for (index, (group, targets)) in groups.iter().zip(group_targets).enumerate() {
             let from = previous_groups.get(index).map_or_else(
                 || vec![0.0; targets.len()],
@@ -174,67 +139,6 @@ impl StatsEntrance {
         let from = align_from_left(previous_genres, genre_targets.len());
         genres.set_segment_shares(&from);
         self.animate_genre_shares(genres, &from, genre_targets);
-    }
-
-    fn animate_ribbon_bar_at(
-        &self,
-        ribbon: &StatsRibbon,
-        index: usize,
-        delay_ms: u32,
-        reveal_label_on_done: bool,
-    ) {
-        let ribbon = ribbon.clone();
-        let animations = self.animations.clone();
-        let generation = self.generation.get();
-        let live_generation = self.generation.clone();
-        self.schedule(delay_ms, move || {
-            let target_ribbon = ribbon.clone();
-            let animation =
-                motion::stats_timed(ribbon.widget(), motion::STATS_CHART_BAR, move |progress| {
-                    target_ribbon.set_bar_fraction(index, progress);
-                });
-            if reveal_label_on_done {
-                let label_ribbon = ribbon.clone();
-                let label_animations = Rc::downgrade(&animations);
-                let live_generation = live_generation.clone();
-                animation.connect_done(move |_| {
-                    if live_generation.get() != generation {
-                        return;
-                    }
-                    let Some(label_animations) = label_animations.upgrade() else {
-                        return;
-                    };
-                    label_ribbon.set_best_week_label_opacity(0.0);
-                    let target_ribbon = label_ribbon.clone();
-                    play_and_keep(
-                        &label_animations,
-                        motion::stats_timed(
-                            label_ribbon.widget(),
-                            motion::STATS_LABEL,
-                            move |progress| {
-                                target_ribbon.set_best_week_label_opacity(progress);
-                            },
-                        ),
-                    );
-                });
-            }
-            play_and_keep(&animations, animation);
-        });
-    }
-
-    fn animate_ribbon_values(&self, ribbon: &StatsRibbon, from: &[f64], targets: &[f64]) {
-        let ribbon = ribbon.clone();
-        let from = from.to_vec();
-        let targets = targets.to_vec();
-        let animations = self.animations.clone();
-        let target_ribbon = ribbon.clone();
-        play_and_keep(
-            &animations,
-            motion::stats_timed(ribbon.widget(), motion::STATS_TWEEN, move |progress| {
-                let values = interpolate_values(&from, &targets, progress);
-                target_ribbon.set_display_values(&values);
-            }),
-        );
     }
 
     fn animate_genre_shares(&self, genres: &StatsGenreCard, from: &[f64], targets: &[f64]) {
@@ -307,13 +211,11 @@ impl StatsEntrance {
 }
 
 fn land_in_end_state(
-    ribbon: &StatsRibbon,
     groups: &[HorizontalBarGroup],
     targets: &[Vec<f64>],
     genres: &StatsGenreCard,
     genre_targets: &[f64],
 ) {
-    ribbon.land_in_end_state();
     for (group, targets) in groups.iter().zip(targets) {
         for (index, target) in targets.iter().enumerate() {
             group.set_value(index, *target);
@@ -326,15 +228,6 @@ fn align_from_left(values: &[f64], target_len: usize) -> Vec<f64> {
     (0..target_len)
         .map(|index| values.get(index).copied().unwrap_or(0.0))
         .collect()
-}
-
-fn align_from_right(values: &[f64], target_len: usize) -> Vec<f64> {
-    if values.len() >= target_len {
-        return values[values.len() - target_len..].to_vec();
-    }
-    let mut aligned = vec![0.0; target_len - values.len()];
-    aligned.extend_from_slice(values);
-    aligned
 }
 
 fn interpolate_values(from: &[f64], targets: &[f64], progress: f64) -> Vec<f64> {

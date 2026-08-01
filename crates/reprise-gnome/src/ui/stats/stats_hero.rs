@@ -13,7 +13,6 @@ const HERO_NATURAL_LINE_LENGTH: i32 = 900;
 #[derive(Clone)]
 pub(super) struct StatsKpi {
     pub(super) root: gtk4::Box,
-    pub(super) label: gtk4::Label,
     pub(super) value: gtk4::Label,
     pub(super) reference: gtk4::Label,
     pub(super) icon: gtk4::Image,
@@ -41,7 +40,6 @@ impl StatsKpi {
         root.append(&reference);
         Self {
             root,
-            label: title,
             value,
             reference,
             icon,
@@ -66,8 +64,7 @@ impl StatsKpi {
 pub(super) struct StatsKpis {
     pub(super) per_day: StatsKpi,
     pub(super) trend: StatsKpi,
-    pub(super) pace: StatsKpi,
-    pub(super) best_week: StatsKpi,
+    pub(super) this_week: StatsKpi,
 }
 
 #[derive(Clone)]
@@ -90,18 +87,20 @@ impl StatsHero {
         time_block.append(&time);
         time_block.append(&subline);
 
+        // STATS-19: the removed weekly chart left one reading worth keeping,
+        // and it is a number, not a diagram. Pace and best week went with the
+        // chart — four KPIs beside an 82px figure read as a second table.
         let kpis = StatsKpis {
             per_day: StatsKpi::new("PER DAY", false),
             trend: StatsKpi::new("TREND", true),
-            pace: StatsKpi::new("PACE", false),
-            best_week: StatsKpi::new("BEST WEEK", false),
+            this_week: StatsKpi::new("THIS WEEK", true),
         };
         let kpi_row = adw::WrapBox::new();
         kpi_row.set_child_spacing(24);
         kpi_row.set_line_spacing(12);
         kpi_row.set_wrap_policy(adw::WrapPolicy::Natural);
         kpi_row.set_valign(gtk4::Align::End);
-        for kpi in [&kpis.per_day, &kpis.trend, &kpis.pace, &kpis.best_week] {
+        for kpi in [&kpis.per_day, &kpis.trend, &kpis.this_week] {
             kpi_row.append(&kpi.root);
         }
         let root = adw::WrapBox::new();
@@ -145,28 +144,17 @@ impl StatsHero {
 
         self.render_comparison(snapshot, period, header);
 
-        if let (Some(pace), StatsPeriod::YearToDate(year)) =
-            (snapshot.hero.pace_projection_ms, period)
-        {
-            self.kpis
-                .pace
-                .label
-                .set_label(&strings::stats_pace_label(year));
-            self.kpis
-                .pace
-                .show(&strings::stats_duration(pace), None, None);
-        } else {
-            self.kpis.pace.hide();
-        }
-
-        if let Some(best_week) = &snapshot.best_week {
-            self.kpis.best_week.show(
-                &strings::stats_best_week(best_week.start, best_week.total_ms),
-                None,
-                None,
-            );
-        } else {
-            self.kpis.best_week.hide();
+        match snapshot.hero.this_week_ms {
+            Some(this_week_ms) => {
+                self.kpis
+                    .this_week
+                    .icon
+                    .set_icon_name(Some("pan-up-symbolic"));
+                self.kpis
+                    .this_week
+                    .show(&strings::stats_duration(this_week_ms), None, None);
+            }
+            None => self.kpis.this_week.hide(),
         }
     }
 
@@ -175,8 +163,7 @@ impl StatsHero {
         self.subline.set_label("");
         self.kpis.per_day.hide();
         self.kpis.trend.hide();
-        self.kpis.pace.hide();
-        self.kpis.best_week.hide();
+        self.kpis.this_week.hide();
         header.hide_new_badge();
         self.root.set_visible(false);
     }

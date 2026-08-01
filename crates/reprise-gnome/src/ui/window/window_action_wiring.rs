@@ -10,7 +10,6 @@ use libadwaita as adw;
 use reprise_core::browser::navigation::NavigationIntent;
 use reprise_core::browser::{AlbumKey, ArtistKey};
 use reprise_core::library::watcher::WatcherHandle;
-use reprise_core::queries::query_stats_album_target_for_path;
 use reprise_core::view_source::ViewSource;
 
 use super::player_controller::PlayerController;
@@ -166,6 +165,18 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
             player.play_from_view(vec![track_id], 0, play_origin::from_artist(&artist));
         });
     }
+    if let Some(player) = player.as_ref() {
+        // `STATS-18`/NAV-10a: the songs card is a second surface showing the
+        // loaded track, so it listens on the same fan-out as the track table.
+        let marker = stats_view.playback_marker();
+        player.add_on_current_track_changed(move |track_id, _, _| {
+            marker.set_loaded_track(track_id);
+        });
+        let marker = stats_view.playback_marker();
+        player.add_on_playback_state_changed(move |state| {
+            marker.set_playback_state(state);
+        });
+    }
     {
         let player = player.as_ref().map(Rc::downgrade);
         stats_view.set_on_play_next(move |track_id| {
@@ -215,24 +226,6 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
                     },
                     "stats artist link",
                 );
-            }
-        });
-    }
-    {
-        let conn = conn.clone();
-        let navigator = metadata_navigator.clone();
-        stats_view.set_on_genre_album(move |path| {
-            let target = query_stats_album_target_for_path(&conn, &path);
-            match target {
-                Ok(Some((track_id, album, album_artist))) => navigator.navigate(
-                    NavigationIntent::OpenAlbum {
-                        album: AlbumKey::new(album, album_artist),
-                        anchor_track_id: Some(track_id),
-                    },
-                    "stats genre album",
-                ),
-                Ok(None) => {}
-                Err(error) => tracing::warn!(%error, "stats genre album lookup failed"),
             }
         });
     }
@@ -444,7 +437,3 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
         });
     }
 }
-
-#[cfg(test)]
-#[path = "window_action_wiring_tests.rs"]
-mod stats_tests;

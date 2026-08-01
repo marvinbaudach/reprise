@@ -2,7 +2,6 @@
 //! empty/failure states. The rest of the page's text is English-only chrome
 //! built in `ui::stats`; everything a user reads as a sentence lives here.
 
-use chrono::{Datelike, NaiveDate};
 use reprise_core::format::format_thousands;
 
 use super::{formatted, plural, text};
@@ -15,8 +14,6 @@ const STATS_DURATION_HOURS_MINUTES: &str = N_!("{hours} h {minutes}");
 const STATS_DURATION_HOURS: &str = N_!("{hours} h");
 const STATS_DURATION_MINUTES: &str = N_!("{minutes} min");
 const STATS_HERO_SUBLINE: &str = N_!("{plays} plays · {artists} artists");
-const STATS_PACE: &str = N_!("PACE FOR {year}");
-const STATS_BEST_WEEK: &str = N_!("{date} · {time}");
 const STATS_TREND_DELTA: &str = N_!("{sign}{time}");
 const STATS_VS_YEAR: &str = N_!("vs {year}");
 const STATS_VS_PREVIOUS_DAYS: &str = N_!("vs previous {count} days");
@@ -38,10 +35,13 @@ const SPELLINGS_MERGED_ONE: &str = N_!("1 spelling merged \u{2014} unify it in t
 const SPELLINGS_MERGED: &str =
     N_!("{count} spellings merged \u{2014} unify them in the tag editor?");
 pub const STATS_EMPTY: &str = N_!("Start listening to see your stats");
+/// Accessible name of a song row. The row itself is the play affordance —
+/// only its title and artist labels navigate — so this is what a screen
+/// reader announces before the track's own text.
+pub const STATS_PLAY_TRACK: &str = N_!("Play this track");
 pub const STATS_UNAVAILABLE: &str = N_!("Your stats could not be read");
 pub const STATS_UNAVAILABLE_DESCRIPTION: &str =
     N_!("Reading the listening history failed. Nothing is missing from it — this view just could not load it.");
-pub const STATS_THIN_HISTORY: &str = N_!("Keep listening — stats grow with you");
 
 /// The single compact duration presentation used throughout My Stats.
 pub fn stats_duration(milliseconds: i64) -> String {
@@ -75,20 +75,6 @@ pub fn stats_hero_subline(plays: i64, artists: i64) -> String {
 
 pub fn stats_per_day(milliseconds: i64) -> String {
     stats_duration(milliseconds)
-}
-
-pub fn stats_pace_label(year: i32) -> String {
-    formatted(STATS_PACE, &[("year", &year.to_string())])
-}
-
-pub fn stats_best_week(start: NaiveDate, milliseconds: i64) -> String {
-    formatted(
-        STATS_BEST_WEEK,
-        &[
-            ("date", &format!("{} {}", start.format("%b"), start.day())),
-            ("time", &stats_duration(milliseconds)),
-        ],
-    )
 }
 
 pub fn stats_trend_delta(milliseconds: i64) -> String {
@@ -276,10 +262,6 @@ pub fn stats_unavailable_title() -> String {
 
 pub fn stats_unavailable_description() -> String {
     text(STATS_UNAVAILABLE_DESCRIPTION)
-}
-
-pub fn stats_thin_history_hint() -> String {
-    text(STATS_THIN_HISTORY)
 }
 
 #[cfg(test)]

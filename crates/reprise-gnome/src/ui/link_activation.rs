@@ -38,7 +38,14 @@ pub(in crate::ui) fn arm(
     // input-parity: ACC-8 keyboard=link-enter-controller
     let click = gtk4::GestureClick::new();
     let click_activate = activate.clone();
-    click.connect_released(move |_, _, _, _| click_activate());
+    click.connect_released(move |gesture, _, _, _| {
+        // Claim the sequence so an enclosing row gesture does not also fire.
+        // A link inside a row that itself acts on click (the My Stats song
+        // rows) must navigate *instead of* triggering the row, not as well
+        // as — otherwise one click both opens the library and starts a track.
+        gesture.set_state(gtk4::EventSequenceState::Claimed);
+        click_activate();
+    });
     widget.add_controller(click);
 
     let keys = gtk4::EventControllerKey::new();
