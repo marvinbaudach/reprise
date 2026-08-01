@@ -23,9 +23,10 @@ use crate::ui::strings;
 /// user actually reads no longer needs the expander.
 const SONG_ROW_LIMIT: usize = 10;
 const SUMMARY_COLUMN_ROWS: usize = 5;
-/// The expander now has to earn its place beside a visible top ten, so it
-/// reaches well past it rather than repeating the same rows.
-const FULL_TRACK_LIMIT: usize = 25;
+/// How many further tracks the expander adds *below* the visible top ten. It
+/// continues the ranking rather than restating it: someone who opens it has
+/// already read rows 1-10 and wants what comes next.
+const FULL_TRACK_EXTRA: usize = 15;
 
 type IdCallback = Rc<RefCell<Option<Rc<dyn Fn(i64)>>>>;
 /// The loaded track as both song lists see it. Shared by `Rc` so a mark
@@ -125,7 +126,7 @@ impl StatsSongsCard {
         }
         root.append(&rows);
 
-        let reveal_button = gtk4::Button::with_label("Show all top tracks");
+        let reveal_button = gtk4::Button::with_label("Show more top tracks");
         reveal_button.add_css_class("flat");
         reveal_button.add_css_class("stats-songs-reveal");
         reveal_button.set_halign(gtk4::Align::Start);
@@ -187,9 +188,9 @@ impl StatsSongsCard {
                     revealer.set_reveal_child(false);
                 }
                 button.set_label(if reveal {
-                    "Hide top tracks"
+                    "Hide more top tracks"
                 } else {
-                    "Show all top tracks"
+                    "Show more top tracks"
                 });
             }
         ));
@@ -234,9 +235,14 @@ impl StatsSongsCard {
     }
 
     pub(in crate::ui) fn set_data(&self, snapshot: &StatsSnapshot) {
-        if snapshot.top_tracks.is_empty() {
+        // The expander only continues the ranking, so it is offered exactly
+        // when there is something past the visible ten — otherwise it would
+        // open onto nothing.
+        let has_more = snapshot.top_tracks.len() > SONG_ROW_LIMIT;
+        self.reveal_button.set_visible(has_more);
+        if !has_more {
             self.revealer.set_reveal_child(false);
-            self.reveal_button.set_label("Show all top tracks");
+            self.reveal_button.set_label("Show more top tracks");
         }
         *self.snapshot.borrow_mut() = Some(snapshot.clone());
         self.summary.render(snapshot, self.sort_by.get());
@@ -561,7 +567,14 @@ fn render_full_rows(
     let token = generations.next_full();
     let tracks = snapshot.top_tracks_sorted(sort_by);
     let leader = tracks.first().map_or(0, |track| metric(track, sort_by));
-    for (index, track) in tracks.iter().take(FULL_TRACK_LIMIT).enumerate() {
+    for (offset, track) in tracks
+        .iter()
+        .skip(SONG_ROW_LIMIT)
+        .take(FULL_TRACK_EXTRA)
+        .enumerate()
+    {
+        // Ranks continue from the card above, so the two lists read as one.
+        let index = offset + SONG_ROW_LIMIT;
         let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 10);
         row.add_css_class("stats-top-track-row");
         row.set_height_request(56);

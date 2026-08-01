@@ -8,8 +8,8 @@ use super::*;
 fn stats_19_the_card_shows_a_full_top_ten_over_two_columns() {
     assert_eq!(SONG_ROW_LIMIT, 10);
     assert_eq!(SUMMARY_COLUMN_ROWS, 5);
-    // The expander must reach past the ten rows already on screen.
-    assert_eq!(FULL_TRACK_LIMIT, 25);
+    // The expander continues past the ten rows already on screen.
+    assert_eq!(FULL_TRACK_EXTRA, 15);
 }
 
 #[test]
@@ -29,12 +29,20 @@ fn summary_cover_generation_survives_rendering_the_full_ranking() {
 }
 
 fn card_and_snapshot(metadata: MetadataCallback) -> (StatsSongsCard, StatsSnapshot) {
+    card_and_snapshot_with(metadata, 6)
+}
+
+/// `tracks` plays descend with the id, so rank order is the id order.
+fn card_and_snapshot_with(
+    metadata: MetadataCallback,
+    tracks: i64,
+) -> (StatsSongsCard, StatsSnapshot) {
     let conn = crate::test_db::open().unwrap();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
-    for id in 1..=6_i64 {
+    for id in 1..=tracks {
         crate::test_db::connection(&conn)
             .execute(
                 "INSERT INTO tracks \
@@ -49,7 +57,7 @@ fn card_and_snapshot(metadata: MetadataCallback) -> (StatsSongsCard, StatsSnapsh
                 ],
             )
             .unwrap();
-        for play in 0..=(6 - id) {
+        for play in 0..=(tracks - id) {
             crate::test_db::connection(&conn)
                 .execute(
                     "INSERT INTO listen_events (track_id, played_at, ms_played) \
@@ -123,7 +131,7 @@ fn stats_19_toggle_sorts_both_columns_and_show_all_reveals_the_full_list() {
     gtk4::init().unwrap();
     crate::ui::style::install_css_string_for_test(&crate::ui::stats::stats_css::css());
     let metadata: MetadataCallback = Rc::new(RefCell::new(None));
-    let (card, snapshot) = card_and_snapshot(metadata);
+    let (card, snapshot) = card_and_snapshot_with(metadata, 13);
     card.set_data(&snapshot);
 
     assert!(!card.revealer.reveals_child());
@@ -155,30 +163,39 @@ fn stats_19_toggle_sorts_both_columns_and_show_all_reveals_the_full_list() {
     assert_eq!(card.sort_toggle.active_name().as_deref(), Some("plays"));
     assert_eq!(
         card.reveal_button.label().as_deref(),
-        Some("Show all top tracks")
+        Some("Show more top tracks")
     );
-    // Two columns; the fixture's six tracks fill the first and spill one row
-    // into the second.
+    // Two columns of five: thirteen tracks fill the visible top ten.
     assert_eq!(card.summary.rows.observe_children().n_items(), 2);
     assert_eq!(card.summary.columns[0].observe_children().n_items(), 5);
-    assert_eq!(card.summary.columns[1].observe_children().n_items(), 1);
+    assert_eq!(card.summary.columns[1].observe_children().n_items(), 5);
     card.sort_toggle.set_active_name(Some("time"));
     assert_eq!(card.sort_by.get(), SortBy::Time);
     assert_eq!(
         descendant_labels(&card.summary.columns[0].first_child().unwrap())[1],
-        "Track 3",
+        "Track 5",
+        // Listened time is capped at the track duration, so the fixture's
+        // time leader is the one with the most *complete* plays, not the one
+        // with the largest raw ms_played.
         "the rank slot prints first, then the title"
     );
 
-    card.reveal_button.emit_clicked();
-    assert!(card.revealer.reveals_child());
-    assert_eq!(card.full_rows.observe_children().n_items(), 6);
-    assert!(
-        card.summary.playbacks.borrow().len() == 6 && card.full_playbacks.borrow().len() == 6,
-        "STATS-18: both lists register every row for the shared marker"
-    );
     card.sort_toggle.set_active_name(Some("plays"));
     assert_eq!(card.sort_by.get(), SortBy::Plays);
+    card.reveal_button.emit_clicked();
+    assert!(card.revealer.reveals_child());
+    // The expander continues the ranking instead of restating it: ten rows
+    // are already on screen, so only 11-13 remain.
+    assert_eq!(card.full_rows.observe_children().n_items(), 3);
+    assert_eq!(
+        descendant_labels(&card.full_rows.first_child().unwrap())[0],
+        "11",
+        "the expanded list picks up where the card stopped"
+    );
+    assert!(
+        card.summary.playbacks.borrow().len() == 10 && card.full_playbacks.borrow().len() == 3,
+        "STATS-18: both lists register every row for the shared marker"
+    );
     run_main_loop_for_layout();
 
     let row = card.full_rows.first_child().unwrap();
@@ -196,6 +213,26 @@ fn stats_19_toggle_sorts_both_columns_and_show_all_reveals_the_full_list() {
     assert_eq!((cover.width(), cover.height()), (42, 42));
     assert_eq!(bar.height(), 8);
     window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_19_the_expander_is_only_offered_when_it_has_something_to_add() {
+    gtk4::init().unwrap();
+    let metadata: MetadataCallback = Rc::new(RefCell::new(None));
+
+    // Six tracks all fit in the visible top ten — opening the expander would
+    // reveal an empty card.
+    let (card, snapshot) = card_and_snapshot_with(metadata.clone(), 6);
+    card.set_data(&snapshot);
+    assert!(!card.reveal_button.is_visible());
+    assert_eq!(card.full_rows.observe_children().n_items(), 0);
+
+    // Eleven tracks leave exactly one for the expander.
+    let (card, snapshot) = card_and_snapshot_with(metadata, 11);
+    card.set_data(&snapshot);
+    assert!(card.reveal_button.is_visible());
+    assert_eq!(card.full_rows.observe_children().n_items(), 1);
 }
 
 #[test]
