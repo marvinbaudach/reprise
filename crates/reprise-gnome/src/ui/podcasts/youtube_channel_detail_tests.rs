@@ -428,3 +428,50 @@ fn pod_14_only_shorts_here_offers_a_way_to_reveal_them() {
         .any(|child| child.has_css_class("reprise-shorts-only-notice")));
     assert_eq!(children.len(), 4, "header, controls, and two episode rows");
 }
+
+/// `SRC-14`: the detail view selects with the same mechanics as the grouped
+/// library view — it owns its per-channel state, but the range walk is the
+/// shared one, so the two surfaces cannot drift apart.
+#[test]
+fn src_14_the_detail_view_ranges_over_its_own_channel() {
+    let mut state = YoutubeChannelState::default();
+
+    state.apply_select(5, &[1, 2, 3], 1, SelectMode::Only);
+    state.apply_select(5, &[1, 2, 3], 3, SelectMode::Range);
+
+    assert_eq!(state.selected_ids(5), vec![1, 2, 3]);
+    assert!(
+        state.selected_ids(6).is_empty(),
+        "one channel's range never reaches another channel"
+    );
+}
+
+/// `SRC-14`: each channel keeps its own anchor, so switching channels and
+/// coming back does not produce a range from a foreign row.
+#[test]
+fn src_14_each_channel_anchors_its_own_range() {
+    let mut state = YoutubeChannelState::default();
+
+    state.apply_select(5, &[1, 2, 3], 3, SelectMode::Only);
+    state.apply_select(6, &[10, 11, 12], 10, SelectMode::Only);
+    state.apply_select(5, &[1, 2, 3], 1, SelectMode::Range);
+
+    assert_eq!(state.selected_ids(5), vec![1, 2, 3]);
+    assert_eq!(
+        state.selected_ids(6),
+        vec![10],
+        "the other channel's selection is untouched"
+    );
+}
+
+/// `SRC-14`: emptying a channel's selection drops the channel rather than
+/// leaving an empty set behind — the state `set_selected` has always kept.
+#[test]
+fn src_14_toggling_the_last_row_off_clears_the_channel() {
+    let mut state = YoutubeChannelState::default();
+
+    state.apply_select(5, &[1, 2], 1, SelectMode::Toggle);
+    state.apply_select(5, &[1, 2], 1, SelectMode::Toggle);
+
+    assert!(state.selected_ids(5).is_empty());
+}

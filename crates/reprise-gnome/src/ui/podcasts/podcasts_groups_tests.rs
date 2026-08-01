@@ -93,7 +93,10 @@ fn compact_episode_row_has_no_play_button_and_stays_within_height_budget() {
         texture,
     );
     for row in [episode(None), episode(Some("https://img.test/episode.jpg"))] {
-        let mut widgets = BTreeMap::new();
+        let mut widgets = RenderedRowWidgets {
+            downloads: BTreeMap::new(),
+            selection: BTreeMap::new(),
+        };
         let rendered = episode_row(
             &row,
             &TitleParts {
@@ -246,7 +249,8 @@ fn src_5_one_expander_is_rendered_per_source_group() {
         None,
         &Rc::new(RefCell::new(PodcastSelection::default())),
     );
-    assert!(widgets.is_empty());
+    assert!(widgets.downloads.is_empty());
+    assert!(widgets.selection.is_empty());
     assert!(container.first_child().is_some());
     assert!(container
         .first_child()

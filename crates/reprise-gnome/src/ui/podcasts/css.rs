@@ -74,6 +74,13 @@ pub(super) fn css() -> String {
   border-left-color: @reprise_player_accent;
   background: alpha(@accent_bg_color, 0.16);
 }
+/* `SRC-14`: deliberately after the playing rule, and a stronger fill than it.
+   A row can be selected, hovered and loaded at once; selection is the state the
+   user is actively steering, so it wins the background, while the loaded row
+   keeps its accent edge and marker. */
+.reprise-podcast-episode-row.reprise-podcast-episode-selected {
+  background: alpha(@accent_bg_color, 0.32);
+}
 .reprise-podcast-result { padding: 6px; }
 .reprise-podcast-glyph-tile {
   min-width: 40px;
@@ -104,5 +111,25 @@ mod tests {
         assert!(css.contains(".reprise-podcast-episode-row.reprise-podcast-playing"));
         assert!(css.contains("border-left-color: @reprise_player_accent"));
         assert!(css.contains("background: alpha(@accent_bg_color, 0.16)"));
+    }
+
+    /// `SRC-14`: a selected row reads as selected, and does so distinctly from
+    /// the loaded row — a shared tint would leave a user unable to tell which
+    /// rows an action is about to hit.
+    #[test]
+    fn src_14_a_selected_row_outweighs_the_loaded_row_tint() {
+        let css = css();
+        let selected = css
+            .find(".reprise-podcast-episode-row.reprise-podcast-episode-selected")
+            .expect("a selected row has its own style");
+        let playing = css
+            .find(".reprise-podcast-episode-row.reprise-podcast-playing")
+            .expect("the loaded row keeps its own style");
+
+        assert!(
+            selected > playing,
+            "the selected rule must come last, or a selected loaded row would not look selected"
+        );
+        assert!(css.contains("background: alpha(@accent_bg_color, 0.32)"));
     }
 }
