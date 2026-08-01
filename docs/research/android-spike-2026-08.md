@@ -183,10 +183,68 @@ Timeout-Budget, das Delta Chat dort verwendet.
 
 ## Frage 3 — Trägt UniFFI die Typen von reprise-view?
 
-Offen. Braucht den lokalen Prototyp (Plan Task 6). Prüfobjekt ist
-`ui/track_list/queue_sections.rs` (`QueueViewModel`, `QueueSection`,
-`QueueSectionKind`, `VirtualContextTail`), nicht mehr
-`podcasts_presentation.rs` — siehe Spec B13.
+**Urteil: TRÄGT MIT EINER AUFLAGE**, und die Auflage prägt P1a.
+
+Prüfobjekt war `ui/track_list/queue_sections.rs`, nachgebaut in
+`spikes/uniffi-shapes` gegen UniFFI 0.29 (Proc-Macro-Modus, plus ein
+`uniffi-bindgen`-Binärziel).
+
+### Was trägt
+
+Verschachtelte Records, Listen, `u32`/`i64`/`String` und — bemerkenswert —
+**Enums mit Datenvariante**. `QueueSectionKind::UpNext { source_label }`
+wird auf der Kotlin-Seite zu einer `sealed class`, also genau der
+idiomatischen Entsprechung:
+
+```kotlin
+data class QueueRow(...)
+data class QueueSection(...)
+data class QueueViewModel(...)
+sealed class QueueSectionKind { ... }
+fun queueViewModel(rows: UInt): QueueViewModel
+fun queueWindow(start: UInt, len: UInt): List<Long>
+```
+
+### Was nicht trägt — und das ist der eigentliche Befund
+
+`QueueViewModel` hält heute über `VirtualContextTail` einen **boxed
+Closure**:
+
+```rust
+window: Rc<dyn Fn(usize, usize) -> Vec<i64>>
+```
+
+Das ist die Naht, an der die GTK-Liste beim Scrollen in Rust zurückruft, um
+den Kontext-Schwanz fensterweise nachzuladen. Über eine FFI-Grenze ist sie
+nicht darstellbar. Gegenprobe gefahren, drei Fehler:
+
+```text
+the trait `uniffi::TypeId<UniFfiTag>` is not implemented for
+  `Rc<dyn Fn(usize, usize) -> Vec<i64>>`
+the trait `uniffi::Lower<UniFfiTag>` is not implemented for ...
+the trait `Lift<UniFfiTag>` is not implemented for ...
+```
+
+Die geteilte Form kompiliert dagegen sauber: das ViewModel trägt nur noch
+`context_len`, und das Fenster holt der Aufrufer über einen **expliziten**
+`queue_window(start, len)`.
+
+### Konsequenz für P1a
+
+**ViewModels in `reprise-view` dürfen keine Closures halten.** Faules
+Nachladen wird von Rückruf zu Anfrage/Antwort. Das betrifft **auch GTK** —
+beide Oberflächen konsumieren dieselbe Schicht, also verliert das
+GTK-Frontend an dieser Stelle seinen Closure-Rückruf und bekommt denselben
+expliziten Fensteraufruf. Das ist kein Nebenschauplatz von P1a, sondern eine
+seiner Kernumbauten.
+
+### Noch nicht gemessen
+
+Die Kosten für eine lange Liste über die Grenze (Plan Task 6 Step 4: 10.000
+Zeilen). Dafür braucht es eine Kotlin-Laufzeit, nicht nur die Generierung.
+Die Frage ist offen, ob das ViewModel am Stück oder seitenweise geholt
+werden muss — die Antwort ändert die Auflage oben nicht, nur ihre
+Dimensionierung.
 
 ## Frage 1 — Erfüllt Media3 den playback-Vertrag?
 
@@ -221,6 +279,30 @@ Dateipfad:
    `crates/reprise-core/src` nutzen `std::fs` direkt (90 inklusive Tests).
 4. **Der `notify`-Watcher.** Auf SAF gibt es keine Entsprechung — das ist
    zugleich die Antwort auf offenen Punkt O3.
+
+### Der Tag-Pfad ist handle-fähig — gemessen, nicht vermutet
+
+Die teuerste Teilfrage war, ob `lofty` überhaupt ohne Pfad arbeiten kann.
+SAF liefert `content://`-URIs und daraus Dateideskriptoren, nie Pfade;
+`reprise-core` ruft heute ausnahmslos `read_from_path`/`save_to_path`.
+
+Gemessen am 2026-08-01 gegen `lofty` 0.24 mit
+`crates/reprise-core/tests/fixtures/sine.flac`:
+
+```text
+LESEN AUS HANDLE: OK    Format: Flac, Tags: 1
+SCHREIBEN IN HANDLE: OK
+```
+
+`lofty::read_from(&mut File)` und `AudioFile::save_to(&mut File,
+WriteOptions)` existieren beide und funktionieren. Damit ist der gesamte
+Tag-Lese- und Schreibpfad über einen Dateideskriptor bedienbar — der Umbau
+ist ein Signaturwechsel, kein Ersatz der Bibliothek.
+
+Das verkleinert den Befund deutlich. Übrig bleiben drei Stellen, die
+wirklich neu gedacht werden müssen: das **Auflisten** eines Baums (SAF hat
+mit `DocumentsContract` eine eigene API dafür), die
+**Unmounted-Klassifikation** über `st_dev`, und der **Watcher**.
 
 ### Was daraus folgt
 
