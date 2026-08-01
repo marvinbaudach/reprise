@@ -638,18 +638,14 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     super::lyrics_smoke::arm(player.as_ref(), info_panel, conn);
 
     super::session_restore::restore_runtime(player.as_ref(), session_state);
-    let restored_place = session_state
-        .browser_place
-        .clone()
-        .unwrap_or_else(|| BrowserPlace::from(ViewSource::Library));
-    let restored_root = session_state
-        .library_root
-        .clone()
-        .unwrap_or_else(|| BrowserPlace::from(ViewSource::Library));
-    nav_history.restore(restored_place.clone(), restored_root);
+    // START-1: a normal start ignores the persisted place and opens the
+    // library. Both fields are still written on close (schema unchanged, the
+    // way back stays open) — they are simply no longer read here.
+    let startup_place = super::session_restore::startup_place(session_state);
+    nav_history.restore(startup_place.clone(), startup_place.clone());
     nav_history.begin_back();
     super::library_shell::route_to_place(
-        &crate::ui::nav_history::NavPlace::browser(restored_place),
+        &crate::ui::nav_history::NavPlace::browser(startup_place),
         sidebar,
         track_list,
         content_stack,
@@ -658,6 +654,9 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         "session restore",
     );
     nav_history.end_back();
+    // START-1: the routing above owns the model; this owns the viewport.
+    // Order matters — the view must exist before its rows can be centered.
+    track_list.center_loaded_track();
     super::session_restore::wire_close(
         window,
         conn,
