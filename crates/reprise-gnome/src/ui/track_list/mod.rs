@@ -47,6 +47,7 @@ pub(in crate::ui) mod track_list_row_interaction;
 pub(crate) mod track_list_smoke;
 pub(crate) mod track_list_sort;
 mod track_list_toast;
+mod track_list_wiring;
 pub(in crate::ui) mod track_menu;
 pub(crate) mod track_playback_selection;
 pub(in crate::ui) mod view_state_memory;
