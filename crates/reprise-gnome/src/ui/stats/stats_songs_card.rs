@@ -322,6 +322,7 @@ impl SummaryRenderer {
         // a11y-semantics: role=button name=track-row state=focusable action=enter/shift-f10
         row.set_focusable(true);
         row.set_accessible_role(gtk4::AccessibleRole::Button);
+        // input-parity: ACC-8 keyboard=enter-space-row
         row.set_cursor_from_name(Some("pointer"));
         row.update_property(&[gtk4::accessible::Property::Label(&strings::text(
             strings::STATS_PLAY_TRACK,
