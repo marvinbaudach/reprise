@@ -267,14 +267,19 @@ pub fn build(app: &adw::Application, conn: &Rc<Db>, db_path: &Path) -> FileOpenH
     if let Some(player) = &player {
         let sidebar = Rc::downgrade(&sidebar);
         let track_list_weak = Rc::downgrade(&track_list);
-        player.add_on_queue_changed(move || {
+        let refresh = Rc::new(move || {
             if let Some(sidebar) = sidebar.upgrade() {
                 sidebar.refresh("up next changed");
             }
             if let Some(track_list) = track_list_weak.upgrade() {
                 track_list.reload_queue_if_visible();
             }
-        });
+        }) as super::window_queue_model::RefreshCallback;
+        super::window_queue_model::install_refresh_callbacks(
+            |refresh| player.add_on_queue_changed(move || refresh()),
+            |refresh| player.add_on_external_changed(move |_| refresh()),
+            refresh,
+        );
         let track_list_weak = Rc::downgrade(&track_list);
         player.set_view_refill_provider(move || match track_list_weak.upgrade() {
             Some(track_list) => track_list.transport_refill_ids(),
