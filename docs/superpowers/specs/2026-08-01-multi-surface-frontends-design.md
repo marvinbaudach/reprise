@@ -557,9 +557,30 @@ jeder Zielplattform linear, während die Oberflächen konstant bleiben.
 
 ### P5 — UX-Regeln nach Geltungsbereich markieren
 
-Jede der ~396 Regeln in `docs/ux-rules.md` bekennt sich zu `[alle]`, `[gtk]`,
-`[mobil]` oder `[desktop]`. `check-ux-traceability.sh` lernt die Scopes. Läuft
-durchgehend parallel; der `[mobil]`-Anteil muss vor P7 fertig sein.
+**Korrektur 2026-08-01.** Die erste Fassung dieses Pakets wollte die Regeln
+mit `[alle]`, `[gtk]`, `[mobil]`, `[desktop]` markieren. Das wäre eine
+Kollision mit Ansage gewesen: `docs/ux-rules.md` **hat bereits zwei
+Markerachsen**, und `[gtk]` ist darin belegt.
+
+| Achse | Werte | Bedeutung |
+| --- | --- | --- |
+| Status | `[active]`, `[planned]`, `[replaced by …]` | ob die Regel erzwingbar ist |
+| **Testebene** | `[core]`, **`[gtk]`**, `[e2e]`, `[manual]` | auf welcher Ebene sie geprüft wird |
+
+`[gtk]` heißt dort „durch Widget-/Logiktests in `reprise-gnome` geprüft" —
+eine Aussage über den *Test*, nicht über die *Oberfläche*. 263 Regeln tragen
+es, und `scripts/check-ux-traceability.sh` wertet es aus. Ein dritter,
+gleichlautender Marker mit anderer Bedeutung hätte das Gate stillschweigend
+falsch gemacht.
+
+Die Geltungsbereich-Achse ist deshalb eine **dritte, kollisionsfreie**:
+
+`[surface:all]` · `[surface:gtk]` · `[surface:mobile]` · `[surface:desktop]`
+
+Kombinationen sind erlaubt (`[surface:gtk][surface:desktop]`). Jede der ~396
+Regeln bekommt genau eine solche Angabe; `check-ux-traceability.sh` lernt sie
+zusätzlich zu den beiden vorhandenen Achsen. Läuft durchgehend parallel; der
+`[surface:mobile]`-Anteil muss vor P7 fertig sein.
 
 ### P6 — Die Tauri-App
 

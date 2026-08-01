@@ -147,7 +147,39 @@ und `cmake`/`make`/`g++` kommen wie bei Delta Chat über `sudo:`.
 
 ## Frage 0 — Baut der Rust-Baum überhaupt für Android?
 
-Offen. Braucht den lokalen Prototyp (Plan Task 4).
+**Urteil: TRÄGT.** Ohne Auflagen, ohne Nacharbeit an einer einzigen Zeile
+Rust.
+
+Umgebung: NDK **29.0.14206865** (`/opt/android-sdk/ndk`), `cargo-ndk` 4.1.2,
+Rust 1.92, Targets `aarch64-linux-android`, `armv7-linux-androideabi`,
+`x86_64-linux-android`.
+
+| Crate | ABI | Release-Build |
+| --- | --- | --- |
+| `reprise-core` | arm64-v8a | **OK**, 43 s |
+| `reprise-core` | armeabi-v7a | **OK**, 42 s |
+| `reprise-core` | x86_64 | **OK**, 45 s |
+| `reprise-runtime` | arm64-v8a | **OK**, 7 s |
+
+Drei Befunde:
+
+1. **`rusqlite` mit `bundled` übersetzt SQLite aus C für alle drei
+   Android-Architekturen**, ohne dass an der Toolchain etwas eingerichtet
+   werden musste. `cargo-ndk` setzt `CC_<target>`/`AR_<target>` aus dem NDK
+   selbst. Das war das größte Einzelrisiko dieser Frage und es ist keins.
+2. **`reprise-runtime` baut in 7 Sekunden auf einem fremden Target.** Damit
+   ist Spec §2.1 („die Runtime ist transportfrei") nicht mehr nur eine
+   Behauptung über den Dependency-Baum, sondern auf Android bewiesen — sie
+   zieht nichts Linux-Spezifisches nach.
+3. **Erzeugt werden `.rlib`-Dateien, nicht `.so`.** Das ist erwartet: beide
+   sind reine Bibliotheks-Crates. Die gemeinsame Bibliothek entsteht später
+   aus einer Bindings-Crate mit `crate-type = ["cdylib"]` — das ist Teil von
+   Frage 3 (UniFFI), nicht dieser Frage.
+
+Zur Einordnung für P8: knapp 45 s je ABI im Release-Build auf einem
+Entwicklungsrechner mit warmem Cache. Der F-Droid-Buildserver baut kalt und
+auf schwächerer Hardware, aber die Größenordnung liegt weit unter dem
+Timeout-Budget, das Delta Chat dort verwendet.
 
 ## Frage 3 — Trägt UniFFI die Typen von reprise-view?
 
