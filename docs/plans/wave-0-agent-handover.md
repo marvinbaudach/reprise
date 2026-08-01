@@ -62,9 +62,9 @@ plan documents stay.
 > `#189` left behind — `window.rs` at exactly 600 lines and the thinness
 > budgets. Branch from a `dev` at or after that commit; if you see either red,
 > you branched from an older one, so rebase rather than fix. One red does
-> remain and is not yours: GitHub Actions fails on
-> every branch in this repository including `main`, because the job never
-> reaches a runner. The enforcing gate is the local run above.
+> remain and is not yours: GitHub Actions fails on every branch in this
+> repository including `main`, because the job never reaches a runner. The
+> enforcing gate is the local run above.
 >
 > **Language.** Code, comments, log/error/UI strings, commit messages and every
 > document in this repository are English. `README.de.md` and `po/` are the
@@ -89,8 +89,10 @@ moved into `ui/window/player_backends.rs` — declared in `window/mod.rs`, not i
 resolved the submodule to `ui/window/window/` — leaving the composition root at
 579 lines. `threads` went to 15 and `filesystem` to 19, the second for two
 `std::fs::metadata` probes in `device_sync_effects.rs` rather than for the
-lyrics batch. Moving the batch worker into `reprise-core` is recorded as the
-follow-up. The record below is kept because it explains why this ran alone.
+lyrics batch. Moving the batch worker into `reprise-core` is the follow-up, now
+written up as `docs/plans/lyrics-batch-to-core.md` (`#198`) — it is not part of
+wave 0 and no brief below owns it. The record below is kept because it explains
+why this ran alone.
 
 Task 0.0 was not agent 1's. It was everyone's: `dev` failed two gates that every
 agent runs before every commit, so seven agents would each have spent their
@@ -128,8 +130,8 @@ start┼─ Agent 2  the missing index (1.1)            ── independent
      └─ Agent 7  security debts (2.4a/c/d)          ── independent
 ```
 
-All seven start at once. Agent 1 is the long pole and
-the only one whose five tasks must run in order.
+All seven start at once. Agent 1 is the long pole and the only one whose five
+tasks must run in order.
 
 **Ownership — no two agents share a file.** Verified against the tree at
 `577765b`; `#196` since added `ui/window/player_backends.rs`, which is agent
@@ -390,8 +392,9 @@ block; if both land, the conflict is two additions and both stay.
 > only **when** the option is on, and then as strictly as before, in both
 > prefixes. Set `stem_backend` off for the test round and make
 > `check-release.sh` skip `check-stem-runtime-packaging.sh` consistently when
-> it is off — that check is red on the base and this stops it blocking
-> **without** anyone silencing it.
+> it is off: a check about a feature that is not shipped should not run. That
+> check is green since `#197`, which removed two assertions it should never
+> have made — do not add them back.
 > The crates stay in the workspace, still built and tested; only the install
 > changes.
 > Verify:

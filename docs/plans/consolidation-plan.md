@@ -105,9 +105,12 @@ every task below says how it should change.
 Known and accepted:
 - `cargo audit`: RUSTSEC-2024-0436 only (`paste`, via `lofty`). A **new**
   advisory means STOP.
-- `scripts/check-stem-runtime-packaging.sh` is red on the base (missing ONNX
-  markers in `build-aux/meson-cargo-build.sh`). It is not part of the merge
-  gate; task 0.8 makes it cleanly switchable.
+- `scripts/check-stem-runtime-packaging.sh` **was** red on the base and is
+  green since `#197` (`e836d12`); it had been asserting the ONNX markers in
+  `build-aux/meson-cargo-build.sh`, a coupling that
+  `check-stem-worker-isolation.sh` forbids. Do not add those two assertions
+  back. It is a release check, not a merge check; task 0.8 still makes it
+  cleanly switchable.
 
 **Known and NOT accepted — fix this first (task 0.0).**
 `scripts/check-frontend-thinness.sh` is **red on `origin/dev` right now**,
@@ -661,8 +664,9 @@ Files: `meson.build`, `data/meson.build`, `meson_options.txt`,
 3. `scripts/check-runtime-service-install.sh` only checks **when** the option
    is on — and then as strictly as before, in both prefixes.
 4. `stem_backend` off for the test round; `check-release.sh` consistently skips
-   `check-stem-runtime-packaging.sh` when the option is off. The red release
-   check stops being a blocker **without** anyone silencing it.
+   `check-stem-runtime-packaging.sh` when the option is off — a check about a
+   feature that is not shipped should not run. (That check is green since
+   `#197`; the skip is about the shipped scope, not about a red.)
 
 The crates stay in the workspace and keep being built and tested; they are just
 not installed.

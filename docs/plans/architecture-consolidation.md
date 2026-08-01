@@ -1135,21 +1135,42 @@ breaker, and the batch runs a provider chain and writes `.lrc` sidecars — core
 work by every line this project draws elsewhere. The pragmatic answer for a
 near-term test round is to raise the budgets with the reason recorded and log
 the move as a follow-up; the dangerous answer is to raise them quietly, which
-is how a budget stops meaning anything.
+is how a budget stops meaning anything. `#196` took the first answer and `#198`
+wrote the follow-up up as `docs/plans/lyrics-batch-to-core.md`. One correction
+from that work: the `filesystem` budget was spent by two `std::fs::metadata`
+probes in `device_sync_effects.rs`, not by the lyrics batch — only `threads` is
+the batch.
 
-### 9.5 Finding K2 — `check-stem-runtime-packaging` is red on the base
+### 9.5 Finding K2 — `check-stem-runtime-packaging` was red on the base — resolved
 
-The ledger records it: *"the extra release-only
-`scripts/check-stem-runtime-packaging.sh` probe remains red on the unchanged
-base because `build-aux/meson-cargo-build.sh` lacks the two ONNX runtime
-environment markers the check requires."* It belongs to
+**Resolved by `#197` (`e836d12`), with a different diagnosis than the one below.**
+
+This is what the ledger recorded, and what this review repeated: *"the extra
+release-only `scripts/check-stem-runtime-packaging.sh` probe remains red on the
+unchanged base because `build-aux/meson-cargo-build.sh` lacks the two ONNX
+runtime environment markers the check requires."* It belongs to
 `scripts/check-release.sh`, not to `check-merge-readiness.sh`, so it correctly
-never blocked a merge — but it will stop every release check.
+never blocked a merge — but it would have stopped every release check.
 
-**Recommendation.** Before the release, either fix it or turn the stem feature
-off for the test round (`-Dstem_backend=false`) and gate the check
-accordingly. For a first round the latter is the smaller bet — an experimental
-ML feature creates support load that distracts from the actual test goal.
+The markers were not missing by accident. `feat(gnome): remove instrumental
+frontend` took the instrumental surface out of the frontend, so `reprise-gnome`
+links neither `reprise-stems` nor `ort` and has nothing to point at a dylib
+with — and `scripts/check-stem-worker-isolation.sh` enforces exactly that
+separation. The check was demanding a coupling its sibling check forbids, so
+adding the markers would have made the two gates contradict each other. `#197`
+dropped the two GTK-build assertions and left the worker-build ones, with that
+reasoning written into the script so it is not "fixed" back.
+
+**The lesson generalises.** A red gate is a claim about the code *or* about the
+gate, and this review took the ledger's reading of which without re-deriving
+it. Two gates that disagree cannot both be satisfied; when one is red on an
+untouched base, check its sibling before changing the code.
+
+**Recommendation, unchanged in substance.** Turn the stem feature off for the
+test round (`-Dstem_backend=false`) and have `check-release.sh` skip the check
+consistently when it is off — not because it is red any more, but because an
+experimental ML feature creates support load that distracts from the actual
+test goal.
 
 ### 9.6 Finding K3 — the Flatpak sandbox is strict, and it is the first hurdle
 
