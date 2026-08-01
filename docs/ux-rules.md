@@ -1089,9 +1089,13 @@ human. Rationale for changes lives in the git history.
 
 ## I. Start state
 
-- **START-1** [planned] [e2e] — Normal start: last view + scroll
-  position, playback paused on the last track (position restored),
-  startup reconcile runs silently (card only for actual work).
+- **START-1** [active] [gtk] — Normaler Start: immer die Bibliotheksansicht
+  mit der gemerkten Sortierung, ohne Suchtext und ohne Facetten. Der geladene
+  Track ist darin zentriert und markiert, sein Equalizer eingefroren wie bei
+  einer Pause; Auswahl und Fokus bleiben unangetastet (NAV-10a). Kommt er in
+  der Bibliothek nicht vor, startet die Liste oben. Wiedergabe pausiert auf
+  dem letzten Track (Position wiederhergestellt), der Startup-Reconcile läuft
+  still (Karte nur bei echter Arbeit).
 - **START-2** [planned] [gtk] — Start with an unavailable library root:
   StatusPage per Root-Guard, no mass Missing marking; library views
   show the last known holdings normally (Root-Guard hasn't marked

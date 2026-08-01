@@ -735,3 +735,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "start_restore_tests.rs"]
+mod start_restore_tests;

@@ -654,6 +654,9 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         "session restore",
     );
     nav_history.end_back();
+    // START-1: the routing above owns the model; this owns the viewport.
+    // Order matters — the view must exist before its rows can be centered.
+    track_list.center_loaded_track();
     super::session_restore::wire_close(
         window,
         conn,
