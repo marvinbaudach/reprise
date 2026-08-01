@@ -4,7 +4,7 @@ Status: bereit zur gemeinsamen Review
 
 Branch: `feature/multi-surface-frontends`
 
-Basis: `bc0cc3ab88` (`origin/dev`, 2026-08-01)
+Basis: `b232cee2f5` (`origin/dev`, 2026-08-01)
 
 ## 1. Ziel
 
