@@ -459,10 +459,14 @@ neuen Oberflächen nicht beschädigt.
 Reihenfolge, nach Android-Priorität geordnet:
 
 ```text
-P0 -> S1 -> P1a -> P3 -> P4a -> P7 -> P8      (Android bis F-Droid)
-                     `-> P1b -> P2 -> P4b -> P6   (Desktop danach)
+P0 -> S1 -> P1a -> P3 -> P3b -> P4a -> P7 -> P8     (Android bis F-Droid)
+                     `-> P1b -> P2 -> P4b -> P6        (Desktop danach)
 P5 laeuft durchgehend parallel (nur Dokumentation)
 ```
+
+**P3b ist am 2026-08-01 neu dazugekommen** — die Speicherabstraktion, die der
+Spike zu Frage 4 zutage gefördert hat. Sie war heute Morgen nicht im Plan und
+liegt auf dem kritischen Pfad vor P4a.
 
 Dieses Dokument ist eine **Architektur-Spec, kein Ausführungsplan.** Jedes
 Paket braucht einen eigenen Implementierungsplan; P1a und P1b mit hoher
@@ -542,6 +546,57 @@ die Compose-App linkt `reprise-view` direkt.
 `reprise-runtime-client` bekommt ein Transport-Trait mit zwei
 Implementierungen: `zbus` (Linux) und in-process (Android, Windows, macOS).
 `reprise-runtime` bleibt unangetastet. Vorbedingung für P7.
+
+### P3b — Speicherzugriff abstrahieren
+
+Neu aufgenommen am 2026-08-01 nach dem Spike-Befund zu Frage 4. **Vorbedingung
+für P4a**, Arbeit an `reprise-core`, nicht an Android.
+
+Das Paket zerfällt in zwei sehr ungleiche Hälften:
+
+**Die schmale Hälfte: Erreichbarkeit.** `library/mounts.rs` exportiert genau
+drei Funktionen, und nur `classify_missing(stored_device, path) ->
+MissingReason` ist der Vertrag; die anderen beiden sind ihre Helfer. Der
+Austausch ist also ein Funktions-Swap, kein Feldzug — trotz der
+Unix-Spezifik der Implementierung.
+
+Der Kniff, der `tracks.device` rettet: Die Spalte wird von „`st_dev`" zu
+einem **generischen Aufenthaltsmerkmal** umgedeutet. Auf Unix bleibt es
+`st_dev` — **keine Migration, Schema v2 unangetastet**. Unter SAF wird es aus
+der Wurzel des gewählten Baums abgeleitet. Die Dreiteilung
+`Unmounted`/`Deleted`/`Unknown` (`models.rs`) trägt damit unverändert weiter;
+nur die Feststellung läuft anders.
+
+**Die breite Hälfte: Durchlaufen und Ein-/Ausgabe.** `walkdir::WalkDir` in
+`scanner.rs:264` und `scanner_progress.rs:15`, plus 49 Produktivdateien mit
+direktem `std::fs`. Hier hilft der wichtigste Messwert des Spikes: **`lofty`
+arbeitet auf Dateihandles.** Die Schnittstelle muss also keine Pfade liefern,
+sondern Handles — und damit reduziert sich der Umbau auf einen
+Signaturwechsel.
+
+Skizze, bewusst im Stil des bestehenden `PlaybackBackend`-Vertrags:
+
+```rust
+pub trait LibrarySource: Send + Sync {
+    fn walk(&self, root: &SourcePath) -> Box<dyn Iterator<Item = Result<Entry, WalkError>>>;
+    fn open(&self, at: &SourcePath) -> Result<Box<dyn ReadSeek>, IoError>;
+    fn open_rw(&self, at: &SourcePath) -> Result<Box<dyn ReadWriteSeek>, IoError>;
+    fn residence_token(&self, at: &SourcePath) -> Option<i64>;
+    fn reachability(&self, at: &SourcePath, stored: Option<i64>) -> MissingReason;
+    /// `None`, wenn die Quelle keine Änderungsmeldung kennt — SAF kennt keine.
+    fn watch(&self, root: &SourcePath) -> Option<Box<dyn Watcher>>;
+}
+```
+
+`watch()` liefert bewusst `Option`. Das ist dieselbe Ehrlichkeit, die der
+Playback-Vertrag schon vorführt („documented degradation, never a failure",
+und `current_generation`s „a safe, honest default … never a lie"): eine
+Quelle ohne Watcher sagt das, statt eine Meldung vorzutäuschen, die nie
+kommt. Das beantwortet zugleich offenen Punkt O3.
+
+**Nicht geschätzt.** Die Größe hängt daran, wie viele der 49 `std::fs`-Stellen
+wirklich über die Abstraktion müssen und wie viele reine Hilfs- oder
+Testpfade sind. Das klärt der Implementierungsplan, nicht diese Spec.
 
 ### P4a — Plattform-Backend Android
 
