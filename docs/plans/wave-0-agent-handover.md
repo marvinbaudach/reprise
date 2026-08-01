@@ -89,10 +89,13 @@ moved into `ui/window/player_backends.rs` — declared in `window/mod.rs`, not i
 resolved the submodule to `ui/window/window/` — leaving the composition root at
 579 lines. `threads` went to 15 and `filesystem` to 19, the second for two
 `std::fs::metadata` probes in `device_sync_effects.rs` rather than for the
-lyrics batch. Moving the batch worker into `reprise-core` is the follow-up, now
-written up as `docs/plans/lyrics-batch-to-core.md` (`#198`) — it is not part of
-wave 0 and no brief below owns it. The record below is kept because it explains
-why this ran alone.
+lyrics batch. Moving the batch worker into `reprise-core` was the follow-up,
+planned in `docs/plans/lyrics-batch-to-core.md` (`#198`) and landed in `#206`.
+It did **not** bring the budgets back down, and correctly so: the provider
+chain and the sidecar writing moved, but the thread that drives the run stays
+in `ui/lyrics/lyrics_batch.rs`, because that is where the progress goes.
+`threads` is still 15 and `filesystem` still 19. The record below is kept
+because it explains why step 0 ran alone.
 
 Task 0.0 was not agent 1's. It was everyone's: `dev` failed two gates that every
 agent runs before every commit, so seven agents would each have spent their

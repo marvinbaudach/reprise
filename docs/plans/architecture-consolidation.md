@@ -1135,11 +1135,19 @@ breaker, and the batch runs a provider chain and writes `.lrc` sidecars — core
 work by every line this project draws elsewhere. The pragmatic answer for a
 near-term test round is to raise the budgets with the reason recorded and log
 the move as a follow-up; the dangerous answer is to raise them quietly, which
-is how a budget stops meaning anything. `#196` took the first answer and `#198`
-wrote the follow-up up as `docs/plans/lyrics-batch-to-core.md`. One correction
-from that work: the `filesystem` budget was spent by two `std::fs::metadata`
-probes in `device_sync_effects.rs`, not by the lyrics batch — only `threads` is
-the batch.
+is how a budget stops meaning anything. `#196` took the first answer, `#198`
+wrote the follow-up up as `docs/plans/lyrics-batch-to-core.md`, and `#206`
+landed it.
+
+Two corrections from that work, both of which sharpen what the budgets measure.
+The `filesystem` budget was spent by two `std::fs::metadata` probes in
+`device_sync_effects.rs`, not by the lyrics batch — only `threads` is the
+batch. And moving the batch did not release the `threads` budget: the provider
+chain and the sidecar writing went to `reprise-core`, but the thread driving
+the run stays in `ui/lyrics/lyrics_batch.rs`, because that is where progress is
+reported. Both budgets still read 19 and 15, and that is the right answer, not
+an unfinished move. A thinness budget counts what the frontend *does*, and
+driving a long-running job while reporting its progress is frontend work.
 
 ### 9.5 Finding K2 — `check-stem-runtime-packaging` was red on the base — resolved
 

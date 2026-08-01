@@ -228,6 +228,11 @@ Whichever is chosen, this lands **before** task 0.1, because task 0.1 moves the
 `filesystem` budget again and two moves in one number are impossible to read
 afterwards.
 
+**Both halves have since landed.** `#196` raised the budgets and `#206` did the
+move as well. The move did not lower `threads`: only the provider chain and the
+sidecar writing belong in `reprise-core`, while the thread that drives the run
+and reports progress stays in the frontend. Do not expect 15 to go back to 14.
+
 **Commit.** `fix(gates): restore the frontend thinness budgets to the measured values`
 
 ### Task 0.1 — `diagnostics`: where the log file lives, and its rotation
