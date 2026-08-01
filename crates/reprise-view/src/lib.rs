@@ -13,3 +13,5 @@
 //! Die Crate ist beim Anlegen leer. `docs/superpowers/specs/
 //! 2026-08-01-multi-surface-frontends-design.md` §4 (P1a) beschreibt, was
 //! zuerst hier einzieht.
+
+pub mod playlists;
