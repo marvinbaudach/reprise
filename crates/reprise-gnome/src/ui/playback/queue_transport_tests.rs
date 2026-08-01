@@ -41,11 +41,18 @@ fn que_8_drag_from_continuing_materialises_one_entry() {
 }
 
 #[test]
-fn browse_8_loaded_deleted_track_is_deferred_while_future_entries_are_purged() {
+fn play_5a_background_purge_defers_loaded_track_while_purging_future_entries() {
     let plan = queue_purge_plan(&[10, 20, 10, 30], Some(10));
 
     assert_eq!(plan.immediate, vec![20, 30]);
     assert_eq!(plan.after_loaded_track, Some(10));
+}
+
+#[test]
+fn browse_11_trashing_loaded_track_requests_immediate_queue_advance() {
+    assert!(should_advance_after_user_delete(&[10, 20], Some(10)));
+    assert!(!should_advance_after_user_delete(&[20], Some(10)));
+    assert!(!should_advance_after_user_delete(&[10], None));
 }
 
 #[test]
