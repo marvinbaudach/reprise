@@ -291,6 +291,25 @@ pub(crate) fn migrate_v51(conn: &Connection) -> Result<(), rusqlite::Error> {
     transaction.commit()
 }
 
+pub(crate) fn migrate_v52(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if version >= 52 {
+        return Ok(());
+    }
+    let transaction = conn.unchecked_transaction()?;
+    transaction.execute(
+        "UPDATE podcast_subscriptions
+         SET title = author
+         WHERE kind = 'youtube'
+           AND author IS NOT NULL
+           AND length(trim(author)) > 0
+           AND title <> author",
+        [],
+    )?;
+    transaction.pragma_update(None, "user_version", 52)?;
+    transaction.commit()
+}
+
 fn has_column(conn: &Connection, table: &str, expected: &str) -> Result<bool, rusqlite::Error> {
     let mut statement = conn.prepare(&format!("PRAGMA table_info({table})"))?;
     let columns = statement
