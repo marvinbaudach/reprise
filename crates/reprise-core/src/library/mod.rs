@@ -23,6 +23,8 @@ pub mod stats_period;
 pub mod stats_screen;
 pub mod stats_snapshot;
 pub mod tag_edit;
+// The single seam that opens library content for a lofty parser — see its
+// module doc for why all four tag readers go through one place.
 mod tag_edit_seed;
 pub mod tag_edit_session;
 mod tag_edit_write;
@@ -32,6 +34,7 @@ mod tag_mutation;
 mod tag_mutation_guarded;
 #[cfg(test)]
 mod tag_mutation_guarded_tests;
+pub(crate) mod tag_probe;
 pub mod tag_write_job;
 pub mod trash_tracks;
 pub mod watcher;

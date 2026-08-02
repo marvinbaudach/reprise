@@ -111,7 +111,15 @@ pub(crate) fn read_tag_field_values(
     path: &Path,
     fields: &[GuardedTagField],
 ) -> Result<Vec<(GuardedTagField, Option<String>)>, TagEditError> {
-    let tagged = lofty::read_from_path(path)?;
+    read_tag_field_values_from(&super::source::UnixLibrarySource, path, fields)
+}
+
+pub(crate) fn read_tag_field_values_from(
+    source: &dyn super::source::LibrarySource,
+    path: &Path,
+    fields: &[GuardedTagField],
+) -> Result<Vec<(GuardedTagField, Option<String>)>, TagEditError> {
+    let tagged = crate::library::tag_probe::open_probe(source, path)?.read()?;
     Ok(fields
         .iter()
         .map(|field| (*field, tagged_value(&tagged, *field)))

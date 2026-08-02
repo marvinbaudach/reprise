@@ -197,9 +197,13 @@ pub(crate) fn walk_with(
 /// missing-verdict write. Every method here says for itself what its `None`
 /// means; do not generalise one method's degradation to another.
 ///
-/// Nothing here has a default implementation. A source that cannot yet answer
-/// one of these questions must fail to compile, not answer `None` — for
-/// `probe` that answer would report the entire library as gone.
+/// **No question a source alone can answer has a default implementation.** A
+/// source that cannot yet answer one must fail to compile, not answer `None` —
+/// for `probe` that answer would report the entire library as gone.
+/// [`Self::reachability`] is the one exception and a deliberate one: it decides
+/// nothing by itself, it only compares what [`Self::residence_token`] returned,
+/// so a source that answers the primitive gets the verdict for free and cannot
+/// get it wrong.
 pub trait LibrarySource: Send + Sync {
     /// Returns the stable residence token of the nearest reachable location at
     /// `at`, or `None` when this source cannot provide one.
