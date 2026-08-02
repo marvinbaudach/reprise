@@ -2821,7 +2821,7 @@ STYLE-1).
 - **AC-21** [replaced by AC-22]
 - **AC-22** [replaced by AC-23]
 - **AC-23** [active] [core] [gtk] — „Song Visuals" is a plugin, switched
-  off by default and applicable live. When switched on, the Linux
+  on by default and applicable live. When switched on, the Linux
   pipeline branches off locally normalized mono PCM before ReplayGain;
   CAVA math generates 64 logarithmic display bands from it, clamped to
   0–1. The portable core uses CAVA's double FFT resolution below 100 Hz,
