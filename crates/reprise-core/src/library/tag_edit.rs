@@ -122,7 +122,22 @@ pub enum TagEditError {
 }
 
 pub fn read_editable_tags(path: &Path) -> Result<EditableTags, TagEditError> {
-    let tagged = lofty::read_from_path(path)?;
+    read_editable_tags_with_source(&super::source::UnixLibrarySource, path)
+}
+
+pub fn read_editable_tags_with_source(
+    source: &dyn super::source::LibrarySource,
+    path: &Path,
+) -> Result<EditableTags, TagEditError> {
+    let reader = source
+        .open_read(path)
+        .map_err(lofty::error::LoftyError::from)?;
+    let probe = lofty::probe::Probe::new(reader);
+    let probe = match lofty::file::FileType::from_path(path) {
+        Some(file_type) => probe.set_file_type(file_type),
+        None => probe,
+    };
+    let tagged = probe.read()?;
     let tag = tagged.primary_tag().or_else(|| tagged.first_tag());
     Ok(EditableTags {
         title: tag
