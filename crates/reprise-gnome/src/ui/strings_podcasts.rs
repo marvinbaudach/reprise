@@ -33,7 +33,6 @@ pub const YOUTUBE_ADD: &str = N_!("Add channel");
 pub const PODCAST_ADD_FILTER: &str = N_!("Add filter");
 pub const PODCAST_FILTER_UNPLAYED: &str = N_!("Unplayed");
 pub const PODCAST_FILTER_DOWNLOADED: &str = N_!("Downloaded");
-pub const PODCAST_FILTER_SHOW: &str = N_!("Show");
 pub const PODCAST_FILTER_SOURCE: &str = N_!("Source");
 pub const PODCAST_CLEAR_ALL: &str = N_!("Clear all");
 pub const PODCAST_NEW_COUNT: &str = N_!("{count} new");
