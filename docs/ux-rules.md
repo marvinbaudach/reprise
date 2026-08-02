@@ -3738,9 +3738,9 @@ listening statistics.
   double click or Enter. Space toggles the focused row's selection and
   Shift+Space extends from the anchor. A secondary click on a row outside the
   selection makes that row the selection before the menu opens, so a menu never
-  acts on rows the pointer is not on. Dasselbe auswahlbezogene Menü ist per
-  Sekundärklick, über das ⋮ der Zeile und per Menü-Taste/Shift+F10 erreichbar;
-  die YouTube-Kanalansicht trägt dasselbe Zeilenmenü wie die gruppierte Liste.
+  acts on rows the pointer is not on. That same selection-aware menu is reached
+  three ways — by secondary click, by the row's ⋮, and by Menu/Shift+F10 — and
+  the YouTube channel view carries the same row menu as the grouped list.
   A range covers only rendered rows: a collapsed group, the episodes past a
   preview window and rows hidden by the filter stay out of it. Applying a
   selection never rebuilds the list, so keyboard focus survives it.
