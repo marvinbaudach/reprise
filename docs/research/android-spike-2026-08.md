@@ -993,7 +993,7 @@ Es sind **13 Stellen**, und darunter ist die folgenschwerste des ganzen Kerns:
 
 | Datei | Zeilen | Bedeutung |
 | --- | --- | --- |
-| `library/scanner_meta.rs` | 132, 148, 184 | **`read_meta` — die Metadatenlesung für jeden importierten Track**, dazu die beiden Reparatur-Fallbacks |
+| `library/scanner_meta.rs` | `read_meta`, `read_meta_content_based`, `read_meta_relaxed` | **`read_meta` ist die Metadatenlesung für jeden importierten Track**, dazu die beiden Reparatur-Fallbacks |
 | `library/tag_mutation.rs` | 199, 289, 376, 486 | die einzige produktive Lofty-Speichernaht und ihre Lesehälften |
 | `library/tag_mutation_guarded.rs` | 114, 201 | |
 | `library/tag_edit.rs` | 125 | |
@@ -1048,9 +1048,9 @@ Gründen absichtlich unverändert:
 
 | Stelle der Inventur | Ergebnis |
 | --- | --- |
-| `library/scanner_meta.rs:132` — `read_meta` | **Umgestellt.** Der normale Tag- und Eigenschaftenlauf liest den Inhalt aus der aktiven Quelle. |
-| `library/scanner_meta.rs:148` — `read_meta_content_based` | **Unverändert.** Die Reparatur liest eine Temp-Datei mit absichtlich fremder Endung und muss den Parser weiter aus dem Inhalt wählen. |
-| `library/scanner_meta.rs:184` — `read_meta_relaxed` | **Umgestellt.** Auch der tolerante zweite Lauf liest aus derselben Quelle. |
+| `library/scanner_meta.rs` — `read_meta` | **Umgestellt.** Der normale Tag- und Eigenschaftenlauf liest den Inhalt aus der aktiven Quelle. |
+| `library/scanner_meta.rs` — `read_meta_content_based` | **Unverändert.** Die Reparatur liest eine Temp-Datei mit absichtlich fremder Endung und muss den Parser weiter aus dem Inhalt wählen. |
+| `library/scanner_meta.rs` — `read_meta_relaxed` | **Umgestellt.** Auch der tolerante zweite Lauf liest aus derselben Quelle. |
 | `library/tag_mutation.rs:199` — `apply_tag_patch_to_file` | **Unverändert.** Das Einlesen hält den Container für die unmittelbar folgende Speicheroperation. |
 | `library/tag_mutation.rs:289` — `strip_and_rewrite_tag` | **Unverändert.** Der erneute Lesezugriff folgt auf eine Dateischreibung und mündet direkt in die Schreibnaht. |
 | `library/tag_mutation.rs:376` — `save_loaded_tagged` | **Unverändert.** Das ist selbst die produktive Lofty-Speichernaht, keine reine Lesung. |
@@ -1089,6 +1089,18 @@ unter SAF weiterhin beide Binder-Rundläufe ausführen und nichts einsparen.
 Die wirksame Zusammenlegung liegt eine Ebene früher: Ein SAF-Walk kann die
 Metadaten aus seinem ohnehin vorhandenen Cursor mittragen, worauf der Scanner
 die zusätzliche Probe wie gemessen vollständig auslässt.
+
+**Zu den Ortsangaben:** Diese Tabellen nennen **Funktionsnamen, keine
+Zeilennummern**. Die frühere Fassung nannte Zeilen — und war schon falsch, als
+sie geschrieben wurde, weil dasselbe Paket die Zeilen verschoben hatte, das sie
+festhielt. Ein Name überlebt jede Umsortierung; eine Zahl überlebt den nächsten
+Commit nicht.
+
+Seit diesem Paket öffnet außerdem **eine einzige Stelle** Bibliotheksinhalte
+für lofty: `library/tag_probe.rs`. Die Begründung — warum die Endung gesetzt
+wird, warum eine unbekannte Endung die Probe absichtlich ungesetzt lässt, und
+warum `read_meta_content_based` genau das Gegenteil braucht — steht dort einmal
+statt in vier Kopien.
 
 ## Frage 8 — Die Umzugserkennung, und was Tauri daran ändert (umgesetzt 2026-08-02)
 

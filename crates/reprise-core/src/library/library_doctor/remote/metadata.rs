@@ -125,15 +125,7 @@ pub(crate) fn read_remote_metadata_from(
     source: &dyn crate::library::source::LibrarySource,
     path: &Path,
 ) -> Result<(EditableTags, RemoteTrackMetadata), TagEditError> {
-    let reader = source
-        .open_read(path)
-        .map_err(lofty::error::LoftyError::from)?;
-    let probe = lofty::probe::Probe::new(reader);
-    let probe = match lofty::file::FileType::from_path(path) {
-        Some(file_type) => probe.set_file_type(file_type),
-        None => probe,
-    };
-    let tagged = probe.read()?;
+    let tagged = crate::library::tag_probe::open_probe(source, path)?.read()?;
     let tag = tagged.primary_tag().or_else(|| tagged.first_tag());
     let text = |key: ItemKey| {
         tag.and_then(|value| value.get_string(key))

@@ -50,7 +50,8 @@ use std::path::Path;
 
 use super::ScanError;
 use crate::library::import_errors;
-use crate::library::source::{LibraryReadHandle, LibrarySource, UnixLibrarySource};
+use crate::library::source::{LibrarySource, UnixLibrarySource};
+use crate::library::tag_probe::open_probe;
 use crate::models::ImportErrorKind;
 
 /// Tag- and properties-derived fields for one audio file. Every field is
@@ -121,24 +122,6 @@ fn meta_from_tagged(tagged: &lofty::file::TaggedFile) -> TrackMeta {
         duration_ms: props.duration().as_millis() as i64,
         bitrate_kbps: props.audio_bitrate().map(|b| b as i32),
     }
-}
-
-/// Reproduces `Probe::open(path)` after the source has opened the content.
-///
-/// Lofty seeds a path-backed probe from the extension but does not sniff its
-/// content. An unknown extension deliberately leaves the probe unseeded so
-/// `Probe::read` returns `UnknownFormat`, exactly as `read_from_path` did;
-/// returning early from `FileType::from_path` would change the typed error
-/// consumed by `import_errors::classify_lofty`.
-fn open_probe(
-    source: &dyn LibrarySource,
-    path: &Path,
-) -> lofty::error::Result<lofty::probe::Probe<LibraryReadHandle>> {
-    let probe = lofty::probe::Probe::new(source.open_read(path)?);
-    Ok(match lofty::file::FileType::from_path(path) {
-        Some(file_type) => probe.set_file_type(file_type),
-        None => probe,
-    })
 }
 
 /// Pass 1: the ordinary tag+properties read, lofty's own default

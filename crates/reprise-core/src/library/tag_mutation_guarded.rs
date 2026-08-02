@@ -119,15 +119,7 @@ pub(crate) fn read_tag_field_values_from(
     path: &Path,
     fields: &[GuardedTagField],
 ) -> Result<Vec<(GuardedTagField, Option<String>)>, TagEditError> {
-    let reader = source
-        .open_read(path)
-        .map_err(lofty::error::LoftyError::from)?;
-    let probe = lofty::probe::Probe::new(reader);
-    let probe = match lofty::file::FileType::from_path(path) {
-        Some(file_type) => probe.set_file_type(file_type),
-        None => probe,
-    };
-    let tagged = probe.read()?;
+    let tagged = crate::library::tag_probe::open_probe(source, path)?.read()?;
     Ok(fields
         .iter()
         .map(|field| (*field, tagged_value(&tagged, *field)))
