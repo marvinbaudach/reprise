@@ -1039,6 +1039,57 @@ vor, `Probe::new(reader)` nicht. Wer das übersieht, verliert stillschweigend
 die Erkennung jeder Datei, deren Header-Schnüffelei scheitert (siehe
 `lyrics/local.rs`s `synced_id3_from_source`).
 
+### Paket 5 umgesetzt: Tag-Lesungen über die Bibliotheksquelle (2026-08-02)
+
+Die 13 zuvor verborgenen Lofty-Pfadstellen sind vollständig klassifiziert.
+Fünf reine Lesungen auf Bibliotheksdateien laufen jetzt über
+`LibrarySource::open_read`; acht Stellen bleiben aus den jeweils angegebenen
+Gründen absichtlich unverändert:
+
+| Stelle der Inventur | Ergebnis |
+| --- | --- |
+| `library/scanner_meta.rs:132` — `read_meta` | **Umgestellt.** Der normale Tag- und Eigenschaftenlauf liest den Inhalt aus der aktiven Quelle. |
+| `library/scanner_meta.rs:148` — `read_meta_content_based` | **Unverändert.** Die Reparatur liest eine Temp-Datei mit absichtlich fremder Endung und muss den Parser weiter aus dem Inhalt wählen. |
+| `library/scanner_meta.rs:184` — `read_meta_relaxed` | **Umgestellt.** Auch der tolerante zweite Lauf liest aus derselben Quelle. |
+| `library/tag_mutation.rs:199` — `apply_tag_patch_to_file` | **Unverändert.** Das Einlesen hält den Container für die unmittelbar folgende Speicheroperation. |
+| `library/tag_mutation.rs:289` — `strip_and_rewrite_tag` | **Unverändert.** Der erneute Lesezugriff folgt auf eine Dateischreibung und mündet direkt in die Schreibnaht. |
+| `library/tag_mutation.rs:376` — `save_loaded_tagged` | **Unverändert.** Das ist selbst die produktive Lofty-Speichernaht, keine reine Lesung. |
+| `library/tag_mutation.rs:486` — `commit_tag_mutation` | **Unverändert.** Konfliktprüfung und Speichern verwenden denselben geladenen Container in einer Schreiboperation. |
+| `library/tag_mutation_guarded.rs:114` — `read_tag_field_values` | **Umgestellt.** Die reine Vorablesung nimmt ihren Griff aus der Quelle. |
+| `library/tag_mutation_guarded.rs:201` — `commit_guarded_tag_changes` | **Unverändert.** Prüfen, Ändern und Speichern gehören zu einer einzigen geschützten Schreiboperation. |
+| `library/tag_edit.rs:125` — `read_editable_tags` | **Umgestellt.** Die reine Editor-Lesung nimmt ihren Griff aus der Quelle. |
+| `library/library_doctor/remote/metadata.rs:121` — `read_remote_metadata` | **Umgestellt.** Die Aufrufer liefern Pfade vorhandener `tracks`-Zeilen; damit ist dies Bibliotheks-E/A, auch wenn die gelesenen Werte mit entfernten Metadaten verglichen werden. |
+| `podcasts/episode_tags.rs:106` — `write_episode_tags` | **Unverändert.** Die Podcast-Downloaddatei ist app-privat und die Lofty-Stelle speichert Tags. |
+| `provenance.rs:212` — `write_ai_tags` | **Unverändert.** Die Stelle ist die Schreibseite des Provenienz-Taggers; dessen separater reiner Leser wurde schon in Paket 4 umgestellt. |
+
+Der Ersatz bildet Lofty 0.24 bewusst genau nach: Die Quelle öffnet zuerst den
+Inhalt, danach setzt `FileType::from_path` den Probe-Typ nur dann, wenn die
+Endung bekannt ist. Eine unbekannte Endung bleibt ungesetzt und führt erst in
+`Probe::read` zu `UnknownFormat`. Damit bleibt auch
+`import_errors::classify_lofty` gleich. Ein vollständiger Scan aus einem
+`Vec<u8>`-Griff ohne Datei im Dateisystem schreibt die echten FLAC-Tags in die
+Datenbank; `broken-tags.mp3`, `broken-front-id3v2-damaged-ape.mp3` und eine
+unbekannte Endung ergeben über Pfad und Quelle dieselben gespeicherten
+Fehlerverdikte.
+
+#### Messung des doppelten Scanner-Zugriffs
+
+Die zählende Quelle zeigt für eine Audiodatei ohne mitgelieferte
+Walk-Metadaten **einen `probe`-Aufruf und einen `open_read`-Aufruf**; Nicht-Audio
+erhält keinen von beiden. Trägt der Walk seine Metadaten bereits mit, sinkt das
+auf **null `probe` und einen `open_read`**. Die Tags selbst brauchen damit in
+beiden Fällen genau eine Öffnung.
+
+Probe und Öffnung lassen sich im allgemeinen Vertrag nicht zu einem einzigen
+Quellenzugriff verschmelzen: `open_read` liefert nur `Read + Seek`, während
+`probe` die provider-eigenen Pfadmetadaten liefert. Androids
+`openFileDescriptor` gibt keinen DocumentsProvider-Metadatensatz zurück; der
+Cursor bleibt eine eigene Abfrage. Ein breiterer Rückgabetyp würde deshalb
+unter SAF weiterhin beide Binder-Rundläufe ausführen und nichts einsparen.
+Die wirksame Zusammenlegung liegt eine Ebene früher: Ein SAF-Walk kann die
+Metadaten aus seinem ohnehin vorhandenen Cursor mittragen, worauf der Scanner
+die zusätzliche Probe wie gemessen vollständig auslässt.
+
 ## Frage 8 — Die Umzugserkennung, und was Tauri daran ändert (umgesetzt 2026-08-02)
 
 **Status: umgesetzt.** `file_stat` liefert jetzt die echte Größe getrennt von
