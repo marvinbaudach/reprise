@@ -578,3 +578,55 @@ ob `MissingReason::Unmounted` auf Android eine Bedeutung hat, und er berührt
 Scanner, Relink und die Mount-Klassifikation gemeinsam. Diese eine Frage sollte
 beantwortet sein, bevor das Paket geschnitten wird — alles andere daran ist
 absehbar.
+
+### Korrektur zu Frage 7 (2026-08-02, nach dem Lesen von `classify_missing`)
+
+Oben steht, `mounts.rs` habe „auf Android kein Gegenstück" und sei „ein
+Neuentwurf". **Das war zu scharf**, und der Fehler ist meiner: Ich habe die
+Einordnung des messenden Durchgangs übernommen, ohne den Klassifikator selbst
+zu lesen. Er ist zehn Zeilen lang und bereits plattformneutral:
+
+```rust
+pub(crate) fn classify_missing(stored_device: Option<i64>, path: &Path) -> MissingReason {
+    let Some(stored_device) = stored_device else { return MissingReason::Unknown };
+    match nearest_existing_ancestor_dev(path) {
+        Some(current) if current == stored_device as u64 => MissingReason::Deleted,
+        Some(_) => MissingReason::Unmounted,
+        None => MissingReason::Unknown,
+    }
+}
+```
+
+Die Logik fragt nicht, **was** das Merkmal ist — nur, ob es mit dem
+gespeicherten übereinstimmt. Das ist wörtlich `residence_token` aus dem
+Spec-Trait, und die Spec hat es richtig vorhergesehen: die Spalte wird von
+„`st_dev`" zu einem generischen Aufenthaltsmerkmal umgedeutet, ohne Migration.
+
+**Der tatsächliche Umfang, nachgezählt:**
+
+| | |
+| --- | --- |
+| Unix-spezifische Produktivstellen (`MetadataExt`, `.dev()`, `.ino()`, `symlink_metadata`) | **15**, in vier Dateien |
+| davon in `mounts.rs` | 9 |
+| Aufrufstellen von `classify_missing` | **2** (`scanner_vanish.rs:148`, `queries/maintenance.rs:365`) |
+| plattformabhängige Funktion | **eine**: `nearest_existing_ancestor_dev` |
+
+**Unter SAF wird die Feststellung sogar einfacher, nicht schwerer.** Der
+Vorfahren-Aufstieg existiert dort nicht — er muss auch nicht: die Wurzel des
+gewählten Baums **ist** der feste Vorfahr. Ist sie abfragbar, steht das Volume
+und eine fehlende Datei ist `Deleted`; ist sie es nicht — Berechtigung
+entzogen, Karte gezogen —, dann `Unmounted`. Dieselbe Dreiteilung, ein
+Vergleich weniger.
+
+**Die Fehlerrichtung stimmt bereits.** `classify_missing` läuft nur für
+Dateien, die ohnehin schon als fehlend gelten. Ein veraltetes Merkmal — unter
+Linux können sich Gerätenummern über einen Neustart ändern — führt zu
+`Unmounted` statt `Deleted`, also zur datenerhaltenden Antwort. Diese
+Großzügigkeit trägt unverändert nach SAF.
+
+**Was offen bleibt, ist eine andere Frage als die, die ich oben gestellt habe:**
+nicht die Erreichbarkeit, sondern die **Umzugserkennung**. `scanner.rs`
+erkennt eine verschobene Datei an `(device, inode)`. SAF kennt keine Inodes,
+sondern Dokument-IDs, und deren Stabilität über einen Umzug hinweg garantiert
+der DocumentsProvider, nicht die Plattform. Das ist der Punkt, der einen
+eigenen Entwurf braucht — nicht `classify_missing`.
