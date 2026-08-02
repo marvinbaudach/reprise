@@ -247,3 +247,56 @@ pub(crate) fn apply_file_identity(
     )?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "awaits optional filesystem identity"]
+    fn placeholder_identity_does_not_match_an_unrelated_track() {
+        let live_dir = tempfile::tempdir().unwrap();
+        let live_path = live_dir.path().join("still-present.flac");
+        std::fs::write(&live_path, b"present").unwrap();
+
+        let db = crate::db::Db::open_in_memory().unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO tracks \
+                 (id, path, title, artist, album, duration_ms, file_size, device, inode, added_at) \
+                 VALUES (1, '/gone/unrelated.flac', 'Unrelated', 'Other Artist', \
+                         'Other Album', 99, 111, 0, 0, 0)",
+                [],
+            )
+            .unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO tracks \
+                 (id, path, title, artist, album, duration_ms, file_size, device, inode, added_at) \
+                 VALUES (2, ?1, 'Still Present', 'Other Artist', 'Other Album', \
+                         99, 111, 0, 0, 0)",
+                [live_path.to_string_lossy().to_string()],
+            )
+            .unwrap();
+
+        let tx = db.conn().unchecked_transaction().unwrap();
+        let candidate = find_move_candidate(
+            &tx,
+            &MoveLookup {
+                device: 0,
+                inode: 0,
+                title: "New Track",
+                artist: "New Artist",
+                album: "New Album",
+                duration_ms: 500,
+                file_size: 222,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            candidate, None,
+            "zero-valued placeholder identity must not match an unrelated track"
+        );
+    }
+}
