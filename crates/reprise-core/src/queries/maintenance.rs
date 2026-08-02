@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use crate::db::Db;
 use crate::device_sync::SyncTrack;
 use crate::library::playlists;
-use crate::library::source::{LibrarySource, UnixLibrarySource};
+use crate::library::source::{LibraryLinkMode, LibrarySource, UnixLibrarySource};
 use crate::models::MissingReason;
 use rusqlite::{Connection, OptionalExtension};
 
@@ -249,6 +249,14 @@ pub fn query_track_album_artist(db: &Db, id: i64) -> Result<Option<String>, rusq
 /// are omitted. The file size is read at enqueue time so progress totals
 /// describe the bytes that will actually be copied.
 pub fn query_sync_tracks(db: &Db, ids: &[i64]) -> Result<Vec<SyncTrack>, rusqlite::Error> {
+    query_sync_tracks_with_source(&UnixLibrarySource, db, ids)
+}
+
+pub fn query_sync_tracks_with_source(
+    source: &dyn LibrarySource,
+    db: &Db,
+    ids: &[i64],
+) -> Result<Vec<SyncTrack>, rusqlite::Error> {
     let conn = db.conn();
     let mut statement = conn.prepare(&format!(
         "SELECT path,title,artist,album,album_artist,track_no,duration_ms,bitrate_kbps \
@@ -288,12 +296,15 @@ pub fn query_sync_tracks(db: &Db, ids: &[i64]) -> Result<Vec<SyncTrack>, rusqlit
             continue;
         };
         let source_path = PathBuf::from(path);
-        let Ok(metadata) = source_path.metadata() else {
+        let Some(metadata) = source.probe(&source_path, LibraryLinkMode::Follow) else {
             continue;
         };
-        if !metadata.is_file() {
+        if !metadata.is_file {
             continue;
         }
+        let Some(size_bytes) = metadata.size else {
+            continue;
+        };
         let Some(original_name) = source_path.file_name() else {
             continue;
         };
@@ -310,10 +321,9 @@ pub fn query_sync_tracks(db: &Db, ids: &[i64]) -> Result<Vec<SyncTrack>, rusqlit
             bitrate_kbps: bitrate_kbps
                 .and_then(|value| u32::try_from(value).ok())
                 .filter(|value| *value > 0),
-            size_bytes: metadata.len(),
+            size_bytes,
             source_mtime: metadata
-                .modified()
-                .ok()
+                .modified
                 .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
                 .and_then(|duration| i64::try_from(duration.as_secs()).ok())
                 .unwrap_or(0),
@@ -373,7 +383,10 @@ fn mark_track_missing_if_current_with(
     let Some((path, device)) = row else {
         return Ok(false);
     };
-    if Path::new(&path).is_file() {
+    if source
+        .probe(Path::new(&path), LibraryLinkMode::Follow)
+        .is_some_and(|metadata| metadata.is_file)
+    {
         return Ok(false);
     }
     let reason = source.reachability(Path::new(&path), device);

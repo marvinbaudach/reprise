@@ -10,15 +10,21 @@ use super::{
     TimedLine,
 };
 
-pub struct LocalProvider;
+pub struct LocalProvider<'a> {
+    pub(crate) source: &'a dyn crate::library::source::LibrarySource,
+}
 
-impl LyricsProvider for LocalProvider {
+impl LyricsProvider for LocalProvider<'_> {
     fn source(&self) -> LyricsSource {
         LyricsSource::Tag
     }
 
     fn lookup(&self, _query: &LyricsQuery, track_path: Option<&Path>) -> SourceOutcome {
-        let Some(path) = track_path.filter(|path| path.is_file()) else {
+        let Some(path) = track_path.filter(|path| {
+            self.source
+                .probe(path, crate::library::source::LibraryLinkMode::Follow)
+                .is_some_and(|metadata| metadata.is_file)
+        }) else {
             return SourceOutcome::Skipped;
         };
         local_hit(path).map_or(SourceOutcome::Skipped, SourceOutcome::Hit)

@@ -8,8 +8,12 @@ use rusqlite::OptionalExtension;
 use super::scanner::move_detect::MOVE_MATCH_TOLERANCE_MS;
 use super::scanner::ScanError;
 use super::source::{
-    self, LibrarySource, LibraryWalkControl, LibraryWalkItem, LibraryWalkOrder, UnixLibrarySource,
+    self, LibraryLinkMode, LibrarySource, LibraryWalkControl, LibraryWalkItem, LibraryWalkOrder,
+    UnixLibrarySource,
 };
+
+#[path = "relink_source.rs"]
+mod source_queries;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RelinkMismatch {
@@ -36,8 +40,20 @@ pub fn probe_relink(
     target: &RelinkTarget,
     new_path: &Path,
 ) -> Result<Option<RelinkMismatch>, ScanError> {
+    probe_relink_with_source(&UnixLibrarySource, db, target, new_path)
+}
+
+pub fn probe_relink_with_source(
+    source: &dyn LibrarySource,
+    db: &Db,
+    target: &RelinkTarget,
+    new_path: &Path,
+) -> Result<Option<RelinkMismatch>, ScanError> {
     let conn = db.conn();
-    if target.old_path.exists() {
+    if source
+        .probe(&target.old_path, LibraryLinkMode::Follow)
+        .is_some()
+    {
         return Err(ScanError::RelinkTargetChanged {
             track_id: target.track_id,
         });
@@ -73,8 +89,20 @@ pub fn probe_relink(
 }
 
 pub fn relink_track(db: &Db, target: &RelinkTarget, new_path: &Path) -> Result<(), ScanError> {
+    relink_track_with_source(&UnixLibrarySource, db, target, new_path)
+}
+
+pub fn relink_track_with_source(
+    source: &dyn LibrarySource,
+    db: &Db,
+    target: &RelinkTarget,
+    new_path: &Path,
+) -> Result<(), ScanError> {
     let conn = db.conn();
-    if target.old_path.exists() {
+    if source
+        .probe(&target.old_path, LibraryLinkMode::Follow)
+        .is_some()
+    {
         return Err(ScanError::RelinkTargetChanged {
             track_id: target.track_id,
         });
@@ -89,13 +117,16 @@ pub fn relink_track(db: &Db, target: &RelinkTarget, new_path: &Path) -> Result<(
     } else {
         meta.title.clone()
     };
-    let (file_size, identity) = super::scanner::file_stat(new_path).ok_or_else(|| {
+    let facts = source_queries::file_facts(source, new_path).ok_or_else(|| {
         std::io::Error::new(
             std::io::ErrorKind::NotFound,
-            format!("relink source disappeared: {}", new_path.display()),
+            format!(
+                "relink source disappeared or lacks file facts: {}",
+                new_path.display()
+            ),
         )
     })?;
-    let (device, inode) = identity.map_or((None, None), |(device, inode)| {
+    let (device, inode) = facts.identity.map_or((None, None), |(device, inode)| {
         (Some(device as i64), Some(inode as i64))
     });
     let mount_point =
@@ -126,8 +157,8 @@ pub fn relink_track(db: &Db, target: &RelinkTarget, new_path: &Path) -> Result<(
         &meta,
         false,
         &super::scanner::move_detect::FileIdentity {
-            file_mtime: super::scanner::file_mtime(new_path),
-            file_size: file_size as i64,
+            file_mtime: facts.mtime,
+            file_size: facts.size as i64,
             device,
             inode,
             mount_point,
@@ -176,7 +207,7 @@ fn relink_from_folder_with_source(
         });
     }
 
-    let Some(total) = count_folder_audio_files(source, folder, cancel)? else {
+    let Some(total) = source_queries::count_folder_audio_files(source, folder, cancel)? else {
         return Ok(FolderRelinkReport {
             relinked: 0,
             group_size,
@@ -201,11 +232,18 @@ fn relink_from_folder_with_source(
             }
             processed = processed.saturating_add(1);
             let path = entry.path.as_path();
-            let Some((file_size, identity)) = super::scanner::file_stat(path) else {
+            let Some(facts) = entry
+                .metadata
+                .as_ref()
+                .and_then(source_queries::FileFacts::from_metadata)
+                .or_else(|| source_queries::file_facts(source, path))
+            else {
                 on_progress(processed, total);
                 return Ok(LibraryWalkControl::Continue);
             };
-            let identity = identity.map(|(device, inode)| (device as i64, inode as i64));
+            let identity = facts
+                .identity
+                .map(|(device, inode)| (device as i64, inode as i64));
             let meta = match super::scanner::track_meta::read_meta(path) {
                 Ok(meta) => meta,
                 Err(ScanError::Import { .. }) => {
@@ -225,7 +263,8 @@ fn relink_from_folder_with_source(
             let mount_point = super::mounts::mount_point_of(path)
                 .map(|mount| mount.to_string_lossy().into_owned());
             let tx = conn.unchecked_transaction()?;
-            let candidate = super::scanner::move_detect::find_move_candidate_in(
+            let candidate = super::scanner::move_detect::find_move_candidate_in_with_source(
+                source,
                 &tx,
                 &super::scanner::move_detect::MoveLookup {
                     identity,
@@ -233,7 +272,7 @@ fn relink_from_folder_with_source(
                     artist: &meta.artist,
                     album: &meta.album,
                     duration_ms: meta.duration_ms,
-                    file_size: file_size as i64,
+                    file_size: facts.size as i64,
                 },
                 &remaining,
             )?;
@@ -241,7 +280,9 @@ fn relink_from_folder_with_source(
                 let expected_path = expected_paths
                     .get(&candidate.id)
                     .expect("move candidates are restricted to remaining target ids");
-                let still_missing = !expected_path.exists()
+                let still_missing = source
+                    .probe(expected_path, LibraryLinkMode::Follow)
+                    .is_none()
                     && tx
                         .query_row(
                             &format!(
@@ -264,8 +305,8 @@ fn relink_from_folder_with_source(
                         &meta,
                         false,
                         &super::scanner::move_detect::FileIdentity {
-                            file_mtime: super::scanner::file_mtime(path),
-                            file_size: file_size as i64,
+                            file_mtime: facts.mtime,
+                            file_size: facts.size as i64,
                             device,
                             inode,
                             mount_point,
@@ -298,40 +339,6 @@ fn relink_from_folder_with_source(
         relinked,
         group_size,
     })
-}
-
-fn count_folder_audio_files(
-    source: &dyn LibrarySource,
-    folder: &Path,
-    cancel: &AtomicBool,
-) -> Result<Option<u32>, ScanError> {
-    if cancel.load(Ordering::Acquire) {
-        return Ok(None);
-    }
-    let mut total = 0_u32;
-    let mut outcome: Result<Option<()>, ScanError> = Ok(Some(()));
-    source::walk_with(source, folder, LibraryWalkOrder::Native, |item| {
-        if cancel.load(Ordering::Acquire) {
-            outcome = Ok(None);
-            return LibraryWalkControl::Stop;
-        }
-        match item {
-            LibraryWalkItem::Entry(entry) => {
-                if entry.is_file && super::scanner::is_audio_file(&entry.path) {
-                    total = total.saturating_add(1);
-                }
-                LibraryWalkControl::Continue
-            }
-            LibraryWalkItem::Error(error) => {
-                outcome = Err(std::io::Error::other(error.detail).into());
-                LibraryWalkControl::Stop
-            }
-        }
-    });
-    match outcome? {
-        Some(()) => Ok(Some(total)),
-        None => Ok(None),
-    }
 }
 
 #[cfg(test)]

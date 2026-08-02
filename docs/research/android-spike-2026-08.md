@@ -734,6 +734,196 @@ den niemand abgelaufen ist, einmal ein Traversierungsfehler, der als
 bestehende Rechte-basierte Test deckt denselben Pfad ab, überspringt sich aber
 überall dort, wo Verzeichnisrechte nicht durchgesetzt werden — als root etwa.
 
+### Die Klassifikation, die Paket 3 freigibt (2026-08-02)
+
+Paket 2 hat festgehalten, dass eine Dateiliste keine zulässige
+Arbeitsgrundlage ist. Hier ist die stellenweise Einordnung, die sie ersetzt.
+
+**Die Rohzahl war dreimal falsch, und jedes Mal zu hoch.** Der Spike schätzte
+27 Stellen für die gesamte Abstraktion. Ein Grep über den damaligen Cluster
+fand 53. Ein Grep über den ganzen Crate fand 94. Die 94 enthielten Treffer in
+inline `#[cfg(test)]`-Modulen und sogar Kommentarzeilen, die `read_dir` bloß
+erwähnen. Nach Ausschluss von Testcode und Kommentaren bleiben **58
+Produktivstellen** — und davon gehören **21** hinter `LibrarySource`.
+
+| Klasse | Stellen | Was damit geschieht |
+| --- | --- | --- |
+| **A — Bibliotheksquelle** | **21** | Paket 3. Die Musikdateien unter einer Scan-Wurzel. |
+| **B — app-privat** | **31** | Nie abstrahiert. Unser eigener XDG-Cache und `dirs::data_dir()/reprise`. |
+| **C — fremde App-Daten** | **2** | Nicht abstrahiert, sondern plattformweise ausgeschlossen. |
+| **E — der Adapter selbst** | **4** | Nichts zu tun; das *ist* die Implementierung. |
+
+Bemerkenswert ist das Verhältnis: **mehr Stellen dürfen nicht in die
+Abstraktion als hinein.** Wer den Cluster als Block umbaut, zieht 31
+app-private Zugriffe in einen Vertrag, der die Musikquelle beschreibt — und
+Android bekäme einen SAF-Umweg für seinen eigenen Cache.
+
+#### A — Bibliotheksquelle (Paket 3)
+
+| Datei | Zeilen | Ergebnis Paket 3 |
+| --- | --- | --- |
+| `cover.rs` | 82 | 1/1 über `LibrarySource` |
+| `cover_writeback.rs` | 22, 50 | 2/2 über `LibrarySource` |
+| `device_sync/snapshot.rs` | 105 | 1/1 über `LibrarySource` |
+| `library/relink.rs` | 40, 77, 244 | 3/3 über `LibrarySource` |
+| `library/rhythmbox_import.rs` | 501 | 1/1 über `LibrarySource` |
+| `library/scanner.rs` | 32, 55, 266 | 3/3 über `LibrarySource` |
+| `library/scanner_move.rs` | 56 | 1/1 über `LibrarySource` |
+| `library/scanner_vanish.rs` | 167 | 1/1 über `LibrarySource` |
+| `lyrics/local.rs` | 21 | 1/1 über `LibrarySource` |
+| `lyrics/sidecar_write.rs` | 17 | 1/1 über `LibrarySource` |
+| `queries/issues.rs` | 244 | 1/1 über `LibrarySource` |
+| `queries/maintenance.rs` | 294, 376 | 2/2 über `LibrarySource` |
+| `stem_separation.rs` | 164 | 1/1 über `LibrarySource` |
+| `writeback_publish.rs` | 198, 207 | 2/2 über `LibrarySource` |
+
+`cover.rs` steht in A **und** in B: Zeile 82 liest den Albumordner nach einem
+Sidecar-Bild, die vier `out.exists()` prüfen Thumbnails im XDG-Cache. Genau
+dieser Fall war der Grund, keine Dateiliste zu akzeptieren.
+
+**Ergebnis Paket 3 (2026-08-02): 21/21 umgestellt, keine Ausnahme.** Der Walk
+trägt jetzt optional genau die Metadaten mit, die eine Quelle beim Auflisten
+ohnehin schon besitzt. Der Unix-Adapter setzt dieses Feld bewusst auf `None`:
+dadurch fragt der Scanner jede Audiodatei einmal per `probe`, Nicht-Audiodateien
+gar nicht, und bereits im Walk gesehene Pfade werden beim anschließenden
+Verschwunden-Abgleich nicht erneut gefragt. Ein SAF-Adapter kann dagegen
+Größe, Änderungszeit und stabile Identität direkt aus seiner Cursor-Zeile
+mitgeben und braucht für dieselbe Datei keinen weiteren Binder-Rundlauf.
+
+Die drei flachen Albumordner-Zugriffe verwenden die eigene objekt-sichere
+Operation `read_directory` statt einer Tiefengrenze am rekursiven `walk`.
+Damit bleiben ihre bisherigen Semantiken — nur unmittelbare Kinder, weder
+Wurzel noch Nachfahren — ausdrücklich erhalten. Auch deren Einträge dürfen
+bereits vorhandene Metadaten mittragen; Unix lässt sie weg und vermeidet so
+einen vorsorglichen `stat` für jedes Kind. Fehlende Antworten und einzelne
+fehlende Fakten bleiben in beiden Operationen `None`; kein Adapter erfindet
+Größe, Zeitstempel oder Identität.
+
+Die Gegenprobe über die ursprünglichen Zugriffsmuster lässt ausschließlich
+die klassifizierten Stellen übrig: Klasse B in den Reprise-eigenen XDG-Daten,
+Klasse C an Rhythmboxʼ eigenen Dateien und Klasse E im Unix-Adapter selbst.
+Diese drei Klassen wurden in Paket 3 nicht verändert.
+
+#### B — app-privat (nie in `LibrarySource`)
+
+| Datei | Zeilen |
+| --- | --- |
+| `ai_promotion.rs` | 160 |
+| `ai_staging.rs` | 106, 127 |
+| `artist_portrait/cache.rs` | 31, 49 |
+| `artist_portrait/mod.rs` | 92, 134 |
+| `cover.rs` | 168, 199, 237, 254 |
+| `cover_download.rs` | 83, 144, 208 |
+| `db_grandfather.rs` | 148, 150 |
+| `device_sync/podcasts.rs` | 156, 159 |
+| `lyrics/lrclib.rs` | 189 |
+| `podcasts/download_state.rs` | 56, 58 |
+| `podcasts/downloads.rs` | 174, 182, 223, 229, 303 |
+| `podcasts/pipeline.rs` | 765 |
+| `podcasts/ytdlp_download.rs` | 266 |
+| `remote_image/cache.rs` | 40, 113, 116 |
+
+Podcast-Downloads liegen unter `dirs::data_dir()/reprise/podcasts`
+(`downloads::default_download_root`) und sind damit app-privat, nicht
+Bibliothek — auch dann, wenn `device_sync/podcasts.rs` sie später auf ein
+angeschlossenes Gerät kopiert. Die Zielseite eines Sync ist ein eigener
+Speicherbereich und bekommt, wenn überhaupt, einen eigenen Vertrag.
+
+#### C — fremde App-Daten, plattformweise ausgeschlossen
+
+| Datei | Zeilen |
+| --- | --- |
+| `library/rhythmbox_import.rs` | 397, 525 |
+
+`rhythmbox_import` liest Rhythmboxʼ eigene `rhythmdb.xml` und `playlists.xml`
+unter `~/.local/share/rhythmbox`. Das ist weder unsere Bibliothek noch unser
+Speicher, und unter Android existiert Rhythmbox nicht. **Diese Stellen brauchen
+keine Abstraktion, sondern eine Plattformgrenze** — der Import ist eine
+Desktop-Funktion. Die Musikdatei, die der Import danach anfasst
+(`rhythmbox_import.rs:501`), steht dagegen in A: sie liegt in der Bibliothek.
+
+#### E — der Unix-Adapter selbst
+
+| Datei | Zeilen |
+| --- | --- |
+| `library/mounts.rs` | 75 |
+| `library/source.rs` | 188, 197, 246 |
+
+Diese Zeilen sind das Innere von `UnixLibrarySource` und `mount_point_of`. Sie
+sollen `walkdir` und `lstat` benutzen; das ist ihr Zweck.
+
+#### Woran die Einordnung hängt
+
+Die Frage pro Stelle war nicht „liegt hier ein Pfad", sondern **wem gehört das,
+worauf der Pfad zeigt**. Kommt er aus `tracks.path` oder einer Scan-Wurzel →
+A. Aus `dirs::cache_dir()`/`dirs::data_dir()` unter unserem Namen → B. Aus dem
+Verzeichnis einer anderen Anwendung → C.
+
+#### Korrektur: die Zahl 21 war zu niedrig (2026-08-02, nachgetragen)
+
+Die Messung oben zählte **direkte** Dateisystem-Aufrufe. Sie übersah zwei
+Gruppen, beide bibliotheksbezogen.
+
+**Neun indirekte Stellen in `reprise-core`**, die über hauseigene Wrapper
+gingen statt über `std::fs` direkt:
+
+| Wrapper | Aufrufstellen |
+| --- | --- |
+| `scanner::file_stat` | `relink.rs:92`, `relink.rs:204` |
+| `scanner::file_mtime` | `relink.rs:129`, `relink.rs:267` |
+| `mounts::mount_point_of` | `relink.rs:102`, `relink.rs:225`, `scanner_mount.rs:69`, `scanner_mount.rs:74`, `scanner_vanish.rs:183` |
+
+Die vier `file_stat`/`file_mtime`-Stellen sind mit Paket 3 erledigt — `relink`
+fragte jede Datei zweimal, genau wie der Scanner, und holt beide Fakten jetzt
+aus einem `probe`.
+
+**`mount_point_of` bleibt offen, und es ist keine mechanische Stelle.** Paket 1
+hat `classify_missing` abstrahiert, aber die Gruppierung „was verschwindet
+zusammen" blieb vollständig Unix — sie steigt pro Vorfahre mit
+`symlink_metadata` auf, bis der Gerätewert wechselt. Unter SAF gibt es keinen
+Mount-Punkt; die Frage müsste der DocumentsProvider-Baum beantworten, und
+`mounts.rs`' eigener Modulkopf nennt btrfs-Subvolumes bereits als Fall, in dem
+die Antwort auch unter Linux nur näherungsweise stimmt. **Das ist eine
+Entwurfsfrage, kein Umzug.**
+
+**Acht Stellen liegen in `reprise-gnome`**, außerhalb der Abstraktion, die
+beansprucht die Musikquelle zu kapseln:
+
+| Datei | Zeilen | Worauf |
+| --- | --- | --- |
+| `ui/device_sync/device_sync_effects.rs` | 335, 338, 393 | `track.source_path` |
+| `ui/import_errors_view.rs` | 4, 404 | Track-Pfad, über `MetadataExt::mtime()` |
+| `ui/file_open.rs` | 134 | geöffnete Datei, wird Track |
+| `ui/mounts.rs` | 67 | Bibliothekswurzel |
+| `ui/playback/playback_faults.rs` | 86 | `summary.path` |
+
+Für Android hieße das: die Compose-Oberfläche baut jeden dieser Zugriffe gegen
+SAF neu — oder sie ziehen vorher nach `reprise-core`. `MetadataExt::mtime()` in
+einer GTK-Ansicht ist Unix-API im Frontend, und niemand hätte sie beim
+P1a-Schnitt als „Präsentationslogik" gelesen.
+
+**Korrigierter Stand:** 21 direkte + 9 indirekte = **30 bibliotheksbezogene
+Stellen in `reprise-core`**, davon 25 mit Paket 3 erledigt und 5
+(`mount_point_of`) als Entwurfsfrage offen; dazu **8 in `reprise-gnome`**, die
+noch keinem Paket zugeordnet sind.
+
+#### Die offene Frage für den SAF-Adapter: „weg" gegen „weiß nicht"
+
+`LibrarySource::probe` liefert `Option`, und `None` heißt **die Datei ist nicht
+da**. Zwei Aufrufstellen — `scanner_vanish::mark_vanished_with` und
+`queries::maintenance::mark_track_missing_if_current_with` — machen daraus
+sofort einen `missing_since`-Eintrag. Die anderen fünfzehn Verbraucher
+behandeln `None` konservativ und schreiben nichts.
+
+Unter Linux ist die Vermischung harmlos und war es immer: `Path::exists()`
+liefert bei einem Rechte- oder E/A-Fehler ebenfalls `false`. **Unter SAF ist
+jede Abfrage ein Binder-Rundlauf, der scheitern kann**, und ein gescheiterter
+Rundlauf sähe aus wie eine gelöschte Datei. Eine SAF-Quelle braucht deshalb ein
+eigenes Signal für „ich konnte nicht nachsehen", bevor sie an diesen zwei
+Stellen produktiv eingesetzt wird. Paket 3 legt sie nicht, weil das die
+Semantik von siebzehn Aufrufstellen ändert; es benennt sie an `probe` und an
+beiden Schreibstellen.
+
 ## Frage 8 — Die Umzugserkennung, und was Tauri daran ändert (umgesetzt 2026-08-02)
 
 **Status: umgesetzt.** `file_stat` liefert jetzt die echte Größe getrennt von

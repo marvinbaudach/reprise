@@ -86,7 +86,10 @@ pub use settings::{
     DeviceFileRecord, DevicePlaylistRecord, DeviceSelection, DeviceSettings, RememberedDevice,
     SelectionSource,
 };
-pub use snapshot::{load_everything_playlist_snapshot, load_mirror_playlist_snapshots};
+pub use snapshot::{
+    load_everything_playlist_snapshot, load_everything_playlist_snapshot_with_source,
+    load_mirror_playlist_snapshots, load_mirror_playlist_snapshots_with_source,
+};
 pub use storage::{
     project_storage, storage_composition, DeviceStorageAccess, DeviceStorageInspection,
     DeviceStorageProjection, DeviceStorageSnapshot, StorageComposition, StorageKnowledge,
