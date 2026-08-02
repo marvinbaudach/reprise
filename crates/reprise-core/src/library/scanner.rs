@@ -40,6 +40,14 @@ pub(crate) fn file_mtime(path: &Path) -> i64 {
 /// which case the scanner skips move detection rather than matching with an
 /// unknown size. The database representation remains `file_size = 0` plus
 /// `NULL` device/inode for that failure case.
+///
+/// **A platform arm must never fabricate an identity.** The non-Unix arm used
+/// to return `(0, 0)` under a comment claiming it was never reached at
+/// runtime — true only while the app was Linux-only. A Tauri desktop makes it
+/// false, and then `WHERE device = 0 AND inode = 0` matches every row scanned
+/// there; with exactly one valid candidate that attaches one track's history
+/// to another, silently. `None` is the only honest answer for a platform
+/// without a stable identity.
 pub(crate) fn file_stat(path: &Path) -> Option<(u64, Option<(u64, u64)>)> {
     let metadata = std::fs::metadata(path).ok()?;
     #[cfg(unix)]
