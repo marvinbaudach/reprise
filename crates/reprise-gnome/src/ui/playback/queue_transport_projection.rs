@@ -5,7 +5,7 @@ use crate::ui::playback::external_media_state::{
 };
 use crate::ui::playback::preview::PlaybackMode;
 use crate::ui::player_controller::PlayerController;
-use crate::ui::track_list::queue_sections::{compose_virtual, QueueViewModel, VirtualContextTail};
+use crate::ui::track_list::queue_sections::{compose_virtual, QueueViewModel, VirtualContext};
 use reprise_core::up_next::QueueItem;
 
 pub(super) fn compose_queue_view_model(
@@ -13,7 +13,7 @@ pub(super) fn compose_queue_view_model(
     queue_current: Option<i64>,
     current_up_next: Option<QueueItem>,
     play_next: &[QueueItem],
-    music_context: Option<VirtualContextTail>,
+    music_context: Option<VirtualContext>,
     music_origin_label: Option<&str>,
     external: &ExternalPlaybackState,
 ) -> QueueViewModel {
@@ -59,8 +59,8 @@ fn direct_podcast_model(
         });
     let context = session.neighbours.as_ref().and_then(|neighbours| {
         (!neighbours.upcoming().is_empty()).then(|| {
-            VirtualContextTail::materialised(
-                neighbours.upcoming().to_vec(),
+            VirtualContext::identified(
+                neighbours.upcoming().len(),
                 (session.subscription_id as u64, neighbours.sequence),
                 neighbours.position(),
             )
@@ -107,25 +107,8 @@ impl PlayerController {
             .borrow()
             .as_ref()
             .map(|origin| origin.label.clone());
-        let player = Rc::downgrade(self);
-        let context = (context_count > 0).then(|| {
-            VirtualContextTail::identified(
-                context_count,
-                context_sequence,
-                context_start,
-                Rc::new(move |offset, limit| {
-                    player.upgrade().map_or_else(Vec::new, |player| {
-                        player
-                            .queue
-                            .borrow()
-                            .remaining_window(offset, limit)
-                            .into_iter()
-                            .map(QueueItem::Track)
-                            .collect()
-                    })
-                }),
-            )
-        });
+        let context = (context_count > 0)
+            .then(|| VirtualContext::identified(context_count, context_sequence, context_start));
         compose_queue_view_model(
             mode,
             queue_current,
@@ -183,13 +166,18 @@ mod tests {
         }
     }
 
-    fn music_context() -> VirtualContextTail {
-        VirtualContextTail::materialised(vec![QueueItem::Track(2), QueueItem::Track(3)], (5, 9), 1)
+    fn music_context() -> VirtualContext {
+        VirtualContext::identified(2, (5, 9), 1)
+    }
+
+    fn music_context_items() -> Vec<QueueItem> {
+        vec![QueueItem::Track(2), QueueItem::Track(3)]
     }
 
     #[test]
     fn que_10_direct_episode_projects_frozen_show_context_not_music() {
         let external = podcast_state(PodcastOrigin::Direct, 7, Some(&[7, 8, 9]));
+        let episode_context = vec![QueueItem::Episode(8), QueueItem::Episode(9)];
 
         let model = compose_queue_view_model(
             PlaybackMode::Podcast,
@@ -202,7 +190,7 @@ mod tests {
         );
 
         assert_eq!(
-            model.all_items(),
+            model.all_items(&episode_context),
             vec![
                 QueueItem::Episode(7),
                 QueueItem::Track(90),
@@ -217,7 +205,9 @@ mod tests {
                 source_label: "VOID PREACHER".into(),
             })
         );
-        assert!(!model.all_items().contains(&QueueItem::Track(2)));
+        assert!(!model
+            .all_items(&episode_context)
+            .contains(&QueueItem::Track(2)));
     }
 
     #[test]
@@ -234,7 +224,10 @@ mod tests {
             &external,
         );
 
-        assert_eq!(model.all_items(), vec![QueueItem::Episode(7)]);
+        assert_eq!(
+            model.all_items(&Vec::<QueueItem>::new()),
+            vec![QueueItem::Episode(7)]
+        );
         assert_eq!(model.sections.len(), 1);
         assert_eq!(model.sections[0].kind, QueueSectionKind::NowPlaying);
     }
@@ -260,6 +253,7 @@ mod tests {
             Some("Music"),
             &podcast_state(PodcastOrigin::Direct, 7, Some(&[7, 8, 9])),
         );
+        let episode_context = vec![QueueItem::Episode(8), QueueItem::Episode(9)];
         let after = compose_queue_view_model(
             PlaybackMode::Queue,
             Some(1),
@@ -270,9 +264,15 @@ mod tests {
             &external,
         );
 
-        assert_ne!(during.all_items(), before.all_items());
+        assert_ne!(
+            during.all_items(&episode_context),
+            before.all_items(&music_context_items())
+        );
         assert_eq!(after, before);
-        assert_eq!(after.all_items(), before.all_items());
+        assert_eq!(
+            after.all_items(&music_context_items()),
+            before.all_items(&music_context_items())
+        );
     }
 
     #[test]
@@ -290,7 +290,7 @@ mod tests {
         );
 
         assert_eq!(
-            model.all_items(),
+            model.all_items(&music_context_items()),
             vec![
                 QueueItem::Episode(7),
                 QueueItem::Track(90),

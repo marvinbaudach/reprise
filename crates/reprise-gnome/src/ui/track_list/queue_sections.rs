@@ -9,7 +9,6 @@
 //! `next_target` pops Play Next FIFO first, then walks the snapshot from
 //! the current position, which is precisely `play_next ++ up_next_rest`.
 
-use std::fmt;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
@@ -17,6 +16,20 @@ use reprise_core::up_next::QueueItem;
 
 use crate::ui::strings;
 use crate::ui::track_list::Shared;
+
+/// P1a's binding rule: no view model may hold a closure, because a planned
+/// Android surface reaches this type through UniFFI, and UniFFI cannot carry
+/// a closure across an FFI boundary. `Rc<dyn Fn(usize, usize) -> Vec<QueueItem>>`
+/// is rejected there with `TypeId`, `Lower` and `Lift` trait-bound errors —
+/// measured against UniFFI 0.29, not assumed.
+///
+/// `Rc<dyn Fn>` is neither `Send` nor `Sync` while every other field here is,
+/// so this assertion fails to compile the moment a closure comes back. It is
+/// a permanent guard, not a one-off migration check.
+const _: () = {
+    const fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<QueueViewModel>();
+};
 
 /// What a queue section IS — drives its header title (and, later, the
 /// header's actions: QUE-3 puts "Clear" on the Play Next header).
@@ -37,19 +50,21 @@ pub(crate) struct QueueSection {
 
 /// The composite Queue view: the flat id list the windowed query renders,
 /// plus the section ranges the header factory titles.
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct QueueViewModel {
     /// Materialized prefix only: optional Now Playing followed by manual
-    /// entries. Context rows are supplied window-by-window by `context`.
+    /// entries. `context` describes the tail; callers supply its rows.
     pub items: Vec<QueueItem>,
     pub sections: Vec<QueueSection>,
-    context: Option<VirtualContextTail>,
+    context: Option<VirtualContext>,
 }
 
-#[derive(Clone)]
-pub(crate) struct VirtualContextTail {
+/// How long the virtual context tail is, and which context it belongs to.
+/// Deliberately data only: the rows themselves are fetched through
+/// [`ContextWindow`], never through a closure the model carries.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct VirtualContext {
     count: usize,
-    window: Rc<dyn Fn(usize, usize) -> Vec<QueueItem>>,
     identity: Option<VirtualContextIdentity>,
 }
 
@@ -59,64 +74,48 @@ pub(crate) struct VirtualContextIdentity {
     start: usize,
 }
 
-impl VirtualContextTail {
+impl VirtualContext {
     #[cfg(test)]
-    pub(crate) fn new(count: usize, window: Rc<dyn Fn(usize, usize) -> Vec<QueueItem>>) -> Self {
+    pub(crate) fn new(count: usize) -> Self {
         Self {
             count,
-            window,
             identity: None,
         }
     }
 
-    pub(crate) fn identified(
-        count: usize,
-        sequence: (u64, u64),
-        start: usize,
-        window: Rc<dyn Fn(usize, usize) -> Vec<QueueItem>>,
-    ) -> Self {
+    pub(crate) fn identified(count: usize, sequence: (u64, u64), start: usize) -> Self {
         Self {
             count,
-            window,
             identity: Some(VirtualContextIdentity { sequence, start }),
         }
     }
+}
 
-    pub(crate) fn materialised(items: Vec<QueueItem>, sequence: (u64, u64), start: usize) -> Self {
-        let items: Rc<[QueueItem]> = Rc::from(items);
-        let count = items.len();
-        Self::identified(
-            count,
-            sequence,
-            start,
-            Rc::new(move |offset, limit| {
-                let end = offset.saturating_add(limit).min(items.len());
-                items.get(offset..end).unwrap_or_default().to_vec()
-            }),
-        )
+/// Supplies the context rows a [`QueueViewModel`] describes but does not
+/// hold. The GTK side implements this over the windowed query; a future
+/// Android side implements it over the same query behind UniFFI.
+pub(crate) trait ContextWindow {
+    fn rows(&self, offset: usize, limit: usize) -> Vec<QueueItem>;
+}
+
+#[cfg(test)]
+impl ContextWindow for Vec<i64> {
+    fn rows(&self, offset: usize, limit: usize) -> Vec<QueueItem> {
+        let end = offset.saturating_add(limit).min(self.len());
+        self.get(offset..end)
+            .unwrap_or_default()
+            .iter()
+            .copied()
+            .map(QueueItem::Track)
+            .collect()
     }
 }
 
-impl fmt::Debug for QueueViewModel {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("QueueViewModel")
-            .field("items", &self.items)
-            .field("sections", &self.sections)
-            .field(
-                "context_count",
-                &self.context.as_ref().map(|tail| tail.count),
-            )
-            .finish()
-    }
-}
-
-impl PartialEq for QueueViewModel {
-    fn eq(&self, other: &Self) -> bool {
-        self.items == other.items
-            && self.sections == other.sections
-            && self.context.as_ref().map(|tail| tail.count)
-                == other.context.as_ref().map(|tail| tail.count)
+#[cfg(test)]
+impl ContextWindow for Vec<QueueItem> {
+    fn rows(&self, offset: usize, limit: usize) -> Vec<QueueItem> {
+        let end = offset.saturating_add(limit).min(self.len());
+        self.get(offset..end).unwrap_or_default().to_vec()
     }
 }
 
@@ -160,7 +159,12 @@ impl QueueViewModel {
         self.items.len() + self.context.as_ref().map_or(0, |tail| tail.count)
     }
 
-    pub(crate) fn items_window(&self, offset: usize, limit: usize) -> Vec<QueueItem> {
+    pub(crate) fn items_window(
+        &self,
+        offset: usize,
+        limit: usize,
+        tail: &dyn ContextWindow,
+    ) -> Vec<QueueItem> {
         if limit == 0 || offset >= self.total_len() {
             return Vec::new();
         }
@@ -178,18 +182,18 @@ impl QueueViewModel {
         };
         let context_offset = offset.saturating_sub(self.items.len());
         let context_limit = remaining.min(context.count.saturating_sub(context_offset));
-        items.extend((context.window)(context_offset, context_limit));
+        items.extend(tail.rows(context_offset, context_limit));
         items
     }
 
-    pub(crate) fn all_items(&self) -> Vec<QueueItem> {
-        self.items_window(0, self.total_len())
+    pub(crate) fn all_items(&self, tail: &dyn ContextWindow) -> Vec<QueueItem> {
+        self.items_window(0, self.total_len(), tail)
     }
 
     /// Exact O(1) model delta for the two normal forward-playback shapes:
     /// consuming the first materialized Play Next row, or advancing through
-    /// an unchanged virtual context. The lazy tail closure is live, so its
-    /// frozen sequence/start identity is the proof for the virtual case.
+    /// an unchanged virtual context. The tail's frozen sequence/start
+    /// identity is the proof for the virtual case.
     pub(crate) fn leading_removal_change_from(&self, old: &Self) -> Option<(u32, u32, u32)> {
         let material_removed = old.items.len().checked_sub(self.items.len())?;
         let context_unchanged = match (&old.context, &self.context) {
@@ -240,30 +244,14 @@ pub(crate) fn compose(
     up_next_rest: &[i64],
     origin_label: Option<&str>,
 ) -> QueueViewModel {
-    let context_ids: Rc<[i64]> = Rc::from(up_next_rest);
-    let context_for_window = context_ids.clone();
-    let context = (!context_ids.is_empty()).then(|| {
-        VirtualContextTail::new(
-            context_ids.len(),
-            Rc::new(move |offset, limit| {
-                let end = offset.saturating_add(limit).min(context_for_window.len());
-                context_for_window
-                    .get(offset..end)
-                    .unwrap_or_default()
-                    .iter()
-                    .copied()
-                    .map(QueueItem::Track)
-                    .collect()
-            }),
-        )
-    });
+    let context = (!up_next_rest.is_empty()).then(|| VirtualContext::new(up_next_rest.len()));
     compose_virtual(now_playing, play_next, context, origin_label)
 }
 
 pub(crate) fn compose_virtual(
     now_playing: Option<QueueItem>,
     play_next: &[QueueItem],
-    context: Option<VirtualContextTail>,
+    context: Option<VirtualContext>,
     origin_label: Option<&str>,
 ) -> QueueViewModel {
     let mut items = Vec::with_capacity(usize::from(now_playing.is_some()) + play_next.len());
@@ -305,6 +293,23 @@ pub(crate) fn compose_virtual(
 }
 
 #[cfg(test)]
+struct SliceContextWindow<'a>(&'a [i64]);
+
+#[cfg(test)]
+impl ContextWindow for SliceContextWindow<'_> {
+    fn rows(&self, offset: usize, limit: usize) -> Vec<QueueItem> {
+        let end = offset.saturating_add(limit).min(self.0.len());
+        self.0
+            .get(offset..end)
+            .unwrap_or_default()
+            .iter()
+            .copied()
+            .map(QueueItem::Track)
+            .collect()
+    }
+}
+
+#[cfg(test)]
 mod que_7_tests {
     use std::cell::Cell;
     use std::rc::Rc;
@@ -315,9 +320,22 @@ mod que_7_tests {
         ids.iter().copied().map(QueueItem::Track).collect()
     }
 
+    struct RecordingContextWindow {
+        requested: Rc<Cell<usize>>,
+    }
+
+    impl ContextWindow for RecordingContextWindow {
+        fn rows(&self, offset: usize, limit: usize) -> Vec<QueueItem> {
+            self.requested.set(limit);
+            (offset..offset + limit)
+                .map(|position| QueueItem::Track(i64::try_from(position).unwrap()))
+                .collect()
+        }
+    }
+
     #[test]
     fn que_7_sidebar_counts_only_the_manual_queue() {
-        let context = VirtualContextTail::new(1_638, Rc::new(|_, _| Vec::new()));
+        let context = VirtualContext::new(1_638);
         let model = compose_virtual(
             Some(QueueItem::Track(1)),
             &tracks(&[10, 11]),
@@ -331,16 +349,10 @@ mod que_7_tests {
     #[test]
     fn que_7_context_tail_is_not_materialised() {
         let requested = Rc::new(Cell::new(0));
-        let requested_for_window = requested.clone();
-        let context = VirtualContextTail::new(
-            1_638,
-            Rc::new(move |offset, limit| {
-                requested_for_window.set(limit);
-                (offset..offset + limit)
-                    .map(|position| QueueItem::Track(i64::try_from(position).unwrap()))
-                    .collect()
-            }),
-        );
+        let context = VirtualContext::new(1_638);
+        let window = RecordingContextWindow {
+            requested: requested.clone(),
+        };
         let model = compose_virtual(
             Some(QueueItem::Track(1)),
             &tracks(&[10, 11]),
@@ -352,28 +364,29 @@ mod que_7_tests {
         assert_eq!(model.total_len(), 1_641);
         assert_eq!(requested.get(), 0);
 
-        let window = model.items_window(203, 20);
-        assert_eq!(window.len(), 20);
+        let items = model.items_window(203, 20, &window);
+        assert_eq!(items.len(), 20);
         assert_eq!(requested.get(), 20);
     }
+}
+
+#[cfg(test)]
+mod que_10_tests {
+    use super::*;
 
     #[test]
-    fn typed_materialised_context_windows_across_the_manual_boundary() {
-        let context = VirtualContextTail::materialised(
-            vec![QueueItem::Episode(20), QueueItem::Episode(21)],
-            (42, 7),
-            0,
-        );
+    fn typed_context_windows_across_the_manual_boundary() {
+        let context_items = vec![QueueItem::Episode(20), QueueItem::Episode(21)];
         let model = compose_virtual(
             Some(QueueItem::Episode(19)),
             &[QueueItem::Track(10)],
-            Some(context),
+            Some(VirtualContext::identified(2, (42, 7), 0)),
             Some("VOID PREACHER"),
         );
 
         assert_eq!(model.total_len(), 4);
         assert_eq!(
-            model.items_window(1, 3),
+            model.items_window(1, 3, &context_items),
             vec![
                 QueueItem::Track(10),
                 QueueItem::Episode(20),
@@ -388,22 +401,14 @@ mod que_7_tests {
         let old = compose_virtual(
             Some(QueueItem::Episode(19)),
             &[QueueItem::Track(10)],
-            Some(VirtualContextTail::materialised(
-                vec![QueueItem::Episode(20), QueueItem::Episode(21)],
-                (42, 7),
-                0,
-            )),
+            Some(VirtualContext::identified(2, (42, 7), 0)),
             Some("VOID PREACHER"),
         )
         .upcoming();
         let new = compose_virtual(
             Some(QueueItem::Episode(20)),
             &[QueueItem::Track(10)],
-            Some(VirtualContextTail::materialised(
-                vec![QueueItem::Episode(21)],
-                (42, 7),
-                1,
-            )),
+            Some(VirtualContext::identified(1, (42, 7), 1)),
             Some("VOID PREACHER"),
         )
         .upcoming();
@@ -532,6 +537,10 @@ mod tests {
         ids.iter().copied().map(QueueItem::Track).collect()
     }
 
+    fn all_items(model: &QueueViewModel, context: &[i64]) -> Vec<QueueItem> {
+        model.all_items(&SliceContextWindow(context))
+    }
+
     #[test]
     fn mixed_manual_queue_preserves_item_kind_when_numeric_ids_collide() {
         let model = compose(
@@ -545,7 +554,7 @@ mod tests {
         );
 
         assert_eq!(
-            model.all_items(),
+            all_items(&model, &[]),
             vec![
                 reprise_core::up_next::QueueItem::Track(1),
                 reprise_core::up_next::QueueItem::Track(7),
@@ -570,7 +579,7 @@ mod tests {
                 .collect::<Vec<_>>()
         );
         assert_eq!(
-            model.all_items(),
+            all_items(&model, &[4, 5, 6]),
             [1, 2, 3, 4, 5, 6]
                 .into_iter()
                 .map(QueueItem::Track)
@@ -609,7 +618,7 @@ mod tests {
             [2, 3].into_iter().map(QueueItem::Track).collect::<Vec<_>>()
         );
         assert_eq!(
-            model.all_items(),
+            all_items(&model, &[4, 5]),
             [2, 3, 4, 5]
                 .into_iter()
                 .map(QueueItem::Track)
@@ -630,7 +639,7 @@ mod tests {
         let model = compose(Some(QueueItem::Track(9)), &[], &[10], Some("Neverbloom"));
         assert_eq!(model.items, vec![QueueItem::Track(9)]);
         assert_eq!(
-            model.all_items(),
+            all_items(&model, &[10]),
             vec![QueueItem::Track(9), QueueItem::Track(10)]
         );
         assert_eq!(model.sections.len(), 2);

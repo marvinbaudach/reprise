@@ -2696,6 +2696,7 @@ dependencies = [
  "reprise-platform-linux",
  "reprise-runtime-client",
  "reprise-runtime-protocol",
+ "reprise-view",
  "rusqlite",
  "serde",
  "serde_json",
@@ -2795,6 +2796,13 @@ dependencies = [
  "tempfile",
  "thiserror",
  "ureq",
+]
+
+[[package]]
+name = "reprise-view"
+version = "0.1.1"
+dependencies = [
+ "reprise-core",
 ]
 
 [[package]]

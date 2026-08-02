@@ -25,6 +25,10 @@ use reprise_core::up_next::{QueueItem, UpNextQueue};
 #[path = "queue_transport_projection.rs"]
 mod projection;
 
+#[path = "queue_context_window.rs"]
+mod queue_context_window;
+pub(in crate::ui) use queue_context_window::QueueContextWindow;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ToggleAction {
     StartCurrent,

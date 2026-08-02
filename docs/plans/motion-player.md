@@ -2,7 +2,7 @@
 slug: motion-player
 worktree: /home/marvin/Projects/reprise/.worktrees/transitions
 branch: feat/motion-player
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-07-18
 ---

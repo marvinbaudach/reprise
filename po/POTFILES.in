@@ -16,7 +16,8 @@ crates/reprise-gnome/src/ui/strings_stats.rs
 crates/reprise-gnome/src/ui/strings_autocomplete.rs
 crates/reprise-gnome/src/ui/strings_filter.rs
 crates/reprise-gnome/src/ui/strings_ai.rs
-crates/reprise-gnome/src/ui/strings_scan.rs
+crates/reprise-view/src/strings/scan.rs
+crates/reprise-view/src/strings/playlists.rs
 crates/reprise-gnome/src/ui/strings_sources.rs
 crates/reprise-gnome/src/ui/strings_song_visuals.rs
 crates/reprise-gnome/src/ui/strings_tag_edit.rs
@@ -25,6 +26,6 @@ crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs
 crates/reprise-gnome/src/ui/sidebar/sidebar_issue_strings.rs
 crates/reprise-gnome/src/ui/preferences/preference_visual_strings.rs
 crates/reprise-gnome/src/ui/browse/browse_filter_strings.rs
-crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs
+crates/reprise-view/src/strings/lyrics.rs
 crates/reprise-gnome/src/ui/track_list/track_list_queue_menu.rs
 crates/reprise-gnome/src/ui/window/window_decoration_strings.rs

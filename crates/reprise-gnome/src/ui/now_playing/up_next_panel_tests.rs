@@ -8,6 +8,10 @@ fn tracks(ids: &[i64]) -> Vec<reprise_core::up_next::QueueItem> {
     ids.iter().copied().map(track).collect()
 }
 
+fn context_window(ids: &[i64]) -> Rc<dyn crate::ui::track_list::queue_sections::ContextWindow> {
+    Rc::new(ids.to_vec())
+}
+
 fn collect_buttons_with_class(widget: &gtk4::Widget, class: &str, buttons: &mut Vec<gtk4::Button>) {
     if let Ok(button) = widget.clone().downcast::<gtk4::Button>() {
         if button.has_css_class(class) {
@@ -228,7 +232,7 @@ fn up_next_row_click_jumps_to_the_exact_queue_entry() {
         &[40],
         Some("Music"),
     );
-    panel.set_queue_model(&model);
+    panel.set_queue_model(&model, &context_window(&[40]));
     let window = gtk4::Window::builder().child(panel.widget()).build();
     window.present();
     while glib::MainContext::default().iteration(false) {}
@@ -268,7 +272,7 @@ fn panel_remove_targets_the_exact_queue_entry() {
         &[40],
         Some("Music"),
     );
-    panel.set_queue_model(&model);
+    panel.set_queue_model(&model, &context_window(&[40]));
     let window = gtk4::Window::builder().child(panel.widget()).build();
     window.present();
     while glib::MainContext::default().iteration(false) {}
@@ -315,7 +319,7 @@ fn mixed_queue_panel_renders_episode_title_and_show() {
         &[],
         None,
     );
-    panel.set_queue_model(&model);
+    panel.set_queue_model(&model, &context_window(&[]));
     let window = gtk4::Window::builder().child(panel.widget()).build();
     window.present();
     while glib::MainContext::default().iteration(false) {}

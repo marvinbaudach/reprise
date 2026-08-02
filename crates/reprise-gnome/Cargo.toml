@@ -25,6 +25,7 @@ test-fixtures = ["reprise-core/test-fixtures"]
 reprise-runtime-client = { path = "../reprise-runtime-client" }
 reprise-runtime-protocol = { path = "../reprise-runtime-protocol" }
 reprise-core = { path = "../reprise-core" }
+reprise-view = { path = "../reprise-view" }
 reprise-platform-linux = { path = "../reprise-platform-linux" }
 # Partitioned from the pre-split single-crate dependency set (no new deps):
 # the frontend holds `Rc<RefCell<rusqlite::Connection>>` and passes it to

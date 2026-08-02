@@ -30,6 +30,8 @@ pub(super) fn plural(
     crate::i18n::format_message(&crate::i18n::ngettext(singular, plural, count), values)
 }
 
+pub use reprise_view::strings::playlists::IMPORTED_PLAYLIST_FALLBACK_NAME;
+
 #[path = "strings_artist.rs"]
 mod artist;
 pub use artist::*;
@@ -681,11 +683,6 @@ pub const EXPORT_PLAYLIST_DIALOG_TITLE: &str = N_!("Export Playlist");
 /// Name shown for the `gtk::FileFilter` restricting the import dialog to
 /// `.m3u`/`.m3u8` files.
 pub const M3U_FILE_FILTER_NAME: &str = N_!("M3U Playlists");
-/// Fallback playlist name when an imported `.m3u` file's name can't be used
-/// as-is (empty file stem, or a non-UTF-8 stem lossily decoded down to
-/// nothing meaningful).
-pub const IMPORTED_PLAYLIST_FALLBACK_NAME: &str = N_!("Imported playlist");
-
 /// Toast shown after a successful import: `matched` of `total` path lines in
 /// the `.m3u` file resolved to a track already in the library.
 pub fn playlist_imported_toast(name: &str, matched: usize, total: usize) -> String {
