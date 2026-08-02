@@ -155,7 +155,7 @@ auf Windows weder nativ noch modern.
 `reprise-core`, `-runtime` und `-platform-linux`; hält den in `LICENSING.md`
 vorgesehenen Pfad für fremde oder proprietäre Frontends offen. Der Autor hält
 das Copyright an allen bewegten Zeilen allein. Die übersetzbaren Texte ziehen
-mit um; siehe offener Punkt O2.
+mit um; siehe Entscheidung O2.
 
 **B5 — Migration vollständig, aber nach Bedarf geschnitten.** `reprise-view`
 wird nicht opportunistisch „bei Berührung" gefüllt, sondern paketweise und je
@@ -737,13 +737,21 @@ Jedes Paket ist an ein mechanisches Tor gebunden, nicht an eine Zusage:
 | Drei Oberflächen driften auseinander | UX-Regeln werden ungleich erfüllt | P5 macht den Geltungsbereich je Regel explizit und messbar |
 | Plattform-Drift im Zuschnitt | „nur noch dieses eine Feature" je Oberfläche | 3.1 ist bindend; Erweiterung ist eine Spec-Änderung, kein Ticket |
 
-## 8. Offene Punkte
+## 8. Klärungspunkte
 
 - **O1 — Windows- und macOS-Playback-Backend.** GStreamer oder plattformeigene
   APIs. Eigener Spike vor P4b; nicht Teil von S1.
-- **O2 — i18n in den neuen Oberflächen.** Die ~5.427 LOC Texte ziehen nach
-  `reprise-view` (B4). Wie Compose und Tauri die `po`-Kataloge konsumieren,
-  ist noch nicht entschieden.
+- **O2 — i18n in den neuen Oberflächen (entschieden 2026-08-02).** Die ~5.427
+  LOC Texte ziehen nach `reprise-view` (B4), aber die Crate übersetzt sie
+  nicht. ViewModels liefern `Message { id, plural, args }`; jede Oberfläche
+  rendert den Wert in ihrem eigenen Übersetzungssystem — GTK mit
+  `gettext`/`ngettext`, Compose mit `strings.xml`/`plurals`, Tauri mit seinem
+  Web-Katalog. Die Android-Probe in
+  `docs/research/android-spike-2026-08.md` §Frage 6 hat gettext statisch und
+  ohne externe Laufzeitbibliothek gebaut, aber mit 24.080 Bytes je ABI und
+  einem für Android unpassenden Katalog-Workflow. Das ist daher keine
+  Build-Grenze, sondern eine bewusste Übersetzer- und Werkzeuggrenze; die
+  konkreten Kataloggeneratoren gehören in die jeweiligen Oberflächenpakete.
 - **O3 — Sichtbarkeit externer Änderungen auf Android.** Der
   `notify`-basierte Weckruf aus `docs/plans/multi-frontend-core.md` §2.2 ist
   unter Android-Storage nicht selbstverständlich. Klärung in S1 oder P4a.

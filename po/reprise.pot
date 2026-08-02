@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-07-31 13:14+0200\n"
+"POT-Creation-Date: 2026-08-02 01:16+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -750,7 +750,7 @@ msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings.rs:556
 #: crates/reprise-gnome/src/ui/strings_radio.rs:62
-#: crates/reprise-gnome/src/ui/strings_scan.rs:7
+#: crates/reprise-view/src/strings/scan.rs:7
 #: crates/reprise-gnome/src/ui/lyrics/lyrics_strings.rs:15
 msgid "Retry"
 msgstr ""
@@ -2575,29 +2575,29 @@ msgstr ""
 msgid "Preparing release check…"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:74
-#, rust-format
-msgid "Checked {checked} of {total} artists"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_releases.rs:43
+#: crates/reprise-gnome/src/ui/strings_releases.rs:45
 #, rust-format
 msgid "{shown} of {total} gaps"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:49
+#: crates/reprise-gnome/src/ui/strings_releases.rs:51
 #, rust-format
 msgid "{total} gaps"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:54
+#: crates/reprise-gnome/src/ui/strings_releases.rs:56
 #, rust-format
 msgid "Show all {total} gaps"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_releases.rs:61
+#: crates/reprise-gnome/src/ui/strings_releases.rs:63
 #, rust-format
 msgid "{local} of {total} tracks"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_releases.rs:74
+#, rust-format
+msgid "Checked {checked} of {total} artists"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:11
@@ -2649,14 +2649,14 @@ msgid "< 1 min"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:29
-#: crates/reprise-gnome/src/ui/strings_stats.rs:16
+#: crates/reprise-gnome/src/ui/strings_stats.rs:15
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:82
 #, rust-format
 msgid "{minutes} min"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:30
-#: crates/reprise-gnome/src/ui/strings_stats.rs:14
+#: crates/reprise-gnome/src/ui/strings_stats.rs:13
 #, rust-format
 msgid "{hours} h {minutes}"
 msgstr ""
@@ -3819,135 +3819,125 @@ msgid_plural "{n} queued"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_stats.rs:15
+#: crates/reprise-gnome/src/ui/strings_stats.rs:14
 #, rust-format
 msgid "{hours} h"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_stats.rs:17
+#: crates/reprise-gnome/src/ui/strings_stats.rs:16
 #, rust-format
 msgid "{plays} plays · {artists} artists"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_stats.rs:18
-#, rust-format
-msgid "PACE FOR {year}"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_stats.rs:19
-#, rust-format
-msgid "{date} · {time}"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_stats.rs:20
+#: crates/reprise-gnome/src/ui/strings_stats.rs:17
 #, rust-format
 msgid "{sign}{time}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_stats.rs:21
+#: crates/reprise-gnome/src/ui/strings_stats.rs:18
 #, rust-format
 msgid "vs {year}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_stats.rs:22
+#: crates/reprise-gnome/src/ui/strings_stats.rs:19
 #, rust-format
 msgid "vs previous {count} days"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_stats.rs:23
+#: crates/reprise-gnome/src/ui/strings_stats.rs:20
 #, rust-format
 msgid "▲ {percent}% vs {period}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_stats.rs:24
+#: crates/reprise-gnome/src/ui/strings_stats.rs:21
 #, rust-format
 msgid "▼ {percent}% vs {period}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_stats.rs:25
+#: crates/reprise-gnome/src/ui/strings_stats.rs:22
 #, rust-format
 msgid "▲ ×{factor} vs {period}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_stats.rs:26
+#: crates/reprise-gnome/src/ui/strings_stats.rs:23
 #, rust-format
 msgid "▼ ×{factor} vs {period}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_stats.rs:27
+#: crates/reprise-gnome/src/ui/strings_stats.rs:24
 #, rust-format
 msgid "{whole}.{fraction}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_stats.rs:28
+#: crates/reprise-gnome/src/ui/strings_stats.rs:25
 #, rust-format
 msgid "<{factor}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_stats.rs:29
+#: crates/reprise-gnome/src/ui/strings_stats.rs:26
 #, rust-format
 msgid "previous {count} days"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_stats.rs:30
+#: crates/reprise-gnome/src/ui/strings_stats.rs:27
 #, rust-format
 msgid "same period {year}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_stats.rs:31
+#: crates/reprise-gnome/src/ui/strings_stats.rs:28
 msgid "New this year"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_stats.rs:32
+#: crates/reprise-gnome/src/ui/strings_stats.rs:29
 #, rust-format
 msgid "New in {year}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_stats.rs:33
+#: crates/reprise-gnome/src/ui/strings_stats.rs:30
 #, rust-format
 msgid "New in the last {count} days"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_stats.rs:34
+#: crates/reprise-gnome/src/ui/strings_stats.rs:31
 #, rust-format
 msgid "Less than one minute in the same period {year}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_stats.rs:35
+#: crates/reprise-gnome/src/ui/strings_stats.rs:32
 #, rust-format
 msgid "Less than one minute in {year}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_stats.rs:36
+#: crates/reprise-gnome/src/ui/strings_stats.rs:33
 #, rust-format
 msgid "Less than one minute in the previous {count} days"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_stats.rs:37
+#: crates/reprise-gnome/src/ui/strings_stats.rs:34
 msgid "1 spelling merged — unify it in the tag editor?"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_stats.rs:39
+#: crates/reprise-gnome/src/ui/strings_stats.rs:36
 #, rust-format
 msgid "{count} spellings merged — unify them in the tag editor?"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_stats.rs:40
+#: crates/reprise-gnome/src/ui/strings_stats.rs:37
 msgid "Start listening to see your stats"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_stats.rs:41
+msgid "Play this track"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_stats.rs:42
 msgid "Your stats could not be read"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_stats.rs:43
+#: crates/reprise-gnome/src/ui/strings_stats.rs:44
 msgid ""
 "Reading the listening history failed. Nothing is missing from it — this view "
 "just could not load it."
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_stats.rs:44
-msgid "Keep listening — stats grow with you"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_autocomplete.rs:12
@@ -4010,29 +4000,29 @@ msgstr ""
 msgid "Hide AI music"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scan.rs:5
+#: crates/reprise-view/src/strings/scan.rs:5
 msgid "Library folder unavailable"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scan.rs:6
+#: crates/reprise-view/src/strings/scan.rs:6
 #, rust-format
 msgid "{root} not mounted"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scan.rs:8
+#: crates/reprise-view/src/strings/scan.rs:8
 msgid "1 moved file relinked"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scan.rs:9
+#: crates/reprise-view/src/strings/scan.rs:9
 #, rust-format
 msgid "{count} moved files relinked"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scan.rs:10
+#: crates/reprise-view/src/strings/scan.rs:10
 msgid "1 previously failed file imported"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_scan.rs:11
+#: crates/reprise-view/src/strings/scan.rs:11
 #, rust-format
 msgid "{count} previously failed files imported"
 msgstr ""
