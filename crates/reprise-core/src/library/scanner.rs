@@ -416,7 +416,7 @@ fn scan_folder_inner(
                 }
                 return Ok(());
             }
-            match track_meta::read_meta_with_fallback(path) {
+            match track_meta::read_meta_with_fallback(source, path) {
                 Ok(outcome) => {
                     // Task 1.8: `hint` is `Some((kind, detail))` only when pass 1
                     // failed but pass 2 rescued the container — see this
