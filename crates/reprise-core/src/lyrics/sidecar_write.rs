@@ -1,7 +1,10 @@
 use std::io;
 use std::path::Path;
 
-use crate::writeback_publish::{publish, Published};
+#[cfg(test)]
+use crate::library::source::UnixLibrarySource;
+use crate::library::source::{LibraryLinkMode, LibrarySource};
+use crate::writeback_publish::{publish_with_source, Published};
 
 use super::TimedLine;
 
@@ -13,8 +16,21 @@ pub(super) enum SidecarWrite {
     Failed,
 }
 
+#[cfg(test)]
 pub(super) fn write_sidecar(track_path: &Path, lines: &[TimedLine]) -> SidecarWrite {
-    if lines.is_empty() || !track_path.is_file() {
+    write_sidecar_with_source(&UnixLibrarySource, track_path, lines)
+}
+
+pub(super) fn write_sidecar_with_source(
+    source: &dyn LibrarySource,
+    track_path: &Path,
+    lines: &[TimedLine],
+) -> SidecarWrite {
+    if lines.is_empty()
+        || !source
+            .probe(track_path, LibraryLinkMode::Follow)
+            .is_some_and(|metadata| metadata.is_file)
+    {
         return SidecarWrite::NotApplicable;
     }
     let target = track_path.with_extension("lrc");
@@ -24,7 +40,7 @@ pub(super) fn write_sidecar(track_path: &Path, lines: &[TimedLine]) -> SidecarWr
         Err(error) => return failed(&target, &error),
     }
 
-    match publish(&target, render_lrc(lines).as_bytes()) {
+    match publish_with_source(source, &target, render_lrc(lines).as_bytes()) {
         Ok(Published::Written) => SidecarWrite::Written,
         Ok(Published::AlreadyPresent) => SidecarWrite::AlreadyPresent,
         Err(error) => failed(&target, &error),

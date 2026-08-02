@@ -163,6 +163,7 @@ fn precomputed_classification_rechecks_a_cache_entry_that_changed_before_lookup(
         options(false),
         Some(&decision),
         LookupProviders {
+            source: &UnixLibrarySource,
             local: &[&local],
             network: &[&network],
         },
@@ -192,6 +193,7 @@ fn precomputed_classification_rechecks_an_unchanged_record_after_its_ttl_expires
         options(false),
         Some(&decision),
         LookupProviders {
+            source: &UnixLibrarySource,
             local: &[&local],
             network: &[&network],
         },
@@ -559,7 +561,9 @@ fn lyr_7_the_next_lookup_finds_the_written_sidecar_without_network() {
         &[&network],
     )
     .unwrap();
-    let local = LocalProvider;
+    let local = LocalProvider {
+        source: &crate::library::source::UnixLibrarySource,
+    };
 
     let result = load_or_fetch_at(
         temp.path(),
