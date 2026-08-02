@@ -40,6 +40,14 @@ pub(crate) enum QueueReorderOp {
     },
 }
 
+pub(crate) fn is_read_only_episode_projection(
+    row: QueueRow,
+    item: reprise_core::up_next::QueueItem,
+) -> bool {
+    matches!(item, reprise_core::up_next::QueueItem::Episode(_))
+        && matches!(row, QueueRow::UpNext(_))
+}
+
 /// Resolves a view position to its section-local row. `None` for positions
 /// outside every section (defensive — GTK should never hand one over).
 pub(crate) fn classify(view_position: u32, sections: &[QueueSection]) -> Option<QueueRow> {
@@ -212,5 +220,25 @@ mod tests {
     fn now_playing_cannot_be_dragged() {
         let s = sections();
         assert_eq!(reorder_op(0, 2, &s), None);
+    }
+
+    #[test]
+    fn episode_context_is_read_only_but_queued_episode_rows_are_not() {
+        assert!(!is_read_only_episode_projection(
+            QueueRow::NowPlaying,
+            QueueItem::Episode(7)
+        ));
+        assert!(is_read_only_episode_projection(
+            QueueRow::UpNext(0),
+            QueueItem::Episode(8)
+        ));
+        assert!(!is_read_only_episode_projection(
+            QueueRow::PlayNext(0),
+            QueueItem::Episode(8)
+        ));
+        assert!(!is_read_only_episode_projection(
+            QueueRow::UpNext(0),
+            QueueItem::Track(8)
+        ));
     }
 }

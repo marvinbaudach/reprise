@@ -19,7 +19,7 @@ use crate::ui::track_list::Shared;
 
 /// P1a's binding rule: no view model may hold a closure, because a planned
 /// Android surface reaches this type through UniFFI, and UniFFI cannot carry
-/// a closure across an FFI boundary. `Rc<dyn Fn(usize, usize) -> Vec<i64>>`
+/// a closure across an FFI boundary. `Rc<dyn Fn(usize, usize) -> Vec<QueueItem>>`
 /// is rejected there with `TypeId`, `Lower` and `Lift` trait-bound errors —
 /// measured against UniFFI 0.29, not assumed.
 ///
@@ -95,12 +95,25 @@ impl VirtualContext {
 /// hold. The GTK side implements this over the windowed query; a future
 /// Android side implements it over the same query behind UniFFI.
 pub(crate) trait ContextWindow {
-    fn rows(&self, offset: usize, limit: usize) -> Vec<i64>;
+    fn rows(&self, offset: usize, limit: usize) -> Vec<QueueItem>;
 }
 
 #[cfg(test)]
 impl ContextWindow for Vec<i64> {
-    fn rows(&self, offset: usize, limit: usize) -> Vec<i64> {
+    fn rows(&self, offset: usize, limit: usize) -> Vec<QueueItem> {
+        let end = offset.saturating_add(limit).min(self.len());
+        self.get(offset..end)
+            .unwrap_or_default()
+            .iter()
+            .copied()
+            .map(QueueItem::Track)
+            .collect()
+    }
+}
+
+#[cfg(test)]
+impl ContextWindow for Vec<QueueItem> {
+    fn rows(&self, offset: usize, limit: usize) -> Vec<QueueItem> {
         let end = offset.saturating_add(limit).min(self.len());
         self.get(offset..end).unwrap_or_default().to_vec()
     }
@@ -169,11 +182,7 @@ impl QueueViewModel {
         };
         let context_offset = offset.saturating_sub(self.items.len());
         let context_limit = remaining.min(context.count.saturating_sub(context_offset));
-        items.extend(
-            tail.rows(context_offset, context_limit)
-                .into_iter()
-                .map(QueueItem::Track),
-        );
+        items.extend(tail.rows(context_offset, context_limit));
         items
     }
 
@@ -288,9 +297,15 @@ struct SliceContextWindow<'a>(&'a [i64]);
 
 #[cfg(test)]
 impl ContextWindow for SliceContextWindow<'_> {
-    fn rows(&self, offset: usize, limit: usize) -> Vec<i64> {
+    fn rows(&self, offset: usize, limit: usize) -> Vec<QueueItem> {
         let end = offset.saturating_add(limit).min(self.0.len());
-        self.0.get(offset..end).unwrap_or_default().to_vec()
+        self.0
+            .get(offset..end)
+            .unwrap_or_default()
+            .iter()
+            .copied()
+            .map(QueueItem::Track)
+            .collect()
     }
 }
 
@@ -310,10 +325,10 @@ mod que_7_tests {
     }
 
     impl ContextWindow for RecordingContextWindow {
-        fn rows(&self, offset: usize, limit: usize) -> Vec<i64> {
+        fn rows(&self, offset: usize, limit: usize) -> Vec<QueueItem> {
             self.requested.set(limit);
             (offset..offset + limit)
-                .map(|position| i64::try_from(position).unwrap())
+                .map(|position| QueueItem::Track(i64::try_from(position).unwrap()))
                 .collect()
         }
     }
@@ -352,6 +367,53 @@ mod que_7_tests {
         let items = model.items_window(203, 20, &window);
         assert_eq!(items.len(), 20);
         assert_eq!(requested.get(), 20);
+    }
+}
+
+#[cfg(test)]
+mod que_10_tests {
+    use super::*;
+
+    #[test]
+    fn typed_context_windows_across_the_manual_boundary() {
+        let context_items = vec![QueueItem::Episode(20), QueueItem::Episode(21)];
+        let model = compose_virtual(
+            Some(QueueItem::Episode(19)),
+            &[QueueItem::Track(10)],
+            Some(VirtualContext::identified(2, (42, 7), 0)),
+            Some("VOID PREACHER"),
+        );
+
+        assert_eq!(model.total_len(), 4);
+        assert_eq!(
+            model.items_window(1, 3, &context_items),
+            vec![
+                QueueItem::Track(10),
+                QueueItem::Episode(20),
+                QueueItem::Episode(21),
+            ]
+        );
+        assert_eq!(model.sidebar_count(), 1);
+    }
+
+    #[test]
+    fn episode_context_skip_is_one_leading_removal() {
+        let old = compose_virtual(
+            Some(QueueItem::Episode(19)),
+            &[QueueItem::Track(10)],
+            Some(VirtualContext::identified(2, (42, 7), 0)),
+            Some("VOID PREACHER"),
+        )
+        .upcoming();
+        let new = compose_virtual(
+            Some(QueueItem::Episode(20)),
+            &[QueueItem::Track(10)],
+            Some(VirtualContext::identified(1, (42, 7), 1)),
+            Some("VOID PREACHER"),
+        )
+        .upcoming();
+
+        assert_eq!(new.leading_removal_change_from(&old), Some((1, 1, 0)));
     }
 }
 
