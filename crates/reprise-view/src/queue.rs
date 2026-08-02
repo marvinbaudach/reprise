@@ -7,8 +7,8 @@
 //! `next_target` pops Play Next FIFO first, then walks the snapshot from
 //! the current position, which is precisely `play_next ++ up_next_rest`.
 
+use crate::strings::{Message, Plural};
 use reprise_core::up_next::QueueItem;
-use reprise_view::strings::{Message, Plural};
 
 macro_rules! N_ {
     ($message:literal) => {
@@ -45,7 +45,7 @@ const _: () = {
 /// What a queue section IS — drives its header title (and, later, the
 /// header's actions: QUE-3 puts "Clear" on the Play Next header).
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) enum QueueSectionKind {
+pub enum QueueSectionKind {
     NowPlaying,
     PlayNext,
     UpNext { source_label: String },
@@ -53,7 +53,7 @@ pub(crate) enum QueueSectionKind {
 
 /// One contiguous section of the composite Queue view.
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct QueueSection {
+pub struct QueueSection {
     pub start: u32,
     pub len: u32,
     pub kind: QueueSectionKind,
@@ -62,7 +62,7 @@ pub(crate) struct QueueSection {
 /// The composite Queue view: the flat id list the windowed query renders,
 /// plus the section ranges the header factory titles.
 #[derive(Clone, Debug, Default, PartialEq)]
-pub(crate) struct QueueViewModel {
+pub struct QueueViewModel {
     /// Materialized prefix only: optional Now Playing followed by manual
     /// entries. `context` describes the tail; callers supply its rows.
     pub items: Vec<QueueItem>,
@@ -74,27 +74,26 @@ pub(crate) struct QueueViewModel {
 /// Deliberately data only: the rows themselves are fetched through
 /// [`ContextWindow`], never through a closure the model carries.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct VirtualContext {
+pub struct VirtualContext {
     count: usize,
     identity: Option<VirtualContextIdentity>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct VirtualContextIdentity {
+pub struct VirtualContextIdentity {
     sequence: (u64, u64),
     start: usize,
 }
 
 impl VirtualContext {
-    #[cfg(test)]
-    pub(crate) fn new(count: usize) -> Self {
+    pub fn new(count: usize) -> Self {
         Self {
             count,
             identity: None,
         }
     }
 
-    pub(crate) fn identified(count: usize, sequence: (u64, u64), start: usize) -> Self {
+    pub fn identified(count: usize, sequence: (u64, u64), start: usize) -> Self {
         Self {
             count,
             identity: Some(VirtualContextIdentity { sequence, start }),
@@ -105,11 +104,10 @@ impl VirtualContext {
 /// Supplies the context rows a [`QueueViewModel`] describes but does not
 /// hold. The GTK side implements this over the windowed query; a future
 /// Android side implements it over the same query behind UniFFI.
-pub(crate) trait ContextWindow {
+pub trait ContextWindow {
     fn rows(&self, offset: usize, limit: usize) -> Vec<QueueItem>;
 }
 
-#[cfg(test)]
 impl ContextWindow for Vec<i64> {
     fn rows(&self, offset: usize, limit: usize) -> Vec<QueueItem> {
         let end = offset.saturating_add(limit).min(self.len());
@@ -122,7 +120,6 @@ impl ContextWindow for Vec<i64> {
     }
 }
 
-#[cfg(test)]
 impl ContextWindow for Vec<QueueItem> {
     fn rows(&self, offset: usize, limit: usize) -> Vec<QueueItem> {
         let end = offset.saturating_add(limit).min(self.len());
@@ -134,7 +131,7 @@ impl QueueViewModel {
     /// The shared queue projection used by the compact panel: the exact same
     /// model with the optional Now Playing prefix removed and section offsets
     /// rebased. No queue composition is repeated in the panel.
-    pub(crate) fn upcoming(&self) -> Self {
+    pub fn upcoming(&self) -> Self {
         let now_playing_len = self
             .sections
             .first()
@@ -159,18 +156,18 @@ impl QueueViewModel {
         }
     }
 
-    pub(crate) fn sidebar_count(&self) -> usize {
+    pub fn sidebar_count(&self) -> usize {
         self.sections
             .iter()
             .find(|section| section.kind == QueueSectionKind::PlayNext)
             .map_or(0, |section| section.len as usize)
     }
 
-    pub(crate) fn total_len(&self) -> usize {
+    pub fn total_len(&self) -> usize {
         self.items.len() + self.context.as_ref().map_or(0, |tail| tail.count)
     }
 
-    pub(crate) fn items_window(
+    pub fn items_window(
         &self,
         offset: usize,
         limit: usize,
@@ -197,7 +194,7 @@ impl QueueViewModel {
         items
     }
 
-    pub(crate) fn all_items(&self, tail: &dyn ContextWindow) -> Vec<QueueItem> {
+    pub fn all_items(&self, tail: &dyn ContextWindow) -> Vec<QueueItem> {
         self.items_window(0, self.total_len(), tail)
     }
 
@@ -205,7 +202,7 @@ impl QueueViewModel {
     /// consuming the first materialized Play Next row, or advancing through
     /// an unchanged virtual context. The tail's frozen sequence/start
     /// identity is the proof for the virtual case.
-    pub(crate) fn leading_removal_change_from(&self, old: &Self) -> Option<(u32, u32, u32)> {
+    pub fn leading_removal_change_from(&self, old: &Self) -> Option<(u32, u32, u32)> {
         let material_removed = old.items.len().checked_sub(self.items.len())?;
         let context_unchanged = match (&old.context, &self.context) {
             (None, None) => true,
@@ -248,8 +245,7 @@ impl QueueViewModel {
 /// emitted only when non-empty; an entirely empty composition (nothing
 /// playing, nothing pending) yields the empty model that routes the view to
 /// the QUE-4 StatusPage.
-#[cfg(test)]
-pub(crate) fn compose(
+pub fn compose(
     now_playing: Option<QueueItem>,
     play_next: &[QueueItem],
     up_next_rest: &[i64],
@@ -266,7 +262,7 @@ pub(crate) fn compose(
     )
 }
 
-pub(crate) fn compose_virtual(
+pub fn compose_virtual(
     now_playing: Option<QueueItem>,
     play_next: &[QueueItem],
     context: Option<VirtualContext>,
@@ -380,7 +376,7 @@ mod que_10_tests {
 
 /// The `(start, end)` ranges `gtk::SectionModel::section(position)` answers
 /// from — half-open, in model coordinates.
-pub(crate) fn section_ranges(sections: &[QueueSection]) -> Vec<(u32, u32)> {
+pub fn section_ranges(sections: &[QueueSection]) -> Vec<(u32, u32)> {
     sections
         .iter()
         .map(|section| (section.start, section.start.saturating_add(section.len)))
@@ -389,7 +385,7 @@ pub(crate) fn section_ranges(sections: &[QueueSection]) -> Vec<(u32, u32)> {
 
 /// Selects the translatable title for the section starting at `start`.
 /// Rendering belongs to the consuming surface.
-pub(crate) fn header_title(sections: &[QueueSection], start: u32) -> Option<Message> {
+pub fn header_title(sections: &[QueueSection], start: u32) -> Option<Message> {
     let section = sections.iter().find(|section| section.start == start)?;
     match section {
         QueueSection {
@@ -430,7 +426,7 @@ pub(crate) fn header_title(sections: &[QueueSection], start: u32) -> Option<Mess
 #[cfg(test)]
 mod tests {
     use super::*;
-    use reprise_view::strings::{Message, Plural};
+    use crate::strings::{Message, Plural};
 
     fn tracks(ids: &[i64]) -> Vec<QueueItem> {
         ids.iter().copied().map(QueueItem::Track).collect()

@@ -17,5 +17,6 @@
 pub mod browse;
 pub mod lyrics;
 pub mod playlists;
+pub mod queue;
 pub mod strings;
 pub mod waveform;

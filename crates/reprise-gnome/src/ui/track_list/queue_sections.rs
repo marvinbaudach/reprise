@@ -12,8 +12,8 @@ use reprise_core::up_next::QueueItem;
 use crate::ui::strings;
 use crate::ui::track_list::Shared;
 
-use super::queue_model;
-pub(crate) use super::queue_model::{
+use reprise_view::queue as queue_model;
+pub(crate) use reprise_view::queue::{
     section_ranges, ContextWindow, QueueSection, QueueSectionKind, QueueViewModel, VirtualContext,
 };
 
