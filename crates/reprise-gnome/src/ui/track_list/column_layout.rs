@@ -19,21 +19,7 @@ use crate::ui::track_list_columns::{
     append_column, append_cover_column, append_rating_column, append_title_column, CellAlignment,
 };
 use reprise_core::format::format_duration;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ColumnId {
-    Cover,
-    Title,
-    TrackNumber,
-    Artist,
-    Album,
-    Genre,
-    Year,
-    Added,
-    Duration,
-    Rating,
-    PlayCount,
-}
+pub use reprise_view::columns::ColumnId;
 
 const DEFAULT_ORDER: [ColumnId; 11] = [
     ColumnId::Cover,
@@ -140,57 +126,6 @@ impl Default for ColumnLayout {
                 ColumnId::Duration,
                 ColumnId::Rating,
             ]),
-        }
-    }
-}
-
-impl ColumnId {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Cover => "cover",
-            Self::Title => "title",
-            Self::TrackNumber => "track-number",
-            Self::Artist => "artist",
-            Self::Album => "album",
-            Self::Genre => "genre",
-            Self::Year => "year",
-            Self::Added => "added",
-            Self::Duration => "duration",
-            Self::Rating => "rating",
-            Self::PlayCount => "play-count",
-        }
-    }
-
-    pub(super) fn parse(value: &str) -> Option<Self> {
-        match value {
-            "cover" => Some(Self::Cover),
-            "title" => Some(Self::Title),
-            "track-number" => Some(Self::TrackNumber),
-            "artist" => Some(Self::Artist),
-            "album" => Some(Self::Album),
-            "genre" => Some(Self::Genre),
-            "year" => Some(Self::Year),
-            "added" => Some(Self::Added),
-            "duration" => Some(Self::Duration),
-            "rating" => Some(Self::Rating),
-            "play-count" => Some(Self::PlayCount),
-            _ => None,
-        }
-    }
-
-    pub fn from_sort_field(field: &str) -> Option<Self> {
-        match field {
-            "title" => Some(Self::Title),
-            "track_no" => Some(Self::TrackNumber),
-            "artist" => Some(Self::Artist),
-            "album" => Some(Self::Album),
-            "genre" => Some(Self::Genre),
-            "year" => Some(Self::Year),
-            "added_at" => Some(Self::Added),
-            "duration_ms" => Some(Self::Duration),
-            "rating" => Some(Self::Rating),
-            "play_count" => Some(Self::PlayCount),
-            _ => None,
         }
     }
 }

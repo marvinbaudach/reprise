@@ -1,13 +1,8 @@
-//! QUE-1: the Queue view's composite model — Now Playing, Play Next, and
-//! a named virtual playback-context tail — composed from the controller
-//! into one flat id list plus section ranges. The pure composition lives
-//! here (testable without GTK); `wire_queue_header_factory` renders the
-//! section titles through `ColumnView`'s header factory, driven by the
-//! `gtk::SectionModel` ranges `TrackListModel` exposes for the Queue source.
+//! QUE-1: GTK section headers for the Queue view.
 //!
-//! QUE-2 by construction: the display order is exactly the play order —
-//! `next_target` pops Play Next FIFO first, then walks the snapshot from
-//! the current position, which is precisely `play_next ++ up_next_rest`.
+//! The toolkit-free queue model lives in the sibling `queue_model` module
+//! and is re-exported here so existing GTK call sites keep their established
+//! path. This adapter owns only GTK rendering and its GTK-bound regressions.
 
 use std::rc::Rc;
 
@@ -17,226 +12,11 @@ use reprise_core::up_next::QueueItem;
 use crate::ui::strings;
 use crate::ui::track_list::Shared;
 
-/// P1a's binding rule: no view model may hold a closure, because a planned
-/// Android surface reaches this type through UniFFI, and UniFFI cannot carry
-/// a closure across an FFI boundary. `Rc<dyn Fn(usize, usize) -> Vec<QueueItem>>`
-/// is rejected there with `TypeId`, `Lower` and `Lift` trait-bound errors —
-/// measured against UniFFI 0.29, not assumed.
-///
-/// `Rc<dyn Fn>` is neither `Send` nor `Sync` while every other field here is,
-/// so this assertion fails to compile the moment a closure comes back. It is
-/// a permanent guard, not a one-off migration check.
-const _: () = {
-    const fn assert_send_sync<T: Send + Sync>() {}
-    assert_send_sync::<QueueViewModel>();
+use reprise_view::queue as queue_model;
+pub(crate) use reprise_view::queue::{
+    section_ranges, ContextWindow, QueueSection, QueueSectionKind, QueueViewModel, VirtualContext,
 };
 
-/// What a queue section IS — drives its header title (and, later, the
-/// header's actions: QUE-3 puts "Clear" on the Play Next header).
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) enum QueueSectionKind {
-    NowPlaying,
-    PlayNext,
-    UpNext { source_label: String },
-}
-
-/// One contiguous section of the composite Queue view.
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct QueueSection {
-    pub start: u32,
-    pub len: u32,
-    pub kind: QueueSectionKind,
-}
-
-/// The composite Queue view: the flat id list the windowed query renders,
-/// plus the section ranges the header factory titles.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub(crate) struct QueueViewModel {
-    /// Materialized prefix only: optional Now Playing followed by manual
-    /// entries. `context` describes the tail; callers supply its rows.
-    pub items: Vec<QueueItem>,
-    pub sections: Vec<QueueSection>,
-    context: Option<VirtualContext>,
-}
-
-/// How long the virtual context tail is, and which context it belongs to.
-/// Deliberately data only: the rows themselves are fetched through
-/// [`ContextWindow`], never through a closure the model carries.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct VirtualContext {
-    count: usize,
-    identity: Option<VirtualContextIdentity>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct VirtualContextIdentity {
-    sequence: (u64, u64),
-    start: usize,
-}
-
-impl VirtualContext {
-    #[cfg(test)]
-    pub(crate) fn new(count: usize) -> Self {
-        Self {
-            count,
-            identity: None,
-        }
-    }
-
-    pub(crate) fn identified(count: usize, sequence: (u64, u64), start: usize) -> Self {
-        Self {
-            count,
-            identity: Some(VirtualContextIdentity { sequence, start }),
-        }
-    }
-}
-
-/// Supplies the context rows a [`QueueViewModel`] describes but does not
-/// hold. The GTK side implements this over the windowed query; a future
-/// Android side implements it over the same query behind UniFFI.
-pub(crate) trait ContextWindow {
-    fn rows(&self, offset: usize, limit: usize) -> Vec<QueueItem>;
-}
-
-#[cfg(test)]
-impl ContextWindow for Vec<i64> {
-    fn rows(&self, offset: usize, limit: usize) -> Vec<QueueItem> {
-        let end = offset.saturating_add(limit).min(self.len());
-        self.get(offset..end)
-            .unwrap_or_default()
-            .iter()
-            .copied()
-            .map(QueueItem::Track)
-            .collect()
-    }
-}
-
-#[cfg(test)]
-impl ContextWindow for Vec<QueueItem> {
-    fn rows(&self, offset: usize, limit: usize) -> Vec<QueueItem> {
-        let end = offset.saturating_add(limit).min(self.len());
-        self.get(offset..end).unwrap_or_default().to_vec()
-    }
-}
-
-impl QueueViewModel {
-    /// The shared queue projection used by the compact panel: the exact same
-    /// model with the optional Now Playing prefix removed and section offsets
-    /// rebased. No queue composition is repeated in the panel.
-    pub(crate) fn upcoming(&self) -> Self {
-        let now_playing_len = self
-            .sections
-            .first()
-            .filter(|section| section.kind == QueueSectionKind::NowPlaying)
-            .map_or(0, |section| section.len);
-        let skip = usize::try_from(now_playing_len).unwrap_or(self.items.len());
-        let items = self.items.get(skip..).unwrap_or_default().to_vec();
-        let sections = self
-            .sections
-            .iter()
-            .filter(|section| section.kind != QueueSectionKind::NowPlaying)
-            .map(|section| QueueSection {
-                start: section.start.saturating_sub(now_playing_len),
-                len: section.len,
-                kind: section.kind.clone(),
-            })
-            .collect();
-        Self {
-            items,
-            sections,
-            context: self.context.clone(),
-        }
-    }
-
-    pub(crate) fn sidebar_count(&self) -> usize {
-        self.sections
-            .iter()
-            .find(|section| section.kind == QueueSectionKind::PlayNext)
-            .map_or(0, |section| section.len as usize)
-    }
-
-    pub(crate) fn total_len(&self) -> usize {
-        self.items.len() + self.context.as_ref().map_or(0, |tail| tail.count)
-    }
-
-    pub(crate) fn items_window(
-        &self,
-        offset: usize,
-        limit: usize,
-        tail: &dyn ContextWindow,
-    ) -> Vec<QueueItem> {
-        if limit == 0 || offset >= self.total_len() {
-            return Vec::new();
-        }
-        let mut items = Vec::with_capacity(limit.min(self.total_len() - offset));
-        if offset < self.items.len() {
-            let end = offset.saturating_add(limit).min(self.items.len());
-            items.extend_from_slice(&self.items[offset..end]);
-        }
-        let remaining = limit.saturating_sub(items.len());
-        if remaining == 0 {
-            return items;
-        }
-        let Some(context) = &self.context else {
-            return items;
-        };
-        let context_offset = offset.saturating_sub(self.items.len());
-        let context_limit = remaining.min(context.count.saturating_sub(context_offset));
-        items.extend(tail.rows(context_offset, context_limit));
-        items
-    }
-
-    pub(crate) fn all_items(&self, tail: &dyn ContextWindow) -> Vec<QueueItem> {
-        self.items_window(0, self.total_len(), tail)
-    }
-
-    /// Exact O(1) model delta for the two normal forward-playback shapes:
-    /// consuming the first materialized Play Next row, or advancing through
-    /// an unchanged virtual context. The tail's frozen sequence/start
-    /// identity is the proof for the virtual case.
-    pub(crate) fn leading_removal_change_from(&self, old: &Self) -> Option<(u32, u32, u32)> {
-        let material_removed = old.items.len().checked_sub(self.items.len())?;
-        let context_unchanged = match (&old.context, &self.context) {
-            (None, None) => true,
-            (Some(old), Some(new)) => {
-                old.identity.is_some() && old.identity == new.identity && old.count == new.count
-            }
-            _ => false,
-        };
-        if material_removed > 0
-            && context_unchanged
-            && old.items.get(material_removed..) == Some(self.items.as_slice())
-        {
-            return Some((0, u32::try_from(material_removed).unwrap_or(u32::MAX), 0));
-        }
-        if material_removed != 0 {
-            return None;
-        }
-        let old_identity = old.context.as_ref()?.identity?;
-        let new_identity = self.context.as_ref()?.identity?;
-        if old_identity.sequence != new_identity.sequence || new_identity.start < old_identity.start
-        {
-            return None;
-        }
-        let removed = new_identity.start - old_identity.start;
-        if old.context.as_ref()?.count != self.context.as_ref()?.count.saturating_add(removed) {
-            return None;
-        }
-        if removed == 0 {
-            return Some((0, 0, 0));
-        }
-        Some((
-            u32::try_from(self.items.len()).unwrap_or(u32::MAX),
-            u32::try_from(removed).unwrap_or(u32::MAX),
-            0,
-        ))
-    }
-}
-
-/// Composes the three queue parts into display order (QUE-1). Sections are
-/// emitted only when non-empty; an entirely empty composition (nothing
-/// playing, nothing pending) yields the empty model that routes the view to
-/// the QUE-4 StatusPage.
 #[cfg(test)]
 pub(crate) fn compose(
     now_playing: Option<QueueItem>,
@@ -244,8 +24,14 @@ pub(crate) fn compose(
     up_next_rest: &[i64],
     origin_label: Option<&str>,
 ) -> QueueViewModel {
-    let context = (!up_next_rest.is_empty()).then(|| VirtualContext::new(up_next_rest.len()));
-    compose_virtual(now_playing, play_next, context, origin_label)
+    let fallback = strings::text(strings::SIDEBAR_MUSIC);
+    queue_model::compose(
+        now_playing,
+        play_next,
+        up_next_rest,
+        origin_label,
+        &fallback,
+    )
 }
 
 pub(crate) fn compose_virtual(
@@ -254,197 +40,43 @@ pub(crate) fn compose_virtual(
     context: Option<VirtualContext>,
     origin_label: Option<&str>,
 ) -> QueueViewModel {
-    let mut items = Vec::with_capacity(usize::from(now_playing.is_some()) + play_next.len());
-    let mut sections = Vec::new();
-
-    if let Some(current) = now_playing {
-        sections.push(QueueSection {
-            start: 0,
-            len: 1,
-            kind: QueueSectionKind::NowPlaying,
-        });
-        items.push(current);
-    }
-    if !play_next.is_empty() {
-        sections.push(QueueSection {
-            start: u32::try_from(items.len()).unwrap_or(u32::MAX),
-            len: u32::try_from(play_next.len()).unwrap_or(u32::MAX),
-            kind: QueueSectionKind::PlayNext,
-        });
-        items.extend_from_slice(play_next);
-    }
-    let context_count = context.as_ref().map_or(0, |tail| tail.count);
-    if context_count > 0 {
-        sections.push(QueueSection {
-            start: u32::try_from(items.len()).unwrap_or(u32::MAX),
-            len: u32::try_from(context_count).unwrap_or(u32::MAX),
-            kind: QueueSectionKind::UpNext {
-                source_label: origin_label
-                    .map_or_else(|| strings::text(strings::SIDEBAR_MUSIC), str::to_owned),
-            },
-        });
-    }
-
-    QueueViewModel {
-        items,
-        sections,
-        context,
-    }
+    // Only translate when the model can actually reach for the fallback. Before
+    // the extraction this lookup sat inside `origin_label.map_or_else(…)` and
+    // ran only when there was no label; `compose_virtual` runs on every queue
+    // mutation, so making it unconditional would have put a gettext call on
+    // that path for nothing. The remaining miss — no label and no context, where
+    // the model builds no Up Next section at all — would need `VirtualContext`
+    // to expose its count, which is not worth widening the type for.
+    let fallback = if origin_label.is_none() {
+        strings::text(strings::SIDEBAR_MUSIC)
+    } else {
+        String::new()
+    };
+    queue_model::compose_virtual(now_playing, play_next, context, origin_label, &fallback)
 }
 
-#[cfg(test)]
-struct SliceContextWindow<'a>(&'a [i64]);
-
-#[cfg(test)]
-impl ContextWindow for SliceContextWindow<'_> {
-    fn rows(&self, offset: usize, limit: usize) -> Vec<QueueItem> {
-        let end = offset.saturating_add(limit).min(self.0.len());
-        self.0
-            .get(offset..end)
-            .unwrap_or_default()
-            .iter()
-            .copied()
-            .map(QueueItem::Track)
-            .collect()
-    }
-}
-
-#[cfg(test)]
-mod que_7_tests {
-    use std::cell::Cell;
-    use std::rc::Rc;
-
-    use super::*;
-
-    fn tracks(ids: &[i64]) -> Vec<QueueItem> {
-        ids.iter().copied().map(QueueItem::Track).collect()
-    }
-
-    struct RecordingContextWindow {
-        requested: Rc<Cell<usize>>,
-    }
-
-    impl ContextWindow for RecordingContextWindow {
-        fn rows(&self, offset: usize, limit: usize) -> Vec<QueueItem> {
-            self.requested.set(limit);
-            (offset..offset + limit)
-                .map(|position| QueueItem::Track(i64::try_from(position).unwrap()))
-                .collect()
-        }
-    }
-
-    #[test]
-    fn que_7_sidebar_counts_only_the_manual_queue() {
-        let context = VirtualContext::new(1_638);
-        let model = compose_virtual(
-            Some(QueueItem::Track(1)),
-            &tracks(&[10, 11]),
-            Some(context),
-            Some("Music"),
-        );
-
-        assert_eq!(model.sidebar_count(), 2);
-    }
-
-    #[test]
-    fn que_7_context_tail_is_not_materialised() {
-        let requested = Rc::new(Cell::new(0));
-        let context = VirtualContext::new(1_638);
-        let window = RecordingContextWindow {
-            requested: requested.clone(),
-        };
-        let model = compose_virtual(
-            Some(QueueItem::Track(1)),
-            &tracks(&[10, 11]),
-            Some(context),
-            Some("Music"),
-        );
-
-        assert_eq!(model.items, tracks(&[1, 10, 11]));
-        assert_eq!(model.total_len(), 1_641);
-        assert_eq!(requested.get(), 0);
-
-        let items = model.items_window(203, 20, &window);
-        assert_eq!(items.len(), 20);
-        assert_eq!(requested.get(), 20);
-    }
-}
-
-#[cfg(test)]
-mod que_10_tests {
-    use super::*;
-
-    #[test]
-    fn typed_context_windows_across_the_manual_boundary() {
-        let context_items = vec![QueueItem::Episode(20), QueueItem::Episode(21)];
-        let model = compose_virtual(
-            Some(QueueItem::Episode(19)),
-            &[QueueItem::Track(10)],
-            Some(VirtualContext::identified(2, (42, 7), 0)),
-            Some("VOID PREACHER"),
-        );
-
-        assert_eq!(model.total_len(), 4);
-        assert_eq!(
-            model.items_window(1, 3, &context_items),
-            vec![
-                QueueItem::Track(10),
-                QueueItem::Episode(20),
-                QueueItem::Episode(21),
-            ]
-        );
-        assert_eq!(model.sidebar_count(), 1);
-    }
-
-    #[test]
-    fn episode_context_skip_is_one_leading_removal() {
-        let old = compose_virtual(
-            Some(QueueItem::Episode(19)),
-            &[QueueItem::Track(10)],
-            Some(VirtualContext::identified(2, (42, 7), 0)),
-            Some("VOID PREACHER"),
-        )
-        .upcoming();
-        let new = compose_virtual(
-            Some(QueueItem::Episode(20)),
-            &[QueueItem::Track(10)],
-            Some(VirtualContext::identified(1, (42, 7), 1)),
-            Some("VOID PREACHER"),
-        )
-        .upcoming();
-
-        assert_eq!(new.leading_removal_change_from(&old), Some((1, 1, 0)));
-    }
-}
-
-/// The `(start, end)` ranges `gtk::SectionModel::section(position)` answers
-/// from — half-open, in model coordinates.
-pub(crate) fn section_ranges(sections: &[QueueSection]) -> Vec<(u32, u32)> {
-    sections
+fn render_message(message: &reprise_view::strings::Message) -> String {
+    let args = message
+        .args
         .iter()
-        .map(|section| (section.start, section.start.saturating_add(section.len)))
-        .collect()
+        .map(|(name, value)| (*name, value.as_str()))
+        .collect::<Vec<_>>();
+    match &message.plural {
+        Some(plural) => strings::plural(
+            message.id,
+            plural.id,
+            usize::try_from(plural.count).unwrap_or(usize::MAX),
+            &args,
+        ),
+        None => strings::formatted(message.id, &args),
+    }
 }
 
 /// The section title shown for the section starting at `start`.
 pub(crate) fn header_title(sections: &[QueueSection], start: u32) -> String {
-    let section = sections.iter().find(|section| section.start == start);
-    match section {
-        Some(QueueSection {
-            kind: QueueSectionKind::NowPlaying,
-            ..
-        }) => strings::text(strings::QUEUE_SECTION_NOW_PLAYING),
-        Some(QueueSection {
-            kind: QueueSectionKind::PlayNext,
-            ..
-        }) => strings::text(strings::QUEUE_SECTION_PLAY_NEXT),
-        Some(QueueSection {
-            len,
-            kind: QueueSectionKind::UpNext { source_label },
-            ..
-        }) => strings::queue_context_tail(source_label, *len as usize),
-        None => String::new(),
-    }
+    queue_model::header_title(sections, start)
+        .as_ref()
+        .map_or_else(String::new, render_message)
 }
 
 /// Installs (or removes) the Queue view's section header factory. Only the
@@ -530,147 +162,106 @@ pub(in crate::ui) fn apply_queue_header_factory(shared: &Rc<Shared>, is_queue: b
 }
 
 #[cfg(test)]
-mod tests {
+mod que_7_tests {
+    use std::cell::Cell;
+    use std::rc::Rc;
+
     use super::*;
 
     fn tracks(ids: &[i64]) -> Vec<QueueItem> {
         ids.iter().copied().map(QueueItem::Track).collect()
     }
 
-    fn all_items(model: &QueueViewModel, context: &[i64]) -> Vec<QueueItem> {
-        model.all_items(&SliceContextWindow(context))
+    struct RecordingContextWindow {
+        requested: Rc<Cell<usize>>,
+    }
+
+    impl ContextWindow for RecordingContextWindow {
+        fn rows(&self, offset: usize, limit: usize) -> Vec<QueueItem> {
+            self.requested.set(limit);
+            (offset..offset + limit)
+                .map(|position| QueueItem::Track(i64::try_from(position).unwrap()))
+                .collect()
+        }
     }
 
     #[test]
-    fn mixed_manual_queue_preserves_item_kind_when_numeric_ids_collide() {
-        let model = compose(
-            Some(reprise_core::up_next::QueueItem::Track(1)),
-            &[
-                reprise_core::up_next::QueueItem::Track(7),
-                reprise_core::up_next::QueueItem::Episode(7),
-            ],
-            &[],
-            Some("Late Night"),
-        );
-
-        assert_eq!(
-            all_items(&model, &[]),
-            vec![
-                reprise_core::up_next::QueueItem::Track(1),
-                reprise_core::up_next::QueueItem::Track(7),
-                reprise_core::up_next::QueueItem::Episode(7),
-            ]
-        );
-    }
-
-    #[test]
-    fn compose_builds_three_sections_in_display_order() {
-        let model = compose(
+    fn que_7_context_tail_is_not_materialised() {
+        let requested = Rc::new(Cell::new(0));
+        let context = VirtualContext::new(1_638);
+        let window = RecordingContextWindow {
+            requested: requested.clone(),
+        };
+        let model = compose_virtual(
             Some(QueueItem::Track(1)),
-            &tracks(&[2, 3]),
-            &[4, 5, 6],
-            Some("Late Night"),
+            &tracks(&[10, 11]),
+            Some(context),
+            Some("Music"),
         );
-        assert_eq!(
-            model.items,
-            [1, 2, 3]
-                .into_iter()
-                .map(QueueItem::Track)
-                .collect::<Vec<_>>()
-        );
-        assert_eq!(
-            all_items(&model, &[4, 5, 6]),
-            [1, 2, 3, 4, 5, 6]
-                .into_iter()
-                .map(QueueItem::Track)
-                .collect::<Vec<_>>()
-        );
-        assert_eq!(model.sections.len(), 3);
-        assert_eq!(model.sections[0].kind, QueueSectionKind::NowPlaying);
-        assert_eq!((model.sections[0].start, model.sections[0].len), (0, 1));
-        assert_eq!(model.sections[1].kind, QueueSectionKind::PlayNext);
-        assert_eq!((model.sections[1].start, model.sections[1].len), (1, 2));
-        assert_eq!(
-            model.sections[2].kind,
-            QueueSectionKind::UpNext {
-                source_label: "Late Night".into()
-            }
-        );
-        assert_eq!((model.sections[2].start, model.sections[2].len), (3, 3));
-        assert_eq!(
-            section_ranges(&model.sections),
-            vec![(0, 1), (1, 3), (3, 6)]
-        );
+
+        assert_eq!(model.items, tracks(&[1, 10, 11]));
+        assert_eq!(model.total_len(), 1_641);
+        assert_eq!(requested.get(), 0);
+
+        let items = model.items_window(203, 20, &window);
+        assert_eq!(items.len(), 20);
+        assert_eq!(requested.get(), 20);
     }
+}
+
+#[cfg(test)]
+mod que_10_tests {
+    use super::*;
 
     #[test]
-    fn upcoming_reuses_the_composition_without_the_now_playing_prefix() {
-        let model = compose(
-            Some(QueueItem::Track(1)),
-            &tracks(&[2, 3]),
-            &[4, 5],
-            Some("Late Night"),
+    fn episode_context_skip_is_one_leading_removal() {
+        let old = compose_virtual(
+            Some(QueueItem::Episode(19)),
+            &[QueueItem::Track(10)],
+            Some(VirtualContext::identified(2, (42, 7), 0)),
+            Some("VOID PREACHER"),
+        )
+        .upcoming();
+        let new = compose_virtual(
+            Some(QueueItem::Episode(20)),
+            &[QueueItem::Track(10)],
+            Some(VirtualContext::identified(1, (42, 7), 1)),
+            Some("VOID PREACHER"),
         )
         .upcoming();
 
-        assert_eq!(
-            model.items,
-            [2, 3].into_iter().map(QueueItem::Track).collect::<Vec<_>>()
-        );
-        assert_eq!(
-            all_items(&model, &[4, 5]),
-            [2, 3, 4, 5]
-                .into_iter()
-                .map(QueueItem::Track)
-                .collect::<Vec<_>>()
-        );
-        assert_eq!(section_ranges(&model.sections), vec![(0, 2), (2, 4)]);
-        assert_eq!(model.sections[0].kind, QueueSectionKind::PlayNext);
-        assert_eq!(
-            model.sections[1].kind,
-            QueueSectionKind::UpNext {
-                source_label: "Late Night".into()
-            }
-        );
+        assert_eq!(new.leading_removal_change_from(&old), Some((1, 1, 0)));
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
 
     #[test]
-    fn compose_omits_empty_play_next_per_que1() {
-        let model = compose(Some(QueueItem::Track(9)), &[], &[10], Some("Neverbloom"));
-        assert_eq!(model.items, vec![QueueItem::Track(9)]);
-        assert_eq!(
-            all_items(&model, &[10]),
-            vec![QueueItem::Track(9), QueueItem::Track(10)]
+    fn header_titles_preserve_all_three_rendered_forms() {
+        let model = compose(
+            Some(QueueItem::Track(1)),
+            &[QueueItem::Track(2), QueueItem::Track(3)],
+            &[4, 5],
+            Some("Neverbloom"),
         );
-        assert_eq!(model.sections.len(), 2);
-        assert_eq!(model.sections[1].start, 1);
-    }
-
-    #[test]
-    fn compose_without_playback_still_lists_pending_play_next() {
-        // Stopped but manually queued tracks exist: no Now Playing row, the
-        // pending section still shows (QUE-4's StatusPage is only for the
-        // fully empty case).
-        let model = compose(None, &tracks(&[7]), &[], None);
-        assert_eq!(model.items, vec![QueueItem::Track(7)]);
-        assert_eq!(model.sections.len(), 1);
-        assert_eq!(model.sections[0].kind, QueueSectionKind::PlayNext);
-    }
-
-    #[test]
-    fn compose_fully_empty_yields_the_empty_model() {
-        let model = compose(None, &[], &[], None);
-        assert!(model.items.is_empty());
-        assert!(model.sections.is_empty());
-    }
-
-    #[test]
-    fn header_title_resolves_up_next_label_and_unknown_start_degrades() {
-        let model = compose(Some(QueueItem::Track(1)), &[], &[2], Some("Neverbloom"));
+        assert_eq!(header_title(&model.sections, 0), "Now Playing");
+        assert_eq!(header_title(&model.sections, 1), "Play Next");
         assert_eq!(
-            header_title(&model.sections, 1),
-            "Playing from Neverbloom · 1 track"
+            header_title(&model.sections, 3),
+            "Playing from Neverbloom · 2 tracks"
         );
         assert_eq!(header_title(&model.sections, 99), String::new());
+    }
+
+    #[test]
+    fn missing_origin_uses_the_surface_rendered_music_label() {
+        let model = compose(None, &[], &[2], None);
+
+        assert_eq!(
+            header_title(&model.sections, 0),
+            "Playing from Music · 1 track"
+        );
     }
 }

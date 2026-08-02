@@ -24,7 +24,7 @@ cd "$repo_root"
 
 frontend=crates/reprise-gnome/src
 shared_view=crates/reprise-view/src
-view_floor=459
+view_floor=806
 
 echo "== Frontend thinness =="
 
