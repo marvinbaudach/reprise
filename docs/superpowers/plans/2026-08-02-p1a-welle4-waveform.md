@@ -2,7 +2,7 @@
 slug: p1a-welle4-waveform
 worktree: /home/marvin/Projects/reprise-p1a-welle4-waveform
 branch: feature/p1a-welle4-waveform
-phase: planned
+phase: refactored
 codex_session:
 created: 2026-08-02
 ---
