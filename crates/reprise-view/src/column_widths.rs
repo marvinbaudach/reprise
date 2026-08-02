@@ -1,8 +1,14 @@
 //! Serialization for user-adjusted column widths, persisted independently of
-//! the order/visibility layout (see [`super::column_layout`]). Format is a
-//! comma-separated list of `id:width` pairs, e.g. `artist:260,album:300`.
+//! the order/visibility layout. Format is a comma-separated list of
+//! `id:width` pairs, e.g. `artist:260,album:300`.
+//!
+//! Shared rather than GTK-local because the string it produces is a
+//! *persisted* user setting: a GTK app and a Tauri desktop read the same
+//! stored value, and two implementations of one format drift. A phone-sized
+//! surface has no resizable columns and simply never calls this — that makes
+//! it unused there, not surface-specific (waves plan §4 rule 12).
 
-use crate::ui::column_layout::ColumnId;
+use crate::columns::ColumnId;
 
 /// Encodes the given widths as `id:width` pairs, sorted by id for a stable,
 /// diff-friendly string. Non-positive widths are dropped.
