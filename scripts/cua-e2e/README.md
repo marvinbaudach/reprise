@@ -48,13 +48,15 @@ fake audio sink, and copied FLAC fixtures. It exercises ten public workflows:
    phase ends: while one is open the app never exits, and `finish_scenario`
    then waits for an exit that never comes.
 10. the grouped list at a realistic size (`podcast-backlog`): three shows and a
-   channel are seeded straight into the profile database with fifteen episodes
-   each, which is the only way to see what scenario 9 cannot — several shows on
-   one screen at once, a group collapsing to its ten newest with a `Show all 15
-   episodes` row, rows carrying no state text while nothing is downloading, and
-   durations reading `53 min` / `2 h 05` on either side of the hour. The
-   fifteen-episode backlog also makes `0 new` an assertion about the rule that
-   a first fetch's backlog is not new, rather than about an empty library.
+    channel are seeded straight into the profile database with fifteen episodes
+    each, which is the only way to see what scenario 9 cannot — several shows on
+    one screen at once, a grouped refresh failure whose expanded Details can be
+    dismissed through the labelled close action, a group collapsing to its ten
+    newest with a `Show all 15 episodes` row, rows carrying no state text while
+    nothing is downloading, and durations reading `53 min` / `2 h 05` on either
+    side of the hour. The fifteen-episode backlog also makes `0 new` an assertion
+    about the rule that a first fetch's backlog is not new, rather than about an
+    empty library.
 
 Every CUA action is bracketed by a fresh `get_window_state` snapshot. The run
 fails on a degraded accessibility tree, a suspected no-op/escalation request,
