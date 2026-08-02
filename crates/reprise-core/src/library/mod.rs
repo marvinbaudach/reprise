@@ -17,6 +17,7 @@ pub mod rhythmbox_import;
 pub mod scanner;
 pub mod session;
 pub mod settings;
+pub mod source;
 pub mod stats;
 pub mod stats_period;
 pub mod stats_screen;

@@ -631,6 +631,57 @@ sondern Dokument-IDs, und deren Stabilität über einen Umzug hinweg garantiert
 der DocumentsProvider, nicht die Plattform. Das ist der Punkt, der einen
 eigenen Entwurf braucht — nicht `classify_missing`.
 
+### Paket 1 umgesetzt: Aufenthalt und Erreichbarkeit (2026-08-02)
+
+`LibrarySource: Send + Sync` besitzt jetzt genau die zwei zuerst benötigten
+Operationen: `residence_token` und die darauf aufgebaute
+Vorgabe-Implementierung `reachability`. `UnixLibrarySource` liefert weiterhin
+den `st_dev` des mit `lstat` gefundenen nächsten existierenden Vorfahren; eine
+Quelle ohne stabiles Merkmal liefert ehrlich `None`. Die zwei bisherigen
+`classify_missing`-Aufrufe und die Root-Guard-Prüfung laufen über dieses Trait.
+Der Linux-Pfad bleibt dabei identisch: der aktuelle `u64`-Gerätewert und der
+gespeicherte SQLite-`i64`-Wert werden wie zuvor über dasselbe Bitmuster
+verglichen. Die alten Mount-Tests bleiben grün; eine zweite Testquelle leitet
+ihr Merkmal stattdessen aus einer Provider-Tree-ID ab und liefert dieselbe
+Dreiteilung `Deleted` / `Unmounted` / `Unknown`.
+
+**Gewonnene Zuführungsform: ein `&dyn LibrarySource`-Parameter.** Die heutigen
+öffentlichen Scan- und Query-Grenzen behalten schmale Unix-Vorgaben, die den
+Parameter an die drei betroffenen Helfer reichen.
+
+**Damit ist die Naht gelegt, aber noch nicht angeschlossen.** `UnixLibrarySource`
+steht fest verdrahtet in drei Vorgabe-Wrappern (`mark_vanished`,
+`any_candidate_confirms_root_residence`, `mark_track_missing_if_current`). Die
+Wahl der Quelle wird also weiterhin *innerhalb* von `reprise-core` getroffen,
+nicht an dessen Rand. Für Paket 1 ist das Absicht — die öffentliche Scan- und
+Query-API bliebe sonst nicht stabil, und der erste Schnitt wäre nicht mehr
+isoliert prüfbar. Aber eine SAF-Quelle kann heute an keiner Produktionsstelle
+eingesetzt werden, nur im Test. Das Hochziehen dieser Wahl an die Crate-Grenze
+ist offene Arbeit und gehört in dasselbe Paket, das die erste echte SAF-Quelle
+mitbringt. Ein Closure hätte die
+zusammengehörigen Operationen `residence_token` und `reachability` wieder
+auseinandergerissen; ein `Effect`-Enum hätte für drei synchrone Abfragen die
+Scanner-Transaktion und die Query unnötig in einen Plattform-Rundlauf zerlegt.
+Die Folgepakete reichen deshalb dieselbe Quelle als Parameter weiter, statt
+pro Operation neue Closures oder Effects einzuführen.
+
+Die ursprüngliche **27er-Messung zählte Abstraktionsstellen und Nähte, nicht
+Rohaufrufe**. Damit Paket 2 nicht neu messen muss, ist der verbleibende
+Live-Bestand nach Paket 1:
+
+| Cluster | Verbleibende Stellen |
+| --- | --- |
+| Baum und Präsenz (Paket 2) | `library/scanner.rs` (`metadata`, Root-Präsenz, ein `WalkDir`), `scanner_progress.rs` (ein `WalkDir`), `scanner_vanish.rs`, `scanner_move.rs`, `relink.rs` (drei Präsenzprüfungen, zwei `WalkDir`), `rhythmbox_import.rs`, `queries/maintenance.rs`, `queries/issues.rs`, `device_sync/snapshot.rs`, `device_sync/podcasts.rs`, `cover.rs`, `cover_writeback.rs`, `lyrics/local.rs`, `lyrics/sidecar_write.rs`, `podcasts/download_state.rs`, `podcasts/downloads.rs`, `podcasts/ytdlp.rs` |
+| Quellnahe Lese-/Schreib-Handles (Paket 3) | `library/scanner_meta.rs`, `tag_edit.rs`, `tag_mutation.rs` (weiterhin die einzige produktive Lofty-Speichernaht), `tag_mutation_guarded.rs`, `tag_edit_write.rs`, `trash_tracks.rs`, `cover.rs`, `cover_writeback.rs`, `writeback_publish.rs`, `provenance.rs`, `lyrics/local.rs`, `lyrics/sidecar_write.rs`, `podcasts/downloads.rs`, `podcasts/ytdlp.rs`, `podcasts/ytdlp_download.rs`, `podcasts/pipeline.rs`, `podcasts/episode_tags.rs` |
+| Bereits vorhandene Zuführungsnaht | `queries/import_errors.rs` nimmt seine Metadata-Abfrage schon als Closure entgegen; beim Durchziehen des Parameters wird sie adaptiert, nicht neu entworfen. |
+| Separater späterer Vertrag | `library/watcher.rs`: `notify` hat unter SAF kein gleichwertiges Gegenstück und bleibt die ausdrücklich optionale Watcher-Fähigkeit, nicht Teil der mechanischen Pakete 2 oder 3. |
+
+Einige Dateien stehen bewusst in beiden ersten Zeilen: etwa `lyrics/local.rs`
+prüft zuerst die Präsenz und öffnet danach dieselbe Quelle. Paket 2 ersetzt
+nur die Status-/Metadaten-/Walk-Operation; Paket 3 ersetzt anschließend das
+Öffnen und Publizieren über Handles. App-private Cache-, Konfigurations- und
+Staging-Pfade bleiben weiterhin außerhalb von `LibrarySource`.
+
 ## Frage 8 — Die Umzugserkennung, und was Tauri daran ändert (umgesetzt 2026-08-02)
 
 **Status: umgesetzt.** `file_stat` liefert jetzt die echte Größe getrennt von
