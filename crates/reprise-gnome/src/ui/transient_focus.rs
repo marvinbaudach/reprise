@@ -192,14 +192,17 @@ fn focus_visible_row(view: &gtk4::Widget) -> bool {
     scroll.set_enable_vertical(false);
     if let Some(view) = view.downcast_ref::<gtk4::ColumnView>() {
         view.scroll_to(position, None, gtk4::ListScrollFlags::FOCUS, Some(scroll));
+        adjustment.set_value(value);
         return true;
     }
     if let Some(view) = view.downcast_ref::<gtk4::ListView>() {
         view.scroll_to(position, gtk4::ListScrollFlags::FOCUS, Some(scroll));
+        adjustment.set_value(value);
         return true;
     }
     if let Some(view) = view.downcast_ref::<gtk4::GridView>() {
         view.scroll_to(position, gtk4::ListScrollFlags::FOCUS, Some(scroll));
+        adjustment.set_value(value);
         return true;
     }
     false

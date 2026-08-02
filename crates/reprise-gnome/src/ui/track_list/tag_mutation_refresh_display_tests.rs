@@ -32,10 +32,11 @@ const VISIBLE_JUMP_PX: f64 = 80.0;
 /// focus handover, and dozens of viewport samples over them.
 const SETTLE: Duration = Duration::from_millis(500);
 
-/// The edited value the test looks for on screen. Album, not genre: the
-/// genre column is hidden in the default layout, so a genre edit proves
-/// nothing about what reached the cells.
-const EDITED_ALBUM: &str = "Edited Album";
+/// The edited value the test looks for on screen. Artist is realised in the
+/// default 900 px layout; Album has a visible header there but GTK does not
+/// realise its horizontally clipped row cells, so inspecting descendants
+/// cannot use it as rendering evidence.
+const EDITED_ARTIST: &str = "Edited Artist";
 
 struct Fixture {
     track_list: TrackList,
@@ -86,11 +87,10 @@ fn scrolled_library() -> Fixture {
         super::super::queue_sections::QueueViewModel::default,
         crate::ui::cover_download_worker::setup_for_test(),
     );
-    // Album is a secondary key of the production default Artist sort. The
-    // test edits Album, so pin a title sort whose order the edit cannot
-    // change; otherwise the edited row correctly moves to the end and the
-    // "written value reached the visible cells" assertion tests sorting
-    // instead of refresh/rebinding.
+    // Pin a title sort whose order the Artist edit cannot change; otherwise
+    // the edited row correctly moves within the production default Artist
+    // sort and the "written value reached the visible cells" assertion tests
+    // sorting instead of refresh/rebinding.
     *track_list.shared.sort.borrow_mut() = crate::ui::track_list_sort::SortState {
         field: "title".into(),
         dir: "asc".into(),
@@ -153,10 +153,10 @@ fn visible_labels(fixture: &Fixture) -> Vec<String> {
     out
 }
 
-/// Writes the new album the way a successful tag write does: into the
+/// Writes the new artist the way a successful tag write does: into the
 /// database, behind the view's back. Only a re-query (or a cell patch) can
 /// bring it on screen.
-fn write_album_to_db(fixture: &Fixture) {
+fn write_artist_to_db(fixture: &Fixture) {
     let conn = crate::test_db::connection(&fixture.track_list.shared.conn);
     let track = fixture
         .track_list
@@ -165,8 +165,8 @@ fn write_album_to_db(fixture: &Fixture) {
         .track_at(ANCHOR_ROW)
         .unwrap();
     conn.execute(
-        "UPDATE tracks SET album = ?1 WHERE id = ?2",
-        (EDITED_ALBUM, track.id),
+        "UPDATE tracks SET artist = ?1 WHERE id = ?2",
+        (EDITED_ARTIST, track.id),
     )
     .unwrap();
 }
@@ -246,7 +246,7 @@ fn tag_1_tag_save_refresh_paints_no_frame_at_the_table_top() {
     // A save that changes nothing gives GTK nothing to redraw, and the
     // assertion below would then pass on an empty sample set. Write the tag
     // the real save writes.
-    write_album_to_db(&fixture);
+    write_artist_to_db(&fixture);
     save_refresh(&fixture);
     crate::ui::test_settle::settle_for(SETTLE);
 
@@ -264,18 +264,18 @@ fn tag_1_save_refresh_shows_the_written_tag_on_screen() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     let fixture = scrolled_library();
     assert!(
-        !visible_labels(&fixture).iter().any(|t| t == EDITED_ALBUM),
-        "precondition: the new album must not be on screen before the save"
+        !visible_labels(&fixture).iter().any(|t| t == EDITED_ARTIST),
+        "precondition: the new artist must not be on screen before the save"
     );
 
-    write_album_to_db(&fixture);
+    write_artist_to_db(&fixture);
     save_refresh(&fixture);
     crate::ui::test_settle::settle_for(SETTLE);
 
     let labels = visible_labels(&fixture);
     assert!(
-        labels.iter().any(|t| t == EDITED_ALBUM),
-        "the saved album never reached the visible cells; on screen: {:?}",
+        labels.iter().any(|t| t == EDITED_ARTIST),
+        "the saved artist never reached the visible cells; on screen: {:?}",
         labels
             .iter()
             .filter(|t| !t.is_empty())
@@ -295,7 +295,7 @@ fn tag_1_save_refresh_requeries_the_view_once() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     let fixture = scrolled_library();
 
-    write_album_to_db(&fixture);
+    write_artist_to_db(&fixture);
     fixture.queries.set(0);
     save_refresh(&fixture);
     crate::ui::test_settle::settle_for(SETTLE);
