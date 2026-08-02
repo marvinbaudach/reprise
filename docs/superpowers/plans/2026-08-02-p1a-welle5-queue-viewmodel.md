@@ -2,7 +2,7 @@
 slug: p1a-welle5-queue-viewmodel
 worktree: /home/marvin/Projects/reprise-p1a-welle5
 branch: feature/p1a-welle5-queue-viewmodel
-phase: planned
+phase: refactored
 codex_session:
 created: 2026-08-02
 ---
