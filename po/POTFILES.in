@@ -27,5 +27,6 @@ crates/reprise-gnome/src/ui/sidebar/sidebar_issue_strings.rs
 crates/reprise-gnome/src/ui/preferences/preference_visual_strings.rs
 crates/reprise-view/src/strings/browse.rs
 crates/reprise-view/src/strings/lyrics.rs
+crates/reprise-view/src/queue.rs
 crates/reprise-gnome/src/ui/track_list/track_list_queue_menu.rs
 crates/reprise-gnome/src/ui/window/window_decoration_strings.rs
