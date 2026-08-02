@@ -280,3 +280,46 @@ lock or coordination board exists in this checkout.
 | episodes-as-queue-citizens | MPRIS episode identity/metadata, the GNOME agent-queue mirror, and their focused tests |
 | episodes-as-queue-citizens | Append-only package-5 rule, plan, and completion records in `docs/ux-rules.md`, `docs/plans/podcasts-radio.md`, and `.superpowers/sdd/progress.md` |
 | sibling branches — excluded | `crates/reprise-core/src/podcasts/store.rs`, `crates/reprise-core/src/podcasts/youtube.rs`, and unrelated source UI or packaging work |
+
+## Active file ownership — multi-surface frontends
+
+Spec: `docs/superpowers/specs/2026-08-01-multi-surface-frontends-design.md`
+Branch: `feature/multi-surface-frontends`
+
+This ownership is ACTIVE. A sibling branch that edits an owned path must
+rebase onto this branch first, not merge past it.
+
+### P0 — groundwork (this plan)
+
+| Owner | Files |
+| --- | --- |
+| multi-surface-frontends | `crates/reprise-view/**`, the `members` list in the workspace `Cargo.toml`, `scripts/check-architecture.sh` |
+| multi-surface-frontends | `docs/superpowers/specs/2026-08-01-multi-surface-frontends-design.md`, `docs/superpowers/plans/2026-08-01-multi-surface-p0-s1.md`, `docs/research/android-spike-2026-08.md`, this section of `AGENTS.md` |
+| sibling branches — excluded | everything under `crates/reprise-gnome/**` until P1a opens |
+
+### P1a — the mobile slice of reprise-view (not yet open)
+
+Package boundaries are drawn when P1a is planned, after the S1 findings
+land. Until then no `reprise-gnome` path is owned by this branch.
+
+### Plans checked before P1a — all resolved (2026-08-01)
+
+Four plans carried an unfinished `phase:` when P0 started. None of their
+branches still existed, and a check against `origin/dev` found the work
+finished in every case. The fields were stale, not the work.
+
+| Plan | was | is | Evidence |
+| --- | --- | --- | --- |
+| `docs/plans/motion-player.md` | planned | **shipped** | MOT-5 `[active]`; `waveform_seek.rs` carries `crossfade_progress`/`desaturation_progress`, `player_bar.rs` carries `animate_play_pulse()` |
+| `docs/plans/ux-rules-motion.md` | reviewed | **shipped** | both phases merged; `ui/motion.rs` exists with the planned tokens; `check-motion-tokens.sh` has an empty phase-two allowlist |
+| `docs/plans/list-views-fixes.md` | refactored | **shipped** | every measure verified in code (cover centring, duration format, episode window of 10, title tail dedup, `image_url` migration) |
+| `docs/plans/audio-character-mcp.md` | ready-for-review | **reverted** | shipped 2026-07-19/20, then removed wholesale by `eda0edaebb`; migration v27 drops its tables. No production code remains |
+
+`reverted` is a new value in the pipeline's status vocabulary. It was
+introduced deliberately: neither `shipped` (nothing is left) nor `planned`
+(it went much further) would have been honest.
+
+**Consequence: P1a is not blocked.** No open plan work touches its target
+areas (`track_list`, `playback`, `now_playing`, `lyrics`, playlists, search,
+scan). The motion work sits *in* those areas but is finished — P1a moves it
+like any other code.
