@@ -14,7 +14,7 @@ use reprise_core::up_next::QueueItem;
 use super::cover_loader::CoverLoader;
 use crate::ui::track_list::queue_row_mapping::{classify, QueueRow};
 use crate::ui::track_list::queue_sections::{
-    section_ranges, QueueSection, QueueSectionKind, QueueViewModel,
+    section_ranges, ContextWindow, QueueSection, QueueSectionKind, QueueViewModel,
 };
 use crate::ui::track_list::track_list_model::TrackListModel;
 
@@ -159,12 +159,19 @@ impl UpNextPanel {
         *self.on_enqueue.borrow_mut() = Some(Rc::new(callback));
     }
 
-    pub(in crate::ui) fn set_queue_model(&self, model: &QueueViewModel) -> String {
+    pub(in crate::ui) fn set_queue_model(
+        &self,
+        model: &QueueViewModel,
+        context_window: &Rc<dyn ContextWindow>,
+    ) -> String {
         let upcoming = model.upcoming();
         *self.queue_sections.borrow_mut() = upcoming.sections.clone();
         *self.section_headers.borrow_mut() = panel_section_headers(&upcoming);
-        self.model
-            .set_queue_snapshot(&upcoming, section_ranges(&upcoming.sections));
+        self.model.set_queue_snapshot(
+            &upcoming,
+            context_window.clone(),
+            section_ranges(&upcoming.sections),
+        );
         self.root
             .set_visible_child_name(if upcoming.total_len() == 0 {
                 "empty"
@@ -173,7 +180,7 @@ impl UpNextPanel {
             });
         let mut total_duration_ms = 0_i64;
         for offset in (0..upcoming.total_len()).step_by(200) {
-            let items = upcoming.items_window(offset, 200);
+            let items = upcoming.items_window(offset, 200, context_window.as_ref());
             let duration = match reprise_core::queries::query_queue_duration_ms(&self.conn, &items)
             {
                 Ok(duration) => duration,

@@ -34,6 +34,8 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use crate::ui::playback::queue_transport::QueueContextWindow;
+
 use gtk4::gio::prelude::*;
 use gtk4::prelude::*;
 
@@ -392,6 +394,10 @@ fn run_query(shared: &Rc<Shared>) {
     let has_filter = !filter.trim().is_empty() || !browse.is_empty() || exclude_ai;
 
     let is_queue = matches!(source, ViewSource::Queue);
+    let queue_context_window = is_queue.then(|| {
+        let player = shared.player.borrow().clone();
+        Rc::new(QueueContextWindow::from_player(player))
+    });
     let queue_model = if is_queue {
         let queue_model = (shared.queue_ids_provider)();
         *shared.queue_sections.borrow_mut() = queue_model.sections.clone();
@@ -401,9 +407,10 @@ fn run_query(shared: &Rc<Shared>) {
         None
     };
 
-    if let Some(queue_model) = &queue_model {
+    if let (Some(queue_model), Some(context_window)) = (&queue_model, queue_context_window) {
         shared.model.set_queue_snapshot(
             queue_model,
+            context_window,
             super::queue_sections::section_ranges(&queue_model.sections),
         );
     } else {

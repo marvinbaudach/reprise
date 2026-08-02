@@ -3,7 +3,9 @@
 use std::rc::Rc;
 
 use crate::ui::now_playing::NowPlayingPanel;
+use crate::ui::playback::queue_transport::QueueContextWindow;
 use crate::ui::player_controller::PlayerController;
+use crate::ui::track_list::queue_sections::ContextWindow;
 
 use super::window_queue_model::SharedQueueModel;
 
@@ -37,9 +39,12 @@ pub(in crate::ui) fn install(
         }
     });
 
+    let context_window: Rc<dyn ContextWindow> =
+        Rc::new(QueueContextWindow::from_player(Rc::downgrade(player)));
     let refresh = {
         let panel = Rc::downgrade(panel);
         let queue_model = Rc::downgrade(queue_model);
+        let context_window = context_window.clone();
         Rc::new(move || {
             let (Some(panel), Some(queue_model)) = (panel.upgrade(), queue_model.upgrade()) else {
                 return;
@@ -48,7 +53,7 @@ pub(in crate::ui) fn install(
                 return;
             }
             let snapshot = queue_model.borrow().clone();
-            panel.set_up_next_model(&snapshot);
+            panel.set_up_next_model(&snapshot, &context_window);
         })
     };
     let refresh_on_queue_change = refresh.clone();
