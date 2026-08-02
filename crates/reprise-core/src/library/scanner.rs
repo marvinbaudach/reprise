@@ -33,34 +33,31 @@ pub(crate) fn file_mtime(path: &Path) -> i64 {
         .map_or(0, |d| d.as_secs() as i64)
 }
 
-/// `(file_size, device, inode)` for the move-detection fingerprint. The app
-/// runs on Linux and uses the Unix `(device, inode)` identity
-/// (`std::os::unix::fs::MetadataExt`); the non-Unix arm exists only to keep
-/// `reprise-core` cross-checkable (spec I / cross-target CI). There is no
-/// stable portable device/inode (`std::os::windows::fs::MetadataExt`'s
-/// equivalents are still behind the unstable `windows_by_handle` feature), so
-/// off Unix identity degrades to `(0, 0)` — never reached at runtime. Returns
-/// `None` if `stat` fails (e.g. a race where the file vanished between
-/// `walkdir` listing it and this call) — Stage 3 Task 1: a file that can't be
-/// stat'd has no reliable filesystem identity to fingerprint, so `scan_folder`
-/// skips the move-detection step entirely for it (rather than the pre-Task-1
-/// behavior of silently fingerprinting on placeholder zeros, which could have
-/// coincidentally matched an unrelated `(device, inode)` of `(0, 0)`) and
-/// stores `NULL` device/inode for the row, same as any pre-Stage-2 row that
-/// predates these columns. `file_size` still defaults to `0` in that case —
-/// unlike device/inode it is `NOT NULL DEFAULT 0` in the schema, matching every
-/// other tag-derived column's non-null convention, so `0` (rather than `NULL`)
-/// is the only representable "unknown" value for it anyway.
-pub(crate) fn file_stat(path: &Path) -> Option<(u64, u64, u64)> {
+/// `(file_size, identity)` for move detection. Unix supplies its stable
+/// `(device, inode)` identity through `std::os::unix::fs::MetadataExt`;
+/// platforms without that identity still supply the real file size and use
+/// the fingerprint strategy alone. Returns `None` if `stat` itself fails, in
+/// which case the scanner skips move detection rather than matching with an
+/// unknown size. The database representation remains `file_size = 0` plus
+/// `NULL` device/inode for that failure case.
+///
+/// **A platform arm must never fabricate an identity.** The non-Unix arm used
+/// to return `(0, 0)` under a comment claiming it was never reached at
+/// runtime — true only while the app was Linux-only. A Tauri desktop makes it
+/// false, and then `WHERE device = 0 AND inode = 0` matches every row scanned
+/// there; with exactly one valid candidate that attaches one track's history
+/// to another, silently. `None` is the only honest answer for a platform
+/// without a stable identity.
+pub(crate) fn file_stat(path: &Path) -> Option<(u64, Option<(u64, u64)>)> {
     let metadata = std::fs::metadata(path).ok()?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        Some((metadata.size(), metadata.dev(), metadata.ino()))
+        Some((metadata.size(), Some((metadata.dev(), metadata.ino()))))
     }
     #[cfg(not(unix))]
     {
-        Some((metadata.len(), 0, 0))
+        Some((metadata.len(), None))
     }
 }
 
@@ -300,10 +297,16 @@ fn scan_folder_inner(
         // Compute identity before touching tags. An exclusion follows the
         // same file across a rename and must win over move detection.
         let stat = file_stat(path);
-        let (file_size, device, inode): (i64, Option<i64>, Option<i64>) = match stat {
-            Some((size, dev, ino)) => (size as i64, Some(dev as i64), Some(ino as i64)),
-            None => (0, None, None),
+        let has_file_stat = stat.is_some();
+        let (file_size, identity): (i64, Option<(i64, i64)>) = match stat {
+            Some((size, identity)) => (
+                size as i64,
+                identity.map(|(device, inode)| (device as i64, inode as i64)),
+            ),
+            None => (0, None),
         };
+        let (device, inode) =
+            identity.map_or((None, None), |(device, inode)| (Some(device), Some(inode)));
         if super::exclusions::matches_file(&tx, path, device, inode)? {
             report.excluded += 1;
             if let Some(progress) = &mut progress {
@@ -434,28 +437,24 @@ fn scan_folder_inner(
                 // the DB has never seen before — a file whose path is already
                 // known just falls through to the ordinary upsert below, even
                 // if its content changed.
-                // Skip move detection entirely when `stat` failed above (no
-                // reliable device/inode to key step 1 off, and step 2's
-                // fingerprint would be matching against a placeholder
-                // `file_size` of 0) — see `file_stat`'s doc comment.
-                let move_candidate = if is_update {
+                // Skip move detection entirely when `stat` failed above,
+                // because step 2 would compare against an unknown size.
+                // Missing identity skips only step 1; the real size still
+                // makes the fingerprint strategy safe.
+                let move_candidate = if is_update || !has_file_stat {
                     None
                 } else {
-                    match (device, inode) {
-                        (Some(device), Some(inode)) => move_detect::find_move_candidate(
-                            &tx,
-                            &move_detect::MoveLookup {
-                                device,
-                                inode,
-                                title: &title,
-                                artist: &meta.artist,
-                                album: &meta.album,
-                                duration_ms: meta.duration_ms,
-                                file_size,
-                            },
-                        )?,
-                        _ => None,
-                    }
+                    move_detect::find_move_candidate(
+                        &tx,
+                        &move_detect::MoveLookup {
+                            identity,
+                            title: &title,
+                            artist: &meta.artist,
+                            album: &meta.album,
+                            duration_ms: meta.duration_ms,
+                            file_size,
+                        },
+                    )?
                 };
 
                 if let Some(candidate) = move_candidate {

@@ -631,13 +631,21 @@ sondern Dokument-IDs, und deren Stabilität über einen Umzug hinweg garantiert
 der DocumentsProvider, nicht die Plattform. Das ist der Punkt, der einen
 eigenen Entwurf braucht — nicht `classify_missing`.
 
-## Frage 8 — Die Umzugserkennung, und was Tauri daran ändert (2026-08-02)
+## Frage 8 — Die Umzugserkennung, und was Tauri daran ändert (umgesetzt 2026-08-02)
+
+**Status: umgesetzt.** `file_stat` liefert jetzt die echte Größe getrennt von
+`Option<(device, inode)>`; `MoveLookup` trägt dieselbe Identität als ein
+einziges optionales Tupel. Ohne Identität entfällt nur Strategie 1, während
+der Fingerabdruck aus Strategie 2 weiterläuft. Der Nicht-Unix-Zweig erfindet
+deshalb kein `(0, 0)` mehr. Die bestehenden Linux-Fälle bleiben unverändert:
+bei vorhandener Identität läuft weiterhin zuerst die Inode-Strategie, danach
+erst der Fingerabdruck.
 
 Die Korrektur zu Frage 7 lässt eine Frage übrig: `scanner.rs` erkennt eine
 verschobene Datei an `(device, inode)`, und SAF kennt keine Inodes. Nachgelesen
 ist die Lage besser **und** schlechter als erwartet.
 
-### Es gibt bereits einen zweiten Weg — er ist nur verriegelt
+### Es gab bereits einen zweiten Weg — er war nur verriegelt
 
 `find_move_candidate` versucht zwei Strategien: erst `(device, inode)` für ein
 `rename` auf demselben Dateisystem, dann einen **Fingerabdruck aus Titel,
@@ -647,51 +655,60 @@ bei dem sich der Inode ändert, Inhalt und Tags aber nicht.
 Die zweite Strategie braucht nichts, was SAF fehlt: Tags und Dauer liefert
 `lofty` über ein Handle, die Größe gibt der DocumentsProvider als Spalte.
 
-Sie ist aber nicht einzeln erreichbar. Die Aufrufstelle (`scanner.rs:444`)
-lautet `match (device, inode) { (Some(device), Some(inode)) => …, _ => None }`
-— **fehlt die Identität, entfallen beide Strategien.** Der Kommentar darüber
-begründet das, und die Begründung ist richtig: schlägt `stat` fehl, ist auch
-`file_size` ein Platzhalter-`0`, und der Fingerabdruck vergliche gegen Müll.
+Vor dem Umbau war sie aber nicht einzeln erreichbar. Die Aufrufstelle
+(`scanner.rs:444`) lautete
+`match (device, inode) { (Some(device), Some(inode)) => …, _ => None }` —
+**fehlte die Identität, entfielen beide Strategien.** Der Kommentar darüber
+begründete das, und die Begründung war für einen fehlgeschlagenen `stat`
+richtig: Dann war auch `file_size` ein Platzhalter-`0`, und der Fingerabdruck
+hätte gegen Müll verglichen.
 
-**Für SAF gilt diese Begründung nicht.** Dort ist die Größe echt, nur die
-Identität fehlt. Die Bedingung, die das Gate motiviert, trifft also nicht zu —
-und damit ist der Umbau klein und klar umrissen: Das heutige
-`Option<(size, device, inode)>` trennt sich in „Größe bekannt" und „Identität
-bekannt", sodass eine Quelle mit Größe, aber ohne Identität, Strategie 2 allein
-benutzen kann. Die Spec hat das im Trait bereits so modelliert —
+**Für SAF galt diese Begründung nicht.** Dort ist die Größe echt, nur die
+Identität fehlt. Die Bedingung, die das Gate motivierte, traf also nicht zu —
+und damit war der Umbau klein und klar umrissen: Das damalige
+`Option<(size, device, inode)>` musste sich in „Größe bekannt" und „Identität
+bekannt" trennen, sodass eine Quelle mit Größe, aber ohne Identität, Strategie
+2 allein benutzen kann. Die Spec hat das im Trait bereits so modelliert —
 `residence_token()` gibt `Option<i64>` zurück, getrennt von allem anderen.
 
-### Derselbe Umbau räumt eine Annahme weg, die Tauri kippt
+### Derselbe Umbau räumte eine Annahme weg, die Tauri kippte
 
-`file_stat`s Doc-Kommentar sagt über den Nicht-Unix-Zweig:
+`file_stat`s damaliger Doc-Kommentar sagte über den Nicht-Unix-Zweig:
 
 > off Unix identity degrades to `(0, 0)` — **never reached at runtime**
 
-Das stimmt, solange die App nur auf Linux läuft. **Ein Tauri-Desktop auf
-Windows macht die Aussage falsch.** Dort schlägt `stat` nicht fehl, es liefert
-`Some((size, 0, 0))`: das Gate öffnet, und Strategie 1 fragt
-`WHERE device = 0 AND inode = 0` — was jede auf Windows gescannte Zeile trifft.
+Das stimmte, solange die App nur auf Linux lief. **Ein Tauri-Desktop auf
+Windows hätte die Aussage falsch gemacht.** Dort hätte `stat` nicht
+fehlgeschlagen, sondern `Some((size, 0, 0))` geliefert: Das Gate hätte
+geöffnet, und Strategie 1 hätte mit `WHERE device = 0 AND inode = 0` jede auf
+Windows gescannte Zeile getroffen.
 
-Genau diesen Fall beschreibt derselbe Kommentar als den Fehler, den Stage 3
-Task 1 beseitigt hat („could have coincidentally matched an unrelated
-`(device, inode)` of `(0, 0)`"). Der damalige Fix greift jedoch nur, wenn
-`stat` **fehlschlägt**. Auf Windows schlägt es nicht fehl.
+Genau diesen Fall beschrieb derselbe Kommentar als den Fehler, den Stage 3
+Task 1 beseitigt hatte („could have coincidentally matched an unrelated
+`(device, inode)` of `(0, 0)`"). Der damalige Fix griff jedoch nur, wenn
+`stat` **fehlschlug**. Auf Windows wäre das nicht passiert.
 
-**Wie weit trägt der Schaden?** Nicht weit, aber er ist echt. Der
-Kandidatenfilter verlangt, dass der alte Pfad verschwunden oder die Zeile
-bereits als fehlend markiert ist, und bei mehreren Treffern greift die
-Mehrdeutigkeitssperre („not guessing"). Falsch wird es also erst, wenn **genau
-eine** solche Zeile existiert — dann hängt die Historie eines fremden Titels
-am neuen. Selten, still, und nicht rückgängig zu machen.
+**Wie weit hätte der Schaden getragen?** Nicht weit, aber er wäre echt
+gewesen. Der Kandidatenfilter verlangt, dass der alte Pfad verschwunden oder
+die Zeile bereits als fehlend markiert ist, und bei mehreren Treffern greift
+die Mehrdeutigkeitssperre („not guessing"). Falsch wäre es also erst geworden,
+wenn **genau eine** solche Zeile existiert hätte — dann hätte die Historie
+eines fremden Titels am neuen gehangen. Selten, still und nicht rückgängig zu
+machen.
 
 ### Folge
 
-Es ist **ein** Umbau für beide Plattformen: Identität von Größe trennen und das
-Gate auf die Identität statt auf den ganzen `stat` legen. Danach
+Der gemeinsame Core-Umbau für beide Plattformen ist umgesetzt: Die bekannte
+Größe öffnet die Umzugserkennung, die optionale Identität nur deren erste
+Strategie. Damit
 
-- benutzt SAF Strategie 2 und verliert nur `rename`-Erkennung,
+- kann ein späterer SAF-Adapter Strategie 2 ohne Identität benutzen; die
+  `LibrarySource`-/Handle-Anbindung selbst ist weiterhin nicht Teil dieses
+  Umbaus,
 - benutzt Windows Strategie 2 statt einer Abfrage auf `(0, 0)`,
-- bleibt Linux unverändert.
+- bleibt Linux samt Strategie-Reihenfolge unverändert.
 
-Er gehört vor den ersten Tauri-Zielbau, nicht erst vor P4a — auf Windows ist
-es ein Datenfehler, auf Android nur eine fehlende Funktion.
+Auf Android fehlt weiterhin die `rename`-Erkennung. Dafür braucht es einen
+eigenen Entwurf für den Umgang mit stabilen
+DocumentsProvider-Dokument-IDs; der hier freigeschaltete Fingerabdruck erkennt
+nur den vorhandenen Kopieren-und-Löschen-Fall.
