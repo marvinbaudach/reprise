@@ -130,7 +130,7 @@ pub fn scan_folder_with_progress(
 ) -> Result<ScanOutcome, ScanError> {
     let conn = db.conn();
     on_progress(ScanProgress::Discovering);
-    let total = scan_progress::count_audio_files(root);
+    let total = scan_progress::estimated_audio_files(conn, root)?;
     let reporter = scan_progress::ScanProgressReporter::new(&mut on_progress, total);
     scan_folder_inner(conn, root, Some(reporter))
 }

@@ -1,28 +1,43 @@
 //! Scan progress counting and reporting, split out of `scanner.rs` to keep it
 //! under the project's 800-line rule — its test suite already lives in the
-//! sibling `scanner_progress_tests.rs`. `count_audio_files` sizes the walk up
-//! front so a percentage is possible; `ScanProgressReporter` forwards one
-//! monotone `Scanning` update per audio file to the caller's callback.
+//! sibling `scanner_progress_tests.rs`. The previous catalog supplies a cheap
+//! estimate without walking the source twice; `ScanProgressReporter` forwards
+//! one monotone `Scanning` update per audio file to the caller's callback.
 
 use std::path::Path;
 
+use rusqlite::Connection;
+
 use super::ScanProgress;
 
-/// Counts the audio files under `root` up front so `scan_folder_with_progress`
-/// can report a total. Uses the parent module's `is_audio_file` matcher so the
-/// count and the walk agree on what "an audio file" is.
-pub(crate) fn count_audio_files(root: &Path) -> u64 {
-    walkdir::WalkDir::new(root)
-        .follow_links(false)
-        .into_iter()
-        .filter_map(Result::ok)
-        .filter(|entry| entry.file_type().is_file() && super::is_audio_file(entry.path()))
-        .count() as u64
+/// Estimates this scan's audio-file count from present catalog rows below
+/// `root`. Reading the local database is cheap for every source, unlike an
+/// exact pre-count that repeats every directory listing and doubles Android
+/// SAF's Binder IPC. The component-aware Rust check is authoritative here;
+/// this is progress metadata, so streaming the small catalog is preferable to
+/// duplicating the scanner's more involved SQL path prefilter.
+pub(crate) fn estimated_audio_files(
+    conn: &Connection,
+    root: &Path,
+) -> Result<u64, rusqlite::Error> {
+    let mut statement = conn.prepare(&format!(
+        "SELECT path FROM tracks WHERE {}",
+        crate::queries::PRESENT
+    ))?;
+    let paths = statement.query_map([], |row| row.get::<_, String>(0))?;
+    let mut total = 0_u64;
+    for path in paths {
+        if Path::new(&path?).starts_with(root) {
+            total = total.saturating_add(1);
+        }
+    }
+    Ok(total)
 }
 
 /// Forwards per-file scan progress to the caller. `total` starts at the
-/// up-front `count_audio_files` estimate and is nudged up if the walk turns out
-/// to visit more files than the pre-count saw, so `processed` never exceeds it.
+/// previous catalog's estimate and is nudged up if the walk visits more files,
+/// so `processed` never exceeds it. A first scan therefore grows its total as
+/// files are discovered; a rescan begins with the last known catalog size.
 pub(crate) struct ScanProgressReporter<'a> {
     callback: &'a mut dyn FnMut(ScanProgress),
     processed: u64,

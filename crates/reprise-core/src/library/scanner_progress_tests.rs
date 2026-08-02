@@ -33,7 +33,8 @@ fn scan_reports_discovery_then_monotone_audio_file_progress() {
     assert_eq!(scanning.len(), 2);
     assert_eq!(scanning[0].0, 1);
     assert_eq!(scanning[1].0, 2);
-    assert!(scanning.iter().all(|(_, total, _)| *total == 2));
+    assert_eq!(scanning[0].1, 1);
+    assert_eq!(scanning[1].1, 2);
     let names: std::collections::HashSet<_> = scanning
         .iter()
         .filter_map(|(_, _, path)| path.file_name().and_then(|name| name.to_str()))
@@ -48,4 +49,30 @@ fn scan_reports_discovery_then_monotone_audio_file_progress() {
     assert_eq!(report.skipped_unchanged, 0);
     assert_eq!(report.errors, 0);
     assert_eq!(report.moved, 0);
+}
+
+#[test]
+fn rescan_uses_the_previous_catalog_size_as_its_progress_estimate() {
+    let dir = tempfile::tempdir().unwrap();
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac");
+    std::fs::copy(&fixture, dir.path().join("first.flac")).unwrap();
+    std::fs::copy(&fixture, dir.path().join("second.flac")).unwrap();
+
+    let db = crate::db::Db::open_in_memory().unwrap();
+    super::tests::completed(scan_folder(&db, dir.path()).unwrap());
+    std::fs::copy(&fixture, dir.path().join("third.flac")).unwrap();
+
+    let mut progress = Vec::new();
+    super::tests::completed(
+        scan_folder_with_progress(&db, dir.path(), |event| progress.push(event)).unwrap(),
+    );
+
+    let totals: Vec<_> = progress
+        .iter()
+        .filter_map(|event| match event {
+            ScanProgress::Scanning { total, .. } => Some(*total),
+            ScanProgress::Discovering | ScanProgress::Fetching { .. } => None,
+        })
+        .collect();
+    assert_eq!(totals, vec![2, 2, 3]);
 }
