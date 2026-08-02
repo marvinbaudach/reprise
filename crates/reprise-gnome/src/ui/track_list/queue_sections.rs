@@ -7,38 +7,65 @@
 use std::rc::Rc;
 
 use gtk4::prelude::*;
+use reprise_core::up_next::QueueItem;
 
 use crate::ui::strings;
 use crate::ui::track_list::Shared;
 
-#[cfg(test)]
-pub(crate) use super::queue_model::compose;
+use super::queue_model;
 pub(crate) use super::queue_model::{
-    compose_virtual, section_ranges, ContextWindow, QueueSection, QueueSectionKind, QueueViewModel,
-    VirtualContext,
+    section_ranges, ContextWindow, QueueSection, QueueSectionKind, QueueViewModel, VirtualContext,
 };
+
 #[cfg(test)]
-use reprise_core::up_next::QueueItem;
+pub(crate) fn compose(
+    now_playing: Option<QueueItem>,
+    play_next: &[QueueItem],
+    up_next_rest: &[i64],
+    origin_label: Option<&str>,
+) -> QueueViewModel {
+    let fallback = strings::text(strings::SIDEBAR_MUSIC);
+    queue_model::compose(
+        now_playing,
+        play_next,
+        up_next_rest,
+        origin_label,
+        &fallback,
+    )
+}
+
+pub(crate) fn compose_virtual(
+    now_playing: Option<QueueItem>,
+    play_next: &[QueueItem],
+    context: Option<VirtualContext>,
+    origin_label: Option<&str>,
+) -> QueueViewModel {
+    let fallback = strings::text(strings::SIDEBAR_MUSIC);
+    queue_model::compose_virtual(now_playing, play_next, context, origin_label, &fallback)
+}
+
+fn render_message(message: &reprise_view::strings::Message) -> String {
+    let args = message
+        .args
+        .iter()
+        .map(|(name, value)| (*name, value.as_str()))
+        .collect::<Vec<_>>();
+    match &message.plural {
+        Some(plural) => strings::plural(
+            message.id,
+            plural.id,
+            usize::try_from(plural.count).unwrap_or(usize::MAX),
+            &args,
+        ),
+        None => strings::formatted(message.id, &args),
+    }
+}
 
 /// The section title shown for the section starting at `start`.
 pub(crate) fn header_title(sections: &[QueueSection], start: u32) -> String {
-    let section = sections.iter().find(|section| section.start == start);
-    match section {
-        Some(QueueSection {
-            kind: QueueSectionKind::NowPlaying,
-            ..
-        }) => strings::text(strings::QUEUE_SECTION_NOW_PLAYING),
-        Some(QueueSection {
-            kind: QueueSectionKind::PlayNext,
-            ..
-        }) => strings::text(strings::QUEUE_SECTION_PLAY_NEXT),
-        Some(QueueSection {
-            len,
-            kind: QueueSectionKind::UpNext { source_label },
-            ..
-        }) => strings::queue_context_tail(source_label, *len as usize),
-        None => String::new(),
-    }
+    queue_model::header_title(sections, start)
+        .as_ref()
+        .map_or_else(String::new, render_message)
 }
 
 /// Installs (or removes) the Queue view's section header factory. Only the
@@ -201,12 +228,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn header_title_resolves_up_next_label_and_unknown_start_degrades() {
-        let model = compose(Some(QueueItem::Track(1)), &[], &[2], Some("Neverbloom"));
+    fn header_titles_preserve_all_three_rendered_forms() {
+        let model = compose(
+            Some(QueueItem::Track(1)),
+            &[QueueItem::Track(2), QueueItem::Track(3)],
+            &[4, 5],
+            Some("Neverbloom"),
+        );
+        assert_eq!(header_title(&model.sections, 0), "Now Playing");
+        assert_eq!(header_title(&model.sections, 1), "Play Next");
         assert_eq!(
-            header_title(&model.sections, 1),
-            "Playing from Neverbloom · 1 track"
+            header_title(&model.sections, 3),
+            "Playing from Neverbloom · 2 tracks"
         );
         assert_eq!(header_title(&model.sections, 99), String::new());
+    }
+
+    #[test]
+    fn missing_origin_uses_the_surface_rendered_music_label() {
+        let model = compose(None, &[], &[2], None);
+
+        assert_eq!(
+            header_title(&model.sections, 0),
+            "Playing from Music · 1 track"
+        );
     }
 }

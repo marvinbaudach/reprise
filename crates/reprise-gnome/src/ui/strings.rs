@@ -469,7 +469,6 @@ pub const SIDEBAR_SECTION_ISSUES: &str = N_!("ISSUES");
 pub const SIDEBAR_MUSIC: &str = N_!("Music");
 pub const SIDEBAR_RECENTLY_ADDED: &str = N_!("Recently added");
 pub const SIDEBAR_QUEUE: &str = N_!("Queue");
-pub const QUEUE_SECTION_NOW_PLAYING: &str = N_!("Now Playing");
 pub const JUMP_TO_NOW_PLAYING: &str = N_!("Jump to now playing");
 pub const GO_TO_PLAYING_ARTIST: &str = N_!("Go to playing artist");
 pub const GO_TO_PLAYING_ALBUM: &str = N_!("Go to playing album");
@@ -479,7 +478,6 @@ pub const NAVIGATE_BACK: &str = N_!("Back to previous view");
 pub const NAVIGATE_FORWARD: &str = N_!("Forward to next view");
 pub const CONTEXT_MENU_PLAY_NEXT: &str = N_!("Play next");
 pub const QUEUE_CLEAR_PLAY_NEXT: &str = N_!("Clear");
-pub const QUEUE_SECTION_PLAY_NEXT: &str = N_!("Play Next");
 /// `{}` is the playback origin's display label (playlist/album/artist name
 /// or the localized "Music").
 pub const EMPTY_QUEUE_TITLE: &str = N_!("Nothing queued");

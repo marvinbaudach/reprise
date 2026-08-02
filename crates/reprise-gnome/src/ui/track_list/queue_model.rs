@@ -8,8 +8,25 @@
 //! the current position, which is precisely `play_next ++ up_next_rest`.
 
 use reprise_core::up_next::QueueItem;
+use reprise_view::strings::{Message, Plural};
 
-use crate::ui::strings;
+macro_rules! N_ {
+    ($message:literal) => {
+        $message
+    };
+}
+
+const QUEUE_SECTION_NOW_PLAYING: &str = N_!("Now Playing");
+const QUEUE_SECTION_PLAY_NEXT: &str = N_!("Play Next");
+
+const fn plural(singular: &'static str, plural: &'static str) -> (&'static str, &'static str) {
+    (singular, plural)
+}
+
+const QUEUE_CONTEXT_TAIL: (&str, &str) = plural(
+    "Playing from {source} · {count} track",
+    "Playing from {source} · {count} tracks",
+);
 
 /// P1a's binding rule: no view model may hold a closure, because a planned
 /// Android surface reaches this type through UniFFI, and UniFFI cannot carry
@@ -237,9 +254,16 @@ pub(crate) fn compose(
     play_next: &[QueueItem],
     up_next_rest: &[i64],
     origin_label: Option<&str>,
+    rendered_fallback: &str,
 ) -> QueueViewModel {
     let context = (!up_next_rest.is_empty()).then(|| VirtualContext::new(up_next_rest.len()));
-    compose_virtual(now_playing, play_next, context, origin_label)
+    compose_virtual(
+        now_playing,
+        play_next,
+        context,
+        origin_label,
+        rendered_fallback,
+    )
 }
 
 pub(crate) fn compose_virtual(
@@ -247,6 +271,7 @@ pub(crate) fn compose_virtual(
     play_next: &[QueueItem],
     context: Option<VirtualContext>,
     origin_label: Option<&str>,
+    rendered_fallback: &str,
 ) -> QueueViewModel {
     let mut items = Vec::with_capacity(usize::from(now_playing.is_some()) + play_next.len());
     let mut sections = Vec::new();
@@ -273,8 +298,7 @@ pub(crate) fn compose_virtual(
             start: u32::try_from(items.len()).unwrap_or(u32::MAX),
             len: u32::try_from(context_count).unwrap_or(u32::MAX),
             kind: QueueSectionKind::UpNext {
-                source_label: origin_label
-                    .map_or_else(|| strings::text(strings::SIDEBAR_MUSIC), str::to_owned),
+                source_label: origin_label.unwrap_or(rendered_fallback).to_owned(),
             },
         });
     }
@@ -319,6 +343,7 @@ mod que_7_tests {
             &tracks(&[10, 11]),
             Some(context),
             Some("Music"),
+            "Music",
         );
 
         assert_eq!(model.sidebar_count(), 2);
@@ -337,6 +362,7 @@ mod que_10_tests {
             &[QueueItem::Track(10)],
             Some(VirtualContext::identified(2, (42, 7), 0)),
             Some("VOID PREACHER"),
+            "Music",
         );
 
         assert_eq!(model.total_len(), 4);
@@ -361,9 +387,50 @@ pub(crate) fn section_ranges(sections: &[QueueSection]) -> Vec<(u32, u32)> {
         .collect()
 }
 
+/// Selects the translatable title for the section starting at `start`.
+/// Rendering belongs to the consuming surface.
+pub(crate) fn header_title(sections: &[QueueSection], start: u32) -> Option<Message> {
+    let section = sections.iter().find(|section| section.start == start)?;
+    match section {
+        QueueSection {
+            kind: QueueSectionKind::NowPlaying,
+            ..
+        } => Some(Message {
+            id: QUEUE_SECTION_NOW_PLAYING,
+            plural: None,
+            args: vec![],
+        }),
+        QueueSection {
+            kind: QueueSectionKind::PlayNext,
+            ..
+        } => Some(Message {
+            id: QUEUE_SECTION_PLAY_NEXT,
+            plural: None,
+            args: vec![],
+        }),
+        QueueSection {
+            len,
+            kind: QueueSectionKind::UpNext { source_label },
+            ..
+        } => {
+            let count = u64::from(*len);
+            let count_text = reprise_core::format::format_thousands(i64::from(*len));
+            Some(Message {
+                id: QUEUE_CONTEXT_TAIL.0,
+                plural: Some(Plural {
+                    id: QUEUE_CONTEXT_TAIL.1,
+                    count,
+                }),
+                args: vec![("source", source_label.clone()), ("count", count_text)],
+            })
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use reprise_view::strings::{Message, Plural};
 
     fn tracks(ids: &[i64]) -> Vec<QueueItem> {
         ids.iter().copied().map(QueueItem::Track).collect()
@@ -371,6 +438,61 @@ mod tests {
 
     fn all_items(model: &QueueViewModel, context: &[i64]) -> Vec<QueueItem> {
         model.all_items(&SliceContextWindow(context))
+    }
+
+    #[test]
+    fn header_titles_select_the_shared_catalog_messages() {
+        let model = compose(
+            Some(QueueItem::Track(1)),
+            &tracks(&[2, 3]),
+            &[4, 5],
+            Some("Neverbloom"),
+            "Music",
+        );
+
+        assert_eq!(
+            header_title(&model.sections, 0),
+            Some(Message {
+                id: "Now Playing",
+                plural: None,
+                args: vec![],
+            })
+        );
+        assert_eq!(
+            header_title(&model.sections, 1),
+            Some(Message {
+                id: "Play Next",
+                plural: None,
+                args: vec![],
+            })
+        );
+        assert_eq!(
+            header_title(&model.sections, 3),
+            Some(Message {
+                id: "Playing from {source} · {count} track",
+                plural: Some(Plural {
+                    id: "Playing from {source} · {count} tracks",
+                    count: 2,
+                }),
+                args: vec![
+                    ("source", "Neverbloom".to_owned()),
+                    ("count", "2".to_owned()),
+                ],
+            })
+        );
+        assert_eq!(header_title(&model.sections, 99), None);
+    }
+
+    #[test]
+    fn composition_uses_the_surface_rendered_context_fallback() {
+        let model = compose_virtual(None, &[], Some(VirtualContext::new(1)), None, "Bibliothek");
+
+        assert_eq!(
+            model.sections[0].kind,
+            QueueSectionKind::UpNext {
+                source_label: "Bibliothek".to_owned(),
+            }
+        );
     }
 
     #[test]
@@ -383,6 +505,7 @@ mod tests {
             ],
             &[],
             Some("Late Night"),
+            "Music",
         );
 
         assert_eq!(
@@ -402,6 +525,7 @@ mod tests {
             &tracks(&[2, 3]),
             &[4, 5, 6],
             Some("Late Night"),
+            "Music",
         );
         assert_eq!(
             model.items,
@@ -442,6 +566,7 @@ mod tests {
             &tracks(&[2, 3]),
             &[4, 5],
             Some("Late Night"),
+            "Music",
         )
         .upcoming();
 
@@ -468,7 +593,13 @@ mod tests {
 
     #[test]
     fn compose_omits_empty_play_next_per_que1() {
-        let model = compose(Some(QueueItem::Track(9)), &[], &[10], Some("Neverbloom"));
+        let model = compose(
+            Some(QueueItem::Track(9)),
+            &[],
+            &[10],
+            Some("Neverbloom"),
+            "Music",
+        );
         assert_eq!(model.items, vec![QueueItem::Track(9)]);
         assert_eq!(
             all_items(&model, &[10]),
@@ -483,7 +614,7 @@ mod tests {
         // Stopped but manually queued tracks exist: no Now Playing row, the
         // pending section still shows (QUE-4's StatusPage is only for the
         // fully empty case).
-        let model = compose(None, &tracks(&[7]), &[], None);
+        let model = compose(None, &tracks(&[7]), &[], None, "Music");
         assert_eq!(model.items, vec![QueueItem::Track(7)]);
         assert_eq!(model.sections.len(), 1);
         assert_eq!(model.sections[0].kind, QueueSectionKind::PlayNext);
@@ -491,7 +622,7 @@ mod tests {
 
     #[test]
     fn compose_fully_empty_yields_the_empty_model() {
-        let model = compose(None, &[], &[], None);
+        let model = compose(None, &[], &[], None, "Music");
         assert!(model.items.is_empty());
         assert!(model.sections.is_empty());
     }
