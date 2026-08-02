@@ -10,6 +10,7 @@ pub(in crate::ui) mod now_playing_marker;
 mod playlist_reorder_guard;
 pub(crate) mod queue_item_menu;
 pub(crate) mod queue_item_presentation;
+mod queue_model;
 pub(crate) mod queue_row_mapping;
 pub(crate) mod queue_sections;
 pub(crate) mod rating;
