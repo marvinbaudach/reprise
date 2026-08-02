@@ -50,6 +50,7 @@ use std::path::Path;
 
 use super::ScanError;
 use crate::library::import_errors;
+use crate::library::source::{LibraryReadHandle, LibrarySource, UnixLibrarySource};
 use crate::models::ImportErrorKind;
 
 /// Tag- and properties-derived fields for one audio file. Every field is
@@ -122,17 +123,41 @@ fn meta_from_tagged(tagged: &lofty::file::TaggedFile) -> TrackMeta {
     }
 }
 
+/// Reproduces `Probe::open(path)` after the source has opened the content.
+///
+/// Lofty seeds a path-backed probe from the extension but does not sniff its
+/// content. An unknown extension deliberately leaves the probe unseeded so
+/// `Probe::read` returns `UnknownFormat`, exactly as `read_from_path` did;
+/// returning early from `FileType::from_path` would change the typed error
+/// consumed by `import_errors::classify_lofty`.
+fn open_probe(
+    source: &dyn LibrarySource,
+    path: &Path,
+) -> lofty::error::Result<lofty::probe::Probe<LibraryReadHandle>> {
+    let probe = lofty::probe::Probe::new(source.open_read(path)?);
+    Ok(match lofty::file::FileType::from_path(path) {
+        Some(file_type) => probe.set_file_type(file_type),
+        None => probe,
+    })
+}
+
 /// Pass 1: the ordinary tag+properties read, lofty's own default
 /// `ParseOptions` (`BestAttempt`, tags included). Unchanged from before Task
 /// 1.8 — the only thing that changed is that a failure here no longer
 /// necessarily ends the import; see [`read_meta_with_fallback`].
 pub(crate) fn read_meta(path: &Path) -> Result<TrackMeta, ScanError> {
+    read_meta_from_source(&UnixLibrarySource, path)
+}
+
+fn read_meta_from_source(source: &dyn LibrarySource, path: &Path) -> Result<TrackMeta, ScanError> {
     #[cfg(test)]
     READ_META_CALLS.with(|calls| calls.set(calls.get() + 1));
-    let tagged = lofty::read_from_path(path).map_err(|e| {
-        let (kind, detail) = import_errors::classify_lofty(&e);
-        ScanError::Import { kind, detail }
-    })?;
+    let tagged = open_probe(source, path)
+        .and_then(lofty::probe::Probe::read)
+        .map_err(|e| {
+            let (kind, detail) = import_errors::classify_lofty(&e);
+            ScanError::Import { kind, detail }
+        })?;
     Ok(meta_from_tagged(&tagged))
 }
 
@@ -176,12 +201,15 @@ pub(super) fn read_meta_content_based(path: &Path) -> Result<TrackMeta, ScanErro
 /// than set to the file stem — `scan_folder_inner` already falls back to
 /// the file stem for ANY empty title, tagged or not, so setting it here
 /// would just be the same computation done twice.
-pub(super) fn read_meta_relaxed(path: &Path) -> Result<TrackMeta, ScanError> {
+pub(super) fn read_meta_relaxed(
+    source: &dyn LibrarySource,
+    path: &Path,
+) -> Result<TrackMeta, ScanError> {
     use lofty::prelude::*;
     let opts = lofty::config::ParseOptions::new()
         .read_tags(false)
         .parsing_mode(lofty::config::ParsingMode::Relaxed);
-    let tagged = lofty::probe::Probe::open(path)
+    let tagged = open_probe(source, path)
         .and_then(|probe| probe.options(opts).read())
         .map_err(|e| {
             let (kind, detail) = import_errors::classify_lofty(&e);
@@ -228,10 +256,13 @@ pub(super) enum MetaOutcome {
 /// carrying pass 2's classification, since "the container itself can't even
 /// be opened tag-free" is a stronger, more actionable diagnosis at that
 /// point than repeating pass 1's tag-parse failure would be.
-pub(super) fn read_meta_with_fallback(path: &Path) -> Result<MetaOutcome, ScanError> {
-    match read_meta(path) {
+pub(super) fn read_meta_with_fallback(
+    source: &dyn LibrarySource,
+    path: &Path,
+) -> Result<MetaOutcome, ScanError> {
+    match read_meta_from_source(source, path) {
         Ok(meta) => Ok(MetaOutcome::Tagged(meta)),
-        Err(ScanError::Import { kind, detail }) => match read_meta_relaxed(path) {
+        Err(ScanError::Import { kind, detail }) => match read_meta_relaxed(source, path) {
             Ok(meta) => Ok(MetaOutcome::Untagged { meta, kind, detail }),
             Err(e2) => Err(e2),
         },
