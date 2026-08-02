@@ -15,6 +15,7 @@
 //! zuerst hier einzieht.
 
 pub mod browse;
+pub mod columns;
 pub mod lyrics;
 pub mod playlists;
 pub mod queue;
