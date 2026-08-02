@@ -297,6 +297,13 @@ mod tests {
             None
         }
 
+        fn open_read(
+            &self,
+            at: &std::path::Path,
+        ) -> std::io::Result<crate::library::source::LibraryReadHandle> {
+            crate::library::source::UnixLibrarySource.open_read(at)
+        }
+
         /// Every path this double lists is one it holds, so "present" is the
         /// truthful answer. Answering `None` here would be the trait's one
         /// destructive degradation, and this double has no reason to give it.
