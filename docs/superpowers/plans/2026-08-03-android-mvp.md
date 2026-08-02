@@ -168,7 +168,7 @@ nicht an einer Shell-Historie hängend.
 - Create: Tests in `crates/reprise-core`
 - Modify: `crates/reprise-android-ffi/src/lib.rs`
 
-- [ ] **Step 1: A2 und A3 in Rust-Tests**
+- [x] **Step 1: A2 und A3 in Rust-Tests**
 
 Beide sind ohne Gerät prüfbar: eine echte Content-URI als `PathBuf`, dann
 `starts_with`, `extension`, und der `LIKE`-Vorfilter gegen eine
@@ -183,7 +183,7 @@ Eine FFI-Funktion, die einen Deskriptor entgegennimmt, `File::from_raw_fd`
 macht, liest, `seek`t und wieder liest. Von Kotlin mit einem echten
 SAF-Deskriptor aufgerufen, Ergebnis über `adb logcat` geprüft.
 
-- [ ] **Step 3: Festhalten, dann Commit**
+- [x] **Step 3: Festhalten, dann Commit**
 
 Die drei Antworten in `docs/research/android-spike-2026-08.md`. **Wenn A1 oder
 A2 fällt, endet die Phase hier** und der Plan wird neu geschnitten — nicht

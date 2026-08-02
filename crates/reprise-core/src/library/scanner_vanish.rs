@@ -187,3 +187,55 @@ pub(super) fn mark_vanished_with(
     }
     Ok(marked)
 }
+
+#[cfg(test)]
+mod android_uri_tests {
+    use super::*;
+
+    const TREE_URI: &str = "content://com.android.externalstorage.documents/tree/primary%3AMusic";
+    const ESCAPED_TREE_URI: &str =
+        "content://com.android.externalstorage.documents/tree/primary\\%3AMusic";
+    const TRACK_URI: &str = "content://com.android.externalstorage.documents/tree/primary%3AMusic/document/primary%3AMusic%2Fsong.flac";
+
+    #[test]
+    fn android_a2_content_uri_path_operations_preserve_tree_membership_and_extension() {
+        let tree = std::path::PathBuf::from(TREE_URI);
+        let track = std::path::PathBuf::from(TRACK_URI);
+
+        assert!(track.starts_with(&tree));
+        assert_eq!(
+            track.extension().and_then(std::ffi::OsStr::to_str),
+            Some("flac")
+        );
+    }
+
+    #[test]
+    fn android_a3_content_uri_root_survives_vanish_like_prefilter() {
+        assert_eq!(
+            crate::library::playlists::escape_like(TREE_URI),
+            ESCAPED_TREE_URI
+        );
+
+        let mut conn = crate::db::open_migrated(None).unwrap();
+        conn.execute(
+            "INSERT INTO tracks (id, path, added_at, device) VALUES (?1, ?2, 0, ?3)",
+            rusqlite::params![1_i64, TRACK_URI, 7_i64],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tracks (id, path, added_at, device) VALUES (?1, ?2, 0, ?3)",
+            rusqlite::params![
+                2_i64,
+                "content://com.android.externalstorage.documents/tree/primaryX3AMusic/document/primaryX3AMusic%2Fother.flac",
+                9_i64,
+            ],
+        )
+        .unwrap();
+        let tx = conn.transaction().unwrap();
+
+        let candidates =
+            candidates_under_root(&tx, Path::new(TREE_URI), "removed_at IS NULL").unwrap();
+
+        assert_eq!(candidates, vec![(1_i64, TRACK_URI.to_owned(), Some(7_i64))]);
+    }
+}

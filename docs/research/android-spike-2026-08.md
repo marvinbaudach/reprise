@@ -1183,3 +1183,58 @@ Auf Android fehlt weiterhin die `rename`-Erkennung. Dafür braucht es einen
 eigenen Entwurf für den Umgang mit stabilen
 DocumentsProvider-Dokument-IDs; der hier freigeschaltete Fingerabdruck erkennt
 nur den vorhandenen Kopieren-und-Löschen-Fall.
+
+## Frage 4b — Tragen Content-URIs die Pfad- und SQL-Annahmen? (2026-08-03)
+
+Diese Prüfung gehört zu Phase 1 des Android-MVP-Plans. Sie trennt die drei
+Annahmen ausdrücklich, weil A1 in diesem Lauf nicht ausgeführt werden sollte.
+
+### A1 — Seek auf einem SAF-Deskriptor
+
+**Nicht geprüft, kein Urteil.** Der Emulator-Lauf aus Phase 1 Schritt 2 war
+ausdrücklich nicht Teil dieses Durchgangs. Es wurde weder eine
+Deskriptor-Funktion ergänzt noch ein Emulator oder echtes SAF-Dokument
+angesprochen.
+
+### A2 — `Path` auf einer realistischen Content-URI
+
+**Urteil: TRÄGT für die beiden geprüften Operationen.** Der Test verwendet
+unverändert:
+
+```text
+Baum:  content://com.android.externalstorage.documents/tree/primary%3AMusic
+Datei: content://com.android.externalstorage.documents/tree/primary%3AMusic/document/primary%3AMusic%2Fsong.flac
+```
+
+`Path::starts_with` liefert `true`: Die Komponenten der Baum-URI sind ein
+echtes Präfix der Komponenten der Datei-URI. Das kodierte `%2F` bleibt zwar
+Teil der letzten Dokument-ID-Komponente und wird nicht zu einem
+Pfadtrennzeichen, liegt aber erst hinter diesem gemeinsamen Präfix.
+
+`Path::extension()` liefert `Some("flac")`: Der Punkt vor `flac` ist in der
+letzten Komponente nicht kodiert. Der Test behauptet bewusst nicht, dass
+`Path` die URI dekodiert oder die Struktur innerhalb der Dokument-ID kennt.
+
+A2 fällt damit nicht; wegen A2 muss der Plan nicht neu geschnitten werden.
+
+### A3 — `LIKE`-Vorfilter unter einer URI-Wurzel
+
+**Urteil: TRÄGT.** Eine migrierte In-Memory-Datenbank enthält die Datei-URI
+oben sowie eine ähnlich aussehende URI aus einem anderen Baum.
+`scanner_vanish::candidates_under_root` gibt für die Baum-URI genau die
+richtige Track-Zeile zurück.
+
+Der `%` in `%3A` wird von `playlists::escape_like` als Literal für
+`LIKE ? ESCAPE '\'` gebunden; das angehängte `/%` bezeichnet danach die
+Nachfahren. Der anschließende autoritative `Path::starts_with`-Filter hält die
+ähnlich aussehende fremde Baum-URI zusätzlich draußen. Der Test hält das
+Escaping außerdem unabhängig als wörtliches `primary\%3AMusic` fest, damit der
+autoritative Nachfilter eine Regression des SQL-Musters nicht verdecken kann.
+Temporäre Mutationen wurden für beide Schichten rot beobachtet: Ohne den
+Nachfahrenanteil `/%` war die Kandidatenliste leer; ohne das Prozent-Escaping
+wich der tatsächliche Mustertext vom erwarteten Literal ab. Nach beiden
+Wiederherstellungen liefen A2 und A3 grün.
+
+Damit sind A2 und A3 festgehalten. A1 bleibt bis zum getrennten Emulator-Lauf
+offen; aus diesem Durchgang folgt kein Urteil über die Seekbarkeit eines
+echten Provider-Deskriptors.
