@@ -1,6 +1,6 @@
-//! Task 1.4: distinguishes "the drive is unplugged" from "the file was
-//! deleted" for a missing track, without any platform trait, GVolumeMonitor,
-//! or `/proc/mounts` parsing.
+//! Task 1.4's Unix mount-point grouping and the Linux residence evidence used
+//! by [`super::source::UnixLibrarySource`]. Missing-item classification itself
+//! is platform-neutral behind [`super::source::LibrarySource`].
 //!
 //! The whole mechanism rests on one fact that is already sitting in the
 //! database: `tracks.device` (schema v2) is the `st_dev` of the file as it
@@ -26,11 +26,9 @@
 //! crucially — it is fully testable without root and without mounting
 //! anything: a test can plant a bogus device id in the database and get a
 //! deterministic `Unmounted` verdict from pure arithmetic (`real_dev +
-//! 99_999`), no loopback device or namespace required. That testability is
-//! *why* this approach was chosen over a `GVolumeMonitor`-based trait (which
-//! would live in the GTK shell anyway — `reprise-core` may never depend on
-//! gtk4/libadwaita/gstreamer/zbus) or `/proc/mounts` parsing (Linux-only,
-//! and it would need a platform abstraction to be unit-tested at all).
+//! 99_999`), no loopback device or namespace required. The source trait keeps
+//! that testable comparison while allowing non-POSIX sources to supply a
+//! different residence token.
 //!
 //! Known limitation, intentionally not worked around: btrfs subvolumes and
 //! bind mounts can share a single device id across what look like separate
@@ -42,19 +40,8 @@
 
 use std::path::{Path, PathBuf};
 
-use super::source::{
-    device_id, nearest_existing_ancestor,
-    nearest_existing_ancestor_dev as source_nearest_existing_ancestor_dev,
-};
+use super::source::{device_id, nearest_existing_ancestor, LibrarySource};
 use crate::models::MissingReason;
-
-/// `st_dev` of the nearest ancestor of `path` that currently exists,
-/// starting the search at `path` itself. `lstat` (`symlink_metadata`) only —
-/// see [`nearest_existing_ancestor`]'s doc comment for why this must never
-/// follow symlinks. `None` only if even `/` can't be `lstat`'d.
-pub(crate) fn nearest_existing_ancestor_dev(path: &Path) -> Option<u64> {
-    source_nearest_existing_ancestor_dev(path)
-}
 
 /// The highest (closest-to-root) ancestor of `path` that still shares
 /// `path`'s device — i.e. that ancestor's mount point.
@@ -91,42 +78,23 @@ pub(crate) fn mount_point_of(path: &Path) -> Option<PathBuf> {
     }
 }
 
-/// Classifies why a track at `path` is missing, given the device id that was
-/// recorded for it at scan time (`tracks.device`, `None` for a row that
-/// predates schema v2 or whose `stat` failed on last scan — see
-/// `library::scanner::file_stat`'s doc comment).
+/// Classifies why an item at `path` is missing through its library source.
 ///
-/// - `stored_device` is `None` → there is nothing to compare against.
-///   `Unknown` (see `MissingReason`'s own doc comment for why this must stay
-///   `Unknown` rather than defaulting to either concrete reason).
-/// - The nearest existing ancestor of `path` shares `stored_device` → the
-///   filesystem the file lived on is present and reachable, and the file
-///   simply isn't there anymore. `Deleted`.
-/// - The nearest existing ancestor's device differs → we're standing on a
-///   *different* filesystem than the one recorded for this file, which
-///   means the original mount is currently absent. `Unmounted`.
-/// - Even `/` couldn't be `lstat`'d (see [`nearest_existing_ancestor_dev`])
-///   → no evidence either way. `Unknown`.
-///
-/// `stored_device` is `i64` (SQLite's only integer type, matching
-/// `Track::device` and `scanner::file_stat`'s `dev as i64` storage cast) and
-/// is cast back to `u64` for the comparison — round-tripping the same bit
-/// pattern `file_stat` cast away from `u64` on the way in.
-pub(crate) fn classify_missing(stored_device: Option<i64>, path: &Path) -> MissingReason {
-    let Some(stored_device) = stored_device else {
-        return MissingReason::Unknown;
-    };
-    let stored_device = stored_device as u64;
-    match nearest_existing_ancestor_dev(path) {
-        Some(current_device) if current_device == stored_device => MissingReason::Deleted,
-        Some(_) => MissingReason::Unmounted,
-        None => MissingReason::Unknown,
-    }
+/// The stored value remains SQLite `i64`; the Unix source round-trips the
+/// same `st_dev` bit pattern the scanner stores today, while another source
+/// may derive the token from its own stable residence identity.
+pub(crate) fn classify_missing(
+    source: &dyn LibrarySource,
+    stored: Option<i64>,
+    path: &Path,
+) -> MissingReason {
+    source.reachability(path, stored)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::library::source::{LibrarySource, UnixLibrarySource};
     use std::os::unix::fs::MetadataExt;
 
     fn dev_of(path: &Path) -> u64 {
@@ -143,7 +111,7 @@ mod tests {
         let gone_path = dir.path().join("gone.flac");
 
         assert_eq!(
-            classify_missing(Some(real_dev as i64), &gone_path),
+            classify_missing(&UnixLibrarySource, Some(real_dev as i64), &gone_path),
             MissingReason::Deleted
         );
     }
@@ -161,7 +129,11 @@ mod tests {
         let gone_path = dir.path().join("gone.flac");
 
         assert_eq!(
-            classify_missing(Some(real_dev as i64 + 99_999), &gone_path),
+            classify_missing(
+                &UnixLibrarySource,
+                Some(real_dev as i64 + 99_999),
+                &gone_path,
+            ),
             MissingReason::Unmounted
         );
     }
@@ -174,7 +146,56 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let gone_path = dir.path().join("gone.flac");
 
-        assert_eq!(classify_missing(None, &gone_path), MissingReason::Unknown);
+        assert_eq!(
+            classify_missing(&UnixLibrarySource, None, &gone_path),
+            MissingReason::Unknown
+        );
+    }
+
+    struct DocumentTreeSource {
+        provider_tree_id: Option<&'static str>,
+    }
+
+    impl LibrarySource for DocumentTreeSource {
+        fn residence_token(&self, _at: &Path) -> Option<i64> {
+            self.provider_tree_id?.strip_prefix("tree-")?.parse().ok()
+        }
+    }
+
+    #[test]
+    fn classifier_supports_the_same_triad_with_a_provider_tree_token() {
+        let at = Path::new("content:/music/album/track.flac");
+
+        assert_eq!(
+            classify_missing(
+                &DocumentTreeSource {
+                    provider_tree_id: Some("tree-41"),
+                },
+                Some(41),
+                at,
+            ),
+            MissingReason::Deleted
+        );
+        assert_eq!(
+            classify_missing(
+                &DocumentTreeSource {
+                    provider_tree_id: Some("tree-73"),
+                },
+                Some(41),
+                at,
+            ),
+            MissingReason::Unmounted
+        );
+        assert_eq!(
+            classify_missing(
+                &DocumentTreeSource {
+                    provider_tree_id: None,
+                },
+                Some(41),
+                at,
+            ),
+            MissingReason::Unknown
+        );
     }
 
     /// `mount_point_of`'s invariant, asserted rather than a hardcoded path

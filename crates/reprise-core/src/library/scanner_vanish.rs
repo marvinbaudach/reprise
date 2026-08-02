@@ -8,6 +8,7 @@
 //! root-guard rationale these functions implement.
 
 use super::*;
+use crate::library::source::{LibrarySource, UnixLibrarySource};
 
 /// Shared row-fetch behind both [`present_candidates_under_root`] (the mark
 /// phase) and [`guard_evidence_under_root`] (the root guard's evidence
@@ -105,7 +106,7 @@ pub(super) fn guard_evidence_under_root(
 }
 
 /// The root guard's evidence check: does ANY guard-evidence candidate's
-/// recorded `device` match the device `root` itself currently resolves to?
+/// recorded residence token match the token `root` currently resolves to?
 /// Always called with [`guard_evidence_under_root`]'s wider list, never
 /// [`present_candidates_under_root`]'s — see that function's doc comment for
 /// why. See `scan_folder_inner`'s `## Root guard` doc section for why a
@@ -114,17 +115,22 @@ pub(super) fn guard_evidence_under_root(
 /// (should-not-happen, since the caller already confirmed `root.exists()`)
 /// case where `root`'s own device can't be resolved either — two unknowns
 /// are never evidence of each other.
-pub(super) fn any_candidate_confirms_root_device(
+pub(super) fn any_candidate_confirms_root_residence(
     candidates: &[(i64, String, Option<i64>)],
     root: &Path,
 ) -> bool {
-    let root_device = mounts::nearest_existing_ancestor_dev(root);
-    candidates.iter().any(|(_, _, device)| {
-        matches!(
-            (device, root_device),
-            (Some(recorded), Some(root_device)) if *recorded as u64 == root_device
-        )
-    })
+    any_candidate_confirms_root_with(&UnixLibrarySource, candidates, root)
+}
+
+fn any_candidate_confirms_root_with(
+    source: &dyn LibrarySource,
+    candidates: &[(i64, String, Option<i64>)],
+    root: &Path,
+) -> bool {
+    let root_token = source.residence_token(root);
+    candidates
+        .iter()
+        .any(|(_, _, stored)| matches!((stored, root_token), (Some(stored), Some(current)) if *stored == current))
 }
 
 /// The mark phase itself: for every `candidates` row whose file no longer
@@ -139,13 +145,21 @@ pub(super) fn mark_vanished(
     tx: &rusqlite::Transaction,
     candidates: Vec<(i64, String, Option<i64>)>,
 ) -> Result<u32, ScanError> {
+    mark_vanished_with(&UnixLibrarySource, tx, candidates)
+}
+
+fn mark_vanished_with(
+    source: &dyn LibrarySource,
+    tx: &rusqlite::Transaction,
+    candidates: Vec<(i64, String, Option<i64>)>,
+) -> Result<u32, ScanError> {
     let mut marked = 0u32;
     for (id, path_str, device) in candidates {
         let path = Path::new(&path_str);
         if path.exists() {
             continue;
         }
-        let reason = mounts::classify_missing(device, path);
+        let reason = mounts::classify_missing(source, device, path);
         tx.execute(
             "UPDATE tracks SET missing_since = ?2, missing_reason = ?3 WHERE id = ?1",
             rusqlite::params![id, now_unix(), reason.as_str()],

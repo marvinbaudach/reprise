@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use crate::db::Db;
 use crate::device_sync::SyncTrack;
 use crate::library::playlists;
+use crate::library::source::{LibrarySource, UnixLibrarySource};
 use crate::models::MissingReason;
 use rusqlite::{Connection, OptionalExtension};
 
@@ -347,6 +348,15 @@ pub fn mark_track_missing_if_current(
     track_id: i64,
     expected_path: &Path,
 ) -> Result<bool, rusqlite::Error> {
+    mark_track_missing_if_current_with(&UnixLibrarySource, db, track_id, expected_path)
+}
+
+fn mark_track_missing_if_current_with(
+    source: &dyn LibrarySource,
+    db: &Db,
+    track_id: i64,
+    expected_path: &Path,
+) -> Result<bool, rusqlite::Error> {
     let conn = db.conn();
     let expected_path = expected_path.to_string_lossy();
     let row: Option<(String, Option<i64>)> = conn
@@ -362,7 +372,7 @@ pub fn mark_track_missing_if_current(
     if Path::new(&path).is_file() {
         return Ok(false);
     }
-    let reason = crate::library::mounts::classify_missing(device, Path::new(&path));
+    let reason = crate::library::mounts::classify_missing(source, device, Path::new(&path));
     let changed = conn.execute(
         &format!(
             "UPDATE tracks SET missing_since=strftime('%s','now'),missing_reason=?3 \
