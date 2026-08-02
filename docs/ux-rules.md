@@ -3722,8 +3722,14 @@ listening statistics.
   download-preservation, and undo behavior. Their episode menus additionally
   expose "Play Next" and "Add to Queue" for the current episode selection;
   the same actions are the keyboard-accessible partner of the typed episode
-  drag source. This asymmetry with radio is deliberate. Unsubscribing is
-  operated from the context menu alone; there is no hover star.
+  drag source. Beside "Copy episode URL", the menu exposes the single-episode
+  action "Open in browser" only when the episode has a launchable web page:
+  YouTube uses the durable watch URL from `audio_url`, while RSS uses
+  `page_url` when present and never treats its media enclosure in `audio_url`
+  as an episode page. Even with a multi-selection, the action targets only the
+  row whose menu was opened. This asymmetry with radio is deliberate.
+  Unsubscribing is operated from the context menu alone; there is no hover
+  star.
 - **SRC-13** [active] [gtk] — **Marking and scrolling are separate in the
   source lists.** The loaded item carries the shared playback marker in every
   source list it appears in; setting the marker never moves the viewport. It is

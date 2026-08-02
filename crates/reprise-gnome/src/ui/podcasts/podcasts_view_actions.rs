@@ -32,6 +32,17 @@ impl PodcastsView {
                 }
             },
         );
+        self.add_target_action(
+            &group,
+            podcasts_context_menu::ACTION_OPEN_IN_BROWSER,
+            |view, id| {
+                if let Ok(Some(row)) = podcasts::store::episode(&view.conn, id) {
+                    if let Some(url) = podcasts_context_menu::browser_url(&row) {
+                        crate::ui::external_link::launch(url, "podcast episode page", None);
+                    }
+                }
+            },
+        );
         self.add_selected_action(
             &group,
             podcasts_context_menu::ACTION_PLAY_NEXT,

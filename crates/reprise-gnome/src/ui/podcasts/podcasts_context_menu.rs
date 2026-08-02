@@ -6,13 +6,14 @@ use std::rc::Rc;
 use gtk4::gio;
 use gtk4::glib::variant::ToVariant;
 use gtk4::prelude::*;
-use reprise_core::podcasts::{EpisodeRow, SourceGroup};
+use reprise_core::podcasts::{EpisodeRow, PodcastKind, SourceGroup};
 
 use super::podcasts_selection::{PodcastSelection, SelectMode};
 use crate::ui::strings;
 
 pub(super) const ACTION_PLAY: &str = "play";
 pub(super) const ACTION_COPY_URL: &str = "copy-url";
+pub(super) const ACTION_OPEN_IN_BROWSER: &str = "open-in-browser";
 pub(super) const ACTION_PLAY_NEXT: &str = "play-next";
 pub(super) const ACTION_ADD_TO_QUEUE: &str = "add-to-queue";
 pub(super) const ACTION_PLAY_NEXT_UNAVAILABLE: &str = "play-next-unavailable";
@@ -30,6 +31,7 @@ pub(super) const ACTION_TOGGLE_PHONE_SYNC: &str = "toggle-phone-sync";
 const ACTIONS: &[&str] = &[
     ACTION_PLAY,
     ACTION_COPY_URL,
+    ACTION_OPEN_IN_BROWSER,
     ACTION_PLAY_NEXT,
     ACTION_ADD_TO_QUEUE,
     ACTION_PLAY_NEXT_UNAVAILABLE,
@@ -134,6 +136,14 @@ pub(super) fn build(row: &EpisodeRow) -> gio::Menu {
     build_for_selection(row, &[row.id], None)
 }
 
+pub(super) fn browser_url(row: &EpisodeRow) -> Option<&str> {
+    let candidate = match row.kind {
+        PodcastKind::Youtube => Some(row.audio_url.as_str()),
+        PodcastKind::Rss => row.page_url.as_deref(),
+    };
+    candidate.filter(|url| reprise_core::external_link::is_launchable_url(url))
+}
+
 pub(super) fn build_for_selection(
     row: &EpisodeRow,
     selected_ids: &[i64],
@@ -158,6 +168,7 @@ pub(super) fn build_for_selection(
     }
     let menu = gio::Menu::new();
     let primary = gio::Menu::new();
+    append_browser_action(&primary, row);
     for mut entry in multi_selection_primary_entries() {
         if !queue_available {
             entry.action = match entry.action {
@@ -228,6 +239,7 @@ fn build_single(row: &EpisodeRow, target_ids: &[i64], queue_available: bool) -> 
         row.id,
     );
     append_targeted(&primary, strings::PODCAST_COPY_URL, ACTION_COPY_URL, row.id);
+    append_browser_action(&primary, row);
     append_selected(
         &primary,
         &strings::text(strings::CONTEXT_MENU_PLAY_NEXT),
@@ -285,6 +297,17 @@ fn build_single(row: &EpisodeRow, target_ids: &[i64], queue_available: bool) -> 
     );
     menu.append_section(None, &destructive);
     menu
+}
+
+fn append_browser_action(menu: &gio::Menu, row: &EpisodeRow) {
+    if browser_url(row).is_some() {
+        append_targeted(
+            menu,
+            strings::PODCAST_OPEN_IN_BROWSER,
+            ACTION_OPEN_IN_BROWSER,
+            row.id,
+        );
+    }
 }
 
 pub(super) fn install_disabled_queue_actions(group: &gio::SimpleActionGroup) {
@@ -753,3 +776,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "podcasts_context_menu_browser_tests.rs"]
+mod browser_tests;
