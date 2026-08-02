@@ -734,6 +734,108 @@ den niemand abgelaufen ist, einmal ein Traversierungsfehler, der als
 bestehende Rechte-basierte Test deckt denselben Pfad ab, überspringt sich aber
 überall dort, wo Verzeichnisrechte nicht durchgesetzt werden — als root etwa.
 
+### Die Klassifikation, die Paket 3 freigibt (2026-08-02)
+
+Paket 2 hat festgehalten, dass eine Dateiliste keine zulässige
+Arbeitsgrundlage ist. Hier ist die stellenweise Einordnung, die sie ersetzt.
+
+**Die Rohzahl war dreimal falsch, und jedes Mal zu hoch.** Der Spike schätzte
+27 Stellen für die gesamte Abstraktion. Ein Grep über den damaligen Cluster
+fand 53. Ein Grep über den ganzen Crate fand 94. Die 94 enthielten Treffer in
+inline `#[cfg(test)]`-Modulen und sogar Kommentarzeilen, die `read_dir` bloß
+erwähnen. Nach Ausschluss von Testcode und Kommentaren bleiben **58
+Produktivstellen** — und davon gehören **21** hinter `LibrarySource`.
+
+| Klasse | Stellen | Was damit geschieht |
+| --- | --- | --- |
+| **A — Bibliotheksquelle** | **21** | Paket 3. Die Musikdateien unter einer Scan-Wurzel. |
+| **B — app-privat** | **31** | Nie abstrahiert. Unser eigener XDG-Cache und `dirs::data_dir()/reprise`. |
+| **C — fremde App-Daten** | **2** | Nicht abstrahiert, sondern plattformweise ausgeschlossen. |
+| **E — der Adapter selbst** | **4** | Nichts zu tun; das *ist* die Implementierung. |
+
+Bemerkenswert ist das Verhältnis: **mehr Stellen dürfen nicht in die
+Abstraktion als hinein.** Wer den Cluster als Block umbaut, zieht 31
+app-private Zugriffe in einen Vertrag, der die Musikquelle beschreibt — und
+Android bekäme einen SAF-Umweg für seinen eigenen Cache.
+
+#### A — Bibliotheksquelle (Paket 3)
+
+| Datei | Zeilen |
+| --- | --- |
+| `cover.rs` | 82 |
+| `cover_writeback.rs` | 22, 50 |
+| `device_sync/snapshot.rs` | 105 |
+| `library/relink.rs` | 40, 77, 244 |
+| `library/rhythmbox_import.rs` | 501 |
+| `library/scanner.rs` | 32, 55, 266 |
+| `library/scanner_move.rs` | 56 |
+| `library/scanner_vanish.rs` | 167 |
+| `lyrics/local.rs` | 21 |
+| `lyrics/sidecar_write.rs` | 17 |
+| `queries/issues.rs` | 244 |
+| `queries/maintenance.rs` | 294, 376 |
+| `stem_separation.rs` | 164 |
+| `writeback_publish.rs` | 198, 207 |
+
+`cover.rs` steht in A **und** in B: Zeile 82 liest den Albumordner nach einem
+Sidecar-Bild, die vier `out.exists()` prüfen Thumbnails im XDG-Cache. Genau
+dieser Fall war der Grund, keine Dateiliste zu akzeptieren.
+
+#### B — app-privat (nie in `LibrarySource`)
+
+| Datei | Zeilen |
+| --- | --- |
+| `ai_promotion.rs` | 160 |
+| `ai_staging.rs` | 106, 127 |
+| `artist_portrait/cache.rs` | 31, 49 |
+| `artist_portrait/mod.rs` | 92, 134 |
+| `cover.rs` | 168, 199, 237, 254 |
+| `cover_download.rs` | 83, 144, 208 |
+| `db_grandfather.rs` | 148, 150 |
+| `device_sync/podcasts.rs` | 156, 159 |
+| `lyrics/lrclib.rs` | 189 |
+| `podcasts/download_state.rs` | 56, 58 |
+| `podcasts/downloads.rs` | 174, 182, 223, 229, 303 |
+| `podcasts/pipeline.rs` | 765 |
+| `podcasts/ytdlp_download.rs` | 266 |
+| `remote_image/cache.rs` | 40, 113, 116 |
+
+Podcast-Downloads liegen unter `dirs::data_dir()/reprise/podcasts`
+(`downloads::default_download_root`) und sind damit app-privat, nicht
+Bibliothek — auch dann, wenn `device_sync/podcasts.rs` sie später auf ein
+angeschlossenes Gerät kopiert. Die Zielseite eines Sync ist ein eigener
+Speicherbereich und bekommt, wenn überhaupt, einen eigenen Vertrag.
+
+#### C — fremde App-Daten, plattformweise ausgeschlossen
+
+| Datei | Zeilen |
+| --- | --- |
+| `library/rhythmbox_import.rs` | 397, 525 |
+
+`rhythmbox_import` liest Rhythmboxʼ eigene `rhythmdb.xml` und `playlists.xml`
+unter `~/.local/share/rhythmbox`. Das ist weder unsere Bibliothek noch unser
+Speicher, und unter Android existiert Rhythmbox nicht. **Diese Stellen brauchen
+keine Abstraktion, sondern eine Plattformgrenze** — der Import ist eine
+Desktop-Funktion. Die Musikdatei, die der Import danach anfasst
+(`rhythmbox_import.rs:501`), steht dagegen in A: sie liegt in der Bibliothek.
+
+#### E — der Unix-Adapter selbst
+
+| Datei | Zeilen |
+| --- | --- |
+| `library/mounts.rs` | 75 |
+| `library/source.rs` | 188, 197, 246 |
+
+Diese Zeilen sind das Innere von `UnixLibrarySource` und `mount_point_of`. Sie
+sollen `walkdir` und `lstat` benutzen; das ist ihr Zweck.
+
+#### Woran die Einordnung hängt
+
+Die Frage pro Stelle war nicht „liegt hier ein Pfad", sondern **wem gehört das,
+worauf der Pfad zeigt**. Kommt er aus `tracks.path` oder einer Scan-Wurzel →
+A. Aus `dirs::cache_dir()`/`dirs::data_dir()` unter unserem Namen → B. Aus dem
+Verzeichnis einer anderen Anwendung → C.
+
 ## Frage 8 — Die Umzugserkennung, und was Tauri daran ändert (umgesetzt 2026-08-02)
 
 **Status: umgesetzt.** `file_stat` liefert jetzt die echte Größe getrennt von
