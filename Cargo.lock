@@ -2696,6 +2696,7 @@ dependencies = [
  "reprise-platform-linux",
  "reprise-runtime-client",
  "reprise-runtime-protocol",
+ "reprise-view",
  "rusqlite",
  "serde",
  "serde_json",
