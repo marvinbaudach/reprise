@@ -2,7 +2,7 @@
 slug: identity-vs-size
 worktree: /home/marvin/Projects/reprise-identity-fix
 branch: fix/identity-vs-size
-phase: planned
+phase: refactored
 codex_session:
 created: 2026-08-02
 ---
