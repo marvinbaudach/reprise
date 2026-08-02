@@ -760,26 +760,49 @@ Android bekäme einen SAF-Umweg für seinen eigenen Cache.
 
 #### A — Bibliotheksquelle (Paket 3)
 
-| Datei | Zeilen |
-| --- | --- |
-| `cover.rs` | 82 |
-| `cover_writeback.rs` | 22, 50 |
-| `device_sync/snapshot.rs` | 105 |
-| `library/relink.rs` | 40, 77, 244 |
-| `library/rhythmbox_import.rs` | 501 |
-| `library/scanner.rs` | 32, 55, 266 |
-| `library/scanner_move.rs` | 56 |
-| `library/scanner_vanish.rs` | 167 |
-| `lyrics/local.rs` | 21 |
-| `lyrics/sidecar_write.rs` | 17 |
-| `queries/issues.rs` | 244 |
-| `queries/maintenance.rs` | 294, 376 |
-| `stem_separation.rs` | 164 |
-| `writeback_publish.rs` | 198, 207 |
+| Datei | Zeilen | Ergebnis Paket 3 |
+| --- | --- | --- |
+| `cover.rs` | 82 | 1/1 über `LibrarySource` |
+| `cover_writeback.rs` | 22, 50 | 2/2 über `LibrarySource` |
+| `device_sync/snapshot.rs` | 105 | 1/1 über `LibrarySource` |
+| `library/relink.rs` | 40, 77, 244 | 3/3 über `LibrarySource` |
+| `library/rhythmbox_import.rs` | 501 | 1/1 über `LibrarySource` |
+| `library/scanner.rs` | 32, 55, 266 | 3/3 über `LibrarySource` |
+| `library/scanner_move.rs` | 56 | 1/1 über `LibrarySource` |
+| `library/scanner_vanish.rs` | 167 | 1/1 über `LibrarySource` |
+| `lyrics/local.rs` | 21 | 1/1 über `LibrarySource` |
+| `lyrics/sidecar_write.rs` | 17 | 1/1 über `LibrarySource` |
+| `queries/issues.rs` | 244 | 1/1 über `LibrarySource` |
+| `queries/maintenance.rs` | 294, 376 | 2/2 über `LibrarySource` |
+| `stem_separation.rs` | 164 | 1/1 über `LibrarySource` |
+| `writeback_publish.rs` | 198, 207 | 2/2 über `LibrarySource` |
 
 `cover.rs` steht in A **und** in B: Zeile 82 liest den Albumordner nach einem
 Sidecar-Bild, die vier `out.exists()` prüfen Thumbnails im XDG-Cache. Genau
 dieser Fall war der Grund, keine Dateiliste zu akzeptieren.
+
+**Ergebnis Paket 3 (2026-08-02): 21/21 umgestellt, keine Ausnahme.** Der Walk
+trägt jetzt optional genau die Metadaten mit, die eine Quelle beim Auflisten
+ohnehin schon besitzt. Der Unix-Adapter setzt dieses Feld bewusst auf `None`:
+dadurch fragt der Scanner jede Audiodatei einmal per `probe`, Nicht-Audiodateien
+gar nicht, und bereits im Walk gesehene Pfade werden beim anschließenden
+Verschwunden-Abgleich nicht erneut gefragt. Ein SAF-Adapter kann dagegen
+Größe, Änderungszeit und stabile Identität direkt aus seiner Cursor-Zeile
+mitgeben und braucht für dieselbe Datei keinen weiteren Binder-Rundlauf.
+
+Die drei flachen Albumordner-Zugriffe verwenden die eigene objekt-sichere
+Operation `read_directory` statt einer Tiefengrenze am rekursiven `walk`.
+Damit bleiben ihre bisherigen Semantiken — nur unmittelbare Kinder, weder
+Wurzel noch Nachfahren — ausdrücklich erhalten. Auch deren Einträge dürfen
+bereits vorhandene Metadaten mittragen; Unix lässt sie weg und vermeidet so
+einen vorsorglichen `stat` für jedes Kind. Fehlende Antworten und einzelne
+fehlende Fakten bleiben in beiden Operationen `None`; kein Adapter erfindet
+Größe, Zeitstempel oder Identität.
+
+Die Gegenprobe über die ursprünglichen Zugriffsmuster lässt ausschließlich
+die klassifizierten Stellen übrig: Klasse B in den Reprise-eigenen XDG-Daten,
+Klasse C an Rhythmboxʼ eigenen Dateien und Klasse E im Unix-Adapter selbst.
+Diese drei Klassen wurden in Paket 3 nicht verändert.
 
 #### B — app-privat (nie in `LibrarySource`)
 
