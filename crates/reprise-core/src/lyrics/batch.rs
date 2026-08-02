@@ -111,28 +111,31 @@ enum BatchItemOutcome {
     Failed,
 }
 
-type LocalLookup = Arc<dyn Fn(&Path) -> bool + Send + Sync>;
-type NeedsLookup = Arc<dyn Fn(&LyricsQuery) -> CacheDecision + Send + Sync>;
-type OnlineLookup = Arc<
-    dyn Fn(&LyricsQuery, &Path, &CacheDecision) -> Result<LyricsHit, LyricsError> + Send + Sync,
+type LocalLookup<'a> = Arc<dyn Fn(&Path) -> bool + Send + Sync + 'a>;
+type NeedsLookup<'a> = Arc<dyn Fn(&LyricsQuery) -> CacheDecision + Send + Sync + 'a>;
+type OnlineLookup<'a> = Arc<
+    dyn Fn(&LyricsQuery, &Path, &CacheDecision) -> Result<LyricsHit, LyricsError>
+        + Send
+        + Sync
+        + 'a,
 >;
-type AllBreakersOpen = Arc<dyn Fn() -> bool + Send + Sync>;
+type AllBreakersOpen<'a> = Arc<dyn Fn() -> bool + Send + Sync + 'a>;
 
 #[derive(Clone)]
-struct BatchServices {
-    local: LocalLookup,
-    needs: NeedsLookup,
-    online: OnlineLookup,
-    all_breakers_open: AllBreakersOpen,
+struct BatchServices<'a> {
+    local: LocalLookup<'a>,
+    needs: NeedsLookup<'a>,
+    online: OnlineLookup<'a>,
+    all_breakers_open: AllBreakersOpen<'a>,
 }
 
-impl BatchServices {
-    fn production() -> Self {
+impl<'a> BatchServices<'a> {
+    fn production(source: &'a dyn crate::library::source::LibrarySource) -> Self {
         Self {
             local: Arc::new(|path| super::local_hit(path).is_some()),
             needs: Arc::new(super::cache::decision),
-            online: Arc::new(|query, path, decision| {
-                super::load_or_fetch_with_cache_decision(query, Some(path), decision)
+            online: Arc::new(move |query, path, decision| {
+                super::load_or_fetch_with_cache_decision(source, query, Some(path), decision)
             }),
             all_breakers_open: Arc::new(super::all_network_breakers_open),
         }
@@ -150,9 +153,25 @@ pub fn run_batch(
     network_allowed: impl Fn() -> bool,
     on_progress: impl FnMut(BatchProgress) -> bool,
 ) -> BatchRunStatus {
+    run_batch_with_source(
+        &crate::library::source::UnixLibrarySource,
+        tracks,
+        is_cancelled,
+        network_allowed,
+        on_progress,
+    )
+}
+
+pub fn run_batch_with_source(
+    source: &dyn crate::library::source::LibrarySource,
+    tracks: &[BatchTrack],
+    is_cancelled: impl Fn() -> bool,
+    network_allowed: impl Fn() -> bool,
+    on_progress: impl FnMut(BatchProgress) -> bool,
+) -> BatchRunStatus {
     run_batch_with_services(
         tracks,
-        &BatchServices::production(),
+        &BatchServices::production(source),
         is_cancelled,
         network_allowed,
         on_progress,
@@ -161,7 +180,7 @@ pub fn run_batch(
 
 fn run_batch_with_services(
     tracks: &[BatchTrack],
-    services: &BatchServices,
+    services: &BatchServices<'_>,
     is_cancelled: impl Fn() -> bool,
     network_allowed: impl Fn() -> bool,
     mut on_progress: impl FnMut(BatchProgress) -> bool,

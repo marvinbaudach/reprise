@@ -21,6 +21,10 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+#[cfg(test)]
+use crate::library::source::UnixLibrarySource;
+use crate::library::source::{LibraryLinkMode, LibrarySource};
+
 const TEMP_CREATE_ATTEMPTS: usize = 16;
 /// Reprise's own temporary files, and nothing else, are named
 /// `.reprise-<16 hex digits>.tmp`.
@@ -65,20 +69,39 @@ pub(crate) enum Published {
 /// must hold no folder image yet) and for logging the returned error in its
 /// own words — every failure here is best-effort and must stay silent to the
 /// user.
+#[cfg(test)]
 pub(crate) fn publish(target: &Path, payload: &[u8]) -> io::Result<Published> {
-    publish_with(target, payload, |from, to| fs::hard_link(from, to))
+    publish_with_source(&UnixLibrarySource, target, payload)
+}
+
+pub(crate) fn publish_with_source(
+    source: &dyn LibrarySource,
+    target: &Path,
+    payload: &[u8],
+) -> io::Result<Published> {
+    publish_from(source, target, payload, |from, to| fs::hard_link(from, to))
 }
 
 /// [`publish`] with the link step injected, so the fallback path can be
 /// tested on filesystems that do implement hard links.
+#[cfg(test)]
 fn publish_with(
+    target: &Path,
+    payload: &[u8],
+    link: impl Fn(&Path, &Path) -> io::Result<()>,
+) -> io::Result<Published> {
+    publish_from(&UnixLibrarySource, target, payload, link)
+}
+
+fn publish_from(
+    source: &dyn LibrarySource,
     target: &Path,
     payload: &[u8],
     link: impl Fn(&Path, &Path) -> io::Result<()>,
 ) -> io::Result<Published> {
     ignore(target);
     if let Some(directory) = target.parent() {
-        sweep_leftovers(directory, LEFTOVER_MAX_AGE);
+        sweep_leftovers(source, directory, LEFTOVER_MAX_AGE);
     }
     let (temporary, mut file) = create_temporary(target)?;
     if let Err(error) = file.write_all(payload).and_then(|()| file.sync_all()) {
@@ -190,33 +213,40 @@ fn temporary_name(token: u64) -> String {
 ///
 /// Two deliberate narrowings, because this deletes files inside the
 /// collection: only names matching Reprise's own exact pattern
-/// ([`is_temporary_name`]) are ever considered, and only regular files
-/// (`DirEntry::metadata` does not follow symlinks) that have not been
-/// modified for `max_age` — long enough that no live writer, in this process
-/// or another, can still own them.
-fn sweep_leftovers(directory: &Path, max_age: Duration) {
-    let Ok(entries) = fs::read_dir(directory) else {
+/// ([`is_temporary_name`]) are ever considered, and only regular files from
+/// a [`LibraryLinkMode::NoFollow`] probe that have not been modified for
+/// `max_age` — long enough that no live writer, in this process or another,
+/// can still own them.
+fn sweep_leftovers(source: &dyn LibrarySource, directory: &Path, max_age: Duration) {
+    let Some(entries) = source.read_directory(directory) else {
         return;
     };
     let now = std::time::SystemTime::now();
-    for entry in entries.flatten() {
-        if !entry.file_name().to_str().is_some_and(is_temporary_name) {
+    for entry in entries {
+        if !entry
+            .path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(is_temporary_name)
+        {
             continue;
         }
-        let is_abandoned = entry.metadata().is_ok_and(|metadata| {
-            metadata.is_file()
+        let metadata = entry
+            .metadata
+            .or_else(|| source.probe(&entry.path, LibraryLinkMode::NoFollow));
+        let is_abandoned = metadata.is_some_and(|metadata| {
+            metadata.is_file
                 && metadata
-                    .modified()
-                    .ok()
+                    .modified
                     .and_then(|modified| now.duration_since(modified).ok())
                     .is_some_and(|age| age >= max_age)
         });
         if !is_abandoned {
             continue;
         }
-        if let Err(error) = fs::remove_file(entry.path()) {
+        if let Err(error) = fs::remove_file(&entry.path) {
             tracing::warn!(
-                path = %entry.path().display(),
+                path = %entry.path.display(),
                 %error,
                 "could not sweep an abandoned writeback temporary file"
             );
