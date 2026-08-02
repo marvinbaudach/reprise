@@ -491,8 +491,9 @@ impl NowPlayingPanel {
     pub(in crate::ui) fn set_up_next_model(
         &self,
         model: &crate::ui::track_list::queue_sections::QueueViewModel,
+        context_window: &Rc<dyn crate::ui::track_list::queue_sections::ContextWindow>,
     ) {
-        let text = self.widgets.up_next.set_queue_model(model);
+        let text = self.widgets.up_next.set_queue_model(model, context_window);
         self.widgets.footers.borrow_mut().up_next = text.clone();
         if self.widgets.session.selected.get() == PanelTab::UpNext {
             self.widgets.footer.set_label(&text);

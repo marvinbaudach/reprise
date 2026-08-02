@@ -78,6 +78,9 @@ mod imp {
         /// QUE-7 queue projection whose context tail is fetched by bounded
         /// windows instead of retained as one id per context row.
         pub(super) virtual_queue: Option<super::super::queue_sections::QueueViewModel>,
+        /// Explicit provider for the virtual queue's context rows. Kept
+        /// beside the GTK list model, never inside the view model itself.
+        pub(super) context_window: Option<Rc<dyn super::super::queue_sections::ContextWindow>>,
         pub cache: BTreeMap<u32, Vec<QueueItemMetadata>>,
         /// QUE-1 section ranges (half-open, model coordinates) for the
         /// Queue source; empty = the whole model is one section. Set via
@@ -252,6 +255,7 @@ impl TrackListModel {
     pub(crate) fn set_queue_snapshot(
         &self,
         queue: &super::queue_sections::QueueViewModel,
+        context_window: Rc<dyn super::queue_sections::ContextWindow>,
         sections: Vec<(u32, u32)>,
     ) {
         let new_total = u32::try_from(queue.total_len()).unwrap_or(u32::MAX);
@@ -271,6 +275,7 @@ impl TrackListModel {
             state.browse = BrowseFilter::default();
             state.queue_items.clear();
             state.virtual_queue = Some(queue.clone());
+            state.context_window = Some(context_window);
             state.sections = sections;
             state.total = new_total;
             state.cache.clear();
@@ -406,6 +411,7 @@ impl TrackListModel {
             state.exclude_ai = exclude_ai;
             state.queue_items = queue_items.to_vec();
             state.virtual_queue = None;
+            state.context_window = None;
             state.total = new_total;
             state.cache.clear();
         }
@@ -452,7 +458,17 @@ impl TrackListModel {
             return None;
         };
 
-        let (source, sort_field, sort_dir, filter, browse, exclude_ai, queue_items, virtual_queue) = {
+        let (
+            source,
+            sort_field,
+            sort_dir,
+            filter,
+            browse,
+            exclude_ai,
+            queue_items,
+            virtual_queue,
+            context_window,
+        ) = {
             let state = self.imp().state.borrow();
             (
                 state.source.clone(),
@@ -463,14 +479,19 @@ impl TrackListModel {
                 state.exclude_ai,
                 state.queue_items.clone(),
                 state.virtual_queue.clone(),
+                state.context_window.clone(),
             )
         };
 
         let (query_offset, queue_items) = if source == ViewSource::Queue {
-            if let Some(queue) = virtual_queue {
+            if let (Some(queue), Some(context_window)) = (virtual_queue, context_window) {
                 (
                     0,
-                    queue.items_window(window_start as usize, WINDOW_SIZE as usize),
+                    queue.items_window(
+                        window_start as usize,
+                        WINDOW_SIZE as usize,
+                        context_window.as_ref(),
+                    ),
                 )
             } else {
                 (i64::from(window_start), queue_items)
