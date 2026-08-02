@@ -14,5 +14,6 @@
 //! 2026-08-01-multi-surface-frontends-design.md` §4 (P1a) beschreibt, was
 //! zuerst hier einzieht.
 
+pub mod lyrics;
 pub mod playlists;
 pub mod strings;
