@@ -95,31 +95,39 @@ pub(in crate::ui) fn is_context_menu_shortcut(
     crate::ui::track_list::track_list_context_keys::is_context_menu_shortcut(key, modifiers)
 }
 
-/// Test-only: every sampled point of the table's first row that does *not*
-/// resolve to a context surface, in view coordinates. An empty result is the
-/// ACC-1 contract — the whole row answers the secondary button.
+/// Test-only: every sampled point of a table's first row or a supplied row
+/// widget that does *not* resolve to a capture-phase context surface. An empty
+/// result is the ACC-1 contract — the whole row answers the secondary button.
 #[cfg(test)]
-pub(in crate::ui) fn row_points_without_a_surface(view: &gtk4::ColumnView) -> Vec<(i32, i32)> {
+pub(in crate::ui) fn row_points_without_a_surface(
+    target: &impl IsA<gtk4::Widget>,
+) -> Vec<(i32, i32)> {
     const SAMPLE_STEP: usize = 3;
 
-    let surface = first_surface(view.upcast_ref()).expect("a realized cell surface");
-    let row = surface
-        .parent()
-        .and_then(|cell| cell.parent())
-        .expect("the surface sits in a cell inside a row");
-    let bounds = row
-        .compute_bounds(view)
-        .expect("the row has bounds in view space");
-
-    let left = bounds.x() as i32;
-    let top = bounds.y() as i32;
-    let right = left + bounds.width() as i32;
-    let bottom = top + bounds.height() as i32;
+    let target = target.as_ref();
+    let (left, top, right, bottom) = if target.is::<gtk4::ColumnView>() {
+        let surface = first_surface(target).expect("a realized cell surface");
+        let row = surface
+            .parent()
+            .and_then(|cell| cell.parent())
+            .expect("the surface sits in a cell inside a row");
+        let bounds = row
+            .compute_bounds(target)
+            .expect("the row has bounds in view space");
+        (
+            bounds.x() as i32,
+            bounds.y() as i32,
+            (bounds.x() + bounds.width()) as i32,
+            (bounds.y() + bounds.height()) as i32,
+        )
+    } else {
+        (0, 0, target.width(), target.height())
+    };
 
     let mut uncovered = Vec::new();
     for x in (left..right).step_by(SAMPLE_STEP) {
         for y in (top..bottom).step_by(SAMPLE_STEP) {
-            if !picks_a_surface(view, x, y) {
+            if !picks_a_surface(target, x, y) {
                 uncovered.push((x, y));
             }
         }
@@ -128,15 +136,35 @@ pub(in crate::ui) fn row_points_without_a_surface(view: &gtk4::ColumnView) -> Ve
 }
 
 #[cfg(test)]
-fn picks_a_surface(view: &gtk4::ColumnView, x: i32, y: i32) -> bool {
-    let mut node = view.pick(f64::from(x), f64::from(y), gtk4::PickFlags::DEFAULT);
+fn picks_a_surface(target: &gtk4::Widget, x: i32, y: i32) -> bool {
+    let mut node = target.pick(f64::from(x), f64::from(y), gtk4::PickFlags::DEFAULT);
     while let Some(widget) = node {
-        if widget.has_css_class(SURFACE_CSS_CLASS) {
+        if is_context_surface(&widget) {
             return true;
+        }
+        if widget == *target {
+            break;
         }
         node = widget.parent();
     }
     false
+}
+
+#[cfg(test)]
+fn is_context_surface(widget: &gtk4::Widget) -> bool {
+    if widget.has_css_class(SURFACE_CSS_CLASS) {
+        return true;
+    }
+    let controllers = widget.observe_controllers();
+    (0..controllers.n_items()).any(|index| {
+        controllers
+            .item(index)
+            .and_downcast::<gtk4::GestureClick>()
+            .is_some_and(|gesture| {
+                gesture.button() == gtk4::gdk::BUTTON_SECONDARY
+                    && gesture.propagation_phase() == gtk4::PropagationPhase::Capture
+            })
+    })
 }
 
 #[cfg(test)]

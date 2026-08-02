@@ -9,6 +9,7 @@ mod podcasts_batch_actions;
 mod podcasts_callbacks;
 mod podcasts_columns;
 mod podcasts_context_menu;
+mod podcasts_context_surface;
 mod podcasts_deferred_actions;
 mod podcasts_device_sync;
 mod podcasts_dnd;
