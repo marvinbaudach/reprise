@@ -22,7 +22,7 @@ use super::podcasts_groups::{self, DownloadRowWidgets};
 use super::podcasts_groups::{SelectionRowWidgets, SELECTED_ROW_CLASS};
 use super::podcasts_playback::EpisodeMark;
 use super::podcasts_presentation::{
-    detail_line, duration, on_phone, relative_date, status_pill, RenderedSourceGroup,
+    detail_line, duration, on_phone, relative_date, source_header, status_pill, RenderedSourceGroup,
 };
 use super::podcasts_row_interaction::{install_row_interaction, SELECT_CHANNEL_ROW_ACTION};
 use super::podcasts_selection::{PodcastSelection, SelectMode};
@@ -543,7 +543,12 @@ impl YoutubeChannelDetail {
             self.images_allowed.get(),
         );
         row.append(image.widget());
-        let title = gtk4::Label::new(Some(&rendered.group.title));
+        let source = source_header(
+            rendered.group.kind,
+            &rendered.group.title,
+            rendered.group.author.as_deref(),
+        );
+        let title = gtk4::Label::new(Some(source.title));
         title.add_css_class("title-2");
         title.set_xalign(0.0);
         title.set_hexpand(true);
