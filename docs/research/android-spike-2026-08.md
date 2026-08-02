@@ -491,3 +491,90 @@ damit eine Obergrenze, keine Zielgröße.
 Android-Arbeit an Reprise, nicht nur für Fremd-Apps. Wer eine ABI hinzufügt,
 muss `abiFilters` mitziehen — der Build schlägt sonst nicht fehl, die App
 stürzt erst beim Start ab.
+
+## Frage 7 — Wie groß ist die Storage-Abstraktion? (nachgetragen 2026-08-02)
+
+Die Spec sagt an dieser Stelle ausdrücklich **„Nicht geschätzt"** und nennt
+die Frage, an der die Größe hängt: wie viele der Dateisystem-Stellen in
+`reprise-core` müssen wirklich über `LibrarySource`, und wie viele nicht.
+
+Vermessen wurden alle Produktivdateien mit Dateisystem-Zugriff, je Bereich von
+einem Agenten eingeordnet; anschließend hat ein zweiter Durchgang jeden
+**Freispruch** angegriffen — die Richtung ist bewusst so gewählt, weil beim
+Schätzen das Unterzählen der teure Fehler ist.
+
+| Urteil | Stellen |
+| --- | --- |
+| **must-abstract** | 21 behauptet → **27 nach der Gegenprüfung** |
+| nur ein Dateihandle nötig | 6 → 3 |
+| app-eigener Pfad (Cache/Config) | 3 |
+| nur in Tests | 11 |
+
+**6 von 20 Freisprüchen wurden zurückgenommen** — eine Fehlerquote von 30 % in
+genau der Richtung, die zählt. Alle sechs lagen im Tag-Schreiben
+(`scanner_meta.rs`, `tag_edit.rs`, `tag_mutation.rs`, `tag_mutation_guarded.rs`,
+`tag_edit_write.rs`, `trash_tracks.rs`): sie galten als „arbeitet auf einem
+Handle", öffnen die Nutzerdatei aber selbst per Pfad.
+
+### Was das Paket kleiner macht
+
+1. **Das Tag-Schreiben bündelt sich bereits in einer Naht.**
+   `tag_mutation.rs` nennt `apply_tag_patch_to_file` im eigenen Doc-Kommentar
+   „the sole production Lofty tag-save path". Tag-Editor, geschützter Editor
+   und der Batch-Job laufen alle dort hindurch. Da `lofty` laut Spike auf
+   Handles arbeitet, deckt **ein** umgestelltes Modul die gesamte
+   Tag-Schreib-Oberfläche ab.
+2. **Zwei Muster für den Schnitt existieren bereits im Code.**
+   `trash_tracks.rs` nimmt die plattformspezifische Löschung schon als
+   injizierten `Fn(&Path)`-Closure entgegen, und `device_sync/machine.rs` gibt
+   einen `Effect`-Enum aus, den eine Plattformschicht ausführt. Beides sind
+   funktionierende Präzedenzfälle — die Abstraktion muss nicht erfunden,
+   sondern verallgemeinert werden.
+3. **Die echten Caches sind app-privat.** `artist_portrait/cache.rs` und
+   `remote_image` liegen im App-Verzeichnis, für das Android einen echten
+   Dateisystempfad vergibt. SAF greift dort nicht, dort ändert sich nichts.
+4. **Viel weniger Dateien als vermutet fassen überhaupt an.** In `concerts`
+   und `radio` tut es außer `http.rs` keine einzige; in `lyrics` nur 2 von 11;
+   in `queries`/`device_sync` nur 5 von 10 — der Rest manipuliert `PathBuf`
+   als Zeichenkette, was nach der eigenen Regel des Crates keine
+   Dateisystemstelle ist.
+
+### Was das Paket größer macht
+
+1. **`mounts.rs` hat auf Android kein Gegenstück — das ist der teure Befund.**
+   Die Unterscheidung „Laufwerk nicht eingehängt" gegen „Datei gelöscht" steht
+   vollständig auf POSIX-`st_dev` und `lstat` über die Pfad-Vorfahren. Unter
+   SAF gibt es kein `/proc/mounts`, keine stabile Geräte-ID unter einem
+   `content://`-Baum und kein Vorfahren-`lstat`. **Das ist kein
+   Signaturwechsel.** Entweder bekommt Android einen anderen Mechanismus
+   (etwa: ist die Berechtigung für diesen Tree-URI noch erteilt?), oder die
+   Unterscheidung wird dort bewusst aufgegeben.
+   `mounts.rs`, `scanner_mount.rs`, die Identitätsfelder in `scanner.rs` und
+   `relink.rs` bilden dabei **eine zusammenhängende Einheit**, keine
+   unabhängigen Stellen.
+2. **Drei Bereiche haben keine Bündelung.** `walkdir::WalkDir::new(root)` läuft
+   an vier Stellen unabhängig über denselben Bibliotheksbaum (`scanner.rs`,
+   `scanner_progress.rs` für den Fortschrittsbalken, `relink.rs` zweimal).
+   Bei den Podcasts gibt es **keinen** gemeinsamen Weg für „einen geladenen
+   Download abschließen" — drei eigenständige Implementierungen. Und in
+   `lyrics` leiten `local.rs` und `sidecar_write.rs` jeweils selbst
+   `track_path.with_extension("lrc")` ab.
+3. **Die `.exists()`-Prüfungen sind verstreut.** „Ist dieser Track noch da?"
+   steht als Einzeiler in `scanner_vanish.rs`, `scanner_move.rs`, dreimal in
+   `relink.rs` und in `rhythmbox_import.rs` — jeweils trivial, aber ohne
+   gemeinsame Stelle.
+
+### Urteil
+
+**Das Paket ist zweigeteilt, und nur eine Hälfte ist Fleißarbeit.**
+
+Die 27 Stellen zerfallen in rund 20 mechanische — `.exists()`,
+`metadata()`, `walk`, Handle statt Pfad — die über das Trait der Spec
+laufen, sobald es existiert, und die dank der Tag-Naht und der beiden
+vorhandenen Präzedenzfälle weniger Aufwand sind, als ihre Zahl vermuten lässt.
+
+Der Rest ist **ein einziger Entwurf**: der Ersatz für `st_dev`. Er entscheidet,
+ob `MissingReason::Unmounted` auf Android eine Bedeutung hat, und er berührt
+Scanner, Relink und die Mount-Klassifikation gemeinsam. Diese eine Frage sollte
+beantwortet sein, bevor das Paket geschnitten wird — alles andere daran ist
+absehbar.
