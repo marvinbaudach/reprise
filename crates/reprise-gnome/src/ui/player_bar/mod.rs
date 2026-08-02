@@ -7,7 +7,7 @@ pub(in crate::ui) mod player_bar_state;
 mod surface;
 mod waveform_primitives;
 pub(in crate::ui) mod waveform_seek;
-pub(in crate::ui) mod waveform_shape;
+pub(in crate::ui) use reprise_view::waveform as waveform_shape;
 
 #[allow(unused_imports)]
 use super::*;
