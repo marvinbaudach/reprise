@@ -132,7 +132,7 @@ struct BatchServices<'a> {
 impl<'a> BatchServices<'a> {
     fn production(source: &'a dyn crate::library::source::LibrarySource) -> Self {
         Self {
-            local: Arc::new(|path| super::local_hit(path).is_some()),
+            local: Arc::new(move |path| super::local_hit_with_source(source, path).is_some()),
             needs: Arc::new(super::cache::decision),
             online: Arc::new(move |query, path, decision| {
                 super::load_or_fetch_with_cache_decision(source, query, Some(path), decision)

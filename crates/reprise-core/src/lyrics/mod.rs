@@ -25,7 +25,7 @@ pub use batch::{
     run_batch, run_batch_with_source, BatchProgress, BatchRunStatus, BatchState, BatchTrack,
 };
 pub use cache::NeedsFetch;
-pub use local::local_hit;
+pub use local::{local_hit, local_hit_with_source};
 pub use lrc::{active_line_index, parse_lrc};
 pub use lrclib::request_url;
 pub use model::{
