@@ -49,6 +49,10 @@ impl super::source::LibrarySource for ScriptedSource {
         super::source::UnixLibrarySource.residence_token(at)
     }
 
+    fn open_read(&self, at: &std::path::Path) -> std::io::Result<super::source::LibraryReadHandle> {
+        super::source::UnixLibrarySource.open_read(at)
+    }
+
     /// The scanner never lists a directory, so this double is never asked.
     /// Spelled out rather than inherited: the trait has no defaults, so a
     /// source cannot answer "nothing here" to a question nobody taught it.

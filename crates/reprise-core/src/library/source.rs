@@ -4,6 +4,7 @@
 //! temporarily unreachable source. Concrete sources own only the stable token
 //! that makes that comparison meaningful on their platform.
 
+use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -120,6 +121,47 @@ pub trait LibraryWalkVisitor {
     fn visit(&mut self, item: LibraryWalkItem) -> LibraryWalkControl;
 }
 
+trait LibraryReadIo: Read + Seek + Send {}
+
+impl<T> LibraryReadIo for T where T: Read + Seek + Send {}
+
+/// An opaque readable and seekable handle to one library item.
+///
+/// The handle is concrete at the [`LibrarySource`] boundary: neither
+/// `std::fs::File` nor a foreign `dyn Read + Seek` leaks into the source
+/// contract. Sources may back it with a Unix file descriptor, an in-memory
+/// cursor, or another reader with the same measured capabilities.
+///
+/// Seeking is required rather than speculative. Lofty 0.24's
+/// `AudioFile::read_from` consumes `Read + Seek`, while the other current
+/// consumers use only the `Read` half to materialize complete sidecar or image
+/// content. It does foreclose a source that can only stream — a pipe-backed
+/// descriptor, say — which is a real cost, accepted because tag parsing needs
+/// to seek and no consumer can be served without it.
+///
+/// `Send` because [`LibrarySource`] is `Send + Sync` and a handle opened on one
+/// thread will be read on another as soon as an Android source hands out a
+/// descriptor from a Binder callback. Every backing type today already is.
+pub struct LibraryReadHandle(Box<dyn LibraryReadIo>);
+
+impl LibraryReadHandle {
+    pub fn new(reader: impl Read + Seek + Send + 'static) -> Self {
+        Self(Box::new(reader))
+    }
+}
+
+impl Read for LibraryReadHandle {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        self.0.read(buffer)
+    }
+}
+
+impl Seek for LibraryReadHandle {
+    fn seek(&mut self, position: SeekFrom) -> io::Result<u64> {
+        self.0.seek(position)
+    }
+}
+
 struct ClosureWalkVisitor<F>(F);
 
 impl<F> LibraryWalkVisitor for ClosureWalkVisitor<F>
@@ -162,6 +204,18 @@ pub trait LibrarySource: Send + Sync {
     /// Returns the stable residence token of the nearest reachable location at
     /// `at`, or `None` when this source cannot provide one.
     fn residence_token(&self, at: &Path) -> Option<i64>;
+
+    /// Opens `at` for reading without exposing the source's concrete storage
+    /// handle. Failure is explicit: a source that cannot provide readable,
+    /// seekable content must not compile with this contract unanswered.
+    ///
+    /// **An `Err` here is a failure to read, never a statement that the item is
+    /// gone.** That distinction is the whole reason this returns `io::Result`
+    /// where [`Self::probe`] returns `Option`: a revoked permission grant, a
+    /// dropped provider connection or a transient I/O error must not become the
+    /// missing-verdict that a `None` from `probe` licenses. No caller may
+    /// substitute one for the other.
+    fn open_read(&self, at: &Path) -> io::Result<LibraryReadHandle>;
 
     /// Returns the facts this source can establish about `at`.
     ///
@@ -264,49 +318,18 @@ pub trait LibrarySource: Send + Sync {
 pub struct UnixLibrarySource;
 
 #[cfg(test)]
-pub(crate) struct ExistingPathSource {
-    is_file: bool,
-    is_directory: bool,
-}
-
+#[path = "source_test_support.rs"]
+mod test_support;
 #[cfg(test)]
-impl ExistingPathSource {
-    pub(crate) const FILE: Self = Self {
-        is_file: true,
-        is_directory: false,
-    };
-    pub(crate) const DIRECTORY: Self = Self {
-        is_file: false,
-        is_directory: true,
-    };
-}
-
-#[cfg(test)]
-impl LibrarySource for ExistingPathSource {
-    fn residence_token(&self, _at: &Path) -> Option<i64> {
-        None
-    }
-
-    fn probe(&self, _at: &Path, _links: LibraryLinkMode) -> Option<LibraryPathMetadata> {
-        Some(LibraryPathMetadata {
-            is_file: self.is_file,
-            is_directory: self.is_directory,
-            size: None,
-            modified: None,
-            identity: None,
-        })
-    }
-
-    fn read_directory(&self, _directory: &Path) -> Option<Vec<LibraryDirectoryEntry>> {
-        Some(Vec::new())
-    }
-
-    fn walk(&self, _root: &Path, _order: LibraryWalkOrder, _visitor: &mut dyn LibraryWalkVisitor) {}
-}
+pub(crate) use test_support::ExistingPathSource;
 
 impl LibrarySource for UnixLibrarySource {
     fn residence_token(&self, at: &Path) -> Option<i64> {
         nearest_existing_ancestor_dev(at).map(|device| device as i64)
+    }
+
+    fn open_read(&self, at: &Path) -> io::Result<LibraryReadHandle> {
+        std::fs::File::open(at).map(LibraryReadHandle::new)
     }
 
     fn probe(&self, at: &Path, links: LibraryLinkMode) -> Option<LibraryPathMetadata> {
@@ -445,12 +468,13 @@ pub(crate) fn nearest_existing_ancestor_dev(path: &Path) -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
+    use std::io::{Read, Seek, SeekFrom};
     use std::os::unix::fs::MetadataExt;
     use std::path::Path;
 
     use super::{
-        LibraryDirectoryEntry, LibraryLinkMode, LibraryPathMetadata, LibrarySource,
-        LibraryWalkControl, LibraryWalkItem, LibraryWalkOrder, LibraryWalkVisitor,
+        LibraryDirectoryEntry, LibraryLinkMode, LibraryPathMetadata, LibraryReadHandle,
+        LibrarySource, LibraryWalkControl, LibraryWalkItem, LibraryWalkOrder, LibraryWalkVisitor,
         UnixLibrarySource,
     };
     use crate::models::MissingReason;
@@ -518,6 +542,23 @@ mod tests {
         );
     }
 
+    #[test]
+    fn unix_source_opens_library_content_as_a_seekable_reader() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("track.flac");
+        std::fs::write(&path, b"library bytes").unwrap();
+
+        let mut handle = UnixLibrarySource.open_read(&path).unwrap();
+        let mut content = String::new();
+        handle.read_to_string(&mut content).unwrap();
+        assert_eq!(content, "library bytes");
+
+        handle.seek(SeekFrom::Start(8)).unwrap();
+        let mut tail = String::new();
+        handle.read_to_string(&mut tail).unwrap();
+        assert_eq!(tail, "bytes");
+    }
+
     /// A source whose residence token is a DocumentsProvider tree id rather
     /// than an `st_dev`, touching no filesystem at all. It exists to prove the
     /// classification in [`LibrarySource::reachability`] is a comparison of
@@ -530,6 +571,13 @@ mod tests {
     impl LibrarySource for DocumentTreeSource {
         fn residence_token(&self, _at: &Path) -> Option<i64> {
             self.provider_tree_id?.strip_prefix("tree-")?.parse().ok()
+        }
+
+        fn open_read(&self, _at: &Path) -> std::io::Result<LibraryReadHandle> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "residence-only test source has no content tree",
+            ))
         }
 
         /// Unused by this double's tests. Made explicit rather than inherited:
@@ -625,6 +673,13 @@ mod tests {
     impl LibrarySource for DocumentTreeTraversalSource {
         fn residence_token(&self, _at: &Path) -> Option<i64> {
             Some(41)
+        }
+
+        fn open_read(&self, _at: &Path) -> std::io::Result<LibraryReadHandle> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "traversal-only test source carries names, not content",
+            ))
         }
 
         /// Unused by this double's tests. Made explicit rather than inherited:
