@@ -3,8 +3,9 @@
 /// apart — in particular every row backfilled by the v10 migration itself
 /// (see `db::SCHEMA_V10`'s doc comment, which predates the `device` column
 /// this enum's classifier needs) and any row whose `device` was never
-/// recorded. Task 1.5's `library::mounts::classify_missing` is the real
-/// classifier both `queries::mark_track_missing` and the scanner's folded-in
+/// recorded. Task 1.5's classifier now lives on the library source itself —
+/// `library::source::LibrarySource::reachability` — which both
+/// `queries::mark_track_missing_if_current` and the scanner's folded-in
 /// mark-vanished phase (`library::scanner::scan_folder`) call for every row
 /// that DOES have a recorded device; nothing downstream may treat an
 /// `Unknown`-reason row as safely auto-removable without re-verifying the

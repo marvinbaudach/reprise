@@ -174,8 +174,8 @@ pub fn scan_folder_with_progress(
 /// finds zero audio files, indistinguishable at a glance from a genuinely
 /// emptied folder. Marking every track under it "unmounted" would still make
 /// the whole library look empty in the UI the moment that scan lands (see
-/// this module's `library::mounts::classify_missing`'s own doc comment for
-/// why `Unmounted` vs `Deleted` matters — this guard is about whether ANY
+/// the `library::source::LibrarySource::reachability` contract for why
+/// `Unmounted` vs `Deleted` matters — this guard is about whether ANY
 /// marking should happen at all, not which reason to use once it does). So,
 /// only once the walk found zero audio files AND at least one NOT-YET-
 /// TOMBSTONED track (`removed_at IS NULL` — present or already-missing
@@ -239,8 +239,8 @@ fn scan_folder_inner(
     debug_assert!(
         root.is_absolute(),
         "scan roots must be absolute paths — library roots (GTK folder chooser, \
-         persisted settings) are always absolute in this codebase, and mounts::\
-         nearest_existing_ancestor_dev's walk-to-`/` guarantee assumes it"
+         persisted settings) are always absolute in this codebase, and the Unix \
+         library source's ancestor walk-to-`/` guarantee assumes it"
     );
     if !root.exists() {
         // Root-Guard case (a): no walk, no database write at all — see this
@@ -584,7 +584,7 @@ fn scan_folder_inner(
         None
     };
     let root_unavailable = guard_evidence.as_ref().is_some_and(|evidence| {
-        !evidence.is_empty() && !vanish::any_candidate_confirms_root_device(evidence, root)
+        !evidence.is_empty() && !vanish::any_candidate_confirms_root_residence(evidence, root)
     });
 
     let outcome = if root_unavailable {
