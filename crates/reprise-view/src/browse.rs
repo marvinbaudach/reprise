@@ -6,11 +6,16 @@
 use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
 
-pub(in crate::ui) fn filters_restrict(
-    search: &str,
-    browse: &BrowseFilter,
-    exclude_ai: bool,
-) -> bool {
+/// P1a's shared browse boundary must remain safe to move between frontend
+/// threads and must never acquire an `Rc` or another thread-local dependency.
+const _: () = {
+    const fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<BrowseFilter>();
+    assert_send_sync::<ViewSource>();
+    assert_send_sync::<String>();
+};
+
+pub fn filters_restrict(search: &str, browse: &BrowseFilter, exclude_ai: bool) -> bool {
     !search.trim().is_empty() || !browse.is_empty() || exclude_ai
 }
 
@@ -18,7 +23,7 @@ pub(in crate::ui) fn filters_restrict(
 /// that therefore has no sidebar row naming it. Only these carry a place pill:
 /// everywhere else the sidebar selection *is* the location display, and a pill
 /// would be a second one (docs/ux-rules.md K, FIL-1c).
-pub(in crate::ui) fn has_place_pill(source: &ViewSource) -> bool {
+pub fn has_place_pill(source: &ViewSource) -> bool {
     matches!(
         source,
         ViewSource::Artist(_) | ViewSource::Album { .. } | ViewSource::Genre(_)
@@ -28,13 +33,13 @@ pub(in crate::ui) fn has_place_pill(source: &ViewSource) -> bool {
 /// A place is not a restriction: only search, facets and the AI-exclude filter
 /// withhold rows the location would otherwise show. Kept as its own name
 /// because callers read better with the intent than with `filters_restrict`.
-pub(in crate::ui) fn is_restricted(search: &str, browse: &BrowseFilter, exclude_ai: bool) -> bool {
+pub fn is_restricted(search: &str, browse: &BrowseFilter, exclude_ai: bool) -> bool {
     filters_restrict(search, browse, exclude_ai)
 }
 
 /// The bare name of the place, undecorated — the caller adds the pill's back
 /// affordance, and `library_shell::scope_title` reuses it for the window title.
-pub(in crate::ui) fn place_pill_label(source: &ViewSource) -> Option<String> {
+pub fn place_pill_label(source: &ViewSource) -> Option<String> {
     match source {
         ViewSource::Artist(artist) => Some(artist.clone()),
         ViewSource::Genre(genre) => Some(genre.clone()),
@@ -50,14 +55,14 @@ pub(in crate::ui) fn place_pill_label(source: &ViewSource) -> Option<String> {
     }
 }
 
-pub(in crate::ui) fn is_track_source(source: &ViewSource) -> bool {
+pub fn is_track_source(source: &ViewSource) -> bool {
     !matches!(
         source,
         ViewSource::ImportErrors | ViewSource::MyStats | ViewSource::Conversions
     )
 }
 
-pub(in crate::ui) fn row_visible(
+pub fn row_visible(
     is_track_source: bool,
     restricted: bool,
     has_place_pill: bool,
