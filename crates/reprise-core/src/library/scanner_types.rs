@@ -88,7 +88,13 @@ pub enum ScanProgress {
     Discovering,
     Scanning {
         processed: u64,
-        total: u64,
+        /// How many audio files this scan expects to visit, or `None` when no
+        /// estimate exists — a first scan has no previous catalog to size
+        /// itself against, and no source is asked to walk the tree twice just
+        /// to produce a denominator. A surface must render `None` as
+        /// indeterminate progress; it may never substitute `processed` for it,
+        /// which would show a full bar for an entire first import.
+        total: Option<u64>,
         current_path: std::path::PathBuf,
     },
     Fetching {

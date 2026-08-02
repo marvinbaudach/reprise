@@ -303,8 +303,13 @@ fn log_progress(progress: &ScanProgress, phase_changed: bool) {
 fn progress_tooltip(progress: &ScanProgress) -> String {
     match progress {
         ScanProgress::Discovering => strings::scan_tooltip_discovering(),
+        // Without an estimate there is no percentage to put in the tooltip
+        // either — the same discovery wording the bar itself falls back to.
+        ScanProgress::Scanning { total: None, .. } => strings::scan_tooltip_discovering(),
         ScanProgress::Scanning {
-            processed, total, ..
+            processed,
+            total: Some(total),
+            ..
         } => strings::scan_tooltip_progress(progress_percent(*processed, *total)),
         ScanProgress::Fetching { done, total } => {
             strings::scan_tooltip_progress(progress_percent(*done, *total))

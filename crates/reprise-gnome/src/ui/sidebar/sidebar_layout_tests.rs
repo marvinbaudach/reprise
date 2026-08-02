@@ -30,7 +30,7 @@ fn fb_8_progress_region_reaches_split_view_bottom() {
     let scanner = ScanProgressView::new();
     scanner.show(&ScanProgress::Scanning {
         processed: 1,
-        total: 2,
+        total: Some(2),
         current_path: "sine.flac".into(),
     });
     sidebar.append_scan_card(scanner.widget());
