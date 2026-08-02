@@ -3965,7 +3965,11 @@ listening statistics.
   and collapsed Details; a successful refresh removes it silently. When no
   cached or downloaded episode exists, the same information and actions use
   the shared full-area failure state instead. Neither surface renders raw
-  provider, transport, database or helper text outside Details.
+  provider, transport, database or helper text outside Details. The populated
+  banner keeps its copy, actions, Details toggle and labelled close control in
+  one compact summary row; only the technical Details expand below it. Closing
+  the banner clears the current failure notice without claiming that a refresh
+  succeeded, and a later provider failure may appear as a new notice.
 - **POD-20** [active] [gtk] — The loaded episode carries the shared
   playback marker in every episode surface it appears in, and that marker
   tells running from paused. Activating the loaded row toggles pause and

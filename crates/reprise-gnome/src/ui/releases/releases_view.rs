@@ -541,6 +541,7 @@ fn render_current_failure(shared: &Rc<Shared>) {
     );
     let occurred_at = shared.failure_occurred_at.borrow().clone();
     let weak = Rc::downgrade(shared);
+    let dismiss_weak = weak.clone();
     let on_action = move |action| {
         let Some(shared) = weak.upgrade() else {
             return;
@@ -549,11 +550,23 @@ fn render_current_failure(shared: &Rc<Shared>) {
             request_fetch(&shared);
         }
     };
+    let on_dismiss = move || {
+        let Some(shared) = dismiss_weak.upgrade() else {
+            return;
+        };
+        shared.fetch_failure.replace(None);
+        shared.error_banner.hide();
+    };
     match presentation.surface {
         FailureSurface::Banner => {
-            shared
-                .error_banner
-                .show(&presentation, &support, &error, &occurred_at, on_action);
+            shared.error_banner.show(
+                &presentation,
+                &support,
+                &error,
+                &occurred_at,
+                on_action,
+                on_dismiss,
+            );
         }
         FailureSurface::FullArea => {
             shared.error_banner.hide();
