@@ -1,8 +1,8 @@
 ---
 slug: p1a-welle2-lyrics
-worktree:
-branch:
-phase: planned
+worktree: /home/marvin/Projects/reprise-p1a-welle2-lyrics
+branch: feature/p1a-welle2-lyrics
+phase: refactored
 codex_session:
 created: 2026-08-02
 ---

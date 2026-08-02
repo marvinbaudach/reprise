@@ -1,4 +1,12 @@
 //! Argument-free labels for the Lyrics surface.
+//!
+//! There is deliberately no unit test pinning these literals. A test that
+//! asserts `LYRICS == "Lyrics"` next to `LYRICS = N_!("Lyrics")` compares a
+//! constant with a copy of itself two lines below and fails only when someone
+//! edits one of the two — it cannot catch what actually matters here, which is
+//! a msgid drifting away from the translated catalogs. That is what
+//! `scripts/tests/gettext-catalogs.sh` checks, against the real `po/*.po`
+//! files, for all seven locales.
 
 pub use super::scan::RETRY;
 
@@ -19,54 +27,3 @@ pub const LYRICS_TAGS: &str = N_!("lyrics · tags");
 pub const ONLINE_LYRICS_DISABLED: &str = N_!("Online lyrics are disabled");
 pub const ENABLE_LYRICS_DESCRIPTION: &str = N_!("Enable them to load missing lyrics automatically");
 pub const ENABLE_IN_SETTINGS: &str = N_!("Enable in Settings");
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn lyrics_labels_preserve_the_existing_catalog_msgids() {
-        assert_eq!(
-            [
-                LYRICS,
-                PLAY_TO_SEE_LYRICS,
-                LOADING_LYRICS,
-                INSTRUMENTAL,
-                NO_LYRICS_FOUND,
-                LYRICS_UNAVAILABLE,
-                RETRY,
-                SYNCED_TAGS,
-                SYNCED_SIDECAR,
-                LYRICS_SIDECAR,
-                SYNCED_LRCLIB,
-                LYRICS_LRCLIB,
-                SYNCED_NETEASE,
-                LYRICS_NETEASE,
-                LYRICS_TAGS,
-                ONLINE_LYRICS_DISABLED,
-                ENABLE_LYRICS_DESCRIPTION,
-                ENABLE_IN_SETTINGS,
-            ],
-            [
-                "Lyrics",
-                "Play a track to see its lyrics",
-                "Loading lyrics…",
-                "Instrumental",
-                "No lyrics found",
-                "Could not load lyrics",
-                "Retry",
-                "synced · tags",
-                "synced · .lrc",
-                "lyrics · .lrc",
-                "synced · LRCLIB",
-                "lyrics · LRCLIB",
-                "synced · NetEase",
-                "lyrics · NetEase",
-                "lyrics · tags",
-                "Online lyrics are disabled",
-                "Enable them to load missing lyrics automatically",
-                "Enable in Settings",
-            ]
-        );
-    }
-}
