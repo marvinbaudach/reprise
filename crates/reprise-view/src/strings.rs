@@ -36,5 +36,6 @@ macro_rules! N_ {
     };
 }
 
+pub mod lyrics;
 pub mod playlists;
 pub mod scan;

@@ -5,28 +5,36 @@ use std::path::PathBuf;
 use reprise_core::lyrics::{active_line_index, LyricsBody, LyricsHit, LyricsQuery};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(in crate::ui) struct LyricsTrack {
-    pub(in crate::ui) query: LyricsQuery,
-    pub(in crate::ui) track_path: Option<PathBuf>,
+pub struct LyricsTrack {
+    pub query: LyricsQuery,
+    pub track_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(in crate::ui) struct RequestIntent {
-    pub(in crate::ui) generation: u64,
-    pub(in crate::ui) track: LyricsTrack,
-    pub(in crate::ui) force: bool,
+pub struct RequestIntent {
+    pub generation: u64,
+    pub track: LyricsTrack,
+    pub force: bool,
 }
 
 #[derive(Debug, Default)]
-pub(in crate::ui) struct LyricsState {
+pub struct LyricsState {
     generation: u64,
     track: Option<LyricsTrack>,
     hit: Option<LyricsHit>,
     active_line: Option<usize>,
 }
 
+/// P1a's binding rule: no shared view state may hold a closure, because
+/// UniFFI cannot carry one across an FFI boundary. `Rc<dyn Fn>` is neither
+/// `Send` nor `Sync`, so this permanent guard rejects such a regression.
+const _: () = {
+    const fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<LyricsState>();
+};
+
 impl LyricsState {
-    pub(in crate::ui) fn set_track(&mut self, track: Option<LyricsTrack>) -> Option<RequestIntent> {
+    pub fn set_track(&mut self, track: Option<LyricsTrack>) -> Option<RequestIntent> {
         if self.track == track {
             return None;
         }
@@ -41,7 +49,7 @@ impl LyricsState {
         })
     }
 
-    pub(in crate::ui) fn retry(&mut self) -> Option<RequestIntent> {
+    pub fn retry(&mut self) -> Option<RequestIntent> {
         let track = self.track.clone()?;
         self.generation = self.generation.wrapping_add(1);
         self.hit = None;
@@ -53,7 +61,7 @@ impl LyricsState {
         })
     }
 
-    pub(in crate::ui) fn request_missing(&mut self) -> Option<RequestIntent> {
+    pub fn request_missing(&mut self) -> Option<RequestIntent> {
         if self.hit.is_some() {
             return None;
         }
@@ -66,7 +74,7 @@ impl LyricsState {
         })
     }
 
-    pub(in crate::ui) fn request_upgrade(&mut self, force: bool) -> Option<RequestIntent> {
+    pub fn request_upgrade(&mut self, force: bool) -> Option<RequestIntent> {
         let track = self.track.clone()?;
         self.generation = self.generation.wrapping_add(1);
         Some(RequestIntent {
@@ -76,16 +84,16 @@ impl LyricsState {
         })
     }
 
-    pub(in crate::ui) fn accepts(&self, generation: u64) -> bool {
+    pub fn accepts(&self, generation: u64) -> bool {
         self.track.is_some() && self.generation == generation
     }
 
-    pub(in crate::ui) fn set_hit(&mut self, hit: LyricsHit) {
+    pub fn set_hit(&mut self, hit: LyricsHit) {
         self.hit = Some(hit);
         self.active_line = None;
     }
 
-    pub(in crate::ui) fn update_position(&mut self, position_ms: i64) -> Option<Option<usize>> {
+    pub fn update_position(&mut self, position_ms: i64) -> Option<Option<usize>> {
         let next = match self.body() {
             Some(LyricsBody::Synced(lines)) => active_line_index(lines, position_ms),
             Some(LyricsBody::Plain(_) | LyricsBody::Instrumental) | None => None,
@@ -97,23 +105,23 @@ impl LyricsState {
         Some(next)
     }
 
-    pub(in crate::ui) fn query(&self) -> Option<&LyricsQuery> {
+    pub fn query(&self) -> Option<&LyricsQuery> {
         self.track.as_ref().map(|track| &track.query)
     }
 
-    pub(in crate::ui) fn body(&self) -> Option<&LyricsBody> {
+    pub fn body(&self) -> Option<&LyricsBody> {
         self.hit.as_ref().map(|hit| &hit.body)
     }
 
-    pub(in crate::ui) fn hit(&self) -> Option<&LyricsHit> {
+    pub fn hit(&self) -> Option<&LyricsHit> {
         self.hit.as_ref()
     }
 
-    pub(in crate::ui) fn active_line(&self) -> Option<usize> {
+    pub fn active_line(&self) -> Option<usize> {
         self.active_line
     }
 
-    pub(in crate::ui) fn active_line_timestamp_ms(&self) -> Option<i64> {
+    pub fn active_line_timestamp_ms(&self) -> Option<i64> {
         let LyricsBody::Synced(lines) = self.body()? else {
             return None;
         };
@@ -122,7 +130,7 @@ impl LyricsState {
             .map(|line| line.start_ms)
     }
 
-    pub(in crate::ui) fn next_line_timestamp_ms(&self, position_ms: i64) -> Option<i64> {
+    pub fn next_line_timestamp_ms(&self, position_ms: i64) -> Option<i64> {
         let LyricsBody::Synced(lines) = self.body()? else {
             return None;
         };
@@ -135,6 +143,8 @@ impl LyricsState {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use reprise_core::lyrics::{LyricsBody, LyricsHit, LyricsQuery, LyricsSource, TimedLine};
 
     use super::*;
