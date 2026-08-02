@@ -647,7 +647,18 @@ Dreiteilung `Deleted` / `Unmounted` / `Unknown`.
 
 **Gewonnene Zuführungsform: ein `&dyn LibrarySource`-Parameter.** Die heutigen
 öffentlichen Scan- und Query-Grenzen behalten schmale Unix-Vorgaben, die den
-Parameter an die drei betroffenen Helfer reichen. Ein Closure hätte die
+Parameter an die drei betroffenen Helfer reichen.
+
+**Damit ist die Naht gelegt, aber noch nicht angeschlossen.** `UnixLibrarySource`
+steht fest verdrahtet in drei Vorgabe-Wrappern (`mark_vanished`,
+`any_candidate_confirms_root_residence`, `mark_track_missing_if_current`). Die
+Wahl der Quelle wird also weiterhin *innerhalb* von `reprise-core` getroffen,
+nicht an dessen Rand. Für Paket 1 ist das Absicht — die öffentliche Scan- und
+Query-API bliebe sonst nicht stabil, und der erste Schnitt wäre nicht mehr
+isoliert prüfbar. Aber eine SAF-Quelle kann heute an keiner Produktionsstelle
+eingesetzt werden, nur im Test. Das Hochziehen dieser Wahl an die Crate-Grenze
+ist offene Arbeit und gehört in dasselbe Paket, das die erste echte SAF-Quelle
+mitbringt. Ein Closure hätte die
 zusammengehörigen Operationen `residence_token` und `reachability` wieder
 auseinandergerissen; ein `Effect`-Enum hätte für drei synchrone Abfragen die
 Scanner-Transaktion und die Query unnötig in einen Plattform-Rundlauf zerlegt.

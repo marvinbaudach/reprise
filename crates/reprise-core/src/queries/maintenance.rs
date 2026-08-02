@@ -334,8 +334,8 @@ pub fn query_sync_tracks(db: &Db, ids: &[i64]) -> Result<Vec<SyncTrack>, rusqlit
 ///
 /// Task 1.2: this is the playback-fault call site `Track::is_missing`'s doc
 /// comment refers to. Task 1.5 swapped the blanket `MissingReason::Unknown`
-/// this used to always write for a real verdict from `library::mounts::
-/// classify_missing`, the same classifier the scanner's own folded-in
+/// this used to always write for a real verdict from
+/// [`LibrarySource::reachability`], the same classifier the scanner's own folded-in
 /// mark-vanished phase (`library::scanner::scan_folder`) uses — one `SELECT`
 /// of the row's `path`/`device` first. The expected path is the identity
 /// snapshot taken before the asynchronous backend fault arrived. Both the
@@ -351,6 +351,10 @@ pub fn mark_track_missing_if_current(
     mark_track_missing_if_current_with(&UnixLibrarySource, db, track_id, expected_path)
 }
 
+/// [`mark_track_missing_if_current`] with the library source injected.
+/// Production passes [`UnixLibrarySource`]; the seam exists so a non-POSIX
+/// source can be classified against without a real filesystem, and so an
+/// Android SAF source can be handed in here once one exists.
 fn mark_track_missing_if_current_with(
     source: &dyn LibrarySource,
     db: &Db,
@@ -372,7 +376,7 @@ fn mark_track_missing_if_current_with(
     if Path::new(&path).is_file() {
         return Ok(false);
     }
-    let reason = crate::library::mounts::classify_missing(source, device, Path::new(&path));
+    let reason = source.reachability(Path::new(&path), device);
     let changed = conn.execute(
         &format!(
             "UPDATE tracks SET missing_since=strftime('%s','now'),missing_reason=?3 \

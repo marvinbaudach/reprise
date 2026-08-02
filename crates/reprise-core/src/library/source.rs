@@ -18,7 +18,31 @@ pub trait LibrarySource: Send + Sync {
     /// `at`, or `None` when this source cannot provide one.
     fn residence_token(&self, at: &Path) -> Option<i64>;
 
-    /// Classifies an already-missing item using its token from the last scan.
+    /// Classifies why an item already known to be missing at `at` is missing,
+    /// given the residence token recorded for it at scan time (`tracks.device`,
+    /// `None` for a row that predates schema v2 or whose residence lookup
+    /// failed on the last scan — see `library::scanner::file_stat`'s doc
+    /// comment).
+    ///
+    /// - `stored` is `None` → there is nothing to compare against. `Unknown`
+    ///   (see `MissingReason`'s own doc comment for why this must stay
+    ///   `Unknown` rather than defaulting to either concrete reason: nothing
+    ///   downstream may treat such a row as safely auto-removable without
+    ///   re-verifying the item first).
+    /// - The item's location reports the same token it was last seen under →
+    ///   the source it lived on is present and reachable, and the item simply
+    ///   isn't there anymore. `Deleted`.
+    /// - It reports a *different* token → we are looking at a different source
+    ///   than the one recorded for this item, which means the original one is
+    ///   currently absent. `Unmounted`.
+    /// - This source can supply no token at all → no evidence either way.
+    ///   `Unknown`. Two unknowns are never evidence of each other.
+    ///
+    /// The token is `i64` because SQLite has no other integer type; it matches
+    /// `Track::device` and `scanner::file_stat`'s storage cast.
+    /// [`UnixLibrarySource`] round-trips exactly the `st_dev` bit pattern that
+    /// cast away from `u64` on the way in, so this stays the same comparison
+    /// Linux made before the trait existed.
     fn reachability(&self, at: &Path, stored: Option<i64>) -> MissingReason {
         let Some(stored) = stored else {
             return MissingReason::Unknown;
@@ -99,18 +123,107 @@ pub(crate) fn nearest_existing_ancestor_dev(path: &Path) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use std::os::unix::fs::MetadataExt;
+    use std::path::Path;
 
     use super::{LibrarySource, UnixLibrarySource};
+    use crate::models::MissingReason;
+
+    fn dev_of(path: &Path) -> u64 {
+        std::fs::symlink_metadata(path).unwrap().dev()
+    }
 
     #[test]
     fn unix_source_uses_the_nearest_existing_ancestor_residence_token() {
         let dir = tempfile::tempdir().unwrap();
-        let expected = std::fs::symlink_metadata(dir.path()).unwrap().dev() as i64;
+        let expected = dev_of(dir.path()) as i64;
         let missing_track = dir.path().join("missing/track.flac");
 
         assert_eq!(
             UnixLibrarySource.residence_token(&missing_track),
             Some(expected)
+        );
+    }
+
+    /// The file's real device recorded: its directory still exists and still
+    /// belongs to the same device, so the only honest conclusion is that the
+    /// file itself was deleted.
+    #[test]
+    fn unix_source_reports_deleted_when_the_device_matches() {
+        let dir = tempfile::tempdir().unwrap();
+        let real_dev = dev_of(dir.path());
+        let gone_path = dir.path().join("gone.flac");
+
+        assert_eq!(
+            UnixLibrarySource.reachability(&gone_path, Some(real_dev as i64)),
+            MissingReason::Deleted
+        );
+    }
+
+    /// A stored device that doesn't match anything on this filesystem
+    /// fabricates exactly the situation an unmounted drive produces: the
+    /// nearest existing ancestor belongs to a different device than the one
+    /// recorded. `real_dev + 99_999` is never going to collide with a real
+    /// `st_dev` in a test environment, so this is deterministic without
+    /// mounting or unmounting anything.
+    #[test]
+    fn unix_source_reports_unmounted_when_the_device_differs() {
+        let dir = tempfile::tempdir().unwrap();
+        let real_dev = dev_of(dir.path());
+        let gone_path = dir.path().join("gone.flac");
+
+        assert_eq!(
+            UnixLibrarySource.reachability(&gone_path, Some(real_dev as i64 + 99_999)),
+            MissingReason::Unmounted
+        );
+    }
+
+    /// No recorded device (schema-v1 row, or a `stat` that failed on last
+    /// scan) means there is no basis for a verdict at all — `Unknown`, never
+    /// a guessed concrete reason.
+    #[test]
+    fn unix_source_reports_unknown_when_no_device_was_recorded() {
+        let dir = tempfile::tempdir().unwrap();
+        let gone_path = dir.path().join("gone.flac");
+
+        assert_eq!(
+            UnixLibrarySource.reachability(&gone_path, None),
+            MissingReason::Unknown
+        );
+    }
+
+    /// A source whose residence token is a DocumentsProvider tree id rather
+    /// than an `st_dev`, touching no filesystem at all. It exists to prove the
+    /// classification in [`LibrarySource::reachability`] is a comparison of
+    /// opaque tokens and carries no POSIX assumption — the property the
+    /// Android SAF source will depend on.
+    struct DocumentTreeSource {
+        provider_tree_id: Option<&'static str>,
+    }
+
+    impl LibrarySource for DocumentTreeSource {
+        fn residence_token(&self, _at: &Path) -> Option<i64> {
+            self.provider_tree_id?.strip_prefix("tree-")?.parse().ok()
+        }
+    }
+
+    #[test]
+    fn a_non_posix_token_yields_the_same_triad() {
+        let at = Path::new("content:/music/album/track.flac");
+        let under = |tree| DocumentTreeSource {
+            provider_tree_id: tree,
+        };
+
+        assert_eq!(
+            under(Some("tree-41")).reachability(at, Some(41)),
+            MissingReason::Deleted
+        );
+        assert_eq!(
+            under(Some("tree-73")).reachability(at, Some(41)),
+            MissingReason::Unmounted
+        );
+        assert_eq!(
+            under(None).reachability(at, Some(41)),
+            MissingReason::Unknown
         );
     }
 }

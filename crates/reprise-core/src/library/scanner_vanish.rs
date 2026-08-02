@@ -64,7 +64,8 @@ fn candidates_under_root(
 
 /// Candidate rows the mark phase must consider: every currently-present
 /// (`PRESENT`) track whose recorded `path` is under `root`, paired with its
-/// recorded `device` (`classify_missing`'s second input). `PRESENT` is the
+/// recorded `device` (the residence token
+/// [`LibrarySource::reachability`] compares against). `PRESENT` is the
 /// correct — and only correct — filter here: the mark phase only ever wants
 /// to *newly* flag a row that isn't already flagged, exactly like the
 /// pre-fold `mark_vanished_under_root` this replaces. See
@@ -122,6 +123,8 @@ pub(super) fn any_candidate_confirms_root_residence(
     any_candidate_confirms_root_with(&UnixLibrarySource, candidates, root)
 }
 
+/// [`any_candidate_confirms_root_residence`] with the library source
+/// injected — see [`mark_vanished_with`] for why the seam is here.
 fn any_candidate_confirms_root_with(
     source: &dyn LibrarySource,
     candidates: &[(i64, String, Option<i64>)],
@@ -134,8 +137,9 @@ fn any_candidate_confirms_root_with(
 }
 
 /// The mark phase itself: for every `candidates` row whose file no longer
-/// exists on disk, sets `missing_since`/`missing_reason` (via `mounts::
-/// classify_missing`) and returns the count newly marked. A row that's still
+/// exists on disk, sets `missing_since`/`missing_reason` (via
+/// [`LibrarySource::reachability`]) and returns the count newly marked. A row
+/// that's still
 /// on disk (e.g. the walk's own move-detection just relocated a different
 /// row onto this path, or the file genuinely never left) is left untouched
 /// — this is the same per-row `path.exists()` check `mark_vanished_under_
@@ -148,6 +152,10 @@ pub(super) fn mark_vanished(
     mark_vanished_with(&UnixLibrarySource, tx, candidates)
 }
 
+/// [`mark_vanished`] with the library source injected. Production passes
+/// [`UnixLibrarySource`]; the seam exists so a non-POSIX source can be
+/// classified against without a real filesystem, and so an Android SAF source
+/// can be handed in here once one exists.
 fn mark_vanished_with(
     source: &dyn LibrarySource,
     tx: &rusqlite::Transaction,
@@ -159,7 +167,7 @@ fn mark_vanished_with(
         if path.exists() {
             continue;
         }
-        let reason = mounts::classify_missing(source, device, path);
+        let reason = source.reachability(path, device);
         tx.execute(
             "UPDATE tracks SET missing_since = ?2, missing_reason = ?3 WHERE id = ?1",
             rusqlite::params![id, now_unix(), reason.as_str()],
