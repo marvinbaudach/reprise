@@ -1,5 +1,8 @@
 use std::borrow::Cow;
+use std::collections::HashMap;
+use std::io::Cursor;
 use std::path::Path;
+use std::path::PathBuf;
 
 use lofty::config::WriteOptions;
 use lofty::id3::v2::{
@@ -36,6 +39,76 @@ fn local_provider() -> LocalProvider<'static> {
     LocalProvider {
         source: &crate::library::source::UnixLibrarySource,
     }
+}
+
+struct VecLibrarySource {
+    track: PathBuf,
+    content: HashMap<PathBuf, Vec<u8>>,
+}
+
+impl crate::library::source::LibrarySource for VecLibrarySource {
+    fn residence_token(&self, _at: &Path) -> Option<i64> {
+        None
+    }
+
+    fn open_read(&self, at: &Path) -> std::io::Result<crate::library::source::LibraryReadHandle> {
+        let bytes = self
+            .content
+            .get(at)
+            .cloned()
+            .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::NotFound))?;
+        Ok(crate::library::source::LibraryReadHandle::new(Cursor::new(
+            bytes,
+        )))
+    }
+
+    fn probe(
+        &self,
+        at: &Path,
+        _links: crate::library::source::LibraryLinkMode,
+    ) -> Option<crate::library::source::LibraryPathMetadata> {
+        (at == self.track).then_some(crate::library::source::LibraryPathMetadata {
+            is_file: true,
+            is_directory: false,
+            size: None,
+            modified: None,
+            identity: None,
+        })
+    }
+
+    fn read_directory(
+        &self,
+        _directory: &Path,
+    ) -> Option<Vec<crate::library::source::LibraryDirectoryEntry>> {
+        None
+    }
+
+    fn walk(
+        &self,
+        _root: &Path,
+        _order: crate::library::source::LibraryWalkOrder,
+        _visitor: &mut dyn crate::library::source::LibraryWalkVisitor,
+    ) {
+    }
+}
+
+#[test]
+fn sidecar_content_can_come_from_a_vec_backed_library_source() {
+    let track = PathBuf::from("content:/music/song.flac");
+    let sidecar = track.with_extension("lrc");
+    let source = VecLibrarySource {
+        track: track.clone(),
+        content: HashMap::from([(sidecar, b"[00:01.25]memory line".to_vec())]),
+    };
+    let provider = LocalProvider { source: &source };
+
+    assert_eq!(
+        hit(provider.lookup(&query(), Some(&track))),
+        (
+            LyricsBody::Synced(vec![TimedLine::new(1_250, "memory line")]),
+            LyricsSource::Sidecar,
+        )
+    );
 }
 
 #[test]

@@ -218,7 +218,14 @@ pub fn write_ai_tags(path: &Path, tags: &AiTagSet) -> Result<(), ProvenanceTagEr
 /// (Beschluss 13): a non-FLAC or unreadable file simply yields `None` — Reprise
 /// only ever writes these tags to FLAC, so nothing else can carry them.
 pub fn read_ai_tags(path: &Path) -> Option<AiTagSet> {
-    let mut reader = std::fs::File::open(path).ok()?;
+    read_ai_tags_with_source(&crate::library::source::UnixLibrarySource, path)
+}
+
+pub fn read_ai_tags_with_source(
+    source: &dyn crate::library::source::LibrarySource,
+    path: &Path,
+) -> Option<AiTagSet> {
+    let mut reader = source.open_read(path).ok()?;
     let flac = FlacFile::read_from(&mut reader, ParseOptions::new()).ok()?;
     let comments = flac.vorbis_comments()?;
     let kind = comments.get(TAG_AI)?.to_string();
@@ -244,12 +251,29 @@ pub fn reconstruct_provenance(
     path: &Path,
     now: i64,
 ) -> Result<bool, rusqlite::Error> {
+    reconstruct_provenance_with_source(
+        db,
+        &crate::library::source::UnixLibrarySource,
+        track_id,
+        path,
+        now,
+    )
+}
+
+pub fn reconstruct_provenance_with_source(
+    db: &crate::db::Db,
+    source: &dyn crate::library::source::LibrarySource,
+    track_id: i64,
+    path: &Path,
+    now: i64,
+) -> Result<bool, rusqlite::Error> {
     let conn = db.conn();
-    reconstruct_provenance_in(conn, track_id, path, now)
+    reconstruct_provenance_in(conn, source, track_id, path, now)
 }
 
 fn reconstruct_provenance_in(
     conn: &Connection,
+    source: &dyn crate::library::source::LibrarySource,
     track_id: i64,
     path: &Path,
     now: i64,
@@ -257,7 +281,7 @@ fn reconstruct_provenance_in(
     if get_provenance_in(conn, track_id)?.is_some() {
         return Ok(false);
     }
-    let Some(tags) = read_ai_tags(path) else {
+    let Some(tags) = read_ai_tags_with_source(source, path) else {
         return Ok(false);
     };
     insert_provenance_in(
@@ -281,6 +305,14 @@ fn reconstruct_provenance_in(
 /// (Beschluss 13). Returns how many rows were reconstructed. Best-effort and
 /// idempotent: already-known and non-AI tracks are skipped.
 pub fn reconstruct_all_missing(db: &crate::db::Db, now: i64) -> Result<usize, rusqlite::Error> {
+    reconstruct_all_missing_with_source(db, &crate::library::source::UnixLibrarySource, now)
+}
+
+pub fn reconstruct_all_missing_with_source(
+    db: &crate::db::Db,
+    source: &dyn crate::library::source::LibrarySource,
+    now: i64,
+) -> Result<usize, rusqlite::Error> {
     let conn = db.conn();
     let mut statement = conn.prepare(
         "SELECT t.id, t.path FROM tracks t \
@@ -293,7 +325,7 @@ pub fn reconstruct_all_missing(db: &crate::db::Db, now: i64) -> Result<usize, ru
     drop(statement);
     let mut reconstructed = 0;
     for (track_id, path) in candidates {
-        if reconstruct_provenance_in(conn, track_id, Path::new(&path), now)? {
+        if reconstruct_provenance_in(conn, source, track_id, Path::new(&path), now)? {
             reconstructed += 1;
         }
     }

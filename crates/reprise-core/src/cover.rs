@@ -4,6 +4,7 @@
 //! separate `cover_writeback` module publishes downloaded covers into album
 //! folders with non-overwriting, best-effort safeguards.
 
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 /// Where a cover for a track comes from.
@@ -30,8 +31,21 @@ pub struct CoverTag {
 }
 
 pub fn read_cover_tag(track_path: &Path) -> CoverTag {
+    read_cover_tag_with_source(&crate::library::source::UnixLibrarySource, track_path)
+}
+
+pub fn read_cover_tag_with_source(
+    source: &dyn crate::library::source::LibrarySource,
+    track_path: &Path,
+) -> CoverTag {
     use lofty::prelude::*;
-    let Ok(tagged) = lofty::read_from_path(track_path) else {
+    let Some(file_type) = lofty::file::FileType::from_path(track_path) else {
+        return CoverTag::default();
+    };
+    let Ok(reader) = source.open_read(track_path) else {
+        return CoverTag::default();
+    };
+    let Ok(tagged) = lofty::probe::Probe::with_file_type(reader, file_type).read() else {
         return CoverTag::default();
     };
     let Some(tag) = tagged.primary_tag().or_else(|| tagged.first_tag()) else {
@@ -65,7 +79,7 @@ pub fn resolve_source_with_source(
     source: &dyn crate::library::source::LibrarySource,
     track_path: &Path,
 ) -> Option<CoverSource> {
-    let tag = read_cover_tag(track_path);
+    let tag = read_cover_tag_with_source(source, track_path);
     // Stage 1 (offline): a previously downloaded canonical cover for this
     // album takes precedence over track-local embedded artwork.
     if let (Some(album_artist), Some(album)) = (tag.album_artist.as_deref(), tag.album.as_deref()) {
@@ -168,7 +182,15 @@ pub fn cache_dir() -> PathBuf {
 /// missing: hash the source bytes -> cache hit? -> else decode, resize (aspect
 /// preserved, longest side = size), write PNG atomically (temp + rename).
 pub fn thumbnail(source: &CoverSource, size: ThumbnailSize) -> Result<PathBuf, CoverError> {
-    let bytes = source_bytes(source)?;
+    thumbnail_with_source(&crate::library::source::UnixLibrarySource, source, size)
+}
+
+pub fn thumbnail_with_source(
+    library_source: &dyn crate::library::source::LibrarySource,
+    source: &CoverSource,
+    size: ThumbnailSize,
+) -> Result<PathBuf, CoverError> {
+    let bytes = source_bytes(library_source, source)?;
     let key = hash_hex(&bytes);
     let dir = cache_dir();
     let out = dir.join(format!("{key}-{}.png", size.pixels()));
@@ -266,10 +288,22 @@ pub fn blur_reduced_thumbnail(
     Ok(out)
 }
 
-fn source_bytes(source: &CoverSource) -> Result<Vec<u8>, CoverError> {
+fn source_bytes(
+    library_source: &dyn crate::library::source::LibrarySource,
+    source: &CoverSource,
+) -> Result<Vec<u8>, CoverError> {
     match source {
         CoverSource::Embedded(b) => Ok(b.clone()),
-        CoverSource::FolderImage(p) => std::fs::read(p).map_err(|e| CoverError::Io(e.to_string())),
+        CoverSource::FolderImage(path) => {
+            let mut reader = library_source
+                .open_read(path)
+                .map_err(|error| CoverError::Io(error.to_string()))?;
+            let mut bytes = Vec::new();
+            reader
+                .read_to_end(&mut bytes)
+                .map_err(|error| CoverError::Io(error.to_string()))?;
+            Ok(bytes)
+        }
     }
 }
 

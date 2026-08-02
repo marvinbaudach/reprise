@@ -1,3 +1,4 @@
+use std::io::Read;
 use std::path::Path;
 
 use lofty::config::ParseOptions;
@@ -27,30 +28,49 @@ impl LyricsProvider for LocalProvider<'_> {
         }) else {
             return SourceOutcome::Skipped;
         };
-        local_hit(path).map_or(SourceOutcome::Skipped, SourceOutcome::Hit)
+        local_hit_with_source(self.source, path).map_or(SourceOutcome::Skipped, SourceOutcome::Hit)
     }
 }
 
 pub fn local_hit(path: &Path) -> Option<LyricsHit> {
-    sidecar_hit(path).or_else(|| tag_hit(path))
+    local_hit_with_source(&crate::library::source::UnixLibrarySource, path)
 }
 
-fn sidecar_hit(track_path: &Path) -> Option<LyricsHit> {
-    let text = std::fs::read_to_string(track_path.with_extension("lrc")).ok()?;
+pub fn local_hit_with_source(
+    source: &dyn crate::library::source::LibrarySource,
+    path: &Path,
+) -> Option<LyricsHit> {
+    sidecar_hit(source, path).or_else(|| tag_hit(source, path))
+}
+
+fn sidecar_hit(
+    source: &dyn crate::library::source::LibrarySource,
+    track_path: &Path,
+) -> Option<LyricsHit> {
+    let mut reader = source.open_read(&track_path.with_extension("lrc")).ok()?;
+    let mut text = String::new();
+    reader.read_to_string(&mut text).ok()?;
     body_from_text(&text).map(|body| LyricsHit {
         body,
         source: LyricsSource::Sidecar,
     })
 }
 
-fn tag_hit(track_path: &Path) -> Option<LyricsHit> {
-    if let Some(body) = synced_id3_from_path(track_path) {
+fn tag_hit(
+    source: &dyn crate::library::source::LibrarySource,
+    track_path: &Path,
+) -> Option<LyricsHit> {
+    if let Some(body) = synced_id3_from_source(source, track_path) {
         return Some(LyricsHit {
             body,
             source: LyricsSource::Tag,
         });
     }
-    let tagged = lofty::read_from_path(track_path).ok()?;
+    let file_type = FileType::from_path(track_path)?;
+    let reader = source.open_read(track_path).ok()?;
+    let tagged = lofty::probe::Probe::with_file_type(reader, file_type)
+        .read()
+        .ok()?;
     for tag in tagged.tags() {
         if let Some(text) = tag.get_string(ItemKey::Lyrics) {
             if let Some(body) = body_from_text(text) {
@@ -73,29 +93,31 @@ fn tag_hit(track_path: &Path) -> Option<LyricsHit> {
     None
 }
 
-fn synced_id3_from_path(path: &Path) -> Option<LyricsBody> {
-    let probe = lofty::probe::Probe::open(path)
-        .ok()?
+fn synced_id3_from_source(
+    source: &dyn crate::library::source::LibrarySource,
+    path: &Path,
+) -> Option<LyricsBody> {
+    let probe = lofty::probe::Probe::new(source.open_read(path).ok()?)
         .guess_file_type()
         .ok()?;
     let file_type = probe.file_type()?;
-    let mut file = std::fs::File::open(path).ok()?;
+    let mut reader = probe.into_inner();
     let options = ParseOptions::new();
     match file_type {
         FileType::Aac => {
-            let parsed = lofty::aac::AacFile::read_from(&mut file, options).ok()?;
+            let parsed = lofty::aac::AacFile::read_from(&mut reader, options).ok()?;
             parsed.id3v2().and_then(synced_id3_body)
         }
         FileType::Aiff => {
-            let parsed = lofty::iff::aiff::AiffFile::read_from(&mut file, options).ok()?;
+            let parsed = lofty::iff::aiff::AiffFile::read_from(&mut reader, options).ok()?;
             parsed.id3v2().and_then(synced_id3_body)
         }
         FileType::Mpeg => {
-            let parsed = lofty::mpeg::MpegFile::read_from(&mut file, options).ok()?;
+            let parsed = lofty::mpeg::MpegFile::read_from(&mut reader, options).ok()?;
             parsed.id3v2().and_then(synced_id3_body)
         }
         FileType::Wav => {
-            let parsed = lofty::iff::wav::WavFile::read_from(&mut file, options).ok()?;
+            let parsed = lofty::iff::wav::WavFile::read_from(&mut reader, options).ok()?;
             parsed.id3v2().and_then(synced_id3_body)
         }
         _ => None,
