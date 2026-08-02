@@ -122,7 +122,14 @@ pub enum TagEditError {
 }
 
 pub fn read_editable_tags(path: &Path) -> Result<EditableTags, TagEditError> {
-    let tagged = lofty::read_from_path(path)?;
+    read_editable_tags_with_source(&super::source::UnixLibrarySource, path)
+}
+
+pub fn read_editable_tags_with_source(
+    source: &dyn super::source::LibrarySource,
+    path: &Path,
+) -> Result<EditableTags, TagEditError> {
+    let tagged = crate::library::tag_probe::open_probe(source, path)?.read()?;
     let tag = tagged.primary_tag().or_else(|| tagged.first_tag());
     Ok(EditableTags {
         title: tag
