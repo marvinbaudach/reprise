@@ -42,66 +42,18 @@
 
 use std::path::{Path, PathBuf};
 
+use super::source::{
+    device_id, nearest_existing_ancestor,
+    nearest_existing_ancestor_dev as source_nearest_existing_ancestor_dev,
+};
 use crate::models::MissingReason;
-
-/// Returns `(ancestor_path, st_dev)` for the nearest ancestor of `path`
-/// (starting at `path` itself) that can be `lstat`'d successfully.
-///
-/// Uses `symlink_metadata` (lstat), deliberately never `metadata` (stat):
-/// if some ancestor component in the path is itself a symlink, `lstat`
-/// reports the symlink's own device rather than following it to whatever
-/// it points at. Following the symlink here would let an ancestor that
-/// merely *points into* a different mount fabricate a foreign device id —
-/// and thus a bogus `Unmounted` verdict — even though the symlink itself
-/// sits on the original, still-mounted filesystem.
-///
-/// `Path::ancestors()` walks `path`, then each successive parent, ending at
-/// `/` for an absolute path — so the walk is capped at the root without any
-/// extra bookkeeping. Returns `None` only if even `/` can't be `lstat`'d,
-/// which should not happen on a working Linux system.
-///
-/// This "capped at `/`" guarantee holds only for an *absolute* `path` — for
-/// a relative path, `ancestors()` instead bottoms out at `""` (`Path::new("")`
-/// does not exist, so the walk would return `None` rather than ever reaching
-/// `/`). Every caller in this codebase passes an absolute path: library
-/// roots come from GTK's folder chooser (always absolute) and
-/// `tracks.path`/scan roots are `walkdir::WalkDir::new(root)` inputs derived
-/// from that same root, so this isn't separately enforced here — see
-/// [`classify_missing`]'s `debug_assert!`, the one real caller wired in by
-/// Task 1.5, for where that assumption is actually checked.
-fn nearest_existing_ancestor(path: &Path) -> Option<(PathBuf, u64)> {
-    path.ancestors().find_map(|ancestor| {
-        std::fs::symlink_metadata(ancestor)
-            .ok()
-            .map(|meta| (ancestor.to_path_buf(), device_id(&meta)))
-    })
-}
-
-/// The filesystem device id used for mount-point grouping: Unix `st_dev`. The
-/// app runs on Linux; the non-Unix arm exists only to keep `reprise-core`
-/// cross-checkable (spec I / cross-target CI). There is no stable portable
-/// device id, so off Unix it collapses to `0` — every path then shares one
-/// "device" and the mount-point walk below becomes a harmless no-op (never
-/// reached at runtime).
-fn device_id(meta: &std::fs::Metadata) -> u64 {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        meta.dev()
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = meta;
-        0
-    }
-}
 
 /// `st_dev` of the nearest ancestor of `path` that currently exists,
 /// starting the search at `path` itself. `lstat` (`symlink_metadata`) only —
 /// see [`nearest_existing_ancestor`]'s doc comment for why this must never
 /// follow symlinks. `None` only if even `/` can't be `lstat`'d.
 pub(crate) fn nearest_existing_ancestor_dev(path: &Path) -> Option<u64> {
-    nearest_existing_ancestor(path).map(|(_, dev)| dev)
+    source_nearest_existing_ancestor_dev(path)
 }
 
 /// The highest (closest-to-root) ancestor of `path` that still shares
@@ -131,7 +83,7 @@ pub(crate) fn mount_point_of(path: &Path) -> Option<PathBuf> {
         };
         let parent_device = std::fs::symlink_metadata(parent)
             .ok()
-            .map(|m| device_id(&m));
+            .and_then(|metadata| device_id(&metadata));
         if parent_device != Some(device) {
             return Some(mount_point);
         }
