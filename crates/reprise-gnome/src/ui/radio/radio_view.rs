@@ -479,6 +479,7 @@ fn show_radio_failure(shared: &Rc<Shared>, kind: SourceErrorKind, technical_caus
         1,
     );
     let weak = Rc::downgrade(shared);
+    let dismiss_weak = weak.clone();
     shared.error_banner.show(
         &presentation,
         "",
@@ -502,6 +503,13 @@ fn show_radio_failure(shared: &Rc<Shared>, kind: SourceErrorKind, technical_caus
                 RadioFailureAction::OpenAddDialog => present_add_dialog(&shared),
                 RadioFailureAction::None => {}
             }
+        },
+        move || {
+            let Some(shared) = dismiss_weak.upgrade() else {
+                return;
+            };
+            shared.failure_kind.replace(None);
+            shared.error_banner.hide();
         },
     );
 }

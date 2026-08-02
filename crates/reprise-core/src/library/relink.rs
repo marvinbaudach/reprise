@@ -7,6 +7,9 @@ use rusqlite::OptionalExtension;
 
 use super::scanner::move_detect::MOVE_MATCH_TOLERANCE_MS;
 use super::scanner::ScanError;
+use super::source::{
+    self, LibrarySource, LibraryWalkControl, LibraryWalkItem, LibraryWalkOrder, UnixLibrarySource,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RelinkMismatch {
@@ -141,6 +144,24 @@ pub fn relink_from_folder(
     cancel: &AtomicBool,
     mut on_progress: impl FnMut(u32, u32),
 ) -> Result<FolderRelinkReport, ScanError> {
+    relink_from_folder_with_source(
+        &UnixLibrarySource,
+        db,
+        folder,
+        group,
+        cancel,
+        &mut on_progress,
+    )
+}
+
+fn relink_from_folder_with_source(
+    source: &dyn LibrarySource,
+    db: &Db,
+    folder: &Path,
+    group: &[RelinkTarget],
+    cancel: &AtomicBool,
+    on_progress: &mut dyn FnMut(u32, u32),
+) -> Result<FolderRelinkReport, ScanError> {
     let conn = db.conn();
     let mut expected_paths: HashMap<i64, PathBuf> = group
         .iter()
@@ -155,7 +176,7 @@ pub fn relink_from_folder(
         });
     }
 
-    let Some(total) = count_folder_audio_files(folder, cancel)? else {
+    let Some(total) = count_folder_audio_files(source, folder, cancel)? else {
         return Ok(FolderRelinkReport {
             relinked: 0,
             group_size,
@@ -163,99 +184,115 @@ pub fn relink_from_folder(
     };
     let mut processed = 0_u32;
     let mut relinked = 0_u32;
-    for entry in walkdir::WalkDir::new(folder)
-        .follow_links(false)
-        .sort_by_file_name()
-    {
-        let entry = entry.map_err(|error| std::io::Error::other(error.to_string()))?;
-        if !entry.file_type().is_file() || !super::scanner::is_audio_file(entry.path()) {
-            continue;
-        }
-        if cancel.load(Ordering::Acquire) {
-            break;
-        }
-        processed = processed.saturating_add(1);
-        let path = entry.path();
-        let Some((file_size, identity)) = super::scanner::file_stat(path) else {
-            on_progress(processed, total);
-            continue;
-        };
-        let identity = identity.map(|(device, inode)| (device as i64, inode as i64));
-        let meta = match super::scanner::track_meta::read_meta(path) {
-            Ok(meta) => meta,
-            Err(ScanError::Import { .. }) => {
+    let mut walk_failure = None;
+    source::walk_with(source, folder, LibraryWalkOrder::FileName, |item| {
+        let result = (|| -> Result<LibraryWalkControl, ScanError> {
+            let entry = match item {
+                LibraryWalkItem::Entry(entry) => entry,
+                LibraryWalkItem::Error(error) => {
+                    return Err(std::io::Error::other(error.detail).into());
+                }
+            };
+            if !entry.is_file || !super::scanner::is_audio_file(&entry.path) {
+                return Ok(LibraryWalkControl::Continue);
+            }
+            if cancel.load(Ordering::Acquire) {
+                return Ok(LibraryWalkControl::Stop);
+            }
+            processed = processed.saturating_add(1);
+            let path = entry.path.as_path();
+            let Some((file_size, identity)) = super::scanner::file_stat(path) else {
                 on_progress(processed, total);
-                continue;
+                return Ok(LibraryWalkControl::Continue);
+            };
+            let identity = identity.map(|(device, inode)| (device as i64, inode as i64));
+            let meta = match super::scanner::track_meta::read_meta(path) {
+                Ok(meta) => meta,
+                Err(ScanError::Import { .. }) => {
+                    on_progress(processed, total);
+                    return Ok(LibraryWalkControl::Continue);
+                }
+                Err(error) => return Err(error),
+            };
+            let title = if meta.title.is_empty() {
+                path.file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .unwrap_or_default()
+                    .to_string()
+            } else {
+                meta.title.clone()
+            };
+            let mount_point = super::mounts::mount_point_of(path)
+                .map(|mount| mount.to_string_lossy().into_owned());
+            let tx = conn.unchecked_transaction()?;
+            let candidate = super::scanner::move_detect::find_move_candidate_in(
+                &tx,
+                &super::scanner::move_detect::MoveLookup {
+                    identity,
+                    title: &title,
+                    artist: &meta.artist,
+                    album: &meta.album,
+                    duration_ms: meta.duration_ms,
+                    file_size: file_size as i64,
+                },
+                &remaining,
+            )?;
+            if let Some(candidate) = candidate {
+                let expected_path = expected_paths
+                    .get(&candidate.id)
+                    .expect("move candidates are restricted to remaining target ids");
+                let still_missing = !expected_path.exists()
+                    && tx
+                        .query_row(
+                            &format!(
+                                "SELECT 1 FROM tracks WHERE id = ?1 AND path = ?2 AND {}",
+                                crate::queries::MISSING
+                            ),
+                            rusqlite::params![candidate.id, expected_path.to_string_lossy()],
+                            |_| Ok(()),
+                        )
+                        .optional()?
+                        .is_some();
+                if still_missing {
+                    let (device, inode) = identity
+                        .map_or((None, None), |(device, inode)| (Some(device), Some(inode)));
+                    super::scanner::move_detect::apply_file_identity(
+                        &tx,
+                        candidate.id,
+                        path,
+                        &title,
+                        &meta,
+                        false,
+                        &super::scanner::move_detect::FileIdentity {
+                            file_mtime: super::scanner::file_mtime(path),
+                            file_size: file_size as i64,
+                            device,
+                            inode,
+                            mount_point,
+                        },
+                    )?;
+                    relinked = relinked.saturating_add(1);
+                }
+                remaining.remove(&candidate.id);
+                expected_paths.remove(&candidate.id);
             }
-            Err(error) => return Err(error),
-        };
-        let title = if meta.title.is_empty() {
-            path.file_stem()
-                .and_then(|stem| stem.to_str())
-                .unwrap_or_default()
-                .to_string()
-        } else {
-            meta.title.clone()
-        };
-        let mount_point =
-            super::mounts::mount_point_of(path).map(|mount| mount.to_string_lossy().into_owned());
-        let tx = conn.unchecked_transaction()?;
-        let candidate = super::scanner::move_detect::find_move_candidate_in(
-            &tx,
-            &super::scanner::move_detect::MoveLookup {
-                identity,
-                title: &title,
-                artist: &meta.artist,
-                album: &meta.album,
-                duration_ms: meta.duration_ms,
-                file_size: file_size as i64,
-            },
-            &remaining,
-        )?;
-        if let Some(candidate) = candidate {
-            let expected_path = expected_paths
-                .get(&candidate.id)
-                .expect("move candidates are restricted to remaining target ids");
-            let still_missing = !expected_path.exists()
-                && tx
-                    .query_row(
-                        &format!(
-                            "SELECT 1 FROM tracks WHERE id = ?1 AND path = ?2 AND {}",
-                            crate::queries::MISSING
-                        ),
-                        rusqlite::params![candidate.id, expected_path.to_string_lossy()],
-                        |_| Ok(()),
-                    )
-                    .optional()?
-                    .is_some();
-            if still_missing {
-                let (device, inode) =
-                    identity.map_or((None, None), |(device, inode)| (Some(device), Some(inode)));
-                super::scanner::move_detect::apply_file_identity(
-                    &tx,
-                    candidate.id,
-                    path,
-                    &title,
-                    &meta,
-                    false,
-                    &super::scanner::move_detect::FileIdentity {
-                        file_mtime: super::scanner::file_mtime(path),
-                        file_size: file_size as i64,
-                        device,
-                        inode,
-                        mount_point,
-                    },
-                )?;
-                relinked = relinked.saturating_add(1);
+            tx.commit()?;
+            on_progress(processed, total);
+            if remaining.is_empty() {
+                return Ok(LibraryWalkControl::Stop);
             }
-            remaining.remove(&candidate.id);
-            expected_paths.remove(&candidate.id);
+            Ok(LibraryWalkControl::Continue)
+        })();
+        match result {
+            Ok(control) => control,
+            Err(error) => {
+                walk_failure = Some(error);
+                LibraryWalkControl::Stop
+            }
         }
-        tx.commit()?;
-        on_progress(processed, total);
-        if remaining.is_empty() {
-            break;
-        }
+    });
+    if let Some(error) = walk_failure {
+        return Err(error);
     }
     Ok(FolderRelinkReport {
         relinked,
@@ -263,18 +300,38 @@ pub fn relink_from_folder(
     })
 }
 
-fn count_folder_audio_files(folder: &Path, cancel: &AtomicBool) -> Result<Option<u32>, ScanError> {
-    let mut total = 0_u32;
-    for entry in walkdir::WalkDir::new(folder).follow_links(false) {
-        if cancel.load(Ordering::Acquire) {
-            return Ok(None);
-        }
-        let entry = entry.map_err(|error| std::io::Error::other(error.to_string()))?;
-        if entry.file_type().is_file() && super::scanner::is_audio_file(entry.path()) {
-            total = total.saturating_add(1);
-        }
+fn count_folder_audio_files(
+    source: &dyn LibrarySource,
+    folder: &Path,
+    cancel: &AtomicBool,
+) -> Result<Option<u32>, ScanError> {
+    if cancel.load(Ordering::Acquire) {
+        return Ok(None);
     }
-    Ok(Some(total))
+    let mut total = 0_u32;
+    let mut outcome: Result<Option<()>, ScanError> = Ok(Some(()));
+    source::walk_with(source, folder, LibraryWalkOrder::Native, |item| {
+        if cancel.load(Ordering::Acquire) {
+            outcome = Ok(None);
+            return LibraryWalkControl::Stop;
+        }
+        match item {
+            LibraryWalkItem::Entry(entry) => {
+                if entry.is_file && super::scanner::is_audio_file(&entry.path) {
+                    total = total.saturating_add(1);
+                }
+                LibraryWalkControl::Continue
+            }
+            LibraryWalkItem::Error(error) => {
+                outcome = Err(std::io::Error::other(error.detail).into());
+                LibraryWalkControl::Stop
+            }
+        }
+    });
+    match outcome? {
+        Some(()) => Ok(Some(total)),
+        None => Ok(None),
+    }
 }
 
 #[cfg(test)]

@@ -8,6 +8,96 @@ use std::path::{Path, PathBuf};
 
 use crate::models::MissingReason;
 
+/// The sibling-order guarantee requested from a library-source traversal.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LibraryWalkOrder {
+    /// Preserve the source adapter's native order.
+    Native,
+    /// Visit siblings in ascending file-name order.
+    FileName,
+}
+
+/// The only entry facts traversal consumers need.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LibraryEntry {
+    pub path: PathBuf,
+    pub is_file: bool,
+}
+
+/// Source-neutral traversal error classification.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LibraryWalkErrorKind {
+    PermissionDenied,
+    Io,
+    Unknown,
+}
+
+/// A traversal failure delivered in source order beside successful entries.
+///
+/// A failure is not the end of the walk: the source reports it and carries on
+/// wherever it can, so one unreadable directory costs its own subtree and
+/// nothing more.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LibraryWalkError {
+    /// The container the source could not enter — **never an item inside it**.
+    /// Those were never seen, and naming one here would invite a consumer to
+    /// record a failure for an item it has no evidence about. `None` only when
+    /// the source cannot say where the failure was; consumers then attribute it
+    /// to the walk's root.
+    pub path: Option<PathBuf>,
+    pub kind: LibraryWalkErrorKind,
+    /// Free-form diagnostic text for logs and the import-error catalog. Not
+    /// translated and not shown as a primary message — [`Self::kind`] is what
+    /// a surface renders.
+    pub detail: String,
+}
+
+/// One event in a library-source traversal.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LibraryWalkItem {
+    Entry(LibraryEntry),
+    Error(LibraryWalkError),
+}
+
+/// Whether a traversal visitor wants the source to continue.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LibraryWalkControl {
+    Continue,
+    Stop,
+}
+
+/// Named callback interface used by [`LibrarySource::walk`].
+///
+/// Keeping this callback named avoids putting a Rust closure in the source
+/// contract, while the control result lets cancellation-sensitive consumers
+/// stop a source without first materializing its entire tree.
+pub trait LibraryWalkVisitor {
+    fn visit(&mut self, item: LibraryWalkItem) -> LibraryWalkControl;
+}
+
+struct ClosureWalkVisitor<F>(F);
+
+impl<F> LibraryWalkVisitor for ClosureWalkVisitor<F>
+where
+    F: FnMut(LibraryWalkItem) -> LibraryWalkControl,
+{
+    fn visit(&mut self, item: LibraryWalkItem) -> LibraryWalkControl {
+        (self.0)(item)
+    }
+}
+
+/// Rust-only convenience around the named visitor interface. The closure is
+/// deliberately kept out of [`LibrarySource`] itself so the source contract
+/// remains object-safe and suitable for a future foreign adapter.
+pub(crate) fn walk_with(
+    source: &dyn LibrarySource,
+    root: &Path,
+    order: LibraryWalkOrder,
+    visit: impl FnMut(LibraryWalkItem) -> LibraryWalkControl,
+) {
+    source.walk(root, order, &mut ClosureWalkVisitor(visit));
+}
+
 /// The residence and reachability capability every library source provides.
 ///
 /// A source without a stable residence token returns `None`. That documented
@@ -17,6 +107,28 @@ pub trait LibrarySource: Send + Sync {
     /// Returns the stable residence token of the nearest reachable location at
     /// `at`, or `None` when this source cannot provide one.
     fn residence_token(&self, at: &Path) -> Option<i64>;
+
+    /// Traverses `root` once, delivering entries and recoverable traversal
+    /// errors to `visitor` in source order until exhaustion or
+    /// [`LibraryWalkControl::Stop`]. The root entry itself is included when
+    /// the adapter exposes it, matching the Unix adapter's `walkdir` behavior.
+    ///
+    /// The named visitor keeps this method object-safe and source-neutral:
+    /// neither `walkdir::DirEntry`, a closure, an anonymous tuple, nor an
+    /// opaque iterator crosses the interface. It also keeps traversal
+    /// streaming, so a SAF adapter need not retain a potentially large tree
+    /// merely to support cancellation.
+    ///
+    /// `FileName` orders siblings; it does not flatten the depth-first tree.
+    /// `Native` deliberately leaves sibling order to the adapter. Both modes
+    /// must deliver directory failures inline and continue when possible.
+    ///
+    /// There is no return value, and none is needed: a source that cannot open
+    /// `root` at all reports that as a single [`LibraryWalkItem::Error`] naming
+    /// `root` and then produces nothing further. Consumers already treat "the
+    /// walk yielded no entries" as its own condition — see `scan_folder_inner`'s
+    /// root guard — so a failure to start needs no separate channel.
+    fn walk(&self, root: &Path, order: LibraryWalkOrder, visitor: &mut dyn LibraryWalkVisitor);
 
     /// Classifies why an item already known to be missing at `at` is missing,
     /// given the residence token recorded for it at scan time (`tracks.device`,
@@ -66,6 +178,44 @@ impl LibrarySource for UnixLibrarySource {
     fn residence_token(&self, at: &Path) -> Option<i64> {
         nearest_existing_ancestor_dev(at).map(|device| device as i64)
     }
+
+    fn walk(&self, root: &Path, order: LibraryWalkOrder, visitor: &mut dyn LibraryWalkVisitor) {
+        // `follow_links(false)` is part of the source contract, not a
+        // walkdir default we happen to inherit. Traversal must agree with
+        // `nearest_existing_ancestor`'s lstat-based residence evidence: a
+        // symlink that merely points into another source must never pull that
+        // foreign tree into this source's scan.
+        let walk = walkdir::WalkDir::new(root).follow_links(false);
+        let walk = match order {
+            LibraryWalkOrder::Native => walk,
+            LibraryWalkOrder::FileName => walk.sort_by_file_name(),
+        };
+        for item in walk {
+            let item = match item {
+                Ok(entry) => LibraryWalkItem::Entry(LibraryEntry {
+                    path: entry.path().to_path_buf(),
+                    is_file: entry.file_type().is_file(),
+                }),
+                Err(error) => {
+                    let kind = match super::import_errors::classify_walkdir(&error) {
+                        crate::models::ImportErrorKind::PermissionDenied => {
+                            LibraryWalkErrorKind::PermissionDenied
+                        }
+                        crate::models::ImportErrorKind::Io => LibraryWalkErrorKind::Io,
+                        _ => LibraryWalkErrorKind::Unknown,
+                    };
+                    LibraryWalkItem::Error(LibraryWalkError {
+                        path: error.path().map(Path::to_path_buf),
+                        kind,
+                        detail: error.to_string(),
+                    })
+                }
+            };
+            if visitor.visit(item) == LibraryWalkControl::Stop {
+                break;
+            }
+        }
+    }
 }
 
 /// Returns `(ancestor_path, st_dev)` for the nearest ancestor of `path`
@@ -89,8 +239,8 @@ impl LibrarySource for UnixLibrarySource {
 /// does not exist, so the walk would return `None` rather than ever reaching
 /// `/`). Every caller in this codebase passes an absolute path: library
 /// roots come from GTK's folder chooser (always absolute) and
-/// `tracks.path`/scan roots are `walkdir::WalkDir::new(root)` inputs derived
-/// from that same root, so this isn't separately enforced here.
+/// `tracks.path`/scan roots are [`LibrarySource::walk`] inputs derived from
+/// that same root, so this isn't separately enforced here.
 pub(crate) fn nearest_existing_ancestor(path: &Path) -> Option<(PathBuf, u64)> {
     path.ancestors().find_map(|ancestor| {
         let metadata = std::fs::symlink_metadata(ancestor).ok()?;
@@ -125,7 +275,10 @@ mod tests {
     use std::os::unix::fs::MetadataExt;
     use std::path::Path;
 
-    use super::{LibrarySource, UnixLibrarySource};
+    use super::{
+        LibrarySource, LibraryWalkControl, LibraryWalkItem, LibraryWalkOrder, LibraryWalkVisitor,
+        UnixLibrarySource,
+    };
     use crate::models::MissingReason;
 
     fn dev_of(path: &Path) -> u64 {
@@ -204,6 +357,17 @@ mod tests {
         fn residence_token(&self, _at: &Path) -> Option<i64> {
             self.provider_tree_id?.strip_prefix("tree-")?.parse().ok()
         }
+
+        /// This double exists to exercise residence classification only, and
+        /// the tests below never walk it. An empty walk is the honest answer
+        /// for a source with no tree at all — not a stub standing in for one.
+        fn walk(
+            &self,
+            _root: &Path,
+            _order: LibraryWalkOrder,
+            _visitor: &mut dyn LibraryWalkVisitor,
+        ) {
+        }
     }
 
     #[test]
@@ -225,5 +389,127 @@ mod tests {
             under(None).reachability(at, Some(41)),
             MissingReason::Unknown
         );
+    }
+
+    enum DocumentNode {
+        Directory(&'static str, Vec<DocumentNode>),
+        File(&'static str),
+    }
+
+    struct DocumentTreeTraversalSource {
+        children: Vec<DocumentNode>,
+    }
+
+    impl DocumentTreeTraversalSource {
+        fn emit(
+            visitor: &mut dyn LibraryWalkVisitor,
+            parent: &Path,
+            nodes: &[DocumentNode],
+            order: LibraryWalkOrder,
+        ) -> LibraryWalkControl {
+            let mut nodes: Vec<_> = nodes.iter().collect();
+            if order == LibraryWalkOrder::FileName {
+                nodes.sort_by_key(|node| match node {
+                    DocumentNode::Directory(name, _) | DocumentNode::File(name) => *name,
+                });
+            }
+            for node in nodes {
+                let (name, is_file) = match node {
+                    DocumentNode::Directory(name, _) => (*name, false),
+                    DocumentNode::File(name) => (*name, true),
+                };
+                let path = parent.join(name);
+                if visitor.visit(LibraryWalkItem::Entry(super::LibraryEntry {
+                    path: path.clone(),
+                    is_file,
+                })) == LibraryWalkControl::Stop
+                {
+                    return LibraryWalkControl::Stop;
+                }
+                if let DocumentNode::Directory(_, children) = node {
+                    if Self::emit(visitor, &path, children, order) == LibraryWalkControl::Stop {
+                        return LibraryWalkControl::Stop;
+                    }
+                }
+            }
+            LibraryWalkControl::Continue
+        }
+    }
+
+    impl LibrarySource for DocumentTreeTraversalSource {
+        fn residence_token(&self, _at: &Path) -> Option<i64> {
+            Some(41)
+        }
+
+        fn walk(&self, root: &Path, order: LibraryWalkOrder, visitor: &mut dyn LibraryWalkVisitor) {
+            Self::emit(visitor, root, &self.children, order);
+        }
+    }
+
+    #[derive(Default)]
+    struct AudioPaths {
+        root: std::path::PathBuf,
+        paths: Vec<std::path::PathBuf>,
+    }
+
+    impl LibraryWalkVisitor for AudioPaths {
+        fn visit(&mut self, item: LibraryWalkItem) -> LibraryWalkControl {
+            let LibraryWalkItem::Entry(entry) = item else {
+                panic!("fixture traversal must not fail");
+            };
+            if entry.is_file
+                && entry
+                    .path
+                    .extension()
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("flac"))
+            {
+                self.paths
+                    .push(entry.path.strip_prefix(&self.root).unwrap().to_path_buf());
+            }
+            LibraryWalkControl::Continue
+        }
+    }
+
+    #[test]
+    fn non_filesystem_tree_matches_unix_order_and_file_filtering() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("Album")).unwrap();
+        std::fs::write(dir.path().join("Album/notes.txt"), b"notes").unwrap();
+        std::fs::write(dir.path().join("Album/song.FLAC"), b"audio").unwrap();
+        std::fs::write(dir.path().join("loose.flac"), b"audio").unwrap();
+
+        let document_tree = DocumentTreeTraversalSource {
+            children: vec![
+                DocumentNode::File("loose.flac"),
+                DocumentNode::Directory(
+                    "Album",
+                    vec![
+                        DocumentNode::File("song.FLAC"),
+                        DocumentNode::File("notes.txt"),
+                    ],
+                ),
+            ],
+        };
+        let document_root = Path::new("content:/music");
+
+        let mut unix = AudioPaths {
+            root: dir.path().to_path_buf(),
+            ..AudioPaths::default()
+        };
+        UnixLibrarySource.walk(dir.path(), LibraryWalkOrder::FileName, &mut unix);
+        let mut document = AudioPaths {
+            root: document_root.to_path_buf(),
+            ..AudioPaths::default()
+        };
+        document_tree.walk(document_root, LibraryWalkOrder::FileName, &mut document);
+
+        assert_eq!(
+            unix.paths,
+            vec![
+                std::path::PathBuf::from("Album/song.FLAC"),
+                std::path::PathBuf::from("loose.flac"),
+            ]
+        );
+        assert_eq!(document.paths, unix.paths);
     }
 }
