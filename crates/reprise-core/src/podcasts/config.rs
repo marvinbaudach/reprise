@@ -14,7 +14,6 @@ pub const YOUTUBE_BROWSER_KEY: &str = "podcasts.youtube_browser";
 pub const YTDLP_PATH_KEY: &str = "podcasts.ytdlp_path";
 pub const REFRESH_HOURS_KEY: &str = "sources.refresh_hours";
 pub const FILTER_UNPLAYED_KEY: &str = "podcasts.filter.unplayed";
-pub const FILTER_SHOW_KEY: &str = "podcasts.filter.show";
 pub const FILTER_SOURCE_KEY: &str = "podcasts.filter.source";
 /// `MTP-36`: the global "latest N per channel" default for the phone-sync
 /// YouTube target, overridable per channel
@@ -163,7 +162,6 @@ pub struct PodcastConfig {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PodcastFilterConfig {
     pub unplayed_only: bool,
-    pub show: Option<String>,
     pub source: Option<PodcastKind>,
     pub downloaded_only: bool,
 }
@@ -221,7 +219,6 @@ pub fn load_filter(db: &Db) -> Result<PodcastFilterConfig, rusqlite::Error> {
     let conn = db.conn();
     Ok(PodcastFilterConfig {
         unplayed_only: crate::library::settings::get_bool_in(conn, FILTER_UNPLAYED_KEY, false)?,
-        show: non_empty_setting(conn, FILTER_SHOW_KEY)?,
         source: match non_empty_setting(conn, FILTER_SOURCE_KEY)?.as_deref() {
             Some("rss") => Some(PodcastKind::Rss),
             Some("youtube") => Some(PodcastKind::Youtube),
@@ -285,16 +282,10 @@ pub fn set_youtube_browser(db: &Db, value: Option<YoutubeBrowser>) -> Result<(),
 }
 
 /// Persists the whole podcast filter — the exact inverse of [`load_filter`],
-/// and kept adjacent to it so the two cannot drift. `None` is stored as the
-/// empty string, which is what [`load_filter`] reads back as `None`.
+/// and kept adjacent to it so the two cannot drift.
 pub fn save_filter(db: &Db, filter: &PodcastFilterConfig) -> Result<(), rusqlite::Error> {
     let conn = db.conn();
     crate::library::settings::set_bool_in(conn, FILTER_UNPLAYED_KEY, filter.unplayed_only)?;
-    crate::library::settings::set_setting_in(
-        conn,
-        FILTER_SHOW_KEY,
-        filter.show.as_deref().unwrap_or_default(),
-    )?;
     crate::library::settings::set_setting_in(
         conn,
         FILTER_SOURCE_KEY,
@@ -458,14 +449,12 @@ mod tests {
     fn sticky_filter_values_are_bundled_and_invalid_sources_clear() {
         let db = db();
         crate::library::settings::set_bool(&db, FILTER_UNPLAYED_KEY, true).unwrap();
-        crate::library::settings::set_setting(&db, FILTER_SHOW_KEY, " Show ").unwrap();
         crate::library::settings::set_setting(&db, FILTER_SOURCE_KEY, "youtube").unwrap();
 
         assert_eq!(
             load_filter(&db).unwrap(),
             PodcastFilterConfig {
                 unplayed_only: true,
-                show: Some("Show".to_owned()),
                 source: Some(PodcastKind::Youtube),
                 downloaded_only: false,
             }
@@ -532,7 +521,6 @@ mod tests {
         let db = db();
         let filter = PodcastFilterConfig {
             unplayed_only: true,
-            show: Some("Some Show".to_owned()),
             source: Some(PodcastKind::Youtube),
             downloaded_only: true,
         };
@@ -540,7 +528,7 @@ mod tests {
         save_filter(&db, &filter).unwrap();
         assert_eq!(load_filter(&db).unwrap(), filter);
 
-        // And back to empty: `None` must survive as `None`, not as `Some("")`.
+        // And back to empty: the optional source must survive as `None`.
         save_filter(&db, &PodcastFilterConfig::default()).unwrap();
         assert_eq!(
             load_filter(&db).unwrap(),

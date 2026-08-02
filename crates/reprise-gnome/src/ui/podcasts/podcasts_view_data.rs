@@ -10,12 +10,6 @@ pub(super) fn episode_ids_in_rendered_order(groups: &[SourceGroup]) -> Vec<i64> 
         .collect()
 }
 
-pub(super) fn unique(mut values: Vec<String>) -> Vec<String> {
-    values.sort_by_key(|value| value.to_lowercase());
-    values.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
-    values
-}
-
 pub(super) fn last_updated_text(conn: &Db) -> String {
     let last = podcasts::store::active_subscriptions(conn)
         .ok()

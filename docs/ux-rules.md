@@ -3594,7 +3594,9 @@ listening statistics.
   with plus, label, and radius 8 in both sources, never the chip shape.
   The shared toolbar grammar reads Add button · "Add filter" · active,
   deletable filter pills · count on the right; filter rows keep their
-  height across state changes.
+  height across state changes. On Podcasts and YouTube, the popover offers
+  only Unplayed and Downloaded; the existing show/channel groups provide
+  per-source narrowing through expansion and collapse.
 - **SRC-3** [replaced by SRC-3a] [gtk] — Each source has exactly one add dialog
   with exactly one input field for search terms or a URL. Search
   returns grouped results with row actions; a recognized URL leads
