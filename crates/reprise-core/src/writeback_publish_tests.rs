@@ -97,17 +97,13 @@ fn a_publication_suppresses_the_library_watcher_for_every_path_it_touches() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn a_failing_publication_leaves_no_temporary_file() {
-    use std::os::unix::fs::PermissionsExt;
-
     let dir = TempDir::new().unwrap();
-    fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o555)).unwrap();
+    let missing_directory = dir.path().join("missing-directory");
 
-    let result = publish(&dir.path().join("cover.jpg"), b"payload");
+    let result = publish(&missing_directory.join("cover.jpg"), b"payload");
 
-    fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o755)).unwrap();
     assert!(result.is_err());
     assert!(directory_entries(dir.path()).is_empty());
 }

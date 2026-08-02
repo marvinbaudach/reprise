@@ -4,6 +4,7 @@ use tempfile::TempDir;
 
 use super::*;
 use crate::cover::{resolve_source, CoverSource};
+use crate::library::source::ExistingPathSource;
 
 fn image_bytes(format: image::ImageFormat) -> Vec<u8> {
     let mut bytes = Cursor::new(Vec::new());
@@ -80,23 +81,20 @@ fn cover_1_an_album_spanning_two_directories_gets_one_cover_in_each() {
     assert_eq!(std::fs::read(second_target).unwrap(), bytes);
 }
 
-#[cfg(unix)]
 #[test]
 fn cover_1_a_write_failure_is_silent_and_leaves_no_temporary_file() {
-    use std::os::unix::fs::PermissionsExt;
+    let root = TempDir::new().unwrap();
+    let missing_album = root.path().join("missing-album");
 
-    let album = TempDir::new().unwrap();
-    std::fs::set_permissions(album.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
-
-    let result = write_album_cover(
-        &[album.path().to_path_buf()],
+    let result = write_album_cover_with_source(
+        &ExistingPathSource::DIRECTORY,
+        &[missing_album],
         &image_bytes(image::ImageFormat::Png),
         "png",
     );
 
-    std::fs::set_permissions(album.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
     assert_eq!(result, vec![CoverWrite::Failed]);
-    assert!(std::fs::read_dir(album.path()).unwrap().next().is_none());
+    assert!(std::fs::read_dir(root.path()).unwrap().next().is_none());
 }
 
 #[test]
