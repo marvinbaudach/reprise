@@ -12,6 +12,7 @@ use reprise_core::podcasts::download_state::DownloadState;
 use reprise_core::podcasts::{EpisodeRow, PodcastKind, SourceGroup};
 
 use super::podcasts_context_menu;
+use super::podcasts_context_surface;
 use super::podcasts_playback::EpisodeMark;
 use super::podcasts_presentation::{
     author_line, detail_line, duration, file_size, on_phone, relative_date, status_pill,
@@ -294,6 +295,12 @@ fn group_header(
     menu.add_css_class("flat");
     menu.set_tooltip_text(Some(&strings::text(strings::PODCAST_MORE_SOURCE_OPTIONS)));
     header.append(&menu);
+    podcasts_context_surface::wire_source_header(
+        &header,
+        group,
+        connected_devices,
+        selected_device_ids,
+    );
     header.upcast()
 }
 
@@ -357,6 +364,13 @@ fn episode_row(
     thumbnail.add_overlay(&marker);
     root.append(&thumbnail);
     install_row_interaction(&root, row.id, SELECT_ROW_ACTION);
+    podcasts_context_surface::wire_episode_row(
+        &root,
+        row,
+        context.selection,
+        context.unavailable_episode,
+        SELECT_ROW_ACTION,
+    );
     super::podcasts_dnd::wire_episode_drag_source(&root, row.id, context.selection);
 
     let identity = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
@@ -405,29 +419,12 @@ fn episode_row(
     widgets.downloads.insert(row.id, download_row);
     root.append(&download);
 
-    let menu = gtk4::MenuButton::builder()
-        .icon_name("view-more-symbolic")
-        .build();
-    // `SRC-14`: built when it opens, not when the row is rendered. A selection
-    // change no longer re-renders (that is what keeps keyboard focus alive), so
-    // a model built here would describe a selection that has since moved on.
-    // Opening it also makes the row the selection when it was outside it, so
-    // the menu and the highlighted rows agree on what is about to be acted on.
-    let menu_row = row.clone();
-    let menu_selection = context.selection.clone();
-    let unavailable_episode = context.unavailable_episode;
-    menu.set_create_popup_func(move |menu| {
-        podcasts_context_menu::popup_for_row(
-            menu,
-            &menu_row,
-            &menu_selection,
-            unavailable_episode,
-            SELECT_ROW_ACTION,
-            None,
-        );
-    });
-    menu.add_css_class("flat");
-    menu.set_tooltip_text(Some(&strings::text(strings::PODCAST_MORE_OPTIONS)));
+    let menu = podcasts_context_surface::episode_menu_button(
+        row,
+        context.selection,
+        context.unavailable_episode,
+        SELECT_ROW_ACTION,
+    );
     root.append(&menu);
     root.upcast()
 }
