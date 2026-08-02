@@ -311,7 +311,7 @@ fn ambiguous_device_inode_candidates_are_not_guessed() {
         .unwrap();
 
     // Get the fixture file_size for the lookup (inode won't match real file).
-    let (file_size, _, _) = file_stat(&path_a).expect("fixture file must stat successfully");
+    let (file_size, _) = file_stat(&path_a).expect("fixture file must stat successfully");
 
     // Call find_move_candidate directly with the fake device/inode to hit the
     // ambiguity branch. Both rows match device=7777, inode=8888, so both are
@@ -319,8 +319,7 @@ fn ambiguous_device_inode_candidates_are_not_guessed() {
     // gone). With 2 valid candidates, the function must warn and return Ok(None).
     let tx = conn.conn().unchecked_transaction().unwrap();
     let lookup = move_detect::MoveLookup {
-        device: 7777,
-        inode: 8888,
+        identity: Some((7777, 8888)),
         title: "Dev Inode Ambiguity",
         artist: "Some Artist",
         album: "Some Album",

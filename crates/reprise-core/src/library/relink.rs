@@ -86,12 +86,15 @@ pub fn relink_track(db: &Db, target: &RelinkTarget, new_path: &Path) -> Result<(
     } else {
         meta.title.clone()
     };
-    let (file_size, device, inode) = super::scanner::file_stat(new_path).ok_or_else(|| {
+    let (file_size, identity) = super::scanner::file_stat(new_path).ok_or_else(|| {
         std::io::Error::new(
             std::io::ErrorKind::NotFound,
             format!("relink source disappeared: {}", new_path.display()),
         )
     })?;
+    let (device, inode) = identity.map_or((None, None), |(device, inode)| {
+        (Some(device as i64), Some(inode as i64))
+    });
     let mount_point =
         super::mounts::mount_point_of(new_path).map(|path| path.to_string_lossy().into_owned());
 
@@ -122,8 +125,8 @@ pub fn relink_track(db: &Db, target: &RelinkTarget, new_path: &Path) -> Result<(
         &super::scanner::move_detect::FileIdentity {
             file_mtime: super::scanner::file_mtime(new_path),
             file_size: file_size as i64,
-            device: Some(device as i64),
-            inode: Some(inode as i64),
+            device,
+            inode,
             mount_point,
         },
     )?;
@@ -173,10 +176,11 @@ pub fn relink_from_folder(
         }
         processed = processed.saturating_add(1);
         let path = entry.path();
-        let Some((file_size, device, inode)) = super::scanner::file_stat(path) else {
+        let Some((file_size, identity)) = super::scanner::file_stat(path) else {
             on_progress(processed, total);
             continue;
         };
+        let identity = identity.map(|(device, inode)| (device as i64, inode as i64));
         let meta = match super::scanner::track_meta::read_meta(path) {
             Ok(meta) => meta,
             Err(ScanError::Import { .. }) => {
@@ -199,8 +203,7 @@ pub fn relink_from_folder(
         let candidate = super::scanner::move_detect::find_move_candidate_in(
             &tx,
             &super::scanner::move_detect::MoveLookup {
-                device: device as i64,
-                inode: inode as i64,
+                identity,
                 title: &title,
                 artist: &meta.artist,
                 album: &meta.album,
@@ -226,6 +229,8 @@ pub fn relink_from_folder(
                     .optional()?
                     .is_some();
             if still_missing {
+                let (device, inode) =
+                    identity.map_or((None, None), |(device, inode)| (Some(device), Some(inode)));
                 super::scanner::move_detect::apply_file_identity(
                     &tx,
                     candidate.id,
@@ -236,8 +241,8 @@ pub fn relink_from_folder(
                     &super::scanner::move_detect::FileIdentity {
                         file_mtime: super::scanner::file_mtime(path),
                         file_size: file_size as i64,
-                        device: Some(device as i64),
-                        inode: Some(inode as i64),
+                        device,
+                        inode,
                         mount_point,
                     },
                 )?;
