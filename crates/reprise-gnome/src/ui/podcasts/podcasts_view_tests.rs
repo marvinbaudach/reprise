@@ -134,8 +134,8 @@ fn src_14_selecting_a_row_does_not_rebuild_it() {
     let row = after.unwrap();
     assert!(row.has_css_class("reprise-podcast-episode-selected"));
     assert!(
-        widgets[&episode_id].checkbox.is_active(),
-        "the checkbox mirrors the selection it did not make"
+        gtk4::test_accessible_has_state(&row, gtk4::AccessibleState::Selected),
+        "the row exposes its selected state to assistive technology"
     );
 }
 
@@ -166,7 +166,60 @@ fn src_14_a_range_selects_every_row_between_anchor_and_target() {
     assert!(!widgets[&order[0]]
         .row
         .has_css_class("reprise-podcast-episode-selected"));
-    assert!(!widgets[&order[0]].checkbox.is_active());
+    assert!(!view.selection.borrow().contains(order[0]));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_12_escape_clears_episode_selection_and_a_second_escape_proceeds() {
+    gtk4::init().unwrap();
+    let (view, _) = view_with_expanded_episodes(3);
+    let order = view.rendered_order();
+    for episode_id in &order[..2] {
+        view.root()
+            .activate_action(
+                "podcasts.select-row",
+                Some(&(*episode_id, SelectMode::Toggle.as_u8()).to_variant()),
+            )
+            .unwrap();
+    }
+    assert_eq!(view.selection.borrow().selected_ids().len(), 2);
+
+    let controllers = view.root.observe_controllers();
+    let key_controller = (0..controllers.n_items())
+        .find_map(|index| {
+            controllers
+                .item(index)?
+                .downcast::<gtk4::EventControllerKey>()
+                .ok()
+        })
+        .expect("the Podcasts root has its selection key controller");
+    assert_eq!(
+        key_controller.propagation_phase(),
+        gtk4::PropagationPhase::Bubble
+    );
+
+    let first_consumed = key_controller.emit_by_name::<bool>(
+        "key-pressed",
+        &[
+            &gtk4::gdk::Key::Escape,
+            &0u32,
+            &gtk4::gdk::ModifierType::empty(),
+        ],
+    );
+    assert!(first_consumed);
+    assert!(view.selection.borrow().selected_ids().is_empty());
+
+    let second_consumed = key_controller.emit_by_name::<bool>(
+        "key-pressed",
+        &[
+            &gtk4::gdk::Key::Escape,
+            &0u32,
+            &gtk4::gdk::ModifierType::empty(),
+        ],
+    );
+    assert!(!second_consumed);
+    assert!(view.selection.borrow().selected_ids().is_empty());
 }
 
 /// A popover needs a real toplevel to attach to, so a menu test has to put the

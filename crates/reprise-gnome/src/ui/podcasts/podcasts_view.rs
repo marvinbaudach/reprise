@@ -35,7 +35,7 @@ use super::podcasts_removal::{
 };
 use super::podcasts_rendered_order;
 use super::podcasts_scroller::build_episode_scroller;
-use super::podcasts_selection::{PodcastSelection, SelectMode, SelectionControls};
+use super::podcasts_selection::{PodcastSelection, SelectMode};
 use super::podcasts_view_data::{episode_ids_in_rendered_order, last_updated_text, unique};
 use super::podcasts_worker::{
     podcasts_response_channel, request_generation, PodcastsOperation, PodcastsPriority,
@@ -60,6 +60,8 @@ mod marker;
 mod requests;
 #[path = "podcasts_view_selection.rs"]
 mod selection;
+#[path = "podcasts_view_shortcuts.rs"]
+mod shortcuts;
 #[cfg(test)]
 #[path = "podcasts_view_tests.rs"]
 mod tests;
@@ -79,7 +81,6 @@ pub(in crate::ui) struct PodcastsView {
     callbacks: PodcastsCallbacks,
     kind: PodcastKind,
     filter_bar: Rc<PodcastsFilterBar>,
-    selection_controls: SelectionControls,
     group_container: gtk4::Box,
     stack: gtk4::Stack,
     youtube_detail: Rc<YoutubeChannelDetail>,
@@ -143,11 +144,7 @@ impl PodcastsView {
         group_container.set_margin_start(12);
         group_container.set_margin_end(12);
         group_container.set_hexpand(true);
-        let (selection_bar, selection_controls) = SelectionControls::standalone();
-        let list_content = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
-        list_content.append(&selection_bar);
-        list_content.append(&group_container);
-        let scroller = build_episode_scroller(list_content.upcast_ref::<gtk4::Widget>());
+        let scroller = build_episode_scroller(group_container.upcast_ref::<gtk4::Widget>());
 
         let status = adw::StatusPage::new();
         let status_button = gtk4::Button::new();
@@ -205,7 +202,6 @@ impl PodcastsView {
             callbacks,
             kind,
             filter_bar,
-            selection_controls,
             group_container,
             stack,
             youtube_detail,
@@ -244,6 +240,7 @@ impl PodcastsView {
         });
         view.install_actions();
         view.wire_controls(&refresh);
+        view.install_selection_shortcuts();
         view.install_reveal_tracking();
         let weak = Rc::downgrade(&view);
         view.empty_state.connect_add(move || {
@@ -363,7 +360,6 @@ impl PodcastsView {
         let groups = self.groups.borrow().clone();
         let download_states = self.download_states.borrow().clone();
         let selected_ids = self.selection.borrow().selected_ids();
-        self.selection_controls.update(&selected_ids);
         let connected_devices = self.device_sync.connected();
         let selected_devices = self.device_sync.selected();
         let filter = self.filter_bar.filter();
@@ -411,8 +407,12 @@ impl PodcastsView {
         // `G2` (design 6a): the header line is a projection over the
         // unfiltered `groups`, not `rendered_groups` — it stays a stable
         // library overview instead of jittering with the active filter.
-        self.filter_bar
-            .set_context(unique(shows), filtered.len(), library_summary(&groups));
+        self.filter_bar.set_context(
+            unique(shows),
+            filtered.len(),
+            library_summary(&groups),
+            selected_ids.len(),
+        );
         let subscriptions = groups.len();
         // `G1`/`NET-1a`: the same combined gate the sidebar already uses to
         // decide whether this source's row is even reachable — one

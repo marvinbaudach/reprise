@@ -3695,9 +3695,13 @@ listening statistics.
   privacy promise in UI copy needs a test per call path, not per feature.
 - **SRC-12** [active] [gtk] — Episodes can be selected in bulk in both the
   grouped library view and the channel detail view, with one shared set of
-  batch actions. Actions that are meaningless for more than one episode are
-  hidden rather than applied to an arbitrary member, and a batch reports
-  itself with a single aggregated toast and a single undo.
+  batch actions offered only by the context menu for the current selection;
+  there are no episode checkboxes or separate selection toolbar. Actions that
+  are meaningless for more than one episode are hidden rather than applied to
+  an arbitrary member, and a batch reports itself with a single aggregated
+  toast and a single undo. Escape clears the current episode selection in
+  whichever of the two surfaces is showing, and is passed on untouched when
+  nothing is selected.
 - **SRC-4a** [active] [gtk] — Radio keeps SRC-4's removal and undo
   behavior, and its station menus continue to omit "Play Next" and "Add
   to Queue". A live stream is deliberately not a citizen of an ordered

@@ -260,7 +260,7 @@ fn src_5_one_expander_is_rendered_per_source_group() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn src_12_grouped_selection_survives_render_rebuild_with_a_keyboard_checkbox() {
+fn src_12_grouped_selection_survives_render_rebuild_on_the_row() {
     gtk4::init().unwrap();
     let mut selection = PodcastSelection::default();
     selection.set_selected(1, true);
@@ -287,7 +287,7 @@ fn src_12_grouped_selection_survives_render_rebuild_with_a_keyboard_checkbox() {
     let container = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
 
     for _ in 0..2 {
-        replace(
+        let widgets = replace(
             &container,
             std::slice::from_ref(&rendered),
             None,
@@ -301,18 +301,20 @@ fn src_12_grouped_selection_survives_render_rebuild_with_a_keyboard_checkbox() {
             None,
             &selection,
         );
-        let checkbox = container
+        let row = &widgets.selection[&1].row;
+        assert!(row.has_css_class(SELECTED_ROW_CLASS));
+        assert!(gtk4::test_accessible_has_property(
+            row,
+            gtk4::AccessibleProperty::Label
+        ));
+        assert!(gtk4::test_accessible_has_state(
+            row,
+            gtk4::AccessibleState::Selected
+        ));
+        assert!(row.is_focusable());
+        assert!(row
             .first_child()
-            .and_downcast::<gtk4::Expander>()
-            .and_then(|expander| expander.child())
-            .and_downcast::<gtk4::Box>()
-            .and_then(|episodes| episodes.first_child())
-            .and_downcast::<gtk4::Box>()
-            .and_then(|row| row.first_child())
-            .and_downcast::<gtk4::CheckButton>()
-            .expect("selected episode checkbox");
-        assert!(checkbox.is_active());
-        assert!(checkbox.is_focusable());
+            .is_some_and(|child| child.is::<gtk4::Overlay>()));
     }
 }
 
