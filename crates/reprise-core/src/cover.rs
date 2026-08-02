@@ -58,6 +58,13 @@ pub fn read_cover_tag(track_path: &Path) -> CoverTag {
 /// detected album mismatch can converge without modifying any audio file.
 /// Pure read — it never writes to either the library or cache.
 pub fn resolve_source(track_path: &Path) -> Option<CoverSource> {
+    resolve_source_with_source(&crate::library::source::UnixLibrarySource, track_path)
+}
+
+pub fn resolve_source_with_source(
+    source: &dyn crate::library::source::LibrarySource,
+    track_path: &Path,
+) -> Option<CoverSource> {
     let tag = read_cover_tag(track_path);
     // Stage 1 (offline): a previously downloaded canonical cover for this
     // album takes precedence over track-local embedded artwork.
@@ -72,30 +79,30 @@ pub fn resolve_source(track_path: &Path) -> Option<CoverSource> {
     }
     track_path
         .parent()
-        .and_then(folder_image)
+        .and_then(|directory| folder_image_with_source(source, directory))
         .map(CoverSource::FolderImage)
 }
 
-/// Finds a sidecar cover image in `dir` by canonical stem + known extension,
-/// case-insensitively, deterministically (stem-then-ext priority).
-pub(crate) fn folder_image(dir: &Path) -> Option<PathBuf> {
-    let entries: Vec<PathBuf> = std::fs::read_dir(dir)
-        .ok()?
-        .filter_map(|e| e.ok().map(|e| e.path()))
-        .collect();
+pub(crate) fn folder_image_with_source(
+    source: &dyn crate::library::source::LibrarySource,
+    dir: &Path,
+) -> Option<PathBuf> {
+    let entries = source.read_directory(dir)?;
     for stem in FOLDER_STEMS {
         for ext in IMAGE_EXTS {
-            for path in &entries {
-                let matches_stem = path
+            for entry in &entries {
+                let matches_stem = entry
+                    .path
                     .file_stem()
                     .and_then(|s| s.to_str())
                     .is_some_and(|s| s.eq_ignore_ascii_case(stem));
-                let matches_ext = path
+                let matches_ext = entry
+                    .path
                     .extension()
                     .and_then(|s| s.to_str())
                     .is_some_and(|s| s.eq_ignore_ascii_case(ext));
                 if matches_stem && matches_ext {
-                    return Some(path.clone());
+                    return Some(entry.path.clone());
                 }
             }
         }
@@ -281,6 +288,40 @@ mod tests {
     use super::*;
     use std::io::Write;
 
+    struct InMemoryAlbumSource {
+        entries: Vec<std::path::PathBuf>,
+    }
+
+    impl crate::library::source::LibrarySource for InMemoryAlbumSource {
+        fn residence_token(&self, _at: &std::path::Path) -> Option<i64> {
+            None
+        }
+
+        fn walk(
+            &self,
+            _root: &std::path::Path,
+            _order: crate::library::source::LibraryWalkOrder,
+            _visitor: &mut dyn crate::library::source::LibraryWalkVisitor,
+        ) {
+        }
+
+        fn read_directory(
+            &self,
+            _directory: &std::path::Path,
+        ) -> Option<Vec<crate::library::source::LibraryDirectoryEntry>> {
+            Some(
+                self.entries
+                    .iter()
+                    .cloned()
+                    .map(|path| crate::library::source::LibraryDirectoryEntry {
+                        path,
+                        metadata: None,
+                    })
+                    .collect(),
+            )
+        }
+    }
+
     // A 1x1 PNG, enough for source-resolution tests (no decode here).
     const TINY_PNG: &[u8] = &[
         0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
@@ -359,6 +400,17 @@ mod tests {
             resolve_source(&track),
             Some(CoverSource::FolderImage(_))
         ));
+    }
+
+    #[test]
+    fn folder_image_reads_a_non_filesystem_library_source() {
+        let directory = std::path::Path::new("content:/music/album");
+        let expected = directory.join("Folder.PNG");
+        let source = InMemoryAlbumSource {
+            entries: vec![directory.join("notes.txt"), expected.clone()],
+        };
+
+        assert_eq!(folder_image_with_source(&source, directory), Some(expected));
     }
 
     #[test]

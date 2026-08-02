@@ -89,7 +89,8 @@ fn mount_point_of(conn: &Connection, path: &std::path::Path) -> Option<String> {
 fn file_metadata_preserves_both_failed_stat_fallbacks() {
     let tmp = tempfile::tempdir().unwrap();
     let missing = tmp.path().join("does-not-exist.flac");
-    assert_eq!(file_metadata(&missing), (0, None));
+    let metadata = UnixLibrarySource.probe(&missing, LibraryLinkMode::Follow);
+    assert_eq!(scanner_file_metadata(metadata), (0, None));
 }
 
 /// `std::fs::rename` on the same filesystem keeps the file's inode (and
@@ -308,7 +309,9 @@ fn ambiguous_device_inode_candidates_are_not_guessed() {
         .unwrap();
 
     // Get the fixture file_size for the lookup (inode won't match real file).
-    let (file_size, _) = file_stat(&path_a).expect("fixture file must stat successfully");
+    let metadata = UnixLibrarySource.probe(&path_a, LibraryLinkMode::Follow);
+    let (_, stat) = scanner_file_metadata(metadata);
+    let (file_size, _) = stat.expect("fixture file must stat successfully");
 
     // Call find_move_candidate directly with the fake device/inode to hit the
     // ambiguity branch. Both rows match device=7777, inode=8888, so both are

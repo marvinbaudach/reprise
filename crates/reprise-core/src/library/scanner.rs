@@ -1,13 +1,14 @@
 use rusqlite::Connection;
 
 use crate::db::Db;
-use std::path::Path;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
 use super::import_errors;
 use super::mounts;
 use super::source::{
-    self, LibrarySource, LibraryWalkControl, LibraryWalkErrorKind, LibraryWalkItem,
-    LibraryWalkOrder, UnixLibrarySource,
+    self, LibraryLinkMode, LibraryPathMetadata, LibrarySource, LibraryWalkControl,
+    LibraryWalkErrorKind, LibraryWalkItem, LibraryWalkOrder, UnixLibrarySource,
 };
 use crate::models::ImportErrorKind;
 use crate::models::MissingReason;
@@ -23,13 +24,6 @@ const AUDIO_EXTENSIONS: [&str; 7] = ["mp3", "flac", "ogg", "opus", "m4a", "aac",
 
 type FileStat = (u64, Option<(u64, u64)>);
 type FileMetadata = (i64, Option<FileStat>);
-
-pub(crate) fn is_audio_file(path: &Path) -> bool {
-    path.extension()
-        .and_then(|extension| extension.to_str())
-        .map(str::to_ascii_lowercase)
-        .is_some_and(|extension| AUDIO_EXTENSIONS.contains(&extension.as_str()))
-}
 
 /// `(mtime, stat)` from one metadata query. `mtime` is zero when the query or
 /// timestamp conversion fails, preserving the scanner's "unknown, always
@@ -51,35 +45,21 @@ pub(crate) fn is_audio_file(path: &Path) -> bool {
 /// there; with exactly one valid candidate that attaches one track's history
 /// to another, silently. `None` is the only honest answer for a platform
 /// without a stable identity.
-pub(crate) fn file_metadata(path: &Path) -> FileMetadata {
-    let Ok(metadata) = std::fs::metadata(path) else {
-        return (0, None);
-    };
+fn scanner_file_metadata(metadata: Option<LibraryPathMetadata>) -> FileMetadata {
     let mtime = metadata
-        .modified()
-        .ok()
+        .as_ref()
+        .and_then(|metadata| metadata.modified)
         .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
         .map_or(0, |duration| duration.as_secs() as i64);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        (
-            mtime,
-            Some((metadata.size(), Some((metadata.dev(), metadata.ino())))),
-        )
-    }
-    #[cfg(not(unix))]
-    {
-        (mtime, Some((metadata.len(), None)))
-    }
+    let stat = metadata.and_then(|metadata| metadata.size.map(|size| (size, metadata.identity)));
+    (mtime, stat)
 }
 
-pub(crate) fn file_mtime(path: &Path) -> i64 {
-    file_metadata(path).0
-}
-
-pub(crate) fn file_stat(path: &Path) -> Option<FileStat> {
-    file_metadata(path).1
+pub(crate) fn is_audio_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .map(str::to_ascii_lowercase)
+        .is_some_and(|extension| AUDIO_EXTENSIONS.contains(&extension.as_str()))
 }
 
 /// Return type for tag_param_values: (title, artist, album, album_artist,
@@ -200,7 +180,7 @@ fn scan_folder_with_progress_from(
 ///
 /// A scan whose own `root` cannot be seen has no evidence about any
 /// individual file under it — it only knows "my root is unreachable". Before
-/// the walk even starts, `!root.exists()` short-circuits straight to
+/// the walk even starts, a failed source probe short-circuits straight to
 /// [`ScanOutcome::RootUnavailable`] with no walk and no database write at
 /// all (`import_errors` included) — see Root-Guard case (a) in this
 /// function's test suite.
@@ -281,7 +261,7 @@ fn scan_folder_inner(
          persisted settings) are always absolute in this codebase, and the Unix \
          library source's ancestor walk-to-`/` guarantee assumes it"
     );
-    if !root.exists() {
+    if source.probe(root, LibraryLinkMode::Follow).is_none() {
         // Root-Guard case (a): no walk, no database write at all — see this
         // function's `## Root guard` doc section.
         tracing::warn!(
@@ -295,6 +275,7 @@ fn scan_folder_inner(
 
     let mut report = ScanReport::default();
     let mut audio_files_seen: u64 = 0;
+    let mut observed_audio_paths = HashSet::<PathBuf>::new();
     let mut mount_cache = mount::MountPointCache::new();
     let tx = conn.unchecked_transaction()?;
     let mut walk_failure = None;
@@ -338,10 +319,14 @@ fn scan_folder_inner(
             // goes on to be added/updated/skipped/errored below. See this
             // function's `## Root guard` doc section.
             audio_files_seen += 1;
+            observed_audio_paths.insert(path.to_path_buf());
             let path_str = path.to_string_lossy().to_string();
             // Compute identity before touching tags. An exclusion follows the
             // same file across a rename and must win over move detection.
-            let (mtime, stat) = file_metadata(path);
+            let metadata = entry
+                .metadata
+                .or_else(|| source.probe(path, LibraryLinkMode::Follow));
+            let (mtime, stat) = scanner_file_metadata(metadata);
             let has_file_stat = stat.is_some();
             let (file_size, identity): (i64, Option<(i64, i64)>) = match stat {
                 Some((size, identity)) => (
@@ -489,7 +474,8 @@ fn scan_folder_inner(
                     let move_candidate = if is_update || !has_file_stat {
                         None
                     } else {
-                        move_detect::find_move_candidate(
+                        move_detect::find_move_candidate_with_source(
+                            source,
                             &tx,
                             &move_detect::MoveLookup {
                                 identity,
@@ -641,7 +627,7 @@ fn scan_folder_inner(
         None
     };
     let root_unavailable = guard_evidence.as_ref().is_some_and(|evidence| {
-        !evidence.is_empty() && !vanish::any_candidate_confirms_root_residence(evidence, root)
+        !evidence.is_empty() && !vanish::any_candidate_confirms_root_with(source, evidence, root)
     });
 
     let outcome = if root_unavailable {
@@ -659,7 +645,8 @@ fn scan_folder_inner(
             root: root.to_path_buf(),
         }
     } else {
-        report.vanished = vanish::mark_vanished(&tx, candidates)?;
+        report.vanished =
+            vanish::mark_vanished_with(source, &tx, candidates, &observed_audio_paths)?;
         // T0.3: one collective change-log row per scan that actually touched
         // the catalog (never per track, never for a no-op reconcile), inside
         // the same transaction as the walk so the event and the rows it

@@ -32,6 +32,12 @@ fn hit(outcome: SourceOutcome) -> (LyricsBody, LyricsSource) {
     (hit.body, hit.source)
 }
 
+fn local_provider() -> LocalProvider<'static> {
+    LocalProvider {
+        source: &crate::library::source::UnixLibrarySource,
+    }
+}
+
 #[test]
 fn lyr_1_timestamped_sidecar_is_synchronized() {
     let temp = TempDir::new().unwrap();
@@ -40,7 +46,7 @@ fn lyr_1_timestamped_sidecar_is_synchronized() {
     std::fs::write(track.with_extension("lrc"), "[00:01.25]first line").unwrap();
 
     assert_eq!(
-        hit(LocalProvider.lookup(&query(), Some(&track))),
+        hit(local_provider().lookup(&query(), Some(&track))),
         (
             LyricsBody::Synced(vec![TimedLine::new(1_250, "first line")]),
             LyricsSource::Sidecar,
@@ -56,7 +62,7 @@ fn sidecar_without_timestamps_is_plain() {
     std::fs::write(track.with_extension("lrc"), "plain sidecar").unwrap();
 
     assert_eq!(
-        hit(LocalProvider.lookup(&query(), Some(&track))),
+        hit(local_provider().lookup(&query(), Some(&track))),
         (
             LyricsBody::Plain("plain sidecar".into()),
             LyricsSource::Sidecar,
@@ -73,7 +79,7 @@ fn embedded_tag_text_is_plain() {
     tag.save_to_path(&track, WriteOptions::default()).unwrap();
 
     assert_eq!(
-        hit(LocalProvider.lookup(&query(), Some(&track))),
+        hit(local_provider().lookup(&query(), Some(&track))),
         (
             LyricsBody::Plain("embedded lyrics".into()),
             LyricsSource::Tag,
@@ -103,7 +109,7 @@ fn embedded_sylt_is_synchronized() {
     tag.save_to_path(&track, WriteOptions::default()).unwrap();
 
     assert_eq!(
-        hit(LocalProvider.lookup(&query(), Some(&track))),
+        hit(local_provider().lookup(&query(), Some(&track))),
         (
             LyricsBody::Synced(vec![
                 TimedLine::new(500, "first"),
@@ -124,7 +130,7 @@ fn sidecar_has_precedence_over_embedded_tag() {
     std::fs::write(track.with_extension("lrc"), "sidecar lyrics").unwrap();
 
     assert_eq!(
-        hit(LocalProvider.lookup(&query(), Some(&track))),
+        hit(local_provider().lookup(&query(), Some(&track))),
         (
             LyricsBody::Plain("sidecar lyrics".into()),
             LyricsSource::Sidecar,
@@ -137,14 +143,17 @@ fn missing_or_unreadable_track_is_skipped() {
     let temp = TempDir::new().unwrap();
     let missing = temp.path().join("missing.flac");
     assert_eq!(
-        LocalProvider.lookup(&query(), Some(&missing)),
+        local_provider().lookup(&query(), Some(&missing)),
         SourceOutcome::Skipped
     );
     assert_eq!(
-        LocalProvider.lookup(&query(), Some(temp.path())),
+        local_provider().lookup(&query(), Some(temp.path())),
         SourceOutcome::Skipped
     );
-    assert_eq!(LocalProvider.lookup(&query(), None), SourceOutcome::Skipped);
+    assert_eq!(
+        local_provider().lookup(&query(), None),
+        SourceOutcome::Skipped
+    );
 }
 
 fn copy_flac(directory: &Path, name: &str) -> std::path::PathBuf {

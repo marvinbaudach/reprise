@@ -8,7 +8,7 @@
 //! root-guard rationale these functions implement.
 
 use super::*;
-use crate::library::source::{LibrarySource, UnixLibrarySource};
+use crate::library::source::{LibraryLinkMode, LibrarySource};
 
 /// Shared row-fetch behind both [`present_candidates_under_root`] (the mark
 /// phase) and [`guard_evidence_under_root`] (the root guard's evidence
@@ -113,19 +113,10 @@ pub(super) fn guard_evidence_under_root(
 /// why. See `scan_folder_inner`'s `## Root guard` doc section for why a
 /// single match is enough to treat `root` as provably reachable. A `NULL`
 /// (`None`) recorded device never counts as a match, even in the
-/// (should-not-happen, since the caller already confirmed `root.exists()`)
+/// (should-not-happen, since the caller already probed `root`)
 /// case where `root`'s own device can't be resolved either — two unknowns
 /// are never evidence of each other.
-pub(super) fn any_candidate_confirms_root_residence(
-    candidates: &[(i64, String, Option<i64>)],
-    root: &Path,
-) -> bool {
-    any_candidate_confirms_root_with(&UnixLibrarySource, candidates, root)
-}
-
-/// [`any_candidate_confirms_root_residence`] with the library source
-/// injected — see [`mark_vanished_with`] for why the seam is here.
-fn any_candidate_confirms_root_with(
+pub(super) fn any_candidate_confirms_root_with(
     source: &dyn LibrarySource,
     candidates: &[(i64, String, Option<i64>)],
     root: &Path,
@@ -137,34 +128,29 @@ fn any_candidate_confirms_root_with(
 }
 
 /// The mark phase itself: for every `candidates` row whose file no longer
-/// exists on disk, sets `missing_since`/`missing_reason` (via
+/// exists at its source, sets `missing_since`/`missing_reason` (via
 /// [`LibrarySource::reachability`]) and returns the count newly marked. A row
 /// that's still
-/// on disk (e.g. the walk's own move-detection just relocated a different
+/// present (e.g. the walk's own move-detection just relocated a different
 /// row onto this path, or the file genuinely never left) is left untouched
-/// — this is the same per-row `path.exists()` check `mark_vanished_under_
-/// root` used before the fold, just running inside the walk's own `tx` now
-/// instead of a separate connection/transaction afterward.
-pub(super) fn mark_vanished(
-    tx: &rusqlite::Transaction,
-    candidates: Vec<(i64, String, Option<i64>)>,
-) -> Result<u32, ScanError> {
-    mark_vanished_with(&UnixLibrarySource, tx, candidates)
-}
-
-/// [`mark_vanished`] with the library source injected. Production passes
-/// [`UnixLibrarySource`]; the seam exists so a non-POSIX source can be
-/// classified against without a real filesystem, and so an Android SAF source
-/// can be handed in here once one exists.
-fn mark_vanished_with(
+/// — this is the same per-row presence check `mark_vanished_under_root` used
+/// before the fold, just running inside the walk's own `tx` now instead of a
+/// separate connection/transaction afterward. Paths already delivered by
+/// the current walk are known present and are skipped without another source
+/// query; only unseen candidates need a probe.
+pub(super) fn mark_vanished_with(
     source: &dyn LibrarySource,
     tx: &rusqlite::Transaction,
     candidates: Vec<(i64, String, Option<i64>)>,
+    observed_paths: &std::collections::HashSet<std::path::PathBuf>,
 ) -> Result<u32, ScanError> {
     let mut marked = 0u32;
     for (id, path_str, device) in candidates {
         let path = Path::new(&path_str);
-        if path.exists() {
+        if observed_paths.contains(path) {
+            continue;
+        }
+        if source.probe(path, LibraryLinkMode::Follow).is_some() {
             continue;
         }
         let reason = source.reachability(path, device);

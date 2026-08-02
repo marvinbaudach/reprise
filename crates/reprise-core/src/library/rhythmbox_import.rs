@@ -10,6 +10,7 @@ use quick_xml::Reader;
 use rusqlite::OptionalExtension;
 
 use crate::db::Db;
+use crate::library::source::{LibraryLinkMode, LibrarySource, UnixLibrarySource};
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -393,6 +394,22 @@ pub fn prescan_rhythmdb(
     db: &Db,
     library_root: Option<&str>,
 ) -> Result<RhythmboxPrescanResult, RhythmboxImportError> {
+    prescan_rhythmdb_with_source(
+        &UnixLibrarySource,
+        rhythmdb_path,
+        playlists_path,
+        db,
+        library_root,
+    )
+}
+
+pub fn prescan_rhythmdb_with_source(
+    source: &dyn LibrarySource,
+    rhythmdb_path: &Path,
+    playlists_path: &Path,
+    db: &Db,
+    library_root: Option<&str>,
+) -> Result<RhythmboxPrescanResult, RhythmboxImportError> {
     let conn = db.conn();
     let last_modified = std::fs::metadata(rhythmdb_path)
         .and_then(|m| m.modified())
@@ -498,7 +515,10 @@ pub fn prescan_rhythmdb(
                                     library_root.is_some_and(|root| path_str.starts_with(root));
                                 if !under_root {
                                     result.outside_library += 1;
-                                } else if !track.path.exists() {
+                                } else if source
+                                    .probe(&track.path, LibraryLinkMode::Follow)
+                                    .is_none()
+                                {
                                     result.missing_on_disk += 1;
                                 } else {
                                     result.outside_library += 1;
