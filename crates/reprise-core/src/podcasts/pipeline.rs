@@ -122,9 +122,10 @@ impl YoutubeFetcher for super::ytdlp::YtDlp {
 }
 
 pub fn project_youtube_feed(listing: super::youtube::YoutubeListing, limit: usize) -> ParsedFeed {
+    let channel = listing.channel;
     ParsedFeed {
-        title: listing.title.unwrap_or_else(|| "YouTube source".to_owned()),
-        author: None,
+        title: channel.clone(),
+        author: channel,
         image_url: None,
         episodes: listing
             .episodes
@@ -650,7 +651,10 @@ fn refresh_to_root_with_download_progress(
             FetchSuccess {
                 etag: response.and_then(|value| value.etag.as_deref()),
                 last_modified: response.and_then(|value| value.last_modified.as_deref()),
-                title: Some(&feed.title),
+                title: match subscription.kind {
+                    PodcastKind::Rss => feed.title.as_deref(),
+                    PodcastKind::Youtube => super::youtube::subscription_title(&feed),
+                },
                 author: feed.author.as_deref(),
                 image_url: feed.image_url.as_deref(),
             },

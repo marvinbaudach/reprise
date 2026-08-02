@@ -458,12 +458,17 @@ fn add_podcast(
     });
     let auto_download = params.auto_download.unwrap_or(config.auto_download_default);
     let now = now_secs();
+    let projected_title = match kind {
+        podcasts::PodcastKind::Rss => feed.title.as_deref(),
+        podcasts::PodcastKind::Youtube => podcasts::youtube::subscription_title(&feed),
+    };
+    let title = projected_title.unwrap_or(url).to_owned();
     let id = podcasts::store::add_or_restore_with_baseline(
         db,
         &podcasts::store::NewSubscription {
             kind,
             feed_url: url.to_owned(),
-            title: feed.title.clone(),
+            title: title.clone(),
             author: feed.author.clone(),
             image_url: feed.image_url.clone(),
             auto_download,
@@ -492,7 +497,7 @@ fn add_podcast(
             last_modified: response
                 .as_ref()
                 .and_then(|value| value.last_modified.as_deref()),
-            title: Some(&feed.title),
+            title: projected_title,
             author: feed.author.as_deref(),
             image_url: feed.image_url.as_deref(),
         },
@@ -506,7 +511,7 @@ fn add_podcast(
             podcasts::PodcastKind::Rss => "rss",
             podcasts::PodcastKind::Youtube => "youtube",
         },
-        title: feed.title,
+        title,
         episodes_affected,
     })
 }
