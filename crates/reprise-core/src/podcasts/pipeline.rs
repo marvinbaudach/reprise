@@ -122,7 +122,14 @@ impl YoutubeFetcher for super::ytdlp::YtDlp {
 }
 
 pub fn project_youtube_feed(listing: super::youtube::YoutubeListing, limit: usize) -> ParsedFeed {
-    let channel = listing.channel;
+    // yt-dlp names the channel in `channel`/`uploader` on most channel dumps,
+    // but not on all of them — and where it does not, its `title` *is* the
+    // channel name, because this path fetches a channel URL rather than the
+    // uploads playlist. (The useless "Videos" title comes from the RSS feed,
+    // which is a different path and is handled where that feed is parsed.)
+    // Falling through to `None` here is what made a freshly added channel fall
+    // back to its own URL as a title.
+    let channel = listing.channel.or(listing.title);
     ParsedFeed {
         title: channel.clone(),
         author: channel,

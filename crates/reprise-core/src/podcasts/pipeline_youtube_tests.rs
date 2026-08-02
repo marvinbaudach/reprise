@@ -33,19 +33,71 @@ impl YoutubeFetcher for NeverYoutube {
     }
 }
 
+/// This path fetches a *channel* URL through yt-dlp, where `title` is the
+/// channel's own name — the useless "Videos" title belongs to the uploads RSS
+/// feed, which is a different path and is stripped by
+/// `youtube::subscription_title`. So when yt-dlp omits `channel`/`uploader`,
+/// falling back to its title is right; falling through to `None` made a freshly
+/// added channel take its own URL as a name (caught by the MCP
+/// `adds_and_imports_a_youtube_channel_through_ytdlp` test).
 #[test]
-fn youtube_projection_never_uses_the_playlist_title_without_a_channel_name() {
+fn youtube_projection_falls_back_to_the_listing_title_without_a_channel_name() {
     let feed = project_youtube_feed(
         super::super::youtube::YoutubeListing {
-            title: Some("Videos".to_owned()),
+            title: Some("HOLLOW FALLEN".to_owned()),
             channel: None,
             episodes: Vec::new(),
         },
         25,
     );
 
-    assert_eq!(feed.title, None);
+    assert_eq!(feed.title.as_deref(), Some("HOLLOW FALLEN"));
+    assert_eq!(feed.author.as_deref(), Some("HOLLOW FALLEN"));
+}
+
+#[test]
+fn youtube_projection_without_any_name_leaves_the_stored_title_alone() {
+    let feed = project_youtube_feed(
+        super::super::youtube::YoutubeListing {
+            title: None,
+            channel: None,
+            episodes: Vec::new(),
+        },
+        25,
+    );
+
+    assert_eq!(feed.title, None, "a nameless listing must not overwrite");
     assert_eq!(feed.author, None);
+}
+
+/// The RSS side is where "Videos" actually comes from, and it is dropped there:
+/// only a non-empty author becomes the subscription title.
+#[test]
+fn youtube_rss_refresh_never_promotes_the_playlist_title() {
+    use super::super::feed::ParsedFeed;
+
+    let videos_feed = ParsedFeed {
+        title: Some("Videos".to_owned()),
+        author: Some("HOLLOW FALLEN".to_owned()),
+        image_url: None,
+        episodes: Vec::new(),
+    };
+    assert_eq!(
+        super::super::youtube::subscription_title(&videos_feed),
+        Some("HOLLOW FALLEN")
+    );
+
+    let authorless = ParsedFeed {
+        title: Some("Videos".to_owned()),
+        author: Some("   ".to_owned()),
+        image_url: None,
+        episodes: Vec::new(),
+    };
+    assert_eq!(
+        super::super::youtube::subscription_title(&authorless),
+        None,
+        "a blank author must not rename the subscription to \"Videos\""
+    );
 }
 
 #[test]
