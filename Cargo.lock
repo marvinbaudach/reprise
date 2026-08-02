@@ -2798,6 +2798,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "reprise-view"
+version = "0.1.1"
+dependencies = [
+ "reprise-core",
+]
+
+[[package]]
 name = "ring"
 version = "0.17.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
