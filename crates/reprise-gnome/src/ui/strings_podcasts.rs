@@ -123,6 +123,7 @@ pub const PODCAST_YTDLP_BLOCKED: &str =
 pub const PODCAST_RESOLVING_AUDIO: &str = N_!("Resolving audio…");
 pub const PODCAST_PLAY: &str = N_!("Play");
 pub const PODCAST_COPY_URL: &str = N_!("Copy episode URL");
+pub const PODCAST_OPEN_IN_BROWSER: &str = N_!("Open in browser");
 pub const PODCAST_MARK_PLAYED: &str = N_!("Mark as played");
 pub const PODCAST_MARK_UNPLAYED: &str = N_!("Mark as unplayed");
 pub const PODCAST_DOWNLOAD: &str = N_!("Download episode");
