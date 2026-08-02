@@ -49,7 +49,7 @@ use gtk4::glib;
 use gtk4::graphene;
 use gtk4::prelude::*;
 
-use super::queue_item_menu::QueueMenuRoute;
+use super::queue_item_menu::{build_common_queue_menu, route, QueueMenuRoute};
 use super::track_menu::{
     action_states, build_track_menu, playlist_entries, summarize_selection, MenuContext,
     MenuInputs, SelectionSummary,
@@ -63,7 +63,7 @@ use crate::ui::strings;
 use crate::ui::tag_edit_flow;
 use crate::ui::track_actions;
 use crate::ui::track_list::{reload, show_toast, Shared};
-use crate::ui::track_list_queue_menu;
+use crate::ui::track_list_queue_menu::{self, ACTION_REMOVE_FROM_QUEUE};
 use reprise_core::library::playlists;
 use reprise_core::models::Track;
 use reprise_core::view_source::ViewSource;
@@ -189,10 +189,12 @@ pub(in crate::ui) fn build_context_menu_model(shared: &Rc<Shared>) -> gio::Menu 
         .filter_map(|position| shared.model.queue_item_at(position))
         .map(|metadata| metadata.item())
         .collect::<Vec<_>>();
+    let queue_projection_editable =
+        !track_list_queue_menu::selection_has_read_only_episode_projection(shared);
     let menu = if context == MenuContext::Queue
-        && super::queue_item_menu::route(&queue_items) == QueueMenuRoute::CommonQueueItems
+        && route(&queue_items) == QueueMenuRoute::CommonQueueItems
     {
-        super::queue_item_menu::build_common_queue_menu(queue_items.len())
+        build_common_queue_menu(queue_items.len(), queue_projection_editable)
     } else {
         let rows = playlists::list(&shared.conn).unwrap_or_else(|error| {
             tracing::error!(%error, "context menu: failed to list playlists");
@@ -206,7 +208,9 @@ pub(in crate::ui) fn build_context_menu_model(shared: &Rc<Shared>) -> gio::Menu 
             is_missing_view,
         })
     };
-    if matches!(context, MenuContext::Playlist | MenuContext::Queue) {
+    if matches!(context, MenuContext::Playlist | MenuContext::Queue)
+        && (context != MenuContext::Queue || queue_projection_editable)
+    {
         let reorder = gio::Menu::new();
         for (label, action) in [
             (strings::CONTEXT_MENU_MOVE_UP, ACTION_MOVE_UP),
@@ -256,12 +260,15 @@ fn update_menu_action_states(
         super::track_list_keyboard_reorder::ReorderDirection::Top,
     ) || (context == MenuContext::Queue
         && track_list_queue_menu::selected_rows(shared).len() > 1);
+    let queue_projection_editable = context != MenuContext::Queue
+        || !track_list_queue_menu::selection_has_read_only_episode_projection(shared);
     for (name, enabled) in [
         (ACTION_PLAY_NEXT, enqueue_enabled),
         (ACTION_ADD_TO_QUEUE, enqueue_enabled),
         (ACTION_MOVE_UP, move_up),
         (ACTION_MOVE_DOWN, move_down),
         (ACTION_MOVE_TO_TOP, move_to_top),
+        (ACTION_REMOVE_FROM_QUEUE, queue_projection_editable),
         (ACTION_GO_TO_ALBUM, states.go_to_album),
         (ACTION_GO_TO_ARTIST, states.go_to_artist),
         (ACTION_SHOW_IN_FILES, states.show_in_files),

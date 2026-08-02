@@ -74,13 +74,14 @@ fn context_window(ids: &[i64]) -> Rc<dyn super::super::queue_sections::ContextWi
 struct LiveContextWindow(Rc<RefCell<Vec<i64>>>);
 
 impl super::super::queue_sections::ContextWindow for LiveContextWindow {
-    fn rows(&self, offset: usize, limit: usize) -> Vec<i64> {
+    fn rows(&self, offset: usize, limit: usize) -> Vec<reprise_core::up_next::QueueItem> {
         self.0
             .borrow()
             .iter()
             .skip(offset)
             .take(limit)
             .copied()
+            .map(reprise_core::up_next::QueueItem::Track)
             .collect()
     }
 }
@@ -189,6 +190,42 @@ fn mixed_queue_snapshot_renders_track_and_episode_with_colliding_ids() {
             if episode.title == "Episode Seven" && episode.show == "Systems Weekly"
     ));
     assert!(model.track_at(1).is_none());
+}
+
+#[test]
+fn virtual_episode_context_renders_episode_metadata() {
+    let conn = crate::test_db::open().unwrap();
+    crate::test_db::connection(&conn)
+        .execute_batch(
+            "INSERT INTO podcast_subscriptions
+             (id, kind, feed_url, title, added_at)
+             VALUES (1, 'rss', 'https://example.test/feed', 'Systems Weekly', 0);
+             INSERT INTO podcast_episodes
+             (id, subscription_id, guid, title, audio_url, duration_secs, first_seen_at)
+             VALUES
+             (7, 1, 'episode-seven', 'Episode Seven',
+              'https://example.test/seven.mp3', 90, 0),
+             (8, 1, 'episode-eight', 'Episode Eight',
+              'https://example.test/eight.mp3', 120, 0);",
+        )
+        .unwrap();
+    let model = TrackListModel::new(Rc::new(conn));
+    let queue = super::super::queue_sections::compose_virtual(
+        Some(reprise_core::up_next::QueueItem::Episode(7)),
+        &[],
+        Some(super::super::queue_sections::VirtualContext::new(1)),
+        Some("Systems Weekly"),
+    );
+    let context: Rc<dyn super::super::queue_sections::ContextWindow> =
+        Rc::new(vec![reprise_core::up_next::QueueItem::Episode(8)]);
+
+    model.set_queue_snapshot(&queue, context, vec![(0, 1), (1, 2)]);
+
+    assert!(matches!(
+        model.queue_item_at(1),
+        Some(reprise_core::queries::QueueItemMetadata::Episode(episode))
+            if episode.title == "Episode Eight" && episode.show == "Systems Weekly"
+    ));
 }
 
 #[test]

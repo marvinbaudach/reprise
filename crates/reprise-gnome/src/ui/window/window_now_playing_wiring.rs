@@ -7,7 +7,7 @@ use crate::ui::playback::queue_transport::QueueContextWindow;
 use crate::ui::player_controller::PlayerController;
 use crate::ui::track_list::queue_sections::ContextWindow;
 
-use super::window_queue_model::SharedQueueModel;
+use super::window_queue_model::{install_refresh_callbacks, RefreshCallback, SharedQueueModel};
 
 pub(in crate::ui) fn install(
     player: &Rc<PlayerController>,
@@ -56,8 +56,11 @@ pub(in crate::ui) fn install(
             panel.set_up_next_model(&snapshot, &context_window);
         })
     };
-    let refresh_on_queue_change = refresh.clone();
-    player.add_on_queue_changed(move || refresh_on_queue_change());
+    install_refresh_callbacks(
+        |refresh| player.add_on_queue_changed(move || refresh()),
+        |refresh| player.add_on_external_changed(move |_| refresh()),
+        refresh.clone() as RefreshCallback,
+    );
     panel.set_on_up_next_refresh(move || refresh());
 
     let player_for_jump = Rc::downgrade(player);

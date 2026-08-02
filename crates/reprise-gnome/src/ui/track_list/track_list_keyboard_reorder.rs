@@ -48,6 +48,21 @@ fn keyboard_queue_op(
     super::queue_row_mapping::reorder_op(from, target, sections)
 }
 
+fn queue_source_is_editable(
+    shared: &Rc<Shared>,
+    from: u32,
+    sections: &[super::queue_sections::QueueSection],
+) -> bool {
+    let row = super::queue_row_mapping::classify(from, sections);
+    let item = shared
+        .model
+        .queue_item_at(from)
+        .map(|metadata| metadata.item());
+    row.zip(item).is_some_and(|(row, item)| {
+        !super::queue_row_mapping::is_read_only_episode_projection(row, item)
+    })
+}
+
 pub(in crate::ui) fn is_available(shared: &Rc<Shared>, direction: ReorderDirection) -> bool {
     let Some((from, target)) = selected_move(shared, direction) else {
         return false;
@@ -83,7 +98,8 @@ pub(in crate::ui) fn is_available(shared: &Rc<Shared>, direction: ReorderDirecti
         }
         ViewSource::Queue => {
             let sections = shared.queue_sections.borrow();
-            keyboard_queue_op(from, shared.model.n_items(), direction, &sections).is_some()
+            queue_source_is_editable(shared, from, &sections)
+                && keyboard_queue_op(from, shared.model.n_items(), direction, &sections).is_some()
         }
         _ => false,
     }
@@ -115,6 +131,10 @@ pub(in crate::ui) fn perform(shared: &Rc<Shared>, direction: ReorderDirection) -
         ViewSource::Queue => {
             let op = {
                 let sections = shared.queue_sections.borrow();
+                if !queue_source_is_editable(shared, from, &sections) {
+                    tracing::debug!(from, "episode context row cannot be reordered; ignoring");
+                    return false;
+                }
                 keyboard_queue_op(from, shared.model.n_items(), direction, &sections)
             };
             let Some(op) = op else {

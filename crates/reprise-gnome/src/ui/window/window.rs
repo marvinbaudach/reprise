@@ -267,14 +267,22 @@ pub fn build(app: &adw::Application, conn: &Rc<Db>, db_path: &Path) -> FileOpenH
     if let Some(player) = &player {
         let sidebar = Rc::downgrade(&sidebar);
         let track_list_weak = Rc::downgrade(&track_list);
-        player.add_on_queue_changed(move || {
+        let refresh = Rc::new(move || {
             if let Some(sidebar) = sidebar.upgrade() {
                 sidebar.refresh("up next changed");
             }
             if let Some(track_list) = track_list_weak.upgrade() {
                 track_list.reload_queue_if_visible();
             }
-        });
+        }) as super::window_queue_model::RefreshCallback;
+        // A queue change always means these surfaces are stale. An external
+        // change only sometimes does, so it goes through the model-change
+        // gate — see `window_queue_model::refresh_on_model_change`.
+        let on_queue_changed = refresh.clone();
+        player.add_on_queue_changed(move || on_queue_changed());
+        let on_external_changed =
+            super::window_queue_model::refresh_on_model_change(&queue_model, refresh);
+        player.add_on_external_changed(move |_| on_external_changed());
         let track_list_weak = Rc::downgrade(&track_list);
         player.set_view_refill_provider(move || match track_list_weak.upgrade() {
             Some(track_list) => track_list.transport_refill_ids(),

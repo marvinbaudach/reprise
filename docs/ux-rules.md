@@ -1118,7 +1118,8 @@ human. Rationale for changes lives in the git history.
   context from `play_origin`. A header appears only if its section has
   entries; an empty manual section leaves only "Continuing …" standing.
   Their visible order is also the playback order; as long as something
-  is playing, the queue never shows two empty sections.
+  is playing, the queue never shows two empty sections. QUE-10 owns the
+  direct-episode variant of the named context section.
 - **QUE-3** [active] [core] — Played manual entries silently disappear
   from "Next in Queue" on queue-item change: no strikethrough and no
   lingering. The section contains only the still-pending future.
@@ -1141,14 +1142,21 @@ human. Rationale for changes lives in the git history.
 - **QUE-9** [active] [core] — The manual queue stores typed track and
   episode entries and preserves their identity even when their numeric
   IDs collide. RSS and YouTube episodes advance in manual queue order,
-  never enter the automatic "Continuing from …" context, never earn a
-  listen, and are never gaplessly pre-fed. POD-20 owns their shared
-  playing marker and POD-21 owns their frozen queue-neighbour transport.
+  never enter the container queue's automatic `QueueSnapshot` context,
+  never earn a listen, and are never gaplessly pre-fed. POD-20 owns their
+  shared playing marker, POD-21 owns their frozen queue-neighbour transport,
+  and QUE-10 owns the direct-episode rendering projection.
   Radio remains excluded. Outward queue snapshots add typed item lists
   alongside the legacy `*_track_ids` projections; those legacy fields
   remain track-only and omit episodes. MPRIS identifies an episode under
   `/org/reprise/Reprise/episode/{id}` and exposes title, show-as-artist
   and length, but no album or rating.
+- **QUE-10** [active] [gtk] — While a podcast or YouTube episode plays
+  directly from its source view, both queue surfaces show that episode as
+  Now Playing and render its frozen POD-21 neighbours as the named context
+  section, labelled with the show or channel. The manual queue and container
+  `QueueSnapshot` remain unchanged underneath and reappear unchanged when
+  queue playback resumes.
 
 ## K. Filter & search visibility
 
@@ -2367,7 +2375,8 @@ property is set and yet nothing happens.
   virtual, named context tail with a count. The tail is not materialized as
   individual rows but only rendered within the visible window; the
   sidebar row "Queue" counts exclusively the manual queue and shows no
-  counter at zero.
+  counter at zero. QUE-10 applies the same virtual tail to a direct episode's
+  frozen show or channel context without changing the container queue.
 - **QUE-8** [active] [gtk] — Drag reorder exists exclusively in "Next in
   Queue". The manual section is reorderable; a drag out of "Continuing"
   upward materializes exactly that entry in the manual section.
