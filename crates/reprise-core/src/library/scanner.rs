@@ -715,6 +715,12 @@ mod progress_tests;
 #[path = "scanner_tests.rs"]
 mod tests;
 
+// The scan tests that use a non-Unix `LibrarySource` live apart from the rest,
+// again for the 800-line rule — see `scanner_source_tests.rs`'s module doc.
+#[cfg(test)]
+#[path = "scanner_source_tests.rs"]
+mod source_tests;
+
 #[cfg(test)]
 #[path = "scanner_metadata_persistence_tests.rs"]
 mod metadata_persistence_tests;

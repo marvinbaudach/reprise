@@ -33,10 +33,22 @@ pub enum LibraryWalkErrorKind {
 }
 
 /// A traversal failure delivered in source order beside successful entries.
+///
+/// A failure is not the end of the walk: the source reports it and carries on
+/// wherever it can, so one unreadable directory costs its own subtree and
+/// nothing more.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LibraryWalkError {
+    /// The container the source could not enter — **never an item inside it**.
+    /// Those were never seen, and naming one here would invite a consumer to
+    /// record a failure for an item it has no evidence about. `None` only when
+    /// the source cannot say where the failure was; consumers then attribute it
+    /// to the walk's root.
     pub path: Option<PathBuf>,
     pub kind: LibraryWalkErrorKind,
+    /// Free-form diagnostic text for logs and the import-error catalog. Not
+    /// translated and not shown as a primary message — [`Self::kind`] is what
+    /// a surface renders.
     pub detail: String,
 }
 
@@ -110,6 +122,12 @@ pub trait LibrarySource: Send + Sync {
     /// `FileName` orders siblings; it does not flatten the depth-first tree.
     /// `Native` deliberately leaves sibling order to the adapter. Both modes
     /// must deliver directory failures inline and continue when possible.
+    ///
+    /// There is no return value, and none is needed: a source that cannot open
+    /// `root` at all reports that as a single [`LibraryWalkItem::Error`] naming
+    /// `root` and then produces nothing further. Consumers already treat "the
+    /// walk yielded no entries" as its own condition — see `scan_folder_inner`'s
+    /// root guard — so a failure to start needs no separate channel.
     fn walk(&self, root: &Path, order: LibraryWalkOrder, visitor: &mut dyn LibraryWalkVisitor);
 
     /// Classifies why an item already known to be missing at `at` is missing,
@@ -340,6 +358,9 @@ mod tests {
             self.provider_tree_id?.strip_prefix("tree-")?.parse().ok()
         }
 
+        /// This double exists to exercise residence classification only, and
+        /// the tests below never walk it. An empty walk is the honest answer
+        /// for a source with no tree at all — not a stub standing in for one.
         fn walk(
             &self,
             _root: &Path,

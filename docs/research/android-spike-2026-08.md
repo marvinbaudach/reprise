@@ -698,11 +698,25 @@ Staging-Pfade bleiben weiterhin außerhalb von `LibrarySource`.
 `scan_folder_with_progress` zählt den Baum nicht mehr vor. Stattdessen dient
 die Zahl der gegenwärtigen Katalogzeilen unter der gewählten Wurzel als billige
 Schätzung aus dem letzten Scan; findet der Lauf mehr Dateien, wächst der
-Nenner mit. Beim ersten Scan sieht der Nutzer deshalb `1 von 1`, dann `2 von
-2`; spätere Scans beginnen mit der vorher bekannten Größe. Neue Dateien können
-den Nenner anheben, bei entfernten Dateien kann der Lauf enden, bevor die
-Schätzung 100 Prozent erreicht. Das Scan-Ergebnis bleibt unverändert, aber SAF
-spart einen vollständigen Satz von DocumentsProvider-Auflistungen.
+Nenner mit. Neue Dateien können ihn anheben, bei entfernten Dateien kann der
+Lauf enden, bevor die Schätzung 100 Prozent erreicht. Das Scan-Ergebnis bleibt
+unverändert, aber SAF spart einen vollständigen Satz von
+DocumentsProvider-Auflistungen.
+
+**Beim ersten Scan gibt es keine Schätzung, und das sagt die App auch.**
+`ScanProgress::Scanning::total` ist `Option<u64>`; ohne vorherigen Katalog
+bleibt es `None`, und die Oberfläche zeigt einen unbestimmten Balken mit
+„Finding music files…" statt einer Prozentzahl. Der naheliegende Kurzschluss —
+den Nenner auf die bereits gesehenen Dateien zu heben — ergäbe `n von n` und
+damit einen vollen Balken über die gesamte Dauer des längsten Scans, den ein
+Nutzer je abwartet. Ein Test hält das fest; eine Schätzung, die künftig wieder
+auf `processed` zurückfällt, schlägt dort fehl.
+
+Die Schätzung nutzt denselben `LIKE '<wurzel>/%'`-Vorfilter wie
+`scanner_vanish::candidates_under_root`, mit `Path::starts_with` als
+maßgeblicher Prüfung dahinter. Ohne ihn zöge ein Rescan eines kleinen
+Unterbaums jedes vorhandene Stück der ganzen Bibliothek durch Rust, nur um
+einen Fortschrittsbalken zu bemaßen.
 
 `LibrarySource::walk` ist objekt-sicher und stromorientiert: Ein benanntes
 Visitor-Interface trägt benannte Einträge und Fehler sowie ein Stoppsignal;
@@ -711,6 +725,14 @@ zum Trait. Die Unix-Quelle kapselt `walkdir` mit `follow_links(false)`, der
 Scanner behält die native Reihenfolge und Relink die Sortierung nach Dateiname.
 Ein im Test aufgebauter DocumentsProvider-artiger Baum ohne Dateisystem liefert
 dieselbe sortierte Audio-Datei-Projektion wie der Unix-Adapter.
+
+Bewiesen ist damit der *Vertrag*. Dass auch die *Verbraucher* quellenneutral
+sind, zeigen zwei Scanner-Tests, die `scan_folder_with_source` mit einer
+skriptgesteuerten Quelle fahren: einmal ein vollständiger Scan über einen Baum,
+den niemand abgelaufen ist, einmal ein Traversierungsfehler, der als
+`import_errors`-Zeile ankommt und den Rest des Laufs nicht abbricht. Der
+bestehende Rechte-basierte Test deckt denselben Pfad ab, überspringt sich aber
+überall dort, wo Verzeichnisrechte nicht durchgesetzt werden — als root etwa.
 
 ## Frage 8 — Die Umzugserkennung, und was Tauri daran ändert (umgesetzt 2026-08-02)
 
