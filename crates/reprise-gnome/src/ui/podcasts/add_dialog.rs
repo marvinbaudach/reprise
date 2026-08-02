@@ -430,7 +430,7 @@ fn preview(
                         .collect();
                     Ok(Preview {
                         kind,
-                        title: feed.title,
+                        title: feed.title.unwrap_or_else(|| task_url.clone()),
                         author: feed.author,
                         image_url: feed.image_url,
                         count,
@@ -453,7 +453,7 @@ fn preview(
                         .collect();
                     Ok(Preview {
                         kind,
-                        title: listing.title.unwrap_or_else(|| task_url.clone()),
+                        title: listing.channel.unwrap_or_else(|| task_url.clone()),
                         author: None,
                         image_url: listing.image_url,
                         count,

@@ -33,16 +33,86 @@ impl YoutubeFetcher for NeverYoutube {
     }
 }
 
+/// This path fetches a *channel* URL through yt-dlp, where `title` is the
+/// channel's own name — the useless "Videos" title belongs to the uploads RSS
+/// feed, which is a different path and is stripped by
+/// `youtube::subscription_title`. So when yt-dlp omits `channel`/`uploader`,
+/// falling back to its title is right; falling through to `None` made a freshly
+/// added channel take its own URL as a name (caught by the MCP
+/// `adds_and_imports_a_youtube_channel_through_ytdlp` test).
 #[test]
-fn untitled_youtube_listing_uses_a_non_url_fallback_title() {
+fn youtube_projection_falls_back_to_the_listing_title_without_a_channel_name() {
     let feed = project_youtube_feed(
         super::super::youtube::YoutubeListing {
-            title: None,
+            title: Some("HOLLOW FALLEN".to_owned()),
+            channel: None,
             episodes: Vec::new(),
         },
         25,
     );
-    assert_eq!(feed.title, "YouTube source");
+
+    assert_eq!(feed.title.as_deref(), Some("HOLLOW FALLEN"));
+    assert_eq!(feed.author.as_deref(), Some("HOLLOW FALLEN"));
+}
+
+#[test]
+fn youtube_projection_without_any_name_leaves_the_stored_title_alone() {
+    let feed = project_youtube_feed(
+        super::super::youtube::YoutubeListing {
+            title: None,
+            channel: None,
+            episodes: Vec::new(),
+        },
+        25,
+    );
+
+    assert_eq!(feed.title, None, "a nameless listing must not overwrite");
+    assert_eq!(feed.author, None);
+}
+
+/// The RSS side is where "Videos" actually comes from, and it is dropped there:
+/// only a non-empty author becomes the subscription title.
+#[test]
+fn youtube_rss_refresh_never_promotes_the_playlist_title() {
+    use super::super::feed::ParsedFeed;
+
+    let videos_feed = ParsedFeed {
+        title: Some("Videos".to_owned()),
+        author: Some("HOLLOW FALLEN".to_owned()),
+        image_url: None,
+        episodes: Vec::new(),
+    };
+    assert_eq!(
+        super::super::youtube::subscription_title(&videos_feed),
+        Some("HOLLOW FALLEN")
+    );
+
+    let authorless = ParsedFeed {
+        title: Some("Videos".to_owned()),
+        author: Some("   ".to_owned()),
+        image_url: None,
+        episodes: Vec::new(),
+    };
+    assert_eq!(
+        super::super::youtube::subscription_title(&authorless),
+        None,
+        "a blank author must not rename the subscription to \"Videos\""
+    );
+}
+
+#[test]
+fn youtube_projection_uses_the_channel_name_instead_of_the_playlist_title() {
+    let feed = project_youtube_feed(
+        super::super::youtube::YoutubeListing {
+            title: Some("Videos".to_owned()),
+            channel: Some("Ferris Media".to_owned()),
+            episodes: Vec::new(),
+        },
+        25,
+    );
+
+    assert_eq!(feed.title.as_deref(), Some("Ferris Media"));
+    assert_eq!(feed.author.as_deref(), Some("Ferris Media"));
 }
 
 struct DatedYoutubeListing {
@@ -52,7 +122,7 @@ struct DatedYoutubeListing {
 impl YoutubeFetcher for DatedYoutubeListing {
     fn list(&self, _: &str, _: usize) -> Result<ParsedFeed, PodcastError> {
         Ok(ParsedFeed {
-            title: "Channel".to_owned(),
+            title: Some("Channel".to_owned()),
             author: None,
             image_url: None,
             episodes: vec![ParsedEpisode {
@@ -183,6 +253,7 @@ fn pod_18_an_exact_feed_date_is_not_overwritten_by_an_approximate_one() {
 
 struct OfficialYoutubeFeed {
     requested_urls: RefCell<Vec<String>>,
+    author: Option<&'static str>,
 }
 
 impl FeedFetcher for OfficialYoutubeFeed {
@@ -197,16 +268,21 @@ impl FeedFetcher for OfficialYoutubeFeed {
         _: Option<&str>,
     ) -> Result<Response, PodcastError> {
         self.requested_urls.borrow_mut().push(url.to_owned());
+        let author = self
+            .author
+            .map(|author| format!("<author><name>{author}</name></author>"))
+            .unwrap_or_default();
         Ok(Response {
-            body: r#"<feed xmlns="http://www.w3.org/2005/Atom"
+            body: format!(
+                r#"<feed xmlns="http://www.w3.org/2005/Atom"
                           xmlns:yt="http://www.youtube.com/xml/schemas/2015">
-              <title>Long-form channel</title>
+              <title>Videos</title>{author}
               <entry><id>yt:video:newest</id><yt:videoId>newest</yt:videoId>
                 <title>Newest</title><published>2026-07-28T08:00:00Z</published></entry>
               <entry><id>yt:video:older</id><yt:videoId>older</yt:videoId>
                 <title>Older</title><published>2026-07-27T08:00:00Z</published></entry>
             </feed>"#
-                .to_owned(),
+            ),
             etag: Some("\"youtube-v1\"".to_owned()),
             last_modified: None,
         })
@@ -235,6 +311,7 @@ fn pod_10_initial_youtube_window_uses_the_official_long_form_feed() {
     .unwrap();
     let feed = OfficialYoutubeFeed {
         requested_urls: RefCell::new(Vec::new()),
+        author: None,
     };
     let directory = tempfile::tempdir().unwrap();
 
@@ -252,6 +329,14 @@ fn pod_10_initial_youtube_window_uses_the_official_long_form_feed() {
             .map(|episode| episode.guid)
             .collect::<Vec<_>>(),
         ["newest", "older"]
+    );
+    assert_eq!(
+        store::subscription(&conn, subscription_id)
+            .unwrap()
+            .unwrap()
+            .title,
+        "Channel",
+        "a playlist title must not replace a good channel name when the feed has no author"
     );
 }
 
@@ -292,6 +377,7 @@ fn handle_subscription_resolves_channel_identity_before_refresh() {
     .unwrap();
     let feed = OfficialYoutubeFeed {
         requested_urls: RefCell::new(Vec::new()),
+        author: Some("Renamed Channel"),
     };
     let directory = tempfile::tempdir().unwrap();
 
@@ -309,6 +395,13 @@ fn handle_subscription_resolves_channel_identity_before_refresh() {
             .unwrap()
             .feed_url,
         "https://www.youtube.com/channel/UCresolved"
+    );
+    assert_eq!(
+        store::subscription(&conn, subscription_id)
+            .unwrap()
+            .unwrap()
+            .title,
+        "Renamed Channel"
     );
     let episodes = super::super::query::episodes_for_subscription(&conn, subscription_id).unwrap();
     assert!(episodes
@@ -470,7 +563,7 @@ impl YoutubeFetcher for DatedFlatPlaylist {
 
     fn list(&self, _: &str, _: usize) -> Result<ParsedFeed, PodcastError> {
         Ok(ParsedFeed {
-            title: "Channel".to_owned(),
+            title: Some("Channel".to_owned()),
             author: None,
             image_url: None,
             episodes: vec![ParsedEpisode {
@@ -541,7 +634,7 @@ impl YoutubeFetcher for ExtendedYoutube {
     fn list_range(&self, url: &str, end: usize) -> Result<ParsedFeed, PodcastError> {
         self.requested.borrow_mut().push((url.to_owned(), end));
         Ok(ParsedFeed {
-            title: "Channel".to_owned(),
+            title: Some("Channel".to_owned()),
             author: None,
             image_url: None,
             episodes: (1..=end)

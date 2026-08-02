@@ -179,6 +179,26 @@ pub(super) fn detail_line<'a>(parts: impl IntoIterator<Item = &'a str>) -> Strin
         .join(" · ")
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct SourceHeader<'a> {
+    pub(super) title: &'a str,
+    pub(super) subtitle: Option<&'a str>,
+}
+
+pub(super) fn source_header<'a>(
+    kind: PodcastKind,
+    title: &'a str,
+    author: Option<&'a str>,
+) -> SourceHeader<'a> {
+    SourceHeader {
+        title,
+        subtitle: match kind {
+            PodcastKind::Rss => author_line(title, author),
+            PodcastKind::Youtube => None,
+        },
+    }
+}
+
 pub(super) fn author_line<'a>(title: &str, author: Option<&'a str>) -> Option<&'a str> {
     let author = author.map(str::trim).filter(|author| !author.is_empty())?;
     let normalized_title = title.trim().to_lowercase();
@@ -402,6 +422,24 @@ mod tests {
         );
         assert_eq!(author_line("Artist Notes", Some("Art")), Some("Art"));
         assert_eq!(author_line("Show", Some("   ")), None);
+    }
+
+    #[test]
+    fn src_5_youtube_header_has_one_channel_name_while_rss_keeps_its_author() {
+        assert_eq!(
+            source_header(PodcastKind::Youtube, "Ferris Media", Some("Ferris Media")),
+            SourceHeader {
+                title: "Ferris Media",
+                subtitle: None,
+            }
+        );
+        assert_eq!(
+            source_header(PodcastKind::Rss, "Systems Weekly", Some("Ada Lovelace")),
+            SourceHeader {
+                title: "Systems Weekly",
+                subtitle: Some("Ada Lovelace"),
+            }
+        );
     }
 
     #[test]

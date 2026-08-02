@@ -3612,7 +3612,10 @@ listening statistics.
   only moving them to trash; multiple unsubscribes are aggregated.
 - **SRC-5** [active] [gtk] — RSS podcasts and YouTube are separate library
   places. Both start with source rows grouped by channel or show which expand
-  to their episodes; radio stays a station list. The add dialogs show real
+  to their episodes; radio stays a station list. A YouTube source is named by
+  its channel and has no author subtitle; an RSS source keeps its show title
+  plus a distinct author subtitle when present. The existing episode, new,
+  latest and download facts line stays unchanged. The add dialogs show real
   source images, group YouTube hits by channel, and hide podcasts, channels and
   stations that are already subscribed.
 - **SRC-3a** [active] [gtk] — Every source has exactly one add dialog with

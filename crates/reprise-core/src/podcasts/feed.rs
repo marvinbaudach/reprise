@@ -8,7 +8,7 @@ use super::PodcastError;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ParsedFeed {
-    pub title: String,
+    pub title: Option<String>,
     pub author: Option<String>,
     pub image_url: Option<String>,
     pub episodes: Vec<ParsedEpisode>,
@@ -159,7 +159,7 @@ pub fn parse_feed(xml: &str, limit: usize) -> Result<ParsedFeed, PodcastError> {
         .filter(|value| !value.is_empty())
         .ok_or_else(|| PodcastError::Parse("feed has no title".to_owned()))?;
     Ok(ParsedFeed {
-        title,
+        title: Some(title),
         author: author
             .map(|value| value.trim().to_owned())
             .filter(|value| !value.is_empty()),
@@ -411,7 +411,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(parsed.title, "Systems Weekly");
+        assert_eq!(parsed.title.as_deref(), Some("Systems Weekly"));
         assert_eq!(parsed.author.as_deref(), Some("Ada"));
         assert_eq!(
             parsed.image_url.as_deref(),

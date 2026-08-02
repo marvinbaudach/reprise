@@ -80,6 +80,7 @@ pub struct YtDlpVideo {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct YtDlpPlaylist {
     pub title: Option<String>,
+    pub channel: Option<String>,
     /// Stable channel URL when yt-dlp reports a channel identity.
     pub source_url: Option<String>,
     pub image_url: Option<String>,
@@ -726,6 +727,9 @@ fn parse_playlist(operation: &'static str, body: &str) -> Result<YtDlpPlaylist, 
             .get("title")
             .and_then(Value::as_str)
             .map(str::to_string),
+        channel: std::iter::once(&value)
+            .chain(raw_entries.iter())
+            .find_map(super::ytdlp_search::channel_name),
         source_url,
         image_url: super::ytdlp_search::entry_image_url(&value),
         entries,
