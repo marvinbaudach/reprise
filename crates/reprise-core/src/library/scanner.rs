@@ -255,12 +255,15 @@ fn scan_folder_inner(
     root: &Path,
     mut progress: Option<scan_progress::ScanProgressReporter<'_>>,
 ) -> Result<ScanOutcome, ScanError> {
-    debug_assert!(
-        root.is_absolute(),
-        "scan roots must be absolute paths — library roots (GTK folder chooser, \
-         persisted settings) are always absolute in this codebase, and the Unix \
-         library source's ancestor walk-to-`/` guarantee assumes it"
-    );
+    // No absoluteness assertion here any more. It used to live at this line and
+    // it was the wrong layer: nothing the scanner does needs an absolute root —
+    // it hands the root to the source and reads back what the source says. The
+    // requirement belongs to `UnixLibrarySource`'s ancestor walk, and it now
+    // sits there, next to the guarantee it protects.
+    //
+    // This is not a formality. A SAF root is a content URI, and
+    // `Path::is_absolute` is false for one (it has no leading `/`), so this
+    // assertion fired on the first scan a real Android source ever attempted.
     if source.probe(root, LibraryLinkMode::Follow).is_none() {
         // Root-Guard case (a): no walk, no database write at all — see this
         // function's `## Root guard` doc section.

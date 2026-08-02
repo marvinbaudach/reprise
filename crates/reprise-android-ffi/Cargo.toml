@@ -1,6 +1,6 @@
 [package]
 name = "reprise-android-ffi"
-description = "Throwaway Android feasibility spike: UniFFI surface over reprise-core"
+description = "UniFFI surface over reprise-core for the Android app"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true

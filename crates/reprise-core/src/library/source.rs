@@ -423,6 +423,21 @@ impl LibrarySource for UnixLibrarySource {
 /// `tracks.path`/scan roots are [`LibrarySource::walk`] inputs derived from
 /// that same root, so this isn't separately enforced here.
 pub(crate) fn nearest_existing_ancestor(path: &Path) -> Option<(PathBuf, u64)> {
+    // The walk-to-`/` guarantee above holds only for an absolute path, so the
+    // requirement is asserted here, where it is actually needed, rather than at
+    // the scanner — which has no such need and used to carry it anyway.
+    //
+    // A relative path is not a panic in release: `ancestors()` bottoms out at
+    // `""`, which no `lstat` succeeds on, so this answers `None`, which
+    // `reachability` turns into `MissingReason::Unknown`. That is the honest
+    // outcome, and it is why a source with no filesystem ancestry — a SAF tree,
+    // whose root is a content URI and therefore not absolute — degrades safely
+    // here instead of lying.
+    debug_assert!(
+        path.is_absolute(),
+        "the Unix source's ancestor walk assumes an absolute path; got {}",
+        path.display()
+    );
     path.ancestors().find_map(|ancestor| {
         let metadata = std::fs::symlink_metadata(ancestor).ok()?;
         Some((ancestor.to_path_buf(), device_id(&metadata)?))
