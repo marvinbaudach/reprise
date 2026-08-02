@@ -24,7 +24,6 @@ pub(super) struct PodcastsFilterBar {
     popover: gtk4::Popover,
     result: gtk4::Label,
     base_result: RefCell<String>,
-    shows: RefCell<Vec<String>>,
     on_changed: RefCell<Option<OnChanged>>,
     // `POD-15`: kept past the constructor because the summary line below the
     // chips names channels on the YouTube page and shows on the RSS one.
@@ -36,7 +35,6 @@ impl PodcastsFilterBar {
         let stored = podcasts::config::load_filter(&conn).unwrap_or_default();
         let filter = PodcastFilter {
             unplayed_only: stored.unplayed_only,
-            show: stored.show,
             source: None,
             downloaded_only: stored.downloaded_only,
         };
@@ -89,7 +87,6 @@ impl PodcastsFilterBar {
             popover,
             result,
             base_result: RefCell::new(String::new()),
-            shows: RefCell::new(Vec::new()),
             on_changed: RefCell::new(None),
             kind,
         });
@@ -121,21 +118,10 @@ impl PodcastsFilterBar {
 
     pub(super) fn set_context(
         self: &Rc<Self>,
-        shows: Vec<String>,
         shown: usize,
         summary: LibrarySummary,
         selected_count: usize,
     ) {
-        if self
-            .filter
-            .borrow()
-            .show
-            .as_ref()
-            .is_some_and(|selected| !shows.contains(selected))
-        {
-            self.filter.borrow_mut().show = None;
-        }
-        self.shows.replace(shows);
         let base_result = if active(&self.filter()) {
             strings::podcast_filtered_count(shown, summary.episodes)
         } else {
@@ -200,12 +186,6 @@ impl PodcastsFilterBar {
                 }
             });
         }
-        if let Some(show) = filter.show.clone() {
-            self.prepend_chip(&show, |filter| PodcastFilter {
-                show: None,
-                ..filter
-            });
-        }
         if filter.downloaded_only {
             self.prepend_chip(
                 &strings::text(strings::PODCAST_FILTER_DOWNLOADED),
@@ -268,22 +248,6 @@ impl PodcastsFilterBar {
                 ..filter
             },
         );
-        self.add_heading(strings::PODCAST_FILTER_SHOW);
-        for show in self.shows.borrow().clone() {
-            let value = show.clone();
-            self.add_value_button(&show, move |filter| PodcastFilter {
-                show: Some(value.clone()),
-                ..filter
-            });
-        }
-    }
-
-    fn add_heading(&self, label: &str) {
-        let heading = gtk4::Label::new(Some(&strings::text(label)));
-        heading.add_css_class("caption");
-        heading.add_css_class("dim-label");
-        heading.set_xalign(0.0);
-        self.popover_box.append(&heading);
     }
 
     fn add_value_button(
@@ -316,10 +280,23 @@ mod tests {
     }
 
     #[test]
-    fn active_filter_detection_is_composable() {
+    fn active_filter_detection_tracks_unplayed_and_downloaded_independently() {
         assert!(!active(&PodcastFilter::default()));
         assert!(active(&PodcastFilter {
             unplayed_only: true,
+            ..PodcastFilter::default()
+        }));
+        assert!(active(&PodcastFilter {
+            downloaded_only: true,
+            ..PodcastFilter::default()
+        }));
+        assert!(active(&PodcastFilter {
+            unplayed_only: true,
+            downloaded_only: true,
+            ..PodcastFilter::default()
+        }));
+        assert!(!active(&PodcastFilter {
+            source: Some(PodcastKind::Youtube),
             ..PodcastFilter::default()
         }));
     }

@@ -36,7 +36,7 @@ use super::podcasts_removal::{
 use super::podcasts_rendered_order;
 use super::podcasts_scroller::build_episode_scroller;
 use super::podcasts_selection::{PodcastSelection, SelectMode};
-use super::podcasts_view_data::{episode_ids_in_rendered_order, last_updated_text, unique};
+use super::podcasts_view_data::{episode_ids_in_rendered_order, last_updated_text};
 use super::podcasts_worker::{
     podcasts_response_channel, request_generation, PodcastsOperation, PodcastsPriority,
     PodcastsRequest, PodcastsRuntime, PodcastsWorkerResult,
@@ -365,10 +365,6 @@ impl PodcastsView {
         let filter = self.filter_bar.filter();
         let filtered = apply_filter(&rows, &filter);
         let total = rows.len();
-        let shows = groups
-            .iter()
-            .map(|group| group.title.clone())
-            .collect::<Vec<_>>();
         let rendered_groups = rendered_source_groups(&groups, &filter, &download_states);
         // `NET-1a` / `C1`: computed once per render pass from the live
         // module + global-gate state, then threaded down to every source
@@ -407,12 +403,8 @@ impl PodcastsView {
         // `G2` (design 6a): the header line is a projection over the
         // unfiltered `groups`, not `rendered_groups` — it stays a stable
         // library overview instead of jittering with the active filter.
-        self.filter_bar.set_context(
-            unique(shows),
-            filtered.len(),
-            library_summary(&groups),
-            selected_ids.len(),
-        );
+        self.filter_bar
+            .set_context(filtered.len(), library_summary(&groups), selected_ids.len());
         let subscriptions = groups.len();
         // `G1`/`NET-1a`: the same combined gate the sidebar already uses to
         // decide whether this source's row is even reachable — one

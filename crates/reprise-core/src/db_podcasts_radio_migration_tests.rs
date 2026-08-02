@@ -308,6 +308,8 @@ fn migration_is_idempotent() {
     migrate_v41(&conn).unwrap();
     migrate_v47(&conn).unwrap();
     migrate_v48(&conn).unwrap();
+    migrate_v51(&conn).unwrap();
+    migrate_v51(&conn).unwrap();
 
     assert_eq!(object_schema(&conn, "podcast_episodes"), before);
 }
@@ -445,6 +447,34 @@ fn newer_schema_is_refused_before_migration() {
             supported
         } if found == SUPPORTED_SCHEMA_VERSION + 1 && supported == SUPPORTED_SCHEMA_VERSION
     ));
+}
+
+#[test]
+fn v51_removes_the_retired_podcast_show_filter_setting() {
+    let conn = db::open(None).unwrap();
+    db::migrate_connection(&conn).unwrap();
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES ('podcasts.filter.show', 'Videos')",
+        [],
+    )
+    .unwrap();
+    conn.pragma_update(None, "user_version", 50).unwrap();
+
+    db::migrate_connection(&conn).unwrap();
+
+    let retired_rows: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM settings WHERE key = 'podcasts.filter.show'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(retired_rows, 0);
+    assert_eq!(
+        conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
+            .unwrap(),
+        51
+    );
 }
 
 #[test]
