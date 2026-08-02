@@ -260,29 +260,43 @@ fn schedule_scroll_restore(
         return;
     };
     // `items_changed(0, old, new)` resets GtkColumnView's adjustment to zero
-    // synchronously. Queue a stable-id scroll before returning to the main
-    // loop, so GTK never paints that transient top-of-table state. This API
-    // also works while the tag dialog is still closing or the table is not
-    // mapped yet. The idle retry below refines the result to the captured
-    // within-row pixel offset once the rebuilt list has usable geometry.
+    // synchronously. Restore the stable-id target immediately while the old
+    // allocation is still usable, then queue the GTK scroll before returning
+    // to the main loop. `scroll_to` alone is asynchronous and can otherwise
+    // leave position zero visible for a frame on a busy renderer. The idle
+    // retry below refines the result against the rebuilt allocation.
+    apply_scroll_anchor_if_allocated(&column_view, anchor, &current_ids);
     let scroll = gtk4::ScrollInfo::new();
     scroll.set_enable_vertical(true);
     column_view.scroll_to(position, None, gtk4::ListScrollFlags::NONE, Some(scroll));
     gtk4::glib::idle_add_local_once(move || {
-        let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(&column_view) else {
+        if apply_scroll_anchor_if_allocated(&column_view, anchor, &current_ids) {
             return;
-        };
-        let (upper, page) = (adjustment.upper(), adjustment.page_size());
-        if upper > page {
-            let height = upper / current_ids.len() as f64;
-            if let Some(target) = reload_restore::scroll_target(anchor, &current_ids, height, page)
-            {
-                adjustment.set_value(target);
-            }
-        } else if attempts > 0 {
+        }
+        if attempts > 0 {
             schedule_scroll_restore(column_view, anchor, current_ids, attempts - 1);
         }
     });
+}
+
+fn apply_scroll_anchor_if_allocated(
+    column_view: &gtk4::ColumnView,
+    anchor: Option<(i64, f64)>,
+    current_ids: &[i64],
+) -> bool {
+    let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(column_view) else {
+        return false;
+    };
+    let (upper, page) = (adjustment.upper(), adjustment.page_size());
+    if upper <= page || current_ids.is_empty() {
+        return false;
+    }
+    let height = upper / current_ids.len() as f64;
+    let Some(target) = reload_restore::scroll_target(anchor, current_ids, height, page) else {
+        return false;
+    };
+    adjustment.set_value(target);
+    true
 }
 
 /// Sets `shared.filter` and reloads — the one place that mutates the filter

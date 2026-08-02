@@ -86,6 +86,16 @@ fn scrolled_library() -> Fixture {
         super::super::queue_sections::QueueViewModel::default,
         crate::ui::cover_download_worker::setup_for_test(),
     );
+    // Album is a secondary key of the production default Artist sort. The
+    // test edits Album, so pin a title sort whose order the edit cannot
+    // change; otherwise the edited row correctly moves to the end and the
+    // "written value reached the visible cells" assertion tests sorting
+    // instead of refresh/rebinding.
+    *track_list.shared.sort.borrow_mut() = crate::ui::track_list_sort::SortState {
+        field: "title".into(),
+        dir: "asc".into(),
+    };
+    super::super::track_list_reload::reload(&track_list.shared);
     let elsewhere = gtk4::Button::with_label("Elsewhere");
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     content.append(&elsewhere);
