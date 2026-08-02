@@ -245,6 +245,15 @@ impl QueueViewModel {
 /// emitted only when non-empty; an entirely empty composition (nothing
 /// playing, nothing pending) yields the empty model that routes the view to
 /// the QUE-4 StatusPage.
+///
+/// **A surface should call [`compose_virtual`] instead.** This entry point
+/// builds an *unidentified* [`VirtualContext`], so
+/// [`QueueViewModel::leading_removal_change_from`] cannot recognise a shifted
+/// context and falls back to a full replacement rather than the O(1) diff.
+/// It exists because it is the shape the tests want, and it is `pub` rather
+/// than `#[cfg(test)]` only because a library's test-gated items are invisible
+/// to a dependent crate's tests — the same reason [`VirtualContext::new`] and
+/// the `ContextWindow` impls for `Vec` are unconditional here.
 pub fn compose(
     now_playing: Option<QueueItem>,
     play_next: &[QueueItem],

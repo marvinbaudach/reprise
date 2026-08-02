@@ -40,7 +40,18 @@ pub(crate) fn compose_virtual(
     context: Option<VirtualContext>,
     origin_label: Option<&str>,
 ) -> QueueViewModel {
-    let fallback = strings::text(strings::SIDEBAR_MUSIC);
+    // Only translate when the model can actually reach for the fallback. Before
+    // the extraction this lookup sat inside `origin_label.map_or_else(…)` and
+    // ran only when there was no label; `compose_virtual` runs on every queue
+    // mutation, so making it unconditional would have put a gettext call on
+    // that path for nothing. The remaining miss — no label and no context, where
+    // the model builds no Up Next section at all — would need `VirtualContext`
+    // to expose its count, which is not worth widening the type for.
+    let fallback = if origin_label.is_none() {
+        strings::text(strings::SIDEBAR_MUSIC)
+    } else {
+        String::new()
+    };
     queue_model::compose_virtual(now_playing, play_next, context, origin_label, &fallback)
 }
 
