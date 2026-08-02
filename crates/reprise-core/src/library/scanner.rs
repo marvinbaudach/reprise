@@ -21,6 +21,9 @@ pub use scanner_types::{
 
 const AUDIO_EXTENSIONS: [&str; 7] = ["mp3", "flac", "ogg", "opus", "m4a", "aac", "wav"];
 
+type FileStat = (u64, Option<(u64, u64)>);
+type FileMetadata = (i64, Option<FileStat>);
+
 pub(crate) fn is_audio_file(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
@@ -28,15 +31,12 @@ pub(crate) fn is_audio_file(path: &Path) -> bool {
         .is_some_and(|extension| AUDIO_EXTENSIONS.contains(&extension.as_str()))
 }
 
-pub(crate) fn file_mtime(path: &Path) -> i64 {
-    std::fs::metadata(path)
-        .and_then(|m| m.modified())
-        .ok()
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map_or(0, |d| d.as_secs() as i64)
-}
-
-/// `(file_size, identity)` for move detection. Unix supplies its stable
+/// `(mtime, stat)` from one metadata query. `mtime` is zero when the query or
+/// timestamp conversion fails, preserving the scanner's "unknown, always
+/// retry" database value. `stat` is `None` only when the metadata query itself
+/// fails; a timestamp failure does not discard otherwise valid file facts.
+///
+/// `stat` is `(file_size, identity)` for move detection. Unix supplies its stable
 /// `(device, inode)` identity through `std::os::unix::fs::MetadataExt`;
 /// platforms without that identity still supply the real file size and use
 /// the fingerprint strategy alone. Returns `None` if `stat` itself fails, in
@@ -51,17 +51,35 @@ pub(crate) fn file_mtime(path: &Path) -> i64 {
 /// there; with exactly one valid candidate that attaches one track's history
 /// to another, silently. `None` is the only honest answer for a platform
 /// without a stable identity.
-pub(crate) fn file_stat(path: &Path) -> Option<(u64, Option<(u64, u64)>)> {
-    let metadata = std::fs::metadata(path).ok()?;
+pub(crate) fn file_metadata(path: &Path) -> FileMetadata {
+    let Ok(metadata) = std::fs::metadata(path) else {
+        return (0, None);
+    };
+    let mtime = metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |duration| duration.as_secs() as i64);
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        Some((metadata.size(), Some((metadata.dev(), metadata.ino()))))
+        (
+            mtime,
+            Some((metadata.size(), Some((metadata.dev(), metadata.ino())))),
+        )
     }
     #[cfg(not(unix))]
     {
-        Some((metadata.len(), None))
+        (mtime, Some((metadata.len(), None)))
     }
+}
+
+pub(crate) fn file_mtime(path: &Path) -> i64 {
+    file_metadata(path).0
+}
+
+pub(crate) fn file_stat(path: &Path) -> Option<FileStat> {
+    file_metadata(path).1
 }
 
 /// Return type for tag_param_values: (title, artist, album, album_artist,
@@ -321,10 +339,9 @@ fn scan_folder_inner(
             // function's `## Root guard` doc section.
             audio_files_seen += 1;
             let path_str = path.to_string_lossy().to_string();
-            let mtime = file_mtime(path);
             // Compute identity before touching tags. An exclusion follows the
             // same file across a rename and must win over move detection.
-            let stat = file_stat(path);
+            let (mtime, stat) = file_metadata(path);
             let has_file_stat = stat.is_some();
             let (file_size, identity): (i64, Option<(i64, i64)>) = match stat {
                 Some((size, identity)) => (

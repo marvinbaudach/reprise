@@ -82,17 +82,14 @@ fn mount_point_of(conn: &Connection, path: &std::path::Path) -> Option<String> {
     .unwrap()
 }
 
-/// `file_stat` must degrade to `None` (not panic, and not fabricate
-/// placeholder zeros) when the path doesn't exist — Stage 3 Task 1's
-/// `Option` return type exists specifically so `scan_folder` can skip
-/// move detection outright in that case rather than fingerprinting
-/// against a `(0, 0)` device/inode that could coincidentally match an
-/// unrelated row.
+/// A failed metadata query preserves both historical fallbacks: mtime zero
+/// forces a later scan to retry the file, while absent stat facts keep move
+/// detection from matching fabricated size or identity values.
 #[test]
-fn file_stat_returns_none_for_a_path_that_does_not_exist() {
+fn file_metadata_preserves_both_failed_stat_fallbacks() {
     let tmp = tempfile::tempdir().unwrap();
     let missing = tmp.path().join("does-not-exist.flac");
-    assert_eq!(file_stat(&missing), None);
+    assert_eq!(file_metadata(&missing), (0, None));
 }
 
 /// `std::fs::rename` on the same filesystem keeps the file's inode (and
