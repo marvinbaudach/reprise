@@ -310,6 +310,8 @@ fn migration_is_idempotent() {
     migrate_v48(&conn).unwrap();
     migrate_v51(&conn).unwrap();
     migrate_v51(&conn).unwrap();
+    migrate_v52(&conn).unwrap();
+    migrate_v52(&conn).unwrap();
 
     assert_eq!(object_schema(&conn, "podcast_episodes"), before);
 }
@@ -473,7 +475,50 @@ fn v51_removes_the_retired_podcast_show_filter_setting() {
     assert_eq!(
         conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
             .unwrap(),
-        51
+        SUPPORTED_SCHEMA_VERSION
+    );
+}
+
+#[test]
+fn v52_names_youtube_subscriptions_from_their_channel_author() {
+    let conn = db::open(None).unwrap();
+    db::migrate_connection(&conn).unwrap();
+    conn.execute_batch(
+        "INSERT INTO podcast_subscriptions
+           (id, kind, feed_url, title, author, added_at)
+         VALUES
+           (1, 'youtube', 'https://youtube.test/channel/renamed', 'Videos', 'Ferris Media', 1),
+           (2, 'youtube', 'https://youtube.test/channel/correct', 'Already Correct', 'Already Correct', 1),
+           (3, 'rss', 'https://feeds.test/show', 'RSS Show', 'RSS Publisher', 1),
+           (4, 'youtube', 'https://youtube.test/channel/unknown', 'Known Placeholder', '   ', 1);
+         PRAGMA user_version = 51;",
+    )
+    .unwrap();
+
+    db::migrate_connection(&conn).unwrap();
+
+    let rows = conn
+        .prepare("SELECT id, title FROM podcast_subscriptions ORDER BY id")
+        .unwrap()
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(
+        rows,
+        [
+            (1, "Ferris Media".to_owned()),
+            (2, "Already Correct".to_owned()),
+            (3, "RSS Show".to_owned()),
+            (4, "Known Placeholder".to_owned()),
+        ]
+    );
+    assert_eq!(
+        conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
+            .unwrap(),
+        52
     );
 }
 

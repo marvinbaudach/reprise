@@ -51,3 +51,15 @@ fn pod_18_a_listing_without_a_timestamp_still_yields_episodes() {
     // yt-dlp sometimes renders numbers as strings; that is a date, not a defect.
     assert_eq!(playlist.entries[3].timestamp, Some(1_785_225_600));
 }
+
+#[test]
+fn channel_identity_is_read_from_the_existing_flat_playlist_json() {
+    let playlist = super::parse_playlist(
+        "list",
+        r#"{"title":"Videos","entries":[{"id":"video","title":"Episode","channel":"Ferris Media"}]}"#,
+    )
+    .unwrap();
+
+    assert_eq!(playlist.channel.as_deref(), Some("Ferris Media"));
+    assert_eq!(playlist.title.as_deref(), Some("Videos"));
+}

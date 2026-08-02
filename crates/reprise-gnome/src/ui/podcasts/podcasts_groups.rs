@@ -15,7 +15,7 @@ use super::podcasts_context_menu;
 use super::podcasts_context_surface;
 use super::podcasts_playback::EpisodeMark;
 use super::podcasts_presentation::{
-    author_line, detail_line, duration, file_size, on_phone, relative_date, status_pill,
+    detail_line, duration, file_size, on_phone, relative_date, source_header, status_pill,
     RenderedSourceGroup, SourceSummary,
 };
 use super::podcasts_row_interaction::{
@@ -243,12 +243,13 @@ fn group_header(
 
     let identity = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
     identity.set_hexpand(true);
-    let title = gtk4::Label::new(Some(&group.title));
+    let source = source_header(group.kind, &group.title, group.author.as_deref());
+    let title = gtk4::Label::new(Some(source.title));
     title.set_xalign(0.0);
     title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
     title.add_css_class("heading");
     identity.append(&title);
-    if let Some(author) = author_line(&group.title, group.author.as_deref()) {
+    if let Some(author) = source.subtitle {
         let author = gtk4::Label::new(Some(author));
         author.set_xalign(0.0);
         author.set_ellipsize(gtk4::pango::EllipsizeMode::End);

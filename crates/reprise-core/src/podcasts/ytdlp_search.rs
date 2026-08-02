@@ -76,6 +76,10 @@ fn non_empty_json_string(value: &Value, key: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
+pub(super) fn channel_name(value: &Value) -> Option<String> {
+    non_empty_json_string(value, "channel").or_else(|| non_empty_json_string(value, "uploader"))
+}
+
 pub(super) fn stable_source_url(value: &Value) -> Option<String> {
     non_empty_json_string(value, "channel_id")
         .map(|id| format!("https://www.youtube.com/channel/{id}"))
