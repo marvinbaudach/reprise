@@ -664,9 +664,9 @@ impl YoutubeChannelDetail {
     ) -> gtk4::Widget {
         let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
         row.add_css_class("reprise-podcast-episode-row");
-        row.update_property(&[gtk4::accessible::Property::Label(
-            &strings::podcast_select_episode(&episode.title),
-        )]);
+        // Named after the episode, not after selecting it — see the same
+        // decision in `podcasts_groups::episode_row`.
+        row.update_property(&[gtk4::accessible::Property::Label(&episode.title)]);
         let mark = self
             .playing_episode
             .get()

@@ -325,9 +325,12 @@ fn episode_row(
     // input-parity: ACC-8 keyboard=episode-row-enter-space
     root.set_cursor_from_name(Some("pointer"));
     root.set_accessible_role(gtk4::AccessibleRole::Button);
-    root.update_property(&[gtk4::accessible::Property::Label(
-        &strings::podcast_select_episode(&row.title),
-    )]);
+    // The name is what the row *is*, not what clicking it does: activating
+    // this button plays the episode, while a plain click selects it. Naming
+    // it "Select …" would tell a screen reader the opposite of what Enter
+    // does. Selection is reported through the `Selected` state below, which
+    // is where assistive technology expects to read it.
+    root.update_property(&[gtk4::accessible::Property::Label(&row.title)]);
     root.set_valign(gtk4::Align::Center);
     if loaded {
         root.add_css_class("reprise-podcast-playing");

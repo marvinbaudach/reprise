@@ -402,13 +402,6 @@ pub fn podcast_removed_episode(title: &str) -> String {
     formatted(N_!("Removed “{title}”"), &[("title", title)])
 }
 
-/// SRC-12 / ACC: every selectable episode row needs its own accessible name.
-/// A shared label leaves a screen-reader user hearing the same thing on every
-/// row with no way to tell them apart.
-pub fn podcast_select_episode(title: &str) -> String {
-    formatted(N_!("Select “{title}”"), &[("title", title)])
-}
-
 pub fn podcast_play_next(title: &str) -> String {
     formatted(N_!("Play next: “{title}”"), &[("title", title)])
 }
