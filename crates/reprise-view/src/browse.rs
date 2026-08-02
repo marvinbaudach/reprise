@@ -6,13 +6,19 @@
 use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
 
-/// P1a's shared browse boundary must remain safe to move between frontend
-/// threads and must never acquire an `Rc` or another thread-local dependency.
+/// This module holds no state of its own — only free decisions over borrowed
+/// values — so there is no view model here to pin. What the assertion does
+/// guard is the premise the decisions rest on: the two `reprise-core` types
+/// they read must stay safe to move between threads, or no surface off the
+/// GTK main loop can call them.
+///
+/// `String` was asserted here too and is dropped: it is `Send + Sync` by
+/// definition and always will be, so the line could never fail and therefore
+/// never guarded anything.
 const _: () = {
     const fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<BrowseFilter>();
     assert_send_sync::<ViewSource>();
-    assert_send_sync::<String>();
 };
 
 pub fn filters_restrict(search: &str, browse: &BrowseFilter, exclude_ai: bool) -> bool {

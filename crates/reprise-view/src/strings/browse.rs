@@ -59,6 +59,12 @@ pub fn leave_place_label(place: &str) -> Message {
     message_with_one_arg(LEAVE_PLACE_LABEL, "place", place)
 }
 
+/// The argument a surface may single out when a restriction is active — GTK
+/// renders it bold. Naming it here rather than repeating the literal on the
+/// other side of the crate boundary means a rename breaks the build instead
+/// of silently dropping the accent.
+pub const FILTERED_ARG: &str = "filtered";
+
 pub fn result_count(filtered: usize, total: usize) -> Message {
     let filtered_number = i64::try_from(filtered).unwrap_or(i64::MAX);
     let total_number = i64::try_from(total).unwrap_or(i64::MAX);
@@ -81,7 +87,7 @@ pub fn result_count(filtered: usize, total: usize) -> Message {
             id: FILTERED_TRACKS.1,
             count: u64::from(plural_count),
         }),
-        args: vec![("filtered", filtered_text), ("total", total_text)],
+        args: vec![(FILTERED_ARG, filtered_text), ("total", total_text)],
     }
 }
 

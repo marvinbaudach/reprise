@@ -38,7 +38,7 @@ pub(in crate::ui) fn result_count_markup(filtered: usize, total: usize) -> (Stri
     let (mut message, restricted) = messages::result_count_state(filtered, total);
     if restricted {
         for (name, value) in &mut message.args {
-            if *name == "filtered" {
+            if *name == messages::FILTERED_ARG {
                 *value = format!("<b>{value}</b>");
                 break;
             }
