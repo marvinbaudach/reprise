@@ -20,8 +20,6 @@ use super::waveform_primitives::{
     resolve_bar_count, rounded_bar, update_accessible_value, BAR_RADIUS, MINI_BAR_COUNT,
     MINI_BAR_GAP, MINI_BAR_RADIUS,
 };
-#[cfg(test)]
-use super::waveform_shape::{aggregate_rms, smooth_neighbors};
 use super::waveform_shape::{shape_display_peaks, DisplayBar, SILENCE_DOT_HEIGHT};
 use crate::ui::motion;
 use crate::ui::style::cover_accent::scale_chroma;
