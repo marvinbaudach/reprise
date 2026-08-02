@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Deliberately no permissions at all: the spike writes its library and
+         its audio files into app-private storage, which is exactly the
+         storage decision taken for the real app. If this builds and runs
+         without a single permission entry, that decision is confirmed. -->
+
+    <application
+        android:label="Reprise Spike"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Spike">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>

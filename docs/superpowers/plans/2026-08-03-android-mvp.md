@@ -144,21 +144,21 @@ erst, wenn ein echtes Gerät drankommt.
 - Create: `android/…` (aus `android-spike/`, umbenannt)
 - Modify: `Cargo.toml`, `scripts/check-architecture.sh`
 
-- [ ] **Step 1: Baseline messen**
+- [x] **Step 1: Baseline messen**
 
-- [ ] **Step 2: Übernehmen, nicht neu erfinden**
+- [x] **Step 2: Übernehmen, nicht neu erfinden**
 
 Der Spike-Branch `spike/android-core-feasibility` hat das Gerüst. Übernimm es
 und lass die Herkunft in der Commit-Nachricht stehen. Vorgebaute `.so` werden
 **nicht** übernommen — sie werden gebaut.
 
-- [ ] **Step 3: Ein Build-Skript**
+- [x] **Step 3: Ein Build-Skript**
 
 `scripts/android-build.sh`, das die Umgebung oben setzt, das Target baut und
 die `.so` an die richtige Stelle legt. Damit ist der Build reproduzierbar und
 nicht an einer Shell-Historie hängend.
 
-- [ ] **Step 4: Volle Gates und Commit**
+- [x] **Step 4: Volle Gates und Commit**
 
 ---
 
