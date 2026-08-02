@@ -2366,11 +2366,16 @@ property is set and yet nothing happens.
   deterministically; selection never follows playback.
 - **NAV-10a** [active] [gtk] — **Marking and scrolling are separate.**
   Every visible instance of the loaded track carries the same playback
-  marker. Double-click/Enter on an already-visible row does not change the
-  viewport. Play from Stopped as well as explicit Previous/Next center the
-  new track without stealing focus or selection. Auto-advance centers only
-  if no scroll movement has occurred for 1.5 seconds; explicit
-  metadata/reveal navigation always selects, focuses, and centers.
+  marker, from one implementation (`ui/playing_marker.rs`) serving every
+  surface that lists tracks: the track table, the podcast groups, and the
+  YouTube channel detail. The player bar is not such a surface — it shows
+  the running track's state through the play/pause button, not through a
+  second copy of the list marker. Double-click/Enter on an already-visible
+  row does not change the viewport. Play from Stopped as well as explicit
+  Previous/Next center the new track without stealing focus or selection.
+  Auto-advance centers only if no scroll movement has occurred for 1.5
+  seconds; explicit metadata/reveal navigation always selects, focuses, and
+  centers.
 - **QUE-7** [active] [gtk] — Up Next consists of the manual queue plus a
   virtual, named context tail with a count. The tail is not materialized as
   individual rows but only rendered within the visible window; the
@@ -2868,6 +2873,22 @@ STYLE-1).
   switcher. The labeled canvas takes on the current cover accent via the
   same global ambient crossfade as the player bar; only without a usable
   cover color does the theme accent apply.
+
+- **AC-24** [active] [gtk] — The reactive light is one layer with one
+  source. The now-playing bloom, the ring around the play button, and the
+  swell of the waveform around the playhead all read
+  `BassPressure.impact` and nothing else — never the CAVA bars, whose
+  auto-sensitivity makes a quiet vocal reach the same value as a drop.
+  All three rest at fixed values (bloom 0.10 at scale 1.0, ring alpha
+  0.12, lens 0) and reach their maximum at impact 1.0; the movement is
+  meant to read as light, not as motion. They are inert whenever the
+  reading is absent or must not move: with the "Song Visuals" plugin
+  switched off — which is the deliberate off-switch for the whole layer —
+  with `gtk-enable-animations=false` (MOT-7), and outside playback, where
+  only the bloom keeps a slow breath. While the Visual tab is open the
+  bloom holds its rest value: that tab carries its own light language and
+  two systems pulsing in different colours against each other is the
+  failure case.
 
 ## Y. Library Doctor / Tag Cleanup
 
