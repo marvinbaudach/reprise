@@ -924,6 +924,47 @@ Stellen produktiv eingesetzt wird. Paket 3 legt sie nicht, weil das die
 Semantik von siebzehn Aufrufstellen ändert; es benennt sie an `probe` und an
 beiden Schreibstellen.
 
+### Paket 4 umgesetzt: Bibliotheksinhalt über einen Lese-Griff (2026-08-02)
+
+Die neue Rohmessung erfasste **84 Produktiv-E/A-Stellen in `reprise-core`**.
+Davon sind **55 app-privat** (unter anderem Cache, Datenbank und
+Podcast-Downloads) und bleiben bewusst außerhalb von `LibrarySource`.
+**18 Stellen sind Klasse A**, weil sie Dateien in der Bibliothek selbst
+betreffen; die sechs Rhythmbox-Stellen bleiben Klasse C und unverändert.
+
+Von den 18 Klasse-A-Stellen sind in diesem Paket **vier reine Lesestellen
+umgestellt**:
+
+| Bereich | Rohstellen | Ergebnis |
+| --- | ---: | --- |
+| `lyrics/local.rs` | 2 | Sidecar und eingebettete Lyrics lesen über `LibrarySource::open_read`. |
+| `provenance.rs` | 2 | Der reine Leser ist umgestellt; der Leser im anschließenden Tag-Schreiber bleibt mit diesem zusammen. |
+| `cover.rs` | 1 | Das Ordnerbild liest seine Bytes über die Quelle. |
+| `tag_mutation.rs` | 4 | Unverändert: beide `Vec<u8>`-Leser sind jeweils untrennbar mit dem folgenden Schreiben gekoppelt. |
+| `library/scanner_repair.rs` | 4 | Unverändert: Lesen, Temp-Datei und abschließender Austausch bilden einen Schreibvorgang. |
+| `writeback_publish.rs` | 5 | Unverändert: diese Stellen reservieren, veröffentlichen oder löschen; sie lesen keinen Bibliotheksinhalt. |
+
+Die Messung der Verbraucher entscheidet die Signatur. Sidecar, Ordnerbild und
+Tag-Reparatur wollen jeweils den ganzen Inhalt; Lofty 0.24 fordert für
+`AudioFile::read_from` dagegen **`Read + Seek`**. Deshalb trägt das benannte,
+konkrete `LibraryReadHandle` genau diese beiden Fähigkeiten. Weder
+`std::fs::File` noch ein fremdes Trait-Objekt steht in der objekt-sicheren
+`LibrarySource`-Signatur, und `open_read` hat keine Vorgabe-Implementierung.
+Die Unix-Quelle verpackt einen `File`; ein Test fährt denselben Lyrics-Vertrag
+über `Cursor<Vec<u8>>` an einem `content:/`-Pfad, dessen Inhalt nirgends als
+Datei existiert.
+
+**Paket 5 muss Zusicherungen entwerfen, nicht Handles umbenennen.**
+`OpenOptions::create_new` ist das unteilbare Versprechen „beanspruche genau
+diesen Namen oder scheitere mit `AlreadyExists`". `rename` ist das unteilbare
+Versprechen, den Zielnamen durch den vollständig geschriebenen Inhalt zu
+ersetzen. SAF gibt keines von beiden: `DocumentsContract.createDocument`
+erzeugt bei einer Kollision einen anderen Namen, und der Provider garantiert
+keinen gleichwertigen atomaren Austausch. Der Schreibvertrag muss diese beiden
+Sicherheitswirkungen ausdrücklich neu formulieren; ein bloßes `create`/`move`
+würde die heutigen Nicht-Überschreiben- und Ganz-oder-gar-nicht-Garantien
+unbemerkt verlieren.
+
 ## Frage 8 — Die Umzugserkennung, und was Tauri daran ändert (umgesetzt 2026-08-02)
 
 **Status: umgesetzt.** `file_stat` liefert jetzt die echte Größe getrennt von
