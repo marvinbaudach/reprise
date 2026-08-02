@@ -23,6 +23,7 @@ pub(super) struct PodcastsFilterBar {
     popover_box: gtk4::Box,
     popover: gtk4::Popover,
     result: gtk4::Label,
+    base_result: RefCell<String>,
     shows: RefCell<Vec<String>>,
     on_changed: RefCell<Option<OnChanged>>,
     // `POD-15`: kept past the constructor because the summary line below the
@@ -87,6 +88,7 @@ impl PodcastsFilterBar {
             popover_box,
             popover,
             result,
+            base_result: RefCell::new(String::new()),
             shows: RefCell::new(Vec::new()),
             on_changed: RefCell::new(None),
             kind,
@@ -122,6 +124,7 @@ impl PodcastsFilterBar {
         shows: Vec<String>,
         shown: usize,
         summary: LibrarySummary,
+        selected_count: usize,
     ) {
         if self
             .filter
@@ -133,7 +136,7 @@ impl PodcastsFilterBar {
             self.filter.borrow_mut().show = None;
         }
         self.shows.replace(shows);
-        self.result.set_text(&if active(&self.filter()) {
+        let base_result = if active(&self.filter()) {
             strings::podcast_filtered_count(shown, summary.episodes)
         } else {
             // `G2` (design 6a): "4 shows · 41 episodes · 7 new" replaces the
@@ -149,8 +152,18 @@ impl PodcastsFilterBar {
                     strings::youtube_library_summary(summary.shows, summary.episodes, summary.new)
                 }
             }
-        });
+        };
+        self.base_result.replace(base_result);
+        self.set_selection_count(selected_count);
         self.rebuild();
+    }
+
+    pub(super) fn set_selection_count(&self, selected_count: usize) {
+        self.result
+            .set_text(&strings::podcast_summary_with_selection(
+                &self.base_result.borrow(),
+                selected_count,
+            ));
     }
 
     pub(super) fn clear_all(self: &Rc<Self>) {
