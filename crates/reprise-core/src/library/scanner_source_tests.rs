@@ -49,6 +49,16 @@ impl super::source::LibrarySource for ScriptedSource {
         super::source::UnixLibrarySource.residence_token(at)
     }
 
+    /// The scanner never lists a directory, so this double is never asked.
+    /// Spelled out rather than inherited: the trait has no defaults, so a
+    /// source cannot answer "nothing here" to a question nobody taught it.
+    fn read_directory(
+        &self,
+        _directory: &std::path::Path,
+    ) -> Option<Vec<super::source::LibraryDirectoryEntry>> {
+        None
+    }
+
     fn probe(
         &self,
         at: &std::path::Path,

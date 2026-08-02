@@ -150,6 +150,10 @@ pub(super) fn mark_vanished_with(
         if observed_paths.contains(path) {
             continue;
         }
+        // One of the two places a `None` from `probe` becomes a write. It is
+        // read as "the item is gone", never as "the source could not say" —
+        // see [`LibrarySource::probe`]'s doc comment for why a source must not
+        // answer `None` to a transient failure.
         if source.probe(path, LibraryLinkMode::Follow).is_some() {
             continue;
         }

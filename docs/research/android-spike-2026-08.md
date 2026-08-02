@@ -859,6 +859,71 @@ worauf der Pfad zeigt**. Kommt er aus `tracks.path` oder einer Scan-Wurzel →
 A. Aus `dirs::cache_dir()`/`dirs::data_dir()` unter unserem Namen → B. Aus dem
 Verzeichnis einer anderen Anwendung → C.
 
+#### Korrektur: die Zahl 21 war zu niedrig (2026-08-02, nachgetragen)
+
+Die Messung oben zählte **direkte** Dateisystem-Aufrufe. Sie übersah zwei
+Gruppen, beide bibliotheksbezogen.
+
+**Neun indirekte Stellen in `reprise-core`**, die über hauseigene Wrapper
+gingen statt über `std::fs` direkt:
+
+| Wrapper | Aufrufstellen |
+| --- | --- |
+| `scanner::file_stat` | `relink.rs:92`, `relink.rs:204` |
+| `scanner::file_mtime` | `relink.rs:129`, `relink.rs:267` |
+| `mounts::mount_point_of` | `relink.rs:102`, `relink.rs:225`, `scanner_mount.rs:69`, `scanner_mount.rs:74`, `scanner_vanish.rs:183` |
+
+Die vier `file_stat`/`file_mtime`-Stellen sind mit Paket 3 erledigt — `relink`
+fragte jede Datei zweimal, genau wie der Scanner, und holt beide Fakten jetzt
+aus einem `probe`.
+
+**`mount_point_of` bleibt offen, und es ist keine mechanische Stelle.** Paket 1
+hat `classify_missing` abstrahiert, aber die Gruppierung „was verschwindet
+zusammen" blieb vollständig Unix — sie steigt pro Vorfahre mit
+`symlink_metadata` auf, bis der Gerätewert wechselt. Unter SAF gibt es keinen
+Mount-Punkt; die Frage müsste der DocumentsProvider-Baum beantworten, und
+`mounts.rs`' eigener Modulkopf nennt btrfs-Subvolumes bereits als Fall, in dem
+die Antwort auch unter Linux nur näherungsweise stimmt. **Das ist eine
+Entwurfsfrage, kein Umzug.**
+
+**Acht Stellen liegen in `reprise-gnome`**, außerhalb der Abstraktion, die
+beansprucht die Musikquelle zu kapseln:
+
+| Datei | Zeilen | Worauf |
+| --- | --- | --- |
+| `ui/device_sync/device_sync_effects.rs` | 335, 338, 393 | `track.source_path` |
+| `ui/import_errors_view.rs` | 4, 404 | Track-Pfad, über `MetadataExt::mtime()` |
+| `ui/file_open.rs` | 134 | geöffnete Datei, wird Track |
+| `ui/mounts.rs` | 67 | Bibliothekswurzel |
+| `ui/playback/playback_faults.rs` | 86 | `summary.path` |
+
+Für Android hieße das: die Compose-Oberfläche baut jeden dieser Zugriffe gegen
+SAF neu — oder sie ziehen vorher nach `reprise-core`. `MetadataExt::mtime()` in
+einer GTK-Ansicht ist Unix-API im Frontend, und niemand hätte sie beim
+P1a-Schnitt als „Präsentationslogik" gelesen.
+
+**Korrigierter Stand:** 21 direkte + 9 indirekte = **30 bibliotheksbezogene
+Stellen in `reprise-core`**, davon 25 mit Paket 3 erledigt und 5
+(`mount_point_of`) als Entwurfsfrage offen; dazu **8 in `reprise-gnome`**, die
+noch keinem Paket zugeordnet sind.
+
+#### Die offene Frage für den SAF-Adapter: „weg" gegen „weiß nicht"
+
+`LibrarySource::probe` liefert `Option`, und `None` heißt **die Datei ist nicht
+da**. Zwei Aufrufstellen — `scanner_vanish::mark_vanished_with` und
+`queries::maintenance::mark_track_missing_if_current_with` — machen daraus
+sofort einen `missing_since`-Eintrag. Die anderen fünfzehn Verbraucher
+behandeln `None` konservativ und schreiben nichts.
+
+Unter Linux ist die Vermischung harmlos und war es immer: `Path::exists()`
+liefert bei einem Rechte- oder E/A-Fehler ebenfalls `false`. **Unter SAF ist
+jede Abfrage ein Binder-Rundlauf, der scheitern kann**, und ein gescheiterter
+Rundlauf sähe aus wie eine gelöschte Datei. Eine SAF-Quelle braucht deshalb ein
+eigenes Signal für „ich konnte nicht nachsehen", bevor sie an diesen zwei
+Stellen produktiv eingesetzt wird. Paket 3 legt sie nicht, weil das die
+Semantik von siebzehn Aufrufstellen ändert; es benennt sie an `probe` und an
+beiden Schreibstellen.
+
 ## Frage 8 — Die Umzugserkennung, und was Tauri daran ändert (umgesetzt 2026-08-02)
 
 **Status: umgesetzt.** `file_stat` liefert jetzt die echte Größe getrennt von

@@ -145,29 +145,46 @@ pub(crate) fn walk_with(
 
 /// The residence and reachability capability every library source provides.
 ///
-/// A source without a stable residence token returns `None`. That documented
-/// degradation produces [`MissingReason::Unknown`]; it never fabricates an
-/// identity and never turns missing evidence into a destructive verdict.
+/// A source without a stable residence token returns `None` from
+/// [`Self::residence_token`]. That documented degradation produces
+/// [`MissingReason::Unknown`] and never fabricates an identity.
+///
+/// **That safety belongs to `residence_token` alone, not to this trait as a
+/// whole.** [`Self::probe`] answers a different question, and its `None` is
+/// read as *confirmed absence* — two call sites turn it straight into a
+/// missing-verdict write. Every method here says for itself what its `None`
+/// means; do not generalise one method's degradation to another.
+///
+/// Nothing here has a default implementation. A source that cannot yet answer
+/// one of these questions must fail to compile, not answer `None` — for
+/// `probe` that answer would report the entire library as gone.
 pub trait LibrarySource: Send + Sync {
     /// Returns the stable residence token of the nearest reachable location at
     /// `at`, or `None` when this source cannot provide one.
     fn residence_token(&self, at: &Path) -> Option<i64>;
 
-    /// Returns the facts this source can establish about `at`, or `None` when
-    /// the path is absent or the source cannot answer. Optional fields remain
-    /// `None` when the path is known but that individual fact is unavailable;
-    /// callers apply their existing conservative fallback instead of receiving
-    /// a fabricated zero or identity.
+    /// Returns the facts this source can establish about `at`.
+    ///
+    /// **`None` means the item is not there.** It is not "I could not find
+    /// out". `library::scanner_vanish::mark_vanished_with` and
+    /// `queries::maintenance::mark_track_missing_if_current_with` turn a `None`
+    /// straight into a `missing_since`/`missing_reason` write, so a source that
+    /// answers `None` for a transient failure marks live tracks as gone. When a
+    /// source cannot reach its backing store, it must not guess absence — that
+    /// case wants its own signal, and does not have one yet (see the spike's
+    /// note on the SAF adapter).
+    ///
+    /// A path that *is* there but whose individual facts are unavailable
+    /// answers `Some` with those fields `None`; callers then apply their own
+    /// conservative fallback rather than receiving a fabricated zero or
+    /// identity.
     ///
     /// `links` is explicit because most Class-A presence checks historically
     /// used `Path::metadata` and followed the final symlink, while abandoned
     /// writeback cleanup used `DirEntry::metadata` and must inspect the link
     /// itself. Keeping that distinction in the contract preserves the safety
     /// boundary rather than silently changing it during abstraction.
-    fn probe(&self, at: &Path, links: LibraryLinkMode) -> Option<LibraryPathMetadata> {
-        let _ = (at, links);
-        None
-    }
+    fn probe(&self, at: &Path, links: LibraryLinkMode) -> Option<LibraryPathMetadata>;
 
     /// Lists only the immediate children of `directory`, or returns `None`
     /// when the directory cannot be read. Per-child failures are skipped,
@@ -178,10 +195,7 @@ pub trait LibrarySource: Send + Sync {
     /// a SAF cursor already supplied; Unix leaves it absent so listing an album
     /// never adds a stat for every non-audio child merely to help another
     /// platform avoid a round trip.
-    fn read_directory(&self, directory: &Path) -> Option<Vec<LibraryDirectoryEntry>> {
-        let _ = directory;
-        None
-    }
+    fn read_directory(&self, directory: &Path) -> Option<Vec<LibraryDirectoryEntry>>;
 
     /// Traverses `root` once, delivering entries and recoverable traversal
     /// errors to `visitor` in source order until exhaustion or
@@ -394,7 +408,8 @@ mod tests {
     use std::path::Path;
 
     use super::{
-        LibrarySource, LibraryWalkControl, LibraryWalkItem, LibraryWalkOrder, LibraryWalkVisitor,
+        LibraryDirectoryEntry, LibraryLinkMode, LibraryPathMetadata, LibrarySource,
+        LibraryWalkControl, LibraryWalkItem, LibraryWalkOrder, LibraryWalkVisitor,
         UnixLibrarySource,
     };
     use crate::models::MissingReason;
@@ -474,6 +489,17 @@ mod tests {
     impl LibrarySource for DocumentTreeSource {
         fn residence_token(&self, _at: &Path) -> Option<i64> {
             self.provider_tree_id?.strip_prefix("tree-")?.parse().ok()
+        }
+
+        /// Unused by this double's tests. Made explicit rather than inherited:
+        /// the trait has no defaults precisely so a source cannot answer
+        /// "absent" for a question it was never taught to answer.
+        fn probe(&self, _at: &Path, _links: LibraryLinkMode) -> Option<LibraryPathMetadata> {
+            None
+        }
+
+        fn read_directory(&self, _directory: &Path) -> Option<Vec<LibraryDirectoryEntry>> {
+            None
         }
 
         /// This double exists to exercise residence classification only, and
@@ -558,6 +584,17 @@ mod tests {
     impl LibrarySource for DocumentTreeTraversalSource {
         fn residence_token(&self, _at: &Path) -> Option<i64> {
             Some(41)
+        }
+
+        /// Unused by this double's tests. Made explicit rather than inherited:
+        /// the trait has no defaults precisely so a source cannot answer
+        /// "absent" for a question it was never taught to answer.
+        fn probe(&self, _at: &Path, _links: LibraryLinkMode) -> Option<LibraryPathMetadata> {
+            None
+        }
+
+        fn read_directory(&self, _directory: &Path) -> Option<Vec<LibraryDirectoryEntry>> {
+            None
         }
 
         fn walk(&self, root: &Path, order: LibraryWalkOrder, visitor: &mut dyn LibraryWalkVisitor) {
