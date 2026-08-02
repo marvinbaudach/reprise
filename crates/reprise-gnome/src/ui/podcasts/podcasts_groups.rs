@@ -21,7 +21,7 @@ use super::podcasts_row_interaction::{
     episode_thumbnail, install_row_interaction, SELECT_ROW_ACTION,
 };
 use super::podcasts_row_state::{download_status, RowNetworkState};
-use super::podcasts_selection::{self, PodcastSelection, SelectMode};
+use super::podcasts_selection::{PodcastSelection, SelectMode};
 use super::podcasts_title::TitleParts;
 use crate::ui::playing_marker;
 use crate::ui::strings;
@@ -38,15 +38,10 @@ pub(super) struct DownloadRowWidgets {
     pub(super) marker: gtk4::Box,
 }
 
-/// The widgets a selection change has to touch on one row, held per episode so
-/// a selection can be applied without rebuilding the list — see
-/// `PodcastsView::apply_selection`. `toggled` is the checkbox's own handler id,
-/// blocked while the state is pushed back into it so the push cannot re-enter
-/// through `podcasts.set-selected`.
+/// The row a selection change has to touch, held per episode so a selection can
+/// be applied without rebuilding the list — see `PodcastsView::apply_selection`.
 pub(super) struct SelectionRowWidgets {
     pub(super) row: gtk4::Box,
-    pub(super) checkbox: gtk4::CheckButton,
-    pub(super) toggled: gtk4::glib::SignalHandlerId,
 }
 
 /// Everything `replace` hands back for later targeted updates.
@@ -330,9 +325,12 @@ fn episode_row(
     // input-parity: ACC-8 keyboard=episode-row-enter-space
     root.set_cursor_from_name(Some("pointer"));
     root.set_accessible_role(gtk4::AccessibleRole::Button);
-    root.update_property(&[gtk4::accessible::Property::Label(&strings::text(
-        strings::PLAY_OR_PAUSE,
-    ))]);
+    // The name is what the row *is*, not what clicking it does: activating
+    // this button plays the episode, while a plain click selects it. Naming
+    // it "Select …" would tell a screen reader the opposite of what Enter
+    // does. Selection is reported through the `Selected` state below, which
+    // is where assistive technology expects to read it.
+    root.update_property(&[gtk4::accessible::Property::Label(&row.title)]);
     root.set_valign(gtk4::Align::Center);
     if loaded {
         root.add_css_class("reprise-podcast-playing");
@@ -343,19 +341,13 @@ fn episode_row(
     root.set_margin_bottom(4);
 
     let is_selected = context.selection.borrow().contains(row.id);
+    root.update_state(&[gtk4::accessible::State::Selected(Some(is_selected))]);
     if is_selected {
         root.add_css_class(SELECTED_ROW_CLASS);
     }
-    let (selected, toggled) = podcasts_selection::episode_checkbox(row.id, &row.title, is_selected);
-    root.append(&selected);
-    widgets.selection.insert(
-        row.id,
-        SelectionRowWidgets {
-            row: root.clone(),
-            checkbox: selected.clone(),
-            toggled,
-        },
-    );
+    widgets
+        .selection
+        .insert(row.id, SelectionRowWidgets { row: root.clone() });
 
     let thumbnail = episode_thumbnail(row, context.images_allowed);
     let marker = playing_marker::build();

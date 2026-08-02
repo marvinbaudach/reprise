@@ -116,6 +116,18 @@ fn pod_10_batch_selection_is_stable_and_channel_scoped() {
 }
 
 #[test]
+fn src_12_clear_selected_drops_every_channels_selection_and_reports_emptiness() {
+    let mut state = YoutubeChannelState::default();
+    state.set_selected(7, 11, true);
+    state.set_selected(8, 21, true);
+
+    assert!(state.clear_selected());
+    assert!(state.selected_ids(7).is_empty());
+    assert!(state.selected_ids(8).is_empty());
+    assert!(!state.clear_selected());
+}
+
+#[test]
 fn pod_10_channel_projection_windows_children_but_preserves_full_summary() {
     let episodes = (1..=12)
         .rev()

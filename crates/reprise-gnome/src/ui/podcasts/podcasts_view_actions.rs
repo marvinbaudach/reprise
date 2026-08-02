@@ -121,23 +121,6 @@ impl PodcastsView {
                 .insert(subscription_id);
             view.render();
         });
-        let set_selected =
-            gio::SimpleAction::new("set-selected", Some(&<(i64, bool)>::static_variant_type()));
-        let weak = Rc::downgrade(self);
-        set_selected.connect_activate(move |_, target| {
-            let Some(view) = weak.upgrade() else { return };
-            let Some((episode_id, selected)) = target.and_then(glib::Variant::get::<(i64, bool)>)
-            else {
-                return;
-            };
-            view.selection
-                .borrow_mut()
-                .set_selected(episode_id, selected);
-            // `SRC-14`: not a `render()` — rebuilding every row would drop the
-            // focus off the checkbox the user just operated.
-            view.apply_selection();
-        });
-        group.add_action(&set_selected);
         let select_row =
             gio::SimpleAction::new("select-row", Some(&<(i64, u8)>::static_variant_type()));
         let weak = Rc::downgrade(self);

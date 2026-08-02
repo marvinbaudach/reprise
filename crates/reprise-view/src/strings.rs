@@ -36,6 +36,13 @@ macro_rules! N_ {
     };
 }
 
+// This tuple exists so xgettext can retain the singular/plural relationship
+// even though the surface, rather than this crate, calls ngettext.
+const fn plural(singular: &'static str, plural: &'static str) -> (&'static str, &'static str) {
+    (singular, plural)
+}
+
+pub mod browse;
 pub mod lyrics;
 pub mod playlists;
 pub mod scan;
