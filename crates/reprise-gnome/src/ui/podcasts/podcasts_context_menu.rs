@@ -1,10 +1,14 @@
 //! Podcast episode context menu, including typed manual-queue actions.
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use gtk4::gio;
 use gtk4::glib::variant::ToVariant;
 use gtk4::prelude::*;
 use reprise_core::podcasts::{EpisodeRow, SourceGroup};
 
+use super::podcasts_selection::{PodcastSelection, SelectMode};
 use crate::ui::strings;
 
 pub(super) const ACTION_PLAY: &str = "play";
@@ -170,6 +174,44 @@ pub(super) fn build_for_selection(
     append_selected(&destructive, &remove.label, remove.action, &target_ids);
     menu.append_section(None, &destructive);
     menu
+}
+
+/// Takes the selection over when `row` sits outside it, then builds the menu
+/// for whatever the selection is now. `parent` owns the popover; `at` is a
+/// widget-local pointer position, or `None` to anchor it to the row centre.
+pub(super) fn popup_for_row(
+    parent: &impl IsA<gtk4::Widget>,
+    row: &EpisodeRow,
+    selection: &Rc<RefCell<PodcastSelection>>,
+    unavailable_episode: Option<i64>,
+    select_action: &str,
+    at: Option<(f64, f64)>,
+) {
+    let took_over = selection.borrow_mut().take_over_for_context_menu(row.id);
+    if took_over {
+        let target = (row.id, SelectMode::Only.as_u8()).to_variant();
+        if let Err(error) = parent.activate_action(select_action, Some(&target)) {
+            tracing::debug!(%error, "podcast row menu could not publish its selection take-over");
+        }
+    }
+    let selected_ids = selection.borrow().selected_ids();
+    let popover = gtk4::PopoverMenu::from_model(Some(&build_for_selection(
+        row,
+        &selected_ids,
+        unavailable_episode,
+    )));
+    popover.set_has_arrow(false);
+    popover.set_parent(parent);
+    let (x, y) = at.unwrap_or_else(|| {
+        let parent = parent.as_ref();
+        (
+            f64::from(parent.width()) / 2.0,
+            f64::from(parent.height()) / 2.0,
+        )
+    });
+    popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+    crate::ui::popover_lifecycle::unparent_after_actions(popover.upcast_ref());
+    popover.popup();
 }
 
 fn build_single(row: &EpisodeRow, target_ids: &[i64], queue_available: bool) -> gio::Menu {

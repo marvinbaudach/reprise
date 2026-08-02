@@ -21,7 +21,7 @@ use super::podcasts_row_interaction::{
     episode_thumbnail, install_row_interaction, SELECT_ROW_ACTION,
 };
 use super::podcasts_row_state::{download_status, RowNetworkState};
-use super::podcasts_selection::{PodcastSelection, SelectMode};
+use super::podcasts_selection::PodcastSelection;
 use super::podcasts_title::TitleParts;
 use crate::ui::playing_marker;
 use crate::ui::strings;
@@ -417,18 +417,14 @@ fn episode_row(
     let menu_selection = context.selection.clone();
     let unavailable_episode = context.unavailable_episode;
     menu.set_create_popup_func(move |menu| {
-        if !menu_selection.borrow().contains(menu_row.id) {
-            let target = (menu_row.id, SelectMode::Only.as_u8()).to_variant();
-            if let Err(error) = menu.activate_action("podcasts.select-row", Some(&target)) {
-                tracing::debug!(%error, "podcast row menu could not take over the selection");
-            }
-        }
-        let selected_ids = menu_selection.borrow().selected_ids();
-        menu.set_menu_model(Some(&podcasts_context_menu::build_for_selection(
+        podcasts_context_menu::popup_for_row(
+            menu,
             &menu_row,
-            &selected_ids,
+            &menu_selection,
             unavailable_episode,
-        )));
+            SELECT_ROW_ACTION,
+            None,
+        );
     });
     menu.add_css_class("flat");
     menu.set_tooltip_text(Some(&strings::text(strings::PODCAST_MORE_OPTIONS)));
