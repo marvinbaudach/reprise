@@ -965,6 +965,80 @@ Sicherheitswirkungen ausdrücklich neu formulieren; ein bloßes `create`/`move`
 würde die heutigen Nicht-Überschreiben- und Ganz-oder-gar-nicht-Garantien
 unbemerkt verlieren.
 
+### Alle Inventuren zusammengeführt — und das Loch, das keine davon sah (2026-08-02)
+
+In diesem Dokument standen drei Zählungen nebeneinander, am selben Tag von
+verschiedenen Durchgängen erhoben, mit unvereinbaren Zähleinheiten und ohne
+Querverweis: „27 abstraktionspflichtige Stellen" (Frage 7), „30
+bibliotheksbezogene, davon 21 direkt Klasse A" (Paket 3) und „84 E/A-Stellen,
+davon 18 Klasse A" (Paket 4). **Diese Zählungen sind hiermit ersetzt.**
+
+**Alle drei waren zu niedrig, aus zwei Gründen — beide Messfehler, keine
+Codefehler.**
+
+**Erstens: der Testfilter schnitt zu früh.** Die Messskripte verwarfen jede
+Zeile ab der ersten `#[cfg(test)]`-Zeile einer Datei. Die steht aber häufig an
+einem einzelnen test-gated Helfer mitten im Produktivcode, nicht am Testmodul
+— in `library/scanner_meta.rs` in Zeile 86 von 200+. **64 Dateien** waren so
+teilweise unsichtbar. Der korrekte Schnitt greift nur bei `#[cfg(test)]`
+unmittelbar vor einem `mod`.
+
+**Zweitens, und schwerer: `lofty` öffnet Dateien selbst.**
+`lofty::read_from_path(path)` und `lofty::probe::Probe::open(path)` rufen intern
+`std::fs::File::open`. Kein Muster über `fs::`, `File::open` oder `.exists()`
+findet sie je — sie sehen aus wie Bibliotheksaufrufe, sind aber
+Dateisystemzugriffe.
+
+Es sind **13 Stellen**, und darunter ist die folgenschwerste des ganzen Kerns:
+
+| Datei | Zeilen | Bedeutung |
+| --- | --- | --- |
+| `library/scanner_meta.rs` | 132, 148, 184 | **`read_meta` — die Metadatenlesung für jeden importierten Track**, dazu die beiden Reparatur-Fallbacks |
+| `library/tag_mutation.rs` | 199, 289, 376, 486 | die einzige produktive Lofty-Speichernaht und ihre Lesehälften |
+| `library/tag_mutation_guarded.rs` | 114, 201 | |
+| `library/tag_edit.rs` | 125 | |
+| `library/library_doctor/remote/metadata.rs` | 121 | |
+| `podcasts/episode_tags.rs` | 106 | app-privat (Podcast-Downloads) |
+| `provenance.rs` | 212 | Schreibseite |
+
+**Was das heißt:** `scanner_meta::read_meta` wird für jeden Track aufgerufen,
+den der Scanner importiert, und geht über `std::fs::File::open` — **unabhängig
+davon, welche `LibrarySource` konfiguriert ist**. Ein SAF-gestützter Scan
+liefe heute durch Traversierung, Präsenzprüfung und Klassifikation korrekt
+über das Trait und würde dann an jedem einzelnen Track scheitern, sobald er
+dessen Tags lesen will.
+
+Die Abstraktion hat also ein Loch an ihrer meistbegangenen Stelle, und keine
+der drei Inventuren hat es gezeigt — weil alle drei nach `std::fs` suchten und
+lofty dazwischenstand.
+
+#### Der ersetzende Stand (korrekt gemessen)
+
+| Gruppe | Stellen |
+| --- | --- |
+| Präsenz und Metadaten | 44 |
+| Direkte E/A | 95 |
+| E/A über `lofty` nach Pfad | 13 |
+
+Diese Rohzahlen umfassen weiterhin app-private Pfade. Maßgeblich bleibt die
+**Klassenzuordnung** aus Paket 3 (Bibliothek / app-privat / fremde App / der
+Adapter selbst), nicht die Rohzahl — mit der Ergänzung, dass die 13
+lofty-Stellen bisher in **keiner** Klasse geführt wurden.
+
+#### Folge für die Paketfolge
+
+Paket 5 war als „die Schreibseite" geplant. **Vorher gehört `scanner_meta`
+umgestellt** — es ist eine reine Lesestelle, sie gehörte in Paket 4 und fiel
+nur durch den Messfehler heraus. `lofty::read_from_path(path)` wird zu
+`AudioFile::read_from(&mut source.open_read(path)?)`, wofür der Griff seit
+diesem Paket `Read + Seek` trägt.
+
+Und beim Umstellen ist auf eine Falle zu achten, die dieses Paket bereits
+einmal gestellt hat: `Probe::open(path)` setzt den Dateityp aus der Endung
+vor, `Probe::new(reader)` nicht. Wer das übersieht, verliert stillschweigend
+die Erkennung jeder Datei, deren Header-Schnüffelei scheitert (siehe
+`lyrics/local.rs`s `synced_id3_from_source`).
+
 ## Frage 8 — Die Umzugserkennung, und was Tauri daran ändert (umgesetzt 2026-08-02)
 
 **Status: umgesetzt.** `file_stat` liefert jetzt die echte Größe getrennt von

@@ -121,9 +121,9 @@ pub trait LibraryWalkVisitor {
     fn visit(&mut self, item: LibraryWalkItem) -> LibraryWalkControl;
 }
 
-trait LibraryReadIo: Read + Seek {}
+trait LibraryReadIo: Read + Seek + Send {}
 
-impl<T> LibraryReadIo for T where T: Read + Seek {}
+impl<T> LibraryReadIo for T where T: Read + Seek + Send {}
 
 /// An opaque readable and seekable handle to one library item.
 ///
@@ -135,11 +135,17 @@ impl<T> LibraryReadIo for T where T: Read + Seek {}
 /// Seeking is required rather than speculative. Lofty 0.24's
 /// `AudioFile::read_from` consumes `Read + Seek`, while the other current
 /// consumers use only the `Read` half to materialize complete sidecar or image
-/// content.
+/// content. It does foreclose a source that can only stream — a pipe-backed
+/// descriptor, say — which is a real cost, accepted because tag parsing needs
+/// to seek and no consumer can be served without it.
+///
+/// `Send` because [`LibrarySource`] is `Send + Sync` and a handle opened on one
+/// thread will be read on another as soon as an Android source hands out a
+/// descriptor from a Binder callback. Every backing type today already is.
 pub struct LibraryReadHandle(Box<dyn LibraryReadIo>);
 
 impl LibraryReadHandle {
-    pub fn new(reader: impl Read + Seek + 'static) -> Self {
+    pub fn new(reader: impl Read + Seek + Send + 'static) -> Self {
         Self(Box::new(reader))
     }
 }
@@ -202,6 +208,13 @@ pub trait LibrarySource: Send + Sync {
     /// Opens `at` for reading without exposing the source's concrete storage
     /// handle. Failure is explicit: a source that cannot provide readable,
     /// seekable content must not compile with this contract unanswered.
+    ///
+    /// **An `Err` here is a failure to read, never a statement that the item is
+    /// gone.** That distinction is the whole reason this returns `io::Result`
+    /// where [`Self::probe`] returns `Option`: a revoked permission grant, a
+    /// dropped provider connection or a transient I/O error must not become the
+    /// missing-verdict that a `None` from `probe` licenses. No caller may
+    /// substitute one for the other.
     fn open_read(&self, at: &Path) -> io::Result<LibraryReadHandle>;
 
     /// Returns the facts this source can establish about `at`.

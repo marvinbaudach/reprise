@@ -253,3 +253,33 @@ fn write_empty_wav(path: &Path) {
     bytes.extend_from_slice(&0i16.to_le_bytes());
     std::fs::write(path, bytes).unwrap();
 }
+
+/// The `Seek` half of the contract, which is the entire reason
+/// [`LibraryReadHandle`] promises more than `Read`: lofty's tag parser seeks.
+/// The sidecar test above only exercises `Read`, so without this one the
+/// costlier half of the promise stands unproven — and a source that could only
+/// stream would look acceptable.
+///
+/// The bytes are a real tagged FLAC, but they reach the parser from a `Vec`
+/// through a `Cursor`; nothing in this path opens a file.
+#[test]
+fn embedded_tags_can_be_parsed_from_a_vec_backed_library_source() {
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac");
+    let bytes = std::fs::read(&fixture).unwrap();
+    let track = PathBuf::from("content:/music/song.flac");
+    let source = VecLibrarySource {
+        track: track.clone(),
+        content: HashMap::from([(track.clone(), bytes)]),
+    };
+
+    let mut handle = crate::library::source::LibrarySource::open_read(&source, &track).unwrap();
+    let probe = lofty::probe::Probe::new(&mut handle)
+        .guess_file_type()
+        .expect("a seekable handle must let lofty sniff the header");
+
+    assert_eq!(
+        probe.file_type(),
+        Some(lofty::file::FileType::Flac),
+        "the parser must reach the same verdict it would from a real file"
+    );
+}

@@ -97,7 +97,16 @@ fn synced_id3_from_source(
     source: &dyn crate::library::source::LibrarySource,
     path: &Path,
 ) -> Option<LyricsBody> {
+    // Seed the extension guess before sniffing, which is what the previous
+    // `Probe::open(path)` did for free. `guess_file_type` is
+    // `self.f_ty = sniffed.or(self.f_ty)`, so an unseeded probe turns a failed
+    // sniff into "unknown format" instead of falling back to the extension —
+    // and lofty documents sniffing as failing on legitimate files whose header
+    // sits past its junk-byte budget. Without this seed a `.mp3` with a long
+    // preamble silently loses its synced (`SYLT`) lyrics: the caller falls
+    // through to the generic tag path, which never looks at `SYLT` at all.
     let probe = lofty::probe::Probe::new(source.open_read(path).ok()?)
+        .set_file_type(FileType::from_path(path)?)
         .guess_file_type()
         .ok()?;
     let file_type = probe.file_type()?;
