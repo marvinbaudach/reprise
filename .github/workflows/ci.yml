@@ -33,7 +33,8 @@ jobs:
         run: >-
           pacman -Syu --noconfirm --needed
           base-devel cargo-audit dbus gettext git gstreamer gst-plugins-base
-          gst-plugins-good gtk4 libadwaita libsecret mesa openssh pkgconf
+          gst-plugins-good gtk4 libadwaita libsecret mesa
+          meson openssh pkgconf
           ripgrep rust sqlite xorg-server-xvfb xorg-xauth
 
       - name: Check out the tested revision
