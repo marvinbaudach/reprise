@@ -1,4 +1,4 @@
-//! QUE-3: maps composite Queue-view row positions (see `queue_sections`)
+//! QUE-3: maps composite Queue-view row positions (see [`crate::queue`])
 //! onto section-local operations. The view shows Now Playing at 0, then
 //! Play Next, then the snapshot's Up Next tail — but the controller's
 //! operations are section-scoped (`up_next` indices vs. snapshot order
@@ -9,11 +9,11 @@
 //! and promotion of one Up Next row into Play Next. The virtual context is
 //! never reordered in place (QUE-8).
 
-use super::queue_sections::{QueueSection, QueueSectionKind};
+use crate::queue::{QueueSection, QueueSectionKind};
 
 /// A composite-view row, resolved to its section-local coordinate.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum QueueRow {
+pub enum QueueRow {
     NowPlaying,
     /// Index into the manual Play Next list.
     PlayNext(usize),
@@ -29,7 +29,7 @@ pub(crate) enum QueueRow {
 // clippy's postfix heuristic doesn't know that, so it's silenced here.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[allow(clippy::enum_variant_names)]
-pub(crate) enum QueueReorderOp {
+pub enum QueueReorderOp {
     /// Reorder within the Play Next section.
     WithinPlayNext { from: usize, to: usize },
     /// Drag an Up Next snapshot row into the Play Next section: remove it
@@ -40,7 +40,7 @@ pub(crate) enum QueueReorderOp {
     },
 }
 
-pub(crate) fn is_read_only_episode_projection(
+pub fn is_read_only_episode_projection(
     row: QueueRow,
     item: reprise_core::up_next::QueueItem,
 ) -> bool {
@@ -50,7 +50,7 @@ pub(crate) fn is_read_only_episode_projection(
 
 /// Resolves a view position to its section-local row. `None` for positions
 /// outside every section (defensive — GTK should never hand one over).
-pub(crate) fn classify(view_position: u32, sections: &[QueueSection]) -> Option<QueueRow> {
+pub fn classify(view_position: u32, sections: &[QueueSection]) -> Option<QueueRow> {
     for section in sections {
         let end = section.start.saturating_add(section.len);
         if view_position < section.start || view_position >= end {
@@ -74,14 +74,14 @@ pub(crate) fn classify(view_position: u32, sections: &[QueueSection]) -> Option<
 /// - Up Next dropped onto Play Next → promote out of the snapshot.
 /// - within Up Next → rejected; Continuing is not reorderable.
 /// - anything that fails to classify on either side → `None`.
-pub(crate) fn reorder_op(from: u32, to: u32, sections: &[QueueSection]) -> Option<QueueReorderOp> {
+pub fn reorder_op(from: u32, to: u32, sections: &[QueueSection]) -> Option<QueueReorderOp> {
     let from_row = classify(from, sections)?;
     let to_row = classify(to, sections)?;
 
     reorder_rows(from_row, to_row)
 }
 
-pub(crate) fn reorder_rows(from_row: QueueRow, to_row: QueueRow) -> Option<QueueReorderOp> {
+pub fn reorder_rows(from_row: QueueRow, to_row: QueueRow) -> Option<QueueReorderOp> {
     match (from_row, to_row) {
         (QueueRow::NowPlaying, _) => None,
         (QueueRow::PlayNext(f), QueueRow::PlayNext(t)) => {
@@ -105,7 +105,7 @@ pub(crate) fn reorder_rows(from_row: QueueRow, to_row: QueueRow) -> Option<Queue
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::track_list::queue_sections::compose;
+    use crate::queue::compose;
     use reprise_core::up_next::QueueItem;
 
     fn tracks(ids: &[i64]) -> Vec<QueueItem> {
@@ -119,6 +119,7 @@ mod tests {
             &tracks(&[2, 3]),
             &[4, 5, 6],
             Some("Music"),
+            "Music",
         )
         .sections
     }
@@ -210,7 +211,14 @@ mod tests {
     #[test]
     fn without_play_next_has_no_drop_target() {
         // View: [1] now playing | [4,5] up next — no Play Next section.
-        let s = compose(Some(QueueItem::Track(1)), &[], &[4, 5], Some("Music")).sections;
+        let s = compose(
+            Some(QueueItem::Track(1)),
+            &[],
+            &[4, 5],
+            Some("Music"),
+            "Music",
+        )
+        .sections;
         assert_eq!(reorder_op(2, 1, &s), None);
         assert_eq!(reorder_op(1, 2, &s), None);
         assert_eq!(reorder_op(2, 0, &s), None);

@@ -10,6 +10,8 @@
 use crate::strings::{Message, Plural};
 use reprise_core::up_next::QueueItem;
 
+pub mod rows;
+
 macro_rules! N_ {
     ($message:literal) => {
         $message
