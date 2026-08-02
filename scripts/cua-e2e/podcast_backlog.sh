@@ -115,6 +115,7 @@ run_podcast_backlog_scenario() {
   local fixtures="$CUA_E2E_SCRATCH_ROOT/podcast-backlog-fixtures"
   local shows=3
   local podcast_total=$((PODCAST_BACKLOG_EPISODES_PER_SOURCE * shows))
+  local failure_heading="Couldn't refresh 3 sources"
   local snapshot
 
   echo "[cua-e2e] podcast-backlog: shows with a real backlog stay scannable"
@@ -141,6 +142,23 @@ run_podcast_backlog_scenario() {
   REPRISE_SMOKE_SOURCE=podcasts \
     start_scenario_app podcast-backlog "$music" "" 60
   wait_for_label "$APP_PID" "$WINDOW_ID" "Toggle sidebar" pb-on-ready >/dev/null
+
+  # POD-19: the empty fixture directory makes all three cached shows fail
+  # their startup refresh without touching a network. The compact banner keeps
+  # its retry, Details and labelled close actions in one summary row. Expand
+  # Details first so dismissing proves the large state in the reported bug can
+  # always be removed, not only the initially collapsed state.
+  snapshot=$(wait_for_label \
+    "$APP_PID" "$WINDOW_ID" "$failure_heading" pb-refresh-failure)
+  assert_snapshot_contains "$snapshot" "Try again"
+  assert_snapshot_contains "$snapshot" "Details"
+  assert_snapshot_contains "$snapshot" "Dismiss"
+  cua_click_label "$APP_PID" "$WINDOW_ID" "Details" pb-refresh-details
+  snapshot=$(wait_for_label "$APP_PID" "$WINDOW_ID" "Copy" pb-refresh-details-open)
+  assert_snapshot_contains "$snapshot" "Dismiss"
+  cua_click_label "$APP_PID" "$WINDOW_ID" "Dismiss" pb-refresh-dismiss
+  wait_for_label_absent \
+    "$APP_PID" "$WINDOW_ID" "$failure_heading" pb-refresh-dismissed >/dev/null
 
   snapshot=$(wait_for_label "$APP_PID" "$WINDOW_ID" \
     "Grim Dystopian: Earballs" pb-collapsed)

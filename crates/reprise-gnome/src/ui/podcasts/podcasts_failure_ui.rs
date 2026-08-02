@@ -156,6 +156,7 @@ impl PodcastsView {
         let last_checked = super::last_updated_text(&self.conn);
         let subscription_id = notice.subscription_id;
         let weak = Rc::downgrade(self);
+        let dismiss_weak = weak.clone();
         let on_action = move |action| {
             let Some(view) = weak.upgrade() else {
                 return;
@@ -178,6 +179,12 @@ impl PodcastsView {
                 FailureActionRoute::None => {}
             }
         };
+        let on_dismiss = move || {
+            let Some(view) = dismiss_weak.upgrade() else {
+                return;
+            };
+            view.clear_fetch_failure();
+        };
         match presentation.surface {
             FailureSurface::Banner => {
                 let support = if matches!(error.kind(), SourceErrorKind::Offline) {
@@ -187,8 +194,14 @@ impl PodcastsView {
                 } else {
                     strings::source_cached_episodes_still_work(cached_items, &last_checked)
                 };
-                self.error_banner
-                    .show(&presentation, &support, &error, &occurred_at, on_action);
+                self.error_banner.show(
+                    &presentation,
+                    &support,
+                    &error,
+                    &occurred_at,
+                    on_action,
+                    on_dismiss,
+                );
             }
             FailureSurface::FullArea => {
                 self.error_banner.hide();
