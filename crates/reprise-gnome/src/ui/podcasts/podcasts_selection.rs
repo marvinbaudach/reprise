@@ -118,6 +118,16 @@ impl PodcastSelection {
         self.selected.contains(&episode_id)
     }
 
+    /// Applies SRC-14's context-menu take-over rule and reports whether the
+    /// caller must publish the changed selection to the visible surface.
+    pub(super) fn take_over_for_context_menu(&mut self, episode_id: i64) -> bool {
+        if self.contains(episode_id) {
+            return false;
+        }
+        self.apply(&[], episode_id, SelectMode::Only);
+        true
+    }
+
     pub(super) fn remove_all(&mut self, episode_ids: &[i64]) {
         for episode_id in episode_ids {
             self.selected.remove(episode_id);
@@ -246,6 +256,27 @@ mod tests {
         selection.apply(&[1, 2, 3], 3, SelectMode::Range);
 
         assert_eq!(selection.selected_ids(), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn src_14_context_menu_preserves_a_selection_that_contains_the_clicked_row() {
+        let mut selection = PodcastSelection::default();
+        selection.set_selected(1, true);
+        selection.set_selected(2, true);
+        selection.set_selected(3, true);
+
+        assert!(!selection.take_over_for_context_menu(2));
+        assert_eq!(selection.selected_ids(), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn src_14_context_menu_replaces_a_selection_outside_the_clicked_row() {
+        let mut selection = PodcastSelection::default();
+        selection.set_selected(1, true);
+        selection.set_selected(2, true);
+
+        assert!(selection.take_over_for_context_menu(3));
+        assert_eq!(selection.selected_ids(), vec![3]);
     }
 
     #[test]

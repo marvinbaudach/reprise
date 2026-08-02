@@ -12,6 +12,7 @@ use reprise_core::podcasts::download_state::DownloadState;
 use reprise_core::podcasts::{EpisodeRow, PodcastKind, SourceGroup};
 
 use super::podcasts_context_menu;
+use super::podcasts_context_surface;
 use super::podcasts_playback::EpisodeMark;
 use super::podcasts_presentation::{
     author_line, detail_line, duration, file_size, on_phone, relative_date, status_pill,
@@ -21,7 +22,7 @@ use super::podcasts_row_interaction::{
     episode_thumbnail, install_row_interaction, SELECT_ROW_ACTION,
 };
 use super::podcasts_row_state::{download_status, RowNetworkState};
-use super::podcasts_selection::{PodcastSelection, SelectMode};
+use super::podcasts_selection::PodcastSelection;
 use super::podcasts_title::TitleParts;
 use crate::ui::playing_marker;
 use crate::ui::strings;
@@ -294,6 +295,12 @@ fn group_header(
     menu.add_css_class("flat");
     menu.set_tooltip_text(Some(&strings::text(strings::PODCAST_MORE_SOURCE_OPTIONS)));
     header.append(&menu);
+    podcasts_context_surface::wire_source_header(
+        &header,
+        group,
+        connected_devices,
+        selected_device_ids,
+    );
     header.upcast()
 }
 
@@ -357,6 +364,13 @@ fn episode_row(
     thumbnail.add_overlay(&marker);
     root.append(&thumbnail);
     install_row_interaction(&root, row.id, SELECT_ROW_ACTION);
+    podcasts_context_surface::wire_episode_row(
+        &root,
+        row,
+        context.selection,
+        context.unavailable_episode,
+        SELECT_ROW_ACTION,
+    );
     super::podcasts_dnd::wire_episode_drag_source(&root, row.id, context.selection);
 
     let identity = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
@@ -405,33 +419,12 @@ fn episode_row(
     widgets.downloads.insert(row.id, download_row);
     root.append(&download);
 
-    let menu = gtk4::MenuButton::builder()
-        .icon_name("view-more-symbolic")
-        .build();
-    // `SRC-14`: built when it opens, not when the row is rendered. A selection
-    // change no longer re-renders (that is what keeps keyboard focus alive), so
-    // a model built here would describe a selection that has since moved on.
-    // Opening it also makes the row the selection when it was outside it, so
-    // the menu and the highlighted rows agree on what is about to be acted on.
-    let menu_row = row.clone();
-    let menu_selection = context.selection.clone();
-    let unavailable_episode = context.unavailable_episode;
-    menu.set_create_popup_func(move |menu| {
-        if !menu_selection.borrow().contains(menu_row.id) {
-            let target = (menu_row.id, SelectMode::Only.as_u8()).to_variant();
-            if let Err(error) = menu.activate_action("podcasts.select-row", Some(&target)) {
-                tracing::debug!(%error, "podcast row menu could not take over the selection");
-            }
-        }
-        let selected_ids = menu_selection.borrow().selected_ids();
-        menu.set_menu_model(Some(&podcasts_context_menu::build_for_selection(
-            &menu_row,
-            &selected_ids,
-            unavailable_episode,
-        )));
-    });
-    menu.add_css_class("flat");
-    menu.set_tooltip_text(Some(&strings::text(strings::PODCAST_MORE_OPTIONS)));
+    let menu = podcasts_context_surface::episode_menu_button(
+        row,
+        context.selection,
+        context.unavailable_episode,
+        SELECT_ROW_ACTION,
+    );
     root.append(&menu);
     root.upcast()
 }
