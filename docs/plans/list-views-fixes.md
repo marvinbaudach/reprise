@@ -2,7 +2,7 @@
 slug: list-views-fixes
 worktree: /home/marvin/Projects/reprise-list-views-fixes
 branch: feature/list-views-fixes
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-07-30
 ---
