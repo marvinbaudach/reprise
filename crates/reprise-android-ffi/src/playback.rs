@@ -29,6 +29,8 @@ pub enum AndroidTransitionMode {
 pub enum AndroidPlaybackError {
     #[error("Media3 failure: {detail}")]
     Backend { detail: String },
+    #[error("invalid playback request: {detail}")]
+    InvalidRequest { detail: String },
     #[error("unsupported Android playback capability: {detail}")]
     Unsupported { detail: String },
 }
@@ -203,6 +205,16 @@ impl From<AndroidPlaybackState> for PlaybackState {
             AndroidPlaybackState::Playing => Self::Playing,
             AndroidPlaybackState::Paused => Self::Paused,
             AndroidPlaybackState::Stopped => Self::Stopped,
+        }
+    }
+}
+
+impl From<PlaybackState> for AndroidPlaybackState {
+    fn from(state: PlaybackState) -> Self {
+        match state {
+            PlaybackState::Playing => Self::Playing,
+            PlaybackState::Paused => Self::Paused,
+            PlaybackState::Stopped => Self::Stopped,
         }
     }
 }

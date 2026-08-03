@@ -1,6 +1,10 @@
 package de.reprise.spike
 
+import androidx.media3.common.Player
+import java.lang.reflect.Proxy
 import java.util.concurrent.atomic.AtomicReference
+import uniffi.reprise_android_ffi.AndroidPlaybackSnapshot
+import uniffi.reprise_android_ffi.AndroidPlaybackState
 
 fun main() {
     unknownTotalUsesIndeterminateProgress()
@@ -11,6 +15,78 @@ fun main() {
     rescanUsesRememberedTreeWithoutChoosingAgain()
     applicationLooperDispatchRunsInlineOnItsOwningThread()
     applicationLooperDispatchPostsAndWaitsFromAnotherThread()
+    positionReadoutUsesTheDurationDeliveredByTheBridge()
+    pausedPlaybackOffersPlayOnTheSurface()
+    mediaSessionTransportReturnsToCore()
+}
+
+private fun mediaSessionTransportReturnsToCore() {
+    var playWhenReady = false
+    val player = Proxy.newProxyInstance(
+        Player::class.java.classLoader,
+        arrayOf(Player::class.java),
+    ) { _, method, _ ->
+        when (method.name) {
+            "getPlayWhenReady" -> playWhenReady
+            else -> primitiveDefault(method.returnType)
+        }
+    } as Player
+    val calls = mutableListOf<String>()
+    val controlled = CoreControlledPlayer(player, object : CoreControlledPlayer.Commands {
+        override fun togglePause() {
+            calls += "toggle"
+        }
+
+        override fun next() {
+            calls += "next"
+        }
+
+        override fun previous() {
+            calls += "previous"
+        }
+    })
+
+    controlled.play()
+    playWhenReady = true
+    controlled.pause()
+    controlled.seekToNext()
+    controlled.seekToPreviousMediaItem()
+
+    check(calls == listOf("toggle", "toggle", "next", "previous"))
+}
+
+private fun primitiveDefault(type: Class<*>): Any? = when (type) {
+    Boolean::class.javaPrimitiveType -> false
+    Int::class.javaPrimitiveType -> 0
+    Long::class.javaPrimitiveType -> 0L
+    Float::class.javaPrimitiveType -> 0f
+    Double::class.javaPrimitiveType -> 0.0
+    else -> null
+}
+
+private fun positionReadoutUsesTheDurationDeliveredByTheBridge() {
+    val state = AndroidPlaybackSnapshot(
+        state = AndroidPlaybackState.PLAYING,
+        currentIndex = 2u,
+        positionMs = 1_250,
+        durationMs = 180_000,
+        error = null,
+    ).toUiState()
+
+    check(state.positionReadout == "0:01 / 3:00")
+    check(state.currentIndex == 2)
+}
+
+private fun pausedPlaybackOffersPlayOnTheSurface() {
+    val state = AndroidPlaybackSnapshot(
+        state = AndroidPlaybackState.PAUSED,
+        currentIndex = 0u,
+        positionMs = 0,
+        durationMs = 0,
+        error = null,
+    ).toUiState()
+
+    check(state.playPauseLabel == "Play")
 }
 
 private fun applicationLooperDispatchRunsInlineOnItsOwningThread() {

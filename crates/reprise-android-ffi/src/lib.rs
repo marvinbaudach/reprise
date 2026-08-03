@@ -14,12 +14,17 @@ use reprise_core::view_source::ViewSource;
 use source::{BridgedSource, SafSource};
 
 pub mod playback;
+mod playback_session;
 pub mod source;
 mod source_error;
 mod source_names;
 
 #[cfg(test)]
 mod playback_tests;
+
+pub use playback_session::{
+    AndroidPlaybackListener, AndroidPlaybackSession, AndroidPlaybackSnapshot,
+};
 
 uniffi::setup_scaffolding!();
 

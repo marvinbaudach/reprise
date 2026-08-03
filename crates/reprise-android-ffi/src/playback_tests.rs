@@ -9,6 +9,7 @@ use crate::playback::{
     AndroidPlaybackBackend, AndroidPlaybackError, AndroidPlaybackPort, AndroidPlaybackState,
     AndroidPlayerEvent, AndroidTransitionMode, PlaybackEventBridge,
 };
+use crate::{AndroidPlaybackListener, AndroidPlaybackSession, AndroidPlaybackSnapshot};
 
 #[derive(Clone, Debug, PartialEq)]
 enum PortCall {
@@ -28,14 +29,16 @@ enum PortCall {
 
 struct RecordingPort {
     calls: Arc<Mutex<Vec<PortCall>>>,
+    bridge: Arc<Mutex<Option<Arc<PlaybackEventBridge>>>>,
 }
 
 impl AndroidPlaybackPort for RecordingPort {
     fn set_event_bridge(
         &self,
-        _bridge: Arc<PlaybackEventBridge>,
+        bridge: Arc<PlaybackEventBridge>,
     ) -> Result<(), AndroidPlaybackError> {
         self.record(PortCall::SetEventBridge);
+        *self.bridge.lock().unwrap() = Some(bridge);
         Ok(())
     }
 
@@ -105,12 +108,52 @@ impl RecordingPort {
     }
 }
 
+struct RecordingListener {
+    snapshots: Arc<Mutex<Vec<AndroidPlaybackSnapshot>>>,
+}
+
+impl AndroidPlaybackListener for RecordingListener {
+    fn on_playback_changed(&self, snapshot: AndroidPlaybackSnapshot) {
+        self.snapshots.lock().unwrap().push(snapshot);
+    }
+}
+
+struct SessionFixture {
+    session: AndroidPlaybackSession,
+    calls: Arc<Mutex<Vec<PortCall>>>,
+    bridge: Arc<Mutex<Option<Arc<PlaybackEventBridge>>>>,
+    snapshots: Arc<Mutex<Vec<AndroidPlaybackSnapshot>>>,
+}
+
+fn recording_session() -> SessionFixture {
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let bridge = Arc::new(Mutex::new(None));
+    let snapshots = Arc::new(Mutex::new(Vec::new()));
+    let session = AndroidPlaybackSession::new(
+        Box::new(RecordingPort {
+            calls: Arc::clone(&calls),
+            bridge: Arc::clone(&bridge),
+        }),
+        Box::new(RecordingListener {
+            snapshots: Arc::clone(&snapshots),
+        }),
+    )
+    .unwrap();
+    SessionFixture {
+        session,
+        calls,
+        bridge,
+        snapshots,
+    }
+}
+
 #[test]
 fn android_backend_routes_every_core_command_through_the_media3_port() {
     let calls = Arc::new(Mutex::new(Vec::new()));
     let backend = AndroidPlaybackBackend::new(
         Box::new(RecordingPort {
             calls: Arc::clone(&calls),
+            bridge: Arc::new(Mutex::new(None)),
         }),
         Box::new(|_| {}),
     )
@@ -157,6 +200,138 @@ fn android_backend_routes_every_core_command_through_the_media3_port() {
     assert!(spectrum_error
         .to_string()
         .contains("spectrum analysis is not supported"));
+}
+
+#[test]
+fn tapping_a_track_starts_a_core_queue_at_that_position() {
+    let fixture = recording_session();
+
+    fixture
+        .session
+        .play_tracks(
+            vec![
+                "content://provider/first.flac".to_owned(),
+                "content://provider/second.flac".to_owned(),
+                "content://provider/third.flac".to_owned(),
+            ],
+            1,
+        )
+        .unwrap();
+
+    assert_eq!(
+        fixture.session.snapshot().unwrap(),
+        AndroidPlaybackSnapshot {
+            state: AndroidPlaybackState::Playing,
+            current_index: Some(1),
+            position_ms: 0,
+            duration_ms: 0,
+            error: None,
+        }
+    );
+    assert_eq!(
+        fixture.calls.lock().unwrap().as_slice(),
+        &[
+            PortCall::SetEventBridge,
+            PortCall::SetTransition(AndroidTransitionMode::Gapless),
+            PortCall::PlayUri("content://provider/second.flac".to_owned()),
+            PortCall::CurrentGeneration,
+            PortCall::SetNext(Some("content://provider/third.flac".to_owned())),
+        ]
+    );
+    assert_eq!(
+        fixture.snapshots.lock().unwrap().last(),
+        Some(&fixture.session.snapshot().unwrap())
+    );
+}
+
+#[test]
+fn core_queue_owns_gapless_advance_and_manual_next_previous() {
+    let fixture = recording_session();
+    fixture
+        .session
+        .play_tracks(
+            vec![
+                "content://provider/first.flac".to_owned(),
+                "content://provider/second.flac".to_owned(),
+                "content://provider/third.flac".to_owned(),
+            ],
+            0,
+        )
+        .unwrap();
+    fixture.calls.lock().unwrap().clear();
+    let bridge = fixture.bridge.lock().unwrap().clone().unwrap();
+
+    bridge.emit(24, AndroidPlayerEvent::AdvancedToNext);
+    bridge.emit(
+        24,
+        AndroidPlayerEvent::Position {
+            position_ms: 1_250,
+            duration_ms: 180_000,
+        },
+    );
+
+    assert_eq!(
+        fixture.session.snapshot().unwrap(),
+        AndroidPlaybackSnapshot {
+            state: AndroidPlaybackState::Playing,
+            current_index: Some(1),
+            position_ms: 1_250,
+            duration_ms: 180_000,
+            error: None,
+        }
+    );
+    assert_eq!(
+        fixture.calls.lock().unwrap().as_slice(),
+        &[PortCall::SetNext(Some(
+            "content://provider/third.flac".to_owned()
+        ))]
+    );
+
+    fixture.session.next().unwrap();
+    fixture.session.previous().unwrap();
+
+    assert_eq!(fixture.session.snapshot().unwrap().current_index, Some(1));
+    assert_eq!(
+        fixture.calls.lock().unwrap().as_slice(),
+        &[
+            PortCall::SetNext(Some("content://provider/third.flac".to_owned())),
+            PortCall::PlayUri("content://provider/third.flac".to_owned()),
+            PortCall::CurrentGeneration,
+            PortCall::SetNext(None),
+            PortCall::PlayUri("content://provider/second.flac".to_owned()),
+            PortCall::CurrentGeneration,
+            PortCall::SetNext(Some("content://provider/third.flac".to_owned())),
+        ]
+    );
+}
+
+#[test]
+fn core_queue_starts_the_next_track_when_media3_reports_a_plain_end() {
+    let fixture = recording_session();
+    fixture
+        .session
+        .play_tracks(
+            vec![
+                "content://provider/first.flac".to_owned(),
+                "content://provider/second.flac".to_owned(),
+            ],
+            0,
+        )
+        .unwrap();
+    fixture.calls.lock().unwrap().clear();
+    let bridge = fixture.bridge.lock().unwrap().clone().unwrap();
+
+    bridge.emit(23, AndroidPlayerEvent::TrackFinished);
+
+    assert_eq!(fixture.session.snapshot().unwrap().current_index, Some(1));
+    assert_eq!(
+        fixture.calls.lock().unwrap().as_slice(),
+        &[
+            PortCall::PlayUri("content://provider/second.flac".to_owned()),
+            PortCall::CurrentGeneration,
+            PortCall::SetNext(None),
+        ]
+    );
 }
 
 #[test]
