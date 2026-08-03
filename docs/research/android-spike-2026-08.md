@@ -831,16 +831,33 @@ Speicherbereich und bekommt, wenn überhaupt, einen eigenen Vertrag.
 
 #### C — fremde App-Daten, plattformweise ausgeschlossen
 
-| Datei | Zeilen |
-| --- | --- |
-| `library/rhythmbox_import.rs` | 397, 525 |
-
 `rhythmbox_import` liest Rhythmboxʼ eigene `rhythmdb.xml` und `playlists.xml`
 unter `~/.local/share/rhythmbox`. Das ist weder unsere Bibliothek noch unser
-Speicher, und unter Android existiert Rhythmbox nicht. **Diese Stellen brauchen
-keine Abstraktion, sondern eine Plattformgrenze** — der Import ist eine
-Desktop-Funktion. Die Musikdatei, die der Import danach anfasst
-(`rhythmbox_import.rs:501`), steht dagegen in A: sie liegt in der Bibliothek.
+Speicher, und unter Android existiert Rhythmbox nicht. Die damalige Folgerung
+„keine Abstraktion, sondern eine Plattformgrenze" war im Ziel richtig, in der
+Form aber zu grob: Ein `#[cfg]`, das den Import fortkompiliert, waere dieselbe
+stille Annahme an anderer Stelle.
+
+P3 hat die Grenze deshalb als verpflichtende
+`LibrarySource::rhythmbox_import_capability` benannt. `UnixLibrarySource`
+antwortet `Supported`, der DocumentsProvider-Adapter `Unsupported`; es gibt
+keine Vorgabeimplementierung. Die Surface behaelt die Pfadentscheidung, Core
+oeffnet beide XML-Dateien ueber `open_read` und gewinnt Anwesenheit sowie
+Aenderungszeit aus `probe`. Der GNOME-Einstieg kombiniert Faehigkeit und
+`LibraryPathPresence`: `Unsupported` bietet nichts an, `Absent` beziehungsweise
+eine bestaetigte Nicht-Datei widerlegen den konkreten Pfad, `Unknown` wird
+nicht als Abwesenheit ausgegeben.
+
+Die erneute Messung fand neben den drei direkten `File::open` und dem
+`std::fs::metadata` noch eine in der Ausgangszaehlung fehlende Stelle:
+`playlists_path.is_file()`. Alle fuenf Zugriffe sind entfernt. Der bereits
+vorhandene Name `prescan_rhythmdb_with_source` war nur teilweise wahr: Vor P3
+lief allein die Anwesenheit der im XML genannten Musikdatei durch die Quelle,
+nicht die beiden XML-Eingaben. Der in-memory Prescan-Test liest nun
+`provider:/rhythmdb.xml` und `provider:/playlists.xml` ohne Dateisystempfad;
+der zweite neue Core-Test weist den Import vor jedem Leseversuch ab, wenn die
+Quelle `Unsupported` meldet. Die Musikdatei, deren Anwesenheit der Prescan
+klassifiziert, bleibt Klasse A, weil sie in der Bibliothek liegt.
 
 #### E — der Unix-Adapter selbst
 

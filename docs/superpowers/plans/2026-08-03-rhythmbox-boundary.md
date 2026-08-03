@@ -2,7 +2,7 @@
 slug: rhythmbox-boundary
 worktree: /home/marvin/Projects/reprise-rhythmbox
 branch: feature/rhythmbox-boundary
-phase: in-progress
+phase: complete
 created: 2026-08-03
 ---
 # Multi-Surface P3 — Rhythmbox als ausdrueckliche Quellenfaehigkeit
