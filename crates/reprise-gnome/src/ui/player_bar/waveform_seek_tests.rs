@@ -15,193 +15,35 @@ impl WaveformSeek {
 }
 
 #[test]
-fn ac_24_the_soft_kick_strikes_at_once_and_leaves_over_220_ms() {
-    use super::kick_soft_step;
-    // Attack is instant — the strike sits on the beat, not after it.
-    assert!((kick_soft_step(0.0, 1.0, 0.016) - 1.0).abs() < 1e-9);
-    assert!((kick_soft_step(0.3, 0.9, 0.016) - 0.9).abs() < 1e-9);
-    // Release is linear over 220 ms: a full kick is gone after 220 ms and
-    // exactly half gone after 110 ms.
-    assert!((kick_soft_step(1.0, 0.0, 0.110) - 0.5).abs() < 1e-9);
-    assert!((kick_soft_step(1.0, 0.0, 0.220) - 0.0).abs() < 1e-9);
-    // It never falls below the reading that is still arriving …
-    assert!((kick_soft_step(0.6, 0.5, 1.0) - 0.5).abs() < 1e-9);
-    // … and never below zero, however long the gap between frames.
-    assert!((kick_soft_step(1.0, 0.0, 99.0) - 0.0).abs() < 1e-9);
-    // Out-of-range readings clamp instead of driving the bars past full.
-    assert!((kick_soft_step(0.0, 4.0, 0.016) - 1.0).abs() < 1e-9);
-    assert!((kick_soft_step(-1.0, -1.0, 0.016) - 0.0).abs() < 1e-9);
-}
-
-#[test]
-#[ignore = "requires a display; run via xvfb-run"]
-fn ac_24_a_kick_on_a_settled_bar_runs_its_tail_out() {
-    // The tick stops itself when the position, the build and the crossfade
-    // have settled. A kick arriving after that has to restart it, or the bars
-    // freeze mid-swell — which is exactly what pausing does.
-    let _main_context = crate::ui::test_main_context::lock_main_context();
-    gtk4::init().unwrap();
-    let settings = gtk4::Settings::default().unwrap();
-    let previous = settings.is_gtk_enable_animations();
-    settings.set_gtk_enable_animations(true);
-
-    let waveform = WaveformSeek::new();
-    let window = gtk4::Window::builder()
-        .default_width(600)
-        .default_height(80)
-        .child(waveform.widget())
-        .build();
-    window.present();
-    while gtk4::glib::MainContext::default().iteration(false) {}
-    assert!(waveform.tick_id.borrow().is_none());
-
-    waveform.set_bass(1.0, 1.0);
-    let attack_deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
-    while waveform.state.borrow().kick_soft < 1.0 && std::time::Instant::now() < attack_deadline {
-        while gtk4::glib::MainContext::default().iteration(false) {}
-        std::thread::sleep(std::time::Duration::from_millis(5));
-    }
-    assert_eq!(waveform.state.borrow().kick_soft, 1.0);
-
-    waveform.set_bass(0.0, 0.0);
-    let release_deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
-    while waveform.state.borrow().kick_soft > 0.0 && std::time::Instant::now() < release_deadline {
-        while gtk4::glib::MainContext::default().iteration(false) {}
-        std::thread::sleep(std::time::Duration::from_millis(5));
-    }
-    assert_eq!(waveform.state.borrow().kick_soft, 0.0);
-    assert!(waveform.tick_id.borrow().is_none());
-
-    window.close();
-    settings.set_gtk_enable_animations(previous);
-}
-
-#[test]
-fn ac_24_the_playhead_glow_grows_with_the_kick() {
-    use super::render::{playhead_glow_alpha, playhead_glow_radius};
-    let h = 34.0;
-    assert!((playhead_glow_radius(h, 0.0) - 7.48).abs() < 1e-6);
-    assert!((playhead_glow_radius(h, 1.0) - 46.58).abs() < 1e-6);
-    assert!((playhead_glow_alpha(0.0, 0.0) - 0.30).abs() < 1e-9);
-    assert!((playhead_glow_alpha(1.0, 1.0) - 0.82).abs() < 1e-9);
-    // Out-of-range readings clamp.
-    assert!((playhead_glow_radius(h, 9.0) - 46.58).abs() < 1e-6);
-    assert!((playhead_glow_alpha(9.0, 9.0) - 0.82).abs() < 1e-9);
-}
-
-#[test]
-fn ac_24_both_layers_stand_down_together() {
-    use super::render::reactive_light_is_active;
-    // Dragging: light under the finger is in the way while you look for a
-    // spot. Build-up and crossfade: two animations fighting.
-    assert!(reactive_light_is_active(false, None, 1.0, 1.0));
-    assert!(
-        !reactive_light_is_active(false, Some(0.4), 1.0, 1.0),
-        "drag"
-    );
-    assert!(!reactive_light_is_active(false, None, 0.5, 1.0), "build");
-    assert!(
-        !reactive_light_is_active(false, None, 1.0, 0.5),
-        "crossfade"
-    );
-    // The mini player is too small: the glow would light half the bar.
-    assert!(!reactive_light_is_active(true, None, 1.0, 1.0), "mini");
-}
-
-#[test]
-fn ac_24_silence_dots_never_pulse() {
-    use super::render::display_bar_height;
-    // `DisplayBar::Silence` is a fixed 2 px dot at every reading. Silence that
-    // breathes is a lie about the recording.
-    for k in 0..=100 {
-        let kick_soft = f64::from(k) / 100.0;
-        assert_eq!(
-            display_bar_height(
-                DisplayBar::Silence,
-                60,
-                120,
-                0.5,
-                kick_soft,
-                1.0,
-                3.9,
-                26.0,
-                1.0,
-                true,
-            ),
-            SILENCE_DOT_HEIGHT
-        );
-    }
-}
-
-/// The lens is back. The guard that used to stand here forbade *any* height
-/// movement, because the first lens flickered. It is replaced — not dropped —
-/// by the three tests below, one per cause of that flicker: a window wide
-/// enough to read as a wave, a driver soft enough to be one, and growth
-/// quantised to even device pixels so no edge ever lands on a half-pixel.
-#[test]
-fn ac_24_lens_growth_lands_only_on_even_device_pixels() {
-    use super::render::{bar_height_for_test, lensed_bar_height};
-    // Bars are centre-anchored: an odd growth splits into two half-pixel
-    // edges, which is what flickered. Sweep the whole reading range and every
-    // bar around the playhead, at 1x and at 2x.
-    for &scale in &[1.0, 2.0] {
-        let step = 2.0 * scale;
-        for k in 0..=100 {
-            let kick_soft = f64::from(k) / 100.0;
-            for index in 0..120 {
-                let base = bar_height_for_test(180, 3.9, 26.0);
-                let grown = lensed_bar_height(base, index, 120, 0.5, kick_soft, scale, 26.0);
-                let grow = grown - base;
-                assert!(grow >= 0.0, "the lens must never shrink a bar");
-                let steps = grow / step;
-                assert!(
-                    (steps - steps.round()).abs() < 1e-9,
-                    "growth {grow} is not a multiple of {step} (scale {scale}, kick {kick_soft})"
-                );
-                assert!(grown <= 26.0, "the lens grew past the ceiling: {grown}");
-            }
-        }
-    }
-}
-
-#[test]
-fn ac_24_a_still_reading_leaves_the_waveform_bit_identical() {
-    use super::render::{bar_height_for_test, lensed_bar_height};
-    // At rest the stored waveform is shown exactly as `shape_display_peaks`
-    // produced it — the lens is presentation, not data.
-    for level in [0u8, 40, 128, 200, 255] {
-        let base = bar_height_for_test(level, 3.9, 26.0);
-        for index in 0..120 {
-            assert_eq!(
-                lensed_bar_height(base, index, 120, 0.5, 0.0, 1.0, 26.0),
-                base,
-                "a bar moved at kick_soft = 0"
-            );
-        }
-    }
-}
-
-#[test]
-fn ac_24_the_lens_is_a_wave_not_a_twitch() {
-    use super::render::{bar_height_for_test, lensed_bar_height};
-    // σ = 8 bars: about thirty move together. The first lens used σ ≈ 3.9 and
-    // read as eight bars twitching. Measure the count that actually moves.
-    let base = bar_height_for_test(255, 3.9, 26.0);
-    let moved = (0..240)
-        .filter(|&i| lensed_bar_height(base, i, 240, 0.5, 1.0, 1.0, 200.0) > base)
-        .count();
-    assert!(moved >= 24, "only {moved} bars move — that is a twitch");
-    // And it is symmetric: the lens shows where you are, not what was.
-    let head = 120usize;
-    for offset in 1..=10 {
-        assert_eq!(
-            lensed_bar_height(base, head - offset, 240, 0.5, 1.0, 1.0, 200.0),
-            lensed_bar_height(base, head + offset, 240, 0.5, 1.0, 1.0, 200.0),
-            "the lens is lopsided at ±{offset}"
-        );
-    }
-    // Beyond the cutoff nothing moves at all.
-    assert_eq!(lensed_bar_height(base, 0, 240, 0.5, 1.0, 1.0, 200.0), base);
+fn ac_24_the_waveform_reads_neither_bass_signal() {
+    // The seek bar is a surface for reading a position and for hitting it.
+    // Movement there is in the way, and the geometry of a 3 px bar cannot
+    // carry it without shimmering.
+    //
+    // Three attempts, three rejections, and the third one is why this guard
+    // asserts on the *source text* rather than on a function's output:
+    //
+    //   1. A lens that swelled the bars around the playhead. Rejected: the
+    //      bars twitched individually (σ ≈ 3.9, driven by raw `kick`).
+    //   2. The same lens, rebuilt properly — σ = 8 so thirty bars moved as one
+    //      wave, driven by a 220 ms `kick_soft`, growth quantised to even
+    //      device pixels so no edge could land on a half-pixel. Still rejected
+    //      on sight: "das Zittern der Seek".
+    //   3. A glow on the playhead alone, touching no bar height. Rejected:
+    //      `kick` falls in 70 ms, so it read as a blink.
+    //
+    // The common cause is not the implementation. It is that this is the one
+    // surface the user has to *aim* at, and the eye resolves it at
+    // single-pixel scale, so any movement reads as a defect rather than as
+    // life. Do not try a fourth time without new evidence about that.
+    //
+    // The played-bar gradient is the exception and stays: it depends on
+    // position alone, never on a reading.
+    let source = include_str!("waveform_seek_render.rs");
+    assert!(!source.contains("kick"));
+    assert!(!source.contains("pressure"));
+    let state = include_str!("waveform_seek.rs");
+    assert!(!state.contains("bass_kick"));
 }
 
 #[test]
@@ -401,9 +243,6 @@ fn ensure_resampled_clears_display_peaks_when_raw_empty() {
         crossfade_start_us: 0,
         desaturation_progress: 0.0,
         desaturation_target: 0.0,
-        bass_kick: 0.0,
-        bass_pressure: 0.0,
-        kick_soft: 0.0,
         min_bar_height: MIN_BAR_HEIGHT,
         max_bar_height: MAX_BAR_HEIGHT,
         bar_count_override: None,
@@ -433,9 +272,6 @@ fn ensure_resampled_populates_on_width_change() {
         crossfade_start_us: 0,
         desaturation_progress: 0.0,
         desaturation_target: 0.0,
-        bass_kick: 0.0,
-        bass_pressure: 0.0,
-        kick_soft: 0.0,
         min_bar_height: MIN_BAR_HEIGHT,
         max_bar_height: MAX_BAR_HEIGHT,
         bar_count_override: None,

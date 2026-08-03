@@ -308,22 +308,26 @@ impl PlayerBar {
         self.animate_play_icon_change(new_glyph);
     }
 
-    /// The live bass reading, fanned out to the two reactive layers the bar
-    /// owns: the cover's shadow and the seek playhead. Called at the spectrum
-    /// rate (~86 Hz).
+    /// The live bass reading, fanned out to the one reactive layer the bar
+    /// owns: the cover's shadow. Called at the spectrum rate (~86 Hz).
     ///
-    /// The transport buttons are deliberately not among the consumers — they
-    /// are what a pointer aims at, and once the running track scrolls out of
-    /// the list they are the only place the playback state is read from.
-    pub fn set_bass(&self, kick: f64, pressure: f64) {
-        let playing = self.playback_state.get() == PlaybackState::Playing;
-        let (kick, pressure) = if playing {
-            (kick, pressure)
-        } else {
-            (0.0, 0.0)
-        };
-        self.waveform.set_bass(kick, pressure);
-        if !playing {
+    /// **The waveform is deliberately not among the consumers.** Reactive light
+    /// has been tried there twice and rejected twice: first as a lens that made
+    /// the bars swell, then as a glow on the playhead. The lens read as
+    /// twitching even after its growth was quantised to even device pixels, and
+    /// the glow — riding `kick`, which falls in 70 ms — read as a blink on the
+    /// one surface you have to aim at. The waveform's only position cue is the
+    /// played-bar gradient, which depends on position alone.
+    ///
+    /// The transport buttons are deliberately not among the consumers either —
+    /// they are what a pointer aims at, and once the running track scrolls out
+    /// of the list they are the only place the playback state is read from.
+    /// `kick` is unused: the bar's cover breathes on `swell`, which this derives
+    /// from `pressure`. It stays in the signature because the caller fans the
+    /// same pair out to every surface and a second setter would be one more
+    /// place for the two to drift apart.
+    pub fn set_bass(&self, _kick: f64, pressure: f64) {
+        if self.playback_state.get() != PlaybackState::Playing {
             *self.swell.borrow_mut() = Swell::default();
             self.swell_last_frame_us.set(0);
             self.cover_lift.set_swell(0.0);

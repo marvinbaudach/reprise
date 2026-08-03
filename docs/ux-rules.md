@@ -2905,26 +2905,26 @@ STYLE-1).
   `impact`, which answers how loud a whole track is rather than what its
   beat is doing: on a limited master it never leaves its resting value.
   `pressure` carries the backdrop's base brightness and `swell` the slow
-  movement of every large surface. Outside the Visualizer view the
-  playhead alone reads `kick` for its compact glow. While the Visualizer
+  movement of every large surface. While the Visualizer
   is visible, the panel cover cross-fades over MOT-1's 400 ms Ambient
   window from `swell` to `kick`; the player-bar cover stays on `swell`.
-  **The transport controls stay still.** The bars around the playhead
-  swell with the bass over a window wide enough to read as one wave, and
-  their growth is quantised to even device pixels so no bar edge ever
-  lands on a half-pixel. That swell and the playhead light stand down
-  together while the user is dragging the playhead, during build-up and
-  during a track crossfade — one predicate governs both, because light
-  under the finger is in the way while you are aiming. The played-bar
-  gradient **stays** through all three, and through MOT-7: it is a
-  colouring that depends only on position, not an animation.
-  The **playhead** carries a glow,
-  and it is the only light outside the Visualizer view that answers a
-  single hit: it is small, it already sits at a position that moves, and
-  it marks the present moment in the track. Everything larger breathes
+  **The transport controls stay still, and so does the whole seek bar.**
+  Nothing in the waveform reads a bass signal — not the bar heights, not
+  the playhead. Reactive light was tried there twice and rejected twice:
+  first as a lens that swelled the bars around the playhead, then as a
+  glow on the playhead itself. The lens still read as twitching after its
+  growth was quantised to even device pixels, and the glow — riding
+  `kick`, which falls in 70 ms — read as a blink. Both failures share one
+  cause: the seek bar is the one surface the user has to *aim* at, and
+  the eye resolves it at single-pixel scale, so any movement there is
+  read as a defect rather than as life. The waveform's only position cue
+  is the played-bar gradient, which depends on position alone and
+  therefore survives MOT-7, a drag, a build-up and a crossfade.
+  Everything that does move breathes
   over seconds on `swell`, a UI-side slow envelope of `pressure` crossed
   with a free-running 5.5 s cycle — deliberately not locked to the tempo,
   because a swell that locks to the beat is a tick again, only slower.
+  Outside the Visualizer view, `kick` therefore drives nothing at all.
   **In the track list only the marker's tempo follows**, in steps: the
   three-bar loop that says "this one is playing" runs slower where the
   track rests and faster where it pushes, driven by `swell` and never by
