@@ -34,6 +34,14 @@ thread_local! {
     static CURRENT_THEME: Cell<theme::Theme> = const { Cell::new(theme::Theme::DEFAULT) };
 }
 
+/// The app stylesheet, for display tests that have to measure a widget the way
+/// it is actually styled. A geometry assertion against unstyled widgets passes
+/// while the shipped button is a different size.
+#[cfg(test)]
+pub(in crate::ui) fn app_css_for_test() -> String {
+    app_css()
+}
+
 /// One entry per feature that ships app-authored (theme-independent) CSS.
 /// Palette colors are NOT here — they live in the separate theme provider.
 fn app_css() -> String {

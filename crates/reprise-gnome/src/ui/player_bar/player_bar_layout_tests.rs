@@ -35,7 +35,10 @@ fn ac_24_the_play_button_stays_a_circle_of_its_declared_size() {
     // hit area — this is what catches it.
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
-    crate::ui::style::install_css_string_for_test(&super::css());
+    // The full sheet, not just this module's: the button's tier classes come
+    // from `style::buttons`, and a test that installs only the player-bar CSS
+    // measures a button the app never renders.
+    crate::ui::style::install_css_string_for_test(&crate::ui::style::app_css_for_test());
     let layout = build();
     let window = gtk4::Window::builder()
         .default_width(1_200)
@@ -49,13 +52,22 @@ fn ac_24_the_play_button_stays_a_circle_of_its_declared_size() {
         .play_pause_button
         .compute_bounds(&layout.root)
         .expect("play button has player-bar bounds");
+    // Assert the property, not an incidental number. `PLAY_BUTTON_SIZE` is a
+    // CSS `min-width`/`min-height`, so the allocation is that plus whatever
+    // border the theme draws — 46 px here. What must hold is that the box is
+    // *square*, because `border-radius: 50%` on anything else is an ellipse,
+    // and that it never falls below the declared hit area.
     assert_eq!(
-        (button.width(), button.height()),
-        (
-            super::PLAY_BUTTON_SIZE as f32,
-            super::PLAY_BUTTON_SIZE as f32
-        ),
-        "the play button is no longer a circle of its declared size"
+        button.width(),
+        button.height(),
+        "the play button is an ellipse: {} x {}",
+        button.width(),
+        button.height()
+    );
+    assert!(
+        button.width() >= super::PLAY_BUTTON_SIZE as f32,
+        "the play button shrank below its declared size: {}",
+        button.width()
     );
 
     window.close();
