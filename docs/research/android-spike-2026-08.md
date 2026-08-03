@@ -1516,3 +1516,83 @@ gemeinsame Orchestrierungsschicht. Genau das ist der Ertrag dieses Pakets.
 Diese Bilanz beruht auf den Rust- und Kotlin-Seams, der Android-
 Cross-Kompilation und den generierten Bindings. Der getrennte Gerätelauf wurde
 für dieses Paket ausdrücklich nicht ausgeführt und wird hier nicht behauptet.
+
+## Paket 3 — Browse-Oberfläche als Messung von `reprise-view` (2026-08-03)
+
+Die Android-Oberfläche besitzt nun drei Reiter für Titel, Alben und
+Interpreten. Jede Änderung des Suchfelds — einschliesslich des leeren Texts —
+geht unverändert an `reprise-core`. Ein Album wird mit Titel und Albuminterpret
+geöffnet; Core bestimmt Zugehörigkeit und kanonische Disc-/Track-Reihenfolge.
+Beim Antippen friert Android genau die sichtbare Titel- beziehungsweise
+Albumliste samt Cursor für die Core-Warteschlange ein. In Kotlin gibt es keine
+Abfrage, Sortierung, Filterung, Gruppierung oder Albumregel.
+
+Das ist eine schmalere Aussage als „die Browse-Präsentation ist teilbar“. Der
+Vergleich trennt deshalb Entscheidungsregeln von Transport- und Widgetarbeit.
+
+### Reibungen im direkten Vergleich
+
+| Reibung | Was `reprise-gnome` besitzt | Was Compose stattdessen tat | Urteil |
+| --- | --- | --- | --- |
+| Core-Typen an einer Sprachgrenze | GNOME kann `Track`, `AlbumSummary` und `ArtistSummary` als Rust-Typen direkt verwenden. Die aktuellen drei mobilen Listen haben dort kein gleiches Presenter-Modul; `query_albums` und `query_artists` haben zurzeit keinen GNOME-Aufrufer. | UniFFI braucht flache `TrackRow`, `AlbumRow` und `ArtistRow`; der Adapter benennt den gespeicherten SAF-Ort ehrlich als `representative_uri` und projiziert nicht benötigte Desktop-Statistiken weg. Kotlin bildet diese Records nochmals auf unveränderliche Oberflächenwerte ab. | **Keine geteilte Präsentationsschicht.** Die Form ist eine notwendige FFI-/Oberflächengrenze. Ein gemeinsamer Presenter würde Transportunterschiede nur verstecken. |
+| Album-/Interpreten-Gruppierung und Listenordnung | GNOME hat diese Zusammenfassungslisten nach der kanonischen Trackoberfläche nicht mehr; seine Album- und Interpretensichten sind Core-Scopes eines `BrowserPlace`. Die weiterhin vorhandenen `query_albums` und `query_artists` besitzen Gruppenschlüssel, Ausschluss fehlender Tracks und stabile Ordnung, werden aber nicht von GNOME präsentiert. | `listAlbums` und `listArtists` reichen genau diese Core-Reihenfolge durch UniFFI und Kotlin bis `LazyColumn`; Compose gruppiert und sortiert nichts nach. | **Echte gemeinsame Entscheidungsregeln in Core, kein Beleg für gemeinsame Präsentation.** Dass nur Android die zwei Listen zeigt, ändert nicht den Besitzer ihrer Gruppierung und Ordnung. |
+| Albumidentität, Inhalt und Reihenfolge | `BrowserPlace::fresh_album` trägt dieselbe Identität aus Album und Albuminterpret. `TrackListModel` fragt die so eingeschränkte Core-Quelle mit der aktuellen View-Sortierung ab; Core entscheidet die Mitgliedschaft und führt die gewählte Ordnung aus. GNOMEs Zeilenaktivierung friert danach diese sichtbare Ordnung ein. | `listAlbumTracks(album, albumArtist)` liefert fertige Zeilen in kanonischer Disc-/Track-Reihenfolge, weil die kleine Oberfläche keine wählbare Sortierung besitzt. Compose zeigt sie in genau dieser Folge. Der zuerst erwogene Tracknummern-Weg hätte mehrere Discs vermischt und fiel im Core-Test rot. | **Echte gemeinsame Entscheidungsregel, aber bereits richtig in Core.** Identität und Mitgliedschaft sind gemeinsam; auch die gewählte Ordnung wird in Core ausgeführt. Ob eine Oberfläche die kanonische oder eine vom Benutzer gewählte Ordnung verlangt, ist ihr Eingabevertrag. Ein zusätzlicher `reprise-view`-Typ ist dafür nicht belegt. |
+| Suche, Sortierung und leerer Suchtext | `TrackViewState` hält Suchtext und Sortierung; `TrackListModel` gibt sie an die Core-Abfragen. `view_session::wire_search` verzögert nur die teure Neuladung um 200 ms und hält den sichtbaren Text sofort fest. Core entscheidet Treffer und Reihenfolge. | `OutlinedTextField` reicht jeden literalen Wert sofort an `searchTracks` weiter. `""` geht ebenfalls durch Core und bedeutet dort die gesamte vorhandene Bibliothek in Titelreihenfolge. Der Kotlin-Test lässt das Port-Doppel absichtlich eine nicht passende Zeile liefern und beweist so, dass Kotlin nicht nachfiltert. | **Treffer, Ordnung und Bedeutung von leer gehören gemeinsam in Core; Eingabeverzögerung gehört zur Oberfläche.** Der Core-Façade ist belegt, ein geteilter Debounce nicht. |
+| Ausführbare Query statt SQL-Baustein | GNOME besitzt mit `TrackListModel::set_query_browsed` einen GTK-nahen Aufrufer für Quelle, Spaltensortierung, Richtung, Text, Facetten, Queue und AI-Ausschluss. Er kann `build_track_query` nicht als vollständige Anwendungsschnittstelle behandeln. | Android hätte dieselben GTK-geprägten Parameter erfinden müssen. Stattdessen kamen `query_library_text_search` und `query_album_tracks` als enge Core-Façaden hinzu. | **Gemeinsame Anwendungsentscheidung in Core.** Wiederverwendet werden soll die benannte Abfrage, nicht GNOMEs umfassender Tabellenzustand und nicht dessen Parameterliste. |
+| Besitz und Fehlerübersetzung | Im selben Prozess leiht GNOME `&str` und behandelt `rusqlite::Error` direkt, meist durch Loggen und einen leeren beziehungsweise unveränderten Modellzustand. | UniFFI liefert besessene Strings; Rust boxt den Bibliothekszustand, leiht die Werte intern und hüllt SQLite-Fehler in `LibraryError::Query`. Compose wandelt Fehler in sichtbare Aktionsmeldungen um. | **Oberflächen- und transportspezifisch.** Besitz, Fehlerhülle und sichtbare Meldung belegen keine gemeinsame View-Schicht. |
+| Mehrere Abfragen statt eines Browse-Snapshots | GNOME rendert jeweils einen `BrowserPlace` über ein langlebiges `TrackListModel`; es braucht keinen atomaren Snapshot dreier paralleler Reiter. Album- und Interpretenzusammenfassungen bilden dort aktuell keine solche Dreieroberfläche. | Beim Laden koordiniert Android vier Aufrufe: leere Titelsuche, Alben, Interpreten und später die Tracks eines geöffneten Albums. Die Records werden synchron zu einem `LibraryScreenState.Browse` zusammengesetzt. | **Noch kein Beleg für eine gemeinsame Schicht.** Die Dreiteilung ist ein mobiles Produkt-/Layoutdetail. Ein gebündelter Core-Snapshot wäre erst gerechtfertigt, wenn getrennte Aufrufe nachweislich inkonsistente Zustände oder relevante FFI-Kosten erzeugen. |
+| Welcher Tap welche Warteschlange startet | GNOME baut für eine Zeilenaktivierung die IDs der aktuell sichtbaren Sortier-/Filteransicht und den Cursor und übergibt beides an `PlayerController::play_from_view`. Der Player friert diesen Kontext ein. | `PlaybackSelection` trägt die gerade gerenderte Liste samt `startIndex`. In der Titelsuche ist das die Trefferliste; im Albumdetail ausschliesslich `selectedAlbum.tracks`. Die Rust-Sitzung setzt daraus die Core-Queue. | **Echte gemeinsame Entscheidungsregel.** „Gerenderter Kontext plus Cursor“ sollte frontend-neutral benannt bleiben. Die Kotlin-Datenkopie ist jedoch nur der Adapter zur bereits erkannten gemeinsamen Playback-Sitzung, kein neuer Browse-Presenter. |
+| Navigation und Wiederherstellung | GNOME besitzt `BrowserPlace`, `TrackViewState`, `nav_history`, `view_session` und `view_state_memory`: Sammlung, Suche, Facetten, Sortierung, stabiler Anker, Auswahl und Fokus werden als Ort erfasst und wiederhergestellt. GTK projiziert daraus Scrollwert und Widgetfokus. | Android hält aktiven Reiter, Suchtext und geöffnetes Album mit `remember(state)` und setzt sie nach einem neuen Bibliothekszustand zurück. Es gibt in diesem Paket noch keine Prozess- oder Navigationswiederherstellung. | **Beleg für einen gemeinsamen Orts-/View-State, nicht für gemeinsame Widgets.** Sammlung, Verfeinerungen und Wiederherstellungssemantik sind teilbar; Tab, Back-Schaltfläche, Scrollanker und Fokusadapter bleiben oberflächenspezifisch. |
+| Anzeigetexte und Dauerformat | GNOME verwendet seine katalogisierten, reicheren Zeilenprojektionen. | Compose formatiert Dauer, „N tracks“, unbekannte Interpreten und Leerzustände lokal. | **Kein Fall für eine gemeinsame Schicht.** Das sind kleine Darstellung und spätere Lokalisierungsarbeit, keine Browse-Regeln. |
+
+### Die 500-Zeilen-Grenze ist ein Produktbefund
+
+`query_library_text_search` und `query_album_tracks` benutzen
+`query_track_window` mit `MAX_WINDOW_LIMIT = 500`. Ihre Android-Schnittstellen
+geben weder Gesamtzahl noch Offset, Cursor oder Folgeseite zurück. Eine Suche
+mit mehr als 500 Treffern und ein Album mit mehr als 500 Tracks werden daher
+still abgeschnitten. `query_albums` und `query_artists` haben umgekehrt gar
+keine Seitengrenze und materialisieren die vollständige Ergebnisliste vor dem
+FFI-Übergang.
+
+GNOME besitzt für seine Trackansicht bereits den anderen Vertrag:
+`TrackListModel` kennt die Gesamtzahl, lädt 200-Zeilen-Fenster nach Bedarf und
+hält höchstens acht Fenster im Cache. GTK virtualisiert die Widgets, das
+Modell die Daten; der Benutzer kann die ganze Bibliothek durchlaufen. Compose
+virtualisiert mit `LazyColumn` nur die bereits materialisierten Zeilen und
+kann die fehlenden Daten nicht anfordern.
+
+Das ist **keine Kotlin-Aufgabe**. Die nächste grosse Bibliotheksoberfläche
+braucht eine Core-Abfrage mit stabilem Request aus Scope, Suche und Ordnung
+sowie Response aus Gesamtzahl und Fenster beziehungsweise Cursor. Erst danach
+darf jede Oberfläche ihr eigenes Vorladen und ihren eigenen Cache wählen. Das
+vorliegende Paket hat genau den Risikofall — eine grosse reale Bibliothek —
+nicht ausführen können. Deshalb bleiben sowohl das Abschneiden bei 500 als
+auch die fehlende Pagination ausdrückliche, ungemessene Produktrisiken; sie
+sind nicht durch den kleinen Testbestand entkräftet.
+
+### Urteil über die vier verbliebenen P1a-Cluster
+
+Die mechanische Zeilenzählung liefert nach dieser zweiten Oberfläche nur für
+einen der vier Cluster positive Evidenz:
+
+| Cluster | Evidenz aus diesem Paket |
+| --- | --- |
+| `tag_edit_flow` | **Nicht gestützt.** Das Paket ist rein lesend und hat keinen zweiten Verbraucher für Feldmischung, Validierung oder Schreibentscheidungen erzeugt. Die mechanische Grösse darf hier keine mobile Teilbarkeit behaupten. |
+| `session_restore` + `view_session` | **Gestützt, aber enger als der Dateiumfang.** Android braucht bereits denselben Begriff eines Browserorts und seiner Verfeinerungen; derzeit besitzt es nur flüchtigen Widgetzustand. `BrowserPlace` und `TrackViewState` zeigen die tragende gemeinsame Semantik. GTK-Scrollanker, Widgetfokus und 200-ms-Debounce sowie Compose-Reiter und `remember` bleiben Adapter. |
+| `column_layout` + `keyboard_reorder` | **Nicht gestützt.** Die mobile Ansicht hat weder Spalten noch Tastaturreihenfolge. Das Paket liefert im Gegenteil erste Evidenz, dass diese Dateien Desktop-Interaktion beschreiben. `ColumnId` kann aus internen Gründen rein sein; diese Oberfläche rechtfertigt aber keinen plattformübergreifenden View-Vertrag dafür. |
+| `missing_view` + `import_errors_view` | **Nicht gestützt.** Weder fehlende Dateien noch Importfehler liegen im Umfang dieser Oberfläche; es entstand kein zweiter Verbraucher und damit keine empirische Teilbarkeit. |
+
+Damit überstimmt die Messung die Schätzung: **Von den vier verbleibenden
+Clustern ist nur `session_restore` + `view_session` durch Paket 3 als nächster
+Kandidat belegt.** Die anderen drei dürfen nicht wegen ihres mechanisch
+gezählten reinen Anteils vorgezogen werden. Die wichtigste neu entdeckte
+gemeinsame Naht — eine paginierbare Core-Trackabfrage für grosse Bibliotheken
+— steht nicht in diesen vier Clustern. Sie ist neue Evidenz für die Abfrage-
+und Tracklistenplanung und sollte deren Reihenfolge eher korrigieren als in
+einen unpassenden Presenter-Umzug hineingedeutet werden.
+
+Diese Bilanz beruht auf den Core-, GNOME-, UniFFI- und Compose-Seams sowie den
+automatisierten Rust- und Kotlin-Prüfungen. Der getrennte Gerätelauf wurde wie
+vorgegeben nicht ausgeführt; insbesondere Laufzeitkosten und Scrollverhalten
+einer grossen Android-Bibliothek werden hier nicht behauptet.
