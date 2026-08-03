@@ -15,15 +15,47 @@ impl WaveformSeek {
 }
 
 #[test]
-fn ac_24_the_waveform_reads_neither_bass_signal() {
-    // The seek bar is a surface for reading a position and for hitting it.
-    // Movement there is in the way, and the geometry of a 3 px bar cannot
-    // carry it without shimmering (round 2 proved both).
-    let source = include_str!("waveform_seek_render.rs");
-    assert!(!source.contains("kick"));
-    assert!(!source.contains("pressure"));
-    let state = include_str!("waveform_seek.rs");
-    assert!(!state.contains("bass_kick"));
+fn ac_24_the_playhead_glow_grows_with_the_kick() {
+    use super::render::{playhead_glow_alpha, playhead_glow_radius};
+    let h = 34.0;
+    assert!((playhead_glow_radius(h, 0.0) - 7.48).abs() < 1e-6);
+    assert!((playhead_glow_radius(h, 1.0) - 46.58).abs() < 1e-6);
+    assert!((playhead_glow_alpha(0.0, 0.0) - 0.30).abs() < 1e-9);
+    assert!((playhead_glow_alpha(1.0, 1.0) - 0.82).abs() < 1e-9);
+    // Out-of-range readings clamp.
+    assert!((playhead_glow_radius(h, 9.0) - 46.58).abs() < 1e-6);
+    assert!((playhead_glow_alpha(9.0, 9.0) - 0.82).abs() < 1e-9);
+}
+
+#[test]
+fn ac_24_the_glow_stands_down_where_it_would_be_in_the_way() {
+    use super::render::glow_is_active;
+    // Dragging: light under the finger is in the way while you look for a
+    // spot. Build-up and crossfade: two animations fighting.
+    assert!(glow_is_active(false, None, 1.0, 1.0));
+    assert!(!glow_is_active(false, Some(0.4), 1.0, 1.0), "drag");
+    assert!(!glow_is_active(false, None, 0.5, 1.0), "build");
+    assert!(!glow_is_active(false, None, 1.0, 0.5), "crossfade");
+    // The mini player is too small: the glow would light half the bar.
+    assert!(!glow_is_active(true, None, 1.0, 1.0), "mini");
+}
+
+/// The regression that keeps the lens from coming back through the side door.
+#[test]
+fn ac_24_bar_heights_are_identical_at_every_reading() {
+    use super::render::{bar_height_for_test, bar_height_for_test_with_kick};
+    let state_max = 26.0;
+    let state_min = state_max * 0.15;
+    for level in [0u8, 40, 128, 200, 255] {
+        let reference = bar_height_for_test(level, state_min, state_max);
+        for kick in [0.0, 0.25, 0.5, 0.75, 1.0] {
+            assert_eq!(
+                bar_height_for_test_with_kick(level, state_min, state_max, kick),
+                reference,
+                "a bar height moved with the reading at kick {kick}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -223,6 +255,8 @@ fn ensure_resampled_clears_display_peaks_when_raw_empty() {
         crossfade_start_us: 0,
         desaturation_progress: 0.0,
         desaturation_target: 0.0,
+        bass_kick: 0.0,
+        bass_pressure: 0.0,
         min_bar_height: MIN_BAR_HEIGHT,
         max_bar_height: MAX_BAR_HEIGHT,
         bar_count_override: None,
@@ -252,6 +286,8 @@ fn ensure_resampled_populates_on_width_change() {
         crossfade_start_us: 0,
         desaturation_progress: 0.0,
         desaturation_target: 0.0,
+        bass_kick: 0.0,
+        bass_pressure: 0.0,
         min_bar_height: MIN_BAR_HEIGHT,
         max_bar_height: MAX_BAR_HEIGHT,
         bar_count_override: None,

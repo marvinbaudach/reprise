@@ -2882,13 +2882,23 @@ STYLE-1).
   `impact`, which answers how loud a whole track is rather than what its
   beat is doing: on a limited master it never leaves its resting value.
   `pressure` carries the brightness and `kick` the movement on top of
-  it, added rather than blended. **The transport controls, the waveform
-  and the track list stay still.** The play/pause button is what a
+  it, added rather than blended. **The transport controls and the track
+  list stay still**, and so do the bar heights: the waveform's geometry
+  is exactly what `shape_display_peaks` delivers at every reading,
+  because a 30 % amplitude on a 3 px bar moves it by a fraction of a
+  pixel and each bar crosses its rounding boundary at a different moment
+  — that is noise, not swell. The **playhead** carries a glow instead,
+  and it is the only surface outside the Visualizer view that answers a
+  single hit: it is small, it already sits at a position that moves, and
+  it marks the present moment in the track. Everything larger breathes
+  over seconds on `swell`, a UI-side slow envelope of `pressure` crossed
+  with a free-running 5.5 s cycle — deliberately not locked to the tempo,
+  because a swell that locks to the beat is a tick again, only slower.
+  The play/pause button is what a
   pointer aims at and, once the running track scrolls out of the list,
   the only place the playback state is read from — a control that
   answers the music moves under the cursor and competes with the state
-  it reports. The waveform and the track list are surfaces for reading
-  and for hitting. The cover itself never changes brightness either: the
+  it reports. The cover itself never changes brightness either: the
   eye reads luminance change in peripheral vision, so a brightening
   cover pulls attention off the list; it lifts on its shadow and carries
   a travelling reflection instead. The lift is two cached shadow layers

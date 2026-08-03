@@ -78,6 +78,30 @@ pub(super) fn draw(
     // replaces the old partially-filled boundary bar (the played/unplayed
     // switch is a hard per-bucket cut instead).
     let playhead_x = (state.fraction * w).clamp(0.5, (w - 0.5).max(0.5));
+    if glow_is_active(
+        state.fill_bars,
+        state.drag_fraction,
+        state.build_progress,
+        state.crossfade_progress,
+    ) {
+        let radius = playhead_glow_radius(h, state.bass_kick);
+        let alpha = playhead_glow_alpha(state.bass_kick, state.bass_pressure);
+        let center_y = h / 2.0;
+        let glow = gtk4::cairo::RadialGradient::new(
+            playhead_x, center_y, 0.0, playhead_x, center_y, radius,
+        );
+        glow.add_color_stop_rgba(0.0, r, g, b, alpha);
+        glow.add_color_stop_rgba(1.0, r, g, b, 0.0);
+        cr.save().ok();
+        cr.rectangle(0.0, 0.0, w, h);
+        cr.clip();
+        cr.set_operator(gtk4::cairo::Operator::Add);
+        if cr.set_source(&glow).is_ok() {
+            cr.arc(playhead_x, center_y, radius, 0.0, std::f64::consts::TAU);
+            let _ = cr.fill();
+        }
+        cr.restore().ok();
+    }
     cr.set_source_rgba(r, g, b, PLAYHEAD_ALPHA);
     cr.rectangle(
         playhead_x - 0.5,
@@ -95,7 +119,33 @@ struct BarDrawStyle {
     opacity: f64,
 }
 
+const GLOW_RADIUS_REST: f64 = 0.22;
+const GLOW_RADIUS_PER_KICK: f64 = 1.15;
+const GLOW_ALPHA_REST: f64 = 0.30;
+const GLOW_ALPHA_PER_PRESSURE: f64 = 0.12;
+const GLOW_ALPHA_PER_KICK: f64 = 0.40;
 const PLAYED_MIN_ALPHA: f64 = 0.55;
+
+pub(super) fn playhead_glow_radius(height: f64, kick: f64) -> f64 {
+    height * (GLOW_RADIUS_REST + GLOW_RADIUS_PER_KICK * kick.clamp(0.0, 1.0))
+}
+
+pub(super) fn playhead_glow_alpha(kick: f64, pressure: f64) -> f64 {
+    GLOW_ALPHA_REST
+        + GLOW_ALPHA_PER_PRESSURE * pressure.clamp(0.0, 1.0)
+        + GLOW_ALPHA_PER_KICK * kick.clamp(0.0, 1.0)
+}
+
+/// The glow is out of the way while the user is aiming, and while another
+/// animation owns the bar.
+pub(super) fn glow_is_active(
+    fill_bars: bool,
+    drag_fraction: Option<f64>,
+    build_progress: f64,
+    crossfade_progress: f64,
+) -> bool {
+    !fill_bars && drag_fraction.is_none() && build_progress >= 1.0 && crossfade_progress >= 1.0
+}
 
 /// Brightness of an already-played bar: dim at the start of the track, full at
 /// the playhead. Purely positional, so it holds still within a frame.
@@ -149,8 +199,7 @@ fn draw_bars(
             DisplayBar::Silence => SILENCE_DOT_HEIGHT * stagger,
             DisplayBar::Level(level) => {
                 let magnitude = f64::from(level).clamp(0.0, 1.0);
-                (state.min_bar_height + magnitude * (state.max_bar_height - state.min_bar_height))
-                    * stagger
+                bar_height(magnitude, state.min_bar_height, state.max_bar_height) * stagger
             }
         };
         // Guard against zero-height bars during early animation frames.
@@ -195,6 +244,29 @@ fn draw_bars(
         rounded_bar(cr, x, y, bar_w, bar_h, bar_radius);
         let _ = cr.fill();
     }
+}
+
+fn bar_height(magnitude: f64, min_bar_height: f64, max_bar_height: f64) -> f64 {
+    min_bar_height + magnitude.clamp(0.0, 1.0) * (max_bar_height - min_bar_height)
+}
+
+#[cfg(test)]
+pub(super) fn bar_height_for_test(level: u8, min_bar_height: f64, max_bar_height: f64) -> f64 {
+    bar_height(
+        f64::from(level) / f64::from(u8::MAX),
+        min_bar_height,
+        max_bar_height,
+    )
+}
+
+#[cfg(test)]
+pub(super) fn bar_height_for_test_with_kick(
+    level: u8,
+    min_bar_height: f64,
+    max_bar_height: f64,
+    _kick: f64,
+) -> f64 {
+    bar_height_for_test(level, min_bar_height, max_bar_height)
 }
 
 /// Skeleton waveform: deterministic pseudo-random bar heights that look like

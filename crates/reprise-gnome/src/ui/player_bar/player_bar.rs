@@ -303,19 +303,22 @@ impl PlayerBar {
         self.animate_play_icon_change(new_glyph);
     }
 
-    /// The live bass reading, fanned out to the one reactive layer the bar
-    /// owns: the cover's shadow. Called at the spectrum rate (~86 Hz).
+    /// The live bass reading, fanned out to the two reactive layers the bar
+    /// owns: the cover's shadow and the seek playhead. Called at the spectrum
+    /// rate (~86 Hz).
     ///
     /// The transport buttons are deliberately not among the consumers — they
     /// are what a pointer aims at, and once the running track scrolls out of
     /// the list they are the only place the playback state is read from.
-    pub fn set_bass(&self, kick: f64, _pressure: f64) {
-        let kick = if self.playback_state.get() == PlaybackState::Playing {
-            crate::ui::motion::reactive_amplitude(kick)
+    pub fn set_bass(&self, kick: f64, pressure: f64) {
+        let (kick, pressure) = if self.playback_state.get() == PlaybackState::Playing {
+            (kick, pressure)
         } else {
-            0.0
+            (0.0, 0.0)
         };
-        self.cover_lift.set_kick(kick);
+        self.waveform.set_bass(kick, pressure);
+        self.cover_lift
+            .set_kick(crate::ui::motion::reactive_amplitude(kick));
     }
 
     fn animate_play_pulse(&self) {

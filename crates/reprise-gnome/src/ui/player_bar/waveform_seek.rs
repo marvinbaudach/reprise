@@ -106,6 +106,9 @@ struct State {
     desaturation_progress: f64, // 0.0 = full chroma, 1.0 = paused chroma
     #[allow(dead_code)] // Consumed by the PlayerBar/Compact wiring in MOT-5 Phase B.
     desaturation_target: f64,
+    /// Live bass readings, 0..1. Presentation only; the stored peaks never move.
+    bass_kick: f64,
+    bass_pressure: f64,
     min_bar_height: f64,
     max_bar_height: f64,
     /// Fixed bar count for the mini player (frame 1e); `None` = width-derived.
@@ -221,6 +224,8 @@ impl WaveformSeek {
             crossfade_start_us: 0,
             desaturation_progress: 0.0,
             desaturation_target: 0.0,
+            bass_kick: 0.0,
+            bass_pressure: 0.0,
             min_bar_height: min_h,
             max_bar_height: max_h,
             bar_count_override,
@@ -449,6 +454,28 @@ impl WaveformSeek {
         let animation = motion::timed(&self.area, from, target, motion::STANDARD, animation_target);
         motion::replace_animation(&self.desaturation_animation, animation.clone());
         animation.play();
+    }
+
+    /// Feeds the playhead glow. Both readings pass through the MOT-7 motion
+    /// gate; the draw side, not this setter, excludes the mini player.
+    pub(in crate::ui) fn set_bass(&self, kick: f64, pressure: f64) {
+        let kick = motion::reactive_amplitude(kick);
+        let pressure = motion::reactive_amplitude(pressure);
+        let changed = {
+            let mut state = self.state.borrow_mut();
+            if (state.bass_kick - kick).abs() < 0.01
+                && (state.bass_pressure - pressure).abs() < 0.01
+            {
+                false
+            } else {
+                state.bass_kick = kick;
+                state.bass_pressure = pressure;
+                true
+            }
+        };
+        if changed {
+            self.area.queue_draw();
+        }
     }
 
     /// Instantly set the playback position (0..1).  Prefer `set_fraction_smooth`
