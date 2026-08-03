@@ -80,6 +80,8 @@ impl super::NowPlayingPanel {
                 .add_css_class("reprise-now-playing-cover");
             self.widgets.external_cover.append(source_image.widget());
             self.widgets.visualizer.set_cover(None);
+            self.widgets.bloom.set_cover(None, generation);
+            self.widgets.shimmer.set_cover(None, generation);
             on_cover_resolved(None);
             return;
         }
@@ -90,8 +92,12 @@ impl super::NowPlayingPanel {
         // bar: without this, a track with no (or slow-to-decode) cover would
         // leave the previous track's accent lingering in the engine.
         self.widgets.visualizer.set_cover(None);
+        self.widgets.bloom.set_cover(None, generation);
+        self.widgets.shimmer.set_cover(None, generation);
         if let Some(track) = track {
             let visualizer = self.widgets.visualizer.clone();
+            let bloom = self.widgets.bloom.clone();
+            let shimmer = self.widgets.shimmer.clone();
             let cover_widget = self.widgets.cover.clone();
             self.cover_loader.load_into_with_resolution(
                 &self.widgets.cover,
@@ -112,6 +118,11 @@ impl super::NowPlayingPanel {
                             .and_downcast::<gtk4::gdk::Texture>()
                             .or_else(|| gtk4::gdk::Texture::from_filename(resolved_path).ok());
                         visualizer.set_cover(texture.as_ref());
+                        bloom.set_cover(texture.as_ref(), generation);
+                        // Same texture, same generation: the shimmer's disc is
+                        // the same blur the bloom lies on, only masked round
+                        // and turning. Nothing is decoded twice.
+                        shimmer.set_cover(texture.as_ref(), generation);
                     }
                     on_cover_resolved(resolved_path);
                 },

@@ -17,19 +17,16 @@ use std::time::{Duration, Instant};
 use gtk4::prelude::*;
 use libadwaita::prelude::AnimationExt;
 
-use crate::ui::cover_loader::CoverLoader;
 use crate::ui::motion;
+use crate::ui::player_bar::transport_glyph::{Glyph, TransportGlyph};
 use crate::ui::player_bar_layout::{self, PlayerBarWidgets, VOLUME_MAX, VOLUME_MIN};
 use crate::ui::strings;
+use crate::ui::swell::Swell;
 use crate::ui::waveform_seek::WaveformSeek;
 use reprise_core::format::{format_duration, format_remaining};
 use reprise_core::playback::PlaybackState;
 use reprise_core::queue::Repeat;
 
-// `pub(in crate::ui)` (Task 8): `now_playing.rs` reuses these icon names/CSS class
-// for its own transport row (DRY) rather than a second, drifting copy.
-pub(in crate::ui) const ICON_PLAY: &str = "media-playback-start-symbolic";
-pub(in crate::ui) const ICON_PAUSE: &str = "media-playback-pause-symbolic";
 pub(in crate::ui) const ICON_SHUFFLE: &str = "media-playlist-shuffle-symbolic";
 pub(in crate::ui) const ICON_PREVIOUS: &str = "media-skip-backward-symbolic";
 pub(in crate::ui) const ICON_NEXT: &str = "media-skip-forward-symbolic";
@@ -76,18 +73,17 @@ pub struct PlayerBar {
     /// start of the bar. Fed by `player_controller.rs`'s `CoverLoader` — this
     /// struct only owns/exposes the widget, never resolves or decodes covers
     /// itself (see `cover_loader.rs`).
-    cover: gtk4::Image,
-    cover_button: gtk4::Button,
+    pub(super) cover: gtk4::Image,
+    pub(super) cover_button: gtk4::Button,
+    pub(super) cover_lift: crate::ui::cover_lift::CoverLift,
     pub(in crate::ui) title_label: gtk4::Label,
-    title_button: gtk4::Button,
+    pub(super) title_button: gtk4::Button,
     pub(in crate::ui) artist_label: gtk4::Label,
-    artist_button: gtk4::Button,
-    /// Three-bar animated equalizer indicator — `playing` CSS class toggled by
-    /// `set_mini_eq_playing`.
-    mini_eq: gtk4::Box,
+    pub(super) artist_button: gtk4::Button,
     pub(in crate::ui) shuffle_button: gtk4::ToggleButton,
     pub(in crate::ui) prev_button: gtk4::Button,
     play_pause_button: gtk4::Button,
+    play_glyph: TransportGlyph,
     pub(in crate::ui) next_button: gtk4::Button,
     pub(in crate::ui) repeat_button: gtk4::ToggleButton,
     pub(in crate::ui) play_next_episode_button: gtk4::Button,
@@ -107,6 +103,8 @@ pub struct PlayerBar {
     pub(in crate::ui) external_podcast: Cell<bool>,
     pub(in crate::ui) play_next_available: Cell<bool>,
     playback_state: Cell<PlaybackState>,
+    swell: RefCell<Swell>,
+    swell_last_frame_us: Cell<i64>,
     pub(in crate::ui) queue_has_tracks: Cell<bool>,
     library_has_tracks: Cell<bool>,
     /// True for the duration of `set_shuffle_indicator`'s `set_active`
@@ -119,17 +117,17 @@ pub struct PlayerBar {
     updating_volume: Rc<Cell<bool>>,
     /// Callback fired when the user activates the title button — wired to
     /// reveal the loaded album in the Library grid (GRID-5).
-    on_title_click: crate::ui::link_activation::ActivationSlot,
+    pub(super) on_title_click: crate::ui::link_activation::ActivationSlot,
     /// Callback fired when the user activates the cover button — wired to
     /// reveal the loaded album in the Library grid (GRID-5).
-    on_cover_click: crate::ui::link_activation::ActivationSlot,
+    pub(super) on_cover_click: crate::ui::link_activation::ActivationSlot,
     /// Callback fired when the user clicks the artist label — navigates to
     /// the artist view (spec 1.5).
-    on_artist_click: crate::ui::link_activation::ActivationSlot,
+    pub(super) on_artist_click: crate::ui::link_activation::ActivationSlot,
     /// The currently-running track-change cross-fade animation (Task 9).
     /// Held here to prevent GC between ticks; replaced on each new fade.
-    current_track_animation: Rc<RefCell<Option<libadwaita::TimedAnimation>>>,
-    track_animation_generation: Rc<Cell<u64>>,
+    pub(super) current_track_animation: Rc<RefCell<Option<libadwaita::TimedAnimation>>>,
+    pub(super) track_animation_generation: Rc<Cell<u64>>,
     /// Held for the 150 ms play↔pause icon cross-fade; replaced on
     /// each state change. Kept alive to prevent GC between ticks.
     current_icon_animation: Rc<RefCell<Option<libadwaita::TimedAnimation>>>,
@@ -145,14 +143,15 @@ impl PlayerBar {
             info_box: _,
             cover,
             cover_button,
+            cover_lift,
             title_label,
             title_button,
             artist_label,
             artist_button,
-            mini_eq,
             shuffle_button,
             prev_button,
             play_pause_button,
+            play_glyph,
             next_button,
             repeat_button,
             play_next_episode_button,
@@ -224,14 +223,15 @@ impl PlayerBar {
             root,
             cover,
             cover_button,
+            cover_lift,
             title_label,
             title_button,
             artist_label,
             artist_button,
-            mini_eq,
             shuffle_button,
             prev_button,
             play_pause_button,
+            play_glyph,
             next_button,
             repeat_button,
             play_next_episode_button,
@@ -247,6 +247,8 @@ impl PlayerBar {
             external_podcast: Cell::new(false),
             play_next_available: Cell::new(false),
             playback_state: Cell::new(PlaybackState::Stopped),
+            swell: RefCell::new(Swell::default()),
+            swell_last_frame_us: Cell::new(0),
             queue_has_tracks: Cell::new(false),
             library_has_tracks: Cell::new(false),
             updating_shuffle: Rc::new(Cell::new(false)),
@@ -271,153 +273,31 @@ impl PlayerBar {
         &self.root
     }
 
-    /// The cover thumbnail widget — `player_controller.rs` feeds it via
-    /// `CoverLoader::load_into` after `set_track`.
-    pub fn cover_image(&self) -> &gtk4::Image {
-        &self.cover
-    }
-
-    /// Resets the cover back to the placeholder icon — used when playback
-    /// stops with no track active (see `clear_track`).
-    pub fn clear_cover(&self) {
-        CoverLoader::set_placeholder(&self.cover);
-    }
-
-    pub fn set_on_title_click<F: Fn() + 'static>(&self, f: F) {
-        *self.on_title_click.borrow_mut() = Some(Rc::new(f));
-    }
-
-    /// Registers the GRID-5 callback for cover link activation.
-    pub fn connect_cover_clicked<F: Fn() + 'static>(&self, f: F) {
-        *self.on_cover_click.borrow_mut() = Some(Rc::new(f));
-    }
-
-    /// Registers a callback invoked when the user clicks the artist label —
-    /// should navigate to the artist view (spec 1.5).
-    pub fn connect_artist_clicked<F: Fn() + 'static>(&self, f: F) {
-        *self.on_artist_click.borrow_mut() = Some(Rc::new(f));
-    }
-
-    /// Shows `title`/`artist` in the left-hand labels. Called on row
-    /// activation with data already in hand from the `Track` (see
-    /// `player_controller.rs`) — no extra DB query needed.
-    ///
-    /// Cross-fades the labels over 250 ms (125 ms fade-out, 125 ms fade-in)
-    /// and follows GTK's system animation setting through [`motion::timed`].
-    pub fn set_track(&self, title: &str, artist: &str) {
-        self.title_button
-            .update_property(&[gtk4::accessible::Property::Label(title)]);
-        self.artist_button
-            .update_property(&[gtk4::accessible::Property::Label(artist)]);
-        self.artist_button.set_sensitive(!artist.trim().is_empty());
-        self.cover_button
-            .update_property(&[gtk4::accessible::Property::Label(&strings::text(
-                strings::REVEAL_PLAYING_ALBUM,
-            ))]);
-        self.animate_track_change(title, artist);
-    }
-
-    /// 250 ms opacity cross-fade: fade out cover + labels, swap text, fade in.
-    /// The system animation setting is followed by the central motion helper.
-    fn animate_track_change(&self, title: &str, artist: &str) {
-        let generation = self.track_animation_generation.get().wrapping_add(1);
-        self.track_animation_generation.set(generation);
-        let title = title.to_string();
-        let artist = artist.to_string();
-        let title_label = self.title_label.clone();
-        let artist_label = self.artist_label.clone();
-        let cover = self.cover.clone();
-        let animation_slot = self.current_track_animation.clone();
-        let animation_generation = self.track_animation_generation.clone();
-
-        // Fade-out: opacity 1 → 0 over 125 ms (cover + labels together).
-        let fade_out_target = libadwaita::CallbackAnimationTarget::new({
-            let title_label = title_label.clone();
-            let artist_label = artist_label.clone();
-            let cover = cover.clone();
-            move |value| {
-                title_label.set_opacity(value);
-                artist_label.set_opacity(value);
-                cover.set_opacity(value);
-            }
-        });
-        let fade_out = motion::timed(
-            &self.title_label,
-            1.0,
-            0.0,
-            motion::STANDARD,
-            fade_out_target,
-        );
-
-        // After fade-out: swap text and fade in (opacity 0 → 1 over 125 ms).
-        // Cover image is swapped externally by CoverLoader; fade-in reveals it.
-        fade_out.connect_done({
-            let title_label = title_label.clone();
-            let artist_label = artist_label.clone();
-            let cover = cover.clone();
-            move |_| {
-                title_label.set_text(&title);
-                artist_label.set_text(&artist);
-
-                if animation_generation.get() != generation {
-                    title_label.set_opacity(1.0);
-                    artist_label.set_opacity(1.0);
-                    cover.set_opacity(1.0);
-                    return;
-                }
-
-                let fade_in_target = libadwaita::CallbackAnimationTarget::new({
-                    let title_label = title_label.clone();
-                    let artist_label = artist_label.clone();
-                    let cover = cover.clone();
-                    move |value| {
-                        title_label.set_opacity(value);
-                        artist_label.set_opacity(value);
-                        cover.set_opacity(value);
-                    }
-                });
-                let fade_in =
-                    motion::timed(&title_label, 0.0, 1.0, motion::STANDARD, fade_in_target);
-                fade_in.set_duration(motion::half(motion::STANDARD));
-                motion::replace_animation(&animation_slot, fade_in.clone());
-                fade_in.play();
-            }
-        });
-        fade_out.set_duration(motion::half(motion::STANDARD));
-        motion::replace_animation(&self.current_track_animation, fade_out.clone());
-        fade_out.play();
-    }
-
-    /// Clears the track labels back to empty — used when playback stops with
-    /// no track active.
-    pub fn clear_track(&self) {
-        let generation = self.track_animation_generation.get().wrapping_add(1);
-        self.track_animation_generation.set(generation);
-        let previous = self.current_track_animation.borrow_mut().take();
-        if let Some(previous) = previous {
-            previous.skip();
-        }
-        self.title_label.set_text("");
-        self.artist_label.set_text("");
-        self.artist_button.set_sensitive(false);
-        self.clear_cover();
-    }
-
     /// Applies a `PlaybackState`: cross-fades the play/pause icon in two 75 ms
-    /// halves, toggles the mini-EQ animation, and refreshes sensitivity.
+    /// halves and refreshes sensitivity.
     pub fn set_state(&self, state: PlaybackState) {
         let was_playing = self.playback_state.get() == PlaybackState::Playing;
         let is_playing = state == PlaybackState::Playing;
-        let new_icon = if is_playing { ICON_PAUSE } else { ICON_PLAY };
+        let new_glyph = if is_playing {
+            Glyph::Pause
+        } else {
+            Glyph::Play
+        };
         let tooltip = if is_playing {
             strings::text(strings::TOOLTIP_PAUSE)
         } else {
             strings::text(strings::TOOLTIP_PLAY)
         };
         self.play_pause_button.set_tooltip_text(Some(&tooltip));
+        self.play_pause_button
+            .update_property(&[gtk4::accessible::Property::Label(&tooltip)]);
         self.playback_state.set(state);
-        self.set_mini_eq_playing(is_playing);
         self.waveform.set_paused(!is_playing);
+        if state != PlaybackState::Playing {
+            // No spectrum arrives outside playback; without this the reactive
+            // layers would freeze on the last frame that did (AC-24).
+            self.set_bass(0.0, 0.0);
+        }
         self.refresh_sensitivity();
         if state == PlaybackState::Stopped {
             self.set_position(0, 0);
@@ -425,7 +305,49 @@ impl PlayerBar {
         if was_playing != is_playing {
             self.animate_play_pulse();
         }
-        self.animate_play_icon_change(new_icon);
+        self.animate_play_icon_change(new_glyph);
+    }
+
+    /// The live bass reading, fanned out to the cover lift and the waveform's
+    /// geometry-neutral colour and playhead-dot layers. Called at the spectrum
+    /// rate (~86 Hz).
+    ///
+    /// The transport buttons are deliberately not among the consumers either —
+    /// they are what a pointer aims at, and once the running track scrolls out
+    /// of the list they are the only place the playback state is read from.
+    pub fn set_bass(&self, _kick: f64, pressure: f64) {
+        if self.playback_state.get() != PlaybackState::Playing {
+            *self.swell.borrow_mut() = Swell::default();
+            self.swell_last_frame_us.set(0);
+            self.cover_lift.set_swell(0.0);
+            self.waveform.set_bass(0.0, 0.0);
+            return;
+        }
+
+        let now = gtk4::glib::monotonic_time();
+        let previous = self.swell_last_frame_us.replace(now);
+        let dt_s = if previous > 0 {
+            now.saturating_sub(previous) as f64 / 1_000_000.0
+        } else {
+            0.0
+        };
+        let value = {
+            let mut swell = self.swell.borrow_mut();
+            swell.advance(pressure, dt_s);
+            if crate::ui::motion::animations_enabled() {
+                swell.value()
+            } else {
+                swell.value_without_motion()
+            }
+        };
+        self.waveform.set_bass(pressure, value);
+        self.cover_lift.set_swell(value);
+    }
+
+    pub(super) fn reset_cover_swell(&self) {
+        *self.swell.borrow_mut() = Swell::default();
+        self.swell_last_frame_us.set(0);
+        self.cover_lift.set_swell(0.0);
     }
 
     fn animate_play_pulse(&self) {
@@ -463,19 +385,19 @@ impl PlayerBar {
     }
 
     /// 150 ms opacity cross-fade for the play↔pause icon swap.
-    fn animate_play_icon_change(&self, new_icon: &'static str) {
+    fn animate_play_icon_change(&self, new_glyph: Glyph) {
         let generation = self.icon_animation_generation.get().wrapping_add(1);
         self.icon_animation_generation.set(generation);
-        let button = self.play_pause_button.clone();
+        let glyph = self.play_glyph.clone();
         let animation_slot = self.current_icon_animation.clone();
         let animation_generation = self.icon_animation_generation.clone();
 
         let fade_out_target = libadwaita::CallbackAnimationTarget::new({
-            let button = button.clone();
-            move |value| button.set_opacity(value)
+            let glyph = glyph.clone();
+            move |value| glyph.widget().set_opacity(value)
         });
         let fade_out = motion::timed(
-            &self.play_pause_button,
+            self.play_glyph.widget(),
             1.0,
             0.0,
             motion::MICRO,
@@ -483,16 +405,16 @@ impl PlayerBar {
         );
 
         fade_out.connect_done(move |_| {
-            button.set_icon_name(new_icon);
+            glyph.set_glyph(new_glyph);
             if animation_generation.get() != generation {
-                button.set_opacity(1.0);
+                glyph.widget().set_opacity(1.0);
                 return;
             }
             let fade_in_target = libadwaita::CallbackAnimationTarget::new({
-                let button = button.clone();
-                move |value| button.set_opacity(value)
+                let glyph = glyph.clone();
+                move |value| glyph.widget().set_opacity(value)
             });
-            let fade_in = motion::timed(&button, 0.0, 1.0, motion::MICRO, fade_in_target);
+            let fade_in = motion::timed(glyph.widget(), 0.0, 1.0, motion::MICRO, fade_in_target);
             fade_in.set_duration(motion::half(motion::MICRO));
             motion::replace_animation(&animation_slot, fade_in.clone());
             fade_in.play();
@@ -531,10 +453,6 @@ impl PlayerBar {
             self.duration_label
                 .set_text(&format_remaining(position_ms, duration_ms));
         }
-    }
-
-    pub fn set_mini_eq_playing(&self, playing: bool) {
-        crate::ui::playing_marker::set_playing(&self.mini_eq, playing);
     }
 
     /// Wires the play/pause button; `f` is called on every click with no
