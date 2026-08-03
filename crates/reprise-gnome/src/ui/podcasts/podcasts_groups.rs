@@ -243,6 +243,7 @@ fn group_header(
 
     let identity = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
     identity.set_hexpand(true);
+    identity.set_valign(gtk4::Align::Center);
     let source = source_header(group.kind, &group.title, group.author.as_deref());
     let title = gtk4::Label::new(Some(source.title));
     title.set_xalign(0.0);

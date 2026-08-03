@@ -323,8 +323,24 @@ fn store_album_downloaded(
     ext: &str,
     album_dirs: &[PathBuf],
 ) -> Option<PathBuf> {
+    store_album_downloaded_with(
+        key,
+        bytes,
+        ext,
+        album_dirs,
+        crate::cover_writeback::write_album_cover,
+    )
+}
+
+fn store_album_downloaded_with(
+    key: &str,
+    bytes: &[u8],
+    ext: &str,
+    album_dirs: &[PathBuf],
+    writeback: impl FnOnce(&[PathBuf], &[u8], &str) -> Vec<crate::cover_writeback::CoverWrite>,
+) -> Option<PathBuf> {
     let cached = store_downloaded(key, bytes, ext)?;
-    let _ = crate::cover_writeback::write_album_cover(album_dirs, bytes, ext);
+    let _ = writeback(album_dirs, bytes, ext);
     Some(cached)
 }
 
@@ -561,24 +577,29 @@ mod tests {
         std::fs::remove_file(cached).ok();
     }
 
-    #[cfg(unix)]
     #[test]
     fn cover_1_album_write_failure_does_not_fail_the_cached_download() {
-        use std::os::unix::fs::PermissionsExt;
-
         let album = tempfile::tempdir().unwrap();
         let key = format!("writeback-failure-{:016x}", fastrand::u64(..));
         let mut png = Cursor::new(Vec::new());
         image::DynamicImage::new_rgb8(1, 1)
             .write_to(&mut png, image::ImageFormat::Png)
             .unwrap();
-        std::fs::set_permissions(album.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
+        let mut writeback_called = false;
 
-        let cached =
-            store_album_downloaded(&key, png.get_ref(), "png", &[album.path().to_path_buf()])
-                .unwrap();
+        let cached = store_album_downloaded_with(
+            &key,
+            png.get_ref(),
+            "png",
+            &[album.path().to_path_buf()],
+            |_, _, _| {
+                writeback_called = true;
+                vec![crate::cover_writeback::CoverWrite::Failed]
+            },
+        )
+        .unwrap();
 
-        std::fs::set_permissions(album.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(writeback_called);
         assert_eq!(std::fs::read(&cached).unwrap(), *png.get_ref());
         assert!(!album.path().join("cover.png").exists());
         std::fs::remove_file(cached).ok();

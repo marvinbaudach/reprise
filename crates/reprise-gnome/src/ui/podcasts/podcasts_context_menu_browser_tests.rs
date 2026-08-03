@@ -101,22 +101,37 @@ fn src_4b_open_in_browser_appears_exactly_when_browser_url_exists() {
     let rss_without_page = episode(2, PodcastKind::Rss);
 
     for row in [&youtube, &rss_without_page] {
-        for menu in [build(row), build_for_selection(row, &[row.id, 99], None)] {
-            let open_entries = menu_actions(&menu)
-                .iter()
-                .filter(|action| action.as_str() == "podcasts.open-in-browser")
-                .count();
-            assert_eq!(
-                open_entries,
-                usize::from(browser_url(row).is_some()),
-                "menu visibility must follow browser_url for {}",
-                row.title
-            );
-            assert_eq!(
-                open_in_browser_target(menu.upcast_ref()),
-                browser_url(row).map(|_| row.id),
-                "the browser action remains targeted to the context row"
-            );
-        }
+        let menu = build(row);
+        let open_entries = menu_actions(&menu)
+            .iter()
+            .filter(|action| action.as_str() == "podcasts.open-in-browser")
+            .count();
+        assert_eq!(
+            open_entries,
+            usize::from(browser_url(row).is_some()),
+            "menu visibility must follow browser_url for {}",
+            row.title
+        );
+        assert_eq!(
+            open_in_browser_target(menu.upcast_ref()),
+            browser_url(row).map(|_| row.id),
+            "the browser action targets the single context row"
+        );
     }
+}
+
+#[test]
+fn src_12_multi_selection_hides_open_in_browser_instead_of_targeting_one_row() {
+    let mut youtube = episode(1, PodcastKind::Youtube);
+    youtube.audio_url = "https://www.youtube.com/watch?v=video-id".into();
+
+    let menu = build_for_selection(&youtube, &[youtube.id, 99], None);
+
+    assert!(
+        !menu_actions(&menu)
+            .iter()
+            .any(|action| action == "podcasts.open-in-browser"),
+        "a multi-selection menu must contain batch actions only"
+    );
+    assert_eq!(open_in_browser_target(menu.upcast_ref()), None);
 }

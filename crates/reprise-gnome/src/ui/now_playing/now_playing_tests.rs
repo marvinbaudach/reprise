@@ -47,6 +47,7 @@ fn external_episode_snapshot() -> crate::ui::playback::external_media::ExternalP
         can_go_next: false,
         stream_tags: StreamTags::default(),
         podcast_phase: Some(PodcastPhase::Playing),
+        restored: false,
         radio: None,
         error: None,
     }
@@ -71,6 +72,7 @@ fn external_radio_snapshot() -> crate::ui::playback::external_media::ExternalPla
         can_go_next: false,
         stream_tags: StreamTags::default(),
         podcast_phase: None,
+        restored: false,
         radio: Some(RadioPresentation::connected()),
         error: None,
     }

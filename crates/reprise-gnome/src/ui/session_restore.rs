@@ -46,32 +46,15 @@ pub(super) fn apply_initial_geometry(window: &adw::ApplicationWindow, state: &Se
     }
 }
 
-/// The place a normal start routes to (START-1): always the library root,
-/// carrying only the remembered sort.
-///
-/// Where the last session ended — a playlist, the queue, a podcast channel —
-/// is deliberately not restored, and neither is a leftover search or facet.
-/// On a cold start a stale refinement does not read as "the filter I chose"
-/// but as "my library is gone", and the player is opened to hear music, so
-/// the library is the honest destination. The sort survives because it is a
-/// preference rather than a refinement.
+/// The place a normal start routes to (START-3): the last valid browser place.
+/// Back/Forward stacks stay session-local, but the visible destination owns
+/// its complete refinements, anchor, and selection across a restart.
 pub(super) fn startup_place(state: &SessionState) -> reprise_core::browser::BrowserPlace {
-    use reprise_core::browser::{
-        BrowserPlace, LibraryScope, SortDirection, TrackCollection, TrackSort, TrackViewState,
-    };
-
-    let direction = if state.sort_dir == "desc" {
-        SortDirection::Descending
-    } else {
-        SortDirection::Ascending
-    };
-    BrowserPlace::tracks(
-        TrackCollection::Library(LibraryScope::All),
-        TrackViewState {
-            sort: TrackSort::new(state.sort_field.clone(), direction),
-            ..TrackViewState::default()
-        },
-    )
+    state
+        .browser_place
+        .clone()
+        .or_else(|| state.library_root.clone())
+        .unwrap_or_else(|| reprise_core::browser::BrowserPlace::from(ViewSource::Library))
 }
 
 pub(super) fn restore_runtime(player: Option<&Rc<PlayerController>>, state: &SessionState) {
@@ -88,7 +71,10 @@ pub(super) fn restore_runtime(player: Option<&Rc<PlayerController>>, state: &Ses
         );
     }
     if let Some(player) = player {
-        player.notify_restored_current_track();
+        let episode_restored = player.restore_session_episode(state.active_episode.as_ref());
+        if !episode_restored {
+            player.notify_restored_current_track();
+        }
         arm_play(player);
     }
     if std::env::var(REPORT_ENV).is_ok() {
@@ -173,6 +159,7 @@ pub(super) fn wire_close(
             state.play_origin = origin_kind;
             state.play_origin_label = origin_label;
             state.play_origin_place = origin_place;
+            state.active_episode = player.session_episode_snapshot();
         }
 
         let result = session::save(&conn, &state);
@@ -424,52 +411,38 @@ mod tests {
     }
 
     #[test]
-    fn start_1_startup_place_is_always_the_library_root() {
-        use reprise_core::browser::{LibraryScope, SortDirection, TrackCollection};
-
+    fn start_3_missing_browser_place_falls_back_to_the_library_root() {
         let state = SessionState {
-            source: SessionSource::Playlist(7),
-            search: "leftover".into(),
-            browse: reprise_core::queries::BrowseFilter {
-                genre: Some("Metal".into()),
-                ..reprise_core::queries::BrowseFilter::default()
-            },
-            sort_field: "year".into(),
-            sort_dir: "desc".into(),
-            browser_place: Some(reprise_core::browser::BrowserPlace::from(
-                ViewSource::Playlist(7),
-            )),
-            library_root: Some(reprise_core::browser::BrowserPlace::from(ViewSource::Queue)),
+            browser_place: None,
+            library_root: None,
             ..SessionState::default()
         };
 
-        let place = startup_place(&state);
-
-        let reprise_core::browser::BrowserPlace::Tracks(track_place) = &place else {
-            panic!("a normal start must route into the track list");
-        };
         assert_eq!(
-            track_place.collection,
-            TrackCollection::Library(LibraryScope::All),
-            "where the last session ended is deliberately not restored"
+            startup_place(&state),
+            reprise_core::browser::BrowserPlace::from(ViewSource::Library)
         );
-        assert_eq!(track_place.state.sort.field, "year");
-        assert_eq!(track_place.state.sort.direction, SortDirection::Descending);
-        assert!(
-            track_place.state.search.is_empty(),
-            "a stale search reads as a lost library on a cold start"
-        );
-        assert_eq!(
-            track_place.state.browse,
-            reprise_core::queries::BrowseFilter::default()
-        );
-        assert!(track_place.state.anchor.is_none());
-        assert!(track_place.state.selected_ids.is_empty());
     }
 
     #[test]
-    fn browse_5_restart_restores_sort_and_playback_origin_without_last_location() {
-        use reprise_core::browser::{BrowserPlace, LibraryScope, SortDirection, TrackCollection};
+    fn start_3_startup_place_restores_the_last_browser_place() {
+        let mut remembered = reprise_core::browser::BrowserPlace::from(ViewSource::Playlist(7));
+        let state = remembered
+            .track_state_mut()
+            .expect("a playlist is a track place");
+        state.search = "remember me".into();
+        state.selected_ids = vec![41];
+        let session = SessionState {
+            browser_place: Some(remembered.clone()),
+            ..SessionState::default()
+        };
+
+        assert_eq!(startup_place(&session), remembered);
+    }
+
+    #[test]
+    fn browse_12_restart_restores_the_last_location_and_playback_origin() {
+        use reprise_core::browser::BrowserPlace;
 
         let db = crate::test_db::open().unwrap();
         crate::test_db::connection(&db)
@@ -499,16 +472,6 @@ mod tests {
         assert_eq!(restored.play_origin_place, Some(play_origin));
         assert_eq!(restored.browser_place, Some(last_location.clone()));
 
-        let startup = startup_place(&restored);
-        let BrowserPlace::Tracks(track_place) = startup else {
-            panic!("session startup must route into the track list");
-        };
-        assert_eq!(
-            track_place.collection,
-            TrackCollection::Library(LibraryScope::All)
-        );
-        assert_eq!(track_place.state.sort.field, "year");
-        assert_eq!(track_place.state.sort.direction, SortDirection::Descending);
-        assert_ne!(BrowserPlace::Tracks(track_place), last_location);
+        assert_eq!(startup_place(&restored), last_location);
     }
 }

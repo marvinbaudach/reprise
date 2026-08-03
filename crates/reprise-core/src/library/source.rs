@@ -336,6 +336,13 @@ pub trait LibrarySource: Send + Sync {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct UnixLibrarySource;
 
+// The test doubles live in `library::source_test_support` (declared in
+// `library/mod.rs`), because several test files outside this module use them.
+// Re-exported here so the call sites that reach them through `source` keep
+// working — one module, two names for it.
+#[cfg(test)]
+pub(crate) use super::source_test_support::ExistingPathSource;
+
 impl LibrarySource for UnixLibrarySource {
     fn residence_token(&self, at: &Path) -> Option<i64> {
         nearest_existing_ancestor_dev(at).map(|device| device as i64)
