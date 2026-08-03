@@ -546,7 +546,7 @@ impl NowPlayingPanel {
             self.swell_pressure.set(0.0);
             self.cover_kick.set(0.0);
             self.swell_last_frame_us.set(0);
-            self.widgets.cover_lift.feed(0.0, 0.0);
+            self.widgets.cover_lift.feed(0.0, 0.0, 0.0);
             self.widgets.cover_lift.set_frame_time(0);
             self.widgets.bloom.set_light(0.0, 0.0);
             self.widgets.visualizer.set_swell(0.0);
@@ -569,7 +569,9 @@ impl NowPlayingPanel {
                 swell.value_without_motion()
             }
         };
-        self.widgets.cover_lift.feed(value, self.cover_kick.get());
+        self.widgets
+            .cover_lift
+            .feed(value, self.cover_kick.get(), pressure);
         self.widgets.cover_lift.set_frame_time(frame_time_us);
         self.widgets.bloom.set_light(pressure, value);
         // The readout names every value the reactive light runs on.

@@ -19,6 +19,15 @@ const LIFT_BLUR_PER_SWELL: f64 = 0.155;
 const LIFT_SPREAD_PER_SWELL: f64 = -0.018;
 const LIFT_COLOUR: &str = "rgba(0, 0, 0, 0.55)";
 
+/// The mockup's `opacity: calc(0.18 + var(--pres) * 0.10 + var(--sw) * 0.22)`.
+const EDGE_REST_OPACITY: f64 = 0.18;
+const EDGE_OPACITY_PER_PRESSURE: f64 = 0.10;
+const EDGE_OPACITY_PER_SWELL: f64 = 0.22;
+/// The seam sits one pixel outside the cover, so it is two pixels wider and
+/// its radius is the cover's plus one.
+const EDGE_OUTSET_PX: i32 = 1;
+const EDGE_CLASS: &str = "reprise-cover-edge-light";
+
 const PANEL_WIDTH: i32 = 168;
 const BAR_WIDTH: i32 = 56;
 const SHADOW_BASE_CLASS: &str = "reprise-cover-lift-shadow";
@@ -71,13 +80,26 @@ fn composite_coverage(swell: f64) -> f64 {
     1.0 - (1.0 - SHADOW_ALPHA * near_opacity(swell)) * (1.0 - SHADOW_ALPHA * far_opacity(swell))
 }
 
+pub(in crate::ui) fn edge_opacity(pressure: f64, swell: f64) -> f64 {
+    EDGE_REST_OPACITY
+        + EDGE_OPACITY_PER_PRESSURE * pressure.clamp(0.0, 1.0)
+        + EDGE_OPACITY_PER_SWELL * swell.clamp(0.0, 1.0)
+}
+
 pub(in crate::ui) fn css() -> String {
+    let edge_radius = RADIUS_SURFACE
+        .strip_suffix("px")
+        .and_then(|radius| radius.parse::<i32>().ok())
+        .expect("surface radius must be an integer pixel value")
+        + EDGE_OUTSET_PX;
     format!(
         ".{SHADOW_BASE_CLASS} {{ border-radius: {RADIUS_SURFACE}; }}\n\
          .{PANEL_NEAR_CLASS} {{ box-shadow: {}; }}\n\
          .{PANEL_FAR_CLASS} {{ box-shadow: {}; }}\n\
          .{BAR_NEAR_CLASS} {{ box-shadow: {}; }}\n\
-         .{BAR_FAR_CLASS} {{ box-shadow: {}; }}",
+         .{BAR_FAR_CLASS} {{ box-shadow: {}; }}\n\
+         .{EDGE_CLASS} {{ border: 1px solid @reprise_player_accent; \
+                          border-radius: {edge_radius}px; }}",
         lift_shadow(f64::from(PANEL_WIDTH), 0.0),
         lift_shadow(f64::from(PANEL_WIDTH), 1.0),
         lift_shadow(f64::from(BAR_WIDTH), 0.0),
@@ -98,6 +120,7 @@ struct SourceBlend {
     from: f64,
     swell: f64,
     kick: f64,
+    pressure: f64,
     progress: f64,
 }
 
@@ -108,6 +131,7 @@ impl Default for SourceBlend {
             from: 0.0,
             swell: 0.0,
             kick: 0.0,
+            pressure: 0.0,
             progress: 1.0,
         }
     }
@@ -141,6 +165,7 @@ struct CoverLiftWidgets {
     root: gtk4::Overlay,
     near: gtk4::Box,
     far: gtk4::Box,
+    edge: Option<gtk4::Box>,
 }
 
 #[derive(Clone)]
@@ -162,14 +187,33 @@ impl CoverLift {
         let far = shadow_layer(width, far_class, 0.0);
         let shadows = gtk4::Overlay::new();
         shadows.set_can_target(false);
+        shadows.set_halign(gtk4::Align::Center);
+        shadows.set_valign(gtk4::Align::Center);
         shadows.set_child(Some(&near));
         shadows.add_overlay(&far);
 
         let root = gtk4::Overlay::new();
-        root.set_size_request(width, width);
+        let assembly_width = if width == PANEL_WIDTH {
+            width + 2 * EDGE_OUTSET_PX
+        } else {
+            width
+        };
+        root.set_size_request(assembly_width, assembly_width);
         root.set_child(Some(&shadows));
+        cover.set_halign(gtk4::Align::Center);
+        cover.set_valign(gtk4::Align::Center);
         root.add_overlay(cover);
-        let widgets = CoverLiftWidgets { root, near, far };
+        let edge = (width == PANEL_WIDTH).then(|| {
+            let edge = edge_layer(width);
+            root.add_overlay(&edge);
+            edge
+        });
+        let widgets = CoverLiftWidgets {
+            root,
+            near,
+            far,
+            edge,
+        };
         Self {
             widgets: Some(widgets),
             blend: Rc::new(RefCell::new(SourceBlend::default())),
@@ -187,8 +231,11 @@ impl CoverLift {
     }
 
     pub(in crate::ui) fn set_swell(&self, swell: f64) {
-        let kick = self.blend.borrow().kick;
-        self.feed(swell, kick);
+        let (kick, pressure) = {
+            let blend = self.blend.borrow();
+            (blend.kick, blend.pressure)
+        };
+        self.feed(swell, kick, pressure);
     }
 
     pub(in crate::ui) fn set_frame_time(&self, frame_time_us: i64) {
@@ -219,26 +266,28 @@ impl CoverLift {
         let widgets_for_target = widgets.clone();
         let target = libadwaita::CallbackAnimationTarget::new(move |progress| {
             blend.borrow_mut().progress = progress;
-            let reading = blend.borrow().reading();
-            apply_reading_to_widgets(&widgets_for_target, reading);
+            let readings = *blend.borrow();
+            apply_reading_to_widgets(&widgets_for_target, readings);
         });
         let animation = motion::timed(&widgets.root, 0.0, 1.0, motion::AMBIENT, target);
         *self.source_animation.borrow_mut() = Some(animation.clone());
         animation.play();
     }
 
-    pub(in crate::ui) fn feed(&self, swell: f64, kick: f64) {
+    pub(in crate::ui) fn feed(&self, swell: f64, kick: f64, pressure: f64) {
         {
             let mut blend = self.blend.borrow_mut();
             blend.swell = swell.clamp(0.0, 1.0);
             blend.kick = kick.clamp(0.0, 1.0);
+            blend.pressure = pressure.clamp(0.0, 1.0);
         }
         self.apply_reading();
     }
 
     fn apply_reading(&self) {
         if let Some(widgets) = &self.widgets {
-            apply_reading_to_widgets(widgets, self.reading());
+            let readings = *self.blend.borrow();
+            apply_reading_to_widgets(widgets, readings);
         }
     }
 
@@ -252,8 +301,15 @@ impl CoverLift {
         }
     }
 
+    #[cfg(test)]
     fn reading(&self) -> f64 {
         self.blend.borrow().reading()
+    }
+
+    #[cfg(test)]
+    fn edge_reading(&self) -> f64 {
+        let blend = self.blend.borrow();
+        edge_opacity(blend.pressure, blend.swell)
     }
 
     #[cfg(test)]
@@ -266,9 +322,25 @@ impl CoverLift {
     }
 }
 
-fn apply_reading_to_widgets(widgets: &CoverLiftWidgets, reading: f64) {
+fn apply_reading_to_widgets(widgets: &CoverLiftWidgets, readings: SourceBlend) {
+    let reading = readings.reading();
     widgets.near.set_opacity(near_opacity(reading));
     widgets.far.set_opacity(far_opacity(reading));
+    if let Some(edge) = &widgets.edge {
+        edge.set_opacity(edge_opacity(readings.pressure, readings.swell));
+    }
+}
+
+fn edge_layer(width: i32) -> gtk4::Box {
+    let edge = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    edge.set_size_request(width + 2 * EDGE_OUTSET_PX, width + 2 * EDGE_OUTSET_PX);
+    edge.set_can_target(false);
+    edge.set_can_focus(false);
+    edge.set_halign(gtk4::Align::Center);
+    edge.set_valign(gtk4::Align::Center);
+    edge.set_opacity(EDGE_REST_OPACITY);
+    edge.add_css_class(EDGE_CLASS);
+    edge
 }
 
 fn shadow_layer(width: i32, class: &str, opacity: f64) -> gtk4::Box {
@@ -287,14 +359,93 @@ mod tests {
     use super::*;
 
     #[test]
+    fn ac_24_the_edge_light_rides_a_pressure_bed_under_a_swell() {
+        // Straight from the mockup: 0.18 + 0.10·pres + 0.22·sw.
+        assert!((edge_opacity(0.0, 0.0) - 0.18).abs() < 1e-9);
+        // A held breakdown: no swell left, but the contour stays lit.
+        assert!((edge_opacity(1.0, 0.0) - 0.28).abs() < 1e-9);
+        // A broad swell on a lit bed.
+        assert!((edge_opacity(0.85, 0.8) - 0.441).abs() < 1e-9);
+        // Both at full: the ceiling.
+        assert!((edge_opacity(1.0, 1.0) - 0.50).abs() < 1e-9);
+        // Out-of-range readings clamp instead of over-driving the seam.
+        assert!((edge_opacity(-1.0, -1.0) - 0.18).abs() < 1e-9);
+        assert!((edge_opacity(4.0, 4.0) - 0.50).abs() < 1e-9);
+    }
+
+    #[test]
+    fn ac_24_the_edge_light_is_one_static_pixel_in_the_cover_accent() {
+        let css = css();
+        assert!(css.contains("border: 1px solid @reprise_player_accent"));
+        // The cover's radius plus the one pixel the seam sits outside it.
+        assert!(css.contains("border-radius: 13px"));
+        // Only the alpha moves. A seam whose width or radius changed per frame
+        // would throw away the cached node every frame — the same rule the
+        // shadow lift follows.
+        assert!(!css.contains("transition"));
+
+        // Live spectrum frames and the backdrop's paused breath are the only
+        // frame sources; the cover must not own another timer.
+        let timer_api = ["add_tick", "callback"].concat();
+        assert!(!include_str!("cover_lift.rs").contains(&timer_api));
+    }
+
+    #[test]
+    fn ac_24_the_edge_light_ignores_the_visualizer_source_switch() {
+        // The switch exists for the shadow, which answers the beat inside the
+        // Visualizer view. The seam has one formula and no such distinction:
+        // switching the source must not move it.
+        let lift = CoverLift::headless_for_test();
+        lift.feed(0.8, 0.1, 0.5);
+        let before = lift.edge_reading();
+        lift.set_source(Source::Kick);
+        lift.advance_blend(0.4);
+        lift.feed(0.8, 0.1, 0.5);
+        assert!((lift.edge_reading() - before).abs() < 1e-9);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn ac_24_the_edge_light_sits_one_pixel_outside_the_cover() {
+        // The design puts the seam outside the artwork ("nichts dahinter"),
+        // so the assembly is exactly two pixels wider than the cover and the
+        // seam is centred on it — an Overlay child left at its default
+        // Align::Fill would silently stretch instead.
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let cover = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        cover.set_size_request(PANEL_WIDTH, PANEL_WIDTH);
+        let lift = CoverLift::new(&cover, PANEL_WIDTH);
+        let window = gtk4::Window::builder().child(lift.widget()).build();
+        window.present();
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        let edge = lift
+            .widgets
+            .as_ref()
+            .and_then(|widgets| widgets.edge.as_ref())
+            .expect("the panel cover must carry an edge light");
+        let cover_bounds = cover
+            .compute_bounds(lift.widget())
+            .expect("cover and lift share a coordinate space");
+        let edge_bounds = edge
+            .compute_bounds(lift.widget())
+            .expect("edge and lift share a coordinate space");
+        assert_eq!(edge_bounds.width(), cover_bounds.width() + 2.0);
+        assert_eq!(edge_bounds.height(), cover_bounds.height() + 2.0);
+        assert_eq!(edge_bounds.center(), cover_bounds.center());
+        window.close();
+    }
+
+    #[test]
     fn ac_24_the_cover_takes_the_beat_only_in_the_visualizer_view() {
         let lift = CoverLift::headless_for_test();
         lift.set_source(Source::Swell);
-        lift.feed(0.9, 0.1); // swell high, kick low
+        lift.feed(0.9, 0.1, 0.0); // swell high, kick low
         assert!((lift.reading() - 0.9).abs() < 1e-9);
         lift.set_source(Source::Kick);
         lift.advance_blend(0.4);
-        lift.feed(0.9, 0.1);
+        lift.feed(0.9, 0.1, 0.0);
         assert!((lift.reading() - 0.1).abs() < 1e-9);
     }
 
@@ -303,14 +454,14 @@ mod tests {
         // The cross-fade is what keeps a tab change from snapping the cover.
         let lift = CoverLift::headless_for_test();
         lift.set_source(Source::Swell);
-        lift.feed(0.9, 0.1);
+        lift.feed(0.9, 0.1, 0.0);
         lift.set_source(Source::Kick);
         // Immediately after the switch the reading is still near the old one.
-        lift.feed(0.9, 0.1);
+        lift.feed(0.9, 0.1, 0.0);
         assert!(lift.reading() > 0.7, "the source switch snapped");
         // And after the Ambient window it has arrived.
         lift.advance_blend(0.4);
-        lift.feed(0.9, 0.1);
+        lift.feed(0.9, 0.1, 0.0);
         assert!((lift.reading() - 0.1).abs() < 0.05);
     }
 
