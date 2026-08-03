@@ -7,6 +7,7 @@ use libadwaita::prelude::BreakpointBinExt;
 use reprise_core::db::Db;
 use reprise_core::playback::{PlaybackState, SpectrumFrame};
 
+use super::cover_bloom;
 use super::cover_loader::CoverLoader;
 use super::lyrics_strings;
 use super::now_playing_column::NowPlayingColumn;
@@ -36,6 +37,7 @@ struct PanelWidgets {
     lyrics: Rc<LyricsView>,
     up_next: Rc<UpNextPanel>,
     visualizer: SongVisualizer,
+    bloom: cover_bloom::CoverBloom,
     lyrics_page: adw::ViewStackPage,
     visual_page: adw::ViewStackPage,
     cover_stack: gtk4::Stack,
@@ -143,6 +145,10 @@ fn build_widgets_for_session(
     glow.set_can_target(false);
     let head_overlay = gtk4::Overlay::new();
     head_overlay.set_child(Some(&glow));
+    let bloom = cover_bloom::CoverBloom::new();
+    // Bottom to top: the static ellipse, the cover's own light, then the cover
+    // and the title block over both.
+    head_overlay.add_overlay(bloom.widget());
     head_overlay.add_overlay(&head);
 
     let lyrics = LyricsView::new();
@@ -280,6 +286,7 @@ fn build_widgets_for_session(
         lyrics,
         up_next,
         visualizer,
+        bloom,
         lyrics_page,
         visual_page,
         cover_stack,
@@ -468,10 +475,14 @@ impl NowPlayingPanel {
     pub(in crate::ui) fn set_playback_state(&self, state: PlaybackState) {
         self.playback_state.set(state);
         self.widgets.visualizer.set_playback_state(state);
+        self.sync_bloom_activity();
     }
 
     pub(in crate::ui) fn set_spectrum(&self, frame: SpectrumFrame) {
         if self.song_visuals_enabled.get() {
+            self.widgets
+                .bloom
+                .set_impact(f64::from(frame.bass_pressure().impact));
             self.widgets.visualizer.set_spectrum(frame);
         }
     }
@@ -485,6 +496,7 @@ impl NowPlayingPanel {
                 self.widgets.tab_stack.set_visible_child_name(UP_NEXT_PAGE);
             }
         }
+        self.sync_bloom_activity();
         self.sync_visual_activity();
     }
 
@@ -578,6 +590,7 @@ impl NowPlayingPanel {
             .connect_visible_child_name_notify(move |stack| {
                 if let Some(panel) = weak.upgrade() {
                     panel.sync_visual_activity();
+                    panel.sync_bloom_activity();
                     if stack.visible_child_name().as_deref() == Some(UP_NEXT_PAGE) {
                         panel.request_up_next_refresh_if_visible();
                     }
@@ -618,6 +631,20 @@ impl NowPlayingPanel {
         );
     }
 
+    /// Recomputes the combined pin rather than letting the Visual tab and the
+    /// plugin toggle race each other. Either reason holds the bloom at rest;
+    /// only when both clear may the current playback state take over.
+    fn sync_bloom_activity(&self) {
+        let pinned = !self.song_visuals_enabled.get()
+            || self.widgets.tab_stack.visible_child_name().as_deref() == Some(VISUAL_PAGE);
+        self.widgets.bloom.set_pinned(pinned);
+        if !pinned {
+            self.widgets
+                .bloom
+                .set_playback_state(self.playback_state.get());
+        }
+    }
+
     fn request_up_next_refresh_if_visible(&self) {
         if !self.is_up_next_visible() {
             return;
@@ -627,12 +654,25 @@ impl NowPlayingPanel {
             callback();
         }
     }
+
+    #[cfg(test)]
+    fn bloom_widget(&self) -> &gtk4::DrawingArea {
+        self.widgets.bloom.widget()
+    }
+
+    #[cfg(test)]
+    fn stage_for_test(&self) -> &gtk4::Box {
+        &self.widgets.stage
+    }
 }
 
 pub(in crate::ui) fn css() -> String {
     super::surface_css::css()
 }
 
+#[cfg(test)]
+#[path = "now_playing_reactive_tests.rs"]
+mod reactive_tests;
 #[cfg(test)]
 #[path = "now_playing_tests.rs"]
 mod tests;

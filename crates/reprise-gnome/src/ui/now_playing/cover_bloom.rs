@@ -197,11 +197,18 @@ impl CoverBloom {
         let inner = self.inner.clone();
         let area = self.area.clone();
         let id = self.area.add_tick_callback(move |_, clock| {
-            if inner.mode.get() != Mode::Breathing
-                || !motion::animations_enabled()
-                || !area.is_mapped()
-            {
+            if inner.mode.get() != Mode::Breathing {
                 *inner.tick_id.borrow_mut() = None;
+                return gtk4::glib::ControlFlow::Break;
+            }
+            if !motion::animations_enabled() {
+                // MOT-7 changes may arrive while already paused. Return to the
+                // fixed rest light before stopping instead of freezing the
+                // breath at whichever alpha the last frame happened to use.
+                inner.mode.set(Mode::Pinned);
+                inner.impact.set(0.0);
+                *inner.tick_id.borrow_mut() = None;
+                area.queue_draw();
                 return gtk4::glib::ControlFlow::Break;
             }
             if inner.breath_start_us.get() == 0 {

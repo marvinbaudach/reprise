@@ -1,7 +1,4 @@
 pub(in crate::ui) mod artist_portrait_worker;
-// Task ordering lands the self-contained layer before the panel consumes it.
-// Remove this temporary allowance when the wiring lands in the next task.
-#[allow(dead_code)]
 mod cover_bloom;
 pub(in crate::ui) mod now_playing_column;
 mod panel_state;
