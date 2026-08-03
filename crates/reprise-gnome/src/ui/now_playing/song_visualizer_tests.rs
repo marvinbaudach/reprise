@@ -141,6 +141,9 @@ fn ac_23_the_readout_follows_the_measurement_the_player_delivers() {
     let visualizer = SongVisualizer::new();
     visualizer.set_playback_state(PlaybackState::Playing);
 
+    // The panel owns the envelope and the readout only reports it, so the
+    // swell has to be in place before the frame that writes the labels.
+    visualizer.set_swell(0.45);
     visualizer.set_spectrum(
         SpectrumFrame::from_cava_bars([0.5; SPECTRUM_BAND_COUNT]).with_bass_pressure(
             BassPressure {
@@ -148,16 +151,27 @@ fn ac_23_the_readout_follows_the_measurement_the_player_delivers() {
                 baseline_dbfs: -19.0,
                 impact: 0.87,
                 aura: 0.31,
-                kick: 0.0,
-                pressure: 0.0,
+                kick: 0.64,
+                pressure: 0.72,
             },
         ),
     );
 
+    // Six values, each distinct, so the assertion pins the *order* and not
+    // just the presence of some numbers.
     let shown = visualizer.readout.shown_values();
-    assert_eq!(shown[0], "-11 dBFS");
-    assert_eq!(shown[2], "0.87");
-    assert_eq!(shown[3], "0.31");
+    assert_eq!(shown.len(), 6);
+    assert_eq!(shown[0], "-11 dBFS"); // Bass
+    assert_eq!(shown[1], "-19 dBFS"); // Baseline
+    assert_eq!(shown[2], "0.31"); // Breakdown (aura)
+    assert_eq!(shown[3], "0.64"); // Kick
+    assert_eq!(shown[4], "0.72"); // Pressure
+    assert_eq!(shown[5], "0.45"); // Swell
+
+    // `impact` is produced but no longer displayed: since the glow became a
+    // stage light driven by `kick`, nothing reads it, and AC-23 asks this strip
+    // to name the analysis the visual actually reacts to.
+    assert!(!shown.contains(&"0.87".to_owned()));
 }
 
 #[test]
