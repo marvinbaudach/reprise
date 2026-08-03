@@ -87,6 +87,8 @@ mod stats;
 pub mod status_bar;
 pub mod strings;
 mod style;
+#[allow(dead_code)] // Consumed by the reactive-light Task 3 wiring.
+mod swell;
 mod tag_edit;
 mod tag_write_gate;
 #[cfg(test)]
