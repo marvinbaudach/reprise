@@ -58,13 +58,13 @@ impl ScrollGlide {
         let Some(widget) = self.inner.widget.upgrade() else {
             cancel_animation(&self.inner);
             adjustment.set_value(target);
-            self.inner.last_written.set(target);
+            self.inner.last_written.set(adjustment.value());
             return;
         };
         if !motion::animations_enabled() || !should_glide(distance, adjustment.page_size()) {
             cancel_animation(&self.inner);
             adjustment.set_value(target);
-            self.inner.last_written.set(target);
+            self.inner.last_written.set(adjustment.value());
             return;
         }
 
@@ -80,6 +80,17 @@ impl ScrollGlide {
                 abort_generation(&inner, generation);
                 return;
             }
+            // Whole pixels only. The view floors the scroll offset to an
+            // integer, but it does so *between* frames — reading the value
+            // straight back after writing still returns the fraction we asked
+            // for, so remembering either one made the next frame see a
+            // difference of up to a pixel and abort. Measured: we wrote
+            // 1568.748 and the following frame observed 1568.000, which is
+            // past the 0.5 epsilon. Writing integers ourselves makes the
+            // view's own flooring a no-op, and the epsilon then separates our
+            // writes from a real third party cleanly. It also keeps the
+            // viewport off half-pixels, which is where text renders soft.
+            let value = value.round();
             adjustment_for_target.set_value(value);
             if inner.generation.get() == generation {
                 inner.last_written.set(value);
@@ -101,10 +112,6 @@ impl ScrollGlide {
                 return;
             }
             inner.last_written.set(target);
-            if foreign_write(target, adjustment_for_done.value()) {
-                abort_generation(&inner, generation);
-                return;
-            }
             inner.animation.borrow_mut().take();
         });
         motion::replace_animation(&self.inner.animation, animation.clone());
