@@ -142,7 +142,13 @@ private fun rememberedReadableTreeListsCatalogWithoutScanning() {
 
     val state = LibrarySession(port).restore()
 
-    check(state == LibraryScreenState.TrackList(listOf(testTrack())))
+    check(
+        state == LibraryScreenState.Browse(
+            titles = listOf(testTrack()),
+            albums = emptyList(),
+            artists = emptyList(),
+        ),
+    )
     check(port.configuredUris == listOf("content://provider/tree/Music"))
     check(port.listCalls == 1)
     check(port.scanCalls == 0)
@@ -173,7 +179,13 @@ private fun choosingTreePersistsGrantAndPreferenceBeforeScanning() {
 
     val state = LibrarySession(port).chooseTree("content://provider/tree/Music", reports::add)
 
-    check(state == LibraryScreenState.TrackList(listOf(testTrack())))
+    check(
+        state == LibraryScreenState.Browse(
+            titles = listOf(testTrack()),
+            albums = emptyList(),
+            artists = emptyList(),
+        ),
+    )
     check(
         port.operations == listOf(
             "persist:content://provider/tree/Music",
@@ -181,7 +193,9 @@ private fun choosingTreePersistsGrantAndPreferenceBeforeScanning() {
             "readable:content://provider/tree/Music",
             "configure:content://provider/tree/Music",
             "scan",
-            "list",
+            "search:",
+            "albums",
+            "artists",
         ),
     )
     check(reports.first() == LibraryScreenState.Scanning())
@@ -197,13 +211,21 @@ private fun rescanUsesRememberedTreeWithoutChoosingAgain() {
 
     val state = LibrarySession(port).rescan(reports::add)
 
-    check(state == LibraryScreenState.TrackList(listOf(testTrack())))
+    check(
+        state == LibraryScreenState.Browse(
+            titles = listOf(testTrack()),
+            albums = emptyList(),
+            artists = emptyList(),
+        ),
+    )
     check(
         port.operations == listOf(
             "readable:content://provider/tree/Music",
             "configure:content://provider/tree/Music",
             "scan",
-            "list",
+            "search:",
+            "albums",
+            "artists",
         ),
     )
     check(reports.first() == LibraryScreenState.Scanning())
@@ -254,9 +276,22 @@ private class RecordingLibrarySessionPort(
         scanCalls += 1
     }
 
-    override fun listTracks(): List<LibraryTrack> {
-        operations += "list"
+    override fun searchTracks(text: String): List<LibraryTrack> {
+        operations += "search:$text"
         listCalls += 1
         return tracks
     }
+
+    override fun listAlbums(): List<LibraryAlbum> {
+        operations += "albums"
+        return emptyList()
+    }
+
+    override fun listArtists(): List<LibraryArtist> {
+        operations += "artists"
+        return emptyList()
+    }
+
+    override fun listAlbumTracks(album: String, albumArtist: String): List<LibraryTrack> =
+        emptyList()
 }

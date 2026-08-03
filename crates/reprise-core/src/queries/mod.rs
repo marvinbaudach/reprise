@@ -90,6 +90,7 @@ mod playlist;
 mod queue;
 mod smart;
 mod stats;
+mod surface_browse;
 
 pub use album_directories::query_album_directories;
 pub use artist_context::{query_artist_albums, query_stats_album_target_for_path};
@@ -181,6 +182,7 @@ pub use queue::{
     QueueItemMetadata, QUEUE_LIMIT,
 };
 pub use stats::{query_library_stats, query_library_stats_browsed, LibraryStats};
+pub use surface_browse::{query_album_tracks, query_library_text_search};
 
 use clauses::build_track_ids_query_browsed;
 use clauses::{build_track_ids_query_base, like_pattern, row_to_id};
