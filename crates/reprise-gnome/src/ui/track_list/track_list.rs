@@ -119,6 +119,10 @@ pub(in crate::ui) struct Shared {
     /// moves without rebuilding the list. A `Cell` (not `RefCell`) because the
     /// payload is a `Copy` `Option<i64>` read on every bind.
     pub(in crate::ui) playing_track_id: Cell<Option<i64>>,
+    /// Monotonic token for deferred explicit/automatic track reveals. Every
+    /// loaded-track change advances it so an older idle callback cannot center
+    /// a superseded row after the marker has already moved elsewhere.
+    pub(in crate::ui) track_reveal_generation: Cell<u64>,
     /// POD-20's shared loaded-episode marker. Separate from
     /// `playing_track_id` because the two id spaces are unrelated and may
     /// collide numerically; the marker also retains running versus paused.

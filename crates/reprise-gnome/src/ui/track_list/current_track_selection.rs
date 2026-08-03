@@ -14,6 +14,7 @@ use reprise_core::view_source::ViewSource;
 use super::player_controller::PlayerController;
 use super::track_list::TrackList;
 use super::track_list_activation::current_queue_ids;
+#[cfg(test)]
 use crate::ui::scroll_center;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -24,7 +25,7 @@ pub(in crate::ui) enum CurrentTrackChange {
     SessionRestore,
 }
 
-const USER_SCROLL_GRACE: Duration = Duration::from_millis(1_500);
+pub(super) const USER_SCROLL_GRACE: Duration = Duration::from_millis(1_500);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TrackRevealPolicy {
@@ -66,12 +67,6 @@ fn visible_position_for_track_in_source(
     ids.iter()
         .position(|candidate| *candidate == current_id)
         .and_then(|position| u32::try_from(position).ok())
-}
-
-/// Row count of the track table's current model — the divisor for
-/// [`scroll_center::centered_scroll_target`]'s uniform-height row math.
-fn track_table_row_count(column_view: &gtk4::ColumnView) -> u32 {
-    column_view.model().map_or(0, |model| model.n_items())
 }
 
 pub(in crate::ui) fn wire(player: Option<&Rc<PlayerController>>, track_list: &Rc<TrackList>) {
@@ -228,6 +223,8 @@ impl TrackList {
         queue_position: Option<usize>,
         change: CurrentTrackChange,
     ) {
+        let reveal_generation = self.shared.track_reveal_generation.get().wrapping_add(1);
+        self.shared.track_reveal_generation.set(reveal_generation);
         let ids = self.shared.current_view_ids();
         let is_queue = matches!(*self.shared.source.borrow(), ViewSource::Queue);
 
@@ -278,15 +275,19 @@ impl TrackList {
                 );
             }
             TrackRevealPolicy::Center => {
-                // The reveal owns the viewport, so apply the marker plainly and
-                // then scroll to center the track.
+                // Apply the marker now, then yield before the expensive reveal
+                // so the playback chrome can reach its first frame. The
+                // generation token prevents this request from outliving a
+                // newer track change while it waits or retries for geometry.
                 self.shared.reapply_now_playing_markers();
-                if change == CurrentTrackChange::AutomaticAdvance {
-                    reveal_automatic_track_position(&self.shared, position, 8);
-                } else {
-                    reveal_track_position(&self.shared.column_view, position, 8);
-                }
-                tracing::info!(track_id, position, ?change, "current track centered");
+                super::track_reveal::defer(
+                    &self.shared,
+                    track_id,
+                    position,
+                    change,
+                    reveal_generation,
+                    8,
+                );
             }
         }
     }
@@ -319,62 +320,14 @@ impl TrackList {
     /// Clears the now-playing marker (on stop) and rebinds the row that
     /// carried it so its `.now-playing` class drops.
     fn clear_now_playing(&self) {
+        self.shared
+            .track_reveal_generation
+            .set(self.shared.track_reveal_generation.get().wrapping_add(1));
         self.shared.playing_track_id.set(None);
         // Drop the marker from whatever visible row still carries it, without
         // nudging the viewport (same reasoning as the double-click path).
         self.shared.reapply_now_playing_markers_pinned();
     }
-}
-
-fn reveal_track_position(column_view: &gtk4::ColumnView, position: u32, attempts: u8) {
-    let n_rows = track_table_row_count(column_view);
-    if let Some((adjustment, value)) =
-        scroll_center::centered_scroll_target(column_view, n_rows, position)
-    {
-        adjustment.set_value(value);
-        return;
-    }
-    if attempts == 0 {
-        return;
-    }
-    let column_view = column_view.clone();
-    gtk4::glib::idle_add_local_once(move || {
-        reveal_track_position(&column_view, position, attempts - 1);
-    });
-}
-
-fn reveal_automatic_track_position(
-    shared: &Rc<super::track_list::Shared>,
-    position: u32,
-    attempts: u8,
-) {
-    let user_scrolling = shared
-        .last_scroll_activity
-        .get()
-        .is_some_and(|last| last.elapsed() < USER_SCROLL_GRACE);
-    if user_scrolling {
-        tracing::debug!(
-            position,
-            "automatic track centering suppressed by scroll activity"
-        );
-        return;
-    }
-    let n_rows = track_table_row_count(&shared.column_view);
-    if let Some((adjustment, value)) =
-        scroll_center::centered_scroll_target(&shared.column_view, n_rows, position)
-    {
-        adjustment.set_value(value);
-        return;
-    }
-    if attempts == 0 {
-        return;
-    }
-    let shared = Rc::downgrade(shared);
-    gtk4::glib::idle_add_local_once(move || {
-        if let Some(shared) = shared.upgrade() {
-            reveal_automatic_track_position(&shared, position, attempts - 1);
-        }
-    });
 }
 
 #[cfg(test)]

@@ -55,6 +55,7 @@ mod track_list_toast;
 mod track_list_wiring;
 pub(in crate::ui) mod track_menu;
 pub(crate) mod track_playback_selection;
+mod track_reveal;
 pub(in crate::ui) mod view_state_memory;
 
 #[allow(unused_imports)]
