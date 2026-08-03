@@ -148,9 +148,7 @@ fn draw_bars(
             // True silence: a fixed dot, unaffected by the height mapping.
             DisplayBar::Silence => SILENCE_DOT_HEIGHT * stagger,
             DisplayBar::Level(level) => {
-                let magnitude = f64::from(level).clamp(0.0, 1.0);
-                (state.min_bar_height + magnitude * (state.max_bar_height - state.min_bar_height))
-                    * stagger
+                bar_height(f64::from(level), state.min_bar_height, state.max_bar_height) * stagger
             }
         };
         // Guard against zero-height bars during early animation frames.
@@ -195,6 +193,31 @@ fn draw_bars(
         rounded_bar(cr, x, y, bar_w, bar_h, bar_radius);
         let _ = cr.fill();
     }
+}
+
+fn bar_height(magnitude: f64, min_bar_height: f64, max_bar_height: f64) -> f64 {
+    min_bar_height + magnitude.clamp(0.0, 1.0) * (max_bar_height - min_bar_height)
+}
+
+#[cfg(test)]
+pub(super) fn bar_height_for_test(level: u8, min_bar_height: f64, max_bar_height: f64) -> f64 {
+    bar_height(
+        f64::from(level) / f64::from(u8::MAX),
+        min_bar_height,
+        max_bar_height,
+    )
+}
+
+#[cfg(test)]
+pub(super) fn bar_height_for_test_with_light(
+    level: u8,
+    min_bar_height: f64,
+    max_bar_height: f64,
+    _kick: f64,
+    _pressure: f64,
+    _swell: f64,
+) -> f64 {
+    bar_height_for_test(level, min_bar_height, max_bar_height)
 }
 
 /// Skeleton waveform: deterministic pseudo-random bar heights that look like

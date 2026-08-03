@@ -14,36 +14,35 @@ impl WaveformSeek {
     }
 }
 
+/// The regression that keeps the lens out. Three attempts died here: a narrow
+/// lens, a wide lens quantised to even device pixels, and a playhead glow.
+/// The first two moved bar heights and read as noise in the rounding error,
+/// because neighbouring bars crossed their pixel boundary at different
+/// moments. This round reacts in colour and in one dot instead, so the
+/// property to pin is not "no signal reaches this file" — both readings now
+/// do — but "no height moves, whatever they say".
 #[test]
-fn ac_24_the_waveform_reads_neither_bass_signal() {
-    // The seek bar is a surface for reading a position and for hitting it.
-    // Movement there is in the way, and the geometry of a 3 px bar cannot
-    // carry it without shimmering.
-    //
-    // Three attempts, three rejections, and the third one is why this guard
-    // asserts on the *source text* rather than on a function's output:
-    //
-    //   1. A lens that swelled the bars around the playhead. Rejected: the
-    //      bars twitched individually (σ ≈ 3.9, driven by raw `kick`).
-    //   2. The same lens, rebuilt properly — σ = 8 so thirty bars moved as one
-    //      wave, driven by a 220 ms `kick_soft`, growth quantised to even
-    //      device pixels so no edge could land on a half-pixel. Still rejected
-    //      on sight: "das Zittern der Seek".
-    //   3. A glow on the playhead alone, touching no bar height. Rejected:
-    //      `kick` falls in 70 ms, so it read as a blink.
-    //
-    // The common cause is not the implementation. It is that this is the one
-    // surface the user has to *aim* at, and the eye resolves it at
-    // single-pixel scale, so any movement reads as a defect rather than as
-    // life. Do not try a fourth time without new evidence about that.
-    //
-    // The played-bar gradient is the exception and stays: it depends on
-    // position alone, never on a reading.
-    let source = include_str!("waveform_seek_render.rs");
-    assert!(!source.contains("kick"));
-    assert!(!source.contains("pressure"));
-    let state = include_str!("waveform_seek.rs");
-    assert!(!state.contains("bass_kick"));
+fn ac_24_bar_heights_never_move_with_the_music() {
+    use super::render::{bar_height_for_test, bar_height_for_test_with_light};
+    let (min, max) = (3.9, 26.0);
+    for level in [0u8, 40, 128, 200, 255] {
+        let reference = bar_height_for_test(level, min, max);
+        for step in 0..=20 {
+            let reading = f64::from(step) / 20.0;
+            for (kick, pressure, swell) in [
+                (reading, 0.0, 0.0),
+                (0.0, reading, 0.0),
+                (0.0, 0.0, reading),
+                (reading, reading, reading),
+            ] {
+                assert_eq!(
+                    bar_height_for_test_with_light(level, min, max, kick, pressure, swell),
+                    reference,
+                    "a bar height moved at kick {kick}, pressure {pressure}, swell {swell}"
+                );
+            }
+        }
+    }
 }
 
 #[test]
