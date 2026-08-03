@@ -120,3 +120,37 @@ This headless X11 run proves accessibility exposure, input delivery, widget
 state transitions, screenshots, and clean logs. Native Wayland rendering,
 pointer feel, portals, media keys, audible playback, and compositor-specific
 behavior remain release-manual checks.
+
+## PLAY-11 stop cases: `filter_clear_matrix.sh`
+
+Scenario 11 above proves the PLAY-11 *hand-off*. Its complement — every case in
+which playback must **not** hand off — lives in a separate runner:
+
+```console
+scripts/cua-e2e/filter_clear_matrix.sh                     # all seven cases
+scripts/cua-e2e/filter_clear_matrix.sh play-11-stop-repeat-all
+```
+
+It covers the cleared-filter hand-off plus six stop cases: the filter is still
+active, the origin snapshot was never filtered, the library holds no other
+title, the origin is a playlist, a genre facet survives the search, and Repeat
+All is engaged.
+
+Two things make it a separate runner rather than more groups in `run.sh`. Each
+case needs its own library, profile and app lifecycle, because the decision
+depends on the origin captured at play time. And the assertions are about a
+playback decision rather than a widget, so it asserts on the app's diagnostic
+log and drives input with `xdotool` instead of walking the accessibility tree —
+the screenshots it keeps for every step are human evidence, not the assertion
+surface. Isolation is otherwise identical: private Xvfb display, own D-Bus
+session, private XDG directories per case, `fakesink` audio.
+
+Each case asserts three things: whether PLAY-11's continuation log line
+appeared, how often a snapshot was seeded (`queue set from view` — one for the
+activation, a second only on hand-off, which is what catches a mis-aimed
+click), and that the log stayed free of GTK/GLib criticals, panics and
+`RefCell` failures.
+
+`play-11-stop-repeat-all` engages Repeat All through the transport button
+rather than `REPRISE_SMOKE_REPEAT=all`, because that hook is silently
+overwritten by the session restore — see issue #250.
