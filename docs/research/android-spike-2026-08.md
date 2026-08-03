@@ -1105,6 +1105,49 @@ wird, warum eine unbekannte Endung die Probe absichtlich ungesetzt lässt, und
 warum `read_meta_content_based` genau das Gegenteil braucht — steht dort einmal
 statt in vier Kopien.
 
+### Phase 3 belegt: ein Scan über SAF, auf dem Gerät (2026-08-03)
+
+Gemessen auf `emulator-5554`, frisch installierte App, geleerte App-Daten,
+Ordner `/sdcard/Music/Repriese` über `ACTION_OPEN_DOCUMENT_TREE` gewählt.
+
+```
+RepriseScan: Scan discovery started
+RepriseScan: Scan progress: processed=1 total=unknown uri=content://…/sine.flac
+RepriseScan: Scan progress: processed=2 total=unknown uri=content://…/broken-tags.mp3
+RepriseScan: Scan call returned: tracks=2 added=2 updated=0 errors=0
+```
+
+Die App-Datenbank, gezogen mit `adb exec-out run-as … cat files/reprise.db`
+(samt `-wal`), bestätigt es nicht nur, sondern zeigt Verhaltensgleichheit mit
+dem Desktop:
+
+| Track | `duration_ms` | `untagged` | `import_errors` | `mount_point` |
+| --- | --- | --- | --- | --- |
+| `sine.flac` | 1160 | 0 | — | *(leer)* |
+| `broken-tags.mp3` | 52 | 1 | `unreadable_tags` | *(leer)* |
+
+**Was damit auf Hardware belegt ist:**
+
+- `lofty` parst über `open_read` → `File::from_raw_fd` auf einem
+  SAF-Deskriptor. Pakete 4 und 5 tragen.
+- `broken-tags.mp3` bekommt dasselbe Verdikt wie auf dem Desktop —
+  Pass 1 scheitert, Pass 2 rettet als `untagged`, der Fehler bleibt als Hinweis
+  stehen. Die Verdikt-Paritätstests aus Paket 5 haben das vorhergesagt.
+- `total=unknown`: der Erstscan hat keine Schätzung und behauptet auch keine.
+  Das `Option<u64>` aus Paket 2 reicht bis auf das Gerät durch.
+- `mount_point` ist leer, weil die SAF-Quelle die Frage ablehnt. Die
+  `mount_point`-Fähigkeit ersetzt den Plattform-Booleschen Wert erfolgreich.
+- Content-URIs überleben Traversierung, Präsenzprüfung, Tag-Lesung und
+  Datenbank ohne Sonderbehandlung.
+
+**Ein Mangel, den erst das Gerät zeigt:** Der Titel lautet
+`primary%3AMusic%2FRepriese%2Fsine`. Der Scanner fällt bei leerem Titel auf
+den Dateistamm zurück, und der Dateistamm einer Content-URI ist die ganze
+kodierte Dokument-ID. Eine Quelle muss einen **Anzeigenamen** liefern können —
+SAF hat ihn in `DocumentsContract.Document.COLUMN_DISPLAY_NAME`. Das ist der
+nächste Fund, den der MVP aus der Abstraktion herausdrückt, und er gehört vor
+Phase 4.
+
 ## Frage 8 — Die Umzugserkennung, und was Tauri daran ändert (umgesetzt 2026-08-02)
 
 **Status: umgesetzt.** `file_stat` liefert jetzt die echte Größe getrennt von

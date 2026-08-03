@@ -17,7 +17,7 @@
         android:appComponentFactory="androidx.core.app.CoreComponentFactory"
         android:debuggable="true"
         android:extractNativeLibs="false"
-        android:label="Reprise A1 Probe"
+        android:label="Reprise Android MVP"
         android:supportsRtl="true"
         android:theme="@style/Theme.Spike" >
         <activity

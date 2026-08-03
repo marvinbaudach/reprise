@@ -95,7 +95,7 @@ MERGED from [androidx.versionedparcelable:versionedparcelable:1.1.1] /home/marvi
 	android:supportsRtl
 		ADDED from /home/marvin/Projects/reprise-android-mvp/android/app/src/main/AndroidManifest.xml:8:9-35
 	android:label
-		ADDED from /home/marvin/Projects/reprise-android-mvp/android/app/src/main/AndroidManifest.xml:7:9-41
+		ADDED from /home/marvin/Projects/reprise-android-mvp/android/app/src/main/AndroidManifest.xml:7:9-44
 	android:theme
 		ADDED from /home/marvin/Projects/reprise-android-mvp/android/app/src/main/AndroidManifest.xml:9:9-43
 activity#de.reprise.spike.MainActivity

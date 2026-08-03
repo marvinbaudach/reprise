@@ -28,8 +28,8 @@
 18        android:debuggable="true"
 19        android:extractNativeLibs="false"
 19-->INJECTED
-20        android:label="Reprise A1 Probe"
-20-->/home/marvin/Projects/reprise-android-mvp/android/app/src/main/AndroidManifest.xml:7:9-41
+20        android:label="Reprise Android MVP"
+20-->/home/marvin/Projects/reprise-android-mvp/android/app/src/main/AndroidManifest.xml:7:9-44
 21        android:supportsRtl="true"
 21-->/home/marvin/Projects/reprise-android-mvp/android/app/src/main/AndroidManifest.xml:8:9-35
 22        android:theme="@style/Theme.Spike" >
