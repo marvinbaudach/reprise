@@ -2955,8 +2955,8 @@ STYLE-1).
   plugin is the deliberate off-switch for the whole layer. With
   `gtk-enable-animations=false` (MOT-7), the brightness remains at the
   bare slow base while the free-running breath stops. While the Visual
-  tab is open the backdrop holds its rest value while the panel cover
-  takes the beat: that tab carries its own light language.
+  tab is open the backdrop holds its rest value, the conic sweep is dark,
+  and the panel cover takes the beat: that tab carries its own light language.
 
 ## Y. Library Doctor / Tag Cleanup
 

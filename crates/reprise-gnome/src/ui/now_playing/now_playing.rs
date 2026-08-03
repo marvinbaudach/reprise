@@ -9,6 +9,7 @@ use reprise_core::playback::{PlaybackState, SpectrumFrame};
 
 use super::cover_bloom;
 use super::cover_loader::CoverLoader;
+use super::cover_shimmer;
 use super::lyrics_strings;
 use super::now_playing_column::NowPlayingColumn;
 #[cfg(test)]
@@ -18,7 +19,7 @@ use super::song_visualizer::SongVisualizer;
 use super::strings;
 use super::up_next_panel::UpNextPanel;
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
-use crate::ui::cover_lift::{CoverLift, Source as CoverLiftSource};
+use crate::ui::cover_lift::CoverLift;
 use crate::ui::lyrics_view::LyricsView;
 use crate::ui::playback::external_media::ExternalPlaybackSnapshot;
 use crate::ui::player_controller::NowPlaying;
@@ -31,19 +32,20 @@ const TAB_SWITCHER_MIN_HEIGHT: i32 = 50;
 #[path = "now_playing_effects.rs"]
 mod now_playing_effects;
 
-struct PanelWidgets {
-    column: NowPlayingColumn,
+pub(super) struct PanelWidgets {
+    pub(super) column: NowPlayingColumn,
     stage: gtk4::Box,
     #[cfg(test)]
     track_content: gtk4::Box,
     lyrics: Rc<LyricsView>,
     up_next: Rc<UpNextPanel>,
-    visualizer: SongVisualizer,
-    bloom: cover_bloom::CoverBloom,
+    pub(super) visualizer: SongVisualizer,
+    pub(super) bloom: cover_bloom::CoverBloom,
+    pub(super) shimmer: cover_shimmer::CoverShimmer,
     lyrics_page: adw::ViewStackPage,
     visual_page: adw::ViewStackPage,
     cover_stack: gtk4::Stack,
-    cover_lift: CoverLift,
+    pub(super) cover_lift: CoverLift,
     external_cover: gtk4::Box,
     cover: gtk4::Image,
     outgoing_cover: gtk4::Image,
@@ -52,12 +54,12 @@ struct PanelWidgets {
     album: gtk4::Label,
     // Retained for the tab session and NPP-13 acceptance test, which prove
     // the active tab stays outside the cover transition.
-    tab_stack: adw::ViewStack,
+    pub(super) tab_stack: adw::ViewStack,
     #[cfg(test)]
     tab_switcher: adw::InlineViewSwitcher,
     footer: gtk4::Label,
     footers: Rc<RefCell<TabFooters>>,
-    session: Rc<TabSession>,
+    pub(super) session: Rc<TabSession>,
 }
 
 fn build_widgets(
@@ -150,9 +152,11 @@ fn build_widgets_for_session(
     let head_overlay = gtk4::Overlay::new();
     head_overlay.set_child(Some(&glow));
     let bloom = cover_bloom::CoverBloom::new();
-    // Bottom to top: the static ellipse, the cover's own light, then the cover
-    // and the title block over both.
+    let shimmer = cover_shimmer::CoverShimmer::new();
+    // Bottom to top: the static ellipse, the blurred cover, the cover-palette
+    // sweep, then the cover and the title block over all three.
     head_overlay.add_overlay(bloom.widget());
+    head_overlay.add_overlay(shimmer.widget());
     head_overlay.add_overlay(&head);
 
     let lyrics = LyricsView::new();
@@ -291,6 +295,7 @@ fn build_widgets_for_session(
         up_next,
         visualizer,
         bloom,
+        shimmer,
         lyrics_page,
         visual_page,
         cover_stack,
@@ -311,25 +316,25 @@ fn build_widgets_for_session(
 }
 
 pub(in crate::ui) struct NowPlayingPanel {
-    widgets: PanelWidgets,
+    pub(super) widgets: PanelWidgets,
     toggle: gtk4::ToggleButton,
     conn: Rc<Db>,
     cover_loader: Rc<CoverLoader>,
     cover_generation: Rc<Cell<u64>>,
     loaded_track: RefCell<Option<NowPlaying>>,
     external_snapshot: RefCell<Option<ExternalPlaybackSnapshot>>,
-    playback_state: Cell<PlaybackState>,
+    pub(super) playback_state: Cell<PlaybackState>,
     syncing_visibility: Cell<bool>,
     on_up_next_refresh: RefCell<Option<OnVoid>>,
     cover_animation: RefCell<Option<adw::TimedAnimation>>,
     cover_animation_generation: Cell<u64>,
     cover_transition_active: Cell<bool>,
     on_track_reveal: crate::ui::link_activation::ActivationSlot,
-    song_visuals_enabled: Cell<bool>,
-    swell: RefCell<Swell>,
-    swell_pressure: Cell<f64>,
-    cover_kick: Cell<f64>,
-    swell_last_frame_us: Cell<i64>,
+    pub(super) song_visuals_enabled: Cell<bool>,
+    pub(super) swell: RefCell<Swell>,
+    pub(super) swell_pressure: Cell<f64>,
+    pub(super) cover_kick: Cell<f64>,
+    pub(super) swell_last_frame_us: Cell<i64>,
     on_album_reveal: crate::ui::link_activation::ActivationSlot,
     on_artist_reveal: crate::ui::link_activation::ActivationSlot,
 }
@@ -540,44 +545,6 @@ impl NowPlayingPanel {
         self.sync_visual_activity();
     }
 
-    fn advance_swell(&self, frame_time_us: i64) {
-        if frame_time_us <= 0 {
-            *self.swell.borrow_mut() = Swell::default();
-            self.swell_pressure.set(0.0);
-            self.cover_kick.set(0.0);
-            self.swell_last_frame_us.set(0);
-            self.widgets.cover_lift.feed(0.0, 0.0, 0.0);
-            self.widgets.cover_lift.set_frame_time(0);
-            self.widgets.bloom.set_light(0.0, 0.0);
-            self.widgets.visualizer.set_swell(0.0);
-            return;
-        }
-
-        let previous = self.swell_last_frame_us.replace(frame_time_us);
-        let dt_s = if previous > 0 {
-            frame_time_us.saturating_sub(previous) as f64 / 1_000_000.0
-        } else {
-            0.0
-        };
-        let pressure = self.swell_pressure.get();
-        let value = {
-            let mut swell = self.swell.borrow_mut();
-            swell.advance(pressure, dt_s);
-            if crate::ui::motion::animations_enabled() {
-                swell.value()
-            } else {
-                swell.value_without_motion()
-            }
-        };
-        self.widgets
-            .cover_lift
-            .feed(value, self.cover_kick.get(), pressure);
-        self.widgets.cover_lift.set_frame_time(frame_time_us);
-        self.widgets.bloom.set_light(pressure, value);
-        // The readout names every value the reactive light runs on.
-        self.widgets.visualizer.set_swell(value);
-    }
-
     pub(in crate::ui) fn set_up_next_model(
         &self,
         model: &crate::ui::track_list::queue_sections::QueueViewModel,
@@ -700,42 +667,6 @@ impl NowPlayingPanel {
                 panel.sync_visual_activity();
                 panel.sync_bloom_activity();
             });
-    }
-
-    fn sync_visual_activity(&self) {
-        self.widgets.visualizer.set_active(
-            self.song_visuals_enabled.get()
-                && self.widgets.column.is_visible()
-                && self.widgets.session.selected.get() == PanelTab::Visual,
-        );
-    }
-
-    /// Recomputes the combined pin rather than letting the reasons race each
-    /// other. Any one of them holds the bloom at rest; only when all clear may
-    /// the current playback state take over.
-    ///
-    /// Panel visibility is one of them, for the same reason
-    /// `sync_visual_activity` tracks it: the panel starts closed (NPP-12), and
-    /// a pinned bloom runs no tick — without this the paused breath would keep
-    /// redrawing a widget nobody can see, on most installs, forever.
-    fn sync_bloom_activity(&self) {
-        let visualizer_visible = self.song_visuals_enabled.get()
-            && self.widgets.column.is_visible()
-            && self.widgets.tab_stack.visible_child_name().as_deref() == Some(VISUAL_PAGE);
-        self.widgets.cover_lift.set_source(if visualizer_visible {
-            CoverLiftSource::Kick
-        } else {
-            CoverLiftSource::Swell
-        });
-        let pinned = !self.song_visuals_enabled.get()
-            || !self.widgets.column.is_visible()
-            || visualizer_visible;
-        self.widgets.bloom.set_pinned(pinned);
-        if !pinned {
-            self.widgets
-                .bloom
-                .set_playback_state(self.playback_state.get());
-        }
     }
 
     fn request_up_next_refresh_if_visible(&self) {

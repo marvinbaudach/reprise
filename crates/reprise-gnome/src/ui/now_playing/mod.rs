@@ -1,6 +1,8 @@
 pub(in crate::ui) mod artist_portrait_worker;
 mod cover_bloom;
+mod cover_shimmer;
 pub(in crate::ui) mod now_playing_column;
+mod now_playing_light;
 mod panel_state;
 pub(in crate::ui) mod song_visualizer;
 #[path = "now_playing.rs"]

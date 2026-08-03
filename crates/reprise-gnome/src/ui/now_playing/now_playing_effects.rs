@@ -81,6 +81,7 @@ impl super::NowPlayingPanel {
             self.widgets.external_cover.append(source_image.widget());
             self.widgets.visualizer.set_cover(None);
             self.widgets.bloom.set_cover(None, generation);
+            self.widgets.shimmer.set_palette(None);
             on_cover_resolved(None);
             return;
         }
@@ -92,9 +93,12 @@ impl super::NowPlayingPanel {
         // leave the previous track's accent lingering in the engine.
         self.widgets.visualizer.set_cover(None);
         self.widgets.bloom.set_cover(None, generation);
+        self.widgets.shimmer.set_palette(None);
         if let Some(track) = track {
             let visualizer = self.widgets.visualizer.clone();
             let bloom = self.widgets.bloom.clone();
+            let shimmer = self.widgets.shimmer.clone();
+            let cover_generation = self.cover_generation.clone();
             let cover_widget = self.widgets.cover.clone();
             self.cover_loader.load_into_with_resolution(
                 &self.widgets.cover,
@@ -116,6 +120,25 @@ impl super::NowPlayingPanel {
                             .or_else(|| gtk4::gdk::Texture::from_filename(resolved_path).ok());
                         visualizer.set_cover(texture.as_ref());
                         bloom.set_cover(texture.as_ref(), generation);
+                        let palette_path = resolved_path.clone();
+                        if let Ok(receiver) = crate::ui::one_shot_task::spawn(
+                            "reprise-cover-shimmer-palette",
+                            move || {
+                                crate::ui::style::cover_palette::accent_from_cover_file(
+                                    &palette_path,
+                                )
+                            },
+                        ) {
+                            let shimmer = shimmer.clone();
+                            let cover_generation = cover_generation.clone();
+                            gtk4::glib::spawn_future_local(async move {
+                                if let Ok(palette) = receiver.recv().await {
+                                    if cover_generation.get() == generation {
+                                        shimmer.set_palette(palette);
+                                    }
+                                }
+                            });
+                        }
                     }
                     on_cover_resolved(resolved_path);
                 },
