@@ -149,6 +149,10 @@ fn build_widgets_for_session(
     let head_overlay = gtk4::Overlay::new();
     head_overlay.set_child(Some(&glow));
     let bloom = cover_bloom::CoverBloom::new();
+    bloom.set_on_frame({
+        let cover_lift = cover_lift.clone();
+        move |frame_time_us| cover_lift.set_frame_time(frame_time_us)
+    });
     // Bottom to top: the static ellipse, the cover's own light, then the cover
     // and the title block over both.
     head_overlay.add_overlay(bloom.widget());
@@ -504,6 +508,7 @@ impl NowPlayingPanel {
         if !enabled {
             self.widgets.visualizer.set_active(false);
             self.widgets.cover_lift.set_kick(0.0);
+            self.widgets.cover_lift.set_frame_time(0);
             if self.widgets.session.selected.get() == PanelTab::Visual {
                 self.widgets.tab_stack.set_visible_child_name(UP_NEXT_PAGE);
             }

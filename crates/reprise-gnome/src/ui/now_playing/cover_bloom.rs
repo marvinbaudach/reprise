@@ -19,6 +19,8 @@ use gtk4::prelude::*;
 use reprise_core::playback::PlaybackState;
 
 use crate::ui::{cover_glow, motion};
+
+type OnFrame = Rc<dyn Fn(i64)>;
 /// Height of the bloom band, from the top of the head overlay: enough for the
 /// cover and the title block, stopping short of the tabs.
 const BLOOM_HEIGHT: f64 = 330.0;
@@ -87,6 +89,7 @@ struct Inner {
     breath_start_us: Cell<i64>,
     last_breath_frame_us: Cell<i64>,
     tick_id: RefCell<Option<gtk4::TickCallbackId>>,
+    on_frame: RefCell<Option<OnFrame>>,
 }
 
 #[derive(Clone)]
@@ -111,6 +114,7 @@ impl CoverBloom {
             breath_start_us: Cell::new(0),
             last_breath_frame_us: Cell::new(0),
             tick_id: RefCell::new(None),
+            on_frame: RefCell::new(None),
         });
         area.set_draw_func({
             let inner = inner.clone();
@@ -121,6 +125,10 @@ impl CoverBloom {
 
     pub(super) fn widget(&self) -> &gtk4::DrawingArea {
         &self.area
+    }
+
+    pub(super) fn set_on_frame(&self, callback: impl Fn(i64) + 'static) {
+        *self.inner.on_frame.borrow_mut() = Some(Rc::new(callback));
     }
 
     /// A resolved cover texture, or `None` for external media, a placeholder,
@@ -149,6 +157,9 @@ impl CoverBloom {
         if self.inner.mode.get() != Mode::Live {
             return;
         }
+        if let Some(clock) = self.area.frame_clock() {
+            self.notify_frame(clock.frame_time());
+        }
         let kick = motion::reactive_amplitude(kick);
         let pressure = motion::reactive_amplitude(pressure);
         if (self.inner.kick.get() - kick).abs() < IMPACT_EPSILON
@@ -159,6 +170,13 @@ impl CoverBloom {
         self.inner.kick.set(kick);
         self.inner.pressure.set(pressure);
         self.area.queue_draw();
+    }
+
+    fn notify_frame(&self, frame_time_us: i64) {
+        let callback = self.inner.on_frame.borrow().clone();
+        if let Some(callback) = callback {
+            callback(frame_time_us);
+        }
     }
 
     pub(super) fn set_playback_state(&self, state: PlaybackState) {
@@ -187,6 +205,9 @@ impl CoverBloom {
         } else {
             Mode::Pinned
         };
+        if mode == Mode::Pinned {
+            self.notify_frame(0);
+        }
         if self.inner.mode.get() == mode {
             return;
         }
@@ -224,6 +245,10 @@ impl CoverBloom {
                 inner.kick.set(0.0);
                 inner.pressure.set(0.0);
                 *inner.tick_id.borrow_mut() = None;
+                let callback = inner.on_frame.borrow().clone();
+                if let Some(callback) = callback {
+                    callback(0);
+                }
                 area.queue_draw();
                 return gtk4::glib::ControlFlow::Break;
             }
@@ -236,6 +261,10 @@ impl CoverBloom {
                 return gtk4::glib::ControlFlow::Continue;
             }
             inner.last_breath_frame_us.set(now);
+            let callback = inner.on_frame.borrow().clone();
+            if let Some(callback) = callback {
+                callback(now);
+            }
             area.queue_draw();
             gtk4::glib::ControlFlow::Continue
         });
