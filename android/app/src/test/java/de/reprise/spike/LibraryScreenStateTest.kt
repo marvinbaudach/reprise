@@ -1,5 +1,7 @@
 package de.reprise.spike
 
+import java.util.concurrent.atomic.AtomicReference
+
 fun main() {
     unknownTotalUsesIndeterminateProgress()
     knownTotalUsesHonestProgressFraction()
@@ -7,6 +9,40 @@ fun main() {
     rememberedUnreadableTreeDoesNotTouchCatalog()
     choosingTreePersistsGrantAndPreferenceBeforeScanning()
     rescanUsesRememberedTreeWithoutChoosingAgain()
+    applicationLooperDispatchRunsInlineOnItsOwningThread()
+    applicationLooperDispatchPostsAndWaitsFromAnotherThread()
+}
+
+private fun applicationLooperDispatchRunsInlineOnItsOwningThread() {
+    var postCount = 0
+    val dispatch = ApplicationLooperDispatch(
+        isApplicationThread = { true },
+        post = {
+            postCount += 1
+            true
+        },
+    )
+
+    val executingThread = dispatch.call { Thread.currentThread().name }
+
+    check(executingThread == Thread.currentThread().name)
+    check(postCount == 0)
+}
+
+private fun applicationLooperDispatchPostsAndWaitsFromAnotherThread() {
+    val worker = AtomicReference<Thread>()
+    val dispatch = ApplicationLooperDispatch(
+        isApplicationThread = { false },
+        post = { command ->
+            worker.set(Thread(command, "media3-application-looper").apply(Thread::start))
+            true
+        },
+    )
+
+    val executingThread = dispatch.call { Thread.currentThread().name }
+
+    worker.get().join()
+    check(executingThread == "media3-application-looper")
 }
 
 private fun unknownTotalUsesIndeterminateProgress() {

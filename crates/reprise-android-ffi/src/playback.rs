@@ -1,6 +1,10 @@
 use std::sync::Arc;
 
-use reprise_core::playback::{PlaybackState, PlayerEvent, StreamEvent, StreamGeneration};
+use reprise_core::library::settings::TrackTransition;
+use reprise_core::playback::{
+    AudioEffects, PlaybackBackend, PlaybackError, PlaybackState, PlayerEvent, StreamEvent,
+    StreamGeneration,
+};
 
 type EventHandler = dyn Fn(StreamEvent) + Send + Sync + 'static;
 
@@ -10,6 +14,143 @@ pub enum AndroidPlaybackState {
     Playing,
     Paused,
     Stopped,
+}
+
+/// The transition modes the Media3 backend can actually provide.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum AndroidTransitionMode {
+    Off,
+    Gapless,
+}
+
+/// A Media3 command failure returned across the Kotlin callback boundary.
+#[derive(Clone, Debug, thiserror::Error, uniffi::Error)]
+#[uniffi(with_try_read)]
+pub enum AndroidPlaybackError {
+    #[error("Media3 failure: {detail}")]
+    Backend { detail: String },
+    #[error("unsupported Android playback capability: {detail}")]
+    Unsupported { detail: String },
+}
+
+impl From<uniffi::UnexpectedUniFFICallbackError> for AndroidPlaybackError {
+    fn from(error: uniffi::UnexpectedUniFFICallbackError) -> Self {
+        Self::Backend {
+            detail: error.to_string(),
+        }
+    }
+}
+
+impl From<AndroidPlaybackError> for PlaybackError {
+    fn from(error: AndroidPlaybackError) -> Self {
+        Self::Backend(error.to_string())
+    }
+}
+
+/// The synchronous command surface Kotlin implements around Media3.
+///
+/// Every implementation method must enter Media3's application Looper before
+/// touching the player. Keeping that hand-off behind every callback makes the
+/// Core trait safe to drive from any runtime thread without weakening Media3's
+/// single-Looper contract.
+#[uniffi::export(callback_interface)]
+pub trait AndroidPlaybackPort: Send + Sync {
+    fn set_event_bridge(
+        &self,
+        bridge: Arc<PlaybackEventBridge>,
+    ) -> Result<(), AndroidPlaybackError>;
+    fn play_path(&self, path: String) -> Result<(), AndroidPlaybackError>;
+    fn play_uri(&self, uri: String) -> Result<(), AndroidPlaybackError>;
+    fn toggle_pause(&self) -> Result<AndroidPlaybackState, AndroidPlaybackError>;
+    fn seek_to(&self, position_ms: i64) -> Result<(), AndroidPlaybackError>;
+    fn set_volume(&self, volume: f64) -> Result<(), AndroidPlaybackError>;
+    fn set_audio_effects(&self) -> Result<(), AndroidPlaybackError>;
+    fn set_spectrum_enabled(&self, enabled: bool) -> Result<(), AndroidPlaybackError>;
+    fn stop(&self) -> Result<(), AndroidPlaybackError>;
+    fn set_next(&self, uri: Option<String>) -> Result<(), AndroidPlaybackError>;
+    fn set_transition(&self, mode: AndroidTransitionMode) -> Result<(), AndroidPlaybackError>;
+    fn current_generation(&self) -> Result<u64, AndroidPlaybackError>;
+}
+
+/// Adapts the foreign Media3 command port to Core's playback contract.
+pub struct AndroidPlaybackBackend {
+    port: Box<dyn AndroidPlaybackPort>,
+}
+
+impl AndroidPlaybackBackend {
+    pub fn new(
+        port: Box<dyn AndroidPlaybackPort>,
+        on_event: Box<EventHandler>,
+    ) -> Result<Self, PlaybackError> {
+        let bridge = PlaybackEventBridge::new(on_event);
+        port.set_event_bridge(bridge).map_err(PlaybackError::from)?;
+        Ok(Self { port })
+    }
+}
+
+impl PlaybackBackend for AndroidPlaybackBackend {
+    fn play(&self, path: &str) -> Result<(), PlaybackError> {
+        self.port
+            .play_path(path.to_owned())
+            .map_err(PlaybackError::from)
+    }
+
+    fn play_uri(&self, uri: &str) -> Result<(), PlaybackError> {
+        self.port
+            .play_uri(uri.to_owned())
+            .map_err(PlaybackError::from)
+    }
+
+    fn toggle_pause(&self) -> Result<PlaybackState, PlaybackError> {
+        self.port
+            .toggle_pause()
+            .map(PlaybackState::from)
+            .map_err(PlaybackError::from)
+    }
+
+    fn seek_to(&self, position_ms: i64) -> Result<(), PlaybackError> {
+        self.port.seek_to(position_ms).map_err(PlaybackError::from)
+    }
+
+    fn set_volume(&self, volume: f64) {
+        let _ = self.port.set_volume(volume);
+    }
+
+    fn set_audio_effects(&self, _effects: AudioEffects) -> Result<(), PlaybackError> {
+        self.port.set_audio_effects().map_err(PlaybackError::from)
+    }
+
+    fn set_spectrum_enabled(&self, enabled: bool) -> Result<(), PlaybackError> {
+        self.port
+            .set_spectrum_enabled(enabled)
+            .map_err(PlaybackError::from)
+    }
+
+    fn stop(&self) -> Result<(), PlaybackError> {
+        self.port.stop().map_err(PlaybackError::from)
+    }
+
+    fn set_next(&self, path: Option<&str>) {
+        let _ = self.port.set_next(path.map(str::to_owned));
+    }
+
+    fn set_transition(&self, mode: TrackTransition, _crossfade_seconds: u8) {
+        let mode = match mode {
+            TrackTransition::Off => AndroidTransitionMode::Off,
+            TrackTransition::Gapless | TrackTransition::Crossfade => {
+                // Media3 has no crossfade. Core explicitly permits this
+                // documented degradation to gapless playback.
+                AndroidTransitionMode::Gapless
+            }
+        };
+        let _ = self.port.set_transition(mode);
+    }
+
+    fn current_generation(&self) -> StreamGeneration {
+        self.port
+            .current_generation()
+            .map_or(StreamGeneration::INITIAL, StreamGeneration::from)
+    }
 }
 
 /// The subset of Core player events produced by the Android library player.
