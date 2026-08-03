@@ -12,7 +12,6 @@ use reprise_core::ai_staging::StagingStore;
 use reprise_core::db::Db;
 use reprise_core::db::DbError;
 use reprise_core::library::playlists;
-use reprise_core::models::Track;
 use reprise_core::queries;
 use reprise_core::view_source::ViewSource;
 
@@ -32,10 +31,7 @@ pub const MAX_SEARCH_LIMIT: i64 = 200;
 /// Maximum explicit track ids accepted by a write tool (`music_create_playlist`
 /// and `music_create_instrumental` share the same spec limit).
 pub const MAX_TRACK_IDS: usize = 500;
-
-// Fixed sort for search — a stable, predictable order for a metadata lookup.
-const SEARCH_SORT_FIELD: &str = "title";
-const SEARCH_SORT_DIR: &str = "asc";
+const SUMMARY_WINDOW_SIZE: i64 = 500;
 
 /// Model id stamped on every instrumental job MCP enqueues — the dedup
 /// fingerprint and the `REPRISE_AI_MODEL` provenance tag (Beschluss 16, plan
@@ -117,24 +113,13 @@ pub fn search_tracks(
 
     let limit = resolve_limit(limit);
     let offset = i64::from(offset.unwrap_or(0));
-    let source = ViewSource::Library;
-
-    let total = queries::query_track_count(&db, &source, query, &[]).map_err(DataError::Db)?;
-    let tracks: Vec<Track> = queries::query_track_window(
-        &db,
-        &source,
-        SEARCH_SORT_FIELD,
-        SEARCH_SORT_DIR,
-        query,
-        offset,
-        limit,
-        &[],
-    )
-    .map_err(DataError::Db)?;
-
-    let dtos: Vec<TrackDto> = tracks.iter().map(TrackDto::from).collect();
+    let window =
+        queries::query_library_text_search(&db, query, queries::WindowRange { offset, limit })
+            .map_err(DataError::Db)?;
+    let total = window.total;
+    let has_more = window.has_more;
+    let dtos: Vec<TrackDto> = window.rows.iter().map(TrackDto::from).collect();
     let returned = dtos.len();
-    let has_more = offset.saturating_add(returned as i64) < total;
 
     Ok(SearchTracksResult {
         tracks: dtos,
@@ -144,6 +129,54 @@ pub fn search_tracks(
         returned,
         has_more,
     })
+}
+
+fn all_artist_summaries(db: &Db) -> Result<Vec<queries::ArtistSummary>, DataError> {
+    let mut offset = 0;
+    let mut rows = Vec::new();
+    loop {
+        let window = queries::query_artists(
+            db,
+            queries::WindowRange {
+                offset,
+                limit: SUMMARY_WINDOW_SIZE,
+            },
+        )
+        .map_err(DataError::Db)?;
+        let returned = i64::try_from(window.rows.len()).unwrap_or(i64::MAX);
+        if returned == 0 && window.has_more {
+            return Err(DataError::Db(rusqlite::Error::InvalidQuery));
+        }
+        rows.extend(window.rows);
+        if !window.has_more {
+            return Ok(rows);
+        }
+        offset = offset.saturating_add(returned);
+    }
+}
+
+fn all_album_summaries(db: &Db) -> Result<Vec<queries::AlbumSummary>, DataError> {
+    let mut offset = 0;
+    let mut rows = Vec::new();
+    loop {
+        let window = queries::query_albums(
+            db,
+            queries::WindowRange {
+                offset,
+                limit: SUMMARY_WINDOW_SIZE,
+            },
+        )
+        .map_err(DataError::Db)?;
+        let returned = i64::try_from(window.rows.len()).unwrap_or(i64::MAX);
+        if returned == 0 && window.has_more {
+            return Err(DataError::Db(rusqlite::Error::InvalidQuery));
+        }
+        rows.extend(window.rows);
+        if !window.has_more {
+            return Ok(rows);
+        }
+        offset = offset.saturating_add(returned);
+    }
 }
 
 /// Paginated artist discovery using the same effective-album-artist grouping
@@ -158,8 +191,7 @@ pub fn search_artists(
     require_read(&db)?;
 
     let needle = query.trim().to_lowercase();
-    let matching: Vec<_> = queries::query_artists(&db)
-        .map_err(DataError::Db)?
+    let matching: Vec<_> = all_artist_summaries(&db)?
         .into_iter()
         .filter(|artist| artist.artist.to_lowercase().contains(&needle))
         .collect();
@@ -197,8 +229,7 @@ pub fn search_albums(
     require_read(&db)?;
 
     let needle = query.trim().to_lowercase();
-    let matching: Vec<_> = queries::query_albums(&db)
-        .map_err(DataError::Db)?
+    let matching: Vec<_> = all_album_summaries(&db)?
         .into_iter()
         .filter(|album| {
             album.album.to_lowercase().contains(&needle)

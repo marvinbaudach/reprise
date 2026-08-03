@@ -153,11 +153,7 @@ pub use import_errors::{
 // between the two. `pub use` for the same cross-crate reachability reason as
 // `query_missing_groups` above.
 pub use import_errors::{count_import_errors_active, count_new_import_errors};
-pub use library_views::{
-    query_album_canonical_track_ids, query_album_count, query_album_track_ids, query_albums,
-    query_artist_count, query_artist_detail_albums, query_artists, AlbumSummary, ArtistAlbum,
-    ArtistSummary,
-};
+pub use library_views::*;
 pub use maintenance::{
     exclude_tracks_matching_paths, filter_present, mark_track_missing_if_current, purge_tombstones,
     query_has_live_tracks, query_import_error_count, query_live_track_ids, query_live_track_paths,
@@ -182,7 +178,7 @@ pub use queue::{
     QueueItemMetadata, QUEUE_LIMIT,
 };
 pub use stats::{query_library_stats, query_library_stats_browsed, LibraryStats};
-pub use surface_browse::{query_album_tracks, query_library_text_search};
+pub use surface_browse::*;
 
 use clauses::build_track_ids_query_browsed;
 use clauses::{build_track_ids_query_base, like_pattern, row_to_id};

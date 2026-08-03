@@ -9,10 +9,10 @@ use reprise_core::library::scanner::{
 };
 use reprise_core::library::settings;
 use reprise_core::queries;
-use reprise_core::view_source::ViewSource;
 
 use source::{BridgedSource, SafSource};
 
+mod browse;
 pub mod playback;
 mod playback_session;
 pub mod source;
@@ -22,6 +22,9 @@ mod source_names;
 #[cfg(test)]
 mod playback_tests;
 
+pub use browse::{
+    AlbumRow, AlbumWindow, ArtistRow, ArtistWindow, TrackRow, TrackWindow, WindowRange,
+};
 pub use playback_session::{
     AndroidPlaybackListener, AndroidPlaybackSession, AndroidPlaybackSnapshot,
 };
@@ -40,35 +43,6 @@ pub enum LibraryError {
     Query { detail: String },
     #[error("no library tree is configured")]
     TreeNotConfigured,
-}
-
-/// One row as the UI needs it — deliberately not the full `Track`, so the
-/// binding surface stays a decision rather than an accident.
-#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
-pub struct TrackRow {
-    pub uri: String,
-    pub title: String,
-    pub artist: String,
-    pub album: String,
-    pub duration_ms: i64,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
-pub struct AlbumRow {
-    pub album: String,
-    pub album_artist: String,
-    pub representative_uri: String,
-    pub track_count: i64,
-    pub year: Option<i32>,
-    pub total_duration_ms: i64,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
-pub struct ArtistRow {
-    pub artist: String,
-    pub track_count: i64,
-    pub album_count: i64,
-    pub representative_uri: String,
 }
 
 #[derive(uniffi::Record)]
@@ -170,59 +144,28 @@ impl MusicLibrary {
         }
     }
 
-    pub fn list_tracks(&self) -> Result<Vec<TrackRow>, LibraryError> {
+    pub fn list_tracks(&self, window: WindowRange) -> Result<TrackWindow, LibraryError> {
         let state = self.lock()?;
-        let tracks = queries::query_track_window(
-            &state.db,
-            &ViewSource::Library,
-            "title",
-            "asc",
-            "",
-            0,
-            i64::MAX,
-            &[],
-        )
-        .map_err(|error| LibraryError::Query {
-            detail: error.to_string(),
-        })?;
-        Ok(tracks.into_iter().map(TrackRow::from).collect())
-    }
-
-    pub fn list_albums(&self) -> Result<Vec<AlbumRow>, LibraryError> {
-        let state = self.lock()?;
-        queries::query_albums(&state.db)
-            .map(|albums| {
-                albums
-                    .into_iter()
-                    .map(|album| AlbumRow {
-                        album: album.album,
-                        album_artist: album.album_artist,
-                        representative_uri: album.representative_path,
-                        track_count: album.track_count,
-                        year: album.year,
-                        total_duration_ms: album.total_duration_ms,
-                    })
-                    .collect()
-            })
+        queries::query_library_text_search(&state.db, "", window.into())
+            .map(TrackWindow::from)
             .map_err(|error| LibraryError::Query {
                 detail: error.to_string(),
             })
     }
 
-    pub fn list_artists(&self) -> Result<Vec<ArtistRow>, LibraryError> {
+    pub fn list_albums(&self, window: WindowRange) -> Result<AlbumWindow, LibraryError> {
         let state = self.lock()?;
-        queries::query_artists(&state.db)
-            .map(|artists| {
-                artists
-                    .into_iter()
-                    .map(|artist| ArtistRow {
-                        artist: artist.artist,
-                        track_count: artist.track_count,
-                        album_count: artist.album_count,
-                        representative_uri: artist.representative_path,
-                    })
-                    .collect()
+        queries::query_albums(&state.db, window.into())
+            .map(AlbumWindow::from)
+            .map_err(|error| LibraryError::Query {
+                detail: error.to_string(),
             })
+    }
+
+    pub fn list_artists(&self, window: WindowRange) -> Result<ArtistWindow, LibraryError> {
+        let state = self.lock()?;
+        queries::query_artists(&state.db, window.into())
+            .map(ArtistWindow::from)
             .map_err(|error| LibraryError::Query {
                 detail: error.to_string(),
             })
@@ -232,37 +175,30 @@ impl MusicLibrary {
         &self,
         album: String,
         album_artist: String,
-    ) -> Result<Vec<TrackRow>, LibraryError> {
+        window: WindowRange,
+    ) -> Result<TrackWindow, LibraryError> {
         let album = album.into_boxed_str();
         let album_artist = album_artist.into_boxed_str();
         let state = self.lock()?;
-        queries::query_album_tracks(&state.db, &album, &album_artist)
-            .map(|tracks| tracks.into_iter().map(TrackRow::from).collect())
+        queries::query_album_tracks(&state.db, &album, &album_artist, window.into())
+            .map(TrackWindow::from)
             .map_err(|error| LibraryError::Query {
                 detail: error.to_string(),
             })
     }
 
-    pub fn search_tracks(&self, text: String) -> Result<Vec<TrackRow>, LibraryError> {
+    pub fn search_tracks(
+        &self,
+        text: String,
+        window: WindowRange,
+    ) -> Result<TrackWindow, LibraryError> {
         let text = text.into_boxed_str();
         let state = self.lock()?;
-        queries::query_library_text_search(&state.db, &text)
-            .map(|tracks| tracks.into_iter().map(TrackRow::from).collect())
+        queries::query_library_text_search(&state.db, &text, window.into())
+            .map(TrackWindow::from)
             .map_err(|error| LibraryError::Query {
                 detail: error.to_string(),
             })
-    }
-}
-
-impl From<reprise_core::models::Track> for TrackRow {
-    fn from(track: reprise_core::models::Track) -> Self {
-        Self {
-            uri: track.path,
-            title: track.title,
-            artist: track.artist,
-            album: track.album,
-            duration_ms: track.duration_ms,
-        }
     }
 }
 
@@ -303,7 +239,9 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
 
-    use super::{AlbumRow, ArtistRow, MusicLibrary, ScanProgressListener, ScanProgressUpdate};
+    use super::{
+        AlbumRow, ArtistRow, MusicLibrary, ScanProgressListener, ScanProgressUpdate, WindowRange,
+    };
     use crate::source::{SafSource, SafSourceError, SourceChild, SourceFacts};
 
     const TREE_URI: &str = "content://com.android.externalstorage.documents/tree/primary%3AMusic";
@@ -451,6 +389,13 @@ mod tests {
         (directory, library)
     }
 
+    fn full_window() -> WindowRange {
+        WindowRange {
+            offset: 0,
+            limit: 500,
+        }
+    }
+
     #[test]
     fn browse_surface_lists_core_album_summaries_in_core_order() {
         let (directory, library) = browse_library();
@@ -466,7 +411,7 @@ mod tests {
             .into_owned();
 
         assert_eq!(
-            library.list_albums().unwrap(),
+            library.list_albums(full_window()).unwrap().rows,
             vec![
                 AlbumRow {
                     album: "Blue".into(),
@@ -503,7 +448,7 @@ mod tests {
             .into_owned();
 
         assert_eq!(
-            library.list_artists().unwrap(),
+            library.list_artists(full_window()).unwrap().rows,
             vec![
                 ArtistRow {
                     artist: "Joni Mitchell".into(),
@@ -537,8 +482,9 @@ mod tests {
 
         assert_eq!(
             library
-                .list_album_tracks(" blue ".into(), "joni mitchell".into())
-                .unwrap(),
+                .list_album_tracks(" blue ".into(), "joni mitchell".into(), full_window())
+                .unwrap()
+                .rows,
             vec![
                 super::TrackRow {
                     uri: first_uri,
@@ -573,7 +519,10 @@ mod tests {
             .into_owned();
 
         assert_eq!(
-            library.search_tracks(" folk ".into()).unwrap(),
+            library
+                .search_tracks(" folk ".into(), full_window())
+                .unwrap()
+                .rows,
             vec![
                 super::TrackRow {
                     uri: case_uri,
@@ -591,6 +540,38 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn browse_surface_exposes_exact_total_and_continuation() {
+        let (_directory, library) = browse_library();
+
+        let first = library
+            .search_tracks(
+                "folk".into(),
+                WindowRange {
+                    offset: 0,
+                    limit: 1,
+                },
+            )
+            .unwrap();
+        let second = library
+            .search_tracks(
+                "folk".into(),
+                WindowRange {
+                    offset: 1,
+                    limit: 1,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(first.total, 2);
+        assert_eq!(first.rows.len(), 1);
+        assert!(first.has_more);
+        assert_eq!(second.total, 2);
+        assert_eq!(second.rows.len(), 1);
+        assert!(!second.has_more);
+        assert_ne!(first.rows[0].uri, second.rows[0].uri);
     }
 
     impl SafSource for UntaggedAlbumSource {
@@ -671,7 +652,7 @@ mod tests {
         let events = Arc::clone(&progress.events);
 
         let summary = library.scan(Box::new(progress)).unwrap();
-        let tracks = library.list_tracks().unwrap();
+        let tracks = library.list_tracks(full_window()).unwrap().rows;
 
         assert_eq!(summary.added, 1);
         assert_eq!(summary.updated, 0);
@@ -709,7 +690,7 @@ mod tests {
         let summary = library
             .scan(Box::new(RecordingProgress::default()))
             .unwrap();
-        let tracks = library.list_tracks().unwrap();
+        let tracks = library.list_tracks(full_window()).unwrap().rows;
 
         assert_eq!(summary.added, 1);
         assert_eq!(tracks.len(), 1);

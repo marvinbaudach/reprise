@@ -13,13 +13,17 @@ internal interface LibrarySessionPort {
 
     fun scan(report: (LibraryScreenState.Scanning) -> Unit)
 
-    fun searchTracks(text: String): List<LibraryTrack>
+    fun searchTracks(text: String, window: LibraryWindowRange): LibraryWindow<LibraryTrack>
 
-    fun listAlbums(): List<LibraryAlbum>
+    fun listAlbums(window: LibraryWindowRange): LibraryWindow<LibraryAlbum>
 
-    fun listArtists(): List<LibraryArtist>
+    fun listArtists(window: LibraryWindowRange): LibraryWindow<LibraryArtist>
 
-    fun listAlbumTracks(album: String, albumArtist: String): List<LibraryTrack>
+    fun listAlbumTracks(
+        album: String,
+        albumArtist: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryTrack>
 }
 
 internal class LibrarySession(
@@ -57,16 +61,35 @@ internal class LibrarySession(
             port.configureTree(treeUri)
             browseState(message)
         }.getOrElse {
-            LibraryScreenState.Browse(emptyList(), emptyList(), emptyList(), message)
+            LibraryScreenState.Browse(
+                LibraryWindow.empty(),
+                LibraryWindow.empty(),
+                LibraryWindow.empty(),
+                message,
+            )
         }
     }
 
-    fun searchTitles(text: String): List<LibraryTrack> = port.searchTracks(text)
+    fun searchTitles(
+        text: String,
+        window: LibraryWindowRange = firstLibraryWindow(),
+    ): LibraryWindow<LibraryTrack> = port.searchTracks(text, window)
+
+    fun listAlbums(window: LibraryWindowRange): LibraryWindow<LibraryAlbum> =
+        port.listAlbums(window)
+
+    fun listArtists(window: LibraryWindowRange): LibraryWindow<LibraryArtist> =
+        port.listArtists(window)
 
     fun openAlbum(album: LibraryAlbum): AlbumTrackList = AlbumTrackList(
         album = album,
-        tracks = port.listAlbumTracks(album.title, album.artist),
+        tracks = listAlbumTracks(album, firstLibraryWindow()),
     )
+
+    fun listAlbumTracks(
+        album: LibraryAlbum,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryTrack> = port.listAlbumTracks(album.title, album.artist, window)
 
     private fun scanTree(
         treeUri: String,
@@ -83,9 +106,9 @@ internal class LibrarySession(
 
     private fun browseState(message: String? = null): LibraryScreenState.Browse =
         LibraryScreenState.Browse(
-            titles = port.searchTracks(""),
-            albums = port.listAlbums(),
-            artists = port.listArtists(),
+            titles = port.searchTracks("", firstLibraryWindow()),
+            albums = port.listAlbums(firstLibraryWindow()),
+            artists = port.listArtists(firstLibraryWindow()),
             message = message,
         )
 }
