@@ -13,9 +13,13 @@ use reprise_core::view_source::ViewSource;
 
 use source::{BridgedSource, SafSource};
 
+pub mod playback;
 pub mod source;
 mod source_error;
 mod source_names;
+
+#[cfg(test)]
+mod playback_tests;
 
 uniffi::setup_scaffolding!();
 
