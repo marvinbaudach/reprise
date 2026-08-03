@@ -181,6 +181,58 @@ pub(in crate::ui) fn accent_from_cover_file(path: &std::path::Path) -> Option<Pa
     dominant_palette(&contiguous, channels)
 }
 
+/// Probe support: prints every median-cut bucket's average colour and its raw
+/// OKLCH chroma, so the near-gray gate can be set from measurement instead of
+/// guesswork. Not used in production.
+#[cfg(test)]
+fn probe_buckets(path: &std::path::Path) {
+    let Ok(pixbuf) =
+        gtk4::gdk_pixbuf::Pixbuf::from_file_at_scale(path, SAMPLE_EDGE, SAMPLE_EDGE, false)
+    else {
+        println!("{}\n  (undecodable)", path.display());
+        return;
+    };
+    let channels = pixbuf.n_channels() as usize;
+    let width = pixbuf.width() as usize;
+    let rowstride = pixbuf.rowstride() as usize;
+    let bytes = pixbuf.read_pixel_bytes();
+    let mut contiguous = Vec::new();
+    for y in 0..pixbuf.height() as usize {
+        let start = y * rowstride;
+        let end = start + width * channels;
+        if end <= bytes.len() {
+            contiguous.extend_from_slice(&bytes[start..end]);
+        }
+    }
+    let opaque: Vec<[u8; 3]> = contiguous
+        .chunks_exact(channels)
+        .filter(|px| channels < 4 || px[3] >= 128)
+        .map(|px| [px[0], px[1], px[2]])
+        .collect();
+    let mut chromas: Vec<(f64, Rgb)> = median_cut_buckets(opaque, 3)
+        .iter()
+        .filter(|bucket| !bucket.is_empty())
+        .map(|bucket| {
+            let n = bucket.len() as f64;
+            let avg = Rgb {
+                r: (bucket.iter().map(|p| f64::from(p[0])).sum::<f64>() / n).round() as u8,
+                g: (bucket.iter().map(|p| f64::from(p[1])).sum::<f64>() / n).round() as u8,
+                b: (bucket.iter().map(|p| f64::from(p[2])).sum::<f64>() / n).round() as u8,
+            };
+            let (_, a, b) =
+                linear_rgb_to_oklab(to_linear(avg.r), to_linear(avg.g), to_linear(avg.b));
+            ((a * a + b * b).sqrt(), avg)
+        })
+        .collect();
+    chromas.sort_by(|left, right| right.0.partial_cmp(&left.0).unwrap());
+    let top: Vec<String> = chromas
+        .iter()
+        .take(3)
+        .map(|(chroma, rgb)| format!("#{:02x}{:02x}{:02x} C={chroma:.3}", rgb.r, rgb.g, rgb.b))
+        .collect();
+    println!("  buckets by chroma: {}", top.join("  "));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -277,5 +329,32 @@ mod tests {
     #[test]
     fn a_grayscale_cover_has_no_palette() {
         assert!(dominant_palette(&solid(128, 128, 128, 64), 3).is_none());
+    }
+
+    /// Probe, not a regression: runs the real extraction over real artwork so
+    /// "why is the light not showing" can be answered by measuring instead of
+    /// reasoning. Paths come from the environment, comma-separated.
+    ///
+    /// ```sh
+    /// REPRISE_COVERS="/path/a/cover.jpg,/path/b/cover.png" \
+    ///   cargo test -p reprise-gnome --bins probe_real_covers -- --ignored --nocapture
+    /// ```
+    #[test]
+    #[ignore = "probe: set REPRISE_COVERS to real cover files"]
+    fn probe_real_covers() {
+        let covers = std::env::var("REPRISE_COVERS").expect("REPRISE_COVERS must be set");
+        for path in covers.split(',').filter(|entry| !entry.is_empty()) {
+            probe_buckets(std::path::Path::new(path));
+            let palette = accent_from_cover_file(std::path::Path::new(path));
+            match palette {
+                Some(palette) => println!(
+                    "{path}\n  primary #{:02x}{:02x}{:02x}  second #{:02x}{:02x}{:02x}  third #{:02x}{:02x}{:02x}",
+                    palette.primary.r, palette.primary.g, palette.primary.b,
+                    palette.second.r, palette.second.g, palette.second.b,
+                    palette.third.r, palette.third.g, palette.third.b,
+                ),
+                None => println!("{path}\n  NONE — no usable colour, the shimmer draws nothing"),
+            }
+        }
     }
 }
