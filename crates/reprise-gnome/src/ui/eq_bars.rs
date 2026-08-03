@@ -41,6 +41,18 @@ const EQ_STATIC_CLASS: &str = "reprise-eq-static";
 /// (`reprise-eq-bar-1`…) so each bar can carry its own animation delay and
 /// static height without relying on `:nth-child` support.
 const EQ_BAR_CLASS: &str = "reprise-eq-bar";
+/// Tempo steps for the animated marker, carried by the `ColumnView` exactly
+/// like `.playback-paused`. The loop is what says "this one is playing"; its
+/// *rate* is what says how hard the track is pushing right now. Stepped rather
+/// than continuous because GTK cannot interpolate `animation-duration` — a
+/// changing value restarts the cycle, and a phase jump on a two-second-scale
+/// signal happens rarely enough that nobody sees it, while a per-frame one
+/// would be a permanent stutter.
+pub(in crate::ui) const EQ_CALM_CLASS: &str = "reprise-eq-calm";
+pub(in crate::ui) const EQ_DRIVEN_CLASS: &str = "reprise-eq-driven";
+const EQ_PERIOD_MS: u32 = 1_100;
+const EQ_CALM_PERIOD_MS: u32 = 1_600;
+const EQ_DRIVEN_PERIOD_MS: u32 = 720;
 
 const BAR_COUNT: usize = 3;
 /// Inter-bar gap and the widget's aligned footprint (matches the 16 px
@@ -55,6 +67,28 @@ pub(in crate::ui) enum EqVariant {
     Animated,
     /// Fixed ascending `currentColor` bars for the My Stats sidebar icon.
     Static,
+}
+
+/// Which tempo step a swell reading belongs to, given the step it is in now.
+/// The overlap is hysteresis: without it a reading sitting on a boundary would
+/// flip the class back and forth and restart the cycle each time.
+pub(in crate::ui) fn tempo_step(swell: f64, current: EqTempo) -> EqTempo {
+    let swell = swell.clamp(0.0, 1.0);
+    match current {
+        EqTempo::Calm if swell > 0.38 => EqTempo::Normal,
+        EqTempo::Normal if swell > 0.72 => EqTempo::Driven,
+        EqTempo::Normal if swell < 0.28 => EqTempo::Calm,
+        EqTempo::Driven if swell < 0.62 => EqTempo::Normal,
+        other => other,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(in crate::ui) enum EqTempo {
+    Calm,
+    #[default]
+    Normal,
+    Driven,
 }
 
 /// Builds a three-bar equaliser box for `variant`. The caller owns
@@ -96,7 +130,11 @@ pub(in crate::ui) fn css() -> String {
            background-color: currentColor; }}\n\
          .{EQ_ANIMATED_CLASS} .{EQ_BAR_CLASS} {{ \
            background-color: @reprise_player_accent; \
-           animation: reprise-eq 1100ms ease-in-out infinite; }}\n\
+           animation: reprise-eq {EQ_PERIOD_MS}ms ease-in-out infinite; }}\n\
+         .{EQ_CALM_CLASS} .{EQ_ANIMATED_CLASS} .{EQ_BAR_CLASS} {{ \
+           animation-duration: {EQ_CALM_PERIOD_MS}ms; }}\n\
+         .{EQ_DRIVEN_CLASS} .{EQ_ANIMATED_CLASS} .{EQ_BAR_CLASS} {{ \
+           animation-duration: {EQ_DRIVEN_PERIOD_MS}ms; }}\n\
          .{EQ_BAR_CLASS}-1 {{ animation-delay: 0ms; }}\n\
          .{EQ_BAR_CLASS}-2 {{ animation-delay: -450ms; }}\n\
          .{EQ_BAR_CLASS}-3 {{ animation-delay: -800ms; }}\n\
@@ -160,6 +198,40 @@ mod tests {
         // Pause must be scoped to the animated variant under the ColumnView's
         // `.playback-paused`, never the static sidebar icon.
         assert!(css.contains(".playback-paused .reprise-eq-animated .reprise-eq-bar"));
+    }
+
+    #[test]
+    fn ac_24_the_marker_changes_tempo_in_steps_with_hysteresis() {
+        // Stepped, because GTK restarts a keyframe cycle whenever its duration
+        // changes: a continuously tracked rate would stutter permanently.
+        assert_eq!(tempo_step(0.10, EqTempo::Normal), EqTempo::Calm);
+        assert_eq!(tempo_step(0.50, EqTempo::Calm), EqTempo::Normal);
+        assert_eq!(tempo_step(0.90, EqTempo::Normal), EqTempo::Driven);
+        assert_eq!(tempo_step(0.40, EqTempo::Driven), EqTempo::Normal);
+
+        // The overlap keeps a reading sitting on a boundary from flipping the
+        // class back and forth, which would restart the cycle each time.
+        assert_eq!(tempo_step(0.30, EqTempo::Calm), EqTempo::Calm);
+        assert_eq!(tempo_step(0.30, EqTempo::Normal), EqTempo::Normal);
+        assert_eq!(tempo_step(0.65, EqTempo::Driven), EqTempo::Driven);
+
+        // Out-of-range readings clamp instead of picking a nonsense step.
+        assert_eq!(tempo_step(4.0, EqTempo::Calm), EqTempo::Normal);
+        assert_eq!(tempo_step(-1.0, EqTempo::Driven), EqTempo::Normal);
+    }
+
+    #[test]
+    fn ac_24_the_tempo_steps_are_scoped_like_the_paused_state() {
+        let css = css();
+        // Same shape as `.playback-paused`: an ancestor class on the
+        // ColumnView, so no cell is touched and the viewport cannot move.
+        assert!(css.contains(".reprise-eq-calm .reprise-eq-animated .reprise-eq-bar"));
+        assert!(css.contains(".reprise-eq-driven .reprise-eq-animated .reprise-eq-bar"));
+        assert!(css.contains("animation-duration: 1600ms"));
+        assert!(css.contains("animation-duration: 720ms"));
+        // The keyframes themselves are untouched — only the rate changes.
+        assert!(css.contains("@keyframes reprise-eq"));
+        assert!(css.contains("animation: reprise-eq 1100ms"));
     }
 
     #[test]

@@ -211,6 +211,10 @@ impl PlayerController {
     /// discipline as the other `sync_*`: one place feeds the bar.
     pub(in crate::ui) fn sync_bass(&self, kick: f32, pressure: f32) {
         self.bar.set_bass(f64::from(kick), f64::from(pressure));
+        let callbacks = self.bass_changed.borrow().clone();
+        for callback in callbacks {
+            callback(kick, pressure);
+        }
     }
 
     /// Reverts the cover-derived accent to the theme fallback AND bumps the

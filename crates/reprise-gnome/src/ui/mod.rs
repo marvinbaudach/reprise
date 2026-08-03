@@ -209,5 +209,15 @@ mod reactive_light_tests {
             !include_str!("now_playing/cover_bloom.rs").contains("kick"),
             "the backdrop must never take the Visualizer cover's per-beat exception"
         );
+        // The track list's marker takes its tempo from `swell`. It must never
+        // take it from `kick`: that view is a surface for reading and for
+        // hitting, and a per-beat rate there is the restlessness rounds 3 and
+        // 5 took out of it.
+        let selection = include_str!("track_list/current_track_selection.rs");
+        assert!(selection.contains("swell"), "the marker lost its envelope");
+        assert!(
+            !selection.contains("kick.") && !selection.contains("kick)"),
+            "the track list started reading the per-beat signal"
+        );
     }
 }

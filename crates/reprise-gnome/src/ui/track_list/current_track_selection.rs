@@ -91,6 +91,42 @@ pub(in crate::ui) fn wire(player: Option<&Rc<PlayerController>>, track_list: &Rc
         }
     });
 
+    // The marker's loop runs faster where the track pushes harder. It reads
+    // `swell`, the same slow envelope the cover breathes on — never `kick`:
+    // the track list is a surface for reading and for hitting, and a
+    // per-beat rate there would be the restlessness rounds 3 and 5 removed.
+    {
+        let track_list_for_bass = Rc::downgrade(track_list);
+        let swell = std::cell::RefCell::new(crate::ui::swell::Swell::default());
+        let tempo = std::cell::Cell::new(crate::ui::eq_bars::EqTempo::default());
+        let last_us = std::cell::Cell::new(0i64);
+        player.add_on_bass_changed(move |_kick, pressure| {
+            let Some(track_list) = track_list_for_bass.upgrade() else {
+                return;
+            };
+            let now = gtk4::glib::monotonic_time();
+            let previous = last_us.replace(now);
+            let dt_s = if previous == 0 {
+                0.0
+            } else {
+                ((now - previous) as f64 / 1_000_000.0).clamp(0.0, 0.25)
+            };
+            let value = {
+                let mut swell = swell.borrow_mut();
+                swell.advance(f64::from(pressure), dt_s);
+                if crate::ui::motion::animations_enabled() {
+                    swell.value()
+                } else {
+                    swell.value_without_motion()
+                }
+            };
+            let next = crate::ui::eq_bars::tempo_step(value, tempo.get());
+            if next != tempo.replace(next) {
+                track_list.set_marker_tempo(next);
+            }
+        });
+    }
+
     let track_list_for_state = Rc::downgrade(track_list);
     player.add_on_playback_state_changed(move |state| {
         if let Some(track_list) = track_list_for_state.upgrade() {
@@ -129,6 +165,10 @@ impl PlayerController {
 
     /// Adds a playback-state listener — the `add_on_current_track_changed`
     /// counterpart for the running/paused half of the marker.
+    pub(in crate::ui) fn add_on_bass_changed(&self, callback: impl Fn(f32, f32) + 'static) {
+        self.bass_changed.borrow_mut().push(Rc::new(callback));
+    }
+
     pub(in crate::ui) fn add_on_playback_state_changed(
         &self,
         callback: impl Fn(PlaybackState) + 'static,
@@ -308,6 +348,22 @@ impl TrackList {
     /// equaliser's keyframes are scoped under it (see `eq_bars.rs`), so one
     /// class on a stable, non-recycled ancestor freezes every visible
     /// now-playing equaliser at once — no per-cell bookkeeping.
+    /// Sets the marker loop's tempo the same way `set_playback_paused` sets
+    /// its frozen state: one class on the `ColumnView`, which is a stable,
+    /// non-recycled ancestor. No cell is touched, so this cannot move the
+    /// viewport — the failure `now_playing_marker.rs` exists to avoid.
+    fn set_marker_tempo(&self, tempo: crate::ui::eq_bars::EqTempo) {
+        use crate::ui::eq_bars::{EqTempo, EQ_CALM_CLASS, EQ_DRIVEN_CLASS};
+        let view = &self.shared.column_view;
+        view.remove_css_class(EQ_CALM_CLASS);
+        view.remove_css_class(EQ_DRIVEN_CLASS);
+        match tempo {
+            EqTempo::Calm => view.add_css_class(EQ_CALM_CLASS),
+            EqTempo::Driven => view.add_css_class(EQ_DRIVEN_CLASS),
+            EqTempo::Normal => {}
+        }
+    }
+
     fn set_playback_paused(&self, paused: bool) {
         if paused {
             self.shared.column_view.add_css_class("playback-paused");

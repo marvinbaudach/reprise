@@ -2903,8 +2903,7 @@ STYLE-1).
   playhead alone reads `kick` for its compact glow. While the Visualizer
   is visible, the panel cover cross-fades over MOT-1's 400 ms Ambient
   window from `swell` to `kick`; the player-bar cover stays on `swell`.
-  **The transport controls and the track list stay
-  still**, and so do the bar heights: the waveform's geometry
+  **The transport controls stay still**, and so do the bar heights: the waveform's geometry
   is exactly what `shape_display_peaks` delivers at every reading,
   because a 30 % amplitude on a 3 px bar moves it by a fraction of a
   pixel and each bar crosses its rounding boundary at a different moment
@@ -2915,6 +2914,16 @@ STYLE-1).
   over seconds on `swell`, a UI-side slow envelope of `pressure` crossed
   with a free-running 5.5 s cycle — deliberately not locked to the tempo,
   because a swell that locks to the beat is a tick again, only slower.
+  **In the track list only the marker's tempo follows**, in steps: the
+  three-bar loop that says "this one is playing" runs slower where the
+  track rests and faster where it pushes, driven by `swell` and never by
+  `kick`. Nothing else there moves — no light, no wash, no change to a
+  bar's height, because that view is a surface for reading and for
+  hitting. The steps carry hysteresis and sit on the `ColumnView` as
+  ancestor classes, exactly like the paused state, so no cell is touched
+  and the viewport cannot move; they are steps rather than a tracked
+  rate because GTK restarts a keyframe cycle whenever its duration
+  changes.
   The play/pause button is what a
   pointer aims at and, once the running track scrolls out of the list,
   the only place the playback state is read from — a control that

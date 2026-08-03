@@ -179,7 +179,12 @@ use reprise_core::media_integration::{
     MediaIntegrationHandles, MprisPlaybackStatus, SharedAgentQueueState, SharedMprisState,
     DEFAULT_VOLUME,
 };
-use reprise_core::playback::{PlaybackBackend, PlaybackState, PlayerEvent, SpectrumFrame};
+use reprise_core::playback::{PlaybackBackend, PlayerEvent};
+
+use super::player_callbacks::{
+    OnBassChanged, OnNowPlayingPanelStateChanged, OnNowPlayingPanelTrackChanged,
+    OnSongVisualSpectrumChanged,
+};
 use reprise_core::queries;
 use reprise_core::queue::Queue;
 use reprise_core::up_next::{QueueItem, UpNextQueue};
@@ -296,6 +301,7 @@ pub struct PlayerController {
     /// `now_playing_wiring.rs`'s `sync_state`.
     pub(in crate::ui) playback_state_changed:
         RefCell<Vec<super::current_track_selection::OnPlaybackStateChanged>>,
+    pub(in crate::ui) bass_changed: RefCell<Vec<OnBassChanged>>,
     /// Independent loaded-track feed for the right Now Playing panel. This
     /// follows the player's cache, never the library selection.
     pub(in crate::ui) now_playing_panel_track_changed:
@@ -407,10 +413,6 @@ pub(in crate::ui) struct NowPlaying {
     pub(in crate::ui) path: String,
 }
 
-type OnNowPlayingPanelTrackChanged = Rc<dyn Fn(Option<NowPlaying>)>;
-type OnNowPlayingPanelStateChanged = Rc<dyn Fn(PlaybackState)>;
-type OnSongVisualSpectrumChanged = Rc<dyn Fn(SpectrumFrame)>;
-
 impl PlayerController {
     /// Builds the controller and the event bridge around injected platform
     /// backends assembled by the window composition root.
@@ -478,6 +480,7 @@ impl PlayerController {
             queue_changed: RefCell::new(Vec::new()),
             current_track_changed: RefCell::new(Vec::new()),
             playback_state_changed: RefCell::new(Vec::new()),
+            bass_changed: RefCell::new(Vec::new()),
             now_playing_panel_track_changed: RefCell::new(None),
             now_playing_panel_state_changed: RefCell::new(None),
             song_visual_spectrum_changed: RefCell::new(None),
