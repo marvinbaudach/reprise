@@ -45,6 +45,84 @@ fn ac_24_bar_heights_never_move_with_the_music() {
     }
 }
 
+fn rgb_from_hex(hex: &str) -> (f64, f64, f64) {
+    let hex = hex.strip_prefix('#').expect("theme colors use #RRGGBB");
+    let channel = |offset| {
+        f64::from(
+            u8::from_str_radix(&hex[offset..offset + 2], 16)
+                .expect("theme colors use hexadecimal channels"),
+        ) / 255.0
+    };
+    (channel(0), channel(2), channel(4))
+}
+
+fn accent_rgb() -> (f64, f64, f64) {
+    rgb_from_hex(
+        crate::ui::style::theme::Theme::DEFAULT
+            .palette()
+            .player_accent,
+    )
+}
+
+fn composited_luminance(rgb: (f64, f64, f64), alpha: f64) -> f64 {
+    let background = rgb_from_hex(
+        crate::ui::style::theme::Theme::DEFAULT
+            .palette()
+            .headerbar_bg,
+    );
+    let composite = |foreground: f64, background: f64| {
+        foreground * alpha.clamp(0.0, 1.0) + background * (1.0 - alpha.clamp(0.0, 1.0))
+    };
+    let linear = |channel: f64| {
+        if channel <= 0.04045 {
+            channel / 12.92
+        } else {
+            ((channel + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.2126 * linear(composite(rgb.0, background.0))
+        + 0.7152 * linear(composite(rgb.1, background.1))
+        + 0.0722 * linear(composite(rgb.2, background.2))
+}
+
+#[test]
+fn ac_24_the_played_colour_rides_a_floor_that_never_moves() {
+    use super::render::played_light;
+    // The floor is what keeps the progress boundary readable on a quiet track.
+    assert!((played_light(0.0, 0.0) - 0.74).abs() < 1e-9);
+    assert!((played_light(1.0, 0.0) - 0.90).abs() < 1e-9);
+    assert!((played_light(0.0, 1.0) - 0.84).abs() < 1e-9);
+    assert!((played_light(1.0, 1.0) - 1.00).abs() < 1e-9);
+    // Out-of-range readings clamp instead of over-driving the fill.
+    assert!((played_light(-1.0, -1.0) - 0.74).abs() < 1e-9);
+    assert!((played_light(4.0, 4.0) - 1.00).abs() < 1e-9);
+    // Never below the floor, at any reading in range.
+    for step in 0..=20 {
+        let reading = f64::from(step) / 20.0;
+        assert!(played_light(reading, reading) >= 0.74 - 1e-9);
+    }
+}
+
+#[test]
+fn ac_24_the_progress_boundary_is_legible_in_silence() {
+    use super::render::played_light;
+
+    // Measured requirement, not a matter of taste: at pressure = swell = 0 the
+    // played part must differ from the unplayed part by at least 3:1 in
+    // luminance, so the boundary reads without relying on hue — which is what
+    // a red/green-blind user, or a glance, actually has.
+    //
+    // Composite each side over the bar's own background and compare relative
+    // luminance (WCAG: (L1 + 0.05) / (L2 + 0.05)).
+    let played = composited_luminance(accent_rgb(), played_light(0.0, 0.0) * 1.0);
+    let unplayed = composited_luminance((1.0, 1.0, 1.0), UNPLAYED_ALPHA);
+    let ratio = (played.max(unplayed) + 0.05) / (played.min(unplayed) + 0.05);
+    assert!(
+        ratio >= 3.0,
+        "played/unplayed luminance ratio is only {ratio:.2}:1"
+    );
+}
+
 #[test]
 fn ac_24_played_bars_brighten_toward_the_playhead() {
     use super::render::played_alpha;
@@ -242,6 +320,9 @@ fn ensure_resampled_clears_display_peaks_when_raw_empty() {
         crossfade_start_us: 0,
         desaturation_progress: 0.0,
         desaturation_target: 0.0,
+        bass_kick: 0.0,
+        bass_pressure: 0.0,
+        bass_swell: 0.0,
         min_bar_height: MIN_BAR_HEIGHT,
         max_bar_height: MAX_BAR_HEIGHT,
         bar_count_override: None,
@@ -271,6 +352,9 @@ fn ensure_resampled_populates_on_width_change() {
         crossfade_start_us: 0,
         desaturation_progress: 0.0,
         desaturation_target: 0.0,
+        bass_kick: 0.0,
+        bass_pressure: 0.0,
+        bass_swell: 0.0,
         min_bar_height: MIN_BAR_HEIGHT,
         max_bar_height: MAX_BAR_HEIGHT,
         bar_count_override: None,

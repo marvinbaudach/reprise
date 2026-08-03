@@ -97,6 +97,21 @@ struct BarDrawStyle {
 
 const PLAYED_MIN_ALPHA: f64 = 0.55;
 
+/// The colour term of a played bar: a floor plus what the music adds.
+///
+/// The floor is not tuning. The played/unplayed boundary is the seek bar's
+/// primary information, and a boundary that dims with a quiet passage makes
+/// the position unreadable exactly when the listener looks for it.
+const PLAYED_LIGHT_FLOOR: f64 = 0.74;
+const PLAYED_LIGHT_PER_PRESSURE: f64 = 0.16;
+const PLAYED_LIGHT_PER_SWELL: f64 = 0.10;
+
+pub(super) fn played_light(pressure: f64, swell: f64) -> f64 {
+    PLAYED_LIGHT_FLOOR
+        + PLAYED_LIGHT_PER_PRESSURE * pressure.clamp(0.0, 1.0)
+        + PLAYED_LIGHT_PER_SWELL * swell.clamp(0.0, 1.0)
+}
+
 /// Brightness of an already-played bar: dim at the start of the track, full at
 /// the playhead. Purely positional, so it holds still within a frame.
 pub(super) fn played_alpha(index: usize, count: usize, fraction: f64) -> f64 {
@@ -183,7 +198,9 @@ fn draw_bars(
                 r,
                 g,
                 b,
-                style.opacity * played_alpha(index, count, state.fraction),
+                style.opacity
+                    * played_light(state.bass_pressure, state.bass_swell)
+                    * played_alpha(index, count, state.fraction),
             );
         } else if is_hover_preview {
             cr.set_source_rgba(1.0, 1.0, 1.0, HOVER_PREVIEW_ALPHA * style.opacity);

@@ -35,8 +35,9 @@ const CONTENT_HEIGHT: i32 = 28;
 const MIN_BAR_HEIGHT: f64 = MAX_BAR_HEIGHT * 0.15;
 const MAX_BAR_HEIGHT: f64 = 26.0;
 /// Alpha for not-yet-played bars — white on dark background, deliberately
-/// receding so the played (accent) part dominates.
-const UNPLAYED_ALPHA: f64 = 0.18;
+/// receding so the played (accent) part keeps at least 3:1 luminance contrast
+/// at the quietest played-light value.
+const UNPLAYED_ALPHA: f64 = 0.12;
 /// Alpha for unplayed bars between the playhead and the hovered position —
 /// the seek preview.
 const HOVER_PREVIEW_ALPHA: f64 = 0.30;
@@ -106,6 +107,10 @@ struct State {
     desaturation_progress: f64, // 0.0 = full chroma, 1.0 = paused chroma
     #[allow(dead_code)] // Consumed by the PlayerBar/Compact wiring in MOT-5 Phase B.
     desaturation_target: f64,
+    /// Live bass readings, 0..1. Presentation only; the stored peaks never move.
+    bass_kick: f64,
+    bass_pressure: f64,
+    bass_swell: f64,
     min_bar_height: f64,
     max_bar_height: f64,
     /// Fixed bar count for the mini player (frame 1e); `None` = width-derived.
@@ -221,6 +226,9 @@ impl WaveformSeek {
             crossfade_start_us: 0,
             desaturation_progress: 0.0,
             desaturation_target: 0.0,
+            bass_kick: 0.0,
+            bass_pressure: 0.0,
+            bass_swell: 0.0,
             min_bar_height: min_h,
             max_bar_height: max_h,
             bar_count_override,
@@ -449,6 +457,34 @@ impl WaveformSeek {
         let animation = motion::timed(&self.area, from, target, motion::STANDARD, animation_target);
         motion::replace_animation(&self.desaturation_animation, animation.clone());
         animation.play();
+    }
+
+    /// Feeds the played-bar colour and the playhead dot without changing the
+    /// stored waveform geometry. MOT-7 gates only the beat-driven dot; pressure
+    /// and swell are colour inputs and remain visible without animations.
+    pub(in crate::ui) fn set_bass(&self, kick: f64, pressure: f64, swell: f64) {
+        let kick = if motion::animations_enabled() {
+            kick
+        } else {
+            0.0
+        };
+        let changed = {
+            let mut state = self.state.borrow_mut();
+            if (state.bass_kick - kick).abs() < 0.01
+                && (state.bass_pressure - pressure).abs() < 0.01
+                && (state.bass_swell - swell).abs() < 0.01
+            {
+                false
+            } else {
+                state.bass_kick = kick;
+                state.bass_pressure = pressure;
+                state.bass_swell = swell;
+                true
+            }
+        };
+        if changed {
+            self.area.queue_draw();
+        }
     }
 
     /// Instantly set the playback position (0..1).  Prefer `set_fraction_smooth`
