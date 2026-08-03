@@ -1,4 +1,4 @@
-use super::{badge_text, fetch_allowed, updates_badge, Feed, FeedBadge, FeedRefresh};
+use super::{badge_text, delta_batch, fetch_allowed, updates_badge, Feed, FeedBadge, FeedRefresh};
 
 fn ready(unseen: i64) -> FeedBadge {
     FeedBadge {
@@ -6,6 +6,74 @@ fn ready(unseen: i64) -> FeedBadge {
         ready: true,
         unseen,
     }
+}
+
+#[test]
+fn unseen_items_are_the_current_delta_batch() {
+    let batch = delta_batch(vec![("first", None), ("second", None)], |item| item.1, 5);
+
+    assert_eq!(batch.shown, [("first", None), ("second", None)]);
+    assert_eq!(batch.total, 2);
+}
+
+#[test]
+fn the_most_recent_seen_visit_is_the_fallback_batch() {
+    let batch = delta_batch(
+        vec![("older", Some(10)), ("newer", Some(20)), ("same", Some(20))],
+        |item| item.1,
+        5,
+    );
+
+    assert_eq!(batch.shown, [("newer", Some(20)), ("same", Some(20))]);
+    assert_eq!(batch.total, 2);
+}
+
+#[test]
+fn a_delta_batch_preserves_input_order_while_applying_its_cap() {
+    let batch = delta_batch(
+        vec![("first", None), ("second", None), ("third", None)],
+        |item| item.1,
+        2,
+    );
+
+    assert_eq!(batch.shown, [("first", None), ("second", None)]);
+    assert_eq!(batch.total, 3);
+}
+
+#[test]
+fn an_empty_feed_has_an_empty_delta_batch() {
+    let batch = delta_batch(Vec::<(&str, Option<i64>)>::new(), |item| item.1, 5);
+
+    assert!(batch.shown.is_empty());
+    assert_eq!(batch.total, 0);
+}
+
+#[test]
+fn a_zero_cap_keeps_the_full_batch_count() {
+    let batch = delta_batch(vec![("first", None), ("second", None)], |item| item.1, 0);
+
+    assert!(batch.shown.is_empty());
+    assert_eq!(batch.total, 2);
+}
+
+#[test]
+fn unseen_items_exclude_every_already_seen_item_from_the_batch() {
+    let batch = delta_batch(
+        vec![
+            ("seen", Some(30)),
+            ("unseen-first", None),
+            ("older", Some(20)),
+            ("unseen-second", None),
+        ],
+        |item| item.1,
+        5,
+    );
+
+    assert_eq!(
+        batch.shown,
+        [("unseen-first", None), ("unseen-second", None)]
+    );
+    assert_eq!(batch.total, 2);
 }
 
 #[test]

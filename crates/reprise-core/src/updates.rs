@@ -16,6 +16,47 @@ pub enum Feed {
     Concerts,
 }
 
+/// The part of one updates feed that answers what changed since the reader's
+/// last visit.
+///
+/// Selecting and capping that batch is a feed decision shared by every
+/// frontend, not widget state, so it stays beside the badge arithmetic in
+/// Core. Callers provide already sorted candidates and retain that order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeltaBatch<T> {
+    /// The capped items to render.
+    pub shown: Vec<T>,
+    /// The complete batch size before applying the cap.
+    pub total: usize,
+}
+
+/// Selects the unseen items, or the most recently seen batch when all items
+/// have already been seen, and caps only the rendered projection.
+pub fn delta_batch<T>(
+    items: Vec<T>,
+    seen_at: impl Fn(&T) -> Option<i64>,
+    cap: usize,
+) -> DeltaBatch<T> {
+    let has_unseen = items.iter().any(|item| seen_at(item).is_none());
+    let newest_seen = items.iter().filter_map(&seen_at).max();
+    let mut batch = items
+        .into_iter()
+        .filter(|item| {
+            if has_unseen {
+                seen_at(item).is_none()
+            } else {
+                seen_at(item) == newest_seen
+            }
+        })
+        .collect::<Vec<_>>();
+    let total = batch.len();
+    batch.truncate(cap);
+    DeltaBatch {
+        shown: batch,
+        total,
+    }
+}
+
 /// Whether a feed may start a fetch right now.
 ///
 /// A disabled feed never fetches. A feed that is already fetching does not
