@@ -13,7 +13,7 @@
 
 use std::cell::RefCell;
 
-use gtk4::prelude::IsA;
+use gtk4::prelude::*;
 use libadwaita::prelude::AnimationExt;
 
 use crate::ui::motion;
@@ -21,6 +21,7 @@ use crate::ui::motion;
 /// Edge length the cover is scaled to before sampling — small enough to be
 /// cheap, large enough to be representative.
 const SAMPLE_EDGE: i32 = 32;
+const ACCENT_TRANSITION_CLASS: &str = "reprise-cover-accent-transition";
 
 /// An extracted 8-bit color.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -288,6 +289,24 @@ fn accent_css(color: Option<Rgb>) -> String {
     }
 }
 
+/// Stable provider content: changing the symbolic color once lets GTK
+/// interpolate every affected computed property locally. The transition class
+/// is present only for an active cover fade, so unrelated style changes do not
+/// inherit the ambient duration.
+fn accent_provider_css(color: Option<Rgb>) -> String {
+    format!(
+        "{}\n.{ACCENT_TRANSITION_CLASS}, .{ACCENT_TRANSITION_CLASS} * {{ \
+         transition: color {duration}ms {easing}, \
+                     background {duration}ms {easing}, \
+                     border-color {duration}ms {easing}, \
+                     outline-color {duration}ms {easing}, \
+                     box-shadow {duration}ms {easing}; }}",
+        accent_css(color),
+        duration = motion::AMBIENT_MS,
+        easing = motion::AMBIENT_CSS_EASING,
+    )
+}
+
 thread_local! {
     /// Override provider for the cover accent, kept so it can be reloaded per
     /// track. Sits above the theme provider so its `reprise_player_accent`
@@ -304,6 +323,7 @@ thread_local! {
 /// application priority so it overrides the theme's `reprise_player_accent`.
 pub(super) fn install(display: &gtk4::gdk::Display) {
     let provider = gtk4::CssProvider::new();
+    provider.load_from_string(&accent_provider_css(None));
     gtk4::style_context_add_provider_for_display(
         display,
         &provider,
@@ -317,7 +337,7 @@ pub(super) fn install(display: &gtk4::gdk::Display) {
 pub(in crate::ui) fn set_cover_accent(color: Option<Rgb>) {
     ACCENT_PROVIDER.with(|slot| {
         if let Some(provider) = slot.borrow().as_ref() {
-            provider.load_from_string(&accent_css(color));
+            provider.load_from_string(&accent_provider_css(color));
         }
     });
 }
@@ -326,54 +346,29 @@ pub(in crate::ui) fn set_cover_accent(color: Option<Rgb>) {
 // Cross-fade
 // ---------------------------------------------------------------------------
 
-/// Linear interpolation between two u8 values at position `t` ∈ [0, 1].
-fn lerp(a: u8, b: u8, t: f64) -> u8 {
-    (f64::from(a) + (f64::from(b) - f64::from(a)) * t)
-        .round()
-        .clamp(0.0, 255.0) as u8
-}
-
-/// Resolves the selected theme's static accent without duplicating a fallback
-/// literal in the cover pipeline.
-fn theme_fallback_rgb() -> Rgb {
-    let accent = super::CURRENT_THEME.with(|slot| slot.get().palette().accent);
-    let hex = accent
-        .strip_prefix('#')
-        .filter(|hex| hex.len() == 6)
-        .expect("theme accent must use #RRGGBB");
-    let channel = |offset| {
-        u8::from_str_radix(&hex[offset..offset + 2], 16)
-            .expect("theme accent must use hexadecimal channels")
-    };
-    Rgb {
-        r: channel(0),
-        g: channel(2),
-        b: channel(4),
+fn transition_roots(widget: &impl IsA<gtk4::Widget>) -> (gtk4::Widget, Vec<gtk4::Widget>) {
+    let widget = widget.upcast_ref::<gtk4::Widget>();
+    let animation_root = widget
+        .root()
+        .and_then(|root| {
+            root.upcast::<gtk4::glib::Object>()
+                .downcast::<gtk4::Widget>()
+                .ok()
+        })
+        .unwrap_or_else(|| widget.clone());
+    let mut roots = gtk4::Window::list_toplevels();
+    if !roots.iter().any(|root| root == &animation_root) {
+        roots.push(animation_root.clone());
     }
-}
-
-fn accent_during_fade(
-    old: Option<Rgb>,
-    new: Option<Rgb>,
-    fallback: Rgb,
-    value: f64,
-) -> Option<Rgb> {
-    if new.is_none() && value >= 1.0 {
-        return None;
-    }
-    let old = old.unwrap_or(fallback);
-    let new = new.unwrap_or(fallback);
-    Some(Rgb {
-        r: lerp(old.r, new.r, value),
-        g: lerp(old.g, new.g, value),
-        b: lerp(old.b, new.b, value),
-    })
+    (animation_root, roots)
 }
 
 /// Animates the cover accent from `old` to `new` with the Ambient token.
-/// The central motion helper follows the system animation setting. A `None`
-/// argument uses the selected palette's theme accent as the interpolation
-/// endpoint; clearing the override after the fade exposes the same color.
+/// GTK interpolates the affected computed CSS properties beneath a temporary
+/// root class; the display-wide provider is reloaded only once, with the final
+/// endpoint. The central motion helper owns class cleanup and follows the
+/// system animation setting. Clearing the override exposes the selected
+/// palette's theme accent as the CSS transition endpoint.
 pub(in crate::ui) fn cross_fade_accent(
     old: Option<Rgb>,
     new: Option<Rgb>,
@@ -388,13 +383,22 @@ pub(in crate::ui) fn cross_fade_accent(
         return;
     }
 
-    let fallback = theme_fallback_rgb();
-    let target = libadwaita::CallbackAnimationTarget::new(move |value| {
-        set_cover_accent(accent_during_fade(old, new, fallback, value));
+    let (animation_root, transition_roots) = transition_roots(widget);
+    let target = libadwaita::CallbackAnimationTarget::new(|_| {});
+    let animation = motion::timed(&animation_root, 0.0, 1.0, motion::AMBIENT, target);
+    animation.connect_done({
+        let transition_roots = transition_roots.clone();
+        move |_| {
+            for root in &transition_roots {
+                root.remove_css_class(ACCENT_TRANSITION_CLASS);
+            }
+        }
     });
-
-    let animation = motion::timed(widget, 0.0, 1.0, motion::AMBIENT, target);
     CURRENT_ANIMATION.with(|slot| motion::replace_animation(slot, animation.clone()));
+    for root in &transition_roots {
+        root.add_css_class(ACCENT_TRANSITION_CLASS);
+    }
+    set_cover_accent(new);
     animation.play();
 }
 
@@ -586,28 +590,24 @@ mod tests {
     }
 
     #[test]
-    fn lerp_interpolates_correctly() {
-        assert_eq!(lerp(0, 200, 0.0), 0);
-        assert_eq!(lerp(0, 200, 1.0), 200);
-        assert_eq!(lerp(0, 200, 0.5), 100);
-        assert_eq!(lerp(100, 200, 0.5), 150);
+    fn accent_provider_uses_one_ambient_css_transition() {
+        let css = accent_provider_css(Some(Rgb {
+            r: 46,
+            g: 200,
+            b: 166,
+        }));
+
+        assert!(css.contains("@define-color reprise_player_accent #2ec8a6"));
+        assert!(css.contains(&format!("{}ms", motion::AMBIENT_MS)));
+        assert!(css.contains(motion::AMBIENT_CSS_EASING));
+        assert!(css.contains(ACCENT_TRANSITION_CLASS));
     }
 
     #[test]
     fn fade_to_theme_fallback_clears_cover_override_at_endpoint() {
-        let cover = Some(Rgb {
-            r: 200,
-            g: 80,
-            b: 40,
-        });
-        let fallback = Rgb {
-            r: 51,
-            g: 201,
-            b: 163,
-        };
-
-        assert!(accent_during_fade(cover, None, fallback, 0.5).is_some());
-        assert_eq!(accent_during_fade(cover, None, fallback, 1.0), None);
+        let css = accent_provider_css(None);
+        assert!(!css.contains("@define-color reprise_player_accent"));
+        assert!(css.contains(ACCENT_TRANSITION_CLASS));
     }
 
     #[test]
