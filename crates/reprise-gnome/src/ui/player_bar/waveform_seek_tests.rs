@@ -124,6 +124,38 @@ fn ac_24_the_progress_boundary_is_legible_in_silence() {
 }
 
 #[test]
+fn ac_24_the_playhead_dot_swings_hard_because_one_element_cannot_shimmer() {
+    use super::render::{playhead_dot_alpha, playhead_dot_halo, playhead_dot_radius};
+    assert!((playhead_dot_radius(0.0) - 5.0).abs() < 1e-9);
+    assert!((playhead_dot_radius(1.0) - 12.0).abs() < 1e-9);
+    assert!((playhead_dot_halo(0.0) - 4.0).abs() < 1e-9);
+    assert!((playhead_dot_halo(1.0) - 24.0).abs() < 1e-9);
+    assert!((playhead_dot_alpha(0.0) - 0.55).abs() < 1e-9);
+    assert!((playhead_dot_alpha(1.0) - 1.00).abs() < 1e-9);
+    // Out-of-range readings clamp.
+    assert!((playhead_dot_radius(9.0) - 12.0).abs() < 1e-9);
+    assert!((playhead_dot_alpha(-1.0) - 0.55).abs() < 1e-9);
+}
+
+#[test]
+fn ac_24_the_dot_stands_down_where_it_would_be_in_the_way() {
+    use super::render::reactive_light_is_active;
+    assert!(reactive_light_is_active(false, None, 1.0, 1.0));
+    assert!(
+        !reactive_light_is_active(false, Some(0.4), 1.0, 1.0),
+        "drag"
+    );
+    assert!(!reactive_light_is_active(false, None, 0.5, 1.0), "build");
+    assert!(
+        !reactive_light_is_active(false, None, 1.0, 0.5),
+        "crossfade"
+    );
+    // The mini player is 46 bars wide; a dot with a 20 px halo would light
+    // half of it.
+    assert!(!reactive_light_is_active(true, None, 1.0, 1.0), "mini");
+}
+
+#[test]
 fn ac_24_played_bars_brighten_toward_the_playhead() {
     use super::render::played_alpha;
     // At the playhead: full. At the very start of the track: dimmest.
@@ -408,6 +440,31 @@ fn mot_7_waveform_position_hard_switches_when_system_animations_are_disabled() {
     assert_eq!(state.fraction_velocity, 0.0);
     drop(state);
     assert!(waveform.tick_id.borrow().is_none());
+
+    settings.set_gtk_enable_animations(previous);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn ac_24_animations_off_freezes_the_dot_but_keeps_the_colour() {
+    gtk4::init().unwrap();
+    let settings = gtk4::Settings::default().unwrap();
+    let previous = settings.is_gtk_enable_animations();
+    settings.set_gtk_enable_animations(false);
+
+    let waveform = WaveformSeek::new();
+    waveform.set_bass(1.0, 1.0, 0.0);
+
+    let state = waveform.state.borrow();
+    assert_eq!(state.bass_kick, 0.0);
+    assert_eq!(super::render::playhead_dot_radius(state.bass_kick), 5.0);
+    assert_eq!(state.bass_pressure, 1.0);
+    assert_eq!(state.bass_swell, 0.0);
+    assert_eq!(
+        super::render::played_light(state.bass_pressure, state.bass_swell),
+        0.90
+    );
+    drop(state);
 
     settings.set_gtk_enable_animations(previous);
 }

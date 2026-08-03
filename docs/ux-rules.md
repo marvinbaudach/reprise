@@ -2905,27 +2905,27 @@ STYLE-1).
   `impact`, which answers how loud a whole track is rather than what its
   beat is doing: on a limited master it never leaves its resting value.
   `pressure` carries the backdrop's base brightness and `swell` the slow
-  movement of every large surface. **Nothing outside the Visualizer's own
-  canvas reads `kick` at all.** The panel cover used to take the beat while
-  that tab was open — round 5's one exception — and it read as the cover
-  twitching under its own shadow.
-  **The transport controls stay still, and so does the whole seek bar.**
-  Nothing in the waveform reads a bass signal — not the bar heights, not
-  the playhead. Reactive light was tried there twice and rejected twice:
-  first as a lens that swelled the bars around the playhead, then as a
-  glow on the playhead itself. The lens still read as twitching after its
-  growth was quantised to even device pixels, and the glow — riding
-  `kick`, which falls in 70 ms — read as a blink. Both failures share one
-  cause: the seek bar is the one surface the user has to *aim* at, and
-  the eye resolves it at single-pixel scale, so any movement there is
-  read as a defect rather than as life. The waveform's only position cue
-  is the played-bar gradient, which depends on position alone and
-  therefore survives MOT-7, a drag, a build-up and a crossfade.
-  Everything that does move breathes
-  over seconds on `swell`, a UI-side slow envelope of `pressure` crossed
-  with a free-running 5.5 s cycle — deliberately not locked to the tempo,
-  because a swell that locks to the beat is a tick again, only slower.
-  Outside the Visualizer view, `kick` therefore drives nothing at all.
+  movement of every large surface. Outside the Visualizer's own canvas,
+  only the playhead dot reads `kick`. The panel cover used to take the beat
+  while that tab was open — round 5's one exception — and it read as the
+  cover twitching under its own shadow.
+  **The transport controls stay still.** The waveform's **bar heights** never
+  move: three attempts to swell them around the playhead were rejected,
+  because neighbouring bars cross their pixel boundary at different moments
+  and the eye reads that as noise rather than as life. What reacts instead is
+  colour and one dot. The played part takes a floor plus what the bass adds,
+  so every played bar changes by the same amount at the same instant and the
+  progress boundary stays legible at any volume — it keeps at least a 3:1
+  luminance ratio against the unplayed part in silence. The playhead itself is
+  a dot that rides the raw beat, which it may do precisely because a single
+  element cannot shimmer. It falls back to its rest size while the user drags
+  it, during build-up and during a track crossfade; the mini player has no dot
+  at all.
+  Every large surface that does move breathes over seconds on `swell`, a
+  UI-side slow envelope of `pressure` crossed with a free-running 5.5 s cycle
+  — deliberately not locked to the tempo, because a swell that locks to the
+  beat is a tick again, only slower.
+  Outside the Visualizer view, `kick` therefore drives only the playhead dot.
   **In the track list only the marker's tempo follows**, in steps: the
   three-bar loop that says "this one is playing" runs slower where the
   track rests and faster where it pushes, driven by `swell` and never by

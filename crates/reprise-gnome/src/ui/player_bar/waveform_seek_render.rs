@@ -74,18 +74,21 @@ pub(super) fn draw(
         );
     }
 
-    // Playhead: a 1 px line at the exact fraction, drawn over the bars —
-    // replaces the old partially-filled boundary bar (the played/unplayed
-    // switch is a hard per-bucket cut instead).
+    // Playhead: the mini player keeps its 1 px line; the full waveform uses one
+    // additive dot so the raw beat cannot make neighbouring geometry shimmer.
     let playhead_x = (state.fraction * w).clamp(0.5, (w - 0.5).max(0.5));
-    cr.set_source_rgba(r, g, b, PLAYHEAD_ALPHA);
-    cr.rectangle(
-        playhead_x - 0.5,
-        (h - state.max_bar_height) / 2.0,
-        1.0,
-        state.max_bar_height,
-    );
-    let _ = cr.fill();
+    if state.fill_bars {
+        cr.set_source_rgba(r, g, b, PLAYHEAD_ALPHA);
+        cr.rectangle(
+            playhead_x - 0.5,
+            (h - state.max_bar_height) / 2.0,
+            1.0,
+            state.max_bar_height,
+        );
+        let _ = cr.fill();
+    } else {
+        draw_playhead_dot(cr, w, h, playhead_x, (r, g, b), state);
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -105,11 +108,91 @@ const PLAYED_MIN_ALPHA: f64 = 0.55;
 const PLAYED_LIGHT_FLOOR: f64 = 0.74;
 const PLAYED_LIGHT_PER_PRESSURE: f64 = 0.16;
 const PLAYED_LIGHT_PER_SWELL: f64 = 0.10;
+const PLAYHEAD_DOT_RADIUS_REST: f64 = 5.0;
+const PLAYHEAD_DOT_RADIUS_PER_KICK: f64 = 7.0;
+const PLAYHEAD_DOT_HALO_REST: f64 = 4.0;
+const PLAYHEAD_DOT_HALO_PER_KICK: f64 = 20.0;
+const PLAYHEAD_DOT_SPREAD_PER_KICK: f64 = 3.0;
+const PLAYHEAD_DOT_ALPHA_REST: f64 = 0.55;
+const PLAYHEAD_DOT_ALPHA_PER_KICK: f64 = 0.45;
 
 pub(super) fn played_light(pressure: f64, swell: f64) -> f64 {
     PLAYED_LIGHT_FLOOR
         + PLAYED_LIGHT_PER_PRESSURE * pressure.clamp(0.0, 1.0)
         + PLAYED_LIGHT_PER_SWELL * swell.clamp(0.0, 1.0)
+}
+
+pub(super) fn playhead_dot_radius(kick: f64) -> f64 {
+    PLAYHEAD_DOT_RADIUS_REST + PLAYHEAD_DOT_RADIUS_PER_KICK * kick.clamp(0.0, 1.0)
+}
+
+pub(super) fn playhead_dot_halo(kick: f64) -> f64 {
+    PLAYHEAD_DOT_HALO_REST + PLAYHEAD_DOT_HALO_PER_KICK * kick.clamp(0.0, 1.0)
+}
+
+pub(super) fn playhead_dot_alpha(kick: f64) -> f64 {
+    PLAYHEAD_DOT_ALPHA_REST + PLAYHEAD_DOT_ALPHA_PER_KICK * kick.clamp(0.0, 1.0)
+}
+
+fn playhead_dot_spread(kick: f64) -> f64 {
+    PLAYHEAD_DOT_SPREAD_PER_KICK * kick.clamp(0.0, 1.0)
+}
+
+pub(super) fn reactive_light_is_active(
+    fill_bars: bool,
+    drag_fraction: Option<f64>,
+    build_progress: f64,
+    crossfade_progress: f64,
+) -> bool {
+    !fill_bars && drag_fraction.is_none() && build_progress >= 1.0 && crossfade_progress >= 1.0
+}
+
+fn draw_playhead_dot(
+    cr: &gtk4::cairo::Context,
+    width: f64,
+    height: f64,
+    x: f64,
+    color: (f64, f64, f64),
+    state: &State,
+) {
+    let reactive_light_active = reactive_light_is_active(
+        state.fill_bars,
+        state.drag_fraction,
+        state.build_progress,
+        state.crossfade_progress,
+    );
+    let dot_animated = reactive_light_active && motion::animations_enabled();
+    let kick = if dot_animated { state.bass_kick } else { 0.0 };
+    let radius = playhead_dot_radius(kick);
+    let alpha = playhead_dot_alpha(kick);
+    let center_y = height / 2.0;
+    let (r, g, b) = color;
+
+    cr.save().ok();
+    cr.rectangle(0.0, 0.0, width, height);
+    cr.clip();
+    cr.set_operator(gtk4::cairo::Operator::Add);
+
+    if dot_animated {
+        let spread = playhead_dot_spread(kick);
+        let halo = playhead_dot_halo(kick);
+        let halo_end = radius + spread + halo;
+        let gradient = gtk4::cairo::RadialGradient::new(x, center_y, radius, x, center_y, halo_end);
+        gradient.add_color_stop_rgba(0.0, r, g, b, alpha);
+        if spread > 0.0 {
+            gradient.add_color_stop_rgba(spread / (spread + halo), r, g, b, alpha);
+        }
+        gradient.add_color_stop_rgba(1.0, r, g, b, 0.0);
+        if cr.set_source(&gradient).is_ok() {
+            cr.arc(x, center_y, halo_end, 0.0, std::f64::consts::TAU);
+            let _ = cr.fill();
+        }
+    }
+
+    cr.set_source_rgba(r, g, b, alpha);
+    cr.arc(x, center_y, radius, 0.0, std::f64::consts::TAU);
+    let _ = cr.fill();
+    cr.restore().ok();
 }
 
 /// Brightness of an already-played bar: dim at the start of the track, full at
