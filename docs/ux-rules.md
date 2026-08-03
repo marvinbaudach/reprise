@@ -2875,20 +2875,25 @@ STYLE-1).
   cover color does the theme accent apply.
 
 - **AC-24** [active] [gtk] — The reactive light is one layer with one
-  source. The now-playing bloom, the ring around the play button, and the
-  swell of the waveform around the playhead all read
-  `BassPressure.impact` and nothing else — never the CAVA bars, whose
-  auto-sensitivity makes a quiet vocal reach the same value as a drop.
-  All three rest at fixed values (bloom 0.10 at scale 1.0, ring alpha
-  0.12, lens 0) and reach their maximum at impact 1.0; the movement is
-  meant to read as light, not as motion. They are inert whenever the
+  pair of sources. The now-playing bloom, the ring around the play
+  button, the swell of the waveform around the playhead, the player
+  bar's cover glow and the wash on the running library row all read
+  `BassPressure.kick` and `BassPressure.pressure` — never the CAVA
+  bars, whose auto-sensitivity makes a quiet vocal reach the same value
+  as a drop, and never `impact`, which answers how loud a whole track
+  is rather than what its beat is doing: on a limited master it never
+  leaves its resting value. `pressure` carries the brightness and
+  `kick` the movement on top of it, added rather than blended, so a
+  four-to-the-floor reads as a lit bed that flashes on the beat, a held
+  breakdown as light standing still and bright, and a hip-hop beat as a
+  darker bed with harder hits. Every effect rests at its value for
+  `kick = pressure = 0` (bloom 0.06 at scale 1.0, ring 0.10, lens 0,
+  bar cover 0.10, row wash 0.08) and is pinned there whenever the
   reading is absent or must not move: with the "Song Visuals" plugin
-  switched off — which is the deliberate off-switch for the whole layer —
-  with `gtk-enable-animations=false` (MOT-7), and outside playback, where
+  off — the deliberate off-switch for the whole layer — with
+  `gtk-enable-animations=false` (MOT-7), and outside playback, where
   only the bloom keeps a slow breath. While the Visual tab is open the
-  bloom holds its rest value: that tab carries its own light language and
-  two systems pulsing in different colours against each other is the
-  failure case.
+  bloom holds its rest value: that tab carries its own light language.
 
 ## Y. Library Doctor / Tag Cleanup
 

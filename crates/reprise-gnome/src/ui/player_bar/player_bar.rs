@@ -418,7 +418,7 @@ impl PlayerBar {
         if state != PlaybackState::Playing {
             // No spectrum arrives outside playback; without this the ring and
             // the lens would freeze on the last frame that did (AC-24).
-            self.set_bass_impact(0.0);
+            self.set_bass(0.0, 0.0);
         }
         self.refresh_sensitivity();
         if state == PlaybackState::Stopped {
@@ -430,17 +430,20 @@ impl PlayerBar {
         self.animate_play_icon_change(new_icon);
     }
 
-    /// The live bass reading, fanned out to the two reactive layers the bar
-    /// owns. Called at the spectrum rate (~86 Hz); each consumer decides for
-    /// itself whether the change is worth a redraw.
-    pub fn set_bass_impact(&self, impact: f64) {
-        let impact = if self.playback_state.get() == PlaybackState::Playing {
-            crate::ui::motion::reactive_amplitude(impact)
+    /// The live bass pair, fanned out to the reactive layers the bar owns.
+    /// Called at the spectrum rate (~86 Hz); each consumer decides for itself
+    /// whether the change is worth a redraw.
+    pub fn set_bass(&self, kick: f64, pressure: f64) {
+        let (kick, pressure) = if self.playback_state.get() == PlaybackState::Playing {
+            (
+                crate::ui::motion::reactive_amplitude(kick),
+                crate::ui::motion::reactive_amplitude(pressure),
+            )
         } else {
-            0.0
+            (0.0, 0.0)
         };
-        self.play_ring.set_opacity(ring_alpha(impact));
-        self.waveform.set_bass_impact(impact);
+        self.play_ring.set_opacity(ring_alpha(kick, pressure));
+        self.waveform.set_bass_impact(kick);
     }
 
     fn animate_play_pulse(&self) {

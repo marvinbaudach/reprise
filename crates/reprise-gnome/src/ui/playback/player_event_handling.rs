@@ -155,7 +155,8 @@ impl PlayerController {
                 self.advance_gaplessly();
             }
             PlayerEvent::Spectrum(frame) => {
-                self.sync_bass_impact(frame.bass_pressure().impact);
+                let bass = frame.bass_pressure();
+                self.sync_bass(bass.kick, bass.pressure);
                 let callback = self.song_visual_spectrum_changed.borrow().clone();
                 if let Some(callback) = callback {
                     callback(frame);

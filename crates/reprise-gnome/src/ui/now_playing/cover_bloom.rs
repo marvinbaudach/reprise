@@ -29,21 +29,18 @@ const BLOOM_HEIGHT: f64 = 330.0;
 /// Width as a share of the panel width. The overflow is clipped by the panel.
 const BLOOM_WIDTH_FACTOR: f64 = 1.24;
 
-/// Rest and reactive share. The reactive slopes were doubled after a live
-/// measurement on Oceano — "Ascendants": over 66 samples `impact` sat at
-/// 0.30–0.41 under load and spiked to 0.88, but the original 0.16 slope turned
-/// that whole span into 0.085 of opacity — below the threshold where a viewer
-/// can tell a hit from the steady state. The rest values are deliberately
-/// unchanged, so "plugin off" and "animations off" look exactly as before.
-const REST_OPACITY: f64 = 0.10;
-const OPACITY_PER_IMPACT: f64 = 0.32;
+const REST_OPACITY: f64 = 0.06;
+const OPACITY_PER_PRESSURE: f64 = 0.15;
+const OPACITY_PER_KICK: f64 = 0.16;
 const REST_SCALE: f64 = 1.0;
-const SCALE_PER_IMPACT: f64 = 0.03;
+/// Only the attack scales. A held wall that zoomed would read as a camera
+/// move, not as light.
+const SCALE_PER_KICK: f64 = 0.025;
 
 /// The paused breath. Deliberately dimmer than the playing rest value: pause
 /// should look calmer, not merely slower.
-const PAUSE_BASE_OPACITY: f64 = 0.06;
-const PAUSE_SWING: f64 = 0.04;
+const PAUSE_BASE_OPACITY: f64 = 0.035;
+const PAUSE_SWING: f64 = 0.025;
 const PAUSE_PERIOD_S: f64 = 6.0;
 
 /// A reading that moves the alpha by less than this cannot be seen and does not
@@ -54,12 +51,14 @@ const IMPACT_EPSILON: f64 = 0.01;
 /// same way and for the same reason.
 const BREATH_FRAME_INTERVAL_US: i64 = 33_000;
 
-pub(super) fn bloom_opacity(impact: f64) -> f64 {
-    REST_OPACITY + OPACITY_PER_IMPACT * impact.clamp(0.0, 1.0)
+pub(super) fn bloom_opacity(kick: f64, pressure: f64) -> f64 {
+    REST_OPACITY
+        + OPACITY_PER_PRESSURE * pressure.clamp(0.0, 1.0)
+        + OPACITY_PER_KICK * kick.clamp(0.0, 1.0)
 }
 
-pub(super) fn bloom_scale(impact: f64) -> f64 {
-    REST_SCALE + SCALE_PER_IMPACT * impact.clamp(0.0, 1.0)
+pub(super) fn bloom_scale(kick: f64, _pressure: f64) -> f64 {
+    REST_SCALE + SCALE_PER_KICK * kick.clamp(0.0, 1.0)
 }
 
 pub(super) fn pause_opacity(elapsed_s: f64) -> f64 {
@@ -86,7 +85,8 @@ enum Mode {
 struct Inner {
     surface: RefCell<Option<cairo::ImageSurface>>,
     generation: Cell<Option<u64>>,
-    impact: Cell<f64>,
+    kick: Cell<f64>,
+    pressure: Cell<f64>,
     mode: Cell<Mode>,
     breath_start_us: Cell<i64>,
     last_breath_frame_us: Cell<i64>,
@@ -109,7 +109,8 @@ impl CoverBloom {
         let inner = Rc::new(Inner {
             surface: RefCell::new(None),
             generation: Cell::new(None),
-            impact: Cell::new(0.0),
+            kick: Cell::new(0.0),
+            pressure: Cell::new(0.0),
             mode: Cell::new(Mode::Pinned),
             breath_start_us: Cell::new(0),
             last_breath_frame_us: Cell::new(0),
@@ -148,15 +149,19 @@ impl CoverBloom {
         self.area.queue_draw();
     }
 
-    pub(super) fn set_impact(&self, impact: f64) {
+    pub(super) fn set_bass(&self, kick: f64, pressure: f64) {
         if self.inner.mode.get() != Mode::Live {
             return;
         }
-        let impact = motion::reactive_amplitude(impact);
-        if (self.inner.impact.get() - impact).abs() < IMPACT_EPSILON {
+        let kick = motion::reactive_amplitude(kick);
+        let pressure = motion::reactive_amplitude(pressure);
+        if (self.inner.kick.get() - kick).abs() < IMPACT_EPSILON
+            && (self.inner.pressure.get() - pressure).abs() < IMPACT_EPSILON
+        {
             return;
         }
-        self.inner.impact.set(impact);
+        self.inner.kick.set(kick);
+        self.inner.pressure.set(pressure);
         self.area.queue_draw();
     }
 
@@ -191,7 +196,8 @@ impl CoverBloom {
         }
         self.inner.mode.set(mode);
         if mode != Mode::Live {
-            self.inner.impact.set(0.0);
+            self.inner.kick.set(0.0);
+            self.inner.pressure.set(0.0);
         }
         if mode == Mode::Breathing {
             self.inner.breath_start_us.set(0);
@@ -219,7 +225,8 @@ impl CoverBloom {
                 // fixed rest light before stopping instead of freezing the
                 // breath at whichever alpha the last frame happened to use.
                 inner.mode.set(Mode::Pinned);
-                inner.impact.set(0.0);
+                inner.kick.set(0.0);
+                inner.pressure.set(0.0);
                 *inner.tick_id.borrow_mut() = None;
                 area.queue_draw();
                 return gtk4::glib::ControlFlow::Break;
@@ -256,8 +263,8 @@ fn draw(cr: &cairo::Context, width: i32, height: i32, inner: &Inner) {
     };
     let (opacity, scale) = match inner.mode.get() {
         Mode::Live => (
-            bloom_opacity(inner.impact.get()),
-            bloom_scale(inner.impact.get()),
+            bloom_opacity(inner.kick.get(), inner.pressure.get()),
+            bloom_scale(inner.kick.get(), inner.pressure.get()),
         ),
         Mode::Breathing => {
             let start = inner.breath_start_us.get();
@@ -268,7 +275,7 @@ fn draw(cr: &cairo::Context, width: i32, height: i32, inner: &Inner) {
             };
             (pause_opacity(elapsed), REST_SCALE)
         }
-        Mode::Pinned => (bloom_opacity(0.0), bloom_scale(0.0)),
+        Mode::Pinned => (bloom_opacity(0.0, 0.0), bloom_scale(0.0, 0.0)),
     };
 
     let w = f64::from(width);
@@ -318,35 +325,38 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ac_24_bloom_curve_hits_the_three_agreed_points() {
-        // Rest, the value a loud track sits at under load, and the peak.
-        assert!((bloom_opacity(0.0) - 0.10).abs() < 1e-9);
-        assert!((bloom_opacity(0.35) - 0.212).abs() < 1e-9);
-        assert!((bloom_opacity(1.0) - 0.42).abs() < 1e-9);
+    fn ac_24_bloom_adds_a_kick_on_top_of_a_pressure_bed() {
+        // Silence: the rest value, and nothing else.
+        assert!((bloom_opacity(0.0, 0.0) - 0.06).abs() < 1e-9);
+        // A held breakdown: no attack left, but the light stays up.
+        assert!((bloom_opacity(0.0, 0.9) - 0.195).abs() < 1e-9);
+        // A techno hit on a lit bed.
+        assert!((bloom_opacity(0.8, 0.85) - 0.3155).abs() < 1e-9);
+        // Both at full: the ceiling.
+        assert!((bloom_opacity(1.0, 1.0) - 0.37).abs() < 1e-9);
+        // The bed alone must never out-shine bed plus hit.
+        assert!(bloom_opacity(0.0, 1.0) < bloom_opacity(1.0, 1.0));
 
-        assert!((bloom_scale(0.0) - 1.00).abs() < 1e-9);
-        assert!((bloom_scale(0.35) - 1.0105).abs() < 1e-9);
-        assert!((bloom_scale(1.0) - 1.03).abs() < 1e-9);
-    }
+        // Only the attack moves the scale — a held wall must not zoom.
+        assert!((bloom_scale(0.0, 1.0) - 1.0).abs() < 1e-9);
+        assert!((bloom_scale(1.0, 0.0) - 1.025).abs() < 1e-9);
 
-    #[test]
-    fn ac_24_bloom_curve_clamps_instead_of_extrapolating() {
-        assert!((bloom_opacity(-1.0) - 0.10).abs() < 1e-9);
-        assert!((bloom_opacity(4.0) - 0.42).abs() < 1e-9);
-        assert!((bloom_scale(4.0) - 1.03).abs() < 1e-9);
+        // Out-of-range readings clamp, never extrapolate.
+        assert!((bloom_opacity(4.0, 4.0) - 0.37).abs() < 1e-9);
+        assert!((bloom_opacity(-1.0, -1.0) - 0.06).abs() < 1e-9);
     }
 
     #[test]
     fn ac_24_pause_breath_stays_below_the_playing_rest() {
         // Six-second period: trough at 4.5 s, crest at 1.5 s.
-        assert!((pause_opacity(0.0) - 0.08).abs() < 1e-9);
-        assert!((pause_opacity(1.5) - 0.10).abs() < 1e-9);
-        assert!((pause_opacity(4.5) - 0.06).abs() < 1e-9);
+        assert!((pause_opacity(0.0) - 0.0475).abs() < 1e-9);
+        assert!((pause_opacity(1.5) - 0.06).abs() < 1e-9);
+        assert!((pause_opacity(4.5) - 0.035).abs() < 1e-9);
         // Never brighter than the playing rest value, and darker on average:
         // pause must look calmer, not merely slower.
         for step in 0..=60 {
             let t = f64::from(step) / 10.0;
-            assert!(pause_opacity(t) <= bloom_opacity(0.0) + 1e-9);
+            assert!(pause_opacity(t) <= bloom_opacity(0.0, 0.0) + 1e-9);
         }
         // A full period returns to where it started.
         assert!((pause_opacity(0.0) - pause_opacity(6.0)).abs() < 1e-9);

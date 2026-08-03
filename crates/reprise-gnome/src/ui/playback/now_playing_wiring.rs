@@ -202,15 +202,15 @@ impl PlayerController {
         enabled: bool,
     ) -> Result<(), PlaybackError> {
         if !enabled {
-            self.sync_bass_impact(0.0);
+            self.sync_bass(0.0, 0.0);
         }
         self.player.set_spectrum_enabled(enabled)
     }
 
-    /// The bass reading, fanned out to the bar's reactive layers. Same
+    /// The bass pair, fanned out to the bar's reactive layers. Same
     /// discipline as the other `sync_*`: one place feeds the bar.
-    pub(in crate::ui) fn sync_bass_impact(&self, impact: f32) {
-        self.bar.set_bass_impact(f64::from(impact));
+    pub(in crate::ui) fn sync_bass(&self, kick: f32, pressure: f32) {
+        self.bar.set_bass(f64::from(kick), f64::from(pressure));
     }
 
     /// Reverts the cover-derived accent to the theme fallback AND bumps the

@@ -482,9 +482,10 @@ impl NowPlayingPanel {
 
     pub(in crate::ui) fn set_spectrum(&self, frame: SpectrumFrame) {
         if self.song_visuals_enabled.get() {
+            let bass = frame.bass_pressure();
             self.widgets
                 .bloom
-                .set_impact(f64::from(frame.bass_pressure().impact));
+                .set_bass(f64::from(bass.kick), f64::from(bass.pressure));
             self.widgets.visualizer.set_spectrum(frame);
         }
     }

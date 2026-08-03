@@ -8,12 +8,11 @@ use gtk4::prelude::*;
 use super::{build, ring_alpha, PLAY_CSS_CLASS, PLAY_RING_CSS_CLASS};
 
 #[test]
-fn ac_24_ring_alpha_spans_the_agreed_range() {
-    assert!((ring_alpha(0.0) - 0.12).abs() < 1e-9);
-    assert!((ring_alpha(0.35) - 0.3125).abs() < 1e-9);
-    assert!((ring_alpha(1.0) - 0.67).abs() < 1e-9);
-    assert!((ring_alpha(-1.0) - 0.12).abs() < 1e-9);
-    assert!((ring_alpha(9.0) - 0.67).abs() < 1e-9);
+fn ac_24_ring_adds_a_kick_on_top_of_a_pressure_bed() {
+    assert!((ring_alpha(0.0, 0.0) - 0.10).abs() < 1e-9);
+    assert!((ring_alpha(0.0, 0.9) - 0.19).abs() < 1e-9);
+    assert!((ring_alpha(1.0, 1.0) - 0.46).abs() < 1e-9);
+    assert!((ring_alpha(4.0, 4.0) - 0.46).abs() < 1e-9);
 }
 
 #[test]
