@@ -91,33 +91,92 @@ fn ac_24_the_playhead_glow_grows_with_the_kick() {
 
 #[test]
 fn ac_24_the_glow_stands_down_where_it_would_be_in_the_way() {
-    use super::render::glow_is_active;
+    use super::render::reactive_light_is_active;
     // Dragging: light under the finger is in the way while you look for a
     // spot. Build-up and crossfade: two animations fighting.
-    assert!(glow_is_active(false, None, 1.0, 1.0));
-    assert!(!glow_is_active(false, Some(0.4), 1.0, 1.0), "drag");
-    assert!(!glow_is_active(false, None, 0.5, 1.0), "build");
-    assert!(!glow_is_active(false, None, 1.0, 0.5), "crossfade");
+    assert!(reactive_light_is_active(false, None, 1.0, 1.0));
+    assert!(
+        !reactive_light_is_active(false, Some(0.4), 1.0, 1.0),
+        "drag"
+    );
+    assert!(!reactive_light_is_active(false, None, 0.5, 1.0), "build");
+    assert!(
+        !reactive_light_is_active(false, None, 1.0, 0.5),
+        "crossfade"
+    );
     // The mini player is too small: the glow would light half the bar.
-    assert!(!glow_is_active(true, None, 1.0, 1.0), "mini");
+    assert!(!reactive_light_is_active(true, None, 1.0, 1.0), "mini");
 }
 
-/// The regression that keeps the lens from coming back through the side door.
+/// The lens is back. The guard that used to stand here forbade *any* height
+/// movement, because the first lens flickered. It is replaced — not dropped —
+/// by the three tests below, one per cause of that flicker: a window wide
+/// enough to read as a wave, a driver soft enough to be one, and growth
+/// quantised to even device pixels so no edge ever lands on a half-pixel.
 #[test]
-fn ac_24_bar_heights_are_identical_at_every_reading() {
-    use super::render::{bar_height_for_test, bar_height_for_test_with_kick};
-    let state_max = 26.0;
-    let state_min = state_max * 0.15;
+fn ac_24_lens_growth_lands_only_on_even_device_pixels() {
+    use super::render::{bar_height_for_test, lensed_bar_height};
+    // Bars are centre-anchored: an odd growth splits into two half-pixel
+    // edges, which is what flickered. Sweep the whole reading range and every
+    // bar around the playhead, at 1x and at 2x.
+    for &scale in &[1.0, 2.0] {
+        let step = 2.0 * scale;
+        for k in 0..=100 {
+            let kick_soft = f64::from(k) / 100.0;
+            for index in 0..120 {
+                let base = bar_height_for_test(180, 3.9, 26.0);
+                let grown = lensed_bar_height(base, index, 120, 0.5, kick_soft, scale, 26.0);
+                let grow = grown - base;
+                assert!(grow >= 0.0, "the lens must never shrink a bar");
+                let steps = grow / step;
+                assert!(
+                    (steps - steps.round()).abs() < 1e-9,
+                    "growth {grow} is not a multiple of {step} (scale {scale}, kick {kick_soft})"
+                );
+                assert!(grown <= 26.0, "the lens grew past the ceiling: {grown}");
+            }
+        }
+    }
+}
+
+#[test]
+fn ac_24_a_still_reading_leaves_the_waveform_bit_identical() {
+    use super::render::{bar_height_for_test, lensed_bar_height};
+    // At rest the stored waveform is shown exactly as `shape_display_peaks`
+    // produced it — the lens is presentation, not data.
     for level in [0u8, 40, 128, 200, 255] {
-        let reference = bar_height_for_test(level, state_min, state_max);
-        for kick in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let base = bar_height_for_test(level, 3.9, 26.0);
+        for index in 0..120 {
             assert_eq!(
-                bar_height_for_test_with_kick(level, state_min, state_max, kick),
-                reference,
-                "a bar height moved with the reading at kick {kick}"
+                lensed_bar_height(base, index, 120, 0.5, 0.0, 1.0, 26.0),
+                base,
+                "a bar moved at kick_soft = 0"
             );
         }
     }
+}
+
+#[test]
+fn ac_24_the_lens_is_a_wave_not_a_twitch() {
+    use super::render::{bar_height_for_test, lensed_bar_height};
+    // σ = 8 bars: about thirty move together. The first lens used σ ≈ 3.9 and
+    // read as eight bars twitching. Measure the count that actually moves.
+    let base = bar_height_for_test(255, 3.9, 26.0);
+    let moved = (0..240)
+        .filter(|&i| lensed_bar_height(base, i, 240, 0.5, 1.0, 1.0, 200.0) > base)
+        .count();
+    assert!(moved >= 24, "only {moved} bars move — that is a twitch");
+    // And it is symmetric: the lens shows where you are, not what was.
+    let head = 120usize;
+    for offset in 1..=10 {
+        assert_eq!(
+            lensed_bar_height(base, head - offset, 240, 0.5, 1.0, 1.0, 200.0),
+            lensed_bar_height(base, head + offset, 240, 0.5, 1.0, 1.0, 200.0),
+            "the lens is lopsided at ±{offset}"
+        );
+    }
+    // Beyond the cutoff nothing moves at all.
+    assert_eq!(lensed_bar_height(base, 0, 240, 0.5, 1.0, 1.0, 200.0), base);
 }
 
 #[test]

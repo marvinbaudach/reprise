@@ -2909,12 +2909,13 @@ STYLE-1).
   playhead alone reads `kick` for its compact glow. While the Visualizer
   is visible, the panel cover cross-fades over MOT-1's 400 ms Ambient
   window from `swell` to `kick`; the player-bar cover stays on `swell`.
-  **The transport controls stay still**, and so do the bar heights: the waveform's geometry
-  is exactly what `shape_display_peaks` delivers at every reading,
-  because a 30 % amplitude on a 3 px bar moves it by a fraction of a
-  pixel and each bar crosses its rounding boundary at a different moment
-  — that is noise, not swell. The **playhead** carries a glow instead,
-  and it is the only surface outside the Visualizer view that answers a
+  **The transport controls stay still.** The bars around the playhead
+  swell with the bass over a window wide enough to read as one wave, and
+  their growth is quantised to even device pixels so no bar edge ever
+  lands on a half-pixel. The swell, the playhead light and the played-bar
+  gradient all stand down while the user is dragging the playhead, during
+  build-up and during a track crossfade. The **playhead** carries a glow,
+  and it is the only light outside the Visualizer view that answers a
   single hit: it is small, it already sits at a position that moves, and
   it marks the present moment in the track. Everything larger breathes
   over seconds on `swell`, a UI-side slow envelope of `pressure` crossed

@@ -33,6 +33,7 @@ pub(super) fn draw(
     );
     let chroma_factor = 1.0 - 0.55 * state.desaturation_progress;
     let (r, g, b) = scale_chroma(color.0, color.1, color.2, chroma_factor);
+    let scale = f64::from(area.scale_factor());
 
     if state.crossfade_progress < 1.0 && !state.previous_bars.is_empty() {
         draw_bars(
@@ -45,6 +46,7 @@ pub(super) fn draw(
                 color: (r, g, b),
                 build_progress: 1.0,
                 opacity: 1.0 - state.crossfade_progress,
+                scale,
             },
         );
         draw_bars(
@@ -57,6 +59,7 @@ pub(super) fn draw(
                 color: (r, g, b),
                 build_progress: 1.0,
                 opacity: state.crossfade_progress,
+                scale,
             },
         );
     } else {
@@ -70,6 +73,7 @@ pub(super) fn draw(
                 color: (r, g, b),
                 build_progress: state.build_progress,
                 opacity: 1.0,
+                scale,
             },
         );
     }
@@ -78,7 +82,7 @@ pub(super) fn draw(
     // replaces the old partially-filled boundary bar (the played/unplayed
     // switch is a hard per-bucket cut instead).
     let playhead_x = (state.fraction * w).clamp(0.5, (w - 0.5).max(0.5));
-    if glow_is_active(
+    if reactive_light_is_active(
         state.fill_bars,
         state.drag_fraction,
         state.build_progress,
@@ -117,6 +121,7 @@ struct BarDrawStyle {
     color: (f64, f64, f64),
     build_progress: f64,
     opacity: f64,
+    scale: f64,
 }
 
 const GLOW_RADIUS_REST: f64 = 0.22;
@@ -125,6 +130,15 @@ const GLOW_ALPHA_REST: f64 = 0.30;
 const GLOW_ALPHA_PER_PRESSURE: f64 = 0.12;
 const GLOW_ALPHA_PER_KICK: f64 = 0.40;
 const PLAYED_MIN_ALPHA: f64 = 0.55;
+/// σ = 8 bars (the exponent carries the conventional 2σ²), so roughly thirty
+/// bars move together and the result reads as a wave. The first lens used 30.0
+/// here — σ ≈ 3.9 — and read as eight bars twitching.
+const LENS_SIGMA_SQ: f64 = 128.0;
+/// Maximum growth. The Visualizer runs at about 100 %; this is a fifth of it,
+/// because the waveform still has to be readable while it moves.
+const LENS_GAIN: f64 = 0.18;
+/// Past this the Gaussian is worth less than one device pixel anyway.
+const LENS_CUTOFF_BARS: f64 = 24.0;
 
 pub(super) fn playhead_glow_radius(height: f64, kick: f64) -> f64 {
     height * (GLOW_RADIUS_REST + GLOW_RADIUS_PER_KICK * kick.clamp(0.0, 1.0))
@@ -136,15 +150,66 @@ pub(super) fn playhead_glow_alpha(kick: f64, pressure: f64) -> f64 {
         + GLOW_ALPHA_PER_KICK * kick.clamp(0.0, 1.0)
 }
 
-/// The glow is out of the way while the user is aiming, and while another
-/// animation owns the bar.
-pub(super) fn glow_is_active(
+/// The reactive light is out of the way while the user is aiming, and while
+/// another animation owns the bar.
+pub(super) fn reactive_light_is_active(
     fill_bars: bool,
     drag_fraction: Option<f64>,
     build_progress: f64,
     crossfade_progress: f64,
 ) -> bool {
     !fill_bars && drag_fraction.is_none() && build_progress >= 1.0 && crossfade_progress >= 1.0
+}
+
+/// Growth of one bar, quantised to whole **even** device pixels.
+///
+/// Bars are centre-anchored, so an odd growth splits into two half-pixel edges
+/// — that, and not the height itself, is what made the first lens flicker.
+/// The headroom below the ceiling is floored to the same even step, so a bar
+/// that runs into `max_bar_height` still sits on the grid.
+pub(super) fn lens_growth(
+    bar_h: f64,
+    index: usize,
+    count: usize,
+    fraction: f64,
+    kick_soft: f64,
+    scale: f64,
+    max_bar_height: f64,
+) -> f64 {
+    if count == 0 {
+        return 0.0;
+    }
+    let d = index as f64 - fraction * count as f64;
+    if d.abs() > LENS_CUTOFF_BARS {
+        return 0.0;
+    }
+    let lens = (-(d * d) / LENS_SIGMA_SQ).exp();
+    let raw = bar_h * LENS_GAIN * kick_soft.clamp(0.0, 1.0) * lens;
+    let step = 2.0 * scale.max(1.0);
+    let grow = (raw / step).round() * step;
+    let headroom = ((max_bar_height - bar_h).max(0.0) / step).floor() * step;
+    grow.min(headroom)
+}
+
+pub(super) fn lensed_bar_height(
+    bar_h: f64,
+    index: usize,
+    count: usize,
+    fraction: f64,
+    kick_soft: f64,
+    scale: f64,
+    max_bar_height: f64,
+) -> f64 {
+    bar_h
+        + lens_growth(
+            bar_h,
+            index,
+            count,
+            fraction,
+            kick_soft,
+            scale,
+            max_bar_height,
+        )
 }
 
 /// Brightness of an already-played bar: dim at the start of the track, full at
@@ -180,6 +245,12 @@ fn draw_bars(
     } else {
         BAR_RADIUS
     };
+    let lens_active = reactive_light_is_active(
+        state.fill_bars,
+        state.drag_fraction,
+        state.build_progress,
+        state.crossfade_progress,
+    );
 
     for (index, &bar) in bars.iter().enumerate() {
         // Staggered build-up: each bar has a small time offset so they rise
@@ -201,6 +272,19 @@ fn draw_bars(
                 let magnitude = f64::from(level).clamp(0.0, 1.0);
                 bar_height(magnitude, state.min_bar_height, state.max_bar_height) * stagger
             }
+        };
+        let bar_h = if lens_active && matches!(bar, DisplayBar::Level(_)) {
+            lensed_bar_height(
+                bar_h,
+                index,
+                count,
+                state.fraction,
+                state.kick_soft,
+                style.scale,
+                state.max_bar_height,
+            )
+        } else {
+            bar_h
         };
         // Guard against zero-height bars during early animation frames.
         if bar_h < 0.5 {
@@ -257,16 +341,6 @@ pub(super) fn bar_height_for_test(level: u8, min_bar_height: f64, max_bar_height
         min_bar_height,
         max_bar_height,
     )
-}
-
-#[cfg(test)]
-pub(super) fn bar_height_for_test_with_kick(
-    level: u8,
-    min_bar_height: f64,
-    max_bar_height: f64,
-    _kick: f64,
-) -> f64 {
-    bar_height_for_test(level, min_bar_height, max_bar_height)
 }
 
 /// Skeleton waveform: deterministic pseudo-random bar heights that look like
