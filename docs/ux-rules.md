@@ -241,8 +241,9 @@ human. Rationale for changes lives in the git history.
   items remain a separate ordered line in front. Later navigation,
   search, facets, or even refining down to zero hits change neither the
   snapshot nor the running item. After the last context track, playback
-  ends with Repeat off unless an explicit manual entry follows; queue
-  hygiene is governed by PLAY-5a/5b/5c.
+  ends with Repeat off unless an explicit manual entry or PLAY-11's new
+  full-library continuation follows; queue hygiene is governed by
+  PLAY-5a/5b/5c.
 - **PLAY-9** [active] [gtk] — Play/Pause, with playback stopped and no
   loaded title, queue snapshot, or "Play Next", immediately starts a
   randomly chosen existing library title. For this, an immutable
@@ -254,6 +255,18 @@ human. Rationale for changes lives in the git history.
   well as the Now Playing panel. Both surfaces use SRC-11's same gated,
   bounded cache and decode path; a missing or refused image keeps the normal
   player placeholder, never a broken-image state.
+- **PLAY-11** [active] [gtk] — **Playback remains an immutable snapshot
+  until it is exhausted.** Later navigation, search, facets, and clearing a
+  filter do not rewrite the running snapshot. Exception after its final
+  title: if the snapshot originated in a search- or facet-filtered Music
+  library and Music is now completely unfiltered, Reprise immediately creates
+  a new random snapshot from all existing library titles and continues with a
+  different title. Missing and deleted titles are excluded; the just-finished title
+  may occur later in the new snapshot but never starts it. If the filter is
+  still active, the origin was not the Music library, the visible list is
+  not the complete library, or no different title exists, playback ends as
+  before. Explicit Play Next entries retain priority and Repeat One/All
+  retain their existing queue behavior.
 
 ## D. Albums & artists view
 
