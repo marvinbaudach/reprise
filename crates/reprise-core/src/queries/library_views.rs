@@ -9,7 +9,7 @@ use super::clauses::{
     ai_projection, filter_clause, like_pattern, order_clause, row_to_id, row_to_track, PRESENT,
 };
 use super::queue::QUEUE_LIMIT;
-use super::{browse::browse_clause, BrowseFilter, MAX_WINDOW_LIMIT};
+use super::{browse::browse_clause, BrowseFilter, WindowRange, MAX_WINDOW_LIMIT};
 
 pub(crate) const EFFECTIVE_ALBUM_ARTIST: &str =
     "CASE WHEN TRIM(album_artist) <> '' THEN TRIM(album_artist) ELSE TRIM(artist) END";
@@ -36,11 +36,27 @@ pub struct ArtistSummary {
     pub representative_path: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlbumWindow {
+    pub total: i64,
+    pub rows: Vec<AlbumSummary>,
+    pub has_more: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArtistWindow {
+    pub total: i64,
+    pub rows: Vec<ArtistSummary>,
+    pub has_more: bool,
+}
+
 /// Returns one row per case-insensitive `(album, effective album artist)`
 /// pair. Blank albums and missing tracks are excluded; the lowest track id
 /// supplies stable display spelling and the representative cover path.
-pub fn query_albums(db: &Db) -> Result<Vec<AlbumSummary>, rusqlite::Error> {
+pub fn query_albums(db: &Db, window: WindowRange) -> Result<AlbumWindow, rusqlite::Error> {
+    let total = query_album_count(db)?;
     let conn = db.conn();
+    let limit = window.limit.clamp(0, MAX_WINDOW_LIMIT);
     let sql = format!(
         "WITH grouped AS ( \
            SELECT LOWER(TRIM(album)) AS album_key, \
@@ -62,10 +78,11 @@ pub fn query_albums(db: &Db) -> Result<Vec<AlbumSummary>, rusqlite::Error> {
                 COALESCE(grouped.total_play_count, 0) \
          FROM grouped JOIN tracks ON tracks.id = grouped.representative_id \
          ORDER BY TRIM(tracks.album) COLLATE NOCASE ASC, \
-                  {EFFECTIVE_ALBUM_ARTIST} COLLATE NOCASE ASC"
+                  {EFFECTIVE_ALBUM_ARTIST} COLLATE NOCASE ASC \
+         LIMIT ?1 OFFSET ?2"
     );
     let mut statement = conn.prepare(&sql)?;
-    let rows = statement.query_map([], |row| {
+    let rows = statement.query_map(rusqlite::params![limit, window.offset], |row| {
         Ok(AlbumSummary {
             album: row.get(0)?,
             album_artist: row.get(1)?,
@@ -77,14 +94,21 @@ pub fn query_albums(db: &Db) -> Result<Vec<AlbumSummary>, rusqlite::Error> {
             total_play_count: row.get(7)?,
         })
     })?;
-    rows.collect()
+    let rows = rows.collect::<Result<Vec<_>, _>>()?;
+    Ok(AlbumWindow {
+        total,
+        has_more: super::surface_browse::has_more(total, window, rows.len()),
+        rows,
+    })
 }
 
 /// One row per case-insensitive effective album artist. Compilation and
 /// featured tracks collapse under their album artist rather than exploding
 /// the list. Blank artists and missing tracks are excluded.
-pub fn query_artists(db: &Db) -> Result<Vec<ArtistSummary>, rusqlite::Error> {
+pub fn query_artists(db: &Db, window: WindowRange) -> Result<ArtistWindow, rusqlite::Error> {
+    let total = query_artist_count(db)?;
     let conn = db.conn();
+    let limit = window.limit.clamp(0, MAX_WINDOW_LIMIT);
     let sql = format!(
         "WITH grouped AS ( \
            SELECT LOWER({EFFECTIVE_ALBUM_ARTIST}) AS artist_key, \
@@ -101,10 +125,11 @@ pub fn query_artists(db: &Db) -> Result<Vec<ArtistSummary>, rusqlite::Error> {
          SELECT {EFFECTIVE_ALBUM_ARTIST}, grouped.track_count, grouped.album_count, \
                 grouped.total_plays, grouped.last_played_at, tracks.path \
          FROM grouped JOIN tracks ON tracks.id = grouped.representative_id \
-         ORDER BY {EFFECTIVE_ALBUM_ARTIST} COLLATE NOCASE ASC"
+         ORDER BY {EFFECTIVE_ALBUM_ARTIST} COLLATE NOCASE ASC \
+         LIMIT ?1 OFFSET ?2"
     );
     let mut statement = conn.prepare(&sql)?;
-    let rows = statement.query_map([], |row| {
+    let rows = statement.query_map(rusqlite::params![limit, window.offset], |row| {
         Ok(ArtistSummary {
             artist: row.get(0)?,
             track_count: row.get(1)?,
@@ -114,13 +139,18 @@ pub fn query_artists(db: &Db) -> Result<Vec<ArtistSummary>, rusqlite::Error> {
             representative_path: row.get(5)?,
         })
     })?;
-    rows.collect()
+    let rows = rows.collect::<Result<Vec<_>, _>>()?;
+    Ok(ArtistWindow {
+        total,
+        has_more: super::surface_browse::has_more(total, window, rows.len()),
+        rows,
+    })
 }
 
-/// Counts the distinct `(album, effective album artist)` groups — the length of
-/// [`query_albums`] without materializing every [`AlbumSummary`]. Same
-/// `PRESENT`/blank-album filter and same case-insensitive grouping keys, so the
-/// two always agree.
+/// Counts the distinct `(album, effective album artist)` groups — the exact
+/// total reported by [`query_albums`] without materializing every
+/// [`AlbumSummary`]. Same `PRESENT`/blank-album filter and same
+/// case-insensitive grouping keys, so the two always agree.
 pub fn query_album_count(db: &Db) -> Result<i64, rusqlite::Error> {
     let conn = db.conn();
     conn.query_row(
@@ -136,9 +166,10 @@ pub fn query_album_count(db: &Db) -> Result<i64, rusqlite::Error> {
     )
 }
 
-/// Counts the distinct effective album artists — the length of [`query_artists`]
-/// without materializing every [`ArtistSummary`]. Same `PRESENT`/blank-artist
-/// filter and case-insensitive key as `query_artists`, so the two always agree.
+/// Counts the distinct effective album artists — the exact total reported by
+/// [`query_artists`] without materializing every [`ArtistSummary`]. Same
+/// `PRESENT`/blank-artist filter and case-insensitive key as `query_artists`,
+/// so the two always agree.
 pub fn query_artist_count(db: &Db) -> Result<i64, rusqlite::Error> {
     let conn = db.conn();
     conn.query_row(
@@ -439,7 +470,7 @@ pub(super) fn query_artist_track_ids(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::queries::{query_track_count, query_track_ids, query_track_window};
+    use crate::queries::{query_track_count, query_track_ids, query_track_window, WindowRange};
     use crate::view_source::ViewSource;
 
     fn seeded_library() -> crate::db::Db {
@@ -460,18 +491,25 @@ mod tests {
         db
     }
 
+    fn full_window() -> WindowRange {
+        WindowRange {
+            offset: 0,
+            limit: MAX_WINDOW_LIMIT,
+        }
+    }
+
     #[test]
     fn artist_and_album_counts_match_the_grouped_summaries() {
         let db = seeded_library();
-        // The counts are exactly the lengths of the grouped summaries — the
-        // point of the facade is to get that number without materializing them.
+        // These fixture-sized windows include every grouped summary, while
+        // the response total still comes from the dedicated count query.
         assert_eq!(
             query_artist_count(&db).unwrap(),
-            query_artists(&db).unwrap().len() as i64
+            query_artists(&db, full_window()).unwrap().rows.len() as i64
         );
         assert_eq!(
             query_album_count(&db).unwrap(),
-            query_albums(&db).unwrap().len() as i64
+            query_albums(&db, full_window()).unwrap().rows.len() as i64
         );
         // Nobody, Other Artist, Solo, Various Artists; the missing "Lost" and
         // blank-album rows are excluded exactly as in the summaries.
@@ -480,11 +518,30 @@ mod tests {
     }
 
     #[test]
+    fn album_and_artist_summaries_are_counted_bounded_windows() {
+        let db = seeded_library();
+        let range = WindowRange {
+            offset: 0,
+            limit: 2,
+        };
+
+        let albums = query_albums(&db, range).unwrap();
+        let artists = query_artists(&db, range).unwrap();
+
+        assert_eq!(albums.total, 3);
+        assert_eq!(albums.rows.len(), 2);
+        assert!(albums.has_more);
+        assert_eq!(artists.total, 4);
+        assert_eq!(artists.rows.len(), 2);
+        assert!(artists.has_more);
+    }
+
+    #[test]
     fn albums_group_by_trimmed_case_insensitive_title_and_effective_artist() {
         let db = seeded_library();
 
         assert_eq!(
-            query_albums(&db).unwrap(),
+            query_albums(&db, full_window()).unwrap().rows,
             vec![
                 AlbumSummary {
                     album: "Compilation".into(),
@@ -526,7 +583,7 @@ mod tests {
         let conn = db.conn();
         let changes_before = conn.total_changes();
 
-        let albums = query_albums(&db).unwrap();
+        let albums = query_albums(&db, full_window()).unwrap().rows;
 
         assert_eq!(conn.total_changes(), changes_before);
         assert!(albums.iter().all(|album| !album.album.is_empty()));
@@ -582,7 +639,7 @@ mod tests {
     #[test]
     fn artists_group_by_effective_album_artist_with_aggregates() {
         let db = seeded_library();
-        let artists = query_artists(&db).unwrap();
+        let artists = query_artists(&db, full_window()).unwrap().rows;
         let names: Vec<&str> = artists.iter().map(|a| a.artist.as_str()).collect();
         assert_eq!(
             names,
@@ -613,7 +670,7 @@ mod tests {
         )
         .unwrap();
 
-        let artists = query_artists(&db).unwrap();
+        let artists = query_artists(&db, full_window()).unwrap().rows;
         let solo = artists.iter().find(|a| a.artist == "Solo").unwrap();
 
         // A per-row read (e.g. only the representative row's play_count) or a
@@ -635,7 +692,7 @@ mod tests {
         .unwrap();
         let changes_before = conn.total_changes();
 
-        let artists = query_artists(&db).unwrap();
+        let artists = query_artists(&db, full_window()).unwrap().rows;
 
         assert_eq!(conn.total_changes(), changes_before);
         assert!(artists.iter().all(|artist| !artist.artist.is_empty()));
@@ -682,7 +739,7 @@ mod tests {
         )
         .unwrap();
 
-        let albums = super::query_albums(&db).unwrap();
+        let albums = super::query_albums(&db, full_window()).unwrap().rows;
         assert_eq!(albums.len(), 1);
         let album = &albums[0];
         assert_eq!(album.year, Some(2020));

@@ -6,9 +6,13 @@ import android.content.SharedPreferences
 import android.net.Uri
 import android.util.Log
 import uniffi.reprise_android_ffi.AlbumRow
+import uniffi.reprise_android_ffi.AlbumWindow as FfiAlbumWindow
 import uniffi.reprise_android_ffi.ArtistRow
+import uniffi.reprise_android_ffi.ArtistWindow as FfiArtistWindow
 import uniffi.reprise_android_ffi.MusicLibrary
 import uniffi.reprise_android_ffi.TrackRow
+import uniffi.reprise_android_ffi.TrackWindow as FfiTrackWindow
+import uniffi.reprise_android_ffi.WindowRange as FfiWindowRange
 
 private const val TAG = "RepriseScan"
 private const val TREE_URI_PREFERENCE = "library_tree_uri"
@@ -61,18 +65,44 @@ internal class AndroidLibrarySessionPort(
         )
     }
 
-    override fun searchTracks(text: String): List<LibraryTrack> =
-        library.searchTracks(text).map(TrackRow::toLibraryTrack)
+    override fun searchTracks(
+        text: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryTrack> = library.searchTracks(text, window.toFfi()).toLibraryTracks()
 
-    override fun listAlbums(): List<LibraryAlbum> =
-        library.listAlbums().map(AlbumRow::toLibraryAlbum)
+    override fun listAlbums(window: LibraryWindowRange): LibraryWindow<LibraryAlbum> =
+        library.listAlbums(window.toFfi()).toLibraryAlbums()
 
-    override fun listArtists(): List<LibraryArtist> =
-        library.listArtists().map(ArtistRow::toLibraryArtist)
+    override fun listArtists(window: LibraryWindowRange): LibraryWindow<LibraryArtist> =
+        library.listArtists(window.toFfi()).toLibraryArtists()
 
-    override fun listAlbumTracks(album: String, albumArtist: String): List<LibraryTrack> =
-        library.listAlbumTracks(album, albumArtist).map(TrackRow::toLibraryTrack)
+    override fun listAlbumTracks(
+        album: String,
+        albumArtist: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryTrack> =
+        library.listAlbumTracks(album, albumArtist, window.toFfi()).toLibraryTracks()
 }
+
+private fun LibraryWindowRange.toFfi() = FfiWindowRange(offset = offset, limit = limit)
+
+private fun FfiTrackWindow.toLibraryTracks() = LibraryWindow(
+    total = total,
+    rows = rows.map(TrackRow::toLibraryTrack),
+    hasMore = hasMore,
+)
+
+private fun FfiAlbumWindow.toLibraryAlbums() = LibraryWindow(
+    total = total,
+    rows = rows.map(AlbumRow::toLibraryAlbum),
+    hasMore = hasMore,
+)
+
+private fun FfiArtistWindow.toLibraryArtists() = LibraryWindow(
+    total = total,
+    rows = rows.map(ArtistRow::toLibraryArtist),
+    hasMore = hasMore,
+)
 
 private fun TrackRow.toLibraryTrack() = LibraryTrack(
     uri = uri,

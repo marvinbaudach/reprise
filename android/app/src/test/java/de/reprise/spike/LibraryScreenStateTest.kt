@@ -3,24 +3,15 @@ package de.reprise.spike
 import androidx.media3.common.Player
 import java.lang.reflect.Proxy
 import java.util.concurrent.atomic.AtomicReference
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
 import uniffi.reprise_android_ffi.AndroidPlaybackSnapshot
 import uniffi.reprise_android_ffi.AndroidPlaybackState
 
-fun main() {
-    unknownTotalUsesIndeterminateProgress()
-    knownTotalUsesHonestProgressFraction()
-    rememberedReadableTreeListsCatalogWithoutScanning()
-    rememberedUnreadableTreeDoesNotTouchCatalog()
-    choosingTreePersistsGrantAndPreferenceBeforeScanning()
-    rescanUsesRememberedTreeWithoutChoosingAgain()
-    applicationLooperDispatchRunsInlineOnItsOwningThread()
-    applicationLooperDispatchPostsAndWaitsFromAnotherThread()
-    positionReadoutUsesTheDurationDeliveredByTheBridge()
-    pausedPlaybackOffersPlayOnTheSurface()
-    mediaSessionTransportReturnsToCore()
-}
-
-private fun mediaSessionTransportReturnsToCore() {
+class LibraryScreenStateTest {
+@Test
+fun mediaSessionTransportReturnsToCore() {
     var playWhenReady = false
     val player = Proxy.newProxyInstance(
         Player::class.java.classLoader,
@@ -52,7 +43,7 @@ private fun mediaSessionTransportReturnsToCore() {
     controlled.seekToNext()
     controlled.seekToPreviousMediaItem()
 
-    check(calls == listOf("toggle", "toggle", "next", "previous"))
+    assertEquals(listOf("toggle", "toggle", "next", "previous"), calls)
 }
 
 private fun primitiveDefault(type: Class<*>): Any? = when (type) {
@@ -64,7 +55,8 @@ private fun primitiveDefault(type: Class<*>): Any? = when (type) {
     else -> null
 }
 
-private fun positionReadoutUsesTheDurationDeliveredByTheBridge() {
+@Test
+fun positionReadoutUsesTheDurationDeliveredByTheBridge() {
     val state = AndroidPlaybackSnapshot(
         state = AndroidPlaybackState.PLAYING,
         currentIndex = 2u,
@@ -73,11 +65,12 @@ private fun positionReadoutUsesTheDurationDeliveredByTheBridge() {
         error = null,
     ).toUiState()
 
-    check(state.positionReadout == "0:01 / 3:00")
-    check(state.currentIndex == 2)
+    assertEquals("0:01 / 3:00", state.positionReadout)
+    assertEquals(2, state.currentIndex)
 }
 
-private fun pausedPlaybackOffersPlayOnTheSurface() {
+@Test
+fun pausedPlaybackOffersPlayOnTheSurface() {
     val state = AndroidPlaybackSnapshot(
         state = AndroidPlaybackState.PAUSED,
         currentIndex = 0u,
@@ -86,10 +79,11 @@ private fun pausedPlaybackOffersPlayOnTheSurface() {
         error = null,
     ).toUiState()
 
-    check(state.playPauseLabel == "Play")
+    assertEquals("Play", state.playPauseLabel)
 }
 
-private fun applicationLooperDispatchRunsInlineOnItsOwningThread() {
+@Test
+fun applicationLooperDispatchRunsInlineOnItsOwningThread() {
     var postCount = 0
     val dispatch = ApplicationLooperDispatch(
         isApplicationThread = { true },
@@ -101,11 +95,12 @@ private fun applicationLooperDispatchRunsInlineOnItsOwningThread() {
 
     val executingThread = dispatch.call { Thread.currentThread().name }
 
-    check(executingThread == Thread.currentThread().name)
-    check(postCount == 0)
+    assertEquals(Thread.currentThread().name, executingThread)
+    assertEquals(0, postCount)
 }
 
-private fun applicationLooperDispatchPostsAndWaitsFromAnotherThread() {
+@Test
+fun applicationLooperDispatchPostsAndWaitsFromAnotherThread() {
     val worker = AtomicReference<Thread>()
     val dispatch = ApplicationLooperDispatch(
         isApplicationThread = { false },
@@ -118,22 +113,25 @@ private fun applicationLooperDispatchPostsAndWaitsFromAnotherThread() {
     val executingThread = dispatch.call { Thread.currentThread().name }
 
     worker.get().join()
-    check(executingThread == "media3-application-looper")
+    assertEquals("media3-application-looper", executingThread)
 }
 
-private fun unknownTotalUsesIndeterminateProgress() {
+@Test
+fun unknownTotalUsesIndeterminateProgress() {
     val scanning = LibraryScreenState.Scanning(processed = 1u, total = null)
 
-    check(scanning.progressPresentation() == ScanProgressPresentation.Indeterminate)
+    assertEquals(ScanProgressPresentation.Indeterminate, scanning.progressPresentation())
 }
 
-private fun knownTotalUsesHonestProgressFraction() {
+@Test
+fun knownTotalUsesHonestProgressFraction() {
     val scanning = LibraryScreenState.Scanning(processed = 1u, total = 4u)
 
-    check(scanning.progressPresentation() == ScanProgressPresentation.Determinate(0.25f))
+    assertEquals(ScanProgressPresentation.Determinate(0.25f), scanning.progressPresentation())
 }
 
-private fun rememberedReadableTreeListsCatalogWithoutScanning() {
+@Test
+fun rememberedReadableTreeListsCatalogWithoutScanning() {
     val port = RecordingLibrarySessionPort(
         rememberedTreeUri = "content://provider/tree/Music",
         readable = true,
@@ -142,19 +140,21 @@ private fun rememberedReadableTreeListsCatalogWithoutScanning() {
 
     val state = LibrarySession(port).restore()
 
-    check(
-        state == LibraryScreenState.Browse(
-            titles = listOf(testTrack()),
-            albums = emptyList(),
-            artists = emptyList(),
+    assertEquals(
+        LibraryScreenState.Browse(
+            titles = completeTestWindow(listOf(testTrack())),
+            albums = completeTestWindow(emptyList()),
+            artists = completeTestWindow(emptyList()),
         ),
+        state,
     )
-    check(port.configuredUris == listOf("content://provider/tree/Music"))
-    check(port.listCalls == 1)
-    check(port.scanCalls == 0)
+    assertEquals(listOf("content://provider/tree/Music"), port.configuredUris)
+    assertEquals(1, port.listCalls)
+    assertEquals(0, port.scanCalls)
 }
 
-private fun rememberedUnreadableTreeDoesNotTouchCatalog() {
+@Test
+fun rememberedUnreadableTreeDoesNotTouchCatalog() {
     val port = RecordingLibrarySessionPort(
         rememberedTreeUri = "content://provider/tree/Music",
         readable = false,
@@ -163,13 +163,14 @@ private fun rememberedUnreadableTreeDoesNotTouchCatalog() {
 
     val state = LibrarySession(port).restore()
 
-    check(state == LibraryScreenState.TreeUnreadable)
-    check(port.configuredUris.isEmpty())
-    check(port.listCalls == 0)
-    check(port.scanCalls == 0)
+    assertEquals(LibraryScreenState.TreeUnreadable, state)
+    assertTrue(port.configuredUris.isEmpty())
+    assertEquals(0, port.listCalls)
+    assertEquals(0, port.scanCalls)
 }
 
-private fun choosingTreePersistsGrantAndPreferenceBeforeScanning() {
+@Test
+fun choosingTreePersistsGrantAndPreferenceBeforeScanning() {
     val port = RecordingLibrarySessionPort(
         rememberedTreeUri = null,
         readable = true,
@@ -179,29 +180,32 @@ private fun choosingTreePersistsGrantAndPreferenceBeforeScanning() {
 
     val state = LibrarySession(port).chooseTree("content://provider/tree/Music", reports::add)
 
-    check(
-        state == LibraryScreenState.Browse(
-            titles = listOf(testTrack()),
-            albums = emptyList(),
-            artists = emptyList(),
+    assertEquals(
+        LibraryScreenState.Browse(
+            titles = completeTestWindow(listOf(testTrack())),
+            albums = completeTestWindow(emptyList()),
+            artists = completeTestWindow(emptyList()),
         ),
+        state,
     )
-    check(
-        port.operations == listOf(
+    assertEquals(
+        listOf(
             "persist:content://provider/tree/Music",
             "remember:content://provider/tree/Music",
             "readable:content://provider/tree/Music",
             "configure:content://provider/tree/Music",
             "scan",
-            "search:",
-            "albums",
-            "artists",
+            "search::0:200",
+            "albums:0:200",
+            "artists:0:200",
         ),
+        port.operations,
     )
-    check(reports.first() == LibraryScreenState.Scanning())
+    assertEquals(LibraryScreenState.Scanning(), reports.first())
 }
 
-private fun rescanUsesRememberedTreeWithoutChoosingAgain() {
+@Test
+fun rescanUsesRememberedTreeWithoutChoosingAgain() {
     val port = RecordingLibrarySessionPort(
         rememberedTreeUri = "content://provider/tree/Music",
         readable = true,
@@ -211,24 +215,27 @@ private fun rescanUsesRememberedTreeWithoutChoosingAgain() {
 
     val state = LibrarySession(port).rescan(reports::add)
 
-    check(
-        state == LibraryScreenState.Browse(
-            titles = listOf(testTrack()),
-            albums = emptyList(),
-            artists = emptyList(),
+    assertEquals(
+        LibraryScreenState.Browse(
+            titles = completeTestWindow(listOf(testTrack())),
+            albums = completeTestWindow(emptyList()),
+            artists = completeTestWindow(emptyList()),
         ),
+        state,
     )
-    check(
-        port.operations == listOf(
+    assertEquals(
+        listOf(
             "readable:content://provider/tree/Music",
             "configure:content://provider/tree/Music",
             "scan",
-            "search:",
-            "albums",
-            "artists",
+            "search::0:200",
+            "albums:0:200",
+            "artists:0:200",
         ),
+        port.operations,
     )
-    check(reports.first() == LibraryScreenState.Scanning())
+    assertEquals(LibraryScreenState.Scanning(), reports.first())
+}
 }
 
 private fun testTrack() = LibraryTrack(
@@ -237,6 +244,12 @@ private fun testTrack() = LibraryTrack(
     artist = "Artist",
     album = "Album",
     durationMs = 1_000,
+)
+
+private fun <T> completeTestWindow(rows: List<T>) = LibraryWindow(
+    total = rows.size.toLong(),
+    rows = rows,
+    hasMore = false,
 )
 
 private class RecordingLibrarySessionPort(
@@ -276,22 +289,28 @@ private class RecordingLibrarySessionPort(
         scanCalls += 1
     }
 
-    override fun searchTracks(text: String): List<LibraryTrack> {
-        operations += "search:$text"
+    override fun searchTracks(
+        text: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryTrack> {
+        operations += "search:$text:${window.offset}:${window.limit}"
         listCalls += 1
-        return tracks
+        return completeTestWindow(tracks)
     }
 
-    override fun listAlbums(): List<LibraryAlbum> {
-        operations += "albums"
-        return emptyList()
+    override fun listAlbums(window: LibraryWindowRange): LibraryWindow<LibraryAlbum> {
+        operations += "albums:${window.offset}:${window.limit}"
+        return completeTestWindow(emptyList())
     }
 
-    override fun listArtists(): List<LibraryArtist> {
-        operations += "artists"
-        return emptyList()
+    override fun listArtists(window: LibraryWindowRange): LibraryWindow<LibraryArtist> {
+        operations += "artists:${window.offset}:${window.limit}"
+        return completeTestWindow(emptyList())
     }
 
-    override fun listAlbumTracks(album: String, albumArtist: String): List<LibraryTrack> =
-        emptyList()
+    override fun listAlbumTracks(
+        album: String,
+        albumArtist: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryTrack> = completeTestWindow(emptyList())
 }
