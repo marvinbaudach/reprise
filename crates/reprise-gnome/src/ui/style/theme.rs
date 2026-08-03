@@ -207,7 +207,9 @@ pub(in crate::ui) fn theme_css(theme: Theme, is_dark: bool) -> String {
          @define-color reprise_secondary_fg_color alpha({fg}, {secondary_alpha});\n\
          @define-color reprise_hint_fg_color alpha({fg}, {hint_alpha});\n\
          @define-color reprise_dim_fg_color {dim};\n\
-         @define-color reprise_player_accent {play};\n",
+         @define-color reprise_player_accent {play};\n\
+         @define-color reprise_player_accent_2 {play};\n\
+         @define-color reprise_player_accent_3 {play};\n",
         win = p.window_bg,
         fg = p.fg,
         view = p.view_bg,
@@ -254,6 +256,8 @@ mod tests {
             "@define-color view_bg_color",
             "@define-color accent_bg_color",
             "@define-color reprise_player_accent",
+            "@define-color reprise_player_accent_2",
+            "@define-color reprise_player_accent_3",
         ] {
             assert!(css.contains(name), "missing color definition: {name}");
         }
@@ -321,11 +325,22 @@ mod tests {
     #[test]
     fn static_player_accent_matches_theme_accent_in_both_appearances() {
         for theme in Theme::all() {
-            for palette in [theme.palette(), theme.light_palette()] {
+            for (is_dark, palette) in [(true, theme.palette()), (false, theme.light_palette())] {
                 assert_eq!(
                     palette.player_accent, palette.accent,
                     "{theme:?} player fallback must use the theme accent"
                 );
+                let css = theme_css(theme, is_dark);
+                for name in [
+                    "reprise_player_accent",
+                    "reprise_player_accent_2",
+                    "reprise_player_accent_3",
+                ] {
+                    assert!(
+                        css.contains(&format!("@define-color {name} {};", palette.player_accent)),
+                        "{theme:?} is missing the {name} fallback"
+                    );
+                }
             }
         }
     }

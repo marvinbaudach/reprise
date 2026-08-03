@@ -1,7 +1,7 @@
 //! Cover-derived player accent ("Follow album cover").
 //!
-//! The dominant, colorful tone of the current album cover is extracted
-//! off-main and installed as an override of `@reprise_player_accent` in a
+//! The three dominant, colorful tones of the current album cover are extracted
+//! off-main and installed as overrides of the three player accent colours in a
 //! dedicated high-priority provider — so the waveform and the play button
 //! (which read that color) take on the album's hue, while selection and
 //! toggles (which read `@accent_color`) keep the theme accent.
@@ -18,124 +18,34 @@ use libadwaita::prelude::AnimationExt;
 
 use crate::ui::motion;
 
-use super::cover_accent_oklab::{is_usable, linear_rgb_to_oklab, oklch_clamp, to_linear};
+use super::cover_accent_oklab::is_usable;
+#[cfg(test)]
+use super::cover_accent_oklab::oklch_clamp;
 pub(in crate::ui) use super::cover_accent_oklab::{scale_chroma, Rgb};
-
-/// Edge length the cover is scaled to before sampling — small enough to be
-/// cheap, large enough to be representative.
-const SAMPLE_EDGE: i32 = 32;
-
-// ---------------------------------------------------------------------------
-// Median-cut
-// ---------------------------------------------------------------------------
-
-/// Recursively splits `pixels` along the channel with the widest range,
-/// up to `depth` levels (producing up to 2^depth buckets). Returns all
-/// buckets as a flat `Vec<Vec<[u8; 3]>>`.
-fn median_cut_buckets(pixels: Vec<[u8; 3]>, depth: u32) -> Vec<Vec<[u8; 3]>> {
-    if depth == 0 || pixels.len() <= 1 {
-        return vec![pixels];
-    }
-
-    // Find the channel with the widest range.
-    let (mut r_min, mut r_max) = (u8::MAX, u8::MIN);
-    let (mut g_min, mut g_max) = (u8::MAX, u8::MIN);
-    let (mut b_min, mut b_max) = (u8::MAX, u8::MIN);
-    for &[r, g, b] in &pixels {
-        r_min = r_min.min(r);
-        r_max = r_max.max(r);
-        g_min = g_min.min(g);
-        g_max = g_max.max(g);
-        b_min = b_min.min(b);
-        b_max = b_max.max(b);
-    }
-
-    let r_range = r_max.saturating_sub(r_min);
-    let g_range = g_max.saturating_sub(g_min);
-    let b_range = b_max.saturating_sub(b_min);
-
-    let mut sorted = pixels;
-    if r_range >= g_range && r_range >= b_range {
-        sorted.sort_unstable_by_key(|&[r, _, _]| r);
-    } else if g_range >= b_range {
-        sorted.sort_unstable_by_key(|&[_, g, _]| g);
-    } else {
-        sorted.sort_unstable_by_key(|&[_, _, b]| b);
-    }
-
-    let mid = sorted.len() / 2;
-    let (lo, hi) = sorted.split_at(mid);
-
-    let mut result = median_cut_buckets(lo.to_vec(), depth - 1);
-    result.extend(median_cut_buckets(hi.to_vec(), depth - 1));
-    result
-}
-
-/// Median-cut dominant accent: splits the pixel set into up to 8 buckets,
-/// picks the bucket with max `population × oklch_chroma`, and OKLCH-clamps
-/// its average RGB. Returns `None` for near-gray or transparent covers.
-fn dominant_accent(pixels: &[u8], channels: usize) -> Option<Rgb> {
-    if channels < 3 {
-        return None;
-    }
-
-    // Collect opaque pixels.
-    let opaque: Vec<[u8; 3]> = pixels
-        .chunks_exact(channels)
-        .filter(|px| channels < 4 || px[3] >= 128)
-        .map(|px| [px[0], px[1], px[2]])
-        .collect();
-
-    if opaque.is_empty() {
-        return None;
-    }
-
-    // Median-cut into 8 buckets (3 levels deep).
-    let buckets = median_cut_buckets(opaque, 3);
-
-    // Score each bucket by population × chroma.
-    let best = buckets.iter().filter_map(|bucket| {
-        if bucket.is_empty() {
-            return None;
-        }
-        let n = bucket.len() as f64;
-        let r_avg = bucket.iter().map(|p| f64::from(p[0])).sum::<f64>() / n;
-        let g_avg = bucket.iter().map(|p| f64::from(p[1])).sum::<f64>() / n;
-        let b_avg = bucket.iter().map(|p| f64::from(p[2])).sum::<f64>() / n;
-
-        let avg = Rgb {
-            r: r_avg.round() as u8,
-            g: g_avg.round() as u8,
-            b: b_avg.round() as u8,
-        };
-
-        let lr = to_linear(avg.r);
-        let lg = to_linear(avg.g);
-        let lb = to_linear(avg.b);
-        let (_, a, b) = linear_rgb_to_oklab(lr, lg, lb);
-        let chroma = (a * a + b * b).sqrt();
-
-        Some((n * chroma, avg))
-    });
-
-    let (_, best_rgb) = best.max_by(|(s1, _), (s2, _)| s1.partial_cmp(s2).unwrap())?;
-    oklch_clamp(best_rgb)
-}
+use super::cover_palette::Palette;
 
 // ---------------------------------------------------------------------------
 // CSS provider
 // ---------------------------------------------------------------------------
 
-/// The `@define-color` override for `color`, or empty (fall back to the theme's
+/// The `@define-color` override for `palette`, or empty (fall back to the theme's
 /// own `reprise_player_accent`) when there is no usable cover accent.
-fn accent_css(color: Option<Rgb>) -> String {
-    match color {
-        Some(c) if is_usable(&c) => {
-            format!(
-                "@define-color reprise_player_accent #{:02x}{:02x}{:02x};",
-                c.r, c.g, c.b
-            )
-        }
+fn accent_css(palette: Option<Palette>) -> String {
+    match palette {
+        Some(p) if is_usable(&p.primary) => format!(
+            "@define-color reprise_player_accent #{:02x}{:02x}{:02x};\n\
+             @define-color reprise_player_accent_2 #{:02x}{:02x}{:02x};\n\
+             @define-color reprise_player_accent_3 #{:02x}{:02x}{:02x};",
+            p.primary.r,
+            p.primary.g,
+            p.primary.b,
+            p.second.r,
+            p.second.g,
+            p.second.b,
+            p.third.r,
+            p.third.g,
+            p.third.b,
+        ),
         _ => String::new(),
     }
 }
@@ -166,10 +76,10 @@ pub(super) fn install(display: &gtk4::gdk::Display) {
 
 /// Applies (or clears, with `None`) the cover-derived player accent. A no-op
 /// before [`install`] has run.
-pub(in crate::ui) fn set_cover_accent(color: Option<Rgb>) {
+pub(in crate::ui) fn set_cover_accent(palette: Option<Palette>) {
     ACCENT_PROVIDER.with(|slot| {
         if let Some(provider) = slot.borrow().as_ref() {
-            provider.load_from_string(&accent_css(color));
+            provider.load_from_string(&accent_css(palette));
         }
     });
 }
@@ -204,21 +114,37 @@ fn theme_fallback_rgb() -> Rgb {
     }
 }
 
-fn accent_during_fade(
-    old: Option<Rgb>,
-    new: Option<Rgb>,
-    fallback: Rgb,
-    value: f64,
-) -> Option<Rgb> {
-    if new.is_none() && value >= 1.0 {
-        return None;
+fn flat_palette(color: Rgb) -> Palette {
+    Palette {
+        primary: color,
+        second: color,
+        third: color,
     }
-    let old = old.unwrap_or(fallback);
-    let new = new.unwrap_or(fallback);
-    Some(Rgb {
+}
+
+fn lerp_rgb(old: Rgb, new: Rgb, value: f64) -> Rgb {
+    Rgb {
         r: lerp(old.r, new.r, value),
         g: lerp(old.g, new.g, value),
         b: lerp(old.b, new.b, value),
+    }
+}
+
+fn accent_during_fade(
+    old: Option<Palette>,
+    new: Option<Palette>,
+    fallback: Rgb,
+    value: f64,
+) -> Option<Palette> {
+    if new.is_none() && value >= 1.0 {
+        return None;
+    }
+    let old = old.unwrap_or_else(|| flat_palette(fallback));
+    let new = new.unwrap_or_else(|| flat_palette(fallback));
+    Some(Palette {
+        primary: lerp_rgb(old.primary, new.primary, value),
+        second: lerp_rgb(old.second, new.second, value),
+        third: lerp_rgb(old.third, new.third, value),
     })
 }
 
@@ -227,8 +153,8 @@ fn accent_during_fade(
 /// argument uses the selected palette's theme accent as the interpolation
 /// endpoint; clearing the override after the fade exposes the same color.
 pub(in crate::ui) fn cross_fade_accent(
-    old: Option<Rgb>,
-    new: Option<Rgb>,
+    old: Option<Palette>,
+    new: Option<Palette>,
     widget: &impl IsA<gtk4::Widget>,
 ) {
     if old == new {
@@ -251,55 +177,12 @@ pub(in crate::ui) fn cross_fade_accent(
 }
 
 // ---------------------------------------------------------------------------
-// Public extraction entry-point
-// ---------------------------------------------------------------------------
-
-/// Extracts the dominant accent from a cover image file. Runs off-main (decodes
-/// a scaled pixbuf and reads its pixels); returns a `Send` [`Rgb`] for the main
-/// thread to apply via [`set_cover_accent`] or [`cross_fade_accent`]. `None` on
-/// any decode failure or a non-colorful cover.
-pub(in crate::ui) fn accent_from_cover_file(path: &std::path::Path) -> Option<Rgb> {
-    let pixbuf =
-        gtk4::gdk_pixbuf::Pixbuf::from_file_at_scale(path, SAMPLE_EDGE, SAMPLE_EDGE, false).ok()?;
-    let channels = pixbuf.n_channels() as usize;
-    let width = pixbuf.width() as usize;
-    let height = pixbuf.height() as usize;
-    let rowstride = pixbuf.rowstride() as usize;
-    let bytes = pixbuf.read_pixel_bytes();
-    // Strip any per-row padding into a contiguous buffer before sampling.
-    let mut contiguous = Vec::with_capacity(width * height * channels);
-    for y in 0..height {
-        let start = y * rowstride;
-        let end = start + width * channels;
-        if end <= bytes.len() {
-            contiguous.extend_from_slice(&bytes[start..end]);
-        }
-    }
-    dominant_accent(&contiguous, channels)
-}
-
-// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn solid(r: u8, g: u8, b: u8, count: usize) -> Vec<u8> {
-        std::iter::repeat_n([r, g, b], count).flatten().collect()
-    }
-
-    // --- median-cut tests (Task 8) ---
-
-    #[test]
-    fn median_cut_picks_vivid_cluster() {
-        // 90% gray pixels, 10% bright red -> should pick the red cluster.
-        let mut pixels = solid(130, 130, 130, 90);
-        pixels.extend(solid(220, 40, 40, 10));
-        let accent = dominant_accent(&pixels, 3).expect("red cluster");
-        assert!(accent.r > 180, "expected red-dominant, got {accent:?}");
-    }
 
     #[test]
     fn chroma_scaling_is_draw_local_and_leaves_provider_state_untouched() {
@@ -323,41 +206,6 @@ mod tests {
     }
 
     #[test]
-    fn near_gray_falls_back_to_none() {
-        let result = dominant_accent(&solid(128, 126, 130, 100), 3);
-        // Either returns None directly, or returns a color that is_usable rejects.
-        assert!(result.is_none() || !is_usable(&result.unwrap()));
-    }
-
-    // --- legacy / regression tests kept from before median-cut ---
-
-    #[test]
-    fn grayscale_cover_has_no_accent() {
-        let pixels = solid(128, 128, 128, 64);
-        assert!(dominant_accent(&pixels, 3).is_none());
-    }
-
-    #[test]
-    fn vivid_pixels_outweigh_gray_ones() {
-        let mut pixels = solid(130, 130, 130, 60); // mostly gray
-        pixels.extend(solid(40, 200, 120, 4)); // a few vivid teal
-        let accent = dominant_accent(&pixels, 3).expect("some accent");
-        // After OKLCH clamping the teal bucket wins, so green should dominate.
-        assert!(accent.g > accent.r && accent.g > accent.b, "{accent:?}");
-    }
-
-    #[test]
-    fn dominant_accent_returns_colorful_result_for_vivid_input() {
-        let pixels = solid(220, 90, 40, 64); // warm orange
-                                             // Result is OKLCH-clamped so exact match not expected, but should exist.
-        let result = dominant_accent(&pixels, 3);
-        assert!(
-            result.is_some(),
-            "expected a result for vivid orange pixels"
-        );
-    }
-
-    #[test]
     fn accent_css_overrides_when_usable_and_is_empty_otherwise() {
         // A vivid, clamped color should produce a CSS override.
         let vivid = oklch_clamp(Rgb {
@@ -366,18 +214,21 @@ mod tests {
             b: 40,
         })
         .expect("orange not gray");
-        let css = accent_css(Some(vivid));
+        let palette = flat_palette(vivid);
+        let css = accent_css(Some(palette));
         assert!(
             css.contains("@define-color reprise_player_accent"),
             "expected CSS override, got: {css:?}"
         );
+        assert!(css.contains("@define-color reprise_player_accent_2"));
+        assert!(css.contains("@define-color reprise_player_accent_3"));
         assert!(accent_css(None).is_empty());
         // Pure gray should clear to empty.
-        assert!(accent_css(Some(Rgb {
+        assert!(accent_css(Some(flat_palette(Rgb {
             r: 128,
             g: 128,
-            b: 128
-        }))
+            b: 128,
+        })))
         .is_empty());
     }
 
@@ -390,12 +241,12 @@ mod tests {
     }
 
     #[test]
-    fn fade_to_theme_fallback_clears_cover_override_at_endpoint() {
-        let cover = Some(Rgb {
+    fn fade_to_theme_fallback_clears_all_three_overrides_at_the_endpoint() {
+        let cover = Some(flat_palette(Rgb {
             r: 200,
             g: 80,
             b: 40,
-        });
+        }));
         let fallback = Rgb {
             r: 51,
             g: 201,
@@ -414,21 +265,21 @@ mod tests {
         let previous_setting = settings.is_gtk_enable_animations();
         settings.set_gtk_enable_animations(true);
         let label = gtk4::Label::new(None);
-        let red = Some(Rgb {
+        let red = Some(flat_palette(Rgb {
             r: 220,
             g: 40,
             b: 40,
-        });
-        let blue = Some(Rgb {
+        }));
+        let blue = Some(flat_palette(Rgb {
             r: 40,
             g: 40,
             b: 220,
-        });
-        let green = Some(Rgb {
+        }));
+        let green = Some(flat_palette(Rgb {
             r: 40,
             g: 220,
             b: 40,
-        });
+        }));
 
         cross_fade_accent(red, blue, &label);
         let first = CURRENT_ANIMATION.with(|slot| slot.borrow().as_ref().unwrap().clone());

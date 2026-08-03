@@ -15,6 +15,7 @@
 pub(super) mod buttons;
 pub(super) mod cover_accent;
 pub(super) mod cover_accent_oklab;
+pub(super) mod cover_palette;
 pub(super) mod interactions;
 pub(super) mod menus;
 pub(super) mod reduced_motion;

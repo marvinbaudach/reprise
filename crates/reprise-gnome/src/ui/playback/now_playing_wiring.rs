@@ -22,7 +22,7 @@ use libadwaita as adw;
 
 use crate::ui::one_shot_task;
 use crate::ui::player_controller::PlayerController;
-use crate::ui::style::cover_accent::Rgb;
+use crate::ui::style::cover_palette::Palette;
 use reprise_core::cover::ThumbnailSize;
 use reprise_core::media_integration::MprisState;
 use reprise_core::playback::{PlaybackError, PlaybackState, SpectrumFrame};
@@ -39,14 +39,14 @@ fn cover_path_to_uri(path: &Path) -> Option<String> {
     }
 }
 
-/// Off-main cover-accent extraction: decode the cover, derive its dominant
-/// accent, and cross-fade to it (generation-guarded so a rapid track change
+/// Off-main cover-palette extraction: decode the cover, derive its three
+/// dominant colours, and cross-fade to them (generation-guarded so a rapid track change
 /// can't apply a stale album accent). A non-colorful cover cross-fades to the
 /// theme fallback. The previous accent is read from (and written back to)
 /// `last_accent_cell`; `widget` is required for the animation target.
 fn apply_cover_accent(
     generation_cell: &Rc<std::cell::Cell<u64>>,
-    last_accent_cell: &Rc<RefCell<Option<Rgb>>>,
+    last_accent_cell: &Rc<RefCell<Option<Palette>>>,
     cover_path: &Path,
     widget: impl IsA<gtk4::Widget> + Clone + 'static,
 ) {
@@ -56,7 +56,7 @@ fn apply_cover_accent(
     let last_accent_cell = last_accent_cell.clone();
     let cover_path = cover_path.to_path_buf();
     let Ok(receiver) = one_shot_task::spawn("reprise-cover-accent", move || {
-        crate::ui::style::cover_accent::accent_from_cover_file(&cover_path)
+        crate::ui::style::cover_palette::accent_from_cover_file(&cover_path)
     }) else {
         return;
     };
