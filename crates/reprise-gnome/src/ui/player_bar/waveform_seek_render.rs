@@ -95,6 +95,30 @@ struct BarDrawStyle {
     opacity: f64,
 }
 
+/// Playhead lens: how strongly a bar at `index` participates, `1.0` directly
+/// under the playhead and `0.0` beyond ten bars. Pure presentation — the stored
+/// waveform is the truth and `shape_display_peaks` is never touched.
+const LENS_SIGMA_SQUARED: f64 = 30.0;
+const LENS_CUTOFF_BARS: f64 = 10.0;
+const LENS_GAIN: f64 = 0.30;
+
+pub(super) fn playhead_lens(index: usize, count: usize, fraction: f64) -> f64 {
+    if count == 0 {
+        return 0.0;
+    }
+    let distance = index as f64 - fraction * count as f64;
+    if distance.abs() > LENS_CUTOFF_BARS {
+        return 0.0;
+    }
+    (-(distance * distance) / LENS_SIGMA_SQUARED).exp()
+}
+
+/// Applies the lens to one bar. The ceiling is mandatory: without it a bar near
+/// the playhead grows straight out of the widget.
+pub(super) fn lensed_bar_height(bar_h: f64, impact: f64, lens: f64, max_bar_height: f64) -> f64 {
+    (bar_h * (1.0 + LENS_GAIN * impact * lens)).min(max_bar_height)
+}
+
 fn draw_bars(
     cr: &gtk4::cairo::Context,
     w: f64,
@@ -139,6 +163,26 @@ fn draw_bars(
                 (state.min_bar_height + magnitude * (state.max_bar_height - state.min_bar_height))
                     * stagger
             }
+        };
+        // The lens is presentation only, and it stays out of three places:
+        // silence dots (a silence that pulses is a lie), the mini player
+        // (46 bars — the sigma would cover a quarter of the strip), and the
+        // build-up/crossfade windows, where two animations would fight.
+        let bar_h = match bar {
+            DisplayBar::Level(_)
+                if state.bass_impact > 0.0
+                    && !state.fill_bars
+                    && style.build_progress >= 1.0
+                    && state.crossfade_progress >= 1.0 =>
+            {
+                lensed_bar_height(
+                    bar_h,
+                    state.bass_impact,
+                    playhead_lens(index, count, state.fraction),
+                    state.max_bar_height,
+                )
+            }
+            _ => bar_h,
         };
         // Guard against zero-height bars during early animation frames.
         if bar_h < 0.5 {

@@ -15,6 +15,53 @@ impl WaveformSeek {
 }
 
 #[test]
+fn ac_24_lens_peaks_at_the_playhead_and_dies_within_ten_bars() {
+    use super::render::playhead_lens;
+    // 200 bars, playhead at the exact middle -> bar 100 is the centre.
+    assert!((playhead_lens(100, 200, 0.5) - 1.0).abs() < 1e-9);
+    // Symmetric around it.
+    assert!((playhead_lens(96, 200, 0.5) - playhead_lens(104, 200, 0.5)).abs() < 1e-9);
+    // Monotonically falling away from the centre.
+    assert!(playhead_lens(102, 200, 0.5) < playhead_lens(101, 200, 0.5));
+    // Hard zero past ten bars, so the far end of the waveform is untouched.
+    assert_eq!(playhead_lens(111, 200, 0.5), 0.0);
+    assert_eq!(playhead_lens(0, 200, 0.5), 0.0);
+    assert_eq!(playhead_lens(0, 0, 0.5), 0.0);
+}
+
+#[test]
+fn ac_24_lens_never_grows_a_bar_past_the_widget() {
+    use super::render::lensed_bar_height;
+    let max = 26.0;
+    // A bar already at the ceiling stays at the ceiling under full impact.
+    assert!((lensed_bar_height(max, 1.0, 1.0, max) - max).abs() < 1e-9);
+    // A short bar grows by the agreed 30 % at the playhead.
+    assert!((lensed_bar_height(10.0, 1.0, 1.0, max) - 13.0).abs() < 1e-9);
+    // At the resting reading it is a tenth, not a third.
+    assert!((lensed_bar_height(10.0, 0.35, 1.0, max) - 11.05).abs() < 1e-9);
+    // No reading, no change.
+    assert!((lensed_bar_height(10.0, 0.0, 1.0, max) - 10.0).abs() < 1e-9);
+    // Away from the playhead, no change either.
+    assert!((lensed_bar_height(10.0, 1.0, 0.0, max) - 10.0).abs() < 1e-9);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn ac_24_mini_player_never_takes_the_lens() {
+    if gtk4::init().is_err() {
+        return;
+    }
+    // 46 bars: the lens sigma would cover a quarter of the whole strip.
+    let mini = WaveformSeek::new_mini();
+    mini.set_bass_impact(1.0);
+    assert_eq!(mini.bass_impact_for_test(), 0.0);
+
+    let full = WaveformSeek::new();
+    full.set_bass_impact(1.0);
+    assert!(full.bass_impact_for_test() > 0.0);
+}
+
+#[test]
 fn interpolation_step_never_overshoots_its_target() {
     // Ordinary frame: advances proportionally, still below target.
     let stepped = interpolation_step(0.10, 1e-6, 16_000.0, 0.20);
@@ -196,6 +243,7 @@ fn ensure_resampled_clears_display_peaks_when_raw_empty() {
         crossfade_start_us: 0,
         desaturation_progress: 0.0,
         desaturation_target: 0.0,
+        bass_impact: 0.0,
         min_bar_height: MIN_BAR_HEIGHT,
         max_bar_height: MAX_BAR_HEIGHT,
         bar_count_override: None,
@@ -225,6 +273,7 @@ fn ensure_resampled_populates_on_width_change() {
         crossfade_start_us: 0,
         desaturation_progress: 0.0,
         desaturation_target: 0.0,
+        bass_impact: 0.0,
         min_bar_height: MIN_BAR_HEIGHT,
         max_bar_height: MAX_BAR_HEIGHT,
         bar_count_override: None,
