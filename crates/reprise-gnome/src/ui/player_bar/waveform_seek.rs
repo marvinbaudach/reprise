@@ -51,6 +51,23 @@ const CROSSFADE_DURATION_S: f64 = motion::AMBIENT_MS as f64 / 1_000.0;
 /// Per-bar stagger increment in seconds.
 const BAR_STAGGER_S: f64 = 0.002;
 
+/// Release window of `kick_soft`. `kick` itself falls in 70 ms, which reads as
+/// a blink on a surface this wide — that was one of the three reasons the first
+/// lens flickered.
+const KICK_SOFT_RELEASE_S: f64 = 0.220;
+
+/// Attack immediately, release linearly. Deliberately not an exponential: a
+/// linear tail reaches zero, so the tick callback below can actually settle.
+pub(super) fn kick_soft_step(previous: f64, kick: f64, dt_s: f64) -> f64 {
+    let kick = kick.clamp(0.0, 1.0);
+    let previous = previous.clamp(0.0, 1.0);
+    if kick > previous {
+        kick
+    } else {
+        (previous - dt_s.max(0.0) / KICK_SOFT_RELEASE_S).max(kick)
+    }
+}
+
 const FALLBACK_BAR_HEIGHT: f64 = 4.0;
 
 const MINI_CONTENT_HEIGHT: i32 = 16;
@@ -109,6 +126,7 @@ struct State {
     /// Live bass readings, 0..1. Presentation only; the stored peaks never move.
     bass_kick: f64,
     bass_pressure: f64,
+    kick_soft: f64,
     min_bar_height: f64,
     max_bar_height: f64,
     /// Fixed bar count for the mini player (frame 1e); `None` = width-derived.
@@ -226,6 +244,7 @@ impl WaveformSeek {
             desaturation_target: 0.0,
             bass_kick: 0.0,
             bass_pressure: 0.0,
+            kick_soft: 0.0,
             min_bar_height: min_h,
             max_bar_height: max_h,
             bar_count_override,
@@ -456,8 +475,9 @@ impl WaveformSeek {
         animation.play();
     }
 
-    /// Feeds the playhead glow. Both readings pass through the MOT-7 motion
-    /// gate; the draw side, not this setter, excludes the mini player.
+    /// Feeds the playhead glow and the waveform lens. Both readings pass
+    /// through the MOT-7 motion gate; the draw side, not this setter, excludes
+    /// the mini player.
     pub(in crate::ui) fn set_bass(&self, kick: f64, pressure: f64) {
         let kick = motion::reactive_amplitude(kick);
         let pressure = motion::reactive_amplitude(pressure);
@@ -475,6 +495,9 @@ impl WaveformSeek {
         };
         if changed {
             self.area.queue_draw();
+        }
+        if kick > 0.0 {
+            self.ensure_tick_callback();
         }
     }
 
@@ -583,6 +606,7 @@ impl WaveformSeek {
                 let dt = (now - s.last_tick_us).max(0) as f64;
                 s.fraction =
                     interpolation_step(s.fraction, s.fraction_velocity, dt, s.target_fraction);
+                s.kick_soft = kick_soft_step(s.kick_soft, s.bass_kick, dt / 1_000_000.0);
                 s.last_tick_us = now;
 
                 // Advance the build-up animation.
@@ -607,11 +631,13 @@ impl WaveformSeek {
                 s.previous_bars.clear();
                 s.crossfade_progress = 1.0;
                 s.crossfade_start_us = 0;
+                s.kick_soft = 0.0;
             }
 
             let settled = (s.fraction - s.target_fraction).abs() < 0.001
                 && s.build_progress >= 1.0
-                && s.crossfade_progress >= 1.0;
+                && s.crossfade_progress >= 1.0
+                && s.kick_soft <= 0.0;
             drop(s);
 
             area.queue_draw();

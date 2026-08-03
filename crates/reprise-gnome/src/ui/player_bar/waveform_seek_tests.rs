@@ -15,6 +15,68 @@ impl WaveformSeek {
 }
 
 #[test]
+fn ac_24_the_soft_kick_strikes_at_once_and_leaves_over_220_ms() {
+    use super::kick_soft_step;
+    // Attack is instant — the strike sits on the beat, not after it.
+    assert!((kick_soft_step(0.0, 1.0, 0.016) - 1.0).abs() < 1e-9);
+    assert!((kick_soft_step(0.3, 0.9, 0.016) - 0.9).abs() < 1e-9);
+    // Release is linear over 220 ms: a full kick is gone after 220 ms and
+    // exactly half gone after 110 ms.
+    assert!((kick_soft_step(1.0, 0.0, 0.110) - 0.5).abs() < 1e-9);
+    assert!((kick_soft_step(1.0, 0.0, 0.220) - 0.0).abs() < 1e-9);
+    // It never falls below the reading that is still arriving …
+    assert!((kick_soft_step(0.6, 0.5, 1.0) - 0.5).abs() < 1e-9);
+    // … and never below zero, however long the gap between frames.
+    assert!((kick_soft_step(1.0, 0.0, 99.0) - 0.0).abs() < 1e-9);
+    // Out-of-range readings clamp instead of driving the bars past full.
+    assert!((kick_soft_step(0.0, 4.0, 0.016) - 1.0).abs() < 1e-9);
+    assert!((kick_soft_step(-1.0, -1.0, 0.016) - 0.0).abs() < 1e-9);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn ac_24_a_kick_on_a_settled_bar_runs_its_tail_out() {
+    // The tick stops itself when the position, the build and the crossfade
+    // have settled. A kick arriving after that has to restart it, or the bars
+    // freeze mid-swell — which is exactly what pausing does.
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let settings = gtk4::Settings::default().unwrap();
+    let previous = settings.is_gtk_enable_animations();
+    settings.set_gtk_enable_animations(true);
+
+    let waveform = WaveformSeek::new();
+    let window = gtk4::Window::builder()
+        .default_width(600)
+        .default_height(80)
+        .child(waveform.widget())
+        .build();
+    window.present();
+    while gtk4::glib::MainContext::default().iteration(false) {}
+    assert!(waveform.tick_id.borrow().is_none());
+
+    waveform.set_bass(1.0, 1.0);
+    let attack_deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+    while waveform.state.borrow().kick_soft < 1.0 && std::time::Instant::now() < attack_deadline {
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert_eq!(waveform.state.borrow().kick_soft, 1.0);
+
+    waveform.set_bass(0.0, 0.0);
+    let release_deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+    while waveform.state.borrow().kick_soft > 0.0 && std::time::Instant::now() < release_deadline {
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert_eq!(waveform.state.borrow().kick_soft, 0.0);
+    assert!(waveform.tick_id.borrow().is_none());
+
+    window.close();
+    settings.set_gtk_enable_animations(previous);
+}
+
+#[test]
 fn ac_24_the_playhead_glow_grows_with_the_kick() {
     use super::render::{playhead_glow_alpha, playhead_glow_radius};
     let h = 34.0;
@@ -257,6 +319,7 @@ fn ensure_resampled_clears_display_peaks_when_raw_empty() {
         desaturation_target: 0.0,
         bass_kick: 0.0,
         bass_pressure: 0.0,
+        kick_soft: 0.0,
         min_bar_height: MIN_BAR_HEIGHT,
         max_bar_height: MAX_BAR_HEIGHT,
         bar_count_override: None,
@@ -288,6 +351,7 @@ fn ensure_resampled_populates_on_width_change() {
         desaturation_target: 0.0,
         bass_kick: 0.0,
         bass_pressure: 0.0,
+        kick_soft: 0.0,
         min_bar_height: MIN_BAR_HEIGHT,
         max_bar_height: MAX_BAR_HEIGHT,
         bar_count_override: None,
