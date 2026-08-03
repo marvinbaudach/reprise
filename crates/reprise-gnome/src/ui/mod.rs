@@ -204,15 +204,10 @@ mod reactive_light_tests {
     #[test]
     fn ac_24_only_the_playhead_ticks() {
         // The regression that keeps the beat off the large surfaces. Outside
-        // the Visualizer view, `kick` is read in exactly one file.
-        for source in [
-            include_str!("cover_lift.rs"),
-            include_str!("now_playing/cover_bloom.rs"),
-        ] {
-            assert!(
-                !source.contains("kick"),
-                "a large surface reads the per-beat signal"
-            );
-        }
+        // the Visualizer view, `cover_lift.rs` is the one deliberate seam.
+        assert!(
+            !include_str!("now_playing/cover_bloom.rs").contains("kick"),
+            "the backdrop must never take the Visualizer cover's per-beat exception"
+        );
     }
 }

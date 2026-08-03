@@ -1,13 +1,14 @@
-//! Cached near/far cover shadows whose opacities cross-fade on a slow swell.
+//! Cached near/far cover shadows driven by slow swell or the Visualizer beat.
 //!
 //! The blur geometry is CSS-static: changing a `box-shadow` blur every frame
 //! invalidates GTK's cached shadow node, while changing opacity keeps both
 //! nodes reusable.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk4::{cairo, prelude::*};
+use libadwaita::prelude::AnimationExt;
 
 use crate::ui::{motion, style::tokens::RADIUS_SURFACE};
 
@@ -105,12 +106,70 @@ pub(in crate::ui) fn css() -> String {
     )
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(in crate::ui) enum Source {
+    #[default]
+    Swell,
+    Kick,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct SourceBlend {
+    source: Source,
+    from: f64,
+    swell: f64,
+    kick: f64,
+    progress: f64,
+}
+
+impl Default for SourceBlend {
+    fn default() -> Self {
+        Self {
+            source: Source::Swell,
+            from: 0.0,
+            swell: 0.0,
+            kick: 0.0,
+            progress: 1.0,
+        }
+    }
+}
+
+impl SourceBlend {
+    fn target(self) -> f64 {
+        match self.source {
+            Source::Swell => self.swell,
+            Source::Kick => self.kick,
+        }
+    }
+
+    fn reading(self) -> f64 {
+        self.from + (self.target() - self.from) * self.progress.clamp(0.0, 1.0)
+    }
+
+    fn set_source(&mut self, source: Source) -> bool {
+        if self.source == source {
+            return false;
+        }
+        self.from = self.reading();
+        self.source = source;
+        self.progress = 0.0;
+        true
+    }
+}
+
 #[derive(Clone)]
-pub(in crate::ui) struct CoverLift {
+struct CoverLiftWidgets {
     root: gtk4::Overlay,
     near: gtk4::Box,
     far: gtk4::Box,
     sheen: Option<CoverSheen>,
+}
+
+#[derive(Clone)]
+pub(in crate::ui) struct CoverLift {
+    widgets: Option<CoverLiftWidgets>,
+    blend: Rc<RefCell<SourceBlend>>,
+    source_animation: Rc<RefCell<Option<libadwaita::TimedAnimation>>>,
 }
 
 impl CoverLift {
@@ -136,30 +195,112 @@ impl CoverLift {
             root.add_overlay(sheen.widget());
             sheen
         });
-        Self {
+        let widgets = CoverLiftWidgets {
             root,
             near,
             far,
             sheen,
+        };
+        Self {
+            widgets: Some(widgets),
+            blend: Rc::new(RefCell::new(SourceBlend::default())),
+            source_animation: Rc::new(RefCell::new(None)),
         }
     }
 
     pub(in crate::ui) fn widget(&self) -> &gtk4::Overlay {
-        &self.root
+        &self
+            .widgets
+            .as_ref()
+            .expect("production cover lift has widgets")
+            .root
     }
 
     pub(in crate::ui) fn set_swell(&self, swell: f64) {
-        self.near.set_opacity(near_opacity(swell));
-        self.far.set_opacity(far_opacity(swell));
-        if let Some(sheen) = &self.sheen {
-            sheen.set_swell(swell);
-        }
+        let kick = self.blend.borrow().kick;
+        self.feed(swell, kick);
     }
 
     pub(in crate::ui) fn set_frame_time(&self, frame_time_us: i64) {
-        if let Some(sheen) = &self.sheen {
+        if let Some(sheen) = self
+            .widgets
+            .as_ref()
+            .and_then(|widgets| widgets.sheen.as_ref())
+        {
             sheen.set_frame_time(frame_time_us);
         }
+    }
+
+    pub(in crate::ui) fn set_source(&self, source: Source) {
+        if self.blend.borrow().source == source {
+            return;
+        }
+        let previous = self.source_animation.borrow_mut().take();
+        if let Some(previous) = previous {
+            previous.pause();
+        }
+        let changed = self.blend.borrow_mut().set_source(source);
+        debug_assert!(changed);
+        self.apply_reading();
+
+        let Some(widgets) = &self.widgets else {
+            return;
+        };
+        let blend = self.blend.clone();
+        let widgets_for_target = widgets.clone();
+        let target = libadwaita::CallbackAnimationTarget::new(move |progress| {
+            blend.borrow_mut().progress = progress;
+            let reading = blend.borrow().reading();
+            apply_reading_to_widgets(&widgets_for_target, reading);
+        });
+        let animation = motion::timed(&widgets.root, 0.0, 1.0, motion::AMBIENT, target);
+        *self.source_animation.borrow_mut() = Some(animation.clone());
+        animation.play();
+    }
+
+    pub(in crate::ui) fn feed(&self, swell: f64, kick: f64) {
+        {
+            let mut blend = self.blend.borrow_mut();
+            blend.swell = swell.clamp(0.0, 1.0);
+            blend.kick = kick.clamp(0.0, 1.0);
+        }
+        self.apply_reading();
+    }
+
+    fn apply_reading(&self) {
+        if let Some(widgets) = &self.widgets {
+            apply_reading_to_widgets(widgets, self.reading());
+        }
+    }
+
+    #[cfg(test)]
+    fn headless_for_test() -> Self {
+        Self {
+            widgets: None,
+            blend: Rc::new(RefCell::new(SourceBlend::default())),
+            source_animation: Rc::new(RefCell::new(None)),
+        }
+    }
+
+    fn reading(&self) -> f64 {
+        self.blend.borrow().reading()
+    }
+
+    #[cfg(test)]
+    fn advance_blend(&self, dt_s: f64) {
+        let duration_s = f64::from(motion::AMBIENT_MS) / 1_000.0;
+        let mut blend = self.blend.borrow_mut();
+        blend.progress = (blend.progress + dt_s.max(0.0) / duration_s).clamp(0.0, 1.0);
+        drop(blend);
+        self.apply_reading();
+    }
+}
+
+fn apply_reading_to_widgets(widgets: &CoverLiftWidgets, reading: f64) {
+    widgets.near.set_opacity(near_opacity(reading));
+    widgets.far.set_opacity(far_opacity(reading));
+    if let Some(sheen) = &widgets.sheen {
+        sheen.set_swell(reading);
     }
 }
 
@@ -309,6 +450,34 @@ fn shadow_layer(width: i32, class: &str, opacity: f64) -> gtk4::Box {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ac_24_the_cover_takes_the_beat_only_in_the_visualizer_view() {
+        let lift = CoverLift::headless_for_test();
+        lift.set_source(Source::Swell);
+        lift.feed(0.9, 0.1); // swell high, kick low
+        assert!((lift.reading() - 0.9).abs() < 1e-9);
+        lift.set_source(Source::Kick);
+        lift.advance_blend(0.4);
+        lift.feed(0.9, 0.1);
+        assert!((lift.reading() - 0.1).abs() < 1e-9);
+    }
+
+    #[test]
+    fn ac_24_the_switch_between_sources_does_not_jump() {
+        // The cross-fade is what keeps a tab change from snapping the cover.
+        let lift = CoverLift::headless_for_test();
+        lift.set_source(Source::Swell);
+        lift.feed(0.9, 0.1);
+        lift.set_source(Source::Kick);
+        // Immediately after the switch the reading is still near the old one.
+        lift.feed(0.9, 0.1);
+        assert!(lift.reading() > 0.7, "the source switch snapped");
+        // And after the Ambient window it has arrived.
+        lift.advance_blend(0.4);
+        lift.feed(0.9, 0.1);
+        assert!((lift.reading() - 0.1).abs() < 0.05);
+    }
 
     #[test]
     fn ac_24_the_lift_is_two_static_shadows_not_an_animated_blur() {

@@ -18,7 +18,7 @@ use super::song_visualizer::SongVisualizer;
 use super::strings;
 use super::up_next_panel::UpNextPanel;
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
-use crate::ui::cover_lift::CoverLift;
+use crate::ui::cover_lift::{CoverLift, Source as CoverLiftSource};
 use crate::ui::lyrics_view::LyricsView;
 use crate::ui::playback::external_media::ExternalPlaybackSnapshot;
 use crate::ui::player_controller::NowPlaying;
@@ -328,6 +328,7 @@ pub(in crate::ui) struct NowPlayingPanel {
     song_visuals_enabled: Cell<bool>,
     swell: RefCell<Swell>,
     swell_pressure: Cell<f64>,
+    cover_kick: Cell<f64>,
     swell_last_frame_us: Cell<i64>,
     on_album_reveal: crate::ui::link_activation::ActivationSlot,
     on_artist_reveal: crate::ui::link_activation::ActivationSlot,
@@ -367,6 +368,7 @@ impl NowPlayingPanel {
             song_visuals_enabled: Cell::new(song_visuals_enabled),
             swell: RefCell::new(Swell::default()),
             swell_pressure: Cell::new(0.0),
+            cover_kick: Cell::new(0.0),
             swell_last_frame_us: Cell::new(0),
             on_album_reveal: Rc::new(RefCell::new(None)),
             on_artist_reveal: Rc::new(RefCell::new(None)),
@@ -497,6 +499,7 @@ impl NowPlayingPanel {
         self.playback_state.set(state);
         if state != PlaybackState::Playing {
             self.swell_pressure.set(0.0);
+            self.cover_kick.set(0.0);
         }
         self.widgets.visualizer.set_playback_state(state);
         self.sync_bloom_activity();
@@ -505,7 +508,19 @@ impl NowPlayingPanel {
     pub(in crate::ui) fn set_spectrum(&self, frame: SpectrumFrame) {
         if self.song_visuals_enabled.get() {
             let bass = frame.bass_pressure();
-            self.swell_pressure.set(f64::from(bass.pressure));
+            let playing = self.playback_state.get() == PlaybackState::Playing;
+            let pressure = if playing {
+                f64::from(bass.pressure)
+            } else {
+                0.0
+            };
+            let kick = if playing {
+                crate::ui::motion::reactive_amplitude(f64::from(bass.kick))
+            } else {
+                0.0
+            };
+            self.swell_pressure.set(pressure);
+            self.cover_kick.set(kick);
             self.advance_swell(gtk4::glib::monotonic_time());
             self.widgets.visualizer.set_spectrum(frame);
         }
@@ -529,8 +544,9 @@ impl NowPlayingPanel {
         if frame_time_us <= 0 {
             *self.swell.borrow_mut() = Swell::default();
             self.swell_pressure.set(0.0);
+            self.cover_kick.set(0.0);
             self.swell_last_frame_us.set(0);
-            self.widgets.cover_lift.set_swell(0.0);
+            self.widgets.cover_lift.feed(0.0, 0.0);
             self.widgets.cover_lift.set_frame_time(0);
             self.widgets.bloom.set_light(0.0, 0.0);
             return;
@@ -552,7 +568,7 @@ impl NowPlayingPanel {
                 swell.value_without_motion()
             }
         };
-        self.widgets.cover_lift.set_swell(value);
+        self.widgets.cover_lift.feed(value, self.cover_kick.get());
         self.widgets.cover_lift.set_frame_time(frame_time_us);
         self.widgets.bloom.set_light(pressure, value);
     }
@@ -698,9 +714,17 @@ impl NowPlayingPanel {
     /// a pinned bloom runs no tick — without this the paused breath would keep
     /// redrawing a widget nobody can see, on most installs, forever.
     fn sync_bloom_activity(&self) {
+        let visualizer_visible = self.song_visuals_enabled.get()
+            && self.widgets.column.is_visible()
+            && self.widgets.tab_stack.visible_child_name().as_deref() == Some(VISUAL_PAGE);
+        self.widgets.cover_lift.set_source(if visualizer_visible {
+            CoverLiftSource::Kick
+        } else {
+            CoverLiftSource::Swell
+        });
         let pinned = !self.song_visuals_enabled.get()
             || !self.widgets.column.is_visible()
-            || self.widgets.tab_stack.visible_child_name().as_deref() == Some(VISUAL_PAGE);
+            || visualizer_visible;
         self.widgets.bloom.set_pinned(pinned);
         if !pinned {
             self.widgets

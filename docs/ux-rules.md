@@ -2878,13 +2878,16 @@ STYLE-1).
   playhead, nowhere else. The now-playing backdrop, the cover in the panel
   and the cover in the player bar read the `BassPressure.pressure` that
   already reaches the UI and its UI-side slow envelope, `swell` — never
-  `BassPressure.kick`, and never the CAVA bars, whose auto-sensitivity
+  the CAVA bars, whose auto-sensitivity
   makes a quiet vocal reach the same value as a drop, and never
   `impact`, which answers how loud a whole track is rather than what its
   beat is doing: on a limited master it never leaves its resting value.
   `pressure` carries the backdrop's base brightness and `swell` the slow
-  movement of every large surface. The playhead alone reads `kick` for
-  its compact glow. **The transport controls and the track list stay
+  movement of every large surface. Outside the Visualizer view the
+  playhead alone reads `kick` for its compact glow. While the Visualizer
+  is visible, the panel cover cross-fades over MOT-1's 400 ms Ambient
+  window from `swell` to `kick`; the player-bar cover stays on `swell`.
+  **The transport controls and the track list stay
   still**, and so do the bar heights: the waveform's geometry
   is exactly what `shape_display_peaks` delivers at every reading,
   because a 30 % amplitude on a 3 px bar moves it by a fraction of a
@@ -2912,8 +2915,8 @@ STYLE-1).
   plugin is the deliberate off-switch for the whole layer. With
   `gtk-enable-animations=false` (MOT-7), the brightness remains at the
   bare slow base while the free-running breath stops. While the Visual
-  tab is open the backdrop holds its rest value: that tab carries its
-  own light language.
+  tab is open the backdrop holds its rest value while the panel cover
+  takes the beat: that tab carries its own light language.
 
 ## Y. Library Doctor / Tag Cleanup
 
