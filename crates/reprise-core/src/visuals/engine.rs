@@ -321,6 +321,8 @@ mod tests {
             baseline_dbfs: -20.0,
             impact,
             aura,
+            kick: 0.0,
+            pressure: 0.0,
         }
     }
 

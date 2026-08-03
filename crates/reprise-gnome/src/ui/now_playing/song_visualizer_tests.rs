@@ -30,6 +30,8 @@ fn ac_23_the_analysis_readout_reports_the_values_the_glow_uses() {
         baseline_dbfs: -20.0,
         impact: 0.42,
         aura: 0.0,
+        kick: 0.0,
+        pressure: 0.0,
     });
 
     // Whole decibels: a tenth of a dB is neither readable at this refresh rate
@@ -48,6 +50,8 @@ fn ac_23_a_silent_analysis_reads_as_a_dash_instead_of_a_bottomed_out_level() {
         baseline_dbfs: -140.0,
         impact: 0.0,
         aura: 0.0,
+        kick: 0.0,
+        pressure: 0.0,
     });
 
     assert_eq!(values[0], "—");
@@ -96,6 +100,8 @@ fn ac_23_the_readout_names_stay_readable_at_the_panel_width() {
         baseline_dbfs: -41.1,
         impact: 0.35,
         aura: 0.95,
+        kick: 0.0,
+        pressure: 0.0,
     });
 
     let (_, natural, _, _) = readout.root.measure(gtk4::Orientation::Horizontal, -1);
@@ -122,6 +128,8 @@ fn ac_23_the_readout_follows_the_measurement_the_player_delivers() {
                 baseline_dbfs: -19.0,
                 impact: 0.87,
                 aura: 0.31,
+                kick: 0.0,
+                pressure: 0.0,
             },
         ),
     );
