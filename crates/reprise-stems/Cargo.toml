@@ -75,7 +75,7 @@ optional = true
 
 # ONNX tensor plumbing, matched to `ort`'s ndarray feature. MIT OR Apache-2.0.
 [dependencies.ndarray]
-version = "0.16"
+version = "0.17"
 optional = true
 
 # Blocking, pure-Rust HTTPS (rustls) for the first-use model download. Same
