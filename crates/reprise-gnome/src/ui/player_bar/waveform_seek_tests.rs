@@ -75,6 +75,21 @@ fn ac_24_playhead_glow_grows_with_the_kick() {
 }
 
 #[test]
+fn ac_24_played_bars_brighten_toward_the_playhead() {
+    use super::render::played_alpha;
+    // At the playhead: full. At the very start of the track: dimmest.
+    assert!((played_alpha(99, 100, 1.0) - 1.0).abs() < 0.02);
+    assert!(played_alpha(0, 100, 1.0) < played_alpha(50, 100, 1.0));
+    assert!(played_alpha(50, 100, 1.0) < played_alpha(99, 100, 1.0));
+    // Never darker than the floor, never brighter than opaque.
+    for index in 0..100 {
+        let a = played_alpha(index, 100, 1.0);
+        assert!((0.55..=1.0).contains(&a), "out of range at {index}: {a}");
+    }
+    assert_eq!(played_alpha(0, 0, 0.5), 1.0);
+}
+
+#[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn ac_24_mini_player_never_takes_the_lens() {
     if gtk4::init().is_err() {

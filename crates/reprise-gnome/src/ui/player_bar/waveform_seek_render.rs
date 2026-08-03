@@ -125,6 +125,7 @@ const GLOW_MIN_RADIUS: f64 = 3.0;
 const GLOW_RADIUS_PER_KICK: f64 = 22.0;
 const GLOW_MIN_ALPHA: f64 = 0.35;
 const GLOW_ALPHA_PER_KICK: f64 = 0.45;
+const PLAYED_MIN_ALPHA: f64 = 0.55;
 
 pub(super) fn playhead_glow_radius(kick: f64) -> f64 {
     GLOW_MIN_RADIUS + GLOW_RADIUS_PER_KICK * kick.clamp(0.0, 1.0)
@@ -132,6 +133,17 @@ pub(super) fn playhead_glow_radius(kick: f64) -> f64 {
 
 pub(super) fn playhead_glow_alpha(kick: f64) -> f64 {
     GLOW_MIN_ALPHA + GLOW_ALPHA_PER_KICK * kick.clamp(0.0, 1.0)
+}
+
+/// Brightness of an already-played bar: dim at the start of the track, full at
+/// the playhead. Purely positional, so it holds still within a frame.
+pub(super) fn played_alpha(index: usize, count: usize, fraction: f64) -> f64 {
+    if count == 0 {
+        return 1.0;
+    }
+    let head = fraction * count as f64;
+    let distance = ((head - index as f64) / count as f64).clamp(0.0, 1.0);
+    PLAYED_MIN_ALPHA + (1.0 - PLAYED_MIN_ALPHA) * (1.0 - distance)
 }
 
 pub(super) fn playhead_lens(index: usize, count: usize, fraction: f64) -> f64 {
@@ -249,7 +261,12 @@ fn draw_bars(
         if is_ghost {
             cr.set_source_rgba(r, g, b, GHOST_ALPHA * style.opacity);
         } else if played {
-            cr.set_source_rgba(r, g, b, style.opacity);
+            cr.set_source_rgba(
+                r,
+                g,
+                b,
+                style.opacity * played_alpha(index, count, state.fraction),
+            );
         } else if is_hover_preview {
             cr.set_source_rgba(1.0, 1.0, 1.0, HOVER_PREVIEW_ALPHA * style.opacity);
         } else {
