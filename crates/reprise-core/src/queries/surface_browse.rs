@@ -1,12 +1,69 @@
 //! Narrow read façades for browse surfaces that do not expose the GTK track
 //! list's column-sort, facet, paging, queue, or AI-projection controls.
 
+use crate::browser::SortDirection;
 use crate::db::Db;
 use crate::models::Track;
 use crate::up_next::QueueItem;
 use crate::view_source::ViewSource;
 
 use super::{query_album_canonical_track_ids, query_track_window, MAX_WINDOW_LIMIT};
+
+/// The library subset a surface wants to read through a bounded window.
+///
+/// These variants deliberately cover only the shared browse surfaces proven
+/// by the Android spike. Playlist, queue, genre, and desktop-only sources keep
+/// their existing, richer contracts until another surface needs them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LibraryTrackScope {
+    All,
+    Album { album: String, album_artist: String },
+    Artist { artist: String },
+}
+
+/// Ordering for a library track window.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LibraryTrackOrder {
+    /// A surface-selected column order, resolved through Core's existing
+    /// whitelist before it reaches SQL.
+    Sorted {
+        field: String,
+        direction: SortDirection,
+    },
+    /// Canonical disc/track order for an album playback snapshot.
+    CanonicalAlbum,
+}
+
+/// One arbitrary window requested by a surface.
+///
+/// Alignment, cache size, and prefetch policy stay outside Core. The signed
+/// values match SQLite and the existing query seam; Core clamps invalid or
+/// oversized limits rather than allowing an unbounded read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WindowRange {
+    pub offset: i64,
+    pub limit: i64,
+}
+
+/// Owned inputs for the cross-surface library-track query.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LibraryTrackRequest {
+    pub scope: LibraryTrackScope,
+    pub search: String,
+    pub order: LibraryTrackOrder,
+    pub window: WindowRange,
+}
+
+/// Exact result cardinality plus the requested track window.
+///
+/// `has_more` is explicit so a caller never has to infer truncation by
+/// comparing the row count with `total` itself.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TrackWindow {
+    pub total: i64,
+    pub rows: Vec<Track>,
+    pub has_more: bool,
+}
 
 /// Returns one album's present tracks in canonical disc/track order.
 pub fn query_album_tracks(
@@ -48,6 +105,39 @@ pub fn query_library_text_search(db: &Db, text: &str) -> Result<Vec<Track>, rusq
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn assert_send_sync<T: Send + Sync>() {}
+
+    #[test]
+    fn library_window_contract_owns_inputs_and_reports_continuation() {
+        assert_send_sync::<LibraryTrackRequest>();
+        assert_send_sync::<TrackWindow>();
+
+        let request = LibraryTrackRequest {
+            scope: LibraryTrackScope::Album {
+                album: "Album".to_owned(),
+                album_artist: "Artist".to_owned(),
+            },
+            search: "live".to_owned(),
+            order: LibraryTrackOrder::Sorted {
+                field: "title".to_owned(),
+                direction: crate::browser::SortDirection::Ascending,
+            },
+            window: WindowRange {
+                offset: 200,
+                limit: 200,
+            },
+        };
+        let response = TrackWindow {
+            total: 401,
+            rows: Vec::new(),
+            has_more: true,
+        };
+
+        assert_eq!(request.window.offset, 200);
+        assert_eq!(response.total, 401);
+        assert!(response.has_more);
+    }
 
     #[test]
     fn album_tracks_use_canonical_disc_then_track_order() {

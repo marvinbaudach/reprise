@@ -182,7 +182,7 @@ pub use queue::{
     QueueItemMetadata, QUEUE_LIMIT,
 };
 pub use stats::{query_library_stats, query_library_stats_browsed, LibraryStats};
-pub use surface_browse::{query_album_tracks, query_library_text_search};
+pub use surface_browse::*;
 
 use clauses::build_track_ids_query_browsed;
 use clauses::{build_track_ids_query_base, like_pattern, row_to_id};
