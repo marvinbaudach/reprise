@@ -18,6 +18,7 @@ source "$repo_root/scripts/cua-e2e/source_modules.sh"
 # What the sources actually do, offline via fixtures.
 source "$repo_root/scripts/cua-e2e/source_content.sh"
 source "$repo_root/scripts/cua-e2e/podcast_backlog.sh"
+source "$repo_root/scripts/cua-e2e/filter_clear_playback.sh"
 
 APP_ID=org.reprise.Reprise
 WINDOW_CLASS_MATCH=reprise
@@ -697,6 +698,9 @@ run_private_session() {
     podcast-backlog)
       run_podcast_backlog_scenario
       ;;
+    play-11-filter-clear)
+      run_play_11_filter_clear_continuation_scenario
+      ;;
     *)
       echo "unknown private CUA scenario group: $private_group" >&2
       return 2
@@ -845,6 +849,7 @@ case "${CUA_E2E_ONLY:-all}" in
       source-podcasts
       source-youtube
       podcast-backlog
+      play-11-filter-clear
     )
     ;;
   populated-library)
@@ -855,7 +860,8 @@ case "${CUA_E2E_ONLY:-all}" in
     | tag-3-multi-dialog-structure | tag-autocomplete-surface \
     | library-doctor | song-visuals \
     | track-sort-playing-marker | scrobbling | responsive-window \
-    | source-modules | source-podcasts | source-youtube | podcast-backlog)
+    | source-modules | source-podcasts | source-youtube | podcast-backlog \
+    | play-11-filter-clear)
     scenario_groups=("$CUA_E2E_ONLY")
     ;;
   *)
