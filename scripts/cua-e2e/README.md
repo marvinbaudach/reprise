@@ -154,3 +154,7 @@ click), and that the log stayed free of GTK/GLib criticals, panics and
 `play-11-stop-repeat-all` engages Repeat All through the transport button
 rather than `REPRISE_SMOKE_REPEAT=all`, because that hook is silently
 overwritten by the session restore — see issue #250.
+
+The runner avoids AT-SPI because `cua-driver` 0.17.0 returns an empty walk for
+window scope on this host even though the registry exposes the app with the
+right PID and a non-empty tree — reported upstream as trycua/cua#2823.
