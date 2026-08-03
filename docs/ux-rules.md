@@ -2942,10 +2942,20 @@ STYLE-1).
   it reports. The cover itself never changes brightness either: the
   eye reads luminance change in peripheral vision, so a brightening
   cover pulls attention off the list; it lifts on its shadow, carries a
-  one-pixel light seam along its edge, and has a slow conic sweep of the
-  cover's own palette turning behind it — one turn a minute. The seam sits
+  one-pixel light seam along its edge, and has a soft disc of the blurred
+  artwork turning behind it — one turn a minute. The seam sits
   one pixel outside the artwork, so the cover's footprint grows by exactly
-  one pixel on each side; nothing crosses the picture itself. The lift is
+  one pixel on each side; nothing crosses the picture itself. The seam
+  takes its hue from the cover but not its chroma: the player accent is
+  ink and stays muted for the waveform and the play button, while a
+  translucent one-pixel seam at that chroma measured as invisible, so the
+  seam reads the same hue lifted into a wider band. **The turning disc is
+  the artwork itself, not colours extracted from it.** A palette sweep was
+  built first and measured against a real library: half the covers are
+  greyscale or near-black and yield no usable colour at all, and most of
+  the rest are monochrome artwork, so the sweep came out as one flat tone
+  lying on a backdrop of the same tone. The blurred cover always has
+  structure, even in black and white. The lift is
   two cached shadow layers
   whose opacities cross-fade with the composite coverage held constant —
   a linear `1 - swell` pair sums to one and still dips 14 %, which reads
@@ -2955,7 +2965,7 @@ STYLE-1).
   plugin is the deliberate off-switch for the whole layer. With
   `gtk-enable-animations=false` (MOT-7), the brightness remains at the
   bare slow base while the free-running breath stops. While the Visual
-  tab is open the backdrop holds its rest value, the conic sweep is dark,
+  tab is open the backdrop holds its rest value, the turning disc is dark,
   and the panel cover takes the beat: that tab carries its own light language.
 
 ## Y. Library Doctor / Tag Cleanup

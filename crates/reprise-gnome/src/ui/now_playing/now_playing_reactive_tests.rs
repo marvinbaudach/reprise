@@ -35,26 +35,6 @@ fn ac_24_the_shimmer_is_dark_in_the_visualizer_view() {
     let (_window, panel) = super::tests::test_panel("org.reprise.Reprise.NowPlayingShimmerPinTest");
     panel.set_transient_visibility(true);
     panel.set_song_visuals_enabled(true);
-    panel
-        .widgets
-        .shimmer
-        .set_palette(Some(crate::ui::style::cover_palette::Palette {
-            primary: crate::ui::style::cover_accent::Rgb {
-                r: 145,
-                g: 132,
-                b: 217,
-            },
-            second: crate::ui::style::cover_accent::Rgb {
-                r: 120,
-                g: 140,
-                b: 210,
-            },
-            third: crate::ui::style::cover_accent::Rgb {
-                r: 170,
-                g: 125,
-                b: 190,
-            },
-        }));
     panel.widgets.shimmer.set_light(0.8, 0.7);
     panel.widgets.shimmer.set_frame_time(15_000_000);
     assert!(panel.widgets.shimmer.widget().is_visible());

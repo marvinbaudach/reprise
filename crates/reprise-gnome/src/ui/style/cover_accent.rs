@@ -18,9 +18,9 @@ use libadwaita::prelude::AnimationExt;
 
 use crate::ui::motion;
 
-use super::cover_accent_oklab::is_usable;
 #[cfg(test)]
 use super::cover_accent_oklab::oklch_clamp;
+use super::cover_accent_oklab::{is_usable, oklch_light};
 pub(in crate::ui) use super::cover_accent_oklab::{scale_chroma, Rgb};
 use super::cover_palette::Palette;
 
@@ -29,23 +29,36 @@ use super::cover_palette::Palette;
 // ---------------------------------------------------------------------------
 
 /// The `@define-color` override for `palette`, or empty (fall back to the theme's
-/// own `reprise_player_accent`) when there is no usable cover accent.
+/// own colours) when there is no usable cover accent.
+///
+/// `reprise_player_accent` is ink: it fills the waveform and the play button, so
+/// it stays inside the muted chroma band those controls were tuned for.
+/// `reprise_cover_light` is the same hue lifted into the light band — it is a
+/// translucent seam on the cover's edge, and at the accent's chroma it measured
+/// as invisible on real artwork.
 fn accent_css(palette: Option<Palette>) -> String {
     match palette {
-        Some(p) if is_usable(&p.primary) => format!(
-            "@define-color reprise_player_accent #{:02x}{:02x}{:02x};\n\
-             @define-color reprise_player_accent_2 #{:02x}{:02x}{:02x};\n\
-             @define-color reprise_player_accent_3 #{:02x}{:02x}{:02x};",
-            p.primary.r,
-            p.primary.g,
-            p.primary.b,
-            p.second.r,
-            p.second.g,
-            p.second.b,
-            p.third.r,
-            p.third.g,
-            p.third.b,
-        ),
+        Some(p) if is_usable(&p.primary) => {
+            let light = oklch_light(p.primary);
+            format!(
+                "@define-color reprise_player_accent #{:02x}{:02x}{:02x};\n\
+                 @define-color reprise_player_accent_2 #{:02x}{:02x}{:02x};\n\
+                 @define-color reprise_player_accent_3 #{:02x}{:02x}{:02x};\n\
+                 @define-color reprise_cover_light #{:02x}{:02x}{:02x};",
+                p.primary.r,
+                p.primary.g,
+                p.primary.b,
+                p.second.r,
+                p.second.g,
+                p.second.b,
+                p.third.r,
+                p.third.g,
+                p.third.b,
+                light.r,
+                light.g,
+                light.b,
+            )
+        }
         _ => String::new(),
     }
 }

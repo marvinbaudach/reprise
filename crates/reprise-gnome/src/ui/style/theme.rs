@@ -209,7 +209,8 @@ pub(in crate::ui) fn theme_css(theme: Theme, is_dark: bool) -> String {
          @define-color reprise_dim_fg_color {dim};\n\
          @define-color reprise_player_accent {play};\n\
          @define-color reprise_player_accent_2 {play};\n\
-         @define-color reprise_player_accent_3 {play};\n",
+         @define-color reprise_player_accent_3 {play};\n\
+         @define-color reprise_cover_light {play};\n",
         win = p.window_bg,
         fg = p.fg,
         view = p.view_bg,

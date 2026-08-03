@@ -138,6 +138,37 @@ pub(in crate::ui::style) fn oklch_clamp(color: Rgb) -> Option<Rgb> {
     })
 }
 
+/// Chroma band for surfaces that are *light* rather than ink.
+///
+/// [`CHROMA_CEIL`] is tuned for the player accent, which fills the waveform and
+/// the play button: at 0.13 a vivid cover cannot glare in a control the eye
+/// rests on. The cover's edge seam is the opposite case — one translucent pixel
+/// at 18–50 % alpha, lying on the artwork's own edge above a dark panel. At the
+/// accent's chroma it measured as invisible on real covers, which is why it
+/// gets its own, wider band instead of the seam simply being drawn brighter:
+/// more alpha of a muted tone is still a muted tone.
+pub(in crate::ui::style) const LIGHT_CHROMA_FLOOR: f64 = 0.16;
+pub(in crate::ui::style) const LIGHT_CHROMA_CEIL: f64 = 0.30;
+
+/// The same colour as `color`, lifted into the light band: hue kept, lightness
+/// kept, chroma renormalised into `[LIGHT_CHROMA_FLOOR, LIGHT_CHROMA_CEIL]`.
+///
+/// Deliberately takes an already-clamped accent rather than a raw bucket
+/// average: hue is the part that has to come from the artwork, and re-reading
+/// the pixels for one more colour would be a second source for the same fact.
+pub(in crate::ui::style) fn oklch_light(color: Rgb) -> Rgb {
+    let (l, a, b) = linear_rgb_to_oklab(to_linear(color.r), to_linear(color.g), to_linear(color.b));
+    let c = (a * a + b * b).sqrt();
+    let h = b.atan2(a);
+    let c_light = c.clamp(LIGHT_CHROMA_FLOOR, LIGHT_CHROMA_CEIL);
+    let (lr, lg, lb) = oklab_to_linear_rgb(l, c_light * h.cos(), c_light * h.sin());
+    Rgb {
+        r: from_linear(lr),
+        g: from_linear(lg),
+        b: from_linear(lb),
+    }
+}
+
 /// Whether `color` is colorful enough to use as an accent. Uses OKLCH chroma
 /// (C ≥ 0.03) — effectively the same gate `oklch_clamp` applies, expressed
 /// as a predicate so callers that already have an `Rgb` can check it without

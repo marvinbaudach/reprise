@@ -1,12 +1,17 @@
-//! A slow conic sweep of the cover's three dominant colours, turning behind it
-//! once a minute.
+//! A soft disc of the cover itself, turning behind it once a minute.
 //!
-//! The colours come from the artwork (`style::cover_palette`), so the light is
-//! the record's own — the same honesty rule the bloom follows. Cairo has no
-//! conic gradient, so the disc is rasterized once per palette as flat wedges
-//! with the radial mask baked in; per frame there is a translate, a rotate and
-//! one `paint_with_alpha`. The clock is the backdrop's — this module owns no
-//! timer.
+//! The mockup draws this as a conic gradient of the cover's three dominant
+//! colours. Measured against this library that failed: half the covers are
+//! greyscale or near-black and yield no palette at all, and the ones that do
+//! are usually monochrome artwork, so the sweep came out as one flat tone over
+//! a backdrop made of the same tone — invisible. The artwork itself always has
+//! structure, even in black and white, so the disc is the blurred cover rather
+//! than colours extracted from it. Same honesty rule as the bloom, and it works
+//! on every record instead of two in five.
+//!
+//! Cost is the bloom's bargain: the masked disc is rasterized once per cover;
+//! per frame there is a translate, a rotate and one `paint_with_alpha`. The
+//! clock is the backdrop's — this module owns no timer.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -14,7 +19,7 @@ use std::rc::Rc;
 use gtk4::cairo;
 use gtk4::prelude::*;
 
-use crate::ui::style::cover_palette::Palette;
+use crate::ui::cover_glow;
 use crate::ui::style::tokens;
 
 const SHIMMER_REST_OPACITY: f64 = 0.34;
@@ -31,15 +36,10 @@ const SHIMMER_TURN_S: f64 = 60.0;
 /// `radial-gradient(circle closest-side, #000 12%, transparent 68%)`.
 const SHIMMER_MASK_SOLID: f64 = 0.12;
 const SHIMMER_MASK_CLEAR: f64 = 0.68;
-/// Edge of the cached raster. Painted up ×2; the disc is a smooth gradient and
-/// bilinear costs nothing visible while quartering the rasterization.
+/// Edge of the cached raster. The cover arrives as a 32 px blur and is painted
+/// up to this before the mask is baked in, so the mask's falloff stays smooth
+/// while the blur itself costs what it costs in `cover_glow`.
 const SHIMMER_SURFACE_EDGE: i32 = 260;
-/// Wedges in the cached conic. At 260 px this is a 1.4° step — below the
-/// resampling filter's own footprint, so no banding survives the upscale.
-const SHIMMER_WEDGES: i32 = 256;
-/// Adjacent wedges overlap by one hundredth of their angle, avoiding Cairo's
-/// antialiasing hairlines without changing the visible gradient.
-const SHIMMER_WEDGE_OVERLAP: f64 = 0.01;
 /// A reading below this threshold cannot visibly change the light.
 const LIGHT_EPSILON: f64 = 0.01;
 
@@ -52,32 +52,6 @@ pub(super) fn shimmer_opacity(pressure: f64, swell: f64) -> f64 {
 /// Rotation at `elapsed_s`, wrapped so a long session cannot lose precision.
 pub(super) fn shimmer_angle(elapsed_s: f64) -> f64 {
     std::f64::consts::TAU * (elapsed_s / SHIMMER_TURN_S).rem_euclid(1.0)
-}
-
-/// The conic gradient's colour and alpha at `t` ∈ [0, 1] around the disc.
-/// Five stops: l1 .52, l2 .40, l3 .30, l2 .42, l1 .52 — the last equals the
-/// first, because a conic gradient closes on itself.
-pub(super) fn shimmer_stop(palette: Palette, t: f64) -> (f64, f64, f64, f64) {
-    let colors = [
-        palette.primary,
-        palette.second,
-        palette.third,
-        palette.second,
-        palette.primary,
-    ];
-    let alphas = [0.52, 0.40, 0.30, 0.42, 0.52];
-    let scaled = t.clamp(0.0, 1.0) * 4.0;
-    let index = (scaled.floor() as usize).min(3);
-    let amount = scaled - index as f64;
-    let start = colors[index];
-    let end = colors[index + 1];
-    let channel = |a: u8, b: u8| (f64::from(a) + (f64::from(b) - f64::from(a)) * amount) / 255.0;
-    (
-        channel(start.r, end.r),
-        channel(start.g, end.g),
-        channel(start.b, end.b),
-        alphas[index] + (alphas[index + 1] - alphas[index]) * amount,
-    )
 }
 
 /// Mask alpha at `r` ∈ [0, 1] of the disc's radius.
@@ -93,7 +67,9 @@ pub(super) fn shimmer_mask(r: f64) -> f64 {
 
 struct Inner {
     surface: RefCell<Option<cairo::ImageSurface>>,
-    palette: Cell<Option<Palette>>,
+    /// Cover generation the cached disc was built from; the panel bumps it once
+    /// per rendered track, exactly as `cover_bloom` keys its own cache.
+    generation: Cell<Option<u64>>,
     pressure: Cell<f64>,
     swell: Cell<f64>,
     started_at_us: Cell<i64>,
@@ -116,7 +92,7 @@ impl CoverShimmer {
         area.set_visible(false);
         let inner = Rc::new(Inner {
             surface: RefCell::new(None),
-            palette: Cell::new(None),
+            generation: Cell::new(None),
             pressure: Cell::new(0.0),
             swell: Cell::new(0.0),
             started_at_us: Cell::new(0),
@@ -134,12 +110,24 @@ impl CoverShimmer {
         &self.area
     }
 
-    pub(super) fn set_palette(&self, palette: Option<Palette>) {
-        if self.inner.palette.get() == palette {
-            return;
+    /// The cover the disc is cut from, or `None` for external media, a
+    /// placeholder, or no track. Without artwork the disc stays dark: a light
+    /// whose colour is not in the record is the dishonesty this whole layer
+    /// exists to avoid.
+    pub(super) fn set_cover(&self, texture: Option<&gtk4::gdk::Texture>, generation: u64) {
+        match texture {
+            Some(texture) => {
+                if self.inner.generation.get() == Some(generation) {
+                    return;
+                }
+                *self.inner.surface.borrow_mut() = build_surface(texture);
+                self.inner.generation.set(Some(generation));
+            }
+            None => {
+                *self.inner.surface.borrow_mut() = None;
+                self.inner.generation.set(None);
+            }
         }
-        self.inner.palette.set(palette);
-        *self.inner.surface.borrow_mut() = None;
         self.area.queue_draw();
     }
 
@@ -196,7 +184,8 @@ impl CoverShimmer {
     }
 }
 
-fn build_surface(palette: Palette) -> Option<cairo::ImageSurface> {
+fn build_surface(texture: &gtk4::gdk::Texture) -> Option<cairo::ImageSurface> {
+    let blurred = cover_glow::blurred_surface(texture)?;
     let surface = cairo::ImageSurface::create(
         cairo::Format::ARgb32,
         SHIMMER_SURFACE_EDGE,
@@ -205,23 +194,18 @@ fn build_surface(palette: Palette) -> Option<cairo::ImageSurface> {
     .ok()?;
     let cr = cairo::Context::new(&surface).ok()?;
     let centre = f64::from(SHIMMER_SURFACE_EDGE) / 2.0;
-    let step = std::f64::consts::TAU / f64::from(SHIMMER_WEDGES);
-    let overlap = step * SHIMMER_WEDGE_OVERLAP;
-    for index in 0..SHIMMER_WEDGES {
-        let t = f64::from(index) / f64::from(SHIMMER_WEDGES);
-        let (r, g, b, a) = shimmer_stop(palette, t);
-        cr.set_source_rgba(r, g, b, a);
-        cr.move_to(centre, centre);
-        cr.arc(
-            centre,
-            centre,
-            centre,
-            t * std::f64::consts::TAU,
-            (t + 1.0 / f64::from(SHIMMER_WEDGES)) * std::f64::consts::TAU + overlap,
-        );
-        cr.close_path();
-        cr.fill().ok();
+
+    // The 32 px blur painted across the whole disc: bilinear over an 8x upscale
+    // is what makes it a blur at all, exactly as in `cover_bloom`.
+    let scale = f64::from(SHIMMER_SURFACE_EDGE) / f64::from(cover_glow::BLUR_EDGE);
+    cr.save().ok();
+    cr.scale(scale, scale);
+    if cr.set_source_surface(&blurred, 0.0, 0.0).is_ok() {
+        cr.source().set_filter(cairo::Filter::Bilinear);
+        cr.source().set_extend(cairo::Extend::Pad);
+        cr.paint().ok();
     }
+    cr.restore().ok();
 
     let mask = cairo::RadialGradient::new(centre, centre, 0.0, centre, centre, centre);
     mask.add_color_stop_rgba(0.0, 0.0, 0.0, 0.0, shimmer_mask(0.0));
@@ -235,14 +219,6 @@ fn build_surface(palette: Palette) -> Option<cairo::ImageSurface> {
 }
 
 fn draw(cr: &cairo::Context, width: i32, height: i32, inner: &Inner) {
-    let Some(palette) = inner.palette.get() else {
-        return;
-    };
-    let needs_surface = inner.surface.borrow().is_none();
-    if needs_surface {
-        let built = build_surface(palette);
-        *inner.surface.borrow_mut() = built;
-    }
     let surface = inner.surface.borrow();
     let Some(surface) = surface.as_ref() else {
         return;
@@ -273,27 +249,6 @@ fn draw(cr: &cairo::Context, width: i32, height: i32, inner: &Inner) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::style::cover_accent::Rgb;
-
-    fn palette() -> Palette {
-        Palette {
-            primary: Rgb {
-                r: 145,
-                g: 132,
-                b: 217,
-            },
-            second: Rgb {
-                r: 120,
-                g: 140,
-                b: 210,
-            },
-            third: Rgb {
-                r: 170,
-                g: 125,
-                b: 190,
-            },
-        }
-    }
 
     #[test]
     fn ac_24_the_shimmer_opacity_matches_the_backdrop_it_lies_on() {
@@ -317,19 +272,23 @@ mod tests {
     }
 
     #[test]
-    fn ac_24_the_shimmer_sweeps_the_palette_and_closes_on_itself() {
-        let palette = palette();
-        // The five stops of the mockup's conic gradient.
-        let (r0, g0, b0, a0) = shimmer_stop(palette, 0.0);
-        assert!((a0 - 0.52).abs() < 1e-9);
-        assert!((shimmer_stop(palette, 0.25).3 - 0.40).abs() < 1e-9);
-        assert!((shimmer_stop(palette, 0.50).3 - 0.30).abs() < 1e-9);
-        assert!((shimmer_stop(palette, 0.75).3 - 0.42).abs() < 1e-9);
-        // A conic gradient wraps: the last stop must equal the first, or the
-        // disc shows a seam that rotates once a minute.
-        let (r1, g1, b1, a1) = shimmer_stop(palette, 1.0);
-        assert!((r0 - r1).abs() < 1e-9 && (g0 - g1).abs() < 1e-9);
-        assert!((b0 - b1).abs() < 1e-9 && (a0 - a1).abs() < 1e-9);
+    fn ac_24_the_shimmer_is_cut_from_the_artwork_not_from_extracted_colours() {
+        // The mockup sweeps three dominant cover colours. Measured against a
+        // real library that fails: half the covers are greyscale or near-black
+        // and yield no palette at all (chroma below the 0.03 gate), and the
+        // ones that do are usually monochrome artwork, so the sweep came out
+        // as one flat tone lying on a backdrop of the same tone. The blurred
+        // cover always has structure, so that is what turns.
+        // Assert on structure, not on words: the doc comment above has to be
+        // free to explain what a conic gradient was and why it lost. The
+        // needles are split because `include_str!` reads this test too — a
+        // literal naming the forbidden symbol would always find itself.
+        let source = include_str!("cover_shimmer.rs");
+        assert!(source.contains("cover_glow::blurred_surface"));
+        let conic_stops = ["fn shimmer", "_stop"].concat();
+        assert!(!source.contains(&conic_stops));
+        let palette_module = ["cover", "_palette"].concat();
+        assert!(!source.contains(&palette_module));
     }
 
     #[test]
