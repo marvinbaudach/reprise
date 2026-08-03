@@ -100,7 +100,7 @@ struct BarDrawStyle {
 /// waveform is the truth and `shape_display_peaks` is never touched.
 const LENS_SIGMA_SQUARED: f64 = 30.0;
 const LENS_CUTOFF_BARS: f64 = 10.0;
-const LENS_GAIN: f64 = 0.30;
+const LENS_GAIN: f64 = 0.55;
 
 pub(super) fn playhead_lens(index: usize, count: usize, fraction: f64) -> f64 {
     if count == 0 {

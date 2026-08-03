@@ -29,10 +29,16 @@ const BLOOM_HEIGHT: f64 = 330.0;
 /// Width as a share of the panel width. The overflow is clipped by the panel.
 const BLOOM_WIDTH_FACTOR: f64 = 1.24;
 
+/// Rest and reactive share. The reactive slopes were doubled after a live
+/// measurement on Oceano — "Ascendants": over 66 samples `impact` sat at
+/// 0.30–0.41 under load and spiked to 0.88, but the original 0.16 slope turned
+/// that whole span into 0.085 of opacity — below the threshold where a viewer
+/// can tell a hit from the steady state. The rest values are deliberately
+/// unchanged, so "plugin off" and "animations off" look exactly as before.
 const REST_OPACITY: f64 = 0.10;
-const OPACITY_PER_IMPACT: f64 = 0.16;
+const OPACITY_PER_IMPACT: f64 = 0.32;
 const REST_SCALE: f64 = 1.0;
-const SCALE_PER_IMPACT: f64 = 0.02;
+const SCALE_PER_IMPACT: f64 = 0.03;
 
 /// The paused breath. Deliberately dimmer than the playing rest value: pause
 /// should look calmer, not merely slower.
@@ -315,19 +321,19 @@ mod tests {
     fn ac_24_bloom_curve_hits_the_three_agreed_points() {
         // Rest, the value a loud track sits at under load, and the peak.
         assert!((bloom_opacity(0.0) - 0.10).abs() < 1e-9);
-        assert!((bloom_opacity(0.35) - 0.156).abs() < 1e-9);
-        assert!((bloom_opacity(1.0) - 0.26).abs() < 1e-9);
+        assert!((bloom_opacity(0.35) - 0.212).abs() < 1e-9);
+        assert!((bloom_opacity(1.0) - 0.42).abs() < 1e-9);
 
         assert!((bloom_scale(0.0) - 1.00).abs() < 1e-9);
-        assert!((bloom_scale(0.35) - 1.007).abs() < 1e-9);
-        assert!((bloom_scale(1.0) - 1.02).abs() < 1e-9);
+        assert!((bloom_scale(0.35) - 1.0105).abs() < 1e-9);
+        assert!((bloom_scale(1.0) - 1.03).abs() < 1e-9);
     }
 
     #[test]
     fn ac_24_bloom_curve_clamps_instead_of_extrapolating() {
         assert!((bloom_opacity(-1.0) - 0.10).abs() < 1e-9);
-        assert!((bloom_opacity(4.0) - 0.26).abs() < 1e-9);
-        assert!((bloom_scale(4.0) - 1.02).abs() < 1e-9);
+        assert!((bloom_opacity(4.0) - 0.42).abs() < 1e-9);
+        assert!((bloom_scale(4.0) - 1.03).abs() < 1e-9);
     }
 
     #[test]

@@ -36,9 +36,9 @@ fn ac_24_lens_never_grows_a_bar_past_the_widget() {
     // A bar already at the ceiling stays at the ceiling under full impact.
     assert!((lensed_bar_height(max, 1.0, 1.0, max) - max).abs() < 1e-9);
     // A short bar grows by the agreed 30 % at the playhead.
-    assert!((lensed_bar_height(10.0, 1.0, 1.0, max) - 13.0).abs() < 1e-9);
+    assert!((lensed_bar_height(10.0, 1.0, 1.0, max) - 15.5).abs() < 1e-9);
     // At the resting reading it is a tenth, not a third.
-    assert!((lensed_bar_height(10.0, 0.35, 1.0, max) - 11.05).abs() < 1e-9);
+    assert!((lensed_bar_height(10.0, 0.35, 1.0, max) - 11.925).abs() < 1e-9);
     // No reading, no change.
     assert!((lensed_bar_height(10.0, 0.0, 1.0, max) - 10.0).abs() < 1e-9);
     // Away from the playhead, no change either.

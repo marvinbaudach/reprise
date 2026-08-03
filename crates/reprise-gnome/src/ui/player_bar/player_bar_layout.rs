@@ -43,7 +43,7 @@ const PLAY_RING_WIDTH: &str = "1.5px";
 /// — an empty box's padding would only add to the outside.
 const PLAY_RING_SIZE: i32 = 51;
 const RING_REST_ALPHA: f64 = 0.12;
-const RING_ALPHA_PER_IMPACT: f64 = 0.30;
+const RING_ALPHA_PER_IMPACT: f64 = 0.55;
 
 pub(in crate::ui) fn ring_alpha(impact: f64) -> f64 {
     RING_REST_ALPHA + RING_ALPHA_PER_IMPACT * impact.clamp(0.0, 1.0)
