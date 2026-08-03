@@ -383,6 +383,7 @@ impl NowPlayingPanel {
         panel.set_song_visuals_enabled(song_visuals_enabled);
         panel.wire();
         panel.sync_visual_activity();
+        panel.sync_bloom_activity();
         panel.render_track();
         panel
     }
@@ -423,6 +424,7 @@ impl NowPlayingPanel {
         self.syncing_visibility.set(false);
         self.request_up_next_refresh_if_visible();
         self.sync_visual_activity();
+        self.sync_bloom_activity();
     }
 
     pub(in crate::ui) fn set_loaded_track(self: &Rc<Self>, track: Option<NowPlaying>) {
@@ -620,6 +622,7 @@ impl NowPlayingPanel {
                 }
                 panel.request_up_next_refresh_if_visible();
                 panel.sync_visual_activity();
+                panel.sync_bloom_activity();
             });
     }
 
@@ -631,11 +634,17 @@ impl NowPlayingPanel {
         );
     }
 
-    /// Recomputes the combined pin rather than letting the Visual tab and the
-    /// plugin toggle race each other. Either reason holds the bloom at rest;
-    /// only when both clear may the current playback state take over.
+    /// Recomputes the combined pin rather than letting the reasons race each
+    /// other. Any one of them holds the bloom at rest; only when all clear may
+    /// the current playback state take over.
+    ///
+    /// Panel visibility is one of them, for the same reason
+    /// `sync_visual_activity` tracks it: the panel starts closed (NPP-12), and
+    /// a pinned bloom runs no tick — without this the paused breath would keep
+    /// redrawing a widget nobody can see, on most installs, forever.
     fn sync_bloom_activity(&self) {
         let pinned = !self.song_visuals_enabled.get()
+            || !self.widgets.column.is_visible()
             || self.widgets.tab_stack.visible_child_name().as_deref() == Some(VISUAL_PAGE);
         self.widgets.bloom.set_pinned(pinned);
         if !pinned {

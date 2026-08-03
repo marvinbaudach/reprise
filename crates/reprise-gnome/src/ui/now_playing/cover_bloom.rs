@@ -43,6 +43,10 @@ const PAUSE_PERIOD_S: f64 = 6.0;
 /// A reading that moves the alpha by less than this cannot be seen and does not
 /// earn a redraw.
 const IMPACT_EPSILON: f64 = 0.01;
+/// Redraw interval (µs) of the paused breath. A six-second sine does not need
+/// sixty frames a second; the visualizer throttles its own resting breath the
+/// same way and for the same reason.
+const BREATH_FRAME_INTERVAL_US: i64 = 33_000;
 
 pub(super) fn bloom_opacity(impact: f64) -> f64 {
     REST_OPACITY + OPACITY_PER_IMPACT * impact.clamp(0.0, 1.0)
@@ -79,6 +83,7 @@ struct Inner {
     impact: Cell<f64>,
     mode: Cell<Mode>,
     breath_start_us: Cell<i64>,
+    last_breath_frame_us: Cell<i64>,
     tick_id: RefCell<Option<gtk4::TickCallbackId>>,
 }
 
@@ -101,6 +106,7 @@ impl CoverBloom {
             impact: Cell::new(0.0),
             mode: Cell::new(Mode::Pinned),
             breath_start_us: Cell::new(0),
+            last_breath_frame_us: Cell::new(0),
             tick_id: RefCell::new(None),
         });
         area.set_draw_func({
@@ -183,6 +189,7 @@ impl CoverBloom {
         }
         if mode == Mode::Breathing {
             self.inner.breath_start_us.set(0);
+            self.inner.last_breath_frame_us.set(0);
             self.start_breath();
         } else {
             self.stop_breath();
@@ -211,9 +218,15 @@ impl CoverBloom {
                 area.queue_draw();
                 return gtk4::glib::ControlFlow::Break;
             }
+            let now = clock.frame_time();
             if inner.breath_start_us.get() == 0 {
-                inner.breath_start_us.set(clock.frame_time());
+                inner.breath_start_us.set(now);
             }
+            let last = inner.last_breath_frame_us.get();
+            if last != 0 && now - last < BREATH_FRAME_INTERVAL_US {
+                return gtk4::glib::ControlFlow::Continue;
+            }
+            inner.last_breath_frame_us.set(now);
             area.queue_draw();
             gtk4::glib::ControlFlow::Continue
         });
