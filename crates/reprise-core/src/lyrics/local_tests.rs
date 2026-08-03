@@ -59,6 +59,10 @@ impl crate::library::source::LibrarySource for VecLibrarySource {
         crate::library::source::UnixLibrarySource.display_name(at)
     }
 
+    fn container_name(&self, at: &Path) -> Option<String> {
+        crate::library::source::UnixLibrarySource.container_name(at)
+    }
+
     fn open_read(&self, at: &Path) -> std::io::Result<crate::library::source::LibraryReadHandle> {
         let bytes = self
             .content

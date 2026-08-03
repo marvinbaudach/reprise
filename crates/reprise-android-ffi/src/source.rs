@@ -1,9 +1,7 @@
-use std::collections::HashMap;
 use std::fs::File;
 use std::io;
 use std::os::fd::FromRawFd;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
 use reprise_core::library::source::{
@@ -12,6 +10,9 @@ use reprise_core::library::source::{
     LibraryWalkItem, LibraryWalkOrder, LibraryWalkVisitor,
 };
 use sha2::{Digest, Sha256};
+
+use crate::source_error::{source_io_error, walk_error};
+use crate::source_names::SourceNames;
 
 /// Provider facts returned by one SAF document query.
 #[derive(Clone, Debug, uniffi::Record)]
@@ -70,20 +71,14 @@ pub trait SafSource: Send + Sync {
 /// Adapts the flat foreign callback to Core's complete storage contract.
 pub struct BridgedSource {
     source: Box<dyn SafSource>,
-    display_names: Mutex<HashMap<PathBuf, Option<String>>>,
+    names: SourceNames,
 }
 
 impl BridgedSource {
     pub fn new(source: Box<dyn SafSource>) -> Self {
         Self {
             source,
-            display_names: Mutex::new(HashMap::new()),
-        }
-    }
-
-    fn remember_display_name(&self, at: PathBuf, display_name: Option<String>) {
-        if let Ok(mut names) = self.display_names.lock() {
-            names.insert(at, display_name);
+            names: SourceNames::default(),
         }
     }
 
@@ -108,9 +103,14 @@ impl BridgedSource {
             });
         }
 
+        let container_name = self.names.display_name(directory);
         for child in children {
             let path = std::path::PathBuf::from(&child.uri);
-            self.remember_display_name(path.clone(), child.display_name.clone());
+            self.names.remember_child(
+                path.clone(),
+                child.display_name.clone(),
+                container_name.clone(),
+            );
             let is_directory = child.is_directory;
             let entry = LibraryEntry {
                 path: path.clone(),
@@ -141,7 +141,11 @@ impl LibrarySource for BridgedSource {
     }
 
     fn display_name(&self, at: &Path) -> Option<String> {
-        self.display_names.lock().ok()?.get(at)?.clone()
+        self.names.display_name(at)
+    }
+
+    fn container_name(&self, at: &Path) -> Option<String> {
+        self.names.container_name(at)
     }
 
     fn open_read(&self, at: &Path) -> io::Result<LibraryReadHandle> {
@@ -168,7 +172,8 @@ impl LibrarySource for BridgedSource {
             .probe(path_uri(at), matches!(links, LibraryLinkMode::Follow))
         {
             Ok(Some(facts)) => {
-                self.remember_display_name(at.to_path_buf(), facts.display_name.clone());
+                self.names
+                    .remember_display_name(at.to_path_buf(), facts.display_name.clone());
                 LibraryPathPresence::Present(metadata_from_facts(at, &facts))
             }
             Ok(None) => LibraryPathPresence::Absent,
@@ -177,6 +182,7 @@ impl LibrarySource for BridgedSource {
     }
 
     fn read_directory(&self, directory: &Path) -> Option<Vec<LibraryDirectoryEntry>> {
+        let container_name = self.names.display_name(directory);
         self.source
             .list_children(path_uri(directory))
             .ok()
@@ -185,7 +191,11 @@ impl LibrarySource for BridgedSource {
                     .into_iter()
                     .map(|child| {
                         let path = PathBuf::from(&child.uri);
-                        self.remember_display_name(path.clone(), child.display_name.clone());
+                        self.names.remember_child(
+                            path.clone(),
+                            child.display_name.clone(),
+                            container_name.clone(),
+                        );
                         LibraryDirectoryEntry {
                             path,
                             metadata: Some(metadata_from_child(&child)),
@@ -211,7 +221,8 @@ impl LibrarySource for BridgedSource {
                 return;
             }
         };
-        self.remember_display_name(root.to_path_buf(), root_facts.display_name.clone());
+        self.names
+            .remember_display_name(root.to_path_buf(), root_facts.display_name.clone());
         let root_entry = LibraryEntry {
             path: root.to_path_buf(),
             is_file: root_facts.is_file,
@@ -251,27 +262,6 @@ fn metadata_from_child(child: &SourceChild) -> LibraryPathMetadata {
 fn modified_time(unix_ms: Option<i64>) -> Option<SystemTime> {
     let unix_ms = u64::try_from(unix_ms?).ok()?;
     SystemTime::UNIX_EPOCH.checked_add(Duration::from_millis(unix_ms))
-}
-
-fn source_io_error(error: SafSourceError) -> io::Error {
-    let kind = match &error {
-        SafSourceError::PermissionDenied { .. } => io::ErrorKind::PermissionDenied,
-        SafSourceError::Io { .. } | SafSourceError::Unknown { .. } => io::ErrorKind::Other,
-    };
-    io::Error::new(kind, error)
-}
-
-fn walk_error(directory: &Path, error: &SafSourceError) -> LibraryWalkError {
-    let kind = match error {
-        SafSourceError::PermissionDenied { .. } => LibraryWalkErrorKind::PermissionDenied,
-        SafSourceError::Io { .. } => LibraryWalkErrorKind::Io,
-        SafSourceError::Unknown { .. } => LibraryWalkErrorKind::Unknown,
-    };
-    LibraryWalkError {
-        path: Some(directory.to_path_buf()),
-        kind,
-        detail: error.to_string(),
-    }
 }
 
 fn document_identity(uri: &Path, document_id: &str) -> Option<(u64, u64)> {

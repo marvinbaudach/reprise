@@ -103,11 +103,7 @@ pub fn relink_track_with_source(
     }
     let meta = super::scanner::track_meta::read_meta(new_path)?;
     let title = if meta.title.is_empty() {
-        new_path
-            .file_stem()
-            .and_then(|stem| stem.to_str())
-            .unwrap_or_default()
-            .to_string()
+        source.display_name(new_path).unwrap_or_default()
     } else {
         meta.title.clone()
     };
@@ -247,10 +243,7 @@ fn relink_from_folder_with_source(
                 Err(error) => return Err(error),
             };
             let title = if meta.title.is_empty() {
-                path.file_stem()
-                    .and_then(|stem| stem.to_str())
-                    .unwrap_or_default()
-                    .to_string()
+                source.display_name(path).unwrap_or_default()
             } else {
                 meta.title.clone()
             };
@@ -783,3 +776,7 @@ mod tests {
         assert_eq!(path, "/different/reused.flac");
     }
 }
+
+#[cfg(test)]
+#[path = "relink_source_name_tests.rs"]
+mod source_name_tests;

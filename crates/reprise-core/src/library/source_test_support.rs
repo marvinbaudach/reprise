@@ -22,6 +22,10 @@ impl LibrarySource for UnknownProbeSource {
         None
     }
 
+    fn container_name(&self, _at: &Path) -> Option<String> {
+        None
+    }
+
     fn open_read(&self, _at: &Path) -> io::Result<LibraryReadHandle> {
         Err(io::Error::new(
             io::ErrorKind::NotConnected,
@@ -38,6 +42,42 @@ impl LibrarySource for UnknownProbeSource {
     }
 
     fn walk(&self, _root: &Path, _order: LibraryWalkOrder, _visitor: &mut dyn LibraryWalkVisitor) {}
+}
+
+pub(crate) struct NamedUnixSource(pub(crate) &'static str);
+
+impl LibrarySource for NamedUnixSource {
+    fn residence_token(&self, at: &Path) -> Option<i64> {
+        super::source::UnixLibrarySource.residence_token(at)
+    }
+
+    fn mount_point(&self, at: &Path) -> Option<PathBuf> {
+        super::source::UnixLibrarySource.mount_point(at)
+    }
+
+    fn display_name(&self, _at: &Path) -> Option<String> {
+        Some(self.0.to_owned())
+    }
+
+    fn container_name(&self, at: &Path) -> Option<String> {
+        super::source::UnixLibrarySource.container_name(at)
+    }
+
+    fn open_read(&self, at: &Path) -> io::Result<LibraryReadHandle> {
+        super::source::UnixLibrarySource.open_read(at)
+    }
+
+    fn probe(&self, at: &Path, links: LibraryLinkMode) -> LibraryPathPresence {
+        super::source::UnixLibrarySource.probe(at, links)
+    }
+
+    fn read_directory(&self, directory: &Path) -> Option<Vec<LibraryDirectoryEntry>> {
+        super::source::UnixLibrarySource.read_directory(directory)
+    }
+
+    fn walk(&self, root: &Path, order: LibraryWalkOrder, visitor: &mut dyn LibraryWalkVisitor) {
+        super::source::UnixLibrarySource.walk(root, order, visitor);
+    }
 }
 
 #[test]

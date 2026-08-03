@@ -234,6 +234,12 @@ pub trait LibrarySource: Send + Sync {
     /// source has nothing better than the identifier it was given.
     fn display_name(&self, at: &Path) -> Option<String>;
 
+    /// The name of the container `at` sits in — an album folder, a
+    /// DocumentsProvider parent — used when an item carries no album tag.
+    /// `None` when the source cannot name one; callers then leave the field
+    /// empty rather than inventing a name from an identifier.
+    fn container_name(&self, at: &Path) -> Option<String>;
+
     /// Opens `at` for reading without exposing the source's concrete storage
     /// handle. Failure is explicit: a source that cannot provide readable,
     /// seekable content must not compile with this contract unanswered.
@@ -342,6 +348,13 @@ impl LibrarySource for UnixLibrarySource {
     fn display_name(&self, at: &Path) -> Option<String> {
         at.file_stem()
             .and_then(|stem| stem.to_str())
+            .map(str::to_owned)
+    }
+
+    fn container_name(&self, at: &Path) -> Option<String> {
+        at.parent()?
+            .file_name()
+            .and_then(|name| name.to_str())
             .map(str::to_owned)
     }
 
@@ -539,6 +552,10 @@ mod tests {
             None
         }
 
+        fn container_name(&self, _at: &Path) -> Option<String> {
+            None
+        }
+
         fn open_read(&self, _at: &Path) -> std::io::Result<LibraryReadHandle> {
             Err(std::io::Error::new(
                 std::io::ErrorKind::Unsupported,
@@ -649,6 +666,10 @@ mod tests {
             at.file_name()
                 .and_then(|name| name.to_str())
                 .map(str::to_owned)
+        }
+
+        fn container_name(&self, _at: &Path) -> Option<String> {
+            None
         }
 
         fn open_read(&self, _at: &Path) -> std::io::Result<LibraryReadHandle> {

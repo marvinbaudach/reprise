@@ -14,6 +14,8 @@ use reprise_core::view_source::ViewSource;
 use source::{BridgedSource, SafSource};
 
 pub mod source;
+mod source_error;
+mod source_names;
 
 uniffi::setup_scaffolding!();
 
@@ -211,6 +213,8 @@ mod tests {
 
     const TREE_URI: &str = "content://com.android.externalstorage.documents/tree/primary%3AMusic";
     const TRACK_URI: &str = "content://com.android.externalstorage.documents/tree/primary%3AMusic/document/primary%3AMusic%2Fsine.flac";
+    const ALBUM_URI: &str = "content://com.android.externalstorage.documents/tree/primary%3AMusic/document/primary%3AMusic%2FSome%20Album";
+    const BROKEN_TAGS_URI: &str = "content://com.android.externalstorage.documents/tree/primary%3AMusic/document/primary%3AMusic%2FSome%20Album%2Fbroken-tags.mp3";
 
     struct OneTrackSource {
         probe_calls: Arc<AtomicUsize>,
@@ -291,6 +295,69 @@ mod tests {
         }
     }
 
+    struct UntaggedAlbumSource;
+
+    impl SafSource for UntaggedAlbumSource {
+        fn residence_token(&self, _uri: String) -> Result<Option<i64>, SafSourceError> {
+            Ok(Some(41))
+        }
+
+        fn probe(
+            &self,
+            uri: String,
+            _follow_links: bool,
+        ) -> Result<Option<SourceFacts>, SafSourceError> {
+            Ok((uri == TREE_URI).then(|| SourceFacts {
+                display_name: Some("Music".to_owned()),
+                is_file: false,
+                is_directory: true,
+                size_bytes: None,
+                modified_unix_ms: Some(1_775_000_000_000),
+                document_id: "primary:Music".to_owned(),
+            }))
+        }
+
+        fn list_children(&self, uri: String) -> Result<Vec<SourceChild>, SafSourceError> {
+            let children = match uri.as_str() {
+                TREE_URI => vec![SourceChild {
+                    uri: ALBUM_URI.to_owned(),
+                    display_name: Some("Some Album".to_owned()),
+                    is_file: false,
+                    is_directory: true,
+                    size_bytes: None,
+                    modified_unix_ms: Some(1_775_000_000_000),
+                    document_id: "primary:Music/Some Album".to_owned(),
+                }],
+                ALBUM_URI => vec![SourceChild {
+                    uri: BROKEN_TAGS_URI.to_owned(),
+                    display_name: Some("broken-tags.mp3".to_owned()),
+                    is_file: true,
+                    is_directory: false,
+                    size_bytes: Some(1),
+                    modified_unix_ms: Some(1_775_000_123_456),
+                    document_id: "primary:Music/Some Album/broken-tags.mp3".to_owned(),
+                }],
+                _ => Vec::new(),
+            };
+            Ok(children)
+        }
+
+        fn open_read_fd(&self, uri: String) -> Result<i32, SafSourceError> {
+            if uri != BROKEN_TAGS_URI {
+                return Err(SafSourceError::Io {
+                    detail: format!("unexpected document: {uri}"),
+                });
+            }
+            let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../reprise-core/tests/fixtures/broken-tags.mp3");
+            File::open(fixture)
+                .map(IntoRawFd::into_raw_fd)
+                .map_err(|error| SafSourceError::Io {
+                    detail: error.to_string(),
+                })
+        }
+    }
+
     #[test]
     fn configured_saf_tree_scans_with_indeterminate_first_progress_and_lists_tracks() {
         let directory = tempfile::tempdir().unwrap();
@@ -333,5 +400,25 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn untagged_saf_track_uses_the_provider_parent_name_as_its_album() {
+        let directory = tempfile::tempdir().unwrap();
+        let library = MusicLibrary::open(directory.path().to_str().unwrap()).unwrap();
+        library
+            .set_tree_uri(TREE_URI.to_owned(), Box::new(UntaggedAlbumSource))
+            .unwrap();
+
+        let summary = library
+            .scan(Box::new(RecordingProgress::default()))
+            .unwrap();
+        let tracks = library.list_tracks().unwrap();
+
+        assert_eq!(summary.added, 1);
+        assert_eq!(tracks.len(), 1);
+        assert_eq!(tracks[0].uri, BROKEN_TAGS_URI);
+        assert_eq!(tracks[0].title, "broken-tags.mp3");
+        assert_eq!(tracks[0].album, "Some Album");
     }
 }
