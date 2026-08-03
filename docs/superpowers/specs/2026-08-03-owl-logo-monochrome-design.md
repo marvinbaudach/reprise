@@ -56,17 +56,50 @@ gerendert bei 512, 48 und 16 px. Belegt wurde:
 | E1 | Das farbige App-Icon bleibt farbig. Monochrom ist eine abgeleitete Fassung, die tragen muss — kein Ersatz. |
 | E2 | Größenabhängiges Artwork statt einer skalierten Zeichnung. |
 | E3 | Handgezeichneter Vektor als Master. Generierte Bilder dienen ausschließlich als visuelle Referenz; **es wird nichts getract**. |
-| E4 | Formsprache: geometrische Konstruktion, dazu kantige Winkelbrauen und spitze Ohrbüschel. Randfüllend. |
+| E4 | **`full` bleibt nah an der Vorlage** — Verläufe, lange Ohrbüschel, geriffelte Ohrmuscheln. Die geometrische Vereinfachung greift erst ab `reduced`, wo die Größe sie erzwingt. Alle Stufen randfüllend. |
 | E5 | Website bekommt Bildmarke **und** horizontale Wortmarke, hell und dunkel, als SVG. |
-| E6 | Wortmarke in einer editorialen Schrift — Kontrast zur geometrischen Eule als Wiedererkennungsstrategie. |
+| E6 | Wortmarke in einer editorialen Schrift — Kontrast zur Eule als Wiedererkennungsstrategie. |
+
+E4 ersetzt eine frühere Fassung, die auch die große Stufe geometrisch
+vereinfacht hätte. Die Vorlagentreue der hochauflösenden Fassung wurde
+nachträglich als Anforderung nachgereicht und wiegt schwerer: Vereinfachung
+findet jetzt nur noch dort statt, wo die Pixelzahl sie erzwingt.
+
+## Vorlage
+
+Die verbindliche Vorlage liegt im Repo:
+`docs/assets/brand-reference/owl-headphones-template.png` (1163×929, mit
+Transparenz). Sie ist keine Stimmungsreferenz, sondern das Ziel für `full`.
+
+Ihre tragenden Merkmale, in absteigender Wichtigkeit:
+
+1. **Lange, geschwungene Ohrbüschel**, die nach außen-oben auslaufen und **vor
+   dem Bügel** liegen — sie durchstoßen ihn optisch. Das ist die auffälligste
+   Eigenheit der Vorlage.
+2. **Winkelbrauen** als dunkle V-Masse zwischen den Augen, die den Blick trägt.
+3. **Bügel mit Verlauf** von tiefem Violett an den Enden nach Blau/Teal im
+   Scheitel, mit heller Glanzkante.
+4. **Geriffelte Ohrmuscheln** — konzentrische Ringe mit Teal-Akzent, die wie
+   Schallwellen lesen.
+5. **Augen mit Verlauf** von Teal nach Gelbgrün, dunkle Pupille, ein weißer
+   Lichtpunkt oben rechts.
+6. **Heller Gesichtsverlauf** gegen den dunklen Kopf.
 
 ## Formsprache und Konstruktion
 
-Eulenkopf frontal, symmetrisch zur Vertikalachse. Die Konstruktion ist
-geometrisch: Kreisbögen und gerade Kanten, keine freihändigen Kurven, keine
-Verlaufsmodellierung von Volumen.
+Eulenkopf frontal, symmetrisch zur Vertikalachse.
 
-Zwei Elemente tragen die Identität und werden in jeder Zeichnung gehalten:
+**`full` folgt der Vorlage.** Verläufe sind ausdrücklich erlaubt — SVG
+beherrscht sie, und die Behauptung im heutigen `data/meson.build`, Verläufe
+erzwängen Raster, ist schlicht falsch. Merkmale 1–6 oben werden gehalten.
+
+**Ab `reduced` greift geometrische Disziplin**, weil die Größe sie erzwingt:
+Kreisbögen und gerade Kanten, Verläufe fallen zu Flächen zusammen, die
+Muschelriffelung entfällt. Das ist keine andere Marke, sondern dieselbe unter
+Druck — die Identitätsträger bleiben.
+
+Zwei Elemente tragen die Identität und werden in **jeder** Zeichnung gehalten,
+auch in `micro`:
 
 - **Ohrbüschel** — zwei spitze Dreiecksformen, die aus der oberen Kopfkante
   herauswachsen. Sie sind Teil der Kopfsilhouette, kein aufgesetztes Detail.
@@ -90,25 +123,35 @@ mit klarer Zuständigkeit:
 
 | Zeichnung | Inhalt | Bedient |
 |---|---|---|
-| **full** | Eule + Bügel + Cups + Augen + Schnabel | 512 / 256 / 128 px, `scalable`-SVG, Website-Marke, Lockups, Apple-Touch-Icon |
-| **reduced** | Eule + Bügel; Cups in der Kopfform aufgegangen, Schnabel vereinfacht | 64 / 48 px, Android-Foreground, Android-Monochrome |
-| **micro** | Eule pur: Kopf, Ohrbüschel, Brauen, Augen-Negativraum; Kanten aufs Pixelraster gehintet | 24 / 16 px, GNOME-Symbolic, **Favicon** |
+| **full** | Vorlagentreu: lange Ohrbüschel vor dem Bügel, Verlaufsbügel, geriffelte Muscheln, Verlaufsaugen mit Lichtpunkt, Gesichtsverlauf | 512 / 256 / 128 px, `scalable`-SVG, Website-Marke, Lockups, Apple-Touch-Icon |
+| **reduced** | Eule + Bügel + Ohrbüschel; Muschelriffelung entfällt, Cups gehen in die Kopfform auf, Verläufe werden Flächen | 64 / 48 px, Android-Foreground, Android-Monochrome |
+| **micro** | Kopf, Ohrbüschel, Brauen, Augen als Negativraum; kein Bügel; Kanten aufs Pixelraster gehintet | 24 / 16 px, GNOME-Symbolic, **Favicon** |
 
 Der Favicon-Fall ist bewusst zugeordnet: Browser-Tabs rendern 16 px. Dorthin
 gehört `micro`, nicht die volle Marke.
 
 ## Farbsystem
 
-Die Palette wird aus dem heutigen Icon übernommen, damit die App farblich nicht
-umspringt:
+Die Palette ist aus der Vorlage gemessen, nicht aus dem heutigen Icon — dort
+fehlt der Teal-Verlauf des Bügels vollständig, weil das aktuelle Icon gar keine
+Kopfhörer hat.
 
 | Rolle | Wert |
 |---|---|
-| Grundfläche / Tinte | `#1B082D` |
-| Körper dunkel | `#34125C` |
-| Körper hell | `#481D70` |
-| Augen-Akzent | `#116B91` |
-| Augen-Aufhellung | `#6CA6B6` |
+| Tinte / Kontur | `#1F1056` |
+| Kopf dunkel | `#2B155E` |
+| Kopf mittel | `#452674` |
+| Körper hell | `#5F2F8A` |
+| Gesicht hell | `#8A679C` |
+| Bügel Teal | `#4F93C8` |
+| Bügel Aufhellung | `#8292D5` |
+| Muschel-Akzent | `#5798BD` |
+| Auge Teal | `#1C698A` |
+| Auge tief | `#114A71` |
+| Metall / Glanz | `#A09EB4` → `#E0E0E1` |
+
+Die Grundfläche des GNOME-App-Icons bleibt bei `#1B082D` aus dem heutigen Icon,
+damit der Launcher-Eindruck nicht springt.
 
 **Monochrom-Ableitung:** dieselben Pfade, eine einzige Füllung, Augen und
 Schnabel bleiben Aussparung. Es entsteht keine zweite Zeichnung. Damit können
@@ -197,7 +240,8 @@ GitHub, Fremdeinbettung. Die Live-Text-Fassung bleibt die primäre.
 
 ## Nicht-Ziele
 
-- Keine Animation, kein 3D, keine skeuomorphe Behandlung.
+- Keine Animation und kein 3D. Verläufe und Glanzkanten sind in `full`
+  dagegen ausdrücklich erwünscht — sie sind Teil der Vorlage.
 - Keine Legacy-PNG-Buckets für Android (minSdk 26).
 - Kein separates Rund-Artwork — die Adaptive-Maske erledigt das.
 - Keine Änderung der App-Farbwelt über das Icon hinaus.
@@ -222,7 +266,8 @@ Gemessen wird headless, nicht betrachtet.
 | V2 | Negativraum überlebt | 16-px-Render, Alpha bei 50 % binarisiert, 4er-Nachbarschaft: ≥ 2 getrennte Hintergrund-Zusammenhangskomponenten (Außenraum + Augenaussparung). Ein Klumpen hat genau 1. |
 | V3 | Monochrom trägt | Alle Füllungen auf einen Wert abgeflacht; danach gilt V2 unverändert. |
 | V4 | Kontrast | Mono-Marke ≥ 4,5:1 gegen `#FFFFFF` **und** gegen `#1B082D`. |
-| V5 | Kein Trace | Zahl der Pfadbefehle je `d`-Attribut: `micro` ≤ 40, `reduced` ≤ 120, `full` ≤ 300. Verhindert den Rückfall in potrace-Matsch. |
+| V5 | Kein Trace | Kein einzelnes `d`-Attribut überschreitet 400 Pfadbefehle, und die Gesamtzahl der Pfade bleibt bei `full` ≤ 60, `reduced` ≤ 20, `micro` = 1. Ein Trace erzeugt genau das Gegenteil: einen Riesenpfad mit Tausenden Befehlen. Der Test greift also auf die Signatur des Tracens, nicht auf Detailreichtum — `full` darf beliebig fein sein, solange es aus benannten Formen besteht. |
+| V8 | Vorlagentreue | `full` bei 512 px gegen `docs/assets/brand-reference/owl-headphones-template.png` gestellt: die sechs Merkmale aus dem Abschnitt „Vorlage" sind einzeln nachweisbar vorhanden. |
 | V6 | Android real | Auf `pixel10xl_api37` installiert und mit **eingeschalteten Themed Icons** geprüft: `<monochrome>` sichtbar, nichts von der Maske beschnitten. |
 | V7 | Symbolic-Hygiene | Symbolic-SVG: genau ein `<path>`, viewBox `0 0 16 16`, kein `transform`, kein `stroke`, kein Verlauf. |
 
@@ -261,5 +306,9 @@ V6 kann erst laufen, wenn der Android-Strang steht.
 ## Arbeitsort
 
 Worktree `.worktrees/owl-logo`, Branch `feat/owl-logo`, Basis `origin/dev` —
-der einzige Baum, der `data/icons/` **und** `android/` enthält. Das
-uncommittete Eulen-Material aus dem Haupt-Checkout ist als Referenz gesichert.
+der einzige Baum, der `data/icons/` **und** `android/` enthält.
+
+Die Vorlage liegt committet unter `docs/assets/brand-reference/`. Das
+uncommittete Eulen-Material aus dem Haupt-Checkout (PNGs ohne Kopfhörer,
+potrace-Symbolic) ist ausschließlich im Sitzungs-Scratchpad gesichert und
+damit flüchtig; es ist für die Umsetzung nicht erforderlich.
