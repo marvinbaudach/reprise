@@ -5075,6 +5075,234 @@ msgstr "Chromium (CSD)"
 msgid "Separate title bar"
 msgstr "Barra de título independiente"
 
+#: crates/reprise-view/src/device_sync.rs:24
+msgid "Opus · 160 kbit/s (Recommended)"
+msgstr "Opus · 160 kbit/s (Recommended)"
+
+#: crates/reprise-view/src/device_sync.rs:25
+msgid "MP3 · 256 kbit/s (Compatibility)"
+msgstr "MP3 · 256 kbit/s (Compatibility)"
+
+#: crates/reprise-view/src/device_sync.rs:26
+msgid "Original files (no conversion)"
+msgstr "Original files (no conversion)"
+
+#: crates/reprise-view/src/device_sync.rs:27
+msgid "Playlist no longer exists — deselect it to continue"
+msgstr "Playlist no longer exists — deselect it to continue"
+
+#: crates/reprise-view/src/device_sync.rs:28
+msgid "Smart snapshot"
+msgstr "Smart snapshot"
+
+#: crates/reprise-view/src/device_sync.rs:29
+#, rust-format
+msgid "{count} entry"
+msgid_plural "{count} entries"
+msgstr[0] "{count} entry"
+msgstr[1] "{count} entries"
+
+#: crates/reprise-view/src/device_sync.rs:30
+#, rust-format
+msgid "{count} unique track"
+msgid_plural "{count} unique tracks"
+msgstr[0] "{count} unique track"
+msgstr[1] "{count} unique tracks"
+
+#: crates/reprise-view/src/device_sync.rs:32
+#, rust-format
+msgid "{count} unavailable track"
+msgid_plural "{count} unavailable tracks"
+msgstr[0] "{count} unavailable track"
+msgstr[1] "{count} unavailable tracks"
+
+#: crates/reprise-view/src/device_sync.rs:33
+#, rust-format
+msgid "{size} · No verified sync time"
+msgstr "{size} · No verified sync time"
+
+#: crates/reprise-view/src/device_sync.rs:34
+#, rust-format
+msgid "{size} · Verified sync time unavailable"
+msgstr "{size} · Verified sync time unavailable"
+
+#: crates/reprise-view/src/device_sync.rs:35
+#, rust-format
+msgid "{size} · Last synced {timestamp}"
+msgstr "{size} · Last synced {timestamp}"
+
+#: crates/reprise-view/src/device_sync.rs:36
+msgid "Never synchronized"
+msgstr "Never synchronized"
+
+#: crates/reprise-view/src/device_sync.rs:37
+#, rust-format
+msgid "Last synced {timestamp}"
+msgstr "Last synced {timestamp}"
+
+#: crates/reprise-view/src/device_sync.rs:38
+#, rust-format
+msgid "{size} on device when last verified"
+msgstr "{size} on device when last verified"
+
+#: crates/reprise-view/src/device_sync.rs:40
+#, rust-format
+msgid "{count} updated"
+msgstr "{count} updated"
+
+#: crates/reprise-view/src/device_sync.rs:42
+#, rust-format
+msgid "{count} unavailable kept"
+msgstr "{count} unavailable kept"
+
+#: crates/reprise-view/src/device_sync.rs:44
+#, rust-format
+msgid "{count} playlist written"
+msgid_plural "{count} playlists written"
+msgstr[0] "{count} playlist written"
+msgstr[1] "{count} playlists written"
+
+#: crates/reprise-view/src/device_sync.rs:46
+#, rust-format
+msgid "{count} playlist removed"
+msgid_plural "{count} playlists removed"
+msgstr[0] "{count} playlist removed"
+msgstr[1] "{count} playlists removed"
+
+#: crates/reprise-view/src/device_sync.rs:47
+#, rust-format
+msgid "{size} transferred"
+msgstr "{size} transferred"
+
+#: crates/reprise-view/src/device_sync.rs:48
+msgid "Verifying device contents…"
+msgstr "Verifying device contents…"
+
+#: crates/reprise-view/src/device_sync.rs:50
+#, rust-format
+msgid "Verified · {count} Reprise track on device"
+msgid_plural "Verified · {count} Reprise tracks on device"
+msgstr[0] "Verified · {count} Reprise track on device"
+msgstr[1] "Verified · {count} Reprise tracks on device"
+
+#: crates/reprise-view/src/device_sync.rs:53
+msgid "Verified after synchronization"
+msgstr "Verified after synchronization"
+
+#: crates/reprise-view/src/device_sync.rs:54
+msgid "Not verified in this session"
+msgstr "Not verified in this session"
+
+#: crates/reprise-view/src/device_sync.rs:55
+msgid "Select at least one playlist to synchronize."
+msgstr "Select at least one playlist to synchronize."
+
+#: crates/reprise-view/src/device_sync.rs:57
+#, rust-format
+msgid "{count} selected playlist no longer exists"
+msgid_plural "{count} selected playlists no longer exist"
+msgstr[0] "{count} selected playlist no longer exists"
+msgstr[1] "{count} selected playlists no longer exist"
+
+#: crates/reprise-view/src/device_sync.rs:61
+#, rust-format
+msgid "{count} playlist is selected twice"
+msgid_plural "{count} playlists are selected twice"
+msgstr[0] "{count} playlist is selected twice"
+msgstr[1] "{count} playlists are selected twice"
+
+#: crates/reprise-view/src/device_sync.rs:65
+#, rust-format
+msgid ""
+"{count} track will be skipped because it is unavailable and not already on "
+"the device."
+msgid_plural ""
+"{count} tracks will be skipped because they are unavailable and not already "
+"on the device."
+msgstr[0] ""
+"{count} track will be skipped because it is unavailable and not already on "
+"the device."
+msgstr[1] ""
+"{count} tracks will be skipped because they are unavailable and not already "
+"on the device."
+
+#: crates/reprise-view/src/device_sync.rs:68
+msgid "An unsafe managed path will be left untouched."
+msgstr "An unsafe managed path will be left untouched."
+
+#: crates/reprise-view/src/device_sync.rs:69
+msgid "_Cancel"
+msgstr "_Cancel"
+
+#: crates/reprise-view/src/device_sync.rs:70
+msgid "_Download & sync"
+msgstr "_Download & sync"
+
+#: crates/reprise-view/src/device_sync.rs:71
+msgid "_Sync now"
+msgstr "_Sync now"
+
+#: crates/reprise-view/src/device_sync.rs:72
+#, rust-format
+msgid "Step 1 of 2 · Downloading {current} of {total} · {percent}%"
+msgstr "Step 1 of 2 · Downloading {current} of {total} · {percent}%"
+
+#: crates/reprise-view/src/device_sync.rs:73
+msgid "Checking device…"
+msgstr "Checking device…"
+
+#: crates/reprise-view/src/device_sync.rs:74
+msgid "Reading storage and preparing the mirror plan"
+msgstr "Reading storage and preparing the mirror plan"
+
+#: crates/reprise-view/src/device_sync.rs:75
+msgid "Finishing synchronization…"
+msgstr "Finishing synchronization…"
+
+#: crates/reprise-view/src/device_sync.rs:76
+msgid "Refreshing the device inventory"
+msgstr "Refreshing the device inventory"
+
+#: crates/reprise-view/src/device_sync.rs:77
+#, rust-format
+msgid "Removing · {done} of {total}"
+msgstr "Removing · {done} of {total}"
+
+#: crates/reprise-view/src/device_sync.rs:78
+#, rust-format
+msgid "Converting · {done} of {total}"
+msgstr "Converting · {done} of {total}"
+
+#: crates/reprise-view/src/device_sync.rs:79
+#, rust-format
+msgid "Copying · {done} of {total}"
+msgstr "Copying · {done} of {total}"
+
+#: crates/reprise-view/src/device_sync.rs:80
+#, rust-format
+msgid "Writing playlists · {done} of {total}"
+msgstr "Writing playlists · {done} of {total}"
+
+#: crates/reprise-view/src/device_sync.rs:81
+#, rust-format
+msgid "Step 2 of 2 · Removing · {done} of {total}"
+msgstr "Step 2 of 2 · Removing · {done} of {total}"
+
+#: crates/reprise-view/src/device_sync.rs:82
+#, rust-format
+msgid "Step 2 of 2 · Converting · {done} of {total}"
+msgstr "Step 2 of 2 · Converting · {done} of {total}"
+
+#: crates/reprise-view/src/device_sync.rs:83
+#, rust-format
+msgid "Step 2 of 2 · Copying · {done} of {total}"
+msgstr "Step 2 of 2 · Copying · {done} of {total}"
+
+#: crates/reprise-view/src/device_sync.rs:85
+#, rust-format
+msgid "Step 2 of 2 · Writing playlists · {done} of {total}"
+msgstr "Step 2 of 2 · Writing playlists · {done} of {total}"
+
 #, rust-format
 #~ msgid "Select “{title}”"
 #~ msgstr "Seleccionar «{title}»"
