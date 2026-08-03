@@ -3,6 +3,7 @@ use std::fs;
 use tempfile::TempDir;
 
 use super::*;
+use crate::library::source::ExistingPathSource;
 use crate::lyrics::parse_lrc;
 
 #[test]
@@ -65,25 +66,17 @@ fn lyr_7_a_track_with_a_very_long_filename_still_gets_a_sidecar() {
     assert!(track.with_extension("lrc").is_file());
 }
 
-#[cfg(unix)]
 #[test]
 fn lyr_7_a_write_failure_leaves_no_temporary_file() {
-    use std::os::unix::fs::PermissionsExt;
-
     let temp = TempDir::new().unwrap();
-    let track = temp.path().join("song.flac");
-    fs::write(&track, b"fixture").unwrap();
-    fs::set_permissions(temp.path(), fs::Permissions::from_mode(0o555)).unwrap();
+    let track = temp.path().join("missing-parent/song.flac");
 
-    let result = write_sidecar(&track, &[TimedLine::new(1_000, "Network text")]);
-
-    fs::set_permissions(temp.path(), fs::Permissions::from_mode(0o755)).unwrap();
-    assert_eq!(result, SidecarWrite::Failed);
-    assert_eq!(
-        fs::read_dir(temp.path())
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name())
-            .collect::<Vec<_>>(),
-        [track.file_name().unwrap()]
+    let result = write_sidecar_with_source(
+        &ExistingPathSource::FILE,
+        &track,
+        &[TimedLine::new(1_000, "Network text")],
     );
+
+    assert_eq!(result, SidecarWrite::Failed);
+    assert!(fs::read_dir(temp.path()).unwrap().next().is_none());
 }

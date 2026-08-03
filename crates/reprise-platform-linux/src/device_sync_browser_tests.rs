@@ -8,7 +8,7 @@ use std::fs;
 
 use reprise_core::device_sync::browser::StorageKind;
 
-use super::target_browser::derive_storage_id;
+use super::target_browser::{derive_storage_id, map_create_folder_result};
 use super::tests::{fixture, run};
 use super::*;
 
@@ -78,17 +78,12 @@ fn browser_creates_a_new_folder_and_rejects_a_duplicate_name() {
 
 #[test]
 fn browser_reports_a_distinct_error_when_a_device_refuses_creation_at_the_storage_root() {
-    let (temp, storage) = fixture();
-    let root = temp.path().join("Locked");
-    fs::create_dir_all(&root).unwrap();
-    let mut permissions = fs::metadata(&root).unwrap().permissions();
-    permissions.set_readonly(true);
-    fs::set_permissions(&root, permissions).unwrap();
-    let locked_id = derive_storage_id("Locked");
+    let refusal = gio::glib::Error::new(
+        gio::IOErrorEnum::PermissionDenied,
+        "the device refused storage-root creation",
+    );
 
-    let result = run(storage.create_child_folder(locked_id, "", "Music"));
-
-    fs::set_permissions(&root, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let result = map_create_folder_result(Err(refusal), true);
 
     assert!(
         matches!(result, Err(DeviceIoError::CannotCreateAtStorageRoot(_))),

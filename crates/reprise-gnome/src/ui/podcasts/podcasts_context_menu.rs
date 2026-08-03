@@ -168,7 +168,6 @@ pub(super) fn build_for_selection(
     }
     let menu = gio::Menu::new();
     let primary = gio::Menu::new();
-    append_browser_action(&primary, row);
     for mut entry in multi_selection_primary_entries() {
         if !queue_available {
             entry.action = match entry.action {

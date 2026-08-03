@@ -321,6 +321,12 @@ pub trait LibrarySource: Send + Sync {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct UnixLibrarySource;
 
+#[cfg(test)]
+#[path = "source_test_support.rs"]
+mod test_support;
+#[cfg(test)]
+pub(crate) use test_support::ExistingPathSource;
+
 impl LibrarySource for UnixLibrarySource {
     fn residence_token(&self, at: &Path) -> Option<i64> {
         nearest_existing_ancestor_dev(at).map(|device| device as i64)

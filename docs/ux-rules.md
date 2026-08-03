@@ -3614,10 +3614,12 @@ listening statistics.
   places. Both start with source rows grouped by channel or show which expand
   to their episodes; radio stays a station list. A YouTube source is named by
   its channel and has no author subtitle; an RSS source keeps its show title
-  plus a distinct author subtitle when present. The existing episode, new,
-  latest and download facts line stays unchanged. The add dialogs show real
-  source images, group YouTube hits by channel, and hide podcasts, channels and
-  stations that are already subscribed.
+  plus a distinct author subtitle when present. The source identity stays
+  vertically centered beside its artwork instead of sticking to the top of the
+  group header. The existing episode, new, latest and download facts line stays
+  unchanged. The add dialogs show real source images, group YouTube hits by
+  channel, and hide podcasts, channels and stations that are already
+  subscribed.
 - **SRC-3a** [active] [gtk] — Every source has exactly one add dialog with
   exactly one input field for search terms or a URL. Search yields results with
   row actions; a recognized URL **of the dialog's own source** leads through
@@ -3729,10 +3731,10 @@ listening statistics.
   action "Open in browser" only when the episode has a launchable web page:
   YouTube uses the durable watch URL from `audio_url`, while RSS uses
   `page_url` when present and never treats its media enclosure in `audio_url`
-  as an episode page. Even with a multi-selection, the action targets only the
-  row whose menu was opened. This asymmetry with radio is deliberate.
-  Unsubscribing is operated from the context menu alone; there is no hover
-  star.
+  as an episode page. As a single-episode action it is absent from a
+  multi-selection menu instead of targeting an arbitrary member, as required
+  by SRC-12. This asymmetry with radio is deliberate. Unsubscribing is operated
+  from the context menu alone; there is no hover star.
 - **SRC-13** [active] [gtk] — **Marking and scrolling are separate in the
   source lists.** The loaded item carries the shared playback marker in every
   source list it appears in; setting the marker never moves the viewport. It is
