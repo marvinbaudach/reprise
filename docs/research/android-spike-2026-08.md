@@ -1148,6 +1148,31 @@ SAF hat ihn in `DocumentsContract.Document.COLUMN_DISPLAY_NAME`. Das ist der
 nächste Fund, den der MVP aus der Abstraktion herausdrückt, und er gehört vor
 Phase 4.
 
+### Der MVP, vollständig belegt (2026-08-03)
+
+Gemessen auf `emulator-5554`, frische Installation, geleerte App-Daten.
+
+| Schritt | Beleg |
+| --- | --- |
+| Ordner über SAF wählen | `ACTION_OPEN_DOCUMENT_TREE` auf `/sdcard/Music/Repriese` |
+| Scannen | `Scan completed: added=2 updated=0 errors=0` |
+| Katalog stimmt | Datenbank: `sine.flac` mit Tags, `broken-tags.mp3` als `untagged` mit `unreadable_tags` — dieselben Verdikte wie unter Linux |
+| Album benannt | `album = "Repriese"` (Anzeigename des übergeordneten Dokuments), nicht `document` |
+| Liste anzeigen | beide Tracks mit Dauer |
+| Abspielen | `AudioTrack: stop(16): called with 51200 frames delivered` — bei 1160 ms und 44,1 kHz sind 51.156 Frames der ganze Track |
+| Neustart | nach `force-stop` steht die Liste wieder da, **ohne zweiten Scan** |
+
+Der letzte Punkt ist der wichtigste für die Abstraktion: Die Tracks kommen aus
+dem Katalog, nicht aus einem erneuten Baumlauf. Ein Kaltstart, der den Baum
+über Binder neu abliefe, wäre genau die Kosten, die die fünf Pakete zu
+vermeiden gelernt haben.
+
+Wird die Berechtigung entzogen oder der Ordner entfernt, zeigt die App
+ausdrücklich „Access may have been revoked or the folder may have been
+removed" und bietet neu zu wählen an — **keine stille leere Bibliothek und
+kein Missing-Verdikt.** Das ist die Oberfläche, an der ein Mensch den
+Unterschied zwischen `Absent` und `Unknown` bemerken würde.
+
 ## Frage 8 — Die Umzugserkennung, und was Tauri daran ändert (umgesetzt 2026-08-02)
 
 **Status: umgesetzt.** `file_stat` liefert jetzt die echte Größe getrennt von
