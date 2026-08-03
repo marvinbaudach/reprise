@@ -10,7 +10,9 @@ use quick_xml::Reader;
 use rusqlite::OptionalExtension;
 
 use crate::db::Db;
-use crate::library::source::{LibraryLinkMode, LibrarySource, UnixLibrarySource};
+use crate::library::source::{
+    LibraryLinkMode, LibraryPathPresence, LibrarySource, UnixLibrarySource,
+};
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -515,9 +517,8 @@ pub fn prescan_rhythmdb_with_source(
                                     library_root.is_some_and(|root| path_str.starts_with(root));
                                 if !under_root {
                                     result.outside_library += 1;
-                                } else if source
-                                    .probe(&track.path, LibraryLinkMode::Follow)
-                                    .is_none()
+                                } else if source.probe(&track.path, LibraryLinkMode::Follow)
+                                    == LibraryPathPresence::Absent
                                 {
                                     result.missing_on_disk += 1;
                                 } else {

@@ -1,6 +1,9 @@
 //! Task 1.4's Unix mount-point grouping and the Linux residence evidence used
-//! by [`super::source::UnixLibrarySource`]. Missing-item classification itself
-//! is platform-neutral behind [`super::source::LibrarySource`].
+//! by [`super::source::UnixLibrarySource`]. This module supplies that source's
+//! answer to [`super::source::LibrarySource::mount_point`]; a source without a
+//! volume-grouping notion declines the question instead. Missing-item
+//! classification itself is platform-neutral behind
+//! [`super::source::LibrarySource`].
 //!
 //! The whole mechanism rests on one fact that is already sitting in the
 //! database: `tracks.device` (schema v2) is the `st_dev` of the file as it

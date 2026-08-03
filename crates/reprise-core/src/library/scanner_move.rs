@@ -14,7 +14,7 @@ use super::track_meta::TrackMeta;
 use super::ScanError;
 #[cfg(test)]
 use crate::library::source::UnixLibrarySource;
-use crate::library::source::{LibraryLinkMode, LibrarySource};
+use crate::library::source::{LibraryLinkMode, LibraryPathPresence, LibrarySource};
 
 /// The one duration tolerance shared by automatic move matching and the
 /// user-confirmed Locate mismatch probe.
@@ -59,9 +59,8 @@ fn valid_candidates(
         .filter(|(id, _, _)| allowed_ids.is_none_or(|allowed| allowed.contains(id)))
         .filter(|(_, path, missing_since)| {
             missing_since.is_some()
-                || source
-                    .probe(Path::new(path), LibraryLinkMode::Follow)
-                    .is_none()
+                || source.probe(Path::new(path), LibraryLinkMode::Follow)
+                    == LibraryPathPresence::Absent
         })
         .map(|(id, path, _)| MoveCandidate { id, path })
         .collect()

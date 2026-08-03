@@ -8,7 +8,7 @@
 //! root-guard rationale these functions implement.
 
 use super::*;
-use crate::library::source::{LibraryLinkMode, LibrarySource};
+use crate::library::source::{LibraryLinkMode, LibraryPathPresence, LibrarySource};
 
 /// Shared row-fetch behind both [`present_candidates_under_root`] (the mark
 /// phase) and [`guard_evidence_under_root`] (the root guard's evidence
@@ -150,11 +150,9 @@ pub(super) fn mark_vanished_with(
         if observed_paths.contains(path) {
             continue;
         }
-        // One of the two places a `None` from `probe` becomes a write. It is
-        // read as "the item is gone", never as "the source could not say" —
-        // see [`LibrarySource::probe`]'s doc comment for why a source must not
-        // answer `None` to a transient failure.
-        if source.probe(path, LibraryLinkMode::Follow).is_some() {
+        // This write needs confirmed absence. Present and Unknown both keep
+        // the row live; inability to reach a source is not a missing verdict.
+        if source.probe(path, LibraryLinkMode::Follow) != LibraryPathPresence::Absent {
             continue;
         }
         let reason = source.reachability(path, device);
@@ -170,7 +168,7 @@ pub(super) fn mark_vanished_with(
             // consumer; for now this just makes that grouping visible in
             // the log for an `Unmounted` row, where it's actually
             // informative (a `Deleted` row has no mount to report).
-            let mount_point = mounts::mount_point_of(path);
+            let mount_point = source.mount_point(path);
             tracing::info!(
                 path = %path_str,
                 reason = reason.as_str(),
@@ -186,4 +184,86 @@ pub(super) fn mark_vanished_with(
         }
     }
     Ok(marked)
+}
+
+#[cfg(test)]
+mod android_uri_tests {
+    use super::*;
+    use crate::library::source_test_support::UnknownProbeSource;
+
+    const TREE_URI: &str = "content://com.android.externalstorage.documents/tree/primary%3AMusic";
+    const ESCAPED_TREE_URI: &str =
+        "content://com.android.externalstorage.documents/tree/primary\\%3AMusic";
+    const TRACK_URI: &str = "content://com.android.externalstorage.documents/tree/primary%3AMusic/document/primary%3AMusic%2Fsong.flac";
+
+    #[test]
+    fn android_a2_content_uri_path_operations_preserve_tree_membership_and_extension() {
+        let tree = std::path::PathBuf::from(TREE_URI);
+        let track = std::path::PathBuf::from(TRACK_URI);
+
+        assert!(track.starts_with(&tree));
+        assert_eq!(
+            track.extension().and_then(std::ffi::OsStr::to_str),
+            Some("flac")
+        );
+    }
+
+    #[test]
+    fn android_a3_content_uri_root_survives_vanish_like_prefilter() {
+        assert_eq!(
+            crate::library::playlists::escape_like(TREE_URI),
+            ESCAPED_TREE_URI
+        );
+
+        let mut conn = crate::db::open_migrated(None).unwrap();
+        conn.execute(
+            "INSERT INTO tracks (id, path, added_at, device) VALUES (?1, ?2, 0, ?3)",
+            rusqlite::params![1_i64, TRACK_URI, 7_i64],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tracks (id, path, added_at, device) VALUES (?1, ?2, 0, ?3)",
+            rusqlite::params![
+                2_i64,
+                "content://com.android.externalstorage.documents/tree/primaryX3AMusic/document/primaryX3AMusic%2Fother.flac",
+                9_i64,
+            ],
+        )
+        .unwrap();
+        let tx = conn.transaction().unwrap();
+
+        let candidates =
+            candidates_under_root(&tx, Path::new(TREE_URI), "removed_at IS NULL").unwrap();
+
+        assert_eq!(candidates, vec![(1_i64, TRACK_URI.to_owned(), Some(7_i64))]);
+    }
+
+    #[test]
+    fn unknown_probe_does_not_mark_vanished_track_missing() {
+        let mut conn = crate::db::open_migrated(None).unwrap();
+        conn.execute(
+            "INSERT INTO tracks (id, path, added_at, device) VALUES (1, ?1, 0, 41)",
+            [TRACK_URI],
+        )
+        .unwrap();
+        let tx = conn.transaction().unwrap();
+
+        let marked = mark_vanished_with(
+            &UnknownProbeSource,
+            &tx,
+            vec![(1, TRACK_URI.to_owned(), Some(41))],
+            &std::collections::HashSet::new(),
+        )
+        .unwrap();
+        let missing: (Option<i64>, Option<String>) = tx
+            .query_row(
+                "SELECT missing_since, missing_reason FROM tracks WHERE id = 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+
+        assert_eq!(marked, 0);
+        assert_eq!(missing, (None, None));
+    }
 }

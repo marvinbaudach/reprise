@@ -49,6 +49,7 @@ use rusqlite::Connection;
 
 use crate::db::Db;
 use crate::library::settings::{self, AutoCleanSetting};
+use crate::library::source::LibraryPathPresence;
 use crate::models::{MissingReason, Track};
 
 use super::clauses::{row_to_track, MISSING};
@@ -248,13 +249,13 @@ pub fn verify_unmounted_tracks_with_source(
 
     let mut healed = Vec::new();
     for (id, path) in candidates {
-        if !source
-            .probe(
+        if !matches!(
+            source.probe(
                 std::path::Path::new(&path),
                 crate::library::source::LibraryLinkMode::Follow,
-            )
-            .is_some_and(|metadata| metadata.is_file)
-        {
+            ),
+            LibraryPathPresence::Present(metadata) if metadata.is_file
+        ) {
             continue;
         }
         let changed = conn.execute(

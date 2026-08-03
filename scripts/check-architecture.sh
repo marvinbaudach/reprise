@@ -143,6 +143,27 @@ if [[ -n "$stray_view_edge" ]]; then
   exit 1
 fi
 
+# The Android UniFFI bridge is an adapter over the engine, not a second
+# application composition root. Keeping every other workspace crate out of
+# its normal dependency graph prevents Android from silently inheriting GTK,
+# Linux platform services, or another frontend's presentation layer.
+android_ffi_tree=$(run_dependency_probe "reprise-android-ffi all features" \
+  -p reprise-android-ffi --all-features -e normal --prefix none --target all) || exit 1
+if printf '%s\n' "$android_ffi_tree" | rg --quiet "$banned_dependency_families"; then
+  echo "reprise-android-ffi must not depend on GTK, libadwaita, GLib, GStreamer, or zbus" >&2
+  printf '%s\n' "$android_ffi_tree" | rg "$banned_dependency_families" >&2
+  exit 1
+fi
+stray_android_ffi_edge=$(printf '%s\n' "$android_ffi_tree" \
+  | rg '^reprise-[a-z-]+ ' \
+  | rg -v '^(reprise-android-ffi|reprise-core) ' \
+  | sort -u || true)
+if [[ -n "$stray_android_ffi_edge" ]]; then
+  echo "reprise-android-ffi may depend on reprise-core only; found:" >&2
+  echo "$stray_android_ffi_edge" >&2
+  exit 1
+fi
+
 # The runtime client is what every surface — GTK, MCP, a future frontend —
 # uses to reach the runtime. It must therefore stay cheap to depend on: the
 # contract, zbus, and nothing else. It deliberately does NOT live in

@@ -5,10 +5,9 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use super::import_errors;
-use super::mounts;
 use super::source::{
-    self, LibraryLinkMode, LibraryPathMetadata, LibrarySource, LibraryWalkControl,
-    LibraryWalkErrorKind, LibraryWalkItem, LibraryWalkOrder, UnixLibrarySource,
+    self, LibraryLinkMode, LibraryPathMetadata, LibraryPathPresence, LibrarySource,
+    LibraryWalkControl, LibraryWalkErrorKind, LibraryWalkItem, LibraryWalkOrder, UnixLibrarySource,
 };
 use crate::models::ImportErrorKind;
 use crate::models::MissingReason;
@@ -116,9 +115,11 @@ fn tag_param_values<'a>(
 }
 
 pub fn scan_folder(db: &Db, root: &Path) -> Result<ScanOutcome, ScanError> {
-    scan_folder_with_source(&UnixLibrarySource, db, root)
+    let conn = db.conn();
+    scan_folder_inner(&UnixLibrarySource, conn, root, None)
 }
 
+#[cfg(test)]
 fn scan_folder_with_source(
     source: &dyn LibrarySource,
     db: &Db,
@@ -138,6 +139,19 @@ pub fn scan_folder_with_progress(
     mut on_progress: impl FnMut(ScanProgress),
 ) -> Result<ScanOutcome, ScanError> {
     scan_folder_with_progress_from(&UnixLibrarySource, db, root, &mut on_progress)
+}
+
+/// Scans through an explicitly selected library source while forwarding the
+/// same progress contract as [`scan_folder_with_progress`]. Platform adapters
+/// use this entry point; the desktop wrapper above remains pinned to
+/// [`UnixLibrarySource`].
+pub fn scan_folder_with_source_and_progress(
+    source: &dyn LibrarySource,
+    db: &Db,
+    root: &Path,
+    mut on_progress: impl FnMut(ScanProgress),
+) -> Result<ScanOutcome, ScanError> {
+    scan_folder_with_progress_from(source, db, root, &mut on_progress)
 }
 
 fn scan_folder_with_progress_from(
@@ -255,13 +269,16 @@ fn scan_folder_inner(
     root: &Path,
     mut progress: Option<scan_progress::ScanProgressReporter<'_>>,
 ) -> Result<ScanOutcome, ScanError> {
-    debug_assert!(
-        root.is_absolute(),
-        "scan roots must be absolute paths — library roots (GTK folder chooser, \
-         persisted settings) are always absolute in this codebase, and the Unix \
-         library source's ancestor walk-to-`/` guarantee assumes it"
-    );
-    if source.probe(root, LibraryLinkMode::Follow).is_none() {
+    // No absoluteness assertion here any more. It used to live at this line and
+    // it was the wrong layer: nothing the scanner does needs an absolute root —
+    // it hands the root to the source and reads back what the source says. The
+    // requirement belongs to `UnixLibrarySource`'s ancestor walk, and it now
+    // sits there, next to the guarantee it protects.
+    //
+    // This is not a formality. A SAF root is a content URI, and
+    // `Path::is_absolute` is false for one (it has no leading `/`), so this
+    // assertion fired on the first scan a real Android source ever attempted.
+    if source.probe(root, LibraryLinkMode::Follow) == LibraryPathPresence::Absent {
         // Root-Guard case (a): no walk, no database write at all — see this
         // function's `## Root guard` doc section.
         tracing::warn!(
@@ -276,7 +293,7 @@ fn scan_folder_inner(
     let mut report = ScanReport::default();
     let mut audio_files_seen: u64 = 0;
     let mut observed_audio_paths = HashSet::<PathBuf>::new();
-    let mut mount_cache = mount::MountPointCache::new();
+    let mut mount_cache = mount::MountPointCache::new(source);
     let tx = conn.unchecked_transaction()?;
     let mut walk_failure = None;
     source::walk_with(source, root, LibraryWalkOrder::Native, |item| {
@@ -323,9 +340,13 @@ fn scan_folder_inner(
             let path_str = path.to_string_lossy().to_string();
             // Compute identity before touching tags. An exclusion follows the
             // same file across a rename and must win over move detection.
-            let metadata = entry
-                .metadata
-                .or_else(|| source.probe(path, LibraryLinkMode::Follow));
+            let metadata =
+                entry
+                    .metadata
+                    .or_else(|| match source.probe(path, LibraryLinkMode::Follow) {
+                        LibraryPathPresence::Present(metadata) => Some(metadata),
+                        LibraryPathPresence::Absent | LibraryPathPresence::Unknown => None,
+                    });
             let (mtime, stat) = scanner_file_metadata(metadata);
             let has_file_stat = stat.is_some();
             let (file_size, identity): (i64, Option<(i64, i64)>) = match stat {
@@ -437,10 +458,7 @@ fn scan_folder_inner(
                     let untagged = hint.is_some();
                     let is_update = known_mtime.is_some();
                     let title = if meta.title.is_empty() {
-                        path.file_stem()
-                            .and_then(|s| s.to_str())
-                            .unwrap_or("")
-                            .to_string()
+                        source.display_name(path).unwrap_or_default()
                     } else {
                         meta.title.clone()
                     };

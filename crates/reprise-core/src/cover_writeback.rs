@@ -3,7 +3,9 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
-use crate::library::source::{LibraryLinkMode, LibrarySource, UnixLibrarySource};
+use crate::library::source::{
+    LibraryLinkMode, LibraryPathPresence, LibrarySource, UnixLibrarySource,
+};
 use crate::writeback_publish::{publish_with_source, Published};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -30,9 +32,10 @@ pub fn write_album_cover_with_source(
         .iter()
         .map(|directory| {
             if !valid
-                || !source
-                    .probe(directory, LibraryLinkMode::Follow)
-                    .is_some_and(|metadata| metadata.is_directory)
+                || !matches!(
+                    source.probe(directory, LibraryLinkMode::Follow),
+                    LibraryPathPresence::Present(metadata) if metadata.is_directory
+                )
             {
                 return CoverWrite::NotApplicable;
             }

@@ -176,14 +176,14 @@ pub(super) fn read_meta_content_based(path: &Path) -> Result<TrackMeta, ScanErro
 /// Returns a [`TrackMeta`] with every tag-derived field at its `Default`
 /// (this function never reads a tag, so it has nothing to put there) except
 /// `duration_ms`/`bitrate_kbps` — read for real from the container's
-/// properties, never zeroed — and `album`, set to the file's PARENT
-/// DIRECTORY name: with no album tag to fall back to, the enclosing folder
-/// is this codebase's next-best signal for "which release this file belongs
-/// to" (the same assumption a rip-by-folder library layout already makes
-/// throughout this app). `title` is deliberately left empty here rather
-/// than set to the file stem — `scan_folder_inner` already falls back to
-/// the file stem for ANY empty title, tagged or not, so setting it here
-/// would just be the same computation done twice.
+/// properties, never zeroed — and `album`, set to the source's name for the
+/// item's container: with no album tag to fall back to, the enclosing folder
+/// or provider parent is this codebase's next-best signal for "which release
+/// this file belongs to". A source that cannot honestly name that container
+/// leaves the album empty. `title` is deliberately left empty here rather
+/// than set to the source's display name — `scan_folder_inner` already applies
+/// that fallback for ANY empty title, tagged or not, so setting it here would
+/// just be the same question asked twice.
 pub(super) fn read_meta_relaxed(
     source: &dyn LibrarySource,
     path: &Path,
@@ -199,12 +199,7 @@ pub(super) fn read_meta_relaxed(
             ScanError::Import { kind, detail }
         })?;
     let props = tagged.properties();
-    let album = path
-        .parent()
-        .and_then(std::path::Path::file_name)
-        .and_then(std::ffi::OsStr::to_str)
-        .unwrap_or_default()
-        .to_string();
+    let album = source.container_name(path).unwrap_or_default();
     Ok(TrackMeta {
         album,
         duration_ms: props.duration().as_millis() as i64,
