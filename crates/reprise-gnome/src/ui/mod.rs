@@ -73,6 +73,7 @@ mod runtime_performance;
 mod scan;
 mod scrobbling;
 mod scroll_center;
+mod scroll_glide;
 pub mod session_restore;
 pub mod shortcuts;
 pub(in crate::ui) mod show_in_files;
