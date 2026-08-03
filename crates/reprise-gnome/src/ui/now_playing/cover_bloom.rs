@@ -18,11 +18,7 @@ use gtk4::cairo;
 use gtk4::prelude::*;
 use reprise_core::playback::PlaybackState;
 
-use crate::ui::motion;
-
-/// Edge length the cover is rasterized down to. The upscale back across the
-/// panel is the blur; 32 px over ~372 px is a factor of ~11.6.
-const BLOOM_EDGE: i32 = 32;
+use crate::ui::{cover_glow, motion};
 /// Height of the bloom band, from the top of the head overlay: enough for the
 /// cover and the title block, stopping short of the tabs.
 const BLOOM_HEIGHT: f64 = 330.0;
@@ -137,7 +133,7 @@ impl CoverBloom {
                 if !needs_rebuild(self.inner.generation.get(), generation) {
                     return;
                 }
-                let built = blurred_surface(texture);
+                let built = cover_glow::blurred_surface(texture);
                 *self.inner.surface.borrow_mut() = built;
                 self.inner.generation.set(Some(generation));
             }
@@ -289,8 +285,8 @@ fn draw(cr: &cairo::Context, width: i32, height: i32, inner: &Inner) {
     cr.clip();
     cr.translate((w - target_w) / 2.0, (BLOOM_HEIGHT - target_h) / 2.0);
     cr.scale(
-        target_w / f64::from(BLOOM_EDGE),
-        target_h / f64::from(BLOOM_EDGE),
+        target_w / f64::from(cover_glow::BLUR_EDGE),
+        target_h / f64::from(cover_glow::BLUR_EDGE),
     );
     if cr.set_source_surface(surface, 0.0, 0.0).is_ok() {
         // Bilinear over an 11x upscale is the blur; Pad keeps the edges from
@@ -300,24 +296,6 @@ fn draw(cr: &cairo::Context, width: i32, height: i32, inner: &Inner) {
         cr.paint_with_alpha(opacity).ok();
     }
     cr.restore().ok();
-}
-
-/// Rasterizes `texture` down to a [`BLOOM_EDGE`] square. Same technique as
-/// `song_visualizer_util::downscale_cover_rgba`, but the surface itself is
-/// kept — it is what gets painted back up.
-fn blurred_surface(texture: &gtk4::gdk::Texture) -> Option<cairo::ImageSurface> {
-    let snapshot = gtk4::Snapshot::new();
-    let bounds = gtk4::graphene::Rect::new(0.0, 0.0, BLOOM_EDGE as f32, BLOOM_EDGE as f32);
-    snapshot.append_texture(texture, &bounds);
-    let node = snapshot.to_node()?;
-    let surface =
-        cairo::ImageSurface::create(cairo::Format::ARgb32, BLOOM_EDGE, BLOOM_EDGE).ok()?;
-    {
-        let cr = cairo::Context::new(&surface).ok()?;
-        node.draw(&cr);
-    }
-    surface.flush();
-    Some(surface)
 }
 
 #[cfg(test)]

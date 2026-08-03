@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use gtk4::glib;
+use gtk4::glib::object::CastNone;
 use gtk4::prelude::IsA;
 use libadwaita as adw;
 
@@ -250,13 +251,24 @@ impl PlayerController {
             let cover_accent_generation = self.cover_accent_generation.clone();
             let cover_accent_last = self.cover_accent_last.clone();
             let bar_widget = self.bar.widget().clone();
-            self.cover_loader.load_into_with_path(
-                self.bar.cover_image(),
+            let bar_cover_target = self.bar.cover_image().clone();
+            let bar_cover_loaded = bar_cover_target.clone();
+            let bar_glow = self.bar.cover_glow_handle();
+            self.cover_loader.load_into_with_resolution(
+                &bar_cover_target,
                 path,
                 ThumbnailSize::Bar,
                 bar_generation,
                 &self.bar_cover_generation,
                 move |cover_path| {
+                    let Some(cover_path) = cover_path else {
+                        bar_glow.set_cover(None, bar_generation);
+                        return;
+                    };
+                    let texture = bar_cover_loaded
+                        .paintable()
+                        .and_downcast::<gtk4::gdk::Texture>();
+                    bar_glow.set_cover(texture.as_ref(), bar_generation);
                     let Some(art_url) = cover_path_to_uri(&cover_path) else {
                         return;
                     };
@@ -281,12 +293,23 @@ impl PlayerController {
                 },
             );
         } else {
-            self.cover_loader.load_into(
-                self.bar.cover_image(),
+            let bar_cover_target = self.bar.cover_image().clone();
+            let bar_cover_loaded = bar_cover_target.clone();
+            let bar_glow = self.bar.cover_glow_handle();
+            self.cover_loader.load_into_with_resolution(
+                &bar_cover_target,
                 path,
                 ThumbnailSize::Bar,
                 bar_generation,
                 &self.bar_cover_generation,
+                move |cover_path| {
+                    let texture = cover_path.and_then(|_| {
+                        bar_cover_loaded
+                            .paintable()
+                            .and_downcast::<gtk4::gdk::Texture>()
+                    });
+                    bar_glow.set_cover(texture.as_ref(), bar_generation);
+                },
             );
         }
 

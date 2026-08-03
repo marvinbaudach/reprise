@@ -5,7 +5,17 @@ use std::time::Duration;
 
 use gtk4::prelude::*;
 
-use super::{build, ring_alpha, PLAY_CSS_CLASS, PLAY_RING_CSS_CLASS};
+use super::{
+    bar_glow_opacity, bar_glow_scale, build, ring_alpha, PLAY_CSS_CLASS, PLAY_RING_CSS_CLASS,
+};
+
+#[test]
+fn ac_24_bar_cover_glow_rests_dark_and_answers_both_readings() {
+    assert!((bar_glow_opacity(0.0, 0.0) - 0.10).abs() < 1e-9);
+    assert!((bar_glow_opacity(0.0, 1.0) - 0.20).abs() < 1e-9);
+    assert!((bar_glow_opacity(1.0, 1.0) - 0.42).abs() < 1e-9);
+    assert!((bar_glow_scale(1.0) - 1.03).abs() < 1e-9);
+}
 
 #[test]
 fn ac_24_ring_adds_a_kick_on_top_of_a_pressure_bed() {

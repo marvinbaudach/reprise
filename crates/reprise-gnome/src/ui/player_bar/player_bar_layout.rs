@@ -16,6 +16,11 @@ const VOLUME_DEFAULT: f64 = 1.0;
 
 const COVER_PIXEL_SIZE: i32 = 56;
 const BAR_HEIGHT: i32 = 86;
+const BAR_GLOW_SIZE: i32 = 150;
+const BAR_GLOW_REST: f64 = 0.10;
+const BAR_GLOW_PER_PRESSURE: f64 = 0.10;
+const BAR_GLOW_PER_KICK: f64 = 0.22;
+const BAR_GLOW_SCALE_PER_KICK: f64 = 0.03;
 // The info zone also owns a 12 px leading margin. Keep its requested content
 // width below 300 so the complete 1,170 px three-zone layout fits inside a
 // 1,200 px decorated window without a transient two-pixel overflow.
@@ -52,6 +57,16 @@ pub(in crate::ui) fn ring_alpha(kick: f64, pressure: f64) -> f64 {
         + RING_ALPHA_PER_KICK * kick.clamp(0.0, 1.0)
 }
 
+pub(in crate::ui) fn bar_glow_opacity(kick: f64, pressure: f64) -> f64 {
+    BAR_GLOW_REST
+        + BAR_GLOW_PER_PRESSURE * pressure.clamp(0.0, 1.0)
+        + BAR_GLOW_PER_KICK * kick.clamp(0.0, 1.0)
+}
+
+pub(in crate::ui) fn bar_glow_scale(kick: f64) -> f64 {
+    1.0 + BAR_GLOW_SCALE_PER_KICK * kick.clamp(0.0, 1.0)
+}
+
 const SURFACE_CSS_CLASS: &str = "player-bar-surface";
 /// CSS class on the transport button row, targeted by the hover-highlight rules.
 const TRANSPORT_ROW_CSS_CLASS: &str = "player-bar-transport";
@@ -70,6 +85,7 @@ pub(in crate::ui) struct PlayerBarWidgets {
     pub(in crate::ui) info_box: gtk4::Box,
     pub(in crate::ui) cover: gtk4::Image,
     pub(in crate::ui) cover_button: gtk4::Button,
+    pub(in crate::ui) cover_glow: super::bar_cover_glow::BarCoverGlow,
     pub(in crate::ui) title_label: gtk4::Label,
     pub(in crate::ui) title_button: gtk4::Button,
     pub(in crate::ui) artist_label: gtk4::Label,
@@ -103,6 +119,12 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     cover_button.update_property(&[gtk4::accessible::Property::Label(&strings::text(
         strings::REVEAL_PLAYING_ALBUM,
     ))]);
+    let cover_glow = super::bar_cover_glow::BarCoverGlow::new(BAR_GLOW_SIZE, BAR_HEIGHT);
+    let cover_slot = gtk4::Overlay::new();
+    cover_slot.set_child(Some(cover_glow.widget()));
+    cover_button.set_halign(gtk4::Align::Center);
+    cover_button.set_valign(gtk4::Align::Center);
+    cover_slot.add_overlay(&cover_button);
 
     // — Track labels —
     let title_label = build_track_label();
@@ -146,7 +168,7 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     // — Start zone (cover + track info) —
     let info_box = gtk4::Box::new(gtk4::Orientation::Horizontal, ZONE_SPACING);
     info_box.set_margin_start(12);
-    info_box.append(&cover_button);
+    info_box.append(&cover_slot);
     info_box.append(&track_info_clamp);
     info_box.set_valign(gtk4::Align::Center);
     info_box.set_width_request(START_ZONE_WIDTH);
@@ -348,6 +370,7 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
         info_box,
         cover,
         cover_button,
+        cover_glow,
         title_label,
         title_button,
         artist_label,

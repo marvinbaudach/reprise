@@ -17,7 +17,6 @@ use std::time::{Duration, Instant};
 use gtk4::prelude::*;
 use libadwaita::prelude::AnimationExt;
 
-use crate::ui::cover_loader::CoverLoader;
 use crate::ui::motion;
 use crate::ui::player_bar_layout::{self, ring_alpha, PlayerBarWidgets, VOLUME_MAX, VOLUME_MIN};
 use crate::ui::strings;
@@ -76,12 +75,13 @@ pub struct PlayerBar {
     /// start of the bar. Fed by `player_controller.rs`'s `CoverLoader` — this
     /// struct only owns/exposes the widget, never resolves or decodes covers
     /// itself (see `cover_loader.rs`).
-    cover: gtk4::Image,
-    cover_button: gtk4::Button,
+    pub(super) cover: gtk4::Image,
+    pub(super) cover_button: gtk4::Button,
+    pub(super) cover_glow: super::bar_cover_glow::BarCoverGlow,
     pub(in crate::ui) title_label: gtk4::Label,
-    title_button: gtk4::Button,
+    pub(super) title_button: gtk4::Button,
     pub(in crate::ui) artist_label: gtk4::Label,
-    artist_button: gtk4::Button,
+    pub(super) artist_button: gtk4::Button,
     pub(in crate::ui) shuffle_button: gtk4::ToggleButton,
     pub(in crate::ui) prev_button: gtk4::Button,
     play_pause_button: gtk4::Button,
@@ -117,17 +117,17 @@ pub struct PlayerBar {
     updating_volume: Rc<Cell<bool>>,
     /// Callback fired when the user activates the title button — wired to
     /// reveal the loaded album in the Library grid (GRID-5).
-    on_title_click: crate::ui::link_activation::ActivationSlot,
+    pub(super) on_title_click: crate::ui::link_activation::ActivationSlot,
     /// Callback fired when the user activates the cover button — wired to
     /// reveal the loaded album in the Library grid (GRID-5).
-    on_cover_click: crate::ui::link_activation::ActivationSlot,
+    pub(super) on_cover_click: crate::ui::link_activation::ActivationSlot,
     /// Callback fired when the user clicks the artist label — navigates to
     /// the artist view (spec 1.5).
-    on_artist_click: crate::ui::link_activation::ActivationSlot,
+    pub(super) on_artist_click: crate::ui::link_activation::ActivationSlot,
     /// The currently-running track-change cross-fade animation (Task 9).
     /// Held here to prevent GC between ticks; replaced on each new fade.
-    current_track_animation: Rc<RefCell<Option<libadwaita::TimedAnimation>>>,
-    track_animation_generation: Rc<Cell<u64>>,
+    pub(super) current_track_animation: Rc<RefCell<Option<libadwaita::TimedAnimation>>>,
+    pub(super) track_animation_generation: Rc<Cell<u64>>,
     /// Held for the 150 ms play↔pause icon cross-fade; replaced on
     /// each state change. Kept alive to prevent GC between ticks.
     current_icon_animation: Rc<RefCell<Option<libadwaita::TimedAnimation>>>,
@@ -143,6 +143,7 @@ impl PlayerBar {
             info_box: _,
             cover,
             cover_button,
+            cover_glow,
             title_label,
             title_button,
             artist_label,
@@ -222,6 +223,7 @@ impl PlayerBar {
             root,
             cover,
             cover_button,
+            cover_glow,
             title_label,
             title_button,
             artist_label,
@@ -269,138 +271,6 @@ impl PlayerBar {
         &self.root
     }
 
-    /// The cover thumbnail widget — `player_controller.rs` feeds it via
-    /// `CoverLoader::load_into` after `set_track`.
-    pub fn cover_image(&self) -> &gtk4::Image {
-        &self.cover
-    }
-
-    /// Resets the cover back to the placeholder icon — used when playback
-    /// stops with no track active (see `clear_track`).
-    pub fn clear_cover(&self) {
-        CoverLoader::set_placeholder(&self.cover);
-    }
-
-    pub fn set_on_title_click<F: Fn() + 'static>(&self, f: F) {
-        *self.on_title_click.borrow_mut() = Some(Rc::new(f));
-    }
-
-    /// Registers the GRID-5 callback for cover link activation.
-    pub fn connect_cover_clicked<F: Fn() + 'static>(&self, f: F) {
-        *self.on_cover_click.borrow_mut() = Some(Rc::new(f));
-    }
-
-    /// Registers a callback invoked when the user clicks the artist label —
-    /// should navigate to the artist view (spec 1.5).
-    pub fn connect_artist_clicked<F: Fn() + 'static>(&self, f: F) {
-        *self.on_artist_click.borrow_mut() = Some(Rc::new(f));
-    }
-
-    /// Shows `title`/`artist` in the left-hand labels. Called on row
-    /// activation with data already in hand from the `Track` (see
-    /// `player_controller.rs`) — no extra DB query needed.
-    ///
-    /// Cross-fades the labels over 250 ms (125 ms fade-out, 125 ms fade-in)
-    /// and follows GTK's system animation setting through [`motion::timed`].
-    pub fn set_track(&self, title: &str, artist: &str) {
-        self.title_button
-            .update_property(&[gtk4::accessible::Property::Label(title)]);
-        self.artist_button
-            .update_property(&[gtk4::accessible::Property::Label(artist)]);
-        self.artist_button.set_sensitive(!artist.trim().is_empty());
-        self.cover_button
-            .update_property(&[gtk4::accessible::Property::Label(&strings::text(
-                strings::REVEAL_PLAYING_ALBUM,
-            ))]);
-        self.animate_track_change(title, artist);
-    }
-
-    /// 250 ms opacity cross-fade: fade out cover + labels, swap text, fade in.
-    /// The system animation setting is followed by the central motion helper.
-    fn animate_track_change(&self, title: &str, artist: &str) {
-        let generation = self.track_animation_generation.get().wrapping_add(1);
-        self.track_animation_generation.set(generation);
-        let title = title.to_string();
-        let artist = artist.to_string();
-        let title_label = self.title_label.clone();
-        let artist_label = self.artist_label.clone();
-        let cover = self.cover.clone();
-        let animation_slot = self.current_track_animation.clone();
-        let animation_generation = self.track_animation_generation.clone();
-
-        // Fade-out: opacity 1 → 0 over 125 ms (cover + labels together).
-        let fade_out_target = libadwaita::CallbackAnimationTarget::new({
-            let title_label = title_label.clone();
-            let artist_label = artist_label.clone();
-            let cover = cover.clone();
-            move |value| {
-                title_label.set_opacity(value);
-                artist_label.set_opacity(value);
-                cover.set_opacity(value);
-            }
-        });
-        let fade_out = motion::timed(
-            &self.title_label,
-            1.0,
-            0.0,
-            motion::STANDARD,
-            fade_out_target,
-        );
-
-        // After fade-out: swap text and fade in (opacity 0 → 1 over 125 ms).
-        // Cover image is swapped externally by CoverLoader; fade-in reveals it.
-        fade_out.connect_done({
-            let title_label = title_label.clone();
-            let artist_label = artist_label.clone();
-            let cover = cover.clone();
-            move |_| {
-                title_label.set_text(&title);
-                artist_label.set_text(&artist);
-
-                if animation_generation.get() != generation {
-                    title_label.set_opacity(1.0);
-                    artist_label.set_opacity(1.0);
-                    cover.set_opacity(1.0);
-                    return;
-                }
-
-                let fade_in_target = libadwaita::CallbackAnimationTarget::new({
-                    let title_label = title_label.clone();
-                    let artist_label = artist_label.clone();
-                    let cover = cover.clone();
-                    move |value| {
-                        title_label.set_opacity(value);
-                        artist_label.set_opacity(value);
-                        cover.set_opacity(value);
-                    }
-                });
-                let fade_in =
-                    motion::timed(&title_label, 0.0, 1.0, motion::STANDARD, fade_in_target);
-                fade_in.set_duration(motion::half(motion::STANDARD));
-                motion::replace_animation(&animation_slot, fade_in.clone());
-                fade_in.play();
-            }
-        });
-        fade_out.set_duration(motion::half(motion::STANDARD));
-        motion::replace_animation(&self.current_track_animation, fade_out.clone());
-        fade_out.play();
-    }
-
-    /// Clears the track labels back to empty — used when playback stops with
-    /// no track active.
-    pub fn clear_track(&self) {
-        let generation = self.track_animation_generation.get().wrapping_add(1);
-        self.track_animation_generation.set(generation);
-        let previous = self.current_track_animation.borrow_mut().take();
-        if let Some(previous) = previous {
-            previous.skip();
-        }
-        self.title_label.set_text("");
-        self.artist_label.set_text("");
-        self.artist_button.set_sensitive(false);
-        self.clear_cover();
-    }
-
     /// Applies a `PlaybackState`: cross-fades the play/pause icon in two 75 ms
     /// halves and refreshes sensitivity.
     pub fn set_state(&self, state: PlaybackState) {
@@ -444,6 +314,7 @@ impl PlayerBar {
         };
         self.play_ring.set_opacity(ring_alpha(kick, pressure));
         self.waveform.set_bass_kick(kick);
+        self.cover_glow.set_bass(kick, pressure);
     }
 
     fn animate_play_pulse(&self) {
