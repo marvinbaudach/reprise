@@ -29,7 +29,7 @@ thiserror = "2"
 # the DEFAULT build performs no build-time download and stays Flatpak-offline
 # buildable. Everything here is optional and off by default.
 [dependencies.ort]
-version = "=2.0.0-rc.10"
+version = "=2.0.0-rc.13"
 optional = true
 default-features = false
 
@@ -75,7 +75,7 @@ optional = true
 
 # ONNX tensor plumbing, matched to `ort`'s ndarray feature. MIT OR Apache-2.0.
 [dependencies.ndarray]
-version = "0.16"
+version = "0.17"
 optional = true
 
 # Blocking, pure-Rust HTTPS (rustls) for the first-use model download. Same
