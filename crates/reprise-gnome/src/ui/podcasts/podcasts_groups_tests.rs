@@ -67,6 +67,57 @@ fn src_11_group_artwork_prefers_its_source_and_never_borrows_for_rss() {
     assert_eq!(group_image_url(&group), None);
 }
 
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_5_youtube_group_title_is_vertically_centered_with_its_artwork() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let group = SourceGroup {
+        subscription_id: 1,
+        title: "Channel".into(),
+        author: None,
+        image_url: None,
+        kind: PodcastKind::Youtube,
+        sync_to_phone: false,
+        episodes: Vec::new(),
+    };
+    let header = group_header(
+        &group,
+        &SourceSummary {
+            episode_count: 0,
+            new_count: 0,
+            downloaded_bytes: 0,
+            latest_published_at: None,
+        },
+        &[],
+        &[],
+        false,
+    );
+    let header = header.downcast::<gtk4::Box>().unwrap();
+    let artwork = header.first_child().expect("channel artwork");
+    let title = descendants(header.upcast_ref())
+        .into_iter()
+        .find(|widget| widget.has_css_class("heading"))
+        .expect("channel title");
+    let window = gtk4::Window::builder()
+        .default_width(900)
+        .child(&header)
+        .build();
+    window.present();
+    crate::ui::source_context_surface::settle_layout();
+
+    let artwork_bounds = artwork.compute_bounds(&window).expect("artwork bounds");
+    let title_bounds = title.compute_bounds(&window).expect("title bounds");
+    let artwork_center = artwork_bounds.y() + artwork_bounds.height() / 2.0;
+    let title_center = title_bounds.y() + title_bounds.height() / 2.0;
+
+    assert!(
+        (title_center - artwork_center).abs() <= 0.5,
+        "channel title center {title_center} differs from artwork center {artwork_center}"
+    );
+    window.close();
+}
+
 fn descendants(widget: &gtk4::Widget) -> Vec<gtk4::Widget> {
     let mut found = Vec::new();
     let mut child = widget.first_child();

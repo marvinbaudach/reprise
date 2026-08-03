@@ -296,12 +296,33 @@ fn read_pid(path: &Path) -> u32 {
 fn assert_process_exits(pid: u32) {
     let process = PathBuf::from(format!("/proc/{pid}"));
     for _ in 0..50 {
-        if !process.exists() {
+        if !process_is_running(&process) {
             return;
         }
         std::thread::sleep(Duration::from_millis(20));
     }
     panic!("descendant process {pid} survived yt-dlp cleanup");
+}
+
+#[cfg(target_os = "linux")]
+fn process_is_running(process: &Path) -> bool {
+    let Ok(stat) = fs::read_to_string(process.join("stat")) else {
+        return false;
+    };
+    stat.rsplit_once(") ")
+        .and_then(|(_, fields)| fields.split_whitespace().next())
+        .is_none_or(|state| state != "Z")
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn zombie_process_state_counts_as_exited() {
+    let directory = tempfile::tempdir().unwrap();
+    let process = directory.path().join("process");
+    fs::create_dir(&process).unwrap();
+    fs::write(process.join("stat"), "123 (sleep) Z 1 2 3").unwrap();
+
+    assert!(!process_is_running(&process));
 }
 
 #[cfg(not(target_os = "linux"))]

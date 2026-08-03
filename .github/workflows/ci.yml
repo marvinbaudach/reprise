@@ -23,17 +23,21 @@ jobs:
     container:
       image: archlinux:latest
     env:
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
       CARGO_TERM_COLOR: always
       GDK_BACKEND: x11
       WAYLAND_DISPLAY: ""
       REPRISE_AUDIO_SINK: fakesink
-      DISPLAY_TEST_JOBS: 4
+      DISPLAY_TEST_JOBS: 1
     steps:
       - name: Install system dependencies
         run: >-
           pacman -Syu --noconfirm --needed
           base-devel cargo-audit dbus gettext git gstreamer gst-plugins-base
-          gst-plugins-good gtk4 libadwaita libsecret mesa openssh pkgconf
+          gst-plugins-good gtk4 libadwaita libsecret mesa
+          meson openssh pkgconf
           ripgrep rust sqlite xorg-server-xvfb xorg-xauth
 
       - name: Check out the tested revision
