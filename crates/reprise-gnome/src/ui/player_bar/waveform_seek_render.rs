@@ -212,6 +212,42 @@ pub(super) fn lensed_bar_height(
         )
 }
 
+#[allow(clippy::too_many_arguments)]
+pub(super) fn display_bar_height(
+    bar: DisplayBar,
+    index: usize,
+    count: usize,
+    fraction: f64,
+    kick_soft: f64,
+    scale: f64,
+    min_bar_height: f64,
+    max_bar_height: f64,
+    stagger: f64,
+    lens_active: bool,
+) -> f64 {
+    let bar_h = match bar {
+        // True silence: a fixed dot, unaffected by the height mapping.
+        DisplayBar::Silence => SILENCE_DOT_HEIGHT * stagger,
+        DisplayBar::Level(level) => {
+            let magnitude = f64::from(level).clamp(0.0, 1.0);
+            bar_height(magnitude, min_bar_height, max_bar_height) * stagger
+        }
+    };
+    if lens_active && matches!(bar, DisplayBar::Level(_)) {
+        lensed_bar_height(
+            bar_h,
+            index,
+            count,
+            fraction,
+            kick_soft,
+            scale,
+            max_bar_height,
+        )
+    } else {
+        bar_h
+    }
+}
+
 /// Brightness of an already-played bar: dim at the start of the track, full at
 /// the playhead. Purely positional, so it holds still within a frame.
 pub(super) fn played_alpha(index: usize, count: usize, fraction: f64) -> f64 {
@@ -265,27 +301,18 @@ fn draw_bars(
             1.0
         };
 
-        let bar_h = match bar {
-            // True silence: a fixed dot, unaffected by the height mapping.
-            DisplayBar::Silence => SILENCE_DOT_HEIGHT * stagger,
-            DisplayBar::Level(level) => {
-                let magnitude = f64::from(level).clamp(0.0, 1.0);
-                bar_height(magnitude, state.min_bar_height, state.max_bar_height) * stagger
-            }
-        };
-        let bar_h = if lens_active && matches!(bar, DisplayBar::Level(_)) {
-            lensed_bar_height(
-                bar_h,
-                index,
-                count,
-                state.fraction,
-                state.kick_soft,
-                style.scale,
-                state.max_bar_height,
-            )
-        } else {
-            bar_h
-        };
+        let bar_h = display_bar_height(
+            bar,
+            index,
+            count,
+            state.fraction,
+            state.kick_soft,
+            style.scale,
+            state.min_bar_height,
+            state.max_bar_height,
+            stagger,
+            lens_active,
+        );
         // Guard against zero-height bars during early animation frames.
         if bar_h < 0.5 {
             continue;

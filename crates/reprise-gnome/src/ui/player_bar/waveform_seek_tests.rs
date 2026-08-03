@@ -90,7 +90,7 @@ fn ac_24_the_playhead_glow_grows_with_the_kick() {
 }
 
 #[test]
-fn ac_24_the_glow_stands_down_where_it_would_be_in_the_way() {
+fn ac_24_both_layers_stand_down_together() {
     use super::render::reactive_light_is_active;
     // Dragging: light under the finger is in the way while you look for a
     // spot. Build-up and crossfade: two animations fighting.
@@ -106,6 +106,31 @@ fn ac_24_the_glow_stands_down_where_it_would_be_in_the_way() {
     );
     // The mini player is too small: the glow would light half the bar.
     assert!(!reactive_light_is_active(true, None, 1.0, 1.0), "mini");
+}
+
+#[test]
+fn ac_24_silence_dots_never_pulse() {
+    use super::render::display_bar_height;
+    // `DisplayBar::Silence` is a fixed 2 px dot at every reading. Silence that
+    // breathes is a lie about the recording.
+    for k in 0..=100 {
+        let kick_soft = f64::from(k) / 100.0;
+        assert_eq!(
+            display_bar_height(
+                DisplayBar::Silence,
+                60,
+                120,
+                0.5,
+                kick_soft,
+                1.0,
+                3.9,
+                26.0,
+                1.0,
+                true,
+            ),
+            SILENCE_DOT_HEIGHT
+        );
+    }
 }
 
 /// The lens is back. The guard that used to stand here forbade *any* height
