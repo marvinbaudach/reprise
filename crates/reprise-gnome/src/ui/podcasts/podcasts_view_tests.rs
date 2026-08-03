@@ -647,6 +647,17 @@ fn src_13_reveal_is_driven_by_the_episode_identity_not_the_snapshot() {
     );
 }
 
+#[test]
+fn start_3_restored_episode_uses_the_selection_reveal_path() {
+    let marker = include_str!("podcasts_view_marker.rs");
+    let wiring = include_str!("../window/source_views.rs");
+
+    assert!(marker.contains("LoadedItemChange::SessionRestore"));
+    assert!(marker.contains("SelectMode::Only"));
+    assert!(marker.contains("rendered_source_groups"));
+    assert!(wiring.contains("snapshot.restored"));
+}
+
 /// `SRC-13`: revealing is the shared policy's call. A second predicate in the
 /// view would be the same duplicated-decision class of bug that made a restart
 /// pass for a toggle.

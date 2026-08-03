@@ -303,7 +303,7 @@ pub fn build(app: &adw::Application, conn: &Rc<Db>, db_path: &Path) -> FileOpenH
     let track_content = track_content::build(track_list.widget(), status_bar.widget());
     // NAV-2: one history for every scoped route through the canonical list.
     let nav_history = Rc::new(crate::ui::nav_history::NavHistory::default());
-    // START-1 depends on this listener existing before `session_restore::restore_runtime`
+    // START-3 depends on this listener existing before `session_restore::restore_runtime`
     // in `window_runtime_wiring`, or its restored-track marker notification is lost.
     super::current_track_selection::wire(player.as_ref(), &track_list);
     let stats_view = super::stats_view::StatsView::new(track_list.shared_cover_loader());

@@ -80,6 +80,7 @@ fn pod_21_external_transport_sensitivity_matches_neighbour_edges_and_radio() {
         can_go_next,
         stream_tags: StreamTags::default(),
         podcast_phase: Some(PodcastPhase::Playing),
+        restored: false,
         radio: None,
         error: None,
     };
@@ -104,12 +105,20 @@ fn pod_21_external_transport_sensitivity_matches_neighbour_edges_and_radio() {
         can_go_next: false,
         stream_tags: StreamTags::default(),
         podcast_phase: None,
+        restored: false,
         radio: Some(RadioPresentation::connected()),
         error: None,
     };
     bar.set_external_snapshot(Some(&radio));
     assert!(!bar.prev_button.is_sensitive());
     assert!(!bar.next_button.is_sensitive());
+}
+
+#[test]
+fn play_10_external_snapshot_wiring_syncs_the_player_bar_artwork() {
+    let source = include_str!("../playback/player_controller_wiring.rs");
+
+    assert!(source.contains("sync_external_bar_artwork(snapshot.as_ref())"));
 }
 
 #[test]
