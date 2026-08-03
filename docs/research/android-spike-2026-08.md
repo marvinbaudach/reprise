@@ -1191,10 +1191,29 @@ Annahmen ausdrücklich, weil A1 in diesem Lauf nicht ausgeführt werden sollte.
 
 ### A1 — Seek auf einem SAF-Deskriptor
 
-**Nicht geprüft, kein Urteil.** Der Emulator-Lauf aus Phase 1 Schritt 2 war
-ausdrücklich nicht Teil dieses Durchgangs. Es wurde weder eine
-Deskriptor-Funktion ergänzt noch ein Emulator oder echtes SAF-Dokument
-angesprochen.
+**Urteil: TRÄGT.** Gemessen am 2026-08-03 auf `emulator-5554`, Android-API 36,
+mit einem echten über `ACTION_OPEN_DOCUMENT_TREE` gewählten Ordner unter
+`/sdcard/Music/Repriese` und dem Anbieter
+`com.android.externalstorage.documents`:
+
+```
+A1 descriptor probe: bytesRead=64 readError=null seekSucceeded=true
+seekError=null bytesReadAfterSeek=32 readAfterSeekError=null bytesMatch=true
+```
+
+Der von `ContentResolver.openFileDescriptor(uri, "r").detachFd()` übergebene
+Deskriptor, in Rust mit `File::from_raw_fd` übernommen, liest, springt, und
+die Bytes nach dem Sprung stimmen mit denen an derselben Stelle aus dem ersten
+Lesen überein. `LibraryReadHandle`s Zusage `Read + Seek` ist damit auf echtem
+Gerät erfüllt, und `lofty` kann direkt darauf parsen — ohne Vorabkopie in den
+App-Cache, die der Plan als Ausweichweg vorgesehen hatte.
+
+**Was damit nicht geprüft ist:** nur der lokale Anbieter
+`externalstorage`. Ein Netzwerk-Anbieter (Drive, SMB) darf laut
+SAF-Vertrag eine Pipe liefern, und eine Pipe kann nicht springen. Für die
+Musikbibliothek eines Telefons ist das der Randfall, nicht der Normalfall —
+aber eine Quelle, die ihn treffen kann, braucht dort die Vorabkopie. Der
+Befund gilt für lokalen Speicher, und nur dafür.
 
 ### A2 — `Path` auf einer realistischen Content-URI
 

@@ -1,0 +1,12 @@
+lib/x86_64/libreprise_android_ffi.so->Project
+lib/arm64-v8a/libandroidx.graphics.path.so->androidx.graphics:graphics-path:1.0.1
+lib/armeabi-v7a/libandroidx.graphics.path.so->androidx.graphics:graphics-path:1.0.1
+lib/x86/libandroidx.graphics.path.so->androidx.graphics:graphics-path:1.0.1
+lib/x86_64/libandroidx.graphics.path.so->androidx.graphics:graphics-path:1.0.1
+lib/arm64-v8a/libjnidispatch.so->net.java.dev.jna:jna:5.19.1
+lib/armeabi/libjnidispatch.so->net.java.dev.jna:jna:5.19.1
+lib/armeabi-v7a/libjnidispatch.so->net.java.dev.jna:jna:5.19.1
+lib/mips/libjnidispatch.so->net.java.dev.jna:jna:5.19.1
+lib/mips64/libjnidispatch.so->net.java.dev.jna:jna:5.19.1
+lib/x86/libjnidispatch.so->net.java.dev.jna:jna:5.19.1
+lib/x86_64/libjnidispatch.so->net.java.dev.jna:jna:5.19.1

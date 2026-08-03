@@ -1,0 +1,8 @@
+de.reprise.spike.app-pngs-0 /home/marvin/Projects/reprise-android-mvp/android/app/build/generated/res/pngs/debug
+de.reprise.spike.app-updated_navigation_xml-1 /home/marvin/Projects/reprise-android-mvp/android/app/build/generated/updated_navigation_xml/debug
+de.reprise.spike.app-packageDebugResources-2 /home/marvin/Projects/reprise-android-mvp/android/app/build/intermediates/incremental/debug/packageDebugResources/merged.dir
+de.reprise.spike.app-packageDebugResources-3 /home/marvin/Projects/reprise-android-mvp/android/app/build/intermediates/incremental/debug/packageDebugResources/stripped.dir
+de.reprise.spike.app-debug-4 /home/marvin/Projects/reprise-android-mvp/android/app/build/intermediates/merged_res/debug/mergeDebugResources
+de.reprise.spike.app-debug-5 /home/marvin/Projects/reprise-android-mvp/android/app/src/debug/res
+de.reprise.spike.app-main-6 /home/marvin/Projects/reprise-android-mvp/android/app/src/main/res
+gradleHome-0 /home/marvin/.gradle

@@ -1,0 +1,19 @@
+{
+    "logs": [
+        {
+            "outputFile": "de.reprise.spike.app-mergeDebugResources-34:/values-v30/values-v30.xml",
+            "map": [
+                {
+                    "source": "/home/marvin/.gradle/caches/9.6.1/transforms/1e705b3469cc454bbf44f0af2d19f339/transformed/material3/res/values-v30/values-v30.xml",
+                    "from": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endColumns": "72",
+                        "endOffsets": "123"
+                    }
+                }
+            ]
+        }
+    ]
+}

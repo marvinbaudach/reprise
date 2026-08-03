@@ -1,0 +1,135 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="de.reprise.spike"
+4    android:versionCode="1"
+5    android:versionName="0.1" >
+6
+7    <uses-sdk
+7-->INJECTED
+8        android:minSdkVersion="26"
+8-->INJECTED
+9        android:targetSdkVersion="37" />
+9-->INJECTED
+10
+11    <permission
+11-->[androidx.core:core:1.19.0] /home/marvin/.gradle/caches/9.6.1/transforms/798ff513198a4cb02fe863904f360ca4/transformed/core-1.19.0/AndroidManifest.xml:22:5-24:47
+12        android:name="de.reprise.spike.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+12-->[androidx.core:core:1.19.0] /home/marvin/.gradle/caches/9.6.1/transforms/798ff513198a4cb02fe863904f360ca4/transformed/core-1.19.0/AndroidManifest.xml:23:9-81
+13        android:protectionLevel="signature" />
+13-->[androidx.core:core:1.19.0] /home/marvin/.gradle/caches/9.6.1/transforms/798ff513198a4cb02fe863904f360ca4/transformed/core-1.19.0/AndroidManifest.xml:24:9-44
+14
+15    <uses-permission android:name="de.reprise.spike.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" /> <!-- SAF grants access to the selected tree without broad storage permissions. -->
+15-->[androidx.core:core:1.19.0] /home/marvin/.gradle/caches/9.6.1/transforms/798ff513198a4cb02fe863904f360ca4/transformed/core-1.19.0/AndroidManifest.xml:26:5-97
+15-->[androidx.core:core:1.19.0] /home/marvin/.gradle/caches/9.6.1/transforms/798ff513198a4cb02fe863904f360ca4/transformed/core-1.19.0/AndroidManifest.xml:26:22-94
+16    <application
+16-->/home/marvin/Projects/reprise-android-mvp/android/app/src/main/AndroidManifest.xml:6:5-18:19
+17        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
+17-->[androidx.core:core:1.19.0] /home/marvin/.gradle/caches/9.6.1/transforms/798ff513198a4cb02fe863904f360ca4/transformed/core-1.19.0/AndroidManifest.xml:28:18-86
+18        android:debuggable="true"
+19        android:extractNativeLibs="false"
+19-->INJECTED
+20        android:label="Reprise A1 Probe"
+20-->/home/marvin/Projects/reprise-android-mvp/android/app/src/main/AndroidManifest.xml:7:9-41
+21        android:supportsRtl="true"
+21-->/home/marvin/Projects/reprise-android-mvp/android/app/src/main/AndroidManifest.xml:8:9-35
+22        android:theme="@style/Theme.Spike" >
+22-->/home/marvin/Projects/reprise-android-mvp/android/app/src/main/AndroidManifest.xml:9:9-43
+23        <activity
+23-->/home/marvin/Projects/reprise-android-mvp/android/app/src/main/AndroidManifest.xml:10:9-17:20
+24            android:name="de.reprise.spike.MainActivity"
+24-->/home/marvin/Projects/reprise-android-mvp/android/app/src/main/AndroidManifest.xml:11:13-41
+25            android:exported="true" >
+25-->/home/marvin/Projects/reprise-android-mvp/android/app/src/main/AndroidManifest.xml:12:13-36
+26            <intent-filter>
+26-->/home/marvin/Projects/reprise-android-mvp/android/app/src/main/AndroidManifest.xml:13:13-16:29
+27                <action android:name="android.intent.action.MAIN" />
+27-->/home/marvin/Projects/reprise-android-mvp/android/app/src/main/AndroidManifest.xml:14:17-69
+27-->/home/marvin/Projects/reprise-android-mvp/android/app/src/main/AndroidManifest.xml:14:25-66
+28
+29                <category android:name="android.intent.category.LAUNCHER" />
+29-->/home/marvin/Projects/reprise-android-mvp/android/app/src/main/AndroidManifest.xml:15:17-77
+29-->/home/marvin/Projects/reprise-android-mvp/android/app/src/main/AndroidManifest.xml:15:27-74
+30            </intent-filter>
+31        </activity>
+32
+33        <provider
+33-->[androidx.emoji2:emoji2:1.4.0] /home/marvin/.gradle/caches/9.6.1/transforms/256b2cc3b4385c32ed3d61520c94c1e7/transformed/emoji2-1.4.0/AndroidManifest.xml:24:9-32:20
+34            android:name="androidx.startup.InitializationProvider"
+34-->[androidx.emoji2:emoji2:1.4.0] /home/marvin/.gradle/caches/9.6.1/transforms/256b2cc3b4385c32ed3d61520c94c1e7/transformed/emoji2-1.4.0/AndroidManifest.xml:25:13-67
+35            android:authorities="de.reprise.spike.androidx-startup"
+35-->[androidx.emoji2:emoji2:1.4.0] /home/marvin/.gradle/caches/9.6.1/transforms/256b2cc3b4385c32ed3d61520c94c1e7/transformed/emoji2-1.4.0/AndroidManifest.xml:26:13-68
+36            android:exported="false" >
+36-->[androidx.emoji2:emoji2:1.4.0] /home/marvin/.gradle/caches/9.6.1/transforms/256b2cc3b4385c32ed3d61520c94c1e7/transformed/emoji2-1.4.0/AndroidManifest.xml:27:13-37
+37            <meta-data
+37-->[androidx.emoji2:emoji2:1.4.0] /home/marvin/.gradle/caches/9.6.1/transforms/256b2cc3b4385c32ed3d61520c94c1e7/transformed/emoji2-1.4.0/AndroidManifest.xml:29:13-31:52
+38                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+38-->[androidx.emoji2:emoji2:1.4.0] /home/marvin/.gradle/caches/9.6.1/transforms/256b2cc3b4385c32ed3d61520c94c1e7/transformed/emoji2-1.4.0/AndroidManifest.xml:30:17-75
+39                android:value="androidx.startup" />
+39-->[androidx.emoji2:emoji2:1.4.0] /home/marvin/.gradle/caches/9.6.1/transforms/256b2cc3b4385c32ed3d61520c94c1e7/transformed/emoji2-1.4.0/AndroidManifest.xml:31:17-49
+40            <meta-data
+40-->[androidx.lifecycle:lifecycle-process:2.11.0] /home/marvin/.gradle/caches/9.6.1/transforms/41f7de2447c1b929d413ffc653c91f7e/transformed/lifecycle-process-2.11.0/AndroidManifest.xml:29:13-31:52
+41                android:name="androidx.lifecycle.ProcessLifecycleInitializer"
+41-->[androidx.lifecycle:lifecycle-process:2.11.0] /home/marvin/.gradle/caches/9.6.1/transforms/41f7de2447c1b929d413ffc653c91f7e/transformed/lifecycle-process-2.11.0/AndroidManifest.xml:30:17-78
+42                android:value="androidx.startup" />
+42-->[androidx.lifecycle:lifecycle-process:2.11.0] /home/marvin/.gradle/caches/9.6.1/transforms/41f7de2447c1b929d413ffc653c91f7e/transformed/lifecycle-process-2.11.0/AndroidManifest.xml:31:17-49
+43            <meta-data
+43-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/marvin/.gradle/caches/9.6.1/transforms/56430983320bc490e7c8c044c3f4ef1b/transformed/profileinstaller-1.4.0/AndroidManifest.xml:29:13-31:52
+44                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
+44-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/marvin/.gradle/caches/9.6.1/transforms/56430983320bc490e7c8c044c3f4ef1b/transformed/profileinstaller-1.4.0/AndroidManifest.xml:30:17-85
+45                android:value="androidx.startup" />
+45-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/marvin/.gradle/caches/9.6.1/transforms/56430983320bc490e7c8c044c3f4ef1b/transformed/profileinstaller-1.4.0/AndroidManifest.xml:31:17-49
+46        </provider>
+47
+48        <uses-library
+48-->[androidx.window:window:1.5.0] /home/marvin/.gradle/caches/9.6.1/transforms/895d98ab43b77f917c56ef42912d9676/transformed/window-1.5.0/AndroidManifest.xml:23:9-25:40
+49            android:name="androidx.window.extensions"
+49-->[androidx.window:window:1.5.0] /home/marvin/.gradle/caches/9.6.1/transforms/895d98ab43b77f917c56ef42912d9676/transformed/window-1.5.0/AndroidManifest.xml:24:13-54
+50            android:required="false" />
+50-->[androidx.window:window:1.5.0] /home/marvin/.gradle/caches/9.6.1/transforms/895d98ab43b77f917c56ef42912d9676/transformed/window-1.5.0/AndroidManifest.xml:25:13-37
+51        <uses-library
+51-->[androidx.window:window:1.5.0] /home/marvin/.gradle/caches/9.6.1/transforms/895d98ab43b77f917c56ef42912d9676/transformed/window-1.5.0/AndroidManifest.xml:26:9-28:40
+52            android:name="androidx.window.sidecar"
+52-->[androidx.window:window:1.5.0] /home/marvin/.gradle/caches/9.6.1/transforms/895d98ab43b77f917c56ef42912d9676/transformed/window-1.5.0/AndroidManifest.xml:27:13-51
+53            android:required="false" />
+53-->[androidx.window:window:1.5.0] /home/marvin/.gradle/caches/9.6.1/transforms/895d98ab43b77f917c56ef42912d9676/transformed/window-1.5.0/AndroidManifest.xml:28:13-37
+54
+55        <receiver
+55-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/marvin/.gradle/caches/9.6.1/transforms/56430983320bc490e7c8c044c3f4ef1b/transformed/profileinstaller-1.4.0/AndroidManifest.xml:34:9-52:20
+56            android:name="androidx.profileinstaller.ProfileInstallReceiver"
+56-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/marvin/.gradle/caches/9.6.1/transforms/56430983320bc490e7c8c044c3f4ef1b/transformed/profileinstaller-1.4.0/AndroidManifest.xml:35:13-76
+57            android:directBootAware="false"
+57-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/marvin/.gradle/caches/9.6.1/transforms/56430983320bc490e7c8c044c3f4ef1b/transformed/profileinstaller-1.4.0/AndroidManifest.xml:36:13-44
+58            android:enabled="true"
+58-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/marvin/.gradle/caches/9.6.1/transforms/56430983320bc490e7c8c044c3f4ef1b/transformed/profileinstaller-1.4.0/AndroidManifest.xml:37:13-35
+59            android:exported="true"
+59-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/marvin/.gradle/caches/9.6.1/transforms/56430983320bc490e7c8c044c3f4ef1b/transformed/profileinstaller-1.4.0/AndroidManifest.xml:38:13-36
+60            android:permission="android.permission.DUMP" >
+60-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/marvin/.gradle/caches/9.6.1/transforms/56430983320bc490e7c8c044c3f4ef1b/transformed/profileinstaller-1.4.0/AndroidManifest.xml:39:13-57
+61            <intent-filter>
+61-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/marvin/.gradle/caches/9.6.1/transforms/56430983320bc490e7c8c044c3f4ef1b/transformed/profileinstaller-1.4.0/AndroidManifest.xml:40:13-42:29
+62                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE" />
+62-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/marvin/.gradle/caches/9.6.1/transforms/56430983320bc490e7c8c044c3f4ef1b/transformed/profileinstaller-1.4.0/AndroidManifest.xml:41:17-91
+62-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/marvin/.gradle/caches/9.6.1/transforms/56430983320bc490e7c8c044c3f4ef1b/transformed/profileinstaller-1.4.0/AndroidManifest.xml:41:25-88
+63            </intent-filter>
+64            <intent-filter>
+64-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/marvin/.gradle/caches/9.6.1/transforms/56430983320bc490e7c8c044c3f4ef1b/transformed/profileinstaller-1.4.0/AndroidManifest.xml:43:13-45:29
+65                <action android:name="androidx.profileinstaller.action.SKIP_FILE" />
+65-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/marvin/.gradle/caches/9.6.1/transforms/56430983320bc490e7c8c044c3f4ef1b/transformed/profileinstaller-1.4.0/AndroidManifest.xml:44:17-85
+65-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/marvin/.gradle/caches/9.6.1/transforms/56430983320bc490e7c8c044c3f4ef1b/transformed/profileinstaller-1.4.0/AndroidManifest.xml:44:25-82
+66            </intent-filter>
+67            <intent-filter>
+67-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/marvin/.gradle/caches/9.6.1/transforms/56430983320bc490e7c8c044c3f4ef1b/transformed/profileinstaller-1.4.0/AndroidManifest.xml:46:13-48:29
+68                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE" />
+68-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/marvin/.gradle/caches/9.6.1/transforms/56430983320bc490e7c8c044c3f4ef1b/transformed/profileinstaller-1.4.0/AndroidManifest.xml:47:17-88
+68-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/marvin/.gradle/caches/9.6.1/transforms/56430983320bc490e7c8c044c3f4ef1b/transformed/profileinstaller-1.4.0/AndroidManifest.xml:47:25-85
+69            </intent-filter>
+70            <intent-filter>
+70-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/marvin/.gradle/caches/9.6.1/transforms/56430983320bc490e7c8c044c3f4ef1b/transformed/profileinstaller-1.4.0/AndroidManifest.xml:49:13-51:29
+71                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION" />
+71-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/marvin/.gradle/caches/9.6.1/transforms/56430983320bc490e7c8c044c3f4ef1b/transformed/profileinstaller-1.4.0/AndroidManifest.xml:50:17-95
+71-->[androidx.profileinstaller:profileinstaller:1.4.0] /home/marvin/.gradle/caches/9.6.1/transforms/56430983320bc490e7c8c044c3f4ef1b/transformed/profileinstaller-1.4.0/AndroidManifest.xml:50:25-92
+72            </intent-filter>
+73        </receiver>
+74    </application>
+75
+76</manifest>
