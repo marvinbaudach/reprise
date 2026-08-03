@@ -18,6 +18,10 @@ impl LibrarySource for UnknownProbeSource {
         None
     }
 
+    fn display_name(&self, _at: &Path) -> Option<String> {
+        None
+    }
+
     fn open_read(&self, _at: &Path) -> io::Result<LibraryReadHandle> {
         Err(io::Error::new(
             io::ErrorKind::NotConnected,

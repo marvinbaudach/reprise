@@ -89,6 +89,10 @@ impl super::source::LibrarySource for ScriptedSource {
         None
     }
 
+    fn display_name(&self, at: &std::path::Path) -> Option<String> {
+        super::source::UnixLibrarySource.display_name(at)
+    }
+
     fn open_read(&self, at: &std::path::Path) -> std::io::Result<super::source::LibraryReadHandle> {
         *self
             .open_counts

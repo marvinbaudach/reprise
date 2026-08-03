@@ -458,10 +458,7 @@ fn scan_folder_inner(
                     let untagged = hint.is_some();
                     let is_update = known_mtime.is_some();
                     let title = if meta.title.is_empty() {
-                        path.file_stem()
-                            .and_then(|s| s.to_str())
-                            .unwrap_or("")
-                            .to_string()
+                        source.display_name(path).unwrap_or_default()
                     } else {
                         meta.title.clone()
                     };

@@ -203,6 +203,7 @@ mod tests {
     use std::fs::File;
     use std::os::fd::IntoRawFd;
     use std::path::PathBuf;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
 
     use super::{MusicLibrary, ScanProgressListener, ScanProgressUpdate};
@@ -211,7 +212,9 @@ mod tests {
     const TREE_URI: &str = "content://com.android.externalstorage.documents/tree/primary%3AMusic";
     const TRACK_URI: &str = "content://com.android.externalstorage.documents/tree/primary%3AMusic/document/primary%3AMusic%2Fsine.flac";
 
-    struct OneTrackSource;
+    struct OneTrackSource {
+        probe_calls: Arc<AtomicUsize>,
+    }
 
     impl SafSource for OneTrackSource {
         fn residence_token(&self, _uri: String) -> Result<Option<i64>, SafSourceError> {
@@ -223,8 +226,10 @@ mod tests {
             uri: String,
             _follow_links: bool,
         ) -> Result<Option<SourceFacts>, SafSourceError> {
+            self.probe_calls.fetch_add(1, Ordering::Relaxed);
             Ok(match uri.as_str() {
                 TREE_URI => Some(SourceFacts {
+                    display_name: Some("Music".to_owned()),
                     is_file: false,
                     is_directory: true,
                     size_bytes: None,
@@ -232,6 +237,7 @@ mod tests {
                     document_id: "primary:Music".to_owned(),
                 }),
                 TRACK_URI => Some(SourceFacts {
+                    display_name: Some("sine.flac".to_owned()),
                     is_file: true,
                     is_directory: false,
                     size_bytes: Some(12_066),
@@ -246,7 +252,7 @@ mod tests {
             Ok(if uri == TREE_URI {
                 vec![SourceChild {
                     uri: TRACK_URI.to_owned(),
-                    display_name: "sine.flac".to_owned(),
+                    display_name: Some("sine.flac".to_owned()),
                     is_file: true,
                     is_directory: false,
                     size_bytes: Some(12_066),
@@ -289,8 +295,14 @@ mod tests {
     fn configured_saf_tree_scans_with_indeterminate_first_progress_and_lists_tracks() {
         let directory = tempfile::tempdir().unwrap();
         let library = MusicLibrary::open(directory.path().to_str().unwrap()).unwrap();
+        let probe_calls = Arc::new(AtomicUsize::new(0));
         library
-            .set_tree_uri(TREE_URI.to_owned(), Box::new(OneTrackSource))
+            .set_tree_uri(
+                TREE_URI.to_owned(),
+                Box::new(OneTrackSource {
+                    probe_calls: Arc::clone(&probe_calls),
+                }),
+            )
             .unwrap();
         let progress = RecordingProgress::default();
         let events = Arc::clone(&progress.events);
@@ -303,6 +315,12 @@ mod tests {
         assert_eq!(summary.errors, 0);
         assert_eq!(tracks.len(), 1);
         assert_eq!(tracks[0].uri, TRACK_URI);
+        assert_eq!(tracks[0].title, "sine.flac");
+        assert_eq!(
+            probe_calls.load(Ordering::Relaxed),
+            2,
+            "the child cursor's display name must not cost a per-file probe",
+        );
         assert!(directory.path().join("reprise.db").is_file());
         assert_eq!(
             *events.lock().unwrap(),

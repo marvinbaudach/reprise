@@ -92,6 +92,7 @@ internal class AndroidSafSource(
     private fun Cursor.sourceFacts(): SourceFacts {
         val mimeType = requiredString(DocumentsContract.Document.COLUMN_MIME_TYPE)
         return SourceFacts(
+            displayName = optionalString(DocumentsContract.Document.COLUMN_DISPLAY_NAME),
             isFile = mimeType != DocumentsContract.Document.MIME_TYPE_DIR,
             isDirectory = mimeType == DocumentsContract.Document.MIME_TYPE_DIR,
             sizeBytes = optionalLong(DocumentsContract.Document.COLUMN_SIZE)?.toULong(),
@@ -105,8 +106,7 @@ internal class AndroidSafSource(
         val mimeType = requiredString(DocumentsContract.Document.COLUMN_MIME_TYPE)
         return SourceChild(
             uri = DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId).toString(),
-            displayName = optionalString(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
-                ?: documentId.substringAfterLast('/'),
+            displayName = optionalString(DocumentsContract.Document.COLUMN_DISPLAY_NAME),
             isFile = mimeType != DocumentsContract.Document.MIME_TYPE_DIR,
             isDirectory = mimeType == DocumentsContract.Document.MIME_TYPE_DIR,
             sizeBytes = optionalLong(DocumentsContract.Document.COLUMN_SIZE)?.toULong(),
@@ -139,6 +139,7 @@ internal class AndroidSafSource(
     private companion object {
         val METADATA_PROJECTION = arrayOf(
             DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
             DocumentsContract.Document.COLUMN_MIME_TYPE,
             DocumentsContract.Document.COLUMN_SIZE,
             DocumentsContract.Document.COLUMN_LAST_MODIFIED,

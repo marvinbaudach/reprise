@@ -1,7 +1,9 @@
+use std::collections::HashMap;
 use std::fs::File;
 use std::io;
 use std::os::fd::FromRawFd;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
 use reprise_core::library::source::{
@@ -14,6 +16,7 @@ use sha2::{Digest, Sha256};
 /// Provider facts returned by one SAF document query.
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct SourceFacts {
+    pub display_name: Option<String>,
     pub is_file: bool,
     pub is_directory: bool,
     pub size_bytes: Option<u64>,
@@ -26,7 +29,7 @@ pub struct SourceFacts {
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct SourceChild {
     pub uri: String,
-    pub display_name: String,
+    pub display_name: Option<String>,
     pub is_file: bool,
     pub is_directory: bool,
     pub size_bytes: Option<u64>,
@@ -67,11 +70,21 @@ pub trait SafSource: Send + Sync {
 /// Adapts the flat foreign callback to Core's complete storage contract.
 pub struct BridgedSource {
     source: Box<dyn SafSource>,
+    display_names: Mutex<HashMap<PathBuf, Option<String>>>,
 }
 
 impl BridgedSource {
     pub fn new(source: Box<dyn SafSource>) -> Self {
-        Self { source }
+        Self {
+            source,
+            display_names: Mutex::new(HashMap::new()),
+        }
+    }
+
+    fn remember_display_name(&self, at: PathBuf, display_name: Option<String>) {
+        if let Ok(mut names) = self.display_names.lock() {
+            names.insert(at, display_name);
+        }
     }
 
     fn emit_children(
@@ -97,6 +110,7 @@ impl BridgedSource {
 
         for child in children {
             let path = std::path::PathBuf::from(&child.uri);
+            self.remember_display_name(path.clone(), child.display_name.clone());
             let is_directory = child.is_directory;
             let entry = LibraryEntry {
                 path: path.clone(),
@@ -126,6 +140,10 @@ impl LibrarySource for BridgedSource {
         None
     }
 
+    fn display_name(&self, at: &Path) -> Option<String> {
+        self.display_names.lock().ok()?.get(at)?.clone()
+    }
+
     fn open_read(&self, at: &Path) -> io::Result<LibraryReadHandle> {
         let raw_fd = self
             .source
@@ -149,7 +167,10 @@ impl LibrarySource for BridgedSource {
             .source
             .probe(path_uri(at), matches!(links, LibraryLinkMode::Follow))
         {
-            Ok(Some(facts)) => LibraryPathPresence::Present(metadata_from_facts(at, &facts)),
+            Ok(Some(facts)) => {
+                self.remember_display_name(at.to_path_buf(), facts.display_name.clone());
+                LibraryPathPresence::Present(metadata_from_facts(at, &facts))
+            }
             Ok(None) => LibraryPathPresence::Absent,
             Err(_) => LibraryPathPresence::Unknown,
         }
@@ -162,9 +183,13 @@ impl LibrarySource for BridgedSource {
             .map(|children| {
                 children
                     .into_iter()
-                    .map(|child| LibraryDirectoryEntry {
-                        path: child.uri.clone().into(),
-                        metadata: Some(metadata_from_child(&child)),
+                    .map(|child| {
+                        let path = PathBuf::from(&child.uri);
+                        self.remember_display_name(path.clone(), child.display_name.clone());
+                        LibraryDirectoryEntry {
+                            path,
+                            metadata: Some(metadata_from_child(&child)),
+                        }
                     })
                     .collect()
             })
@@ -186,6 +211,7 @@ impl LibrarySource for BridgedSource {
                 return;
             }
         };
+        self.remember_display_name(root.to_path_buf(), root_facts.display_name.clone());
         let root_entry = LibraryEntry {
             path: root.to_path_buf(),
             is_file: root_facts.is_file,
@@ -300,6 +326,7 @@ mod tests {
             _follow_links: bool,
         ) -> Result<Option<SourceFacts>, SafSourceError> {
             Ok(Some(SourceFacts {
+                display_name: Some("song.flac".to_owned()),
                 is_file: true,
                 is_directory: false,
                 size_bytes: Some(12_066),
@@ -493,6 +520,7 @@ mod tests {
         ) -> Result<Option<SourceFacts>, SafSourceError> {
             self.probe_calls.fetch_add(1, Ordering::Relaxed);
             Ok(Some(SourceFacts {
+                display_name: Some("Music".to_owned()),
                 is_file: false,
                 is_directory: true,
                 size_bytes: None,
@@ -525,7 +553,7 @@ mod tests {
     ) -> SourceChild {
         SourceChild {
             uri: uri.to_owned(),
-            display_name: display_name.to_owned(),
+            display_name: Some(display_name.to_owned()),
             is_file,
             is_directory: !is_file,
             size_bytes,
