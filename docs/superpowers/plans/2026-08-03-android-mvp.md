@@ -274,13 +274,13 @@ Schnitt" oben.
 
 ## Phase 5 — Festhalten
 
-- [ ] **Step 1: Was der MVP über die Abstraktion gesagt hat**
+- [x] **Step 1: Was der MVP über die Abstraktion gesagt hat**
 
 Die ehrliche Bilanz: Welche der fünf Pakete haben getragen, welche Signatur
 hat sich verrenkt, was würde man anders schneiden. **Das ist der Ertrag**, den
 kein weiteres Paket gegen Doppelgänger liefern kann.
 
-- [ ] **Step 2: Ledger, Gates, Commit**
+- [x] **Step 2: Ledger, Gates, Commit**
 
 ---
 

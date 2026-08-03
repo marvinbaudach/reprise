@@ -1303,3 +1303,79 @@ Wiederherstellungen liefen A2 und A3 grün.
 Damit sind A2 und A3 festgehalten. A1 bleibt bis zum getrennten Emulator-Lauf
 offen; aus diesem Durchgang folgt kein Urteil über die Seekbarkeit eines
 echten Provider-Deskriptors.
+
+## Phase 5 — Bilanz der Storage-Abstraktion (2026-08-03)
+
+Der MVP hat die Bibliothek über eine echte SAF-Quelle gescannt. Sein Ertrag ist
+nicht, dass `LibrarySource` als Ganzes bestätigt wäre. Vier der fünf
+Storage-Pakete trugen für den geprüften lokalen DocumentsProvider; eine
+Signatur musste geändert werden, und vier weitere Dateisystemannahmen lagen
+außerhalb der Signaturen an Stellen, die ihre Quelle gar nicht befragen
+konnten.
+
+### Was von den fünf Paketen getragen hat
+
+| Paket | Befund am zweiten Quelltyp |
+| --- | --- |
+| 1 — Aufenthalt und Erreichbarkeit | **Trägt.** Eine SAF-Quelle kann einen stabilen Tree-Token liefern; `reachability` bleibt ein Vergleich opaker Werte. Nicht getragen hat die fremde Vorbedingung des Aufrufers: `scan_folder_inner` verlangte mit `is_absolute`, was nur der Unix-Vorfahrenlauf braucht. Die Zusicherung sitzt jetzt bei `UnixLibrarySource`. |
+| 2 — Traversierung | **Trägt.** Der Rust-Adapter leitet den stromorientierten Walk aus wiederholten `listChildren`-Aufrufen ab, trägt Fehler in Reihenfolge weiter und stoppt ohne den Baum zu materialisieren. Der Gerätelauf bestätigte außerdem den unbekannten Nenner beim ersten Scan; ein Vorzähl-Lauf wäre unter Binder genau die falsche Optimierung gewesen. |
+| 3 — Präsenz und Metadaten | **Trägt nicht in der ursprünglichen Signatur.** `Option<LibraryPathMetadata>` musste gleichzeitig „bestätigt nicht vorhanden" und „Binder-Aufruf gescheitert" ausdrücken. Der erste Adapter verrenkte die Fehlerseite deshalb zu einer faktenfreien Präsenz. Erst `LibraryPathPresence::{Present, Absent, Unknown}` bildet die Quelle ab; nur `Absent` darf einen Missing-Schreibzugriff lizenzieren. Das ist die Signatur, die der MVP korrigiert hat. |
+| 4 — Lese-Griff | **Trägt für den geprüften lokalen Provider.** Der echte Deskriptor liest und sucht, Rust übernimmt ihn ohne Cache-Kopie, und der Gerätelauf parst darüber Audio. Das Urteil gilt nicht pauschal für Netzwerk-Provider, die eine nicht seekbare Pipe liefern dürfen. |
+| 5 — Tag-Lesung | **Trägt.** Lofty liest Tags und Eigenschaften über denselben Griff; `sine.flac` und `broken-tags.mp3` erreichten auf dem Gerät dieselben Datenbank- und Fehlerverdikte wie im Kern. Die explizite Endungs-Vorsaat bleibt nötig, weil ein Griff allein den Container-Typ nicht kennt. |
+
+Die Paketgrenzen für Traversierung, Metadaten, Griff und Parser waren damit
+brauchbar. Der Fehler lag in der Beweisreihenfolge: Der Vertrag wurde gegen
+Unix und gegen Testdoppelgänger verbreitert, bevor ein zweiter Quelltyp ihn
+unter seinen eigenen Fehlern und Bezeichnern benutzen musste.
+
+### Fünf Befunde, die kein selbstgeschriebener Doppelgänger gezeigt hat
+
+1. `is_absolute` stand am Scanner-Eingang, obwohl nur der Unix-Adapter eine
+   absolute Wurzel für seinen Vorfahrenlauf braucht. Eine Content-URI ist für
+   `Path` nicht absolut.
+2. `probe` hatte mit `Option` nur zwei Ergebnisse. Ein echter Binder-Aufruf
+   hat mindestens drei: vorhanden, bestätigt abwesend und nicht feststellbar.
+3. Der Scanner trug einen Plattform-Booleschen Wert, um
+   `mount_point_of` zu überspringen. Die eigentliche Frage lautet, ob diese
+   Quelle für dieses Objekt eine gemeinsame Ausfallgrenze benennen kann.
+4. Der Titelfallback nahm `file_stem` aus dem Bezeichner. Bei SAF ist das die
+   kodierte Dokument-ID, nicht `COLUMN_DISPLAY_NAME`.
+5. Der Albumfallback nahm `parent().file_name()` aus demselben Bezeichner.
+   Für `content://…/document/…/broken-tags.mp3` ergibt das wörtlich
+   `document`, nicht den Anzeigenamen des übergeordneten Dokuments.
+
+Diese fünf Fehler waren gegen die Doppelgänger unsichtbar. **Ein
+Doppelgänger, den wir selbst schreiben, scheitert nicht; er antwortet nur.**
+Er liefert auf Nachfrage genau den Token, die Metadaten und den Baum, die sein
+Test erwartet. Er hat keinen abgebrochenen Binder-Rundlauf, keinen
+DocumentsProvider ohne Mount-Begriff und keinen opaken Bezeichner, solange wir
+ihm diese Eigenschaften nicht vorher einbauen. Damit kann er bekannte
+Zusicherungen festhalten, aber nicht belegen, dass die Fragen vollständig oder
+am richtigen Besitzer liegen.
+
+### Wie der Schnitt beim nächsten Mal anders beginnt
+
+Die zweite Quelle kommt künftig **vor** der gemeinsamen Abstraktion. Zuerst
+wird der schmalste echte vertikale Lauf in beiden Quellen gebaut; danach wird
+nur das gemeinsam benannte Verhalten herausgezogen. Für die Leseseite hätte
+das bedeutet: ein realer SAF-Walk mit Providerfehler, Metadaten, Griff und
+Anzeigenamen, bevor `LibrarySource` seine endgültigen Methoden erhält. Dann
+wären `Unknown`, `mount_point`, `display_name` und `container_name` aus zwei
+Implementierungen entstanden statt nachträglich aus vier Reparaturen.
+
+Das ist auch die Reihenfolge für die noch offenen Pakete:
+
+- **Schreibseite:** Erst auf SAF konkret beweisen, wie Namensreservierung,
+  Kollision, temporäre Veröffentlichung, Austausch und Aufräumen sicher
+  funktionieren. Danach den gemeinsamen Vertrag mit Unix schneiden.
+  `create_new` und atomarer `rename` dürfen nicht als Methoden vorgegeben
+  werden, wenn der zweite Provider diese Zusicherungen nicht besitzt.
+- **Watcher:** Erst das Verhalten einer zweiten Quelle bauen. SAF hat kein
+  allgemeines `notify`-Gegenstück; möglich sind Provider-Beobachter,
+  periodischer Abgleich oder gar keine Push-Fähigkeit. Erst aus diesem
+  konkreten Ergebnis darf eine optionale Watcher-Fähigkeit oder ein
+  Scan-Fallback abstrahiert werden.
+
+Für beide gilt daher: **zweite Quelle zuerst, dann abstrahieren.** Ein weiterer
+Vertrag gegen einen Doppelgänger würde erneut nur zeigen, dass unser eigener
+Antwortgeber die Fragen erfüllt, die wir ihm vorher gegeben haben.
