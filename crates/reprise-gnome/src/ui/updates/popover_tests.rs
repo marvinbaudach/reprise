@@ -1,3 +1,11 @@
+// Visibility inside the popover is asserted with `get_visible`, never
+// `is_visible`. The two are different questions: `get_visible` reports the flag
+// `render` just set, while `is_visible` also walks the parent chain. These
+// tests never pop the popover up, so every widget below it answers `false` to
+// `is_visible` no matter what the code did — an assertion for "hidden" passes
+// against any implementation at all, and one for "shown" can never pass. Only
+// `state.button` (parentless here) and `state.badge` (below the button) may be
+// read either way. STYLE-1's rule applies: prove the result, not the property.
 use super::*;
 use reprise_core::db::Db;
 
@@ -288,16 +296,19 @@ fn nr_9b_opening_keeps_the_pre_stamp_count_and_clears_the_badge() {
     let state = test_popover(conn, PathBuf::from("unused.db"));
 
     assert!(
-        state.badge.is_visible(),
+        state.badge.get_visible(),
         "two unseen releases should badge before the popover ever opens"
     );
 
     state.render(true, false);
 
-    assert!(state.new_tag.is_visible(), "the batch count stays rendered");
+    assert!(
+        state.new_tag.get_visible(),
+        "the batch count stays rendered"
+    );
     assert_eq!(state.new_tag.text(), "2 new");
     assert!(
-        !state.badge.is_visible(),
+        !state.badge.get_visible(),
         "opening stamps every unseen candidate, so the badge must clear"
     );
 }
@@ -317,8 +328,8 @@ fn nr_23_an_empty_batch_hides_its_header_and_list() {
 
     state.render(false, false);
 
-    assert!(!state.news_section.is_visible());
-    assert!(state.nothing_new.is_visible());
+    assert!(!state.news_section.get_visible());
+    assert!(state.nothing_new.get_visible());
 }
 
 /// B5: the hourly background staleness timer's lifecycle is coupled to the
