@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-02 11:16+0200\n"
+"POT-Creation-Date: 2026-08-04 00:27+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Marvin Baudach\n"
 "Language-Team: German\n"
@@ -327,7 +327,7 @@ msgstr ""
 "in den Papierkorb verschieben."
 
 #: crates/reprise-gnome/src/ui/strings.rs:221
-#: crates/reprise-gnome/src/ui/strings.rs:498
+#: crates/reprise-gnome/src/ui/strings.rs:496
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:107
 #: crates/reprise-gnome/src/ui/strings_radio.rs:38
 #: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:30
@@ -656,177 +656,170 @@ msgid "Queue"
 msgstr "Warteschlange"
 
 #: crates/reprise-gnome/src/ui/strings.rs:472
-msgid "Now Playing"
-msgstr "Aktuelle Wiedergabe"
-
-#: crates/reprise-gnome/src/ui/strings.rs:473
 msgid "Jump to now playing"
 msgstr "Zur aktuellen Wiedergabe springen"
 
-#: crates/reprise-gnome/src/ui/strings.rs:474
+#: crates/reprise-gnome/src/ui/strings.rs:473
 msgid "Go to playing artist"
 msgstr "Zum wiedergegebenen Interpreten wechseln"
 
-#: crates/reprise-gnome/src/ui/strings.rs:475
+#: crates/reprise-gnome/src/ui/strings.rs:474
 msgid "Go to playing album"
 msgstr "Zum wiedergegebenen Album wechseln"
 
-#: crates/reprise-gnome/src/ui/strings.rs:476
+#: crates/reprise-gnome/src/ui/strings.rs:475
 msgid "Reveal playing track"
 msgstr "Wiedergegebenen Titel anzeigen"
 
-#: crates/reprise-gnome/src/ui/strings.rs:477
+#: crates/reprise-gnome/src/ui/strings.rs:476
 #, rust-format
 msgid "Go to album {album}"
 msgstr "Zum Album {album}"
 
-#: crates/reprise-gnome/src/ui/strings.rs:478
+#: crates/reprise-gnome/src/ui/strings.rs:477
 msgid "Back to previous view"
 msgstr "Zur vorherigen Ansicht zurückkehren"
 
-#: crates/reprise-gnome/src/ui/strings.rs:479
+#: crates/reprise-gnome/src/ui/strings.rs:478
 msgid "Forward to next view"
 msgstr "Vorwärts zur nächsten Ansicht"
 
-#: crates/reprise-gnome/src/ui/strings.rs:480
+#: crates/reprise-gnome/src/ui/strings.rs:479
 msgid "Play next"
 msgstr "Als Nächstes wiedergeben"
 
-#: crates/reprise-gnome/src/ui/strings.rs:481
+#: crates/reprise-gnome/src/ui/strings.rs:480
 msgid "Clear"
 msgstr "Leeren"
 
-#: crates/reprise-gnome/src/ui/strings.rs:482
-msgid "Play Next"
-msgstr "Als Nächstes"
-
-#: crates/reprise-gnome/src/ui/strings.rs:485
+#: crates/reprise-gnome/src/ui/strings.rs:483
 msgid "Nothing queued"
 msgstr "Nichts in der Warteschlange"
 
-#: crates/reprise-gnome/src/ui/strings.rs:486
+#: crates/reprise-gnome/src/ui/strings.rs:484
 msgid "Play something"
 msgstr "Etwas wiedergeben"
 
-#: crates/reprise-gnome/src/ui/strings.rs:487
-#: crates/reprise-gnome/src/ui/strings.rs:496
+#: crates/reprise-gnome/src/ui/strings.rs:485
+#: crates/reprise-gnome/src/ui/strings.rs:494
 msgid "New playlist"
 msgstr "Neue Wiedergabeliste"
 
-#: crates/reprise-gnome/src/ui/strings.rs:488
+#: crates/reprise-gnome/src/ui/strings.rs:486
 msgid "Import errors"
 msgstr "Importfehler"
 
-#: crates/reprise-gnome/src/ui/strings.rs:489
+#: crates/reprise-gnome/src/ui/strings.rs:487
 msgid "Missing files"
 msgstr "Fehlende Dateien"
 
-#: crates/reprise-gnome/src/ui/strings.rs:490
+#: crates/reprise-gnome/src/ui/strings.rs:488
 msgid "My Stats"
 msgstr "Meine Statistiken"
 
-#: crates/reprise-gnome/src/ui/strings.rs:494
+#: crates/reprise-gnome/src/ui/strings.rs:492
 msgid "Toggle sidebar"
 msgstr "Seitenleiste ein-/ausblenden"
 
-#: crates/reprise-gnome/src/ui/strings.rs:497
+#: crates/reprise-gnome/src/ui/strings.rs:495
 msgid "Playlist name"
 msgstr "Name der Wiedergabeliste"
 
-#: crates/reprise-gnome/src/ui/strings.rs:499
+#: crates/reprise-gnome/src/ui/strings.rs:497
 msgid "Create"
 msgstr "Erstellen"
 
-#: crates/reprise-gnome/src/ui/strings.rs:504
+#: crates/reprise-gnome/src/ui/strings.rs:502
 #, rust-format
 msgid "Could not create playlist “{name}”"
 msgstr "Die Wiedergabeliste „{name}“ konnte nicht erstellt werden"
 
-#: crates/reprise-gnome/src/ui/strings.rs:515
+#: crates/reprise-gnome/src/ui/strings.rs:513
 msgid "Rescan library"
 msgstr "Musiksammlung erneut einlesen"
 
-#: crates/reprise-gnome/src/ui/strings.rs:521
+#: crates/reprise-gnome/src/ui/strings.rs:519
 msgid "No library folder to rescan yet — use “Scan folder…” first"
 msgstr ""
 "Noch kein Ordner zum erneuten Einlesen vorhanden — verwenden Sie zuerst "
 "„Ordner einlesen…“"
 
-#: crates/reprise-gnome/src/ui/strings.rs:529
+#: crates/reprise-gnome/src/ui/strings.rs:527
 msgid "A scan is already running"
 msgstr "Ein Einlesevorgang läuft bereits"
 
-#: crates/reprise-gnome/src/ui/strings.rs:537
+#: crates/reprise-gnome/src/ui/strings.rs:535
 #, rust-format
 msgid "{count} track removed from library"
 msgid_plural "{count} tracks removed from library"
 msgstr[0] "{count} Titel aus der Musiksammlung entfernt"
 msgstr[1] "{count} Titel aus der Musiksammlung entfernt"
 
-#: crates/reprise-gnome/src/ui/strings.rs:547
+#: crates/reprise-gnome/src/ui/strings.rs:545
 msgid "Could not remove tracks from library"
 msgstr "Titel konnten nicht aus der Musiksammlung entfernt werden"
 
-#: crates/reprise-gnome/src/ui/strings.rs:558
+#: crates/reprise-gnome/src/ui/strings.rs:556
 #: crates/reprise-gnome/src/ui/strings_radio.rs:62
 #: crates/reprise-view/src/strings/scan.rs:7
 msgid "Retry"
 msgstr "Erneut versuchen"
 
-#: crates/reprise-gnome/src/ui/strings.rs:561
+#: crates/reprise-gnome/src/ui/strings.rs:559
 #: crates/reprise-gnome/src/ui/strings_news.rs:52
+#: crates/reprise-gnome/src/ui/strings_sources.rs:19
 msgid "Dismiss"
 msgstr "Schließen"
 
-#: crates/reprise-gnome/src/ui/strings.rs:567
+#: crates/reprise-gnome/src/ui/strings.rs:565
 msgid "Could not retry — see the log for details"
 msgstr "Erneuter Versuch fehlgeschlagen — Einzelheiten finden Sie im Protokoll"
 
-#: crates/reprise-gnome/src/ui/strings.rs:576
+#: crates/reprise-gnome/src/ui/strings.rs:574
 #, rust-format
 msgid "{count} track added to queue"
 msgid_plural "{count} tracks added to queue"
 msgstr[0] "{count} Titel zur Warteschlange hinzugefügt"
 msgstr[1] "{count} Titel zur Warteschlange hinzugefügt"
 
-#: crates/reprise-gnome/src/ui/strings.rs:583
+#: crates/reprise-gnome/src/ui/strings.rs:581
 msgid "Move up"
 msgstr "Nach oben verschieben"
 
-#: crates/reprise-gnome/src/ui/strings.rs:584
+#: crates/reprise-gnome/src/ui/strings.rs:582
 msgid "Move down"
 msgstr "Nach unten verschieben"
 
-#: crates/reprise-gnome/src/ui/strings.rs:593
+#: crates/reprise-gnome/src/ui/strings.rs:591
 #, rust-format
 msgid "{count} track added to {playlist}"
 msgid_plural "{count} tracks added to {playlist}"
 msgstr[0] "{count} Titel zu {playlist} hinzugefügt"
 msgstr[1] "{count} Titel zu {playlist} hinzugefügt"
 
-#: crates/reprise-gnome/src/ui/strings.rs:605
+#: crates/reprise-gnome/src/ui/strings.rs:603
 #, rust-format
 msgid "{count} track removed from playlist"
 msgid_plural "{count} tracks removed from playlist"
 msgstr[0] "{count} Titel aus der Wiedergabeliste entfernt"
 msgstr[1] "{count} Titel aus der Wiedergabeliste entfernt"
 
-#: crates/reprise-gnome/src/ui/strings.rs:615
+#: crates/reprise-gnome/src/ui/strings.rs:613
 #, rust-format
 msgid "Could not add tracks to “{name}”"
 msgstr "Titel konnten nicht zu „{name}“ hinzugefügt werden"
 
-#: crates/reprise-gnome/src/ui/strings.rs:621
+#: crates/reprise-gnome/src/ui/strings.rs:619
 msgid "Could not remove tracks from playlist"
 msgstr "Titel konnten nicht aus der Wiedergabeliste entfernt werden"
 
-#: crates/reprise-gnome/src/ui/strings.rs:630
+#: crates/reprise-gnome/src/ui/strings.rs:628
 msgid "Could not remove — reload the playlist and try again"
 msgstr ""
 "Entfernen fehlgeschlagen — laden Sie die Wiedergabeliste neu und versuchen "
 "Sie es erneut"
 
-#: crates/reprise-gnome/src/ui/strings.rs:643
+#: crates/reprise-gnome/src/ui/strings.rs:641
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:267
 #, rust-format
 msgid "{count} track"
@@ -834,98 +827,98 @@ msgid_plural "{count} tracks"
 msgstr[0] "{count} Titel"
 msgstr[1] "{count} Titel"
 
-#: crates/reprise-gnome/src/ui/strings.rs:659
+#: crates/reprise-gnome/src/ui/strings.rs:657
 msgid "Could not reorder playlist"
 msgstr "Die Wiedergabeliste konnte nicht neu angeordnet werden"
 
-#: crates/reprise-gnome/src/ui/strings.rs:666
+#: crates/reprise-gnome/src/ui/strings.rs:664
 msgid "Import playlist…"
 msgstr "Wiedergabeliste importieren…"
 
-#: crates/reprise-gnome/src/ui/strings.rs:667
+#: crates/reprise-gnome/src/ui/strings.rs:665
 msgid "Export playlist…"
 msgstr "Wiedergabeliste exportieren…"
 
-#: crates/reprise-gnome/src/ui/strings.rs:668
+#: crates/reprise-gnome/src/ui/strings.rs:666
 msgid "Delete playlist…"
 msgstr "Wiedergabeliste löschen…"
 
-#: crates/reprise-gnome/src/ui/strings.rs:669
+#: crates/reprise-gnome/src/ui/strings.rs:667
 msgid "Delete Playlist"
 msgstr "Wiedergabeliste löschen"
 
-#: crates/reprise-gnome/src/ui/strings.rs:671
+#: crates/reprise-gnome/src/ui/strings.rs:669
 msgid "The playlist will be deleted. Its tracks will remain in your library."
 msgstr ""
 "Die Wiedergabeliste wird gelöscht. Ihre Titel bleiben in der Bibliothek "
 "erhalten."
 
-#: crates/reprise-gnome/src/ui/strings.rs:673
+#: crates/reprise-gnome/src/ui/strings.rs:671
 #, rust-format
 msgid "Delete “{name}”?"
 msgstr "„{name}“ löschen?"
 
-#: crates/reprise-gnome/src/ui/strings.rs:676
+#: crates/reprise-gnome/src/ui/strings.rs:674
 #, rust-format
 msgid "Deleted playlist “{name}”"
 msgstr "Wiedergabeliste „{name}“ gelöscht"
 
-#: crates/reprise-gnome/src/ui/strings.rs:679
+#: crates/reprise-gnome/src/ui/strings.rs:677
 #, rust-format
 msgid "Could not delete playlist “{name}”"
 msgstr "Wiedergabeliste „{name}“ konnte nicht gelöscht werden"
 
-#: crates/reprise-gnome/src/ui/strings.rs:681
+#: crates/reprise-gnome/src/ui/strings.rs:679
 msgid "Import Playlist"
 msgstr "Wiedergabeliste importieren"
 
-#: crates/reprise-gnome/src/ui/strings.rs:682
+#: crates/reprise-gnome/src/ui/strings.rs:680
 msgid "Export Playlist"
 msgstr "Wiedergabeliste exportieren"
 
-#: crates/reprise-gnome/src/ui/strings.rs:685
+#: crates/reprise-gnome/src/ui/strings.rs:683
 msgid "M3U Playlists"
 msgstr "M3U-Wiedergabelisten"
 
-#: crates/reprise-gnome/src/ui/strings.rs:692
+#: crates/reprise-gnome/src/ui/strings.rs:690
 #, rust-format
 msgid "Imported {name}: {matched} of {total} tracks matched"
 msgstr "{name} importiert: {matched} von {total} Titeln zugeordnet"
 
-#: crates/reprise-gnome/src/ui/strings.rs:707
+#: crates/reprise-gnome/src/ui/strings.rs:705
 #, rust-format
 msgid "Imported {name}: 0 of {total} tracks matched — nothing added"
 msgstr ""
 "{name} importiert: 0 von {total} Titeln zugeordnet — nichts hinzugefügt"
 
-#: crates/reprise-gnome/src/ui/strings.rs:715
+#: crates/reprise-gnome/src/ui/strings.rs:713
 msgid "Could not import playlist"
 msgstr "Die Wiedergabeliste konnte nicht importiert werden"
 
-#: crates/reprise-gnome/src/ui/strings.rs:721
+#: crates/reprise-gnome/src/ui/strings.rs:719
 #, rust-format
 msgid "One opened audio file is not in the library"
 msgid_plural "{count} opened audio files are not in the library"
 msgstr[0] "Eine geöffnete Audiodatei ist nicht in der Sammlung"
 msgstr[1] "{count} geöffnete Audiodateien sind nicht in der Sammlung"
 
-#: crates/reprise-gnome/src/ui/strings.rs:731
+#: crates/reprise-gnome/src/ui/strings.rs:729
 #, rust-format
 msgid "One opened file is not supported"
 msgid_plural "{count} opened files are not supported"
 msgstr[0] "Eine geöffnete Datei wird nicht unterstützt"
 msgstr[1] "{count} geöffnete Dateien werden nicht unterstützt"
 
-#: crates/reprise-gnome/src/ui/strings.rs:739
+#: crates/reprise-gnome/src/ui/strings.rs:737
 msgid "Playback is unavailable"
 msgstr "Die Wiedergabe ist nicht verfügbar"
 
-#: crates/reprise-gnome/src/ui/strings.rs:744
+#: crates/reprise-gnome/src/ui/strings.rs:742
 #, rust-format
 msgid "Exported {name}"
 msgstr "{name} exportiert"
 
-#: crates/reprise-gnome/src/ui/strings.rs:749
+#: crates/reprise-gnome/src/ui/strings.rs:747
 #, rust-format
 msgid "Could not export “{name}”"
 msgstr "„{name}“ konnte nicht exportiert werden"
@@ -1961,7 +1954,7 @@ msgid "Open in MusicBrainz"
 msgstr "In MusicBrainz öffnen"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:36
-#: crates/reprise-gnome/src/ui/strings_news.rs:147
+#: crates/reprise-gnome/src/ui/strings_news.rs:146
 msgid "New Releases"
 msgstr "Neue Veröffentlichungen"
 
@@ -2048,190 +2041,187 @@ msgid "UPDATES"
 msgstr "AKTUALISIERUNGEN"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:62
-msgid "NEW RELEASES"
-msgstr "NEUE VERÖFFENTLICHUNGEN"
+msgid "RELEASES"
+msgstr "VERÖFFENTLICHUNGEN"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:63
 msgid "CONCERTS"
 msgstr "KONZERTE"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:64
-msgid "new near you"
-msgstr "neu in der Nähe"
-
-#: crates/reprise-gnome/src/ui/strings_news.rs:65
-msgid "newly announced"
-msgstr "neu angekündigt"
-
-#: crates/reprise-gnome/src/ui/strings_news.rs:66
 msgid "Concerts fetch failed"
 msgstr "Abrufen der Konzerte fehlgeschlagen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:67
+#: crates/reprise-gnome/src/ui/strings_news.rs:65
+msgid "Nothing new since your last look"
+msgstr "Nichts Neues seit deinem letzten Blick"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:66
 msgid "Checking for new releases…"
 msgstr "Suche nach neuen Veröffentlichungen…"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:68
+#: crates/reprise-gnome/src/ui/strings_news.rs:67
 msgid "No upcoming releases from your artists"
 msgstr "Keine bevorstehenden Veröffentlichungen Ihrer Interpreten"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:69
+#: crates/reprise-gnome/src/ui/strings_news.rs:68
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:94
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:188
 msgid "Updated just now"
 msgstr "Gerade aktualisiert"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:70
+#: crates/reprise-gnome/src/ui/strings_news.rs:69
 msgid "See all"
 msgstr "Alle anzeigen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:71
+#: crates/reprise-gnome/src/ui/strings_news.rs:70
 #: crates/reprise-gnome/src/ui/strings_releases.rs:33
 msgid "Hide"
 msgstr "Ausblenden"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:76
+#: crates/reprise-gnome/src/ui/strings_news.rs:75
 #, rust-format
 msgid "{count} track selected"
 msgid_plural "{count} tracks selected"
 msgstr[0] "{count} Titel ausgewählt"
 msgstr[1] "{count} Titel ausgewählt"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:87
+#: crates/reprise-gnome/src/ui/strings_news.rs:86
 #, rust-format
 msgid "{count} track · {duration}"
 msgid_plural "{count} tracks · {duration}"
 msgstr[0] "{count} Titel · {duration}"
 msgstr[1] "{count} Titel · {duration}"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:98
+#: crates/reprise-gnome/src/ui/strings_news.rs:97
+#: crates/reprise-view/src/queue.rs:29
 #, rust-format
 msgid "Playing from {source} · {count} track"
 msgid_plural "Playing from {source} · {count} tracks"
 msgstr[0] "Wiedergabe aus {source} · {count} Titel"
 msgstr[1] "Wiedergabe aus {source} · {count} Titel"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:107
+#: crates/reprise-gnome/src/ui/strings_news.rs:106
 #, rust-format
 msgid "{type} · {date}"
 msgstr "{type} · {date}"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:114
+#: crates/reprise-gnome/src/ui/strings_news.rs:113
 #, rust-format
 msgid "MusicBrainz · Updated {date}"
 msgstr "MusicBrainz · Aktualisiert am {date}"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:119
+#: crates/reprise-gnome/src/ui/strings_news.rs:118
 #, rust-format
 msgid "Cached · Updated {date}"
 msgstr "Zwischengespeichert · Aktualisiert am {date}"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:130
+#: crates/reprise-gnome/src/ui/strings_news.rs:129
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:98
 #, rust-format
 msgid "Updated {age} min ago"
 msgstr "Vor {age} Min. aktualisiert"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:136
+#: crates/reprise-gnome/src/ui/strings_news.rs:135
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:104
 #, rust-format
 msgid "Updated {age} h ago"
 msgstr "Vor {age} Std. aktualisiert"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:139
+#: crates/reprise-gnome/src/ui/strings_news.rs:138
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:109
 #, rust-format
 msgid "Updated {age} d ago"
 msgstr "Vor {age} Tg. aktualisiert"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:144
+#: crates/reprise-gnome/src/ui/strings_news.rs:143
 #, rust-format
 msgid "{count} hidden · Show"
 msgstr "{count} ausgeblendet · Anzeigen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:148
+#: crates/reprise-gnome/src/ui/strings_news.rs:147
 msgid "released"
 msgstr "veröffentlicht"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:149
+#: crates/reprise-gnome/src/ui/strings_news.rs:148
 #: crates/reprise-gnome/src/ui/strings_releases.rs:27
 msgid "In library"
 msgstr "In der Musiksammlung"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:150
+#: crates/reprise-gnome/src/ui/strings_news.rs:149
 msgid "Single in library"
 msgstr "Single in der Musiksammlung"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:151
+#: crates/reprise-gnome/src/ui/strings_news.rs:150
 msgid "Show in library"
 msgstr "In der Musiksammlung anzeigen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:152
+#: crates/reprise-gnome/src/ui/strings_news.rs:151
 msgid "Open announcement"
 msgstr "Ankündigung öffnen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:153
+#: crates/reprise-gnome/src/ui/strings_news.rs:152
 msgid "Show again"
 msgstr "Erneut anzeigen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:154
+#: crates/reprise-gnome/src/ui/strings_news.rs:153
 msgid "All caught up"
 msgstr "Alles aktuell"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:155
+#: crates/reprise-gnome/src/ui/strings_news.rs:154
 msgid "Retention: 6 months"
 msgstr "Aufbewahrung: 6 Monate"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:161
+#: crates/reprise-gnome/src/ui/strings_news.rs:160
 #, rust-format
 msgid "in {days} d"
 msgstr "in {days} Tg."
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:167
+#: crates/reprise-gnome/src/ui/strings_news.rs:166
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:38
 #, rust-format
 msgid "{count} new"
 msgstr "{count} neu"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:172
+#: crates/reprise-gnome/src/ui/strings_news.rs:171
 #, rust-format
 msgid "Show all concerts ({count}) →"
 msgstr "Alle Konzerte anzeigen ({count}) →"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:179
+#: crates/reprise-gnome/src/ui/strings_news.rs:178
 #, rust-format
 msgid "Show all releases ({count}) →"
 msgstr "Alle Veröffentlichungen anzeigen ({count}) →"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:186
+#: crates/reprise-gnome/src/ui/strings_news.rs:185
 msgid "unknown date"
 msgstr "unbekanntes Datum"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:195
+#: crates/reprise-gnome/src/ui/strings_news.rs:194
 msgid "Checking missing album covers…"
 msgstr "Fehlende Albumcover werden geprüft…"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:196
+#: crates/reprise-gnome/src/ui/strings_news.rs:195
 msgid "Cover check complete"
 msgstr "Cover-Prüfung abgeschlossen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:197
+#: crates/reprise-gnome/src/ui/strings_news.rs:196
 msgid "Could not check album covers"
 msgstr "Albumcover konnten nicht geprüft werden"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:198
+#: crates/reprise-gnome/src/ui/strings_news.rs:197
 msgid "Checking missing lyrics…"
 msgstr "Fehlende Songtexte werden geprüft…"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:199
+#: crates/reprise-gnome/src/ui/strings_news.rs:198
 msgid "Lyrics check complete"
 msgstr "Songtext-Prüfung abgeschlossen"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:200
+#: crates/reprise-gnome/src/ui/strings_news.rs:199
 msgid "Could not check lyrics"
 msgstr "Songtexte konnten nicht geprüft werden"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:213
+#: crates/reprise-gnome/src/ui/strings_news.rs:212
 #, rust-format
 msgid ""
 "{checked} of {total} checked · {downloaded} downloaded · {unavailable} "
@@ -2240,7 +2230,7 @@ msgstr ""
 "{checked} von {total} geprüft · {downloaded} heruntergeladen · {unavailable} "
 "nicht verfügbar"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:230
+#: crates/reprise-gnome/src/ui/strings_news.rs:229
 #, rust-format
 msgid ""
 "{checked} of {total} checked · {cached} cached · {unavailable} unavailable"
@@ -3058,7 +3048,7 @@ msgid "More source options"
 msgstr "Weitere Quellenoptionen"
 
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:146
-#: crates/reprise-gnome/src/ui/strings_sources.rs:21
+#: crates/reprise-gnome/src/ui/strings_sources.rs:22
 msgid "Unsubscribe"
 msgstr "Abbestellen"
 
@@ -4202,64 +4192,64 @@ msgstr "Abonnierte Quellen erscheinen nicht mehr in späteren Suchen."
 msgid "Copy"
 msgstr "Kopieren"
 
-#: crates/reprise-gnome/src/ui/strings_sources.rs:19
+#: crates/reprise-gnome/src/ui/strings_sources.rs:20
 msgid "Try again"
 msgstr "Erneut versuchen"
 
-#: crates/reprise-gnome/src/ui/strings_sources.rs:20
+#: crates/reprise-gnome/src/ui/strings_sources.rs:21
 msgid "Check subscription"
 msgstr "Abo prüfen"
 
-#: crates/reprise-gnome/src/ui/strings_sources.rs:22
+#: crates/reprise-gnome/src/ui/strings_sources.rs:23
 msgid "Open Preferences"
 msgstr "Einstellungen öffnen"
 
-#: crates/reprise-gnome/src/ui/strings_sources.rs:23
+#: crates/reprise-gnome/src/ui/strings_sources.rs:24
 msgid "Find a new URL"
 msgstr "Neue Adresse suchen"
 
-#: crates/reprise-gnome/src/ui/strings_sources.rs:24
+#: crates/reprise-gnome/src/ui/strings_sources.rs:25
 msgid "Couldn't check this channel for new uploads"
 msgstr "Dieser Kanal konnte nicht auf neue Uploads geprüft werden"
 
-#: crates/reprise-gnome/src/ui/strings_sources.rs:25
+#: crates/reprise-gnome/src/ui/strings_sources.rs:26
 msgid "Can't reach YouTube right now"
 msgstr "YouTube ist gerade nicht erreichbar"
 
-#: crates/reprise-gnome/src/ui/strings_sources.rs:26
+#: crates/reprise-gnome/src/ui/strings_sources.rs:27
 msgid "Can't reach this source right now"
 msgstr "Diese Quelle ist gerade nicht erreichbar"
 
-#: crates/reprise-gnome/src/ui/strings_sources.rs:27
+#: crates/reprise-gnome/src/ui/strings_sources.rs:28
 msgid "This podcast has moved or ended"
 msgstr "Dieser Podcast ist umgezogen oder eingestellt"
 
-#: crates/reprise-gnome/src/ui/strings_sources.rs:29
+#: crates/reprise-gnome/src/ui/strings_sources.rs:30
 msgid "YouTube is limiting requests right now — try again in a few minutes"
 msgstr ""
 "YouTube drosselt gerade die Anfragen — in ein paar Minuten erneut versuchen"
 
-#: crates/reprise-gnome/src/ui/strings_sources.rs:30
+#: crates/reprise-gnome/src/ui/strings_sources.rs:31
 msgid "The YouTube helper needs an update"
 msgstr "Die YouTube-Hilfskomponente braucht ein Update"
 
-#: crates/reprise-gnome/src/ui/strings_sources.rs:31
+#: crates/reprise-gnome/src/ui/strings_sources.rs:32
 msgid "You're offline"
 msgstr "Kein Netz"
 
-#: crates/reprise-gnome/src/ui/strings_sources.rs:32
+#: crates/reprise-gnome/src/ui/strings_sources.rs:33
 #, rust-format
 msgid "Couldn't refresh {count} sources"
 msgstr "{count} Quellen konnten nicht aktualisiert werden"
 
-#: crates/reprise-gnome/src/ui/strings_sources.rs:34
+#: crates/reprise-gnome/src/ui/strings_sources.rs:35
 #, rust-format
 msgid "Affected: {sources}. Saved episodes and downloads still work."
 msgstr ""
 "Betroffen: {sources}. Gespeicherte Episoden und Downloads funktionieren "
 "weiter."
 
-#: crates/reprise-gnome/src/ui/strings_sources.rs:36
+#: crates/reprise-gnome/src/ui/strings_sources.rs:37
 #, rust-format
 msgid ""
 "Affected: {sources}, and {count} more. Saved episodes and downloads still "
@@ -4268,7 +4258,7 @@ msgstr ""
 "Betroffen: {sources} und {count} weitere. Gespeicherte Episoden und "
 "Downloads funktionieren weiter."
 
-#: crates/reprise-gnome/src/ui/strings_sources.rs:38
+#: crates/reprise-gnome/src/ui/strings_sources.rs:39
 #, rust-format
 msgid ""
 "Affected: {sources}. Nothing is downloaded from these sources yet; your "
@@ -4277,7 +4267,7 @@ msgstr ""
 "Betroffen: {sources}. Von diesen Quellen ist noch nichts geladen; deine "
 "anderen Quellen und deine Musik sind unberührt."
 
-#: crates/reprise-gnome/src/ui/strings_sources.rs:41
+#: crates/reprise-gnome/src/ui/strings_sources.rs:42
 #, rust-format
 msgid ""
 "Affected: {sources}, and {count} more. Nothing is downloaded from these "
@@ -4286,14 +4276,14 @@ msgstr ""
 "Betroffen: {sources} und {count} weitere. Von diesen Quellen ist noch nichts "
 "geladen; deine anderen Quellen und deine Musik sind unberührt."
 
-#: crates/reprise-gnome/src/ui/strings_sources.rs:44
+#: crates/reprise-gnome/src/ui/strings_sources.rs:45
 #, rust-format
 msgid "Showing the {count} episodes from {time}. Downloads play as usual."
 msgstr ""
 "Es werden die {count} Episoden von {time} angezeigt. Downloads spielen wie "
 "gewohnt."
 
-#: crates/reprise-gnome/src/ui/strings_sources.rs:46
+#: crates/reprise-gnome/src/ui/strings_sources.rs:47
 msgid ""
 "Nothing is downloaded from this channel yet, so there's nothing to show. "
 "Your other channels and your music are unaffected."
@@ -4301,7 +4291,7 @@ msgstr ""
 "Von diesem Kanal ist noch nichts geladen, deshalb gibt es nichts zu zeigen. "
 "Deine anderen Kanäle und deine Musik sind unberührt."
 
-#: crates/reprise-gnome/src/ui/strings_sources.rs:49
+#: crates/reprise-gnome/src/ui/strings_sources.rs:50
 msgid ""
 "Nothing is downloaded from this podcast yet, so there's nothing to show. "
 "Your other podcasts and your music are unaffected."
@@ -4309,16 +4299,16 @@ msgstr ""
 "Von diesem Podcast ist noch nichts geladen, deshalb gibt es nichts zu "
 "zeigen. Deine anderen Podcasts und deine Musik sind unberührt."
 
-#: crates/reprise-gnome/src/ui/strings_sources.rs:52
+#: crates/reprise-gnome/src/ui/strings_sources.rs:53
 #, rust-format
 msgid "Showing downloaded content. Last checked {time}."
 msgstr "Es werden geladene Inhalte angezeigt. Zuletzt geprüft {time}."
 
-#: crates/reprise-gnome/src/ui/strings_sources.rs:53
+#: crates/reprise-gnome/src/ui/strings_sources.rs:54
 msgid "This action couldn't be completed. Try again."
 msgstr "Diese Aktion konnte nicht abgeschlossen werden. Erneut versuchen."
 
-#: crates/reprise-gnome/src/ui/strings_sources.rs:55
+#: crates/reprise-gnome/src/ui/strings_sources.rs:56
 #, rust-format
 msgid "Nothing found for '{query}' — try pasting a feed/channel URL instead"
 msgstr ""
@@ -5047,6 +5037,14 @@ msgstr "Aktiviere sie, um fehlende Songtexte automatisch zu laden"
 msgid "Enable in Settings"
 msgstr "In den Einstellungen aktivieren"
 
+#: crates/reprise-view/src/queue.rs:21
+msgid "Now Playing"
+msgstr "Aktuelle Wiedergabe"
+
+#: crates/reprise-view/src/queue.rs:22
+msgid "Play Next"
+msgstr "Als Nächstes"
+
 #: crates/reprise-gnome/src/ui/track_list/track_list_queue_menu.rs:18
 msgid "Removed one track from Queue"
 msgstr "Einen Titel aus der Warteschlange entfernt"
@@ -5073,847 +5071,3 @@ msgstr "Chromium (CSD)"
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:18
 msgid "Separate title bar"
 msgstr "Separate Titelleiste"
-
-#, rust-format
-#~ msgid "Select “{title}”"
-#~ msgstr "„{title}“ auswählen"
-
-#, rust-format
-#~ msgid "PACE FOR {year}"
-#~ msgstr "HOCHRECHNUNG {year}"
-
-#, rust-format
-#~ msgid "{date} · {time}"
-#~ msgstr "{date} · {time}"
-
-#~ msgid "Keep listening — stats grow with you"
-#~ msgstr "Hör weiter — Statistiken wachsen mit"
-
-#, rust-format
-#~ msgid "Leave scope: {scope}"
-#~ msgstr "Filter verlassen: {scope}"
-
-#~ msgid "Load missing lyrics · contacts LRCLIB"
-#~ msgstr "Fehlende Songtexte laden · kontaktiert LRCLIB"
-
-#~ msgid "Experimental"
-#~ msgstr "Experimentell"
-
-#~ msgid "Experimental features"
-#~ msgstr "Experimentelle Funktionen"
-
-#~ msgid "Unfinished features with rough edges, off by default."
-#~ msgstr "Unfertige Funktionen mit rauen Kanten, standardmäßig aus."
-
-#~ msgid "Enable experimental features"
-#~ msgstr "Experimentelle Funktionen aktivieren"
-
-#~ msgid ""
-#~ "Shows AI instrumental versions across the app: the context-menu trigger, "
-#~ "the conversion view, badges, and the \"Hide AI music\" filter."
-#~ msgstr ""
-#~ "Zeigt KI-Instrumentalversionen in der ganzen App: den Auslöser im "
-#~ "Kontextmenü, die Konvertierungsansicht, Abzeichen und den Filter „KI-"
-#~ "Musik ausblenden“."
-
-#~ msgid "Refresh failed · showing saved episodes"
-#~ msgstr ""
-#~ "Aktualisierung fehlgeschlagen · gespeicherte Episoden werden angezeigt"
-
-#~ msgid "Could not reconnect to this station"
-#~ msgstr "Verbindung zu diesem Sender konnte nicht wiederhergestellt werden"
-
-#~ msgid "Add YouTube channel"
-#~ msgstr "YouTube-Kanal hinzufügen"
-
-#, rust-format
-#~ msgid "{episodes} · {unplayed} new · latest {latest} · {downloaded}"
-#~ msgstr "{episodes} · {unplayed} neu · letzte {latest} · {downloaded}"
-
-#~ msgid "Show upcoming and newly released albums · contacts MusicBrainz"
-#~ msgstr ""
-#~ "Kommende und neu veröffentlichte Alben anzeigen · kontaktiert MusicBrainz"
-
-#~ msgid "Not in library"
-#~ msgstr "Nicht in der Musiksammlung"
-
-#~ msgid "No release data yet"
-#~ msgstr "Noch keine Veröffentlichungsdaten"
-
-#~ msgid "No releases from your artists yet"
-#~ msgstr "Noch keine Veröffentlichungen Ihrer Interpreten"
-
-#, rust-format
-#~ msgid "{shown} of {total} releases"
-#~ msgstr "{shown} von {total} Veröffentlichungen"
-
-#, rust-format
-#~ msgid "{total} releases"
-#~ msgstr "{total} Veröffentlichungen"
-
-#, rust-format
-#~ msgid "Show all {total} releases"
-#~ msgstr "Alle {total} Veröffentlichungen anzeigen"
-
-#~ msgid "Add a show to receive its latest episodes."
-#~ msgstr "Füge eine Sendung hinzu, um ihre neuesten Episoden zu erhalten."
-
-#~ msgid "yt-dlp is not installed — YouTube sources are disabled"
-#~ msgstr "yt-dlp ist nicht installiert — YouTube-Quellen sind deaktiviert"
-
-#~ msgid "Import latest N episodes"
-#~ msgstr "Neueste N Episoden importieren"
-
-#~ msgid "Download new episodes automatically (default for new subscriptions)"
-#~ msgstr ""
-#~ "Neue Episoden automatisch herunterladen (Standard für neue Abonnements)"
-
-#~ msgid "Downloads cleanup"
-#~ msgstr "Downloads bereinigen"
-
-#~ msgid "Refresh every N hours"
-#~ msgstr "Alle N Stunden aktualisieren"
-
-#, rust-format
-#~ msgid "Show all {count} episodes"
-#~ msgstr "Alle {count} Episoden anzeigen"
-
-#~ msgid "Add an internet radio station to start listening."
-#~ msgstr "Füge einen Internetradiosender hinzu, um mit dem Hören zu beginnen."
-
-#, rust-format
-#~ msgid "Show all {count} stations"
-#~ msgstr "Alle {count} Sender anzeigen"
-
-#~ msgid ""
-#~ "Downloaded on first use (~316 MB), verified by checksum, with a licence "
-#~ "note kept beside it."
-#~ msgstr ""
-#~ "Wird bei der ersten Verwendung heruntergeladen (~316 MB), per Prüfsumme "
-#~ "verifiziert, mit einem Lizenzhinweis daneben."
-
-#~ msgid ""
-#~ "This build has no stem-separation backend, so the model can't be "
-#~ "downloaded here."
-#~ msgstr ""
-#~ "Dieser Build enthält kein Stem-Separation-Backend, daher kann das Modell "
-#~ "hier nicht heruntergeladen werden."
-
-#~ msgid ""
-#~ "The packaged ONNX Runtime is unavailable or failed verification. "
-#~ "Reinstall this build."
-#~ msgstr ""
-#~ "Die mitgelieferte ONNX Runtime ist nicht verfügbar oder konnte nicht "
-#~ "verifiziert werden. Installiere diesen Build neu."
-
-#~ msgid "Kept on device"
-#~ msgstr "Auf dem Gerät behalten"
-
-#~ msgid ""
-#~ "GVfs did not report total capacity; the bar shows known music and free "
-#~ "space."
-#~ msgstr ""
-#~ "GVfs hat keine Gesamtkapazität gemeldet; der Balken zeigt bekannte Musik "
-#~ "und freien Speicher."
-
-#~ msgid "Synchronization"
-#~ msgstr "Synchronisierung"
-
-#~ msgid "Connected Android Devices"
-#~ msgstr "Verbundene Android-Geräte"
-
-#~ msgid "No Android Device Connected"
-#~ msgstr "Kein Android-Gerät verbunden"
-
-#~ msgid ""
-#~ "Connect your unlocked Android device by USB and select File transfer in "
-#~ "its USB options."
-#~ msgstr ""
-#~ "Verbinde dein entsperrtes Android-Gerät per USB und wähle in den USB-"
-#~ "Optionen die Dateiübertragung aus."
-
-#~ msgid "Connected"
-#~ msgstr "Verbunden"
-
-#~ msgid "Disconnected"
-#~ msgstr "Getrennt"
-
-#~ msgid "Reading music on device…"
-#~ msgstr "Musik auf dem Gerät wird gelesen…"
-
-#~ msgid "Could not read music on this device"
-#~ msgstr "Musik auf diesem Gerät konnte nicht gelesen werden"
-
-#~ msgid "Music on Device"
-#~ msgstr "Musik auf dem Gerät"
-
-#~ msgid "Phone Playlists"
-#~ msgstr "Handy-Wiedergabelisten"
-
-#~ msgid "No music was found in the device Music folder."
-#~ msgstr "Im Musikordner des Geräts wurde keine Musik gefunden."
-
-#~ msgid "Create a phone playlist, then drag tracks onto it."
-#~ msgstr "Erstelle eine Handy-Wiedergabeliste und ziehe dann Titel darauf."
-
-#~ msgid "Waiting for tracks"
-#~ msgstr "Wartet auf Titel"
-
-#~ msgid "New Phone Playlist"
-#~ msgstr "Neue Handy-Wiedergabeliste"
-
-#~ msgid "Add Selected Tracks"
-#~ msgstr "Ausgewählte Titel hinzufügen"
-
-#~ msgid "Refresh Device Music"
-#~ msgstr "Gerätemusik aktualisieren"
-
-#~ msgid "Not Enough Space on Device"
-#~ msgstr "Nicht genügend Speicherplatz auf dem Gerät"
-
-#~ msgid "Cancel Current Copy"
-#~ msgstr "Aktuellen Kopiervorgang abbrechen"
-
-#~ msgid "Preparing copy…"
-#~ msgstr "Kopiervorgang wird vorbereitet…"
-
-#~ msgid "Paused — reconnect the device to continue"
-#~ msgstr "Pausiert — verbinde das Gerät erneut, um fortzufahren"
-
-#~ msgid "Cancelling current copy…"
-#~ msgstr "Aktueller Kopiervorgang wird abgebrochen…"
-
-#~ msgid "Synchronization complete"
-#~ msgstr "Synchronisierung abgeschlossen"
-
-#~ msgid "Synchronization failed"
-#~ msgstr "Synchronisierung fehlgeschlagen"
-
-#~ msgid "Ready to synchronize"
-#~ msgstr "Bereit zum Synchronisieren"
-
-#~ msgid "Current file"
-#~ msgstr "Aktuelle Datei"
-
-#~ msgid "Overall progress"
-#~ msgstr "Gesamtfortschritt"
-
-#, rust-format
-#~ msgid "{state} · {space}"
-#~ msgstr "{state} · {space}"
-
-#, rust-format
-#~ msgid "{count} job waiting"
-#~ msgid_plural "{count} jobs waiting"
-#~ msgstr[0] "{count} Auftrag wartet"
-#~ msgstr[1] "{count} Aufträge warten"
-
-#, rust-format
-#~ msgid "{copied} copied · {skipped} skipped · {failed} failed"
-#~ msgstr "{copied} kopiert · {skipped} übersprungen · {failed} fehlgeschlagen"
-
-#, rust-format
-#~ msgid "{count} track queued · job {position}"
-#~ msgid_plural "{count} tracks queued · job {position}"
-#~ msgstr[0] "{count} Titel eingereiht · Auftrag {position}"
-#~ msgstr[1] "{count} Titel eingereiht · Auftrag {position}"
-
-#, rust-format
-#~ msgid ""
-#~ "This copy needs {required}, but only {available} is available for this "
-#~ "action. Free some space or select fewer tracks."
-#~ msgstr ""
-#~ "Dieser Kopiervorgang benötigt {required}, für diese Aktion sind jedoch "
-#~ "nur {available} verfügbar. Gib Speicherplatz frei oder wähle weniger "
-#~ "Titel aus."
-
-#~ msgid "Excluded Files"
-#~ msgstr "Ausgeschlossene Dateien"
-
-#~ msgid "Could not restore excluded files"
-#~ msgstr "Ausgeschlossene Dateien konnten nicht wiederhergestellt werden"
-
-#, rust-format
-#~ msgid "{count} file ignored during library scans"
-#~ msgid_plural "{count} files ignored during library scans"
-#~ msgstr[0] "{count} Datei wird beim Einlesen der Musiksammlung ignoriert"
-#~ msgstr[1] "{count} Dateien werden beim Einlesen der Musiksammlung ignoriert"
-
-#~ msgid "Grid"
-#~ msgstr "Grid"
-
-#~ msgid "Bars"
-#~ msgstr "Bars"
-
-#~ msgid "Add a concert provider API key in Preferences."
-#~ msgstr ""
-#~ "Fügen Sie in den Einstellungen einen API-Schlüssel für einen Konzerte-"
-#~ "Anbieter hinzu."
-
-#~ msgid "Concerts needs an API key"
-#~ msgstr "Konzerte benötigt einen API-Schlüssel"
-
-#~ msgid "Add a Bandsintown app_id or Ticketmaster API key in Preferences."
-#~ msgstr ""
-#~ "Fügen Sie in den Einstellungen eine Bandsintown-app_id oder einen "
-#~ "Ticketmaster-API-Schlüssel hinzu."
-
-#~ msgid "Ticketmaster API key"
-#~ msgstr "Ticketmaster-API-Schlüssel"
-
-#~ msgid "History"
-#~ msgstr "Verlauf"
-
-#, rust-format
-#~ msgid "({count})"
-#~ msgstr "({count})"
-
-#, rust-format
-#~ msgid "hidden on {date}"
-#~ msgstr "ausgeblendet am {date}"
-
-#~ msgid "Flow"
-#~ msgstr "Flow"
-
-#~ msgid "Pulse"
-#~ msgstr "Pulse"
-
-#~ msgid "Read the layout without changing Rhythmbox settings"
-#~ msgstr "Anordnung lesen, ohne Rhythmbox-Einstellungen zu ändern"
-
-#~ msgid "Rhythmbox column layout imported"
-#~ msgstr "Spaltenanordnung aus Rhythmbox importiert"
-
-#~ msgid "Could not save the imported column layout"
-#~ msgstr "Die importierte Spaltenanordnung konnte nicht gespeichert werden"
-
-#, rust-format
-#~ msgid "Could not import Rhythmbox columns: {error}"
-#~ msgstr "Rhythmbox-Spalten konnten nicht importiert werden: {error}"
-
-#~ msgid ""
-#~ "Import ratings, play counts, date-added and last-played information, "
-#~ "playlists, and optionally the column layout"
-#~ msgstr ""
-#~ "Bewertungen, Wiedergabezähler, Hinzufügedatum, letzte Wiedergabe, "
-#~ "Wiedergabelisten und optional die Spaltenanordnung importieren"
-
-#~ msgid "1 hour"
-#~ msgstr "1 Stunde"
-
-#, rust-format
-#~ msgid "{count} hours"
-#~ msgstr "{count} Stunden"
-
-#~ msgid "1 minute"
-#~ msgstr "1 Minute"
-
-#, rust-format
-#~ msgid "Mix from {genre} · Create"
-#~ msgstr "Mix aus {genre} · Erstellen"
-
-#~ msgid "Mix from your top genre · Create"
-#~ msgstr "Mix aus Ihrem Top-Genre · Erstellen"
-
-#~ msgid "Use your own API key"
-#~ msgstr "Eigenen API-Schlüssel verwenden"
-
-#~ msgid "Pause"
-#~ msgstr "Pause"
-
-#~ msgid "Audio Character"
-#~ msgstr "Klangprofil"
-
-#~ msgid "Song analysis"
-#~ msgstr "Songanalyse"
-
-#~ msgid "Rings"
-#~ msgstr "Rings"
-
-#~ msgid "F11 Fullscreen · color follows the cover accent"
-#~ msgstr "F11 Vollbild · Farbe folgt dem Cover-Akzent"
-
-#~ msgid "Analyze audio locally"
-#~ msgstr "Audio lokal analysieren"
-
-#~ msgid ""
-#~ "Reprise reads audio files only on this device. Nothing is uploaded. "
-#~ "Existing profiles are kept when this is turned off."
-#~ msgstr ""
-#~ "Reprise liest Audiodateien nur auf diesem Gerät. Es wird nichts "
-#~ "hochgeladen. Vorhandene Profile bleiben beim Ausschalten erhalten."
-
-#~ msgid "Analysis progress"
-#~ msgstr "Analysefortschritt"
-
-#~ msgid "No eligible tracks"
-#~ msgstr "Keine geeigneten Titel"
-
-#, rust-format
-#~ msgid "Analysis is off · {analyzed} of {total} analyzed · {failed} failed"
-#~ msgstr ""
-#~ "Analyse ist aus · {analyzed} von {total} analysiert · {failed} "
-#~ "fehlgeschlagen"
-
-#, rust-format
-#~ msgid "Ready · {analyzed} of {total} analyzed · {failed} failed"
-#~ msgstr ""
-#~ "Bereit · {analyzed} von {total} analysiert · {failed} fehlgeschlagen"
-
-#, rust-format
-#~ msgid "Analyzing · {analyzed} of {total} analyzed · {failed} failed"
-#~ msgstr ""
-#~ "Analyse läuft · {analyzed} von {total} analysiert · {failed} "
-#~ "fehlgeschlagen"
-
-#, rust-format
-#~ msgid "Paused · {analyzed} of {total} analyzed · {failed} failed"
-#~ msgstr ""
-#~ "Pausiert · {analyzed} von {total} analysiert · {failed} fehlgeschlagen"
-
-#, rust-format
-#~ msgid "Cancelled · {analyzed} of {total} analyzed · {failed} failed"
-#~ msgstr ""
-#~ "Abgebrochen · {analyzed} von {total} analysiert · {failed} fehlgeschlagen"
-
-#, rust-format
-#~ msgid "Failed · {analyzed} of {total} analyzed · {failed} failed"
-#~ msgstr ""
-#~ "Fehlgeschlagen · {analyzed} von {total} analysiert · {failed} "
-#~ "fehlgeschlagen"
-
-#, rust-format
-#~ msgid "Complete · {analyzed} of {total} analyzed · {failed} failed"
-#~ msgstr ""
-#~ "Vollständig · {analyzed} von {total} analysiert · {failed} fehlgeschlagen"
-
-#~ msgid "Pause analysis"
-#~ msgstr "Analyse pausieren"
-
-#~ msgid "Resume analysis"
-#~ msgstr "Analyse fortsetzen"
-
-#~ msgid "Cancel analysis"
-#~ msgstr "Analyse abbrechen"
-
-#~ msgid "Reanalyze library"
-#~ msgstr "Musiksammlung neu analysieren"
-
-#~ msgid "Reanalyze the library?"
-#~ msgstr "Musiksammlung neu analysieren?"
-
-#~ msgid ""
-#~ "Existing Audio Character profiles will be replaced. This can take time. "
-#~ "Music files and track metadata are not changed."
-#~ msgstr ""
-#~ "Vorhandene Klangprofile werden ersetzt. Dies kann einige Zeit dauern. "
-#~ "Musikdateien und Titelmetadaten werden nicht verändert."
-
-#~ msgid "Reanalyze"
-#~ msgstr "Neu analysieren"
-
-#~ msgid "Play a track to see its Audio Character"
-#~ msgstr "Einen Titel abspielen, um sein Klangprofil zu sehen"
-
-#~ msgid "The loaded track's local audio profile will appear here."
-#~ msgstr "Hier erscheint das lokale Audioprofil des geladenen Titels."
-
-#~ msgid "Local audio analysis is disabled"
-#~ msgstr "Die lokale Audioanalyse ist deaktiviert"
-
-#~ msgid "Enable Analyze audio locally in Library Settings."
-#~ msgstr "„Audio lokal analysieren“ in den Sammlungseinstellungen aktivieren."
-
-#~ msgid "Audio Character is pending"
-#~ msgstr "Klangprofil steht aus"
-
-#~ msgid "This track is waiting for local analysis."
-#~ msgstr "Dieser Titel wartet auf die lokale Analyse."
-
-#~ msgid "Audio Character analysis failed"
-#~ msgstr "Klangprofilanalyse fehlgeschlagen"
-
-#~ msgid "Retry failed tracks from Library Settings."
-#~ msgstr ""
-#~ "Fehlgeschlagene Titel in den Sammlungseinstellungen erneut versuchen."
-
-#~ msgid "Audio Character is stale"
-#~ msgstr "Klangprofil ist veraltet"
-
-#~ msgid "The local profile will be updated in the background."
-#~ msgstr "Das lokale Profil wird im Hintergrund aktualisiert."
-
-#~ msgid "Intensity"
-#~ msgstr "Intensität"
-
-#~ msgid "Brightness"
-#~ msgstr "Helligkeit"
-
-#~ msgid "Dynamicity"
-#~ msgstr "Dynamik"
-
-#~ msgid "Rhythmicity"
-#~ msgstr "Rhythmik"
-
-#, rust-format
-#~ msgid "Confidence {confidence}%"
-#~ msgstr "Sicherheit {confidence}%"
-
-#, rust-format
-#~ msgid "{dimension}, {value}%, confidence {confidence}%"
-#~ msgstr "{dimension}, {value} %, Sicherheit {confidence} %"
-
-#~ msgid "Tempo"
-#~ msgstr "Tempo"
-
-#, rust-format
-#~ msgid "{bpm} BPM"
-#~ msgstr "{bpm} BPM"
-
-#, rust-format
-#~ msgid "Tempo, {bpm} BPM, confidence {confidence}%"
-#~ msgstr "Tempo, {bpm} BPM, Sicherheit {confidence} %"
-
-#~ msgid "Ctrl+M"
-#~ msgstr "Strg+M"
-
-#~ msgid "Restore full window (Ctrl+M)"
-#~ msgstr "Vollständiges Fenster wiederherstellen (Strg+M)"
-
-#~ msgid "Close mini-player"
-#~ msgstr "Mini-Player schließen"
-
-#~ msgid "Title A–Z"
-#~ msgstr "Titel A–Z"
-
-#~ msgid "Artist A–Z"
-#~ msgstr "Interpret A–Z"
-
-#, rust-format
-#~ msgid "{} albums"
-#~ msgstr "{} Alben"
-
-#, rust-format
-#~ msgid "No albums match \"{}\""
-#~ msgstr "Keine Alben entsprechen \"{}\""
-
-#~ msgid "Tracks"
-#~ msgstr "Titel"
-
-#~ msgid "Albums"
-#~ msgstr "Alben"
-
-#~ msgid "No Albums Yet"
-#~ msgstr "Noch keine Alben"
-
-#~ msgid "Scan a music folder to see album covers here."
-#~ msgstr "Lesen Sie einen Musikordner ein, um hier Albumcover zu sehen."
-
-#~ msgid "No Artists Yet"
-#~ msgstr "Noch keine Interpreten"
-
-#~ msgid "Scan a music folder to see artists here."
-#~ msgstr "Lesen Sie einen Musikordner ein, um hier Interpreten zu sehen."
-
-#~ msgid "Unknown Artist"
-#~ msgstr "Unbekannter Interpret"
-
-#~ msgid "A–Z"
-#~ msgstr "A–Z"
-
-#~ msgid "ARTIST"
-#~ msgstr "INTERPRET"
-
-#~ msgid "Play all"
-#~ msgstr "Alle wiedergeben"
-
-#~ msgid "Edit tags for all"
-#~ msgstr "Metadaten für alle bearbeiten"
-
-#~ msgid "Go to folder"
-#~ msgstr "Zum Ordner wechseln"
-
-#~ msgid "Top tracks"
-#~ msgstr "Top-Titel"
-
-#~ msgid "No albums for this artist yet."
-#~ msgstr "Für diesen Interpreten gibt es noch keine Alben."
-
-#, rust-format
-#~ msgid "{count} hour"
-#~ msgid_plural "{count} hours"
-#~ msgstr[0] "{count} Stunde"
-#~ msgstr[1] "{count} Stunden"
-
-#, rust-format
-#~ msgid "{count} play this year"
-#~ msgid_plural "{count} plays this year"
-#~ msgstr[0] "{count} Wiedergabe dieses Jahr"
-#~ msgstr[1] "{count} Wiedergaben dieses Jahr"
-
-#, rust-format
-#~ msgid "{count} play"
-#~ msgid_plural "{count} plays"
-#~ msgstr[0] "{count} Wiedergabe"
-#~ msgstr[1] "{count} Wiedergaben"
-
-#~ msgid "Ctrl+L"
-#~ msgstr "Strg+L"
-
-#~ msgid "Play album (Ctrl+Enter)"
-#~ msgstr "Album abspielen (Strg+Eingabe)"
-
-#~ msgid "Pause album"
-#~ msgstr "Album pausieren"
-
-#~ msgid ""
-#~ "1 play was imported. Detailed stats start now, with what you listen to in "
-#~ "Reprise."
-#~ msgstr ""
-#~ "1 Wiedergabe wurde importiert. Detaillierte Statistiken beginnen jetzt "
-#~ "mit dem, was Sie in Reprise hören."
-
-#, rust-format
-#~ msgid ""
-#~ "{count} plays were imported. Detailed stats start now, with what you "
-#~ "listen to in Reprise."
-#~ msgstr ""
-#~ "{count} Wiedergaben wurden importiert. Detaillierte Statistiken beginnen "
-#~ "jetzt mit dem, was Sie in Reprise hören."
-
-#~ msgid "Your Rhythmbox history was imported"
-#~ msgstr "Ihr Rhythmbox-Hörverlauf wurde importiert"
-
-#~ msgid "Clear Search or Return to Track List"
-#~ msgstr "Suche leeren oder zur Titelliste zurückkehren"
-
-#~ msgid "Shuffle Album"
-#~ msgstr "Album zufällig wiedergeben"
-
-#~ msgid "Add to Queue"
-#~ msgstr "Zur Warteschlange hinzufügen"
-
-#~ msgid "Add to Playlist"
-#~ msgstr "Zur Wiedergabeliste hinzufügen"
-
-#~ msgid "New Playlist…"
-#~ msgstr "Neue Wiedergabeliste…"
-
-#~ msgid "Go to Folder"
-#~ msgstr "Zum Ordner wechseln"
-
-#~ msgid "Play album"
-#~ msgstr "Album wiedergeben"
-
-#~ msgid "runs per track, fills only empty fields"
-#~ msgstr "läuft pro Titel und füllt nur leere Felder"
-
-#~ msgid "Searching MusicBrainz…"
-#~ msgstr "MusicBrainz wird durchsucht…"
-
-#~ msgid "No matching release found"
-#~ msgstr "Keine passende Veröffentlichung gefunden"
-
-#~ msgid "Network error — check your connection"
-#~ msgstr "Netzwerkfehler — überprüfen Sie Ihre Verbindung"
-
-#~ msgid "Done — empty fields filled from MusicBrainz"
-#~ msgstr "Fertig — leere Felder wurden aus MusicBrainz ergänzt"
-
-#~ msgid "Done — all fields already have values"
-#~ msgstr "Fertig — alle Felder enthalten bereits Werte"
-
-#, rust-format
-#~ msgid "{filtered} of {total}"
-#~ msgstr "{filtered} von {total}"
-
-#~ msgid "Path"
-#~ msgstr "Pfad"
-
-#~ msgid "Reason"
-#~ msgstr "Grund"
-
-#~ msgid "Time"
-#~ msgstr "Zeit"
-
-#~ msgid ""
-#~ "This removes the missing tracks from the Reprise library. Your media "
-#~ "files are never deleted."
-#~ msgstr ""
-#~ "Hierdurch werden die fehlenden Titel aus der Reprise-Bibliothek entfernt. "
-#~ "Deine Mediendateien werden niemals gelöscht."
-
-#, rust-format
-#~ msgid "Removed {count} missing entry"
-#~ msgid_plural "Removed {count} missing entries"
-#~ msgstr[0] "{count} fehlender Eintrag entfernt"
-#~ msgstr[1] "{count} fehlende Einträge entfernt"
-
-#~ msgid "Compact player menu"
-#~ msgstr "Kompaktplayer-Menü"
-
-#~ msgid "Pill"
-#~ msgstr "Pill"
-
-#~ msgid "Card"
-#~ msgstr "Card"
-
-#~ msgid "Album cover"
-#~ msgstr "Albumcover"
-
-#~ msgid "Track artist"
-#~ msgstr "Interpret"
-
-#~ msgid "Track album"
-#~ msgstr "Album"
-
-#~ msgid "Total duration"
-#~ msgstr "Gesamtdauer"
-
-#~ msgid "Could not save the compact layout"
-#~ msgstr "Das Kompaktlayout konnte nicht gespeichert werden"
-
-#~ msgid "NEW"
-#~ msgstr "NEU"
-
-#~ msgid ""
-#~ "GNOME media controls, media keys, and lock-screen integration (D-Bus)"
-#~ msgstr ""
-#~ "GNOME-Mediensteuerung, Medientasten und Sperrbildschirm-Integration (D-"
-#~ "Bus)"
-
-#~ msgid "Always visible"
-#~ msgstr "Immer sichtbar"
-
-#~ msgid "About"
-#~ msgstr "Über Reprise"
-
-#~ msgid "Rhythmbox import failed"
-#~ msgstr "Rhythmbox-Import fehlgeschlagen"
-
-#~ msgid "Rhythmbox import completed with warnings"
-#~ msgstr "Rhythmbox-Import mit Warnungen abgeschlossen"
-
-#, rust-format
-#~ msgid ""
-#~ "Matched {matched} tracks · imported {ratings} ratings · raised "
-#~ "{play_counts} play counts · restored {dates} date-added values · restored "
-#~ "{last_played} last-played values · skipped {skipped}"
-#~ msgstr ""
-#~ "{matched} Titel gefunden · {ratings} Bewertungen importiert · "
-#~ "{play_counts} Wiedergabezähler erhöht · {dates} Hinzufügedaten "
-#~ "wiederhergestellt · {last_played} letzte Wiedergaben wiederhergestellt · "
-#~ "{skipped} übersprungen"
-
-#, rust-format
-#~ msgid "Could not import Rhythmbox data: {error}"
-#~ msgstr "Rhythmbox-Daten konnten nicht importiert werden: {error}"
-
-#, rust-format
-#~ msgid ""
-#~ "Imported {playlists} playlists with {tracks} tracks · skipped {skipped} "
-#~ "unavailable tracks"
-#~ msgstr ""
-#~ "{playlists} Wiedergabelisten mit {tracks} Titeln importiert · {skipped} "
-#~ "nicht verfügbare Titel übersprungen"
-
-#, rust-format
-#~ msgid "Playlists could not be imported: {error}"
-#~ msgstr "Wiedergabelisten konnten nicht importiert werden: {error}"
-
-#~ msgid "Configure…"
-#~ msgstr "Konfigurieren…"
-
-#, rust-format
-#~ msgid "{prefix} · {pending} listen pending"
-#~ msgid_plural "{prefix} · {pending} listens pending"
-#~ msgstr[0] "{prefix} · {pending} Wiedergabe ausstehend"
-#~ msgstr[1] "{prefix} · {pending} Wiedergaben ausstehend"
-
-#, rust-format
-#~ msgid "{prefix} · {pending} scrobble pending"
-#~ msgid_plural "{prefix} · {pending} scrobbles pending"
-#~ msgstr[0] "{prefix} · {pending} Scrobble ausstehend"
-#~ msgstr[1] "{prefix} · {pending} Scrobbles ausstehend"
-
-#~ msgid "Connect ListenBrainz"
-#~ msgstr "ListenBrainz verbinden"
-
-#~ msgid "Bar"
-#~ msgstr "Leiste"
-
-#~ msgid "Import its column layout without changing Rhythmbox settings"
-#~ msgstr ""
-#~ "Dessen Spaltenanordnung importieren, ohne Rhythmbox-Einstellungen zu "
-#~ "ändern"
-
-#~ msgid "Import Rhythmbox column layout"
-#~ msgstr "Spaltenanordnung aus Rhythmbox importieren"
-
-#~ msgid "All genres"
-#~ msgstr "Alle Genres"
-
-#~ msgid ""
-#~ "Reprise keeps your library local. Music files are changed only when you "
-#~ "explicitly edit tags or move tracks to Trash."
-#~ msgstr ""
-#~ "Reprise verwaltet Ihre Musiksammlung lokal. Musikdateien werden nur "
-#~ "geändert, wenn Sie ausdrücklich Metadaten bearbeiten oder Titel in den "
-#~ "Papierkorb verschieben."
-
-#~ msgid "Download missing album covers"
-#~ msgstr "Fehlende Albumcover herunterladen"
-
-#~ msgid "Uses MusicBrainz and Cover Art Archive only when enabled"
-#~ msgstr "Verwendet MusicBrainz und Cover Art Archive nur nach Aktivierung"
-
-#~ msgid ""
-#~ "Download missing album covers from Cover Art Archive (network; off by "
-#~ "default)"
-#~ msgstr ""
-#~ "Fehlende Albumcover aus dem Cover Art Archive herunterladen (Netzwerk; "
-#~ "standardmäßig aus)"
-
-#~ msgid "Cover check stopped"
-#~ msgstr "Cover-Prüfung gestoppt"
-
-#~ msgid "Minimal View"
-#~ msgstr "Minimalansicht"
-
-#~ msgid "Restore Full View"
-#~ msgstr "Vollständige Ansicht wiederherstellen"
-
-#~ msgid "Filters"
-#~ msgstr "Filter"
-
-#~ msgid "Your listening leaned toward higher intensity"
-#~ msgstr "Deine Wiedergabe tendierte zu höherer Intensität"
-
-#~ msgid "Your listening leaned toward higher brightness"
-#~ msgstr "Deine Wiedergabe tendierte zu hellerem Klang"
-
-#~ msgid "Your listening leaned toward higher dynamicity"
-#~ msgstr "Deine Wiedergabe tendierte zu höherer Dynamik"
-
-#~ msgid "Your listening leaned toward higher rhythmicity"
-#~ msgstr "Deine Wiedergabe tendierte zu stärkerer Rhythmik"
-
-#, rust-format
-#~ msgid "Based on {count} analyzed plays · {coverage}% coverage"
-#~ msgstr ""
-#~ "Basierend auf {count} analysierten Wiedergaben · {coverage}% Abdeckung"
-
-#~ msgid "Search or paste an RSS / YouTube URL"
-#~ msgstr "Suchen oder eine RSS-/YouTube-URL einfügen"
-
-#~ msgid "Delete played after 7 days"
-#~ msgstr "Gespielte nach 7 Tagen löschen"
-
-#~ msgid "YouTube sources"
-#~ msgstr "YouTube-Quellen"
-
-#~ msgid "Show history"
-#~ msgstr "Verlauf anzeigen"
-
-#~ msgid "More artist actions"
-#~ msgstr "Weitere Interpretenaktionen"
