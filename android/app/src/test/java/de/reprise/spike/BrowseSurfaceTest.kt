@@ -1,16 +1,12 @@
 package de.reprise.spike
 
-fun main() {
-    theSameLoadedWindowRequestsItsContinuationOnlyOnce()
-    appendingAContinuationKeepsTheExactTotalAndOrder()
-    theVisibleCountDistinguishesALoadedWindowFromTheWholeLibrary()
-    restoringLibraryLoadsAllThreeTabsThroughTheCorePort()
-    titleSearchDelegatesTheLiteralTextToTheCorePort()
-    openingAnAlbumUsesItsCoreIdentityAndOrder()
-    playingFromAlbumDetailUsesTheAlbumSnapshot()
-}
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Test
 
-private fun theSameLoadedWindowRequestsItsContinuationOnlyOnce() {
+class BrowseSurfaceTest {
+@Test
+fun theSameLoadedWindowRequestsItsContinuationOnlyOnce() {
     val rows = (1..500).map { rank -> testBrowseTrack("title-$rank") }
     val window = LibraryWindow(
         total = 1_824,
@@ -20,11 +16,12 @@ private fun theSameLoadedWindowRequestsItsContinuationOnlyOnce() {
 
     val firstRequest = window.nextRequest(lastRequestedOffset = null)
 
-    check(firstRequest == LibraryWindowRange(offset = 500, limit = 200))
-    check(window.nextRequest(lastRequestedOffset = firstRequest.offset) == null)
+    assertEquals(LibraryWindowRange(offset = 500, limit = 200), firstRequest)
+    assertNull(window.nextRequest(lastRequestedOffset = firstRequest?.offset))
 }
 
-private fun appendingAContinuationKeepsTheExactTotalAndOrder() {
+@Test
+fun appendingAContinuationKeepsTheExactTotalAndOrder() {
     val firstRows = listOf(testBrowseTrack("first"), testBrowseTrack("second"))
     val finalRow = testBrowseTrack("third")
     val first = LibraryWindow(total = 3, rows = firstRows, hasMore = true)
@@ -32,21 +29,23 @@ private fun appendingAContinuationKeepsTheExactTotalAndOrder() {
 
     val complete = first.append(continuation)
 
-    check(complete == LibraryWindow(total = 3, rows = firstRows + finalRow, hasMore = false))
-    check(complete.nextRequest(lastRequestedOffset = 2) == null)
+    assertEquals(LibraryWindow(total = 3, rows = firstRows + finalRow, hasMore = false), complete)
+    assertNull(complete.nextRequest(lastRequestedOffset = 2))
 }
 
-private fun theVisibleCountDistinguishesALoadedWindowFromTheWholeLibrary() {
+@Test
+fun theVisibleCountDistinguishesALoadedWindowFromTheWholeLibrary() {
     val window = LibraryWindow(
         total = 1_824,
         rows = (1..500).map { rank -> testBrowseTrack("title-$rank") },
         hasMore = true,
     )
 
-    check(window.visibleCountLabel("title", "titles") == "500 of 1824 titles loaded")
+    assertEquals("500 of 1824 titles loaded", window.visibleCountLabel("title", "titles"))
 }
 
-private fun restoringLibraryLoadsAllThreeTabsThroughTheCorePort() {
+@Test
+fun restoringLibraryLoadsAllThreeTabsThroughTheCorePort() {
     val title = testBrowseTrack("title")
     val album = testAlbum()
     val artist = testArtist()
@@ -59,25 +58,28 @@ private fun restoringLibraryLoadsAllThreeTabsThroughTheCorePort() {
 
     val state = LibrarySession(port).restore()
 
-    check(
-        state == LibraryScreenState.Browse(
+    assertEquals(
+        LibraryScreenState.Browse(
             titles = titleWindow,
             albums = completeWindow(listOf(album)),
             artists = completeWindow(listOf(artist)),
         ),
+        state,
     )
-    check(
-        port.operations == listOf(
+    assertEquals(
+        listOf(
             "readable:content://provider/tree/Music",
             "configure:content://provider/tree/Music",
             "search::0:200",
             "albums:0:200",
             "artists:0:200",
         ),
+        port.operations,
     )
 }
 
-private fun titleSearchDelegatesTheLiteralTextToTheCorePort() {
+@Test
+fun titleSearchDelegatesTheLiteralTextToTheCorePort() {
     val returnedByCore = testBrowseTrack("core-result")
     val returnedWindow = completeWindow(listOf(returnedByCore))
     val port = RecordingBrowsePort(
@@ -86,29 +88,32 @@ private fun titleSearchDelegatesTheLiteralTextToTheCorePort() {
 
     val tracks = LibrarySession(port).searchTitles(" folk ")
 
-    check(tracks == returnedWindow)
-    check(port.operations == listOf("search: folk :0:200"))
+    assertEquals(returnedWindow, tracks)
+    assertEquals(listOf("search: folk :0:200"), port.operations)
 }
 
-private fun openingAnAlbumUsesItsCoreIdentityAndOrder() {
+@Test
+fun openingAnAlbumUsesItsCoreIdentityAndOrder() {
     val album = testAlbum()
     val coreOrder = listOf(testBrowseTrack("disc-one"), testBrowseTrack("disc-two"))
     val port = RecordingBrowsePort(albumTracks = completeWindow(coreOrder))
 
     val detail = LibrarySession(port).openAlbum(album)
 
-    check(detail == AlbumTrackList(album, completeWindow(coreOrder)))
-    check(port.operations == listOf("album:Kind of Blue:Miles Davis:0:200"))
+    assertEquals(AlbumTrackList(album, completeWindow(coreOrder)), detail)
+    assertEquals(listOf("album:Kind of Blue:Miles Davis:0:200"), port.operations)
 }
 
-private fun playingFromAlbumDetailUsesTheAlbumSnapshot() {
+@Test
+fun playingFromAlbumDetailUsesTheAlbumSnapshot() {
     val albumTracks = listOf(testBrowseTrack("first"), testBrowseTrack("second"))
     val detail = AlbumTrackList(testAlbum(), completeWindow(albumTracks))
 
     val selection = detail.playbackSelection(1)
 
-    check(selection == PlaybackSelection(albumTracks, 1))
-    check(selection.tracks[selection.startIndex].title == "second")
+    assertEquals(PlaybackSelection(albumTracks, 1), selection)
+    assertEquals("second", selection.tracks[selection.startIndex].title)
+}
 }
 
 private fun testBrowseTrack(title: String) = LibraryTrack(

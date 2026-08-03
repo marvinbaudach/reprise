@@ -61,4 +61,5 @@ dependencies {
     implementation("androidx.media3:media3-session:1.10.1")
     // UniFFI's Kotlin bindings call into the .so through JNA.
     implementation("net.java.dev.jna:jna:5.19.1@aar")
+    testImplementation("junit:junit:4.13.2")
 }
