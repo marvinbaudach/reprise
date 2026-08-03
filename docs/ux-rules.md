@@ -2848,18 +2848,31 @@ STYLE-1).
   passage climbs to the same band values as a drop and the glow would
   fire on both. Instead a second path measures the same PCM without any
   gain of its own: a 30–150 Hz band, its RMS in true dBFS, and a slow
-  baseline of the track's own recent bass. Absolute level and the swell
-  above that baseline together produce two presentation-only values. A
-  rhythmic kick lifts two broad neon glows softly and in proportion to
-  the measured pressure; only pressure sustained across a breakdown adds
-  the two brighter inner auras. A bass band that stays quiet in absolute
+  baseline of the track's own recent bass. That path produces four
+  presentation-only values: the swell over the running baseline
+  (`impact`), the same held across a breakdown (`aura`), the attack
+  against the band's own recent floor (`kick`), and the absolute held
+  level (`pressure`).
+  **The two broad neon glows are a stage light driven by `kick`.** A hit
+  throws them to full in the same frame and they fall at the render
+  clock; they are deliberately not driven by `impact`, which measures
+  the swell over a two-second baseline and therefore cannot reach full
+  on a limited master — measured across three real tracks it tops out at
+  0.85 and clears 0.6 for one percent of a blast-beat track, while
+  `kick` reaches 1.00 on all three. The fall belongs to the render clock
+  and not to the detector: `kick`'s own release is 70 ms, and at the
+  twelve hits per second a blast beat produces, passing it straight
+  through would be a strobe. Only pressure sustained across a breakdown
+  adds the two brighter inner auras. A bass band that stays quiet in absolute
   terms never glows, however tall the bars grow, and high-frequency
   energy alone never triggers either layer. Both release after the
   impulse instead of flickering, and neither changes CAVA values, peak
   caps, nor bar heights. With animations switched off, the layer holds
   the current frame's value without decay.
   Below the canvas the visual names the analysis it reacts to —
-  absolute bass level, baseline, kick glow, and breakdown aura. The
+  absolute bass level, baseline, kick glow, breakdown aura, and the two
+  per-beat readings `kick` and `pressure` that the reactive light on the
+  cover runs on. The
   numbers refresh at most ten times per second so they stay readable,
   and a band without measurable signal reads as a dash instead of a
   bottomed-out level.
