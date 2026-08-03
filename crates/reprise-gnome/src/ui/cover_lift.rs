@@ -49,12 +49,35 @@ pub(in crate::ui) fn lift_shadow(width: f64, kick: f64) -> String {
     format!("0 {y}px {blur}px {spread} {LIFT_COLOUR}")
 }
 
+/// Alpha of a single shadow layer, mirrored from [`LIFT_COLOUR`]. The
+/// cross-fade has to know it, because two translucent blacks do not add
+/// linearly.
+const SHADOW_ALPHA: f64 = 0.55;
+
+/// Opacity of the resting layer, compensated so the *composite* coverage of
+/// the two layers stays constant while their shape morphs.
+///
+/// A plain `1.0 - kick` looks right on paper and flickers on screen: at
+/// `kick = 0.5` both layers sit at 0.275, and `1 - (1-0.275)²` is 0.474
+/// against 0.550 at either end — a 14 % brightening in the middle of every
+/// hit, then back. Solving `1 - (1 - a·near)(1 - a·far) = a` for `near`
+/// removes it exactly.
 pub(in crate::ui) fn near_opacity(kick: f64) -> f64 {
-    1.0 - kick.clamp(0.0, 1.0)
+    let far = SHADOW_ALPHA * kick.clamp(0.0, 1.0);
+    if far >= 1.0 {
+        return 0.0;
+    }
+    ((1.0 - (1.0 - SHADOW_ALPHA) / (1.0 - far)) / SHADOW_ALPHA).clamp(0.0, 1.0)
 }
 
 pub(in crate::ui) fn far_opacity(kick: f64) -> f64 {
     kick.clamp(0.0, 1.0)
+}
+
+/// Composite coverage of both layers — the quantity that must not move.
+#[cfg(test)]
+fn composite_coverage(kick: f64) -> f64 {
+    1.0 - (1.0 - SHADOW_ALPHA * near_opacity(kick)) * (1.0 - SHADOW_ALPHA * far_opacity(kick))
 }
 
 pub(in crate::ui) fn sheen_opacity(kick: f64) -> f64 {
@@ -309,11 +332,18 @@ mod tests {
         assert!((near_opacity(1.0) - 0.0).abs() < 1e-9);
         assert!((far_opacity(0.0) - 0.0).abs() < 1e-9);
         assert!((far_opacity(1.0) - 1.0).abs() < 1e-9);
-        // The pair always sums to one, so the total shadow weight is constant
-        // and only its shape changes.
-        for step in 0..=10 {
-            let kick = f64::from(step) / 10.0;
-            assert!((near_opacity(kick) + far_opacity(kick) - 1.0).abs() < 1e-9);
+        // What must stay constant is the COMPOSITE coverage, not the sum of
+        // the two opacities. Two translucent blacks do not add linearly: a
+        // plain `1 - kick` pair sums to one and still dips to 0.474 against
+        // 0.550 in the middle, which reads as a bright/dark flicker on every
+        // hit. Assert the thing the eye actually sees.
+        for step in 0..=100 {
+            let kick = f64::from(step) / 100.0;
+            assert!(
+                (composite_coverage(kick) - SHADOW_ALPHA).abs() < 1e-9,
+                "the shadow changes weight at kick {kick}: {}",
+                composite_coverage(kick)
+            );
         }
     }
 

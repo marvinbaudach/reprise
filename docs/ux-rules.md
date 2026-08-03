@@ -2874,26 +2874,34 @@ STYLE-1).
   same global ambient crossfade as the player bar; only without a usable
   cover color does the theme accent apply.
 
-- **AC-24** [active] [gtk] — The reactive light lives on the cover and on
-  the play button, and nowhere else. The now-playing backdrop, the cover
-  in the panel, the cover in the player bar and the ring around the play
-  button read `BassPressure.kick` and `BassPressure.pressure` — never the
-  CAVA bars, whose auto-sensitivity makes a quiet vocal reach the same
-  value as a drop, and never `impact`, which answers how loud a whole
-  track is rather than what its beat is doing: on a limited master it
-  never leaves its resting value. `pressure` carries the brightness and
-  `kick` the movement on top of it, added rather than blended. **The
-  waveform and the track list stay still** — they are surfaces for
-  reading and for hitting, and neither reads either signal. The cover
-  itself never changes brightness: the eye reads luminance change in
-  peripheral vision, so a brightening cover pulls attention off the list;
-  it lifts on its shadow and carries a travelling reflection instead.
-  Every effect rests at its value for `kick = pressure = 0` and is pinned
-  there whenever the reading is absent or must not move: with the "Song
-  Visuals" plugin off — the deliberate off-switch for the whole layer —
-  with `gtk-enable-animations=false` (MOT-7), and outside playback, where
-  only the backdrop keeps a slow breath. While the Visual tab is open the
-  backdrop holds its rest value: that tab carries its own light language.
+- **AC-24** [active] [gtk] — The reactive light lives on the cover and
+  nowhere else. The now-playing backdrop, the cover in the panel and the
+  cover in the player bar read `BassPressure.kick` and
+  `BassPressure.pressure` — never the CAVA bars, whose auto-sensitivity
+  makes a quiet vocal reach the same value as a drop, and never
+  `impact`, which answers how loud a whole track is rather than what its
+  beat is doing: on a limited master it never leaves its resting value.
+  `pressure` carries the brightness and `kick` the movement on top of
+  it, added rather than blended. **The transport controls, the waveform
+  and the track list stay still.** The play/pause button is what a
+  pointer aims at and, once the running track scrolls out of the list,
+  the only place the playback state is read from — a control that
+  answers the music moves under the cursor and competes with the state
+  it reports. The waveform and the track list are surfaces for reading
+  and for hitting. The cover itself never changes brightness either: the
+  eye reads luminance change in peripheral vision, so a brightening
+  cover pulls attention off the list; it lifts on its shadow and carries
+  a travelling reflection instead. The lift is two cached shadow layers
+  whose opacities cross-fade with the composite coverage held constant —
+  a linear `1 - kick` pair sums to one and still dips 14 %, which reads
+  as a flicker on every hit. Every effect rests at its value for
+  `kick = pressure = 0` and is pinned there whenever the reading is
+  absent or must not move: with the "Song Visuals" plugin off — the
+  deliberate off-switch for the whole layer — with
+  `gtk-enable-animations=false` (MOT-7), and outside playback, where
+  only the backdrop keeps a slow breath. While the Visual tab is open
+  the backdrop holds its rest value: that tab carries its own light
+  language.
 
 ## Y. Library Doctor / Tag Cleanup
 

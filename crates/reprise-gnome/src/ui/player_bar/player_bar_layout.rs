@@ -38,22 +38,6 @@ const ZONE_SPACING: i32 = 8;
 
 const COVER_CSS_CLASS: &str = "player-bar-cover";
 const PLAY_CSS_CLASS: &str = "player-bar-play";
-const PLAY_RING_CSS_CLASS: &str = "player-bar-play-ring";
-const PLAY_RING_WIDTH: &str = "1.5px";
-/// The ring's outer size: 44 px button + 2 x (2 px gap + 1.5 px stroke),
-/// rounded up. The gap is this size request minus the button, not CSS padding
-/// — an empty box's padding would only add to the outside.
-const PLAY_RING_SIZE: i32 = 51;
-const RING_REST_ALPHA: f64 = 0.10;
-const RING_ALPHA_PER_PRESSURE: f64 = 0.10;
-const RING_ALPHA_PER_KICK: f64 = 0.26;
-
-pub(in crate::ui) fn ring_alpha(kick: f64, pressure: f64) -> f64 {
-    RING_REST_ALPHA
-        + RING_ALPHA_PER_PRESSURE * pressure.clamp(0.0, 1.0)
-        + RING_ALPHA_PER_KICK * kick.clamp(0.0, 1.0)
-}
-
 const SURFACE_CSS_CLASS: &str = "player-bar-surface";
 /// CSS class on the transport button row, targeted by the hover-highlight rules.
 const TRANSPORT_ROW_CSS_CLASS: &str = "player-bar-transport";
@@ -81,7 +65,6 @@ pub(in crate::ui) struct PlayerBarWidgets {
     pub(in crate::ui) prev_button: gtk4::Button,
     pub(in crate::ui) play_pause_button: gtk4::Button,
     pub(super) play_glyph: TransportGlyph,
-    pub(in crate::ui) play_ring: gtk4::Box,
     pub(in crate::ui) next_button: gtk4::Button,
     pub(in crate::ui) repeat_button: gtk4::ToggleButton,
     pub(in crate::ui) play_next_episode_button: gtk4::Button,
@@ -177,28 +160,11 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     play_pause_button.add_css_class("circular");
     play_pause_button.add_css_class(PLAY_CSS_CLASS);
     buttons::arm(&play_pause_button, buttons::PRIMARY_CLASS);
-    // A ring outside the button, never a scale on the button itself: a
-    // breathing button shifts the hit area under the cursor. Its own element
-    // and its own property, so the button's shadow tiers and its outline focus
-    // ring are untouched and keep precedence (AC-24, BTN-1, BTN-3).
-    let play_ring = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
-    play_ring.add_css_class(PLAY_RING_CSS_CLASS);
-    play_ring.set_can_target(false);
-    play_ring.set_can_focus(false);
-    play_ring.set_size_request(PLAY_RING_SIZE, PLAY_RING_SIZE);
-    play_ring.set_halign(gtk4::Align::Center);
-    play_ring.set_valign(gtk4::Align::Center);
-    play_ring.set_opacity(RING_REST_ALPHA);
-    let play_slot = gtk4::Overlay::new();
-    play_slot.set_child(Some(&play_ring));
-    // Centered, not filled: an overlay child defaults to `Align::Fill` and
-    // would be stretched to the ring's 51 px, turning the 44 px circle into an
-    // ellipse and growing the hit area by 7 px — the one thing the ring exists
-    // to avoid (AC-24).
+    // The transport control stays completely still. It is the one element a
+    // pointer aims at and, once the running track scrolls out of the list, the
+    // only place the playback state is read from — a control that answers the
+    // music moves under the cursor and competes with the state it reports.
     play_pause_button.set_halign(gtk4::Align::Center);
-    play_slot.add_overlay(&play_pause_button);
-    play_slot.set_halign(gtk4::Align::Center);
-    play_slot.set_valign(gtk4::Align::Center);
     let next_button = transport_button(ICON_NEXT, strings::TOOLTIP_NEXT);
     next_button.set_sensitive(false);
     let repeat_button = transport_toggle(ICON_REPEAT_ALL, strings::REPEAT);
@@ -213,7 +179,7 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     let transport_row = gtk4::Box::new(gtk4::Orientation::Horizontal, ZONE_SPACING);
     transport_row.append(&shuffle_button);
     transport_row.append(&prev_button);
-    transport_row.append(&play_slot);
+    transport_row.append(&play_pause_button);
     transport_row.append(&next_button);
     transport_row.append(&repeat_button);
     transport_row.append(&play_next_episode_button);
@@ -367,7 +333,6 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
         shuffle_button,
         prev_button,
         play_pause_button,
-        play_ring,
         next_button,
         repeat_button,
         play_glyph,
@@ -402,9 +367,6 @@ pub(in crate::ui) fn css() -> String {
                        0 0 26px 6px alpha(@reprise_player_accent, 0.35); \
            transition: box-shadow {TRANSITION}, background-color {TRANSITION}, \
                        transform {TRANSITION}; }}\n\
-         .{PLAY_RING_CSS_CLASS} {{ \
-           border: {PLAY_RING_WIDTH} solid @reprise_player_accent; \
-           border-radius: 50%; margin: 0; padding: 0; }}\n\
          .{PLAY_CSS_CLASS}:hover {{ \
            box-shadow: inset 0 2px 1px alpha(#ffffff, 0.42), \
                        inset 0 -4px 3px alpha(#000000, 0.26), \

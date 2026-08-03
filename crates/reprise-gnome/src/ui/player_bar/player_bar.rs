@@ -19,7 +19,7 @@ use libadwaita::prelude::AnimationExt;
 
 use crate::ui::motion;
 use crate::ui::player_bar::transport_glyph::{Glyph, TransportGlyph};
-use crate::ui::player_bar_layout::{self, ring_alpha, PlayerBarWidgets, VOLUME_MAX, VOLUME_MIN};
+use crate::ui::player_bar_layout::{self, PlayerBarWidgets, VOLUME_MAX, VOLUME_MIN};
 use crate::ui::strings;
 use crate::ui::waveform_seek::WaveformSeek;
 use reprise_core::format::{format_duration, format_remaining};
@@ -83,7 +83,6 @@ pub struct PlayerBar {
     pub(in crate::ui) prev_button: gtk4::Button,
     play_pause_button: gtk4::Button,
     play_glyph: TransportGlyph,
-    play_ring: gtk4::Box,
     pub(in crate::ui) next_button: gtk4::Button,
     pub(in crate::ui) repeat_button: gtk4::ToggleButton,
     pub(in crate::ui) play_next_episode_button: gtk4::Button,
@@ -150,7 +149,6 @@ impl PlayerBar {
             prev_button,
             play_pause_button,
             play_glyph,
-            play_ring,
             next_button,
             repeat_button,
             play_next_episode_button,
@@ -231,7 +229,6 @@ impl PlayerBar {
             prev_button,
             play_pause_button,
             play_glyph,
-            play_ring,
             next_button,
             repeat_button,
             play_next_episode_button,
@@ -306,19 +303,18 @@ impl PlayerBar {
         self.animate_play_icon_change(new_glyph);
     }
 
-    /// The live bass pair, fanned out to the reactive layers the bar owns.
-    /// Called at the spectrum rate (~86 Hz); each consumer decides for itself
-    /// whether the change is worth a redraw.
-    pub fn set_bass(&self, kick: f64, pressure: f64) {
-        let (kick, pressure) = if self.playback_state.get() == PlaybackState::Playing {
-            (
-                crate::ui::motion::reactive_amplitude(kick),
-                crate::ui::motion::reactive_amplitude(pressure),
-            )
+    /// The live bass reading, fanned out to the one reactive layer the bar
+    /// owns: the cover's shadow. Called at the spectrum rate (~86 Hz).
+    ///
+    /// The transport buttons are deliberately not among the consumers — they
+    /// are what a pointer aims at, and once the running track scrolls out of
+    /// the list they are the only place the playback state is read from.
+    pub fn set_bass(&self, kick: f64, _pressure: f64) {
+        let kick = if self.playback_state.get() == PlaybackState::Playing {
+            crate::ui::motion::reactive_amplitude(kick)
         } else {
-            (0.0, 0.0)
+            0.0
         };
-        self.play_ring.set_opacity(ring_alpha(kick, pressure));
         self.cover_lift.set_kick(kick);
     }
 

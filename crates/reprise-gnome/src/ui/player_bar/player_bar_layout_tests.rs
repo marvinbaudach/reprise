@@ -5,33 +5,34 @@ use std::time::Duration;
 
 use gtk4::prelude::*;
 
-use super::{build, ring_alpha, PLAY_CSS_CLASS, PLAY_RING_CSS_CLASS};
+use super::{build, PLAY_CSS_CLASS};
 
 #[test]
-fn ac_24_ring_adds_a_kick_on_top_of_a_pressure_bed() {
-    assert!((ring_alpha(0.0, 0.0) - 0.10).abs() < 1e-9);
-    assert!((ring_alpha(0.0, 0.9) - 0.19).abs() < 1e-9);
-    assert!((ring_alpha(1.0, 1.0) - 0.46).abs() < 1e-9);
-    assert!((ring_alpha(4.0, 4.0) - 0.46).abs() < 1e-9);
-}
+fn ac_24_the_transport_control_stays_still() {
+    // The play/pause button is what a pointer aims at, and once the running
+    // track scrolls out of the list it is the only place the playback state is
+    // read from. A control that answers the music moves under the cursor and
+    // competes with the state it reports, so it carries no reactive layer at
+    // all — no ring, no scale, no tint.
+    let layout = include_str!("player_bar_layout.rs");
+    assert!(!layout.contains("play_ring"));
+    assert!(!layout.contains("ring_alpha"));
+    let bar = include_str!("player_bar.rs");
+    assert!(!bar.contains("play_ring"));
 
-#[test]
-fn ac_24_ring_is_its_own_layer_and_leaves_the_button_alone() {
     let css = super::css();
-    // Its own element with its own property: the button's box-shadow tiers
-    // (BTN-3) and the outline focus ring (BTN-1) stay exactly as they are,
-    // and the ring sits outside the hit area rather than resizing it.
-    assert!(css.contains(&format!(".{PLAY_RING_CSS_CLASS}")));
-    assert!(css.contains("border-radius: 50%"));
-    assert!(!css.contains(&format!(".{PLAY_RING_CSS_CLASS} {{ outline")));
-    // The button never scales with the music — a breathing button moves the
-    // hit area under the cursor.
+    assert!(!css.contains("player-bar-play-ring"));
+    // The button never scales with the music either.
     assert!(!css.contains(&format!(".{PLAY_CSS_CLASS}.reactive")));
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn ac_24_ring_leaves_the_play_button_round_and_its_hit_area_untouched() {
+fn ac_24_the_play_button_stays_a_circle_of_its_declared_size() {
+    // The glyph's optical correction lives inside the drawing area. If it ever
+    // leaks into the button — as an overlay child left on `Align::Fill` once
+    // did, stretching a 44 px circle into a 51x44 ellipse with a 7 px wider
+    // hit area — this is what catches it.
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     crate::ui::style::install_css_string_for_test(&super::css());
@@ -48,69 +49,13 @@ fn ac_24_ring_leaves_the_play_button_round_and_its_hit_area_untouched() {
         .play_pause_button
         .compute_bounds(&layout.root)
         .expect("play button has player-bar bounds");
-    let ring = layout
-        .play_ring
-        .compute_bounds(&layout.root)
-        .expect("play ring has player-bar bounds");
-
-    // Square, and exactly the size it was before the ring existed: the ring
-    // is a layer around the button, never a change to the button. An
-    // overlay child left on `Align::Fill` gets stretched to the ring and
-    // the circle silently becomes an ellipse with a wider hit area.
     assert_eq!(
         (button.width(), button.height()),
         (
             super::PLAY_BUTTON_SIZE as f32,
             super::PLAY_BUTTON_SIZE as f32
         ),
-        "the ring deformed the play button"
-    );
-    // The ring encloses the button on every side, and the button stays
-    // centred inside it.
-    assert!(ring.width() > button.width() && ring.height() > button.height());
-    let dx = (ring.x() + ring.width() / 2.0) - (button.x() + button.width() / 2.0);
-    let dy = (ring.y() + ring.height() / 2.0) - (button.y() + button.height() / 2.0);
-    assert!(
-        dx.abs() <= 0.5 && dy.abs() <= 0.5,
-        "ring off-centre: {dx}, {dy}"
-    );
-    // A visible gap remains between the button edge and the ring stroke.
-    let gap = (ring.width() - button.width()) / 2.0;
-    assert!((2.0..=5.0).contains(&gap), "ring gap out of range: {gap}");
-
-    window.close();
-}
-
-#[test]
-#[ignore = "requires a display; run via xvfb-run"]
-fn ac_24_the_glyph_offset_never_moves_the_circle_or_the_ring() {
-    // The correction belongs to the glyph. The circle and the bass ring are
-    // the button's geometry; moving either would make the error visible twice.
-    let _main_context = crate::ui::test_main_context::lock_main_context();
-    gtk4::init().unwrap();
-    crate::ui::style::install_css_string_for_test(&super::css());
-    let layout = build();
-    let window = gtk4::Window::builder()
-        .default_width(1_200)
-        .default_height(180)
-        .child(&layout.root)
-        .build();
-    window.present();
-    wait_for_layout();
-
-    let button = layout
-        .play_pause_button
-        .compute_bounds(&layout.root)
-        .expect("play button has player-bar bounds");
-    let ring = layout
-        .play_ring
-        .compute_bounds(&layout.root)
-        .expect("play ring has player-bar bounds");
-    let dx = (ring.x() + ring.width() / 2.0) - (button.x() + button.width() / 2.0);
-    let dy = (ring.y() + ring.height() / 2.0) - (button.y() + button.height() / 2.0);
-    assert!(
-        dx.abs() <= 0.5 && dy.abs() <= 0.5,
-        "glyph correction moved the circle or ring: {dx}, {dy}"
+        "the play button is no longer a circle of its declared size"
     );
 
     window.close();
