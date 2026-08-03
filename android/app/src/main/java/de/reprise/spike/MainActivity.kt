@@ -1,8 +1,12 @@
 package de.reprise.spike
 
-import android.media.MediaPlayer
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
 import android.net.Uri
 import android.os.Bundle
+import android.os.IBinder
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -16,7 +20,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
@@ -51,7 +55,23 @@ class MainActivity : ComponentActivity() {
             ),
         )
     }
-    private var player: MediaPlayer? = null
+    private var playbackService: ReprisePlaybackService? = null
+    private var playbackBound = false
+    private val playbackState = mutableStateOf(PlaybackUiState())
+    private val playbackConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName, binder: IBinder) {
+            val service = (binder as ReprisePlaybackService.LocalBinder).service()
+            playbackService = service
+            service.attachObserver { snapshot ->
+                runOnUiThread { playbackState.value = snapshot.toUiState() }
+            }
+        }
+
+        override fun onServiceDisconnected(name: ComponentName) {
+            playbackService = null
+            playbackState.value = PlaybackUiState()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -61,17 +81,38 @@ class MainActivity : ComponentActivity() {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     LibraryScreen(
                         initialState = initialState,
+                        playback = playbackState.value,
                         chooseFolder = ::chooseTree,
                         rescan = ::rescan,
-                        playTrack = ::playTrack,
+                        playTracks = ::playTracks,
+                        togglePause = { runPlaybackCommand("change playback state") { togglePause() } },
+                        next = { runPlaybackCommand("skip to the next track") { next() } },
+                        previous = { runPlaybackCommand("return to the previous track") { previous() } },
                     )
                 }
             }
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        val intent = Intent(this, ReprisePlaybackService::class.java).apply {
+            action = ReprisePlaybackService.LOCAL_BIND_ACTION
+        }
+        playbackBound = bindService(intent, playbackConnection, Context.BIND_AUTO_CREATE)
+    }
+
+    override fun onStop() {
+        playbackService?.detachObserver()
+        playbackService = null
+        if (playbackBound) {
+            unbindService(playbackConnection)
+            playbackBound = false
+        }
+        super.onStop()
+    }
+
     override fun onDestroy() {
-        releasePlayer()
         if (libraryDelegate.isInitialized()) {
             libraryDelegate.value.close()
         }
@@ -116,46 +157,30 @@ class MainActivity : ComponentActivity() {
         }.start()
     }
 
-    private fun playTrack(track: LibraryTrack, reportError: (String) -> Unit) {
-        releasePlayer()
-        val next = MediaPlayer()
-        player = next
-        next.setOnPreparedListener { prepared ->
-            if (player === prepared) {
-                prepared.start()
-            } else {
-                prepared.release()
-            }
-        }
-        next.setOnCompletionListener { completed ->
-            if (player === completed) {
-                player = null
-            }
-            completed.release()
-        }
-        next.setOnErrorListener { failed, what, extra ->
-            if (player === failed) {
-                player = null
-            }
-            failed.release()
-            reportError("Could not play ${track.title} (MediaPlayer $what/$extra).")
-            true
-        }
-        runCatching {
-            next.setDataSource(this, Uri.parse(track.uri))
-            next.prepareAsync()
-        }.onFailure { error ->
-            if (player === next) {
-                player = null
-            }
-            next.release()
-            reportError("Could not play ${track.title}: ${error.detail()}")
+    private fun playTracks(
+        tracks: List<LibraryTrack>,
+        startIndex: Int,
+        reportError: (String) -> Unit,
+    ) {
+        runPlaybackCommand("play ${tracks[startIndex].title}", reportError) {
+            playTracks(tracks.map(LibraryTrack::uri), startIndex)
         }
     }
 
-    private fun releasePlayer() {
-        player?.release()
-        player = null
+    private fun runPlaybackCommand(
+        action: String,
+        reportError: (String) -> Unit = { message ->
+            playbackState.value = playbackState.value.copy(error = message)
+        },
+        command: ReprisePlaybackService.() -> Unit,
+    ) {
+        val service = playbackService
+        if (service == null) {
+            reportError("Could not $action: playback is still connecting.")
+            return
+        }
+        runCatching { service.command() }
+            .onFailure { error -> reportError("Could not $action: ${error.detail()}") }
     }
 }
 
@@ -181,9 +206,13 @@ internal class UiProgress(
 @Composable
 private fun LibraryScreen(
     initialState: LibraryScreenState,
+    playback: PlaybackUiState,
     chooseFolder: (Uri, (LibraryScreenState) -> Unit) -> Unit,
     rescan: ((LibraryScreenState) -> Unit) -> Unit,
-    playTrack: (LibraryTrack, (String) -> Unit) -> Unit,
+    playTracks: (List<LibraryTrack>, Int, (String) -> Unit) -> Unit,
+    togglePause: () -> Unit,
+    next: () -> Unit,
+    previous: () -> Unit,
 ) {
     var state by remember { mutableStateOf(initialState) }
     val folderPicker = rememberLauncherForActivityResult(
@@ -205,17 +234,21 @@ private fun LibraryScreen(
         is LibraryScreenState.Scanning -> ScanningScreen(current)
         is LibraryScreenState.TrackList -> TrackListScreen(
             state = current,
+            playback = playback,
             chooseFolder = { folderPicker.launch(null) },
             rescan = { rescan { state = it } },
-            playTrack = { track ->
+            playTrack = { index ->
                 state = current.copy(message = null)
-                playTrack(track) { message ->
+                playTracks(current.tracks, index) { message ->
                     val visible = state
                     if (visible is LibraryScreenState.TrackList) {
                         state = visible.copy(message = message)
                     }
                 }
             },
+            togglePause = togglePause,
+            next = next,
+            previous = previous,
         )
     }
 }
@@ -284,9 +317,13 @@ private fun ScanningScreen(state: LibraryScreenState.Scanning) {
 @Composable
 private fun TrackListScreen(
     state: LibraryScreenState.TrackList,
+    playback: PlaybackUiState,
     chooseFolder: () -> Unit,
     rescan: () -> Unit,
-    playTrack: (LibraryTrack) -> Unit,
+    playTrack: (Int) -> Unit,
+    togglePause: () -> Unit,
+    next: () -> Unit,
+    previous: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -303,18 +340,24 @@ private fun TrackListScreen(
             }
         }
         state.message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        PlaybackControls(
+            state = playback,
+            togglePause = togglePause,
+            next = next,
+            previous = previous,
+        )
         if (state.tracks.isEmpty() && state.message == null) {
             Text("No tracks found in this folder.")
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(state.tracks, key = { track -> track.uri }) { track ->
+                itemsIndexed(state.tracks, key = { _, track -> track.uri }) { index, track ->
                     ListItem(
                         headlineContent = { Text(track.title) },
                         supportingContent = { Text(track.details()) },
                         trailingContent = { Text(formatDuration(track.durationMs)) },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { playTrack(track) },
+                            .clickable { playTrack(index) },
                     )
                     HorizontalDivider()
                 }
@@ -323,12 +366,38 @@ private fun TrackListScreen(
     }
 }
 
+@Composable
+private fun PlaybackControls(
+    state: PlaybackUiState,
+    togglePause: () -> Unit,
+    next: () -> Unit,
+    previous: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Button(onClick = previous, enabled = state.ready && state.currentIndex != null) {
+            Text("Previous")
+        }
+        Button(onClick = togglePause, enabled = state.ready && state.currentIndex != null) {
+            Text(state.playPauseLabel)
+        }
+        Button(onClick = next, enabled = state.ready && state.currentIndex != null) {
+            Text("Next")
+        }
+        Text(state.positionReadout)
+    }
+    state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+}
+
 private fun LibraryTrack.details(): String =
     listOf(artist, album).filter(String::isNotBlank).joinToString(" • ").ifBlank {
         "Unknown artist"
     }
 
-private fun formatDuration(durationMs: Long): String {
+internal fun formatDuration(durationMs: Long): String {
     val totalSeconds = (durationMs.coerceAtLeast(0) / 1_000)
     return "%d:%02d".format(totalSeconds / 60, totalSeconds % 60)
 }
