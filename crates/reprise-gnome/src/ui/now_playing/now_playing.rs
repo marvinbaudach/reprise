@@ -549,6 +549,7 @@ impl NowPlayingPanel {
             self.widgets.cover_lift.feed(0.0, 0.0);
             self.widgets.cover_lift.set_frame_time(0);
             self.widgets.bloom.set_light(0.0, 0.0);
+            self.widgets.visualizer.set_swell(0.0);
             return;
         }
 
@@ -571,6 +572,8 @@ impl NowPlayingPanel {
         self.widgets.cover_lift.feed(value, self.cover_kick.get());
         self.widgets.cover_lift.set_frame_time(frame_time_us);
         self.widgets.bloom.set_light(pressure, value);
+        // The readout names every value the reactive light runs on.
+        self.widgets.visualizer.set_swell(value);
     }
 
     pub(in crate::ui) fn set_up_next_model(

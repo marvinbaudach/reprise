@@ -11,7 +11,9 @@ pub const SONG_VISUALS_ACCESSIBLE: &str = N_!("Audio-reactive song visual");
 pub const SONG_VISUALS_ANALYSIS_ACCESSIBLE: &str = N_!("Live song analysis driving the visual");
 pub const SONG_VISUALS_BASS: &str = N_!("Bass");
 pub const SONG_VISUALS_BASELINE: &str = N_!("Baseline");
-pub const SONG_VISUALS_IMPACT: &str = N_!("Impact");
+
 pub const SONG_VISUALS_BREAKDOWN: &str = N_!("Breakdown");
 pub const SONG_VISUALS_KICK: &str = N_!("Kick");
 pub const SONG_VISUALS_PRESSURE: &str = N_!("Pressure");
+/// The slow envelope the cover and the panel light breathe on.
+pub const SONG_VISUALS_SWELL: &str = N_!("Swell");

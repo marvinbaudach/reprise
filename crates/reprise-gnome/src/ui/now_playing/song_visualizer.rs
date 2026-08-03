@@ -57,6 +57,9 @@ pub(in crate::ui) struct SongVisualizer {
     /// can gate on "are we actually playing" without borrowing it.
     playback: Rc<Cell<PlaybackState>>,
     panel_active: Rc<Cell<bool>>,
+    /// Mirrored from the panel, which owns the envelope — the readout names
+    /// every value the reactive light runs on, and `swell` is one of them.
+    swell: Rc<Cell<f64>>,
     tick_id: Rc<RefCell<Option<gtk4::TickCallbackId>>>,
 }
 
@@ -80,6 +83,7 @@ impl SongVisualizer {
             readout,
             playback: Rc::new(Cell::new(PlaybackState::Stopped)),
             panel_active: Rc::new(Cell::new(false)),
+            swell: Rc::new(Cell::new(0.0)),
             tick_id: Rc::new(RefCell::new(None)),
         }
     }
@@ -109,7 +113,8 @@ impl SongVisualizer {
     /// motion from the previous track does not bleed into the new one.
     pub(in crate::ui) fn note_track_changed(&self) {
         self.engine.borrow_mut().note_track_changed();
-        self.readout.set(self.engine.borrow().bass_pressure());
+        self.readout
+            .set(self.engine.borrow().bass_pressure(), self.swell.get());
         queue_registered_areas(&self.areas);
     }
 
@@ -129,7 +134,7 @@ impl SongVisualizer {
             return;
         }
         self.engine.borrow_mut().ingest(&frame);
-        self.readout.update(frame.bass_pressure());
+        self.readout.update(frame.bass_pressure(), self.swell.get());
         self.ensure_tick();
     }
 
@@ -147,9 +152,15 @@ impl SongVisualizer {
             self.ensure_tick();
         } else {
             self.stop_tick();
-            self.readout.set(self.engine.borrow().bass_pressure());
+            self.readout
+                .set(self.engine.borrow().bass_pressure(), self.swell.get());
             queue_registered_areas(&self.areas);
         }
+    }
+
+    /// The panel owns the envelope; the readout only reports it.
+    pub(in crate::ui) fn set_swell(&self, swell: f64) {
+        self.swell.set(swell);
     }
 
     pub(in crate::ui) fn set_active(&self, active: bool) {
@@ -174,6 +185,7 @@ impl SongVisualizer {
         let panel_active = self.panel_active.clone();
         let playback = self.playback.clone();
         let readout = self.readout.clone();
+        let swell = self.swell.clone();
         let slot = self.tick_id.clone();
         // Decouple the sim's advance from the render frame rate: each engine
         // tick is a fixed 1/60 s step, but the frame clock slows to the render
@@ -210,7 +222,7 @@ impl SongVisualizer {
             }
             // Also refreshed here, so the readout follows the release once
             // playback stops and no further frames arrive.
-            readout.update(engine.borrow().bass_pressure());
+            readout.update(engine.borrow().bass_pressure(), swell.get());
             queue_registered_areas(&areas);
             if settled {
                 *slot.borrow_mut() = None;
@@ -230,7 +242,7 @@ impl SongVisualizer {
 }
 
 /// The six analysis numbers, in the order the readout shows them.
-fn analysis_values(pressure: BassPressure) -> [String; 6] {
+fn analysis_values(pressure: BassPressure, swell: f64) -> [String; 6] {
     let decibels = |value: f32| {
         if value <= READOUT_SILENCE_DBFS {
             "—".to_owned()
@@ -244,10 +256,14 @@ fn analysis_values(pressure: BassPressure) -> [String; 6] {
     [
         decibels(pressure.level_dbfs),
         decibels(pressure.baseline_dbfs),
-        format!("{:.2}", pressure.impact),
+        // `impact` is deliberately absent: since the glow became a stage light
+        // driven by `kick`, nothing reads it any more, and AC-23 asks this
+        // strip to name the analysis the visual *reacts to*. It stays a
+        // produced reading, just not a displayed one.
         format!("{:.2}", pressure.aura),
         format!("{:.2}", pressure.kick),
         format!("{:.2}", pressure.pressure),
+        format!("{swell:.2}"),
     ]
 }
 
@@ -284,10 +300,10 @@ impl AnalysisReadout {
         let values = [
             strings::SONG_VISUALS_BASS,
             strings::SONG_VISUALS_BASELINE,
-            strings::SONG_VISUALS_IMPACT,
             strings::SONG_VISUALS_BREAKDOWN,
             strings::SONG_VISUALS_KICK,
             strings::SONG_VISUALS_PRESSURE,
+            strings::SONG_VISUALS_SWELL,
         ]
         .into_iter()
         .enumerate()
@@ -322,22 +338,22 @@ impl AnalysisReadout {
 
     /// Writes the numbers immediately — for state changes, where the readout
     /// must not lag behind a stop or a track switch.
-    fn set(&self, pressure: BassPressure) {
+    fn set(&self, pressure: BassPressure, swell: f64) {
         self.last_update_us.set(gtk4::glib::monotonic_time());
-        for (label, value) in self.values.iter().zip(analysis_values(pressure)) {
+        for (label, value) in self.values.iter().zip(analysis_values(pressure, swell)) {
             label.set_text(&value);
         }
     }
 
     /// Writes the numbers at most every [`READOUT_INTERVAL_US`] — for the live
     /// path, which fires at the frame rate.
-    fn update(&self, pressure: BassPressure) {
+    fn update(&self, pressure: BassPressure, swell: f64) {
         let now = gtk4::glib::monotonic_time();
         let last = self.last_update_us.get();
         if last != 0 && now.saturating_sub(last) < READOUT_INTERVAL_US {
             return;
         }
-        self.set(pressure);
+        self.set(pressure, swell);
     }
 
     #[cfg(test)]

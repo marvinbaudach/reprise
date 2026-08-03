@@ -2870,9 +2870,12 @@ STYLE-1).
   caps, nor bar heights. With animations switched off, the layer holds
   the current frame's value without decay.
   Below the canvas the visual names the analysis it reacts to —
-  absolute bass level, baseline, kick glow, breakdown aura, and the two
-  per-beat readings `kick` and `pressure` that the reactive light on the
-  cover runs on. The
+  absolute bass level, baseline, breakdown aura, the attack `kick` the
+  stage light runs on, the held `pressure`, and the slow `swell` the
+  cover and the panel light breathe on. `impact` is produced but not
+  shown: since the glow became a stage light nothing reads it, and this
+  strip names what the visual reacts to, not everything the detector
+  computes. The
   numbers refresh at most ten times per second so they stay readable,
   and a band without measurable signal reads as a dash instead of a
   bottomed-out level.
