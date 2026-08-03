@@ -1,6 +1,5 @@
-//! One New Releases list row: cover, title/meta, and a chip<->actions
-//! `GtkStack` that reveals a primary action plus Hide on row hover or
-//! keyboard focus (NR-10). Library ownership is three-state
+//! One New Releases list row: cover, title/meta, a persistent status chip,
+//! and actions revealed on row hover or keyboard focus (NR-10a). Library ownership is three-state
 //! (`LibraryPresence`: `Absent`, `Partial`, `Complete`), not a boolean —
 //! owning only the lead single off an album is `Partial`, distinct from
 //! owning nothing (`Absent`) or the whole thing (`Complete`). The primary
@@ -10,7 +9,6 @@
 //! because owning just the single means the user wants the rest of the
 //! album, not a trip back to the one track they already have.
 
-use std::cell::Cell;
 use std::rc::Rc;
 
 use chrono::{Datelike, NaiveDate};
@@ -19,13 +17,12 @@ use gtk4::prelude::*;
 use reprise_core::artist_news::{LibraryPresence, StoredRelease};
 
 use super::release_cover::LazyReleaseCover;
+use super::release_row_actions;
 use crate::ui::strings;
 
 /// Compact cover edge shared by every row (NR-9 layout; the old hero/row
 /// split is gone — see popover.rs).
 const COVER_EDGE: i32 = 40;
-const CHIP_CHILD: &str = "chip";
-const ACTIONS_CHILD: &str = "actions";
 
 /// Navigates to and focuses an in-library album by (title, artist). Kept as
 /// a plain closure type rather than a `MetadataNavigator` reference so this
@@ -138,128 +135,7 @@ pub(in crate::ui) fn primary_action(release: &StoredRelease, today: NaiveDate) -
     ))
 }
 
-/// Whether the actions page should replace the chip. Hover alone would trap
-/// keyboard users behind an unreachable reveal, so the stack must also stay
-/// on "actions" while focus is anywhere in the row (ACC-1).
-pub(in crate::ui) fn stack_target(hovered: bool, focused: bool) -> &'static str {
-    if hovered || focused {
-        ACTIONS_CHILD
-    } else {
-        CHIP_CHILD
-    }
-}
-
-/// Selects a fallback when the running icon theme lacks the preferred icon.
-pub(in crate::ui) fn icon_with_fallback(
-    primary: &'static str,
-    fallback: &'static str,
-) -> &'static str {
-    let Some(display) = gtk4::gdk::Display::default() else {
-        return primary;
-    };
-    if gtk4::IconTheme::for_display(&display).has_icon(primary) {
-        primary
-    } else {
-        fallback
-    }
-}
-
-/// Builds a flat icon button with matching tooltip and accessible label.
-pub(in crate::ui) fn action_button(icon_name: &str, label: &str) -> gtk4::Button {
-    let button = gtk4::Button::from_icon_name(icon_name);
-    button.add_css_class("flat");
-    button.add_css_class("new-release-action");
-    button.set_tooltip_text(Some(label));
-    button.update_property(&[gtk4::accessible::Property::Label(label)]);
-    button
-}
-
-/// Opens an announcement or ticket URL externally and logs any failure.
-///
-/// The URL comes from provider JSON, so it goes through the shared scheme
-/// allowlist: anything that is not a web link is silently not opened.
-pub(in crate::ui) fn launch_uri(url: &str) {
-    crate::ui::external_link::launch(url, "announcement", None);
-}
-
-fn primary_button(
-    release: &StoredRelease,
-    today: NaiveDate,
-    on_show_album: &OnShowAlbum,
-    close_popover: &Rc<dyn Fn()>,
-) -> gtk4::Button {
-    match primary_action(release, today) {
-        PrimaryAction::ShowInLibrary => {
-            let icon = icon_with_fallback("go-jump-symbolic", "folder-music-symbolic");
-            let button = action_button(icon, &strings::text(strings::SHOW_IN_LIBRARY));
-            let close_popover = close_popover.clone();
-            let on_show_album = on_show_album.clone();
-            let title = release.title.clone();
-            let artist = release.artist_name.clone();
-            button.connect_clicked(move |_| {
-                close_popover();
-                on_show_album(&title, &artist);
-            });
-            button
-        }
-        PrimaryAction::OpenAnnouncement(url) => {
-            let icon = icon_with_fallback("external-link-symbolic", "web-browser-symbolic");
-            let button = action_button(icon, &strings::text(strings::OPEN_ANNOUNCEMENT));
-            let close_popover = close_popover.clone();
-            button.connect_clicked(move |_| {
-                close_popover();
-                launch_uri(&url);
-            });
-            button
-        }
-    }
-}
-
-/// Only builds the button; the click is wired in `build`, where the
-/// row's `Revealer` exists to collapse before `on_hide` actually runs (B4).
-fn hide_button() -> gtk4::Button {
-    action_button(
-        "view-conceal-symbolic",
-        &strings::text(strings::HIDE_RELEASE),
-    )
-}
-
-fn wire_hover_and_focus(row: &gtk4::Box, stack: &gtk4::Stack) {
-    let pointer_inside = Rc::new(Cell::new(false));
-    let focus_inside = Rc::new(Cell::new(false));
-
-    let motion = gtk4::EventControllerMotion::new();
-    let enter_stack = stack.clone();
-    let enter_pointer = pointer_inside.clone();
-    let enter_focus = focus_inside.clone();
-    motion.connect_enter(move |_, _, _| {
-        enter_pointer.set(true);
-        enter_stack.set_visible_child_name(stack_target(true, enter_focus.get()));
-    });
-    let leave_stack = stack.clone();
-    let leave_pointer = pointer_inside.clone();
-    let leave_focus = focus_inside.clone();
-    motion.connect_leave(move |_| {
-        leave_pointer.set(false);
-        leave_stack.set_visible_child_name(stack_target(false, leave_focus.get()));
-    });
-    row.add_controller(motion);
-
-    let focus = gtk4::EventControllerFocus::new();
-    let focus_stack = stack.clone();
-    let focus_pointer = pointer_inside.clone();
-    let focus_inside_enter = focus_inside.clone();
-    focus.connect_enter(move |_| {
-        focus_inside_enter.set(true);
-        focus_stack.set_visible_child_name(stack_target(focus_pointer.get(), true));
-    });
-    let blur_stack = stack.clone();
-    focus.connect_leave(move |_| {
-        focus_inside.set(false);
-        blur_stack.set_visible_child_name(stack_target(pointer_inside.get(), false));
-    });
-    row.add_controller(focus);
-}
+pub(in crate::ui) use super::release_row_actions::launch_uri;
 
 /// One popover list entry. Hiding lives on the row itself rather than
 /// behind a separate destination, so it stays reachable regardless of list
@@ -295,55 +171,18 @@ pub(in crate::ui) fn build(
     text.append(&title);
     text.append(&meta);
 
-    let chip_label = gtk4::Label::new(None);
-    chip_label.set_valign(gtk4::Align::Center);
-    match chip_presentation(release, today) {
-        ChipPresentation::Upcoming(copy) => {
-            chip_label.set_label(&copy);
-            chip_label.add_css_class("new-release-chip");
-        }
-        ChipPresentation::Released => {
-            chip_label.set_label(&strings::text(strings::RELEASED));
-            chip_label.add_css_class("new-release-chip-neutral");
-        }
-        ChipPresentation::PartiallyOwned => {
-            chip_label.set_label(&strings::text(strings::NEW_RELEASES_PARTIALLY_OWNED));
-            chip_label.add_css_class("new-release-chip-partial");
-        }
-        ChipPresentation::InLibrary => {
-            chip_label.set_label(&strings::text(strings::IN_LIBRARY));
-            chip_label.add_css_class("new-release-chip-neutral");
-        }
-    }
-
-    let actions = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
-    actions.set_valign(gtk4::Align::Center);
-    actions.append(&primary_button(
-        release,
-        today,
-        on_show_album,
-        close_popover,
-    ));
-    let hide = hide_button();
-    actions.append(&hide);
-
-    let right_stack = gtk4::Stack::new();
-    right_stack.set_transition_type(gtk4::StackTransitionType::Crossfade);
-    right_stack.set_transition_duration(crate::ui::motion::MICRO_MS);
-    right_stack.add_named(&chip_label, Some(CHIP_CHILD));
-    right_stack.add_named(&actions, Some(ACTIONS_CHILD));
-    right_stack.set_visible_child_name(CHIP_CHILD);
+    let trailing = release_row_actions::build(release, today, on_show_album, close_popover);
 
     let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
     row.add_css_class("new-release-row");
     row.append(cover.widget());
     row.append(&text);
-    row.append(&right_stack);
+    row.append(&trailing.root);
 
     // a11y-semantics: role=group name=new-release-row state=focusable action=tab-into-actions
     row.set_focusable(true);
 
-    wire_hover_and_focus(&row, &right_stack);
+    release_row_actions::wire_hover_and_focus(&row, &trailing.actions);
 
     // Hide collapses the row instead of yanking it out (B4): the button only
     // starts the collapse; `on_hide` (which persists hidden/hidden_at and
@@ -370,7 +209,7 @@ pub(in crate::ui) fn build(
     // Weak: the button (owned by the row, owned by the revealer) must not
     // hold a strong ref back to the revealer, or the pair leaks.
     let revealer_weak = revealer.downgrade();
-    hide.connect_clicked(move |_| {
+    trailing.hide.connect_clicked(move |_| {
         if let Some(revealer) = revealer_weak.upgrade() {
             revealer.set_reveal_child(false);
         }
@@ -382,6 +221,7 @@ pub(in crate::ui) fn build(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
 
     fn release_with_date(date: &str) -> StoredRelease {
         StoredRelease {
@@ -536,64 +376,19 @@ mod tests {
         );
     }
 
-    #[test]
-    fn nr_10_stack_target_shows_actions_on_hover_or_focus() {
-        assert_eq!(stack_target(false, false), CHIP_CHILD);
-        assert_eq!(stack_target(true, false), ACTIONS_CHILD);
-        assert_eq!(stack_target(false, true), ACTIONS_CHILD);
-        assert_eq!(stack_target(true, true), ACTIONS_CHILD);
-    }
-
-    /// Depth-first search rather than a single sibling scan: since B4 wraps
-    /// the row in a `Revealer`, the stack is a grandchild (revealer -> row
-    /// box -> stack), not a direct sibling of the returned widget.
-    fn find_stack(widget: &gtk4::Widget) -> Option<gtk4::Stack> {
-        if let Ok(stack) = widget.clone().downcast::<gtk4::Stack>() {
-            return Some(stack);
-        }
-        let mut child = widget.first_child();
-        while let Some(current) = child {
-            if let Some(stack) = find_stack(&current) {
-                return Some(stack);
-            }
-            child = current.next_sibling();
-        }
-        None
-    }
-
     fn action_buttons(row: &gtk4::Widget) -> Vec<gtk4::Button> {
-        let stack = find_stack(row).expect("row exposes a chip/actions stack");
-        let actions = stack
-            .child_by_name(ACTIONS_CHILD)
-            .expect("actions page exists");
         let mut buttons = Vec::new();
-        let mut child = actions.first_child();
-        while let Some(current) = child {
-            if let Ok(button) = current.clone().downcast::<gtk4::Button>() {
+        if let Ok(button) = row.clone().downcast::<gtk4::Button>() {
+            if button.has_css_class("new-release-action") {
                 buttons.push(button);
             }
+        }
+        let mut child = row.first_child();
+        while let Some(current) = child {
+            buttons.extend(action_buttons(&current));
             child = current.next_sibling();
         }
         buttons
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn nr_10_row_exposes_both_chip_and_actions_pages() {
-        if gtk4::init().is_err() {
-            return;
-        }
-        let release = release_with_date("2026-01-01");
-        let on_hide: Rc<dyn Fn(&str)> = Rc::new(|_| {});
-        let on_show_album: OnShowAlbum = Rc::new(|_, _| {});
-        let close_popover: Rc<dyn Fn()> = Rc::new(|| {});
-
-        let row = build(&release, today(), &on_hide, &on_show_album, &close_popover);
-
-        let stack = find_stack(&row).expect("row exposes a chip/actions stack");
-        assert!(stack.child_by_name(CHIP_CHILD).is_some());
-        assert!(stack.child_by_name(ACTIONS_CHILD).is_some());
-        assert_eq!(stack.visible_child_name().as_deref(), Some(CHIP_CHILD));
     }
 
     /// B4: the Hide button no longer invokes `on_hide` directly — it only
