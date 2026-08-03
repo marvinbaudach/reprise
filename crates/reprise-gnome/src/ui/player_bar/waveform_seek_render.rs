@@ -78,6 +78,24 @@ pub(super) fn draw(
     // replaces the old partially-filled boundary bar (the played/unplayed
     // switch is a hard per-bucket cut instead).
     let playhead_x = (state.fraction * w).clamp(0.5, (w - 0.5).max(0.5));
+    if !state.fill_bars && state.bass_kick > 0.0 {
+        let radius = playhead_glow_radius(state.bass_kick);
+        let alpha = playhead_glow_alpha(state.bass_kick);
+        let center_y = h / 2.0;
+        let glow = gtk4::cairo::RadialGradient::new(
+            playhead_x, center_y, 0.0, playhead_x, center_y, radius,
+        );
+        glow.add_color_stop_rgba(0.0, r, g, b, alpha);
+        glow.add_color_stop_rgba(1.0, r, g, b, 0.0);
+        cr.save().ok();
+        cr.rectangle(0.0, 0.0, w, h);
+        cr.clip();
+        if cr.set_source(&glow).is_ok() {
+            cr.arc(playhead_x, center_y, radius, 0.0, std::f64::consts::TAU);
+            let _ = cr.fill();
+        }
+        cr.restore().ok();
+    }
     cr.set_source_rgba(r, g, b, PLAYHEAD_ALPHA);
     cr.rectangle(
         playhead_x - 0.5,
@@ -103,6 +121,18 @@ const LENS_CUTOFF_BARS: f64 = 10.0;
 const LENS_GAIN: f64 = 0.35;
 /// Below half a device pixel a bar must not move at all — see the test.
 const LENS_MIN_GROWTH_PX: f64 = 0.5;
+const GLOW_MIN_RADIUS: f64 = 3.0;
+const GLOW_RADIUS_PER_KICK: f64 = 22.0;
+const GLOW_MIN_ALPHA: f64 = 0.35;
+const GLOW_ALPHA_PER_KICK: f64 = 0.45;
+
+pub(super) fn playhead_glow_radius(kick: f64) -> f64 {
+    GLOW_MIN_RADIUS + GLOW_RADIUS_PER_KICK * kick.clamp(0.0, 1.0)
+}
+
+pub(super) fn playhead_glow_alpha(kick: f64) -> f64 {
+    GLOW_MIN_ALPHA + GLOW_ALPHA_PER_KICK * kick.clamp(0.0, 1.0)
+}
 
 pub(super) fn playhead_lens(index: usize, count: usize, fraction: f64) -> f64 {
     if count == 0 {

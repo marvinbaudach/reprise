@@ -65,6 +65,16 @@ fn ac_24_lens_snaps_to_whole_pixels_instead_of_shimmering() {
 }
 
 #[test]
+fn ac_24_playhead_glow_grows_with_the_kick() {
+    use super::render::{playhead_glow_alpha, playhead_glow_radius};
+    assert!((playhead_glow_radius(0.0) - 3.0).abs() < 1e-9);
+    assert!((playhead_glow_radius(1.0) - 25.0).abs() < 1e-9);
+    assert!((playhead_glow_alpha(0.0) - 0.35).abs() < 1e-9);
+    assert!((playhead_glow_alpha(1.0) - 0.80).abs() < 1e-9);
+    assert!((playhead_glow_radius(9.0) - 25.0).abs() < 1e-9);
+}
+
+#[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn ac_24_mini_player_never_takes_the_lens() {
     if gtk4::init().is_err() {
