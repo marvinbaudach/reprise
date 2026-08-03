@@ -11,9 +11,10 @@
 //!
 //! Given a path like `/media/nas-music/Rock/x.flac`, nothing in the string
 //! itself says whether the mount is `/media/nas-music` or `/media` — both
-//! are plausible mount points for the same file. `mounts::mount_point_of`
-//! can answer that question by walking the filesystem and comparing device
-//! ids, but only while the drive is still mounted: the moment it's the
+//! are plausible mount points for the same file. A [`LibrarySource`] answers
+//! that grouping question when it has such a notion; the Unix source uses
+//! `mounts::mount_point_of` to walk the filesystem and compare device ids.
+//! It can do that only while the drive is still mounted: the moment it's the
 //! missing-drive case this whole self-healing-list feature exists for,
 //! `/proc/mounts` has no entry to walk, and the ancestor directories above
 //! the vanished file resolve to whatever filesystem is now underneath
@@ -25,8 +26,8 @@
 //!
 //! ## Memoization
 //!
-//! `mounts::mount_point_of` costs one `lstat` per path component walked —
-//! O(depth) per file. A library scan touches every file under a root, and
+//! The Unix answer costs one `lstat` per path component walked — O(depth) per
+//! file. A library scan touches every file under a root, and
 //! files in the same directory always resolve to the same mount point (the
 //! mount point is a property of the directory, not of the individual file),
 //! so [`MountPointCache`] memoizes the result per `path.parent()` rather
@@ -39,39 +40,41 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use super::mounts;
+use super::source::LibrarySource;
 
 /// Per-scan cache: `path.parent()` → the `mount_point` value to record for
 /// every file directly inside that directory. See this module's doc
 /// comment for why memoizing on the parent (rather than the full path) is
 /// both correct — the mount point is a property of the directory, not the
 /// file — and the whole reason this exists.
-#[derive(Default)]
-pub(super) struct MountPointCache {
+pub(super) struct MountPointCache<'source> {
+    source: &'source dyn LibrarySource,
     by_parent: HashMap<PathBuf, Option<String>>,
 }
 
-impl MountPointCache {
-    pub(super) fn new() -> Self {
-        Self::default()
+impl<'source> MountPointCache<'source> {
+    pub(super) fn new(source: &'source dyn LibrarySource) -> Self {
+        Self {
+            source,
+            by_parent: HashMap::new(),
+        }
     }
 
     /// Resolves the `mount_point` column value to store for `path`,
     /// consulting (and populating) the per-parent-directory cache. `None`
-    /// only in the same case `mounts::mount_point_of` itself returns `None`
-    /// — even `/` couldn't be `lstat`'d, which should not happen on a
-    /// working Linux system; see that function's own doc comment.
+    /// only when the source has no grouping boundary for the path or cannot
+    /// resolve it.
     pub(super) fn resolve(&mut self, path: &Path) -> Option<String> {
         let Some(parent) = path.parent() else {
             // No parent component at all (bare "/") — not a shape any real
             // audio file path takes, but handled directly rather than
             // panicking or caching under a placeholder key.
-            return mounts::mount_point_of(path).map(|p| path_to_string(&p));
+            return self.source.mount_point(path).map(|p| path_to_string(&p));
         };
         if let Some(cached) = self.by_parent.get(parent) {
             return cached.clone();
         }
-        let resolved = mounts::mount_point_of(path).map(|p| path_to_string(&p));
+        let resolved = self.source.mount_point(path).map(|p| path_to_string(&p));
         self.by_parent
             .insert(parent.to_path_buf(), resolved.clone());
         resolved

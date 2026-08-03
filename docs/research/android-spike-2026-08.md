@@ -907,22 +907,25 @@ Stellen in `reprise-core`**, davon 25 mit Paket 3 erledigt und 5
 (`mount_point_of`) als Entwurfsfrage offen; dazu **8 in `reprise-gnome`**, die
 noch keinem Paket zugeordnet sind.
 
-#### Die offene Frage für den SAF-Adapter: „weg" gegen „weiß nicht"
+#### Erledigt: „weg" gegen „weiß nicht" ist ein Drei-Zustands-Vertrag
 
-`LibrarySource::probe` liefert `Option`, und `None` heißt **die Datei ist nicht
-da**. Zwei Aufrufstellen — `scanner_vanish::mark_vanished_with` und
-`queries::maintenance::mark_track_missing_if_current_with` — machen daraus
-sofort einen `missing_since`-Eintrag. Die anderen fünfzehn Verbraucher
-behandeln `None` konservativ und schreiben nichts.
+Der erste SAF-Adapter bestätigte Paket 3s offene Frage: Eine faktenfreie
+`Some`-Antwort schützte `scanner_vanish::mark_vanished_with`, aber nicht
+`queries::maintenance::mark_track_missing_if_current_with`, weil dessen
+`is_file`-Prüfung danach trotzdem einen `missing_since`-Eintrag schrieb.
 
-Unter Linux ist die Vermischung harmlos und war es immer: `Path::exists()`
-liefert bei einem Rechte- oder E/A-Fehler ebenfalls `false`. **Unter SAF ist
-jede Abfrage ein Binder-Rundlauf, der scheitern kann**, und ein gescheiterter
-Rundlauf sähe aus wie eine gelöschte Datei. Eine SAF-Quelle braucht deshalb ein
-eigenes Signal für „ich konnte nicht nachsehen", bevor sie an diesen zwei
-Stellen produktiv eingesetzt wird. Paket 3 legt sie nicht, weil das die
-Semantik von siebzehn Aufrufstellen ändert; es benennt sie an `probe` und an
-beiden Schreibstellen.
+`LibrarySource::probe` liefert deshalb nun `LibraryPathPresence`: `Present`
+trägt Fakten, `Absent` bestätigt Abwesenheit, und `Unknown` sagt ausdrücklich,
+dass die Quelle nicht nachsehen konnte. **Nur `Absent` darf an den zwei
+destruktiven Stellen bis zum Schreibzugriff gelangen.** Ein fehlgeschlagener
+Binder-Aufruf wird direkt `Unknown`; die faktenfreie Ersatz-Metadatenstruktur
+ist entfernt. Die übrigen Verbraucher behandeln `Unknown` konservativ und
+behalten ihr bisheriges Ergebnis.
+
+Auch Unix trennt die Zustände jetzt ehrlich: erfolgreicher `stat` ist
+`Present`, `NotFound` ist `Absent`, jeder andere Fehler — etwa fehlende Rechte
+oder E/A — ist `Unknown`. Damit ist ein Zugriffsfehler auch auf Linux keine
+behauptete Abwesenheit mehr.
 
 ### Paket 4 umgesetzt: Bibliotheksinhalt über einen Lese-Griff (2026-08-02)
 
@@ -1102,6 +1105,74 @@ wird, warum eine unbekannte Endung die Probe absichtlich ungesetzt lässt, und
 warum `read_meta_content_based` genau das Gegenteil braucht — steht dort einmal
 statt in vier Kopien.
 
+### Phase 3 belegt: ein Scan über SAF, auf dem Gerät (2026-08-03)
+
+Gemessen auf `emulator-5554`, frisch installierte App, geleerte App-Daten,
+Ordner `/sdcard/Music/Repriese` über `ACTION_OPEN_DOCUMENT_TREE` gewählt.
+
+```
+RepriseScan: Scan discovery started
+RepriseScan: Scan progress: processed=1 total=unknown uri=content://…/sine.flac
+RepriseScan: Scan progress: processed=2 total=unknown uri=content://…/broken-tags.mp3
+RepriseScan: Scan call returned: tracks=2 added=2 updated=0 errors=0
+```
+
+Die App-Datenbank, gezogen mit `adb exec-out run-as … cat files/reprise.db`
+(samt `-wal`), bestätigt es nicht nur, sondern zeigt Verhaltensgleichheit mit
+dem Desktop:
+
+| Track | `duration_ms` | `untagged` | `import_errors` | `mount_point` |
+| --- | --- | --- | --- | --- |
+| `sine.flac` | 1160 | 0 | — | *(leer)* |
+| `broken-tags.mp3` | 52 | 1 | `unreadable_tags` | *(leer)* |
+
+**Was damit auf Hardware belegt ist:**
+
+- `lofty` parst über `open_read` → `File::from_raw_fd` auf einem
+  SAF-Deskriptor. Pakete 4 und 5 tragen.
+- `broken-tags.mp3` bekommt dasselbe Verdikt wie auf dem Desktop —
+  Pass 1 scheitert, Pass 2 rettet als `untagged`, der Fehler bleibt als Hinweis
+  stehen. Die Verdikt-Paritätstests aus Paket 5 haben das vorhergesagt.
+- `total=unknown`: der Erstscan hat keine Schätzung und behauptet auch keine.
+  Das `Option<u64>` aus Paket 2 reicht bis auf das Gerät durch.
+- `mount_point` ist leer, weil die SAF-Quelle die Frage ablehnt. Die
+  `mount_point`-Fähigkeit ersetzt den Plattform-Booleschen Wert erfolgreich.
+- Content-URIs überleben Traversierung, Präsenzprüfung, Tag-Lesung und
+  Datenbank ohne Sonderbehandlung.
+
+**Ein Mangel, den erst das Gerät zeigt:** Der Titel lautet
+`primary%3AMusic%2FRepriese%2Fsine`. Der Scanner fällt bei leerem Titel auf
+den Dateistamm zurück, und der Dateistamm einer Content-URI ist die ganze
+kodierte Dokument-ID. Eine Quelle muss einen **Anzeigenamen** liefern können —
+SAF hat ihn in `DocumentsContract.Document.COLUMN_DISPLAY_NAME`. Das ist der
+nächste Fund, den der MVP aus der Abstraktion herausdrückt, und er gehört vor
+Phase 4.
+
+### Der MVP, vollständig belegt (2026-08-03)
+
+Gemessen auf `emulator-5554`, frische Installation, geleerte App-Daten.
+
+| Schritt | Beleg |
+| --- | --- |
+| Ordner über SAF wählen | `ACTION_OPEN_DOCUMENT_TREE` auf `/sdcard/Music/Repriese` |
+| Scannen | `Scan completed: added=2 updated=0 errors=0` |
+| Katalog stimmt | Datenbank: `sine.flac` mit Tags, `broken-tags.mp3` als `untagged` mit `unreadable_tags` — dieselben Verdikte wie unter Linux |
+| Album benannt | `album = "Repriese"` (Anzeigename des übergeordneten Dokuments), nicht `document` |
+| Liste anzeigen | beide Tracks mit Dauer |
+| Abspielen | `AudioTrack: stop(16): called with 51200 frames delivered` — bei 1160 ms und 44,1 kHz sind 51.156 Frames der ganze Track |
+| Neustart | nach `force-stop` steht die Liste wieder da, **ohne zweiten Scan** |
+
+Der letzte Punkt ist der wichtigste für die Abstraktion: Die Tracks kommen aus
+dem Katalog, nicht aus einem erneuten Baumlauf. Ein Kaltstart, der den Baum
+über Binder neu abliefe, wäre genau die Kosten, die die fünf Pakete zu
+vermeiden gelernt haben.
+
+Wird die Berechtigung entzogen oder der Ordner entfernt, zeigt die App
+ausdrücklich „Access may have been revoked or the folder may have been
+removed" und bietet neu zu wählen an — **keine stille leere Bibliothek und
+kein Missing-Verdikt.** Das ist die Oberfläche, an der ein Mensch den
+Unterschied zwischen `Absent` und `Unknown` bemerken würde.
+
 ## Frage 8 — Die Umzugserkennung, und was Tauri daran ändert (umgesetzt 2026-08-02)
 
 **Status: umgesetzt.** `file_stat` liefert jetzt die echte Größe getrennt von
@@ -1183,3 +1254,153 @@ Auf Android fehlt weiterhin die `rename`-Erkennung. Dafür braucht es einen
 eigenen Entwurf für den Umgang mit stabilen
 DocumentsProvider-Dokument-IDs; der hier freigeschaltete Fingerabdruck erkennt
 nur den vorhandenen Kopieren-und-Löschen-Fall.
+
+## Frage 4b — Tragen Content-URIs die Pfad- und SQL-Annahmen? (2026-08-03)
+
+Diese Prüfung gehört zu Phase 1 des Android-MVP-Plans. Sie trennt die drei
+Annahmen ausdrücklich, weil A1 in diesem Lauf nicht ausgeführt werden sollte.
+
+### A1 — Seek auf einem SAF-Deskriptor
+
+**Urteil: TRÄGT.** Gemessen am 2026-08-03 auf `emulator-5554`, Android-API 36,
+mit einem echten über `ACTION_OPEN_DOCUMENT_TREE` gewählten Ordner unter
+`/sdcard/Music/Repriese` und dem Anbieter
+`com.android.externalstorage.documents`:
+
+```
+A1 descriptor probe: bytesRead=64 readError=null seekSucceeded=true
+seekError=null bytesReadAfterSeek=32 readAfterSeekError=null bytesMatch=true
+```
+
+Der von `ContentResolver.openFileDescriptor(uri, "r").detachFd()` übergebene
+Deskriptor, in Rust mit `File::from_raw_fd` übernommen, liest, springt, und
+die Bytes nach dem Sprung stimmen mit denen an derselben Stelle aus dem ersten
+Lesen überein. `LibraryReadHandle`s Zusage `Read + Seek` ist damit auf echtem
+Gerät erfüllt, und `lofty` kann direkt darauf parsen — ohne Vorabkopie in den
+App-Cache, die der Plan als Ausweichweg vorgesehen hatte.
+
+**Was damit nicht geprüft ist:** nur der lokale Anbieter
+`externalstorage`. Ein Netzwerk-Anbieter (Drive, SMB) darf laut
+SAF-Vertrag eine Pipe liefern, und eine Pipe kann nicht springen. Für die
+Musikbibliothek eines Telefons ist das der Randfall, nicht der Normalfall —
+aber eine Quelle, die ihn treffen kann, braucht dort die Vorabkopie. Der
+Befund gilt für lokalen Speicher, und nur dafür.
+
+### A2 — `Path` auf einer realistischen Content-URI
+
+**Urteil: TRÄGT für die beiden geprüften Operationen.** Der Test verwendet
+unverändert:
+
+```text
+Baum:  content://com.android.externalstorage.documents/tree/primary%3AMusic
+Datei: content://com.android.externalstorage.documents/tree/primary%3AMusic/document/primary%3AMusic%2Fsong.flac
+```
+
+`Path::starts_with` liefert `true`: Die Komponenten der Baum-URI sind ein
+echtes Präfix der Komponenten der Datei-URI. Das kodierte `%2F` bleibt zwar
+Teil der letzten Dokument-ID-Komponente und wird nicht zu einem
+Pfadtrennzeichen, liegt aber erst hinter diesem gemeinsamen Präfix.
+
+`Path::extension()` liefert `Some("flac")`: Der Punkt vor `flac` ist in der
+letzten Komponente nicht kodiert. Der Test behauptet bewusst nicht, dass
+`Path` die URI dekodiert oder die Struktur innerhalb der Dokument-ID kennt.
+
+A2 fällt damit nicht; wegen A2 muss der Plan nicht neu geschnitten werden.
+
+### A3 — `LIKE`-Vorfilter unter einer URI-Wurzel
+
+**Urteil: TRÄGT.** Eine migrierte In-Memory-Datenbank enthält die Datei-URI
+oben sowie eine ähnlich aussehende URI aus einem anderen Baum.
+`scanner_vanish::candidates_under_root` gibt für die Baum-URI genau die
+richtige Track-Zeile zurück.
+
+Der `%` in `%3A` wird von `playlists::escape_like` als Literal für
+`LIKE ? ESCAPE '\'` gebunden; das angehängte `/%` bezeichnet danach die
+Nachfahren. Der anschließende autoritative `Path::starts_with`-Filter hält die
+ähnlich aussehende fremde Baum-URI zusätzlich draußen. Der Test hält das
+Escaping außerdem unabhängig als wörtliches `primary\%3AMusic` fest, damit der
+autoritative Nachfilter eine Regression des SQL-Musters nicht verdecken kann.
+Temporäre Mutationen wurden für beide Schichten rot beobachtet: Ohne den
+Nachfahrenanteil `/%` war die Kandidatenliste leer; ohne das Prozent-Escaping
+wich der tatsächliche Mustertext vom erwarteten Literal ab. Nach beiden
+Wiederherstellungen liefen A2 und A3 grün.
+
+Damit sind A2 und A3 festgehalten. A1 bleibt bis zum getrennten Emulator-Lauf
+offen; aus diesem Durchgang folgt kein Urteil über die Seekbarkeit eines
+echten Provider-Deskriptors.
+
+## Phase 5 — Bilanz der Storage-Abstraktion (2026-08-03)
+
+Der MVP hat die Bibliothek über eine echte SAF-Quelle gescannt. Sein Ertrag ist
+nicht, dass `LibrarySource` als Ganzes bestätigt wäre. Vier der fünf
+Storage-Pakete trugen für den geprüften lokalen DocumentsProvider; eine
+Signatur musste geändert werden, und vier weitere Dateisystemannahmen lagen
+außerhalb der Signaturen an Stellen, die ihre Quelle gar nicht befragen
+konnten.
+
+### Was von den fünf Paketen getragen hat
+
+| Paket | Befund am zweiten Quelltyp |
+| --- | --- |
+| 1 — Aufenthalt und Erreichbarkeit | **Trägt.** Eine SAF-Quelle kann einen stabilen Tree-Token liefern; `reachability` bleibt ein Vergleich opaker Werte. Nicht getragen hat die fremde Vorbedingung des Aufrufers: `scan_folder_inner` verlangte mit `is_absolute`, was nur der Unix-Vorfahrenlauf braucht. Die Zusicherung sitzt jetzt bei `UnixLibrarySource`. |
+| 2 — Traversierung | **Trägt.** Der Rust-Adapter leitet den stromorientierten Walk aus wiederholten `listChildren`-Aufrufen ab, trägt Fehler in Reihenfolge weiter und stoppt ohne den Baum zu materialisieren. Der Gerätelauf bestätigte außerdem den unbekannten Nenner beim ersten Scan; ein Vorzähl-Lauf wäre unter Binder genau die falsche Optimierung gewesen. |
+| 3 — Präsenz und Metadaten | **Trägt nicht in der ursprünglichen Signatur.** `Option<LibraryPathMetadata>` musste gleichzeitig „bestätigt nicht vorhanden" und „Binder-Aufruf gescheitert" ausdrücken. Der erste Adapter verrenkte die Fehlerseite deshalb zu einer faktenfreien Präsenz. Erst `LibraryPathPresence::{Present, Absent, Unknown}` bildet die Quelle ab; nur `Absent` darf einen Missing-Schreibzugriff lizenzieren. Das ist die Signatur, die der MVP korrigiert hat. |
+| 4 — Lese-Griff | **Trägt für den geprüften lokalen Provider.** Der echte Deskriptor liest und sucht, Rust übernimmt ihn ohne Cache-Kopie, und der Gerätelauf parst darüber Audio. Das Urteil gilt nicht pauschal für Netzwerk-Provider, die eine nicht seekbare Pipe liefern dürfen. |
+| 5 — Tag-Lesung | **Trägt.** Lofty liest Tags und Eigenschaften über denselben Griff; `sine.flac` und `broken-tags.mp3` erreichten auf dem Gerät dieselben Datenbank- und Fehlerverdikte wie im Kern. Die explizite Endungs-Vorsaat bleibt nötig, weil ein Griff allein den Container-Typ nicht kennt. |
+
+Die Paketgrenzen für Traversierung, Metadaten, Griff und Parser waren damit
+brauchbar. Der Fehler lag in der Beweisreihenfolge: Der Vertrag wurde gegen
+Unix und gegen Testdoppelgänger verbreitert, bevor ein zweiter Quelltyp ihn
+unter seinen eigenen Fehlern und Bezeichnern benutzen musste.
+
+### Fünf Befunde, die kein selbstgeschriebener Doppelgänger gezeigt hat
+
+1. `is_absolute` stand am Scanner-Eingang, obwohl nur der Unix-Adapter eine
+   absolute Wurzel für seinen Vorfahrenlauf braucht. Eine Content-URI ist für
+   `Path` nicht absolut.
+2. `probe` hatte mit `Option` nur zwei Ergebnisse. Ein echter Binder-Aufruf
+   hat mindestens drei: vorhanden, bestätigt abwesend und nicht feststellbar.
+3. Der Scanner trug einen Plattform-Booleschen Wert, um
+   `mount_point_of` zu überspringen. Die eigentliche Frage lautet, ob diese
+   Quelle für dieses Objekt eine gemeinsame Ausfallgrenze benennen kann.
+4. Der Titelfallback nahm `file_stem` aus dem Bezeichner. Bei SAF ist das die
+   kodierte Dokument-ID, nicht `COLUMN_DISPLAY_NAME`.
+5. Der Albumfallback nahm `parent().file_name()` aus demselben Bezeichner.
+   Für `content://…/document/…/broken-tags.mp3` ergibt das wörtlich
+   `document`, nicht den Anzeigenamen des übergeordneten Dokuments.
+
+Diese fünf Fehler waren gegen die Doppelgänger unsichtbar. **Ein
+Doppelgänger, den wir selbst schreiben, scheitert nicht; er antwortet nur.**
+Er liefert auf Nachfrage genau den Token, die Metadaten und den Baum, die sein
+Test erwartet. Er hat keinen abgebrochenen Binder-Rundlauf, keinen
+DocumentsProvider ohne Mount-Begriff und keinen opaken Bezeichner, solange wir
+ihm diese Eigenschaften nicht vorher einbauen. Damit kann er bekannte
+Zusicherungen festhalten, aber nicht belegen, dass die Fragen vollständig oder
+am richtigen Besitzer liegen.
+
+### Wie der Schnitt beim nächsten Mal anders beginnt
+
+Die zweite Quelle kommt künftig **vor** der gemeinsamen Abstraktion. Zuerst
+wird der schmalste echte vertikale Lauf in beiden Quellen gebaut; danach wird
+nur das gemeinsam benannte Verhalten herausgezogen. Für die Leseseite hätte
+das bedeutet: ein realer SAF-Walk mit Providerfehler, Metadaten, Griff und
+Anzeigenamen, bevor `LibrarySource` seine endgültigen Methoden erhält. Dann
+wären `Unknown`, `mount_point`, `display_name` und `container_name` aus zwei
+Implementierungen entstanden statt nachträglich aus vier Reparaturen.
+
+Das ist auch die Reihenfolge für die noch offenen Pakete:
+
+- **Schreibseite:** Erst auf SAF konkret beweisen, wie Namensreservierung,
+  Kollision, temporäre Veröffentlichung, Austausch und Aufräumen sicher
+  funktionieren. Danach den gemeinsamen Vertrag mit Unix schneiden.
+  `create_new` und atomarer `rename` dürfen nicht als Methoden vorgegeben
+  werden, wenn der zweite Provider diese Zusicherungen nicht besitzt.
+- **Watcher:** Erst das Verhalten einer zweiten Quelle bauen. SAF hat kein
+  allgemeines `notify`-Gegenstück; möglich sind Provider-Beobachter,
+  periodischer Abgleich oder gar keine Push-Fähigkeit. Erst aus diesem
+  konkreten Ergebnis darf eine optionale Watcher-Fähigkeit oder ein
+  Scan-Fallback abstrahiert werden.
+
+Für beide gilt daher: **zweite Quelle zuerst, dann abstrahieren.** Ein weiterer
+Vertrag gegen einen Doppelgänger würde erneut nur zeigen, dass unser eigener
+Antwortgeber die Fragen erfüllt, die wir ihm vorher gegeben haben.

@@ -9,7 +9,9 @@ use std::path::{Path, PathBuf};
 use crate::db::Db;
 use crate::device_sync::SyncTrack;
 use crate::library::playlists;
-use crate::library::source::{LibraryLinkMode, LibrarySource, UnixLibrarySource};
+use crate::library::source::{
+    LibraryLinkMode, LibraryPathPresence, LibrarySource, UnixLibrarySource,
+};
 use crate::models::MissingReason;
 use rusqlite::{Connection, OptionalExtension};
 
@@ -296,7 +298,9 @@ pub fn query_sync_tracks_with_source(
             continue;
         };
         let source_path = PathBuf::from(path);
-        let Some(metadata) = source.probe(&source_path, LibraryLinkMode::Follow) else {
+        let LibraryPathPresence::Present(metadata) =
+            source.probe(&source_path, LibraryLinkMode::Follow)
+        else {
             continue;
         };
         if !metadata.is_file {
@@ -342,12 +346,10 @@ pub fn query_sync_tracks_with_source(
 /// preserved, and the row resurfaces in `ViewSource::Missing` (Stage 3 Task
 /// 3) instead of vanishing outright.
 ///
-/// Task 1.2: this is the playback-fault call site `Track::is_missing`'s doc
-/// comment refers to. Task 1.5 swapped the blanket `MissingReason::Unknown`
-/// this used to always write for a real verdict from
-/// [`LibrarySource::reachability`], the same classifier the scanner's own folded-in
-/// mark-vanished phase (`library::scanner::scan_folder`) uses — one `SELECT`
-/// of the row's `path`/`device` first. The expected path is the identity
+/// This is the playback-fault call site `Track::is_missing` documents. It uses
+/// [`LibrarySource::reachability`], the same classifier as the scanner's
+/// mark-vanished phase, after selecting the row's path and device. The
+/// expected path is the identity
 /// snapshot taken before the asynchronous backend fault arrived. Both the
 /// read and write require that same path plus `PRESENT`, and the file is
 /// rechecked immediately before writing. A watcher/Locate reconcile that
@@ -365,7 +367,7 @@ pub fn mark_track_missing_if_current(
 /// Production passes [`UnixLibrarySource`]; the seam exists so a non-POSIX
 /// source can be classified against without a real filesystem, and so an
 /// Android SAF source can be handed in here once one exists.
-fn mark_track_missing_if_current_with(
+pub(super) fn mark_track_missing_if_current_with(
     source: &dyn LibrarySource,
     db: &Db,
     track_id: i64,
@@ -383,10 +385,7 @@ fn mark_track_missing_if_current_with(
     let Some((path, device)) = row else {
         return Ok(false);
     };
-    if source
-        .probe(Path::new(&path), LibraryLinkMode::Follow)
-        .is_some_and(|metadata| metadata.is_file)
-    {
+    if source.probe(Path::new(&path), LibraryLinkMode::Follow) != LibraryPathPresence::Absent {
         return Ok(false);
     }
     let reason = source.reachability(Path::new(&path), device);

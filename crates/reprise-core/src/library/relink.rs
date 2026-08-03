@@ -8,8 +8,8 @@ use rusqlite::OptionalExtension;
 use super::scanner::move_detect::MOVE_MATCH_TOLERANCE_MS;
 use super::scanner::ScanError;
 use super::source::{
-    self, LibraryLinkMode, LibrarySource, LibraryWalkControl, LibraryWalkItem, LibraryWalkOrder,
-    UnixLibrarySource,
+    self, LibraryLinkMode, LibraryPathPresence, LibrarySource, LibraryWalkControl, LibraryWalkItem,
+    LibraryWalkOrder, UnixLibrarySource,
 };
 
 #[path = "relink_source.rs"]
@@ -50,10 +50,7 @@ pub fn probe_relink_with_source(
     new_path: &Path,
 ) -> Result<Option<RelinkMismatch>, ScanError> {
     let conn = db.conn();
-    if source
-        .probe(&target.old_path, LibraryLinkMode::Follow)
-        .is_some()
-    {
+    if source.probe(&target.old_path, LibraryLinkMode::Follow) != LibraryPathPresence::Absent {
         return Err(ScanError::RelinkTargetChanged {
             track_id: target.track_id,
         });
@@ -99,21 +96,14 @@ pub fn relink_track_with_source(
     new_path: &Path,
 ) -> Result<(), ScanError> {
     let conn = db.conn();
-    if source
-        .probe(&target.old_path, LibraryLinkMode::Follow)
-        .is_some()
-    {
+    if source.probe(&target.old_path, LibraryLinkMode::Follow) != LibraryPathPresence::Absent {
         return Err(ScanError::RelinkTargetChanged {
             track_id: target.track_id,
         });
     }
     let meta = super::scanner::track_meta::read_meta(new_path)?;
     let title = if meta.title.is_empty() {
-        new_path
-            .file_stem()
-            .and_then(|stem| stem.to_str())
-            .unwrap_or_default()
-            .to_string()
+        source.display_name(new_path).unwrap_or_default()
     } else {
         meta.title.clone()
     };
@@ -253,10 +243,7 @@ fn relink_from_folder_with_source(
                 Err(error) => return Err(error),
             };
             let title = if meta.title.is_empty() {
-                path.file_stem()
-                    .and_then(|stem| stem.to_str())
-                    .unwrap_or_default()
-                    .to_string()
+                source.display_name(path).unwrap_or_default()
             } else {
                 meta.title.clone()
             };
@@ -280,9 +267,8 @@ fn relink_from_folder_with_source(
                 let expected_path = expected_paths
                     .get(&candidate.id)
                     .expect("move candidates are restricted to remaining target ids");
-                let still_missing = source
-                    .probe(expected_path, LibraryLinkMode::Follow)
-                    .is_none()
+                let still_missing = source.probe(expected_path, LibraryLinkMode::Follow)
+                    == LibraryPathPresence::Absent
                     && tx
                         .query_row(
                             &format!(
@@ -790,3 +776,7 @@ mod tests {
         assert_eq!(path, "/different/reused.flac");
     }
 }
+
+#[cfg(test)]
+#[path = "relink_source_name_tests.rs"]
+mod source_name_tests;
