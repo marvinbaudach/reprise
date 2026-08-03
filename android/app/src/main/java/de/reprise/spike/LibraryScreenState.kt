@@ -3,6 +3,8 @@ package de.reprise.spike
 internal sealed interface LibraryScreenState {
     data class NoFolder(val message: String? = null) : LibraryScreenState
 
+    data object TreeUnreadable : LibraryScreenState
+
     data class Scanning(
         val processed: ULong = 0u,
         val total: ULong? = null,

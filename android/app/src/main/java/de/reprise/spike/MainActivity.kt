@@ -1,6 +1,5 @@
 package de.reprise.spike
 
-import android.content.Intent
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Bundle
@@ -12,6 +11,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -37,19 +37,32 @@ import uniffi.reprise_android_ffi.ScanProgressListener
 import uniffi.reprise_android_ffi.ScanProgressUpdate
 
 private const val TAG = "RepriseScan"
+private const val PREFERENCES_NAME = "reprise_android"
 
 class MainActivity : ComponentActivity() {
     private val libraryDelegate = lazy { MusicLibrary.open(filesDir.absolutePath) }
     private val library by libraryDelegate
+    private val session by lazy {
+        LibrarySession(
+            AndroidLibrarySessionPort(
+                resolver = contentResolver,
+                preferences = getSharedPreferences(PREFERENCES_NAME, MODE_PRIVATE),
+                library = library,
+            ),
+        )
+    }
     private var player: MediaPlayer? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val initialState = restoreLibrary()
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     LibraryScreen(
-                        chooseFolder = ::scanTree,
+                        initialState = initialState,
+                        chooseFolder = ::chooseTree,
+                        rescan = ::rescan,
                         playTrack = ::playTrack,
                     )
                 }
@@ -65,57 +78,41 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
-    private fun scanTree(treeUri: Uri, report: (LibraryScreenState) -> Unit) {
-        runCatching {
-            contentResolver.takePersistableUriPermission(
-                treeUri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION,
-            )
-        }.onFailure { error ->
-            val message = "Could not keep access to the selected folder: ${error.detail()}"
-            Log.e(TAG, message, error)
-            report(LibraryScreenState.NoFolder(message))
-            return
-        }
+    private fun restoreLibrary(): LibraryScreenState = runCatching {
+        session.restore()
+    }.getOrElse { error ->
+        val message = "Could not load the saved library: ${error.detail()}"
+        Log.e(TAG, message, error)
+        runCatching { session.stateAfterFailure(message) }
+            .getOrDefault(LibraryScreenState.NoFolder(message))
+    }
 
-        report(LibraryScreenState.Scanning())
+    private fun chooseTree(treeUri: Uri, report: (LibraryScreenState) -> Unit) {
+        runLibraryAction(report) { progress ->
+            session.chooseTree(treeUri.toString(), progress)
+        }
+    }
+
+    private fun rescan(report: (LibraryScreenState) -> Unit) {
+        runLibraryAction(report, session::rescan)
+    }
+
+    private fun runLibraryAction(
+        report: (LibraryScreenState) -> Unit,
+        action: ((LibraryScreenState.Scanning) -> Unit) -> LibraryScreenState,
+    ) {
         Thread {
             val outcome = runCatching {
-                library.setTreeUri(
-                    treeUri.toString(),
-                    AndroidSafSource(contentResolver, treeUri),
-                )
-                val summary = library.scan(
-                    UiProgress { progress ->
-                        runOnUiThread { report(progress) }
-                    },
-                )
-                val tracks = library.listTracks().map { track ->
-                    LibraryTrack(
-                        uri = track.uri,
-                        title = track.title,
-                        artist = track.artist,
-                        album = track.album,
-                        durationMs = track.durationMs,
-                    )
+                action { progress ->
+                    runOnUiThread { report(progress) }
                 }
-                Log.i(
-                    TAG,
-                    "Scan completed: tracks=${tracks.size} added=${summary.added} " +
-                        "updated=${summary.updated} errors=${summary.errors}",
-                )
-                LibraryScreenState.TrackList(tracks)
             }
-            runOnUiThread {
-                outcome.fold(
-                    onSuccess = report,
-                    onFailure = { error ->
-                        val message = "Could not scan the selected folder: ${error.detail()}"
-                        Log.e(TAG, message, error)
-                        report(LibraryScreenState.NoFolder(message))
-                    },
-                )
+            val state = outcome.getOrElse { error ->
+                val message = "Could not update the library: ${error.detail()}"
+                Log.e(TAG, message, error)
+                session.stateAfterFailure(message)
             }
+            runOnUiThread { report(state) }
         }.start()
     }
 
@@ -162,7 +159,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private class UiProgress(
+internal class UiProgress(
     private val report: (LibraryScreenState.Scanning) -> Unit,
 ) : ScanProgressListener {
     override fun onProgress(progress: ScanProgressUpdate) {
@@ -183,10 +180,12 @@ private class UiProgress(
 
 @Composable
 private fun LibraryScreen(
+    initialState: LibraryScreenState,
     chooseFolder: (Uri, (LibraryScreenState) -> Unit) -> Unit,
+    rescan: ((LibraryScreenState) -> Unit) -> Unit,
     playTrack: (LibraryTrack, (String) -> Unit) -> Unit,
 ) {
-    var state by remember { mutableStateOf<LibraryScreenState>(LibraryScreenState.NoFolder()) }
+    var state by remember { mutableStateOf(initialState) }
     val folderPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree(),
     ) { treeUri ->
@@ -200,10 +199,14 @@ private fun LibraryScreen(
             message = current.message,
             chooseFolder = { folderPicker.launch(null) },
         )
+        LibraryScreenState.TreeUnreadable -> TreeUnreadableScreen(
+            chooseFolder = { folderPicker.launch(null) },
+        )
         is LibraryScreenState.Scanning -> ScanningScreen(current)
         is LibraryScreenState.TrackList -> TrackListScreen(
             state = current,
             chooseFolder = { folderPicker.launch(null) },
+            rescan = { rescan { state = it } },
             playTrack = { track ->
                 state = current.copy(message = null)
                 playTrack(track) { message ->
@@ -214,6 +217,25 @@ private fun LibraryScreen(
                 }
             },
         )
+    }
+}
+
+@Composable
+private fun TreeUnreadableScreen(chooseFolder: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            "Reprise can no longer read the saved music folder. " +
+                "Access may have been revoked or the folder may have been removed.",
+        )
+        Button(onClick = chooseFolder) {
+            Text("Choose folder again")
+        }
     }
 }
 
@@ -263,6 +285,7 @@ private fun ScanningScreen(state: LibraryScreenState.Scanning) {
 private fun TrackListScreen(
     state: LibraryScreenState.TrackList,
     chooseFolder: () -> Unit,
+    rescan: () -> Unit,
     playTrack: (LibraryTrack) -> Unit,
 ) {
     Column(
@@ -271,11 +294,16 @@ private fun TrackListScreen(
             .padding(horizontal = 16.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Button(onClick = chooseFolder) {
-            Text("Choose another folder")
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Button(onClick = rescan) {
+                Text("Rescan")
+            }
+            Button(onClick = chooseFolder) {
+                Text("Choose another folder")
+            }
         }
         state.message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        if (state.tracks.isEmpty()) {
+        if (state.tracks.isEmpty() && state.message == null) {
             Text("No tracks found in this folder.")
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize()) {
