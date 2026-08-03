@@ -1,5 +1,54 @@
 package de.reprise.spike
 
+private const val LIBRARY_WINDOW_SIZE = 200L
+
+internal data class LibraryWindowRange(
+    val offset: Long,
+    val limit: Long,
+)
+
+internal data class LibraryWindow<T>(
+    val total: Long,
+    val rows: List<T>,
+    val hasMore: Boolean,
+) {
+    fun append(continuation: LibraryWindow<T>): LibraryWindow<T> = LibraryWindow(
+        total = continuation.total,
+        rows = rows + continuation.rows,
+        hasMore = continuation.hasMore,
+    )
+
+    fun nextRequest(lastRequestedOffset: Long?): LibraryWindowRange? {
+        val offset = rows.size.toLong()
+        if (!hasMore || offset >= total || offset == lastRequestedOffset) {
+            return null
+        }
+        return LibraryWindowRange(
+            offset = offset,
+            limit = minOf(LIBRARY_WINDOW_SIZE, total - offset),
+        )
+    }
+
+    companion object {
+        fun <T> empty(): LibraryWindow<T> = LibraryWindow(
+            total = 0,
+            rows = emptyList(),
+            hasMore = false,
+        )
+    }
+}
+
+internal fun firstLibraryWindow() = LibraryWindowRange(offset = 0, limit = LIBRARY_WINDOW_SIZE)
+
+internal fun LibraryWindow<*>.visibleCountLabel(singular: String, plural: String): String {
+    val noun = if (total == 1L) singular else plural
+    return if (rows.size.toLong() < total) {
+        "${rows.size} of $total $noun loaded"
+    } else {
+        "$total $noun"
+    }
+}
+
 internal sealed interface LibraryScreenState {
     data class NoFolder(val message: String? = null) : LibraryScreenState
 
@@ -11,9 +60,9 @@ internal sealed interface LibraryScreenState {
     ) : LibraryScreenState
 
     data class Browse(
-        val titles: List<LibraryTrack>,
-        val albums: List<LibraryAlbum>,
-        val artists: List<LibraryArtist>,
+        val titles: LibraryWindow<LibraryTrack>,
+        val albums: LibraryWindow<LibraryAlbum>,
+        val artists: LibraryWindow<LibraryArtist>,
         val message: String? = null,
     ) : LibraryScreenState
 }
@@ -44,10 +93,10 @@ internal data class LibraryArtist(
 
 internal data class AlbumTrackList(
     val album: LibraryAlbum,
-    val tracks: List<LibraryTrack>,
+    val tracks: LibraryWindow<LibraryTrack>,
 ) {
     fun playbackSelection(startIndex: Int): PlaybackSelection =
-        PlaybackSelection(tracks, startIndex)
+        PlaybackSelection(tracks.rows, startIndex)
 }
 
 internal data class PlaybackSelection(

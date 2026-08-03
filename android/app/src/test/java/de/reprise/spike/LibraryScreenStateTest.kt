@@ -144,9 +144,9 @@ private fun rememberedReadableTreeListsCatalogWithoutScanning() {
 
     check(
         state == LibraryScreenState.Browse(
-            titles = listOf(testTrack()),
-            albums = emptyList(),
-            artists = emptyList(),
+            titles = completeTestWindow(listOf(testTrack())),
+            albums = completeTestWindow(emptyList()),
+            artists = completeTestWindow(emptyList()),
         ),
     )
     check(port.configuredUris == listOf("content://provider/tree/Music"))
@@ -181,9 +181,9 @@ private fun choosingTreePersistsGrantAndPreferenceBeforeScanning() {
 
     check(
         state == LibraryScreenState.Browse(
-            titles = listOf(testTrack()),
-            albums = emptyList(),
-            artists = emptyList(),
+            titles = completeTestWindow(listOf(testTrack())),
+            albums = completeTestWindow(emptyList()),
+            artists = completeTestWindow(emptyList()),
         ),
     )
     check(
@@ -193,9 +193,9 @@ private fun choosingTreePersistsGrantAndPreferenceBeforeScanning() {
             "readable:content://provider/tree/Music",
             "configure:content://provider/tree/Music",
             "scan",
-            "search:",
-            "albums",
-            "artists",
+            "search::0:200",
+            "albums:0:200",
+            "artists:0:200",
         ),
     )
     check(reports.first() == LibraryScreenState.Scanning())
@@ -213,9 +213,9 @@ private fun rescanUsesRememberedTreeWithoutChoosingAgain() {
 
     check(
         state == LibraryScreenState.Browse(
-            titles = listOf(testTrack()),
-            albums = emptyList(),
-            artists = emptyList(),
+            titles = completeTestWindow(listOf(testTrack())),
+            albums = completeTestWindow(emptyList()),
+            artists = completeTestWindow(emptyList()),
         ),
     )
     check(
@@ -223,9 +223,9 @@ private fun rescanUsesRememberedTreeWithoutChoosingAgain() {
             "readable:content://provider/tree/Music",
             "configure:content://provider/tree/Music",
             "scan",
-            "search:",
-            "albums",
-            "artists",
+            "search::0:200",
+            "albums:0:200",
+            "artists:0:200",
         ),
     )
     check(reports.first() == LibraryScreenState.Scanning())
@@ -237,6 +237,12 @@ private fun testTrack() = LibraryTrack(
     artist = "Artist",
     album = "Album",
     durationMs = 1_000,
+)
+
+private fun <T> completeTestWindow(rows: List<T>) = LibraryWindow(
+    total = rows.size.toLong(),
+    rows = rows,
+    hasMore = false,
 )
 
 private class RecordingLibrarySessionPort(
@@ -276,22 +282,28 @@ private class RecordingLibrarySessionPort(
         scanCalls += 1
     }
 
-    override fun searchTracks(text: String): List<LibraryTrack> {
-        operations += "search:$text"
+    override fun searchTracks(
+        text: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryTrack> {
+        operations += "search:$text:${window.offset}:${window.limit}"
         listCalls += 1
-        return tracks
+        return completeTestWindow(tracks)
     }
 
-    override fun listAlbums(): List<LibraryAlbum> {
-        operations += "albums"
-        return emptyList()
+    override fun listAlbums(window: LibraryWindowRange): LibraryWindow<LibraryAlbum> {
+        operations += "albums:${window.offset}:${window.limit}"
+        return completeTestWindow(emptyList())
     }
 
-    override fun listArtists(): List<LibraryArtist> {
-        operations += "artists"
-        return emptyList()
+    override fun listArtists(window: LibraryWindowRange): LibraryWindow<LibraryArtist> {
+        operations += "artists:${window.offset}:${window.limit}"
+        return completeTestWindow(emptyList())
     }
 
-    override fun listAlbumTracks(album: String, albumArtist: String): List<LibraryTrack> =
-        emptyList()
+    override fun listAlbumTracks(
+        album: String,
+        albumArtist: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryTrack> = completeTestWindow(emptyList())
 }

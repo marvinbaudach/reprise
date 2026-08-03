@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Button
@@ -19,6 +20,7 @@ import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,8 +41,11 @@ internal fun BrowseScreen(
     playback: PlaybackUiState,
     chooseFolder: () -> Unit,
     rescan: () -> Unit,
-    searchTitles: (String) -> List<LibraryTrack>,
+    searchTitles: (String, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
+    listAlbums: (LibraryWindowRange) -> LibraryWindow<LibraryAlbum>,
+    listArtists: (LibraryWindowRange) -> LibraryWindow<LibraryArtist>,
     openAlbum: (LibraryAlbum) -> AlbumTrackList,
+    listAlbumTracks: (LibraryAlbum, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
     playTracks: (PlaybackSelection, (String) -> Unit) -> Unit,
     togglePause: () -> Unit,
     next: () -> Unit,
@@ -49,12 +54,63 @@ internal fun BrowseScreen(
     var selectedTab by remember { mutableStateOf(BrowseTab.TITLES) }
     var searchText by remember(state) { mutableStateOf("") }
     var visibleTitles by remember(state) { mutableStateOf(state.titles) }
+    var visibleAlbums by remember(state) { mutableStateOf(state.albums) }
+    var visibleArtists by remember(state) { mutableStateOf(state.artists) }
     var selectedAlbum by remember(state) { mutableStateOf<AlbumTrackList?>(null) }
     var browseError by remember(state) { mutableStateOf(state.message) }
+    var titlesRequestedOffset by remember(state, searchText) { mutableStateOf<Long?>(null) }
+    var albumsRequestedOffset by remember(state) { mutableStateOf<Long?>(null) }
+    var artistsRequestedOffset by remember(state) { mutableStateOf<Long?>(null) }
+    var albumRequestedOffset by remember(state, selectedAlbum?.album) { mutableStateOf<Long?>(null) }
 
     fun play(selection: PlaybackSelection) {
         browseError = null
         playTracks(selection) { message -> browseError = message }
+    }
+
+    fun loadMoreTitles() {
+        val request = visibleTitles.nextRequest(titlesRequestedOffset) ?: return
+        titlesRequestedOffset = request.offset
+        runCatching { searchTitles(searchText, request) }
+            .onSuccess { continuation ->
+                visibleTitles = visibleTitles.append(continuation)
+                browseError = null
+            }
+            .onFailure { error -> browseError = error.browseDetail("load more titles") }
+    }
+
+    fun loadMoreAlbums() {
+        val request = visibleAlbums.nextRequest(albumsRequestedOffset) ?: return
+        albumsRequestedOffset = request.offset
+        runCatching { listAlbums(request) }
+            .onSuccess { continuation ->
+                visibleAlbums = visibleAlbums.append(continuation)
+                browseError = null
+            }
+            .onFailure { error -> browseError = error.browseDetail("load more albums") }
+    }
+
+    fun loadMoreArtists() {
+        val request = visibleArtists.nextRequest(artistsRequestedOffset) ?: return
+        artistsRequestedOffset = request.offset
+        runCatching { listArtists(request) }
+            .onSuccess { continuation ->
+                visibleArtists = visibleArtists.append(continuation)
+                browseError = null
+            }
+            .onFailure { error -> browseError = error.browseDetail("load more artists") }
+    }
+
+    fun loadMoreAlbumTracks() {
+        val detail = selectedAlbum ?: return
+        val request = detail.tracks.nextRequest(albumRequestedOffset) ?: return
+        albumRequestedOffset = request.offset
+        runCatching { listAlbumTracks(detail.album, request) }
+            .onSuccess { continuation ->
+                selectedAlbum = detail.copy(tracks = detail.tracks.append(continuation))
+                browseError = null
+            }
+            .onFailure { error -> browseError = error.browseDetail("load more album tracks") }
     }
 
     Column(
@@ -93,40 +149,46 @@ internal fun BrowseScreen(
                 searchText = searchText,
                 search = { text ->
                     searchText = text
-                    runCatching { searchTitles(text) }
+                    runCatching { searchTitles(text, firstLibraryWindow()) }
                         .onSuccess { tracks ->
                             visibleTitles = tracks
+                            titlesRequestedOffset = null
                             browseError = null
                         }
                         .onFailure { error -> browseError = error.browseDetail("search") }
                 },
-                play = { index -> play(PlaybackSelection(visibleTitles, index)) },
+                play = { index -> play(PlaybackSelection(visibleTitles.rows, index)) },
+                loadMore = ::loadMoreTitles,
             )
             BrowseTab.ALBUMS -> AlbumsTab(
-                albums = state.albums,
+                albums = visibleAlbums,
                 selectedAlbum = selectedAlbum,
                 openAlbum = { album ->
                     runCatching { openAlbum(album) }
                         .onSuccess { detail ->
                             selectedAlbum = detail
+                            albumRequestedOffset = null
                             browseError = null
                         }
                         .onFailure { error -> browseError = error.browseDetail("open the album") }
                 },
                 closeAlbum = { selectedAlbum = null },
                 play = { index -> selectedAlbum?.let { play(it.playbackSelection(index)) } },
+                loadMoreAlbums = ::loadMoreAlbums,
+                loadMoreAlbumTracks = ::loadMoreAlbumTracks,
             )
-            BrowseTab.ARTISTS -> ArtistsTab(state.artists)
+            BrowseTab.ARTISTS -> ArtistsTab(visibleArtists, ::loadMoreArtists)
         }
     }
 }
 
 @Composable
 private fun TitlesTab(
-    tracks: List<LibraryTrack>,
+    tracks: LibraryWindow<LibraryTrack>,
     searchText: String,
     search: (String) -> Unit,
     play: (Int) -> Unit,
+    loadMore: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedTextField(
@@ -136,21 +198,24 @@ private fun TitlesTab(
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
-        if (tracks.isEmpty()) {
+        Text(tracks.visibleCountLabel("title", "titles"))
+        if (tracks.rows.isEmpty()) {
             Text(if (searchText.isEmpty()) "No tracks found in this folder." else "No matches.")
         } else {
-            TrackRows(tracks = tracks, play = play)
+            TrackRows(tracks = tracks, play = play, loadMore = loadMore)
         }
     }
 }
 
 @Composable
 private fun AlbumsTab(
-    albums: List<LibraryAlbum>,
+    albums: LibraryWindow<LibraryAlbum>,
     selectedAlbum: AlbumTrackList?,
     openAlbum: (LibraryAlbum) -> Unit,
     closeAlbum: () -> Unit,
     play: (Int) -> Unit,
+    loadMoreAlbums: () -> Unit,
+    loadMoreAlbumTracks: () -> Unit,
 ) {
     if (selectedAlbum != null) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -159,55 +224,72 @@ private fun AlbumsTab(
             }
             Text(selectedAlbum.album.title, style = MaterialTheme.typography.titleLarge)
             Text(selectedAlbum.album.artist)
-            if (selectedAlbum.tracks.isEmpty()) {
+            Text(selectedAlbum.tracks.visibleCountLabel("track", "tracks"))
+            if (selectedAlbum.tracks.rows.isEmpty()) {
                 Text("No tracks in this album.")
             } else {
-                TrackRows(tracks = selectedAlbum.tracks, play = play)
+                TrackRows(
+                    tracks = selectedAlbum.tracks,
+                    play = play,
+                    loadMore = loadMoreAlbumTracks,
+                )
             }
         }
         return
     }
 
-    if (albums.isEmpty()) {
+    if (albums.rows.isEmpty()) {
         Text("No albums found in this folder.")
         return
     }
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
-        items(albums, key = { album -> "${album.artist}\u0000${album.title}" }) { album ->
-            ListItem(
-                headlineContent = { Text(album.title) },
-                supportingContent = { Text(album.details()) },
-                trailingContent = { Text(formatDuration(album.totalDurationMs)) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { openAlbum(album) },
-            )
-            HorizontalDivider()
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(albums.visibleCountLabel("album", "albums"))
+        LazyColumn(modifier = Modifier.fillMaxSize()) {
+            items(albums.rows, key = { album -> "${album.artist}\u0000${album.title}" }) { album ->
+                ListItem(
+                    headlineContent = { Text(album.title) },
+                    supportingContent = { Text(album.details()) },
+                    trailingContent = { Text(formatDuration(album.totalDurationMs)) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { openAlbum(album) },
+                )
+                HorizontalDivider()
+            }
+            windowContinuation(albums, loadMoreAlbums)
         }
     }
 }
 
 @Composable
-private fun ArtistsTab(artists: List<LibraryArtist>) {
-    if (artists.isEmpty()) {
+private fun ArtistsTab(artists: LibraryWindow<LibraryArtist>, loadMore: () -> Unit) {
+    if (artists.rows.isEmpty()) {
         Text("No artists found in this folder.")
         return
     }
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
-        items(artists, key = LibraryArtist::name) { artist ->
-            ListItem(
-                headlineContent = { Text(artist.name) },
-                supportingContent = { Text(artist.details()) },
-            )
-            HorizontalDivider()
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(artists.visibleCountLabel("artist", "artists"))
+        LazyColumn(modifier = Modifier.fillMaxSize()) {
+            items(artists.rows, key = LibraryArtist::name) { artist ->
+                ListItem(
+                    headlineContent = { Text(artist.name) },
+                    supportingContent = { Text(artist.details()) },
+                )
+                HorizontalDivider()
+            }
+            windowContinuation(artists, loadMore)
         }
     }
 }
 
 @Composable
-private fun TrackRows(tracks: List<LibraryTrack>, play: (Int) -> Unit) {
+private fun TrackRows(
+    tracks: LibraryWindow<LibraryTrack>,
+    play: (Int) -> Unit,
+    loadMore: () -> Unit,
+) {
     LazyColumn(modifier = Modifier.fillMaxSize()) {
-        itemsIndexed(tracks, key = { _, track -> track.uri }) { index, track ->
+        itemsIndexed(tracks.rows, key = { _, track -> track.uri }) { index, track ->
             ListItem(
                 headlineContent = { Text(track.title) },
                 supportingContent = { Text(track.details()) },
@@ -218,6 +300,22 @@ private fun TrackRows(tracks: List<LibraryTrack>, play: (Int) -> Unit) {
             )
             HorizontalDivider()
         }
+        windowContinuation(tracks, loadMore)
+    }
+}
+
+private fun LazyListScope.windowContinuation(
+    window: LibraryWindow<*>,
+    loadMore: () -> Unit,
+) {
+    if (!window.hasMore) {
+        return
+    }
+    item(key = "load-window-${window.rows.size}") {
+        LaunchedEffect(window.rows.size) {
+            loadMore()
+        }
+        Text("Loading…")
     }
 }
 
