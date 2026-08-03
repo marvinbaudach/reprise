@@ -2,7 +2,7 @@
 slug: p1a-welle7-device-sync-copy
 worktree: /home/marvin/Projects/reprise-p1a-welle7-device-sync-copy
 branch: feature/p1a-welle7-device-sync-copy
-phase: planned
+phase: refactored
 codex_session:
 created: 2026-08-02
 ---
@@ -50,6 +50,16 @@ und etwas Besseres ergeben:
 
 Der Modulkopf sagt: „Every function here is a plain projection over
 already-computed state; none of it touches a widget."
+
+**Ausführungskorrektur (2026-08-03):** Die Tabelle hat „Aufrufstellen" als
+zwei konsumierende Dateien gezählt, nicht als einzelne Aufrufe, und
+`DeviceView` fälschlich den Core-Typen zugerechnet. `DeviceView` sowie
+`PreparationRunState` gehören zu GNOME; ersterer trägt sogar ein `gio::Icon`,
+obwohl die Projektionsfunktionen es nie lesen. Genau dieser Messfehler machte
+den ersten Rewrite-Commit notwendig: Die drei zu breiten `DeviceView`-Eingänge
+wurden auf Core-Zustand und schmale Werte reduziert, der GTK-eigene
+Vorbereitungslauf wird im Adapter in ein reines Fortschritts-DTO übersetzt.
+Die 301 Zeilen waren produktive `cloc`-Zeilen; physisch hatte die Datei 333.
 
 ## Die zwei Entwurfsaufgaben
 

@@ -480,3 +480,40 @@ fn format_bytes(bytes: u64) -> String {
         format!("{} B", bytes as u64)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use reprise_core::device_sync::{PlannedSyncPhase, SyncStep};
+
+    use super::*;
+
+    #[test]
+    fn transfer_progress_exposes_named_fields_and_an_unrendered_message() {
+        let progress = transfer_progress_copy(
+            &PlannedSyncPhase::Syncing {
+                step: SyncStep::Copying,
+                done: 1,
+                total: 2,
+                current_track: "Immortal — Lorna Shore".into(),
+                bytes_done: 50,
+                bytes_total: 100,
+            },
+            2 * 1_024 * 1_024,
+        )
+        .unwrap();
+
+        assert_eq!(
+            progress,
+            ProgressCopy {
+                title: Message {
+                    id: "Copying · {done} of {total}",
+                    plural: None,
+                    args: vec![("done", "1".into()), ("total", "2".into())],
+                },
+                subtitle: ProgressSubtitle::CurrentTrack("Immortal — Lorna Shore".into()),
+                speed: ProgressSpeed::BytesPerSecond(2 * 1_024 * 1_024),
+                fraction: 0.5,
+            }
+        );
+    }
+}
