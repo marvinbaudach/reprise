@@ -113,6 +113,15 @@ fn rating_display(rating: i32, hovered: bool, preview: i32) -> RatingDisplay {
     }
 }
 
+fn rating_update(current: i32, requested: i32) -> Option<i32> {
+    let requested = requested.clamp(RATING_MIN, RATING_MAX);
+    (requested != current).then_some(requested)
+}
+
+fn track_binding_changed(previous: Option<i64>, current: Option<i64>) -> bool {
+    previous != current
+}
+
 /// Which star (1-based) a pointer at `x` in a `width`-wide row of `STAR_COUNT`
 /// equal-width stars is over. Clamped to `1..=STAR_COUNT`; `0` only when
 /// `width <= 0` (unallocated).
@@ -146,6 +155,7 @@ mod imp {
         pub stars_box: RefCell<Option<gtk4::Box>>,
         pub dash: RefCell<Option<gtk4::Label>>,
         pub rating: Cell<i32>,
+        pub bound_track_id: Cell<Option<i64>>,
         /// Whether the pointer is currently over the cell (drives reveal).
         pub hovered: Cell<bool>,
         /// Star (1-based) the pointer is over during hover, `0` = none.
@@ -294,8 +304,18 @@ impl RatingWidget {
     /// `track_list.rs` to show a freshly-bound row's stored rating. Clamps
     /// out-of-range input rather than trusting stale/corrupt DB data.
     pub fn set_rating(&self, rating: i32) {
-        self.imp().rating.set(rating.clamp(RATING_MIN, RATING_MAX));
+        let Some(rating) = rating_update(self.imp().rating.get(), rating) else {
+            return;
+        };
+        self.imp().rating.set(rating);
         self.refresh();
+    }
+
+    /// Remembers which track owns this recycled cell and reports whether its
+    /// per-cell marker registries need replacing.
+    pub(in crate::ui) fn set_bound_track(&self, track_id: Option<i64>) -> bool {
+        let previous = self.imp().bound_track_id.replace(track_id);
+        track_binding_changed(previous, track_id)
     }
 
     /// Replaces the click callback. `track_list.rs` calls this on every rebind
@@ -408,6 +428,21 @@ mod tests {
         let display = rating_display(3, false, 0);
         assert!(display.show_stars);
         assert_eq!(display.threshold, 3);
+    }
+
+    #[test]
+    fn unchanged_rating_is_a_noop_display_update() {
+        assert_eq!(rating_update(3, 3), None);
+        assert_eq!(rating_update(5, 99), None);
+        assert_eq!(rating_update(2, 3), Some(3));
+    }
+
+    #[test]
+    fn same_track_binding_keeps_cell_registries() {
+        assert!(!track_binding_changed(Some(42), Some(42)));
+        assert!(track_binding_changed(Some(42), Some(43)));
+        assert!(track_binding_changed(Some(42), None));
+        assert!(track_binding_changed(None, Some(42)));
     }
 
     #[test]
