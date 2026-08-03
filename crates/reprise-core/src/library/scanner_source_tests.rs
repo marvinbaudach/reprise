@@ -75,6 +75,10 @@ impl ScriptedSource {
 }
 
 impl super::source::LibrarySource for ScriptedSource {
+    fn rhythmbox_import_capability(&self) -> super::source::RhythmboxImportCapability {
+        super::source::RhythmboxImportCapability::Unsupported
+    }
+
     fn residence_token(&self, at: &std::path::Path) -> Option<i64> {
         super::source::UnixLibrarySource.residence_token(at)
     }

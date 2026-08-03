@@ -1,7 +1,6 @@
 //! Read-only import of per-track statistics from Rhythmbox's `rhythmdb.xml`.
 
 use std::collections::HashSet;
-use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
@@ -11,7 +10,8 @@ use rusqlite::OptionalExtension;
 
 use crate::db::Db;
 use crate::library::source::{
-    LibraryLinkMode, LibraryPathPresence, LibrarySource, UnixLibrarySource,
+    LibraryLinkMode, LibraryPathPresence, LibrarySource, RhythmboxImportCapability,
+    UnixLibrarySource,
 };
 use thiserror::Error;
 
@@ -88,6 +88,8 @@ pub struct RhythmboxPlaylistSummary {
 
 #[derive(Debug, Error)]
 pub enum RhythmboxImportError {
+    #[error("this library source does not support Rhythmbox import")]
+    UnsupportedSource,
     #[error("could not read Rhythmbox database: {0}")]
     Io(#[from] std::io::Error),
     #[error("invalid Rhythmbox XML: {0}")]
@@ -183,7 +185,15 @@ fn field_for(name: &[u8]) -> Option<Field> {
 }
 
 pub fn parse_rhythmdb(path: &Path) -> Result<Vec<RhythmboxTrackStats>, RhythmboxImportError> {
-    let file = File::open(path)?;
+    parse_rhythmdb_with_source(&UnixLibrarySource, path)
+}
+
+pub fn parse_rhythmdb_with_source(
+    source: &dyn LibrarySource,
+    path: &Path,
+) -> Result<Vec<RhythmboxTrackStats>, RhythmboxImportError> {
+    require_rhythmbox_import(source)?;
+    let file = source.open_read(path)?;
     let mut reader = Reader::from_reader(BufReader::new(file));
     reader.config_mut().trim_text(true);
     reader.config_mut().check_end_names = true;
@@ -412,12 +422,16 @@ pub fn prescan_rhythmdb_with_source(
     db: &Db,
     library_root: Option<&str>,
 ) -> Result<RhythmboxPrescanResult, RhythmboxImportError> {
+    require_rhythmbox_import(source)?;
     let conn = db.conn();
-    let last_modified = std::fs::metadata(rhythmdb_path)
-        .and_then(|m| m.modified())
-        .ok();
+    let last_modified = match source.probe(rhythmdb_path, LibraryLinkMode::Follow) {
+        LibraryPathPresence::Present(metadata) if metadata.is_file => metadata.modified,
+        LibraryPathPresence::Present(_)
+        | LibraryPathPresence::Absent
+        | LibraryPathPresence::Unknown => None,
+    };
 
-    let file = File::open(rhythmdb_path)?;
+    let file = source.open_read(rhythmdb_path)?;
     let mut reader = Reader::from_reader(BufReader::new(file));
     reader.config_mut().trim_text(true);
     reader.config_mut().check_end_names = true;
@@ -543,8 +557,13 @@ pub fn prescan_rhythmdb_with_source(
         buffer.clear();
     }
 
-    if playlists_path.is_file() {
-        if let Ok(playlists) = parse_playlists(playlists_path) {
+    let playlists_may_be_file = match source.probe(playlists_path, LibraryLinkMode::Follow) {
+        LibraryPathPresence::Present(metadata) => metadata.is_file,
+        LibraryPathPresence::Absent => false,
+        LibraryPathPresence::Unknown => true,
+    };
+    if playlists_may_be_file {
+        if let Ok(playlists) = parse_playlists_with_source(source, playlists_path) {
             result.playlist_count = playlists.len();
             result.playlist_track_count = playlists.iter().map(|p| p.paths.len()).sum();
         }
@@ -554,7 +573,15 @@ pub fn prescan_rhythmdb_with_source(
 }
 
 pub fn parse_playlists(path: &Path) -> Result<Vec<RhythmboxPlaylist>, RhythmboxImportError> {
-    let file = File::open(path)?;
+    parse_playlists_with_source(&UnixLibrarySource, path)
+}
+
+pub fn parse_playlists_with_source(
+    source: &dyn LibrarySource,
+    path: &Path,
+) -> Result<Vec<RhythmboxPlaylist>, RhythmboxImportError> {
+    require_rhythmbox_import(source)?;
+    let file = source.open_read(path)?;
     let mut reader = Reader::from_reader(BufReader::new(file));
     reader.config_mut().trim_text(true);
     reader.config_mut().check_end_names = true;
@@ -638,6 +665,13 @@ pub fn parse_playlists(path: &Path) -> Result<Vec<RhythmboxPlaylist>, RhythmboxI
             _ => {}
         }
         buffer.clear();
+    }
+}
+
+fn require_rhythmbox_import(source: &dyn LibrarySource) -> Result<(), RhythmboxImportError> {
+    match source.rhythmbox_import_capability() {
+        RhythmboxImportCapability::Supported => Ok(()),
+        RhythmboxImportCapability::Unsupported => Err(RhythmboxImportError::UnsupportedSource),
     }
 }
 
