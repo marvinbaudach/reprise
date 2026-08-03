@@ -2912,9 +2912,13 @@ STYLE-1).
   **The transport controls stay still.** The bars around the playhead
   swell with the bass over a window wide enough to read as one wave, and
   their growth is quantised to even device pixels so no bar edge ever
-  lands on a half-pixel. The swell, the playhead light and the played-bar
-  gradient all stand down while the user is dragging the playhead, during
-  build-up and during a track crossfade. The **playhead** carries a glow,
+  lands on a half-pixel. That swell and the playhead light stand down
+  together while the user is dragging the playhead, during build-up and
+  during a track crossfade — one predicate governs both, because light
+  under the finger is in the way while you are aiming. The played-bar
+  gradient **stays** through all three, and through MOT-7: it is a
+  colouring that depends only on position, not an animation.
+  The **playhead** carries a glow,
   and it is the only light outside the Visualizer view that answers a
   single hit: it is small, it already sits at a position that moves, and
   it marks the present moment in the track. Everything larger breathes
