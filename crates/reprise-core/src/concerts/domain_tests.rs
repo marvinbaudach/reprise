@@ -3,8 +3,8 @@ use rusqlite::params;
 
 use super::{
     artist_due, config, count_unseen, count_upcoming, geocode_url, haversine_km, jitter_seconds,
-    mark_scope_seen, parse_geocode, query_events, query_unseen, refresh_due, ConcertFilter,
-    DateHorizon,
+    mark_scope_seen, parse_geocode, query_events, query_scope_with_seen, query_unseen, refresh_due,
+    ConcertFilter, DateHorizon,
 };
 
 fn conn() -> crate::db::Db {
@@ -324,4 +324,34 @@ fn seen_cycle_marks_only_the_current_filter_scope() {
     assert_eq!(count_unseen(&conn, &filter, None, today).unwrap(), 0);
     filter.country = None;
     assert_eq!(count_unseen(&conn, &filter, None, today).unwrap(), 1);
+}
+
+#[test]
+fn scope_query_keeps_each_filtered_events_seen_stamp() {
+    let conn = conn();
+    insert_event(&conn, 1, "2026-08-01", "DE", Some(48.14), false);
+    insert_event(&conn, 2, "2026-08-02", "CH", Some(47.38), false);
+    insert_event(&conn, 3, "2026-08-03", "DE", Some(48.15), false);
+    conn.conn()
+        .execute("UPDATE concert_events SET seen_at = 400 WHERE id = 1", [])
+        .unwrap();
+    let filter = ConcertFilter {
+        country: Some("DE".into()),
+        ..ConcertFilter::default()
+    };
+
+    let rows = query_scope_with_seen(
+        &conn,
+        &filter,
+        None,
+        NaiveDate::from_ymd_opt(2026, 7, 25).unwrap(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        rows.iter()
+            .map(|(row, seen_at)| (row.id, *seen_at))
+            .collect::<Vec<_>>(),
+        [(1, Some(400)), (3, None)]
+    );
 }

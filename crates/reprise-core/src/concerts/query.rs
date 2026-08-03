@@ -119,6 +119,21 @@ pub fn query_unseen(
         .collect())
 }
 
+/// Reads every event in the current scope with its visit stamp, without
+/// capping it, for [`crate::updates::delta_batch`].
+pub fn query_scope_with_seen(
+    db: &crate::db::Db,
+    filter: &ConcertFilter,
+    location: Option<&AppLocation>,
+    today: NaiveDate,
+) -> Result<Vec<(ConcertRow, Option<i64>)>, rusqlite::Error> {
+    let conn = db.conn();
+    Ok(filtered_events(conn, filter, location, today)?
+        .into_iter()
+        .map(|event| (event.row, event.seen_at))
+        .collect())
+}
+
 pub fn count_unseen(
     db: &crate::db::Db,
     filter: &ConcertFilter,
