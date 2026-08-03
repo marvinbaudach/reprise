@@ -5,9 +5,6 @@ use std::rc::Rc;
 
 use gtk4::{cairo, prelude::*};
 
-/// Optical correction: a right-pointing triangle's mass sits left of its
-/// geometric centre, so a geometrically centred one reads as right-heavy.
-const PLAY_OPTICAL_SHIFT: f64 = 0.06;
 const PLAY_WIDTH: f64 = 0.50;
 const PLAY_TOP: f64 = 0.24;
 const PLAY_BOTTOM: f64 = 0.76;
@@ -17,10 +14,23 @@ const PAUSE_TOP: f64 = 0.30;
 const PAUSE_BOTTOM: f64 = 0.70;
 const GLYPH_SIZE: i32 = 24;
 
+/// Horizontal extent of the play triangle, placed so its **centroid** — not
+/// its bounding box — sits on the button's centre.
+///
+/// The triangle has its base on the left and its apex on the right, so two
+/// thirds of its area lie in the left half and its centroid falls one third of
+/// the way across. A bounding-box-centred triangle therefore reads as sitting
+/// too far left, and the correction moves it right.
+///
+/// This shipped inverted: the old comment had the premise right ("mass sits
+/// left of its geometric centre") and the conclusion backwards ("reads as
+/// right-heavy"), and the code subtracted its shift — pushing the triangle
+/// further left, which is what made the play button look off centre inside a
+/// button the layout had centred to the pixel. Written as the centroid rule
+/// there is no sign left to get wrong.
 pub(super) fn play_ink_bounds(size: f64) -> (f64, f64) {
     let width = PLAY_WIDTH * size;
-    let shift = PLAY_OPTICAL_SHIFT * width;
-    let x0 = (size - width) / 2.0 - shift;
+    let x0 = size / 2.0 - width / 3.0;
     (x0, x0 + width)
 }
 
@@ -128,15 +138,19 @@ mod tests {
         let (x0, x1) = pause_ink_bounds(24.0);
         assert!(((x0 + x1) / 2.0 - 12.0).abs() < 1e-9, "pause is off centre");
 
-        // A right-pointing triangle has its mass on the left and its tip
-        // running out into nothing on the right, so geometric centring reads
-        // as right-heavy. Shift it left by 6 % of its width.
+        // The play triangle is centred on its centroid, which sits one third
+        // of the way from base to apex — so its bounding box lands right of
+        // centre by a sixth of its width, not left of it.
         let (x0, x1) = play_ink_bounds(24.0);
-        let centre = (x0 + x1) / 2.0;
         let width = x1 - x0;
+        let centroid = x0 + width / 3.0;
         assert!(
-            (centre - (12.0 - 0.06 * width)).abs() < 1e-6,
-            "play is not optically centred: centre {centre}, width {width}"
+            (centroid - 12.0).abs() < 1e-9,
+            "play is not optically centred: centroid {centroid}, width {width}"
+        );
+        assert!(
+            x0 > (24.0 - width) / 2.0,
+            "the correction moved the triangle left again: x0 {x0}"
         );
     }
 }
