@@ -19,7 +19,7 @@ use libadwaita::prelude::AnimationExt;
 
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::motion;
-use crate::ui::player_bar_layout::{self, PlayerBarWidgets, VOLUME_MAX, VOLUME_MIN};
+use crate::ui::player_bar_layout::{self, ring_alpha, PlayerBarWidgets, VOLUME_MAX, VOLUME_MIN};
 use crate::ui::strings;
 use crate::ui::waveform_seek::WaveformSeek;
 use reprise_core::format::{format_duration, format_remaining};
@@ -85,6 +85,7 @@ pub struct PlayerBar {
     pub(in crate::ui) shuffle_button: gtk4::ToggleButton,
     pub(in crate::ui) prev_button: gtk4::Button,
     play_pause_button: gtk4::Button,
+    play_ring: gtk4::Box,
     pub(in crate::ui) next_button: gtk4::Button,
     pub(in crate::ui) repeat_button: gtk4::ToggleButton,
     pub(in crate::ui) play_next_episode_button: gtk4::Button,
@@ -149,6 +150,7 @@ impl PlayerBar {
             shuffle_button,
             prev_button,
             play_pause_button,
+            play_ring,
             next_button,
             repeat_button,
             play_next_episode_button,
@@ -227,6 +229,7 @@ impl PlayerBar {
             shuffle_button,
             prev_button,
             play_pause_button,
+            play_ring,
             next_button,
             repeat_button,
             play_next_episode_button,
@@ -412,6 +415,11 @@ impl PlayerBar {
         self.play_pause_button.set_tooltip_text(Some(&tooltip));
         self.playback_state.set(state);
         self.waveform.set_paused(!is_playing);
+        if state != PlaybackState::Playing {
+            // No spectrum arrives outside playback; without this the ring and
+            // the lens would freeze on the last frame that did (AC-24).
+            self.set_bass_impact(0.0);
+        }
         self.refresh_sensitivity();
         if state == PlaybackState::Stopped {
             self.set_position(0, 0);
@@ -420,6 +428,19 @@ impl PlayerBar {
             self.animate_play_pulse();
         }
         self.animate_play_icon_change(new_icon);
+    }
+
+    /// The live bass reading, fanned out to the two reactive layers the bar
+    /// owns. Called at the spectrum rate (~86 Hz); each consumer decides for
+    /// itself whether the change is worth a redraw.
+    pub fn set_bass_impact(&self, impact: f64) {
+        let impact = if self.playback_state.get() == PlaybackState::Playing {
+            crate::ui::motion::reactive_amplitude(impact)
+        } else {
+            0.0
+        };
+        self.play_ring.set_opacity(ring_alpha(impact));
+        self.waveform.set_bass_impact(impact);
     }
 
     fn animate_play_pulse(&self) {

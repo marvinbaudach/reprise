@@ -451,6 +451,12 @@ impl WaveformSeek {
         animation.play();
     }
 
+    /// Task 7 wires the shared bass reading before Task 8 gives the full-size
+    /// waveform its local playhead lens. Kept intentionally inert for this
+    /// one ordered commit and replaced by the real state update in Task 8.
+    #[allow(dead_code)]
+    pub(in crate::ui) fn set_bass_impact(&self, _impact: f64) {}
+
     /// Instantly set the playback position (0..1).  Prefer `set_fraction_smooth`
     /// when updating from a sub-second position tick so movement is continuous.
     #[allow(dead_code)]

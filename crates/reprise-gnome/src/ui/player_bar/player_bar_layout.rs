@@ -36,6 +36,19 @@ const ZONE_SPACING: i32 = 8;
 
 const COVER_CSS_CLASS: &str = "player-bar-cover";
 const PLAY_CSS_CLASS: &str = "player-bar-play";
+const PLAY_RING_CSS_CLASS: &str = "player-bar-play-ring";
+/// Gap between the button edge and the ring, and the ring's own stroke.
+const PLAY_RING_GAP: &str = "2px";
+const PLAY_RING_WIDTH: &str = "1.5px";
+/// 44 px button + 2 x (2 px gap + 1.5 px stroke), rounded up.
+const PLAY_RING_SIZE: i32 = 51;
+const RING_REST_ALPHA: f64 = 0.12;
+const RING_ALPHA_PER_IMPACT: f64 = 0.30;
+
+pub(in crate::ui) fn ring_alpha(impact: f64) -> f64 {
+    RING_REST_ALPHA + RING_ALPHA_PER_IMPACT * impact.clamp(0.0, 1.0)
+}
+
 const SURFACE_CSS_CLASS: &str = "player-bar-surface";
 /// CSS class on the transport button row, targeted by the hover-highlight rules.
 const TRANSPORT_ROW_CSS_CLASS: &str = "player-bar-transport";
@@ -61,6 +74,7 @@ pub(in crate::ui) struct PlayerBarWidgets {
     pub(in crate::ui) shuffle_button: gtk4::ToggleButton,
     pub(in crate::ui) prev_button: gtk4::Button,
     pub(in crate::ui) play_pause_button: gtk4::Button,
+    pub(in crate::ui) play_ring: gtk4::Box,
     pub(in crate::ui) next_button: gtk4::Button,
     pub(in crate::ui) repeat_button: gtk4::ToggleButton,
     pub(in crate::ui) play_next_episode_button: gtk4::Button,
@@ -149,6 +163,23 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     play_pause_button.add_css_class("circular");
     play_pause_button.add_css_class(PLAY_CSS_CLASS);
     buttons::arm(&play_pause_button, buttons::PRIMARY_CLASS);
+    // A ring outside the button, never a scale on the button itself: a
+    // breathing button shifts the hit area under the cursor. Its own element
+    // and its own property, so the button's shadow tiers and its outline focus
+    // ring are untouched and keep precedence (AC-24, BTN-1, BTN-3).
+    let play_ring = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+    play_ring.add_css_class(PLAY_RING_CSS_CLASS);
+    play_ring.set_can_target(false);
+    play_ring.set_can_focus(false);
+    play_ring.set_size_request(PLAY_RING_SIZE, PLAY_RING_SIZE);
+    play_ring.set_halign(gtk4::Align::Center);
+    play_ring.set_valign(gtk4::Align::Center);
+    play_ring.set_opacity(RING_REST_ALPHA);
+    let play_slot = gtk4::Overlay::new();
+    play_slot.set_child(Some(&play_ring));
+    play_slot.add_overlay(&play_pause_button);
+    play_slot.set_halign(gtk4::Align::Center);
+    play_slot.set_valign(gtk4::Align::Center);
     let next_button = transport_button(ICON_NEXT, strings::TOOLTIP_NEXT);
     next_button.set_sensitive(false);
     let repeat_button = transport_toggle(ICON_REPEAT_ALL, strings::REPEAT);
@@ -163,7 +194,7 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     let transport_row = gtk4::Box::new(gtk4::Orientation::Horizontal, ZONE_SPACING);
     transport_row.append(&shuffle_button);
     transport_row.append(&prev_button);
-    transport_row.append(&play_pause_button);
+    transport_row.append(&play_slot);
     transport_row.append(&next_button);
     transport_row.append(&repeat_button);
     transport_row.append(&play_next_episode_button);
@@ -316,6 +347,7 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
         shuffle_button,
         prev_button,
         play_pause_button,
+        play_ring,
         next_button,
         repeat_button,
         play_next_episode_button,
@@ -349,6 +381,10 @@ pub(in crate::ui) fn css() -> String {
                        0 0 26px 6px alpha(@reprise_player_accent, 0.35); \
            transition: box-shadow {TRANSITION}, background-color {TRANSITION}, \
                        transform {TRANSITION}; }}\n\
+         .{PLAY_RING_CSS_CLASS} {{ \
+           border: {PLAY_RING_WIDTH} solid @reprise_player_accent; \
+           border-radius: 50%; \
+           margin: 0; padding: {PLAY_RING_GAP}; }}\n\
          .{PLAY_CSS_CLASS}:hover {{ \
            box-shadow: inset 0 2px 1px alpha(#ffffff, 0.42), \
                        inset 0 -4px 3px alpha(#000000, 0.26), \
@@ -435,7 +471,30 @@ mod tests {
 
     use gtk4::prelude::*;
 
-    use super::build;
+    use super::{build, ring_alpha, PLAY_CSS_CLASS, PLAY_RING_CSS_CLASS};
+
+    #[test]
+    fn ac_24_ring_alpha_spans_the_agreed_range() {
+        assert!((ring_alpha(0.0) - 0.12).abs() < 1e-9);
+        assert!((ring_alpha(0.35) - 0.225).abs() < 1e-9);
+        assert!((ring_alpha(1.0) - 0.42).abs() < 1e-9);
+        assert!((ring_alpha(-1.0) - 0.12).abs() < 1e-9);
+        assert!((ring_alpha(9.0) - 0.42).abs() < 1e-9);
+    }
+
+    #[test]
+    fn ac_24_ring_is_its_own_layer_and_leaves_the_button_alone() {
+        let css = super::css();
+        // Its own element with its own property: the button's box-shadow tiers
+        // (BTN-3) and the outline focus ring (BTN-1) stay exactly as they are,
+        // and the ring sits outside the hit area rather than resizing it.
+        assert!(css.contains(&format!(".{PLAY_RING_CSS_CLASS}")));
+        assert!(css.contains("border-radius: 50%"));
+        assert!(!css.contains(&format!(".{PLAY_RING_CSS_CLASS} {{ outline")));
+        // The button never scales with the music — a breathing button moves the
+        // hit area under the cursor.
+        assert!(!css.contains(&format!(".{PLAY_CSS_CLASS}.reactive")));
+    }
 
     fn wait_for_layout() {
         let main_loop = gtk4::glib::MainLoop::new(None, false);
