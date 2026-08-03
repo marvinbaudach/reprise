@@ -223,7 +223,7 @@ mod tests {
         // and the playhead lens only exists while this module's spectrum tap runs.
         // Shipping it off would ship all three effects dead; the module toggle is
         // deliberately the one off-switch for the whole reactive layer (AC-24).
-        assert!(SONG_VISUALS_MODULE.default_enabled);
+        const { assert!(SONG_VISUALS_MODULE.default_enabled) };
     }
 
     #[test]
