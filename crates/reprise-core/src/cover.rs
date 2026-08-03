@@ -331,6 +331,10 @@ mod tests {
             None
         }
 
+        fn mount_point(&self, _at: &std::path::Path) -> Option<std::path::PathBuf> {
+            None
+        }
+
         fn open_read(
             &self,
             at: &std::path::Path,

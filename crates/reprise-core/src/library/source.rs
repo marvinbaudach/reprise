@@ -219,6 +219,12 @@ pub trait LibrarySource: Send + Sync {
     /// `at`, or `None` when this source cannot provide one.
     fn residence_token(&self, at: &Path) -> Option<i64>;
 
+    /// The grouping boundary `at` belongs to — "what disappears together when
+    /// this goes away", used to group missing tracks by the volume they shared.
+    /// `None` when the source has no such notion: a DocumentsProvider tree has
+    /// no mount point, and inventing one would group unrelated items.
+    fn mount_point(&self, at: &Path) -> Option<PathBuf>;
+
     /// Opens `at` for reading without exposing the source's concrete storage
     /// handle. Failure is explicit: a source that cannot provide readable,
     /// seekable content must not compile with this contract unanswered.
@@ -318,6 +324,10 @@ pub struct UnixLibrarySource;
 impl LibrarySource for UnixLibrarySource {
     fn residence_token(&self, at: &Path) -> Option<i64> {
         nearest_existing_ancestor_dev(at).map(|device| device as i64)
+    }
+
+    fn mount_point(&self, at: &Path) -> Option<PathBuf> {
+        super::mounts::mount_point_of(at)
     }
 
     fn open_read(&self, at: &Path) -> io::Result<LibraryReadHandle> {
@@ -586,6 +596,10 @@ mod tests {
             self.provider_tree_id?.strip_prefix("tree-")?.parse().ok()
         }
 
+        fn mount_point(&self, _at: &Path) -> Option<std::path::PathBuf> {
+            None
+        }
+
         fn open_read(&self, _at: &Path) -> std::io::Result<LibraryReadHandle> {
             Err(std::io::Error::new(
                 std::io::ErrorKind::Unsupported,
@@ -686,6 +700,10 @@ mod tests {
     impl LibrarySource for DocumentTreeTraversalSource {
         fn residence_token(&self, _at: &Path) -> Option<i64> {
             Some(41)
+        }
+
+        fn mount_point(&self, _at: &Path) -> Option<std::path::PathBuf> {
+            None
         }
 
         fn open_read(&self, _at: &Path) -> std::io::Result<LibraryReadHandle> {

@@ -122,6 +122,10 @@ impl LibrarySource for BridgedSource {
             .unwrap_or_default()
     }
 
+    fn mount_point(&self, _at: &Path) -> Option<std::path::PathBuf> {
+        None
+    }
+
     fn open_read(&self, at: &Path) -> io::Result<LibraryReadHandle> {
         let raw_fd = self
             .source

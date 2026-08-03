@@ -51,6 +51,10 @@ impl crate::library::source::LibrarySource for VecLibrarySource {
         None
     }
 
+    fn mount_point(&self, _at: &Path) -> Option<PathBuf> {
+        None
+    }
+
     fn open_read(&self, at: &Path) -> std::io::Result<crate::library::source::LibraryReadHandle> {
         let bytes = self
             .content

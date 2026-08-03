@@ -1,5 +1,5 @@
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::source::{
     LibraryDirectoryEntry, LibraryLinkMode, LibraryPathPresence, LibraryReadHandle, LibrarySource,
@@ -11,6 +11,10 @@ pub(crate) struct UnknownProbeSource;
 
 impl LibrarySource for UnknownProbeSource {
     fn residence_token(&self, _at: &Path) -> Option<i64> {
+        None
+    }
+
+    fn mount_point(&self, _at: &Path) -> Option<PathBuf> {
         None
     }
 
