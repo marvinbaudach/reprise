@@ -1,7 +1,7 @@
-//! Title-column factory: playing marker, cover-light wash, and title badges.
+//! Title-column factory: playing marker and title badges.
 //!
-//! Extracted as one cohesive cell factory when the wash layer made the shared
-//! column module exceed the project's 800-line code-file cap.
+//! Extracted as one cohesive cell factory to keep the shared column module
+//! below the project's 800-line code-file cap.
 
 use std::rc::Rc;
 
@@ -11,7 +11,6 @@ use reprise_core::models::Track;
 use reprise_core::queries::QueueItemMetadata;
 
 use super::now_playing_marker;
-use super::row_wash;
 use super::track_list_columns::{
     ai_badge_visible, apply_missing_title, apply_now_playing_item, build_playing_marker,
     clear_missing_title, toggle_class, NOW_PLAYING_CLASS, NOW_PLAYING_TITLE_CLASS,
@@ -38,12 +37,6 @@ pub(in crate::ui) fn append_title_column(
         };
         let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
         track_list_row_interaction::expand_to_cell(&row);
-        let wash = row_wash::build();
-        track_list_row_interaction::expand_to_cell(&wash);
-        let cell = gtk4::Overlay::new();
-        cell.set_child(Some(&wash));
-        cell.add_overlay(&row);
-        track_list_row_interaction::expand_to_cell(&cell);
         let eq = build_playing_marker();
         eq.set_visible(false);
         let label = gtk4::Label::new(None);
@@ -64,8 +57,8 @@ pub(in crate::ui) fn append_title_column(
             &column_view_for_setup,
         );
         track_list_dnd::wire_row_dnd(&row, item, &shared);
-        item.set_child(Some(&cell));
-        list_density::inherit(&column_view_for_setup, &cell);
+        item.set_child(Some(&row));
+        list_density::inherit(&column_view_for_setup, &row);
     });
 
     factory.connect_bind(move |_, obj| {
@@ -73,25 +66,11 @@ pub(in crate::ui) fn append_title_column(
             tracing::warn!("title column bind: object is not a ListItem");
             return;
         };
-        let Some(cell) = item
-            .child()
-            .and_then(|widget| widget.downcast::<gtk4::Overlay>().ok())
-        else {
-            tracing::warn!("title column bind: list item child is not an Overlay");
-            return;
-        };
-        let Some(wash) = cell
+        let Some(row) = item
             .child()
             .and_then(|widget| widget.downcast::<gtk4::Box>().ok())
         else {
-            tracing::warn!("title column bind: title cell has no wash layer");
-            return;
-        };
-        let Some(row) = wash
-            .next_sibling()
-            .and_then(|widget| widget.downcast::<gtk4::Box>().ok())
-        else {
-            tracing::warn!("title column bind: title cell has no content row");
+            tracing::warn!("title column bind: title cell is not a Box");
             return;
         };
         let Some(eq) = row.first_child() else {
@@ -140,32 +119,16 @@ pub(in crate::ui) fn append_title_column(
             ai_badge.set_visible(track.is_some_and(|track| ai_badge_visible(track.is_ai)));
         }
         let track_id = queue_item_presentation::rating_track_id(&metadata);
-        row_wash::apply(&wash, playing, item.is_selected(), &shared_for_bind);
-        let item_weak = glib::WeakRef::new();
-        item_weak.set(Some(item));
-        row_wash::register_cell(&shared_for_bind, item, {
-            let wash = wash.clone();
-            let item_weak = item_weak.clone();
-            move |shared| {
-                let playing = track_id
-                    .is_some_and(|track_id| shared.playing_track_id.get() == Some(track_id));
-                let selected = item_weak.upgrade().is_some_and(|item| item.is_selected());
-                row_wash::apply(&wash, playing, selected, shared);
-            }
-        });
         now_playing_marker::register_cell(&shared_for_bind, item, {
             let row = row.clone();
             let eq = eq.clone();
             let label = label.clone();
-            let wash = wash.clone();
             move |shared| {
                 let playing = track_id
                     .is_some_and(|track_id| shared.playing_track_id.get() == Some(track_id));
                 toggle_class(&row, NOW_PLAYING_CLASS, playing);
                 eq.set_visible(playing);
                 toggle_class(&label, NOW_PLAYING_TITLE_CLASS, playing);
-                let selected = item_weak.upgrade().is_some_and(|item| item.is_selected());
-                row_wash::apply(&wash, playing, selected, shared);
             }
         });
     });
@@ -173,7 +136,6 @@ pub(in crate::ui) fn append_title_column(
     factory.connect_unbind(move |_, obj| {
         if let Some(item) = obj.downcast_ref::<gtk4::ListItem>() {
             now_playing_marker::unregister_cell(&shared_for_unbind, item);
-            row_wash::unregister_cell(&shared_for_unbind, item);
         }
     });
 

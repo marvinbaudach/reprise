@@ -106,8 +106,6 @@ struct State {
     desaturation_progress: f64, // 0.0 = full chroma, 1.0 = paused chroma
     #[allow(dead_code)] // Consumed by the PlayerBar/Compact wiring in MOT-5 Phase B.
     desaturation_target: f64,
-    /// Live bass reading, 0..1. Presentation only; the stored peaks never move.
-    bass_kick: f64,
     min_bar_height: f64,
     max_bar_height: f64,
     /// Fixed bar count for the mini player (frame 1e); `None` = width-derived.
@@ -223,7 +221,6 @@ impl WaveformSeek {
             crossfade_start_us: 0,
             desaturation_progress: 0.0,
             desaturation_target: 0.0,
-            bass_kick: 0.0,
             min_bar_height: min_h,
             max_bar_height: max_h,
             bar_count_override,
@@ -452,33 +449,6 @@ impl WaveformSeek {
         let animation = motion::timed(&self.area, from, target, motion::STANDARD, animation_target);
         motion::replace_animation(&self.desaturation_animation, animation.clone());
         animation.play();
-    }
-
-    /// Feeds the playhead lens. The mini player is excluded outright: at 46
-    /// bars the lens covers too much of the strip to read as local.
-    pub(in crate::ui) fn set_bass_kick(&self, kick: f64) {
-        let kick = motion::reactive_amplitude(kick);
-        let changed = {
-            let mut state = self.state.borrow_mut();
-            let kick = if state.fill_bars { 0.0 } else { kick };
-            // ~200 bars of Cairo per redraw: a change too small to see is not
-            // worth a frame. Keep the last drawn value so sub-threshold steps
-            // accumulate instead of starving the waveform of redraws.
-            if (state.bass_kick - kick).abs() < 0.01 {
-                false
-            } else {
-                state.bass_kick = kick;
-                true
-            }
-        };
-        if changed {
-            self.area.queue_draw();
-        }
-    }
-
-    #[cfg(test)]
-    pub(in crate::ui) fn bass_kick_for_test(&self) -> f64 {
-        self.state.borrow().bass_kick
     }
 
     /// Instantly set the playback position (0..1).  Prefer `set_fraction_smooth`

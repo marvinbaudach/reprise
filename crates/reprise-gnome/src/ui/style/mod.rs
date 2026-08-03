@@ -63,7 +63,6 @@ fn app_css() -> String {
         super::track_content::css(),
         super::track_list_header_style::css(),
         super::track_list_row_interaction::css(),
-        super::track_list::row_wash::css(),
         super::stats_css::css(),
         super::concerts::css::css(),
         super::releases::css::css(),

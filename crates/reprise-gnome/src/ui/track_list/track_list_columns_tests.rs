@@ -3,20 +3,15 @@ use reprise_core::models::MissingReason;
 use super::*;
 
 #[test]
-fn ac_24_row_wash_rests_low_and_never_reaches_the_artist_column() {
-    use crate::ui::track_list::row_wash::{css, row_wash_alpha};
-    assert!((row_wash_alpha(0.0, 0.0) - 0.08).abs() < 1e-9);
-    assert!((row_wash_alpha(0.0, 1.0) - 0.16).abs() < 1e-9);
-    assert!((row_wash_alpha(1.0, 1.0) - 0.32).abs() < 1e-9);
-    // The gradient has to die before the artist column so no text contrast
-    // is touched.
-    assert!(css().contains("58%"));
-}
-
-#[test]
-fn ac_24_row_wash_never_reaches_for_items_changed() {
-    let source = include_str!("row_wash.rs");
-    assert!(!source.contains("items_changed"));
+fn ac_24_the_running_row_reads_neither_bass_signal() {
+    // The EQ bars and the row colour are the whole marker (MOT-5, NAV-10a).
+    for source in [
+        include_str!("track_list_columns.rs"),
+        include_str!("track_list_title_column.rs"),
+    ] {
+        assert!(!source.contains("row_wash"));
+        assert!(!source.contains("kick"));
+    }
 }
 
 #[test]

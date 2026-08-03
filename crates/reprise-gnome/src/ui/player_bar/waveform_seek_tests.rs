@@ -15,63 +15,15 @@ impl WaveformSeek {
 }
 
 #[test]
-fn ac_24_lens_peaks_at_the_playhead_and_dies_within_ten_bars() {
-    use super::render::playhead_lens;
-    // 200 bars, playhead at the exact middle -> bar 100 is the centre.
-    assert!((playhead_lens(100, 200, 0.5) - 1.0).abs() < 1e-9);
-    // Symmetric around it.
-    assert!((playhead_lens(96, 200, 0.5) - playhead_lens(104, 200, 0.5)).abs() < 1e-9);
-    // Monotonically falling away from the centre.
-    assert!(playhead_lens(102, 200, 0.5) < playhead_lens(101, 200, 0.5));
-    // Hard zero past ten bars, so the far end of the waveform is untouched.
-    assert_eq!(playhead_lens(111, 200, 0.5), 0.0);
-    assert_eq!(playhead_lens(0, 200, 0.5), 0.0);
-    assert_eq!(playhead_lens(0, 0, 0.5), 0.0);
-}
-
-#[test]
-fn ac_24_lens_never_grows_a_bar_past_the_widget() {
-    use super::render::lensed_bar_height;
-    let max = 26.0;
-    // A bar already at the ceiling stays at the ceiling under a full kick.
-    assert!((lensed_bar_height(max, 1.0, 1.0, max) - max).abs() < 1e-9);
-    // A short bar grows by the agreed gain and snaps to a whole pixel.
-    assert!((lensed_bar_height(10.0, 1.0, 1.0, max) - 14.0).abs() < 1e-9);
-    // A smaller kick still grows only to its nearest whole pixel.
-    assert!((lensed_bar_height(10.0, 0.35, 1.0, max) - 11.0).abs() < 1e-9);
-    // No reading, no change.
-    assert!((lensed_bar_height(10.0, 0.0, 1.0, max) - 10.0).abs() < 1e-9);
-    // Away from the playhead, no change either.
-    assert!((lensed_bar_height(10.0, 1.0, 0.0, max) - 10.0).abs() < 1e-9);
-}
-
-#[test]
-fn ac_24_lens_snaps_to_whole_pixels_instead_of_shimmering() {
-    use super::render::lensed_bar_height;
-    let max = 26.0;
-    // A growth under half a pixel is not drawn at all: at 3 px bars that is
-    // rounding noise, and every bar crosses its boundary at a different
-    // moment, which reads as a shimmer rather than a swell.
-    assert!((lensed_bar_height(10.0, 0.05, 1.0, max) - 10.0).abs() < 1e-9);
-    // Above that it grows, and lands on a whole pixel.
-    let grown = lensed_bar_height(10.0, 1.0, 1.0, max);
-    assert!(
-        (grown - grown.round()).abs() < 1e-9,
-        "not pixel-aligned: {grown}"
-    );
-    assert!(grown > 10.0);
-    // The ceiling still holds.
-    assert!((lensed_bar_height(max, 1.0, 1.0, max) - max).abs() < 1e-9);
-}
-
-#[test]
-fn ac_24_playhead_glow_grows_with_the_kick() {
-    use super::render::{playhead_glow_alpha, playhead_glow_radius};
-    assert!((playhead_glow_radius(0.0) - 3.0).abs() < 1e-9);
-    assert!((playhead_glow_radius(1.0) - 25.0).abs() < 1e-9);
-    assert!((playhead_glow_alpha(0.0) - 0.35).abs() < 1e-9);
-    assert!((playhead_glow_alpha(1.0) - 0.80).abs() < 1e-9);
-    assert!((playhead_glow_radius(9.0) - 25.0).abs() < 1e-9);
+fn ac_24_the_waveform_reads_neither_bass_signal() {
+    // The seek bar is a surface for reading a position and for hitting it.
+    // Movement there is in the way, and the geometry of a 3 px bar cannot
+    // carry it without shimmering (round 2 proved both).
+    let source = include_str!("waveform_seek_render.rs");
+    assert!(!source.contains("kick"));
+    assert!(!source.contains("pressure"));
+    let state = include_str!("waveform_seek.rs");
+    assert!(!state.contains("bass_kick"));
 }
 
 #[test]
@@ -87,22 +39,6 @@ fn ac_24_played_bars_brighten_toward_the_playhead() {
         assert!((0.55..=1.0).contains(&a), "out of range at {index}: {a}");
     }
     assert_eq!(played_alpha(0, 0, 0.5), 1.0);
-}
-
-#[test]
-#[ignore = "requires a display; run via xvfb-run"]
-fn ac_24_mini_player_never_takes_the_lens() {
-    if gtk4::init().is_err() {
-        return;
-    }
-    // 46 bars: the lens sigma would cover a quarter of the whole strip.
-    let mini = WaveformSeek::new_mini();
-    mini.set_bass_kick(1.0);
-    assert_eq!(mini.bass_kick_for_test(), 0.0);
-
-    let full = WaveformSeek::new();
-    full.set_bass_kick(1.0);
-    assert!(full.bass_kick_for_test() > 0.0);
 }
 
 #[test]
@@ -287,7 +223,6 @@ fn ensure_resampled_clears_display_peaks_when_raw_empty() {
         crossfade_start_us: 0,
         desaturation_progress: 0.0,
         desaturation_target: 0.0,
-        bass_kick: 0.0,
         min_bar_height: MIN_BAR_HEIGHT,
         max_bar_height: MAX_BAR_HEIGHT,
         bar_count_override: None,
@@ -317,7 +252,6 @@ fn ensure_resampled_populates_on_width_change() {
         crossfade_start_us: 0,
         desaturation_progress: 0.0,
         desaturation_target: 0.0,
-        bass_kick: 0.0,
         min_bar_height: MIN_BAR_HEIGHT,
         max_bar_height: MAX_BAR_HEIGHT,
         bar_count_override: None,

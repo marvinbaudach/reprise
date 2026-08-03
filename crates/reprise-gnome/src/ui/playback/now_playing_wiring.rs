@@ -198,13 +198,6 @@ impl PlayerController {
         *self.song_visual_spectrum_changed.borrow_mut() = Some(Rc::new(callback));
     }
 
-    pub(in crate::ui) fn set_on_track_list_bass_changed(
-        &self,
-        callback: impl Fn(f32, f32) + 'static,
-    ) {
-        *self.track_list_bass_changed.borrow_mut() = Some(Rc::new(callback));
-    }
-
     pub(in crate::ui) fn set_song_visuals_enabled(
         &self,
         enabled: bool,
@@ -219,10 +212,6 @@ impl PlayerController {
     /// discipline as the other `sync_*`: one place feeds the bar.
     pub(in crate::ui) fn sync_bass(&self, kick: f32, pressure: f32) {
         self.bar.set_bass(f64::from(kick), f64::from(pressure));
-        let callback = self.track_list_bass_changed.borrow().clone();
-        if let Some(callback) = callback {
-            callback(kick, pressure);
-        }
     }
 
     /// Reverts the cover-derived accent to the theme fallback AND bumps the

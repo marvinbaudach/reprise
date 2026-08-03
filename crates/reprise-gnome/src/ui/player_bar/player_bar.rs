@@ -286,8 +286,8 @@ impl PlayerBar {
         self.playback_state.set(state);
         self.waveform.set_paused(!is_playing);
         if state != PlaybackState::Playing {
-            // No spectrum arrives outside playback; without this the ring and
-            // the lens would freeze on the last frame that did (AC-24).
+            // No spectrum arrives outside playback; without this the reactive
+            // layers would freeze on the last frame that did (AC-24).
             self.set_bass(0.0, 0.0);
         }
         self.refresh_sensitivity();
@@ -313,7 +313,6 @@ impl PlayerBar {
             (0.0, 0.0)
         };
         self.play_ring.set_opacity(ring_alpha(kick, pressure));
-        self.waveform.set_bass_kick(kick);
         self.cover_glow.set_bass(kick, pressure);
     }
 

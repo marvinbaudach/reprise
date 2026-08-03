@@ -78,24 +78,6 @@ pub(super) fn draw(
     // replaces the old partially-filled boundary bar (the played/unplayed
     // switch is a hard per-bucket cut instead).
     let playhead_x = (state.fraction * w).clamp(0.5, (w - 0.5).max(0.5));
-    if !state.fill_bars && state.bass_kick > 0.0 {
-        let radius = playhead_glow_radius(state.bass_kick);
-        let alpha = playhead_glow_alpha(state.bass_kick);
-        let center_y = h / 2.0;
-        let glow = gtk4::cairo::RadialGradient::new(
-            playhead_x, center_y, 0.0, playhead_x, center_y, radius,
-        );
-        glow.add_color_stop_rgba(0.0, r, g, b, alpha);
-        glow.add_color_stop_rgba(1.0, r, g, b, 0.0);
-        cr.save().ok();
-        cr.rectangle(0.0, 0.0, w, h);
-        cr.clip();
-        if cr.set_source(&glow).is_ok() {
-            cr.arc(playhead_x, center_y, radius, 0.0, std::f64::consts::TAU);
-            let _ = cr.fill();
-        }
-        cr.restore().ok();
-    }
     cr.set_source_rgba(r, g, b, PLAYHEAD_ALPHA);
     cr.rectangle(
         playhead_x - 0.5,
@@ -113,27 +95,7 @@ struct BarDrawStyle {
     opacity: f64,
 }
 
-/// Playhead lens: how strongly a bar at `index` participates, `1.0` directly
-/// under the playhead and `0.0` beyond ten bars. Pure presentation — the stored
-/// waveform is the truth and `shape_display_peaks` is never touched.
-const LENS_SIGMA_SQUARED: f64 = 30.0;
-const LENS_CUTOFF_BARS: f64 = 10.0;
-const LENS_GAIN: f64 = 0.35;
-/// Below half a device pixel a bar must not move at all — see the test.
-const LENS_MIN_GROWTH_PX: f64 = 0.5;
-const GLOW_MIN_RADIUS: f64 = 3.0;
-const GLOW_RADIUS_PER_KICK: f64 = 22.0;
-const GLOW_MIN_ALPHA: f64 = 0.35;
-const GLOW_ALPHA_PER_KICK: f64 = 0.45;
 const PLAYED_MIN_ALPHA: f64 = 0.55;
-
-pub(super) fn playhead_glow_radius(kick: f64) -> f64 {
-    GLOW_MIN_RADIUS + GLOW_RADIUS_PER_KICK * kick.clamp(0.0, 1.0)
-}
-
-pub(super) fn playhead_glow_alpha(kick: f64) -> f64 {
-    GLOW_MIN_ALPHA + GLOW_ALPHA_PER_KICK * kick.clamp(0.0, 1.0)
-}
 
 /// Brightness of an already-played bar: dim at the start of the track, full at
 /// the playhead. Purely positional, so it holds still within a frame.
@@ -144,28 +106,6 @@ pub(super) fn played_alpha(index: usize, count: usize, fraction: f64) -> f64 {
     let head = fraction * count as f64;
     let distance = ((head - index as f64) / count as f64).clamp(0.0, 1.0);
     PLAYED_MIN_ALPHA + (1.0 - PLAYED_MIN_ALPHA) * (1.0 - distance)
-}
-
-pub(super) fn playhead_lens(index: usize, count: usize, fraction: f64) -> f64 {
-    if count == 0 {
-        return 0.0;
-    }
-    let distance = index as f64 - fraction * count as f64;
-    if distance.abs() > LENS_CUTOFF_BARS {
-        return 0.0;
-    }
-    (-(distance * distance) / LENS_SIGMA_SQUARED).exp()
-}
-
-/// Applies the lens to one bar. The ceiling is mandatory: without it a bar near
-/// the playhead grows straight out of the widget.
-pub(super) fn lensed_bar_height(bar_h: f64, kick: f64, lens: f64, max_bar_height: f64) -> f64 {
-    let grown = bar_h * (1.0 + LENS_GAIN * kick * lens);
-    if grown - bar_h < LENS_MIN_GROWTH_PX {
-        bar_h
-    } else {
-        grown.min(max_bar_height).round()
-    }
 }
 
 fn draw_bars(
@@ -212,26 +152,6 @@ fn draw_bars(
                 (state.min_bar_height + magnitude * (state.max_bar_height - state.min_bar_height))
                     * stagger
             }
-        };
-        // The lens is presentation only, and it stays out of three places:
-        // silence dots (a silence that pulses is a lie), the mini player
-        // (46 bars — the sigma would cover a quarter of the strip), and the
-        // build-up/crossfade windows, where two animations would fight.
-        let bar_h = match bar {
-            DisplayBar::Level(_)
-                if state.bass_kick > 0.0
-                    && !state.fill_bars
-                    && style.build_progress >= 1.0
-                    && state.crossfade_progress >= 1.0 =>
-            {
-                lensed_bar_height(
-                    bar_h,
-                    state.bass_kick,
-                    playhead_lens(index, count, state.fraction),
-                    state.max_bar_height,
-                )
-            }
-            _ => bar_h,
         };
         // Guard against zero-height bars during early animation frames.
         if bar_h < 0.5 {

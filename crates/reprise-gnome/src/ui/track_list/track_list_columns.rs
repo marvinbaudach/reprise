@@ -313,7 +313,7 @@ pub(in crate::ui) fn append_column(
 /// slow load started for track A can complete after the cell has already
 /// been recycled to show track B — without a guard, that late result would
 /// paint A's cover into B's row. Each cell gets its own generation counter,
-/// bumped on every bind before the load is kicked off; `CoverLoader::
+/// bumped on every bind before the load starts; `CoverLoader::
 /// load_into` compares the token it was given against the counter's *current*
 /// value when the async result lands and drops it if they no longer match
 /// (see that function's doc comment).
@@ -404,7 +404,7 @@ pub(in crate::ui) fn append_cover_column(
                 .entry(key)
                 .or_insert_with(|| Rc::new(Cell::new(0u64)))
                 .clone();
-            // Bump before kicking off the load: this is the token the async
+            // Bump before starting the load: this is the token the async
             // result must still match when it lands (see the doc comment
             // above) — a stale-in-flight load for whatever track this cell
             // previously showed is dropped by `load_into`'s own check.
