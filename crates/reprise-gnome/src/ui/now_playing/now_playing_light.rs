@@ -5,9 +5,8 @@
 //! hands them to the cover lift, the backdrop, the shimmer and the readout —
 //! having two such places is how a duplicated predicate drifts.
 
-use super::panel_state::{PanelTab, VISUAL_PAGE};
+use super::panel_state::PanelTab;
 use super::surface::NowPlayingPanel;
-use crate::ui::cover_lift::Source as CoverLiftSource;
 use crate::ui::swell::Swell;
 
 impl NowPlayingPanel {
@@ -15,10 +14,8 @@ impl NowPlayingPanel {
         if frame_time_us <= 0 {
             *self.swell.borrow_mut() = Swell::default();
             self.swell_pressure.set(0.0);
-            self.cover_kick.set(0.0);
             self.swell_last_frame_us.set(0);
-            self.widgets.cover_lift.feed(0.0, 0.0, 0.0);
-            self.widgets.cover_lift.set_frame_time(0);
+            self.widgets.cover_lift.feed(0.0, 0.0);
             self.widgets.bloom.set_light(0.0, 0.0);
             self.widgets.shimmer.set_light(0.0, 0.0);
             self.widgets.shimmer.set_frame_time(0);
@@ -42,10 +39,7 @@ impl NowPlayingPanel {
                 swell.value_without_motion()
             }
         };
-        self.widgets
-            .cover_lift
-            .feed(value, self.cover_kick.get(), pressure);
-        self.widgets.cover_lift.set_frame_time(frame_time_us);
+        self.widgets.cover_lift.feed(value, pressure);
         self.widgets.bloom.set_light(pressure, value);
         self.widgets.shimmer.set_light(pressure, value);
         self.widgets.shimmer.set_frame_time(frame_time_us);
@@ -62,25 +56,23 @@ impl NowPlayingPanel {
     }
 
     /// Recomputes the combined pin rather than letting the reasons race each
-    /// other. Any one of them holds the bloom at rest and hides the shimmer;
-    /// only when all clear may the current playback state take over.
+    /// other. Either reason holds the bloom at rest and hides the shimmer;
+    /// only when both clear may the current playback state take over.
     ///
     /// Panel visibility is one of them, for the same reason
     /// `sync_visual_activity` tracks it: the panel starts closed (NPP-12), and
     /// a pinned bloom runs no tick — without this the paused breath would keep
     /// redrawing a widget nobody can see, on most installs, forever.
+    ///
+    /// **The Visual tab is deliberately not a reason.** It used to be: the tab
+    /// held the backdrop at rest, hid the turning disc and switched the cover's
+    /// shadow to the beat, on the theory that two light languages in one panel
+    /// fight each other. Looked at in use, the plain treatment — blurred cover,
+    /// moving — was simply nicer there too, and the beat-driven shadow read as
+    /// the cover twitching. The head of the panel now looks the same whichever
+    /// tab is open.
     pub(super) fn sync_bloom_activity(&self) {
-        let visualizer_visible = self.song_visuals_enabled.get()
-            && self.widgets.column.is_visible()
-            && self.widgets.tab_stack.visible_child_name().as_deref() == Some(VISUAL_PAGE);
-        self.widgets.cover_lift.set_source(if visualizer_visible {
-            CoverLiftSource::Kick
-        } else {
-            CoverLiftSource::Swell
-        });
-        let pinned = !self.song_visuals_enabled.get()
-            || !self.widgets.column.is_visible()
-            || visualizer_visible;
+        let pinned = !self.song_visuals_enabled.get() || !self.widgets.column.is_visible();
         self.widgets.bloom.set_pinned(pinned);
         self.widgets.shimmer.set_pinned(pinned);
         if !pinned {

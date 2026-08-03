@@ -333,7 +333,6 @@ pub(in crate::ui) struct NowPlayingPanel {
     pub(super) song_visuals_enabled: Cell<bool>,
     pub(super) swell: RefCell<Swell>,
     pub(super) swell_pressure: Cell<f64>,
-    pub(super) cover_kick: Cell<f64>,
     pub(super) swell_last_frame_us: Cell<i64>,
     on_album_reveal: crate::ui::link_activation::ActivationSlot,
     on_artist_reveal: crate::ui::link_activation::ActivationSlot,
@@ -373,7 +372,6 @@ impl NowPlayingPanel {
             song_visuals_enabled: Cell::new(song_visuals_enabled),
             swell: RefCell::new(Swell::default()),
             swell_pressure: Cell::new(0.0),
-            cover_kick: Cell::new(0.0),
             swell_last_frame_us: Cell::new(0),
             on_album_reveal: Rc::new(RefCell::new(None)),
             on_artist_reveal: Rc::new(RefCell::new(None)),
@@ -504,7 +502,6 @@ impl NowPlayingPanel {
         self.playback_state.set(state);
         if state != PlaybackState::Playing {
             self.swell_pressure.set(0.0);
-            self.cover_kick.set(0.0);
         }
         self.widgets.visualizer.set_playback_state(state);
         self.sync_bloom_activity();
@@ -519,13 +516,7 @@ impl NowPlayingPanel {
             } else {
                 0.0
             };
-            let kick = if playing {
-                crate::ui::motion::reactive_amplitude(f64::from(bass.kick))
-            } else {
-                0.0
-            };
             self.swell_pressure.set(pressure);
-            self.cover_kick.set(kick);
             self.advance_swell(gtk4::glib::monotonic_time());
             self.widgets.visualizer.set_spectrum(frame);
         }

@@ -2905,9 +2905,10 @@ STYLE-1).
   `impact`, which answers how loud a whole track is rather than what its
   beat is doing: on a limited master it never leaves its resting value.
   `pressure` carries the backdrop's base brightness and `swell` the slow
-  movement of every large surface. While the Visualizer
-  is visible, the panel cover cross-fades over MOT-1's 400 ms Ambient
-  window from `swell` to `kick`; the player-bar cover stays on `swell`.
+  movement of every large surface. **Nothing outside the Visualizer's own
+  canvas reads `kick` at all.** The panel cover used to take the beat while
+  that tab was open — round 5's one exception — and it read as the cover
+  twitching under its own shadow.
   **The transport controls stay still, and so does the whole seek bar.**
   Nothing in the waveform reads a bass signal — not the bar heights, not
   the playhead. Reactive light was tried there twice and rejected twice:
@@ -2964,9 +2965,14 @@ STYLE-1).
   decays instead of freezing at the last reading. The "Song Visuals"
   plugin is the deliberate off-switch for the whole layer. With
   `gtk-enable-animations=false` (MOT-7), the brightness remains at the
-  bare slow base while the free-running breath stops. While the Visual
-  tab is open the backdrop holds its rest value, the turning disc is dark,
-  and the panel cover takes the beat: that tab carries its own light language.
+  bare slow base while the free-running breath stops. **The head of the
+  panel looks the same whichever tab is open.** The Visual tab used to hold
+  the backdrop at rest and darken the turning disc, on the theory that two
+  light languages in one panel fight each other; in use the plain treatment
+  was simply better there too. The backdrop and the disc rest only when the
+  "Song Visuals" plugin is off or the panel is closed — the second because a
+  pinned backdrop runs no tick, and without it the paused breath would keep
+  redrawing a widget nobody can see.
 
 ## Y. Library Doctor / Tag Cleanup
 

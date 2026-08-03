@@ -1,16 +1,16 @@
-//! Cached near/far cover shadows driven by slow swell or the Visualizer beat.
+//! Cached near/far cover shadows and the one-pixel edge seam, both driven by
+//! the slow swell.
 //!
 //! The blur geometry is CSS-static: changing a `box-shadow` blur every frame
 //! invalidates GTK's cached shadow node, while changing opacity keeps both
 //! nodes reusable.
 
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
-use libadwaita::prelude::AnimationExt;
 
-use crate::ui::{motion, style::tokens::RADIUS_SURFACE};
+use crate::ui::style::tokens::RADIUS_SURFACE;
 
 const LIFT_Y_REST: f64 = 0.048;
 const LIFT_Y_PER_SWELL: f64 = 0.048;
@@ -107,57 +107,18 @@ pub(in crate::ui) fn css() -> String {
     )
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(in crate::ui) enum Source {
-    #[default]
-    Swell,
-    Kick,
-}
-
-#[derive(Clone, Copy, Debug)]
-struct SourceBlend {
-    source: Source,
-    from: f64,
+/// The two readings every layer here runs on.
+///
+/// **There is deliberately no `kick`.** The cover used to switch to the beat
+/// while the Visualizer view was open — round 5's one exception — and on screen
+/// that read as the cover twitching under its own shadow. It was rejected for
+/// the same reason the waveform's lens and playhead glow were: a hard transient
+/// under a large, still object reads as a defect, not as life. Both readings
+/// here move over seconds.
+#[derive(Clone, Copy, Debug, Default)]
+struct Readings {
     swell: f64,
-    kick: f64,
     pressure: f64,
-    progress: f64,
-}
-
-impl Default for SourceBlend {
-    fn default() -> Self {
-        Self {
-            source: Source::Swell,
-            from: 0.0,
-            swell: 0.0,
-            kick: 0.0,
-            pressure: 0.0,
-            progress: 1.0,
-        }
-    }
-}
-
-impl SourceBlend {
-    fn target(self) -> f64 {
-        match self.source {
-            Source::Swell => self.swell,
-            Source::Kick => self.kick,
-        }
-    }
-
-    fn reading(self) -> f64 {
-        self.from + (self.target() - self.from) * self.progress.clamp(0.0, 1.0)
-    }
-
-    fn set_source(&mut self, source: Source) -> bool {
-        if self.source == source {
-            return false;
-        }
-        self.from = self.reading();
-        self.source = source;
-        self.progress = 0.0;
-        true
-    }
 }
 
 #[derive(Clone)]
@@ -171,9 +132,7 @@ struct CoverLiftWidgets {
 #[derive(Clone)]
 pub(in crate::ui) struct CoverLift {
     widgets: Option<CoverLiftWidgets>,
-    blend: Rc<RefCell<SourceBlend>>,
-    frame_time_us: Rc<Cell<i64>>,
-    source_animation: Rc<RefCell<Option<libadwaita::TimedAnimation>>>,
+    readings: Rc<Cell<Readings>>,
 }
 
 impl CoverLift {
@@ -216,9 +175,7 @@ impl CoverLift {
         };
         Self {
             widgets: Some(widgets),
-            blend: Rc::new(RefCell::new(SourceBlend::default())),
-            frame_time_us: Rc::new(Cell::new(0)),
-            source_animation: Rc::new(RefCell::new(None)),
+            readings: Rc::new(Cell::new(Readings::default())),
         }
     }
 
@@ -230,64 +187,26 @@ impl CoverLift {
             .root
     }
 
+    /// The player bar's entry point: it derives no pressure of its own and its
+    /// small cover carries no edge seam, so the bed stays where it was.
     pub(in crate::ui) fn set_swell(&self, swell: f64) {
-        let (kick, pressure) = {
-            let blend = self.blend.borrow();
-            (blend.kick, blend.pressure)
-        };
-        self.feed(swell, kick, pressure);
-    }
-
-    pub(in crate::ui) fn set_frame_time(&self, frame_time_us: i64) {
-        let frame_time_us = if motion::animations_enabled() {
-            frame_time_us
-        } else {
-            0
-        };
-        self.frame_time_us.set(frame_time_us);
-    }
-
-    pub(in crate::ui) fn set_source(&self, source: Source) {
-        if self.blend.borrow().source == source {
-            return;
-        }
-        let previous = self.source_animation.borrow_mut().take();
-        if let Some(previous) = previous {
-            previous.pause();
-        }
-        let changed = self.blend.borrow_mut().set_source(source);
-        debug_assert!(changed);
+        let mut readings = self.readings.get();
+        readings.swell = swell.clamp(0.0, 1.0);
+        self.readings.set(readings);
         self.apply_reading();
-
-        let Some(widgets) = &self.widgets else {
-            return;
-        };
-        let blend = self.blend.clone();
-        let widgets_for_target = widgets.clone();
-        let target = libadwaita::CallbackAnimationTarget::new(move |progress| {
-            blend.borrow_mut().progress = progress;
-            let readings = *blend.borrow();
-            apply_reading_to_widgets(&widgets_for_target, readings);
-        });
-        let animation = motion::timed(&widgets.root, 0.0, 1.0, motion::AMBIENT, target);
-        *self.source_animation.borrow_mut() = Some(animation.clone());
-        animation.play();
     }
 
-    pub(in crate::ui) fn feed(&self, swell: f64, kick: f64, pressure: f64) {
-        {
-            let mut blend = self.blend.borrow_mut();
-            blend.swell = swell.clamp(0.0, 1.0);
-            blend.kick = kick.clamp(0.0, 1.0);
-            blend.pressure = pressure.clamp(0.0, 1.0);
-        }
+    pub(in crate::ui) fn feed(&self, swell: f64, pressure: f64) {
+        self.readings.set(Readings {
+            swell: swell.clamp(0.0, 1.0),
+            pressure: pressure.clamp(0.0, 1.0),
+        });
         self.apply_reading();
     }
 
     fn apply_reading(&self) {
         if let Some(widgets) = &self.widgets {
-            let readings = *self.blend.borrow();
-            apply_reading_to_widgets(widgets, readings);
+            apply_reading_to_widgets(widgets, self.readings.get());
         }
     }
 
@@ -295,37 +214,20 @@ impl CoverLift {
     fn headless_for_test() -> Self {
         Self {
             widgets: None,
-            blend: Rc::new(RefCell::new(SourceBlend::default())),
-            frame_time_us: Rc::new(Cell::new(0)),
-            source_animation: Rc::new(RefCell::new(None)),
+            readings: Rc::new(Cell::new(Readings::default())),
         }
     }
 
     #[cfg(test)]
-    fn reading(&self) -> f64 {
-        self.blend.borrow().reading()
-    }
-
-    #[cfg(test)]
     fn edge_reading(&self) -> f64 {
-        let blend = self.blend.borrow();
-        edge_opacity(blend.pressure, blend.swell)
-    }
-
-    #[cfg(test)]
-    fn advance_blend(&self, dt_s: f64) {
-        let duration_s = f64::from(motion::AMBIENT_MS) / 1_000.0;
-        let mut blend = self.blend.borrow_mut();
-        blend.progress = (blend.progress + dt_s.max(0.0) / duration_s).clamp(0.0, 1.0);
-        drop(blend);
-        self.apply_reading();
+        let readings = self.readings.get();
+        edge_opacity(readings.pressure, readings.swell)
     }
 }
 
-fn apply_reading_to_widgets(widgets: &CoverLiftWidgets, readings: SourceBlend) {
-    let reading = readings.reading();
-    widgets.near.set_opacity(near_opacity(reading));
-    widgets.far.set_opacity(far_opacity(reading));
+fn apply_reading_to_widgets(widgets: &CoverLiftWidgets, readings: Readings) {
+    widgets.near.set_opacity(near_opacity(readings.swell));
+    widgets.far.set_opacity(far_opacity(readings.swell));
     if let Some(edge) = &widgets.edge {
         edge.set_opacity(edge_opacity(readings.pressure, readings.swell));
     }
@@ -391,17 +293,22 @@ mod tests {
     }
 
     #[test]
-    fn ac_24_the_edge_light_ignores_the_visualizer_source_switch() {
-        // The switch exists for the shadow, which answers the beat inside the
-        // Visualizer view. The seam has one formula and no such distinction:
-        // switching the source must not move it.
+    fn ac_24_the_cover_reads_no_beat_anywhere() {
+        // Round 5 gave the cover one exception: while the Visualizer view was
+        // open its shadow switched from `swell` to the beat. Looked at in use,
+        // that read as the cover twitching under its own shadow, and it was
+        // rejected along with the waveform's lens and playhead glow. Both
+        // layers here now move over seconds, in every view.
+        //
+        // The type is the guard: `Readings` carries a swell and a pressure and
+        // nothing else, so there is no third reading to route anywhere. A
+        // source-text assertion would only fight this comment.
         let lift = CoverLift::headless_for_test();
-        lift.feed(0.8, 0.1, 0.5);
+        lift.feed(0.8, 0.5);
         let before = lift.edge_reading();
-        lift.set_source(Source::Kick);
-        lift.advance_blend(0.4);
-        lift.feed(0.8, 0.1, 0.5);
+        lift.feed(0.8, 0.5);
         assert!((lift.edge_reading() - before).abs() < 1e-9);
+        assert!((before - edge_opacity(0.5, 0.8)).abs() < 1e-9);
     }
 
     #[test]
@@ -435,34 +342,6 @@ mod tests {
         assert_eq!(edge_bounds.height(), cover_bounds.height() + 2.0);
         assert_eq!(edge_bounds.center(), cover_bounds.center());
         window.close();
-    }
-
-    #[test]
-    fn ac_24_the_cover_takes_the_beat_only_in_the_visualizer_view() {
-        let lift = CoverLift::headless_for_test();
-        lift.set_source(Source::Swell);
-        lift.feed(0.9, 0.1, 0.0); // swell high, kick low
-        assert!((lift.reading() - 0.9).abs() < 1e-9);
-        lift.set_source(Source::Kick);
-        lift.advance_blend(0.4);
-        lift.feed(0.9, 0.1, 0.0);
-        assert!((lift.reading() - 0.1).abs() < 1e-9);
-    }
-
-    #[test]
-    fn ac_24_the_switch_between_sources_does_not_jump() {
-        // The cross-fade is what keeps a tab change from snapping the cover.
-        let lift = CoverLift::headless_for_test();
-        lift.set_source(Source::Swell);
-        lift.feed(0.9, 0.1, 0.0);
-        lift.set_source(Source::Kick);
-        // Immediately after the switch the reading is still near the old one.
-        lift.feed(0.9, 0.1, 0.0);
-        assert!(lift.reading() > 0.7, "the source switch snapped");
-        // And after the Ambient window it has arrived.
-        lift.advance_blend(0.4);
-        lift.feed(0.9, 0.1, 0.0);
-        assert!((lift.reading() - 0.1).abs() < 0.05);
     }
 
     #[test]

@@ -124,20 +124,6 @@ pub(in crate::ui) fn animations_enabled() -> bool {
     gtk4::Settings::default().is_none_or(|settings| settings.is_gtk_enable_animations())
 }
 
-/// The amplitude a reactive effect may apply right now, under MOT-7.
-///
-/// The bloom, the play-button ring and the playhead lens all scale a fixed
-/// rest value by the bass reading. Zero is therefore not "no light" but
-/// exactly each effect's rest value, which is what a user who turned motion
-/// off must see — a still image, not a missing layer.
-pub(in crate::ui) fn reactive_amplitude(impact: f64) -> f64 {
-    if animations_enabled() {
-        impact.clamp(0.0, 1.0)
-    } else {
-        0.0
-    }
-}
-
 pub(in crate::ui) fn replace_animation(
     slot: &RefCell<Option<adw::TimedAnimation>>,
     animation: adw::TimedAnimation,
@@ -210,21 +196,5 @@ mod tests {
         assert!(animation.follows_enable_animations_setting());
         assert_eq!(animation.duration(), STANDARD_MS);
         assert_eq!(animation.easing(), libadwaita::Easing::EaseOutCubic);
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn mot_7_reactive_amplitude_follows_the_animation_setting() {
-        gtk4::init().unwrap();
-        let settings = gtk4::Settings::default().unwrap();
-
-        settings.set_gtk_enable_animations(true);
-        assert!((reactive_amplitude(0.35) - 0.35).abs() < f64::EPSILON);
-        // Out-of-range readings are clamped, never scaled.
-        assert_eq!(reactive_amplitude(1.4), 1.0);
-        assert_eq!(reactive_amplitude(-0.2), 0.0);
-
-        settings.set_gtk_enable_animations(false);
-        assert_eq!(reactive_amplitude(1.0), 0.0);
     }
 }

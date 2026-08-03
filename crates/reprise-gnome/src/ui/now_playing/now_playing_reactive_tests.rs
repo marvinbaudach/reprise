@@ -28,7 +28,7 @@ fn ac_24_bloom_sits_behind_the_cover_inside_the_head_overlay() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn ac_24_the_shimmer_is_dark_in_the_visualizer_view() {
+fn ac_24_the_panel_head_looks_the_same_whichever_tab_is_open() {
     if gtk4::init().is_err() {
         return;
     }
@@ -39,13 +39,15 @@ fn ac_24_the_shimmer_is_dark_in_the_visualizer_view() {
     panel.widgets.shimmer.set_frame_time(15_000_000);
     assert!(panel.widgets.shimmer.widget().is_visible());
 
-    let last_frame = std::rc::Rc::new(std::cell::Cell::new(None));
-    panel.widgets.bloom.set_on_frame({
-        let last_frame = last_frame.clone();
-        move |frame_time_us| last_frame.set(Some(frame_time_us))
-    });
+    // The Visual tab used to pin the backdrop and hide the disc, on the theory
+    // that two light languages in one panel fight each other. In use the plain
+    // treatment was better there too, so switching tabs must change nothing
+    // about the head.
     panel.widgets.tab_stack.set_visible_child_name(VISUAL_PAGE);
+    assert!(panel.widgets.shimmer.widget().is_visible());
 
+    // Closing the panel still rests both: a pinned backdrop runs no tick, and
+    // without that the paused breath would redraw a widget nobody can see.
+    panel.set_transient_visibility(false);
     assert!(!panel.widgets.shimmer.widget().is_visible());
-    assert_eq!(last_frame.get(), Some(0));
 }
