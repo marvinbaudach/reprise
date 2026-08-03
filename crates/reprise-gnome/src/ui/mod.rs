@@ -23,6 +23,7 @@
 mod about;
 #[cfg(test)]
 mod accessibility_semantics;
+mod adjustment_hold;
 mod artist_news;
 mod browse;
 mod compact;

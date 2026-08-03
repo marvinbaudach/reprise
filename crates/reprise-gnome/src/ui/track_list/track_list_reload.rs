@@ -39,6 +39,7 @@ use crate::ui::playback::queue_transport::QueueContextWindow;
 use gtk4::gio::prelude::*;
 use gtk4::prelude::*;
 
+use crate::ui::adjustment_hold::AdjustmentHold;
 use crate::ui::browse_filter_count;
 use crate::ui::track_list::reload_restore::{self, ReloadAnchor};
 use crate::ui::track_list::track_list_empty_state::{
@@ -55,6 +56,7 @@ use reprise_core::view_source::ViewSource;
 /// repopulated `ColumnView` doesn't have adjustment geometry until the next
 /// allocation pass" issue.
 const SCROLL_RESTORE_MAX_ATTEMPTS: u8 = 8;
+const SCROLL_ADJUSTMENT_HOLD: std::time::Duration = std::time::Duration::from_millis(250);
 
 #[derive(Clone, Copy)]
 enum ReloadViewport {
@@ -133,7 +135,12 @@ pub(in crate::ui) fn capture_reload_anchor(shared: &Shared) -> ReloadAnchor {
 /// exist as soon as `set_query_browsed` returned) and schedules the scroll
 /// restore on idle, since a freshly rebuilt list needs at least one
 /// allocation pass before its adjustment reports usable geometry.
-fn restore_reload_anchor(shared: &Shared, captured: &ReloadAnchor, viewport: ReloadViewport) {
+fn restore_reload_anchor(
+    shared: &Shared,
+    captured: &ReloadAnchor,
+    viewport: ReloadViewport,
+    hold: Option<AdjustmentHold>,
+) {
     // Resolving positions costs a sorted full-table id query; skip it when
     // the capture side already established there is nothing to put back and
     // the caller did not request a playing-track reveal.
@@ -168,6 +175,7 @@ fn restore_reload_anchor(shared: &Shared, captured: &ReloadAnchor, viewport: Rel
         captured.anchor,
         current_ids,
         SCROLL_RESTORE_MAX_ATTEMPTS,
+        hold,
     );
 }
 
@@ -255,6 +263,7 @@ fn schedule_scroll_restore(
     anchor: Option<(i64, f64)>,
     current_ids: Vec<i64>,
     attempts: u8,
+    hold: Option<AdjustmentHold>,
 ) {
     let Some(position) = reload_restore::prepaint_position(anchor, &current_ids) else {
         return;
@@ -265,16 +274,16 @@ fn schedule_scroll_restore(
     // to the main loop. `scroll_to` alone is asynchronous and can otherwise
     // leave position zero visible for a frame on a busy renderer. The idle
     // retry below refines the result against the rebuilt allocation.
-    apply_scroll_anchor_if_allocated(&column_view, anchor, &current_ids);
+    apply_scroll_anchor_if_allocated(&column_view, anchor, &current_ids, hold.as_ref());
     let scroll = gtk4::ScrollInfo::new();
     scroll.set_enable_vertical(true);
     column_view.scroll_to(position, None, gtk4::ListScrollFlags::NONE, Some(scroll));
     gtk4::glib::idle_add_local_once(move || {
-        if apply_scroll_anchor_if_allocated(&column_view, anchor, &current_ids) {
+        if apply_scroll_anchor_if_allocated(&column_view, anchor, &current_ids, hold.as_ref()) {
             return;
         }
         if attempts > 0 {
-            schedule_scroll_restore(column_view, anchor, current_ids, attempts - 1);
+            schedule_scroll_restore(column_view, anchor, current_ids, attempts - 1, hold);
         }
     });
 }
@@ -283,6 +292,7 @@ fn apply_scroll_anchor_if_allocated(
     column_view: &gtk4::ColumnView,
     anchor: Option<(i64, f64)>,
     current_ids: &[i64],
+    hold: Option<&AdjustmentHold>,
 ) -> bool {
     let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(column_view) else {
         return false;
@@ -295,6 +305,9 @@ fn apply_scroll_anchor_if_allocated(
     let Some(target) = reload_restore::scroll_target(anchor, current_ids, height, page) else {
         return false;
     };
+    if let Some(hold) = hold {
+        hold.set_target(target);
+    }
     adjustment.set_value(target);
     true
 }
@@ -380,8 +393,16 @@ fn reload_with_anchor_and_viewport(
     captured: &ReloadAnchor,
     viewport: ReloadViewport,
 ) {
+    let hold = matches!(viewport, ReloadViewport::PreserveAnchor)
+        .then(|| gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view))
+        .flatten()
+        .filter(|_| captured.anchor.is_some())
+        .map(|adjustment| AdjustmentHold::new(&adjustment));
     run_query(shared);
-    restore_reload_anchor(shared, captured, viewport);
+    restore_reload_anchor(shared, captured, viewport, hold.clone());
+    if let Some(hold) = hold {
+        hold.release_after(SCROLL_ADJUSTMENT_HOLD);
+    }
 }
 
 /// The bare query/model-swap/empty-state work, with no selection/scroll

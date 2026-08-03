@@ -5,6 +5,10 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
+use crate::ui::adjustment_hold::AdjustmentHold;
+
+const FOCUS_SCROLL_HOLD: std::time::Duration = std::time::Duration::from_millis(250);
+
 #[derive(Clone)]
 pub(super) struct TransientFocusGuard {
     invoker: glib::WeakRef<gtk4::Widget>,
@@ -190,19 +194,23 @@ fn focus_visible_row(view: &gtk4::Widget) -> bool {
     let position = position.min(rows - 1);
     let scroll = gtk4::ScrollInfo::new();
     scroll.set_enable_vertical(false);
+    let hold = AdjustmentHold::new(&adjustment);
     if let Some(view) = view.downcast_ref::<gtk4::ColumnView>() {
         view.scroll_to(position, None, gtk4::ListScrollFlags::FOCUS, Some(scroll));
-        adjustment.set_value(value);
+        hold.set_target(value);
+        hold.release_after(FOCUS_SCROLL_HOLD);
         return true;
     }
     if let Some(view) = view.downcast_ref::<gtk4::ListView>() {
         view.scroll_to(position, gtk4::ListScrollFlags::FOCUS, Some(scroll));
-        adjustment.set_value(value);
+        hold.set_target(value);
+        hold.release_after(FOCUS_SCROLL_HOLD);
         return true;
     }
     if let Some(view) = view.downcast_ref::<gtk4::GridView>() {
         view.scroll_to(position, gtk4::ListScrollFlags::FOCUS, Some(scroll));
-        adjustment.set_value(value);
+        hold.set_target(value);
+        hold.release_after(FOCUS_SCROLL_HOLD);
         return true;
     }
     false
