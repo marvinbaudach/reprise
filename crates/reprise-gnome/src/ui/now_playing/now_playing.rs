@@ -18,6 +18,7 @@ use super::song_visualizer::SongVisualizer;
 use super::strings;
 use super::up_next_panel::UpNextPanel;
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
+use crate::ui::cover_lift::CoverLift;
 use crate::ui::lyrics_view::LyricsView;
 use crate::ui::playback::external_media::ExternalPlaybackSnapshot;
 use crate::ui::player_controller::NowPlaying;
@@ -41,6 +42,7 @@ struct PanelWidgets {
     lyrics_page: adw::ViewStackPage,
     visual_page: adw::ViewStackPage,
     cover_stack: gtk4::Stack,
+    cover_lift: CoverLift,
     external_cover: gtk4::Box,
     cover: gtk4::Image,
     outgoing_cover: gtk4::Image,
@@ -94,6 +96,7 @@ fn build_widgets_for_session(
     let cover_transition = gtk4::Overlay::new();
     cover_transition.set_child(Some(&cover));
     cover_transition.add_overlay(&outgoing_cover);
+    let cover_lift = CoverLift::new(&cover_transition, tokens::NOW_PLAYING_COVER_SIZE);
     let external_cover = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     external_cover.set_size_request(
         tokens::NOW_PLAYING_COVER_SIZE,
@@ -102,7 +105,7 @@ fn build_widgets_for_session(
     external_cover.set_halign(gtk4::Align::Center);
     external_cover.set_valign(gtk4::Align::Center);
     let cover_stack = gtk4::Stack::new();
-    cover_stack.add_named(&cover_transition, Some("track"));
+    cover_stack.add_named(cover_lift.widget(), Some("track"));
     cover_stack.add_named(&external_cover, Some("external"));
     cover_stack.set_visible_child_name("track");
 
@@ -290,6 +293,7 @@ fn build_widgets_for_session(
         lyrics_page,
         visual_page,
         cover_stack,
+        cover_lift,
         external_cover,
         cover,
         outgoing_cover,
@@ -476,6 +480,9 @@ impl NowPlayingPanel {
 
     pub(in crate::ui) fn set_playback_state(&self, state: PlaybackState) {
         self.playback_state.set(state);
+        if state != PlaybackState::Playing {
+            self.widgets.cover_lift.set_kick(0.0);
+        }
         self.widgets.visualizer.set_playback_state(state);
         self.sync_bloom_activity();
     }
@@ -486,6 +493,7 @@ impl NowPlayingPanel {
             self.widgets
                 .bloom
                 .set_bass(f64::from(bass.kick), f64::from(bass.pressure));
+            self.widgets.cover_lift.set_kick(f64::from(bass.kick));
             self.widgets.visualizer.set_spectrum(frame);
         }
     }
@@ -495,6 +503,7 @@ impl NowPlayingPanel {
         self.widgets.visual_page.set_visible(enabled);
         if !enabled {
             self.widgets.visualizer.set_active(false);
+            self.widgets.cover_lift.set_kick(0.0);
             if self.widgets.session.selected.get() == PanelTab::Visual {
                 self.widgets.tab_stack.set_visible_child_name(UP_NEXT_PAGE);
             }

@@ -1,7 +1,7 @@
 //! Cover, metadata links, and the shared track-change crossfade for PlayerBar.
 //!
-//! Kept beside `player_bar.rs` so adding the cover-derived light does not push
-//! the main surface past the project's 800-line code-file cap.
+//! Kept beside `player_bar.rs` so cover behavior does not push the main surface
+//! past the project's 800-line code-file cap.
 
 use std::rc::Rc;
 
@@ -10,7 +10,7 @@ use libadwaita::prelude::AnimationExt;
 
 use crate::ui::{cover_loader::CoverLoader, motion, strings};
 
-use super::{bar_cover_glow::BarCoverGlow, PlayerBar};
+use super::PlayerBar;
 
 impl PlayerBar {
     /// The cover thumbnail widget — the controller feeds it through the shared
@@ -19,14 +19,10 @@ impl PlayerBar {
         &self.cover
     }
 
-    pub(in crate::ui) fn cover_glow_handle(&self) -> BarCoverGlow {
-        self.cover_glow.clone()
-    }
-
-    /// Resets the cover and its derived light when no track remains active.
+    /// Resets the cover and its lift when no track remains active.
     pub fn clear_cover(&self) {
         CoverLoader::set_placeholder(&self.cover);
-        self.cover_glow.set_cover(None, 0);
+        self.cover_lift.set_kick(0.0);
     }
 
     pub fn set_on_title_click<F: Fn() + 'static>(&self, f: F) {
@@ -58,18 +54,15 @@ impl PlayerBar {
     }
 
     /// 250 ms opacity crossfade: fade out cover + labels, swap text, fade in.
-    /// The cover light stays at rest throughout, so an asynchronously resolved
-    /// replacement can never pulse at the same time as the outgoing artwork.
+    /// The cover and metadata share one transition.
     fn animate_track_change(&self, title: &str, artist: &str) {
         let generation = self.track_animation_generation.get().wrapping_add(1);
         self.track_animation_generation.set(generation);
-        self.cover_glow.set_pinned(true);
         let title = title.to_string();
         let artist = artist.to_string();
         let title_label = self.title_label.clone();
         let artist_label = self.artist_label.clone();
         let cover = self.cover.clone();
-        let cover_glow = self.cover_glow.clone();
         let animation_slot = self.current_track_animation.clone();
         let animation_generation = self.track_animation_generation.clone();
 
@@ -119,15 +112,6 @@ impl PlayerBar {
                 let fade_in =
                     motion::timed(&title_label, 0.0, 1.0, motion::STANDARD, fade_in_target);
                 fade_in.set_duration(motion::half(motion::STANDARD));
-                fade_in.connect_done({
-                    let cover_glow = cover_glow.clone();
-                    let animation_generation = animation_generation.clone();
-                    move |_| {
-                        if animation_generation.get() == generation {
-                            cover_glow.set_pinned(false);
-                        }
-                    }
-                });
                 motion::replace_animation(&animation_slot, fade_in.clone());
                 fade_in.play();
             }
@@ -148,7 +132,6 @@ impl PlayerBar {
         self.title_label.set_text("");
         self.artist_label.set_text("");
         self.artist_button.set_sensitive(false);
-        self.cover_glow.set_pinned(false);
         self.clear_cover();
     }
 }

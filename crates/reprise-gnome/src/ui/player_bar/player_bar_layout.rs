@@ -7,6 +7,7 @@ use libadwaita::prelude::*;
 use super::cover_loader::CoverLoader;
 use super::strings;
 use super::{ICON_NEXT, ICON_PLAY, ICON_PREVIOUS, ICON_REPEAT_ALL, ICON_SHUFFLE};
+use crate::ui::cover_lift::CoverLift;
 use crate::ui::style::buttons;
 
 pub(in crate::ui) const VOLUME_MIN: f64 = 0.0;
@@ -16,11 +17,6 @@ const VOLUME_DEFAULT: f64 = 1.0;
 
 const COVER_PIXEL_SIZE: i32 = 56;
 const BAR_HEIGHT: i32 = 86;
-const BAR_GLOW_SIZE: i32 = 150;
-const BAR_GLOW_REST: f64 = 0.10;
-const BAR_GLOW_PER_PRESSURE: f64 = 0.10;
-const BAR_GLOW_PER_KICK: f64 = 0.22;
-const BAR_GLOW_SCALE_PER_KICK: f64 = 0.03;
 // The info zone also owns a 12 px leading margin. Keep its requested content
 // width below 300 so the complete 1,170 px three-zone layout fits inside a
 // 1,200 px decorated window without a transient two-pixel overflow.
@@ -57,16 +53,6 @@ pub(in crate::ui) fn ring_alpha(kick: f64, pressure: f64) -> f64 {
         + RING_ALPHA_PER_KICK * kick.clamp(0.0, 1.0)
 }
 
-pub(in crate::ui) fn bar_glow_opacity(kick: f64, pressure: f64) -> f64 {
-    BAR_GLOW_REST
-        + BAR_GLOW_PER_PRESSURE * pressure.clamp(0.0, 1.0)
-        + BAR_GLOW_PER_KICK * kick.clamp(0.0, 1.0)
-}
-
-pub(in crate::ui) fn bar_glow_scale(kick: f64) -> f64 {
-    1.0 + BAR_GLOW_SCALE_PER_KICK * kick.clamp(0.0, 1.0)
-}
-
 const SURFACE_CSS_CLASS: &str = "player-bar-surface";
 /// CSS class on the transport button row, targeted by the hover-highlight rules.
 const TRANSPORT_ROW_CSS_CLASS: &str = "player-bar-transport";
@@ -85,7 +71,7 @@ pub(in crate::ui) struct PlayerBarWidgets {
     pub(in crate::ui) info_box: gtk4::Box,
     pub(in crate::ui) cover: gtk4::Image,
     pub(in crate::ui) cover_button: gtk4::Button,
-    pub(in crate::ui) cover_glow: super::bar_cover_glow::BarCoverGlow,
+    pub(in crate::ui) cover_lift: CoverLift,
     pub(in crate::ui) title_label: gtk4::Label,
     pub(in crate::ui) title_button: gtk4::Button,
     pub(in crate::ui) artist_label: gtk4::Label,
@@ -119,12 +105,9 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     cover_button.update_property(&[gtk4::accessible::Property::Label(&strings::text(
         strings::REVEAL_PLAYING_ALBUM,
     ))]);
-    let cover_glow = super::bar_cover_glow::BarCoverGlow::new(BAR_GLOW_SIZE, BAR_HEIGHT);
-    let cover_slot = gtk4::Overlay::new();
-    cover_slot.set_child(Some(cover_glow.widget()));
     cover_button.set_halign(gtk4::Align::Center);
     cover_button.set_valign(gtk4::Align::Center);
-    cover_slot.add_overlay(&cover_button);
+    let cover_lift = CoverLift::new(&cover_button, COVER_PIXEL_SIZE);
 
     // — Track labels —
     let title_label = build_track_label();
@@ -168,7 +151,7 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     // — Start zone (cover + track info) —
     let info_box = gtk4::Box::new(gtk4::Orientation::Horizontal, ZONE_SPACING);
     info_box.set_margin_start(12);
-    info_box.append(&cover_slot);
+    info_box.append(cover_lift.widget());
     info_box.append(&track_info_clamp);
     info_box.set_valign(gtk4::Align::Center);
     info_box.set_width_request(START_ZONE_WIDTH);
@@ -370,7 +353,7 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
         info_box,
         cover,
         cover_button,
-        cover_glow,
+        cover_lift,
         title_label,
         title_button,
         artist_label,
@@ -395,7 +378,7 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
 /// border-radius, title/artist/time label styling, transport hover,
 /// volume-knob visibility, and artist-label hover colour.
 pub(in crate::ui) fn css() -> String {
-    use super::{motion, style::tokens::TRANSITION};
+    use super::{motion, style::tokens::RADIUS_SURFACE, style::tokens::TRANSITION};
     let micro_ms = motion::MICRO_MS;
     let micro_easing = motion::MICRO_CSS_EASING;
     format!(
@@ -437,7 +420,7 @@ pub(in crate::ui) fn css() -> String {
            50%  {{ transform: scale(0.92); }} \
            100% {{ transform: scale(1.0); }} }}\n\
          .{COVER_CSS_CLASS} {{ \
-           border-radius: 8px; \
+           border-radius: {RADIUS_SURFACE}; \
            box-shadow: inset 0 0 0 1px alpha(white, 0.08); \
            opacity: 0.92; transition: opacity {TRANSITION}; }}\n\
          .{COVER_CSS_CLASS}.hovered {{ opacity: 1.0; }}\n\

@@ -30,6 +30,7 @@ mod compact;
 mod concerts;
 mod cover;
 mod cover_glow;
+mod cover_lift;
 pub mod delete_tracks;
 mod device_sync;
 pub mod dialogs;

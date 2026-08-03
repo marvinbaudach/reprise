@@ -77,7 +77,7 @@ pub struct PlayerBar {
     /// itself (see `cover_loader.rs`).
     pub(super) cover: gtk4::Image,
     pub(super) cover_button: gtk4::Button,
-    pub(super) cover_glow: super::bar_cover_glow::BarCoverGlow,
+    pub(super) cover_lift: crate::ui::cover_lift::CoverLift,
     pub(in crate::ui) title_label: gtk4::Label,
     pub(super) title_button: gtk4::Button,
     pub(in crate::ui) artist_label: gtk4::Label,
@@ -143,7 +143,7 @@ impl PlayerBar {
             info_box: _,
             cover,
             cover_button,
-            cover_glow,
+            cover_lift,
             title_label,
             title_button,
             artist_label,
@@ -223,7 +223,7 @@ impl PlayerBar {
             root,
             cover,
             cover_button,
-            cover_glow,
+            cover_lift,
             title_label,
             title_button,
             artist_label,
@@ -313,7 +313,7 @@ impl PlayerBar {
             (0.0, 0.0)
         };
         self.play_ring.set_opacity(ring_alpha(kick, pressure));
-        self.cover_glow.set_bass(kick, pressure);
+        self.cover_lift.set_kick(kick);
     }
 
     fn animate_play_pulse(&self) {
