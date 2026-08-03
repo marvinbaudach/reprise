@@ -11,6 +11,10 @@ use reprise_core::library::rhythmbox_import::{
     self, RhythmboxImportChoices, RhythmboxPlaylist, RhythmboxPrescanResult, RhythmboxRollback,
     RhythmboxTrackStats,
 };
+use reprise_core::library::source::{
+    LibraryLinkMode, LibraryPathPresence, LibrarySource, RhythmboxImportCapability,
+    UnixLibrarySource,
+};
 
 use super::strings;
 use super::PreferencesContext;
@@ -70,7 +74,24 @@ fn default_rhythmdb_path() -> PathBuf {
 }
 
 fn rhythmbox_data_available(rhythmdb_path: &Path) -> bool {
-    rhythmdb_path.is_file()
+    should_offer_rhythmbox_import(
+        UnixLibrarySource.rhythmbox_import_capability(),
+        UnixLibrarySource.probe(rhythmdb_path, LibraryLinkMode::Follow),
+    )
+}
+
+fn should_offer_rhythmbox_import(
+    capability: RhythmboxImportCapability,
+    presence: LibraryPathPresence,
+) -> bool {
+    match (capability, presence) {
+        (RhythmboxImportCapability::Unsupported, _) => false,
+        (RhythmboxImportCapability::Supported, LibraryPathPresence::Present(metadata)) => {
+            metadata.is_file
+        }
+        (RhythmboxImportCapability::Supported, LibraryPathPresence::Absent) => false,
+        (RhythmboxImportCapability::Supported, LibraryPathPresence::Unknown) => true,
+    }
 }
 
 pub(in crate::ui) fn rhythmbox_import_available() -> bool {

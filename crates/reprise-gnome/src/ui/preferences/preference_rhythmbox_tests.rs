@@ -16,6 +16,51 @@ fn import_row_requires_a_detected_rhythmdb_file() {
 }
 
 #[test]
+fn import_offer_distinguishes_capability_from_unknown_presence() {
+    use reprise_core::library::source::{
+        LibraryPathMetadata, LibraryPathPresence, RhythmboxImportCapability,
+    };
+
+    let file = || {
+        LibraryPathPresence::Present(LibraryPathMetadata {
+            is_file: true,
+            is_directory: false,
+            size: None,
+            modified: None,
+            identity: None,
+        })
+    };
+    let directory = LibraryPathPresence::Present(LibraryPathMetadata {
+        is_file: false,
+        is_directory: true,
+        size: None,
+        modified: None,
+        identity: None,
+    });
+
+    assert!(!should_offer_rhythmbox_import(
+        RhythmboxImportCapability::Unsupported,
+        file()
+    ));
+    assert!(!should_offer_rhythmbox_import(
+        RhythmboxImportCapability::Supported,
+        LibraryPathPresence::Absent
+    ));
+    assert!(!should_offer_rhythmbox_import(
+        RhythmboxImportCapability::Supported,
+        directory
+    ));
+    assert!(should_offer_rhythmbox_import(
+        RhythmboxImportCapability::Supported,
+        LibraryPathPresence::Unknown
+    ));
+    assert!(should_offer_rhythmbox_import(
+        RhythmboxImportCapability::Supported,
+        file()
+    ));
+}
+
+#[test]
 fn only_supported_library_data_is_selected_for_import() {
     let options = import_option_specs();
     assert_eq!(options.len(), 4);
