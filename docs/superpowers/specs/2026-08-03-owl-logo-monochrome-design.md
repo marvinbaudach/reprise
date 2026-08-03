@@ -284,7 +284,7 @@ Gemessen wird headless, nicht betrachtet.
 | V1 | Randfüllung | Gilt nur für Icon-Flächen, nicht für Lockups. Stufe via `rsvg-convert` gerendert; die Bounding-Box der Marke spannt **in beiden Achsen** ≥ 70 % der Live-Fläche. |
 | V2 | Negativraum überlebt | 16-px-Render, Alpha bei 50 % binarisiert, 4er-Nachbarschaft: ≥ 2 getrennte Hintergrund-Zusammenhangskomponenten (Außenraum + Augenaussparung). Ein Klumpen hat genau 1. |
 | V3 | Monochrom trägt | Alle Füllungen auf einen Wert abgeflacht; danach gilt V2 unverändert. |
-| V4 | Kontrast | Mono-Marke ≥ 4,5:1 gegen `#FFFFFF` **und** gegen `#1B082D`. |
+| V4 | Kontrast der **farbigen** Marke | Der hellste Körperwert von `mark.svg` ≥ 4,5:1 gegen `#FFFFFF`, der von `mark-on-dark.svg` ≥ 4,5:1 gegen `#1B082D`. Gilt **nicht** für Symbolic und Themed Icon: beide werden von GNOME beziehungsweise Android zur Laufzeit umgefärbt, der literale Füllwert wird nie angezeigt. Dort trägt allein die Silhouette, also V2. |
 | V5 | Kein Trace | Kein einzelnes `d`-Attribut überschreitet 400 Pfadbefehle, und die Gesamtzahl der Pfade bleibt bei `full` ≤ 60, `reduced` ≤ 20, `micro` = 1. Ein Trace erzeugt genau das Gegenteil: einen Riesenpfad mit Tausenden Befehlen. Der Test greift also auf die Signatur des Tracens, nicht auf Detailreichtum — `full` darf beliebig fein sein, solange es aus benannten Formen besteht. |
 | V8 | Vorlagentreue | `full` bei 512 px gegen `docs/assets/brand-reference/owl-headphones-template.png` gestellt: die sechs Merkmale aus dem Abschnitt „Vorlage" sind einzeln nachweisbar vorhanden. |
 | V6 | Android real | Auf `pixel10xl_api37` installiert und mit **eingeschalteten Themed Icons** geprüft: `<monochrome>` sichtbar, nichts von der Maske beschnitten. |
