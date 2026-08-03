@@ -258,12 +258,12 @@ der Datenbank, die dieselbe Zahl nennt.
 **Files:**
 - Modify: `android/app/src/main/java/…`
 
-- [ ] **Step 1: Ordner wählen, scannen, Liste zeigen**
+- [x] **Step 1: Ordner wählen, scannen, Liste zeigen**
 
 Compose. Drei Zustände: kein Ordner, scannt, Liste. Kein Design-Anspruch —
 lesbar und ehrlich reicht.
 
-- [ ] **Step 2: Einen Track abspielen**
+- [x] **Step 2: Einen Track abspielen**
 
 `MediaPlayer` auf der Content-URI, direkt aus Kotlin. Siehe „bewusster
 Schnitt" oben.
