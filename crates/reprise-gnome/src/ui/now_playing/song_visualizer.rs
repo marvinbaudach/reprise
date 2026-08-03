@@ -225,8 +225,8 @@ impl SongVisualizer {
     }
 }
 
-/// The four analysis numbers, in the order the readout shows them.
-fn analysis_values(pressure: BassPressure) -> [String; 4] {
+/// The six analysis numbers, in the order the readout shows them.
+fn analysis_values(pressure: BassPressure) -> [String; 6] {
     let decibels = |value: f32| {
         if value <= READOUT_SILENCE_DBFS {
             "—".to_owned()
@@ -242,6 +242,8 @@ fn analysis_values(pressure: BassPressure) -> [String; 4] {
         decibels(pressure.baseline_dbfs),
         format!("{:.2}", pressure.impact),
         format!("{:.2}", pressure.aura),
+        format!("{:.2}", pressure.kick),
+        format!("{:.2}", pressure.pressure),
     ]
 }
 
@@ -257,8 +259,8 @@ struct AnalysisReadout {
 
 impl AnalysisReadout {
     fn new() -> Self {
-        // Two by two, not one row of four: the panel is a fixed 300 px wide
-        // (NPP-1), where four columns leave ~70 px each and truncate every
+        // Two by three, not one row of six: the panel is a fixed 300 px wide
+        // (NPP-1), where six columns leave ~45 px each and truncate every
         // caption. Caption and value sit side by side rather than stacked,
         // because the strip the canvas leaves free is only about one line
         // tall — stacked, the second row was silently clipped. Every label
@@ -280,6 +282,8 @@ impl AnalysisReadout {
             strings::SONG_VISUALS_BASELINE,
             strings::SONG_VISUALS_IMPACT,
             strings::SONG_VISUALS_BREAKDOWN,
+            strings::SONG_VISUALS_KICK,
+            strings::SONG_VISUALS_PRESSURE,
         ]
         .into_iter()
         .enumerate()

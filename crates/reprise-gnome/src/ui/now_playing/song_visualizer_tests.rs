@@ -30,17 +30,19 @@ fn ac_23_the_analysis_readout_reports_the_values_the_glow_uses() {
         baseline_dbfs: -20.0,
         impact: 0.42,
         aura: 0.0,
-        kick: 0.0,
-        pressure: 0.0,
+        kick: 0.77,
+        pressure: 0.61,
     });
 
     // Whole decibels: a tenth of a dB is neither readable at this refresh rate
     // nor affordable in a 300 px panel, where it truncated "Baseline".
-    assert_eq!(values.len(), 4);
+    assert_eq!(values.len(), 6);
     assert_eq!(values[0], "-14 dBFS");
     assert_eq!(values[1], "-20 dBFS");
     assert_eq!(values[2], "0.42");
     assert_eq!(values[3], "0.00");
+    assert_eq!(values[4], "0.77");
+    assert_eq!(values[5], "0.61");
 }
 
 #[test]
@@ -56,6 +58,11 @@ fn ac_23_a_silent_analysis_reads_as_a_dash_instead_of_a_bottomed_out_level() {
 
     assert_eq!(values[0], "—");
     assert_eq!(values[1], "—");
+    assert_eq!(values.len(), 6);
+    assert_eq!(values[2], "0.00");
+    assert_eq!(values[3], "0.00");
+    assert_eq!(values[4], "0.00");
+    assert_eq!(values[5], "0.00");
 }
 
 #[test]

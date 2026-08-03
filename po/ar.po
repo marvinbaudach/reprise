@@ -4241,6 +4241,14 @@ msgstr ""
 msgid "Breakdown"
 msgstr ""
 
+#: crates/reprise-gnome/src/ui/strings_song_visuals.rs:16
+msgid "Kick"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_song_visuals.rs:17
+msgid "Pressure"
+msgstr ""
+
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:16
 msgid "Review changes"
 msgstr ""
