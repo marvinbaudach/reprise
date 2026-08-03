@@ -69,9 +69,9 @@ ungemessen bleibt.**
 **Files:**
 - Modify: `crates/reprise-core/src/queries/`
 
-- [ ] **Step 1: Baseline messen**
+- [x] **Step 1: Baseline messen**
 
-- [ ] **Step 2: Anfrage und Antwort benennen**
+- [x] **Step 2: Anfrage und Antwort benennen**
 
 Eine Anfrage aus Bereich (ganze Bibliothek, Album, Interpret), Suchtext,
 Ordnung und Fenster. Eine Antwort aus **Gesamtzahl** und den Zeilen dieses
@@ -85,7 +85,7 @@ Kern liefert Gesamtzahl und Fenster, mehr nicht.
 **UniFFI muss die Typen tragen können** — keine anonymen Tupel, keine
 Closures, keine `&str` in der Antwort.
 
-- [ ] **Step 3: Volle Gates und Commit**
+- [x] **Step 3: Volle Gates und Commit**
 
 ---
 
@@ -95,20 +95,20 @@ Closures, keine `&str` in der Antwort.
 - Modify: `crates/reprise-core/src/queries/surface_browse.rs`
 - Modify: `crates/reprise-android-ffi/src/`
 
-- [ ] **Step 1: Umstellen**
+- [x] **Step 1: Umstellen**
 
 `query_library_text_search` und `query_album_tracks` liefern Gesamtzahl und
 Fenster. Album- und Interpretenlisten bekommen dieselbe Behandlung, statt
 unbegrenzt zu materialisieren.
 
-- [ ] **Step 2: Ein Test, der das Abschneiden beweist**
+- [x] **Step 2: Ein Test, der das Abschneiden beweist**
 
 Mehr Zeilen als ein Fenster, dann prüfen: die Gesamtzahl stimmt, das Fenster
 ist vollständig, und ein zweites Fenster liefert den Rest ohne Lücke und ohne
 Dopplung. **Beobachte ihn rot**, bevor er grün wird — das ist der Test, den es
 vorher nicht gab und dessen Fehlen die Grenze verdeckt hat.
 
-- [ ] **Step 3: Volle Gates und Commit**
+- [x] **Step 3: Volle Gates und Commit**
 
 ---
 
@@ -117,21 +117,21 @@ vorher nicht gab und dessen Fehlen die Grenze verdeckt hat.
 **Files:**
 - Modify: `android/app/src/main/java/…`
 
-- [ ] **Step 1: `LazyColumn` fordert nach**
+- [x] **Step 1: `LazyColumn` fordert nach**
 
 Beim Erreichen des Fensterendes das nächste anfordern. Die Gesamtzahl macht
 die Bildlaufleiste ehrlich.
 
-- [ ] **Step 2: Volle Gates und Commit**
+- [x] **Step 2: Volle Gates und Commit**
 
 ---
 
 ## Task 4: Festhalten
 
-- [ ] **Step 1: Was gemessen ist und was nicht**
+- [x] **Step 1: Was gemessen ist und was nicht**
 
 Der Vertrag ist geprüft; **das Verhalten an einer großen realen Bibliothek
 nicht.** Schreib das so hin. Ein Vertrag, der unter Last nie lief, ist
 korrekt, nicht bewährt.
 
-- [ ] **Step 2: Ledger, Gates, Commit**
+- [x] **Step 2: Ledger, Gates, Commit**

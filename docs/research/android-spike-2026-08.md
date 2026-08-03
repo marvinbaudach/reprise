@@ -1596,3 +1596,64 @@ Diese Bilanz beruht auf den Core-, GNOME-, UniFFI- und Compose-Seams sowie den
 automatisierten Rust- und Kotlin-Prüfungen. Der getrennte Gerätelauf wurde wie
 vorgegeben nicht ausgeführt; insbesondere Laufzeitkosten und Scrollverhalten
 einer grossen Android-Bibliothek werden hier nicht behauptet.
+
+## Nachtrag — Fenstervertrag und grosser Emulator-Scan (2026-08-03)
+
+Die vier Browse-Fassaden liefern jetzt gezählte, begrenzte Fenster statt
+nackter Vektoren. Der Vertrag ist automatisiert über mehr Zeilen als ein
+Fenster geprüft: Gesamtzahl und Fensterinhalt stimmen, das nächste Fenster
+schliesst ohne Lücke oder Dopplung an, und `has_more` macht jede unvollständige
+Antwort sichtbar. Compose fordert an seinem geladenen Listenende selbst das
+nächste 200-Zeilen-Fenster an; Ausrichtung, Vorladen und Duplikatschutz bleiben
+damit Oberflächenpolitik.
+
+Das beweist den Vertrag, nicht sein Laufzeitverhalten an einer grossen realen
+Bibliothek. Der grosse Emulatorlauf verwendete 1.824 Dateien in 562
+Verzeichnissen, aber weder ein echtes Telefon noch die Bibliothek eines
+Benutzers. Er vermass den Storage-Scan, nicht langes Scrollen durch alle
+Browse-Fenster. Für diese Bilanz gilt daher ausdrücklich: **Der Emulator misst
+Anzahlen und Verlaufsgestalt, nie Zeit.** Aus ihm folgt keine belastbare Dauer,
+kein Geräte-Durchsatz und kein Leistungsversprechen.
+
+### Was der instrumentierte Lauf tatsächlich zählt
+
+- Der Scan verursachte **3.520 Provider-Rundläufe für 1.824 Dateien in 562
+  Verzeichnissen**. Das sind rechnerisch **1,93 Rundläufe je Datei**. Die **42
+  Rundläufe des Ordner-Pickers** wurden separat gezählt und sind in den 3.520
+  nicht enthalten.
+- Die Instrumentierung trennt Verzeichnisauflistung und Tag-Lesung noch nicht.
+  Die 3.520 belegen deshalb Last und Form des Gesamtlaufs, aber nicht, welcher
+  Anteil auf Listing und welcher auf Öffnen beziehungsweise Tag-Parsing
+  entfällt. Ohne diese Trennung wäre jede gezielte Optimierungsbehauptung
+  geraten.
+- Die beobachtete Fortschrittsrate blieb über den Lauf bei **3–5/s** und zeigte
+  keinen Abwärtstrend. Das ist nur die Form der aufgezeichneten Folge, kein
+  Emulator-Benchmark und insbesondere keine gemessene Gesamtdauer für ein
+  reales Gerät.
+- `scan_folder_inner` eröffnet vor dem Walk eine
+  `unchecked_transaction()` und committet erst nach Walk, Vanish-Abgleich und
+  Change-Log-Eintrag. Eine Transaktion umfasst damit den vollständigen Scan.
+  Das ist ein Befund für die spätere Scanner-Planung; dieses Paket ändert ihn
+  bewusst nicht.
+
+### Lehren für den nächsten Messschnitt
+
+1. Ein gezähltes Fenster verhindert stilles Abschneiden; seine Korrektheit
+   sagt noch nichts über Scrollkosten oder Gerätegeschwindigkeit.
+2. Emulatorzahlen dürfen Lastform und fehlenden Abfall zeigen, aber keine Zeit
+   eines realen Geräts ersetzen.
+3. Der nächste Storage-Zähler muss Listing und Tag-Lesung getrennt benennen,
+   bevor eine der beiden Seiten optimiert wird.
+4. Die scanweite Transaktion ist als möglicher Skalierungsfaktor sichtbar,
+   aber ohne isolierende Messung weder Ursache noch Reparaturauftrag.
+5. Android-Testquellen sind noch keine ausgeführten Tests. Die beiden Dateien
+   unter `android/app/src/test` waren `fun main()`-Skripte ohne JUnit-Laufzeit;
+   `:app:testDebugUnitTest` entdeckte deshalb **null Tests**. Erst nach der
+   Umstellung auf echte JUnit-Tests entdeckte derselbe Task 18: Eine absichtliche
+   Mutation machte genau einen rot, nach ihrer Rücknahme liefen 18 von 18 grün.
+   Ein Assemble- oder Compilerfolg darf nie wieder als Testausführung gelten.
+
+Die reale grosse Bibliothek, ein physisches Android-Gerät, die Scrollkosten
+über viele Fenster, die Listing-/Tag-Read-Aufteilung und die Wirkung der
+scanweiten Transaktion bleiben damit ausdrücklich ungemessen. Der Vertrag ist
+korrekt geprüft; unter dieser Last ist er noch nicht bewährt.
