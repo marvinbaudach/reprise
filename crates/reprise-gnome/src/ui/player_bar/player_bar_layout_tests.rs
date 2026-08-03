@@ -347,3 +347,47 @@ fn player_bar_css_parses_without_errors() {
     let errors = crate::ui::style::css_parse_errors(&super::css());
     assert!(errors.is_empty(), "CSS parse errors: {errors:?}");
 }
+
+/// STYLE-5: the artist reads as a second line of the title, so its text has to
+/// start on the same pixel.
+///
+/// It did not: a `GtkButton` centres a bare child, and the artist label was one
+/// — its own `halign: Start` does not survive that — so it sat seven pixels
+/// right of the title, which is exactly `(button_content - label) / 2`. The
+/// title never showed the bug because it was already wrapped in a row box.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn style_5_the_artist_starts_on_the_same_pixel_as_the_title() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    crate::ui::style::install_css_string_for_test(&crate::ui::style::app_css_for_test());
+    let layout = build();
+    // Deliberately different lengths: equal-length strings would line up even
+    // with the centring bug present.
+    layout.title_label.set_text("Unwoven Ashes");
+    layout.artist_label.set_text("As I Lay Dying");
+    let window = gtk4::Window::builder()
+        .default_width(1_200)
+        .default_height(180)
+        .child(&layout.root)
+        .build();
+    window.present();
+    wait_for_layout();
+
+    let title = layout
+        .title_label
+        .compute_bounds(&layout.root)
+        .expect("title label has player-bar bounds");
+    let artist = layout
+        .artist_label
+        .compute_bounds(&layout.root)
+        .expect("artist label has player-bar bounds");
+    assert!(
+        (title.x() - artist.x()).abs() < 0.5,
+        "artist is not flush with the title: title x={}, artist x={}",
+        title.x(),
+        artist.x()
+    );
+
+    window.close();
+}

@@ -148,7 +148,7 @@ mod tests {
     fn nav_10a_a_far_target_jumps_instead_of_gliding() {
         // Three viewport heights. Beyond that a glide is either absurdly slow
         // or a blur, and at launch the list is at 0 with the loaded track far
-        // away — which is exactly how START-1 keeps its instant placement.
+        // away — which is exactly how START-3 keeps its instant placement.
         let page = 600.0;
         assert!(should_glide(0.0, page));
         assert!(should_glide(page, page));

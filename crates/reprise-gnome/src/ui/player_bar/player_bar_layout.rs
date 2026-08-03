@@ -115,8 +115,16 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     title_button.update_property(&[gtk4::accessible::Property::Label(&strings::text(
         strings::JUMP_TO_NOW_PLAYING,
     ))]);
+    // Wrapped in a row for the same reason the title is: a `GtkButton` centres
+    // a bare child, which put the artist seven pixels right of the title above
+    // it — the label's own `halign: Start` does not survive that. Filling the
+    // button with a box and letting the label start inside it is what makes
+    // the two line up.
+    let artist_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
+    artist_row.append(&artist_label);
+    artist_row.set_valign(gtk4::Align::Center);
     let artist_button = gtk4::Button::builder()
-        .child(&artist_label)
+        .child(&artist_row)
         .has_frame(false)
         .tooltip_text(strings::text(strings::GO_TO_PLAYING_ARTIST))
         .build();
