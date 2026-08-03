@@ -7,7 +7,7 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use gtk4::{cairo, prelude::*};
+use gtk4::prelude::*;
 use libadwaita::prelude::AnimationExt;
 
 use crate::ui::{motion, style::tokens::RADIUS_SURFACE};
@@ -19,15 +19,6 @@ const LIFT_BLUR_PER_SWELL: f64 = 0.155;
 const LIFT_SPREAD_PER_SWELL: f64 = -0.018;
 const LIFT_COLOUR: &str = "rgba(0, 0, 0, 0.55)";
 
-const SHEEN_WIDTH: f64 = 0.30;
-const SHEEN_ANGLE_DEG: f64 = 18.0;
-const SHEEN_TRAVEL: f64 = 0.50;
-const SHEEN_PERIOD_S: f64 = 13.0;
-const SHEEN_REST_OPACITY: f64 = 0.22;
-const SHEEN_OPACITY_PER_SWELL: f64 = 0.18;
-const SHEEN_ACCENT_ALPHA: f64 = 0.30;
-const SHEEN_RADIUS: f64 = 12.0;
-
 const PANEL_WIDTH: i32 = 168;
 const BAR_WIDTH: i32 = 56;
 const SHADOW_BASE_CLASS: &str = "reprise-cover-lift-shadow";
@@ -35,7 +26,6 @@ const PANEL_NEAR_CLASS: &str = "reprise-cover-lift-panel-near";
 const PANEL_FAR_CLASS: &str = "reprise-cover-lift-panel-far";
 const BAR_NEAR_CLASS: &str = "reprise-cover-lift-bar-near";
 const BAR_FAR_CLASS: &str = "reprise-cover-lift-bar-far";
-const SHEEN_CLASS: &str = "reprise-cover-sheen";
 
 pub(in crate::ui) fn lift_shadow(width: f64, swell: f64) -> String {
     let swell = swell.clamp(0.0, 1.0);
@@ -81,24 +71,13 @@ fn composite_coverage(swell: f64) -> f64 {
     1.0 - (1.0 - SHADOW_ALPHA * near_opacity(swell)) * (1.0 - SHADOW_ALPHA * far_opacity(swell))
 }
 
-pub(in crate::ui) fn sheen_opacity(swell: f64) -> f64 {
-    SHEEN_REST_OPACITY + SHEEN_OPACITY_PER_SWELL * swell.clamp(0.0, 1.0)
-}
-
-/// Horizontal offset of the reflection's centre at `elapsed_s`.
-pub(in crate::ui) fn sheen_offset(elapsed_s: f64, width: f64) -> f64 {
-    let phase = std::f64::consts::TAU * elapsed_s / SHEEN_PERIOD_S;
-    SHEEN_TRAVEL * width * phase.sin()
-}
-
 pub(in crate::ui) fn css() -> String {
     format!(
         ".{SHADOW_BASE_CLASS} {{ border-radius: {RADIUS_SURFACE}; }}\n\
          .{PANEL_NEAR_CLASS} {{ box-shadow: {}; }}\n\
          .{PANEL_FAR_CLASS} {{ box-shadow: {}; }}\n\
          .{BAR_NEAR_CLASS} {{ box-shadow: {}; }}\n\
-         .{BAR_FAR_CLASS} {{ box-shadow: {}; }}\n\
-         .{SHEEN_CLASS} {{ color: @reprise_player_accent; }}",
+         .{BAR_FAR_CLASS} {{ box-shadow: {}; }}",
         lift_shadow(f64::from(PANEL_WIDTH), 0.0),
         lift_shadow(f64::from(PANEL_WIDTH), 1.0),
         lift_shadow(f64::from(BAR_WIDTH), 0.0),
@@ -162,13 +141,13 @@ struct CoverLiftWidgets {
     root: gtk4::Overlay,
     near: gtk4::Box,
     far: gtk4::Box,
-    sheen: Option<CoverSheen>,
 }
 
 #[derive(Clone)]
 pub(in crate::ui) struct CoverLift {
     widgets: Option<CoverLiftWidgets>,
     blend: Rc<RefCell<SourceBlend>>,
+    frame_time_us: Rc<Cell<i64>>,
     source_animation: Rc<RefCell<Option<libadwaita::TimedAnimation>>>,
 }
 
@@ -190,20 +169,11 @@ impl CoverLift {
         root.set_size_request(width, width);
         root.set_child(Some(&shadows));
         root.add_overlay(cover);
-        let sheen = (width == PANEL_WIDTH).then(|| {
-            let sheen = CoverSheen::new(width);
-            root.add_overlay(sheen.widget());
-            sheen
-        });
-        let widgets = CoverLiftWidgets {
-            root,
-            near,
-            far,
-            sheen,
-        };
+        let widgets = CoverLiftWidgets { root, near, far };
         Self {
             widgets: Some(widgets),
             blend: Rc::new(RefCell::new(SourceBlend::default())),
+            frame_time_us: Rc::new(Cell::new(0)),
             source_animation: Rc::new(RefCell::new(None)),
         }
     }
@@ -222,13 +192,12 @@ impl CoverLift {
     }
 
     pub(in crate::ui) fn set_frame_time(&self, frame_time_us: i64) {
-        if let Some(sheen) = self
-            .widgets
-            .as_ref()
-            .and_then(|widgets| widgets.sheen.as_ref())
-        {
-            sheen.set_frame_time(frame_time_us);
-        }
+        let frame_time_us = if motion::animations_enabled() {
+            frame_time_us
+        } else {
+            0
+        };
+        self.frame_time_us.set(frame_time_us);
     }
 
     pub(in crate::ui) fn set_source(&self, source: Source) {
@@ -278,6 +247,7 @@ impl CoverLift {
         Self {
             widgets: None,
             blend: Rc::new(RefCell::new(SourceBlend::default())),
+            frame_time_us: Rc::new(Cell::new(0)),
             source_animation: Rc::new(RefCell::new(None)),
         }
     }
@@ -299,141 +269,6 @@ impl CoverLift {
 fn apply_reading_to_widgets(widgets: &CoverLiftWidgets, reading: f64) {
     widgets.near.set_opacity(near_opacity(reading));
     widgets.far.set_opacity(far_opacity(reading));
-    if let Some(sheen) = &widgets.sheen {
-        sheen.set_swell(reading);
-    }
-}
-
-#[derive(Clone)]
-struct CoverSheen {
-    area: gtk4::DrawingArea,
-    frame_time_us: Rc<Cell<i64>>,
-}
-
-impl CoverSheen {
-    fn new(width: i32) -> Self {
-        let area = gtk4::DrawingArea::builder()
-            .width_request(width)
-            .height_request(width)
-            .can_target(false)
-            .can_focus(false)
-            .opacity(SHEEN_REST_OPACITY)
-            .build();
-        area.add_css_class(SHEEN_CLASS);
-        let frame_time_us = Rc::new(Cell::new(0));
-        area.set_draw_func({
-            let frame_time_us = frame_time_us.clone();
-            move |area, cr, width, height| {
-                let elapsed_s = frame_time_us.get() as f64 / 1_000_000.0;
-                draw_sheen(area, cr, width, height, elapsed_s);
-            }
-        });
-        Self {
-            area,
-            frame_time_us,
-        }
-    }
-
-    fn widget(&self) -> &gtk4::DrawingArea {
-        &self.area
-    }
-
-    fn set_swell(&self, swell: f64) {
-        self.area.set_opacity(sheen_opacity(swell));
-    }
-
-    fn set_frame_time(&self, frame_time_us: i64) {
-        let frame_time_us = if motion::animations_enabled() {
-            frame_time_us
-        } else {
-            0
-        };
-        self.frame_time_us.set(frame_time_us);
-        self.area.queue_draw();
-    }
-}
-
-fn draw_sheen(
-    area: &gtk4::DrawingArea,
-    cr: &cairo::Context,
-    width: i32,
-    height: i32,
-    elapsed_s: f64,
-) {
-    if width <= 0 || height <= 0 {
-        return;
-    }
-    let width = f64::from(width);
-    let height = f64::from(height);
-    let strip_width = SHEEN_WIDTH * width;
-    let accent = area.color();
-
-    cr.save().ok();
-    rounded_rectangle(cr, 0.0, 0.0, width, height, SHEEN_RADIUS);
-    cr.clip();
-    cr.translate(width / 2.0 + sheen_offset(elapsed_s, width), height / 2.0);
-    cr.rotate(SHEEN_ANGLE_DEG.to_radians());
-    let gradient = cairo::LinearGradient::new(-strip_width / 2.0, 0.0, strip_width / 2.0, 0.0);
-    gradient.add_color_stop_rgba(
-        0.0,
-        f64::from(accent.red()),
-        f64::from(accent.green()),
-        f64::from(accent.blue()),
-        0.0,
-    );
-    gradient.add_color_stop_rgba(
-        0.30,
-        f64::from(accent.red()),
-        f64::from(accent.green()),
-        f64::from(accent.blue()),
-        SHEEN_ACCENT_ALPHA,
-    );
-    gradient.add_color_stop_rgba(
-        1.0,
-        f64::from(accent.red()),
-        f64::from(accent.green()),
-        f64::from(accent.blue()),
-        0.0,
-    );
-    if cr.set_source(&gradient).is_ok() {
-        cr.rectangle(-strip_width / 2.0, -height, strip_width, height * 2.0);
-        cr.fill().ok();
-    }
-    cr.restore().ok();
-}
-
-fn rounded_rectangle(cr: &cairo::Context, x: f64, y: f64, w: f64, h: f64, radius: f64) {
-    let radius = radius.min(w / 2.0).min(h / 2.0);
-    cr.new_sub_path();
-    cr.arc(
-        x + w - radius,
-        y + radius,
-        radius,
-        -std::f64::consts::FRAC_PI_2,
-        0.0,
-    );
-    cr.arc(
-        x + w - radius,
-        y + h - radius,
-        radius,
-        0.0,
-        std::f64::consts::FRAC_PI_2,
-    );
-    cr.arc(
-        x + radius,
-        y + h - radius,
-        radius,
-        std::f64::consts::FRAC_PI_2,
-        std::f64::consts::PI,
-    );
-    cr.arc(
-        x + radius,
-        y + radius,
-        radius,
-        std::f64::consts::PI,
-        std::f64::consts::PI + std::f64::consts::FRAC_PI_2,
-    );
-    cr.close_path();
 }
 
 fn shadow_layer(width: i32, class: &str, opacity: f64) -> gtk4::Box {
@@ -524,25 +359,5 @@ mod tests {
             "0 16px 50px -3px rgba(0, 0, 0, 0.55)"
         );
         assert_eq!(lift_shadow(56.0, 0.0), "0 3px 8px 0 rgba(0, 0, 0, 0.55)");
-    }
-
-    #[test]
-    fn ac_24_the_sheen_travels_on_time_and_only_brightens_on_the_swell() {
-        // Opacity is the only thing the music touches.
-        assert!((sheen_opacity(0.0) - 0.22).abs() < 1e-9);
-        assert!((sheen_opacity(1.0) - 0.40).abs() < 1e-9);
-        assert!((sheen_opacity(4.0) - 0.40).abs() < 1e-9);
-
-        // The travel is a 13 s sine over ±0.5 w and depends on nothing else.
-        let w = 168.0;
-        assert!((sheen_offset(0.0, w) - 0.0).abs() < 1e-9);
-        assert!((sheen_offset(13.0 / 4.0, w) - 0.5 * w).abs() < 1e-6);
-        assert!((sheen_offset(13.0 * 3.0 / 4.0, w) + 0.5 * w).abs() < 1e-6);
-        assert!((sheen_offset(0.0, w) - sheen_offset(13.0, w)).abs() < 1e-6);
-
-        // Live spectrum frames and the backdrop's existing paused breath are
-        // the only frame sources; the cover must not own another timer.
-        let timer_api = ["add_tick", "callback"].concat();
-        assert!(!include_str!("cover_lift.rs").contains(&timer_api));
     }
 }

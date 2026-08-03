@@ -2941,8 +2941,12 @@ STYLE-1).
   answers the music moves under the cursor and competes with the state
   it reports. The cover itself never changes brightness either: the
   eye reads luminance change in peripheral vision, so a brightening
-  cover pulls attention off the list; it lifts on its shadow and carries
-  a travelling reflection instead. The lift is two cached shadow layers
+  cover pulls attention off the list; it lifts on its shadow, carries a
+  one-pixel light seam along its edge, and has a slow conic sweep of the
+  cover's own palette turning behind it — one turn a minute. The seam sits
+  one pixel outside the artwork, so the cover's footprint grows by exactly
+  one pixel on each side; nothing crosses the picture itself. The lift is
+  two cached shadow layers
   whose opacities cross-fade with the composite coverage held constant —
   a linear `1 - swell` pair sums to one and still dips 14 %, which reads
   as a flicker during the cross-fade. Every large effect rests at its
