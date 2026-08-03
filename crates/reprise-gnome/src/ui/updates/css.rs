@@ -147,7 +147,7 @@ pub(in crate::ui) fn css() -> String {
     .new-release-action:hover {\
         background-color: alpha(currentColor, 0.08);\
     }\
-    /* Footer 'Fetch now' ghost button: accent text, no border, tinted hover. */\
+    /* Header 'Fetch now' ghost button: accent text, no border, tinted hover. */\
     .new-release-ghost {\
         color: @accent_color;\
         background-color: transparent;\

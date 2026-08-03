@@ -6,9 +6,8 @@ use crate::ui::strings;
 
 use super::badge;
 use super::concerts_section::ConcertsSection;
-use super::popover::SCROLLER_MAX_HEIGHT;
 
-const POPOVER_WIDTH: i32 = 336;
+const POPOVER_WIDTH: i32 = 380;
 
 pub(super) struct UpdatesShell {
     pub button: gtk4::MenuButton,
@@ -43,17 +42,7 @@ pub(super) fn build() -> UpdatesShell {
     empty.set_justify(gtk4::Justification::Center);
     empty.set_margin_top(12);
     empty.set_margin_bottom(12);
-    let scroller = gtk4::ScrolledWindow::builder()
-        .child(&list)
-        .hscrollbar_policy(gtk4::PolicyType::Never)
-        .vscrollbar_policy(gtk4::PolicyType::Automatic)
-        .propagate_natural_height(true)
-        .max_content_height(SCROLLER_MAX_HEIGHT)
-        .build();
 
-    let updates_header = gtk4::Label::new(Some(&strings::text(strings::UPDATES_HEADER)));
-    updates_header.add_css_class("new-release-header");
-    updates_header.set_xalign(0.0);
     let header_label = gtk4::Label::new(Some(&strings::text(strings::UPDATES_NEW_RELEASES_HEADER)));
     header_label.add_css_class("new-release-header");
     header_label.set_xalign(0.0);
@@ -66,7 +55,7 @@ pub(super) fn build() -> UpdatesShell {
     header_row.append(&new_tag);
     let news_section = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
     news_section.append(&header_row);
-    news_section.append(&scroller);
+    news_section.append(&list);
 
     let concerts_section = ConcertsSection::new();
     let nothing_new = gtk4::Label::new(Some(&strings::text(strings::UPDATES_NOTHING_NEW)));
@@ -80,16 +69,21 @@ pub(super) fn build() -> UpdatesShell {
     let (releases_jump, releases_jump_label) = build_jump_row();
     let (concerts_jump, concerts_jump_label) = build_jump_row();
 
-    let (footer, fetch_button, fetch_stack, spinner, updated, failure) = build_footer();
+    let (updates_header, fetch_button, fetch_stack, spinner, updated) = build_header();
+    let failure = gtk4::Label::new(None);
+    failure.add_css_class("dim-label");
+    failure.set_xalign(0.0);
+    failure.set_wrap(true);
+    failure.set_visible(false);
     let list_page = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
     list_page.append(&updates_header);
+    list_page.append(&failure);
     list_page.append(&news_section);
     list_page.append(concerts_section.root());
     list_page.append(&nothing_new);
     list_page.append(&separator);
     list_page.append(&releases_jump);
     list_page.append(&concerts_jump);
-    list_page.append(&footer);
 
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     content.set_size_request(POPOVER_WIDTH, -1);
@@ -137,40 +131,73 @@ fn build_jump_row() -> (gtk4::Button, gtk4::Label) {
     (button, label)
 }
 
-fn build_footer() -> (
+fn build_header() -> (
     gtk4::Box,
     gtk4::Button,
     gtk4::Stack,
     gtk4::Spinner,
     gtk4::Label,
-    gtk4::Label,
 ) {
+    let title = gtk4::Label::new(Some(&strings::text(strings::UPDATES_HEADER)));
+    title.add_css_class("new-release-header");
+    title.set_xalign(0.0);
+    title.set_hexpand(true);
     let icon = gtk4::Image::from_icon_name("view-refresh-symbolic");
     let spinner = gtk4::Spinner::new();
     let stack = gtk4::Stack::new();
     stack.add_named(&icon, Some("icon"));
     stack.add_named(&spinner, Some("spinner"));
     stack.set_visible_child_name("icon");
-    let fetch_label = gtk4::Label::new(Some(&strings::text(strings::FETCH_NOW)));
-    let fetch_content = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
-    fetch_content.append(&stack);
-    fetch_content.append(&fetch_label);
     let fetch_button = gtk4::Button::builder()
-        .child(&fetch_content)
+        .child(&stack)
+        .tooltip_text(strings::text(strings::FETCH_NOW))
         .css_classes(["flat", "new-release-ghost"])
         .build();
     let updated = gtk4::Label::new(None);
     updated.add_css_class("dim-label");
-    let failure = gtk4::Label::new(None);
-    failure.add_css_class("dim-label");
-    failure.set_visible(false);
-    let status = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
-    status.set_hexpand(true);
-    status.set_halign(gtk4::Align::End);
-    status.append(&updated);
-    status.append(&failure);
-    let footer = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-    footer.append(&fetch_button);
-    footer.append(&status);
-    (footer, fetch_button, stack, spinner, updated, failure)
+    updated.set_halign(gtk4::Align::End);
+    let fetch_status = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+    fetch_status.append(&fetch_button);
+    fetch_status.append(&updated);
+    let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+    header.append(&title);
+    header.append(&fetch_status);
+    (header, fetch_button, stack, spinner, updated)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn nr_23_shell_is_a_fixed_delta_layout_with_fetch_state_in_its_header() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        if gtk4::init().is_err() {
+            return;
+        }
+        let shell = build();
+        let content = shell.popover.child().expect("popover content");
+        let list_page = content.first_child().expect("list page");
+        let header = list_page.first_child().expect("updates header");
+
+        assert_eq!(content.width_request(), 380);
+        assert!(shell
+            .list
+            .ancestor(gtk4::ScrolledWindow::static_type())
+            .is_none());
+        assert_eq!(
+            shell.list.parent(),
+            Some(shell.news_section.clone().upcast())
+        );
+        assert_eq!(shell.failure.parent(), Some(list_page.clone()));
+        assert_eq!(shell.fetch_button.parent(), shell.updated.parent());
+        assert_eq!(
+            shell
+                .fetch_button
+                .parent()
+                .and_then(|parent| parent.parent()),
+            Some(header)
+        );
+    }
 }

@@ -18,8 +18,6 @@ use super::release_cover::fallback_accent_for_artist;
 use super::release_row;
 use super::shell;
 
-/// Caps the scrolling release list's natural height before it scrolls.
-pub(in crate::ui) const SCROLLER_MAX_HEIGHT: i32 = 288;
 /// How often the background timer re-checks staleness while the module is
 /// enabled (Beschluss 8). Deliberately coarse: `refresh_due`'s own 6 h+jitter
 /// window is the real gate, this just samples it periodically.
