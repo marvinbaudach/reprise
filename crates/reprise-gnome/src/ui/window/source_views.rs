@@ -131,6 +131,7 @@ pub(in crate::ui) fn install(
         let youtube = Rc::downgrade(&youtube);
         player.add_on_external_changed(move |snapshot| {
             let episode_mark = crate::ui::podcasts::episode_mark_from_snapshot(snapshot.as_ref());
+            let restored = snapshot.as_ref().is_some_and(|snapshot| snapshot.restored);
             let unavailable_episode = snapshot.as_ref().and_then(|snapshot| {
                 if snapshot.podcast_phase
                     == Some(crate::ui::playback::external_media::PodcastPhase::Failed)
@@ -141,11 +142,11 @@ pub(in crate::ui) fn install(
                 }
             });
             if let Some(view) = podcasts.upgrade() {
-                view.set_playing_episode(episode_mark);
+                view.set_playing_episode(episode_mark, restored);
                 view.set_unavailable_episode(unavailable_episode);
             }
             if let Some(view) = youtube.upgrade() {
-                view.set_playing_episode(episode_mark);
+                view.set_playing_episode(episode_mark, restored);
                 view.set_unavailable_episode(unavailable_episode);
             }
             tracing::debug!(

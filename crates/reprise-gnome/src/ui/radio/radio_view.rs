@@ -1,6 +1,3 @@
-use std::cell::{Cell, RefCell};
-use std::rc::Rc;
-
 use gtk4::gio;
 use gtk4::prelude::*;
 use libadwaita as adw;
@@ -10,6 +7,8 @@ use reprise_core::radio::{self, StationRow};
 use reprise_core::source_error::{
     source_failure_presentation, SourceError, SourceErrorKind, SourceSurface,
 };
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 
 use super::add_dialog::RadioAddDialog;
 use super::radio_columns::{self, LiveState};
@@ -689,6 +688,7 @@ mod tests {
                 organization: None,
             },
             podcast_phase: None,
+            restored: false,
             radio: Some(RadioPresentation::connected()),
             error: None,
         }));

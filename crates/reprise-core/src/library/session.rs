@@ -29,6 +29,26 @@ pub enum SessionSource {
     ImportErrors,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionEpisodeOrigin {
+    Direct,
+    ManualQueue,
+}
+
+/// Stable identity needed to present a loaded episode after process restart.
+/// Stream URLs are deliberately excluded because YouTube URLs are signed and
+/// short-lived; the frontend resolves the durable episode row again on Play.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionEpisode {
+    pub episode_id: i64,
+    pub origin: SessionEpisodeOrigin,
+    /// Frozen rendered show/channel order for direct playback. Manual-queue
+    /// context is already persisted by `current_up_next` plus `up_next`.
+    #[serde(default)]
+    pub neighbour_episode_ids: Vec<i64>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SessionState {
     pub version: u8,
@@ -52,6 +72,8 @@ pub struct SessionState {
     pub up_next: UpNextQueue,
     #[serde(default, deserialize_with = "deserialize_current_up_next")]
     pub current_up_next: Option<QueueItem>,
+    #[serde(default)]
+    pub active_episode: Option<SessionEpisode>,
     /// Where the current playback snapshot was started from (QUE-1's
     /// "Up Next · from <source>" and NAV-9's jump target). `None` for
     /// sessions saved before the field existed or when nothing was played.
@@ -84,6 +106,7 @@ impl Default for SessionState {
             queue: empty_queue(),
             up_next: UpNextQueue::default(),
             current_up_next: None,
+            active_episode: None,
             play_origin: None,
             play_origin_label: None,
             play_origin_place: None,
@@ -174,7 +197,16 @@ fn place_is_resolvable(conn: &Connection, place: &BrowserPlace) -> bool {
             | TrackCollection::Queue
             | TrackCollection::Missing,
         ) => true,
-        None => matches!(place, BrowserPlace::ImportErrors | BrowserPlace::MyStats),
+        None => matches!(
+            place,
+            BrowserPlace::ImportErrors
+                | BrowserPlace::MyStats
+                | BrowserPlace::Releases
+                | BrowserPlace::Concerts
+                | BrowserPlace::Podcasts
+                | BrowserPlace::Youtube
+                | BrowserPlace::Radio
+        ),
     }
 }
 
@@ -249,6 +281,16 @@ fn normalize(mut state: SessionState) -> SessionState {
     }
     let queue_limit = usize::try_from(crate::queries::QUEUE_LIMIT).unwrap_or(usize::MAX);
     state.up_next.truncate(queue_limit);
+    if let Some(active) = state.active_episode.as_mut() {
+        if active.episode_id <= 0 {
+            state.active_episode = None;
+        } else if active.origin == SessionEpisodeOrigin::ManualQueue {
+            active.neighbour_episode_ids.clear();
+        } else {
+            active.neighbour_episode_ids.retain(|id| *id > 0);
+            active.neighbour_episode_ids.truncate(queue_limit);
+        }
+    }
     if state.queue.ids.len() > queue_limit {
         state.queue = empty_queue();
     } else {
@@ -396,6 +438,7 @@ mod tests {
             },
             up_next: UpNextQueue::default(),
             current_up_next: None,
+            active_episode: None,
             play_origin: None,
             play_origin_label: None,
             play_origin_place: None,
@@ -422,7 +465,7 @@ mod tests {
         state.library_root = Some(root.clone());
         state.play_origin_place = Some(current.clone());
 
-        // This persistence survives while START-1 decides where startup lands.
+        // START-3 restores this complete place rather than only its sorting.
         save(&conn, &state).unwrap();
         let restored = load(&conn);
 
@@ -444,6 +487,26 @@ mod tests {
     }
 
     #[test]
+    fn browse_12_stable_source_places_survive_the_session_round_trip() {
+        let conn = conn();
+        for place in [
+            BrowserPlace::Podcasts,
+            BrowserPlace::Youtube,
+            BrowserPlace::Radio,
+            BrowserPlace::Releases,
+            BrowserPlace::Concerts,
+            BrowserPlace::MyStats,
+        ] {
+            let mut state = full_state();
+            state.browser_place = Some(place.clone());
+
+            save(&conn, &state).unwrap();
+
+            assert_eq!(load(&conn).browser_place, Some(place));
+        }
+    }
+
+    #[test]
     fn session_place_resolution_falls_back_to_the_remembered_library_root() {
         let conn = conn();
         let mut state = full_state();
@@ -455,7 +518,7 @@ mod tests {
         state.play_origin_place = Some(BrowserPlace::from(ViewSource::Playlist(9999)));
         state.play_origin_label = Some("Deleted".into());
 
-        // This persistence survives while START-1 decides where startup lands.
+        // START-3 falls back to this root when the current place went stale.
         save(&conn, &state).unwrap();
         let restored = load(&conn);
 
@@ -651,5 +714,63 @@ mod tests {
         state.up_next.append(&items);
         save(&conn, &state).unwrap();
         assert_eq!(load(&conn).up_next.len(), len - 1);
+    }
+
+    #[test]
+    fn que_11_active_episode_identity_and_direct_context_round_trip() {
+        let state = SessionState {
+            active_episode: Some(SessionEpisode {
+                episode_id: 42,
+                origin: SessionEpisodeOrigin::Direct,
+                neighbour_episode_ids: vec![41, 42, 43],
+            }),
+            ..SessionState::default()
+        };
+
+        let value = serde_json::to_string(&state).unwrap();
+        let restored: SessionState = serde_json::from_str(&value).unwrap();
+
+        assert_eq!(restored.active_episode, state.active_episode);
+    }
+
+    #[test]
+    fn que_11_active_episode_state_is_validated_and_bounded() {
+        let mut invalid = SessionState {
+            active_episode: Some(SessionEpisode {
+                episode_id: 0,
+                origin: SessionEpisodeOrigin::Direct,
+                neighbour_episode_ids: vec![1, 2],
+            }),
+            ..SessionState::default()
+        };
+        assert_eq!(normalize(invalid.clone()).active_episode, None);
+
+        invalid.active_episode = Some(SessionEpisode {
+            episode_id: 7,
+            origin: SessionEpisodeOrigin::ManualQueue,
+            neighbour_episode_ids: vec![7, 8],
+        });
+        assert_eq!(
+            normalize(invalid.clone())
+                .active_episode
+                .unwrap()
+                .neighbour_episode_ids,
+            Vec::<i64>::new()
+        );
+
+        let limit = usize::try_from(crate::queries::QUEUE_LIMIT).unwrap();
+        invalid.active_episode = Some(SessionEpisode {
+            episode_id: 7,
+            origin: SessionEpisodeOrigin::Direct,
+            neighbour_episode_ids: (1..=i64::try_from(limit + 10).unwrap()).collect(),
+        });
+        assert_eq!(
+            normalize(invalid)
+                .active_episode
+                .unwrap()
+                .neighbour_episode_ids
+                .len(),
+            limit
+        );
     }
 }

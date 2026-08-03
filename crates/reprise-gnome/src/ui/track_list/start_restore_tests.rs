@@ -1,5 +1,5 @@
-//! START-1 display tests: a normal start marks the loaded track like a paused
-//! song and centers it, without touching selection or focus.
+//! START-3 display tests: a normal start marks, selects, and centers the
+//! restored loaded track like a paused song without taking keyboard focus.
 //!
 //! Included as a child module of `current_track_selection` (see the bottom of
 //! that file) for two reasons: the tests drive its private
@@ -68,7 +68,7 @@ fn centered_value(track_list: &TrackList, position: u32) -> Option<f64> {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn start_1_loaded_track_is_centered_and_marked_paused() {
+fn start_3_loaded_track_is_selected_centered_and_marked_paused() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let (track_list, window) = synthetic_track_list(100);
@@ -117,16 +117,17 @@ fn start_1_loaded_track_is_centered_and_marked_paused() {
     );
     assert_eq!(
         track_list.shared.selection.selection().size(),
-        0,
-        "START-1 marks and centers; it never takes the selection (NAV-10a)"
+        1,
+        "START-3 gives the restored loaded track the sole selection"
     );
+    assert!(track_list.shared.selection.is_selected(position));
 
     window.close();
 }
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn start_1_absent_loaded_track_does_not_move_the_live_viewport() {
+fn start_3_absent_loaded_track_does_not_move_the_live_viewport() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let (track_list, window) = synthetic_track_list(100);

@@ -15,8 +15,11 @@ pub(in crate::ui) enum LoadedItemChange {
     /// A row in this very list was activated. The row was therefore visible.
     ActivatedHere,
     /// The loaded item changed without this list causing it — the player bar,
-    /// another surface, or a restored session.
+    /// or another surface.
     ChangedElsewhere,
+    /// The process reconstructed the last loaded item at cold start. This is
+    /// the one change that intentionally restores selection and position.
+    SessionRestore,
     /// The list just became the visible page.
     ViewEntered,
 }
@@ -47,7 +50,9 @@ pub(in crate::ui) fn reveal_policy(change: LoadedItemChange, user_scrolling: boo
     match change {
         LoadedItemChange::ActivatedHere => RevealPolicy::MarkerOnly,
         LoadedItemChange::ChangedElsewhere if user_scrolling => RevealPolicy::MarkerOnly,
-        LoadedItemChange::ChangedElsewhere | LoadedItemChange::ViewEntered => RevealPolicy::Reveal,
+        LoadedItemChange::ChangedElsewhere
+        | LoadedItemChange::SessionRestore
+        | LoadedItemChange::ViewEntered => RevealPolicy::Reveal,
     }
 }
 
@@ -89,6 +94,18 @@ mod tests {
         );
         assert_eq!(
             reveal_policy(LoadedItemChange::ViewEntered, false),
+            RevealPolicy::Reveal
+        );
+    }
+
+    #[test]
+    fn start_3_session_restore_always_reveals() {
+        assert_eq!(
+            reveal_policy(LoadedItemChange::SessionRestore, true),
+            RevealPolicy::Reveal
+        );
+        assert_eq!(
+            reveal_policy(LoadedItemChange::SessionRestore, false),
             RevealPolicy::Reveal
         );
     }

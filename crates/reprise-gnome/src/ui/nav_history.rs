@@ -313,7 +313,7 @@ mod tests {
         root.track_state_mut().unwrap().search = "root query".into();
         let current = BrowserPlace::fresh_album("Blue", "Joni Mitchell");
 
-        // This persistence survives while START-1 decides where startup lands.
+        // START-3 restores these two places without reconstructing history.
         nav.restore(current.clone(), root.clone());
 
         assert_eq!(nav.session_places(current.clone()), Some((current, root)));

@@ -237,7 +237,7 @@ impl TrackList {
         self.shared.playing_track_id.set(Some(track_id));
         if change == CurrentTrackChange::SessionRestore {
             // Intentionally set before lookup: the class is inert without a matching row.
-            // START-1: a restored track is loaded but not running, so its row
+            // START-3: a restored track is loaded but not running, so its row
             // must look exactly like a mid-session pause — same marker, same
             // frozen equaliser. `restore_session_queue` fans out a
             // `Stopped` before this runs (session_player.rs), which is why
@@ -721,11 +721,11 @@ mod tests {
         );
     }
 
-    /// START-1: the restored track is loaded, not running. It gets the marker,
+    /// START-3: the restored track is loaded, not running. It gets the marker,
     /// but the viewport belongs to the startup centering — never to this
     /// callback, which fires before the target view even exists.
     #[test]
-    fn start_1_session_restore_marks_without_moving_the_viewport() {
+    fn start_3_session_restore_marks_without_moving_the_viewport() {
         assert_eq!(
             reveal_policy(CurrentTrackChange::SessionRestore, false),
             TrackRevealPolicy::MarkerOnly
