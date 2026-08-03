@@ -443,7 +443,7 @@ impl PlayerBar {
             (0.0, 0.0)
         };
         self.play_ring.set_opacity(ring_alpha(kick, pressure));
-        self.waveform.set_bass_impact(kick);
+        self.waveform.set_bass_kick(kick);
     }
 
     fn animate_play_pulse(&self) {

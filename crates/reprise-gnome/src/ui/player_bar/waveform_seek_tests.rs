@@ -33,16 +33,35 @@ fn ac_24_lens_peaks_at_the_playhead_and_dies_within_ten_bars() {
 fn ac_24_lens_never_grows_a_bar_past_the_widget() {
     use super::render::lensed_bar_height;
     let max = 26.0;
-    // A bar already at the ceiling stays at the ceiling under full impact.
+    // A bar already at the ceiling stays at the ceiling under a full kick.
     assert!((lensed_bar_height(max, 1.0, 1.0, max) - max).abs() < 1e-9);
-    // A short bar grows by the agreed 30 % at the playhead.
-    assert!((lensed_bar_height(10.0, 1.0, 1.0, max) - 15.5).abs() < 1e-9);
-    // At the resting reading it is a tenth, not a third.
-    assert!((lensed_bar_height(10.0, 0.35, 1.0, max) - 11.925).abs() < 1e-9);
+    // A short bar grows by the agreed gain and snaps to a whole pixel.
+    assert!((lensed_bar_height(10.0, 1.0, 1.0, max) - 14.0).abs() < 1e-9);
+    // A smaller kick still grows only to its nearest whole pixel.
+    assert!((lensed_bar_height(10.0, 0.35, 1.0, max) - 11.0).abs() < 1e-9);
     // No reading, no change.
     assert!((lensed_bar_height(10.0, 0.0, 1.0, max) - 10.0).abs() < 1e-9);
     // Away from the playhead, no change either.
     assert!((lensed_bar_height(10.0, 1.0, 0.0, max) - 10.0).abs() < 1e-9);
+}
+
+#[test]
+fn ac_24_lens_snaps_to_whole_pixels_instead_of_shimmering() {
+    use super::render::lensed_bar_height;
+    let max = 26.0;
+    // A growth under half a pixel is not drawn at all: at 3 px bars that is
+    // rounding noise, and every bar crosses its boundary at a different
+    // moment, which reads as a shimmer rather than a swell.
+    assert!((lensed_bar_height(10.0, 0.05, 1.0, max) - 10.0).abs() < 1e-9);
+    // Above that it grows, and lands on a whole pixel.
+    let grown = lensed_bar_height(10.0, 1.0, 1.0, max);
+    assert!(
+        (grown - grown.round()).abs() < 1e-9,
+        "not pixel-aligned: {grown}"
+    );
+    assert!(grown > 10.0);
+    // The ceiling still holds.
+    assert!((lensed_bar_height(max, 1.0, 1.0, max) - max).abs() < 1e-9);
 }
 
 #[test]
@@ -53,12 +72,12 @@ fn ac_24_mini_player_never_takes_the_lens() {
     }
     // 46 bars: the lens sigma would cover a quarter of the whole strip.
     let mini = WaveformSeek::new_mini();
-    mini.set_bass_impact(1.0);
-    assert_eq!(mini.bass_impact_for_test(), 0.0);
+    mini.set_bass_kick(1.0);
+    assert_eq!(mini.bass_kick_for_test(), 0.0);
 
     let full = WaveformSeek::new();
-    full.set_bass_impact(1.0);
-    assert!(full.bass_impact_for_test() > 0.0);
+    full.set_bass_kick(1.0);
+    assert!(full.bass_kick_for_test() > 0.0);
 }
 
 #[test]
@@ -243,7 +262,7 @@ fn ensure_resampled_clears_display_peaks_when_raw_empty() {
         crossfade_start_us: 0,
         desaturation_progress: 0.0,
         desaturation_target: 0.0,
-        bass_impact: 0.0,
+        bass_kick: 0.0,
         min_bar_height: MIN_BAR_HEIGHT,
         max_bar_height: MAX_BAR_HEIGHT,
         bar_count_override: None,
@@ -273,7 +292,7 @@ fn ensure_resampled_populates_on_width_change() {
         crossfade_start_us: 0,
         desaturation_progress: 0.0,
         desaturation_target: 0.0,
-        bass_impact: 0.0,
+        bass_kick: 0.0,
         min_bar_height: MIN_BAR_HEIGHT,
         max_bar_height: MAX_BAR_HEIGHT,
         bar_count_override: None,

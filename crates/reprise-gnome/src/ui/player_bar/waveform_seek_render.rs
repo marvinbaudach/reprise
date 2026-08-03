@@ -100,7 +100,9 @@ struct BarDrawStyle {
 /// waveform is the truth and `shape_display_peaks` is never touched.
 const LENS_SIGMA_SQUARED: f64 = 30.0;
 const LENS_CUTOFF_BARS: f64 = 10.0;
-const LENS_GAIN: f64 = 0.55;
+const LENS_GAIN: f64 = 0.35;
+/// Below half a device pixel a bar must not move at all — see the test.
+const LENS_MIN_GROWTH_PX: f64 = 0.5;
 
 pub(super) fn playhead_lens(index: usize, count: usize, fraction: f64) -> f64 {
     if count == 0 {
@@ -115,8 +117,13 @@ pub(super) fn playhead_lens(index: usize, count: usize, fraction: f64) -> f64 {
 
 /// Applies the lens to one bar. The ceiling is mandatory: without it a bar near
 /// the playhead grows straight out of the widget.
-pub(super) fn lensed_bar_height(bar_h: f64, impact: f64, lens: f64, max_bar_height: f64) -> f64 {
-    (bar_h * (1.0 + LENS_GAIN * impact * lens)).min(max_bar_height)
+pub(super) fn lensed_bar_height(bar_h: f64, kick: f64, lens: f64, max_bar_height: f64) -> f64 {
+    let grown = bar_h * (1.0 + LENS_GAIN * kick * lens);
+    if grown - bar_h < LENS_MIN_GROWTH_PX {
+        bar_h
+    } else {
+        grown.min(max_bar_height).round()
+    }
 }
 
 fn draw_bars(
@@ -170,14 +177,14 @@ fn draw_bars(
         // build-up/crossfade windows, where two animations would fight.
         let bar_h = match bar {
             DisplayBar::Level(_)
-                if state.bass_impact > 0.0
+                if state.bass_kick > 0.0
                     && !state.fill_bars
                     && style.build_progress >= 1.0
                     && state.crossfade_progress >= 1.0 =>
             {
                 lensed_bar_height(
                     bar_h,
-                    state.bass_impact,
+                    state.bass_kick,
                     playhead_lens(index, count, state.fraction),
                     state.max_bar_height,
                 )
