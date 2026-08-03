@@ -44,13 +44,31 @@ pub enum LibraryError {
 
 /// One row as the UI needs it — deliberately not the full `Track`, so the
 /// binding surface stays a decision rather than an accident.
-#[derive(uniffi::Record)]
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct TrackRow {
     pub uri: String,
     pub title: String,
     pub artist: String,
     pub album: String,
     pub duration_ms: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct AlbumRow {
+    pub album: String,
+    pub album_artist: String,
+    pub representative_uri: String,
+    pub track_count: i64,
+    pub year: Option<i32>,
+    pub total_duration_ms: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct ArtistRow {
+    pub artist: String,
+    pub track_count: i64,
+    pub album_count: i64,
+    pub representative_uri: String,
 }
 
 #[derive(uniffi::Record)]
@@ -167,16 +185,84 @@ impl MusicLibrary {
         .map_err(|error| LibraryError::Query {
             detail: error.to_string(),
         })?;
-        Ok(tracks
-            .into_iter()
-            .map(|track| TrackRow {
-                uri: track.path,
-                title: track.title,
-                artist: track.artist,
-                album: track.album,
-                duration_ms: track.duration_ms,
+        Ok(tracks.into_iter().map(TrackRow::from).collect())
+    }
+
+    pub fn list_albums(&self) -> Result<Vec<AlbumRow>, LibraryError> {
+        let state = self.lock()?;
+        queries::query_albums(&state.db)
+            .map(|albums| {
+                albums
+                    .into_iter()
+                    .map(|album| AlbumRow {
+                        album: album.album,
+                        album_artist: album.album_artist,
+                        representative_uri: album.representative_path,
+                        track_count: album.track_count,
+                        year: album.year,
+                        total_duration_ms: album.total_duration_ms,
+                    })
+                    .collect()
             })
-            .collect())
+            .map_err(|error| LibraryError::Query {
+                detail: error.to_string(),
+            })
+    }
+
+    pub fn list_artists(&self) -> Result<Vec<ArtistRow>, LibraryError> {
+        let state = self.lock()?;
+        queries::query_artists(&state.db)
+            .map(|artists| {
+                artists
+                    .into_iter()
+                    .map(|artist| ArtistRow {
+                        artist: artist.artist,
+                        track_count: artist.track_count,
+                        album_count: artist.album_count,
+                        representative_uri: artist.representative_path,
+                    })
+                    .collect()
+            })
+            .map_err(|error| LibraryError::Query {
+                detail: error.to_string(),
+            })
+    }
+
+    pub fn list_album_tracks(
+        &self,
+        album: String,
+        album_artist: String,
+    ) -> Result<Vec<TrackRow>, LibraryError> {
+        let album = album.into_boxed_str();
+        let album_artist = album_artist.into_boxed_str();
+        let state = self.lock()?;
+        queries::query_album_tracks(&state.db, &album, &album_artist)
+            .map(|tracks| tracks.into_iter().map(TrackRow::from).collect())
+            .map_err(|error| LibraryError::Query {
+                detail: error.to_string(),
+            })
+    }
+
+    pub fn search_tracks(&self, text: String) -> Result<Vec<TrackRow>, LibraryError> {
+        let text = text.into_boxed_str();
+        let state = self.lock()?;
+        queries::query_library_text_search(&state.db, &text)
+            .map(|tracks| tracks.into_iter().map(TrackRow::from).collect())
+            .map_err(|error| LibraryError::Query {
+                detail: error.to_string(),
+            })
+    }
+}
+
+impl From<reprise_core::models::Track> for TrackRow {
+    fn from(track: reprise_core::models::Track) -> Self {
+        Self {
+            uri: track.path,
+            title: track.title,
+            artist: track.artist,
+            album: track.album,
+            duration_ms: track.duration_ms,
+        }
     }
 }
 
@@ -217,7 +303,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
 
-    use super::{MusicLibrary, ScanProgressListener, ScanProgressUpdate};
+    use super::{AlbumRow, ArtistRow, MusicLibrary, ScanProgressListener, ScanProgressUpdate};
     use crate::source::{SafSource, SafSourceError, SourceChild, SourceFacts};
 
     const TREE_URI: &str = "content://com.android.externalstorage.documents/tree/primary%3AMusic";
@@ -305,6 +391,207 @@ mod tests {
     }
 
     struct UntaggedAlbumSource;
+
+    fn browse_library() -> (tempfile::TempDir, MusicLibrary) {
+        let directory = tempfile::tempdir().unwrap();
+        let music = directory.path().join("music");
+        std::fs::create_dir(&music).unwrap();
+        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../android/app/src/main/assets/sine.flac");
+        for (name, title, artist, album_artist, year, track_no, genre) in [
+            (
+                "blue-2.flac",
+                "A Case of You",
+                "Joni Mitchell",
+                "Joni Mitchell",
+                1971,
+                2,
+                "Folk",
+            ),
+            (
+                "blue-1.flac",
+                "All I Want",
+                "Joni Mitchell",
+                "Joni Mitchell",
+                1971,
+                1,
+                "Folk",
+            ),
+            (
+                "blue-live.flac",
+                "Blue Live",
+                "Guest",
+                "Other Artist",
+                2000,
+                1,
+                "Rock",
+            ),
+        ] {
+            let path = music.join(name);
+            std::fs::copy(&fixture, &path).unwrap();
+            reprise_core::library::tag_edit::apply_patch_to_file(
+                &path,
+                &reprise_core::library::tag_edit::TagPatch {
+                    title: Some(title.into()),
+                    artist: Some(artist.into()),
+                    album: Some("Blue".into()),
+                    album_artist: Some(album_artist.into()),
+                    year: Some(Some(year)),
+                    track_no: Some(Some(track_no)),
+                    genre: Some(genre.into()),
+                },
+            )
+            .unwrap();
+        }
+        let db_path = directory.path().join("reprise.db");
+        let db = reprise_core::db::Db::open_migrated(Some(&db_path)).unwrap();
+        reprise_core::library::scanner::scan_folder(&db, &music).unwrap();
+        drop(db);
+        let library = MusicLibrary::open(directory.path().to_str().unwrap()).unwrap();
+        (directory, library)
+    }
+
+    #[test]
+    fn browse_surface_lists_core_album_summaries_in_core_order() {
+        let (directory, library) = browse_library();
+        let blue_uri = directory
+            .path()
+            .join("music/blue-1.flac")
+            .to_string_lossy()
+            .into_owned();
+        let live_uri = directory
+            .path()
+            .join("music/blue-live.flac")
+            .to_string_lossy()
+            .into_owned();
+
+        assert_eq!(
+            library.list_albums().unwrap(),
+            vec![
+                AlbumRow {
+                    album: "Blue".into(),
+                    album_artist: "Joni Mitchell".into(),
+                    representative_uri: blue_uri,
+                    track_count: 2,
+                    year: Some(1971),
+                    total_duration_ms: 2_320,
+                },
+                AlbumRow {
+                    album: "Blue".into(),
+                    album_artist: "Other Artist".into(),
+                    representative_uri: live_uri,
+                    track_count: 1,
+                    year: Some(2000),
+                    total_duration_ms: 1_160,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn browse_surface_lists_core_artist_summaries_in_core_order() {
+        let (directory, library) = browse_library();
+        let joni_uri = directory
+            .path()
+            .join("music/blue-1.flac")
+            .to_string_lossy()
+            .into_owned();
+        let other_uri = directory
+            .path()
+            .join("music/blue-live.flac")
+            .to_string_lossy()
+            .into_owned();
+
+        assert_eq!(
+            library.list_artists().unwrap(),
+            vec![
+                ArtistRow {
+                    artist: "Joni Mitchell".into(),
+                    track_count: 2,
+                    album_count: 1,
+                    representative_uri: joni_uri,
+                },
+                ArtistRow {
+                    artist: "Other Artist".into(),
+                    track_count: 1,
+                    album_count: 1,
+                    representative_uri: other_uri,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn browse_surface_gets_one_albums_tracks_in_core_order() {
+        let (directory, library) = browse_library();
+        let first_uri = directory
+            .path()
+            .join("music/blue-1.flac")
+            .to_string_lossy()
+            .into_owned();
+        let second_uri = directory
+            .path()
+            .join("music/blue-2.flac")
+            .to_string_lossy()
+            .into_owned();
+
+        assert_eq!(
+            library
+                .list_album_tracks(" blue ".into(), "joni mitchell".into())
+                .unwrap(),
+            vec![
+                super::TrackRow {
+                    uri: first_uri,
+                    title: "All I Want".into(),
+                    artist: "Joni Mitchell".into(),
+                    album: "Blue".into(),
+                    duration_ms: 1_160,
+                },
+                super::TrackRow {
+                    uri: second_uri,
+                    title: "A Case of You".into(),
+                    artist: "Joni Mitchell".into(),
+                    album: "Blue".into(),
+                    duration_ms: 1_160,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn browse_surface_searches_shared_fields_in_core_title_order() {
+        let (directory, library) = browse_library();
+        let case_uri = directory
+            .path()
+            .join("music/blue-2.flac")
+            .to_string_lossy()
+            .into_owned();
+        let want_uri = directory
+            .path()
+            .join("music/blue-1.flac")
+            .to_string_lossy()
+            .into_owned();
+
+        assert_eq!(
+            library.search_tracks(" folk ".into()).unwrap(),
+            vec![
+                super::TrackRow {
+                    uri: case_uri,
+                    title: "A Case of You".into(),
+                    artist: "Joni Mitchell".into(),
+                    album: "Blue".into(),
+                    duration_ms: 1_160,
+                },
+                super::TrackRow {
+                    uri: want_uri,
+                    title: "All I Want".into(),
+                    artist: "Joni Mitchell".into(),
+                    album: "Blue".into(),
+                    duration_ms: 1_160,
+                },
+            ]
+        );
+    }
 
     impl SafSource for UntaggedAlbumSource {
         fn residence_token(&self, _uri: String) -> Result<Option<i64>, SafSourceError> {

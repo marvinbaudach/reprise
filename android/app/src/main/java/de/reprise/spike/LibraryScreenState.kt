@@ -10,8 +10,10 @@ internal sealed interface LibraryScreenState {
         val total: ULong? = null,
     ) : LibraryScreenState
 
-    data class TrackList(
-        val tracks: List<LibraryTrack>,
+    data class Browse(
+        val titles: List<LibraryTrack>,
+        val albums: List<LibraryAlbum>,
+        val artists: List<LibraryArtist>,
         val message: String? = null,
     ) : LibraryScreenState
 }
@@ -22,6 +24,35 @@ internal data class LibraryTrack(
     val artist: String,
     val album: String,
     val durationMs: Long,
+)
+
+internal data class LibraryAlbum(
+    val title: String,
+    val artist: String,
+    val representativeUri: String,
+    val trackCount: Long,
+    val year: Int?,
+    val totalDurationMs: Long,
+)
+
+internal data class LibraryArtist(
+    val name: String,
+    val trackCount: Long,
+    val albumCount: Long,
+    val representativeUri: String,
+)
+
+internal data class AlbumTrackList(
+    val album: LibraryAlbum,
+    val tracks: List<LibraryTrack>,
+) {
+    fun playbackSelection(startIndex: Int): PlaybackSelection =
+        PlaybackSelection(tracks, startIndex)
+}
+
+internal data class PlaybackSelection(
+    val tracks: List<LibraryTrack>,
+    val startIndex: Int,
 )
 
 internal sealed interface ScanProgressPresentation {

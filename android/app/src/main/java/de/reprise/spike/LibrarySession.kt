@@ -13,7 +13,13 @@ internal interface LibrarySessionPort {
 
     fun scan(report: (LibraryScreenState.Scanning) -> Unit)
 
-    fun listTracks(): List<LibraryTrack>
+    fun searchTracks(text: String): List<LibraryTrack>
+
+    fun listAlbums(): List<LibraryAlbum>
+
+    fun listArtists(): List<LibraryArtist>
+
+    fun listAlbumTracks(album: String, albumArtist: String): List<LibraryTrack>
 }
 
 internal class LibrarySession(
@@ -25,7 +31,7 @@ internal class LibrarySession(
             return LibraryScreenState.TreeUnreadable
         }
         port.configureTree(treeUri)
-        return LibraryScreenState.TrackList(port.listTracks())
+        return browseState()
     }
 
     fun chooseTree(
@@ -49,11 +55,18 @@ internal class LibrarySession(
         }
         return runCatching {
             port.configureTree(treeUri)
-            LibraryScreenState.TrackList(port.listTracks(), message)
+            browseState(message)
         }.getOrElse {
-            LibraryScreenState.TrackList(emptyList(), message)
+            LibraryScreenState.Browse(emptyList(), emptyList(), emptyList(), message)
         }
     }
+
+    fun searchTitles(text: String): List<LibraryTrack> = port.searchTracks(text)
+
+    fun openAlbum(album: LibraryAlbum): AlbumTrackList = AlbumTrackList(
+        album = album,
+        tracks = port.listAlbumTracks(album.title, album.artist),
+    )
 
     private fun scanTree(
         treeUri: String,
@@ -65,6 +78,14 @@ internal class LibrarySession(
         port.configureTree(treeUri)
         report(LibraryScreenState.Scanning())
         port.scan(report)
-        return LibraryScreenState.TrackList(port.listTracks())
+        return browseState()
     }
+
+    private fun browseState(message: String? = null): LibraryScreenState.Browse =
+        LibraryScreenState.Browse(
+            titles = port.searchTracks(""),
+            albums = port.listAlbums(),
+            artists = port.listArtists(),
+            message = message,
+        )
 }

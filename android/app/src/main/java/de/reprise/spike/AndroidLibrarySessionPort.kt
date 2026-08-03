@@ -5,7 +5,10 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.net.Uri
 import android.util.Log
+import uniffi.reprise_android_ffi.AlbumRow
+import uniffi.reprise_android_ffi.ArtistRow
 import uniffi.reprise_android_ffi.MusicLibrary
+import uniffi.reprise_android_ffi.TrackRow
 
 private const val TAG = "RepriseScan"
 private const val TREE_URI_PREFERENCE = "library_tree_uri"
@@ -58,13 +61,39 @@ internal class AndroidLibrarySessionPort(
         )
     }
 
-    override fun listTracks(): List<LibraryTrack> = library.listTracks().map { track ->
-        LibraryTrack(
-            uri = track.uri,
-            title = track.title,
-            artist = track.artist,
-            album = track.album,
-            durationMs = track.durationMs,
-        )
-    }
+    override fun searchTracks(text: String): List<LibraryTrack> =
+        library.searchTracks(text).map(TrackRow::toLibraryTrack)
+
+    override fun listAlbums(): List<LibraryAlbum> =
+        library.listAlbums().map(AlbumRow::toLibraryAlbum)
+
+    override fun listArtists(): List<LibraryArtist> =
+        library.listArtists().map(ArtistRow::toLibraryArtist)
+
+    override fun listAlbumTracks(album: String, albumArtist: String): List<LibraryTrack> =
+        library.listAlbumTracks(album, albumArtist).map(TrackRow::toLibraryTrack)
 }
+
+private fun TrackRow.toLibraryTrack() = LibraryTrack(
+    uri = uri,
+    title = title,
+    artist = artist,
+    album = album,
+    durationMs = durationMs,
+)
+
+private fun AlbumRow.toLibraryAlbum() = LibraryAlbum(
+    title = album,
+    artist = albumArtist,
+    representativeUri = representativeUri,
+    trackCount = trackCount,
+    year = year,
+    totalDurationMs = totalDurationMs,
+)
+
+private fun ArtistRow.toLibraryArtist() = LibraryArtist(
+    name = artist,
+    trackCount = trackCount,
+    albumCount = albumCount,
+    representativeUri = representativeUri,
+)
