@@ -1,9 +1,8 @@
 //! Cover-derived player accent ("Follow album cover").
 //!
-//! The three dominant, colorful tones of the current album cover are extracted
-//! off-main and installed as overrides of the three player accent colours in a
-//! dedicated high-priority provider — so the waveform and the play button
-//! (which read that color) take on the album's hue, while selection and
+//! The dominant, colorful tone of the current album cover is extracted off-main
+//! and installed in a dedicated high-priority provider as two colours — so the
+//! waveform and the play button take on the album's hue, while selection and
 //! toggles (which read `@accent_color`) keep the theme accent.
 //!
 //! When a cover is missing, grayscale, or too dark/washed-out to read on the
@@ -22,7 +21,6 @@ use crate::ui::motion;
 use super::cover_accent_oklab::oklch_clamp;
 use super::cover_accent_oklab::{is_usable, oklch_light};
 pub(in crate::ui) use super::cover_accent_oklab::{scale_chroma, Rgb};
-use super::cover_palette::Palette;
 
 // ---------------------------------------------------------------------------
 // CSS provider
@@ -36,27 +34,14 @@ use super::cover_palette::Palette;
 /// `reprise_cover_light` is the same hue lifted into the light band — it is a
 /// translucent seam on the cover's edge, and at the accent's chroma it measured
 /// as invisible on real artwork.
-fn accent_css(palette: Option<Palette>) -> String {
-    match palette {
-        Some(p) if is_usable(&p.primary) => {
-            let light = oklch_light(p.primary);
+fn accent_css(accent: Option<Rgb>) -> String {
+    match accent {
+        Some(accent) if is_usable(&accent) => {
+            let light = oklch_light(accent);
             format!(
                 "@define-color reprise_player_accent #{:02x}{:02x}{:02x};\n\
-                 @define-color reprise_player_accent_2 #{:02x}{:02x}{:02x};\n\
-                 @define-color reprise_player_accent_3 #{:02x}{:02x}{:02x};\n\
                  @define-color reprise_cover_light #{:02x}{:02x}{:02x};",
-                p.primary.r,
-                p.primary.g,
-                p.primary.b,
-                p.second.r,
-                p.second.g,
-                p.second.b,
-                p.third.r,
-                p.third.g,
-                p.third.b,
-                light.r,
-                light.g,
-                light.b,
+                accent.r, accent.g, accent.b, light.r, light.g, light.b,
             )
         }
         _ => String::new(),
@@ -89,10 +74,10 @@ pub(super) fn install(display: &gtk4::gdk::Display) {
 
 /// Applies (or clears, with `None`) the cover-derived player accent. A no-op
 /// before [`install`] has run.
-pub(in crate::ui) fn set_cover_accent(palette: Option<Palette>) {
+pub(in crate::ui) fn set_cover_accent(accent: Option<Rgb>) {
     ACCENT_PROVIDER.with(|slot| {
         if let Some(provider) = slot.borrow().as_ref() {
-            provider.load_from_string(&accent_css(palette));
+            provider.load_from_string(&accent_css(accent));
         }
     });
 }
@@ -127,37 +112,21 @@ fn theme_fallback_rgb() -> Rgb {
     }
 }
 
-fn flat_palette(color: Rgb) -> Palette {
-    Palette {
-        primary: color,
-        second: color,
-        third: color,
-    }
-}
-
-fn lerp_rgb(old: Rgb, new: Rgb, value: f64) -> Rgb {
-    Rgb {
-        r: lerp(old.r, new.r, value),
-        g: lerp(old.g, new.g, value),
-        b: lerp(old.b, new.b, value),
-    }
-}
-
 fn accent_during_fade(
-    old: Option<Palette>,
-    new: Option<Palette>,
+    old: Option<Rgb>,
+    new: Option<Rgb>,
     fallback: Rgb,
     value: f64,
-) -> Option<Palette> {
+) -> Option<Rgb> {
     if new.is_none() && value >= 1.0 {
         return None;
     }
-    let old = old.unwrap_or_else(|| flat_palette(fallback));
-    let new = new.unwrap_or_else(|| flat_palette(fallback));
-    Some(Palette {
-        primary: lerp_rgb(old.primary, new.primary, value),
-        second: lerp_rgb(old.second, new.second, value),
-        third: lerp_rgb(old.third, new.third, value),
+    let old = old.unwrap_or(fallback);
+    let new = new.unwrap_or(fallback);
+    Some(Rgb {
+        r: lerp(old.r, new.r, value),
+        g: lerp(old.g, new.g, value),
+        b: lerp(old.b, new.b, value),
     })
 }
 
@@ -166,8 +135,8 @@ fn accent_during_fade(
 /// argument uses the selected palette's theme accent as the interpolation
 /// endpoint; clearing the override after the fade exposes the same color.
 pub(in crate::ui) fn cross_fade_accent(
-    old: Option<Palette>,
-    new: Option<Palette>,
+    old: Option<Rgb>,
+    new: Option<Rgb>,
     widget: &impl IsA<gtk4::Widget>,
 ) {
     if old == new {
@@ -227,21 +196,22 @@ mod tests {
             b: 40,
         })
         .expect("orange not gray");
-        let palette = flat_palette(vivid);
-        let css = accent_css(Some(palette));
+        let css = accent_css(Some(vivid));
         assert!(
             css.contains("@define-color reprise_player_accent"),
             "expected CSS override, got: {css:?}"
         );
-        assert!(css.contains("@define-color reprise_player_accent_2"));
-        assert!(css.contains("@define-color reprise_player_accent_3"));
+        // The seam's colour rides along: same hue, chroma lifted, because the
+        // accent's own band is tuned for ink and is invisible as a one-pixel
+        // translucent line.
+        assert!(css.contains("@define-color reprise_cover_light"));
         assert!(accent_css(None).is_empty());
         // Pure gray should clear to empty.
-        assert!(accent_css(Some(flat_palette(Rgb {
+        assert!(accent_css(Some(Rgb {
             r: 128,
             g: 128,
             b: 128,
-        })))
+        }))
         .is_empty());
     }
 
@@ -255,11 +225,11 @@ mod tests {
 
     #[test]
     fn fade_to_theme_fallback_clears_all_three_overrides_at_the_endpoint() {
-        let cover = Some(flat_palette(Rgb {
+        let cover = Some(Rgb {
             r: 200,
             g: 80,
             b: 40,
-        }));
+        });
         let fallback = Rgb {
             r: 51,
             g: 201,
@@ -278,21 +248,21 @@ mod tests {
         let previous_setting = settings.is_gtk_enable_animations();
         settings.set_gtk_enable_animations(true);
         let label = gtk4::Label::new(None);
-        let red = Some(flat_palette(Rgb {
+        let red = Some(Rgb {
             r: 220,
             g: 40,
             b: 40,
-        }));
-        let blue = Some(flat_palette(Rgb {
+        });
+        let blue = Some(Rgb {
             r: 40,
             g: 40,
             b: 220,
-        }));
-        let green = Some(flat_palette(Rgb {
+        });
+        let green = Some(Rgb {
             r: 40,
             g: 220,
             b: 40,
-        }));
+        });
 
         cross_fade_accent(red, blue, &label);
         let first = CURRENT_ANIMATION.with(|slot| slot.borrow().as_ref().unwrap().clone());

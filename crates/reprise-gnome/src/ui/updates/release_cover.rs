@@ -20,7 +20,7 @@ pub(in crate::ui) fn fallback_accent_for_artist(db: &Db, artist: &str) -> Option
     let thumbnail =
         reprise_core::cover::thumbnail(&source, reprise_core::cover::ThumbnailSize::Portrait)
             .ok()?;
-    let accent = crate::ui::style::cover_palette::accent_from_cover_file(&thumbnail)?.primary;
+    let accent = crate::ui::style::cover_palette::accent_from_cover_file(&thumbnail)?;
     Some(format!("#{:02X}{:02X}{:02X}", accent.r, accent.g, accent.b))
 }
 

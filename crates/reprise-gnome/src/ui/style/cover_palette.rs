@@ -1,35 +1,23 @@
-//! The three dominant colours of a cover.
+//! The dominant colour of a cover.
 //!
 //! Median-cut splits the (32 px) cover into eight buckets and scores each by
-//! `population × OKLCH chroma`. The old code kept the winner and threw seven
-//! away; the palette keeps the best three that are far enough apart in hue to
-//! read as different light. The mockup's own words for what these are:
-//! "Drei Farben, nach Sättigung gewichtet und auf gleiche Helligkeit gebracht.
-//! Near-Black fällt raus — daraus kommt kein Licht."
+//! `population × OKLCH chroma`. It then walks that ranking and takes the first
+//! bucket that survives the near-gray gate, rather than giving up when the
+//! single highest-scoring one happens to be gray.
+//!
+//! This briefly returned three colours, for a conic sweep of the cover's
+//! palette behind the artwork. Measured against a real library that effect did
+//! not work — half the covers yield no usable colour at all and most of the
+//! rest are monochrome — so the sweep became a rotating copy of the blurred
+//! cover and the second and third entries lost their only reader.
 
 #[cfg(test)]
 use super::cover_accent_oklab::is_usable;
-use super::cover_accent_oklab::{
-    hue_distance, hue_of, hue_rotated, linear_rgb_to_oklab, oklch_clamp, to_linear, Rgb,
-};
+use super::cover_accent_oklab::{linear_rgb_to_oklab, oklch_clamp, to_linear, Rgb};
 
 /// Edge length the cover is scaled to before sampling — small enough to be
 /// cheap, large enough to be representative.
 const SAMPLE_EDGE: i32 = 32;
-
-/// Two palette entries closer than this in OKLCH hue read as one colour.
-const MIN_HUE_SEPARATION: f64 = 0.35; // radians, ≈ 20°
-/// A monochrome cover's missing entries are filled by rotating the primary
-/// this far — enough for the conic sweep to move, small enough to stay the
-/// same colour family.
-const FILL_HUE_STEP: f64 = 0.38; // radians, ≈ 22°
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(in crate::ui) struct Palette {
-    pub(in crate::ui) primary: Rgb,
-    pub(in crate::ui) second: Rgb,
-    pub(in crate::ui) third: Rgb,
-}
 
 /// Recursively splits `pixels` along the channel with the widest range,
 /// up to `depth` levels (producing up to 2^depth buckets). Returns all
@@ -73,7 +61,7 @@ fn median_cut_buckets(pixels: Vec<[u8; 3]>, depth: u32) -> Vec<Vec<[u8; 3]>> {
     result
 }
 
-pub(in crate::ui) fn dominant_palette(pixels: &[u8], channels: usize) -> Option<Palette> {
+pub(in crate::ui) fn dominant_accent(pixels: &[u8], channels: usize) -> Option<Rgb> {
     if channels < 3 {
         return None;
     }
@@ -125,43 +113,18 @@ pub(in crate::ui) fn dominant_palette(pixels: &[u8], channels: usize) -> Option<
         },
     );
 
-    let mut kept = Vec::with_capacity(3);
-    for (_, _, average) in ranked {
-        let Some(color) = oklch_clamp(average) else {
-            continue;
-        };
-        let hue = hue_of(color);
-        if kept
-            .iter()
-            .all(|entry| hue_distance(hue, hue_of(*entry)) >= MIN_HUE_SEPARATION)
-        {
-            kept.push(color);
-            if kept.len() == 3 {
-                break;
-            }
-        }
-    }
-
-    let primary = *kept.first()?;
-    let second = kept
-        .get(1)
-        .copied()
-        .unwrap_or_else(|| hue_rotated(primary, FILL_HUE_STEP));
-    let third = kept
-        .get(2)
-        .copied()
-        .unwrap_or_else(|| hue_rotated(primary, -FILL_HUE_STEP));
-    Some(Palette {
-        primary,
-        second,
-        third,
-    })
+    // Walk the ranking instead of taking only the winner: a cover whose
+    // largest, most colourful bucket is still near-gray usually has a smaller
+    // one that is not, and the theme fallback is a worse answer than that.
+    ranked
+        .into_iter()
+        .find_map(|(_, _, average)| oklch_clamp(average))
 }
 
-/// Extracts the dominant palette from a cover image file. Runs off-main (decodes
-/// a scaled pixbuf and reads its pixels); returns a `Send` [`Palette`] for the main
+/// Extracts the dominant accent from a cover image file. Runs off-main (decodes
+/// a scaled pixbuf and reads its pixels); returns a `Send` [`Rgb`] for the main
 /// thread to apply. `None` on any decode failure or a non-colorful cover.
-pub(in crate::ui) fn accent_from_cover_file(path: &std::path::Path) -> Option<Palette> {
+pub(in crate::ui) fn accent_from_cover_file(path: &std::path::Path) -> Option<Rgb> {
     let pixbuf =
         gtk4::gdk_pixbuf::Pixbuf::from_file_at_scale(path, SAMPLE_EDGE, SAMPLE_EDGE, false).ok()?;
     let channels = pixbuf.n_channels() as usize;
@@ -178,7 +141,7 @@ pub(in crate::ui) fn accent_from_cover_file(path: &std::path::Path) -> Option<Pa
             contiguous.extend_from_slice(&bytes[start..end]);
         }
     }
-    dominant_palette(&contiguous, channels)
+    dominant_accent(&contiguous, channels)
 }
 
 /// Probe support: prints every median-cut bucket's average colour and its raw
@@ -246,13 +209,13 @@ mod tests {
         // 90% gray pixels, 10% bright red -> should pick the red cluster.
         let mut pixels = solid(130, 130, 130, 90);
         pixels.extend(solid(220, 40, 40, 10));
-        let accent = dominant_palette(&pixels, 3).expect("red cluster").primary;
+        let accent = dominant_accent(&pixels, 3).expect("red cluster");
         assert!(accent.r > 180, "expected red-dominant, got {accent:?}");
     }
 
     #[test]
     fn near_gray_falls_back_to_none() {
-        let result = dominant_palette(&solid(128, 126, 130, 100), 3).map(|palette| palette.primary);
+        let result = dominant_accent(&solid(128, 126, 130, 100), 3);
         // Either returns None directly, or returns a color that is_usable rejects.
         assert!(result.is_none() || !is_usable(&result.unwrap()));
     }
@@ -260,14 +223,14 @@ mod tests {
     #[test]
     fn grayscale_cover_has_no_accent() {
         let pixels = solid(128, 128, 128, 64);
-        assert!(dominant_palette(&pixels, 3).is_none());
+        assert!(dominant_accent(&pixels, 3).is_none());
     }
 
     #[test]
     fn vivid_pixels_outweigh_gray_ones() {
         let mut pixels = solid(130, 130, 130, 60); // mostly gray
         pixels.extend(solid(40, 200, 120, 4)); // a few vivid teal
-        let accent = dominant_palette(&pixels, 3).expect("some accent").primary;
+        let accent = dominant_accent(&pixels, 3).expect("some accent");
         // After OKLCH clamping the teal bucket wins, so green should dominate.
         assert!(accent.g > accent.r && accent.g > accent.b, "{accent:?}");
     }
@@ -276,7 +239,7 @@ mod tests {
     fn dominant_accent_returns_colorful_result_for_vivid_input() {
         let pixels = solid(220, 90, 40, 64); // warm orange
                                              // Result is OKLCH-clamped so exact match not expected, but should exist.
-        let result = dominant_palette(&pixels, 3);
+        let result = dominant_accent(&pixels, 3);
         assert!(
             result.is_some(),
             "expected a result for vivid orange pixels"
@@ -284,51 +247,23 @@ mod tests {
     }
 
     #[test]
-    fn the_palette_keeps_three_distinct_hues_from_one_cover() {
-        // A cover with three real colour families plus filler.
-        let mut pixels = solid(40, 60, 200, 40); // blue
-        pixels.extend(solid(210, 70, 60, 30)); // red
-        pixels.extend(solid(60, 190, 90, 20)); // green
-        pixels.extend(solid(20, 20, 24, 40)); // near-black filler
-        let palette = dominant_palette(&pixels, 3).expect("three families");
-        let hues = [palette.primary, palette.second, palette.third].map(hue_of);
-        for (i, a) in hues.iter().enumerate() {
-            for b in hues.iter().skip(i + 1) {
-                assert!(
-                    hue_distance(*a, *b) >= MIN_HUE_SEPARATION,
-                    "two palette entries share a hue: {hues:?}"
-                );
-            }
-        }
+    fn a_gray_winner_does_not_cost_the_cover_its_accent() {
+        // Mostly near-black filler, one small vivid family. The old code took
+        // the single highest-scoring bucket and gave up when it was gray; the
+        // ranking is walked instead, because a smaller colourful bucket is a
+        // better answer than the theme fallback.
+        let mut pixels = solid(20, 20, 24, 200); // near-black, wins on population
+        pixels.extend(solid(210, 70, 60, 24)); // small but colourful
+        let accent = dominant_accent(&pixels, 3).expect("the red bucket survives");
+        assert!(accent.r > accent.g && accent.r > accent.b, "{accent:?}");
     }
 
     #[test]
-    fn a_monochrome_cover_still_yields_three_usable_colours() {
-        // One vivid family and nothing else. A flat conic sweep of one colour
-        // is not a sweep, so the gaps are filled by rotating the primary —
-        // never by inventing a colour from outside the artwork's hue.
-        let palette = dominant_palette(&solid(200, 60, 40, 64), 3).expect("vivid");
-        assert_eq!(palette.primary, palette.primary);
-        assert_ne!(palette.second, palette.primary);
-        assert_ne!(palette.third, palette.second);
-        let base = hue_of(palette.primary);
-        assert!(hue_distance(base, hue_of(palette.second)) <= FILL_HUE_STEP + 1e-6);
-        assert!(hue_distance(base, hue_of(palette.third)) <= FILL_HUE_STEP + 1e-6);
-    }
-
-    #[test]
-    fn the_primary_is_exactly_what_the_single_accent_used_to_be() {
-        // The player accent is shipped behaviour; three colours must not move
-        // the first one.
-        let mut pixels = solid(130, 130, 130, 90);
-        pixels.extend(solid(220, 40, 40, 10));
-        let palette = dominant_palette(&pixels, 3).expect("red cluster");
-        assert!(palette.primary.r > 180, "{:?}", palette.primary);
-    }
-
-    #[test]
-    fn a_grayscale_cover_has_no_palette() {
-        assert!(dominant_palette(&solid(128, 128, 128, 64), 3).is_none());
+    fn a_grayscale_cover_has_no_accent() {
+        // Nothing to walk to: every bucket is below the near-gray gate, so the
+        // theme fallback applies. Inventing a hue here is exactly the
+        // dishonesty the cover-derived accent exists to avoid.
+        assert!(dominant_accent(&solid(128, 128, 128, 64), 3).is_none());
     }
 
     /// Probe, not a regression: runs the real extraction over real artwork so
@@ -345,15 +280,15 @@ mod tests {
         let covers = std::env::var("REPRISE_COVERS").expect("REPRISE_COVERS must be set");
         for path in covers.split(',').filter(|entry| !entry.is_empty()) {
             probe_buckets(std::path::Path::new(path));
-            let palette = accent_from_cover_file(std::path::Path::new(path));
-            match palette {
-                Some(palette) => println!(
-                    "{path}\n  primary #{:02x}{:02x}{:02x}  second #{:02x}{:02x}{:02x}  third #{:02x}{:02x}{:02x}",
-                    palette.primary.r, palette.primary.g, palette.primary.b,
-                    palette.second.r, palette.second.g, palette.second.b,
-                    palette.third.r, palette.third.g, palette.third.b,
-                ),
-                None => println!("{path}\n  NONE — no usable colour, the shimmer draws nothing"),
+            match accent_from_cover_file(std::path::Path::new(path)) {
+                Some(accent) => {
+                    let light = super::super::cover_accent_oklab::oklch_light(accent);
+                    println!(
+                        "{path}\n  accent #{:02x}{:02x}{:02x}   seam #{:02x}{:02x}{:02x}",
+                        accent.r, accent.g, accent.b, light.r, light.g, light.b,
+                    );
+                }
+                None => println!("{path}\n  NONE — no usable colour, the theme accent applies"),
             }
         }
     }

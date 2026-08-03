@@ -46,10 +46,30 @@ pub(in crate::ui) fn app_css_for_test() -> String {
 
 #[cfg(test)]
 mod composed_css_tests {
-    /// Every feature module has its own parse test, but they all run on that
-    /// module's section in isolation. The app installs the *concatenation*, and
-    /// the running app logs parser errors against it — so something is only
-    /// caught here.
+    /// The stylesheet the app actually installs must parse without a single
+    /// error.
+    ///
+    /// Every feature module has its own parse test, but each runs on that
+    /// module's section in isolation, and a section can be individually
+    /// well-formed while using a property or value GTK4 does not have. That is
+    /// not theoretical: two rules shipped inert for months — an `overflow`
+    /// clip (no such property in GTK4) and the mini player's whole transparency
+    /// fix, whose `!important` GTK4 rejects as junk, taking all five of its
+    /// declarations with it. Both looked fine in their own module's test and
+    /// only ever complained into the running app's log, where nobody reads.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn the_composed_stylesheet_parses_without_errors() {
+        gtk4::init().unwrap();
+        let errors = super::css_parse_errors(&super::app_css());
+        assert!(
+            errors.is_empty(),
+            "the installed stylesheet has {} parser error(s):\n  {}",
+            errors.len(),
+            errors.join("\n  ")
+        );
+    }
+
     #[test]
     #[ignore = "probe: prints the composed stylesheet's parse errors with context"]
     fn probe_composed_css_errors() {
@@ -160,15 +180,16 @@ pub(in crate::ui) fn install_css_string_for_test(css: &str) {
     );
 }
 
-/// The OverlaySplitView positions children with GPU transforms without
-/// clipping the content pane. Clip the internal wrapper widgets so resized
-/// columns cannot paint behind the info-panel sidebar.
+/// Formerly clipped `OverlaySplitView`'s internal wrappers so a resized column
+/// could not paint behind the info-panel sidebar.
+///
+/// It never did: **GTK4 CSS has no `overflow` property.** The parser rejected
+/// both declarations and the rule shipped inert, which the composed-stylesheet
+/// test below now makes impossible to repeat. Should the symptom ever show up,
+/// GTK4's equivalent is `gtk_widget_set_overflow(widget, GTK_OVERFLOW_HIDDEN)`
+/// on the wrappers, from code — there is no stylesheet answer.
 fn info_panel_clip_css() -> String {
-    concat!(
-        "overlay-split-view > widget { overflow: hidden; } ",
-        "overlay-split-view > widget > * { overflow: hidden; } ",
-    )
-    .into()
+    String::new()
 }
 
 /// Installs the structural app CSS and the default theme palette on the

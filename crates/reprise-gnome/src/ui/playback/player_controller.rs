@@ -174,7 +174,7 @@ use crate::ui::mpris_mirror;
 use crate::ui::player_bar::PlayerBar;
 use crate::ui::player_controller_wiring;
 use crate::ui::player_lyrics::{lyrics_query_for, start_track_for_lyrics, PlayerLyrics};
-use crate::ui::style::cover_palette::Palette as AccentPalette;
+use crate::ui::style::cover_accent::Rgb as AccentRgb;
 use reprise_core::media_integration::{
     MediaIntegrationHandles, MprisPlaybackStatus, SharedAgentQueueState, SharedMprisState,
     DEFAULT_VOLUME,
@@ -378,7 +378,7 @@ pub struct PlayerController {
     /// "from" palette for the 400 ms cross-fade; written back once each new
     /// palette is committed. `pub(in crate::ui)` so `now_playing_wiring.rs` can
     /// borrow it.
-    pub(in crate::ui) cover_accent_last: Rc<RefCell<Option<AccentPalette>>>,
+    pub(in crate::ui) cover_accent_last: Rc<RefCell<Option<AccentRgb>>>,
     /// The owning `gio::Application`, for `play_track_id`'s track-change
     /// notification (Task 9: `app.send_notification`). Passed into `new` from
     /// `window::build`, which already holds the `&adw::Application` it builds

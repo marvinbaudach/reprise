@@ -22,7 +22,7 @@ use libadwaita as adw;
 
 use crate::ui::one_shot_task;
 use crate::ui::player_controller::PlayerController;
-use crate::ui::style::cover_palette::Palette;
+use crate::ui::style::cover_accent::Rgb;
 use reprise_core::cover::ThumbnailSize;
 use reprise_core::media_integration::MprisState;
 use reprise_core::playback::{PlaybackError, PlaybackState, SpectrumFrame};
@@ -46,7 +46,7 @@ fn cover_path_to_uri(path: &Path) -> Option<String> {
 /// `last_accent_cell`; `widget` is required for the animation target.
 fn apply_cover_accent(
     generation_cell: &Rc<std::cell::Cell<u64>>,
-    last_accent_cell: &Rc<RefCell<Option<Palette>>>,
+    last_accent_cell: &Rc<RefCell<Option<Rgb>>>,
     cover_path: &Path,
     widget: impl IsA<gtk4::Widget> + Clone + 'static,
 ) {

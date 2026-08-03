@@ -182,31 +182,6 @@ pub(in crate::ui::style) fn is_usable(color: &Rgb) -> bool {
     chroma >= 0.03
 }
 
-/// OKLCH hue of a colour, in radians.
-pub(in crate::ui::style) fn hue_of(color: Rgb) -> f64 {
-    let (_, a, b) = linear_rgb_to_oklab(to_linear(color.r), to_linear(color.g), to_linear(color.b));
-    b.atan2(a)
-}
-
-/// Shortest angular distance between two hues, in radians (0..=π).
-pub(in crate::ui::style) fn hue_distance(a: f64, b: f64) -> f64 {
-    let distance = (a - b).rem_euclid(std::f64::consts::TAU);
-    distance.min(std::f64::consts::TAU - distance)
-}
-
-/// `color` rotated by `radians` in OKLCH, keeping L and C.
-pub(in crate::ui::style) fn hue_rotated(color: Rgb, radians: f64) -> Rgb {
-    let (l, a, b) = linear_rgb_to_oklab(to_linear(color.r), to_linear(color.g), to_linear(color.b));
-    let chroma = (a * a + b * b).sqrt();
-    let hue = b.atan2(a) + radians;
-    let (r, g, b) = oklab_to_linear_rgb(l, chroma * hue.cos(), chroma * hue.sin());
-    Rgb {
-        r: from_linear(r),
-        g: from_linear(g),
-        b: from_linear(b),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
