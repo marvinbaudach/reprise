@@ -22,7 +22,11 @@ use reprise_core::visuals::VisualEngine;
 
 use crate::ui::{motion, strings};
 
-const DRAW_HEIGHT: i32 = 220;
+/// Canvas height. Trimmed by 12 px when the readout grew from four values to
+/// six: the strip below is what is left of the panel, and a readout taller
+/// than it is silently clipped — the failure this file's `…fits_in_the_strip…`
+/// test exists to catch.
+const DRAW_HEIGHT: i32 = 208;
 /// Edge length (px) the cover texture is rasterized down to before feeding
 /// the engine's secondary-accent palette extraction — cheap and plenty for a
 /// hue/saturation sample.

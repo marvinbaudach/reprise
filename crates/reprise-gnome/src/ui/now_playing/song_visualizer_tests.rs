@@ -70,9 +70,12 @@ fn ac_23_a_silent_analysis_reads_as_a_dash_instead_of_a_bottomed_out_level() {
 fn ac_23_the_readout_fits_in_the_strip_left_under_the_canvas() {
     // The panel is a fixed 300 px wide and the canvas takes everything above,
     // leaving roughly one strip. A readout taller than that is silently
-    // clipped — the live session showed Impact and Breakdown cut off.
+    // clipped — the live session showed Impact and Breakdown cut off. The
+    // strip grew by the 12 px the canvas gave back when Kick and Pressure
+    // added a third row; the two numbers move together and neither may be
+    // raised on its own.
     const PANEL_WIDTH: i32 = 300;
-    const STRIP_HEIGHT: i32 = 52;
+    const STRIP_HEIGHT: i32 = 64;
 
     gtk4::init().unwrap();
     let readout = AnalysisReadout::new();
