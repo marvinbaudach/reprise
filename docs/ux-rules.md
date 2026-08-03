@@ -2874,16 +2874,18 @@ STYLE-1).
   same global ambient crossfade as the player bar; only without a usable
   cover color does the theme accent apply.
 
-- **AC-24** [active] [gtk] — The reactive light lives on the cover and
-  nowhere else. The now-playing backdrop, the cover in the panel and the
-  cover in the player bar read `BassPressure.kick` and
-  `BassPressure.pressure` — never the CAVA bars, whose auto-sensitivity
+- **AC-24** [active] [gtk] — The reactive light lives on the cover and the
+  playhead, nowhere else. The now-playing backdrop, the cover in the panel
+  and the cover in the player bar read the `BassPressure.pressure` that
+  already reaches the UI and its UI-side slow envelope, `swell` — never
+  `BassPressure.kick`, and never the CAVA bars, whose auto-sensitivity
   makes a quiet vocal reach the same value as a drop, and never
   `impact`, which answers how loud a whole track is rather than what its
   beat is doing: on a limited master it never leaves its resting value.
-  `pressure` carries the brightness and `kick` the movement on top of
-  it, added rather than blended. **The transport controls and the track
-  list stay still**, and so do the bar heights: the waveform's geometry
+  `pressure` carries the backdrop's base brightness and `swell` the slow
+  movement of every large surface. The playhead alone reads `kick` for
+  its compact glow. **The transport controls and the track list stay
+  still**, and so do the bar heights: the waveform's geometry
   is exactly what `shape_display_peaks` delivers at every reading,
   because a 30 % amplitude on a 3 px bar moves it by a fraction of a
   pixel and each bar crosses its rounding boundary at a different moment
@@ -2903,15 +2905,15 @@ STYLE-1).
   cover pulls attention off the list; it lifts on its shadow and carries
   a travelling reflection instead. The lift is two cached shadow layers
   whose opacities cross-fade with the composite coverage held constant —
-  a linear `1 - kick` pair sums to one and still dips 14 %, which reads
-  as a flicker on every hit. Every effect rests at its value for
-  `kick = pressure = 0` and is pinned there whenever the reading is
-  absent or must not move: with the "Song Visuals" plugin off — the
-  deliberate off-switch for the whole layer — with
-  `gtk-enable-animations=false` (MOT-7), and outside playback, where
-  only the backdrop keeps a slow breath. While the Visual tab is open
-  the backdrop holds its rest value: that tab carries its own light
-  language.
+  a linear `1 - swell` pair sums to one and still dips 14 %, which reads
+  as a flicker during the cross-fade. Every large effect rests at its
+  value for `swell = pressure = 0`; outside playback the slow signal
+  decays instead of freezing at the last reading. The "Song Visuals"
+  plugin is the deliberate off-switch for the whole layer. With
+  `gtk-enable-animations=false` (MOT-7), the brightness remains at the
+  bare slow base while the free-running breath stops. While the Visual
+  tab is open the backdrop holds its rest value: that tab carries its
+  own light language.
 
 ## Y. Library Doctor / Tag Cleanup
 

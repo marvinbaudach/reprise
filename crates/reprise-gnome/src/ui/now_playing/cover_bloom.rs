@@ -18,7 +18,7 @@ use gtk4::cairo;
 use gtk4::prelude::*;
 use reprise_core::playback::PlaybackState;
 
-use crate::ui::{cover_glow, motion};
+use crate::ui::cover_glow;
 
 type OnFrame = Rc<dyn Fn(i64)>;
 /// Height of the bloom band, from the top of the head overlay: enough for the
@@ -29,39 +29,25 @@ const BLOOM_WIDTH_FACTOR: f64 = 1.24;
 
 const REST_OPACITY: f64 = 0.06;
 const OPACITY_PER_PRESSURE: f64 = 0.15;
-const OPACITY_PER_KICK: f64 = 0.16;
+const OPACITY_PER_SWELL: f64 = 0.16;
 const REST_SCALE: f64 = 1.0;
-/// Only the attack scales. A held wall that zoomed would read as a camera
-/// move, not as light.
-const SCALE_PER_KICK: f64 = 0.025;
-
-/// The paused breath. Deliberately dimmer than the playing rest value: pause
-/// should look calmer, not merely slower.
-const PAUSE_BASE_OPACITY: f64 = 0.035;
-const PAUSE_SWING: f64 = 0.025;
-const PAUSE_PERIOD_S: f64 = 6.0;
+const SCALE_PER_SWELL: f64 = 0.025;
 
 /// A reading that moves the alpha by less than this cannot be seen and does not
 /// earn a redraw.
-const IMPACT_EPSILON: f64 = 0.01;
+const LIGHT_EPSILON: f64 = 0.01;
 /// Redraw interval (µs) of the paused breath. A six-second sine does not need
-/// sixty frames a second; the visualizer throttles its own resting breath the
-/// same way and for the same reason.
+/// sixty frames a second; the slow envelope only needs this tick as a clock.
 const BREATH_FRAME_INTERVAL_US: i64 = 33_000;
 
-pub(super) fn bloom_opacity(kick: f64, pressure: f64) -> f64 {
+pub(super) fn bloom_opacity(pressure: f64, swell: f64) -> f64 {
     REST_OPACITY
         + OPACITY_PER_PRESSURE * pressure.clamp(0.0, 1.0)
-        + OPACITY_PER_KICK * kick.clamp(0.0, 1.0)
+        + OPACITY_PER_SWELL * swell.clamp(0.0, 1.0)
 }
 
-pub(super) fn bloom_scale(kick: f64, _pressure: f64) -> f64 {
-    REST_SCALE + SCALE_PER_KICK * kick.clamp(0.0, 1.0)
-}
-
-pub(super) fn pause_opacity(elapsed_s: f64) -> f64 {
-    let phase = std::f64::consts::TAU * elapsed_s / PAUSE_PERIOD_S;
-    PAUSE_BASE_OPACITY + PAUSE_SWING * (0.5 + 0.5 * phase.sin())
+pub(super) fn bloom_scale(swell: f64) -> f64 {
+    REST_SCALE + SCALE_PER_SWELL * swell.clamp(0.0, 1.0)
 }
 
 /// The blurred surface is cached against the panel's cover generation, which is
@@ -76,17 +62,16 @@ enum Mode {
     Live,
     /// Slow breath while a track is loaded but not playing.
     Breathing,
-    /// Held at the rest value: Visual tab open, plugin off, or motion off.
+    /// Held at the rest value: Visual tab open, plugin off, or panel hidden.
     Pinned,
 }
 
 struct Inner {
     surface: RefCell<Option<cairo::ImageSurface>>,
     generation: Cell<Option<u64>>,
-    kick: Cell<f64>,
+    swell: Cell<f64>,
     pressure: Cell<f64>,
     mode: Cell<Mode>,
-    breath_start_us: Cell<i64>,
     last_breath_frame_us: Cell<i64>,
     tick_id: RefCell<Option<gtk4::TickCallbackId>>,
     on_frame: RefCell<Option<OnFrame>>,
@@ -108,10 +93,9 @@ impl CoverBloom {
         let inner = Rc::new(Inner {
             surface: RefCell::new(None),
             generation: Cell::new(None),
-            kick: Cell::new(0.0),
+            swell: Cell::new(0.0),
             pressure: Cell::new(0.0),
             mode: Cell::new(Mode::Pinned),
-            breath_start_us: Cell::new(0),
             last_breath_frame_us: Cell::new(0),
             tick_id: RefCell::new(None),
             on_frame: RefCell::new(None),
@@ -153,21 +137,18 @@ impl CoverBloom {
         self.area.queue_draw();
     }
 
-    pub(super) fn set_bass(&self, kick: f64, pressure: f64) {
-        if self.inner.mode.get() != Mode::Live {
+    pub(super) fn set_light(&self, pressure: f64, swell: f64) {
+        if self.inner.mode.get() == Mode::Pinned {
             return;
         }
-        if let Some(clock) = self.area.frame_clock() {
-            self.notify_frame(clock.frame_time());
-        }
-        let kick = motion::reactive_amplitude(kick);
-        let pressure = motion::reactive_amplitude(pressure);
-        if (self.inner.kick.get() - kick).abs() < IMPACT_EPSILON
-            && (self.inner.pressure.get() - pressure).abs() < IMPACT_EPSILON
+        let pressure = pressure.clamp(0.0, 1.0);
+        let swell = swell.clamp(0.0, 1.0);
+        if (self.inner.swell.get() - swell).abs() < LIGHT_EPSILON
+            && (self.inner.pressure.get() - pressure).abs() < LIGHT_EPSILON
         {
             return;
         }
-        self.inner.kick.set(kick);
+        self.inner.swell.set(swell);
         self.inner.pressure.set(pressure);
         self.area.queue_draw();
     }
@@ -200,11 +181,6 @@ impl CoverBloom {
     }
 
     fn apply_mode(&self, mode: Mode) {
-        let mode = if motion::animations_enabled() {
-            mode
-        } else {
-            Mode::Pinned
-        };
         if mode == Mode::Pinned {
             self.notify_frame(0);
         }
@@ -212,12 +188,11 @@ impl CoverBloom {
             return;
         }
         self.inner.mode.set(mode);
-        if mode != Mode::Live {
-            self.inner.kick.set(0.0);
+        if mode == Mode::Pinned {
+            self.inner.swell.set(0.0);
             self.inner.pressure.set(0.0);
         }
         if mode == Mode::Breathing {
-            self.inner.breath_start_us.set(0);
             self.inner.last_breath_frame_us.set(0);
             self.start_breath();
         } else {
@@ -237,25 +212,7 @@ impl CoverBloom {
                 *inner.tick_id.borrow_mut() = None;
                 return gtk4::glib::ControlFlow::Break;
             }
-            if !motion::animations_enabled() {
-                // MOT-7 changes may arrive while already paused. Return to the
-                // fixed rest light before stopping instead of freezing the
-                // breath at whichever alpha the last frame happened to use.
-                inner.mode.set(Mode::Pinned);
-                inner.kick.set(0.0);
-                inner.pressure.set(0.0);
-                *inner.tick_id.borrow_mut() = None;
-                let callback = inner.on_frame.borrow().clone();
-                if let Some(callback) = callback {
-                    callback(0);
-                }
-                area.queue_draw();
-                return gtk4::glib::ControlFlow::Break;
-            }
             let now = clock.frame_time();
-            if inner.breath_start_us.get() == 0 {
-                inner.breath_start_us.set(now);
-            }
             let last = inner.last_breath_frame_us.get();
             if last != 0 && now - last < BREATH_FRAME_INTERVAL_US {
                 return gtk4::glib::ControlFlow::Continue;
@@ -287,20 +244,11 @@ fn draw(cr: &cairo::Context, width: i32, height: i32, inner: &Inner) {
         return;
     };
     let (opacity, scale) = match inner.mode.get() {
-        Mode::Live => (
-            bloom_opacity(inner.kick.get(), inner.pressure.get()),
-            bloom_scale(inner.kick.get(), inner.pressure.get()),
+        Mode::Live | Mode::Breathing => (
+            bloom_opacity(inner.pressure.get(), inner.swell.get()),
+            bloom_scale(inner.swell.get()),
         ),
-        Mode::Breathing => {
-            let start = inner.breath_start_us.get();
-            let elapsed = if start == 0 {
-                0.0
-            } else {
-                (gtk4::glib::monotonic_time() - start) as f64 / 1_000_000.0
-            };
-            (pause_opacity(elapsed), REST_SCALE)
-        }
-        Mode::Pinned => (bloom_opacity(0.0, 0.0), bloom_scale(0.0, 0.0)),
+        Mode::Pinned => (bloom_opacity(0.0, 0.0), bloom_scale(0.0)),
     };
 
     let w = f64::from(width);
@@ -332,41 +280,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ac_24_bloom_adds_a_kick_on_top_of_a_pressure_bed() {
+    fn ac_24_bloom_adds_a_swell_on_top_of_a_pressure_bed() {
         // Silence: the rest value, and nothing else.
         assert!((bloom_opacity(0.0, 0.0) - 0.06).abs() < 1e-9);
         // A held breakdown: no attack left, but the light stays up.
-        assert!((bloom_opacity(0.0, 0.9) - 0.195).abs() < 1e-9);
-        // A techno hit on a lit bed.
-        assert!((bloom_opacity(0.8, 0.85) - 0.3155).abs() < 1e-9);
+        assert!((bloom_opacity(0.9, 0.0) - 0.195).abs() < 1e-9);
+        // A broad swell on a lit bed.
+        assert!((bloom_opacity(0.85, 0.8) - 0.3155).abs() < 1e-9);
         // Both at full: the ceiling.
         assert!((bloom_opacity(1.0, 1.0) - 0.37).abs() < 1e-9);
         // The bed alone must never out-shine bed plus hit.
-        assert!(bloom_opacity(0.0, 1.0) < bloom_opacity(1.0, 1.0));
+        assert!(bloom_opacity(1.0, 0.0) < bloom_opacity(1.0, 1.0));
 
-        // Only the attack moves the scale — a held wall must not zoom.
-        assert!((bloom_scale(0.0, 1.0) - 1.0).abs() < 1e-9);
-        assert!((bloom_scale(1.0, 0.0) - 1.025).abs() < 1e-9);
+        assert!((bloom_scale(0.0) - 1.0).abs() < 1e-9);
+        assert!((bloom_scale(1.0) - 1.025).abs() < 1e-9);
 
         // Out-of-range readings clamp, never extrapolate.
         assert!((bloom_opacity(4.0, 4.0) - 0.37).abs() < 1e-9);
         assert!((bloom_opacity(-1.0, -1.0) - 0.06).abs() < 1e-9);
-    }
-
-    #[test]
-    fn ac_24_pause_breath_stays_below_the_playing_rest() {
-        // Six-second period: trough at 4.5 s, crest at 1.5 s.
-        assert!((pause_opacity(0.0) - 0.0475).abs() < 1e-9);
-        assert!((pause_opacity(1.5) - 0.06).abs() < 1e-9);
-        assert!((pause_opacity(4.5) - 0.035).abs() < 1e-9);
-        // Never brighter than the playing rest value, and darker on average:
-        // pause must look calmer, not merely slower.
-        for step in 0..=60 {
-            let t = f64::from(step) / 10.0;
-            assert!(pause_opacity(t) <= bloom_opacity(0.0, 0.0) + 1e-9);
-        }
-        // A full period returns to where it started.
-        assert!((pause_opacity(0.0) - pause_opacity(6.0)).abs() < 1e-9);
     }
 
     #[test]

@@ -21,6 +21,7 @@ use crate::ui::motion;
 use crate::ui::player_bar::transport_glyph::{Glyph, TransportGlyph};
 use crate::ui::player_bar_layout::{self, PlayerBarWidgets, VOLUME_MAX, VOLUME_MIN};
 use crate::ui::strings;
+use crate::ui::swell::Swell;
 use crate::ui::waveform_seek::WaveformSeek;
 use reprise_core::format::{format_duration, format_remaining};
 use reprise_core::playback::PlaybackState;
@@ -102,6 +103,8 @@ pub struct PlayerBar {
     pub(in crate::ui) external_podcast: Cell<bool>,
     pub(in crate::ui) play_next_available: Cell<bool>,
     playback_state: Cell<PlaybackState>,
+    swell: RefCell<Swell>,
+    swell_last_frame_us: Cell<i64>,
     pub(in crate::ui) queue_has_tracks: Cell<bool>,
     library_has_tracks: Cell<bool>,
     /// True for the duration of `set_shuffle_indicator`'s `set_active`
@@ -244,6 +247,8 @@ impl PlayerBar {
             external_podcast: Cell::new(false),
             play_next_available: Cell::new(false),
             playback_state: Cell::new(PlaybackState::Stopped),
+            swell: RefCell::new(Swell::default()),
+            swell_last_frame_us: Cell::new(0),
             queue_has_tracks: Cell::new(false),
             library_has_tracks: Cell::new(false),
             updating_shuffle: Rc::new(Cell::new(false)),
@@ -311,14 +316,43 @@ impl PlayerBar {
     /// are what a pointer aims at, and once the running track scrolls out of
     /// the list they are the only place the playback state is read from.
     pub fn set_bass(&self, kick: f64, pressure: f64) {
-        let (kick, pressure) = if self.playback_state.get() == PlaybackState::Playing {
+        let playing = self.playback_state.get() == PlaybackState::Playing;
+        let (kick, pressure) = if playing {
             (kick, pressure)
         } else {
             (0.0, 0.0)
         };
         self.waveform.set_bass(kick, pressure);
-        self.cover_lift
-            .set_kick(crate::ui::motion::reactive_amplitude(kick));
+        if !playing {
+            *self.swell.borrow_mut() = Swell::default();
+            self.swell_last_frame_us.set(0);
+            self.cover_lift.set_swell(0.0);
+            return;
+        }
+
+        let now = gtk4::glib::monotonic_time();
+        let previous = self.swell_last_frame_us.replace(now);
+        let dt_s = if previous > 0 {
+            now.saturating_sub(previous) as f64 / 1_000_000.0
+        } else {
+            0.0
+        };
+        let value = {
+            let mut swell = self.swell.borrow_mut();
+            swell.advance(pressure, dt_s);
+            if crate::ui::motion::animations_enabled() {
+                swell.value()
+            } else {
+                swell.value_without_motion()
+            }
+        };
+        self.cover_lift.set_swell(value);
+    }
+
+    pub(super) fn reset_cover_swell(&self) {
+        *self.swell.borrow_mut() = Swell::default();
+        self.swell_last_frame_us.set(0);
+        self.cover_lift.set_swell(0.0);
     }
 
     fn animate_play_pulse(&self) {

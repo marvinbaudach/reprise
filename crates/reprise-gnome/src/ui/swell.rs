@@ -26,7 +26,8 @@ impl Swell {
         self.elapsed_s = (self.elapsed_s + dt_s).rem_euclid(BREATH_PERIOD_S);
     }
 
-    pub(in crate::ui) fn base(&self) -> f64 {
+    #[cfg(test)]
+    fn base(&self) -> f64 {
         self.base
     }
 

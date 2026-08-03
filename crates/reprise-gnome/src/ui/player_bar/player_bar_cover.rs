@@ -22,7 +22,7 @@ impl PlayerBar {
     /// Resets the cover and its lift when no track remains active.
     pub fn clear_cover(&self) {
         CoverLoader::set_placeholder(&self.cover);
-        self.cover_lift.set_kick(0.0);
+        self.reset_cover_swell();
     }
 
     pub fn set_on_title_click<F: Fn() + 'static>(&self, f: F) {

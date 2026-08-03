@@ -1,4 +1,4 @@
-//! Cached near/far cover shadows whose opacities cross-fade on a bass hit.
+//! Cached near/far cover shadows whose opacities cross-fade on a slow swell.
 //!
 //! The blur geometry is CSS-static: changing a `box-shadow` blur every frame
 //! invalidates GTK's cached shadow node, while changing opacity keeps both
@@ -12,10 +12,10 @@ use gtk4::{cairo, prelude::*};
 use crate::ui::{motion, style::tokens::RADIUS_SURFACE};
 
 const LIFT_Y_REST: f64 = 0.048;
-const LIFT_Y_PER_KICK: f64 = 0.048;
+const LIFT_Y_PER_SWELL: f64 = 0.048;
 const LIFT_BLUR_REST: f64 = 0.14;
-const LIFT_BLUR_PER_KICK: f64 = 0.155;
-const LIFT_SPREAD_PER_KICK: f64 = -0.018;
+const LIFT_BLUR_PER_SWELL: f64 = 0.155;
+const LIFT_SPREAD_PER_SWELL: f64 = -0.018;
 const LIFT_COLOUR: &str = "rgba(0, 0, 0, 0.55)";
 
 const SHEEN_WIDTH: f64 = 0.30;
@@ -23,7 +23,7 @@ const SHEEN_ANGLE_DEG: f64 = 18.0;
 const SHEEN_TRAVEL: f64 = 0.50;
 const SHEEN_PERIOD_S: f64 = 13.0;
 const SHEEN_REST_OPACITY: f64 = 0.22;
-const SHEEN_OPACITY_PER_KICK: f64 = 0.18;
+const SHEEN_OPACITY_PER_SWELL: f64 = 0.18;
 const SHEEN_ACCENT_ALPHA: f64 = 0.30;
 const SHEEN_RADIUS: f64 = 12.0;
 
@@ -36,11 +36,11 @@ const BAR_NEAR_CLASS: &str = "reprise-cover-lift-bar-near";
 const BAR_FAR_CLASS: &str = "reprise-cover-lift-bar-far";
 const SHEEN_CLASS: &str = "reprise-cover-sheen";
 
-pub(in crate::ui) fn lift_shadow(width: f64, kick: f64) -> String {
-    let kick = kick.clamp(0.0, 1.0);
-    let y = ((LIFT_Y_REST + LIFT_Y_PER_KICK * kick) * width).round() as i64;
-    let blur = ((LIFT_BLUR_REST + LIFT_BLUR_PER_KICK * kick) * width).round() as i64;
-    let spread = (LIFT_SPREAD_PER_KICK * kick * width).round() as i64;
+pub(in crate::ui) fn lift_shadow(width: f64, swell: f64) -> String {
+    let swell = swell.clamp(0.0, 1.0);
+    let y = ((LIFT_Y_REST + LIFT_Y_PER_SWELL * swell) * width).round() as i64;
+    let blur = ((LIFT_BLUR_REST + LIFT_BLUR_PER_SWELL * swell) * width).round() as i64;
+    let spread = (LIFT_SPREAD_PER_SWELL * swell * width).round() as i64;
     let spread = if spread == 0 {
         "0".to_string()
     } else {
@@ -57,31 +57,31 @@ const SHADOW_ALPHA: f64 = 0.55;
 /// Opacity of the resting layer, compensated so the *composite* coverage of
 /// the two layers stays constant while their shape morphs.
 ///
-/// A plain `1.0 - kick` looks right on paper and flickers on screen: at
-/// `kick = 0.5` both layers sit at 0.275, and `1 - (1-0.275)²` is 0.474
+/// A plain `1.0 - swell` looks right on paper and flickers on screen: at
+/// `swell = 0.5` both layers sit at 0.275, and `1 - (1-0.275)²` is 0.474
 /// against 0.550 at either end — a 14 % brightening in the middle of every
 /// hit, then back. Solving `1 - (1 - a·near)(1 - a·far) = a` for `near`
 /// removes it exactly.
-pub(in crate::ui) fn near_opacity(kick: f64) -> f64 {
-    let far = SHADOW_ALPHA * kick.clamp(0.0, 1.0);
+pub(in crate::ui) fn near_opacity(swell: f64) -> f64 {
+    let far = SHADOW_ALPHA * swell.clamp(0.0, 1.0);
     if far >= 1.0 {
         return 0.0;
     }
     ((1.0 - (1.0 - SHADOW_ALPHA) / (1.0 - far)) / SHADOW_ALPHA).clamp(0.0, 1.0)
 }
 
-pub(in crate::ui) fn far_opacity(kick: f64) -> f64 {
-    kick.clamp(0.0, 1.0)
+pub(in crate::ui) fn far_opacity(swell: f64) -> f64 {
+    swell.clamp(0.0, 1.0)
 }
 
 /// Composite coverage of both layers — the quantity that must not move.
 #[cfg(test)]
-fn composite_coverage(kick: f64) -> f64 {
-    1.0 - (1.0 - SHADOW_ALPHA * near_opacity(kick)) * (1.0 - SHADOW_ALPHA * far_opacity(kick))
+fn composite_coverage(swell: f64) -> f64 {
+    1.0 - (1.0 - SHADOW_ALPHA * near_opacity(swell)) * (1.0 - SHADOW_ALPHA * far_opacity(swell))
 }
 
-pub(in crate::ui) fn sheen_opacity(kick: f64) -> f64 {
-    SHEEN_REST_OPACITY + SHEEN_OPACITY_PER_KICK * kick.clamp(0.0, 1.0)
+pub(in crate::ui) fn sheen_opacity(swell: f64) -> f64 {
+    SHEEN_REST_OPACITY + SHEEN_OPACITY_PER_SWELL * swell.clamp(0.0, 1.0)
 }
 
 /// Horizontal offset of the reflection's centre at `elapsed_s`.
@@ -148,12 +148,11 @@ impl CoverLift {
         &self.root
     }
 
-    pub(in crate::ui) fn set_kick(&self, kick: f64) {
-        let kick = motion::reactive_amplitude(kick);
-        self.near.set_opacity(near_opacity(kick));
-        self.far.set_opacity(far_opacity(kick));
+    pub(in crate::ui) fn set_swell(&self, swell: f64) {
+        self.near.set_opacity(near_opacity(swell));
+        self.far.set_opacity(far_opacity(swell));
         if let Some(sheen) = &self.sheen {
-            sheen.set_kick(kick);
+            sheen.set_swell(swell);
         }
     }
 
@@ -198,8 +197,8 @@ impl CoverSheen {
         &self.area
     }
 
-    fn set_kick(&self, kick: f64) {
-        self.area.set_opacity(sheen_opacity(kick));
+    fn set_swell(&self, swell: f64) {
+        self.area.set_opacity(sheen_opacity(swell));
     }
 
     fn set_frame_time(&self, frame_time_us: i64) {
@@ -334,15 +333,15 @@ mod tests {
         assert!((far_opacity(1.0) - 1.0).abs() < 1e-9);
         // What must stay constant is the COMPOSITE coverage, not the sum of
         // the two opacities. Two translucent blacks do not add linearly: a
-        // plain `1 - kick` pair sums to one and still dips to 0.474 against
+        // plain `1 - swell` pair sums to one and still dips to 0.474 against
         // 0.550 in the middle, which reads as a bright/dark flicker on every
         // hit. Assert the thing the eye actually sees.
         for step in 0..=100 {
-            let kick = f64::from(step) / 100.0;
+            let swell = f64::from(step) / 100.0;
             assert!(
-                (composite_coverage(kick) - SHADOW_ALPHA).abs() < 1e-9,
-                "the shadow changes weight at kick {kick}: {}",
-                composite_coverage(kick)
+                (composite_coverage(swell) - SHADOW_ALPHA).abs() < 1e-9,
+                "the shadow changes weight at swell {swell}: {}",
+                composite_coverage(swell)
             );
         }
     }
@@ -359,7 +358,7 @@ mod tests {
     }
 
     #[test]
-    fn ac_24_the_sheen_travels_on_time_and_only_brightens_on_the_kick() {
+    fn ac_24_the_sheen_travels_on_time_and_only_brightens_on_the_swell() {
         // Opacity is the only thing the music touches.
         assert!((sheen_opacity(0.0) - 0.22).abs() < 1e-9);
         assert!((sheen_opacity(1.0) - 0.40).abs() < 1e-9);

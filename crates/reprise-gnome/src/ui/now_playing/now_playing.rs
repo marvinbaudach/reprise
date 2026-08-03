@@ -23,6 +23,7 @@ use crate::ui::lyrics_view::LyricsView;
 use crate::ui::playback::external_media::ExternalPlaybackSnapshot;
 use crate::ui::player_controller::NowPlaying;
 use crate::ui::style::tokens;
+use crate::ui::swell::Swell;
 
 type OnVoid = Rc<dyn Fn()>;
 const TAB_SWITCHER_MIN_HEIGHT: i32 = 50;
@@ -149,10 +150,6 @@ fn build_widgets_for_session(
     let head_overlay = gtk4::Overlay::new();
     head_overlay.set_child(Some(&glow));
     let bloom = cover_bloom::CoverBloom::new();
-    bloom.set_on_frame({
-        let cover_lift = cover_lift.clone();
-        move |frame_time_us| cover_lift.set_frame_time(frame_time_us)
-    });
     // Bottom to top: the static ellipse, the cover's own light, then the cover
     // and the title block over both.
     head_overlay.add_overlay(bloom.widget());
@@ -329,6 +326,9 @@ pub(in crate::ui) struct NowPlayingPanel {
     cover_transition_active: Cell<bool>,
     on_track_reveal: crate::ui::link_activation::ActivationSlot,
     song_visuals_enabled: Cell<bool>,
+    swell: RefCell<Swell>,
+    swell_pressure: Cell<f64>,
+    swell_last_frame_us: Cell<i64>,
     on_album_reveal: crate::ui::link_activation::ActivationSlot,
     on_artist_reveal: crate::ui::link_activation::ActivationSlot,
 }
@@ -365,8 +365,19 @@ impl NowPlayingPanel {
             cover_transition_active: Cell::new(false),
             on_track_reveal: Rc::new(RefCell::new(None)),
             song_visuals_enabled: Cell::new(song_visuals_enabled),
+            swell: RefCell::new(Swell::default()),
+            swell_pressure: Cell::new(0.0),
+            swell_last_frame_us: Cell::new(0),
             on_album_reveal: Rc::new(RefCell::new(None)),
             on_artist_reveal: Rc::new(RefCell::new(None)),
+        });
+        panel.widgets.bloom.set_on_frame({
+            let weak = Rc::downgrade(&panel);
+            move |frame_time_us| {
+                if let Some(panel) = weak.upgrade() {
+                    panel.advance_swell(frame_time_us);
+                }
+            }
         });
         crate::ui::link_activation::arm_slot(
             &panel.widgets.cover,
@@ -485,7 +496,7 @@ impl NowPlayingPanel {
     pub(in crate::ui) fn set_playback_state(&self, state: PlaybackState) {
         self.playback_state.set(state);
         if state != PlaybackState::Playing {
-            self.widgets.cover_lift.set_kick(0.0);
+            self.swell_pressure.set(0.0);
         }
         self.widgets.visualizer.set_playback_state(state);
         self.sync_bloom_activity();
@@ -494,10 +505,8 @@ impl NowPlayingPanel {
     pub(in crate::ui) fn set_spectrum(&self, frame: SpectrumFrame) {
         if self.song_visuals_enabled.get() {
             let bass = frame.bass_pressure();
-            self.widgets
-                .bloom
-                .set_bass(f64::from(bass.kick), f64::from(bass.pressure));
-            self.widgets.cover_lift.set_kick(f64::from(bass.kick));
+            self.swell_pressure.set(f64::from(bass.pressure));
+            self.advance_swell(gtk4::glib::monotonic_time());
             self.widgets.visualizer.set_spectrum(frame);
         }
     }
@@ -507,14 +516,45 @@ impl NowPlayingPanel {
         self.widgets.visual_page.set_visible(enabled);
         if !enabled {
             self.widgets.visualizer.set_active(false);
-            self.widgets.cover_lift.set_kick(0.0);
-            self.widgets.cover_lift.set_frame_time(0);
+            self.advance_swell(0);
             if self.widgets.session.selected.get() == PanelTab::Visual {
                 self.widgets.tab_stack.set_visible_child_name(UP_NEXT_PAGE);
             }
         }
         self.sync_bloom_activity();
         self.sync_visual_activity();
+    }
+
+    fn advance_swell(&self, frame_time_us: i64) {
+        if frame_time_us <= 0 {
+            *self.swell.borrow_mut() = Swell::default();
+            self.swell_pressure.set(0.0);
+            self.swell_last_frame_us.set(0);
+            self.widgets.cover_lift.set_swell(0.0);
+            self.widgets.cover_lift.set_frame_time(0);
+            self.widgets.bloom.set_light(0.0, 0.0);
+            return;
+        }
+
+        let previous = self.swell_last_frame_us.replace(frame_time_us);
+        let dt_s = if previous > 0 {
+            frame_time_us.saturating_sub(previous) as f64 / 1_000_000.0
+        } else {
+            0.0
+        };
+        let pressure = self.swell_pressure.get();
+        let value = {
+            let mut swell = self.swell.borrow_mut();
+            swell.advance(pressure, dt_s);
+            if crate::ui::motion::animations_enabled() {
+                swell.value()
+            } else {
+                swell.value_without_motion()
+            }
+        };
+        self.widgets.cover_lift.set_swell(value);
+        self.widgets.cover_lift.set_frame_time(frame_time_us);
+        self.widgets.bloom.set_light(pressure, value);
     }
 
     pub(in crate::ui) fn set_up_next_model(

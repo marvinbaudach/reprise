@@ -87,7 +87,6 @@ mod stats;
 pub mod status_bar;
 pub mod strings;
 mod style;
-#[allow(dead_code)] // Consumed by the reactive-light Task 3 wiring.
 mod swell;
 mod tag_edit;
 mod tag_write_gate;
@@ -199,3 +198,21 @@ use window::{
     library_chrome, library_shell, window_action_wiring, window_decoration_strings,
     window_decorations, window_navigation, window_runtime_wiring, window_smoke,
 };
+
+#[cfg(test)]
+mod reactive_light_tests {
+    #[test]
+    fn ac_24_only_the_playhead_ticks() {
+        // The regression that keeps the beat off the large surfaces. Outside
+        // the Visualizer view, `kick` is read in exactly one file.
+        for source in [
+            include_str!("cover_lift.rs"),
+            include_str!("now_playing/cover_bloom.rs"),
+        ] {
+            assert!(
+                !source.contains("kick"),
+                "a large surface reads the per-beat signal"
+            );
+        }
+    }
+}
