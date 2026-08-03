@@ -1,13 +1,13 @@
-//! Narrow read façades for browse surfaces that do not expose the GTK track
-//! list's column-sort, facet, paging, queue, or AI-projection controls.
+//! Counted, bounded read façades for browse surfaces. Scope, search, order,
+//! and window are shared; GTK-specific facets, queues, AI projection, window
+//! alignment, caching, and prefetch remain with their existing owners.
 
 use crate::browser::SortDirection;
 use crate::db::Db;
 use crate::models::Track;
-use crate::up_next::QueueItem;
 use crate::view_source::ViewSource;
 
-use super::{query_album_canonical_track_ids, query_track_window, MAX_WINDOW_LIMIT};
+use super::{query_track_count, query_track_window};
 
 /// The library subset a surface wants to read through a bounded window.
 ///
@@ -30,7 +30,7 @@ pub enum LibraryTrackOrder {
         field: String,
         direction: SortDirection,
     },
-    /// Canonical disc/track order for an album playback snapshot.
+    /// Canonical disc/track order for an album container.
     CanonicalAlbum,
 }
 
@@ -65,40 +65,95 @@ pub struct TrackWindow {
     pub has_more: bool,
 }
 
-/// Returns one album's present tracks in canonical disc/track order.
+pub(super) fn has_more(total: i64, window: WindowRange, returned: usize) -> bool {
+    let returned = i64::try_from(returned).unwrap_or(i64::MAX);
+    window.offset.max(0).saturating_add(returned) < total
+}
+
+/// Runs the shared counted and bounded track query.
+pub fn query_library_tracks(
+    db: &Db,
+    request: &LibraryTrackRequest,
+) -> Result<TrackWindow, rusqlite::Error> {
+    let source = match &request.scope {
+        LibraryTrackScope::All => ViewSource::Library,
+        LibraryTrackScope::Album {
+            album,
+            album_artist,
+        } => ViewSource::Album {
+            album: album.clone(),
+            album_artist: album_artist.clone(),
+        },
+        LibraryTrackScope::Artist { artist } => ViewSource::Artist(artist.clone()),
+    };
+    let (sort_field, sort_dir) = match &request.order {
+        LibraryTrackOrder::Sorted { field, direction } => (
+            field.as_str(),
+            match direction {
+                SortDirection::Ascending => "asc",
+                SortDirection::Descending => "desc",
+            },
+        ),
+        LibraryTrackOrder::CanonicalAlbum => ("album_canonical", "asc"),
+    };
+    let total = query_track_count(db, &source, &request.search, &[])?;
+    let rows = query_track_window(
+        db,
+        &source,
+        sort_field,
+        sort_dir,
+        &request.search,
+        request.window.offset,
+        request.window.limit,
+        &[],
+    )?;
+    Ok(TrackWindow {
+        total,
+        has_more: has_more(total, request.window, rows.len()),
+        rows,
+    })
+}
+
+/// Returns one counted window of an album's present tracks in canonical
+/// disc/track order.
 pub fn query_album_tracks(
     db: &Db,
     album: &str,
     album_artist: &str,
-) -> Result<Vec<Track>, rusqlite::Error> {
-    let queue = query_album_canonical_track_ids(db, album, album_artist)?
-        .into_iter()
-        .map(QueueItem::Track)
-        .collect::<Vec<_>>();
-    query_track_window(
+    window: WindowRange,
+) -> Result<TrackWindow, rusqlite::Error> {
+    query_library_tracks(
         db,
-        &ViewSource::Queue,
-        "",
-        "",
-        "",
-        0,
-        MAX_WINDOW_LIMIT,
-        &queue,
+        &LibraryTrackRequest {
+            scope: LibraryTrackScope::Album {
+                album: album.to_owned(),
+                album_artist: album_artist.to_owned(),
+            },
+            search: String::new(),
+            order: LibraryTrackOrder::CanonicalAlbum,
+            window,
+        },
     )
 }
 
 /// Searches the present flat library with the shared literal LIKE semantics
-/// and returns matches in title order.
-pub fn query_library_text_search(db: &Db, text: &str) -> Result<Vec<Track>, rusqlite::Error> {
-    query_track_window(
+/// and returns a counted window of matches in title order.
+pub fn query_library_text_search(
+    db: &Db,
+    text: &str,
+    window: WindowRange,
+) -> Result<TrackWindow, rusqlite::Error> {
+    query_library_tracks(
         db,
-        &ViewSource::Library,
-        "title",
-        "asc",
-        text,
-        0,
-        MAX_WINDOW_LIMIT,
-        &[],
+        &LibraryTrackRequest {
+            scope: LibraryTrackScope::All,
+            search: text.to_owned(),
+            order: LibraryTrackOrder::Sorted {
+                field: "title".to_owned(),
+                direction: SortDirection::Ascending,
+            },
+            window,
+        },
     )
 }
 
@@ -140,6 +195,53 @@ mod tests {
     }
 
     #[test]
+    fn text_search_returns_exact_total_and_gapless_windows() {
+        let db = Db::open_in_memory().unwrap();
+        for id in 1..=501_i64 {
+            db.conn()
+                .execute(
+                    "INSERT INTO tracks (id,path,title,artist,added_at) VALUES (?1,?2,?3,'Match',0)",
+                    rusqlite::params![id, format!("/music/{id:03}.flac"), format!("Track {id:03}")],
+                )
+                .unwrap();
+        }
+
+        let first = query_library_text_search(
+            &db,
+            "Match",
+            WindowRange {
+                offset: 0,
+                limit: 500,
+            },
+        )
+        .unwrap();
+        let second = query_library_text_search(
+            &db,
+            "Match",
+            WindowRange {
+                offset: 500,
+                limit: 500,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(first.total, 501);
+        assert_eq!(first.rows.len(), 500);
+        assert!(first.has_more);
+        assert_eq!(second.total, 501);
+        assert_eq!(second.rows.len(), 1);
+        assert!(!second.has_more);
+
+        let ids = first
+            .rows
+            .iter()
+            .chain(&second.rows)
+            .map(|track| track.id)
+            .collect::<Vec<_>>();
+        assert_eq!(ids, (1..=501_i64).collect::<Vec<_>>());
+    }
+
+    #[test]
     fn album_tracks_use_canonical_disc_then_track_order() {
         let db = Db::open_in_memory().unwrap();
         db.conn()
@@ -152,11 +254,20 @@ mod tests {
             )
             .unwrap();
 
-        let titles = query_album_tracks(&db, "Album", "Artist")
-            .unwrap()
-            .into_iter()
-            .map(|track| track.title)
-            .collect::<Vec<_>>();
+        let titles = query_album_tracks(
+            &db,
+            "Album",
+            "Artist",
+            WindowRange {
+                offset: 0,
+                limit: 200,
+            },
+        )
+        .unwrap()
+        .rows
+        .into_iter()
+        .map(|track| track.title)
+        .collect::<Vec<_>>();
 
         assert_eq!(
             titles,
