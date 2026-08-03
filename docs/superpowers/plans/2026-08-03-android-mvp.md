@@ -231,14 +231,14 @@ der abgeleitete `walk` dieselbe Reihenfolge- und Filterzusicherung liefert wie
 - Modify: `crates/reprise-android-ffi/src/lib.rs`
 - Modify: `android/app/src/main/java/…`
 
-- [ ] **Step 1: Die FFI-Oberfläche**
+- [x] **Step 1: Die FFI-Oberfläche**
 
 Datenbank öffnen (App-privates Verzeichnis), Baum-URI setzen, scannen,
 Tracks auflisten. Fortschritt als Rückruf — `ScanProgress::Scanning::total`
 ist seit Paket 2 `Option<u64>`, und der Erstscan hat **keine** Schätzung: die
 Oberfläche zeigt einen unbestimmten Balken, keine erfundene Prozentzahl.
 
-- [ ] **Step 2: Die Kotlin-Quelle**
+- [x] **Step 2: Die Kotlin-Quelle**
 
 `ContentResolver`, `DocumentsContract.buildChildDocumentsUriUsingTree`,
 `openFileDescriptor`. Die vier Methoden, mehr nicht.

@@ -143,6 +143,7 @@ pub(super) fn mark_vanished_with(
     tx: &rusqlite::Transaction,
     candidates: Vec<(i64, String, Option<i64>)>,
     observed_paths: &std::collections::HashSet<std::path::PathBuf>,
+    resolve_native_mount_points: bool,
 ) -> Result<u32, ScanError> {
     let mut marked = 0u32;
     for (id, path_str, device) in candidates {
@@ -168,7 +169,9 @@ pub(super) fn mark_vanished_with(
             // consumer; for now this just makes that grouping visible in
             // the log for an `Unmounted` row, where it's actually
             // informative (a `Deleted` row has no mount to report).
-            let mount_point = mounts::mount_point_of(path);
+            let mount_point = resolve_native_mount_points
+                .then(|| mounts::mount_point_of(path))
+                .flatten();
             tracing::info!(
                 path = %path_str,
                 reason = reason.as_str(),
@@ -253,6 +256,7 @@ mod android_uri_tests {
             &tx,
             vec![(1, TRACK_URI.to_owned(), Some(41))],
             &std::collections::HashSet::new(),
+            true,
         )
         .unwrap();
         let missing: (Option<i64>, Option<String>) = tx

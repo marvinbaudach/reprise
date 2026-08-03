@@ -1,33 +1,23 @@
-//! Throwaway Android feasibility spike (spike branch only — do not merge).
-//!
-//! The narrowest UniFFI surface that still proves the real thing: open the
-//! real database, run the real scanner, and read through the real windowed
-//! query layer — all from Kotlin, with `reprise-core` loaded as a `.so` inside
-//! an app sandbox rather than executed as a shell binary.
-//!
-//! `Db` owns a `rusqlite::Connection` and is deliberately not `Sync` (see
-//! `db_handle.rs`), so the exported object holds it behind a `Mutex`. That is
-//! the same rule the desktop already follows — one handle per thread — and it
-//! is worth knowing now that it survives the FFI boundary unchanged.
+//! Minimal Android library surface over `reprise-core`.
 
-use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
-use std::os::fd::FromRawFd;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use reprise_core::db::Db;
-use reprise_core::library::scanner::{scan_folder, ScanOutcome};
+use reprise_core::library::scanner::{
+    scan_folder_with_source_and_progress, ScanOutcome, ScanProgress,
+};
+use reprise_core::library::settings;
 use reprise_core::queries;
 use reprise_core::view_source::ViewSource;
+
+use source::{BridgedSource, SafSource};
 
 pub mod source;
 
 uniffi::setup_scaffolding!();
 
-const PROBE_INITIAL_READ_BYTES: usize = 64;
-const PROBE_SEEK_OFFSET: usize = 16;
-const PROBE_COMPARISON_BYTES: usize = 32;
+const DATABASE_FILE_NAME: &str = "reprise.db";
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum LibraryError {
@@ -37,12 +27,15 @@ pub enum LibraryError {
     Scan { detail: String },
     #[error("query error: {detail}")]
     Query { detail: String },
+    #[error("no library tree is configured")]
+    TreeNotConfigured,
 }
 
 /// One row as the UI needs it — deliberately not the full `Track`, so the
 /// binding surface stays a decision rather than an accident.
 #[derive(uniffi::Record)]
 pub struct TrackRow {
+    pub uri: String,
     pub title: String,
     pub artist: String,
     pub album: String,
@@ -56,101 +49,84 @@ pub struct ScanSummary {
     pub errors: u32,
 }
 
-/// Evidence from probing whether an adopted Android file descriptor supports
-/// the `Read + Seek` contract required by `LibraryReadHandle`.
-#[derive(Debug, uniffi::Record)]
-pub struct FileDescriptorProbeResult {
-    pub bytes_read: u64,
-    pub read_error: Option<String>,
-    pub seek_succeeded: bool,
-    pub seek_error: Option<String>,
-    pub bytes_read_after_seek: u64,
-    pub read_after_seek_error: Option<String>,
-    pub bytes_match: Option<bool>,
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum ScanProgressUpdate {
+    Discovering,
+    Scanning {
+        processed: u64,
+        total: Option<u64>,
+        current_uri: String,
+    },
+    Fetching {
+        done: u64,
+        total: u64,
+    },
 }
 
-#[uniffi::export]
-pub fn probe_file_descriptor(raw_fd: i32) -> FileDescriptorProbeResult {
-    if raw_fd < 0 {
-        let detail = format!("invalid file descriptor: {raw_fd}");
-        return FileDescriptorProbeResult {
-            bytes_read: 0,
-            read_error: Some(detail.clone()),
-            seek_succeeded: false,
-            seek_error: Some(detail),
-            bytes_read_after_seek: 0,
-            read_after_seek_error: None,
-            bytes_match: None,
-        };
-    }
+#[uniffi::export(callback_interface)]
+pub trait ScanProgressListener: Send + Sync {
+    fn on_progress(&self, progress: ScanProgressUpdate);
+}
 
-    // ParcelFileDescriptor.detachFd() transfers ownership to Rust. Adopting it
-    // here makes File close it on every return path; leaking one descriptor per
-    // track would eventually exhaust the Android process descriptor table.
-    let mut file = unsafe { File::from_raw_fd(raw_fd) };
-    let mut initial = [0; PROBE_INITIAL_READ_BYTES];
-    let (bytes_read, read_error) = match file.read(&mut initial) {
-        Ok(count) => (count, None),
-        Err(error) => (0, Some(error.to_string())),
-    };
+struct ConfiguredTree {
+    uri: PathBuf,
+    source: BridgedSource,
+}
 
-    let seek_error = match file.seek(SeekFrom::Start(PROBE_SEEK_OFFSET as u64)) {
-        Ok(_) => None,
-        Err(error) => Some(error.to_string()),
-    };
-    let seek_succeeded = seek_error.is_none();
-
-    let mut bytes_read_after_seek = 0;
-    let mut read_after_seek_error = None;
-    let mut bytes_match = None;
-    if seek_succeeded {
-        let mut after_seek = [0; PROBE_COMPARISON_BYTES];
-        match file.read(&mut after_seek) {
-            Ok(count) => {
-                bytes_read_after_seek = count;
-                if read_error.is_none() && PROBE_SEEK_OFFSET + count <= bytes_read && count > 0 {
-                    bytes_match = Some(
-                        after_seek[..count]
-                            == initial[PROBE_SEEK_OFFSET..PROBE_SEEK_OFFSET + count],
-                    );
-                }
-            }
-            Err(error) => read_after_seek_error = Some(error.to_string()),
-        }
-    }
-
-    FileDescriptorProbeResult {
-        bytes_read: bytes_read as u64,
-        read_error,
-        seek_succeeded,
-        seek_error,
-        bytes_read_after_seek: bytes_read_after_seek as u64,
-        read_after_seek_error,
-        bytes_match,
-    }
+struct LibraryState {
+    db: Db,
+    tree: Option<ConfiguredTree>,
 }
 
 #[derive(uniffi::Object)]
 pub struct MusicLibrary {
-    db: Mutex<Db>,
+    state: Mutex<LibraryState>,
 }
 
 #[uniffi::export]
 impl MusicLibrary {
-    /// Opens (creating and migrating if needed) the library at `db_path`.
+    /// Opens the library database inside the app's private directory.
     #[uniffi::constructor]
-    pub fn open(db_path: &str) -> Result<Self, LibraryError> {
-        let db = Db::open_migrated(Some(Path::new(&db_path))).map_err(|error| {
+    pub fn open(app_private_directory: &str) -> Result<Self, LibraryError> {
+        let db_path = Path::new(app_private_directory).join(DATABASE_FILE_NAME);
+        let db = Db::open_migrated(Some(&db_path)).map_err(|error| LibraryError::Database {
+            detail: error.to_string(),
+        })?;
+        Ok(Self {
+            state: Mutex::new(LibraryState { db, tree: None }),
+        })
+    }
+
+    pub fn set_tree_uri(
+        &self,
+        tree_uri: String,
+        source: Box<dyn SafSource>,
+    ) -> Result<(), LibraryError> {
+        let mut state = self.lock()?;
+        settings::set_library_root(&state.db, &tree_uri).map_err(|error| {
             LibraryError::Database {
                 detail: error.to_string(),
             }
         })?;
-        Ok(Self { db: Mutex::new(db) })
+        state.tree = Some(ConfiguredTree {
+            uri: tree_uri.into(),
+            source: BridgedSource::new(source),
+        });
+        Ok(())
     }
 
-    pub fn scan(&self, folder: &str) -> Result<ScanSummary, LibraryError> {
-        let db = self.lock()?;
-        let outcome = scan_folder(&db, Path::new(&folder)).map_err(|error| LibraryError::Scan {
+    pub fn scan(
+        &self,
+        progress: Box<dyn ScanProgressListener>,
+    ) -> Result<ScanSummary, LibraryError> {
+        let state = self.lock()?;
+        let tree = state.tree.as_ref().ok_or(LibraryError::TreeNotConfigured)?;
+        let outcome =
+            scan_folder_with_source_and_progress(&tree.source, &state.db, &tree.uri, |event| {
+                progress.on_progress(event.into());
+            });
+        drop(progress);
+        let outcome = outcome.map_err(|error| LibraryError::Scan {
             detail: error.to_string(),
         })?;
         match outcome {
@@ -165,25 +141,16 @@ impl MusicLibrary {
         }
     }
 
-    pub fn track_count(&self) -> Result<i64, LibraryError> {
-        let db = self.lock()?;
-        queries::query_track_count(&db, &ViewSource::Library, "", &[]).map_err(|error| {
-            LibraryError::Query {
-                detail: error.to_string(),
-            }
-        })
-    }
-
-    pub fn window(&self, offset: i64, limit: i64) -> Result<Vec<TrackRow>, LibraryError> {
-        let db = self.lock()?;
+    pub fn list_tracks(&self) -> Result<Vec<TrackRow>, LibraryError> {
+        let state = self.lock()?;
         let tracks = queries::query_track_window(
-            &db,
+            &state.db,
             &ViewSource::Library,
             "title",
             "asc",
             "",
-            offset,
-            limit,
+            0,
+            i64::MAX,
             &[],
         )
         .map_err(|error| LibraryError::Query {
@@ -192,6 +159,7 @@ impl MusicLibrary {
         Ok(tracks
             .into_iter()
             .map(|track| TrackRow {
+                uri: track.path,
                 title: track.title,
                 artist: track.artist,
                 album: track.album,
@@ -205,10 +173,28 @@ impl MusicLibrary {
     /// A poisoned mutex means another call panicked while holding the
     /// connection. Reporting that as an error beats propagating the panic
     /// across the FFI boundary, where it would abort the app process.
-    fn lock(&self) -> Result<std::sync::MutexGuard<'_, Db>, LibraryError> {
-        self.db.lock().map_err(|_| LibraryError::Database {
+    fn lock(&self) -> Result<std::sync::MutexGuard<'_, LibraryState>, LibraryError> {
+        self.state.lock().map_err(|_| LibraryError::Database {
             detail: "library handle poisoned by an earlier panic".to_owned(),
         })
+    }
+}
+
+impl From<ScanProgress> for ScanProgressUpdate {
+    fn from(progress: ScanProgress) -> Self {
+        match progress {
+            ScanProgress::Discovering => Self::Discovering,
+            ScanProgress::Scanning {
+                processed,
+                total,
+                current_path,
+            } => Self::Scanning {
+                processed,
+                total,
+                current_uri: current_path.to_string_lossy().into_owned(),
+            },
+            ScanProgress::Fetching { done, total } => Self::Fetching { done, total },
+        }
     }
 }
 
@@ -217,39 +203,117 @@ mod tests {
     use std::fs::File;
     use std::os::fd::IntoRawFd;
     use std::path::PathBuf;
-    use std::process::{Command, Stdio};
+    use std::sync::{Arc, Mutex};
 
-    use super::probe_file_descriptor;
+    use super::{MusicLibrary, ScanProgressListener, ScanProgressUpdate};
+    use crate::source::{SafSource, SafSourceError, SourceChild, SourceFacts};
+
+    const TREE_URI: &str = "content://com.android.externalstorage.documents/tree/primary%3AMusic";
+    const TRACK_URI: &str = "content://com.android.externalstorage.documents/tree/primary%3AMusic/document/primary%3AMusic%2Fsine.flac";
+
+    struct OneTrackSource;
+
+    impl SafSource for OneTrackSource {
+        fn residence_token(&self, _uri: String) -> Result<Option<i64>, SafSourceError> {
+            Ok(Some(41))
+        }
+
+        fn probe(
+            &self,
+            uri: String,
+            _follow_links: bool,
+        ) -> Result<Option<SourceFacts>, SafSourceError> {
+            Ok(match uri.as_str() {
+                TREE_URI => Some(SourceFacts {
+                    is_file: false,
+                    is_directory: true,
+                    size_bytes: None,
+                    modified_unix_ms: Some(1_775_000_000_000),
+                    document_id: "primary:Music".to_owned(),
+                }),
+                TRACK_URI => Some(SourceFacts {
+                    is_file: true,
+                    is_directory: false,
+                    size_bytes: Some(12_066),
+                    modified_unix_ms: Some(1_775_000_123_456),
+                    document_id: "primary:Music/sine.flac".to_owned(),
+                }),
+                _ => None,
+            })
+        }
+
+        fn list_children(&self, uri: String) -> Result<Vec<SourceChild>, SafSourceError> {
+            Ok(if uri == TREE_URI {
+                vec![SourceChild {
+                    uri: TRACK_URI.to_owned(),
+                    display_name: "sine.flac".to_owned(),
+                    is_file: true,
+                    is_directory: false,
+                    size_bytes: Some(12_066),
+                    modified_unix_ms: Some(1_775_000_123_456),
+                    document_id: "primary:Music/sine.flac".to_owned(),
+                }]
+            } else {
+                Vec::new()
+            })
+        }
+
+        fn open_read_fd(&self, uri: String) -> Result<i32, SafSourceError> {
+            if uri != TRACK_URI {
+                return Err(SafSourceError::Io {
+                    detail: format!("unexpected document: {uri}"),
+                });
+            }
+            let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../android/app/src/main/assets/sine.flac");
+            File::open(fixture)
+                .map(IntoRawFd::into_raw_fd)
+                .map_err(|error| SafSourceError::Io {
+                    detail: error.to_string(),
+                })
+        }
+    }
+
+    #[derive(Default)]
+    struct RecordingProgress {
+        events: Arc<Mutex<Vec<ScanProgressUpdate>>>,
+    }
+
+    impl ScanProgressListener for RecordingProgress {
+        fn on_progress(&self, progress: ScanProgressUpdate) {
+            self.events.lock().unwrap().push(progress);
+        }
+    }
 
     #[test]
-    fn fd_probe_reports_seekable_and_non_seekable_descriptors() {
-        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../android/app/src/main/assets/sine.flac");
-        let seekable = probe_file_descriptor(File::open(fixture).unwrap().into_raw_fd());
-
-        assert_eq!(seekable.bytes_read, 64);
-        assert_eq!(seekable.read_error, None);
-        assert!(seekable.seek_succeeded);
-        assert_eq!(seekable.seek_error, None);
-        assert_eq!(seekable.bytes_read_after_seek, 32);
-        assert_eq!(seekable.read_after_seek_error, None);
-        assert_eq!(seekable.bytes_match, Some(true));
-
-        let mut child = Command::new("printf")
-            .arg("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ")
-            .stdout(Stdio::piped())
-            .spawn()
+    fn configured_saf_tree_scans_with_indeterminate_first_progress_and_lists_tracks() {
+        let directory = tempfile::tempdir().unwrap();
+        let library = MusicLibrary::open(directory.path().to_str().unwrap()).unwrap();
+        library
+            .set_tree_uri(TREE_URI.to_owned(), Box::new(OneTrackSource))
             .unwrap();
-        let stdout = child.stdout.take().unwrap();
-        let non_seekable = probe_file_descriptor(stdout.into_raw_fd());
-        assert!(child.wait().unwrap().success());
+        let progress = RecordingProgress::default();
+        let events = Arc::clone(&progress.events);
 
-        assert_eq!(non_seekable.bytes_read, 64);
-        assert_eq!(non_seekable.read_error, None);
-        assert!(!non_seekable.seek_succeeded);
-        assert!(non_seekable.seek_error.is_some());
-        assert_eq!(non_seekable.bytes_read_after_seek, 0);
-        assert_eq!(non_seekable.read_after_seek_error, None);
-        assert_eq!(non_seekable.bytes_match, None);
+        let summary = library.scan(Box::new(progress)).unwrap();
+        let tracks = library.list_tracks().unwrap();
+
+        assert_eq!(summary.added, 1);
+        assert_eq!(summary.updated, 0);
+        assert_eq!(summary.errors, 0);
+        assert_eq!(tracks.len(), 1);
+        assert_eq!(tracks[0].uri, TRACK_URI);
+        assert!(directory.path().join("reprise.db").is_file());
+        assert_eq!(
+            *events.lock().unwrap(),
+            vec![
+                ScanProgressUpdate::Discovering,
+                ScanProgressUpdate::Scanning {
+                    processed: 1,
+                    total: None,
+                    current_uri: TRACK_URI.to_owned(),
+                },
+            ]
+        );
     }
 }

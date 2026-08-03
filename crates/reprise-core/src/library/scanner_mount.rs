@@ -46,14 +46,17 @@ use super::mounts;
 /// comment for why memoizing on the parent (rather than the full path) is
 /// both correct — the mount point is a property of the directory, not the
 /// file — and the whole reason this exists.
-#[derive(Default)]
 pub(super) struct MountPointCache {
+    enabled: bool,
     by_parent: HashMap<PathBuf, Option<String>>,
 }
 
 impl MountPointCache {
-    pub(super) fn new() -> Self {
-        Self::default()
+    pub(super) fn new(enabled: bool) -> Self {
+        Self {
+            enabled,
+            by_parent: HashMap::new(),
+        }
     }
 
     /// Resolves the `mount_point` column value to store for `path`,
@@ -62,6 +65,12 @@ impl MountPointCache {
     /// — even `/` couldn't be `lstat`'d, which should not happen on a
     /// working Linux system; see that function's own doc comment.
     pub(super) fn resolve(&mut self, path: &Path) -> Option<String> {
+        // Opaque sources such as Android SAF have no Unix mount point for Core
+        // to derive. Native desktop scans keep this enabled and therefore
+        // retain the exact existing resolution behavior.
+        if !self.enabled {
+            return None;
+        }
         let Some(parent) = path.parent() else {
             // No parent component at all (bare "/") — not a shape any real
             // audio file path takes, but handled directly rather than

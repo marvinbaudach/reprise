@@ -4,7 +4,7 @@
     <!-- SAF grants access to the selected tree without broad storage permissions. -->
 
     <application
-        android:label="Reprise A1 Probe"
+        android:label="Reprise Android MVP"
         android:supportsRtl="true"
         android:theme="@style/Theme.Spike">
         <activity

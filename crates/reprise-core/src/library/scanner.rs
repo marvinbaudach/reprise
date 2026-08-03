@@ -116,20 +116,22 @@ fn tag_param_values<'a>(
 }
 
 pub fn scan_folder(db: &Db, root: &Path) -> Result<ScanOutcome, ScanError> {
-    scan_folder_with_source(&UnixLibrarySource, db, root)
+    let conn = db.conn();
+    scan_folder_inner(&UnixLibrarySource, conn, root, None, true)
 }
 
+#[cfg(test)]
 fn scan_folder_with_source(
     source: &dyn LibrarySource,
     db: &Db,
     root: &Path,
 ) -> Result<ScanOutcome, ScanError> {
     let conn = db.conn();
-    scan_folder_inner(source, conn, root, None)
+    scan_folder_inner(source, conn, root, None, false)
 }
 
 pub(crate) fn scan_folder_in(conn: &Connection, root: &Path) -> Result<ScanOutcome, ScanError> {
-    scan_folder_inner(&UnixLibrarySource, conn, root, None)
+    scan_folder_inner(&UnixLibrarySource, conn, root, None, true)
 }
 
 pub fn scan_folder_with_progress(
@@ -137,7 +139,20 @@ pub fn scan_folder_with_progress(
     root: &Path,
     mut on_progress: impl FnMut(ScanProgress),
 ) -> Result<ScanOutcome, ScanError> {
-    scan_folder_with_progress_from(&UnixLibrarySource, db, root, &mut on_progress)
+    scan_folder_with_progress_from(&UnixLibrarySource, db, root, &mut on_progress, true)
+}
+
+/// Scans through an explicitly selected library source while forwarding the
+/// same progress contract as [`scan_folder_with_progress`]. Platform adapters
+/// use this entry point; the desktop wrapper above remains pinned to
+/// [`UnixLibrarySource`].
+pub fn scan_folder_with_source_and_progress(
+    source: &dyn LibrarySource,
+    db: &Db,
+    root: &Path,
+    mut on_progress: impl FnMut(ScanProgress),
+) -> Result<ScanOutcome, ScanError> {
+    scan_folder_with_progress_from(source, db, root, &mut on_progress, false)
 }
 
 fn scan_folder_with_progress_from(
@@ -145,12 +160,19 @@ fn scan_folder_with_progress_from(
     db: &Db,
     root: &Path,
     on_progress: &mut dyn FnMut(ScanProgress),
+    resolve_native_mount_points: bool,
 ) -> Result<ScanOutcome, ScanError> {
     let conn = db.conn();
     on_progress(ScanProgress::Discovering);
     let total = scan_progress::estimated_audio_files(conn, root)?;
     let reporter = scan_progress::ScanProgressReporter::new(on_progress, total);
-    scan_folder_inner(source, conn, root, Some(reporter))
+    scan_folder_inner(
+        source,
+        conn,
+        root,
+        Some(reporter),
+        resolve_native_mount_points,
+    )
 }
 
 /// Walks `root`, upserting every audio file found, then — in the SAME
@@ -254,6 +276,7 @@ fn scan_folder_inner(
     conn: &Connection,
     root: &Path,
     mut progress: Option<scan_progress::ScanProgressReporter<'_>>,
+    resolve_native_mount_points: bool,
 ) -> Result<ScanOutcome, ScanError> {
     // No absoluteness assertion here any more. It used to live at this line and
     // it was the wrong layer: nothing the scanner does needs an absolute root —
@@ -279,7 +302,7 @@ fn scan_folder_inner(
     let mut report = ScanReport::default();
     let mut audio_files_seen: u64 = 0;
     let mut observed_audio_paths = HashSet::<PathBuf>::new();
-    let mut mount_cache = mount::MountPointCache::new();
+    let mut mount_cache = mount::MountPointCache::new(resolve_native_mount_points);
     let tx = conn.unchecked_transaction()?;
     let mut walk_failure = None;
     source::walk_with(source, root, LibraryWalkOrder::Native, |item| {
@@ -652,8 +675,13 @@ fn scan_folder_inner(
             root: root.to_path_buf(),
         }
     } else {
-        report.vanished =
-            vanish::mark_vanished_with(source, &tx, candidates, &observed_audio_paths)?;
+        report.vanished = vanish::mark_vanished_with(
+            source,
+            &tx,
+            candidates,
+            &observed_audio_paths,
+            resolve_native_mount_points,
+        )?;
         // T0.3: one collective change-log row per scan that actually touched
         // the catalog (never per track, never for a no-op reconcile), inside
         // the same transaction as the walk so the event and the rows it
