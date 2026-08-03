@@ -2,7 +2,7 @@
 slug: track-change-ui-stall
 worktree: /home/marvin/Projects/reprise-track-change-ui-stall
 branch: feature/track-change-ui-stall
-phase: planned
+phase: coded
 codex_session:
 created: 2026-08-03
 ---
@@ -220,3 +220,39 @@ The probe scaffold lives on this branch as a separate commit. To re-measure:
 
 then drive `org.mpris.MediaPlayer2.Player.Next` over the probe bus name and read
 the `PROBE track change breakdown` lines.
+
+## Result (measured after the fix)
+
+Both builds run against the same pristine copy of the library (1822 rows), same
+nested headless compositor, same GL renderer, same click cadence, driven through
+the same AT-SPI path a user's click takes.
+
+| | before | after | |
+|---|---|---|---|
+| click → player bar shows the new track | 929 ms | **306 ms** | −67 % |
+| main loop unresponsive | 759 ms | 564 ms | −26 % |
+| CPU per track change | ~3400 ms | ~2300 ms | −32 % |
+| idle main-loop round trip | 5.74 ms | 0.61 ms | −89 % |
+
+The headline number is the first row: the visuals now land at 306 ms, against an
+audio switch at ~335 ms. Audio and picture arrive together, which was the
+complaint.
+
+Ordering, which is what P0 was actually for: **8 of 8 clicks now stall *after*
+the paint** (paint at 290–365 ms, stall starting at 379–724 ms). Before, 5 of 8
+stalled *before* it — that is the frozen window the report described.
+
+NAV-10a holds: "current track centered" fires nine times in both runs, and the
+generation guard logged no superseded reveal in this cadence (its unit test
+covers the overtaking case).
+
+Verified independently of the implementer's report: `cargo test -p reprise-gnome`
+— 1323 passed, 0 failed, 392 display-backed tests ignored.
+
+### What is not fixed
+
+The 564 ms stall is still there, just moved behind the first paint. The row-bind
+avalanche (P1's target) is reduced but not eliminated — the remaining budget is
+GTK's own layout across the 205 rows it binds, which the "Out of scope" note
+predicted would dominate once the closures got cheaper. Plain scrolling still
+pays it. Re-attributing it needs the probe scaffold rebased onto this branch.
