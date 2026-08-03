@@ -44,6 +44,36 @@ pub(in crate::ui) fn app_css_for_test() -> String {
     app_css()
 }
 
+#[cfg(test)]
+mod composed_css_tests {
+    /// Every feature module has its own parse test, but they all run on that
+    /// module's section in isolation. The app installs the *concatenation*, and
+    /// the running app logs parser errors against it — so something is only
+    /// caught here.
+    #[test]
+    #[ignore = "probe: prints the composed stylesheet's parse errors with context"]
+    fn probe_composed_css_errors() {
+        gtk4::init().unwrap();
+        let css = super::app_css();
+        let lines: Vec<&str> = css.lines().collect();
+        let errors = super::css_parse_errors(&css);
+        println!(
+            "composed stylesheet: {} lines, {} errors",
+            lines.len(),
+            errors.len()
+        );
+        for error in &errors {
+            println!("  {error}");
+        }
+        for number in [515usize, 550] {
+            if let Some(line) = lines.get(number - 1) {
+                let shown: String = line.chars().take(240).collect();
+                println!("line {number}: {shown}");
+            }
+        }
+    }
+}
+
 /// One entry per feature that ships app-authored (theme-independent) CSS.
 /// Palette colors are NOT here — they live in the separate theme provider.
 fn app_css() -> String {
