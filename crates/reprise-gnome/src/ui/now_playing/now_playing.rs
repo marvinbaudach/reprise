@@ -7,7 +7,9 @@ use libadwaita::prelude::BreakpointBinExt;
 use reprise_core::db::Db;
 use reprise_core::playback::{PlaybackState, SpectrumFrame};
 
+use super::cover_bloom;
 use super::cover_loader::CoverLoader;
+use super::cover_shimmer;
 use super::lyrics_strings;
 use super::now_playing_column::NowPlayingColumn;
 #[cfg(test)]
@@ -17,10 +19,12 @@ use super::song_visualizer::SongVisualizer;
 use super::strings;
 use super::up_next_panel::UpNextPanel;
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
+use crate::ui::cover_lift::CoverLift;
 use crate::ui::lyrics_view::LyricsView;
 use crate::ui::playback::external_media::ExternalPlaybackSnapshot;
 use crate::ui::player_controller::NowPlaying;
 use crate::ui::style::tokens;
+use crate::ui::swell::Swell;
 
 type OnVoid = Rc<dyn Fn()>;
 const TAB_SWITCHER_MIN_HEIGHT: i32 = 50;
@@ -28,17 +32,20 @@ const TAB_SWITCHER_MIN_HEIGHT: i32 = 50;
 #[path = "now_playing_effects.rs"]
 mod now_playing_effects;
 
-struct PanelWidgets {
-    column: NowPlayingColumn,
+pub(super) struct PanelWidgets {
+    pub(super) column: NowPlayingColumn,
     stage: gtk4::Box,
     #[cfg(test)]
     track_content: gtk4::Box,
     lyrics: Rc<LyricsView>,
     up_next: Rc<UpNextPanel>,
-    visualizer: SongVisualizer,
+    pub(super) visualizer: SongVisualizer,
+    pub(super) bloom: cover_bloom::CoverBloom,
+    pub(super) shimmer: cover_shimmer::CoverShimmer,
     lyrics_page: adw::ViewStackPage,
     visual_page: adw::ViewStackPage,
     cover_stack: gtk4::Stack,
+    pub(super) cover_lift: CoverLift,
     external_cover: gtk4::Box,
     cover: gtk4::Image,
     outgoing_cover: gtk4::Image,
@@ -47,12 +54,12 @@ struct PanelWidgets {
     album: gtk4::Label,
     // Retained for the tab session and NPP-13 acceptance test, which prove
     // the active tab stays outside the cover transition.
-    tab_stack: adw::ViewStack,
+    pub(super) tab_stack: adw::ViewStack,
     #[cfg(test)]
     tab_switcher: adw::InlineViewSwitcher,
     footer: gtk4::Label,
     footers: Rc<RefCell<TabFooters>>,
-    session: Rc<TabSession>,
+    pub(super) session: Rc<TabSession>,
 }
 
 fn build_widgets(
@@ -92,6 +99,7 @@ fn build_widgets_for_session(
     let cover_transition = gtk4::Overlay::new();
     cover_transition.set_child(Some(&cover));
     cover_transition.add_overlay(&outgoing_cover);
+    let cover_lift = CoverLift::new(&cover_transition, tokens::NOW_PLAYING_COVER_SIZE);
     let external_cover = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     external_cover.set_size_request(
         tokens::NOW_PLAYING_COVER_SIZE,
@@ -100,7 +108,7 @@ fn build_widgets_for_session(
     external_cover.set_halign(gtk4::Align::Center);
     external_cover.set_valign(gtk4::Align::Center);
     let cover_stack = gtk4::Stack::new();
-    cover_stack.add_named(&cover_transition, Some("track"));
+    cover_stack.add_named(cover_lift.widget(), Some("track"));
     cover_stack.add_named(&external_cover, Some("external"));
     cover_stack.set_visible_child_name("track");
 
@@ -143,6 +151,12 @@ fn build_widgets_for_session(
     glow.set_can_target(false);
     let head_overlay = gtk4::Overlay::new();
     head_overlay.set_child(Some(&glow));
+    let bloom = cover_bloom::CoverBloom::new();
+    let shimmer = cover_shimmer::CoverShimmer::new();
+    // Bottom to top: the static ellipse, the blurred cover, the cover-palette
+    // sweep, then the cover and the title block over all three.
+    head_overlay.add_overlay(bloom.widget());
+    head_overlay.add_overlay(shimmer.widget());
     head_overlay.add_overlay(&head);
 
     let lyrics = LyricsView::new();
@@ -280,9 +294,12 @@ fn build_widgets_for_session(
         lyrics,
         up_next,
         visualizer,
+        bloom,
+        shimmer,
         lyrics_page,
         visual_page,
         cover_stack,
+        cover_lift,
         external_cover,
         cover,
         outgoing_cover,
@@ -299,21 +316,24 @@ fn build_widgets_for_session(
 }
 
 pub(in crate::ui) struct NowPlayingPanel {
-    widgets: PanelWidgets,
+    pub(super) widgets: PanelWidgets,
     toggle: gtk4::ToggleButton,
     conn: Rc<Db>,
     cover_loader: Rc<CoverLoader>,
     cover_generation: Rc<Cell<u64>>,
     loaded_track: RefCell<Option<NowPlaying>>,
     external_snapshot: RefCell<Option<ExternalPlaybackSnapshot>>,
-    playback_state: Cell<PlaybackState>,
+    pub(super) playback_state: Cell<PlaybackState>,
     syncing_visibility: Cell<bool>,
     on_up_next_refresh: RefCell<Option<OnVoid>>,
     cover_animation: RefCell<Option<adw::TimedAnimation>>,
     cover_animation_generation: Cell<u64>,
     cover_transition_active: Cell<bool>,
     on_track_reveal: crate::ui::link_activation::ActivationSlot,
-    song_visuals_enabled: Cell<bool>,
+    pub(super) song_visuals_enabled: Cell<bool>,
+    pub(super) swell: RefCell<Swell>,
+    pub(super) swell_pressure: Cell<f64>,
+    pub(super) swell_last_frame_us: Cell<i64>,
     on_album_reveal: crate::ui::link_activation::ActivationSlot,
     on_artist_reveal: crate::ui::link_activation::ActivationSlot,
 }
@@ -350,8 +370,19 @@ impl NowPlayingPanel {
             cover_transition_active: Cell::new(false),
             on_track_reveal: Rc::new(RefCell::new(None)),
             song_visuals_enabled: Cell::new(song_visuals_enabled),
+            swell: RefCell::new(Swell::default()),
+            swell_pressure: Cell::new(0.0),
+            swell_last_frame_us: Cell::new(0),
             on_album_reveal: Rc::new(RefCell::new(None)),
             on_artist_reveal: Rc::new(RefCell::new(None)),
+        });
+        panel.widgets.bloom.set_on_frame({
+            let weak = Rc::downgrade(&panel);
+            move |frame_time_us| {
+                if let Some(panel) = weak.upgrade() {
+                    panel.advance_swell(frame_time_us);
+                }
+            }
         });
         crate::ui::link_activation::arm_slot(
             &panel.widgets.cover,
@@ -376,6 +407,7 @@ impl NowPlayingPanel {
         panel.set_song_visuals_enabled(song_visuals_enabled);
         panel.wire();
         panel.sync_visual_activity();
+        panel.sync_bloom_activity();
         panel.render_track();
         panel
     }
@@ -416,6 +448,7 @@ impl NowPlayingPanel {
         self.syncing_visibility.set(false);
         self.request_up_next_refresh_if_visible();
         self.sync_visual_activity();
+        self.sync_bloom_activity();
     }
 
     pub(in crate::ui) fn set_loaded_track(self: &Rc<Self>, track: Option<NowPlaying>) {
@@ -467,11 +500,24 @@ impl NowPlayingPanel {
 
     pub(in crate::ui) fn set_playback_state(&self, state: PlaybackState) {
         self.playback_state.set(state);
+        if state != PlaybackState::Playing {
+            self.swell_pressure.set(0.0);
+        }
         self.widgets.visualizer.set_playback_state(state);
+        self.sync_bloom_activity();
     }
 
     pub(in crate::ui) fn set_spectrum(&self, frame: SpectrumFrame) {
         if self.song_visuals_enabled.get() {
+            let bass = frame.bass_pressure();
+            let playing = self.playback_state.get() == PlaybackState::Playing;
+            let pressure = if playing {
+                f64::from(bass.pressure)
+            } else {
+                0.0
+            };
+            self.swell_pressure.set(pressure);
+            self.advance_swell(gtk4::glib::monotonic_time());
             self.widgets.visualizer.set_spectrum(frame);
         }
     }
@@ -481,10 +527,12 @@ impl NowPlayingPanel {
         self.widgets.visual_page.set_visible(enabled);
         if !enabled {
             self.widgets.visualizer.set_active(false);
+            self.advance_swell(0);
             if self.widgets.session.selected.get() == PanelTab::Visual {
                 self.widgets.tab_stack.set_visible_child_name(UP_NEXT_PAGE);
             }
         }
+        self.sync_bloom_activity();
         self.sync_visual_activity();
     }
 
@@ -578,6 +626,7 @@ impl NowPlayingPanel {
             .connect_visible_child_name_notify(move |stack| {
                 if let Some(panel) = weak.upgrade() {
                     panel.sync_visual_activity();
+                    panel.sync_bloom_activity();
                     if stack.visible_child_name().as_deref() == Some(UP_NEXT_PAGE) {
                         panel.request_up_next_refresh_if_visible();
                     }
@@ -607,15 +656,8 @@ impl NowPlayingPanel {
                 }
                 panel.request_up_next_refresh_if_visible();
                 panel.sync_visual_activity();
+                panel.sync_bloom_activity();
             });
-    }
-
-    fn sync_visual_activity(&self) {
-        self.widgets.visualizer.set_active(
-            self.song_visuals_enabled.get()
-                && self.widgets.column.is_visible()
-                && self.widgets.session.selected.get() == PanelTab::Visual,
-        );
     }
 
     fn request_up_next_refresh_if_visible(&self) {
@@ -627,12 +669,25 @@ impl NowPlayingPanel {
             callback();
         }
     }
+
+    #[cfg(test)]
+    fn bloom_widget(&self) -> &gtk4::DrawingArea {
+        self.widgets.bloom.widget()
+    }
+
+    #[cfg(test)]
+    fn stage_for_test(&self) -> &gtk4::Box {
+        &self.widgets.stage
+    }
 }
 
 pub(in crate::ui) fn css() -> String {
     super::surface_css::css()
 }
 
+#[cfg(test)]
+#[path = "now_playing_reactive_tests.rs"]
+mod reactive_tests;
 #[cfg(test)]
 #[path = "now_playing_tests.rs"]
 mod tests;

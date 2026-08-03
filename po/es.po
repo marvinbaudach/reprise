@@ -4362,6 +4362,14 @@ msgstr "Impacto"
 msgid "Breakdown"
 msgstr "Breakdown"
 
+#: crates/reprise-gnome/src/ui/strings_song_visuals.rs:16
+msgid "Kick"
+msgstr "Bombo"
+
+#: crates/reprise-gnome/src/ui/strings_song_visuals.rs:17
+msgid "Pressure"
+msgstr "Presión"
+
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:16
 msgid "Review changes"
 msgstr "Revisar cambios"

@@ -2394,11 +2394,22 @@ property is set and yet nothing happens.
   deterministically; selection never follows playback.
 - **NAV-10a** [active] [gtk] — **Marking and scrolling are separate.**
   Every visible instance of the loaded track carries the same playback
-  marker. Double-click/Enter on an already-visible row does not change the
-  viewport. Play from Stopped as well as explicit Previous/Next center the
-  new track without stealing focus or selection. Auto-advance centers only
-  if no scroll movement has occurred for 1.5 seconds; explicit
-  metadata/reveal navigation always selects, focuses, and centers.
+  marker, from one implementation (`ui/playing_marker.rs`) serving every
+  surface that lists tracks: the track table, the podcast groups, and the
+  YouTube channel detail. The player bar is not such a surface — it shows
+  the running track's state through the play/pause button, not through a
+  second copy of the list marker. Double-click/Enter on an already-visible
+  row does not change the viewport. Play from Stopped as well as explicit
+  Previous/Next center the new track without stealing focus or selection.
+  Centring moves the viewport over the Standard token rather than
+  teleporting it, and yields immediately to anything else that writes the
+  scroll position — the user's own scrolling, a model replacement, or
+  GTK's own reset. A distance of more than three viewport heights is
+  still applied at once, so the first placement after launch stays
+  instant (START-1).
+  Auto-advance centers only if no scroll movement has occurred for 1.5
+  seconds; explicit metadata/reveal navigation always selects, focuses, and
+  centers.
 - **QUE-7** [active] [gtk] — Up Next consists of the manual queue plus a
   virtual, named context tail with a count. The tail is not materialized as
   individual rows but only rendered within the visible window; the
@@ -2849,7 +2860,7 @@ STYLE-1).
 - **AC-21** [replaced by AC-22]
 - **AC-22** [replaced by AC-23]
 - **AC-23** [active] [core] [gtk] — „Song Visuals" is a plugin, switched
-  off by default and applicable live. When switched on, the Linux
+  on by default and applicable live. When switched on, the Linux
   pipeline branches off locally normalized mono PCM before ReplayGain;
   CAVA math generates 64 logarithmic display bands from it, clamped to
   0–1. The portable core uses CAVA's double FFT resolution below 100 Hz,
@@ -2871,18 +2882,34 @@ STYLE-1).
   passage climbs to the same band values as a drop and the glow would
   fire on both. Instead a second path measures the same PCM without any
   gain of its own: a 30–150 Hz band, its RMS in true dBFS, and a slow
-  baseline of the track's own recent bass. Absolute level and the swell
-  above that baseline together produce two presentation-only values. A
-  rhythmic kick lifts two broad neon glows softly and in proportion to
-  the measured pressure; only pressure sustained across a breakdown adds
-  the two brighter inner auras. A bass band that stays quiet in absolute
+  baseline of the track's own recent bass. That path produces four
+  presentation-only values: the swell over the running baseline
+  (`impact`), the same held across a breakdown (`aura`), the attack
+  against the band's own recent floor (`kick`), and the absolute held
+  level (`pressure`).
+  **The two broad neon glows are a stage light driven by `kick`.** A hit
+  throws them to full in the same frame and they fall at the render
+  clock; they are deliberately not driven by `impact`, which measures
+  the swell over a two-second baseline and therefore cannot reach full
+  on a limited master — measured across three real tracks it tops out at
+  0.85 and clears 0.6 for one percent of a blast-beat track, while
+  `kick` reaches 1.00 on all three. The fall belongs to the render clock
+  and not to the detector: `kick`'s own release is 70 ms, and at the
+  twelve hits per second a blast beat produces, passing it straight
+  through would be a strobe. Only pressure sustained across a breakdown
+  adds the two brighter inner auras. A bass band that stays quiet in absolute
   terms never glows, however tall the bars grow, and high-frequency
   energy alone never triggers either layer. Both release after the
   impulse instead of flickering, and neither changes CAVA values, peak
   caps, nor bar heights. With animations switched off, the layer holds
   the current frame's value without decay.
   Below the canvas the visual names the analysis it reacts to —
-  absolute bass level, baseline, kick glow, and breakdown aura. The
+  absolute bass level, baseline, breakdown aura, the attack `kick` the
+  stage light runs on, the held `pressure`, and the slow `swell` the
+  cover and the panel light breathe on. `impact` is produced but not
+  shown: since the glow became a stage light nothing reads it, and this
+  strip names what the visual reacts to, not everything the detector
+  computes. The
   numbers refresh at most ten times per second so they stay readable,
   and a band without measurable signal reads as a dash instead of a
   bottomed-out level.
@@ -2896,6 +2923,88 @@ STYLE-1).
   switcher. The labeled canvas takes on the current cover accent via the
   same global ambient crossfade as the player bar; only without a usable
   cover color does the theme accent apply.
+
+- **AC-24** [active] [gtk] — The reactive light lives on the cover and the
+  playhead, nowhere else. The now-playing backdrop, the cover in the panel
+  and the cover in the player bar read the `BassPressure.pressure` that
+  already reaches the UI and its UI-side slow envelope, `swell` — never
+  the CAVA bars, whose auto-sensitivity
+  makes a quiet vocal reach the same value as a drop, and never
+  `impact`, which answers how loud a whole track is rather than what its
+  beat is doing: on a limited master it never leaves its resting value.
+  `pressure` carries the backdrop's base brightness and `swell` the slow
+  movement of every large surface. **Outside the Visualizer's own canvas,
+  nothing reads `kick` at all.** The panel cover used to take the beat
+  while that tab was open — round 5's one exception — and it read as the
+  cover twitching under its own shadow.
+  **The transport controls stay still.** The waveform's **bar heights** never
+  move: three attempts to swell them around the playhead were rejected,
+  because neighbouring bars cross their pixel boundary at different moments
+  and the eye reads that as noise rather than as life. What reacts instead is
+  colour. The played part takes a floor plus what the bass adds,
+  so every played bar changes by the same amount at the same instant and the
+  progress boundary stays legible at any volume — it keeps at least a 3:1
+  luminance ratio against the unplayed part in silence. The playhead stays a
+  one-pixel line with a slim glow beside it, and that glow follows `pressure`,
+  not the beat. **Four** attempts put the beat on this surface — a lens twice,
+  a radial glow, then a pulsing dot — and all four were rejected on sight, for
+  one reason: at five to seven kicks a second, on the surface the user has to
+  *aim* at, anything answering per beat reads as flicker rather than as life.
+  Reducing its amplitude only makes the flicker quieter, because the rate is
+  what does the damage. The glow rests while the user drags the playhead,
+  during build-up and during a crossfade; the mini player has none.
+  Every large surface that does move breathes over seconds on `swell`, a
+  UI-side slow envelope of `pressure` crossed with a free-running 5.5 s cycle
+  — deliberately not locked to the tempo, because a swell that locks to the
+  beat is a tick again, only slower.
+  Outside the Visualizer view, `kick` therefore drives only the playhead dot.
+  **In the track list only the marker's tempo follows**, in steps: the
+  three-bar loop that says "this one is playing" runs slower where the
+  track rests and faster where it pushes, driven by `swell` and never by
+  `kick`. Nothing else there moves — no light, no wash, no change to a
+  bar's height, because that view is a surface for reading and for
+  hitting. The steps carry hysteresis and sit on the `ColumnView` as
+  ancestor classes, exactly like the paused state, so no cell is touched
+  and the viewport cannot move; they are steps rather than a tracked
+  rate because GTK restarts a keyframe cycle whenever its duration
+  changes.
+  The play/pause button is what a
+  pointer aims at and, once the running track scrolls out of the list,
+  the only place the playback state is read from — a control that
+  answers the music moves under the cursor and competes with the state
+  it reports. The cover itself never changes brightness either: the
+  eye reads luminance change in peripheral vision, so a brightening
+  cover pulls attention off the list; it lifts on its shadow, carries a
+  one-pixel light seam along its edge, and has a soft disc of the blurred
+  artwork turning behind it — one turn a minute. The seam sits
+  one pixel outside the artwork, so the cover's footprint grows by exactly
+  one pixel on each side; nothing crosses the picture itself. The seam
+  takes its hue from the cover but not its chroma: the player accent is
+  ink and stays muted for the waveform and the play button, while a
+  translucent one-pixel seam at that chroma measured as invisible, so the
+  seam reads the same hue lifted into a wider band. **The turning disc is
+  the artwork itself, not colours extracted from it.** A palette sweep was
+  built first and measured against a real library: half the covers are
+  greyscale or near-black and yield no usable colour at all, and most of
+  the rest are monochrome artwork, so the sweep came out as one flat tone
+  lying on a backdrop of the same tone. The blurred cover always has
+  structure, even in black and white. The lift is
+  two cached shadow layers
+  whose opacities cross-fade with the composite coverage held constant —
+  a linear `1 - swell` pair sums to one and still dips 14 %, which reads
+  as a flicker during the cross-fade. Every large effect rests at its
+  value for `swell = pressure = 0`; outside playback the slow signal
+  decays instead of freezing at the last reading. The "Song Visuals"
+  plugin is the deliberate off-switch for the whole layer. With
+  `gtk-enable-animations=false` (MOT-7), the brightness remains at the
+  bare slow base while the free-running breath stops. **The head of the
+  panel looks the same whichever tab is open.** The Visual tab used to hold
+  the backdrop at rest and darken the turning disc, on the theory that two
+  light languages in one panel fight each other; in use the plain treatment
+  was simply better there too. The backdrop and the disc rest only when the
+  "Song Visuals" plugin is off or the panel is closed — the second because a
+  pinned backdrop runs no tick, and without it the paused breath would keep
+  redrawing a widget nobody can see.
 
 ## Y. Library Doctor / Tag Cleanup
 

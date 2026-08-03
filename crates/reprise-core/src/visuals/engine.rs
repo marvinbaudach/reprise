@@ -65,6 +65,10 @@ pub struct VisualEngine {
     /// The absolute bass measurement the glow layer draws from (AC-23). The
     /// engine never derives it from the bars, which CAVA keeps re-normalizing.
     pressure: BassPressure,
+    /// The stage light itself: attacked by `kick`, released per frame. Kept
+    /// apart from `pressure` so the analysis readout keeps reporting the raw
+    /// detector values rather than what the glow happens to be doing.
+    glow: f32,
     playing: bool,
     has_track: bool,
     idle_phase: f32,
@@ -86,6 +90,7 @@ impl VisualEngine {
             bands_peaks: [0.0; SPECTRUM_BAND_COUNT],
             display_bands: [0.0; SPECTRUM_BAND_COUNT],
             pressure: BassPressure::silent(),
+            glow: 0.0,
             playing: false,
             has_track: false,
             idle_phase: 0.0,
@@ -159,15 +164,23 @@ impl VisualEngine {
         self.bands_current = [0.0; SPECTRUM_BAND_COUNT];
         self.bands_peaks = [0.0; SPECTRUM_BAND_COUNT];
         self.pressure = BassPressure::silent();
+        self.glow = 0.0;
         self.refresh_display_bands();
     }
 
-    /// Installs the already-bounded CAVA values in the same frame. The glow
-    /// layer takes the frame's own measurement — attack and release already
-    /// live in the detector, so the engine adds no second envelope.
+    /// Installs the already-bounded CAVA values in the same frame.
+    ///
+    /// The glow is a stage light: a hit throws it to full at once, then it
+    /// falls. It is sourced from `kick`, not `impact` — measured over three
+    /// real tracks, `impact` tops out at 0.85 on a heavily limited master and
+    /// never reaches full at all, while `kick` reaches 1.00 on all three. The
+    /// fall is applied here rather than taken from the detector, because
+    /// `kick`'s own release is 70 ms: at the 12.6 hits per second a blast beat
+    /// produces, passing it straight through would be a 12 Hz strobe.
     pub fn ingest(&mut self, frame: &SpectrumFrame) {
         self.bands_current = *frame.bands();
         self.pressure = frame.bass_pressure();
+        self.glow = self.glow.max(self.pressure.kick);
         for (peak, current) in self.bands_peaks.iter_mut().zip(self.bands_current.iter()) {
             *peak = peak.max(*current);
         }
@@ -191,12 +204,18 @@ impl VisualEngine {
                 settled &= *bar == 0.0;
             }
         }
+        // The stage light falls on every frame, playing or not: the attack
+        // lands in `ingest`, the decay belongs to the render clock. Without a
+        // fall here the light would simply latch on at the first hit.
+        self.glow = (self.glow - GLOW_RELEASE).max(0.0);
+        settled &= self.glow == 0.0;
         if !self.playing {
-            // No fresh measurements arrive once playback stops, so the glow is
-            // released here rather than waiting for a frame that never comes.
-            for glow in [&mut self.pressure.impact, &mut self.pressure.aura] {
-                *glow = (*glow - GLOW_RELEASE).max(0.0);
-                settled &= *glow == 0.0;
+            // No fresh measurements arrive once playback stops, so the two
+            // detector readings are released here as well rather than waiting
+            // for a frame that never comes.
+            for value in [&mut self.pressure.impact, &mut self.pressure.aura] {
+                *value = (*value - GLOW_RELEASE).max(0.0);
+                settled &= *value == 0.0;
             }
         }
         for (peak, current) in self.bands_peaks.iter_mut().zip(self.bands_current.iter()) {
@@ -236,7 +255,7 @@ impl VisualEngine {
         ModeCtx {
             peaks: &self.bands_peaks,
             bars: &self.display_bands,
-            bass_impact: self.pressure.impact,
+            bass_impact: self.glow,
             bass_aura: self.pressure.aura,
             accent: self.accent,
             accent2: self.accent2(),
@@ -315,12 +334,81 @@ mod tests {
         engine
     }
 
+    /// A stage light: the hit throws it to full, then it falls.
+    #[test]
+    fn ac_23_a_bass_hit_throws_the_glow_to_full_and_then_it_falls() {
+        let mut engine = VisualEngine::new();
+        engine.set_has_track(true);
+        engine.set_playing(true);
+
+        // A full kick arrives. The attack is immediate — no easing, no ramp.
+        engine.ingest(&frame_with(BassPressure {
+            kick: 1.0,
+            ..pressure(0.0, 0.0)
+        }));
+        assert!(
+            engine.glow >= 1.0 - f32::EPSILON,
+            "the hit did not reach full: {}",
+            engine.glow
+        );
+
+        // Silence afterwards: it falls, and it falls all the way.
+        for _ in 0..2 {
+            engine.tick();
+        }
+        let after_two = engine.glow;
+        assert!(after_two < 1.0, "the light latched on: {after_two}");
+        for _ in 0..60 {
+            engine.tick();
+        }
+        assert_eq!(engine.glow, 0.0, "the light never went out");
+    }
+
+    /// The reason this changed at all: `impact` cannot reach full on a
+    /// limited master — measured over three real tracks it tops out at 0.85 —
+    /// so the glow must not be sourced from it.
+    #[test]
+    fn ac_23_the_glow_reads_the_kick_and_not_the_impact() {
+        let mut engine = VisualEngine::new();
+        engine.set_has_track(true);
+        engine.set_playing(true);
+
+        engine.ingest(&frame_with(BassPressure {
+            kick: 0.0,
+            ..pressure(1.0, 1.0)
+        }));
+        assert_eq!(
+            engine.glow, 0.0,
+            "a maxed-out impact must not light the stage on its own"
+        );
+
+        engine.ingest(&frame_with(BassPressure {
+            kick: 0.8,
+            ..pressure(0.0, 0.0)
+        }));
+        assert!((engine.glow - 0.8).abs() < 1e-6, "got {}", engine.glow);
+    }
+
+    fn frame_with(reading: BassPressure) -> SpectrumFrame {
+        SpectrumFrame::from_cava_bars([0.0; SPECTRUM_BAND_COUNT]).with_bass_pressure(reading)
+    }
+
+    /// A reading whose *attack* is `kick` — what the stage light runs on.
+    fn hit(kick: f32, aura: f32) -> BassPressure {
+        BassPressure {
+            kick,
+            ..pressure(0.0, aura)
+        }
+    }
+
     fn pressure(impact: f32, aura: f32) -> BassPressure {
         BassPressure {
             level_dbfs: -14.0,
             baseline_dbfs: -20.0,
             impact,
             aura,
+            kick: 0.0,
+            pressure: 0.0,
         }
     }
 
@@ -354,17 +442,17 @@ mod tests {
     }
 
     #[test]
-    fn ac_23_the_measured_impact_ignites_the_broad_glows() {
-        // Bars stay empty; only the absolute measurement drives the glow.
-        let engine = engine_with([0.0; SPECTRUM_BAND_COUNT], pressure(1.0, 0.0));
+    fn ac_23_the_measured_kick_ignites_the_broad_glows() {
+        // Bars stay empty; only the attack reading drives the stage light.
+        let engine = engine_with([0.0; SPECTRUM_BAND_COUNT], hit(1.0, 0.0));
 
         assert_eq!(broad_glow_alphas(&engine).len(), 2);
     }
 
     #[test]
     fn ac_23_a_rhythmic_kick_glows_softer_than_a_full_drop() {
-        let kick = engine_with([0.4; SPECTRUM_BAND_COUNT], pressure(STEADY_GLOW, 0.0));
-        let drop = engine_with([0.4; SPECTRUM_BAND_COUNT], pressure(1.0, 0.0));
+        let kick = engine_with([0.4; SPECTRUM_BAND_COUNT], hit(STEADY_GLOW, 0.0));
+        let drop = engine_with([0.4; SPECTRUM_BAND_COUNT], hit(1.0, 0.0));
 
         let kick_alpha = broad_glow_alphas(&kick).iter().sum::<f32>();
         let drop_alpha = broad_glow_alphas(&drop).iter().sum::<f32>();
@@ -378,8 +466,8 @@ mod tests {
 
     #[test]
     fn ac_23_only_a_sustained_breakdown_adds_the_inner_auras() {
-        let kicking = engine_with([0.4; SPECTRUM_BAND_COUNT], pressure(1.0, 0.0));
-        let breakdown = engine_with([0.4; SPECTRUM_BAND_COUNT], pressure(1.0, 1.0));
+        let kicking = engine_with([0.4; SPECTRUM_BAND_COUNT], hit(1.0, 0.0));
+        let breakdown = engine_with([0.4; SPECTRUM_BAND_COUNT], hit(1.0, 1.0));
 
         assert_eq!(broad_glow_alphas(&kicking).len(), 2);
         assert_eq!(broad_glow_alphas(&breakdown).len(), 4);
@@ -387,7 +475,7 @@ mod tests {
 
     #[test]
     fn ac_23_the_glow_leaves_with_the_track_when_playback_stops() {
-        let mut engine = engine_with([0.4; SPECTRUM_BAND_COUNT], pressure(1.0, 1.0));
+        let mut engine = engine_with([0.4; SPECTRUM_BAND_COUNT], hit(1.0, 1.0));
         engine.set_playing(false);
 
         for _ in 0..200 {

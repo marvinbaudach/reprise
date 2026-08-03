@@ -352,7 +352,7 @@ fn now_playing_css_defines_the_21a_stage_head_and_glow() {
     assert!(!css.contains("background-color: #17191c"));
     assert!(css.contains(".reprise-now-playing-glow"));
     assert!(css.contains("radial-gradient"));
-    assert!(css.contains("alpha(@reprise_player_accent, 0.4)"));
+    assert!(css.contains("alpha(@reprise_player_accent, 0.26)"));
     assert!(css.contains(".reprise-now-playing-idle .reprise-now-playing-glow"));
     assert!(css.contains("border-radius: 12px"));
     assert!(css.contains("font-size: 15px"));
@@ -718,7 +718,7 @@ fn npp_13_cold_cover_resolves_before_the_outgoing_cover_fades() {
     settings.set_gtk_enable_animations(animations_were_enabled);
 }
 
-fn test_panel(application_id: &str) -> (adw::ApplicationWindow, Rc<NowPlayingPanel>) {
+pub(super) fn test_panel(application_id: &str) -> (adw::ApplicationWindow, Rc<NowPlayingPanel>) {
     let cover_runtime = crate::ui::cover_download_worker::setup_for_test();
     test_panel_with_cover_loader(application_id, CoverLoader::new(cover_runtime))
 }

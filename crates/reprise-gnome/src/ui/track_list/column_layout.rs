@@ -14,9 +14,10 @@ use reprise_core::library::settings::{self, COLUMN_WIDTHS_KEY};
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::rating::COMPACT_RATING_COLUMN_WIDTH;
 use crate::ui::strings;
+use crate::ui::track_list::track_list_title_column::append_title_column;
 use crate::ui::track_list::Shared;
 use crate::ui::track_list_columns::{
-    append_column, append_cover_column, append_rating_column, append_title_column, CellAlignment,
+    append_column, append_cover_column, append_rating_column, CellAlignment,
 };
 use reprise_core::format::format_duration;
 pub use reprise_view::columns::ColumnId;

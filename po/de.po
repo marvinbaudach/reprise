@@ -4361,6 +4361,14 @@ msgstr "Wirkung"
 msgid "Breakdown"
 msgstr "Breakdown"
 
+#: crates/reprise-gnome/src/ui/strings_song_visuals.rs:16
+msgid "Kick"
+msgstr "Kick"
+
+#: crates/reprise-gnome/src/ui/strings_song_visuals.rs:17
+msgid "Pressure"
+msgstr "Druck"
+
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:16
 msgid "Review changes"
 msgstr "Änderungen prüfen"

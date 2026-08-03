@@ -33,6 +33,8 @@ fn ac_23_the_frame_carries_the_measured_bass_pressure() {
         baseline_dbfs: -20.5,
         impact: 0.8,
         aura: 0.4,
+        kick: 0.6,
+        pressure: 0.7,
     };
 
     let frame =
@@ -57,6 +59,8 @@ fn ac_23_the_frame_boundary_neutralizes_hostile_bass_pressure() {
             baseline_dbfs: f32::INFINITY,
             impact: 2.0,
             aura: -1.0,
+            kick: f32::NAN,
+            pressure: 5.0,
         },
     );
 
