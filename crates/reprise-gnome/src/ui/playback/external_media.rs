@@ -110,7 +110,7 @@ impl PlayerController {
         self.play_external_with_context_and_origin(media, None, None, origin)
     }
 
-    fn play_external_with_context_and_origin(
+    pub(super) fn play_external_with_context_and_origin(
         self: &Rc<Self>,
         media: ExternalMedia,
         neighbours: Option<NeighbourContext>,
@@ -225,6 +225,7 @@ impl PlayerController {
             published_at,
             art_url,
             phase,
+            restored: false,
             origin,
             resume: ResumePolicy::new(resume_ms),
             position_ms: resume_ms.max(0),
@@ -474,6 +475,9 @@ impl PlayerController {
     }
 
     pub(in crate::ui) fn toggle_external_pause(self: &Rc<Self>) -> bool {
+        if self.resume_restored_episode() {
+            return true;
+        }
         match self.playback_mode() {
             PlaybackMode::Podcast | PlaybackMode::QueuedEpisode => {
                 match self.player.toggle_pause() {

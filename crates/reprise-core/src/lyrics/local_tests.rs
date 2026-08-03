@@ -51,6 +51,18 @@ impl crate::library::source::LibrarySource for VecLibrarySource {
         None
     }
 
+    fn mount_point(&self, _at: &Path) -> Option<PathBuf> {
+        None
+    }
+
+    fn display_name(&self, at: &Path) -> Option<String> {
+        crate::library::source::UnixLibrarySource.display_name(at)
+    }
+
+    fn container_name(&self, at: &Path) -> Option<String> {
+        crate::library::source::UnixLibrarySource.container_name(at)
+    }
+
     fn open_read(&self, at: &Path) -> std::io::Result<crate::library::source::LibraryReadHandle> {
         let bytes = self
             .content
@@ -66,14 +78,20 @@ impl crate::library::source::LibrarySource for VecLibrarySource {
         &self,
         at: &Path,
         _links: crate::library::source::LibraryLinkMode,
-    ) -> Option<crate::library::source::LibraryPathMetadata> {
-        (at == self.track).then_some(crate::library::source::LibraryPathMetadata {
-            is_file: true,
-            is_directory: false,
-            size: None,
-            modified: None,
-            identity: None,
-        })
+    ) -> crate::library::source::LibraryPathPresence {
+        if at == self.track {
+            crate::library::source::LibraryPathPresence::Present(
+                crate::library::source::LibraryPathMetadata {
+                    is_file: true,
+                    is_directory: false,
+                    size: None,
+                    modified: None,
+                    identity: None,
+                },
+            )
+        } else {
+            crate::library::source::LibraryPathPresence::Absent
+        }
     }
 
     fn read_directory(

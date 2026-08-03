@@ -399,7 +399,7 @@ impl TrackList {
         crate::ui::view_session::restore_browser_place(self, place)
     }
 
-    /// START-1: centers the loaded track after the startup routing built this
+    /// START-3: centers the loaded track after startup routing built this
     /// view. See `track_list_reload::center_loaded_track` for why this is the
     /// only scroller running at that moment.
     pub(in crate::ui) fn center_loaded_track(&self) {

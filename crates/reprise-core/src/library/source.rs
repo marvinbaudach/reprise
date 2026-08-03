@@ -10,6 +10,9 @@ use std::time::SystemTime;
 
 use crate::models::MissingReason;
 
+pub(crate) use super::source_unix::{device_id, nearest_existing_ancestor};
+use super::source_unix::{file_identity, nearest_existing_ancestor_dev};
+
 /// The sibling-order guarantee requested from a library-source traversal.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LibraryWalkOrder {
@@ -56,6 +59,23 @@ pub struct LibraryPathMetadata {
     /// to another, silently. `None` is the only honest answer for a platform
     /// without a stable identity.
     pub identity: Option<(u64, u64)>,
+}
+
+/// What a source can establish about one library path.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LibraryPathPresence {
+    /// The item exists, with every fact the source could establish.
+    Present(LibraryPathMetadata),
+    /// The source confirmed that the item does not exist.
+    ///
+    /// This is the only state that may license a missing-verdict write.
+    Absent,
+    /// The source could not determine whether the item exists.
+    ///
+    /// This state never licenses a missing verdict. A source that cannot
+    /// reach its backing store answers `Unknown` rather than guessing either
+    /// presence or absence.
+    Unknown,
 }
 
 /// One immediate child returned by [`LibrarySource::read_directory`].
@@ -191,15 +211,8 @@ pub(crate) fn walk_with(
 /// [`Self::residence_token`]. That documented degradation produces
 /// [`MissingReason::Unknown`] and never fabricates an identity.
 ///
-/// **That safety belongs to `residence_token` alone, not to this trait as a
-/// whole.** [`Self::probe`] answers a different question, and its `None` is
-/// read as *confirmed absence* — two call sites turn it straight into a
-/// missing-verdict write. Every method here says for itself what its `None`
-/// means; do not generalise one method's degradation to another.
-///
 /// **No question a source alone can answer has a default implementation.** A
-/// source that cannot yet answer one must fail to compile, not answer `None` —
-/// for `probe` that answer would report the entire library as gone.
+/// source that cannot yet answer one must fail to compile rather than guess.
 /// [`Self::reachability`] is the one exception and a deliberate one: it decides
 /// nothing by itself, it only compares what [`Self::residence_token`] returned,
 /// so a source that answers the primitive gets the verdict for free and cannot
@@ -209,40 +222,42 @@ pub trait LibrarySource: Send + Sync {
     /// `at`, or `None` when this source cannot provide one.
     fn residence_token(&self, at: &Path) -> Option<i64>;
 
+    /// The grouping boundary `at` belongs to — "what disappears together when
+    /// this goes away", used to group missing tracks by the volume they shared.
+    /// `None` when the source has no such notion: a DocumentsProvider tree has
+    /// no mount point, and inventing one would group unrelated items.
+    fn mount_point(&self, at: &Path) -> Option<PathBuf>;
+
+    /// The name to show a person for `at`, when the item itself carries no title.
+    /// A path-backed source answers with the file stem; a DocumentsProvider answers
+    /// with the display name it already returns in its cursor. `None` when the
+    /// source has nothing better than the identifier it was given.
+    fn display_name(&self, at: &Path) -> Option<String>;
+
+    /// The name of the container `at` sits in — an album folder, a
+    /// DocumentsProvider parent — used when an item carries no album tag.
+    /// `None` when the source cannot name one; callers then leave the field
+    /// empty rather than inventing a name from an identifier.
+    fn container_name(&self, at: &Path) -> Option<String>;
+
     /// Opens `at` for reading without exposing the source's concrete storage
     /// handle. Failure is explicit: a source that cannot provide readable,
     /// seekable content must not compile with this contract unanswered.
     ///
     /// **An `Err` here is a failure to read, never a statement that the item is
-    /// gone.** That distinction is the whole reason this returns `io::Result`
-    /// where [`Self::probe`] returns `Option`: a revoked permission grant, a
-    /// dropped provider connection or a transient I/O error must not become the
-    /// missing-verdict that a `None` from `probe` licenses. No caller may
-    /// substitute one for the other.
+    /// gone.** A revoked permission grant, dropped provider connection or
+    /// transient I/O error is equivalent to [`LibraryPathPresence::Unknown`],
+    /// never [`LibraryPathPresence::Absent`].
     fn open_read(&self, at: &Path) -> io::Result<LibraryReadHandle>;
 
-    /// Returns the facts this source can establish about `at`.
-    ///
-    /// **`None` means the item is not there.** It is not "I could not find
-    /// out". `library::scanner_vanish::mark_vanished_with` and
-    /// `queries::maintenance::mark_track_missing_if_current_with` turn a `None`
-    /// straight into a `missing_since`/`missing_reason` write, so a source that
-    /// answers `None` for a transient failure marks live tracks as gone. When a
-    /// source cannot reach its backing store, it must not guess absence — that
-    /// case wants its own signal, and does not have one yet (see the spike's
-    /// note on the SAF adapter).
-    ///
-    /// A path that *is* there but whose individual facts are unavailable
-    /// answers `Some` with those fields `None`; callers then apply their own
-    /// conservative fallback rather than receiving a fabricated zero or
-    /// identity.
+    /// Returns whether `at` is present, absent, or could not be checked.
     ///
     /// `links` is explicit because most Class-A presence checks historically
     /// used `Path::metadata` and followed the final symlink, while abandoned
     /// writeback cleanup used `DirEntry::metadata` and must inspect the link
     /// itself. Keeping that distinction in the contract preserves the safety
     /// boundary rather than silently changing it during abstraction.
-    fn probe(&self, at: &Path, links: LibraryLinkMode) -> Option<LibraryPathMetadata>;
+    fn probe(&self, at: &Path, links: LibraryLinkMode) -> LibraryPathPresence;
 
     /// Lists only the immediate children of `directory`, or returns `None`
     /// when the directory cannot be read. Per-child failures are skipped,
@@ -321,28 +336,52 @@ pub trait LibrarySource: Send + Sync {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct UnixLibrarySource;
 
+// The test doubles live in `library::source_test_support` (declared in
+// `library/mod.rs`), because several test files outside this module use them.
+// Re-exported here so the call sites that reach them through `source` keep
+// working — one module, two names for it.
 #[cfg(test)]
-#[path = "source_test_support.rs"]
-mod test_support;
-#[cfg(test)]
-pub(crate) use test_support::ExistingPathSource;
+pub(crate) use super::source_test_support::ExistingPathSource;
 
 impl LibrarySource for UnixLibrarySource {
     fn residence_token(&self, at: &Path) -> Option<i64> {
         nearest_existing_ancestor_dev(at).map(|device| device as i64)
     }
 
+    fn mount_point(&self, at: &Path) -> Option<PathBuf> {
+        super::mounts::mount_point_of(at)
+    }
+
+    fn display_name(&self, at: &Path) -> Option<String> {
+        at.file_stem()
+            .and_then(|stem| stem.to_str())
+            .map(str::to_owned)
+    }
+
+    fn container_name(&self, at: &Path) -> Option<String> {
+        at.parent()?
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(str::to_owned)
+    }
+
     fn open_read(&self, at: &Path) -> io::Result<LibraryReadHandle> {
         std::fs::File::open(at).map(LibraryReadHandle::new)
     }
 
-    fn probe(&self, at: &Path, links: LibraryLinkMode) -> Option<LibraryPathMetadata> {
-        let metadata = match links {
+    fn probe(&self, at: &Path, links: LibraryLinkMode) -> LibraryPathPresence {
+        let result = match links {
             LibraryLinkMode::Follow => std::fs::metadata(at),
             LibraryLinkMode::NoFollow => std::fs::symlink_metadata(at),
-        }
-        .ok()?;
-        Some(LibraryPathMetadata {
+        };
+        let metadata = match result {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                return LibraryPathPresence::Absent;
+            }
+            Err(_) => return LibraryPathPresence::Unknown,
+        };
+        LibraryPathPresence::Present(LibraryPathMetadata {
             is_file: metadata.is_file(),
             is_directory: metadata.is_dir(),
             size: Some(metadata.len()),
@@ -405,71 +444,6 @@ impl LibrarySource for UnixLibrarySource {
     }
 }
 
-/// Returns `(ancestor_path, st_dev)` for the nearest ancestor of `path`
-/// (starting at `path` itself) that can be `lstat`'d successfully.
-///
-/// Uses `symlink_metadata` (lstat), deliberately never `metadata` (stat):
-/// if some ancestor component in the path is itself a symlink, `lstat`
-/// reports the symlink's own device rather than following it to whatever
-/// it points at. Following the symlink here would let an ancestor that
-/// merely *points into* a different mount fabricate a foreign device id —
-/// and thus a bogus `Unmounted` verdict — even though the symlink itself
-/// sits on the original, still-mounted filesystem.
-///
-/// `Path::ancestors()` walks `path`, then each successive parent, ending at
-/// `/` for an absolute path — so the walk is capped at the root without any
-/// extra bookkeeping. Returns `None` only if even `/` can't be `lstat`'d,
-/// which should not happen on a working Linux system.
-///
-/// This "capped at `/`" guarantee holds only for an *absolute* `path` — for
-/// a relative path, `ancestors()` instead bottoms out at `""` (`Path::new("")`
-/// does not exist, so the walk would return `None` rather than ever reaching
-/// `/`). Every caller in this codebase passes an absolute path: library
-/// roots come from GTK's folder chooser (always absolute) and
-/// `tracks.path`/scan roots are [`LibrarySource::walk`] inputs derived from
-/// that same root, so this isn't separately enforced here.
-pub(crate) fn nearest_existing_ancestor(path: &Path) -> Option<(PathBuf, u64)> {
-    path.ancestors().find_map(|ancestor| {
-        let metadata = std::fs::symlink_metadata(ancestor).ok()?;
-        Some((ancestor.to_path_buf(), device_id(&metadata)?))
-    })
-}
-
-/// Returns Unix `st_dev`, or `None` when the target has no stable device id.
-pub(crate) fn device_id(metadata: &std::fs::Metadata) -> Option<u64> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        Some(metadata.dev())
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = metadata;
-        None
-    }
-}
-
-fn file_identity(metadata: &std::fs::Metadata) -> Option<(u64, u64)> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        Some((metadata.dev(), metadata.ino()))
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = metadata;
-        None
-    }
-}
-
-/// `st_dev` of the nearest ancestor of `path` that currently exists,
-/// starting the search at `path` itself. `lstat` (`symlink_metadata`) only —
-/// see [`nearest_existing_ancestor`]'s doc comment for why this must never
-/// follow symlinks. `None` only if even `/` can't be `lstat`'d.
-pub(crate) fn nearest_existing_ancestor_dev(path: &Path) -> Option<u64> {
-    nearest_existing_ancestor(path).map(|(_, device)| device)
-}
-
 #[cfg(test)]
 mod tests {
     use std::io::{Read, Seek, SeekFrom};
@@ -477,7 +451,7 @@ mod tests {
     use std::path::Path;
 
     use super::{
-        LibraryDirectoryEntry, LibraryLinkMode, LibraryPathMetadata, LibraryReadHandle,
+        LibraryDirectoryEntry, LibraryLinkMode, LibraryPathPresence, LibraryReadHandle,
         LibrarySource, LibraryWalkControl, LibraryWalkItem, LibraryWalkOrder, LibraryWalkVisitor,
         UnixLibrarySource,
     };
@@ -577,6 +551,18 @@ mod tests {
             self.provider_tree_id?.strip_prefix("tree-")?.parse().ok()
         }
 
+        fn mount_point(&self, _at: &Path) -> Option<std::path::PathBuf> {
+            None
+        }
+
+        fn display_name(&self, _at: &Path) -> Option<String> {
+            None
+        }
+
+        fn container_name(&self, _at: &Path) -> Option<String> {
+            None
+        }
+
         fn open_read(&self, _at: &Path) -> std::io::Result<LibraryReadHandle> {
             Err(std::io::Error::new(
                 std::io::ErrorKind::Unsupported,
@@ -587,8 +573,8 @@ mod tests {
         /// Unused by this double's tests. Made explicit rather than inherited:
         /// the trait has no defaults precisely so a source cannot answer
         /// "absent" for a question it was never taught to answer.
-        fn probe(&self, _at: &Path, _links: LibraryLinkMode) -> Option<LibraryPathMetadata> {
-            None
+        fn probe(&self, _at: &Path, _links: LibraryLinkMode) -> LibraryPathPresence {
+            LibraryPathPresence::Unknown
         }
 
         fn read_directory(&self, _directory: &Path) -> Option<Vec<LibraryDirectoryEntry>> {
@@ -679,6 +665,20 @@ mod tests {
             Some(41)
         }
 
+        fn mount_point(&self, _at: &Path) -> Option<std::path::PathBuf> {
+            None
+        }
+
+        fn display_name(&self, at: &Path) -> Option<String> {
+            at.file_name()
+                .and_then(|name| name.to_str())
+                .map(str::to_owned)
+        }
+
+        fn container_name(&self, _at: &Path) -> Option<String> {
+            None
+        }
+
         fn open_read(&self, _at: &Path) -> std::io::Result<LibraryReadHandle> {
             Err(std::io::Error::new(
                 std::io::ErrorKind::Unsupported,
@@ -689,8 +689,8 @@ mod tests {
         /// Unused by this double's tests. Made explicit rather than inherited:
         /// the trait has no defaults precisely so a source cannot answer
         /// "absent" for a question it was never taught to answer.
-        fn probe(&self, _at: &Path, _links: LibraryLinkMode) -> Option<LibraryPathMetadata> {
-            None
+        fn probe(&self, _at: &Path, _links: LibraryLinkMode) -> LibraryPathPresence {
+            LibraryPathPresence::Unknown
         }
 
         fn read_directory(&self, _directory: &Path) -> Option<Vec<LibraryDirectoryEntry>> {

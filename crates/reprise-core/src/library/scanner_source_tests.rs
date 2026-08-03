@@ -17,13 +17,15 @@ use std::sync::Mutex;
 /// because package 2 abstracted traversal and nothing else; the paths it hands
 /// out are real files in a temp dir, so the scanner's own reads still work.
 ///
-/// This is what makes the traversal seam more than a rename: the two tests
-/// below drive `scan_folder_inner`'s entire body — the audio filter, the
-/// per-entry upsert, the import-error path — through a source the scanner has
-/// never seen, rather than through `UnixLibrarySource` in disguise.
+/// This is what makes the traversal seam more than a rename: the tests below
+/// drive `scan_folder_inner`'s entire body — the audio filter, the per-entry
+/// upsert, the import-error path — through a source the scanner has never seen,
+/// rather than through `UnixLibrarySource` in disguise. It deliberately has no
+/// mount grouping boundary even when a test gives it filesystem-backed paths.
 struct ScriptedSource {
     items: Vec<super::source::LibraryWalkItem>,
     contents: HashMap<std::path::PathBuf, Vec<u8>>,
+    mount_point_counts: Mutex<HashMap<std::path::PathBuf, usize>>,
     open_counts: Mutex<HashMap<std::path::PathBuf, usize>>,
     probe_counts: Mutex<HashMap<std::path::PathBuf, usize>>,
 }
@@ -33,6 +35,7 @@ impl ScriptedSource {
         Self {
             items,
             contents: HashMap::new(),
+            mount_point_counts: Mutex::new(HashMap::new()),
             open_counts: Mutex::new(HashMap::new()),
             probe_counts: Mutex::new(HashMap::new()),
         }
@@ -45,6 +48,15 @@ impl ScriptedSource {
 
     fn open_count(&self, path: &std::path::Path) -> usize {
         self.open_counts
+            .lock()
+            .unwrap()
+            .get(path)
+            .copied()
+            .unwrap_or_default()
+    }
+
+    fn mount_point_count(&self, path: &std::path::Path) -> usize {
+        self.mount_point_counts
             .lock()
             .unwrap()
             .get(path)
@@ -65,6 +77,24 @@ impl ScriptedSource {
 impl super::source::LibrarySource for ScriptedSource {
     fn residence_token(&self, at: &std::path::Path) -> Option<i64> {
         super::source::UnixLibrarySource.residence_token(at)
+    }
+
+    fn mount_point(&self, at: &std::path::Path) -> Option<std::path::PathBuf> {
+        *self
+            .mount_point_counts
+            .lock()
+            .unwrap()
+            .entry(at.to_path_buf())
+            .or_default() += 1;
+        None
+    }
+
+    fn display_name(&self, at: &std::path::Path) -> Option<String> {
+        super::source::UnixLibrarySource.display_name(at)
+    }
+
+    fn container_name(&self, at: &std::path::Path) -> Option<String> {
+        super::source::UnixLibrarySource.container_name(at)
     }
 
     fn open_read(&self, at: &std::path::Path) -> std::io::Result<super::source::LibraryReadHandle> {
@@ -96,7 +126,7 @@ impl super::source::LibrarySource for ScriptedSource {
         &self,
         at: &std::path::Path,
         links: super::source::LibraryLinkMode,
-    ) -> Option<super::source::LibraryPathMetadata> {
+    ) -> super::source::LibraryPathPresence {
         *self
             .probe_counts
             .lock()
@@ -129,9 +159,11 @@ fn scripted_file(path: &std::path::Path) -> super::source::LibraryWalkItem {
 }
 
 fn scripted_file_with_metadata(path: &std::path::Path) -> super::source::LibraryWalkItem {
-    let metadata = super::source::UnixLibrarySource
-        .probe(path, super::source::LibraryLinkMode::Follow)
-        .expect("fixture file must be reachable");
+    let super::source::LibraryPathPresence::Present(metadata) =
+        super::source::UnixLibrarySource.probe(path, super::source::LibraryLinkMode::Follow)
+    else {
+        panic!("fixture file must be reachable");
+    };
     super::source::LibraryWalkItem::Entry(super::source::LibraryEntry {
         path: path.to_path_buf(),
         is_file: true,
@@ -302,6 +334,43 @@ fn complete_scan_persists_tags_read_only_from_the_library_source() {
     assert_eq!(stored.2, "Source-only album");
     assert!(stored.3 > 0, "the real source duration must be persisted");
     assert_eq!(source.open_count(&logical_path), 1);
+}
+
+#[test]
+fn source_without_mount_points_leaves_missing_rows_without_a_grouping_boundary() {
+    let source_root = tempfile::tempdir().unwrap();
+    let root = source_root.path();
+    let first = fixture_copy(root, "first.flac");
+    let second = fixture_copy(root, "second.flac");
+    let source = ScriptedSource::new(vec![scripted_file(&first), scripted_file(&second)]);
+    let db = crate::db::Db::open_in_memory().unwrap();
+
+    let report = completed(scan_folder_with_source(&source, &db, root).unwrap());
+    assert_eq!(report.added, 2);
+    std::fs::remove_file(&first).unwrap();
+    std::fs::remove_file(&second).unwrap();
+
+    let vanished =
+        completed(scan_folder_with_source(&ScriptedSource::new(Vec::new()), &db, root).unwrap());
+
+    assert_eq!(vanished.vanished, 2);
+    let missing_rows = db
+        .conn()
+        .prepare("SELECT missing_since IS NOT NULL, mount_point FROM tracks ORDER BY path")
+        .unwrap()
+        .query_map([], |row| {
+            Ok((row.get::<_, bool>(0)?, row.get::<_, Option<String>>(1)?))
+        })
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(missing_rows, vec![(true, None), (true, None)]);
+    assert_eq!(
+        source.mount_point_count(&first),
+        1,
+        "the per-parent cache must retain the source's absence answer"
+    );
+    assert_eq!(source.mount_point_count(&second), 0);
 }
 
 fn recorded_reason(db: &crate::db::Db, path: &std::path::Path) -> String {

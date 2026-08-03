@@ -907,22 +907,25 @@ Stellen in `reprise-core`**, davon 25 mit Paket 3 erledigt und 5
 (`mount_point_of`) als Entwurfsfrage offen; dazu **8 in `reprise-gnome`**, die
 noch keinem Paket zugeordnet sind.
 
-#### Die offene Frage für den SAF-Adapter: „weg" gegen „weiß nicht"
+#### Erledigt: „weg" gegen „weiß nicht" ist ein Drei-Zustands-Vertrag
 
-`LibrarySource::probe` liefert `Option`, und `None` heißt **die Datei ist nicht
-da**. Zwei Aufrufstellen — `scanner_vanish::mark_vanished_with` und
-`queries::maintenance::mark_track_missing_if_current_with` — machen daraus
-sofort einen `missing_since`-Eintrag. Die anderen fünfzehn Verbraucher
-behandeln `None` konservativ und schreiben nichts.
+Der erste SAF-Adapter bestätigte Paket 3s offene Frage: Eine faktenfreie
+`Some`-Antwort schützte `scanner_vanish::mark_vanished_with`, aber nicht
+`queries::maintenance::mark_track_missing_if_current_with`, weil dessen
+`is_file`-Prüfung danach trotzdem einen `missing_since`-Eintrag schrieb.
 
-Unter Linux ist die Vermischung harmlos und war es immer: `Path::exists()`
-liefert bei einem Rechte- oder E/A-Fehler ebenfalls `false`. **Unter SAF ist
-jede Abfrage ein Binder-Rundlauf, der scheitern kann**, und ein gescheiterter
-Rundlauf sähe aus wie eine gelöschte Datei. Eine SAF-Quelle braucht deshalb ein
-eigenes Signal für „ich konnte nicht nachsehen", bevor sie an diesen zwei
-Stellen produktiv eingesetzt wird. Paket 3 legt sie nicht, weil das die
-Semantik von siebzehn Aufrufstellen ändert; es benennt sie an `probe` und an
-beiden Schreibstellen.
+`LibrarySource::probe` liefert deshalb nun `LibraryPathPresence`: `Present`
+trägt Fakten, `Absent` bestätigt Abwesenheit, und `Unknown` sagt ausdrücklich,
+dass die Quelle nicht nachsehen konnte. **Nur `Absent` darf an den zwei
+destruktiven Stellen bis zum Schreibzugriff gelangen.** Ein fehlgeschlagener
+Binder-Aufruf wird direkt `Unknown`; die faktenfreie Ersatz-Metadatenstruktur
+ist entfernt. Die übrigen Verbraucher behandeln `Unknown` konservativ und
+behalten ihr bisheriges Ergebnis.
+
+Auch Unix trennt die Zustände jetzt ehrlich: erfolgreicher `stat` ist
+`Present`, `NotFound` ist `Absent`, jeder andere Fehler — etwa fehlende Rechte
+oder E/A — ist `Unknown`. Damit ist ein Zugriffsfehler auch auf Linux keine
+behauptete Abwesenheit mehr.
 
 ### Paket 4 umgesetzt: Bibliotheksinhalt über einen Lese-Griff (2026-08-02)
 
@@ -1102,6 +1105,74 @@ wird, warum eine unbekannte Endung die Probe absichtlich ungesetzt lässt, und
 warum `read_meta_content_based` genau das Gegenteil braucht — steht dort einmal
 statt in vier Kopien.
 
+### Phase 3 belegt: ein Scan über SAF, auf dem Gerät (2026-08-03)
+
+Gemessen auf `emulator-5554`, frisch installierte App, geleerte App-Daten,
+Ordner `/sdcard/Music/Repriese` über `ACTION_OPEN_DOCUMENT_TREE` gewählt.
+
+```
+RepriseScan: Scan discovery started
+RepriseScan: Scan progress: processed=1 total=unknown uri=content://…/sine.flac
+RepriseScan: Scan progress: processed=2 total=unknown uri=content://…/broken-tags.mp3
+RepriseScan: Scan call returned: tracks=2 added=2 updated=0 errors=0
+```
+
+Die App-Datenbank, gezogen mit `adb exec-out run-as … cat files/reprise.db`
+(samt `-wal`), bestätigt es nicht nur, sondern zeigt Verhaltensgleichheit mit
+dem Desktop:
+
+| Track | `duration_ms` | `untagged` | `import_errors` | `mount_point` |
+| --- | --- | --- | --- | --- |
+| `sine.flac` | 1160 | 0 | — | *(leer)* |
+| `broken-tags.mp3` | 52 | 1 | `unreadable_tags` | *(leer)* |
+
+**Was damit auf Hardware belegt ist:**
+
+- `lofty` parst über `open_read` → `File::from_raw_fd` auf einem
+  SAF-Deskriptor. Pakete 4 und 5 tragen.
+- `broken-tags.mp3` bekommt dasselbe Verdikt wie auf dem Desktop —
+  Pass 1 scheitert, Pass 2 rettet als `untagged`, der Fehler bleibt als Hinweis
+  stehen. Die Verdikt-Paritätstests aus Paket 5 haben das vorhergesagt.
+- `total=unknown`: der Erstscan hat keine Schätzung und behauptet auch keine.
+  Das `Option<u64>` aus Paket 2 reicht bis auf das Gerät durch.
+- `mount_point` ist leer, weil die SAF-Quelle die Frage ablehnt. Die
+  `mount_point`-Fähigkeit ersetzt den Plattform-Booleschen Wert erfolgreich.
+- Content-URIs überleben Traversierung, Präsenzprüfung, Tag-Lesung und
+  Datenbank ohne Sonderbehandlung.
+
+**Ein Mangel, den erst das Gerät zeigt:** Der Titel lautet
+`primary%3AMusic%2FRepriese%2Fsine`. Der Scanner fällt bei leerem Titel auf
+den Dateistamm zurück, und der Dateistamm einer Content-URI ist die ganze
+kodierte Dokument-ID. Eine Quelle muss einen **Anzeigenamen** liefern können —
+SAF hat ihn in `DocumentsContract.Document.COLUMN_DISPLAY_NAME`. Das ist der
+nächste Fund, den der MVP aus der Abstraktion herausdrückt, und er gehört vor
+Phase 4.
+
+### Der MVP, vollständig belegt (2026-08-03)
+
+Gemessen auf `emulator-5554`, frische Installation, geleerte App-Daten.
+
+| Schritt | Beleg |
+| --- | --- |
+| Ordner über SAF wählen | `ACTION_OPEN_DOCUMENT_TREE` auf `/sdcard/Music/Repriese` |
+| Scannen | `Scan completed: added=2 updated=0 errors=0` |
+| Katalog stimmt | Datenbank: `sine.flac` mit Tags, `broken-tags.mp3` als `untagged` mit `unreadable_tags` — dieselben Verdikte wie unter Linux |
+| Album benannt | `album = "Repriese"` (Anzeigename des übergeordneten Dokuments), nicht `document` |
+| Liste anzeigen | beide Tracks mit Dauer |
+| Abspielen | `AudioTrack: stop(16): called with 51200 frames delivered` — bei 1160 ms und 44,1 kHz sind 51.156 Frames der ganze Track |
+| Neustart | nach `force-stop` steht die Liste wieder da, **ohne zweiten Scan** |
+
+Der letzte Punkt ist der wichtigste für die Abstraktion: Die Tracks kommen aus
+dem Katalog, nicht aus einem erneuten Baumlauf. Ein Kaltstart, der den Baum
+über Binder neu abliefe, wäre genau die Kosten, die die fünf Pakete zu
+vermeiden gelernt haben.
+
+Wird die Berechtigung entzogen oder der Ordner entfernt, zeigt die App
+ausdrücklich „Access may have been revoked or the folder may have been
+removed" und bietet neu zu wählen an — **keine stille leere Bibliothek und
+kein Missing-Verdikt.** Das ist die Oberfläche, an der ein Mensch den
+Unterschied zwischen `Absent` und `Unknown` bemerken würde.
+
 ## Frage 8 — Die Umzugserkennung, und was Tauri daran ändert (umgesetzt 2026-08-02)
 
 **Status: umgesetzt.** `file_stat` liefert jetzt die echte Größe getrennt von
@@ -1183,3 +1254,406 @@ Auf Android fehlt weiterhin die `rename`-Erkennung. Dafür braucht es einen
 eigenen Entwurf für den Umgang mit stabilen
 DocumentsProvider-Dokument-IDs; der hier freigeschaltete Fingerabdruck erkennt
 nur den vorhandenen Kopieren-und-Löschen-Fall.
+
+## Frage 4b — Tragen Content-URIs die Pfad- und SQL-Annahmen? (2026-08-03)
+
+Diese Prüfung gehört zu Phase 1 des Android-MVP-Plans. Sie trennt die drei
+Annahmen ausdrücklich, weil A1 in diesem Lauf nicht ausgeführt werden sollte.
+
+### A1 — Seek auf einem SAF-Deskriptor
+
+**Urteil: TRÄGT.** Gemessen am 2026-08-03 auf `emulator-5554`, Android-API 36,
+mit einem echten über `ACTION_OPEN_DOCUMENT_TREE` gewählten Ordner unter
+`/sdcard/Music/Repriese` und dem Anbieter
+`com.android.externalstorage.documents`:
+
+```
+A1 descriptor probe: bytesRead=64 readError=null seekSucceeded=true
+seekError=null bytesReadAfterSeek=32 readAfterSeekError=null bytesMatch=true
+```
+
+Der von `ContentResolver.openFileDescriptor(uri, "r").detachFd()` übergebene
+Deskriptor, in Rust mit `File::from_raw_fd` übernommen, liest, springt, und
+die Bytes nach dem Sprung stimmen mit denen an derselben Stelle aus dem ersten
+Lesen überein. `LibraryReadHandle`s Zusage `Read + Seek` ist damit auf echtem
+Gerät erfüllt, und `lofty` kann direkt darauf parsen — ohne Vorabkopie in den
+App-Cache, die der Plan als Ausweichweg vorgesehen hatte.
+
+**Was damit nicht geprüft ist:** nur der lokale Anbieter
+`externalstorage`. Ein Netzwerk-Anbieter (Drive, SMB) darf laut
+SAF-Vertrag eine Pipe liefern, und eine Pipe kann nicht springen. Für die
+Musikbibliothek eines Telefons ist das der Randfall, nicht der Normalfall —
+aber eine Quelle, die ihn treffen kann, braucht dort die Vorabkopie. Der
+Befund gilt für lokalen Speicher, und nur dafür.
+
+### A2 — `Path` auf einer realistischen Content-URI
+
+**Urteil: TRÄGT für die beiden geprüften Operationen.** Der Test verwendet
+unverändert:
+
+```text
+Baum:  content://com.android.externalstorage.documents/tree/primary%3AMusic
+Datei: content://com.android.externalstorage.documents/tree/primary%3AMusic/document/primary%3AMusic%2Fsong.flac
+```
+
+`Path::starts_with` liefert `true`: Die Komponenten der Baum-URI sind ein
+echtes Präfix der Komponenten der Datei-URI. Das kodierte `%2F` bleibt zwar
+Teil der letzten Dokument-ID-Komponente und wird nicht zu einem
+Pfadtrennzeichen, liegt aber erst hinter diesem gemeinsamen Präfix.
+
+`Path::extension()` liefert `Some("flac")`: Der Punkt vor `flac` ist in der
+letzten Komponente nicht kodiert. Der Test behauptet bewusst nicht, dass
+`Path` die URI dekodiert oder die Struktur innerhalb der Dokument-ID kennt.
+
+A2 fällt damit nicht; wegen A2 muss der Plan nicht neu geschnitten werden.
+
+### A3 — `LIKE`-Vorfilter unter einer URI-Wurzel
+
+**Urteil: TRÄGT.** Eine migrierte In-Memory-Datenbank enthält die Datei-URI
+oben sowie eine ähnlich aussehende URI aus einem anderen Baum.
+`scanner_vanish::candidates_under_root` gibt für die Baum-URI genau die
+richtige Track-Zeile zurück.
+
+Der `%` in `%3A` wird von `playlists::escape_like` als Literal für
+`LIKE ? ESCAPE '\'` gebunden; das angehängte `/%` bezeichnet danach die
+Nachfahren. Der anschließende autoritative `Path::starts_with`-Filter hält die
+ähnlich aussehende fremde Baum-URI zusätzlich draußen. Der Test hält das
+Escaping außerdem unabhängig als wörtliches `primary\%3AMusic` fest, damit der
+autoritative Nachfilter eine Regression des SQL-Musters nicht verdecken kann.
+Temporäre Mutationen wurden für beide Schichten rot beobachtet: Ohne den
+Nachfahrenanteil `/%` war die Kandidatenliste leer; ohne das Prozent-Escaping
+wich der tatsächliche Mustertext vom erwarteten Literal ab. Nach beiden
+Wiederherstellungen liefen A2 und A3 grün.
+
+Damit sind A2 und A3 festgehalten. A1 bleibt bis zum getrennten Emulator-Lauf
+offen; aus diesem Durchgang folgt kein Urteil über die Seekbarkeit eines
+echten Provider-Deskriptors.
+
+## Phase 5 — Bilanz der Storage-Abstraktion (2026-08-03)
+
+Der MVP hat die Bibliothek über eine echte SAF-Quelle gescannt. Sein Ertrag ist
+nicht, dass `LibrarySource` als Ganzes bestätigt wäre. Vier der fünf
+Storage-Pakete trugen für den geprüften lokalen DocumentsProvider; eine
+Signatur musste geändert werden, und vier weitere Dateisystemannahmen lagen
+außerhalb der Signaturen an Stellen, die ihre Quelle gar nicht befragen
+konnten.
+
+### Was von den fünf Paketen getragen hat
+
+| Paket | Befund am zweiten Quelltyp |
+| --- | --- |
+| 1 — Aufenthalt und Erreichbarkeit | **Trägt.** Eine SAF-Quelle kann einen stabilen Tree-Token liefern; `reachability` bleibt ein Vergleich opaker Werte. Nicht getragen hat die fremde Vorbedingung des Aufrufers: `scan_folder_inner` verlangte mit `is_absolute`, was nur der Unix-Vorfahrenlauf braucht. Die Zusicherung sitzt jetzt bei `UnixLibrarySource`. |
+| 2 — Traversierung | **Trägt.** Der Rust-Adapter leitet den stromorientierten Walk aus wiederholten `listChildren`-Aufrufen ab, trägt Fehler in Reihenfolge weiter und stoppt ohne den Baum zu materialisieren. Der Gerätelauf bestätigte außerdem den unbekannten Nenner beim ersten Scan; ein Vorzähl-Lauf wäre unter Binder genau die falsche Optimierung gewesen. |
+| 3 — Präsenz und Metadaten | **Trägt nicht in der ursprünglichen Signatur.** `Option<LibraryPathMetadata>` musste gleichzeitig „bestätigt nicht vorhanden" und „Binder-Aufruf gescheitert" ausdrücken. Der erste Adapter verrenkte die Fehlerseite deshalb zu einer faktenfreien Präsenz. Erst `LibraryPathPresence::{Present, Absent, Unknown}` bildet die Quelle ab; nur `Absent` darf einen Missing-Schreibzugriff lizenzieren. Das ist die Signatur, die der MVP korrigiert hat. |
+| 4 — Lese-Griff | **Trägt für den geprüften lokalen Provider.** Der echte Deskriptor liest und sucht, Rust übernimmt ihn ohne Cache-Kopie, und der Gerätelauf parst darüber Audio. Das Urteil gilt nicht pauschal für Netzwerk-Provider, die eine nicht seekbare Pipe liefern dürfen. |
+| 5 — Tag-Lesung | **Trägt.** Lofty liest Tags und Eigenschaften über denselben Griff; `sine.flac` und `broken-tags.mp3` erreichten auf dem Gerät dieselben Datenbank- und Fehlerverdikte wie im Kern. Die explizite Endungs-Vorsaat bleibt nötig, weil ein Griff allein den Container-Typ nicht kennt. |
+
+Die Paketgrenzen für Traversierung, Metadaten, Griff und Parser waren damit
+brauchbar. Der Fehler lag in der Beweisreihenfolge: Der Vertrag wurde gegen
+Unix und gegen Testdoppelgänger verbreitert, bevor ein zweiter Quelltyp ihn
+unter seinen eigenen Fehlern und Bezeichnern benutzen musste.
+
+### Fünf Befunde, die kein selbstgeschriebener Doppelgänger gezeigt hat
+
+1. `is_absolute` stand am Scanner-Eingang, obwohl nur der Unix-Adapter eine
+   absolute Wurzel für seinen Vorfahrenlauf braucht. Eine Content-URI ist für
+   `Path` nicht absolut.
+2. `probe` hatte mit `Option` nur zwei Ergebnisse. Ein echter Binder-Aufruf
+   hat mindestens drei: vorhanden, bestätigt abwesend und nicht feststellbar.
+3. Der Scanner trug einen Plattform-Booleschen Wert, um
+   `mount_point_of` zu überspringen. Die eigentliche Frage lautet, ob diese
+   Quelle für dieses Objekt eine gemeinsame Ausfallgrenze benennen kann.
+4. Der Titelfallback nahm `file_stem` aus dem Bezeichner. Bei SAF ist das die
+   kodierte Dokument-ID, nicht `COLUMN_DISPLAY_NAME`.
+5. Der Albumfallback nahm `parent().file_name()` aus demselben Bezeichner.
+   Für `content://…/document/…/broken-tags.mp3` ergibt das wörtlich
+   `document`, nicht den Anzeigenamen des übergeordneten Dokuments.
+
+Diese fünf Fehler waren gegen die Doppelgänger unsichtbar. **Ein
+Doppelgänger, den wir selbst schreiben, scheitert nicht; er antwortet nur.**
+Er liefert auf Nachfrage genau den Token, die Metadaten und den Baum, die sein
+Test erwartet. Er hat keinen abgebrochenen Binder-Rundlauf, keinen
+DocumentsProvider ohne Mount-Begriff und keinen opaken Bezeichner, solange wir
+ihm diese Eigenschaften nicht vorher einbauen. Damit kann er bekannte
+Zusicherungen festhalten, aber nicht belegen, dass die Fragen vollständig oder
+am richtigen Besitzer liegen.
+
+### Wie der Schnitt beim nächsten Mal anders beginnt
+
+Die zweite Quelle kommt künftig **vor** der gemeinsamen Abstraktion. Zuerst
+wird der schmalste echte vertikale Lauf in beiden Quellen gebaut; danach wird
+nur das gemeinsam benannte Verhalten herausgezogen. Für die Leseseite hätte
+das bedeutet: ein realer SAF-Walk mit Providerfehler, Metadaten, Griff und
+Anzeigenamen, bevor `LibrarySource` seine endgültigen Methoden erhält. Dann
+wären `Unknown`, `mount_point`, `display_name` und `container_name` aus zwei
+Implementierungen entstanden statt nachträglich aus vier Reparaturen.
+
+Das ist auch die Reihenfolge für die noch offenen Pakete:
+
+- **Schreibseite:** Erst auf SAF konkret beweisen, wie Namensreservierung,
+  Kollision, temporäre Veröffentlichung, Austausch und Aufräumen sicher
+  funktionieren. Danach den gemeinsamen Vertrag mit Unix schneiden.
+  `create_new` und atomarer `rename` dürfen nicht als Methoden vorgegeben
+  werden, wenn der zweite Provider diese Zusicherungen nicht besitzt.
+- **Watcher:** Erst das Verhalten einer zweiten Quelle bauen. SAF hat kein
+  allgemeines `notify`-Gegenstück; möglich sind Provider-Beobachter,
+  periodischer Abgleich oder gar keine Push-Fähigkeit. Erst aus diesem
+  konkreten Ergebnis darf eine optionale Watcher-Fähigkeit oder ein
+  Scan-Fallback abstrahiert werden.
+
+Für beide gilt daher: **zweite Quelle zuerst, dann abstrahieren.** Ein weiterer
+Vertrag gegen einen Doppelgänger würde erneut nur zeigen, dass unser eigener
+Antwortgeber die Fragen erfüllt, die wir ihm vorher gegeben haben.
+
+## Paket 2 — Bilanz von `PlaybackBackend` am zweiten Backend (2026-08-03)
+
+Der Android-Player läuft nun über eine echte zweite Implementierung von
+`PlaybackBackend`: Media3 führt die Befehle aus, der Ereignisadapter meldet
+Zustand, Position, Dauer und Abschluss zurück, und eine Rust-eigene Sitzung
+bindet beides an `reprise_core::queue::Queue`. Die Compose-Seite enthält keine
+Warteschlangenentscheidung. Sie übergibt beim Antippen die eingefrorene
+aktuelle Liste samt Cursor und rendert danach nur Snapshots.
+
+Das Urteil ist zweigeteilt. **Als Plattformvertrag war `PlaybackBackend`
+deutlich besser vorbereitet als `LibrarySource`.** Keine Core-Signatur musste
+für Media3 geändert werden, GStreamer und der Desktop blieben unberührt. Als
+vollständige Anwendungsnaht war es dagegen nicht fertig: Der Vertrag besitzt
+den Player, aber nicht die Bindung zwischen Playerereignissen und der
+Core-Warteschlange. Diese Bindung musste für Android als schmale Rust-Sitzung
+neben dem Trait gebaut werden.
+
+### Was am zweiten Backend getragen hat
+
+| Teil des Vertrags | Befund mit Media3 |
+| --- | --- |
+| Start und Grundtransport | **Trägt.** `play_uri`, `seek_to`, `set_volume` und `stop` bilden Media3 direkt ab. Eine `content://`-Adresse erreicht unverändert `MediaItem.fromUri`; die String-Signatur konnte sie tragen, obwohl der Doc-Kommentar bisher nur `http`, `https` und `file` nennt. |
+| Zustands- und Positionsereignisse | **Trägt.** `StateChanged` und `Position { position_ms, duration_ms }` beantworten genau die Fragen der mobilen Oberfläche. Die Dauer kommt aus demselben Ereignis; Kotlin fragt den Player dafür nicht ab. |
+| Abschluss und lückenloser Übergang | **Trägt mit einer Signaturspannung.** `TrackFinished` und `AdvancedToNext` trennen den gewöhnlichen Core-Vorlauf vom bereits hörbaren Media3-Handoff richtig. `set_next` funktioniert technisch, aber sein Parameter und Kommentar heißen „Pfad“, während Android eine Content-URI vorfüttert. |
+| Stream-Generationen | **Trägt besonders gut.** Media3s Application Looper serialisiert Start, Generationswechsel und Listener. Dadurch kann jedes Ereignis die Generation vom Produktionszeitpunkt tragen, und verspätete Ereignisse werden mit derselben strikten Kleiner-als-Regel verworfen wie beim Linux-Pfad. |
+| Übergänge und fehlende Fähigkeiten | **Trägt.** Das Trait erlaubt ausdrücklich, `Crossfade` als `Gapless` zu behandeln. Audioeffekte und Spektrum melden Nichtunterstützung, statt erfundene Media3-Funktionen vorzutäuschen. |
+| Ereignisübergabe | **Trägt hinter einem Adapter.** Der Rust-Closure-Konstruktor ist nicht UniFFI-fähig. Ein benanntes, Rust-eigenes `PlaybackEventBridge` nimmt die flachen Kotlin-Ereignisse an und ruft den unveränderten Closure intern auf; Reihenfolge und Generationspaar bleiben erhalten. |
+
+### Welche Signaturen sich verrenkt haben
+
+Zwei Stellen sind nicht so geschnitten, wie man sie nach der zweiten
+Implementierung neu schneiden würde:
+
+1. **`set_next(Option<&str>)` meint einen lokalen Pfad.** Der Aufrufer braucht
+   aber dieselbe Ortswahl wie beim Start: lokaler Pfad oder URI. Android musste
+   den String als URI interpretieren, während Linux ihn weiterhin als Pfad
+   liest. Das Verhalten ist eindeutig implementiert, aber der Typ sagt es
+   nicht. Ein gemeinsames `PlaybackLocation::{Path, Uri}` für Start und
+   Vorfütterung würde die Zusicherung beim Besitzer benennen.
+2. **`toggle_pause` ist ein Oberflächenbefehl, kein vollständiger
+   Transportvertrag.** Der Compose-Knopf passt natürlich darauf. Eine
+   MediaSession erhält dagegen getrennte, idempotente Befehle „Play“ und
+   „Pause“. Der Kotlin-Adapter muss deshalb zuerst Media3s `playWhenReady`
+   ansehen und nur bei einer wirklichen Zustandsänderung `toggle_pause`
+   aufrufen. `set_playing(bool)` oder getrennte `play`-/`pause`-Methoden wären
+   die bessere Plattformsignatur.
+
+Die Event-Closure ist ebenfalls nicht sprachübergreifend, aber sie zwang keine
+falsche Semantik in das Trait: Der benannte FFI-Adapter übersetzt nur den
+Transport. Würde Android von Anfang an als gleichrangige Plattform geplant,
+wäre ein benanntes `PlayerEventSink`-Objekt die einfachere Konstruktornaht;
+die `PlayerEvent`- und `StreamEvent`-Typen selbst würden unverändert bleiben.
+
+### Was außerhalb des Traits fehlte
+
+`PlaybackBackend` entscheidet absichtlich nicht, welcher Track folgt. Diese
+Entscheidung liegt in `reprise-core::queue::Queue`, während die allgemeine
+Bindung von Queue, Backend und Ereignissen heute in `reprise-runtime` und in
+der GNOME-Steuerung lebt. `reprise-android-ffi` darf laut Architektur nur von
+Core abhängen und konnte diesen Runtime-Transport daher nicht wiederverwenden.
+
+Android besitzt nun eine schmale Rust-Sitzung, die ausschließlich Core-
+Entscheidungen ausführt:
+
+- Antippen: `Queue::set_tracks` mit der ganzen aktuellen Liste und dem Cursor;
+- natürliches Ende und gapless Handoff: `Queue::advance_auto`;
+- Next: `Queue::next_manual`;
+- Previous: `Queue::previous`.
+
+Damit liegt keine Reihenfolge- oder Fortschaltlogik in Kotlin. Trotzdem ist
+die Sitzung ein Hinweis auf den nächsten besseren Schnitt: Eine
+frontend-neutrale Playback-Sitzung sollte neben der Queue im gemeinsamen
+Rust-Layer liegen und `PlaybackBackend` plus `StreamEvent` besitzen. Dann
+würden GNOME, Android und ein späteres KDE-Frontend dieselbe Bindung benutzen,
+nicht nur dieselben Einzelteile.
+
+### Expliziter Vergleich mit den fünf Storage-Paketen
+
+Die Storage-Reihe hatte fünf Pakete gegen selbstgeschriebene Doppelgänger
+bewiesen. An der ersten realen SAF-Quelle fielen fünf vorher unsichtbare
+Annahmen: `is_absolute` am falschen Besitzer, ein zweistufiges `probe` ohne
+„unbekannt“, ein Plattform-Bool statt einer Mount-Fähigkeit, `file_stem` als
+Anzeigename und der Pfad-Elternname als Containername.
+
+Beim Playback war das Ergebnis besser:
+
+- **keine** Core-Signatur musste für das zweite Backend geändert werden;
+- die Befehlsseite, Ereignisvarianten, Dauer und Generationen passten direkt;
+- zwei Signaturen spannten (`set_next` als Pfad und `toggle_pause` als einziger
+  Play/Pause-Befehl), ohne eine falsche Core-Aussage zu erzwingen;
+- eine fehlende gemeinsame Schicht wurde sichtbar: die Playback-Sitzung über
+  Queue, Backend und Ereignissen.
+
+`PlaybackBackend` war also **besser vorbereitet, aber nicht vollständig**.
+Der wichtigste Grund ist nicht, dass seine Tests bessere Doppelgänger hatten.
+Der Vertrag entstand bereits aus einem echten, asynchronen GStreamer-Backend
+und seinem produktiven GTK-Verbraucher. Seine Kommentare kodierten konkrete
+Fehlerfälle — späte Ereignisse, gapless Handoff und erlaubte Degradation —
+statt nur Antworten eines selbst gebauten Gegenübers. Außerdem ähneln sich
+GStreamer und Media3 in dieser Domäne stärker als Unix-Dateisystem und SAF:
+beide spielen eine Adresse ab, melden Zustand und Position und besitzen einen
+seriellen Ereignisstrom.
+
+Die Storage-Lehre bleibt trotzdem bestehen: Erst das zweite reale Gegenüber
+zeigt, ob die Fragen am richtigen Besitzer liegen. Hier zeigte es keinen
+kaputten Plattformvertrag, sondern zwei zu enge Signaturen und die fehlende
+gemeinsame Orchestrierungsschicht. Genau das ist der Ertrag dieses Pakets.
+
+Diese Bilanz beruht auf den Rust- und Kotlin-Seams, der Android-
+Cross-Kompilation und den generierten Bindings. Der getrennte Gerätelauf wurde
+für dieses Paket ausdrücklich nicht ausgeführt und wird hier nicht behauptet.
+
+## Paket 3 — Browse-Oberfläche als Messung von `reprise-view` (2026-08-03)
+
+Die Android-Oberfläche besitzt nun drei Reiter für Titel, Alben und
+Interpreten. Jede Änderung des Suchfelds — einschliesslich des leeren Texts —
+geht unverändert an `reprise-core`. Ein Album wird mit Titel und Albuminterpret
+geöffnet; Core bestimmt Zugehörigkeit und kanonische Disc-/Track-Reihenfolge.
+Beim Antippen friert Android genau die sichtbare Titel- beziehungsweise
+Albumliste samt Cursor für die Core-Warteschlange ein. In Kotlin gibt es keine
+Abfrage, Sortierung, Filterung, Gruppierung oder Albumregel.
+
+Das ist eine schmalere Aussage als „die Browse-Präsentation ist teilbar“. Der
+Vergleich trennt deshalb Entscheidungsregeln von Transport- und Widgetarbeit.
+
+### Reibungen im direkten Vergleich
+
+| Reibung | Was `reprise-gnome` besitzt | Was Compose stattdessen tat | Urteil |
+| --- | --- | --- | --- |
+| Core-Typen an einer Sprachgrenze | GNOME kann `Track`, `AlbumSummary` und `ArtistSummary` als Rust-Typen direkt verwenden. Die aktuellen drei mobilen Listen haben dort kein gleiches Presenter-Modul; `query_albums` und `query_artists` haben zurzeit keinen GNOME-Aufrufer. | UniFFI braucht flache `TrackRow`, `AlbumRow` und `ArtistRow`; der Adapter benennt den gespeicherten SAF-Ort ehrlich als `representative_uri` und projiziert nicht benötigte Desktop-Statistiken weg. Kotlin bildet diese Records nochmals auf unveränderliche Oberflächenwerte ab. | **Keine geteilte Präsentationsschicht.** Die Form ist eine notwendige FFI-/Oberflächengrenze. Ein gemeinsamer Presenter würde Transportunterschiede nur verstecken. |
+| Album-/Interpreten-Gruppierung und Listenordnung | GNOME hat diese Zusammenfassungslisten nach der kanonischen Trackoberfläche nicht mehr; seine Album- und Interpretensichten sind Core-Scopes eines `BrowserPlace`. Die weiterhin vorhandenen `query_albums` und `query_artists` besitzen Gruppenschlüssel, Ausschluss fehlender Tracks und stabile Ordnung, werden aber nicht von GNOME präsentiert. | `listAlbums` und `listArtists` reichen genau diese Core-Reihenfolge durch UniFFI und Kotlin bis `LazyColumn`; Compose gruppiert und sortiert nichts nach. | **Echte gemeinsame Entscheidungsregeln in Core, kein Beleg für gemeinsame Präsentation.** Dass nur Android die zwei Listen zeigt, ändert nicht den Besitzer ihrer Gruppierung und Ordnung. |
+| Albumidentität, Inhalt und Reihenfolge | `BrowserPlace::fresh_album` trägt dieselbe Identität aus Album und Albuminterpret. `TrackListModel` fragt die so eingeschränkte Core-Quelle mit der aktuellen View-Sortierung ab; Core entscheidet die Mitgliedschaft und führt die gewählte Ordnung aus. GNOMEs Zeilenaktivierung friert danach diese sichtbare Ordnung ein. | `listAlbumTracks(album, albumArtist)` liefert fertige Zeilen in kanonischer Disc-/Track-Reihenfolge, weil die kleine Oberfläche keine wählbare Sortierung besitzt. Compose zeigt sie in genau dieser Folge. Der zuerst erwogene Tracknummern-Weg hätte mehrere Discs vermischt und fiel im Core-Test rot. | **Echte gemeinsame Entscheidungsregel, aber bereits richtig in Core.** Identität und Mitgliedschaft sind gemeinsam; auch die gewählte Ordnung wird in Core ausgeführt. Ob eine Oberfläche die kanonische oder eine vom Benutzer gewählte Ordnung verlangt, ist ihr Eingabevertrag. Ein zusätzlicher `reprise-view`-Typ ist dafür nicht belegt. |
+| Suche, Sortierung und leerer Suchtext | `TrackViewState` hält Suchtext und Sortierung; `TrackListModel` gibt sie an die Core-Abfragen. `view_session::wire_search` verzögert nur die teure Neuladung um 200 ms und hält den sichtbaren Text sofort fest. Core entscheidet Treffer und Reihenfolge. | `OutlinedTextField` reicht jeden literalen Wert sofort an `searchTracks` weiter. `""` geht ebenfalls durch Core und bedeutet dort die gesamte vorhandene Bibliothek in Titelreihenfolge. Der Kotlin-Test lässt das Port-Doppel absichtlich eine nicht passende Zeile liefern und beweist so, dass Kotlin nicht nachfiltert. | **Treffer, Ordnung und Bedeutung von leer gehören gemeinsam in Core; Eingabeverzögerung gehört zur Oberfläche.** Der Core-Façade ist belegt, ein geteilter Debounce nicht. |
+| Ausführbare Query statt SQL-Baustein | GNOME besitzt mit `TrackListModel::set_query_browsed` einen GTK-nahen Aufrufer für Quelle, Spaltensortierung, Richtung, Text, Facetten, Queue und AI-Ausschluss. Er kann `build_track_query` nicht als vollständige Anwendungsschnittstelle behandeln. | Android hätte dieselben GTK-geprägten Parameter erfinden müssen. Stattdessen kamen `query_library_text_search` und `query_album_tracks` als enge Core-Façaden hinzu. | **Gemeinsame Anwendungsentscheidung in Core.** Wiederverwendet werden soll die benannte Abfrage, nicht GNOMEs umfassender Tabellenzustand und nicht dessen Parameterliste. |
+| Besitz und Fehlerübersetzung | Im selben Prozess leiht GNOME `&str` und behandelt `rusqlite::Error` direkt, meist durch Loggen und einen leeren beziehungsweise unveränderten Modellzustand. | UniFFI liefert besessene Strings; Rust boxt den Bibliothekszustand, leiht die Werte intern und hüllt SQLite-Fehler in `LibraryError::Query`. Compose wandelt Fehler in sichtbare Aktionsmeldungen um. | **Oberflächen- und transportspezifisch.** Besitz, Fehlerhülle und sichtbare Meldung belegen keine gemeinsame View-Schicht. |
+| Mehrere Abfragen statt eines Browse-Snapshots | GNOME rendert jeweils einen `BrowserPlace` über ein langlebiges `TrackListModel`; es braucht keinen atomaren Snapshot dreier paralleler Reiter. Album- und Interpretenzusammenfassungen bilden dort aktuell keine solche Dreieroberfläche. | Beim Laden koordiniert Android vier Aufrufe: leere Titelsuche, Alben, Interpreten und später die Tracks eines geöffneten Albums. Die Records werden synchron zu einem `LibraryScreenState.Browse` zusammengesetzt. | **Noch kein Beleg für eine gemeinsame Schicht.** Die Dreiteilung ist ein mobiles Produkt-/Layoutdetail. Ein gebündelter Core-Snapshot wäre erst gerechtfertigt, wenn getrennte Aufrufe nachweislich inkonsistente Zustände oder relevante FFI-Kosten erzeugen. |
+| Welcher Tap welche Warteschlange startet | GNOME baut für eine Zeilenaktivierung die IDs der aktuell sichtbaren Sortier-/Filteransicht und den Cursor und übergibt beides an `PlayerController::play_from_view`. Der Player friert diesen Kontext ein. | `PlaybackSelection` trägt die gerade gerenderte Liste samt `startIndex`. In der Titelsuche ist das die Trefferliste; im Albumdetail ausschliesslich `selectedAlbum.tracks`. Die Rust-Sitzung setzt daraus die Core-Queue. | **Echte gemeinsame Entscheidungsregel.** „Gerenderter Kontext plus Cursor“ sollte frontend-neutral benannt bleiben. Die Kotlin-Datenkopie ist jedoch nur der Adapter zur bereits erkannten gemeinsamen Playback-Sitzung, kein neuer Browse-Presenter. |
+| Navigation und Wiederherstellung | GNOME besitzt `BrowserPlace`, `TrackViewState`, `nav_history`, `view_session` und `view_state_memory`: Sammlung, Suche, Facetten, Sortierung, stabiler Anker, Auswahl und Fokus werden als Ort erfasst und wiederhergestellt. GTK projiziert daraus Scrollwert und Widgetfokus. | Android hält aktiven Reiter, Suchtext und geöffnetes Album mit `remember(state)` und setzt sie nach einem neuen Bibliothekszustand zurück. Es gibt in diesem Paket noch keine Prozess- oder Navigationswiederherstellung. | **Beleg für einen gemeinsamen Orts-/View-State, nicht für gemeinsame Widgets.** Sammlung, Verfeinerungen und Wiederherstellungssemantik sind teilbar; Tab, Back-Schaltfläche, Scrollanker und Fokusadapter bleiben oberflächenspezifisch. |
+| Anzeigetexte und Dauerformat | GNOME verwendet seine katalogisierten, reicheren Zeilenprojektionen. | Compose formatiert Dauer, „N tracks“, unbekannte Interpreten und Leerzustände lokal. | **Kein Fall für eine gemeinsame Schicht.** Das sind kleine Darstellung und spätere Lokalisierungsarbeit, keine Browse-Regeln. |
+
+### Die 500-Zeilen-Grenze ist ein Produktbefund
+
+`query_library_text_search` und `query_album_tracks` benutzen
+`query_track_window` mit `MAX_WINDOW_LIMIT = 500`. Ihre Android-Schnittstellen
+geben weder Gesamtzahl noch Offset, Cursor oder Folgeseite zurück. Eine Suche
+mit mehr als 500 Treffern und ein Album mit mehr als 500 Tracks werden daher
+still abgeschnitten. `query_albums` und `query_artists` haben umgekehrt gar
+keine Seitengrenze und materialisieren die vollständige Ergebnisliste vor dem
+FFI-Übergang.
+
+GNOME besitzt für seine Trackansicht bereits den anderen Vertrag:
+`TrackListModel` kennt die Gesamtzahl, lädt 200-Zeilen-Fenster nach Bedarf und
+hält höchstens acht Fenster im Cache. GTK virtualisiert die Widgets, das
+Modell die Daten; der Benutzer kann die ganze Bibliothek durchlaufen. Compose
+virtualisiert mit `LazyColumn` nur die bereits materialisierten Zeilen und
+kann die fehlenden Daten nicht anfordern.
+
+Das ist **keine Kotlin-Aufgabe**. Die nächste grosse Bibliotheksoberfläche
+braucht eine Core-Abfrage mit stabilem Request aus Scope, Suche und Ordnung
+sowie Response aus Gesamtzahl und Fenster beziehungsweise Cursor. Erst danach
+darf jede Oberfläche ihr eigenes Vorladen und ihren eigenen Cache wählen. Das
+vorliegende Paket hat genau den Risikofall — eine grosse reale Bibliothek —
+nicht ausführen können. Deshalb bleiben sowohl das Abschneiden bei 500 als
+auch die fehlende Pagination ausdrückliche, ungemessene Produktrisiken; sie
+sind nicht durch den kleinen Testbestand entkräftet.
+
+### Urteil über die vier verbliebenen P1a-Cluster
+
+Die mechanische Zeilenzählung liefert nach dieser zweiten Oberfläche nur für
+einen der vier Cluster positive Evidenz:
+
+| Cluster | Evidenz aus diesem Paket |
+| --- | --- |
+| `tag_edit_flow` | **Nicht gestützt.** Das Paket ist rein lesend und hat keinen zweiten Verbraucher für Feldmischung, Validierung oder Schreibentscheidungen erzeugt. Die mechanische Grösse darf hier keine mobile Teilbarkeit behaupten. |
+| `session_restore` + `view_session` | **Gestützt, aber enger als der Dateiumfang.** Android braucht bereits denselben Begriff eines Browserorts und seiner Verfeinerungen; derzeit besitzt es nur flüchtigen Widgetzustand. `BrowserPlace` und `TrackViewState` zeigen die tragende gemeinsame Semantik. GTK-Scrollanker, Widgetfokus und 200-ms-Debounce sowie Compose-Reiter und `remember` bleiben Adapter. |
+| `column_layout` + `keyboard_reorder` | **Nicht gestützt.** Die mobile Ansicht hat weder Spalten noch Tastaturreihenfolge. Das Paket liefert im Gegenteil erste Evidenz, dass diese Dateien Desktop-Interaktion beschreiben. `ColumnId` kann aus internen Gründen rein sein; diese Oberfläche rechtfertigt aber keinen plattformübergreifenden View-Vertrag dafür. |
+| `missing_view` + `import_errors_view` | **Nicht gestützt.** Weder fehlende Dateien noch Importfehler liegen im Umfang dieser Oberfläche; es entstand kein zweiter Verbraucher und damit keine empirische Teilbarkeit. |
+
+Damit überstimmt die Messung die Schätzung: **Von den vier verbleibenden
+Clustern ist nur `session_restore` + `view_session` durch Paket 3 als nächster
+Kandidat belegt.** Die anderen drei dürfen nicht wegen ihres mechanisch
+gezählten reinen Anteils vorgezogen werden. Die wichtigste neu entdeckte
+gemeinsame Naht — eine paginierbare Core-Trackabfrage für grosse Bibliotheken
+— steht nicht in diesen vier Clustern. Sie ist neue Evidenz für die Abfrage-
+und Tracklistenplanung und sollte deren Reihenfolge eher korrigieren als in
+einen unpassenden Presenter-Umzug hineingedeutet werden.
+
+Diese Bilanz beruht auf den Core-, GNOME-, UniFFI- und Compose-Seams sowie den
+automatisierten Rust- und Kotlin-Prüfungen. Der getrennte Gerätelauf wurde wie
+vorgegeben nicht ausgeführt; insbesondere Laufzeitkosten und Scrollverhalten
+einer grossen Android-Bibliothek werden hier nicht behauptet.
+
+## Nachtrag — Fenstervertrag und grosser Emulator-Scan (2026-08-03)
+
+Die vier Browse-Fassaden liefern jetzt gezählte, begrenzte Fenster statt
+nackter Vektoren. Der Vertrag ist automatisiert über mehr Zeilen als ein
+Fenster geprüft: Gesamtzahl und Fensterinhalt stimmen, das nächste Fenster
+schliesst ohne Lücke oder Dopplung an, und `has_more` macht jede unvollständige
+Antwort sichtbar. Compose fordert an seinem geladenen Listenende selbst das
+nächste 200-Zeilen-Fenster an; Ausrichtung, Vorladen und Duplikatschutz bleiben
+damit Oberflächenpolitik.
+
+Das beweist den Vertrag, nicht sein Laufzeitverhalten an einer grossen realen
+Bibliothek. Der grosse Emulatorlauf verwendete 1.824 Dateien in 562
+Verzeichnissen, aber weder ein echtes Telefon noch die Bibliothek eines
+Benutzers. Er vermass den Storage-Scan, nicht langes Scrollen durch alle
+Browse-Fenster. Für diese Bilanz gilt daher ausdrücklich: **Der Emulator misst
+Anzahlen und Verlaufsgestalt, nie Zeit.** Aus ihm folgt keine belastbare Dauer,
+kein Geräte-Durchsatz und kein Leistungsversprechen.
+
+### Was der instrumentierte Lauf tatsächlich zählt
+
+- Der Scan verursachte **3.520 Provider-Rundläufe für 1.824 Dateien in 562
+  Verzeichnissen**. Das sind rechnerisch **1,93 Rundläufe je Datei**. Die **42
+  Rundläufe des Ordner-Pickers** wurden separat gezählt und sind in den 3.520
+  nicht enthalten.
+- Die Instrumentierung trennt Verzeichnisauflistung und Tag-Lesung noch nicht.
+  Die 3.520 belegen deshalb Last und Form des Gesamtlaufs, aber nicht, welcher
+  Anteil auf Listing und welcher auf Öffnen beziehungsweise Tag-Parsing
+  entfällt. Ohne diese Trennung wäre jede gezielte Optimierungsbehauptung
+  geraten.
+- Die beobachtete Fortschrittsrate blieb über den Lauf bei **3–5/s** und zeigte
+  keinen Abwärtstrend. Das ist nur die Form der aufgezeichneten Folge, kein
+  Emulator-Benchmark und insbesondere keine gemessene Gesamtdauer für ein
+  reales Gerät.
+- `scan_folder_inner` eröffnet vor dem Walk eine
+  `unchecked_transaction()` und committet erst nach Walk, Vanish-Abgleich und
+  Change-Log-Eintrag. Eine Transaktion umfasst damit den vollständigen Scan.
+  Das ist ein Befund für die spätere Scanner-Planung; dieses Paket ändert ihn
+  bewusst nicht.
+
+### Lehren für den nächsten Messschnitt
+
+1. Ein gezähltes Fenster verhindert stilles Abschneiden; seine Korrektheit
+   sagt noch nichts über Scrollkosten oder Gerätegeschwindigkeit.
+2. Emulatorzahlen dürfen Lastform und fehlenden Abfall zeigen, aber keine Zeit
+   eines realen Geräts ersetzen.
+3. Der nächste Storage-Zähler muss Listing und Tag-Lesung getrennt benennen,
+   bevor eine der beiden Seiten optimiert wird.
+4. Die scanweite Transaktion ist als möglicher Skalierungsfaktor sichtbar,
+   aber ohne isolierende Messung weder Ursache noch Reparaturauftrag.
+5. Android-Testquellen sind noch keine ausgeführten Tests. Die beiden Dateien
+   unter `android/app/src/test` waren `fun main()`-Skripte ohne JUnit-Laufzeit;
+   `:app:testDebugUnitTest` entdeckte deshalb **null Tests**. Erst nach der
+   Umstellung auf echte JUnit-Tests entdeckte derselbe Task 18: Eine absichtliche
+   Mutation machte genau einen rot, nach ihrer Rücknahme liefen 18 von 18 grün.
+   Ein Assemble- oder Compilerfolg darf nie wieder als Testausführung gelten.
+
+Die reale grosse Bibliothek, ein physisches Android-Gerät, die Scrollkosten
+über viele Fenster, die Listing-/Tag-Read-Aufteilung und die Wirkung der
+scanweiten Transaktion bleiben damit ausdrücklich ungemessen. Der Vertrag ist
+korrekt geprüft; unter dieser Last ist er noch nicht bewährt.

@@ -8,7 +8,9 @@ use super::{
     everything_playlist_snapshot, MirrorPlaylistSnapshot, MirrorTrack, SelectionSource, SyncTrack,
     UnavailableTrack,
 };
-use crate::library::source::{LibraryLinkMode, LibrarySource, UnixLibrarySource};
+use crate::library::source::{
+    LibraryLinkMode, LibraryPathPresence, LibrarySource, UnixLibrarySource,
+};
 
 pub fn load_mirror_playlist_snapshots(
     db: &crate::db::Db,
@@ -115,7 +117,9 @@ impl SnapshotTrack {
             return self.unavailable();
         }
         let source_path = PathBuf::from(&self.path);
-        let Some(metadata) = source.probe(&source_path, LibraryLinkMode::Follow) else {
+        let LibraryPathPresence::Present(metadata) =
+            source.probe(&source_path, LibraryLinkMode::Follow)
+        else {
             return self.unavailable();
         };
         if !metadata.is_file {

@@ -3,7 +3,7 @@ use std::path::Path;
 
 #[cfg(test)]
 use crate::library::source::UnixLibrarySource;
-use crate::library::source::{LibraryLinkMode, LibrarySource};
+use crate::library::source::{LibraryLinkMode, LibraryPathPresence, LibrarySource};
 use crate::writeback_publish::{publish_with_source, Published};
 
 use super::TimedLine;
@@ -27,9 +27,10 @@ pub(super) fn write_sidecar_with_source(
     lines: &[TimedLine],
 ) -> SidecarWrite {
     if lines.is_empty()
-        || !source
-            .probe(track_path, LibraryLinkMode::Follow)
-            .is_some_and(|metadata| metadata.is_file)
+        || !matches!(
+            source.probe(track_path, LibraryLinkMode::Follow),
+            LibraryPathPresence::Present(metadata) if metadata.is_file
+        )
     {
         return SidecarWrite::NotApplicable;
     }

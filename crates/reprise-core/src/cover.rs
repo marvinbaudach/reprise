@@ -331,6 +331,18 @@ mod tests {
             None
         }
 
+        fn mount_point(&self, _at: &std::path::Path) -> Option<std::path::PathBuf> {
+            None
+        }
+
+        fn display_name(&self, at: &std::path::Path) -> Option<String> {
+            crate::library::source::UnixLibrarySource.display_name(at)
+        }
+
+        fn container_name(&self, at: &std::path::Path) -> Option<String> {
+            crate::library::source::UnixLibrarySource.container_name(at)
+        }
+
         fn open_read(
             &self,
             at: &std::path::Path,
@@ -338,23 +350,24 @@ mod tests {
             crate::library::source::UnixLibrarySource.open_read(at)
         }
 
-        /// Every path this double lists is one it holds, so "present" is the
-        /// truthful answer. Answering `None` here would be the trait's one
-        /// destructive degradation, and this double has no reason to give it.
         fn probe(
             &self,
             at: &std::path::Path,
             _links: crate::library::source::LibraryLinkMode,
-        ) -> Option<crate::library::source::LibraryPathMetadata> {
-            self.entries.iter().any(|entry| entry == at).then_some(
-                crate::library::source::LibraryPathMetadata {
-                    is_file: true,
-                    is_directory: false,
-                    size: None,
-                    modified: None,
-                    identity: None,
-                },
-            )
+        ) -> crate::library::source::LibraryPathPresence {
+            if self.entries.iter().any(|entry| entry == at) {
+                crate::library::source::LibraryPathPresence::Present(
+                    crate::library::source::LibraryPathMetadata {
+                        is_file: true,
+                        is_directory: false,
+                        size: None,
+                        modified: None,
+                        identity: None,
+                    },
+                )
+            } else {
+                crate::library::source::LibraryPathPresence::Absent
+            }
         }
 
         fn walk(

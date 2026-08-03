@@ -24,7 +24,9 @@
 
 use std::path::Path;
 
-use crate::library::source::{LibraryLinkMode, LibrarySource, UnixLibrarySource};
+use crate::library::source::{
+    LibraryLinkMode, LibraryPathPresence, LibrarySource, UnixLibrarySource,
+};
 
 /// Progress reported by a backend, in permille (0..=1000) of the whole job —
 /// the same unit stored in `ai_jobs.progress_permille`.
@@ -172,7 +174,7 @@ impl StemSeparationBackend for FakeStemBackend<'_> {
         progress: &mut dyn FnMut(ProgressPermille),
         cancel: &dyn Fn() -> bool,
     ) -> Result<(), StemError> {
-        if self.source.probe(source, LibraryLinkMode::Follow).is_none() {
+        if self.source.probe(source, LibraryLinkMode::Follow) == LibraryPathPresence::Absent {
             return Err(StemError::SourceUnreadable(format!(
                 "no such source file: {}",
                 source.display()

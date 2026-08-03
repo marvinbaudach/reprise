@@ -1,0 +1,30 @@
+[package]
+name = "reprise-android-ffi"
+description = "UniFFI surface over reprise-core for the Android app"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "reprise_android_ffi"
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+
+[dependencies]
+reprise-core = { path = "../reprise-core" }
+uniffi = { version = "0.32", features = ["cli"] }
+thiserror = "2"
+
+[build-dependencies]
+uniffi = { version = "0.32", features = ["build"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

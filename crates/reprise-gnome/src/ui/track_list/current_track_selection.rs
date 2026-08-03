@@ -277,7 +277,7 @@ impl TrackList {
         self.shared.playing_track_id.set(Some(track_id));
         if change == CurrentTrackChange::SessionRestore {
             // Intentionally set before lookup: the class is inert without a matching row.
-            // START-1: a restored track is loaded but not running, so its row
+            // START-3: a restored track is loaded but not running, so its row
             // must look exactly like a mid-session pause — same marker, same
             // frozen equaliser. `restore_session_queue` fans out a
             // `Stopped` before this runs (session_player.rs), which is why
@@ -745,6 +745,57 @@ mod tests {
         assert_eq!(count_now_playing(&column_view), 0);
 
         window.close();
+    }
+
+    #[test]
+    fn visible_position_finds_the_current_track_in_view_order() {
+        assert_eq!(
+            visible_position_for_track_in_source(&[41, 42, 43], 42, None, false),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn visible_position_uses_queue_occurrence_then_falls_back_to_first_match() {
+        assert_eq!(
+            visible_position_for_track_in_source(&[7, 8, 7], 7, Some(2), false),
+            Some(2)
+        );
+        assert_eq!(
+            visible_position_for_track_in_source(&[7, 8, 7], 7, Some(1), false),
+            Some(0)
+        );
+        assert_eq!(
+            visible_position_for_track_in_source(&[7, 8, 7], 9, None, false),
+            None
+        );
+    }
+
+    #[test]
+    fn queue_does_not_highlight_a_pending_duplicate_of_the_current_track() {
+        assert_eq!(
+            visible_position_for_track_in_source(&[7, 8, 7], 7, None, true),
+            None
+        );
+        assert_eq!(
+            visible_position_for_track_in_source(&[7, 8, 7], 7, None, false),
+            Some(0)
+        );
+    }
+
+    /// START-3: the restored track is loaded, not running. It gets the marker,
+    /// but the viewport belongs to the startup centering — never to this
+    /// callback, which fires before the target view even exists.
+    #[test]
+    fn start_3_session_restore_marks_without_moving_the_viewport() {
+        assert_eq!(
+            reveal_policy(CurrentTrackChange::SessionRestore, false),
+            TrackRevealPolicy::MarkerOnly
+        );
+        assert_eq!(
+            reveal_policy(CurrentTrackChange::SessionRestore, true),
+            TrackRevealPolicy::MarkerOnly
+        );
     }
 }
 

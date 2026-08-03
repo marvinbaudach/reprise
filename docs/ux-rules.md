@@ -115,8 +115,8 @@ human. Rationale for changes lives in the git history.
   topmost stack entry — if the stack shows Artist detail after a Queue
   click, "Music" is highlighted.
 - **NAV-2a** [planned] [core] — The stack does not survive the session
-  (session restore no longer restores any prior view — see START-1 and
-  BROWSE-5);
+  (session restore retains the visible destination, but not its history —
+  see START-3 and BROWSE-12);
   Back with no stack entries is disabled, never a no-op.
 - **NAV-3** [planned] [e2e] — Clickable metadata is the same everywhere:
   in every track list (Library, Playlist, Queue, Album detail, Top
@@ -134,9 +134,8 @@ human. Rationale for changes lives in the git history.
   changes also preserve the scroll + selection of the mode being left.
   The scroll anchor consists of track/album ID plus offset, never a raw
   pixel value; re-sort and insert therefore keep content at its
-  position. START-1 restores, across restarts, only the last active
-  view including scroll position; all other modes start at the top,
-  unselected.
+  position. START-3 restores, across restarts, the last visible browser
+  location including scroll position; no history stack is reconstructed.
 - **NAV-6** [active] [e2e] — Search (Ctrl+F) filters the current view
   live; Esc clears and closes. Search never navigates on its own.
 - **NAV-7** [active] [e2e] — Hamburger menu: "Scan Library" → starts the
@@ -242,14 +241,32 @@ human. Rationale for changes lives in the git history.
   items remain a separate ordered line in front. Later navigation,
   search, facets, or even refining down to zero hits change neither the
   snapshot nor the running item. After the last context track, playback
-  ends with Repeat off unless an explicit manual entry follows; queue
-  hygiene is governed by PLAY-5a/5b/5c.
+  ends with Repeat off unless an explicit manual entry or PLAY-11's new
+  full-library continuation follows; queue hygiene is governed by
+  PLAY-5a/5b/5c.
 - **PLAY-9** [active] [gtk] — Play/Pause, with playback stopped and no
   loaded title, queue snapshot, or "Play Next", immediately starts a
   randomly chosen existing library title. For this, an immutable
   snapshot is created from all existing library titles in random order;
   Missing and deleted titles are excluded. With an empty library,
   Play/Pause stays disabled and playback stays stopped.
+- **PLAY-10** [active] [gtk] — A loaded podcast, YouTube episode, or radio
+  station projects its stored source image into the full-width player bar as
+  well as the Now Playing panel. Both surfaces use SRC-11's same gated,
+  bounded cache and decode path; a missing or refused image keeps the normal
+  player placeholder, never a broken-image state.
+- **PLAY-11** [active] [gtk] — **Playback remains an immutable snapshot
+  until it is exhausted.** Later navigation, search, facets, and clearing a
+  filter do not rewrite the running snapshot. Exception after its final
+  title: if the snapshot originated in a search- or facet-filtered Music
+  library and Music is now completely unfiltered, Reprise immediately creates
+  a new random snapshot from all existing library titles and continues with a
+  different title. Missing and deleted titles are excluded; the just-finished title
+  may occur later in the new snapshot but never starts it. If the filter is
+  still active, the origin was not the Music library, the visible list is
+  not the complete library, or no different title exists, playback ends as
+  before. Explicit Play Next entries retain priority and Repeat One/All
+  retain their existing queue behavior.
 
 ## D. Albums & artists view
 
@@ -1090,18 +1107,22 @@ human. Rationale for changes lives in the git history.
 
 ## I. Start state
 
-- **START-1** [active] [gtk] — Normal start: always the library view with
-  the remembered sorting, without search text or facets. The loaded track is
-  centered and marked there, its equaliser frozen as if paused; selection and
-  focus stay untouched (NAV-10a). If the track is not in the library, the list
-  starts at the top. Playback stays paused on the last track with its position
-  restored; startup reconcile runs silently (a card appears only for actual
-  work).
+- **START-1** [replaced by START-3] — Normal start previously forced the
+  library root and left selection untouched.
 - **START-2** [planned] [gtk] — Start with an unavailable library root:
   StatusPage per Root-Guard, no mass Missing marking; library views
   show the last known holdings normally (Root-Guard hasn't marked
   anything), only the StatusPage/card reports the state. No blank
   screen.
+- **START-3** [active] [gtk] — Normal start restores the last valid browser
+  destination, including its local refinements, but never reconstructs the
+  Back/Forward stack and never autoplays. The last loaded track or episode is
+  presented paused; the first Play starts that exact item through a fresh
+  playable source, applying an episode's existing resume position. If its stable ID belongs to the
+  restored destination, that row becomes the sole selection and is centered
+  without taking keyboard focus; grouped podcast and YouTube sources expand
+  the required group and preview window first. An unavailable item leaves the
+  destination's own selection and viewport untouched.
 
 ## J. Queue view
 
@@ -1157,6 +1178,13 @@ human. Rationale for changes lives in the git history.
   section, labelled with the show or channel. The manual queue and container
   `QueueSnapshot` remain unchanged underneath and reappear unchanged when
   queue playback resumes.
+- **QUE-11** [active] [core] [gtk] — Session persistence keeps the typed
+  manual queue, its current entry, and the stable identity of a loaded podcast
+  or YouTube episode. Direct playback additionally stores its bounded frozen
+  episode-neighbour order; manual playback derives neighbours from the
+  restored typed queue. Signed or resolved stream URLs never persist. On cold
+  start the identity is validated against the current episode catalog and is
+  reconstructed as paused metadata only.
 
 ## K. Filter & search visibility
 
@@ -3281,11 +3309,8 @@ means deterministic and high-confidence, never „without review".
   queue, cover, or My Stats. The destination selects, focuses, and
   centers the anchor track; Back restores the point of origin.
 
-- **BROWSE-5** [active] [core] — **Session restore is limited.** The
-  remembered sorting and the structured playback origin are restored; the
-  start always opens the library root (START-1). The last visited location,
-  history, open search surfaces, utilities, and raw widget focus do not
-  survive a restart.
+- **BROWSE-5** [replaced by BROWSE-12] — Session restore previously retained
+  sorting and playback origin but always opened the library root.
 
 - **BROWSE-6** [active] [core] — **Listening events are historical
   facts.** Every qualified play stores the title, album, artist, genre,
@@ -3343,6 +3368,14 @@ means deterministic and high-confidence, never „without review".
   rows remain focused; otherwise selection and focus fall to the next row, to
   the previous row at the end of the list, and to the stable content
   container when the list is empty.
+
+- **BROWSE-12** [active] [core] [gtk] — **The last browser destination is a
+  session value.** Its structured place owns source, scope, search, facets,
+  sorting, stable anchor, selection, and content focus and survives a normal
+  restart. Stable source roots such as Podcasts, YouTube, Radio, Releases,
+  Concerts, and My Stats remain resolvable without a track collection; stale
+  database-backed places fall back to the remembered Music root. Back/Forward
+  history, utility overlays, and raw widget focus remain process-local.
 
 - **COVER-1** [active] [core] — After a downloaded album cover has been
   published in the XDG cache, Reprise also writes `cover.<ext>` into every
@@ -3850,10 +3883,11 @@ listening statistics.
   revealed — group expanded, row centered — on entering the view and when the
   loaded item changed outside the view, the latter only if no scroll movement
   has occurred for 1.5 seconds. Activating a row never reveals, because the row
-  was visible. A reveal changes neither focus nor selection. A collapsed
-  group's ten-episode preview window opens when the loaded episode sits past
-  it; an item hidden by the active filter is not revealed and the filter is
-  never cleared to reach it.
+  was visible. A reveal changes neither focus nor selection, except START-3's
+  one cold-start restoration, which makes the restored episode the sole
+  selection without taking focus. A collapsed group's ten-episode preview
+  window opens when the loaded episode sits past it; an item hidden by the
+  active filter is not revealed and the filter is never cleared to reach it.
 - **SRC-14** [active] [gtk] — **Episode rows select like track rows.** A click
   selects the row alone, Ctrl-click toggles it, Shift-click extends the
   selection from the anchor across the rendered order, and playback takes a
