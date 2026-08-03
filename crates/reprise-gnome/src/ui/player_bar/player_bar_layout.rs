@@ -37,10 +37,10 @@ const ZONE_SPACING: i32 = 8;
 const COVER_CSS_CLASS: &str = "player-bar-cover";
 const PLAY_CSS_CLASS: &str = "player-bar-play";
 const PLAY_RING_CSS_CLASS: &str = "player-bar-play-ring";
-/// Gap between the button edge and the ring, and the ring's own stroke.
-const PLAY_RING_GAP: &str = "2px";
 const PLAY_RING_WIDTH: &str = "1.5px";
-/// 44 px button + 2 x (2 px gap + 1.5 px stroke), rounded up.
+/// The ring's outer size: 44 px button + 2 x (2 px gap + 1.5 px stroke),
+/// rounded up. The gap is this size request minus the button, not CSS padding
+/// — an empty box's padding would only add to the outside.
 const PLAY_RING_SIZE: i32 = 51;
 const RING_REST_ALPHA: f64 = 0.12;
 const RING_ALPHA_PER_IMPACT: f64 = 0.30;
@@ -177,6 +177,11 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     play_ring.set_opacity(RING_REST_ALPHA);
     let play_slot = gtk4::Overlay::new();
     play_slot.set_child(Some(&play_ring));
+    // Centered, not filled: an overlay child defaults to `Align::Fill` and
+    // would be stretched to the ring's 51 px, turning the 44 px circle into an
+    // ellipse and growing the hit area by 7 px — the one thing the ring exists
+    // to avoid (AC-24).
+    play_pause_button.set_halign(gtk4::Align::Center);
     play_slot.add_overlay(&play_pause_button);
     play_slot.set_halign(gtk4::Align::Center);
     play_slot.set_valign(gtk4::Align::Center);
@@ -383,8 +388,7 @@ pub(in crate::ui) fn css() -> String {
                        transform {TRANSITION}; }}\n\
          .{PLAY_RING_CSS_CLASS} {{ \
            border: {PLAY_RING_WIDTH} solid @reprise_player_accent; \
-           border-radius: 50%; \
-           margin: 0; padding: {PLAY_RING_GAP}; }}\n\
+           border-radius: 50%; margin: 0; padding: 0; }}\n\
          .{PLAY_CSS_CLASS}:hover {{ \
            box-shadow: inset 0 2px 1px alpha(#ffffff, 0.42), \
                        inset 0 -4px 3px alpha(#000000, 0.26), \
@@ -494,6 +498,58 @@ mod tests {
         // The button never scales with the music — a breathing button moves the
         // hit area under the cursor.
         assert!(!css.contains(&format!(".{PLAY_CSS_CLASS}.reactive")));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn ac_24_ring_leaves_the_play_button_round_and_its_hit_area_untouched() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        crate::ui::style::install_css_string_for_test(&super::css());
+        let layout = build();
+        let window = gtk4::Window::builder()
+            .default_width(1_200)
+            .default_height(180)
+            .child(&layout.root)
+            .build();
+        window.present();
+        wait_for_layout();
+
+        let button = layout
+            .play_pause_button
+            .compute_bounds(&layout.root)
+            .expect("play button has player-bar bounds");
+        let ring = layout
+            .play_ring
+            .compute_bounds(&layout.root)
+            .expect("play ring has player-bar bounds");
+
+        // Square, and exactly the size it was before the ring existed: the ring
+        // is a layer around the button, never a change to the button. An
+        // overlay child left on `Align::Fill` gets stretched to the ring and
+        // the circle silently becomes an ellipse with a wider hit area.
+        assert_eq!(
+            (button.width(), button.height()),
+            (
+                super::PLAY_BUTTON_SIZE as f32,
+                super::PLAY_BUTTON_SIZE as f32
+            ),
+            "the ring deformed the play button"
+        );
+        // The ring encloses the button on every side, and the button stays
+        // centred inside it.
+        assert!(ring.width() > button.width() && ring.height() > button.height());
+        let dx = (ring.x() + ring.width() / 2.0) - (button.x() + button.width() / 2.0);
+        let dy = (ring.y() + ring.height() / 2.0) - (button.y() + button.height() / 2.0);
+        assert!(
+            dx.abs() <= 0.5 && dy.abs() <= 0.5,
+            "ring off-centre: {dx}, {dy}"
+        );
+        // A visible gap remains between the button edge and the ring stroke.
+        let gap = (ring.width() - button.width()) / 2.0;
+        assert!((2.0..=5.0).contains(&gap), "ring gap out of range: {gap}");
+
+        window.close();
     }
 
     fn wait_for_layout() {
