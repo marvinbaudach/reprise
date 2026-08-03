@@ -4,15 +4,13 @@ use std::os::fd::FromRawFd;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
+use crate::source_error::{source_io_error, walk_error};
+use crate::source_names::SourceNames;
 use reprise_core::library::source::{
     LibraryDirectoryEntry, LibraryEntry, LibraryLinkMode, LibraryPathMetadata, LibraryPathPresence,
     LibraryReadHandle, LibrarySource, LibraryWalkControl, LibraryWalkError, LibraryWalkErrorKind,
     LibraryWalkItem, LibraryWalkOrder, LibraryWalkVisitor,
 };
-use sha2::{Digest, Sha256};
-
-use crate::source_error::{source_io_error, walk_error};
-use crate::source_names::SourceNames;
 
 /// Provider facts returned by one SAF document query.
 #[derive(Clone, Debug, uniffi::Record)]
@@ -22,7 +20,7 @@ pub struct SourceFacts {
     pub is_directory: bool,
     pub size_bytes: Option<u64>,
     pub modified_unix_ms: Option<i64>,
-    /// Stable within one DocumentsProvider, as required by DocumentsContract.
+    /// Provider-local identifier used to address this document.
     pub document_id: String,
 }
 
@@ -174,7 +172,7 @@ impl LibrarySource for BridgedSource {
             Ok(Some(facts)) => {
                 self.names
                     .remember_display_name(at.to_path_buf(), facts.display_name.clone());
-                LibraryPathPresence::Present(metadata_from_facts(at, &facts))
+                LibraryPathPresence::Present(metadata_from_facts(&facts))
             }
             Ok(None) => LibraryPathPresence::Absent,
             Err(_) => LibraryPathPresence::Unknown,
@@ -226,7 +224,7 @@ impl LibrarySource for BridgedSource {
         let root_entry = LibraryEntry {
             path: root.to_path_buf(),
             is_file: root_facts.is_file,
-            metadata: Some(metadata_from_facts(root, &root_facts)),
+            metadata: Some(metadata_from_facts(&root_facts)),
         };
         if visitor.visit(LibraryWalkItem::Entry(root_entry)) == LibraryWalkControl::Stop {
             return;
@@ -239,13 +237,13 @@ fn path_uri(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
-fn metadata_from_facts(at: &Path, facts: &SourceFacts) -> LibraryPathMetadata {
+fn metadata_from_facts(facts: &SourceFacts) -> LibraryPathMetadata {
     LibraryPathMetadata {
         is_file: facts.is_file,
         is_directory: facts.is_directory,
         size: facts.size_bytes,
         modified: modified_time(facts.modified_unix_ms),
-        identity: document_identity(at, &facts.document_id),
+        identity: None,
     }
 }
 
@@ -255,34 +253,13 @@ fn metadata_from_child(child: &SourceChild) -> LibraryPathMetadata {
         is_directory: child.is_directory,
         size: child.size_bytes,
         modified: modified_time(child.modified_unix_ms),
-        identity: document_identity(Path::new(&child.uri), &child.document_id),
+        identity: None,
     }
 }
 
 fn modified_time(unix_ms: Option<i64>) -> Option<SystemTime> {
     let unix_ms = u64::try_from(unix_ms?).ok()?;
     SystemTime::UNIX_EPOCH.checked_add(Duration::from_millis(unix_ms))
-}
-
-fn document_identity(uri: &Path, document_id: &str) -> Option<(u64, u64)> {
-    if document_id.is_empty() {
-        return None;
-    }
-    let uri = uri.to_str()?;
-    let authority = uri.strip_prefix("content://")?.split('/').next()?;
-    if authority.is_empty() {
-        return None;
-    }
-
-    let digest = Sha256::new()
-        .chain_update(authority.as_bytes())
-        .chain_update([0])
-        .chain_update(document_id.as_bytes())
-        .finalize();
-    Some((
-        u64::from_be_bytes(digest[0..8].try_into().ok()?),
-        u64::from_be_bytes(digest[8..16].try_into().ok()?),
-    ))
 }
 
 #[cfg(test)]
@@ -299,9 +276,7 @@ mod tests {
         LibraryWalkOrder, LibraryWalkVisitor, UnixLibrarySource,
     };
 
-    use super::{
-        document_identity, BridgedSource, SafSource, SafSourceError, SourceChild, SourceFacts,
-    };
+    use super::{BridgedSource, SafSource, SafSourceError, SourceChild, SourceFacts};
 
     struct PresentSource;
 
@@ -337,7 +312,7 @@ mod tests {
     }
 
     #[test]
-    fn probe_projects_provider_facts_without_fabricating_missing_values() {
+    fn probe_projects_provider_facts_without_fabricating_file_identity() {
         let source = BridgedSource::new(Box::new(PresentSource));
 
         let LibraryPathPresence::Present(metadata) = source.probe(
@@ -361,28 +336,9 @@ mod tests {
                 .as_millis(),
             1_775_000_123_456
         );
-        assert!(
-            metadata.identity.is_some(),
-            "the stable provider document id must reach Core as stable identity metadata"
-        );
-    }
-
-    #[test]
-    fn document_identity_is_stable_and_provider_scoped() {
-        let document_id = "primary:Music/Album/song.flac";
-        let external = Path::new(
-            "content://com.android.externalstorage.documents/document/primary%3AMusic%2FAlbum%2Fsong.flac",
-        );
-        let other_provider = Path::new("content://example.provider/document/song.flac");
-
         assert_eq!(
-            document_identity(external, document_id),
-            Some((0x8b2b_afa4_6193_bf64, 0x9c7b_dbc9_a3c7_ad67))
-        );
-        assert_ne!(
-            document_identity(external, document_id),
-            document_identity(other_provider, document_id),
-            "the same provider-local id must not collide across providers"
+            metadata.identity, None,
+            "a provider document id is not a file identity unless rename stability is guaranteed"
         );
     }
 
@@ -671,7 +627,7 @@ mod tests {
         assert!(bridged_paths
             .metadata
             .iter()
-            .all(|metadata| metadata.size == Some(5) && metadata.identity.is_some()));
+            .all(|metadata| metadata.size == Some(5) && metadata.identity.is_none()));
         assert_eq!(
             probe_calls.load(Ordering::Relaxed),
             1,
