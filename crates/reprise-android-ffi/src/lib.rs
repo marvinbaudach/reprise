@@ -21,6 +21,8 @@ use reprise_core::library::scanner::{scan_folder, ScanOutcome};
 use reprise_core::queries;
 use reprise_core::view_source::ViewSource;
 
+pub mod source;
+
 uniffi::setup_scaffolding!();
 
 const PROBE_INITIAL_READ_BYTES: usize = 64;

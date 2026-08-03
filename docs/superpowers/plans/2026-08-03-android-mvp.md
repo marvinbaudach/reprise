@@ -177,7 +177,7 @@ In-Memory-Datenbank. **Erst rot beobachten, wo es rot sein muss.**
 Fällt A2, halte fest **woran genau** — davon hängt ab, ob der MVP URIs als
 Pfade führen kann oder eine Übersetzungsschicht braucht.
 
-- [ ] **Step 2: A1 auf dem Emulator**
+- [x] **Step 2: A1 auf dem Emulator**
 
 Eine FFI-Funktion, die einen Deskriptor entgegennimmt, `File::from_raw_fd`
 macht, liest, `seek`t und wieder liest. Von Kotlin mit einem echten
@@ -197,11 +197,11 @@ drumherum gebaut.
 - Modify: `crates/reprise-android-ffi/src/lib.rs`
 - Create: `crates/reprise-android-ffi/src/source.rs`
 
-- [ ] **Step 1: Die UniFFI-Schnittstelle**
+- [x] **Step 1: Die UniFFI-Schnittstelle**
 
 Vier Methoden, flache Records. Kein `Path`, kein Griff, kein Visitor.
 
-- [ ] **Step 2: Der Adapter**
+- [x] **Step 2: Der Adapter**
 
 `impl LibrarySource for BridgedSource`. `walk` wird aus `listChildren`
 abgeleitet — Rekursion, `LibraryWalkOrder`, `LibraryWalkControl::Stop`,
@@ -215,13 +215,13 @@ Provider sagt: gibt es nicht" und „der Aufruf ist gescheitert"
 unterscheiden.** Kann die Kotlin-Seite das nicht liefern, ist das der
 wichtigste Befund des ganzen MVP und gehört sofort festgehalten.
 
-- [ ] **Step 3: Der Adapter gegen einen Fake**
+- [x] **Step 3: Der Adapter gegen einen Fake**
 
 Ein Rust-Test mit einem Fake-`SafSource` (In-Memory-Baum), der beweist, dass
 der abgeleitete `walk` dieselbe Reihenfolge- und Filterzusicherung liefert wie
 `UnixLibrarySource`.
 
-- [ ] **Step 4: Volle Gates und Commit**
+- [x] **Step 4: Volle Gates und Commit**
 
 ---
 
