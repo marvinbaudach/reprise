@@ -2373,6 +2373,12 @@ property is set and yet nothing happens.
   second copy of the list marker. Double-click/Enter on an already-visible
   row does not change the viewport. Play from Stopped as well as explicit
   Previous/Next center the new track without stealing focus or selection.
+  Centring moves the viewport over the Standard token rather than
+  teleporting it, and yields immediately to anything else that writes the
+  scroll position — the user's own scrolling, a model replacement, or
+  GTK's own reset. A distance of more than three viewport heights is
+  still applied at once, so the first placement after launch stays
+  instant (START-1).
   Auto-advance centers only if no scroll movement has occurred for 1.5
   seconds; explicit metadata/reveal navigation always selects, focuses, and
   centers.

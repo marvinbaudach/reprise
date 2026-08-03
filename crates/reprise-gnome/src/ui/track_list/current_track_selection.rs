@@ -324,7 +324,7 @@ impl TrackList {
                 if change == CurrentTrackChange::AutomaticAdvance {
                     reveal_automatic_track_position(&self.shared, position, 8);
                 } else {
-                    reveal_track_position(&self.shared.column_view, position, 8);
+                    reveal_track_position(&self.shared, position, 8);
                 }
                 tracing::info!(track_id, position, ?change, "current track centered");
             }
@@ -382,20 +382,22 @@ impl TrackList {
     }
 }
 
-fn reveal_track_position(column_view: &gtk4::ColumnView, position: u32, attempts: u8) {
-    let n_rows = track_table_row_count(column_view);
+fn reveal_track_position(shared: &Rc<super::track_list::Shared>, position: u32, attempts: u8) {
+    let n_rows = track_table_row_count(&shared.column_view);
     if let Some((adjustment, value)) =
-        scroll_center::centered_scroll_target(column_view, n_rows, position)
+        scroll_center::centered_scroll_target(&shared.column_view, n_rows, position)
     {
-        adjustment.set_value(value);
+        shared.scroll_glide.glide_to(&adjustment, value);
         return;
     }
     if attempts == 0 {
         return;
     }
-    let column_view = column_view.clone();
+    let shared = Rc::downgrade(shared);
     gtk4::glib::idle_add_local_once(move || {
-        reveal_track_position(&column_view, position, attempts - 1);
+        if let Some(shared) = shared.upgrade() {
+            reveal_track_position(&shared, position, attempts - 1);
+        }
     });
 }
 
@@ -419,7 +421,7 @@ fn reveal_automatic_track_position(
     if let Some((adjustment, value)) =
         scroll_center::centered_scroll_target(&shared.column_view, n_rows, position)
     {
-        adjustment.set_value(value);
+        shared.scroll_glide.glide_to(&adjustment, value);
         return;
     }
     if attempts == 0 {
@@ -432,6 +434,10 @@ fn reveal_automatic_track_position(
         }
     });
 }
+
+#[cfg(test)]
+#[path = "current_track_selection_glide_tests.rs"]
+mod glide_tests;
 
 #[cfg(test)]
 mod tests {
@@ -739,57 +745,6 @@ mod tests {
         assert_eq!(count_now_playing(&column_view), 0);
 
         window.close();
-    }
-
-    #[test]
-    fn visible_position_finds_the_current_track_in_view_order() {
-        assert_eq!(
-            visible_position_for_track_in_source(&[41, 42, 43], 42, None, false),
-            Some(1)
-        );
-    }
-
-    #[test]
-    fn visible_position_uses_queue_occurrence_then_falls_back_to_first_match() {
-        assert_eq!(
-            visible_position_for_track_in_source(&[7, 8, 7], 7, Some(2), false),
-            Some(2)
-        );
-        assert_eq!(
-            visible_position_for_track_in_source(&[7, 8, 7], 7, Some(1), false),
-            Some(0)
-        );
-        assert_eq!(
-            visible_position_for_track_in_source(&[7, 8, 7], 9, None, false),
-            None
-        );
-    }
-
-    #[test]
-    fn queue_does_not_highlight_a_pending_duplicate_of_the_current_track() {
-        assert_eq!(
-            visible_position_for_track_in_source(&[7, 8, 7], 7, None, true),
-            None
-        );
-        assert_eq!(
-            visible_position_for_track_in_source(&[7, 8, 7], 7, None, false),
-            Some(0)
-        );
-    }
-
-    /// START-1: the restored track is loaded, not running. It gets the marker,
-    /// but the viewport belongs to the startup centering — never to this
-    /// callback, which fires before the target view even exists.
-    #[test]
-    fn start_1_session_restore_marks_without_moving_the_viewport() {
-        assert_eq!(
-            reveal_policy(CurrentTrackChange::SessionRestore, false),
-            TrackRevealPolicy::MarkerOnly
-        );
-        assert_eq!(
-            reveal_policy(CurrentTrackChange::SessionRestore, true),
-            TrackRevealPolicy::MarkerOnly
-        );
     }
 }
 
