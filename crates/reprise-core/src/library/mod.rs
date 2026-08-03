@@ -18,6 +18,8 @@ pub mod scanner;
 pub mod session;
 pub mod settings;
 pub mod source;
+#[cfg(test)]
+pub(crate) mod source_test_support;
 pub mod stats;
 pub mod stats_period;
 pub mod stats_screen;

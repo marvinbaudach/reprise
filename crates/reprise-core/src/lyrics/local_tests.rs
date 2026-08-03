@@ -66,14 +66,20 @@ impl crate::library::source::LibrarySource for VecLibrarySource {
         &self,
         at: &Path,
         _links: crate::library::source::LibraryLinkMode,
-    ) -> Option<crate::library::source::LibraryPathMetadata> {
-        (at == self.track).then_some(crate::library::source::LibraryPathMetadata {
-            is_file: true,
-            is_directory: false,
-            size: None,
-            modified: None,
-            identity: None,
-        })
+    ) -> crate::library::source::LibraryPathPresence {
+        if at == self.track {
+            crate::library::source::LibraryPathPresence::Present(
+                crate::library::source::LibraryPathMetadata {
+                    is_file: true,
+                    is_directory: false,
+                    size: None,
+                    modified: None,
+                    identity: None,
+                },
+            )
+        } else {
+            crate::library::source::LibraryPathPresence::Absent
+        }
     }
 
     fn read_directory(

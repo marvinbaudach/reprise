@@ -907,22 +907,25 @@ Stellen in `reprise-core`**, davon 25 mit Paket 3 erledigt und 5
 (`mount_point_of`) als Entwurfsfrage offen; dazu **8 in `reprise-gnome`**, die
 noch keinem Paket zugeordnet sind.
 
-#### Die offene Frage für den SAF-Adapter: „weg" gegen „weiß nicht"
+#### Erledigt: „weg" gegen „weiß nicht" ist ein Drei-Zustands-Vertrag
 
-`LibrarySource::probe` liefert `Option`, und `None` heißt **die Datei ist nicht
-da**. Zwei Aufrufstellen — `scanner_vanish::mark_vanished_with` und
-`queries::maintenance::mark_track_missing_if_current_with` — machen daraus
-sofort einen `missing_since`-Eintrag. Die anderen fünfzehn Verbraucher
-behandeln `None` konservativ und schreiben nichts.
+Der erste SAF-Adapter bestätigte Paket 3s offene Frage: Eine faktenfreie
+`Some`-Antwort schützte `scanner_vanish::mark_vanished_with`, aber nicht
+`queries::maintenance::mark_track_missing_if_current_with`, weil dessen
+`is_file`-Prüfung danach trotzdem einen `missing_since`-Eintrag schrieb.
 
-Unter Linux ist die Vermischung harmlos und war es immer: `Path::exists()`
-liefert bei einem Rechte- oder E/A-Fehler ebenfalls `false`. **Unter SAF ist
-jede Abfrage ein Binder-Rundlauf, der scheitern kann**, und ein gescheiterter
-Rundlauf sähe aus wie eine gelöschte Datei. Eine SAF-Quelle braucht deshalb ein
-eigenes Signal für „ich konnte nicht nachsehen", bevor sie an diesen zwei
-Stellen produktiv eingesetzt wird. Paket 3 legt sie nicht, weil das die
-Semantik von siebzehn Aufrufstellen ändert; es benennt sie an `probe` und an
-beiden Schreibstellen.
+`LibrarySource::probe` liefert deshalb nun `LibraryPathPresence`: `Present`
+trägt Fakten, `Absent` bestätigt Abwesenheit, und `Unknown` sagt ausdrücklich,
+dass die Quelle nicht nachsehen konnte. **Nur `Absent` darf an den zwei
+destruktiven Stellen bis zum Schreibzugriff gelangen.** Ein fehlgeschlagener
+Binder-Aufruf wird direkt `Unknown`; die faktenfreie Ersatz-Metadatenstruktur
+ist entfernt. Die übrigen Verbraucher behandeln `Unknown` konservativ und
+behalten ihr bisheriges Ergebnis.
+
+Auch Unix trennt die Zustände jetzt ehrlich: erfolgreicher `stat` ist
+`Present`, `NotFound` ist `Absent`, jeder andere Fehler — etwa fehlende Rechte
+oder E/A — ist `Unknown`. Damit ist ein Zugriffsfehler auch auf Linux keine
+behauptete Abwesenheit mehr.
 
 ### Paket 4 umgesetzt: Bibliotheksinhalt über einen Lese-Griff (2026-08-02)
 

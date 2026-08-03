@@ -38,8 +38,8 @@ verrenkt er sich, sagt er uns, welche Signatur falsch ist.
 
 ## Die Brücke — warum sie einfacher ist, als sie klingt
 
-`LibrarySource` ist ein Rust-Trait mit `&Path`, `Option<LibraryPathMetadata>`,
-einem `LibraryReadHandle` (`Box<dyn Read + Seek + Send>`) und einem
+`LibrarySource` ist ein Rust-Trait mit `&Path`, `LibraryPathPresence`, einem
+`LibraryReadHandle` (`Box<dyn Read + Seek + Send>`) und einem
 Visitor-Callback. **Nichts davon überquert UniFFI** — und das muss es auch
 nicht.
 
@@ -64,9 +64,12 @@ Ein Rust-Adapter hält dieses Objekt und implementiert darauf das echte Trait:
 - **`probe` / `read_directory`** — flache Records, Zeitstempel als `i64`
   statt `SystemTime`.
 
-**Diese Brücke ändert `LibrarySource` nicht.** Wenn sie es doch verlangt, ist
-das ein Befund und gehört in die Commit-Nachricht, nicht stillschweigend
-umgesetzt.
+**Die Brücke hat `LibrarySource` widerlegt.** Der erste Adapter-Stand musste
+einen fehlgeschlagenen Binder-Aufruf als faktenfreie Präsenz ausgeben, weil
+`Option<LibraryPathMetadata>` „nicht da" und „nicht feststellbar" nicht
+trennen konnte. Der Vertrag trägt deshalb nun explizit `Present`, `Absent`
+und `Unknown`; das ist der erwartete Entwurfsbefund dieses MVP und muss in der
+Commit-Nachricht stehen.
 
 ## Drei Annahmen, die den Ansatz kippen können
 
@@ -207,13 +210,10 @@ Vier Methoden, flache Records. Kein `Path`, kein Griff, kein Visitor.
 abgeleitet — Rekursion, `LibraryWalkOrder`, `LibraryWalkControl::Stop`,
 Fehler als `LibraryWalkItem::Error`.
 
-**Beachte, was Paket 3 gelernt hat:** `probe` liefert `None` für „nicht da",
-und zwei Aufrufstellen machen daraus einen `missing_since`-Eintrag. Eine
-SAF-Quelle, die bei einem gescheiterten Binder-Rundlauf `None` liefert, würde
-lebende Tracks als gelöscht markieren. **Der Adapter muss zwischen „der
-Provider sagt: gibt es nicht" und „der Aufruf ist gescheitert"
-unterscheiden.** Kann die Kotlin-Seite das nicht liefern, ist das der
-wichtigste Befund des ganzen MVP und gehört sofort festgehalten.
+**Beachte, was Paket 3 gelernt hat:** Nur `LibraryPathPresence::Absent` darf
+einen `missing_since`-Eintrag lizenzieren. `Unknown` tut das an beiden
+destruktiven Stellen nie. Der Adapter bildet deshalb Provider-Abwesenheit auf
+`Absent` und einen gescheiterten Binder-Rundlauf direkt auf `Unknown` ab.
 
 - [x] **Step 3: Der Adapter gegen einen Fake**
 

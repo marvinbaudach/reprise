@@ -23,7 +23,7 @@ use std::time::Duration;
 
 #[cfg(test)]
 use crate::library::source::UnixLibrarySource;
-use crate::library::source::{LibraryLinkMode, LibrarySource};
+use crate::library::source::{LibraryLinkMode, LibraryPathPresence, LibrarySource};
 
 const TEMP_CREATE_ATTEMPTS: usize = 16;
 /// Reprise's own temporary files, and nothing else, are named
@@ -231,9 +231,13 @@ fn sweep_leftovers(source: &dyn LibrarySource, directory: &Path, max_age: Durati
         {
             continue;
         }
-        let metadata = entry
-            .metadata
-            .or_else(|| source.probe(&entry.path, LibraryLinkMode::NoFollow));
+        let metadata =
+            entry.metadata.or_else(
+                || match source.probe(&entry.path, LibraryLinkMode::NoFollow) {
+                    LibraryPathPresence::Present(metadata) => Some(metadata),
+                    LibraryPathPresence::Absent | LibraryPathPresence::Unknown => None,
+                },
+            );
         let is_abandoned = metadata.is_some_and(|metadata| {
             metadata.is_file
                 && metadata

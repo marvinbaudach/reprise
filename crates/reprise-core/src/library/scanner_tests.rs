@@ -89,7 +89,10 @@ fn mount_point_of(conn: &Connection, path: &std::path::Path) -> Option<String> {
 fn file_metadata_preserves_both_failed_stat_fallbacks() {
     let tmp = tempfile::tempdir().unwrap();
     let missing = tmp.path().join("does-not-exist.flac");
-    let metadata = UnixLibrarySource.probe(&missing, LibraryLinkMode::Follow);
+    let metadata = match UnixLibrarySource.probe(&missing, LibraryLinkMode::Follow) {
+        LibraryPathPresence::Present(metadata) => Some(metadata),
+        LibraryPathPresence::Absent | LibraryPathPresence::Unknown => None,
+    };
     assert_eq!(scanner_file_metadata(metadata), (0, None));
 }
 
@@ -309,7 +312,10 @@ fn ambiguous_device_inode_candidates_are_not_guessed() {
         .unwrap();
 
     // Get the fixture file_size for the lookup (inode won't match real file).
-    let metadata = UnixLibrarySource.probe(&path_a, LibraryLinkMode::Follow);
+    let metadata = match UnixLibrarySource.probe(&path_a, LibraryLinkMode::Follow) {
+        LibraryPathPresence::Present(metadata) => Some(metadata),
+        LibraryPathPresence::Absent | LibraryPathPresence::Unknown => None,
+    };
     let (_, stat) = scanner_file_metadata(metadata);
     let (file_size, _) = stat.expect("fixture file must stat successfully");
 

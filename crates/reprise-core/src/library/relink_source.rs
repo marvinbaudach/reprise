@@ -5,7 +5,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::library::scanner::ScanError;
 use crate::library::source::{
-    self, LibraryLinkMode, LibrarySource, LibraryWalkControl, LibraryWalkItem, LibraryWalkOrder,
+    self, LibraryLinkMode, LibraryPathPresence, LibrarySource, LibraryWalkControl, LibraryWalkItem,
+    LibraryWalkOrder,
 };
 
 pub(super) struct FileFacts {
@@ -33,7 +34,10 @@ impl FileFacts {
 }
 
 pub(super) fn file_facts(source: &dyn LibrarySource, path: &Path) -> Option<FileFacts> {
-    FileFacts::from_metadata(&source.probe(path, LibraryLinkMode::Follow)?)
+    match source.probe(path, LibraryLinkMode::Follow) {
+        LibraryPathPresence::Present(metadata) => FileFacts::from_metadata(&metadata),
+        LibraryPathPresence::Absent | LibraryPathPresence::Unknown => None,
+    }
 }
 
 pub(super) fn count_folder_audio_files(

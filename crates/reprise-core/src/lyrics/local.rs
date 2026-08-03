@@ -22,9 +22,12 @@ impl LyricsProvider for LocalProvider<'_> {
 
     fn lookup(&self, _query: &LyricsQuery, track_path: Option<&Path>) -> SourceOutcome {
         let Some(path) = track_path.filter(|path| {
-            self.source
-                .probe(path, crate::library::source::LibraryLinkMode::Follow)
-                .is_some_and(|metadata| metadata.is_file)
+            matches!(
+                self.source
+                    .probe(path, crate::library::source::LibraryLinkMode::Follow),
+                crate::library::source::LibraryPathPresence::Present(metadata)
+                    if metadata.is_file
+            )
         }) else {
             return SourceOutcome::Skipped;
         };

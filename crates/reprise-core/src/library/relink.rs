@@ -8,8 +8,8 @@ use rusqlite::OptionalExtension;
 use super::scanner::move_detect::MOVE_MATCH_TOLERANCE_MS;
 use super::scanner::ScanError;
 use super::source::{
-    self, LibraryLinkMode, LibrarySource, LibraryWalkControl, LibraryWalkItem, LibraryWalkOrder,
-    UnixLibrarySource,
+    self, LibraryLinkMode, LibraryPathPresence, LibrarySource, LibraryWalkControl, LibraryWalkItem,
+    LibraryWalkOrder, UnixLibrarySource,
 };
 
 #[path = "relink_source.rs"]
@@ -50,10 +50,7 @@ pub fn probe_relink_with_source(
     new_path: &Path,
 ) -> Result<Option<RelinkMismatch>, ScanError> {
     let conn = db.conn();
-    if source
-        .probe(&target.old_path, LibraryLinkMode::Follow)
-        .is_some()
-    {
+    if source.probe(&target.old_path, LibraryLinkMode::Follow) != LibraryPathPresence::Absent {
         return Err(ScanError::RelinkTargetChanged {
             track_id: target.track_id,
         });
@@ -99,10 +96,7 @@ pub fn relink_track_with_source(
     new_path: &Path,
 ) -> Result<(), ScanError> {
     let conn = db.conn();
-    if source
-        .probe(&target.old_path, LibraryLinkMode::Follow)
-        .is_some()
-    {
+    if source.probe(&target.old_path, LibraryLinkMode::Follow) != LibraryPathPresence::Absent {
         return Err(ScanError::RelinkTargetChanged {
             track_id: target.track_id,
         });
@@ -280,9 +274,8 @@ fn relink_from_folder_with_source(
                 let expected_path = expected_paths
                     .get(&candidate.id)
                     .expect("move candidates are restricted to remaining target ids");
-                let still_missing = source
-                    .probe(expected_path, LibraryLinkMode::Follow)
-                    .is_none()
+                let still_missing = source.probe(expected_path, LibraryLinkMode::Follow)
+                    == LibraryPathPresence::Absent
                     && tx
                         .query_row(
                             &format!(

@@ -96,7 +96,7 @@ impl super::source::LibrarySource for ScriptedSource {
         &self,
         at: &std::path::Path,
         links: super::source::LibraryLinkMode,
-    ) -> Option<super::source::LibraryPathMetadata> {
+    ) -> super::source::LibraryPathPresence {
         *self
             .probe_counts
             .lock()
@@ -129,9 +129,11 @@ fn scripted_file(path: &std::path::Path) -> super::source::LibraryWalkItem {
 }
 
 fn scripted_file_with_metadata(path: &std::path::Path) -> super::source::LibraryWalkItem {
-    let metadata = super::source::UnixLibrarySource
-        .probe(path, super::source::LibraryLinkMode::Follow)
-        .expect("fixture file must be reachable");
+    let super::source::LibraryPathPresence::Present(metadata) =
+        super::source::UnixLibrarySource.probe(path, super::source::LibraryLinkMode::Follow)
+    else {
+        panic!("fixture file must be reachable");
+    };
     super::source::LibraryWalkItem::Entry(super::source::LibraryEntry {
         path: path.to_path_buf(),
         is_file: true,

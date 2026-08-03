@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 use super::import_errors;
 use super::mounts;
 use super::source::{
-    self, LibraryLinkMode, LibraryPathMetadata, LibrarySource, LibraryWalkControl,
-    LibraryWalkErrorKind, LibraryWalkItem, LibraryWalkOrder, UnixLibrarySource,
+    self, LibraryLinkMode, LibraryPathMetadata, LibraryPathPresence, LibrarySource,
+    LibraryWalkControl, LibraryWalkErrorKind, LibraryWalkItem, LibraryWalkOrder, UnixLibrarySource,
 };
 use crate::models::ImportErrorKind;
 use crate::models::MissingReason;
@@ -264,7 +264,7 @@ fn scan_folder_inner(
     // This is not a formality. A SAF root is a content URI, and
     // `Path::is_absolute` is false for one (it has no leading `/`), so this
     // assertion fired on the first scan a real Android source ever attempted.
-    if source.probe(root, LibraryLinkMode::Follow).is_none() {
+    if source.probe(root, LibraryLinkMode::Follow) == LibraryPathPresence::Absent {
         // Root-Guard case (a): no walk, no database write at all — see this
         // function's `## Root guard` doc section.
         tracing::warn!(
@@ -326,9 +326,13 @@ fn scan_folder_inner(
             let path_str = path.to_string_lossy().to_string();
             // Compute identity before touching tags. An exclusion follows the
             // same file across a rename and must win over move detection.
-            let metadata = entry
-                .metadata
-                .or_else(|| source.probe(path, LibraryLinkMode::Follow));
+            let metadata =
+                entry
+                    .metadata
+                    .or_else(|| match source.probe(path, LibraryLinkMode::Follow) {
+                        LibraryPathPresence::Present(metadata) => Some(metadata),
+                        LibraryPathPresence::Absent | LibraryPathPresence::Unknown => None,
+                    });
             let (mtime, stat) = scanner_file_metadata(metadata);
             let has_file_stat = stat.is_some();
             let (file_size, identity): (i64, Option<(i64, i64)>) = match stat {

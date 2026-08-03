@@ -5,9 +5,9 @@ use std::path::Path;
 use std::time::{Duration, SystemTime};
 
 use reprise_core::library::source::{
-    LibraryDirectoryEntry, LibraryEntry, LibraryLinkMode, LibraryPathMetadata, LibraryReadHandle,
-    LibrarySource, LibraryWalkControl, LibraryWalkError, LibraryWalkErrorKind, LibraryWalkItem,
-    LibraryWalkOrder, LibraryWalkVisitor,
+    LibraryDirectoryEntry, LibraryEntry, LibraryLinkMode, LibraryPathMetadata, LibraryPathPresence,
+    LibraryReadHandle, LibrarySource, LibraryWalkControl, LibraryWalkError, LibraryWalkErrorKind,
+    LibraryWalkItem, LibraryWalkOrder, LibraryWalkVisitor,
 };
 use sha2::{Digest, Sha256};
 
@@ -140,17 +140,14 @@ impl LibrarySource for BridgedSource {
         Ok(LibraryReadHandle::new(file))
     }
 
-    fn probe(&self, at: &Path, links: LibraryLinkMode) -> Option<LibraryPathMetadata> {
+    fn probe(&self, at: &Path, links: LibraryLinkMode) -> LibraryPathPresence {
         match self
             .source
             .probe(path_uri(at), matches!(links, LibraryLinkMode::Follow))
         {
-            Ok(Some(facts)) => Some(metadata_from_facts(at, &facts)),
-            Ok(None) => None,
-            // LibrarySource has no probe-failure arm. A conservative, fact-free
-            // present result prevents a transient Binder failure from licensing
-            // either missing_since write. Callers that need facts safely get none.
-            Err(_) => Some(unavailable_metadata()),
+            Ok(Some(facts)) => LibraryPathPresence::Present(metadata_from_facts(at, &facts)),
+            Ok(None) => LibraryPathPresence::Absent,
+            Err(_) => LibraryPathPresence::Unknown,
         }
     }
 
@@ -226,16 +223,6 @@ fn modified_time(unix_ms: Option<i64>) -> Option<SystemTime> {
     SystemTime::UNIX_EPOCH.checked_add(Duration::from_millis(unix_ms))
 }
 
-fn unavailable_metadata() -> LibraryPathMetadata {
-    LibraryPathMetadata {
-        is_file: false,
-        is_directory: false,
-        size: None,
-        modified: None,
-        identity: None,
-    }
-}
-
 fn source_io_error(error: SafSourceError) -> io::Error {
     let kind = match &error {
         SafSourceError::PermissionDenied { .. } => io::ErrorKind::PermissionDenied,
@@ -288,8 +275,8 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use reprise_core::library::source::{
-        LibraryLinkMode, LibrarySource, LibraryWalkControl, LibraryWalkItem, LibraryWalkOrder,
-        LibraryWalkVisitor, UnixLibrarySource,
+        LibraryLinkMode, LibraryPathPresence, LibrarySource, LibraryWalkControl, LibraryWalkItem,
+        LibraryWalkOrder, LibraryWalkVisitor, UnixLibrarySource,
     };
 
     use super::{
@@ -332,14 +319,14 @@ mod tests {
     fn probe_projects_provider_facts_without_fabricating_missing_values() {
         let source = BridgedSource::new(Box::new(PresentSource));
 
-        let metadata = source
-            .probe(
+        let LibraryPathPresence::Present(metadata) = source.probe(
                 Path::new(
                     "content://com.android.externalstorage.documents/document/primary%3AMusic%2FAlbum%2Fsong.flac",
                 ),
                 LibraryLinkMode::NoFollow,
-            )
-            .expect("the provider confirmed that the document exists");
+            ) else {
+                panic!("the provider confirmed that the document exists");
+            };
 
         assert!(metadata.is_file);
         assert!(!metadata.is_directory);
@@ -420,15 +407,14 @@ mod tests {
         let missing = BridgedSource::new(Box::new(ProbeSource(ProbeOutcome::Missing)));
         let failed = BridgedSource::new(Box::new(ProbeSource(ProbeOutcome::Failed)));
 
-        assert_eq!(missing.probe(path, LibraryLinkMode::Follow), None);
-        let conservative = failed
-            .probe(path, LibraryLinkMode::Follow)
-            .expect("a failed Binder call must never license a missing-track write");
-        assert!(!conservative.is_file);
-        assert!(!conservative.is_directory);
-        assert_eq!(conservative.size, None);
-        assert_eq!(conservative.modified, None);
-        assert_eq!(conservative.identity, None);
+        assert_eq!(
+            missing.probe(path, LibraryLinkMode::Follow),
+            LibraryPathPresence::Absent
+        );
+        assert_eq!(
+            failed.probe(path, LibraryLinkMode::Follow),
+            LibraryPathPresence::Unknown
+        );
     }
 
     struct DescriptorSource {
