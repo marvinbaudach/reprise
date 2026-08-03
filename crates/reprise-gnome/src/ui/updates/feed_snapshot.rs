@@ -61,6 +61,7 @@ pub(super) fn concerts(db: &Db, enabled: bool, today: NaiveDate) -> ConcertsSnap
     let delta = DeltaBatch {
         shown: delta.shown.into_iter().map(|(row, _seen_at)| row).collect(),
         total: delta.total,
+        unseen: delta.unseen,
     };
     let count = reprise_core::concerts::count_upcoming(db, &filter, location.as_ref(), today)
         .map_or_else(

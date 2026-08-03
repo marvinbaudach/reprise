@@ -28,6 +28,15 @@ pub struct DeltaBatch<T> {
     pub shown: Vec<T>,
     /// The complete batch size before applying the cap.
     pub total: usize,
+    /// Whether this batch is actually unseen, as opposed to the one held over
+    /// from the last visit.
+    ///
+    /// A batch stays on screen after it has been read, so that looking twice
+    /// does not empty the popover. But a held-over batch must not be announced
+    /// as new: the badge counts unseen entries and is already gone by then, and
+    /// a header still claiming "3 new" would contradict it — the exact
+    /// incoherence between badge and list this surface exists to remove.
+    pub unseen: bool,
 }
 
 /// Selects the unseen items, or the most recently seen batch when all items
@@ -54,6 +63,7 @@ pub fn delta_batch<T>(
     DeltaBatch {
         shown: batch,
         total,
+        unseen: has_unseen,
     }
 }
 

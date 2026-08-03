@@ -116,6 +116,7 @@ impl ConcertsSection {
         enabled: bool,
         has_credentials: bool,
         total: usize,
+        unseen: bool,
         rows: &[ConcertRow],
         today: NaiveDate,
     ) {
@@ -124,7 +125,9 @@ impl ConcertsSection {
         if !visible {
             return;
         }
+        // See the releases header: a held-over batch renders without a count.
         self.count_tag.set_label(&strings::updates_new_count(total));
+        self.count_tag.set_visible(unseen && total > 0);
         while let Some(child) = self.list.first_child() {
             self.list.remove(&child);
         }

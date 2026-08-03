@@ -312,10 +312,13 @@ impl NewReleasesPopover {
         let news_visible =
             news_enabled && (releases.delta.total > 0 || effect.empty != EmptyPresentation::Hidden);
         self.news_section.set_visible(news_visible);
+        // Only an actually unseen batch is announced as new. A batch held over
+        // from the last visit still renders, but without a count that would
+        // contradict the badge (which has cleared by then).
         self.new_tag
             .set_label(&strings::updates_new_count(releases.delta.total));
         self.new_tag
-            .set_visible(news_visible && releases.delta.total > 0);
+            .set_visible(news_visible && releases.delta.unseen && releases.delta.total > 0);
         self.list.remove_all();
         match effect.empty {
             EmptyPresentation::Hidden => {}
@@ -360,6 +363,7 @@ impl NewReleasesPopover {
             concerts_enabled,
             concerts.credentials,
             concerts.delta.total,
+            concerts.delta.unseen,
             &concerts.delta.shown,
             today,
         );

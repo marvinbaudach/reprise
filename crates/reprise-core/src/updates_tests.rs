@@ -14,6 +14,7 @@ fn unseen_items_are_the_current_delta_batch() {
 
     assert_eq!(batch.shown, [("first", None), ("second", None)]);
     assert_eq!(batch.total, 2);
+    assert!(batch.unseen, "nothing here has been read yet");
 }
 
 #[test]
@@ -26,6 +27,32 @@ fn the_most_recent_seen_visit_is_the_fallback_batch() {
 
     assert_eq!(batch.shown, [("newer", Some(20)), ("same", Some(20))]);
     assert_eq!(batch.total, 2);
+    assert!(
+        !batch.unseen,
+        "a batch held over from the last visit is not new, and announcing it \
+         as new would contradict a badge that has already cleared"
+    );
+}
+
+/// The badge counts unseen entries, the header count describes the batch on
+/// screen. Both must answer the same question, or the surface contradicts
+/// itself — one saying "nothing new" while the other claims "2 new".
+#[test]
+fn a_batch_is_only_new_while_something_in_the_feed_is_unseen() {
+    let mixed = delta_batch(
+        vec![("read", Some(10)), ("fresh", None)],
+        |item| item.1,
+        5,
+    );
+    assert!(mixed.unseen);
+    assert_eq!(mixed.shown, [("fresh", None)]);
+
+    let all_read = delta_batch(vec![("read", Some(10))], |item| item.1, 5);
+    assert!(!all_read.unseen);
+    assert_eq!(all_read.total, 1, "it still renders, it just is not new");
+
+    let empty = delta_batch(Vec::<(&str, Option<i64>)>::new(), |item| item.1, 5);
+    assert!(!empty.unseen, "an empty feed has nothing new to announce");
 }
 
 #[test]

@@ -1946,11 +1946,21 @@ the panel).
   with no queued artists. Offline or error still show the last cache and its
   previous age. The shared failure surface remains specified by NR-21.
 - **NR-23** [active] [gtk] — The delta popover shows at most five
-  releases and three concerts without an internal scroller. Each
-  section's count chip names the full batch size. A section without a
-  batch loses both header and rows; when both are empty, exactly one
-  quiet empty row appears. Jump rows remain visible while their module
-  is active, even when its delta section is absent.
+  releases and three concerts without an internal scroller. A section's
+  count chip names the full batch size, but appears **only while that
+  batch is genuinely unseen**: a batch held over from the last visit
+  still renders — looking twice must not empty the popover — yet carries
+  no count, because the badge has cleared by then and a header still
+  claiming "1 new" would contradict it. A section without a batch loses
+  both header and rows; when both are empty, exactly one quiet empty row
+  appears. Jump rows remain visible while their module is active, even
+  when its delta section is absent. The fetch trigger keeps the update
+  age inside its own button, so the header carries one labelled target
+  rather than a bare symbolic glyph.
+  *Reason:* the count-without-unseen case was found in a screenshot on
+  2026-08-04, after the rule's own display tests had passed — the two
+  halves of the surface were each self-consistent and only disagreed
+  with each other (see also STYLE-1).
 ## S. Surfaces & Geometry
 
 <!-- Section letter: R (New Releases) is the last one assigned; S follows

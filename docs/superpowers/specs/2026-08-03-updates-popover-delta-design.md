@@ -50,6 +50,13 @@ damit möglich, ohne dass der Popover leerläuft.
 Concerts, kein Scroller. Der Zähler-Chip im Kopf nennt die volle Chargengröße,
 der Sprung-Link führt zum Rest. Der Popover hat damit eine konstante Höhe.
 
+**B2a — Der Chip erscheint nur bei einer ungesehenen Charge.** Nachgetragen am
+2026-08-04, nachdem der erste Screenshot des fertigen Popovers ihn widerlegt
+hat: Eine übernommene Charge blieb korrekt stehen (B1), der Kopf behauptete aber
+weiterhin „1 new", während das Badge längst verschwunden war. Beide Hälften
+derselben Oberfläche widersprachen sich — genau die Inkohärenz, gegen die dieser
+Umbau angetreten ist. Die Charge rendert also weiter, aber ohne Zähler.
+
 **B3 — Leere Sektionen fallen weg.** Eine Sektion ohne Neuigkeiten verschwindet
 samt Kopf. Sind beide leer, steht genau eine ruhige Zeile über den Sprüngen. Ein
 Kopf ohne Inhalt ist strukturell nicht mehr möglich.
@@ -90,11 +97,14 @@ stempeln → Badge neu berechnen. Anzeige und Kopfzahl beruhen auf dem Zustand
 
 Sechs Eingriffe gegenüber dem Ist-Zustand:
 
-1. **Abruf und Alter wandern in die Kopfzeile.** „Fetch now" wird zum
-   Icon-Button neben „UPDATES", das Alter steht rechts daneben. Der
-   Fußbereich verliert seine Verwaltungszeile, der Popover endet mit Navigation
-   statt mit Wartung. Ein Fehlerhinweis (NR-21) bekommt im Fehlerfall eine
-   eigene Zeile direkt unter dem Kopf.
+1. **Abruf und Alter wandern in die Kopfzeile.** Der Fußbereich verliert seine
+   Verwaltungszeile, der Popover endet mit Navigation statt mit Wartung. Ein
+   Fehlerhinweis (NR-21) bekommt im Fehlerfall eine eigene Zeile direkt unter
+   dem Kopf. Das Alter sitzt dabei **im** Abruf-Button, nicht daneben: Der
+   erste Screenshot zeigte einen unbeschrifteten symbolischen Glyph, wo vorher
+   „Fetch now" stand — die Aktion war faktisch versteckt. Zusammengefasst
+   ergeben beide ein breites, selbsterklärendes Ziel („Updated 1 d ago" ist
+   genau das, worauf der Klick wirkt).
 2. **„NEW RELEASES" heißt „RELEASES".** Das „New" steckt ab jetzt im
    Zähler-Chip; heute steht es doppelt da und beschreibt trotzdem nichts Neues.
 3. **Der Zähler-Chip wird gefüllt, die Status-Chips bleiben umrandet.** Heute

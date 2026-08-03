@@ -313,6 +313,51 @@ fn nr_9b_opening_keeps_the_pre_stamp_count_and_clears_the_badge() {
     );
 }
 
+/// NR-23: found in a screenshot, not by a test. The popover kept the last
+/// visit's batch on screen — correct — but its header still announced "1 new"
+/// while the badge had already cleared, so the two halves of the same surface
+/// contradicted each other. A held-over batch renders without a count.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn nr_23_a_held_over_batch_renders_without_claiming_to_be_new() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    if gtk4::init().is_err() {
+        return;
+    }
+    let conn = crate::test_db::open().unwrap();
+    reprise_core::modules::set_enabled(&conn, &reprise_core::modules::NEW_RELEASES_MODULE, true)
+        .unwrap();
+    reprise_core::library::settings::set_new_releases_fetch_completed(&conn, true).unwrap();
+    let now = chrono::Utc::now().timestamp();
+    crate::test_db::connection(&conn)
+        .execute(
+            "INSERT INTO new_releases (
+               release_group_mbid, artist_name, artist_mbid, title, release_type,
+               first_release_date, fetched_at, seen_at, fallback_accent
+             ) VALUES ('already-read', 'Artist', 'artist', 'Release', 'Album',
+                       '2026-08-01', ?1, ?1, '#123456')",
+            rusqlite::params![now],
+        )
+        .unwrap();
+    let conn = Rc::new(conn);
+    let state = test_popover(conn, PathBuf::from("unused.db"));
+
+    state.render(false, false);
+
+    assert!(
+        state.news_section.get_visible(),
+        "looking twice must not empty the popover"
+    );
+    assert!(
+        !state.new_tag.get_visible(),
+        "the batch was already read, so nothing here is new"
+    );
+    assert!(
+        !state.badge.get_visible(),
+        "and the badge agrees — that is the point"
+    );
+}
+
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn nr_23_an_empty_batch_hides_its_header_and_list() {
