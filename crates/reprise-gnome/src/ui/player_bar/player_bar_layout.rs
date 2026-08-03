@@ -6,7 +6,8 @@ use libadwaita::prelude::*;
 
 use super::cover_loader::CoverLoader;
 use super::strings;
-use super::{ICON_NEXT, ICON_PLAY, ICON_PREVIOUS, ICON_REPEAT_ALL, ICON_SHUFFLE};
+use super::transport_glyph::{Glyph, TransportGlyph};
+use super::{ICON_NEXT, ICON_PREVIOUS, ICON_REPEAT_ALL, ICON_SHUFFLE};
 use crate::ui::cover_lift::CoverLift;
 use crate::ui::style::buttons;
 
@@ -79,6 +80,7 @@ pub(in crate::ui) struct PlayerBarWidgets {
     pub(in crate::ui) shuffle_button: gtk4::ToggleButton,
     pub(in crate::ui) prev_button: gtk4::Button,
     pub(in crate::ui) play_pause_button: gtk4::Button,
+    pub(super) play_glyph: TransportGlyph,
     pub(in crate::ui) play_ring: gtk4::Box,
     pub(in crate::ui) next_button: gtk4::Button,
     pub(in crate::ui) repeat_button: gtk4::ToggleButton,
@@ -165,8 +167,12 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     prev_button.set_sensitive(false);
     // The play/pause control is the accent-glow focal point of the bar and the
     // primary tier of BTN-3: it may react more visibly than its neighbours.
-    let play_pause_button = gtk4::Button::from_icon_name(ICON_PLAY);
+    let play_glyph = TransportGlyph::new(Glyph::Play);
+    let play_pause_button = gtk4::Button::builder().child(play_glyph.widget()).build();
     play_pause_button.set_tooltip_text(Some(&strings::text(strings::TOOLTIP_PLAY)));
+    play_pause_button.update_property(&[gtk4::accessible::Property::Label(&strings::text(
+        strings::TOOLTIP_PLAY,
+    ))]);
     play_pause_button.set_valign(gtk4::Align::Center);
     play_pause_button.add_css_class("circular");
     play_pause_button.add_css_class(PLAY_CSS_CLASS);
@@ -364,6 +370,7 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
         play_ring,
         next_button,
         repeat_button,
+        play_glyph,
         play_next_episode_button,
         retry_external_button,
         position_label,

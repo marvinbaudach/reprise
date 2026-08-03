@@ -18,6 +18,7 @@ use gtk4::prelude::*;
 use libadwaita::prelude::AnimationExt;
 
 use crate::ui::motion;
+use crate::ui::player_bar::transport_glyph::{Glyph, TransportGlyph};
 use crate::ui::player_bar_layout::{self, ring_alpha, PlayerBarWidgets, VOLUME_MAX, VOLUME_MIN};
 use crate::ui::strings;
 use crate::ui::waveform_seek::WaveformSeek;
@@ -25,10 +26,6 @@ use reprise_core::format::{format_duration, format_remaining};
 use reprise_core::playback::PlaybackState;
 use reprise_core::queue::Repeat;
 
-// `pub(in crate::ui)` (Task 8): `now_playing.rs` reuses these icon names/CSS class
-// for its own transport row (DRY) rather than a second, drifting copy.
-pub(in crate::ui) const ICON_PLAY: &str = "media-playback-start-symbolic";
-pub(in crate::ui) const ICON_PAUSE: &str = "media-playback-pause-symbolic";
 pub(in crate::ui) const ICON_SHUFFLE: &str = "media-playlist-shuffle-symbolic";
 pub(in crate::ui) const ICON_PREVIOUS: &str = "media-skip-backward-symbolic";
 pub(in crate::ui) const ICON_NEXT: &str = "media-skip-forward-symbolic";
@@ -85,6 +82,7 @@ pub struct PlayerBar {
     pub(in crate::ui) shuffle_button: gtk4::ToggleButton,
     pub(in crate::ui) prev_button: gtk4::Button,
     play_pause_button: gtk4::Button,
+    play_glyph: TransportGlyph,
     play_ring: gtk4::Box,
     pub(in crate::ui) next_button: gtk4::Button,
     pub(in crate::ui) repeat_button: gtk4::ToggleButton,
@@ -151,6 +149,7 @@ impl PlayerBar {
             shuffle_button,
             prev_button,
             play_pause_button,
+            play_glyph,
             play_ring,
             next_button,
             repeat_button,
@@ -231,6 +230,7 @@ impl PlayerBar {
             shuffle_button,
             prev_button,
             play_pause_button,
+            play_glyph,
             play_ring,
             next_button,
             repeat_button,
@@ -276,13 +276,19 @@ impl PlayerBar {
     pub fn set_state(&self, state: PlaybackState) {
         let was_playing = self.playback_state.get() == PlaybackState::Playing;
         let is_playing = state == PlaybackState::Playing;
-        let new_icon = if is_playing { ICON_PAUSE } else { ICON_PLAY };
+        let new_glyph = if is_playing {
+            Glyph::Pause
+        } else {
+            Glyph::Play
+        };
         let tooltip = if is_playing {
             strings::text(strings::TOOLTIP_PAUSE)
         } else {
             strings::text(strings::TOOLTIP_PLAY)
         };
         self.play_pause_button.set_tooltip_text(Some(&tooltip));
+        self.play_pause_button
+            .update_property(&[gtk4::accessible::Property::Label(&tooltip)]);
         self.playback_state.set(state);
         self.waveform.set_paused(!is_playing);
         if state != PlaybackState::Playing {
@@ -297,7 +303,7 @@ impl PlayerBar {
         if was_playing != is_playing {
             self.animate_play_pulse();
         }
-        self.animate_play_icon_change(new_icon);
+        self.animate_play_icon_change(new_glyph);
     }
 
     /// The live bass pair, fanned out to the reactive layers the bar owns.
@@ -351,19 +357,19 @@ impl PlayerBar {
     }
 
     /// 150 ms opacity cross-fade for the play↔pause icon swap.
-    fn animate_play_icon_change(&self, new_icon: &'static str) {
+    fn animate_play_icon_change(&self, new_glyph: Glyph) {
         let generation = self.icon_animation_generation.get().wrapping_add(1);
         self.icon_animation_generation.set(generation);
-        let button = self.play_pause_button.clone();
+        let glyph = self.play_glyph.clone();
         let animation_slot = self.current_icon_animation.clone();
         let animation_generation = self.icon_animation_generation.clone();
 
         let fade_out_target = libadwaita::CallbackAnimationTarget::new({
-            let button = button.clone();
-            move |value| button.set_opacity(value)
+            let glyph = glyph.clone();
+            move |value| glyph.widget().set_opacity(value)
         });
         let fade_out = motion::timed(
-            &self.play_pause_button,
+            self.play_glyph.widget(),
             1.0,
             0.0,
             motion::MICRO,
@@ -371,16 +377,16 @@ impl PlayerBar {
         );
 
         fade_out.connect_done(move |_| {
-            button.set_icon_name(new_icon);
+            glyph.set_glyph(new_glyph);
             if animation_generation.get() != generation {
-                button.set_opacity(1.0);
+                glyph.widget().set_opacity(1.0);
                 return;
             }
             let fade_in_target = libadwaita::CallbackAnimationTarget::new({
-                let button = button.clone();
-                move |value| button.set_opacity(value)
+                let glyph = glyph.clone();
+                move |value| glyph.widget().set_opacity(value)
             });
-            let fade_in = motion::timed(&button, 0.0, 1.0, motion::MICRO, fade_in_target);
+            let fade_in = motion::timed(glyph.widget(), 0.0, 1.0, motion::MICRO, fade_in_target);
             fade_in.set_duration(motion::half(motion::MICRO));
             motion::replace_animation(&animation_slot, fade_in.clone());
             fade_in.play();

@@ -239,11 +239,8 @@ fn mot_6_second_track_and_state_changes_finish_the_previous_visual_state() {
     bar.set_state(PlaybackState::Playing);
     bar.set_state(PlaybackState::Paused);
     assert_eq!(bar.playback_state.get(), PlaybackState::Paused);
-    assert_eq!(
-        bar.play_pause_button.icon_name().as_deref(),
-        Some(ICON_PAUSE)
-    );
-    assert_eq!(bar.play_pause_button.opacity(), 1.0);
+    assert_eq!(bar.play_glyph.glyph(), Glyph::Pause);
+    assert_eq!(bar.play_glyph.widget().opacity(), 1.0);
     {
         // Scope the borrow: window.close() below unmaps the bar, whose teardown
         // calls replace_animation() (a slot.borrow_mut()). Holding this .borrow()
@@ -277,11 +274,8 @@ fn mot_7_player_bar_hard_switches_when_system_animations_are_disabled() {
     assert_eq!(bar.title_label.text(), "Immediate");
     assert_eq!(bar.artist_label.text(), "Artist");
     assert_eq!(bar.title_label.opacity(), 1.0);
-    assert_eq!(
-        bar.play_pause_button.icon_name().as_deref(),
-        Some(ICON_PAUSE)
-    );
-    assert_eq!(bar.play_pause_button.opacity(), 1.0);
+    assert_eq!(bar.play_glyph.glyph(), Glyph::Pause);
+    assert_eq!(bar.play_glyph.widget().opacity(), 1.0);
 
     settings.set_gtk_enable_animations(previous);
 }

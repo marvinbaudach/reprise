@@ -81,6 +81,41 @@ fn ac_24_ring_leaves_the_play_button_round_and_its_hit_area_untouched() {
     window.close();
 }
 
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn ac_24_the_glyph_offset_never_moves_the_circle_or_the_ring() {
+    // The correction belongs to the glyph. The circle and the bass ring are
+    // the button's geometry; moving either would make the error visible twice.
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    crate::ui::style::install_css_string_for_test(&super::css());
+    let layout = build();
+    let window = gtk4::Window::builder()
+        .default_width(1_200)
+        .default_height(180)
+        .child(&layout.root)
+        .build();
+    window.present();
+    wait_for_layout();
+
+    let button = layout
+        .play_pause_button
+        .compute_bounds(&layout.root)
+        .expect("play button has player-bar bounds");
+    let ring = layout
+        .play_ring
+        .compute_bounds(&layout.root)
+        .expect("play ring has player-bar bounds");
+    let dx = (ring.x() + ring.width() / 2.0) - (button.x() + button.width() / 2.0);
+    let dy = (ring.y() + ring.height() / 2.0) - (button.y() + button.height() / 2.0);
+    assert!(
+        dx.abs() <= 0.5 && dy.abs() <= 0.5,
+        "glyph correction moved the circle or ring: {dx}, {dy}"
+    );
+
+    window.close();
+}
+
 fn wait_for_layout() {
     let main_loop = gtk4::glib::MainLoop::new(None, false);
     let quit = main_loop.clone();
