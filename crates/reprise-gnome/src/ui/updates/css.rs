@@ -222,7 +222,7 @@ mod tests {
     }
 
     #[test]
-    fn nr_9a_badge_overlaps_the_compact_updates_trigger() {
+    fn nr_9b_badge_overlaps_the_compact_updates_trigger() {
         let css = super::css();
         assert!(css.contains(".updates-trigger"));
         assert!(css.contains("min-width: 32px"));

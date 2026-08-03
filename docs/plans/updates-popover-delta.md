@@ -2,7 +2,7 @@
 slug: updates-popover-delta
 worktree: /home/marvin/Projects/reprise-updates-popover-delta
 branch: feature/updates-popover-delta
-phase: planned
+phase: complete
 codex_session:
 created: 2026-08-03
 ---
