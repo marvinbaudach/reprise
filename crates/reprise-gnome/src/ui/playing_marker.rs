@@ -37,15 +37,19 @@ mod tests {
     }
 
     #[test]
-    fn nav_10a_playing_marked_in_canonical_list_and_player_bar() {
+    fn nav_10a_playing_marked_on_every_list_surface_but_not_the_player_bar() {
         for source in [
             include_str!("track_list/track_list_columns.rs"),
-            include_str!("player_bar/player_bar_layout.rs"),
             include_str!("podcasts/podcasts_groups.rs"),
             include_str!("podcasts/youtube_channel_detail.rs"),
         ] {
             assert!(source.contains("playing_marker::build"));
             assert!(!source.contains("eq_bars::build(EqVariant::Animated)"));
         }
+        // The player bar shows the running state through the play/pause button.
+        // A second copy of the list marker there animates the same three bars
+        // twice on every view where the running track is visible in the list.
+        let player_bar = include_str!("player_bar/player_bar_layout.rs");
+        assert!(!player_bar.contains("playing_marker::build"));
     }
 }

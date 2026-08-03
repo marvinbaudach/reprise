@@ -82,9 +82,6 @@ pub struct PlayerBar {
     title_button: gtk4::Button,
     pub(in crate::ui) artist_label: gtk4::Label,
     artist_button: gtk4::Button,
-    /// Three-bar animated equalizer indicator — `playing` CSS class toggled by
-    /// `set_mini_eq_playing`.
-    mini_eq: gtk4::Box,
     pub(in crate::ui) shuffle_button: gtk4::ToggleButton,
     pub(in crate::ui) prev_button: gtk4::Button,
     play_pause_button: gtk4::Button,
@@ -149,7 +146,6 @@ impl PlayerBar {
             title_button,
             artist_label,
             artist_button,
-            mini_eq,
             shuffle_button,
             prev_button,
             play_pause_button,
@@ -228,7 +224,6 @@ impl PlayerBar {
             title_button,
             artist_label,
             artist_button,
-            mini_eq,
             shuffle_button,
             prev_button,
             play_pause_button,
@@ -404,7 +399,7 @@ impl PlayerBar {
     }
 
     /// Applies a `PlaybackState`: cross-fades the play/pause icon in two 75 ms
-    /// halves, toggles the mini-EQ animation, and refreshes sensitivity.
+    /// halves and refreshes sensitivity.
     pub fn set_state(&self, state: PlaybackState) {
         let was_playing = self.playback_state.get() == PlaybackState::Playing;
         let is_playing = state == PlaybackState::Playing;
@@ -416,7 +411,6 @@ impl PlayerBar {
         };
         self.play_pause_button.set_tooltip_text(Some(&tooltip));
         self.playback_state.set(state);
-        self.set_mini_eq_playing(is_playing);
         self.waveform.set_paused(!is_playing);
         self.refresh_sensitivity();
         if state == PlaybackState::Stopped {
@@ -531,10 +525,6 @@ impl PlayerBar {
             self.duration_label
                 .set_text(&format_remaining(position_ms, duration_ms));
         }
-    }
-
-    pub fn set_mini_eq_playing(&self, playing: bool) {
-        crate::ui::playing_marker::set_playing(&self.mini_eq, playing);
     }
 
     /// Wires the play/pause button; `f` is called on every click with no

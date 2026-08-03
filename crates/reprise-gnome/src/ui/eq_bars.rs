@@ -163,13 +163,16 @@ mod tests {
     }
 
     #[test]
-    fn marker_1_single_implementation_serves_track_list_and_bar() {
-        let track_list = include_str!("track_list/track_list_columns.rs");
-        let player_bar = include_str!("player_bar/player_bar_layout.rs");
-
-        assert!(track_list.contains("playing_marker::build"));
-        assert!(player_bar.contains("playing_marker::build"));
-        assert!(!track_list.contains("eq_bars::build"));
-        assert!(!player_bar.contains("mini_eq.append(&bar)"));
+    fn nav_10a_one_marker_implementation_serves_every_list_surface() {
+        for source in [
+            include_str!("track_list/track_list_columns.rs"),
+            include_str!("podcasts/podcasts_groups.rs"),
+            include_str!("podcasts/youtube_channel_detail.rs"),
+        ] {
+            // One implementation, several surfaces: every marker goes through
+            // `playing_marker`, none reaches for `eq_bars` directly.
+            assert!(source.contains("playing_marker::build"));
+            assert!(!source.contains("eq_bars::build"));
+        }
     }
 }

@@ -7,7 +7,6 @@ use libadwaita::prelude::*;
 use super::cover_loader::CoverLoader;
 use super::strings;
 use super::{ICON_NEXT, ICON_PLAY, ICON_PREVIOUS, ICON_REPEAT_ALL, ICON_SHUFFLE};
-use crate::ui::playing_marker;
 use crate::ui::style::buttons;
 
 pub(in crate::ui) const VOLUME_MIN: f64 = 0.0;
@@ -59,7 +58,6 @@ pub(in crate::ui) struct PlayerBarWidgets {
     pub(in crate::ui) title_button: gtk4::Button,
     pub(in crate::ui) artist_label: gtk4::Label,
     pub(in crate::ui) artist_button: gtk4::Button,
-    pub(in crate::ui) mini_eq: gtk4::Box,
     pub(in crate::ui) shuffle_button: gtk4::ToggleButton,
     pub(in crate::ui) prev_button: gtk4::Button,
     pub(in crate::ui) play_pause_button: gtk4::Button,
@@ -96,14 +94,11 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     let artist_label = build_track_label();
     artist_label.add_css_class("player-bar-artist");
 
-    // — Shared persistent playing marker —
-    let mini_eq = playing_marker::build();
-    mini_eq.add_css_class("mini-eq");
-
-    // Title row: title label + mini-EQ side by side (spec 1.5: "neben dem Titel").
+    // Title row: the title alone. The running state lives on the play/pause
+    // button (NAV-10a) — a second animated marker here doubles the track
+    // list's on every view where the running track is visible.
     let title_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
     title_row.append(&title_label);
-    title_row.append(&mini_eq);
     title_row.set_valign(gtk4::Align::Center);
     let title_button = gtk4::Button::builder()
         .child(&title_row)
@@ -318,7 +313,6 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
         title_button,
         artist_label,
         artist_button,
-        mini_eq,
         shuffle_button,
         prev_button,
         play_pause_button,
@@ -335,8 +329,8 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
 }
 
 /// Player-bar chrome CSS: accent-glow play button, hairline top border, cover
-/// border-radius, title/artist/time label styling, transport hover, mini-EQ
-/// animation, volume-knob visibility, and artist-label hover colour.
+/// border-radius, title/artist/time label styling, transport hover,
+/// volume-knob visibility, and artist-label hover colour.
 pub(in crate::ui) fn css() -> String {
     use super::{motion, style::tokens::TRANSITION};
     let micro_ms = motion::MICRO_MS;
@@ -394,8 +388,7 @@ pub(in crate::ui) fn css() -> String {
          .{TRANSPORT_ROW_CSS_CLASS} button.reprise-btn-add {{ border-radius: 8px; }}\n\
          .{VOLUME_SCALE_CSS_CLASS} trough > slider {{ \
            opacity: 0; transition: opacity {TRANSITION}; }}\n\
-         .{VOLUME_SCALE_CSS_CLASS}.{KNOB_VISIBLE_CSS_CLASS} trough > slider {{ opacity: 1; }}\n\
-         .mini-eq {{ margin-left: 4px; }}"
+         .{VOLUME_SCALE_CSS_CLASS}.{KNOB_VISIBLE_CSS_CLASS} trough > slider {{ opacity: 1; }}"
     )
 }
 
@@ -710,13 +703,6 @@ mod tests {
         let shared = buttons::css();
         assert!(shared.contains(&format!(".{}:active", buttons::PRIMARY_CLASS)));
         assert!(shared.contains(&press_scale));
-    }
-
-    #[test]
-    fn css_uses_supported_mini_eq_spacing_property() {
-        let css = super::css();
-        assert!(css.contains(".mini-eq { margin-left: 4px; }"));
-        assert!(!css.contains("margin-start"));
     }
 
     #[test]
