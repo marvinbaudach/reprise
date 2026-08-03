@@ -12,19 +12,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Button
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -84,6 +78,8 @@ class MainActivity : ComponentActivity() {
                         playback = playbackState.value,
                         chooseFolder = ::chooseTree,
                         rescan = ::rescan,
+                        searchTitles = session::searchTitles,
+                        openAlbum = session::openAlbum,
                         playTracks = ::playTracks,
                         togglePause = { runPlaybackCommand("change playback state") { togglePause() } },
                         next = { runPlaybackCommand("skip to the next track") { next() } },
@@ -158,12 +154,12 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun playTracks(
-        tracks: List<LibraryTrack>,
-        startIndex: Int,
+        selection: PlaybackSelection,
         reportError: (String) -> Unit,
     ) {
-        runPlaybackCommand("play ${tracks[startIndex].title}", reportError) {
-            playTracks(tracks.map(LibraryTrack::uri), startIndex)
+        val selected = selection.tracks[selection.startIndex]
+        runPlaybackCommand("play ${selected.title}", reportError) {
+            playTracks(selection.tracks.map(LibraryTrack::uri), selection.startIndex)
         }
     }
 
@@ -209,7 +205,9 @@ private fun LibraryScreen(
     playback: PlaybackUiState,
     chooseFolder: (Uri, (LibraryScreenState) -> Unit) -> Unit,
     rescan: ((LibraryScreenState) -> Unit) -> Unit,
-    playTracks: (List<LibraryTrack>, Int, (String) -> Unit) -> Unit,
+    searchTitles: (String) -> List<LibraryTrack>,
+    openAlbum: (LibraryAlbum) -> AlbumTrackList,
+    playTracks: (PlaybackSelection, (String) -> Unit) -> Unit,
     togglePause: () -> Unit,
     next: () -> Unit,
     previous: () -> Unit,
@@ -232,20 +230,14 @@ private fun LibraryScreen(
             chooseFolder = { folderPicker.launch(null) },
         )
         is LibraryScreenState.Scanning -> ScanningScreen(current)
-        is LibraryScreenState.TrackList -> TrackListScreen(
+        is LibraryScreenState.Browse -> BrowseScreen(
             state = current,
             playback = playback,
             chooseFolder = { folderPicker.launch(null) },
             rescan = { rescan { state = it } },
-            playTrack = { index ->
-                state = current.copy(message = null)
-                playTracks(current.tracks, index) { message ->
-                    val visible = state
-                    if (visible is LibraryScreenState.TrackList) {
-                        state = visible.copy(message = message)
-                    }
-                }
-            },
+            searchTitles = searchTitles,
+            openAlbum = openAlbum,
+            playTracks = playTracks,
             togglePause = togglePause,
             next = next,
             previous = previous,
@@ -312,94 +304,6 @@ private fun ScanningScreen(state: LibraryScreenState.Scanning) {
             )
         }
     }
-}
-
-@Composable
-private fun TrackListScreen(
-    state: LibraryScreenState.TrackList,
-    playback: PlaybackUiState,
-    chooseFolder: () -> Unit,
-    rescan: () -> Unit,
-    playTrack: (Int) -> Unit,
-    togglePause: () -> Unit,
-    next: () -> Unit,
-    previous: () -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(onClick = rescan) {
-                Text("Rescan")
-            }
-            Button(onClick = chooseFolder) {
-                Text("Choose another folder")
-            }
-        }
-        state.message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        PlaybackControls(
-            state = playback,
-            togglePause = togglePause,
-            next = next,
-            previous = previous,
-        )
-        if (state.tracks.isEmpty() && state.message == null) {
-            Text("No tracks found in this folder.")
-        } else {
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                itemsIndexed(state.tracks, key = { _, track -> track.uri }) { index, track ->
-                    ListItem(
-                        headlineContent = { Text(track.title) },
-                        supportingContent = { Text(track.details()) },
-                        trailingContent = { Text(formatDuration(track.durationMs)) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { playTrack(index) },
-                    )
-                    HorizontalDivider()
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun PlaybackControls(
-    state: PlaybackUiState,
-    togglePause: () -> Unit,
-    next: () -> Unit,
-    previous: () -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Button(onClick = previous, enabled = state.ready && state.currentIndex != null) {
-            Text("Previous")
-        }
-        Button(onClick = togglePause, enabled = state.ready && state.currentIndex != null) {
-            Text(state.playPauseLabel)
-        }
-        Button(onClick = next, enabled = state.ready && state.currentIndex != null) {
-            Text("Next")
-        }
-        Text(state.positionReadout)
-    }
-    state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-}
-
-private fun LibraryTrack.details(): String =
-    listOf(artist, album).filter(String::isNotBlank).joinToString(" • ").ifBlank {
-        "Unknown artist"
-    }
-
-internal fun formatDuration(durationMs: Long): String {
-    val totalSeconds = (durationMs.coerceAtLeast(0) / 1_000)
-    return "%d:%02d".format(totalSeconds / 60, totalSeconds % 60)
 }
 
 private fun Throwable.detail(): String = message ?: javaClass.simpleName
