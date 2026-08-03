@@ -1404,3 +1404,115 @@ Das ist auch die Reihenfolge für die noch offenen Pakete:
 Für beide gilt daher: **zweite Quelle zuerst, dann abstrahieren.** Ein weiterer
 Vertrag gegen einen Doppelgänger würde erneut nur zeigen, dass unser eigener
 Antwortgeber die Fragen erfüllt, die wir ihm vorher gegeben haben.
+
+## Paket 2 — Bilanz von `PlaybackBackend` am zweiten Backend (2026-08-03)
+
+Der Android-Player läuft nun über eine echte zweite Implementierung von
+`PlaybackBackend`: Media3 führt die Befehle aus, der Ereignisadapter meldet
+Zustand, Position, Dauer und Abschluss zurück, und eine Rust-eigene Sitzung
+bindet beides an `reprise_core::queue::Queue`. Die Compose-Seite enthält keine
+Warteschlangenentscheidung. Sie übergibt beim Antippen die eingefrorene
+aktuelle Liste samt Cursor und rendert danach nur Snapshots.
+
+Das Urteil ist zweigeteilt. **Als Plattformvertrag war `PlaybackBackend`
+deutlich besser vorbereitet als `LibrarySource`.** Keine Core-Signatur musste
+für Media3 geändert werden, GStreamer und der Desktop blieben unberührt. Als
+vollständige Anwendungsnaht war es dagegen nicht fertig: Der Vertrag besitzt
+den Player, aber nicht die Bindung zwischen Playerereignissen und der
+Core-Warteschlange. Diese Bindung musste für Android als schmale Rust-Sitzung
+neben dem Trait gebaut werden.
+
+### Was am zweiten Backend getragen hat
+
+| Teil des Vertrags | Befund mit Media3 |
+| --- | --- |
+| Start und Grundtransport | **Trägt.** `play_uri`, `seek_to`, `set_volume` und `stop` bilden Media3 direkt ab. Eine `content://`-Adresse erreicht unverändert `MediaItem.fromUri`; die String-Signatur konnte sie tragen, obwohl der Doc-Kommentar bisher nur `http`, `https` und `file` nennt. |
+| Zustands- und Positionsereignisse | **Trägt.** `StateChanged` und `Position { position_ms, duration_ms }` beantworten genau die Fragen der mobilen Oberfläche. Die Dauer kommt aus demselben Ereignis; Kotlin fragt den Player dafür nicht ab. |
+| Abschluss und lückenloser Übergang | **Trägt mit einer Signaturspannung.** `TrackFinished` und `AdvancedToNext` trennen den gewöhnlichen Core-Vorlauf vom bereits hörbaren Media3-Handoff richtig. `set_next` funktioniert technisch, aber sein Parameter und Kommentar heißen „Pfad“, während Android eine Content-URI vorfüttert. |
+| Stream-Generationen | **Trägt besonders gut.** Media3s Application Looper serialisiert Start, Generationswechsel und Listener. Dadurch kann jedes Ereignis die Generation vom Produktionszeitpunkt tragen, und verspätete Ereignisse werden mit derselben strikten Kleiner-als-Regel verworfen wie beim Linux-Pfad. |
+| Übergänge und fehlende Fähigkeiten | **Trägt.** Das Trait erlaubt ausdrücklich, `Crossfade` als `Gapless` zu behandeln. Audioeffekte und Spektrum melden Nichtunterstützung, statt erfundene Media3-Funktionen vorzutäuschen. |
+| Ereignisübergabe | **Trägt hinter einem Adapter.** Der Rust-Closure-Konstruktor ist nicht UniFFI-fähig. Ein benanntes, Rust-eigenes `PlaybackEventBridge` nimmt die flachen Kotlin-Ereignisse an und ruft den unveränderten Closure intern auf; Reihenfolge und Generationspaar bleiben erhalten. |
+
+### Welche Signaturen sich verrenkt haben
+
+Zwei Stellen sind nicht so geschnitten, wie man sie nach der zweiten
+Implementierung neu schneiden würde:
+
+1. **`set_next(Option<&str>)` meint einen lokalen Pfad.** Der Aufrufer braucht
+   aber dieselbe Ortswahl wie beim Start: lokaler Pfad oder URI. Android musste
+   den String als URI interpretieren, während Linux ihn weiterhin als Pfad
+   liest. Das Verhalten ist eindeutig implementiert, aber der Typ sagt es
+   nicht. Ein gemeinsames `PlaybackLocation::{Path, Uri}` für Start und
+   Vorfütterung würde die Zusicherung beim Besitzer benennen.
+2. **`toggle_pause` ist ein Oberflächenbefehl, kein vollständiger
+   Transportvertrag.** Der Compose-Knopf passt natürlich darauf. Eine
+   MediaSession erhält dagegen getrennte, idempotente Befehle „Play“ und
+   „Pause“. Der Kotlin-Adapter muss deshalb zuerst Media3s `playWhenReady`
+   ansehen und nur bei einer wirklichen Zustandsänderung `toggle_pause`
+   aufrufen. `set_playing(bool)` oder getrennte `play`-/`pause`-Methoden wären
+   die bessere Plattformsignatur.
+
+Die Event-Closure ist ebenfalls nicht sprachübergreifend, aber sie zwang keine
+falsche Semantik in das Trait: Der benannte FFI-Adapter übersetzt nur den
+Transport. Würde Android von Anfang an als gleichrangige Plattform geplant,
+wäre ein benanntes `PlayerEventSink`-Objekt die einfachere Konstruktornaht;
+die `PlayerEvent`- und `StreamEvent`-Typen selbst würden unverändert bleiben.
+
+### Was außerhalb des Traits fehlte
+
+`PlaybackBackend` entscheidet absichtlich nicht, welcher Track folgt. Diese
+Entscheidung liegt in `reprise-core::queue::Queue`, während die allgemeine
+Bindung von Queue, Backend und Ereignissen heute in `reprise-runtime` und in
+der GNOME-Steuerung lebt. `reprise-android-ffi` darf laut Architektur nur von
+Core abhängen und konnte diesen Runtime-Transport daher nicht wiederverwenden.
+
+Android besitzt nun eine schmale Rust-Sitzung, die ausschließlich Core-
+Entscheidungen ausführt:
+
+- Antippen: `Queue::set_tracks` mit der ganzen aktuellen Liste und dem Cursor;
+- natürliches Ende und gapless Handoff: `Queue::advance_auto`;
+- Next: `Queue::next_manual`;
+- Previous: `Queue::previous`.
+
+Damit liegt keine Reihenfolge- oder Fortschaltlogik in Kotlin. Trotzdem ist
+die Sitzung ein Hinweis auf den nächsten besseren Schnitt: Eine
+frontend-neutrale Playback-Sitzung sollte neben der Queue im gemeinsamen
+Rust-Layer liegen und `PlaybackBackend` plus `StreamEvent` besitzen. Dann
+würden GNOME, Android und ein späteres KDE-Frontend dieselbe Bindung benutzen,
+nicht nur dieselben Einzelteile.
+
+### Expliziter Vergleich mit den fünf Storage-Paketen
+
+Die Storage-Reihe hatte fünf Pakete gegen selbstgeschriebene Doppelgänger
+bewiesen. An der ersten realen SAF-Quelle fielen fünf vorher unsichtbare
+Annahmen: `is_absolute` am falschen Besitzer, ein zweistufiges `probe` ohne
+„unbekannt“, ein Plattform-Bool statt einer Mount-Fähigkeit, `file_stem` als
+Anzeigename und der Pfad-Elternname als Containername.
+
+Beim Playback war das Ergebnis besser:
+
+- **keine** Core-Signatur musste für das zweite Backend geändert werden;
+- die Befehlsseite, Ereignisvarianten, Dauer und Generationen passten direkt;
+- zwei Signaturen spannten (`set_next` als Pfad und `toggle_pause` als einziger
+  Play/Pause-Befehl), ohne eine falsche Core-Aussage zu erzwingen;
+- eine fehlende gemeinsame Schicht wurde sichtbar: die Playback-Sitzung über
+  Queue, Backend und Ereignissen.
+
+`PlaybackBackend` war also **besser vorbereitet, aber nicht vollständig**.
+Der wichtigste Grund ist nicht, dass seine Tests bessere Doppelgänger hatten.
+Der Vertrag entstand bereits aus einem echten, asynchronen GStreamer-Backend
+und seinem produktiven GTK-Verbraucher. Seine Kommentare kodierten konkrete
+Fehlerfälle — späte Ereignisse, gapless Handoff und erlaubte Degradation —
+statt nur Antworten eines selbst gebauten Gegenübers. Außerdem ähneln sich
+GStreamer und Media3 in dieser Domäne stärker als Unix-Dateisystem und SAF:
+beide spielen eine Adresse ab, melden Zustand und Position und besitzen einen
+seriellen Ereignisstrom.
+
+Die Storage-Lehre bleibt trotzdem bestehen: Erst das zweite reale Gegenüber
+zeigt, ob die Fragen am richtigen Besitzer liegen. Hier zeigte es keinen
+kaputten Plattformvertrag, sondern zwei zu enge Signaturen und die fehlende
+gemeinsame Orchestrierungsschicht. Genau das ist der Ertrag dieses Pakets.
+
+Diese Bilanz beruht auf den Rust- und Kotlin-Seams, der Android-
+Cross-Kompilation und den generierten Bindings. Der getrennte Gerätelauf wurde
+für dieses Paket ausdrücklich nicht ausgeführt und wird hier nicht behauptet.
