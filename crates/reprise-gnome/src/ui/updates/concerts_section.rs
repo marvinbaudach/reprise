@@ -9,8 +9,6 @@ use reprise_core::concerts::ConcertRow;
 
 use crate::ui::strings;
 
-const MAX_DELTA_ROWS: usize = 3;
-
 #[derive(Debug, PartialEq, Eq)]
 pub(super) struct ConcertDeltaPresentation {
     pub artist: String,
@@ -20,16 +18,8 @@ pub(super) struct ConcertDeltaPresentation {
     pub target: Option<String>,
 }
 
-pub(super) fn concerts_section_subtitle(radius_active: bool) -> String {
-    strings::text(if radius_active {
-        strings::UPDATES_NEW_NEAR_YOU
-    } else {
-        strings::UPDATES_NEWLY_ANNOUNCED
-    })
-}
-
-pub(super) fn concerts_section_visible(enabled: bool, has_credentials: bool) -> bool {
-    enabled && has_credentials
+pub(super) fn concerts_section_visible(enabled: bool, has_credentials: bool, total: usize) -> bool {
+    enabled && has_credentials && total > 0
 }
 
 pub(super) fn delta_presentations(
@@ -37,7 +27,6 @@ pub(super) fn delta_presentations(
     today: NaiveDate,
 ) -> Vec<ConcertDeltaPresentation> {
     rows.iter()
-        .take(MAX_DELTA_ROWS)
         .map(|row| {
             let date = NaiveDate::parse_from_str(&row.date_key, "%Y-%m-%d").map_or_else(
                 |_| row.date_key.clone(),
@@ -86,7 +75,7 @@ pub(super) type OnOpenUrl = Rc<dyn Fn(String)>;
 pub(super) struct ConcertsSection {
     root: gtk4::Box,
     list: gtk4::Box,
-    subtitle: gtk4::Label,
+    count_tag: gtk4::Label,
     on_open_url: RefCell<OnOpenUrl>,
 }
 
@@ -96,12 +85,11 @@ impl ConcertsSection {
         title.add_css_class("new-release-header");
         title.set_xalign(0.0);
         title.set_hexpand(true);
-        let subtitle = gtk4::Label::new(None);
-        subtitle.add_css_class("dim-label");
-        subtitle.set_xalign(1.0);
+        let count_tag = gtk4::Label::new(None);
+        count_tag.add_css_class("new-release-tag");
         let header = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
         header.append(&title);
-        header.append(&subtitle);
+        header.append(&count_tag);
 
         let list = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
@@ -110,7 +98,7 @@ impl ConcertsSection {
         Self {
             root,
             list,
-            subtitle,
+            count_tag,
             on_open_url: RefCell::new(Rc::new(|_| {})),
         }
     }
@@ -127,17 +115,16 @@ impl ConcertsSection {
         &self,
         enabled: bool,
         has_credentials: bool,
-        radius_active: bool,
+        total: usize,
         rows: &[ConcertRow],
         today: NaiveDate,
     ) {
-        let visible = concerts_section_visible(enabled, has_credentials);
+        let visible = concerts_section_visible(enabled, has_credentials, total);
         self.root.set_visible(visible);
         if !visible {
             return;
         }
-        self.subtitle
-            .set_label(&concerts_section_subtitle(radius_active));
+        self.count_tag.set_label(&strings::updates_new_count(total));
         while let Some(child) = self.list.first_child() {
             self.list.remove(&child);
         }
@@ -153,7 +140,7 @@ fn build_delta_row(row: ConcertDeltaPresentation, on_open_url: &OnOpenUrl) -> gt
     artist.set_xalign(0.0);
     artist.set_hexpand(true);
     let ticket = gtk4::Label::new(row.ticket_label.as_deref());
-    ticket.add_css_class("new-release-tag");
+    ticket.add_css_class("dim-label");
     ticket.set_visible(row.ticket_label.is_some());
     let title = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
     title.append(&artist);
@@ -209,22 +196,11 @@ mod tests {
     }
 
     #[test]
-    fn conc_7_section_subtitle_reflects_radius_scope() {
-        assert_eq!(
-            concerts_section_subtitle(true),
-            strings::text(strings::UPDATES_NEW_NEAR_YOU)
-        );
-        assert_eq!(
-            concerts_section_subtitle(false),
-            strings::text(strings::UPDATES_NEWLY_ANNOUNCED)
-        );
-    }
-
-    #[test]
     fn conc_9_section_is_absent_without_provider_credentials() {
-        assert!(concerts_section_visible(true, true));
-        assert!(!concerts_section_visible(true, false));
-        assert!(!concerts_section_visible(false, true));
+        assert!(concerts_section_visible(true, true, 1));
+        assert!(!concerts_section_visible(true, false, 1));
+        assert!(!concerts_section_visible(false, true, 1));
+        assert!(!concerts_section_visible(true, true, 0));
     }
 
     #[test]
@@ -241,7 +217,7 @@ mod tests {
     }
 
     #[test]
-    fn conc_7_delta_rows_are_capped_and_present_ticket_targets() {
+    fn conc_7_delta_rows_preserve_the_already_capped_snapshot() {
         let today = NaiveDate::from_ymd_opt(2026, 7, 25).unwrap();
         let rows = (1..=4)
             .map(|id| row(id, &format!("2026-08-0{id}")))
@@ -249,7 +225,7 @@ mod tests {
 
         let presentations = delta_presentations(&rows, today);
 
-        assert_eq!(presentations.len(), 3);
+        assert_eq!(presentations.len(), 4);
         assert_eq!(presentations[0].artist, "Artist 1");
         assert!(presentations[0].meta.contains("Cologne"));
         assert!(presentations[0].meta.contains("Palladium"));

@@ -18,6 +18,7 @@ pub(super) struct UpdatesShell {
     pub concerts_section: ConcertsSection,
     pub list: gtk4::ListBox,
     pub empty: gtk4::Label,
+    pub nothing_new: gtk4::Label,
     pub new_tag: gtk4::Label,
     pub releases_jump: gtk4::Button,
     pub releases_jump_label: gtk4::Label,
@@ -68,6 +69,12 @@ pub(super) fn build() -> UpdatesShell {
     news_section.append(&scroller);
 
     let concerts_section = ConcertsSection::new();
+    let nothing_new = gtk4::Label::new(Some(&strings::text(strings::UPDATES_NOTHING_NEW)));
+    nothing_new.add_css_class("dim-label");
+    nothing_new.set_halign(gtk4::Align::Center);
+    nothing_new.set_margin_top(12);
+    nothing_new.set_margin_bottom(12);
+    nothing_new.set_visible(false);
     let separator = gtk4::Separator::new(gtk4::Orientation::Horizontal);
     separator.add_css_class("new-release-separator");
     let (releases_jump, releases_jump_label) = build_jump_row();
@@ -78,6 +85,7 @@ pub(super) fn build() -> UpdatesShell {
     list_page.append(&updates_header);
     list_page.append(&news_section);
     list_page.append(concerts_section.root());
+    list_page.append(&nothing_new);
     list_page.append(&separator);
     list_page.append(&releases_jump);
     list_page.append(&concerts_jump);
@@ -101,6 +109,7 @@ pub(super) fn build() -> UpdatesShell {
         concerts_section,
         list,
         empty,
+        nothing_new,
         new_tag,
         releases_jump,
         releases_jump_label,

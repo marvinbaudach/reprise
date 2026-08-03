@@ -31,15 +31,12 @@ struct OpeningEffect {
     navigates: bool,
 }
 
-/// Every listed (already-filtered, non-hidden) release is stamped seen on
-/// open — the list scrolls now instead of capping at a handful of rows, so
-/// nothing should stay unseen just because it rendered below a fold.
-fn opening_effect(releases: &[reprise_core::artist_news::StoredRelease]) -> OpeningEffect {
+/// Every unseen candidate is stamped when Updates opens, including candidates
+/// below the visible cap. Otherwise the badge could never clear; the section
+/// count names the complete batch and the jump row leads to the remainder.
+fn opening_effect(unseen_ids: &[String]) -> OpeningEffect {
     OpeningEffect {
-        seen_ids: releases
-            .iter()
-            .map(|release| release.release_group_mbid.clone())
-            .collect(),
+        seen_ids: unseen_ids.to_vec(),
         navigates: false,
     }
 }
@@ -108,7 +105,7 @@ fn module_effect(
     fetch_completed: bool,
     fetching: bool,
 ) -> ModuleEffect {
-    let empty = if !enabled || has_releases {
+    let empty = if !enabled || has_releases || fetch_completed {
         EmptyPresentation::Hidden
     } else if fetching {
         EmptyPresentation::Checking
@@ -150,6 +147,7 @@ struct NewReleasesPopover {
     concerts_section: ConcertsSection,
     list: gtk4::ListBox,
     empty: gtk4::Label,
+    nothing_new: gtk4::Label,
     new_tag: gtk4::Label,
     releases_jump: gtk4::Button,
     releases_jump_label: gtk4::Label,
@@ -189,6 +187,7 @@ impl NewReleasesPopover {
             concerts_section,
             list,
             empty,
+            nothing_new,
             new_tag,
             releases_jump,
             releases_jump_label,
@@ -212,6 +211,7 @@ impl NewReleasesPopover {
             concerts_section,
             list,
             empty,
+            nothing_new,
             new_tag,
             releases_jump,
             releases_jump_label,
@@ -300,32 +300,24 @@ impl NewReleasesPopover {
             reprise_core::modules::is_enabled(&self.conn, &reprise_core::modules::CONCERTS_MODULE)
                 .unwrap_or(false);
         let today = chrono::Local::now().date_naive();
-        let all_releases = if news_enabled {
-            match reprise_core::artist_news::query_releases(&self.conn, true, today) {
-                Ok(releases) => releases,
-                Err(error) => {
-                    tracing::warn!(%error, "could not query New Releases");
-                    Vec::new()
-                }
-            }
-        } else {
-            Vec::new()
-        };
-        let releases = all_releases
-            .iter()
-            .filter(|release| !release.hidden)
-            .cloned()
-            .collect::<Vec<_>>();
+        let releases = feed_snapshot::releases(&self.conn, news_enabled, today);
+        let concerts = feed_snapshot::concerts(&self.conn, concerts_enabled, today);
         let fetch_completed = self.fetch_completed();
         let effect = module_effect(
             news_enabled,
-            !all_releases.is_empty(),
+            releases.delta.total > 0,
             fetch_completed,
             self.fetching.get(),
         );
         self.button
             .set_visible(effect.button_visible || concerts_enabled);
-        self.news_section.set_visible(news_enabled);
+        let news_visible =
+            news_enabled && (releases.delta.total > 0 || effect.empty != EmptyPresentation::Hidden);
+        self.news_section.set_visible(news_visible);
+        self.new_tag
+            .set_label(&strings::updates_new_count(releases.delta.total));
+        self.new_tag
+            .set_visible(news_visible && releases.delta.total > 0);
         self.list.remove_all();
         match effect.empty {
             EmptyPresentation::Hidden => {}
@@ -357,7 +349,7 @@ impl NewReleasesPopover {
             let popover = self.popover.clone();
             Rc::new(move || popover.popdown())
         };
-        for release in &releases {
+        for release in &releases.delta.shown {
             self.list.append(&release_row::build(
                 release,
                 today,
@@ -366,13 +358,16 @@ impl NewReleasesPopover {
                 &close_popover,
             ));
         }
-        let concerts = feed_snapshot::concerts(&self.conn, concerts_enabled, today);
         self.concerts_section.render(
             concerts_enabled,
             concerts.credentials,
-            concerts.filter.radius_km.is_some(),
-            &concerts.unseen,
+            concerts.delta.total,
+            &concerts.delta.shown,
             today,
+        );
+        let concerts_visible = concerts_enabled && concerts.credentials && concerts.delta.total > 0;
+        self.nothing_new.set_visible(
+            effect.empty == EmptyPresentation::Hidden && !news_visible && !concerts_visible,
         );
         self.concerts_jump.set_visible(concerts_enabled);
         self.concerts_jump_label
@@ -382,7 +377,7 @@ impl NewReleasesPopover {
         self.releases_jump_label
             .set_label(&strings::updates_show_all_releases(releases_count));
         if mark_seen {
-            let effect = opening_effect(&releases);
+            let effect = opening_effect(&releases.unseen_ids);
             if !effect.seen_ids.is_empty() {
                 let now = chrono::Utc::now().timestamp();
                 if let Err(error) =
@@ -393,13 +388,12 @@ impl NewReleasesPopover {
             }
             if concerts_enabled {
                 let conn = &self.conn;
-                let filter = reprise_core::concerts::config::persisted_filter(conn);
                 let location = reprise_core::concerts::config::location(conn);
-                match (filter, location) {
-                    (Ok(filter), Ok(location)) => {
+                match location {
+                    Ok(location) => {
                         if let Err(error) = reprise_core::concerts::mark_scope_seen(
                             conn,
-                            &filter,
+                            &concerts.filter,
                             location.as_ref(),
                             today,
                             chrono::Utc::now().timestamp(),
@@ -407,7 +401,7 @@ impl NewReleasesPopover {
                             tracing::warn!(%error, "could not mark Concerts updates seen");
                         }
                     }
-                    (Err(error), _) | (_, Err(error)) => {
+                    Err(error) => {
                         tracing::warn!(%error, "could not read Concerts scope while opening Updates");
                     }
                 }
@@ -434,13 +428,6 @@ impl NewReleasesPopover {
                 self.badge.set_visible(true);
             }
             _ => self.badge.set_visible(false),
-        }
-        if unseen_releases > 0 {
-            self.new_tag
-                .set_label(&strings::new_releases_new_count(unseen_releases));
-            self.new_tag.set_visible(true);
-        } else {
-            self.new_tag.set_visible(false);
         }
         let latest_news = reprise_core::artist_news::latest_fetched_at(&self.conn)
             .ok()
