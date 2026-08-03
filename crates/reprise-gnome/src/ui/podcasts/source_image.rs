@@ -223,6 +223,62 @@ impl SourceImage {
     }
 }
 
+/// Loads the same gated and cached source artwork into an image owned by a
+/// different surface. The caller owns the generation so changing playback
+/// invalidates any older decode before it can repaint the player bar.
+pub(crate) fn load_into_image(
+    image: &gtk4::Image,
+    image_url: Option<&str>,
+    width: i32,
+    height: i32,
+    images_allowed: bool,
+    generation: u64,
+    current: &Rc<Cell<u64>>,
+) {
+    if current.get() != generation {
+        return;
+    }
+    crate::ui::cover_loader::CoverLoader::set_placeholder(image);
+    let Some(url) = image_url.and_then(validated_url) else {
+        return;
+    };
+    if let Some(texture) = cached_texture(&url, width, height) {
+        image.set_paintable(Some(&texture));
+        return;
+    }
+    let Some(receiver) = queue_artwork(url.clone(), images_allowed) else {
+        tracing::debug!(%url, "source artwork queue is full");
+        return;
+    };
+    let weak_image = image.downgrade();
+    let current = current.clone();
+    gtk4::glib::spawn_future_local(async move {
+        let path = match receiver.recv().await {
+            Ok(Some(path)) => path,
+            Ok(None) => return,
+            Err(error) => {
+                tracing::debug!(%error, %url, "could not load player-bar source artwork");
+                return;
+            }
+        };
+        if current.get() != generation {
+            return;
+        }
+        let Some(image) = weak_image.upgrade() else {
+            return;
+        };
+        let texture = match decode_texture(&path, width, height) {
+            Ok(texture) => texture,
+            Err(error) => {
+                tracing::debug!(%error, %url, path = %path.display(), "player-bar source artwork could not be decoded");
+                return;
+            }
+        };
+        remember_texture(url, width, height, texture.clone());
+        image.set_paintable(Some(&texture));
+    });
+}
+
 struct ArtworkTask {
     url: String,
     response: async_channel::Sender<Option<PathBuf>>,
@@ -545,5 +601,30 @@ mod tests {
             image.widget().visible_child_name().as_deref(),
             Some("fallback")
         );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn play_10_cached_external_artwork_loads_into_an_existing_player_image() {
+        use std::cell::Cell;
+        use std::rc::Rc;
+
+        gtk4::init().unwrap();
+        let url = "https://images.test/play-10-player-bar.png";
+        reprise_core::remote_image::resolve(Some(url), true, &mut |_| Ok(TINY_PNG.to_vec()));
+        let image = gtk4::Image::new();
+        let current = Rc::new(Cell::new(1));
+
+        super::load_into_image(&image, Some(url), 56, 56, false, 1, &current);
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while image.paintable().is_none() {
+            while gtk4::glib::MainContext::default().iteration(false) {}
+            assert!(
+                std::time::Instant::now() < deadline,
+                "cached episode artwork did not reach the existing player image"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
     }
 }

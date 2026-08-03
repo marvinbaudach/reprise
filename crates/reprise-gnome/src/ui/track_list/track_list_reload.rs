@@ -229,27 +229,26 @@ fn schedule_centered_scroll_refinement(
     });
 }
 
-/// START-1: centers the loaded track once the startup routing has built the
-/// library view.
+/// START-3: selects and centers the loaded track once startup routing has
+/// built the restored view.
 ///
 /// Called after `route_to_place`, which is the one moment nothing else owns
-/// the viewport: the startup place carries no anchor
-/// (`session_restore::startup_place`), so `view_state_memory`'s anchor
-/// restore bails out, and an untouched list produces a no-op reload anchor.
 /// A no-op when nothing is loaded or the loaded track is not part of the
-/// view — the list then simply starts at the top.
+/// view, preserving that view's own selection and viewport.
 pub(in crate::ui) fn center_loaded_track(shared: &Shared) {
     let Some(track_id) = shared.playing_track_id.get() else {
         return;
     };
     let current_ids = shared.current_view_ids();
-    if !current_ids.contains(&track_id) {
+    let Some(position) = current_ids.iter().position(|id| *id == track_id) else {
         tracing::debug!(
             track_id,
-            "startup centering skipped: loaded track is not in the library view"
+            "startup selection skipped: loaded track is not in the restored view"
         );
         return;
-    }
+    };
+    shared.selection.unselect_all();
+    shared.selection.select_item(position as u32, false);
     schedule_centered_scroll_restore(
         shared.column_view.clone(),
         Some(track_id),

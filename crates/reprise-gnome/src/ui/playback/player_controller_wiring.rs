@@ -68,6 +68,7 @@ pub(in crate::ui) fn wire_bar_controls(controller: &Rc<PlayerController>) {
                 .waveform_generation
                 .set(controller.waveform_generation.get().wrapping_add(1));
         }
+        controller.sync_external_bar_artwork(snapshot.as_ref());
         controller.bar.set_external_snapshot(snapshot.as_ref());
         controller
             .compact_player

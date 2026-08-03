@@ -638,11 +638,15 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     super::lyrics_smoke::arm(player.as_ref(), info_panel, conn);
 
     super::session_restore::restore_runtime(player.as_ref(), session_state);
-    // START-1: a normal start ignores the persisted place and opens the
-    // library. Both fields are still written on close (schema unchanged, the
-    // way back stays open) — they are simply no longer read here.
+    // START-3: restore the last visible place, but not the Back/Forward stack.
+    // The Music root remains a separate remembered place so an absolute
+    // sidebar click still restores its own refinements.
     let startup_place = super::session_restore::startup_place(session_state);
-    nav_history.restore(startup_place.clone(), startup_place.clone());
+    let library_root = session_state
+        .library_root
+        .clone()
+        .unwrap_or_else(|| BrowserPlace::from(ViewSource::Library));
+    nav_history.restore(startup_place.clone(), library_root);
     nav_history.begin_back();
     super::library_shell::route_to_place(
         &crate::ui::nav_history::NavPlace::browser(startup_place),
@@ -654,7 +658,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         "session restore",
     );
     nav_history.end_back();
-    // START-1: the routing above owns the model; this owns the viewport.
+    // START-3: the routing above owns the model; this owns the viewport.
     // Order matters — the view must exist before its rows can be centered.
     track_list.center_loaded_track();
     super::session_restore::wire_close(

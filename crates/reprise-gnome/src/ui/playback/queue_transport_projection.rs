@@ -152,6 +152,7 @@ mod tests {
             published_at: None,
             art_url: None,
             phase: PodcastPhase::Playing,
+            restored: false,
             origin,
             resume: ResumePolicy::new(0),
             position_ms: 0,

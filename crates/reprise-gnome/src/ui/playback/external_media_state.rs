@@ -118,6 +118,10 @@ impl NeighbourContext {
         &self.items[self.index.saturating_add(1)..]
     }
 
+    pub(super) fn episode_ids(&self) -> Option<Vec<i64>> {
+        self.items.iter().map(|item| item.episode_id()).collect()
+    }
+
     /// Position of the current item — the stable `start` for the tail identity.
     pub(super) fn position(&self) -> usize {
         self.index
@@ -232,6 +236,10 @@ pub(super) struct PodcastSession {
     pub(super) published_at: Option<i64>,
     pub(super) art_url: Option<String>,
     pub(super) phase: PodcastPhase,
+    /// True only for the paused metadata shell reconstructed at cold start.
+    /// The first Play resolves a fresh source instead of toggling a pipeline
+    /// that belongs to the previous process.
+    pub(super) restored: bool,
     pub(super) origin: PodcastOrigin,
     pub(super) resume: ResumePolicy,
     pub(super) position_ms: i64,
@@ -288,6 +296,7 @@ pub(in crate::ui) struct ExternalPlaybackSnapshot {
     pub(in crate::ui) can_go_next: bool,
     pub(in crate::ui) stream_tags: StreamTags,
     pub(in crate::ui) podcast_phase: Option<PodcastPhase>,
+    pub(in crate::ui) restored: bool,
     pub(in crate::ui) radio: Option<RadioPresentation>,
     pub(in crate::ui) error: Option<String>,
 }
@@ -413,6 +422,7 @@ impl ExternalPlaybackState {
                     .is_some_and(NeighbourContext::has_next),
                 stream_tags: self.stream_tags.clone(),
                 podcast_phase: Some(session.phase),
+                restored: session.restored,
                 radio: None,
                 error: session.error.clone(),
             }),
@@ -424,6 +434,7 @@ impl ExternalPlaybackState {
                 can_go_next: false,
                 stream_tags: self.stream_tags.clone(),
                 podcast_phase: None,
+                restored: false,
                 radio: Some(session.presentation.clone()),
                 error: session.presentation.inline_error.clone(),
             }),
@@ -580,6 +591,7 @@ mod tests {
             published_at: None,
             art_url: None,
             phase: PodcastPhase::Playing,
+            restored: false,
             origin: PodcastOrigin::Direct,
             resume: ResumePolicy::new(0),
             position_ms: 0,
