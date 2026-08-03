@@ -108,7 +108,6 @@ struct State {
     #[allow(dead_code)] // Consumed by the PlayerBar/Compact wiring in MOT-5 Phase B.
     desaturation_target: f64,
     /// Live bass readings, 0..1. Presentation only; the stored peaks never move.
-    bass_kick: f64,
     bass_pressure: f64,
     bass_swell: f64,
     min_bar_height: f64,
@@ -226,7 +225,6 @@ impl WaveformSeek {
             crossfade_start_us: 0,
             desaturation_progress: 0.0,
             desaturation_target: 0.0,
-            bass_kick: 0.0,
             bass_pressure: 0.0,
             bass_swell: 0.0,
             min_bar_height: min_h,
@@ -462,21 +460,19 @@ impl WaveformSeek {
     /// Feeds the played-bar colour and the playhead dot without changing the
     /// stored waveform geometry. MOT-7 gates only the beat-driven dot; pressure
     /// and swell are colour inputs and remain visible without animations.
-    pub(in crate::ui) fn set_bass(&self, kick: f64, pressure: f64, swell: f64) {
-        let kick = if motion::animations_enabled() {
-            kick
-        } else {
-            0.0
-        };
+    /// The live bass readings the seek bar uses. `kick` is deliberately absent:
+    /// four attempts to drive something here from the raw beat were rejected on
+    /// sight, because this is the surface the user aims at and anything
+    /// answering per beat reads as flicker. Both readings here move over
+    /// seconds.
+    pub(in crate::ui) fn set_bass(&self, pressure: f64, swell: f64) {
         let changed = {
             let mut state = self.state.borrow_mut();
-            if (state.bass_kick - kick).abs() < 0.01
-                && (state.bass_pressure - pressure).abs() < 0.01
+            if (state.bass_pressure - pressure).abs() < 0.01
                 && (state.bass_swell - swell).abs() < 0.01
             {
                 false
             } else {
-                state.bass_kick = kick;
                 state.bass_pressure = pressure;
                 state.bass_swell = swell;
                 true

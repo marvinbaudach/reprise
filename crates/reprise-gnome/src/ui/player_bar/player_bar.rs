@@ -315,12 +315,12 @@ impl PlayerBar {
     /// The transport buttons are deliberately not among the consumers either —
     /// they are what a pointer aims at, and once the running track scrolls out
     /// of the list they are the only place the playback state is read from.
-    pub fn set_bass(&self, kick: f64, pressure: f64) {
+    pub fn set_bass(&self, _kick: f64, pressure: f64) {
         if self.playback_state.get() != PlaybackState::Playing {
             *self.swell.borrow_mut() = Swell::default();
             self.swell_last_frame_us.set(0);
             self.cover_lift.set_swell(0.0);
-            self.waveform.set_bass(0.0, 0.0, 0.0);
+            self.waveform.set_bass(0.0, 0.0);
             return;
         }
 
@@ -340,7 +340,7 @@ impl PlayerBar {
                 swell.value_without_motion()
             }
         };
-        self.waveform.set_bass(kick, pressure, value);
+        self.waveform.set_bass(pressure, value);
         self.cover_lift.set_swell(value);
     }
 

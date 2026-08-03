@@ -2905,22 +2905,26 @@ STYLE-1).
   `impact`, which answers how loud a whole track is rather than what its
   beat is doing: on a limited master it never leaves its resting value.
   `pressure` carries the backdrop's base brightness and `swell` the slow
-  movement of every large surface. Outside the Visualizer's own canvas,
-  only the playhead dot reads `kick`. The panel cover used to take the beat
+  movement of every large surface. **Outside the Visualizer's own canvas,
+  nothing reads `kick` at all.** The panel cover used to take the beat
   while that tab was open — round 5's one exception — and it read as the
   cover twitching under its own shadow.
   **The transport controls stay still.** The waveform's **bar heights** never
   move: three attempts to swell them around the playhead were rejected,
   because neighbouring bars cross their pixel boundary at different moments
   and the eye reads that as noise rather than as life. What reacts instead is
-  colour and one dot. The played part takes a floor plus what the bass adds,
+  colour. The played part takes a floor plus what the bass adds,
   so every played bar changes by the same amount at the same instant and the
   progress boundary stays legible at any volume — it keeps at least a 3:1
-  luminance ratio against the unplayed part in silence. The playhead itself is
-  a dot that rides the raw beat, which it may do precisely because a single
-  element cannot shimmer. It falls back to its rest size while the user drags
-  it, during build-up and during a track crossfade; the mini player has no dot
-  at all.
+  luminance ratio against the unplayed part in silence. The playhead stays a
+  one-pixel line with a slim glow beside it, and that glow follows `pressure`,
+  not the beat. **Four** attempts put the beat on this surface — a lens twice,
+  a radial glow, then a pulsing dot — and all four were rejected on sight, for
+  one reason: at five to seven kicks a second, on the surface the user has to
+  *aim* at, anything answering per beat reads as flicker rather than as life.
+  Reducing its amplitude only makes the flicker quieter, because the rate is
+  what does the damage. The glow rests while the user drags the playhead,
+  during build-up and during a crossfade; the mini player has none.
   Every large surface that does move breathes over seconds on `swell`, a
   UI-side slow envelope of `pressure` crossed with a free-running 5.5 s cycle
   — deliberately not locked to the tempo, because a swell that locks to the

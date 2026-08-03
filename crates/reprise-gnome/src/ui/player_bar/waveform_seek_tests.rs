@@ -124,21 +124,24 @@ fn ac_24_the_progress_boundary_is_legible_in_silence() {
 }
 
 #[test]
-fn ac_24_the_playhead_dot_swings_hard_because_one_element_cannot_shimmer() {
-    use super::render::{playhead_dot_alpha, playhead_dot_halo, playhead_dot_radius};
-    assert!((playhead_dot_radius(0.0) - 5.0).abs() < 1e-9);
-    assert!((playhead_dot_radius(1.0) - 12.0).abs() < 1e-9);
-    assert!((playhead_dot_halo(0.0) - 4.0).abs() < 1e-9);
-    assert!((playhead_dot_halo(1.0) - 24.0).abs() < 1e-9);
-    assert!((playhead_dot_alpha(0.0) - 0.55).abs() < 1e-9);
-    assert!((playhead_dot_alpha(1.0) - 1.00).abs() < 1e-9);
+fn ac_24_the_playhead_glow_is_slim_and_follows_the_slow_signal() {
+    use super::render::{playhead_glow_alpha, playhead_glow_half_width};
+    // Four attempts drove this from the raw beat — a lens twice, a radial
+    // glow, then a pulsing dot — and all four were rejected on sight. The
+    // driver is `pressure`, which moves over seconds, so there is nothing left
+    // that *can* flicker. The numbers are small on purpose: this sits where
+    // the user aims.
+    assert!((playhead_glow_half_width(0.0) - 2.0).abs() < 1e-9);
+    assert!((playhead_glow_half_width(1.0) - 6.0).abs() < 1e-9);
+    assert!((playhead_glow_alpha(0.0) - 0.22).abs() < 1e-9);
+    assert!((playhead_glow_alpha(1.0) - 0.48).abs() < 1e-9);
     // Out-of-range readings clamp.
-    assert!((playhead_dot_radius(9.0) - 12.0).abs() < 1e-9);
-    assert!((playhead_dot_alpha(-1.0) - 0.55).abs() < 1e-9);
+    assert!((playhead_glow_half_width(9.0) - 6.0).abs() < 1e-9);
+    assert!((playhead_glow_alpha(-1.0) - 0.22).abs() < 1e-9);
 }
 
 #[test]
-fn ac_24_the_dot_stands_down_where_it_would_be_in_the_way() {
+fn ac_24_the_glow_stands_down_where_it_would_be_in_the_way() {
     use super::render::reactive_light_is_active;
     assert!(reactive_light_is_active(false, None, 1.0, 1.0));
     assert!(
@@ -150,8 +153,7 @@ fn ac_24_the_dot_stands_down_where_it_would_be_in_the_way() {
         !reactive_light_is_active(false, None, 1.0, 0.5),
         "crossfade"
     );
-    // The mini player is 46 bars wide; a dot with a 20 px halo would light
-    // half of it.
+    // The mini player is 46 bars wide; even a slim glow would wash it out.
     assert!(!reactive_light_is_active(true, None, 1.0, 1.0), "mini");
 }
 
@@ -352,7 +354,6 @@ fn ensure_resampled_clears_display_peaks_when_raw_empty() {
         crossfade_start_us: 0,
         desaturation_progress: 0.0,
         desaturation_target: 0.0,
-        bass_kick: 0.0,
         bass_pressure: 0.0,
         bass_swell: 0.0,
         min_bar_height: MIN_BAR_HEIGHT,
@@ -384,7 +385,6 @@ fn ensure_resampled_populates_on_width_change() {
         crossfade_start_us: 0,
         desaturation_progress: 0.0,
         desaturation_target: 0.0,
-        bass_kick: 0.0,
         bass_pressure: 0.0,
         bass_swell: 0.0,
         min_bar_height: MIN_BAR_HEIGHT,
@@ -446,27 +446,28 @@ fn mot_7_waveform_position_hard_switches_when_system_animations_are_disabled() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn ac_24_animations_off_freezes_the_dot_but_keeps_the_colour() {
+fn ac_24_the_seek_bar_carries_no_beat_at_all() {
+    // The bar's two live readings both move over seconds. There is no third
+    // one: `kick` reached this widget four times and was rejected four times,
+    // so the setter no longer takes it.
     gtk4::init().unwrap();
-    let settings = gtk4::Settings::default().unwrap();
-    let previous = settings.is_gtk_enable_animations();
-    settings.set_gtk_enable_animations(false);
 
     let waveform = WaveformSeek::new();
-    waveform.set_bass(1.0, 1.0, 0.0);
+    waveform.set_bass(1.0, 0.0);
 
     let state = waveform.state.borrow();
-    assert_eq!(state.bass_kick, 0.0);
-    assert_eq!(super::render::playhead_dot_radius(state.bass_kick), 5.0);
     assert_eq!(state.bass_pressure, 1.0);
     assert_eq!(state.bass_swell, 0.0);
     assert_eq!(
         super::render::played_light(state.bass_pressure, state.bass_swell),
         0.90
     );
-    drop(state);
-
-    settings.set_gtk_enable_animations(previous);
+    // Full pressure widens the glow to its ceiling — 6 px beside a 1 px line,
+    // which is the whole excursion.
+    assert_eq!(
+        super::render::playhead_glow_half_width(state.bass_pressure),
+        6.0
+    );
 }
 
 #[test]
