@@ -67,9 +67,28 @@ findet jetzt nur noch dort statt, wo die Pixelzahl sie erzwingt.
 
 ## Vorlage
 
-Die verbindliche Vorlage liegt im Repo:
-`docs/assets/brand-reference/owl-headphones-template.png` (1163×929, mit
-Transparenz). Sie ist keine Stimmungsreferenz, sondern das Ziel für `full`.
+Die verbindliche Vorlage liegt im Repo. Zwei Dateien:
+
+- `owl-headphones-template.png` — wie eingereicht, 1163×929. **Ohne echte
+  Transparenz**: das Karomuster ist eingebrannte Bilddaten, die Datei ist ein
+  Screenshot eines transparenten Bildes.
+- `owl-headphones-template-clean.png` — dieselbe Marke mit entferntem
+  Karomuster (Flood-Fill vom Rand, danach Entfernung eingeschlossener
+  Karo-Komponenten nach Bimodalitätstest, damit die schmalen Silberkanten am
+  Bügel erhalten bleiben). **Das ist die Referenz für V8.**
+
+Sie ist keine Stimmungsreferenz, sondern das Ziel für `full`.
+
+Gemessene Geometrie der bereinigten Marke, normiert auf ihre Bounding-Box
+(1147×920, Seitenverhältnis 1,2467):
+
+| Landmarke | Wert |
+|---|---|
+| Breiteste Stelle (Ohrmuscheln) | y = 0,674, volle Breite |
+| Augenzentrum links | (0,358 / 0,757) |
+| Augenzentrum rechts | (0,641 / 0,758) |
+| Augenbreite / -höhe | 0,078 / 0,09–0,11 |
+| Unterkante Kopf | y = 0,999, mittig |
 
 Ihre tragenden Merkmale, in absteigender Wichtigkeit:
 
