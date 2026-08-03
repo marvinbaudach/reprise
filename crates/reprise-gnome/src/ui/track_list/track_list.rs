@@ -131,6 +131,9 @@ pub(in crate::ui) struct Shared {
     /// remove+insert snapped the viewport to the top on a double-click-to-play.
     pub(in crate::ui) now_playing_markers:
         RefCell<Vec<super::now_playing_marker::NowPlayingMarker>>,
+    pub(in crate::ui) row_wash_kick: Cell<f64>,
+    pub(in crate::ui) row_wash_pressure: Cell<f64>,
+    pub(in crate::ui) row_washes: RefCell<Vec<super::row_wash::RowWashMarker>>,
     /// Realised rating-cell re-appliers. Rating-only Tag Editor saves use
     /// these to update stars without an `items_changed` row replacement,
     /// which would re-anchor the viewport.

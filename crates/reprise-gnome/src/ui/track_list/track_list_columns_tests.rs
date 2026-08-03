@@ -3,6 +3,23 @@ use reprise_core::models::MissingReason;
 use super::*;
 
 #[test]
+fn ac_24_row_wash_rests_low_and_never_reaches_the_artist_column() {
+    use crate::ui::track_list::row_wash::{css, row_wash_alpha};
+    assert!((row_wash_alpha(0.0, 0.0) - 0.08).abs() < 1e-9);
+    assert!((row_wash_alpha(0.0, 1.0) - 0.16).abs() < 1e-9);
+    assert!((row_wash_alpha(1.0, 1.0) - 0.32).abs() < 1e-9);
+    // The gradient has to die before the artist column so no text contrast
+    // is touched.
+    assert!(css().contains("58%"));
+}
+
+#[test]
+fn ac_24_row_wash_never_reaches_for_items_changed() {
+    let source = include_str!("row_wash.rs");
+    assert!(!source.contains("items_changed"));
+}
+
+#[test]
 fn rating_sort_requires_query_reload_but_other_sorts_need_one_row() {
     assert_eq!(rating_refresh_for_sort("rating"), RatingRefresh::Query);
     assert_eq!(rating_refresh_for_sort("title"), RatingRefresh::Row);

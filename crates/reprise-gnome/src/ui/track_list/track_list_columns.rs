@@ -34,23 +34,33 @@ use reprise_core::up_next::QueueItem;
 
 /// Marker class carried by every cell of the currently-playing row — drives
 /// the accent row background. See `track_list_row_interaction.rs`'s CSS.
-const NOW_PLAYING_CLASS: &str = "now-playing";
+pub(super) const NOW_PLAYING_CLASS: &str = "now-playing";
 /// Extra class on the leading (cover) cell only, carrying the 2 px left-edge
 /// accent indicator so it sits at the row's left edge without a per-row hunt.
 const NOW_PLAYING_LEADING_CLASS: &str = "now-playing-leading";
 /// Class on the title label of the playing row: bold + theme accent.
-const NOW_PLAYING_TITLE_CLASS: &str = "now-playing-title";
+pub(super) const NOW_PLAYING_TITLE_CLASS: &str = "now-playing-title";
 /// Class on a missing track's title label; set and cleared on every bind.
 const MISSING_TRACK_TITLE_CLASS: &str = "missing-track-title";
 
 /// Adds or removes `class` on `widget` to match `present` (idempotent, so a
 /// recycled cell rebound to a different row always ends in the right state).
-fn toggle_class(widget: &impl gtk4::prelude::IsA<gtk4::Widget>, class: &str, present: bool) {
+pub(super) fn toggle_class(
+    widget: &impl gtk4::prelude::IsA<gtk4::Widget>,
+    class: &str,
+    present: bool,
+) {
     if present {
         widget.add_css_class(class);
     } else {
         widget.remove_css_class(class);
     }
+}
+
+/// Keeps the title factory on the one shared NAV-10a marker constructor even
+/// though that factory lives in a size-cap sibling.
+pub(super) fn build_playing_marker() -> gtk4::Box {
+    playing_marker::build()
 }
 
 /// Human explanation shared by the missing-row tooltip and the explicit
@@ -70,7 +80,7 @@ pub(in crate::ui) fn missing_track_explanation(
     }
 }
 
-fn apply_missing_title(label: &gtk4::Label, track: &Track) {
+pub(super) fn apply_missing_title(label: &gtk4::Label, track: &Track) {
     let missing = track.is_missing();
     toggle_class(label, MISSING_TRACK_TITLE_CLASS, missing);
     let attributes = missing.then(|| {
@@ -83,7 +93,7 @@ fn apply_missing_title(label: &gtk4::Label, track: &Track) {
     label.set_tooltip_text(explanation.as_deref());
 }
 
-fn clear_missing_title(label: &gtk4::Label) {
+pub(super) fn clear_missing_title(label: &gtk4::Label) {
     toggle_class(label, MISSING_TRACK_TITLE_CLASS, false);
     label.set_attributes(None);
     label.set_tooltip_text(None);
@@ -109,7 +119,7 @@ pub(in crate::ui) fn apply_now_playing(
     playing
 }
 
-fn apply_now_playing_item(
+pub(super) fn apply_now_playing_item(
     cell: &impl gtk4::prelude::IsA<gtk4::Widget>,
     item: &QueueItemMetadata,
     shared: &Shared,
@@ -279,160 +289,6 @@ pub(in crate::ui) fn append_column(
     // Dummy sorter: makes the header clickable/toggleable without ever
     // reordering the model itself (SQL is the sort source of truth — see
     // module doc comment).
-    let never_sorts = gtk4::CustomSorter::new(|_, _| gtk4::Ordering::Equal);
-    column.set_sorter(Some(&never_sorts));
-
-    column_view.append_column(&column);
-    column
-}
-
-/// Builds the Title column. Unlike the seven generic `append_column` text
-/// columns, its cell is a `Box[eq-bars, label]` so the now-playing row shows
-/// an animated equaliser before the title (hidden on every other row) and
-/// renders the title bold + accent (`.now-playing-title`). The equaliser is
-/// built once per cell (recycled with the row) and only shown when the bound
-/// track is the playing one; its pause is driven by the `.playback-paused`
-/// class on the `ColumnView` (see `TrackList::set_playback_paused`), never
-/// per cell. Same sorter/context-menu/drag wiring as `append_column`.
-pub(in crate::ui) fn append_title_column(
-    column_view: &gtk4::ColumnView,
-    shared: &Rc<Shared>,
-) -> gtk4::ColumnViewColumn {
-    let factory = gtk4::SignalListItemFactory::new();
-
-    let shared_for_bind = shared.clone();
-    let shared_for_unbind_title = shared.clone();
-    let shared = shared.clone();
-    let column_view_for_setup = column_view.clone();
-    factory.connect_setup(move |_, obj| {
-        let Some(item) = obj.downcast_ref::<gtk4::ListItem>() else {
-            tracing::warn!("title column setup: object is not a ListItem");
-            return;
-        };
-        let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
-        track_list_row_interaction::expand_to_cell(&row);
-        let eq = playing_marker::build();
-        eq.set_visible(false);
-        let label = gtk4::Label::new(None);
-        label.set_xalign(0.0);
-        label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-        label.set_hexpand(true);
-        row.append(&eq);
-        row.append(&label);
-        // INST-10: a compact "AI" badge after the title, hidden until a bound
-        // row is AI-manipulated. `stats-badge` is the shared accent-pill style.
-        let ai_badge = gtk4::Label::new(Some(&strings::text(strings::AI_BADGE_LABEL)));
-        ai_badge.add_css_class("stats-badge");
-        ai_badge.set_tooltip_text(Some(&strings::text(strings::AI_BADGE_TOOLTIP)));
-        ai_badge.set_visible(false);
-        row.append(&ai_badge);
-        track_list_context_menu::wire_context_menu_gesture(
-            &row,
-            item,
-            &shared,
-            &column_view_for_setup,
-        );
-        track_list_dnd::wire_row_dnd(&row, item, &shared);
-        item.set_child(Some(&row));
-        list_density::inherit(&column_view_for_setup, &row);
-    });
-
-    factory.connect_bind(move |_, obj| {
-        let Some(item) = obj.downcast_ref::<gtk4::ListItem>() else {
-            tracing::warn!("title column bind: object is not a ListItem");
-            return;
-        };
-        let Some(row) = item.child().and_then(|w| w.downcast::<gtk4::Box>().ok()) else {
-            tracing::warn!("title column bind: list item child is not a Box");
-            return;
-        };
-        let Some(eq) = row.first_child() else {
-            tracing::warn!("title column bind: title cell has no equaliser child");
-            return;
-        };
-        let Some(label) = eq
-            .next_sibling()
-            .and_then(|w| w.downcast::<gtk4::Label>().ok())
-        else {
-            tracing::warn!("title column bind: title cell has no label child");
-            return;
-        };
-        let Some(boxed) = item
-            .item()
-            .and_then(|o| o.downcast::<glib::BoxedAnyObject>().ok())
-        else {
-            tracing::warn!("title column bind: item is not typed queue metadata");
-            return;
-        };
-        let metadata = boxed.borrow::<QueueItemMetadata>();
-        let track = super::queue_item_presentation::track(&metadata);
-        if track.is_some_and(Track::is_missing) {
-            let track = track.expect("checked above");
-            // Missing rows are de-emphasised (grey + strikethrough per the
-            // missing rules); the plain title carries no search highlight.
-            label.set_text(&track.title);
-            apply_missing_title(&label, track);
-        } else if let Some(track) = track {
-            // Clear any leftover missing styling from a recycled row FIRST
-            // (class off, attributes cleared, tooltip cleared), then let the
-            // search-match highlight own the label's final markup.
-            apply_missing_title(&label, track);
-            let needle = shared_for_bind.filter.borrow().clone();
-            match super::match_highlight::highlight_markup(
-                &track.title,
-                &needle,
-                super::match_highlight::accent_foreground(&label).as_deref(),
-            ) {
-                Some(markup) => label.set_markup(&markup),
-                None => label.set_text(&track.title),
-            }
-        } else {
-            clear_missing_title(&label);
-            label.set_text(super::queue_item_presentation::title(&metadata));
-        }
-        // One comparison drives all three now-playing affordances: the cell
-        // background (via `.now-playing` on the row box), the equaliser's
-        // visibility, and the bold-accent title.
-        let playing = apply_now_playing_item(&row, &metadata, &shared_for_bind, false);
-        eq.set_visible(playing);
-        toggle_class(&label, NOW_PLAYING_TITLE_CLASS, playing);
-        // INST-10: the AI badge (the label's trailing sibling) follows the row's
-        // provenance flag.
-        if let Some(ai_badge) = label.next_sibling() {
-            ai_badge.set_visible(track.is_some_and(|track| ai_badge_visible(track.is_ai)));
-        }
-        let track_id = super::queue_item_presentation::rating_track_id(&metadata);
-        now_playing_marker::register_cell(&shared_for_bind, item, {
-            let row = row.clone();
-            let eq = eq.clone();
-            let label = label.clone();
-            move |shared| {
-                let playing = track_id
-                    .is_some_and(|track_id| shared.playing_track_id.get() == Some(track_id));
-                toggle_class(&row, NOW_PLAYING_CLASS, playing);
-                eq.set_visible(playing);
-                toggle_class(&label, NOW_PLAYING_TITLE_CLASS, playing);
-            }
-        });
-    });
-
-    // Drop this cell's marker entry on unbind so the registry stays bounded to
-    // visible cells (see `now_playing_marker::unregister_cell`).
-    factory.connect_unbind(move |_, obj| {
-        if let Some(item) = obj.downcast_ref::<gtk4::ListItem>() {
-            now_playing_marker::unregister_cell(&shared_for_unbind_title, item);
-        }
-    });
-
-    let column = gtk4::ColumnViewColumn::builder()
-        .title(strings::text(strings::COLUMN_TITLE))
-        .factory(&factory)
-        .resizable(true)
-        .build();
-    column.set_id(Some("title"));
-
-    // Dummy sorter: makes the header clickable/toggleable without ever
-    // reordering the model itself (SQL is the sort source of truth).
     let never_sorts = gtk4::CustomSorter::new(|_, _| gtk4::Ordering::Equal);
     column.set_sorter(Some(&never_sorts));
 
@@ -789,7 +645,7 @@ fn on_rating_changed(
 
 /// INST-10: the AI badge shows for an AI-manipulated track and nothing else. A
 /// pure decision so the rule is testable without realising a ColumnView cell.
-fn ai_badge_visible(is_ai: bool) -> bool {
+pub(super) fn ai_badge_visible(is_ai: bool) -> bool {
     is_ai
 }
 

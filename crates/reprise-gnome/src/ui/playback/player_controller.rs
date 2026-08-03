@@ -306,6 +306,8 @@ pub struct PlayerController {
         RefCell<Option<OnNowPlayingPanelStateChanged>>,
     /// Bounded live-spectrum feed for the optional Now Playing visualizer.
     pub(in crate::ui) song_visual_spectrum_changed: RefCell<Option<OnSongVisualSpectrumChanged>>,
+    pub(in crate::ui) track_list_bass_changed:
+        RefCell<Option<super::current_track_selection::OnTrackListBassChanged>>,
     /// Supplies the current view's ids when an exhausted queue needs refill.
     pub(in crate::ui) view_refill_ids: RefCell<Option<ViewRefillIds>>,
     /// How many *consecutive* auto-skips (Stage 2 Task 5) have happened since
@@ -481,6 +483,7 @@ impl PlayerController {
             now_playing_panel_track_changed: RefCell::new(None),
             now_playing_panel_state_changed: RefCell::new(None),
             song_visual_spectrum_changed: RefCell::new(None),
+            track_list_bass_changed: RefCell::new(None),
             view_refill_ids: RefCell::new(None),
             consecutive_skips: Cell::new(0),
             failure_skip_limit: Cell::new(0),

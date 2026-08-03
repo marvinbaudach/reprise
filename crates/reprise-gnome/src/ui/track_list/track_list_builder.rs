@@ -92,6 +92,9 @@ pub(in crate::ui) fn build(
         playing_track_id: Cell::new(None),
         playing_episode: Cell::new(None),
         now_playing_markers: RefCell::new(Vec::new()),
+        row_wash_kick: Cell::new(0.0),
+        row_wash_pressure: Cell::new(0.0),
+        row_washes: RefCell::new(Vec::new()),
         rating_cells: RefCell::new(Vec::new()),
         last_scroll_activity: Cell::new(None),
         active_reorder_drag_from: Cell::new(None),
@@ -141,6 +144,11 @@ pub(in crate::ui) fn build(
         tag_write_gate: crate::ui::tag_write_gate::TagWriteGate::default(),
         on_import_errors_mutated: RefCell::new(None),
         player: RefCell::new(std::rc::Weak::new()),
+    });
+
+    selection.connect_selection_changed({
+        let shared = shared.clone();
+        move |_, _, _| shared.reapply_row_washes()
     });
 
     {

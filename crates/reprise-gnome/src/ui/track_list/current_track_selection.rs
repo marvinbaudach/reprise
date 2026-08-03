@@ -50,6 +50,7 @@ pub(in crate::ui) type OnCurrentTrackChanged = Rc<dyn Fn(i64, Option<usize>, Cur
 /// `.playback-paused` class on the `ColumnView`) and drop the marker on stop.
 /// Mirror of `OnCurrentTrackChanged`'s seam — see `wire`.
 pub(in crate::ui) type OnPlaybackStateChanged = Rc<dyn Fn(PlaybackState)>;
+pub(in crate::ui) type OnTrackListBassChanged = Rc<dyn Fn(f32, f32)>;
 
 fn visible_position_for_track_in_source(
     ids: &[i64],
@@ -97,6 +98,13 @@ pub(in crate::ui) fn wire(player: Option<&Rc<PlayerController>>, track_list: &Rc
             track_list.on_playback_state(state);
         } else {
             tracing::debug!("playback-state marker skipped: track list is gone");
+        }
+    });
+
+    let track_list_for_bass = Rc::downgrade(track_list);
+    player.set_on_track_list_bass_changed(move |kick, pressure| {
+        if let Some(track_list) = track_list_for_bass.upgrade() {
+            track_list.set_bass(f64::from(kick), f64::from(pressure));
         }
     });
 }

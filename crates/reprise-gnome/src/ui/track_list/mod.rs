@@ -21,6 +21,7 @@ pub(crate) mod rating;
 pub(in crate::ui) mod rating_cell_refresh;
 pub(in crate::ui) mod reload_restore;
 mod responsive_columns;
+pub(in crate::ui) mod row_wash;
 #[path = "track_list.rs"]
 mod surface;
 pub(in crate::ui) mod tag_mutation_refresh;
@@ -51,6 +52,7 @@ pub(in crate::ui) mod track_list_rescan;
 pub(in crate::ui) mod track_list_row_interaction;
 pub(crate) mod track_list_smoke;
 pub(crate) mod track_list_sort;
+pub(crate) mod track_list_title_column;
 mod track_list_toast;
 mod track_list_wiring;
 pub(in crate::ui) mod track_menu;
