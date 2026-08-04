@@ -64,22 +64,18 @@ fn browse_4_reveal_station_from_the_library_records_back_history() {
 #[test]
 fn browse_4_a_reveal_in_the_open_source_view_yields_no_transition() {
     let mut podcast = BrowserNavigation::new(BrowserPlace::Podcasts);
-    assert!(
-        podcast
-            .navigate(NavigationIntent::RevealEpisode {
-                subscription_id: 7,
-                episode_id: None,
-                kind: SourceKind::Podcasts,
-            })
-            .is_none()
-    );
+    assert!(podcast
+        .navigate(NavigationIntent::RevealEpisode {
+            subscription_id: 7,
+            episode_id: None,
+            kind: SourceKind::Podcasts,
+        })
+        .is_none());
 
     let mut radio = BrowserNavigation::new(BrowserPlace::Radio);
-    assert!(
-        radio
-            .navigate(NavigationIntent::RevealStation { station_id: 5 })
-            .is_none()
-    );
+    assert!(radio
+        .navigate(NavigationIntent::RevealStation { station_id: 5 })
+        .is_none());
 }
 
 #[test]
@@ -104,4 +100,12 @@ fn browse_4_invalid_source_ids_have_no_target() {
         assert!(navigation.navigate(intent).is_none());
         assert_eq!(navigation.current(), &library());
     }
+}
+
+#[test]
+fn browse_4_two_youtube_places_are_the_same_destination() {
+    assert!(same_destination(
+        &BrowserPlace::Youtube,
+        &BrowserPlace::Youtube
+    ));
 }

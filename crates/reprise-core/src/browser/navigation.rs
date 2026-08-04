@@ -403,6 +403,7 @@ fn same_destination(left: &BrowserPlace, right: &BrowserPlace) -> bool {
         | (BrowserPlace::Releases, BrowserPlace::Releases)
         | (BrowserPlace::Concerts, BrowserPlace::Concerts)
         | (BrowserPlace::Podcasts, BrowserPlace::Podcasts)
+        | (BrowserPlace::Youtube, BrowserPlace::Youtube)
         | (BrowserPlace::Radio, BrowserPlace::Radio)
         | (BrowserPlace::Conversions, BrowserPlace::Conversions) => true,
         _ => false,
@@ -516,11 +517,9 @@ mod tests {
             Some(&TrackCollection::Queue),
             "Queue must not depend on whichever utility or scope was visible"
         );
-        assert!(
-            navigation
-                .navigate(NavigationIntent::Sidebar(SidebarTarget::Queue))
-                .is_none()
-        );
+        assert!(navigation
+            .navigate(NavigationIntent::Sidebar(SidebarTarget::Queue))
+            .is_none());
 
         let stats = navigation
             .navigate(NavigationIntent::Sidebar(SidebarTarget::MyStats))
@@ -641,11 +640,9 @@ mod tests {
         let queue = BrowserPlace::tracks(TrackCollection::Queue, queue_state.clone());
         navigation.replace_current(queue.clone());
 
-        assert!(
-            navigation
-                .navigate(NavigationIntent::Sidebar(SidebarTarget::Queue))
-                .is_none()
-        );
+        assert!(navigation
+            .navigate(NavigationIntent::Sidebar(SidebarTarget::Queue))
+            .is_none());
         assert_eq!(navigation.current(), &queue);
         assert_eq!(navigation.current().track_state(), Some(&queue_state));
     }
@@ -709,30 +706,24 @@ mod tests {
     fn browse_4_blank_or_invalid_metadata_links_are_noops() {
         let mut navigation = BrowserNavigation::new(library());
 
-        assert!(
-            navigation
-                .navigate(NavigationIntent::OpenAlbum {
-                    album: AlbumKey::new("  ", "Joni Mitchell"),
-                    anchor_track_id: None,
-                })
-                .is_none()
-        );
-        assert!(
-            navigation
-                .navigate(NavigationIntent::OpenArtist {
-                    artist: ArtistKey::new("  "),
-                    anchor_track_id: None,
-                })
-                .is_none()
-        );
-        assert!(
-            navigation
-                .navigate(NavigationIntent::RevealTrack {
-                    origin: Box::new(library()),
-                    track_id: 0,
-                })
-                .is_none()
-        );
+        assert!(navigation
+            .navigate(NavigationIntent::OpenAlbum {
+                album: AlbumKey::new("  ", "Joni Mitchell"),
+                anchor_track_id: None,
+            })
+            .is_none());
+        assert!(navigation
+            .navigate(NavigationIntent::OpenArtist {
+                artist: ArtistKey::new("  "),
+                anchor_track_id: None,
+            })
+            .is_none());
+        assert!(navigation
+            .navigate(NavigationIntent::RevealTrack {
+                origin: Box::new(library()),
+                track_id: 0,
+            })
+            .is_none());
         assert_eq!(navigation.current(), &library());
     }
 

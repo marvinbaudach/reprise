@@ -764,3 +764,4 @@ Task mobile-m8-durable-play-journal: complete (this commit, base d4dfc5ebb1, put
 # Jump to playing source item
 
 Task jump-to-playing-source-item AP1: complete (this commit, base 8b69f127fb, added source-list navigation identities, validated episode and station reveal intents, routed them through metadata scopes, and proved source destinations, history, open-view no-transition behavior, and invalid-id no-ops with display-free Core tests; the new tests were extracted into a focused sibling because keeping them in navigation.rs would exceed the repository's 800-line code-file limit)
+Fix jump-to-playing-source-item AP1 YouTube destination identity: complete (this commit, base 22f322ecb0, added the missing direct same-destination case for two YouTube places and pinned the helper itself so the earlier equality short-circuit cannot hide the regression)
