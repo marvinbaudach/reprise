@@ -41,6 +41,53 @@ private const val DESTROYED = "already been destroyed"
 @Config(sdk = [36])
 class TrackArtworkTest {
     /**
+     * A full-size sheet request is useful now; queued row work belongs to the
+     * list the sheet just covered. It therefore gets a separate serial lane,
+     * while each lane keeps deterministic one-at-a-time decoding.
+     */
+    @Test
+    fun nowPlayingArtworkUsesItsOwnLaneInsteadOfWaitingBehindListWork() {
+        val listWorker = Executors.newSingleThreadExecutor()
+        val fullSizeWorker = Executors.newSingleThreadExecutor()
+        val listStarted = CountDownLatch(1)
+        val releaseList = CountDownLatch(1)
+        val fullSizeAnswered = CountDownLatch(1)
+        val artwork = TrackArtwork(
+            resolve = { _, size ->
+                if (size == AndroidArtworkSize.LIST) {
+                    listStarted.countDown()
+                    releaseList.await(WAIT_SECONDS, TimeUnit.SECONDS)
+                }
+                null
+            },
+            decode = { _ -> null },
+            worker = listWorker,
+            fullSizeWorker = fullSizeWorker,
+            onMainThread = { work -> work() },
+        )
+        val listGate = ArtworkRequestGate()
+        val listRequest = listGate.begin("content://tracks/list", AndroidArtworkSize.LIST)
+        val fullSizeGate = ArtworkRequestGate()
+        val fullSizeRequest =
+            fullSizeGate.begin("content://tracks/now-playing", AndroidArtworkSize.NOW_PLAYING)
+
+        try {
+            artwork.load(listRequest, listGate) {}
+            assertTrue("the list request must occupy its lane", listStarted.await(1, TimeUnit.SECONDS))
+
+            artwork.load(fullSizeRequest, fullSizeGate) { fullSizeAnswered.countDown() }
+
+            assertTrue(
+                "the full-size request must not wait for queued or running list artwork",
+                fullSizeAnswered.await(1, TimeUnit.SECONDS),
+            )
+        } finally {
+            releaseList.countDown()
+            artwork.shutdown()
+        }
+    }
+
+    /**
      * A read that arrives too late is refused, and the refusal stays on the
      * artwork thread.
      *

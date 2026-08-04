@@ -38,7 +38,8 @@ private const val TAG = "RepriseArtwork"
 internal class TrackArtwork(
     private val resolve: (String, AndroidArtworkSize) -> String?,
     private val decode: (String) -> ImageBitmap? = ::decodeCachedCover,
-    private val worker: ExecutorService = singleArtworkThread(),
+    private val worker: ExecutorService = singleArtworkThread("reprise-artwork-list"),
+    private val fullSizeWorker: ExecutorService = singleArtworkThread("reprise-artwork-full"),
     private val onMainThread: (() -> Unit) -> Unit = { work ->
         Handler(Looper.getMainLooper()).post(work)
     },
@@ -54,7 +55,11 @@ internal class TrackArtwork(
         gate: ArtworkRequestGate,
         deliver: (ImageBitmap?) -> Unit,
     ) {
-        worker.execute {
+        val lane = when (request.size) {
+            AndroidArtworkSize.NOW_PLAYING -> fullSizeWorker
+            AndroidArtworkSize.LIST -> worker
+        }
+        lane.execute {
             if (!gate.accepts(request)) {
                 return@execute
             }
@@ -105,6 +110,7 @@ internal class TrackArtwork(
      */
     fun shutdown() {
         worker.shutdownNow()
+        fullSizeWorker.shutdownNow()
     }
 }
 
@@ -153,8 +159,8 @@ internal fun TrackCover(
     )
 }
 
-private fun singleArtworkThread(): ExecutorService =
-    Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "reprise-artwork") }
+private fun singleArtworkThread(name: String): ExecutorService =
+    Executors.newSingleThreadExecutor { runnable -> Thread(runnable, name) }
 
 private fun decodeCachedCover(path: String): ImageBitmap? =
     BitmapFactory.decodeFile(path)?.asImageBitmap()
