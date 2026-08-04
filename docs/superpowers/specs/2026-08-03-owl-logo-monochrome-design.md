@@ -331,3 +331,94 @@ Die Vorlage liegt committet unter `docs/assets/brand-reference/`. Das
 uncommittete Eulen-Material aus dem Haupt-Checkout (PNGs ohne Kopfhörer,
 potrace-Symbolic) ist ausschließlich im Sitzungs-Scratchpad gesichert und
 damit flüchtig; es ist für die Umsetzung nicht erforderlich.
+
+## Änderungen aus der Umsetzung
+
+Diese Spec wurde vor der ersten Zeichnung geschrieben. Was danach an
+gerenderten Bildern und an Messwerten sichtbar wurde, steht hier — mit dem
+Grund, nicht nur mit dem neuen Wert. Wo ein Punkt oben und hier verschieden
+sind, gilt dieser Abschnitt.
+
+### Grundfläche und Palette
+
+- **Die Grundfläche des App-Icons ist kein flaches `#1B082D` mehr, sondern
+  eine Verlaufsplatte `#5798BD → #8570CB`.** Gemessen: Kopf `#2B155E` gegen
+  `#1B082D` ergibt **1,31:1**. Die Palette hat zu wenig Helligkeitsspanne,
+  um eine dunkle Eule auf einem dunklen Grund zu tragen; hellere Platten
+  retten den Kopf, killen aber die helle Gesichtsscheibe. Die Verlaufsplatte
+  war eine von drei durchgerechneten Auswegen und ist die entschiedene.
+- **Der Kopf-Verlauf endet bei `#33195F` statt `#452674`.** Die Kinnkante ist
+  der einzige Rand, der gegen das violette Ende der Platte antritt: mit
+  `#452674` sind das 2,49:1, mit `#33195F` 3,58:1.
+- **`Metall / Glanz #A09EB4 → #E0E0E1` entfällt.** `#E0E0E1` erreicht gegen
+  Weiß 1,32:1. Der Schnabel trägt jetzt `#A7B7CE → #2B3B69`, aus der Vorlage
+  gemessen; sie geht dort als einzige Stelle ins Marineblau.
+- **Die Augen haben keinen grünen Ring um eine teale Iris.** In der Vorlage
+  ist das ein Verlauf Teal → Gelbgrün innerhalb der Iris. Ein Ring zerfällt
+  bei kleiner Größe zu einem grünen Fleck.
+
+### Konstruktion des Gesichts
+
+- **Die Braue ist keine eigene Form.** Sie ist die Oberkante der
+  Gesichtsscheibe: eine Gerade mit Steigung 0,589 von (316|596) zum Scheitel
+  (623|777). Der dunkle Kopf darüber *ist* die Braue. Die erste Fassung legte
+  eine dunkle Fläche über runde Augen und drückte sie damit von 139 auf 99
+  Einheiten Höhe — bei 128 px las die Marke als Katze.
+- **Gemessene Augen der Vorlage:** sichtbar 148 × 139 Einheiten, Mitten
+  (472|734) und (769|733), Pupille ⌀ 74 bei (473|726), Glanzpunkt ⌀ 16 bei
+  (450|704). Die Zeichnung trifft das auf wenige Einheiten.
+
+### Zuständigkeit der Stufen
+
+- **`reduced` zeigt nur den Kopf, ohne Kopfhörer.** Gemessen: in der vollen
+  Komposition nehmen Bügel und Muscheln zwei Drittel der Breite; bei einem
+  48-px-Icon bleibt der Kopf 19 px breit und jedes Auge 2 px. Ohne
+  Kopfhörer trägt derselbe Kopf 36 px. Die Kopfhörer bleiben ab 128 px, im
+  Lockup und im Web.
+- **`micro` bedient 24 und 32 px**, nicht 16 und 24. Das GNOME-Symbolic wird
+  aus `micro` **erzeugt** statt ein zweites Mal gezeichnet — zwei Hände an
+  derselben Silhouette lassen sie auseinanderlaufen.
+- **`reduced` steht im Raster der vollen Zeichnung** (`0 0 1247 1000`) und
+  benutzt dieselben Koordinaten. Ein eigenes quadratisches Raster sitzt
+  anders auf der Platte, und dann zeigt dieselbe App bei 48 px ein sichtbar
+  anderes Logo als bei 128 px.
+
+### Kriterien
+
+- **V4 ist neu gefasst.** Alt: „der hellste Körperwert ≥ 4,5:1 gegen Weiß
+  beziehungsweise `#1B082D`". Das war aus drei Gründen falsch. Der Test lief
+  nie — die Funktion stand als toter Code im Skript. Er misst einen einzelnen
+  Hex-Wert, also entscheidet ein Glanzpunkt über eine Marke, die auf ihrer
+  ganzen Fläche im Grund versinkt. Und 4,5:1 ist die Schwelle für Fließtext.
+  Neu: **flächengewichtet am Saum der gerenderten Marke gegen den
+  tatsächlichen Grund** — Median ≥ **3,0** (WCAG 1.4.11, grafische Objekte)
+  und höchstens 2 % der Randfläche unter 1,5:1. Für die Platte wird Pixel
+  gegen Pixel gemessen, weil ein Verlauf keinen einzelnen Wert hat.
+- **V2 und V3 gelten nur für Silhouetten** — `micro`, Symbolic, die
+  Mono-Fassungen. Die farbigen Stufen haben keine durchsichtigen Löcher;
+  ihre Augen sind gefüllte Flächen. Der Versuch, „bleiben zwei Augen übrig"
+  über zusammenhängende Farbflächen zu messen, war auf der Verlaufs-Iris
+  nicht stabil (2 bis 9 Flächen je nach Rendergröße) und wurde verworfen,
+  statt eine schwankende Zahl grün zu nennen.
+- **V5 zählt Formen, nicht Pfade.** `<ellipse>` und `<circle>` tragen Fläche;
+  sie nicht zu zählen ließ 29 % der Formen von `mark.svg` unsichtbar fürs
+  Budget. Neue Budgets: `full` ≤ 34, `reduced` ≤ 20, `micro` = 1.
+- **V9 neu: Androids garantierte Fläche ist der 66-dp-Kreis**, nicht die
+  72-dp-Zone. Nur er ist auf jeder Maskenform sichtbar.
+- **V8 neu gefasst:** nicht „Vorlagentreue nach Augenschein", sondern die
+  gemessene Deckung von farbigem Layer und Silhouette ≥ 0,90. Sonst zeigt
+  derselbe Launcher je nach Einstellung zwei verschiedene Eulen.
+
+### Erzeugung statt Pflege
+
+- **`scripts/build-brand-assets.sh` erzeugt jede abgeleitete Datei** aus den
+  Zeichnungen: App-Icon-Stufen, Symbolic, Android-Layer, Web-Set, Lockups,
+  Fassung für dunkle Gründe. Vorher war das App-Icon eine Kopie der Marke,
+  und die kleinen Stufen bekamen die Platte nie — zwei verschiedene Icons
+  für dieselbe App.
+- **`--check` erzeugt daneben und vergleicht.** Damit ist beweisbar, dass
+  der Baum aus den Zeichnungen stammt und niemand eine abgeleitete Datei von
+  Hand nachgebessert hat.
+- **Androids Hintergrundebene ist ein Drawable mit Verlauf**, kein
+  `@color`-Wert mehr, und wird aus derselben Plattendatei erzeugt wie die
+  GNOME-Platte.

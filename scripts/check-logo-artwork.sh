@@ -5,12 +5,17 @@
 # docs/superpowers/specs/2026-08-03-owl-logo-monochrome-design.md.
 # V2 ist der entscheidende Test: bleibt bei kleiner Rendergröße
 # Negativraum übrig, oder wird die Marke zum Klumpen?
+#
+#   ./scripts/check-logo-artwork.sh --all        alles, was ausgeliefert wird
+#   ./scripts/check-logo-artwork.sh full <svg>   eine einzelne Stufe
 set -euo pipefail
 
 repo_root=${LOGO_ARTWORK_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 cd "$repo_root"
 
 measure="python3 scripts/lib/logo_measure.py"
+flatten="python3 scripts/lib/svg_flatten.py"
+layer="python3 scripts/lib/svg_layer.py"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
@@ -18,17 +23,23 @@ fail=0
 ok()  { printf '  ok    %s\n' "$*"; }
 bad() { printf '  FAIL  %s\n' "$*" >&2; fail=1; }
 
-# Rendergröße und Pfadbudget je Stufe.
-stage_size() { case $1 in full) echo 128;; reduced) echo 48;; micro) echo 16;; esac; }
-stage_paths() { case $1 in full) echo 60;; reduced) echo 20;; micro) echo 1;; esac; }
+# Rendergröße und Formbudget je Stufe.
+stage_size()   { case $1 in full) echo 128;; reduced) echo 48;; micro) echo 16;; esac; }
+stage_shapes() { case $1 in full) echo 34;; reduced) echo 20;; micro) echo 1;; esac; }
 
-# V1 ist nur auf quadratischen Rastern aussagekräftig. Die freistehende
-# Marke definiert ihre eigenen Grenzen — dort ergäbe die Messung immer 1,0
-# und würde Erfolg vortäuschen. Ihre Randfüllung wird auf den Zielflächen
-# geprüft, die sie einbetten.
+# Kontrastschwellen. 3,0 ist WCAG 1.4.11 für grafische Objekte — die Grenze,
+# an der eine Fläche sich von ihrem Grund abhebt. Die frühere Fassung
+# verlangte 4,5, den Wert für Fließtext, und zwar von **jedem** Palettenwert
+# gegen Weiß und Schwarz. Das ist für eine Zeichnung, die auf ihrer eigenen
+# Platte sitzt, kein sinnvoller Test: er verbot helle Glanzpunkte und sagte
+# nichts darüber, ob die Marke auf ihrer Platte steht.
+MIN_EDGE=3.0
+MAX_BLIND=0.02      # Anteil der Fläche, der unter 1,5:1 im Grund versinkt
+
 is_square_viewbox() {   # <svg>
-  local vb; vb=$(grep -o 'viewBox="[^"]*"' "$1" | head -1 | tr -d 'viewBox="')
-  local w h; w=$(echo "$vb" | awk '{print $3}'); h=$(echo "$vb" | awk '{print $4}')
+  local vb w h
+  vb=$(grep -o 'viewBox="[^"]*"' "$1" | head -1 | sed 's/viewBox="//; s/"//')
+  w=$(echo "$vb" | awk '{print $3}'); h=$(echo "$vb" | awk '{print $4}')
   awk "BEGIN{exit !($w == $h)}"
 }
 
@@ -38,49 +49,124 @@ check_v1() {   # <png> <stage> <svg>
     return
   fi
   read -r fw fh < <($measure fill-ratio "$1")
-  if awk "BEGIN{exit !($fw >= 0.70 && $fh >= 0.70)}"; then
-    ok "V1 Randfüllung $2: ${fw} × ${fh}"
-  else
-    bad "V1 Randfüllung $2: ${fw} × ${fh} — mindestens 0.70 in beiden Achsen"
-  fi
+  awk "BEGIN{exit !($fw >= 0.70 && $fh >= 0.70)}" \
+    && ok "V1 Randfüllung $2: ${fw} × ${fh}" \
+    || bad "V1 Randfüllung $2: ${fw} × ${fh} — mindestens 0.70 in beiden Achsen"
 }
 
 check_v2() {   # <png> <label>
   local n; n=$($measure bg-components "$1")
-  if [ "$n" -ge 2 ]; then
-    ok "V2 Negativraum $2: $n Hintergrundkomponenten"
-  else
-    bad "V2 Negativraum $2: $n Komponente — die Aussparung ist zugelaufen"
-  fi
+  [ "$n" -ge 2 ] \
+    && ok "V2 Negativraum $2: $n Hintergrundkomponenten" \
+    || bad "V2 Negativraum $2: $n Komponente — die Aussparung ist zugelaufen"
+}
+
+check_v3() {   # <svg> <stage> <size>
+  $flatten "$1" "$tmp/mono.svg"
+  rsvg-convert -w "$3" -h "$3" -a "$tmp/mono.svg" -o "$tmp/mono.png"
+  check_v2 "$tmp/mono.png" "${3}px einfarbig"
+}
+
+# Zur Erinnerung, warum hier kein Augen-Zähler steht: der Versuch, „bleiben
+# bei 48 px zwei Augen übrig" über zusammenhängende Farbflächen zu messen,
+# war nicht stabil. Auf der Verlaufs-Iris zerfällt jedes Auge in mehrere
+# Teilflächen, und die Zahl schwankt mit der Rendergröße zwischen 2 und 9 —
+# ein Gate, das mal grün und mal rot wird, ohne dass sich die Zeichnung
+# ändert, ist schlimmer als keins. Was den farbigen Stufen bleibt, ist V4:
+# die Marke muss auf ihrer Platte stehen. Ob sie innen liest, ist an
+# gerenderten Bildern entschieden und in der Spec begründet.
+
+# V4 misst am gerenderten Bild, nicht an Hex-Werten aus der Datei. Was
+# entscheidet, ob eine Marke auf einem Grund steht, ist ihr Saum: das Innere
+# darf beliebig hell sein, solange die Außenkante trägt.
+report_contrast() {   # <median> <min> <anteil3> <blind> <label>
+  awk -v m="$1" -v blind="$4" -v lim="$MIN_EDGE" -v maxblind="$MAX_BLIND" \
+      "BEGIN{exit !(m >= lim && blind <= maxblind)}" \
+    && ok "V4 $5: Median $1, blind $4" \
+    || bad "V4 $5: Median $1 (< $MIN_EDGE) oder blind $4 (> $MAX_BLIND)"
+}
+
+check_v4_ground() {   # <png> <hex> <label>
+  report_contrast $($measure edge-contrast "$1" "$2") "$3"
+}
+
+check_v4_plate() {   # <zusammengesetztes-icon.svg> <label>
+  # Marke und Platte einzeln rendern und Pixel gegen Pixel halten. Ein
+  # Verlauf hat keinen einzelnen Hex-Wert, gegen den sich rechnen ließe.
+  $layer "$1" rp-mark "$tmp/l-mark.svg"
+  $layer "$1" rp-plate "$tmp/l-plate.svg"
+  # Gemessen wird bei 512 px, nicht bei der Anzeigegröße. Der Saum ist zwei
+  # Pixel breit; bei kleiner Rendergröße sind das ein Prozent der Kantenlänge
+  # und der Saum greift bis in die Gesichtsscheibe hinein. Dann entscheidet
+  # die Auflösung der Messung über das Urteil statt die Zeichnung.
+  rsvg-convert -w 512 -h 512 "$tmp/l-mark.svg" -o "$tmp/l-mark.png"
+  rsvg-convert -w 512 -h 512 "$tmp/l-plate.svg" -o "$tmp/l-plate.png"
+  report_contrast $($measure pair-edge-contrast "$tmp/l-mark.png" "$tmp/l-plate.png") "$2"
 }
 
 check_v5() {   # <svg> <stage>
-  read -r paths maxcmd < <($measure path-stats "$1")
-  local budget; budget=$(stage_paths "$2")
-  [ "$paths" -le "$budget" ] \
-    && ok "V5 Pfadzahl $2: $paths ≤ $budget" \
-    || bad "V5 Pfadzahl $2: $paths > $budget"
+  read -r shapes maxcmd < <($measure shape-stats "$1")
+  local budget; budget=$(stage_shapes "$2")
+  [ "$shapes" -le "$budget" ] \
+    && ok "V5 Formzahl $2: $shapes ≤ $budget" \
+    || bad "V5 Formzahl $2: $shapes > $budget"
   [ "$maxcmd" -le 400 ] \
     && ok "V5 größter Pfad $2: $maxcmd Befehle" \
     || bad "V5 größter Pfad $2: $maxcmd Befehle > 400 — sieht nach Trace aus"
 }
 
-check_v4() {   # <hex>
-  for ground in FFFFFF 1B082D; do
-    local c; c=$($measure contrast "$1" "$ground")
-    awk "BEGIN{exit !($c >= 4.5)}" \
-      && ok "V4 Kontrast gegen #$ground: $c" \
-      || bad "V4 Kontrast gegen #$ground: $c < 4.5"
+check_v7() {   # <svg>
+  # Formen werden gezählt, nicht Zeilen gegrept. `grep -c '<path'` zählt
+  # Zeilen mit mindestens einem Treffer: zwei Pfade in einer Zeile ergaben
+  # „genau ein Pfad", und jeder optimierte Export löst genau das aus.
+  read -r shapes _ < <($measure shape-stats "$1")
+  [ "$shapes" -eq 1 ] && ok "V7 genau eine Form" || bad "V7 $shapes Formen, erwartet genau 1"
+  grep -q 'viewBox="0 0 16 16"' "$1" && ok "V7 viewBox" || bad "V7 viewBox ist nicht 0 0 16 16"
+  # Konturen und Verläufe auch in `style="…"`-Schreibweise verbieten: das ist
+  # Inkscapes Standard-Exportform, und Inkscape steht auf diesem Rechner.
+  for forbidden in 'transform=' 'stroke=' 'stroke *:' 'linearGradient' 'radialGradient'; do
+    grep -Eq "$forbidden" "$1" \
+      && bad "V7 enthält $forbidden" \
+      || ok "V7 ohne $forbidden"
   done
 }
 
-check_v7() {   # <svg>
-  local paths; paths=$(grep -c '<path' "$1" || true)
-  [ "$paths" -eq 1 ] && ok "V7 genau ein Pfad" || bad "V7 $paths Pfade, erwartet genau 1"
-  grep -q 'viewBox="0 0 16 16"' "$1" && ok "V7 viewBox" || bad "V7 viewBox ist nicht 0 0 16 16"
-  for forbidden in transform= stroke= linearGradient radialGradient; do
-    grep -q "$forbidden" "$1" && bad "V7 enthält $forbidden" || ok "V7 ohne $forbidden"
-  done
+# V8: Androids Themed Icon zeigt die Silhouette, der Launcher sonst die
+# farbige Fassung. Weichen beide voneinander ab, zeigt derselbe Launcher je
+# nach Einstellung zwei verschiedene Eulen.
+check_v8() {   # <farbig.svg> <silhouette.svg>
+  rsvg-convert -w 256 -a "$1" -o "$tmp/v8-a.png"
+  rsvg-convert -w 256 -a "$2" -o "$tmp/v8-b.png"
+  local j; j=$($measure overlap "$tmp/v8-a.png" "$tmp/v8-b.png")
+  awk "BEGIN{exit !($j >= 0.90)}" \
+    && ok "V8 Deckung farbig/Silhouette: $j" \
+    || bad "V8 Deckung farbig/Silhouette: $j < 0.90 — zwei verschiedene Formen"
+}
+
+# V9: Androids garantierte Fläche ist der 66-dp-Kreis, nicht das
+# 72-dp-Quadrat. Nur er ist auf jeder Maskenform sichtbar.
+check_v9() {   # <vectordrawable.xml>
+  local r; r=$(python3 - "$1" <<'PY'
+import re, subprocess, sys, tempfile, pathlib
+xml = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+paths = re.findall(r'android:pathData="([^"]+)"', xml)
+body = "".join(f'<path fill="#000" d="{d}"/>' for d in paths)
+svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" '
+       f'width="108" height="108">{body}</svg>')
+with tempfile.TemporaryDirectory() as tmp:
+    source = pathlib.Path(tmp) / "vd.svg"
+    png = pathlib.Path(tmp) / "vd.png"
+    source.write_text(svg, encoding="utf-8")
+    subprocess.run(["rsvg-convert", "-w", "432", "-h", "432", str(source),
+                    "-o", str(png)], check=True, capture_output=True)
+    sys.path.insert(0, "scripts/lib")
+    from logo_measure import radius
+    print(f"{radius(png) * 108:.2f}")
+PY
+)
+  awk "BEGIN{exit !($r <= 33.5)}" \
+    && ok "V9 Radius ${r} dp ≤ 33 dp (66-dp-Kreis)" \
+    || bad "V9 Radius ${r} dp > 33 dp — wird auf Kreismasken beschnitten"
 }
 
 self_test() {
@@ -98,34 +184,100 @@ EOF
   local b r; b=$($measure bg-components "$tmp/blob.png"); r=$($measure bg-components "$tmp/ring.png")
   [ "$b" -eq 1 ] && ok "Selbsttest Klumpen = 1" || bad "Selbsttest Klumpen = $b, erwartet 1"
   [ "$r" -eq 2 ] && ok "Selbsttest Ring = 2"   || bad "Selbsttest Ring = $r, erwartet 2"
+
+  # V3 muss auch Inkscapes Schreibweise abflachen. Ein `sed` auf
+  # `fill="…"` ließ `style="fill:…"` unberührt und maß danach die
+  # unveränderte Farbzeichnung — ein Test, der nichts prüft.
+  cat > "$tmp/styled.svg" <<'EOF'
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path style="fill:#ff0000;opacity:0.4" d="M0 0h64v64H0z"/></svg>
+EOF
+  $flatten "$tmp/styled.svg" "$tmp/styled-flat.svg"
+  grep -q 'fill:#000000' "$tmp/styled-flat.svg" && grep -q 'opacity:1' "$tmp/styled-flat.svg" \
+    && ok "Selbsttest V3 fasst style=\"fill:…\" an" \
+    || bad "Selbsttest V3 lässt style=\"fill:…\" stehen"
+
+  # V4 muss einen Verlauf erkennen, gegen den die Marke versinkt.
+  awk "BEGIN{exit !($($measure contrast 2B155E 1B082D) < 1.5)}" \
+    && ok "Selbsttest V4 erkennt 1,31:1 als blind" \
+    || bad "Selbsttest V4 hält 1,31:1 für sichtbar"
+}
+
+check_stage() {   # <stage> <svg> [--silhouette]
+  local stage=$1 svg=$2 kind=${3:-} size
+  size=$(stage_size "$stage")
+  echo "Stufe $stage bei ${size}px: $svg"
+  check_v5 "$svg" "$stage"
+  rsvg-convert -w "$size" -a "$svg" -o "$tmp/s.png"
+  check_v1 "$tmp/s.png" "$stage" "$svg"
+  # V2 und V3 fragen nach durchsichtigem Negativraum. Das ist bei den
+  # farbigen Stufen die falsche Frage: dort sind die Augen gefüllte
+  # Flächen, keine Löcher. Gemessen wird der Negativraum an den
+  # Silhouetten, die ihn tragen müssen — micro, symbolic, mono.
+  if [ "$kind" = "--silhouette" ]; then
+    check_v2 "$tmp/s.png" "${size}px"
+    check_v3 "$svg" "$stage" "$size"
+  fi
+}
+
+check_all() {
+  local icons=data/icons/hicolor brand=data/brand
+  local android=android/app/src/main/res
+
+  echo "Kalibrierung der Detektoren"
+  self_test
+
+  check_stage full "$brand/mark.svg"
+  check_stage reduced "$brand/mark-reduced.svg"
+  check_stage micro "$brand/mark-micro.svg" --silhouette
+
+  echo "Einfarbige Silhouetten"
+  # Hier greift der Negativraum-Test: Augen und Schnabel sind Löcher, und
+  # genau die laufen bei kleiner Größe als erstes zu.
+  rsvg-convert -w 128 -a "$brand/mark-mono.svg" -o "$tmp/mono-full.png"
+  check_v2 "$tmp/mono-full.png" "mark-mono bei 128px"
+  rsvg-convert -w 48 -a "$brand/mark-reduced-mono.svg" -o "$tmp/mono-red.png"
+  check_v2 "$tmp/mono-red.png" "mark-reduced-mono bei 48px"
+
+  echo "Symbolic: $icons/symbolic/apps/org.reprise.Reprise-symbolic.svg"
+  check_v7 "$icons/symbolic/apps/org.reprise.Reprise-symbolic.svg"
+  rsvg-convert -w 16 -h 16 "$icons/symbolic/apps/org.reprise.Reprise-symbolic.svg" \
+    -o "$tmp/sym.png"
+  check_v2 "$tmp/sym.png" "16px"
+  # Kein Kontrasttest: GNOME färbt Symbolic-Icons zur Laufzeit mit der
+  # Vordergrundfarbe des Themes um. Der literale Wert #222222 wird nie
+  # angezeigt. Was hier zählt, ist die Silhouette — und die prüft V2.
+
+  echo "App-Icon auf der Platte"
+  check_v4_plate "$icons/scalable/apps/org.reprise.Reprise.svg" "volle Stufe auf der Platte"
+  check_v4_plate "$brand/favicon.svg" "Micro-Stufe auf der Platte"
+  check_v4_plate "$brand/icon-reduced.svg" "reduzierte Stufe auf der Platte"
+
+  echo "Fassung für dunkle Gründe"
+  rsvg-convert -w 256 -a "$brand/mark-on-dark.svg" -o "$tmp/on-dark.png"
+  check_v4_ground "$tmp/on-dark.png" 1B082D "mark-on-dark auf #1B082D"
+  rsvg-convert -w 256 -a "$brand/mark.svg" -o "$tmp/on-light.png"
+  check_v4_ground "$tmp/on-light.png" FFFFFF "mark auf Weiß"
+
+  echo "Android"
+  check_v8 "$brand/mark-reduced.svg" "$brand/mark-reduced-mono.svg"
+  check_v9 "$android/drawable/ic_launcher_foreground.xml"
+  check_v9 "$android/drawable/ic_launcher_monochrome.xml"
+
+  echo "Herkunft der abgeleiteten Dateien"
+  ./scripts/build-brand-assets.sh --check
 }
 
 case ${1:-} in
-  --self-test)
-    echo "Kalibrierung des V2-Detektors"; self_test ;;
+  --self-test) echo "Kalibrierung der Detektoren"; self_test ;;
+  --all)       check_all ;;
   --symbolic)
     svg=$2; echo "Symbolic: $svg"
     check_v7 "$svg"
     rsvg-convert -w 16 -h 16 "$svg" -o "$tmp/sym.png"
-    check_v2 "$tmp/sym.png" "16px"
-    # Kein Kontrasttest: GNOME färbt Symbolic-Icons zur Laufzeit mit der
-    # Vordergrundfarbe des Themes um. Der literale Wert #222222 wird nie
-    # angezeigt, ein Kontrastwert gegen irgendeinen Grund wäre bedeutungslos.
-    # Was hier zählt, ist die Silhouette — und die prüft V2.
-    ;;
-  full|reduced|micro)
-    stage=$1; svg=$2; size=$(stage_size "$stage")
-    echo "Stufe $stage bei ${size}px: $svg"
-    check_v5 "$svg" "$stage"
-    rsvg-convert -w "$size" -h "$size" -a "$svg" -o "$tmp/s.png"
-    check_v1 "$tmp/s.png" "$stage" "$svg"
-    check_v2 "$tmp/s.png" "${size}px"
-    # V3: alle Füllungen auf einen Wert abflachen, dann erneut V2
-    sed -E 's/fill="(#[0-9A-Fa-f]{3,8}|url\([^)]*\))"/fill="#000000"/g' "$svg" > "$tmp/mono.svg"
-    rsvg-convert -w "$size" -h "$size" -a "$tmp/mono.svg" -o "$tmp/m.png"
-    check_v2 "$tmp/m.png" "${size}px monochrom" ;;
+    check_v2 "$tmp/sym.png" "16px" ;;
+  full|reduced|micro) check_stage "$1" "$2" ;;
   *)
-    echo "Aufruf: $0 {full|reduced|micro} <svg> | --symbolic <svg> | --self-test" >&2
+    echo "Aufruf: $0 --all | {full|reduced|micro} <svg> | --symbolic <svg> | --self-test" >&2
     exit 2 ;;
 esac
 

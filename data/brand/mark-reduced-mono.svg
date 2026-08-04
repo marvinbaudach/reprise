@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1247 1000" width="1247" height="1000"
+     fill="currentColor">
+  <!-- Silhouette der reduzierten Zeichnung. Sie trägt Androids Themed Icon,
+       das vom System eingefärbt wird — dort zählt nur Alpha.
+
+       Wichtig ist, dass diese Silhouette **dieselbe Form** hat wie der
+       farbige Foreground-Layer: sonst zeigt derselbe Launcher je nach
+       Einstellung zwei verschiedene Eulen. Das Gate misst die Deckung
+       beider Formen gegeneinander (V8), deshalb steht sie im selben
+       Raster und benutzt dieselben Koordinaten.
+
+       Augen und Schnabel sind hier Aussparungen statt Flächen: einfarbig
+       verschmelzen sie sonst mit dem Kopf zu einem Klumpen. -->
+  <path id="rm-tuft-l" d="M 228 264 C 372 358 486 404 596 430 C 486 470 400 512 336 566
+                          C 318 462 282 356 228 264 Z"/>
+  <path id="rm-tuft-r" d="M 1018 264 C 874 358 760 404 650 430 C 760 470 846 512 910 566
+                          C 928 462 964 356 1018 264 Z"/>
+  <path id="rm-head" fill-rule="evenodd"
+        d="M 623 402 C 852 402 1008 550 1008 746
+           C 1008 902 843 999 623 999 C 403 999 239 902 239 746
+           C 239 550 394 402 623 402 Z
+           M 474 665 A 68 68 0 1 0 474 801 A 68 68 0 1 0 474 665 Z
+           M 772 665 A 68 68 0 1 0 772 801 A 68 68 0 1 0 772 665 Z
+           M 623 793 C 645 793 662 811 662 833
+           C 662 861 643 895 623 932
+           C 603 895 584 861 584 833
+           C 584 811 601 793 623 793 Z"/>
+</svg>

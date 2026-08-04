@@ -1,127 +1,139 @@
-<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
-  <rect x="8" y="8" width="112" height="112" rx="26" fill="#1B082D"/>
-  <g transform="translate(16 25.5) scale(0.07699)">
-
+  <!-- Erzeugt von scripts/build-brand-assets.sh. Nicht von Hand ändern. -->
+  <!-- Grundfläche des App-Icons. Sie ist hell, weil die Marke dunkel ist:
+       Bügel und Kopf sind beide tiefes Violett, also muss der Grund den
+       Kontrast liefern. Eine dunkle Platte ließ den Kopf bei 1,23:1
+       verschwinden — der Grund, warum die großen Stufen matschig wirkten. -->
+  <g id="rp-plate">
+    <defs>
+      <linearGradient id="rp-plate-fill" x1="0" y1="0" x2="0.35" y2="1">
+        <stop offset="0" stop-color="#5798BD"/>
+        <stop offset="1" stop-color="#8570CB"/>
+      </linearGradient>
+    </defs>
+    <rect x="8" y="8" width="112" height="112" rx="26" fill="url(#rp-plate-fill)"/>
+  </g>
+  <g id="rp-mark" transform="translate(17.0000 26.3095) scale(0.075381)">
   <defs>
-    <linearGradient id="g-band" x1="0" y1="1" x2="0" y2="0">
+    <!-- Der Bügel ist dunkel und trägt nur einen schmalen Teal-Streifen.
+         In der Vorlage dominiert der Kopf, der Bügel stützt ihn. Ein heller
+         Bügel dreht diese Rangfolge um und macht aus der Eule ein Beiwerk. -->
+    <linearGradient id="rp-m-rp-band" x1="0" y1="1" x2="0" y2="0">
       <stop offset="0" stop-color="#1F1056"/>
-      <stop offset="0.55" stop-color="#4F93C8"/>
-      <stop offset="1" stop-color="#8292D5"/>
+      <stop offset="1" stop-color="#3A2470"/>
     </linearGradient>
-    <linearGradient id="g-head" x1="0" y1="0" x2="0" y2="1">
+    <linearGradient id="rp-m-rp-sheen" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#2E6E9E"/>
+      <stop offset="1" stop-color="#5798BD"/>
+    </linearGradient>
+    <linearGradient id="rp-m-rp-head" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#2B155E"/>
-      <stop offset="1" stop-color="#452674"/>
+      <stop offset="1" stop-color="#33195F"/>
     </linearGradient>
-    <radialGradient id="g-face" cx="0.5" cy="0.35" r="0.75">
-      <stop offset="0" stop-color="#8A679C"/>
-      <stop offset="1" stop-color="#5F2F8A"/>
-    </radialGradient>
-    <radialGradient id="g-iris" cx="0.5" cy="0.7" r="0.7">
-      <stop offset="0" stop-color="#C7D98A"/>
-      <stop offset="0.55" stop-color="#1C698A"/>
-      <stop offset="1" stop-color="#114A71"/>
-    </radialGradient>
-    <linearGradient id="g-metal" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#A09EB4"/>
-      <stop offset="1" stop-color="#E0E0E1"/>
+    <!-- Die Gesichtsscheibe ist oben gesättigt und wird zum Kinn hin heller.
+         Gemessen an der Vorlage bei x=500: #76388F unter den Augen,
+         #9880A6 am Kinn. Eine radiale Aufhellung zur Mitte hin, wie in der
+         ersten Fassung, dreht diesen Verlauf um. -->
+    <linearGradient id="rp-m-rp-face" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#76388F"/>
+      <stop offset="1" stop-color="#9E88AB"/>
+    </linearGradient>
+    <!-- Die Iris läuft von Teal oben nach Gelbgrün unten. In der Vorlage
+         ist das ein Verlauf, kein Ring: ein grüner Ring um eine teale Iris
+         zerfällt bei kleiner Größe zu einem grünen Fleck. -->
+    <linearGradient id="rp-m-rp-iris" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0B4670"/>
+      <stop offset="0.25" stop-color="#176A8D"/>
+      <stop offset="0.62" stop-color="#82A99E"/>
+      <stop offset="1" stop-color="#B0D098"/>
+    </linearGradient>
+    <linearGradient id="rp-m-rp-beak" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#A7B7CE"/>
+      <stop offset="0.62" stop-color="#8E8CB2"/>
+      <stop offset="1" stop-color="#2B3B69"/>
     </linearGradient>
   </defs>
 
   <!-- Bügel: Scheitel auf der Mittelachse y=0..145, Enden an den Muscheln. -->
-  <g id="band">
+  <g id="rp-m-rp-g-band">
     <path d="M 74 674 C 74 258 314 0 623 0 C 932 0 1173 258 1173 674
              L 1065 674 C 1065 326 872 145 623 145 C 374 145 182 326 182 674 Z"
-          fill="url(#g-band)"/>
-    <path d="M 119 576 C 151 241 359 58 623 58 C 887 58 1096 241 1128 576
-             C 1071 278 875 101 623 101 C 371 101 176 278 119 576 Z"
-          fill="#E0E0E1" opacity="0.38"/>
+          fill="url(#rp-m-rp-band)"/>
+    <path d="M 112 612 C 140 258 356 44 623 44 C 890 44 1107 258 1135 612
+             C 1080 300 880 96 623 96 C 366 96 167 300 112 612 Z"
+          fill="url(#rp-m-rp-sheen)"/>
   </g>
 
-  <!-- Ohrmuscheln: konzentrische Ringe, breiteste Stelle bei y=674. -->
-  <g id="cups">
+  <!-- Ohrmuscheln: drei Formen je Seite. Die Vorlage staffelt fünf Ringe;
+       ab 64 px laufen sie zu einem Streifenmuster zusammen, das nichts mehr
+       zeigt. Ein Ring trägt die Teal-Farbe der Marke, der Rest ist Masse. -->
+  <g id="rp-m-rp-g-cups">
     <ellipse cx="118" cy="674" rx="118" ry="190" fill="#1F1056"/>
     <ellipse cx="1129" cy="674" rx="118" ry="190" fill="#1F1056"/>
-    <ellipse cx="118" cy="674" rx="91" ry="164" fill="#2B155E"/>
-    <ellipse cx="1129" cy="674" rx="91" ry="164" fill="#2B155E"/>
     <path fill="#5798BD" fill-rule="evenodd"
-          d="M 118 535 A 72 139 0 1 1 117.9 535 Z M 118 557 A 54 117 0 1 0 118.1 557 Z"/>
+          d="M 118 522 A 84 152 0 1 1 117.9 522 Z M 118 552 A 58 122 0 1 0 118.1 552 Z"/>
     <path fill="#5798BD" fill-rule="evenodd"
-          d="M 1129 535 A 72 139 0 1 1 1128.9 535 Z M 1129 557 A 54 117 0 1 0 1129.1 557 Z"/>
-    <path fill="#8292D5" fill-rule="evenodd" opacity="0.72"
-          d="M 118 579 A 43 95 0 1 1 117.9 579 Z M 118 594 A 29 80 0 1 0 118.1 594 Z"/>
-    <path fill="#8292D5" fill-rule="evenodd" opacity="0.72"
-          d="M 1129 579 A 43 95 0 1 1 1128.9 579 Z M 1129 594 A 29 80 0 1 0 1129.1 594 Z"/>
-    <ellipse cx="118" cy="674" rx="21" ry="66" fill="#452674"/>
-    <ellipse cx="1129" cy="674" rx="21" ry="66" fill="#452674"/>
+          d="M 1129 522 A 84 152 0 1 1 1128.9 522 Z M 1129 552 A 58 122 0 1 0 1129.1 552 Z"/>
+    <ellipse cx="118" cy="674" rx="60" ry="124" fill="#2B155E"/>
+    <ellipse cx="1129" cy="674" rx="60" ry="124" fill="#2B155E"/>
   </g>
 
-  <!-- Ohrbüschel: lange Spitzen vor dem Bügel bei (179,200) und (1068,200). -->
-  <g id="tufts">
-    <path d="M 179 200 C 278 278 385 352 493 486
-             C 422 456 359 452 286 485 C 244 506 207 544 174 592
-             C 199 452 189 324 179 200 Z"
+  <!-- Ohrbüschel: schlanke Klingen, Spitzen bei (168|350) und (1078|350).
+       In der Vorlage sind es lange, nach hinten gefegte Federspitzen mit
+       sichtbarem Freiraum darum. Als breite Keile gezeichnet — die erste
+       Fassung — lesen sie als Fledermausflügel, und die Marke verliert ihr
+       Eulen-Signal noch vor der Verkleinerung. -->
+  <g id="rp-m-rp-g-tufts">
+    <path d="M 228 264 C 372 358 486 404 596 430 C 486 470 400 512 336 566
+             C 318 462 282 356 228 264 Z"
           fill="#2B155E"/>
-    <path d="M 1068 200 C 969 278 862 352 754 486
-             C 825 456 888 452 961 485 C 1003 506 1040 544 1073 592
-             C 1048 452 1058 324 1068 200 Z"
+    <path d="M 1018 264 C 874 358 760 404 650 430 C 760 470 846 512 910 566
+             C 928 462 964 356 1018 264 Z"
           fill="#2B155E"/>
-    <path d="M 205 249 C 278 318 348 376 410 442 C 353 425 302 433 251 468 Z"
-          fill="#452674"/>
-    <path d="M 1042 249 C 969 318 899 376 837 442 C 894 425 945 433 996 468 Z"
-          fill="#452674"/>
   </g>
 
-  <!-- Kopf: Oberkante Mittelachse y=427, Kinn y=999 bei x=402..843. -->
-  <g id="head">
-    <path fill="url(#g-head)" fill-rule="evenodd"
-          d="M 623 427 C 854 427 1008 562 1008 746
-             C 1008 902 843 999 623 999 C 403 999 239 902 239 746
-             C 239 562 392 427 623 427 Z
-             M 446 702 A 55 56 0 1 0 446 814 A 55 56 0 1 0 446 702 Z
-             M 799 702 A 55 56 0 1 0 799 814 A 55 56 0 1 0 799 702 Z"/>
+  <!-- Kopf: Scheitel auf der Mittelachse bei y=402, Kinn bei y=999. Der
+       Verlauf ist flach — die Unterkante ist der einzige Rand, der gegen
+       das violette Ende der Platte antritt, und ein aufgehellter Kopf sackt
+       dort unter 3:1. -->
+  <path id="rp-m-rp-head" fill="url(#rp-m-rp-head)"
+        d="M 623 402 C 852 402 1008 550 1008 746
+           C 1008 902 843 999 623 999 C 403 999 239 902 239 746
+           C 239 550 394 402 623 402 Z"/>
+
+  <!-- Gesichtsscheibe. Ihre Oberkante ist die Braue: eine Gerade mit
+       Steigung 0,589 von (316|596) zum Scheitel (623|777) und gespiegelt
+       zurück. Genau diese Kante macht den wachen Blick der Vorlage — der
+       dunkle Kopf darüber ist die Braue, es braucht keine eigene Form.
+       Gemessen: die Kante schneidet das linke Auge bei (441|670) an und
+       verlässt es bei (548|733). -->
+  <path id="rp-m-rp-face" fill="url(#rp-m-rp-face)"
+        d="M 623 777 L 316 596
+           C 268 630 252 700 256 800
+           C 262 900 420 952 623 952
+           C 826 952 984 900 990 800
+           C 994 700 978 630 930 596 Z"/>
+
+  <!-- Augen: 148 × 139 in der Vorlage, Mitte auf y=733. Sie sind als
+       gekappte Ellipsen gezeichnet — die Sehne liegt auf der Brauenkante.
+       Die frühere Fassung legte eine dunkle Braue über runde Augen und
+       drückte sie damit zu Schlitzen: bei 128 px las die Marke als Katze. -->
+  <g id="rp-m-rp-g-eyes">
+    <path fill="url(#rp-m-rp-iris)" d="M 441.5 670.1 A 74 70 0 1 0 548 733 Z"/>
+    <path fill="url(#rp-m-rp-iris)" d="M 698 733 A 74 70 0 1 0 804.5 670.1 Z"/>
+    <circle cx="475" cy="728" r="37" fill="#160A43"/>
+    <circle cx="771" cy="728" r="37" fill="#160A43"/>
+    <circle cx="452" cy="704" r="8" fill="#FFFFFF"/>
+    <circle cx="794" cy="704" r="8" fill="#FFFFFF"/>
   </g>
 
-  <g id="face">
-    <path fill="url(#g-face)" fill-rule="evenodd"
-          d="M 623 603 C 799 603 929 684 929 808
-             C 929 921 795 974 623 974 C 451 974 318 921 318 808
-             C 318 684 447 603 623 603 Z
-             M 446 702 A 55 56 0 1 0 446 814 A 55 56 0 1 0 446 702 Z
-             M 799 702 A 55 56 0 1 0 799 814 A 55 56 0 1 0 799 702 Z"/>
-  </g>
-
-  <!-- Winkelbrauen: dunkle V-Masse zwischen den Augen. -->
-  <g id="brow">
-    <path d="M 623 553 C 695 603 787 626 910 652
-             L 880 724 C 787 698 705 690 623 718
-             C 541 690 459 698 366 724 L 336 652
-             C 459 626 551 603 623 553 Z"
-          fill="#2B155E"/>
-    <path d="M 623 597 L 704 675 L 623 704 L 542 675 Z" fill="#1F1056"/>
-  </g>
-
-  <g id="eyes">
-    <path fill="url(#g-iris)" fill-rule="evenodd"
-          d="M 446 707 A 49 50 0 1 0 446 807 A 49 50 0 1 0 446 707 Z
-             M 446 738 A 19 19 0 1 1 446 776 A 19 19 0 1 1 446 738 Z"/>
-    <path fill="url(#g-iris)" fill-rule="evenodd"
-          d="M 799 708 A 49 50 0 1 0 799 808 A 49 50 0 1 0 799 708 Z
-             M 799 739 A 19 19 0 1 1 799 777 A 19 19 0 1 1 799 739 Z"/>
-    <path fill="#1F1056" fill-rule="evenodd"
-          d="M 446 731 A 26 26 0 1 0 446 783 A 26 26 0 1 0 446 731 Z
-             M 446 738 A 19 19 0 1 1 446 776 A 19 19 0 1 1 446 738 Z"/>
-    <path fill="#1F1056" fill-rule="evenodd"
-          d="M 799 732 A 26 26 0 1 0 799 784 A 26 26 0 1 0 799 732 Z
-             M 799 739 A 19 19 0 1 1 799 777 A 19 19 0 1 1 799 739 Z"/>
-    <circle cx="463" cy="734" r="8" fill="#FFFFFF"/>
-    <circle cx="816" cy="735" r="8" fill="#FFFFFF"/>
-  </g>
-
-  <g id="beak">
-    <path d="M 623 781 L 670 854 L 623 941 L 576 854 Z" fill="url(#g-metal)"/>
-    <path d="M 623 804 L 648 854 L 623 900 Z" fill="#E0E0E1" opacity="0.62"/>
-  </g>
-
+  <!-- Schnabel: runder Ansatz unter dem Scheitel der Braue, lange Spitze.
+       Er wird zur Spitze hin dunkel — in der Vorlage der einzige Ort, an
+       dem die Zeichnung ins Marineblau geht. -->
+  <path id="rp-m-rp-beak" fill="url(#rp-m-rp-beak)"
+        d="M 623 773 C 651 773 674 796 674 824
+           C 674 860 650 903 623 950
+           C 596 903 572 860 572 824
+           C 572 796 595 773 623 773 Z"/>
   </g>
 </svg>

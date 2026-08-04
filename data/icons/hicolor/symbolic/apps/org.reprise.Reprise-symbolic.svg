@@ -1,6 +1,32 @@
+<!-- Erzeugt von scripts/build-brand-assets.sh. Nicht von Hand ändern. -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
-  <path fill="#222222" fill-rule="evenodd" d="M1 1 L6 5 L8 4 L10 5 L15 1
-        L13 7 L13 10 C13 13 11 15 8 15 C5 15 3 13 3 10 L3 7 Z
-        M4.5 9 L7 9.5 L7 11.5 L4.5 11.5 Z
-        M11.5 9 L9 9.5 L9 11.5 L11.5 11.5 Z"/>
+  <!-- Stufe für 24 und 32 px, zugleich die Vorlage des Symbolic. Ein Pfad,
+       keine Kopfhörer: bei dieser Größe wäre der Bügel eine 1-px-Linie, die
+       am Kopf klebt.
+
+       Die Silhouette ist dieselbe wie in `mark-reduced.svg` — Kopf und
+       Büschel zu einer Kontur verschmolzen, umgerechnet aufs 16er Raster.
+       Eine eigene Formensprache an dieser Stufe hieße: bei 32 px eine
+       andere Eule als bei 48 px.
+
+       Augen und Schnabel sind echte Aussparungen. Sie sind der Negativraum,
+       den V2 misst — bleibt er bei kleiner Rendergröße übrig, trägt die
+       Zeichnung; läuft er zu, ist sie ein Klumpen. -->
+  <path fill="#222222" fill-rule="evenodd"
+        d="M 0.60 0.90
+           C 1.30 2.60 1.90 4.60 2.20 6.66
+           C 0.90 7.60 0.22 8.90 0.22 10.31
+           C 0.22 13.47 3.54 15.44 8 15.44
+           C 12.46 15.44 15.78 13.47 15.78 10.31
+           C 15.78 8.90 15.10 7.60 13.80 6.66
+           C 14.10 4.60 14.70 2.60 15.40 0.90
+           C 14.00 2.60 12.20 3.50 10.55 3.91
+           C 9.75 3.55 8.90 3.34 8 3.34
+           C 7.10 3.34 6.25 3.55 5.45 3.91
+           C 3.80 3.50 2.00 2.60 0.60 0.90 Z
+           M 3.43 10.05 A 1.55 1.55 0 1 0 6.53 10.05
+           A 1.55 1.55 0 1 0 3.43 10.05 Z
+           M 9.47 10.05 A 1.55 1.55 0 1 0 12.57 10.05
+           A 1.55 1.55 0 1 0 9.47 10.05 Z
+           M 8 11.70 L 8.85 13.15 L 8 14.70 L 7.15 13.15 Z"/>
 </svg>

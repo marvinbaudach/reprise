@@ -1,3 +1,11 @@
+---
+slug: owl-logo
+worktree: /home/marvin/Projects/reprise/.worktrees/owl-logo
+branch: feat/owl-logo
+phase: reviewed
+codex_session:
+created: 2026-08-04
+---
 # Owl Logo Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -32,11 +40,17 @@ gepinnte statische Fraunces-Instanz dort ohnehin erzeugt wird.
   Bügel-Aufhellung `#8292D5`, Muschel-Akzent `#5798BD`, Auge Teal `#1C698A`,
   Auge tief `#114A71`, Metall `#A09EB4`→`#E0E0E1`. Grundfläche des
   GNOME-App-Icons `#1B082D`.
+  > **Überholt.** Die Grundfläche ist eine Verlaufsplatte `#5798BD → #8570CB`,
+  > der Kopf-Verlauf endet bei `#33195F`, und `Metall` entfällt. Gründe und
+  > Messwerte stehen in der Spec unter „Änderungen aus der Umsetzung".
 - GNOME-Symbolic: genau **ein** `<path>`, `viewBox="0 0 16 16"`, kein
   `transform`, kein `stroke`, kein Verlauf, `fill="#222222"`.
 - Android: `minSdk = 26`. Adaptive Icons sind garantiert, Legacy-PNG-Buckets
   entfallen. Alle Layer auf 108-dp-Viewport, Marke vollständig in der
   72-dp-Safe-Zone.
+  > **Überholt.** Androids auf *jeder* Maskenform garantierter Bereich ist der
+  > **66-dp-Kreis**, nicht das 72-dp-Quadrat. Die Marke wird auf diesen Radius
+  > gepasst und gemessen (V9).
 - Referenz für Vorlagentreue ist ausschließlich
   `docs/assets/brand-reference/owl-headphones-template-clean.png`, nie die
   Fassung mit eingebranntem Karomuster.
