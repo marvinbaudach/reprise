@@ -1,6 +1,8 @@
+use reprise_core::browser::navigation::{NavigationIntent, SourceKind};
 use reprise_core::podcasts::PodcastKind;
 
 use crate::ui::player_controller::PlayerController;
+use crate::ui::playing_links::LinkSurface;
 
 use super::external_media_state::{ExternalMedia, ExternalSession};
 
@@ -46,8 +48,33 @@ pub(super) fn loaded_source_item(session: Option<&ExternalSession>) -> Option<Lo
     }
 }
 
+/// Which intent a player metadata surface sends for the loaded source item.
+/// It uses the same surface grammar as the label table, so a link cannot say
+/// one thing and perform another.
+pub(in crate::ui) fn source_reveal_intent(
+    item: &LoadedSourceItem,
+    surface: LinkSurface,
+) -> NavigationIntent {
+    match item {
+        LoadedSourceItem::Episode {
+            subscription_id,
+            episode_id,
+            kind,
+        } => NavigationIntent::RevealEpisode {
+            subscription_id: *subscription_id,
+            episode_id: (surface == LinkSurface::Title).then_some(*episode_id),
+            kind: match kind {
+                PodcastKind::Rss => SourceKind::Podcasts,
+                PodcastKind::Youtube => SourceKind::Youtube,
+            },
+        },
+        LoadedSourceItem::Station { station_id } => NavigationIntent::RevealStation {
+            station_id: *station_id,
+        },
+    }
+}
+
 impl PlayerController {
-    #[allow(dead_code)] // Wired to all player-bar surfaces in AP9.
     pub(in crate::ui) fn current_source_item(&self) -> Option<LoadedSourceItem> {
         loaded_source_item(self.external.borrow().session.as_ref())
     }
@@ -55,13 +82,16 @@ impl PlayerController {
 
 #[cfg(test)]
 mod tests {
+    use reprise_core::browser::navigation::{NavigationIntent, SourceKind};
     use reprise_core::podcasts::PodcastKind;
+
+    use crate::ui::playing_links::LinkSurface;
 
     use super::super::external_media_state::{
         ExternalMedia, ExternalSession, PodcastOrigin, PodcastPhase, PodcastSession,
         RadioPresentation, RadioSession, ResumePolicy,
     };
-    use super::{loaded_source_item, LoadedSourceItem};
+    use super::{loaded_source_item, source_reveal_intent, LoadedSourceItem};
 
     fn podcast_session(
         kind: PodcastKind,
@@ -178,5 +208,74 @@ mod tests {
     fn browse_4_a_session_without_a_subscription_has_no_source_item() {
         let session = podcast_session(PodcastKind::Rss, PodcastOrigin::Direct, 0, false);
         assert_eq!(loaded_source_item(Some(&session)), None);
+    }
+
+    #[test]
+    fn browse_4_the_title_link_reveals_the_episode() {
+        let item = LoadedSourceItem::Episode {
+            subscription_id: 42,
+            episode_id: 7,
+            kind: PodcastKind::Rss,
+        };
+
+        assert_eq!(
+            source_reveal_intent(&item, LinkSurface::Title),
+            NavigationIntent::RevealEpisode {
+                subscription_id: 42,
+                episode_id: Some(7),
+                kind: SourceKind::Podcasts,
+            }
+        );
+    }
+
+    #[test]
+    fn browse_4_the_cover_and_channel_links_reveal_the_channel() {
+        let item = LoadedSourceItem::Episode {
+            subscription_id: 42,
+            episode_id: 7,
+            kind: PodcastKind::Rss,
+        };
+        let expected = NavigationIntent::RevealEpisode {
+            subscription_id: 42,
+            episode_id: None,
+            kind: SourceKind::Podcasts,
+        };
+
+        assert_eq!(source_reveal_intent(&item, LinkSurface::Cover), expected);
+        assert_eq!(source_reveal_intent(&item, LinkSurface::Subtitle), expected);
+    }
+
+    #[test]
+    fn browse_4_all_three_radio_links_reveal_the_station() {
+        let item = LoadedSourceItem::Station { station_id: 9 };
+
+        for surface in [
+            LinkSurface::Title,
+            LinkSurface::Subtitle,
+            LinkSurface::Cover,
+        ] {
+            assert_eq!(
+                source_reveal_intent(&item, surface),
+                NavigationIntent::RevealStation { station_id: 9 }
+            );
+        }
+    }
+
+    #[test]
+    fn browse_4_a_youtube_episode_targets_the_youtube_place() {
+        let item = LoadedSourceItem::Episode {
+            subscription_id: 42,
+            episode_id: 7,
+            kind: PodcastKind::Youtube,
+        };
+
+        assert_eq!(
+            source_reveal_intent(&item, LinkSurface::Title),
+            NavigationIntent::RevealEpisode {
+                subscription_id: 42,
+                episode_id: Some(7),
+                kind: SourceKind::Youtube,
+            }
+        );
     }
 }

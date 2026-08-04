@@ -1,14 +1,17 @@
 //! One rendering edge for every track, album, and artist metadata link.
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use libadwaita as adw;
-use reprise_core::browser::navigation::NavigationIntent;
+use reprise_core::browser::navigation::{NavigationIntent, SourceTarget};
 
 use super::library_shell::{self, ActiveContentFocus};
 use crate::ui::nav_history::NavHistory;
 use crate::ui::sidebar::Sidebar;
 use crate::ui::track_list::TrackList;
+
+type SourceRevealCallback = Rc<dyn Fn(SourceTarget)>;
 
 fn normalize_catalog_intent(
     intent: NavigationIntent,
@@ -44,6 +47,7 @@ pub(in crate::ui) struct MetadataNavigator {
     content_stack: gtk4::Stack,
     source_title: adw::WindowTitle,
     active_content_focus: ActiveContentFocus,
+    on_source_reveal: Rc<RefCell<Option<SourceRevealCallback>>>,
 }
 
 impl MetadataNavigator {
@@ -62,10 +66,45 @@ impl MetadataNavigator {
             content_stack,
             source_title,
             active_content_focus,
+            on_source_reveal: Rc::new(RefCell::new(None)),
         }
     }
 
+    pub(in crate::ui) fn set_on_source_reveal(&self, callback: impl Fn(SourceTarget) + 'static) {
+        self.on_source_reveal.replace(Some(Rc::new(callback)));
+    }
+
     pub(in crate::ui) fn navigate(&self, intent: NavigationIntent, reason: &'static str) {
+        if let Some(target) = intent.source_target() {
+            // Order is contractual: the target view must hold the request
+            // before routing maps it. In an already-open source view history
+            // returns no transition, but the callback still performs the
+            // user-requested reveal.
+            let callback = self.on_source_reveal.borrow().clone();
+            if let Some(callback) = callback {
+                callback(target);
+            }
+            let (Some(sidebar), Some(track_list)) =
+                (self.sidebar.upgrade(), self.track_list.upgrade())
+            else {
+                return;
+            };
+            if let Some(place) = self
+                .history
+                .navigate_from(intent, track_list.browser_place())
+            {
+                library_shell::route_to_place(
+                    &place,
+                    &sidebar,
+                    &track_list,
+                    &self.content_stack,
+                    &self.source_title,
+                    &self.active_content_focus,
+                    reason,
+                );
+            }
+            return;
+        }
         let (Some(sidebar), Some(track_list)) = (self.sidebar.upgrade(), self.track_list.upgrade())
         else {
             return;
