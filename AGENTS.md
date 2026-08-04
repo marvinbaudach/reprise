@@ -6,15 +6,33 @@ exactly where the last session left off. **Read this fully before writing code.*
 ## What Reprise is
 
 A native **GTK4 / libadwaita** music player for GNOME (Rust; MIT engine + GPL-3.0 Linux GUI — see LICENSING.md) — a Rhythmbox
-successor. Three-crate Cargo workspace:
+successor. **Nine-crate** Cargo workspace:
 
 - `crates/reprise-core` — pure, cross-platform engine (DB, queue, queries, scanner,
-  playlists, M3U, settings, module registry, the cover pipeline, and the platform
-  *contracts* `playback`/`media_integration`). **Dependency-pure:** it must never depend
+  playlists, M3U, settings, module registry, podcasts/YouTube/radio, concerts, releases,
+  device sync, the cover pipeline, and the platform *contracts*
+  `playback`/`media_integration`). **Dependency-pure:** it must never depend
   on gtk4/libadwaita/gstreamer/zbus. Enforced — see Gates.
 - `crates/reprise-platform-linux` — Linux platform backends: GStreamer playback (`player`),
-  MPRIS/D-Bus media integration (`mpris`).
+  MPRIS/D-Bus media integration (`mpris`), MTP device sync, Trash, and the D-Bus host for
+  the runtime service.
 - `crates/reprise-gnome` — the GTK4/libadwaita frontend. Binary name stays `reprise`.
+- `crates/reprise-runtime` — the toolkit-neutral single-owner runtime for playback, queue,
+  jobs and device runs. **Built and tested, but no shipped surface uses it yet** — see
+  `docs/plans/architecture-consolidation.md` §2.2. Whether it is cut over to or shelved is
+  still open; `docs/plans/consolidation-plan.md` task 0.10 is where that decision gets
+  written down.
+- `crates/reprise-runtime-protocol` — the versioned command/snapshot contract between the
+  runtime and its clients.
+- `crates/reprise-runtime-client` — the client every surface would use to reach the runtime.
+- `crates/reprise-cli` — headless CLI over core facades; `mpris` and `worker` are the two
+  sanctioned feature-gated exceptions to its core-only dependency rule.
+- `crates/reprise-mcp` — local stdio MCP server exposing read-only library resources and
+  capability-gated create tools to agents.
+- `crates/reprise-stems` — the removable ML stem-separation backend behind the experimental
+  instrumental jobs.
+
+`scripts/check-architecture.sh` enforces the dependency direction between all nine.
 
 ## Where we are RIGHT NOW — read these two, in order
 
@@ -48,7 +66,7 @@ plans — they live at `docs/` top level and outrank the code.
 
 ## UX rules are binding
 
-`docs/ux-rules.md` is the single UX source of truth (German). Before touching
+`docs/ux-rules.md` is the single UX source of truth. Before touching
 any user-facing behavior, read the sections you work in. The contract:
 
 - `[active]` rules are enforceable: deviation is a bug; every `[active]` rule
@@ -119,8 +137,10 @@ cargo test --workspace                                  # NOTE: bare `cargo test
 cargo audit                                             # ONLY accepted advisory: RUSTSEC-2024-0436 (`paste`, via lofty). A NEW advisory = STOP.
 ```
 
-Baseline test count as of the current plan: **390 passed; 1 ignored** at plan start; each task
-states its expected new total.
+Baseline test count: take it from the **latest entry in
+`.superpowers/sdd/progress.md`**, not from this file — a number hardcoded here goes stale
+within days and a stale baseline is worse than none. Each task states its expected new total
+relative to the run it starts from.
 
 **Core purity proof** (run after any `reprise-core` change):
 ```bash
@@ -133,11 +153,13 @@ Markdown is exempt: docs are split by subject, never by line count.
 
 ## NON-NEGOTIABLE safety rules
 
-- **English everywhere** — code, comments, log/error/UI strings, commit messages. (User-facing
-  translations come later via gettext; German first.) Internal design docs/specs are in German
-  — deliberately, it is the project's working language. Tests and shell scripts are code, so
-  they stay English even when they enforce a German doc; rule IDs and status tokens
-  (`[active]`, `[planned]`) are quoted verbatim and stay German.
+- **English everywhere** — code, comments, log/error/UI strings, commit messages, **and every
+  document in this repository**: `docs/ux-rules.md`, the plans under `docs/plans/`, the ADRs,
+  research notes and design specs. This was decided on 2026-07-31 and the existing German
+  documents were translated in the same pass; a new document written in German is a defect, not
+  a style choice. The one deliberate exception is `README.de.md`, which is a German translation
+  *for users* and stays German — as do the gettext catalogs under `po/`, which are how the UI
+  reaches non-English users.
 - **Never touch the user's music files or real database unasked.** Reprise writes inside the
   music collection only in three cases: tags through an explicit Tag Editor action, a new `.lrc`
   beside an existing track after downloading synchronized lyrics, and a new `cover.<ext>` in an
@@ -178,19 +200,19 @@ Markdown is exempt: docs are split by subject, never by line count.
 
 ## Roadmap (stages)
 
-Done: MVP (playback, MPRIS, library organize) · Refactor (3-crate split, core made
-dependency-pure) · **GUI-A** (album covers in list + bar, Now-Playing full view, cover in
-track-change notification) — final review READY TO MERGE.
+The staged GUI-A…GUI-D roadmap this section used to carry is done and has been superseded by
+feature work. Landed since: the tag editor with multi-select batch edit, the browse bar and
+editable column layout, first-run and session restore, album covers and the cover pipeline,
+podcasts, YouTube, radio, concerts, new releases, device sync, library doctor, my stats,
+lyrics, the visualizer, the experimental stem separation, the CLI and MCP surfaces, and the
+headless runtime (built, not yet wired — see the crate list above).
 
-In progress: **GUI-A2** (automatic online album-cover download via Cover Art Archive — the current
-plan).
+**Where the project stands now:** a project-wide review and its execution plan live in
+`docs/plans/architecture-consolidation.md` (findings) and `docs/plans/consolidation-plan.md`
+(waves, task by task). Wave 0 there is the set of release blockers for opening a test round.
+Read those two before starting architectural work.
 
-Next: **GUI-B** (tag editor with **multi-select batch edit** — mixed fields show
-"(multiple values)", only user-changed fields are written, never clobber per-track values —
-plus delete/trash) · **GUI-C** (browse bar + editable column layout) · **GUI-D**
-(first-run wizard + session restore). Then release (Flatpak/Flathub, gettext, AppStream).
-
-Each next stage starts with a design spec → an implementation plan (held in-session, not
+New work still starts with a design spec → an implementation plan (held in-session, not
 committed) → task-by-task execution as above.
 
 ## Agent skills
@@ -208,6 +230,12 @@ Default labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-huma
 Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
 
 ## Not released yet — no backwards compatibility
+
+> **This section expires with the first test release.** It is correct only while nobody has
+> installed Reprise. The moment a tester does, the permission below becomes a licence to
+> delete data in someone else's library. `docs/plans/consolidation-plan.md` task 0.7 carries
+> the replacement text and says to set it **in the same change that opens the test round** —
+> not before, because until then this rule is still right and still useful.
 
 Reprise has **not** shipped and there are **no existing installations**. Migrations,
 compatibility fallbacks, dual-write paths and deprecated-key readers are therefore *not*

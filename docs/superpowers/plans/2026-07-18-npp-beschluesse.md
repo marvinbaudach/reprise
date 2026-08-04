@@ -1,150 +1,155 @@
-# Now-Playing-Panel — Beschlussdokument (Grilling 2026-07-18)
+# Now-playing panel — decision document (grilling 2026-07-18)
 
-Normativer Kontext für den Umbau der rechten Spalte zum Now-Playing-Panel nach
-Design **21** (verbindliche Fassung, konsolidiert aus 10b + Screenshot-Review),
-Frames **21a** (Lyrics-Tab) und **21b** (Visual-Tab). Referenz für den
-Artist-News-Folge-Task: Frame **22a**. Design-Quelle ist das claude.ai/design-
-Projekt „Audio-Player für große Bibliotheken" (Share-Link, kanonisch; PDFs in
-`docs/design/` sind nicht maßgeblich).
+Normative context for the rebuild of the right column into the now-playing
+panel per design **21** (binding version, consolidated from 10b + screenshot
+review), frames **21a** (lyrics tab) and **21b** (Visual tab). Reference for
+the Artist News follow-up task: frame **22a**. The design source is the
+claude.ai/design project "Audio-Player für große Bibliotheken" (share link,
+canonical; PDFs in `docs/design/` are not authoritative).
 
-> **Regelwerk-Vermerk (erledigt 2026-07-18):** Die Überführung ist passiert —
-> **normativ ist ab sofort Abschnitt P von `docs/ux-rules.md`** (NPP-1–10, alle
-> `[aktiv]`, jede Regel durch einen regelbenannten Test gedeckt und von
-> `scripts/check-ux-traceability.sh` erzwungen). Die Regelfassung unten bleibt
-> als *historischer* Wortlaut des Grillings stehen; bei Abweichungen gewinnt das
-> Regelwerk. Dieses Dokument ist das **Beschluss-Ledger**: es hält das *Warum*
-> und die Detailentscheidungen, die unterhalb der Regel-Ebene liegen — dafür
-> gibt es im Regelwerk keinen Platz.
+> **Rulebook note (done 2026-07-18):** The transfer has happened —
+> **section P of `docs/ux-rules.md` is normative from now on** (NPP-1–10, all
+> `[active]`, every rule covered by a rule-named test and enforced by
+> `scripts/check-ux-traceability.sh`). The rule version below remains as the
+> *historical* wording of the grilling; where they diverge, the rulebook wins.
+> This document is the **decision ledger**: it holds the *why* and the detail
+> decisions that lie below the rule level — for those there is no room in the
+> rulebook.
 
-## NPP-Regeln (historischer Grilling-Wortlaut — normativ ist ux-rules.md § P)
+## NPP rules (historical grilling wording — ux-rules.md § P is normative)
 
-### Struktur
+### Structure
 
-- **NPP-1 · Geometrie** `[aktiv]` — Panel fix **300 px** (die linke Sidebar
-  fix **240 px** — bewusst ungleich), einklappbar mit derselben
-  Slide-Transition wie die linke Sidebar (MOT-3, Standard-Token 250 ms
-  ease-out-cubic; die bestehende `OverlaySplitView`-Transition liefert sie).
-- **NPP-2 · Aufbau vertikal** `[aktiv]` — Cover **168 px** (Radius 12,
-  Schatten + 1 px Inset-Hairline) → Titel 15 px bold / „Artist · Album" 12 px
-  weiß 55 % → **Pill-Toggle** Up Next | Lyrics | Visual (Segmente, kein
-  Tab-Bar-Widget) → Tab-Inhalt füllt den Rest → Fußzeile 10.5 px weiß 35 %
-  (Inhalt pro Tab, siehe Beschlüsse 3/9). **Kein Volume-Regler im Panel** —
-  Lautstärke lebt ausschließlich in der Playerleiste (P-1).
-- **NPP-3 · Glow statt Volltint** `[aktiv]` — Radialer Verlauf aus der
-  Cover-Akzentfarbe (bestehende Extraktions-Pipeline) hinter dem Cover — nur
-  oberes Drittel (~300 px Ellipse, weich auslaufend, Opacity ~0.4), läuft nach
-  unten auf neutrales Panel-Dunkel aus. Basis-Hintergrund bleibt neutral,
-  damit der Lyrics-Kontrast konstant ist. Fallback Petrol (= Theme-Akzent,
-  Beschluss 8). Als Verlauf/Textur einmal gerendert, kein Live-Blur.
-- **NPP-4 · Tab-Gedächtnis** `[aktiv]` — Gewählter Tab bleibt innerhalb der
-  Session erhalten (NAV-5), Neustart = Up Next. Die bisherige Persistenz des
-  Panel-Tabs über Neustarts (`info_panel_tab`-Setting) entfällt **bewusst**;
-  die Persistenz der Panel-*Sichtbarkeit* bleibt.
+- **NPP-1 · Geometry** `[active]` — Panel fixed at **300 px** (the left
+  sidebar fixed at **240 px** — deliberately unequal), collapsible with the
+  same slide transition as the left sidebar (MOT-3, Standard token 250 ms
+  ease-out-cubic; the existing `OverlaySplitView` transition provides it).
+- **NPP-2 · Vertical layout** `[active]` — Cover **168 px** (radius 12,
+  shadow + 1 px inset hairline) → title 15 px bold / "Artist · Album" 12 px
+  white 55% → **pill toggle** Up Next | Lyrics | Visual (segments, no
+  tab-bar widget) → tab content fills the rest → footer 10.5 px white 35%
+  (content per tab, see decisions 3/9). **No volume control in the panel** —
+  volume lives exclusively in the player bar (P-1).
+- **NPP-3 · Glow instead of full tint** `[active]` — Radial gradient from the
+  cover accent color (existing extraction pipeline) behind the cover — upper
+  third only (~300 px ellipse, fading out softly, opacity ~0.4), running down
+  into neutral panel-dark. The base background stays neutral so that the
+  lyrics contrast is constant. Fallback petrol (= theme accent,
+  decision 8). Rendered once as a gradient/texture, no live blur.
+- **NPP-4 · Tab memory** `[active]` — The selected tab is retained within the
+  session (NAV-5), restart = Up Next. The previous persistence of the panel
+  tab across restarts (`info_panel_tab` setting) is **deliberately** dropped;
+  the persistence of panel *visibility* remains.
 
-### Synced Lyrics (Lyrics-Tab)
+### Synced lyrics (lyrics tab)
 
-- **NPP-5 · Zeilen-Styling** `[aktiv]` — Aktive Zeile 15 px bold weiß +
-  Akzent-Unterstrich (26×2.5 px, zentriert, Farbe = Cover-Akzent).
-  Nachbarzeilen gestuft: ±1 → weiß 45 %, ±2 → 32 %, weiter → 28 %. Alle Zeilen
-  zentriert, 13 px, großzügiger Abstand (~13 px gap). Ganze LRC-Zeilen, kein
-  Karaoke-Wort-Highlight.
-- **NPP-6 · Zeilenwechsel-Motion** `[aktiv]` — Beim Timestamp-Wechsel
-  blendet die neue Zeile 45 % → weiß+bold, die alte zurück (Micro-Token
-  150 ms ease-out); gleichzeitig scrollt die Liste die aktive Zeile mittig
-  (Standard-Token, ease-out-cubic — kein Spring). Der Unterstrich wandert
-  nicht — er gehört zur aktiven Zeile und faded mit ihr.
-- **NPP-7 · Manuelles Scrollen gewinnt** `[aktiv]` — User-Scroll pausiert
-  den Auto-Scroll 4 s (Timer resettet bei jedem User-Scroll-Event); danach
-  gleitet die Liste zurück zur aktiven Zeile. Während der Pause bekommt die
-  aktive Zeile ihr Highlight weiter (nur kein Scroll). User-Scroll bricht auch
-  einen laufenden Rück-Glide ab und startet die 4 s neu; programmatische
-  Scrolls resetten den Timer nie.
-- **NPP-8 · Klick = Seek** `[aktiv]` — Klick auf eine Zeile seekt zum
-  Timestamp (nur synced). Hover: weiß 65 % + Pointer. Einzige
-  Klick-Interaktion im Lyrics-Tab; Lyrics-Text ist nicht selektierbar.
-- **NPP-9 · Fallbacks** `[aktiv]` — Unsynced → statischer scrollbarer Text
-  (13 px, weiß 65 %), kein Highlight, kein Auto-Scroll, Fuß „lyrics · tags".
-  Keine Lyrics → dezenter Leerzustand („No lyrics found", keine Suche-CTA in
-  v1) mit **Inline-Retry** bei Fehlern (Beschluss 9). Instrumental-Gap
-  (>10 s ohne Zeile) → aktive Zeile bleibt, dimmt auf 60 %.
-- **NPP-10 · Trackwechsel** `[aktiv]` — Cover, Titelblock, Glow und
-  Tab-Inhalt crossfaden gemeinsam (Standard-Token, MOT-5); Lyrics starten auf
-  Zeile 0 zentriert. Kein Slide — Trackwechsel ist kein Ortswechsel.
+- **NPP-5 · Line styling** `[active]` — Active line 15 px bold white +
+  accent underline (26×2.5 px, centered, color = cover accent).
+  Neighboring lines stepped: ±1 → white 45%, ±2 → 32%, further → 28%. All
+  lines centered, 13 px, generous spacing (~13 px gap). Whole LRC lines, no
+  karaoke word highlighting.
+- **NPP-6 · Line-change motion** `[active]` — On a timestamp change the new
+  line fades 45% → white+bold, the old one back (Micro token
+  150 ms ease-out); at the same time the list scrolls the active line to the
+  center (Standard token, ease-out-cubic — no spring). The underline does not
+  travel — it belongs to the active line and fades with it.
+- **NPP-7 · Manual scrolling wins** `[active]` — A user scroll pauses
+  auto-scroll for 4 s (the timer resets on every user scroll event);
+  afterwards the list glides back to the active line. During the pause the
+  active line keeps receiving its highlight (only the scroll is absent). A
+  user scroll also aborts a running glide-back and restarts the 4 s;
+  programmatic scrolls never reset the timer.
+- **NPP-8 · Click = seek** `[active]` — Clicking a line seeks to the
+  timestamp (synced only). Hover: white 65% + pointer. The only click
+  interaction in the lyrics tab; the lyrics text is not selectable.
+- **NPP-9 · Fallbacks** `[active]` — Unsynced → static scrollable text
+  (13 px, white 65%), no highlight, no auto-scroll, footer "lyrics · tags".
+  No lyrics → subtle empty state ("No lyrics found", no search CTA in v1)
+  with **inline retry** on errors (decision 9). Instrumental gap
+  (>10 s without a line) → the active line stays, dims to 60%.
+- **NPP-10 · Track change** `[active]` — Cover, title block, glow, and tab
+  content crossfade together (Standard token, MOT-5); lyrics start on
+  line 0, centered. No slide — a track change is not a change of place.
 
-### Verhalten & Kanten
+### Behavior & edges
 
-- Seek (Waveform oder Lyrics-Klick) springt den Auto-Scroll sofort auf die
-  neue aktive Zeile (kein 4-s-Timer).
-- Pause friert das Highlight ein; Play nimmt es wieder auf. Ein pausierter
-  Track zählt als geladen — das Panel zeigt ihn weiter. Das Panel folgt
-  **immer** dem spielenden/geladenen Track, nie der Library-Selektion.
-- `gtk-enable-animations=false`: alle NPP-Motions werden Hard-Switch (MOT-7,
-  zentral über `ui/motion.rs`).
-- Der gemeinsame Kopf (Cover/Glow/Titel/Toggle) ist ein Widget, die
-  Tab-Inhalte wechseln darunter.
+- A seek (waveform or lyrics click) jumps auto-scroll immediately to the
+  new active line (no 4-s timer).
+- Pause freezes the highlight; play picks it up again. A paused track counts
+  as loaded — the panel keeps showing it. The panel **always** follows the
+  playing/loaded track, never the library selection.
+- `gtk-enable-animations=false`: all NPP motions become hard switches (MOT-7,
+  centrally via `ui/motion.rs`).
+- The shared head (cover/glow/title/toggle) is one widget, the tab contents
+  change beneath it.
 
-## Gegrillte Beschlüsse (2026-07-18, alle bestätigt)
+## Grilled decisions (2026-07-18, all confirmed)
 
-1. **Artist News zieht um** — Der Information-Tab entfällt. Artist News gehört
-   zum Künstler, nicht zum spielenden Track: Wiederanschluss als Sektion in
-   der Artist-Detail-View nach Frame **22a** (eigener Folge-Task; Sektion nur
-   bei Einträgen, genau eine Akzent-Release-Karte, ⟳ TIP-konform, Cache-Alter
-   statt Fehlerbanner). Dieser Task **entkoppelt nur**: Worker, Cache und
-   Settings bleiben unangetastet erhalten. Kein Informationsverlust bei den
-   Track-Metadaten — Codec/Bitrate/Pfad leben im Tag-Editor bzw. den Spalten.
-2. **Scope dieser Iteration** — Gemeinsamer Kopf + Lyrics-Tab (NPP-5..10) +
-   Up-Next-Tab. Das **Visual-Segment erscheint erst mit dem
-   Visualizer-Folge-Task** (21b): Die Labs-Regel „Plugin deaktiviert →
-   Segment verschwindet aus dem Panel" macht die Zwei-Segment-Pill
-   designkonform, solange das Plugin nicht existiert.
-3. **Up-Next-Tab** — Nur **kommende** Tracks (der spielende hängt groß im
-   Kopf — keine Dopplung, P-1). Rows im 21a-Stil (Cover 32 px, Titel 13.5 px,
-   Artist dim). **Klick = Sprung** zu diesem Queue-Eintrag: explizite
-   Nutzeraktion (PLAY-5-konform), übersprungene Einträge bleiben in der
-   Queue-Historie — das Panel verwaltet nichts (kein Reorder, kein
-   Entfernen; das kann die Queue-View). Leer: dezentes „Queue is empty".
-   Fußzeile: „n tracks · Restdauer".
-4. **Idle-Zustand** (kein geladener Track) — Platzhalter-Cover ohne Glow,
-   Titelzeile dezent „Nothing playing", Tabs bleiben nutzbar (Up-Next-Klick
-   startet die Wiedergabe). Nichts klappt von allein auf oder zu.
-5. **Light-Theme** — Das Panel bleibt in beiden Farbschemata die **dunkle
-   Bühne** (fixer neutral-dunkler Grund wie ein Player-Canvas): ein
-   Alpha-Satz, konstanter Lyrics-Kontrast, Glow wirkt immer.
-6. **Geometrie** — Links fix 240 px (ersetzt 220–280 px/22 %-Fraction),
-   rechts fix 300 px (ersetzt 340 px). Responsive Collapse (<800 px) bleibt.
-7. **14a-Flächenhierarchie** — Eigener schmaler Paralleltask (Branch
-   `feat/theme-surface-hierarchy`): linke Sidebar eine Stufe heller als die
-   Tabelle, Headerbar eine Stufe darüber, 1-px-Hairlines — in allen drei
-   Dark-Themes; die Light-Paletten haben die Hierarchie bereits.
-8. **Fallback-Akzent = Theme-Akzent (Petrol)** — `player_accent` wird pro
-   Theme auf den Theme-Akzent gesetzt; das statische Orange (#e8703a)
-   entfällt. Gilt einheitlich für Play-Button, Waveform, Glow, Unterstrich
-   und später Visual. Umsetzung wegen Datei-Ownership (`theme.rs`,
-   `cover_accent.rs`) im Paralleltask (Beschluss 7); Status-Flip dort nicht
-   möglich — gilt mit dem Merge von `feat/theme-surface-hierarchy`.
-9. **Kein Panel-Header** — ⟳/× entfallen ersatzlos (mockgetreu 21a).
-   Schließen nur über den App-Header-Toggle (persistiert Sichtbarkeit
-   weiterhin), Lyrics-Retry wandert als dezenter Inline-Button in den
-   Fehlerzustand des Lyrics-Tabs.
+1. **Artist News moves out** — The Information tab is dropped. Artist News
+   belongs to the artist, not to the playing track: reconnected as a section
+   in the artist detail view per frame **22a** (its own follow-up task;
+   section only when there are entries, exactly one accent release card,
+   ⟳ TIP-compliant, cache age instead of an error banner). This task
+   **only decouples**: worker, cache, and settings are kept untouched. No
+   loss of information for the track metadata — codec/bitrate/path live in
+   the tag editor and in the columns respectively.
+2. **Scope of this iteration** — Shared head + lyrics tab (NPP-5..10) +
+   Up Next tab. The **Visual segment only appears with the visualizer
+   follow-up task** (21b): the Labs rule "plugin disabled → segment
+   disappears from the panel" makes the two-segment pill design-compliant
+   as long as the plugin does not exist.
+3. **Up Next tab** — Only **upcoming** tracks (the playing one hangs large
+   in the head — no duplication, P-1). Rows in 21a style (cover 32 px, title
+   13.5 px, artist dim). **Click = jump** to that queue entry: an explicit
+   user action (PLAY-5-compliant), skipped entries stay in the queue
+   history — the panel manages nothing (no reorder, no removal; the queue
+   view can do that). Empty: a subtle "Queue is empty".
+   Footer: "n tracks · remaining duration".
+4. **Idle state** (no loaded track) — placeholder cover without glow, title
+   line subtly "Nothing playing", tabs remain usable (an Up Next click
+   starts playback). Nothing opens or closes on its own.
+5. **Light theme** — In both color schemes the panel remains the **dark
+   stage** (a fixed neutral-dark ground like a player canvas): one
+   alpha set, constant lyrics contrast, the glow always works.
+6. **Geometry** — Left fixed at 240 px (replaces 220–280 px/22% fraction),
+   right fixed at 300 px (replaces 340 px). Responsive collapse (<800 px)
+   stays.
+7. **14a surface hierarchy** — Its own narrow parallel task (branch
+   `feat/theme-surface-hierarchy`): left sidebar one level lighter than the
+   table, headerbar one level above it, 1 px hairlines — in all three
+   dark themes; the light palettes already have the hierarchy.
+8. **Fallback accent = theme accent (petrol)** — `player_accent` is set per
+   theme to the theme accent; the static orange (#e8703a) is dropped.
+   Applies uniformly to the play button, waveform, glow, underline
+   and, later, Visual. Implemented in the parallel task because of file
+   ownership (`theme.rs`, `cover_accent.rs`) (decision 7); a status flip is
+   not possible there — it applies with the merge of
+   `feat/theme-surface-hierarchy`.
+9. **No panel header** — ⟳/× are dropped without replacement (faithful to
+   mock 21a). Closing only via the app header toggle (which continues to
+   persist visibility), the lyrics retry moves into the error state of the
+   lyrics tab as a subtle inline button.
 
-## Selbstentscheidungen (Implementierungsebene)
+## Self-made decisions (implementation level)
 
-- `info_panel_tab`-Setting samt Getter/Setter in `reprise-core` entfernen
-  (NPP-4); keine Migration nötig — verwaiste Zeile in `settings` ist harmlos.
-- Volume-Footer-Entfernung aus dem Diktat ist gegen den Code ein No-op (das
-  Panel hatte nie einen); die Regel NPP-2 wird per Struktur-Test absichert.
-- Glow als CSS-Radialverlauf auf dem Kopf-Widget (einmal pro Track gesetzt),
-  kein Echtzeit-Blur — erfüllt „als Textur einmal rendern".
-- Der Visualizer-Folge-Task übernimmt: Spektrum-Pipeline, Presets
-  Rings/Flow/Pulse, F11-Fullscreen, Labs-Plugin-Schalter (21b), Ausklingen
-  bei Pause, Idle statisch-minimal, MOT-2-Begründung (einzige Dauerbewegung,
-  nur in diesem Tab).
+- Remove the `info_panel_tab` setting along with its getter/setter in
+  `reprise-core` (NPP-4); no migration needed — an orphaned row in
+  `settings` is harmless.
+- Removing the volume footer as required by the dictate is a no-op against
+  the code (the panel never had one); rule NPP-2 is secured by a structure
+  test.
+- Glow as a CSS radial gradient on the head widget (set once per track), no
+  real-time blur — satisfies "render once as a texture".
+- The visualizer follow-up task takes over: spectrum pipeline, presets
+  Rings/Flow/Pulse, F11 fullscreen, Labs plugin switch (21b), fade-out
+  on pause, idle static-minimal, MOT-2 justification (the only continuous
+  motion, only in this tab).
 
-## Folge-Tasks (nicht dieser Branch)
+## Follow-up tasks (not this branch)
 
-| Task | Referenz | Inhalt |
+| Task | Reference | Content |
 |------|----------|--------|
-| Artist News in Artist-Detail-View | Frame 22a | News-Sektion unter Top Tracks, Release-Karte, „Remind me" `[geplant]` |
-| Audio-Visualizer (Visual-Tab) | Frames 21b/10b/10c | GPU-Muster, Presets, F11, Labs-Plugin; Segment erscheint erst damit |
-| ~~NPP-Regeln → ux-rules.md Sektion P~~ | dieses Dokument | **erledigt 2026-07-18** — Abschnitt P, NPP-1–10 `[aktiv]`, 59 Regeln traceable |
-| ~~14a-Flächenhierarchie + Petrol~~ | Beschlüsse 7/8 | **erledigt 2026-07-18** — `feat/theme-surface-hierarchy` auf main gemergt |
+| Artist News in the artist detail view | Frame 22a | News section below Top Tracks, release card, "Remind me" `[planned]` |
+| Audio visualizer (Visual tab) | Frames 21b/10b/10c | GPU patterns, presets, F11, Labs plugin; the segment only appears with it |
+| ~~NPP rules → ux-rules.md section P~~ | this document | **done 2026-07-18** — section P, NPP-1–10 `[active]`, 59 rules traceable |
+| ~~14a surface hierarchy + petrol~~ | Decisions 7/8 | **done 2026-07-18** — `feat/theme-surface-hierarchy` merged to main |

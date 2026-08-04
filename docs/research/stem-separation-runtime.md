@@ -1,87 +1,88 @@
-# ML-Runtime für Stem-Separation — Spike-Report (Paket E)
+# ML runtime for stem separation — spike report (package E)
 
-Stand: 2026-07-22
+As of: 2026-07-22
 
-## Zweck und Auftrag
+## Purpose and remit
 
-Dieser Report entscheidet **faktenbasiert** die letzte offene Frage des
-Multi-Frontend-Core-Plans (`docs/plans/multi-frontend-core.md`, Beschluss 11):
-Welche ML-Runtime setzt Paket G für die Vocal-Removal-/Instrumental-Pipeline
-(`crates/reprise-stems`) um? Gemessen wurden auf dem Zielrechner im
-Release-Profil zwei Kandidaten:
+This report decides, **on a factual basis**, the last open question of the
+multi-frontend core plan (`docs/plans/multi-frontend-core.md`, decision 11):
+which ML runtime does package G implement for the vocal-removal/instrumental
+pipeline (`crates/reprise-stems`)? Two candidates were measured on the target
+machine in the release profile:
 
-- **(a) candle** (pure-Rust, HF-Ökosystem) mit einem Demucs-Klasse-Modell.
-- **(b) ort** (ONNX-Runtime-Bindings) mit einem MDX-Klasse-ONNX-Modell.
+- **(a) candle** (pure Rust, HF ecosystem) with a Demucs-class model.
+- **(b) ort** (ONNX Runtime bindings) with an MDX-class ONNX model.
 
-`libtorch` und Python-Subprozess sind laut Beschluss 11 verworfen und wurden
-nicht vermessen. Deliverable ist **dieser Report mit Empfehlung**, kein
-Produktionscode — Paket G implementiert die Empfehlung. Der Spike-Code liegt
-in `crates/reprise-stems/examples/` hinter den optionalen Features
-`spike-candle`/`spike-ort` (siehe [Anhang: Reproduktion](#anhang-reproduktion)).
+`libtorch` and a Python subprocess are discarded per decision 11 and were not
+measured. The deliverable is **this report with a recommendation**, not
+production code — package G implements the recommendation. The spike code
+lives in `crates/reprise-stems/examples/` behind the optional features
+`spike-candle`/`spike-ort` (see [Appendix: reproduction](#appendix-reproduction)).
 
-**Qualität ist ausdrücklich nicht Gegenstand dieses Spikes** (Beschluss:
-Demucs-Klasse-Qualität ist die Einschlussbedingung, aber die
-Trennqualität wird hier nicht bewertet). Das Testsignal ist synthetisch und
-dient ausschließlich einem **faithful Timing**.
+**Quality is expressly not the subject of this spike** (decision:
+Demucs-class quality is the inclusion condition, but the
+separation quality is not assessed here). The test signal is synthetic and
+serves exclusively a **faithful timing**.
 
-## Kernergebnis (TL;DR)
+## Core result (TL;DR)
 
-- **candle scheitert an der Modellverfügbarkeit, nicht an der Runtime.**
-  candle-transformers enthält **kein** Demucs; die einzige Rust-Demucs-Portierung
-  (`demucs-rs`) setzt auf **Burn**, nicht candle. Ein echter htdemucs-Lauf unter
-  candle erfordert einen **Hand-Port der Hybrid-Transformer-Architektur plus
-  Gewichtskonvertierung** — außerhalb des Spike-Timebox und ein erheblicher
-  Paket-G-Aufwand. Die Runtime selbst ist pure-Rust und schlank (verifiziert).
-- **ort läuft sofort** — ONNX-Modelle laden ohne Architektur-Port. Sowohl ein
-  MDX-Klasse-Modell als auch **htdemucs** (die geforderte Demucs-Klasse) laufen
-  auf diesem Rechner **schneller als Echtzeit** (~2,5–3,5×).
-- **Der Lizenz-Gate kippt die Modellwahl, nicht die Runtime:** Die
-  UVR-MDX-Net-Community-Gewichte haben **keine belastbare Lizenz** (Gate-Fail),
-  **htdemucs ist sauber MIT** (Meta; Gate-Pass).
-- **Empfehlung: ort-Runtime + htdemucs-Gewichte (MIT) als ONNX.** Preis, den
-  Paket G zahlt: die native-onnxruntime-Flatpak-Offline-Story und ein hoher
-  Speicher-Peak (~6 GB fp32).
+- **candle fails on model availability, not on the runtime.**
+  candle-transformers contains **no** Demucs; the only Rust Demucs port
+  (`demucs-rs`) builds on **Burn**, not candle. A real htdemucs run under
+  candle requires a **hand port of the hybrid-transformer architecture plus
+  weight conversion** — outside the spike timebox and a considerable package G
+  effort. The runtime itself is pure Rust and lean (verified).
+- **ort runs immediately** — ONNX models load without an architecture port.
+  Both an MDX-class model and **htdemucs** (the required Demucs class) run
+  on this machine **faster than real time** (~2.5–3.5×).
+- **The licence gate tips the model choice, not the runtime:** the
+  UVR-MDX-Net community weights have **no defensible licence** (gate fail),
+  **htdemucs is cleanly MIT** (Meta; gate pass).
+- **Recommendation: ort runtime + htdemucs weights (MIT) as ONNX.** The price
+  package G pays: the native-onnxruntime Flatpak offline story and a high
+  memory peak (~6 GB fp32).
 
-## Methode
+## Method
 
-### Zielrechner
+### Target machine
 
-Ausgelesen aus `/proc/cpuinfo` und `free -h`:
+Read out from `/proc/cpuinfo` and `free -h`:
 
-- **CPU:** Intel Core Ultra 7 258V (Lunar Lake), 8 Kerne / 8 Threads (kein SMT;
-  4 P-Kerne Lion Cove + 4 LP-E-Kerne Skymont — **heterogen**, relevant für die
-  Timing-Varianz unten).
-- **SIMD:** AVX, AVX2, FMA, F16C — **kein AVX-512** (Lunar Lake).
-- **RAM:** 30 GiB gesamt, ~19 GiB verfügbar zum Messzeitpunkt.
+- **CPU:** Intel Core Ultra 7 258V (Lunar Lake), 8 cores / 8 threads (no SMT;
+  4 Lion Cove P-cores + 4 Skymont LP-E-cores — **heterogeneous**, relevant for
+  the timing variance below).
+- **SIMD:** AVX, AVX2, FMA, F16C — **no AVX-512** (Lunar Lake).
+- **RAM:** 30 GiB total, ~19 GiB available at the time of measurement.
 - **OS:** Linux 6.18.38-1-MANJARO x86_64.
-- **Toolchain:** rustc/cargo 1.96.1; **Release-Profil** für alle Messungen.
+- **Toolchain:** rustc/cargo 1.96.1; **release profile** for all measurements.
 
-### Testsignal
+### Test signal
 
-Synthetisch erzeugt (`synth_stereo`): Stereo, 44,1 kHz, f32, Summe aus
-Sinus-Partialtönen (220/440/660/1760 Hz) plus schwaches Xorshift-Rauschen.
-Längen: 45 s / 90 s / 120 s, um den langsamen ersten Chunk (ONNX-Runtime-Warmup)
-zu amortisieren. Für Timing völlig ausreichend, da die Inferenzkosten allein von
-der Tensor-Form und dem Modellgraphen bestimmt werden, nicht vom Signalinhalt.
+Synthetically generated (`synth_stereo`): stereo, 44.1 kHz, f32, sum of sine
+partials (220/440/660/1760 Hz) plus weak xorshift noise.
+Lengths: 45 s / 90 s / 120 s, to amortize the slow first chunk (ONNX Runtime
+warmup). Entirely sufficient for timing, since the inference cost is
+determined solely by the tensor shape and the model graph, not by the signal
+content.
 
-### Modelle (Herkunft, Größe, Checksumme)
+### Models (provenance, size, checksum)
 
-| Modell | Datei | Größe | sha256 | Quelle |
+| Model | File | Size | sha256 | Source |
 |---|---|---|---|---|
-| MDX-Klasse | `UVR-MDX-NET-Inst_HQ_1.onnx` | 66.759.214 B (63,7 MiB) | `38a045c4…e29f7f9` | HF-Mirror `Blane187/all_public_uvr_models` |
-| Demucs-Klasse | `htdemucs.onnx` (fp32) | 316.446.953 B (301,8 MiB) | `68d0bf16…fcc5e74` | HF `StemSplitio/htdemucs-onnx` |
+| MDX class | `UVR-MDX-NET-Inst_HQ_1.onnx` | 66,759,214 B (63.7 MiB) | `38a045c4…e29f7f9` | HF mirror `Blane187/all_public_uvr_models` |
+| Demucs class | `htdemucs.onnx` (fp32) | 316,446,953 B (301.8 MiB) | `68d0bf16…fcc5e74` | HF `StemSplitio/htdemucs-onnx` |
 
-Modellgraphen (per `ort_probe` ausgelesen, also real, nicht angenommen):
+Model graphs (read out via `ort_probe`, i.e. real, not assumed):
 
-- **MDX:** Input `input` `[batch, 4, 3072, 256]`, Output `output` gleich.
-  Spektrogramm-Domäne: 4 Kanäle = (L,R)×(Re,Im), dim_f=3072, dim_t=256.
-  STFT extern (im Harness, `rustfft`): n_fft=6144, hop=1024 (MDX-Standard) ⇒
-  ein Chunk = 256·1024 = 262.144 Samples = **5,944 s Audio**.
-- **htdemucs:** Input `mix` `[1, 2, 343980]` (Stereo-**Waveform**, 7,8 s
-  Segment), Output `stems` `[1, 4, 2, 343980]` (4 Quellen × Stereo). Die STFT
-  liegt **im Graphen** — reine Waveform-I/O.
+- **MDX:** input `input` `[batch, 4, 3072, 256]`, output `output` the same.
+  Spectrogram domain: 4 channels = (L,R)×(Re,Im), dim_f=3072, dim_t=256.
+  STFT external (in the harness, `rustfft`): n_fft=6144, hop=1024 (MDX
+  standard) ⇒ one chunk = 256·1024 = 262,144 samples = **5.944 s of audio**.
+- **htdemucs:** input `mix` `[1, 2, 343980]` (stereo **waveform**, 7.8 s
+  segment), output `stems` `[1, 4, 2, 343980]` (4 sources × stereo). The STFT
+  lies **inside the graph** — pure waveform I/O.
 
-### Exakte Kommandos
+### Exact commands
 
 ```bash
 # Kandidat (b): ONNX-Modellgraph inspizieren
@@ -94,216 +95,221 @@ cargo run -p reprise-stems --release --features spike-ort --example ort_demucs_b
 cargo run -p reprise-stems --release --features spike-candle --example candle_probe
 ```
 
-Gemessen wird: Kaltstart (Session-Build = Modell laden + Graph-Optimierung),
-erste-Chunk-Latenz (inkl. ONNX-Warmup), reiner Inferenz-Echtzeitfaktor (RTF =
-Wandzeit / Audiodauer), Peak RSS (`VmHWM` aus `/proc/self/status`),
-Thread-Anzahl (onnxruntime intra-op default = 8).
+What is measured: cold start (session build = load model + graph
+optimization), first-chunk latency (incl. ONNX warmup), pure inference
+real-time factor (RTF = wall time / audio duration), peak RSS (`VmHWM` from
+`/proc/self/status`), thread count (onnxruntime intra-op default = 8).
 
-## Messtabelle
+## Measurement table
 
-| Metrik | (a) candle + Demucs | (b) ort + MDX-Net HQ | (b) ort + **htdemucs** (Demucs-Klasse) |
+| Metric | (a) candle + Demucs | (b) ort + MDX-Net HQ | (b) ort + **htdemucs** (Demucs class) |
 |---|---|---|---|
-| Im Timebox lauffähig | **Nein** — Port-Blocker | Ja | Ja |
-| Modelldatei | — | 63,7 MiB | 316 MiB (fp32) / 166 MiB (fp16) |
-| Kaltstart (Session-Build) | — | **~0,14 s** (128–183 ms) | **~3,2 s** (3,16–3,93 s) |
-| Erste Ausgabe (inkl. Warmup) | — | ~2,3–2,6 s | ~5,1–7,5 s |
-| **Echtzeitfaktor (RTF)** | **nicht messbar** | **0,37–0,42×** (~2,5× RT) | **0,28–0,46×** (~2,5–3,5× RT)¹ |
-| 4-Min-Song (240 s) → Rechenzeit | — | ~94 s | ~70–110 s¹ |
-| Peak RSS | (Mikrobench: 144 MiB) | **~2,6–2,8 GB** | **~5,0–6,2 GB** (fp32) |
-| Threads (intra-op) | 1 (Mikrobench) | 8 | 8 |
-| Binary-Größenimpact | **+~2 MB** (pure Rust) | +~22 MB (onnxruntime statisch) | +~22 MB |
-| Pure Rust | **Ja** (verifiziert) | Nein (onnxruntime 1.22.0) | Nein |
+| Runnable within the timebox | **No** — port blocker | Yes | Yes |
+| Model file | — | 63.7 MiB | 316 MiB (fp32) / 166 MiB (fp16) |
+| Cold start (session build) | — | **~0.14 s** (128–183 ms) | **~3.2 s** (3.16–3.93 s) |
+| First output (incl. warmup) | — | ~2.3–2.6 s | ~5.1–7.5 s |
+| **Real-time factor (RTF)** | **not measurable** | **0.37–0.42×** (~2.5× RT) | **0.28–0.46×** (~2.5–3.5× RT)¹ |
+| 4-min song (240 s) → compute time | — | ~94 s | ~70–110 s¹ |
+| Peak RSS | (microbench: 144 MiB) | **~2.6–2.8 GB** | **~5.0–6.2 GB** (fp32) |
+| Threads (intra-op) | 1 (microbench) | 8 | 8 |
+| Binary size impact | **+~2 MB** (pure Rust) | +~22 MB (onnxruntime static) | +~22 MB |
+| Pure Rust | **Yes** (verified) | No (onnxruntime 1.22.0) | No |
 
-¹ **Wichtiger Vorbehalt:** Der htdemucs-Harness verarbeitet Segmente **ohne
-Overlap** (Back-to-Back). Produktions-Demucs nutzt typischerweise Overlap 0,25
-(und optional `shifts`/TTA), was die reale Rechenzeit um ~1,3× (bzw. bei
-`shifts` deutlich mehr) erhöht. Die gemessenen RTF sind also eine **untere
-Schranke**; realistisch mit Overlap ~0,4–0,45×. Die Varianz (0,28–0,46) stammt
-messbar von der **heterogenen P+E-Kern-Topologie**: onnxruntime verteilt 8
-Threads über ungleiche Kerne, was bei kurzen Läufen schwankt. Median-typisch
-liegt htdemucs bei **~0,30–0,35× ohne Overlap**.
+¹ **Important caveat:** the htdemucs harness processes segments **without
+overlap** (back-to-back). Production Demucs typically uses overlap 0.25
+(and optionally `shifts`/TTA), which raises the real compute time by ~1.3×
+(and considerably more with `shifts`). The measured RTFs are therefore a
+**lower bound**; realistically with overlap ~0.4–0.45×. The variance
+(0.28–0.46) demonstrably stems from the **heterogeneous P+E core topology**:
+onnxruntime distributes 8 threads across unequal cores, which fluctuates on
+short runs. Median-typically htdemucs lies at **~0.30–0.35× without overlap**.
 
-candle-Mikrobenchmark (nur Kontext, **kein** Demucs-RTF): matmul 512×384×384 =
-25 GFLOP/s, Conv-Encoder-Stack 328 ms/Pass, Peak RSS 144 MiB. Das belegt: candle
-läuft pure-Rust auf diesem Rechner; der Out-of-the-box-CPU-Durchsatz ist moderat
-(ohne MKL/BLAS-Feature), was eine htdemucs-Portierung nicht per se disqualifiziert,
-aber auch keinen Vorsprung verspricht.
+candle microbenchmark (context only, **no** Demucs RTF): matmul 512×384×384 =
+25 GFLOP/s, conv encoder stack 328 ms/pass, peak RSS 144 MiB. This proves:
+candle runs pure Rust on this machine; the out-of-the-box CPU throughput is
+moderate (without the MKL/BLAS feature), which does not per se disqualify an
+htdemucs port, but does not promise any head start either.
 
-## Build- und Packaging-Story
+## Build and packaging story
 
 ### (a) candle
 
-- **Pure-Rust bestätigt:** `ldd` auf das candle-Beispielbinary zeigt **nur**
-  `libc`/`libm`/`libgcc_s` — **keine** native ML-Bibliothek, kein BLAS, kein
-  onnxruntime. Der Standard-CPU-Backend (`gemm`-Crate) ist reiner Rust-Code.
-- **Binärgröße:** candle-Beispiel 2,5 MB; der Aufschlag durch candle ggü. einem
-  Leer-Binary liegt bei ~2 MB. **Flatpak-Offline-Build trivial** — reine
-  crates.io-Abhängigkeiten, `cargo --offline` mit vendorten Crates genügt, keine
-  Build-Zeit-Downloads, kein native-Lib-Management pro Plattform.
-- **Lizenz Runtime:** candle-core/candle-nn 0.11.0 = **MIT OR Apache-2.0** ✓.
-- **Der Blocker liegt am Modell, nicht am Build** (siehe Risiken).
+- **Pure Rust confirmed:** `ldd` on the candle example binary shows **only**
+  `libc`/`libm`/`libgcc_s` — **no** native ML library, no BLAS, no
+  onnxruntime. The default CPU backend (`gemm` crate) is pure Rust code.
+- **Binary size:** candle example 2.5 MB; the surcharge from candle compared
+  to an empty binary is ~2 MB. **Flatpak offline build trivial** — purely
+  crates.io dependencies, `cargo --offline` with vendored crates suffices, no
+  build-time downloads, no per-platform native lib management.
+- **Runtime licence:** candle-core/candle-nn 0.11.0 = **MIT OR Apache-2.0** ✓.
+- **The blocker lies with the model, not the build** (see Risks).
 
 ### (b) ort
 
-- **Auflösung/Linking (empirisch aus dem `ort-sys`-Buildlog):**
-  `onnxruntime not found using pkg-config, falling back to manual setup` ⇒ die
-  Default-Strategie **`download-binaries`** lädt zur **Build-Zeit** eine
-  vorkompilierte statische `libonnxruntime.a` (97,8 MB, onnxruntime **1.22.0**)
-  von pykes CDN nach `~/.cache/ort.pyke.io/…` und linkt sie **statisch**
-  (`cargo:rustc-link-lib=static=onnxruntime`, plus `stdc++`). Ergebnis: ein
-  selbstständiges 26,7-MB-Binary ohne Runtime-`.so`-Abhängigkeit (`ldd` zeigt nur
-  `libstdc++`/`libgcc_s`).
-- **Flatpak-Offline-Build — der zentrale Preis:** `download-binaries` **bricht**
-  einen Offline-/Flathub-Build (Netz zur Build-Zeit verboten). Tragfähige Wege:
-  1. **`ORT_STRATEGY=system`** + die vorkompilierte `libonnxruntime.a`/`.so` als
-     **deklarierte, per sha256 geprüfte Flatpak-Source** (flatpak-builder lädt
-     Sources vorab mit Checksumme — genau das Muster, das der Plan für die
-     Modell-Gewichte ohnehin vorsieht). `ORT_LIB_LOCATION` zeigt auf die Datei.
-  2. **`load-dynamic`** + eine gebündelte `libonnxruntime.so`, die zur Laufzeit
-     via `dlopen` geladen wird (entkoppelt Build und Lib vollständig).
-  3. onnxruntime als eigenes Flatpak-Modul aus Source bauen (langsam, unnötig).
-  Empfehlung für G: **Weg 1 oder 2** — beide sind Standard und lösbar, aber
-  **echte Packaging-Arbeit**, die candle nicht hätte.
-- **Portabilität:** onnxruntime hat offizielle Builds für Windows/macOS/
-  Android/iOS — die Portabilitätszusage des Plans bleibt gewahrt, jedoch mit
-  **nativer Lib pro Plattform** statt eines reinen Rust-Artefakts.
-- **Lizenz Runtime:** ort/ort-sys 2.0.0-rc.10 = **MIT OR Apache-2.0** ✓;
-  ONNX Runtime selbst = **MIT** (Microsoft) ✓. Hinweis: ort 2.0 ist noch
-  **RC** (kein stabiles Release) — Paket G sollte auf die dann aktuelle
-  Version re-pinnen.
+- **Resolution/linking (empirical, from the `ort-sys` build log):**
+  `onnxruntime not found using pkg-config, falling back to manual setup` ⇒ the
+  default strategy **`download-binaries`** downloads, at **build time**, a
+  precompiled static `libonnxruntime.a` (97.8 MB, onnxruntime **1.22.0**)
+  from pyke's CDN into `~/.cache/ort.pyke.io/…` and links it **statically**
+  (`cargo:rustc-link-lib=static=onnxruntime`, plus `stdc++`). Result: a
+  self-contained 26.7 MB binary without a runtime `.so` dependency (`ldd`
+  shows only `libstdc++`/`libgcc_s`).
+- **Flatpak offline build — the central price:** `download-binaries`
+  **breaks** an offline/Flathub build (network at build time is forbidden).
+  Viable routes:
+  1. **`ORT_STRATEGY=system`** + the precompiled `libonnxruntime.a`/`.so` as a
+     **declared Flatpak source verified by sha256** (flatpak-builder fetches
+     sources in advance with a checksum — exactly the pattern the plan
+     foresees for the model weights anyway). `ORT_LIB_LOCATION` points to the
+     file.
+  2. **`load-dynamic`** + a bundled `libonnxruntime.so` that is loaded at
+     runtime via `dlopen` (fully decouples build and lib).
+  3. Build onnxruntime as its own Flatpak module from source (slow,
+     unnecessary).
+  Recommendation for G: **route 1 or 2** — both are standard and solvable, but
+  **real packaging work** that candle would not have.
+- **Portability:** onnxruntime has official builds for Windows/macOS/
+  Android/iOS — the plan's portability promise remains intact, but with a
+  **native lib per platform** instead of a pure Rust artifact.
+- **Runtime licence:** ort/ort-sys 2.0.0-rc.10 = **MIT OR Apache-2.0** ✓;
+  ONNX Runtime itself = **MIT** (Microsoft) ✓. Note: ort 2.0 is still
+  **RC** (not a stable release) — package G should re-pin to the version
+  current at that time.
 
-### Workspace-Hygiene (beide)
+### Workspace hygiene (both)
 
-Die Spike-Deps sind **optional** und die Beispiele tragen `required-features`;
-`cargo check/test/clippy --all-targets` (ohne Features) überspringt sie. Belegt:
-`cargo tree -p reprise-stems` (Default) ist **core-only**; `cargo check
---workspace`, `cargo test -p reprise-stems` und `cargo clippy --all-targets -p
-reprise-stems -- -D warnings` sind grün; **`cargo audit` bringt keinen neuen
-Advisory** (weiterhin nur der akzeptierte RUSTSEC-2024-0436 via `paste`/lofty).
-494 Lock-Pakete insgesamt.
+The spike deps are **optional** and the examples carry `required-features`;
+`cargo check/test/clippy --all-targets` (without features) skips them. Proven:
+`cargo tree -p reprise-stems` (default) is **core-only**; `cargo check
+--workspace`, `cargo test -p reprise-stems` and `cargo clippy --all-targets -p
+reprise-stems -- -D warnings` are green; **`cargo audit` brings no new
+advisory** (still only the accepted RUSTSEC-2024-0436 via `paste`/lofty).
+494 lock packages in total.
 
-## Lizenz-Befunde gegen das LICENSING-Gate
+## Licence findings against the LICENSING gate
 
-Das Gate (`LICENSING.md`, Absatz „Audio-analysis and stem-separation…“) verlangt
-für den MIT-Engine-Pfad: **Redistribution + kommerzielle Nutzung + Linking aus
-GPL-Linux-Client und künftigen proprietären Frontends**; AGPL sowie
-Non-Commercial-/No-Derivatives-Terms sind ausgeschlossen; jedes Modell braucht
-**dokumentierte Lizenz und Provenienz** vor Einzug ins Repo.
+The gate (`LICENSING.md`, paragraph "Audio-analysis and stem-separation…")
+demands, for the MIT engine path: **redistribution + commercial use + linking
+from the GPL Linux client and future proprietary frontends**; AGPL as well as
+non-commercial/no-derivatives terms are excluded; every model needs a
+**documented licence and provenance** before it moves into the repo.
 
-| Artefakt | Lizenz | Quelle/Nachweis | Gate |
+| Artifact | Licence | Source/evidence | Gate |
 |---|---|---|---|
 | candle-core/nn 0.11 | MIT OR Apache-2.0 | crates.io | **✓** |
 | ort / ort-sys 2.0.0-rc.10 | MIT OR Apache-2.0 | crates.io | **✓** |
-| ONNX Runtime 1.22.0 (nativ) | MIT | microsoft/onnxruntime (GitHub-API) | **✓** |
-| **Demucs / htdemucs-Gewichte** | **MIT** (Meta Platforms) | `adefossez/demucs` LICENSE (MIT, „Copyright (c) Meta Platforms“); Gewichte via `demucs/remote/files.txt` von `dl.fbaipublicfiles.com` als Teil des MIT-Projekts | **✓** |
-| htdemucs **als ONNX** | **MIT** | `StemSplitio/htdemucs-onnx`: „This repo is MIT-licensed, matching the original HT-Demucs.“; ONNX-Export von Metas offiziellen Gewichten | **✓** |
-| **UVR-MDX-Net-Community-Modelle** | **unklar / nicht etabliert** | siehe unten | **✗ (Gate-Fail)** |
+| ONNX Runtime 1.22.0 (native) | MIT | microsoft/onnxruntime (GitHub API) | **✓** |
+| **Demucs / htdemucs weights** | **MIT** (Meta Platforms) | `adefossez/demucs` LICENSE (MIT, "Copyright (c) Meta Platforms"); weights via `demucs/remote/files.txt` from `dl.fbaipublicfiles.com` as part of the MIT project | **✓** |
+| htdemucs **as ONNX** | **MIT** | `StemSplitio/htdemucs-onnx`: "This repo is MIT-licensed, matching the original HT-Demucs."; ONNX export of Meta's official weights | **✓** |
+| **UVR-MDX-Net community models** | **unclear / not established** | see below | **✗ (gate fail)** |
 
-### Warum die UVR-MDX-Net-Gewichte durchfallen
+### Why the UVR-MDX-Net weights fail
 
-- Das UVR-**Anwendungs**-Repo (`Anjok07/ultimatevocalremovergui`) meldet in den
-  GitHub-Metadaten zwar MIT, hat aber **keine LICENSE-Datei** im Root
-  (Default-Branch `master`; `raw …/LICENSE` = 404), und der GitHub-`/license`-
-  Endpunkt liefert **`None`** (keine erkannte Lizenzdatei). Issue #2185 (2026,
-  **unbeantwortet**) fragt genau die kommerzielle Nutzung der **Modelle** an und
-  hält fest, dass keine explizite LICENSE existiert.
-- **Entscheidender Punkt:** Selbst ein MIT auf dem *Anwendungscode* lizenziert
-  **nicht** die **separat gehosteten Modell-Gewichte**. Die MDX-Net-Modelle sind
-  eigene Artefakte (nicht im Repo, von verschiedenen Community-Trainern, auf
-  Drittanbieter-HF-Mirrors), **ohne** beigelegte Lizenz. Auch
-  `python-audio-separator` (die kanonische Modell-Registry) führt **keine**
-  Pro-Modell-Lizenzfelder.
-- Damit ist für die konkret getesteten Gewichte (`UVR-MDX-NET-Inst_HQ_1`)
-  **keine Redistribution-/Kommerz-Lizenz etablierbar** — und „Lizenz nicht
-  feststellbar“ ist laut Auftrag selbst ein Gate-relevanter Fail. Sie dürfen
-  nach `LICENSING.md` **nicht** ausgeliefert werden.
-- Provenienz-Randnotiz (kein Distributions-Blocker, aber ehrlich vermerkt):
-  Demucs/MDX wurden auf MUSDB18(-HQ) (CC BY-NC) plus Zusatzdaten trainiert. Die
-  Demucs-Autoren stellen die **resultierenden Gewichte** dennoch ausdrücklich
-  unter MIT — die verbreitete (rechtlich nicht abschließend getestete) Position,
-  dass Modellgewichte kein Derivat der Trainingsdaten-Lizenz sind. Für den Gate
-  zählt die **ausgesprochene Distributionslizenz** = MIT.
+- The UVR **application** repo (`Anjok07/ultimatevocalremovergui`) does report
+  MIT in the GitHub metadata, but has **no LICENSE file** in the root
+  (default branch `master`; `raw …/LICENSE` = 404), and the GitHub `/license`
+  endpoint returns **`None`** (no recognized licence file). Issue #2185 (2026,
+  **unanswered**) asks about precisely the commercial use of the **models**
+  and records that no explicit LICENSE exists.
+- **Decisive point:** even an MIT on the *application code* does **not**
+  license the **separately hosted model weights**. The MDX-Net models are
+  artifacts of their own (not in the repo, from various community trainers, on
+  third-party HF mirrors), **without** an accompanying licence.
+  `python-audio-separator` (the canonical model registry) likewise carries
+  **no** per-model licence fields.
+- For the specific weights tested (`UVR-MDX-NET-Inst_HQ_1`), therefore, **no
+  redistribution/commercial licence can be established** — and "licence not
+  determinable" is, per the remit, itself a gate-relevant fail. Under
+  `LICENSING.md` they **must not** be shipped.
+- Provenance side note (not a distribution blocker, but honestly recorded):
+  Demucs/MDX were trained on MUSDB18(-HQ) (CC BY-NC) plus additional data. The
+  Demucs authors nevertheless expressly place the **resulting weights** under
+  MIT — the widespread (legally not conclusively tested) position that model
+  weights are not a derivative of the training data licence. For the gate what
+  counts is the **licence pronounced for distribution** = MIT.
 
-## Risiken
+## Risks
 
-1. **candle-Port-Aufwand (der Blocker):** htdemucs ist Hybrid-Transformer-Demucs
-   — parallele Zeit- und Spektral-Zweige, Cross-Domain-Attention, Encoder/Decoder
-   mit LSTM/Attention. Ein candle-Port bedeutet **~1000+ Zeilen Modulcode plus
-   PyTorch→safetensors-Gewichtskonvertierung und numerische Verifikation**. Das
-   ist ein mehrtägiger bis -wöchiger Aufwand mit Fehlerrisiko, klar außerhalb
-   eines Spikes. **Schätzung: groß.**
-2. **Speicher-Peak (ort/htdemucs):** ~6,2 GB fp32-Peak RSS (onnxruntime-Arena).
-   Auf 8-GB-Geräten grenzwertig; **parallele Jobs sind ausgeschlossen** (der Plan
-   sieht ohnehin 1 Job gleichzeitig vor — passt). Milderung: fp16-Export
-   (166 MB, ~halbiert Gewichtsspeicher), onnxruntime-Arena-Konfiguration
-   (`disable_cpu_mem_arena`/`memory_pattern`), kleinere Segmentlänge.
-3. **ort 2.0 ist RC:** API-Drift möglich (dieser Spike traf rc.10; `session.run`
-   verlangt `&mut`, `Tensor::from_array((shape, vec))`). Paket G pinnt neu und
-   sichert mit einem Smoke-Test ab.
-4. **Flatpak-Offline-Lib:** siehe Build-Story — lösbar (System-/load-dynamic +
-   geprüfte Source), aber nicht kostenlos; muss im G-Scope eingeplant werden.
-5. **Timing-Varianz auf P+E-CPU:** die heterogene Kern-Topologie streut die RTF.
-   Für stabile Nutzerzeiten ggf. Thread-Affinität/Thread-Count in onnxruntime
-   setzen; für die Kaufentscheidung unkritisch, da selbst der schlechteste Lauf
-   klar schneller als Echtzeit ist.
-6. **htdemucs-Nachbearbeitung:** v1 gibt nur die Instrumental-Spur aus
-   (Beschluss 19). htdemucs liefert 4 Stems; Instrumental = Mix − Vocals (bzw.
-   Summe drums+bass+other) plus die interne Overlap-/Fenster-Rekonstruktion —
-   ein Implementierungsdetail für G, kein Runtime-Risiko.
+1. **candle port effort (the blocker):** htdemucs is hybrid-transformer Demucs
+   — parallel time and spectral branches, cross-domain attention,
+   encoder/decoder with LSTM/attention. A candle port means **~1000+ lines of
+   module code plus PyTorch→safetensors weight conversion and numerical
+   verification**. That is an effort of several days to several weeks with a
+   risk of error, clearly outside a spike. **Estimate: large.**
+2. **Memory peak (ort/htdemucs):** ~6.2 GB fp32 peak RSS (onnxruntime arena).
+   Borderline on 8 GB devices; **parallel jobs are ruled out** (the plan
+   foresees 1 job at a time anyway — fits). Mitigation: fp16 export
+   (166 MB, ~halves the weight memory), onnxruntime arena configuration
+   (`disable_cpu_mem_arena`/`memory_pattern`), smaller segment length.
+3. **ort 2.0 is RC:** API drift possible (this spike hit rc.10; `session.run`
+   requires `&mut`, `Tensor::from_array((shape, vec))`). Package G re-pins and
+   secures it with a smoke test.
+4. **Flatpak offline lib:** see the build story — solvable (system/
+   load-dynamic + verified source), but not free; must be planned into the
+   G scope.
+5. **Timing variance on a P+E CPU:** the heterogeneous core topology scatters
+   the RTF. For stable user-facing times, set thread affinity/thread count in
+   onnxruntime if necessary; uncritical for the buying decision, since even
+   the worst run is clearly faster than real time.
+6. **htdemucs post-processing:** v1 outputs only the instrumental track
+   (decision 19). htdemucs delivers 4 stems; instrumental = mix − vocals (or
+   the sum drums+bass+other) plus the internal overlap/window reconstruction —
+   an implementation detail for G, not a runtime risk.
 
-## Empfehlung
+## Recommendation
 
-> **Paket G implementiert die `ort`-Runtime (ONNX Runtime) und liefert als
-> Modell htdemucs — Hybrid-Transformer-Demucs v4 — als ONNX-Export unter der
-> MIT-Lizenz (Metas offizielle Gewichte, z. B. via `StemSplitio/htdemucs-onnx`).**
-> Begründung auf Fakten: (1) htdemucs ist die vom Plan geforderte
-> Demucs-Klasse-Qualität, und seine Gewichte sind **sauber MIT** und bestehen
-> das `LICENSING.md`-Gate für Redistribution und kommerzielle Nutzung; (2) ONNX
-> lädt **direkt** in ort — es gibt in candle **kein** Demucs-Modell (nur eine
-> Burn-Portierung), und ein Hand-Port der Hybrid-Transformer-Architektur samt
-> Gewichtskonvertierung ist ein großer, außerhalb dieses Spikes liegender
-> Aufwand; (3) die gemessene Leistung auf dem Zielrechner ist mit ~0,3–0,45×
-> Echtzeitfaktor komfortabel schneller als Echtzeit (ein 4-Minuten-Song in gut
-> ein bis knapp zwei Minuten). Die **UVR-MDX-Net-Community-Modelle sind
-> ausdrücklich nicht zu verwenden** — ihre Gewichte haben keine belastbare
-> Lizenz und fallen durch das Gate. Der Preis dieser Wahl, den G einplanen muss,
-> ist zweifach und beherrschbar: die native onnxruntime-Bibliothek muss für den
-> Flatpak-Offline-Build als per-Checksum geprüfte System-/`load-dynamic`-Lib
-> bereitgestellt werden (nicht der cargo-`download-binaries`-Default), und der
-> fp32-Speicher-Peak von ~6 GB verlangt striktes Ein-Job-Serialisieren (ohnehin
-> geplant) sowie die Prüfung des fp16-Exports. candle bleibt der **pure-Rust-
-> Nordstern** für den Fall, dass später eine gepflegte candle-Demucs-
-> Implementierung existiert — dann ist ein Wechsel wert, neu bewertet zu werden.**
+> **Package G implements the `ort` runtime (ONNX Runtime) and ships as its
+> model htdemucs — hybrid-transformer Demucs v4 — as an ONNX export under the
+> MIT licence (Meta's official weights, e.g. via `StemSplitio/htdemucs-onnx`).**
+> Justification on facts: (1) htdemucs is the Demucs-class quality required by
+> the plan, and its weights are **cleanly MIT** and pass the
+> `LICENSING.md` gate for redistribution and commercial use; (2) ONNX
+> loads **directly** into ort — in candle there is **no** Demucs model (only a
+> Burn port), and a hand port of the hybrid-transformer architecture including
+> weight conversion is a large effort lying outside this spike; (3) the
+> measured performance on the target machine, at a real-time factor of
+> ~0.3–0.45×, is comfortably faster than real time (a 4-minute song in a good
+> one to just under two minutes). The **UVR-MDX-Net community models are
+> expressly not to be used** — their weights have no defensible licence and
+> fail the gate. The price of this choice, which G must plan for, is twofold
+> and manageable: for the Flatpak offline build the native onnxruntime library
+> must be provided as a per-checksum verified system/`load-dynamic` lib
+> (not the cargo `download-binaries` default), and the fp32 memory peak of
+> ~6 GB demands strict one-job serialization (planned anyway) as well as an
+> evaluation of the fp16 export. candle remains the **pure-Rust north
+> star** for the case that a maintained candle Demucs implementation exists
+> later — a switch would then be worth re-evaluating.**
 
-### Was offen bleibt
+### What remains open
 
-- **fp16 vs. fp32:** fp16-htdemucs (166 MB) auf CPU messen — halbiert Download
-  und Gewichtsspeicher, aber onnxruntime-CPU kann fp16 intern nach fp32 casten
-  (evtl. langsamer). Für G in 1 h zu klären.
-- **Overlap/Qualität:** reale Segment-Overlap-Kosten (0,25) und die
-  Instrumental-Rekonstruktion (Mix − Vocals) messen; erwartet ~+30 % Rechenzeit.
-- **onnxruntime-Bezug für Flatpak:** konkrete Source-URL + sha256 der
-  vorkompilierten Lib festzurren (oder `load-dynamic`) und `ORT_STRATEGY` in der
-  G-Buildpipeline verankern.
-- **ort-Version:** beim G-Start auf die dann aktuelle (idealerweise stabile)
-  ort-2.0-Version re-pinnen und den ONNX-Runtime-Versionsstand fixieren.
-- **Chunking/Cancel/Progress (G-Scope):** deterministische Ausgabe über
-  Chunk-Grenzen, Cancel zwischen Chunks, Progress-Callbacks (aus dem Plan).
+- **fp16 vs. fp32:** measure fp16 htdemucs (166 MB) on CPU — halves the
+  download and the weight memory, but onnxruntime CPU may internally cast fp16
+  to fp32 (possibly slower). To be clarified for G in 1 h.
+- **Overlap/quality:** measure the real segment overlap cost (0.25) and the
+  instrumental reconstruction (mix − vocals); ~+30% compute time expected.
+- **onnxruntime sourcing for Flatpak:** nail down the concrete source URL +
+  sha256 of the precompiled lib (or `load-dynamic`) and anchor `ORT_STRATEGY`
+  in the G build pipeline.
+- **ort version:** at the start of G, re-pin to the then current (ideally
+  stable) ort 2.0 version and fix the ONNX Runtime version level.
+- **Chunking/cancel/progress (G scope):** deterministic output across chunk
+  boundaries, cancel between chunks, progress callbacks (from the plan).
 
-## Anhang: Reproduktion
+## Appendix: reproduction
 
-Spike-Code (bewusst schlank, klar als Spike markiert): `crates/reprise-stems/`
-— `Cargo.toml` (optionale Features `spike-candle`/`spike-ort`, Beispiele mit
-`required-features`) und `examples/{ort_probe,ort_mdx_bench,ort_demucs_bench,
-candle_probe}.rs`. Modelle werden **nicht** eingecheckt; sie wurden zur Messung
-von den in der Modelltabelle genannten HF-Quellen geladen. Aufgelöste
-Versionen: candle 0.11.0, ort/ort-sys 2.0.0-rc.10 (onnxruntime 1.22.0),
+Spike code (deliberately lean, clearly marked as a spike):
+`crates/reprise-stems/`
+— `Cargo.toml` (optional features `spike-candle`/`spike-ort`, examples with
+`required-features`) and `examples/{ort_probe,ort_mdx_bench,ort_demucs_bench,
+candle_probe}.rs`. Models are **not** checked in; for the measurement they
+were downloaded from the HF sources named in the model table. Resolved
+versions: candle 0.11.0, ort/ort-sys 2.0.0-rc.10 (onnxruntime 1.22.0),
 rustfft 6.4.1, ndarray 0.16.1, hound 3.5.1.
 
-### Umgebungsblockaden
+### Environment blockers
 
-**Keine.** Netzwerk (crates.io, huggingface.co, github.com) war während des
-gesamten Spikes verfügbar; alle Crate- und Modell-Downloads sowie der
-onnxruntime-Build-Zeit-Download gelangen. Es wurde keine Messung fingiert; die
-einzige „nicht gemessene“ Größe — candles Demucs-RTF — ist ehrlich als
-Port-Blocker dokumentiert, nicht als Umgebungsproblem.
+**None.** The network (crates.io, huggingface.co, github.com) was available
+throughout the entire spike; all crate and model downloads as well as the
+onnxruntime build-time download succeeded. No measurement was faked; the
+only "unmeasured" quantity — candle's Demucs RTF — is honestly documented as a
+port blocker, not as an environment problem.

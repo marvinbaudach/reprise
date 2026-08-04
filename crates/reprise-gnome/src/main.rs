@@ -114,6 +114,7 @@ fn ensure_window(
 }
 
 fn main() -> glib::ExitCode {
+    ui::track_list::diagnostic_trail::mark_process_start();
     init_logging();
     i18n::init();
     i18n::smoke_report();

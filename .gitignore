@@ -67,3 +67,7 @@ android/app/src/main/java/uniffi/
 # `~/.gradle`, so they are pointed here instead — a gigabyte of downloaded
 # distribution and caches that a stray `git add -A` would otherwise swallow.
 .gradle-user-home/
+
+# Python-Bytecode der Skripte unter scripts/lib
+__pycache__/
+*.pyc

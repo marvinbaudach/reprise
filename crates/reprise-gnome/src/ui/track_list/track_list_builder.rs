@@ -87,8 +87,10 @@ pub(in crate::ui) fn build(
     let cover_loader = CoverLoader::new(cover_download);
     let shared = Rc::new(Shared {
         model,
+        diagnostic_trail: super::diagnostic_trail::handle(),
         selection: selection.clone(),
         column_view: column_view.clone(),
+        scrolled: scrolled.clone(),
         playing_track_id: Cell::new(None),
         track_reveal_generation: Cell::new(0),
         playing_episode: Cell::new(None),
@@ -157,10 +159,16 @@ pub(in crate::ui) fn build(
         scrolled
             .vadjustment()
             .connect_value_changed(move |adjustment| {
-                if debug_scroll {
-                    let value = adjustment.value();
-                    let previous = previous_value.replace(value);
-                    if previous - value > 80.0 {
+                let value = adjustment.value();
+                let previous = previous_value.replace(value);
+                if previous - value > 80.0 {
+                    super::diagnostic_trail::record(super::diagnostic_trail::Event::ScrollJump {
+                        from: previous,
+                        to: value,
+                        upper: adjustment.upper(),
+                        page: adjustment.page_size(),
+                    });
+                    if debug_scroll {
                         tracing::error!(
                             from = previous,
                             to = value,
@@ -169,9 +177,9 @@ pub(in crate::ui) fn build(
                             "SCROLL JUMP-TO-TOP\n{}",
                             std::backtrace::Backtrace::force_capture()
                         );
-                    } else {
-                        tracing::debug!(value, previous, "SCROLL");
                     }
+                } else if debug_scroll {
+                    tracing::debug!(value, previous, "SCROLL");
                 }
                 if let Some(shared) = shared_weak.upgrade() {
                     shared
@@ -289,6 +297,7 @@ pub(in crate::ui) fn build(
     super::delete_tracks::arm_smoke(&shared);
     super::browse_bar::arm_smoke(&shared);
     track_list_dnd_smoke::arm_smoke_dnd(&shared);
+    super::row_loss_watchdog::install(&shared);
 
     TrackList {
         shared,

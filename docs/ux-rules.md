@@ -240,7 +240,8 @@ human. Rationale for changes lives in the git history.
   browser origin, and its display name are frozen; typed manual queue
   items remain a separate ordered line in front. Later navigation,
   search, facets, or even refining down to zero hits change neither the
-  snapshot nor the running item. After the last context track, playback
+  running item nor a snapshot that still has titles ahead of it; the
+  exhausted case belongs to PLAY-11. After the last context track, playback
   ends with Repeat off unless an explicit manual entry or PLAY-11's new
   full-library continuation follows; queue hygiene is governed by
   PLAY-5a/5b/5c.
@@ -256,15 +257,20 @@ human. Rationale for changes lives in the git history.
   bounded cache and decode path; a missing or refused image keeps the normal
   player placeholder, never a broken-image state.
 - **PLAY-11** [active] [gtk] — **Playback remains an immutable snapshot
-  until it is exhausted.** Later navigation, search, facets, and clearing a
-  filter do not rewrite the running snapshot. Exception after its final
-  title: if the snapshot originated in a search- or facet-filtered Music
-  library and Music is now completely unfiltered, Reprise immediately creates
-  a new random snapshot from all existing library titles and continues with a
-  different title. Missing and deleted titles are excluded; the just-finished title
-  may occur later in the new snapshot but never starts it. If the filter is
-  still active, the origin was not the Music library, the visible list is
-  not the complete library, or no different title exists, playback ends as
+  while it still has titles ahead of it.** Later navigation, search, facets,
+  and clearing a filter never rewrite a snapshot with a future. Exception once
+  it is exhausted — nothing left ahead of the cursor: if the snapshot
+  originated in a search- or facet-filtered Music library and Music is now
+  completely unfiltered, Reprise continues from all existing library titles in
+  random order. **While a title is still playing, that continuation is bound in
+  at once**, the moment Music becomes unfiltered, so the queue stops reading
+  empty for the rest of the title; the running title keeps the cursor, is never
+  restarted or re-ordered, and every other library title follows it exactly
+  once. If the final title has already ended instead, a new random snapshot
+  starts on a title other than the one just finished — which may occur later in
+  it, but never starts it. Missing and deleted titles are excluded. If the
+  filter is still active, the origin was not the Music library, the visible list
+  is not the complete library, or no other title exists, playback ends as
   before. Explicit Play Next entries retain priority and Repeat One/All
   retain their existing queue behavior.
 
@@ -1118,7 +1124,8 @@ human. Rationale for changes lives in the git history.
   destination, including its local refinements, but never reconstructs the
   Back/Forward stack and never autoplays. The last loaded track or episode is
   presented paused; the first Play starts that exact item through a fresh
-  playable source, applying an episode's existing resume position. If its stable ID belongs to the
+  playable source, applying an episode's existing resume position, and leaves
+  the viewport exactly as the start placed it (NAV-10a). If its stable ID belongs to the
   restored destination, that row becomes the sole selection and is centered
   without taking keyboard focus; grouped podcast and YouTube sources expand
   the required group and preview window first. An unavailable item leaves the
@@ -2442,7 +2449,11 @@ property is set and yet nothing happens.
   the running track's state through the play/pause button, not through a
   second copy of the list marker. Double-click/Enter on an already-visible
   row does not change the viewport. Play from Stopped as well as explicit
-  Previous/Next center the new track without stealing focus or selection.
+  Previous/Next center the new track without stealing focus or selection —
+  except for the one Play that starts a restored session, whose track
+  START-3 already selected and centered at startup: that row is placed, so
+  starting it only starts the audio. Centring it again would be a second
+  visible scroll on a viewport that is already the target.
   Centring moves the viewport over the Standard token rather than
   teleporting it, and yields immediately to anything else that writes the
   scroll position — the user's own scrolling, a model replacement, or
@@ -2694,7 +2705,7 @@ property is set and yet nothing happens.
   relative to rank 1. Clicking the card or a rank row opens the library
   filtered to the artist (regular history push). If a group combines
   several spellings, the unification hint from STATS-9 is retained.
-- **STATS-14** [active] [gtk] — The songs card shows the six leading
+- **STATS-14** [replaced by STATS-22] [gtk] — The songs card shows the six leading
   tracks: cover, title, and artist in two lines, a horizontal bar relative
   to rank 1 in an accent gradient, the play count on the right. Next to
   the kicker, the toggle "by plays / by time" sorts both these six rows
@@ -2801,6 +2812,35 @@ property is set and yet nothing happens.
   origin is My Stats itself: the queue's context tail carries that name and
   jumps back to this page, rather than borrowing the name of one artist out of
   a ranking that spans many.
+- **STATS-22** [active] [gtk] — Replaces STATS-14, which still described the
+  six-row card from before STATS-19 and let the expander open a second,
+  full-width section underneath it. **The ranking is one card.** The songs card
+  carries the top ten in two columns (STATS-19): cover, title and artist on two
+  lines, a horizontal bar relative to rank 1 in an accent gradient, and the
+  metric on the right, which follows the "by plays / by time" toggle beside the
+  kicker — that toggle sorts the visible rows and the continuation alike. A row
+  plays its track inside the visible ranking (STATS-21), its two labels lead
+  into the library, and its context menu offers "Play next", "Add to queue" and
+  "Go to album". **The expander grows this card and never opens a second one:**
+  "Show more top tracks" reveals ranks 11 and up inside the same card, directly
+  below the button that opened them, and the page keeps exactly the sections it
+  had — bands, songs, genres. Collapsing returns the card to its ten rows. The
+  continuation continues the ranking rather than restating it and is offered
+  only when there is something past the ten (STATS-19); its durations use the
+  compact format from STATS-11, its titles and artists take link color and
+  underline on hover, and the focus ring stays visible. **Its rows answer like
+  the ten above them:** rank 11 is a focusable row that carries the pointer
+  cursor and the shared hover wash (BTN-1/BTN-4), plays its track on click and
+  on Enter or Space, and offers the same "Play next", "Add to queue" and "Go to
+  album" on right-click and Shift+F10. A row that sits in the ranking and stays
+  inert reads as broken, and in one card it reads that way twice over.
+  **The ranking a play hands over is what is on screen:** the visible ten while
+  the card is collapsed, those ten plus the revealed ranks while it is open —
+  which refines STATS-21's "visible top ten" to follow the card rather than the
+  render, so the queue never starts from rows nobody was shown. The clause in
+  STATS-10 that let the expanded list stand "as its own full-width section" is
+  void with this rule; everything else STATS-10 says about the page — its order,
+  its curation, its narrow-window stacking — stands.
 ## W. Buttons & interaction states
 
 <!-- Section letter: V (My Stats) is the last section assigned on main;

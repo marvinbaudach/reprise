@@ -1,12 +1,12 @@
-# rmcp Security Advisory — eingereicht
+# rmcp Security Advisory — submitted
 
-**Status:** Eingereicht als öffentliches Issue am 2026-07-23:
+**Status:** Submitted as a public issue on 2026-07-23:
 https://github.com/modelcontextprotocol/rust-sdk/issues/1030
 
-Kanal-Historie: Private Vulnerability Reporting ist im Repo aktiviert, aber der
-DoS wurde bewusst als öffentliches Issue gemeldet (Entscheidung 2026-07-23).
-Der frühere REST-API-Versuch über `.../security-advisories/reports` lieferte am
-2026-07-22 HTTP 500 (GitHub-seitig). Text unten = eingereichter Inhalt.
+Channel history: private vulnerability reporting is enabled in the repo, but the
+DoS was deliberately reported as a public issue (decision 2026-07-23).
+The earlier REST API attempt via `.../security-advisories/reports` returned
+HTTP 500 on 2026-07-22 (on GitHub's side). Text below = submitted content.
 
 **Title:** Unbounded line buffer in AsyncRwTransport::receive (stdio transport) — memory-exhaustion denial-of-service
 

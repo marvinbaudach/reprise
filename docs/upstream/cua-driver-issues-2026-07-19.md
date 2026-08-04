@@ -1,93 +1,92 @@
-# cua-driver — zwei Upstream-Bugs (2026-07-19)
+# cua-driver — two upstream bugs (2026-07-19)
 
-Projekt: https://github.com/trycua/cua (`libs/cua-driver`), Version **0.8.3**
-(Release 2026-07-15, aktuell). Gefunden beim Betrieb von
+Project: https://github.com/trycua/cua (`libs/cua-driver`), version **0.8.3**
+(released 2026-07-15, current). Found while running
 `scripts/cua-e2e/run.sh`.
 
-**Status: formuliert, noch nicht eingereicht.**
+**Status: drafted, not yet submitted.**
 
-Beide Fundstellen sind öffentlich unberichtet (Suche über Issues und PRs).
-Verwandt, aber nicht deckungsgleich:
+Both findings are publicly unreported (searched across issues and PRs).
+Related, but not identical:
 
 - [#1936](https://github.com/trycua/cua/issues/1936) /
-  [#1938](https://github.com/trycua/cua/pull/1938) — unbegrenzte AT-SPI-Waits,
-  wenn das Ziel D-Bus nicht mehr bedient. Behoben über eine **Whitelist**
-  deadline-gesicherter Pfade, benachbarte Pfade können also weiterhin
-  festhängen. Issue B unten ist vermutlich genau so ein Pfad.
-- [#2010](https://github.com/trycua/cua/issues/2010) (offen) — `serve` setzt
-  `ScreenReaderEnabled=true` und startet damit Orca, also einen zweiten
-  AT-Client auf demselben Baum. Für unseren Harness noch auszuschließen.
+  [#1938](https://github.com/trycua/cua/pull/1938) — unbounded AT-SPI waits
+  when the target no longer serves D-Bus. Fixed via a **whitelist** of
+  deadline-guarded paths, so neighbouring paths can still hang. Issue B below
+  is presumably exactly such a path.
+- [#2010](https://github.com/trycua/cua/issues/2010) (open) — `serve` sets
+  `ScreenReaderEnabled=true` and thereby starts Orca, i.e. a second AT client
+  on the same tree. Still to be ruled out for our harness.
 
-## Wichtig für die Einordnung
+## Important for context
 
-Der ursprüngliche Anlass — ein 12-minütiger Hang in unserem Harness — war
-**kein** Treiberfehler. Die getriebene App (Reprise) ist mit SIGSEGV
-gestorben; der Treiber blockierte danach auf einem toten Gegenüber. Der
-App-Absturz ist bei uns behoben.
+The original trigger — a 12-minute hang in our harness — was **not** a driver
+bug. The driven app (Reprise) died with SIGSEGV; the driver then blocked on a
+dead peer. The app crash is fixed on our side.
 
-Was bleibt, sind die zwei Punkte unten: der Treiber sollte den Tod seines
-Gegenübers als **terminalen Zustand** melden, statt pro Aufruf 120 s zu
-verbrennen, und `doctor` sollte nicht abstürzen.
+What remains are the two points below: the driver should report the death of
+its peer as a **terminal state** instead of burning 120 s per call, and
+`doctor` should not crash.
 
 ---
 
-## Issue A — `cua-driver doctor` bricht ab: Panic im SIGCHLD-Handler
+## Issue A — `cua-driver doctor` aborts: panic in the SIGCHLD handler
 
-**Titel:** `doctor` aborts: panic inside `wait_timeout` SIGCHLD handler
+**Title:** `doctor` aborts: panic inside `wait_timeout` SIGCHLD handler
 
 **Environment**
-- cua-driver 0.8.3, `x86_64-unknown-linux-gnu` (Release-Tarball)
+- cua-driver 0.8.3, `x86_64-unknown-linux-gnu` (release tarball)
 - Manjaro stable, Linux 6.18.38-1-MANJARO
 
 **Repro**
 ```sh
 cua-driver doctor
 ```
-Bricht sporadisch ab — hier fünf identische Core-Dumps an einem Tag
+Aborts sporadically — five identical core dumps on one day here
 (12:17, 12:22, 12:45, 13:30, 14:31).
 
-**Expected:** `doctor` läuft durch und gibt einen Report aus.
+**Expected:** `doctor` runs through and prints a report.
 
 **Actual:** SIGABRT. Stack:
 ```
 doctor::run
   -> ChildExt::wait_timeout
   -> __poll
-  -> SIGCHLD-Zustellung
-  -> wait_timeout::imp::sigchld_handler   <- panic hier
+  -> SIGCHLD delivery
+  -> wait_timeout::imp::sigchld_handler   <- panic here
   -> core::panicking::panic_cannot_unwind
   -> abort
 ```
 
-Ein Panic in einem Signal-Handler ist unabhängig vom Auslöser problematisch:
-Unwinding über eine Signal-Handler-Grenze ist nicht erlaubt, deshalb greift
-`panic_cannot_unwind` und ruft `abort`. Der Handler sollte panikfrei und
-idealerweise async-signal-safe sein.
+A panic in a signal handler is problematic regardless of the trigger:
+unwinding across a signal handler boundary is not allowed, so
+`panic_cannot_unwind` kicks in and calls `abort`. The handler should be
+panic-free and ideally async-signal-safe.
 
 ---
 
-## Issue B — Daemon blockiert unbegrenzt, wenn die Ziel-App mitten in der Sitzung stirbt
+## Issue B — daemon blocks indefinitely when the target app dies mid-session
 
-**Titel:** Daemon blocks indefinitely after the target process dies; client
+**Title:** Daemon blocks indefinitely after the target process dies; client
 reads 0 bytes for the full timeout
 
 **Environment**
 - cua-driver 0.8.3
-- Manjaro stable, X11 unter Xvfb
+- Manjaro stable, X11 under Xvfb
 - GTK 4.22.4, libadwaita 1.9.2, at-spi2-core 2.60.5
 
 **Repro**
-1. Eine GTK4-App über AT-SPI treiben.
-2. Die App mitten in der Sitzung abstürzen lassen (bei uns: SIGSEGV).
-3. Weitere Tool-Aufrufe absetzen.
+1. Drive a GTK4 app over AT-SPI.
+2. Let the app crash mid-session (SIGSEGV in our case).
+3. Issue further tool calls.
 
-**Expected:** Der Daemon bemerkt, dass das Gegenüber weg ist, und beendet den
-Aufruf zügig mit einer klaren Fehlermeldung („target process exited").
+**Expected:** The daemon notices that the peer is gone and ends the call
+promptly with a clear error message ("target process exited").
 
-**Actual:** Der persistente Listener meldet den Disconnect, danach schreibt
-der Daemon **nie** auf den Client-Socket. Jeder Folgeaufruf verbrennt die
-vollen 120 s. Der Daemon stürzt dabei **nicht** ab (kein Core-Dump) — er
-blockiert.
+**Actual:** The persistent listener reports the disconnect, after which the
+daemon **never** writes to the client socket. Every subsequent call burns the
+full 120 s. The daemon does **not** crash while doing so (no core dump) — it
+blocks.
 
 ```
 WARN cua_driver: could not activate the persistent AT-SPI listener:
@@ -105,28 +104,28 @@ WARN cua_driver: could not activate the persistent AT-SPI listener:
   State-dependent tools may misbehave.
 ```
 
-Vermutlich dieselbe Klasse wie #1936/#1938 — ein AT-SPI-Await außerhalb der
-`OP_TIMEOUT`-Whitelist. Der Tod des Gegenübers wäre als expliziter terminaler
-Zustand besser aufgehoben als hinter einem Deadline-Fallback.
+Presumably the same class as #1936/#1938 — an AT-SPI await outside the
+`OP_TIMEOUT` whitelist. The death of the peer would be better placed as an
+explicit terminal state than behind a deadline fallback.
 
-**Nachweisgrenze:** Post-mortem aus Logs und Core-Dumps. Der Per-Run-Socket
-(`/tmp/reprise-cua-e2e.CTHmiY`) wurde beim Cleanup entfernt, eine
-Live-Nachprobe des blockierten Sockets war danach nicht mehr möglich. Vor dem
-Einreichen wäre eine minimale Repro sinnvoll: eine Wegwerf-GTK4-App treiben,
-ihr `SIGSEGV` schicken, dann einen `get_window_state`-Aufruf absetzen.
+**Limit of evidence:** post-mortem from logs and core dumps. The per-run socket
+(`/tmp/reprise-cua-e2e.CTHmiY`) was removed during cleanup, so a live re-check
+of the blocked socket was no longer possible afterwards. Before submitting, a
+minimal reproduction would make sense: drive a throwaway GTK4 app, send it
+`SIGSEGV`, then issue a `get_window_state` call.
 
 ---
 
-## Unsere Seite (nicht upstream)
+## Our side (not upstream)
 
-- **Behoben:** `primary_menu.rs` rief `popup()` auf einem entwurzelten
-  `MenuButton` — Compact-Mode hängt den Library-Baum ab, der Weak-Ref lässt
-  sich aber weiter upgraden. Guard prüft jetzt `root()`, nicht nur Lebendigkeit.
-- **Offen:** `scripts/cua-e2e/lib.sh` hat keine `kill -0`-Lebendprüfung (nur
-  `run.sh` hat eine). Deshalb wurden aus dem Absturz zwölf Minuten: sechs
-  Aufrufe à 120 s. Eine Prüfung in den `cua_*`-Helfern würde nach einem
-  App-Tod sofort abbrechen statt zu warten.
-- **Offen:** Elf weitere ungesicherte `popup()`-Stellen sind theoretisch
-  derselben Entwurzelung ausgesetzt. Sie hängen an Gesten und Tasten auf
-  Widgets **innerhalb** des abgehängten Baums, sind also nach heutigem Stand
-  nicht erreichbar — belegt ist kein Pfad dorthin.
+- **Fixed:** `primary_menu.rs` called `popup()` on an unrooted `MenuButton` —
+  compact mode detaches the library tree, but the weak ref can still be
+  upgraded. The guard now checks `root()`, not just liveness.
+- **Open:** `scripts/cua-e2e/lib.sh` has no `kill -0` liveness check (only
+  `run.sh` has one). That is how the crash turned into twelve minutes: six
+  calls at 120 s each. A check in the `cua_*` helpers would abort immediately
+  after an app death instead of waiting.
+- **Open:** eleven further unguarded `popup()` sites are theoretically exposed
+  to the same unrooting. They hang off gestures and keys on widgets **inside**
+  the detached tree, so as things stand today they are unreachable — no path
+  there is demonstrated.

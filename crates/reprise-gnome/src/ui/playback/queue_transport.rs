@@ -15,6 +15,7 @@
 
 use std::rc::Rc;
 
+use crate::ui::current_track_selection::CurrentTrackChange;
 use crate::ui::player_controller::PlayerController;
 use crate::ui::up_next_transport::AdvanceReason;
 use reprise_core::db::Db;
@@ -31,7 +32,9 @@ pub(in crate::ui) use queue_context_window::QueueContextWindow;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ToggleAction {
-    StartCurrent,
+    /// Carries the reveal the loaded track earns when it starts — the one
+    /// decision that separates a cold start from every later Play (START-3).
+    StartCurrent(CurrentTrackChange),
     StartPending,
     StartRandom,
     TogglePipeline,
@@ -66,13 +69,26 @@ fn should_advance_after_user_delete(ids: &[i64], loaded: Option<i64>) -> bool {
     loaded.is_some_and(|id| ids.contains(&id))
 }
 
+/// `restored_placement_intact` says the loaded track is still exactly where a
+/// normal start put it: selected and centered, never played (START-3). Its
+/// first Play only starts the audio, because the viewport is already the one
+/// the reveal would scroll to — and a glide onto the value the list already
+/// holds is the second visible centering this bug report is about. Every other
+/// start from Stopped keeps NAV-10a's explicit-transport reveal.
 fn toggle_action(
     status: MprisPlaybackStatus,
     current_track: Option<QueueItem>,
     has_pending: bool,
+    restored_placement_intact: bool,
 ) -> ToggleAction {
     match (status, current_track, has_pending) {
-        (MprisPlaybackStatus::Stopped, Some(_), _) => ToggleAction::StartCurrent,
+        (MprisPlaybackStatus::Stopped, Some(_), _) => {
+            ToggleAction::StartCurrent(if restored_placement_intact {
+                CurrentTrackChange::PlaybackStarted
+            } else {
+                CurrentTrackChange::ExplicitTransport
+            })
+        }
         (MprisPlaybackStatus::Stopped, None, true) => ToggleAction::StartPending,
         (MprisPlaybackStatus::Stopped, None, false) => ToggleAction::StartRandom,
         (MprisPlaybackStatus::Playing | MprisPlaybackStatus::Paused, _, _) => {
@@ -250,8 +266,13 @@ impl PlayerController {
             .get()
             .or_else(|| self.queue.borrow().current().map(QueueItem::Track));
         let has_pending = !self.up_next.borrow().is_empty();
-        match toggle_action(status, current, has_pending) {
-            ToggleAction::StartCurrent => {
+        match toggle_action(
+            status,
+            current,
+            has_pending,
+            self.restored_placement_intact.get(),
+        ) {
+            ToggleAction::StartCurrent(change) => {
                 if let Some(item) = current {
                     let id = item.id();
                     let playable = {
@@ -270,7 +291,7 @@ impl PlayerController {
                         Ok(true) => self.present_queue_item(
                             item,
                             crate::ui::player_controller::StartPlayback::Yes,
-                            crate::ui::current_track_selection::CurrentTrackChange::ExplicitTransport,
+                            change,
                         ),
                         Ok(false) => self.advance_playback(AdvanceReason::Manual),
                         Err(error) => {
@@ -278,7 +299,7 @@ impl PlayerController {
                             self.present_queue_item(
                                 item,
                                 crate::ui::player_controller::StartPlayback::Yes,
-                                crate::ui::current_track_selection::CurrentTrackChange::ExplicitTransport,
+                                change,
                             );
                         }
                     }

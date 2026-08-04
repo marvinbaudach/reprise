@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <!-- Erzeugt von scripts/build-brand-assets.sh. Nicht von Hand ändern. -->
+  <!-- Grundfläche des App-Icons. Sie ist fast schwarz, weil die Marke der
+       Verlauf ist: Violett und Blau leuchten nur auf einem dunklen Grund.
+       Umgekehrt gemessen — dunkle Marke auf hellem Verlauf — kam der Rand
+       auf 1,8 bis 2,5:1 und fiel durch. -->
+  <g id="rp-plate">
+    <defs>
+      <linearGradient id="rp-plate-fill" x1="0" y1="0" x2="0.35" y2="1">
+        <stop offset="0" stop-color="#12121C"/>
+        <stop offset="1" stop-color="#070710"/>
+      </linearGradient>
+    </defs>
+    <rect x="0" y="0" width="128" height="128" rx="22" fill="url(#rp-plate-fill)"/>
+  </g>
+  <g id="rp-mark" transform="translate(2.6667 2.6667) scale(7.666667)">
+  <!-- Die Marke: das Wiederholungszeichen der Notenschrift. Es markiert
+       genau das, wonach die App heißt — eine Reprise.
+
+       Auf dem **16er Raster** gezeichnet, jede Kante auf einer ganzen
+       Rasterlinie: Punkte bei x 2–5, dünner Balken 7–9, dicker Balken
+       10–14, alle Balken y 2–14. Damit sind 32, 48, 128 und 512 px glatte
+       Vielfache, und bei 16 px ist jeder Pixel ganz an oder ganz aus.
+
+       Die beiden Balken sind **absichtlich ungleich** — 2 gegen 4 Einheiten.
+       Gleich breit gezeichnet liest das Zeichen als Pausensymbol; die
+       Notenschrift setzt dünn vor dick, und genau dieser Unterschied trennt
+       die beiden Bedeutungen.
+
+       Ein Pfad, vier Teilflächen. Der Verlauf läuft von Violett nach Blau
+       quer über alle vier — sie gehören zusammen, also teilen sie ihn. -->
+  <defs>
+    <linearGradient id="rp-m-rp-mark-fill" x1="0" y1="0" x2="0.6" y2="1">
+      <stop offset="0" stop-color="#A020F0"/>
+      <stop offset="1" stop-color="#4A72FF"/>
+    </linearGradient>
+  </defs>
+  <path id="rp-m-rp-sign" fill="url(#rp-m-rp-mark-fill)"
+        d="M 10 2 L 14 2 L 14 14 L 10 14 Z
+           M 7 2 L 9 2 L 9 14 L 7 14 Z
+           M 2 5.5 A 1.5 1.5 0 1 0 5 5.5 A 1.5 1.5 0 1 0 2 5.5 Z
+           M 2 10.5 A 1.5 1.5 0 1 0 5 10.5 A 1.5 1.5 0 1 0 2 10.5 Z"/>
+  </g>
+</svg>
