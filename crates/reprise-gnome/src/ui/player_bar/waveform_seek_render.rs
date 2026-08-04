@@ -88,23 +88,33 @@ pub(super) fn draw(
         );
     }
 
+    let animations_enabled = motion::animations_enabled();
     let head_colour = if state.raw_centroid.is_empty() {
         (r, g, b)
+    } else if !animations_enabled {
+        spectral_colour(centroid_at(&state.raw_centroid, state.fraction))
     } else {
         state
             .head_colour
             .unwrap_or_else(|| spectral_colour(centroid_at(&state.raw_centroid, state.fraction)))
     };
     let top = (h - state.max_bar_height) / 2.0;
-    let decorations_are_live =
-        !state.fill_bars && state.build_progress >= 1.0 && state.crossfade_progress >= 1.0;
-    if decorations_are_live {
+    let decorations = crate::ui::player_bar::waveform_playhead::decoration_visibility(
+        state.fill_bars,
+        state.drag_fraction.is_some(),
+        animations_enabled,
+        state.build_progress,
+        state.crossfade_progress,
+    );
+    if decorations.afterglow {
         crate::ui::player_bar::waveform_playhead::draw_afterglow(
             cr,
             playhead_x,
             top,
             state.max_bar_height,
             head_colour,
+            state.drag_fraction.is_some(),
+            animations_enabled,
         );
     }
     crate::ui::player_bar::waveform_playhead::draw_playhead(
@@ -113,8 +123,12 @@ pub(super) fn draw(
         top,
         state.max_bar_height,
         head_colour,
-        decorations_are_live,
-        PLAYHEAD_ALPHA,
+        decorations.glow,
+        if animations_enabled {
+            PLAYHEAD_ALPHA
+        } else {
+            1.0
+        },
     );
     state.last_drawn_head_x = Some(playhead_x);
     state.last_drawn_colour = Some(head_colour);
@@ -232,12 +246,10 @@ fn draw_bars(
             .centroid
             .get(index)
             .map(|value| spectral_colour(f64::from(*value)));
-        let (r, g, b) = spectral
-            .map(|colour| {
-                let chroma_factor = 1.0 - 0.55 * state.desaturation_progress;
-                scale_chroma(colour.0, colour.1, colour.2, chroma_factor)
-            })
-            .unwrap_or(accent);
+        let (r, g, b) = spectral.map_or(accent, |colour| {
+            let chroma_factor = 1.0 - 0.55 * state.desaturation_progress;
+            scale_chroma(colour.0, colour.1, colour.2, chroma_factor)
+        });
         if is_ghost {
             cr.set_source_rgba(accent.0, accent.1, accent.2, GHOST_ALPHA * style.opacity);
         } else if played {

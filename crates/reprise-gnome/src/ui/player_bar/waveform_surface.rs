@@ -128,19 +128,15 @@ fn build_surfaces(
         rounded_bar(&mask_cr, x, y, bar_width, bar_height, bar_radius);
         mask_cr.fill().ok()?;
 
-        let spectral = state
-            .shaped_centroid
-            .get(index)
-            .map(|value| spectral_colour(f64::from(*value)))
-            .map(|value| {
-                scale_chroma(
-                    value.0,
-                    value.1,
-                    value.2,
-                    1.0 - 0.55 * state.desaturation_progress,
-                )
-            })
-            .unwrap_or(accent);
+        let spectral = state.shaped_centroid.get(index).map_or(accent, |value| {
+            let value = spectral_colour(f64::from(*value));
+            scale_chroma(
+                value.0,
+                value.1,
+                value.2,
+                1.0 - 0.55 * state.desaturation_progress,
+            )
+        });
         colour_cr.set_source_rgba(spectral.0, spectral.1, spectral.2, 1.0);
         rounded_bar(&colour_cr, x, y, bar_width, bar_height, bar_radius);
         colour_cr.fill().ok()?;

@@ -17,6 +17,27 @@ pub(super) struct GlowLayer {
     pub(super) alpha: f64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct DecorationVisibility {
+    pub(super) glow: bool,
+    pub(super) afterglow: bool,
+}
+
+pub(super) fn decoration_visibility(
+    fill_bars: bool,
+    dragging: bool,
+    animations_enabled: bool,
+    build_progress: f64,
+    crossfade_progress: f64,
+) -> DecorationVisibility {
+    let settled = build_progress >= 1.0 && crossfade_progress >= 1.0;
+    let decorate = !fill_bars && animations_enabled && settled;
+    DecorationVisibility {
+        glow: decorate,
+        afterglow: decorate && !dragging,
+    }
+}
+
 pub(super) fn playhead_rect(head_x: f64, top: f64, max_bar_height: f64) -> PlayheadRect {
     PlayheadRect {
         x: head_x - PLAYHEAD_WIDTH / 2.0,
@@ -38,7 +59,16 @@ pub(super) fn glow_layers(playhead: PlayheadRect) -> [GlowLayer; 3] {
     })
 }
 
-pub(super) fn afterglow_rect(head_x: f64, top: f64, max_bar_height: f64) -> Option<PlayheadRect> {
+pub(super) fn afterglow_rect(
+    head_x: f64,
+    top: f64,
+    max_bar_height: f64,
+    dragging: bool,
+    animations_enabled: bool,
+) -> Option<PlayheadRect> {
+    if dragging || !animations_enabled {
+        return None;
+    }
     let x = (head_x - AFTERGLOW_WIDTH).max(0.0);
     let width = head_x - x;
     (width > 0.0).then_some(PlayheadRect {
@@ -55,8 +85,11 @@ pub(super) fn draw_afterglow(
     top: f64,
     max_bar_height: f64,
     colour: (f64, f64, f64),
+    dragging: bool,
+    animations_enabled: bool,
 ) {
-    let Some(rect) = afterglow_rect(head_x, top, max_bar_height) else {
+    let Some(rect) = afterglow_rect(head_x, top, max_bar_height, dragging, animations_enabled)
+    else {
         return;
     };
     let (r, g, b) = colour;
@@ -133,13 +166,46 @@ mod tests {
 
     #[test]
     fn afterglow_trails_left_of_the_playhead_and_clips_at_zero() {
-        let ordinary = afterglow_rect(40.0, 7.0, 26.0).unwrap();
+        let ordinary = afterglow_rect(40.0, 7.0, 26.0, false, true).unwrap();
         assert_eq!((ordinary.x, ordinary.width), (26.0, 14.0));
         assert_eq!((ordinary.y, ordinary.height), (7.0, 26.0));
         assert!(ordinary.x + ordinary.width <= 40.0);
 
-        let clipped = afterglow_rect(6.0, 7.0, 26.0).unwrap();
+        let clipped = afterglow_rect(6.0, 7.0, 26.0, false, true).unwrap();
         assert_eq!((clipped.x, clipped.width), (0.0, 6.0));
-        assert!(afterglow_rect(0.0, 7.0, 26.0).is_none());
+        assert!(afterglow_rect(0.0, 7.0, 26.0, false, true).is_none());
+        assert!(afterglow_rect(40.0, 7.0, 26.0, true, true).is_none());
+        assert!(afterglow_rect(40.0, 7.0, 26.0, false, false).is_none());
+    }
+
+    #[test]
+    fn decorations_respect_animation_drag_and_mini_player_state() {
+        assert_eq!(
+            decoration_visibility(false, false, true, 1.0, 1.0),
+            DecorationVisibility {
+                glow: true,
+                afterglow: true,
+            }
+        );
+        assert_eq!(
+            decoration_visibility(false, true, true, 1.0, 1.0),
+            DecorationVisibility {
+                glow: true,
+                afterglow: false,
+            }
+        );
+        for visibility in [
+            decoration_visibility(false, false, false, 1.0, 1.0),
+            decoration_visibility(true, false, true, 1.0, 1.0),
+            decoration_visibility(false, false, true, 0.5, 1.0),
+        ] {
+            assert_eq!(
+                visibility,
+                DecorationVisibility {
+                    glow: false,
+                    afterglow: false,
+                }
+            );
+        }
     }
 }
