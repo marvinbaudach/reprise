@@ -10,15 +10,15 @@ install_data(
   install_dir: get_option('datadir') / 'metainfo',
 )
 
-# Das App-Icon liegt skalierbar vor; die Sonderstufen 48 und 64 kommen aus
-# einer eigenen, vereinfachten Zeichnung und werden deshalb zusätzlich als
-# PNG installiert.
+# Install the exact scalable drawing and every measured raster stage. The
+# smallest stages remain explicit because desktop shells may request them
+# without resampling the scalable icon.
 install_data(
   'icons/hicolor/scalable/apps/' + app_id + '.svg',
   install_dir: get_option('datadir') / 'icons/hicolor/scalable/apps',
 )
 
-foreach size : ['48x48', '64x64', '128x128', '256x256', '512x512']
+foreach size : ['16x16', '22x22', '24x24', '32x32', '48x48', '64x64', '128x128', '256x256', '512x512']
   install_data(
     'icons/hicolor/' + size + '/apps/' + app_id + '.png',
     install_dir: get_option('datadir') / 'icons/hicolor' / size / 'apps',
