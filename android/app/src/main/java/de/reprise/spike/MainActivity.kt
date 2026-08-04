@@ -30,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import de.reprise.spike.ui.theme.RepriseTheme
 import uniffi.reprise_android_ffi.MusicLibrary
 import uniffi.reprise_android_ffi.ScanProgressListener
 import uniffi.reprise_android_ffi.ScanProgressUpdate
@@ -71,8 +72,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val initialState = restoreLibrary()
         setContent {
-            MaterialTheme {
-                Surface(modifier = Modifier.fillMaxSize()) {
+            RepriseTheme {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background,
+                ) {
                     LibraryScreen(
                         initialState = initialState,
                         playback = playbackState.value,
