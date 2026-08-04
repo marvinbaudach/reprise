@@ -1,6 +1,6 @@
 //! Typed Android playback settings over Core's shared persistence.
 
-use reprise_core::equalizer::EqualizerPoint;
+use reprise_core::equalizer::{EqualizerCurve, EqualizerPoint};
 use reprise_core::library::settings;
 
 use crate::{LibraryError, MusicLibrary};
@@ -27,6 +27,15 @@ pub struct AndroidEqualizerSnapshot {
 
 impl From<&EqualizerPoint> for AndroidEqualizerPoint {
     fn from(point: &EqualizerPoint) -> Self {
+        Self {
+            frequency_hz: point.frequency_hz,
+            gain_db: point.gain_db,
+        }
+    }
+}
+
+impl From<AndroidEqualizerPoint> for EqualizerPoint {
+    fn from(point: AndroidEqualizerPoint) -> Self {
         Self {
             frequency_hz: point.frequency_hz,
             gain_db: point.gain_db,
@@ -61,5 +70,34 @@ impl MusicLibrary {
     pub fn playback_settings(&self) -> Result<AndroidPlaybackSettings, LibraryError> {
         let state = self.lock()?;
         Ok(AndroidPlaybackSettings::load(&state.db))
+    }
+
+    pub fn set_equalizer_enabled(&self, enabled: bool) -> Result<(), LibraryError> {
+        let state = self.lock()?;
+        settings::set_equalizer_enabled(&state.db, enabled).map_err(|error| database_error(&error))
+    }
+
+    /// Replaces the authored curve with points from one explicit phone edit.
+    pub fn replace_equalizer_curve(
+        &self,
+        points: Vec<AndroidEqualizerPoint>,
+    ) -> Result<(), LibraryError> {
+        let curve = EqualizerCurve::new(points.into_iter().map(EqualizerPoint::from).collect())
+            .map_err(|error| LibraryError::InvalidPlaybackSetting {
+                detail: error.to_string(),
+            })?;
+        let state = self.lock()?;
+        settings::set_equalizer_curve(&state.db, &curve).map_err(|error| database_error(&error))
+    }
+
+    pub fn set_gapless_enabled(&self, enabled: bool) -> Result<(), LibraryError> {
+        let state = self.lock()?;
+        settings::set_gapless_enabled(&state.db, enabled).map_err(|error| database_error(&error))
+    }
+}
+
+fn database_error(error: &impl ToString) -> LibraryError {
+    LibraryError::Database {
+        detail: error.to_string(),
     }
 }

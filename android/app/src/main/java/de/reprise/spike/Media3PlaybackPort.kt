@@ -24,6 +24,7 @@ private const val POSITION_INTERVAL_MS = 500L
 /** Media3 implementation of the foreign half of Core's PlaybackBackend. */
 internal class Media3PlaybackPort(
     private val player: Player,
+    private val equalizerChanged: () -> Unit,
 ) : AndroidPlaybackPort {
     private val handler = Handler(player.applicationLooper)
     private val dispatch = player.applicationLooper.dispatch(handler)
@@ -84,6 +85,7 @@ internal class Media3PlaybackPort(
 
         override fun onAudioSessionIdChanged(audioSessionId: Int) {
             deviceEqualizer.onAudioSessionChanged(audioSessionId)
+            equalizerChanged()
         }
     }
 
@@ -131,6 +133,7 @@ internal class Media3PlaybackPort(
                 EqualizerCurvePoint(point.frequencyHz, point.gainDb)
             },
         )
+        equalizerChanged()
     }
 
     override fun equalizerSnapshot(): AndroidEqualizerSnapshot? = dispatch.call {

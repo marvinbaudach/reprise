@@ -630,6 +630,102 @@ fn viewing_and_applying_playback_settings_preserves_the_authored_curve_byte_for_
 }
 
 #[test]
+fn phone_curve_replacement_validates_its_numeric_payload_and_changes_only_that_key() {
+    let directory = tempfile::tempdir().unwrap();
+    let library = crate::MusicLibrary::open(
+        directory.path().to_str().unwrap(),
+        directory.path().join("cache").to_str().unwrap(),
+    )
+    .unwrap();
+    {
+        let state = library.lock().unwrap();
+        reprise_core::library::settings::set_setting(&state.db, "ui.theme", "desktop-only-theme")
+            .unwrap();
+    }
+
+    library
+        .replace_equalizer_curve(vec![
+            AndroidEqualizerPoint {
+                frequency_hz: 125.0,
+                gain_db: -3.0,
+            },
+            AndroidEqualizerPoint {
+                frequency_hz: 1_000.0,
+                gain_db: 4.5,
+            },
+        ])
+        .unwrap();
+    let saved = library.playback_settings().unwrap();
+    assert_eq!(saved.equalizer_curve.len(), 2);
+    assert_eq!(saved.equalizer_curve[1].gain_db, 4.5);
+    assert!(library
+        .replace_equalizer_curve(vec![
+            AndroidEqualizerPoint {
+                frequency_hz: 1_000.0,
+                gain_db: f64::NAN,
+            },
+            AndroidEqualizerPoint {
+                frequency_hz: 125.0,
+                gain_db: 0.0,
+            },
+        ])
+        .is_err());
+
+    let state = library.lock().unwrap();
+    assert_eq!(
+        reprise_core::library::settings::get_setting(&state.db, "ui.theme")
+            .unwrap()
+            .as_deref(),
+        Some("desktop-only-theme"),
+    );
+    assert_eq!(
+        reprise_core::library::settings::get_equalizer_curve(&state.db)
+            .points()
+            .len(),
+        2,
+        "a rejected replacement must leave the authored curve intact",
+    );
+}
+
+#[test]
+fn saved_track_transition_drives_android_at_startup_and_after_reload() {
+    let directory = tempfile::tempdir().unwrap();
+    let database_path = directory.path().join("reprise.db");
+    let database = reprise_core::db::Db::open_migrated(Some(&database_path)).unwrap();
+    reprise_core::library::settings::set_gapless_enabled(&database, false).unwrap();
+    drop(database);
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let session = AndroidPlaybackSession::new(
+        directory.path().to_str().unwrap(),
+        Box::new(RecordingPort {
+            calls: Arc::clone(&calls),
+            bridge: Arc::new(Mutex::new(None)),
+        }),
+        Box::new(RecordingListener {
+            snapshots: Arc::new(Mutex::new(Vec::new())),
+        }),
+    )
+    .unwrap();
+    assert!(calls
+        .lock()
+        .unwrap()
+        .contains(&PortCall::SetTransition(AndroidTransitionMode::Off)));
+
+    let library = crate::MusicLibrary::open(
+        directory.path().to_str().unwrap(),
+        directory.path().join("cache").to_str().unwrap(),
+    )
+    .unwrap();
+    library.set_gapless_enabled(true).unwrap();
+    session.reload_playback_settings().unwrap();
+
+    assert_eq!(
+        calls.lock().unwrap().last(),
+        Some(&PortCall::SetTransition(AndroidTransitionMode::Gapless)),
+    );
+}
+
+#[test]
 fn playback_event_bridge_delivers_ordered_core_events_with_production_generations() {
     let received = Arc::new(Mutex::new(Vec::<StreamEvent>::new()));
     let recorded = Arc::clone(&received);

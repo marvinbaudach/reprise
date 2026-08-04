@@ -1,9 +1,8 @@
 //! Android's Core-owned playback queue and transport surface.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
-use reprise_core::library::settings::TrackTransition;
 use reprise_core::playback::{PlaybackBackend, PlayerEvent, StreamEvent, StreamGeneration};
 use reprise_core::queue::{Queue, Repeat};
 
@@ -150,6 +149,7 @@ struct SessionInner {
     backend: OnceLock<AndroidPlaybackBackend>,
     listener: Box<dyn AndroidPlaybackListener>,
     plays: PlayRecorder,
+    database_path: PathBuf,
 }
 
 impl SessionInner {
@@ -324,12 +324,15 @@ impl AndroidPlaybackSession {
                 }
             })?;
         let playback_settings = crate::AndroidPlaybackSettings::load(&database);
+        let transition = reprise_core::library::settings::get_track_transition(&database);
+        let crossfade_seconds = reprise_core::library::settings::get_crossfade_seconds(&database);
         drop(database);
         let inner = Arc::new(SessionInner {
             state: Mutex::new(SessionState::new()),
             backend: OnceLock::new(),
             listener,
-            plays: PlayRecorder::spawn(database_path),
+            plays: PlayRecorder::spawn(database_path.clone()),
+            database_path,
         });
         let weak = Arc::downgrade(&inner);
         let backend = AndroidPlaybackBackend::new(
@@ -352,7 +355,9 @@ impl AndroidPlaybackSession {
             playback_settings.equalizer_enabled,
             playback_settings.equalizer_curve,
         )?;
-        inner.backend()?.set_transition(TrackTransition::Gapless, 0);
+        inner
+            .backend()?
+            .set_transition(transition, crossfade_seconds);
         Ok(Self { inner })
     }
 
@@ -454,6 +459,26 @@ impl AndroidPlaybackSession {
         &self,
     ) -> Result<Option<crate::AndroidEqualizerSnapshot>, AndroidPlaybackError> {
         self.inner.backend()?.equalizer_snapshot()
+    }
+
+    /// Re-reads authored settings after an explicit UI write and applies them.
+    pub fn reload_playback_settings(&self) -> Result<(), AndroidPlaybackError> {
+        let database =
+            reprise_core::db::Db::open_ready(&self.inner.database_path).map_err(|error| {
+                AndroidPlaybackError::Backend {
+                    detail: format!("could not reload playback settings: {error}"),
+                }
+            })?;
+        let playback_settings = crate::AndroidPlaybackSettings::load(&database);
+        let transition = reprise_core::library::settings::get_track_transition(&database);
+        let crossfade_seconds = reprise_core::library::settings::get_crossfade_seconds(&database);
+        let backend = self.inner.backend()?;
+        backend.set_equalizer(
+            playback_settings.equalizer_enabled,
+            playback_settings.equalizer_curve,
+        )?;
+        backend.set_transition(transition, crossfade_seconds);
+        Ok(())
     }
 }
 

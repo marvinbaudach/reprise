@@ -1,5 +1,6 @@
 package de.reprise.spike
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -18,8 +19,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,6 +51,7 @@ private enum class BrowseTab(val label: String) {
 internal fun BrowseScreen(
     state: LibraryScreenState.Browse,
     playback: PlaybackUiState,
+    playbackSettingsRevision: Long,
     chooseFolder: () -> Unit,
     rescan: () -> Unit,
     searchTitles: (String, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
@@ -56,6 +60,10 @@ internal fun BrowseScreen(
     openAlbum: (LibraryAlbum) -> AlbumTrackList,
     listAlbumTracks: (LibraryAlbum, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
     playTracks: (PlaybackSelection, (String) -> Unit) -> Unit,
+    loadPlaybackSettings: () -> PlaybackSettingsUiState,
+    setEqualizerEnabled: (Boolean) -> PlaybackSettingsUiState,
+    replaceEqualizerCurve: (List<EqualizerCurvePoint>) -> PlaybackSettingsUiState,
+    setGaplessEnabled: (Boolean) -> PlaybackSettingsUiState,
     themeSelection: MobileThemeSelection,
     selectTheme: (MobileTheme) -> Unit,
 ) {
@@ -76,6 +84,38 @@ internal fun BrowseScreen(
     // sheet the user opened is not something the device orientation gets to
     // close.
     var nowPlayingExpanded by rememberSaveable { mutableStateOf(false) }
+    var settingsVisible by rememberSaveable { mutableStateOf(false) }
+    var settingsState by remember { mutableStateOf<PlaybackSettingsUiState?>(null) }
+
+    fun openSettings() {
+        settingsState = runCatching(loadPlaybackSettings).getOrElse { error ->
+            PlaybackSettingsUiState(
+                equalizerEnabled = false,
+                gaplessEnabled = false,
+                equalizerBands = emptyList(),
+                error = "Could not load playback settings: ${error.message ?: "unknown error"}",
+            )
+        }
+        settingsVisible = true
+    }
+
+    fun updateSettings(action: () -> PlaybackSettingsUiState) {
+        settingsState = runCatching(action).getOrElse { error ->
+            settingsState?.copy(
+                error = "Could not save playback settings: ${error.message ?: "unknown error"}",
+            )
+        }
+    }
+
+    LaunchedEffect(playbackSettingsRevision) {
+        if (settingsVisible) {
+            settingsState = runCatching(loadPlaybackSettings).getOrElse { error ->
+                settingsState?.copy(
+                    error = "Could not refresh playback settings: ${error.message ?: "unknown error"}",
+                )
+            }
+        }
+    }
 
     fun play(selection: PlaybackSelection) {
         browseError = null
@@ -153,8 +193,7 @@ internal fun BrowseScreen(
                     },
                     rescan = rescan,
                     chooseFolder = chooseFolder,
-                    themeSelection = themeSelection,
-                    selectTheme = selectTheme,
+                    openSettings = ::openSettings,
                 )
             },
             bottomBar = {
@@ -240,6 +279,31 @@ internal fun BrowseScreen(
                     playback = playback,
                     close = { nowPlayingExpanded = false },
                 )
+            }
+        }
+        if (settingsVisible) {
+            BackHandler { settingsVisible = false }
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = MaterialTheme.colorScheme.background,
+            ) {
+                settingsState?.let { current ->
+                    PlaybackSettingsScreen(
+                        state = current,
+                        themeSelection = themeSelection,
+                        close = { settingsVisible = false },
+                        setEqualizerEnabled = { enabled ->
+                            updateSettings { setEqualizerEnabled(enabled) }
+                        },
+                        replaceEqualizerCurve = { points ->
+                            updateSettings { replaceEqualizerCurve(points) }
+                        },
+                        setGaplessEnabled = { enabled ->
+                            updateSettings { setGaplessEnabled(enabled) }
+                        },
+                        selectTheme = selectTheme,
+                    )
+                }
             }
         }
     }
