@@ -678,14 +678,15 @@ impl ServerHandler for RepriseServer {
         ]))
     }
 
+    // rmcp 3 lets a resource handler ask the client for input mid-request
+    // (MRTR), which is why the return type is an outcome enum rather than the
+    // result itself. Every resource this server exposes is read straight out
+    // of the database and never needs anything from the caller, so it always
+    // answers with `Complete` in one round.
     async fn read_resource(
         &self,
         request: ReadResourceRequestParams,
         _context: RequestContext<RoleServer>,
-    // rmcp 3 lets a resource handler ask the client for input mid-request
-    // (MRTR), so the return type became an outcome enum. Every resource this
-    // server exposes is read straight out of the database and never needs
-    // anything from the caller, so it always completes in one round.
     ) -> Result<ReadResourceResponse, ErrorData> {
         let uri = request.uri;
         let path = self.db_path.clone();
@@ -751,10 +752,9 @@ impl ServerHandler for RepriseServer {
             }
         };
 
-        Ok(
-            ReadResourceResult::new(vec![ResourceContents::text(json, uri)
-                .with_mime_type(RESOURCE_MIME_JSON)])
-            .into(),
-        )
+        Ok(ReadResourceResult::new(vec![
+            ResourceContents::text(json, uri).with_mime_type(RESOURCE_MIME_JSON)
+        ])
+        .into())
     }
 }
