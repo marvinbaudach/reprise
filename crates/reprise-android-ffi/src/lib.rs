@@ -10,6 +10,7 @@ use reprise_core::queries;
 
 use source::{BridgedSource, SafSource};
 
+mod appearance;
 #[cfg(test)]
 mod artwork_tests;
 mod browse;
@@ -27,6 +28,7 @@ mod log_capture;
 #[cfg(test)]
 mod playback_tests;
 
+pub use appearance::*;
 pub use browse::{
     AlbumRow, AlbumWindow, ArtistRow, ArtistWindow, TrackRow, TrackWindow, WindowRange,
 };
@@ -238,17 +240,6 @@ impl MusicLibrary {
                 Ok(None)
             }
         }
-    }
-}
-
-impl MusicLibrary {
-    /// A poisoned mutex means another call panicked while holding the
-    /// connection. Reporting that as an error beats propagating the panic
-    /// across the FFI boundary, where it would abort the app process.
-    fn lock(&self) -> Result<std::sync::MutexGuard<'_, LibraryState>, LibraryError> {
-        self.state.lock().map_err(|_| LibraryError::Database {
-            detail: "library handle poisoned by an earlier panic".to_owned(),
-        })
     }
 }
 

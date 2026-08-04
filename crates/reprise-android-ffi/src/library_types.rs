@@ -26,6 +26,17 @@ pub struct MusicLibrary {
     pub(crate) cache_root: PathBuf,
 }
 
+impl MusicLibrary {
+    /// A poisoned mutex means another call panicked while holding the
+    /// connection. Reporting that as an error beats propagating the panic
+    /// across the FFI boundary, where it would abort the app process.
+    pub(crate) fn lock(&self) -> Result<std::sync::MutexGuard<'_, LibraryState>, LibraryError> {
+        self.state.lock().map_err(|_| LibraryError::Database {
+            detail: "library handle poisoned by an earlier panic".to_owned(),
+        })
+    }
+}
+
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum LibraryError {
     #[error("database error: {detail}")]

@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.util.Log
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -28,6 +30,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,10 +39,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import de.reprise.spike.ui.theme.RepriseTheme
+import uniffi.reprise_android_ffi.AndroidColorScheme
+import uniffi.reprise_android_ffi.AndroidRepeatMode
 import uniffi.reprise_android_ffi.MusicLibrary
 import uniffi.reprise_android_ffi.ScanProgressListener
 import uniffi.reprise_android_ffi.ScanProgressUpdate
-import uniffi.reprise_android_ffi.AndroidRepeatMode
 
 private const val TAG = "RepriseScan"
 private const val PREFERENCES_NAME = "reprise_android"
@@ -65,6 +69,12 @@ class MainActivity : ComponentActivity() {
     }
     private val artworkDelegate = lazy { TrackArtwork(resolve = session::artworkFor) }
     private val artwork by artworkDelegate
+    private val themeController by lazy {
+        ThemeController(
+            port = AndroidThemeSettingsPort(library),
+            dynamicAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S,
+        )
+    }
 
     /**
      * Every transport command the surface can issue, bound once here instead of
@@ -111,14 +121,15 @@ class MainActivity : ComponentActivity() {
         // From SDK 35 the system draws behind the bars whether an app asks or
         // not; saying so explicitly is what lets us pick light bar icons for a
         // ground that is dark even when the system is not.
-        enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.dark(TRANSPARENT_SYSTEM_BAR),
-            navigationBarStyle = SystemBarStyle.dark(TRANSPARENT_SYSTEM_BAR),
-        )
+        configureEdgeToEdge(darkPalette = true)
         super.onCreate(savedInstanceState)
+        val initialTheme = restoreTheme()
         val initialState = restoreLibrary()
         setContent {
-            RepriseTheme {
+            var themeSelection by remember { mutableStateOf(initialTheme) }
+            val darkPalette = themeSelection.usesDarkPalette(isSystemInDarkTheme())
+            LaunchedEffect(darkPalette) { configureEdgeToEdge(darkPalette) }
+            RepriseTheme(themeSelection, darkPalette) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,
@@ -142,12 +153,44 @@ class MainActivity : ComponentActivity() {
                                 openAlbum = session::openAlbum,
                                 listAlbumTracks = session::listAlbumTracks,
                                 playTracks = ::playTracks,
+                                themeSelection = themeSelection,
+                                selectTheme = { palette ->
+                                    runCatching {
+                                        themeController.select(themeSelection, palette)
+                                    }.onSuccess { selection ->
+                                        themeSelection = selection
+                                    }.onFailure { error ->
+                                        Log.e(TAG, "Could not change theme", error)
+                                    }
+                                },
                             )
                         }
                     }
                 }
             }
         }
+    }
+
+    private fun configureEdgeToEdge(darkPalette: Boolean) {
+        val transparent = SystemBarStyle.auto(
+            TRANSPARENT_SYSTEM_BAR,
+            TRANSPARENT_SYSTEM_BAR,
+        ) { darkPalette }
+        enableEdgeToEdge(
+            statusBarStyle = transparent,
+            navigationBarStyle = transparent,
+        )
+    }
+
+    private fun restoreTheme(): MobileThemeSelection = runCatching {
+        themeController.load()
+    }.getOrElse { error ->
+        Log.e(TAG, "Could not load appearance settings; using Nocturne", error)
+        MobileThemeSelection(
+            palette = MobileTheme.NOCTURNE,
+            colorScheme = AndroidColorScheme.SYSTEM,
+            dynamicAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S,
+        )
     }
 
     override fun onStart() {
@@ -290,6 +333,8 @@ private fun LibraryScreen(
     openAlbum: (LibraryAlbum) -> AlbumTrackList,
     listAlbumTracks: (LibraryAlbum, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
     playTracks: (PlaybackSelection, (String) -> Unit) -> Unit,
+    themeSelection: MobileThemeSelection,
+    selectTheme: (MobileTheme) -> Unit,
 ) {
     var state by remember { mutableStateOf(initialState) }
     val folderPicker = rememberLauncherForActivityResult(
@@ -320,6 +365,8 @@ private fun LibraryScreen(
             openAlbum = openAlbum,
             listAlbumTracks = listAlbumTracks,
             playTracks = playTracks,
+            themeSelection = themeSelection,
+            selectTheme = selectTheme,
         )
     }
 }

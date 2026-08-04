@@ -56,6 +56,8 @@ internal fun BrowseScreen(
     openAlbum: (LibraryAlbum) -> AlbumTrackList,
     listAlbumTracks: (LibraryAlbum, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
     playTracks: (PlaybackSelection, (String) -> Unit) -> Unit,
+    themeSelection: MobileThemeSelection,
+    selectTheme: (MobileTheme) -> Unit,
 ) {
     var selectedTab by remember { mutableStateOf(BrowseTab.TITLES) }
     var searchVisible by remember { mutableStateOf(false) }
@@ -151,6 +153,8 @@ internal fun BrowseScreen(
                     },
                     rescan = rescan,
                     chooseFolder = chooseFolder,
+                    themeSelection = themeSelection,
+                    selectTheme = selectTheme,
                 )
             },
             bottomBar = {
