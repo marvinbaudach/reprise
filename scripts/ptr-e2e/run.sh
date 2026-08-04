@@ -82,6 +82,11 @@ PTR_E2E_HEADER_ONLY="${PTR_E2E_HEADER_ONLY:-0}"
 PTR_E2E_PLAYLIST_DELETE_ONLY="${PTR_E2E_PLAYLIST_DELETE_ONLY:-0}"
 PTR_E2E_PREFERENCES_ONLY="${PTR_E2E_PREFERENCES_ONLY:-0}"
 PTR_E2E_COLREORDER_ONLY="${PTR_E2E_COLREORDER_ONLY:-0}"
+# Seeking needs a track long enough that a click lands somewhere other than
+# "already finished": this flow replaces the 1.16s sine fixtures with a single
+# generated long one, so it runs on its own rather than inside the full sweep.
+PTR_E2E_COMPACT_SEEK_ONLY="${PTR_E2E_COMPACT_SEEK_ONLY:-0}"
+COMPACT_SEEK_FIXTURE_S="${COMPACT_SEEK_FIXTURE_S:-180}"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=artist-news.sh
@@ -98,6 +103,8 @@ source "$REPO_ROOT/scripts/ptr-e2e/playlist-delete.sh"
 source "$REPO_ROOT/scripts/ptr-e2e/preferences.sh"
 # shellcheck source=column-reorder.sh
 source "$REPO_ROOT/scripts/ptr-e2e/column-reorder.sh"
+# shellcheck source=compact-seek.sh
+source "$REPO_ROOT/scripts/ptr-e2e/compact-seek.sh"
 FIXTURE_PATH="$REPO_ROOT/crates/reprise-core/tests/fixtures/sine.flac"
 APP_ID="org.reprise.Reprise"
 # Substring match for `xdotool search --class`: a superset of every WM_CLASS
@@ -145,16 +152,30 @@ cat > "$XDG_CONFIG_HOME_SCRATCH/gtk-4.0/settings.ini" <<'EOF'
 gtk-icon-theme-name=Papirus-Dark
 EOF
 
-for i in $(seq 1 "$PTR_E2E_N_TRACKS"); do
-  # Zero-padded index so filenames (and thus the title the scanner falls
-  # back to — `sine.flac` carries no title tag, only a DESCRIPTION comment,
-  # so the title is the file stem) sort predictably.
-  printf -v idx "%02d" "$i"
-  cp "$FIXTURE_PATH" "$MUSIC_DIR/sine_$idx.flac"
-  if [ "$PTR_E2E_NEWS_ONLY" = "1" ]; then
-    tag_artist_news_fixture "$MUSIC_DIR/sine_$idx.flac" "$i"
+if [ "$PTR_E2E_COMPACT_SEEK_ONLY" = "1" ]; then
+  # A single, long track: seek assertions need room, and one row keeps the
+  # "play row 0" step unambiguous. Generated rather than committed so the
+  # repository stays free of a multi-megabyte audio fixture.
+  if ! command -v ffmpeg >/dev/null 2>&1; then
+    echo "FAIL: PTR_E2E_COMPACT_SEEK_ONLY needs ffmpeg to generate the long fixture" >&2
+    exit 2
   fi
-done
+  ffmpeg -loglevel error -f lavfi \
+    -i "sine=frequency=440:duration=$COMPACT_SEEK_FIXTURE_S" \
+    -metadata title="Long Sine" -metadata artist="Pointer Harness" \
+    "$MUSIC_DIR/long_sine.flac"
+else
+  for i in $(seq 1 "$PTR_E2E_N_TRACKS"); do
+    # Zero-padded index so filenames (and thus the title the scanner falls
+    # back to — `sine.flac` carries no title tag, only a DESCRIPTION comment,
+    # so the title is the file stem) sort predictably.
+    printf -v idx "%02d" "$i"
+    cp "$FIXTURE_PATH" "$MUSIC_DIR/sine_$idx.flac"
+    if [ "$PTR_E2E_NEWS_ONLY" = "1" ]; then
+      tag_artist_news_fixture "$MUSIC_DIR/sine_$idx.flac" "$i"
+    fi
+  done
+fi
 
 write_artist_news_fixtures
 
@@ -511,6 +532,14 @@ fi
 
 if [ "$PTR_E2E_PREFERENCES_ONLY" = "1" ]; then
   run_preferences_flow
+  assert_log_absent \
+    'Gtk-CRITICAL|GLib-CRITICAL|GLib-GObject-CRITICAL|panicked at|BorrowError|BorrowMutError|already borrowed' \
+    'GTK/GLib critical, panic, or RefCell borrow failure'
+  exit 0
+fi
+
+if [ "$PTR_E2E_COMPACT_SEEK_ONLY" = "1" ]; then
+  run_compact_seek_flow
   assert_log_absent \
     'Gtk-CRITICAL|GLib-CRITICAL|GLib-GObject-CRITICAL|panicked at|BorrowError|BorrowMutError|already borrowed' \
     'GTK/GLib critical, panic, or RefCell borrow failure'

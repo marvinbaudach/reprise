@@ -279,7 +279,16 @@ impl WaveformSeek {
         drag.connect_drag_begin({
             let state = state.clone();
             let area = area.clone();
-            move |_, x, _| {
+            move |gesture, x, _| {
+                // Claim the sequence on press. In the mini player this widget
+                // sits inside the card's GtkWindowHandle, whose own drag
+                // gesture claims the sequence once the pointer passes the drag
+                // threshold and starts a window move — cancelling this gesture
+                // mid-scrub, so the seek committed at the *start* point while
+                // the window slid across the desktop. Claiming first keeps the
+                // scrub here; the rest of the card stays a drag surface, which
+                // is exactly what MINI-2 asks for.
+                gesture.set_state(gtk4::EventSequenceState::Claimed);
                 let frac = fraction_at(x, f64::from(area.width()));
                 state.borrow_mut().drag_fraction = Some(frac);
                 area.queue_draw();
