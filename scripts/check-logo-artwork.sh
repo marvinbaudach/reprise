@@ -23,9 +23,10 @@ fail=0
 ok()  { printf '  ok    %s\n' "$*"; }
 bad() { printf '  FAIL  %s\n' "$*" >&2; fail=1; }
 
-# Rendergröße und Formbudget je Stufe.
-stage_size()   { case $1 in full) echo 128;; reduced) echo 48;; micro) echo 16;; esac; }
-stage_shapes() { case $1 in full) echo 34;; reduced) echo 20;; micro) echo 1;; esac; }
+# Es gibt nur noch eine Zeichnung. Sie wird bei der kleinsten Größe geprüft,
+# bei der sie ausgeliefert wird — was dort trägt, trägt auch darüber.
+MARK_SIZE=16
+MARK_SHAPES=12
 
 # Kontrastschwellen. 3,0 ist WCAG 1.4.11 für grafische Objekte — die Grenze,
 # an der eine Fläche sich von ihrem Grund abhebt. Die frühere Fassung
@@ -104,9 +105,9 @@ check_v4_plate() {   # <zusammengesetztes-icon.svg> <label>
   report_contrast $($measure pair-edge-contrast "$tmp/l-mark.png" "$tmp/l-plate.png") "$2"
 }
 
-check_v5() {   # <svg> <stage>
+check_v5() {   # <svg> <label> <budget>
   read -r shapes maxcmd < <($measure shape-stats "$1")
-  local budget; budget=$(stage_shapes "$2")
+  local budget=$3
   [ "$shapes" -le "$budget" ] \
     && ok "V5 Formzahl $2: $shapes ≤ $budget" \
     || bad "V5 Formzahl $2: $shapes > $budget"
@@ -206,21 +207,25 @@ EOF
     || bad "Selbsttest V4 hält 1,31:1 für sichtbar"
 }
 
-check_stage() {   # <stage> <svg> [--silhouette]
-  local stage=$1 svg=$2 kind=${3:-} size
-  size=$(stage_size "$stage")
-  echo "Stufe $stage bei ${size}px: $svg"
-  check_v5 "$svg" "$stage"
-  rsvg-convert -w "$size" -a "$svg" -o "$tmp/s.png"
-  check_v1 "$tmp/s.png" "$stage" "$svg"
-  # V2 und V3 fragen nach durchsichtigem Negativraum. Das ist bei den
-  # farbigen Stufen die falsche Frage: dort sind die Augen gefüllte
-  # Flächen, keine Löcher. Gemessen wird der Negativraum an den
-  # Silhouetten, die ihn tragen müssen — micro, symbolic, mono.
-  if [ "$kind" = "--silhouette" ]; then
-    check_v2 "$tmp/s.png" "${size}px"
-    check_v3 "$svg" "$stage" "$size"
-  fi
+check_mark() {   # <svg>
+  echo "Marke: $1"
+  check_v5 "$1" "Marke" "$MARK_SHAPES"
+  # V1 fragt nach der Geometrie — füllt die Zeichnung ihr Raster aus? Bei
+  # 16 px entscheidet darüber die Kantenglättung: eine Federspitze, die eine
+  # halbe Rasterzeile hoch ist, landet unter der Alphaschwelle und fehlt in
+  # der Messung. Gemessen wird deshalb groß.
+  rsvg-convert -w 128 -a "$1" -o "$tmp/s.png"
+  check_v1 "$tmp/s.png" "Marke" "$1"
+}
+
+check_silhouette() {   # <svg>
+  echo "Einfarbige Fassung bei ${MARK_SIZE}px: $1"
+  # Hier greift der Negativraum-Test: die Augen sind Ringe und der Schnabel
+  # ein Loch, und genau die laufen bei kleiner Größe als erstes zu. An der
+  # farbigen Fassung wäre dieselbe Frage sinnlos — dort sind es Flächen.
+  rsvg-convert -w "$MARK_SIZE" -a "$1" -o "$tmp/sil.png"
+  check_v2 "$tmp/sil.png" "${MARK_SIZE}px"
+  check_v3 "$1" "Silhouette" "$MARK_SIZE"
 }
 
 check_all() {
@@ -230,17 +235,8 @@ check_all() {
   echo "Kalibrierung der Detektoren"
   self_test
 
-  check_stage full "$brand/mark.svg"
-  check_stage reduced "$brand/mark-reduced.svg"
-  check_stage micro "$brand/mark-micro.svg" --silhouette
-
-  echo "Einfarbige Silhouetten"
-  # Hier greift der Negativraum-Test: Augen und Schnabel sind Löcher, und
-  # genau die laufen bei kleiner Größe als erstes zu.
-  rsvg-convert -w 128 -a "$brand/mark-mono.svg" -o "$tmp/mono-full.png"
-  check_v2 "$tmp/mono-full.png" "mark-mono bei 128px"
-  rsvg-convert -w 48 -a "$brand/mark-reduced-mono.svg" -o "$tmp/mono-red.png"
-  check_v2 "$tmp/mono-red.png" "mark-reduced-mono bei 48px"
+  check_mark "$brand/mark.svg"
+  check_silhouette "$brand/mark-mono.svg"
 
   echo "Symbolic: $icons/symbolic/apps/org.reprise.Reprise-symbolic.svg"
   check_v7 "$icons/symbolic/apps/org.reprise.Reprise-symbolic.svg"
@@ -252,9 +248,8 @@ check_all() {
   # angezeigt. Was hier zählt, ist die Silhouette — und die prüft V2.
 
   echo "App-Icon auf der Platte"
-  check_v4_plate "$icons/scalable/apps/org.reprise.Reprise.svg" "volle Stufe auf der Platte"
-  check_v4_plate "$brand/favicon.svg" "Micro-Stufe auf der Platte"
-  check_v4_plate "$brand/icon-reduced.svg" "reduzierte Stufe auf der Platte"
+  check_v4_plate "$icons/scalable/apps/org.reprise.Reprise.svg" "Marke auf der Platte"
+  check_v4_plate "$brand/favicon.svg" "Marke auf der randlosen Platte"
 
   echo "Fassung für dunkle Gründe"
   rsvg-convert -w 256 -a "$brand/mark-on-dark.svg" -o "$tmp/on-dark.png"
@@ -263,7 +258,7 @@ check_all() {
   check_v4_ground "$tmp/on-light.png" FFFFFF "mark auf Weiß"
 
   echo "Android"
-  check_v8 "$brand/mark-reduced.svg" "$brand/mark-reduced-mono.svg"
+  check_v8 "$brand/mark.svg" "$brand/mark-mono.svg"
   check_v9 "$android/drawable/ic_launcher_foreground.xml"
   check_v9 "$android/drawable/ic_launcher_monochrome.xml"
 
@@ -279,9 +274,10 @@ case ${1:-} in
     check_v7 "$svg"
     rsvg-convert -w 16 -h 16 "$svg" -o "$tmp/sym.png"
     check_v2 "$tmp/sym.png" "16px" ;;
-  full|reduced|micro) check_stage "$1" "$2" ;;
+  --mark)      check_mark "$2" ;;
+  --silhouette) check_silhouette "$2" ;;
   *)
-    echo "Aufruf: $0 --all | {full|reduced|micro} <svg> | --symbolic <svg> | --self-test" >&2
+    echo "Aufruf: $0 --all | --mark <svg> | --silhouette <svg> | --symbolic <svg> | --self-test" >&2
     exit 2 ;;
 esac
 

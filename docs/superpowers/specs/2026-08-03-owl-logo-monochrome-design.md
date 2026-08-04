@@ -454,3 +454,49 @@ Der rohe Flächenvergleich bestrafte genau das, was an der Silhouette Absicht
 ist: Augen und Schnabel sind dort Löcher und in der farbigen Fassung Flächen.
 Gemessen wird, ob der Launcher dieselbe Eule zeigt — nicht, ob beide Fassungen
 gleich viel Fläche haben.
+
+### Nachtrag: eine Zeichnung statt drei, und ohne Kopfhörer
+
+Der Stufenbau ist aufgelöst. `full`, `reduced` und `micro` sind verschwunden;
+es gibt nur noch `mark.svg` und ihre einfarbige Fassung `mark-mono.svg`.
+Die Kopfhörer sind ganz entfallen.
+
+**Warum überhaupt drei Zeichnungen?** Weil die vorlagentreue Eule mit
+Kopfhörern bei 48 px zerfiel. Nimmt man die Kopfhörer heraus und zeichnet
+bewusst grob — Vorbild ist der Löwe von Brave —, trägt eine einzige Zeichnung
+von 512 bis 16 px. Drei Zeichnungen zu pflegen war die Antwort auf ein
+Problem, das die Vereinfachung gar nicht erst entstehen lässt.
+
+Was der Verzicht kostet: die Kopfhörer waren das einzige Musiksignal im Bild.
+Das trägt jetzt der Name.
+
+**Die Zeichnung liegt auf dem 16er Raster**, und jede tragende Kante liegt auf
+einer ganzen Rasterlinie: Augen als Kreise mit Radius 2 um (5|9) und (11|9),
+Pupillen mit Radius 1, Schnabel von x=7 bis x=9. Damit sind 32, 48, 64, 128
+und 512 px glatte Vielfache — die Zeichnung wird vergrößert, nicht
+interpoliert. Auf halben Rasterlinien gezeichnet, wie im ersten Wurf, wird bei
+16 px jede Kante zu einem grauen Verlauf über zwei Pixel.
+
+**Die Augen sind Ringe, keine Löcher.** Das ist der Befund, an dem die
+vorigen Fassungen gescheitert sind: einfarbig ist ein Auge, das nur ein Loch
+ist, ein Katzenauge. Erst die Pupille darin macht es zum Eulenauge. In der
+Farbfassung ist dieselbe Form eine Fläche mit Pupille, damit beide Fassungen
+dieselbe Zeichnung zeigen — V8 misst das und ergibt 1,0000.
+
+**Die Marke ist flach gefüllt.** Die Tiefe kommt von der Platte. Ein Verlauf
+in der Marke hätte zwei Kosten: Androids VectorDrawable kennt keine
+Verlaufsverweise, und bei 16 px ist ein Verlauf über drei Pixel Matsch.
+
+#### Zwei Korrekturen am Messverfahren
+
+- **V2 zählt Hintergrundflächen jetzt in 8er-Nachbarschaft.** Vordergrund und
+  Hintergrund brauchen entgegengesetzte Nachbarschaften, sonst widersprechen
+  sich die Zählungen: mit der 4er-Regel zerfiel ein einen Pixel dünner
+  Augenring in vier Eckstücke, die einzeln unter die Mindestgröße rutschten.
+  Die Messung meldete „keine Aussparung" für eine Zeichnung, deren Augen im
+  Bild klar offen sind. Der Selbsttest (Klumpen = 1, Ring = 2) kalibriert
+  weiterhin richtig.
+- **V1 wird bei 128 px gemessen, nicht bei 16.** Die Frage ist geometrisch —
+  füllt die Zeichnung ihr Raster aus? Bei 16 px entscheidet darüber die
+  Kantenglättung: eine Federspitze von einer halben Rasterzeile Höhe landet
+  unter der Alphaschwelle und fehlt in der Messung.

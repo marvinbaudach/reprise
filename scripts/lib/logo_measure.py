@@ -27,6 +27,9 @@ PATH_CMD = re.compile(r"[MmLlHhVvCcSsQqTtAaZz]")
 MIN_HOLE_SHARE = 0.001
 MIN_HOLE_PIXELS = 3
 
+NEIGHBOURS_8 = ((1, 0), (-1, 0), (0, 1), (0, -1),
+                (1, 1), (1, -1), (-1, 1), (-1, -1))
+
 
 def _rgba(png):
     return Image.open(png).convert("RGBA")
@@ -41,11 +44,18 @@ def _alpha_mask(png):
 
 
 def bg_components(png):
-    """Zahl der Hintergrund-Zusammenhangskomponenten, 4er-Nachbarschaft.
+    """Zahl der Hintergrund-Zusammenhangskomponenten, 8er-Nachbarschaft.
 
     Ein Klumpen ohne Aussparung hat genau 1: den Außenraum. Jede weitere
     Komponente ist überlebender Negativraum — sofern sie groß genug ist, um
     bei dieser Rendergröße noch als Aussparung gesehen zu werden.
+
+    Vordergrund und Hintergrund brauchen **entgegengesetzte**
+    Nachbarschaften, sonst widersprechen sich die Zählungen. Mit 4er-Regel
+    für den Hintergrund zerfällt ein einen Pixel dünner Ring in vier
+    Eckstücke, die einzeln unter die Mindestgröße rutschen: die Messung
+    meldete „keine Aussparung" für eine Zeichnung, deren Augen im Bild klar
+    offen sind. Für den Hintergrund gilt daher 8er-Nachbarschaft.
     """
     w, h, bg = _alpha_mask(png)
     floor = max(MIN_HOLE_PIXELS, int(MIN_HOLE_SHARE * w * h))
@@ -64,7 +74,7 @@ def bg_components(png):
                 area += 1
                 if x in (0, w - 1) or y in (0, h - 1):
                     touches_border = True
-                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                for dx, dy in NEIGHBOURS_8:
                     nx, ny = x + dx, y + dy
                     if 0 <= nx < w and 0 <= ny < h and not seen[ny][nx] and bg[ny][nx]:
                         seen[ny][nx] = True

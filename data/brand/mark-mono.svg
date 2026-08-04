@@ -1,33 +1,30 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1247 1000" width="1247" height="1000"
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16"
      fill="currentColor">
-  <!-- Einfarbige Fassung der vollen Zeichnung, für Kontexte, die nur eine
-       Farbe hergeben.
+  <!-- Einfarbige Fassung: GNOME-Symbolic und Androids Themed Icon. Beide
+       werden zur Laufzeit umgefärbt, dort zählt nur Alpha.
 
-       Sie ist **nicht** die eingefärbte Vollfassung: dort liegen Gesicht,
-       Augen und Schnabel als eigene Flächen übereinander, und einfarbig
-       verschmelzen sie zu einem Klumpen mit zwei Pünktchen. Hier trägt
-       stattdessen die Silhouette, und Augen wie Schnabel sind echte
-       Aussparungen.
+       Genau **ein** Pfad, wie das Symbolic es verlangt, und `evenodd` statt
+       Wickelrichtungen: die Augen sind Ringe, also Loch mit Pupille darin.
+       Wären sie bloße Löcher, läse die Silhouette als Katze — das ist der
+       Unterschied, an dem die vorige Fassung gescheitert ist.
 
-       Die Ringe der Ohrmuscheln entfallen: einfarbig ist ein Ring ein Loch,
-       und drei ineinandergelegte Löcher lesen als Zielscheibe. -->
-  <path id="mono-band"
-        d="M 74 674 C 74 258 314 0 623 0 C 932 0 1173 258 1173 674
-           L 1065 674 C 1065 326 872 145 623 145 C 374 145 182 326 182 674 Z"/>
-  <ellipse id="mono-cup-l" cx="118" cy="674" rx="118" ry="190"/>
-  <ellipse id="mono-cup-r" cx="1129" cy="674" rx="118" ry="190"/>
-  <path id="mono-tuft-l" d="M 261 392 C 363 404 457 442 530 496
-                          C 460 520 403 560 363 610 C 344 520 308 444 261 392 Z"/>
-  <path id="mono-tuft-r" d="M 985 392 C 883 404 789 442 716 496
-                          C 786 520 843 560 883 610 C 902 520 938 444 985 392 Z"/>
-  <path id="mono-head" fill-rule="evenodd"
-        d="M 623 372 C 800 372 950 520 985 700
-           C 1006 810 900 999 623 999 C 346 999 240 810 261 700
-           C 296 520 446 372 623 372 Z
-           M 474 665 A 68 68 0 1 0 474 801 A 68 68 0 1 0 474 665 Z
-           M 772 665 A 68 68 0 1 0 772 801 A 68 68 0 1 0 772 665 Z
-           M 623 780 C 656 780 683 807 683 840
-           C 683 884 656 936 623 980
-           C 590 936 563 884 563 840
-           C 563 807 590 780 623 780 Z"/>
+       Der Umriss ist identisch mit dem von `mark.svg`. Das Gate misst die
+       Deckung beider Umrisse (V8): sonst zeigt derselbe Launcher je nach
+       Einstellung zwei verschiedene Eulen. -->
+  <path fill-rule="evenodd"
+        d="M 8 4 C 9.6 4 11 4.2 12.2 4.6
+           C 13.1 3.8 14.3 3.2 15.7 2.5
+           C 14.8 4 14.3 5.1 14.1 6.3
+           C 15 7.3 15.4 8.4 15.4 9.5
+           C 15.4 12.4 12.4 14.5 8 14.5
+           C 3.6 14.5 0.6 12.4 0.6 9.5
+           C 0.6 8.4 1 7.3 1.9 6.3
+           C 1.7 5.1 1.2 4 0.3 2.5
+           C 1.7 3.2 2.9 3.8 3.8 4.6
+           C 5 4.2 6.4 4 8 4 Z
+           M 3 9 A 2 2 0 1 0 7 9 A 2 2 0 1 0 3 9 Z
+           M 4 9 A 1 1 0 1 0 6 9 A 1 1 0 1 0 4 9 Z
+           M 9 9 A 2 2 0 1 0 13 9 A 2 2 0 1 0 9 9 Z
+           M 10 9 A 1 1 0 1 0 12 9 A 1 1 0 1 0 10 9 Z
+           M 7 11 L 9 11 L 8 14.5 Z"/>
 </svg>

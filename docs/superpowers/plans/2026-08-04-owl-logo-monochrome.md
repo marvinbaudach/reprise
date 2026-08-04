@@ -14,7 +14,10 @@ created: 2026-08-04
 Zeichnungen neu bauen und daraus GNOME, Android und Web bedienen.
 
 **Architecture:** Drei SVG-Master (`full`, `reduced`, `micro`) unter
-`data/brand/` sind die einzige Quelle. Alle Zielflächen sind reine Ableitungen
+`data/brand/` sind die einzige Quelle.
+> **Überholt.** Es gibt nur noch **eine** Zeichnung, `data/brand/mark.svg`,
+> plus ihre einfarbige Fassung `mark-mono.svg` — ohne Kopfhörer und auf dem
+> 16er Raster. Begründung in der Spec unter „eine Zeichnung statt drei". Alle Zielflächen sind reine Ableitungen
 davon. Ein Mess-Skript prüft jede Zeichnung gegen die Kriterien der Spec, bevor
 irgendetwas abgeleitet wird — die Zeichnung wird gemessen, nicht begutachtet.
 

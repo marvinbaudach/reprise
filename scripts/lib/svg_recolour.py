@@ -17,7 +17,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from svg_ids import prefix_ids                          # noqa: E402
 
-_HEX = re.compile(r"#[0-9A-Fa-f]{6}\b")
+# Auch `currentColor` ist ein Farbwert und muss abbildbar sein: die
+# einfarbige Fassung benutzt ihn, damit eine Webseite sie per CSS einfärben
+# kann — das GNOME-Symbolic braucht dort aber einen literalen Wert.
+_HEX = re.compile(r"#[0-9A-Fa-f]{6}\b|\bcurrentColor\b")
 
 
 def recolour(text, mapping):
