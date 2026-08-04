@@ -13,15 +13,11 @@
 
 use std::cell::RefCell;
 
-use gtk4::prelude::*;
-use libadwaita::prelude::AnimationExt;
 
-use crate::ui::motion;
 
 /// Edge length the cover is scaled to before sampling — small enough to be
 /// cheap, large enough to be representative.
 const SAMPLE_EDGE: i32 = 32;
-const ACCENT_TRANSITION_CLASS: &str = "reprise-cover-accent-transition";
 
 /// An extracted 8-bit color.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -289,41 +285,18 @@ fn accent_css(color: Option<Rgb>) -> String {
     }
 }
 
-/// Stable provider content: changing the symbolic color once lets GTK
-/// interpolate every affected computed property locally. The transition class
-/// is present only for an active cover fade, so unrelated style changes do not
-/// inherit the ambient duration.
-fn accent_provider_css(color: Option<Rgb>) -> String {
-    format!(
-        "{}\n.{ACCENT_TRANSITION_CLASS}, .{ACCENT_TRANSITION_CLASS} * {{ \
-         transition: color {duration}ms {easing}, \
-                     background {duration}ms {easing}, \
-                     border-color {duration}ms {easing}, \
-                     outline-color {duration}ms {easing}, \
-                     box-shadow {duration}ms {easing}; }}",
-        accent_css(color),
-        duration = motion::AMBIENT_MS,
-        easing = motion::AMBIENT_CSS_EASING,
-    )
-}
-
 thread_local! {
     /// Override provider for the cover accent, kept so it can be reloaded per
     /// track. Sits above the theme provider so its `reprise_player_accent`
     /// wins when set, and falls back to the theme's when cleared (empty).
     static ACCENT_PROVIDER: RefCell<Option<gtk4::CssProvider>> = const { RefCell::new(None) };
-
-    /// The currently-running cross-fade animation. Held here to prevent GC
-    /// between ticks. Replaced (and thus dropped) on each new fade.
-    static CURRENT_ANIMATION: RefCell<Option<libadwaita::TimedAnimation>> =
-        const { RefCell::new(None) };
 }
 
 /// Installs the (initially empty) cover-accent override provider just above
 /// application priority so it overrides the theme's `reprise_player_accent`.
 pub(super) fn install(display: &gtk4::gdk::Display) {
     let provider = gtk4::CssProvider::new();
-    provider.load_from_string(&accent_provider_css(None));
+    provider.load_from_string(&accent_css(None));
     gtk4::style_context_add_provider_for_display(
         display,
         &provider,
@@ -337,87 +310,9 @@ pub(super) fn install(display: &gtk4::gdk::Display) {
 pub(in crate::ui) fn set_cover_accent(color: Option<Rgb>) {
     ACCENT_PROVIDER.with(|slot| {
         if let Some(provider) = slot.borrow().as_ref() {
-            provider.load_from_string(&accent_provider_css(color));
+            provider.load_from_string(&accent_css(color));
         }
     });
-}
-
-// ---------------------------------------------------------------------------
-// Cross-fade
-// ---------------------------------------------------------------------------
-
-/// Drops the transition class from every current top level, whether or not this
-/// process put it there. Idempotent: `remove_css_class` on a widget that does
-/// not carry the class is a no-op.
-fn clear_transition_class() {
-    for root in gtk4::Window::list_toplevels() {
-        root.remove_css_class(ACCENT_TRANSITION_CLASS);
-    }
-}
-
-fn transition_roots(widget: &impl IsA<gtk4::Widget>) -> (gtk4::Widget, Vec<gtk4::Widget>) {
-    let widget = widget.upcast_ref::<gtk4::Widget>();
-    let animation_root = widget
-        .root()
-        .and_then(|root| {
-            root.upcast::<gtk4::glib::Object>()
-                .downcast::<gtk4::Widget>()
-                .ok()
-        })
-        .unwrap_or_else(|| widget.clone());
-    let mut roots = gtk4::Window::list_toplevels();
-    if !roots.iter().any(|root| root == &animation_root) {
-        roots.push(animation_root.clone());
-    }
-    (animation_root, roots)
-}
-
-/// Animates the cover accent from `old` to `new` with the Ambient token.
-/// GTK interpolates the affected computed CSS properties beneath a temporary
-/// root class; the display-wide provider is reloaded only once, with the final
-/// endpoint. The central motion helper owns class cleanup and follows the
-/// system animation setting. Clearing the override exposes the selected
-/// palette's theme accent as the CSS transition endpoint.
-pub(in crate::ui) fn cross_fade_accent(
-    old: Option<Rgb>,
-    new: Option<Rgb>,
-    widget: &impl IsA<gtk4::Widget>,
-) {
-    if old == new {
-        let previous = CURRENT_ANIMATION.with(|slot| slot.borrow_mut().take());
-        if let Some(previous) = previous {
-            previous.skip();
-        }
-        clear_transition_class();
-        set_cover_accent(new);
-        return;
-    }
-
-    // Cleanup normally rides on the animation's `done` signal, and
-    // `motion::replace_animation` skips a superseded fade (which emits `done`).
-    // The one case neither covers is a fade whose animation root stops ticking
-    // before it completes — an unrealized window leaves the class behind with
-    // nothing left to fire. Sweeping first bounds that to a single track change
-    // instead of the rest of the session, and costs one class removal.
-    clear_transition_class();
-
-    let (animation_root, transition_roots) = transition_roots(widget);
-    let target = libadwaita::CallbackAnimationTarget::new(|_| {});
-    let animation = motion::timed(&animation_root, 0.0, 1.0, motion::AMBIENT, target);
-    animation.connect_done({
-        let transition_roots = transition_roots.clone();
-        move |_| {
-            for root in &transition_roots {
-                root.remove_css_class(ACCENT_TRANSITION_CLASS);
-            }
-        }
-    });
-    CURRENT_ANIMATION.with(|slot| motion::replace_animation(slot, animation.clone()));
-    for root in &transition_roots {
-        root.add_css_class(ACCENT_TRANSITION_CLASS);
-    }
-    set_cover_accent(new);
-    animation.play();
 }
 
 // ---------------------------------------------------------------------------
@@ -426,7 +321,7 @@ pub(in crate::ui) fn cross_fade_accent(
 
 /// Extracts the dominant accent from a cover image file. Runs off-main (decodes
 /// a scaled pixbuf and reads its pixels); returns a `Send` [`Rgb`] for the main
-/// thread to apply via [`set_cover_accent`] or [`cross_fade_accent`]. `None` on
+/// thread to apply via [`set_cover_accent`]. `None` on
 /// any decode failure or a non-colorful cover.
 pub(in crate::ui) fn accent_from_cover_file(path: &std::path::Path) -> Option<Rgb> {
     let pixbuf =
@@ -512,7 +407,6 @@ mod tests {
     #[test]
     fn chroma_scaling_is_draw_local_and_leaves_provider_state_untouched() {
         ACCENT_PROVIDER.with(|slot| slot.borrow_mut().take());
-        CURRENT_ANIMATION.with(|slot| slot.borrow_mut().take());
 
         let original = (0.8, 0.2, 0.1);
         let unchanged = scale_chroma(original.0, original.1, original.2, 1.0);
@@ -527,7 +421,6 @@ mod tests {
         // Chroma scaling is pure draw-time math: it neither replaces nor
         // reloads the application-wide cover-accent provider.
         ACCENT_PROVIDER.with(|slot| assert!(slot.borrow().is_none()));
-        CURRENT_ANIMATION.with(|slot| assert!(slot.borrow().is_none()));
     }
 
     #[test]
@@ -607,64 +500,36 @@ mod tests {
         .is_empty());
     }
 
+    // MOT-1/MOT-3: the accent provider carries the colour and nothing else. It
+    // deliberately imposes no duration, because the properties that carry the
+    // accent (background-color, box-shadow) are the same ones the accent-bearing
+    // widgets already transition at their own token — the play button declares
+    // Micro for exactly these. A CSS property has one transition, and it cannot
+    // tell an accent change from a hover, so a duration written here would
+    // override the widget's own token instead of adding to it.
     #[test]
-    fn accent_provider_uses_one_ambient_css_transition() {
-        let css = accent_provider_css(Some(Rgb {
+    fn mot_1_accent_provider_imposes_no_duration_of_its_own() {
+        let css = accent_css(Some(Rgb {
             r: 46,
             g: 200,
             b: 166,
         }));
 
         assert!(css.contains("@define-color reprise_player_accent #2ec8a6"));
-        assert!(css.contains(&format!("{}ms", motion::AMBIENT_MS)));
-        assert!(css.contains(motion::AMBIENT_CSS_EASING));
-        assert!(css.contains(ACCENT_TRANSITION_CLASS));
+        assert!(
+            !css.contains("transition"),
+            "the accent provider must not override the tokens its consumers declare: {css:?}"
+        );
+        assert!(
+            !css.contains(&format!("{}ms", crate::ui::motion::AMBIENT_MS)),
+            "no ambient duration belongs in the accent provider: {css:?}"
+        );
     }
 
     #[test]
     fn fade_to_theme_fallback_clears_cover_override_at_endpoint() {
-        let css = accent_provider_css(None);
+        let css = accent_css(None);
         assert!(!css.contains("@define-color reprise_player_accent"));
-        assert!(css.contains(ACCENT_TRANSITION_CLASS));
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn mot_6_replacing_an_accent_fade_skips_the_previous_animation() {
-        gtk4::init().unwrap();
-        let settings = gtk4::Settings::default().unwrap();
-        let previous_setting = settings.is_gtk_enable_animations();
-        settings.set_gtk_enable_animations(true);
-        let label = gtk4::Label::new(None);
-        let red = Some(Rgb {
-            r: 220,
-            g: 40,
-            b: 40,
-        });
-        let blue = Some(Rgb {
-            r: 40,
-            g: 40,
-            b: 220,
-        });
-        let green = Some(Rgb {
-            r: 40,
-            g: 220,
-            b: 40,
-        });
-
-        cross_fade_accent(red, blue, &label);
-        let first = CURRENT_ANIMATION.with(|slot| slot.borrow().as_ref().unwrap().clone());
-        cross_fade_accent(blue, green, &label);
-
-        assert_eq!(first.state(), libadwaita::AnimationState::Finished);
-        CURRENT_ANIMATION.with(|slot| {
-            let animation = slot.borrow();
-            let animation = animation.as_ref().unwrap();
-            assert_eq!(animation.duration(), motion::AMBIENT_MS);
-            assert_eq!(animation.easing(), motion::AMBIENT_EASING);
-            assert!(animation.follows_enable_animations_setting());
-        });
-
-        settings.set_gtk_enable_animations(previous_setting);
+        assert!(css.is_empty(), "clearing the override must leave nothing behind");
     }
 }

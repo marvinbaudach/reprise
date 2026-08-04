@@ -48,7 +48,6 @@ fn apply_cover_accent(
     generation_cell: &Rc<std::cell::Cell<u64>>,
     last_accent_cell: &Rc<RefCell<Option<Rgb>>>,
     cover_path: &Path,
-    widget: impl IsA<gtk4::Widget> + Clone + 'static,
 ) {
     let generation = generation_cell.get().wrapping_add(1);
     generation_cell.set(generation);
@@ -63,9 +62,8 @@ fn apply_cover_accent(
     glib::spawn_future_local(async move {
         if let Ok(new_color) = receiver.recv().await {
             if generation_cell.get() == generation {
-                let old_color = *last_accent_cell.borrow();
                 *last_accent_cell.borrow_mut() = new_color;
-                crate::ui::style::cover_accent::cross_fade_accent(old_color, new_color, &widget);
+                crate::ui::style::cover_accent::set_cover_accent(new_color);
             }
         }
     });
@@ -213,9 +211,8 @@ impl PlayerController {
     fn reset_cover_accent(&self) {
         let generation = self.cover_accent_generation.get().wrapping_add(1);
         self.cover_accent_generation.set(generation);
-        let old_color = *self.cover_accent_last.borrow();
         *self.cover_accent_last.borrow_mut() = None;
-        crate::ui::style::cover_accent::cross_fade_accent(old_color, None, self.bar.widget());
+        crate::ui::style::cover_accent::set_cover_accent(None);
     }
 
     /// Loads `path`'s cover into the bar and compact player through the shared
@@ -240,7 +237,6 @@ impl PlayerController {
             let mpris_state = self.mpris_state.clone();
             let cover_accent_generation = self.cover_accent_generation.clone();
             let cover_accent_last = self.cover_accent_last.clone();
-            let bar_widget = self.bar.widget().clone();
             self.cover_loader.load_into_with_path(
                 self.bar.cover_image(),
                 path,
@@ -267,7 +263,6 @@ impl PlayerController {
                         &cover_accent_generation,
                         &cover_accent_last,
                         &cover_path,
-                        bar_widget.clone(),
                     );
                 },
             );
