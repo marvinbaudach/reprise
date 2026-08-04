@@ -9,6 +9,8 @@ use super::strings;
 use super::transport_glyph::{Glyph, TransportGlyph};
 use super::{ICON_NEXT, ICON_PREVIOUS, ICON_REPEAT_ALL, ICON_SHUFFLE};
 use crate::ui::cover_lift::CoverLift;
+use crate::ui::playback::preview::PlaybackMode;
+use crate::ui::playing_links::{self, LinkAvailability};
 use crate::ui::style::buttons;
 
 pub(in crate::ui) const VOLUME_MIN: f64 = 0.0;
@@ -77,6 +79,13 @@ pub(in crate::ui) struct PlayerBarWidgets {
 }
 
 pub(in crate::ui) fn build() -> PlayerBarWidgets {
+    let link_labels = playing_links::player_bar_labels(
+        PlaybackMode::Queue,
+        LinkAvailability {
+            artist: true,
+            album: true,
+        },
+    );
     // — Cover —
     let cover = gtk4::Image::new();
     cover.set_pixel_size(COVER_PIXEL_SIZE);
@@ -85,10 +94,10 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     let cover_button = gtk4::Button::builder()
         .child(&cover)
         .has_frame(false)
-        .tooltip_text(strings::text(strings::REVEAL_PLAYING_ALBUM))
+        .tooltip_text(strings::text(link_labels.cover))
         .build();
     cover_button.update_property(&[gtk4::accessible::Property::Label(&strings::text(
-        strings::REVEAL_PLAYING_ALBUM,
+        link_labels.cover,
     ))]);
     cover_button.set_halign(gtk4::Align::Center);
     cover_button.set_valign(gtk4::Align::Center);
@@ -110,10 +119,10 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     let title_button = gtk4::Button::builder()
         .child(&title_row)
         .has_frame(false)
-        .tooltip_text(strings::text(strings::JUMP_TO_NOW_PLAYING))
+        .tooltip_text(strings::text(link_labels.title))
         .build();
     title_button.update_property(&[gtk4::accessible::Property::Label(&strings::text(
-        strings::JUMP_TO_NOW_PLAYING,
+        link_labels.title,
     ))]);
     // Wrapped in a row for the same reason the title is: a `GtkButton` centres
     // a bare child, which put the artist seven pixels right of the title above
@@ -126,7 +135,7 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     let artist_button = gtk4::Button::builder()
         .child(&artist_row)
         .has_frame(false)
-        .tooltip_text(strings::text(strings::GO_TO_PLAYING_ARTIST))
+        .tooltip_text(strings::text(link_labels.subtitle))
         .build();
 
     let track_box = gtk4::Box::new(gtk4::Orientation::Vertical, 2);

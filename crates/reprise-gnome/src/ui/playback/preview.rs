@@ -18,6 +18,15 @@ pub(in crate::ui) enum PlaybackMode {
 }
 
 impl PlaybackMode {
+    #[allow(dead_code)] // Exhaustive contract exercised by PLAY-12 tests.
+    pub(in crate::ui) const ALL: [Self; 5] = [
+        Self::Queue,
+        Self::QueuedEpisode,
+        Self::Preview,
+        Self::Podcast,
+        Self::Radio,
+    ];
+
     /// Whether a `TrackFinished` event in this mode should advance the queue.
     /// Only a queue track does; a finished external-media session stops instead.
     pub(in crate::ui) fn advances_queue_on_finish(self) -> bool {

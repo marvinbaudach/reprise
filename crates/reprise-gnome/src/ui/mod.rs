@@ -59,6 +59,7 @@ mod one_shot_task;
 mod online_discovery_banner;
 mod playback;
 pub(crate) mod player_bar;
+pub(in crate::ui) mod playing_links;
 pub(crate) mod playing_marker;
 mod playlists;
 pub(crate) mod podcasts;
