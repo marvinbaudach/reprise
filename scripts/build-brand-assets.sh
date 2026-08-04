@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+# Erzeugt jede abgeleitete Markendatei aus den Zeichnungen unter data/brand.
+#
+# Handgezeichnet und damit Quelle sind nur:
+#   data/brand/mark.svg           die Marke, eine Zeichnung für jede Größe
+#   data/brand/mark-mono.svg      ihre einfarbige Fassung, ein Pfad
+#   data/brand/icon-plate.svg     Grundfläche und Verlauf des App-Icons
+#
+# Alles andere entsteht hier. Das ist der Grund: das App-Icon war früher
+# eine Kopie der Marke, und die kleinen Stufen bekamen die Platte nie —
+# zwei verschiedene Icons für dieselbe App. Was erzeugt wird, kann nicht
+# auseinanderlaufen.
+#
+#   ./scripts/build-brand-assets.sh            schreibt in den Baum
+#   ./scripts/build-brand-assets.sh --check    erzeugt daneben und vergleicht
+set -euo pipefail
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+cd "$root"
+
+lib=scripts/lib
+brand=data/brand
+icons=data/icons/hicolor
+android=android/app/src/main/res
+font=$brand/fonts/Fraunces-SemiBold.ttf
+
+mode=${1:-write}
+tmp=$(mktemp -d)
+out=$root
+[ "$mode" = "--check" ] && out=$(mktemp -d)
+cleanup() { rm -rf "$tmp"; [ "$out" != "$root" ] && rm -rf "$out"; return 0; }
+trap cleanup EXIT
+
+# Zielpfad im Ausgabebaum. Im Prüfmodus liegt daneben, was sonst überschriebe.
+dest() {
+  if [ "$out" = "$root" ]; then printf '%s\n' "$1"; else
+    mkdir -p "$out/$(dirname "$1")"; printf '%s\n' "$out/$1"
+  fi
+}
+
+say() { printf '  %s\n' "$*"; }
+
+# Kantenlänge des Kastens, in den die Marke auf der 128er Platte passt.
+# Die Zeichnung ist fast quadratisch und braucht Rand, sonst stößt sie an
+# die gerundete Ecke der Platte.
+box=92
+
+echo "== App-Icon: Platte + Zeichnung =="
+python3 $lib/compose_icon.py $brand/icon-plate.svg $brand/mark.svg \
+  "$(dest $icons/scalable/apps/org.reprise.Reprise.svg)" \
+  --box-width $box --box-height $box
+say "scalable ← mark.svg"
+
+for size in 512 256 128 64 48; do
+  mkdir -p "$(dirname "$(dest $icons/${size}x${size}/apps/org.reprise.Reprise.png)")"
+  rsvg-convert -w $size -h $size \
+    "$(dest $icons/scalable/apps/org.reprise.Reprise.svg)" \
+    -o "$(dest $icons/${size}x${size}/apps/org.reprise.Reprise.png)"
+  say "${size}px ← scalable"
+done
+
+# GNOME färbt Symbolic-Icons zur Laufzeit um; #222222 ist die Konvention.
+#
+# Eine Datei genügt jetzt. Die vorige Marke brauchte eine eigene, auf 16 px
+# gehintete Fassung, weil ihre Augenringe dort einen Pixel dünn waren. Das
+# Wiederholungszeichen besteht aus Rechtecken auf ganzen Rasterlinien und
+# ist bei 16 px von sich aus scharf.
+python3 $lib/svg_recolour.py $brand/mark-mono.svg \
+  "$(dest $icons/symbolic/apps/org.reprise.Reprise-symbolic.svg)" \
+  'currentColor=#222222'
+say "symbolic ← mark-mono.svg"
+
+echo "== Android: adaptives Icon =="
+python3 $lib/svg_to_vectordrawable.py $brand/mark.svg \
+  "$(dest $android/drawable/ic_launcher_foreground.xml)"
+say "foreground ← mark.svg"
+python3 $lib/svg_to_vectordrawable.py $brand/mark-mono.svg \
+  "$(dest $android/drawable/ic_launcher_monochrome.xml)" --mono
+say "monochrome ← mark-mono.svg"
+python3 $lib/plate_to_vectordrawable.py $brand/icon-plate.svg \
+  "$(dest $android/drawable/ic_launcher_background.xml)"
+say "background ← icon-plate.svg"
+
+echo "== Web =="
+# Randlos für Apple und den Play Store: beide maskieren selbst, eine eigene
+# Rundung darunter erzeugte nur einen sichtbaren Saum.
+python3 $lib/compose_icon.py $brand/icon-plate.svg $brand/mark.svg \
+  "$tmp/icon-bleed.svg" --box-width $box --box-height $box \
+  --plate-inset 0 --plate-radius 0
+rsvg-convert -w 180 -h 180 "$tmp/icon-bleed.svg" \
+  -o "$(dest $brand/apple-touch-icon-180.png)"
+say "apple-touch-icon-180.png"
+# Der Play Store nimmt keine Transparenz an; die randlose Platte deckt.
+rsvg-convert -w 512 -h 512 "$tmp/icon-bleed.svg" \
+  -o "$(dest $brand/play-store-icon-512.png)"
+say "play-store-icon-512.png"
+
+python3 $lib/compose_icon.py $brand/icon-plate.svg $brand/mark.svg \
+  "$(dest $brand/favicon.svg)" --box-width $box --box-height $box \
+  --plate-inset 0 --plate-radius 22
+rsvg-convert -w 32 -h 32 "$(dest $brand/favicon.svg)" \
+  -o "$(dest $brand/favicon-32.png)"
+say "favicon.svg + favicon-32.png"
+
+# Keine eigene Fassung für helle oder dunkle Gründe. Gemessen: der Verlauf
+# erreicht gegen Weiß 5,30 und 4,08 und gegen die fast schwarze Platte 3,72
+# und 4,83 — dieselbe Zeichnung trägt auf beidem. Die vorige Marke brauchte
+# eine aufgehellte Zweitfassung, weil sie ein dunkles Violett war.
+
+echo "== Lockups =="
+for mode_name in horizontal vertical; do
+  python3 $lib/compose_lockup.py $brand/mark.svg $font \
+    --mode $mode_name --size 268 --tracking 2 --mark-height 320 \
+    --prefix "rp-l$(printf '%.1s' "$mode_name")-" \
+    --live "$(dest $brand/lockup-$mode_name.svg)" \
+    --outlined "$(dest $brand/lockup-$mode_name-outlined.svg)"
+  say "lockup-$mode_name.svg + -outlined.svg"
+done
+
+if [ "$mode" = "--check" ]; then
+  echo "== Abgleich mit dem Baum =="
+  status=0
+  while IFS= read -r generated; do
+    relative=${generated#"$out"/}
+    if ! cmp -s "$generated" "$relative"; then
+      printf '  FAIL  %s weicht von den Zeichnungen ab\n' "$relative" >&2
+      status=1
+    fi
+  done < <(find "$out" -type f)
+  [ $status -eq 0 ] && echo "  ok    jede abgeleitete Datei stammt aus den Zeichnungen"
+  exit $status
+fi
+
+echo "Fertig. Prüfen mit: ./scripts/check-logo-artwork.sh --all"

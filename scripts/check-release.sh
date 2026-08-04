@@ -33,6 +33,12 @@ xmllint --noout data/org.reprise.Reprise.metainfo.xml \
   data/icons/hicolor/scalable/apps/org.reprise.Reprise.svg \
   data/icons/hicolor/symbolic/apps/org.reprise.Reprise-symbolic.svg
 
+echo "== Logo artwork =="
+# Misst die Zeichnungen und beweist zugleich, dass jede ausgelieferte
+# Icon-Datei aus ihnen erzeugt wurde. Ohne diesen Aufruf wäre das Gate ein
+# Skript, das niemand fährt — und die Marke liefe still auseinander.
+bash scripts/check-logo-artwork.sh --all
+
 echo "== Flatpak manifest and Cargo sources =="
 python3 -c 'import sys, yaml; data=yaml.safe_load(open(sys.argv[1], encoding="utf-8")); assert data["app-id"] == "org.reprise.Reprise"; assert data["runtime"] == "org.gnome.Platform"; assert data["runtime-version"] == "50"; assert data["sdk"] == "org.gnome.Sdk"' org.reprise.Reprise.yml
 jq empty flatpak/cargo-sources.json
