@@ -8,7 +8,7 @@ use crate::models::Track;
 use crate::view_source::ViewSource;
 use rusqlite::OptionalExtension;
 
-use super::clauses::{row_to_track, PRESENT};
+use super::clauses::{row_to_track, track_projection, PRESENT};
 use super::{query_track_count, query_track_window};
 
 /// The library subset a surface wants to read through a bounded window.
@@ -160,15 +160,18 @@ pub fn query_library_text_search(
 }
 
 /// Returns one present library track by its stable row identity.
+///
+/// The projection comes from `track_projection` rather than being written out
+/// here: `row_to_track` reads its columns by fixed index, so a list that drifts
+/// from the windowed queries' would not fail, it would quietly hand `path` to
+/// `title`. No surface on this path renders the AI badge, so the `is_ai` column
+/// is the cheap literal `0` — projected all the same, because `row_to_track`
+/// reads index 22 either way.
 pub fn query_present_track_by_id(db: &Db, track_id: i64) -> Result<Option<Track>, rusqlite::Error> {
+    let projection = track_projection("", false);
     db.conn()
         .query_row(
-            &format!(
-                "SELECT id, path, title, artist, album, album_artist, year, track_no, genre, \
-                 duration_ms, bitrate_kbps, rating, play_count, last_played_at, added_at, \
-                 file_mtime, missing_since, missing_reason, untagged, file_size, device, inode, \
-                 0 AS is_ai FROM tracks WHERE id = ?1 AND {PRESENT}"
-            ),
+            &format!("SELECT {projection} FROM tracks WHERE id = ?1 AND {PRESENT}"),
             [track_id],
             row_to_track,
         )
@@ -282,6 +285,42 @@ mod tests {
         assert_eq!(playing.play_count, 9);
         assert_eq!(query_present_track_by_id(&db, 42).unwrap(), None);
         assert_eq!(query_present_track_by_id(&db, 999).unwrap(), None);
+    }
+
+    /// The single-row lookup and a window read the same track the same way.
+    ///
+    /// `row_to_track` addresses its columns by fixed index, so a projection
+    /// that drifts from the one the windowed queries use does not fail — it
+    /// hands `path` to `title` and reports it as data. The seeded row therefore
+    /// carries a distinct value in every column `row_to_track` reads, and both
+    /// paths have to return the very same `Track`.
+    #[test]
+    fn the_single_row_lookup_reads_the_same_columns_as_a_window() {
+        let db = Db::open_in_memory().unwrap();
+        db.conn()
+            .execute_batch(
+                "INSERT INTO tracks
+                   (id,path,title,artist,album,album_artist,year,track_no,genre,
+                    duration_ms,bitrate_kbps,rating,play_count,last_played_at,added_at,
+                    file_mtime,untagged,file_size,device,inode) VALUES
+                 (41,'/music/complete.flac','Complete','Artist','Album','Album Artist',1998,7,
+                  'Genre',123000,987,4,9,1700,1600,1500,1,4242,2001,3003);",
+            )
+            .unwrap();
+
+        let by_id = query_present_track_by_id(&db, 41).unwrap().unwrap();
+        let windowed = query_library_text_search(
+            &db,
+            "",
+            WindowRange {
+                offset: 0,
+                limit: 10,
+            },
+        )
+        .unwrap()
+        .rows;
+
+        assert_eq!(windowed, vec![by_id]);
     }
 
     #[test]

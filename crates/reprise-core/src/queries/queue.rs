@@ -9,7 +9,7 @@ use crate::models::Track;
 use crate::podcasts::EpisodeRow;
 use crate::up_next::QueueItem;
 
-use super::clauses::{ai_projection, row_to_track};
+use super::clauses::{row_to_track, track_projection};
 use super::MAX_WINDOW_LIMIT;
 
 /// Hard cap for playback snapshots and the manual queue.
@@ -140,12 +140,9 @@ fn query_tracks(
     ids: &[i64],
     project_ai: bool,
 ) -> Result<Vec<Track>, rusqlite::Error> {
-    let is_ai = ai_projection(project_ai);
+    let projection = track_projection("", project_ai);
     let sql = format!(
-        "SELECT id, path, title, artist, album, album_artist, year, track_no, genre, \
-         duration_ms, bitrate_kbps, rating, play_count, last_played_at, added_at, \
-         file_mtime, missing_since, missing_reason, untagged, file_size, device, inode, \
-         {is_ai} AS is_ai \
+        "SELECT {projection} \
          FROM tracks WHERE id IN ({})",
         placeholders(ids.len())
     );
