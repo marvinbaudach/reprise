@@ -1,12 +1,17 @@
 package de.reprise.spike
 
+import uniffi.reprise_android_ffi.AndroidArtworkSize
+
 /**
  * One list slot's claim on an artwork resolution.
  *
  * Identity decides, not the track URI: the same track can legitimately be
  * asked for twice, and the second ask must win.
  */
-internal class ArtworkRequest(val trackUri: String)
+internal class ArtworkRequest(
+    val trackUri: String,
+    val size: AndroidArtworkSize,
+)
 
 /**
  * Admits only the newest request a slot made.
@@ -21,8 +26,10 @@ internal class ArtworkRequestGate {
     private var current: ArtworkRequest? = null
 
     @Synchronized
-    fun begin(trackUri: String): ArtworkRequest =
-        ArtworkRequest(trackUri).also { request -> current = request }
+    fun begin(
+        trackUri: String,
+        size: AndroidArtworkSize = AndroidArtworkSize.LIST,
+    ): ArtworkRequest = ArtworkRequest(trackUri, size).also { request -> current = request }
 
     @Synchronized
     fun accepts(request: ArtworkRequest): Boolean = current === request

@@ -1,5 +1,10 @@
 package de.reprise.spike
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -32,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import uniffi.reprise_android_ffi.AndroidRepeatMode
 
 private enum class BrowseTab(val label: String) {
     TITLES("Titles"),
@@ -54,6 +60,10 @@ internal fun BrowseScreen(
     togglePause: () -> Unit,
     next: () -> Unit,
     previous: () -> Unit,
+    seekTo: (Long) -> Unit,
+    setShuffle: (Boolean) -> Unit,
+    setRepeat: (AndroidRepeatMode) -> Unit,
+    setRating: (Long, Int) -> Boolean,
 ) {
     var selectedTab by remember { mutableStateOf(BrowseTab.TITLES) }
     var searchVisible by remember { mutableStateOf(false) }
@@ -68,6 +78,7 @@ internal fun BrowseScreen(
     var albumsRequestedOffset by remember(state) { mutableStateOf<Long?>(null) }
     var artistsRequestedOffset by remember(state) { mutableStateOf<Long?>(null) }
     var albumRequestedOffset by remember(state, selectedAlbum?.album) { mutableStateOf<Long?>(null) }
+    var nowPlayingExpanded by remember { mutableStateOf(false) }
 
     fun play(selection: PlaybackSelection) {
         browseError = null
@@ -131,6 +142,8 @@ internal fun BrowseScreen(
             .onFailure { error -> browseError = error.browseDetail("load more album tracks") }
     }
 
+    val currentTrack = activeSelection?.currentTrack(playback)
+    Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -147,11 +160,12 @@ internal fun BrowseScreen(
         },
         bottomBar = {
             LibraryBottomFrame(
-                currentTrack = activeSelection?.currentTrack(playback),
+                currentTrack = currentTrack,
                 playback = playback,
                 togglePause = togglePause,
                 next = next,
                 previous = previous,
+                openNowPlaying = { nowPlayingExpanded = true },
             )
         },
     ) { contentPadding ->
@@ -220,6 +234,31 @@ internal fun BrowseScreen(
                     artists = visibleArtists,
                     lastRequestedOffset = artistsRequestedOffset,
                     loadMore = ::loadMoreArtists,
+                )
+            }
+        }
+    }
+        AnimatedVisibility(
+            visible = nowPlayingExpanded && currentTrack != null,
+            enter = slideInVertically(initialOffsetY = { height -> height }) + expandVertically(
+                expandFrom = Alignment.Bottom,
+            ),
+            exit = slideOutVertically(targetOffsetY = { height -> height }) + shrinkVertically(
+                shrinkTowards = Alignment.Bottom,
+            ),
+        ) {
+            currentTrack?.let { track ->
+                NowPlayingSheet(
+                    track = track,
+                    playback = playback,
+                    close = { nowPlayingExpanded = false },
+                    seekTo = seekTo,
+                    togglePause = togglePause,
+                    next = next,
+                    previous = previous,
+                    setShuffle = setShuffle,
+                    setRepeat = setRepeat,
+                    setRating = setRating,
                 )
             }
         }

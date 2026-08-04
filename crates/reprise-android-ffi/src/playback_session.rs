@@ -1,14 +1,34 @@
 //! Android's Core-owned playback queue and transport surface.
 
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use reprise_core::library::settings::TrackTransition;
 use reprise_core::playback::{PlaybackBackend, PlayerEvent, StreamEvent, StreamGeneration};
-use reprise_core::queue::Queue;
+use reprise_core::queue::{Queue, Repeat};
 
 use crate::playback::{
     AndroidPlaybackBackend, AndroidPlaybackError, AndroidPlaybackPort, AndroidPlaybackState,
 };
+
+/// Queue repeat state carried across UniFFI without stringly typed modes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum AndroidRepeatMode {
+    Off,
+    All,
+    One,
+}
+
+impl From<AndroidRepeatMode> for Repeat {
+    fn from(mode: AndroidRepeatMode) -> Self {
+        match mode {
+            AndroidRepeatMode::Off => Repeat::Off,
+            AndroidRepeatMode::All => Repeat::All,
+            AndroidRepeatMode::One => Repeat::One,
+        }
+    }
+}
 
 /// The playback state rendered by the Android surface.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
@@ -17,6 +37,8 @@ pub struct AndroidPlaybackSnapshot {
     pub current_index: Option<u64>,
     pub position_ms: i64,
     pub duration_ms: i64,
+    pub shuffled: bool,
+    pub repeat: AndroidRepeatMode,
     pub error: Option<String>,
 }
 
@@ -27,24 +49,32 @@ pub trait AndroidPlaybackListener: Send + Sync {
 
 struct SessionState {
     queue: Queue,
+    track_ids: Vec<i64>,
     uris: Vec<String>,
     snapshot: AndroidPlaybackSnapshot,
     stream: StreamGeneration,
+    max_position_ms: i64,
+    play_recorded: bool,
 }
 
 impl SessionState {
     fn new() -> Self {
         Self {
             queue: Queue::new(),
+            track_ids: Vec::new(),
             uris: Vec::new(),
             snapshot: AndroidPlaybackSnapshot {
                 state: AndroidPlaybackState::Stopped,
                 current_index: None,
                 position_ms: 0,
                 duration_ms: 0,
+                shuffled: false,
+                repeat: AndroidRepeatMode::Off,
                 error: None,
             },
             stream: StreamGeneration::INITIAL,
+            max_position_ms: 0,
+            play_recorded: false,
         }
     }
 
@@ -71,6 +101,8 @@ impl SessionState {
         self.snapshot.duration_ms = 0;
         self.snapshot.error = None;
         self.snapshot.state = AndroidPlaybackState::Playing;
+        self.max_position_ms = 0;
+        self.play_recorded = false;
     }
 
     fn stop(&mut self) {
@@ -87,12 +119,37 @@ impl SessionState {
         self.stream = generation;
         true
     }
+
+    fn current_track_id(&self) -> Option<i64> {
+        self.snapshot
+            .current_index
+            .and_then(|index| usize::try_from(index).ok())
+            .and_then(|index| self.track_ids.get(index).copied())
+    }
+
+    fn play_to_record(&mut self, completed: bool) -> Option<i64> {
+        if completed {
+            self.max_position_ms = self.max_position_ms.max(self.snapshot.duration_ms);
+        }
+        if self.play_recorded
+            || !reprise_core::library::stats::should_count_play(
+                self.max_position_ms,
+                self.snapshot.duration_ms,
+            )
+        {
+            return None;
+        }
+        let track_id = self.current_track_id()?;
+        self.play_recorded = true;
+        Some(track_id)
+    }
 }
 
 struct SessionInner {
     state: Mutex<SessionState>,
     backend: OnceLock<AndroidPlaybackBackend>,
     listener: Box<dyn AndroidPlaybackListener>,
+    database_path: PathBuf,
 }
 
 impl SessionInner {
@@ -113,6 +170,20 @@ impl SessionInner {
     fn notify(&self) {
         if let Ok(state) = self.state.lock() {
             self.listener.on_playback_changed(state.snapshot.clone());
+        }
+    }
+
+    fn record_play(&self, track_id: i64) {
+        let result = reprise_core::db::Db::open_ready(&self.database_path).and_then(|db| {
+            let now_unix = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64;
+            reprise_core::library::stats::record_play(&db, track_id, now_unix)
+                .map_err(reprise_core::db::DbError::from)
+        });
+        if let Err(error) = result {
+            tracing::warn!(%error, track_id, "could not record Android play count");
         }
     }
 
@@ -164,7 +235,7 @@ impl SessionInner {
             Stop,
         }
 
-        let follow_up = {
+        let (follow_up, play_to_record) = {
             let Ok(mut state) = self.state.lock() else {
                 return;
             };
@@ -174,7 +245,7 @@ impl SessionInner {
             match event.event {
                 PlayerEvent::StateChanged(playback) => {
                     state.snapshot.state = playback.into();
-                    FollowUp::None
+                    (FollowUp::None, None)
                 }
                 PlayerEvent::Position {
                     position_ms,
@@ -184,34 +255,42 @@ impl SessionInner {
                     if duration_ms > 0 {
                         state.snapshot.duration_ms = duration_ms;
                     }
-                    FollowUp::None
+                    state.max_position_ms = state.max_position_ms.max(position_ms.max(0));
+                    let play = state.play_to_record(false);
+                    (FollowUp::None, play)
                 }
                 PlayerEvent::TrackFinished => {
+                    let play = state.play_to_record(true);
                     if state.queue.advance_auto().is_some() {
                         state.adopt_current();
-                        FollowUp::Start
+                        (FollowUp::Start, play)
                     } else {
                         state.stop();
-                        FollowUp::Stop
+                        (FollowUp::Stop, play)
                     }
                 }
                 PlayerEvent::AdvancedToNext => {
+                    let play = state.play_to_record(true);
                     if state.queue.advance_auto().is_some() {
                         state.adopt_current();
-                        FollowUp::Feed(state.next_uri())
+                        (FollowUp::Feed(state.next_uri()), play)
                     } else {
                         state.stop();
-                        FollowUp::Stop
+                        (FollowUp::Stop, play)
                     }
                 }
                 PlayerEvent::Error(message) => {
                     state.snapshot.state = AndroidPlaybackState::Stopped;
                     state.snapshot.error = Some(message);
-                    FollowUp::Stop
+                    (FollowUp::Stop, None)
                 }
-                PlayerEvent::StreamTags { .. } | PlayerEvent::Spectrum(_) => FollowUp::None,
+                PlayerEvent::StreamTags { .. } | PlayerEvent::Spectrum(_) => (FollowUp::None, None),
             }
         };
+
+        if let Some(track_id) = play_to_record {
+            self.record_play(track_id);
+        }
 
         match follow_up {
             FollowUp::None => self.notify(),
@@ -244,13 +323,21 @@ pub struct AndroidPlaybackSession {
 impl AndroidPlaybackSession {
     #[uniffi::constructor]
     pub fn new(
+        app_private_directory: &str,
         port: Box<dyn AndroidPlaybackPort>,
         listener: Box<dyn AndroidPlaybackListener>,
     ) -> Result<Self, AndroidPlaybackError> {
+        let database_path = Path::new(&app_private_directory).join(crate::DATABASE_FILE_NAME);
+        reprise_core::db::Db::open_migrated(Some(&database_path)).map_err(|error| {
+            AndroidPlaybackError::Backend {
+                detail: format!("could not open playback statistics database: {error}"),
+            }
+        })?;
         let inner = Arc::new(SessionInner {
             state: Mutex::new(SessionState::new()),
             backend: OnceLock::new(),
             listener,
+            database_path,
         });
         let weak = Arc::downgrade(&inner);
         let backend = AndroidPlaybackBackend::new(
@@ -275,12 +362,18 @@ impl AndroidPlaybackSession {
 
     pub fn play_tracks(
         &self,
+        track_ids: Vec<i64>,
         uris: Vec<String>,
         start_index: u64,
     ) -> Result<(), AndroidPlaybackError> {
         if uris.is_empty() {
             return Err(AndroidPlaybackError::InvalidRequest {
                 detail: "a playback queue cannot be empty".to_owned(),
+            });
+        }
+        if track_ids.len() != uris.len() {
+            return Err(AndroidPlaybackError::InvalidRequest {
+                detail: "track ids and playback URIs must describe the same queue".to_owned(),
             });
         }
         let start_index =
@@ -292,13 +385,14 @@ impl AndroidPlaybackSession {
                 detail: "the tapped track is outside the visible list".to_owned(),
             });
         }
-        let ids = (0..uris.len())
+        let queue_indices = (0..uris.len())
             .map(|index| i64::try_from(index).unwrap_or(i64::MAX))
             .collect();
         {
             let mut state = self.inner.lock()?;
+            state.track_ids = track_ids;
             state.uris = uris;
-            state.queue.set_tracks(ids, start_index);
+            state.queue.set_tracks(queue_indices, start_index);
             state.adopt_current();
         }
         self.inner.start_current()
@@ -321,6 +415,39 @@ impl AndroidPlaybackSession {
 
     pub fn previous(&self) -> Result<(), AndroidPlaybackError> {
         self.move_playhead(Queue::previous)
+    }
+
+    pub fn seek_to(&self, position_ms: i64) -> Result<(), AndroidPlaybackError> {
+        self.inner
+            .backend()?
+            .seek_to(position_ms.max(0))
+            .map_err(|error| AndroidPlaybackError::Backend {
+                detail: error.to_string(),
+            })
+    }
+
+    pub fn set_shuffle(&self, enabled: bool) -> Result<(), AndroidPlaybackError> {
+        let next_uri = {
+            let mut state = self.inner.lock()?;
+            state.queue.set_shuffle(enabled);
+            state.snapshot.shuffled = state.queue.is_shuffled();
+            state.next_uri()
+        };
+        self.inner.backend()?.set_next(next_uri.as_deref());
+        self.inner.notify();
+        Ok(())
+    }
+
+    pub fn set_repeat(&self, mode: AndroidRepeatMode) -> Result<(), AndroidPlaybackError> {
+        let next_uri = {
+            let mut state = self.inner.lock()?;
+            state.queue.set_repeat(mode.into());
+            state.snapshot.repeat = mode;
+            state.next_uri()
+        };
+        self.inner.backend()?.set_next(next_uri.as_deref());
+        self.inner.notify();
+        Ok(())
     }
 
     pub fn snapshot(&self) -> Result<AndroidPlaybackSnapshot, AndroidPlaybackError> {

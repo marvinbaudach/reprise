@@ -6,6 +6,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -107,6 +108,7 @@ internal fun LibraryBottomFrame(
     togglePause: () -> Unit,
     next: () -> Unit,
     previous: () -> Unit,
+    openNowPlaying: () -> Unit,
 ) {
     Column {
         if (currentTrack != null) {
@@ -116,6 +118,7 @@ internal fun LibraryBottomFrame(
                 togglePause = togglePause,
                 next = next,
                 previous = previous,
+                openNowPlaying = openNowPlaying,
             )
         }
         // Material 3 pads the item row *inside* this component by the system
@@ -154,12 +157,14 @@ private fun MiniPlayer(
     togglePause: () -> Unit,
     next: () -> Unit,
     previous: () -> Unit,
+    openNowPlaying: () -> Unit,
 ) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .height(libraryFrameMetrics.miniPlayerHeightDp.dp)
-            .padding(horizontal = 12.dp),
+            .padding(horizontal = 12.dp)
+            .clickable(onClick = openNowPlaying),
         color = MaterialTheme.colorScheme.surfaceContainer,
         shape = MaterialTheme.shapes.large,
     ) {
@@ -230,11 +235,11 @@ private fun MiniPlayer(
 }
 
 @Composable
-internal fun CoverPlaceholder(size: Int) {
+internal fun CoverPlaceholder(size: Int, shape: androidx.compose.ui.graphics.Shape? = null) {
     Box(
         modifier = Modifier
             .size(size.dp)
-            .clip(MaterialTheme.shapes.small)
+            .clip(shape ?: MaterialTheme.shapes.small)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh),
         contentAlignment = Alignment.Center,
     ) {

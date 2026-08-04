@@ -9,7 +9,9 @@ use crate::playback::{
     AndroidPlaybackBackend, AndroidPlaybackError, AndroidPlaybackPort, AndroidPlaybackState,
     AndroidPlayerEvent, AndroidTransitionMode, PlaybackEventBridge,
 };
-use crate::{AndroidPlaybackListener, AndroidPlaybackSession, AndroidPlaybackSnapshot};
+use crate::{
+    AndroidPlaybackListener, AndroidPlaybackSession, AndroidPlaybackSnapshot, AndroidRepeatMode,
+};
 
 #[derive(Clone, Debug, PartialEq)]
 enum PortCall {
@@ -123,13 +125,16 @@ struct SessionFixture {
     calls: Arc<Mutex<Vec<PortCall>>>,
     bridge: Arc<Mutex<Option<Arc<PlaybackEventBridge>>>>,
     snapshots: Arc<Mutex<Vec<AndroidPlaybackSnapshot>>>,
+    _directory: tempfile::TempDir,
 }
 
 fn recording_session() -> SessionFixture {
     let calls = Arc::new(Mutex::new(Vec::new()));
     let bridge = Arc::new(Mutex::new(None));
     let snapshots = Arc::new(Mutex::new(Vec::new()));
+    let directory = tempfile::tempdir().unwrap();
     let session = AndroidPlaybackSession::new(
+        directory.path().to_str().unwrap(),
         Box::new(RecordingPort {
             calls: Arc::clone(&calls),
             bridge: Arc::clone(&bridge),
@@ -144,6 +149,7 @@ fn recording_session() -> SessionFixture {
         calls,
         bridge,
         snapshots,
+        _directory: directory,
     }
 }
 
@@ -209,6 +215,7 @@ fn tapping_a_track_starts_a_core_queue_at_that_position() {
     fixture
         .session
         .play_tracks(
+            vec![10, 11, 12],
             vec![
                 "content://provider/first.flac".to_owned(),
                 "content://provider/second.flac".to_owned(),
@@ -225,6 +232,8 @@ fn tapping_a_track_starts_a_core_queue_at_that_position() {
             current_index: Some(1),
             position_ms: 0,
             duration_ms: 0,
+            shuffled: false,
+            repeat: AndroidRepeatMode::Off,
             error: None,
         }
     );
@@ -250,6 +259,7 @@ fn core_queue_owns_gapless_advance_and_manual_next_previous() {
     fixture
         .session
         .play_tracks(
+            vec![10, 11, 12],
             vec![
                 "content://provider/first.flac".to_owned(),
                 "content://provider/second.flac".to_owned(),
@@ -277,6 +287,8 @@ fn core_queue_owns_gapless_advance_and_manual_next_previous() {
             current_index: Some(1),
             position_ms: 1_250,
             duration_ms: 180_000,
+            shuffled: false,
+            repeat: AndroidRepeatMode::Off,
             error: None,
         }
     );
@@ -311,6 +323,7 @@ fn core_queue_starts_the_next_track_when_media3_reports_a_plain_end() {
     fixture
         .session
         .play_tracks(
+            vec![10, 11],
             vec![
                 "content://provider/first.flac".to_owned(),
                 "content://provider/second.flac".to_owned(),
@@ -332,6 +345,130 @@ fn core_queue_starts_the_next_track_when_media3_reports_a_plain_end() {
             PortCall::SetNext(None),
         ]
     );
+}
+
+#[test]
+fn exported_session_seek_reaches_the_media3_port() {
+    let fixture = recording_session();
+    fixture.calls.lock().unwrap().clear();
+
+    fixture.session.seek_to(48_000).unwrap();
+
+    assert_eq!(
+        fixture.calls.lock().unwrap().as_slice(),
+        &[PortCall::SeekTo(48_000)]
+    );
+}
+
+#[test]
+fn session_modes_are_readable_and_repeat_one_refeeds_after_media3_auto_advance() {
+    let fixture = recording_session();
+    fixture
+        .session
+        .play_tracks(vec![10], vec!["content://provider/only.flac".to_owned()], 0)
+        .unwrap();
+
+    fixture.session.set_shuffle(true).unwrap();
+    fixture.session.set_repeat(AndroidRepeatMode::One).unwrap();
+    let snapshot = fixture.session.snapshot().unwrap();
+    assert!(snapshot.shuffled);
+    assert_eq!(snapshot.repeat, AndroidRepeatMode::One);
+
+    fixture.calls.lock().unwrap().clear();
+    fixture
+        .bridge
+        .lock()
+        .unwrap()
+        .clone()
+        .unwrap()
+        .emit(24, AndroidPlayerEvent::AdvancedToNext);
+
+    assert_eq!(fixture.session.snapshot().unwrap().current_index, Some(0));
+    assert_eq!(
+        fixture.calls.lock().unwrap().as_slice(),
+        &[PortCall::SetNext(Some(
+            "content://provider/only.flac".to_owned()
+        ))],
+        "Repeat::One must re-feed the real AdvancedToNext path Media3 emits",
+    );
+}
+
+#[test]
+fn play_count_uses_the_tracks_high_water_position_and_records_only_once() {
+    let directory = tempfile::tempdir().unwrap();
+    let music = directory.path().join("music");
+    std::fs::create_dir(&music).unwrap();
+    let track_path = music.join("sine.flac");
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../android/app/src/main/assets/sine.flac"),
+        &track_path,
+    )
+    .unwrap();
+    let db_path = directory.path().join("reprise.db");
+    let db = reprise_core::db::Db::open_migrated(Some(&db_path)).unwrap();
+    reprise_core::library::scanner::scan_folder(&db, &music).unwrap();
+    let track = reprise_core::queries::query_library_text_search(
+        &db,
+        "",
+        reprise_core::queries::WindowRange {
+            offset: 0,
+            limit: 1,
+        },
+    )
+    .unwrap()
+    .rows
+    .remove(0);
+    drop(db);
+
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let bridge = Arc::new(Mutex::new(None));
+    let session = AndroidPlaybackSession::new(
+        directory.path().to_str().unwrap(),
+        Box::new(RecordingPort {
+            calls,
+            bridge: Arc::clone(&bridge),
+        }),
+        Box::new(RecordingListener {
+            snapshots: Arc::new(Mutex::new(Vec::new())),
+        }),
+    )
+    .unwrap();
+    session
+        .play_tracks(vec![track.id], vec![track.path], 0)
+        .unwrap();
+    let events = bridge.lock().unwrap().clone().unwrap();
+
+    events.emit(
+        23,
+        AndroidPlayerEvent::Position {
+            position_ms: 600,
+            // Media3 can know the position before it has resolved duration;
+            // this tick cannot count yet, but its high-water must survive.
+            duration_ms: 0,
+        },
+    );
+    events.emit(
+        23,
+        AndroidPlayerEvent::Position {
+            position_ms: 100,
+            duration_ms: 1_000,
+        },
+    );
+
+    let verify = reprise_core::db::Db::open_ready(&db_path).unwrap();
+    let updated = reprise_core::queries::query_library_text_search(
+        &verify,
+        "",
+        reprise_core::queries::WindowRange {
+            offset: 0,
+            limit: 1,
+        },
+    )
+    .unwrap()
+    .rows
+    .remove(0);
+    assert_eq!(updated.play_count, 1);
 }
 
 #[test]

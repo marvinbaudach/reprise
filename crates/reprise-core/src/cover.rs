@@ -132,6 +132,10 @@ pub(crate) fn folder_image_with_source(
 
 use std::hash::{Hash, Hasher};
 
+#[cfg(test)]
+#[path = "cover_mobile_tests.rs"]
+mod mobile_tests;
+
 /// The cached edge lengths — one per consumer (list row / player bar / artist
 /// portrait / album grid / Now-Playing view). Each maps to its own on-disk
 /// cache file.
@@ -145,6 +149,8 @@ pub enum ThumbnailSize {
     Full,
     /// A 56 dp Android list/mini-player slot at the measured 3x density.
     MobileList,
+    /// A 364 dp Android Now Playing cover at the measured 3x density.
+    MobileFull,
 }
 
 impl ThumbnailSize {
@@ -157,6 +163,7 @@ impl ThumbnailSize {
             ThumbnailSize::Grid => 256,
             ThumbnailSize::Full => 1024,
             ThumbnailSize::MobileList => 168,
+            ThumbnailSize::MobileFull => 1092,
         }
     }
 }
@@ -671,27 +678,6 @@ mod tests {
         let (w, h) = (decoded.width(), decoded.height());
         assert!(w.max(h) == ThumbnailSize::List.pixels(), "got {w}x{h}");
         std::fs::remove_file(&path).ok();
-    }
-
-    #[test]
-    fn source_aware_mobile_thumbnail_uses_the_platform_cache_root() {
-        let cache_root = tempfile::tempdir().unwrap();
-        let source = CoverSource::Embedded(solid_png([26, 82, 118]));
-
-        let path = thumbnail_with_source(
-            &crate::library::source::UnixLibrarySource,
-            &source,
-            ThumbnailSize::MobileList,
-            cache_root.path(),
-        )
-        .unwrap();
-
-        assert!(path.starts_with(cache_root.path().join("reprise/covers")));
-        assert!(path
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .ends_with(&format!("-{}.png", 56 * 3)));
     }
 
     #[test]

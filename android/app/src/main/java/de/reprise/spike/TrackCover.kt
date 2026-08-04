@@ -17,11 +17,13 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import uniffi.reprise_android_ffi.AndroidArtworkSize
 
 private const val TAG = "RepriseArtwork"
 
@@ -34,7 +36,7 @@ private const val TAG = "RepriseArtwork"
  * library screen depends on. One track, one lazy read, exactly like the desktop.
  */
 internal class TrackArtwork(
-    private val resolve: (String) -> String?,
+    private val resolve: (String, AndroidArtworkSize) -> String?,
     private val decode: (String) -> ImageBitmap? = ::decodeCachedCover,
     private val worker: ExecutorService = singleArtworkThread(),
     private val onMainThread: (() -> Unit) -> Unit = { work ->
@@ -56,7 +58,7 @@ internal class TrackArtwork(
             if (!gate.accepts(request)) {
                 return@execute
             }
-            val image = runCatching { resolve(request.trackUri)?.let(decode) }
+            val image = runCatching { resolve(request.trackUri, request.size)?.let(decode) }
                 .onFailure { error ->
                     Log.w(TAG, "Could not read artwork for ${request.trackUri}", error)
                 }
@@ -85,19 +87,24 @@ internal val LocalTrackArtwork = staticCompositionLocalOf<TrackArtwork?> { null 
  * without local artwork keep the symbol: nothing is downloaded here.
  */
 @Composable
-internal fun TrackCover(trackUri: String, size: Int) {
+internal fun TrackCover(
+    trackUri: String,
+    size: Int,
+    artworkSize: AndroidArtworkSize = AndroidArtworkSize.LIST,
+    shape: Shape? = null,
+) {
     val artwork = LocalTrackArtwork.current
     val gate = remember { ArtworkRequestGate() }
-    var image by remember(trackUri) { mutableStateOf<ImageBitmap?>(null) }
-    DisposableEffect(trackUri, artwork) {
-        val request = gate.begin(trackUri)
+    var image by remember(trackUri, artworkSize) { mutableStateOf<ImageBitmap?>(null) }
+    DisposableEffect(trackUri, artwork, artworkSize) {
+        val request = gate.begin(trackUri, artworkSize)
         artwork?.load(request, gate) { loaded -> image = loaded }
         onDispose { gate.invalidate(request) }
     }
 
     val cover = image
     if (cover == null) {
-        CoverPlaceholder(size)
+        CoverPlaceholder(size, shape)
         return
     }
     Image(
@@ -106,7 +113,7 @@ internal fun TrackCover(trackUri: String, size: Int) {
         contentScale = ContentScale.Crop,
         modifier = Modifier
             .size(size.dp)
-            .clip(MaterialTheme.shapes.small),
+            .clip(shape ?: MaterialTheme.shapes.small),
     )
 }
 

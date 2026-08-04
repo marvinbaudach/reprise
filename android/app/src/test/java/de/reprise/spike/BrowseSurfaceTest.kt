@@ -9,9 +9,65 @@ import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import uniffi.reprise_android_ffi.AndroidArtworkSize
 import uniffi.reprise_android_ffi.AndroidPlaybackState
+import uniffi.reprise_android_ffi.AndroidRepeatMode
 
 class BrowseSurfaceTest {
+    @Test
+    fun seekDragOwnsTheHeadUntilRelease() {
+        val initial = SeekPositionState.fromSnapshot(12_000)
+        val dragging = initial.dragTo(48_000)
+
+        assertEquals(48_000, dragging.acceptSnapshot(13_000).positionMs)
+        assertTrue(dragging.isDragging)
+
+        val released = dragging.release()
+        assertEquals(13_500, released.acceptSnapshot(13_500).positionMs)
+        assertEquals(false, released.isDragging)
+    }
+
+    @Test
+    fun fullArtworkHasItsOwnLazyCacheEntry() {
+        val track = testBrowseTrack("title")
+        val port = RecordingBrowsePort()
+        val session = LibrarySession(port)
+
+        session.artworkFor(track.uri, AndroidArtworkSize.LIST)
+        session.artworkFor(track.uri, AndroidArtworkSize.NOW_PLAYING)
+        session.artworkFor(track.uri, AndroidArtworkSize.LIST)
+
+        assertEquals(
+            listOf(
+                track.uri to AndroidArtworkSize.LIST,
+                track.uri to AndroidArtworkSize.NOW_PLAYING,
+            ),
+            port.artworkRequests,
+        )
+    }
+
+    @Test
+    fun nowPlayingUsesTheMeasuredSheetAndCoverMetrics() {
+        assertEquals(
+            NowPlayingMetrics(
+                coverSizeDp = 364,
+                coverRadiusDp = 28,
+                titleSizeSp = 28,
+                titleLineHeightSp = 36,
+                artistSizeSp = 16,
+                artistLineHeightSp = 24,
+            ),
+            nowPlayingMetrics,
+        )
+    }
+
+    @Test
+    fun repeatButtonCyclesAllThreeReadableModes() {
+        assertEquals(AndroidRepeatMode.ALL, cycleRepeatMode(AndroidRepeatMode.OFF))
+        assertEquals(AndroidRepeatMode.ONE, cycleRepeatMode(AndroidRepeatMode.ALL))
+        assertEquals(AndroidRepeatMode.OFF, cycleRepeatMode(AndroidRepeatMode.ONE))
+    }
+
     @Test
     fun artworkResolutionIsALazyCallSeparateFromPagedTracks() {
         val track = testBrowseTrack("title")
@@ -117,7 +173,7 @@ class BrowseSurfaceTest {
         val deliveryScheduled = CountDownLatch(1)
         var deliveries = 0
         val artwork = TrackArtwork(
-            resolve = {
+            resolve = { _, _ ->
                 resolvingThread.set(Thread.currentThread())
                 null
             },
@@ -318,6 +374,7 @@ fun playingFromAlbumDetailUsesTheAlbumSnapshot() {
 }
 
 private fun testBrowseTrack(title: String) = LibraryTrack(
+    id = title.hashCode().toLong(),
     uri = "content://provider/document/$title.flac",
     title = title,
     artist = "Miles Davis",
@@ -359,6 +416,7 @@ private class RecordingBrowsePort(
     private val whileResolvingArtwork: (String) -> Unit = {},
 ) : LibrarySessionPort {
     val operations = mutableListOf<String>()
+    val artworkRequests = mutableListOf<Pair<String, AndroidArtworkSize>>()
 
     override fun rememberedTreeUri(): String? = rememberedTreeUri
 
@@ -406,9 +464,14 @@ private class RecordingBrowsePort(
         return albumTracks
     }
 
-    override fun artworkFor(trackUri: String): String? {
+    override fun artworkFor(trackUri: String, size: AndroidArtworkSize): String? {
         operations += "artwork:$trackUri"
+        artworkRequests += trackUri to size
         whileResolvingArtwork(trackUri)
         return artwork[trackUri]
+    }
+
+    override fun setRating(trackId: Long, rating: Int) {
+        operations += "rating:$trackId:$rating"
     }
 }

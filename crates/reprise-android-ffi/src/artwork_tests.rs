@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use super::source::{SafSource, SafSourceError, SourceChild, SourceFacts};
-use super::{MusicLibrary, WindowRange};
+use super::{AndroidArtworkSize, MusicLibrary, WindowRange};
 
 const TINY_IMAGE: &[u8] = &[
     0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
@@ -172,10 +172,25 @@ fn artwork_is_resolved_only_by_the_lazy_track_call() {
         0,
         "list_tracks must remain a metadata-only paged query",
     );
-    let artwork = library.track_artwork(&tracks[0].uri);
+    let artwork = library.track_artwork(&tracks[0].uri, AndroidArtworkSize::List);
     assert_eq!(open_calls.load(Ordering::Relaxed), 2);
     assert!(artwork.is_some());
     assert!(Path::new(&artwork.unwrap()).starts_with(directory.path().join("cache/reprise/covers")));
+}
+
+#[test]
+fn now_playing_artwork_uses_the_1092_pixel_cache_rung() {
+    let directory = tempfile::tempdir().unwrap();
+    let (library, _) = library_with_one_album_cover(directory.path());
+    let track_uri = library.list_tracks(full_window()).unwrap().rows[0]
+        .uri
+        .clone();
+
+    let artwork = library
+        .track_artwork(&track_uri, AndroidArtworkSize::NowPlaying)
+        .unwrap();
+
+    assert!(artwork.ends_with("-1092.png"), "got {artwork}");
 }
 
 /// An environmental failure must not look like "this track has no artwork".
@@ -196,7 +211,7 @@ fn an_unusable_cover_cache_is_logged_rather_than_passing_as_no_artwork() {
 
     let logs = CapturedLogs::default();
     let artwork = tracing::subscriber::with_default(LogCapture(logs.clone()), || {
-        library.track_artwork(&track_uri)
+        library.track_artwork(&track_uri, AndroidArtworkSize::List)
     });
 
     assert!(artwork.is_none());

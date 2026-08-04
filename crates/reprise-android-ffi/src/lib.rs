@@ -4,9 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use reprise_core::db::Db;
-use reprise_core::library::scanner::{
-    scan_folder_with_source_and_progress, ScanOutcome, ScanProgress,
-};
+use reprise_core::library::scanner::{scan_folder_with_source_and_progress, ScanOutcome};
 use reprise_core::library::settings;
 use reprise_core::queries;
 
@@ -15,6 +13,7 @@ use source::{BridgedSource, SafSource};
 #[cfg(test)]
 mod artwork_tests;
 mod browse;
+mod library_types;
 pub mod playback;
 mod playback_session;
 pub mod source;
@@ -27,67 +26,16 @@ mod playback_tests;
 pub use browse::{
     AlbumRow, AlbumWindow, ArtistRow, ArtistWindow, TrackRow, TrackWindow, WindowRange,
 };
+pub use library_types::{
+    AndroidArtworkSize, LibraryError, MusicLibrary, ScanProgressListener, ScanProgressUpdate,
+    ScanSummary,
+};
+use library_types::{ConfiguredTree, LibraryState, DATABASE_FILE_NAME};
 pub use playback_session::{
-    AndroidPlaybackListener, AndroidPlaybackSession, AndroidPlaybackSnapshot,
+    AndroidPlaybackListener, AndroidPlaybackSession, AndroidPlaybackSnapshot, AndroidRepeatMode,
 };
 
 uniffi::setup_scaffolding!();
-
-const DATABASE_FILE_NAME: &str = "reprise.db";
-
-#[derive(Debug, thiserror::Error, uniffi::Error)]
-pub enum LibraryError {
-    #[error("database error: {detail}")]
-    Database { detail: String },
-    #[error("scan error: {detail}")]
-    Scan { detail: String },
-    #[error("query error: {detail}")]
-    Query { detail: String },
-    #[error("no library tree is configured")]
-    TreeNotConfigured,
-}
-
-#[derive(uniffi::Record)]
-pub struct ScanSummary {
-    pub added: u32,
-    pub updated: u32,
-    pub errors: u32,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
-pub enum ScanProgressUpdate {
-    Discovering,
-    Scanning {
-        processed: u64,
-        total: Option<u64>,
-        current_uri: String,
-    },
-    Fetching {
-        done: u64,
-        total: u64,
-    },
-}
-
-#[uniffi::export(callback_interface)]
-pub trait ScanProgressListener: Send + Sync {
-    fn on_progress(&self, progress: ScanProgressUpdate);
-}
-
-struct ConfiguredTree {
-    uri: PathBuf,
-    source: Arc<BridgedSource>,
-}
-
-struct LibraryState {
-    db: Db,
-    tree: Option<ConfiguredTree>,
-}
-
-#[derive(uniffi::Object)]
-pub struct MusicLibrary {
-    state: Mutex<LibraryState>,
-    cache_root: PathBuf,
-}
 
 #[uniffi::export]
 impl MusicLibrary {
@@ -212,14 +160,29 @@ impl MusicLibrary {
             })
     }
 
+    /// Persists one row's rating and refuses to report success if the row was
+    /// removed after it crossed the boundary.
+    pub fn set_track_rating(&self, track_id: i64, rating: i32) -> Result<(), LibraryError> {
+        let state = self.lock()?;
+        let changed =
+            reprise_core::library::stats::set_rating_if_present(&state.db, track_id, rating)
+                .map_err(|error| LibraryError::Database {
+                    detail: error.to_string(),
+                })?;
+        if !changed {
+            return Err(LibraryError::TrackNotFound { track_id });
+        }
+        Ok(())
+    }
+
     /// Resolves local artwork lazily for one track and returns its cached
-    /// 168 px thumbnail path. A missing or unreadable image stays `None`,
+    /// measured-size thumbnail path. A missing or unreadable image stays `None`,
     /// because "this track has no artwork" is a legitimate answer the UI must
     /// render. An *environmental* failure — a poisoned handle, a full disk, a
     /// cache directory that cannot be created — looks identical from the
     /// Kotlin side, so every one of those leaves a `tracing` line behind
     /// rather than silently suppressing covers forever.
-    pub fn track_artwork(&self, track_uri: &str) -> Option<String> {
+    pub fn track_artwork(&self, track_uri: &str, size: AndroidArtworkSize) -> Option<String> {
         let source = {
             let state = match self.lock() {
                 Ok(state) => state,
@@ -238,7 +201,7 @@ impl MusicLibrary {
         match reprise_core::cover::thumbnail_with_source(
             source.as_ref(),
             &cover,
-            reprise_core::cover::ThumbnailSize::MobileList,
+            size.thumbnail_size(),
             &self.cache_root,
         ) {
             Ok(path) => Some(path.to_string_lossy().into_owned()),
@@ -269,24 +232,6 @@ impl MusicLibrary {
     }
 }
 
-impl From<ScanProgress> for ScanProgressUpdate {
-    fn from(progress: ScanProgress) -> Self {
-        match progress {
-            ScanProgress::Discovering => Self::Discovering,
-            ScanProgress::Scanning {
-                processed,
-                total,
-                current_path,
-            } => Self::Scanning {
-                processed,
-                total,
-                current_uri: current_path.to_string_lossy().into_owned(),
-            },
-            ScanProgress::Fetching { done, total } => Self::Fetching { done, total },
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::fs::File;
@@ -296,7 +241,8 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use super::{
-        AlbumRow, ArtistRow, MusicLibrary, ScanProgressListener, ScanProgressUpdate, WindowRange,
+        AlbumRow, ArtistRow, LibraryError, MusicLibrary, ScanProgressListener, ScanProgressUpdate,
+        WindowRange,
     };
     use crate::source::{SafSource, SafSourceError, SourceChild, SourceFacts};
 
@@ -562,6 +508,7 @@ mod tests {
                 .rows,
             vec![
                 super::TrackRow {
+                    id: 2,
                     uri: first_uri,
                     title: "All I Want".into(),
                     artist: "Joni Mitchell".into(),
@@ -571,6 +518,7 @@ mod tests {
                     rating: 0,
                 },
                 super::TrackRow {
+                    id: 3,
                     uri: second_uri,
                     title: "A Case of You".into(),
                     artist: "Joni Mitchell".into(),
@@ -604,6 +552,7 @@ mod tests {
                 .rows,
             vec![
                 super::TrackRow {
+                    id: 3,
                     uri: case_uri,
                     title: "A Case of You".into(),
                     artist: "Joni Mitchell".into(),
@@ -613,6 +562,7 @@ mod tests {
                     rating: 4,
                 },
                 super::TrackRow {
+                    id: 2,
                     uri: want_uri,
                     title: "All I Want".into(),
                     artist: "Joni Mitchell".into(),
@@ -676,6 +626,31 @@ mod tests {
         assert_eq!(second.rows.len(), 1);
         assert!(!second.has_more);
         assert_ne!(first.rows[0].uri, second.rows[0].uri);
+    }
+
+    #[test]
+    fn track_identity_drives_rating_writes_and_a_missing_id_is_an_error() {
+        let (_directory, library) = browse_library();
+        let track = library
+            .search_tracks("A Case of You".into(), full_window())
+            .unwrap()
+            .rows
+            .remove(0);
+
+        assert!(track.id > 0);
+        library.set_track_rating(track.id, 5).unwrap();
+        let updated = library
+            .search_tracks("A Case of You".into(), full_window())
+            .unwrap()
+            .rows
+            .remove(0);
+        assert_eq!(updated.id, track.id);
+        assert_eq!(updated.rating, 5);
+
+        assert!(matches!(
+            library.set_track_rating(i64::MAX, 4),
+            Err(LibraryError::TrackNotFound { track_id }) if track_id == i64::MAX
+        ));
     }
 
     impl SafSource for UntaggedAlbumSource {

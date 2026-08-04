@@ -9,6 +9,7 @@ import androidx.media3.session.MediaSessionService
 import uniffi.reprise_android_ffi.AndroidPlaybackListener
 import uniffi.reprise_android_ffi.AndroidPlaybackSession
 import uniffi.reprise_android_ffi.AndroidPlaybackSnapshot
+import uniffi.reprise_android_ffi.AndroidRepeatMode
 
 /** Owns Media3 for background playback, notifications and external controls. */
 class ReprisePlaybackService : MediaSessionService() {
@@ -36,7 +37,7 @@ class ReprisePlaybackService : MediaSessionService() {
         val player = ExoPlayer.Builder(this).build()
         val port = Media3PlaybackPort(player)
         playbackPort = port
-        coreSession = AndroidPlaybackSession(port, coreListener)
+        coreSession = AndroidPlaybackSession(filesDir.absolutePath, port, coreListener)
         mediaSession = MediaSession.Builder(
             this,
             CoreControlledPlayer(player, mediaSessionCommands),
@@ -70,8 +71,12 @@ class ReprisePlaybackService : MediaSessionService() {
         observer = null
     }
 
-    internal fun playTracks(uris: List<String>, startIndex: Int) {
-        coreSession().playTracks(uris, startIndex.toULong())
+    internal fun playTracks(tracks: List<LibraryTrack>, startIndex: Int) {
+        coreSession().playTracks(
+            tracks.map(LibraryTrack::id),
+            tracks.map(LibraryTrack::uri),
+            startIndex.toULong(),
+        )
     }
 
     internal fun togglePause() {
@@ -84,6 +89,18 @@ class ReprisePlaybackService : MediaSessionService() {
 
     internal fun previous() {
         coreSession().previous()
+    }
+
+    internal fun seekTo(positionMs: Long) {
+        coreSession().seekTo(positionMs)
+    }
+
+    internal fun setShuffle(enabled: Boolean) {
+        coreSession().setShuffle(enabled)
+    }
+
+    internal fun setRepeat(mode: AndroidRepeatMode) {
+        coreSession().setRepeat(mode)
     }
 
     private fun coreSession(): AndroidPlaybackSession = checkNotNull(coreSession) {

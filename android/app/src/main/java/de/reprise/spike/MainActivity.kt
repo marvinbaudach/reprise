@@ -39,6 +39,7 @@ import de.reprise.spike.ui.theme.RepriseTheme
 import uniffi.reprise_android_ffi.MusicLibrary
 import uniffi.reprise_android_ffi.ScanProgressListener
 import uniffi.reprise_android_ffi.ScanProgressUpdate
+import uniffi.reprise_android_ffi.AndroidRepeatMode
 
 private const val TAG = "RepriseScan"
 private const val PREFERENCES_NAME = "reprise_android"
@@ -123,6 +124,16 @@ class MainActivity : ComponentActivity() {
                                 previous = {
                                     runPlaybackCommand("return to the previous track") { previous() }
                                 },
+                                seekTo = { positionMs ->
+                                    runPlaybackCommand("seek") { seekTo(positionMs) }
+                                },
+                                setShuffle = { enabled ->
+                                    runPlaybackCommand("change shuffle") { setShuffle(enabled) }
+                                },
+                                setRepeat = { mode ->
+                                    runPlaybackCommand("change repeat") { setRepeat(mode) }
+                                },
+                                setRating = ::setTrackRating,
                             )
                         }
                     }
@@ -203,9 +214,17 @@ class MainActivity : ComponentActivity() {
     ) {
         val selected = selection.tracks[selection.startIndex]
         runPlaybackCommand("play ${selected.title}", reportError) {
-            playTracks(selection.tracks.map(LibraryTrack::uri), selection.startIndex)
+            playTracks(selection.tracks, selection.startIndex)
         }
     }
+
+    private fun setTrackRating(trackId: Long, rating: Int): Boolean = runCatching {
+        session.setRating(trackId, rating)
+    }.onFailure { error ->
+        playbackState.value = playbackState.value.copy(
+            error = "Could not save rating: ${error.detail()}",
+        )
+    }.isSuccess
 
     private fun runPlaybackCommand(
         action: String,
@@ -258,6 +277,10 @@ private fun LibraryScreen(
     togglePause: () -> Unit,
     next: () -> Unit,
     previous: () -> Unit,
+    seekTo: (Long) -> Unit,
+    setShuffle: (Boolean) -> Unit,
+    setRepeat: (AndroidRepeatMode) -> Unit,
+    setRating: (Long, Int) -> Boolean,
 ) {
     var state by remember { mutableStateOf(initialState) }
     val folderPicker = rememberLauncherForActivityResult(
@@ -291,6 +314,10 @@ private fun LibraryScreen(
             togglePause = togglePause,
             next = next,
             previous = previous,
+            seekTo = seekTo,
+            setShuffle = setShuffle,
+            setRepeat = setRepeat,
+            setRating = setRating,
         )
     }
 }

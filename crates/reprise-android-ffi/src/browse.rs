@@ -6,6 +6,7 @@ use reprise_core::queries;
 /// the binding surface stays a decision rather than an accident.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct TrackRow {
+    pub id: i64,
     pub uri: String,
     pub title: String,
     pub artist: String,
@@ -63,6 +64,7 @@ pub struct ArtistWindow {
 impl From<reprise_core::models::Track> for TrackRow {
     fn from(track: reprise_core::models::Track) -> Self {
         Self {
+            id: track.id,
             uri: track.path,
             title: track.title,
             artist: track.artist,

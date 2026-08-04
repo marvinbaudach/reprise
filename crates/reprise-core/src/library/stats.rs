@@ -23,8 +23,21 @@ const RATING_MAX: i32 = 5;
 
 /// Sets `track_id`'s rating, clamped to `RATING_MIN..=RATING_MAX`.
 pub fn set_rating(db: &Db, track_id: i64, rating: i32) -> Result<(), rusqlite::Error> {
-    let conn = db.conn();
-    set_rating_in(conn, track_id, rating)
+    set_rating_if_present(db, track_id, rating).map(|_| ())
+}
+
+/// Sets a rating and reports whether a live track row actually matched.
+///
+/// Callers that present a success/failure result to a user need this stricter
+/// answer; the legacy [`set_rating`] facade deliberately retains its silent
+/// zero-row behavior for existing desktop call sites.
+pub fn set_rating_if_present(db: &Db, track_id: i64, rating: i32) -> Result<bool, rusqlite::Error> {
+    let clamped = rating.clamp(RATING_MIN, RATING_MAX);
+    let changed = db.conn().execute(
+        "UPDATE tracks SET rating = ?1 WHERE id = ?2 AND removed_at IS NULL",
+        rusqlite::params![clamped, track_id],
+    )?;
+    Ok(changed == 1)
 }
 
 pub(crate) fn set_rating_in(
