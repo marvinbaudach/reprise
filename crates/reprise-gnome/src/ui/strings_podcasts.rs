@@ -39,6 +39,9 @@ pub const PODCAST_FILTER_UNPLAYED: &str = N_!("Unplayed");
 pub const PODCAST_FILTER_DOWNLOADED: &str = N_!("Downloaded");
 pub const PODCAST_FILTER_SOURCE: &str = N_!("Source");
 pub const PODCAST_CLEAR_ALL: &str = N_!("Clear all");
+/// Beside the selection count. "Clear all" drops filters, so the two must not
+/// read alike.
+pub const PODCAST_CLEAR_SELECTION: &str = N_!("Clear");
 pub const PODCAST_NEW_COUNT: &str = N_!("{count} new");
 pub const PODCAST_LATEST: &str = N_!("latest {date}");
 /// `SRC-10`: the shared empty-state grammar's copy for Podcasts — title, one

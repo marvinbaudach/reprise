@@ -3933,7 +3933,7 @@ listening statistics.
   all three add dialogs) computes the gate itself at its own connection rather
   than relying on an upstream checkpoint — the lesson from `T6-G1-gap`: a
   privacy promise in UI copy needs a test per call path, not per feature.
-- **SRC-12** [active] [gtk] — Episodes can be selected in bulk in both the
+- **SRC-12** [replaced by SRC-12a] [gtk] — Episodes can be selected in bulk in both the
   grouped library view and the channel detail view, with one shared set of
   batch actions offered only by the context menu for the current selection;
   there are no episode checkboxes or separate selection toolbar. Actions that
@@ -3942,6 +3942,24 @@ listening statistics.
   toast and a single undo. Escape clears the current episode selection in
   whichever of the two surfaces is showing, and is passed on untouched when
   nothing is selected.
+- **SRC-12a** [active] [gtk] — Episodes can be selected in bulk in both the
+  grouped library view and the channel detail view, with one shared set of
+  batch actions offered only by the context menu for the current selection.
+  Selection is carried by a checkbox over the left media slot in grouped rows,
+  never by a permanent extra column or a separate selection toolbar; the
+  channel page keeps its existing tint-only selection because it has no media
+  column. A checkbox appears only while a selection exists and only on a row
+  that is selected, hovered, or focused. Applying a selection never rebuilds
+  the list. Ctrl+A selects every rendered episode of the focused source; with
+  no focused row it selects the whole rendered list, while the channel page
+  selects its current rendered window. Collapsed groups, episodes past a
+  preview window, and filtered-out rows are never swept up. Escape and the
+  visible Clear action beside the selection count both clear the current
+  surface's selection; Escape propagates unchanged when nothing was selected.
+  Actions meaningless for more than one episode stay hidden, and a batch
+  reports one aggregated toast and one undo. Covered by the `src_12a_…` tests
+  in `podcasts_selection`, `podcasts_view_shortcuts`, `podcasts_view_tests`,
+  and `source_row::media_column`.
 - **SRC-4a** [active] [gtk] — Radio keeps SRC-4's removal and undo
   behavior, and its station menus continue to omit "Play Next" and "Add
   to Queue". A live stream is deliberately not a citizen of an ordered

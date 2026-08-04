@@ -377,71 +377,6 @@ impl YoutubeChannelDetail {
             .set_loaded_limit(subscription_id, limit);
     }
 
-    /// `SRC-14`: the episode order a range ranges over on this surface — the
-    /// rows the active channel currently shows, after the Shorts filter and
-    /// the loaded window. Derived on each use for the same reason the grouped
-    /// view derives its own: the inputs change without a re-render.
-    fn rendered_order(&self) -> Vec<i64> {
-        let Some(subscription_id) = self.state.borrow().active_channel() else {
-            return Vec::new();
-        };
-        let Some(rendered) = self
-            .groups
-            .borrow()
-            .iter()
-            .find(|group| group.group.subscription_id == subscription_id)
-            .cloned()
-        else {
-            return Vec::new();
-        };
-        let state = self.state.borrow().clone();
-        project_channel(&rendered, &state)
-            .group
-            .episodes
-            .iter()
-            .map(|episode| episode.id)
-            .collect()
-    }
-
-    /// `SRC-14`: push the selection onto the rows on screen without rebuilding
-    /// them, so keyboard focus survives selecting.
-    fn apply_selection(self: &Rc<Self>) {
-        let Some(subscription_id) = self.state.borrow().active_channel() else {
-            return;
-        };
-        let selected = self.state.borrow().selected_ids(subscription_id);
-        for (episode_id, widgets) in self.selection_widgets.borrow().iter() {
-            let is_selected = selected.contains(episode_id);
-            if is_selected {
-                widgets.row.add_css_class(SELECTED_ROW_CLASS);
-            } else {
-                widgets.row.remove_css_class(SELECTED_ROW_CLASS);
-            }
-            widgets
-                .row
-                .update_state(&[gtk4::accessible::State::Selected(Some(is_selected))]);
-        }
-        if let Some(summary) = self.selection_summary.borrow().as_ref() {
-            summary
-                .label
-                .set_text(&strings::podcast_summary_with_selection(
-                    &summary.base,
-                    selected.len(),
-                ));
-        }
-    }
-
-    fn select_row(self: &Rc<Self>, episode_id: i64, mode: SelectMode) {
-        let Some(subscription_id) = self.state.borrow().active_channel() else {
-            return;
-        };
-        let order = self.rendered_order();
-        self.state
-            .borrow_mut()
-            .apply_select(subscription_id, &order, episode_id, mode);
-        self.apply_selection();
-    }
-
     fn render_active(self: &Rc<Self>) {
         let Some(subscription_id) = self.state.borrow().active_channel() else {
             return;
@@ -783,6 +718,9 @@ impl YoutubeChannelDetail {
         row.upcast()
     }
 }
+
+#[path = "youtube_channel_selection.rs"]
+mod selection;
 
 #[cfg(test)]
 #[path = "youtube_channel_detail_tests.rs"]

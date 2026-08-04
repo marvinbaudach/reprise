@@ -147,6 +147,14 @@ impl PodcastsView {
             view.select_row(episode_id, mode);
         });
         group.add_action(&select_row);
+        let clear_selection = gio::SimpleAction::new("clear-selection", None);
+        let weak = Rc::downgrade(self);
+        clear_selection.connect_activate(move |_, _| {
+            if let Some(view) = weak.upgrade() {
+                view.clear_visible_selection();
+            }
+        });
+        group.add_action(&clear_selection);
         self.youtube_detail.install_actions(&group);
         let add = gio::SimpleAction::new("open-add", None);
         let weak = Rc::downgrade(self);

@@ -23,6 +23,7 @@ pub(super) struct PodcastsFilterBar {
     popover_box: gtk4::Box,
     popover: gtk4::Popover,
     result: gtk4::Label,
+    clear_selection: gtk4::Button,
     base_result: RefCell<String>,
     on_changed: RefCell<Option<OnChanged>>,
     // `POD-15`: kept past the constructor because the summary line below the
@@ -77,6 +78,12 @@ impl PodcastsFilterBar {
         result.add_css_class("dim-label");
         result.add_css_class("caption");
         root.append(&result);
+        let clear_selection =
+            gtk4::Button::with_label(&strings::text(strings::PODCAST_CLEAR_SELECTION));
+        clear_selection.add_css_class("flat");
+        clear_selection.set_visible(false);
+        clear_selection.set_action_name(Some("podcasts.clear-selection"));
+        root.append(&clear_selection);
 
         let bar = Rc::new(Self {
             root,
@@ -86,6 +93,7 @@ impl PodcastsFilterBar {
             popover_box,
             popover,
             result,
+            clear_selection,
             base_result: RefCell::new(String::new()),
             on_changed: RefCell::new(None),
             kind,
@@ -150,6 +158,7 @@ impl PodcastsFilterBar {
                 &self.base_result.borrow(),
                 selected_count,
             ));
+        self.clear_selection.set_visible(selected_count > 0);
     }
 
     pub(super) fn clear_all(self: &Rc<Self>) {
