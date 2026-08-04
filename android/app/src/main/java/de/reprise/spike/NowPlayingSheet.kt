@@ -37,8 +37,8 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -358,9 +358,16 @@ private fun RatingRow(track: LibraryTrack) {
                             failure = TransientMessage(message).after(failure)
                         }
                     },
+                    // `selected` would claim these five are one exclusive choice
+                    // inside a selectable group, which they are not: up to five
+                    // of them are filled at once and there is no group. The
+                    // rating is a *state*, so it is carried as one — and as the
+                    // whole control's state, so a screen reader user learns the
+                    // current rating from whichever star they land on rather
+                    // than by counting filled ones.
                     modifier = Modifier
                         .size(48.dp)
-                        .semantics { selected = star <= rating },
+                        .semantics { stateDescription = "Rated $rating of 5" },
                 ) {
                     MaterialSymbol(
                         name = if (star <= rating) "star" else "star_outline",

@@ -9,11 +9,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertIsNotSelected
-import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -97,15 +99,16 @@ class ComposeBehaviorTest {
             }
         }
 
-        compose.onNodeWithContentDescription("Rate 2 of 5 stars").assertIsSelected()
-        compose.onNodeWithContentDescription("Rate 3 of 5 stars").assertIsNotSelected()
+        // The stars carry the rating as their state, so reading it back off any
+        // of them is reading what the control shows.
+        star(2).assertRating(2)
+        star(4).assertRating(2)
 
-        compose.onNodeWithContentDescription("Rate 4 of 5 stars").performClick()
+        star(4).performClick()
 
         compose.onNodeWithText(failure).assertIsDisplayed()
-        compose.onNodeWithContentDescription("Rate 2 of 5 stars").assertIsSelected()
-        compose.onNodeWithContentDescription("Rate 3 of 5 stars").assertIsNotSelected()
-        compose.onNodeWithContentDescription("Rate 4 of 5 stars").assertIsNotSelected()
+        star(2).assertRating(2)
+        star(4).assertRating(2)
         assertEquals(listOf(830L to 4), controls.ratingRequests)
     }
 
@@ -149,7 +152,15 @@ class ComposeBehaviorTest {
         }
 
         compose.onNodeWithText("First Song").performClick()
-        compose.onNodeWithContentDescription("Open Now Playing").performClick()
+        // Found by the action it offers rather than by a description of its
+        // own: a content description on this node would be merged over the
+        // track it announces, and announcing the track is the point of it.
+        val miniPlayer = compose.onNode(hasClickLabel("Open Now Playing"))
+        miniPlayer.assertTextContains("First Song")
+        miniPlayer.assertTextContains("Artist")
+        miniPlayer.assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.ContentDescription))
+
+        miniPlayer.performClick()
         compose.onNodeWithContentDescription("Collapse Now Playing").assertIsDisplayed()
         compose.onAllNodesWithText("First Song").assertCountEquals(3)
 
@@ -166,9 +177,26 @@ class ComposeBehaviorTest {
         compose.onAllNodesWithText("Second Song").assertCountEquals(2)
     }
 
-    private fun androidx.compose.ui.test.SemanticsNodeInteraction.progress(): Float =
+    private fun SemanticsNodeInteraction.progress(): Float =
         fetchSemanticsNode().config[SemanticsProperties.ProgressBarRangeInfo].current
+
+    private fun star(star: Int): SemanticsNodeInteraction =
+        compose.onNodeWithContentDescription("Rate $star of 5 stars")
+
+    private fun SemanticsNodeInteraction.assertRating(rating: Int): SemanticsNodeInteraction =
+        assert(
+            SemanticsMatcher.expectValue(
+                SemanticsProperties.StateDescription,
+                "Rated $rating of 5",
+            ),
+        )
 }
+
+/** Matches the node offering a click labelled [label], however it is described. */
+private fun hasClickLabel(label: String) =
+    SemanticsMatcher("${SemanticsActions.OnClick.name} is labelled \"$label\"") { node ->
+        node.config.getOrNull(SemanticsActions.OnClick)?.label == label
+    }
 
 private fun testPlayback(positionMs: Long) = PlaybackUiState(
     ready = true,

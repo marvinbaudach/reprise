@@ -85,6 +85,12 @@ internal val LocalTrackArtwork = staticCompositionLocalOf<TrackArtwork?> { null 
 /**
  * A track's cover, or the honest no-artwork symbol until one arrives. Tracks
  * without local artwork keep the symbol: nothing is downloaded here.
+ *
+ * [decorative] drops the cover's own description for the covers that sit inside
+ * a node which already announces the track. A content description anywhere
+ * under such a node is merged into it and then wins over the merged title and
+ * artist, so a described cover there would be the *only* thing a screen reader
+ * reads out.
  */
 @Composable
 internal fun TrackCover(
@@ -92,6 +98,7 @@ internal fun TrackCover(
     size: Int,
     artworkSize: AndroidArtworkSize = AndroidArtworkSize.LIST,
     shape: Shape? = null,
+    decorative: Boolean = false,
 ) {
     val artwork = LocalTrackArtwork.current
     val gate = remember { ArtworkRequestGate() }
@@ -104,12 +111,12 @@ internal fun TrackCover(
 
     val cover = image
     if (cover == null) {
-        CoverPlaceholder(size, shape)
+        CoverPlaceholder(size, shape, decorative)
         return
     }
     Image(
         bitmap = cover,
-        contentDescription = "Album artwork",
+        contentDescription = if (decorative) null else "Album artwork",
         contentScale = ContentScale.Crop,
         modifier = Modifier
             .size(size.dp)

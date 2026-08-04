@@ -127,10 +127,17 @@ mod tests {
             },
         );
 
+        // Asserted as a whole record: writing the theme must leave the colour
+        // scheme alone. One key per setter guarantees that today, so the
+        // assertion is here to catch the day a setter writes both through one
+        // helper.
         library.set_theme(AndroidThemeChoice::Dynamic).unwrap();
         assert_eq!(
-            library.appearance_settings().unwrap().theme,
-            AndroidStoredTheme::Dynamic,
+            library.appearance_settings().unwrap(),
+            super::AndroidAppearanceSettings {
+                theme: AndroidStoredTheme::Dynamic,
+                color_scheme: AndroidColorScheme::Dark,
+            },
         );
     }
 }

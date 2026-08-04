@@ -41,7 +41,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -185,8 +184,11 @@ private fun MiniPlayer(
             .fillMaxWidth()
             .height(libraryFrameMetrics.miniPlayerHeightDp.dp)
             .padding(horizontal = 12.dp)
-            .clickable(onClick = openNowPlaying)
-            .semantics { contentDescription = "Open Now Playing" },
+            // The label names the *action*; it does not replace what this node
+            // announces. A content description would: it wins over the merged
+            // descendants, and the one thing a screen-reader user needs here is
+            // which track is playing.
+            .clickable(onClickLabel = "Open Now Playing", onClick = openNowPlaying),
         color = MaterialTheme.colorScheme.surfaceContainer,
         shape = MaterialTheme.shapes.large,
     ) {
@@ -200,6 +202,7 @@ private fun MiniPlayer(
                 TrackCover(
                     trackUri = track.uri,
                     size = libraryFrameMetrics.trackCoverSizeDp,
+                    decorative = true,
                 )
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
@@ -257,7 +260,11 @@ private fun MiniPlayer(
 }
 
 @Composable
-internal fun CoverPlaceholder(size: Int, shape: androidx.compose.ui.graphics.Shape? = null) {
+internal fun CoverPlaceholder(
+    size: Int,
+    shape: androidx.compose.ui.graphics.Shape? = null,
+    decorative: Boolean = false,
+) {
     Box(
         modifier = Modifier
             .size(size.dp)
@@ -267,7 +274,7 @@ internal fun CoverPlaceholder(size: Int, shape: androidx.compose.ui.graphics.Sha
     ) {
         MaterialSymbol(
             name = "music_note",
-            contentDescription = "No artwork",
+            contentDescription = if (decorative) "" else "No artwork",
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             sizeSp = 28,
         )
