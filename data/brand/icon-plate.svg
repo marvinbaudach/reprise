@@ -1,13 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
-  <!-- Grundfläche des App-Icons. Sie ist hell, weil die Marke dunkel ist:
-       Bügel und Kopf sind beide tiefes Violett, also muss der Grund den
-       Kontrast liefern. Eine dunkle Platte ließ den Kopf bei 1,23:1
-       verschwinden — der Grund, warum die großen Stufen matschig wirkten. -->
+  <!-- Grundfläche des App-Icons. Sie ist fast schwarz, weil die Marke der
+       Verlauf ist: Violett und Blau leuchten nur auf einem dunklen Grund.
+       Umgekehrt gemessen — dunkle Marke auf hellem Verlauf — kam der Rand
+       auf 1,8 bis 2,5:1 und fiel durch. -->
   <g id="rp-plate">
     <defs>
       <linearGradient id="rp-plate-fill" x1="0" y1="0" x2="0.35" y2="1">
-        <stop offset="0" stop-color="#5798BD"/>
-        <stop offset="1" stop-color="#8570CB"/>
+        <stop offset="0" stop-color="#12121C"/>
+        <stop offset="1" stop-color="#070710"/>
       </linearGradient>
     </defs>
     <rect x="8" y="8" width="112" height="112" rx="26" fill="url(#rp-plate-fill)"/>

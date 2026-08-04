@@ -85,6 +85,39 @@ def bg_components(png):
     return count
 
 
+def ink_components(png):
+    """Zahl der getrennten Tintenflächen, 4er-Nachbarschaft.
+
+    Das Gegenstück zu `bg_components`. Eine Marke mit Aussparungen fragt
+    „bleibt der Negativraum offen?"; eine Marke aus getrennten Strichen
+    fragt das Gegenteil: „bleiben die Striche getrennt, oder laufen sie bei
+    kleiner Größe zu einem Klotz zusammen?" Zwei Balken, die bei 16 px
+    verschmelzen, sind kein Wiederholungszeichen mehr.
+    """
+    w, h, bg = _alpha_mask(png)
+    floor = max(MIN_HOLE_PIXELS, int(MIN_HOLE_SHARE * w * h))
+    seen = [[False] * w for _ in range(h)]
+    count = 0
+    for sy in range(h):
+        for sx in range(w):
+            if seen[sy][sx] or bg[sy][sx]:
+                continue
+            queue = deque([(sx, sy)])
+            seen[sy][sx] = True
+            area = 0
+            while queue:
+                x, y = queue.popleft()
+                area += 1
+                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    nx, ny = x + dx, y + dy
+                    if 0 <= nx < w and 0 <= ny < h and not seen[ny][nx] and not bg[ny][nx]:
+                        seen[ny][nx] = True
+                        queue.append((nx, ny))
+            if area >= floor:
+                count += 1
+    return count
+
+
 def fill_ratio(png):
     """Anteil der Live-Fläche, den die Bounding-Box der Marke belegt."""
     w, h, bg = _alpha_mask(png)
@@ -414,6 +447,8 @@ def main():
     cmd, args = sys.argv[1], sys.argv[2:]
     if cmd == "bg-components":
         print(bg_components(args[0]))
+    elif cmd == "ink-components":
+        print(ink_components(args[0]))
     elif cmd == "fill-ratio":
         fw, fh = fill_ratio(args[0])
         print(f"{fw:.4f} {fh:.4f}")

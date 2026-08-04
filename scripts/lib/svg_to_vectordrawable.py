@@ -142,32 +142,105 @@ def resolve_fill(attrs, inherited):
     raise SystemExit(f"Form ohne erkennbare Füllung: {attrs.strip()[:80]}")
 
 
-def check_flat(fill, attrs):
-    """VectorDrawable kennt `url(#…)` nicht.
+GRADIENT = re.compile(
+    r'<linearGradient\b([^>]*\bid="([^"]+)"[^>]*)>(.*?)</linearGradient>', re.S)
+STOP = re.compile(r'<stop\b[^>]*offset="([^"]+)"[^>]*stop-color="([^"]+)"')
 
-    Ein Verweis auf eine Verlaufsdefinition landete bisher wörtlich in
-    `android:fillColor`. Android rendert das als Schwarz — die Zeichnung
-    kompiliert, sieht aber anders aus als die Quelle. Deshalb hier hart
-    abbrechen: für Android wird die flache Stufe gezeichnet, nicht die
-    verlaufsreiche.
+
+def gradient_defs(text):
+    """Alle linearGradient-Definitionen als {id: (x1, y1, x2, y2, stops)}.
+
+    Die Koordinaten stehen in `objectBoundingBox`, also als Anteile der
+    Fläche, die den Verlauf trägt. Android will Nutzerkoordinaten; die
+    Umrechnung braucht deshalb die Tintenbox der Zeichnung.
     """
-    if fill.startswith("url("):
+    found = {}
+    for head, name, body in GRADIENT.findall(text):
+        units = re.search(r'gradientUnits="([^"]+)"', head)
+        if units and units.group(1) != "objectBoundingBox":
+            raise SystemExit(f"gradientUnits={units.group(1)} wird nicht abgebildet")
+        stops = [(float(o), c) for o, c in STOP.findall(body)]
+        if len(stops) < 2:
+            raise SystemExit(f"Verlauf {name} mit {len(stops)} Farbmarke(n)")
+        box = [float(re.search(rf'\b{axis}="([^"]+)"', head).group(1))
+               if re.search(rf'\b{axis}="([^"]+)"', head) else default
+               for axis, default in (("x1", 0.0), ("y1", 0.0),
+                                     ("x2", 1.0), ("y2", 0.0))]
+        found[name] = (*box, stops)
+    return found
+
+
+def check_flat(fill, attrs, gradients):
+    """VectorDrawable kennt `url(#…)` nur als eingebettete `aapt:attr`.
+
+    Ein Verweis auf eine Verlaufsdefinition landete früher wörtlich in
+    `android:fillColor`; Android rendert das als Schwarz — die Zeichnung
+    kompiliert, sieht aber anders aus als die Quelle. Bekannte Verläufe
+    werden jetzt übersetzt, unbekannte brechen ab.
+    """
+    if not fill.startswith("url("):
+        return fill
+    name = fill[fill.index("#") + 1:fill.index(")")]
+    if name not in gradients:
         raise SystemExit(
-            f"Verlaufsfüllung {fill} kann kein VectorDrawable werden: "
-            f"{attrs.strip()[:60]}")
+            f"Verlauf {name} ist nicht definiert: {attrs.strip()[:60]}")
     return fill
+
+
+def ink_bounds_108(svg_path, transform):
+    """Die Tintenbox der Zeichnung, umgerechnet aufs 108er Raster."""
+    _, _, vw, vh = view_box(Path(svg_path).read_text(encoding="utf-8"))
+    with tempfile.TemporaryDirectory() as tmp:
+        png = Path(tmp) / "probe.png"
+        height = max(1, round(PROBE_WIDTH * vh / vw))
+        subprocess.run(
+            ["rsvg-convert", "-w", str(PROBE_WIDTH), "-h", str(height),
+             str(svg_path), "-o", str(png)],
+            check=True, capture_output=True)
+        fx0, fy0, fx1, fy1 = ink_box(png)
+    return (transform.x(fx0 * vw), transform.y(fy0 * vh),
+            transform.x(fx1 * vw), transform.y(fy1 * vh))
+
+
+def gradient_block(spec, bounds, indent="        "):
+    """Ein `aapt:attr`-Verlauf in Nutzerkoordinaten des 108er Rasters.
+
+    Die SVG-Koordinaten sind Anteile der tragenden Fläche. Für ein Zeichen,
+    dessen Teilflächen sich **einen** Verlauf teilen, ist das die Tintenbox
+    der ganzen Zeichnung — nicht die jeder einzelnen Form. Pro Form
+    gerechnet bekäme jeder Balken seinen eigenen kleinen Verlauf, und aus
+    einem durchlaufenden Farbverlauf würden vier gestreifte Klötze.
+    """
+    x1, y1, x2, y2, stops = spec
+    bx0, by0, bx1, by1 = bounds
+    w, h = bx1 - bx0, by1 - by0
+    items = "".join(
+        f'{indent}        <item android:offset="{offset:g}" '
+        f'android:color="{colour}"/>\n'
+        for offset, colour in stops)
+    return (f'{indent}<aapt:attr name="android:fillColor">\n'
+            f'{indent}    <gradient android:type="linear"\n'
+            f'{indent}        android:startX="{bx0 + x1 * w:.3f}" '
+            f'android:startY="{by0 + y1 * h:.3f}"\n'
+            f'{indent}        android:endX="{bx0 + x2 * w:.3f}" '
+            f'android:endY="{by0 + y2 * h:.3f}">\n'
+            f"{items}"
+            f"{indent}    </gradient>\n"
+            f"{indent}</aapt:attr>\n")
 
 
 def convert(src, mono):
     text = Path(src).read_text(encoding="utf-8")
     transform = build_transform(src)
+    gradients = gradient_defs(text)
+    bounds = ink_bounds_108(src, transform) if gradients else None
     inherited = GROUP_FILL.search(text)
     inherited = inherited.group(1) if inherited else None
     shapes = []
     for match in SHAPE.finditer(text):
         kind, attrs = match.group(1), match.group(2)
         fill = "#000000" if mono else check_flat(resolve_fill(attrs, inherited),
-                                                 attrs)
+                                                 attrs, gradients)
         if fill == "none":
             continue
         if fill == "currentColor":
@@ -189,19 +262,32 @@ def convert(src, mono):
     if not shapes:
         raise SystemExit(f"keine Formen in {src}")
 
+    uses_gradient = any(f.startswith("url(") for _, f, _ in shapes)
     head = ('<?xml version="1.0" encoding="utf-8"?>\n'
             "<!-- Erzeugt von scripts/build-brand-assets.sh."
             " Nicht von Hand ändern. -->\n"
             '<vector xmlns:android="http://schemas.android.com/apk/res/android"\n'
-            '    android:width="108dp"\n'
+            + ('    xmlns:aapt="http://schemas.android.com/aapt"\n'
+               if uses_gradient else "")
+            + '    android:width="108dp"\n'
             '    android:height="108dp"\n'
             '    android:viewportWidth="108"\n'
             '    android:viewportHeight="108">\n')
-    body = "".join(
-        f'    <path android:fillColor="{fill}" android:fillType="{fill_type}"\n'
-        f'          android:pathData="{d}"/>\n'
-        for d, fill, fill_type in shapes)
-    return head + body + "</vector>\n"
+    parts = []
+    for d, fill, fill_type in shapes:
+        if fill.startswith("url("):
+            name = fill[fill.index("#") + 1:fill.index(")")]
+            parts.append(
+                f'    <path android:fillType="{fill_type}"\n'
+                f'          android:pathData="{d}">\n'
+                + gradient_block(gradients[name], bounds)
+                + "    </path>\n")
+        else:
+            parts.append(
+                f'    <path android:fillColor="{fill}" '
+                f'android:fillType="{fill_type}"\n'
+                f'          android:pathData="{d}"/>\n')
+    return head + "".join(parts) + "</vector>\n"
 
 
 def main():

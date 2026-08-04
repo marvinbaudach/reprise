@@ -4,7 +4,6 @@
 # Handgezeichnet und damit Quelle sind nur:
 #   data/brand/mark.svg           die Marke, eine Zeichnung für jede Größe
 #   data/brand/mark-mono.svg      ihre einfarbige Fassung, ein Pfad
-#   data/brand/mark-mono-16.svg   dieselbe, auf 16 px gehintet
 #   data/brand/icon-plate.svg     Grundfläche und Verlauf des App-Icons
 #
 # Alles andere entsteht hier. Das ist der Grund: das App-Icon war früher
@@ -62,19 +61,14 @@ done
 
 # GNOME färbt Symbolic-Icons zur Laufzeit um; #222222 ist die Konvention.
 #
-# Zwei Dateien, weil GTK größenabhängig sucht: bei 16 px greift es nach
-# `16x16/apps`, darüber nach `symbolic/apps`. Nachgemessen mit
-# Gtk.IconTheme.lookup_icon — 16 px holt die gehintete Fassung, 24 px und
-# mehr die runde.
+# Eine Datei genügt jetzt. Die vorige Marke brauchte eine eigene, auf 16 px
+# gehintete Fassung, weil ihre Augenringe dort einen Pixel dünn waren. Das
+# Wiederholungszeichen besteht aus Rechtecken auf ganzen Rasterlinien und
+# ist bei 16 px von sich aus scharf.
 python3 $lib/svg_recolour.py $brand/mark-mono.svg \
   "$(dest $icons/symbolic/apps/org.reprise.Reprise-symbolic.svg)" \
   'currentColor=#222222'
 say "symbolic ← mark-mono.svg"
-mkdir -p "$(dirname "$(dest $icons/16x16/apps/org.reprise.Reprise-symbolic.svg)")"
-python3 $lib/svg_recolour.py $brand/mark-mono-16.svg \
-  "$(dest $icons/16x16/apps/org.reprise.Reprise-symbolic.svg)" \
-  'currentColor=#222222'
-say "symbolic 16px ← mark-mono-16.svg"
 
 echo "== Android: adaptives Icon =="
 python3 $lib/svg_to_vectordrawable.py $brand/mark.svg \
@@ -108,12 +102,10 @@ rsvg-convert -w 32 -h 32 "$(dest $brand/favicon.svg)" \
   -o "$(dest $brand/favicon-32.png)"
 say "favicon.svg + favicon-32.png"
 
-echo "== Fassung für dunkle Gründe =="
-# Dieselbe Zeichnung mit angehobenem Körperwert. Als zweite Datei gepflegt
-# liefe sie auseinander; erzeugt kann sie es nicht.
-python3 $lib/svg_recolour.py $brand/mark.svg "$(dest $brand/mark-on-dark.svg)" \
-  --prefix rp-od- '#2B155E=#8262BC'
-say "mark-on-dark.svg ← mark.svg"
+# Keine eigene Fassung für helle oder dunkle Gründe. Gemessen: der Verlauf
+# erreicht gegen Weiß 5,30 und 4,08 und gegen die fast schwarze Platte 3,72
+# und 4,83 — dieselbe Zeichnung trägt auf beidem. Die vorige Marke brauchte
+# eine aufgehellte Zweitfassung, weil sie ein dunkles Violett war.
 
 echo "== Lockups =="
 for mode_name in horizontal vertical; do

@@ -84,9 +84,6 @@ test -f "$tmp_root/root/usr/share/applications/org.reprise.Reprise.desktop"
 test -f "$tmp_root/root/usr/share/metainfo/org.reprise.Reprise.metainfo.xml"
 test -f "$tmp_root/root/usr/share/icons/hicolor/scalable/apps/org.reprise.Reprise.svg"
 test -f "$tmp_root/root/usr/share/icons/hicolor/symbolic/apps/org.reprise.Reprise-symbolic.svg"
-# Die auf 16 px gehintete Fassung muss mitinstalliert werden, sonst greift
-# GTK dort auf die runde zurück — und genau die ist bei 16 px unlesbar.
-test -f "$tmp_root/root/usr/share/icons/hicolor/16x16/apps/org.reprise.Reprise-symbolic.svg"
 while IFS= read -r locale; do
   [[ -z "$locale" || "$locale" == \#* ]] && continue
   test -f "$tmp_root/root/usr/share/locale/$locale/LC_MESSAGES/reprise.mo"

@@ -26,7 +26,9 @@ bad() { printf '  FAIL  %s\n' "$*" >&2; fail=1; }
 # Es gibt nur noch eine Zeichnung. Sie wird bei der kleinsten Größe geprüft,
 # bei der sie ausgeliefert wird — was dort trägt, trägt auch darüber.
 MARK_SIZE=16
-MARK_SHAPES=12
+MARK_SHAPES=4
+# Punkt, Punkt, dünner Balken, dicker Balken.
+MARK_PARTS=4
 
 # Kontrastschwellen. 3,0 ist WCAG 1.4.11 für grafische Objekte — die Grenze,
 # an der eine Fläche sich von ihrem Grund abhebt. Die frühere Fassung
@@ -55,11 +57,17 @@ check_v1() {   # <png> <stage> <svg>
     || bad "V1 Randfüllung $2: ${fw} × ${fh} — mindestens 0.70 in beiden Achsen"
 }
 
+# V2 fragt: zerfällt die Marke bei kleiner Größe, oder wird sie zum Klotz?
+# Wie das zu messen ist, hängt davon ab, woraus sie gebaut ist. Eine Marke
+# mit Aussparungen — die frühere Eule — misst man am Negativraum. Ein
+# Zeichen aus getrennten Strichen hat keine Aussparungen; dort zählt, ob die
+# Striche getrennt bleiben. Zwei Balken, die bei 16 px verschmelzen, sind
+# kein Wiederholungszeichen mehr.
 check_v2() {   # <png> <label>
-  local n; n=$($measure bg-components "$1")
-  [ "$n" -ge 2 ] \
-    && ok "V2 Negativraum $2: $n Hintergrundkomponenten" \
-    || bad "V2 Negativraum $2: $n Komponente — die Aussparung ist zugelaufen"
+  local n; n=$($measure ink-components "$1")
+  [ "$n" -eq "$MARK_PARTS" ] \
+    && ok "V2 Teilflächen $2: $n getrennt" \
+    || bad "V2 Teilflächen $2: $n statt $MARK_PARTS — die Striche sind zusammengelaufen"
 }
 
 check_v3() {   # <svg> <stage> <size>
@@ -220,12 +228,8 @@ check_mark() {   # <svg>
 
 check_silhouette() {   # <svg>
   echo "Einfarbige Fassung bei ${MARK_SIZE}px: $1"
-  # Hier greift der Negativraum-Test: die Augen sind Ringe und der Schnabel
-  # ein Loch, und genau die laufen bei kleiner Größe als erstes zu. An der
-  # farbigen Fassung wäre dieselbe Frage sinnlos — dort sind es Flächen.
   rsvg-convert -w "$MARK_SIZE" -a "$1" -o "$tmp/sil.png"
   check_v2 "$tmp/sil.png" "${MARK_SIZE}px"
-  check_v3 "$1" "Silhouette" "$MARK_SIZE"
 }
 
 check_all() {
@@ -238,32 +242,25 @@ check_all() {
   check_mark "$brand/mark.svg"
   check_silhouette "$brand/mark-mono.svg"
 
-  # Zwei Symbolic-Dateien: GTK holt sich bei 16 px die gehintete aus
-  # `16x16/apps`, ab 24 px die runde aus `symbolic/apps`. Beide müssen die
-  # Hygiene erfüllen, und beide müssen bei ihrer Größe Aussparungen behalten.
-  for symbolic in "$icons/symbolic/apps" "$icons/16x16/apps"; do
-    echo "Symbolic: $symbolic/org.reprise.Reprise-symbolic.svg"
-    check_v7 "$symbolic/org.reprise.Reprise-symbolic.svg"
-    rsvg-convert -w 16 -h 16 "$symbolic/org.reprise.Reprise-symbolic.svg" \
-      -o "$tmp/sym.png"
-    check_v2 "$tmp/sym.png" "16px"
-  done
-  # Die gehintete Fassung darf eine andere Innenzeichnung haben, aber nicht
-  # eine andere Eule sein.
-  check_v8 "$brand/mark-mono.svg" "$brand/mark-mono-16.svg"
+  local symbolic="$icons/symbolic/apps/org.reprise.Reprise-symbolic.svg"
+  echo "Symbolic: $symbolic"
+  check_v7 "$symbolic"
+  rsvg-convert -w 16 -h 16 "$symbolic" -o "$tmp/sym.png"
+  check_v2 "$tmp/sym.png" "16px"
   # Kein Kontrasttest: GNOME färbt Symbolic-Icons zur Laufzeit mit der
   # Vordergrundfarbe des Themes um. Der literale Wert #222222 wird nie
-  # angezeigt. Was hier zählt, ist die Silhouette — und die prüft V2.
+  # angezeigt. Was hier zählt, ist die Form — und die prüft V2.
 
   echo "App-Icon auf der Platte"
   check_v4_plate "$icons/scalable/apps/org.reprise.Reprise.svg" "Marke auf der Platte"
   check_v4_plate "$brand/favicon.svg" "Marke auf der randlosen Platte"
 
-  echo "Fassung für dunkle Gründe"
-  rsvg-convert -w 256 -a "$brand/mark-on-dark.svg" -o "$tmp/on-dark.png"
-  check_v4_ground "$tmp/on-dark.png" 1B082D "mark-on-dark auf #1B082D"
+  echo "Auf fremdem Grund"
+  # Dieselbe Zeichnung muss auf Weiß so gut stehen wie auf ihrer Platte,
+  # sonst braucht die Website eine zweite Fassung — und zwei Fassungen
+  # laufen auseinander.
   rsvg-convert -w 256 -a "$brand/mark.svg" -o "$tmp/on-light.png"
-  check_v4_ground "$tmp/on-light.png" FFFFFF "mark auf Weiß"
+  check_v4_ground "$tmp/on-light.png" FFFFFF "Marke auf Weiß"
 
   echo "Android"
   check_v8 "$brand/mark.svg" "$brand/mark-mono.svg"
