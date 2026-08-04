@@ -384,6 +384,21 @@ mod tests {
         let db_path = directory.path().join("reprise.db");
         let db = reprise_core::db::Db::open_migrated(Some(&db_path)).unwrap();
         reprise_core::library::scanner::scan_folder(&db, &music).unwrap();
+        let rated_track = reprise_core::queries::query_library_text_search(
+            &db,
+            "A Case of You",
+            reprise_core::queries::WindowRange {
+                offset: 0,
+                limit: 1,
+            },
+        )
+        .unwrap()
+        .rows
+        .remove(0);
+        reprise_core::library::stats::set_rating(&db, rated_track.id, 4).unwrap();
+        for played_at in 0..27 {
+            reprise_core::library::stats::record_play(&db, rated_track.id, played_at).unwrap();
+        }
         drop(db);
         let library = MusicLibrary::open(directory.path().to_str().unwrap()).unwrap();
         (directory, library)
@@ -492,6 +507,8 @@ mod tests {
                     artist: "Joni Mitchell".into(),
                     album: "Blue".into(),
                     duration_ms: 1_160,
+                    play_count: 0,
+                    rating: 0,
                 },
                 super::TrackRow {
                     uri: second_uri,
@@ -499,6 +516,8 @@ mod tests {
                     artist: "Joni Mitchell".into(),
                     album: "Blue".into(),
                     duration_ms: 1_160,
+                    play_count: 27,
+                    rating: 4,
                 },
             ]
         );
@@ -530,6 +549,8 @@ mod tests {
                     artist: "Joni Mitchell".into(),
                     album: "Blue".into(),
                     duration_ms: 1_160,
+                    play_count: 27,
+                    rating: 4,
                 },
                 super::TrackRow {
                     uri: want_uri,
@@ -537,9 +558,32 @@ mod tests {
                     artist: "Joni Mitchell".into(),
                     album: "Blue".into(),
                     duration_ms: 1_160,
+                    play_count: 0,
+                    rating: 0,
                 },
             ]
         );
+    }
+
+    #[test]
+    fn track_window_carries_real_rating_and_play_count_without_changing_paging() {
+        let (_directory, library) = browse_library();
+
+        let window = library
+            .search_tracks(
+                "folk".into(),
+                WindowRange {
+                    offset: 0,
+                    limit: 1,
+                },
+            )
+            .unwrap();
+        let row = &window.rows[0];
+
+        assert_eq!(window.total, 2);
+        assert!(window.has_more);
+        assert_eq!(row.rating, 4);
+        assert_eq!(row.play_count, 27);
     }
 
     #[test]

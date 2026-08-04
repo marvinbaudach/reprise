@@ -67,6 +67,9 @@ fun positionReadoutUsesTheDurationDeliveredByTheBridge() {
 
     assertEquals("0:01 / 3:00", state.positionReadout)
     assertEquals(2, state.currentIndex)
+    assertEquals(1_250L, state.positionMs)
+    assertEquals(180_000L, state.durationMs)
+    assertEquals(1_250f / 180_000f, state.progressFraction, 0.000_001f)
 }
 
 @Test
@@ -244,6 +247,8 @@ private fun testTrack() = LibraryTrack(
     artist = "Artist",
     album = "Album",
     durationMs = 1_000,
+    playCount = 27,
+    rating = 4,
 )
 
 private fun <T> completeTestWindow(rows: List<T>) = LibraryWindow(

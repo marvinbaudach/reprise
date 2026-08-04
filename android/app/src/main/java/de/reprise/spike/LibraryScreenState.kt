@@ -73,6 +73,8 @@ internal data class LibraryTrack(
     val artist: String,
     val album: String,
     val durationMs: Long,
+    val playCount: Long,
+    val rating: Int,
 )
 
 internal data class LibraryAlbum(

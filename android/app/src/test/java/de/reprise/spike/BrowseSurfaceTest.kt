@@ -2,7 +2,9 @@ package de.reprise.spike
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import uniffi.reprise_android_ffi.AndroidPlaybackState
 
 class BrowseSurfaceTest {
 @Test
@@ -18,6 +20,69 @@ fun theSameLoadedWindowRequestsItsContinuationOnlyOnce() {
 
     assertEquals(LibraryWindowRange(offset = 500, limit = 200), firstRequest)
     assertNull(window.nextRequest(lastRequestedOffset = firstRequest?.offset))
+}
+
+@Test
+fun redesignedTrackListKeepsOneContinuationAtItsVisibleEnd() {
+    val rows = (1..500).map { rank -> testBrowseTrack("title-$rank") }
+    val window = LibraryWindow(
+        total = 1_824,
+        rows = rows,
+        hasMore = true,
+    )
+
+    val content = trackListContent(window, lastRequestedOffset = null)
+    val repeated = trackListContent(window, lastRequestedOffset = 500)
+
+    assertEquals(501, content.size)
+    assertEquals(TrackListContent.Row(index = 499, track = rows.last()), content[499])
+    assertEquals(
+        TrackListContent.Continuation(LibraryWindowRange(offset = 500, limit = 200)),
+        content.last(),
+    )
+    assertEquals(1, content.count { it is TrackListContent.Continuation })
+    assertEquals(500, repeated.size)
+    assertEquals(0, repeated.count { it is TrackListContent.Continuation })
+}
+
+@Test
+fun libraryFrameUsesTheExactTwoAMetricsAndOnlyBackedDestination() {
+    assertEquals(
+        LibraryFrameMetrics(
+            topAppBarHeightDp = 64,
+            filterChipHeightDp = 32,
+            trackRowHeightDp = 72,
+            trackCoverSizeDp = 56,
+            miniPlayerHeightDp = 72,
+            navigationBarHeightDp = 80,
+        ),
+        libraryFrameMetrics,
+    )
+    assertEquals(listOf(LibraryDestination.LIBRARY), libraryDestinations)
+}
+
+@Test
+fun currentRowKeepsItsTintWhileOnlyPlayingAnimatesTheFourBars() {
+    val rows = listOf(testBrowseTrack("first"), testBrowseTrack("second"))
+    val selection = PlaybackSelection(rows, startIndex = 1)
+    val playing = PlaybackUiState(
+        ready = true,
+        state = AndroidPlaybackState.PLAYING,
+        currentIndex = 1,
+    )
+    val paused = playing.copy(state = AndroidPlaybackState.PAUSED)
+
+    assertEquals(rows[1], selection.currentTrack(playing))
+    assertEquals(
+        TrackPlaybackPresentation(isCurrent = true, animateBars = true),
+        rows[1].playbackPresentation(selection, playing),
+    )
+    assertEquals(
+        TrackPlaybackPresentation(isCurrent = true, animateBars = false),
+        rows[1].playbackPresentation(selection, paused),
+    )
+    assertEquals(false, rows[0].playbackPresentation(selection, playing).isCurrent)
+    assertTrue(rows[1].playbackPresentation(selection, playing).animateBars)
 }
 
 @Test
@@ -122,6 +187,8 @@ private fun testBrowseTrack(title: String) = LibraryTrack(
     artist = "Miles Davis",
     album = "Kind of Blue",
     durationMs = 1_000,
+    playCount = 27,
+    rating = 4,
 )
 
 private fun testAlbum() = LibraryAlbum(
