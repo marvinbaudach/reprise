@@ -131,8 +131,10 @@ pub(super) fn playlist_kind(value: &str) -> Option<PlaylistKind> {
 struct DialogWidgets {
     dialog: adw::Dialog,
     entry: gtk4::SearchEntry,
-    /// `RAD-5`: the three shortcut chips, kept addressable for tests.
-    chip_metal: gtk4::Button,
+    /// `RAD-5`: the shortcut chips, kept addressable for tests. The library
+    /// chip exists even when it is hidden, so `present` can bring it back
+    /// once the library has something to suggest.
+    chip_library: gtk4::Button,
     chip_top_voted: gtk4::Button,
     chip_near_you: gtk4::Button,
     spinner: gtk4::Spinner,
@@ -154,6 +156,11 @@ pub(super) struct RadioAddDialog {
     /// set at all in tests that never call the setter, in which case a
     /// no-location "Near you" click is silently a no-op rather than a panic.
     on_location_settings: RefCell<Option<LocationSettingsCallback>>,
+    /// `RAD-5`: what the library chip currently searches for, refreshed on
+    /// every `present` — the top genre and the stored country both change
+    /// while the dialog object lives on, and a chip that searches for last
+    /// month's taste is worse than no chip.
+    library_suggestion: RefCell<Option<radio_chips::LibrarySuggestion>>,
     /// `NET-3` point 4: the same connectivity seam `RadioView` reads for
     /// `NET-3b`'s Play affordance (shared `Rc`, not a copy) — offline
     /// disables search and skips the ICY probe for a pasted URL.
@@ -258,7 +265,7 @@ impl RadioAddDialog {
             widgets: DialogWidgets {
                 dialog,
                 entry,
-                chip_metal: chips.metal,
+                chip_library: chips.library,
                 chip_top_voted: chips.top_voted,
                 chip_near_you: chips.near_you,
                 spinner,
@@ -273,6 +280,7 @@ impl RadioAddDialog {
             conn,
             on_added: Rc::new(on_added),
             on_location_settings: RefCell::new(None),
+            library_suggestion: RefCell::new(None),
             connectivity,
         });
         {
@@ -301,12 +309,15 @@ impl RadioAddDialog {
         }
         {
             let weak = Rc::downgrade(&this);
-            this.widgets.chip_metal.connect_clicked(move |_| {
-                if let Some(this) = weak.upgrade() {
-                    this.run_chip_search(
-                        &strings::text(strings::RADIO_CHIP_METAL_DE),
-                        radio_chips::metal_in_germany_criteria(),
-                    );
+            this.widgets.chip_library.connect_clicked(move |_| {
+                let Some(this) = weak.upgrade() else {
+                    return;
+                };
+                // The chip is hidden without a suggestion, so this clone is
+                // the only thing a click can act on — never a stale default.
+                let suggestion = this.library_suggestion.borrow().clone();
+                if let Some(suggestion) = suggestion {
+                    this.run_chip_search(&suggestion.label, suggestion.criteria);
                 }
             });
         }
@@ -341,8 +352,26 @@ impl RadioAddDialog {
         *self.on_location_settings.borrow_mut() = Some(Rc::new(callback));
     }
 
+    /// `RAD-5`: recompute the library chip from the library itself, on every
+    /// open rather than once at construction — the dialog object outlives
+    /// both the listening history and the stored location.
+    pub(super) fn refresh_library_chip(&self) {
+        let genre = reprise_core::library::taste::top_genre(&self.conn).unwrap_or_else(|error| {
+            tracing::warn!(%error, "could not read the library's top genre for the radio chip");
+            None
+        });
+        let location = reprise_core::location::app_location(&self.conn).unwrap_or_else(|error| {
+            tracing::warn!(%error, "could not read the stored location for the radio chip");
+            None
+        });
+        let suggestion = radio_chips::library_suggestion(genre, location.as_ref());
+        radio_chips::apply_library_suggestion(&self.widgets.chip_library, suggestion.as_ref());
+        *self.library_suggestion.borrow_mut() = suggestion;
+    }
+
     pub(super) fn present(self: &Rc<Self>, parent: &impl IsA<gtk4::Widget>) {
         self.widgets.entry.set_text("");
+        self.refresh_library_chip();
         self.render(AddDialogState::default());
         // `NET-3` point 4: the reason search is unavailable is visible
         // immediately, before the user types anything.

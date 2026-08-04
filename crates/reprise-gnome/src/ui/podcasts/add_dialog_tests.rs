@@ -19,7 +19,7 @@ fn find_scroller(widget: &gtk4::Widget) -> Option<gtk4::ScrolledWindow> {
 #[ignore = "requires a display; run via xvfb-run"]
 fn src_6_the_foreign_url_hint_appears_while_typing() {
     gtk4::init().unwrap();
-    let surface = build_surface(PodcastKind::Rss, Connectivity::Online);
+    let surface = build_surface(PodcastKind::Rss, Connectivity::Online, None);
 
     surface.entry.set_text("https://www.youtube.com/@example");
     assert_eq!(
@@ -48,7 +48,7 @@ fn src_6_the_foreign_url_hint_appears_while_typing() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn net_3_search_is_disabled_offline_but_a_url_stays_submittable() {
     gtk4::init().unwrap();
-    let surface = build_surface(PodcastKind::Rss, Connectivity::Offline);
+    let surface = build_surface(PodcastKind::Rss, Connectivity::Offline, None);
 
     assert_eq!(
         surface.status.text().as_str(),
@@ -81,7 +81,7 @@ fn net_3_search_is_disabled_offline_but_a_url_stays_submittable() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn src_8_add_dialog_results_scroll_vertically_only() {
     gtk4::init().unwrap();
-    let surface = build_surface(PodcastKind::Rss, Connectivity::Online);
+    let surface = build_surface(PodcastKind::Rss, Connectivity::Online, None);
     let scroller = surface
         .dialog
         .child()
@@ -108,7 +108,7 @@ fn src_8_add_dialog_results_scroll_vertically_only() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn src_3a_add_dialog_has_fixed_cancel_and_primary_actions() {
     gtk4::init().unwrap();
-    let surface = build_surface(PodcastKind::Rss, Connectivity::Online);
+    let surface = build_surface(PodcastKind::Rss, Connectivity::Online, None);
     let cancel = strings::text(strings::PODCAST_CANCEL);
     let search = strings::text(strings::PODCAST_SEARCH);
     let preview = strings::text(strings::PODCAST_PREVIEW);
@@ -121,6 +121,40 @@ fn src_3a_add_dialog_has_fixed_cancel_and_primary_actions() {
     surface.entry.set_text("https://example.test/feed.xml");
     assert_eq!(surface.primary.label().as_deref(), Some(preview.as_str()));
     assert!(surface.primary.is_sensitive());
+}
+
+/// `SRC-15`: the add dialog offers one suggestion drawn from the library —
+/// and only when the library has one. A library that has played nothing with
+/// a genre gets no chip rather than an empty pill.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_15_the_library_chip_appears_only_with_a_genre_to_suggest() {
+    gtk4::init().unwrap();
+
+    let without = build_surface(PodcastKind::Rss, Connectivity::Online, None);
+    assert!(
+        without.library_chip.is_none(),
+        "no played genre must mean no chip at all"
+    );
+
+    let with = build_surface(PodcastKind::Rss, Connectivity::Online, Some("Metal"));
+    let chip = with.library_chip.expect("a played genre must offer a chip");
+    assert_eq!(
+        chip.label().as_deref(),
+        Some(strings::podcast_chip_genre("Metal").as_str())
+    );
+    assert!(chip.has_css_class("pill"));
+
+    let youtube = build_surface(PodcastKind::Youtube, Connectivity::Online, Some("Metal"));
+    assert_eq!(
+        youtube
+            .library_chip
+            .expect("the YouTube page carries the same chip")
+            .label()
+            .as_deref(),
+        Some(strings::youtube_chip_genre("Metal").as_str()),
+        "the YouTube page finds channels, not podcasts, and says so"
+    );
 }
 
 /// `SRC-8`: the dialog keeps one width. Neither a long show title nor a

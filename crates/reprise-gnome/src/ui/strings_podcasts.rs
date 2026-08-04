@@ -349,6 +349,19 @@ pub fn podcast_source_off_title(source: &str) -> String {
     formatted(PODCAST_SOURCE_OFF_TITLE, &[("source", source)])
 }
 
+/// `SRC-15`: the library chip in the add dialog. The genre is the user's
+/// own, so the sentence has to stay translatable rather than being glued
+/// together at the call site.
+pub fn podcast_chip_genre(genre: &str) -> String {
+    formatted(N_!("{genre} podcasts"), &[("genre", genre)])
+}
+
+/// `SRC-15`: the same chip on the YouTube page, where the results are
+/// channels rather than podcasts.
+pub fn youtube_chip_genre(genre: &str) -> String {
+    formatted(N_!("{genre} channels"), &[("genre", genre)])
+}
+
 pub fn podcast_unsubscribe_from(show: &str) -> String {
     formatted(N_!("Unsubscribe from “{show}”"), &[("show", show)])
 }

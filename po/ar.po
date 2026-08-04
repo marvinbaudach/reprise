@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-04 02:33+0200\n"
+"POT-Creation-Date: 2026-08-04 21:11+0200\n"
 "PO-Revision-Date: 2026-07-20 11:38+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Arabic\n"
@@ -3189,42 +3189,52 @@ msgstr[5] ""
 msgid "{visible} of {total} episodes"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:353
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:356
+#, rust-format
+msgid "{genre} podcasts"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:362
+#, rust-format
+msgid "{genre} channels"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:366
 #, rust-format
 msgid "Unsubscribe from “{show}”"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:358
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:371
 #, rust-format
 msgid "Sync downloaded episodes to “{device}”"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:374
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:387
 #, rust-format
 msgid "{shown} of {available} · {downloaded} downloaded · {size}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:389
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:402
 #, rust-format
 msgid "{summary} · {count} selected"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:396
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:409
 #, rust-format
 msgid "Stop syncing episodes to “{device}”"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:402
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:415
 #, rust-format
 msgid "Removed “{title}”"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:406
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:419
 #, rust-format
 msgid "Play next: “{title}”"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:414
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:427
 #, rust-format
 msgid "{downloads} download kept"
 msgid_plural "{downloads} downloads kept"
@@ -3235,17 +3245,17 @@ msgstr[3] ""
 msgstr[4] ""
 msgstr[5] ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:421
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:434
 #, rust-format
 msgid "{shows} shows — {downloads} downloads kept"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:428
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:441
 #, rust-format
 msgid "Import the latest {count} episodes"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:436
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:449
 #, rust-format
 msgid "{count} matching video · audio only"
 msgid_plural "{count} matching videos · audio only"
@@ -3256,7 +3266,7 @@ msgstr[3] ""
 msgstr[4] ""
 msgstr[5] ""
 
-#: crates/reprise-gnome/src/ui/strings_podcasts.rs:445
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:458
 #, rust-format
 msgid "Updated {minutes} min ago"
 msgstr ""
@@ -3407,10 +3417,6 @@ msgstr ""
 msgid "Report plays to the directory"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:73
-msgid "Metal in DE"
-msgstr ""
-
 #: crates/reprise-gnome/src/ui/strings_radio.rs:74
 msgid "Top voted"
 msgstr ""
@@ -3419,7 +3425,12 @@ msgstr ""
 msgid "Near you"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:80
+#: crates/reprise-gnome/src/ui/strings_radio.rs:82
+#, rust-format
+msgid "{genre} in {country}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_radio.rs:90
 #, rust-format
 msgid "{count} station"
 msgid_plural "{count} stations"
@@ -3430,12 +3441,12 @@ msgstr[3] ""
 msgstr[4] ""
 msgstr[5] ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:89
+#: crates/reprise-gnome/src/ui/strings_radio.rs:99
 #, rust-format
 msgid "{visible} of {total} stations"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:100
+#: crates/reprise-gnome/src/ui/strings_radio.rs:110
 #, rust-format
 msgid "{count} match · by votes"
 msgid_plural "{count} matches · by votes"
@@ -3446,12 +3457,12 @@ msgstr[3] ""
 msgstr[4] ""
 msgstr[5] ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:108
+#: crates/reprise-gnome/src/ui/strings_radio.rs:118
 #, rust-format
 msgid "Remove “{name}”"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:113
+#: crates/reprise-gnome/src/ui/strings_radio.rs:123
 #, rust-format
 msgid "Playlist file detected ({kind}) — resolved to {host}"
 msgstr ""

@@ -237,6 +237,65 @@ fn src_8_radio_results_scroll_inside_a_bounded_viewport() {
     );
 }
 
+/// Seeds one played track so the library has a genre to suggest.
+fn seed_played_genre(conn: &Db, genre: &str) {
+    let seeding = crate::test_db::connection(conn);
+    seeding
+        .execute(
+            "INSERT INTO tracks \
+             (id, path, title, artist, album, genre, duration_ms, play_count, added_at) \
+             VALUES (1, '/music/1.flac', 'Track', 'Artist', 'Album', ?1, 300000, 0, 0)",
+            [genre],
+        )
+        .unwrap();
+    seeding
+        .execute(
+            "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (1, 100, 300000)",
+            [],
+        )
+        .unwrap();
+}
+
+/// `RAD-5`: the library chip end to end — hidden while the library has
+/// nothing to suggest, labelled from the played genre and the stored country
+/// once it has, and dispatching that very search when clicked.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn rad_5_the_library_chip_appears_from_the_library_and_searches_what_it_says() {
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let dialog = RadioAddDialog::new(
+        conn.clone(),
+        Rc::new(Cell::new(Connectivity::Online)),
+        || {},
+    );
+
+    dialog.refresh_library_chip();
+    assert!(
+        !dialog.widgets.chip_library.is_visible(),
+        "a library with nothing played must not carry a suggestion chip"
+    );
+
+    seed_played_genre(&conn, "Metal");
+    reprise_core::location::store(&conn, 52.52, 13.405, "Berlin, Deutschland", Some("DE")).unwrap();
+    dialog.refresh_library_chip();
+
+    assert!(dialog.widgets.chip_library.is_visible());
+    assert_eq!(
+        dialog.widgets.chip_library.label().as_deref(),
+        Some("Metal in DE"),
+        "the chip names the genre this library plays and the country it knows"
+    );
+
+    dialog.widgets.chip_library.emit_clicked();
+
+    assert!(
+        matches!(dialog.state.borrow().phase, AddDialogPhase::Searching),
+        "the chip must dispatch the search it advertises"
+    );
+    assert_eq!(dialog.widgets.entry.text().as_str(), "Metal in DE");
+}
+
 /// `SRC-8`: the dialog keeps one width, whatever a search returns. A
 /// station name wider than the dialog must ellipsize instead of raising the
 /// content's *minimum* width — `adw::Dialog`'s `content_width` is only a
