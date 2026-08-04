@@ -29,6 +29,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import uniffi.reprise_android_ffi.AndroidColorScheme
 import uniffi.reprise_android_ffi.AndroidPlaybackState
 
 @RunWith(RobolectricTestRunner::class)
@@ -37,12 +38,20 @@ class ComposeBehaviorTest {
     @get:Rule
     val compose = createAndroidComposeRule<ComponentActivity>()
 
+    /// Nocturne with dynamic colour off: these tests are about behaviour, and a
+    /// wallpaper-seeded palette would make them depend on the host's wallpaper.
+    private val nocturneForTests = MobileThemeSelection(
+        palette = MobileTheme.NOCTURNE,
+        colorScheme = AndroidColorScheme.SYSTEM,
+        dynamicAvailable = false,
+    )
+
     @Test
     fun seekDragOwnsTheHeadUntilReleaseThenSnapshotsResume() {
         val controls = RecordingPlaybackControls()
         var playback by mutableStateOf(testPlayback(positionMs = 20_000))
         compose.setContent {
-            RepriseTheme {
+            RepriseTheme(nocturneForTests, darkPalette = true) {
                 CompositionLocalProvider(LocalPlaybackControls provides controls) {
                     NowPlayingSheet(
                         track = testTrack(rating = 2),
@@ -77,7 +86,7 @@ class ComposeBehaviorTest {
         val failure = "Could not save rating: track is missing."
         val controls = RecordingPlaybackControls(ratingFailure = failure)
         compose.setContent {
-            RepriseTheme {
+            RepriseTheme(nocturneForTests, darkPalette = true) {
                 CompositionLocalProvider(LocalPlaybackControls provides controls) {
                     NowPlayingSheet(
                         track = testTrack(rating = 2),
@@ -118,12 +127,14 @@ class ComposeBehaviorTest {
         val playedIndices = mutableListOf<Int>()
         var playback by mutableStateOf(testPlayback(positionMs = 20_000))
         compose.setContent {
-            RepriseTheme {
+            RepriseTheme(nocturneForTests, darkPalette = true) {
                 BrowseScreen(
                     state = browse,
                     playback = playback,
                     chooseFolder = {},
                     rescan = {},
+                    themeSelection = nocturneForTests,
+                    selectTheme = {},
                     searchTitles = { _, _ -> browse.titles },
                     listAlbums = { browse.albums },
                     listArtists = { browse.artists },
