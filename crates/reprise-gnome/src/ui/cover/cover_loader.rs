@@ -11,7 +11,7 @@ use std::rc::Rc;
 use gtk4::gdk;
 use gtk4::gio;
 use gtk4::glib;
-use reprise_core::cover::{resolve_source, thumbnail, ThumbnailSize};
+use reprise_core::cover::{thumbnail, ThumbnailSize};
 
 use crate::ui::cover_download_worker::{CoverDownloadRuntime, DownloadOutcome, DownloadRequest};
 use crate::ui::track_cover::TrackCover;
@@ -198,8 +198,14 @@ impl CoverLoader {
             // Off the main loop: resolve source + build/hit the disk cache.
             let path_for_worker = path_owned.clone();
             let mut cache_path: Option<std::path::PathBuf> = gio::spawn_blocking(move || {
-                let source = resolve_source(std::path::Path::new(&path_for_worker))?;
-                thumbnail(&source, size).ok()
+                // Asks what this track resolved to last time before opening
+                // it. The thumbnail cache alone cannot save the read: its key
+                // is a hash of the cover bytes, so it can only be consulted
+                // once the file has already been read.
+                reprise_core::cover::thumbnail_for_track(
+                    std::path::Path::new(&path_for_worker),
+                    size,
+                )
             })
             .await
             .ok()
@@ -210,6 +216,27 @@ impl CoverLoader {
                 return;
             }
             if cache_path.is_none() {
+                // Asking the download worker means it reads the file's tags to
+                // work out which album to ask about. If it already came back
+                // empty for this track, and nothing has changed since, that
+                // read would only arrive at the same answer.
+                let known_empty = {
+                    let path = path_owned.clone();
+                    gio::spawn_blocking(move || {
+                        reprise_core::cover::download_marked_unavailable(
+                            std::path::Path::new(&path),
+                            size,
+                        )
+                    })
+                    .await
+                    .unwrap_or(false)
+                };
+                if known_empty {
+                    if current.get() == token {
+                        on_resolved(None);
+                    }
+                    return;
+                }
                 let (response, result) = async_channel::bounded(1);
                 if !this.download.try_request(DownloadRequest {
                     track_path: path_owned.clone(),
@@ -226,6 +253,17 @@ impl CoverLoader {
                     return;
                 }
                 let Ok(DownloadOutcome::Downloaded(downloaded_path)) = result else {
+                    if matches!(result, Ok(DownloadOutcome::Unavailable)) {
+                        let path = path_owned.clone();
+                        gio::spawn_blocking(move || {
+                            reprise_core::cover::remember_download_unavailable(
+                                std::path::Path::new(&path),
+                                size,
+                            );
+                        })
+                        .await
+                        .ok();
+                    }
                     on_resolved(None);
                     return;
                 };
