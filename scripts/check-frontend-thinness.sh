@@ -197,7 +197,7 @@ crates/reprise-gnome/src/ui/concerts/concerts_worker.rs:1
 crates/reprise-gnome/src/ui/concerts/mod.rs:1
 crates/reprise-gnome/src/ui/issues/mod.rs:1
 crates/reprise-gnome/src/ui/lyrics/lyrics_view.rs:4
-crates/reprise-gnome/src/ui/motion.rs:2
+crates/reprise-gnome/src/ui/motion.rs:4
 crates/reprise-gnome/src/ui/playback/external_media.rs:1
 crates/reprise-gnome/src/ui/playback/external_media_state.rs:1
 crates/reprise-gnome/src/ui/playback/session_player.rs:3
