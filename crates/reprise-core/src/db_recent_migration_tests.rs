@@ -1,5 +1,8 @@
 use super::*;
 
+#[path = "db_equalizer_migration_tests.rs"]
+mod equalizer_migration_tests;
+
 #[test]
 fn migrate_v23_listen_history_survives_track_delete() {
     let conn = open(None).unwrap();

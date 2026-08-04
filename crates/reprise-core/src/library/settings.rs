@@ -242,7 +242,7 @@ pub const COMPACT_LAYOUT_KEY: &str = "ui.compact_layout";
 pub const WINDOW_DECORATION_MODE_KEY: &str = "ui.window_decoration_mode";
 pub const COMPACT_ALWAYS_ON_TOP_KEY: &str = "ui.compact_always_on_top";
 pub const EQUALIZER_ENABLED_KEY: &str = "playback.equalizer_enabled";
-pub const EQUALIZER_BANDS_KEY: &str = "playback.equalizer_bands";
+pub const EQUALIZER_CURVE_KEY: &str = crate::db_equalizer::EQUALIZER_CURVE_KEY;
 pub const REPLAY_GAIN_MODE_KEY: &str = "playback.replay_gain_mode";
 pub const GAPLESS_ENABLED_KEY: &str = "playback.gapless_enabled";
 pub const CROSSFADE_SECONDS_KEY: &str = "playback.crossfade_seconds";
@@ -491,30 +491,34 @@ pub(super) fn set_equalizer_enabled_in(
 }
 
 pub(super) fn get_equalizer_bands_in(conn: &Connection) -> [f64; 10] {
-    let value = typed_value(conn, EQUALIZER_BANDS_KEY, "0,0,0,0,0,0,0,0,0,0");
-    let values = value
-        .split(',')
-        .map(str::parse::<f64>)
-        .collect::<Result<Vec<_>, _>>();
-    let Ok(values) = values else {
-        tracing::warn!("invalid equalizer bands; using flat preset");
-        return [0.0; 10];
-    };
-    let Ok(values) = <Vec<f64> as TryInto<[f64; 10]>>::try_into(values) else {
-        tracing::warn!("wrong equalizer band count; using flat preset");
-        return [0.0; 10];
-    };
-    values.map(|value| value.clamp(-12.0, 12.0))
+    get_equalizer_curve_in(conn).project_to_gstreamer()
 }
 
 pub(super) fn set_equalizer_bands_in(
     conn: &Connection,
     values: [f64; 10],
 ) -> Result<(), rusqlite::Error> {
-    let value = values
-        .map(|value| value.clamp(-12.0, 12.0).to_string())
-        .join(",");
-    set_setting_in(conn, EQUALIZER_BANDS_KEY, &value)
+    set_equalizer_curve_in(
+        conn,
+        &crate::equalizer::EqualizerCurve::from_gstreamer_levels(values),
+    )
+}
+
+pub(super) fn get_equalizer_curve_in(conn: &Connection) -> crate::equalizer::EqualizerCurve {
+    let Some(value) = get_setting_in(conn, EQUALIZER_CURVE_KEY).ok().flatten() else {
+        return crate::equalizer::EqualizerCurve::flat_gstreamer();
+    };
+    crate::equalizer::EqualizerCurve::parse(&value).unwrap_or_else(|error| {
+        tracing::warn!(%error, "invalid equalizer curve; using flat preset");
+        crate::equalizer::EqualizerCurve::flat_gstreamer()
+    })
+}
+
+pub(super) fn set_equalizer_curve_in(
+    conn: &Connection,
+    curve: &crate::equalizer::EqualizerCurve,
+) -> Result<(), rusqlite::Error> {
+    set_setting_in(conn, EQUALIZER_CURVE_KEY, &curve.serialize())
 }
 
 pub(super) fn get_replay_gain_mode_in(conn: &Connection) -> ReplayGainMode {
