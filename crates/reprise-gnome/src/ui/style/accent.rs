@@ -47,6 +47,15 @@ pub(in crate::ui) fn current() -> AccentSource {
     CURRENT_SOURCE.with(Cell::get)
 }
 
+/// The effective color for every Rust-side accent reader.
+pub(in crate::ui) fn accent_rgba() -> gtk4::gdk::RGBA {
+    match current() {
+        AccentSource::App => gtk4::gdk::RGBA::parse(APP_ACCENT)
+            .expect("the compile-time Reprise accent must be valid #RRGGBB"),
+        AccentSource::System => libadwaita::StyleManager::default().accent_color_rgba(),
+    }
+}
+
 pub(super) fn set_current(source: AccentSource) {
     CURRENT_SOURCE.with(|current| current.set(source));
 }
@@ -116,5 +125,15 @@ mod tests {
         let ratio = (background + 0.05) / (foreground + 0.05);
         assert!(ratio >= 4.5, "app accent contrast is only {ratio:.2}:1");
         assert!((ratio - 11.164).abs() < 0.001);
+    }
+
+    #[test]
+    fn app_source_rgba_is_the_logo_teal() {
+        let previous = current();
+        set_current(AccentSource::App);
+        let accent = accent_rgba();
+        set_current(previous);
+
+        assert_eq!(accent.to_string(), "rgb(79,219,212)");
     }
 }

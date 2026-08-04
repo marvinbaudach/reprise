@@ -1,7 +1,7 @@
 //! Audio-reactive Bars visual for the Now Playing Visual page.
 //!
-//! All reactive state (eased spectrum bands, impact overlay and accent
-//! palette) and the Bars geometry live in
+//! All reactive state (eased spectrum bands, impact overlay and effective
+//! accent) and the Bars geometry live in
 //! `reprise_core::visuals::VisualEngine` — a portable core the GUI never has
 //! to reimplement. This module owns the inline canvas embedded in the Now
 //! Playing panel. It turns the engine's
@@ -9,9 +9,6 @@
 //! Cairo `DrawingArea` driven by the tick loop and `queue_registered_areas`.
 
 mod render;
-mod song_visualizer_util;
-
-use song_visualizer_util::downscale_cover_rgba;
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -27,11 +24,6 @@ use crate::ui::{motion, strings};
 /// than it is silently clipped — the failure this file's `…fits_in_the_strip…`
 /// test exists to catch.
 const DRAW_HEIGHT: i32 = 208;
-/// Edge length (px) the cover texture is rasterized down to before feeding
-/// the engine's secondary-accent palette extraction — cheap and plenty for a
-/// hue/saturation sample.
-const COVER_PALETTE_EDGE: i32 = 32;
-const COVER_PALETTE_PIXELS: usize = (COVER_PALETTE_EDGE * COVER_PALETTE_EDGE) as usize;
 /// Redraw interval (µs) while no audio is playing — the resting breath runs at
 /// ~30 Hz instead of the full render rate.
 const IDLE_FRAME_INTERVAL_US: i64 = 33_000;
@@ -90,23 +82,6 @@ impl SongVisualizer {
 
     pub(in crate::ui) fn widget(&self) -> &gtk4::Box {
         &self.root
-    }
-
-    /// Feeds the engine's secondary accent: the texture is rasterized down
-    /// to a small RGBA sample and handed to `VisualEngine::set_cover_pixels`,
-    /// or cleared on `None`.
-    pub(in crate::ui) fn set_cover(&self, texture: Option<&gtk4::gdk::Texture>) {
-        match texture {
-            Some(texture) => match downscale_cover_rgba(texture, COVER_PALETTE_EDGE) {
-                Some(rgba) => self
-                    .engine
-                    .borrow_mut()
-                    .set_cover_pixels(&rgba, COVER_PALETTE_PIXELS),
-                None => self.engine.borrow_mut().clear_cover(),
-            },
-            None => self.engine.borrow_mut().clear_cover(),
-        }
-        queue_registered_areas(&self.areas);
     }
 
     /// A new track started: resets the Bars envelope and impact overlay so
@@ -384,8 +359,8 @@ fn drawing_area(engine: &Rc<RefCell<VisualEngine>>) -> gtk4::DrawingArea {
     ))]);
     let engine = engine.clone();
     let renderer = Rc::new(RefCell::new(render::SceneRenderer::default()));
-    area.set_draw_func(move |area, cr, width, height| {
-        let accent = accent_rgb(area);
+    area.set_draw_func(move |_, cr, width, height| {
+        let accent = accent_rgb();
         engine.borrow_mut().set_accent(accent);
         let scene_size = render::capped_scene_size(width, height);
         let scene = engine
@@ -415,11 +390,9 @@ fn queue_registered_areas(areas: &Rc<RefCell<Vec<gtk4::glib::WeakRef<gtk4::Widge
     });
 }
 
-/// Reads `widget`'s resolved CSS `color` (the app accent, via
-/// `@reprise_player_accent`) as an `(r, g, b)` triple the engine can use for
-/// its accent-driven fills.
-fn accent_rgb(widget: &impl IsA<gtk4::Widget>) -> (f32, f32, f32) {
-    let color = widget.color();
+/// Reads the effective accent through the central Rust-side source.
+fn accent_rgb() -> (f32, f32, f32) {
+    let color = crate::ui::style::accent::accent_rgba();
     (color.red(), color.green(), color.blue())
 }
 

@@ -2990,9 +2990,10 @@ STYLE-1).
   internal scene raster area and scales it to the unchanged canvas
   size. When panel height is tight, the visual content stays below the
   tab switcher and scrolls within its own tab, instead of covering the
-  switcher. The labeled canvas takes on the current cover accent via the
-  same global ambient crossfade as the player bar; only without a usable
-  cover color does the theme accent apply.
+  switcher. The labeled canvas takes on the effective accent color from
+  STYLE-8; its secondary hue is always a fixed 42-degree shift of that same
+  color. Changing the app/system source or the live system accent updates the
+  canvas without reading or sampling the cover.
 
 - **AC-24** [active] [gtk] — The reactive light lives on the cover and the
   playhead, nowhere else. The now-playing backdrop, the cover in the panel
