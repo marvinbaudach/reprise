@@ -10,7 +10,8 @@ use crate::playback::{
     AndroidPlayerEvent, AndroidTransitionMode, PlaybackEventBridge,
 };
 use crate::{
-    AndroidPlaybackListener, AndroidPlaybackSession, AndroidPlaybackSnapshot, AndroidRepeatMode,
+    AndroidEqualizerPoint, AndroidEqualizerSnapshot, AndroidPlaybackListener,
+    AndroidPlaybackSession, AndroidPlaybackSnapshot, AndroidRepeatMode,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -21,6 +22,8 @@ enum PortCall {
     TogglePause,
     SeekTo(i64),
     SetVolume(f64),
+    SetEqualizer(bool, Vec<AndroidEqualizerPoint>),
+    EqualizerSnapshot,
     SetAudioEffects,
     SetSpectrumEnabled(bool),
     Stop,
@@ -67,6 +70,20 @@ impl AndroidPlaybackPort for RecordingPort {
     fn set_volume(&self, volume: f64) -> Result<(), AndroidPlaybackError> {
         self.record(PortCall::SetVolume(volume));
         Ok(())
+    }
+
+    fn set_equalizer(
+        &self,
+        enabled: bool,
+        curve: Vec<AndroidEqualizerPoint>,
+    ) -> Result<(), AndroidPlaybackError> {
+        self.record(PortCall::SetEqualizer(enabled, curve));
+        Ok(())
+    }
+
+    fn equalizer_snapshot(&self) -> Result<Option<AndroidEqualizerSnapshot>, AndroidPlaybackError> {
+        self.record(PortCall::EqualizerSnapshot);
+        Ok(None)
     }
 
     fn set_audio_effects(&self) -> Result<(), AndroidPlaybackError> {
@@ -241,6 +258,51 @@ fn tapping_a_track_starts_a_core_queue_at_that_position() {
         fixture.calls.lock().unwrap().as_slice(),
         &[
             PortCall::SetEventBridge,
+            PortCall::SetEqualizer(
+                false,
+                vec![
+                    AndroidEqualizerPoint {
+                        frequency_hz: 29.0,
+                        gain_db: 0.0
+                    },
+                    AndroidEqualizerPoint {
+                        frequency_hz: 59.0,
+                        gain_db: 0.0
+                    },
+                    AndroidEqualizerPoint {
+                        frequency_hz: 119.0,
+                        gain_db: 0.0
+                    },
+                    AndroidEqualizerPoint {
+                        frequency_hz: 237.0,
+                        gain_db: 0.0
+                    },
+                    AndroidEqualizerPoint {
+                        frequency_hz: 474.0,
+                        gain_db: 0.0
+                    },
+                    AndroidEqualizerPoint {
+                        frequency_hz: 947.0,
+                        gain_db: 0.0
+                    },
+                    AndroidEqualizerPoint {
+                        frequency_hz: 1_889.0,
+                        gain_db: 0.0
+                    },
+                    AndroidEqualizerPoint {
+                        frequency_hz: 3_770.0,
+                        gain_db: 0.0
+                    },
+                    AndroidEqualizerPoint {
+                        frequency_hz: 7_523.0,
+                        gain_db: 0.0
+                    },
+                    AndroidEqualizerPoint {
+                        frequency_hz: 15_011.0,
+                        gain_db: 0.0
+                    },
+                ]
+            ),
             PortCall::SetTransition(AndroidTransitionMode::Gapless),
             PortCall::PlayUri("content://provider/second.flac".to_owned()),
             PortCall::CurrentGeneration,
@@ -500,6 +562,167 @@ fn play_count_uses_the_tracks_high_water_position_and_records_only_once() {
     .rows
     .remove(0);
     assert_eq!(updated.play_count, 1);
+}
+
+#[test]
+fn viewing_and_applying_playback_settings_preserves_the_authored_curve_byte_for_byte() {
+    let directory = tempfile::tempdir().unwrap();
+    let library = crate::MusicLibrary::open(
+        directory.path().to_str().unwrap(),
+        directory.path().join("cache").to_str().unwrap(),
+    )
+    .unwrap();
+    let curve = reprise_core::equalizer::EqualizerCurve::new(vec![
+        reprise_core::equalizer::EqualizerPoint {
+            frequency_hz: 80.0,
+            gain_db: -4.5,
+        },
+        reprise_core::equalizer::EqualizerPoint {
+            frequency_hz: 12_000.0,
+            gain_db: 7.25,
+        },
+    ])
+    .unwrap();
+    let stored_before = {
+        let state = library.lock().unwrap();
+        reprise_core::library::settings::set_equalizer_curve(&state.db, &curve).unwrap();
+        reprise_core::library::settings::set_equalizer_enabled(&state.db, true).unwrap();
+        reprise_core::library::settings::get_setting(
+            &state.db,
+            reprise_core::library::settings::EQUALIZER_CURVE_KEY,
+        )
+        .unwrap()
+    };
+
+    let viewed = library.playback_settings().unwrap();
+
+    assert_eq!(viewed.equalizer_curve.len(), 2);
+    assert_eq!(viewed.equalizer_curve[0].frequency_hz, 80.0);
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let session = AndroidPlaybackSession::new(
+        directory.path().to_str().unwrap(),
+        Box::new(RecordingPort {
+            calls: Arc::clone(&calls),
+            bridge: Arc::new(Mutex::new(None)),
+        }),
+        Box::new(RecordingListener {
+            snapshots: Arc::new(Mutex::new(Vec::new())),
+        }),
+    )
+    .unwrap();
+    assert!(calls.lock().unwrap().contains(&PortCall::SetEqualizer(
+        true,
+        viewed.equalizer_curve.clone(),
+    )));
+    drop(session);
+    let stored_after = {
+        let state = library.lock().unwrap();
+        reprise_core::library::settings::get_setting(
+            &state.db,
+            reprise_core::library::settings::EQUALIZER_CURVE_KEY,
+        )
+        .unwrap()
+    };
+    assert_eq!(
+        stored_after, stored_before,
+        "viewing and applying must never write a projection"
+    );
+}
+
+#[test]
+fn phone_curve_replacement_validates_its_numeric_payload_and_changes_only_that_key() {
+    let directory = tempfile::tempdir().unwrap();
+    let library = crate::MusicLibrary::open(
+        directory.path().to_str().unwrap(),
+        directory.path().join("cache").to_str().unwrap(),
+    )
+    .unwrap();
+    {
+        let state = library.lock().unwrap();
+        reprise_core::library::settings::set_setting(&state.db, "ui.theme", "desktop-only-theme")
+            .unwrap();
+    }
+
+    library
+        .replace_equalizer_curve(vec![
+            AndroidEqualizerPoint {
+                frequency_hz: 125.0,
+                gain_db: -3.0,
+            },
+            AndroidEqualizerPoint {
+                frequency_hz: 1_000.0,
+                gain_db: 4.5,
+            },
+        ])
+        .unwrap();
+    let saved = library.playback_settings().unwrap();
+    assert_eq!(saved.equalizer_curve.len(), 2);
+    assert_eq!(saved.equalizer_curve[1].gain_db, 4.5);
+    assert!(library
+        .replace_equalizer_curve(vec![
+            AndroidEqualizerPoint {
+                frequency_hz: 1_000.0,
+                gain_db: f64::NAN,
+            },
+            AndroidEqualizerPoint {
+                frequency_hz: 125.0,
+                gain_db: 0.0,
+            },
+        ])
+        .is_err());
+
+    let state = library.lock().unwrap();
+    assert_eq!(
+        reprise_core::library::settings::get_setting(&state.db, "ui.theme")
+            .unwrap()
+            .as_deref(),
+        Some("desktop-only-theme"),
+    );
+    assert_eq!(
+        reprise_core::library::settings::get_equalizer_curve(&state.db)
+            .points()
+            .len(),
+        2,
+        "a rejected replacement must leave the authored curve intact",
+    );
+}
+
+#[test]
+fn saved_track_transition_drives_android_at_startup_and_after_reload() {
+    let directory = tempfile::tempdir().unwrap();
+    let database_path = directory.path().join("reprise.db");
+    let database = reprise_core::db::Db::open_migrated(Some(&database_path)).unwrap();
+    reprise_core::library::settings::set_gapless_enabled(&database, false).unwrap();
+    drop(database);
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let session = AndroidPlaybackSession::new(
+        directory.path().to_str().unwrap(),
+        Box::new(RecordingPort {
+            calls: Arc::clone(&calls),
+            bridge: Arc::new(Mutex::new(None)),
+        }),
+        Box::new(RecordingListener {
+            snapshots: Arc::new(Mutex::new(Vec::new())),
+        }),
+    )
+    .unwrap();
+    assert!(calls
+        .lock()
+        .unwrap()
+        .contains(&PortCall::SetTransition(AndroidTransitionMode::Off)));
+
+    let library = crate::MusicLibrary::open(
+        directory.path().to_str().unwrap(),
+        directory.path().join("cache").to_str().unwrap(),
+    )
+    .unwrap();
+    library.set_gapless_enabled(true).unwrap();
+    session.reload_playback_settings().unwrap();
+
+    assert_eq!(
+        calls.lock().unwrap().last(),
+        Some(&PortCall::SetTransition(AndroidTransitionMode::Gapless)),
+    );
 }
 
 #[test]

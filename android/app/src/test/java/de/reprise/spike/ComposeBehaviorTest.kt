@@ -138,6 +138,7 @@ class ComposeBehaviorTest {
                 BrowseScreen(
                     state = browse,
                     playback = playback,
+                    playbackSettingsRevision = 0,
                     chooseFolder = {},
                     rescan = {},
                     themeSelection = nocturneForTests,
@@ -150,6 +151,18 @@ class ComposeBehaviorTest {
                     playTracks = { selection, _ ->
                         playedIndices += selection.startIndex
                         playback = playback.copy(currentIndex = selection.startIndex)
+                    },
+                    loadPlaybackSettings = {
+                        PlaybackSettingsUiState(false, true, emptyList())
+                    },
+                    setEqualizerEnabled = { enabled ->
+                        PlaybackSettingsUiState(enabled, true, emptyList())
+                    },
+                    replaceEqualizerCurve = {
+                        PlaybackSettingsUiState(false, true, emptyList())
+                    },
+                    setGaplessEnabled = { enabled ->
+                        PlaybackSettingsUiState(false, enabled, emptyList())
                     },
                 )
             }
@@ -279,6 +292,97 @@ class ComposeBehaviorTest {
         assertFalse(closed)
         collapse.assertIsDisplayed()
         assertEquals(restTop.value, collapse.getUnclippedBoundsInRoot().top.value, 0.5f)
+    }
+
+    @Test
+    fun equalizerEditWarnsBeforeReplacingTheCurveAndViewingWritesNothing() {
+        val replacements = mutableListOf<List<EqualizerCurvePoint>>()
+        compose.setContent {
+            RepriseTheme(nocturneForTests, darkPalette = true) {
+                PlaybackSettingsScreen(
+                    state = PlaybackSettingsUiState(
+                        equalizerEnabled = true,
+                        gaplessEnabled = true,
+                        equalizerBands = listOf(
+                            EqualizerBandUi(125.0, -2.0, -12.0, 12.0),
+                            EqualizerBandUi(1_000.0, 1.0, -12.0, 12.0),
+                        ),
+                    ),
+                    themeSelection = nocturneForTests,
+                    close = {},
+                    setEqualizerEnabled = {},
+                    replaceEqualizerCurve = { replacements += it },
+                    setGaplessEnabled = {},
+                    selectTheme = {},
+                )
+            }
+        }
+
+        assertTrue(replacements.isEmpty())
+        compose.onNodeWithText("Crossfade").assertDoesNotExist()
+        compose.onNodeWithText("ReplayGain").assertDoesNotExist()
+        compose.onNodeWithText("Edit equalizer").performClick()
+        compose.onNodeWithText(
+            "Editing here replaces the saved equalizer curve with this device's bands.",
+        ).assertIsDisplayed()
+        assertTrue(replacements.isEmpty())
+
+        compose.onNodeWithText("Continue").performClick()
+        assertTrue(replacements.isEmpty())
+        compose.onNodeWithContentDescription("125 Hz equalizer band")
+            .performSemanticsAction(SemanticsActions.SetProgress) { setProgress ->
+                setProgress(3f)
+            }
+
+        assertEquals(1, replacements.size)
+        assertEquals(listOf(125.0, 1_000.0), replacements.single().map { it.frequencyHz })
+        assertEquals(3.0, replacements.single().first().gainDb, 0.01)
+    }
+
+    @Test
+    fun overflowRoutesToSettingsAndKeepsThemeChoicesOutOfTheMenu() {
+        val browse = LibraryScreenState.Browse(
+            titles = LibraryWindow.empty(),
+            albums = LibraryWindow.empty(),
+            artists = LibraryWindow.empty(),
+        )
+        compose.setContent {
+            RepriseTheme(nocturneForTests, darkPalette = true) {
+                BrowseScreen(
+                    state = browse,
+                    playback = PlaybackUiState(),
+                    playbackSettingsRevision = 0,
+                    chooseFolder = {},
+                    rescan = {},
+                    themeSelection = nocturneForTests,
+                    selectTheme = {},
+                    searchTitles = { _, _ -> browse.titles },
+                    listAlbums = { browse.albums },
+                    listArtists = { browse.artists },
+                    openAlbum = { error("Album navigation is outside this test") },
+                    listAlbumTracks = { _, _ -> LibraryWindow.empty() },
+                    playTracks = { _, _ -> },
+                    loadPlaybackSettings = {
+                        PlaybackSettingsUiState(false, true, emptyList())
+                    },
+                    setEqualizerEnabled = { enabled ->
+                        PlaybackSettingsUiState(enabled, true, emptyList())
+                    },
+                    replaceEqualizerCurve = {
+                        PlaybackSettingsUiState(false, true, emptyList())
+                    },
+                    setGaplessEnabled = { enabled ->
+                        PlaybackSettingsUiState(false, enabled, emptyList())
+                    },
+                )
+            }
+        }
+
+        compose.onNodeWithContentDescription("Library actions").performClick()
+        compose.onNodeWithText("Nocturne").assertDoesNotExist()
+        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithText("Appearance").assertIsDisplayed()
+        compose.onNodeWithText("Nocturne").assertIsDisplayed()
     }
 
     private fun SemanticsNodeInteraction.progress(): Float =

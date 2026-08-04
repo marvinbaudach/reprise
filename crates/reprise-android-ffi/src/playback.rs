@@ -6,6 +6,12 @@ use reprise_core::playback::{
     StreamGeneration,
 };
 
+use crate::{AndroidEqualizerPoint, AndroidEqualizerSnapshot};
+
+#[cfg(test)]
+#[path = "playback_tests.rs"]
+mod tests;
+
 type EventHandler = dyn Fn(StreamEvent) + Send + Sync + 'static;
 
 /// The playback states Media3 must report back to Core.
@@ -66,6 +72,12 @@ pub trait AndroidPlaybackPort: Send + Sync {
     fn toggle_pause(&self) -> Result<AndroidPlaybackState, AndroidPlaybackError>;
     fn seek_to(&self, position_ms: i64) -> Result<(), AndroidPlaybackError>;
     fn set_volume(&self, volume: f64) -> Result<(), AndroidPlaybackError>;
+    fn set_equalizer(
+        &self,
+        enabled: bool,
+        curve: Vec<AndroidEqualizerPoint>,
+    ) -> Result<(), AndroidPlaybackError>;
+    fn equalizer_snapshot(&self) -> Result<Option<AndroidEqualizerSnapshot>, AndroidPlaybackError>;
     fn set_audio_effects(&self) -> Result<(), AndroidPlaybackError>;
     fn set_spectrum_enabled(&self, enabled: bool) -> Result<(), AndroidPlaybackError>;
     fn stop(&self) -> Result<(), AndroidPlaybackError>;
@@ -87,6 +99,20 @@ impl AndroidPlaybackBackend {
         let bridge = PlaybackEventBridge::new(on_event);
         port.set_event_bridge(bridge).map_err(PlaybackError::from)?;
         Ok(Self { port })
+    }
+
+    pub fn set_equalizer(
+        &self,
+        enabled: bool,
+        curve: Vec<AndroidEqualizerPoint>,
+    ) -> Result<(), AndroidPlaybackError> {
+        self.port.set_equalizer(enabled, curve)
+    }
+
+    pub fn equalizer_snapshot(
+        &self,
+    ) -> Result<Option<AndroidEqualizerSnapshot>, AndroidPlaybackError> {
+        self.port.equalizer_snapshot()
     }
 }
 

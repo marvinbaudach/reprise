@@ -8,6 +8,9 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import java.io.File
+import uniffi.reprise_android_ffi.AndroidEqualizerBand
+import uniffi.reprise_android_ffi.AndroidEqualizerPoint
+import uniffi.reprise_android_ffi.AndroidEqualizerSnapshot
 import uniffi.reprise_android_ffi.AndroidPlaybackException
 import uniffi.reprise_android_ffi.AndroidPlaybackPort
 import uniffi.reprise_android_ffi.AndroidPlaybackState
@@ -21,9 +24,11 @@ private const val POSITION_INTERVAL_MS = 500L
 /** Media3 implementation of the foreign half of Core's PlaybackBackend. */
 internal class Media3PlaybackPort(
     private val player: Player,
+    private val equalizerChanged: () -> Unit,
 ) : AndroidPlaybackPort {
     private val handler = Handler(player.applicationLooper)
     private val dispatch = player.applicationLooper.dispatch(handler)
+    private val deviceEqualizer = DeviceEqualizer(AndroidEqualizerEngineFactory)
     private var eventBridge: PlaybackEventBridgeInterface? = null
     private var generation = 0UL
     private var nextUri: String? = null
@@ -77,10 +82,18 @@ internal class Media3PlaybackPort(
             val detail = error.message ?: error.errorCodeName
             emit(AndroidPlayerEvent.Error("${error.errorCodeName}: $detail"))
         }
+
+        override fun onAudioSessionIdChanged(audioSessionId: Int) {
+            deviceEqualizer.onAudioSessionChanged(audioSessionId)
+            equalizerChanged()
+        }
     }
 
     init {
-        dispatch.call { player.addListener(listener) }
+        dispatch.call {
+            player.addListener(listener)
+            deviceEqualizer.onAudioSessionChanged(player.audioSessionId)
+        }
     }
 
     override fun setEventBridge(bridge: PlaybackEventBridge) = dispatch.call {
@@ -111,6 +124,32 @@ internal class Media3PlaybackPort(
 
     override fun setVolume(volume: Double) = dispatch.call {
         player.volume = volume.coerceIn(0.0, 1.0).toFloat()
+    }
+
+    override fun setEqualizer(enabled: Boolean, curve: List<AndroidEqualizerPoint>) = dispatch.call {
+        deviceEqualizer.configure(
+            enabled = enabled,
+            curve = curve.map { point ->
+                EqualizerCurvePoint(point.frequencyHz, point.gainDb)
+            },
+        )
+        equalizerChanged()
+    }
+
+    override fun equalizerSnapshot(): AndroidEqualizerSnapshot? = dispatch.call {
+        deviceEqualizer.snapshot()?.let { snapshot ->
+            AndroidEqualizerSnapshot(
+                enabled = snapshot.enabled,
+                bands = snapshot.bands.map { band ->
+                    AndroidEqualizerBand(
+                        frequencyHz = band.frequencyHz,
+                        gainDb = band.gainDb,
+                        minimumGainDb = band.minimumGainDb,
+                        maximumGainDb = band.maximumGainDb,
+                    )
+                },
+            )
+        }
     }
 
     override fun setAudioEffects(): Unit = dispatch.call {
@@ -146,6 +185,7 @@ internal class Media3PlaybackPort(
     fun release() = dispatch.call {
         handler.removeCallbacks(positionTicker)
         player.removeListener(listener)
+        deviceEqualizer.release()
         player.release()
         eventBridge = null
     }

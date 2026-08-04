@@ -40,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import de.reprise.spike.ui.theme.RepriseTheme
 import uniffi.reprise_android_ffi.AndroidColorScheme
+import uniffi.reprise_android_ffi.AndroidEqualizerPoint
 import uniffi.reprise_android_ffi.AndroidRepeatMode
 import uniffi.reprise_android_ffi.MusicLibrary
 import uniffi.reprise_android_ffi.ScanProgressListener
@@ -102,6 +103,7 @@ class MainActivity : ComponentActivity() {
     private var playbackService: ReprisePlaybackService? = null
     private var playbackBound = false
     private val playbackState = mutableStateOf(PlaybackUiState())
+    private val playbackSettingsRevision = mutableStateOf(0L)
     private val playbackConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, binder: IBinder) {
             val service = (binder as ReprisePlaybackService.LocalBinder).service()
@@ -109,11 +111,17 @@ class MainActivity : ComponentActivity() {
             service.attachObserver { snapshot ->
                 runOnUiThread { playbackState.value = snapshot.toUiState() }
             }
+            service.attachSettingsObserver {
+                runOnUiThread {
+                    playbackSettingsRevision.value += 1L
+                }
+            }
         }
 
         override fun onServiceDisconnected(name: ComponentName) {
             playbackService = null
             playbackState.value = PlaybackUiState()
+            playbackSettingsRevision.value += 1L
         }
     }
 
@@ -145,6 +153,7 @@ class MainActivity : ComponentActivity() {
                             LibraryScreen(
                                 initialState = initialState,
                                 playback = playbackState.value,
+                                playbackSettingsRevision = playbackSettingsRevision.value,
                                 chooseFolder = ::chooseTree,
                                 rescan = ::rescan,
                                 searchTitles = session::searchTitles,
@@ -153,6 +162,10 @@ class MainActivity : ComponentActivity() {
                                 openAlbum = session::openAlbum,
                                 listAlbumTracks = session::listAlbumTracks,
                                 playTracks = ::playTracks,
+                                loadPlaybackSettings = ::loadPlaybackSettings,
+                                setEqualizerEnabled = ::setEqualizerEnabled,
+                                replaceEqualizerCurve = ::replaceEqualizerCurve,
+                                setGaplessEnabled = ::setGaplessEnabled,
                                 themeSelection = themeSelection,
                                 selectTheme = { palette ->
                                     runCatching {
@@ -203,6 +216,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         playbackService?.detachObserver()
+        playbackService?.detachSettingsObserver()
         playbackService = null
         if (playbackBound) {
             unbindService(playbackConnection)
@@ -285,6 +299,45 @@ class MainActivity : ComponentActivity() {
         onFailure = { error -> "Could not save rating: ${error.detail()}" },
     )
 
+    private fun loadPlaybackSettings(): PlaybackSettingsUiState {
+        val stored = library.playbackSettings()
+        val bands = playbackService?.equalizerSnapshot()?.bands.orEmpty().map { band ->
+            EqualizerBandUi(
+                frequencyHz = band.frequencyHz,
+                gainDb = band.gainDb,
+                minimumGainDb = band.minimumGainDb,
+                maximumGainDb = band.maximumGainDb,
+            )
+        }
+        return PlaybackSettingsUiState(
+            equalizerEnabled = stored.equalizerEnabled,
+            gaplessEnabled = stored.gaplessEnabled,
+            equalizerBands = bands,
+        )
+    }
+
+    private fun setEqualizerEnabled(enabled: Boolean): PlaybackSettingsUiState {
+        library.setEqualizerEnabled(enabled)
+        playbackService?.reloadPlaybackSettings()
+        return loadPlaybackSettings()
+    }
+
+    private fun replaceEqualizerCurve(
+        points: List<EqualizerCurvePoint>,
+    ): PlaybackSettingsUiState {
+        library.replaceEqualizerCurve(
+            points.map { point -> AndroidEqualizerPoint(point.frequencyHz, point.gainDb) },
+        )
+        playbackService?.reloadPlaybackSettings()
+        return loadPlaybackSettings()
+    }
+
+    private fun setGaplessEnabled(enabled: Boolean): PlaybackSettingsUiState {
+        library.setGaplessEnabled(enabled)
+        playbackService?.reloadPlaybackSettings()
+        return loadPlaybackSettings()
+    }
+
     private fun runPlaybackCommand(
         action: String,
         reportError: (String) -> Unit = { message ->
@@ -325,6 +378,7 @@ internal class UiProgress(
 private fun LibraryScreen(
     initialState: LibraryScreenState,
     playback: PlaybackUiState,
+    playbackSettingsRevision: Long,
     chooseFolder: (Uri, (LibraryScreenState) -> Unit) -> Unit,
     rescan: ((LibraryScreenState) -> Unit) -> Unit,
     searchTitles: (String, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
@@ -333,6 +387,10 @@ private fun LibraryScreen(
     openAlbum: (LibraryAlbum) -> AlbumTrackList,
     listAlbumTracks: (LibraryAlbum, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
     playTracks: (PlaybackSelection, (String) -> Unit) -> Unit,
+    loadPlaybackSettings: () -> PlaybackSettingsUiState,
+    setEqualizerEnabled: (Boolean) -> PlaybackSettingsUiState,
+    replaceEqualizerCurve: (List<EqualizerCurvePoint>) -> PlaybackSettingsUiState,
+    setGaplessEnabled: (Boolean) -> PlaybackSettingsUiState,
     themeSelection: MobileThemeSelection,
     selectTheme: (MobileTheme) -> Unit,
 ) {
@@ -357,6 +415,7 @@ private fun LibraryScreen(
         is LibraryScreenState.Browse -> BrowseScreen(
             state = current,
             playback = playback,
+            playbackSettingsRevision = playbackSettingsRevision,
             chooseFolder = { folderPicker.launch(null) },
             rescan = { rescan { state = it } },
             searchTitles = searchTitles,
@@ -365,6 +424,10 @@ private fun LibraryScreen(
             openAlbum = openAlbum,
             listAlbumTracks = listAlbumTracks,
             playTracks = playTracks,
+            loadPlaybackSettings = loadPlaybackSettings,
+            setEqualizerEnabled = setEqualizerEnabled,
+            replaceEqualizerCurve = replaceEqualizerCurve,
+            setGaplessEnabled = setGaplessEnabled,
             themeSelection = themeSelection,
             selectTheme = selectTheme,
         )

@@ -52,8 +52,7 @@ internal fun LibraryTopAppBar(
     toggleSearch: () -> Unit,
     rescan: () -> Unit,
     chooseFolder: () -> Unit,
-    themeSelection: MobileThemeSelection,
-    selectTheme: (MobileTheme) -> Unit,
+    openSettings: () -> Unit,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     Row(
@@ -98,32 +97,14 @@ internal fun LibraryTopAppBar(
                         chooseFolder()
                     },
                 )
-                themeSelection.availableThemes.forEach { theme ->
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                when (theme) {
-                                    MobileTheme.NOCTURNE -> "Nocturne"
-                                    MobileTheme.DYNAMIC -> "Dynamic colour"
-                                },
-                            )
-                        },
-                        leadingIcon = {
-                            MaterialSymbol(
-                                name = if (themeSelection.palette == theme) {
-                                    "check"
-                                } else {
-                                    "palette"
-                                },
-                                contentDescription = "",
-                            )
-                        },
-                        onClick = {
-                            menuExpanded = false
-                            selectTheme(theme)
-                        },
-                    )
-                }
+                DropdownMenuItem(
+                    text = { Text("Settings") },
+                    leadingIcon = { MaterialSymbol("settings", "") },
+                    onClick = {
+                        menuExpanded = false
+                        openSettings()
+                    },
+                )
             }
         }
     }

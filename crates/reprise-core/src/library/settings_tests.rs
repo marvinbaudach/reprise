@@ -333,7 +333,7 @@ fn crossfade_seconds_clamp_and_default() {
 #[test]
 fn equalizer_bands_reject_corrupt_values_and_clamp_writes() {
     let conn = migrated_conn();
-    set_setting(&conn, EQUALIZER_BANDS_KEY, "1,2,broken").unwrap();
+    set_setting(&conn, EQUALIZER_CURVE_KEY, "not a curve").unwrap();
     assert_eq!(get_equalizer_bands(&conn), [0.0; 10]);
     set_equalizer_bands(&conn, [50.0; 10]).unwrap();
     assert_eq!(get_equalizer_bands(&conn), [12.0; 10]);

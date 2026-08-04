@@ -8,6 +8,7 @@ import androidx.media3.common.C
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import uniffi.reprise_android_ffi.AndroidEqualizerSnapshot
 import uniffi.reprise_android_ffi.AndroidPlaybackListener
 import uniffi.reprise_android_ffi.AndroidPlaybackSession
 import uniffi.reprise_android_ffi.AndroidPlaybackSnapshot
@@ -19,6 +20,7 @@ class ReprisePlaybackService : MediaSessionService() {
     private var playbackPort: Media3PlaybackPort? = null
     private var coreSession: AndroidPlaybackSession? = null
     private var observer: ((AndroidPlaybackSnapshot) -> Unit)? = null
+    private var settingsObserver: (() -> Unit)? = null
     private val localBinder = LocalBinder()
 
     private val coreListener = object : AndroidPlaybackListener {
@@ -52,7 +54,7 @@ class ReprisePlaybackService : MediaSessionService() {
             )
             .setHandleAudioBecomingNoisy(true)
             .build()
-        val port = Media3PlaybackPort(player)
+        val port = Media3PlaybackPort(player) { settingsObserver?.invoke() }
         playbackPort = port
         coreSession = AndroidPlaybackSession(filesDir.absolutePath, port, coreListener)
         mediaSession = MediaSession.Builder(
@@ -70,6 +72,7 @@ class ReprisePlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         observer = null
+        settingsObserver = null
         coreSession?.close()
         coreSession = null
         mediaSession?.release()
@@ -86,6 +89,15 @@ class ReprisePlaybackService : MediaSessionService() {
 
     internal fun detachObserver() {
         observer = null
+    }
+
+    internal fun attachSettingsObserver(observer: () -> Unit) {
+        settingsObserver = observer
+        observer()
+    }
+
+    internal fun detachSettingsObserver() {
+        settingsObserver = null
     }
 
     internal fun playTracks(tracks: List<LibraryTrack>, startIndex: Int) {
@@ -119,6 +131,13 @@ class ReprisePlaybackService : MediaSessionService() {
     internal fun setRepeat(mode: AndroidRepeatMode) {
         coreSession().setRepeat(mode)
     }
+
+    internal fun reloadPlaybackSettings() {
+        coreSession().reloadPlaybackSettings()
+    }
+
+    internal fun equalizerSnapshot(): AndroidEqualizerSnapshot? =
+        coreSession().equalizerSnapshot()
 
     private fun coreSession(): AndroidPlaybackSession = checkNotNull(coreSession) {
         "Core playback session is not ready"

@@ -518,7 +518,7 @@ fn v52_names_youtube_subscriptions_from_their_channel_author() {
     assert_eq!(
         conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
             .unwrap(),
-        52
+        SUPPORTED_SCHEMA_VERSION
     );
 }
 

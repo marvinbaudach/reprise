@@ -49,6 +49,8 @@ pub enum LibraryError {
     TreeNotConfigured,
     #[error("track {track_id} is no longer in the library")]
     TrackNotFound { track_id: i64 },
+    #[error("invalid playback setting: {detail}")]
+    InvalidPlaybackSetting { detail: String },
 }
 
 /// The two measured Android artwork slots; both remain lazy per track.

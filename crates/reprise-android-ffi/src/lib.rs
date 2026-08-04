@@ -19,15 +19,13 @@ mod logging;
 mod play_recorder;
 pub mod playback;
 mod playback_session;
+mod playback_settings;
 pub mod source;
 mod source_error;
 mod source_names;
 
 #[cfg(test)]
 mod log_capture;
-#[cfg(test)]
-mod playback_tests;
-
 pub use appearance::*;
 pub use browse::{
     AlbumRow, AlbumWindow, ArtistRow, ArtistWindow, TrackRow, TrackWindow, WindowRange,
@@ -41,6 +39,7 @@ pub use logging::init_logging;
 pub use playback_session::{
     AndroidPlaybackListener, AndroidPlaybackSession, AndroidPlaybackSnapshot, AndroidRepeatMode,
 };
+pub use playback_settings::*;
 
 uniffi::setup_scaffolding!();
 
