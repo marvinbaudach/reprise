@@ -90,6 +90,10 @@ private fun LibraryTrackRow(
                 TrackCover(
                     trackUri = track.uri,
                     size = libraryFrameMetrics.trackCoverSizeDp,
+                    // The row is one clickable node, so anything described
+                    // below it is merged into what the row announces. A cover
+                    // saying "Album artwork" there replaces the song.
+                    decorative = true,
                 )
                 Column(modifier = Modifier.weight(1f)) {
                     Text(

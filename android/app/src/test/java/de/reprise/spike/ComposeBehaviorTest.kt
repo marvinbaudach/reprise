@@ -15,6 +15,7 @@ import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -150,6 +151,14 @@ class ComposeBehaviorTest {
                 )
             }
         }
+
+        // The row is one clickable node too, so everything described below it
+        // is merged into what it announces. The rating and the play count earn
+        // their place there; the cover does not — "Album artwork" would sit
+        // where the song belongs. Pinned exactly, so a cover that starts
+        // describing itself again fails here.
+        compose.onNodeWithText("First Song")
+            .assertContentDescriptionEquals("2 of 5 stars", "27 plays")
 
         compose.onNodeWithText("First Song").performClick()
         // Found by the action it offers rather than by a description of its
