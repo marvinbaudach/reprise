@@ -3,6 +3,8 @@ package de.reprise.spike
 import android.content.Intent
 import android.os.Binder
 import android.os.IBinder
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
@@ -34,7 +36,22 @@ class ReprisePlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
-        val player = ExoPlayer.Builder(this).build()
+        val player = ExoPlayer.Builder(this)
+            // Media3 defaults both of these off, and the device confirms it:
+            // while a track was playing, the system's audio focus stack was
+            // empty. Without focus the app talks over other players, keeps
+            // going through a call, and drowns navigation prompts. Without the
+            // becoming-noisy handler, unplugging headphones keeps the music
+            // playing out loud through the speaker.
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(C.USAGE_MEDIA)
+                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                    .build(),
+                /* handleAudioFocus = */ true,
+            )
+            .setHandleAudioBecomingNoisy(true)
+            .build()
         val port = Media3PlaybackPort(player)
         playbackPort = port
         coreSession = AndroidPlaybackSession(filesDir.absolutePath, port, coreListener)
