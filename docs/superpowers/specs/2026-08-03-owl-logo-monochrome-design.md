@@ -530,3 +530,28 @@ Berührte er die Augenlöcher diagonal, liefe der Hintergrund von den Augen
 durch die Schnabelkerbe nach draußen — die Augen wären dann keine
 geschlossenen Aussparungen mehr. Das ist die Kehrseite der 8er-Nachbarschaft
 aus dem vorigen Nachtrag, und V2 hat es gemeldet.
+
+### V6 erledigt: auf dem Gerät geprüft
+
+Gefahren auf `pixel10xl_api37` (Android 17, Pixel Launcher 907), headless
+gestartet. Ein Ressourcen-APK mit ausschließlich den Launcher-Icons wurde
+gebaut, signiert und installiert; danach die Themed Icons über die
+Launcher-Einstellung `themed_icons` eingeschaltet und der Launcher neu
+gestartet.
+
+Beide Fassungen sitzen richtig:
+
+- **Farbig** — Verlaufsplatte, Marke mittig, die Federohren werden von der
+  Kreismaske **nicht** angeschnitten. Das ist V9 in der Praxis: der gemessene
+  Radius von 32,93 dp hält den 66-dp-Kreis ein.
+- **Themed** — das System färbt die einfarbige Ebene ein. Die Augen bleiben
+  Ringe mit Pupille, der Schnabel ist sichtbar, nichts läuft zu.
+
+Was dieser Test **nicht** abdeckt: er prüft die Icon-Ressourcen, nicht den
+Build der echten Android-App. Sobald die neu gebaut wird, zieht sie dieselben
+Dateien.
+
+Nebenbefund: das angeschlossene echte Pixel läuft mit `bitpit.launcher`.
+Themed Icons sind ein Pixel-Launcher-Feature — auf einem Fremdlauncher wäre
+genau der zu prüfende Pfad nicht ausgeführt worden. Deshalb der Emulator, und
+auf dem Gerät wurde nichts installiert.

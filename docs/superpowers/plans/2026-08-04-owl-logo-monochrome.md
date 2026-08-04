@@ -2,7 +2,7 @@
 slug: owl-logo
 worktree: /home/marvin/Projects/reprise/.worktrees/owl-logo
 branch: feat/owl-logo
-phase: refactored
+phase: verified
 codex_session:
 created: 2026-08-04
 ---
