@@ -317,11 +317,14 @@ impl AndroidPlaybackSession {
         listener: Box<dyn AndroidPlaybackListener>,
     ) -> Result<Self, AndroidPlaybackError> {
         let database_path = Path::new(&app_private_directory).join(crate::DATABASE_FILE_NAME);
-        reprise_core::db::Db::open_migrated(Some(&database_path)).map_err(|error| {
-            AndroidPlaybackError::Backend {
-                detail: format!("could not open playback statistics database: {error}"),
-            }
-        })?;
+        let database =
+            reprise_core::db::Db::open_migrated(Some(&database_path)).map_err(|error| {
+                AndroidPlaybackError::Backend {
+                    detail: format!("could not open playback statistics database: {error}"),
+                }
+            })?;
+        let playback_settings = crate::AndroidPlaybackSettings::load(&database);
+        drop(database);
         let inner = Arc::new(SessionInner {
             state: Mutex::new(SessionState::new()),
             backend: OnceLock::new(),
@@ -345,6 +348,10 @@ impl AndroidPlaybackSession {
                 detail: "playback backend was initialized twice".to_owned(),
             });
         }
+        inner.backend()?.set_equalizer(
+            playback_settings.equalizer_enabled,
+            playback_settings.equalizer_curve,
+        )?;
         inner.backend()?.set_transition(TrackTransition::Gapless, 0);
         Ok(Self { inner })
     }
@@ -441,6 +448,12 @@ impl AndroidPlaybackSession {
 
     pub fn snapshot(&self) -> Result<AndroidPlaybackSnapshot, AndroidPlaybackError> {
         Ok(self.inner.lock()?.snapshot.clone())
+    }
+
+    pub fn equalizer_snapshot(
+        &self,
+    ) -> Result<Option<crate::AndroidEqualizerSnapshot>, AndroidPlaybackError> {
+        self.inner.backend()?.equalizer_snapshot()
     }
 }
 
