@@ -1,6 +1,6 @@
 //! Typed Android playback settings over Core's shared persistence.
 
-use reprise_core::equalizer::{EqualizerCurve, EqualizerPoint};
+use reprise_core::equalizer::{EqualizerBand, EqualizerCurve, EqualizerPoint};
 use reprise_core::library::settings;
 
 use crate::{LibraryError, MusicLibrary};
@@ -15,6 +15,15 @@ pub struct AndroidEqualizerPoint {
 pub struct AndroidEqualizerBand {
     pub frequency_hz: f64,
     pub gain_db: f64,
+    pub minimum_gain_db: f64,
+    pub maximum_gain_db: f64,
+}
+
+/// What one device says its own equalizer can do at one band: where it sits and
+/// how far it moves. The input side of [`project_equalizer_curve`].
+#[derive(Clone, Copy, Debug, PartialEq, uniffi::Record)]
+pub struct AndroidEqualizerBandCapability {
+    pub frequency_hz: f64,
     pub minimum_gain_db: f64,
     pub maximum_gain_db: f64,
 }
@@ -83,9 +92,7 @@ impl MusicLibrary {
         points: Vec<AndroidEqualizerPoint>,
     ) -> Result<(), LibraryError> {
         let curve = EqualizerCurve::new(points.into_iter().map(EqualizerPoint::from).collect())
-            .map_err(|error| LibraryError::InvalidPlaybackSetting {
-                detail: error.to_string(),
-            })?;
+            .map_err(|error| invalid_playback_setting(&error))?;
         let state = self.lock()?;
         settings::set_equalizer_curve(&state.db, &curve).map_err(|error| database_error(&error))
     }
@@ -96,8 +103,55 @@ impl MusicLibrary {
     }
 }
 
+/// Samples an authored curve at one device's band centres and clamps each value
+/// to what that band can actually reach.
+///
+/// The Android engine used to carry its own copy of this arithmetic in Kotlin,
+/// which meant the carefully tested Rust version guaranteed nothing about what a
+/// real phone rendered. One decision, one implementation, one set of tests: the
+/// device contributes its capabilities, the core does the maths.
+#[uniffi::export]
+pub fn project_equalizer_curve(
+    curve: Vec<AndroidEqualizerPoint>,
+    bands: Vec<AndroidEqualizerBandCapability>,
+) -> Result<Vec<AndroidEqualizerBand>, LibraryError> {
+    let curve = EqualizerCurve::new(curve.into_iter().map(EqualizerPoint::from).collect())
+        .map_err(|error| invalid_playback_setting(&error))?;
+    let capabilities = bands
+        .iter()
+        .map(|band| EqualizerBand {
+            frequency_hz: band.frequency_hz,
+            min_gain_db: band.minimum_gain_db,
+            max_gain_db: band.maximum_gain_db,
+        })
+        .collect::<Vec<_>>();
+    let projection = curve
+        .project(&capabilities)
+        .map_err(|error| invalid_playback_setting(&error))?;
+    Ok(bands
+        .into_iter()
+        .zip(projection.band_levels_db)
+        .map(|(band, gain_db)| AndroidEqualizerBand {
+            frequency_hz: band.frequency_hz,
+            gain_db,
+            minimum_gain_db: band.minimum_gain_db,
+            maximum_gain_db: band.maximum_gain_db,
+        })
+        .collect())
+}
+
+fn invalid_playback_setting(error: &impl ToString) -> LibraryError {
+    LibraryError::InvalidPlaybackSetting {
+        detail: error.to_string(),
+    }
+}
+
 fn database_error(error: &impl ToString) -> LibraryError {
     LibraryError::Database {
         detail: error.to_string(),
     }
 }
+
+#[cfg(test)]
+#[path = "playback_settings_tests.rs"]
+mod tests;

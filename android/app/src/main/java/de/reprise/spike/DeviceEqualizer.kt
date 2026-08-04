@@ -1,13 +1,37 @@
 package de.reprise.spike
 
 import android.media.audiofx.Equalizer
-import kotlin.math.ln
 import kotlin.math.roundToInt
 
 internal data class EqualizerCurvePoint(
     val frequencyHz: Double,
     val gainDb: Double,
 )
+
+/** What one of this device's bands sits at, and how far it can move. */
+internal data class DeviceEqualizerBandCapability(
+    val frequencyHz: Double,
+    val minimumGainDb: Double,
+    val maximumGainDb: Double,
+)
+
+/**
+ * Samples an authored curve at this device's band centres.
+ *
+ * Deliberately not implemented here. Kotlin used to carry its own copy of that
+ * arithmetic beside the tested one in `reprise-core`, so the version with the
+ * tests guaranteed nothing about what a real phone rendered. The only
+ * implementation now lives in the core, behind
+ * `uniffi.reprise_android_ffi.projectEqualizerCurve`; this seam exists so the
+ * JVM tests can drive the wiring without loading the native library.
+ */
+internal fun interface EqualizerCurveProjector {
+    /** Gains in dB, one per band, in the order the bands were given. */
+    fun project(
+        curve: List<EqualizerCurvePoint>,
+        bands: List<DeviceEqualizerBandCapability>,
+    ): List<Double>
+}
 
 internal data class DeviceEqualizerBand(
     val frequencyHz: Double,
@@ -40,6 +64,7 @@ internal interface EqualizerEngine {
 /** Owns the Equalizer effect for the current Media3 audio session. */
 internal class DeviceEqualizer(
     private val factory: EqualizerEngineFactory,
+    private val projector: EqualizerCurveProjector,
 ) {
     private var engine: EqualizerEngine? = null
     private var enabled = false
@@ -47,7 +72,6 @@ internal class DeviceEqualizer(
     private var currentSnapshot: DeviceEqualizerSnapshot? = null
 
     fun configure(enabled: Boolean, curve: List<EqualizerCurvePoint>) {
-        requireValidCurve(curve)
         this.enabled = enabled
         this.curve = curve.toList()
         engine?.let(::applySafely)
@@ -77,18 +101,30 @@ internal class DeviceEqualizer(
 
     private fun applyTo(target: EqualizerEngine) {
         val levelRange = target.levelRangeMilliBel
-        val bands = (0 until target.numberOfBands).map { band ->
-            val frequencyHz = target.centerFrequencyMilliHz(band).toDouble() / MILLIHERTZ_PER_HERTZ
-            val projectedGainDb = projectCurve(frequencyHz, curve)
-            val levelMilliBel = (projectedGainDb * MILLIBEL_PER_DECIBEL)
+        val capabilities = (0 until target.numberOfBands).map { band ->
+            DeviceEqualizerBandCapability(
+                frequencyHz = target.centerFrequencyMilliHz(band).toDouble() / MILLIHERTZ_PER_HERTZ,
+                minimumGainDb = levelRange.first / MILLIBEL_PER_DECIBEL,
+                maximumGainDb = levelRange.last / MILLIBEL_PER_DECIBEL,
+            )
+        }
+        val gainsDb = projector.project(curve, capabilities)
+        require(gainsDb.size == capabilities.size) {
+            "the projection answered ${gainsDb.size} gains for ${capabilities.size} bands"
+        }
+        // Only the device's own representation is decided here: whole millibel,
+        // inside the integer range its API accepts. Rounding can land a band one
+        // step outside a range the projection already respected.
+        val bands = capabilities.mapIndexed { band, capability ->
+            val levelMilliBel = (gainsDb[band] * MILLIBEL_PER_DECIBEL)
                 .roundToInt()
                 .coerceIn(levelRange)
             target.setBandLevelMilliBel(band, levelMilliBel)
             DeviceEqualizerBand(
-                frequencyHz = frequencyHz,
+                frequencyHz = capability.frequencyHz,
                 gainDb = levelMilliBel / MILLIBEL_PER_DECIBEL,
-                minimumGainDb = levelRange.first / MILLIBEL_PER_DECIBEL,
-                maximumGainDb = levelRange.last / MILLIBEL_PER_DECIBEL,
+                minimumGainDb = capability.minimumGainDb,
+                maximumGainDb = capability.maximumGainDb,
             )
         }
         target.enabled = enabled
@@ -134,31 +170,6 @@ private class AndroidEqualizerEngine(
     }
 
     override fun release() = equalizer.release()
-}
-
-private fun requireValidCurve(curve: List<EqualizerCurvePoint>) {
-    require(curve.isNotEmpty()) { "equalizer curve must contain at least one point" }
-    var previousFrequency = 0.0
-    curve.forEach { point ->
-        require(point.frequencyHz.isFinite() && point.frequencyHz > previousFrequency) {
-            "equalizer curve frequencies must be finite, positive, and strictly increasing"
-        }
-        require(point.gainDb.isFinite()) { "equalizer curve gains must be finite" }
-        previousFrequency = point.frequencyHz
-    }
-}
-
-private fun projectCurve(frequencyHz: Double, curve: List<EqualizerCurvePoint>): Double {
-    val upperIndex = curve.indexOfFirst { it.frequencyHz >= frequencyHz }
-    if (upperIndex <= 0) {
-        return if (upperIndex == 0) curve[0].gainDb else curve.last().gainDb
-    }
-
-    val lower = curve[upperIndex - 1]
-    val upper = curve[upperIndex]
-    val fraction = (ln(frequencyHz) - ln(lower.frequencyHz)) /
-        (ln(upper.frequencyHz) - ln(lower.frequencyHz))
-    return lower.gainDb + fraction * (upper.gainDb - lower.gainDb)
 }
 
 private const val AUDIO_SESSION_ID_UNSET = 0

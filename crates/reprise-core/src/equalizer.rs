@@ -20,9 +20,34 @@ pub struct EqualizerPoint {
     pub gain_db: f64,
 }
 
+/// An ordered, validated curve.
+///
+/// Deserialization is routed through [`EqualizerCurve::new`] by
+/// `#[serde(try_from)]`, so the invariants below are structural rather than a
+/// convention every reader has to remember. A derived `Deserialize` would write
+/// straight into the private field, and `{"points":[]}` would then be accepted
+/// and panic later inside [`EqualizerCurve::project_to_gstreamer`] — the type is
+/// `pub` in a `pub` module, and the whole premise of this design is that a
+/// stored curve is always a valid one.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "EqualizerCurveWire")]
 pub struct EqualizerCurve {
     points: Vec<EqualizerPoint>,
+}
+
+/// The literal serialized shape, and the only door into [`EqualizerCurve`] that
+/// serde knows about.
+#[derive(Deserialize)]
+struct EqualizerCurveWire {
+    points: Vec<EqualizerPoint>,
+}
+
+impl TryFrom<EqualizerCurveWire> for EqualizerCurve {
+    type Error = EqualizerCurveError;
+
+    fn try_from(wire: EqualizerCurveWire) -> Result<Self, Self::Error> {
+        Self::new(wire.points)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -32,10 +57,20 @@ pub struct EqualizerBand {
     pub max_gain_db: f64,
 }
 
+/// A curve seen through one backend's bands. Read, never stored: writing one
+/// back would make a picture of the truth into the truth.
 #[derive(Clone, Debug, PartialEq)]
 pub struct EqualizerProjection {
     pub band_levels_db: Vec<f64>,
+    /// The bands land on the authored points, so nothing was interpolated.
+    ///
+    /// Deliberately kept though no caller reads it yet: it and [`Self::clipped`]
+    /// are how the decided contract — "a non-exact or clipped projection must
+    /// never overwrite the authored curve" — is stated in code. Today that rule
+    /// is kept structurally instead, by no display path ever writing, so these
+    /// two are the record of *why*, not a switch anything flips.
     pub exact: bool,
+    /// At least one band could not reach the authored gain and was clamped.
     pub clipped: bool,
 }
 
@@ -53,8 +88,8 @@ pub enum EqualizerCurveError {
     GainOutOfRange { index: usize },
     #[error("equalizer frequencies must be strictly increasing at point {index}")]
     FrequenciesNotIncreasing { index: usize },
-    #[error("the stored equalizer curve is malformed")]
-    Malformed,
+    #[error("the stored equalizer curve is malformed: {detail}")]
+    Malformed { detail: String },
 }
 
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
@@ -114,6 +149,20 @@ impl EqualizerCurve {
         &self.points
     }
 
+    /// True when the curve's points *are* GStreamer's ten centres.
+    ///
+    /// The desktop's ten sliders cannot express anything else, so a ten-band
+    /// write over a curve that fails this predicate replaces authored points
+    /// with projections of them. See `settings::set_equalizer_bands_in`.
+    pub fn is_gstreamer_ten_band(&self) -> bool {
+        self.points.len() == GSTREAMER_EQUALIZER_CENTRES_HZ.len()
+            && self
+                .points
+                .iter()
+                .zip(GSTREAMER_EQUALIZER_CENTRES_HZ)
+                .all(|(point, centre_hz)| point.frequency_hz == centre_hz)
+    }
+
     pub fn project(
         &self,
         bands: &[EqualizerBand],
@@ -158,10 +207,12 @@ impl EqualizerCurve {
         serde_json::to_string(self).expect("validated finite points serialize as JSON")
     }
 
+    /// Reads a stored curve. Validation lives in `Deserialize` now, so this no
+    /// longer re-checks anything — it only names the failure for the log.
     pub(crate) fn parse(value: &str) -> Result<Self, EqualizerCurveError> {
-        let decoded =
-            serde_json::from_str::<Self>(value).map_err(|_| EqualizerCurveError::Malformed)?;
-        Self::new(decoded.points)
+        serde_json::from_str::<Self>(value).map_err(|error| EqualizerCurveError::Malformed {
+            detail: error.to_string(),
+        })
     }
 
     fn sample(&self, frequency_hz: f64) -> f64 {
@@ -261,5 +312,70 @@ mod tests {
             ]),
             Err(EqualizerCurveError::FrequenciesNotIncreasing { .. })
         ));
+    }
+
+    /// The invariants have to be structural, not a convention `parse` remembers.
+    /// Before `#[serde(try_from)]`, `Deserialize` wrote straight into the
+    /// private field: this payload was *accepted*, and `project_to_gstreamer`
+    /// then panicked with "index out of bounds, len is 0" on the first sample.
+    /// Removing the attribute turns this test red.
+    #[test]
+    fn deserialization_cannot_smuggle_a_curve_past_the_invariants() {
+        let empty = serde_json::from_str::<EqualizerCurve>(r#"{"points":[]}"#).unwrap_err();
+        assert!(
+            empty.to_string().contains("at least one point"),
+            "an empty curve must be rejected by name, got: {empty}",
+        );
+
+        let unordered = serde_json::from_str::<EqualizerCurve>(
+            r#"{"points":[{"frequency_hz":100.0,"gain_db":0.0},
+                          {"frequency_hz":100.0,"gain_db":1.0}]}"#,
+        )
+        .unwrap_err();
+        assert!(
+            unordered.to_string().contains("strictly increasing"),
+            "an unordered curve must be rejected by name, got: {unordered}",
+        );
+
+        assert!(
+            serde_json::from_str::<EqualizerCurve>(
+                r#"{"points":[{"frequency_hz":0.0,"gain_db":0.0}]}"#
+            )
+            .is_err(),
+            "a zero frequency is outside the range the sampler assumes",
+        );
+
+        // And the door still opens for a curve that is actually valid.
+        let curve = EqualizerCurve::from_gstreamer_levels([1.5; 10]);
+        assert_eq!(EqualizerCurve::parse(&curve.serialize()).unwrap(), curve);
+    }
+
+    #[test]
+    fn only_gstreamers_own_ten_centres_count_as_a_ten_band_curve() {
+        assert!(EqualizerCurve::flat_gstreamer().is_gstreamer_ten_band());
+        // A phone's five bands: same kind of value, a different authored shape.
+        let phone = EqualizerCurve::new(
+            [60.0, 230.0, 910.0, 3_600.0, 14_000.0]
+                .into_iter()
+                .map(|frequency_hz| EqualizerPoint {
+                    frequency_hz,
+                    gain_db: 2.0,
+                })
+                .collect(),
+        )
+        .unwrap();
+        assert!(!phone.is_gstreamer_ten_band());
+        // Ten points, but not at the centres the desktop's sliders mean.
+        let shifted = EqualizerCurve::new(
+            GSTREAMER_EQUALIZER_CENTRES_HZ
+                .into_iter()
+                .map(|frequency_hz| EqualizerPoint {
+                    frequency_hz: frequency_hz + 1.0,
+                    gain_db: 0.0,
+                })
+                .collect(),
+        )
+        .unwrap();
+        assert!(!shifted.is_gstreamer_ten_band());
     }
 }

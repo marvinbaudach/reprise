@@ -490,14 +490,40 @@ pub(super) fn set_equalizer_enabled_in(
     set_bool_in(conn, EQUALIZER_ENABLED_KEY, value)
 }
 
+/// The ten-band *picture* of the stored curve, for backends whose equalizer is
+/// GStreamer's fixed ten centres. Never persisted: see
+/// [`set_equalizer_bands_in`].
 pub(super) fn get_equalizer_bands_in(conn: &Connection) -> [f64; 10] {
     get_equalizer_curve_in(conn).project_to_gstreamer()
 }
 
+/// Replaces the whole curve with ten values at GStreamer's centres.
+///
+/// The write is accepted even when the stored curve was authored somewhere
+/// else — refusing it would leave the desktop equalizer looking alive and
+/// doing nothing, which is a worse failure than the loss it would prevent. But
+/// it is no longer *silent*: a ten-slider surface can only express those ten
+/// centres, so when the stored curve is some other shape (a phone's five
+/// bands, say, carried over in a copied library) nine of the ten values being
+/// written back are projections of it rather than authored points, and the
+/// authored ones do not survive. That is a decision on the record here, not an
+/// accident in the caller.
+///
+/// A real answer needs the editing surface to say what it is about to replace,
+/// and `crates/reprise-gnome` may not change in this package — see the M6
+/// residual note in `docs/superpowers/plans/2026-08-04-mobile-m3.md`.
 pub(super) fn set_equalizer_bands_in(
     conn: &Connection,
     values: [f64; 10],
 ) -> Result<(), rusqlite::Error> {
+    let stored = get_equalizer_curve_in(conn);
+    if !stored.is_gstreamer_ten_band() {
+        tracing::warn!(
+            stored_points = stored.points().len(),
+            "a ten-band equalizer edit is replacing a curve authored on another backend; \
+             its points are lost and the written values are a projection of it"
+        );
+    }
     set_equalizer_curve_in(
         conn,
         &crate::equalizer::EqualizerCurve::from_gstreamer_levels(values),

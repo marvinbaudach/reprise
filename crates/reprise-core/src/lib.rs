@@ -89,6 +89,9 @@ pub mod waveform;
 mod writeback_publish;
 
 #[cfg(test)]
+mod log_capture;
+
+#[cfg(test)]
 mod artist_news_candidates_tests;
 #[cfg(test)]
 mod artist_news_parsing_tests;

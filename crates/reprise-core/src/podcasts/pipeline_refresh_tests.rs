@@ -584,52 +584,7 @@ impl FeedFetcher for LeakingFeed {
     }
 }
 
-/// A minimal `tracing::Subscriber` that records every event's fields as
-/// plain text, so a test can assert on what a real log line would have
-/// contained without pulling in `tracing-subscriber`.
-#[derive(Clone, Default)]
-struct CapturedLogs(std::sync::Arc<std::sync::Mutex<Vec<String>>>);
-
-impl CapturedLogs {
-    fn joined(&self) -> String {
-        self.0.lock().unwrap().join("\n")
-    }
-}
-
-struct FieldCollector(String);
-
-impl tracing::field::Visit for FieldCollector {
-    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
-        use std::fmt::Write as _;
-        let _ = write!(self.0, " {}={:?}", field.name(), value);
-    }
-}
-
-struct LogCapture(CapturedLogs);
-
-impl tracing::Subscriber for LogCapture {
-    fn enabled(&self, _metadata: &tracing::Metadata<'_>) -> bool {
-        true
-    }
-
-    fn new_span(&self, _span: &tracing::span::Attributes<'_>) -> tracing::span::Id {
-        tracing::span::Id::from_u64(1)
-    }
-
-    fn record(&self, _span: &tracing::span::Id, _values: &tracing::span::Record<'_>) {}
-
-    fn record_follows_from(&self, _span: &tracing::span::Id, _follows: &tracing::span::Id) {}
-
-    fn event(&self, event: &tracing::Event<'_>) {
-        let mut collector = FieldCollector(event.metadata().name().to_owned());
-        event.record(&mut collector);
-        self.0 .0.lock().unwrap().push(collector.0);
-    }
-
-    fn enter(&self, _span: &tracing::span::Id) {}
-
-    fn exit(&self, _span: &tracing::span::Id) {}
-}
+use crate::log_capture::{CapturedLogs, LogCapture};
 
 /// `POD-13`: the redaction this rule promises — feed `download_episode` a
 /// provider error carrying a signed URL, a query string, a credential and
