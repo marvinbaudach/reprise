@@ -17,8 +17,8 @@ use libadwaita::prelude::AnimationExt;
 use super::waveform_primitives::BAR_GAP;
 use super::waveform_primitives::{
     bar_played, bar_slot_width, fraction_at, interpolation_step, keyboard_seek_target,
-    resolve_bar_count, rounded_bar, update_accessible_value, BAR_RADIUS, MINI_BAR_COUNT,
-    MINI_BAR_GAP, MINI_BAR_RADIUS,
+    resolve_bar_count, rounded_bar, should_redraw, update_accessible_value, RedrawSnapshot,
+    BAR_RADIUS, MINI_BAR_COUNT, MINI_BAR_GAP, MINI_BAR_RADIUS,
 };
 use super::waveform_shape::{shape_display_peaks, DisplayBar, SILENCE_DOT_HEIGHT};
 use crate::ui::motion;
@@ -115,6 +115,15 @@ struct State {
     crossfade_start_us: i64,
     head_colour_target: Option<(f64, f64, f64)>,
     head_colour: Option<(f64, f64, f64)>,
+    mask_surface: Option<gtk4::cairo::ImageSurface>,
+    colour_surface: Option<gtk4::cairo::ImageSurface>,
+    surface_key: Option<waveform_surface::SurfaceKey>,
+    last_drawn_head_x: Option<f64>,
+    last_drawn_colour: Option<(f64, f64, f64)>,
+    last_drawn_hover_fraction: Option<f64>,
+    last_drawn_drag_fraction: Option<f64>,
+    last_drawn_pressure: f64,
+    last_drawn_swell: f64,
     // Pause desaturation animation.
     desaturation_progress: f64, // 0.0 = full chroma, 1.0 = paused chroma
     #[allow(dead_code)] // Consumed by the PlayerBar/Compact wiring in MOT-5 Phase B.
@@ -239,6 +248,15 @@ impl WaveformSeek {
             crossfade_start_us: 0,
             head_colour_target: None,
             head_colour: None,
+            mask_surface: None,
+            colour_surface: None,
+            surface_key: None,
+            last_drawn_head_x: None,
+            last_drawn_colour: None,
+            last_drawn_hover_fraction: None,
+            last_drawn_drag_fraction: None,
+            last_drawn_pressure: 0.0,
+            last_drawn_swell: 0.0,
             desaturation_progress: 0.0,
             desaturation_target: 0.0,
             bass_pressure: 0.0,
@@ -436,6 +454,7 @@ impl WaveformSeek {
         s.raw_peaks = peaks;
         s.display_peaks.clear();
         s.shaped_centroid.clear();
+        waveform_surface::invalidate(&mut s);
         if !animate {
             s.fraction = s.target_fraction;
             s.fraction_velocity = 0.0;
@@ -665,6 +684,30 @@ impl WaveformSeek {
                 _ => target,
             });
 
+            let animation_running = s.build_progress < 1.0
+                || s.crossfade_progress < 1.0
+                || (s.desaturation_progress - s.desaturation_target).abs() > f64::EPSILON;
+            let current_draw = RedrawSnapshot {
+                head_x: (s.fraction * f64::from(area.width()))
+                    .clamp(1.5, (f64::from(area.width()) - 1.5).max(1.5)),
+                colour: s.head_colour.unwrap_or(target),
+                hover_fraction: s.hover_fraction,
+                drag_fraction: s.drag_fraction,
+                pressure: s.bass_pressure,
+                swell: s.bass_swell,
+            };
+            let last_drawn =
+                s.last_drawn_head_x
+                    .zip(s.last_drawn_colour)
+                    .map(|(head_x, colour)| RedrawSnapshot {
+                        head_x,
+                        colour,
+                        hover_fraction: s.last_drawn_hover_fraction,
+                        drag_fraction: s.last_drawn_drag_fraction,
+                        pressure: s.last_drawn_pressure,
+                        swell: s.last_drawn_swell,
+                    });
+            let redraw = should_redraw(last_drawn, current_draw, animation_running);
             let settled = (s.fraction - s.target_fraction).abs() < 0.001
                 && s.build_progress >= 1.0
                 && s.crossfade_progress >= 1.0
@@ -673,7 +716,9 @@ impl WaveformSeek {
                 });
             drop(s);
 
-            area.queue_draw();
+            if redraw {
+                area.queue_draw();
+            }
 
             if settled {
                 *tick_id_slot.borrow_mut() = None;
@@ -687,6 +732,9 @@ impl WaveformSeek {
 
 #[path = "waveform_seek_render.rs"]
 mod render;
+
+#[path = "waveform_surface.rs"]
+mod waveform_surface;
 
 #[cfg(test)]
 #[path = "waveform_seek_tests.rs"]

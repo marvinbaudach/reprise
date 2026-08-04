@@ -26,15 +26,26 @@ pub(super) fn draw(
     }
 
     let color = area.color();
-    let color = (
+    let widget_colour = (
         f64::from(color.red()),
         f64::from(color.green()),
         f64::from(color.blue()),
     );
     let chroma_factor = 1.0 - 0.55 * state.desaturation_progress;
-    let (r, g, b) = scale_chroma(color.0, color.1, color.2, chroma_factor);
+    let (r, g, b) = scale_chroma(
+        widget_colour.0,
+        widget_colour.1,
+        widget_colour.2,
+        chroma_factor,
+    );
 
-    if state.crossfade_progress < 1.0 && !state.previous_bars.is_empty() {
+    let bar_head_x = (state.fraction * w).clamp(0.0, w);
+    let playhead_x = bar_head_x.clamp(1.5, (w - 1.5).max(1.5));
+    let cache_live = waveform_surface::cache_is_live(state)
+        && waveform_surface::ensure_cache(state, width, height, area.scale_factor(), widget_colour);
+    if cache_live {
+        waveform_surface::draw_cached_bars(cr, state, w, h, bar_head_x, (r, g, b));
+    } else if state.crossfade_progress < 1.0 && !state.previous_bars.is_empty() {
         draw_bars(
             cr,
             w,
@@ -77,7 +88,6 @@ pub(super) fn draw(
         );
     }
 
-    let playhead_x = (state.fraction * w).clamp(1.5, (w - 1.5).max(1.5));
     let head_colour = if state.raw_centroid.is_empty() {
         (r, g, b)
     } else {
@@ -106,6 +116,12 @@ pub(super) fn draw(
         decorations_are_live,
         PLAYHEAD_ALPHA,
     );
+    state.last_drawn_head_x = Some(playhead_x);
+    state.last_drawn_colour = Some(head_colour);
+    state.last_drawn_hover_fraction = state.hover_fraction;
+    state.last_drawn_drag_fraction = state.drag_fraction;
+    state.last_drawn_pressure = state.bass_pressure;
+    state.last_drawn_swell = state.bass_swell;
 }
 
 #[derive(Clone, Copy)]
@@ -243,7 +259,7 @@ fn draw_bars(
     }
 }
 
-fn bar_height(magnitude: f64, min_bar_height: f64, max_bar_height: f64) -> f64 {
+pub(super) fn bar_height(magnitude: f64, min_bar_height: f64, max_bar_height: f64) -> f64 {
     min_bar_height + magnitude.clamp(0.0, 1.0) * (max_bar_height - min_bar_height)
 }
 
