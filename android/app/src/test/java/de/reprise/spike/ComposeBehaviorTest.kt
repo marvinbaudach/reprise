@@ -117,6 +117,39 @@ class ComposeBehaviorTest {
         assertEquals(listOf(830L to 4), controls.ratingRequests)
     }
 
+    /**
+     * The star waits for the database, not for the finger. Taking the write off
+     * the main thread was allowed to change *when* the answer arrives and
+     * nothing else: while it is still in flight the stars must read exactly what
+     * they read before the tap, and they must move the moment — and only the
+     * moment — the write says it succeeded.
+     */
+    @Test
+    fun theStarsWaitForTheWriteToAnswerAndOnlyThenMove() {
+        val controls = RecordingPlaybackControls(answerImmediately = false)
+        compose.setContent {
+            RepriseTheme(nocturneForTests, darkPalette = true) {
+                CompositionLocalProvider(LocalPlaybackControls provides controls) {
+                    NowPlayingSheet(
+                        track = testTrack(rating = 2),
+                        playback = testPlayback(positionMs = 20_000),
+                        close = {},
+                    )
+                }
+            }
+        }
+
+        star(4).performClick()
+        compose.waitForIdle()
+
+        assertEquals(listOf(830L to 4), controls.ratingRequests)
+        star(4).assertRating(2)
+
+        compose.runOnIdle { controls.answerPending(null) }
+
+        star(4).assertRating(4)
+    }
+
     @Test
     fun miniPlayerOpensTheSheetBackClosesItAndTheLibraryKeepsWorking() {
         val tracks = listOf(
@@ -540,16 +573,33 @@ private fun testTrack(rating: Int) = LibraryTrack(
 
 private class RecordingPlaybackControls(
     private val ratingFailure: String? = null,
+    /**
+     * False stands in for the writer thread: the tap is recorded, and the
+     * answer arrives only when [answerPending] is called, the way it does once
+     * the database has actually agreed.
+     */
+    private val answerImmediately: Boolean = true,
 ) : PlaybackControls by DisconnectedPlaybackControls {
     val seekPositions = mutableListOf<Long>()
     val ratingRequests = mutableListOf<Pair<Long, Int>>()
+    private val unanswered = mutableListOf<(String?) -> Unit>()
 
     override fun seekTo(positionMs: Long) {
         seekPositions += positionMs
     }
 
-    override fun setRating(trackId: Long, rating: Int): String? {
+    override fun setRating(trackId: Long, rating: Int, report: (String?) -> Unit) {
         ratingRequests += trackId to rating
-        return ratingFailure
+        if (answerImmediately) {
+            report(ratingFailure)
+        } else {
+            unanswered += report
+        }
+    }
+
+    fun answerPending(message: String?) {
+        val reports = unanswered.toList()
+        unanswered.clear()
+        reports.forEach { report -> report(message) }
     }
 }

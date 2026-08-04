@@ -118,10 +118,15 @@ class BrowseSurfaceTest {
         controls.setShuffle(true)
         controls.setRepeat(AndroidRepeatMode.ALL)
 
-        assertEquals(
-            "Could not save rating: playback is not connected.",
-            controls.setRating(trackId = 830, rating = 4),
-        )
+        var answered: String? = null
+        var answers = 0
+        controls.setRating(trackId = 830, rating = 4) { message ->
+            answered = message
+            answers += 1
+        }
+
+        assertEquals("Could not save rating: playback is not connected.", answered)
+        assertEquals(1, answers)
     }
 
     @Test

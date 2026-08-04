@@ -28,8 +28,18 @@ internal interface PlaybackControls {
 
     fun setRepeat(mode: AndroidRepeatMode)
 
-    /** The failure to show, or null when the rating was saved. */
-    fun setRating(trackId: Long, rating: Int): String?
+    /**
+     * Saves one rating and answers through [report]: the failure to show, or
+     * null when the rating was saved.
+     *
+     * A callback rather than a return value because the write does not belong
+     * on the thread that raises the tap — it is a SQLite transaction that can
+     * queue behind a whole folder scan (see [RatingWriter]). What that must not
+     * cost is *when* the star moves: [report] is what the star waits for, so it
+     * still moves only after the database agreed, never before and never in
+     * hope. [report] is called on the main thread, exactly once per tap.
+     */
+    fun setRating(trackId: Long, rating: Int, report: (String?) -> Unit)
 }
 
 /**
@@ -53,8 +63,8 @@ internal object DisconnectedPlaybackControls : PlaybackControls {
 
     override fun setRepeat(mode: AndroidRepeatMode) = Unit
 
-    override fun setRating(trackId: Long, rating: Int): String =
-        "Could not save rating: playback is not connected."
+    override fun setRating(trackId: Long, rating: Int, report: (String?) -> Unit) =
+        report("Could not save rating: playback is not connected.")
 }
 
 /** No transport unless an activity provides one — previews stay honest. */

@@ -1,8 +1,22 @@
 //! Write helpers for per-track listening statistics: star ratings and
 //! play-count tracking. Kept separate from `scanner.rs` (which owns the
-//! read/write path for library *metadata* scanned off disk) because these
-//! writes originate from user interaction and playback events on the UI
-//! thread, not from a scan worker.
+//! read/write path for library *metadata* scanned off disk) by *what* they
+//! write rather than by where from: one already-known row at a time, addressed
+//! by id, recording what a listener did rather than what a file says.
+//!
+//! Which thread calls them is no longer one answer, and used to be documented
+//! as if it were. The desktop still rates and counts plays from its UI thread.
+//! Android does neither: play counts go to a writer thread the playback session
+//! owns (`reprise-android-ffi`'s `play_recorder`), and a star tap goes to a
+//! second one the activity owns, precisely so that Media3's application thread
+//! and the main thread never wait on SQLite. Tag writeback calls
+//! `set_rating_in` from inside a transaction it is already holding.
+//!
+//! So everything here has to be callable from any thread holding its own
+//! [`Db`] handle or `Connection`, and losing to another writer is an ordinary
+//! outcome rather than a defect — a scan wraps a whole folder walk in one
+//! transaction, which is what [`is_database_busy`] exists to let a caller
+//! recognise.
 //!
 //! `should_count_play` is a pure predicate — no `Connection`, no I/O — so the
 //! "was this track actually listened to" decision is unit-testable on its

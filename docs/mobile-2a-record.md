@@ -73,6 +73,29 @@ does:
   seventeen parameters, and `BrowseScreen.kt` became four files along the seams
   it already had.
 
+### Ratings left the main thread too
+
+The review that moved play counting off Media3's application thread left the
+star tap behind, on the grounds that it is a discrete action rather than a
+500 ms tick. It was the same blocking SQLite write, on the main thread, behind
+the same handle a SAF scan holds for the whole of its folder walk — so a tap
+during a scan did not merely stutter, it waited for the walk.
+
+It now goes through `RatingWriter`: one thread the activity owns, one tap at a
+time in the order they were made, with the outcome delivered back on the main
+thread. **The visible behaviour is unchanged on purpose.** The star still moves
+only after the database has agreed, a refusal still arrives as the
+self-dismissing message, and nothing is shown optimistically and taken back —
+`PlaybackControls.setRating` traded its return value for a callback precisely so
+that the star could keep waiting for the same answer it always waited for.
+`ComposeBehaviorTest` pins both halves: the failure that must not move a star,
+and the success that must not move one *early*.
+
+Two things that follow, and are not defects: an answer that arrives after the
+sheet has moved to another track lands in state nobody is showing, so it is
+logged rather than shown; and a tap made during a scan is now answered when the
+scan lets go instead of freezing the screen until it does.
+
 ## Verified on a device, not assumed
 
 Every claim below was observed on the `pixel10xl_api37` emulator against the
@@ -123,9 +146,6 @@ Named here so they are not mistaken for the list above.
   on a configuration change. Fixing it means either writing up to 500 tracks into
   `savedInstanceState` — a `TransactionTooLarge` risk — or introducing a second
   source of truth for "what is playing". That is a decision, not a refactor.
-- **Rating writes are synchronous on the main thread.** Play counting was moved
-  to a dedicated writer thread; a star tap was left, being a discrete action
-  rather than a 500 ms tick. It is the same class of thing.
 - **A play can still be lost, but no longer silently.** The play-count writer
   now offers a write that lost to the scanner's single folder-walk transaction
   up to four times before giving up, and says which track it gave up on. What it
@@ -138,8 +158,9 @@ Named here so they are not mistaken for the list above.
   `:app:testDebugUnitTest` gate now runs `compose-ui-test-junit4` 1.11.4 on
   Robolectric 4.16.1's simulated API 36. It drives the seek gesture across a
   snapshot tick and its release, a rejected rating without optimistic star
-  movement, and the mini player / predictive-back sheet lifecycle while the
-  Library stays composed.
+  movement, a rating whose write has not answered yet and whose stars therefore
+  have not moved yet, and the mini player / predictive-back sheet lifecycle
+  while the Library stays composed.
   It also drives `OnBackPressedDispatcher.dispatchOnBackStarted` /
   `dispatchOnBackProgressed` / `dispatchOnBackCancelled` directly (activity
   1.13.0 routes these through the same `NavigationEventDispatcher`
@@ -153,6 +174,8 @@ Named here so they are not mistaken for the list above.
   dispatch — Robolectric calls the dispatcher API directly rather than
   synthesizing the platform's edge-swipe recognition — so device checks remain
   the proof for those two.
-- **`library/stats.rs` still documents its writes as happening "on the UI
-  thread"**, which stopped being true for Android when play recording moved off
-  it.
+- **The rating writer is host-tested, not device-run.** `RatingWriterTest` and
+  `ComposeBehaviorTest` prove the thread hop, the ordering, the answered
+  teardown and the star that waits — but no device has yet been watched rating a
+  track while a scan holds the library, which is the case the change was made
+  for.

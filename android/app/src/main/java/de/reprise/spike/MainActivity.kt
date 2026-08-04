@@ -70,6 +70,16 @@ class MainActivity : ComponentActivity() {
     }
     private val artworkDelegate = lazy { TrackArtwork(resolve = session::artworkFor) }
     private val artwork by artworkDelegate
+
+    /**
+     * Star taps, off the main thread and answered back on it. The lambda defers
+     * touching [session] until a rating is actually made, so opening the
+     * library still happens when the screen asks for it and not before.
+     */
+    private val ratings = RatingWriter(
+        write = { trackId, rating -> session.setRating(trackId, rating) },
+        onMainThread = { work -> runOnUiThread { work() } },
+    )
     private val themeController by lazy {
         ThemeController(
             port = AndroidThemeSettingsPort(library),
@@ -97,8 +107,8 @@ class MainActivity : ComponentActivity() {
         override fun setRepeat(mode: AndroidRepeatMode) =
             runPlaybackCommand("change repeat") { setRepeat(mode) }
 
-        override fun setRating(trackId: Long, rating: Int): String? =
-            setTrackRating(trackId, rating)
+        override fun setRating(trackId: Long, rating: Int, report: (String?) -> Unit) =
+            setTrackRating(trackId, rating, report)
     }
     private var playbackService: ReprisePlaybackService? = null
     private var playbackBound = false
@@ -226,6 +236,13 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        // First, and before the library handle is closed below: a star tap that
+        // is still queued has to reach the database it was written for, and a
+        // write arriving at a closed handle would be a crash rather than a lost
+        // rating.
+        if (!ratings.shutdown()) {
+            Log.w(TAG, "A rating was still being written when the screen closed")
+        }
         if (artworkDelegate.isInitialized()) {
             artworkDelegate.value.shutdown()
         }
@@ -284,20 +301,28 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Persists one rating and answers with the failure to show, or null when it
-     * was saved.
+     * Persists one rating off the main thread and answers on it with the
+     * failure to show, or null when it was saved.
      *
      * Deliberately not through [playbackState]: that whole record is replaced
      * by the next 500 ms position tick, so a message left there is gone before
      * anyone reads it. The rating's outcome belongs to the control the user
      * tapped.
+     *
+     * Which is also why the outcome is logged when it is a failure: the control
+     * the user tapped can be gone by the time a queued write answers, and a
+     * refusal nobody is left to show belongs in `logcat` rather than nowhere.
      */
-    private fun setTrackRating(trackId: Long, rating: Int): String? = runCatching {
-        session.setRating(trackId, rating)
-    }.fold(
-        onSuccess = { null },
-        onFailure = { error -> "Could not save rating: ${error.detail()}" },
-    )
+    private fun setTrackRating(trackId: Long, rating: Int, report: (String?) -> Unit) {
+        ratings.rate(trackId, rating) { outcome ->
+            val message = outcome.fold(
+                onSuccess = { null },
+                onFailure = { error -> "Could not save rating: ${error.detail()}" },
+            )
+            message?.let { Log.w(TAG, it) }
+            report(message)
+        }
+    }
 
     private fun loadPlaybackSettings(): PlaybackSettingsUiState {
         val stored = library.playbackSettings()

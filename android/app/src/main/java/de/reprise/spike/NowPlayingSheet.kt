@@ -329,11 +329,20 @@ private fun ModeButton(
 }
 
 /**
- * `setRating` answers with the failure to show, or null when the rating was
- * saved. That message is an acknowledgement rather than state — the star does
+ * `setRating` writes off the main thread and answers back on it, with the
+ * failure to show or null when the rating was saved. The star waits for that
+ * answer: it is never moved in advance and never moved back, because a star
+ * that moved before the database agreed would be telling the user something
+ * nobody has checked.
+ *
+ * The failure message is an acknowledgement rather than state — the star does
  * not move, so without it the tap looks like it worked — which is why it gets a
  * [TransientMessage] and the two errors on the browse screen do not. See that
  * type for the rule.
+ *
+ * Both pieces of state are keyed on the track, so an answer that arrives after
+ * the sheet has moved on lands in state nobody is showing rather than in the
+ * next track's stars.
  */
 @Composable
 private fun RatingRow(track: LibraryTrack) {
@@ -350,12 +359,13 @@ private fun RatingRow(track: LibraryTrack) {
             (1..5).forEach { star ->
                 IconButton(
                     onClick = {
-                        val message = setRating(track.id, star)
-                        if (message == null) {
-                            rating = star
-                            failure = null
-                        } else {
-                            failure = TransientMessage(message).after(failure)
+                        setRating(track.id, star) { message ->
+                            if (message == null) {
+                                rating = star
+                                failure = null
+                            } else {
+                                failure = TransientMessage(message).after(failure)
+                            }
                         }
                     },
                     // `selected` would claim these five are one exclusive choice
