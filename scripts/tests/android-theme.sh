@@ -8,6 +8,7 @@ trap 'rm -rf "$fixture_root"' EXIT
 
 source_root="$fixture_root/main/java"
 theme_file="$source_root/de/reprise/spike/ui/theme/NocturneTheme.kt"
+dynamic_theme_file="$source_root/de/reprise/spike/ui/theme/DynamicTheme.kt"
 screen_file="$source_root/de/reprise/spike/LibraryScreen.kt"
 mkdir -p "$(dirname "$theme_file")" "$(dirname "$screen_file")"
 
@@ -15,6 +16,10 @@ printf '%s\n' \
   'package de.reprise.spike.ui.theme' \
   'import androidx.compose.ui.graphics.Color' \
   'internal val Ground = Color(0xFF161826)' >"$theme_file"
+printf '%s\n' \
+  'package de.reprise.spike.ui.theme' \
+  'import androidx.compose.ui.graphics.Color' \
+  'internal val WallpaperFallback = Color(0xFF232532)' >"$dynamic_theme_file"
 printf '%s\n' \
   'package de.reprise.spike' \
   'internal const val ScreenName = "Library"' >"$screen_file"

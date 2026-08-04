@@ -7,12 +7,14 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import de.reprise.spike.MobileThemeSelection
 import de.reprise.spike.R
 
 private val NocturneBackground = Color(0xFF161826)
@@ -137,9 +139,13 @@ internal val NocturneShapes = Shapes(
 )
 
 @Composable
-internal fun RepriseTheme(content: @Composable () -> Unit) {
+internal fun RepriseTheme(
+    selection: MobileThemeSelection,
+    darkPalette: Boolean,
+    content: @Composable () -> Unit,
+) {
     MaterialTheme(
-        colorScheme = NocturneColorScheme,
+        colorScheme = androidColorScheme(LocalContext.current, selection, darkPalette),
         typography = NocturneTypography,
         shapes = NocturneShapes,
         content = content,
