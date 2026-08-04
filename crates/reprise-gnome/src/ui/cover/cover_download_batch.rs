@@ -144,6 +144,32 @@ impl CoverDownloadBatch {
 
         let this = self.clone();
         glib::spawn_future_local(async move {
+            // Every track the download side has already settled is dropped
+            // here, before anything opens a file. Asking the worker means it
+            // reads the track's tags to work out which album to look up, and
+            // this batch runs over the whole library on every launch — so
+            // without this filter a settled library re-reads every file it
+            // owns, every time, to be told what it was told last time.
+            let paths = {
+                let candidates = paths.clone();
+                gtk4::gio::spawn_blocking(move || {
+                    candidates
+                        .into_iter()
+                        .filter(|path| {
+                            !reprise_core::cover::download_marked_unavailable(
+                                std::path::Path::new(path),
+                                reprise_core::cover::ThumbnailSize::List,
+                            )
+                        })
+                        .collect::<Vec<String>>()
+                })
+                .await
+                .unwrap_or(paths)
+            };
+            if this.generation.get() != generation {
+                return;
+            }
+
             for path in &paths {
                 if this.generation.get() != generation {
                     return;
@@ -169,6 +195,22 @@ impl CoverDownloadBatch {
                 let outcome = result.recv().await.unwrap_or(DownloadOutcome::Unavailable);
                 if this.generation.get() != generation {
                     return;
+                }
+                // Settled either way: covered already, or nothing to be had.
+                // Both mean the next launch has no reason to open this file.
+                if matches!(
+                    outcome,
+                    DownloadOutcome::AlreadyCovered | DownloadOutcome::Unavailable
+                ) {
+                    let settled = path.clone();
+                    gtk4::gio::spawn_blocking(move || {
+                        reprise_core::cover::remember_download_unavailable(
+                            std::path::Path::new(&settled),
+                            reprise_core::cover::ThumbnailSize::List,
+                        );
+                    })
+                    .await
+                    .ok();
                 }
                 this.set_progress(this.progress.get().advance(&outcome));
             }

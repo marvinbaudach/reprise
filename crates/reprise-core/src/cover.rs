@@ -311,6 +311,201 @@ fn source_bytes(
 /// bytes, hex-encoded. The key only needs to be deterministic on one machine
 /// and collision-resistant enough for a cache — no crypto property required,
 /// so no new hashing dependency.
+/// Where a track's last cover resolution is remembered.
+///
+/// One file per track and size, named from the track's path. It holds the
+/// stamp the resolution was valid for and the thumbnail it produced — or
+/// nothing, when the track has no cover at all, which is worth remembering
+/// just as much.
+fn resolution_index_path(track_path: &Path, size: ThumbnailSize) -> PathBuf {
+    let key = hash_hex(track_path.as_os_str().as_encoded_bytes());
+    cache_dir()
+        .join("resolved")
+        .join(format!("{key}-{}", size.pixels()))
+}
+
+fn mtime_nanos(path: &Path) -> u128 {
+    std::fs::metadata(path)
+        .and_then(|meta| meta.modified())
+        .ok()
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |since| since.as_nanos())
+}
+
+/// What has to stay the same for a remembered resolution to still be true.
+///
+/// Three things can change a track's cover without the track itself changing:
+/// the file being rewritten, a sidecar image appearing in the album folder, or
+/// a cover being downloaded for the album. Hence three stamps — each one a
+/// `stat`, which is microseconds against the milliseconds a tag read costs.
+///
+/// The download side is stamped from a marker the publisher bumps, not from
+/// the download directory's mtime: negative markers and temp files land there
+/// too, and none of them change what a track resolves to.
+fn resolution_stamp(track_path: &Path) -> Option<String> {
+    let meta = std::fs::metadata(track_path).ok()?;
+    let track = mtime_nanos(track_path);
+    let folder = track_path.parent().map_or(0, mtime_nanos);
+    let downloaded = mtime_nanos(&crate::cover_download::publish_marker());
+    Some(format!("{track}:{}:{folder}:{downloaded}", meta.len()))
+}
+
+/// The thumbnail for a track, asking what was resolved last time before
+/// reading anything.
+///
+/// The thumbnail cache is content-addressed: its key is a hash of the cover
+/// bytes, so it cannot be asked until those bytes are in hand — and getting
+/// them means reading the file's tags. That read is the expensive part, it
+/// happens for every cover the app shows, and a warm cache never saved it: a
+/// 1800-track library read 455 sets of tags on every single launch, cache warm
+/// or cold. This index is asked first and answers from three `stat` calls.
+///
+/// `None` means the track has no cover — remembered too, so a coverless track
+/// costs three stats rather than a full tag read on every launch.
+pub fn thumbnail_for_track(track_path: &Path, size: ThumbnailSize) -> Option<PathBuf> {
+    let stamp = resolution_stamp(track_path);
+    let index = resolution_index_path(track_path, size);
+
+    if let Some(stamp) = stamp.as_deref() {
+        if let Some(remembered) = read_resolution(&index, stamp) {
+            return remembered;
+        }
+    }
+
+    let resolved = resolve_source(track_path).and_then(|source| thumbnail(&source, size).ok());
+    if let Some(stamp) = stamp.as_deref() {
+        write_resolution(&index, stamp, resolved.as_deref());
+    }
+    resolved
+}
+
+/// Marker in the index's third line for "the download side has nothing to do
+/// here".
+///
+/// One marker for both of its answers — already covered, or nothing found —
+/// because they lead to the same thing: do not ask again until something that
+/// could change the answer has changed.
+///
+/// It lives on its own line because it is a different question from what the
+/// cover resolved to. Writing it into the answer line cost an evening: the
+/// batch marks a *covered* track settled, that overwrote the remembered
+/// thumbnail, and the whole library rendered as placeholders.
+const DOWNLOAD_EXHAUSTED: &str = "-";
+
+/// The three lines an index entry holds: the stamp it is valid for, the
+/// thumbnail the cover resolved to (empty for "no cover"), and whether the
+/// download side is settled.
+struct IndexEntry {
+    stamp: String,
+    thumbnail: String,
+    download_settled: bool,
+}
+
+fn read_entry(index: &Path) -> Option<IndexEntry> {
+    let contents = std::fs::read_to_string(index).ok()?;
+    let mut lines = contents.split('\n');
+    Some(IndexEntry {
+        stamp: lines.next()?.to_owned(),
+        thumbnail: lines.next().unwrap_or_default().to_owned(),
+        download_settled: lines.next().unwrap_or_default() == DOWNLOAD_EXHAUSTED,
+    })
+}
+
+/// Whether the download side has already been asked about this track and had
+/// nothing to do, while nothing relevant has changed since.
+///
+/// Without this, every launch asks the download worker about every track in
+/// the library — the cover batch does exactly that, unconditionally — and the
+/// worker reads each file's tags to work out which album to ask about, only to
+/// arrive at the same answer as last time.
+pub fn download_marked_unavailable(track_path: &Path, size: ThumbnailSize) -> bool {
+    let Some(stamp) = resolution_stamp(track_path) else {
+        return false;
+    };
+    read_entry(&resolution_index_path(track_path, size))
+        .is_some_and(|entry| entry.stamp == stamp && entry.download_settled)
+}
+
+/// Remember that the download side had nothing to do for this track, keeping
+/// whatever the cover itself resolved to.
+pub fn remember_download_unavailable(track_path: &Path, size: ThumbnailSize) {
+    let Some(stamp) = resolution_stamp(track_path) else {
+        return;
+    };
+    let index = resolution_index_path(track_path, size);
+    let thumbnail = read_entry(&index)
+        .filter(|entry| entry.stamp == stamp)
+        .map(|entry| entry.thumbnail)
+        .unwrap_or_default();
+    write_entry(&index, &stamp, &thumbnail, true);
+}
+
+/// `Some(entry)` when the index still applies, `None` when it must be redone.
+/// The inner `Option` is the answer itself: `None` for "this track has no
+/// cover", which is a real answer and not a miss.
+fn read_resolution(index: &Path, stamp: &str) -> Option<Option<PathBuf>> {
+    let entry = read_entry(index)?;
+    if entry.stamp != stamp {
+        return None;
+    }
+    if entry.thumbnail.is_empty() {
+        return Some(None);
+    }
+    let path = PathBuf::from(entry.thumbnail);
+    // The thumbnail cache can be cleared independently of this index; a
+    // remembered path that no longer exists is a miss, not an answer.
+    path.exists().then_some(Some(path))
+}
+
+fn write_resolution(index: &Path, stamp: &str, thumbnail: Option<&Path>) {
+    let answer = thumbnail
+        .map(|path| path.to_string_lossy())
+        .unwrap_or_default();
+    // A fresh resolution says nothing about the download side; keep what is
+    // known about it rather than making the batch ask all over again.
+    let settled =
+        read_entry(index).is_some_and(|entry| entry.stamp == stamp && entry.download_settled);
+    write_entry(index, stamp, &answer, settled);
+}
+
+fn write_entry(index: &Path, stamp: &str, thumbnail: &str, download_settled: bool) {
+    let answer = format!(
+        "{thumbnail}\n{}",
+        if download_settled {
+            DOWNLOAD_EXHAUSTED
+        } else {
+            ""
+        }
+    );
+    write_resolution_body(index, stamp, &answer);
+}
+
+fn write_resolution_body(index: &Path, stamp: &str, answer: &str) {
+    let Some(dir) = index.parent() else {
+        return;
+    };
+    if std::fs::create_dir_all(dir).is_err() {
+        return;
+    }
+    let body = format!("{stamp}\n{answer}");
+    // Same atomic publish as the thumbnails: a torn index file would be read
+    // back as a stamp mismatch at best and a wrong path at worst.
+    let tmp = dir.join(format!(
+        ".{}-{}.tmp",
+        index
+            .file_name()
+            .map_or("index", |name| name.to_str().unwrap_or("index")),
+        fastrand::u64(..)
+    ));
+    if std::fs::write(&tmp, body).is_err() {
+        let _ = std::fs::remove_file(&tmp);
+        return;
+    }
+    if std::fs::rename(&tmp, index).is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+}
+
 pub(crate) fn hash_hex(bytes: &[u8]) -> String {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     bytes.hash(&mut h);
@@ -685,6 +880,105 @@ mod tests {
             "small source must stay native size, got {w}x{h}"
         );
         std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn a_remembered_resolution_answers_without_touching_the_track_again() {
+        // Proof by denial: after the first resolution the track is made
+        // unreadable. Anything that still opens it would fail; the remembered
+        // answer does not need to.
+        let dir = tempfile::tempdir().unwrap();
+        let album = format!("Remembered {}", fastrand::u64(..));
+        let track = tagged_track_with_cover(dir.path(), "t.flac", &album, solid_png([9, 9, 9]));
+
+        let first = thumbnail_for_track(&track, ThumbnailSize::List);
+        assert!(first.is_some(), "the track has an embedded cover");
+
+        let mut locked = std::fs::metadata(&track).unwrap().permissions();
+        locked.set_readonly(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            locked.set_mode(0o000);
+        }
+        std::fs::set_permissions(&track, locked).unwrap();
+
+        let second = thumbnail_for_track(&track, ThumbnailSize::List);
+        assert_eq!(
+            second, first,
+            "a remembered resolution must answer from the index, not the file"
+        );
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut open = std::fs::metadata(&track).unwrap().permissions();
+            open.set_mode(0o644);
+            std::fs::set_permissions(&track, open).ok();
+        }
+        std::fs::remove_file(resolution_index_path(&track, ThumbnailSize::List)).ok();
+        first.map(|path| std::fs::remove_file(path).ok());
+    }
+
+    #[test]
+    fn settling_the_download_side_keeps_the_cover_that_was_already_found() {
+        // The batch marks every track it walks as settled, including the ones
+        // that already have a cover. Writing that into the answer instead of
+        // beside it rendered the whole library as placeholders.
+        let dir = tempfile::tempdir().unwrap();
+        let album = format!("Settled {}", fastrand::u64(..));
+        let track = tagged_track_with_cover(dir.path(), "s.flac", &album, solid_png([4, 5, 6]));
+
+        let resolved = thumbnail_for_track(&track, ThumbnailSize::List);
+        assert!(resolved.is_some(), "the track has an embedded cover");
+
+        remember_download_unavailable(&track, ThumbnailSize::List);
+
+        assert!(
+            download_marked_unavailable(&track, ThumbnailSize::List),
+            "the download side must be remembered as settled"
+        );
+        assert_eq!(
+            thumbnail_for_track(&track, ThumbnailSize::List),
+            resolved,
+            "settling the download side must not erase the cover itself"
+        );
+
+        std::fs::remove_file(resolution_index_path(&track, ThumbnailSize::List)).ok();
+        resolved.map(|path| std::fs::remove_file(path).ok());
+    }
+
+    #[test]
+    fn a_sidecar_cover_appearing_undoes_a_remembered_absence() {
+        // "No cover" is remembered too, so a coverless track costs three stats
+        // instead of a tag read. It must not survive a cover showing up.
+        let dir = tempfile::tempdir().unwrap();
+        let track = dir.path().join("untagged.mp3");
+        std::fs::write(&track, b"not really an mp3").unwrap();
+
+        assert_eq!(
+            thumbnail_for_track(&track, ThumbnailSize::List),
+            None,
+            "nothing to resolve yet"
+        );
+        assert!(
+            resolution_index_path(&track, ThumbnailSize::List).exists(),
+            "the absence must be remembered, or every launch pays for it again"
+        );
+
+        // A folder image appearing changes the album folder's mtime, which is
+        // part of the stamp — the remembered absence has to fall.
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        std::fs::write(dir.path().join("cover.png"), solid_png([1, 2, 3])).unwrap();
+
+        let after = thumbnail_for_track(&track, ThumbnailSize::List);
+        assert!(
+            after.is_some(),
+            "a sidecar cover appearing must invalidate the remembered absence"
+        );
+
+        std::fs::remove_file(resolution_index_path(&track, ThumbnailSize::List)).ok();
+        after.map(|path| std::fs::remove_file(path).ok());
     }
 
     #[test]
