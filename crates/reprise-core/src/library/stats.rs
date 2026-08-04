@@ -18,6 +18,12 @@
 //! transaction, which is what [`is_database_busy`] exists to let a caller
 //! recognise.
 //!
+//! Android's process-surviving play journal adds one more constraint without
+//! moving its queue into Core: [`record_journaled_play`] joins the ordinary
+//! count statement and the applied sequence high-water in one transaction.
+//! Core owns those two SQL statements; the journal file and its lifecycle stay
+//! at the Android boundary.
+//!
 //! `should_count_play` is a pure predicate — no `Connection`, no I/O — so the
 //! "was this track actually listened to" decision is unit-testable on its
 //! own, following the same pattern as `track_list::empty_state_for` and
@@ -106,12 +112,67 @@ pub(crate) fn set_rating_for_registered_track(
 /// `now_unix` (seconds since the Unix epoch — the same unit `scanner.rs`
 /// uses for `added_at`/`occurred_at`).
 pub fn record_play(db: &Db, track_id: i64, now_unix: i64) -> Result<(), rusqlite::Error> {
-    let conn = db.conn();
+    record_play_in(db.conn(), track_id, now_unix)
+}
+
+/// The play-count update on a caller-owned connection or transaction.
+///
+/// The Android journal pairs this statement with its applied high-water mark
+/// in one transaction. Keeping the statement here avoids a second transaction
+/// and keeps SQL ownership out of the frontend crate.
+pub(crate) fn record_play_in(
+    conn: &Connection,
+    track_id: i64,
+    now_unix: i64,
+) -> Result<(), rusqlite::Error> {
     conn.execute(
         "UPDATE tracks SET play_count = play_count + 1, last_played_at = ?1 WHERE id = ?2",
         rusqlite::params![now_unix, track_id],
     )?;
     Ok(())
+}
+
+/// Returns the highest Android play-journal sequence committed to this
+/// library. Journal sequences start at one, so zero means none has landed.
+pub fn play_journal_high_water(db: &Db) -> Result<i64, rusqlite::Error> {
+    db.conn().query_row(
+        "SELECT applied_sequence FROM android_play_count_journal_state WHERE singleton = 1",
+        [],
+        |row| row.get(0),
+    )
+}
+
+/// Applies a journaled play exactly once.
+///
+/// A sequence at or below the stored high-water mark is an already-committed
+/// replay and returns `false`. A newer sequence increments the count and moves
+/// the mark in the same transaction, returning `true`. The immediate
+/// transaction matters because this is a read-then-write operation racing the
+/// scanner's long write transaction: SQLite's ordinary busy timeout must
+/// govern the race instead of a deferred snapshot-upgrade failure.
+pub fn record_journaled_play(
+    db: &Db,
+    sequence: i64,
+    track_id: i64,
+    now_unix: i64,
+) -> Result<bool, rusqlite::Error> {
+    crate::events::in_txn_immediate(db.conn(), |conn| {
+        let high_water: i64 = conn.query_row(
+            "SELECT applied_sequence FROM android_play_count_journal_state WHERE singleton = 1",
+            [],
+            |row| row.get(0),
+        )?;
+        if sequence <= high_water {
+            return Ok(false);
+        }
+        record_play_in(conn, track_id, now_unix)?;
+        conn.execute(
+            "UPDATE android_play_count_journal_state SET applied_sequence = ?1 \
+             WHERE singleton = 1",
+            [sequence],
+        )?;
+        Ok(true)
+    })
 }
 
 /// Whether a failed write lost to another writer holding the database, rather
@@ -284,6 +345,58 @@ mod tests {
             .unwrap();
         assert_eq!(count, 2);
         assert_eq!(last_played, 1_700_000_100);
+    }
+
+    #[test]
+    fn journaled_play_and_its_high_water_commit_exactly_once() {
+        let conn = seeded_conn();
+        assert_eq!(play_journal_high_water(&conn).unwrap(), 0);
+
+        assert!(record_journaled_play(&conn, 7, 1, 1_700_000_000).unwrap());
+        assert_eq!(play_journal_high_water(&conn).unwrap(), 7);
+        assert!(
+            !record_journaled_play(&conn, 7, 1, 1_700_000_000).unwrap(),
+            "replaying the committed entry must be a no-op",
+        );
+        assert!(
+            !record_journaled_play(&conn, 6, 1, 1_699_999_999).unwrap(),
+            "an older entry must stay behind the high-water mark",
+        );
+
+        let (count, last_played): (i64, i64) = conn
+            .conn()
+            .query_row(
+                "SELECT play_count, last_played_at FROM tracks WHERE id = 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+        assert_eq!(last_played, 1_700_000_000);
+    }
+
+    #[test]
+    fn journaled_play_rolls_back_when_its_high_water_cannot_move() {
+        let conn = seeded_conn();
+        conn.conn()
+            .execute_batch(
+                "CREATE TRIGGER reject_play_high_water \
+                 BEFORE UPDATE ON android_play_count_journal_state \
+                 BEGIN SELECT RAISE(ABORT, 'high-water unavailable'); END;",
+            )
+            .unwrap();
+
+        let error = record_journaled_play(&conn, 1, 1, 1_700_000_000).unwrap_err();
+
+        assert!(error.to_string().contains("high-water unavailable"));
+        let count: i64 = conn
+            .conn()
+            .query_row("SELECT play_count FROM tracks WHERE id = 1", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(count, 0, "the count and high-water must roll back together");
+        assert_eq!(play_journal_high_water(&conn).unwrap(), 0);
     }
 
     /// The predicate has to recognise the error SQLite really produces under

@@ -21,12 +21,20 @@
 //! `busy_timeout` every `Db` connection carries — which is exactly the moment a
 //! user is most likely to press play. A single attempt would then fail with
 //! `SQLITE_BUSY` and the play would be gone. So a play that lost to another
-//! writer is offered again a bounded number of times ([`retry_after`]) before
-//! it is given up, and giving up says so by name.
+//! writer is offered again a bounded number of times ([`retry_after`]). When
+//! that round gives up, it says so by track and sequence and leaves the play in
+//! the journal for a later drain.
 //!
-//! What this deliberately is **not** is a persistent queue: nothing here
-//! survives the process. A play still in hand when Android kills the service is
-//! lost, silently, because there is nobody left to tell.
+//! ## Surviving the process
+//!
+//! The writer appends every play to a bounded file in Android's private app
+//! directory before it asks SQLite to count it. Each entry has a monotonic
+//! sequence; Core increments the count and advances one applied high-water mark
+//! in the same transaction. The journal entry is removed only after that
+//! commit, so a kill on either side of the commit is safe: an unapplied entry is
+//! replayed, while an already-applied one is recognized without being counted
+//! twice. A malformed line or half-written final line is reported and repaired
+//! without blocking earlier valid entries.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -36,6 +44,8 @@ use std::thread::JoinHandle;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use reprise_core::db::Db;
+
+use crate::play_journal::{JournalEntry, PlayJournal};
 
 /// How many times one play is offered to a database another writer is holding.
 ///
@@ -98,13 +108,15 @@ pub(crate) struct PlayRecorder {
 impl PlayRecorder {
     /// Starts the writer over `database_path`, which the caller has already
     /// opened and migrated.
-    pub(crate) fn spawn(database_path: PathBuf) -> Self {
+    pub(crate) fn spawn(database_path: PathBuf, applied_sequence: i64) -> Self {
         let (plays, queued) = mpsc::channel();
         let shutting_down = Arc::new(AtomicBool::new(false));
         let worker_flag = Arc::clone(&shutting_down);
         let worker = std::thread::Builder::new()
             .name("reprise-android-plays".to_owned())
-            .spawn(move || write_queued_plays(&database_path, queued, &worker_flag));
+            .spawn(move || {
+                write_queued_plays(&database_path, applied_sequence, queued, &worker_flag);
+            });
         match worker {
             Ok(worker) => Self {
                 plays: Some(plays),
@@ -126,7 +138,9 @@ impl PlayRecorder {
     }
 
     /// Queues one play. Never blocks on the database and never panics — a play
-    /// that cannot be queued leaves a warning rather than disappearing.
+    /// that cannot be queued leaves a warning rather than disappearing. The
+    /// channel is deliberately the only state this object has access to; the
+    /// private-file journal is opened and appended only by the writer thread.
     pub(crate) fn record(&self, play: RecordedPlay) {
         let Some(plays) = self.plays.as_ref() else {
             tracing::warn!(
@@ -148,13 +162,14 @@ impl PlayRecorder {
 impl Drop for PlayRecorder {
     fn drop(&mut self) {
         // Dropping the sender ends the worker's loop, but only after it has
-        // drained everything already queued. Joining is what turns "the service
-        // is being destroyed" into a bounded wait instead of a lost play count:
-        // the outstanding work is at most a handful of single-row updates.
+        // journaled everything already queued. Joining is what turns "the
+        // service is being destroyed" into a bounded handoff instead of losing
+        // an event that had reached this process but not its private file.
         //
-        // The flag goes up first so that bound stays a bound: a drain that is
-        // currently backing off from a busy database stops offering the write
-        // again and settles for saying it was lost.
+        // The flag goes up first so a drain currently backing off from a busy
+        // database stops retrying. Its entry is already durable and remains for
+        // the next session rather than extending `onDestroy` by the full retry
+        // budget.
         self.shutting_down.store(true, Ordering::Relaxed);
         self.plays = None;
         if let Some(worker) = self.worker.take() {
@@ -167,38 +182,85 @@ impl Drop for PlayRecorder {
 
 fn write_queued_plays(
     database_path: &Path,
+    applied_sequence: i64,
     queued: Receiver<RecordedPlay>,
     shutting_down: &AtomicBool,
 ) {
-    let db = match Db::open_ready(database_path) {
-        Ok(db) => db,
+    let mut journal = match PlayJournal::open(database_path, applied_sequence) {
+        Ok(journal) => journal,
         Err(error) => {
-            // Drain rather than return, so every play that arrives afterwards
-            // still says out loud that it went nowhere.
-            tracing::warn!(%error, "no Android play counting: could not open the library");
+            tracing::warn!(%error, "no Android play counting: could not open the play journal");
             for play in queued {
                 tracing::warn!(
                     track_id = play.track_id,
-                    "dropped an Android play count: the library never opened",
+                    "dropped an Android play count: the journal never opened",
                 );
             }
             return;
         }
     };
+    let db = match Db::open_ready(database_path) {
+        Ok(db) => db,
+        Err(error) => {
+            tracing::warn!(%error, "Android play counts will remain journaled: could not open the library");
+            for play in queued {
+                append_or_warn(&mut journal, play);
+            }
+            return;
+        }
+    };
+    drain_journal(&db, &mut journal, shutting_down);
     for play in queued {
-        record_play_with_retries(&db, play, shutting_down);
+        if append_or_warn(&mut journal, play) {
+            drain_journal(&db, &mut journal, shutting_down);
+        }
     }
 }
 
-/// Writes one play, offering it again while the only thing in the way is
-/// another writer. A play that is finally given up leaves a warning naming the
-/// track, so the loss is a line in `logcat` rather than nothing at all.
-fn record_play_with_retries(db: &Db, play: RecordedPlay, shutting_down: &AtomicBool) {
+fn append_or_warn(journal: &mut PlayJournal, play: RecordedPlay) -> bool {
+    match journal.append(play) {
+        Ok(accepted) => accepted,
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                track_id = play.track_id,
+                "dropped an Android play count: it could not be journaled",
+            );
+            false
+        }
+    }
+}
+
+fn drain_journal(db: &Db, journal: &mut PlayJournal, shutting_down: &AtomicBool) {
+    while let Some(entry) = journal.front() {
+        if !record_play_with_retries(db, entry, shutting_down) {
+            return;
+        }
+        if let Err(error) = journal.remove_front() {
+            tracing::warn!(
+                %error,
+                track_id = entry.play.track_id,
+                sequence = entry.sequence,
+                "an Android play committed but could not be removed from its journal",
+            );
+            return;
+        }
+    }
+}
+
+/// Writes one journal entry, offering it again while the only thing in the way
+/// is another writer. A retry round that gives up leaves a warning naming the
+/// track and sequence; the caller keeps the entry durable for a later drain.
+fn record_play_with_retries(db: &Db, entry: JournalEntry, shutting_down: &AtomicBool) -> bool {
     let mut attempt = 1;
     loop {
-        let error = match reprise_core::library::stats::record_play(db, play.track_id, play.at_unix)
-        {
-            Ok(()) => return,
+        let error = match reprise_core::library::stats::record_journaled_play(
+            db,
+            entry.sequence,
+            entry.play.track_id,
+            entry.play.at_unix,
+        ) {
+            Ok(_) => return true,
             Err(error) => error,
         };
         let busy = reprise_core::library::stats::is_database_busy(&error);
@@ -206,14 +268,16 @@ fn record_play_with_retries(db: &Db, play: RecordedPlay, shutting_down: &AtomicB
         let Some(wait) = wait else {
             tracing::warn!(
                 %error,
-                track_id = play.track_id,
+                track_id = entry.play.track_id,
+                sequence = entry.sequence,
                 attempts = attempt,
-                "dropped an Android play count",
+                "kept an Android play count in its journal after a write failure",
             );
-            return;
+            return false;
         };
         tracing::debug!(
-            track_id = play.track_id,
+            track_id = entry.play.track_id,
+            sequence = entry.sequence,
             attempt,
             "the library is busy; offering an Android play count again",
         );
@@ -224,12 +288,167 @@ fn record_play_with_retries(db: &Db, play: RecordedPlay, shutting_down: &AtomicB
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::AtomicBool;
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{mpsc, Arc};
+    use std::time::{Duration, Instant};
 
     use reprise_core::db::Db;
 
     use super::{record_play_with_retries, retry_after, RecordedPlay, BUSY_ATTEMPTS};
     use crate::log_capture::{CapturedLogs, LogCapture};
+    use crate::play_journal::{JournalEntry, FILE_NAME as JOURNAL_FILE_NAME};
+
+    fn seeded_database(directory: &Path) -> (PathBuf, i64) {
+        let music = directory.join("music");
+        std::fs::create_dir(&music).unwrap();
+        std::fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../android/app/src/main/assets/sine.flac"),
+            music.join("sine.flac"),
+        )
+        .unwrap();
+        let database_path = directory.join("reprise.db");
+        let database = Db::open_migrated(Some(&database_path)).unwrap();
+        reprise_core::library::scanner::scan_folder(&database, &music).unwrap();
+        let track = reprise_core::queries::query_library_text_search(
+            &database,
+            "",
+            reprise_core::queries::WindowRange {
+                offset: 0,
+                limit: 1,
+            },
+        )
+        .unwrap()
+        .rows
+        .remove(0);
+        (database_path, track.id)
+    }
+
+    fn play_count(database_path: &Path, track_id: i64) -> i64 {
+        let database = Db::open_ready(database_path).unwrap();
+        reprise_core::queries::query_present_track_by_id(&database, track_id)
+            .unwrap()
+            .unwrap()
+            .play_count
+    }
+
+    #[test]
+    fn an_unapplied_journal_entry_is_counted_on_the_next_open() {
+        let directory = tempfile::tempdir().unwrap();
+        let (database_path, track_id) = seeded_database(directory.path());
+        std::fs::write(
+            directory.path().join(JOURNAL_FILE_NAME),
+            format!("v1\t1\t{track_id}\t1700000000\n"),
+        )
+        .unwrap();
+
+        let recorder = super::PlayRecorder::spawn(database_path.clone(), 0);
+        drop(recorder);
+
+        assert_eq!(play_count(&database_path, track_id), 1);
+        assert_eq!(
+            std::fs::read(directory.path().join(JOURNAL_FILE_NAME)).unwrap(),
+            b"",
+            "the committed entry must be removed from the journal",
+        );
+    }
+
+    #[test]
+    fn an_applied_entry_left_in_the_journal_is_not_counted_twice() {
+        let directory = tempfile::tempdir().unwrap();
+        let (database_path, track_id) = seeded_database(directory.path());
+        let database = Db::open_ready(&database_path).unwrap();
+        assert!(reprise_core::library::stats::record_journaled_play(
+            &database,
+            1,
+            track_id,
+            1_700_000_000,
+        )
+        .unwrap());
+        drop(database);
+        std::fs::write(
+            directory.path().join(JOURNAL_FILE_NAME),
+            format!("v1\t1\t{track_id}\t1700000000\n"),
+        )
+        .unwrap();
+
+        let recorder = super::PlayRecorder::spawn(database_path.clone(), 1);
+        drop(recorder);
+
+        assert_eq!(play_count(&database_path, track_id), 1);
+        assert_eq!(
+            std::fs::read(directory.path().join(JOURNAL_FILE_NAME)).unwrap(),
+            b"",
+        );
+    }
+
+    #[test]
+    fn corrupt_lines_and_a_truncated_tail_do_not_block_valid_replay() {
+        let directory = tempfile::tempdir().unwrap();
+        let (database_path, track_id) = seeded_database(directory.path());
+        std::fs::write(
+            directory.path().join(JOURNAL_FILE_NAME),
+            format!("v1\t1\t{track_id}\t1700000000\nnot-an-entry\nv1\t2\t{track_id}"),
+        )
+        .unwrap();
+
+        let recorder = super::PlayRecorder::spawn(database_path.clone(), 0);
+        drop(recorder);
+
+        assert_eq!(play_count(&database_path, track_id), 1);
+        assert_eq!(
+            std::fs::read(directory.path().join(JOURNAL_FILE_NAME)).unwrap(),
+            b"",
+            "repair must discard malformed records and the incomplete last line",
+        );
+    }
+
+    #[test]
+    fn recording_returns_while_the_writer_is_held_before_the_journal_append() {
+        let directory = tempfile::tempdir().unwrap();
+        let (database_path, track_id) = seeded_database(directory.path());
+        let (plays, queued) = mpsc::channel();
+        let shutting_down = Arc::new(AtomicBool::new(false));
+        let worker_flag = Arc::clone(&shutting_down);
+        let (entered, wait_until_entered) = mpsc::channel();
+        let (release, wait_for_release) = mpsc::channel();
+        let worker_path = database_path.clone();
+        let worker = std::thread::Builder::new()
+            .name("reprise-android-plays-test".to_owned())
+            .spawn(move || {
+                entered.send(()).unwrap();
+                wait_for_release.recv().unwrap();
+                super::write_queued_plays(&worker_path, 0, queued, &worker_flag);
+            })
+            .unwrap();
+        let recorder = super::PlayRecorder {
+            plays: Some(plays),
+            shutting_down,
+            worker: Some(worker),
+        };
+        wait_until_entered.recv().unwrap();
+
+        let started = Instant::now();
+        recorder.record(RecordedPlay {
+            track_id,
+            at_unix: 1_700_000_000,
+        });
+        let elapsed = started.elapsed();
+        let ordinary_operation = !recorder.shutting_down.load(Ordering::Relaxed);
+        release.send(()).unwrap();
+        drop(recorder);
+
+        assert!(
+            elapsed < Duration::from_millis(100),
+            "the playback thread waited for writer-thread work",
+        );
+        assert!(
+            ordinary_operation,
+            "the fixture must still describe ordinary operation",
+        );
+        assert_eq!(play_count(&database_path, track_id), 1);
+    }
 
     /// The whole point of the retry: a write that lost to the scanner's
     /// transaction is offered again, with a growing pause, up to a bound. A
@@ -268,13 +487,20 @@ mod tests {
 
         let logs = CapturedLogs::default();
         tracing::subscriber::with_default(LogCapture(logs.clone()), || {
-            record_play_with_retries(&read_only, RecordedPlay::now(830), &AtomicBool::new(false));
+            record_play_with_retries(
+                &read_only,
+                JournalEntry {
+                    sequence: 1,
+                    play: RecordedPlay::now(830),
+                },
+                &AtomicBool::new(false),
+            );
         });
 
         let logged = logs.joined();
         assert!(logged.contains("WARN"), "expected a warning, got {logged}");
         assert!(
-            logged.contains("dropped an Android play count"),
+            logged.contains("kept an Android play count in its journal"),
             "expected the loss to be named, got {logged}",
         );
         assert!(
