@@ -185,6 +185,21 @@ fn src_16_the_title_starts_at_the_same_x_in_both_source_views() {
             .x()
     };
     assert_eq!(x(&rss), x(&youtube));
+
+    // Comparing the two kinds against each other is not enough on its own:
+    // both read their geometry from the same skeleton, so the equality above
+    // holds by construction and no change to the shared constants can break
+    // it. Pinning the absolute offset is what gives this test a lever — it
+    // fails when the media column, the row's leading margin or the row
+    // spacing changes, which is the drift the rule is actually about.
+    // Bounds are relative to the row root, so its own leading margin is not
+    // part of this — the offset is the media column plus the row's spacing.
+    let expected = crate::ui::source_row::MEDIA_WIDTH as f32 + 12.0;
+    assert_eq!(
+        x(&rss),
+        expected,
+        "the title no longer starts one media column plus one gap from the row edge"
+    );
 }
 
 /// `SRC-16`: the shared skeleton also fixes the other axis.

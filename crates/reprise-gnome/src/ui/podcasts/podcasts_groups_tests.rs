@@ -540,7 +540,14 @@ fn src_12a_grouped_selection_survives_render_rebuild_on_the_row() {
             gtk4::AccessibleState::Selected
         ));
         assert!(row.is_focusable());
-        assert!(row
+        // The media column leads the row. It used to be the thumbnail overlay
+        // itself; since `SRC-16` the overlay sits inside the shared skeleton's
+        // fixed-width media host, which is what keeps the title at the same x
+        // position in both source kinds. The claim is unchanged — artwork
+        // first — only one level deeper.
+        let media = row.first_child().expect("the row leads with its media column");
+        assert!(media.is::<gtk4::Box>());
+        assert!(media
             .first_child()
             .is_some_and(|child| child.is::<gtk4::Overlay>()));
     }
