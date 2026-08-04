@@ -153,12 +153,15 @@ impl PlayJournal {
     /// one of them at once. Until then it still costs a slot, so the caller's
     /// cap keeps counting it.
     pub(super) fn remove_front(&mut self) -> io::Result<()> {
-        let rewritten = rewrite(&self.path, self.entries.iter().copied().skip(1));
+        let replaced = replace(&self.path, self.entries.iter().copied().skip(1));
         self.entries.pop_front();
-        match rewritten {
+        match replaced {
+            // The file now matches the queue exactly, whatever the directory
+            // sync goes on to say — so the count of lines left behind is zero
+            // either way, and only durability is still at stake.
             Ok(()) => {
                 self.stale_lines = 0;
-                Ok(())
+                sync_directory_of(&self.path)
             }
             Err(error) => {
                 self.stale_lines += 1;
@@ -215,6 +218,16 @@ fn claim(path: &Path) -> io::Result<File> {
 /// Renumbering has to land *above* the applied mark as well as above the
 /// previous entry: a number at or below the mark is one Core has already
 /// committed, and the rescued play would be swallowed as a replay of it.
+///
+/// What it deliberately does *not* do is renumber a line merely for sitting at
+/// or below the applied mark. Being at or below the mark is exactly what an
+/// already-counted entry looks like — one whose removal a crash or an
+/// unwritable file interrupted — and renumbering those would count every one of
+/// them a second time. So a sequence commits at most one play, and among lines
+/// sharing a sequence at most one can have been the play that committed: the
+/// first keeps its number and is judged against the mark, and only the ones
+/// behind it, which provably never committed under that number, are rescued.
+/// That is the whole of what can be recovered without inventing a play.
 fn parse_entries(
     contents: &[u8],
     applied_sequence: i64,
@@ -337,6 +350,19 @@ fn parse_number(value: Option<&str>) -> Result<i64, UnreadableLine> {
 }
 
 fn rewrite(path: &Path, entries: impl Iterator<Item = JournalEntry>) -> io::Result<()> {
+    replace(path, entries)?;
+    sync_directory_of(path)
+}
+
+/// Puts `entries` in the file's place, atomically.
+///
+/// Split out from [`rewrite`] so a caller can tell the two failures apart: an
+/// error from here means the file still holds what it held, while an error from
+/// the directory sync afterwards means the file *was* replaced and only the
+/// name's durability is in doubt. [`PlayJournal::remove_front`] counts lines it
+/// believes are still on disk, and would over-count them forever if it read the
+/// second case as the first.
+fn replace(path: &Path, entries: impl Iterator<Item = JournalEntry>) -> io::Result<()> {
     let temporary = path.with_file_name(TEMP_FILE_NAME);
     let mut file = fs::File::create(&temporary)?;
     for entry in entries {
@@ -344,8 +370,7 @@ fn rewrite(path: &Path, entries: impl Iterator<Item = JournalEntry>) -> io::Resu
     }
     file.sync_data()?;
     drop(file);
-    fs::rename(temporary, path)?;
-    sync_directory_of(path)
+    fs::rename(temporary, path)
 }
 
 /// Makes a name durable, not just the bytes behind it.
