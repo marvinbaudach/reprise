@@ -7,17 +7,23 @@ The 1:3 barline ratio prevents the mark reading as a rest, while the 5.5-unit
 dot-to-barline gap binds the four shapes without collapsing them.
 
 `data/brand/palette.toml` is the only maintained colour source. The mark puts
-`#A855F7` on the three small elements — the two dots and the thin barline — and
+`#FF6F5E` on the three small elements — the two dots and the thin barline — and
 `#4FDBD4` on the thick barline. The light-ground form replaces them with
-`#7C3AED` and `#00706B`. The carrier is a solid `#33363F` rounded 88-unit
+`#C4362A` and `#00706B`. The carrier is a solid `#33363F` rounded 88-unit
 square. Nothing uses a gradient.
 
 The split was chosen against the alternative that swapped the two colours,
 compared at dock size. Teal on the thick barline reads farther because the
 largest field carries the brighter colour: 7.13:1 against the carrier where
-violet manages 3.05:1. Violet still holds as the accent on the small elements.
+coral manages 4.42:1. Coral still holds as the accent on the small elements.
 Only the chosen split is generated — keeping the loser "for comparison" would
 mean a second mark to hold in step, and the comparison is over.
+
+Coral is deliberate rather than saturated red. `#EF4444` beside teal is
+reserved for interface error states and its lower lightness would outweigh the
+teal. Coral separates just as clearly without that connotation and sits closer
+to the teal in lightness. Any future adjustment stays within
+`#FF6F5E` … `#FF8A72`; it never moves toward red.
 
 At 512 px the rendered ink box is x 24.562–66.938 and y 20.062–75.938 viewBox
 units. Four components survive at 22, 24, 28 and 32 px. At 16 px the counter
@@ -50,9 +56,9 @@ The symbolic SVG keeps the 96-unit geometry: it is rendered at whatever size
 the shell asks for, and grid-fitting it to 16 would misfit every other size.
 A themed 16 px surface can use `reprise-mark-16-mono.svg`.
 
-Measured WCAG contrasts are 3.05 (`#A855F7`) and 7.13 (`#4FDBD4`) on the
-carrier, 4.99 and 11.68 on `#0a0a0e`, 5.70 (`#7C3AED`) and 5.95 (`#00706B`)
-on white, and 4.92 and 5.13 on `#eceef5`. All exceed the 3:1 graphical-object
+Measured WCAG contrasts are 4.42 (`#FF6F5E`) and 7.13 (`#4FDBD4`) on the
+carrier, 7.23 and 11.68 on `#0a0a0e`, 5.37 (`#C4362A`) and 5.95 (`#00706B`)
+on white, and 4.64 and 5.13 on `#eceef5`. All exceed the 3:1 graphical-object
 floor. The fixed Android `translate(6,6)` placement loses 0.000436 of rendered
 ink under the centred 66-dp circle and keeps all four components.
 

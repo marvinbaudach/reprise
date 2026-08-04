@@ -15,7 +15,7 @@ def colours(palette):
         f'    <color name="{name}">{value}</color>\n'
         for name, value in (
             ("reprise_teal", palette["reprise_teal"]),
-            ("reprise_violet", palette["reprise_violet"]),
+            ("reprise_coral", palette["reprise_coral"]),
             ("reprise_plate", palette["reprise_plate"]),
         )
     )

@@ -8,9 +8,9 @@ from pathlib import Path
 
 PALETTE_KEYS = (
     "reprise_teal",
-    "reprise_violet",
+    "reprise_coral",
     "reprise_teal_light",
-    "reprise_violet_light",
+    "reprise_coral_light",
     "reprise_plate",
 )
 HEX = re.compile(r"#[0-9A-F]{6}")
@@ -124,27 +124,27 @@ def render(palette):
     # The colour split was decided at dock size against the alternative that
     # swapped the two: teal on the thick barline reads farther because the
     # large field carries the brighter colour (7.13:1 on the plate against
-    # violet's 3.05:1), and violet stays legible as the accent on the dots and
+    # coral's 4.42:1), and coral stays legible as the accent on the dots and
     # the thin barline. Only the chosen split is generated — a second one kept
     # "for comparison" is a second mark to keep in step, and the comparison is
     # over.
     return {
         "reprise-mark.svg": mark_svg(
-            palette["reprise_violet"], palette["reprise_teal"],
+            palette["reprise_coral"], palette["reprise_teal"],
             "Teal carries the thick barline so the\n"
-            "       largest field holds the brighter colour; violet accents the dots\n"
+            "       largest field holds the brighter colour; coral accents the dots\n"
             "       and the thin barline."),
         "reprise-mark-light.svg": mark_svg(
-            palette["reprise_violet_light"], palette["reprise_teal_light"],
+            palette["reprise_coral_light"], palette["reprise_teal_light"],
             "The deeper pair keeps that hierarchy\n"
             "       while clearing the graphical-object contrast floor on light ground."),
         "reprise-mark-mono.svg": mono_svg(),
         "icon-plate.svg": plate_svg(palette["reprise_plate"]),
         "reprise-mark-16.svg": hinted_16_svg(
-            palette["reprise_violet"], palette["reprise_teal"]),
+            palette["reprise_coral"], palette["reprise_teal"]),
         "reprise-mark-16-mono.svg": hinted_16_mono_svg(),
         "reprise-icon-16.svg": hinted_16_icon_svg(
-            palette["reprise_violet"], palette["reprise_teal"],
+            palette["reprise_coral"], palette["reprise_teal"],
             palette["reprise_plate"]),
     }
 
