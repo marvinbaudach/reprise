@@ -301,6 +301,28 @@ fn write_negative(key: &str) {
     let _ = std::fs::write(negative_marker_path(key), b"");
 }
 
+/// Bumped whenever a downloaded cover is published.
+///
+/// A downloaded cover outranks a track's own artwork, so publishing one can
+/// change what *any* track resolves to — including tracks that have not been
+/// touched themselves. `cover::thumbnail_for_track` carries this marker's
+/// timestamp in its stamp so those remembered answers fall. A marker rather
+/// than the directory's own mtime, so that anything else writing into the
+/// download cache does not invalidate every remembered cover in the library.
+pub fn publish_marker() -> PathBuf {
+    downloaded_dir().join(".published")
+}
+
+fn note_publication() {
+    let marker = publish_marker();
+    if let Some(dir) = marker.parent() {
+        if std::fs::create_dir_all(dir).is_err() {
+            return;
+        }
+    }
+    let _ = std::fs::write(&marker, fastrand::u64(..).to_string());
+}
+
 fn store_downloaded(key: &str, bytes: &[u8], ext: &str) -> Option<PathBuf> {
     let dir = downloaded_dir();
     std::fs::create_dir_all(&dir).ok()?;
@@ -314,6 +336,7 @@ fn store_downloaded(key: &str, bytes: &[u8], ext: &str) -> Option<PathBuf> {
         let _ = std::fs::remove_file(&tmp);
         return downloaded_cover_path(key); // a concurrent writer may have published it
     }
+    note_publication();
     Some(out)
 }
 
