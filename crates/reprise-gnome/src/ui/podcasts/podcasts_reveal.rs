@@ -51,6 +51,27 @@ pub(super) fn reveal_target(
     })
 }
 
+/// Locates a channel in the rendered groups. `needs_full_window` is always
+/// false: whoever jumps to the channel wants to see it from the top, not a row
+/// in the middle of its episode list (Spec A.2).
+///
+/// Measured on 2026-08-05 in the first post-idle Xvfb tick: the header was
+/// 40 px high both collapsed and expanded; the respective expanders were 60
+/// and 102 px high. The header is therefore the stable centering target in
+/// both states, while the expanded expander would include episode rows.
+pub(super) fn channel_reveal_target(
+    groups: &[SourceGroup],
+    subscription_id: i64,
+) -> Option<RevealTarget> {
+    groups
+        .iter()
+        .any(|group| group.subscription_id == subscription_id)
+        .then_some(RevealTarget {
+            subscription_id,
+            needs_full_window: false,
+        })
+}
+
 /// Adjustment value that vertically centers a row spanning
 /// `row_top..row_top + row_height` in the scrolled content. `row_top` is
 /// measured against the content, not the viewport. Returns `None` while the
@@ -247,6 +268,41 @@ mod tests {
 
         assert_eq!(reveal_target(&groups, 99, false), None);
         assert_eq!(reveal_target(&[], 1, false), None);
+    }
+
+    #[test]
+    fn src_13_a_channel_reveal_only_expands_its_group() {
+        let groups = [group(7, &[1, 2, 3])];
+
+        assert_eq!(
+            channel_reveal_target(&groups, 7),
+            Some(RevealTarget {
+                subscription_id: 7,
+                needs_full_window: false,
+            })
+        );
+    }
+
+    #[test]
+    fn src_13_a_channel_reveal_leaves_the_episode_window_closed() {
+        let ids = (1..=15).collect::<Vec<_>>();
+        let groups = [group(7, &ids)];
+
+        assert_eq!(
+            channel_reveal_target(&groups, 7),
+            Some(RevealTarget {
+                subscription_id: 7,
+                needs_full_window: false,
+            })
+        );
+    }
+
+    #[test]
+    fn src_13_a_channel_that_is_not_listed_has_nothing_to_reveal() {
+        let groups = [group(7, &[1, 2])];
+
+        assert_eq!(channel_reveal_target(&groups, 99), None);
+        assert_eq!(channel_reveal_target(&[], 7), None);
     }
 
     #[test]

@@ -112,6 +112,7 @@ pub(in crate::ui) struct PodcastsView {
     download_states: Rc<RefCell<BTreeMap<i64, DownloadState>>>,
     download_widgets: RefCell<BTreeMap<i64, podcasts_groups::DownloadRowWidgets>>,
     selection_widgets: RefCell<BTreeMap<i64, podcasts_groups::SelectionRowWidgets>>,
+    channel_widgets: RefCell<BTreeMap<i64, podcasts_groups::ChannelRowWidgets>>,
     scroller: gtk4::ScrolledWindow,
     last_scroll_activity: Cell<Option<std::time::Instant>>,
     reveal_animation: Rc<RefCell<Option<adw::TimedAnimation>>>,
@@ -226,6 +227,7 @@ impl PodcastsView {
             download_states: Rc::new(RefCell::new(BTreeMap::new())),
             download_widgets: RefCell::new(BTreeMap::new()),
             selection_widgets: RefCell::new(BTreeMap::new()),
+            channel_widgets: RefCell::new(BTreeMap::new()),
             scroller,
             last_scroll_activity: Cell::new(None),
             reveal_animation: Rc::new(RefCell::new(None)),
@@ -400,6 +402,7 @@ impl PodcastsView {
         );
         self.download_widgets.replace(rendered_widgets.downloads);
         self.selection_widgets.replace(rendered_widgets.selection);
+        self.channel_widgets.replace(rendered_widgets.channels);
         // `G2` (design 6a): the header line is a projection over the
         // unfiltered `groups`, not `rendered_groups` — it stays a stable
         // library overview instead of jittering with the active filter.

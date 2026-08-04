@@ -7,6 +7,13 @@ use crate::ui::podcasts::podcasts_playback::episode_mark_requires_render;
 use crate::ui::podcasts::podcasts_reveal;
 use crate::ui::source_reveal::{self, LoadedItemChange, RevealPolicy};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum RevealRequest {
+    Episode(i64),
+    #[allow(dead_code)] // Constructed by the source-view entry point in AP7.
+    Channel(i64),
+}
+
 impl PodcastsView {
     pub(in crate::ui) fn set_playing_episode(&self, mark: Option<EpisodeMark>, restored: bool) {
         let previous = self.playing_episode.replace(mark);
@@ -48,13 +55,17 @@ impl PodcastsView {
     /// focus or selection. `START-3` is the single cold-start exception: it
     /// restores this episode as the sole selection before centering it.
     fn reveal_loaded_episode(&self, change: LoadedItemChange) {
+        let Some(mark) = self.playing_episode.get() else {
+            return;
+        };
+        self.reveal(RevealRequest::Episode(mark.id), change);
+    }
+
+    pub(super) fn reveal(&self, request: RevealRequest, change: LoadedItemChange) {
         let user_scrolling = source_reveal::is_user_scrolling(self.last_scroll_activity.get());
         if source_reveal::reveal_policy(change, user_scrolling) == RevealPolicy::MarkerOnly {
             return;
         }
-        let Some(mark) = self.playing_episode.get() else {
-            return;
-        };
         let groups = self.groups.borrow().clone();
         let download_states = self.download_states.borrow().clone();
         let rendered_groups =
@@ -63,15 +74,23 @@ impl PodcastsView {
             .into_iter()
             .map(|rendered| rendered.group)
             .collect::<Vec<_>>();
-        let window_expanded = {
-            let expanded = self.expanded_episode_sources.borrow();
-            let Some(target) = podcasts_reveal::reveal_target(&rendered_groups, mark.id, false)
-            else {
-                return;
-            };
-            expanded.contains(&target.subscription_id)
+        let target = match request {
+            RevealRequest::Episode(episode_id) => {
+                let window_expanded = {
+                    let expanded = self.expanded_episode_sources.borrow();
+                    let Some(target) =
+                        podcasts_reveal::reveal_target(&rendered_groups, episode_id, false)
+                    else {
+                        return;
+                    };
+                    expanded.contains(&target.subscription_id)
+                };
+                podcasts_reveal::reveal_target(&rendered_groups, episode_id, window_expanded)
+            }
+            RevealRequest::Channel(subscription_id) => {
+                podcasts_reveal::channel_reveal_target(&rendered_groups, subscription_id)
+            }
         };
-        let target = podcasts_reveal::reveal_target(&rendered_groups, mark.id, window_expanded);
         let Some(target) = target else {
             return;
         };
@@ -89,21 +108,26 @@ impl PodcastsView {
             self.render();
         }
         if change == LoadedItemChange::SessionRestore {
-            self.select_row(mark.id, SelectMode::Only);
+            if let RevealRequest::Episode(episode_id) = request {
+                self.select_row(episode_id, SelectMode::Only);
+            }
         }
-        let row = self
-            .download_widgets
-            .borrow()
-            .get(&mark.id)
-            .map(|widgets| widgets.root.clone());
+        let row = match request {
+            RevealRequest::Episode(episode_id) => self
+                .download_widgets
+                .borrow()
+                .get(&episode_id)
+                .map(|widgets| widgets.root.clone().upcast::<gtk4::Widget>()),
+            RevealRequest::Channel(subscription_id) => self
+                .channel_widgets
+                .borrow()
+                .get(&subscription_id)
+                .map(|widgets| widgets.header.clone()),
+        };
         let Some(row) = row else {
             return;
         };
-        podcasts_reveal::center_row(
-            &self.scroller,
-            row.upcast_ref::<gtk4::Widget>(),
-            &self.reveal_animation,
-        );
+        podcasts_reveal::center_row(&self.scroller, &row, &self.reveal_animation);
     }
 
     /// A pause or resume of the episode already on screen: only the marker
