@@ -4,95 +4,14 @@
 //! palette each stay reviewable on their own. Nothing here touches GTK or any
 //! global state — it is pure arithmetic over sRGB bytes.
 
+use super::color_math::{from_linear, linear_rgb_to_oklab, oklab_to_linear_rgb, to_linear};
+
 /// An extracted 8-bit color.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::ui) struct Rgb {
     pub(in crate::ui) r: u8,
     pub(in crate::ui) g: u8,
     pub(in crate::ui) b: u8,
-}
-
-/// sRGB channel (0–255) → linear light.
-pub(in crate::ui::style) fn to_linear(channel: u8) -> f64 {
-    let c = f64::from(channel) / 255.0;
-    if c <= 0.04045 {
-        c / 12.92
-    } else {
-        ((c + 0.055) / 1.055).powf(2.4)
-    }
-}
-
-/// Linear light → sRGB channel (0–255), clamped.
-pub(in crate::ui::style) fn from_linear(c: f64) -> u8 {
-    let srgb = if c <= 0.003_130_8 {
-        c * 12.92
-    } else {
-        1.055 * c.powf(1.0 / 2.4) - 0.055
-    };
-    (srgb.clamp(0.0, 1.0) * 255.0).round() as u8
-}
-
-/// Linear RGB → OKLab `(L, a, b)`.
-pub(in crate::ui::style) fn linear_rgb_to_oklab(lr: f64, lg: f64, lb: f64) -> (f64, f64, f64) {
-    // Linear RGB → LMS (matrix from Björn Ottosson's OKLab blog)
-    let l = 0.412_221_470_8 * lr + 0.536_332_536_3 * lg + 0.051_445_992_9 * lb;
-    let m = 0.211_903_498_2 * lr + 0.680_699_545_1 * lg + 0.107_396_956_6 * lb;
-    let s = 0.088_302_461_9 * lr + 0.281_718_837_6 * lg + 0.629_978_700_5 * lb;
-
-    // Cube root
-    let l = l.cbrt();
-    let m = m.cbrt();
-    let s = s.cbrt();
-
-    // LMS → Lab
-    let lab_l = 0.210_454_255_3 * l + 0.793_617_785_0 * m - 0.004_072_046_8 * s;
-    let lab_a = 1.977_998_495_1 * l - 2.428_592_205_0 * m + 0.450_593_709_9 * s;
-    let lab_b = 0.025_904_037_1 * l + 0.782_771_766_2 * m - 0.808_675_766_0 * s;
-
-    (lab_l, lab_a, lab_b)
-}
-
-/// OKLab `(L, a, b)` → linear RGB `(r, g, b)`.
-pub(in crate::ui::style) fn oklab_to_linear_rgb(
-    lab_l: f64,
-    lab_a: f64,
-    lab_b: f64,
-) -> (f64, f64, f64) {
-    // Lab → LMS (inverse matrix)
-    let l = lab_l + 0.396_337_777_3 * lab_a + 0.215_803_757_9 * lab_b;
-    let m = lab_l - 0.105_561_346_2 * lab_a - 0.063_854_174_7 * lab_b;
-    let s = lab_l - 0.089_484_177_5 * lab_a - 1.291_485_548_0 * lab_b;
-
-    // Cube (inverse of cube root)
-    let l = l * l * l;
-    let m = m * m * m;
-    let s = s * s * s;
-
-    // LMS → linear RGB (inverse matrix)
-    let r = 4.076_741_661_3 * l - 3.307_711_590_8 * m + 0.230_969_929_5 * s;
-    let g = -1.268_437_973_0 * l + 2.609_757_401_1 * m - 0.341_319_427_9 * s;
-    let b = -0.004_196_086_3 * l - 0.703_418_614_7 * m + 1.707_614_701_0 * s;
-
-    (r, g, b)
-}
-
-/// Scales an sRGB color's OKLCH chroma while preserving its lightness and hue.
-/// Inputs and outputs use Cairo's normalized 0..1 channel range. This is pure
-/// color math and deliberately does not touch the global cover-accent provider.
-pub(in crate::ui) fn scale_chroma(r: f64, g: f64, b: f64, factor: f64) -> (f64, f64, f64) {
-    let to_channel = |value: f64| (value.clamp(0.0, 1.0) * 255.0).round() as u8;
-    let (l, a, b) = linear_rgb_to_oklab(
-        to_linear(to_channel(r)),
-        to_linear(to_channel(g)),
-        to_linear(to_channel(b)),
-    );
-    let factor = factor.clamp(0.0, 1.0);
-    let (lr, lg, lb) = oklab_to_linear_rgb(l, a * factor, b * factor);
-    (
-        f64::from(from_linear(lr)) / 255.0,
-        f64::from(from_linear(lg)) / 255.0,
-        f64::from(from_linear(lb)) / 255.0,
-    )
 }
 
 /// Chroma is clamped into this band. The floor lifts washed-out or dark covers

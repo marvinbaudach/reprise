@@ -22,7 +22,7 @@ use super::waveform_primitives::{
 };
 use super::waveform_shape::{shape_display_peaks, DisplayBar, SILENCE_DOT_HEIGHT};
 use crate::ui::motion;
-use crate::ui::style::cover_accent::scale_chroma;
+use crate::ui::style::color_math::scale_chroma;
 use reprise_core::format::format_duration;
 
 /// Shared, cloneable slot for the optional seek handler (cloned out before it

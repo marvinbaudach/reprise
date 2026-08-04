@@ -11,9 +11,10 @@
 //! rest are monochrome — so the sweep became a rotating copy of the blurred
 //! cover and the second and third entries lost their only reader.
 
+use super::color_math::{linear_rgb_to_oklab, to_linear};
 #[cfg(test)]
 use super::cover_accent_oklab::is_usable;
-use super::cover_accent_oklab::{linear_rgb_to_oklab, oklch_clamp, to_linear, Rgb};
+use super::cover_accent_oklab::{oklch_clamp, Rgb};
 
 /// Edge length the cover is scaled to before sampling — small enough to be
 /// cheap, large enough to be representative.

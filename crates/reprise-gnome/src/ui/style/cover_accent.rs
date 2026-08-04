@@ -14,8 +14,8 @@ use std::cell::RefCell;
 
 #[cfg(test)]
 use super::cover_accent_oklab::oklch_clamp;
+pub(in crate::ui) use super::cover_accent_oklab::Rgb;
 use super::cover_accent_oklab::{is_usable, oklch_light};
-pub(in crate::ui) use super::cover_accent_oklab::{scale_chroma, Rgb};
 
 // ---------------------------------------------------------------------------
 // CSS provider
@@ -79,25 +79,6 @@ pub(in crate::ui) fn set_cover_accent(accent: Option<Rgb>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn chroma_scaling_is_draw_local_and_leaves_provider_state_untouched() {
-        ACCENT_PROVIDER.with(|slot| slot.borrow_mut().take());
-
-        let original = (0.8, 0.2, 0.1);
-        let unchanged = scale_chroma(original.0, original.1, original.2, 1.0);
-        assert!((unchanged.0 - original.0).abs() <= 1.0 / 255.0);
-        assert!((unchanged.1 - original.1).abs() <= 1.0 / 255.0);
-        assert!((unchanged.2 - original.2).abs() <= 1.0 / 255.0);
-
-        let gray = scale_chroma(original.0, original.1, original.2, 0.0);
-        assert!((gray.0 - gray.1).abs() <= 1.0 / 255.0);
-        assert!((gray.1 - gray.2).abs() <= 1.0 / 255.0);
-
-        // Chroma scaling is pure draw-time math: it neither replaces nor
-        // reloads the application-wide cover-accent provider.
-        ACCENT_PROVIDER.with(|slot| assert!(slot.borrow().is_none()));
-    }
 
     #[test]
     fn accent_css_overrides_when_usable_and_is_empty_otherwise() {

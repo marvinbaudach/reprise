@@ -14,6 +14,7 @@
 
 pub(super) mod accent;
 pub(super) mod buttons;
+pub(super) mod color_math;
 pub(super) mod cover_accent;
 pub(super) mod cover_accent_oklab;
 pub(super) mod cover_palette;
