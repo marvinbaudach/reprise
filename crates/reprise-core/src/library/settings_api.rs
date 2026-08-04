@@ -3,20 +3,20 @@ use crate::db::Db;
 use super::{
     get_auto_clean_armed_at_in, get_bool_in, get_browse_visible_in, get_color_scheme_in,
     get_compact_always_on_top_in, get_compact_layout_in, get_crossfade_seconds_in,
-    get_equalizer_bands_in, get_equalizer_enabled_in, get_gapless_enabled_in,
-    get_info_panel_visible_in, get_last_scan_relinked_in, get_last_viewed_import_errors_in,
-    get_last_viewed_missing_in, get_library_root_in, get_list_density_in,
-    get_missing_auto_clean_in, get_new_releases_fetch_completed_in,
+    get_equalizer_bands_in, get_equalizer_curve_in, get_equalizer_enabled_in,
+    get_gapless_enabled_in, get_info_panel_visible_in, get_last_scan_relinked_in,
+    get_last_viewed_import_errors_in, get_last_viewed_missing_in, get_library_root_in,
+    get_list_density_in, get_missing_auto_clean_in, get_new_releases_fetch_completed_in,
     get_new_releases_last_completed_at_in, get_onboarding_completed_in,
     get_online_discovery_banner_completed_in, get_player_bar_position_in, get_replay_gain_mode_in,
     get_setting_in, get_sidebar_collapsed_in, get_sidebar_visible_in, get_status_visible_in,
     get_track_transition_in, get_window_decoration_mode_in, get_window_view_mode_in,
     set_auto_clean_armed_at_in, set_bool_in, set_browse_visible_in, set_color_scheme_in,
     set_compact_always_on_top_in, set_compact_layout_in, set_crossfade_seconds_in,
-    set_equalizer_bands_in, set_equalizer_enabled_in, set_gapless_enabled_in,
-    set_info_panel_visible_in, set_last_scan_relinked_in, set_last_viewed_import_errors_in,
-    set_last_viewed_missing_in, set_library_root_in, set_list_density_in,
-    set_missing_auto_clean_in, set_new_releases_fetch_completed_in,
+    set_equalizer_bands_in, set_equalizer_curve_in, set_equalizer_enabled_in,
+    set_gapless_enabled_in, set_info_panel_visible_in, set_last_scan_relinked_in,
+    set_last_viewed_import_errors_in, set_last_viewed_missing_in, set_library_root_in,
+    set_list_density_in, set_missing_auto_clean_in, set_new_releases_fetch_completed_in,
     set_new_releases_last_completed_at_in, set_onboarding_completed_in,
     set_online_discovery_banner_completed_in, set_player_bar_position_in, set_replay_gain_mode_in,
     set_setting_in, set_sidebar_collapsed_in, set_sidebar_visible_in, set_status_visible_in,
@@ -245,6 +245,19 @@ pub fn get_equalizer_bands(db: &Db) -> [f64; 10] {
 pub fn set_equalizer_bands(db: &Db, values: [f64; 10]) -> Result<(), rusqlite::Error> {
     let conn = db.conn();
     set_equalizer_bands_in(conn, values)
+}
+
+pub fn get_equalizer_curve(db: &Db) -> crate::equalizer::EqualizerCurve {
+    let conn = db.conn();
+    get_equalizer_curve_in(conn)
+}
+
+pub fn set_equalizer_curve(
+    db: &Db,
+    curve: &crate::equalizer::EqualizerCurve,
+) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
+    set_equalizer_curve_in(conn, curve)
 }
 
 pub fn get_replay_gain_mode(db: &Db) -> ReplayGainMode {

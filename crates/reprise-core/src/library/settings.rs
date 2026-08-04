@@ -242,7 +242,7 @@ pub const COMPACT_LAYOUT_KEY: &str = "ui.compact_layout";
 pub const WINDOW_DECORATION_MODE_KEY: &str = "ui.window_decoration_mode";
 pub const COMPACT_ALWAYS_ON_TOP_KEY: &str = "ui.compact_always_on_top";
 pub const EQUALIZER_ENABLED_KEY: &str = "playback.equalizer_enabled";
-pub const EQUALIZER_BANDS_KEY: &str = "playback.equalizer_bands";
+pub const EQUALIZER_CURVE_KEY: &str = crate::db_equalizer::EQUALIZER_CURVE_KEY;
 pub const REPLAY_GAIN_MODE_KEY: &str = "playback.replay_gain_mode";
 pub const GAPLESS_ENABLED_KEY: &str = "playback.gapless_enabled";
 pub const CROSSFADE_SECONDS_KEY: &str = "playback.crossfade_seconds";
@@ -490,31 +490,61 @@ pub(super) fn set_equalizer_enabled_in(
     set_bool_in(conn, EQUALIZER_ENABLED_KEY, value)
 }
 
+/// The ten-band *picture* of the stored curve, for backends whose equalizer is
+/// GStreamer's fixed ten centres. Never persisted: see
+/// [`set_equalizer_bands_in`].
 pub(super) fn get_equalizer_bands_in(conn: &Connection) -> [f64; 10] {
-    let value = typed_value(conn, EQUALIZER_BANDS_KEY, "0,0,0,0,0,0,0,0,0,0");
-    let values = value
-        .split(',')
-        .map(str::parse::<f64>)
-        .collect::<Result<Vec<_>, _>>();
-    let Ok(values) = values else {
-        tracing::warn!("invalid equalizer bands; using flat preset");
-        return [0.0; 10];
-    };
-    let Ok(values) = <Vec<f64> as TryInto<[f64; 10]>>::try_into(values) else {
-        tracing::warn!("wrong equalizer band count; using flat preset");
-        return [0.0; 10];
-    };
-    values.map(|value| value.clamp(-12.0, 12.0))
+    get_equalizer_curve_in(conn).project_to_gstreamer()
 }
 
+/// Replaces the whole curve with ten values at GStreamer's centres.
+///
+/// The write is accepted even when the stored curve was authored somewhere
+/// else — refusing it would leave the desktop equalizer looking alive and
+/// doing nothing, which is a worse failure than the loss it would prevent. But
+/// it is no longer *silent*: a ten-slider surface can only express those ten
+/// centres, so when the stored curve is some other shape (a phone's five
+/// bands, say, carried over in a copied library) nine of the ten values being
+/// written back are projections of it rather than authored points, and the
+/// authored ones do not survive. That is a decision on the record here, not an
+/// accident in the caller.
+///
+/// A real answer needs the editing surface to say what it is about to replace,
+/// and `crates/reprise-gnome` may not change in this package — see the M6
+/// residual note in `docs/superpowers/plans/2026-08-04-mobile-m3.md`.
 pub(super) fn set_equalizer_bands_in(
     conn: &Connection,
     values: [f64; 10],
 ) -> Result<(), rusqlite::Error> {
-    let value = values
-        .map(|value| value.clamp(-12.0, 12.0).to_string())
-        .join(",");
-    set_setting_in(conn, EQUALIZER_BANDS_KEY, &value)
+    let stored = get_equalizer_curve_in(conn);
+    if !stored.is_gstreamer_ten_band() {
+        tracing::warn!(
+            stored_points = stored.points().len(),
+            "a ten-band equalizer edit is replacing a curve authored on another backend; \
+             its points are lost and the written values are a projection of it"
+        );
+    }
+    set_equalizer_curve_in(
+        conn,
+        &crate::equalizer::EqualizerCurve::from_gstreamer_levels(values),
+    )
+}
+
+pub(super) fn get_equalizer_curve_in(conn: &Connection) -> crate::equalizer::EqualizerCurve {
+    let Some(value) = get_setting_in(conn, EQUALIZER_CURVE_KEY).ok().flatten() else {
+        return crate::equalizer::EqualizerCurve::flat_gstreamer();
+    };
+    crate::equalizer::EqualizerCurve::parse(&value).unwrap_or_else(|error| {
+        tracing::warn!(%error, "invalid equalizer curve; using flat preset");
+        crate::equalizer::EqualizerCurve::flat_gstreamer()
+    })
+}
+
+pub(super) fn set_equalizer_curve_in(
+    conn: &Connection,
+    curve: &crate::equalizer::EqualizerCurve,
+) -> Result<(), rusqlite::Error> {
+    set_setting_in(conn, EQUALIZER_CURVE_KEY, &curve.serialize())
 }
 
 pub(super) fn get_replay_gain_mode_in(conn: &Connection) -> ReplayGainMode {

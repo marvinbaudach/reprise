@@ -41,6 +41,7 @@ mod db_change_log;
 mod db_concerts;
 mod db_device_sync;
 mod db_drop_audio_analysis_mix;
+mod db_equalizer;
 mod db_grandfather;
 mod db_library_doctor;
 mod db_library_doctor_remote;
@@ -55,6 +56,7 @@ mod db_release_discography;
 mod db_sync_log;
 mod db_tag_write_jobs;
 pub mod device_sync;
+pub mod equalizer;
 pub mod events;
 pub mod external_link;
 pub mod fingerprint;
@@ -85,6 +87,9 @@ pub mod view_source;
 pub mod visuals;
 pub mod waveform;
 mod writeback_publish;
+
+#[cfg(test)]
+mod log_capture;
 
 #[cfg(test)]
 mod artist_news_candidates_tests;

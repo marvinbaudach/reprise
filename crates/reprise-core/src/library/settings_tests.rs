@@ -333,10 +333,68 @@ fn crossfade_seconds_clamp_and_default() {
 #[test]
 fn equalizer_bands_reject_corrupt_values_and_clamp_writes() {
     let conn = migrated_conn();
-    set_setting(&conn, EQUALIZER_BANDS_KEY, "1,2,broken").unwrap();
+    set_setting(&conn, EQUALIZER_CURVE_KEY, "not a curve").unwrap();
     assert_eq!(get_equalizer_bands(&conn), [0.0; 10]);
     set_equalizer_bands(&conn, [50.0; 10]).unwrap();
     assert_eq!(get_equalizer_bands(&conn), [12.0; 10]);
+}
+
+/// A ten-band write over a curve authored somewhere else — the case a copied
+/// library makes real the moment a phone-authored curve and desktop
+/// preferences meet. The write is accepted on purpose: refusing it would
+/// leave the desktop's sliders moving and its equalizer doing nothing. What
+/// must not happen is that it happens *quietly*. Deleting the `tracing::warn!`
+/// in `set_equalizer_bands_in`, or making `is_gstreamer_ten_band` answer true
+/// for any ten points, turns this red.
+#[test]
+fn a_ten_band_write_over_a_foreign_curve_is_accepted_and_said_out_loud() {
+    use crate::equalizer::{EqualizerCurve, EqualizerPoint};
+
+    let conn = migrated_conn();
+    let phone = EqualizerCurve::new(
+        [60.0, 230.0, 910.0, 3_600.0, 14_000.0]
+            .into_iter()
+            .map(|frequency_hz| EqualizerPoint {
+                frequency_hz,
+                gain_db: 4.0,
+            })
+            .collect(),
+    )
+    .unwrap();
+    set_equalizer_curve(&conn, &phone).unwrap();
+
+    let logs = crate::log_capture::CapturedLogs::default();
+    tracing::subscriber::with_default(crate::log_capture::LogCapture(logs.clone()), || {
+        set_equalizer_bands(&conn, [3.0; 10]).unwrap();
+    });
+
+    assert_eq!(
+        get_equalizer_bands(&conn),
+        [3.0; 10],
+        "the desktop edit must land; a silently disabled equalizer is worse",
+    );
+    let stored = get_equalizer_curve(&conn);
+    assert!(
+        stored.is_gstreamer_ten_band(),
+        "the phone's five authored points are gone, replaced by the ten centres",
+    );
+    assert!(
+        logs.joined().contains("authored on another backend"),
+        "the replacement must be on the record, logged: {}",
+        logs.joined(),
+    );
+
+    // A desktop edit on top of a desktop curve replaces nothing, and says
+    // nothing. Otherwise the warning would be noise every preference change.
+    let quiet = crate::log_capture::CapturedLogs::default();
+    tracing::subscriber::with_default(crate::log_capture::LogCapture(quiet.clone()), || {
+        set_equalizer_bands(&conn, [1.0; 10]).unwrap();
+    });
+    assert!(
+        !quiet.joined().contains("authored on another backend"),
+        "logged: {}",
+        quiet.joined(),
+    );
 }
 
 #[test]

@@ -4,8 +4,35 @@ use reprise_core::queries;
 
 /// One row as the UI needs it — deliberately not the full Core `Track`, so
 /// the binding surface stays a decision rather than an accident.
+///
+/// # Two identities, and which one a new method takes
+///
+/// A row carries *both* [`id`](Self::id) and [`uri`](Self::uri), and they are
+/// not interchangeable. A method that picks the wrong one is not a compile
+/// error and usually not a visible bug either — it just quietly breaks the
+/// first time a rescan runs. So the rule is:
+///
+/// * **`id` addresses the library row.** Anything that reads or writes what
+///   Reprise knows *about* a track takes the id: `MusicLibrary::set_track_rating`
+///   and `AndroidPlaybackSession::play_tracks`, whose queue has to keep pointing
+///   at the same rows while it plays. The id survives a rescan; a moved or
+///   renamed file keeps its row.
+/// * **`uri` addresses the bytes on the device.** Anything that has to open the
+///   file through the document provider takes the uri:
+///   `MusicLibrary::track_artwork` reads the track's embedded picture and its
+///   album folder, which no row id can locate. A rescan may hand out a
+///   different uri for the same id.
+///
+/// The one place both appear together is `play_tracks`, which takes the ids to
+/// count plays against and the uris to hand Media3 — the same row, addressed
+/// twice, on purpose.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct TrackRow {
+    /// Stable across a rescan. The key for everything the library stores about
+    /// this track — see the type's documentation.
+    pub id: i64,
+    /// Where the bytes are. The key for everything that has to open the file —
+    /// see the type's documentation.
     pub uri: String,
     pub title: String,
     pub artist: String,
@@ -63,6 +90,7 @@ pub struct ArtistWindow {
 impl From<reprise_core::models::Track> for TrackRow {
     fn from(track: reprise_core::models::Track) -> Self {
         Self {
+            id: track.id,
             uri: track.path,
             title: track.title,
             artist: track.artist,

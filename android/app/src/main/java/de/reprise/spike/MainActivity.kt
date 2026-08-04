@@ -5,24 +5,32 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,6 +39,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import de.reprise.spike.ui.theme.RepriseTheme
+import uniffi.reprise_android_ffi.AndroidColorScheme
+import uniffi.reprise_android_ffi.AndroidEqualizerPoint
+import uniffi.reprise_android_ffi.AndroidRepeatMode
 import uniffi.reprise_android_ffi.MusicLibrary
 import uniffi.reprise_android_ffi.ScanProgressListener
 import uniffi.reprise_android_ffi.ScanProgressUpdate
@@ -38,8 +49,15 @@ import uniffi.reprise_android_ffi.ScanProgressUpdate
 private const val TAG = "RepriseScan"
 private const val PREFERENCES_NAME = "reprise_android"
 
+/** No scrim behind the system bars: the app's own ground is what shows through. */
+private const val TRANSPARENT_SYSTEM_BAR = 0
+
 class MainActivity : ComponentActivity() {
-    private val libraryDelegate = lazy { MusicLibrary.open(filesDir.absolutePath) }
+    // The core is told where to cache covers instead of assuming an XDG
+    // directory that does not exist here.
+    private val libraryDelegate = lazy {
+        MusicLibrary.open(filesDir.absolutePath, cacheDir.absolutePath)
+    }
     private val library by libraryDelegate
     private val session by lazy {
         LibrarySession(
@@ -50,9 +68,52 @@ class MainActivity : ComponentActivity() {
             ),
         )
     }
+    private val artworkDelegate = lazy { TrackArtwork(resolve = session::artworkFor) }
+    private val artwork by artworkDelegate
+
+    /**
+     * Star taps, off the main thread and answered back on it. The lambda defers
+     * touching [session] until a rating is actually made, so opening the
+     * library still happens when the screen asks for it and not before.
+     */
+    private val ratings = RatingWriter(
+        write = { trackId, rating -> session.setRating(trackId, rating) },
+        onMainThread = { work -> runOnUiThread { work() } },
+    )
+    private val themeController by lazy {
+        ThemeController(
+            port = AndroidThemeSettingsPort(library),
+            dynamicAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S,
+        )
+    }
+
+    /**
+     * Every transport command the surface can issue, bound once here instead of
+     * threaded through two composables that issue none of them.
+     */
+    private val playbackControls = object : PlaybackControls {
+        override fun togglePause() =
+            runPlaybackCommand("change playback state") { togglePause() }
+
+        override fun next() = runPlaybackCommand("skip to the next track") { next() }
+
+        override fun previous() = runPlaybackCommand("return to the previous track") { previous() }
+
+        override fun seekTo(positionMs: Long) = runPlaybackCommand("seek") { seekTo(positionMs) }
+
+        override fun setShuffle(enabled: Boolean) =
+            runPlaybackCommand("change shuffle") { setShuffle(enabled) }
+
+        override fun setRepeat(mode: AndroidRepeatMode) =
+            runPlaybackCommand("change repeat") { setRepeat(mode) }
+
+        override fun setRating(trackId: Long, rating: Int, report: (String?) -> Unit) =
+            setTrackRating(trackId, rating, report)
+    }
     private var playbackService: ReprisePlaybackService? = null
     private var playbackBound = false
     private val playbackState = mutableStateOf(PlaybackUiState())
+    private val playbackSettingsRevision = mutableStateOf(0L)
     private val playbackConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, binder: IBinder) {
             val service = (binder as ReprisePlaybackService.LocalBinder).service()
@@ -60,41 +121,99 @@ class MainActivity : ComponentActivity() {
             service.attachObserver { snapshot ->
                 runOnUiThread { playbackState.value = snapshot.toUiState() }
             }
+            service.attachSettingsObserver {
+                runOnUiThread {
+                    playbackSettingsRevision.value += 1L
+                }
+            }
         }
 
         override fun onServiceDisconnected(name: ComponentName) {
             playbackService = null
             playbackState.value = PlaybackUiState()
+            playbackSettingsRevision.value += 1L
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // From SDK 35 the system draws behind the bars whether an app asks or
+        // not; saying so explicitly is what lets us pick light bar icons for a
+        // ground that is dark even when the system is not.
+        configureEdgeToEdge(darkPalette = true)
         super.onCreate(savedInstanceState)
+        val initialTheme = restoreTheme()
         val initialState = restoreLibrary()
         setContent {
-            RepriseTheme {
+            var themeSelection by remember { mutableStateOf(initialTheme) }
+            val darkPalette = themeSelection.usesDarkPalette(isSystemInDarkTheme())
+            LaunchedEffect(darkPalette) { configureEdgeToEdge(darkPalette) }
+            RepriseTheme(themeSelection, darkPalette) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,
                 ) {
-                    LibraryScreen(
-                        initialState = initialState,
-                        playback = playbackState.value,
-                        chooseFolder = ::chooseTree,
-                        rescan = ::rescan,
-                        searchTitles = session::searchTitles,
-                        listAlbums = session::listAlbums,
-                        listArtists = session::listArtists,
-                        openAlbum = session::openAlbum,
-                        listAlbumTracks = session::listAlbumTracks,
-                        playTracks = ::playTracks,
-                        togglePause = { runPlaybackCommand("change playback state") { togglePause() } },
-                        next = { runPlaybackCommand("skip to the next track") { next() } },
-                        previous = { runPlaybackCommand("return to the previous track") { previous() } },
-                    )
+                    // The frame starts below the clock. Material 3's
+                    // NavigationBar consumes its own bottom inset, so the root
+                    // must not consume that inset a second time.
+                    Box(modifier = Modifier.statusBarsPadding()) {
+                        CompositionLocalProvider(
+                            LocalTrackArtwork provides artwork,
+                            LocalPlaybackControls provides playbackControls,
+                        ) {
+                            LibraryScreen(
+                                initialState = initialState,
+                                playback = playbackState.value,
+                                playbackSettingsRevision = playbackSettingsRevision.value,
+                                chooseFolder = ::chooseTree,
+                                rescan = ::rescan,
+                                searchTitles = session::searchTitles,
+                                listAlbums = session::listAlbums,
+                                listArtists = session::listArtists,
+                                openAlbum = session::openAlbum,
+                                listAlbumTracks = session::listAlbumTracks,
+                                playTracks = ::playTracks,
+                                loadPlaybackSettings = ::loadPlaybackSettings,
+                                setEqualizerEnabled = ::setEqualizerEnabled,
+                                replaceEqualizerCurve = ::replaceEqualizerCurve,
+                                setGaplessEnabled = ::setGaplessEnabled,
+                                themeSelection = themeSelection,
+                                selectTheme = { palette ->
+                                    runCatching {
+                                        themeController.select(themeSelection, palette)
+                                    }.onSuccess { selection ->
+                                        themeSelection = selection
+                                    }.onFailure { error ->
+                                        Log.e(TAG, "Could not change theme", error)
+                                    }
+                                },
+                            )
+                        }
+                    }
                 }
             }
         }
+    }
+
+    private fun configureEdgeToEdge(darkPalette: Boolean) {
+        val transparent = SystemBarStyle.auto(
+            TRANSPARENT_SYSTEM_BAR,
+            TRANSPARENT_SYSTEM_BAR,
+        ) { darkPalette }
+        enableEdgeToEdge(
+            statusBarStyle = transparent,
+            navigationBarStyle = transparent,
+        )
+    }
+
+    private fun restoreTheme(): MobileThemeSelection = runCatching {
+        themeController.load()
+    }.getOrElse { error ->
+        Log.e(TAG, "Could not load appearance settings; using Nocturne", error)
+        MobileThemeSelection(
+            palette = MobileTheme.NOCTURNE,
+            colorScheme = AndroidColorScheme.SYSTEM,
+            dynamicAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S,
+        )
     }
 
     override fun onStart() {
@@ -107,6 +226,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         playbackService?.detachObserver()
+        playbackService?.detachSettingsObserver()
         playbackService = null
         if (playbackBound) {
             unbindService(playbackConnection)
@@ -116,6 +236,21 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        // First, and before the library handle is closed below: a star tap that
+        // is still queued has to reach the database it was written for, and a
+        // write arriving at a closed handle would be a crash rather than a lost
+        // rating.
+        if (!ratings.shutdown()) {
+            Log.w(TAG, "A rating was still being written when the screen closed")
+        }
+        // Artwork deliberately gets no such drain. A cover is a read, so the
+        // requests still queued are dropped rather than waited for, and a read
+        // already running needs no help: the bindings count a handle's in-flight
+        // calls and the close below frees the Rust object only once the last one
+        // has returned. `TrackArtwork.shutdown` carries the reasoning.
+        if (artworkDelegate.isInitialized()) {
+            artworkDelegate.value.shutdown()
+        }
         if (libraryDelegate.isInitialized()) {
             libraryDelegate.value.close()
         }
@@ -166,8 +301,79 @@ class MainActivity : ComponentActivity() {
     ) {
         val selected = selection.tracks[selection.startIndex]
         runPlaybackCommand("play ${selected.title}", reportError) {
-            playTracks(selection.tracks.map(LibraryTrack::uri), selection.startIndex)
+            playTracks(selection.tracks, selection.startIndex)
         }
+    }
+
+    /**
+     * Persists one rating off the main thread and answers on it with the
+     * failure to show, or null when it was saved.
+     *
+     * Deliberately not through [playbackState]: that whole record is replaced
+     * by the next 500 ms position tick, so a message left there is gone before
+     * anyone reads it. The rating's outcome belongs to the control the user
+     * tapped.
+     *
+     * Which is also why the outcome is logged when it is a failure: the control
+     * the user tapped can be gone by the time a queued write answers, and a
+     * refusal nobody is left to show belongs in `logcat` rather than nowhere.
+     */
+    private fun setTrackRating(trackId: Long, rating: Int, report: (String?) -> Unit) {
+        ratings.rate(trackId, rating) { outcome ->
+            val message = outcome.fold(
+                onSuccess = { null },
+                onFailure = { error -> "Could not save rating: ${error.detail()}" },
+            )
+            message?.let { Log.w(TAG, it) }
+            report(message)
+        }
+    }
+
+    private fun loadPlaybackSettings(): PlaybackSettingsUiState {
+        val stored = library.playbackSettings()
+        val snapshot = playbackService?.equalizerSnapshot()
+        val bands = snapshot?.bands.orEmpty().map { band ->
+            EqualizerBandUi(
+                frequencyHz = band.frequencyHz,
+                gainDb = band.gainDb,
+                minimumGainDb = band.minimumGainDb,
+                maximumGainDb = band.maximumGainDb,
+            )
+        }
+        return PlaybackSettingsUiState(
+            equalizerEnabled = stored.equalizerEnabled,
+            gaplessEnabled = stored.gaplessEnabled,
+            equalizerBands = bands,
+            // A snapshot that reports no equalizer is a session we *have* asked:
+            // saying "start playback" there would be false while a track plays.
+            equalizerBandsAbsence = if (snapshot != null && !snapshot.available) {
+                EqualizerBandsAbsence.NO_EQUALIZER_ON_THIS_DEVICE
+            } else {
+                EqualizerBandsAbsence.NO_PLAYBACK_YET
+            },
+        )
+    }
+
+    private fun setEqualizerEnabled(enabled: Boolean): PlaybackSettingsUiState {
+        library.setEqualizerEnabled(enabled)
+        playbackService?.reloadPlaybackSettings()
+        return loadPlaybackSettings()
+    }
+
+    private fun replaceEqualizerCurve(
+        points: List<EqualizerCurvePoint>,
+    ): PlaybackSettingsUiState {
+        library.replaceEqualizerCurve(
+            points.map { point -> AndroidEqualizerPoint(point.frequencyHz, point.gainDb) },
+        )
+        playbackService?.reloadPlaybackSettings()
+        return loadPlaybackSettings()
+    }
+
+    private fun setGaplessEnabled(enabled: Boolean): PlaybackSettingsUiState {
+        library.setGaplessEnabled(enabled)
+        playbackService?.reloadPlaybackSettings()
+        return loadPlaybackSettings()
     }
 
     private fun runPlaybackCommand(
@@ -210,6 +416,7 @@ internal class UiProgress(
 private fun LibraryScreen(
     initialState: LibraryScreenState,
     playback: PlaybackUiState,
+    playbackSettingsRevision: Long,
     chooseFolder: (Uri, (LibraryScreenState) -> Unit) -> Unit,
     rescan: ((LibraryScreenState) -> Unit) -> Unit,
     searchTitles: (String, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
@@ -218,9 +425,12 @@ private fun LibraryScreen(
     openAlbum: (LibraryAlbum) -> AlbumTrackList,
     listAlbumTracks: (LibraryAlbum, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
     playTracks: (PlaybackSelection, (String) -> Unit) -> Unit,
-    togglePause: () -> Unit,
-    next: () -> Unit,
-    previous: () -> Unit,
+    loadPlaybackSettings: () -> PlaybackSettingsUiState,
+    setEqualizerEnabled: (Boolean) -> PlaybackSettingsUiState,
+    replaceEqualizerCurve: (List<EqualizerCurvePoint>) -> PlaybackSettingsUiState,
+    setGaplessEnabled: (Boolean) -> PlaybackSettingsUiState,
+    themeSelection: MobileThemeSelection,
+    selectTheme: (MobileTheme) -> Unit,
 ) {
     var state by remember { mutableStateOf(initialState) }
     val folderPicker = rememberLauncherForActivityResult(
@@ -243,6 +453,7 @@ private fun LibraryScreen(
         is LibraryScreenState.Browse -> BrowseScreen(
             state = current,
             playback = playback,
+            playbackSettingsRevision = playbackSettingsRevision,
             chooseFolder = { folderPicker.launch(null) },
             rescan = { rescan { state = it } },
             searchTitles = searchTitles,
@@ -251,9 +462,12 @@ private fun LibraryScreen(
             openAlbum = openAlbum,
             listAlbumTracks = listAlbumTracks,
             playTracks = playTracks,
-            togglePause = togglePause,
-            next = next,
-            previous = previous,
+            loadPlaybackSettings = loadPlaybackSettings,
+            setEqualizerEnabled = setEqualizerEnabled,
+            replaceEqualizerCurve = replaceEqualizerCurve,
+            setGaplessEnabled = setGaplessEnabled,
+            themeSelection = themeSelection,
+            selectTheme = selectTheme,
         )
     }
 }

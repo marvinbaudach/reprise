@@ -1,6 +1,7 @@
 //! Cover-art resolution and thumbnailing (portable, GUI-free). These APIs read
 //! covers from the user's files (embedded picture, or a sidecar image in the
-//! album folder) and produce cached thumbnails under the XDG cache dir. The
+//! album folder) and produce cached thumbnails below a platform-provided cache
+//! root. The desktop convenience wrappers keep using the XDG cache dir. The
 //! separate `cover_writeback` module publishes downloaded covers into album
 //! folders with non-overwriting, best-effort safeguards.
 
@@ -72,19 +73,24 @@ pub fn read_cover_tag_with_source(
 /// detected album mismatch can converge without modifying any audio file.
 /// Pure read — it never writes to either the library or cache.
 pub fn resolve_source(track_path: &Path) -> Option<CoverSource> {
-    resolve_source_with_source(&crate::library::source::UnixLibrarySource, track_path)
+    resolve_source_with_source(
+        &crate::library::source::UnixLibrarySource,
+        track_path,
+        &default_cache_root(),
+    )
 }
 
 pub fn resolve_source_with_source(
     source: &dyn crate::library::source::LibrarySource,
     track_path: &Path,
+    cache_root: &Path,
 ) -> Option<CoverSource> {
     let tag = read_cover_tag_with_source(source, track_path);
     // Stage 1 (offline): a previously downloaded canonical cover for this
     // album takes precedence over track-local embedded artwork.
     if let (Some(album_artist), Some(album)) = (tag.album_artist.as_deref(), tag.album.as_deref()) {
         let key = crate::cover_download::album_key(album_artist, album);
-        if let Some(path) = crate::cover_download::downloaded_cover_path(&key) {
+        if let Some(path) = crate::cover_download::downloaded_cover_path_in(cache_root, &key) {
             return Some(CoverSource::FolderImage(path));
         }
     }
@@ -126,6 +132,10 @@ pub(crate) fn folder_image_with_source(
 
 use std::hash::{Hash, Hasher};
 
+#[cfg(test)]
+#[path = "cover_mobile_tests.rs"]
+mod mobile_tests;
+
 /// The cached edge lengths — one per consumer (list row / player bar / artist
 /// portrait / album grid / Now-Playing view). Each maps to its own on-disk
 /// cache file.
@@ -137,6 +147,10 @@ pub enum ThumbnailSize {
     Portrait,
     Grid,
     Full,
+    /// A 56 dp Android list/mini-player slot at the measured 3x density.
+    MobileList,
+    /// A 364 dp Android Now Playing cover at the measured 3x density.
+    MobileFull,
 }
 
 impl ThumbnailSize {
@@ -148,6 +162,8 @@ impl ThumbnailSize {
             ThumbnailSize::Portrait => 192,
             ThumbnailSize::Grid => 256,
             ThumbnailSize::Full => 1024,
+            ThumbnailSize::MobileList => 168,
+            ThumbnailSize::MobileFull => 1092,
         }
     }
 }
@@ -173,26 +189,39 @@ impl std::error::Error for CoverError {}
 /// path inside the user's library — this is the load-bearing half of the
 /// "we don't touch your files" promise.
 pub fn cache_dir() -> PathBuf {
-    dirs::cache_dir()
-        .unwrap_or_else(std::env::temp_dir)
-        .join("reprise/covers")
+    cache_dir_with_root(&default_cache_root())
+}
+
+fn default_cache_root() -> PathBuf {
+    dirs::cache_dir().unwrap_or_else(std::env::temp_dir)
+}
+
+/// The cover cache directory below a cache root supplied by the platform.
+pub(crate) fn cache_dir_with_root(cache_root: &Path) -> PathBuf {
+    cache_root.join("reprise/covers")
 }
 
 /// Returns the cache path to a thumbnail of `source` at `size`, creating it if
 /// missing: hash the source bytes -> cache hit? -> else decode, resize (aspect
 /// preserved, longest side = size), write PNG atomically (temp + rename).
 pub fn thumbnail(source: &CoverSource, size: ThumbnailSize) -> Result<PathBuf, CoverError> {
-    thumbnail_with_source(&crate::library::source::UnixLibrarySource, source, size)
+    thumbnail_with_source(
+        &crate::library::source::UnixLibrarySource,
+        source,
+        size,
+        &default_cache_root(),
+    )
 }
 
 pub fn thumbnail_with_source(
     library_source: &dyn crate::library::source::LibrarySource,
     source: &CoverSource,
     size: ThumbnailSize,
+    cache_root: &Path,
 ) -> Result<PathBuf, CoverError> {
     let bytes = source_bytes(library_source, source)?;
     let key = hash_hex(&bytes);
-    let dir = cache_dir();
+    let dir = cache_dir_with_root(cache_root);
     let out = dir.join(format!("{key}-{}.png", size.pixels()));
     if out.exists() {
         return Ok(out);
@@ -702,6 +731,46 @@ mod tests {
         assert!(f.starts_with(cache_dir()));
         std::fs::remove_file(&f).ok();
         let _ = dir;
+    }
+
+    /// Stage 1 must read the *platform-provided* cache root — the whole reason
+    /// one is threaded through at all. Reverting the lookup in
+    /// `resolve_source_with_source` to the XDG-only `downloaded_cover_path`
+    /// turns this red, because the colliding default-root entry would win.
+    #[test]
+    fn a_downloaded_cover_is_taken_from_the_platform_cache_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache_root = tempfile::tempdir().unwrap();
+        let album = format!("Platform Root Album {}", fastrand::u64(..));
+        let track =
+            tagged_track_with_cover(dir.path(), "track.flac", &album, solid_png([255, 0, 0]));
+        let key = crate::cover_download::album_key("Consistency Artist", &album);
+
+        let platform_dir = crate::cover_download::downloaded_dir_in(cache_root.path());
+        std::fs::create_dir_all(&platform_dir).unwrap();
+        let platform_cover = platform_dir.join(format!("{key}.png"));
+        std::fs::write(&platform_cover, solid_png([0, 255, 0])).unwrap();
+
+        // The same album key, seeded in the desktop default root: it must lose.
+        let default_dir = crate::cover_download::downloaded_dir();
+        std::fs::create_dir_all(&default_dir).unwrap();
+        let default_cover = default_dir.join(format!("{key}.png"));
+        std::fs::write(&default_cover, solid_png([0, 0, 255])).unwrap();
+
+        let resolved = resolve_source_with_source(
+            &crate::library::source::UnixLibrarySource,
+            &track,
+            cache_root.path(),
+        );
+
+        std::fs::remove_file(&default_cover).ok();
+        match resolved {
+            Some(CoverSource::FolderImage(path)) => assert_eq!(
+                path, platform_cover,
+                "stage 1 must read the cache root it was handed, not the XDG default"
+            ),
+            other => panic!("expected the platform root's downloaded cover, got {other:?}"),
+        }
     }
 
     #[test]
