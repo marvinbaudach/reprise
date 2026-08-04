@@ -6,7 +6,7 @@ macro_rules! N_ {
     };
 }
 
-use super::{formatted, plural};
+use super::{formatted, plural, text};
 
 pub const PODCASTS: &str = N_!("Podcasts");
 pub const YOUTUBE: &str = N_!("YouTube");
@@ -22,6 +22,10 @@ pub const PODCAST_SOURCE_RSS: &str = N_!("RSS");
 pub const PODCAST_SOURCE_YOUTUBE: &str = N_!("YouTube");
 pub const PODCAST_STATUS_NEW: &str = N_!("New");
 pub const PODCAST_STATUS_RESUME: &str = N_!("Resume");
+/// The Resume chip with the share already heard. `PODCAST_STATUS_RESUME`
+/// stays for episodes whose duration is unknown, where a percentage would be
+/// invented rather than measured.
+pub const PODCAST_STATUS_RESUME_PERCENT: &str = N_!("Resume {percent} %");
 pub const PODCAST_STATUS_PLAYED: &str = N_!("Played");
 pub const PODCAST_TODAY: &str = N_!("Today");
 pub const PODCAST_YESTERDAY: &str = N_!("Yesterday");
@@ -278,6 +282,16 @@ pub fn podcast_duration_hours(hours: i64, minutes: i64) -> String {
     )
 }
 
+pub fn podcast_status_resume(percent: Option<u8>) -> String {
+    match percent {
+        Some(percent) => formatted(
+            PODCAST_STATUS_RESUME_PERCENT,
+            &[("percent", &percent.to_string())],
+        ),
+        None => text(PODCAST_STATUS_RESUME),
+    }
+}
+
 pub fn podcast_group_facts(episodes: &str, new: usize, latest: &str, downloaded: &str) -> String {
     let new_count = formatted(PODCAST_NEW_COUNT, &[("count", &new.to_string())]);
     let latest =
@@ -529,6 +543,12 @@ mod tests {
     #[test]
     fn show_all_episodes_uses_the_full_group_count() {
         assert_eq!(podcast_show_all_episodes(15), "Show all 15 episodes");
+    }
+
+    #[test]
+    fn the_resume_chip_states_a_percentage_only_when_there_is_one() {
+        assert_eq!(podcast_status_resume(Some(42)), "Resume 42 %");
+        assert_eq!(podcast_status_resume(None), "Resume");
     }
 
     /// `G2` (design 6a): matches the owner's design example verbatim.

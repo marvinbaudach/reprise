@@ -10,6 +10,8 @@ use reprise_core::podcasts::{EpisodeRow, EpisodeStatus, PodcastKind, SourceGroup
 use super::podcasts_context_menu::PodcastSyncDevice;
 use crate::ui::strings;
 
+pub(super) use crate::ui::source_row::detail_line;
+
 /// The filter the podcast view applies, which is exactly the filter the core
 /// persists — so it *is* the core's type rather than a field-for-field copy of
 /// it. The copy that used to live here had the same four fields and the same
@@ -168,15 +170,6 @@ pub(super) fn file_size(bytes: Option<i64>) -> Option<String> {
     } else {
         Some(format!("{:.1} MB", bytes / MIB))
     }
-}
-
-pub(super) fn detail_line<'a>(parts: impl IntoIterator<Item = &'a str>) -> String {
-    parts
-        .into_iter()
-        .map(str::trim)
-        .filter(|part| !part.is_empty())
-        .collect::<Vec<_>>()
-        .join(" · ")
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
