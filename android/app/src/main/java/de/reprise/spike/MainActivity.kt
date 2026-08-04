@@ -171,6 +171,7 @@ class MainActivity : ComponentActivity() {
                                 listArtists = session::listArtists,
                                 openAlbum = session::openAlbum,
                                 listAlbumTracks = session::listAlbumTracks,
+                                loadTrackById = ::loadTrackById,
                                 playTracks = ::playTracks,
                                 loadPlaybackSettings = ::loadPlaybackSettings,
                                 setEqualizerEnabled = ::setEqualizerEnabled,
@@ -305,6 +306,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun loadTrackById(trackId: Long): LibraryTrack? = runCatching {
+        session.trackById(trackId)
+    }.getOrElse { error ->
+        Log.e(TAG, "Could not load playing track $trackId", error)
+        null
+    }
+
     /**
      * Persists one rating off the main thread and answers on it with the
      * failure to show, or null when it was saved.
@@ -424,6 +432,7 @@ private fun LibraryScreen(
     listArtists: (LibraryWindowRange) -> LibraryWindow<LibraryArtist>,
     openAlbum: (LibraryAlbum) -> AlbumTrackList,
     listAlbumTracks: (LibraryAlbum, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
+    loadTrackById: (Long) -> LibraryTrack?,
     playTracks: (PlaybackSelection, (String) -> Unit) -> Unit,
     loadPlaybackSettings: () -> PlaybackSettingsUiState,
     setEqualizerEnabled: (Boolean) -> PlaybackSettingsUiState,
@@ -461,6 +470,7 @@ private fun LibraryScreen(
             listArtists = listArtists,
             openAlbum = openAlbum,
             listAlbumTracks = listAlbumTracks,
+            loadTrackById = loadTrackById,
             playTracks = playTracks,
             loadPlaybackSettings = loadPlaybackSettings,
             setEqualizerEnabled = setEqualizerEnabled,

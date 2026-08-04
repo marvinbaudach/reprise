@@ -32,14 +32,10 @@ internal data class TrackPlaybackPresentation(
     val animateBars: Boolean,
 )
 
-internal fun PlaybackSelection.currentTrack(playback: PlaybackUiState): LibraryTrack? =
-    playback.currentIndex?.let(tracks::getOrNull)
-
 internal fun LibraryTrack.playbackPresentation(
-    selection: PlaybackSelection?,
     playback: PlaybackUiState,
 ): TrackPlaybackPresentation {
-    val isCurrent = selection?.currentTrack(playback)?.uri == uri
+    val isCurrent = playback.currentTrackId == id
     return TrackPlaybackPresentation(
         isCurrent = isCurrent,
         animateBars = isCurrent && playback.isPlaying,

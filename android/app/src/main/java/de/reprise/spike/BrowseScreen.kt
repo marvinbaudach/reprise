@@ -59,6 +59,7 @@ internal fun BrowseScreen(
     listArtists: (LibraryWindowRange) -> LibraryWindow<LibraryArtist>,
     openAlbum: (LibraryAlbum) -> AlbumTrackList,
     listAlbumTracks: (LibraryAlbum, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
+    loadTrackById: (Long) -> LibraryTrack?,
     playTracks: (PlaybackSelection, (String) -> Unit) -> Unit,
     loadPlaybackSettings: () -> PlaybackSettingsUiState,
     setEqualizerEnabled: (Boolean) -> PlaybackSettingsUiState,
@@ -74,7 +75,6 @@ internal fun BrowseScreen(
     var visibleAlbums by remember(state) { mutableStateOf(state.albums) }
     var visibleArtists by remember(state) { mutableStateOf(state.artists) }
     var selectedAlbum by remember(state) { mutableStateOf<AlbumTrackList?>(null) }
-    var activeSelection by remember { mutableStateOf<PlaybackSelection?>(null) }
     var browseError by remember(state) { mutableStateOf(state.message) }
     var titlesRequestedOffset by remember(state, searchText) { mutableStateOf<Long?>(null) }
     var albumsRequestedOffset by remember(state) { mutableStateOf<Long?>(null) }
@@ -126,7 +126,6 @@ internal fun BrowseScreen(
 
     fun play(selection: PlaybackSelection) {
         browseError = null
-        activeSelection = selection
         playTracks(selection) { message -> browseError = message }
     }
 
@@ -186,7 +185,9 @@ internal fun BrowseScreen(
             .onFailure { error -> browseError = error.browseDetail("load more album tracks") }
     }
 
-    val currentTrack = activeSelection?.currentTrack(playback)
+    val currentTrack = remember(playback.currentTrackId, playback.currentTrackUri) {
+        playback.currentTrackId?.let(loadTrackById)
+    }
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
@@ -234,7 +235,6 @@ internal fun BrowseScreen(
                         searchVisible = searchVisible,
                         searchText = searchText,
                         search = ::search,
-                        activeSelection = activeSelection,
                         playback = playback,
                         lastRequestedOffset = titlesRequestedOffset,
                         play = { index -> play(PlaybackSelection(visibleTitles.rows, index)) },
@@ -243,7 +243,6 @@ internal fun BrowseScreen(
                     BrowseTab.ALBUMS -> AlbumsTab(
                         albums = visibleAlbums,
                         selectedAlbum = selectedAlbum,
-                        activeSelection = activeSelection,
                         playback = playback,
                         openAlbum = { album ->
                             runCatching { openAlbum(album) }

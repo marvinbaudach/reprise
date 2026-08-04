@@ -2,6 +2,8 @@ package de.reprise.spike
 
 import androidx.activity.BackEventCompat
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -166,7 +168,13 @@ class ComposeBehaviorTest {
             artists = LibraryWindow.empty(),
         )
         val playedIndices = mutableListOf<Int>()
-        var playback by mutableStateOf(testPlayback(positionMs = 20_000))
+        var playback by mutableStateOf(
+            testPlayback(positionMs = 20_000).copy(
+                currentIndex = null,
+                currentTrackId = null,
+                currentTrackUri = null,
+            ),
+        )
         compose.setContent {
             RepriseTheme(nocturneForTests, darkPalette = true) {
                 BrowseScreen(
@@ -182,9 +190,15 @@ class ComposeBehaviorTest {
                     listArtists = { browse.artists },
                     openAlbum = { error("Album navigation is outside this test") },
                     listAlbumTracks = { _, _ -> LibraryWindow.empty() },
+                    loadTrackById = { id -> tracks.firstOrNull { it.id == id } },
                     playTracks = { selection, _ ->
                         playedIndices += selection.startIndex
-                        playback = playback.copy(currentIndex = selection.startIndex)
+                        val selected = selection.tracks[selection.startIndex]
+                        playback = playback.copy(
+                            currentIndex = selection.startIndex,
+                            currentTrackId = selected.id,
+                            currentTrackUri = selected.uri,
+                        )
                     },
                     loadPlaybackSettings = {
                         PlaybackSettingsUiState(false, true, emptyList())
@@ -234,6 +248,92 @@ class ComposeBehaviorTest {
         compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
         compose.onNodeWithContentDescription("Collapse Now Playing").assertDoesNotExist()
         compose.onAllNodesWithText("Second Song").assertCountEquals(2)
+    }
+
+    /**
+     * The mutable snapshot below stands in for the bound playback service: it
+     * outlives every activity instance, while the composition and every
+     * `remember` inside it are destroyed by [ActivityScenario.recreate]. The
+     * replacement activity installs the same production surface its
+     * `onCreate` would install, and that surface must recover one complete
+     * library row from the session-owned stable id.
+     *
+     * The final recreation keeps `nowPlayingExpanded` true in saved UI state
+     * but removes the session identity. That must render neither sheet nor mini
+     * player; a stale retained row is worse than an honest blank surface.
+     */
+    @Test
+    fun playingTrackSurvivesActivityRecreationAndStoppedPlaybackStaysBlank() {
+        val track = testTrack(rating = 2).copy(title = "Rotation Song")
+        val browse = LibraryScreenState.Browse(
+            titles = LibraryWindow(total = 1, rows = listOf(track), hasMore = false),
+            albums = LibraryWindow.empty(),
+            artists = LibraryWindow.empty(),
+        )
+        val loadedIds = mutableListOf<Long>()
+        var playback by mutableStateOf(
+            testPlayback(positionMs = 20_000).copy(
+                currentTrackId = track.id,
+                currentTrackUri = track.uri,
+            ),
+        )
+        val content: @Composable () -> Unit = {
+            RepriseTheme(nocturneForTests, darkPalette = true) {
+                BrowseScreen(
+                    state = browse,
+                    playback = playback,
+                    playbackSettingsRevision = 0,
+                    chooseFolder = {},
+                    rescan = {},
+                    themeSelection = nocturneForTests,
+                    selectTheme = {},
+                    searchTitles = { _, _ -> browse.titles },
+                    listAlbums = { browse.albums },
+                    listArtists = { browse.artists },
+                    openAlbum = { error("Album navigation is outside this test") },
+                    listAlbumTracks = { _, _ -> LibraryWindow.empty() },
+                    loadTrackById = { id ->
+                        loadedIds += id
+                        track.takeIf { it.id == id }
+                    },
+                    playTracks = { _, _ -> },
+                    loadPlaybackSettings = {
+                        PlaybackSettingsUiState(false, true, emptyList())
+                    },
+                    setEqualizerEnabled = { enabled ->
+                        PlaybackSettingsUiState(enabled, true, emptyList())
+                    },
+                    replaceEqualizerCurve = {
+                        PlaybackSettingsUiState(false, true, emptyList())
+                    },
+                    setGaplessEnabled = { enabled ->
+                        PlaybackSettingsUiState(false, enabled, emptyList())
+                    },
+                )
+            }
+        }
+        compose.setContent(content)
+        compose.onNode(hasClickLabel("Open Now Playing")).assertTextContains("Rotation Song")
+
+        compose.activityRule.scenario.recreate()
+        compose.runOnUiThread { compose.activity.setContent(content = content) }
+        compose.waitForIdle()
+
+        val restoredMiniPlayer = compose.onNode(hasClickLabel("Open Now Playing"))
+        restoredMiniPlayer.assertTextContains("Rotation Song")
+        restoredMiniPlayer.performClick()
+        compose.onNodeWithContentDescription("Collapse Now Playing").assertIsDisplayed()
+
+        compose.runOnIdle {
+            playback = PlaybackUiState(ready = true)
+        }
+        compose.activityRule.scenario.recreate()
+        compose.runOnUiThread { compose.activity.setContent(content = content) }
+        compose.waitForIdle()
+
+        compose.onNode(hasClickLabel("Open Now Playing")).assertDoesNotExist()
+        compose.onNodeWithContentDescription("Collapse Now Playing").assertDoesNotExist()
+        assertEquals(listOf(track.id, track.id), loadedIds)
     }
 
     /**
@@ -395,6 +495,7 @@ class ComposeBehaviorTest {
                     listArtists = { browse.artists },
                     openAlbum = { error("Album navigation is outside this test") },
                     listAlbumTracks = { _, _ -> LibraryWindow.empty() },
+                    loadTrackById = { null },
                     playTracks = { _, _ -> },
                     loadPlaybackSettings = {
                         PlaybackSettingsUiState(false, true, emptyList())
@@ -452,6 +553,7 @@ class ComposeBehaviorTest {
                     listArtists = { browse.artists },
                     openAlbum = { error("Album navigation is outside this test") },
                     listAlbumTracks = { _, _ -> LibraryWindow.empty() },
+                    loadTrackById = { null },
                     playTracks = { _, _ -> },
                     loadPlaybackSettings = {
                         // Open once, then behave like a service that has not
@@ -555,6 +657,8 @@ private fun testPlayback(positionMs: Long) = PlaybackUiState(
     ready = true,
     state = AndroidPlaybackState.PAUSED,
     currentIndex = 0,
+    currentTrackId = 830,
+    currentTrackUri = "content://provider/document/song.flac",
     positionMs = positionMs,
     durationMs = 100_000,
     playPauseLabel = "Play",

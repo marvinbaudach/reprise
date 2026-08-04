@@ -62,6 +62,8 @@ fun everyFieldTheSurfaceReadsSurvivesTheTripFromTheBridge() {
     val state = AndroidPlaybackSnapshot(
         state = AndroidPlaybackState.PLAYING,
         currentIndex = 2u,
+        currentTrackId = 41,
+        currentTrackUri = "content://provider/playing.flac",
         positionMs = 1_250,
         durationMs = 180_000,
         shuffled = true,
@@ -70,6 +72,8 @@ fun everyFieldTheSurfaceReadsSurvivesTheTripFromTheBridge() {
     ).toUiState()
 
     assertEquals(2, state.currentIndex)
+    assertEquals(41L, state.currentTrackId)
+    assertEquals("content://provider/playing.flac", state.currentTrackUri)
     assertEquals(1_250L, state.positionMs)
     assertEquals(180_000L, state.durationMs)
     assertEquals(1_250f / 180_000f, state.progressFraction, 0.000_001f)
@@ -82,6 +86,8 @@ fun pausedPlaybackOffersPlayOnTheSurface() {
     val state = AndroidPlaybackSnapshot(
         state = AndroidPlaybackState.PAUSED,
         currentIndex = 0u,
+        currentTrackId = 41,
+        currentTrackUri = "content://provider/playing.flac",
         positionMs = 0,
         durationMs = 0,
         shuffled = false,
@@ -326,6 +332,8 @@ private class RecordingLibrarySessionPort(
         albumArtist: String,
         window: LibraryWindowRange,
     ): LibraryWindow<LibraryTrack> = completeTestWindow(emptyList())
+
+    override fun trackById(trackId: Long): LibraryTrack? = tracks.firstOrNull { it.id == trackId }
 
     override fun artworkFor(trackUri: String, size: AndroidArtworkSize): String? = null
 
