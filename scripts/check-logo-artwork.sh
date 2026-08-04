@@ -23,13 +23,13 @@ MIN_CONTRAST=3.0
 MAX_CIRCLE_CLIP=0.01
 GEOMETRY_TOLERANCE=$(awk 'BEGIN { print 96 / 512 }')
 
-read -r TEAL VIOLET TEAL_LIGHT VIOLET_LIGHT PLATE < <(python3 - <<'PY'
+read -r TEAL CORAL TEAL_LIGHT CORAL_LIGHT PLATE < <(python3 - <<'PY'
 import tomllib
 with open("data/brand/palette.toml", "rb") as source:
     palette = tomllib.load(source)
 print(*(palette[key] for key in (
-    "reprise_teal", "reprise_violet", "reprise_teal_light",
-    "reprise_violet_light", "reprise_plate")))
+    "reprise_teal", "reprise_coral", "reprise_teal_light",
+    "reprise_coral_light", "reprise_plate")))
 PY
 )
 
@@ -51,8 +51,8 @@ geometry = (
     ("rect", {"x": "52", "y": "20", "width": "15", "height": "56", "rx": "1.5"}),
 )
 colours = {
-    "reprise-mark.svg": (palette["reprise_violet"], palette["reprise_teal"]),
-    "reprise-mark-light.svg": (palette["reprise_violet_light"], palette["reprise_teal_light"]),
+    "reprise-mark.svg": (palette["reprise_coral"], palette["reprise_teal"]),
+    "reprise-mark-light.svg": (palette["reprise_coral_light"], palette["reprise_teal_light"]),
 }
 for name, (small, large) in colours.items():
     root = ET.parse(brand / name).getroot()
@@ -65,7 +65,7 @@ for name, (small, large) in colours.items():
         assert node.attrib["fill"] == (small if index < 3 else large), (name, index)
     assert not re.search(r"(?:linear|radial)Gradient", ET.tostring(root, encoding="unicode"))
 hinted = (
-    ("reprise-mark-16.svg", (palette["reprise_violet"], palette["reprise_teal"])),
+    ("reprise-mark-16.svg", (palette["reprise_coral"], palette["reprise_teal"])),
     ("reprise-mark-16-mono.svg", None),
 )
 hinted_geometry = (
@@ -389,10 +389,10 @@ check_all() {
   report_components
   check_hinted_16
   echo "Contrast"
-  check_pair_contrast "$VIOLET" "$TEAL" "$PLATE" "plate $PLATE"
-  check_pair_contrast "$VIOLET" "$TEAL" '#0a0a0e' "dark dock #0a0a0e"
-  check_pair_contrast "$VIOLET_LIGHT" "$TEAL_LIGHT" '#FFFFFF' "white"
-  check_pair_contrast "$VIOLET_LIGHT" "$TEAL_LIGHT" '#eceef5' "light ground #eceef5"
+  check_pair_contrast "$CORAL" "$TEAL" "$PLATE" "plate $PLATE"
+  check_pair_contrast "$CORAL" "$TEAL" '#0a0a0e' "dark dock #0a0a0e"
+  check_pair_contrast "$CORAL_LIGHT" "$TEAL_LIGHT" '#FFFFFF' "white"
+  check_pair_contrast "$CORAL_LIGHT" "$TEAL_LIGHT" '#eceef5' "light ground #eceef5"
   echo "Symbolic and silhouette parity"
   check_v7
   check_v8
