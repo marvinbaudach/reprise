@@ -671,8 +671,8 @@ impl NowPlayingPanel {
     }
 
     #[cfg(test)]
-    fn bloom_widget(&self) -> &gtk4::DrawingArea {
-        self.widgets.bloom.widget()
+    fn bloom_widget(&self) -> &gtk4::Widget {
+        self.widgets.bloom.widget().upcast_ref()
     }
 
     #[cfg(test)]

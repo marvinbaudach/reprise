@@ -94,10 +94,31 @@ def ink_components(png):
     kleiner Größe zu einem Klotz zusammen?" Zwei Balken, die bei 16 px
     verschmelzen, sind kein Wiederholungszeichen mehr.
     """
+    return sum(1 for area in ink_component_sizes(png)
+               if area >= _noise_floor(png))
+
+
+def _noise_floor(png):
+    w, h, _ = _alpha_mask(png)
+    return max(MIN_HOLE_PIXELS, int(MIN_HOLE_SHARE * w * h))
+
+
+def ink_component_sizes(png):
+    """Pixel area of every ink group, largest first — noise floor ignored.
+
+    `ink_components` answers "how many strokes survive?" and drops anything
+    under the noise floor, which is right for a gate but hides *why* a stage
+    falls short. At 16px all four elements of the repeat sign are still
+    separate pixel groups; two of them are 2px each and fall under the 3px
+    floor, so the counter reports 2. Describing that as "the dots merged
+    into the thin barline" would be a guess — and it is the wrong one.
+    Nothing merges there; the dots are simply too small to count. This
+    returns the raw group sizes so a report can state what was measured
+    instead of narrating a cause nobody checked.
+    """
     w, h, bg = _alpha_mask(png)
-    floor = max(MIN_HOLE_PIXELS, int(MIN_HOLE_SHARE * w * h))
     seen = [[False] * w for _ in range(h)]
-    count = 0
+    areas = []
     for sy in range(h):
         for sx in range(w):
             if seen[sy][sx] or bg[sy][sx]:
@@ -113,9 +134,61 @@ def ink_components(png):
                     if 0 <= nx < w and 0 <= ny < h and not seen[ny][nx] and not bg[ny][nx]:
                         seen[ny][nx] = True
                         queue.append((nx, ny))
+            areas.append(area)
+    return sorted(areas, reverse=True)
+
+
+def _foreground_components(mask):
+    """Count material foreground components in a precomputed boolean mask."""
+    h = len(mask)
+    w = len(mask[0]) if h else 0
+    floor = max(MIN_HOLE_PIXELS, int(MIN_HOLE_SHARE * w * h))
+    seen = [[False] * w for _ in range(h)]
+    count = 0
+    for sy in range(h):
+        for sx in range(w):
+            if seen[sy][sx] or not mask[sy][sx]:
+                continue
+            queue = deque([(sx, sy)])
+            seen[sy][sx] = True
+            area = 0
+            while queue:
+                x, y = queue.popleft()
+                area += 1
+                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    nx, ny = x + dx, y + dy
+                    if (0 <= nx < w and 0 <= ny < h and
+                            not seen[ny][nx] and mask[ny][nx]):
+                        seen[ny][nx] = True
+                        queue.append((nx, ny))
             if area >= floor:
                 count += 1
     return count
+
+
+def circle_clip(png, radius_share):
+    """Return clipped alpha share and component counts under a centred circle."""
+    image = _rgba(png)
+    w, h = image.size
+    alpha = image.getchannel("A").load()
+    cx, cy = w / 2, h / 2
+    radius_px = radius_share * w
+    total_alpha = clipped_alpha = 0
+    before = [[False] * w for _ in range(h)]
+    after = [[False] * w for _ in range(h)]
+    for y in range(h):
+        for x in range(w):
+            value = alpha[x, y]
+            total_alpha += value
+            ink = value >= 128
+            before[y][x] = ink
+            inside = math.hypot(x + 0.5 - cx, y + 0.5 - cy) <= radius_px
+            if not inside:
+                clipped_alpha += value
+            elif ink:
+                after[y][x] = True
+    share = clipped_alpha / total_alpha if total_alpha else 0.0
+    return share, _foreground_components(before), _foreground_components(after)
 
 
 def fill_ratio(png):
@@ -449,6 +522,10 @@ def main():
         print(bg_components(args[0]))
     elif cmd == "ink-components":
         print(ink_components(args[0]))
+    elif cmd == "ink-component-sizes":
+        print(" ".join(str(a) for a in ink_component_sizes(args[0])))
+    elif cmd == "noise-floor":
+        print(_noise_floor(args[0]))
     elif cmd == "fill-ratio":
         fw, fh = fill_ratio(args[0])
         print(f"{fw:.4f} {fh:.4f}")
@@ -476,6 +553,9 @@ def main():
         print(f"{overlap(args[0], args[1]):.4f}")
     elif cmd == "outline-overlap":
         print(f"{outline_overlap(args[0], args[1]):.4f}")
+    elif cmd == "circle-clip":
+        share, before, after = circle_clip(args[0], float(args[1]))
+        print(f"{share:.6f} {before} {after}")
     else:
         raise SystemExit(f"unknown command: {cmd}")
 

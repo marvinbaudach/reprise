@@ -60,11 +60,40 @@ impl RadioModel {
         Self { store, selection }
     }
 
+    /// Publishes `rows`, but only if they differ from what the store already
+    /// holds.
+    ///
+    /// The view re-renders on every external playback snapshot — the play
+    /// itself, each phase change, and every new ICY stream title. The station
+    /// list is identical across all of those, yet the old unconditional
+    /// `remove_all()` + append made `GtkSingleSelection` autoselect row 0 (it
+    /// saw the selected item removed) and reset the scroll offset while the
+    /// store stood empty. Double-clicking a station moved the highlight to the
+    /// station above it, and every song change did it again. The live parts of
+    /// a row reach their cells through [`super::radio_live_cells`] instead, so
+    /// no model signal is needed to move the playing marker.
     pub(super) fn replace(&self, rows: Vec<StationRow>) {
+        if self.rows() == rows {
+            return;
+        }
         self.store.remove_all();
         for row in rows {
             self.store.append(&RadioObject::new(row));
         }
+    }
+
+    /// The rows the store currently holds, in order.
+    pub(super) fn rows(&self) -> Vec<StationRow> {
+        use gtk4::prelude::{Cast, ListModelExt};
+
+        (0..self.store.n_items())
+            .filter_map(|position| {
+                self.store
+                    .item(position)
+                    .and_then(|object| object.downcast::<RadioObject>().ok())
+                    .map(|object| object.row())
+            })
+            .collect()
     }
 
     pub(super) fn store(&self) -> &gio::ListStore {

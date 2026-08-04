@@ -2,10 +2,15 @@
 //! lying behind the cover, breathing with the bass.
 //!
 //! Honest by construction — the colour comes from the artwork itself, not from
-//! a hue derived from it. The blur is bought once per track: the texture is
-//! rasterized down to a 32 px square and painted back up across the panel, so
-//! Cairo's own interpolation does the blurring. There is no blur node in the
-//! snapshot path and nothing per frame but an alpha and a scale.
+//! a hue derived from it. The blur is bought once per track: the cover is
+//! rasterized down to a 32 px square and handed to the renderer as a texture,
+//! and painting it back up across the panel is what blurs it. There is no blur
+//! node in the snapshot path and nothing per frame but an alpha and a scale.
+//!
+//! Those two are all a frame ever changes, so a frame costs a snapshot and not
+//! a rasterization: `cover_bloom_area` places the texture, and the widget it
+//! replaced — a `GtkDrawingArea` re-painting the blurred cover through Cairo
+//! every frame — was the larger half of the app's whole idle cost on a GPU.
 //!
 //! While playing, the spectrum events are the frame source (they arrive every
 //! 11.6 ms) — no tick callback runs. The only tick here drives the slow breath
@@ -18,14 +23,15 @@ use gtk4::cairo;
 use gtk4::prelude::*;
 use reprise_core::playback::PlaybackState;
 
+use super::cover_bloom_area::BloomArea;
 use crate::ui::cover_glow;
 
 type OnFrame = Rc<dyn Fn(i64)>;
 /// Height of the bloom band, from the top of the head overlay: enough for the
 /// cover and the title block, stopping short of the tabs.
-const BLOOM_HEIGHT: f64 = 330.0;
+pub(super) const BLOOM_HEIGHT: f64 = 330.0;
 /// Width as a share of the panel width. The overflow is clipped by the panel.
-const BLOOM_WIDTH_FACTOR: f64 = 1.24;
+pub(super) const BLOOM_WIDTH_FACTOR: f64 = 1.24;
 
 const REST_OPACITY: f64 = 0.06;
 const OPACITY_PER_PRESSURE: f64 = 0.15;
@@ -67,7 +73,6 @@ enum Mode {
 }
 
 struct Inner {
-    surface: RefCell<Option<cairo::ImageSurface>>,
     generation: Cell<Option<u64>>,
     swell: Cell<f64>,
     pressure: Cell<f64>,
@@ -79,19 +84,41 @@ struct Inner {
 
 #[derive(Clone)]
 pub(super) struct CoverBloom {
-    area: gtk4::DrawingArea,
+    area: BloomArea,
     inner: Rc<Inner>,
+}
+
+/// The blurred 32 px surface as something the renderer can keep.
+///
+/// Built once per track. The data guard locks the surface for as long as it
+/// lives, so it is dropped before the texture leaves this function.
+fn texture_from_surface(surface: &mut cairo::ImageSurface) -> Option<gtk4::gdk::MemoryTexture> {
+    let width = surface.width();
+    let height = surface.height();
+    let stride = surface.stride() as usize;
+    match surface.data() {
+        Ok(data) => {
+            let bytes = gtk4::glib::Bytes::from(&*data);
+            Some(gtk4::gdk::MemoryTexture::new(
+                width,
+                height,
+                // Cairo's ARgb32 is premultiplied BGRA on little-endian.
+                gtk4::gdk::MemoryFormat::B8g8r8a8Premultiplied,
+                &bytes,
+                stride,
+            ))
+        }
+        Err(error) => {
+            tracing::warn!(%error, "bloom: blurred cover surface was not readable");
+            None
+        }
+    }
 }
 
 impl CoverBloom {
     pub(super) fn new() -> Self {
-        let area = gtk4::DrawingArea::new();
-        area.add_css_class("reprise-now-playing-bloom");
-        // Decoration only: it must never take a click meant for the cover.
-        area.set_can_target(false);
-        area.set_can_focus(false);
+        let area = BloomArea::new();
         let inner = Rc::new(Inner {
-            surface: RefCell::new(None),
             generation: Cell::new(None),
             swell: Cell::new(0.0),
             pressure: Cell::new(0.0),
@@ -100,14 +127,12 @@ impl CoverBloom {
             tick_id: RefCell::new(None),
             on_frame: RefCell::new(None),
         });
-        area.set_draw_func({
-            let inner = inner.clone();
-            move |_, cr, width, height| draw(cr, width, height, &inner)
-        });
-        Self { area, inner }
+        let bloom = Self { area, inner };
+        bloom.apply_light();
+        bloom
     }
 
-    pub(super) fn widget(&self) -> &gtk4::DrawingArea {
+    pub(super) fn widget(&self) -> &BloomArea {
         &self.area
     }
 
@@ -125,16 +150,19 @@ impl CoverBloom {
                 if !needs_rebuild(self.inner.generation.get(), generation) {
                     return;
                 }
-                let built = cover_glow::blurred_surface(texture);
-                *self.inner.surface.borrow_mut() = built;
+                let blurred = cover_glow::blurred_surface(texture)
+                    .as_mut()
+                    .and_then(texture_from_surface);
+                self.area
+                    .set_texture(blurred.as_ref().map(gtk4::prelude::Cast::upcast_ref));
                 self.inner.generation.set(Some(generation));
             }
             None => {
-                *self.inner.surface.borrow_mut() = None;
+                self.area.set_texture(None);
                 self.inner.generation.set(None);
             }
         }
-        self.area.queue_draw();
+        self.apply_light();
     }
 
     pub(super) fn set_light(&self, pressure: f64, swell: f64) {
@@ -150,7 +178,19 @@ impl CoverBloom {
         }
         self.inner.swell.set(swell);
         self.inner.pressure.set(pressure);
-        self.area.queue_draw();
+        self.apply_light();
+    }
+
+    /// Hands the current reading to the surface. The whole per-frame cost.
+    fn apply_light(&self) {
+        let (opacity, scale) = match self.inner.mode.get() {
+            Mode::Live | Mode::Breathing => (
+                bloom_opacity(self.inner.pressure.get(), self.inner.swell.get()),
+                bloom_scale(self.inner.swell.get()),
+            ),
+            Mode::Pinned => (bloom_opacity(0.0, 0.0), bloom_scale(0.0)),
+        };
+        self.area.set_light(opacity, scale);
     }
 
     fn notify_frame(&self, frame_time_us: i64) {
@@ -198,7 +238,7 @@ impl CoverBloom {
         } else {
             self.stop_breath();
         }
-        self.area.queue_draw();
+        self.apply_light();
     }
 
     fn start_breath(&self) {
@@ -206,7 +246,7 @@ impl CoverBloom {
             return;
         }
         let inner = self.inner.clone();
-        let area = self.area.clone();
+        let bloom = self.clone();
         let id = self.area.add_tick_callback(move |_, clock| {
             if inner.mode.get() != Mode::Breathing {
                 *inner.tick_id.borrow_mut() = None;
@@ -222,7 +262,7 @@ impl CoverBloom {
             if let Some(callback) = callback {
                 callback(now);
             }
-            area.queue_draw();
+            bloom.apply_light();
             gtk4::glib::ControlFlow::Continue
         });
         *self.inner.tick_id.borrow_mut() = Some(id);
@@ -233,46 +273,6 @@ impl CoverBloom {
             id.remove();
         }
     }
-}
-
-fn draw(cr: &cairo::Context, width: i32, height: i32, inner: &Inner) {
-    if width <= 0 || height <= 0 {
-        return;
-    }
-    let surface = inner.surface.borrow();
-    let Some(surface) = surface.as_ref() else {
-        return;
-    };
-    let (opacity, scale) = match inner.mode.get() {
-        Mode::Live | Mode::Breathing => (
-            bloom_opacity(inner.pressure.get(), inner.swell.get()),
-            bloom_scale(inner.swell.get()),
-        ),
-        Mode::Pinned => (bloom_opacity(0.0, 0.0), bloom_scale(0.0)),
-    };
-
-    let w = f64::from(width);
-    let band = BLOOM_HEIGHT.min(f64::from(height));
-    let target_w = w * BLOOM_WIDTH_FACTOR * scale;
-    let target_h = BLOOM_HEIGHT * scale;
-
-    cr.save().ok();
-    // Clipped to the panel: the 124 % width overflows both edges on purpose.
-    cr.rectangle(0.0, 0.0, w, band);
-    cr.clip();
-    cr.translate((w - target_w) / 2.0, (BLOOM_HEIGHT - target_h) / 2.0);
-    cr.scale(
-        target_w / f64::from(cover_glow::BLUR_EDGE),
-        target_h / f64::from(cover_glow::BLUR_EDGE),
-    );
-    if cr.set_source_surface(surface, 0.0, 0.0).is_ok() {
-        // Bilinear over an 11x upscale is the blur; Pad keeps the edges from
-        // bleeding to transparent inside the clip.
-        cr.source().set_filter(cairo::Filter::Bilinear);
-        cr.source().set_extend(cairo::Extend::Pad);
-        cr.paint_with_alpha(opacity).ok();
-    }
-    cr.restore().ok();
 }
 
 #[cfg(test)]

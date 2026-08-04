@@ -8,6 +8,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -20,7 +21,6 @@ import de.reprise.spike.R
 private val NocturneBackground = Color(0xFF161826)
 private val NocturneSurface = Color(0xFF232532)
 private val NocturneSurfaceContainer = Color(0xFF292B31)
-private val NocturnePrimary = Color(0xFF4FDBD4)
 private val NocturneOnPrimary = Color(0xFF003735)
 private val NocturnePrimaryContainer = Color(0xFF00504E)
 private val NocturneOnPrimaryContainer = Color(0xFF71F8F0)
@@ -33,38 +33,41 @@ private val NocturneOutline = Color(0xFF3F424D)
 private val NocturneText = Color(0xFFE9E9ED)
 private val NocturneMutedText = Color(0xFFB2B6CA)
 
-internal val NocturneColorScheme = darkColorScheme(
-    primary = NocturnePrimary,
-    onPrimary = NocturneOnPrimary,
-    primaryContainer = NocturnePrimaryContainer,
-    onPrimaryContainer = NocturneOnPrimaryContainer,
-    secondary = NocturneOnSecondaryContainer,
-    onSecondary = NocturneSecondaryContainer,
-    secondaryContainer = NocturneSecondaryContainer,
-    onSecondaryContainer = NocturneOnSecondaryContainer,
-    tertiary = NocturneTertiary,
-    onTertiary = NocturneBackground,
-    tertiaryContainer = NocturneTertiaryContainer,
-    onTertiaryContainer = NocturneOnTertiaryContainer,
-    background = NocturneBackground,
-    onBackground = NocturneText,
-    surface = NocturneSurface,
-    onSurface = NocturneText,
-    surfaceDim = NocturneBackground,
-    surfaceBright = NocturneSurface,
-    surfaceContainerLowest = NocturneBackground,
-    surfaceContainerLow = NocturneSurface,
-    surfaceContainer = NocturneSurfaceContainer,
-    surfaceContainerHigh = NocturneSurfaceContainer,
-    surfaceContainerHighest = NocturneSurfaceContainer,
-    onSurfaceVariant = NocturneMutedText,
-    outline = NocturneOutline,
-    outlineVariant = NocturneOutline,
-    inverseSurface = NocturneText,
-    inverseOnSurface = NocturneBackground,
-    inversePrimary = NocturnePrimaryContainer,
-    surfaceTint = NocturnePrimary,
-)
+@Composable
+internal fun nocturneColorScheme() = colorResource(R.color.reprise_teal).let { primary ->
+    darkColorScheme(
+        primary = primary,
+        onPrimary = NocturneOnPrimary,
+        primaryContainer = NocturnePrimaryContainer,
+        onPrimaryContainer = NocturneOnPrimaryContainer,
+        secondary = NocturneOnSecondaryContainer,
+        onSecondary = NocturneSecondaryContainer,
+        secondaryContainer = NocturneSecondaryContainer,
+        onSecondaryContainer = NocturneOnSecondaryContainer,
+        tertiary = NocturneTertiary,
+        onTertiary = NocturneBackground,
+        tertiaryContainer = NocturneTertiaryContainer,
+        onTertiaryContainer = NocturneOnTertiaryContainer,
+        background = NocturneBackground,
+        onBackground = NocturneText,
+        surface = NocturneSurface,
+        onSurface = NocturneText,
+        surfaceDim = NocturneBackground,
+        surfaceBright = NocturneSurface,
+        surfaceContainerLowest = NocturneBackground,
+        surfaceContainerLow = NocturneSurface,
+        surfaceContainer = NocturneSurfaceContainer,
+        surfaceContainerHigh = NocturneSurfaceContainer,
+        surfaceContainerHighest = NocturneSurfaceContainer,
+        onSurfaceVariant = NocturneMutedText,
+        outline = NocturneOutline,
+        outlineVariant = NocturneOutline,
+        inverseSurface = NocturneText,
+        inverseOnSurface = NocturneBackground,
+        inversePrimary = NocturnePrimaryContainer,
+        surfaceTint = primary,
+    )
+}
 
 private val RobotoFlex = FontFamily(
     Font(R.font.roboto_flex, weight = FontWeight.Normal),
