@@ -1,3 +1,4 @@
+use crate::ui::playback::external_media::ExternalMedia;
 use crate::ui::playback::preview::PlaybackMode;
 use crate::ui::strings;
 
@@ -55,6 +56,13 @@ pub(in crate::ui) fn link_target(mode: PlaybackMode, surface: LinkSurface) -> Li
     }
 }
 
+pub(in crate::ui) fn external_mode(media: &ExternalMedia) -> PlaybackMode {
+    match media {
+        ExternalMedia::Podcast { .. } => PlaybackMode::Podcast,
+        ExternalMedia::Radio { .. } => PlaybackMode::Radio,
+    }
+}
+
 /// `PLAY-12`'s “never dead”: a surface whose own target does not exist falls
 /// back to the nearest target that does.
 pub(in crate::ui) fn resolve(target: LinkTarget, available: LinkAvailability) -> LinkTarget {
@@ -101,7 +109,6 @@ pub(in crate::ui) fn player_bar_labels(
     labels(mode, available, player_bar_label)
 }
 
-#[allow(dead_code)] // Delivered to the Now Playing panel in AP8.
 pub(in crate::ui) fn panel_labels(mode: PlaybackMode, available: LinkAvailability) -> LinkLabels {
     labels(mode, available, panel_label)
 }
@@ -225,5 +232,50 @@ mod tests {
                 assert_ne!(labels.title, labels.subtitle);
             }
         }
+    }
+
+    #[test]
+    fn browse_4_external_podcast_playback_names_the_episode_and_channel_links() {
+        let labels = player_bar_labels(
+            PlaybackMode::Podcast,
+            LinkAvailability {
+                artist: true,
+                album: true,
+            },
+        );
+
+        assert_eq!(labels.title, strings::JUMP_TO_PLAYING_EPISODE);
+        assert_eq!(labels.subtitle, strings::GO_TO_PLAYING_CHANNEL);
+        assert_eq!(labels.cover, strings::GO_TO_PLAYING_CHANNEL);
+    }
+
+    #[test]
+    fn browse_4_radio_playback_names_all_three_links_the_station() {
+        let labels = player_bar_labels(
+            PlaybackMode::Radio,
+            LinkAvailability {
+                artist: false,
+                album: false,
+            },
+        );
+
+        assert_eq!(labels.title, strings::JUMP_TO_PLAYING_STATION);
+        assert_eq!(labels.subtitle, strings::JUMP_TO_PLAYING_STATION);
+        assert_eq!(labels.cover, strings::JUMP_TO_PLAYING_STATION);
+    }
+
+    #[test]
+    fn browse_4_leaving_external_playback_restores_the_library_labels() {
+        let labels = player_bar_labels(
+            PlaybackMode::Queue,
+            LinkAvailability {
+                artist: true,
+                album: true,
+            },
+        );
+
+        assert_eq!(labels.title, strings::JUMP_TO_NOW_PLAYING);
+        assert_eq!(labels.subtitle, strings::GO_TO_PLAYING_ARTIST);
+        assert_eq!(labels.cover, strings::REVEAL_PLAYING_ALBUM);
     }
 }

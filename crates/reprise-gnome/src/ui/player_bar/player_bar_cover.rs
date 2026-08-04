@@ -8,6 +8,7 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use libadwaita::prelude::AnimationExt;
 
+use crate::ui::playing_links::LinkLabels;
 use crate::ui::{cover_loader::CoverLoader, motion, strings};
 
 use super::PlayerBar;
@@ -40,16 +41,22 @@ impl PlayerBar {
     }
 
     /// Shows `title`/`artist` and starts their shared 250 ms crossfade.
-    pub fn set_track(&self, title: &str, artist: &str) {
+    pub fn set_track(&self, title: &str, artist: &str, links: LinkLabels) {
+        let title_link = strings::text(links.title);
+        let artist_link = strings::text(links.subtitle);
+        let cover_link = strings::text(links.cover);
         self.title_button
-            .update_property(&[gtk4::accessible::Property::Label(title)]);
+            .update_property(&[gtk4::accessible::Property::Label(&title_link)]);
         self.artist_button
-            .update_property(&[gtk4::accessible::Property::Label(artist)]);
-        self.artist_button.set_sensitive(!artist.trim().is_empty());
+            .update_property(&[gtk4::accessible::Property::Label(&artist_link)]);
         self.cover_button
-            .update_property(&[gtk4::accessible::Property::Label(&strings::text(
-                strings::REVEAL_PLAYING_ALBUM,
-            ))]);
+            .update_property(&[gtk4::accessible::Property::Label(&cover_link)]);
+        self.title_button.set_tooltip_text(Some(&title_link));
+        self.artist_button.set_tooltip_text(Some(&artist_link));
+        self.cover_button.set_tooltip_text(Some(&cover_link));
+        self.title_button.set_sensitive(true);
+        self.artist_button.set_sensitive(true);
+        self.cover_button.set_sensitive(true);
         self.animate_track_change(title, artist);
     }
 
@@ -131,7 +138,9 @@ impl PlayerBar {
         }
         self.title_label.set_text("");
         self.artist_label.set_text("");
+        self.title_button.set_sensitive(false);
         self.artist_button.set_sensitive(false);
+        self.cover_button.set_sensitive(false);
         self.clear_cover();
     }
 }

@@ -265,6 +265,9 @@ impl PlayerBar {
         };
         // Starts at Repeat::Off — matches Queue::default() (see queue.rs).
         bar.set_repeat_indicator(Repeat::Off);
+        // No item is loaded at construction time, so all three metadata
+        // surfaces start visibly inactive until their first `set_track`.
+        bar.clear_track();
         bar
     }
 
