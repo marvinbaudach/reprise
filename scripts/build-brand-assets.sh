@@ -50,12 +50,14 @@ generated_brand=$(target data/brand/.keep)
 generated_brand=$(dirname "$generated_brand")
 rm -f "$generated_brand/.keep"
 python3 "$lib/brand_sources.py" "$palette" "$generated_brand"
-say "four 96-unit SVG sources ← palette.toml"
+say "four 96-unit sources plus the 16-unit stage ← palette.toml"
 
 mark=$generated_brand/reprise-mark.svg
 mark_light=$generated_brand/reprise-mark-light.svg
 mark_mono=$generated_brand/reprise-mark-mono.svg
 plate=$generated_brand/icon-plate.svg
+icon_16=$generated_brand/reprise-icon-16.svg
+mark_16_mono=$generated_brand/reprise-mark-16-mono.svg
 
 build_surface_tree() {
   local tree_root=$out
@@ -70,11 +72,18 @@ build_surface_tree() {
 
   mkdir -p "$icons/scalable/apps"
   cp "$icon" "$icons/scalable/apps/org.reprise.Reprise.svg"
-  for size in 16 22 24 32 48 64 128 256 512; do
+  # Every stage from 22px up comes from the 96-unit drawing. 16px comes from
+  # its own grid-aligned source: rasterising the 96-unit mark that small turns
+  # the dots into two specks below the noise floor, and no amount of scaling
+  # fixes a feature that is under a pixel.
+  for size in 22 24 32 48 64 128 256 512; do
     mkdir -p "$icons/${size}x${size}/apps"
     rsvg-convert -w "$size" -h "$size" "$icon" \
       -o "$icons/${size}x${size}/apps/org.reprise.Reprise.png"
   done
+  mkdir -p "$icons/16x16/apps"
+  rsvg-convert -w 16 -h 16 "$icon_16" \
+    -o "$icons/16x16/apps/org.reprise.Reprise.png"
   mkdir -p "$icons/symbolic/apps"
   python3 "$lib/svg_recolour.py" "$mark_mono" \
     "$icons/symbolic/apps/org.reprise.Reprise-symbolic.svg" \
@@ -117,10 +126,12 @@ build_surface_tree() {
       --outlined "$brand/lockup-$lockup_mode-outlined.svg"
   done
 
-  # The light mark ships as a source for surfaces this repository does not
-  # build — web pages and slides on pale ground. Nothing here consumes it, so
-  # assert it exists rather than let a rename silently drop it.
+  # Two sources ship without anything here consuming them: the light mark for
+  # pale surfaces this repository does not build, and the single-colour 16-unit
+  # form for a themed 16px surface that would otherwise be redrawn by hand.
+  # Assert them rather than let a rename silently drop them.
   test -f "$mark_light"
+  test -f "$mark_16_mono"
 }
 
 echo "== Asset tree =="

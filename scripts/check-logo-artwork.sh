@@ -64,6 +64,36 @@ for name, (small, large) in colours.items():
         assert all(node.attrib.get(key) == value for key, value in attributes.items()), (name, index)
         assert node.attrib["fill"] == (small if index < 3 else large), (name, index)
     assert not re.search(r"(?:linear|radial)Gradient", ET.tostring(root, encoding="unicode"))
+hinted = (
+    ("reprise-mark-16.svg", (palette["reprise_violet"], palette["reprise_teal"])),
+    ("reprise-mark-16-mono.svg", None),
+)
+hinted_geometry = (
+    {"x": "3", "y": "5", "width": "3", "height": "3"},
+    {"x": "3", "y": "9", "width": "3", "height": "3"},
+    {"x": "7", "y": "3", "width": "1", "height": "10"},
+    {"x": "9", "y": "3", "width": "3", "height": "10"},
+)
+for name, fills in hinted:
+    root = ET.parse(brand / name).getroot()
+    assert root.attrib["viewBox"] == "0 0 16 16", name
+    shapes = list(root)
+    assert len(shapes) == 4, name
+    for index, (node, attributes) in enumerate(zip(shapes, hinted_geometry, strict=True)):
+        assert node.tag.rsplit("}", 1)[-1] == "rect", (name, index)
+        assert all(node.attrib.get(key) == value
+                   for key, value in attributes.items()), (name, index)
+        if fills is not None:
+            assert node.attrib["fill"] == (fills[0] if index < 3 else fills[1]), (name, index)
+    if fills is None:
+        assert root.attrib["fill"] == "currentColor", name
+icon16 = ET.parse(brand / "reprise-icon-16.svg").getroot()
+assert icon16.attrib["viewBox"] == "0 0 16 16"
+carrier = list(icon16)[0]
+assert carrier.attrib == {
+    "x": "1", "y": "1", "width": "14", "height": "14",
+    "rx": "4", "fill": palette["reprise_plate"],
+}
 mono = ET.parse(brand / "reprise-mark-mono.svg").getroot()
 assert mono.attrib["viewBox"] == "0 0 96 96"
 assert mono.attrib["fill"] == "currentColor"
@@ -79,7 +109,7 @@ assert rects[0].attrib == {
 }
 PY
   then
-    ok "source geometry: ordered circles, 1:3 barlines and solid 96-unit plate"
+    ok "source geometry: 96-unit sign, 16-unit hinted stage, 1:3 barlines, solid carriers"
   else
     bad "source geometry differs from the specified 96-unit drawing"
   fi
@@ -100,6 +130,39 @@ check_geometry_box() {
     ok "V1 ink box at 512px: x=[$x0,$x1], y=[$y0,$y1] viewBox units (±1px)"
   else
     bad "V1 ink box x=[$x0,$x1], y=[$y0,$y1] misses the exact geometry"
+  fi
+}
+
+# The 16px stage has its own source, so it gets its own gate rather than a
+# report. Everything the 96-unit drawing cannot do at this size — four
+# countable elements, each well clear of the noise floor — this one must.
+check_hinted_16() {
+  local png=$tmp/hinted-16.png count sizes floor smallest
+  rsvg-convert -w 16 -h 16 -a data/brand/reprise-mark-16.svg -o "$png"
+  count=$("${measure[@]}" ink-components "$png")
+  sizes=$("${measure[@]}" ink-component-sizes "$png")
+  floor=$("${measure[@]}" noise-floor "$png")
+  smallest=$(awk '{print $NF}' <<<"$sizes")
+  if [[ $count -eq $MARK_PARTS ]]; then
+    ok "V2 16px hinted gate: $count separate components at sizes [$sizes]"
+  else
+    bad "V2 16px hinted gate: $count instead of $MARK_PARTS components at sizes [$sizes]"
+  fi
+  # Clearing the floor by a single pixel would mean the next renderer rounds it
+  # away again. Demand real headroom.
+  if [[ $smallest -ge $((floor * 2)) ]]; then
+    ok "V2 16px hinted headroom: smallest element ${smallest}px against a ${floor}px floor"
+  else
+    bad "V2 16px hinted headroom: smallest element ${smallest}px is not clear of the ${floor}px floor"
+  fi
+  # The shipped 16px raster must come from this source, not from a downscale of
+  # the 96-unit mark. Compare the two renders: identical would mean the wiring
+  # silently fell back.
+  rsvg-convert -w 16 -h 16 -a data/brand/reprise-mark.svg -o "$tmp/plain-16.png"
+  if cmp -s "$png" "$tmp/plain-16.png"; then
+    bad "V2 16px hinted source renders identically to the 96-unit mark — the stage is not wired up"
+  else
+    ok "V2 16px hinted source differs from the downscaled 96-unit mark"
   fi
 }
 
@@ -126,7 +189,7 @@ report_components() {
       floor=$("${measure[@]}" noise-floor "$png")
       groups=$(wc -w <<<"$sizes")
       if [[ $groups -eq $MARK_PARTS ]]; then
-        ok "V2 ${size}px report: $count of $MARK_PARTS components clear the ${floor}px noise floor; all $MARK_PARTS pixel groups survive separately at sizes [$sizes] — nothing merged, the small elements are just under the floor"
+        ok "V2 ${size}px report: the 96-unit mark puts $count of $MARK_PARTS components over the ${floor}px noise floor; all $MARK_PARTS groups survive separately at sizes [$sizes] — nothing merged, the dots are just too small to count. This stage ships from reprise-mark-16.svg instead."
       else
         ok "V2 ${size}px report: $count components above the ${floor}px noise floor; $groups pixel groups at sizes [$sizes] — strokes have run together"
       fi
@@ -165,13 +228,25 @@ check_v7() {
       ok "V7 symbolic has no $forbidden"
     fi
   done
-  for source in data/brand/reprise-mark.svg data/brand/reprise-mark-light.svg; do
+  for source in data/brand/reprise-mark.svg data/brand/reprise-mark-light.svg data/brand/reprise-mark-16.svg; do
     if grep -Eq '(linear|radial)Gradient' "$source"; then
       bad "V7 coloured source contains a gradient: $source"
     else
       ok "V7 coloured source is gradient-free: $source"
     fi
   done
+}
+
+check_v8_hinted() {
+  local overlap
+  rsvg-convert -w 256 -h 256 -a data/brand/reprise-mark-16.svg -o "$tmp/v8h-colour.png"
+  rsvg-convert -w 256 -h 256 -a data/brand/reprise-mark-16-mono.svg -o "$tmp/v8h-mono.png"
+  overlap=$("${measure[@]}" outline-overlap "$tmp/v8h-colour.png" "$tmp/v8h-mono.png")
+  if awk -v value="$overlap" 'BEGIN { exit !(value >= 0.99) }'; then
+    ok "V8 hinted colour/mono outline overlap: $overlap"
+  else
+    bad "V8 hinted colour/mono outline overlap: $overlap < 0.99"
+  fi
 }
 
 check_v8() {
@@ -275,6 +350,8 @@ check_delivery() {
     data/icons/hicolor/symbolic/apps/org.reprise.Reprise-symbolic.svg \
     data/brand/reprise-icon.svg \
     data/brand/reprise-mark.svg data/brand/reprise-mark-light.svg \
+    data/brand/reprise-mark-16.svg data/brand/reprise-mark-16-mono.svg \
+    data/brand/reprise-icon-16.svg \
     android/app/src/main/res/drawable/ic_repeat_sign.xml; do
     [[ -f $required ]] && ok "delivered: $required" || bad "missing: $required"
   done
@@ -310,6 +387,7 @@ check_all() {
   check_geometry_box
   echo "Raster component report"
   report_components
+  check_hinted_16
   echo "Contrast"
   check_pair_contrast "$VIOLET" "$TEAL" "$PLATE" "plate $PLATE"
   check_pair_contrast "$VIOLET" "$TEAL" '#0a0a0e' "dark dock #0a0a0e"
@@ -318,6 +396,7 @@ check_all() {
   echo "Symbolic and silhouette parity"
   check_v7
   check_v8
+  check_v8_hinted
   echo "Android 66dp mask"
   check_v9 android/app/src/main/res/drawable/ic_launcher_foreground.xml colour
   check_v9 android/app/src/main/res/drawable/ic_launcher_monochrome.xml monochrome
