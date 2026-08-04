@@ -174,7 +174,6 @@ use crate::ui::mpris_mirror;
 use crate::ui::player_bar::PlayerBar;
 use crate::ui::player_controller_wiring;
 use crate::ui::player_lyrics::{lyrics_query_for, start_track_for_lyrics, PlayerLyrics};
-use crate::ui::style::cover_accent::Rgb as AccentRgb;
 use reprise_core::media_integration::{
     MediaIntegrationHandles, MprisPlaybackStatus, SharedAgentQueueState, SharedMprisState,
     DEFAULT_VOLUME,
@@ -403,15 +402,6 @@ pub struct PlayerController {
     /// rapid track change can't paint a stale waveform.
     pub(in crate::ui) waveform_generation: Rc<Cell<u64>>,
     pub(in crate::ui) waveform_backend: Arc<dyn WaveformBackend>,
-    /// Generation token for the cover-accent off-main extraction, so a rapid
-    /// track change can't apply a stale album accent.
-    pub(in crate::ui) cover_accent_generation: Rc<Cell<u64>>,
-    /// The cover palette most recently applied (or `None` for no-cover / fallback).
-    /// Read by `reset_cover_accent` and `apply_cover_accent` to supply the
-    /// "from" palette for the 400 ms cross-fade; written back once each new
-    /// palette is committed. `pub(in crate::ui)` so `now_playing_wiring.rs` can
-    /// borrow it.
-    pub(in crate::ui) cover_accent_last: Rc<RefCell<Option<AccentRgb>>>,
     /// The owning `gio::Application`, for `play_track_id`'s track-change
     /// notification (Task 9: `app.send_notification`). Passed into `new` from
     /// `window::build`, which already holds the `&adw::Application` it builds
@@ -533,8 +523,6 @@ impl PlayerController {
             lyrics,
             waveform_generation: Rc::new(Cell::new(0)),
             waveform_backend: waveform,
-            cover_accent_generation: Rc::new(Cell::new(0)),
-            cover_accent_last: Rc::new(RefCell::new(None)),
             application: {
                 let weak = glib::WeakRef::new();
                 weak.set(Some(app.upcast_ref::<gio::Application>()));

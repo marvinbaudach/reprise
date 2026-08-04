@@ -1580,20 +1580,11 @@ place (MOT-2, the motion reading of P-4).
   (OverlaySplitView, NavigationSplitView, ToastOverlay, Banner, Dialog,
   Popover — e.g. the push/pop slides of the settings subpages) count
   as system-given and are exempt from the token requirement.
-  **The cover accent is not its own animation.** It used to be listed as
-  the Ambient case, animated in Rust by interpolating the colour and
-  reloading a display-wide provider per frame — which restyled the whole
-  widget tree ~24 times per track change and cost ~190 ms of main-thread
-  time (measured 2026-08-04, see `docs/plans/track-change-ui-stall.md`).
-  It is now a single colour change, and it inherits the transition the
-  carrying widget already declares: the play button transitions
-  `background-color` and `box-shadow` on Micro, so its accent moves on
-  Micro. That is MOT-3 rather than an exception to it — the alternative
-  is impossible, not merely expensive: the properties carrying the accent
-  are the same ones carrying hover and focus, a CSS property has exactly
-  one transition, and it cannot tell an accent change from a hover. Any
-  duration imposed centrally would override the token the widget declares
-  for its own interaction states.
+  **The accent is not its own animation.** Changing its source reloads one
+  named color; the carrying widget's existing transition applies. The play
+  button, for example, transitions `background-color` and `box-shadow` on
+  Micro. A central accent duration would override that widget's interaction
+  transition because a CSS property has exactly one transition.
   <!-- Flip criterion MOT-1: all call sites from the motion plan's
        audit inventory consume tokens; scripts/check-motion-tokens.sh
        is strict and without a leftover allowlist. -->
@@ -1620,16 +1611,15 @@ place (MOT-2, the motion reading of P-4).
   Pause = icon crossfade (two Micro halves) + scale pulse (1.0→0.92→
   1.0, Micro); track change = cover/title crossfade; the waveform
   crossfades to the new track instead of dropping to 0; pause slightly
-  desaturates the waveform fill (at draw time), play reverses it — the
-  accent pipeline (`cover_accent`) stays untouched. The EQ indicators
+  desaturates the waveform fill with draw-local color math, play reverses
+  it. The effective accent itself stays untouched. The EQ indicators
   (track list, mini-player) run only during active playback; the idle
   bar is static — no permanent loop without playback.
 - **MOT-6** [active] [gtk] — Nothing blocks: the model changes at frame
   0, the animation only illustrates. A second action during a running
   animation jumps to the end state via `AdwAnimation::skip()` and then
-  starts the new one; animation slots (track crossfade, icon
-  crossfade, accent fade) call `skip()` instead of silently dropping
-  the old handle.
+  starts the new one; animation slots (track crossfade and icon crossfade)
+  call `skip()` instead of silently dropping the old handle.
 - **MOT-7** [active] [gtk] — `gtk-enable-animations=false` wins without
   exception: every token degrades centrally in `ui/motion.rs` to a
   hard switch (`follow-enable-animations-setting` or the central gate
@@ -1680,18 +1670,17 @@ the panel).
   toggle, a retry belongs in the tab's error state. **No volume
   control** (P-1).
 - **NPP-3** [active] [gtk] — Glow instead of full tint: a radial
-  gradient of the cover accent color sits in the upper third behind
+  gradient of the effective accent color (`@accent_color`) sits in the upper third behind
   the cover and fades down into neutral panel-dark. The reason is
   legibility — the base surface stays neutral so the lyrics contrast
-  stays constant over the whole height. Fallback is the theme accent
-  (petrol), idle shows no glow. Rendered as a gradient, never
+  stays constant over the whole height. Idle shows no glow. Rendered as a gradient, never
   live-blurred.
 - **NPP-4** [active] [gtk] — Tab memory only for the session (NAV-5); a
   restart lands on Up Next. Panel *visibility* continues to persist
   across restarts — tab and visibility are separate states.
 - **NPP-5** [active] [gtk] — Line hierarchy in the lyrics tab: active
   line 15 px bold white with accent underline (26 × 2.5 px, centered,
-  color = cover accent), neighbors stepped white 45% (±1) / 32% (±2) /
+  color = `@accent_color`), neighbors stepped white 45% (±1) / 32% (±2) /
   28% (further). All lines centered, 13 px, generous spacing. Whole
   LRC lines, no karaoke word highlighting.
 - **NPP-6** [active] [gtk] — Line change: the new line fades to
@@ -2489,9 +2478,8 @@ property is set and yet nothing happens.
   standard token; the old cover lies on top of the fully resolved new
   cover or placeholder for this and only fades out afterward. The queue
   updates its rows independently of this, so the played title moves up out
-  of the list. The playback accent derived from the cover continues to
-  follow the ambient transition from MOT-1 separately; interruptions
-  follow MOT-6. Newly loaded synchronized lyrics start at line 0 and
+  of the list. The effective accent is independent of the cover and does
+  not change with the track. Newly loaded synchronized lyrics start at line 0 and
   position it per LYR-4. Without animations, cover and content switch hard
   (MOT-7).
 

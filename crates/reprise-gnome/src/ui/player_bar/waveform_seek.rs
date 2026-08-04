@@ -430,7 +430,7 @@ impl WaveformSeek {
     }
 
     /// Animates the local waveform fill toward the paused or playing chroma.
-    /// This never mutates the application-wide cover-accent provider.
+    /// This never mutates the application-wide effective accent.
     pub(in crate::ui) fn set_paused(&self, paused: bool) {
         let target = if paused { 1.0 } else { 0.0 };
         if self.state.borrow().desaturation_target == target {

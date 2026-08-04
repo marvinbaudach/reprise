@@ -15,7 +15,6 @@
 pub(super) mod accent;
 pub(super) mod buttons;
 pub(super) mod color_math;
-pub(super) mod cover_accent;
 pub(super) mod cover_accent_oklab;
 pub(super) mod cover_palette;
 pub(super) mod interactions;
@@ -229,7 +228,6 @@ pub(super) fn install() {
         );
         THEME_PROVIDER.with(|slot| *slot.borrow_mut() = Some(theme_provider));
 
-        cover_accent::install(&display);
         reduced_motion::install(&display);
 
         let manager = adw::StyleManager::default();

@@ -182,7 +182,7 @@ impl CompactPlayer {
 
     /// Feeds the mini waveform the same precomputed peaks as the full player
     /// bar, so the compact view draws the real track shape with progress — not
-    /// the pseudo-random skeleton fallback. Played bars take the cover accent
+    /// the pseudo-random skeleton fallback. Played bars take the effective accent
     /// via the `.waveform-seek` CSS `color` binding (MINI-1, frame 1e).
     pub(in crate::ui) fn set_peaks(&self, peaks: Vec<u8>) {
         self.0.widgets.waveform.set_peaks(peaks);
@@ -675,7 +675,7 @@ mod tests {
             player.0.widgets.waveform.has_raw_peaks_for_test(),
             "compact set_peaks must reach the mini waveform"
         );
-        // Played bars take the cover accent (the same @reprise_player_accent as
+        // Played bars take the effective accent (the same @reprise_player_accent as
         // the play button); unplayed bars stay dim white (frame 1e).
         let css = crate::ui::compact::compact_player_layouts::mini_css();
         assert!(css.contains(".waveform-seek { color: @reprise_player_accent; }"));

@@ -12,7 +12,6 @@
 //! `build_content_nav` builds the `adw::NavigationView` the shell's content
 //! page becomes. Called from `library_shell::build`.
 
-use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -22,7 +21,6 @@ use libadwaita as adw;
 
 use crate::ui::one_shot_task;
 use crate::ui::player_controller::PlayerController;
-use crate::ui::style::cover_accent::Rgb;
 use reprise_core::cover::ThumbnailSize;
 use reprise_core::media_integration::MprisState;
 use reprise_core::playback::{PlaybackError, PlaybackState, SpectrumFrame};
@@ -37,36 +35,6 @@ fn cover_path_to_uri(path: &Path) -> Option<String> {
             None
         }
     }
-}
-
-/// Off-main cover-palette extraction: decode the cover, derive its three
-/// dominant colours, and cross-fade to them (generation-guarded so a rapid track change
-/// can't apply a stale album accent). A non-colorful cover cross-fades to the
-/// theme fallback. The previous accent is read from (and written back to)
-/// `last_accent_cell`; `widget` is required for the animation target.
-fn apply_cover_accent(
-    generation_cell: &Rc<std::cell::Cell<u64>>,
-    last_accent_cell: &Rc<RefCell<Option<Rgb>>>,
-    cover_path: &Path,
-) {
-    let generation = generation_cell.get().wrapping_add(1);
-    generation_cell.set(generation);
-    let generation_cell = generation_cell.clone();
-    let last_accent_cell = last_accent_cell.clone();
-    let cover_path = cover_path.to_path_buf();
-    let Ok(receiver) = one_shot_task::spawn("reprise-cover-accent", move || {
-        crate::ui::style::cover_palette::accent_from_cover_file(&cover_path)
-    }) else {
-        return;
-    };
-    glib::spawn_future_local(async move {
-        if let Ok(new_color) = receiver.recv().await {
-            if generation_cell.get() == generation {
-                *last_accent_cell.borrow_mut() = new_color;
-                crate::ui::style::cover_accent::set_cover_accent(new_color);
-            }
-        }
-    });
 }
 
 fn set_art_url_for_current_track(mirror: &mut MprisState, track_id: i64, art_url: String) -> bool {
@@ -161,7 +129,6 @@ impl PlayerController {
         self.bar.clear_track();
         self.compact_player.clear_track();
         self.sync_lyrics_track(None);
-        self.reset_cover_accent();
         self.notify_now_playing_panel_track_changed();
     }
 
@@ -215,41 +182,19 @@ impl PlayerController {
         }
     }
 
-    /// Reverts the cover-derived accent to the theme fallback AND bumps the
-    /// generation, so an accent extraction still in flight for the previous
-    /// track can't re-apply its (now stale) album accent afterwards. This is
-    /// the clear-path counterpart of `apply_cover_accent`'s own bump — without
-    /// it, a Stop or a switch to a coverless track would leave the previous
-    /// album's hue tinting the waveform and play button.
-    fn reset_cover_accent(&self) {
-        let generation = self.cover_accent_generation.get().wrapping_add(1);
-        self.cover_accent_generation.set(generation);
-        *self.cover_accent_last.borrow_mut() = None;
-        crate::ui::style::cover_accent::set_cover_accent(None);
-    }
-
     /// Loads `path`'s cover into the bar and compact player through the shared
     /// `CoverLoader` instance. The bar's cover load also carries the MPRIS
-    /// art_url callback and cover-accent extraction (previously on the
-    /// now-playing page's full-size load).
+    /// art_url callback.
     pub(in crate::ui) fn sync_cover(&self, path: &str) {
         if let Some(track_id) = self.now_playing.borrow().as_ref().map(|t| t.id) {
             self.sync_waveform(track_id, path);
         }
-        // Revert to the theme fallback up front: if this track has no usable
-        // cover, the loader's `on_loaded` never fires and `apply_cover_accent`
-        // is never reached, so without this reset the previous album's accent
-        // would linger. A track that *does* have a cover re-applies its accent
-        // once decoding completes.
-        self.reset_cover_accent();
         let bar_generation = self.bar_cover_generation.get().wrapping_add(1);
         self.bar_cover_generation.set(bar_generation);
         let track_id = self.now_playing.borrow().as_ref().map(|track| track.id);
         if let Some(track_id) = track_id {
             let now_playing = self.now_playing.clone();
             let mpris_state = self.mpris_state.clone();
-            let cover_accent_generation = self.cover_accent_generation.clone();
-            let cover_accent_last = self.cover_accent_last.clone();
             let bar_cover_target = self.bar.cover_image().clone();
             self.cover_loader.load_into_with_resolution(
                 &bar_cover_target,
@@ -276,7 +221,6 @@ impl PlayerController {
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner);
                     set_art_url_for_current_track(&mut mirror, track_id, art_url);
-                    apply_cover_accent(&cover_accent_generation, &cover_accent_last, &cover_path);
                 },
             );
         } else {
@@ -459,5 +403,25 @@ mod tests {
             "file:///cover.png".into(),
         ));
         assert_eq!(mirror.art_url.as_deref(), Some("file:///cover.png"));
+    }
+
+    #[test]
+    fn player_cover_loading_has_no_cover_color_pipeline() {
+        let wiring = include_str!("now_playing_wiring.rs");
+        let controller = include_str!("player_controller.rs");
+        let style = include_str!("../style/mod.rs");
+        for retired in [
+            ["apply_cover", "_accent"].concat(),
+            ["reset_cover", "_accent"].concat(),
+            ["cover_accent", "_generation"].concat(),
+            ["cover_accent", "_last"].concat(),
+        ] {
+            assert!(!wiring.contains(&retired), "wiring retained {retired}");
+            assert!(
+                !controller.contains(&retired),
+                "controller retained {retired}"
+            );
+        }
+        assert!(!style.contains(&["mod cover", "_accent;"].concat()));
     }
 }

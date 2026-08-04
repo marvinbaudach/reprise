@@ -12,8 +12,6 @@
 //! cover and the second and third entries lost their only reader.
 
 use super::color_math::{linear_rgb_to_oklab, to_linear};
-#[cfg(test)]
-use super::cover_accent_oklab::is_usable;
 use super::cover_accent_oklab::{oklch_clamp, Rgb};
 
 /// Edge length the cover is scaled to before sampling — small enough to be
@@ -217,8 +215,7 @@ mod tests {
     #[test]
     fn near_gray_falls_back_to_none() {
         let result = dominant_accent(&solid(128, 126, 130, 100), 3);
-        // Either returns None directly, or returns a color that is_usable rejects.
-        assert!(result.is_none() || !is_usable(&result.unwrap()));
+        assert!(result.is_none());
     }
 
     #[test]
@@ -283,10 +280,9 @@ mod tests {
             probe_buckets(std::path::Path::new(path));
             match accent_from_cover_file(std::path::Path::new(path)) {
                 Some(accent) => {
-                    let light = super::super::cover_accent_oklab::oklch_light(accent);
                     println!(
-                        "{path}\n  accent #{:02x}{:02x}{:02x}   seam #{:02x}{:02x}{:02x}",
-                        accent.r, accent.g, accent.b, light.r, light.g, light.b,
+                        "{path}\n  accent #{:02x}{:02x}{:02x}",
+                        accent.r, accent.g, accent.b,
                     );
                 }
                 None => println!("{path}\n  NONE — no usable colour, the theme accent applies"),
