@@ -111,6 +111,65 @@ fn menu_button(rendered: &RenderedEpisode) -> gtk4::MenuButton {
         .expect("episode row menu")
 }
 
+fn render_group_header(kind: PodcastKind, author: Option<&str>) -> gtk4::Widget {
+    group_header(
+        &SourceGroup {
+            subscription_id: 1,
+            title: "Source".into(),
+            author: author.map(str::to_owned),
+            image_url: None,
+            kind,
+            sync_to_phone: false,
+            episodes: Vec::new(),
+        },
+        &SourceSummary {
+            episode_count: 0,
+            new_count: 0,
+            downloaded_bytes: 0,
+            latest_published_at: None,
+        },
+        &[],
+        &[],
+        false,
+    )
+}
+
+/// `POD-10`: expansion and opening a page must not compete on the header.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn pod_10_the_channel_header_has_no_arrow_button() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let header = render_group_header(PodcastKind::Youtube, None);
+    let icon_names = descendants(&header)
+        .into_iter()
+        .filter_map(|widget| widget.downcast::<gtk4::Image>().ok())
+        .filter_map(|image| image.icon_name())
+        .collect::<Vec<_>>();
+    assert!(
+        icon_names.iter().all(|name| name != "go-next-symbolic"),
+        "the channel header still carries an arrow"
+    );
+}
+
+/// `SRC-16`: RSS's available second-line data uses the shared quiet identity
+/// typography. YouTube has no stored handle field yet, so its half is planned.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_16_the_rss_source_header_types_its_second_line_like_the_shared_grammar() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let header = render_group_header(PodcastKind::Rss, Some("Author"));
+    let subtitle = descendants(&header)
+        .into_iter()
+        .filter_map(|widget| widget.downcast::<gtk4::Label>().ok())
+        .find(|label| label.text() == "Author")
+        .expect("RSS author subtitle");
+    assert!(subtitle.has_css_class("caption"));
+    assert!(subtitle.has_css_class("dim-label"));
+    assert_eq!(subtitle.xalign(), 0.0);
+}
+
 /// `SRC-16`: 16:9 and square artwork leave the title at the same x position.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]

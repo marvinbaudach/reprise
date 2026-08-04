@@ -330,6 +330,16 @@ pub(super) fn build_source(
     selected_device_ids: &[String],
 ) -> gio::Menu {
     let menu = gio::Menu::new();
+    if group.kind == PodcastKind::Youtube {
+        let channel = gio::Menu::new();
+        append_targeted(
+            &channel,
+            strings::YOUTUBE_OPEN_CHANNEL,
+            "open-channel",
+            group.subscription_id,
+        );
+        menu.append_section(None, &channel);
+    }
     match sync_control(devices, selected_device_ids) {
         SyncControl::Hidden => {}
         SyncControl::Direct { device, selected } => append_device_targeted(
@@ -722,8 +732,8 @@ mod tests {
             }],
             &[],
         );
-        // 1 section for "Sync to <device>" plus 1 for "Unsubscribe".
-        assert_eq!(menu.n_items(), 2);
+        // Open channel, "Sync to <device>", and Unsubscribe.
+        assert_eq!(menu.n_items(), 3);
     }
 
     #[test]
@@ -775,6 +785,10 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "podcasts_source_menu_tests.rs"]
+mod source_menu_tests;
 
 #[cfg(test)]
 #[path = "podcasts_context_menu_browser_tests.rs"]

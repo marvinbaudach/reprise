@@ -4028,7 +4028,10 @@ listening statistics.
   `src_16_the_checkbox_replaces_the_playing_marker_rather_than_covering_it`,
   `src_16_the_title_starts_at_the_same_x_in_both_source_views`,
   `src_16_rows_have_the_same_height_in_both_source_views`, and
-  `src_16_a_row_renders_exactly_one_status_chip`.
+  `src_16_a_row_renders_exactly_one_status_chip`. **[planned]** RSS author
+  subtitles already use the same quiet second-line typography, but a YouTube
+  channel handle cannot join it until the source projection carries a durable
+  handle field; no subtitle is invented from other channel data meanwhile.
 - **SRC-17** [active] [gtk] — **Approach reveals one reserved source-row
   action surface.** A source row's ⋮ keeps its layout space at all times and
   changes only opacity and targeting on hover, keyboard focus, or selection;
@@ -4113,7 +4116,11 @@ listening statistics.
   keeps Shorts hidden by default. "Load more" extends that same channel once,
   past the yt-dlp provider boundary, up to entry 40. Selection and bulk
   download or removal stay bound to the channel; every row shows the download
-  state from POD-7.
+  state from POD-7. The channel page is reached from the source row's existing
+  menu; the already-expandable channel header carries no arrow button or
+  second competing navigation affordance. Covered by
+  `pod_10_the_source_menu_opens_the_channel_page` and
+  `pod_10_the_channel_header_has_no_arrow_button`.
 - **POD-11** [active] [core] [gtk] — On the YouTube channel page every row
   carries a download column of its own with the state from POD-7 and, as soon
   as a file actually exists, its compactly formatted size (e.g. "148 MB",

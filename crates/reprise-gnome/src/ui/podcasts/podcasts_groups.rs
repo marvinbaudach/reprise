@@ -280,14 +280,6 @@ fn group_header(
         sync.set_tooltip_text(Some(&strings::text(strings::PODCAST_SYNC_PHONE)));
         header.append(&sync);
     }
-    if group.kind == PodcastKind::Youtube {
-        let open = gtk4::Button::from_icon_name("go-next-symbolic");
-        open.add_css_class("flat");
-        open.set_tooltip_text(Some(&strings::text(strings::YOUTUBE_OPEN_CHANNEL)));
-        open.set_action_name(Some("podcasts.open-channel"));
-        open.set_action_target_value(Some(&group.subscription_id.to_variant()));
-        header.append(&open);
-    }
     let menu = gtk4::MenuButton::builder()
         .icon_name("view-more-symbolic")
         .menu_model(&podcasts_context_menu::build_source(
