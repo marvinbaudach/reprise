@@ -169,6 +169,11 @@ impl PodcastsFilterBar {
         self.apply(PodcastFilter::default());
     }
 
+    #[allow(dead_code)] // Used by the explicit source reveal entry point in AP7.
+    pub(super) fn apply_filter(self: &Rc<Self>, filter: PodcastFilter) {
+        self.apply(filter);
+    }
+
     fn apply(self: &Rc<Self>, filter: PodcastFilter) {
         if let Err(error) = podcasts::config::save_filter(&self.conn, &filter) {
             tracing::warn!(%error, "could not persist podcast filters");

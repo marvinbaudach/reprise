@@ -258,6 +258,92 @@ pub(super) fn apply_filter(rows: &[EpisodeRow], filter: &PodcastFilter) -> Vec<E
         .collect()
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum PodcastFilterFacet {
+    Unplayed,
+    Source,
+    Downloaded,
+}
+
+pub(super) const PODCAST_FACETS: [PodcastFilterFacet; 3] = [
+    PodcastFilterFacet::Unplayed,
+    PodcastFilterFacet::Source,
+    PodcastFilterFacet::Downloaded,
+];
+
+/// A filter containing only the selected facet. This deliberately delegates
+/// the facet's actual matching semantics back to `matches_filter`.
+fn only_facet(filter: &PodcastFilter, facet: PodcastFilterFacet) -> PodcastFilter {
+    match facet {
+        PodcastFilterFacet::Unplayed => PodcastFilter {
+            unplayed_only: filter.unplayed_only,
+            ..PodcastFilter::default()
+        },
+        PodcastFilterFacet::Source => PodcastFilter {
+            source: filter.source,
+            ..PodcastFilter::default()
+        },
+        PodcastFilterFacet::Downloaded => PodcastFilter {
+            downloaded_only: filter.downloaded_only,
+            ..PodcastFilter::default()
+        },
+    }
+}
+
+/// `matches_filter` is a conjunction of independent facets, so a facet hides
+/// the row exactly when the row fails that facet alone.
+pub(super) fn facet_hides(
+    row: &EpisodeRow,
+    filter: &PodcastFilter,
+    facet: PodcastFilterFacet,
+) -> bool {
+    !matches_filter(row, &only_facet(filter, facet))
+}
+
+pub(super) fn remove_facet(filter: &PodcastFilter, facet: PodcastFilterFacet) -> PodcastFilter {
+    let mut result = filter.clone();
+    match facet {
+        PodcastFilterFacet::Unplayed => result.unplayed_only = false,
+        PodcastFilterFacet::Source => result.source = None,
+        PodcastFilterFacet::Downloaded => result.downloaded_only = false,
+    }
+    result
+}
+
+/// `SRC-13`: the filter an explicit jump to this episode needs — unchanged
+/// when the episode is visible, otherwise the same filter minus exactly the
+/// facets that hide it.
+pub(super) fn filter_without_hiding(row: &EpisodeRow, filter: &PodcastFilter) -> PodcastFilter {
+    if matches_filter(row, filter) {
+        return filter.clone();
+    }
+    PODCAST_FACETS
+        .into_iter()
+        .filter(|facet| facet_hides(row, filter, *facet))
+        .fold(filter.clone(), |filter, facet| remove_facet(&filter, facet))
+}
+
+/// The filter required for a channel jump. A filtered group disappears when
+/// no episode survives, so remove precisely the facets that every episode in
+/// the group fails.
+pub(super) fn filter_without_hiding_group(
+    group: &SourceGroup,
+    filter: &PodcastFilter,
+) -> PodcastFilter {
+    if !apply_filter(&group.episodes, filter).is_empty() {
+        return filter.clone();
+    }
+    PODCAST_FACETS
+        .into_iter()
+        .filter(|facet| {
+            group
+                .episodes
+                .iter()
+                .all(|row| facet_hides(row, filter, *facet))
+        })
+        .fold(filter.clone(), |filter, facet| remove_facet(&filter, facet))
+}
+
 pub(super) fn active(filter: &PodcastFilter) -> bool {
     filter.unplayed_only || filter.downloaded_only
 }
@@ -641,3 +727,7 @@ mod tests {
         assert!(!on_phone(&[phone], &[]));
     }
 }
+
+#[cfg(test)]
+#[path = "podcasts_presentation_filter_tests.rs"]
+mod filter_tests;

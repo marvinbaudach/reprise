@@ -34,6 +34,9 @@ pub(super) enum RadioFilterFacet {
     Country,
 }
 
+const RADIO_FILTER_FACETS: [RadioFilterFacet; 2] =
+    [RadioFilterFacet::Genre, RadioFilterFacet::Country];
+
 pub(super) fn remove_filter(filter: &RadioFilter, facet: RadioFilterFacet) -> RadioFilter {
     let mut result = filter.clone();
     match facet {
@@ -51,6 +54,41 @@ pub(super) fn filter_rows(rows: &[StationRow], filter: &RadioFilter) -> Vec<Stat
         })
         .cloned()
         .collect()
+}
+
+/// A filter containing only the selected facet, keeping `filter_rows` as the
+/// single source of matching behavior.
+fn only_facet(filter: &RadioFilter, facet: RadioFilterFacet) -> RadioFilter {
+    match facet {
+        RadioFilterFacet::Genre => RadioFilter {
+            genre: filter.genre.clone(),
+            country: None,
+        },
+        RadioFilterFacet::Country => RadioFilter {
+            genre: None,
+            country: filter.country.clone(),
+        },
+    }
+}
+
+pub(super) fn facet_hides_station(
+    row: &StationRow,
+    filter: &RadioFilter,
+    facet: RadioFilterFacet,
+) -> bool {
+    filter_rows(std::slice::from_ref(row), &only_facet(filter, facet)).is_empty()
+}
+
+pub(super) fn filter_without_hiding(row: &StationRow, filter: &RadioFilter) -> RadioFilter {
+    if !filter_rows(std::slice::from_ref(row), filter).is_empty() {
+        return filter.clone();
+    }
+    RADIO_FILTER_FACETS
+        .into_iter()
+        .filter(|facet| facet_hides_station(row, filter, *facet))
+        .fold(filter.clone(), |filter, facet| {
+            remove_filter(&filter, facet)
+        })
 }
 
 pub(super) fn genre_facets(rows: &[StationRow]) -> Vec<String> {
@@ -199,6 +237,11 @@ impl RadioFilterBar {
 
     pub(super) fn clear_all(self: &Rc<Self>) {
         self.apply(RadioFilter::default());
+    }
+
+    #[allow(dead_code)] // Used by the explicit station reveal entry point in AP7.
+    pub(super) fn apply_filter(self: &Rc<Self>, filter: RadioFilter) {
+        self.apply(filter);
     }
 
     pub(super) fn set_rows(&self, rows: &[StationRow]) {
@@ -400,6 +443,34 @@ mod tests {
         );
         assert_eq!(genre_facets(&rows), ["Jazz", "Metal"]);
         assert_eq!(country_facets(&rows), ["CH", "DE"]);
+    }
+
+    #[test]
+    fn src_13_only_the_hiding_facet_is_dropped_for_a_station() {
+        let station = test_station(1, Some("Metal"), Some("DE"));
+        let filter = RadioFilter {
+            genre: Some("Metal".into()),
+            country: Some("CH".into()),
+        };
+
+        assert_eq!(
+            filter_without_hiding(&station, &filter),
+            RadioFilter {
+                genre: Some("Metal".into()),
+                country: None,
+            }
+        );
+    }
+
+    #[test]
+    fn src_13_a_visible_station_leaves_every_facet_standing() {
+        let station = test_station(1, Some("Metal"), Some("CH"));
+        let filter = RadioFilter {
+            genre: Some("Metal".into()),
+            country: Some("CH".into()),
+        };
+
+        assert_eq!(filter_without_hiding(&station, &filter), filter);
     }
 
     #[test]
