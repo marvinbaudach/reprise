@@ -31,7 +31,6 @@ import androidx.compose.ui.unit.dp
 @Composable
 internal fun TrackRows(
     tracks: LibraryWindow<LibraryTrack>,
-    activeSelection: PlaybackSelection?,
     playback: PlaybackUiState,
     lastRequestedOffset: Long?,
     play: (Int) -> Unit,
@@ -50,7 +49,7 @@ internal fun TrackRows(
             when (content) {
                 is TrackListContent.Row -> LibraryTrackRow(
                     track = content.track,
-                    presentation = content.track.playbackPresentation(activeSelection, playback),
+                    presentation = content.track.playbackPresentation(playback),
                     play = { play(content.index) },
                 )
                 is TrackListContent.Continuation -> {

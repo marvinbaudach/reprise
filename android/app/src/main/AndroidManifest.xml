@@ -5,6 +5,13 @@
 
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!--
+        From API 33 the playing notification is only shown once the user has
+        allowed notifications. Without it the service still runs and the music
+        still plays; only the transport in the shade and on the lock screen
+        stays invisible. MainActivity asks at the first playback command.
+    -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:name=".RepriseApplication"

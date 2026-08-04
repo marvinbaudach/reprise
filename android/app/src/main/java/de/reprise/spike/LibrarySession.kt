@@ -34,6 +34,8 @@ internal interface LibrarySessionPort {
         window: LibraryWindowRange,
     ): LibraryWindow<LibraryTrack>
 
+    fun trackById(trackId: Long): LibraryTrack?
+
     fun artworkFor(trackUri: String, size: AndroidArtworkSize): String?
 
     fun setRating(trackId: Long, rating: Int)
@@ -124,6 +126,8 @@ internal class LibrarySession(
         album: LibraryAlbum,
         window: LibraryWindowRange,
     ): LibraryWindow<LibraryTrack> = port.listAlbumTracks(album.title, album.artist, window)
+
+    fun trackById(trackId: Long): LibraryTrack? = port.trackById(trackId)
 
     fun setRating(trackId: Long, rating: Int) {
         port.setRating(trackId, rating)

@@ -324,25 +324,25 @@ fun libraryFrameUsesTheExactTwoAMetricsAndOnlyBackedDestination() {
 @Test
 fun currentRowKeepsItsTintWhileOnlyPlayingAnimatesTheFourBars() {
     val rows = listOf(testBrowseTrack("first"), testBrowseTrack("second"))
-    val selection = PlaybackSelection(rows, startIndex = 1)
     val playing = PlaybackUiState(
         ready = true,
         state = AndroidPlaybackState.PLAYING,
         currentIndex = 1,
+        currentTrackId = rows[1].id,
+        currentTrackUri = rows[1].uri,
     )
     val paused = playing.copy(state = AndroidPlaybackState.PAUSED)
 
-    assertEquals(rows[1], selection.currentTrack(playing))
     assertEquals(
         TrackPlaybackPresentation(isCurrent = true, animateBars = true),
-        rows[1].playbackPresentation(selection, playing),
+        rows[1].playbackPresentation(playing),
     )
     assertEquals(
         TrackPlaybackPresentation(isCurrent = true, animateBars = false),
-        rows[1].playbackPresentation(selection, paused),
+        rows[1].playbackPresentation(paused),
     )
-    assertEquals(false, rows[0].playbackPresentation(selection, playing).isCurrent)
-    assertTrue(rows[1].playbackPresentation(selection, playing).animateBars)
+    assertEquals(false, rows[0].playbackPresentation(playing).isCurrent)
+    assertTrue(rows[1].playbackPresentation(playing).animateBars)
 }
 
 @Test
@@ -531,6 +531,9 @@ private class RecordingBrowsePort(
         operations += "album:$album:$albumArtist:${window.offset}:${window.limit}"
         return albumTracks
     }
+
+    override fun trackById(trackId: Long): LibraryTrack? =
+        titleResults.values.asSequence().flatMap { it.rows }.firstOrNull { it.id == trackId }
 
     override fun artworkFor(trackUri: String, size: AndroidArtworkSize): String? {
         operations += "artwork:$trackUri"

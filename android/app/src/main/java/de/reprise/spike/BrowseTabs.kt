@@ -26,7 +26,6 @@ internal fun TitlesTab(
     searchVisible: Boolean,
     searchText: String,
     search: (String) -> Unit,
-    activeSelection: PlaybackSelection?,
     playback: PlaybackUiState,
     lastRequestedOffset: Long?,
     play: (Int) -> Unit,
@@ -59,7 +58,6 @@ internal fun TitlesTab(
         } else {
             TrackRows(
                 tracks = tracks,
-                activeSelection = activeSelection,
                 playback = playback,
                 lastRequestedOffset = lastRequestedOffset,
                 play = play,
@@ -73,7 +71,6 @@ internal fun TitlesTab(
 internal fun AlbumsTab(
     albums: LibraryWindow<LibraryAlbum>,
     selectedAlbum: AlbumTrackList?,
-    activeSelection: PlaybackSelection?,
     playback: PlaybackUiState,
     openAlbum: (LibraryAlbum) -> Unit,
     closeAlbum: () -> Unit,
@@ -110,7 +107,6 @@ internal fun AlbumsTab(
             } else {
                 TrackRows(
                     tracks = selectedAlbum.tracks,
-                    activeSelection = activeSelection,
                     playback = playback,
                     lastRequestedOffset = albumRequestedOffset,
                     play = play,

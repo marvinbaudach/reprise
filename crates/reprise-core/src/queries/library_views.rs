@@ -6,7 +6,7 @@ use rusqlite::types::Value;
 use rusqlite::Connection;
 
 use super::clauses::{
-    ai_projection, filter_clause, like_pattern, order_clause, row_to_id, row_to_track, PRESENT,
+    filter_clause, like_pattern, order_clause, row_to_id, row_to_track, track_projection, PRESENT,
 };
 use super::queue::QUEUE_LIMIT;
 use super::{browse::browse_clause, BrowseFilter, WindowRange, MAX_WINDOW_LIMIT};
@@ -201,12 +201,9 @@ pub(super) fn query_album_track_window(
     let filter_sql = filter_clause(has_filter, 5);
     let browse_first_param = if has_filter { 6 } else { 5 };
     let (browse_sql, browse_values) = browse_clause(browse, browse_first_param);
-    let is_ai = ai_projection(project_ai);
+    let projection = track_projection("", project_ai);
     let sql = format!(
-        "SELECT id, path, title, artist, album, album_artist, year, track_no, genre, \
-         duration_ms, bitrate_kbps, rating, play_count, last_played_at, added_at, \
-         file_mtime, missing_since, missing_reason, untagged, file_size, device, inode, \
-         {is_ai} AS is_ai \
+        "SELECT {projection} \
          FROM tracks WHERE {PRESENT} \
          AND TRIM(album) = ?3 COLLATE NOCASE \
          AND {EFFECTIVE_ALBUM_ARTIST} = ?4 COLLATE NOCASE{filter_sql}{browse_sql} \
@@ -393,12 +390,9 @@ pub(super) fn query_artist_track_window(
     let filter_sql = filter_clause(has_filter, 4);
     let browse_first_param = if has_filter { 5 } else { 4 };
     let (browse_sql, browse_values) = browse_clause(browse, browse_first_param);
-    let is_ai = ai_projection(project_ai);
+    let projection = track_projection("", project_ai);
     let sql = format!(
-        "SELECT id, path, title, artist, album, album_artist, year, track_no, genre, \
-         duration_ms, bitrate_kbps, rating, play_count, last_played_at, added_at, \
-         file_mtime, missing_since, missing_reason, untagged, file_size, device, inode, \
-         {is_ai} AS is_ai \
+        "SELECT {projection} \
          FROM tracks WHERE {PRESENT} \
          AND {EFFECTIVE_ALBUM_ARTIST} = ?3 COLLATE NOCASE{filter_sql}{browse_sql} \
          ORDER BY {order} LIMIT ?1 OFFSET ?2"

@@ -112,6 +112,57 @@ pub(super) fn ai_projection(project_ai: bool) -> &'static str {
     }
 }
 
+/// The stored track columns, in exactly the order [`row_to_track`] indexes
+/// them: the column at position *n* here is the one `r.get(n)` reads there.
+///
+/// Every query whose rows go through `row_to_track` (or
+/// `row_to_playlist_track`) projects this list via [`track_projection`] rather
+/// than spelling it out. A hand-written copy does not fail loudly when it
+/// drifts: adding a column in the middle of one list and not the others makes
+/// `path` arrive where `title` is read — a silent shift, not a missing column
+/// and not a compile error. [`PRESENT`] above exists for the same reason, and
+/// its doc comment records what the last such drift cost.
+const TRACK_COLUMNS: [&str; 22] = [
+    "id",
+    "path",
+    "title",
+    "artist",
+    "album",
+    "album_artist",
+    "year",
+    "track_no",
+    "genre",
+    "duration_ms",
+    "bitrate_kbps",
+    "rating",
+    "play_count",
+    "last_played_at",
+    "added_at",
+    "file_mtime",
+    "missing_since",
+    "missing_reason",
+    "untagged",
+    "file_size",
+    "device",
+    "inode",
+];
+
+/// The projection every track query selects: the stored [`TRACK_COLUMNS`]
+/// followed by the gated `is_ai` column `row_to_track` reads at index 22.
+///
+/// `qualifier` prefixes each stored column and is empty for the queries that
+/// read `tracks` alone; the playlist window passes `"tracks."` because it joins
+/// `playlist_tracks` and would otherwise leave `id` ambiguous. It appends its
+/// own `pt.position` after this projection, at index 23.
+pub(super) fn track_projection(qualifier: &str, project_ai: bool) -> String {
+    let columns = TRACK_COLUMNS
+        .iter()
+        .map(|column| format!("{qualifier}{column}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("{columns}, {} AS is_ai", ai_projection(project_ai))
+}
+
 /// Builds the bound `%…%` LIKE pattern for a trimmed filter value — always
 /// through `library::playlists::escape_like` (Stage-3 close-out finding:
 /// this used to be a bare `format!("%{}%", filter.trim())` at every call
@@ -203,13 +254,10 @@ pub(super) fn build_track_query_base_browsed(
     let browse_first_param = if has_filter { 4 } else { 3 };
     let (browse_clause, _) = browse_clause(browse, browse_first_param);
     let ai_clause = ai_exclude_clause(exclude_ai);
-    let is_ai = ai_projection(project_ai);
+    let projection = track_projection("", project_ai);
     let presence = presence_clause(missing_flag);
     format!(
-        "SELECT id, path, title, artist, album, album_artist, year, track_no, genre, \
-         duration_ms, bitrate_kbps, rating, play_count, last_played_at, added_at, \
-         file_mtime, missing_since, missing_reason, untagged, file_size, device, inode, \
-         {is_ai} AS is_ai \
+        "SELECT {projection} \
          FROM tracks WHERE {presence}{filter_clause}{browse_clause}{ai_clause} \
          ORDER BY {order} LIMIT ?1 OFFSET ?2"
     )

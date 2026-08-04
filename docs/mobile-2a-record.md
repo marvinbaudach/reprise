@@ -168,6 +168,54 @@ sheet has moved to another track lands in state nobody is showing, so it is
 logged rather than shown; and a tap made during a scan is now answered when the
 scan lets go instead of freezing the screen until it does.
 
+### M7 — and the older, worse bug it uncovered
+
+Rotating the phone blanked the mini player and the sheet. The stated cause was
+that "what is playing" lived in `PlaybackSelection` — a list of up to 500
+`LibraryTrack` objects retained by the activity, which dies with it. Nothing was
+written into `savedInstanceState`; instead the reason to keep that list was
+removed. The playback session already owned the queue, it simply never named the
+current track, so `AndroidPlaybackSnapshot` gained the track's id and uri —
+derived transiently from `current_index` at every read, so they *cannot* drift
+from it — and the surface loads that one track by id.
+
+Three things came out of the review and the device that the package did not set
+out to do:
+
+- **The by-id read was on the main thread.** It sat in a `remember { }`, calling
+  through the same handle a SAF scan holds for a whole folder walk. That is the
+  defect the rating writer had just been moved away from, rebuilt in a new place
+  one day later — a read is not exempt, the lock is the same. It now runs on a
+  lane the activity owns, keyed on the track so a late answer cannot land in the
+  next track's state, with a bounded retry so one transient failure does not
+  blank the surface for the rest of the song.
+- **The column list had eight copies.** The by-id query was about to become the
+  ninth. `TRACK_COLUMNS` plus `track_projection(qualifier, project_ai)` replaced
+  all of them; the generated SQL is byte-identical.
+- **Rotating the phone stopped the music**, and had always done so. The blank
+  mini player hid it: nobody could tell "the state was lost" from "playback
+  ended". Once the surface reported honestly, the emulator showed the session
+  going `PLAYING(3), position=9197` → `destroySessionLocked` →
+  `abandonAudioFocus()` → a fresh session at `NONE(0), position=0`.
+
+  The cause was one line that was never written. `MainActivity` bound the service
+  with `BIND_AUTO_CREATE` and unbound it in `onDestroy`, and a bound-only service
+  dies with its last client — but the deeper reason is that `onCreate` built the
+  `MediaSession` and never called `addSession`. Media3 raises the service to the
+  foreground itself, and only for sessions it has been told about. The platform
+  session existed from `build()`, which is why `dumpsys` said PLAYING while none
+  of Media3's machinery had ever run.
+
+  So: `addSession`, `startService` at the play command (not
+  `startForegroundService` — that opens a five-second contract at a moment when
+  there is nothing to show yet), and `stopSelf` when the core reports an empty
+  queue rather than in the gap between two tracks. **A media notification is a
+  new visible surface** — cover, title, artist, transport, in the drawer and on
+  the lock screen. It is also the price of the service being allowed to live at
+  all. `POST_NOTIFICATIONS` is asked for at the **first play command**, not at a
+  cold start: Android allows two refusals before the dialog stops appearing, and
+  a question asked out of context spends one of them for nothing.
+
 ## Verified on a device, not assumed
 
 Every claim below was observed on the `pixel10xl_api37` emulator against the
@@ -210,6 +258,29 @@ both would have read as green:
    stood at 4, so tapping the fourth star wrote 4 over 4. A test whose passing
    state is indistinguishable from its failing state is not a test.
 
+### M7 on a device
+
+Both directions were measured, because the fix and its opposite are both
+failures: a mini player that vanishes while music plays, and one that names a
+track after playback ended.
+
+| claim | evidence |
+| --- | --- |
+| Rotating no longer stops the music | the media session's position **advanced across two rotations** — `PLAYING(3) 15179 → 24306 → 36418` — where the same measurement previously fell back to `NONE(0), position=0` |
+| The playing track survives the rotation | the mini player's own text nodes are identical portrait → landscape → portrait: `(F)Inally (U)Nderstanding (N)Othing` / `Emmure` |
+| Nothing playing stays nothing | started fresh and rotated with no playback: no transport controls before, none after |
+| The service really is in the foreground | a notification record with `FOREGROUND_SERVICE`, `category=transport`, three actions |
+| The permission is asked at the play command | the first run showed the system dialog appearing on the tap that started playback — and playback ran on underneath it, unaffected |
+
+The first attempt at this measurement read `transport=False` everywhere and
+looked like a regression. The dump belonged entirely to
+`com.google.android.permissioncontroller`: the permission dialog was sitting over
+the surface being measured. A second confusion was mine too — a title node
+picked "the nearest text within 220 px of the transport controls", which in
+landscape reaches into a library row. Reading the mini player's own nodes
+instead resolved it. Both are worth recording: neither the app nor the fix was
+at fault, and both would have been reported as defects by a less careful read.
+
 ## What was deliberately left out, and why
 
 These are **not** unfinished work. They were measured, found to have no backend,
@@ -234,11 +305,16 @@ made `MissingReason::Unknown` unable to delete anything.
 
 Named here so they are not mistaken for the list above.
 
-- **Rotation loses what is playing.** The sheet's expanded flag survives, but the
-  playing selection does not, so the mini player and the sheet's content vanish
-  on a configuration change. Fixing it means either writing up to 500 tracks into
-  `savedInstanceState` — a `TransactionTooLarge` risk — or introducing a second
-  source of truth for "what is playing". That is a decision, not a refactor.
+- ~~**Rotation loses what is playing.**~~ Closed by M7, and it was two bugs: the
+  surface kept its own copy of what is playing, and the service died with the
+  activity so the music genuinely stopped. Neither was fixed by saving state —
+  see the M7 section. What remains unproven is a **physical** rotation: the
+  emulator's `user_rotation` recreates the activity, which is the mechanism, but
+  no real device has been turned.
+- **The notification has never been looked at.** It is proven to exist as a
+  foreground-service record with three transport actions, but nobody has seen it
+  rendered: whether the cover loads, whether the title truncates, whether the
+  three actions are the right three. That is an eyes-on check on a real phone.
 - **A play can still be lost, but no longer silently.** The play-count writer
   now offers a write that lost to the scanner's single folder-walk transaction
   up to four times before giving up, and says which track it gave up on. What it
