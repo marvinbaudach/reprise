@@ -552,6 +552,9 @@ impl YoutubeChannelDetail {
         title.add_css_class("title-2");
         title.set_xalign(0.0);
         title.set_hexpand(true);
+        // SRC-8: vertical scrolling only. A long channel title must shorten
+        // rather than push this window wider than its content width.
+        title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
         row.append(&title);
         // `POD-12` / `D3`: read-only "On phone" mirror — same fact and same
         // glyph as `podcasts_groups::group_header`'s indicator, never a
@@ -733,6 +736,8 @@ impl YoutubeChannelDetail {
         subtitle.set_xalign(0.0);
         subtitle.add_css_class("caption");
         subtitle.add_css_class("dim-label");
+        // SRC-8: same reason as the episode title above it.
+        subtitle.set_ellipsize(gtk4::pango::EllipsizeMode::End);
         copy.append(&subtitle);
         row.append(&copy);
         let status = gtk4::Box::new(gtk4::Orientation::Vertical, 2);

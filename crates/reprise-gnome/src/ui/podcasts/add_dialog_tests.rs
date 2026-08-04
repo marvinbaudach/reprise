@@ -123,6 +123,37 @@ fn src_3a_add_dialog_has_fixed_cancel_and_primary_actions() {
     assert!(surface.primary.is_sensitive());
 }
 
+/// `SRC-8`: the dialog keeps one width. Neither a long show title nor a
+/// long publisher line may raise a result row's *minimum* width past the
+/// dialog's content width — `adw::Dialog` honours that width only as a
+/// natural size, so an unellipsized label widens the window and the dialog
+/// visibly changes size between two searches.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_8_a_long_result_row_never_widens_the_dialog() {
+    gtk4::init().unwrap();
+    let long = candidate_row(
+        "Ein außergewöhnlich langer Podcasttitel, der die Dialogbreite deutlich überschreitet",
+        "Herausgegeben von einem Sender mit einem ebenso langen Namen · 480 Folgen",
+        PodcastKind::Rss,
+        None,
+        false,
+    );
+    let short = candidate_row("Show", "Publisher", PodcastKind::Rss, None, false);
+
+    let (long_minimum, _, _, _) = long.measure(gtk4::Orientation::Horizontal, -1);
+    let (short_minimum, _, _, _) = short.measure(gtk4::Orientation::Horizontal, -1);
+
+    assert_eq!(
+        long_minimum, short_minimum,
+        "row text length must not change the width the row demands"
+    );
+    assert!(
+        long_minimum <= CONTENT_WIDTH,
+        "a result row must fit the {CONTENT_WIDTH}px dialog, got {long_minimum}px"
+    );
+}
+
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn src_5_result_rows_use_the_source_artwork_surface() {

@@ -237,6 +237,46 @@ fn src_8_radio_results_scroll_inside_a_bounded_viewport() {
     );
 }
 
+/// `SRC-8`: the dialog keeps one width, whatever a search returns. A
+/// station name wider than the dialog must ellipsize instead of raising the
+/// content's *minimum* width — `adw::Dialog`'s `content_width` is only a
+/// natural size, so a single long row (even one scrolled out of sight)
+/// otherwise widens the window and the dialog visibly changes size between
+/// two searches.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_8_a_long_station_name_never_widens_the_dialog() {
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let dialog = RadioAddDialog::new(conn, Rc::new(Cell::new(Connectivity::Online)), || {});
+    let content = dialog.widgets.dialog.child().expect("dialog content");
+    let (empty_minimum, _, _, _) = content.measure(gtk4::Orientation::Horizontal, -1);
+
+    dialog.render_results(vec![StationCandidate {
+        uuid: "long".into(),
+        name: "Rock Antenne Heavy Metal Deutschlands längster Sendername für den Härtetest".into(),
+        url_resolved: "https://radio.test/long".into(),
+        codec: Some("MP3".into()),
+        bitrate_kbps: Some(320),
+        country_code: Some("DE".into()),
+        genre: Some("symphonic melodic death metal aus norddeutschen Kellern".into()),
+        tags: Vec::new(),
+        votes: 12_345,
+        favicon_url: None,
+    }]);
+
+    let (with_results_minimum, _, _, _) = content.measure(gtk4::Orientation::Horizontal, -1);
+    assert_eq!(
+        with_results_minimum, empty_minimum,
+        "a result row must not add to the dialog's minimum width"
+    );
+    assert!(
+        with_results_minimum <= CONTENT_WIDTH,
+        "the dialog must stay at its {CONTENT_WIDTH}px content width, got a \
+         minimum of {with_results_minimum}px"
+    );
+}
+
 /// `RAD-5`: the required "absent without a location" half, exercised
 /// through the real button wiring rather than just the pure decision
 /// function — clicking "Near you" with no app-level location stored must

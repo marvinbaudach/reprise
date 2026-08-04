@@ -18,6 +18,13 @@ use crate::ui::{one_shot_task, source_add_action, strings};
 type AddedCallback = Rc<dyn Fn()>;
 type LocationSettingsCallback = Rc<dyn Fn()>;
 
+/// `SRC-8`: the single size this dialog keeps, whatever a search returns.
+/// `adw::Dialog` treats both as *natural* sizes — a child whose minimum
+/// width exceeds them wins and the dialog grows — which is why every result
+/// label below ellipsizes instead of asking for its full text width.
+const CONTENT_WIDTH: i32 = 560;
+const CONTENT_HEIGHT: i32 = 620;
+
 /// `NET-1a` / `C1`: `online_sources::network_allowed(conn,
 /// &modules::SOURCE_IMAGES_MODULE)`, computed fresh at every call so each
 /// favicon tile reflects the current gate — this dialog never lets the
@@ -243,8 +250,8 @@ impl RadioAddDialog {
         toolbar.set_content(Some(&content));
         let dialog = adw::Dialog::builder()
             .child(&toolbar)
-            .content_width(560)
-            .content_height(620)
+            .content_width(CONTENT_WIDTH)
+            .content_height(CONTENT_HEIGHT)
             .build();
 
         let this = Rc::new(Self {
@@ -613,9 +620,15 @@ impl RadioAddDialog {
             copy.set_hexpand(true);
             let title = gtk4::Label::new(Some(&candidate.name));
             title.set_xalign(0.0);
+            // SRC-8: both lines ellipsize. A label that keeps its full text
+            // width raises the dialog's *minimum* width past `CONTENT_WIDTH`
+            // — including rows scrolled out of sight — so the dialog would
+            // change size from one search to the next.
+            title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
             let details =
                 gtk4::Label::new(Some(&radio::search::format_candidate_details(&candidate)));
             details.set_xalign(0.0);
+            details.set_ellipsize(gtk4::pango::EllipsizeMode::End);
             details.add_css_class("dim-label");
             details.add_css_class("caption");
             copy.append(&title);
@@ -695,6 +708,10 @@ impl RadioAddDialog {
         );
         let name = gtk4::Label::new(Some(&preview.name));
         name.set_xalign(0.0);
+        // SRC-8: a station whose ICY name is longer than the dialog must not
+        // widen it either — the preview sits outside the scroller.
+        name.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+        name.set_hexpand(true);
         let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 10);
         row.append(tile.widget());
         row.append(&name);

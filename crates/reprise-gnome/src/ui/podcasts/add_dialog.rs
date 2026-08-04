@@ -46,6 +46,12 @@ struct Preview {
 
 type OnAdded = Rc<dyn Fn(bool)>;
 
+/// `SRC-8`: the single size this dialog keeps, whatever a search returns.
+/// `adw::Dialog` treats both as *natural* sizes, so a result label that does
+/// not ellipsize raises the minimum width and widens the window instead.
+const CONTENT_WIDTH: i32 = 620;
+const CONTENT_HEIGHT: i32 = 560;
+
 struct SearchContext<'a> {
     generation: &'a Rc<Cell<u64>>,
     status: &'a gtk4::Label,
@@ -138,8 +144,8 @@ fn build_surface(kind: PodcastKind, connectivity: Connectivity) -> AddDialogSurf
     toolbar.set_content(Some(&content));
     let dialog = adw::Dialog::builder()
         .title(strings::text(dialog_title(kind)))
-        .content_width(620)
-        .content_height(560)
+        .content_width(CONTENT_WIDTH)
+        .content_height(CONTENT_HEIGHT)
         .child(&toolbar)
         .build();
 
@@ -678,6 +684,10 @@ fn candidate_row(
     subtitle.add_css_class("caption");
     subtitle.add_css_class("dim-label");
     subtitle.set_xalign(0.0);
+    // SRC-8: the subtitle ellipsizes for the same reason the title does — a
+    // long publisher name would otherwise raise the dialog's minimum width
+    // and the window would change size between two searches.
+    subtitle.set_ellipsize(gtk4::pango::EllipsizeMode::End);
     labels.append(&subtitle);
     row.append(&labels);
     row
