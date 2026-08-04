@@ -318,4 +318,6 @@ private class RecordingLibrarySessionPort(
         albumArtist: String,
         window: LibraryWindowRange,
     ): LibraryWindow<LibraryTrack> = completeTestWindow(emptyList())
+
+    override fun artworkFor(trackUri: String): String? = null
 }

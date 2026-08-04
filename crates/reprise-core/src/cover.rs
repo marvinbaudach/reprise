@@ -1,6 +1,7 @@
 //! Cover-art resolution and thumbnailing (portable, GUI-free). These APIs read
 //! covers from the user's files (embedded picture, or a sidecar image in the
-//! album folder) and produce cached thumbnails under the XDG cache dir. The
+//! album folder) and produce cached thumbnails below a platform-provided cache
+//! root. The desktop convenience wrappers keep using the XDG cache dir. The
 //! separate `cover_writeback` module publishes downloaded covers into album
 //! folders with non-overwriting, best-effort safeguards.
 
@@ -72,19 +73,24 @@ pub fn read_cover_tag_with_source(
 /// detected album mismatch can converge without modifying any audio file.
 /// Pure read — it never writes to either the library or cache.
 pub fn resolve_source(track_path: &Path) -> Option<CoverSource> {
-    resolve_source_with_source(&crate::library::source::UnixLibrarySource, track_path)
+    resolve_source_with_source(
+        &crate::library::source::UnixLibrarySource,
+        track_path,
+        &default_cache_root(),
+    )
 }
 
 pub fn resolve_source_with_source(
     source: &dyn crate::library::source::LibrarySource,
     track_path: &Path,
+    cache_root: &Path,
 ) -> Option<CoverSource> {
     let tag = read_cover_tag_with_source(source, track_path);
     // Stage 1 (offline): a previously downloaded canonical cover for this
     // album takes precedence over track-local embedded artwork.
     if let (Some(album_artist), Some(album)) = (tag.album_artist.as_deref(), tag.album.as_deref()) {
         let key = crate::cover_download::album_key(album_artist, album);
-        if let Some(path) = crate::cover_download::downloaded_cover_path(&key) {
+        if let Some(path) = crate::cover_download::downloaded_cover_path_in(cache_root, &key) {
             return Some(CoverSource::FolderImage(path));
         }
     }
@@ -137,6 +143,8 @@ pub enum ThumbnailSize {
     Portrait,
     Grid,
     Full,
+    /// A 56 dp Android list/mini-player slot at the measured 3x density.
+    MobileList,
 }
 
 impl ThumbnailSize {
@@ -148,6 +156,7 @@ impl ThumbnailSize {
             ThumbnailSize::Portrait => 192,
             ThumbnailSize::Grid => 256,
             ThumbnailSize::Full => 1024,
+            ThumbnailSize::MobileList => 168,
         }
     }
 }
@@ -173,26 +182,39 @@ impl std::error::Error for CoverError {}
 /// path inside the user's library — this is the load-bearing half of the
 /// "we don't touch your files" promise.
 pub fn cache_dir() -> PathBuf {
-    dirs::cache_dir()
-        .unwrap_or_else(std::env::temp_dir)
-        .join("reprise/covers")
+    cache_dir_with_root(&default_cache_root())
+}
+
+fn default_cache_root() -> PathBuf {
+    dirs::cache_dir().unwrap_or_else(std::env::temp_dir)
+}
+
+/// The cover cache directory below a cache root supplied by the platform.
+pub(crate) fn cache_dir_with_root(cache_root: &Path) -> PathBuf {
+    cache_root.join("reprise/covers")
 }
 
 /// Returns the cache path to a thumbnail of `source` at `size`, creating it if
 /// missing: hash the source bytes -> cache hit? -> else decode, resize (aspect
 /// preserved, longest side = size), write PNG atomically (temp + rename).
 pub fn thumbnail(source: &CoverSource, size: ThumbnailSize) -> Result<PathBuf, CoverError> {
-    thumbnail_with_source(&crate::library::source::UnixLibrarySource, source, size)
+    thumbnail_with_source(
+        &crate::library::source::UnixLibrarySource,
+        source,
+        size,
+        &default_cache_root(),
+    )
 }
 
 pub fn thumbnail_with_source(
     library_source: &dyn crate::library::source::LibrarySource,
     source: &CoverSource,
     size: ThumbnailSize,
+    cache_root: &Path,
 ) -> Result<PathBuf, CoverError> {
     let bytes = source_bytes(library_source, source)?;
     let key = hash_hex(&bytes);
-    let dir = cache_dir();
+    let dir = cache_dir_with_root(cache_root);
     let out = dir.join(format!("{key}-{}.png", size.pixels()));
     if out.exists() {
         return Ok(out);
@@ -609,6 +631,27 @@ mod tests {
         let (w, h) = (decoded.width(), decoded.height());
         assert!(w.max(h) == ThumbnailSize::List.pixels(), "got {w}x{h}");
         std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn source_aware_mobile_thumbnail_uses_the_platform_cache_root() {
+        let cache_root = tempfile::tempdir().unwrap();
+        let source = CoverSource::Embedded(solid_png([26, 82, 118]));
+
+        let path = thumbnail_with_source(
+            &crate::library::source::UnixLibrarySource,
+            &source,
+            ThumbnailSize::MobileList,
+            cache_root.path(),
+        )
+        .unwrap();
+
+        assert!(path.starts_with(cache_root.path().join("reprise/covers")));
+        assert!(path
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .ends_with(&format!("-{}.png", 56 * 3)));
     }
 
     #[test]

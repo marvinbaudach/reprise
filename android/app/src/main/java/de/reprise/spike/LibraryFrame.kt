@@ -155,7 +155,10 @@ private fun MiniPlayer(
                     .padding(horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                CoverPlaceholder(size = libraryFrameMetrics.trackCoverSizeDp)
+                TrackCover(
+                    trackUri = track.uri,
+                    size = libraryFrameMetrics.trackCoverSizeDp,
+                )
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(

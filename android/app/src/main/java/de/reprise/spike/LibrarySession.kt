@@ -1,5 +1,12 @@
 package de.reprise.spike
 
+/**
+ * How many resolved cover paths one session remembers. Large enough that
+ * scrolling back through a loaded window never asks twice, small enough that
+ * the map stays a rounding error next to the rows it describes.
+ */
+private const val REMEMBERED_ARTWORK_PATHS = 512
+
 internal interface LibrarySessionPort {
     fun rememberedTreeUri(): String?
 
@@ -24,11 +31,18 @@ internal interface LibrarySessionPort {
         albumArtist: String,
         window: LibraryWindowRange,
     ): LibraryWindow<LibraryTrack>
+
+    fun artworkFor(trackUri: String): String?
 }
 
 internal class LibrarySession(
     private val port: LibrarySessionPort,
 ) {
+    private val artworkPaths = object : LinkedHashMap<String, String?>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String?>): Boolean =
+            size > REMEMBERED_ARTWORK_PATHS
+    }
+
     fun restore(): LibraryScreenState {
         val treeUri = port.rememberedTreeUri() ?: return LibraryScreenState.NoFolder()
         if (!port.isTreeReadable(treeUri)) {
@@ -91,6 +105,19 @@ internal class LibrarySession(
         window: LibraryWindowRange,
     ): LibraryWindow<LibraryTrack> = port.listAlbumTracks(album.title, album.artist, window)
 
+    /**
+     * The cached cover for one track, asked of the core at most once per track.
+     * Resolving reads the file's tags through the document provider, which is
+     * far too expensive to repeat every time a row scrolls back into view.
+     */
+    fun artworkFor(trackUri: String): String? = synchronized(artworkPaths) {
+        if (artworkPaths.containsKey(trackUri)) {
+            artworkPaths[trackUri]
+        } else {
+            port.artworkFor(trackUri).also { path -> artworkPaths[trackUri] = path }
+        }
+    }
+
     private fun scanTree(
         treeUri: String,
         report: (LibraryScreenState.Scanning) -> Unit,
@@ -101,6 +128,8 @@ internal class LibrarySession(
         port.configureTree(treeUri)
         report(LibraryScreenState.Scanning())
         port.scan(report)
+        // The files behind those paths may have just changed underneath us.
+        synchronized(artworkPaths) { artworkPaths.clear() }
         return browseState()
     }
 

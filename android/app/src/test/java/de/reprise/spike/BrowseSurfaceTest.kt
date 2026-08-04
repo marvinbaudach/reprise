@@ -1,26 +1,136 @@
 package de.reprise.spike
 
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import uniffi.reprise_android_ffi.AndroidPlaybackState
 
 class BrowseSurfaceTest {
-@Test
-fun theSameLoadedWindowRequestsItsContinuationOnlyOnce() {
-    val rows = (1..500).map { rank -> testBrowseTrack("title-$rank") }
-    val window = LibraryWindow(
-        total = 1_824,
-        rows = rows,
-        hasMore = true,
-    )
+    @Test
+    fun artworkResolutionIsALazyCallSeparateFromPagedTracks() {
+        val track = testBrowseTrack("title")
+        val port = RecordingBrowsePort(
+            titleResults = mapOf("" to completeWindow(listOf(track))),
+            artwork = mapOf(track.uri to "/private/cache/reprise/covers/title-168.png"),
+        )
+        val session = LibrarySession(port)
 
-    val firstRequest = window.nextRequest(lastRequestedOffset = null)
+        session.searchTitles("")
+        assertEquals(listOf("search::0:200"), port.operations)
 
-    assertEquals(LibraryWindowRange(offset = 500, limit = 200), firstRequest)
-    assertNull(window.nextRequest(lastRequestedOffset = firstRequest?.offset))
-}
+        assertEquals(
+            "/private/cache/reprise/covers/title-168.png",
+            session.artworkFor(track.uri),
+        )
+        assertEquals(listOf("search::0:200", "artwork:${track.uri}"), port.operations)
+    }
+
+    @Test
+    fun oneTrackIsResolvedOnceHoweverOftenItsRowComesBack() {
+        val track = testBrowseTrack("title")
+        val port = RecordingBrowsePort(
+            artwork = mapOf(track.uri to "/private/cache/reprise/covers/title-168.png"),
+        )
+        val session = LibrarySession(port)
+
+        repeat(3) { session.artworkFor(track.uri) }
+
+        assertEquals(listOf("artwork:${track.uri}"), port.operations)
+    }
+
+    @Test
+    fun aTrackWithoutArtworkIsAlsoAskedOnlyOnce() {
+        val track = testBrowseTrack("title")
+        val port = RecordingBrowsePort()
+        val session = LibrarySession(port)
+
+        assertNull(session.artworkFor(track.uri))
+        assertNull(session.artworkFor(track.uri))
+
+        assertEquals(listOf("artwork:${track.uri}"), port.operations)
+    }
+
+    @Test
+    fun rescanningForgetsTheCoversItResolvedBefore() {
+        val track = testBrowseTrack("title")
+        val port = RecordingBrowsePort(
+            artwork = mapOf(track.uri to "/private/cache/reprise/covers/title-168.png"),
+        )
+        val session = LibrarySession(port)
+        session.artworkFor(track.uri)
+
+        session.rescan {}
+        session.artworkFor(track.uri)
+
+        assertEquals(2, port.operations.count { it == "artwork:${track.uri}" })
+    }
+
+    @Test
+    fun recycledArtworkRequestCannotReplaceTheNewRowsImage() {
+        val gate = ArtworkRequestGate()
+        val oldRow = gate.begin("content://provider/document/old.flac")
+        val newRow = gate.begin("content://provider/document/new.flac")
+
+        assertFalse(gate.accepts(oldRow))
+        assertTrue(gate.accepts(newRow))
+        gate.invalidate(newRow)
+        assertFalse(gate.accepts(newRow))
+    }
+
+    @Test
+    fun artworkFinishingAfterRecyclingIsNotDeliveredToTheNewRow() {
+        val callerThread = Thread.currentThread()
+        val resolvingThread = AtomicReference<Thread>()
+        val mainThreadWork = AtomicReference<() -> Unit>()
+        val deliveryScheduled = CountDownLatch(1)
+        var deliveries = 0
+        val artwork = TrackArtwork(
+            resolve = {
+                resolvingThread.set(Thread.currentThread())
+                null
+            },
+            onMainThread = { work ->
+                mainThreadWork.set(work)
+                deliveryScheduled.countDown()
+            },
+        )
+        val gate = ArtworkRequestGate()
+        val oldRow = gate.begin("content://provider/document/old.flac")
+
+        try {
+            artwork.load(oldRow, gate) { deliveries += 1 }
+            assertTrue(deliveryScheduled.await(5, TimeUnit.SECONDS))
+            assertNotSame(callerThread, resolvingThread.get())
+
+            gate.begin("content://provider/document/new.flac")
+            mainThreadWork.get().invoke()
+
+            assertEquals(0, deliveries)
+        } finally {
+            artwork.shutdown()
+        }
+    }
+
+    @Test
+    fun theSameLoadedWindowRequestsItsContinuationOnlyOnce() {
+        val rows = (1..500).map { rank -> testBrowseTrack("title-$rank") }
+        val window = LibraryWindow(
+            total = 1_824,
+            rows = rows,
+            hasMore = true,
+        )
+
+        val firstRequest = window.nextRequest(lastRequestedOffset = null)
+
+        assertEquals(LibraryWindowRange(offset = 500, limit = 200), firstRequest)
+        assertNull(window.nextRequest(lastRequestedOffset = firstRequest?.offset))
+    }
 
 @Test
 fun redesignedTrackListKeepsOneContinuationAtItsVisibleEnd() {
@@ -219,6 +329,7 @@ private class RecordingBrowsePort(
     private val albums: LibraryWindow<LibraryAlbum> = completeWindow(emptyList()),
     private val artists: LibraryWindow<LibraryArtist> = completeWindow(emptyList()),
     private val albumTracks: LibraryWindow<LibraryTrack> = completeWindow(emptyList()),
+    private val artwork: Map<String, String?> = emptyMap(),
 ) : LibrarySessionPort {
     val operations = mutableListOf<String>()
 
@@ -266,5 +377,10 @@ private class RecordingBrowsePort(
     ): LibraryWindow<LibraryTrack> {
         operations += "album:$album:$albumArtist:${window.offset}:${window.limit}"
         return albumTracks
+    }
+
+    override fun artworkFor(trackUri: String): String? {
+        operations += "artwork:$trackUri"
+        return artwork[trackUri]
     }
 }

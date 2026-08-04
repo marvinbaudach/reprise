@@ -472,7 +472,10 @@ private fun LibraryTrackRow(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                CoverPlaceholder(size = libraryFrameMetrics.trackCoverSizeDp)
+                TrackCover(
+                    trackUri = track.uri,
+                    size = libraryFrameMetrics.trackCoverSizeDp,
+                )
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = track.title,

@@ -4,7 +4,7 @@
 //! are also published best-effort into the album's local track directories;
 //! release-group covers remain cache-only because they have no local album.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use crate::{
@@ -74,9 +74,21 @@ pub fn downloaded_dir() -> PathBuf {
     cover::cache_dir().join("downloaded")
 }
 
+pub(crate) fn downloaded_dir_in(cache_root: &Path) -> PathBuf {
+    cover::cache_dir_with_root(cache_root).join("downloaded")
+}
+
 /// The cached downloaded cover file for `key`, if one exists (any known ext).
 pub fn downloaded_cover_path(key: &str) -> Option<PathBuf> {
     let dir = downloaded_dir();
+    downloaded_cover_path_from_dir(&dir, key)
+}
+
+pub(crate) fn downloaded_cover_path_in(cache_root: &Path, key: &str) -> Option<PathBuf> {
+    downloaded_cover_path_from_dir(&downloaded_dir_in(cache_root), key)
+}
+
+fn downloaded_cover_path_from_dir(dir: &Path, key: &str) -> Option<PathBuf> {
     IMAGE_EXTS
         .iter()
         .map(|ext| dir.join(format!("{key}.{ext}")))

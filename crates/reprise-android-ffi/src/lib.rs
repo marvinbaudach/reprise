@@ -1,7 +1,7 @@
 //! Minimal Android library surface over `reprise-core`.
 
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use reprise_core::db::Db;
 use reprise_core::library::scanner::{
@@ -12,6 +12,8 @@ use reprise_core::queries;
 
 use source::{BridgedSource, SafSource};
 
+#[cfg(test)]
+mod artwork_tests;
 mod browse;
 pub mod playback;
 mod playback_session;
@@ -73,7 +75,7 @@ pub trait ScanProgressListener: Send + Sync {
 
 struct ConfiguredTree {
     uri: PathBuf,
-    source: BridgedSource,
+    source: Arc<BridgedSource>,
 }
 
 struct LibraryState {
@@ -84,19 +86,24 @@ struct LibraryState {
 #[derive(uniffi::Object)]
 pub struct MusicLibrary {
     state: Mutex<LibraryState>,
+    cache_root: PathBuf,
 }
 
 #[uniffi::export]
 impl MusicLibrary {
     /// Opens the library database inside the app's private directory.
     #[uniffi::constructor]
-    pub fn open(app_private_directory: &str) -> Result<Self, LibraryError> {
+    pub fn open(
+        app_private_directory: &str,
+        app_cache_directory: &str,
+    ) -> Result<Self, LibraryError> {
         let db_path = Path::new(app_private_directory).join(DATABASE_FILE_NAME);
         let db = Db::open_migrated(Some(&db_path)).map_err(|error| LibraryError::Database {
             detail: error.to_string(),
         })?;
         Ok(Self {
             state: Mutex::new(LibraryState { db, tree: None }),
+            cache_root: PathBuf::from(app_cache_directory),
         })
     }
 
@@ -113,7 +120,7 @@ impl MusicLibrary {
         })?;
         state.tree = Some(ConfiguredTree {
             uri: tree_uri.into(),
-            source: BridgedSource::new(source),
+            source: Arc::new(BridgedSource::new(source)),
         });
         Ok(())
     }
@@ -124,10 +131,14 @@ impl MusicLibrary {
     ) -> Result<ScanSummary, LibraryError> {
         let state = self.lock()?;
         let tree = state.tree.as_ref().ok_or(LibraryError::TreeNotConfigured)?;
-        let outcome =
-            scan_folder_with_source_and_progress(&tree.source, &state.db, &tree.uri, |event| {
+        let outcome = scan_folder_with_source_and_progress(
+            tree.source.as_ref(),
+            &state.db,
+            &tree.uri,
+            |event| {
                 progress.on_progress(event.into());
-            });
+            },
+        );
         drop(progress);
         let outcome = outcome.map_err(|error| LibraryError::Scan {
             detail: error.to_string(),
@@ -199,6 +210,28 @@ impl MusicLibrary {
             .map_err(|error| LibraryError::Query {
                 detail: error.to_string(),
             })
+    }
+
+    /// Resolves local artwork lazily for one track and returns its cached
+    /// 168 px thumbnail path. A missing or unreadable image stays `None`.
+    pub fn track_artwork(&self, track_uri: &str) -> Option<String> {
+        let source = {
+            let state = self.lock().ok()?;
+            Arc::clone(&state.tree.as_ref()?.source)
+        };
+        let cover = reprise_core::cover::resolve_source_with_source(
+            source.as_ref(),
+            Path::new(&track_uri),
+            &self.cache_root,
+        )?;
+        reprise_core::cover::thumbnail_with_source(
+            source.as_ref(),
+            &cover,
+            reprise_core::cover::ThumbnailSize::MobileList,
+            &self.cache_root,
+        )
+        .ok()
+        .map(|path| path.to_string_lossy().into_owned())
     }
 }
 
@@ -400,7 +433,11 @@ mod tests {
             reprise_core::library::stats::record_play(&db, rated_track.id, played_at).unwrap();
         }
         drop(db);
-        let library = MusicLibrary::open(directory.path().to_str().unwrap()).unwrap();
+        let library = MusicLibrary::open(
+            directory.path().to_str().unwrap(),
+            directory.path().join("cache").to_str().unwrap(),
+        )
+        .unwrap();
         (directory, library)
     }
 
@@ -682,7 +719,11 @@ mod tests {
     #[test]
     fn configured_saf_tree_scans_with_indeterminate_first_progress_and_lists_tracks() {
         let directory = tempfile::tempdir().unwrap();
-        let library = MusicLibrary::open(directory.path().to_str().unwrap()).unwrap();
+        let library = MusicLibrary::open(
+            directory.path().to_str().unwrap(),
+            directory.path().join("cache").to_str().unwrap(),
+        )
+        .unwrap();
         let probe_calls = Arc::new(AtomicUsize::new(0));
         library
             .set_tree_uri(
@@ -726,7 +767,11 @@ mod tests {
     #[test]
     fn untagged_saf_track_uses_the_provider_parent_name_as_its_album() {
         let directory = tempfile::tempdir().unwrap();
-        let library = MusicLibrary::open(directory.path().to_str().unwrap()).unwrap();
+        let library = MusicLibrary::open(
+            directory.path().to_str().unwrap(),
+            directory.path().join("cache").to_str().unwrap(),
+        )
+        .unwrap();
         library
             .set_tree_uri(TREE_URI.to_owned(), Box::new(UntaggedAlbumSource))
             .unwrap();
