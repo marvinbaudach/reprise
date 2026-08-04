@@ -52,7 +52,7 @@ pub(in crate::ui) type OnCurrentTrackChanged = Rc<dyn Fn(i64, Option<usize>, Cur
 /// Mirror of `OnCurrentTrackChanged`'s seam — see `wire`.
 pub(in crate::ui) type OnPlaybackStateChanged = Rc<dyn Fn(PlaybackState)>;
 
-fn visible_position_for_track_in_source(
+pub(super) fn visible_position_for_track_in_source(
     ids: &[i64],
     current_id: i64,
     queue_position: Option<usize>,
@@ -278,12 +278,14 @@ impl TrackList {
                 // Apply the marker now, then yield before the expensive reveal
                 // so the playback chrome can reach its first frame. The
                 // generation token prevents this request from outliving a
-                // newer track change while it waits or retries for geometry.
+                // newer track change while it waits or retries for geometry;
+                // the row index is deliberately *not* carried across the yield
+                // — see `track_reveal::defer`.
                 self.shared.reapply_now_playing_markers();
                 super::track_reveal::defer(
                     &self.shared,
                     track_id,
-                    position,
+                    queue_position,
                     change,
                     reveal_generation,
                     8,

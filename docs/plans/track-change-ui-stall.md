@@ -2,7 +2,7 @@
 slug: track-change-ui-stall
 worktree: /home/marvin/Projects/reprise-track-change-ui-stall
 branch: feature/track-change-ui-stall
-phase: coded
+phase: reviewed
 codex_session:
 created: 2026-08-03
 ---

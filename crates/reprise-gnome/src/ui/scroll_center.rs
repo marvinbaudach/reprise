@@ -30,7 +30,15 @@ pub(in crate::ui) fn centered_scroll_target(
 /// Adjustment value that vertically centers row `position`, assuming
 /// (near-)uniform row heights, so a row's offset is derived from the
 /// adjustment's total content height. Returns `None` when the list is
-/// unallocated (`upper`/`page_size` unset) or fits entirely in the viewport.
+/// unallocated (`upper`/`page_size` unset), fits entirely in the viewport, or
+/// `position` is not a row of this list.
+///
+/// The `position >= n_rows` rejection is load-bearing, not defensive padding:
+/// a caller that resolved a row index and then let the model change underneath
+/// it would otherwise get a plausible-looking value back — the arithmetic
+/// clamps into range and cannot tell a stale index from a real one — and would
+/// scroll to an unrelated row. Callers that derive `position` and `n_rows` from
+/// the same snapshot can never hit it.
 pub(in crate::ui) fn centered_scroll_value(
     position: u32,
     n_rows: u32,
@@ -38,6 +46,9 @@ pub(in crate::ui) fn centered_scroll_value(
     page_size: f64,
 ) -> Option<f64> {
     if n_rows == 0 || upper <= 0.0 || page_size <= 0.0 || upper <= page_size {
+        return None;
+    }
+    if position >= n_rows {
         return None;
     }
     let row_height = upper / f64::from(n_rows);
@@ -70,5 +81,16 @@ mod tests {
         assert_eq!(centered_scroll_value(5, 10, 100.0, 200.0), None);
         // Empty model.
         assert_eq!(centered_scroll_value(0, 0, 1000.0, 200.0), None);
+    }
+
+    #[test]
+    fn centered_scroll_value_rejects_a_row_the_list_no_longer_has() {
+        // A row index resolved against a 100-row view, evaluated after a filter
+        // shortened the list to 30. Without the bound check the arithmetic
+        // clamps to the bottom of the new list (720.0) and reads as a perfectly
+        // ordinary answer — the caller would scroll to an unrelated row.
+        assert_eq!(centered_scroll_value(42, 30, 300.0, 200.0), None);
+        // The last valid row still resolves.
+        assert_eq!(centered_scroll_value(29, 30, 300.0, 200.0), Some(100.0));
     }
 }

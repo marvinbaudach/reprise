@@ -346,6 +346,15 @@ pub(in crate::ui) fn set_cover_accent(color: Option<Rgb>) {
 // Cross-fade
 // ---------------------------------------------------------------------------
 
+/// Drops the transition class from every current top level, whether or not this
+/// process put it there. Idempotent: `remove_css_class` on a widget that does
+/// not carry the class is a no-op.
+fn clear_transition_class() {
+    for root in gtk4::Window::list_toplevels() {
+        root.remove_css_class(ACCENT_TRANSITION_CLASS);
+    }
+}
+
 fn transition_roots(widget: &impl IsA<gtk4::Widget>) -> (gtk4::Widget, Vec<gtk4::Widget>) {
     let widget = widget.upcast_ref::<gtk4::Widget>();
     let animation_root = widget
@@ -379,9 +388,18 @@ pub(in crate::ui) fn cross_fade_accent(
         if let Some(previous) = previous {
             previous.skip();
         }
+        clear_transition_class();
         set_cover_accent(new);
         return;
     }
+
+    // Cleanup normally rides on the animation's `done` signal, and
+    // `motion::replace_animation` skips a superseded fade (which emits `done`).
+    // The one case neither covers is a fade whose animation root stops ticking
+    // before it completes — an unrealized window leaves the class behind with
+    // nothing left to fire. Sweeping first bounds that to a single track change
+    // instead of the rest of the session, and costs one class removal.
+    clear_transition_class();
 
     let (animation_root, transition_roots) = transition_roots(widget);
     let target = libadwaita::CallbackAnimationTarget::new(|_| {});
