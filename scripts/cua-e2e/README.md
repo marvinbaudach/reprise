@@ -121,20 +121,27 @@ state transitions, screenshots, and clean logs. Native Wayland rendering,
 pointer feel, portals, media keys, audible playback, and compositor-specific
 behavior remain release-manual checks.
 
-## PLAY-11 stop cases: `filter_clear_matrix.sh`
+## PLAY-11 decision matrix: `filter_clear_matrix.sh`
 
-Scenario 11 above proves the PLAY-11 *hand-off*. Its complement — every case in
-which playback must **not** hand off — lives in a separate runner:
+Scenario 11 above proves the PLAY-11 *hand-off*. The full decision — both
+moments it may fire, and every case in which playback must **not** hand off —
+lives in a separate runner:
 
 ```console
-scripts/cua-e2e/filter_clear_matrix.sh                     # all seven cases
+scripts/cua-e2e/filter_clear_matrix.sh                     # all eight cases
 scripts/cua-e2e/filter_clear_matrix.sh play-11-stop-repeat-all
 ```
 
-It covers the cleared-filter hand-off plus six stop cases: the filter is still
-active, the origin snapshot was never filtered, the library holds no other
-title, the origin is a playlist, a genre facet survives the search, and Repeat
-All is engaged.
+It covers two continuation cases and six stop cases. The continuations are the
+two moments PLAY-11 distinguishes: a snapshot already exhausted when the filter
+goes away is bound in at once, while one that still has a title ahead of it
+keeps PLAY-8's immutability and is handed over only when its last title ends.
+Each case asserts both log lines — one present, one absent — so a trigger that
+fires at the wrong moment fails instead of passing on the other's evidence.
+
+The stop cases: the filter is still active, the origin snapshot was never
+filtered, the library holds no other title, the origin is a playlist, a genre
+facet survives the search, and Repeat All is engaged.
 
 Two things make it a separate runner rather than more groups in `run.sh`. Each
 case needs its own library, profile and app lifecycle, because the decision

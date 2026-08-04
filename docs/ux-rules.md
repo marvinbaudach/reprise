@@ -240,7 +240,8 @@ human. Rationale for changes lives in the git history.
   browser origin, and its display name are frozen; typed manual queue
   items remain a separate ordered line in front. Later navigation,
   search, facets, or even refining down to zero hits change neither the
-  snapshot nor the running item. After the last context track, playback
+  running item nor a snapshot that still has titles ahead of it; the
+  exhausted case belongs to PLAY-11. After the last context track, playback
   ends with Repeat off unless an explicit manual entry or PLAY-11's new
   full-library continuation follows; queue hygiene is governed by
   PLAY-5a/5b/5c.
@@ -256,15 +257,20 @@ human. Rationale for changes lives in the git history.
   bounded cache and decode path; a missing or refused image keeps the normal
   player placeholder, never a broken-image state.
 - **PLAY-11** [active] [gtk] — **Playback remains an immutable snapshot
-  until it is exhausted.** Later navigation, search, facets, and clearing a
-  filter do not rewrite the running snapshot. Exception after its final
-  title: if the snapshot originated in a search- or facet-filtered Music
-  library and Music is now completely unfiltered, Reprise immediately creates
-  a new random snapshot from all existing library titles and continues with a
-  different title. Missing and deleted titles are excluded; the just-finished title
-  may occur later in the new snapshot but never starts it. If the filter is
-  still active, the origin was not the Music library, the visible list is
-  not the complete library, or no different title exists, playback ends as
+  while it still has titles ahead of it.** Later navigation, search, facets,
+  and clearing a filter never rewrite a snapshot with a future. Exception once
+  it is exhausted — nothing left ahead of the cursor: if the snapshot
+  originated in a search- or facet-filtered Music library and Music is now
+  completely unfiltered, Reprise continues from all existing library titles in
+  random order. **While a title is still playing, that continuation is bound in
+  at once**, the moment Music becomes unfiltered, so the queue stops reading
+  empty for the rest of the title; the running title keeps the cursor, is never
+  restarted or re-ordered, and every other library title follows it exactly
+  once. If the final title has already ended instead, a new random snapshot
+  starts on a title other than the one just finished — which may occur later in
+  it, but never starts it. Missing and deleted titles are excluded. If the
+  filter is still active, the origin was not the Music library, the visible list
+  is not the complete library, or no other title exists, playback ends as
   before. Explicit Play Next entries retain priority and Repeat One/All
   retain their existing queue behavior.
 

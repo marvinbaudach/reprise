@@ -11,6 +11,8 @@ use reprise_core::playback::PlaybackState;
 use reprise_core::queries;
 use reprise_core::view_source::ViewSource;
 
+use crate::ui::player_controller::VisibleView;
+
 use super::player_controller::PlayerController;
 use super::track_list::TrackList;
 use super::track_list_activation::current_queue_ids;
@@ -250,16 +252,27 @@ impl super::Shared {
 }
 
 impl TrackList {
-    /// Track ids for the transport's end-of-queue refill (see
-    /// `PlayerController::set_view_refill_provider`): the visible view's
-    /// full id list, or empty when the Queue view itself is showing —
-    /// refilling the exhausted queue from its own (exhausted) contents would
-    /// just loop it, overriding the user's repeat setting.
-    pub fn transport_refill_ids(&self) -> Vec<i64> {
+    /// The visible view for the playback paths (see
+    /// `PlayerController::set_view_refill_provider`): the full id list the
+    /// transport's end-of-queue refill plays, plus the row count PLAY-11
+    /// compares against the live library. Nothing when the Queue view itself
+    /// is showing — refilling the exhausted queue from its own (exhausted)
+    /// contents would just loop it, overriding the user's repeat setting.
+    ///
+    /// The count comes from the model rather than from `ids.len()` on
+    /// purpose: the id query stops at `QUEUE_LIMIT` rows, the model's total
+    /// does not. `Missing` and `ImportErrors` keep their rows outside
+    /// `shared.model`, so `total` reads 0 for them — harmless, because the
+    /// refill only reads `ids` and PLAY-11 turns those origins away for not
+    /// being the library root.
+    pub(in crate::ui) fn transport_refill_view(&self) -> VisibleView {
         if matches!(*self.shared.source.borrow(), ViewSource::Queue) {
-            return Vec::new();
+            return VisibleView::none();
         }
-        self.shared.current_view_ids()
+        VisibleView {
+            ids: self.shared.current_view_ids(),
+            total: self.shared.model.n_items() as usize,
+        }
     }
 
     fn update_current_track(

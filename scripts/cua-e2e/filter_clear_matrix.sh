@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 #
-# PLAY-11 stop-case matrix — the decision cases `filter_clear_playback.sh`
-# cannot cover.
+# PLAY-11 decision matrix — the cases `filter_clear_playback.sh` cannot cover.
 #
-# `filter_clear_playback.sh` proves the PLAY-11 *hand-off* through the shared
-# CUA harness: accessibility exposure plus real input delivery. This runner
-# covers the complementary half — every case in which PLAY-11 must NOT hand
-# off — and it deliberately does not use AT-SPI at all:
+# `filter_clear_playback.sh` proves the PLAY-11 hand-off through the shared CUA
+# harness: accessibility exposure plus real input delivery. This runner covers
+# the decision itself — both moments the continuation may be taken, and every
+# case in which it must NOT be — and it deliberately does not use AT-SPI at all:
 #
 #   * each case needs its own library, its own profile and its own app
 #     lifecycle, because the decision depends on the origin captured at play
@@ -37,8 +36,14 @@ CUA_E2E_OUT_DIR="${CUA_E2E_OUT_DIR:-/tmp/reprise-play-11-matrix}"
 CUA_E2E_SCREEN_RES="${CUA_E2E_SCREEN_RES:-1600x1000x24}"
 TRACK_SECONDS="${TRACK_SECONDS:-6}"
 
-# The one log line PLAY-11's hand-off emits (up_next_transport.rs).
+# PLAY-11 hands off at two different moments, and each emits its own line
+# (`playback/library_continuation.rs`). Which one a case must see is part of
+# what the case asserts: a snapshot that was already exhausted when the filter
+# went away is bound in at once, one that still had a future is handed over
+# when its last title ends. Every case asserts both — one presence, one
+# absence — so a trigger firing at the wrong moment cannot pass.
 MARKER="filtered queue exhausted after filter clear; continuing from random library snapshot"
+BOUND_MARKER="library filter cleared on an exhausted queue; bound in a random library continuation"
 
 # Screen coordinates of the controls each case drives, read off the 1600x1000
 # layout. They are asserted indirectly: a mis-aimed click shows up as a wrong
@@ -50,6 +55,7 @@ REPEAT_X=904; REPEAT_Y=837
 
 ALL_CASES=(
   play-11-continues-after-clear
+  play-11-continues-at-title-end
   play-11-stop-filter-active
   play-11-stop-unfiltered-origin
   play-11-stop-single-title-library
@@ -103,13 +109,28 @@ if [[ "${PLAY11_MATRIX_INNER:-}" == "1" ]]; then
   }
 
   declare -a app_env=()
-  expect_marker=""; expect_queue_sets=""; description=""
+  expect_marker=""; expect_bound=no; expect_queue_sets=""; description=""
   case "$case_name" in
     play-11-continues-after-clear)
-      description="the cleared Music filter hands off to a fresh random library snapshot"
+      # One hit, so the snapshot is exhausted from its first frame: clearing
+      # the filter binds the continuation in while the title still plays,
+      # which is why no second `play_from_view` seeds a snapshot here.
+      description="the cleared Music filter binds a random library continuation in at once"
       seed_three_track_library
       app_env=(REPRISE_SMOKE_FILTER=needle)
-      expect_marker=yes; expect_queue_sets=2 ;;
+      expect_marker=no; expect_bound=yes; expect_queue_sets=1 ;;
+    play-11-continues-at-title-end)
+      # Two hits, started at the first: the snapshot still has a future when
+      # the filter goes away, so PLAY-8 keeps it and the hand-off has to wait
+      # for the second hit to finish — the path the immediate binding must
+      # never swallow.
+      description="a filter cleared too early still hands off after the final title"
+      seed_track "Needle One" 440 Needle needle-one.flac
+      seed_track "Needle Two" 470 Needle needle-two.flac
+      seed_track "Library Alpha" 550 Common alpha.flac
+      seed_track "Library Beta" 660 Common beta.flac
+      app_env=(REPRISE_SMOKE_FILTER=needle)
+      expect_marker=yes; expect_bound=no; expect_queue_sets=2 ;;
     play-11-stop-filter-active)
       description="the search filter is still active when the snapshot ends"
       seed_three_track_library
@@ -203,7 +224,8 @@ if [[ "${PLAY11_MATRIX_INNER:-}" == "1" ]]; then
   shot 02-playing
 
   case "$case_name" in
-    play-11-continues-after-clear|play-11-stop-single-title-library|\
+    play-11-continues-after-clear|play-11-continues-at-title-end|\
+    play-11-stop-single-title-library|\
     play-11-stop-playlist-origin|play-11-stop-repeat-all)
       note "clearing the whole filter while playback runs"
       xdotool mousemove "$CLEAR_ALL_X" "$CLEAR_ALL_Y"; sleep 0.3; xdotool click 1
@@ -218,14 +240,20 @@ if [[ "${PLAY11_MATRIX_INNER:-}" == "1" ]]; then
 
   note "waiting for the snapshot to exhaust"
   observed_marker=no
+  observed_bound=no
   for _ in $(seq 1 45); do
-    if rg --quiet --fixed-strings "$MARKER" "$app_log"; then
-      observed_marker=yes
-      break
-    fi
+    rg --quiet --fixed-strings "$MARKER" "$app_log" && observed_marker=yes
+    rg --quiet --fixed-strings "$BOUND_MARKER" "$app_log" && observed_bound=yes
+    # Stop as soon as the line this case expects is there; a case expecting
+    # neither has to sit out the full window, which is what makes its absence
+    # worth anything.
+    [[ "$expect_marker" == yes && "$observed_marker" == yes ]] && break
+    [[ "$expect_bound" == yes && "$observed_bound" == yes ]] && break
     sleep 1
   done
   sleep 3
+  rg --quiet --fixed-strings "$MARKER" "$app_log" && observed_marker=yes
+  rg --quiet --fixed-strings "$BOUND_MARKER" "$app_log" && observed_bound=yes
   shot 04-final
 
   # `queue set from view` counts snapshot seeds: one for the activation, a
@@ -238,12 +266,14 @@ if [[ "${PLAY11_MATRIX_INNER:-}" == "1" ]]; then
 
   echo
   note "result $case_name"
-  echo "   continuation marker : observed=$observed_marker expected=$expect_marker"
+  echo "   end-of-title marker : observed=$observed_marker expected=$expect_marker"
+  echo "   bound-in marker     : observed=$observed_bound expected=$expect_bound"
   echo "   queue-set-from-view : actual=$queue_sets expected=$expect_queue_sets"
   echo "   critical/panic lines: $criticals (expected 0)"
 
   status=0
-  [[ "$observed_marker" == "$expect_marker" ]] || { echo "   !! marker mismatch"; status=1; }
+  [[ "$observed_marker" == "$expect_marker" ]] || { echo "   !! end-of-title marker mismatch"; status=1; }
+  [[ "$observed_bound" == "$expect_bound" ]] || { echo "   !! bound-in marker mismatch"; status=1; }
   [[ "$queue_sets" == "$expect_queue_sets" ]] || { echo "   !! queue-set mismatch"; status=1; }
   [[ "$criticals" == "0" ]] || { echo "   !! log is not clean"; status=1; }
   [[ $status -eq 0 ]] && echo "   => PASS" || echo "   => FAIL"

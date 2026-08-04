@@ -58,6 +58,16 @@ assert_app_log_contains() {
   fi
 }
 
+assert_app_log_absent() {
+  local log_path=$1 marker=$2 scenario=$3
+
+  if rg --quiet --fixed-strings "$marker" "$log_path"; then
+    echo "$scenario log carries the marker '$marker' it must not: $log_path" >&2
+    rg --fixed-strings "$marker" "$log_path" >&2 || true
+    return 1
+  fi
+}
+
 window_id_from_response() {
   jq -r --arg class "$WINDOW_CLASS_MATCH" '
     [.. | objects
@@ -700,6 +710,7 @@ run_private_session() {
       ;;
     play-11-filter-clear)
       run_play_11_filter_clear_continuation_scenario
+      run_play_11_late_filter_clear_scenario
       ;;
     *)
       echo "unknown private CUA scenario group: $private_group" >&2

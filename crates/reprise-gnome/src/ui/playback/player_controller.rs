@@ -190,7 +190,33 @@ use reprise_core::queue::Queue;
 use reprise_core::up_next::{QueueItem, UpNextQueue};
 use reprise_core::waveform::WaveformBackend;
 
-type ViewRefillIds = Rc<dyn Fn() -> Vec<i64>>;
+/// The visible track view as the playback paths see it.
+///
+/// `ids` is what a refill plays: the visible query's id list, which stops at
+/// `queries::QUEUE_LIMIT` rows. `total` is the same view's row count, and it
+/// is *not* capped. PLAY-11 needs both, because the ids alone cannot tell a
+/// complete library from the first 10,000 rows of a filtered one — see
+/// `library_continuation::cleared_library_filter_handoff`.
+///
+/// Both come from one provider call so they always describe the same moment;
+/// two providers could be read either side of a reload and disagree.
+pub(in crate::ui) struct VisibleView {
+    pub(in crate::ui) ids: Vec<i64>,
+    pub(in crate::ui) total: usize,
+}
+
+impl VisibleView {
+    /// The view a playback path must not refill from — the Queue view itself,
+    /// or a track list that is already gone.
+    pub(in crate::ui) fn none() -> Self {
+        Self {
+            ids: Vec::new(),
+            total: 0,
+        }
+    }
+}
+
+type ViewRefillIds = Rc<dyn Fn() -> VisibleView>;
 
 use super::scrobble_runtime::ScrobbleRuntime;
 use super::scrobble_session::ScrobbleSession;
@@ -555,7 +581,10 @@ impl PlayerController {
         self.bar.set_on_title_click(f);
     }
 
-    pub fn set_view_refill_provider(&self, provider: impl Fn() -> Vec<i64> + 'static) {
+    pub(in crate::ui) fn set_view_refill_provider(
+        &self,
+        provider: impl Fn() -> VisibleView + 'static,
+    ) {
         *self.view_refill_ids.borrow_mut() = Some(Rc::new(provider));
     }
 
