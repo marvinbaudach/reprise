@@ -249,9 +249,23 @@ pub fn build(app: &adw::Application, conn: &Rc<Db>, db_path: &Path) -> FileOpenH
         Rc::new(TrackList::new(
             conn.clone(),
             on_activate,
-            move |source, _count, _filter, _browse| {
+            move |source, _count, filter, browse| {
                 if let Some(player) = &player_for_reload {
                     player.refresh_library_availability();
+                    // PLAY-11: a Music view that just became completely
+                    // unfiltered is the one moment an exhausted, filter-born
+                    // snapshot may be given a future. Every other reload pays
+                    // only the two `Cell`/`RefCell` reads inside — the queries
+                    // sit behind the exhausted-and-filtered-origin guards, and
+                    // the guard that matters most (a filtered `play_origin`)
+                    // is cleared by the first success, so this cannot re-bind
+                    // the continuation it just installed.
+                    if matches!(source, ViewSource::Library)
+                        && filter.trim().is_empty()
+                        && browse.is_empty()
+                    {
+                        player.continue_library_after_filter_clear();
+                    }
                 }
                 if matches!(source, ViewSource::Library) {
                     status_bar.refresh(&conn_for_status);
@@ -285,8 +299,8 @@ pub fn build(app: &adw::Application, conn: &Rc<Db>, db_path: &Path) -> FileOpenH
         player.add_on_external_changed(move |_| on_external_changed());
         let track_list_weak = Rc::downgrade(&track_list);
         player.set_view_refill_provider(move || match track_list_weak.upgrade() {
-            Some(track_list) => track_list.transport_refill_ids(),
-            None => Vec::new(),
+            Some(track_list) => track_list.transport_refill_view(),
+            None => crate::ui::player_controller::VisibleView::none(),
         });
     }
     let scan_progress = ScanProgressView::new();

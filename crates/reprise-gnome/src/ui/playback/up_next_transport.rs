@@ -11,42 +11,6 @@ pub(in crate::ui) enum AdvanceReason {
     Manual,
 }
 
-fn random_library_continuation(
-    origin: Option<&super::play_origin::PlayOrigin>,
-    visible_ids: &[i64],
-    mut random_live_ids: Vec<i64>,
-    finished_track_id: Option<i64>,
-) -> Option<Vec<i64>> {
-    let origin = origin?;
-    if !origin.place.is_library_root() {
-        return None;
-    }
-    let state = origin.place.track_state()?;
-    if state.search.trim().is_empty() && state.browse.is_empty() {
-        return None;
-    }
-
-    let visible = visible_ids
-        .iter()
-        .copied()
-        .collect::<std::collections::HashSet<_>>();
-    let live = random_live_ids
-        .iter()
-        .copied()
-        .collect::<std::collections::HashSet<_>>();
-    if visible.len() != visible_ids.len() || live.len() != random_live_ids.len() || visible != live
-    {
-        return None;
-    }
-
-    let finished_track_id = finished_track_id?;
-    let next_position = random_live_ids
-        .iter()
-        .position(|id| *id != finished_track_id)?;
-    random_live_ids.rotate_left(next_position);
-    Some(random_live_ids)
-}
-
 fn drop_unavailable_episodes(
     pending: &mut UpNextQueue,
     available: &std::collections::HashSet<i64>,
@@ -243,7 +207,10 @@ impl PlayerController {
                 // PLAY-11: the filtered snapshot remains immutable while it
                 // plays. Once it is exhausted, however, an already-cleared
                 // Library filter may hand off to a fresh random full-library
-                // snapshot instead of falling silent.
+                // snapshot instead of falling silent. A filter cleared early
+                // enough already bound its continuation in on the reload
+                // (`library_continuation.rs`), in which case the context is
+                // not exhausted here and this never runs.
                 if reason == AdvanceReason::Automatic
                     && self.refill_random_library_after_filter_clear()
                 {
@@ -264,38 +231,6 @@ impl PlayerController {
         }
     }
 
-    fn refill_random_library_after_filter_clear(self: &std::rc::Rc<Self>) -> bool {
-        let origin = self.play_origin.borrow().clone();
-        let provider = self.view_refill_ids.borrow().clone();
-        let Some(provider) = provider else {
-            return false;
-        };
-        let visible_ids = provider();
-        let random_live_ids = match queries::query_random_live_track_ids(&self.conn) {
-            Ok(ids) => ids,
-            Err(error) => {
-                tracing::error!(%error, "failed to build random library continuation");
-                return false;
-            }
-        };
-        let finished_track_id = self.current_track.get().map(|(id, _)| id);
-        let Some(ids) = random_library_continuation(
-            origin.as_ref(),
-            &visible_ids,
-            random_live_ids,
-            finished_track_id,
-        ) else {
-            return false;
-        };
-        let continuation_len = ids.len();
-        self.play_from_view(ids, 0, super::play_origin::PlayOrigin::library());
-        tracing::info!(
-            continuation_len,
-            "filtered queue exhausted after filter clear; continuing from random library snapshot"
-        );
-        true
-    }
-
     /// Rebuilds the exhausted playback context from the visible view's ids
     /// (see `PlayerController::set_view_refill_provider`) and starts playing
     /// it — at a random position when shuffle is on, from the top otherwise.
@@ -307,7 +242,7 @@ impl PlayerController {
         let Some(provider) = provider else {
             return false;
         };
-        let ids = provider();
+        let ids = provider().ids;
         if ids.is_empty() {
             return false;
         }
@@ -440,14 +375,12 @@ fn prefeed_track_id(item: QueueItem) -> Option<i64> {
 
 #[cfg(test)]
 mod tests {
-    use reprise_core::browser::BrowserPlace;
     use reprise_core::queue::{Queue, Repeat};
     use reprise_core::up_next::UpNextQueue;
-    use reprise_core::view_source::ViewSource;
 
     use super::{
         next_matching_target, next_target, peek_auto_target, play_pending_at, previous_target,
-        random_library_continuation, AdvanceReason,
+        AdvanceReason,
     };
 
     fn context(ids: &[i64]) -> Queue {
@@ -469,76 +402,6 @@ mod tests {
 
     fn track(id: i64) -> Option<reprise_core::up_next::QueueItem> {
         Some(reprise_core::up_next::QueueItem::Track(id))
-    }
-
-    #[test]
-    fn play_11_filter_clear_continues_with_random_full_library_snapshot() {
-        let mut place = BrowserPlace::from(ViewSource::Library);
-        place.track_state_mut().unwrap().search = "needle".into();
-        let origin = super::super::play_origin::PlayOrigin {
-            place,
-            label: "Music".into(),
-        };
-
-        assert_eq!(
-            random_library_continuation(
-                Some(&origin),
-                &[1, 2, 3],
-                vec![2, 3, 1],
-                Some(2),
-            ),
-            Some(vec![3, 1, 2]),
-            "the finished filtered hit must not immediately repeat when the full library takes over"
-        );
-    }
-
-    #[test]
-    fn play_11_continuation_requires_a_cleared_library_filter() {
-        let unfiltered = super::super::play_origin::PlayOrigin {
-            place: BrowserPlace::from(ViewSource::Library),
-            label: "Music".into(),
-        };
-        assert_eq!(
-            random_library_continuation(Some(&unfiltered), &[1, 2, 3], vec![3, 1, 2], Some(2)),
-            None,
-            "an ordinary full-library snapshot still ends normally"
-        );
-
-        let mut filtered_place = BrowserPlace::from(ViewSource::Library);
-        filtered_place.track_state_mut().unwrap().browse.genre = Some("Metal".into());
-        let filtered = super::super::play_origin::PlayOrigin {
-            place: filtered_place,
-            label: "Music".into(),
-        };
-        assert_eq!(
-            random_library_continuation(Some(&filtered), &[2], vec![3, 1, 2], Some(2)),
-            None,
-            "a filter that remains active must not loop or escape its hit set"
-        );
-
-        let mut playlist_place = BrowserPlace::from(ViewSource::Playlist(7));
-        playlist_place.track_state_mut().unwrap().search = "needle".into();
-        let playlist = super::super::play_origin::PlayOrigin {
-            place: playlist_place,
-            label: "Mix".into(),
-        };
-        assert_eq!(
-            random_library_continuation(Some(&playlist), &[1, 2, 3], vec![3, 1, 2], Some(2)),
-            None,
-            "clearing a playlist filter must not escape into the whole library"
-        );
-
-        let mut one_track_place = BrowserPlace::from(ViewSource::Library);
-        one_track_place.track_state_mut().unwrap().search = "only".into();
-        let one_track = super::super::play_origin::PlayOrigin {
-            place: one_track_place,
-            label: "Music".into(),
-        };
-        assert_eq!(
-            random_library_continuation(Some(&one_track), &[2], vec![2], Some(2)),
-            None,
-            "the only library title must not repeat forever"
-        );
     }
 
     #[test]
