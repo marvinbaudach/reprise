@@ -27,7 +27,6 @@ pub(in crate::ui) enum LoadedItemChange {
     /// regardless of the 1.5-second grace period. The grace protects a
     /// reading user from a viewport that jumps under their hand; here they
     /// asked for the jump themselves.
-    #[allow(dead_code)] // Constructed by the source-view entry points in AP7.
     RequestedByUser,
 }
 

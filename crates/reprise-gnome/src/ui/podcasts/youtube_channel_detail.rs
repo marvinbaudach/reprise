@@ -320,6 +320,14 @@ impl YoutubeChannelDetail {
         self.state.borrow().active_channel().is_some()
     }
 
+    pub(super) fn close_channel(&self) {
+        let was_active = self.state.borrow().active_channel().is_some();
+        if was_active {
+            self.state.borrow_mut().close_channel();
+            self.host.set_visible_child_name("list");
+        }
+    }
+
     pub(super) fn clear_selection(self: &Rc<Self>) -> bool {
         let cleared = self.state.borrow_mut().clear_selected();
         if cleared {

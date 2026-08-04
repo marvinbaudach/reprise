@@ -39,6 +39,20 @@ pub(super) fn station_position(rows: &[StationRow], station_id: i64) -> Option<u
         .and_then(|position| u32::try_from(position).ok())
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum StationRevealOutcome {
+    Reveal,
+    NotListed,
+}
+
+pub(super) fn station_reveal_outcome(rows: &[StationRow], station_id: i64) -> StationRevealOutcome {
+    if station_position(rows, station_id).is_some() {
+        StationRevealOutcome::Reveal
+    } else {
+        StationRevealOutcome::NotListed
+    }
+}
+
 fn visible_rows(model: &RadioModel) -> Vec<StationRow> {
     (0..model.store().n_items())
         .filter_map(|position| {
@@ -226,5 +240,19 @@ mod tests {
 
         assert_eq!(station_position(&rows, 42), None);
         assert_eq!(station_position(&[], 5), None);
+    }
+
+    #[test]
+    fn src_13_a_station_that_is_gone_is_reported_instead_of_ignored() {
+        let rows = rows(&[5, 9]);
+
+        assert_eq!(
+            station_reveal_outcome(&rows, 9),
+            StationRevealOutcome::Reveal
+        );
+        assert_eq!(
+            station_reveal_outcome(&rows, 42),
+            StationRevealOutcome::NotListed
+        );
     }
 }

@@ -26,14 +26,15 @@ use super::podcasts_filter_bar::PodcastsFilterBar;
 use super::podcasts_groups;
 use super::podcasts_playback::EpisodeMark;
 use super::podcasts_presentation::{
-    active as filter_active, apply_filter, library_summary, rendered_source_groups,
-    sort_newest_first,
+    active as filter_active, apply_filter, filter_without_hiding, filter_without_hiding_group,
+    library_summary, rendered_source_groups, sort_newest_first,
 };
 use super::podcasts_removal::{
     download_commit_action, download_request_allowed, download_toggle_action, DownloadCommitAction,
     DownloadToggleAction, KeptDownloads,
 };
 use super::podcasts_rendered_order;
+use super::podcasts_reveal::RevealRequest;
 use super::podcasts_scroller::build_episode_scroller;
 use super::podcasts_selection::{PodcastSelection, SelectMode};
 use super::podcasts_view_data::{episode_ids_in_rendered_order, last_updated_text};
@@ -118,6 +119,7 @@ pub(in crate::ui) struct PodcastsView {
     reveal_animation: Rc<RefCell<Option<adw::TimedAnimation>>>,
     activating_here: Cell<bool>,
     playing_episode: Cell<Option<EpisodeMark>>,
+    pending_reveal: RefCell<Option<RevealRequest>>,
     unavailable_episode: Cell<Option<i64>>,
     generation: Cell<u64>,
     toast_overlay: glib::WeakRef<adw::ToastOverlay>,
@@ -233,6 +235,7 @@ impl PodcastsView {
             reveal_animation: Rc::new(RefCell::new(None)),
             activating_here: Cell::new(false),
             playing_episode: Cell::new(None),
+            pending_reveal: RefCell::new(None),
             unavailable_episode: Cell::new(None),
             generation: Cell::new(0),
             toast_overlay: glib::WeakRef::new(),

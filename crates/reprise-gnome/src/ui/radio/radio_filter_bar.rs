@@ -239,7 +239,6 @@ impl RadioFilterBar {
         self.apply(RadioFilter::default());
     }
 
-    #[allow(dead_code)] // Used by the explicit station reveal entry point in AP7.
     pub(super) fn apply_filter(self: &Rc<Self>, filter: RadioFilter) {
         self.apply(filter);
     }

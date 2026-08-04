@@ -4,15 +4,8 @@
 
 use super::*;
 use crate::ui::podcasts::podcasts_playback::episode_mark_requires_render;
-use crate::ui::podcasts::podcasts_reveal;
+use crate::ui::podcasts::podcasts_reveal::{self, RevealRequest};
 use crate::ui::source_reveal::{self, LoadedItemChange, RevealPolicy};
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum RevealRequest {
-    Episode(i64),
-    #[allow(dead_code)] // Constructed by the source-view entry point in AP7.
-    Channel(i64),
-}
 
 impl PodcastsView {
     pub(in crate::ui) fn set_playing_episode(&self, mark: Option<EpisodeMark>, restored: bool) {
@@ -46,9 +39,80 @@ impl PodcastsView {
         let weak = Rc::downgrade(self);
         self.root.connect_map(move |_| {
             if let Some(view) = weak.upgrade() {
-                view.reveal_loaded_episode(LoadedItemChange::ViewEntered);
+                if let Some(request) = view.pending_reveal.take() {
+                    view.reveal(request, LoadedItemChange::RequestedByUser);
+                } else {
+                    view.reveal_loaded_episode(LoadedItemChange::ViewEntered);
+                }
             }
         });
+    }
+
+    pub(in crate::ui) fn request_reveal(
+        self: &Rc<Self>,
+        subscription_id: i64,
+        episode_id: Option<i64>,
+    ) {
+        // Both source views may receive the same request. A subscription that
+        // belongs to the sibling kind is not missing from the library; it is
+        // simply this instance's responsibility to ignore.
+        let stored_kind = podcasts::store::subscription(&self.conn, subscription_id)
+            .ok()
+            .flatten()
+            .map(|subscription| subscription.kind);
+        if stored_kind.is_some_and(|kind| kind != self.kind) {
+            return;
+        }
+
+        // Clone every input before applying a filter: `apply_filter` invokes
+        // `on_changed` synchronously, which re-enters `render` and mutably
+        // borrows the view's collections.
+        let groups = self.groups.borrow().clone();
+        let request = match podcasts_reveal::reveal_outcome(&groups, subscription_id, episode_id) {
+            podcasts_reveal::RevealOutcome::Reveal(request) => request,
+            podcasts_reveal::RevealOutcome::NotListed => {
+                self.show_reveal_not_listed();
+                return;
+            }
+        };
+        self.youtube_detail.close_channel();
+
+        let filter = self.filter_bar.filter();
+        let adjusted = match request {
+            RevealRequest::Episode(episode_id) => {
+                let episode = groups
+                    .iter()
+                    .flat_map(|group| group.episodes.iter())
+                    .find(|episode| episode.id == episode_id)
+                    .expect("reveal_outcome accepted an episode that is present");
+                filter_without_hiding(episode, &filter)
+            }
+            RevealRequest::Channel(subscription_id) => {
+                let group = groups
+                    .iter()
+                    .find(|group| group.subscription_id == subscription_id)
+                    .expect("reveal_outcome accepted a channel that is present");
+                filter_without_hiding_group(group, &filter)
+            }
+        };
+        if adjusted != filter {
+            self.filter_bar.apply_filter(adjusted);
+        }
+
+        self.pending_reveal.replace(Some(request));
+        if self.root.is_mapped() {
+            if let Some(request) = self.pending_reveal.take() {
+                self.reveal(request, LoadedItemChange::RequestedByUser);
+            }
+        }
+    }
+
+    fn show_reveal_not_listed(&self) {
+        if let Some(overlay) = self.toast_overlay.upgrade() {
+            overlay.add_toast(adw::Toast::new(&strings::text(
+                strings::EPISODE_NOT_IN_SUBSCRIPTIONS,
+            )));
+        }
     }
 
     /// `SRC-13`: expands and centers the loaded episode without changing
