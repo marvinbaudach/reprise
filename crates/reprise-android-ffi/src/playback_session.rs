@@ -1,13 +1,13 @@
 //! Android's Core-owned playback queue and transport surface.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use reprise_core::library::settings::TrackTransition;
 use reprise_core::playback::{PlaybackBackend, PlayerEvent, StreamEvent, StreamGeneration};
 use reprise_core::queue::{Queue, Repeat};
 
+use crate::play_recorder::{PlayRecorder, RecordedPlay};
 use crate::playback::{
     AndroidPlaybackBackend, AndroidPlaybackError, AndroidPlaybackPort, AndroidPlaybackState,
 };
@@ -149,7 +149,7 @@ struct SessionInner {
     state: Mutex<SessionState>,
     backend: OnceLock<AndroidPlaybackBackend>,
     listener: Box<dyn AndroidPlaybackListener>,
-    database_path: PathBuf,
+    plays: PlayRecorder,
 }
 
 impl SessionInner {
@@ -170,20 +170,6 @@ impl SessionInner {
     fn notify(&self) {
         if let Ok(state) = self.state.lock() {
             self.listener.on_playback_changed(state.snapshot.clone());
-        }
-    }
-
-    fn record_play(&self, track_id: i64) {
-        let result = reprise_core::db::Db::open_ready(&self.database_path).and_then(|db| {
-            let now_unix = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs() as i64;
-            reprise_core::library::stats::record_play(&db, track_id, now_unix)
-                .map_err(reprise_core::db::DbError::from)
-        });
-        if let Err(error) = result {
-            tracing::warn!(%error, track_id, "could not record Android play count");
         }
     }
 
@@ -288,8 +274,11 @@ impl SessionInner {
             }
         };
 
+        // Queued, not written: this runs on Media3's application thread, and
+        // `FollowUp::Start` below is the gapless transition into the next
+        // track. See `play_recorder`.
         if let Some(track_id) = play_to_record {
-            self.record_play(track_id);
+            self.plays.record(RecordedPlay::now(track_id));
         }
 
         match follow_up {
@@ -337,7 +326,7 @@ impl AndroidPlaybackSession {
             state: Mutex::new(SessionState::new()),
             backend: OnceLock::new(),
             listener,
-            database_path,
+            plays: PlayRecorder::spawn(database_path),
         });
         let weak = Arc::downgrade(&inner);
         let backend = AndroidPlaybackBackend::new(

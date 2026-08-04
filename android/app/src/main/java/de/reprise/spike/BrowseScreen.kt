@@ -32,6 +32,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,7 +64,7 @@ internal fun BrowseScreen(
     seekTo: (Long) -> Unit,
     setShuffle: (Boolean) -> Unit,
     setRepeat: (AndroidRepeatMode) -> Unit,
-    setRating: (Long, Int) -> Boolean,
+    setRating: (Long, Int) -> String?,
 ) {
     var selectedTab by remember { mutableStateOf(BrowseTab.TITLES) }
     var searchVisible by remember { mutableStateOf(false) }
@@ -78,7 +79,10 @@ internal fun BrowseScreen(
     var albumsRequestedOffset by remember(state) { mutableStateOf<Long?>(null) }
     var artistsRequestedOffset by remember(state) { mutableStateOf<Long?>(null) }
     var albumRequestedOffset by remember(state, selectedAlbum?.album) { mutableStateOf<Long?>(null) }
-    var nowPlayingExpanded by remember { mutableStateOf(false) }
+    // Saveable, not remembered: a rotation recreates the activity, and a
+    // sheet the user opened is not something the device orientation gets to
+    // close.
+    var nowPlayingExpanded by rememberSaveable { mutableStateOf(false) }
 
     fun play(selection: PlaybackSelection) {
         browseError = null

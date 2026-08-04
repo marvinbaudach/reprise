@@ -218,13 +218,21 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun setTrackRating(trackId: Long, rating: Int): Boolean = runCatching {
+    /**
+     * Persists one rating and answers with the failure to show, or null when it
+     * was saved.
+     *
+     * Deliberately not through [playbackState]: that whole record is replaced
+     * by the next 500 ms position tick, so a message left there is gone before
+     * anyone reads it. The rating's outcome belongs to the control the user
+     * tapped.
+     */
+    private fun setTrackRating(trackId: Long, rating: Int): String? = runCatching {
         session.setRating(trackId, rating)
-    }.onFailure { error ->
-        playbackState.value = playbackState.value.copy(
-            error = "Could not save rating: ${error.detail()}",
-        )
-    }.isSuccess
+    }.fold(
+        onSuccess = { null },
+        onFailure = { error -> "Could not save rating: ${error.detail()}" },
+    )
 
     private fun runPlaybackCommand(
         action: String,
@@ -280,7 +288,7 @@ private fun LibraryScreen(
     seekTo: (Long) -> Unit,
     setShuffle: (Boolean) -> Unit,
     setRepeat: (AndroidRepeatMode) -> Unit,
-    setRating: (Long, Int) -> Boolean,
+    setRating: (Long, Int) -> String?,
 ) {
     var state by remember { mutableStateOf(initialState) }
     val folderPicker = rememberLauncherForActivityResult(

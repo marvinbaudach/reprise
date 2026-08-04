@@ -32,10 +32,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.sp
 import kotlin.math.PI
 import kotlin.math.sin
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import uniffi.reprise_android_ffi.AndroidArtworkSize
 import uniffi.reprise_android_ffi.AndroidRepeatMode
@@ -62,7 +63,7 @@ internal fun NowPlayingSheet(
     previous: () -> Unit,
     setShuffle: (Boolean) -> Unit,
     setRepeat: (AndroidRepeatMode) -> Unit,
-    setRating: (Long, Int) -> Boolean,
+    setRating: (Long, Int) -> String?,
 ) {
     var backProgress by remember { mutableFloatStateOf(0f) }
     PredictiveBackHandler {
@@ -194,17 +195,29 @@ private fun WavySeekSlider(trackId: Long, playback: PlaybackUiState, seekTo: (Lo
                 )
             },
         )
-        Text(
-            text = "${formatDuration(displayed)} / " +
-                if (durationMs > 0) formatDuration(durationMs) else "--:--",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            textAlign = TextAlign.Center,
-        )
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                text = formatDuration(displayed),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Text(
+                text = formatRemaining(displayed, durationMs),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
+/**
+ * The wave is what has been played. Right of the head the track is still to
+ * come, so it stays a flat line — a wave there would claim motion the player
+ * has not made yet.
+ */
 @Composable
 private fun WavySliderTrack(progress: Float) {
     val active = MaterialTheme.colorScheme.primary
@@ -214,22 +227,32 @@ private fun WavySliderTrack(progress: Float) {
             .fillMaxWidth()
             .height(32.dp),
     ) {
-        val path = Path()
         val center = size.height / 2f
+        val head = size.width * progress.coerceIn(0f, 1f)
+        val thickness = 3.dp.toPx()
+        drawLine(
+            color = inactive,
+            start = Offset(head, center),
+            end = Offset(size.width, center),
+            strokeWidth = thickness,
+            cap = StrokeCap.Round,
+        )
+        if (head <= 0f) {
+            return@Canvas
+        }
         val amplitude = 4.dp.toPx()
         val wavelength = 24.dp.toPx()
-        path.moveTo(0f, center)
+        val step = 2.dp.toPx()
+        fun waveAt(x: Float) = center + sin((x / wavelength) * 2.0 * PI).toFloat() * amplitude
+        val elapsed = Path()
+        elapsed.moveTo(0f, center)
         var x = 0f
-        while (x <= size.width) {
-            val y = center + sin((x / wavelength) * 2.0 * PI).toFloat() * amplitude
-            path.lineTo(x, y)
-            x += 2.dp.toPx()
+        while (x < head) {
+            elapsed.lineTo(x, waveAt(x))
+            x += step
         }
-        val stroke = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
-        drawPath(path, inactive, style = stroke)
-        clipRect(right = size.width * progress.coerceIn(0f, 1f)) {
-            drawPath(path, active, style = stroke)
-        }
+        elapsed.lineTo(head, waveAt(head))
+        drawPath(elapsed, active, style = Stroke(width = thickness, cap = StrokeCap.Round))
     }
 }
 
@@ -259,7 +282,9 @@ private fun PlaybackActions(
         IconButton(
             onClick = togglePause,
             modifier = Modifier
-                .size(64.dp)
+                .size(nowPlayingMetrics.playButtonSizeDp.dp)
+                // The shape scale's top rung is the frame's 28 dp rounded
+                // square; a circle would be a different control.
                 .clip(MaterialTheme.shapes.extraLarge)
                 .background(MaterialTheme.colorScheme.primary),
         ) {
@@ -267,7 +292,7 @@ private fun PlaybackActions(
                 name = if (playback.isPlaying) "pause" else "play_arrow",
                 contentDescription = playback.playPauseLabel,
                 tint = MaterialTheme.colorScheme.onPrimary,
-                sizeSp = 36,
+                sizeSp = 40,
             )
         }
         IconButton(onClick = next, modifier = Modifier.size(48.dp)) {
@@ -315,9 +340,17 @@ private fun ModeButton(
     }
 }
 
+/**
+ * [setRating] answers with the failure to show, or null when the rating was
+ * saved. That message gets its own transient slot rather than the playback
+ * snapshot's `error`: the snapshot is replaced wholesale by the next 500 ms
+ * position tick, which would wipe the message before it could be read while a
+ * track plays, and leave it standing forever while one is paused.
+ */
 @Composable
-private fun RatingRow(track: LibraryTrack, setRating: (Long, Int) -> Boolean) {
+private fun RatingRow(track: LibraryTrack, setRating: (Long, Int) -> String?) {
     var rating by remember(track.id) { mutableStateOf(track.rating.coerceIn(0, 5)) }
+    var failure by remember(track.id) { mutableStateOf<TransientMessage?>(null) }
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             text = "${track.playCount.coerceAtLeast(0)} plays",
@@ -328,8 +361,12 @@ private fun RatingRow(track: LibraryTrack, setRating: (Long, Int) -> Boolean) {
             (1..5).forEach { star ->
                 IconButton(
                     onClick = {
-                        if (setRating(track.id, star)) {
+                        val message = setRating(track.id, star)
+                        if (message == null) {
                             rating = star
+                            failure = null
+                        } else {
+                            failure = TransientMessage(message).after(failure)
                         }
                     },
                     modifier = Modifier.size(48.dp),
@@ -342,6 +379,18 @@ private fun RatingRow(track: LibraryTrack, setRating: (Long, Int) -> Boolean) {
                     )
                 }
             }
+        }
+        failure?.let { message ->
+            LaunchedEffect(message) {
+                delay(RATING_FAILURE_MS)
+                failure = null
+            }
+            Text(
+                text = message.text,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+            )
         }
     }
 }

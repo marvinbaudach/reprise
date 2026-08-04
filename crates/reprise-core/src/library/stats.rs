@@ -22,15 +22,24 @@ const RATING_MIN: i32 = 0;
 const RATING_MAX: i32 = 5;
 
 /// Sets `track_id`'s rating, clamped to `RATING_MIN..=RATING_MAX`.
+///
+/// Addresses the row by id alone, exactly as it always has: a row whose
+/// `removed_at` is set is still rated. Its desktop caller only ever rates rows
+/// that came out of a query already filtering `removed_at IS NULL`, so it
+/// cannot tell the difference today — which is precisely why the condition must
+/// not be added here on the way past. A boundary that has to *report* whether a
+/// live row matched asks [`set_rating_if_present`] instead.
 pub fn set_rating(db: &Db, track_id: i64, rating: i32) -> Result<(), rusqlite::Error> {
-    set_rating_if_present(db, track_id, rating).map(|_| ())
+    set_rating_in(db.conn(), track_id, rating)
 }
 
-/// Sets a rating and reports whether a live track row actually matched.
+/// Sets a rating on a row that is still part of the library, and reports
+/// whether one matched.
 ///
-/// Callers that present a success/failure result to a user need this stricter
-/// answer; the legacy [`set_rating`] facade deliberately retains its silent
-/// zero-row behavior for existing desktop call sites.
+/// The stricter answer exists for callers that show the user a success or a
+/// failure — the Android sheet's stars, which have no other way to learn that
+/// the row behind them has since been removed. [`set_rating`] keeps the silent
+/// zero-row behaviour its desktop call sites were written against.
 pub fn set_rating_if_present(db: &Db, track_id: i64, rating: i32) -> Result<bool, rusqlite::Error> {
     let clamped = rating.clamp(RATING_MIN, RATING_MAX);
     let changed = db.conn().execute(
@@ -40,6 +49,11 @@ pub fn set_rating_if_present(db: &Db, track_id: i64, rating: i32) -> Result<bool
     Ok(changed == 1)
 }
 
+/// The unconditional rating write, on a bare `Connection`.
+///
+/// This is the one statement behind [`set_rating`]; tag editing needs it on a
+/// connection it is already holding a transaction on, which a `Db` handle
+/// cannot express.
 pub(crate) fn set_rating_in(
     conn: &Connection,
     track_id: i64,
@@ -53,6 +67,12 @@ pub(crate) fn set_rating_in(
     Ok(())
 }
 
+/// Sets a rating only if the row is still live *and* still describes the file
+/// on disk that the writeback just tagged.
+///
+/// The extra `path` predicate is the point: between reading a file and writing
+/// its tags back, the row may have been re-pointed at another file, and rating
+/// that one would attribute the edit to the wrong track.
 pub(crate) fn set_rating_for_registered_track(
     conn: &Connection,
     track_id: i64,
@@ -103,6 +123,28 @@ mod tests {
         )
         .unwrap();
         conn
+    }
+
+    /// Seeds row 2 as a track the library has since removed, so both rating
+    /// writers can be asked what they do with it.
+    fn seeded_conn_with_removed_track() -> Db {
+        let conn = seeded_conn();
+        conn.conn()
+            .execute(
+                "INSERT INTO tracks (id, path, title, artist, added_at, removed_at) \
+                 VALUES (2, '/x/gone.flac', 'Gone', 'B', 0, 100)",
+                [],
+            )
+            .unwrap();
+        conn
+    }
+
+    fn rating_of(db: &Db, track_id: i64) -> i32 {
+        db.conn()
+            .query_row("SELECT rating FROM tracks WHERE id = ?1", [track_id], |r| {
+                r.get(0)
+            })
+            .unwrap()
     }
 
     #[test]
@@ -156,6 +198,29 @@ mod tests {
             .query_row("SELECT rating FROM tracks WHERE id = 1", [], |r| r.get(0))
             .unwrap();
         assert_eq!(rating, 0);
+    }
+
+    /// The desktop's rating column addresses a row by id and expects the write
+    /// to land. Adding `removed_at IS NULL` here would silently narrow that for
+    /// a caller that never asked, so this pins the two writers apart.
+    #[test]
+    fn set_rating_writes_a_removed_row_while_the_reporting_writer_refuses_it() {
+        let conn = seeded_conn_with_removed_track();
+
+        set_rating(&conn, 2, 3).unwrap();
+        assert_eq!(rating_of(&conn, 2), 3);
+
+        assert!(!set_rating_if_present(&conn, 2, 5).unwrap());
+        assert_eq!(rating_of(&conn, 2), 3);
+    }
+
+    #[test]
+    fn set_rating_if_present_reports_the_live_row_it_wrote() {
+        let conn = seeded_conn_with_removed_track();
+
+        assert!(set_rating_if_present(&conn, 1, 4).unwrap());
+        assert_eq!(rating_of(&conn, 1), 4);
+        assert!(!set_rating_if_present(&conn, 404, 4).unwrap());
     }
 
     #[test]

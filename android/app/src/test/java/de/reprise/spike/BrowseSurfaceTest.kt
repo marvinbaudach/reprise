@@ -1,10 +1,14 @@
 package de.reprise.spike
 
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.unit.dp
+import de.reprise.spike.ui.theme.NocturneShapes
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -56,9 +60,45 @@ class BrowseSurfaceTest {
                 titleLineHeightSp = 36,
                 artistSizeSp = 16,
                 artistLineHeightSp = 24,
+                playButtonSizeDp = 80,
+                playButtonRadiusDp = 28,
             ),
             nowPlayingMetrics,
         )
+    }
+
+    /**
+     * The sheet clips its play button with the theme's `extraLarge`, so the
+     * rounded square the frame asks for only stays one if that rung stays 28 dp.
+     */
+    @Test
+    fun theSheetsPlayButtonRungIsTheFramesRoundedSquare() {
+        assertEquals(
+            RoundedCornerShape(nowPlayingMetrics.playButtonRadiusDp.dp),
+            NocturneShapes.extraLarge,
+        )
+    }
+
+    @Test
+    fun theSeekReadoutCountsDownWhatIsLeftRatherThanUpToTheTotal() {
+        assertEquals("−1:00", formatRemaining(positionMs = 80_000, durationMs = 140_000))
+        assertEquals("−0:00", formatRemaining(positionMs = 140_000, durationMs = 140_000))
+        assertEquals("−0:00", formatRemaining(positionMs = 200_000, durationMs = 140_000))
+        assertEquals("--:--", formatRemaining(positionMs = 3_000, durationMs = 0))
+    }
+
+    /**
+     * A rating that fails the same way twice is still two failures; the second
+     * must restart its own dismissal rather than ride out the first one's.
+     */
+    @Test
+    fun aRepeatedRatingFailureIsANewMessageWithItsOwnLifetime() {
+        val first = TransientMessage("Could not save rating: gone")
+        val second = TransientMessage("Could not save rating: gone").after(first)
+
+        assertEquals(first.text, second.text)
+        assertNotEquals(first, second)
+        assertEquals(TransientMessage("Could not save rating: gone"), first.after(null))
     }
 
     @Test

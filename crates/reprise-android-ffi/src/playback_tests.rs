@@ -360,34 +360,59 @@ fn exported_session_seek_reaches_the_media3_port() {
     );
 }
 
+/// Two tracks, not one. A single-track queue wraps to index 0 under
+/// `Repeat::All` just as it stays there under `Repeat::One`, so it cannot tell
+/// the two modes apart — mapping `AndroidRepeatMode::One` to `Repeat::All`
+/// passes such a fixture. With a second track the modes disagree about where
+/// the playhead lands, which is the whole assertion.
 #[test]
 fn session_modes_are_readable_and_repeat_one_refeeds_after_media3_auto_advance() {
     let fixture = recording_session();
     fixture
         .session
-        .play_tracks(vec![10], vec!["content://provider/only.flac".to_owned()], 0)
+        .play_tracks(
+            vec![10, 11],
+            vec![
+                "content://provider/first.flac".to_owned(),
+                "content://provider/second.flac".to_owned(),
+            ],
+            0,
+        )
         .unwrap();
 
     fixture.session.set_shuffle(true).unwrap();
-    fixture.session.set_repeat(AndroidRepeatMode::One).unwrap();
+    fixture.session.set_repeat(AndroidRepeatMode::All).unwrap();
     let snapshot = fixture.session.snapshot().unwrap();
     assert!(snapshot.shuffled);
-    assert_eq!(snapshot.repeat, AndroidRepeatMode::One);
+    assert_eq!(snapshot.repeat, AndroidRepeatMode::All);
 
+    let bridge = fixture.bridge.lock().unwrap().clone().unwrap();
+    bridge.emit(24, AndroidPlayerEvent::AdvancedToNext);
+    assert_eq!(
+        fixture.session.snapshot().unwrap().current_index,
+        Some(1),
+        "Repeat::All must leave the track it just finished",
+    );
+
+    fixture.session.previous().unwrap();
+    fixture.session.set_repeat(AndroidRepeatMode::One).unwrap();
+    assert_eq!(
+        fixture.session.snapshot().unwrap().repeat,
+        AndroidRepeatMode::One
+    );
     fixture.calls.lock().unwrap().clear();
-    fixture
-        .bridge
-        .lock()
-        .unwrap()
-        .clone()
-        .unwrap()
-        .emit(24, AndroidPlayerEvent::AdvancedToNext);
 
-    assert_eq!(fixture.session.snapshot().unwrap().current_index, Some(0));
+    bridge.emit(24, AndroidPlayerEvent::AdvancedToNext);
+
+    assert_eq!(
+        fixture.session.snapshot().unwrap().current_index,
+        Some(0),
+        "Repeat::One must stay on the track Media3 just advanced past",
+    );
     assert_eq!(
         fixture.calls.lock().unwrap().as_slice(),
         &[PortCall::SetNext(Some(
-            "content://provider/only.flac".to_owned()
+            "content://provider/first.flac".to_owned()
         ))],
         "Repeat::One must re-feed the real AdvancedToNext path Media3 emits",
     );
@@ -455,6 +480,12 @@ fn play_count_uses_the_tracks_high_water_position_and_records_only_once() {
             duration_ms: 1_000,
         },
     );
+    // The write is queued to the session's writer thread rather than done on
+    // the thread Media3 calls in on. Dropping the session is what the service's
+    // `onDestroy` does, and it must drain what is still queued — so this is
+    // both how the assertion becomes deterministic and the proof that a play
+    // counted during teardown survives it.
+    drop(session);
 
     let verify = reprise_core::db::Db::open_ready(&db_path).unwrap();
     let updated = reprise_core::queries::query_library_text_search(
