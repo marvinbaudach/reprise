@@ -87,31 +87,38 @@ internal fun BrowseScreen(
     var settingsVisible by rememberSaveable { mutableStateOf(false) }
     var settingsState by remember { mutableStateOf<PlaybackSettingsUiState?>(null) }
 
+    // A failure has to leave a *state* behind, never null: null renders
+    // nothing at all, and there is no previous state to fall back on the first
+    // time round — or after a rotation, which throws this one away and restores
+    // `settingsVisible` without it.
+    fun failedSettings(message: String): PlaybackSettingsUiState = settingsState?.copy(error = message)
+        ?: PlaybackSettingsUiState(
+            equalizerEnabled = false,
+            gaplessEnabled = false,
+            equalizerBands = emptyList(),
+            error = message,
+        )
+
     fun openSettings() {
         settingsState = runCatching(loadPlaybackSettings).getOrElse { error ->
-            PlaybackSettingsUiState(
-                equalizerEnabled = false,
-                gaplessEnabled = false,
-                equalizerBands = emptyList(),
-                error = "Could not load playback settings: ${error.message ?: "unknown error"}",
-            )
+            failedSettings("Could not load playback settings: ${error.message ?: "unknown error"}")
         }
         settingsVisible = true
     }
 
     fun updateSettings(action: () -> PlaybackSettingsUiState) {
         settingsState = runCatching(action).getOrElse { error ->
-            settingsState?.copy(
-                error = "Could not save playback settings: ${error.message ?: "unknown error"}",
-            )
+            failedSettings("Could not save playback settings: ${error.message ?: "unknown error"}")
         }
     }
 
+    // Also the reload after a rotation: this runs on entering the composition,
+    // and `settingsVisible` is saveable while the settings themselves are not.
     LaunchedEffect(playbackSettingsRevision) {
         if (settingsVisible) {
             settingsState = runCatching(loadPlaybackSettings).getOrElse { error ->
-                settingsState?.copy(
-                    error = "Could not refresh playback settings: ${error.message ?: "unknown error"}",
+                failedSettings(
+                    "Could not refresh playback settings: ${error.message ?: "unknown error"}",
                 )
             }
         }
@@ -287,8 +294,12 @@ internal fun BrowseScreen(
                 modifier = Modifier.fillMaxSize(),
                 color = MaterialTheme.colorScheme.background,
             ) {
-                settingsState?.let { current ->
-                    PlaybackSettingsScreen(
+                // Never an empty branch: a full-screen surface with no header
+                // and no way back is what a rotation used to leave behind while
+                // the settings were being read again.
+                when (val current = settingsState) {
+                    null -> PlaybackSettingsLoading(close = { settingsVisible = false })
+                    else -> PlaybackSettingsScreen(
                         state = current,
                         themeSelection = themeSelection,
                         close = { settingsVisible = false },

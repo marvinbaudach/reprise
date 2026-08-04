@@ -301,7 +301,8 @@ class MainActivity : ComponentActivity() {
 
     private fun loadPlaybackSettings(): PlaybackSettingsUiState {
         val stored = library.playbackSettings()
-        val bands = playbackService?.equalizerSnapshot()?.bands.orEmpty().map { band ->
+        val snapshot = playbackService?.equalizerSnapshot()
+        val bands = snapshot?.bands.orEmpty().map { band ->
             EqualizerBandUi(
                 frequencyHz = band.frequencyHz,
                 gainDb = band.gainDb,
@@ -313,6 +314,13 @@ class MainActivity : ComponentActivity() {
             equalizerEnabled = stored.equalizerEnabled,
             gaplessEnabled = stored.gaplessEnabled,
             equalizerBands = bands,
+            // A snapshot that reports no equalizer is a session we *have* asked:
+            // saying "start playback" there would be false while a track plays.
+            equalizerBandsAbsence = if (snapshot != null && !snapshot.available) {
+                EqualizerBandsAbsence.NO_EQUALIZER_ON_THIS_DEVICE
+            } else {
+                EqualizerBandsAbsence.NO_PLAYBACK_YET
+            },
         )
     }
 

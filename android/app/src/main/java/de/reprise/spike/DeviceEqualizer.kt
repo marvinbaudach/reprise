@@ -40,8 +40,17 @@ internal data class DeviceEqualizerBand(
     val maximumGainDb: Double,
 )
 
+/**
+ * What this device's equalizer is doing right now.
+ *
+ * `null` from [DeviceEqualizer.snapshot] means there is no audio session yet.
+ * A snapshot with [available] false means there is one and the device gave us
+ * no equalizer for it — nothing retries, so the settings screen has to say that
+ * instead of asking for the playback that is already running.
+ */
 internal data class DeviceEqualizerSnapshot(
     val enabled: Boolean,
+    val available: Boolean,
     val bands: List<DeviceEqualizerBand>,
 )
 
@@ -85,10 +94,15 @@ internal class DeviceEqualizer(
             return
         }
 
-        runCatching { factory.create(audioSessionId) }.getOrNull()?.also { replacement ->
-            engine = replacement
-            applySafely(replacement)
+        val replacement = runCatching { factory.create(audioSessionId) }.getOrNull()
+        if (replacement == null) {
+            // The device refused the effect outright. Nothing here retries, so
+            // this is the answer for this session, and it is not "no session".
+            currentSnapshot = unavailable()
+            return
         }
+        engine = replacement
+        applySafely(replacement)
     }
 
     fun snapshot(): DeviceEqualizerSnapshot? = currentSnapshot
@@ -128,7 +142,11 @@ internal class DeviceEqualizer(
             )
         }
         target.enabled = enabled
-        currentSnapshot = DeviceEqualizerSnapshot(enabled = enabled, bands = bands)
+        currentSnapshot = DeviceEqualizerSnapshot(
+            enabled = enabled,
+            available = true,
+            bands = bands,
+        )
     }
 
     private fun applySafely(target: EqualizerEngine) {
@@ -136,10 +154,18 @@ internal class DeviceEqualizer(
             runCatching { target.release() }
             if (engine === target) {
                 engine = null
-                currentSnapshot = null
+                // Same fact as a refused effect: this session has one, and we
+                // have no equalizer to show for it.
+                currentSnapshot = unavailable()
             }
         }
     }
+
+    private fun unavailable() = DeviceEqualizerSnapshot(
+        enabled = enabled,
+        available = false,
+        bands = emptyList(),
+    )
 }
 
 internal object AndroidEqualizerEngineFactory : EqualizerEngineFactory {

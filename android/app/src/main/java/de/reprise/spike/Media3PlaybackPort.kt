@@ -143,6 +143,7 @@ internal class Media3PlaybackPort(
         deviceEqualizer.snapshot()?.let { snapshot ->
             AndroidEqualizerSnapshot(
                 enabled = snapshot.enabled,
+                available = snapshot.available,
                 bands = snapshot.bands.map { band ->
                     AndroidEqualizerBand(
                         frequencyHz = band.frequencyHz,

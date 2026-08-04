@@ -18,6 +18,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.onAllNodesWithText
@@ -383,6 +384,114 @@ class ComposeBehaviorTest {
         compose.onNodeWithText("Settings").performClick()
         compose.onNodeWithText("Appearance").assertIsDisplayed()
         compose.onNodeWithText("Nocturne").assertIsDisplayed()
+    }
+
+    /**
+     * A rotation recreates the activity: `settingsVisible` is saveable and comes
+     * back true, the loaded settings are a plain `remember` and come back null.
+     * The screen used to render nothing at all in that state — a full-screen
+     * surface with no header and no way back — and if the reload then failed,
+     * the old error path folded `null?.copy(...)` back to null and it stayed
+     * that way. Restoring `settingsState?.let { ... }`, or the `?:`-less error
+     * path, turns this red.
+     */
+    @Test
+    fun settingsSurviveARotationEvenWhenTheReloadFails() {
+        val browse = LibraryScreenState.Browse(
+            titles = LibraryWindow.empty(),
+            albums = LibraryWindow.empty(),
+            artists = LibraryWindow.empty(),
+        )
+        var opened = false
+        val restoration = StateRestorationTester(compose)
+        restoration.setContent {
+            RepriseTheme(nocturneForTests, darkPalette = true) {
+                BrowseScreen(
+                    state = browse,
+                    playback = PlaybackUiState(),
+                    playbackSettingsRevision = 0,
+                    chooseFolder = {},
+                    rescan = {},
+                    themeSelection = nocturneForTests,
+                    selectTheme = {},
+                    searchTitles = { _, _ -> browse.titles },
+                    listAlbums = { browse.albums },
+                    listArtists = { browse.artists },
+                    openAlbum = { error("Album navigation is outside this test") },
+                    listAlbumTracks = { _, _ -> LibraryWindow.empty() },
+                    playTracks = { _, _ -> },
+                    loadPlaybackSettings = {
+                        // Open once, then behave like a service that has not
+                        // rebound yet — the state this screen used to keep.
+                        if (opened) error("playback is still connecting")
+                        opened = true
+                        PlaybackSettingsUiState(false, true, emptyList())
+                    },
+                    setEqualizerEnabled = { PlaybackSettingsUiState(it, true, emptyList()) },
+                    replaceEqualizerCurve = { PlaybackSettingsUiState(false, true, emptyList()) },
+                    setGaplessEnabled = { PlaybackSettingsUiState(false, it, emptyList()) },
+                )
+            }
+        }
+        compose.onNodeWithContentDescription("Library actions").performClick()
+        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithContentDescription("Back to Library").assertIsDisplayed()
+
+        restoration.emulateSavedInstanceStateRestore()
+
+        compose.onNodeWithContentDescription("Back to Library").assertIsDisplayed()
+        compose.onNodeWithText("Settings").assertIsDisplayed()
+        compose.onNodeWithText(
+            "Could not refresh playback settings: playback is still connecting",
+        ).assertIsDisplayed()
+    }
+
+    /** The waiting screen the rotation lands on before the reload answers. */
+    @Test
+    fun theSettingsScreenWithoutItsStateStillOffersAWayBack() {
+        var closed = false
+        compose.setContent {
+            RepriseTheme(nocturneForTests, darkPalette = true) {
+                PlaybackSettingsLoading(close = { closed = true })
+            }
+        }
+
+        compose.onNodeWithText("Reading playback settings…").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Back to Library").performClick()
+        assertTrue(closed)
+    }
+
+    /**
+     * `engine` stays null forever when the device refuses the effect and nothing
+     * retries, so "start playback" would be a cause the screen knows to be false
+     * while a track is playing.
+     */
+    @Test
+    fun anAbsentDeviceEqualizerIsNotReportedAsAbsentPlayback() {
+        compose.setContent {
+            RepriseTheme(nocturneForTests, darkPalette = true) {
+                PlaybackSettingsScreen(
+                    state = PlaybackSettingsUiState(
+                        equalizerEnabled = true,
+                        gaplessEnabled = true,
+                        equalizerBands = emptyList(),
+                        equalizerBandsAbsence =
+                        EqualizerBandsAbsence.NO_EQUALIZER_ON_THIS_DEVICE,
+                    ),
+                    themeSelection = nocturneForTests,
+                    close = {},
+                    setEqualizerEnabled = {},
+                    replaceEqualizerCurve = {},
+                    setGaplessEnabled = {},
+                    selectTheme = {},
+                )
+            }
+        }
+
+        compose.onNodeWithText("This device provided no equalizer for what is playing.")
+            .assertIsDisplayed()
+        compose.onNodeWithText("Start playback to read this device's equalizer bands.")
+            .assertDoesNotExist()
     }
 
     private fun SemanticsNodeInteraction.progress(): Float =

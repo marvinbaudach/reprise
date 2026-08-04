@@ -28,9 +28,16 @@ pub struct AndroidEqualizerBandCapability {
     pub maximum_gain_db: f64,
 }
 
+/// What the device's equalizer is currently doing.
+///
+/// `None` from `equalizer_snapshot` means there is no audio session to ask at
+/// all. `available: false` means there *is* one and the device gave us no
+/// equalizer for it — a different fact, and a surface that reports one as the
+/// other tells the user to start playback while a track is playing.
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct AndroidEqualizerSnapshot {
     pub enabled: bool,
+    pub available: bool,
     pub bands: Vec<AndroidEqualizerBand>,
 }
 

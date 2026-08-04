@@ -40,12 +40,48 @@ internal data class EqualizerBandUi(
     val maximumGainDb: Double,
 )
 
+/**
+ * Why there are no bands to show. Read only when the list is empty — the screen
+ * must not name a cause it does not know, and "start playback" is false while a
+ * track is already playing on a device that gave us no equalizer at all.
+ */
+internal enum class EqualizerBandsAbsence {
+    /** No audio session yet, so there is nothing to ask about the bands. */
+    NO_PLAYBACK_YET,
+
+    /** There is a session, and this device provided no equalizer for it. */
+    NO_EQUALIZER_ON_THIS_DEVICE,
+}
+
 internal data class PlaybackSettingsUiState(
     val equalizerEnabled: Boolean,
     val gaplessEnabled: Boolean,
     val equalizerBands: List<EqualizerBandUi>,
+    val equalizerBandsAbsence: EqualizerBandsAbsence = EqualizerBandsAbsence.NO_PLAYBACK_YET,
     val error: String? = null,
 )
+
+/**
+ * The settings screen before its state has arrived. It exists so that a
+ * rotation, which recreates the activity and throws the loaded settings away
+ * while restoring the fact that this screen was open, cannot leave a blank
+ * full-screen surface with no header and no visible way back.
+ */
+@Composable
+internal fun PlaybackSettingsLoading(close: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp),
+    ) {
+        SettingsHeader(close)
+        Text(
+            "Reading playback settings…",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+}
 
 @Composable
 internal fun PlaybackSettingsScreen(
@@ -95,7 +131,12 @@ internal fun PlaybackSettingsScreen(
             if (bands.isEmpty()) {
                 item {
                     Text(
-                        "Start playback to read this device's equalizer bands.",
+                        when (state.equalizerBandsAbsence) {
+                            EqualizerBandsAbsence.NO_PLAYBACK_YET ->
+                                "Start playback to read this device's equalizer bands."
+                            EqualizerBandsAbsence.NO_EQUALIZER_ON_THIS_DEVICE ->
+                                "This device provided no equalizer for what is playing."
+                        },
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyMedium,
                     )
