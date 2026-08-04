@@ -1124,7 +1124,8 @@ human. Rationale for changes lives in the git history.
   destination, including its local refinements, but never reconstructs the
   Back/Forward stack and never autoplays. The last loaded track or episode is
   presented paused; the first Play starts that exact item through a fresh
-  playable source, applying an episode's existing resume position. If its stable ID belongs to the
+  playable source, applying an episode's existing resume position, and leaves
+  the viewport exactly as the start placed it (NAV-10a). If its stable ID belongs to the
   restored destination, that row becomes the sole selection and is centered
   without taking keyboard focus; grouped podcast and YouTube sources expand
   the required group and preview window first. An unavailable item leaves the
@@ -2448,7 +2449,11 @@ property is set and yet nothing happens.
   the running track's state through the play/pause button, not through a
   second copy of the list marker. Double-click/Enter on an already-visible
   row does not change the viewport. Play from Stopped as well as explicit
-  Previous/Next center the new track without stealing focus or selection.
+  Previous/Next center the new track without stealing focus or selection —
+  except for the one Play that starts a restored session, whose track
+  START-3 already selected and centered at startup: that row is placed, so
+  starting it only starts the audio. Centring it again would be a second
+  visible scroll on a viewport that is already the target.
   Centring moves the viewport over the Standard token rather than
   teleporting it, and yields immediately to anything else that writes the
   scroll position — the user's own scrolling, a model replacement, or

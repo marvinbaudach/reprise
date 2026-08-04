@@ -105,6 +105,9 @@ impl PlayerController {
         let repeat = self.queue.borrow().repeat();
         let current =
             current_up_next.or_else(|| self.queue.borrow().current().map(QueueItem::Track));
+        // START-3 centers this item once the startup routing has built the
+        // view; the first Play must not center it a second time.
+        self.restored_placement_intact.set(current.is_some());
         self.sync_transport_enabled(queue_has_tracks);
         self.sync_shuffle_indicator(shuffled);
         self.sync_repeat_indicator(repeat);
