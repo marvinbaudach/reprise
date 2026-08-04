@@ -151,7 +151,7 @@ fn css_covers_the_sync_card_vocabulary() {
     }
     assert!(
         !css.contains("#1CA98F"),
-        "the accent must come from the theme, not a literal, or non-default palettes break"
+        "the accent must come from the shared style source, not a literal"
     );
 }
 
@@ -163,7 +163,11 @@ fn css_parses_in_gtk_without_dropping_declarations() {
     }
     let combined = format!(
         "{}\n{}",
-        crate::ui::style::theme::theme_css(crate::ui::style::theme::Theme::DEFAULT, true),
+        crate::ui::style::theme::theme_css(
+            crate::ui::style::theme::Theme::DEFAULT,
+            true,
+            crate::ui::style::accent::AccentSource::App,
+        ),
         css()
     );
     let errors = crate::ui::style::css_parse_errors(&combined);

@@ -1,13 +1,11 @@
-#![cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the persistence contract is wired in accent-color source step 2"
-    )
-)]
+use std::cell::Cell;
 
 /// Reprise's brand accent: the thick barline of the repeat-sign logo.
 pub(in crate::ui) const APP_ACCENT: &str = "#4FDBD4";
+
+/// Dark foreground for text and glyphs on [`APP_ACCENT`]. Its 11.16:1 WCAG
+/// contrast ratio is comfortably above the 4.5:1 AA requirement for text.
+const APP_ACCENT_FG: &str = "#04140f";
 
 /// Settings key persisting the selected [`AccentSource`].
 pub(in crate::ui) const ACCENT_SOURCE_SETTING_KEY: &str = "ui.accent-source";
@@ -19,11 +17,22 @@ pub(in crate::ui) enum AccentSource {
     System,
 }
 
+thread_local! {
+    static CURRENT_SOURCE: Cell<AccentSource> = const { Cell::new(AccentSource::DEFAULT) };
+}
+
 impl AccentSource {
     /// A fresh install starts with Reprise's own brand accent.
     pub(in crate::ui) const DEFAULT: Self = Self::App;
 
     /// Stable persistence key.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the accent preference persists ids in accent-color source step 3"
+        )
+    )]
     pub(in crate::ui) const fn id(self) -> &'static str {
         match self {
             Self::App => "app",
@@ -38,6 +47,36 @@ impl AccentSource {
             "app" => Self::App,
             _ => Self::DEFAULT,
         }
+    }
+}
+
+pub(in crate::ui) fn current() -> AccentSource {
+    CURRENT_SOURCE.with(Cell::get)
+}
+
+pub(super) fn set_current(source: AccentSource) {
+    CURRENT_SOURCE.with(|current| current.set(source));
+}
+
+/// Foreground for an app-authored accent surface. System accents leave this
+/// role to libadwaita's matching `accent_fg_color`.
+pub(in crate::ui) const fn accent_fg(source: AccentSource) -> Option<&'static str> {
+    match source {
+        AccentSource::App => Some(APP_ACCENT_FG),
+        AccentSource::System => None,
+    }
+}
+
+/// CSS definitions owned by the selected source. The System choice returns no
+/// definitions so libadwaita's named accent colors remain authoritative.
+pub(super) fn css_overrides(source: AccentSource) -> String {
+    match accent_fg(source) {
+        Some(foreground) => format!(
+            "@define-color accent_bg_color {APP_ACCENT};\n\
+             @define-color accent_fg_color {foreground};\n\
+             @define-color accent_color {APP_ACCENT};\n"
+        ),
+        None => String::new(),
     }
 }
 
@@ -57,5 +96,32 @@ mod tests {
         assert_eq!(AccentSource::DEFAULT, AccentSource::App);
         assert_eq!(APP_ACCENT, "#4FDBD4");
         assert_eq!(ACCENT_SOURCE_SETTING_KEY, "ui.accent-source");
+        assert_eq!(accent_fg(AccentSource::App), Some("#04140f"));
+        assert_eq!(accent_fg(AccentSource::System), None);
+    }
+
+    #[test]
+    fn app_accent_foreground_meets_wcag_aa_for_text() {
+        fn luminance(hex: &str) -> f64 {
+            let hex = hex.strip_prefix('#').expect("color uses #RRGGBB");
+            let linear = |offset| {
+                let channel = f64::from(
+                    u8::from_str_radix(&hex[offset..offset + 2], 16)
+                        .expect("color uses hexadecimal channels"),
+                ) / 255.0;
+                if channel <= 0.04045 {
+                    channel / 12.92
+                } else {
+                    ((channel + 0.055) / 1.055).powf(2.4)
+                }
+            };
+            0.2126 * linear(0) + 0.7152 * linear(2) + 0.0722 * linear(4)
+        }
+
+        let foreground = luminance(APP_ACCENT_FG);
+        let background = luminance(APP_ACCENT);
+        let ratio = (background + 0.05) / (foreground + 0.05);
+        assert!(ratio >= 4.5, "app accent contrast is only {ratio:.2}:1");
+        assert!((ratio - 11.164).abs() < 0.001);
     }
 }

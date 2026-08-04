@@ -3061,10 +3061,9 @@ STYLE-1).
   artwork turning behind it — one turn a minute. The seam sits
   one pixel outside the artwork, so the cover's footprint grows by exactly
   one pixel on each side; nothing crosses the picture itself. The seam
-  takes its hue from the cover but not its chroma: the player accent is
-  ink and stays muted for the waveform and the play button, while a
-  translucent one-pixel seam at that chroma measured as invisible, so the
-  seam reads the same hue lifted into a wider band. **The turning disc is
+  uses the effective app or system accent (`@accent_color`), exactly like
+  the other accent-bearing UI; it never extracts a separate color from the
+  cover. **The turning disc is
   the artwork itself, not colours extracted from it.** A palette sweep was
   built first and measured against a real library: half the covers are
   greyscale or near-black and yield no usable colour at all, and most of

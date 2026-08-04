@@ -217,8 +217,10 @@ pub(super) fn install() {
         );
 
         let is_dark = adw::StyleManager::default().is_dark();
+        let theme = CURRENT_THEME.with(Cell::get);
+        let source = accent::current();
         let theme_provider = gtk4::CssProvider::new();
-        theme_provider.load_from_string(&theme::theme_css(theme::Theme::DEFAULT, is_dark));
+        theme_provider.load_from_string(&theme::theme_css(theme, is_dark, source));
         gtk4::style_context_add_provider_for_display(
             &display,
             &theme_provider,
@@ -229,8 +231,14 @@ pub(super) fn install() {
         cover_accent::install(&display);
         reduced_motion::install(&display);
 
-        adw::StyleManager::default().connect_dark_notify(|_| {
+        let manager = adw::StyleManager::default();
+        manager.connect_dark_notify(|_| {
             reload_theme_for_appearance();
+        });
+        manager.connect_accent_color_notify(|_| {
+            if accent::current() == accent::AccentSource::System {
+                reload_theme_for_appearance();
+            }
         });
     });
 }
@@ -242,9 +250,16 @@ pub(in crate::ui) fn set_theme(theme: theme::Theme) {
     let is_dark = adw::StyleManager::default().is_dark();
     THEME_PROVIDER.with(|slot| {
         if let Some(provider) = slot.borrow().as_ref() {
-            provider.load_from_string(&theme::theme_css(theme, is_dark));
+            provider.load_from_string(&theme::theme_css(theme, is_dark, accent::current()));
         }
     });
+}
+
+/// Switches between Reprise's brand accent and libadwaita's system accent,
+/// then reloads the palette provider so every named-color consumer updates.
+pub(in crate::ui) fn set_accent_source(source: accent::AccentSource) {
+    accent::set_current(source);
+    reload_theme_for_appearance();
 }
 
 /// Sets the libadwaita color scheme preference and reloads the current theme
@@ -262,10 +277,11 @@ pub(in crate::ui) fn set_color_scheme(scheme: &str) {
 /// appearance (dark or light). Called from the `dark_notify` signal handler.
 fn reload_theme_for_appearance() {
     let theme = CURRENT_THEME.with(std::cell::Cell::get);
+    let source = accent::current();
     let is_dark = adw::StyleManager::default().is_dark();
     THEME_PROVIDER.with(|slot| {
         if let Some(provider) = slot.borrow().as_ref() {
-            provider.load_from_string(&theme::theme_css(theme, is_dark));
+            provider.load_from_string(&theme::theme_css(theme, is_dark, source));
         }
     });
 }
@@ -286,10 +302,11 @@ mod tests {
         for theme in super::theme::Theme::all() {
             for (is_dark, palette) in [(true, theme.palette()), (false, theme.light_palette())] {
                 assert!(
-                    super::theme::theme_css(theme, is_dark).contains(&format!(
-                        "@define-color sidebar_bg_color {};",
-                        palette.sidebar_bg
-                    )),
+                    super::theme::theme_css(theme, is_dark, super::accent::AccentSource::App)
+                        .contains(&format!(
+                            "@define-color sidebar_bg_color {};",
+                            palette.sidebar_bg
+                        )),
                     "{theme:?} did not project its sidebar surface into both consumers"
                 );
             }
