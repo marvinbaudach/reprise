@@ -222,6 +222,7 @@ impl PlayerController {
             neighbours,
             automatic_advance,
             subscription_id,
+            kind,
             published_at,
             art_url,
             phase,
