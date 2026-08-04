@@ -2694,7 +2694,7 @@ property is set and yet nothing happens.
   relative to rank 1. Clicking the card or a rank row opens the library
   filtered to the artist (regular history push). If a group combines
   several spellings, the unification hint from STATS-9 is retained.
-- **STATS-14** [active] [gtk] — The songs card shows the six leading
+- **STATS-14** [replaced by STATS-22] [gtk] — The songs card shows the six leading
   tracks: cover, title, and artist in two lines, a horizontal bar relative
   to rank 1 in an accent gradient, the play count on the right. Next to
   the kicker, the toggle "by plays / by time" sorts both these six rows
@@ -2801,6 +2801,35 @@ property is set and yet nothing happens.
   origin is My Stats itself: the queue's context tail carries that name and
   jumps back to this page, rather than borrowing the name of one artist out of
   a ranking that spans many.
+- **STATS-22** [active] [gtk] — Replaces STATS-14, which still described the
+  six-row card from before STATS-19 and let the expander open a second,
+  full-width section underneath it. **The ranking is one card.** The songs card
+  carries the top ten in two columns (STATS-19): cover, title and artist on two
+  lines, a horizontal bar relative to rank 1 in an accent gradient, and the
+  metric on the right, which follows the "by plays / by time" toggle beside the
+  kicker — that toggle sorts the visible rows and the continuation alike. A row
+  plays its track inside the visible ranking (STATS-21), its two labels lead
+  into the library, and its context menu offers "Play next", "Add to queue" and
+  "Go to album". **The expander grows this card and never opens a second one:**
+  "Show more top tracks" reveals ranks 11 and up inside the same card, directly
+  below the button that opened them, and the page keeps exactly the sections it
+  had — bands, songs, genres. Collapsing returns the card to its ten rows. The
+  continuation continues the ranking rather than restating it and is offered
+  only when there is something past the ten (STATS-19); its durations use the
+  compact format from STATS-11, its titles and artists take link color and
+  underline on hover, and the focus ring stays visible. **Its rows answer like
+  the ten above them:** rank 11 is a focusable row that carries the pointer
+  cursor and the shared hover wash (BTN-1/BTN-4), plays its track on click and
+  on Enter or Space, and offers the same "Play next", "Add to queue" and "Go to
+  album" on right-click and Shift+F10. A row that sits in the ranking and stays
+  inert reads as broken, and in one card it reads that way twice over.
+  **The ranking a play hands over is what is on screen:** the visible ten while
+  the card is collapsed, those ten plus the revealed ranks while it is open —
+  which refines STATS-21's "visible top ten" to follow the card rather than the
+  render, so the queue never starts from rows nobody was shown. The clause in
+  STATS-10 that let the expanded list stand "as its own full-width section" is
+  void with this rule; everything else STATS-10 says about the page — its order,
+  its curation, its narrow-window stacking — stands.
 ## W. Buttons & interaction states
 
 <!-- Section letter: V (My Stats) is the last section assigned on main;

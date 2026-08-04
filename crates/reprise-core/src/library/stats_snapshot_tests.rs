@@ -318,7 +318,7 @@ fn stats_15_genre_top_artist_uses_the_page_wide_artist_resolver() {
 }
 
 #[test]
-fn stats_14_top_tracks_sort_toggle_orders_by_time() {
+fn stats_22_top_tracks_sort_toggle_orders_by_time() {
     let conn = migrated_conn();
     insert_track(&conn, 1, "Frequent", "Artist", "", "Rock", 10_000, 0, None);
     insert_track(&conn, 2, "Long", "Artist", "", "Rock", 1_000_000, 0, None);

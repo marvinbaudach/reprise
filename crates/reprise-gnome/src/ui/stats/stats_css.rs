@@ -212,7 +212,14 @@ pub(in crate::ui) fn css() -> String {
          .stats-genre-legend-unify {{ padding: 0 2px; min-height: 0; }}\n\
          .stats-genre-cover:focus-visible {{ outline: 2px solid @accent_color; }}\n\
          .stats-highlight-value {{ font-size: 18px; font-weight: 700; }}\n\
-         .stats-top-track-row {{ padding: 5px; }}",
+         /* STATS-22: the continuation is part of the ranking and activatable \
+            like it, so it answers with the same wash and the same ring. */\n\
+         .stats-top-track-row {{ \
+           padding: 5px; \
+           transition: background-color {transition}; }}\n\
+         .stats-top-track-row:hover {{ \
+           background-color: alpha(currentColor, {hover_alpha}); }}\n\
+         .stats-top-track-row:focus-visible {{ outline: 2px solid @accent_color; }}",
         radius = tokens::RADIUS_SURFACE,
         border_alpha = tokens::SURFACE_BORDER_ALPHA,
         hover_alpha = tokens::BTN_HOVER_ALPHA,
@@ -286,6 +293,30 @@ mod tests {
         );
         // The wash must not swallow the click it decorates.
         assert!(css.contains(".stats-band-hover { background-color: transparent;"));
+    }
+
+    /// STATS-22: the continuation is activatable, so it answers under the
+    /// pointer and under focus with the same wash and ring the ten rows above
+    /// it use — an activatable row that stays inert on hover reads as dead.
+    #[test]
+    fn stats_22_the_continuation_row_hovers_and_focuses_like_the_ten_above_it() {
+        use crate::ui::style::tokens;
+
+        let css = super::css();
+        let wash = format!(
+            "background-color: alpha(currentColor, {});",
+            tokens::BTN_HOVER_ALPHA
+        );
+        assert!(
+            css.contains(&format!(".stats-top-track-row:hover {{ {wash} }}")),
+            "the continuation row must hover with the shared wash"
+        );
+        assert!(
+            css.contains(
+                ".stats-top-track-row:focus-visible { outline: 2px solid @accent_color; }"
+            ),
+            "the continuation row must keep a visible focus ring"
+        );
     }
 
     #[test]

@@ -15,32 +15,34 @@ use reprise_core::playback::PlaybackState;
 
 use super::stats_metadata_links::{self, MetadataCallback, StatsMetadataTarget};
 use super::stats_songs_playback::{SongRowPlayback, TrackMark};
-use super::stats_view_widgets::{card, clear, label};
+use super::stats_songs_row_actions::RowActions;
+use super::stats_view_widgets::{clear, label};
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::strings;
 
 /// The card shows a full top ten split over two columns, so the ranking a
 /// user actually reads no longer needs the expander.
-const SONG_ROW_LIMIT: usize = 10;
+pub(super) const SONG_ROW_LIMIT: usize = 10;
 const SUMMARY_COLUMN_ROWS: usize = 5;
 /// How many further tracks the expander adds *below* the visible top ten. It
 /// continues the ranking rather than restating it: someone who opens it has
 /// already read rows 1-10 and wants what comes next.
 const FULL_TRACK_EXTRA: usize = 15;
 
-type IdCallback = Rc<RefCell<Option<Rc<dyn Fn(i64)>>>>;
-/// Starting playback hands over the *ranking* the row sits in, not just the
-/// row: `(ids, index)` is the same shape the track table activates with, so
-/// the queue, Previous/Next and Shuffle get a context to work on instead of a
-/// single orphaned track (STATS-21).
-type PlayCallback = Rc<RefCell<Option<Rc<dyn Fn(&[i64], usize)>>>>;
-/// The visible ranking behind one render, shared by every row it built.
-type PlayContext = Rc<Vec<i64>>;
 /// The loaded track as both song lists see it. Shared by `Rc` so a mark
 /// arriving between renders reaches the rows that already exist and the rows
 /// built afterwards alike — a re-render reads this, it never re-derives it.
 type SharedMark = Rc<Cell<Option<TrackMark>>>;
 type RowPlaybacks = Rc<RefCell<Vec<Rc<SongRowPlayback>>>>;
+
+/// What one render of the continuation fills: its rows' playback markers and
+/// the controllers those rows must outlive.
+#[derive(Clone, Default)]
+struct ContinuationParts {
+    playbacks: RowPlaybacks,
+    row_clicks: Rc<RefCell<Vec<gtk4::GestureClick>>>,
+    context_actions: Rc<RefCell<Vec<gio::SimpleActionGroup>>>,
+}
 
 #[derive(Clone, Default)]
 struct CoverGenerations {
@@ -67,20 +69,17 @@ struct SummaryRenderer {
     row_clicks: Rc<RefCell<Vec<gtk4::GestureClick>>>,
     cover_loader: Rc<CoverLoader>,
     generations: CoverGenerations,
-    metadata: MetadataCallback,
-    on_play_track: PlayCallback,
-    on_play_next: IdCallback,
-    on_add_to_queue: IdCallback,
     context_actions: Rc<RefCell<Vec<gio::SimpleActionGroup>>>,
     mark: SharedMark,
     playbacks: RowPlaybacks,
+    actions: RowActions,
 }
 
 #[derive(Clone)]
 pub(in crate::ui) struct StatsSongsCard {
     root: gtk4::Box,
     summary: SummaryRenderer,
-    full_playbacks: RowPlaybacks,
+    full: ContinuationParts,
     #[cfg_attr(not(test), allow(dead_code))]
     revealer: gtk4::Revealer,
     #[cfg_attr(not(test), allow(dead_code))]
@@ -139,31 +138,33 @@ impl StatsSongsCard {
         reveal_button.set_halign(gtk4::Align::Start);
         root.append(&reveal_button);
 
-        let full_rows = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
-        let expanded_content = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
-        expanded_content.append(&full_rows);
-        let expanded = card(&expanded_content);
-        expanded.set_hexpand(true);
+        // STATS-22: the continuation belongs to the ranking it continues, so
+        // it grows this card instead of opening a second one below it. The
+        // rows keep the column rhythm above them, which is what lets ranks 10
+        // and 11 read as neighbours rather than as two lists.
+        let full_rows = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
+        full_rows.set_hexpand(true);
         let revealer = gtk4::Revealer::new();
         revealer.set_reveal_child(false);
-        revealer.set_child(Some(&expanded));
+        revealer.set_child(Some(&full_rows));
+        // A collapsed revealer is still a visible box child, and the card puts
+        // spacing between visible children — so it leaves the card entirely
+        // until it has something to show.
         revealer.set_visible(false);
         revealer.connect_child_revealed_notify(|revealer| {
             if !revealer.is_child_revealed() && !revealer.reveals_child() {
                 revealer.set_visible(false);
             }
         });
+        root.append(&revealer);
 
         let snapshot = Rc::new(RefCell::new(None::<StatsSnapshot>));
         let sort_by = Rc::new(Cell::new(SortBy::Plays));
         let cover_generations = CoverGenerations::default();
-        let on_play_track: PlayCallback = Rc::new(RefCell::new(None));
-        let on_play_next: IdCallback = Rc::new(RefCell::new(None));
-        let on_add_to_queue: IdCallback = Rc::new(RefCell::new(None));
         let context_actions = Rc::new(RefCell::new(Vec::new()));
         let summary_bars = Rc::new(RefCell::new(Vec::new()));
         let row_clicks = Rc::new(RefCell::new(Vec::new()));
-        let full_playbacks: RowPlaybacks = Rc::new(RefCell::new(Vec::new()));
+        let full = ContinuationParts::default();
         let summary = SummaryRenderer {
             rows,
             columns,
@@ -171,20 +172,23 @@ impl StatsSongsCard {
             row_clicks,
             cover_loader,
             generations: cover_generations,
-            metadata,
-            on_play_track,
-            on_play_next,
-            on_add_to_queue,
             context_actions,
             mark: Rc::new(Cell::new(None)),
             playbacks: Rc::new(RefCell::new(Vec::new())),
+            actions: RowActions::new(metadata),
         };
 
+        let expanded = summary.actions.play_context.expanded.clone();
         reveal_button.connect_clicked(glib::clone!(
             #[weak]
             revealer,
+            #[strong]
+            expanded,
             move |button| {
                 let reveal = !revealer.reveals_child();
+                // The revealed ranks join the ranking a play hands over the
+                // moment they are on screen, and leave it again when they go.
+                expanded.set(reveal);
                 if reveal {
                     // A hidden revealer cannot animate. Join the section flow
                     // before starting the transition; collapse removes it only
@@ -207,7 +211,7 @@ impl StatsSongsCard {
             let snapshot = snapshot.clone();
             let sort_by = sort_by.clone();
             let summary = summary.clone();
-            let full_playbacks = full_playbacks.clone();
+            let full = full.clone();
             move |toggle| {
                 let active_name = toggle.active_name();
                 let value = sort_for_toggle_name(active_name.as_deref());
@@ -215,7 +219,7 @@ impl StatsSongsCard {
                 let snapshot = snapshot.borrow().clone();
                 if let Some(snapshot) = snapshot {
                     summary.render(&snapshot, value);
-                    render_full_rows(&full_rows, &snapshot, value, &summary, &full_playbacks);
+                    render_full_rows(&full_rows, &snapshot, value, &summary, &full);
                 }
             }
         });
@@ -223,7 +227,7 @@ impl StatsSongsCard {
         Self {
             root,
             summary,
-            full_playbacks,
+            full,
             revealer,
             reveal_button,
             full_rows,
@@ -237,6 +241,9 @@ impl StatsSongsCard {
         &self.root
     }
 
+    /// The continuation lives inside the card (STATS-22); only the tests still
+    /// need a handle on it, to prove exactly that.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(in crate::ui) fn expanded_widget(&self) -> &gtk4::Revealer {
         &self.revealer
     }
@@ -249,6 +256,7 @@ impl StatsSongsCard {
         self.reveal_button.set_visible(has_more);
         if !has_more {
             self.revealer.set_reveal_child(false);
+            self.summary.actions.play_context.expanded.set(false);
             self.reveal_button.set_label("Show more top tracks");
         }
         *self.snapshot.borrow_mut() = Some(snapshot.clone());
@@ -258,7 +266,7 @@ impl StatsSongsCard {
             snapshot,
             self.sort_by.get(),
             &self.summary,
-            &self.full_playbacks,
+            &self.full,
         );
     }
 
@@ -272,7 +280,7 @@ impl StatsSongsCard {
         for playback in self.summary.playbacks.borrow().iter() {
             playback.set_mark(mark);
         }
-        for playback in self.full_playbacks.borrow().iter() {
+        for playback in self.full.playbacks.borrow().iter() {
             playback.set_mark(mark);
         }
     }
@@ -315,19 +323,21 @@ impl SummaryRenderer {
         let tracks = snapshot.top_tracks_sorted(sort_by);
         let leader = tracks.first().map_or(0, |track| metric(track, sort_by));
         let token = self.generations.next_summary();
-        // Built once per render and shared by every row: the play context is
-        // the ranking as it currently stands on screen — the same ten rows,
-        // in the sort the user picked. Re-sorting rebuilds it, so a play
-        // never seeds a queue in yesterday's order.
-        let context: PlayContext = Rc::new(
-            tracks
-                .iter()
-                .take(SONG_ROW_LIMIT)
-                .map(|track| track.track_id)
-                .collect(),
-        );
+        // The ranking the rows hand over when they play, rebuilt every render
+        // so a play never seeds a queue in yesterday's order. The continuation
+        // appends its own ranks right after (STATS-22).
+        {
+            let mut ranking = self.actions.play_context.ranking.borrow_mut();
+            ranking.clear();
+            ranking.extend(
+                tracks
+                    .iter()
+                    .take(SONG_ROW_LIMIT)
+                    .map(|track| track.track_id),
+            );
+        }
         for (index, track) in tracks.iter().take(SONG_ROW_LIMIT).enumerate() {
-            let row = self.song_row(track, index, leader, sort_by, token, &context);
+            let row = self.song_row(track, index, leader, sort_by, token);
             self.columns[index / SUMMARY_COLUMN_ROWS].append(&row);
         }
     }
@@ -339,19 +349,10 @@ impl SummaryRenderer {
         leader: i64,
         sort_by: SortBy,
         token: u64,
-        context: &PlayContext,
     ) -> gtk4::Box {
         let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
         row.add_css_class("stats-song-row");
         row.set_hexpand(true);
-        // a11y-semantics: role=button name=track-row state=focusable action=enter/shift-f10
-        row.set_focusable(true);
-        row.set_accessible_role(gtk4::AccessibleRole::Button);
-        // input-parity: ACC-8 keyboard=enter-space-row
-        row.set_cursor_from_name(Some("pointer"));
-        row.update_property(&[gtk4::accessible::Property::Label(&strings::text(
-            strings::STATS_PLAY_TRACK,
-        ))]);
 
         // `STATS-18`: the rank slot is the marker slot — the loaded row shows
         // the shared equaliser where every other row shows its number.
@@ -390,7 +391,7 @@ impl SummaryRenderer {
             &track.title,
             "stats-item-title",
             StatsMetadataTarget::Track(track.track_id),
-            &self.metadata,
+            &self.actions.metadata,
         );
         title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
         text.append(&title);
@@ -401,7 +402,7 @@ impl SummaryRenderer {
                 track_id: track.track_id,
                 artist: track.effective_artist.clone(),
             },
-            &self.metadata,
+            &self.actions.metadata,
         );
         artist.set_ellipsize(gtk4::pango::EllipsizeMode::End);
         text.append(&artist);
@@ -423,107 +424,28 @@ impl SummaryRenderer {
         value.set_width_request(72);
         row.append(&value);
 
-        // input-parity: ACC-8 keyboard=enter-row
-        let activate = gtk4::GestureClick::new();
-        activate.set_button(1);
-        activate.connect_released({
-            let callback = self.on_play_track.clone();
-            let context = context.clone();
-            move |_, _, _, _| invoke_play(&callback, &context, index)
-        });
-        row.add_controller(activate.clone());
-        self.row_clicks.borrow_mut().push(activate);
-        install_row_keys(&row, &self.on_play_track, context, index);
-
         let playback = SongRowPlayback::new(&row, &rank_slot, &rank, &title, &bar, track.track_id);
         playback.set_mark(self.mark.get());
         self.playbacks.borrow_mut().push(playback);
 
-        self.install_context_menu(&row, track);
-        row
-    }
-
-    fn install_context_menu(&self, row: &gtk4::Box, track: &TopTrack) {
-        let menu = gio::Menu::new();
-        menu.append(Some("Play next"), Some("song.play-next"));
-        menu.append(Some("Add to queue"), Some("song.add-to-queue"));
-        menu.append(Some("Go to album"), Some("song.open-album"));
-        let actions = gio::SimpleActionGroup::new();
-        add_id_action(&actions, "play-next", track.track_id, &self.on_play_next);
-        add_id_action(
-            &actions,
-            "add-to-queue",
-            track.track_id,
-            &self.on_add_to_queue,
-        );
-        let open_album = gio::SimpleAction::new("open-album", None);
-        open_album.connect_activate({
-            let callback = self.metadata.clone();
-            let target = StatsMetadataTarget::Album {
-                track_id: track.track_id,
-                album: track.album.clone(),
-                album_artist: track.effective_artist.clone(),
-            };
-            move |_, _| invoke_metadata(&callback, target.clone())
-        });
-        actions.add_action(&open_album);
-        row.insert_action_group("song", Some(&actions));
-
-        let popover = gtk4::PopoverMenu::from_model(Some(&menu));
-        popover.set_parent(row);
-        crate::ui::popover_lifecycle::unparent_after_actions(popover.upcast_ref());
-        // input-parity: ACC-8 keyboard=menu-shift-f10
-        let click = gtk4::GestureClick::new();
-        click.set_button(3);
-        click.connect_pressed({
-            let popover = popover.downgrade();
-            move |_, _, x, y| {
-                let Some(popover) = popover.upgrade() else {
-                    return;
-                };
-                popup(&popover, x, y);
-            }
-        });
-        row.add_controller(click);
-        let keys = gtk4::EventControllerKey::new();
-        keys.connect_key_pressed({
-            let popover = popover.downgrade();
-            move |controller, key, _, modifiers| {
-                if !crate::ui::track_list::track_list_context_keys::is_context_menu_shortcut(
-                    key, modifiers,
-                ) {
-                    return glib::Propagation::Proceed;
-                }
-                let Some(popover) = popover.upgrade() else {
-                    return glib::Propagation::Proceed;
-                };
-                let Some(row) = controller.widget() else {
-                    return glib::Propagation::Proceed;
-                };
-                popup(
-                    &popover,
-                    f64::from(row.width()) / 2.0,
-                    f64::from(row.height()) / 2.0,
-                );
-                glib::Propagation::Stop
-            }
-        });
-        row.add_controller(keys);
+        let (activate, actions) = self.actions.attach(&row, track, index);
+        self.row_clicks.borrow_mut().push(activate);
         self.context_actions.borrow_mut().push(actions);
+        row
     }
 }
 
 impl StatsSongsCard {
     pub(in crate::ui) fn set_on_play_track(&self, callback: impl Fn(&[i64], usize) + 'static) {
-        *self.summary.on_play_track.borrow_mut() = Some(Rc::new(callback));
+        *self.summary.actions.on_play_track.borrow_mut() = Some(Rc::new(callback));
     }
 
     pub(in crate::ui) fn set_on_play_next(&self, callback: impl Fn(i64) + 'static) {
-        *self.summary.on_play_next.borrow_mut() = Some(Rc::new(callback));
+        *self.summary.actions.on_play_next.borrow_mut() = Some(Rc::new(callback));
     }
 
     pub(in crate::ui) fn set_on_add_to_queue(&self, callback: impl Fn(i64) + 'static) {
-        *self.summary.on_add_to_queue.borrow_mut() = Some(Rc::new(callback));
+        *self.summary.actions.on_add_to_queue.borrow_mut() = Some(Rc::new(callback));
     }
 
     pub(super) fn summary_bars(&self) -> Vec<gtk4::LevelBar> {
@@ -531,62 +453,35 @@ impl StatsSongsCard {
     }
 }
 
-/// Enter and Space start the row's track, matching the pointer. Return
-/// `Proceed` for everything else so the context-menu shortcut still reaches
-/// its own controller.
-fn install_row_keys(row: &gtk4::Box, callback: &PlayCallback, context: &PlayContext, index: usize) {
-    let keys = gtk4::EventControllerKey::new();
-    let callback = callback.clone();
-    let context = context.clone();
-    keys.connect_key_pressed(move |_, key, _, _| {
-        if matches!(
-            key,
-            gtk4::gdk::Key::Return | gtk4::gdk::Key::KP_Enter | gtk4::gdk::Key::space
-        ) {
-            invoke_play(&callback, &context, index);
-            return glib::Propagation::Stop;
-        }
-        glib::Propagation::Proceed
-    });
-    row.add_controller(keys);
-}
-
-fn add_id_action(
-    actions: &gio::SimpleActionGroup,
-    name: &str,
-    track_id: i64,
-    callback: &IdCallback,
-) {
-    let action = gio::SimpleAction::new(name, None);
-    let callback = callback.clone();
-    action.connect_activate(move |_, _| invoke_id(&callback, track_id));
-    actions.add_action(&action);
-}
-
-fn popup(popover: &gtk4::PopoverMenu, x: f64, y: f64) {
-    popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(
-        x.round() as i32,
-        y.round() as i32,
-        1,
-        1,
-    )));
-    popover.popup();
-}
-
 fn render_full_rows(
     container: &gtk4::Box,
     snapshot: &StatsSnapshot,
     sort_by: SortBy,
     summary: &SummaryRenderer,
-    playbacks: &RowPlaybacks,
+    parts: &ContinuationParts,
 ) {
     clear(container);
-    playbacks.borrow_mut().clear();
+    parts.playbacks.borrow_mut().clear();
+    parts.row_clicks.borrow_mut().clear();
+    parts.context_actions.borrow_mut().clear();
     let generations = &summary.generations;
-    let metadata = &summary.metadata;
+    let metadata = &summary.actions.metadata;
     let token = generations.next_full();
     let tracks = snapshot.top_tracks_sorted(sort_by);
     let leader = tracks.first().map_or(0, |track| metric(track, sort_by));
+    // The continuation appends its ranks to the ranking the visible ten just
+    // wrote — one list, so rank 11 can play at the index it actually holds.
+    {
+        let mut ranking = summary.actions.play_context.ranking.borrow_mut();
+        ranking.truncate(SONG_ROW_LIMIT);
+        ranking.extend(
+            tracks
+                .iter()
+                .skip(SONG_ROW_LIMIT)
+                .take(FULL_TRACK_EXTRA)
+                .map(|track| track.track_id),
+        );
+    }
     for (offset, track) in tracks
         .iter()
         .skip(SONG_ROW_LIMIT)
@@ -667,7 +562,13 @@ fn render_full_rows(
         ));
         let playback = SongRowPlayback::new(&row, &rank_slot, &rank, &title, &bar, track.track_id);
         playback.set_mark(summary.mark.get());
-        playbacks.borrow_mut().push(playback);
+        parts.playbacks.borrow_mut().push(playback);
+        // STATS-22: the continuation row answers like the ten above it —
+        // click and Enter play it inside the ranking, Shift+F10 and the right
+        // button open the same three actions.
+        let (activate, actions) = summary.actions.attach(&row, track, index);
+        parts.row_clicks.borrow_mut().push(activate);
+        parts.context_actions.borrow_mut().push(actions);
         container.append(&row);
     }
 }
@@ -676,33 +577,6 @@ fn next_generation(generation: &Cell<u64>) -> u64 {
     let token = generation.get().wrapping_add(1);
     generation.set(token);
     token
-}
-
-/// Starts the row at `index` of `context`. An index the context cannot answer
-/// for would seed the queue at the wrong track, so it plays nothing instead.
-fn invoke_play(callback: &PlayCallback, context: &PlayContext, index: usize) {
-    let callback = callback.borrow().clone();
-    if index >= context.len() {
-        tracing::warn!(index, len = context.len(), "stale stats row; not playing");
-        return;
-    }
-    if let Some(callback) = callback {
-        callback(context, index);
-    }
-}
-
-fn invoke_id(callback: &IdCallback, id: i64) {
-    let callback = callback.borrow().clone();
-    if let Some(callback) = callback {
-        callback(id);
-    }
-}
-
-fn invoke_metadata(callback: &MetadataCallback, target: StatsMetadataTarget) {
-    let callback = callback.borrow().clone();
-    if let Some(callback) = callback {
-        callback(target);
-    }
 }
 
 fn metric(track: &TopTrack, sort_by: SortBy) -> i64 {
