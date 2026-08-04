@@ -591,7 +591,7 @@ fn stats_11a_zero_baseline_shows_new_badge_not_a_delta() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn stats_10_section_gaps_stay_equal_when_top_tracks_expand_and_collapse() {
+fn stats_22_expanding_the_ranking_grows_the_songs_card_instead_of_adding_one() {
     gtk4::init().unwrap();
     crate::ui::style::install_css_string_for_test(&super::super::stats_css::css());
     // Twelve tracks: ten fill the card, so the expander has two left to add.
@@ -602,9 +602,15 @@ fn stats_10_section_gaps_stay_equal_when_top_tracks_expand_and_collapse() {
         .unwrap()
         .downcast::<gtk4::Box>()
         .unwrap();
+    let songs_section = view.render.songs_section.clone();
+    let expanded = view.render.songs_card.expanded_widget().clone();
 
-    assert!(!view.render.top_tracks_section.is_visible());
+    // The continuation is part of the songs card, so it can only ever grow
+    // that card — the page keeps its three sections either way.
+    assert!(expanded.is_ancestor(&songs_section));
+    assert!(!expanded.is_visible());
     assert_eq!(occupied_section_gaps(&sections), vec![20, 20]);
+    let collapsed_height = songs_section.compute_bounds(&sections).unwrap().height();
 
     let reveal = descendant_button(
         view.render.songs_card.widget().upcast_ref(),
@@ -613,15 +619,25 @@ fn stats_10_section_gaps_stay_equal_when_top_tracks_expand_and_collapse() {
     reveal.emit_clicked();
     wait_for(400);
 
-    assert!(view.render.top_tracks_section.is_visible());
-    assert!(view.render.top_tracks_section.is_child_revealed());
-    assert_eq!(occupied_section_gaps(&sections), vec![20, 20, 20]);
+    assert!(expanded.is_visible());
+    assert!(expanded.is_child_revealed());
+    assert_eq!(occupied_section_gaps(&sections), vec![20, 20]);
+    let expanded_height = songs_section.compute_bounds(&sections).unwrap().height();
+    assert!(
+        expanded_height > collapsed_height,
+        "the two extra ranks must grow the songs card itself \
+         ({collapsed_height} -> {expanded_height})"
+    );
 
     reveal.emit_clicked();
     wait_for(400);
 
-    assert!(!view.render.top_tracks_section.is_visible());
+    assert!(!expanded.is_visible());
     assert_eq!(occupied_section_gaps(&sections), vec![20, 20]);
+    assert_eq!(
+        songs_section.compute_bounds(&sections).unwrap().height(),
+        collapsed_height
+    );
     window.close();
 }
 

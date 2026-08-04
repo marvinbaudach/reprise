@@ -151,6 +151,137 @@ fn stats_21_the_play_context_follows_the_active_sort() {
     assert_eq!(*index, 0);
 }
 
+/// STATS-22: the continuation is part of the ranking, not a caption under it,
+/// so rank 11 starts playback exactly the way rank 10 does.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_22_a_continuation_row_plays_inside_the_ranking_it_continues() {
+    gtk4::init().unwrap();
+    let metadata: MetadataCallback = Rc::new(RefCell::new(None));
+    let (card, snapshot) = card_and_snapshot_with(metadata, 13);
+    let played = recorder(&card);
+    card.set_data(&snapshot);
+    card.reveal_button.emit_clicked();
+
+    card.full.row_clicks.borrow()[0].emit_by_name::<()>("released", &[&1_i32, &0.0_f64, &0.0_f64]);
+
+    let calls = played.borrow();
+    let (ids, index) = calls
+        .first()
+        .expect("the continuation row started playback");
+    assert_eq!(
+        *ids,
+        (1..=13).collect::<Vec<i64>>(),
+        "the ranking on screen reaches past the ten once it is open"
+    );
+    assert_eq!(*index, 10, "rank 11 is the eleventh entry of that ranking");
+    assert_eq!(ids[*index], 11, "which is still exactly that row's track");
+}
+
+/// The ranking handed over is what the user can *see*: ten while the card is
+/// collapsed, ten plus the continuation once it is open. Seeding the queue
+/// from rows that are still hidden would play tracks nobody was shown.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_22_the_handed_over_ranking_grows_with_the_continuation() {
+    gtk4::init().unwrap();
+    let metadata: MetadataCallback = Rc::new(RefCell::new(None));
+    let (card, snapshot) = card_and_snapshot_with(metadata, 13);
+    let played = recorder(&card);
+    card.set_data(&snapshot);
+
+    let play_first = || {
+        card.summary.row_clicks.borrow()[0]
+            .emit_by_name::<()>("released", &[&1_i32, &0.0_f64, &0.0_f64]);
+        played
+            .borrow()
+            .last()
+            .expect("a row started playback")
+            .0
+            .clone()
+    };
+
+    assert_eq!(
+        play_first(),
+        (1..=10).collect::<Vec<i64>>(),
+        "collapsed, the visible ranking is the top ten"
+    );
+
+    card.reveal_button.emit_clicked();
+    assert_eq!(
+        play_first(),
+        (1..=13).collect::<Vec<i64>>(),
+        "open, the continuation belongs to the ranking"
+    );
+
+    card.reveal_button.emit_clicked();
+    assert_eq!(
+        play_first(),
+        (1..=10).collect::<Vec<i64>>(),
+        "collapsing puts the hidden ranks back out of reach"
+    );
+}
+
+/// The continuation carries the same three actions as the rows above it, on
+/// its own track.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_22_the_continuation_offers_the_same_context_actions() {
+    gtk4::init().unwrap();
+    let opened = Rc::new(RefCell::new(None));
+    let metadata: MetadataCallback = Rc::new(RefCell::new(Some({
+        let opened = opened.clone();
+        Rc::new(move |value| *opened.borrow_mut() = Some(value))
+    })));
+    let (card, snapshot) = card_and_snapshot_with(metadata, 13);
+    let next = Rc::new(RefCell::new(Vec::new()));
+    let queued = Rc::new(RefCell::new(Vec::new()));
+    card.set_on_play_next({
+        let next = next.clone();
+        move |id| next.borrow_mut().push(id)
+    });
+    card.set_on_add_to_queue({
+        let queued = queued.clone();
+        move |id| queued.borrow_mut().push(id)
+    });
+    card.set_data(&snapshot);
+
+    let actions = &card.full.context_actions.borrow()[0];
+    actions.lookup_action("play-next").unwrap().activate(None);
+    actions
+        .lookup_action("add-to-queue")
+        .unwrap()
+        .activate(None);
+    actions.lookup_action("open-album").unwrap().activate(None);
+
+    assert_eq!(
+        *next.borrow(),
+        vec![11],
+        "rank 11's own track, not rank 1's"
+    );
+    assert_eq!(*queued.borrow(), vec![11]);
+    assert!(matches!(
+        opened.borrow().as_ref(),
+        Some(StatsMetadataTarget::Album { track_id: 11, .. })
+    ));
+}
+
+/// Pointer and keyboard reach the continuation alike: the row is a focusable
+/// button with the play label, so Enter and Shift+F10 land where the click and
+/// the right-click do.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn stats_22_continuation_rows_are_focusable_play_buttons() {
+    gtk4::init().unwrap();
+    let metadata: MetadataCallback = Rc::new(RefCell::new(None));
+    let (card, snapshot) = card_and_snapshot_with(metadata, 13);
+    card.set_data(&snapshot);
+
+    let row = card.full_rows.first_child().expect("a continuation row");
+    assert!(row.is_focusable(), "rank 11 must be reachable by keyboard");
+    assert_eq!(row.accessible_role(), gtk4::AccessibleRole::Button);
+}
+
 /// One recorded activation: the context handed over and the row inside it.
 type PlayCalls = Rc<RefCell<Vec<(Vec<i64>, usize)>>>;
 
@@ -176,12 +307,11 @@ fn stats_19_toggle_sorts_both_columns_and_show_all_reveals_the_full_list() {
 
     assert!(!card.revealer.reveals_child());
     assert!(
-        card.revealer.parent().is_none(),
-        "the expanded ranking must not live inside the songs card"
+        card.revealer.is_ancestor(card.widget()),
+        "the expanded ranking must live inside the songs card"
     );
     let stage = gtk4::Box::new(gtk4::Orientation::Vertical, 20);
     stage.append(card.widget());
-    stage.append(card.expanded_widget());
     let window = gtk4::Window::builder()
         .default_width(960)
         .child(&stage)
@@ -233,7 +363,7 @@ fn stats_19_toggle_sorts_both_columns_and_show_all_reveals_the_full_list() {
         "the expanded list picks up where the card stopped"
     );
     assert!(
-        card.summary.playbacks.borrow().len() == 10 && card.full_playbacks.borrow().len() == 3,
+        card.summary.playbacks.borrow().len() == 10 && card.full.playbacks.borrow().len() == 3,
         "STATS-18: both lists register every row for the shared marker"
     );
     run_main_loop_for_layout();
@@ -277,7 +407,7 @@ fn stats_19_the_expander_is_only_offered_when_it_has_something_to_add() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn stats_14_context_actions_target_the_same_track() {
+fn stats_22_context_actions_target_the_same_track() {
     gtk4::init().unwrap();
     let opened = Rc::new(RefCell::new(None));
     let metadata: MetadataCallback = Rc::new(RefCell::new(Some({
@@ -319,12 +449,15 @@ fn discarded_song_rows_release_their_context_widgets() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let metadata: MetadataCallback = Rc::new(RefCell::new(None));
-    let (card, snapshot) = card_and_snapshot(metadata);
+    // Thirteen tracks, so the continuation exists too: it carries the same
+    // popover and gestures since STATS-22, and therefore the same leak risk.
+    let (card, snapshot) = card_and_snapshot_with(metadata, 13);
     card.set_data(&snapshot);
-    let old_row = card.summary.columns[0].first_child().unwrap();
-    let old_row = old_row.downcast::<gtk4::Box>().unwrap();
-    let weak_row = old_row.downgrade();
-    drop(old_row);
+    let weak_rows = [
+        card.summary.columns[0].first_child().unwrap(),
+        card.full_rows.first_child().unwrap(),
+    ]
+    .map(|row| row.downcast::<gtk4::Box>().unwrap().downgrade());
 
     card.set_data(&snapshot);
     let context = glib::MainContext::default();
@@ -332,10 +465,12 @@ fn discarded_song_rows_release_their_context_widgets() {
         context.iteration(false);
     }
 
-    assert!(
-        weak_row.upgrade().is_none(),
-        "a discarded row must not be retained by its input controllers"
-    );
+    for weak_row in weak_rows {
+        assert!(
+            weak_row.upgrade().is_none(),
+            "a discarded row must not be retained by its input controllers"
+        );
+    }
 }
 
 fn descendant_labels(root: &gtk4::Widget) -> Vec<String> {

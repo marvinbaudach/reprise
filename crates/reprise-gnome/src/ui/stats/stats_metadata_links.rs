@@ -52,7 +52,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn stats_14_metadata_links_are_compact_keyboard_links() {
+    fn stats_22_metadata_links_are_compact_keyboard_links() {
         gtk4::init().unwrap();
         let callback: MetadataCallback = Rc::new(RefCell::new(None));
         let link = link(
