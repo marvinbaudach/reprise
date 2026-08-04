@@ -94,10 +94,27 @@ impl RadioReveal {
     /// worth a reveal. It hangs off the connected station's identity, so a
     /// reconnect, an inline error or any other snapshot for the same station
     /// leaves the viewport alone.
-    pub(super) fn on_external_change(self: &Rc<Self>, previously_connected: Option<i64>) {
+    ///
+    /// `change` says where the snapshot came from. A row activated in this
+    /// very table was visible by definition, so it resolves to `MarkerOnly` —
+    /// double-clicking a station must not scroll the table under the pointer.
+    pub(super) fn on_external_change(
+        self: &Rc<Self>,
+        previously_connected: Option<i64>,
+        change: LoadedItemChange,
+    ) {
         if connected_station(&self.live.borrow()) != previously_connected {
-            self.reveal(LoadedItemChange::ChangedElsewhere);
+            self.reveal(change);
         }
+    }
+
+    /// Drops the recorded scroll activity, so the next reveal is not held off
+    /// by [`source_reveal::USER_SCROLL_GRACE`]. Tests scroll the table
+    /// themselves to set up a viewport, which would otherwise make every
+    /// reveal they then trigger a no-op for the next 1.5 seconds.
+    #[cfg(test)]
+    pub(super) fn forget_scroll_activity(&self) {
+        self.last_scroll_activity.set(None);
     }
 
     /// Returns whether the centering could be applied. `false` means the

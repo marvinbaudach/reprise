@@ -5,6 +5,7 @@ use reprise_core::connectivity::Connectivity;
 use reprise_core::radio::StationRow;
 
 use super::radio_context_menu;
+use super::radio_live_cells::RadioLiveCells;
 use super::radio_model::RadioObject;
 use super::radio_presentation::{
     format_bitrate, format_country, format_genre, now_playing, row_is_accented, RadioLiveState,
@@ -31,6 +32,7 @@ fn text_column(
     render: impl Fn(&StationRow, &RadioLiveState) -> String + 'static,
     live_state: &LiveState,
     connectivity: &ConnectivitySource,
+    cells: &Rc<RadioLiveCells>,
 ) {
     let factory = gtk4::SignalListItemFactory::new();
     let live_for_gesture = live_state.clone();
@@ -56,6 +58,8 @@ fn text_column(
         item.set_child(Some(&surface));
     });
     let live_state = live_state.clone();
+    let render = Rc::new(render);
+    let cells_for_bind = cells.clone();
     factory.connect_bind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
@@ -70,14 +74,27 @@ fn text_column(
             return;
         };
         let row = object.row();
-        let live = live_state();
-        label.set_text(&render(&row, &live));
-        apply_playing_style(label.upcast_ref(), row_is_accented(row.id, &live));
+        // The live half of this cell, re-runnable on its own: registering it
+        // is what lets a playback change reach an already-bound cell without
+        // a model signal (see `radio_live_cells`).
+        let apply = {
+            let live_state = live_state.clone();
+            let render = render.clone();
+            Rc::new(move || {
+                let live = live_state();
+                label.set_text(&render(&row, &live));
+                apply_playing_style(label.upcast_ref(), row_is_accented(row.id, &live));
+            }) as Rc<dyn Fn()>
+        };
+        apply();
+        cells_for_bind.register(item, apply);
     });
-    factory.connect_unbind(|_, object| {
+    let cells_for_unbind = cells.clone();
+    factory.connect_unbind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
         };
+        cells_for_unbind.unregister(item);
         let Some(surface) = item.child().and_downcast::<gtk4::Box>() else {
             return;
         };
@@ -100,6 +117,7 @@ fn state_column(
     view: &gtk4::ColumnView,
     live_state: &LiveState,
     connectivity: &ConnectivitySource,
+    cells: &Rc<RadioLiveCells>,
 ) {
     let factory = gtk4::SignalListItemFactory::new();
     let live_for_gesture = live_state.clone();
@@ -124,6 +142,7 @@ fn state_column(
         item.set_child(Some(&surface));
     });
     let live_state = live_state.clone();
+    let cells_for_bind = cells.clone();
     factory.connect_bind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
@@ -140,20 +159,28 @@ fn state_column(
         let Some(object) = item.item().and_downcast::<RadioObject>() else {
             return;
         };
-        let row = object.row();
-        let live = live_state();
-        let playing = row_is_accented(row.id, &live);
-        icon.set_icon_name(Some(if playing {
-            "audio-volume-high-symbolic"
-        } else {
-            "network-wireless-symbolic"
-        }));
-        apply_playing_style(cell.upcast_ref(), playing);
+        let station_id = object.row().id;
+        let apply = {
+            let live_state = live_state.clone();
+            Rc::new(move || {
+                let playing = row_is_accented(station_id, &live_state());
+                icon.set_icon_name(Some(if playing {
+                    "audio-volume-high-symbolic"
+                } else {
+                    "network-wireless-symbolic"
+                }));
+                apply_playing_style(cell.upcast_ref(), playing);
+            }) as Rc<dyn Fn()>
+        };
+        apply();
+        cells_for_bind.register(item, apply);
     });
-    factory.connect_unbind(|_, object| {
+    let cells_for_unbind = cells.clone();
+    factory.connect_unbind(move |_, object| {
         let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
             return;
         };
+        cells_for_unbind.unregister(item);
         let Some(surface) = item.child().and_downcast::<gtk4::Box>() else {
             return;
         };
@@ -173,8 +200,9 @@ pub(super) fn append_columns(
     view: &gtk4::ColumnView,
     live_state: &LiveState,
     connectivity: &ConnectivitySource,
+    cells: &Rc<RadioLiveCells>,
 ) {
-    state_column(view, live_state, connectivity);
+    state_column(view, live_state, connectivity, cells);
     text_column(
         view,
         &strings::text(strings::RADIO_STATION),
@@ -182,6 +210,7 @@ pub(super) fn append_columns(
         |row, _| row.name.clone(),
         live_state,
         connectivity,
+        cells,
     );
     text_column(
         view,
@@ -190,6 +219,7 @@ pub(super) fn append_columns(
         |row, _| format_genre(row.genre.as_deref()),
         live_state,
         connectivity,
+        cells,
     );
     text_column(
         view,
@@ -198,6 +228,7 @@ pub(super) fn append_columns(
         |row, _| format_bitrate(row.bitrate_kbps),
         live_state,
         connectivity,
+        cells,
     );
     text_column(
         view,
@@ -206,6 +237,7 @@ pub(super) fn append_columns(
         |row, _| format_country(row.country_code.as_deref()),
         live_state,
         connectivity,
+        cells,
     );
     text_column(
         view,
@@ -214,6 +246,7 @@ pub(super) fn append_columns(
         |row, live| now_playing(row.id, live),
         live_state,
         connectivity,
+        cells,
     );
 }
 
@@ -260,7 +293,12 @@ mod tests {
         // the default Online.
         let connectivity: Rc<dyn Fn() -> reprise_core::connectivity::Connectivity> =
             Rc::new(|| reprise_core::connectivity::Connectivity::Online);
-        append_columns(&view, &live_state, &connectivity);
+        append_columns(
+            &view,
+            &live_state,
+            &connectivity,
+            &Rc::new(RadioLiveCells::default()),
+        );
 
         let window = gtk4::Window::new();
         window.set_default_size(1200, 400);
