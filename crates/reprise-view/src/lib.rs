@@ -15,11 +15,13 @@
 //! zuerst hier einzieht.
 
 pub mod browse;
+pub mod colour;
 pub mod column_widths;
 pub mod columns;
 pub mod device_sync;
 pub mod lyrics;
 pub mod playlists;
 pub mod queue;
+pub mod spectral_colour;
 pub mod strings;
 pub mod waveform;
