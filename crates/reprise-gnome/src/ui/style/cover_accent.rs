@@ -12,11 +12,6 @@
 
 use std::cell::RefCell;
 
-use gtk4::prelude::IsA;
-use libadwaita::prelude::AnimationExt;
-
-use crate::ui::motion;
-
 #[cfg(test)]
 use super::cover_accent_oklab::oklch_clamp;
 use super::cover_accent_oklab::{is_usable, oklch_light};
@@ -53,11 +48,6 @@ thread_local! {
     /// track. Sits above the theme provider so its `reprise_player_accent`
     /// wins when set, and falls back to the theme's when cleared (empty).
     static ACCENT_PROVIDER: RefCell<Option<gtk4::CssProvider>> = const { RefCell::new(None) };
-
-    /// The currently-running cross-fade animation. Held here to prevent GC
-    /// between ticks. Replaced (and thus dropped) on each new fade.
-    static CURRENT_ANIMATION: RefCell<Option<libadwaita::TimedAnimation>> =
-        const { RefCell::new(None) };
 }
 
 /// Installs the (initially empty) cover-accent override provider just above
@@ -83,82 +73,6 @@ pub(in crate::ui) fn set_cover_accent(accent: Option<Rgb>) {
 }
 
 // ---------------------------------------------------------------------------
-// Cross-fade
-// ---------------------------------------------------------------------------
-
-/// Linear interpolation between two u8 values at position `t` ∈ [0, 1].
-fn lerp(a: u8, b: u8, t: f64) -> u8 {
-    (f64::from(a) + (f64::from(b) - f64::from(a)) * t)
-        .round()
-        .clamp(0.0, 255.0) as u8
-}
-
-/// Resolves the selected theme's static accent without duplicating a fallback
-/// literal in the cover pipeline.
-fn theme_fallback_rgb() -> Rgb {
-    let accent = super::CURRENT_THEME.with(|slot| slot.get().palette().accent);
-    let hex = accent
-        .strip_prefix('#')
-        .filter(|hex| hex.len() == 6)
-        .expect("theme accent must use #RRGGBB");
-    let channel = |offset| {
-        u8::from_str_radix(&hex[offset..offset + 2], 16)
-            .expect("theme accent must use hexadecimal channels")
-    };
-    Rgb {
-        r: channel(0),
-        g: channel(2),
-        b: channel(4),
-    }
-}
-
-fn accent_during_fade(
-    old: Option<Rgb>,
-    new: Option<Rgb>,
-    fallback: Rgb,
-    value: f64,
-) -> Option<Rgb> {
-    if new.is_none() && value >= 1.0 {
-        return None;
-    }
-    let old = old.unwrap_or(fallback);
-    let new = new.unwrap_or(fallback);
-    Some(Rgb {
-        r: lerp(old.r, new.r, value),
-        g: lerp(old.g, new.g, value),
-        b: lerp(old.b, new.b, value),
-    })
-}
-
-/// Animates the cover accent from `old` to `new` with the Ambient token.
-/// The central motion helper follows the system animation setting. A `None`
-/// argument uses the selected palette's theme accent as the interpolation
-/// endpoint; clearing the override after the fade exposes the same color.
-pub(in crate::ui) fn cross_fade_accent(
-    old: Option<Rgb>,
-    new: Option<Rgb>,
-    widget: &impl IsA<gtk4::Widget>,
-) {
-    if old == new {
-        let previous = CURRENT_ANIMATION.with(|slot| slot.borrow_mut().take());
-        if let Some(previous) = previous {
-            previous.skip();
-        }
-        set_cover_accent(new);
-        return;
-    }
-
-    let fallback = theme_fallback_rgb();
-    let target = libadwaita::CallbackAnimationTarget::new(move |value| {
-        set_cover_accent(accent_during_fade(old, new, fallback, value));
-    });
-
-    let animation = motion::timed(widget, 0.0, 1.0, motion::AMBIENT, target);
-    CURRENT_ANIMATION.with(|slot| motion::replace_animation(slot, animation.clone()));
-    animation.play();
-}
-
-// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -169,7 +83,6 @@ mod tests {
     #[test]
     fn chroma_scaling_is_draw_local_and_leaves_provider_state_untouched() {
         ACCENT_PROVIDER.with(|slot| slot.borrow_mut().take());
-        CURRENT_ANIMATION.with(|slot| slot.borrow_mut().take());
 
         let original = (0.8, 0.2, 0.1);
         let unchanged = scale_chroma(original.0, original.1, original.2, 1.0);
@@ -184,7 +97,6 @@ mod tests {
         // Chroma scaling is pure draw-time math: it neither replaces nor
         // reloads the application-wide cover-accent provider.
         ACCENT_PROVIDER.with(|slot| assert!(slot.borrow().is_none()));
-        CURRENT_ANIMATION.with(|slot| assert!(slot.borrow().is_none()));
     }
 
     #[test]
@@ -215,68 +127,29 @@ mod tests {
         .is_empty());
     }
 
+    // MOT-1/MOT-3: the accent provider carries the colour and nothing else. It
+    // deliberately imposes no duration, because the properties that carry the
+    // accent (background-color, box-shadow) are the same ones the accent-bearing
+    // widgets already transition at their own token — the play button declares
+    // Micro for exactly these. A CSS property has one transition, and it cannot
+    // tell an accent change from a hover, so a duration written here would
+    // override the widget's own token instead of adding to it.
     #[test]
-    fn lerp_interpolates_correctly() {
-        assert_eq!(lerp(0, 200, 0.0), 0);
-        assert_eq!(lerp(0, 200, 1.0), 200);
-        assert_eq!(lerp(0, 200, 0.5), 100);
-        assert_eq!(lerp(100, 200, 0.5), 150);
-    }
+    fn mot_1_accent_provider_imposes_no_duration_of_its_own() {
+        let css = accent_css(Some(Rgb {
+            r: 46,
+            g: 200,
+            b: 166,
+        }));
 
-    #[test]
-    fn fade_to_theme_fallback_clears_all_three_overrides_at_the_endpoint() {
-        let cover = Some(Rgb {
-            r: 200,
-            g: 80,
-            b: 40,
-        });
-        let fallback = Rgb {
-            r: 51,
-            g: 201,
-            b: 163,
-        };
-
-        assert!(accent_during_fade(cover, None, fallback, 0.5).is_some());
-        assert_eq!(accent_during_fade(cover, None, fallback, 1.0), None);
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn mot_6_replacing_an_accent_fade_skips_the_previous_animation() {
-        gtk4::init().unwrap();
-        let settings = gtk4::Settings::default().unwrap();
-        let previous_setting = settings.is_gtk_enable_animations();
-        settings.set_gtk_enable_animations(true);
-        let label = gtk4::Label::new(None);
-        let red = Some(Rgb {
-            r: 220,
-            g: 40,
-            b: 40,
-        });
-        let blue = Some(Rgb {
-            r: 40,
-            g: 40,
-            b: 220,
-        });
-        let green = Some(Rgb {
-            r: 40,
-            g: 220,
-            b: 40,
-        });
-
-        cross_fade_accent(red, blue, &label);
-        let first = CURRENT_ANIMATION.with(|slot| slot.borrow().as_ref().unwrap().clone());
-        cross_fade_accent(blue, green, &label);
-
-        assert_eq!(first.state(), libadwaita::AnimationState::Finished);
-        CURRENT_ANIMATION.with(|slot| {
-            let animation = slot.borrow();
-            let animation = animation.as_ref().unwrap();
-            assert_eq!(animation.duration(), motion::AMBIENT_MS);
-            assert_eq!(animation.easing(), motion::AMBIENT_EASING);
-            assert!(animation.follows_enable_animations_setting());
-        });
-
-        settings.set_gtk_enable_animations(previous_setting);
+        assert!(css.contains("@define-color reprise_player_accent #2ec8a6"));
+        assert!(
+            !css.contains("transition"),
+            "the accent provider must not override the tokens its consumers declare: {css:?}"
+        );
+        assert!(
+            accent_css(None).is_empty(),
+            "clearing the override must leave nothing behind"
+        );
     }
 }

@@ -8,8 +8,7 @@
 
 use std::rc::Rc;
 
-use gtk4::prelude::*;
-
+use super::now_playing_marker::cell_key;
 use super::Shared;
 
 type RatingApplier = Rc<dyn Fn(i32)>;
@@ -35,39 +34,34 @@ pub(in crate::ui) fn unregister_cell(shared: &Shared, item: &gtk4::ListItem) {
 
 impl Shared {
     fn register_rating_cell(&self, item: &gtk4::ListItem, track_id: i64, apply: RatingApplier) {
-        let target = item.as_ptr();
-        let mut markers = self.rating_cells.borrow_mut();
-        markers.retain(|marker| {
-            marker
-                .item
-                .upgrade()
-                .is_some_and(|live| live.as_ptr() != target)
-        });
         let weak = gtk4::glib::WeakRef::new();
         weak.set(Some(item));
-        markers.push(RatingCellMarker {
-            item: weak,
-            track_id,
-            apply,
-        });
+        // Keyed insert: rebinding the same cell replaces its entry, which is
+        // the dedup the previous linear `retain` performed. Pruning entries
+        // whose `ListItem` died moved to `refresh_realised_ratings`, which runs
+        // per rating save rather than per bind. A recycled address colliding
+        // with a dead entry is harmless — the insert replaces it, and it was
+        // dead anyway.
+        self.rating_cells.borrow_mut().insert(
+            cell_key(item),
+            RatingCellMarker {
+                item: weak,
+                track_id,
+                apply,
+            },
+        );
     }
 
     fn unregister_rating_cell(&self, item: &gtk4::ListItem) {
-        let target = item.as_ptr();
-        self.rating_cells.borrow_mut().retain(|marker| {
-            marker
-                .item
-                .upgrade()
-                .is_some_and(|live| live.as_ptr() != target)
-        });
+        self.rating_cells.borrow_mut().remove(&cell_key(item));
     }
 
     pub(in crate::ui) fn refresh_realised_ratings(&self, ratings: &[(i64, i32)]) {
         let appliers: Vec<(i64, RatingApplier)> = {
             let mut markers = self.rating_cells.borrow_mut();
-            markers.retain(|marker| marker.item.upgrade().is_some());
+            markers.retain(|_, marker| marker.item.upgrade().is_some());
             markers
-                .iter()
+                .values()
                 .map(|marker| (marker.track_id, marker.apply.clone()))
                 .collect()
         };
