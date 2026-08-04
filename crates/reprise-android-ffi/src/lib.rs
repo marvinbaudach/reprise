@@ -213,10 +213,21 @@ impl MusicLibrary {
     }
 
     /// Resolves local artwork lazily for one track and returns its cached
-    /// 168 px thumbnail path. A missing or unreadable image stays `None`.
+    /// 168 px thumbnail path. A missing or unreadable image stays `None`,
+    /// because "this track has no artwork" is a legitimate answer the UI must
+    /// render. An *environmental* failure — a poisoned handle, a full disk, a
+    /// cache directory that cannot be created — looks identical from the
+    /// Kotlin side, so every one of those leaves a `tracing` line behind
+    /// rather than silently suppressing covers forever.
     pub fn track_artwork(&self, track_uri: &str) -> Option<String> {
         let source = {
-            let state = self.lock().ok()?;
+            let state = match self.lock() {
+                Ok(state) => state,
+                Err(error) => {
+                    tracing::warn!(%error, track = track_uri, "no artwork: library handle unusable");
+                    return None;
+                }
+            };
             Arc::clone(&state.tree.as_ref()?.source)
         };
         let cover = reprise_core::cover::resolve_source_with_source(
@@ -224,14 +235,26 @@ impl MusicLibrary {
             Path::new(&track_uri),
             &self.cache_root,
         )?;
-        reprise_core::cover::thumbnail_with_source(
+        match reprise_core::cover::thumbnail_with_source(
             source.as_ref(),
             &cover,
             reprise_core::cover::ThumbnailSize::MobileList,
             &self.cache_root,
-        )
-        .ok()
-        .map(|path| path.to_string_lossy().into_owned())
+        ) {
+            Ok(path) => Some(path.to_string_lossy().into_owned()),
+            // The cache is unusable: every following track will fail the same
+            // way, so this is the one worth waking someone up for.
+            Err(error @ reprise_core::cover::CoverError::Io(_)) => {
+                tracing::warn!(%error, track = track_uri, "no artwork: cover cache unusable");
+                None
+            }
+            // One unrenderable image among many. Expected in the wild, so it
+            // stays at debug.
+            Err(error) => {
+                tracing::debug!(%error, track = track_uri, "no artwork: cover did not decode");
+                None
+            }
+        }
     }
 }
 

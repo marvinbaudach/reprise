@@ -531,6 +531,46 @@ mod tests {
         let _ = dir;
     }
 
+    /// Stage 1 must read the *platform-provided* cache root — the whole reason
+    /// one is threaded through at all. Reverting the lookup in
+    /// `resolve_source_with_source` to the XDG-only `downloaded_cover_path`
+    /// turns this red, because the colliding default-root entry would win.
+    #[test]
+    fn a_downloaded_cover_is_taken_from_the_platform_cache_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache_root = tempfile::tempdir().unwrap();
+        let album = format!("Platform Root Album {}", fastrand::u64(..));
+        let track =
+            tagged_track_with_cover(dir.path(), "track.flac", &album, solid_png([255, 0, 0]));
+        let key = crate::cover_download::album_key("Consistency Artist", &album);
+
+        let platform_dir = crate::cover_download::downloaded_dir_in(cache_root.path());
+        std::fs::create_dir_all(&platform_dir).unwrap();
+        let platform_cover = platform_dir.join(format!("{key}.png"));
+        std::fs::write(&platform_cover, solid_png([0, 255, 0])).unwrap();
+
+        // The same album key, seeded in the desktop default root: it must lose.
+        let default_dir = crate::cover_download::downloaded_dir();
+        std::fs::create_dir_all(&default_dir).unwrap();
+        let default_cover = default_dir.join(format!("{key}.png"));
+        std::fs::write(&default_cover, solid_png([0, 0, 255])).unwrap();
+
+        let resolved = resolve_source_with_source(
+            &crate::library::source::UnixLibrarySource,
+            &track,
+            cache_root.path(),
+        );
+
+        std::fs::remove_file(&default_cover).ok();
+        match resolved {
+            Some(CoverSource::FolderImage(path)) => assert_eq!(
+                path, platform_cover,
+                "stage 1 must read the cache root it was handed, not the XDG default"
+            ),
+            other => panic!("expected the platform root's downloaded cover, got {other:?}"),
+        }
+    }
+
     #[test]
     fn browse_10_tracks_from_one_album_prefer_the_shared_cached_cover() {
         let dir = tempfile::tempdir().unwrap();

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -24,6 +25,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarDefaults
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -116,9 +118,22 @@ internal fun LibraryBottomFrame(
                 previous = previous,
             )
         }
+        // Material 3 pads the item row *inside* this component by the system
+        // bar inset, so a bare 80 dp on the outside would be spent on the
+        // inset instead of on the bar: with gesture navigation ~19 dp of it,
+        // with three buttons ~48 dp, which is less than one active pill needs.
+        // Adding the very same inset to the height leaves the plan's 80 dp of
+        // bar intact and puts the system's area below it. The root consumes
+        // only the status bar, so this is the one place the bottom inset is
+        // spent.
+        val systemBarInsets = NavigationBarDefaults.windowInsets
         NavigationBar(
-            modifier = Modifier.height(libraryFrameMetrics.navigationBarHeightDp.dp),
+            modifier = Modifier.height(
+                libraryFrameMetrics.navigationBarHeightDp.dp +
+                    systemBarInsets.asPaddingValues().calculateBottomPadding(),
+            ),
             containerColor = MaterialTheme.colorScheme.surface,
+            windowInsets = systemBarInsets,
         ) {
             libraryDestinations.forEach { destination ->
                 NavigationBarItem(

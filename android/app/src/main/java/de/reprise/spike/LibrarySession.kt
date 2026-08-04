@@ -43,6 +43,14 @@ internal class LibrarySession(
             size > REMEMBERED_ARTWORK_PATHS
     }
 
+    /**
+     * Bumped whenever [artworkPaths] is dropped. Resolving happens outside the
+     * monitor, so a cover that was already in flight when a rescan cleared the
+     * map would otherwise write its now-stale answer back into the fresh one.
+     * Guarded by the [artworkPaths] monitor like the map itself.
+     */
+    private var artworkGeneration = 0
+
     fun restore(): LibraryScreenState {
         val treeUri = port.rememberedTreeUri() ?: return LibraryScreenState.NoFolder()
         if (!port.isTreeReadable(treeUri)) {
@@ -109,13 +117,25 @@ internal class LibrarySession(
      * The cached cover for one track, asked of the core at most once per track.
      * Resolving reads the file's tags through the document provider, which is
      * far too expensive to repeat every time a row scrolls back into view.
+     *
+     * The monitor covers the map accesses only, never the resolve itself: a tag
+     * read plus thumbnail generation is slow enough that holding it would make
+     * [rescan] wait for a cover it is about to throw away.
      */
-    fun artworkFor(trackUri: String): String? = synchronized(artworkPaths) {
-        if (artworkPaths.containsKey(trackUri)) {
-            artworkPaths[trackUri]
-        } else {
-            port.artworkFor(trackUri).also { path -> artworkPaths[trackUri] = path }
+    fun artworkFor(trackUri: String): String? {
+        val startedInGeneration = synchronized(artworkPaths) {
+            if (artworkPaths.containsKey(trackUri)) {
+                return artworkPaths[trackUri]
+            }
+            artworkGeneration
         }
+        val path = port.artworkFor(trackUri)
+        synchronized(artworkPaths) {
+            if (artworkGeneration == startedInGeneration) {
+                artworkPaths[trackUri] = path
+            }
+        }
+        return path
     }
 
     private fun scanTree(
@@ -129,7 +149,10 @@ internal class LibrarySession(
         report(LibraryScreenState.Scanning())
         port.scan(report)
         // The files behind those paths may have just changed underneath us.
-        synchronized(artworkPaths) { artworkPaths.clear() }
+        synchronized(artworkPaths) {
+            artworkPaths.clear()
+            artworkGeneration++
+        }
         return browseState()
     }
 

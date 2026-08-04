@@ -71,6 +71,32 @@ class BrowseSurfaceTest {
         assertEquals(2, port.operations.count { it == "artwork:${track.uri}" })
     }
 
+    /**
+     * Resolving a cover no longer holds the map's monitor, so a rescan can now
+     * clear the map while a resolve is in flight. The hook fires exactly at
+     * that point — from the resolving call itself, which is the deterministic
+     * stand-in for the background rescan thread — and the answer it produces
+     * describes files the rescan has just replaced, so it must not be kept.
+     */
+    @Test
+    fun aCoverResolvedAcrossARescanIsNotRememberedFromTheOldScan() {
+        val track = testBrowseTrack("title")
+        var session: LibrarySession? = null
+        val port = RecordingBrowsePort(
+            artwork = mapOf(track.uri to "/private/cache/reprise/covers/title-168.png"),
+            whileResolvingArtwork = { session?.rescan {} },
+        )
+        session = LibrarySession(port)
+
+        assertEquals(
+            "/private/cache/reprise/covers/title-168.png",
+            session.artworkFor(track.uri),
+        )
+        session.artworkFor(track.uri)
+
+        assertEquals(2, port.operations.count { it == "artwork:${track.uri}" })
+    }
+
     @Test
     fun recycledArtworkRequestCannotReplaceTheNewRowsImage() {
         val gate = ArtworkRequestGate()
@@ -330,6 +356,7 @@ private class RecordingBrowsePort(
     private val artists: LibraryWindow<LibraryArtist> = completeWindow(emptyList()),
     private val albumTracks: LibraryWindow<LibraryTrack> = completeWindow(emptyList()),
     private val artwork: Map<String, String?> = emptyMap(),
+    private val whileResolvingArtwork: (String) -> Unit = {},
 ) : LibrarySessionPort {
     val operations = mutableListOf<String>()
 
@@ -381,6 +408,7 @@ private class RecordingBrowsePort(
 
     override fun artworkFor(trackUri: String): String? {
         operations += "artwork:$trackUri"
+        whileResolvingArtwork(trackUri)
         return artwork[trackUri]
     }
 }

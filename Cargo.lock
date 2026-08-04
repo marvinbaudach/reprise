@@ -2794,6 +2794,7 @@ dependencies = [
  "reprise-core",
  "tempfile",
  "thiserror",
+ "tracing",
  "uniffi",
 ]
 

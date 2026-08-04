@@ -19,6 +19,10 @@ path = "src/bin/uniffi-bindgen.rs"
 reprise-core = { path = "../reprise-core" }
 uniffi = { version = "0.32", features = ["cli"] }
 thiserror = "2"
+# The workspace's diagnostics facade, already used throughout reprise-core.
+# The artwork path swallows environmental failures behind an `Option`, so the
+# reason has to leave a trail somewhere; this is that somewhere.
+tracing = "0.1"
 
 [build-dependencies]
 uniffi = { version = "0.32", features = ["build"] }
