@@ -1,50 +1,10 @@
 //! Pointer and keyboard affordances for compact grouped episode rows.
 
-use std::cell::Cell;
-use std::rc::Rc;
-
 use gtk4::glib::variant::ToVariant;
 use gtk4::prelude::*;
 use reprise_core::podcasts::{EpisodeRow, PodcastKind};
 
 use super::podcasts_selection::SelectMode;
-
-/// One reveal rule for the unsubscribe star, shared by every row in both
-/// views: visible while the row is hovered, and visible while the star itself
-/// has keyboard focus — a hover-only star is unreachable without a pointer.
-/// `host` is whatever widget stands for "the row" at that call site.
-pub(super) fn reveal_unsubscribe_on_hover_or_focus(
-    host: &impl IsA<gtk4::Widget>,
-    unsubscribe: &gtk4::Button,
-) {
-    let hovered = Rc::new(Cell::new(false));
-    let hover = gtk4::EventControllerMotion::new();
-    let hovered_state = hovered.clone();
-    let hovered_unsubscribe = unsubscribe.downgrade();
-    hover.connect_enter(move |_, _, _| {
-        hovered_state.set(true);
-        if let Some(unsubscribe) = hovered_unsubscribe.upgrade() {
-            unsubscribe.set_opacity(1.0);
-        }
-    });
-    let hovered_state = hovered.clone();
-    let hovered_unsubscribe = unsubscribe.downgrade();
-    hover.connect_leave(move |_| {
-        hovered_state.set(false);
-        if let Some(unsubscribe) = hovered_unsubscribe.upgrade() {
-            unsubscribe.set_opacity(if unsubscribe.has_focus() { 1.0 } else { 0.0 });
-        }
-    });
-    host.as_ref().add_controller(hover);
-
-    unsubscribe.connect_has_focus_notify(move |unsubscribe| {
-        unsubscribe.set_opacity(if unsubscribe.has_focus() || hovered.get() {
-            1.0
-        } else {
-            0.0
-        });
-    });
-}
 
 pub(super) fn episode_thumbnail(row: &EpisodeRow, images_allowed: bool) -> gtk4::Overlay {
     let (width, height) = match row.kind {

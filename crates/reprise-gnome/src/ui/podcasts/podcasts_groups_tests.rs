@@ -602,10 +602,6 @@ fn src_4b_unsubscribe_exists_only_as_a_menu_action() {
         !source.contains("starred-symbolic"),
         "the hover star is gone from the grouped source header"
     );
-    assert!(
-        !source.contains("reveal_unsubscribe_on_hover_or_focus"),
-        "with no star there is nothing to reveal on hover"
-    );
 }
 
 /// `SRC-11` / `NET-1a`: the library group header is one of the source
