@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <!-- Generated from palette.toml. The repeat sign on the 16-unit
+       grid, for the one raster stage where the 96-unit geometry
+       renders the dots as two specks. -->
+  <rect x="3" y="5" width="3" height="3" fill="#A855F7"/>
+  <rect x="3" y="9" width="3" height="3" fill="#A855F7"/>
+  <rect x="7" y="3" width="1" height="10" fill="#A855F7"/>
+  <rect x="9" y="3" width="3" height="10" fill="#4FDBD4"/>
+</svg>

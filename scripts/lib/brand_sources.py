@@ -54,6 +54,61 @@ def mono_svg():
 '''
 
 
+def hinted_16_body(small, large):
+    """The repeat sign redrawn on the 16-unit grid, every edge on a whole line.
+
+    The 96-unit geometry is the mark; this is the same sign at the one size
+    where that geometry stops working. Scaled to 16px it renders four separate
+    pixel groups of 20, 8, 2 and 2 pixels — nothing merges, but the dots are
+    small enough that a detector treats them as noise and a viewer sees two
+    specks. Here the dots are 3x3, the barlines are 1 and 3 pixels, and every
+    gap is a whole pixel, so the 1:3 ratio that makes this a repeat sign rather
+    than a rest survives at the smallest stage shipped.
+
+    The dots are 3x3 rather than 2x2 because 2x2 leaves them at 4 pixels
+    against a 3-pixel noise floor — countable, but one rounding decision away
+    from vanishing. At 3x3 they are 9 pixels and read as dots beside a
+    ten-pixel barline instead of as specks.
+
+    Proportions run heavier than the 96-unit drawing on purpose: ink fills 64%
+    of the carrier's width against 48% there, because thin features disappear
+    at this size.
+    """
+    return (f'  <rect x="3" y="5" width="3" height="3" fill="{small}"/>\n'
+            f'  <rect x="3" y="9" width="3" height="3" fill="{small}"/>\n'
+            f'  <rect x="7" y="3" width="1" height="10" fill="{small}"/>\n'
+            f'  <rect x="9" y="3" width="3" height="10" fill="{large}"/>\n')
+
+
+def hinted_16_svg(small, large):
+    return ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">\n'
+            '  <!-- Generated from palette.toml. The repeat sign on the 16-unit\n'
+            '       grid, for the one raster stage where the 96-unit geometry\n'
+            '       renders the dots as two specks. -->\n'
+            + hinted_16_body(small, large) + '</svg>\n')
+
+
+def hinted_16_mono_svg():
+    return ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16"\n'
+            '     fill="currentColor">\n'
+            '  <!-- Single-colour form of the 16-unit drawing. -->\n'
+            '  <rect x="3" y="5" width="3" height="3"/>\n'
+            '  <rect x="3" y="9" width="3" height="3"/>\n'
+            '  <rect x="7" y="3" width="1" height="10"/>\n'
+            '  <rect x="9" y="3" width="3" height="10"/>\n'
+            '</svg>\n')
+
+
+def hinted_16_icon_svg(small, large, plate):
+    """Carrier and sign in one file — at this size composing them would resample."""
+    return ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">\n'
+            '  <!-- Generated from palette.toml. Carrier and sign are drawn\n'
+            '       together because composing them at 16 units would land the\n'
+            '       mark off the pixel grid it exists to sit on. -->\n'
+            f'  <rect x="1" y="1" width="14" height="14" rx="4" fill="{plate}"/>\n'
+            + hinted_16_body(small, large) + '</svg>\n')
+
+
 def plate_svg(fill):
     return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96">
   <!-- Generated from palette.toml. The solid plate is deliberately lighter
@@ -85,6 +140,12 @@ def render(palette):
             "       while clearing the graphical-object contrast floor on light ground."),
         "reprise-mark-mono.svg": mono_svg(),
         "icon-plate.svg": plate_svg(palette["reprise_plate"]),
+        "reprise-mark-16.svg": hinted_16_svg(
+            palette["reprise_violet"], palette["reprise_teal"]),
+        "reprise-mark-16-mono.svg": hinted_16_mono_svg(),
+        "reprise-icon-16.svg": hinted_16_icon_svg(
+            palette["reprise_violet"], palette["reprise_teal"],
+            palette["reprise_plate"]),
     }
 
 
