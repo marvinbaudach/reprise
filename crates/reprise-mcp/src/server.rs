@@ -17,8 +17,8 @@ use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{
     CallToolResult, Implementation, ListResourcesResult, PaginatedRequestParams,
-    ReadResourceRequestParams, ReadResourceResult, Resource, ResourceContents, ServerCapabilities,
-    ServerInfo,
+    ReadResourceRequestParams, ReadResourceResponse, ReadResourceResult, Resource,
+    ResourceContents, ServerCapabilities, ServerInfo,
 };
 use rmcp::service::RequestContext;
 use rmcp::{tool, tool_handler, tool_router, ErrorData, RoleServer, ServerHandler};
@@ -682,7 +682,11 @@ impl ServerHandler for RepriseServer {
         &self,
         request: ReadResourceRequestParams,
         _context: RequestContext<RoleServer>,
-    ) -> Result<ReadResourceResult, ErrorData> {
+    // rmcp 3 lets a resource handler ask the client for input mid-request
+    // (MRTR), so the return type became an outcome enum. Every resource this
+    // server exposes is read straight out of the database and never needs
+    // anything from the caller, so it always completes in one round.
+    ) -> Result<ReadResourceResponse, ErrorData> {
         let uri = request.uri;
         let path = self.db_path.clone();
 
@@ -747,9 +751,10 @@ impl ServerHandler for RepriseServer {
             }
         };
 
-        Ok(ReadResourceResult::new(vec![ResourceContents::text(
-            json, uri,
+        Ok(
+            ReadResourceResult::new(vec![ResourceContents::text(json, uri)
+                .with_mime_type(RESOURCE_MIME_JSON)])
+            .into(),
         )
-        .with_mime_type(RESOURCE_MIME_JSON)]))
     }
 }
