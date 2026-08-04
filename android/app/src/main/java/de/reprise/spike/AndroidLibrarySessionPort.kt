@@ -110,6 +110,8 @@ private fun TrackRow.toLibraryTrack() = LibraryTrack(
     artist = artist,
     album = album,
     durationMs = durationMs,
+    playCount = playCount,
+    rating = rating,
 )
 
 private fun AlbumRow.toLibraryAlbum() = LibraryAlbum(

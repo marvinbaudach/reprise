@@ -11,6 +11,8 @@ pub struct TrackRow {
     pub artist: String,
     pub album: String,
     pub duration_ms: i64,
+    pub play_count: i64,
+    pub rating: i32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
@@ -66,6 +68,8 @@ impl From<reprise_core::models::Track> for TrackRow {
             artist: track.artist,
             album: track.album,
             duration_ms: track.duration_ms,
+            play_count: track.play_count,
+            rating: track.rating,
         }
     }
 }
