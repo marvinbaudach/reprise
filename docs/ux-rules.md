@@ -3982,6 +3982,18 @@ listening statistics.
   A range covers only rendered rows: a collapsed group, the episodes past a
   preview window and rows hidden by the filter stay out of it. Applying a
   selection never rebuilds the list, so keyboard focus survives it.
+- **SRC-15** [active] [core] [gtk] — **The add dialogs suggest from the
+  library, never from a hard-coded taste.** Podcasts and YouTube each carry
+  one chip above the result list holding the genre this library has spent the
+  most listening time on — "Metal podcasts" on the podcast page, "Metal
+  channels" on the YouTube page — and radio carries the same fact as its
+  first chip (`RAD-5`). All three read one shared derivation, so they never
+  disagree about what this library listens to. Activating a chip fills the
+  search field with the term it searched for: the run stays visible,
+  editable and repeatable, never a hidden query. A library that has played
+  nothing carrying a genre shows **no chip at all** — an empty or invented
+  suggestion is worse than none, and the dialogs remain fully usable through
+  their search field.
 - **POD-1** [active] [core] — Episode status is a pure derivation:
   Played exactly when `played_at` is set, otherwise Resume when
   `position_ms > 0`, otherwise unstarted. The visible New pill is a
@@ -4259,9 +4271,21 @@ listening statistics.
   remain the stream URL themselves. The preview reads name, bitrate,
   genre, and content type exclusively from ICY/HTTP headers and never
   streams the body.
-- **RAD-5** [active] [core] [gtk] — The Add Station dialog always shows
-  three one-click radio-browser searches — "Metal in DE", "Top voted",
-  "Near you" — regardless of whether a location is stored. "Near you"
+- **RAD-5** [active] [core] [gtk] — The Add Station dialog always shows the
+  one-click radio-browser searches "Top voted" and "Near you", regardless of
+  whether a location is stored, and ahead of them a **library chip** that
+  suggests what this library actually listens to. That chip's genre is the
+  one with the most **listening time** — not the most files, so a large
+  unplayed collection cannot out-vote what gets played — folded across
+  spelling variants and clamped per listen exactly as the stats screen
+  clamps it. A stored country narrows the search and shows in the label
+  ("Metal in DE"); without one the chip keeps the genre and searches
+  worldwide rather than becoming a second "Near you". A library that has
+  played nothing with a genre gets **no chip at all** instead of a
+  suggestion it has no evidence for — never a hard-coded genre, which was
+  only ever right for one library in one country. Genre and country are both
+  read fresh each time the dialog opens, because the dialog outlives both.
+  "Near you"
   reuses the one app-level, already-consented location (`O-4`); it never
   queries the XDG Location portal or a geocoder itself, and hoisting that
   location out of the `concerts.` namespace carries its existing consent
