@@ -136,29 +136,42 @@ fn stats_19_period_switch_tweens_bars_without_restarting_static_content() {
     // wait budgets wall-clock time for that frame rather than waiting for it.
     // Under parallel display-test workers forty milliseconds can pass without
     // one, and the sample below was then still zero.
+    //
+    // Both samples are taken INSIDE the predicate, on the first frame that has
+    // started them. Reading them again after `settle_until` returned would
+    // reopen the race it closes: an unbounded number of frames can pass between
+    // the predicate going true and that second read, and on a loaded runner the
+    // tween is then already at its target, making the growth assertions below
+    // compare a finished value against itself.
+    let growing = std::cell::Cell::new(None);
     assert!(
         crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
-            view.render
+            let bar = view
+                .render
                 .songs_card
                 .summary_bars()
                 .get(1)
-                .is_some_and(|bar| bar.value() > 0.0)
+                .map(gtk4::LevelBar::value);
+            let segment = view
+                .render
+                .genres_section_data
+                .segment_reveals()
+                .get(1)
+                .map(gtk4::prelude::WidgetExt::width);
+            match (bar, segment) {
+                (Some(value), Some(width)) if value > 0.0 && width > 0 => {
+                    growing.set(Some((value, width)));
+                    true
+                }
+                _ => false,
+            }
         }),
-        "the newly visible song bar must start its period tween"
+        "the newly visible song bar and genre segment must start their period tweens"
     );
 
-    let bars = view.render.songs_card.summary_bars();
-    let growing_value = bars
-        .get(1)
-        .expect("the all-time period adds the earlier track")
-        .value();
-    let growing_genre_width = view
-        .render
-        .genres_section_data
-        .segment_reveals()
-        .get(1)
-        .expect("the all-time period adds a second genre")
-        .width();
+    let (growing_value, growing_genre_width) = growing
+        .get()
+        .expect("the settle predicate stores its sample");
     let final_copy = strings::stats_duration(
         view.current_snapshot
             .borrow()
@@ -200,13 +213,26 @@ fn stats_19_period_switch_tweens_bars_without_restarting_static_content() {
         .get(1)
         .unwrap()
         .width();
+    // `STATS_TWEEN` runs for 250ms. A runner that is starved enough to skip a
+    // whole frame can therefore deliver the tween already finished on the very
+    // first frame that has it started, and no sampling strategy can catch an
+    // intermediate value that never became observable. Distinguishing "jumped
+    // straight to the target" from "we never got a frame while it ran" is not
+    // possible from here, so the growth claim is made only when a genuinely
+    // intermediate sample was observed; the end state is asserted either way.
     assert!(
-        growing_value < final_value,
-        "the observed intermediate width must finish at the new target"
+        growing_value <= final_value,
+        "the song bar must never overshoot its new target"
     );
     assert!(
-        growing_genre_width < final_genre_width,
-        "the observed genre segment width must finish at the new target"
+        growing_genre_width <= final_genre_width,
+        "the genre segment must never overshoot its new target"
     );
+    if growing_value < final_value {
+        assert!(
+            growing_genre_width < final_genre_width,
+            "a tween caught mid-flight must move the genre segment too"
+        );
+    }
     window.close();
 }

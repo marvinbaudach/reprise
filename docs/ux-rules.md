@@ -59,10 +59,10 @@ fetch existed (NR-8). Both times every individual test was green — the
 bug sat between the rules, because each test pre-established the target
 state.
 
-**Language.** This document and the design docs are German — the
-project's working language. Tests and scripts are code and therefore
-English (AGENTS.md); rule IDs and status tokens are quoted verbatim
-there.
+**Language.** This rulebook is English. Design docs and specs under
+`docs/superpowers/` remain German as the project's working language.
+Tests and scripts are code and therefore English (AGENTS.md); rule IDs
+and status tokens are quoted verbatim there.
 
 **Changes.** If you encounter a case while implementing or testing that no
 rule covers: **add a rule, don't decide locally.** Agents do this by
@@ -115,7 +115,8 @@ human. Rationale for changes lives in the git history.
   topmost stack entry — if the stack shows Artist detail after a Queue
   click, "Music" is highlighted.
 - **NAV-2a** [planned] [core] — The stack does not survive the session
-  (session restore only restores the topmost view, START-1 unchanged);
+  (session restore retains the visible destination, but not its history —
+  see START-3 and BROWSE-12);
   Back with no stack entries is disabled, never a no-op.
 - **NAV-3** [planned] [e2e] — Clickable metadata is the same everywhere:
   in every track list (Library, Playlist, Queue, Album detail, Top
@@ -133,9 +134,8 @@ human. Rationale for changes lives in the git history.
   changes also preserve the scroll + selection of the mode being left.
   The scroll anchor consists of track/album ID plus offset, never a raw
   pixel value; re-sort and insert therefore keep content at its
-  position. START-1 restores, across restarts, only the last active
-  view including scroll position; all other modes start at the top,
-  unselected.
+  position. START-3 restores, across restarts, the last visible browser
+  location including scroll position; no history stack is reconstructed.
 - **NAV-6** [active] [e2e] — Search (Ctrl+F) filters the current view
   live; Esc clears and closes. Search never navigates on its own.
 - **NAV-7** [active] [e2e] — Hamburger menu: "Scan Library" → starts the
@@ -241,14 +241,32 @@ human. Rationale for changes lives in the git history.
   items remain a separate ordered line in front. Later navigation,
   search, facets, or even refining down to zero hits change neither the
   snapshot nor the running item. After the last context track, playback
-  ends with Repeat off unless an explicit manual entry follows; queue
-  hygiene is governed by PLAY-5a/5b/5c.
+  ends with Repeat off unless an explicit manual entry or PLAY-11's new
+  full-library continuation follows; queue hygiene is governed by
+  PLAY-5a/5b/5c.
 - **PLAY-9** [active] [gtk] — Play/Pause, with playback stopped and no
   loaded title, queue snapshot, or "Play Next", immediately starts a
   randomly chosen existing library title. For this, an immutable
   snapshot is created from all existing library titles in random order;
   Missing and deleted titles are excluded. With an empty library,
   Play/Pause stays disabled and playback stays stopped.
+- **PLAY-10** [active] [gtk] — A loaded podcast, YouTube episode, or radio
+  station projects its stored source image into the full-width player bar as
+  well as the Now Playing panel. Both surfaces use SRC-11's same gated,
+  bounded cache and decode path; a missing or refused image keeps the normal
+  player placeholder, never a broken-image state.
+- **PLAY-11** [active] [gtk] — **Playback remains an immutable snapshot
+  until it is exhausted.** Later navigation, search, facets, and clearing a
+  filter do not rewrite the running snapshot. Exception after its final
+  title: if the snapshot originated in a search- or facet-filtered Music
+  library and Music is now completely unfiltered, Reprise immediately creates
+  a new random snapshot from all existing library titles and continues with a
+  different title. Missing and deleted titles are excluded; the just-finished title
+  may occur later in the new snapshot but never starts it. If the filter is
+  still active, the origin was not the Music library, the visible list is
+  not the complete library, or no different title exists, playback ends as
+  before. Explicit Play Next entries retain priority and Repeat One/All
+  retain their existing queue behavior.
 
 ## D. Albums & artists view
 
@@ -1089,14 +1107,22 @@ human. Rationale for changes lives in the git history.
 
 ## I. Start state
 
-- **START-1** [planned] [e2e] — Normal start: last view + scroll
-  position, playback paused on the last track (position restored),
-  startup reconcile runs silently (card only for actual work).
+- **START-1** [replaced by START-3] — Normal start previously forced the
+  library root and left selection untouched.
 - **START-2** [planned] [gtk] — Start with an unavailable library root:
   StatusPage per Root-Guard, no mass Missing marking; library views
   show the last known holdings normally (Root-Guard hasn't marked
   anything), only the StatusPage/card reports the state. No blank
   screen.
+- **START-3** [active] [gtk] — Normal start restores the last valid browser
+  destination, including its local refinements, but never reconstructs the
+  Back/Forward stack and never autoplays. The last loaded track or episode is
+  presented paused; the first Play starts that exact item through a fresh
+  playable source, applying an episode's existing resume position. If its stable ID belongs to the
+  restored destination, that row becomes the sole selection and is centered
+  without taking keyboard focus; grouped podcast and YouTube sources expand
+  the required group and preview window first. An unavailable item leaves the
+  destination's own selection and viewport untouched.
 
 ## J. Queue view
 
@@ -1113,7 +1139,8 @@ human. Rationale for changes lives in the git history.
   context from `play_origin`. A header appears only if its section has
   entries; an empty manual section leaves only "Continuing …" standing.
   Their visible order is also the playback order; as long as something
-  is playing, the queue never shows two empty sections.
+  is playing, the queue never shows two empty sections. QUE-10 owns the
+  direct-episode variant of the named context section.
 - **QUE-3** [active] [core] — Played manual entries silently disappear
   from "Next in Queue" on queue-item change: no strikethrough and no
   lingering. The section contains only the still-pending future.
@@ -1136,14 +1163,28 @@ human. Rationale for changes lives in the git history.
 - **QUE-9** [active] [core] — The manual queue stores typed track and
   episode entries and preserves their identity even when their numeric
   IDs collide. RSS and YouTube episodes advance in manual queue order,
-  never enter the automatic "Continuing from …" context, never earn a
-  listen, and are never gaplessly pre-fed. POD-20 owns their shared
-  playing marker and POD-21 owns their frozen queue-neighbour transport.
+  never enter the container queue's automatic `QueueSnapshot` context,
+  never earn a listen, and are never gaplessly pre-fed. POD-20 owns their
+  shared playing marker, POD-21 owns their frozen queue-neighbour transport,
+  and QUE-10 owns the direct-episode rendering projection.
   Radio remains excluded. Outward queue snapshots add typed item lists
   alongside the legacy `*_track_ids` projections; those legacy fields
   remain track-only and omit episodes. MPRIS identifies an episode under
   `/org/reprise/Reprise/episode/{id}` and exposes title, show-as-artist
   and length, but no album or rating.
+- **QUE-10** [active] [gtk] — While a podcast or YouTube episode plays
+  directly from its source view, both queue surfaces show that episode as
+  Now Playing and render its frozen POD-21 neighbours as the named context
+  section, labelled with the show or channel. The manual queue and container
+  `QueueSnapshot` remain unchanged underneath and reappear unchanged when
+  queue playback resumes.
+- **QUE-11** [active] [core] [gtk] — Session persistence keeps the typed
+  manual queue, its current entry, and the stable identity of a loaded podcast
+  or YouTube episode. Direct playback additionally stores its bounded frozen
+  episode-neighbour order; manual playback derives neighbours from the
+  restored typed queue. Signed or resolved stream URLs never persist. On cold
+  start the identity is validated against the current episode catalog and is
+  reconstructed as paused metadata only.
 
 ## K. Filter & search visibility
 
@@ -1523,8 +1564,8 @@ place (MOT-2, the motion reading of P-4).
   crossfades run as two Micro halves of 75 ms each) · **Standard**
   250 ms ease-out-cubic for surfaces (sidebar/panel reveal, toast in,
   card collapse, crossfades cover/StatusPage⇄list) · **Ambient** 400 ms
-  ease-out-cubic for atmospheric, non-interactive transitions
-  (accent-color crossfade) · **Spatial** = AdwSpringAnimation with Adw
+  ease-out-cubic for atmospheric, non-interactive transitions (waveform
+  build and crossfade, plugin settle) · **Spatial** = AdwSpringAnimation with Adw
   default spring parameters for directed navigation, added in code
   starting with the first directed navigation case. Ease-in only for
   what is leaving (toast out, Micro duration); linear only for genuine
@@ -1532,6 +1573,20 @@ place (MOT-2, the motion reading of P-4).
   (OverlaySplitView, NavigationSplitView, ToastOverlay, Banner, Dialog,
   Popover — e.g. the push/pop slides of the settings subpages) count
   as system-given and are exempt from the token requirement.
+  **The cover accent is not its own animation.** It used to be listed as
+  the Ambient case, animated in Rust by interpolating the colour and
+  reloading a display-wide provider per frame — which restyled the whole
+  widget tree ~24 times per track change and cost ~190 ms of main-thread
+  time (measured 2026-08-04, see `docs/plans/track-change-ui-stall.md`).
+  It is now a single colour change, and it inherits the transition the
+  carrying widget already declares: the play button transitions
+  `background-color` and `box-shadow` on Micro, so its accent moves on
+  Micro. That is MOT-3 rather than an exception to it — the alternative
+  is impossible, not merely expensive: the properties carrying the accent
+  are the same ones carrying hover and focus, a CSS property has exactly
+  one transition, and it cannot tell an accent change from a hover. Any
+  duration imposed centrally would override the token the widget declares
+  for its own interaction states.
   <!-- Flip criterion MOT-1: all call sites from the motion plan's
        audit inventory consume tokens; scripts/check-motion-tokens.sh
        is strict and without a leftover allowlist. -->
@@ -1785,10 +1840,14 @@ the panel).
   from NR-3 shows the **count** of entries with `seen_at IS NULL`,
   from 10 shown as „9+", disappears on opening (all listed entries get
   stamped), and renders no empty element at 0.
-- **NR-10** [active] [gtk] — Row hover or focus fades out the status
+- **NR-10** [replaced by NR-10a] [gtk] — Row hover or focus fades out the status
   chip and fades in the row actions; on leaving, the chip returns.
   Keyboard parity: the row is focusable, focus shows the actions, and
   the buttons are reachable via Tab/Enter.
+- **NR-10a** [active] [gtk] — Row hover or focus fades in the row
+  actions without displacing the status chip; the chip remains visible
+  in every state. The row stays focusable and its sensitive action
+  buttons remain reachable via Tab/Enter.
 - **NR-11** [active] [gtk] — „Open announcement" opens a URL by
   priority: MusicBrainz URL relations of the release group (Bandcamp/
   purchase/streaming before official homepage/discography) → fallback
@@ -1800,9 +1859,11 @@ the panel).
   entries individually recoverable. Retention: 6 months **and** at
   most 200 entries (the stricter limit wins), hard deletion, but never
   within the 90-day fetch window. Replaces NR-4.
-- **NR-13** [active] [gtk] — Released releases already present in the
-  library are marked (not filtered out) and offer the action „Show in
-  library" (navigate + focus, **no** direct play path).
+- **NR-13** [active] [gtk] — In the full Releases overview, released
+  releases already present in the library are marked and offer the
+  action „Show in library" (navigate + focus, **no** direct play path).
+  The delta popover does not list releases already complete in the
+  library.
 - **NR-3a** [active] [gtk] — The header trigger opens „Updates" and is
   visible as soon as at least one active feed has entries or a
   first-run state per NR-8. Its badge counts exclusively unseen
@@ -1812,11 +1873,17 @@ the panel).
   jump rows „Show all releases/concerts →" navigate normally and close
   the popover. The popover has no internal subpages; the history
   lives in the full releases view (NR-12a).
-- **NR-9a** [active] [gtk] — The badge shows the sum of unseen releases
+- **NR-9a** [replaced by NR-9b] [gtk] — The badge shows the sum of unseen releases
   and concerts, from 10 shown as „9+", and renders nothing at 0.
   Opening stamps the entire delta set of both sections in the current
   scope. Releases fully present in the library are listed and
   stamped, but never count toward the unseen badge.
+- **NR-9b** [active] [core] [gtk] — The popover shows one visit batch:
+  every unseen entry, or, when none is unseen, every entry carrying the
+  newest `seen_at` stamp. Opening stamps the complete unseen batch in
+  scope, including entries below the visible cap. Rows and section
+  counts use the pre-stamp state; the badge uses the post-stamp state.
+  Releases already complete in the library do not enter the popover.
 - **NR-12a** [replaced by NR-16] [gtk] — The persistent history of
   all announcements ever shown lives in the full releases view as its
   own sidebar location. Hidden entries there are individually
@@ -1892,6 +1959,22 @@ the panel).
   the age measured from the completed update again, including a successful run
   with no queued artists. Offline or error still show the last cache and its
   previous age. The shared failure surface remains specified by NR-21.
+- **NR-23** [active] [gtk] — The delta popover shows at most five
+  releases and three concerts without an internal scroller. A section's
+  count chip names the full batch size, but appears **only while that
+  batch is genuinely unseen**: a batch held over from the last visit
+  still renders — looking twice must not empty the popover — yet carries
+  no count, because the badge has cleared by then and a header still
+  claiming "1 new" would contradict it. A section without a batch loses
+  both header and rows; when both are empty, exactly one quiet empty row
+  appears. Jump rows remain visible while their module is active, even
+  when its delta section is absent. The fetch trigger keeps the update
+  age inside its own button, so the header carries one labelled target
+  rather than a bare symbolic glyph.
+  *Reason:* the count-without-unseen case was found in a screenshot on
+  2026-08-04, after the rule's own display tests had passed — the two
+  halves of the surface were each self-consistent and only disagreed
+  with each other (see also STYLE-1).
 ## S. Surfaces & Geometry
 
 <!-- Section letter: R (New Releases) is the last one assigned; S follows
@@ -2353,16 +2436,28 @@ property is set and yet nothing happens.
   deterministically; selection never follows playback.
 - **NAV-10a** [active] [gtk] — **Marking and scrolling are separate.**
   Every visible instance of the loaded track carries the same playback
-  marker. Double-click/Enter on an already-visible row does not change the
-  viewport. Play from Stopped as well as explicit Previous/Next center the
-  new track without stealing focus or selection. Auto-advance centers only
-  if no scroll movement has occurred for 1.5 seconds; explicit
-  metadata/reveal navigation always selects, focuses, and centers.
+  marker, from one implementation (`ui/playing_marker.rs`) serving every
+  surface that lists tracks: the track table, the podcast groups, and the
+  YouTube channel detail. The player bar is not such a surface — it shows
+  the running track's state through the play/pause button, not through a
+  second copy of the list marker. Double-click/Enter on an already-visible
+  row does not change the viewport. Play from Stopped as well as explicit
+  Previous/Next center the new track without stealing focus or selection.
+  Centring moves the viewport over the Standard token rather than
+  teleporting it, and yields immediately to anything else that writes the
+  scroll position — the user's own scrolling, a model replacement, or
+  GTK's own reset. A distance of more than three viewport heights is
+  still applied at once, so the first placement after launch stays
+  instant (START-1).
+  Auto-advance centers only if no scroll movement has occurred for 1.5
+  seconds; explicit metadata/reveal navigation always selects, focuses, and
+  centers.
 - **QUE-7** [active] [gtk] — Up Next consists of the manual queue plus a
   virtual, named context tail with a count. The tail is not materialized as
   individual rows but only rendered within the visible window; the
   sidebar row "Queue" counts exclusively the manual queue and shows no
-  counter at zero.
+  counter at zero. QUE-10 applies the same virtual tail to a direct episode's
+  frozen show or channel context without changing the container queue.
 - **QUE-8** [active] [gtk] — Drag reorder exists exclusively in "Next in
   Queue". The manual section is reorderable; a drag out of "Continuing"
   upward materializes exactly that entry in the manual section.
@@ -2599,7 +2694,7 @@ property is set and yet nothing happens.
   relative to rank 1. Clicking the card or a rank row opens the library
   filtered to the artist (regular history push). If a group combines
   several spellings, the unification hint from STATS-9 is retained.
-- **STATS-14** [active] [gtk] — The songs card shows the six leading
+- **STATS-14** [replaced by STATS-22] [gtk] — The songs card shows the six leading
   tracks: cover, title, and artist in two lines, a horizontal bar relative
   to rank 1 in an accent gradient, the play count on the right. Next to
   the kicker, the toggle "by plays / by time" sorts both these six rows
@@ -2706,6 +2801,35 @@ property is set and yet nothing happens.
   origin is My Stats itself: the queue's context tail carries that name and
   jumps back to this page, rather than borrowing the name of one artist out of
   a ranking that spans many.
+- **STATS-22** [active] [gtk] — Replaces STATS-14, which still described the
+  six-row card from before STATS-19 and let the expander open a second,
+  full-width section underneath it. **The ranking is one card.** The songs card
+  carries the top ten in two columns (STATS-19): cover, title and artist on two
+  lines, a horizontal bar relative to rank 1 in an accent gradient, and the
+  metric on the right, which follows the "by plays / by time" toggle beside the
+  kicker — that toggle sorts the visible rows and the continuation alike. A row
+  plays its track inside the visible ranking (STATS-21), its two labels lead
+  into the library, and its context menu offers "Play next", "Add to queue" and
+  "Go to album". **The expander grows this card and never opens a second one:**
+  "Show more top tracks" reveals ranks 11 and up inside the same card, directly
+  below the button that opened them, and the page keeps exactly the sections it
+  had — bands, songs, genres. Collapsing returns the card to its ten rows. The
+  continuation continues the ranking rather than restating it and is offered
+  only when there is something past the ten (STATS-19); its durations use the
+  compact format from STATS-11, its titles and artists take link color and
+  underline on hover, and the focus ring stays visible. **Its rows answer like
+  the ten above them:** rank 11 is a focusable row that carries the pointer
+  cursor and the shared hover wash (BTN-1/BTN-4), plays its track on click and
+  on Enter or Space, and offers the same "Play next", "Add to queue" and "Go to
+  album" on right-click and Shift+F10. A row that sits in the ranking and stays
+  inert reads as broken, and in one card it reads that way twice over.
+  **The ranking a play hands over is what is on screen:** the visible ten while
+  the card is collapsed, those ten plus the revealed ranks while it is open —
+  which refines STATS-21's "visible top ten" to follow the card rather than the
+  render, so the queue never starts from rows nobody was shown. The clause in
+  STATS-10 that let the expanded list stand "as its own full-width section" is
+  void with this rule; everything else STATS-10 says about the page — its order,
+  its curation, its narrow-window stacking — stands.
 ## W. Buttons & interaction states
 
 <!-- Section letter: V (My Stats) is the last section assigned on main;
@@ -2807,7 +2931,7 @@ STYLE-1).
 - **AC-21** [replaced by AC-22]
 - **AC-22** [replaced by AC-23]
 - **AC-23** [active] [core] [gtk] — „Song Visuals" is a plugin, switched
-  off by default and applicable live. When switched on, the Linux
+  on by default and applicable live. When switched on, the Linux
   pipeline branches off locally normalized mono PCM before ReplayGain;
   CAVA math generates 64 logarithmic display bands from it, clamped to
   0–1. The portable core uses CAVA's double FFT resolution below 100 Hz,
@@ -2829,18 +2953,34 @@ STYLE-1).
   passage climbs to the same band values as a drop and the glow would
   fire on both. Instead a second path measures the same PCM without any
   gain of its own: a 30–150 Hz band, its RMS in true dBFS, and a slow
-  baseline of the track's own recent bass. Absolute level and the swell
-  above that baseline together produce two presentation-only values. A
-  rhythmic kick lifts two broad neon glows softly and in proportion to
-  the measured pressure; only pressure sustained across a breakdown adds
-  the two brighter inner auras. A bass band that stays quiet in absolute
+  baseline of the track's own recent bass. That path produces four
+  presentation-only values: the swell over the running baseline
+  (`impact`), the same held across a breakdown (`aura`), the attack
+  against the band's own recent floor (`kick`), and the absolute held
+  level (`pressure`).
+  **The two broad neon glows are a stage light driven by `kick`.** A hit
+  throws them to full in the same frame and they fall at the render
+  clock; they are deliberately not driven by `impact`, which measures
+  the swell over a two-second baseline and therefore cannot reach full
+  on a limited master — measured across three real tracks it tops out at
+  0.85 and clears 0.6 for one percent of a blast-beat track, while
+  `kick` reaches 1.00 on all three. The fall belongs to the render clock
+  and not to the detector: `kick`'s own release is 70 ms, and at the
+  twelve hits per second a blast beat produces, passing it straight
+  through would be a strobe. Only pressure sustained across a breakdown
+  adds the two brighter inner auras. A bass band that stays quiet in absolute
   terms never glows, however tall the bars grow, and high-frequency
   energy alone never triggers either layer. Both release after the
   impulse instead of flickering, and neither changes CAVA values, peak
   caps, nor bar heights. With animations switched off, the layer holds
   the current frame's value without decay.
   Below the canvas the visual names the analysis it reacts to —
-  absolute bass level, baseline, kick glow, and breakdown aura. The
+  absolute bass level, baseline, breakdown aura, the attack `kick` the
+  stage light runs on, the held `pressure`, and the slow `swell` the
+  cover and the panel light breathe on. `impact` is produced but not
+  shown: since the glow became a stage light nothing reads it, and this
+  strip names what the visual reacts to, not everything the detector
+  computes. The
   numbers refresh at most ten times per second so they stay readable,
   and a band without measurable signal reads as a dash instead of a
   bottomed-out level.
@@ -2854,6 +2994,88 @@ STYLE-1).
   switcher. The labeled canvas takes on the current cover accent via the
   same global ambient crossfade as the player bar; only without a usable
   cover color does the theme accent apply.
+
+- **AC-24** [active] [gtk] — The reactive light lives on the cover and the
+  playhead, nowhere else. The now-playing backdrop, the cover in the panel
+  and the cover in the player bar read the `BassPressure.pressure` that
+  already reaches the UI and its UI-side slow envelope, `swell` — never
+  the CAVA bars, whose auto-sensitivity
+  makes a quiet vocal reach the same value as a drop, and never
+  `impact`, which answers how loud a whole track is rather than what its
+  beat is doing: on a limited master it never leaves its resting value.
+  `pressure` carries the backdrop's base brightness and `swell` the slow
+  movement of every large surface. **Outside the Visualizer's own canvas,
+  nothing reads `kick` at all.** The panel cover used to take the beat
+  while that tab was open — round 5's one exception — and it read as the
+  cover twitching under its own shadow.
+  **The transport controls stay still.** The waveform's **bar heights** never
+  move: three attempts to swell them around the playhead were rejected,
+  because neighbouring bars cross their pixel boundary at different moments
+  and the eye reads that as noise rather than as life. What reacts instead is
+  colour. The played part takes a floor plus what the bass adds,
+  so every played bar changes by the same amount at the same instant and the
+  progress boundary stays legible at any volume — it keeps at least a 3:1
+  luminance ratio against the unplayed part in silence. The playhead stays a
+  one-pixel line with a slim glow beside it, and that glow follows `pressure`,
+  not the beat. **Four** attempts put the beat on this surface — a lens twice,
+  a radial glow, then a pulsing dot — and all four were rejected on sight, for
+  one reason: at five to seven kicks a second, on the surface the user has to
+  *aim* at, anything answering per beat reads as flicker rather than as life.
+  Reducing its amplitude only makes the flicker quieter, because the rate is
+  what does the damage. The glow rests while the user drags the playhead,
+  during build-up and during a crossfade; the mini player has none.
+  Every large surface that does move breathes over seconds on `swell`, a
+  UI-side slow envelope of `pressure` crossed with a free-running 5.5 s cycle
+  — deliberately not locked to the tempo, because a swell that locks to the
+  beat is a tick again, only slower.
+  Outside the Visualizer view, `kick` therefore drives only the playhead dot.
+  **In the track list only the marker's tempo follows**, in steps: the
+  three-bar loop that says "this one is playing" runs slower where the
+  track rests and faster where it pushes, driven by `swell` and never by
+  `kick`. Nothing else there moves — no light, no wash, no change to a
+  bar's height, because that view is a surface for reading and for
+  hitting. The steps carry hysteresis and sit on the `ColumnView` as
+  ancestor classes, exactly like the paused state, so no cell is touched
+  and the viewport cannot move; they are steps rather than a tracked
+  rate because GTK restarts a keyframe cycle whenever its duration
+  changes.
+  The play/pause button is what a
+  pointer aims at and, once the running track scrolls out of the list,
+  the only place the playback state is read from — a control that
+  answers the music moves under the cursor and competes with the state
+  it reports. The cover itself never changes brightness either: the
+  eye reads luminance change in peripheral vision, so a brightening
+  cover pulls attention off the list; it lifts on its shadow, carries a
+  one-pixel light seam along its edge, and has a soft disc of the blurred
+  artwork turning behind it — one turn a minute. The seam sits
+  one pixel outside the artwork, so the cover's footprint grows by exactly
+  one pixel on each side; nothing crosses the picture itself. The seam
+  takes its hue from the cover but not its chroma: the player accent is
+  ink and stays muted for the waveform and the play button, while a
+  translucent one-pixel seam at that chroma measured as invisible, so the
+  seam reads the same hue lifted into a wider band. **The turning disc is
+  the artwork itself, not colours extracted from it.** A palette sweep was
+  built first and measured against a real library: half the covers are
+  greyscale or near-black and yield no usable colour at all, and most of
+  the rest are monochrome artwork, so the sweep came out as one flat tone
+  lying on a backdrop of the same tone. The blurred cover always has
+  structure, even in black and white. The lift is
+  two cached shadow layers
+  whose opacities cross-fade with the composite coverage held constant —
+  a linear `1 - swell` pair sums to one and still dips 14 %, which reads
+  as a flicker during the cross-fade. Every large effect rests at its
+  value for `swell = pressure = 0`; outside playback the slow signal
+  decays instead of freezing at the last reading. The "Song Visuals"
+  plugin is the deliberate off-switch for the whole layer. With
+  `gtk-enable-animations=false` (MOT-7), the brightness remains at the
+  bare slow base while the free-running breath stops. **The head of the
+  panel looks the same whichever tab is open.** The Visual tab used to hold
+  the backdrop at rest and darken the turning disc, on the theory that two
+  light languages in one panel fight each other; in use the plain treatment
+  was simply better there too. The backdrop and the disc rest only when the
+  "Song Visuals" plugin is off or the panel is closed — the second because a
+  pinned backdrop runs no tick, and without it the paused breath would keep
+  redrawing a widget nobody can see.
 
 ## Y. Library Doctor / Tag Cleanup
 
@@ -3158,12 +3380,8 @@ means deterministic and high-confidence, never „without review".
   queue, cover, or My Stats. The destination selects, focuses, and
   centers the anchor track; Back restores the point of origin.
 
-- **BROWSE-5** [active] [core] — **Session restore is limited.** The
-  current browser location, the remembered library root, and the
-  structured playback origin are restored. History, open search
-  surfaces, utilities, and raw widget focus do not survive a restart.
-  Destinations that can no longer be resolved fall back to the library
-  root.
+- **BROWSE-5** [replaced by BROWSE-12] — Session restore previously retained
+  sorting and playback origin but always opened the library root.
 
 - **BROWSE-6** [active] [core] — **Listening events are historical
   facts.** Every qualified play stores the title, album, artist, genre,
@@ -3221,6 +3439,14 @@ means deterministic and high-confidence, never „without review".
   rows remain focused; otherwise selection and focus fall to the next row, to
   the previous row at the end of the list, and to the stable content
   container when the list is empty.
+
+- **BROWSE-12** [active] [core] [gtk] — **The last browser destination is a
+  session value.** Its structured place owns source, scope, search, facets,
+  sorting, stable anchor, selection, and content focus and survives a normal
+  restart. Stable source roots such as Podcasts, YouTube, Radio, Releases,
+  Concerts, and My Stats remain resolvable without a track collection; stale
+  database-backed places fall back to the remembered Music root. Back/Forward
+  history, utility overlays, and raw widget focus remain process-local.
 
 - **COVER-1** [active] [core] — After a downloaded album cover has been
   published in the XDG cache, Reprise also writes `cover.<ext>` into every
@@ -3581,7 +3807,9 @@ listening statistics.
   with plus, label, and radius 8 in both sources, never the chip shape.
   The shared toolbar grammar reads Add button · "Add filter" · active,
   deletable filter pills · count on the right; filter rows keep their
-  height across state changes.
+  height across state changes. On Podcasts and YouTube, the popover offers
+  only Unplayed and Downloaded; the existing show/channel groups provide
+  per-source narrowing through expansion and collapse.
 - **SRC-3** [replaced by SRC-3a] [gtk] — Each source has exactly one add dialog
   with exactly one input field for search terms or a URL. Search
   returns grouped results with row actions; a recognized URL leads
@@ -3597,9 +3825,14 @@ listening statistics.
   only moving them to trash; multiple unsubscribes are aggregated.
 - **SRC-5** [active] [gtk] — RSS podcasts and YouTube are separate library
   places. Both start with source rows grouped by channel or show which expand
-  to their episodes; radio stays a station list. The add dialogs show real
-  source images, group YouTube hits by channel, and hide podcasts, channels and
-  stations that are already subscribed.
+  to their episodes; radio stays a station list. A YouTube source is named by
+  its channel and has no author subtitle; an RSS source keeps its show title
+  plus a distinct author subtitle when present. The source identity stays
+  vertically centered beside its artwork instead of sticking to the top of the
+  group header. The existing episode, new, latest and download facts line stays
+  unchanged. The add dialogs show real source images, group YouTube hits by
+  channel, and hide podcasts, channels and stations that are already
+  subscribed.
 - **SRC-3a** [active] [gtk] — Every source has exactly one add dialog with
   exactly one input field for search terms or a URL. Search yields results with
   row actions; a recognized URL **of the dialog's own source** leads through
@@ -3691,9 +3924,13 @@ listening statistics.
   privacy promise in UI copy needs a test per call path, not per feature.
 - **SRC-12** [active] [gtk] — Episodes can be selected in bulk in both the
   grouped library view and the channel detail view, with one shared set of
-  batch actions. Actions that are meaningless for more than one episode are
-  hidden rather than applied to an arbitrary member, and a batch reports
-  itself with a single aggregated toast and a single undo.
+  batch actions offered only by the context menu for the current selection;
+  there are no episode checkboxes or separate selection toolbar. Actions that
+  are meaningless for more than one episode are hidden rather than applied to
+  an arbitrary member, and a batch reports itself with a single aggregated
+  toast and a single undo. Escape clears the current episode selection in
+  whichever of the two surfaces is showing, and is passed on untouched when
+  nothing is selected.
 - **SRC-4a** [active] [gtk] — Radio keeps SRC-4's removal and undo
   behavior, and its station menus continue to omit "Play Next" and "Add
   to Queue". A live stream is deliberately not a citizen of an ordered
@@ -3703,28 +3940,37 @@ listening statistics.
   download-preservation, and undo behavior. Their episode menus additionally
   expose "Play Next" and "Add to Queue" for the current episode selection;
   the same actions are the keyboard-accessible partner of the typed episode
-  drag source. This asymmetry with radio is deliberate. Unsubscribing is
-  operated from the context menu alone; there is no hover star.
+  drag source. Beside "Copy episode URL", the menu exposes the single-episode
+  action "Open in browser" only when the episode has a launchable web page:
+  YouTube uses the durable watch URL from `audio_url`, while RSS uses
+  `page_url` when present and never treats its media enclosure in `audio_url`
+  as an episode page. As a single-episode action it is absent from a
+  multi-selection menu instead of targeting an arbitrary member, as required
+  by SRC-12. This asymmetry with radio is deliberate. Unsubscribing is operated
+  from the context menu alone; there is no hover star.
 - **SRC-13** [active] [gtk] — **Marking and scrolling are separate in the
   source lists.** The loaded item carries the shared playback marker in every
   source list it appears in; setting the marker never moves the viewport. It is
   revealed — group expanded, row centered — on entering the view and when the
   loaded item changed outside the view, the latter only if no scroll movement
   has occurred for 1.5 seconds. Activating a row never reveals, because the row
-  was visible. A reveal changes neither focus nor selection. A collapsed
-  group's ten-episode preview window opens when the loaded episode sits past
-  it; an item hidden by the active filter is not revealed and the filter is
-  never cleared to reach it.
+  was visible. A reveal changes neither focus nor selection, except START-3's
+  one cold-start restoration, which makes the restored episode the sole
+  selection without taking focus. A collapsed group's ten-episode preview
+  window opens when the loaded episode sits past it; an item hidden by the
+  active filter is not revealed and the filter is never cleared to reach it.
 - **SRC-14** [active] [gtk] — **Episode rows select like track rows.** A click
   selects the row alone, Ctrl-click toggles it, Shift-click extends the
   selection from the anchor across the rendered order, and playback takes a
   double click or Enter. Space toggles the focused row's selection and
   Shift+Space extends from the anchor. A secondary click on a row outside the
   selection makes that row the selection before the menu opens, so a menu never
-  acts on rows the pointer is not on. A range covers only rendered rows: a
-  collapsed group, the episodes past a preview window and rows hidden by the
-  filter stay out of it. Applying a selection never rebuilds the list, so
-  keyboard focus survives it.
+  acts on rows the pointer is not on. That same selection-aware menu is reached
+  three ways — by secondary click, by the row's ⋮, and by Menu/Shift+F10 — and
+  the YouTube channel view carries the same row menu as the grouped list.
+  A range covers only rendered rows: a collapsed group, the episodes past a
+  preview window and rows hidden by the filter stay out of it. Applying a
+  selection never rebuilds the list, so keyboard focus survives it.
 - **POD-1** [active] [core] — Episode status is a pure derivation:
   Played exactly when `played_at` is set, otherwise Resume when
   `position_ms > 0`, otherwise unstarted. The visible New pill is a
@@ -3935,7 +4181,11 @@ listening statistics.
   and collapsed Details; a successful refresh removes it silently. When no
   cached or downloaded episode exists, the same information and actions use
   the shared full-area failure state instead. Neither surface renders raw
-  provider, transport, database or helper text outside Details.
+  provider, transport, database or helper text outside Details. The populated
+  banner keeps its copy, actions, Details toggle and labelled close control in
+  one compact summary row; only the technical Details expand below it. Closing
+  the banner clears the current failure notice without claiming that a refresh
+  succeeded, and a later provider failure may appear as a new notice.
 - **POD-20** [active] [gtk] — The loaded episode carries the shared
   playback marker in every episode surface it appears in, and that marker
   tells running from paused. Activating the loaded row toggles pause and

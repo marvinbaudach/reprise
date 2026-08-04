@@ -16,6 +16,7 @@ pub const SOURCE_ADDED_ACCESSIBLE: &str = N_!("{source} is already in your libra
 pub const SOURCE_SUBSCRIBED_DROP_OUT: &str = N_!("Subscribed sources drop out of later searches.");
 pub const SOURCE_DETAILS: &str = N_!("Details");
 pub const SOURCE_COPY_DETAILS: &str = N_!("Copy");
+pub const SOURCE_DISMISS: &str = N_!("Dismiss");
 pub const SOURCE_TRY_AGAIN: &str = N_!("Try again");
 pub const SOURCE_CHECK_SUBSCRIPTION: &str = N_!("Check subscription");
 pub const SOURCE_UNSUBSCRIBE: &str = N_!("Unsubscribe");

@@ -1,7 +1,7 @@
 pub(in crate::ui) mod column_header_dnd;
 pub(crate) mod column_layout;
 pub(in crate::ui) mod column_layout_editor;
-pub(in crate::ui) mod column_widths;
+pub(in crate::ui) use reprise_view::column_widths;
 pub(in crate::ui) mod current_track_selection;
 pub(in crate::ui) mod end_of_results;
 pub(in crate::ui) mod list_density;
@@ -10,10 +10,16 @@ pub(in crate::ui) mod now_playing_marker;
 mod playlist_reorder_guard;
 pub(crate) mod queue_item_menu;
 pub(crate) mod queue_item_presentation;
-pub(crate) mod queue_row_mapping;
+pub(crate) mod queue_row_mapping {
+    pub(crate) use reprise_view::queue::rows::{
+        classify, is_read_only_episode_projection, reorder_op, reorder_rows, QueueReorderOp,
+        QueueRow,
+    };
+}
 pub(crate) mod queue_sections;
 pub(crate) mod rating;
 pub(in crate::ui) mod rating_cell_refresh;
+mod rating_column;
 pub(in crate::ui) mod reload_restore;
 mod responsive_columns;
 #[path = "track_list.rs"]
@@ -46,9 +52,12 @@ pub(in crate::ui) mod track_list_rescan;
 pub(in crate::ui) mod track_list_row_interaction;
 pub(crate) mod track_list_smoke;
 pub(crate) mod track_list_sort;
+pub(crate) mod track_list_title_column;
 mod track_list_toast;
+mod track_list_wiring;
 pub(in crate::ui) mod track_menu;
 pub(crate) mod track_playback_selection;
+mod track_reveal;
 pub(in crate::ui) mod view_state_memory;
 
 #[allow(unused_imports)]

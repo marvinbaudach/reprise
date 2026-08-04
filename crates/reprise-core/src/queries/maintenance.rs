@@ -9,6 +9,9 @@ use std::path::{Path, PathBuf};
 use crate::db::Db;
 use crate::device_sync::SyncTrack;
 use crate::library::playlists;
+use crate::library::source::{
+    LibraryLinkMode, LibraryPathPresence, LibrarySource, UnixLibrarySource,
+};
 use crate::models::MissingReason;
 use rusqlite::{Connection, OptionalExtension};
 
@@ -248,6 +251,14 @@ pub fn query_track_album_artist(db: &Db, id: i64) -> Result<Option<String>, rusq
 /// are omitted. The file size is read at enqueue time so progress totals
 /// describe the bytes that will actually be copied.
 pub fn query_sync_tracks(db: &Db, ids: &[i64]) -> Result<Vec<SyncTrack>, rusqlite::Error> {
+    query_sync_tracks_with_source(&UnixLibrarySource, db, ids)
+}
+
+pub fn query_sync_tracks_with_source(
+    source: &dyn LibrarySource,
+    db: &Db,
+    ids: &[i64],
+) -> Result<Vec<SyncTrack>, rusqlite::Error> {
     let conn = db.conn();
     let mut statement = conn.prepare(&format!(
         "SELECT path,title,artist,album,album_artist,track_no,duration_ms,bitrate_kbps \
@@ -287,12 +298,17 @@ pub fn query_sync_tracks(db: &Db, ids: &[i64]) -> Result<Vec<SyncTrack>, rusqlit
             continue;
         };
         let source_path = PathBuf::from(path);
-        let Ok(metadata) = source_path.metadata() else {
+        let LibraryPathPresence::Present(metadata) =
+            source.probe(&source_path, LibraryLinkMode::Follow)
+        else {
             continue;
         };
-        if !metadata.is_file() {
+        if !metadata.is_file {
             continue;
         }
+        let Some(size_bytes) = metadata.size else {
+            continue;
+        };
         let Some(original_name) = source_path.file_name() else {
             continue;
         };
@@ -309,10 +325,9 @@ pub fn query_sync_tracks(db: &Db, ids: &[i64]) -> Result<Vec<SyncTrack>, rusqlit
             bitrate_kbps: bitrate_kbps
                 .and_then(|value| u32::try_from(value).ok())
                 .filter(|value| *value > 0),
-            size_bytes: metadata.len(),
+            size_bytes,
             source_mtime: metadata
-                .modified()
-                .ok()
+                .modified
                 .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
                 .and_then(|duration| i64::try_from(duration.as_secs()).ok())
                 .unwrap_or(0),
@@ -331,18 +346,29 @@ pub fn query_sync_tracks(db: &Db, ids: &[i64]) -> Result<Vec<SyncTrack>, rusqlit
 /// preserved, and the row resurfaces in `ViewSource::Missing` (Stage 3 Task
 /// 3) instead of vanishing outright.
 ///
-/// Task 1.2: this is the playback-fault call site `Track::is_missing`'s doc
-/// comment refers to. Task 1.5 swapped the blanket `MissingReason::Unknown`
-/// this used to always write for a real verdict from `library::mounts::
-/// classify_missing`, the same classifier the scanner's own folded-in
-/// mark-vanished phase (`library::scanner::scan_folder`) uses — one `SELECT`
-/// of the row's `path`/`device` first. The expected path is the identity
+/// This is the playback-fault call site `Track::is_missing` documents. It uses
+/// [`LibrarySource::reachability`], the same classifier as the scanner's
+/// mark-vanished phase, after selecting the row's path and device. The
+/// expected path is the identity
 /// snapshot taken before the asynchronous backend fault arrived. Both the
 /// read and write require that same path plus `PRESENT`, and the file is
 /// rechecked immediately before writing. A watcher/Locate reconcile that
 /// wins the race therefore survives instead of having its new live identity
 /// marked missing by stale fault work. Returns whether one row changed.
 pub fn mark_track_missing_if_current(
+    db: &Db,
+    track_id: i64,
+    expected_path: &Path,
+) -> Result<bool, rusqlite::Error> {
+    mark_track_missing_if_current_with(&UnixLibrarySource, db, track_id, expected_path)
+}
+
+/// [`mark_track_missing_if_current`] with the library source injected.
+/// Production passes [`UnixLibrarySource`]; the seam exists so a non-POSIX
+/// source can be classified against without a real filesystem, and so an
+/// Android SAF source can be handed in here once one exists.
+pub(super) fn mark_track_missing_if_current_with(
+    source: &dyn LibrarySource,
     db: &Db,
     track_id: i64,
     expected_path: &Path,
@@ -359,10 +385,10 @@ pub fn mark_track_missing_if_current(
     let Some((path, device)) = row else {
         return Ok(false);
     };
-    if Path::new(&path).is_file() {
+    if source.probe(Path::new(&path), LibraryLinkMode::Follow) != LibraryPathPresence::Absent {
         return Ok(false);
     }
-    let reason = crate::library::mounts::classify_missing(device, Path::new(&path));
+    let reason = source.reachability(Path::new(&path), device);
     let changed = conn.execute(
         &format!(
             "UPDATE tracks SET missing_since=strftime('%s','now'),missing_reason=?3 \

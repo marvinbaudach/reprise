@@ -416,7 +416,8 @@ fn preparation_skipped_offline(files: usize) -> String {
 /// "Step 1 of 2 · Downloading 1 of 2 · 62%" — the preparation download's own
 /// progress line. Always step 1: a preparation phase only ever precedes the
 /// transfer, never follows it.
-pub fn preparation_step_progress(current_index: usize, total: usize, percent: u64) -> String {
+#[cfg(test)]
+fn preparation_step_progress(current_index: usize, total: usize, percent: u64) -> String {
     format!(
         "Step 1 of 2 · Downloading {} of {total} · {percent}%",
         current_index + 1
@@ -426,7 +427,8 @@ pub fn preparation_step_progress(current_index: usize, total: usize, percent: u6
 /// Prefixes an existing transfer-progress title with "Step 2 of 2" — used
 /// only when this run's transfer phase was actually preceded by a
 /// preparation download, never for a plain single-phase sync.
-pub fn two_phase_title(title: &str) -> String {
+#[cfg(test)]
+fn two_phase_title(title: &str) -> String {
     format!("Step 2 of 2 · {title}")
 }
 

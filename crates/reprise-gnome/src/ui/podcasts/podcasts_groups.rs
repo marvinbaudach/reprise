@@ -12,16 +12,17 @@ use reprise_core::podcasts::download_state::DownloadState;
 use reprise_core::podcasts::{EpisodeRow, PodcastKind, SourceGroup};
 
 use super::podcasts_context_menu;
+use super::podcasts_context_surface;
 use super::podcasts_playback::EpisodeMark;
 use super::podcasts_presentation::{
-    author_line, detail_line, duration, file_size, on_phone, relative_date, status_pill,
+    detail_line, duration, file_size, on_phone, relative_date, source_header, status_pill,
     RenderedSourceGroup, SourceSummary,
 };
 use super::podcasts_row_interaction::{
     episode_thumbnail, install_row_interaction, SELECT_ROW_ACTION,
 };
 use super::podcasts_row_state::{download_status, RowNetworkState};
-use super::podcasts_selection::{self, PodcastSelection, SelectMode};
+use super::podcasts_selection::PodcastSelection;
 use super::podcasts_title::TitleParts;
 use crate::ui::playing_marker;
 use crate::ui::strings;
@@ -38,15 +39,10 @@ pub(super) struct DownloadRowWidgets {
     pub(super) marker: gtk4::Box,
 }
 
-/// The widgets a selection change has to touch on one row, held per episode so
-/// a selection can be applied without rebuilding the list — see
-/// `PodcastsView::apply_selection`. `toggled` is the checkbox's own handler id,
-/// blocked while the state is pushed back into it so the push cannot re-enter
-/// through `podcasts.set-selected`.
+/// The row a selection change has to touch, held per episode so a selection can
+/// be applied without rebuilding the list — see `PodcastsView::apply_selection`.
 pub(super) struct SelectionRowWidgets {
     pub(super) row: gtk4::Box,
-    pub(super) checkbox: gtk4::CheckButton,
-    pub(super) toggled: gtk4::glib::SignalHandlerId,
 }
 
 /// Everything `replace` hands back for later targeted updates.
@@ -247,12 +243,14 @@ fn group_header(
 
     let identity = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
     identity.set_hexpand(true);
-    let title = gtk4::Label::new(Some(&group.title));
+    identity.set_valign(gtk4::Align::Center);
+    let source = source_header(group.kind, &group.title, group.author.as_deref());
+    let title = gtk4::Label::new(Some(source.title));
     title.set_xalign(0.0);
     title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
     title.add_css_class("heading");
     identity.append(&title);
-    if let Some(author) = author_line(&group.title, group.author.as_deref()) {
+    if let Some(author) = source.subtitle {
         let author = gtk4::Label::new(Some(author));
         author.set_xalign(0.0);
         author.set_ellipsize(gtk4::pango::EllipsizeMode::End);
@@ -299,6 +297,12 @@ fn group_header(
     menu.add_css_class("flat");
     menu.set_tooltip_text(Some(&strings::text(strings::PODCAST_MORE_SOURCE_OPTIONS)));
     header.append(&menu);
+    podcasts_context_surface::wire_source_header(
+        &header,
+        group,
+        connected_devices,
+        selected_device_ids,
+    );
     header.upcast()
 }
 
@@ -330,9 +334,12 @@ fn episode_row(
     // input-parity: ACC-8 keyboard=episode-row-enter-space
     root.set_cursor_from_name(Some("pointer"));
     root.set_accessible_role(gtk4::AccessibleRole::Button);
-    root.update_property(&[gtk4::accessible::Property::Label(&strings::text(
-        strings::PLAY_OR_PAUSE,
-    ))]);
+    // The name is what the row *is*, not what clicking it does: activating
+    // this button plays the episode, while a plain click selects it. Naming
+    // it "Select …" would tell a screen reader the opposite of what Enter
+    // does. Selection is reported through the `Selected` state below, which
+    // is where assistive technology expects to read it.
+    root.update_property(&[gtk4::accessible::Property::Label(&row.title)]);
     root.set_valign(gtk4::Align::Center);
     if loaded {
         root.add_css_class("reprise-podcast-playing");
@@ -343,19 +350,13 @@ fn episode_row(
     root.set_margin_bottom(4);
 
     let is_selected = context.selection.borrow().contains(row.id);
+    root.update_state(&[gtk4::accessible::State::Selected(Some(is_selected))]);
     if is_selected {
         root.add_css_class(SELECTED_ROW_CLASS);
     }
-    let (selected, toggled) = podcasts_selection::episode_checkbox(row.id, &row.title, is_selected);
-    root.append(&selected);
-    widgets.selection.insert(
-        row.id,
-        SelectionRowWidgets {
-            row: root.clone(),
-            checkbox: selected.clone(),
-            toggled,
-        },
-    );
+    widgets
+        .selection
+        .insert(row.id, SelectionRowWidgets { row: root.clone() });
 
     let thumbnail = episode_thumbnail(row, context.images_allowed);
     let marker = playing_marker::build();
@@ -365,6 +366,13 @@ fn episode_row(
     thumbnail.add_overlay(&marker);
     root.append(&thumbnail);
     install_row_interaction(&root, row.id, SELECT_ROW_ACTION);
+    podcasts_context_surface::wire_episode_row(
+        &root,
+        row,
+        context.selection,
+        context.unavailable_episode,
+        SELECT_ROW_ACTION,
+    );
     super::podcasts_dnd::wire_episode_drag_source(&root, row.id, context.selection);
 
     let identity = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
@@ -413,33 +421,12 @@ fn episode_row(
     widgets.downloads.insert(row.id, download_row);
     root.append(&download);
 
-    let menu = gtk4::MenuButton::builder()
-        .icon_name("view-more-symbolic")
-        .build();
-    // `SRC-14`: built when it opens, not when the row is rendered. A selection
-    // change no longer re-renders (that is what keeps keyboard focus alive), so
-    // a model built here would describe a selection that has since moved on.
-    // Opening it also makes the row the selection when it was outside it, so
-    // the menu and the highlighted rows agree on what is about to be acted on.
-    let menu_row = row.clone();
-    let menu_selection = context.selection.clone();
-    let unavailable_episode = context.unavailable_episode;
-    menu.set_create_popup_func(move |menu| {
-        if !menu_selection.borrow().contains(menu_row.id) {
-            let target = (menu_row.id, SelectMode::Only.as_u8()).to_variant();
-            if let Err(error) = menu.activate_action("podcasts.select-row", Some(&target)) {
-                tracing::debug!(%error, "podcast row menu could not take over the selection");
-            }
-        }
-        let selected_ids = menu_selection.borrow().selected_ids();
-        menu.set_menu_model(Some(&podcasts_context_menu::build_for_selection(
-            &menu_row,
-            &selected_ids,
-            unavailable_episode,
-        )));
-    });
-    menu.add_css_class("flat");
-    menu.set_tooltip_text(Some(&strings::text(strings::PODCAST_MORE_OPTIONS)));
+    let menu = podcasts_context_surface::episode_menu_button(
+        row,
+        context.selection,
+        context.unavailable_episode,
+        SELECT_ROW_ACTION,
+    );
     root.append(&menu);
     root.upcast()
 }

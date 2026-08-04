@@ -179,6 +179,26 @@ pub(super) fn detail_line<'a>(parts: impl IntoIterator<Item = &'a str>) -> Strin
         .join(" · ")
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct SourceHeader<'a> {
+    pub(super) title: &'a str,
+    pub(super) subtitle: Option<&'a str>,
+}
+
+pub(super) fn source_header<'a>(
+    kind: PodcastKind,
+    title: &'a str,
+    author: Option<&'a str>,
+) -> SourceHeader<'a> {
+    SourceHeader {
+        title,
+        subtitle: match kind {
+            PodcastKind::Rss => author_line(title, author),
+            PodcastKind::Youtube => None,
+        },
+    }
+}
+
 pub(super) fn author_line<'a>(title: &str, author: Option<&'a str>) -> Option<&'a str> {
     let author = author.map(str::trim).filter(|author| !author.is_empty())?;
     let normalized_title = title.trim().to_lowercase();
@@ -236,7 +256,6 @@ pub(super) fn status_pill(row: &EpisodeRow) -> Option<Pill> {
 
 pub(super) fn matches_filter(row: &EpisodeRow, filter: &PodcastFilter) -> bool {
     (!filter.unplayed_only || row.played_at.is_none())
-        && filter.show.as_deref().is_none_or(|show| row.show == show)
         && filter.source.is_none_or(|source| row.kind == source)
         && (!filter.downloaded_only || row.downloaded_path.is_some())
 }
@@ -249,10 +268,7 @@ pub(super) fn apply_filter(rows: &[EpisodeRow], filter: &PodcastFilter) -> Vec<E
 }
 
 pub(super) fn active(filter: &PodcastFilter) -> bool {
-    filter.unplayed_only
-        || filter.show.is_some()
-        || filter.source.is_some()
-        || filter.downloaded_only
+    filter.unplayed_only || filter.downloaded_only
 }
 
 pub(super) fn sort_newest_first(rows: &mut [EpisodeRow]) {
@@ -409,20 +425,38 @@ mod tests {
     }
 
     #[test]
-    fn filtering_composes_unplayed_show_and_source() {
+    fn src_5_youtube_header_has_one_channel_name_while_rss_keeps_its_author() {
+        assert_eq!(
+            source_header(PodcastKind::Youtube, "Ferris Media", Some("Ferris Media")),
+            SourceHeader {
+                title: "Ferris Media",
+                subtitle: None,
+            }
+        );
+        assert_eq!(
+            source_header(PodcastKind::Rss, "Systems Weekly", Some("Ada Lovelace")),
+            SourceHeader {
+                title: "Systems Weekly",
+                subtitle: Some("Ada Lovelace"),
+            }
+        );
+    }
+
+    #[test]
+    fn filtering_composes_unplayed_downloaded_and_source() {
         let mut rows = vec![
             row(1, Some(10), PodcastKind::Rss),
             row(2, Some(20), PodcastKind::Youtube),
             row(3, Some(30), PodcastKind::Rss),
         ];
         rows[0].played_at = Some(100);
+        rows[1].downloaded_path = Some("/music/ep2.mp3".into());
         let filtered = apply_filter(
             &rows,
             &PodcastFilter {
                 unplayed_only: true,
-                show: Some("Show".into()),
                 source: Some(PodcastKind::Youtube),
-                downloaded_only: false,
+                downloaded_only: true,
             },
         );
         assert_eq!(filtered.iter().map(|row| row.id).collect::<Vec<_>>(), [2]);

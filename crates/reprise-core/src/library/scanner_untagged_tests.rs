@@ -254,7 +254,11 @@ fn a_dismissed_import_error_does_not_block_repairing_an_untagged_track() {
     .unwrap();
     let path_str = path.to_string_lossy().to_string();
     let meta = std::fs::metadata(&path).unwrap();
-    let mtime = file_mtime(&path);
+    let metadata = match UnixLibrarySource.probe(&path, LibraryLinkMode::Follow) {
+        LibraryPathPresence::Present(metadata) => Some(metadata),
+        LibraryPathPresence::Absent | LibraryPathPresence::Unknown => None,
+    };
+    let (mtime, _) = scanner_file_metadata(metadata);
     let size = meta.len() as i64;
 
     let conn = crate::db::Db::open_in_memory().unwrap();
@@ -379,7 +383,11 @@ fn a_later_scan_repairs_an_already_imported_untagged_track_with_unchanged_mtime(
 
     // Seed the row exactly as a pre-repair import would have: flagged untagged,
     // with the file's current mtime so the incremental fast path would skip it.
-    let mtime = file_mtime(&path);
+    let metadata = match UnixLibrarySource.probe(&path, LibraryLinkMode::Follow) {
+        LibraryPathPresence::Present(metadata) => Some(metadata),
+        LibraryPathPresence::Absent | LibraryPathPresence::Unknown => None,
+    };
+    let (mtime, _) = scanner_file_metadata(metadata);
     conn.conn()
         .execute(
             "INSERT INTO tracks (path, title, artist, album, added_at, file_mtime, untagged) \

@@ -13,7 +13,9 @@
 
 use super::*;
 use crate::library::playlists;
+use crate::library::source_test_support::UnknownProbeSource;
 use std::collections::HashSet;
+use std::path::Path;
 
 fn seeded_sync_tracks() -> (tempfile::TempDir, crate::db::Db) {
     let temp = tempfile::tempdir().unwrap();
@@ -524,6 +526,33 @@ fn sync_tracks_include_copy_metadata_and_actual_file_size() {
     assert_eq!(track.artist, "Second");
     assert_eq!(track.duration_ms, 22_000);
     assert_eq!(track.size_bytes, 22);
+}
+
+#[test]
+fn unknown_probe_does_not_mark_playback_fault_track_missing() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    let path = Path::new("content://provider/document/song.flac");
+    conn.execute(
+        "INSERT INTO tracks (id, path, title, artist, added_at, device) \
+         VALUES (1, ?1, 'Song', 'Artist', 0, 41)",
+        [path.to_string_lossy()],
+    )
+    .unwrap();
+
+    let changed =
+        super::maintenance::mark_track_missing_if_current_with(&UnknownProbeSource, &db, 1, path)
+            .unwrap();
+    let missing: (Option<i64>, Option<String>) = conn
+        .query_row(
+            "SELECT missing_since, missing_reason FROM tracks WHERE id = 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+
+    assert!(!changed);
+    assert_eq!(missing, (None, None));
 }
 
 // -- query_track_album_artist (player-bar artist deep-link) --------------

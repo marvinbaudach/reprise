@@ -14,6 +14,164 @@ impl WaveformSeek {
     }
 }
 
+/// The regression that keeps the lens out. Three attempts died here: a narrow
+/// lens, a wide lens quantised to even device pixels, and a playhead glow.
+/// The first two moved bar heights and read as noise in the rounding error,
+/// because neighbouring bars crossed their pixel boundary at different
+/// moments. This round reacts in colour and in one dot instead, so the
+/// property to pin is not "no signal reaches this file" — both readings now
+/// do — but "no height moves, whatever they say".
+#[test]
+fn ac_24_bar_heights_never_move_with_the_music() {
+    use super::render::{bar_height_for_test, bar_height_for_test_with_light};
+    let (min, max) = (3.9, 26.0);
+    for level in [0u8, 40, 128, 200, 255] {
+        let reference = bar_height_for_test(level, min, max);
+        for step in 0..=20 {
+            let reading = f64::from(step) / 20.0;
+            for (kick, pressure, swell) in [
+                (reading, 0.0, 0.0),
+                (0.0, reading, 0.0),
+                (0.0, 0.0, reading),
+                (reading, reading, reading),
+            ] {
+                assert_eq!(
+                    bar_height_for_test_with_light(level, min, max, kick, pressure, swell),
+                    reference,
+                    "a bar height moved at kick {kick}, pressure {pressure}, swell {swell}"
+                );
+            }
+        }
+    }
+}
+
+fn rgb_from_hex(hex: &str) -> (f64, f64, f64) {
+    let hex = hex.strip_prefix('#').expect("theme colors use #RRGGBB");
+    let channel = |offset| {
+        f64::from(
+            u8::from_str_radix(&hex[offset..offset + 2], 16)
+                .expect("theme colors use hexadecimal channels"),
+        ) / 255.0
+    };
+    (channel(0), channel(2), channel(4))
+}
+
+fn accent_rgb() -> (f64, f64, f64) {
+    rgb_from_hex(
+        crate::ui::style::theme::Theme::DEFAULT
+            .palette()
+            .player_accent,
+    )
+}
+
+fn composited_luminance(rgb: (f64, f64, f64), alpha: f64) -> f64 {
+    let background = rgb_from_hex(
+        crate::ui::style::theme::Theme::DEFAULT
+            .palette()
+            .headerbar_bg,
+    );
+    let composite = |foreground: f64, background: f64| {
+        foreground * alpha.clamp(0.0, 1.0) + background * (1.0 - alpha.clamp(0.0, 1.0))
+    };
+    let linear = |channel: f64| {
+        if channel <= 0.04045 {
+            channel / 12.92
+        } else {
+            ((channel + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.2126 * linear(composite(rgb.0, background.0))
+        + 0.7152 * linear(composite(rgb.1, background.1))
+        + 0.0722 * linear(composite(rgb.2, background.2))
+}
+
+#[test]
+fn ac_24_the_played_colour_rides_a_floor_that_never_moves() {
+    use super::render::played_light;
+    // The floor is what keeps the progress boundary readable on a quiet track.
+    assert!((played_light(0.0, 0.0) - 0.74).abs() < 1e-9);
+    assert!((played_light(1.0, 0.0) - 0.90).abs() < 1e-9);
+    assert!((played_light(0.0, 1.0) - 0.84).abs() < 1e-9);
+    assert!((played_light(1.0, 1.0) - 1.00).abs() < 1e-9);
+    // Out-of-range readings clamp instead of over-driving the fill.
+    assert!((played_light(-1.0, -1.0) - 0.74).abs() < 1e-9);
+    assert!((played_light(4.0, 4.0) - 1.00).abs() < 1e-9);
+    // Never below the floor, at any reading in range.
+    for step in 0..=20 {
+        let reading = f64::from(step) / 20.0;
+        assert!(played_light(reading, reading) >= 0.74 - 1e-9);
+    }
+}
+
+#[test]
+fn ac_24_the_progress_boundary_is_legible_in_silence() {
+    use super::render::played_light;
+
+    // Measured requirement, not a matter of taste: at pressure = swell = 0 the
+    // played part must differ from the unplayed part by at least 3:1 in
+    // luminance, so the boundary reads without relying on hue — which is what
+    // a red/green-blind user, or a glance, actually has.
+    //
+    // Composite each side over the bar's own background and compare relative
+    // luminance (WCAG: (L1 + 0.05) / (L2 + 0.05)).
+    let played = composited_luminance(accent_rgb(), played_light(0.0, 0.0) * 1.0);
+    let unplayed = composited_luminance((1.0, 1.0, 1.0), UNPLAYED_ALPHA);
+    let ratio = (played.max(unplayed) + 0.05) / (played.min(unplayed) + 0.05);
+    assert!(
+        ratio >= 3.0,
+        "played/unplayed luminance ratio is only {ratio:.2}:1"
+    );
+}
+
+#[test]
+fn ac_24_the_playhead_glow_is_slim_and_follows_the_slow_signal() {
+    use super::render::{playhead_glow_alpha, playhead_glow_half_width};
+    // Four attempts drove this from the raw beat — a lens twice, a radial
+    // glow, then a pulsing dot — and all four were rejected on sight. The
+    // driver is `pressure`, which moves over seconds, so there is nothing left
+    // that *can* flicker. The numbers are small on purpose: this sits where
+    // the user aims.
+    assert!((playhead_glow_half_width(0.0) - 2.0).abs() < 1e-9);
+    assert!((playhead_glow_half_width(1.0) - 6.0).abs() < 1e-9);
+    assert!((playhead_glow_alpha(0.0) - 0.22).abs() < 1e-9);
+    assert!((playhead_glow_alpha(1.0) - 0.48).abs() < 1e-9);
+    // Out-of-range readings clamp.
+    assert!((playhead_glow_half_width(9.0) - 6.0).abs() < 1e-9);
+    assert!((playhead_glow_alpha(-1.0) - 0.22).abs() < 1e-9);
+}
+
+#[test]
+fn ac_24_the_glow_stands_down_where_it_would_be_in_the_way() {
+    use super::render::reactive_light_is_active;
+    assert!(reactive_light_is_active(false, None, 1.0, 1.0));
+    assert!(
+        !reactive_light_is_active(false, Some(0.4), 1.0, 1.0),
+        "drag"
+    );
+    assert!(!reactive_light_is_active(false, None, 0.5, 1.0), "build");
+    assert!(
+        !reactive_light_is_active(false, None, 1.0, 0.5),
+        "crossfade"
+    );
+    // The mini player is 46 bars wide; even a slim glow would wash it out.
+    assert!(!reactive_light_is_active(true, None, 1.0, 1.0), "mini");
+}
+
+#[test]
+fn ac_24_played_bars_brighten_toward_the_playhead() {
+    use super::render::played_alpha;
+    // At the playhead: full. At the very start of the track: dimmest.
+    assert!((played_alpha(99, 100, 1.0) - 1.0).abs() < 0.02);
+    assert!(played_alpha(0, 100, 1.0) < played_alpha(50, 100, 1.0));
+    assert!(played_alpha(50, 100, 1.0) < played_alpha(99, 100, 1.0));
+    // Never darker than the floor, never brighter than opaque.
+    for index in 0..100 {
+        let a = played_alpha(index, 100, 1.0);
+        assert!((0.55..=1.0).contains(&a), "out of range at {index}: {a}");
+    }
+    assert_eq!(played_alpha(0, 0, 0.5), 1.0);
+}
+
 #[test]
 fn interpolation_step_never_overshoots_its_target() {
     // Ordinary frame: advances proportionally, still below target.
@@ -168,94 +326,6 @@ fn smooth_fraction_velocity_is_computed_from_delta() {
 }
 
 #[test]
-fn aggregate_rms_undoes_the_stored_sqrt_compression() {
-    // Stored values are sqrt-compressed: v = sqrt(rms) * 255. A stored 255
-    // must aggregate back to rms 1.0, a stored 0 to 0.0.
-    let rms = aggregate_rms(&[255, 255, 0, 0], 2);
-    assert_eq!(rms.len(), 2);
-    assert!((rms[0] - 1.0).abs() < 1e-6);
-    assert!(rms[1].abs() < 1e-6);
-}
-
-#[test]
-fn aggregate_rms_handles_empty_input() {
-    assert!(aggregate_rms(&[], 10).is_empty());
-    assert!(aggregate_rms(&[128], 0).is_empty());
-}
-
-#[test]
-fn shape_gives_a_compressed_wall_internal_dynamics() {
-    // A "loudness war" track: RMS varies only in a narrow, loud band
-    // (a 230-ish verse into a 250-ish chorus). Percentile mapping must
-    // spread that band across the full height.
-    let mut raw = vec![230u8; 100];
-    raw.extend([250u8; 100]);
-    let bars = shape_display_peaks(&raw, 100);
-    let mut lo = f32::MAX;
-    let mut hi = f32::MIN;
-    for bar in &bars {
-        if let DisplayBar::Level(level) = bar {
-            lo = lo.min(*level);
-            hi = hi.max(*level);
-        }
-    }
-    assert!(
-        hi - lo > 0.5,
-        "narrow loud band must be spread out, got lo={lo} hi={hi}"
-    );
-}
-
-#[test]
-fn shape_clips_outliers_above_the_high_percentile() {
-    // 96 quiet bars, 4 very loud ones: the loud ones sit above p95 and
-    // must clip to the full height (1.0 after gamma).
-    let mut raw = vec![100u8; 96];
-    raw.extend([255u8; 4]);
-    let bars = shape_display_peaks(&raw, 100);
-    let last = bars.last().unwrap();
-    match last {
-        DisplayBar::Level(level) => assert!(*level > 0.95, "outlier level {level}"),
-        DisplayBar::Silence => panic!("loud bar classified as silence"),
-    }
-}
-
-#[test]
-fn shape_marks_true_silence_as_dots_not_levels() {
-    // Stored 0 (and anything below −50 dB of track max) is silence.
-    let mut raw = vec![0u8; 10];
-    raw.extend([200u8; 90]);
-    let bars = shape_display_peaks(&raw, 100);
-    assert_eq!(bars[0], DisplayBar::Silence);
-    assert!(matches!(bars[99], DisplayBar::Level(_)));
-}
-
-#[test]
-fn shape_of_a_perfectly_flat_track_sits_mid_height_not_full() {
-    // Degenerate percentiles (p10 == p95): render mid-height, never a
-    // full-height wall.
-    let raw = vec![200u8; 100];
-    let bars = shape_display_peaks(&raw, 50);
-    for bar in bars {
-        match bar {
-            DisplayBar::Level(level) => {
-                assert!((0.05..0.95).contains(&level), "flat level {level}");
-            }
-            DisplayBar::Silence => panic!("flat loud track is not silence"),
-        }
-    }
-}
-
-#[test]
-fn smoothing_averages_neighbors_25_50_25() {
-    let smoothed = smooth_neighbors(&[0.0, 1.0, 0.0]);
-    // Middle: 0.25*0 + 0.5*1 + 0.25*0 = 0.5; edges clamp to themselves:
-    // 0.25*0 + 0.5*0 + 0.25*1 = 0.25.
-    assert!((smoothed[1] - 0.5).abs() < 1e-6);
-    assert!((smoothed[0] - 0.25).abs() < 1e-6);
-    assert!((smoothed[2] - 0.25).abs() < 1e-6);
-}
-
-#[test]
 fn compute_bar_count_uses_fixed_slots_and_caps_at_160() {
     assert_eq!(compute_bar_count(0), 1);
     assert_eq!(compute_bar_count(1), 1);
@@ -284,6 +354,8 @@ fn ensure_resampled_clears_display_peaks_when_raw_empty() {
         crossfade_start_us: 0,
         desaturation_progress: 0.0,
         desaturation_target: 0.0,
+        bass_pressure: 0.0,
+        bass_swell: 0.0,
         min_bar_height: MIN_BAR_HEIGHT,
         max_bar_height: MAX_BAR_HEIGHT,
         bar_count_override: None,
@@ -313,6 +385,8 @@ fn ensure_resampled_populates_on_width_change() {
         crossfade_start_us: 0,
         desaturation_progress: 0.0,
         desaturation_target: 0.0,
+        bass_pressure: 0.0,
+        bass_swell: 0.0,
         min_bar_height: MIN_BAR_HEIGHT,
         max_bar_height: MAX_BAR_HEIGHT,
         bar_count_override: None,
@@ -368,6 +442,32 @@ fn mot_7_waveform_position_hard_switches_when_system_animations_are_disabled() {
     assert!(waveform.tick_id.borrow().is_none());
 
     settings.set_gtk_enable_animations(previous);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn ac_24_the_seek_bar_carries_no_beat_at_all() {
+    // The bar's two live readings both move over seconds. There is no third
+    // one: `kick` reached this widget four times and was rejected four times,
+    // so the setter no longer takes it.
+    gtk4::init().unwrap();
+
+    let waveform = WaveformSeek::new();
+    waveform.set_bass(1.0, 0.0);
+
+    let state = waveform.state.borrow();
+    assert_eq!(state.bass_pressure, 1.0);
+    assert_eq!(state.bass_swell, 0.0);
+    assert_eq!(
+        super::render::played_light(state.bass_pressure, state.bass_swell),
+        0.90
+    );
+    // Full pressure widens the glow to its ceiling — 6 px beside a 1 px line,
+    // which is the whole excursion.
+    assert_eq!(
+        super::render::playhead_glow_half_width(state.bass_pressure),
+        6.0
+    );
 }
 
 #[test]

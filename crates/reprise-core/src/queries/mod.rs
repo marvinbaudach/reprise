@@ -90,6 +90,7 @@ mod playlist;
 mod queue;
 mod smart;
 mod stats;
+mod surface_browse;
 
 pub use album_directories::query_album_directories;
 pub use artist_context::{query_artist_albums, query_stats_album_target_for_path};
@@ -129,7 +130,9 @@ pub use issues::{query_missing_groups, query_missing_rows, MissingGroup, Missing
 // missing` split. `pub use` for the same cross-crate reachability reason as
 // `query_missing_groups` above.
 pub use issues::{count_missing, count_new_missing};
-pub use issues::{mark_mount_unavailable, verify_unmounted_tracks};
+pub use issues::{
+    mark_mount_unavailable, verify_unmounted_tracks, verify_unmounted_tracks_with_source,
+};
 // Task 2.3: the auto-clean read/act split — `auto_clean_eligible` for a
 // preview, `run_auto_clean` for the real unattended deletion. `pub use` for
 // the same cross-crate reachability reason as `query_missing_groups` above:
@@ -150,19 +153,15 @@ pub use import_errors::{
 // between the two. `pub use` for the same cross-crate reachability reason as
 // `query_missing_groups` above.
 pub use import_errors::{count_import_errors_active, count_new_import_errors};
-pub use library_views::{
-    query_album_canonical_track_ids, query_album_count, query_album_track_ids, query_albums,
-    query_artist_count, query_artist_detail_albums, query_artists, AlbumSummary, ArtistAlbum,
-    ArtistSummary,
-};
+pub use library_views::*;
 pub use maintenance::{
     exclude_tracks_matching_paths, filter_present, mark_track_missing_if_current, purge_tombstones,
     query_has_live_tracks, query_import_error_count, query_live_track_ids, query_live_track_paths,
     query_live_track_summaries, query_queue_purge_track_ids, query_queue_retained_track_ids,
-    query_random_live_track_ids, query_sync_tracks, query_track_album_artist,
-    query_track_ids_by_title_desc, query_track_ids_by_titles, query_track_summary,
-    remove_missing_tracks, remove_tracks_matching_paths, tombstone_tracks, track_id_for_path,
-    undo_tombstone,
+    query_random_live_track_ids, query_sync_tracks, query_sync_tracks_with_source,
+    query_track_album_artist, query_track_ids_by_title_desc, query_track_ids_by_titles,
+    query_track_summary, remove_missing_tracks, remove_tracks_matching_paths, tombstone_tracks,
+    track_id_for_path, undo_tombstone,
 };
 // `remove_tracks_impl`/`RemoveGuard` are the internal shared deletion path
 // `remove_missing_tracks`/`purge_tombstones`/`remove_tracks_matching_paths` all funnel
@@ -179,6 +178,7 @@ pub use queue::{
     QueueItemMetadata, QUEUE_LIMIT,
 };
 pub use stats::{query_library_stats, query_library_stats_browsed, LibraryStats};
+pub use surface_browse::*;
 
 use clauses::build_track_ids_query_browsed;
 use clauses::{build_track_ids_query_base, like_pattern, row_to_id};

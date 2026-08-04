@@ -3,6 +3,8 @@
 //! SQLite LIKE semantics of the search query, so a highlighted row and a
 //! matching row are the same set.
 
+use std::cell::RefCell;
+
 use gtk4::glib;
 use gtk4::prelude::*;
 
@@ -48,6 +50,23 @@ pub(in crate::ui) fn highlight_markup(
     Some(out)
 }
 
+/// Highlights against the live filter without cloning it. Empty searches
+/// return before `resolve_foreground`, avoiding a style-manager lookup and
+/// allocation on the normal, unfiltered bind path. The filter borrow is
+/// deliberately dropped before invoking the GTK-facing resolver.
+pub(in crate::ui) fn highlight_from_filter(
+    text: &str,
+    filter: &RefCell<String>,
+    resolve_foreground: impl FnOnce() -> Option<String>,
+) -> Option<String> {
+    if filter.borrow().trim().is_empty() {
+        return None;
+    }
+    let foreground = resolve_foreground();
+    let needle = filter.borrow();
+    highlight_markup(text, &needle, foreground.as_deref())
+}
+
 /// Resolves libadwaita's current accent into the literal color Pango markup
 /// requires. The widget parameter keeps the binding-facing interface stable.
 pub(in crate::ui) fn accent_foreground(_widget: &impl IsA<gtk4::Widget>) -> Option<String> {
@@ -62,6 +81,8 @@ pub(in crate::ui) fn accent_foreground(_widget: &impl IsA<gtk4::Widget>) -> Opti
 
 #[cfg(test)]
 mod tests {
+    use std::cell::{Cell, RefCell};
+
     use super::*;
 
     // UX FIL-5: matching mirrors SQLite LIKE — ASCII-case-insensitive substring.
@@ -96,6 +117,20 @@ mod tests {
     fn fil_5_no_markup_when_needle_empty_or_absent() {
         assert_eq!(highlight_markup("Falling", "  ", None), None);
         assert_eq!(highlight_markup("Falling", "xyz", None), None);
+    }
+
+    #[test]
+    fn fil_5_inactive_search_skips_accent_resolution() {
+        let filter = RefCell::new(String::new());
+        let accent_requested = Cell::new(false);
+
+        let markup = highlight_from_filter("Falling", &filter, || {
+            accent_requested.set(true);
+            Some("#2ec8a6".to_string())
+        });
+
+        assert_eq!(markup, None);
+        assert!(!accent_requested.get());
     }
 
     // UX FIL-5: with a resolved accent, matches are accent bold.

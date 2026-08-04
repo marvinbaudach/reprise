@@ -26,6 +26,12 @@ pub(in crate::ui) const STATS_HORIZONTAL_STAGGER_MS: u32 = 40;
 
 pub(in crate::ui) const MICRO_EASING: adw::Easing = adw::Easing::EaseOutQuad;
 pub(in crate::ui) const STANDARD_EASING: adw::Easing = adw::Easing::EaseOutCubic;
+/// Retained without a Rust call site: the cover-accent cross-fade was the only
+/// `TimedAnimation` on the Ambient token, and the accent now rides whatever
+/// transition its consuming widgets already declare (see `style::cover_accent`
+/// and MOT-1). `AMBIENT_MS` itself is still live — waveform build/crossfade and
+/// the plugin settle use it.
+#[allow(dead_code)]
 pub(in crate::ui) const AMBIENT_EASING: adw::Easing = adw::Easing::EaseOutCubic;
 const STATS_DRIVER_EASING: adw::Easing = adw::Easing::Linear;
 const STATS_BEZIER_X1: f64 = 0.16;
@@ -55,6 +61,7 @@ pub(in crate::ui) const STANDARD: MotionToken = MotionToken {
     duration_ms: STANDARD_MS,
     easing: STANDARD_EASING,
 };
+#[allow(dead_code)]
 pub(in crate::ui) const AMBIENT: MotionToken = MotionToken {
     duration_ms: AMBIENT_MS,
     easing: AMBIENT_EASING,

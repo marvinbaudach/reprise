@@ -6,7 +6,9 @@ use reprise_core::podcasts::download_state::DownloadState;
 use reprise_core::podcasts::{EpisodeRow, PodcastKind};
 
 use super::*;
-use crate::ui::podcasts::podcasts_presentation::{source_summary, RenderedSourceGroup};
+use crate::ui::podcasts::podcasts_presentation::{
+    source_summary, RenderedSourceGroup, SourceSummary,
+};
 
 fn episode(id: i64, duration_secs: Option<i64>) -> EpisodeRow {
     EpisodeRow {
@@ -113,6 +115,18 @@ fn pod_10_batch_selection_is_stable_and_channel_scoped() {
 
     assert_eq!(state.selected_ids(7), vec![12]);
     assert_eq!(state.selected_ids(8), vec![21]);
+}
+
+#[test]
+fn src_12_clear_selected_drops_every_channels_selection_and_reports_emptiness() {
+    let mut state = YoutubeChannelState::default();
+    state.set_selected(7, 11, true);
+    state.set_selected(8, 21, true);
+
+    assert!(state.clear_selected());
+    assert!(state.selected_ids(7).is_empty());
+    assert!(state.selected_ids(8).is_empty());
+    assert!(!state.clear_selected());
 }
 
 #[test]
@@ -367,6 +381,141 @@ fn pod_12_channel_header_on_phone_indicator_reflects_the_toggle_and_stays_read_o
 
 fn children_of(root: &gtk4::Box) -> Vec<gtk4::Widget> {
     std::iter::successors(root.first_child(), gtk4::prelude::WidgetExt::next_sibling).collect()
+}
+
+fn context_gesture(widget: &gtk4::Widget) -> gtk4::GestureClick {
+    let controllers = widget.observe_controllers();
+    (0..controllers.n_items())
+        .find_map(|index| {
+            controllers
+                .item(index)?
+                .downcast::<gtk4::GestureClick>()
+                .ok()
+                .filter(|gesture| gesture.button() == gtk4::gdk::BUTTON_SECONDARY)
+        })
+        .expect("channel episode row secondary-click gesture")
+}
+
+fn context_keys(widget: &gtk4::Widget) -> gtk4::EventControllerKey {
+    let controllers = widget.observe_controllers();
+    (0..controllers.n_items())
+        .find_map(|index| {
+            controllers
+                .item(index)?
+                .downcast::<gtk4::EventControllerKey>()
+                .ok()
+                .filter(|keys| keys.propagation_phase() == gtk4::PropagationPhase::Capture)
+        })
+        .expect("channel episode row capture-phase context keys")
+}
+
+fn attached_popover(widget: &gtk4::Widget) -> gtk4::PopoverMenu {
+    std::iter::successors(widget.first_child(), gtk4::prelude::WidgetExt::next_sibling)
+        .find_map(|child| child.downcast::<gtk4::PopoverMenu>().ok())
+        .expect("channel episode row popover")
+}
+
+fn menu_has_action(model: &gtk4::gio::MenuModel, expected: &str) -> bool {
+    for item in 0..model.n_items() {
+        if model
+            .item_attribute_value(item, "action", Some(gtk4::glib::VariantTy::STRING))
+            .and_then(|value| value.get::<String>())
+            .as_deref()
+            == Some(expected)
+        {
+            return true;
+        }
+        if model
+            .item_link(item, "section")
+            .is_some_and(|section| menu_has_action(&section, expected))
+        {
+            return true;
+        }
+    }
+    false
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_14_channel_secondary_click_opens_for_one_row_or_the_three_row_selection() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let stack = gtk4::Stack::new();
+    let detail = YoutubeChannelDetail::new(&stack, true);
+    stack.add_named(detail.widget(), Some("youtube-channel"));
+    let actions = gtk4::gio::SimpleActionGroup::new();
+    detail.install_actions(&actions);
+    stack.insert_action_group("podcasts", Some(&actions));
+    let episodes = (1..=4).map(|id| episode(id, Some(600))).collect::<Vec<_>>();
+    let rendered = RenderedSourceGroup {
+        summary: SourceSummary {
+            episode_count: 4,
+            new_count: 0,
+            downloaded_bytes: 0,
+            latest_published_at: None,
+        },
+        group: reprise_core::podcasts::SourceGroup {
+            subscription_id: 7,
+            title: "Channel".into(),
+            author: None,
+            image_url: None,
+            kind: PodcastKind::Youtube,
+            sync_to_phone: false,
+            episodes,
+        },
+    };
+    detail.update(
+        std::slice::from_ref(&rendered),
+        &BTreeMap::new(),
+        &[],
+        &BTreeMap::new(),
+        false,
+        reprise_core::connectivity::Connectivity::Online,
+        None,
+        None,
+    );
+    detail.state.borrow_mut().open_channel(7);
+    let selection = detail.state.borrow_mut().selection(7);
+    for episode_id in [1, 2, 3] {
+        selection.borrow_mut().set_selected(episode_id, true);
+    }
+    detail.render_active();
+    let window = gtk4::Window::new();
+    window.set_child(Some(&stack));
+    window.present();
+
+    let outside = detail.selection_widgets.borrow()[&4].row.clone();
+    assert_eq!(
+        context_keys(outside.upcast_ref()).propagation_phase(),
+        gtk4::PropagationPhase::Capture
+    );
+    let menu = outside
+        .last_child()
+        .and_downcast::<gtk4::MenuButton>()
+        .expect("channel detail row discovery menu");
+    assert_eq!(menu.icon_name().as_deref(), Some("view-more-symbolic"));
+    assert_eq!(
+        menu.tooltip_text().as_deref(),
+        Some(strings::text(strings::PODCAST_MORE_OPTIONS)).as_deref()
+    );
+    context_gesture(outside.upcast_ref()).emit_by_name::<()>("pressed", &[&1i32, &8.0f64, &8.0f64]);
+    assert_eq!(selection.borrow().selected_ids(), vec![4]);
+    let popover = attached_popover(outside.upcast_ref());
+    assert!(popover.is_visible());
+    popover.popdown();
+
+    selection.borrow_mut().clear();
+    for episode_id in [1, 2, 3] {
+        selection.borrow_mut().set_selected(episode_id, true);
+    }
+    let inside = detail.selection_widgets.borrow()[&2].row.clone();
+    context_gesture(inside.upcast_ref()).emit_by_name::<()>("pressed", &[&1i32, &8.0f64, &8.0f64]);
+    assert_eq!(selection.borrow().selected_ids(), vec![1, 2, 3]);
+    let popover = attached_popover(inside.upcast_ref());
+    assert!(menu_has_action(
+        &popover.menu_model().expect("multi-selection menu model"),
+        "podcasts.mark-played-selected"
+    ));
 }
 
 /// `POD-14`: a channel whose every current entry is a hidden Short

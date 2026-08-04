@@ -1,7 +1,6 @@
 //! Read-only import of per-track statistics from Rhythmbox's `rhythmdb.xml`.
 
 use std::collections::HashSet;
-use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
@@ -10,6 +9,9 @@ use quick_xml::Reader;
 use rusqlite::OptionalExtension;
 
 use crate::db::Db;
+use crate::library::source::{
+    LibraryLinkMode, LibraryPathPresence, LibrarySource, UnixLibrarySource,
+};
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -180,7 +182,14 @@ fn field_for(name: &[u8]) -> Option<Field> {
 }
 
 pub fn parse_rhythmdb(path: &Path) -> Result<Vec<RhythmboxTrackStats>, RhythmboxImportError> {
-    let file = File::open(path)?;
+    parse_rhythmdb_with_source(&UnixLibrarySource, path)
+}
+
+pub fn parse_rhythmdb_with_source(
+    source: &dyn LibrarySource,
+    path: &Path,
+) -> Result<Vec<RhythmboxTrackStats>, RhythmboxImportError> {
+    let file = source.open_read(path)?;
     let mut reader = Reader::from_reader(BufReader::new(file));
     reader.config_mut().trim_text(true);
     reader.config_mut().check_end_names = true;
@@ -393,12 +402,31 @@ pub fn prescan_rhythmdb(
     db: &Db,
     library_root: Option<&str>,
 ) -> Result<RhythmboxPrescanResult, RhythmboxImportError> {
-    let conn = db.conn();
-    let last_modified = std::fs::metadata(rhythmdb_path)
-        .and_then(|m| m.modified())
-        .ok();
+    prescan_rhythmdb_with_source(
+        &UnixLibrarySource,
+        rhythmdb_path,
+        playlists_path,
+        db,
+        library_root,
+    )
+}
 
-    let file = File::open(rhythmdb_path)?;
+pub fn prescan_rhythmdb_with_source(
+    source: &dyn LibrarySource,
+    rhythmdb_path: &Path,
+    playlists_path: &Path,
+    db: &Db,
+    library_root: Option<&str>,
+) -> Result<RhythmboxPrescanResult, RhythmboxImportError> {
+    let conn = db.conn();
+    let last_modified = match source.probe(rhythmdb_path, LibraryLinkMode::Follow) {
+        LibraryPathPresence::Present(metadata) if metadata.is_file => metadata.modified,
+        LibraryPathPresence::Present(_)
+        | LibraryPathPresence::Absent
+        | LibraryPathPresence::Unknown => None,
+    };
+
+    let file = source.open_read(rhythmdb_path)?;
     let mut reader = Reader::from_reader(BufReader::new(file));
     reader.config_mut().trim_text(true);
     reader.config_mut().check_end_names = true;
@@ -498,7 +526,9 @@ pub fn prescan_rhythmdb(
                                     library_root.is_some_and(|root| path_str.starts_with(root));
                                 if !under_root {
                                     result.outside_library += 1;
-                                } else if !track.path.exists() {
+                                } else if source.probe(&track.path, LibraryLinkMode::Follow)
+                                    == LibraryPathPresence::Absent
+                                {
                                     result.missing_on_disk += 1;
                                 } else {
                                     result.outside_library += 1;
@@ -522,8 +552,13 @@ pub fn prescan_rhythmdb(
         buffer.clear();
     }
 
-    if playlists_path.is_file() {
-        if let Ok(playlists) = parse_playlists(playlists_path) {
+    let playlists_may_be_file = match source.probe(playlists_path, LibraryLinkMode::Follow) {
+        LibraryPathPresence::Present(metadata) => metadata.is_file,
+        LibraryPathPresence::Absent => false,
+        LibraryPathPresence::Unknown => true,
+    };
+    if playlists_may_be_file {
+        if let Ok(playlists) = parse_playlists_with_source(source, playlists_path) {
             result.playlist_count = playlists.len();
             result.playlist_track_count = playlists.iter().map(|p| p.paths.len()).sum();
         }
@@ -533,7 +568,14 @@ pub fn prescan_rhythmdb(
 }
 
 pub fn parse_playlists(path: &Path) -> Result<Vec<RhythmboxPlaylist>, RhythmboxImportError> {
-    let file = File::open(path)?;
+    parse_playlists_with_source(&UnixLibrarySource, path)
+}
+
+pub fn parse_playlists_with_source(
+    source: &dyn LibrarySource,
+    path: &Path,
+) -> Result<Vec<RhythmboxPlaylist>, RhythmboxImportError> {
+    let file = source.open_read(path)?;
     let mut reader = Reader::from_reader(BufReader::new(file));
     reader.config_mut().trim_text(true);
     reader.config_mut().check_end_names = true;

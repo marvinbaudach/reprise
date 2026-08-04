@@ -19,7 +19,7 @@ fn track(title: &str) -> BatchTrack {
 
 fn services(
     online: impl Fn(&LyricsQuery, &Path) -> Result<LyricsHit, LyricsError> + Send + Sync + 'static,
-) -> BatchServices {
+) -> BatchServices<'static> {
     BatchServices {
         local: Arc::new(|_| false),
         needs: Arc::new(|query| cache_decision(query, NeedsFetch::Fetch)),
@@ -51,7 +51,7 @@ fn cache_decision(query: &LyricsQuery, expected: NeedsFetch) -> CacheDecision {
 
 fn run(
     tracks: &[BatchTrack],
-    services: &BatchServices,
+    services: &BatchServices<'_>,
     is_cancelled: impl Fn() -> bool,
     network_allowed: impl Fn() -> bool,
 ) -> (BatchRunStatus, Vec<BatchProgress>) {

@@ -2,7 +2,7 @@ pub(in crate::ui) mod lyrics_batch;
 pub(in crate::ui) mod lyrics_batch_progress;
 pub(in crate::ui) mod lyrics_scroll;
 pub(in crate::ui) mod lyrics_smoke;
-pub(in crate::ui) mod lyrics_state;
+pub(in crate::ui) use reprise_view::lyrics as lyrics_state;
 pub(in crate::ui) mod lyrics_strings;
 pub(in crate::ui) mod lyrics_view;
 pub(in crate::ui) mod lyrics_worker;

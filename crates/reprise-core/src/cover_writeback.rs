@@ -3,7 +3,10 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
-use crate::writeback_publish::{publish, Published};
+use crate::library::source::{
+    LibraryLinkMode, LibraryPathPresence, LibrarySource, UnixLibrarySource,
+};
+use crate::writeback_publish::{publish_with_source, Published};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CoverWrite {
@@ -14,18 +17,32 @@ pub enum CoverWrite {
 }
 
 pub fn write_album_cover(album_dirs: &[PathBuf], bytes: &[u8], ext: &str) -> Vec<CoverWrite> {
+    write_album_cover_with_source(&UnixLibrarySource, album_dirs, bytes, ext)
+}
+
+pub fn write_album_cover_with_source(
+    source: &dyn LibrarySource,
+    album_dirs: &[PathBuf],
+    bytes: &[u8],
+    ext: &str,
+) -> Vec<CoverWrite> {
     let valid = crate::cover_download::validated_image_extension(bytes) == Some(ext)
         && crate::cover::IMAGE_EXTS.contains(&ext);
     album_dirs
         .iter()
         .map(|directory| {
-            if !valid || !directory.is_dir() {
+            if !valid
+                || !matches!(
+                    source.probe(directory, LibraryLinkMode::Follow),
+                    LibraryPathPresence::Present(metadata) if metadata.is_directory
+                )
+            {
                 return CoverWrite::NotApplicable;
             }
-            if album_has_artwork(directory) {
+            if album_has_artwork(source, directory) {
                 return CoverWrite::AlreadyPresent;
             }
-            write_one(directory, bytes, ext)
+            write_one(source, directory, bytes, ext)
         })
         .collect()
 }
@@ -43,23 +60,23 @@ pub fn write_album_cover(album_dirs: &[PathBuf], bytes: &[u8], ext: &str) -> Vec
 ///
 /// An unreadable directory counts as covered: nothing can be established
 /// about it, and refusing is the conservative half of that.
-fn album_has_artwork(directory: &Path) -> bool {
-    if crate::cover::folder_image(directory).is_some() {
+fn album_has_artwork(source: &dyn LibrarySource, directory: &Path) -> bool {
+    if crate::cover::folder_image_with_source(source, directory).is_some() {
         return true;
     }
-    let Ok(entries) = std::fs::read_dir(directory) else {
+    let Some(entries) = source.read_directory(directory) else {
         return true;
     };
-    entries.flatten().any(|entry| {
-        let path = entry.path();
+    entries.into_iter().any(|entry| {
+        let path = entry.path;
         crate::library::scanner::is_audio_file(&path)
             && crate::cover::read_cover_tag(&path).picture.is_some()
     })
 }
 
-fn write_one(directory: &Path, bytes: &[u8], ext: &str) -> CoverWrite {
+fn write_one(source: &dyn LibrarySource, directory: &Path, bytes: &[u8], ext: &str) -> CoverWrite {
     let target = directory.join(format!("cover.{ext}"));
-    match publish(&target, bytes) {
+    match publish_with_source(source, &target, bytes) {
         Ok(Published::Written) => CoverWrite::Written(target),
         Ok(Published::AlreadyPresent) => CoverWrite::AlreadyPresent,
         Err(error) => failed(&target, &error),

@@ -9,17 +9,28 @@ pub(super) fn details_text(error: &SourceError, occurred_at: &str) -> String {
 
 pub(super) struct SourceErrorDetails {
     root: gtk4::Box,
+    toggle: gtk4::Button,
     revealer: gtk4::Revealer,
     text: gtk4::Label,
 }
 
 impl SourceErrorDetails {
     pub(super) fn new() -> Self {
+        Self::build(true)
+    }
+
+    pub(super) fn compact() -> Self {
+        Self::build(false)
+    }
+
+    fn build(include_toggle: bool) -> Self {
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
         let toggle = gtk4::Button::with_label(&strings::text(strings::SOURCE_DETAILS));
         toggle.add_css_class("flat");
         toggle.set_halign(gtk4::Align::Start);
-        root.append(&toggle);
+        if include_toggle {
+            root.append(&toggle);
+        }
 
         let details_box = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
         let text = gtk4::Label::new(None);
@@ -55,6 +66,7 @@ impl SourceErrorDetails {
         }
         Self {
             root,
+            toggle,
             revealer,
             text,
         }
@@ -62,6 +74,10 @@ impl SourceErrorDetails {
 
     pub(super) fn widget(&self) -> &gtk4::Widget {
         self.root.upcast_ref()
+    }
+
+    pub(super) fn toggle(&self) -> &gtk4::Button {
+        &self.toggle
     }
 
     pub(super) fn set_error(&self, error: &SourceError, occurred_at: &str) {

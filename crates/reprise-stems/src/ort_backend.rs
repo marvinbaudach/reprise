@@ -198,7 +198,10 @@ fn configure_onnxruntime() -> Result<(), StemError> {
     Ok(())
 }
 
-fn session_error(e: &ort::Error) -> StemError {
+// `ort` 2.0.0-rc.13 made builder errors generic (`Error<SessionBuilder>`),
+// while other calls still yield the plain `Error`. Both only need to be
+// rendered, so accept anything printable rather than naming either type.
+fn session_error<E: std::fmt::Display>(e: &E) -> StemError {
     StemError::Backend(format!("onnxruntime session: {e}"))
 }
 

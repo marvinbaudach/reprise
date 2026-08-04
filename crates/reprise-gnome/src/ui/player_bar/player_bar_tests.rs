@@ -80,6 +80,7 @@ fn pod_21_external_transport_sensitivity_matches_neighbour_edges_and_radio() {
         can_go_next,
         stream_tags: StreamTags::default(),
         podcast_phase: Some(PodcastPhase::Playing),
+        restored: false,
         radio: None,
         error: None,
     };
@@ -104,12 +105,20 @@ fn pod_21_external_transport_sensitivity_matches_neighbour_edges_and_radio() {
         can_go_next: false,
         stream_tags: StreamTags::default(),
         podcast_phase: None,
+        restored: false,
         radio: Some(RadioPresentation::connected()),
         error: None,
     };
     bar.set_external_snapshot(Some(&radio));
     assert!(!bar.prev_button.is_sensitive());
     assert!(!bar.next_button.is_sensitive());
+}
+
+#[test]
+fn play_10_external_snapshot_wiring_syncs_the_player_bar_artwork() {
+    let source = include_str!("../playback/player_controller_wiring.rs");
+
+    assert!(source.contains("sync_external_bar_artwork(snapshot.as_ref())"));
 }
 
 #[test]
@@ -239,11 +248,8 @@ fn mot_6_second_track_and_state_changes_finish_the_previous_visual_state() {
     bar.set_state(PlaybackState::Playing);
     bar.set_state(PlaybackState::Paused);
     assert_eq!(bar.playback_state.get(), PlaybackState::Paused);
-    assert_eq!(
-        bar.play_pause_button.icon_name().as_deref(),
-        Some(ICON_PAUSE)
-    );
-    assert_eq!(bar.play_pause_button.opacity(), 1.0);
+    assert_eq!(bar.play_glyph.glyph(), Glyph::Pause);
+    assert_eq!(bar.play_glyph.widget().opacity(), 1.0);
     {
         // Scope the borrow: window.close() below unmaps the bar, whose teardown
         // calls replace_animation() (a slot.borrow_mut()). Holding this .borrow()
@@ -277,11 +283,8 @@ fn mot_7_player_bar_hard_switches_when_system_animations_are_disabled() {
     assert_eq!(bar.title_label.text(), "Immediate");
     assert_eq!(bar.artist_label.text(), "Artist");
     assert_eq!(bar.title_label.opacity(), 1.0);
-    assert_eq!(
-        bar.play_pause_button.icon_name().as_deref(),
-        Some(ICON_PAUSE)
-    );
-    assert_eq!(bar.play_pause_button.opacity(), 1.0);
+    assert_eq!(bar.play_glyph.glyph(), Glyph::Pause);
+    assert_eq!(bar.play_glyph.widget().opacity(), 1.0);
 
     settings.set_gtk_enable_animations(previous);
 }

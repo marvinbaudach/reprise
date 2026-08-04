@@ -30,6 +30,8 @@ pub(super) fn plural(
     crate::i18n::format_message(&crate::i18n::ngettext(singular, plural, count), values)
 }
 
+pub use reprise_view::strings::playlists::IMPORTED_PLAYLIST_FALLBACK_NAME;
+
 #[path = "strings_artist.rs"]
 mod artist;
 pub use artist::*;
@@ -467,7 +469,6 @@ pub const SIDEBAR_SECTION_ISSUES: &str = N_!("ISSUES");
 pub const SIDEBAR_MUSIC: &str = N_!("Music");
 pub const SIDEBAR_RECENTLY_ADDED: &str = N_!("Recently added");
 pub const SIDEBAR_QUEUE: &str = N_!("Queue");
-pub const QUEUE_SECTION_NOW_PLAYING: &str = N_!("Now Playing");
 pub const JUMP_TO_NOW_PLAYING: &str = N_!("Jump to now playing");
 pub const GO_TO_PLAYING_ARTIST: &str = N_!("Go to playing artist");
 pub const GO_TO_PLAYING_ALBUM: &str = N_!("Go to playing album");
@@ -477,7 +478,6 @@ pub const NAVIGATE_BACK: &str = N_!("Back to previous view");
 pub const NAVIGATE_FORWARD: &str = N_!("Forward to next view");
 pub const CONTEXT_MENU_PLAY_NEXT: &str = N_!("Play next");
 pub const QUEUE_CLEAR_PLAY_NEXT: &str = N_!("Clear");
-pub const QUEUE_SECTION_PLAY_NEXT: &str = N_!("Play Next");
 /// `{}` is the playback origin's display label (playlist/album/artist name
 /// or the localized "Music").
 pub const EMPTY_QUEUE_TITLE: &str = N_!("Nothing queued");
@@ -681,11 +681,6 @@ pub const EXPORT_PLAYLIST_DIALOG_TITLE: &str = N_!("Export Playlist");
 /// Name shown for the `gtk::FileFilter` restricting the import dialog to
 /// `.m3u`/`.m3u8` files.
 pub const M3U_FILE_FILTER_NAME: &str = N_!("M3U Playlists");
-/// Fallback playlist name when an imported `.m3u` file's name can't be used
-/// as-is (empty file stem, or a non-UTF-8 stem lossily decoded down to
-/// nothing meaningful).
-pub const IMPORTED_PLAYLIST_FALLBACK_NAME: &str = N_!("Imported playlist");
-
 /// Toast shown after a successful import: `matched` of `total` path lines in
 /// the `.m3u` file resolved to a track already in the library.
 pub fn playlist_imported_toast(name: &str, matched: usize, total: usize) -> String {

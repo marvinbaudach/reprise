@@ -119,6 +119,10 @@ pub(in crate::ui) struct Shared {
     /// moves without rebuilding the list. A `Cell` (not `RefCell`) because the
     /// payload is a `Copy` `Option<i64>` read on every bind.
     pub(in crate::ui) playing_track_id: Cell<Option<i64>>,
+    /// Monotonic token for deferred explicit/automatic track reveals. Every
+    /// loaded-track change advances it so an older idle callback cannot center
+    /// a superseded row after the marker has already moved elsewhere.
+    pub(in crate::ui) track_reveal_generation: Cell<u64>,
     /// POD-20's shared loaded-episode marker. Separate from
     /// `playing_track_id` because the two id spaces are unrelated and may
     /// collide numerically; the marker also retains running versus paused.
@@ -130,12 +134,14 @@ pub(in crate::ui) struct Shared {
     /// former `items_changed(pos, 1, 1)` marker refresh, whose fake
     /// remove+insert snapped the viewport to the top on a double-click-to-play.
     pub(in crate::ui) now_playing_markers:
-        RefCell<Vec<super::now_playing_marker::NowPlayingMarker>>,
+        RefCell<std::collections::HashMap<usize, super::now_playing_marker::NowPlayingMarker>>,
     /// Realised rating-cell re-appliers. Rating-only Tag Editor saves use
     /// these to update stars without an `items_changed` row replacement,
     /// which would re-anchor the viewport.
-    pub(in crate::ui) rating_cells: RefCell<Vec<super::rating_cell_refresh::RatingCellMarker>>,
+    pub(in crate::ui) rating_cells:
+        RefCell<std::collections::HashMap<usize, super::rating_cell_refresh::RatingCellMarker>>,
     pub(in crate::ui) last_scroll_activity: Cell<Option<std::time::Instant>>,
+    pub(in crate::ui) scroll_glide: crate::ui::scroll_glide::ScrollGlide,
     /// View position an in-app single-row reorder drag started from — set at
     /// drag-prepare, cleared on drag end/cancel. `None` while no reorder-
     /// eligible drag is in flight; the drop-indicator eligibility check in
@@ -398,6 +404,13 @@ impl TrackList {
         crate::ui::view_session::restore_browser_place(self, place)
     }
 
+    /// START-3: centers the loaded track after startup routing built this
+    /// view. See `track_list_reload::center_loaded_track` for why this is the
+    /// only scroller running at that moment.
+    pub(in crate::ui) fn center_loaded_track(&self) {
+        super::track_list_reload::center_loaded_track(&self.shared);
+    }
+
     pub(in crate::ui) fn set_on_search_restored(&self, callback: impl Fn(&str) + 'static) {
         *self.shared.on_search_restored.borrow_mut() = Some(Rc::new(callback));
     }
@@ -518,79 +531,5 @@ impl TrackList {
         callback: impl Fn(&[super::queue_row_mapping::QueueRow]) -> usize + 'static,
     ) {
         *self.shared.on_queue_remove.borrow_mut() = Some(Rc::new(callback));
-    }
-
-    /// Injects the callback invoked after any context-menu action that
-    /// mutates a playlist's membership — see the `Shared::on_playlist_
-    /// mutated` doc comment. `window.rs` wires this to `Sidebar::refresh`.
-    pub fn set_on_playlist_mutated(&self, callback: impl Fn() + 'static) {
-        *self.shared.on_playlist_mutated.borrow_mut() = Some(Rc::new(callback));
-    }
-
-    /// Injects the queue drag-reorder callback (Stage 3 Task 6) — see the
-    /// `Shared::on_queue_reorder` doc comment. `window.rs` wires this to
-    /// `PlayerController::move_queue_item`.
-    pub fn set_on_queue_reorder(
-        &self,
-        callback: impl Fn(super::queue_row_mapping::QueueReorderOp) -> bool + 'static,
-    ) {
-        *self.shared.on_queue_reorder.borrow_mut() = Some(Rc::new(callback));
-    }
-
-    /// Injects the sidebar "add to playlist" drag-and-drop callback (Stage 3
-    /// Task 6 review finding #1) — see the `Shared::on_sidebar_playlist_drop`
-    /// doc comment. `window.rs` wires this to `Sidebar::handle_playlist_drop`.
-    pub fn set_on_sidebar_playlist_drop(
-        &self,
-        callback: impl Fn(i64, &str, &[i64]) -> bool + 'static,
-    ) {
-        *self.shared.on_sidebar_playlist_drop.borrow_mut() = Some(Rc::new(callback));
-    }
-
-    /// Injects the sidebar "add to queue" drag-and-drop callback — see the
-    /// `Shared::on_sidebar_queue_drop` doc comment. `window.rs` wires this to
-    /// `Sidebar::handle_queue_drop`.
-    pub fn set_on_sidebar_queue_drop(&self, callback: impl Fn(&[i64]) -> bool + 'static) {
-        *self.shared.on_sidebar_queue_drop.borrow_mut() = Some(Rc::new(callback));
-    }
-
-    /// Injects the "Rescan library" context-menu action callback (Missing
-    /// source, Stage 3 Task 8) — see the `Shared::on_rescan_library` doc
-    /// comment. `window.rs` wires this to `trigger_rescan_of_library_root`.
-    pub fn set_on_rescan_library(&self, callback: impl Fn() + 'static) {
-        *self.shared.on_rescan_library.borrow_mut() = Some(Rc::new(callback));
-    }
-
-    /// Injects the Missing-view mutation callback — see `Shared::on_library_
-    /// mutated` for the empty-vs-purged id contract.
-    pub fn set_on_library_mutated(&self, callback: impl Fn(&[i64]) + 'static) {
-        *self.shared.on_library_mutated.borrow_mut() = Some(Rc::new(callback));
-    }
-
-    pub fn remove_missing_with_undo(&self, ids: &[i64]) {
-        self.shared.missing_files_view.remove_with_undo(ids);
-    }
-
-    pub fn set_on_tags_mutated(&self, callback: impl Fn(&[PathBuf]) + 'static) {
-        *self.shared.on_tags_mutated.borrow_mut() = Some(Rc::new(callback));
-    }
-
-    pub(in crate::ui) fn tag_write_gate(&self) -> crate::ui::tag_write_gate::TagWriteGate {
-        self.shared.tag_write_gate.clone()
-    }
-
-    /// Injects the callback invoked after the ImportErrors panel's own
-    /// Retry/Dismiss actions mutate `import_errors` (Stage 3 Task 8) — see
-    /// the `Shared::on_import_errors_mutated` doc comment. `window.rs` wires
-    /// this to `Sidebar::refresh`.
-    pub fn set_on_import_errors_mutated(&self, callback: impl Fn() + 'static) {
-        *self.shared.on_import_errors_mutated.borrow_mut() = Some(Rc::new(callback));
-    }
-
-    /// Injects the player controller — injected post-construction via
-    /// `TrackList::set_player`, used by the tag-edit flow to refresh
-    /// now-playing metadata after successful tag edits.
-    pub fn set_player(&self, player: &Rc<crate::ui::player_controller::PlayerController>) {
-        *self.shared.player.borrow_mut() = Rc::downgrade(player);
     }
 }

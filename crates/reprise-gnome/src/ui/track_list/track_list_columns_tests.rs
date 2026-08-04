@@ -3,6 +3,18 @@ use reprise_core::models::MissingReason;
 use super::*;
 
 #[test]
+fn ac_24_the_running_row_reads_neither_bass_signal() {
+    // The EQ bars and the row colour are the whole marker (MOT-5, NAV-10a).
+    for source in [
+        include_str!("track_list_columns.rs"),
+        include_str!("track_list_title_column.rs"),
+    ] {
+        assert!(!source.contains("row_wash"));
+        assert!(!source.contains("kick"));
+    }
+}
+
+#[test]
 fn rating_sort_requires_query_reload_but_other_sorts_need_one_row() {
     assert_eq!(rating_refresh_for_sort("rating"), RatingRefresh::Query);
     assert_eq!(rating_refresh_for_sort("title"), RatingRefresh::Row);

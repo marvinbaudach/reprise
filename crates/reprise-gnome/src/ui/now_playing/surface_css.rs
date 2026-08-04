@@ -21,8 +21,7 @@ pub(super) fn css() -> String {
      .reprise-now-playing-head {{ padding: 22px 18px 16px; }}\n\
      .reprise-now-playing-cover {{ \
        border-radius: {RADIUS_SURFACE}; \
-       box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), \
-                   inset 0 0 0 1px alpha(#ffffff, 0.12); }}\n\
+       box-shadow: inset 0 0 0 1px alpha(#ffffff, 0.12); }}\n\
      .reprise-now-playing-title {{ \
        color: #ffffff; font-size: {NOW_PLAYING_TITLE_SIZE}; font-weight: 700; }}\n\
      .reprise-now-playing-subtitle {{ \

@@ -59,7 +59,7 @@ fn progress_channel_keeps_only_the_latest_pending_update() {
         &receiver,
         ScanProgress::Scanning {
             processed: 2,
-            total: 9,
+            total: Some(9),
             current_path: PathBuf::from("second.flac"),
         },
     );
@@ -74,7 +74,7 @@ fn progress_channel_keeps_only_the_latest_pending_update() {
         panic!("expected the newest scanning event");
     };
     assert_eq!(processed, 2);
-    assert_eq!(total, 9);
+    assert_eq!(total, Some(9));
     assert_eq!(current_path, PathBuf::from("second.flac"));
     assert!(receiver.is_empty());
 }
@@ -90,7 +90,7 @@ fn foreground_progress_view_replays_and_tracks_the_active_scan() {
     let controls = ScanControls::new(&button, &main);
     controls.show_progress(&ScanProgress::Scanning {
         processed: 2,
-        total: 5,
+        total: Some(5),
         current_path: PathBuf::from("song.flac"),
     });
     let foreground = ScanProgressView::new();

@@ -21,9 +21,11 @@ mod model;
 mod netease;
 mod sidecar_write;
 
-pub use batch::{run_batch, BatchProgress, BatchRunStatus, BatchState, BatchTrack};
+pub use batch::{
+    run_batch, run_batch_with_source, BatchProgress, BatchRunStatus, BatchState, BatchTrack,
+};
 pub use cache::NeedsFetch;
-pub use local::local_hit;
+pub use local::{local_hit, local_hit_with_source};
 pub use lrc::{active_line_index, parse_lrc};
 pub use lrclib::request_url;
 pub use model::{
@@ -31,6 +33,7 @@ pub use model::{
     SourceOutcome, TimedLine,
 };
 
+use crate::library::source::{LibrarySource, UnixLibrarySource};
 use cache::CachedResult;
 use chain::run_chain;
 use local::LocalProvider;
@@ -54,7 +57,15 @@ pub fn load_or_fetch(
     query: &LyricsQuery,
     track_path: Option<&Path>,
 ) -> Result<LyricsHit, LyricsError> {
-    load_or_fetch_with_options(query, track_path, LookupOptions::default())
+    load_or_fetch_with_source(&UnixLibrarySource, query, track_path)
+}
+
+pub fn load_or_fetch_with_source(
+    source: &dyn LibrarySource,
+    query: &LyricsQuery,
+    track_path: Option<&Path>,
+) -> Result<LyricsHit, LyricsError> {
+    load_or_fetch_with_options_and_source(source, query, track_path, LookupOptions::default())
 }
 
 pub fn load_or_fetch_with_options(
@@ -62,25 +73,42 @@ pub fn load_or_fetch_with_options(
     track_path: Option<&Path>,
     options: LookupOptions,
 ) -> Result<LyricsHit, LyricsError> {
-    load_or_fetch_with_cache_context(query, track_path, options, None)
+    load_or_fetch_with_options_and_source(&UnixLibrarySource, query, track_path, options)
+}
+
+pub fn load_or_fetch_with_options_and_source(
+    source: &dyn LibrarySource,
+    query: &LyricsQuery,
+    track_path: Option<&Path>,
+    options: LookupOptions,
+) -> Result<LyricsHit, LyricsError> {
+    load_or_fetch_with_cache_context(source, query, track_path, options, None)
 }
 
 fn load_or_fetch_with_cache_decision(
+    source: &dyn LibrarySource,
     query: &LyricsQuery,
     track_path: Option<&Path>,
     decision: &cache::CacheDecision,
 ) -> Result<LyricsHit, LyricsError> {
-    load_or_fetch_with_cache_context(query, track_path, LookupOptions::default(), Some(decision))
+    load_or_fetch_with_cache_context(
+        source,
+        query,
+        track_path,
+        LookupOptions::default(),
+        Some(decision),
+    )
 }
 
 fn load_or_fetch_with_cache_context(
+    source: &dyn LibrarySource,
     query: &LyricsQuery,
     track_path: Option<&Path>,
     options: LookupOptions,
     cache_decision: Option<&cache::CacheDecision>,
 ) -> Result<LyricsHit, LyricsError> {
     let now = unix_timestamp();
-    let local = LocalProvider;
+    let local = LocalProvider { source };
     let lrclib = lrclib::production_provider(now, options.force);
     let netease = netease::production_provider(now, options.force);
     let network: [&dyn LyricsProvider; 2] = [&lrclib, &netease];
@@ -89,7 +117,7 @@ fn load_or_fetch_with_cache_context(
     } else {
         &[]
     };
-    load_or_fetch_with_cache_context_at(
+    load_or_fetch_with_cache_context_at_from(
         &cache::cache_dir(),
         now,
         query,
@@ -97,6 +125,7 @@ fn load_or_fetch_with_cache_context(
         options,
         cache_decision,
         LookupProviders {
+            source,
             local: &[&local],
             network,
         },
@@ -125,13 +154,35 @@ fn load_or_fetch_at(
         options,
         None,
         LookupProviders {
+            source: &UnixLibrarySource,
             local: local_providers,
             network: network_providers,
         },
     )
 }
 
+#[cfg(test)]
 fn load_or_fetch_with_cache_context_at(
+    cache_dir: &Path,
+    now: i64,
+    query: &LyricsQuery,
+    track_path: Option<&Path>,
+    options: LookupOptions,
+    cache_decision: Option<&cache::CacheDecision>,
+    providers: LookupProviders<'_>,
+) -> Result<LyricsHit, LyricsError> {
+    load_or_fetch_with_cache_context_at_from(
+        cache_dir,
+        now,
+        query,
+        track_path,
+        options,
+        cache_decision,
+        providers,
+    )
+}
+
+fn load_or_fetch_with_cache_context_at_from(
     cache_dir: &Path,
     now: i64,
     query: &LyricsQuery,
@@ -176,7 +227,7 @@ fn load_or_fetch_with_cache_context_at(
             } else {
                 cache::write_found(cache_dir, now, query, &hit, true);
                 if let (Some(track_path), LyricsBody::Synced(lines)) = (track_path, &hit.body) {
-                    sidecar_write::write_sidecar(track_path, lines);
+                    sidecar_write::write_sidecar_with_source(providers.source, track_path, lines);
                 }
             }
             Ok(hit)
@@ -197,6 +248,7 @@ fn load_or_fetch_with_cache_context_at(
 
 #[derive(Clone, Copy)]
 struct LookupProviders<'a> {
+    source: &'a dyn LibrarySource,
     local: &'a [&'a dyn LyricsProvider],
     network: &'a [&'a dyn LyricsProvider],
 }

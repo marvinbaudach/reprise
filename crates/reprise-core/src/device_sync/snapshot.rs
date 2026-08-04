@@ -8,8 +8,18 @@ use super::{
     everything_playlist_snapshot, MirrorPlaylistSnapshot, MirrorTrack, SelectionSource, SyncTrack,
     UnavailableTrack,
 };
+use crate::library::source::{
+    LibraryLinkMode, LibraryPathPresence, LibrarySource, UnixLibrarySource,
+};
 
 pub fn load_mirror_playlist_snapshots(
+    db: &crate::db::Db,
+) -> Result<Vec<MirrorPlaylistSnapshot>, rusqlite::Error> {
+    load_mirror_playlist_snapshots_with_source(&UnixLibrarySource, db)
+}
+
+pub fn load_mirror_playlist_snapshots_with_source(
+    source: &dyn LibrarySource,
     db: &crate::db::Db,
 ) -> Result<Vec<MirrorPlaylistSnapshot>, rusqlite::Error> {
     let conn = db.conn();
@@ -18,13 +28,13 @@ pub fn load_mirror_playlist_snapshots(
         snapshots.push(MirrorPlaylistSnapshot {
             source: SelectionSource::Playlist(playlist.id),
             name: playlist.name,
-            entries: load_manual_entries(conn, playlist.id)?,
+            entries: load_manual_entries(source, conn, playlist.id)?,
         });
     }
     for playlist in crate::library::playlists::list_smart(db)? {
-        let source = crate::view_source::ViewSource::Smart(playlist.id);
-        let ids = crate::queries::query_track_ids(db, &source, "title", "asc", "", &[])?;
-        let tracks = crate::queries::query_sync_tracks(db, &ids)?;
+        let view_source = crate::view_source::ViewSource::Smart(playlist.id);
+        let ids = crate::queries::query_track_ids(db, &view_source, "title", "asc", "", &[])?;
+        let tracks = crate::queries::query_sync_tracks_with_source(source, db, &ids)?;
         snapshots.push(MirrorPlaylistSnapshot {
             source: SelectionSource::Smart(playlist.id),
             name: playlist.name,
@@ -37,6 +47,13 @@ pub fn load_mirror_playlist_snapshots(
 pub fn load_everything_playlist_snapshot(
     db: &crate::db::Db,
 ) -> Result<MirrorPlaylistSnapshot, rusqlite::Error> {
+    load_everything_playlist_snapshot_with_source(&UnixLibrarySource, db)
+}
+
+pub fn load_everything_playlist_snapshot_with_source(
+    source: &dyn LibrarySource,
+    db: &crate::db::Db,
+) -> Result<MirrorPlaylistSnapshot, rusqlite::Error> {
     let library_ids = crate::queries::query_track_ids(
         db,
         &crate::view_source::ViewSource::Library,
@@ -45,11 +62,12 @@ pub fn load_everything_playlist_snapshot(
         "",
         &[],
     )?;
-    let library_tracks = crate::queries::query_sync_tracks(db, &library_ids)?;
+    let library_tracks = crate::queries::query_sync_tracks_with_source(source, db, &library_ids)?;
     Ok(everything_playlist_snapshot(library_tracks))
 }
 
 fn load_manual_entries(
+    source: &dyn LibrarySource,
     conn: &Connection,
     playlist_id: i64,
 ) -> Result<Vec<MirrorTrack>, rusqlite::Error> {
@@ -76,7 +94,7 @@ fn load_manual_entries(
             missing_since: row.get(9)?,
         })
     })?;
-    rows.map(|row| row.map(SnapshotTrack::into_mirror_track))
+    rows.map(|row| row.map(|track| track.into_mirror_track(source)))
         .collect()
 }
 
@@ -94,17 +112,22 @@ struct SnapshotTrack {
 }
 
 impl SnapshotTrack {
-    fn into_mirror_track(self) -> MirrorTrack {
+    fn into_mirror_track(self, source: &dyn LibrarySource) -> MirrorTrack {
         if self.missing_since.is_some() {
             return self.unavailable();
         }
         let source_path = PathBuf::from(&self.path);
-        let Ok(metadata) = source_path.metadata() else {
+        let LibraryPathPresence::Present(metadata) =
+            source.probe(&source_path, LibraryLinkMode::Follow)
+        else {
             return self.unavailable();
         };
-        if !metadata.is_file() {
+        if !metadata.is_file {
             return self.unavailable();
         }
+        let Some(size_bytes) = metadata.size else {
+            return self.unavailable();
+        };
         let Some(original_name) = source_path.file_name() else {
             return self.unavailable();
         };
@@ -122,10 +145,9 @@ impl SnapshotTrack {
                 .bitrate_kbps
                 .and_then(|value| u32::try_from(value).ok())
                 .filter(|value| *value > 0),
-            size_bytes: metadata.len(),
+            size_bytes,
             source_mtime: metadata
-                .modified()
-                .ok()
+                .modified
                 .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
                 .and_then(|duration| i64::try_from(duration.as_secs()).ok())
                 .unwrap_or(0),

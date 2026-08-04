@@ -1,6 +1,9 @@
-//! Task 1.4: distinguishes "the drive is unplugged" from "the file was
-//! deleted" for a missing track, without any platform trait, GVolumeMonitor,
-//! or `/proc/mounts` parsing.
+//! Task 1.4's Unix mount-point grouping and the Linux residence evidence used
+//! by [`super::source::UnixLibrarySource`]. This module supplies that source's
+//! answer to [`super::source::LibrarySource::mount_point`]; a source without a
+//! volume-grouping notion declines the question instead. Missing-item
+//! classification itself is platform-neutral behind
+//! [`super::source::LibrarySource`].
 //!
 //! The whole mechanism rests on one fact that is already sitting in the
 //! database: `tracks.device` (schema v2) is the `st_dev` of the file as it
@@ -27,10 +30,13 @@
 //! anything: a test can plant a bogus device id in the database and get a
 //! deterministic `Unmounted` verdict from pure arithmetic (`real_dev +
 //! 99_999`), no loopback device or namespace required. That testability is
-//! *why* this approach was chosen over a `GVolumeMonitor`-based trait (which
+//! *why* this evidence was chosen over a `GVolumeMonitor`-based one (which
 //! would live in the GTK shell anyway — `reprise-core` may never depend on
-//! gtk4/libadwaita/gstreamer/zbus) or `/proc/mounts` parsing (Linux-only,
-//! and it would need a platform abstraction to be unit-tested at all).
+//! gtk4/libadwaita/gstreamer/zbus) or `/proc/mounts` parsing (Linux-only, and
+//! it would need a platform abstraction to be unit-tested at all). Neither
+//! reason expired when [`super::source::LibrarySource`] arrived: that trait
+//! generalises *which token* stands for "the source is still here", it does
+//! not make either alternative any more testable or any less GTK-bound.
 //!
 //! Known limitation, intentionally not worked around: btrfs subvolumes and
 //! bind mounts can share a single device id across what look like separate
@@ -42,67 +48,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::models::MissingReason;
-
-/// Returns `(ancestor_path, st_dev)` for the nearest ancestor of `path`
-/// (starting at `path` itself) that can be `lstat`'d successfully.
-///
-/// Uses `symlink_metadata` (lstat), deliberately never `metadata` (stat):
-/// if some ancestor component in the path is itself a symlink, `lstat`
-/// reports the symlink's own device rather than following it to whatever
-/// it points at. Following the symlink here would let an ancestor that
-/// merely *points into* a different mount fabricate a foreign device id —
-/// and thus a bogus `Unmounted` verdict — even though the symlink itself
-/// sits on the original, still-mounted filesystem.
-///
-/// `Path::ancestors()` walks `path`, then each successive parent, ending at
-/// `/` for an absolute path — so the walk is capped at the root without any
-/// extra bookkeeping. Returns `None` only if even `/` can't be `lstat`'d,
-/// which should not happen on a working Linux system.
-///
-/// This "capped at `/`" guarantee holds only for an *absolute* `path` — for
-/// a relative path, `ancestors()` instead bottoms out at `""` (`Path::new("")`
-/// does not exist, so the walk would return `None` rather than ever reaching
-/// `/`). Every caller in this codebase passes an absolute path: library
-/// roots come from GTK's folder chooser (always absolute) and
-/// `tracks.path`/scan roots are `walkdir::WalkDir::new(root)` inputs derived
-/// from that same root, so this isn't separately enforced here — see
-/// [`classify_missing`]'s `debug_assert!`, the one real caller wired in by
-/// Task 1.5, for where that assumption is actually checked.
-fn nearest_existing_ancestor(path: &Path) -> Option<(PathBuf, u64)> {
-    path.ancestors().find_map(|ancestor| {
-        std::fs::symlink_metadata(ancestor)
-            .ok()
-            .map(|meta| (ancestor.to_path_buf(), device_id(&meta)))
-    })
-}
-
-/// The filesystem device id used for mount-point grouping: Unix `st_dev`. The
-/// app runs on Linux; the non-Unix arm exists only to keep `reprise-core`
-/// cross-checkable (spec I / cross-target CI). There is no stable portable
-/// device id, so off Unix it collapses to `0` — every path then shares one
-/// "device" and the mount-point walk below becomes a harmless no-op (never
-/// reached at runtime).
-fn device_id(meta: &std::fs::Metadata) -> u64 {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        meta.dev()
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = meta;
-        0
-    }
-}
-
-/// `st_dev` of the nearest ancestor of `path` that currently exists,
-/// starting the search at `path` itself. `lstat` (`symlink_metadata`) only —
-/// see [`nearest_existing_ancestor`]'s doc comment for why this must never
-/// follow symlinks. `None` only if even `/` can't be `lstat`'d.
-pub(crate) fn nearest_existing_ancestor_dev(path: &Path) -> Option<u64> {
-    nearest_existing_ancestor(path).map(|(_, dev)| dev)
-}
+use super::source::{device_id, nearest_existing_ancestor};
 
 /// The highest (closest-to-root) ancestor of `path` that still shares
 /// `path`'s device — i.e. that ancestor's mount point.
@@ -131,44 +77,11 @@ pub(crate) fn mount_point_of(path: &Path) -> Option<PathBuf> {
         };
         let parent_device = std::fs::symlink_metadata(parent)
             .ok()
-            .map(|m| device_id(&m));
+            .and_then(|metadata| device_id(&metadata));
         if parent_device != Some(device) {
             return Some(mount_point);
         }
         mount_point = parent.to_path_buf();
-    }
-}
-
-/// Classifies why a track at `path` is missing, given the device id that was
-/// recorded for it at scan time (`tracks.device`, `None` for a row that
-/// predates schema v2 or whose `stat` failed on last scan — see
-/// `library::scanner::file_stat`'s doc comment).
-///
-/// - `stored_device` is `None` → there is nothing to compare against.
-///   `Unknown` (see `MissingReason`'s own doc comment for why this must stay
-///   `Unknown` rather than defaulting to either concrete reason).
-/// - The nearest existing ancestor of `path` shares `stored_device` → the
-///   filesystem the file lived on is present and reachable, and the file
-///   simply isn't there anymore. `Deleted`.
-/// - The nearest existing ancestor's device differs → we're standing on a
-///   *different* filesystem than the one recorded for this file, which
-///   means the original mount is currently absent. `Unmounted`.
-/// - Even `/` couldn't be `lstat`'d (see [`nearest_existing_ancestor_dev`])
-///   → no evidence either way. `Unknown`.
-///
-/// `stored_device` is `i64` (SQLite's only integer type, matching
-/// `Track::device` and `scanner::file_stat`'s `dev as i64` storage cast) and
-/// is cast back to `u64` for the comparison — round-tripping the same bit
-/// pattern `file_stat` cast away from `u64` on the way in.
-pub(crate) fn classify_missing(stored_device: Option<i64>, path: &Path) -> MissingReason {
-    let Some(stored_device) = stored_device else {
-        return MissingReason::Unknown;
-    };
-    let stored_device = stored_device as u64;
-    match nearest_existing_ancestor_dev(path) {
-        Some(current_device) if current_device == stored_device => MissingReason::Deleted,
-        Some(_) => MissingReason::Unmounted,
-        None => MissingReason::Unknown,
     }
 }
 
@@ -179,50 +92,6 @@ mod tests {
 
     fn dev_of(path: &Path) -> u64 {
         std::fs::symlink_metadata(path).unwrap().dev()
-    }
-
-    /// `classify_missing` with the file's real device recorded: the file's
-    /// directory still exists and still belongs to the same device, so the
-    /// only honest conclusion is that the file itself was deleted.
-    #[test]
-    fn classify_missing_returns_deleted_when_device_matches() {
-        let dir = tempfile::tempdir().unwrap();
-        let real_dev = dev_of(dir.path());
-        let gone_path = dir.path().join("gone.flac");
-
-        assert_eq!(
-            classify_missing(Some(real_dev as i64), &gone_path),
-            MissingReason::Deleted
-        );
-    }
-
-    /// A stored device that doesn't match anything on this filesystem
-    /// fabricates exactly the situation an unmounted drive produces: the
-    /// nearest existing ancestor belongs to a different device than the one
-    /// recorded. `real_dev + 99_999` is never going to collide with a real
-    /// `st_dev` in a test environment, so this is deterministic without
-    /// mounting or unmounting anything.
-    #[test]
-    fn classify_missing_returns_unmounted_when_device_differs() {
-        let dir = tempfile::tempdir().unwrap();
-        let real_dev = dev_of(dir.path());
-        let gone_path = dir.path().join("gone.flac");
-
-        assert_eq!(
-            classify_missing(Some(real_dev as i64 + 99_999), &gone_path),
-            MissingReason::Unmounted
-        );
-    }
-
-    /// No recorded device (schema-v1 row, or a `stat` that failed on last
-    /// scan) means there is no basis for a verdict at all — `Unknown`, never
-    /// a guessed concrete reason.
-    #[test]
-    fn classify_missing_returns_unknown_when_device_not_recorded() {
-        let dir = tempfile::tempdir().unwrap();
-        let gone_path = dir.path().join("gone.flac");
-
-        assert_eq!(classify_missing(None, &gone_path), MissingReason::Unknown);
     }
 
     /// `mount_point_of`'s invariant, asserted rather than a hardcoded path

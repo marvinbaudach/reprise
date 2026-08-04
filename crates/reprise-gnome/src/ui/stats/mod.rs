@@ -10,6 +10,7 @@ pub(in crate::ui) mod stats_hero;
 pub(in crate::ui) mod stats_metadata_links;
 pub(in crate::ui) mod stats_songs_card;
 mod stats_songs_playback;
+mod stats_songs_row_actions;
 pub(crate) mod stats_view;
 pub(in crate::ui) mod stats_view_widgets;
 #[allow(unused_imports)]

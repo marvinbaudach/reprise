@@ -5,6 +5,7 @@
 #![allow(dead_code)]
 
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use reprise_core::podcasts::{EpisodeRow, PodcastKind};
 use reprise_core::up_next::QueueItem;
@@ -62,7 +63,10 @@ pub(in crate::ui) enum PodcastPhase {
 pub(super) struct NeighbourContext {
     items: Vec<QueueItem>,
     index: usize,
+    pub(super) sequence: u64,
 }
+
+static NEXT_NEIGHBOUR_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 impl NeighbourContext {
     pub(super) fn for_episode(episode_ids: &[i64], episode_id: i64) -> Option<Self> {
@@ -86,6 +90,7 @@ impl NeighbourContext {
         Some(Self {
             items: items.to_vec(),
             index,
+            sequence: NEXT_NEIGHBOUR_SEQUENCE.fetch_add(1, Ordering::Relaxed),
         })
     }
 
@@ -106,6 +111,24 @@ impl NeighbourContext {
 
     pub(super) fn current_item(&self) -> QueueItem {
         self.items[self.index]
+    }
+
+    /// The items after the current one, in frozen show order.
+    pub(super) fn upcoming(&self) -> &[QueueItem] {
+        &self.items[self.index.saturating_add(1)..]
+    }
+
+    pub(super) fn episode_ids(&self) -> Option<Vec<i64>> {
+        self.items.iter().map(|item| item.episode_id()).collect()
+    }
+
+    /// Position of the current item — the stable `start` for the tail identity.
+    pub(super) fn position(&self) -> usize {
+        self.index
+    }
+
+    pub(super) fn upcoming_context(&self, offset: usize) -> Option<Self> {
+        self.shifted(self.index.checked_add(1)?.checked_add(offset)?)
     }
 
     pub(super) fn previous(&self) -> Option<Self> {
@@ -130,6 +153,7 @@ impl NeighbourContext {
         (index < self.items.len()).then(|| Self {
             items: self.items.clone(),
             index,
+            sequence: self.sequence,
         })
     }
 }
@@ -212,6 +236,10 @@ pub(super) struct PodcastSession {
     pub(super) published_at: Option<i64>,
     pub(super) art_url: Option<String>,
     pub(super) phase: PodcastPhase,
+    /// True only for the paused metadata shell reconstructed at cold start.
+    /// The first Play resolves a fresh source instead of toggling a pipeline
+    /// that belongs to the previous process.
+    pub(super) restored: bool,
     pub(super) origin: PodcastOrigin,
     pub(super) resume: ResumePolicy,
     pub(super) position_ms: i64,
@@ -268,6 +296,7 @@ pub(in crate::ui) struct ExternalPlaybackSnapshot {
     pub(in crate::ui) can_go_next: bool,
     pub(in crate::ui) stream_tags: StreamTags,
     pub(in crate::ui) podcast_phase: Option<PodcastPhase>,
+    pub(in crate::ui) restored: bool,
     pub(in crate::ui) radio: Option<RadioPresentation>,
     pub(in crate::ui) error: Option<String>,
 }
@@ -393,6 +422,7 @@ impl ExternalPlaybackState {
                     .is_some_and(NeighbourContext::has_next),
                 stream_tags: self.stream_tags.clone(),
                 podcast_phase: Some(session.phase),
+                restored: session.restored,
                 radio: None,
                 error: session.error.clone(),
             }),
@@ -404,6 +434,7 @@ impl ExternalPlaybackState {
                 can_go_next: false,
                 stream_tags: self.stream_tags.clone(),
                 podcast_phase: None,
+                restored: false,
                 radio: Some(session.presentation.clone()),
                 error: session.presentation.inline_error.clone(),
             }),
@@ -560,6 +591,7 @@ mod tests {
             published_at: None,
             art_url: None,
             phase: PodcastPhase::Playing,
+            restored: false,
             origin: PodcastOrigin::Direct,
             resume: ResumePolicy::new(0),
             position_ms: 0,
@@ -567,33 +599,6 @@ mod tests {
             duration_known: false,
             error: None,
         }
-    }
-
-    #[test]
-    fn pod_21_neighbours_follow_the_frozen_rendered_order_without_wrapping() {
-        let mut rendered_ids = vec![11, 22, 33];
-        let middle = NeighbourContext::for_episode(&rendered_ids, 22).unwrap();
-
-        assert_eq!(
-            middle.previous().map(|context| context.current_id()),
-            Some(11)
-        );
-        assert_eq!(middle.next().map(|context| context.current_id()), Some(33));
-        assert!(NeighbourContext::for_episode(&rendered_ids, 11)
-            .unwrap()
-            .previous()
-            .is_none());
-        assert!(NeighbourContext::for_episode(&rendered_ids, 33)
-            .unwrap()
-            .next()
-            .is_none());
-
-        rendered_ids.clear();
-        assert_eq!(
-            middle.previous().map(|context| context.current_id()),
-            Some(11)
-        );
-        assert_eq!(middle.next().map(|context| context.current_id()), Some(33));
     }
 
     #[test]

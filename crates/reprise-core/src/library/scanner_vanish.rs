@@ -8,6 +8,7 @@
 //! root-guard rationale these functions implement.
 
 use super::*;
+use crate::library::source::{LibraryLinkMode, LibraryPathPresence, LibrarySource};
 
 /// Shared row-fetch behind both [`present_candidates_under_root`] (the mark
 /// phase) and [`guard_evidence_under_root`] (the root guard's evidence
@@ -63,7 +64,8 @@ fn candidates_under_root(
 
 /// Candidate rows the mark phase must consider: every currently-present
 /// (`PRESENT`) track whose recorded `path` is under `root`, paired with its
-/// recorded `device` (`classify_missing`'s second input). `PRESENT` is the
+/// recorded `device` (the residence token
+/// [`LibrarySource::reachability`] compares against). `PRESENT` is the
 /// correct — and only correct — filter here: the mark phase only ever wants
 /// to *newly* flag a row that isn't already flagged, exactly like the
 /// pre-fold `mark_vanished_under_root` this replaces. See
@@ -105,47 +107,55 @@ pub(super) fn guard_evidence_under_root(
 }
 
 /// The root guard's evidence check: does ANY guard-evidence candidate's
-/// recorded `device` match the device `root` itself currently resolves to?
+/// recorded residence token match the token `root` currently resolves to?
 /// Always called with [`guard_evidence_under_root`]'s wider list, never
 /// [`present_candidates_under_root`]'s — see that function's doc comment for
 /// why. See `scan_folder_inner`'s `## Root guard` doc section for why a
 /// single match is enough to treat `root` as provably reachable. A `NULL`
 /// (`None`) recorded device never counts as a match, even in the
-/// (should-not-happen, since the caller already confirmed `root.exists()`)
+/// (should-not-happen, since the caller already probed `root`)
 /// case where `root`'s own device can't be resolved either — two unknowns
 /// are never evidence of each other.
-pub(super) fn any_candidate_confirms_root_device(
+pub(super) fn any_candidate_confirms_root_with(
+    source: &dyn LibrarySource,
     candidates: &[(i64, String, Option<i64>)],
     root: &Path,
 ) -> bool {
-    let root_device = mounts::nearest_existing_ancestor_dev(root);
-    candidates.iter().any(|(_, _, device)| {
-        matches!(
-            (device, root_device),
-            (Some(recorded), Some(root_device)) if *recorded as u64 == root_device
-        )
-    })
+    let root_token = source.residence_token(root);
+    candidates
+        .iter()
+        .any(|(_, _, stored)| matches!((stored, root_token), (Some(stored), Some(current)) if *stored == current))
 }
 
 /// The mark phase itself: for every `candidates` row whose file no longer
-/// exists on disk, sets `missing_since`/`missing_reason` (via `mounts::
-/// classify_missing`) and returns the count newly marked. A row that's still
-/// on disk (e.g. the walk's own move-detection just relocated a different
+/// exists at its source, sets `missing_since`/`missing_reason` (via
+/// [`LibrarySource::reachability`]) and returns the count newly marked. A row
+/// that's still
+/// present (e.g. the walk's own move-detection just relocated a different
 /// row onto this path, or the file genuinely never left) is left untouched
-/// — this is the same per-row `path.exists()` check `mark_vanished_under_
-/// root` used before the fold, just running inside the walk's own `tx` now
-/// instead of a separate connection/transaction afterward.
-pub(super) fn mark_vanished(
+/// — this is the same per-row presence check `mark_vanished_under_root` used
+/// before the fold, just running inside the walk's own `tx` now instead of a
+/// separate connection/transaction afterward. Paths already delivered by
+/// the current walk are known present and are skipped without another source
+/// query; only unseen candidates need a probe.
+pub(super) fn mark_vanished_with(
+    source: &dyn LibrarySource,
     tx: &rusqlite::Transaction,
     candidates: Vec<(i64, String, Option<i64>)>,
+    observed_paths: &std::collections::HashSet<std::path::PathBuf>,
 ) -> Result<u32, ScanError> {
     let mut marked = 0u32;
     for (id, path_str, device) in candidates {
         let path = Path::new(&path_str);
-        if path.exists() {
+        if observed_paths.contains(path) {
             continue;
         }
-        let reason = mounts::classify_missing(device, path);
+        // This write needs confirmed absence. Present and Unknown both keep
+        // the row live; inability to reach a source is not a missing verdict.
+        if source.probe(path, LibraryLinkMode::Follow) != LibraryPathPresence::Absent {
+            continue;
+        }
+        let reason = source.reachability(path, device);
         tx.execute(
             "UPDATE tracks SET missing_since = ?2, missing_reason = ?3 WHERE id = ?1",
             rusqlite::params![id, now_unix(), reason.as_str()],
@@ -158,7 +168,7 @@ pub(super) fn mark_vanished(
             // consumer; for now this just makes that grouping visible in
             // the log for an `Unmounted` row, where it's actually
             // informative (a `Deleted` row has no mount to report).
-            let mount_point = mounts::mount_point_of(path);
+            let mount_point = source.mount_point(path);
             tracing::info!(
                 path = %path_str,
                 reason = reason.as_str(),
@@ -174,4 +184,86 @@ pub(super) fn mark_vanished(
         }
     }
     Ok(marked)
+}
+
+#[cfg(test)]
+mod android_uri_tests {
+    use super::*;
+    use crate::library::source_test_support::UnknownProbeSource;
+
+    const TREE_URI: &str = "content://com.android.externalstorage.documents/tree/primary%3AMusic";
+    const ESCAPED_TREE_URI: &str =
+        "content://com.android.externalstorage.documents/tree/primary\\%3AMusic";
+    const TRACK_URI: &str = "content://com.android.externalstorage.documents/tree/primary%3AMusic/document/primary%3AMusic%2Fsong.flac";
+
+    #[test]
+    fn android_a2_content_uri_path_operations_preserve_tree_membership_and_extension() {
+        let tree = std::path::PathBuf::from(TREE_URI);
+        let track = std::path::PathBuf::from(TRACK_URI);
+
+        assert!(track.starts_with(&tree));
+        assert_eq!(
+            track.extension().and_then(std::ffi::OsStr::to_str),
+            Some("flac")
+        );
+    }
+
+    #[test]
+    fn android_a3_content_uri_root_survives_vanish_like_prefilter() {
+        assert_eq!(
+            crate::library::playlists::escape_like(TREE_URI),
+            ESCAPED_TREE_URI
+        );
+
+        let mut conn = crate::db::open_migrated(None).unwrap();
+        conn.execute(
+            "INSERT INTO tracks (id, path, added_at, device) VALUES (?1, ?2, 0, ?3)",
+            rusqlite::params![1_i64, TRACK_URI, 7_i64],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tracks (id, path, added_at, device) VALUES (?1, ?2, 0, ?3)",
+            rusqlite::params![
+                2_i64,
+                "content://com.android.externalstorage.documents/tree/primaryX3AMusic/document/primaryX3AMusic%2Fother.flac",
+                9_i64,
+            ],
+        )
+        .unwrap();
+        let tx = conn.transaction().unwrap();
+
+        let candidates =
+            candidates_under_root(&tx, Path::new(TREE_URI), "removed_at IS NULL").unwrap();
+
+        assert_eq!(candidates, vec![(1_i64, TRACK_URI.to_owned(), Some(7_i64))]);
+    }
+
+    #[test]
+    fn unknown_probe_does_not_mark_vanished_track_missing() {
+        let mut conn = crate::db::open_migrated(None).unwrap();
+        conn.execute(
+            "INSERT INTO tracks (id, path, added_at, device) VALUES (1, ?1, 0, 41)",
+            [TRACK_URI],
+        )
+        .unwrap();
+        let tx = conn.transaction().unwrap();
+
+        let marked = mark_vanished_with(
+            &UnknownProbeSource,
+            &tx,
+            vec![(1, TRACK_URI.to_owned(), Some(41))],
+            &std::collections::HashSet::new(),
+        )
+        .unwrap();
+        let missing: (Option<i64>, Option<String>) = tx
+            .query_row(
+                "SELECT missing_since, missing_reason FROM tracks WHERE id = 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+
+        assert_eq!(marked, 0);
+        assert_eq!(missing, (None, None));
+    }
 }

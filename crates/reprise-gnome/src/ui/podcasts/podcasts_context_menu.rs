@@ -1,14 +1,19 @@
 //! Podcast episode context menu, including typed manual-queue actions.
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use gtk4::gio;
 use gtk4::glib::variant::ToVariant;
 use gtk4::prelude::*;
-use reprise_core::podcasts::{EpisodeRow, SourceGroup};
+use reprise_core::podcasts::{EpisodeRow, PodcastKind, SourceGroup};
 
+use super::podcasts_selection::{PodcastSelection, SelectMode};
 use crate::ui::strings;
 
 pub(super) const ACTION_PLAY: &str = "play";
 pub(super) const ACTION_COPY_URL: &str = "copy-url";
+pub(super) const ACTION_OPEN_IN_BROWSER: &str = "open-in-browser";
 pub(super) const ACTION_PLAY_NEXT: &str = "play-next";
 pub(super) const ACTION_ADD_TO_QUEUE: &str = "add-to-queue";
 pub(super) const ACTION_PLAY_NEXT_UNAVAILABLE: &str = "play-next-unavailable";
@@ -26,6 +31,7 @@ pub(super) const ACTION_TOGGLE_PHONE_SYNC: &str = "toggle-phone-sync";
 const ACTIONS: &[&str] = &[
     ACTION_PLAY,
     ACTION_COPY_URL,
+    ACTION_OPEN_IN_BROWSER,
     ACTION_PLAY_NEXT,
     ACTION_ADD_TO_QUEUE,
     ACTION_PLAY_NEXT_UNAVAILABLE,
@@ -130,6 +136,14 @@ pub(super) fn build(row: &EpisodeRow) -> gio::Menu {
     build_for_selection(row, &[row.id], None)
 }
 
+pub(super) fn browser_url(row: &EpisodeRow) -> Option<&str> {
+    let candidate = match row.kind {
+        PodcastKind::Youtube => Some(row.audio_url.as_str()),
+        PodcastKind::Rss => row.page_url.as_deref(),
+    };
+    candidate.filter(|url| reprise_core::external_link::is_launchable_url(url))
+}
+
 pub(super) fn build_for_selection(
     row: &EpisodeRow,
     selected_ids: &[i64],
@@ -172,6 +186,44 @@ pub(super) fn build_for_selection(
     menu
 }
 
+/// Takes the selection over when `row` sits outside it, then builds the menu
+/// for whatever the selection is now. `parent` owns the popover; `at` is a
+/// widget-local pointer position, or `None` to anchor it to the row centre.
+pub(super) fn popup_for_row(
+    parent: &impl IsA<gtk4::Widget>,
+    row: &EpisodeRow,
+    selection: &Rc<RefCell<PodcastSelection>>,
+    unavailable_episode: Option<i64>,
+    select_action: &str,
+    at: Option<(f64, f64)>,
+) {
+    let took_over = selection.borrow_mut().take_over_for_context_menu(row.id);
+    if took_over {
+        let target = (row.id, SelectMode::Only.as_u8()).to_variant();
+        if let Err(error) = parent.activate_action(select_action, Some(&target)) {
+            tracing::debug!(%error, "podcast row menu could not publish its selection take-over");
+        }
+    }
+    let selected_ids = selection.borrow().selected_ids();
+    let popover = gtk4::PopoverMenu::from_model(Some(&build_for_selection(
+        row,
+        &selected_ids,
+        unavailable_episode,
+    )));
+    popover.set_has_arrow(false);
+    popover.set_parent(parent);
+    let (x, y) = at.unwrap_or_else(|| {
+        let parent = parent.as_ref();
+        (
+            f64::from(parent.width()) / 2.0,
+            f64::from(parent.height()) / 2.0,
+        )
+    });
+    popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+    crate::ui::popover_lifecycle::unparent_after_actions(popover.upcast_ref());
+    popover.popup();
+}
+
 fn build_single(row: &EpisodeRow, target_ids: &[i64], queue_available: bool) -> gio::Menu {
     let menu = gio::Menu::new();
     let primary = gio::Menu::new();
@@ -186,6 +238,7 @@ fn build_single(row: &EpisodeRow, target_ids: &[i64], queue_available: bool) -> 
         row.id,
     );
     append_targeted(&primary, strings::PODCAST_COPY_URL, ACTION_COPY_URL, row.id);
+    append_browser_action(&primary, row);
     append_selected(
         &primary,
         &strings::text(strings::CONTEXT_MENU_PLAY_NEXT),
@@ -243,6 +296,17 @@ fn build_single(row: &EpisodeRow, target_ids: &[i64], queue_available: bool) -> 
     );
     menu.append_section(None, &destructive);
     menu
+}
+
+fn append_browser_action(menu: &gio::Menu, row: &EpisodeRow) {
+    if browser_url(row).is_some() {
+        append_targeted(
+            menu,
+            strings::PODCAST_OPEN_IN_BROWSER,
+            ACTION_OPEN_IN_BROWSER,
+            row.id,
+        );
+    }
 }
 
 pub(super) fn install_disabled_queue_actions(group: &gio::SimpleActionGroup) {
@@ -711,3 +775,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "podcasts_context_menu_browser_tests.rs"]
+mod browser_tests;

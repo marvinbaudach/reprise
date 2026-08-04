@@ -2,6 +2,7 @@
 
 use chrono::NaiveDate;
 
+use super::feed::ParsedFeed;
 use super::ytdlp::{YtDlpPlaylist, YtDlpVideo};
 
 const WATCH_URL_PREFIX: &str = "https://www.youtube.com/watch?v=";
@@ -12,6 +13,7 @@ const LONG_FORM_FEED_PREFIX: &str = "https://www.youtube.com/feeds/videos.xml?pl
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct YoutubeListing {
     pub title: Option<String>,
+    pub channel: Option<String>,
     pub episodes: Vec<YoutubeEpisode>,
 }
 
@@ -31,8 +33,16 @@ pub struct YoutubeEpisode {
 pub fn project_playlist(playlist: YtDlpPlaylist) -> YoutubeListing {
     YoutubeListing {
         title: playlist.title,
+        channel: playlist.channel,
         episodes: playlist.entries.into_iter().map(project_video).collect(),
     }
+}
+
+pub fn subscription_title(feed: &ParsedFeed) -> Option<&str> {
+    feed.author
+        .as_deref()
+        .map(str::trim)
+        .filter(|author| !author.is_empty())
 }
 
 pub fn project_video(video: YtDlpVideo) -> YoutubeEpisode {
@@ -151,6 +161,7 @@ mod tests {
     fn flat_playlist_projects_stable_episode_identity_in_source_order() {
         let listing = project_playlist(YtDlpPlaylist {
             title: Some("The Channel".to_owned()),
+            channel: Some("Ferris Media".to_owned()),
             source_url: None,
             image_url: None,
             entries: vec![
@@ -174,6 +185,7 @@ mod tests {
         });
 
         assert_eq!(listing.title.as_deref(), Some("The Channel"));
+        assert_eq!(listing.channel.as_deref(), Some("Ferris Media"));
         assert_eq!(
             listing.episodes,
             vec![

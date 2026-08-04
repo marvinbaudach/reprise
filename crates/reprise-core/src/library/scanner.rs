@@ -1,11 +1,14 @@
 use rusqlite::Connection;
 
 use crate::db::Db;
-use std::path::Path;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
 use super::import_errors;
-use super::mounts;
-#[cfg(test)]
+use super::source::{
+    self, LibraryLinkMode, LibraryPathMetadata, LibraryPathPresence, LibrarySource,
+    LibraryWalkControl, LibraryWalkErrorKind, LibraryWalkItem, LibraryWalkOrder, UnixLibrarySource,
+};
 use crate::models::ImportErrorKind;
 use crate::models::MissingReason;
 use crate::queries::PRESENT;
@@ -18,50 +21,44 @@ pub use scanner_types::{
 
 const AUDIO_EXTENSIONS: [&str; 7] = ["mp3", "flac", "ogg", "opus", "m4a", "aac", "wav"];
 
+type FileStat = (u64, Option<(u64, u64)>);
+type FileMetadata = (i64, Option<FileStat>);
+
+/// `(mtime, stat)` from one metadata query. `mtime` is zero when the query or
+/// timestamp conversion fails, preserving the scanner's "unknown, always
+/// retry" database value. `stat` is `None` only when the metadata query itself
+/// fails; a timestamp failure does not discard otherwise valid file facts.
+///
+/// `stat` is `(file_size, identity)` for move detection. Unix supplies its stable
+/// `(device, inode)` identity through `std::os::unix::fs::MetadataExt`;
+/// platforms without that identity still supply the real file size and use
+/// the fingerprint strategy alone. Returns `None` if `stat` itself fails, in
+/// which case the scanner skips move detection rather than matching with an
+/// unknown size. The database representation remains `file_size = 0` plus
+/// `NULL` device/inode for that failure case.
+///
+/// **A platform arm must never fabricate an identity.** The non-Unix arm used
+/// to return `(0, 0)` under a comment claiming it was never reached at
+/// runtime — true only while the app was Linux-only. A Tauri desktop makes it
+/// false, and then `WHERE device = 0 AND inode = 0` matches every row scanned
+/// there; with exactly one valid candidate that attaches one track's history
+/// to another, silently. `None` is the only honest answer for a platform
+/// without a stable identity.
+fn scanner_file_metadata(metadata: Option<LibraryPathMetadata>) -> FileMetadata {
+    let mtime = metadata
+        .as_ref()
+        .and_then(|metadata| metadata.modified)
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |duration| duration.as_secs() as i64);
+    let stat = metadata.and_then(|metadata| metadata.size.map(|size| (size, metadata.identity)));
+    (mtime, stat)
+}
+
 pub(crate) fn is_audio_file(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
         .map(str::to_ascii_lowercase)
         .is_some_and(|extension| AUDIO_EXTENSIONS.contains(&extension.as_str()))
-}
-
-pub(crate) fn file_mtime(path: &Path) -> i64 {
-    std::fs::metadata(path)
-        .and_then(|m| m.modified())
-        .ok()
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map_or(0, |d| d.as_secs() as i64)
-}
-
-/// `(file_size, device, inode)` for the move-detection fingerprint. The app
-/// runs on Linux and uses the Unix `(device, inode)` identity
-/// (`std::os::unix::fs::MetadataExt`); the non-Unix arm exists only to keep
-/// `reprise-core` cross-checkable (spec I / cross-target CI). There is no
-/// stable portable device/inode (`std::os::windows::fs::MetadataExt`'s
-/// equivalents are still behind the unstable `windows_by_handle` feature), so
-/// off Unix identity degrades to `(0, 0)` — never reached at runtime. Returns
-/// `None` if `stat` fails (e.g. a race where the file vanished between
-/// `walkdir` listing it and this call) — Stage 3 Task 1: a file that can't be
-/// stat'd has no reliable filesystem identity to fingerprint, so `scan_folder`
-/// skips the move-detection step entirely for it (rather than the pre-Task-1
-/// behavior of silently fingerprinting on placeholder zeros, which could have
-/// coincidentally matched an unrelated `(device, inode)` of `(0, 0)`) and
-/// stores `NULL` device/inode for the row, same as any pre-Stage-2 row that
-/// predates these columns. `file_size` still defaults to `0` in that case —
-/// unlike device/inode it is `NOT NULL DEFAULT 0` in the schema, matching every
-/// other tag-derived column's non-null convention, so `0` (rather than `NULL`)
-/// is the only representable "unknown" value for it anyway.
-pub(crate) fn file_stat(path: &Path) -> Option<(u64, u64, u64)> {
-    let metadata = std::fs::metadata(path).ok()?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        Some((metadata.size(), metadata.dev(), metadata.ino()))
-    }
-    #[cfg(not(unix))]
-    {
-        Some((metadata.len(), 0, 0))
-    }
 }
 
 /// Return type for tag_param_values: (title, artist, album, album_artist,
@@ -119,11 +116,21 @@ fn tag_param_values<'a>(
 
 pub fn scan_folder(db: &Db, root: &Path) -> Result<ScanOutcome, ScanError> {
     let conn = db.conn();
-    scan_folder_in(conn, root)
+    scan_folder_inner(&UnixLibrarySource, conn, root, None)
+}
+
+#[cfg(test)]
+fn scan_folder_with_source(
+    source: &dyn LibrarySource,
+    db: &Db,
+    root: &Path,
+) -> Result<ScanOutcome, ScanError> {
+    let conn = db.conn();
+    scan_folder_inner(source, conn, root, None)
 }
 
 pub(crate) fn scan_folder_in(conn: &Connection, root: &Path) -> Result<ScanOutcome, ScanError> {
-    scan_folder_inner(conn, root, None)
+    scan_folder_inner(&UnixLibrarySource, conn, root, None)
 }
 
 pub fn scan_folder_with_progress(
@@ -131,11 +138,33 @@ pub fn scan_folder_with_progress(
     root: &Path,
     mut on_progress: impl FnMut(ScanProgress),
 ) -> Result<ScanOutcome, ScanError> {
+    scan_folder_with_progress_from(&UnixLibrarySource, db, root, &mut on_progress)
+}
+
+/// Scans through an explicitly selected library source while forwarding the
+/// same progress contract as [`scan_folder_with_progress`]. Platform adapters
+/// use this entry point; the desktop wrapper above remains pinned to
+/// [`UnixLibrarySource`].
+pub fn scan_folder_with_source_and_progress(
+    source: &dyn LibrarySource,
+    db: &Db,
+    root: &Path,
+    mut on_progress: impl FnMut(ScanProgress),
+) -> Result<ScanOutcome, ScanError> {
+    scan_folder_with_progress_from(source, db, root, &mut on_progress)
+}
+
+fn scan_folder_with_progress_from(
+    source: &dyn LibrarySource,
+    db: &Db,
+    root: &Path,
+    on_progress: &mut dyn FnMut(ScanProgress),
+) -> Result<ScanOutcome, ScanError> {
     let conn = db.conn();
     on_progress(ScanProgress::Discovering);
-    let total = scan_progress::count_audio_files(root);
-    let reporter = scan_progress::ScanProgressReporter::new(&mut on_progress, total);
-    scan_folder_inner(conn, root, Some(reporter))
+    let total = scan_progress::estimated_audio_files(conn, root)?;
+    let reporter = scan_progress::ScanProgressReporter::new(on_progress, total);
+    scan_folder_inner(source, conn, root, Some(reporter))
 }
 
 /// Walks `root`, upserting every audio file found, then — in the SAME
@@ -165,7 +194,7 @@ pub fn scan_folder_with_progress(
 ///
 /// A scan whose own `root` cannot be seen has no evidence about any
 /// individual file under it — it only knows "my root is unreachable". Before
-/// the walk even starts, `!root.exists()` short-circuits straight to
+/// the walk even starts, a failed source probe short-circuits straight to
 /// [`ScanOutcome::RootUnavailable`] with no walk and no database write at
 /// all (`import_errors` included) — see Root-Guard case (a) in this
 /// function's test suite.
@@ -177,8 +206,8 @@ pub fn scan_folder_with_progress(
 /// finds zero audio files, indistinguishable at a glance from a genuinely
 /// emptied folder. Marking every track under it "unmounted" would still make
 /// the whole library look empty in the UI the moment that scan lands (see
-/// this module's `library::mounts::classify_missing`'s own doc comment for
-/// why `Unmounted` vs `Deleted` matters — this guard is about whether ANY
+/// the `library::source::LibrarySource::reachability` contract for why
+/// `Unmounted` vs `Deleted` matters — this guard is about whether ANY
 /// marking should happen at all, not which reason to use once it does). So,
 /// only once the walk found zero audio files AND at least one NOT-YET-
 /// TOMBSTONED track (`removed_at IS NULL` — present or already-missing
@@ -235,17 +264,21 @@ pub fn scan_folder_with_progress(
 /// deleting it. Only a later scan that achieves a real pass-1 success (the
 /// file got re-tagged) clears it.
 fn scan_folder_inner(
+    source: &dyn LibrarySource,
     conn: &Connection,
     root: &Path,
     mut progress: Option<scan_progress::ScanProgressReporter<'_>>,
 ) -> Result<ScanOutcome, ScanError> {
-    debug_assert!(
-        root.is_absolute(),
-        "scan roots must be absolute paths — library roots (GTK folder chooser, \
-         persisted settings) are always absolute in this codebase, and mounts::\
-         nearest_existing_ancestor_dev's walk-to-`/` guarantee assumes it"
-    );
-    if !root.exists() {
+    // No absoluteness assertion here any more. It used to live at this line and
+    // it was the wrong layer: nothing the scanner does needs an absolute root —
+    // it hands the root to the source and reads back what the source says. The
+    // requirement belongs to `UnixLibrarySource`'s ancestor walk, and it now
+    // sits there, next to the guarantee it protects.
+    //
+    // This is not a formality. A SAF root is a content URI, and
+    // `Path::is_absolute` is false for one (it has no leading `/`), so this
+    // assertion fired on the first scan a real Android source ever attempted.
+    if source.probe(root, LibraryLinkMode::Follow) == LibraryPathPresence::Absent {
         // Root-Guard case (a): no walk, no database write at all — see this
         // function's `## Root guard` doc section.
         tracing::warn!(
@@ -259,258 +292,273 @@ fn scan_folder_inner(
 
     let mut report = ScanReport::default();
     let mut audio_files_seen: u64 = 0;
-    let mut mount_cache = mount::MountPointCache::new();
+    let mut observed_audio_paths = HashSet::<PathBuf>::new();
+    let mut mount_cache = mount::MountPointCache::new(source);
     let tx = conn.unchecked_transaction()?;
-    for entry in walkdir::WalkDir::new(root).follow_links(false).into_iter() {
-        let entry = match entry {
-            Ok(entry) => entry,
-            Err(err) => {
-                // `err.path()` is the DIRECTORY walkdir failed to enter,
-                // never a file underneath it — those were never seen, so
-                // inventing rows for them would be fiction.
-                let err_path = err.path().map_or_else(
-                    || root.to_string_lossy().to_string(),
-                    |p| p.to_string_lossy().to_string(),
-                );
-                import_errors::record_error(
-                    &tx,
-                    &err_path,
-                    import_errors::classify_walkdir(&err),
-                    &format!("directory traversal error: {err}"),
-                    now_unix(),
-                )?;
-                report.errors += 1;
-                continue;
+    let mut walk_failure = None;
+    source::walk_with(source, root, LibraryWalkOrder::Native, |item| {
+        let result = (|| -> Result<(), ScanError> {
+            let entry = match item {
+                LibraryWalkItem::Entry(entry) => entry,
+                LibraryWalkItem::Error(error) => {
+                    // `error.path` is the DIRECTORY the source failed to enter,
+                    // never a file underneath it — those were never seen, so
+                    // inventing rows for them would be fiction.
+                    let err_path = error.path.as_ref().map_or_else(
+                        || root.to_string_lossy().to_string(),
+                        |p| p.to_string_lossy().to_string(),
+                    );
+                    let kind = match error.kind {
+                        LibraryWalkErrorKind::PermissionDenied => ImportErrorKind::PermissionDenied,
+                        LibraryWalkErrorKind::Io => ImportErrorKind::Io,
+                        LibraryWalkErrorKind::Unknown => ImportErrorKind::Unknown,
+                    };
+                    import_errors::record_error(
+                        &tx,
+                        &err_path,
+                        kind,
+                        &format!("directory traversal error: {}", error.detail),
+                        now_unix(),
+                    )?;
+                    report.errors += 1;
+                    return Ok(());
+                }
+            };
+            if !entry.is_file {
+                return Ok(());
             }
-        };
-        if !entry.file_type().is_file() {
-            continue;
-        }
-        let path = entry.path();
-        if !is_audio_file(path) {
-            continue;
-        }
-        // Root-Guard input: "did the walk find any audio file at all under
-        // `root`?" — counted regardless of whether this particular file
-        // goes on to be added/updated/skipped/errored below. See this
-        // function's `## Root guard` doc section.
-        audio_files_seen += 1;
-        let path_str = path.to_string_lossy().to_string();
-        let mtime = file_mtime(path);
-        // Compute identity before touching tags. An exclusion follows the
-        // same file across a rename and must win over move detection.
-        let stat = file_stat(path);
-        let (file_size, device, inode): (i64, Option<i64>, Option<i64>) = match stat {
-            Some((size, dev, ino)) => (size as i64, Some(dev as i64), Some(ino as i64)),
-            None => (0, None, None),
-        };
-        if super::exclusions::matches_file(&tx, path, device, inode)? {
-            report.excluded += 1;
-            if let Some(progress) = &mut progress {
-                progress.advance(path);
+            let path = entry.path.as_path();
+            if !is_audio_file(path) {
+                return Ok(());
             }
-            continue;
-        }
-        let known: Option<(i64, Option<i64>, Option<i64>, i64)> = tx
+            // Root-Guard input: "did the walk find any audio file at all under
+            // `root`?" — counted regardless of whether this particular file
+            // goes on to be added/updated/skipped/errored below. See this
+            // function's `## Root guard` doc section.
+            audio_files_seen += 1;
+            observed_audio_paths.insert(path.to_path_buf());
+            let path_str = path.to_string_lossy().to_string();
+            // Compute identity before touching tags. An exclusion follows the
+            // same file across a rename and must win over move detection.
+            let metadata =
+                entry
+                    .metadata
+                    .or_else(|| match source.probe(path, LibraryLinkMode::Follow) {
+                        LibraryPathPresence::Present(metadata) => Some(metadata),
+                        LibraryPathPresence::Absent | LibraryPathPresence::Unknown => None,
+                    });
+            let (mtime, stat) = scanner_file_metadata(metadata);
+            let has_file_stat = stat.is_some();
+            let (file_size, identity): (i64, Option<(i64, i64)>) = match stat {
+                Some((size, identity)) => (
+                    size as i64,
+                    identity.map(|(device, inode)| (device as i64, inode as i64)),
+                ),
+                None => (0, None),
+            };
+            let (device, inode) =
+                identity.map_or((None, None), |(device, inode)| (Some(device), Some(inode)));
+            if super::exclusions::matches_file(&tx, path, device, inode)? {
+                report.excluded += 1;
+                if let Some(progress) = &mut progress {
+                    progress.advance(path);
+                }
+                return Ok(());
+            }
+            let known: Option<(i64, Option<i64>, Option<i64>, i64)> = tx
             .query_row(
                 "SELECT file_mtime, missing_since, removed_at, untagged FROM tracks WHERE path = ?1",
                 [&path_str],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
             )
             .ok();
-        let known_mtime = known.map(|(file_mtime, ..)| file_mtime);
-        let known_missing = known.is_some_and(|(_, missing_since, ..)| missing_since.is_some());
-        // Task 1.9: a row can be tombstoned (`removed_at` set, via a future
-        // "Remove from library") independently of ever having been marked
-        // missing — evidence that the file is still sitting at its exact
-        // recorded path outranks that removal (evidence rule, Beschluss
-        // 7/12), so this reappearance check must fire for a tombstoned row
-        // too, not only a missing one.
-        let known_removed = known.is_some_and(|(_, _, removed_at, _)| removed_at.is_some());
-        // A present row still flagged `untagged` (an earlier scan couldn't parse
-        // its container) must NOT take the unchanged-mtime fast path: excluding
-        // it here drops it through to re-read + `repair_damaged_tags`, so a
-        // library imported before auto-repair existed stops staying untagged.
-        let known_untagged = known.is_some_and(|(_, _, _, untagged)| untagged != 0);
-        if known_mtime == Some(mtime) && !known_untagged {
-            if known_missing || known_removed {
-                // The file reappeared at its exact recorded path with an
-                // unchanged mtime (NAS remount, restore-from-trash, or a
-                // tombstoned row whose object turned out to still be
-                // there): the ordinary incremental fast path would
-                // otherwise skip it forever, silently ignoring `missing_
-                // since`/`removed_at` — this is the one case the fast path
-                // must NOT take, since the row still needs both cleared
-                // even though nothing else changed. This is also the ONLY
-                // chance a row whose `mount_point` is NULL (a pre-schema-v10
-                // row, or any row that was never re-scanned since) has to
-                // acquire one without its file actually changing — see
-                // `scanner_mount.rs`'s module doc comment.
-                let mount_point = mount_cache.resolve(path);
-                tx.execute(
-                    "UPDATE tracks SET missing_since = NULL, missing_reason = NULL, \
+            let known_mtime = known.map(|(file_mtime, ..)| file_mtime);
+            let known_missing = known.is_some_and(|(_, missing_since, ..)| missing_since.is_some());
+            // Task 1.9: a row can be tombstoned (`removed_at` set, via a future
+            // "Remove from library") independently of ever having been marked
+            // missing — evidence that the file is still sitting at its exact
+            // recorded path outranks that removal (evidence rule, Beschluss
+            // 7/12), so this reappearance check must fire for a tombstoned row
+            // too, not only a missing one.
+            let known_removed = known.is_some_and(|(_, _, removed_at, _)| removed_at.is_some());
+            // A present row still flagged `untagged` (an earlier scan couldn't parse
+            // its container) must NOT take the unchanged-mtime fast path: excluding
+            // it here drops it through to re-read + `repair_damaged_tags`, so a
+            // library imported before auto-repair existed stops staying untagged.
+            let known_untagged = known.is_some_and(|(_, _, _, untagged)| untagged != 0);
+            if known_mtime == Some(mtime) && !known_untagged {
+                if known_missing || known_removed {
+                    // The file reappeared at its exact recorded path with an
+                    // unchanged mtime (NAS remount, restore-from-trash, or a
+                    // tombstoned row whose object turned out to still be
+                    // there): the ordinary incremental fast path would
+                    // otherwise skip it forever, silently ignoring `missing_
+                    // since`/`removed_at` — this is the one case the fast path
+                    // must NOT take, since the row still needs both cleared
+                    // even though nothing else changed. This is also the ONLY
+                    // chance a row whose `mount_point` is NULL (a pre-schema-v10
+                    // row, or any row that was never re-scanned since) has to
+                    // acquire one without its file actually changing — see
+                    // `scanner_mount.rs`'s module doc comment.
+                    let mount_point = mount_cache.resolve(path);
+                    tx.execute(
+                        "UPDATE tracks SET missing_since = NULL, missing_reason = NULL, \
                      removed_at = NULL, mount_point = ?2 WHERE path = ?1",
-                    rusqlite::params![path_str, mount_point],
-                )?;
-                if import_errors::clear_error(&tx, &path_str)? {
-                    report.healed += 1;
-                }
-                report.updated += 1;
-                tracing::info!(
-                    path = %path_str,
-                    was_missing = known_missing,
-                    was_removed = known_removed,
-                    "restored track from evidence (unchanged mtime)"
-                );
-            } else {
-                report.skipped_unchanged += 1;
-            }
-            if let Some(progress) = &mut progress {
-                progress.advance(path);
-            }
-            continue;
-        }
-        // Dismiss-skip fast path: a `stat`, not a tag parse. Must run BEFORE
-        // `read_meta` — see `check_dismissed`'s doc comment. An `untagged` row
-        // is exempt: a dismissal only silences the notification and predates
-        // auto-repair, so skipping here would strand a now-repairable file
-        // forever (its mtime never changes, so it is never re-read).
-        if !known_untagged
-            && import_errors::check_dismissed(&tx, &path_str, mtime, file_size, now_unix())?
-        {
-            if let Some(progress) = &mut progress {
-                progress.advance(path);
-            }
-            continue;
-        }
-        match track_meta::read_meta_with_fallback(path) {
-            Ok(outcome) => {
-                // Task 1.8: `hint` is `Some((kind, detail))` only when pass 1
-                // failed but pass 2 rescued the container — see this
-                // function's `## Hint coexistence` doc section just below.
-                let (meta, hint) = match outcome {
-                    track_meta::MetaOutcome::Tagged(meta) => (meta, None),
-                    // A file the strict reader couldn't parse is repaired in
-                    // place (damaged containers stripped, fresh ID3v2 written
-                    // from the file name / folder), then re-read as a normal
-                    // tagged import. On any repair failure it stays untagged.
-                    track_meta::MetaOutcome::Untagged { meta, kind, detail } => {
-                        match repair::repair_damaged_tags(path, &meta, kind) {
-                            Some(repaired) => (repaired, None),
-                            None => (meta, Some((kind, detail))),
-                        }
+                        rusqlite::params![path_str, mount_point],
+                    )?;
+                    if import_errors::clear_error(&tx, &path_str)? {
+                        report.healed += 1;
                     }
-                };
-                let untagged = hint.is_some();
-                let is_update = known_mtime.is_some();
-                let title = if meta.title.is_empty() {
-                    path.file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("")
-                        .to_string()
+                    report.updated += 1;
+                    tracing::info!(
+                        path = %path_str,
+                        was_missing = known_missing,
+                        was_removed = known_removed,
+                        "restored track from evidence (unchanged mtime)"
+                    );
                 } else {
-                    meta.title.clone()
-                };
-                // Task 1.6: recorded now, while still reachable, and
-                // memoized per parent dir — see `scanner_mount.rs`.
-                let mount_point = mount_cache.resolve(path);
-                // A pass-1 success clears any previous failure for this path
-                // (a file that errored once and is now readable again must
-                // not stay in the error log). A pass-2 (untagged) success
-                // must NOT clear it — instead it refreshes the row with
-                // pass 1's diagnosis, keeping it alive as a HINT. See this
-                // function's `## Hint coexistence` doc section.
-                if let Some((kind, detail)) = hint {
-                    import_errors::record_error(&tx, &path_str, kind, &detail, now_unix())?;
-                } else if import_errors::clear_error(&tx, &path_str)? {
-                    // Task 1.9: a real pass-1 success (never the pass-2
-                    // hint-refresh branch above) that actually deleted a
-                    // prior error row — see `ScanReport::healed`'s doc
-                    // comment for why the hint case must never land here.
-                    report.healed += 1;
+                    report.skipped_unchanged += 1;
                 }
+                if let Some(progress) = &mut progress {
+                    progress.advance(path);
+                }
+                return Ok(());
+            }
+            // Dismiss-skip fast path: a `stat`, not a tag parse. Must run BEFORE
+            // `read_meta` — see `check_dismissed`'s doc comment. An `untagged` row
+            // is exempt: a dismissal only silences the notification and predates
+            // auto-repair, so skipping here would strand a now-repairable file
+            // forever (its mtime never changes, so it is never re-read).
+            if !known_untagged
+                && import_errors::check_dismissed(&tx, &path_str, mtime, file_size, now_unix())?
+            {
+                if let Some(progress) = &mut progress {
+                    progress.advance(path);
+                }
+                return Ok(());
+            }
+            match track_meta::read_meta_with_fallback(source, path) {
+                Ok(outcome) => {
+                    // Task 1.8: `hint` is `Some((kind, detail))` only when pass 1
+                    // failed but pass 2 rescued the container — see this
+                    // function's `## Hint coexistence` doc section just below.
+                    let (meta, hint) = match outcome {
+                        track_meta::MetaOutcome::Tagged(meta) => (meta, None),
+                        // A file the strict reader couldn't parse is repaired in
+                        // place (damaged containers stripped, fresh ID3v2 written
+                        // from the file name / folder), then re-read as a normal
+                        // tagged import. On any repair failure it stays untagged.
+                        track_meta::MetaOutcome::Untagged { meta, kind, detail } => {
+                            match repair::repair_damaged_tags(path, &meta, kind) {
+                                Some(repaired) => (repaired, None),
+                                None => (meta, Some((kind, detail))),
+                            }
+                        }
+                    };
+                    let untagged = hint.is_some();
+                    let is_update = known_mtime.is_some();
+                    let title = if meta.title.is_empty() {
+                        source.display_name(path).unwrap_or_default()
+                    } else {
+                        meta.title.clone()
+                    };
+                    // Task 1.6: recorded now, while still reachable, and
+                    // memoized per parent dir — see `scanner_mount.rs`.
+                    let mount_point = mount_cache.resolve(path);
+                    // A pass-1 success clears any previous failure for this path
+                    // (a file that errored once and is now readable again must
+                    // not stay in the error log). A pass-2 (untagged) success
+                    // must NOT clear it — instead it refreshes the row with
+                    // pass 1's diagnosis, keeping it alive as a HINT. See this
+                    // function's `## Hint coexistence` doc section.
+                    if let Some((kind, detail)) = hint {
+                        import_errors::record_error(&tx, &path_str, kind, &detail, now_unix())?;
+                    } else if import_errors::clear_error(&tx, &path_str)? {
+                        // Task 1.9: a real pass-1 success (never the pass-2
+                        // hint-refresh branch above) that actually deleted a
+                        // prior error row — see `ScanReport::healed`'s doc
+                        // comment for why the hint case must never land here.
+                        report.healed += 1;
+                    }
 
-                // Move detection (Stage 2 Task 8) only ever applies to a path
-                // the DB has never seen before — a file whose path is already
-                // known just falls through to the ordinary upsert below, even
-                // if its content changed.
-                // Skip move detection entirely when `stat` failed above (no
-                // reliable device/inode to key step 1 off, and step 2's
-                // fingerprint would be matching against a placeholder
-                // `file_size` of 0) — see `file_stat`'s doc comment.
-                let move_candidate = if is_update {
-                    None
-                } else {
-                    match (device, inode) {
-                        (Some(device), Some(inode)) => move_detect::find_move_candidate(
+                    // Move detection (Stage 2 Task 8) only ever applies to a path
+                    // the DB has never seen before — a file whose path is already
+                    // known just falls through to the ordinary upsert below, even
+                    // if its content changed.
+                    // Skip move detection entirely when `stat` failed above,
+                    // because step 2 would compare against an unknown size.
+                    // Missing identity skips only step 1; the real size still
+                    // makes the fingerprint strategy safe.
+                    let move_candidate = if is_update || !has_file_stat {
+                        None
+                    } else {
+                        move_detect::find_move_candidate_with_source(
+                            source,
                             &tx,
                             &move_detect::MoveLookup {
-                                device,
-                                inode,
+                                identity,
                                 title: &title,
                                 artist: &meta.artist,
                                 album: &meta.album,
                                 duration_ms: meta.duration_ms,
                                 file_size,
                             },
-                        )?,
-                        _ => None,
-                    }
-                };
+                        )?
+                    };
 
-                if let Some(candidate) = move_candidate {
-                    // A move: refresh path/tags/filesystem-identity on the
-                    // existing row by id via the shared `apply_file_identity`
-                    // — see its own doc comment for exactly what it touches
-                    // (and, deliberately, doesn't).
-                    move_detect::apply_file_identity(
-                        &tx,
-                        candidate.id,
-                        path,
-                        &title,
-                        &meta,
-                        untagged,
-                        &move_detect::FileIdentity {
-                            file_mtime: mtime,
-                            file_size,
-                            device,
-                            inode,
-                            mount_point: mount_point.clone(),
-                        },
-                    )?;
-                    // Clear a stale import_errors row under the old path too
-                    // (e.g. the old location briefly failed to read before
-                    // being moved away) — the new path was already cleared
-                    // above. Unconditional even for an untagged import: this
-                    // is the OLD path's row, a different path string from
-                    // the hint (if any) recorded above for the CURRENT path.
-                    if import_errors::clear_error(&tx, &candidate.path)? {
-                        report.healed += 1;
-                    }
-                    report.moved += 1;
-                } else {
-                    // `ON CONFLICT(path)` fires whenever this path already
-                    // has a row — including one still carrying `removed_at`
-                    // from a prior tombstone: the walk just proved the file
-                    // is there, so `removed_at=NULL` in the `DO UPDATE SET`
-                    // below resurrects it here too (evidence rule, Beschluss
-                    // 7/12), same as the fast-path-restore branch and
-                    // `apply_file_identity`'s move arm above.
-                    let (
-                        title_p,
-                        artist_p,
-                        album_p,
-                        album_artist_p,
-                        artist_mbid_p,
-                        year_p,
-                        track_no_p,
-                        disc_no_p,
-                        genre_p,
-                        duration_ms_p,
-                        bitrate_kbps_p,
-                        untagged_p,
-                    ) = tag_param_values(&title, &meta, untagged);
-                    tx.execute(
+                    if let Some(candidate) = move_candidate {
+                        // A move: refresh path/tags/filesystem-identity on the
+                        // existing row by id via the shared `apply_file_identity`
+                        // — see its own doc comment for exactly what it touches
+                        // (and, deliberately, doesn't).
+                        move_detect::apply_file_identity(
+                            &tx,
+                            candidate.id,
+                            path,
+                            &title,
+                            &meta,
+                            untagged,
+                            &move_detect::FileIdentity {
+                                file_mtime: mtime,
+                                file_size,
+                                device,
+                                inode,
+                                mount_point: mount_point.clone(),
+                            },
+                        )?;
+                        // Clear a stale import_errors row under the old path too
+                        // (e.g. the old location briefly failed to read before
+                        // being moved away) — the new path was already cleared
+                        // above. Unconditional even for an untagged import: this
+                        // is the OLD path's row, a different path string from
+                        // the hint (if any) recorded above for the CURRENT path.
+                        if import_errors::clear_error(&tx, &candidate.path)? {
+                            report.healed += 1;
+                        }
+                        report.moved += 1;
+                    } else {
+                        // `ON CONFLICT(path)` fires whenever this path already
+                        // has a row — including one still carrying `removed_at`
+                        // from a prior tombstone: the walk just proved the file
+                        // is there, so `removed_at=NULL` in the `DO UPDATE SET`
+                        // below resurrects it here too (evidence rule, Beschluss
+                        // 7/12), same as the fast-path-restore branch and
+                        // `apply_file_identity`'s move arm above.
+                        let (
+                            title_p,
+                            artist_p,
+                            album_p,
+                            album_artist_p,
+                            artist_mbid_p,
+                            year_p,
+                            track_no_p,
+                            disc_no_p,
+                            genre_p,
+                            duration_ms_p,
+                            bitrate_kbps_p,
+                            untagged_p,
+                        ) = tag_param_values(&title, &meta, untagged);
+                        tx.execute(
                         "INSERT INTO tracks (path, title, artist, album, album_artist, artist_mbid,
                            year, track_no, disc_no, genre, duration_ms, bitrate_kbps, added_at,
                            file_mtime, file_size, device, inode, mount_point, untagged)
@@ -546,29 +594,41 @@ fn scan_folder_inner(
                             untagged_p,
                         ],
                     )?;
-                    if is_update {
-                        report.updated += 1;
-                    } else {
-                        report.added += 1;
+                        if is_update {
+                            report.updated += 1;
+                        } else {
+                            report.added += 1;
+                        }
                     }
                 }
+                Err(ScanError::Import { kind, detail }) => {
+                    // Both passes failed: `kind`/`detail` are pass 2's
+                    // classification (see `read_meta_with_fallback`'s doc
+                    // comment). Episode upsert — see `record_error`'s doc
+                    // comment.
+                    import_errors::record_error(&tx, &path_str, kind, &detail, now_unix())?;
+                    report.errors += 1;
+                }
+                // `read_meta_with_fallback` only ever produces `Import`;
+                // propagating any other variant is safer than an
+                // `unreachable!()` panic if that changes.
+                Err(other) => return Err(other),
             }
-            Err(ScanError::Import { kind, detail }) => {
-                // Both passes failed: `kind`/`detail` are pass 2's
-                // classification (see `read_meta_with_fallback`'s doc
-                // comment). Episode upsert — see `record_error`'s doc
-                // comment.
-                import_errors::record_error(&tx, &path_str, kind, &detail, now_unix())?;
-                report.errors += 1;
+            if let Some(progress) = &mut progress {
+                progress.advance(path);
             }
-            // `read_meta_with_fallback` only ever produces `Import`;
-            // propagating any other variant is safer than an
-            // `unreachable!()` panic if that changes.
-            Err(other) => return Err(other),
+            Ok(())
+        })();
+        match result {
+            Ok(()) => LibraryWalkControl::Continue,
+            Err(error) => {
+                walk_failure = Some(error);
+                LibraryWalkControl::Stop
+            }
         }
-        if let Some(progress) = &mut progress {
-            progress.advance(path);
-        }
+    });
+    if let Some(error) = walk_failure {
+        return Err(error);
     }
 
     // `candidates` (`PRESENT`-only) feeds the mark phase below regardless of
@@ -585,7 +645,7 @@ fn scan_folder_inner(
         None
     };
     let root_unavailable = guard_evidence.as_ref().is_some_and(|evidence| {
-        !evidence.is_empty() && !vanish::any_candidate_confirms_root_device(evidence, root)
+        !evidence.is_empty() && !vanish::any_candidate_confirms_root_with(source, evidence, root)
     });
 
     let outcome = if root_unavailable {
@@ -603,7 +663,8 @@ fn scan_folder_inner(
             root: root.to_path_buf(),
         }
     } else {
-        report.vanished = vanish::mark_vanished(&tx, candidates)?;
+        report.vanished =
+            vanish::mark_vanished_with(source, &tx, candidates, &observed_audio_paths)?;
         // T0.3: one collective change-log row per scan that actually touched
         // the catalog (never per track, never for a no-op reconcile), inside
         // the same transaction as the walk so the event and the rows it
@@ -675,6 +736,12 @@ mod progress_tests;
 #[cfg(test)]
 #[path = "scanner_tests.rs"]
 mod tests;
+
+// The scan tests that use a non-Unix `LibrarySource` live apart from the rest,
+// again for the 800-line rule — see `scanner_source_tests.rs`'s module doc.
+#[cfg(test)]
+#[path = "scanner_source_tests.rs"]
+mod source_tests;
 
 #[cfg(test)]
 #[path = "scanner_metadata_persistence_tests.rs"]

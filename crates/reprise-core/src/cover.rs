@@ -4,6 +4,7 @@
 //! separate `cover_writeback` module publishes downloaded covers into album
 //! folders with non-overwriting, best-effort safeguards.
 
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 /// Where a cover for a track comes from.
@@ -30,8 +31,21 @@ pub struct CoverTag {
 }
 
 pub fn read_cover_tag(track_path: &Path) -> CoverTag {
+    read_cover_tag_with_source(&crate::library::source::UnixLibrarySource, track_path)
+}
+
+pub fn read_cover_tag_with_source(
+    source: &dyn crate::library::source::LibrarySource,
+    track_path: &Path,
+) -> CoverTag {
     use lofty::prelude::*;
-    let Ok(tagged) = lofty::read_from_path(track_path) else {
+    let Some(file_type) = lofty::file::FileType::from_path(track_path) else {
+        return CoverTag::default();
+    };
+    let Ok(reader) = source.open_read(track_path) else {
+        return CoverTag::default();
+    };
+    let Ok(tagged) = lofty::probe::Probe::with_file_type(reader, file_type).read() else {
         return CoverTag::default();
     };
     let Some(tag) = tagged.primary_tag().or_else(|| tagged.first_tag()) else {
@@ -58,7 +72,14 @@ pub fn read_cover_tag(track_path: &Path) -> CoverTag {
 /// detected album mismatch can converge without modifying any audio file.
 /// Pure read — it never writes to either the library or cache.
 pub fn resolve_source(track_path: &Path) -> Option<CoverSource> {
-    let tag = read_cover_tag(track_path);
+    resolve_source_with_source(&crate::library::source::UnixLibrarySource, track_path)
+}
+
+pub fn resolve_source_with_source(
+    source: &dyn crate::library::source::LibrarySource,
+    track_path: &Path,
+) -> Option<CoverSource> {
+    let tag = read_cover_tag_with_source(source, track_path);
     // Stage 1 (offline): a previously downloaded canonical cover for this
     // album takes precedence over track-local embedded artwork.
     if let (Some(album_artist), Some(album)) = (tag.album_artist.as_deref(), tag.album.as_deref()) {
@@ -72,30 +93,30 @@ pub fn resolve_source(track_path: &Path) -> Option<CoverSource> {
     }
     track_path
         .parent()
-        .and_then(folder_image)
+        .and_then(|directory| folder_image_with_source(source, directory))
         .map(CoverSource::FolderImage)
 }
 
-/// Finds a sidecar cover image in `dir` by canonical stem + known extension,
-/// case-insensitively, deterministically (stem-then-ext priority).
-pub(crate) fn folder_image(dir: &Path) -> Option<PathBuf> {
-    let entries: Vec<PathBuf> = std::fs::read_dir(dir)
-        .ok()?
-        .filter_map(|e| e.ok().map(|e| e.path()))
-        .collect();
+pub(crate) fn folder_image_with_source(
+    source: &dyn crate::library::source::LibrarySource,
+    dir: &Path,
+) -> Option<PathBuf> {
+    let entries = source.read_directory(dir)?;
     for stem in FOLDER_STEMS {
         for ext in IMAGE_EXTS {
-            for path in &entries {
-                let matches_stem = path
+            for entry in &entries {
+                let matches_stem = entry
+                    .path
                     .file_stem()
                     .and_then(|s| s.to_str())
                     .is_some_and(|s| s.eq_ignore_ascii_case(stem));
-                let matches_ext = path
+                let matches_ext = entry
+                    .path
                     .extension()
                     .and_then(|s| s.to_str())
                     .is_some_and(|s| s.eq_ignore_ascii_case(ext));
                 if matches_stem && matches_ext {
-                    return Some(path.clone());
+                    return Some(entry.path.clone());
                 }
             }
         }
@@ -161,7 +182,15 @@ pub fn cache_dir() -> PathBuf {
 /// missing: hash the source bytes -> cache hit? -> else decode, resize (aspect
 /// preserved, longest side = size), write PNG atomically (temp + rename).
 pub fn thumbnail(source: &CoverSource, size: ThumbnailSize) -> Result<PathBuf, CoverError> {
-    let bytes = source_bytes(source)?;
+    thumbnail_with_source(&crate::library::source::UnixLibrarySource, source, size)
+}
+
+pub fn thumbnail_with_source(
+    library_source: &dyn crate::library::source::LibrarySource,
+    source: &CoverSource,
+    size: ThumbnailSize,
+) -> Result<PathBuf, CoverError> {
+    let bytes = source_bytes(library_source, source)?;
     let key = hash_hex(&bytes);
     let dir = cache_dir();
     let out = dir.join(format!("{key}-{}.png", size.pixels()));
@@ -259,10 +288,22 @@ pub fn blur_reduced_thumbnail(
     Ok(out)
 }
 
-fn source_bytes(source: &CoverSource) -> Result<Vec<u8>, CoverError> {
+fn source_bytes(
+    library_source: &dyn crate::library::source::LibrarySource,
+    source: &CoverSource,
+) -> Result<Vec<u8>, CoverError> {
     match source {
         CoverSource::Embedded(b) => Ok(b.clone()),
-        CoverSource::FolderImage(p) => std::fs::read(p).map_err(|e| CoverError::Io(e.to_string())),
+        CoverSource::FolderImage(path) => {
+            let mut reader = library_source
+                .open_read(path)
+                .map_err(|error| CoverError::Io(error.to_string()))?;
+            let mut bytes = Vec::new();
+            reader
+                .read_to_end(&mut bytes)
+                .map_err(|error| CoverError::Io(error.to_string()))?;
+            Ok(bytes)
+        }
     }
 }
 
@@ -280,6 +321,79 @@ pub(crate) fn hash_hex(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
     use std::io::Write;
+
+    struct InMemoryAlbumSource {
+        entries: Vec<std::path::PathBuf>,
+    }
+
+    impl crate::library::source::LibrarySource for InMemoryAlbumSource {
+        fn residence_token(&self, _at: &std::path::Path) -> Option<i64> {
+            None
+        }
+
+        fn mount_point(&self, _at: &std::path::Path) -> Option<std::path::PathBuf> {
+            None
+        }
+
+        fn display_name(&self, at: &std::path::Path) -> Option<String> {
+            crate::library::source::UnixLibrarySource.display_name(at)
+        }
+
+        fn container_name(&self, at: &std::path::Path) -> Option<String> {
+            crate::library::source::UnixLibrarySource.container_name(at)
+        }
+
+        fn open_read(
+            &self,
+            at: &std::path::Path,
+        ) -> std::io::Result<crate::library::source::LibraryReadHandle> {
+            crate::library::source::UnixLibrarySource.open_read(at)
+        }
+
+        fn probe(
+            &self,
+            at: &std::path::Path,
+            _links: crate::library::source::LibraryLinkMode,
+        ) -> crate::library::source::LibraryPathPresence {
+            if self.entries.iter().any(|entry| entry == at) {
+                crate::library::source::LibraryPathPresence::Present(
+                    crate::library::source::LibraryPathMetadata {
+                        is_file: true,
+                        is_directory: false,
+                        size: None,
+                        modified: None,
+                        identity: None,
+                    },
+                )
+            } else {
+                crate::library::source::LibraryPathPresence::Absent
+            }
+        }
+
+        fn walk(
+            &self,
+            _root: &std::path::Path,
+            _order: crate::library::source::LibraryWalkOrder,
+            _visitor: &mut dyn crate::library::source::LibraryWalkVisitor,
+        ) {
+        }
+
+        fn read_directory(
+            &self,
+            _directory: &std::path::Path,
+        ) -> Option<Vec<crate::library::source::LibraryDirectoryEntry>> {
+            Some(
+                self.entries
+                    .iter()
+                    .cloned()
+                    .map(|path| crate::library::source::LibraryDirectoryEntry {
+                        path,
+                        metadata: None,
+                    })
+                    .collect(),
+            )
+        }
+    }
 
     // A 1x1 PNG, enough for source-resolution tests (no decode here).
     const TINY_PNG: &[u8] = &[
@@ -359,6 +473,17 @@ mod tests {
             resolve_source(&track),
             Some(CoverSource::FolderImage(_))
         ));
+    }
+
+    #[test]
+    fn folder_image_reads_a_non_filesystem_library_source() {
+        let directory = std::path::Path::new("content:/music/album");
+        let expected = directory.join("Folder.PNG");
+        let source = InMemoryAlbumSource {
+            entries: vec![directory.join("notes.txt"), expected.clone()],
+        };
+
+        assert_eq!(folder_image_with_source(&source, directory), Some(expected));
     }
 
     #[test]

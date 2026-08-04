@@ -46,6 +46,17 @@ pub(super) fn apply_initial_geometry(window: &adw::ApplicationWindow, state: &Se
     }
 }
 
+/// The place a normal start routes to (START-3): the last valid browser place.
+/// Back/Forward stacks stay session-local, but the visible destination owns
+/// its complete refinements, anchor, and selection across a restart.
+pub(super) fn startup_place(state: &SessionState) -> reprise_core::browser::BrowserPlace {
+    state
+        .browser_place
+        .clone()
+        .or_else(|| state.library_root.clone())
+        .unwrap_or_else(|| reprise_core::browser::BrowserPlace::from(ViewSource::Library))
+}
+
 pub(super) fn restore_runtime(player: Option<&Rc<PlayerController>>, state: &SessionState) {
     if let Some(player) = player {
         player.restore_session_queue(
@@ -60,7 +71,10 @@ pub(super) fn restore_runtime(player: Option<&Rc<PlayerController>>, state: &Ses
         );
     }
     if let Some(player) = player {
-        player.notify_restored_current_track();
+        let episode_restored = player.restore_session_episode(state.active_episode.as_ref());
+        if !episode_restored {
+            player.notify_restored_current_track();
+        }
         arm_play(player);
     }
     if std::env::var(REPORT_ENV).is_ok() {
@@ -145,6 +159,7 @@ pub(super) fn wire_close(
             state.play_origin = origin_kind;
             state.play_origin_label = origin_label;
             state.play_origin_place = origin_place;
+            state.active_episode = player.session_episode_snapshot();
         }
 
         let result = session::save(&conn, &state);
@@ -393,5 +408,70 @@ mod tests {
         );
 
         assert_eq!(state.source, SessionSource::Library);
+    }
+
+    #[test]
+    fn start_3_missing_browser_place_falls_back_to_the_library_root() {
+        let state = SessionState {
+            browser_place: None,
+            library_root: None,
+            ..SessionState::default()
+        };
+
+        assert_eq!(
+            startup_place(&state),
+            reprise_core::browser::BrowserPlace::from(ViewSource::Library)
+        );
+    }
+
+    #[test]
+    fn start_3_startup_place_restores_the_last_browser_place() {
+        let mut remembered = reprise_core::browser::BrowserPlace::from(ViewSource::Playlist(7));
+        let state = remembered
+            .track_state_mut()
+            .expect("a playlist is a track place");
+        state.search = "remember me".into();
+        state.selected_ids = vec![41];
+        let session = SessionState {
+            browser_place: Some(remembered.clone()),
+            ..SessionState::default()
+        };
+
+        assert_eq!(startup_place(&session), remembered);
+    }
+
+    #[test]
+    fn browse_12_restart_restores_the_last_location_and_playback_origin() {
+        use reprise_core::browser::BrowserPlace;
+
+        let db = crate::test_db::open().unwrap();
+        crate::test_db::connection(&db)
+            .execute(
+                "INSERT INTO playlists (id, name, position) VALUES (7, 'Road', 0)",
+                [],
+            )
+            .unwrap();
+        let last_location = BrowserPlace::from(ViewSource::Playlist(7));
+        let mut play_origin = BrowserPlace::from(ViewSource::Library);
+        play_origin.track_state_mut().unwrap().search = "origin query".into();
+        let state = SessionState {
+            sort_field: "year".into(),
+            sort_dir: "desc".into(),
+            browser_place: Some(last_location.clone()),
+            play_origin: Some(SessionSource::Playlist(7)),
+            play_origin_place: Some(play_origin.clone()),
+            ..SessionState::default()
+        };
+
+        session::save(&db, &state).unwrap();
+        let restored = session::load(&db);
+
+        assert_eq!(restored.sort_field, "year");
+        assert_eq!(restored.sort_dir, "desc");
+        assert_eq!(restored.play_origin, Some(SessionSource::Playlist(7)));
+        assert_eq!(restored.play_origin_place, Some(play_origin));
+        assert_eq!(restored.browser_place, Some(last_location.clone()));
+
+        assert_eq!(startup_place(&restored), last_location);
     }
 }

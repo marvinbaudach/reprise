@@ -24,6 +24,10 @@
 
 use std::path::Path;
 
+use crate::library::source::{
+    LibraryLinkMode, LibraryPathPresence, LibrarySource, UnixLibrarySource,
+};
+
 /// Progress reported by a backend, in permille (0..=1000) of the whole job —
 /// the same unit stored in `ai_jobs.progress_permille`.
 pub type ProgressPermille = u16;
@@ -102,7 +106,8 @@ pub trait StemSeparationBackend {
 ///
 /// `pub` (not `#[cfg(test)]`) because packages H1/H2 drive their job
 /// round-trips through it; it pulls in nothing beyond `std`.
-pub struct FakeStemBackend {
+pub struct FakeStemBackend<'a> {
+    source: &'a dyn LibrarySource,
     steps: u16,
     model: String,
     outcome: FakeOutcome,
@@ -117,16 +122,24 @@ enum FakeOutcome {
     FailAtStep(u16),
 }
 
-impl Default for FakeStemBackend {
+impl Default for FakeStemBackend<'static> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl FakeStemBackend {
+impl FakeStemBackend<'static> {
     /// A four-chunk backend that succeeds — the common test double.
     pub fn new() -> Self {
+        Self::from_source(&UnixLibrarySource)
+    }
+}
+
+impl<'a> FakeStemBackend<'a> {
+    /// A fake backend whose source-presence query uses `source`.
+    pub fn from_source(source: &'a dyn LibrarySource) -> Self {
         Self {
+            source,
             steps: 4,
             model: "fake-stems@1".to_string(),
             outcome: FakeOutcome::Succeed,
@@ -153,7 +166,7 @@ impl FakeStemBackend {
     }
 }
 
-impl StemSeparationBackend for FakeStemBackend {
+impl StemSeparationBackend for FakeStemBackend<'_> {
     fn separate_instrumental(
         &self,
         source: &Path,
@@ -161,7 +174,7 @@ impl StemSeparationBackend for FakeStemBackend {
         progress: &mut dyn FnMut(ProgressPermille),
         cancel: &dyn Fn() -> bool,
     ) -> Result<(), StemError> {
-        if !source.exists() {
+        if self.source.probe(source, LibraryLinkMode::Follow) == LibraryPathPresence::Absent {
             return Err(StemError::SourceUnreadable(format!(
                 "no such source file: {}",
                 source.display()

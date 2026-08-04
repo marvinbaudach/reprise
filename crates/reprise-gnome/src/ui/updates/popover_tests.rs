@@ -1,3 +1,11 @@
+// Visibility inside the popover is asserted with `get_visible`, never
+// `is_visible`. The two are different questions: `get_visible` reports the flag
+// `render` just set, while `is_visible` also walks the parent chain. These
+// tests never pop the popover up, so every widget below it answers `false` to
+// `is_visible` no matter what the code did — an assertion for "hidden" passes
+// against any implementation at all, and one for "shown" can never pass. Only
+// `state.button` (parentless here) and `state.badge` (below the button) may be
+// read either way. STYLE-1's rule applies: prove the result, not the property.
 use super::*;
 use reprise_core::db::Db;
 
@@ -22,26 +30,30 @@ fn release(id: &str) -> reprise_core::artist_news::StoredRelease {
 
 #[test]
 fn nr_5b_opening_the_popover_never_requests_navigation() {
-    let effect = opening_effect(&[release("one"), release("two")]);
+    let effect = opening_effect(&["one".into(), "two".into()]);
 
     assert_eq!(effect.seen_ids, ["one", "two"]);
     assert!(!effect.navigates);
 }
 
-/// The popover used to cap stamping at `POPOVER_LIMIT` (5), matching the old
-/// capped row list. The list now scrolls instead of capping, so opening it
-/// must stamp every listed release as seen, not just the first few.
+/// The visible batch is capped at five, but opening must stamp every unseen
+/// candidate so the badge can clear and the jump row can lead to the rest.
 #[test]
-fn nr_9a_opening_stamps_every_listed_release_seen() {
-    let releases: Vec<_> = (1..=7).map(|n| release(&format!("release-{n}"))).collect();
+fn nr_9b_opening_stamps_every_unseen_candidate_not_only_the_visible_batch() {
+    let mut releases: Vec<_> = (1..=7).map(|n| release(&format!("release-{n}"))).collect();
+    let mut already_seen = release("already-seen");
+    already_seen.seen_at = Some(50);
+    releases.push(already_seen);
 
-    let effect = opening_effect(&releases);
+    let unseen_ids = feed_snapshot::unseen_release_ids(&releases);
+    let effect = opening_effect(&unseen_ids);
 
     assert_eq!(effect.seen_ids.len(), 7);
     assert_eq!(
         effect.seen_ids,
         releases
             .iter()
+            .filter(|release| release.seen_at.is_none())
             .map(|release| release.release_group_mbid.clone())
             .collect::<Vec<_>>()
     );
@@ -130,7 +142,7 @@ fn nr_7_disabled_module_hides_the_button_and_blocks_fetch() {
         ModuleEffect {
             button_visible: false,
             fetch_allowed: true,
-            empty: EmptyPresentation::NoReleases,
+            empty: EmptyPresentation::Hidden,
             badge_allowed: false,
         }
     );
@@ -248,8 +260,8 @@ fn nr_8_enabling_the_module_reaches_a_fetch() {
     assert!(!state.badge.is_visible());
 }
 
-/// NR-9: opening the popover stamps every listed release seen, so the badge
-/// (visible beforehand for the unseen releases) must be gone afterwards.
+/// NR-9b: rendering uses the pre-stamp batch total while the badge uses the
+/// post-stamp count, so opening keeps the header count and clears the badge.
 /// `render(true, ..)` is called directly rather than emitting the popover's
 /// real "show" signal: the popover here is never parented under a realized
 /// toplevel (no test in this file maps one), and GTK's real show handling
@@ -258,7 +270,7 @@ fn nr_8_enabling_the_module_reaches_a_fetch() {
 /// exercises the same production code path the real signal would.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn nr_9a_opening_the_popover_clears_the_badge() {
+fn nr_9b_opening_keeps_the_pre_stamp_count_and_clears_the_badge() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     if gtk4::init().is_err() {
         return;
@@ -284,16 +296,85 @@ fn nr_9a_opening_the_popover_clears_the_badge() {
     let state = test_popover(conn, PathBuf::from("unused.db"));
 
     assert!(
-        state.badge.is_visible(),
+        state.badge.get_visible(),
         "two unseen releases should badge before the popover ever opens"
     );
 
     state.render(true, false);
 
     assert!(
-        !state.badge.is_visible(),
-        "opening stamps every listed release seen, so the badge must clear"
+        state.new_tag.get_visible(),
+        "the batch count stays rendered"
     );
+    assert_eq!(state.new_tag.text(), "2 new");
+    assert!(
+        !state.badge.get_visible(),
+        "opening stamps every unseen candidate, so the badge must clear"
+    );
+}
+
+/// NR-23: found in a screenshot, not by a test. The popover kept the last
+/// visit's batch on screen — correct — but its header still announced "1 new"
+/// while the badge had already cleared, so the two halves of the same surface
+/// contradicted each other. A held-over batch renders without a count.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn nr_23_a_held_over_batch_renders_without_claiming_to_be_new() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    if gtk4::init().is_err() {
+        return;
+    }
+    let conn = crate::test_db::open().unwrap();
+    reprise_core::modules::set_enabled(&conn, &reprise_core::modules::NEW_RELEASES_MODULE, true)
+        .unwrap();
+    reprise_core::library::settings::set_new_releases_fetch_completed(&conn, true).unwrap();
+    let now = chrono::Utc::now().timestamp();
+    crate::test_db::connection(&conn)
+        .execute(
+            "INSERT INTO new_releases (
+               release_group_mbid, artist_name, artist_mbid, title, release_type,
+               first_release_date, fetched_at, seen_at, fallback_accent
+             ) VALUES ('already-read', 'Artist', 'artist', 'Release', 'Album',
+                       '2026-08-01', ?1, ?1, '#123456')",
+            rusqlite::params![now],
+        )
+        .unwrap();
+    let conn = Rc::new(conn);
+    let state = test_popover(conn, PathBuf::from("unused.db"));
+
+    state.render(false, false);
+
+    assert!(
+        state.news_section.get_visible(),
+        "looking twice must not empty the popover"
+    );
+    assert!(
+        !state.new_tag.get_visible(),
+        "the batch was already read, so nothing here is new"
+    );
+    assert!(
+        !state.badge.get_visible(),
+        "and the badge agrees — that is the point"
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn nr_23_an_empty_batch_hides_its_header_and_list() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    if gtk4::init().is_err() {
+        return;
+    }
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    reprise_core::modules::set_enabled(&conn, &reprise_core::modules::NEW_RELEASES_MODULE, true)
+        .unwrap();
+    reprise_core::library::settings::set_new_releases_fetch_completed(&conn, true).unwrap();
+    let state = test_popover(conn, PathBuf::from("unused.db"));
+
+    state.render(false, false);
+
+    assert!(!state.news_section.get_visible());
+    assert!(state.nothing_new.get_visible());
 }
 
 /// B5: the hourly background staleness timer's lifecycle is coupled to the

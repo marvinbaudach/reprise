@@ -12,6 +12,9 @@ use std::path::Path;
 
 use super::track_meta::TrackMeta;
 use super::ScanError;
+#[cfg(test)]
+use crate::library::source::UnixLibrarySource;
+use crate::library::source::{LibraryLinkMode, LibraryPathPresence, LibrarySource};
 
 /// The one duration tolerance shared by automatic move matching and the
 /// user-confirmed Locate mismatch probe.
@@ -27,11 +30,10 @@ pub(crate) struct MoveCandidate {
 
 /// Everything `find_move_candidate` needs to know about the file it's
 /// looking for a pre-move identity of. Bundled into one struct (rather than
-/// seven positional arguments) purely to stay under clippy's
+/// six positional arguments) purely to stay under clippy's
 /// `too_many_arguments` lint.
 pub(crate) struct MoveLookup<'a> {
-    pub(crate) device: i64,
-    pub(crate) inode: i64,
+    pub(crate) identity: Option<(i64, i64)>,
     pub(crate) title: &'a str,
     pub(crate) artist: &'a str,
     pub(crate) album: &'a str,
@@ -49,12 +51,17 @@ pub(crate) struct MoveLookup<'a> {
 /// fact unambiguous (see the
 /// `one_deleted_one_alive_duplicate_is_still_an_unambiguous_move` test).
 fn valid_candidates(
+    source: &dyn LibrarySource,
     rows: Vec<(i64, String, Option<i64>)>,
     allowed_ids: Option<&HashSet<i64>>,
 ) -> Vec<MoveCandidate> {
     rows.into_iter()
         .filter(|(id, _, _)| allowed_ids.is_none_or(|allowed| allowed.contains(id)))
-        .filter(|(_, path, missing_since)| missing_since.is_some() || !Path::new(path).exists())
+        .filter(|(_, path, missing_since)| {
+            missing_since.is_some()
+                || source.probe(Path::new(path), LibraryLinkMode::Follow)
+                    == LibraryPathPresence::Absent
+        })
         .map(|(id, path, _)| MoveCandidate { id, path })
         .collect()
 }
@@ -66,50 +73,63 @@ fn valid_candidates(
 /// both when nothing matches and when multiple rows match ambiguously (the
 /// latter logs a `tracing::warn!` so the caller can fall back to a normal
 /// insert without ever guessing which row to attach history to).
+#[cfg(test)]
 pub(super) fn find_move_candidate(
     tx: &rusqlite::Transaction,
     lookup: &MoveLookup,
 ) -> Result<Option<MoveCandidate>, ScanError> {
-    find_move_candidate_inner(tx, lookup, None)
+    find_move_candidate_with_source(&UnixLibrarySource, tx, lookup)
 }
 
-pub(crate) fn find_move_candidate_in(
+pub(super) fn find_move_candidate_with_source(
+    source: &dyn LibrarySource,
+    tx: &rusqlite::Transaction,
+    lookup: &MoveLookup,
+) -> Result<Option<MoveCandidate>, ScanError> {
+    find_move_candidate_inner(source, tx, lookup, None)
+}
+
+pub(crate) fn find_move_candidate_in_with_source(
+    source: &dyn LibrarySource,
     tx: &rusqlite::Transaction,
     lookup: &MoveLookup,
     allowed_ids: &HashSet<i64>,
 ) -> Result<Option<MoveCandidate>, ScanError> {
-    find_move_candidate_inner(tx, lookup, Some(allowed_ids))
+    find_move_candidate_inner(source, tx, lookup, Some(allowed_ids))
 }
 
 fn find_move_candidate_inner(
+    source: &dyn LibrarySource,
     tx: &rusqlite::Transaction,
     lookup: &MoveLookup,
     allowed_ids: Option<&HashSet<i64>>,
 ) -> Result<Option<MoveCandidate>, ScanError> {
-    let rows: Vec<(i64, String, Option<i64>)> = {
-        let mut stmt = tx.prepare(
-            "SELECT id, path, missing_since FROM tracks WHERE device = ?1 AND inode = ?2",
-        )?;
-        let mapped = stmt
-            .query_map(rusqlite::params![lookup.device, lookup.inode], |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-            })?
-            .collect::<Result<_, _>>()?;
-        mapped
-    };
-    let mut candidates = valid_candidates(rows, allowed_ids);
-    match candidates.len() {
-        1 => return Ok(Some(candidates.remove(0))),
-        n if n > 1 => {
-            tracing::warn!(
-                device = lookup.device,
-                inode = lookup.inode,
-                candidate_count = n,
-                "ambiguous device/inode move candidates; not guessing"
-            );
-            return Ok(None);
+    if let Some((device, inode)) = lookup.identity {
+        let rows: Vec<(i64, String, Option<i64>)> = {
+            let mut stmt = tx.prepare(
+                "SELECT id, path, missing_since FROM tracks WHERE device = ?1 AND inode = ?2",
+            )?;
+            let mapped = stmt
+                .query_map(rusqlite::params![device, inode], |r| {
+                    Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+                })?
+                .collect::<Result<_, _>>()?;
+            mapped
+        };
+        let mut candidates = valid_candidates(source, rows, allowed_ids);
+        match candidates.len() {
+            1 => return Ok(Some(candidates.remove(0))),
+            n if n > 1 => {
+                tracing::warn!(
+                    device,
+                    inode,
+                    candidate_count = n,
+                    "ambiguous device/inode move candidates; not guessing"
+                );
+                return Ok(None);
+            }
+            _ => {}
         }
-        _ => {}
     }
 
     let rows: Vec<(i64, String, Option<i64>)> = {
@@ -133,7 +153,7 @@ fn find_move_candidate_inner(
             .collect::<Result<_, _>>()?;
         mapped
     };
-    let mut candidates = valid_candidates(rows, allowed_ids);
+    let mut candidates = valid_candidates(source, rows, allowed_ids);
     match candidates.len() {
         1 => Ok(Some(candidates.remove(0))),
         n if n > 1 => {
@@ -153,7 +173,7 @@ fn find_move_candidate_inner(
 /// The filesystem-identity fields `apply_file_identity` writes, bundled
 /// purely to stay under clippy's `too_many_arguments` lint (same reasoning
 /// as [`MoveLookup`]). This is deliberately exactly what a caller already
-/// has in hand from `file_stat`/`file_mtime`/`mount::MountPointCache::
+/// has in hand from `LibrarySource::probe`/`mount::MountPointCache::
 /// resolve` — no field here that isn't already computed by every call site
 /// before it ever reaches this function.
 pub(crate) struct FileIdentity {
@@ -246,4 +266,130 @@ pub(crate) fn apply_file_identity(
         ],
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn placeholder_identity_does_not_match_an_unrelated_track() {
+        let live_dir = tempfile::tempdir().unwrap();
+        let live_path = live_dir.path().join("still-present.flac");
+        std::fs::write(&live_path, b"present").unwrap();
+
+        let db = crate::db::Db::open_in_memory().unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO tracks \
+                 (id, path, title, artist, album, duration_ms, file_size, device, inode, added_at) \
+                 VALUES (1, '/gone/unrelated.flac', 'Unrelated', 'Other Artist', \
+                         'Other Album', 99, 111, 0, 0, 0)",
+                [],
+            )
+            .unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO tracks \
+                 (id, path, title, artist, album, duration_ms, file_size, device, inode, added_at) \
+                 VALUES (2, ?1, 'Still Present', 'Other Artist', 'Other Album', \
+                         99, 111, 0, 0, 0)",
+                [live_path.to_string_lossy().to_string()],
+            )
+            .unwrap();
+
+        let tx = db.conn().unchecked_transaction().unwrap();
+        let candidate = find_move_candidate(
+            &tx,
+            &MoveLookup {
+                identity: None,
+                title: "New Track",
+                artist: "New Artist",
+                album: "New Album",
+                duration_ms: 500,
+                file_size: 222,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            candidate, None,
+            "zero-valued placeholder identity must not match an unrelated track"
+        );
+    }
+
+    #[test]
+    fn fingerprint_match_works_without_identity() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO tracks \
+                 (id, path, title, artist, album, duration_ms, file_size, device, inode, added_at) \
+                 VALUES (1, '/gone/fingerprint.flac', 'Matching Track', 'Matching Artist', \
+                         'Matching Album', 1000, 222, NULL, NULL, 0)",
+                [],
+            )
+            .unwrap();
+
+        let tx = db.conn().unchecked_transaction().unwrap();
+        let candidate = find_move_candidate(
+            &tx,
+            &MoveLookup {
+                identity: None,
+                title: "Matching Track",
+                artist: "Matching Artist",
+                album: "Matching Album",
+                duration_ms: 1000,
+                file_size: 222,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            candidate,
+            Some(MoveCandidate {
+                id: 1,
+                path: "/gone/fingerprint.flac".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn identity_match_precedes_fingerprint_match() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        db.conn()
+            .execute_batch(
+                "INSERT INTO tracks \
+                 (id, path, title, artist, album, duration_ms, file_size, device, inode, added_at) \
+                 VALUES (1, '/gone/identity.flac', 'Other Track', 'Other Artist', \
+                         'Other Album', 99, 111, 77, 88, 0); \
+                 INSERT INTO tracks \
+                 (id, path, title, artist, album, duration_ms, file_size, device, inode, added_at) \
+                 VALUES (2, '/gone/fingerprint.flac', 'Matching Track', 'Matching Artist', \
+                         'Matching Album', 1000, 222, 99, 100, 0);",
+            )
+            .unwrap();
+
+        let tx = db.conn().unchecked_transaction().unwrap();
+        let candidate = find_move_candidate(
+            &tx,
+            &MoveLookup {
+                identity: Some((77, 88)),
+                title: "Matching Track",
+                artist: "Matching Artist",
+                album: "Matching Album",
+                duration_ms: 1000,
+                file_size: 222,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            candidate,
+            Some(MoveCandidate {
+                id: 1,
+                path: "/gone/identity.flac".to_string(),
+            })
+        );
+    }
 }

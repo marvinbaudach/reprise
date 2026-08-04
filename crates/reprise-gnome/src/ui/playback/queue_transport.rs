@@ -16,12 +16,18 @@
 use std::rc::Rc;
 
 use crate::ui::player_controller::PlayerController;
-use crate::ui::track_list::queue_sections::{compose_virtual, QueueViewModel, VirtualContextTail};
 use crate::ui::up_next_transport::AdvanceReason;
 use reprise_core::db::Db;
 use reprise_core::media_integration::MprisPlaybackStatus;
 use reprise_core::queue::Queue;
 use reprise_core::up_next::{QueueItem, UpNextQueue};
+
+#[path = "queue_transport_projection.rs"]
+mod projection;
+
+#[path = "queue_context_window.rs"]
+mod queue_context_window;
+pub(in crate::ui) use queue_context_window::QueueContextWindow;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ToggleAction {
@@ -420,54 +426,6 @@ impl PlayerController {
         self.play_origin.borrow().clone()
     }
 
-    /// The Queue view's three parts in display order (QUE-1): the playing
-    /// track, pending manual entries, and virtual metadata for the snapshot's
-    /// play-order tail. The tail provider clones only requested windows.
-    pub(in crate::ui) fn queue_view_model(self: &Rc<Self>) -> QueueViewModel {
-        let deferred = self.deferred_queue_purge_id.get();
-        let now_playing = match self.playback_mode() {
-            super::preview::PlaybackMode::Queue => self
-                .current_up_next
-                .get()
-                .or_else(|| self.queue.borrow().current().map(QueueItem::Track)),
-            super::preview::PlaybackMode::QueuedEpisode => self.current_up_next.get(),
-            super::preview::PlaybackMode::Preview
-            | super::preview::PlaybackMode::Podcast
-            | super::preview::PlaybackMode::Radio => None,
-        }
-        .filter(|item| item.track_id().is_none_or(|id| Some(id) != deferred));
-        let play_next = self.up_next.borrow().ids().to_vec();
-        let (context_count, context_sequence, context_start) = {
-            let queue = self.queue.borrow();
-            (
-                queue.remaining_len(),
-                queue.sequence_identity(),
-                queue
-                    .current_order_position()
-                    .map_or(0, |position| position + 1),
-            )
-        };
-        let origin_label = self
-            .play_origin
-            .borrow()
-            .as_ref()
-            .map(|origin| origin.label.clone());
-        let player = Rc::downgrade(self);
-        let context = (context_count > 0).then(|| {
-            VirtualContextTail::identified(
-                context_count,
-                context_sequence,
-                context_start,
-                Rc::new(move |offset, limit| {
-                    player.upgrade().map_or_else(Vec::new, |player| {
-                        player.queue.borrow().remaining_window(offset, limit)
-                    })
-                }),
-            )
-        });
-        compose_virtual(now_playing, &play_next, context, origin_label.as_deref())
-    }
-
     /// QUE-3's "Play next": the given ids jump the manual line (front of
     /// Play Next), unlike `append_to_queue`'s back-of-line append.
     pub(in crate::ui) fn play_next(&self, ids: &[i64]) {
@@ -492,10 +450,24 @@ impl PlayerController {
         &self,
         rows: &[crate::ui::track_list::queue_row_mapping::QueueRow],
     ) -> usize {
+        use crate::ui::track_list::queue_row_mapping::QueueRow;
+
+        let direct_episode = projection::has_direct_episode_projection(&self.external.borrow());
+        let editable_rows = rows
+            .iter()
+            .copied()
+            .filter(|row| !direct_episode || matches!(row, QueueRow::PlayNext(_)))
+            .collect::<Vec<_>>();
+        if editable_rows.len() != rows.len() {
+            tracing::debug!(
+                ignored = rows.len() - editable_rows.len(),
+                "episode context rows cannot move to Play Next; ignoring"
+            );
+        }
         let moved = {
             let mut context = self.queue.borrow_mut();
             let mut pending = self.up_next.borrow_mut();
-            move_rows_to_front(&mut context, &mut pending, rows)
+            move_rows_to_front(&mut context, &mut pending, &editable_rows)
         };
         if moved > 0 {
             self.notify_queue_changed();
@@ -529,15 +501,21 @@ impl PlayerController {
     ) -> usize {
         use crate::ui::track_list::queue_row_mapping::QueueRow;
 
+        let direct_episode = projection::has_direct_episode_projection(&self.external.borrow());
         let mut play_next_indices = Vec::new();
         let mut up_next_offsets = Vec::new();
         let mut remove_current = false;
+        let mut ignored = 0;
         for row in rows {
             match row {
                 QueueRow::PlayNext(index) => play_next_indices.push(*index),
-                QueueRow::UpNext(offset) => up_next_offsets.push(*offset),
-                QueueRow::NowPlaying => remove_current = true,
+                QueueRow::UpNext(offset) if !direct_episode => up_next_offsets.push(*offset),
+                QueueRow::NowPlaying if !direct_episode => remove_current = true,
+                QueueRow::UpNext(_) | QueueRow::NowPlaying => ignored += 1,
             }
+        }
+        if ignored > 0 {
+            tracing::debug!(ignored, "episode context rows cannot be removed; ignoring");
         }
 
         let mut removed = 0;
@@ -607,6 +585,15 @@ impl PlayerController {
         &self,
         op: crate::ui::track_list::queue_row_mapping::QueueReorderOp,
     ) -> bool {
+        if projection::has_direct_episode_projection(&self.external.borrow())
+            && matches!(
+                op,
+                crate::ui::track_list::queue_row_mapping::QueueReorderOp::PromoteUpNext { .. }
+            )
+        {
+            tracing::debug!("episode context rows cannot be reordered; ignoring");
+            return false;
+        }
         let moved = {
             let mut context = self.queue.borrow_mut();
             let mut manual = self.up_next.borrow_mut();
@@ -633,6 +620,9 @@ impl PlayerController {
         match row {
             QueueRow::PlayNext(index) => self.play_up_next_at(index),
             QueueRow::UpNext(offset) => {
+                if self.jump_to_direct_episode_context(offset) {
+                    return;
+                }
                 let target = {
                     let mut queue = self.queue.borrow_mut();
                     match queue.current_order_position() {
@@ -658,6 +648,10 @@ impl PlayerController {
                 );
             }
             QueueRow::NowPlaying => {
+                if projection::has_direct_episode_projection(&self.external.borrow()) {
+                    tracing::debug!("direct episode Now Playing row cannot mutate music; ignoring");
+                    return;
+                }
                 let current = self
                     .current_up_next
                     .get()

@@ -82,6 +82,7 @@ impl SourceFailureState {
         glyph.set_pixel_size(GLYPH_PIXEL_SIZE);
         glyph.set_halign(gtk4::Align::Center);
         glyph.set_valign(gtk4::Align::Center);
+        glyph.set_vexpand(true);
         tile.append(&glyph);
         root.append(&tile);
         let title = gtk4::Label::new(None);
@@ -204,6 +205,7 @@ fn build(copy: &SourceEmptyStateCopy) -> (gtk4::Widget, gtk4::Button) {
     glyph.set_pixel_size(GLYPH_PIXEL_SIZE);
     glyph.set_halign(gtk4::Align::Center);
     glyph.set_valign(gtk4::Align::Center);
+    glyph.set_vexpand(true);
     tile.append(&glyph);
     root.append(&tile);
 
@@ -295,6 +297,53 @@ mod tests {
                 .text(),
             "or paste a channel URL in the dialog"
         );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn src_10_glyph_is_centered_inside_its_tile() {
+        gtk4::init().unwrap();
+        let state = SourceEmptyState::new(&copy(None));
+        let root = state.widget().clone().downcast::<gtk4::Box>().unwrap();
+        let tile = root.first_child().unwrap().downcast::<gtk4::Box>().unwrap();
+        let glyph = tile
+            .first_child()
+            .unwrap()
+            .downcast::<gtk4::Image>()
+            .unwrap();
+        let window = gtk4::Window::builder()
+            .default_width(320)
+            .default_height(320)
+            .child(&root)
+            .build();
+        window.present();
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        let tile_bounds = tile.compute_bounds(&window).expect("tile bounds");
+        let glyph_bounds = glyph.compute_bounds(&window).expect("glyph bounds");
+        let tile_center = (
+            tile_bounds.x() + tile_bounds.width() / 2.0,
+            tile_bounds.y() + tile_bounds.height() / 2.0,
+        );
+        let glyph_center = (
+            glyph_bounds.x() + glyph_bounds.width() / 2.0,
+            glyph_bounds.y() + glyph_bounds.height() / 2.0,
+        );
+
+        assert!(
+            (glyph_center.0 - tile_center.0).abs() <= 0.5,
+            "glyph x center {} differs from tile x center {}",
+            glyph_center.0,
+            tile_center.0
+        );
+        assert!(
+            (glyph_center.1 - tile_center.1).abs() <= 0.5,
+            "glyph y center {} differs from tile y center {}",
+            glyph_center.1,
+            tile_center.1
+        );
+
+        window.close();
     }
 
     #[test]

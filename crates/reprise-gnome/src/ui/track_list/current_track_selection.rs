@@ -14,6 +14,7 @@ use reprise_core::view_source::ViewSource;
 use super::player_controller::PlayerController;
 use super::track_list::TrackList;
 use super::track_list_activation::current_queue_ids;
+#[cfg(test)]
 use crate::ui::scroll_center;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -24,7 +25,7 @@ pub(in crate::ui) enum CurrentTrackChange {
     SessionRestore,
 }
 
-const USER_SCROLL_GRACE: Duration = Duration::from_millis(1_500);
+pub(super) const USER_SCROLL_GRACE: Duration = Duration::from_millis(1_500);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TrackRevealPolicy {
@@ -34,11 +35,13 @@ enum TrackRevealPolicy {
 
 fn reveal_policy(change: CurrentTrackChange, user_scrolling: bool) -> TrackRevealPolicy {
     match change {
-        CurrentTrackChange::PlaybackStarted => TrackRevealPolicy::MarkerOnly,
+        CurrentTrackChange::PlaybackStarted | CurrentTrackChange::SessionRestore => {
+            TrackRevealPolicy::MarkerOnly
+        }
         CurrentTrackChange::AutomaticAdvance if user_scrolling => TrackRevealPolicy::MarkerOnly,
-        CurrentTrackChange::AutomaticAdvance
-        | CurrentTrackChange::ExplicitTransport
-        | CurrentTrackChange::SessionRestore => TrackRevealPolicy::Center,
+        CurrentTrackChange::AutomaticAdvance | CurrentTrackChange::ExplicitTransport => {
+            TrackRevealPolicy::Center
+        }
     }
 }
 
@@ -49,7 +52,7 @@ pub(in crate::ui) type OnCurrentTrackChanged = Rc<dyn Fn(i64, Option<usize>, Cur
 /// Mirror of `OnCurrentTrackChanged`'s seam — see `wire`.
 pub(in crate::ui) type OnPlaybackStateChanged = Rc<dyn Fn(PlaybackState)>;
 
-fn visible_position_for_track_in_source(
+pub(super) fn visible_position_for_track_in_source(
     ids: &[i64],
     current_id: i64,
     queue_position: Option<usize>,
@@ -66,8 +69,7 @@ fn visible_position_for_track_in_source(
         .and_then(|position| u32::try_from(position).ok())
 }
 
-/// Row count of the track table's current model — the divisor for
-/// [`scroll_center::centered_scroll_target`]'s uniform-height row math.
+#[cfg(test)]
 fn track_table_row_count(column_view: &gtk4::ColumnView) -> u32 {
     column_view.model().map_or(0, |model| model.n_items())
 }
@@ -88,6 +90,42 @@ pub(in crate::ui) fn wire(player: Option<&Rc<PlayerController>>, track_list: &Rc
             ),
         }
     });
+
+    // The marker's loop runs faster where the track pushes harder. It reads
+    // `swell`, the same slow envelope the cover breathes on — never `kick`:
+    // the track list is a surface for reading and for hitting, and a
+    // per-beat rate there would be the restlessness rounds 3 and 5 removed.
+    {
+        let track_list_for_bass = Rc::downgrade(track_list);
+        let swell = std::cell::RefCell::new(crate::ui::swell::Swell::default());
+        let tempo = std::cell::Cell::new(crate::ui::eq_bars::EqTempo::default());
+        let last_us = std::cell::Cell::new(0i64);
+        player.add_on_bass_changed(move |_kick, pressure| {
+            let Some(track_list) = track_list_for_bass.upgrade() else {
+                return;
+            };
+            let now = gtk4::glib::monotonic_time();
+            let previous = last_us.replace(now);
+            let dt_s = if previous == 0 {
+                0.0
+            } else {
+                ((now - previous) as f64 / 1_000_000.0).clamp(0.0, 0.25)
+            };
+            let value = {
+                let mut swell = swell.borrow_mut();
+                swell.advance(f64::from(pressure), dt_s);
+                if crate::ui::motion::animations_enabled() {
+                    swell.value()
+                } else {
+                    swell.value_without_motion()
+                }
+            };
+            let next = crate::ui::eq_bars::tempo_step(value, tempo.get());
+            if next != tempo.replace(next) {
+                track_list.set_marker_tempo(next);
+            }
+        });
+    }
 
     let track_list_for_state = Rc::downgrade(track_list);
     player.add_on_playback_state_changed(move |state| {
@@ -127,6 +165,10 @@ impl PlayerController {
 
     /// Adds a playback-state listener — the `add_on_current_track_changed`
     /// counterpart for the running/paused half of the marker.
+    pub(in crate::ui) fn add_on_bass_changed(&self, callback: impl Fn(f32, f32) + 'static) {
+        self.bass_changed.borrow_mut().push(Rc::new(callback));
+    }
+
     pub(in crate::ui) fn add_on_playback_state_changed(
         &self,
         callback: impl Fn(PlaybackState) + 'static,
@@ -226,16 +268,24 @@ impl TrackList {
         queue_position: Option<usize>,
         change: CurrentTrackChange,
     ) {
+        let reveal_generation = self.shared.track_reveal_generation.get().wrapping_add(1);
+        self.shared.track_reveal_generation.set(reveal_generation);
         let ids = self.shared.current_view_ids();
         let is_queue = matches!(*self.shared.source.borrow(), ViewSource::Queue);
 
-        if matches!(
-            change,
-            CurrentTrackChange::PlaybackStarted
-                | CurrentTrackChange::AutomaticAdvance
-                | CurrentTrackChange::ExplicitTransport
-        ) {
-            self.shared.playing_track_id.set(Some(track_id));
+        // Every change carries a loaded track, including the session restore:
+        // NAV-10a asks for the marker on every visible instance of the
+        // *loaded* track, not only the running one.
+        self.shared.playing_track_id.set(Some(track_id));
+        if change == CurrentTrackChange::SessionRestore {
+            // Intentionally set before lookup: the class is inert without a matching row.
+            // START-3: a restored track is loaded but not running, so its row
+            // must look exactly like a mid-session pause — same marker, same
+            // frozen equaliser. `restore_session_queue` fans out a
+            // `Stopped` before this runs (session_player.rs), which is why
+            // the class is set here and not earlier. The first real `Playing`
+            // drops it again (`on_playback_state`).
+            self.set_playback_paused(true);
         }
         let Some(position) =
             visible_position_for_track_in_source(&ids, track_id, queue_position, is_queue)
@@ -270,15 +320,21 @@ impl TrackList {
                 );
             }
             TrackRevealPolicy::Center => {
-                // The reveal owns the viewport, so apply the marker plainly and
-                // then scroll to center the track.
+                // Apply the marker now, then yield before the expensive reveal
+                // so the playback chrome can reach its first frame. The
+                // generation token prevents this request from outliving a
+                // newer track change while it waits or retries for geometry;
+                // the row index is deliberately *not* carried across the yield
+                // — see `track_reveal::defer`.
                 self.shared.reapply_now_playing_markers();
-                if change == CurrentTrackChange::AutomaticAdvance {
-                    reveal_automatic_track_position(&self.shared, position, 8);
-                } else {
-                    reveal_track_position(&self.shared.column_view, position, 8);
-                }
-                tracing::info!(track_id, position, ?change, "current track centered");
+                super::track_reveal::defer(
+                    &self.shared,
+                    track_id,
+                    queue_position,
+                    change,
+                    reveal_generation,
+                    8,
+                );
             }
         }
     }
@@ -300,6 +356,22 @@ impl TrackList {
     /// equaliser's keyframes are scoped under it (see `eq_bars.rs`), so one
     /// class on a stable, non-recycled ancestor freezes every visible
     /// now-playing equaliser at once — no per-cell bookkeeping.
+    /// Sets the marker loop's tempo the same way `set_playback_paused` sets
+    /// its frozen state: one class on the `ColumnView`, which is a stable,
+    /// non-recycled ancestor. No cell is touched, so this cannot move the
+    /// viewport — the failure `now_playing_marker.rs` exists to avoid.
+    fn set_marker_tempo(&self, tempo: crate::ui::eq_bars::EqTempo) {
+        use crate::ui::eq_bars::{EqTempo, EQ_CALM_CLASS, EQ_DRIVEN_CLASS};
+        let view = &self.shared.column_view;
+        view.remove_css_class(EQ_CALM_CLASS);
+        view.remove_css_class(EQ_DRIVEN_CLASS);
+        match tempo {
+            EqTempo::Calm => view.add_css_class(EQ_CALM_CLASS),
+            EqTempo::Driven => view.add_css_class(EQ_DRIVEN_CLASS),
+            EqTempo::Normal => {}
+        }
+    }
+
     fn set_playback_paused(&self, paused: bool) {
         if paused {
             self.shared.column_view.add_css_class("playback-paused");
@@ -311,6 +383,9 @@ impl TrackList {
     /// Clears the now-playing marker (on stop) and rebinds the row that
     /// carried it so its `.now-playing` class drops.
     fn clear_now_playing(&self) {
+        self.shared
+            .track_reveal_generation
+            .set(self.shared.track_reveal_generation.get().wrapping_add(1));
         self.shared.playing_track_id.set(None);
         // Drop the marker from whatever visible row still carries it, without
         // nudging the viewport (same reasoning as the double-click path).
@@ -318,398 +393,14 @@ impl TrackList {
     }
 }
 
-fn reveal_track_position(column_view: &gtk4::ColumnView, position: u32, attempts: u8) {
-    let n_rows = track_table_row_count(column_view);
-    if let Some((adjustment, value)) =
-        scroll_center::centered_scroll_target(column_view, n_rows, position)
-    {
-        adjustment.set_value(value);
-        return;
-    }
-    if attempts == 0 {
-        return;
-    }
-    let column_view = column_view.clone();
-    gtk4::glib::idle_add_local_once(move || {
-        reveal_track_position(&column_view, position, attempts - 1);
-    });
-}
-
-fn reveal_automatic_track_position(
-    shared: &Rc<super::track_list::Shared>,
-    position: u32,
-    attempts: u8,
-) {
-    let user_scrolling = shared
-        .last_scroll_activity
-        .get()
-        .is_some_and(|last| last.elapsed() < USER_SCROLL_GRACE);
-    if user_scrolling {
-        tracing::debug!(
-            position,
-            "automatic track centering suppressed by scroll activity"
-        );
-        return;
-    }
-    let n_rows = track_table_row_count(&shared.column_view);
-    if let Some((adjustment, value)) =
-        scroll_center::centered_scroll_target(&shared.column_view, n_rows, position)
-    {
-        adjustment.set_value(value);
-        return;
-    }
-    if attempts == 0 {
-        return;
-    }
-    let shared = Rc::downgrade(shared);
-    gtk4::glib::idle_add_local_once(move || {
-        if let Some(shared) = shared.upgrade() {
-            reveal_automatic_track_position(&shared, position, attempts - 1);
-        }
-    });
-}
+#[cfg(test)]
+#[path = "current_track_selection_glide_tests.rs"]
+mod glide_tests;
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+#[path = "current_track_selection_tests.rs"]
+mod tests;
 
-    #[test]
-    fn nav_10a_playback_scroll_policy_distinguishes_user_intent() {
-        assert_eq!(
-            reveal_policy(CurrentTrackChange::PlaybackStarted, false),
-            TrackRevealPolicy::MarkerOnly
-        );
-        assert_eq!(
-            reveal_policy(CurrentTrackChange::ExplicitTransport, true),
-            TrackRevealPolicy::Center
-        );
-        assert_eq!(
-            reveal_policy(CurrentTrackChange::AutomaticAdvance, false),
-            TrackRevealPolicy::Center
-        );
-        assert_eq!(
-            reveal_policy(CurrentTrackChange::AutomaticAdvance, true),
-            TrackRevealPolicy::MarkerOnly
-        );
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn nav_10a_row_activation_marker_does_not_move_selection_or_viewport() {
-        gtk4::init().unwrap();
-        let conn = crate::test_db::open().unwrap();
-        let fixture_conn = crate::test_db::connection(&conn);
-        let tx = fixture_conn.unchecked_transaction().unwrap();
-        for id in 1..=100 {
-            tx.execute(
-                "INSERT INTO tracks (id, path, title, artist, added_at) \
-                 VALUES (?1, ?2, ?3, 'Synthetic Artist', 0)",
-                (
-                    id,
-                    format!("/synthetic/{id:03}.flac"),
-                    format!("Track {id:03}"),
-                ),
-            )
-            .unwrap();
-        }
-        tx.commit().unwrap();
-        let track_list = TrackList::new(
-            Rc::new(conn),
-            Box::new(|_, _, _, _| {}),
-            |_, _, _, _| {},
-            super::super::queue_sections::QueueViewModel::default,
-            crate::ui::cover_download_worker::setup_for_test(),
-        );
-        let window = gtk4::Window::builder()
-            .default_width(900)
-            .default_height(320)
-            .child(track_list.widget())
-            .build();
-        window.present();
-        while gtk4::glib::MainContext::default().iteration(false) {}
-
-        let position = 60;
-        let track_id = track_list.shared.model.track_at(position).unwrap().id;
-        track_list
-            .shared
-            .column_view
-            .scroll_to(position, None, gtk4::ListScrollFlags::FOCUS, None);
-        let adjustment = track_list.shared.column_view.vadjustment().unwrap();
-        // `scroll_to` settles over later main-loop turns, so pumping once is not
-        // enough to establish the precondition. This is test setup, not the
-        // behaviour under test: wait until the viewport actually moved.
-        crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
-            adjustment.value() > 0.0
-        });
-        let before = adjustment.value();
-        assert!(
-            before > 0.0,
-            "precondition: the list must be scrolled away from the top"
-        );
-        track_list.shared.selection.select_item(10, true);
-        track_list.update_current_track(track_id, None, CurrentTrackChange::PlaybackStarted);
-        while gtk4::glib::MainContext::default().iteration(false) {}
-
-        assert!((adjustment.value() - before).abs() < 0.5);
-        assert!(track_list.shared.selection.is_selected(10));
-        assert!(!track_list.shared.selection.is_selected(position));
-
-        let auto_position = 80;
-        let auto_track_id = track_list.shared.model.track_at(auto_position).unwrap().id;
-        track_list
-            .shared
-            .last_scroll_activity
-            .set(Some(std::time::Instant::now()));
-        track_list.update_current_track(auto_track_id, None, CurrentTrackChange::AutomaticAdvance);
-        while gtk4::glib::MainContext::default().iteration(false) {}
-        assert!(
-            (adjustment.value() - before).abs() < 0.5,
-            "automatic advance must not fight an active scroll"
-        );
-
-        track_list.shared.last_scroll_activity.set(None);
-        track_list.update_current_track(auto_track_id, None, CurrentTrackChange::AutomaticAdvance);
-        while gtk4::glib::MainContext::default().iteration(false) {}
-        assert!(
-            (adjustment.value() - before).abs() >= 0.5,
-            "idle automatic advance must center the new track"
-        );
-
-        track_list.update_current_track(track_id, None, CurrentTrackChange::SessionRestore);
-        while gtk4::glib::MainContext::default().iteration(false) {}
-        assert!(track_list.shared.selection.is_selected(10));
-        assert!(!track_list.shared.selection.is_selected(position));
-
-        window.close();
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn fil_9_filter_changes_center_the_visible_playing_track() {
-        let _main_context = crate::ui::test_main_context::lock_main_context();
-        gtk4::init().unwrap();
-        let conn = crate::test_db::open().unwrap();
-        let fixture_conn = crate::test_db::connection(&conn);
-        let tx = fixture_conn.unchecked_transaction().unwrap();
-        for id in 1..=100 {
-            let title = if (31..=60).contains(&id) {
-                format!("Match Track {id:03}")
-            } else {
-                format!("Other Track {id:03}")
-            };
-            tx.execute(
-                "INSERT INTO tracks (id, path, title, artist, added_at) \
-                 VALUES (?1, ?2, ?3, 'Synthetic Artist', 0)",
-                (id, format!("/synthetic/{id:03}.flac"), title),
-            )
-            .unwrap();
-        }
-        tx.commit().unwrap();
-        let track_list = TrackList::new(
-            Rc::new(conn),
-            Box::new(|_, _, _, _| {}),
-            |_, _, _, _| {},
-            super::super::queue_sections::QueueViewModel::default,
-            crate::ui::cover_download_worker::setup_for_test(),
-        );
-        let window = gtk4::Window::builder()
-            .default_width(900)
-            .default_height(320)
-            .child(track_list.widget())
-            .build();
-        window.present();
-        while gtk4::glib::MainContext::default().iteration(false) {}
-
-        let adjustment = track_list.shared.column_view.vadjustment().unwrap();
-        let playing_id = 51;
-        let unfiltered_ids = track_list.shared.current_view_ids();
-        let unfiltered_position = unfiltered_ids
-            .iter()
-            .position(|id| *id == playing_id)
-            .and_then(|position| u32::try_from(position).ok())
-            .unwrap();
-        let unfiltered_row_height =
-            adjustment.upper() / f64::from(track_list.shared.model.n_items());
-        adjustment.set_value(f64::from(unfiltered_position) * unfiltered_row_height);
-        while gtk4::glib::MainContext::default().iteration(false) {}
-        track_list.update_current_track(playing_id, None, CurrentTrackChange::PlaybackStarted);
-
-        track_list.set_filter("Match");
-        assert_eq!(track_list.shared.model.n_items(), 30);
-        assert_playing_track_centered(&track_list, playing_id, &adjustment);
-
-        let filtered_ids = track_list.shared.current_view_ids();
-        let filtered_position = filtered_ids
-            .iter()
-            .position(|id| *id == playing_id)
-            .and_then(|position| u32::try_from(position).ok())
-            .unwrap();
-        let filtered_row_height = adjustment.upper() / f64::from(track_list.shared.model.n_items());
-        adjustment.set_value(f64::from(filtered_position) * filtered_row_height);
-        while gtk4::glib::MainContext::default().iteration(false) {}
-
-        track_list.set_filter("");
-        assert_eq!(track_list.shared.model.n_items(), 100);
-        assert_playing_track_centered(&track_list, playing_id, &adjustment);
-
-        window.close();
-    }
-
-    fn assert_playing_track_centered(
-        track_list: &TrackList,
-        playing_id: i64,
-        adjustment: &gtk4::Adjustment,
-    ) {
-        let current_ids = track_list.shared.current_view_ids();
-        let playing_position = current_ids
-            .iter()
-            .position(|id| *id == playing_id)
-            .and_then(|position| u32::try_from(position).ok())
-            .unwrap();
-        crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
-            scroll_center::centered_scroll_value(
-                playing_position,
-                track_list.shared.model.n_items(),
-                adjustment.upper(),
-                adjustment.page_size(),
-            )
-            .is_some_and(|target| (adjustment.value() - target).abs() < 0.5)
-        });
-        let expected = scroll_center::centered_scroll_value(
-            playing_position,
-            track_list.shared.model.n_items(),
-            adjustment.upper(),
-            adjustment.page_size(),
-        )
-        .expect("expanded list must have centering geometry");
-        assert!(
-            (adjustment.value() - expected).abs() < 0.5,
-            "filter change must center playing track {playing_id}: \
-             actual {}, expected {expected}",
-            adjustment.value()
-        );
-    }
-
-    /// Counts the widgets in `widget`'s subtree carrying the `.now-playing`
-    /// marker class — the visible footprint of the now-playing row's cells.
-    fn count_now_playing(widget: &gtk4::Widget) -> usize {
-        let mut count = usize::from(widget.has_css_class("now-playing"));
-        let mut child = widget.first_child();
-        while let Some(current) = child {
-            count += count_now_playing(&current);
-            child = current.next_sibling();
-        }
-        count
-    }
-
-    /// The now-playing marker must be applied to (and cleared from) the already-
-    /// realised cell widgets IN PLACE — the mechanism that replaced the former
-    /// `items_changed(pos, 1, 1)` refresh (whose fake remove+insert snapped the
-    /// viewport to the top). Proves the registered re-appliers actually toggle
-    /// real widgets, and that the reapply path never panics (RefCell re-entry).
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn now_playing_marker_toggles_visible_cells_in_place() {
-        gtk4::init().unwrap();
-        let conn = crate::test_db::open().unwrap();
-        let fixture_conn = crate::test_db::connection(&conn);
-        let tx = fixture_conn.unchecked_transaction().unwrap();
-        for id in 1..=100 {
-            tx.execute(
-                "INSERT INTO tracks (id, path, title, artist, added_at) \
-                 VALUES (?1, ?2, ?3, 'Synthetic Artist', 0)",
-                (
-                    id,
-                    format!("/synthetic/{id:03}.flac"),
-                    format!("Track {id:03}"),
-                ),
-            )
-            .unwrap();
-        }
-        tx.commit().unwrap();
-        let track_list = TrackList::new(
-            Rc::new(conn),
-            Box::new(|_, _, _, _| {}),
-            |_, _, _, _| {},
-            super::super::queue_sections::QueueViewModel::default,
-            crate::ui::cover_download_worker::setup_for_test(),
-        );
-        let window = gtk4::Window::builder()
-            .default_width(900)
-            .default_height(320)
-            .child(track_list.widget())
-            .build();
-        window.present();
-        while gtk4::glib::MainContext::default().iteration(false) {}
-
-        let column_view: gtk4::Widget = track_list.shared.column_view.clone().upcast();
-
-        // No track playing yet: no cell carries the marker.
-        assert_eq!(count_now_playing(&column_view), 0);
-
-        // Start playback on a row visible at the top (no scroll involved): the
-        // marker appears on that row's realised cells with no model signal.
-        let first_id = track_list.shared.model.track_at(0).unwrap().id;
-        track_list.update_current_track(first_id, None, CurrentTrackChange::PlaybackStarted);
-        while gtk4::glib::MainContext::default().iteration(false) {}
-        assert!(
-            count_now_playing(&column_view) > 0,
-            "playing row's cells must gain the marker in place"
-        );
-
-        // Advancing to another visible row moves the marker; the footprint
-        // stays that of a single row (no stale marker left behind).
-        let footprint = count_now_playing(&column_view);
-        let second_id = track_list.shared.model.track_at(1).unwrap().id;
-        track_list.update_current_track(second_id, None, CurrentTrackChange::PlaybackStarted);
-        while gtk4::glib::MainContext::default().iteration(false) {}
-        assert_eq!(
-            count_now_playing(&column_view),
-            footprint,
-            "marker must move, not accumulate on the previous row"
-        );
-
-        // Stopping clears the marker from every cell.
-        track_list.on_playback_state(PlaybackState::Stopped);
-        while gtk4::glib::MainContext::default().iteration(false) {}
-        assert_eq!(count_now_playing(&column_view), 0);
-
-        window.close();
-    }
-
-    #[test]
-    fn visible_position_finds_the_current_track_in_view_order() {
-        assert_eq!(
-            visible_position_for_track_in_source(&[41, 42, 43], 42, None, false),
-            Some(1)
-        );
-    }
-
-    #[test]
-    fn visible_position_uses_queue_occurrence_then_falls_back_to_first_match() {
-        assert_eq!(
-            visible_position_for_track_in_source(&[7, 8, 7], 7, Some(2), false),
-            Some(2)
-        );
-        assert_eq!(
-            visible_position_for_track_in_source(&[7, 8, 7], 7, Some(1), false),
-            Some(0)
-        );
-        assert_eq!(
-            visible_position_for_track_in_source(&[7, 8, 7], 9, None, false),
-            None
-        );
-    }
-
-    #[test]
-    fn queue_does_not_highlight_a_pending_duplicate_of_the_current_track() {
-        assert_eq!(
-            visible_position_for_track_in_source(&[7, 8, 7], 7, None, true),
-            None
-        );
-        assert_eq!(
-            visible_position_for_track_in_source(&[7, 8, 7], 7, None, false),
-            Some(0)
-        );
-    }
-}
+#[cfg(test)]
+#[path = "start_restore_tests.rs"]
+mod start_restore_tests;

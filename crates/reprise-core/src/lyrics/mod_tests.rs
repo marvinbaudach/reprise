@@ -4,6 +4,7 @@ use std::path::Path;
 use tempfile::TempDir;
 
 use super::*;
+use crate::library::source::ExistingPathSource;
 
 struct FixedProvider {
     source: LyricsSource,
@@ -163,6 +164,7 @@ fn precomputed_classification_rechecks_a_cache_entry_that_changed_before_lookup(
         options(false),
         Some(&decision),
         LookupProviders {
+            source: &UnixLibrarySource,
             local: &[&local],
             network: &[&network],
         },
@@ -192,6 +194,7 @@ fn precomputed_classification_rechecks_an_unchanged_record_after_its_ttl_expires
         options(false),
         Some(&decision),
         LookupProviders {
+            source: &UnixLibrarySource,
             local: &[&local],
             network: &[&network],
         },
@@ -502,19 +505,12 @@ fn lyr_7_a_network_hit_without_a_track_path_remains_cache_only() {
     assert!(cache::cache_file(temp.path(), &query()).exists());
 }
 
-#[cfg(unix)]
 #[test]
 fn lyr_7_a_sidecar_write_failure_never_changes_the_lookup_result() {
-    use std::os::unix::fs::PermissionsExt;
-
     let temp = TempDir::new().unwrap();
     let cache_dir = temp.path().join("cache");
-    let music_dir = temp.path().join("music");
     std::fs::create_dir(&cache_dir).unwrap();
-    std::fs::create_dir(&music_dir).unwrap();
-    let track = music_dir.join("song.flac");
-    std::fs::write(&track, b"fixture").unwrap();
-    std::fs::set_permissions(&music_dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let track = temp.path().join("missing-music/song.flac");
     let local = FixedProvider::new(LyricsSource::Tag, SourceOutcome::Skipped);
     let expected = LyricsHit {
         body: LyricsBody::Synced(vec![TimedLine::new(1_000, "Network text")]),
@@ -522,17 +518,20 @@ fn lyr_7_a_sidecar_write_failure_never_changes_the_lookup_result() {
     };
     let network = FixedProvider::new(LyricsSource::Lrclib, SourceOutcome::Hit(expected.clone()));
 
-    let result = load_or_fetch_at(
+    let result = load_or_fetch_with_cache_context_at(
         &cache_dir,
         100,
         &query(),
         Some(&track),
         options(false),
-        &[&local],
-        &[&network],
+        None,
+        LookupProviders {
+            source: &ExistingPathSource::FILE,
+            local: &[&local],
+            network: &[&network],
+        },
     );
 
-    std::fs::set_permissions(&music_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
     assert_eq!(result, Ok(expected));
     assert!(cache::cache_file(&cache_dir, &query()).exists());
     assert!(!track.with_extension("lrc").exists());
@@ -559,7 +558,9 @@ fn lyr_7_the_next_lookup_finds_the_written_sidecar_without_network() {
         &[&network],
     )
     .unwrap();
-    let local = LocalProvider;
+    let local = LocalProvider {
+        source: &crate::library::source::UnixLibrarySource,
+    };
 
     let result = load_or_fetch_at(
         temp.path(),

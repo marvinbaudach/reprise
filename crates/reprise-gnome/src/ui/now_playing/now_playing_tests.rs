@@ -7,6 +7,10 @@ fn wait_for_layout(milliseconds: u64) {
     crate::ui::test_settle::settle_for(Duration::from_millis(milliseconds));
 }
 
+fn context_window(ids: &[i64]) -> Rc<dyn crate::ui::track_list::queue_sections::ContextWindow> {
+    Rc::new(ids.to_vec())
+}
+
 fn loaded_track() -> NowPlaying {
     NowPlaying {
         id: 7,
@@ -43,6 +47,7 @@ fn external_episode_snapshot() -> crate::ui::playback::external_media::ExternalP
         can_go_next: false,
         stream_tags: StreamTags::default(),
         podcast_phase: Some(PodcastPhase::Playing),
+        restored: false,
         radio: None,
         error: None,
     }
@@ -67,6 +72,7 @@ fn external_radio_snapshot() -> crate::ui::playback::external_media::ExternalPla
         can_go_next: false,
         stream_tags: StreamTags::default(),
         podcast_phase: None,
+        restored: false,
         radio: Some(RadioPresentation::connected()),
         error: None,
     }
@@ -306,7 +312,7 @@ fn npp_1_long_queue_source_cannot_resize_the_fixed_sidebar() {
 
     let short =
         crate::ui::track_list::queue_sections::compose(None, &[], &[1], Some("Popular Monster"));
-    panel.set_up_next_model(&short);
+    panel.set_up_next_model(&short, &context_window(&[1]));
     wait_for_layout(100);
     let short_width = panel.widgets.stage.width();
 
@@ -316,7 +322,7 @@ fn npp_1_long_queue_source_cannot_resize_the_fixed_sidebar() {
         &[1],
         Some("I Feel The Everblack Festering Within Me"),
     );
-    panel.set_up_next_model(&long);
+    panel.set_up_next_model(&long, &context_window(&[1]));
     wait_for_layout(100);
 
     let expected_header = "Playing from I Feel The Everblack Festering Within Me · 1 track";
@@ -346,7 +352,7 @@ fn now_playing_css_defines_the_21a_stage_head_and_glow() {
     assert!(!css.contains("background-color: #17191c"));
     assert!(css.contains(".reprise-now-playing-glow"));
     assert!(css.contains("radial-gradient"));
-    assert!(css.contains("alpha(@reprise_player_accent, 0.4)"));
+    assert!(css.contains("alpha(@reprise_player_accent, 0.26)"));
     assert!(css.contains(".reprise-now-playing-idle .reprise-now-playing-glow"));
     assert!(css.contains("border-radius: 12px"));
     assert!(css.contains("font-size: 15px"));
@@ -712,7 +718,7 @@ fn npp_13_cold_cover_resolves_before_the_outgoing_cover_fades() {
     settings.set_gtk_enable_animations(animations_were_enabled);
 }
 
-fn test_panel(application_id: &str) -> (adw::ApplicationWindow, Rc<NowPlayingPanel>) {
+pub(super) fn test_panel(application_id: &str) -> (adw::ApplicationWindow, Rc<NowPlayingPanel>) {
     let cover_runtime = crate::ui::cover_download_worker::setup_for_test();
     test_panel_with_cover_loader(application_id, CoverLoader::new(cover_runtime))
 }

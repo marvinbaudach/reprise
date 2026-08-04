@@ -39,6 +39,7 @@ require_executable scripts/check-frontend-thinness.sh
 require_executable scripts/check-accessibility-semantics.sh
 require_executable scripts/check-input-parity.sh
 require_executable scripts/check-motion-tokens.sh
+require_executable scripts/check-android-theme.sh
 require_executable scripts/check-merge-readiness.sh
 require_executable scripts/install-git-hooks.sh
 require_executable scripts/performance-baseline.sh
@@ -55,6 +56,7 @@ require_executable scripts/tests/performance-runtime-baseline.sh
 require_executable scripts/tests/readme-showcase.sh
 require_executable scripts/tests/accessibility-semantics.sh
 require_executable scripts/tests/input-parity.sh
+require_executable scripts/tests/android-theme.sh
 require_executable scripts/tests/msrv.sh
 require_executable scripts/tests/github-flow.sh
 require_executable scripts/tests/weekly-portfolio-sync.sh
@@ -91,7 +93,7 @@ require_pattern 'cleanup_worker_roots' scripts/check-display-tests.sh
 require_pattern 'if \[\[ -f \$display_test_passed \]\]' scripts/check-display-tests.sh
 require_pattern 'server-num' scripts/check-display-tests.sh
 require_pattern_order 'if env' 'dbus-run-session -- xvfb-run' scripts/check-display-tests.sh
-require_pattern 'DISPLAY_TEST_JOBS: 4' .github/workflows/ci.yml
+require_pattern 'DISPLAY_TEST_JOBS: 1' .github/workflows/ci.yml
 require_pattern 'Frontend lint' scripts/check-architecture.sh
 require_pattern 'composition root must stay below 600' scripts/check-architecture.sh
 require_pattern 'UI orchestrators must stay below 600' scripts/check-architecture.sh
@@ -108,6 +110,7 @@ require_pattern 'frontend workers must open ready-to-use databases through the c
 require_pattern 'must use the shared one-shot task helper' scripts/check-architecture.sh
 require_pattern 'check-accessibility-semantics.sh' scripts/check-architecture.sh
 require_pattern 'check-input-parity.sh' scripts/check-architecture.sh
+require_pattern 'check-android-theme.sh' scripts/check-architecture.sh
 require_pattern 'check-merge-readiness.sh' .githooks/pre-push
 require_pattern 'core.hooksPath .githooks' scripts/install-git-hooks.sh
 require_pattern '^## Current automated baseline' TESTING.md
@@ -129,6 +132,7 @@ scripts/tests/performance-runtime-baseline.sh
 scripts/tests/readme-showcase.sh
 scripts/tests/accessibility-semantics.sh
 scripts/tests/input-parity.sh
+scripts/tests/android-theme.sh
 scripts/tests/github-flow.sh
 scripts/tests/weekly-portfolio-sync.sh
 scripts/tests/worktree-gc.sh

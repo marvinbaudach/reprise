@@ -10,6 +10,8 @@ members = [
     "crates/reprise-cli",
     "crates/reprise-mcp",
     "crates/reprise-stems",
+    "crates/reprise-view",
+    "crates/reprise-android-ffi",
 ]
 default-members = ["crates/reprise-gnome"]
 

@@ -73,6 +73,18 @@ fn view_state(progress: &ScanProgress) -> ScanProgressState {
             total,
             current_path,
         } => {
+            // No estimate means no percentage. A first scan has no previous
+            // catalog to size itself against, so it keeps the discovery title
+            // and a pulsing bar while the filenames stream past — rather than
+            // a bar that reads "n of n" and sits full from the first file to
+            // the last.
+            let Some(total) = total else {
+                return ScanProgressState {
+                    title: strings::text(strings::SCAN_DISCOVERING),
+                    detail: display_name(current_path),
+                    mode: ProgressMode::Indeterminate,
+                };
+            };
             let fraction = if *total == 0 {
                 0.0
             } else {
@@ -497,8 +509,17 @@ impl EmptyScanIndicator {
                     .label
                     .set_label(&strings::text(strings::SCAN_DISCOVERING));
             }
+            // No estimate, no denominator to name — same fallback as the
+            // progress bar's own view state.
+            ScanProgress::Scanning { total: None, .. } => {
+                self.inner
+                    .label
+                    .set_label(&strings::text(strings::SCAN_DISCOVERING));
+            }
             ScanProgress::Scanning {
-                processed, total, ..
+                processed,
+                total: Some(total),
+                ..
             } => {
                 self.inner
                     .label
@@ -564,7 +585,7 @@ mod tests {
     fn scanning_shows_counts_filename_and_clamped_fraction() {
         let state = view_state(&ScanProgress::Scanning {
             processed: 7,
-            total: 4,
+            total: Some(4),
             current_path: PathBuf::from("/music/Album/a very long song.flac"),
         });
 
@@ -577,7 +598,7 @@ mod tests {
     fn empty_library_has_a_finite_zero_fraction() {
         let state = view_state(&ScanProgress::Scanning {
             processed: 0,
-            total: 0,
+            total: Some(0),
             current_path: PathBuf::new(),
         });
 
@@ -621,7 +642,7 @@ mod tests {
         );
         view.show(&ScanProgress::Scanning {
             processed: 2,
-            total: 4,
+            total: Some(4),
             current_path: PathBuf::from("/music/song.flac"),
         });
 

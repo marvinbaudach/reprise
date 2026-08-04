@@ -136,7 +136,7 @@ pub const SONG_VISUALS_MODULE: ModuleDescriptor = ModuleDescriptor {
     id: "song_visuals",
     name: "Song Visuals",
     description: "Show local audio-reactive visuals in Now Playing",
-    default_enabled: false,
+    default_enabled: true,
     applies_live: true,
 };
 
@@ -215,6 +215,15 @@ mod tests {
     fn modules_default_to_their_declared_default() {
         let db = migrated_db();
         assert!(is_enabled(&db, &MPRIS_MODULE).unwrap()); // default_enabled: true
+    }
+
+    #[test]
+    fn song_visuals_ships_enabled_so_the_reactive_light_has_a_signal() {
+        // The bass reading that drives the now-playing bloom, the play-button ring
+        // and the playhead lens only exists while this module's spectrum tap runs.
+        // Shipping it off would ship all three effects dead; the module toggle is
+        // deliberately the one off-switch for the whole reactive layer (AC-24).
+        const { assert!(SONG_VISUALS_MODULE.default_enabled) };
     }
 
     #[test]
@@ -410,7 +419,7 @@ mod tests {
     }
 
     #[test]
-    fn ac_23_song_visuals_are_a_live_opt_in_module() {
+    fn ac_23_song_visuals_are_a_live_default_on_module_with_an_off_switch() {
         let db = migrated_db();
         let descriptor = ALL_MODULES
             .iter()
@@ -419,11 +428,11 @@ mod tests {
             .expect("Song Visuals must be exposed on the Plugins page");
 
         assert_eq!(descriptor.name, "Song Visuals");
-        assert!(!descriptor.default_enabled);
+        assert!(descriptor.default_enabled);
         assert!(descriptor.applies_live);
-        assert!(!is_enabled(&db, descriptor).unwrap());
-        set_enabled(&db, descriptor, true).unwrap();
         assert!(is_enabled(&db, descriptor).unwrap());
+        set_enabled(&db, descriptor, false).unwrap();
+        assert!(!is_enabled(&db, descriptor).unwrap());
     }
 
     #[test]

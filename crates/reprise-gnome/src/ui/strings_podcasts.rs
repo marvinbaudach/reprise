@@ -33,7 +33,6 @@ pub const YOUTUBE_ADD: &str = N_!("Add channel");
 pub const PODCAST_ADD_FILTER: &str = N_!("Add filter");
 pub const PODCAST_FILTER_UNPLAYED: &str = N_!("Unplayed");
 pub const PODCAST_FILTER_DOWNLOADED: &str = N_!("Downloaded");
-pub const PODCAST_FILTER_SHOW: &str = N_!("Show");
 pub const PODCAST_FILTER_SOURCE: &str = N_!("Source");
 pub const PODCAST_CLEAR_ALL: &str = N_!("Clear all");
 pub const PODCAST_NEW_COUNT: &str = N_!("{count} new");
@@ -124,6 +123,7 @@ pub const PODCAST_YTDLP_BLOCKED: &str =
 pub const PODCAST_RESOLVING_AUDIO: &str = N_!("Resolving audio…");
 pub const PODCAST_PLAY: &str = N_!("Play");
 pub const PODCAST_COPY_URL: &str = N_!("Copy episode URL");
+pub const PODCAST_OPEN_IN_BROWSER: &str = N_!("Open in browser");
 pub const PODCAST_MARK_PLAYED: &str = N_!("Mark as played");
 pub const PODCAST_MARK_UNPLAYED: &str = N_!("Mark as unplayed");
 pub const PODCAST_DOWNLOAD: &str = N_!("Download episode");
@@ -158,7 +158,6 @@ pub const YOUTUBE_SHORTS_ONLY_DESCRIPTION: &str =
     N_!("Every recent upload from this channel is a Short. Show them anyway?");
 pub const YOUTUBE_SHOW_SHORTS_ANYWAY: &str = N_!("Show Shorts anyway");
 pub const YOUTUBE_OPEN_CHANNEL: &str = N_!("Open channel");
-pub const YOUTUBE_SELECT_EPISODES: &str = N_!("Select episodes");
 pub const YOUTUBE_DOWNLOAD_SELECTED: &str = N_!("Download selected");
 pub const YOUTUBE_REMOVE_SELECTED: &str = N_!("Remove selected");
 pub const PODCAST_UNDO: &str = N_!("Undo");
@@ -382,8 +381,14 @@ pub fn youtube_channel_summary(
     )
 }
 
-pub fn youtube_selected_count(count: usize) -> String {
-    formatted(N_!("{count} selected"), &[("count", &count.to_string())])
+pub fn podcast_summary_with_selection(summary: &str, selected: usize) -> String {
+    if selected == 0 {
+        return summary.to_owned();
+    }
+    formatted(
+        N_!("{summary} · {count} selected"),
+        &[("summary", summary), ("count", &selected.to_string())],
+    )
 }
 
 pub fn podcast_stop_sync_device(device: &str) -> String {
@@ -395,13 +400,6 @@ pub fn podcast_stop_sync_device(device: &str) -> String {
 
 pub fn podcast_removed_episode(title: &str) -> String {
     formatted(N_!("Removed “{title}”"), &[("title", title)])
-}
-
-/// SRC-12 / ACC: every selection checkbox in the list needs its own
-/// accessible name. A shared "Select episodes" label leaves a screen-reader
-/// user hearing the same thing on every row with no way to tell them apart.
-pub fn podcast_select_episode(title: &str) -> String {
-    formatted(N_!("Select “{title}”"), &[("title", title)])
 }
 
 pub fn podcast_play_next(title: &str) -> String {
@@ -559,6 +557,17 @@ mod tests {
             youtube_library_summary(4, 41, 7).trim_start_matches("4 channels"),
             podcast_library_summary(4, 41, 7).trim_start_matches("4 shows"),
         );
+    }
+
+    #[test]
+    fn src_12_summary_reports_a_selection_and_drops_it_at_zero() {
+        let summary = "2 channels · 54 episodes · 4 new";
+
+        assert_eq!(
+            podcast_summary_with_selection(summary, 3),
+            "2 channels · 54 episodes · 4 new · 3 selected"
+        );
+        assert_eq!(podcast_summary_with_selection(summary, 0), summary);
     }
 
     #[test]

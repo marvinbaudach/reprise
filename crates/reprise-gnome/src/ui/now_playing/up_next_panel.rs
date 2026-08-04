@@ -14,7 +14,7 @@ use reprise_core::up_next::QueueItem;
 use super::cover_loader::CoverLoader;
 use crate::ui::track_list::queue_row_mapping::{classify, QueueRow};
 use crate::ui::track_list::queue_sections::{
-    section_ranges, QueueSection, QueueSectionKind, QueueViewModel,
+    section_ranges, ContextWindow, QueueSection, QueueSectionKind, QueueViewModel,
 };
 use crate::ui::track_list::track_list_model::TrackListModel;
 
@@ -68,9 +68,17 @@ struct RowWidgets {
     cover: gtk4::Image,
     title: gtk4::Label,
     artist: gtk4::Label,
+    remove_button: gtk4::Button,
     generation: Rc<Cell<u64>>,
     row: Cell<Option<QueueRow>>,
+    editable: Cell<bool>,
     drop_target: gtk4::DropTarget,
+}
+
+fn row_is_editable(row: Option<QueueRow>, item: QueueItem) -> bool {
+    row.is_some_and(|row| {
+        !crate::ui::track_list::queue_row_mapping::is_read_only_episode_projection(row, item)
+    })
 }
 
 pub(in crate::ui) struct UpNextPanel {
@@ -159,12 +167,19 @@ impl UpNextPanel {
         *self.on_enqueue.borrow_mut() = Some(Rc::new(callback));
     }
 
-    pub(in crate::ui) fn set_queue_model(&self, model: &QueueViewModel) -> String {
+    pub(in crate::ui) fn set_queue_model(
+        &self,
+        model: &QueueViewModel,
+        context_window: &Rc<dyn ContextWindow>,
+    ) -> String {
         let upcoming = model.upcoming();
         *self.queue_sections.borrow_mut() = upcoming.sections.clone();
         *self.section_headers.borrow_mut() = panel_section_headers(&upcoming);
-        self.model
-            .set_queue_snapshot(&upcoming, section_ranges(&upcoming.sections));
+        self.model.set_queue_snapshot(
+            &upcoming,
+            context_window.clone(),
+            section_ranges(&upcoming.sections),
+        );
         self.root
             .set_visible_child_name(if upcoming.total_len() == 0 {
                 "empty"
@@ -173,7 +188,7 @@ impl UpNextPanel {
             });
         let mut total_duration_ms = 0_i64;
         for offset in (0..upcoming.total_len()).step_by(200) {
-            let items = upcoming.items_window(offset, 200);
+            let items = upcoming.items_window(offset, 200, context_window.as_ref());
             let duration = match reprise_core::queries::query_queue_duration_ms(&self.conn, &items)
             {
                 Ok(duration) => duration,
@@ -276,6 +291,9 @@ fn build_factory(
             let sections_for_keys = queue_sections.clone();
             let on_reorder_for_keys = on_reorder.clone();
             keys.connect_key_pressed(move |_, key, _, modifiers| {
+                if !widgets_for_keys.editable.get() {
+                    return gtk4::glib::Propagation::Proceed;
+                }
                 let Some(row) = widgets_for_keys.row.get() else {
                     return gtk4::glib::Propagation::Proceed;
                 };
@@ -305,6 +323,9 @@ fn build_factory(
             drag_source.set_actions(gtk4::gdk::DragAction::MOVE);
             let widgets_for_drag = widgets.clone();
             drag_source.connect_prepare(move |_, _, _| {
+                if !widgets_for_drag.editable.get() {
+                    return None;
+                }
                 let row = widgets_for_drag.row.get()?;
                 Some(gtk4::gdk::ContentProvider::for_value(
                     &encode_drag_row(row).to_value(),
@@ -388,6 +409,9 @@ fn build_factory(
                 ));
             let row = classify(item.position(), &queue_sections.borrow());
             widgets.row.set(row);
+            let editable = row_is_editable(row, metadata.item());
+            widgets.editable.set(editable);
+            widgets.remove_button.set_visible(editable);
             widgets.drop_target.set_actions(match row {
                 Some(QueueRow::PlayNext(_)) => {
                     gtk4::gdk::DragAction::COPY | gtk4::gdk::DragAction::MOVE
@@ -427,6 +451,8 @@ fn build_factory(
                 .generation
                 .set(widgets.generation.get().wrapping_add(1));
             widgets.row.set(None);
+            widgets.editable.set(false);
+            widgets.remove_button.set_visible(false);
             widgets
                 .drop_target
                 .set_actions(gtk4::gdk::DragAction::empty());
@@ -493,13 +519,15 @@ fn build_row_widgets() -> (gtk4::Box, gtk4::Button, gtk4::Button, RowWidgets) {
     (
         row,
         jump_button,
-        remove_button,
+        remove_button.clone(),
         RowWidgets {
             cover,
             title,
             artist,
+            remove_button: remove_button.clone(),
             generation: Rc::new(Cell::new(0)),
             row: Cell::new(None),
+            editable: Cell::new(false),
             // input-parity: ACC-8 keyboard=up-next-alt-arrows
             drop_target: gtk4::DropTarget::new(glib::Type::STRING, gtk4::gdk::DragAction::empty()),
         },

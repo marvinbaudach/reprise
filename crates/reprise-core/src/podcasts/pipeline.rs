@@ -122,9 +122,17 @@ impl YoutubeFetcher for super::ytdlp::YtDlp {
 }
 
 pub fn project_youtube_feed(listing: super::youtube::YoutubeListing, limit: usize) -> ParsedFeed {
+    // yt-dlp names the channel in `channel`/`uploader` on most channel dumps,
+    // but not on all of them — and where it does not, its `title` *is* the
+    // channel name, because this path fetches a channel URL rather than the
+    // uploads playlist. (The useless "Videos" title comes from the RSS feed,
+    // which is a different path and is handled where that feed is parsed.)
+    // Falling through to `None` here is what made a freshly added channel fall
+    // back to its own URL as a title.
+    let channel = listing.channel.or(listing.title);
     ParsedFeed {
-        title: listing.title.unwrap_or_else(|| "YouTube source".to_owned()),
-        author: None,
+        title: channel.clone(),
+        author: channel,
         image_url: None,
         episodes: listing
             .episodes
@@ -650,7 +658,10 @@ fn refresh_to_root_with_download_progress(
             FetchSuccess {
                 etag: response.and_then(|value| value.etag.as_deref()),
                 last_modified: response.and_then(|value| value.last_modified.as_deref()),
-                title: Some(&feed.title),
+                title: match subscription.kind {
+                    PodcastKind::Rss => feed.title.as_deref(),
+                    PodcastKind::Youtube => super::youtube::subscription_title(&feed),
+                },
                 author: feed.author.as_deref(),
                 image_url: feed.image_url.as_deref(),
             },

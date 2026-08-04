@@ -67,6 +67,25 @@ fn track_items(ids: &[i64]) -> Vec<reprise_core::up_next::QueueItem> {
         .collect()
 }
 
+fn context_window(ids: &[i64]) -> Rc<dyn super::super::queue_sections::ContextWindow> {
+    Rc::new(ids.to_vec())
+}
+
+struct LiveContextWindow(Rc<RefCell<Vec<i64>>>);
+
+impl super::super::queue_sections::ContextWindow for LiveContextWindow {
+    fn rows(&self, offset: usize, limit: usize) -> Vec<reprise_core::up_next::QueueItem> {
+        self.0
+            .borrow()
+            .iter()
+            .skip(offset)
+            .take(limit)
+            .copied()
+            .map(reprise_core::up_next::QueueItem::Track)
+            .collect()
+    }
+}
+
 fn seeded_model(rows: &[(&str, &str)]) -> TrackListModel {
     let conn = crate::test_db::open().unwrap();
     for (t, a) in rows {
@@ -121,7 +140,7 @@ fn queue_snapshot_defers_metadata_until_a_row_is_requested() {
     let model = seeded_model(&[("One", "A"), ("Two", "B"), ("Three", "C")]);
 
     let queue = super::super::queue_sections::compose(None, &track_items(&[3, 1]), &[], None);
-    model.set_queue_snapshot(&queue, vec![(0, 2)]);
+    model.set_queue_snapshot(&queue, context_window(&[]), vec![(0, 2)]);
 
     assert_eq!(model.n_items(), 2);
     assert!(model.cached_windows().is_empty());
@@ -158,7 +177,7 @@ fn mixed_queue_snapshot_renders_track_and_episode_with_colliding_ids() {
         None,
     );
 
-    model.set_queue_snapshot(&queue, vec![(0, 2)]);
+    model.set_queue_snapshot(&queue, context_window(&[]), vec![(0, 2)]);
 
     assert!(matches!(
         model.queue_item_at(0),
@@ -174,32 +193,58 @@ fn mixed_queue_snapshot_renders_track_and_episode_with_colliding_ids() {
 }
 
 #[test]
+fn virtual_episode_context_renders_episode_metadata() {
+    let conn = crate::test_db::open().unwrap();
+    crate::test_db::connection(&conn)
+        .execute_batch(
+            "INSERT INTO podcast_subscriptions
+             (id, kind, feed_url, title, added_at)
+             VALUES (1, 'rss', 'https://example.test/feed', 'Systems Weekly', 0);
+             INSERT INTO podcast_episodes
+             (id, subscription_id, guid, title, audio_url, duration_secs, first_seen_at)
+             VALUES
+             (7, 1, 'episode-seven', 'Episode Seven',
+              'https://example.test/seven.mp3', 90, 0),
+             (8, 1, 'episode-eight', 'Episode Eight',
+              'https://example.test/eight.mp3', 120, 0);",
+        )
+        .unwrap();
+    let model = TrackListModel::new(Rc::new(conn));
+    let queue = super::super::queue_sections::compose_virtual(
+        Some(reprise_core::up_next::QueueItem::Episode(7)),
+        &[],
+        Some(super::super::queue_sections::VirtualContext::new(1)),
+        Some("Systems Weekly"),
+    );
+    let context: Rc<dyn super::super::queue_sections::ContextWindow> =
+        Rc::new(vec![reprise_core::up_next::QueueItem::Episode(8)]);
+
+    model.set_queue_snapshot(&queue, context, vec![(0, 1), (1, 2)]);
+
+    assert!(matches!(
+        model.queue_item_at(1),
+        Some(reprise_core::queries::QueueItemMetadata::Episode(episode))
+            if episode.title == "Episode Eight" && episode.show == "Systems Weekly"
+    ));
+}
+
+#[test]
 fn advancing_the_queue_emits_one_leading_removal_instead_of_a_full_replace() {
     let model = seeded_model(&[("One", "A"), ("Two", "B"), ("Three", "C")]);
     let live_tail = Rc::new(RefCell::new(vec![1, 2, 3]));
-    let tail_for_before = live_tail.clone();
+    let context_window: Rc<dyn super::super::queue_sections::ContextWindow> =
+        Rc::new(LiveContextWindow(live_tail.clone()));
     let before = super::super::queue_sections::compose_virtual(
         None,
         &[],
-        Some(
-            super::super::queue_sections::VirtualContextTail::identified(
-                3,
-                (7, 11),
-                1,
-                Rc::new(move |offset, limit| {
-                    tail_for_before
-                        .borrow()
-                        .iter()
-                        .skip(offset)
-                        .take(limit)
-                        .copied()
-                        .collect()
-                }),
-            ),
-        ),
+        Some(super::super::queue_sections::VirtualContext::identified(
+            3,
+            (7, 11),
+            1,
+        )),
         None,
     );
-    model.set_queue_snapshot(&before, vec![(0, 3)]);
+    model.set_queue_snapshot(&before, context_window.clone(), vec![(0, 3)]);
 
     let changes = Rc::new(RefCell::new(Vec::new()));
     let changes_for_signal = changes.clone();
@@ -210,29 +255,17 @@ fn advancing_the_queue_emits_one_leading_removal_instead_of_a_full_replace() {
     });
 
     *live_tail.borrow_mut() = vec![2, 3];
-    let tail_for_after = live_tail.clone();
     let after = super::super::queue_sections::compose_virtual(
         None,
         &[],
-        Some(
-            super::super::queue_sections::VirtualContextTail::identified(
-                2,
-                (7, 11),
-                2,
-                Rc::new(move |offset, limit| {
-                    tail_for_after
-                        .borrow()
-                        .iter()
-                        .skip(offset)
-                        .take(limit)
-                        .copied()
-                        .collect()
-                }),
-            ),
-        ),
+        Some(super::super::queue_sections::VirtualContext::identified(
+            2,
+            (7, 11),
+            2,
+        )),
         None,
     );
-    model.set_queue_snapshot(&after, vec![(0, 2)]);
+    model.set_queue_snapshot(&after, context_window, vec![(0, 2)]);
 
     assert_eq!(
         *changes.borrow(),
@@ -245,7 +278,7 @@ fn advancing_the_queue_emits_one_leading_removal_instead_of_a_full_replace() {
 fn consuming_play_next_preserves_the_remaining_sidebar_rows() {
     let model = seeded_model(&[("One", "A"), ("Two", "B"), ("Three", "C")]);
     let before = super::super::queue_sections::compose(None, &track_items(&[1, 2, 3]), &[], None);
-    model.set_queue_snapshot(&before, vec![(0, 3)]);
+    model.set_queue_snapshot(&before, context_window(&[]), vec![(0, 3)]);
 
     let changes = Rc::new(RefCell::new(Vec::new()));
     let changes_for_signal = changes.clone();
@@ -256,7 +289,7 @@ fn consuming_play_next_preserves_the_remaining_sidebar_rows() {
     });
 
     let after = super::super::queue_sections::compose(None, &track_items(&[2, 3]), &[], None);
-    model.set_queue_snapshot(&after, vec![(0, 2)]);
+    model.set_queue_snapshot(&after, context_window(&[]), vec![(0, 2)]);
 
     assert_eq!(
         *changes.borrow(),

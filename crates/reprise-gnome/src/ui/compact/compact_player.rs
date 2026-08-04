@@ -195,11 +195,16 @@ impl CompactPlayer {
         let Some(snapshot) = snapshot else {
             self.0.seek_enabled.set(true);
             self.0.widgets.waveform.widget().set_opacity(1.0);
-            self.0
-                .widgets
-                .waveform
-                .widget()
-                .set_sensitive(self.0.current_duration_ms.get() > 0);
+            // Unconditionally sensitive, exactly like the full player bar:
+            // this runs once at startup — before any track has reported a
+            // duration — and nothing re-evaluates sensitivity afterwards, so
+            // gating it on the duration left the waveform insensitive for the
+            // whole session. GTK skips insensitive widgets when picking, which
+            // took click-to-seek, drag-to-scrub (MINI-1) and keyboard seek with
+            // it, and handed the drag to the card's WindowHandle — moving the
+            // window instead of scrubbing (MINI-2 exempts the waveform).
+            // A seek with no duration is already a no-op in `connect_seek`.
+            self.0.widgets.waveform.widget().set_sensitive(true);
             self.0.widgets.title_label.remove_css_class("dim-label");
             self.0.widgets.title_label.set_tooltip_text(None);
             self.0.menu.set_queue_navigation_enabled(true);
@@ -674,5 +679,82 @@ mod tests {
         // the play button); unplayed bars stay dim white (frame 1e).
         let css = crate::ui::compact::compact_player_layouts::mini_css();
         assert!(css.contains(".waveform-seek { color: @reprise_player_accent; }"));
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn mini_1_waveform_stays_hittable_when_external_clears_before_a_duration_is_known() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        let player = CompactPlayer::new();
+        // Startup order: the external-media session reports "nothing external"
+        // before any local track has produced a duration. An insensitive
+        // waveform is skipped by GTK hit-testing entirely — pointer picking
+        // lands on the card below it, so click-to-seek, drag-to-scrub (MINI-1)
+        // and keyboard seek all die, and the card's WindowHandle turns the
+        // scrub into a window move (MINI-2 exempts the waveform from dragging).
+        player.set_external_snapshot(None);
+        assert!(
+            player.0.widgets.waveform.widget().get_sensitive(),
+            "clearing external playback must leave the mini waveform hittable"
+        );
+        // …and it must still be hittable once a track supplies a duration,
+        // because nothing re-evaluates sensitivity after this point.
+        player.set_position(0, 180_000);
+        assert!(
+            player.0.widgets.waveform.widget().get_sensitive(),
+            "the mini waveform must stay hittable once a track is loaded"
+        );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn mini_1_waveform_is_the_pointer_target_inside_the_card() {
+        if gtk4::init().is_err() {
+            return;
+        }
+        // The card padding is CSS, and the waveform's position depends on it.
+        crate::ui::style::install_css_string_for_test(
+            &crate::ui::compact::compact_player_layouts::mini_css(),
+        );
+        let player = CompactPlayer::new();
+        // Same startup order the app produces.
+        player.set_external_snapshot(None);
+        player.set_position(0, 180_000);
+
+        let win = gtk4::Window::new();
+        win.set_child(Some(player.handle()));
+        win.set_default_size(
+            crate::ui::compact::compact_player_layouts::MINI_WIDTH,
+            crate::ui::compact::compact_player_layouts::MINI_HEIGHT,
+        );
+        win.present();
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        let root = player.handle().clone().upcast::<gtk4::Widget>();
+        let waveform = player.0.widgets.waveform.widget().clone();
+        let bounds = waveform.compute_bounds(&root).expect("waveform bounds");
+        assert!(
+            bounds.width() > 0.0 && bounds.height() > 0.0,
+            "the mini waveform must have an allocation to be clickable"
+        );
+        // Pointer picking is what click-to-seek and drag-to-scrub ride on
+        // (MINI-1). GTK skips insensitive widgets while picking, so a
+        // regression there silently hands every press to the card's
+        // WindowHandle, which moves the window instead (MINI-2).
+        for fraction in [0.1_f32, 0.5, 0.9] {
+            let x = f64::from(bounds.x() + bounds.width() * fraction);
+            let y = f64::from(bounds.y() + bounds.height() / 2.0);
+            let hit = root
+                .pick(x, y, gtk4::PickFlags::DEFAULT)
+                .expect("a widget under the pointer");
+            assert_eq!(
+                hit,
+                waveform.clone().upcast::<gtk4::Widget>(),
+                "the waveform must be the pick target at {fraction} of its width"
+            );
+        }
+        win.close();
     }
 }

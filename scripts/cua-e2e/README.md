@@ -14,7 +14,7 @@ scripts/cua-e2e/run.sh
 
 The runner creates a private Xvfb display and Openbox window manager. Each
 scenario group gets a fresh D-Bus session, AT-SPI bus, CUA daemon, XDG profile,
-fake audio sink, and copied FLAC fixtures. It exercises ten public workflows:
+fake audio sink, and copied FLAC fixtures. It exercises eleven public workflows:
 
 1. a fresh profile exposes the first-run wizard; activating `Skip for Now`
    reveals the `No music yet` empty-library state;
@@ -48,13 +48,18 @@ fake audio sink, and copied FLAC fixtures. It exercises ten public workflows:
    phase ends: while one is open the app never exits, and `finish_scenario`
    then waits for an exit that never comes.
 10. the grouped list at a realistic size (`podcast-backlog`): three shows and a
-   channel are seeded straight into the profile database with fifteen episodes
-   each, which is the only way to see what scenario 9 cannot — several shows on
-   one screen at once, a group collapsing to its ten newest with a `Show all 15
-   episodes` row, rows carrying no state text while nothing is downloading, and
-   durations reading `53 min` / `2 h 05` on either side of the hour. The
-   fifteen-episode backlog also makes `0 new` an assertion about the rule that
-   a first fetch's backlog is not new, rather than about an empty library.
+    channel are seeded straight into the profile database with fifteen episodes
+    each, which is the only way to see what scenario 9 cannot — several shows on
+    one screen at once, a grouped refresh failure whose expanded Details can be
+    dismissed through the labelled close action, a group collapsing to its ten
+    newest with a `Show all 15 episodes` row, rows carrying no state text while
+    nothing is downloading, and durations reading `53 min` / `2 h 05` on either
+    side of the hour. The fifteen-episode backlog also makes `0 new` an assertion
+    about the rule that a first fetch's backlog is not new, rather than about an
+    empty library.
+11. `PLAY-11`: a title started from search-filtered Music finishes after the
+    search is cleared, then a fresh random full-library snapshot starts without
+    replaying that just-finished title first.
 
 Every CUA action is bracketed by a fresh `get_window_state` snapshot. The run
 fails on a degraded accessibility tree, a suspected no-op/escalation request,
@@ -105,11 +110,51 @@ For an iterative keyboard-only retry, run
 `CUA_E2E_ONLY=populated-library scripts/cua-e2e/run.sh`; use
 `CUA_E2E_ONLY=library-doctor scripts/cua-e2e/run.sh` for the Doctor workflow,
 or `CUA_E2E_ONLY=track-sort-playing-marker scripts/cua-e2e/run.sh` for the
-repeated-sort regression, `CUA_E2E_ONLY=source-modules` for the module switches, or
-`CUA_E2E_ONLY=source-podcasts` for the offline feed workflow.
+repeated-sort regression, `CUA_E2E_ONLY=source-modules` for the module switches,
+`CUA_E2E_ONLY=source-podcasts` for the offline feed workflow, or
+`CUA_E2E_ONLY=play-11-filter-clear scripts/cua-e2e/run.sh` for the filtered
+playback continuation.
 The default remains the complete matrix.
 
 This headless X11 run proves accessibility exposure, input delivery, widget
 state transitions, screenshots, and clean logs. Native Wayland rendering,
 pointer feel, portals, media keys, audible playback, and compositor-specific
 behavior remain release-manual checks.
+
+## PLAY-11 stop cases: `filter_clear_matrix.sh`
+
+Scenario 11 above proves the PLAY-11 *hand-off*. Its complement — every case in
+which playback must **not** hand off — lives in a separate runner:
+
+```console
+scripts/cua-e2e/filter_clear_matrix.sh                     # all seven cases
+scripts/cua-e2e/filter_clear_matrix.sh play-11-stop-repeat-all
+```
+
+It covers the cleared-filter hand-off plus six stop cases: the filter is still
+active, the origin snapshot was never filtered, the library holds no other
+title, the origin is a playlist, a genre facet survives the search, and Repeat
+All is engaged.
+
+Two things make it a separate runner rather than more groups in `run.sh`. Each
+case needs its own library, profile and app lifecycle, because the decision
+depends on the origin captured at play time. And the assertions are about a
+playback decision rather than a widget, so it asserts on the app's diagnostic
+log and drives input with `xdotool` instead of walking the accessibility tree —
+the screenshots it keeps for every step are human evidence, not the assertion
+surface. Isolation is otherwise identical: private Xvfb display, own D-Bus
+session, private XDG directories per case, `fakesink` audio.
+
+Each case asserts three things: whether PLAY-11's continuation log line
+appeared, how often a snapshot was seeded (`queue set from view` — one for the
+activation, a second only on hand-off, which is what catches a mis-aimed
+click), and that the log stayed free of GTK/GLib criticals, panics and
+`RefCell` failures.
+
+`play-11-stop-repeat-all` engages Repeat All through the transport button
+rather than `REPRISE_SMOKE_REPEAT=all`, because that hook is silently
+overwritten by the session restore — see issue #250.
+
+The runner avoids AT-SPI because `cua-driver` 0.17.0 returns an empty walk for
+window scope on this host even though the registry exposes the app with the
+right PID and a non-empty tree — reported upstream as trycua/cua#2823.

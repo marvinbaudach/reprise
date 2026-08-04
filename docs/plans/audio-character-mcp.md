@@ -3,11 +3,24 @@ slug: audio-character-mcp
 worktree: /tmp/reprise-audio-character-mcp
 branch: feat/audio-character-mcp
 base: 35045a33
-phase: ready-for-review
+phase: reverted
 created: 2026-07-19
 ---
 
 # Sound profile and agent-capable playlist planning — implementation plan
+
+> **Void since 2026-07-23.** Stages 1A and 1B of this plan were fully
+> implemented and merged on 2026-07-19/20, and then removed wholesale by
+> `eda0edaebb` ("remove Song Analysis, Create Similar Mix, and Related Artist
+> Discovery", 76 files). Migration v27
+> (`crates/reprise-core/src/db_drop_audio_analysis_mix.rs`) drops
+> `track_audio_analysis`, `mix_drafts` and `mix_draft_tracks`. No production
+> code from this plan is left in `origin/dev` — only this document. Stage 2
+> (MCP) never happened; `crates/reprise-mcp` grew out of
+> `docs/plans/multi-frontend-core.md` instead.
+>
+> The status `reverted` is new for this: neither `shipped` (nothing is left)
+> nor `planned` (it went much further) would have been honest.
 
 This plan implements
 [`docs/superpowers/specs/2026-07-19-audio-character-mcp-design.md`](../superpowers/specs/2026-07-19-audio-character-mcp-design.md).

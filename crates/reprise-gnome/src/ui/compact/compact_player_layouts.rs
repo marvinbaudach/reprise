@@ -209,11 +209,16 @@ pub(in crate::ui) fn mini_css() -> String {
            box-shadow: none; border: none; border-radius: 0; }}\n\
          /* Kill GTK's client-side window-decoration shadow, border and corner \
             radius on the card-sized toplevel — otherwise Adwaita's `window.csd` \
-            renders an oversized halo/edge behind the card. !important beats the \
-            themed rule's specificity (MINI-1/MINI-2). */\n\
+            renders an oversized halo/edge behind the card (MINI-1/MINI-2). \
+            These carried `!important` until 2026-08-03, which GTK4's CSS parser \
+            does not support: it rejected the value as junk and dropped all five \
+            declarations, so the fix shipped doing nothing. It never needed it — \
+            this sheet is installed at STYLE_PROVIDER_PRIORITY_APPLICATION and \
+            Adwaita's at PRIORITY_THEME, and provider priority is decided before \
+            specificity. */\n\
          window.{CSS_WINDOW_CLASS} {{ \
-           box-shadow: none !important; border: none !important; border-radius: 0 !important; \
-           background: none !important; background-color: transparent !important; }}"
+           box-shadow: none; border: none; border-radius: 0; \
+           background: none; background-color: transparent; }}"
     )
 }
 

@@ -123,17 +123,12 @@ impl DeviceStorage {
             .into_iter()
             .fold(storage, |parent, component| parent.child(component));
         let target = parent.child(&sanitized);
-        match target
-            .make_directory_future(gio::glib::Priority::DEFAULT)
-            .await
-        {
-            Ok(()) => Ok(()),
-            Err(error) if error.matches(gio::IOErrorEnum::Exists) => {
-                Err(DeviceIoError::FolderAlreadyExists)
-            }
-            Err(error) if at_storage_root => Err(DeviceIoError::CannotCreateAtStorageRoot(error)),
-            Err(error) => Err(error.into()),
-        }
+        map_create_folder_result(
+            target
+                .make_directory_future(gio::glib::Priority::DEFAULT)
+                .await,
+            at_storage_root,
+        )
     }
 
     /// `MTP-32`: relocates an already-synced target folder from
@@ -218,6 +213,20 @@ impl DeviceStorage {
                 }
             }
         }
+    }
+}
+
+pub(super) fn map_create_folder_result(
+    result: Result<(), gio::glib::Error>,
+    at_storage_root: bool,
+) -> Result<(), DeviceIoError> {
+    match result {
+        Ok(()) => Ok(()),
+        Err(error) if error.matches(gio::IOErrorEnum::Exists) => {
+            Err(DeviceIoError::FolderAlreadyExists)
+        }
+        Err(error) if at_storage_root => Err(DeviceIoError::CannotCreateAtStorageRoot(error)),
+        Err(error) => Err(error.into()),
     }
 }
 

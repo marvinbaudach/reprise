@@ -307,12 +307,13 @@ mod tests {
     }
 
     #[test]
-    fn browse_5_restore_keeps_current_and_library_root_but_drops_history() {
+    fn session_history_restore_keeps_current_and_library_root_but_drops_history() {
         let nav = NavHistory::default();
         let mut root = BrowserPlace::from(ViewSource::Library);
         root.track_state_mut().unwrap().search = "root query".into();
         let current = BrowserPlace::fresh_album("Blue", "Joni Mitchell");
 
+        // START-3 restores these two places without reconstructing history.
         nav.restore(current.clone(), root.clone());
 
         assert_eq!(nav.session_places(current.clone()), Some((current, root)));

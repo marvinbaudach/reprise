@@ -16,15 +16,16 @@ use reprise_core::podcasts::download_state::DownloadState;
 use reprise_core::podcasts::EpisodeRow;
 
 use super::podcasts_context_menu::PodcastSyncDevice;
+use super::podcasts_context_surface;
 use super::podcasts_download_presentation;
 use super::podcasts_groups::{self, DownloadRowWidgets};
 use super::podcasts_groups::{SelectionRowWidgets, SELECTED_ROW_CLASS};
 use super::podcasts_playback::EpisodeMark;
 use super::podcasts_presentation::{
-    detail_line, duration, on_phone, relative_date, status_pill, RenderedSourceGroup,
+    detail_line, duration, on_phone, relative_date, source_header, status_pill, RenderedSourceGroup,
 };
 use super::podcasts_row_interaction::{install_row_interaction, SELECT_CHANNEL_ROW_ACTION};
-use super::podcasts_selection::{self, SelectMode};
+use super::podcasts_selection::{PodcastSelection, SelectMode};
 use crate::ui::playing_marker;
 use crate::ui::strings;
 
@@ -41,10 +42,9 @@ pub(super) struct YoutubeChannelState {
     /// (`SET-8`) when the detail surface is built. Defaults to `false`
     /// (Shorts hidden), matching Reprise's historical hardcoded behavior.
     default_shows_shorts: bool,
-    selected: BTreeMap<i64, BTreeSet<i64>>,
-    /// `SRC-14`: the range anchor, per channel — the detail view only ever
-    /// shows one channel, but its selection outlives switching between them.
-    anchors: BTreeMap<i64, i64>,
+    /// One shared selection object per channel. Row context-menu callbacks
+    /// keep this exact handle, so opening a menu never consults a stale copy.
+    selected: BTreeMap<i64, Rc<RefCell<PodcastSelection>>>,
 }
 
 impl YoutubeChannelState {
@@ -102,15 +102,13 @@ impl YoutubeChannelState {
     }
 
     pub(super) fn set_selected(&mut self, subscription_id: i64, episode_id: i64, selected: bool) {
-        let channel = self.selected.entry(subscription_id).or_default();
-        if selected {
-            channel.insert(episode_id);
-        } else {
-            channel.remove(&episode_id);
-        }
-        if channel.is_empty() {
-            self.selected.remove(&subscription_id);
-        }
+        self.selection(subscription_id)
+            .borrow_mut()
+            .set_selected(episode_id, selected);
+    }
+
+    fn selection(&mut self, subscription_id: i64) -> Rc<RefCell<PodcastSelection>> {
+        self.selected.entry(subscription_id).or_default().clone()
     }
 
     /// `SRC-14`: the same click mechanics as the grouped library view, over
@@ -123,27 +121,23 @@ impl YoutubeChannelState {
         episode_id: i64,
         mode: SelectMode,
     ) {
-        let selected = self.selected.entry(subscription_id).or_default();
-        let mut anchor = self.anchors.get(&subscription_id).copied();
-        podcasts_selection::apply_select(selected, &mut anchor, order, episode_id, mode);
-        let empty = selected.is_empty();
-        match anchor {
-            Some(anchor) => {
-                self.anchors.insert(subscription_id, anchor);
-            }
-            None => {
-                self.anchors.remove(&subscription_id);
-            }
-        }
-        if empty {
-            self.selected.remove(&subscription_id);
-        }
+        self.selection(subscription_id)
+            .borrow_mut()
+            .apply(order, episode_id, mode);
     }
 
     pub(super) fn selected_ids(&self, subscription_id: i64) -> Vec<i64> {
         self.selected
             .get(&subscription_id)
-            .map_or_else(Vec::new, |selected| selected.iter().copied().collect())
+            .map_or_else(Vec::new, |selected| selected.borrow().selected_ids())
+    }
+
+    pub(super) fn clear_selected(&mut self) -> bool {
+        let mut cleared = false;
+        for selection in self.selected.values() {
+            cleared = selection.borrow_mut().clear() || cleared;
+        }
+        cleared
     }
 
     fn hide_shorts(&self, subscription_id: i64) -> bool {
@@ -156,13 +150,12 @@ impl YoutubeChannelState {
     }
 
     fn retain_selected(&mut self, subscription_id: i64, available: &[EpisodeRow]) {
-        let Some(selected) = self.selected.get_mut(&subscription_id) else {
+        let Some(selected) = self.selected.get(&subscription_id) else {
             return;
         };
-        selected.retain(|episode_id| available.iter().any(|episode| episode.id == *episode_id));
-        if selected.is_empty() {
-            self.selected.remove(&subscription_id);
-        }
+        selected
+            .borrow_mut()
+            .retain_available(available.iter().map(|episode| episode.id));
     }
 }
 
@@ -190,7 +183,7 @@ pub(super) struct YoutubeChannelDetail {
     selection_widgets: RefCell<BTreeMap<i64, SelectionRowWidgets>>,
     /// Rebuilt with the toolbar on each `render_active`, kept so a selection
     /// change can refresh the count without rebuilding anything.
-    selection_controls: RefCell<Option<podcasts_selection::SelectionControls>>,
+    selection_summary: RefCell<Option<SelectionSummary>>,
     /// `POD-12` / `D3`: read-only mirror of the same per-device selection
     /// `podcasts_groups::group_header` already shows on the channel list —
     /// this view never decides selection itself, only displays it (`on_phone`
@@ -206,6 +199,11 @@ pub(super) struct YoutubeChannelDetail {
     connectivity: Cell<Connectivity>,
     unavailable_episode: Cell<Option<i64>>,
     playing_episode: Cell<Option<EpisodeMark>>,
+}
+
+struct SelectionSummary {
+    label: gtk4::Label,
+    base: String,
 }
 
 impl YoutubeChannelDetail {
@@ -233,7 +231,7 @@ impl YoutubeChannelDetail {
             download_states: RefCell::new(BTreeMap::new()),
             download_widgets: RefCell::new(BTreeMap::new()),
             selection_widgets: RefCell::new(BTreeMap::new()),
-            selection_controls: RefCell::new(None),
+            selection_summary: RefCell::new(None),
             connected_devices: RefCell::new(Vec::new()),
             selected_devices: RefCell::new(BTreeMap::new()),
             images_allowed: Cell::new(false),
@@ -320,6 +318,14 @@ impl YoutubeChannelDetail {
 
     pub(super) fn is_active(&self) -> bool {
         self.state.borrow().active_channel().is_some()
+    }
+
+    pub(super) fn clear_selection(self: &Rc<Self>) -> bool {
+        let cleared = self.state.borrow_mut().clear_selected();
+        if cleared {
+            self.render_active();
+        }
+        cleared
     }
 
     pub(super) fn neighbour_ids_for_episode(&self, episode_id: i64) -> Option<Vec<i64>> {
@@ -411,16 +417,17 @@ impl YoutubeChannelDetail {
             } else {
                 widgets.row.remove_css_class(SELECTED_ROW_CLASS);
             }
-            if widgets.checkbox.is_active() != is_selected {
-                // Blocked so this push cannot re-enter through the checkbox's
-                // own handler.
-                widgets.checkbox.block_signal(&widgets.toggled);
-                widgets.checkbox.set_active(is_selected);
-                widgets.checkbox.unblock_signal(&widgets.toggled);
-            }
+            widgets
+                .row
+                .update_state(&[gtk4::accessible::State::Selected(Some(is_selected))]);
         }
-        if let Some(controls) = self.selection_controls.borrow().as_ref() {
-            controls.update(&selected);
+        if let Some(summary) = self.selection_summary.borrow().as_ref() {
+            summary
+                .label
+                .set_text(&strings::podcast_summary_with_selection(
+                    &summary.base,
+                    selected.len(),
+                ));
         }
     }
 
@@ -536,7 +543,12 @@ impl YoutubeChannelDetail {
             self.images_allowed.get(),
         );
         row.append(image.widget());
-        let title = gtk4::Label::new(Some(&rendered.group.title));
+        let source = source_header(
+            rendered.group.kind,
+            &rendered.group.title,
+            rendered.group.author.as_deref(),
+        );
+        let title = gtk4::Label::new(Some(source.title));
         title.add_css_class("title-2");
         title.set_xalign(0.0);
         title.set_hexpand(true);
@@ -587,11 +599,16 @@ impl YoutubeChannelDetail {
             &rendered.group.episodes,
             &download_states,
         );
-        let window = gtk4::Label::new(Some(&strings::youtube_channel_summary(
+        let base_summary = strings::youtube_channel_summary(
             summary.shown,
             summary.available,
             summary.downloaded_count,
             summary.downloaded_bytes,
+        );
+        let selected_count = self.state.borrow().selected_ids(subscription_id).len();
+        let window = gtk4::Label::new(Some(&strings::podcast_summary_with_selection(
+            &base_summary,
+            selected_count,
         )));
         window.set_hexpand(true);
         window.set_xalign(0.0);
@@ -626,12 +643,10 @@ impl YoutubeChannelDetail {
             }
         });
         controls.append(&hide_shorts);
-        // SRC-12: the same trio the grouped library view shows, built by the
-        // same type rather than a second hand-rolled copy — two copies drifted
-        // apart on sensitivity and wording once already.
-        let selection = podcasts_selection::SelectionControls::appended_to(&controls);
-        selection.update(&self.state.borrow().selected_ids(subscription_id));
-        self.selection_controls.replace(Some(selection));
+        self.selection_summary.replace(Some(SelectionSummary {
+            label: window,
+            base: base_summary,
+        }));
         controls.upcast()
     }
 
@@ -643,6 +658,14 @@ impl YoutubeChannelDetail {
     ) -> gtk4::Widget {
         let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
         row.add_css_class("reprise-podcast-episode-row");
+        // a11y-semantics: role=button name=podcast-episode-row state=focusable-selected action=activate
+        row.set_focusable(true);
+        // input-parity: ACC-8 keyboard=episode-row-enter-space
+        row.set_cursor_from_name(Some("pointer"));
+        row.set_accessible_role(gtk4::AccessibleRole::Button);
+        // Named after the episode, not after selecting it — see the same
+        // decision in `podcasts_groups::episode_row`.
+        row.update_property(&[gtk4::accessible::Property::Label(&episode.title)]);
         let mark = self
             .playing_episode
             .get()
@@ -652,42 +675,22 @@ impl YoutubeChannelDetail {
         if loaded {
             row.add_css_class("reprise-podcast-playing");
         }
-        let selected = gtk4::CheckButton::new();
-        let is_selected = self
-            .state
-            .borrow()
-            .selected_ids(episode.subscription_id)
-            .contains(&episode.id);
-        selected.set_active(is_selected);
+        let selection = self.state.borrow_mut().selection(episode.subscription_id);
+        let is_selected = selection.borrow().contains(episode.id);
+        row.update_state(&[gtk4::accessible::State::Selected(Some(is_selected))]);
         if is_selected {
             row.add_css_class(SELECTED_ROW_CLASS);
         }
-        let weak = Rc::downgrade(self);
-        let episode_id = episode.id;
-        let subscription_id = episode.subscription_id;
-        let toggled = selected.connect_toggled(move |selected| {
-            if let Some(detail) = weak.upgrade() {
-                detail.state.borrow_mut().set_selected(
-                    subscription_id,
-                    episode_id,
-                    selected.is_active(),
-                );
-                // `SRC-14`: not `render_active()` — rebuilding every row would
-                // drop the focus off the checkbox that was just operated.
-                detail.apply_selection();
-            }
-        });
-        row.append(&selected);
         // `SRC-14`: the library view's click mechanics, on this surface too.
         install_row_interaction(&row, episode.id, SELECT_CHANNEL_ROW_ACTION);
-        selection_widgets.insert(
-            episode.id,
-            SelectionRowWidgets {
-                row: row.clone(),
-                checkbox: selected.clone(),
-                toggled,
-            },
+        podcasts_context_surface::wire_episode_row(
+            &row,
+            episode,
+            &selection,
+            self.unavailable_episode.get(),
+            SELECT_CHANNEL_ROW_ACTION,
         );
+        selection_widgets.insert(episode.id, SelectionRowWidgets { row: row.clone() });
         let play = gtk4::Button::new();
         play.add_css_class("flat");
         play.set_tooltip_text(Some(&strings::text(strings::PLAY_OR_PAUSE)));
@@ -758,6 +761,12 @@ impl YoutubeChannelDetail {
         );
         row.append(&download_widgets.status);
         row.append(&download_widgets.action);
+        row.append(&podcasts_context_surface::episode_menu_button(
+            episode,
+            &selection,
+            self.unavailable_episode.get(),
+            SELECT_CHANNEL_ROW_ACTION,
+        ));
         widgets.insert(episode.id, download_widgets);
         row.upcast()
     }

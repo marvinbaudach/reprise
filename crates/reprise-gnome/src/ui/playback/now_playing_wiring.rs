@@ -39,8 +39,8 @@ fn cover_path_to_uri(path: &Path) -> Option<String> {
     }
 }
 
-/// Off-main cover-accent extraction: decode the cover, derive its dominant
-/// accent, and cross-fade to it (generation-guarded so a rapid track change
+/// Off-main cover-palette extraction: decode the cover, derive its three
+/// dominant colours, and cross-fade to them (generation-guarded so a rapid track change
 /// can't apply a stale album accent). A non-colorful cover cross-fades to the
 /// theme fallback. The previous accent is read from (and written back to)
 /// `last_accent_cell`; `widget` is required for the animation target.
@@ -48,7 +48,6 @@ fn apply_cover_accent(
     generation_cell: &Rc<std::cell::Cell<u64>>,
     last_accent_cell: &Rc<RefCell<Option<Rgb>>>,
     cover_path: &Path,
-    widget: impl IsA<gtk4::Widget> + Clone + 'static,
 ) {
     let generation = generation_cell.get().wrapping_add(1);
     generation_cell.set(generation);
@@ -56,16 +55,15 @@ fn apply_cover_accent(
     let last_accent_cell = last_accent_cell.clone();
     let cover_path = cover_path.to_path_buf();
     let Ok(receiver) = one_shot_task::spawn("reprise-cover-accent", move || {
-        crate::ui::style::cover_accent::accent_from_cover_file(&cover_path)
+        crate::ui::style::cover_palette::accent_from_cover_file(&cover_path)
     }) else {
         return;
     };
     glib::spawn_future_local(async move {
         if let Ok(new_color) = receiver.recv().await {
             if generation_cell.get() == generation {
-                let old_color = *last_accent_cell.borrow();
                 *last_accent_cell.borrow_mut() = new_color;
-                crate::ui::style::cover_accent::cross_fade_accent(old_color, new_color, &widget);
+                crate::ui::style::cover_accent::set_cover_accent(new_color);
             }
         }
     });
@@ -201,7 +199,20 @@ impl PlayerController {
         &self,
         enabled: bool,
     ) -> Result<(), PlaybackError> {
+        if !enabled {
+            self.sync_bass(0.0, 0.0);
+        }
         self.player.set_spectrum_enabled(enabled)
+    }
+
+    /// The bass pair, fanned out to the bar's reactive layers. Same
+    /// discipline as the other `sync_*`: one place feeds the bar.
+    pub(in crate::ui) fn sync_bass(&self, kick: f32, pressure: f32) {
+        self.bar.set_bass(f64::from(kick), f64::from(pressure));
+        let callbacks = self.bass_changed.borrow().clone();
+        for callback in callbacks {
+            callback(kick, pressure);
+        }
     }
 
     /// Reverts the cover-derived accent to the theme fallback AND bumps the
@@ -213,9 +224,8 @@ impl PlayerController {
     fn reset_cover_accent(&self) {
         let generation = self.cover_accent_generation.get().wrapping_add(1);
         self.cover_accent_generation.set(generation);
-        let old_color = *self.cover_accent_last.borrow();
         *self.cover_accent_last.borrow_mut() = None;
-        crate::ui::style::cover_accent::cross_fade_accent(old_color, None, self.bar.widget());
+        crate::ui::style::cover_accent::set_cover_accent(None);
     }
 
     /// Loads `path`'s cover into the bar and compact player through the shared
@@ -240,14 +250,17 @@ impl PlayerController {
             let mpris_state = self.mpris_state.clone();
             let cover_accent_generation = self.cover_accent_generation.clone();
             let cover_accent_last = self.cover_accent_last.clone();
-            let bar_widget = self.bar.widget().clone();
-            self.cover_loader.load_into_with_path(
-                self.bar.cover_image(),
+            let bar_cover_target = self.bar.cover_image().clone();
+            self.cover_loader.load_into_with_resolution(
+                &bar_cover_target,
                 path,
                 ThumbnailSize::Bar,
                 bar_generation,
                 &self.bar_cover_generation,
                 move |cover_path| {
+                    let Some(cover_path) = cover_path else {
+                        return;
+                    };
                     let Some(art_url) = cover_path_to_uri(&cover_path) else {
                         return;
                     };
@@ -263,12 +276,7 @@ impl PlayerController {
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner);
                     set_art_url_for_current_track(&mut mirror, track_id, art_url);
-                    apply_cover_accent(
-                        &cover_accent_generation,
-                        &cover_accent_last,
-                        &cover_path,
-                        bar_widget.clone(),
-                    );
+                    apply_cover_accent(&cover_accent_generation, &cover_accent_last, &cover_path);
                 },
             );
         } else {
@@ -341,6 +349,11 @@ impl PlayerController {
 
     pub(in crate::ui) fn sync_state(&self, state: PlaybackState) {
         self.bar.set_state(state);
+        if state != PlaybackState::Playing {
+            // The bar resets its own consumers in `set_state`; use the shared
+            // fan-out as well so the realised running-row wash reaches rest.
+            self.sync_bass(0.0, 0.0);
+        }
         self.compact_player.set_state(state);
         self.sync_lyrics_state(state);
         // Fan the same state out to the track list's now-playing equaliser

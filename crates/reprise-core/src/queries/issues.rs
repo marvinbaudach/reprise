@@ -49,6 +49,7 @@ use rusqlite::Connection;
 
 use crate::db::Db;
 use crate::library::settings::{self, AutoCleanSetting};
+use crate::library::source::LibraryPathPresence;
 use crate::models::{MissingReason, Track};
 
 use super::clauses::{row_to_track, MISSING};
@@ -221,6 +222,13 @@ pub fn query_missing_rows(
 /// still-live `unmounted`/`unknown` state prevents stale mount-event work
 /// from resurrecting or rewriting that newer identity.
 pub fn verify_unmounted_tracks(db: &Db) -> Result<Vec<i64>, rusqlite::Error> {
+    verify_unmounted_tracks_with_source(&crate::library::source::UnixLibrarySource, db)
+}
+
+pub fn verify_unmounted_tracks_with_source(
+    source: &dyn crate::library::source::LibrarySource,
+    db: &Db,
+) -> Result<Vec<i64>, rusqlite::Error> {
     let conn = db.conn();
     let candidates = {
         let mut statement = conn.prepare(&format!(
@@ -241,7 +249,13 @@ pub fn verify_unmounted_tracks(db: &Db) -> Result<Vec<i64>, rusqlite::Error> {
 
     let mut healed = Vec::new();
     for (id, path) in candidates {
-        if !std::path::Path::new(&path).is_file() {
+        if !matches!(
+            source.probe(
+                std::path::Path::new(&path),
+                crate::library::source::LibraryLinkMode::Follow,
+            ),
+            LibraryPathPresence::Present(metadata) if metadata.is_file
+        ) {
             continue;
         }
         let changed = conn.execute(
