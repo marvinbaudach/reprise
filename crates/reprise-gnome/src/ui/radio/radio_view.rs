@@ -21,8 +21,8 @@ use crate::ui::playback::external_media::{ExternalMedia, RadioPhase};
 use crate::ui::playback::player_controller::PlayerController;
 use crate::ui::sidebar::sidebar_presentation::NavIcon;
 use crate::ui::source_empty_state::{SourceEmptyState, SourceEmptyStateCopy};
-use crate::ui::source_reveal::LoadedItemChange;
 use crate::ui::source_error_banner::SourceErrorBanner;
+use crate::ui::source_reveal::LoadedItemChange;
 use crate::ui::strings;
 
 #[path = "radio_failure_ui.rs"]
@@ -848,7 +848,10 @@ mod tests {
         view.shared.model.selection().set_selected(1);
         assert_eq!(view.shared.model.selection().selected(), 1);
 
-        on_external_snapshot(&view.shared, Some(connected_snapshot(bravo, "Artist — Song")));
+        on_external_snapshot(
+            &view.shared,
+            Some(connected_snapshot(bravo, "Artist — Song")),
+        );
         crate::ui::source_context_surface::settle_layout();
 
         assert_eq!(
