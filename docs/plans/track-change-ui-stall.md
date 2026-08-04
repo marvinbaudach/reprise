@@ -256,3 +256,34 @@ avalanche (P1's target) is reduced but not eliminated — the remaining budget i
 GTK's own layout across the 205 rows it binds, which the "Out of scope" note
 predicted would dominate once the closures got cheaper. Plain scrolling still
 pays it. Re-attributing it needs the probe scaffold rebased onto this branch.
+
+## Result after the review pass and the registry fix
+
+The "out of scope" note above turned out to be wrong, and worth recording why.
+It assumed the ~300 ms that the bind timer did not account for was GtkColumnView's
+own layout. It was not: both per-cell registries identified a cell by scanning
+the whole registry and upgrading each entry's `WeakRef`, and that scan ran on
+**unbind** as well as on bind — outside anything the probe wrapped. Two linear
+scans per cell, ~1640 cells per jump, ~80 entries each.
+
+Keying those registries (commit `perf(ui): key the cell registries…`) collapses
+the remaining cost:
+
+| | before | after Codex | after review fix | after registry fix |
+|---|---|---|---|---|
+| click → player bar shows the track | 929 ms | 306 ms | 287 ms | **292 ms** |
+| main loop unresponsive | 759 ms | 564 ms | 499 ms | **47 ms** |
+| CPU per track change | ~3400 ms | ~2300 ms | ~1450 ms | **~1060 ms** |
+| `set_value` (the scroll) | 500–573 ms | — | 500–532 ms | **7–15 ms** |
+| cell binds it triggers | 1640 | — | 1640 | **1640** |
+| time in those binds | 267–301 ms | — | 270–280 ms | **4–11 ms** |
+
+The bind count is unchanged — GtkColumnView still rebinds ~205 rows for a
+distant jump, and both scroll APIs were measured to do so. What changed is that
+a bind costs about a fiftieth of what it did. Plain scrolling pays the same two
+scans, so it gets the same relief.
+
+Lesson for the next measurement: an instrument that wraps only the obvious half
+of a pair (bind, but not unbind) will attribute the missing half to whatever is
+convenient — here "GTK internals", which read as a floor and nearly stopped the
+work one fix short of the actual cause.
