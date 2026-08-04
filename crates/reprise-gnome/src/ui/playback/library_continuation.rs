@@ -300,7 +300,12 @@ mod tests {
             label: "Music".into(),
         };
         assert_eq!(
-            random_library_continuation(Some(&unfiltered), &whole(&[1, 2, 3]), vec![3, 1, 2], Some(2)),
+            random_library_continuation(
+                Some(&unfiltered),
+                &whole(&[1, 2, 3]),
+                vec![3, 1, 2],
+                Some(2)
+            ),
             None,
             "an ordinary full-library snapshot still ends normally"
         );
@@ -324,7 +329,12 @@ mod tests {
             label: "Mix".into(),
         };
         assert_eq!(
-            random_library_continuation(Some(&playlist), &whole(&[1, 2, 3]), vec![3, 1, 2], Some(2)),
+            random_library_continuation(
+                Some(&playlist),
+                &whole(&[1, 2, 3]),
+                vec![3, 1, 2],
+                Some(2)
+            ),
             None,
             "clearing a playlist filter must not escape into the whole library"
         );

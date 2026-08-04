@@ -17,8 +17,8 @@ use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{
     CallToolResult, Implementation, ListResourcesResult, PaginatedRequestParams,
-    ReadResourceRequestParams, ReadResourceResult, Resource, ResourceContents, ServerCapabilities,
-    ServerInfo,
+    ReadResourceRequestParams, ReadResourceResponse, ReadResourceResult, Resource,
+    ResourceContents, ServerCapabilities, ServerInfo,
 };
 use rmcp::service::RequestContext;
 use rmcp::{tool, tool_handler, tool_router, ErrorData, RoleServer, ServerHandler};
@@ -678,11 +678,16 @@ impl ServerHandler for RepriseServer {
         ]))
     }
 
+    // rmcp 3 lets a resource handler ask the client for input mid-request
+    // (MRTR), which is why the return type is an outcome enum rather than the
+    // result itself. Every resource this server exposes is read straight out
+    // of the database and never needs anything from the caller, so it always
+    // answers with `Complete` in one round.
     async fn read_resource(
         &self,
         request: ReadResourceRequestParams,
         _context: RequestContext<RoleServer>,
-    ) -> Result<ReadResourceResult, ErrorData> {
+    ) -> Result<ReadResourceResponse, ErrorData> {
         let uri = request.uri;
         let path = self.db_path.clone();
 
@@ -747,9 +752,9 @@ impl ServerHandler for RepriseServer {
             }
         };
 
-        Ok(ReadResourceResult::new(vec![ResourceContents::text(
-            json, uri,
-        )
-        .with_mime_type(RESOURCE_MIME_JSON)]))
+        Ok(ReadResourceResult::new(vec![
+            ResourceContents::text(json, uri).with_mime_type(RESOURCE_MIME_JSON)
+        ])
+        .into())
     }
 }
