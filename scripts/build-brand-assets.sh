@@ -2,9 +2,10 @@
 # Erzeugt jede abgeleitete Markendatei aus den Zeichnungen unter data/brand.
 #
 # Handgezeichnet und damit Quelle sind nur:
-#   data/brand/mark.svg        die Marke, eine Zeichnung für jede Größe
-#   data/brand/mark-mono.svg   ihre einfarbige Fassung, ein Pfad
-#   data/brand/icon-plate.svg  Grundfläche und Verlauf des App-Icons
+#   data/brand/mark.svg           die Marke, eine Zeichnung für jede Größe
+#   data/brand/mark-mono.svg      ihre einfarbige Fassung, ein Pfad
+#   data/brand/mark-mono-16.svg   dieselbe, auf 16 px gehintet
+#   data/brand/icon-plate.svg     Grundfläche und Verlauf des App-Icons
 #
 # Alles andere entsteht hier. Das ist der Grund: das App-Icon war früher
 # eine Kopie der Marke, und die kleinen Stufen bekamen die Platte nie —
@@ -60,10 +61,20 @@ for size in 512 256 128 64 48; do
 done
 
 # GNOME färbt Symbolic-Icons zur Laufzeit um; #222222 ist die Konvention.
+#
+# Zwei Dateien, weil GTK größenabhängig sucht: bei 16 px greift es nach
+# `16x16/apps`, darüber nach `symbolic/apps`. Nachgemessen mit
+# Gtk.IconTheme.lookup_icon — 16 px holt die gehintete Fassung, 24 px und
+# mehr die runde.
 python3 $lib/svg_recolour.py $brand/mark-mono.svg \
   "$(dest $icons/symbolic/apps/org.reprise.Reprise-symbolic.svg)" \
   'currentColor=#222222'
 say "symbolic ← mark-mono.svg"
+mkdir -p "$(dirname "$(dest $icons/16x16/apps/org.reprise.Reprise-symbolic.svg)")"
+python3 $lib/svg_recolour.py $brand/mark-mono-16.svg \
+  "$(dest $icons/16x16/apps/org.reprise.Reprise-symbolic.svg)" \
+  'currentColor=#222222'
+say "symbolic 16px ← mark-mono-16.svg"
 
 echo "== Android: adaptives Icon =="
 python3 $lib/svg_to_vectordrawable.py $brand/mark.svg \

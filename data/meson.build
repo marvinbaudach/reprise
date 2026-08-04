@@ -30,6 +30,14 @@ install_data(
   install_dir: get_option('datadir') / 'icons/hicolor/symbolic/apps',
 )
 
+# Eigene Fassung für 16 px. GTK sucht größenabhängig und greift dort nach
+# `16x16/apps`; die runde Zeichnung wird bei 16 px zu grauem Matsch, weil
+# der Ring zwischen Augenloch und Pupille genau einen Pixel dünn ist.
+install_data(
+  'icons/hicolor/16x16/apps/' + app_id + '-symbolic.svg',
+  install_dir: get_option('datadir') / 'icons/hicolor/16x16/apps',
+)
+
 
 # The activatable runtime service (plan section 9.4). Binary, bus-activation
 # file and systemd user unit are installed together and by the same build:

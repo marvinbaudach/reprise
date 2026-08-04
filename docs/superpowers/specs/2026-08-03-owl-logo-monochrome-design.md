@@ -500,3 +500,33 @@ Verlaufsverweise, und bei 16 px ist ein Verlauf über drei Pixel Matsch.
   füllt die Zeichnung ihr Raster aus? Bei 16 px entscheidet darüber die
   Kantenglättung: eine Federspitze von einer halben Rasterzeile Höhe landet
   unter der Alphaschwelle und fehlt in der Messung.
+
+### Nachtrag: eigene Fassung für 16 px
+
+Einfarbig trägt die Marke ab 24 px sauber, in hellem wie in dunklem Theme.
+Bei **16 px** trägt sie nicht: der Ring zwischen Augenloch und Pupille ist
+dort genau einen Pixel dünn, und ein Kreisrand liegt nie auf einer
+Pixelkante. Aus dem Ring wird Grau, aus den Augen werden zwei Flecken, und
+die Marke kippt in dieser Auflösung wieder Richtung Katze. Vier
+Pupillengrößen durchgemessen — bei 16 px matschen alle gleich. Das ist keine
+Frage der Abstimmung, sondern eine Grenze der Auflösung.
+
+Deshalb gibt es **`data/brand/mark-mono-16.svg`**: derselbe Umriss, aber
+Augen und Schnabel als Rechtecke auf ganzen Pixelkanten — Augenloch 4 × 4 px,
+Pupille 2 × 2 px mittig, Ring überall genau ein ganzer Pixel. Jeder Pixel ist
+ganz an oder ganz aus.
+
+Das ist kein zweites Logo, sondern dieselbe Marke für eine Größe gehintet;
+V8 misst die Deckung beider Umrisse und ergibt 1,0000.
+
+**Dass GTK die Datei auch nimmt, ist nachgemessen**, nicht angenommen:
+`Gtk.IconTheme.lookup_icon` löst `org.reprise.Reprise-symbolic` bei 16 px
+nach `hicolor/16x16/apps` auf und ab 24 px nach `hicolor/symbolic/apps`.
+Beide Verzeichnisse stehen in der `index.theme` von hicolor, `16x16/apps` als
+`Threshold` mit Size 16, `symbolic/apps` als `Scalable` von 8 bis 512.
+
+Der Schnabel sitzt in der gehinteten Fassung eine Rasterzeile tiefer.
+Berührte er die Augenlöcher diagonal, liefe der Hintergrund von den Augen
+durch die Schnabelkerbe nach draußen — die Augen wären dann keine
+geschlossenen Aussparungen mehr. Das ist die Kehrseite der 8er-Nachbarschaft
+aus dem vorigen Nachtrag, und V2 hat es gemeldet.

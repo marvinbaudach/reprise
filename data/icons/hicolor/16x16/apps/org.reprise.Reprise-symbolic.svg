@@ -1,0 +1,43 @@
+<!-- Erzeugt von scripts/build-brand-assets.sh. Nicht von Hand ändern. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16"
+     fill="#222222">
+  <!-- Die einfarbige Marke, auf 16 px gehintet. Nur dafür.
+       Ab 24 px gilt `mark-mono.svg`; GTK holt sich diese Datei aus
+       `hicolor/16x16/apps` und jene aus `hicolor/symbolic/apps`.
+
+       Warum eine zweite Datei: der Ring zwischen Augenloch und Pupille ist
+       bei 16 px genau ein Pixel dünn, und ein Kreisrand liegt nie auf einer
+       Pixelkante. Aus dem Ring wird Grau, aus den Augen zwei Flecken, und
+       die Marke kippt in dieser Auflösung wieder Richtung Katze. Vier
+       Pupillengrößen durchprobiert — bei 16 px matschen alle gleich.
+
+       Deshalb sind Augen und Schnabel hier **Rechtecke auf ganzen
+       Pixelkanten** statt Kreise: Augenloch 4 × 4 px, Pupille 2 × 2 px
+       mittig, Ring also überall genau ein ganzer Pixel. Jeder Pixel ist ganz
+       an oder ganz aus. Bei 16 px sieht niemand, dass es Rechtecke sind —
+       man sieht, dass es scharf ist.
+
+       Der Schnabel sitzt eine Rasterzeile tiefer als in der runden Fassung.
+       Berührte er die Augenlöcher diagonal, liefe der Hintergrund von den
+       Augen durch die Schnabelkerbe nach draußen — die Augen wären dann
+       keine geschlossenen Aussparungen mehr, und genau das misst V2.
+
+       Der Umriss ist derselbe wie in `mark-mono.svg`; das Gate misst die
+       Deckung beider Umrisse. -->
+  <path fill-rule="evenodd"
+        d="M 8 4 C 9.6 4 11 4.2 12.2 4.6
+           C 13.1 3.8 14.3 3.2 15.7 2.5
+           C 14.8 4 14.3 5.1 14.1 6.3
+           C 15 7.3 15.4 8.4 15.4 9.5
+           C 15.4 12.4 12.4 14.5 8 14.5
+           C 3.6 14.5 0.6 12.4 0.6 9.5
+           C 0.6 8.4 1 7.3 1.9 6.3
+           C 1.7 5.1 1.2 4 0.3 2.5
+           C 1.7 3.2 2.9 3.8 3.8 4.6
+           C 5 4.2 6.4 4 8 4 Z
+           M 3 7 h 4 v 4 h -4 z
+           M 4 8 h 2 v 2 h -2 z
+           M 9 7 h 4 v 4 h -4 z
+           M 10 8 h 2 v 2 h -2 z
+           M 7 12 h 2 v 2 h -2 z"/>
+</svg>

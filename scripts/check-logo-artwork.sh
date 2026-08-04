@@ -7,7 +7,7 @@
 # Negativraum übrig, oder wird die Marke zum Klumpen?
 #
 #   ./scripts/check-logo-artwork.sh --all        alles, was ausgeliefert wird
-#   ./scripts/check-logo-artwork.sh full <svg>   eine einzelne Stufe
+#   ./scripts/check-logo-artwork.sh --mark <svg>  eine einzelne Zeichnung
 set -euo pipefail
 
 repo_root=${LOGO_ARTWORK_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
@@ -238,11 +238,19 @@ check_all() {
   check_mark "$brand/mark.svg"
   check_silhouette "$brand/mark-mono.svg"
 
-  echo "Symbolic: $icons/symbolic/apps/org.reprise.Reprise-symbolic.svg"
-  check_v7 "$icons/symbolic/apps/org.reprise.Reprise-symbolic.svg"
-  rsvg-convert -w 16 -h 16 "$icons/symbolic/apps/org.reprise.Reprise-symbolic.svg" \
-    -o "$tmp/sym.png"
-  check_v2 "$tmp/sym.png" "16px"
+  # Zwei Symbolic-Dateien: GTK holt sich bei 16 px die gehintete aus
+  # `16x16/apps`, ab 24 px die runde aus `symbolic/apps`. Beide müssen die
+  # Hygiene erfüllen, und beide müssen bei ihrer Größe Aussparungen behalten.
+  for symbolic in "$icons/symbolic/apps" "$icons/16x16/apps"; do
+    echo "Symbolic: $symbolic/org.reprise.Reprise-symbolic.svg"
+    check_v7 "$symbolic/org.reprise.Reprise-symbolic.svg"
+    rsvg-convert -w 16 -h 16 "$symbolic/org.reprise.Reprise-symbolic.svg" \
+      -o "$tmp/sym.png"
+    check_v2 "$tmp/sym.png" "16px"
+  done
+  # Die gehintete Fassung darf eine andere Innenzeichnung haben, aber nicht
+  # eine andere Eule sein.
+  check_v8 "$brand/mark-mono.svg" "$brand/mark-mono-16.svg"
   # Kein Kontrasttest: GNOME färbt Symbolic-Icons zur Laufzeit mit der
   # Vordergrundfarbe des Themes um. Der literale Wert #222222 wird nie
   # angezeigt. Was hier zählt, ist die Silhouette — und die prüft V2.
