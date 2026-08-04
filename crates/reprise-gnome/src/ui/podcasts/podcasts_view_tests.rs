@@ -139,6 +139,46 @@ fn src_14_selecting_a_row_does_not_rebuild_it() {
     );
 }
 
+/// `SRC-14` and `SRC-12a` together: selection updates the retained media
+/// overlays without rebuilding the rows or exposing every checkbox at once.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_12a_starting_a_selection_reveals_every_row_checkbox_without_a_rebuild() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let (view, _) = view_with_expanded_episodes(2);
+    let order = view.rendered_order();
+    let first_row = view.selection_widgets.borrow()[&order[0]].row.clone();
+
+    view.select_row(order[0], SelectMode::Only);
+
+    let widgets = view.selection_widgets.borrow();
+    assert_eq!(
+        first_row.as_ptr(),
+        widgets[&order[0]].row.as_ptr(),
+        "the row widget was rebuilt"
+    );
+    assert_eq!(
+        widgets[&order[0]]
+            .media
+            .as_ref()
+            .expect("grouped row media")
+            .checkbox()
+            .opacity(),
+        1.0
+    );
+    assert_eq!(
+        widgets[&order[1]]
+            .media
+            .as_ref()
+            .expect("grouped row media")
+            .checkbox()
+            .opacity(),
+        0.0,
+        "an unhovered, unselected row shows no checkbox in selection mode"
+    );
+}
+
 /// `SRC-14`: a range runs over the rendered order, and unselecting clears the
 /// row's look again.
 #[test]

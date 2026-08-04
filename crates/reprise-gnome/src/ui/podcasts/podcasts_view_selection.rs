@@ -22,24 +22,38 @@ impl PodcastsView {
     /// focus, which would make selecting a second row with the keyboard
     /// impossible — the focused row would no longer exist.
     pub(super) fn apply_selection(&self) {
-        let selection = self.selection.borrow();
-        for (episode_id, widgets) in self.selection_widgets.borrow().iter() {
-            let selected = selection.contains(*episode_id);
+        let selected_ids = self.selection.borrow().selected_ids();
+        let selection_mode = !selected_ids.is_empty();
+        let widgets = self
+            .selection_widgets
+            .borrow()
+            .iter()
+            .map(|(episode_id, widgets)| {
+                (
+                    *episode_id,
+                    widgets.row.clone(),
+                    widgets.media.clone(),
+                    widgets.reveal.clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+        for (episode_id, row, media, reveal) in widgets {
+            let selected = selected_ids.contains(&episode_id);
             if selected {
-                widgets
-                    .row
-                    .add_css_class(podcasts_groups::SELECTED_ROW_CLASS);
+                row.add_css_class(podcasts_groups::SELECTED_ROW_CLASS);
             } else {
-                widgets
-                    .row
-                    .remove_css_class(podcasts_groups::SELECTED_ROW_CLASS);
+                row.remove_css_class(podcasts_groups::SELECTED_ROW_CLASS);
             }
-            widgets
-                .row
-                .update_state(&[gtk4::accessible::State::Selected(Some(selected))]);
+            row.update_state(&[gtk4::accessible::State::Selected(Some(selected))]);
+            if let Some(media) = media {
+                media.set_selection_mode(selection_mode);
+                media.set_selected(selected);
+            }
+            if let Some(reveal) = reveal {
+                reveal.set_selected(selected);
+            }
         }
-        self.filter_bar
-            .set_selection_count(selection.selected_ids().len());
+        self.filter_bar.set_selection_count(selected_ids.len());
     }
 
     pub(super) fn select_row(&self, episode_id: i64, mode: SelectMode) {
