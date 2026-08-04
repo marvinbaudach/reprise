@@ -516,6 +516,31 @@ fn run_query(shared: &Rc<Shared>) {
 mod display_tests {
     use super::*;
 
+    fn has_row_intersecting_viewport(column_view: &gtk4::ColumnView) -> bool {
+        let viewport_width = column_view.width() as f32;
+        let viewport_height = column_view.height() as f32;
+        let mut pending = vec![column_view.clone().upcast::<gtk4::Widget>()];
+        while let Some(widget) = pending.pop() {
+            let is_row = widget.type_().name().contains("ColumnViewRow");
+            if is_row
+                && widget.compute_bounds(column_view).is_some_and(|bounds| {
+                    bounds.x() < viewport_width
+                        && bounds.x() + bounds.width() > 0.0
+                        && bounds.y() < viewport_height
+                        && bounds.y() + bounds.height() > 0.0
+                })
+            {
+                return true;
+            }
+            let mut child = widget.first_child();
+            while let Some(current) = child {
+                child = current.next_sibling();
+                pending.push(current);
+            }
+        }
+        false
+    }
+
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn tag_1_query_reloading_metadata_save_keeps_the_live_viewport() {
@@ -592,6 +617,67 @@ mod display_tests {
             adjustment.value()
         );
         assert!(track_list.shared.selection.is_selected(position));
+        window.close();
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn tag_1_reload_with_a_deep_anchor_keeps_a_row_inside_the_viewport() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let conn = crate::test_db::open().unwrap();
+        let fixture_conn = crate::test_db::connection(&conn);
+        let tx = fixture_conn.unchecked_transaction().unwrap();
+        for id in 1..=200 {
+            tx.execute(
+                "INSERT INTO tracks (id, path, title, artist, added_at) \
+                 VALUES (?1, ?2, ?3, 'Synthetic Artist', 0)",
+                (
+                    id,
+                    format!("/synthetic/{id:03}.flac"),
+                    format!("Track {id:03}"),
+                ),
+            )
+            .unwrap();
+        }
+        tx.commit().unwrap();
+        let track_list = super::super::TrackList::new(
+            Rc::new(conn),
+            Box::new(|_, _, _, _| {}),
+            |_, _, _, _| {},
+            super::super::queue_sections::QueueViewModel::default,
+            crate::ui::cover_download_worker::setup_for_test(),
+        );
+        let window = gtk4::Window::builder()
+            .default_width(900)
+            .default_height(320)
+            .child(track_list.widget())
+            .build();
+        window.present();
+        while gtk4::glib::MainContext::default().iteration(false) {}
+
+        let position = 150;
+        track_list
+            .shared
+            .column_view
+            .scroll_to(position, None, gtk4::ListScrollFlags::FOCUS, None);
+        let adjustment = track_list.shared.column_view.vadjustment().unwrap();
+        crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
+            adjustment.value() > adjustment.page_size() * 2.0
+        });
+        let anchor = capture_reload_anchor(&track_list.shared);
+        assert!(
+            anchor.anchor.is_some(),
+            "deep viewport must capture an anchor"
+        );
+
+        reload_with_anchor(&track_list.shared, &anchor);
+        crate::ui::test_settle::settle_for(SCROLL_ADJUSTMENT_HOLD);
+
+        assert!(
+            has_row_intersecting_viewport(&track_list.shared.column_view),
+            "reloaded ColumnView has no row widget intersecting its viewport"
+        );
         window.close();
     }
 }
