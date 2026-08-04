@@ -632,3 +632,18 @@ Wiederholungszeichen ist Allgemeingut der Notenschrift — eigen ist daran die
 Verwendung, nicht die Form. Und es bleibt ein Risiko: zwei Balken nebeneinander
 können als Pausensymbol gelesen werden. Dagegen steht, dass sie bewusst
 ungleich sind, 2 gegen 4 Einheiten, wie in der Notenschrift dünn vor dick.
+
+### Offen: Sichttest des neuen Zeichens auf dem Launcher
+
+Für die Eule war V6 auf `pixel10xl_api37` gefahren und beide Ebenen waren
+gesichtet. Das Wiederholungszeichen ist **so nicht nachgeprüft**. Belegt ist
+für die neue Marke:
+
+- `aapt2` kompiliert und linkt alle drei Ebenen,
+- der Verlauf steht als `aapt:attr` im VectorDrawable und ist am gerenderten
+  Bild nachgemessen — #803EF6 oben, #4A72FF unten, also zwei Farbmarken und
+  kein flacher Ersatz,
+- V9 hält mit 32,88 dp den 66-dp-Kreis ein.
+
+Nicht belegt ist, wie es der Pixel Launcher tatsächlich zeigt. Der Ablauf
+steht oben unter „V6 erledigt" und ist in etwa zehn Minuten wiederholbar.
