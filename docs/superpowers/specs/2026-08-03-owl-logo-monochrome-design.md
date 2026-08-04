@@ -1,5 +1,17 @@
 # Die Eule neu bauen: ein Vektor-Master, drei Zeichnungen, vier Flächen
 
+> **Die Marke ist am Ende keine Eule geworden.** Ausgeliefert wird das
+> **Wiederholungszeichen der Notenschrift** — `:‖`, das Zeichen für genau
+> das, wonach die App heißt. Der Grund steht im letzten Abschnitt,
+> „Richtungswechsel: vom Gesicht zum Zeichen".
+>
+> Was aus dieser Spec **weiter gilt**: die Messkriterien V1–V9, die Regel
+> „erzeugen statt pflegen", die Herkunftsprüfung, die Zielflächenmatrix und
+> jede Erkenntnis in den Nachträgen. Was **historisch** ist: alles zur
+> Geometrie der Eule, zur Vorlage und zum Stufenbau aus `full`, `reduced`
+> und `micro`. Beides bleibt stehen, weil die Nachträge die Begründungen
+> tragen — und weil der Weg dorthin die Kriterien erst hervorgebracht hat.
+
 Das App-Icon ist eine Eule, die Vorlage für das neue Logo ist eine Eule mit
 Over-Ear-Kopfhörern. Beide existieren heute nur als Raster, und die
 Ein-Farb-Fassung ist ein automatischer Trace. Das Ergebnis: bei 16 px steht ein
@@ -555,3 +567,68 @@ Nebenbefund: das angeschlossene echte Pixel läuft mit `bitpit.launcher`.
 Themed Icons sind ein Pixel-Launcher-Feature — auf einem Fremdlauncher wäre
 genau der zu prüfende Pfad nicht ausgeführt worden. Deshalb der Emulator, und
 auf dem Gerät wurde nichts installiert.
+
+## Richtungswechsel: vom Gesicht zum Zeichen
+
+Die Eule ist an der Favicon-Größe gescheitert — und zwar **nicht an der
+Schärfe**. Gemessen per Erosion hatte sie 17,1 % Strichstärke, also 2,7 px
+bei 16 px, und lag damit vor jeder geprüften Alternative außer einer. Sieben
+Alternativentwürfe kamen auf 2,4 bis 3,5 % (0,4 bis 0,6 px bei 16 px); fünf
+davon hätten bei 48 px tragende Elemente unter zwei Pixeln gehabt.
+
+Gescheitert ist sie an der **Zahl der Merkmale**. Ein Gesicht braucht Augen,
+Ohren und Schnabel — drei Dinge, die zusammen gelesen werden müssen. Auf
+sechzehn Pixeln ist dafür kein Platz, egal wie sauber jedes einzelne
+gerastert ist. Ein Zeichen mit *einem* Merkmal hat dieses Problem nicht.
+
+**Die Marke ist jetzt das Wiederholungszeichen der Notenschrift:** zwei
+Punkte, ein dünner Balken, ein dicker Balken. Es markiert in einer Partitur
+eine Reprise, heißt also wörtlich, wie die App heißt. Das ist mehr, als eine
+Wellenform oder ein Kopfhörer leisten — die sagen „Musik", aber nicht
+„Reprise".
+
+### Was sich dadurch vereinfacht hat
+
+| | vorher | jetzt |
+|---|---|---|
+| Zeichnungen | `mark`, `mark-mono`, `mark-mono-16` | `mark`, `mark-mono` |
+| Fassungen für Gründe | zusätzlich `mark-on-dark` | keine |
+| Formen in der Marke | 6 | 1 Pfad, 4 Teilflächen |
+| 16-px-Fassung | eigene, gehintete Datei | dieselbe Datei |
+
+Die gehintete Fassung entfiel, weil Rechtecke auf ganzen Rasterlinien bei
+16 px von sich aus scharf sind — sie war nur nötig, solange die Augen Ringe
+von einem Pixel Wandstärke waren. Die Fassung für dunkle Gründe entfiel,
+weil derselbe Verlauf gegen Weiß 5,03 und gegen die Platte 3,87 erreicht.
+
+### Palette
+
+Der Verlauf stammt aus einer Vorlage des Nutzers und läuft **`#A020F0`
+violett nach `#4A72FF` blau** auf der fast schwarzen Platte `#12121C` →
+`#070710`. Das blaue Ende ist gegenüber der Vorlage angehoben: dort stand
+`#0830D8`, und das erreichte gegen die Platte nur 2,28:1. Die umgekehrte
+Anordnung — dunkle Marke auf hellem Verlauf — wurde durchgerechnet und
+verworfen, sie kam auf 1,8 bis 2,5:1.
+
+### Zwei Anpassungen am Messverfahren
+
+- **V2 hat die Form gewechselt.** Es fragte, ob Negativraum überlebt — das
+  passte zu einer Marke aus Aussparungen. Ein Zeichen aus getrennten
+  Strichen hat keine Aussparungen, und die eigentliche Frage ist dort die
+  umgekehrte: bleiben die Striche getrennt? V2 zählt jetzt Tintenflächen und
+  verlangt alle vier. Zwei Balken, die bei 16 px verschmelzen, sind kein
+  Wiederholungszeichen mehr.
+- **Der VectorDrawable-Konverter kann Verläufe.** Er bildet einen
+  `linearGradient` auf ein `aapt:attr`-Gefälle in Viewport-Koordinaten ab.
+  Bezugsfläche ist die Tintenbox der **ganzen** Zeichnung, nicht die jeder
+  Form: pro Form gerechnet bekäme jeder Balken seinen eigenen kleinen
+  Verlauf, und aus einem durchlaufenden Farbverlauf würden vier gestreifte
+  Klötze.
+
+### Was der Wechsel kostet
+
+Die Eule war ein Charakter und gehörte dieser App allein. Das
+Wiederholungszeichen ist Allgemeingut der Notenschrift — eigen ist daran die
+Verwendung, nicht die Form. Und es bleibt ein Risiko: zwei Balken nebeneinander
+können als Pausensymbol gelesen werden. Dagegen steht, dass sie bewusst
+ungleich sind, 2 gegen 4 Einheiten, wie in der Notenschrift dünn vor dick.
