@@ -15,6 +15,18 @@ use crate::ui::style::buttons;
 const FILTER_BAR_MIN_HEIGHT: i32 = 34;
 type OnChanged = Rc<dyn Fn(PodcastFilter)>;
 
+pub(in crate::ui) fn add_button(kind: PodcastKind) -> gtk4::Button {
+    let add = gtk4::Button::builder()
+        .label(strings::text(match kind {
+            PodcastKind::Rss => strings::PODCAST_ADD,
+            PodcastKind::Youtube => strings::YOUTUBE_ADD,
+        }))
+        .build();
+    buttons::arm(&add, buttons::ADD_ACTION_CLASS);
+    add.set_action_name(Some("podcasts.open-add"));
+    add
+}
+
 pub(super) struct PodcastsFilterBar {
     root: gtk4::Box,
     conn: Rc<Db>,
@@ -47,15 +59,7 @@ impl PodcastsFilterBar {
         root.set_size_request(-1, FILTER_BAR_MIN_HEIGHT);
         root.add_css_class("toolbar");
 
-        let add = gtk4::Button::builder()
-            .icon_name("list-add-symbolic")
-            .label(strings::text(match kind {
-                PodcastKind::Rss => strings::PODCAST_ADD,
-                PodcastKind::Youtube => strings::YOUTUBE_ADD,
-            }))
-            .build();
-        buttons::arm(&add, buttons::ADD_ACTION_CLASS);
-        add.set_action_name(Some("podcasts.open-add"));
+        let add = add_button(kind);
         root.append(&add);
 
         let chips = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);

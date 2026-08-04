@@ -3815,7 +3815,10 @@ listening statistics.
   condition is a radio empty state with exactly one directly reachable
   "Add station" action.
 - **SRC-2** [active] [gtk] — Adding uses a tinted rectangular button
-  with plus, label, and radius 8 in both sources, never the chip shape.
+  with a label and radius 8 in both sources, never the chip shape. The plus was
+  never rendered on the podcast side because setting its label replaced the
+  icon child, and is now absent from radio too, so both buttons describe the
+  behavior they actually share.
   The shared toolbar grammar reads Add button · "Add filter" · active,
   deletable filter pills · count on the right; filter rows keep their
   height across state changes. On Podcasts and YouTube, the popover offers
