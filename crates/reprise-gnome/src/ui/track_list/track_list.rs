@@ -141,6 +141,7 @@ pub(in crate::ui) struct Shared {
     pub(in crate::ui) rating_cells:
         RefCell<std::collections::HashMap<usize, super::rating_cell_refresh::RatingCellMarker>>,
     pub(in crate::ui) last_scroll_activity: Cell<Option<std::time::Instant>>,
+    pub(in crate::ui) scroll_glide: crate::ui::scroll_glide::ScrollGlide,
     /// View position an in-app single-row reorder drag started from — set at
     /// drag-prepare, cleared on drag end/cancel. `None` while no reorder-
     /// eligible drag is in flight; the drop-indicator eligibility check in

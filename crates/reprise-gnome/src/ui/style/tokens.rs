@@ -151,7 +151,7 @@ pub(in crate::ui) const DIALOG_CARD_ALPHA: &str = "0.07";
 // --- Now Playing panel (design 21a) ---
 
 pub(in crate::ui) const NOW_PLAYING_COVER_SIZE: i32 = 168;
-pub(in crate::ui) const NOW_PLAYING_GLOW_ALPHA: &str = "0.4";
+pub(in crate::ui) const NOW_PLAYING_GLOW_ALPHA: &str = "0.26";
 pub(in crate::ui) const NOW_PLAYING_SUBTITLE_ALPHA: &str = "0.55";
 pub(in crate::ui) const NOW_PLAYING_PILL_RADIUS: &str = "99px";
 pub(in crate::ui) const NOW_PLAYING_PILL_BG_ALPHA: &str = "0.06";

@@ -25,33 +25,51 @@ fn ac_23_visual_widget_exposes_only_a_labeled_bars_canvas() {
 
 #[test]
 fn ac_23_the_analysis_readout_reports_the_values_the_glow_uses() {
-    let values = analysis_values(BassPressure {
-        level_dbfs: -14.2,
-        baseline_dbfs: -20.0,
-        impact: 0.42,
-        aura: 0.0,
-    });
+    let values = analysis_values(
+        BassPressure {
+            level_dbfs: -14.2,
+            baseline_dbfs: -20.0,
+            impact: 0.42,
+            aura: 0.0,
+            kick: 0.77,
+            pressure: 0.61,
+        },
+        0.44,
+    );
 
     // Whole decibels: a tenth of a dB is neither readable at this refresh rate
     // nor affordable in a 300 px panel, where it truncated "Baseline".
-    assert_eq!(values.len(), 4);
+    assert_eq!(values.len(), 6);
     assert_eq!(values[0], "-14 dBFS");
     assert_eq!(values[1], "-20 dBFS");
-    assert_eq!(values[2], "0.42");
-    assert_eq!(values[3], "0.00");
+    // Bass, Baseline, Breakdown, Kick, Pressure, Swell — `impact` drives
+    // nothing since the glow became a stage light, so it is not shown.
+    assert_eq!(values[2], "0.00");
+    assert_eq!(values[3], "0.77");
+    assert_eq!(values[4], "0.61");
+    assert_eq!(values[5], "0.44");
 }
 
 #[test]
 fn ac_23_a_silent_analysis_reads_as_a_dash_instead_of_a_bottomed_out_level() {
-    let values = analysis_values(BassPressure {
-        level_dbfs: -140.0,
-        baseline_dbfs: -140.0,
-        impact: 0.0,
-        aura: 0.0,
-    });
+    let values = analysis_values(
+        BassPressure {
+            level_dbfs: -140.0,
+            baseline_dbfs: -140.0,
+            impact: 0.0,
+            aura: 0.0,
+            kick: 0.0,
+            pressure: 0.0,
+        },
+        0.0,
+    );
 
     assert_eq!(values[0], "—");
     assert_eq!(values[1], "—");
+    assert_eq!(values.len(), 6);
+    for value in &values[2..] {
+        assert_eq!(value, "0.00");
+    }
 }
 
 #[test]
@@ -59,9 +77,12 @@ fn ac_23_a_silent_analysis_reads_as_a_dash_instead_of_a_bottomed_out_level() {
 fn ac_23_the_readout_fits_in_the_strip_left_under_the_canvas() {
     // The panel is a fixed 300 px wide and the canvas takes everything above,
     // leaving roughly one strip. A readout taller than that is silently
-    // clipped — the live session showed Impact and Breakdown cut off.
+    // clipped — the live session showed Impact and Breakdown cut off. The
+    // strip grew by the 12 px the canvas gave back when Kick and Pressure
+    // added a third row; the two numbers move together and neither may be
+    // raised on its own.
     const PANEL_WIDTH: i32 = 300;
-    const STRIP_HEIGHT: i32 = 52;
+    const STRIP_HEIGHT: i32 = 64;
 
     gtk4::init().unwrap();
     let readout = AnalysisReadout::new();
@@ -91,12 +112,17 @@ fn ac_23_the_readout_names_stay_readable_at_the_panel_width() {
     crate::ui::style::install_css_string_for_test(&css());
 
     let readout = AnalysisReadout::new();
-    readout.set(BassPressure {
-        level_dbfs: -41.7,
-        baseline_dbfs: -41.1,
-        impact: 0.35,
-        aura: 0.95,
-    });
+    readout.set(
+        BassPressure {
+            level_dbfs: -41.7,
+            baseline_dbfs: -41.1,
+            impact: 0.35,
+            aura: 0.95,
+            kick: 0.0,
+            pressure: 0.0,
+        },
+        0.0,
+    );
 
     let (_, natural, _, _) = readout.root.measure(gtk4::Orientation::Horizontal, -1);
 
@@ -115,6 +141,9 @@ fn ac_23_the_readout_follows_the_measurement_the_player_delivers() {
     let visualizer = SongVisualizer::new();
     visualizer.set_playback_state(PlaybackState::Playing);
 
+    // The panel owns the envelope and the readout only reports it, so the
+    // swell has to be in place before the frame that writes the labels.
+    visualizer.set_swell(0.45);
     visualizer.set_spectrum(
         SpectrumFrame::from_cava_bars([0.5; SPECTRUM_BAND_COUNT]).with_bass_pressure(
             BassPressure {
@@ -122,14 +151,27 @@ fn ac_23_the_readout_follows_the_measurement_the_player_delivers() {
                 baseline_dbfs: -19.0,
                 impact: 0.87,
                 aura: 0.31,
+                kick: 0.64,
+                pressure: 0.72,
             },
         ),
     );
 
+    // Six values, each distinct, so the assertion pins the *order* and not
+    // just the presence of some numbers.
     let shown = visualizer.readout.shown_values();
-    assert_eq!(shown[0], "-11 dBFS");
-    assert_eq!(shown[2], "0.87");
-    assert_eq!(shown[3], "0.31");
+    assert_eq!(shown.len(), 6);
+    assert_eq!(shown[0], "-11 dBFS"); // Bass
+    assert_eq!(shown[1], "-19 dBFS"); // Baseline
+    assert_eq!(shown[2], "0.31"); // Breakdown (aura)
+    assert_eq!(shown[3], "0.64"); // Kick
+    assert_eq!(shown[4], "0.72"); // Pressure
+    assert_eq!(shown[5], "0.45"); // Swell
+
+    // `impact` is produced but no longer displayed: since the glow became a
+    // stage light driven by `kick`, nothing reads it, and AC-23 asks this strip
+    // to name the analysis the visual actually reacts to.
+    assert!(!shown.contains(&"0.87".to_owned()));
 }
 
 #[test]

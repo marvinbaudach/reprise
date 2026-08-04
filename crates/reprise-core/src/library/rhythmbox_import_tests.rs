@@ -1,8 +1,111 @@
 use std::fs;
+use std::io::{self, Cursor};
 
 use tempfile::tempdir;
 
+use crate::library::source::{
+    LibraryDirectoryEntry, LibraryLinkMode, LibraryPathMetadata, LibraryPathPresence,
+    LibraryReadHandle, LibrarySource, LibraryWalkOrder, LibraryWalkVisitor,
+};
+
 use super::*;
+
+struct MemoryRhythmboxSource {
+    files: std::collections::HashMap<PathBuf, Vec<u8>>,
+}
+
+impl MemoryRhythmboxSource {
+    fn new(files: impl IntoIterator<Item = (PathBuf, Vec<u8>)>) -> Self {
+        Self {
+            files: files.into_iter().collect(),
+        }
+    }
+}
+
+impl LibrarySource for MemoryRhythmboxSource {
+    fn residence_token(&self, _at: &Path) -> Option<i64> {
+        None
+    }
+
+    fn mount_point(&self, _at: &Path) -> Option<PathBuf> {
+        None
+    }
+
+    fn display_name(&self, _at: &Path) -> Option<String> {
+        None
+    }
+
+    fn container_name(&self, _at: &Path) -> Option<String> {
+        None
+    }
+
+    fn open_read(&self, at: &Path) -> io::Result<LibraryReadHandle> {
+        let bytes = self.files.get(at).cloned().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::NotFound, "in-memory source has no such item")
+        })?;
+        Ok(LibraryReadHandle::new(Cursor::new(bytes)))
+    }
+
+    fn probe(&self, at: &Path, _links: LibraryLinkMode) -> LibraryPathPresence {
+        if !self.files.contains_key(at) {
+            return LibraryPathPresence::Absent;
+        }
+        LibraryPathPresence::Present(LibraryPathMetadata {
+            is_file: true,
+            is_directory: false,
+            size: self.files.get(at).map(|bytes| bytes.len() as u64),
+            modified: Some(std::time::SystemTime::UNIX_EPOCH),
+            identity: None,
+        })
+    }
+
+    fn read_directory(&self, _directory: &Path) -> Option<Vec<LibraryDirectoryEntry>> {
+        Some(Vec::new())
+    }
+
+    fn walk(&self, _root: &Path, _order: LibraryWalkOrder, _visitor: &mut dyn LibraryWalkVisitor) {}
+}
+
+#[test]
+fn source_backed_prescan_reads_both_xml_inputs_without_filesystem_paths() {
+    let rhythmdb_path = PathBuf::from("provider:/rhythmdb.xml");
+    let playlists_path = PathBuf::from("provider:/playlists.xml");
+    let track = PathBuf::from("/music/source-only.ogg");
+    let track_uri = url::Url::from_file_path(&track).unwrap();
+    let rhythmdb = format!(
+        r#"<rhythmdb version="2.0">
+<entry type="song"><location>{track_uri}</location><rating>4</rating></entry>
+</rhythmdb>"#
+    );
+    let playlists = format!(
+        r#"<rhythmdb-playlists>
+<playlist name="Source only" type="static"><location>{track_uri}</location></playlist>
+</rhythmdb-playlists>"#
+    );
+    let source = MemoryRhythmboxSource::new([
+        (rhythmdb_path.clone(), rhythmdb.into_bytes()),
+        (playlists_path.clone(), playlists.into_bytes()),
+    ]);
+    let db = database(&track, 0, 0);
+
+    let result = prescan_rhythmdb_with_source(
+        &source,
+        &rhythmdb_path,
+        &playlists_path,
+        &db,
+        Some("/music"),
+    )
+    .unwrap();
+
+    assert_eq!(result.total_entries, 1);
+    assert_eq!(result.matched, 1);
+    assert_eq!(result.playlist_count, 1);
+    assert_eq!(result.playlist_track_count, 1);
+    assert_eq!(
+        result.last_modified,
+        Some(std::time::SystemTime::UNIX_EPOCH)
+    );
+}
 
 #[test]
 fn prescan_counts_entries_and_classifies_skips() {

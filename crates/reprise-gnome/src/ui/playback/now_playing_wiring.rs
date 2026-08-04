@@ -39,8 +39,8 @@ fn cover_path_to_uri(path: &Path) -> Option<String> {
     }
 }
 
-/// Off-main cover-accent extraction: decode the cover, derive its dominant
-/// accent, and cross-fade to it (generation-guarded so a rapid track change
+/// Off-main cover-palette extraction: decode the cover, derive its three
+/// dominant colours, and cross-fade to them (generation-guarded so a rapid track change
 /// can't apply a stale album accent). A non-colorful cover cross-fades to the
 /// theme fallback. The previous accent is read from (and written back to)
 /// `last_accent_cell`; `widget` is required for the animation target.
@@ -55,7 +55,7 @@ fn apply_cover_accent(
     let last_accent_cell = last_accent_cell.clone();
     let cover_path = cover_path.to_path_buf();
     let Ok(receiver) = one_shot_task::spawn("reprise-cover-accent", move || {
-        crate::ui::style::cover_accent::accent_from_cover_file(&cover_path)
+        crate::ui::style::cover_palette::accent_from_cover_file(&cover_path)
     }) else {
         return;
     };
@@ -199,7 +199,20 @@ impl PlayerController {
         &self,
         enabled: bool,
     ) -> Result<(), PlaybackError> {
+        if !enabled {
+            self.sync_bass(0.0, 0.0);
+        }
         self.player.set_spectrum_enabled(enabled)
+    }
+
+    /// The bass pair, fanned out to the bar's reactive layers. Same
+    /// discipline as the other `sync_*`: one place feeds the bar.
+    pub(in crate::ui) fn sync_bass(&self, kick: f32, pressure: f32) {
+        self.bar.set_bass(f64::from(kick), f64::from(pressure));
+        let callbacks = self.bass_changed.borrow().clone();
+        for callback in callbacks {
+            callback(kick, pressure);
+        }
     }
 
     /// Reverts the cover-derived accent to the theme fallback AND bumps the
@@ -237,13 +250,17 @@ impl PlayerController {
             let mpris_state = self.mpris_state.clone();
             let cover_accent_generation = self.cover_accent_generation.clone();
             let cover_accent_last = self.cover_accent_last.clone();
-            self.cover_loader.load_into_with_path(
-                self.bar.cover_image(),
+            let bar_cover_target = self.bar.cover_image().clone();
+            self.cover_loader.load_into_with_resolution(
+                &bar_cover_target,
                 path,
                 ThumbnailSize::Bar,
                 bar_generation,
                 &self.bar_cover_generation,
                 move |cover_path| {
+                    let Some(cover_path) = cover_path else {
+                        return;
+                    };
                     let Some(art_url) = cover_path_to_uri(&cover_path) else {
                         return;
                     };
@@ -332,6 +349,11 @@ impl PlayerController {
 
     pub(in crate::ui) fn sync_state(&self, state: PlaybackState) {
         self.bar.set_state(state);
+        if state != PlaybackState::Playing {
+            // The bar resets its own consumers in `set_state`; use the shared
+            // fan-out as well so the realised running-row wash reaches rest.
+            self.sync_bass(0.0, 0.0);
+        }
         self.compact_player.set_state(state);
         self.sync_lyrics_state(state);
         // Fan the same state out to the track list's now-playing equaliser

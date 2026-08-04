@@ -95,6 +95,7 @@ pub(in crate::ui) fn build(
         now_playing_markers: RefCell::new(std::collections::HashMap::new()),
         rating_cells: RefCell::new(std::collections::HashMap::new()),
         last_scroll_activity: Cell::new(None),
+        scroll_glide: crate::ui::scroll_glide::ScrollGlide::new(&column_view),
         active_reorder_drag_from: Cell::new(None),
         conn,
         cover_loader: cover_loader.clone(),

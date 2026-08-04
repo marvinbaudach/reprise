@@ -92,23 +92,9 @@ fn reveal(
         return;
     };
 
-    let n_rows = shared
-        .column_view
-        .model()
-        .map_or(0, |model| model.n_items());
-    if let Some(adjustment) = shared.column_view.vadjustment() {
-        if let Some(value) = centered_reveal_value(
-            generation,
-            shared.track_reveal_generation.get(),
-            position,
-            n_rows,
-            adjustment.upper(),
-            adjustment.page_size(),
-        ) {
-            adjustment.set_value(value);
-            tracing::info!(track_id, position, ?change, "current track centered");
-            return;
-        }
+    if reveal_position(shared, position, attempts) {
+        tracing::info!(track_id, position, ?change, "current track centered");
+        return;
     }
     if attempts == 0 {
         return;
@@ -128,33 +114,40 @@ fn reveal(
     });
 }
 
-fn centered_reveal_value(
-    request_generation: u64,
-    current_generation: u64,
-    position: u32,
-    n_rows: u32,
-    upper: f64,
-    page_size: f64,
-) -> Option<f64> {
-    (request_generation == current_generation)
-        .then(|| {
-            crate::ui::scroll_center::centered_scroll_value(position, n_rows, upper, page_size)
-        })
-        .flatten()
+/// Brings row `position` to the vertical centre, gliding rather than jumping so
+/// a reveal reads as movement and a user scroll can take the viewport back
+/// mid-flight. Retries on its own while the list has no usable geometry yet.
+///
+/// Split out from [`reveal`] because the two answer different questions:
+/// *which* row (resolved fresh against the live view, see the module comment)
+/// and *how the viewport gets there*. Returns whether it reached a target;
+/// `false` means the geometry was not ready and a retry was queued.
+pub(super) fn reveal_position(shared: &Rc<Shared>, position: u32, attempts: u8) -> bool {
+    let n_rows = shared
+        .column_view
+        .model()
+        .map_or(0, |model| model.n_items());
+    if let Some((adjustment, value)) =
+        crate::ui::scroll_center::centered_scroll_target(&shared.column_view, n_rows, position)
+    {
+        shared.scroll_glide.glide_to(&adjustment, value);
+        return true;
+    }
+    if attempts == 0 {
+        return false;
+    }
+    let shared = Rc::downgrade(shared);
+    gtk4::glib::idle_add_local_once(move || {
+        if let Some(shared) = shared.upgrade() {
+            reveal_position(&shared, position, attempts - 1);
+        }
+    });
+    false
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn nav_10a_superseded_reveal_has_no_center_target() {
-        assert_eq!(
-            centered_reveal_value(7, 7, 50, 100, 1_000.0, 200.0),
-            Some(405.0)
-        );
-        assert_eq!(centered_reveal_value(7, 8, 50, 100, 1_000.0, 200.0), None);
-    }
 
     // NAV-10a: a pending reveal must follow the track, not the row number it
     // happened to sit on. The generation token cannot see a filter change, so
@@ -180,7 +173,7 @@ mod tests {
         // 30-row list; the bound check in `centered_scroll_value` is the second
         // line of defence and refuses it outright.
         assert_eq!(
-            centered_reveal_value(1, 1, 42, 30, 300.0, 200.0),
+            crate::ui::scroll_center::centered_scroll_value(42, 30, 300.0, 200.0),
             None,
             "a row the list no longer has must not produce a scroll target"
         );
