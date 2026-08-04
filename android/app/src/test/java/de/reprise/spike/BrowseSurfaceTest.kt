@@ -1,26 +1,286 @@
 package de.reprise.spike
 
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.unit.dp
+import de.reprise.spike.ui.theme.NocturneShapes
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import uniffi.reprise_android_ffi.AndroidArtworkSize
 import uniffi.reprise_android_ffi.AndroidPlaybackState
+import uniffi.reprise_android_ffi.AndroidRepeatMode
 
 class BrowseSurfaceTest {
-@Test
-fun theSameLoadedWindowRequestsItsContinuationOnlyOnce() {
-    val rows = (1..500).map { rank -> testBrowseTrack("title-$rank") }
-    val window = LibraryWindow(
-        total = 1_824,
-        rows = rows,
-        hasMore = true,
-    )
+    @Test
+    fun seekDragOwnsTheHeadUntilRelease() {
+        val initial = SeekPositionState.fromSnapshot(12_000)
+        val dragging = initial.dragTo(48_000)
 
-    val firstRequest = window.nextRequest(lastRequestedOffset = null)
+        assertEquals(48_000, dragging.acceptSnapshot(13_000).positionMs)
+        assertTrue(dragging.isDragging)
 
-    assertEquals(LibraryWindowRange(offset = 500, limit = 200), firstRequest)
-    assertNull(window.nextRequest(lastRequestedOffset = firstRequest?.offset))
-}
+        val released = dragging.release()
+        assertEquals(13_500, released.acceptSnapshot(13_500).positionMs)
+        assertEquals(false, released.isDragging)
+    }
+
+    @Test
+    fun fullArtworkHasItsOwnLazyCacheEntry() {
+        val track = testBrowseTrack("title")
+        val port = RecordingBrowsePort()
+        val session = LibrarySession(port)
+
+        session.artworkFor(track.uri, AndroidArtworkSize.LIST)
+        session.artworkFor(track.uri, AndroidArtworkSize.NOW_PLAYING)
+        session.artworkFor(track.uri, AndroidArtworkSize.LIST)
+
+        assertEquals(
+            listOf(
+                track.uri to AndroidArtworkSize.LIST,
+                track.uri to AndroidArtworkSize.NOW_PLAYING,
+            ),
+            port.artworkRequests,
+        )
+    }
+
+    @Test
+    fun nowPlayingUsesTheMeasuredSheetAndCoverMetrics() {
+        assertEquals(
+            NowPlayingMetrics(
+                coverSizeDp = 364,
+                coverRadiusDp = 28,
+                titleSizeSp = 28,
+                titleLineHeightSp = 36,
+                artistSizeSp = 16,
+                artistLineHeightSp = 24,
+                playButtonSizeDp = 80,
+                playButtonRadiusDp = 28,
+            ),
+            nowPlayingMetrics,
+        )
+    }
+
+    /**
+     * The sheet clips its play button with the theme's `extraLarge`, so the
+     * rounded square the frame asks for only stays one if that rung stays 28 dp.
+     */
+    @Test
+    fun theSheetsPlayButtonRungIsTheFramesRoundedSquare() {
+        assertEquals(
+            RoundedCornerShape(nowPlayingMetrics.playButtonRadiusDp.dp),
+            NocturneShapes.extraLarge,
+        )
+    }
+
+    @Test
+    fun theSeekReadoutCountsDownWhatIsLeftRatherThanUpToTheTotal() {
+        assertEquals("−1:00", formatRemaining(positionMs = 80_000, durationMs = 140_000))
+        assertEquals("−0:00", formatRemaining(positionMs = 140_000, durationMs = 140_000))
+        assertEquals("−0:00", formatRemaining(positionMs = 200_000, durationMs = 140_000))
+        assertEquals("--:--", formatRemaining(positionMs = 3_000, durationMs = 0))
+    }
+
+    /**
+     * A rating that fails the same way twice is still two failures; the second
+     * must restart its own dismissal rather than ride out the first one's.
+     */
+    @Test
+    fun aRepeatedRatingFailureIsANewMessageWithItsOwnLifetime() {
+        val first = TransientMessage("Could not save rating: gone")
+        val second = TransientMessage("Could not save rating: gone").after(first)
+
+        assertEquals(first.text, second.text)
+        assertNotEquals(first, second)
+        assertEquals(TransientMessage("Could not save rating: gone"), first.after(null))
+    }
+
+    /**
+     * The default behind [LocalPlaybackControls] must not be able to pass for a
+     * connected player. Every command is a no-op — and the one command that has
+     * to answer answers with a failure, never with the null that means the
+     * rating reached the database.
+     */
+    @Test
+    fun theDisconnectedControlsDoNothingAndNeverClaimARatingWasSaved() {
+        val controls: PlaybackControls = DisconnectedPlaybackControls
+
+        controls.togglePause()
+        controls.next()
+        controls.previous()
+        controls.seekTo(42_000)
+        controls.setShuffle(true)
+        controls.setRepeat(AndroidRepeatMode.ALL)
+
+        var answered: String? = null
+        var answers = 0
+        controls.setRating(trackId = 830, rating = 4) { message ->
+            answered = message
+            answers += 1
+        }
+
+        assertEquals("Could not save rating: playback is not connected.", answered)
+        assertEquals(1, answers)
+    }
+
+    @Test
+    fun repeatButtonCyclesAllThreeReadableModes() {
+        assertEquals(AndroidRepeatMode.ALL, cycleRepeatMode(AndroidRepeatMode.OFF))
+        assertEquals(AndroidRepeatMode.ONE, cycleRepeatMode(AndroidRepeatMode.ALL))
+        assertEquals(AndroidRepeatMode.OFF, cycleRepeatMode(AndroidRepeatMode.ONE))
+    }
+
+    @Test
+    fun artworkResolutionIsALazyCallSeparateFromPagedTracks() {
+        val track = testBrowseTrack("title")
+        val port = RecordingBrowsePort(
+            titleResults = mapOf("" to completeWindow(listOf(track))),
+            artwork = mapOf(track.uri to "/private/cache/reprise/covers/title-168.png"),
+        )
+        val session = LibrarySession(port)
+
+        session.searchTitles("")
+        assertEquals(listOf("search::0:200"), port.operations)
+
+        assertEquals(
+            "/private/cache/reprise/covers/title-168.png",
+            session.artworkFor(track.uri),
+        )
+        assertEquals(listOf("search::0:200", "artwork:${track.uri}"), port.operations)
+    }
+
+    @Test
+    fun oneTrackIsResolvedOnceHoweverOftenItsRowComesBack() {
+        val track = testBrowseTrack("title")
+        val port = RecordingBrowsePort(
+            artwork = mapOf(track.uri to "/private/cache/reprise/covers/title-168.png"),
+        )
+        val session = LibrarySession(port)
+
+        repeat(3) { session.artworkFor(track.uri) }
+
+        assertEquals(listOf("artwork:${track.uri}"), port.operations)
+    }
+
+    @Test
+    fun aTrackWithoutArtworkIsAlsoAskedOnlyOnce() {
+        val track = testBrowseTrack("title")
+        val port = RecordingBrowsePort()
+        val session = LibrarySession(port)
+
+        assertNull(session.artworkFor(track.uri))
+        assertNull(session.artworkFor(track.uri))
+
+        assertEquals(listOf("artwork:${track.uri}"), port.operations)
+    }
+
+    @Test
+    fun rescanningForgetsTheCoversItResolvedBefore() {
+        val track = testBrowseTrack("title")
+        val port = RecordingBrowsePort(
+            artwork = mapOf(track.uri to "/private/cache/reprise/covers/title-168.png"),
+        )
+        val session = LibrarySession(port)
+        session.artworkFor(track.uri)
+
+        session.rescan {}
+        session.artworkFor(track.uri)
+
+        assertEquals(2, port.operations.count { it == "artwork:${track.uri}" })
+    }
+
+    /**
+     * Resolving a cover no longer holds the map's monitor, so a rescan can now
+     * clear the map while a resolve is in flight. The hook fires exactly at
+     * that point — from the resolving call itself, which is the deterministic
+     * stand-in for the background rescan thread — and the answer it produces
+     * describes files the rescan has just replaced, so it must not be kept.
+     */
+    @Test
+    fun aCoverResolvedAcrossARescanIsNotRememberedFromTheOldScan() {
+        val track = testBrowseTrack("title")
+        var session: LibrarySession? = null
+        val port = RecordingBrowsePort(
+            artwork = mapOf(track.uri to "/private/cache/reprise/covers/title-168.png"),
+            whileResolvingArtwork = { session?.rescan {} },
+        )
+        session = LibrarySession(port)
+
+        assertEquals(
+            "/private/cache/reprise/covers/title-168.png",
+            session.artworkFor(track.uri),
+        )
+        session.artworkFor(track.uri)
+
+        assertEquals(2, port.operations.count { it == "artwork:${track.uri}" })
+    }
+
+    @Test
+    fun recycledArtworkRequestCannotReplaceTheNewRowsImage() {
+        val gate = ArtworkRequestGate()
+        val oldRow = gate.begin("content://provider/document/old.flac")
+        val newRow = gate.begin("content://provider/document/new.flac")
+
+        assertFalse(gate.accepts(oldRow))
+        assertTrue(gate.accepts(newRow))
+        gate.invalidate(newRow)
+        assertFalse(gate.accepts(newRow))
+    }
+
+    @Test
+    fun artworkFinishingAfterRecyclingIsNotDeliveredToTheNewRow() {
+        val callerThread = Thread.currentThread()
+        val resolvingThread = AtomicReference<Thread>()
+        val mainThreadWork = AtomicReference<() -> Unit>()
+        val deliveryScheduled = CountDownLatch(1)
+        var deliveries = 0
+        val artwork = TrackArtwork(
+            resolve = { _, _ ->
+                resolvingThread.set(Thread.currentThread())
+                null
+            },
+            onMainThread = { work ->
+                mainThreadWork.set(work)
+                deliveryScheduled.countDown()
+            },
+        )
+        val gate = ArtworkRequestGate()
+        val oldRow = gate.begin("content://provider/document/old.flac")
+
+        try {
+            artwork.load(oldRow, gate) { deliveries += 1 }
+            assertTrue(deliveryScheduled.await(5, TimeUnit.SECONDS))
+            assertNotSame(callerThread, resolvingThread.get())
+
+            gate.begin("content://provider/document/new.flac")
+            mainThreadWork.get().invoke()
+
+            assertEquals(0, deliveries)
+        } finally {
+            artwork.shutdown()
+        }
+    }
+
+    @Test
+    fun theSameLoadedWindowRequestsItsContinuationOnlyOnce() {
+        val rows = (1..500).map { rank -> testBrowseTrack("title-$rank") }
+        val window = LibraryWindow(
+            total = 1_824,
+            rows = rows,
+            hasMore = true,
+        )
+
+        val firstRequest = window.nextRequest(lastRequestedOffset = null)
+
+        assertEquals(LibraryWindowRange(offset = 500, limit = 200), firstRequest)
+        assertNull(window.nextRequest(lastRequestedOffset = firstRequest?.offset))
+    }
 
 @Test
 fun redesignedTrackListKeepsOneContinuationAtItsVisibleEnd() {
@@ -182,6 +442,7 @@ fun playingFromAlbumDetailUsesTheAlbumSnapshot() {
 }
 
 private fun testBrowseTrack(title: String) = LibraryTrack(
+    id = title.hashCode().toLong(),
     uri = "content://provider/document/$title.flac",
     title = title,
     artist = "Miles Davis",
@@ -219,8 +480,11 @@ private class RecordingBrowsePort(
     private val albums: LibraryWindow<LibraryAlbum> = completeWindow(emptyList()),
     private val artists: LibraryWindow<LibraryArtist> = completeWindow(emptyList()),
     private val albumTracks: LibraryWindow<LibraryTrack> = completeWindow(emptyList()),
+    private val artwork: Map<String, String?> = emptyMap(),
+    private val whileResolvingArtwork: (String) -> Unit = {},
 ) : LibrarySessionPort {
     val operations = mutableListOf<String>()
+    val artworkRequests = mutableListOf<Pair<String, AndroidArtworkSize>>()
 
     override fun rememberedTreeUri(): String? = rememberedTreeUri
 
@@ -266,5 +530,16 @@ private class RecordingBrowsePort(
     ): LibraryWindow<LibraryTrack> {
         operations += "album:$album:$albumArtist:${window.offset}:${window.limit}"
         return albumTracks
+    }
+
+    override fun artworkFor(trackUri: String, size: AndroidArtworkSize): String? {
+        operations += "artwork:$trackUri"
+        artworkRequests += trackUri to size
+        whileResolvingArtwork(trackUri)
+        return artwork[trackUri]
+    }
+
+    override fun setRating(trackId: Long, rating: Int) {
+        operations += "rating:$trackId:$rating"
     }
 }

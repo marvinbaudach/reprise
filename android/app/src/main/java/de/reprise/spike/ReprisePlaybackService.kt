@@ -3,12 +3,16 @@ package de.reprise.spike
 import android.content.Intent
 import android.os.Binder
 import android.os.IBinder
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import uniffi.reprise_android_ffi.AndroidEqualizerSnapshot
 import uniffi.reprise_android_ffi.AndroidPlaybackListener
 import uniffi.reprise_android_ffi.AndroidPlaybackSession
 import uniffi.reprise_android_ffi.AndroidPlaybackSnapshot
+import uniffi.reprise_android_ffi.AndroidRepeatMode
 
 /** Owns Media3 for background playback, notifications and external controls. */
 class ReprisePlaybackService : MediaSessionService() {
@@ -16,6 +20,7 @@ class ReprisePlaybackService : MediaSessionService() {
     private var playbackPort: Media3PlaybackPort? = null
     private var coreSession: AndroidPlaybackSession? = null
     private var observer: ((AndroidPlaybackSnapshot) -> Unit)? = null
+    private var settingsObserver: (() -> Unit)? = null
     private val localBinder = LocalBinder()
 
     private val coreListener = object : AndroidPlaybackListener {
@@ -33,10 +38,25 @@ class ReprisePlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
-        val player = ExoPlayer.Builder(this).build()
-        val port = Media3PlaybackPort(player)
+        val player = ExoPlayer.Builder(this)
+            // Media3 defaults both of these off, and the device confirms it:
+            // while a track was playing, the system's audio focus stack was
+            // empty. Without focus the app talks over other players, keeps
+            // going through a call, and drowns navigation prompts. Without the
+            // becoming-noisy handler, unplugging headphones keeps the music
+            // playing out loud through the speaker.
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(C.USAGE_MEDIA)
+                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                    .build(),
+                /* handleAudioFocus = */ true,
+            )
+            .setHandleAudioBecomingNoisy(true)
+            .build()
+        val port = Media3PlaybackPort(player) { settingsObserver?.invoke() }
         playbackPort = port
-        coreSession = AndroidPlaybackSession(port, coreListener)
+        coreSession = AndroidPlaybackSession(filesDir.absolutePath, port, coreListener)
         mediaSession = MediaSession.Builder(
             this,
             CoreControlledPlayer(player, mediaSessionCommands),
@@ -52,6 +72,7 @@ class ReprisePlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         observer = null
+        settingsObserver = null
         coreSession?.close()
         coreSession = null
         mediaSession?.release()
@@ -70,8 +91,21 @@ class ReprisePlaybackService : MediaSessionService() {
         observer = null
     }
 
-    internal fun playTracks(uris: List<String>, startIndex: Int) {
-        coreSession().playTracks(uris, startIndex.toULong())
+    internal fun attachSettingsObserver(observer: () -> Unit) {
+        settingsObserver = observer
+        observer()
+    }
+
+    internal fun detachSettingsObserver() {
+        settingsObserver = null
+    }
+
+    internal fun playTracks(tracks: List<LibraryTrack>, startIndex: Int) {
+        coreSession().playTracks(
+            tracks.map(LibraryTrack::id),
+            tracks.map(LibraryTrack::uri),
+            startIndex.toULong(),
+        )
     }
 
     internal fun togglePause() {
@@ -85,6 +119,25 @@ class ReprisePlaybackService : MediaSessionService() {
     internal fun previous() {
         coreSession().previous()
     }
+
+    internal fun seekTo(positionMs: Long) {
+        coreSession().seekTo(positionMs)
+    }
+
+    internal fun setShuffle(enabled: Boolean) {
+        coreSession().setShuffle(enabled)
+    }
+
+    internal fun setRepeat(mode: AndroidRepeatMode) {
+        coreSession().setRepeat(mode)
+    }
+
+    internal fun reloadPlaybackSettings() {
+        coreSession().reloadPlaybackSettings()
+    }
+
+    internal fun equalizerSnapshot(): AndroidEqualizerSnapshot? =
+        coreSession().equalizerSnapshot()
 
     private fun coreSession(): AndroidPlaybackSession = checkNotNull(coreSession) {
         "Core playback session is not ready"

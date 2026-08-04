@@ -7,13 +7,23 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
 
     <application
+        android:name=".RepriseApplication"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="Reprise Android MVP"
         android:supportsRtl="true"
         android:theme="@style/Theme.Spike">
+        <!--
+            A day/night flip is a recomposition, not a restart: without this the
+            OS destroys and recreates the activity, and the search text, the
+            selected tab and the scroll position go with it. Compose republishes
+            the configuration to `isSystemInDarkTheme()` on its own, so the
+            palette and the system bar icons still follow the system. Rotation
+            is deliberately left to recreate the activity.
+        -->
         <activity
             android:name=".MainActivity"
+            android:configChanges="uiMode"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

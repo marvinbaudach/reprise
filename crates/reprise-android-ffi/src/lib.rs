@@ -1,102 +1,63 @@
 //! Minimal Android library surface over `reprise-core`.
 
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use reprise_core::db::Db;
-use reprise_core::library::scanner::{
-    scan_folder_with_source_and_progress, ScanOutcome, ScanProgress,
-};
+use reprise_core::library::scanner::{scan_folder_with_source_and_progress, ScanOutcome};
 use reprise_core::library::settings;
 use reprise_core::queries;
 
 use source::{BridgedSource, SafSource};
 
+mod appearance;
+#[cfg(test)]
+mod artwork_tests;
 mod browse;
+mod library_types;
+mod logging;
+mod play_recorder;
 pub mod playback;
 mod playback_session;
+mod playback_settings;
 pub mod source;
 mod source_error;
 mod source_names;
 
 #[cfg(test)]
-mod playback_tests;
-
+mod log_capture;
+pub use appearance::*;
 pub use browse::{
     AlbumRow, AlbumWindow, ArtistRow, ArtistWindow, TrackRow, TrackWindow, WindowRange,
 };
-pub use playback_session::{
-    AndroidPlaybackListener, AndroidPlaybackSession, AndroidPlaybackSnapshot,
+pub use library_types::{
+    AndroidArtworkSize, LibraryError, MusicLibrary, ScanProgressListener, ScanProgressUpdate,
+    ScanSummary,
 };
+use library_types::{ConfiguredTree, LibraryState, DATABASE_FILE_NAME};
+pub use logging::init_logging;
+pub use playback_session::{
+    AndroidPlaybackListener, AndroidPlaybackSession, AndroidPlaybackSnapshot, AndroidRepeatMode,
+};
+pub use playback_settings::*;
 
 uniffi::setup_scaffolding!();
-
-const DATABASE_FILE_NAME: &str = "reprise.db";
-
-#[derive(Debug, thiserror::Error, uniffi::Error)]
-pub enum LibraryError {
-    #[error("database error: {detail}")]
-    Database { detail: String },
-    #[error("scan error: {detail}")]
-    Scan { detail: String },
-    #[error("query error: {detail}")]
-    Query { detail: String },
-    #[error("no library tree is configured")]
-    TreeNotConfigured,
-}
-
-#[derive(uniffi::Record)]
-pub struct ScanSummary {
-    pub added: u32,
-    pub updated: u32,
-    pub errors: u32,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
-pub enum ScanProgressUpdate {
-    Discovering,
-    Scanning {
-        processed: u64,
-        total: Option<u64>,
-        current_uri: String,
-    },
-    Fetching {
-        done: u64,
-        total: u64,
-    },
-}
-
-#[uniffi::export(callback_interface)]
-pub trait ScanProgressListener: Send + Sync {
-    fn on_progress(&self, progress: ScanProgressUpdate);
-}
-
-struct ConfiguredTree {
-    uri: PathBuf,
-    source: BridgedSource,
-}
-
-struct LibraryState {
-    db: Db,
-    tree: Option<ConfiguredTree>,
-}
-
-#[derive(uniffi::Object)]
-pub struct MusicLibrary {
-    state: Mutex<LibraryState>,
-}
 
 #[uniffi::export]
 impl MusicLibrary {
     /// Opens the library database inside the app's private directory.
     #[uniffi::constructor]
-    pub fn open(app_private_directory: &str) -> Result<Self, LibraryError> {
+    pub fn open(
+        app_private_directory: &str,
+        app_cache_directory: &str,
+    ) -> Result<Self, LibraryError> {
         let db_path = Path::new(app_private_directory).join(DATABASE_FILE_NAME);
         let db = Db::open_migrated(Some(&db_path)).map_err(|error| LibraryError::Database {
             detail: error.to_string(),
         })?;
         Ok(Self {
             state: Mutex::new(LibraryState { db, tree: None }),
+            cache_root: PathBuf::from(app_cache_directory),
         })
     }
 
@@ -113,7 +74,7 @@ impl MusicLibrary {
         })?;
         state.tree = Some(ConfiguredTree {
             uri: tree_uri.into(),
-            source: BridgedSource::new(source),
+            source: Arc::new(BridgedSource::new(source)),
         });
         Ok(())
     }
@@ -124,10 +85,14 @@ impl MusicLibrary {
     ) -> Result<ScanSummary, LibraryError> {
         let state = self.lock()?;
         let tree = state.tree.as_ref().ok_or(LibraryError::TreeNotConfigured)?;
-        let outcome =
-            scan_folder_with_source_and_progress(&tree.source, &state.db, &tree.uri, |event| {
+        let outcome = scan_folder_with_source_and_progress(
+            tree.source.as_ref(),
+            &state.db,
+            &tree.uri,
+            |event| {
                 progress.on_progress(event.into());
-            });
+            },
+        );
         drop(progress);
         let outcome = outcome.map_err(|error| LibraryError::Scan {
             detail: error.to_string(),
@@ -200,33 +165,79 @@ impl MusicLibrary {
                 detail: error.to_string(),
             })
     }
-}
 
-impl MusicLibrary {
-    /// A poisoned mutex means another call panicked while holding the
-    /// connection. Reporting that as an error beats propagating the panic
-    /// across the FFI boundary, where it would abort the app process.
-    fn lock(&self) -> Result<std::sync::MutexGuard<'_, LibraryState>, LibraryError> {
-        self.state.lock().map_err(|_| LibraryError::Database {
-            detail: "library handle poisoned by an earlier panic".to_owned(),
-        })
+    /// Persists one row's rating and refuses to report success if the row was
+    /// removed after it crossed the boundary.
+    pub fn set_track_rating(&self, track_id: i64, rating: i32) -> Result<(), LibraryError> {
+        let state = self.lock()?;
+        let changed =
+            reprise_core::library::stats::set_rating_if_present(&state.db, track_id, rating)
+                .map_err(|error| LibraryError::Database {
+                    detail: error.to_string(),
+                })?;
+        if !changed {
+            return Err(LibraryError::TrackNotFound { track_id });
+        }
+        Ok(())
     }
-}
 
-impl From<ScanProgress> for ScanProgressUpdate {
-    fn from(progress: ScanProgress) -> Self {
-        match progress {
-            ScanProgress::Discovering => Self::Discovering,
-            ScanProgress::Scanning {
-                processed,
-                total,
-                current_path,
-            } => Self::Scanning {
-                processed,
-                total,
-                current_uri: current_path.to_string_lossy().into_owned(),
-            },
-            ScanProgress::Fetching { done, total } => Self::Fetching { done, total },
+    /// Resolves local artwork lazily for one track and returns its cached
+    /// measured-size thumbnail path.
+    ///
+    /// The two answers are kept apart, the way every sibling method on this
+    /// object keeps them apart:
+    ///
+    /// * `Ok(None)` — **this track has no artwork**. A missing picture, or one
+    ///   that does not decode, is an ordinary answer the UI renders as the
+    ///   no-artwork symbol. It is not an error and Kotlin must not treat it as
+    ///   one.
+    /// * `Err(_)` — the library itself could not answer: a handle poisoned by
+    ///   an earlier panic, or no configured tree to read covers through. Those
+    ///   are the same conditions `set_track_rating`, `scan`, `list_*` and
+    ///   `search_tracks` all report as a typed [`LibraryError`], and folding
+    ///   them into the `None` that means "no cover" is what made a broken
+    ///   library indistinguishable from a picture-less one.
+    ///
+    /// A full disk still answers `Ok(None)` — the cover cache being unwritable
+    /// affects the *thumbnail*, not the library, and every following track will
+    /// fail the same way — but it says so in the log rather than passing
+    /// silently.
+    pub fn track_artwork(
+        &self,
+        track_uri: &str,
+        size: AndroidArtworkSize,
+    ) -> Result<Option<String>, LibraryError> {
+        let source = {
+            let state = self.lock()?;
+            let tree = state.tree.as_ref().ok_or(LibraryError::TreeNotConfigured)?;
+            Arc::clone(&tree.source)
+        };
+        let Some(cover) = reprise_core::cover::resolve_source_with_source(
+            source.as_ref(),
+            Path::new(&track_uri),
+            &self.cache_root,
+        ) else {
+            return Ok(None);
+        };
+        match reprise_core::cover::thumbnail_with_source(
+            source.as_ref(),
+            &cover,
+            size.thumbnail_size(),
+            &self.cache_root,
+        ) {
+            Ok(path) => Ok(Some(path.to_string_lossy().into_owned())),
+            // The cache is unusable: every following track will fail the same
+            // way, so this is the one worth waking someone up for.
+            Err(error @ reprise_core::cover::CoverError::Io(_)) => {
+                tracing::warn!(%error, track = track_uri, "no artwork: cover cache unusable");
+                Ok(None)
+            }
+            // One unrenderable image among many. Expected in the wild, so it
+            // stays at debug.
+            Err(error) => {
+                tracing::debug!(%error, track = track_uri, "no artwork: cover did not decode");
+                Ok(None)
+            }
         }
     }
 }
@@ -240,7 +251,8 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use super::{
-        AlbumRow, ArtistRow, MusicLibrary, ScanProgressListener, ScanProgressUpdate, WindowRange,
+        AlbumRow, ArtistRow, LibraryError, MusicLibrary, ScanProgressListener, ScanProgressUpdate,
+        WindowRange,
     };
     use crate::source::{SafSource, SafSourceError, SourceChild, SourceFacts};
 
@@ -400,7 +412,11 @@ mod tests {
             reprise_core::library::stats::record_play(&db, rated_track.id, played_at).unwrap();
         }
         drop(db);
-        let library = MusicLibrary::open(directory.path().to_str().unwrap()).unwrap();
+        let library = MusicLibrary::open(
+            directory.path().to_str().unwrap(),
+            directory.path().join("cache").to_str().unwrap(),
+        )
+        .unwrap();
         (directory, library)
     }
 
@@ -502,6 +518,7 @@ mod tests {
                 .rows,
             vec![
                 super::TrackRow {
+                    id: 2,
                     uri: first_uri,
                     title: "All I Want".into(),
                     artist: "Joni Mitchell".into(),
@@ -511,6 +528,7 @@ mod tests {
                     rating: 0,
                 },
                 super::TrackRow {
+                    id: 3,
                     uri: second_uri,
                     title: "A Case of You".into(),
                     artist: "Joni Mitchell".into(),
@@ -544,6 +562,7 @@ mod tests {
                 .rows,
             vec![
                 super::TrackRow {
+                    id: 3,
                     uri: case_uri,
                     title: "A Case of You".into(),
                     artist: "Joni Mitchell".into(),
@@ -553,6 +572,7 @@ mod tests {
                     rating: 4,
                 },
                 super::TrackRow {
+                    id: 2,
                     uri: want_uri,
                     title: "All I Want".into(),
                     artist: "Joni Mitchell".into(),
@@ -616,6 +636,31 @@ mod tests {
         assert_eq!(second.rows.len(), 1);
         assert!(!second.has_more);
         assert_ne!(first.rows[0].uri, second.rows[0].uri);
+    }
+
+    #[test]
+    fn track_identity_drives_rating_writes_and_a_missing_id_is_an_error() {
+        let (_directory, library) = browse_library();
+        let track = library
+            .search_tracks("A Case of You".into(), full_window())
+            .unwrap()
+            .rows
+            .remove(0);
+
+        assert!(track.id > 0);
+        library.set_track_rating(track.id, 5).unwrap();
+        let updated = library
+            .search_tracks("A Case of You".into(), full_window())
+            .unwrap()
+            .rows
+            .remove(0);
+        assert_eq!(updated.id, track.id);
+        assert_eq!(updated.rating, 5);
+
+        assert!(matches!(
+            library.set_track_rating(i64::MAX, 4),
+            Err(LibraryError::TrackNotFound { track_id }) if track_id == i64::MAX
+        ));
     }
 
     impl SafSource for UntaggedAlbumSource {
@@ -682,7 +727,11 @@ mod tests {
     #[test]
     fn configured_saf_tree_scans_with_indeterminate_first_progress_and_lists_tracks() {
         let directory = tempfile::tempdir().unwrap();
-        let library = MusicLibrary::open(directory.path().to_str().unwrap()).unwrap();
+        let library = MusicLibrary::open(
+            directory.path().to_str().unwrap(),
+            directory.path().join("cache").to_str().unwrap(),
+        )
+        .unwrap();
         let probe_calls = Arc::new(AtomicUsize::new(0));
         library
             .set_tree_uri(
@@ -726,7 +775,11 @@ mod tests {
     #[test]
     fn untagged_saf_track_uses_the_provider_parent_name_as_its_album() {
         let directory = tempfile::tempdir().unwrap();
-        let library = MusicLibrary::open(directory.path().to_str().unwrap()).unwrap();
+        let library = MusicLibrary::open(
+            directory.path().to_str().unwrap(),
+            directory.path().join("cache").to_str().unwrap(),
+        )
+        .unwrap();
         library
             .set_tree_uri(TREE_URI.to_owned(), Box::new(UntaggedAlbumSource))
             .unwrap();

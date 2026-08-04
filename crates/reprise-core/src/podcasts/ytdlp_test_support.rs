@@ -4,7 +4,6 @@ use std::{
     fs,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -30,46 +29,4 @@ pub(super) fn short_timeouts() -> YtDlpTimeouts {
     }
 }
 
-#[derive(Clone, Default)]
-pub(super) struct CapturedLogs(Arc<Mutex<Vec<String>>>);
-
-impl CapturedLogs {
-    pub(super) fn joined(&self) -> String {
-        self.0.lock().unwrap().join("\n")
-    }
-}
-
-struct FieldCollector(String);
-
-impl tracing::field::Visit for FieldCollector {
-    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
-        use std::fmt::Write as _;
-        let _ = write!(self.0, " {}={:?}", field.name(), value);
-    }
-}
-
-pub(super) struct LogCapture(pub(super) CapturedLogs);
-
-impl tracing::Subscriber for LogCapture {
-    fn enabled(&self, _metadata: &tracing::Metadata<'_>) -> bool {
-        true
-    }
-
-    fn new_span(&self, _span: &tracing::span::Attributes<'_>) -> tracing::span::Id {
-        tracing::span::Id::from_u64(1)
-    }
-
-    fn record(&self, _span: &tracing::span::Id, _values: &tracing::span::Record<'_>) {}
-
-    fn record_follows_from(&self, _span: &tracing::span::Id, _follows: &tracing::span::Id) {}
-
-    fn event(&self, event: &tracing::Event<'_>) {
-        let mut collector = FieldCollector(event.metadata().name().to_owned());
-        event.record(&mut collector);
-        self.0 .0.lock().unwrap().push(collector.0);
-    }
-
-    fn enter(&self, _span: &tracing::span::Id) {}
-
-    fn exit(&self, _span: &tracing::span::Id) {}
-}
+pub(super) use crate::log_capture::{CapturedLogs, LogCapture};

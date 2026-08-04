@@ -1,0 +1,28 @@
+package de.reprise.spike.ui.theme
+
+import android.content.Context
+import android.os.Build
+import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
+import de.reprise.spike.MobileTheme
+import de.reprise.spike.MobileThemeSelection
+
+/** Chooses the wallpaper-seeded Material palette behind the API 31 guard. */
+internal fun androidColorScheme(
+    context: Context,
+    selection: MobileThemeSelection,
+    darkPalette: Boolean,
+): ColorScheme {
+    if (selection.palette != MobileTheme.DYNAMIC ||
+        !selection.dynamicAvailable ||
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.S
+    ) {
+        return NocturneColorScheme
+    }
+    return if (darkPalette) {
+        dynamicDarkColorScheme(context)
+    } else {
+        dynamicLightColorScheme(context)
+    }
+}

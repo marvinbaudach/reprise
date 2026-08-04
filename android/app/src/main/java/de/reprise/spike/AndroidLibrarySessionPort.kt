@@ -6,6 +6,7 @@ import android.content.SharedPreferences
 import android.net.Uri
 import android.util.Log
 import uniffi.reprise_android_ffi.AlbumRow
+import uniffi.reprise_android_ffi.AndroidArtworkSize
 import uniffi.reprise_android_ffi.AlbumWindow as FfiAlbumWindow
 import uniffi.reprise_android_ffi.ArtistRow
 import uniffi.reprise_android_ffi.ArtistWindow as FfiArtistWindow
@@ -82,6 +83,13 @@ internal class AndroidLibrarySessionPort(
         window: LibraryWindowRange,
     ): LibraryWindow<LibraryTrack> =
         library.listAlbumTracks(album, albumArtist, window.toFfi()).toLibraryTracks()
+
+    override fun artworkFor(trackUri: String, size: AndroidArtworkSize): String? =
+        library.trackArtwork(trackUri, size)
+
+    override fun setRating(trackId: Long, rating: Int) {
+        library.setTrackRating(trackId, rating)
+    }
 }
 
 private fun LibraryWindowRange.toFfi() = FfiWindowRange(offset = offset, limit = limit)
@@ -105,6 +113,7 @@ private fun FfiArtistWindow.toLibraryArtists() = LibraryWindow(
 )
 
 private fun TrackRow.toLibraryTrack() = LibraryTrack(
+    id = id,
     uri = uri,
     title = title,
     artist = artist,

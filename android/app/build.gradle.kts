@@ -48,6 +48,13 @@ android {
     buildFeatures {
         compose = true
     }
+
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+        unitTests.all {
+            it.systemProperty("user.home", gradle.gradleUserHomeDir.absolutePath)
+        }
+    }
 }
 
 dependencies {
@@ -62,4 +69,8 @@ dependencies {
     // UniFFI's Kotlin bindings call into the .so through JNA.
     implementation("net.java.dev.jna:jna:5.19.1@aar")
     testImplementation("junit:junit:4.13.2")
+    testImplementation(platform("androidx.compose:compose-bom:2026.06.01"))
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    testImplementation("org.robolectric:robolectric:4.16.1")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

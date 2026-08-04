@@ -8,6 +8,10 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import java.io.File
+import uniffi.reprise_android_ffi.AndroidEqualizerBand
+import uniffi.reprise_android_ffi.AndroidEqualizerBandCapability
+import uniffi.reprise_android_ffi.AndroidEqualizerPoint
+import uniffi.reprise_android_ffi.AndroidEqualizerSnapshot
 import uniffi.reprise_android_ffi.AndroidPlaybackException
 import uniffi.reprise_android_ffi.AndroidPlaybackPort
 import uniffi.reprise_android_ffi.AndroidPlaybackState
@@ -15,15 +19,19 @@ import uniffi.reprise_android_ffi.AndroidPlayerEvent
 import uniffi.reprise_android_ffi.AndroidTransitionMode
 import uniffi.reprise_android_ffi.PlaybackEventBridge
 import uniffi.reprise_android_ffi.PlaybackEventBridgeInterface
+import uniffi.reprise_android_ffi.projectEqualizerCurve
 
 private const val POSITION_INTERVAL_MS = 500L
 
 /** Media3 implementation of the foreign half of Core's PlaybackBackend. */
 internal class Media3PlaybackPort(
     private val player: Player,
+    private val equalizerChanged: () -> Unit,
 ) : AndroidPlaybackPort {
     private val handler = Handler(player.applicationLooper)
     private val dispatch = player.applicationLooper.dispatch(handler)
+    private val deviceEqualizer =
+        DeviceEqualizer(AndroidEqualizerEngineFactory, CoreEqualizerCurveProjector)
     private var eventBridge: PlaybackEventBridgeInterface? = null
     private var generation = 0UL
     private var nextUri: String? = null
@@ -77,10 +85,18 @@ internal class Media3PlaybackPort(
             val detail = error.message ?: error.errorCodeName
             emit(AndroidPlayerEvent.Error("${error.errorCodeName}: $detail"))
         }
+
+        override fun onAudioSessionIdChanged(audioSessionId: Int) {
+            deviceEqualizer.onAudioSessionChanged(audioSessionId)
+            equalizerChanged()
+        }
     }
 
     init {
-        dispatch.call { player.addListener(listener) }
+        dispatch.call {
+            player.addListener(listener)
+            deviceEqualizer.onAudioSessionChanged(player.audioSessionId)
+        }
     }
 
     override fun setEventBridge(bridge: PlaybackEventBridge) = dispatch.call {
@@ -111,6 +127,33 @@ internal class Media3PlaybackPort(
 
     override fun setVolume(volume: Double) = dispatch.call {
         player.volume = volume.coerceIn(0.0, 1.0).toFloat()
+    }
+
+    override fun setEqualizer(enabled: Boolean, curve: List<AndroidEqualizerPoint>) = dispatch.call {
+        deviceEqualizer.configure(
+            enabled = enabled,
+            curve = curve.map { point ->
+                EqualizerCurvePoint(point.frequencyHz, point.gainDb)
+            },
+        )
+        equalizerChanged()
+    }
+
+    override fun equalizerSnapshot(): AndroidEqualizerSnapshot? = dispatch.call {
+        deviceEqualizer.snapshot()?.let { snapshot ->
+            AndroidEqualizerSnapshot(
+                enabled = snapshot.enabled,
+                available = snapshot.available,
+                bands = snapshot.bands.map { band ->
+                    AndroidEqualizerBand(
+                        frequencyHz = band.frequencyHz,
+                        gainDb = band.gainDb,
+                        minimumGainDb = band.minimumGainDb,
+                        maximumGainDb = band.maximumGainDb,
+                    )
+                },
+            )
+        }
     }
 
     override fun setAudioEffects(): Unit = dispatch.call {
@@ -146,6 +189,7 @@ internal class Media3PlaybackPort(
     fun release() = dispatch.call {
         handler.removeCallbacks(positionTicker)
         player.removeListener(listener)
+        deviceEqualizer.release()
         player.release()
         eventBridge = null
     }
@@ -198,6 +242,29 @@ internal class Media3PlaybackPort(
     private fun emit(event: AndroidPlayerEvent) {
         eventBridge?.emit(generation, event)
     }
+}
+
+/**
+ * The one implementation of the curve projection, borrowed from the core.
+ *
+ * It lives here rather than in `DeviceEqualizer.kt` because this file is where
+ * the native boundary already is: the equalizer itself stays testable on the
+ * JVM without the `.so`.
+ */
+private object CoreEqualizerCurveProjector : EqualizerCurveProjector {
+    override fun project(
+        curve: List<EqualizerCurvePoint>,
+        bands: List<DeviceEqualizerBandCapability>,
+    ): List<Double> = projectEqualizerCurve(
+        curve.map { point -> AndroidEqualizerPoint(point.frequencyHz, point.gainDb) },
+        bands.map { band ->
+            AndroidEqualizerBandCapability(
+                frequencyHz = band.frequencyHz,
+                minimumGainDb = band.minimumGainDb,
+                maximumGainDb = band.maximumGainDb,
+            )
+        },
+    ).map { projected -> projected.gainDb }
 }
 
 private fun Looper.dispatch(handler: Handler): ApplicationLooperDispatch =

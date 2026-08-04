@@ -6,8 +6,10 @@ import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import uniffi.reprise_android_ffi.AndroidArtworkSize
 import uniffi.reprise_android_ffi.AndroidPlaybackSnapshot
 import uniffi.reprise_android_ffi.AndroidPlaybackState
+import uniffi.reprise_android_ffi.AndroidRepeatMode
 
 class LibraryScreenStateTest {
 @Test
@@ -56,20 +58,23 @@ private fun primitiveDefault(type: Class<*>): Any? = when (type) {
 }
 
 @Test
-fun positionReadoutUsesTheDurationDeliveredByTheBridge() {
+fun everyFieldTheSurfaceReadsSurvivesTheTripFromTheBridge() {
     val state = AndroidPlaybackSnapshot(
         state = AndroidPlaybackState.PLAYING,
         currentIndex = 2u,
         positionMs = 1_250,
         durationMs = 180_000,
+        shuffled = true,
+        repeat = AndroidRepeatMode.ALL,
         error = null,
     ).toUiState()
 
-    assertEquals("0:01 / 3:00", state.positionReadout)
     assertEquals(2, state.currentIndex)
     assertEquals(1_250L, state.positionMs)
     assertEquals(180_000L, state.durationMs)
     assertEquals(1_250f / 180_000f, state.progressFraction, 0.000_001f)
+    assertTrue(state.shuffled)
+    assertEquals(AndroidRepeatMode.ALL, state.repeat)
 }
 
 @Test
@@ -79,6 +84,8 @@ fun pausedPlaybackOffersPlayOnTheSurface() {
         currentIndex = 0u,
         positionMs = 0,
         durationMs = 0,
+        shuffled = false,
+        repeat = AndroidRepeatMode.OFF,
         error = null,
     ).toUiState()
 
@@ -242,6 +249,7 @@ fun rescanUsesRememberedTreeWithoutChoosingAgain() {
 }
 
 private fun testTrack() = LibraryTrack(
+    id = 1,
     uri = "content://provider/document/song.flac",
     title = "Song",
     artist = "Artist",
@@ -318,4 +326,8 @@ private class RecordingLibrarySessionPort(
         albumArtist: String,
         window: LibraryWindowRange,
     ): LibraryWindow<LibraryTrack> = completeTestWindow(emptyList())
+
+    override fun artworkFor(trackUri: String, size: AndroidArtworkSize): String? = null
+
+    override fun setRating(trackId: Long, rating: Int) = Unit
 }

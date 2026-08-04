@@ -68,6 +68,7 @@ internal sealed interface LibraryScreenState {
 }
 
 internal data class LibraryTrack(
+    val id: Long,
     val uri: String,
     val title: String,
     val artist: String,

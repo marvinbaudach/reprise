@@ -1,7 +1,5 @@
 package de.reprise.spike
 
-import uniffi.reprise_android_ffi.AndroidPlaybackState
-
 internal data class LibraryFrameMetrics(
     val topAppBarHeightDp: Int,
     val filterChipHeightDp: Int,
@@ -44,6 +42,6 @@ internal fun LibraryTrack.playbackPresentation(
     val isCurrent = selection?.currentTrack(playback)?.uri == uri
     return TrackPlaybackPresentation(
         isCurrent = isCurrent,
-        animateBars = isCurrent && playback.state == AndroidPlaybackState.PLAYING,
+        animateBars = isCurrent && playback.isPlaying,
     )
 }

@@ -6,11 +6,13 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -24,6 +26,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarDefaults
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -49,6 +52,7 @@ internal fun LibraryTopAppBar(
     toggleSearch: () -> Unit,
     rescan: () -> Unit,
     chooseFolder: () -> Unit,
+    openSettings: () -> Unit,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     Row(
@@ -93,6 +97,14 @@ internal fun LibraryTopAppBar(
                         chooseFolder()
                     },
                 )
+                DropdownMenuItem(
+                    text = { Text("Settings") },
+                    leadingIcon = { MaterialSymbol("settings", "") },
+                    onClick = {
+                        menuExpanded = false
+                        openSettings()
+                    },
+                )
             }
         }
     }
@@ -102,23 +114,32 @@ internal fun LibraryTopAppBar(
 internal fun LibraryBottomFrame(
     currentTrack: LibraryTrack?,
     playback: PlaybackUiState,
-    togglePause: () -> Unit,
-    next: () -> Unit,
-    previous: () -> Unit,
+    openNowPlaying: () -> Unit,
 ) {
     Column {
         if (currentTrack != null) {
             MiniPlayer(
                 track = currentTrack,
                 playback = playback,
-                togglePause = togglePause,
-                next = next,
-                previous = previous,
+                openNowPlaying = openNowPlaying,
             )
         }
+        // Material 3 pads the item row *inside* this component by the system
+        // bar inset, so a bare 80 dp on the outside would be spent on the
+        // inset instead of on the bar: with gesture navigation ~19 dp of it,
+        // with three buttons ~48 dp, which is less than one active pill needs.
+        // Adding the very same inset to the height leaves the plan's 80 dp of
+        // bar intact and puts the system's area below it. The root consumes
+        // only the status bar, so this is the one place the bottom inset is
+        // spent.
+        val systemBarInsets = NavigationBarDefaults.windowInsets
         NavigationBar(
-            modifier = Modifier.height(libraryFrameMetrics.navigationBarHeightDp.dp),
+            modifier = Modifier.height(
+                libraryFrameMetrics.navigationBarHeightDp.dp +
+                    systemBarInsets.asPaddingValues().calculateBottomPadding(),
+            ),
             containerColor = MaterialTheme.colorScheme.surface,
+            windowInsets = systemBarInsets,
         ) {
             libraryDestinations.forEach { destination ->
                 NavigationBarItem(
@@ -136,15 +157,19 @@ internal fun LibraryBottomFrame(
 private fun MiniPlayer(
     track: LibraryTrack,
     playback: PlaybackUiState,
-    togglePause: () -> Unit,
-    next: () -> Unit,
-    previous: () -> Unit,
+    openNowPlaying: () -> Unit,
 ) {
+    val controls = LocalPlaybackControls.current
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .height(libraryFrameMetrics.miniPlayerHeightDp.dp)
-            .padding(horizontal = 12.dp),
+            .padding(horizontal = 12.dp)
+            // The label names the *action*; it does not replace what this node
+            // announces. A content description would: it wins over the merged
+            // descendants, and the one thing a screen-reader user needs here is
+            // which track is playing.
+            .clickable(onClickLabel = "Open Now Playing", onClick = openNowPlaying),
         color = MaterialTheme.colorScheme.surfaceContainer,
         shape = MaterialTheme.shapes.large,
     ) {
@@ -155,7 +180,11 @@ private fun MiniPlayer(
                     .padding(horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                CoverPlaceholder(size = libraryFrameMetrics.trackCoverSizeDp)
+                TrackCover(
+                    trackUri = track.uri,
+                    size = libraryFrameMetrics.trackCoverSizeDp,
+                    decorative = true,
+                )
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
@@ -172,11 +201,11 @@ private fun MiniPlayer(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                IconButton(onClick = previous, modifier = Modifier.size(48.dp)) {
+                IconButton(onClick = controls::previous, modifier = Modifier.size(48.dp)) {
                     MaterialSymbol("skip_previous", "Previous track")
                 }
                 IconButton(
-                    onClick = togglePause,
+                    onClick = controls::togglePause,
                     modifier = Modifier
                         .size(48.dp)
                         .clip(MaterialTheme.shapes.large)
@@ -189,7 +218,7 @@ private fun MiniPlayer(
                         sizeSp = 30,
                     )
                 }
-                IconButton(onClick = next, modifier = Modifier.size(48.dp)) {
+                IconButton(onClick = controls::next, modifier = Modifier.size(48.dp)) {
                     MaterialSymbol("skip_next", "Next track")
                 }
             }
@@ -212,17 +241,21 @@ private fun MiniPlayer(
 }
 
 @Composable
-internal fun CoverPlaceholder(size: Int) {
+internal fun CoverPlaceholder(
+    size: Int,
+    shape: androidx.compose.ui.graphics.Shape? = null,
+    decorative: Boolean = false,
+) {
     Box(
         modifier = Modifier
             .size(size.dp)
-            .clip(MaterialTheme.shapes.small)
+            .clip(shape ?: MaterialTheme.shapes.small)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh),
         contentAlignment = Alignment.Center,
     ) {
         MaterialSymbol(
             name = "music_note",
-            contentDescription = "No artwork",
+            contentDescription = if (decorative) "" else "No artwork",
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             sizeSp = 28,
         )
