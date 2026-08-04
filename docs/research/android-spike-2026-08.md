@@ -831,16 +831,44 @@ Speicherbereich und bekommt, wenn überhaupt, einen eigenen Vertrag.
 
 #### C — fremde App-Daten, plattformweise ausgeschlossen
 
-| Datei | Zeilen |
-| --- | --- |
-| `library/rhythmbox_import.rs` | 397, 525 |
-
 `rhythmbox_import` liest Rhythmboxʼ eigene `rhythmdb.xml` und `playlists.xml`
 unter `~/.local/share/rhythmbox`. Das ist weder unsere Bibliothek noch unser
-Speicher, und unter Android existiert Rhythmbox nicht. **Diese Stellen brauchen
-keine Abstraktion, sondern eine Plattformgrenze** — der Import ist eine
-Desktop-Funktion. Die Musikdatei, die der Import danach anfasst
-(`rhythmbox_import.rs:501`), steht dagegen in A: sie liegt in der Bibliothek.
+Speicher, und unter Android existiert Rhythmbox nicht. Daraus folgt keine Frage,
+die jede `LibrarySource` beantworten muss. Die Gegenmessung nach dem ersten
+P3-Schnitt fand zwoelf verpflichtete Implementierungen bei nur zwei
+Produktionsaufrufen: Die GNOME-Surface fragte einen konkreten
+`UnixLibrarySource`, und der zweite Aufruf war der Core-Guard selbst. Die
+versuchte `RhythmboxImportCapability` war deshalb spekulative Allgemeinheit und
+wurde samt `UnsupportedSource` wieder entfernt.
+
+Die Surface behaelt die Pfadentscheidung. Core oeffnet beide XML-Dateien
+weiterhin ueber `LibrarySource::open_read` und gewinnt Anwesenheit sowie
+Aenderungszeit aus `probe`. Der GNOME-Einstieg wertet nur
+`LibraryPathPresence` aus: `Absent` beziehungsweise eine bestaetigte
+Nicht-Datei widerlegen den konkreten Pfad, `Unknown` wird nicht als Abwesenheit
+ausgegeben. `&dyn LibrarySource` bleibt der Leser, weil es die bereits echte
+Speichernaht mit Produktions- und in-memory Adapter ist. Ein eigener
+Rhythmbox-Trait wuerde `open_read` und `probe` duplizieren; ein konkreter
+Unix-Parameter wuerde den quellenreinen Test ohne Dateisystem aufgeben.
+
+Kein Typ-Guard verhindert einen kuenftigen nicht-GNOME-Aufrufer. Ein solcher
+Aufrufer existiert nicht: Der gesamte Produktionsfluss liegt in
+`preference_rhythmbox.rs`, CLI, MCP und Android verdrahten ihn nicht. Das ist
+fuer den heutigen Umfang ausreichend und vermeidet eine Sperre, deren Kosten
+jeder kuenftige Quellenadapter traegt.
+
+Die erneute Messung fand neben den drei direkten `File::open` und dem
+`std::fs::metadata` noch eine in der Ausgangszaehlung fehlende Stelle:
+`playlists_path.is_file()`. Alle fuenf Zugriffe sind entfernt. Der bereits
+vorhandene Name `prescan_rhythmdb_with_source` war nur teilweise wahr: Vor P3
+lief allein die Anwesenheit der im XML genannten Musikdatei durch die Quelle,
+nicht die beiden XML-Eingaben. Der in-memory Prescan-Test liest nun
+`provider:/rhythmdb.xml` und `provider:/playlists.xml` ohne Dateisystempfad.
+Der anfangs hinzugefuegte zweite Core-Test wies den Import vor jedem
+Leseversuch ab, wenn die Quelle `Unsupported` meldete; dieser Test und der von
+ihm belegte Guard wurden mit der spekulativen Faehigkeit entfernt. Die
+Musikdatei, deren Anwesenheit der Prescan klassifiziert, bleibt Klasse A, weil
+sie in der Bibliothek liegt.
 
 #### E — der Unix-Adapter selbst
 
