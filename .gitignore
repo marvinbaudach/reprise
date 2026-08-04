@@ -62,3 +62,8 @@ android/build/
 android/app/build/
 android/app/src/main/jniLibs/
 android/app/src/main/java/uniffi/
+
+# A Gradle home inside the worktree. The sandboxed Codex runs cannot write to
+# `~/.gradle`, so they are pointed here instead — a gigabyte of downloaded
+# distribution and caches that a stray `git add -A` would otherwise swallow.
+.gradle-user-home/
