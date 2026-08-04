@@ -116,8 +116,22 @@ report_components() { # <variant>
       [[ $count -eq $MARK_PARTS ]] \
         && ok "V2 variant $variant ${size}px gate: $count separate components" \
         || bad "V2 variant $variant ${size}px gate: $count instead of $MARK_PARTS components"
-    elif [[ $size -eq 16 && $count -eq 2 ]]; then
-      ok "V2 variant $variant 16px report: $count components; both dots join the thin barline, thick barline remains separate; all four separate from 22px"
+    elif [[ $count -lt $MARK_PARTS ]]; then
+      # Say what was measured, not what it probably means. A stage can fall
+      # short two ways and they call for opposite fixes: strokes running into
+      # each other (geometry too tight) or strokes surviving but too small to
+      # count (the sign is simply below its useful size). The raw group sizes
+      # tell them apart — groups still equal to MARK_PARTS means nothing
+      # merged.
+      local sizes groups floor
+      sizes=$("${measure[@]}" ink-component-sizes "$png")
+      floor=$("${measure[@]}" noise-floor "$png")
+      groups=$(wc -w <<<"$sizes")
+      if [[ $groups -eq $MARK_PARTS ]]; then
+        ok "V2 variant $variant ${size}px report: $count of $MARK_PARTS components clear the ${floor}px noise floor; all $MARK_PARTS pixel groups survive separately at sizes [$sizes] — nothing merged, the small elements are just under the floor"
+      else
+        ok "V2 variant $variant ${size}px report: $count components above the ${floor}px noise floor; $groups pixel groups at sizes [$sizes] — strokes have run together"
+      fi
     else
       ok "V2 variant $variant ${size}px report: $count separate components"
     fi

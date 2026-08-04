@@ -94,10 +94,31 @@ def ink_components(png):
     kleiner Größe zu einem Klotz zusammen?" Zwei Balken, die bei 16 px
     verschmelzen, sind kein Wiederholungszeichen mehr.
     """
+    return sum(1 for area in ink_component_sizes(png)
+               if area >= _noise_floor(png))
+
+
+def _noise_floor(png):
+    w, h, _ = _alpha_mask(png)
+    return max(MIN_HOLE_PIXELS, int(MIN_HOLE_SHARE * w * h))
+
+
+def ink_component_sizes(png):
+    """Pixel area of every ink group, largest first — noise floor ignored.
+
+    `ink_components` answers "how many strokes survive?" and drops anything
+    under the noise floor, which is right for a gate but hides *why* a stage
+    falls short. At 16px all four elements of the repeat sign are still
+    separate pixel groups; two of them are 2px each and fall under the 3px
+    floor, so the counter reports 2. Describing that as "the dots merged
+    into the thin barline" would be a guess — and it is the wrong one.
+    Nothing merges there; the dots are simply too small to count. This
+    returns the raw group sizes so a report can state what was measured
+    instead of narrating a cause nobody checked.
+    """
     w, h, bg = _alpha_mask(png)
-    floor = max(MIN_HOLE_PIXELS, int(MIN_HOLE_SHARE * w * h))
     seen = [[False] * w for _ in range(h)]
-    count = 0
+    areas = []
     for sy in range(h):
         for sx in range(w):
             if seen[sy][sx] or bg[sy][sx]:
@@ -113,9 +134,8 @@ def ink_components(png):
                     if 0 <= nx < w and 0 <= ny < h and not seen[ny][nx] and not bg[ny][nx]:
                         seen[ny][nx] = True
                         queue.append((nx, ny))
-            if area >= floor:
-                count += 1
-    return count
+            areas.append(area)
+    return sorted(areas, reverse=True)
 
 
 def _foreground_components(mask):
@@ -502,6 +522,10 @@ def main():
         print(bg_components(args[0]))
     elif cmd == "ink-components":
         print(ink_components(args[0]))
+    elif cmd == "ink-component-sizes":
+        print(" ".join(str(a) for a in ink_component_sizes(args[0])))
+    elif cmd == "noise-floor":
+        print(_noise_floor(args[0]))
     elif cmd == "fill-ratio":
         fw, fh = fill_ratio(args[0])
         print(f"{fw:.4f} {fh:.4f}")
