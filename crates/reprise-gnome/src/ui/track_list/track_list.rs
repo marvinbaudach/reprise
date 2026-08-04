@@ -119,6 +119,10 @@ pub(in crate::ui) struct Shared {
     /// moves without rebuilding the list. A `Cell` (not `RefCell`) because the
     /// payload is a `Copy` `Option<i64>` read on every bind.
     pub(in crate::ui) playing_track_id: Cell<Option<i64>>,
+    /// Monotonic token for deferred explicit/automatic track reveals. Every
+    /// loaded-track change advances it so an older idle callback cannot center
+    /// a superseded row after the marker has already moved elsewhere.
+    pub(in crate::ui) track_reveal_generation: Cell<u64>,
     /// POD-20's shared loaded-episode marker. Separate from
     /// `playing_track_id` because the two id spaces are unrelated and may
     /// collide numerically; the marker also retains running versus paused.
@@ -130,11 +134,12 @@ pub(in crate::ui) struct Shared {
     /// former `items_changed(pos, 1, 1)` marker refresh, whose fake
     /// remove+insert snapped the viewport to the top on a double-click-to-play.
     pub(in crate::ui) now_playing_markers:
-        RefCell<Vec<super::now_playing_marker::NowPlayingMarker>>,
+        RefCell<std::collections::HashMap<usize, super::now_playing_marker::NowPlayingMarker>>,
     /// Realised rating-cell re-appliers. Rating-only Tag Editor saves use
     /// these to update stars without an `items_changed` row replacement,
     /// which would re-anchor the viewport.
-    pub(in crate::ui) rating_cells: RefCell<Vec<super::rating_cell_refresh::RatingCellMarker>>,
+    pub(in crate::ui) rating_cells:
+        RefCell<std::collections::HashMap<usize, super::rating_cell_refresh::RatingCellMarker>>,
     pub(in crate::ui) last_scroll_activity: Cell<Option<std::time::Instant>>,
     pub(in crate::ui) scroll_glide: crate::ui::scroll_glide::ScrollGlide,
     /// View position an in-app single-row reorder drag started from — set at

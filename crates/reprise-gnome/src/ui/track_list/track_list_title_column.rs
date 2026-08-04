@@ -99,12 +99,10 @@ pub(in crate::ui) fn append_title_column(
             apply_missing_title(&label, track);
         } else if let Some(track) = track {
             apply_missing_title(&label, track);
-            let needle = shared_for_bind.filter.borrow().clone();
-            match match_highlight::highlight_markup(
-                &track.title,
-                &needle,
-                match_highlight::accent_foreground(&label).as_deref(),
-            ) {
+            match match_highlight::highlight_from_filter(&track.title, &shared_for_bind.filter, {
+                let label = label.clone();
+                move || match_highlight::accent_foreground(&label)
+            }) {
                 Some(markup) => label.set_markup(&markup),
                 None => label.set_text(&track.title),
             }

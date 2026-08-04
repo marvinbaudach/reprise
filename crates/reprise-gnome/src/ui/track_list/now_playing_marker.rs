@@ -16,12 +16,12 @@
 //! old one by mutating already-realised widgets in place, with no model signal
 //! and therefore no viewport jump.
 //!
-//! No `connect_unbind` counterpart is needed: GTK recycles a bounded pool of
-//! `ListItem`s, and every `bind` re-registers, replacing that item's entry
-//! (dedup by `ListItem` identity) with the current track. So the registry
-//! stays the size of the pool, dead entries self-heal on the next pass, and a
-//! stale applier on a pooled-but-unbound (hence invisible) cell only ever
-//! toggles a class no one can see — never a visible wrong marker.
+//! Every `bind` re-registers, replacing that item's entry (dedup by
+//! `ListItem` identity) with the current track, and `connect_unbind` drops it
+//! again — see [`unregister_cell`] for why that counterpart is required rather
+//! than optional. Entries whose `ListItem` died are pruned when the markers are
+//! next re-applied, and a stale applier on a pooled-but-unbound (hence
+//! invisible) cell only ever toggles a class no one can see.
 
 use std::rc::Rc;
 
@@ -70,39 +70,43 @@ pub(in crate::ui) struct NowPlayingMarker {
     apply: Rc<dyn Fn()>,
 }
 
+/// Registry key for a cell: the `ListItem`'s address, which is what identifies
+/// a cell across rebinds. Shared with `rating_cell_refresh`, which keys the same
+/// way for the same reason.
+pub(in crate::ui) fn cell_key(item: &gtk4::ListItem) -> usize {
+    item.as_ptr() as usize
+}
+
 impl Shared {
     /// Registers (or, on rebind of the same `ListItem`, replaces) the marker
-    /// re-applier for a cell. Also drops any entries whose `ListItem` has since
-    /// died, so the registry can never grow without bound.
+    /// re-applier for a cell.
+    ///
+    /// Keyed rather than scanned: this runs once per cell per bind, and a
+    /// distant scroll makes GtkColumnView rebind ~1600 cells in one go. The
+    /// previous linear `retain` turned that into ~130k `WeakRef` upgrades —
+    /// each a GObject refcount round trip — for a single jump. Pruning dead
+    /// entries moved to [`Shared::reapply_now_playing_markers`], which runs
+    /// once per playback change instead of once per bind. A recycled address
+    /// colliding with a dead entry is harmless: the insert replaces it.
     pub(in crate::ui) fn register_now_playing_marker(
         &self,
         item: &gtk4::ListItem,
         apply: Rc<dyn Fn()>,
     ) {
-        let target = item.as_ptr();
-        let mut markers = self.now_playing_markers.borrow_mut();
-        markers.retain(|marker| {
-            marker
-                .item
-                .upgrade()
-                .is_some_and(|live| live.as_ptr() != target)
-        });
         let weak = gtk4::glib::WeakRef::new();
         weak.set(Some(item));
-        markers.push(NowPlayingMarker { item: weak, apply });
+        self.now_playing_markers
+            .borrow_mut()
+            .insert(cell_key(item), NowPlayingMarker { item: weak, apply });
     }
 
-    /// Removes the registry entry for `item` (and prunes any dead entries),
-    /// releasing the cell widgets that entry's re-applier captured. See
-    /// [`unregister_cell`] for why this must run on unbind.
+    /// Removes the registry entry for `item`, releasing the cell widgets that
+    /// entry's re-applier captured. See [`unregister_cell`] for why this must
+    /// run on unbind.
     pub(in crate::ui) fn unregister_now_playing_marker(&self, item: &gtk4::ListItem) {
-        let target = item.as_ptr();
-        self.now_playing_markers.borrow_mut().retain(|marker| {
-            marker
-                .item
-                .upgrade()
-                .is_some_and(|live| live.as_ptr() != target)
-        });
+        self.now_playing_markers
+            .borrow_mut()
+            .remove(&cell_key(item));
     }
 
     /// Re-runs every registered cell's marker application against the current
@@ -112,8 +116,11 @@ impl Shared {
     pub(in crate::ui) fn reapply_now_playing_markers(&self) {
         let appliers: Vec<Rc<dyn Fn()>> = {
             let mut markers = self.now_playing_markers.borrow_mut();
-            markers.retain(|marker| marker.item.upgrade().is_some());
-            markers.iter().map(|marker| marker.apply.clone()).collect()
+            markers.retain(|_, marker| marker.item.upgrade().is_some());
+            markers
+                .values()
+                .map(|marker| marker.apply.clone())
+                .collect()
         };
         for apply in appliers {
             apply();

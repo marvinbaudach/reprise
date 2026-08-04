@@ -19,6 +19,7 @@ pub(crate) mod queue_row_mapping {
 pub(crate) mod queue_sections;
 pub(crate) mod rating;
 pub(in crate::ui) mod rating_cell_refresh;
+mod rating_column;
 pub(in crate::ui) mod reload_restore;
 mod responsive_columns;
 #[path = "track_list.rs"]
@@ -56,6 +57,7 @@ mod track_list_toast;
 mod track_list_wiring;
 pub(in crate::ui) mod track_menu;
 pub(crate) mod track_playback_selection;
+mod track_reveal;
 pub(in crate::ui) mod view_state_memory;
 
 #[allow(unused_imports)]

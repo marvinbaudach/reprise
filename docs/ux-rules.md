@@ -1564,8 +1564,8 @@ place (MOT-2, the motion reading of P-4).
   crossfades run as two Micro halves of 75 ms each) · **Standard**
   250 ms ease-out-cubic for surfaces (sidebar/panel reveal, toast in,
   card collapse, crossfades cover/StatusPage⇄list) · **Ambient** 400 ms
-  ease-out-cubic for atmospheric, non-interactive transitions
-  (accent-color crossfade) · **Spatial** = AdwSpringAnimation with Adw
+  ease-out-cubic for atmospheric, non-interactive transitions (waveform
+  build and crossfade, plugin settle) · **Spatial** = AdwSpringAnimation with Adw
   default spring parameters for directed navigation, added in code
   starting with the first directed navigation case. Ease-in only for
   what is leaving (toast out, Micro duration); linear only for genuine
@@ -1573,6 +1573,20 @@ place (MOT-2, the motion reading of P-4).
   (OverlaySplitView, NavigationSplitView, ToastOverlay, Banner, Dialog,
   Popover — e.g. the push/pop slides of the settings subpages) count
   as system-given and are exempt from the token requirement.
+  **The cover accent is not its own animation.** It used to be listed as
+  the Ambient case, animated in Rust by interpolating the colour and
+  reloading a display-wide provider per frame — which restyled the whole
+  widget tree ~24 times per track change and cost ~190 ms of main-thread
+  time (measured 2026-08-04, see `docs/plans/track-change-ui-stall.md`).
+  It is now a single colour change, and it inherits the transition the
+  carrying widget already declares: the play button transitions
+  `background-color` and `box-shadow` on Micro, so its accent moves on
+  Micro. That is MOT-3 rather than an exception to it — the alternative
+  is impossible, not merely expensive: the properties carrying the accent
+  are the same ones carrying hover and focus, a CSS property has exactly
+  one transition, and it cannot tell an accent change from a hover. Any
+  duration imposed centrally would override the token the widget declares
+  for its own interaction states.
   <!-- Flip criterion MOT-1: all call sites from the motion plan's
        audit inventory consume tokens; scripts/check-motion-tokens.sh
        is strict and without a leftover allowlist. -->
