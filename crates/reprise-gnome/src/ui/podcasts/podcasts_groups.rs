@@ -15,8 +15,8 @@ use super::podcasts_context_menu;
 use super::podcasts_context_surface;
 use super::podcasts_playback::EpisodeMark;
 use super::podcasts_presentation::{
-    detail_line, duration, file_size, on_phone, relative_date, source_header, status_pill,
-    RenderedSourceGroup, SourceSummary,
+    duration, file_size, on_phone, relative_date, source_header, status_pill, RenderedSourceGroup,
+    SourceSummary,
 };
 use super::podcasts_row_interaction::{
     episode_thumbnail, install_row_interaction, SELECT_ROW_ACTION,
@@ -43,6 +43,8 @@ pub(super) struct DownloadRowWidgets {
 /// be applied without rebuilding the list — see `PodcastsView::apply_selection`.
 pub(super) struct SelectionRowWidgets {
     pub(super) row: gtk4::Box,
+    pub(super) media: Option<Rc<crate::ui::source_row::MediaColumn>>,
+    pub(super) reveal: Option<Rc<crate::ui::source_row::Reveal>>,
 }
 
 /// Everything `replace` hands back for later targeted updates.
@@ -324,7 +326,8 @@ fn episode_row(
 ) -> gtk4::Widget {
     let loaded = context.mark.is_some();
     let playing = context.mark.is_some_and(|mark| mark.playing);
-    let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+    let skeleton = crate::ui::source_row::skeleton();
+    let root = skeleton.root.clone();
     root.add_css_class("reprise-podcast-episode-row");
     // `POD-20`: this plain Box needs the shared hover tint that ColumnView
     // rows receive from the platform stylesheet.
@@ -340,31 +343,23 @@ fn episode_row(
     // does. Selection is reported through the `Selected` state below, which
     // is where assistive technology expects to read it.
     root.update_property(&[gtk4::accessible::Property::Label(&row.title)]);
-    root.set_valign(gtk4::Align::Center);
     if loaded {
         root.add_css_class("reprise-podcast-playing");
     }
-    root.set_margin_start(12);
-    root.set_margin_end(8);
-    root.set_margin_top(4);
-    root.set_margin_bottom(4);
 
     let is_selected = context.selection.borrow().contains(row.id);
     root.update_state(&[gtk4::accessible::State::Selected(Some(is_selected))]);
     if is_selected {
         root.add_css_class(SELECTED_ROW_CLASS);
     }
-    widgets
-        .selection
-        .insert(row.id, SelectionRowWidgets { row: root.clone() });
-
-    let thumbnail = episode_thumbnail(row, context.images_allowed);
+    let (artwork, shape) = episode_thumbnail(row, context.images_allowed);
+    let media = Rc::new(crate::ui::source_row::MediaColumn::new(&artwork, shape));
     let marker = playing_marker::build();
     marker.add_css_class("reprise-podcast-episode-marker");
     playing_marker::set_playing(&marker, playing);
-    marker.set_visible(loaded);
-    thumbnail.add_overlay(&marker);
-    root.append(&thumbnail);
+    media.set_state_overlay(&marker);
+    media.set_loaded(loaded);
+    skeleton.media.append(media.widget());
     install_row_interaction(&root, row.id, SELECT_ROW_ACTION);
     podcasts_context_surface::wire_episode_row(
         &root,
@@ -375,31 +370,33 @@ fn episode_row(
     );
     super::podcasts_dnd::wire_episode_drag_source(&root, row.id, context.selection);
 
-    let identity = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    identity.set_hexpand(true);
     let title = gtk4::Label::new(None);
     title.set_markup(&super::podcasts_title::markup(title_parts));
     title.set_xalign(0.0);
     title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-    identity.append(&title);
+    title.add_css_class("reprise-source-row-title");
+    skeleton.identity.append(&title);
     let date = relative_date(row.published_at, Local::now().date_naive());
     let duration = duration(row.duration_secs);
-    let status = status_pill(row);
-    let detail = detail_line([
+    let detail_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+    let facts = gtk4::Label::new(Some(&crate::ui::source_row::detail_line([
         date.as_str(),
         duration.as_str(),
-        status.as_ref().map_or("", |pill| pill.label),
-    ]);
-    let detail = gtk4::Label::new(Some(&detail));
-    detail.set_xalign(0.0);
-    detail.add_css_class("caption");
-    detail.add_css_class("dim-label");
-    identity.append(&detail);
-    root.append(&identity);
+    ])));
+    facts.set_xalign(0.0);
+    facts.add_css_class("caption");
+    facts.add_css_class("dim-label");
+    detail_row.append(&facts);
+    if let Some(spec) = chip_spec(row) {
+        detail_row.append(&crate::ui::source_row::chip(&spec));
+    }
+    skeleton.identity.append(&detail_row);
 
     let status = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    status.set_size_request(crate::ui::source_row::SIZE_SLOT_WIDTH, -1);
+    status.add_css_class("reprise-source-row-size");
     status.append(&download_status(context.download_state));
-    root.append(&status);
+    skeleton.trailing.append(&status);
 
     let download = gtk4::Button::new();
     download.add_css_class("flat");
@@ -419,7 +416,7 @@ fn episode_row(
         context.network.unavailable_now,
     );
     widgets.downloads.insert(row.id, download_row);
-    root.append(&download);
+    skeleton.trailing.append(&download);
 
     let menu = podcasts_context_surface::episode_menu_button(
         row,
@@ -427,8 +424,52 @@ fn episode_row(
         context.unavailable_episode,
         SELECT_ROW_ACTION,
     );
-    root.append(&menu);
+    skeleton.trailing.append(&menu);
+    let reveal = Rc::new(crate::ui::source_row::Reveal::install(&root, &menu));
+    reveal.set_selected(is_selected);
+    let hover_media = media.clone();
+    reveal.on_hover(move |hovered| hover_media.set_hovered(hovered));
+    let focus_media = media.clone();
+    root.connect_has_focus_notify(move |row| focus_media.set_focused(row.has_focus()));
+    media.set_selection_mode(!context.selected_ids.is_empty());
+    media.set_selected(is_selected);
+    let checkbox_id = row.id;
+    media.connect_toggled(move |checkbox| {
+        let target = (
+            checkbox_id,
+            super::podcasts_selection::SelectMode::Toggle.as_u8(),
+        )
+            .to_variant();
+        if let Err(error) = checkbox.activate_action(SELECT_ROW_ACTION, Some(&target)) {
+            tracing::debug!(%error, checkbox_id, "selection checkbox did not reach the action");
+        }
+    });
+    widgets.selection.insert(
+        row.id,
+        SelectionRowWidgets {
+            row: root.clone(),
+            media: Some(media),
+            reveal: Some(reveal),
+        },
+    );
     root.upcast()
+}
+
+/// The one status chip a source row may carry.
+pub(super) fn chip_spec(row: &EpisodeRow) -> Option<crate::ui::source_row::ChipSpec> {
+    let pill = status_pill(row)?;
+    let label = if pill.css_class == "reprise-podcast-status-resume" {
+        strings::podcast_status_resume(crate::ui::source_row::resume_percent(
+            row.position_ms,
+            row.duration_secs,
+        ))
+    } else {
+        strings::text(pill.label)
+    };
+    Some(crate::ui::source_row::ChipSpec {
+        label,
+        css_class: pill.css_class,
+    })
 }
 
 pub(super) use super::podcasts_row_state::{update_download_state, update_network_state};
@@ -440,3 +481,7 @@ pub(super) fn update_playback_state(widgets: &DownloadRowWidgets, playing: bool)
 #[cfg(test)]
 #[path = "podcasts_groups_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "podcasts_source_row_tests.rs"]
+mod source_row_tests;

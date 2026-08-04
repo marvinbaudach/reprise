@@ -54,7 +54,7 @@ impl Reveal {
 
         let focus_state = reveal.state.clone();
         let focus_target = target.as_ref().downgrade();
-        target.as_ref().connect_has_focus_notify(move |widget| {
+        host.as_ref().connect_has_focus_notify(move |widget| {
             focus_state.focused.set(widget.has_focus());
             apply(&focus_state, &focus_target);
         });

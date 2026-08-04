@@ -1,8 +1,10 @@
 //! Shared source-row style.
 
+use super::skeleton::ROW_MIN_HEIGHT;
+
 pub(in crate::ui) fn css() -> String {
     r#"
-.reprise-source-row { min-height: 56px; }
+.reprise-source-row { min-height: __ROW_MIN_HEIGHT__px; }
 .reprise-source-row-media { min-width: 64px; min-height: 40px; }
 .reprise-source-row-size { min-width: 110px; }
 .reprise-source-row-chip {
@@ -12,7 +14,7 @@ pub(in crate::ui) fn css() -> String {
   font-size: 0.8em;
 }
 "#
-    .to_owned()
+    .replace("__ROW_MIN_HEIGHT__", &ROW_MIN_HEIGHT.to_string())
 }
 
 #[cfg(test)]

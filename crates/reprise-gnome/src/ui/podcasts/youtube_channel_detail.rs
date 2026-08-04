@@ -693,7 +693,14 @@ impl YoutubeChannelDetail {
             self.unavailable_episode.get(),
             SELECT_CHANNEL_ROW_ACTION,
         );
-        selection_widgets.insert(episode.id, SelectionRowWidgets { row: row.clone() });
+        selection_widgets.insert(
+            episode.id,
+            SelectionRowWidgets {
+                row: row.clone(),
+                media: None,
+                reveal: None,
+            },
+        );
         let play = gtk4::Button::new();
         play.add_css_class("flat");
         play.set_tooltip_text(Some(&strings::text(strings::PLAY_OR_PAUSE)));

@@ -3994,6 +3994,32 @@ listening statistics.
   nothing carrying a genre shows **no chip at all** — an empty or invented
   suggestion is worse than none, and the dialogs remain fully usable through
   their search field.
+- **SRC-16** [active] [gtk] — **Podcast and YouTube episode lists share one
+  row grammar.** A fixed 64 × 40 media column hosts either 64 × 36 wide art or
+  36 × 36 square art, so both source kinds start their title at the same x
+  position and keep the same minimum row height. The second line drops absent
+  date or duration values instead of leaving separators behind, and carries at
+  most one status chip outside that fact chain. Resume states include the
+  measured whole percentage when duration is known and fall back to Resume
+  without inventing one otherwise. The 110-pixel download-state slot stays
+  reserved on the right even when no size is known; selection occupies the
+  media overlay on the left. Covered by
+  `src_16_the_shared_row_geometry_is_one_set_of_constants`,
+  `src_16_the_row_height_is_carried_by_the_shared_style`,
+  `src_16_both_shapes_fit_the_same_column`,
+  `src_16_the_checkbox_replaces_the_playing_marker_rather_than_covering_it`,
+  `src_16_the_title_starts_at_the_same_x_in_both_source_views`,
+  `src_16_rows_have_the_same_height_in_both_source_views`, and
+  `src_16_a_row_renders_exactly_one_status_chip`.
+- **SRC-17** [active] [gtk] — **Approach reveals one reserved source-row
+  action surface.** A source row's ⋮ keeps its layout space at all times and
+  changes only opacity and targeting on hover, keyboard focus, or selection;
+  revealing it can therefore never move the title under the pointer. The same
+  hover state is shared with the media overlay rather than collected by a
+  second controller. Covered by
+  `src_17_revealing_keeps_the_space_and_only_changes_opacity`,
+  `src_17_the_row_menu_button_is_transparent_until_hover_focus_or_selection`,
+  and `src_17_revealing_the_row_menu_button_does_not_move_the_title`.
 - **POD-1** [active] [core] — Episode status is a pure derivation:
   Played exactly when `played_at` is set, otherwise Resume when
   `position_ms > 0`, otherwise unstarted. The visible New pill is a

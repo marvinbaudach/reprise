@@ -6,11 +6,15 @@ use reprise_core::podcasts::{EpisodeRow, PodcastKind};
 
 use super::podcasts_selection::SelectMode;
 
-pub(super) fn episode_thumbnail(row: &EpisodeRow, images_allowed: bool) -> gtk4::Overlay {
-    let (width, height) = match row.kind {
-        PodcastKind::Rss => (32, 32),
-        PodcastKind::Youtube => (56, 32),
+pub(super) fn episode_thumbnail(
+    row: &EpisodeRow,
+    images_allowed: bool,
+) -> (gtk4::Widget, crate::ui::source_row::MediaShape) {
+    let shape = match row.kind {
+        PodcastKind::Rss => crate::ui::source_row::MediaShape::Square,
+        PodcastKind::Youtube => crate::ui::source_row::MediaShape::Wide,
     };
+    let (width, height) = crate::ui::source_row::media_size(shape);
     let source = super::source_image::SourceImage::new_with_dimensions(
         row.image_url.as_deref().or(row.show_image_url.as_deref()),
         match row.kind {
@@ -24,10 +28,7 @@ pub(super) fn episode_thumbnail(row: &EpisodeRow, images_allowed: bool) -> gtk4:
     source
         .widget()
         .add_css_class("reprise-podcast-episode-thumbnail");
-    let overlay = gtk4::Overlay::new();
-    overlay.set_size_request(width, height);
-    overlay.set_child(Some(source.widget()));
-    overlay
+    (source.widget().clone().upcast(), shape)
 }
 
 /// Activating a row is the only way to play it now that the per-row play

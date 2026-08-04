@@ -36,6 +36,7 @@ pub(in crate::ui) struct MediaColumn {
     checkbox: gtk4::CheckButton,
     state_overlay: Rc<RefCell<Option<gtk4::Widget>>>,
     state: Rc<OverlayState>,
+    toggle_handler: RefCell<Option<gtk4::glib::SignalHandlerId>>,
 }
 
 impl MediaColumn {
@@ -62,6 +63,7 @@ impl MediaColumn {
             checkbox,
             state_overlay: Rc::new(RefCell::new(None)),
             state: Rc::new(OverlayState::default()),
+            toggle_handler: RefCell::new(None),
         };
         column.recompute();
         column
@@ -95,8 +97,23 @@ impl MediaColumn {
 
     pub(in crate::ui) fn set_selected(&self, selected: bool) {
         self.state.selected.set(selected);
+        let handler = self.toggle_handler.borrow_mut().take();
+        if let Some(handler) = handler.as_ref() {
+            self.checkbox.block_signal(handler);
+        }
         self.checkbox.set_active(selected);
+        if let Some(handler) = handler.as_ref() {
+            self.checkbox.unblock_signal(handler);
+        }
+        self.toggle_handler.replace(handler);
         self.recompute();
+    }
+
+    /// Installs the view-owned selection action while keeping state updates
+    /// from feeding back into that action through `set_active`.
+    pub(in crate::ui) fn connect_toggled(&self, callback: impl Fn(&gtk4::CheckButton) + 'static) {
+        let handler = self.checkbox().connect_toggled(callback);
+        self.toggle_handler.replace(Some(handler));
     }
 
     pub(in crate::ui) fn set_hovered(&self, hovered: bool) {
