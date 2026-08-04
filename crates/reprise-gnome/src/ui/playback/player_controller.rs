@@ -291,6 +291,13 @@ pub struct PlayerController {
     /// Cached library availability used to keep idle Play reachable without
     /// enabling it for a genuinely empty library.
     pub(in crate::ui) library_has_tracks: Cell<bool>,
+    /// START-3: the restored track is still sitting where the start put it —
+    /// selected and centered — and has not been played yet. The first Play
+    /// therefore only has to start the audio; centering it again is the second
+    /// visible scroll START-3 exists to avoid. Cleared by the first
+    /// `present_track`, which is the moment any placement stops being the
+    /// startup one.
+    pub(in crate::ui) restored_placement_intact: Cell<bool>,
     pub(in crate::ui) up_next: RefCell<UpNextQueue>,
     pub(in crate::ui) current_up_next: Cell<Option<QueueItem>>,
     /// Catalog id removed while its player-owned snapshot remains loaded.
@@ -495,6 +502,7 @@ impl PlayerController {
             scrobble_session: RefCell::new(ScrobbleSession::default()),
             queue: RefCell::new(Queue::new()),
             library_has_tracks: Cell::new(library_has_tracks),
+            restored_placement_intact: Cell::new(false),
             up_next: RefCell::new(UpNextQueue::default()),
             current_up_next: Cell::new(None),
             deferred_queue_purge_id: Cell::new(None),
@@ -652,6 +660,9 @@ impl PlayerController {
         self.sync_lyrics_track(None);
         // Ordinary queue playback leaves preview mode (INST-4b).
         self.leave_external_for_queue();
+        // Whatever the start placed, this presentation supersedes it: from
+        // here on the ordinary NAV-10a reveal policy applies again (START-3).
+        self.restored_placement_intact.set(false);
 
         let summary = {
             let conn = &self.conn;
