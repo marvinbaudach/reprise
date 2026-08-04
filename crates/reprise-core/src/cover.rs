@@ -379,12 +379,37 @@ pub fn thumbnail_for_track(track_path: &Path, size: ThumbnailSize) -> Option<Pat
     resolved
 }
 
-/// Marker in the index for "the download side has nothing to do here".
+/// Marker in the index's third line for "the download side has nothing to do
+/// here".
 ///
 /// One marker for both of its answers — already covered, or nothing found —
 /// because they lead to the same thing: do not ask again until something that
 /// could change the answer has changed.
+///
+/// It lives on its own line because it is a different question from what the
+/// cover resolved to. Writing it into the answer line cost an evening: the
+/// batch marks a *covered* track settled, that overwrote the remembered
+/// thumbnail, and the whole library rendered as placeholders.
 const DOWNLOAD_EXHAUSTED: &str = "-";
+
+/// The three lines an index entry holds: the stamp it is valid for, the
+/// thumbnail the cover resolved to (empty for "no cover"), and whether the
+/// download side is settled.
+struct IndexEntry {
+    stamp: String,
+    thumbnail: String,
+    download_settled: bool,
+}
+
+fn read_entry(index: &Path) -> Option<IndexEntry> {
+    let contents = std::fs::read_to_string(index).ok()?;
+    let mut lines = contents.split('\n');
+    Some(IndexEntry {
+        stamp: lines.next()?.to_owned(),
+        thumbnail: lines.next().unwrap_or_default().to_owned(),
+        download_settled: lines.next().unwrap_or_default() == DOWNLOAD_EXHAUSTED,
+    })
+}
 
 /// Whether the download side has already been asked about this track and had
 /// nothing to do, while nothing relevant has changed since.
@@ -397,41 +422,36 @@ pub fn download_marked_unavailable(track_path: &Path, size: ThumbnailSize) -> bo
     let Some(stamp) = resolution_stamp(track_path) else {
         return false;
     };
-    let index = resolution_index_path(track_path, size);
-    let Ok(contents) = std::fs::read_to_string(&index) else {
-        return false;
-    };
-    matches!(
-        contents.split_once('\n'),
-        Some((remembered, DOWNLOAD_EXHAUSTED)) if remembered == stamp
-    )
+    read_entry(&resolution_index_path(track_path, size))
+        .is_some_and(|entry| entry.stamp == stamp && entry.download_settled)
 }
 
-/// Remember that the download side had nothing to do for this track.
+/// Remember that the download side had nothing to do for this track, keeping
+/// whatever the cover itself resolved to.
 pub fn remember_download_unavailable(track_path: &Path, size: ThumbnailSize) {
     let Some(stamp) = resolution_stamp(track_path) else {
         return;
     };
-    write_resolution_body(
-        &resolution_index_path(track_path, size),
-        &stamp,
-        DOWNLOAD_EXHAUSTED,
-    );
+    let index = resolution_index_path(track_path, size);
+    let thumbnail = read_entry(&index)
+        .filter(|entry| entry.stamp == stamp)
+        .map(|entry| entry.thumbnail)
+        .unwrap_or_default();
+    write_entry(&index, &stamp, &thumbnail, true);
 }
 
 /// `Some(entry)` when the index still applies, `None` when it must be redone.
 /// The inner `Option` is the answer itself: `None` for "this track has no
 /// cover", which is a real answer and not a miss.
 fn read_resolution(index: &Path, stamp: &str) -> Option<Option<PathBuf>> {
-    let contents = std::fs::read_to_string(index).ok()?;
-    let (remembered_stamp, thumbnail) = contents.split_once('\n')?;
-    if remembered_stamp != stamp {
+    let entry = read_entry(index)?;
+    if entry.stamp != stamp {
         return None;
     }
-    if thumbnail.is_empty() || thumbnail == DOWNLOAD_EXHAUSTED {
+    if entry.thumbnail.is_empty() {
         return Some(None);
     }
-    let path = PathBuf::from(thumbnail);
+    let path = PathBuf::from(entry.thumbnail);
     // The thumbnail cache can be cleared independently of this index; a
     // remembered path that no longer exists is a miss, not an answer.
     path.exists().then_some(Some(path))
@@ -441,6 +461,22 @@ fn write_resolution(index: &Path, stamp: &str, thumbnail: Option<&Path>) {
     let answer = thumbnail
         .map(|path| path.to_string_lossy())
         .unwrap_or_default();
+    // A fresh resolution says nothing about the download side; keep what is
+    // known about it rather than making the batch ask all over again.
+    let settled =
+        read_entry(index).is_some_and(|entry| entry.stamp == stamp && entry.download_settled);
+    write_entry(index, stamp, &answer, settled);
+}
+
+fn write_entry(index: &Path, stamp: &str, thumbnail: &str, download_settled: bool) {
+    let answer = format!(
+        "{thumbnail}\n{}",
+        if download_settled {
+            DOWNLOAD_EXHAUSTED
+        } else {
+            ""
+        }
+    );
     write_resolution_body(index, stamp, &answer);
 }
 
@@ -882,6 +918,34 @@ mod tests {
         }
         std::fs::remove_file(resolution_index_path(&track, ThumbnailSize::List)).ok();
         first.map(|path| std::fs::remove_file(path).ok());
+    }
+
+    #[test]
+    fn settling_the_download_side_keeps_the_cover_that_was_already_found() {
+        // The batch marks every track it walks as settled, including the ones
+        // that already have a cover. Writing that into the answer instead of
+        // beside it rendered the whole library as placeholders.
+        let dir = tempfile::tempdir().unwrap();
+        let album = format!("Settled {}", fastrand::u64(..));
+        let track = tagged_track_with_cover(dir.path(), "s.flac", &album, solid_png([4, 5, 6]));
+
+        let resolved = thumbnail_for_track(&track, ThumbnailSize::List);
+        assert!(resolved.is_some(), "the track has an embedded cover");
+
+        remember_download_unavailable(&track, ThumbnailSize::List);
+
+        assert!(
+            download_marked_unavailable(&track, ThumbnailSize::List),
+            "the download side must be remembered as settled"
+        );
+        assert_eq!(
+            thumbnail_for_track(&track, ThumbnailSize::List),
+            resolved,
+            "settling the download side must not erase the cover itself"
+        );
+
+        std::fs::remove_file(resolution_index_path(&track, ThumbnailSize::List)).ok();
+        resolved.map(|path| std::fs::remove_file(path).ok());
     }
 
     #[test]
