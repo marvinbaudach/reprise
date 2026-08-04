@@ -80,6 +80,17 @@ class MainActivity : ComponentActivity() {
         write = { trackId, rating -> session.setRating(trackId, rating) },
         onMainThread = { work -> runOnUiThread { work() } },
     )
+
+    /**
+     * The playing track's row, read off the main thread and answered back on
+     * it. Same reason as [ratings] — `track_by_id` takes the library lock a
+     * folder scan holds for its whole walk — and the same deferred lambda, so
+     * the library still opens when the screen asks for it.
+     */
+    private val tracks = TrackLoader(
+        read = { trackId -> session.trackById(trackId) },
+        onMainThread = { work -> runOnUiThread { work() } },
+    )
     private val themeController by lazy {
         ThemeController(
             port = AndroidThemeSettingsPort(library),
@@ -171,7 +182,7 @@ class MainActivity : ComponentActivity() {
                                 listArtists = session::listArtists,
                                 openAlbum = session::openAlbum,
                                 listAlbumTracks = session::listAlbumTracks,
-                                loadTrackById = ::loadTrackById,
+                                loadTrack = ::loadTrack,
                                 playTracks = ::playTracks,
                                 loadPlaybackSettings = ::loadPlaybackSettings,
                                 setEqualizerEnabled = ::setEqualizerEnabled,
@@ -244,11 +255,13 @@ class MainActivity : ComponentActivity() {
         if (!ratings.shutdown()) {
             Log.w(TAG, "A rating was still being written when the screen closed")
         }
-        // Artwork deliberately gets no such drain. A cover is a read, so the
-        // requests still queued are dropped rather than waited for, and a read
-        // already running needs no help: the bindings count a handle's in-flight
-        // calls and the close below frees the Rust object only once the last one
-        // has returned. `TrackArtwork.shutdown` carries the reasoning.
+        // Artwork and the playing track's row deliberately get no such drain.
+        // Both are reads, so the requests still queued are dropped rather than
+        // waited for, and a read already running needs no help: the bindings
+        // count a handle's in-flight calls and the close below frees the Rust
+        // object only once the last one has returned. `TrackArtwork.shutdown`
+        // carries the reasoning.
+        tracks.shutdown()
         if (artworkDelegate.isInitialized()) {
             artworkDelegate.value.shutdown()
         }
@@ -306,11 +319,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun loadTrackById(trackId: Long): LibraryTrack? = runCatching {
-        session.trackById(trackId)
-    }.getOrElse { error ->
-        Log.e(TAG, "Could not load playing track $trackId", error)
-        null
+    /**
+     * Asks for the playing track's row. The failure is handled inside
+     * [TrackLoader], which is also the only place that can do anything about
+     * it: it is the one that can ask again.
+     */
+    private fun loadTrack(trackId: Long, deliver: (LibraryTrack?) -> Unit) {
+        tracks.load(trackId, deliver)
     }
 
     /**
@@ -432,7 +447,7 @@ private fun LibraryScreen(
     listArtists: (LibraryWindowRange) -> LibraryWindow<LibraryArtist>,
     openAlbum: (LibraryAlbum) -> AlbumTrackList,
     listAlbumTracks: (LibraryAlbum, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
-    loadTrackById: (Long) -> LibraryTrack?,
+    loadTrack: (Long, (LibraryTrack?) -> Unit) -> Unit,
     playTracks: (PlaybackSelection, (String) -> Unit) -> Unit,
     loadPlaybackSettings: () -> PlaybackSettingsUiState,
     setEqualizerEnabled: (Boolean) -> PlaybackSettingsUiState,
@@ -470,7 +485,7 @@ private fun LibraryScreen(
             listArtists = listArtists,
             openAlbum = openAlbum,
             listAlbumTracks = listAlbumTracks,
-            loadTrackById = loadTrackById,
+            loadTrack = loadTrack,
             playTracks = playTracks,
             loadPlaybackSettings = loadPlaybackSettings,
             setEqualizerEnabled = setEqualizerEnabled,

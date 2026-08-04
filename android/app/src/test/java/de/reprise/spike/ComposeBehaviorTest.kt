@@ -190,7 +190,7 @@ class ComposeBehaviorTest {
                     listArtists = { browse.artists },
                     openAlbum = { error("Album navigation is outside this test") },
                     listAlbumTracks = { _, _ -> LibraryWindow.empty() },
-                    loadTrackById = { id -> tracks.firstOrNull { it.id == id } },
+                    loadTrack = { id, deliver -> deliver(tracks.firstOrNull { it.id == id }) },
                     playTracks = { selection, _ ->
                         playedIndices += selection.startIndex
                         val selected = selection.tracks[selection.startIndex]
@@ -292,9 +292,9 @@ class ComposeBehaviorTest {
                     listArtists = { browse.artists },
                     openAlbum = { error("Album navigation is outside this test") },
                     listAlbumTracks = { _, _ -> LibraryWindow.empty() },
-                    loadTrackById = { id ->
+                    loadTrack = { id, deliver ->
                         loadedIds += id
-                        track.takeIf { it.id == id }
+                        deliver(track.takeIf { it.id == id })
                     },
                     playTracks = { _, _ -> },
                     loadPlaybackSettings = {
@@ -334,6 +334,103 @@ class ComposeBehaviorTest {
         compose.onNode(hasClickLabel("Open Now Playing")).assertDoesNotExist()
         compose.onNodeWithContentDescription("Collapse Now Playing").assertDoesNotExist()
         assertEquals(listOf(track.id, track.id), loadedIds)
+    }
+
+    /**
+     * The playing track's row is read off the main thread, so its answer
+     * arrives after the composition that asked for it — and it is shown only
+     * while it is still the track the session reports as playing.
+     *
+     * Four moments, one decision. Nothing is shown while this track's answer is
+     * outstanding: keeping the previous row would put a track on screen that is
+     * not the one playing, and the star in the sheet would rate it. An answer
+     * for the track before this one is discarded rather than shown in its
+     * place. And a session that has stopped shows nothing at all, whatever
+     * arrives afterwards — the one rule the mini player may never break.
+     *
+     * The fake here never answers by itself, which is the point: a surface that
+     * reads the row inside its own composition cannot pass this, because the
+     * row only ever exists after the composition that asked for it.
+     */
+    @Test
+    fun theRowAppearsOnlyOnItsOwnAnswerAndNeverStandsInForAnotherTrack() {
+        val first = testTrack(rating = 2).copy(id = 830, title = "First Song")
+        val second = testTrack(rating = 4).copy(
+            id = 831,
+            uri = "content://provider/document/second.flac",
+            title = "Second Song",
+        )
+        val browse = LibraryScreenState.Browse(
+            titles = LibraryWindow(total = 2, rows = listOf(first, second), hasMore = false),
+            albums = LibraryWindow.empty(),
+            artists = LibraryWindow.empty(),
+        )
+        val pending = mutableMapOf<Long, (LibraryTrack?) -> Unit>()
+        var playback by mutableStateOf(
+            testPlayback(positionMs = 20_000).copy(
+                currentTrackId = first.id,
+                currentTrackUri = first.uri,
+            ),
+        )
+        compose.setContent {
+            RepriseTheme(nocturneForTests, darkPalette = true) {
+                BrowseScreen(
+                    state = browse,
+                    playback = playback,
+                    playbackSettingsRevision = 0,
+                    chooseFolder = {},
+                    rescan = {},
+                    themeSelection = nocturneForTests,
+                    selectTheme = {},
+                    searchTitles = { _, _ -> browse.titles },
+                    listAlbums = { browse.albums },
+                    listArtists = { browse.artists },
+                    openAlbum = { error("Album navigation is outside this test") },
+                    listAlbumTracks = { _, _ -> LibraryWindow.empty() },
+                    loadTrack = { id, deliver -> pending[id] = deliver },
+                    playTracks = { _, _ -> },
+                    loadPlaybackSettings = {
+                        PlaybackSettingsUiState(false, true, emptyList())
+                    },
+                    setEqualizerEnabled = { enabled ->
+                        PlaybackSettingsUiState(enabled, true, emptyList())
+                    },
+                    replaceEqualizerCurve = {
+                        PlaybackSettingsUiState(false, true, emptyList())
+                    },
+                    setGaplessEnabled = { enabled ->
+                        PlaybackSettingsUiState(false, enabled, emptyList())
+                    },
+                )
+            }
+        }
+        val miniPlayer = { compose.onNode(hasClickLabel("Open Now Playing")) }
+
+        // Asked for, not answered: the frame stays empty rather than borrowing
+        // a row from somewhere else.
+        miniPlayer().assertDoesNotExist()
+
+        compose.runOnIdle { pending.getValue(first.id)(first) }
+        miniPlayer().assertTextContains("First Song")
+
+        // The session moves on before the next row has been read.
+        compose.runOnIdle {
+            playback = playback.copy(currentTrackId = second.id, currentTrackUri = second.uri)
+        }
+        miniPlayer().assertDoesNotExist()
+
+        // The first track's answer arrives late — for a track that is no longer
+        // the one playing.
+        compose.runOnIdle { pending.getValue(first.id)(first) }
+        miniPlayer().assertDoesNotExist()
+
+        compose.runOnIdle { pending.getValue(second.id)(second) }
+        miniPlayer().assertTextContains("Second Song")
+
+        // Playback ends. Whatever answers now belongs to nothing.
+        compose.runOnIdle { playback = PlaybackUiState(ready = true) }
+        compose.runOnIdle { pending.getValue(second.id)(second) }
+        miniPlayer().assertDoesNotExist()
     }
 
     /**
@@ -495,7 +592,7 @@ class ComposeBehaviorTest {
                     listArtists = { browse.artists },
                     openAlbum = { error("Album navigation is outside this test") },
                     listAlbumTracks = { _, _ -> LibraryWindow.empty() },
-                    loadTrackById = { null },
+                    loadTrack = { _, deliver -> deliver(null) },
                     playTracks = { _, _ -> },
                     loadPlaybackSettings = {
                         PlaybackSettingsUiState(false, true, emptyList())
@@ -553,7 +650,7 @@ class ComposeBehaviorTest {
                     listArtists = { browse.artists },
                     openAlbum = { error("Album navigation is outside this test") },
                     listAlbumTracks = { _, _ -> LibraryWindow.empty() },
-                    loadTrackById = { null },
+                    loadTrack = { _, deliver -> deliver(null) },
                     playTracks = { _, _ -> },
                     loadPlaybackSettings = {
                         // Open once, then behave like a service that has not
