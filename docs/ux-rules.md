@@ -273,6 +273,15 @@ human. Rationale for changes lives in the git history.
   is not the complete library, or no other title exists, playback ends as
   before. Explicit Play Next entries retain priority and Repeat One/All
   retain their existing queue behavior.
+- **PLAY-12** [active] [gtk] — **The player bar has no dead surfaces.** The
+  title, channel/artist line, and cover are links in every playback mode. What
+  is playing is findable: each of the three surfaces leads to the place where
+  the loaded item stands in a list. If a surface has no distinct target in a
+  mode, it leads to the nearest target that does exist, never nowhere. A
+  surface may be insensitive only when no item at all is loaded; it is then
+  visibly inactive rather than silently inert. Its label and tooltip name the
+  actual target for the current mode. The Now Playing and information panels
+  share these links and labels.
 
 ## D. Albums & artists view
 
@@ -3389,7 +3398,11 @@ means deterministic and high-confidence, never „without review".
   intents RevealTrack, OpenAlbum, and OpenArtist, regardless of whether
   they originate from the player bar, Now Playing panel, track list,
   queue, cover, or My Stats. The destination selects, focuses, and
-  centers the anchor track; Back restores the point of origin.
+  centers the anchor track; Back restores the point of origin. For a playing
+  podcast or YouTube item, the title and Ctrl+L reveal the episode while the
+  channel line and cover reveal its channel. For radio, all three surfaces
+  reveal the station row. These jumps always land in the source list, never a
+  detail page; an open channel detail page closes for the jump.
 
 - **BROWSE-5** [replaced by BROWSE-12] — Session restore previously retained
   sorting and playback origin but always opened the library root.
@@ -3997,7 +4010,10 @@ listening statistics.
   one cold-start restoration, which makes the restored episode the sole
   selection without taking focus. A collapsed group's ten-episode preview
   window opens when the loaded episode sits past it; an item hidden by the
-  active filter is not revealed and the filter is never cleared to reach it.
+  active filter is not revealed and the filter is never cleared to reach it. A
+  jump the user asked for always reveals, also in the already visible view and
+  regardless of the 1.5-second grace period; it drops exactly those filter
+  facets that would otherwise keep the target hidden, and nothing else.
 - **SRC-14** [active] [gtk] — **Episode rows select like track rows.** A click
   selects the row alone, Ctrl-click toggles it, Shift-click extends the
   selection from the anchor across the rendered order, and playback takes a
