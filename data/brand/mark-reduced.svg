@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Bügel: eine Masse, keine Glanzkante. -->
+  <path id="band" d="M 4 40 C 4 18 16 6 32 6 C 48 6 60 18 60 40
+                     L 53 40 C 53 23 44 13 32 13 C 20 13 11 23 11 40 Z"
+        fill="#4F93C8"/>
+  <!-- Muscheln: schlichte Rundungen, die in die Kopfform übergehen. -->
+  <path id="cup-l" d="M 8 29 C 3 29 1 34 1 40 C 1 47 3 52 8 52
+                      C 12 52 14 47 14 40 C 14 34 12 29 8 29 Z"
+        fill="#2B155E"/>
+  <path id="cup-r" d="M 56 29 C 61 29 63 34 63 40 C 63 47 61 52 56 52
+                      C 52 52 50 47 50 40 C 50 34 52 29 56 29 Z"
+        fill="#2B155E"/>
+  <!-- Ohrbüschel: erhalten, sie tragen das Eulen-Signal. -->
+  <path id="tufts" d="M 10 10 C 17 19 22 24 26 29 C 21 27 17 28 14 32 L 10 10 Z
+                      M 54 10 C 47 19 42 24 38 29 C 43 27 47 28 50 32 L 54 10 Z"
+        fill="#2B155E"/>
+  <path id="head" fill="#2B155E" fill-rule="evenodd"
+        d="M 32 24 C 46 24 52 33 52 42 C 52 52 43 58 32 58
+           C 21 58 12 52 12 42 C 12 33 18 24 32 24 Z
+           M 19 43 C 19 39 21 37 24 37 C 27 37 29 39 29 43
+           C 29 47 27 49 24 49 C 21 49 19 47 19 43 Z
+           M 35 43 C 35 39 37 37 40 37 C 43 37 45 39 45 43
+           C 45 47 43 49 40 49 C 37 49 35 47 35 43 Z"/>
+  <path id="face" fill="#5F2F8A" fill-rule="evenodd"
+        d="M 32 32 C 42 32 48 37 48 44 C 48 52 41 56 32 56
+           C 23 56 16 52 16 44 C 16 37 22 32 32 32 Z
+           M 19 43 C 19 39 21 37 24 37 C 27 37 29 39 29 43
+           C 29 47 27 49 24 49 C 21 49 19 47 19 43 Z
+           M 35 43 C 35 39 37 37 40 37 C 43 37 45 39 45 43
+           C 45 47 43 49 40 49 C 37 49 35 47 35 43 Z"/>
+  <path id="brow" d="M 32 31 L 47 36 L 46 40 L 32 38 L 18 40 L 17 36 Z"
+        fill="#2B155E"/>
+  <path id="eye-l" fill="#1C698A" fill-rule="evenodd"
+        d="M 20 43 C 20 40 21 39 24 39 C 27 39 28 40 28 43
+           C 28 46 27 47 24 47 C 21 47 20 46 20 43 Z
+           M 22 43 C 22 44 23 45 24 45 C 25 45 26 44 26 43
+           C 26 42 25 41 24 41 C 23 41 22 42 22 43 Z"/>
+  <path id="eye-r" fill="#1C698A" fill-rule="evenodd"
+        d="M 36 43 C 36 40 37 39 40 39 C 43 39 44 40 44 43
+           C 44 46 43 47 40 47 C 37 47 36 46 36 43 Z
+           M 38 43 C 38 44 39 45 40 45 C 41 45 42 44 42 43
+           C 42 42 41 41 40 41 C 39 41 38 42 38 43 Z"/>
+  <path id="beak" d="M 32 44 L 35 50 L 32 56 L 29 50 Z" fill="#A09EB4"/>
+</svg>
