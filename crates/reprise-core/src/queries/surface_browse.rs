@@ -6,7 +6,9 @@ use crate::browser::SortDirection;
 use crate::db::Db;
 use crate::models::Track;
 use crate::view_source::ViewSource;
+use rusqlite::OptionalExtension;
 
+use super::clauses::{row_to_track, track_projection, PRESENT};
 use super::{query_track_count, query_track_window};
 
 /// The library subset a surface wants to read through a bounded window.
@@ -157,6 +159,25 @@ pub fn query_library_text_search(
     )
 }
 
+/// Returns one present library track by its stable row identity.
+///
+/// The projection comes from `track_projection` rather than being written out
+/// here: `row_to_track` reads its columns by fixed index, so a list that drifts
+/// from the windowed queries' would not fail, it would quietly hand `path` to
+/// `title`. No surface on this path renders the AI badge, so the `is_ai` column
+/// is the cheap literal `0` — projected all the same, because `row_to_track`
+/// reads index 22 either way.
+pub fn query_present_track_by_id(db: &Db, track_id: i64) -> Result<Option<Track>, rusqlite::Error> {
+    let projection = track_projection("", false);
+    db.conn()
+        .query_row(
+            &format!("SELECT {projection} FROM tracks WHERE id = ?1 AND {PRESENT}"),
+            [track_id],
+            row_to_track,
+        )
+        .optional()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -239,6 +260,67 @@ mod tests {
             .map(|track| track.id)
             .collect::<Vec<_>>();
         assert_eq!(ids, (1..=501_i64).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn present_track_by_id_returns_one_complete_track_and_excludes_removed_rows() {
+        let db = Db::open_in_memory().unwrap();
+        db.conn()
+            .execute_batch(
+                "INSERT INTO tracks
+                   (id,path,title,artist,album,duration_ms,rating,play_count,added_at) VALUES
+                 (41,'/music/playing.flac','Playing','Artist','Album',123000,4,9,0),
+                 (42,'/music/removed.flac','Removed','Artist','Album',456000,2,3,0);
+                 UPDATE tracks SET removed_at = 10 WHERE id = 42;",
+            )
+            .unwrap();
+
+        let playing = query_present_track_by_id(&db, 41).unwrap().unwrap();
+
+        assert_eq!(playing.id, 41);
+        assert_eq!(playing.path, "/music/playing.flac");
+        assert_eq!(playing.title, "Playing");
+        assert_eq!(playing.duration_ms, 123_000);
+        assert_eq!(playing.rating, 4);
+        assert_eq!(playing.play_count, 9);
+        assert_eq!(query_present_track_by_id(&db, 42).unwrap(), None);
+        assert_eq!(query_present_track_by_id(&db, 999).unwrap(), None);
+    }
+
+    /// The single-row lookup and a window read the same track the same way.
+    ///
+    /// `row_to_track` addresses its columns by fixed index, so a projection
+    /// that drifts from the one the windowed queries use does not fail — it
+    /// hands `path` to `title` and reports it as data. The seeded row therefore
+    /// carries a distinct value in every column `row_to_track` reads, and both
+    /// paths have to return the very same `Track`.
+    #[test]
+    fn the_single_row_lookup_reads_the_same_columns_as_a_window() {
+        let db = Db::open_in_memory().unwrap();
+        db.conn()
+            .execute_batch(
+                "INSERT INTO tracks
+                   (id,path,title,artist,album,album_artist,year,track_no,genre,
+                    duration_ms,bitrate_kbps,rating,play_count,last_played_at,added_at,
+                    file_mtime,untagged,file_size,device,inode) VALUES
+                 (41,'/music/complete.flac','Complete','Artist','Album','Album Artist',1998,7,
+                  'Genre',123000,987,4,9,1700,1600,1500,1,4242,2001,3003);",
+            )
+            .unwrap();
+
+        let by_id = query_present_track_by_id(&db, 41).unwrap().unwrap();
+        let windowed = query_library_text_search(
+            &db,
+            "",
+            WindowRange {
+                offset: 0,
+                limit: 10,
+            },
+        )
+        .unwrap()
+        .rows;
+
+        assert_eq!(windowed, vec![by_id]);
     }
 
     #[test]

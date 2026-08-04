@@ -101,7 +101,7 @@ build_surface_tree() {
   python3 "$lib/svg_to_vectordrawable.py" "$mark_mono" \
     "$android/drawable/ic_repeat_sign.xml" \
     --fixed-offset 6 --mono --mono-fill '@android:color/white' \
-    --tint '?attr/colorControlNormal'
+    --tint '?android:attr/colorControlNormal'
   python3 "$lib/plate_to_vectordrawable.py" "$plate" \
     "$android/drawable/ic_launcher_background.xml" \
     --colour-ref '@color/reprise_plate'

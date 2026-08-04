@@ -34,6 +34,8 @@ impl From<AndroidRepeatMode> for Repeat {
 pub struct AndroidPlaybackSnapshot {
     pub state: AndroidPlaybackState,
     pub current_index: Option<u64>,
+    pub current_track_id: Option<i64>,
+    pub current_track_uri: Option<String>,
     pub position_ms: i64,
     pub duration_ms: i64,
     pub shuffled: bool,
@@ -65,6 +67,8 @@ impl SessionState {
             snapshot: AndroidPlaybackSnapshot {
                 state: AndroidPlaybackState::Stopped,
                 current_index: None,
+                current_track_id: None,
+                current_track_uri: None,
                 position_ms: 0,
                 duration_ms: 0,
                 shuffled: false,
@@ -126,6 +130,25 @@ impl SessionState {
             .and_then(|index| self.track_ids.get(index).copied())
     }
 
+    fn presented_snapshot(&self) -> AndroidPlaybackSnapshot {
+        let mut snapshot = self.snapshot.clone();
+        let identity = snapshot
+            .current_index
+            .and_then(|index| usize::try_from(index).ok())
+            .and_then(|index| self.track_ids.get(index).zip(self.uris.get(index)));
+        match identity {
+            Some((track_id, uri)) => {
+                snapshot.current_track_id = Some(*track_id);
+                snapshot.current_track_uri = Some(uri.clone());
+            }
+            None => {
+                snapshot.current_track_id = None;
+                snapshot.current_track_uri = None;
+            }
+        }
+        snapshot
+    }
+
     fn play_to_record(&mut self, completed: bool) -> Option<i64> {
         if completed {
             self.max_position_ms = self.max_position_ms.max(self.snapshot.duration_ms);
@@ -169,7 +192,8 @@ impl SessionInner {
 
     fn notify(&self) {
         if let Ok(state) = self.state.lock() {
-            self.listener.on_playback_changed(state.snapshot.clone());
+            self.listener
+                .on_playback_changed(state.presented_snapshot());
         }
     }
 
@@ -452,7 +476,7 @@ impl AndroidPlaybackSession {
     }
 
     pub fn snapshot(&self) -> Result<AndroidPlaybackSnapshot, AndroidPlaybackError> {
-        Ok(self.inner.lock()?.snapshot.clone())
+        Ok(self.inner.lock()?.presented_snapshot())
     }
 
     pub fn equalizer_snapshot(
@@ -500,5 +524,25 @@ impl AndroidPlaybackSession {
         } else {
             self.inner.stop_backend()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_snapshot_with_an_out_of_range_cursor_has_no_track_identity() {
+        let mut state = SessionState::new();
+        state.track_ids = vec![41];
+        state.uris = vec!["content://provider/only.flac".to_owned()];
+        state.snapshot.current_index = Some(2);
+        state.snapshot.current_track_id = Some(41);
+        state.snapshot.current_track_uri = Some("content://provider/only.flac".to_owned());
+
+        let snapshot = state.presented_snapshot();
+
+        assert_eq!(snapshot.current_track_id, None);
+        assert_eq!(snapshot.current_track_uri, None);
     }
 }

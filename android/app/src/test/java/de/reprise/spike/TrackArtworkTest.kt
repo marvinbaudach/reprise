@@ -4,6 +4,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
@@ -40,6 +41,81 @@ private const val DESTROYED = "already been destroyed"
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class TrackArtworkTest {
+    /**
+     * A full-size sheet request is useful now; queued row work belongs to the
+     * list the sheet just covered. It therefore gets a separate serial lane,
+     * while each lane keeps deterministic one-at-a-time decoding.
+     */
+    @Test
+    fun nowPlayingArtworkUsesItsOwnLaneInsteadOfWaitingBehindListWork() {
+        val listWorker = Executors.newSingleThreadExecutor()
+        val fullSizeWorker = Executors.newSingleThreadExecutor()
+        val listStarted = CountDownLatch(1)
+        val releaseList = CountDownLatch(1)
+        val fullSizeAnswered = CountDownLatch(1)
+        val artwork = TrackArtwork(
+            resolve = { _, size ->
+                if (size == AndroidArtworkSize.LIST) {
+                    listStarted.countDown()
+                    releaseList.await(WAIT_SECONDS, TimeUnit.SECONDS)
+                }
+                null
+            },
+            decode = { _ -> null },
+            worker = listWorker,
+            fullSizeWorker = fullSizeWorker,
+            onMainThread = { work -> work() },
+        )
+        val listGate = ArtworkRequestGate()
+        val listRequest = listGate.begin("content://tracks/list", AndroidArtworkSize.LIST)
+        val fullSizeGate = ArtworkRequestGate()
+        val fullSizeRequest =
+            fullSizeGate.begin("content://tracks/now-playing", AndroidArtworkSize.NOW_PLAYING)
+
+        try {
+            artwork.load(listRequest, listGate) {}
+            assertTrue("the list request must occupy its lane", listStarted.await(1, TimeUnit.SECONDS))
+
+            artwork.load(fullSizeRequest, fullSizeGate) { fullSizeAnswered.countDown() }
+
+            assertTrue(
+                "the full-size request must not wait for queued or running list artwork",
+                fullSizeAnswered.await(1, TimeUnit.SECONDS),
+            )
+        } finally {
+            releaseList.countDown()
+            artwork.shutdown()
+        }
+    }
+
+    /**
+     * Teardown stops *both* lanes.
+     *
+     * One line of code and nothing pinning it: the full-size lane was added
+     * after the list lane, and the next such change is the one that forgets it.
+     * A lane that survives `shutdown` is a thread that keeps starting reads
+     * while `onDestroy` closes the handle underneath them — which is safe by
+     * `MusicLibrary`'s call counter, but pointless work in the moments the app
+     * has left, and it is not what this method claims to do.
+     */
+    @Test
+    fun shutdownStopsTheFullSizeLaneAndNotOnlyTheListLane() {
+        val listWorker = Executors.newSingleThreadExecutor()
+        val fullSizeWorker = Executors.newSingleThreadExecutor()
+        val artwork = TrackArtwork(
+            resolve = { _, _ -> null },
+            decode = { _ -> null },
+            worker = listWorker,
+            fullSizeWorker = fullSizeWorker,
+            onMainThread = { work -> work() },
+        )
+
+        artwork.shutdown()
+
+        assertThrows(RejectedExecutionException::class.java) { listWorker.execute {} }
+        assertThrows(RejectedExecutionException::class.java) { fullSizeWorker.execute {} }
+    }
+
     /**
      * A read that arrives too late is refused, and the refusal stays on the
      * artwork thread.

@@ -9,6 +9,10 @@ use reprise_core::playback::{
 use crate::{AndroidEqualizerPoint, AndroidEqualizerSnapshot};
 
 #[cfg(test)]
+#[path = "playback_test_support.rs"]
+mod test_support;
+
+#[cfg(test)]
 #[path = "playback_tests.rs"]
 mod tests;
 
