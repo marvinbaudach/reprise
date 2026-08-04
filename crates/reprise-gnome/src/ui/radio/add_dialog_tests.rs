@@ -237,6 +237,105 @@ fn src_8_radio_results_scroll_inside_a_bounded_viewport() {
     );
 }
 
+/// Seeds one played track so the library has a genre to suggest.
+fn seed_played_genre(conn: &Db, genre: &str) {
+    let seeding = crate::test_db::connection(conn);
+    seeding
+        .execute(
+            "INSERT INTO tracks \
+             (id, path, title, artist, album, genre, duration_ms, play_count, added_at) \
+             VALUES (1, '/music/1.flac', 'Track', 'Artist', 'Album', ?1, 300000, 0, 0)",
+            [genre],
+        )
+        .unwrap();
+    seeding
+        .execute(
+            "INSERT INTO listen_events (track_id, played_at, ms_played) VALUES (1, 100, 300000)",
+            [],
+        )
+        .unwrap();
+}
+
+/// `RAD-5`: the library chip end to end — hidden while the library has
+/// nothing to suggest, labelled from the played genre and the stored country
+/// once it has, and dispatching that very search when clicked.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn rad_5_the_library_chip_appears_from_the_library_and_searches_what_it_says() {
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let dialog = RadioAddDialog::new(
+        conn.clone(),
+        Rc::new(Cell::new(Connectivity::Online)),
+        || {},
+    );
+
+    dialog.refresh_library_chip();
+    assert!(
+        !dialog.widgets.chip_library.is_visible(),
+        "a library with nothing played must not carry a suggestion chip"
+    );
+
+    seed_played_genre(&conn, "Metal");
+    reprise_core::location::store(&conn, 52.52, 13.405, "Berlin, Deutschland", Some("DE")).unwrap();
+    dialog.refresh_library_chip();
+
+    assert!(dialog.widgets.chip_library.is_visible());
+    assert_eq!(
+        dialog.widgets.chip_library.label().as_deref(),
+        Some("Metal in DE"),
+        "the chip names the genre this library plays and the country it knows"
+    );
+
+    dialog.widgets.chip_library.emit_clicked();
+
+    assert!(
+        matches!(dialog.state.borrow().phase, AddDialogPhase::Searching),
+        "the chip must dispatch the search it advertises"
+    );
+    assert_eq!(dialog.widgets.entry.text().as_str(), "Metal in DE");
+}
+
+/// `SRC-8`: the dialog keeps one width, whatever a search returns. A
+/// station name wider than the dialog must ellipsize instead of raising the
+/// content's *minimum* width — `adw::Dialog`'s `content_width` is only a
+/// natural size, so a single long row (even one scrolled out of sight)
+/// otherwise widens the window and the dialog visibly changes size between
+/// two searches.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_8_a_long_station_name_never_widens_the_dialog() {
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    let dialog = RadioAddDialog::new(conn, Rc::new(Cell::new(Connectivity::Online)), || {});
+    let content = dialog.widgets.dialog.child().expect("dialog content");
+    let (empty_minimum, _, _, _) = content.measure(gtk4::Orientation::Horizontal, -1);
+
+    dialog.render_results(vec![StationCandidate {
+        uuid: "long".into(),
+        name: "Rock Antenne Heavy Metal Deutschlands längster Sendername für den Härtetest".into(),
+        url_resolved: "https://radio.test/long".into(),
+        codec: Some("MP3".into()),
+        bitrate_kbps: Some(320),
+        country_code: Some("DE".into()),
+        genre: Some("symphonic melodic death metal aus norddeutschen Kellern".into()),
+        tags: Vec::new(),
+        votes: 12_345,
+        favicon_url: None,
+    }]);
+
+    let (with_results_minimum, _, _, _) = content.measure(gtk4::Orientation::Horizontal, -1);
+    assert_eq!(
+        with_results_minimum, empty_minimum,
+        "a result row must not add to the dialog's minimum width"
+    );
+    assert!(
+        with_results_minimum <= CONTENT_WIDTH,
+        "the dialog must stay at its {CONTENT_WIDTH}px content width, got a \
+         minimum of {with_results_minimum}px"
+    );
+}
+
 /// `RAD-5`: the required "absent without a location" half, exercised
 /// through the real button wiring rather than just the pure decision
 /// function — clicking "Near you" with no app-level location stored must

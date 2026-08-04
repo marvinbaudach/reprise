@@ -19,7 +19,7 @@ fn find_scroller(widget: &gtk4::Widget) -> Option<gtk4::ScrolledWindow> {
 #[ignore = "requires a display; run via xvfb-run"]
 fn src_6_the_foreign_url_hint_appears_while_typing() {
     gtk4::init().unwrap();
-    let surface = build_surface(PodcastKind::Rss, Connectivity::Online);
+    let surface = build_surface(PodcastKind::Rss, Connectivity::Online, None);
 
     surface.entry.set_text("https://www.youtube.com/@example");
     assert_eq!(
@@ -48,7 +48,7 @@ fn src_6_the_foreign_url_hint_appears_while_typing() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn net_3_search_is_disabled_offline_but_a_url_stays_submittable() {
     gtk4::init().unwrap();
-    let surface = build_surface(PodcastKind::Rss, Connectivity::Offline);
+    let surface = build_surface(PodcastKind::Rss, Connectivity::Offline, None);
 
     assert_eq!(
         surface.status.text().as_str(),
@@ -81,7 +81,7 @@ fn net_3_search_is_disabled_offline_but_a_url_stays_submittable() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn src_8_add_dialog_results_scroll_vertically_only() {
     gtk4::init().unwrap();
-    let surface = build_surface(PodcastKind::Rss, Connectivity::Online);
+    let surface = build_surface(PodcastKind::Rss, Connectivity::Online, None);
     let scroller = surface
         .dialog
         .child()
@@ -108,7 +108,7 @@ fn src_8_add_dialog_results_scroll_vertically_only() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn src_3a_add_dialog_has_fixed_cancel_and_primary_actions() {
     gtk4::init().unwrap();
-    let surface = build_surface(PodcastKind::Rss, Connectivity::Online);
+    let surface = build_surface(PodcastKind::Rss, Connectivity::Online, None);
     let cancel = strings::text(strings::PODCAST_CANCEL);
     let search = strings::text(strings::PODCAST_SEARCH);
     let preview = strings::text(strings::PODCAST_PREVIEW);
@@ -121,6 +121,71 @@ fn src_3a_add_dialog_has_fixed_cancel_and_primary_actions() {
     surface.entry.set_text("https://example.test/feed.xml");
     assert_eq!(surface.primary.label().as_deref(), Some(preview.as_str()));
     assert!(surface.primary.is_sensitive());
+}
+
+/// `SRC-15`: the add dialog offers one suggestion drawn from the library —
+/// and only when the library has one. A library that has played nothing with
+/// a genre gets no chip rather than an empty pill.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_15_the_library_chip_appears_only_with_a_genre_to_suggest() {
+    gtk4::init().unwrap();
+
+    let without = build_surface(PodcastKind::Rss, Connectivity::Online, None);
+    assert!(
+        without.library_chip.is_none(),
+        "no played genre must mean no chip at all"
+    );
+
+    let with = build_surface(PodcastKind::Rss, Connectivity::Online, Some("Metal"));
+    let chip = with.library_chip.expect("a played genre must offer a chip");
+    assert_eq!(
+        chip.label().as_deref(),
+        Some(strings::podcast_chip_genre("Metal").as_str())
+    );
+    assert!(chip.has_css_class("pill"));
+
+    let youtube = build_surface(PodcastKind::Youtube, Connectivity::Online, Some("Metal"));
+    assert_eq!(
+        youtube
+            .library_chip
+            .expect("the YouTube page carries the same chip")
+            .label()
+            .as_deref(),
+        Some(strings::youtube_chip_genre("Metal").as_str()),
+        "the YouTube page finds channels, not podcasts, and says so"
+    );
+}
+
+/// `SRC-8`: the dialog keeps one width. Neither a long show title nor a
+/// long publisher line may raise a result row's *minimum* width past the
+/// dialog's content width — `adw::Dialog` honours that width only as a
+/// natural size, so an unellipsized label widens the window and the dialog
+/// visibly changes size between two searches.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_8_a_long_result_row_never_widens_the_dialog() {
+    gtk4::init().unwrap();
+    let long = candidate_row(
+        "Ein außergewöhnlich langer Podcasttitel, der die Dialogbreite deutlich überschreitet",
+        "Herausgegeben von einem Sender mit einem ebenso langen Namen · 480 Folgen",
+        PodcastKind::Rss,
+        None,
+        false,
+    );
+    let short = candidate_row("Show", "Publisher", PodcastKind::Rss, None, false);
+
+    let (long_minimum, _, _, _) = long.measure(gtk4::Orientation::Horizontal, -1);
+    let (short_minimum, _, _, _) = short.measure(gtk4::Orientation::Horizontal, -1);
+
+    assert_eq!(
+        long_minimum, short_minimum,
+        "row text length must not change the width the row demands"
+    );
+    assert!(
+        long_minimum <= CONTENT_WIDTH,
+        "a result row must fit the {CONTENT_WIDTH}px dialog, got {long_minimum}px"
+    );
 }
 
 #[test]

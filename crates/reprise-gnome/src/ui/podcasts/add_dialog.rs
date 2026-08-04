@@ -46,6 +46,12 @@ struct Preview {
 
 type OnAdded = Rc<dyn Fn(bool)>;
 
+/// `SRC-8`: the single size this dialog keeps, whatever a search returns.
+/// `adw::Dialog` treats both as *natural* sizes, so a result label that does
+/// not ellipsize raises the minimum width and widens the window instead.
+const CONTENT_WIDTH: i32 = 620;
+const CONTENT_HEIGHT: i32 = 560;
+
 struct SearchContext<'a> {
     generation: &'a Rc<Cell<u64>>,
     status: &'a gtk4::Label,
@@ -56,6 +62,9 @@ struct SearchContext<'a> {
 }
 
 struct AddDialogSurface {
+    /// `SRC-15`: absent when the library has played nothing with a genre —
+    /// the row is then not built at all rather than standing empty.
+    library_chip: Option<gtk4::Button>,
     dialog: adw::Dialog,
     entry: gtk4::SearchEntry,
     status: gtk4::Label,
@@ -64,7 +73,11 @@ struct AddDialogSurface {
     primary: gtk4::Button,
 }
 
-fn build_surface(kind: PodcastKind, connectivity: Connectivity) -> AddDialogSurface {
+fn build_surface(
+    kind: PodcastKind,
+    connectivity: Connectivity,
+    library_genre: Option<&str>,
+) -> AddDialogSurface {
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
     content.set_margin_top(18);
     content.set_margin_bottom(18);
@@ -75,6 +88,23 @@ fn build_surface(kind: PodcastKind, connectivity: Connectivity) -> AddDialogSurf
         .placeholder_text(strings::text(dialog_hint(kind)))
         .build();
     content.append(&entry);
+    // `SRC-15`: one suggestion from the user's own library, in the same flat
+    // pill shape the radio dialog uses, so an empty search field is not the
+    // only way in. Built only when the library has a genre to suggest — an
+    // empty chip row would be worse than none.
+    let library_chip = library_genre.map(|genre| {
+        let label = match kind {
+            PodcastKind::Rss => strings::podcast_chip_genre(genre),
+            PodcastKind::Youtube => strings::youtube_chip_genre(genre),
+        };
+        let chip = gtk4::Button::with_label(&label);
+        chip.add_css_class("pill");
+        // Left-aligned and only as wide as its text, like the radio chips —
+        // a full-width button would read as a second primary action.
+        chip.set_halign(gtk4::Align::Start);
+        content.append(&chip);
+        chip
+    });
     let status = gtk4::Label::new(None);
     status.add_css_class("dim-label");
     status.set_xalign(0.0);
@@ -138,12 +168,13 @@ fn build_surface(kind: PodcastKind, connectivity: Connectivity) -> AddDialogSurf
     toolbar.set_content(Some(&content));
     let dialog = adw::Dialog::builder()
         .title(strings::text(dialog_title(kind)))
-        .content_width(620)
-        .content_height(560)
+        .content_width(CONTENT_WIDTH)
+        .content_height(CONTENT_HEIGHT)
         .child(&toolbar)
         .build();
 
     AddDialogSurface {
+        library_chip,
         dialog,
         entry,
         status,
@@ -162,7 +193,20 @@ pub(super) fn present(
 ) {
     let conn = conn.clone();
     let on_added: OnAdded = Rc::new(on_added);
-    let surface = build_surface(preferred_kind, connectivity);
+    // `SRC-15`: the same library fact the radio chip reads, so both dialogs
+    // suggest the same genre instead of each inventing a rule of its own.
+    // This dialog is rebuilt on every open, so the suggestion is always
+    // current without a refresh path.
+    let library_genre = reprise_core::library::taste::top_genre(&conn).unwrap_or_else(|error| {
+        tracing::warn!(%error, "could not read the library's top genre for the podcast chip");
+        None
+    });
+    let surface = build_surface(
+        preferred_kind,
+        connectivity,
+        library_genre.as_ref().map(|genre| genre.name.as_str()),
+    );
+    let library_chip = surface.library_chip;
     let dialog = surface.dialog;
     let entry = surface.entry;
     let status = surface.status;
@@ -244,6 +288,19 @@ pub(super) fn present(
     });
     let submit_on_activate = submit.clone();
     entry.connect_activate(move |entry| submit_on_activate(entry.text().to_string()));
+    if let (Some(chip), Some(genre)) = (library_chip, library_genre) {
+        // `SRC-15`: the chip fills the field it searches with, so the run is
+        // visible, editable and repeatable — never a hidden query the user
+        // cannot see or amend.
+        let submit_on_chip = submit.clone();
+        let entry_for_chip = entry.downgrade();
+        chip.connect_clicked(move |_| {
+            if let Some(entry) = entry_for_chip.upgrade() {
+                entry.set_text(&genre.name);
+            }
+            submit_on_chip(genre.name.clone());
+        });
+    }
     let submit_on_click = submit.clone();
     let entry_for_click = entry.downgrade();
     primary.connect_clicked(move |_| {
@@ -678,6 +735,10 @@ fn candidate_row(
     subtitle.add_css_class("caption");
     subtitle.add_css_class("dim-label");
     subtitle.set_xalign(0.0);
+    // SRC-8: the subtitle ellipsizes for the same reason the title does — a
+    // long publisher name would otherwise raise the dialog's minimum width
+    // and the window would change size between two searches.
+    subtitle.set_ellipsize(gtk4::pango::EllipsizeMode::End);
     labels.append(&subtitle);
     row.append(&labels);
     row
