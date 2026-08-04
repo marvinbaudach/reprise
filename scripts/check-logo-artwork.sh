@@ -51,10 +51,8 @@ geometry = (
     ("rect", {"x": "52", "y": "20", "width": "15", "height": "56", "rx": "1.5"}),
 )
 colours = {
-    "reprise-mark-a.svg": (palette["reprise_violet"], palette["reprise_teal"]),
-    "reprise-mark-b.svg": (palette["reprise_teal"], palette["reprise_violet"]),
-    "reprise-mark-a-light.svg": (palette["reprise_violet_light"], palette["reprise_teal_light"]),
-    "reprise-mark-b-light.svg": (palette["reprise_teal_light"], palette["reprise_violet_light"]),
+    "reprise-mark.svg": (palette["reprise_violet"], palette["reprise_teal"]),
+    "reprise-mark-light.svg": (palette["reprise_violet_light"], palette["reprise_teal_light"]),
 }
 for name, (small, large) in colours.items():
     root = ET.parse(brand / name).getroot()
@@ -87,9 +85,9 @@ PY
   fi
 }
 
-check_geometry_box() { # <variant>
-  local variant=$1 png=$tmp/geometry-$1.png
-  rsvg-convert -w 512 -h 512 -a "data/brand/reprise-mark-$variant.svg" -o "$png"
+check_geometry_box() {
+  local png=$tmp/geometry.png
+  rsvg-convert -w 512 -h 512 -a "data/brand/reprise-mark.svg" -o "$png"
   local sx0 sy0 sx1 sy1 x0 y0 x1 y1
   read -r sx0 sy0 sx1 sy1 < <("${measure[@]}" ink-box "$png")
   read -r x0 y0 x1 y1 < <(awk -v a="$sx0" -v b="$sy0" -v c="$sx1" -v d="$sy1" \
@@ -99,23 +97,23 @@ check_geometry_box() { # <variant>
         ok=(x0 >= 24.5-t && x0 <= 24.5+t && y0 >= 20-t && y0 <= 20+t &&
             x1 >= 67-t && x1 <= 67+t && y1 >= 76-t && y1 <= 76+t); exit !ok
       }'; then
-    ok "V1 variant $variant ink box at 512px: x=[$x0,$x1], y=[$y0,$y1] viewBox units (±1px)"
+    ok "V1 ink box at 512px: x=[$x0,$x1], y=[$y0,$y1] viewBox units (±1px)"
   else
-    bad "V1 variant $variant ink box x=[$x0,$x1], y=[$y0,$y1] misses the exact geometry"
+    bad "V1 ink box x=[$x0,$x1], y=[$y0,$y1] misses the exact geometry"
   fi
 }
 
-report_components() { # <variant>
-  local variant=$1 size png count
+report_components() {
+  local size png count
   for size in 16 22 24 28 32; do
-    png=$tmp/$variant-$size.png
+    png=$tmp/mark-$size.png
     rsvg-convert -w "$size" -h "$size" -a \
-      "data/brand/reprise-mark-$variant.svg" -o "$png"
+      "data/brand/reprise-mark.svg" -o "$png"
     count=$("${measure[@]}" ink-components "$png")
     if [[ $size -eq $MARK_SIZE ]]; then
       [[ $count -eq $MARK_PARTS ]] \
-        && ok "V2 variant $variant ${size}px gate: $count separate components" \
-        || bad "V2 variant $variant ${size}px gate: $count instead of $MARK_PARTS components"
+        && ok "V2 ${size}px gate: $count separate components" \
+        || bad "V2 ${size}px gate: $count instead of $MARK_PARTS components"
     elif [[ $count -lt $MARK_PARTS ]]; then
       # Say what was measured, not what it probably means. A stage can fall
       # short two ways and they call for opposite fixes: strokes running into
@@ -128,25 +126,25 @@ report_components() { # <variant>
       floor=$("${measure[@]}" noise-floor "$png")
       groups=$(wc -w <<<"$sizes")
       if [[ $groups -eq $MARK_PARTS ]]; then
-        ok "V2 variant $variant ${size}px report: $count of $MARK_PARTS components clear the ${floor}px noise floor; all $MARK_PARTS pixel groups survive separately at sizes [$sizes] — nothing merged, the small elements are just under the floor"
+        ok "V2 ${size}px report: $count of $MARK_PARTS components clear the ${floor}px noise floor; all $MARK_PARTS pixel groups survive separately at sizes [$sizes] — nothing merged, the small elements are just under the floor"
       else
-        ok "V2 variant $variant ${size}px report: $count components above the ${floor}px noise floor; $groups pixel groups at sizes [$sizes] — strokes have run together"
+        ok "V2 ${size}px report: $count components above the ${floor}px noise floor; $groups pixel groups at sizes [$sizes] — strokes have run together"
       fi
     else
-      ok "V2 variant $variant ${size}px report: $count separate components"
+      ok "V2 ${size}px report: $count separate components"
     fi
   done
 }
 
-check_pair_contrast() { # <variant> <small> <large> <ground> <label>
-  local variant=$1 small=$2 large=$3 ground=$4 label=$5 a b
+check_pair_contrast() { # <small> <large> <ground> <label>
+  local small=$1 large=$2 ground=$3 label=$4 a b
   a=$("${measure[@]}" contrast "$small" "$ground")
   b=$("${measure[@]}" contrast "$large" "$ground")
   if awk -v a="$a" -v b="$b" -v floor="$MIN_CONTRAST" \
       'BEGIN { exit !(a >= floor && b >= floor) }'; then
-    ok "V4 variant $variant on $label: small $a:1, thick $b:1"
+    ok "V4 on $label: small $a:1, thick $b:1"
   else
-    bad "V4 variant $variant on $label: small $a:1, thick $b:1 (minimum $MIN_CONTRAST:1)"
+    bad "V4 on $label: small $a:1, thick $b:1 (minimum $MIN_CONTRAST:1)"
   fi
 }
 
@@ -167,7 +165,7 @@ check_v7() {
       ok "V7 symbolic has no $forbidden"
     fi
   done
-  for source in data/brand/reprise-mark-{a,b,a-light,b-light}.svg; do
+  for source in data/brand/reprise-mark.svg data/brand/reprise-mark-light.svg; do
     if grep -Eq '(linear|radial)Gradient' "$source"; then
       bad "V7 coloured source contains a gradient: $source"
     else
@@ -176,18 +174,18 @@ check_v7() {
   done
 }
 
-check_v8() { # <variant>
-  local variant=$1 overlap
-  rsvg-convert -w 256 -h 256 -a "data/brand/reprise-mark-$variant.svg" \
-    -o "$tmp/v8-colour-$variant.png"
+check_v8() {
+  local overlap
+  rsvg-convert -w 256 -h 256 -a "data/brand/reprise-mark.svg" \
+    -o "$tmp/v8-colour.png"
   rsvg-convert -w 256 -h 256 -a data/brand/reprise-mark-mono.svg \
-    -o "$tmp/v8-mono-$variant.png"
+    -o "$tmp/v8-mono.png"
   overlap=$("${measure[@]}" outline-overlap \
-    "$tmp/v8-colour-$variant.png" "$tmp/v8-mono-$variant.png")
+    "$tmp/v8-colour.png" "$tmp/v8-mono.png")
   if awk -v value="$overlap" 'BEGIN { exit !(value >= 0.99) }'; then
-    ok "V8 variant $variant colour/mono outline overlap: $overlap"
+    ok "V8 colour/mono outline overlap: $overlap"
   else
-    bad "V8 variant $variant colour/mono outline overlap: $overlap < 0.99"
+    bad "V8 colour/mono outline overlap: $overlap < 0.99"
   fi
 }
 
@@ -250,7 +248,6 @@ for directory, names, files in os.walk(root):
             continue
         derived = (
             str(relative).startswith("data/icons/") or
-            str(relative).startswith("data/brand/variants/") or
             (str(relative).startswith("data/brand/") and relative.suffix == ".svg" and
              ("Generated" in text or "Erzeugt" in text)) or
             (str(relative).startswith("android/app/src/main/res/") and "Generated" in text)
@@ -276,8 +273,8 @@ check_delivery() {
   for required in \
     data/icons/hicolor/scalable/apps/org.reprise.Reprise.svg \
     data/icons/hicolor/symbolic/apps/org.reprise.Reprise-symbolic.svg \
-    data/brand/reprise-icon-a.svg data/brand/reprise-icon-b.svg \
-    data/brand/variants/compare.html \
+    data/brand/reprise-icon.svg \
+    data/brand/reprise-mark.svg data/brand/reprise-mark-light.svg \
     android/app/src/main/res/drawable/ic_repeat_sign.xml; do
     [[ -f $required ]] && ok "delivered: $required" || bad "missing: $required"
   done
@@ -285,11 +282,6 @@ check_delivery() {
     bad "shipped scalable icon rescales the specified geometry"
   else
     ok "shipped scalable icon preserves the 96-unit coordinates without transform"
-  fi
-  if rg --pcre2 -q 'src="(?!data:image/png;base64,)' data/brand/variants/compare.html; then
-    bad "comparison sheet has an external image resource"
-  else
-    ok "comparison sheet embeds every raster as a data URI"
   fi
 }
 
@@ -315,26 +307,19 @@ check_all() {
   self_test
   echo "Source and exact rendered geometry"
   check_source_contract
-  check_geometry_box a
-  check_geometry_box b
+  check_geometry_box
   echo "Raster component report"
-  report_components a
-  report_components b
+  report_components
   echo "Contrast"
-  check_pair_contrast a "$VIOLET" "$TEAL" "$PLATE" "plate $PLATE"
-  check_pair_contrast b "$TEAL" "$VIOLET" "$PLATE" "plate $PLATE"
-  check_pair_contrast a "$VIOLET" "$TEAL" '#0a0a0e' "dark dock #0a0a0e"
-  check_pair_contrast b "$TEAL" "$VIOLET" '#0a0a0e' "dark dock #0a0a0e"
-  check_pair_contrast a "$VIOLET_LIGHT" "$TEAL_LIGHT" '#FFFFFF' "white"
-  check_pair_contrast b "$TEAL_LIGHT" "$VIOLET_LIGHT" '#FFFFFF' "white"
-  check_pair_contrast a "$VIOLET_LIGHT" "$TEAL_LIGHT" '#eceef5' "light ground #eceef5"
-  check_pair_contrast b "$TEAL_LIGHT" "$VIOLET_LIGHT" '#eceef5' "light ground #eceef5"
+  check_pair_contrast "$VIOLET" "$TEAL" "$PLATE" "plate $PLATE"
+  check_pair_contrast "$VIOLET" "$TEAL" '#0a0a0e' "dark dock #0a0a0e"
+  check_pair_contrast "$VIOLET_LIGHT" "$TEAL_LIGHT" '#FFFFFF' "white"
+  check_pair_contrast "$VIOLET_LIGHT" "$TEAL_LIGHT" '#eceef5' "light ground #eceef5"
   echo "Symbolic and silhouette parity"
   check_v7
-  check_v8 a
-  check_v8 b
+  check_v8
   echo "Android 66dp mask"
-  check_v9 android/app/src/main/res/drawable/ic_launcher_foreground_a.xml colour
+  check_v9 android/app/src/main/res/drawable/ic_launcher_foreground.xml colour
   check_v9 android/app/src/main/res/drawable/ic_launcher_monochrome.xml monochrome
   echo "Palette ownership and delivery"
   check_palette_single_source

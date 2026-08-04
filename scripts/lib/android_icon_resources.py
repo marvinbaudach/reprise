@@ -22,16 +22,6 @@ def colours(palette):
     return '<?xml version="1.0" encoding="utf-8"?>\n' + generated_note() + f"<resources>\n{body}</resources>\n"
 
 
-def drawable_alias(target):
-    return (
-        '<?xml version="1.0" encoding="utf-8"?>\n'
-        + generated_note()
-        + '<layer-list xmlns:android="http://schemas.android.com/apk/res/android">\n'
-        + f'    <item android:drawable="@drawable/{target}"/>\n'
-        + "</layer-list>\n"
-    )
-
-
 def adaptive_icon():
     return (
         '<?xml version="1.0" encoding="utf-8"?>\n'
@@ -49,12 +39,10 @@ def write(path, text):
     path.write_text(text, encoding="utf-8")
 
 
-def build(palette_path, res_dir, active):
+def build(palette_path, res_dir):
     palette = tomllib.loads(Path(palette_path).read_text(encoding="utf-8"))
     root = Path(res_dir)
     write(root / "values/colors.xml", colours(palette))
-    write(root / "drawable/ic_launcher_foreground.xml",
-          drawable_alias(f"ic_launcher_foreground_{active}"))
     for name in ("ic_launcher.xml", "ic_launcher_round.xml"):
         write(root / "mipmap-anydpi-v26" / name, adaptive_icon())
 
@@ -63,9 +51,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("palette")
     parser.add_argument("res_dir")
-    parser.add_argument("--active", choices=("a", "b"), required=True)
     args = parser.parse_args()
-    build(args.palette, args.res_dir, args.active)
+    build(args.palette, args.res_dir)
 
 
 if __name__ == "__main__":

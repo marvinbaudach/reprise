@@ -66,23 +66,23 @@ def plate_svg(fill):
 
 
 def render(palette):
-    teal = palette["reprise_teal"]
-    violet = palette["reprise_violet"]
-    teal_light = palette["reprise_teal_light"]
-    violet_light = palette["reprise_violet_light"]
+    # The colour split was decided at dock size against the alternative that
+    # swapped the two: teal on the thick barline reads farther because the
+    # large field carries the brighter colour (7.13:1 on the plate against
+    # violet's 3.05:1), and violet stays legible as the accent on the dots and
+    # the thin barline. Only the chosen split is generated — a second one kept
+    # "for comparison" is a second mark to keep in step, and the comparison is
+    # over.
     return {
-        "reprise-mark-a.svg": mark_svg(
-            violet, teal,
-            "Variant A puts violet on the larger\n       barline so the accent carries farther at dock size."),
-        "reprise-mark-b.svg": mark_svg(
-            teal, violet,
-            "Variant B keeps the smaller dots and\n       thin barline teal so their distinction survives longer when rasterised."),
-        "reprise-mark-a-light.svg": mark_svg(
-            violet_light, teal_light,
-            "The deeper colours preserve variant A's\n       hierarchy while meeting the graphical-object contrast floor on light ground."),
-        "reprise-mark-b-light.svg": mark_svg(
-            teal_light, violet_light,
-            "The deeper colours preserve variant B's\n       small-element emphasis without losing contrast on light ground."),
+        "reprise-mark.svg": mark_svg(
+            palette["reprise_violet"], palette["reprise_teal"],
+            "Teal carries the thick barline so the\n"
+            "       largest field holds the brighter colour; violet accents the dots\n"
+            "       and the thin barline."),
+        "reprise-mark-light.svg": mark_svg(
+            palette["reprise_violet_light"], palette["reprise_teal_light"],
+            "The deeper pair keeps that hierarchy\n"
+            "       while clearing the graphical-object contrast floor on light ground."),
         "reprise-mark-mono.svg": mono_svg(),
         "icon-plate.svg": plate_svg(palette["reprise_plate"]),
     }
