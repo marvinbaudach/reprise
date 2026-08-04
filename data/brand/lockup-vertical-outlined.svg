@@ -65,28 +65,38 @@
     <ellipse cx="1129" cy="674" rx="60" ry="124" fill="#2B155E"/>
   </g>
 
-  <!-- Ohrbüschel: schlanke Klingen, Spitzen bei (168|350) und (1078|350).
-       In der Vorlage sind es lange, nach hinten gefegte Federspitzen mit
-       sichtbarem Freiraum darum. Als breite Keile gezeichnet — die erste
-       Fassung — lesen sie als Fledermausflügel, und die Marke verliert ihr
-       Eulen-Signal noch vor der Verkleinerung. -->
+  <!-- Ohrbüschel: flach nach außen gefegte Federspitzen, Enden bei (261|392)
+       und (985|392) — genau auf der Kopfbreite.
+
+       Der Winkel entscheidet über die Tierart. Steil nach oben zeigende
+       Dreiecke auf einem runden Kopf sind Katzenohren, und daran ändert auch
+       die Augenform nichts. Nach außen gefegt lesen dieselben Flächen als
+       Federohren.
+
+       Die Enden sind auf die Kopfbreite gestaffelt. Weiter außen stoßen sie
+       an die Ohrmuscheln, und aus Kopf und Büscheln wird eine durchgehende
+       dunkle Fläche, die als Flügel liest. In `mark-reduced.svg` — ohne
+       Kopfhörer — ist dieselbe Länge dagegen reichlich. -->
   <g id="rp-lv-o-rp-g-tufts">
-    <path d="M 228 264 C 372 358 486 404 596 430 C 486 470 400 512 336 566
-             C 318 462 282 356 228 264 Z"
+    <path d="M 261 392 C 363 404 457 442 530 496
+             C 460 520 403 560 363 610 C 344 520 308 444 261 392 Z"
           fill="#2B155E"/>
-    <path d="M 1018 264 C 874 358 760 404 650 430 C 760 470 846 512 910 566
-             C 928 462 964 356 1018 264 Z"
+    <path d="M 985 392 C 883 404 789 442 716 496
+             C 786 520 843 560 883 610 C 902 520 938 444 985 392 Z"
           fill="#2B155E"/>
   </g>
 
-  <!-- Kopf: Scheitel auf der Mittelachse bei y=402, Kinn bei y=999. Der
-       Verlauf ist flach — die Unterkante ist der einzige Rand, der gegen
+  <!-- Kopf: eiförmig, Scheitel auf der Mittelachse bei y=372, Kinn bei
+       y=999. Ein oben schmaler Kopf gibt den Büscheln die Kante, aus der
+       sie hervorgehen; ein oben breiter Kopf verschluckt sie.
+
+       Der Verlauf ist flach — die Unterkante ist der einzige Rand, der gegen
        das violette Ende der Platte antritt, und ein aufgehellter Kopf sackt
        dort unter 3:1. -->
   <path id="rp-lv-o-rp-head" fill="url(#rp-lv-o-rp-head)"
-        d="M 623 402 C 852 402 1008 550 1008 746
-           C 1008 902 843 999 623 999 C 403 999 239 902 239 746
-           C 239 550 394 402 623 402 Z"/>
+        d="M 623 372 C 800 372 950 520 985 700
+           C 1006 810 900 999 623 999 C 346 999 240 810 261 700
+           C 296 520 446 372 623 372 Z"/>
 
   <!-- Gesichtsscheibe. Ihre Oberkante ist die Braue: eine Gerade mit
        Steigung 0,589 von (316|596) zum Scheitel (623|777) und gespiegelt
@@ -96,10 +106,10 @@
        verlässt es bei (548|733). -->
   <path id="rp-lv-o-rp-face" fill="url(#rp-lv-o-rp-face)"
         d="M 623 777 L 316 596
-           C 268 630 252 700 256 800
-           C 262 900 420 952 623 952
-           C 826 952 984 900 990 800
-           C 994 700 978 630 930 596 Z"/>
+           C 300 630 290 700 296 800
+           C 304 900 450 952 623 952
+           C 796 952 942 900 950 800
+           C 956 700 946 630 930 596 Z"/>
 
   <!-- Augen: 148 × 139 in der Vorlage, Mitte auf y=733. Sie sind als
        gekappte Ellipsen gezeichnet — die Sehne liegt auf der Brauenkante.
@@ -118,10 +128,10 @@
        Er wird zur Spitze hin dunkel — in der Vorlage der einzige Ort, an
        dem die Zeichnung ins Marineblau geht. -->
   <path id="rp-lv-o-rp-beak" fill="url(#rp-lv-o-rp-beak)"
-        d="M 623 773 C 651 773 674 796 674 824
-           C 674 860 650 903 623 950
-           C 596 903 572 860 572 824
-           C 572 796 595 773 623 773 Z"/>
+        d="M 623 760 C 660 760 690 790 690 828
+           C 690 878 660 936 623 986
+           C 586 936 556 878 556 828
+           C 556 790 586 760 623 760 Z"/>
   </g>
   <g fill="currentColor" transform="translate(4.0000 575.6000)">
     <path transform="translate(0.0000 0) scale(0.134000 -0.134000)" d="M1236 913Q1236 813 1192.5 732.5Q1149 652 1070.5 599.0Q992 546 883 527Q859 523 835.5 519.0Q812 515 787.5 513.0Q763 511 733 511Q660 511 603.0 520.5Q546 530 501.5 548.5Q457 567 421 594L429 631Q463 605 501.0 589.5Q539 574 580.5 567.5Q622 561 665 561Q797 561 875.0 646.0Q953 731 953 903Q953 1035 903.0 1137.5Q853 1240 766.5 1298.5Q680 1357 569 1357H481V100Q481 78 490.5 67.5Q500 57 522 52L596 39Q607 37 611.5 32.0Q616 27 616 19Q616 0 594 0H89Q78 0 72.0 5.0Q66 10 66 19Q66 33 86 39L160 52Q182 57 191.5 67.5Q201 78 201 100V1311Q201 1327 191.0 1335.5Q181 1344 160 1348L86 1361Q66 1367 66 1381Q66 1390 72.0 1395.0Q78 1400 89 1400H571Q780 1400 928.5 1339.0Q1077 1278 1156.5 1168.5Q1236 1059 1236 913ZM686 539 949 570 1224 104Q1244 72 1266.0 59.5Q1288 47 1318 39Q1330 36 1335.0 31.5Q1340 27 1340 19Q1340 10 1334.5 5.0Q1329 0 1317 0H876Q854 0 854 19Q854 26 858.0 29.0Q862 32 870 36L913 45Q935 52 940.0 66.0Q945 80 928 110Z"/>

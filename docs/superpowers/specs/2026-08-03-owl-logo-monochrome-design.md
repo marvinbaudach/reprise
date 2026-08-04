@@ -422,3 +422,35 @@ sind, gilt dieser Abschnitt.
 - **Androids Hintergrundebene ist ein Drawable mit Verlauf**, kein
   `@color`-Wert mehr, und wird aus derselben Plattendatei erzeugt wie die
   GNOME-Platte.
+
+### Nachtrag: der Winkel der Ohrbüschel entscheidet über die Tierart
+
+Nach der ersten Runde las die Marke weiterhin als Katze. Ich hatte die
+Ursache bei den Augen vermutet — gekappte Ellipsen wirken wie schräge
+Katzenaugen — und vier Fassungen gebaut: gefegte Büschel, runde Augen ohne
+Büschel, runde Augen mit Büscheln, dasselbe mit flacher Braue. Am Bild
+entschieden: **nur die Fassung mit gefegten Büscheln und gekappten Augen
+liest als Eule.** Die runden Augen kippen die Marke zum Lemur.
+
+Damit ist die Regel: **steil nach oben zeigende Dreiecke auf einem runden
+Kopf sind Katzenohren, egal wie die Augen aussehen. Nach außen gefegte
+Federspitzen auf einem oben schmalen Kopf sind Ohrbüschel.** Daraus folgen
+drei Änderungen gegenüber der ersten Runde:
+
+- **Kopf eiförmig**, Scheitel bei y=372 statt y=402 und oben schmaler. Ein
+  oben breiter Kopf verschluckt die Büschel.
+- **Büschel flach nach außen**, Enden bei (261|392) und (985|392) statt
+  Spitzen bei (228|264). In `mark.svg` sind sie auf die Kopfbreite
+  gestaffelt: weiter außen stoßen sie an die Ohrmuscheln, und Kopf plus
+  Büschel werden zu einer Fläche, die als Flügel liest.
+- **Schnabel größer und gehakt**, 134 × 226 statt 102 × 177. Er ist nach den
+  Augen das zweitstärkste Eulensignal und trägt bis 32 px.
+- **Gesichtsscheibe eingezogen.** Auf dem schmaleren Kopf lag ihre Kante auf
+  der Silhouette; gemessen versanken dort 25 % des Markenrandes unter 1,5:1
+  gegen die Platte. Nach dem Einzug sind es 0 %.
+
+**V8 vergleicht jetzt Umrisse statt Flächen** (Schwelle 0,97 statt 0,90).
+Der rohe Flächenvergleich bestrafte genau das, was an der Silhouette Absicht
+ist: Augen und Schnabel sind dort Löcher und in der farbigen Fassung Flächen.
+Gemessen wird, ob der Launcher dieselbe Eule zeigt — nicht, ob beide Fassungen
+gleich viel Fläche haben.

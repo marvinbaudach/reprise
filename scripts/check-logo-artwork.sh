@@ -137,10 +137,14 @@ check_v7() {   # <svg>
 check_v8() {   # <farbig.svg> <silhouette.svg>
   rsvg-convert -w 256 -a "$1" -o "$tmp/v8-a.png"
   rsvg-convert -w 256 -a "$2" -o "$tmp/v8-b.png"
-  local j; j=$($measure overlap "$tmp/v8-a.png" "$tmp/v8-b.png")
-  awk "BEGIN{exit !($j >= 0.90)}" \
-    && ok "V8 Deckung farbig/Silhouette: $j" \
-    || bad "V8 Deckung farbig/Silhouette: $j < 0.90 — zwei verschiedene Formen"
+  # Verglichen werden die **Umrisse**, Aussparungen aufgefüllt. Der rohe
+  # Flächenvergleich bestraft sonst genau das, was an der Silhouette Absicht
+  # ist: Augen und Schnabel sind dort Löcher und in der farbigen Fassung
+  # Flächen.
+  local j; j=$($measure outline-overlap "$tmp/v8-a.png" "$tmp/v8-b.png")
+  awk "BEGIN{exit !($j >= 0.97)}" \
+    && ok "V8 Deckung der Umrisse farbig/Silhouette: $j" \
+    || bad "V8 Deckung der Umrisse farbig/Silhouette: $j < 0.97 — zwei verschiedene Formen"
 }
 
 # V9: Androids garantierte Fläche ist der 66-dp-Kreis, nicht das

@@ -331,6 +331,56 @@ def radius(png, cx_share=0.5, cy_share=0.5):
     return best / w
 
 
+def _filled_mask(png):
+    """Maske der Marke, bei der eingeschlossene Löcher als Fläche gelten.
+
+    Hintergrund ist nur, was vom Bildrand aus erreichbar ist. Alles andere
+    liegt innerhalb der Silhouette, auch wenn dort nichts gezeichnet ist.
+    """
+    w, h, bg = _alpha_mask(png)
+    outside = [[False] * w for _ in range(h)]
+    queue = deque()
+    for x in range(w):
+        for y in (0, h - 1):
+            if bg[y][x] and not outside[y][x]:
+                outside[y][x] = True
+                queue.append((x, y))
+    for y in range(h):
+        for x in (0, w - 1):
+            if bg[y][x] and not outside[y][x]:
+                outside[y][x] = True
+                queue.append((x, y))
+    while queue:
+        x, y = queue.popleft()
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < w and 0 <= ny < h and bg[ny][nx] and not outside[ny][nx]:
+                outside[ny][nx] = True
+                queue.append((nx, ny))
+    return w, h, outside
+
+
+def outline_overlap(png_a, png_b):
+    """Jaccard-Index der beiden **Umrisse**, Aussparungen aufgefüllt.
+
+    Der rohe Flächenvergleich bestraft genau das, was an der Silhouette
+    Absicht ist: Augen und Schnabel sind dort Löcher und in der farbigen
+    Fassung Flächen. Verglichen werden soll der Umriss — zeigt der Launcher
+    dieselbe Eule, egal ob eingefärbt oder farbig?
+    """
+    wa, ha, outside_a = _filled_mask(png_a)
+    wb, hb, outside_b = _filled_mask(png_b)
+    if (wa, ha) != (wb, hb):
+        raise SystemExit(f"Maße verschieden: {wa}x{ha} vs {wb}x{hb}")
+    inter = union = 0
+    for y in range(ha):
+        for x in range(wa):
+            a, b = not outside_a[y][x], not outside_b[y][x]
+            inter += a and b
+            union += a or b
+    return inter / union if union else 0.0
+
+
 def overlap(png_a, png_b):
     """Jaccard-Index zweier Alphamasken.
 
@@ -379,6 +429,8 @@ def main():
         print(f"{radius(args[0]):.4f}")
     elif cmd == "overlap":
         print(f"{overlap(args[0], args[1]):.4f}")
+    elif cmd == "outline-overlap":
+        print(f"{outline_overlap(args[0], args[1]):.4f}")
     else:
         raise SystemExit(f"unknown command: {cmd}")
 
