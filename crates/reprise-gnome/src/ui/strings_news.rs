@@ -59,11 +59,10 @@ pub const NEW_RELEASES_INCLUDE_SINGLES_DESCRIPTION: &str =
 pub const FETCH_NOW: &str = N_!("Fetch now");
 pub const FETCH_FAILED_INLINE: &str = N_!("Refresh failed · showing saved releases");
 pub const UPDATES_HEADER: &str = N_!("UPDATES");
-pub const UPDATES_NEW_RELEASES_HEADER: &str = N_!("NEW RELEASES");
+pub const UPDATES_NEW_RELEASES_HEADER: &str = N_!("RELEASES");
 pub const UPDATES_CONCERTS_HEADER: &str = N_!("CONCERTS");
-pub const UPDATES_NEW_NEAR_YOU: &str = N_!("new near you");
-pub const UPDATES_NEWLY_ANNOUNCED: &str = N_!("newly announced");
 pub const UPDATES_CONCERTS_FETCH_FAILED: &str = N_!("Concerts fetch failed");
+pub const UPDATES_NOTHING_NEW: &str = N_!("Nothing new since your last look");
 pub const NEW_RELEASES_CHECKING: &str = N_!("Checking for new releases…");
 pub const NEW_RELEASES_NONE: &str = N_!("No upcoming releases from your artists");
 pub const UPDATED_JUST_NOW: &str = N_!("Updated just now");
@@ -161,9 +160,9 @@ pub fn new_releases_days_until(days: i64) -> String {
     formatted(N_!("in {days} d"), &[("days", &days.to_string())])
 }
 
-/// „N new" count pill for the New Releases badge/header. „new" does not
+/// „N new" count pill shared by both Updates feed headers. „new" does not
 /// change with the count, so no plural form is needed.
-pub fn new_releases_new_count(count: i64) -> String {
+pub fn updates_new_count(count: usize) -> String {
     formatted(N_!("{count} new"), &[("count", &count.to_string())])
 }
 
@@ -249,8 +248,8 @@ mod tests {
     }
 
     #[test]
-    fn new_releases_new_count_formats_count() {
-        assert_eq!(new_releases_new_count(3), "3 new");
+    fn updates_new_count_formats_either_feed() {
+        assert_eq!(updates_new_count(3), "3 new");
     }
 
     #[test]

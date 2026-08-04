@@ -56,10 +56,11 @@ pub(in crate::ui) fn css() -> String {
         letter-spacing: 0.08em;\
         opacity: 0.55;\
     }\
-    /* 'NEW' / history-count pill: accent-tinted, not a solid fill. */\
+    /* Full-batch count pill: the filled accent outranks outlined row-status \
+       chips without inventing a second colour. */\
     .new-release-tag {\
-        background-color: alpha(@accent_bg_color, 0.18);\
-        color: @accent_color;\
+        background-color: @accent_bg_color;\
+        color: @accent_fg_color;\
         border-radius: 8px;\
         padding: 1px 6px;\
         font-size: 10.5px;\
@@ -146,7 +147,7 @@ pub(in crate::ui) fn css() -> String {
     .new-release-action:hover {\
         background-color: alpha(currentColor, 0.08);\
     }\
-    /* Footer 'Fetch now' ghost button: accent text, no border, tinted hover. */\
+    /* Header 'Fetch now' ghost button: accent text, no border, tinted hover. */\
     .new-release-ghost {\
         color: @accent_color;\
         background-color: transparent;\
@@ -208,7 +209,20 @@ mod tests {
     }
 
     #[test]
-    fn nr_9a_badge_overlaps_the_compact_updates_trigger() {
+    fn nr_23_count_chip_uses_the_theme_accent_fill() {
+        let css = super::css();
+        let tag = css
+            .split(".new-release-tag {")
+            .nth(1)
+            .and_then(|rules| rules.split('}').next())
+            .expect("count-chip rules");
+
+        assert!(tag.contains("background-color: @accent_bg_color"));
+        assert!(tag.contains("color: @accent_fg_color"));
+    }
+
+    #[test]
+    fn nr_9b_badge_overlaps_the_compact_updates_trigger() {
         let css = super::css();
         assert!(css.contains(".updates-trigger"));
         assert!(css.contains("min-width: 32px"));

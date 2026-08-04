@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-04 00:28+0200\n"
+"POT-Creation-Date: 2026-08-04 02:33+0200\n"
 "PO-Revision-Date: 2026-07-20 11:38+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: French\n"
@@ -1907,7 +1907,7 @@ msgid "Open in MusicBrainz"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:36
-#: crates/reprise-gnome/src/ui/strings_news.rs:147
+#: crates/reprise-gnome/src/ui/strings_news.rs:146
 msgid "New Releases"
 msgstr ""
 
@@ -1989,63 +1989,59 @@ msgid "UPDATES"
 msgstr "ACTUALITÉS"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:62
-msgid "NEW RELEASES"
-msgstr "NOUVELLES SORTIES"
+msgid "RELEASES"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:63
 msgid "CONCERTS"
 msgstr "CONCERTS"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:64
-msgid "new near you"
-msgstr "nouveau près de chez vous"
-
-#: crates/reprise-gnome/src/ui/strings_news.rs:65
-msgid "newly announced"
-msgstr "annoncé récemment"
-
-#: crates/reprise-gnome/src/ui/strings_news.rs:66
 msgid "Concerts fetch failed"
 msgstr "Échec de la récupération des concerts"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:67
+#: crates/reprise-gnome/src/ui/strings_news.rs:65
+msgid "Nothing new since your last look"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:66
 msgid "Checking for new releases…"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:68
+#: crates/reprise-gnome/src/ui/strings_news.rs:67
 msgid "No upcoming releases from your artists"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:69
+#: crates/reprise-gnome/src/ui/strings_news.rs:68
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:94
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:188
 msgid "Updated just now"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:70
+#: crates/reprise-gnome/src/ui/strings_news.rs:69
 msgid "See all"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:71
+#: crates/reprise-gnome/src/ui/strings_news.rs:70
 #: crates/reprise-gnome/src/ui/strings_releases.rs:33
 msgid "Hide"
 msgstr "Cacher"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:76
+#: crates/reprise-gnome/src/ui/strings_news.rs:75
 #, rust-format
 msgid "{count} track selected"
 msgid_plural "{count} tracks selected"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:87
+#: crates/reprise-gnome/src/ui/strings_news.rs:86
 #, rust-format
 msgid "{count} track · {duration}"
 msgid_plural "{count} tracks · {duration}"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:98
+#: crates/reprise-gnome/src/ui/strings_news.rs:97
 #: crates/reprise-view/src/queue.rs:29
 #, rust-format
 msgid "Playing from {source} · {count} track"
@@ -2053,134 +2049,134 @@ msgid_plural "Playing from {source} · {count} tracks"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:107
+#: crates/reprise-gnome/src/ui/strings_news.rs:106
 #, rust-format
 msgid "{type} · {date}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:114
+#: crates/reprise-gnome/src/ui/strings_news.rs:113
 #, rust-format
 msgid "MusicBrainz · Updated {date}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:119
+#: crates/reprise-gnome/src/ui/strings_news.rs:118
 #, rust-format
 msgid "Cached · Updated {date}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:130
+#: crates/reprise-gnome/src/ui/strings_news.rs:129
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:98
 #, rust-format
 msgid "Updated {age} min ago"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:136
+#: crates/reprise-gnome/src/ui/strings_news.rs:135
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:104
 #, rust-format
 msgid "Updated {age} h ago"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:139
+#: crates/reprise-gnome/src/ui/strings_news.rs:138
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:109
 #, rust-format
 msgid "Updated {age} d ago"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:144
+#: crates/reprise-gnome/src/ui/strings_news.rs:143
 #, rust-format
 msgid "{count} hidden · Show"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:148
+#: crates/reprise-gnome/src/ui/strings_news.rs:147
 msgid "released"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:149
+#: crates/reprise-gnome/src/ui/strings_news.rs:148
 #: crates/reprise-gnome/src/ui/strings_releases.rs:27
 msgid "In library"
 msgstr "Réanalyser la bibliothèque"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:150
+#: crates/reprise-gnome/src/ui/strings_news.rs:149
 msgid "Single in library"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:151
+#: crates/reprise-gnome/src/ui/strings_news.rs:150
 msgid "Show in library"
 msgstr "Analyse de la bibliothèque"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:152
+#: crates/reprise-gnome/src/ui/strings_news.rs:151
 msgid "Open announcement"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:153
+#: crates/reprise-gnome/src/ui/strings_news.rs:152
 msgid "Show again"
 msgstr "Afficher la ligne d’état"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:154
+#: crates/reprise-gnome/src/ui/strings_news.rs:153
 msgid "All caught up"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:155
+#: crates/reprise-gnome/src/ui/strings_news.rs:154
 msgid "Retention: 6 months"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:161
+#: crates/reprise-gnome/src/ui/strings_news.rs:160
 #, rust-format
 msgid "in {days} d"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:167
+#: crates/reprise-gnome/src/ui/strings_news.rs:166
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:38
 #, rust-format
 msgid "{count} new"
 msgstr "{count} piste"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:172
+#: crates/reprise-gnome/src/ui/strings_news.rs:171
 #, rust-format
 msgid "Show all concerts ({count}) →"
 msgstr "Afficher tous les concerts ({count}) →"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:179
+#: crates/reprise-gnome/src/ui/strings_news.rs:178
 #, rust-format
 msgid "Show all releases ({count}) →"
 msgstr "Afficher toutes les sorties ({count}) →"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:186
+#: crates/reprise-gnome/src/ui/strings_news.rs:185
 msgid "unknown date"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:195
+#: crates/reprise-gnome/src/ui/strings_news.rs:194
 msgid "Checking missing album covers…"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:196
+#: crates/reprise-gnome/src/ui/strings_news.rs:195
 msgid "Cover check complete"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:197
+#: crates/reprise-gnome/src/ui/strings_news.rs:196
 msgid "Could not check album covers"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:198
+#: crates/reprise-gnome/src/ui/strings_news.rs:197
 msgid "Checking missing lyrics…"
 msgstr "Vérification des paroles manquantes…"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:199
+#: crates/reprise-gnome/src/ui/strings_news.rs:198
 msgid "Lyrics check complete"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:200
+#: crates/reprise-gnome/src/ui/strings_news.rs:199
 msgid "Could not check lyrics"
 msgstr "Impossible de vérifier les paroles"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:213
+#: crates/reprise-gnome/src/ui/strings_news.rs:212
 #, rust-format
 msgid ""
 "{checked} of {total} checked · {downloaded} downloaded · {unavailable} "
 "unavailable"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:230
+#: crates/reprise-gnome/src/ui/strings_news.rs:229
 #, rust-format
 msgid ""
 "{checked} of {total} checked · {cached} cached · {unavailable} unavailable"
@@ -4920,252 +4916,3 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:18
 msgid "Separate title bar"
 msgstr ""
-
-#~ msgid "Not in library"
-#~ msgstr "Absent de la bibliothèque"
-
-#~ msgid "No release data yet"
-#~ msgstr "Pas encore de données de sorties"
-
-#~ msgid "No releases from your artists yet"
-#~ msgstr "Pas encore de sorties de vos artistes"
-
-#, rust-format
-#~ msgid "{shown} of {total} releases"
-#~ msgstr "{shown} sur {total} sorties"
-
-#, rust-format
-#~ msgid "{total} releases"
-#~ msgstr "{total} sorties"
-
-#, rust-format
-#~ msgid "Show all {total} releases"
-#~ msgstr "Afficher les {total} sorties"
-
-#~ msgid "Disconnected"
-#~ msgstr "Déconnecté"
-
-#~ msgid "Could not restore excluded files"
-#~ msgstr "Impossible de réorganiser la liste de lecture"
-
-#~ msgid "Add a concert provider API key in Preferences."
-#~ msgstr ""
-#~ "Ajoutez une clé API d'un fournisseur de concerts dans les Préférences."
-
-#~ msgid "Concerts needs an API key"
-#~ msgstr "Concerts nécessite une clé API"
-
-#~ msgid "Add a Bandsintown app_id or Ticketmaster API key in Preferences."
-#~ msgstr ""
-#~ "Ajoutez un app_id Bandsintown ou une clé API Ticketmaster dans les "
-#~ "Préférences."
-
-#~ msgid "Ticketmaster API key"
-#~ msgstr "Clé API Ticketmaster"
-
-#, rust-format
-#~ msgid "({count})"
-#~ msgstr "{count} piste"
-
-#~ msgid "Read the layout without changing Rhythmbox settings"
-#~ msgstr "Lire la disposition sans modifier les paramètres de Rhythmbox"
-
-#~ msgid "Rhythmbox column layout imported"
-#~ msgstr "Disposition des colonnes de Rhythmbox importée"
-
-#~ msgid "Could not save the imported column layout"
-#~ msgstr "Impossible d’enregistrer la disposition des colonnes importée"
-
-#, rust-format
-#~ msgid "Could not import Rhythmbox columns: {error}"
-#~ msgstr "Impossible d’importer les colonnes de Rhythmbox : {error}"
-
-#~ msgid "1 hour"
-#~ msgstr "1 heure"
-
-#~ msgid "1 minute"
-#~ msgstr "1 minute"
-
-#, rust-format
-#~ msgid ""
-#~ "Remove {count} track from the library? The music file will remain on disk."
-#~ msgid_plural ""
-#~ "Remove {count} tracks from the library? The music files will remain on "
-#~ "disk."
-#~ msgstr[0] ""
-#~ "Retirer {count} piste de la bibliothèque ? Le fichier musical restera sur "
-#~ "le disque."
-#~ msgstr[1] ""
-#~ "Retirer {count} pistes de la bibliothèque ? Les fichiers musicaux "
-#~ "resteront sur le disque."
-
-#~ msgid "Pause"
-#~ msgstr "Pause"
-
-#~ msgid "Audio Character"
-#~ msgstr "Caractère audio"
-
-#~ msgid "Analyze audio locally"
-#~ msgstr "Analyser le son localement"
-
-#~ msgid ""
-#~ "Reprise reads audio files only on this device. Nothing is uploaded. "
-#~ "Existing profiles are kept when this is turned off."
-#~ msgstr ""
-#~ "Reprise lit les fichiers audio uniquement sur cet appareil. Rien n’est "
-#~ "envoyé. Les profils existants sont conservés lorsque cette option est "
-#~ "désactivée."
-
-#~ msgid "Analysis progress"
-#~ msgstr "Progression de l’analyse"
-
-#~ msgid "No eligible tracks"
-#~ msgstr "Aucune piste admissible"
-
-#, rust-format
-#~ msgid "Analysis is off · {analyzed} of {total} analyzed · {failed} failed"
-#~ msgstr ""
-#~ "Analyse désactivée · {analyzed} sur {total} analysées · {failed} échecs"
-
-#, rust-format
-#~ msgid "Ready · {analyzed} of {total} analyzed · {failed} failed"
-#~ msgstr "Prêt · {analyzed} sur {total} analysées · {failed} échecs"
-
-#, rust-format
-#~ msgid "Analyzing · {analyzed} of {total} analyzed · {failed} failed"
-#~ msgstr "Analyse · {analyzed} sur {total} analysées · {failed} échecs"
-
-#, rust-format
-#~ msgid "Paused · {analyzed} of {total} analyzed · {failed} failed"
-#~ msgstr "En pause · {analyzed} sur {total} analysées · {failed} échecs"
-
-#, rust-format
-#~ msgid "Cancelled · {analyzed} of {total} analyzed · {failed} failed"
-#~ msgstr "Annulé · {analyzed} sur {total} analysées · {failed} échecs"
-
-#, rust-format
-#~ msgid "Failed · {analyzed} of {total} analyzed · {failed} failed"
-#~ msgstr "Échec · {analyzed} sur {total} analysées · {failed} échecs"
-
-#, rust-format
-#~ msgid "Complete · {analyzed} of {total} analyzed · {failed} failed"
-#~ msgstr "Terminé · {analyzed} sur {total} analysées · {failed} échecs"
-
-#~ msgid "Pause analysis"
-#~ msgstr "Suspendre l’analyse"
-
-#~ msgid "Resume analysis"
-#~ msgstr "Reprendre l’analyse"
-
-#~ msgid "Cancel analysis"
-#~ msgstr "Annuler l’analyse"
-
-#~ msgid "Reanalyze library"
-#~ msgstr "Réanalyser la bibliothèque"
-
-#~ msgid "Reanalyze the library?"
-#~ msgstr "Réanalyser la bibliothèque ?"
-
-#~ msgid ""
-#~ "Existing Audio Character profiles will be replaced. This can take time. "
-#~ "Music files and track metadata are not changed."
-#~ msgstr ""
-#~ "Les profils de Caractère audio existants seront remplacés. Cela peut "
-#~ "prendre du temps. Les fichiers musicaux et métadonnées des pistes ne sont "
-#~ "pas modifiés."
-
-#~ msgid "Reanalyze"
-#~ msgstr "Réanalyser"
-
-#~ msgid "Play a track to see its Audio Character"
-#~ msgstr "Lisez une piste pour voir son Caractère audio"
-
-#~ msgid "The loaded track's local audio profile will appear here."
-#~ msgstr "Le profil audio local de la piste chargée apparaîtra ici."
-
-#~ msgid "Local audio analysis is disabled"
-#~ msgstr "L’analyse audio locale est désactivée"
-
-#~ msgid "Enable Analyze audio locally in Library Settings."
-#~ msgstr ""
-#~ "Activez « Analyser le son localement » dans les paramètres de la "
-#~ "bibliothèque."
-
-#~ msgid "Audio Character is pending"
-#~ msgstr "Le Caractère audio est en attente"
-
-#~ msgid "This track is waiting for local analysis."
-#~ msgstr "Cette piste attend l’analyse locale."
-
-#~ msgid "Audio Character analysis failed"
-#~ msgstr "L’analyse du Caractère audio a échoué"
-
-#~ msgid "Retry failed tracks from Library Settings."
-#~ msgstr ""
-#~ "Réessayez les pistes en échec depuis les paramètres de la bibliothèque."
-
-#~ msgid "The local profile will be updated in the background."
-#~ msgstr "Le profil local sera mis à jour en arrière-plan."
-
-#~ msgid "Intensity"
-#~ msgstr "Intensité"
-
-#~ msgid "Brightness"
-#~ msgstr "Luminosité"
-
-#~ msgid "Dynamicity"
-#~ msgstr "Dynamisme"
-
-#~ msgid "Rhythmicity"
-#~ msgstr "Rythmicité"
-
-#, rust-format
-#~ msgid "Confidence {confidence}%"
-#~ msgstr "Confiance {confidence} %"
-
-#, rust-format
-#~ msgid "{dimension}, {value}%, confidence {confidence}%"
-#~ msgstr "{dimension}, {value} %, confiance {confidence} %"
-
-#~ msgid "Tempo"
-#~ msgstr "Tempo"
-
-#, rust-format
-#~ msgid "{bpm} BPM"
-#~ msgstr "{bpm} BPM"
-
-#, rust-format
-#~ msgid "Tempo, {bpm} BPM, confidence {confidence}%"
-#~ msgstr "Tempo, {bpm} BPM, confiance {confidence} %"
-
-#~ msgid "Title A–Z"
-#~ msgstr "Titre A–Z"
-
-#~ msgid "Artist A–Z"
-#~ msgstr "Artiste A–Z"
-
-#, rust-format
-#~ msgid "{} albums"
-#~ msgstr "{} albums"
-
-#, rust-format
-#~ msgid "No albums match \"{}\""
-#~ msgstr "Aucun album ne correspond à « {} »"
-
-#~ msgid "Stop Playback"
-#~ msgstr "Arrêter la lecture"
-
-#~ msgid "Tracks"
-#~ msgstr "Pistes"
-
-#~ msgid "Albums"
-#~ msgstr "Albums"
-
-#~ msgid "Unknown Artist"
-#~ msgstr "Artiste inconnu"
-
-#~ msgid "Top tracks"
-#~ msgstr "Meilleures pistes"
-
-#~ msgid "Connected"
-#~ msgstr "Connecté"

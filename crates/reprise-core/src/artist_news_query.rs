@@ -229,13 +229,25 @@ pub(crate) fn query_releases_in(
     Ok(releases)
 }
 
-pub fn unseen_release_count(db: &crate::db::Db, today: NaiveDate) -> Result<i64, rusqlite::Error> {
+/// The visible release candidates for the Updates popover, excluding releases
+/// the library already owns completely.
+///
+/// This is also the set [`unseen_release_count`] counts. Keeping the filter in
+/// one query prevents the popover list and its badge from disagreeing.
+pub fn delta_candidates(
+    db: &crate::db::Db,
+    today: NaiveDate,
+) -> Result<Vec<StoredRelease>, rusqlite::Error> {
     let conn = db.conn();
-    Ok(query_releases_in(conn, true, today)?
+    let mut releases = query_releases_in(conn, false, today)?;
+    releases.retain(|release| release.presence != LibraryPresence::Complete);
+    Ok(releases)
+}
+
+pub fn unseen_release_count(db: &crate::db::Db, today: NaiveDate) -> Result<i64, rusqlite::Error> {
+    Ok(delta_candidates(db, today)?
         .into_iter()
-        .filter(|release| {
-            release.seen_at.is_none() && release.presence != LibraryPresence::Complete
-        })
+        .filter(|release| release.seen_at.is_none())
         .count() as i64)
 }
 

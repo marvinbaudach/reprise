@@ -6,7 +6,7 @@
 use chrono::NaiveDate;
 
 use crate::artist_news::{
-    hidden_release_count, mark_releases_seen, query_releases, set_release_hidden,
+    delta_candidates, hidden_release_count, mark_releases_seen, query_releases, set_release_hidden,
     unseen_release_count,
 };
 
@@ -43,7 +43,7 @@ fn insert_named_release(db: &crate::db::Db, mbid: &str, title: &str, seen_at: Op
 }
 
 #[test]
-fn nr_9a_unseen_badge_excludes_complete_albums_but_keeps_partial_ones() {
+fn popover_candidates_and_badge_exclude_complete_albums_from_the_same_set() {
     let conn = migrated_conn();
     insert_named_release(&conn, "owned", "Owned Album", None);
     insert_named_release(&conn, "partial", "Partial Album", None);
@@ -71,10 +71,22 @@ fn nr_9a_unseen_badge_excludes_complete_albums_but_keeps_partial_ones() {
             .unwrap();
     }
 
+    let candidates = delta_candidates(&conn, date()).unwrap();
     assert_eq!(
+        candidates
+            .iter()
+            .map(|release| release.release_group_mbid.as_str())
+            .collect::<Vec<_>>(),
+        ["absent", "partial", "seen"],
+        "complete releases are not popover candidates"
+    );
+    assert_eq!(
+        candidates
+            .iter()
+            .filter(|release| release.seen_at.is_none())
+            .count() as i64,
         unseen_release_count(&conn, date()).unwrap(),
-        2,
-        "only absent and partial unseen releases contribute to the badge"
+        "the badge counts the unseen part of exactly the popover candidate set"
     );
 }
 

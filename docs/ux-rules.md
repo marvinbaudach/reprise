@@ -1840,10 +1840,14 @@ the panel).
   from NR-3 shows the **count** of entries with `seen_at IS NULL`,
   from 10 shown as „9+", disappears on opening (all listed entries get
   stamped), and renders no empty element at 0.
-- **NR-10** [active] [gtk] — Row hover or focus fades out the status
+- **NR-10** [replaced by NR-10a] [gtk] — Row hover or focus fades out the status
   chip and fades in the row actions; on leaving, the chip returns.
   Keyboard parity: the row is focusable, focus shows the actions, and
   the buttons are reachable via Tab/Enter.
+- **NR-10a** [active] [gtk] — Row hover or focus fades in the row
+  actions without displacing the status chip; the chip remains visible
+  in every state. The row stays focusable and its sensitive action
+  buttons remain reachable via Tab/Enter.
 - **NR-11** [active] [gtk] — „Open announcement" opens a URL by
   priority: MusicBrainz URL relations of the release group (Bandcamp/
   purchase/streaming before official homepage/discography) → fallback
@@ -1855,9 +1859,11 @@ the panel).
   entries individually recoverable. Retention: 6 months **and** at
   most 200 entries (the stricter limit wins), hard deletion, but never
   within the 90-day fetch window. Replaces NR-4.
-- **NR-13** [active] [gtk] — Released releases already present in the
-  library are marked (not filtered out) and offer the action „Show in
-  library" (navigate + focus, **no** direct play path).
+- **NR-13** [active] [gtk] — In the full Releases overview, released
+  releases already present in the library are marked and offer the
+  action „Show in library" (navigate + focus, **no** direct play path).
+  The delta popover does not list releases already complete in the
+  library.
 - **NR-3a** [active] [gtk] — The header trigger opens „Updates" and is
   visible as soon as at least one active feed has entries or a
   first-run state per NR-8. Its badge counts exclusively unseen
@@ -1867,11 +1873,17 @@ the panel).
   jump rows „Show all releases/concerts →" navigate normally and close
   the popover. The popover has no internal subpages; the history
   lives in the full releases view (NR-12a).
-- **NR-9a** [active] [gtk] — The badge shows the sum of unseen releases
+- **NR-9a** [replaced by NR-9b] [gtk] — The badge shows the sum of unseen releases
   and concerts, from 10 shown as „9+", and renders nothing at 0.
   Opening stamps the entire delta set of both sections in the current
   scope. Releases fully present in the library are listed and
   stamped, but never count toward the unseen badge.
+- **NR-9b** [active] [core] [gtk] — The popover shows one visit batch:
+  every unseen entry, or, when none is unseen, every entry carrying the
+  newest `seen_at` stamp. Opening stamps the complete unseen batch in
+  scope, including entries below the visible cap. Rows and section
+  counts use the pre-stamp state; the badge uses the post-stamp state.
+  Releases already complete in the library do not enter the popover.
 - **NR-12a** [replaced by NR-16] [gtk] — The persistent history of
   all announcements ever shown lives in the full releases view as its
   own sidebar location. Hidden entries there are individually
@@ -1947,6 +1959,22 @@ the panel).
   the age measured from the completed update again, including a successful run
   with no queued artists. Offline or error still show the last cache and its
   previous age. The shared failure surface remains specified by NR-21.
+- **NR-23** [active] [gtk] — The delta popover shows at most five
+  releases and three concerts without an internal scroller. A section's
+  count chip names the full batch size, but appears **only while that
+  batch is genuinely unseen**: a batch held over from the last visit
+  still renders — looking twice must not empty the popover — yet carries
+  no count, because the badge has cleared by then and a header still
+  claiming "1 new" would contradict it. A section without a batch loses
+  both header and rows; when both are empty, exactly one quiet empty row
+  appears. Jump rows remain visible while their module is active, even
+  when its delta section is absent. The fetch trigger keeps the update
+  age inside its own button, so the header carries one labelled target
+  rather than a bare symbolic glyph.
+  *Reason:* the count-without-unseen case was found in a screenshot on
+  2026-08-04, after the rule's own display tests had passed — the two
+  halves of the surface were each self-consistent and only disagreed
+  with each other (see also STYLE-1).
 ## S. Surfaces & Geometry
 
 <!-- Section letter: R (New Releases) is the last one assigned; S follows
