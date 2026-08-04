@@ -1,5 +1,6 @@
 package de.reprise.spike
 
+import androidx.activity.BackEventCompat
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -18,6 +19,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -26,6 +28,7 @@ import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
 import de.reprise.spike.ui.theme.RepriseTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -186,6 +189,98 @@ class ComposeBehaviorTest {
         compose.onAllNodesWithText("Second Song").assertCountEquals(2)
     }
 
+    /**
+     * The commit leg (a completed [onBackPressed]) is covered by
+     * [miniPlayerOpensTheSheetBackClosesItAndTheLibraryKeepsWorking]. Gesture
+     * navigation shows the progressed preview far more often than a completed
+     * swipe, and that leg was untested: [PredictiveBackHandler] only calls
+     * `close()` after its event flow completes, so a gesture held mid-swipe
+     * must neither dismiss the sheet nor leave it sitting still.
+     *
+     * `OnBackPressedDispatcher.dispatchOnBackStarted`/`dispatchOnBackProgressed`
+     * reach [PredictiveBackHandler]'s flow under Robolectric — confirmed by
+     * driving them here — and the sheet's `graphicsLayer` translation is
+     * visible to `getUnclippedBoundsInRoot()`, so the actual on-screen motion
+     * is what gets asserted, not a proxy for it.
+     */
+    @Test
+    fun predictiveBackProgressMovesTheSheetWithoutClosingIt() {
+        var closed = false
+        compose.setContent {
+            RepriseTheme(nocturneForTests, darkPalette = true) {
+                CompositionLocalProvider(LocalPlaybackControls provides RecordingPlaybackControls()) {
+                    NowPlayingSheet(
+                        track = testTrack(rating = 2),
+                        playback = testPlayback(positionMs = 20_000),
+                        close = { closed = true },
+                    )
+                }
+            }
+        }
+        val collapse = compose.onNodeWithContentDescription("Collapse Now Playing")
+        val restTop = collapse.getUnclippedBoundsInRoot().top
+
+        compose.runOnIdle {
+            val dispatcher = compose.activity.onBackPressedDispatcher
+            dispatcher.dispatchOnBackStarted(BackEventCompat(0f, 0f, 0f, BackEventCompat.EDGE_LEFT))
+            dispatcher.dispatchOnBackProgressed(BackEventCompat(0f, 0f, 0.5f, BackEventCompat.EDGE_LEFT))
+        }
+        compose.waitForIdle()
+
+        assertFalse(closed)
+        collapse.assertIsDisplayed()
+        val progressedTop = collapse.getUnclippedBoundsInRoot().top
+        // A completed drag at halfway drives roughly 39dp of the 64dp full
+        // step in practice; the threshold stays well clear of both that and
+        // measurement noise so it fails if the translation stops tracking
+        // backProgress, not if a rounding pixel wobbles.
+        assertTrue(
+            "progressed top $progressedTop should clear rest top $restTop by more than " +
+                "${PROGRESS_MOTION_THRESHOLD_DP}dp",
+            progressedTop.value > restTop.value + PROGRESS_MOTION_THRESHOLD_DP,
+        )
+    }
+
+    /**
+     * The abandoned-gesture leg of the same contract: a swipe released before
+     * completion reaches [PredictiveBackHandler]'s `CancellationException`
+     * catch, which must both leave the sheet open and reset `backProgress` to
+     * 0f. Driven the same way as the progress case, then cancelled instead of
+     * completed.
+     */
+    @Test
+    fun predictiveBackCancelSnapsTheSheetFullyBackOpen() {
+        var closed = false
+        compose.setContent {
+            RepriseTheme(nocturneForTests, darkPalette = true) {
+                CompositionLocalProvider(LocalPlaybackControls provides RecordingPlaybackControls()) {
+                    NowPlayingSheet(
+                        track = testTrack(rating = 2),
+                        playback = testPlayback(positionMs = 20_000),
+                        close = { closed = true },
+                    )
+                }
+            }
+        }
+        val collapse = compose.onNodeWithContentDescription("Collapse Now Playing")
+        val restTop = collapse.getUnclippedBoundsInRoot().top
+
+        compose.runOnIdle {
+            val dispatcher = compose.activity.onBackPressedDispatcher
+            dispatcher.dispatchOnBackStarted(BackEventCompat(0f, 0f, 0f, BackEventCompat.EDGE_LEFT))
+            dispatcher.dispatchOnBackProgressed(BackEventCompat(0f, 0f, 0.5f, BackEventCompat.EDGE_LEFT))
+        }
+        compose.waitForIdle()
+        assertTrue(collapse.getUnclippedBoundsInRoot().top.value > restTop.value + PROGRESS_MOTION_THRESHOLD_DP)
+
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.dispatchOnBackCancelled() }
+        compose.waitForIdle()
+
+        assertFalse(closed)
+        collapse.assertIsDisplayed()
+        assertEquals(restTop.value, collapse.getUnclippedBoundsInRoot().top.value, 0.5f)
+    }
+
     private fun SemanticsNodeInteraction.progress(): Float =
         fetchSemanticsNode().config[SemanticsProperties.ProgressBarRangeInfo].current
 
@@ -206,6 +301,9 @@ private fun hasClickLabel(label: String) =
     SemanticsMatcher("${SemanticsActions.OnClick.name} is labelled \"$label\"") { node ->
         node.config.getOrNull(SemanticsActions.OnClick)?.label == label
     }
+
+/** See [ComposeBehaviorTest.predictiveBackProgressMovesTheSheetWithoutClosingIt]. */
+private const val PROGRESS_MOTION_THRESHOLD_DP = 24f
 
 private fun testPlayback(positionMs: Long) = PlaybackUiState(
     ready = true,

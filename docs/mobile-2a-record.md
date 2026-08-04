@@ -140,8 +140,19 @@ Named here so they are not mistaken for the list above.
   snapshot tick and its release, a rejected rating without optimistic star
   movement, and the mini player / predictive-back sheet lifecycle while the
   Library stays composed.
-  This still does not prove pixel rendering, predictive-back gesture motion or
-  physical-device pointer dispatch; those remain device checks.
+  It also drives `OnBackPressedDispatcher.dispatchOnBackStarted` /
+  `dispatchOnBackProgressed` / `dispatchOnBackCancelled` directly (activity
+  1.13.0 routes these through the same `NavigationEventDispatcher`
+  `PredictiveBackHandler` registers with, confirmed by driving them under
+  Robolectric rather than assumed), and reads the sheet's actual
+  `graphicsLayer`-transformed position back with `getUnclippedBoundsInRoot()`.
+  So a progressed gesture that moves the sheet without dismissing it, and a
+  cancelled gesture that snaps it fully back open, are both covered now, each
+  proven to fail when the production behaviour it guards is broken.
+  This still does not prove pixel rendering or physical-device touch-to-gesture
+  dispatch — Robolectric calls the dispatcher API directly rather than
+  synthesizing the platform's edge-swipe recognition — so device checks remain
+  the proof for those two.
 - **`library/stats.rs` still documents its writes as happening "on the UI
   thread"**, which stopped being true for Android when play recording moved off
   it.
