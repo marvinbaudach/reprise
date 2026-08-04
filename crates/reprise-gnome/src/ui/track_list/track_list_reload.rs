@@ -498,6 +498,20 @@ fn run_query(shared: &Rc<Shared>) {
             shared.library_root_unavailable.get(),
         ),
     );
+    shared
+        .diagnostic_trail
+        .record(super::diagnostic_trail::Event::Reload {
+            source: source.label(),
+            count,
+        });
+    shared
+        .diagnostic_trail
+        .record(super::diagnostic_trail::Event::StackPage {
+            page: shared
+                .stack
+                .visible_child_name()
+                .map_or_else(|| "none".into(), |page| page.to_string()),
+        });
 
     tracing::info!(
         count,

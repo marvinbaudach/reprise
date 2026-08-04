@@ -62,6 +62,7 @@ fn reveal(
     attempts: u8,
 ) {
     if shared.track_reveal_generation.get() != generation {
+        record_reveal(shared, track_id, None, change, "superseded");
         tracing::debug!(track_id, "superseded track reveal skipped");
         return;
     }
@@ -71,6 +72,7 @@ fn reveal(
             .get()
             .is_some_and(|last| last.elapsed() < USER_SCROLL_GRACE)
     {
+        record_reveal(shared, track_id, None, change, "suppressed-by-scroll");
         tracing::debug!(
             track_id,
             "automatic track centering suppressed by scroll activity"
@@ -85,6 +87,7 @@ fn reveal(
     let Some(position) =
         visible_position_for_track_in_source(&ids, track_id, queue_position, is_queue)
     else {
+        record_reveal(shared, track_id, None, change, "left-view");
         tracing::debug!(
             track_id,
             "loaded track left the visible query before its reveal ran"
@@ -93,12 +96,15 @@ fn reveal(
     };
 
     if reveal_position(shared, position, attempts) {
+        record_reveal(shared, track_id, Some(position), change, "centered");
         tracing::info!(track_id, position, ?change, "current track centered");
         return;
     }
     if attempts == 0 {
+        record_reveal(shared, track_id, Some(position), change, "no-geometry");
         return;
     }
+    record_reveal(shared, track_id, Some(position), change, "retry");
     let shared = Rc::downgrade(shared);
     gtk4::glib::idle_add_local_once(move || {
         if let Some(shared) = shared.upgrade() {
@@ -112,6 +118,23 @@ fn reveal(
             );
         }
     });
+}
+
+fn record_reveal(
+    shared: &Shared,
+    track_id: i64,
+    position: Option<u32>,
+    change: CurrentTrackChange,
+    outcome: &str,
+) {
+    shared
+        .diagnostic_trail
+        .record(super::diagnostic_trail::Event::Reveal {
+            track_id,
+            position,
+            change: format!("{change:?}").to_lowercase(),
+            outcome: outcome.to_owned(),
+        });
 }
 
 /// Brings row `position` to the vertical centre, gliding rather than jumping so

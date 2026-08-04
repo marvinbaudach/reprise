@@ -87,6 +87,8 @@ mod imp {
         /// `TrackListModel::set_sections` BEFORE the query swap whose
         /// `items_changed` makes GTK re-read sections.
         pub sections: Vec<(u32, u32)>,
+        pub window_query_error_count: u64,
+        pub last_window_query_error: Option<String>,
     }
 
     /// `conn` is `None` only in the brief instant between `glib::Object::new`
@@ -283,6 +285,11 @@ impl TrackListModel {
         };
         let (items, sections) = queue_snapshot_emissions(change, sections_changed, new_total);
         if let Some((position, removed, added)) = items {
+            super::diagnostic_trail::record(super::diagnostic_trail::Event::ItemsChanged {
+                position,
+                removed,
+                added,
+            });
             self.items_changed(position, removed, added);
         }
         // The `SectionModel` interface is test-gated off (see `Interfaces`
@@ -291,6 +298,10 @@ impl TrackListModel {
         #[cfg(not(test))]
         if let Some((position, n_items)) = sections {
             use gtk4::prelude::SectionModelExt;
+            super::diagnostic_trail::record(super::diagnostic_trail::Event::SectionsChanged {
+                position,
+                n_items,
+            });
             self.sections_changed(position, n_items);
         }
         #[cfg(test)]
@@ -426,6 +437,19 @@ impl TrackListModel {
             "model query set"
         );
 
+        super::diagnostic_trail::record(super::diagnostic_trail::Event::QuerySet {
+            total: new_total,
+            source: source.label(),
+            sort_field: sort_field.to_owned(),
+            sort_dir: sort_dir.to_owned(),
+            filter_len: filter.chars().count(),
+            exclude_ai,
+        });
+        super::diagnostic_trail::record(super::diagnostic_trail::Event::ItemsChanged {
+            position: 0,
+            removed: old_total,
+            added: new_total,
+        });
         self.items_changed(0, old_total, new_total);
     }
 
@@ -529,6 +553,18 @@ impl TrackListModel {
         let rows = match rows {
             Ok(rows) => rows,
             Err(error) => {
+                let error_text = error.to_string();
+                {
+                    let mut state = self.imp().state.borrow_mut();
+                    state.window_query_error_count =
+                        state.window_query_error_count.saturating_add(1);
+                    state.last_window_query_error = Some(error_text.clone());
+                }
+                super::diagnostic_trail::record(super::diagnostic_trail::Event::WindowQueryError {
+                    position,
+                    window_start,
+                    error: error_text,
+                });
                 tracing::error!(%error, position, window_start, "failed to load track window");
                 return None;
             }
@@ -595,6 +631,14 @@ impl TrackListModel {
         let state = self.imp().state.borrow();
         let rows = state.cache.values().map(Vec::len).sum();
         (state.cache.len(), rows)
+    }
+
+    pub(in crate::ui) fn window_query_error(&self) -> (u64, Option<String>) {
+        let state = self.imp().state.borrow();
+        (
+            state.window_query_error_count,
+            state.last_window_query_error.clone(),
+        )
     }
 }
 

@@ -95,6 +95,10 @@ pub(in crate::ui) use super::track_list_toast::show_toast;
 /// individually below; everything else stays private to this file.
 pub(in crate::ui) struct Shared {
     pub(in crate::ui) model: TrackListModel,
+    /// Process-thread trail shared with `TrackListModel`, which is created
+    /// before this aggregate exists and therefore reaches it through the
+    /// narrow thread-local handle in `diagnostic_trail`.
+    pub(in crate::ui) diagnostic_trail: Rc<super::diagnostic_trail::DiagnosticTrail>,
     /// The `ColumnView`'s selection model (Stage 3 Task 5) — every context-
     /// menu action reads its target row positions from here (`selection()`/
     /// `is_selected()`/`select_range()`), and `wire_context_menu_gesture`'s
@@ -110,6 +114,9 @@ pub(in crate::ui) struct Shared {
     /// why the Escape shortcut (`ui::shortcuts`) needs a precise handle
     /// rather than "whatever's focusable in the current stack page."
     pub(in crate::ui) column_view: gtk4::ColumnView,
+    /// Stable owner of the vertical adjustment and its allocation, retained
+    /// for the row-loss dump rather than rediscovered from widget parents.
+    pub(in crate::ui) scrolled: gtk4::ScrolledWindow,
     /// Track id of the currently-playing row (the now-playing marker), or
     /// `None` when nothing is playing. Every column's `connect_bind` reads
     /// this to toggle the `.now-playing` marker class on its cell, so a row
