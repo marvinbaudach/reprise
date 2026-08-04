@@ -39,11 +39,7 @@ fn the_most_recent_seen_visit_is_the_fallback_batch() {
 /// itself — one saying "nothing new" while the other claims "2 new".
 #[test]
 fn a_batch_is_only_new_while_something_in_the_feed_is_unseen() {
-    let mixed = delta_batch(
-        vec![("read", Some(10)), ("fresh", None)],
-        |item| item.1,
-        5,
-    );
+    let mixed = delta_batch(vec![("read", Some(10)), ("fresh", None)], |item| item.1, 5);
     assert!(mixed.unseen);
     assert_eq!(mixed.shown, [("fresh", None)]);
 

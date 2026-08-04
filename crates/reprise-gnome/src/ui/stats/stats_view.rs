@@ -31,7 +31,7 @@ const SECTION_SPACING: i32 = 20;
 /// The fixed editorial order of the page's sections (STATS-10). The test reads
 /// the real widget tree and compares against this.
 #[cfg(test)]
-const SECTION_ORDER: [&str; 6] = ["header", "hero", "bands", "songs", "top-tracks", "genres"];
+const SECTION_ORDER: [&str; 5] = ["header", "hero", "bands", "songs", "genres"];
 
 type StringCallback = Rc<RefCell<Option<Rc<dyn Fn(String)>>>>;
 type IdsCallback = Rc<RefCell<Option<Rc<dyn Fn(Vec<i64>)>>>>;
@@ -106,10 +106,11 @@ impl StatsView {
         // weekly chart that used to open the page is gone; its two readings
         // live in the hero's KPI row, where they cost a line instead of a
         // half-empty diagram.
+        // STATS-22: expanding the ranking is the songs card's own business —
+        // the page has three sections whether it is open or closed.
         let sections = gtk4::Box::new(gtk4::Orientation::Vertical, SECTION_SPACING);
         sections.append(bands_row.widget());
         sections.append(&songs_section);
-        sections.append(songs_card.expanded_widget());
         sections.append(&genres_section);
 
         let empty = adw::StatusPage::builder()
@@ -182,7 +183,6 @@ impl StatsView {
             genres_section_data: genres.clone(),
             songs_card: songs_card.clone(),
             songs_section: songs_section.clone(),
-            top_tracks_section: songs_card.expanded_widget().clone(),
             genres_section: genres_section.clone(),
             entrance,
         });
@@ -397,14 +397,6 @@ impl StatsView {
                 order.push("bands");
             } else if widget == self.render.songs_section.clone().upcast::<gtk4::Widget>() {
                 order.push("songs");
-            } else if widget
-                == self
-                    .render
-                    .top_tracks_section
-                    .clone()
-                    .upcast::<gtk4::Widget>()
-            {
-                order.push("top-tracks");
             } else if self
                 .render
                 .genres_section_data
@@ -429,8 +421,6 @@ struct RenderParts {
     genres_section_data: StatsGenreCard,
     songs_card: StatsSongsCard,
     songs_section: gtk4::Box,
-    #[cfg_attr(not(test), allow(dead_code))]
-    top_tracks_section: gtk4::Revealer,
     genres_section: gtk4::Box,
     entrance: StatsEntrance,
 }
