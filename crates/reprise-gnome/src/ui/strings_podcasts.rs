@@ -205,7 +205,7 @@ pub fn podcast_episode_count(count: usize) -> String {
     )
 }
 
-/// SRC-12 batch feedback. One message per batch, never one per episode, and
+/// SRC-12a batch feedback. One message per batch, never one per episode, and
 /// never assembled by concatenating two separately translated fragments —
 /// word order and punctuation around "N done, M failed" differ per language,
 /// so both numbers live in one msgid, pluralised on the successful count.
@@ -244,7 +244,7 @@ pub fn episodes_added_to_queue_toast(count: usize) -> String {
     )
 }
 
-/// SRC-12: acting on a selection that contains nothing to act on is still an
+/// SRC-12a: acting on a selection that contains nothing to act on is still an
 /// answer. Staying silent reads as a broken button.
 pub const PODCAST_BATCH_NOTHING_TO_DELETE: &str = N_!("No downloaded files in the selection");
 
@@ -596,7 +596,7 @@ mod tests {
     }
 
     #[test]
-    fn src_12_summary_reports_a_selection_and_drops_it_at_zero() {
+    fn src_12a_summary_reports_a_selection_and_drops_it_at_zero() {
         let summary = "2 channels · 54 episodes · 4 new";
 
         assert_eq!(

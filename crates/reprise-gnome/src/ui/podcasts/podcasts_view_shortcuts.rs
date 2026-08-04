@@ -133,7 +133,7 @@ mod tests {
     }
 
     #[test]
-    fn src_12_modified_escape_and_other_keys_proceed_without_clearing() {
+    fn src_12a_modified_escape_and_other_keys_proceed_without_clearing() {
         for (key, modifiers) in [
             (gdk::Key::Escape, gdk::ModifierType::CONTROL_MASK),
             (gdk::Key::Escape, gdk::ModifierType::SHIFT_MASK),

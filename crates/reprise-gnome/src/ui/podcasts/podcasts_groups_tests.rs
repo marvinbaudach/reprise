@@ -488,7 +488,7 @@ fn src_5_one_expander_is_rendered_per_source_group() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn src_12_grouped_selection_survives_render_rebuild_on_the_row() {
+fn src_12a_grouped_selection_survives_render_rebuild_on_the_row() {
     gtk4::init().unwrap();
     let mut selection = PodcastSelection::default();
     selection.set_selected(1, true);

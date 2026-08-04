@@ -211,7 +211,7 @@ fn src_14_a_range_selects_every_row_between_anchor_and_target() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn src_12_escape_clears_episode_selection_and_a_second_escape_proceeds() {
+fn src_12a_escape_clears_episode_selection_and_a_second_escape_proceeds() {
     gtk4::init().unwrap();
     let (view, _) = view_with_expanded_episodes(3);
     let order = view.rendered_order();

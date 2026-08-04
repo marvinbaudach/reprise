@@ -186,7 +186,7 @@ fn pod_10_batch_selection_is_stable_and_channel_scoped() {
 }
 
 #[test]
-fn src_12_clear_selected_drops_every_channels_selection_and_reports_emptiness() {
+fn src_12a_clear_selected_drops_every_channels_selection_and_reports_emptiness() {
     let mut state = YoutubeChannelState::default();
     state.set_selected(7, 11, true);
     state.set_selected(8, 21, true);

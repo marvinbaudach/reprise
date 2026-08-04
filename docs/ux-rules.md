@@ -3978,7 +3978,7 @@ listening statistics.
   `page_url` when present and never treats its media enclosure in `audio_url`
   as an episode page. As a single-episode action it is absent from a
   multi-selection menu instead of targeting an arbitrary member, as required
-  by SRC-12. This asymmetry with radio is deliberate. Unsubscribing is operated
+  by SRC-12a. This asymmetry with radio is deliberate. Unsubscribing is operated
   from the context menu alone; there is no hover star.
 - **SRC-13** [active] [gtk] — **Marking and scrolling are separate in the
   source lists.** The loaded item carries the shared playback marker in every

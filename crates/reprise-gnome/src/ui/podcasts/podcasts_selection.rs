@@ -322,7 +322,7 @@ mod tests {
     }
 
     #[test]
-    fn src_12_selection_survives_a_widget_rebuild_and_spans_shows() {
+    fn src_12a_selection_survives_a_widget_rebuild_and_spans_shows() {
         let mut selection = PodcastSelection::default();
         selection.set_selected(11, true);
         selection.set_selected(21, true);
@@ -333,7 +333,7 @@ mod tests {
     }
 
     #[test]
-    fn src_12_clear_reports_and_drops_a_non_empty_selection() {
+    fn src_12a_clear_reports_and_drops_a_non_empty_selection() {
         let mut selection = PodcastSelection::default();
         selection.set_selected(11, true);
         selection.set_selected(21, true);
@@ -343,7 +343,7 @@ mod tests {
     }
 
     #[test]
-    fn src_12_clear_reports_an_already_empty_selection() {
+    fn src_12a_clear_reports_an_already_empty_selection() {
         let mut selection = PodcastSelection::default();
 
         assert!(!selection.clear());
