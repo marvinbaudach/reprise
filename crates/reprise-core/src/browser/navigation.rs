@@ -29,6 +29,16 @@ pub enum SidebarTarget {
     Conversions,
 }
 
+/// Which source list a reveal intent belongs to. Deliberately *not*
+/// `PodcastKind`: `reprise_core::browser` imports `BrowseFilter` and
+/// `ViewSource` and nothing else, and the navigation grammar stays free of
+/// the podcast domain.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SourceKind {
+    Podcasts,
+    Youtube,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum NavigationIntent {
     Sidebar(SidebarTarget),
@@ -47,8 +57,57 @@ pub enum NavigationIntent {
         origin: Box<BrowserPlace>,
         track_id: i64,
     },
+    /// `BROWSE-4`: reveal an episode, or its channel when `episode_id` is
+    /// `None`, in the source list that owns it.
+    RevealEpisode {
+        subscription_id: i64,
+        episode_id: Option<i64>,
+        kind: SourceKind,
+    },
+    /// `BROWSE-4`: reveal the station in the Radio source list.
+    RevealStation {
+        station_id: i64,
+    },
     Back,
     Forward,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SourceTarget {
+    Episode {
+        subscription_id: i64,
+        episode_id: Option<i64>,
+        kind: SourceKind,
+    },
+    Station {
+        station_id: i64,
+    },
+}
+
+impl NavigationIntent {
+    /// The source-list reveal this intent asks for, or `None` for every other
+    /// intent and for ids that cannot address anything (`<= 0`, like
+    /// `RevealTrack`'s `track_id <= 0` rule).
+    #[must_use]
+    pub fn source_target(&self) -> Option<SourceTarget> {
+        match *self {
+            Self::RevealEpisode {
+                subscription_id,
+                episode_id,
+                kind,
+            } if subscription_id > 0 && episode_id.is_none_or(|id| id > 0) => {
+                Some(SourceTarget::Episode {
+                    subscription_id,
+                    episode_id,
+                    kind,
+                })
+            }
+            Self::RevealStation { station_id } if station_id > 0 => {
+                Some(SourceTarget::Station { station_id })
+            }
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -192,6 +251,26 @@ impl BrowserNavigation {
                 };
                 set_explicit_track_anchor(&mut target, track_id);
                 self.go_metadata_scope(target)
+            }
+            source_intent @ (NavigationIntent::RevealEpisode { .. }
+            | NavigationIntent::RevealStation { .. }) => {
+                let target = source_intent.source_target()?;
+                let place = match target {
+                    SourceTarget::Episode {
+                        kind: SourceKind::Podcasts,
+                        ..
+                    } => BrowserPlace::Podcasts,
+                    SourceTarget::Episode {
+                        kind: SourceKind::Youtube,
+                        ..
+                    } => BrowserPlace::Youtube,
+                    SourceTarget::Station { .. } => BrowserPlace::Radio,
+                };
+                // When the source view is already open, `go_metadata_scope`
+                // yields `None` because there is no transition to render. The
+                // reveal request does not depend on that transition:
+                // `MetadataNavigator::navigate` dispatches it independently.
+                self.go_metadata_scope(place)
             }
         }
     }
@@ -338,6 +417,10 @@ fn push_bounded(stack: &mut Vec<BrowserPlace>, place: BrowserPlace) {
 }
 
 #[cfg(test)]
+#[path = "navigation_source_tests.rs"]
+mod source_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::browser::{
@@ -433,9 +516,11 @@ mod tests {
             Some(&TrackCollection::Queue),
             "Queue must not depend on whichever utility or scope was visible"
         );
-        assert!(navigation
-            .navigate(NavigationIntent::Sidebar(SidebarTarget::Queue))
-            .is_none());
+        assert!(
+            navigation
+                .navigate(NavigationIntent::Sidebar(SidebarTarget::Queue))
+                .is_none()
+        );
 
         let stats = navigation
             .navigate(NavigationIntent::Sidebar(SidebarTarget::MyStats))
@@ -556,9 +641,11 @@ mod tests {
         let queue = BrowserPlace::tracks(TrackCollection::Queue, queue_state.clone());
         navigation.replace_current(queue.clone());
 
-        assert!(navigation
-            .navigate(NavigationIntent::Sidebar(SidebarTarget::Queue))
-            .is_none());
+        assert!(
+            navigation
+                .navigate(NavigationIntent::Sidebar(SidebarTarget::Queue))
+                .is_none()
+        );
         assert_eq!(navigation.current(), &queue);
         assert_eq!(navigation.current().track_state(), Some(&queue_state));
     }
@@ -622,24 +709,30 @@ mod tests {
     fn browse_4_blank_or_invalid_metadata_links_are_noops() {
         let mut navigation = BrowserNavigation::new(library());
 
-        assert!(navigation
-            .navigate(NavigationIntent::OpenAlbum {
-                album: AlbumKey::new("  ", "Joni Mitchell"),
-                anchor_track_id: None,
-            })
-            .is_none());
-        assert!(navigation
-            .navigate(NavigationIntent::OpenArtist {
-                artist: ArtistKey::new("  "),
-                anchor_track_id: None,
-            })
-            .is_none());
-        assert!(navigation
-            .navigate(NavigationIntent::RevealTrack {
-                origin: Box::new(library()),
-                track_id: 0,
-            })
-            .is_none());
+        assert!(
+            navigation
+                .navigate(NavigationIntent::OpenAlbum {
+                    album: AlbumKey::new("  ", "Joni Mitchell"),
+                    anchor_track_id: None,
+                })
+                .is_none()
+        );
+        assert!(
+            navigation
+                .navigate(NavigationIntent::OpenArtist {
+                    artist: ArtistKey::new("  "),
+                    anchor_track_id: None,
+                })
+                .is_none()
+        );
+        assert!(
+            navigation
+                .navigate(NavigationIntent::RevealTrack {
+                    origin: Box::new(library()),
+                    track_id: 0,
+                })
+                .is_none()
+        );
         assert_eq!(navigation.current(), &library());
     }
 
