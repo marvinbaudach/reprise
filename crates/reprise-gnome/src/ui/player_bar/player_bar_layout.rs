@@ -6,8 +6,9 @@ use libadwaita::prelude::*;
 
 use super::cover_loader::CoverLoader;
 use super::strings;
-use super::{ICON_NEXT, ICON_PLAY, ICON_PREVIOUS, ICON_REPEAT_ALL, ICON_SHUFFLE};
-use crate::ui::playing_marker;
+use super::transport_glyph::{Glyph, TransportGlyph};
+use super::{ICON_NEXT, ICON_PREVIOUS, ICON_REPEAT_ALL, ICON_SHUFFLE};
+use crate::ui::cover_lift::CoverLift;
 use crate::ui::style::buttons;
 
 pub(in crate::ui) const VOLUME_MIN: f64 = 0.0;
@@ -55,14 +56,15 @@ pub(in crate::ui) struct PlayerBarWidgets {
     pub(in crate::ui) info_box: gtk4::Box,
     pub(in crate::ui) cover: gtk4::Image,
     pub(in crate::ui) cover_button: gtk4::Button,
+    pub(in crate::ui) cover_lift: CoverLift,
     pub(in crate::ui) title_label: gtk4::Label,
     pub(in crate::ui) title_button: gtk4::Button,
     pub(in crate::ui) artist_label: gtk4::Label,
     pub(in crate::ui) artist_button: gtk4::Button,
-    pub(in crate::ui) mini_eq: gtk4::Box,
     pub(in crate::ui) shuffle_button: gtk4::ToggleButton,
     pub(in crate::ui) prev_button: gtk4::Button,
     pub(in crate::ui) play_pause_button: gtk4::Button,
+    pub(super) play_glyph: TransportGlyph,
     pub(in crate::ui) next_button: gtk4::Button,
     pub(in crate::ui) repeat_button: gtk4::ToggleButton,
     pub(in crate::ui) play_next_episode_button: gtk4::Button,
@@ -88,6 +90,9 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     cover_button.update_property(&[gtk4::accessible::Property::Label(&strings::text(
         strings::REVEAL_PLAYING_ALBUM,
     ))]);
+    cover_button.set_halign(gtk4::Align::Center);
+    cover_button.set_valign(gtk4::Align::Center);
+    let cover_lift = CoverLift::new(&cover_button, COVER_PIXEL_SIZE);
 
     // — Track labels —
     let title_label = build_track_label();
@@ -96,14 +101,11 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     let artist_label = build_track_label();
     artist_label.add_css_class("player-bar-artist");
 
-    // — Shared persistent playing marker —
-    let mini_eq = playing_marker::build();
-    mini_eq.add_css_class("mini-eq");
-
-    // Title row: title label + mini-EQ side by side (spec 1.5: "neben dem Titel").
+    // Title row: the title alone. The running state lives on the play/pause
+    // button (NAV-10a) — a second animated marker here doubles the track
+    // list's on every view where the running track is visible.
     let title_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
     title_row.append(&title_label);
-    title_row.append(&mini_eq);
     title_row.set_valign(gtk4::Align::Center);
     let title_button = gtk4::Button::builder()
         .child(&title_row)
@@ -113,8 +115,16 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     title_button.update_property(&[gtk4::accessible::Property::Label(&strings::text(
         strings::JUMP_TO_NOW_PLAYING,
     ))]);
+    // Wrapped in a row for the same reason the title is: a `GtkButton` centres
+    // a bare child, which put the artist seven pixels right of the title above
+    // it — the label's own `halign: Start` does not survive that. Filling the
+    // button with a box and letting the label start inside it is what makes
+    // the two line up.
+    let artist_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
+    artist_row.append(&artist_label);
+    artist_row.set_valign(gtk4::Align::Center);
     let artist_button = gtk4::Button::builder()
-        .child(&artist_label)
+        .child(&artist_row)
         .has_frame(false)
         .tooltip_text(strings::text(strings::GO_TO_PLAYING_ARTIST))
         .build();
@@ -134,7 +144,7 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     // — Start zone (cover + track info) —
     let info_box = gtk4::Box::new(gtk4::Orientation::Horizontal, ZONE_SPACING);
     info_box.set_margin_start(12);
-    info_box.append(&cover_button);
+    info_box.append(cover_lift.widget());
     info_box.append(&track_info_clamp);
     info_box.set_valign(gtk4::Align::Center);
     info_box.set_width_request(START_ZONE_WIDTH);
@@ -148,12 +158,21 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     prev_button.set_sensitive(false);
     // The play/pause control is the accent-glow focal point of the bar and the
     // primary tier of BTN-3: it may react more visibly than its neighbours.
-    let play_pause_button = gtk4::Button::from_icon_name(ICON_PLAY);
+    let play_glyph = TransportGlyph::new(Glyph::Play);
+    let play_pause_button = gtk4::Button::builder().child(play_glyph.widget()).build();
     play_pause_button.set_tooltip_text(Some(&strings::text(strings::TOOLTIP_PLAY)));
+    play_pause_button.update_property(&[gtk4::accessible::Property::Label(&strings::text(
+        strings::TOOLTIP_PLAY,
+    ))]);
     play_pause_button.set_valign(gtk4::Align::Center);
     play_pause_button.add_css_class("circular");
     play_pause_button.add_css_class(PLAY_CSS_CLASS);
     buttons::arm(&play_pause_button, buttons::PRIMARY_CLASS);
+    // The transport control stays completely still. It is the one element a
+    // pointer aims at and, once the running track scrolls out of the list, the
+    // only place the playback state is read from — a control that answers the
+    // music moves under the cursor and competes with the state it reports.
+    play_pause_button.set_halign(gtk4::Align::Center);
     let next_button = transport_button(ICON_NEXT, strings::TOOLTIP_NEXT);
     next_button.set_sensitive(false);
     let repeat_button = transport_toggle(ICON_REPEAT_ALL, strings::REPEAT);
@@ -314,16 +333,17 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
         info_box,
         cover,
         cover_button,
+        cover_lift,
         title_label,
         title_button,
         artist_label,
         artist_button,
-        mini_eq,
         shuffle_button,
         prev_button,
         play_pause_button,
         next_button,
         repeat_button,
+        play_glyph,
         play_next_episode_button,
         retry_external_button,
         position_label,
@@ -335,10 +355,10 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
 }
 
 /// Player-bar chrome CSS: accent-glow play button, hairline top border, cover
-/// border-radius, title/artist/time label styling, transport hover, mini-EQ
-/// animation, volume-knob visibility, and artist-label hover colour.
+/// border-radius, title/artist/time label styling, transport hover,
+/// volume-knob visibility, and artist-label hover colour.
 pub(in crate::ui) fn css() -> String {
-    use super::{motion, style::tokens::TRANSITION};
+    use super::{motion, style::tokens::RADIUS_SURFACE, style::tokens::TRANSITION};
     let micro_ms = motion::MICRO_MS;
     let micro_easing = motion::MICRO_CSS_EASING;
     format!(
@@ -377,7 +397,7 @@ pub(in crate::ui) fn css() -> String {
            50%  {{ transform: scale(0.92); }} \
            100% {{ transform: scale(1.0); }} }}\n\
          .{COVER_CSS_CLASS} {{ \
-           border-radius: 8px; \
+           border-radius: {RADIUS_SURFACE}; \
            box-shadow: inset 0 0 0 1px alpha(white, 0.08); \
            opacity: 0.92; transition: opacity {TRANSITION}; }}\n\
          .{COVER_CSS_CLASS}.hovered {{ opacity: 1.0; }}\n\
@@ -394,8 +414,7 @@ pub(in crate::ui) fn css() -> String {
          .{TRANSPORT_ROW_CSS_CLASS} button.reprise-btn-add {{ border-radius: 8px; }}\n\
          .{VOLUME_SCALE_CSS_CLASS} trough > slider {{ \
            opacity: 0; transition: opacity {TRANSITION}; }}\n\
-         .{VOLUME_SCALE_CSS_CLASS}.{KNOB_VISIBLE_CSS_CLASS} trough > slider {{ opacity: 1; }}\n\
-         .mini-eq {{ margin-left: 4px; }}"
+         .{VOLUME_SCALE_CSS_CLASS}.{KNOB_VISIBLE_CSS_CLASS} trough > slider {{ opacity: 1; }}"
     )
 }
 
@@ -437,293 +456,5 @@ fn build_track_label() -> gtk4::Label {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::time::Duration;
-
-    use gtk4::prelude::*;
-
-    use super::build;
-
-    fn wait_for_layout() {
-        let main_loop = gtk4::glib::MainLoop::new(None, false);
-        let quit = main_loop.clone();
-        gtk4::glib::timeout_add_local_once(Duration::from_millis(50), move || quit.quit());
-        main_loop.run();
-    }
-
-    fn descendant_buttons(root: &gtk4::Widget) -> Vec<gtk4::Button> {
-        let mut buttons = Vec::new();
-        let mut pending = vec![root.clone()];
-        while let Some(widget) = pending.pop() {
-            if let Ok(button) = widget.clone().downcast::<gtk4::Button>() {
-                buttons.push(button);
-            }
-            let mut child = widget.first_child();
-            while let Some(current) = child {
-                child = current.next_sibling();
-                pending.push(current);
-            }
-        }
-        buttons
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn que_1_player_bar_has_no_queue_button() {
-        gtk4::init().unwrap();
-        let layout = build();
-        let queue_buttons = descendant_buttons(layout.root.upcast_ref())
-            .into_iter()
-            .filter(|button| button.icon_name().as_deref() == Some("view-list-symbolic"))
-            .count();
-
-        assert_eq!(
-            queue_buttons, 0,
-            "the player bar still renders a queue button"
-        );
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn library_bar_has_three_zones_via_centerbox() {
-        let _main_context = crate::ui::test_main_context::lock_main_context();
-        if gtk4::init().is_err() {
-            return;
-        }
-        let layout = build();
-        let window = gtk4::Window::builder()
-            .default_width(1_200)
-            .child(&layout.root)
-            .build();
-        window.set_size_request(1_200, -1);
-        window.present();
-        wait_for_layout();
-
-        assert_eq!(layout.root.width(), 1_200);
-        // Start zone: info_box is the start widget of center_box.
-        assert_eq!(
-            layout.center_box.start_widget(),
-            Some(layout.info_box.clone().upcast())
-        );
-        assert!(layout.cover.is_ancestor(&layout.info_box));
-        assert!(layout.title_label.is_ancestor(&layout.info_box));
-        assert!(layout.artist_label.is_ancestor(&layout.info_box));
-        // Transport controls are within the center zone.
-        assert!(layout.shuffle_button.is_ancestor(&layout.root));
-        assert!(layout.play_pause_button.is_ancestor(&layout.root));
-        assert!(layout.prev_button.is_ancestor(&layout.root));
-        assert!(layout.next_button.is_ancestor(&layout.root));
-        assert!(layout.repeat_button.is_ancestor(&layout.root));
-        // Seek row widgets are present.
-        assert!(layout.position_label.is_ancestor(&layout.root));
-        assert!(layout.duration_label.is_ancestor(&layout.root));
-        assert!(layout.waveform.widget().is_ancestor(&layout.root));
-        // End zone has volume controls.
-        assert!(layout.volume_scale.is_ancestor(&layout.root));
-        assert!(layout.volume_icon.is_ancestor(&layout.root));
-        window.close();
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn style_5_player_bar_fits_a_narrow_short_window_without_clipping() {
-        let _main_context = crate::ui::test_main_context::lock_main_context();
-        gtk4::init().unwrap();
-        let layout = build();
-        let content = gtk4::ScrolledWindow::builder()
-            .child(&gtk4::Label::new(Some("Scrollable library content")))
-            .vexpand(true)
-            .build();
-        let shell = crate::ui::library_player_bar::LibraryPlayerBarShell::new(
-            &content,
-            Some(layout.root.upcast_ref()),
-            reprise_core::library::settings::PlayerBarPosition::Bottom,
-        );
-        let window = gtk4::Window::builder()
-            .default_width(720)
-            .default_height(420)
-            .child(shell.widget())
-            .build();
-
-        window.present();
-        wait_for_layout();
-
-        assert!(
-            window.width() <= 720,
-            "the full player forced a half-screen window wider: {}",
-            window.width()
-        );
-        assert_eq!(layout.root.width(), shell.widget().width());
-        assert!(
-            layout.root.height() >= super::BAR_HEIGHT,
-            "the player bar lost its full structural height"
-        );
-        for (name, widget) in [
-            ("cover", layout.cover_button.upcast_ref::<gtk4::Widget>()),
-            (
-                "play/pause",
-                layout.play_pause_button.upcast_ref::<gtk4::Widget>(),
-            ),
-            (
-                "waveform",
-                layout.waveform.widget().upcast_ref::<gtk4::Widget>(),
-            ),
-            (
-                "position",
-                layout.position_label.upcast_ref::<gtk4::Widget>(),
-            ),
-            (
-                "duration",
-                layout.duration_label.upcast_ref::<gtk4::Widget>(),
-            ),
-            ("volume", layout.volume_scale.upcast_ref::<gtk4::Widget>()),
-        ] {
-            let bounds = widget
-                .compute_bounds(&layout.root)
-                .unwrap_or_else(|| panic!("{name} has no player-bar bounds"));
-            assert!(
-                bounds.x() >= 0.0
-                    && bounds.y() >= 0.0
-                    && bounds.x() + bounds.width() <= layout.root.width() as f32
-                    && bounds.y() + bounds.height() <= layout.root.height() as f32,
-                "{name} is clipped outside the player bar: {bounds:?}, bar={}x{}",
-                layout.root.width(),
-                layout.root.height()
-            );
-        }
-
-        window.close();
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn style_5_long_title_keeps_transport_controls_centered() {
-        let _main_context = crate::ui::test_main_context::lock_main_context();
-        gtk4::init().unwrap();
-        let layout = build();
-        layout.title_label.set_text(
-            "Siren's Lament — Dark Melodic Metalcore Instrumental Mix | \
-             Cinematic Heavy Atmospheric Metal With An Extremely Long Name",
-        );
-        layout
-            .artist_label
-            .set_text("Hollow Fallen — Videos With Another Long Channel Name");
-        let window = gtk4::Window::builder()
-            .default_width(1_200)
-            .default_height(180)
-            .child(&layout.root)
-            .build();
-
-        window.present();
-        wait_for_layout();
-
-        let play_bounds = layout
-            .play_pause_button
-            .compute_bounds(&layout.root)
-            .expect("play button has player-bar bounds");
-        let play_center = play_bounds.x() + play_bounds.width() / 2.0;
-        let bar_center = layout.root.width() as f32 / 2.0;
-        assert!(
-            (play_center - bar_center).abs() <= 1.0,
-            "long metadata shifted transport controls: play={play_center}, bar={bar_center}"
-        );
-
-        window.close();
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn tip_1d_player_bar_buttons_follow_tooltip_discipline() {
-        if gtk4::init().is_err() {
-            return;
-        }
-        let layout = build();
-        let violations =
-            crate::ui::tooltip_discipline::tooltip_violations(layout.root.upcast_ref());
-        assert!(violations.is_empty(), "{violations:?}");
-    }
-
-    #[test]
-    fn css_styles_the_glow_play_button_and_surface() {
-        let css = super::css();
-        assert!(css.contains(".player-bar-play"));
-        assert!(css.contains("@reprise_player_accent"));
-        assert!(css.contains(".player-bar-surface"));
-        assert!(css.contains("background-color: @headerbar_bg_color"));
-        assert!(css.contains("border-top: 1px solid"));
-        assert!(css.contains("@keyframes reprise-play-pulse"));
-        assert!(css.contains("transform: scale(0.92)"));
-        assert!(css.contains("inset 0 2px 1px alpha(#ffffff, 0.34)"));
-        assert!(css.contains("inset 0 -4px 3px alpha(#000000, 0.30)"));
-        assert!(css.contains("0 6px 12px alpha(#000000, 0.36)"));
-        assert!(css.contains("inset 0 4px 6px alpha(#000000, 0.44)"));
-        assert!(css.contains("0 1px 2px alpha(#000000, 0.22)"));
-        assert!(css.contains(&format!(
-            "animation: reprise-play-pulse {}ms {} 1",
-            crate::ui::motion::MICRO_MS,
-            crate::ui::motion::MICRO_CSS_EASING
-        )));
-    }
-
-    #[test]
-    fn tip_1d_player_bar_artist_names_its_navigation_action() {
-        let source = include_str!("player_bar_layout.rs")
-            .split("#[cfg(test)]")
-            .next()
-            .unwrap();
-        let artist_tooltip = ".tooltip_text(strings::text(strings::GO_TO_PLAYING_ARTIST))";
-
-        assert_eq!(source.matches(&artist_tooltip).count(), 1);
-    }
-
-    #[test]
-    fn css_includes_new_cover_and_label_classes() {
-        let css = super::css();
-        assert!(css.contains(".player-bar-cover"));
-        assert!(css.contains(".player-bar-title"));
-        assert!(css.contains(".player-bar-artist"));
-        assert!(css.contains("border-radius: 8px"));
-    }
-
-    /// The press sink is no longer the player bar's own business: it comes
-    /// from the one central set (BTN-4), and the bar only adds the louder
-    /// accent ring the main action is allowed (BTN-3).
-    #[test]
-    fn btn_3_play_button_has_sculpted_depth_and_a_distinct_pressed_well() {
-        use crate::ui::style::buttons;
-
-        let css = super::css();
-        assert!(css.contains(&format!(".{}:active", super::PLAY_CSS_CLASS)));
-        assert!(css.contains("inset 0 2px 1px alpha(#ffffff, 0.34)"));
-        assert!(css.contains("inset 0 -4px 3px alpha(#000000, 0.30)"));
-        assert!(css.contains("0 6px 12px alpha(#000000, 0.36)"));
-        assert!(css.contains("inset 0 4px 6px alpha(#000000, 0.44)"));
-        assert!(css.contains("0 0 0 4px alpha(@reprise_player_accent"));
-        // The MOT-5 play/pause pulse keyframes stay; only the *press* scale
-        // moved out, so no local rule may restate it.
-        let press_scale = format!("scale({})", crate::ui::style::tokens::BTN_PRESS_SCALE);
-        assert!(
-            !css.contains(&press_scale),
-            "the press scale belongs to style::buttons, not to a per-button tint"
-        );
-
-        let shared = buttons::css();
-        assert!(shared.contains(&format!(".{}:active", buttons::PRIMARY_CLASS)));
-        assert!(shared.contains(&press_scale));
-    }
-
-    #[test]
-    fn css_uses_supported_mini_eq_spacing_property() {
-        let css = super::css();
-        assert!(css.contains(".mini-eq { margin-left: 4px; }"));
-        assert!(!css.contains("margin-start"));
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn player_bar_css_parses_without_errors() {
-        gtk4::init().unwrap();
-        let errors = crate::ui::style::css_parse_errors(&super::css());
-        assert!(errors.is_empty(), "CSS parse errors: {errors:?}");
-    }
-}
+#[path = "player_bar_layout_tests.rs"]
+mod tests;

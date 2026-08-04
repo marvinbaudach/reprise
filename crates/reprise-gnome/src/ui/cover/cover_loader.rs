@@ -155,26 +155,6 @@ impl CoverLoader {
         self.load_target(cover, track_path, size, token, current, |_| {});
     }
 
-    /// Loads a cover like [`Self::load_into`] and reports the exact cached
-    /// image path after a successful decode. MPRIS uses that path for
-    /// `mpris:artUrl`; reporting it from this existing pipeline avoids any
-    /// synchronous tag/image work on the GTK main loop.
-    pub fn load_into_with_path(
-        self: &Rc<Self>,
-        image: &gtk4::Image,
-        track_path: &str,
-        size: ThumbnailSize,
-        token: u64,
-        current: &Rc<Cell<u64>>,
-        on_loaded: impl Fn(PathBuf) + 'static,
-    ) {
-        self.load_target(image, track_path, size, token, current, move |path| {
-            if let Some(path) = path {
-                on_loaded(path);
-            }
-        });
-    }
-
     /// Loads a cover and reports both successful and empty resolutions while
     /// `token` is current. Replacement animations use this to keep the
     /// outgoing cover visible until the new paintable or placeholder is ready.

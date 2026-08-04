@@ -29,6 +29,8 @@ mod browse;
 mod compact;
 mod concerts;
 mod cover;
+mod cover_glow;
+mod cover_lift;
 pub mod delete_tracks;
 mod device_sync;
 pub mod dialogs;
@@ -71,6 +73,7 @@ mod runtime_performance;
 mod scan;
 mod scrobbling;
 mod scroll_center;
+mod scroll_glide;
 pub mod session_restore;
 pub mod shortcuts;
 pub(in crate::ui) mod show_in_files;
@@ -85,6 +88,7 @@ mod stats;
 pub mod status_bar;
 pub mod strings;
 mod style;
+mod swell;
 mod tag_edit;
 mod tag_write_gate;
 #[cfg(test)]
@@ -195,3 +199,26 @@ use window::{
     library_chrome, library_shell, window_action_wiring, window_decoration_strings,
     window_decorations, window_navigation, window_runtime_wiring, window_smoke,
 };
+
+#[cfg(test)]
+mod reactive_light_tests {
+    #[test]
+    fn ac_24_only_the_playhead_ticks() {
+        // The regression that keeps the beat off the large surfaces. Outside
+        // the Visualizer view, `cover_lift.rs` is the one deliberate seam.
+        assert!(
+            !include_str!("now_playing/cover_bloom.rs").contains("kick"),
+            "the backdrop must never take the Visualizer cover's per-beat exception"
+        );
+        // The track list's marker takes its tempo from `swell`. It must never
+        // take it from `kick`: that view is a surface for reading and for
+        // hitting, and a per-beat rate there is the restlessness rounds 3 and
+        // 5 took out of it.
+        let selection = include_str!("track_list/current_track_selection.rs");
+        assert!(selection.contains("swell"), "the marker lost its envelope");
+        assert!(
+            !selection.contains("kick.") && !selection.contains("kick)"),
+            "the track list started reading the per-beat signal"
+        );
+    }
+}

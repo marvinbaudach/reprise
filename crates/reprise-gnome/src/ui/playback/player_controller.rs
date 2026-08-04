@@ -179,7 +179,12 @@ use reprise_core::media_integration::{
     MediaIntegrationHandles, MprisPlaybackStatus, SharedAgentQueueState, SharedMprisState,
     DEFAULT_VOLUME,
 };
-use reprise_core::playback::{PlaybackBackend, PlaybackState, PlayerEvent, SpectrumFrame};
+use reprise_core::playback::{PlaybackBackend, PlayerEvent};
+
+use super::player_callbacks::{
+    OnBassChanged, OnNowPlayingPanelStateChanged, OnNowPlayingPanelTrackChanged,
+    OnSongVisualSpectrumChanged,
+};
 use reprise_core::queries;
 use reprise_core::queue::Queue;
 use reprise_core::up_next::{QueueItem, UpNextQueue};
@@ -296,6 +301,7 @@ pub struct PlayerController {
     /// `now_playing_wiring.rs`'s `sync_state`.
     pub(in crate::ui) playback_state_changed:
         RefCell<Vec<super::current_track_selection::OnPlaybackStateChanged>>,
+    pub(in crate::ui) bass_changed: RefCell<Vec<OnBassChanged>>,
     /// Independent loaded-track feed for the right Now Playing panel. This
     /// follows the player's cache, never the library selection.
     pub(in crate::ui) now_playing_panel_track_changed:
@@ -367,10 +373,10 @@ pub struct PlayerController {
     /// Generation token for the cover-accent off-main extraction, so a rapid
     /// track change can't apply a stale album accent.
     pub(in crate::ui) cover_accent_generation: Rc<Cell<u64>>,
-    /// The accent most recently applied (or `None` for no-cover / fallback).
+    /// The cover palette most recently applied (or `None` for no-cover / fallback).
     /// Read by `reset_cover_accent` and `apply_cover_accent` to supply the
-    /// "from" color for the 400 ms cross-fade; written back once each new
-    /// accent is committed. `pub(in crate::ui)` so `now_playing_wiring.rs` can
+    /// "from" palette for the 400 ms cross-fade; written back once each new
+    /// palette is committed. `pub(in crate::ui)` so `now_playing_wiring.rs` can
     /// borrow it.
     pub(in crate::ui) cover_accent_last: Rc<RefCell<Option<AccentRgb>>>,
     /// The owning `gio::Application`, for `play_track_id`'s track-change
@@ -406,10 +412,6 @@ pub(in crate::ui) struct NowPlaying {
     /// this player-owned snapshot to load the same cover as the transport bar.
     pub(in crate::ui) path: String,
 }
-
-type OnNowPlayingPanelTrackChanged = Rc<dyn Fn(Option<NowPlaying>)>;
-type OnNowPlayingPanelStateChanged = Rc<dyn Fn(PlaybackState)>;
-type OnSongVisualSpectrumChanged = Rc<dyn Fn(SpectrumFrame)>;
 
 impl PlayerController {
     /// Builds the controller and the event bridge around injected platform
@@ -478,6 +480,7 @@ impl PlayerController {
             queue_changed: RefCell::new(Vec::new()),
             current_track_changed: RefCell::new(Vec::new()),
             playback_state_changed: RefCell::new(Vec::new()),
+            bass_changed: RefCell::new(Vec::new()),
             now_playing_panel_track_changed: RefCell::new(None),
             now_playing_panel_state_changed: RefCell::new(None),
             song_visual_spectrum_changed: RefCell::new(None),

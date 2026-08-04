@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-04 00:27+0200\n"
+"POT-Creation-Date: 2026-08-04 02:33+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Spanish\n"
@@ -4344,13 +4344,21 @@ msgstr "Graves"
 msgid "Baseline"
 msgstr "Línea base"
 
-#: crates/reprise-gnome/src/ui/strings_song_visuals.rs:14
-msgid "Impact"
-msgstr "Impacto"
-
 #: crates/reprise-gnome/src/ui/strings_song_visuals.rs:15
 msgid "Breakdown"
 msgstr "Breakdown"
+
+#: crates/reprise-gnome/src/ui/strings_song_visuals.rs:16
+msgid "Kick"
+msgstr "Bombo"
+
+#: crates/reprise-gnome/src/ui/strings_song_visuals.rs:17
+msgid "Pressure"
+msgstr "Presión"
+
+#: crates/reprise-gnome/src/ui/strings_song_visuals.rs:19
+msgid "Swell"
+msgstr "Swell"
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:16
 msgid "Review changes"

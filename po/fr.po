@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-04 00:27+0200\n"
+"POT-Creation-Date: 2026-08-04 02:33+0200\n"
 "PO-Revision-Date: 2026-07-20 11:38+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: French\n"
@@ -4186,12 +4186,20 @@ msgstr ""
 msgid "Baseline"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_song_visuals.rs:14
-msgid "Impact"
-msgstr ""
-
 #: crates/reprise-gnome/src/ui/strings_song_visuals.rs:15
 msgid "Breakdown"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_song_visuals.rs:16
+msgid "Kick"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_song_visuals.rs:17
+msgid "Pressure"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_song_visuals.rs:19
+msgid "Swell"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:16
