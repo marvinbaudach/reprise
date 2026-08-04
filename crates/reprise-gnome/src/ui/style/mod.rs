@@ -12,6 +12,7 @@
 //! reloading just that one provider — the mechanism behind the live theme
 //! picker.
 
+pub(super) mod accent;
 pub(super) mod buttons;
 pub(super) mod cover_accent;
 pub(super) mod cover_accent_oklab;

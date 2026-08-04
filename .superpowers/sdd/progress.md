@@ -744,3 +744,7 @@ Task logo-repeat-sign-assets: complete (this commit, base 6df24e179d, committed 
 # Repeat-sign coral palette
 
 Task logo-repeat-sign-coral: complete (commits 3ef5c34620 and this commit, base 8b69f127fb, renamed the sole maintained violet palette tokens to coral, regenerated every coloured desktop, web and Android output without changing geometry, preserved the symbolic, both monochrome sources, Android monochrome and plate background byte-for-byte, and recorded the coral-not-red range in the normative specification; the palette-only red phase failed on the obsolete `reprise_violet` lookup before the renamed pipeline passed, the four requested brand commands passed with coral/teal contrast 4.42/7.13 on the plate, 7.23/11.68 on the dark dock, 5.37/5.95 on white and 4.64/5.13 on the light ground, and dark-ground renders measured three separate coral components plus one teal component at both 16 and 24 px; format, strict workspace Clippy, the complete workspace suite and live audit with only accepted RUSTSEC-2024-0436 passed after the committed baseline rustfmt drift was isolated in 3ef5c34620; no real data, app, live desktop, push, repository lock, coordination board or file outside this worktree was touched)
+
+# Accent color source
+
+Task accent-color-source-1: complete (this commit, base d898dde1f4, added the stable App/System accent-source persistence contract with the logo-teal app default and safe unknown-id fallback; the focused round-trip regression was observed red at compile time before passing, and no behavior was wired yet)
