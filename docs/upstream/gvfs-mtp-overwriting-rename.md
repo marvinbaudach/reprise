@@ -1,47 +1,47 @@
-# gvfs (MTP) — überschreibendes Rename wird bestätigt, aber nicht ausgeführt
+# gvfs (MTP) — an overwriting rename is confirmed but never carried out
 
-Projekt: https://gitlab.gnome.org/GNOME/gvfs — Backend `mtp`.
-Beobachtet mit **gvfs/gvfs-mtp 1.60.1** und GLib 2.88.2 auf Manjaro, Gerät:
-Google Pixel 10 Pro XL (Android, MTP über `gvfsd-mtp`).
+Project: https://gitlab.gnome.org/GNOME/gvfs — `mtp` backend.
+Observed with **gvfs/gvfs-mtp 1.60.1** and GLib 2.88.2 on Manjaro, device:
+Google Pixel 10 Pro XL (Android, MTP via `gvfsd-mtp`).
 
-**Status: formuliert, noch nicht eingereicht** — der Text im letzten Abschnitt
-ist fertig zum Einreichen, es fehlt nur ein GNOME-GitLab-Konto.
+**Status: drafted, not yet submitted** — the text in the last section is ready
+to submit, only a GNOME GitLab account is missing.
 
-## Befund
+## Finding
 
-`g_file_move (src, dst, G_FILE_COPY_OVERWRITE, …)` auf einem MTP-Mount
+`g_file_move (src, dst, G_FILE_COPY_OVERWRITE, …)` on an MTP mount
 
-- meldet **Erfolg**,
-- entfernt die **vorhandene Zieldatei**,
-- **wendet den neuen Namen nicht an** — die Quelle bleibt unter ihrem alten
-  Namen liegen.
+- reports **success**,
+- removes the **existing destination file**,
+- **does not apply the new name** — the source stays behind under its old
+  name.
 
-Zeigt das Ziel dagegen auf einen **freien** Namen, funktioniert dasselbe Rename
-zuverlässig. Der Fehler hängt also am Overwrite-Pfad, nicht am Rename an sich.
+If the destination points at a **free** name instead, the same rename works
+reliably. So the bug hangs off the overwrite path, not off the rename itself.
 
-Gemessen mit `scripts/upstream-repros/gvfs-mtp-overwriting-rename.py`, zweimal
-derselbe Ablauf über je 120 Dateien à 7 MB gegen dasselbe Verzeichnis:
+Measured with `scripts/upstream-repros/gvfs-mtp-overwriting-rename.py`, the
+same sequence twice over 120 files of 7 MB each against the same directory:
 
-| Durchlauf | Ziel existierte vorher | `g_file_move` meldete Erfolg | tatsächlich umbenannt |
+| Pass | Destination existed before | `g_file_move` reported success | actually renamed |
 | --- | --- | --- | --- |
-| 1 | nein | 120/120 | **120** |
-| 2 | ja | 120/120 | **87** (33 blieben liegen) |
+| 1 | no | 120/120 | **120** |
+| 2 | yes | 120/120 | **87** (33 left behind) |
 
-Sowohl `g_file_move` als auch `g_file_move_async` sind betroffen.
+Both `g_file_move` and `g_file_move_async` are affected.
 
-## Einordnung: Folgefehler von !246, kein Duplikat
+## Classification: a follow-up bug of !246, not a duplicate
 
-[#751](https://gitlab.gnome.org/GNOME/gvfs/-/issues/751) („gvfs-mtp's do_move()
-doesn't implement file renaming") ist **geschlossen**, behoben durch
-[!246](https://gitlab.gnome.org/GNOME/gvfs/-/merge_requests/246) („fix: Add file
-rename support in MTP backend move operation", gemergt 2025-08-13). Der Rename
-selbst funktioniert seitdem — 1.60.1 enthält den Fix, und Durchlauf 1 oben
-belegt ihn.
+[#751](https://gitlab.gnome.org/GNOME/gvfs/-/issues/751) ("gvfs-mtp's do_move()
+doesn't implement file renaming") is **closed**, fixed by
+[!246](https://gitlab.gnome.org/GNOME/gvfs/-/merge_requests/246) ("fix: Add file
+rename support in MTP backend move operation", merged 2025-08-13). The rename
+itself has worked since then — 1.60.1 contains the fix, and pass 1 above
+demonstrates it.
 
-Offen bleibt genau der Fall, den #751 in seiner Beschreibung bereits als
-Randfall benennt: *„handling edge cases where the new filename exists in the
-source directory or the old filename exists in the destination"*. !246 fügt in
-`do_move` ein
+What remains open is exactly the case that #751 already names as an edge case in
+its description: *"handling edge cases where the new filename exists in the
+source directory or the old filename exists in the destination"*. !246 inserts
+into `do_move`:
 
 ```c
 if (g_strcmp0 (src_name, dest_name) != 0) {
@@ -50,58 +50,57 @@ if (g_strcmp0 (src_name, dest_name) != 0) {
     int ret = LIBMTP_Set_File_Name (device, file, dest_name);
 ```
 
-ein. MTP duldet keine zwei Objekte gleichen Namens im selben Ordner, und der
-Zielname ist zum Zeitpunkt dieses Aufrufs belegt beziehungsweise gerade erst
-freigegeben worden — der Rename greift dann nicht, der Job meldet aber Erfolg.
-Die genaue Zeile ist nicht verifiziert; die Messung oben ist eine Beobachtung
-von außen.
+MTP tolerates no two objects with the same name in the same folder, and at the
+time of this call the destination name is occupied, or has only just been
+freed — the rename then does not take effect, but the job reports success. The
+exact line is not verified; the measurement above is an observation from the
+outside.
 
-Kein offenes Issue mit Label `5. MTP` deckt das ab (Stand 2026-07-28). Am
-nächsten liegt [#648](https://gitlab.gnome.org/GNOME/gvfs/-/issues/648)
-(hochgeladene Bilder werden von der Android-Galerie nicht indexiert) — gleiche
-Wirkung, andere Ursache.
+No open issue with the label `5. MTP` covers this (as of 2026-07-28). The
+closest is [#648](https://gitlab.gnome.org/GNOME/gvfs/-/issues/648)
+(uploaded images are not indexed by the Android gallery) — same effect,
+different cause.
 
-## Zweitbefund: der Verzeichnis-Cache lügt nach einem Rename
+## Second finding: the directory cache lies after a rename
 
-Unmittelbar nach einem Rename beantwortet `g_file_query_exists` beide Namen
-falsch, und zwar in beide Richtungen: der alte Name wird noch als vorhanden
-gemeldet, der neue je nach Zeitpunkt als fehlend. Im ersten Durchlauf oben
-meldete eine sofortige Nachprüfung 120 Fehlschläge, von denen nach einem
-Remount **keiner** echt war. Eine Anwendung kann den Erfolg also nicht einmal
-zuverlässig selbst nachmessen, ohne den Mount zu erneuern.
+Immediately after a rename, `g_file_query_exists` answers incorrectly for both
+names, and in both directions: the old name is still reported as present, the
+new one — depending on the moment — as missing. In the first pass above, an
+immediate re-check reported 120 failures, of which **none** were real after a
+remount. So an application cannot even reliably measure the success itself
+without renewing the mount.
 
-## Warum das praktisch weh tut
+## Why this hurts in practice
 
-Das ist genau der Ablauf, den jede Anwendung nutzt, die atomar veröffentlichen
-will: erst nach `<name>.part` schreiben, dann auf `<name>` umbenennen. Auf MTP
-bleibt die Nutzlast dadurch unter einer Endung liegen, die der Media-Scanner
-des Telefons nicht indexiert — die Datei ist vollständig übertragen und für den
-Nutzer trotzdem unsichtbar. Da der Aufruf Erfolg meldet, merkt die Anwendung
-nichts davon.
+This is exactly the sequence used by every application that wants to publish
+atomically: first write to `<name>.part`, then rename to `<name>`. On MTP the
+payload is thereby stranded under an extension that the phone's media scanner
+does not index — the file is fully transferred and still invisible to the user.
+Because the call reports success, the application notices nothing of it.
 
-In Reprise traf das 173 von 278 übertragenen Titeln eines Laufs; auf dem Handy
-erschienen 104. Unsere Gegenmaßnahme (siehe MTP-21): vorhandenes Ziel vor dem
-Rename explizit löschen und das Ergebnis danach nachmessen, statt dem
-Rückgabewert zu glauben.
+In Reprise this affected 173 of 278 transferred tracks in one run; 104 showed up
+on the phone. Our countermeasure (see MTP-21): explicitly delete an existing
+destination before the rename and re-measure the result afterwards instead of
+believing the return value.
 
-## Reproduktion
+## Reproduction
 
 ```
 ./scripts/upstream-repros/gvfs-mtp-overwriting-rename.py \
     "mtp://<host>/Internal shared storage"
 ```
 
-Das Skript legt ein Streuverzeichnis an, fährt beide Durchläufe, mountet vor
-jeder Zählung neu (wegen des Cache-Befunds oben) und räumt am Ende auf.
+The script creates a scratch directory, runs both passes, remounts before every
+count (because of the cache finding above) and cleans up at the end.
 
 ---
 
-## Einzureichender Text
+## Text to submit
 
-Neues Issue unter https://gitlab.gnome.org/GNOME/gvfs/-/issues/new, Skript oben
-anhängen.
+New issue at https://gitlab.gnome.org/GNOME/gvfs/-/issues/new, attach the script
+above.
 
-**Titel:** `MTP: an overwriting g_file_move reports success, drops the destination and never applies the rename`
+**Title:** `MTP: an overwriting g_file_move reports success, drops the destination and never applies the rename`
 
 **Labels:** `1. Bug`, `5. MTP`
 

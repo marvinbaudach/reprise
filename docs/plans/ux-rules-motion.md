@@ -6,381 +6,381 @@ phase: shipped
 codex_session:
 created: 2026-07-17
 ---
-# UX-Motion (Sektion O) — Finaler Implementierungsplan
+# UX motion (section O) — final implementation plan
 
-**Status:** gegrillt 2026-07-17, bereit für /code
-**Branch:** feat/ux-rules-motion (aus Worktree `.worktrees/transitions`, s. Operative Notizen)
-**Datum:** 2026-07-17
+**Status:** grilled 2026-07-17, ready for /code
+**Branch:** feat/ux-rules-motion (from the worktree `.worktrees/transitions`, see Operational notes)
+**Date:** 2026-07-17
 
-> Alle Entscheidungen sind final (Beschlüsse-Tabelle unten). Dieses Dokument ist
-> die vollständige Anweisung für die headless code-Phase. **Die code-Phase
-> implementiert AUSSCHLIESSLICH Phase 1 (Abschnitt 4.2) und stoppt dann.**
-> Phase 2 startet erst nach dem harten Gate-Check in Abschnitt 4.3 — niemals
-> im selben Lauf „einfach weitermachen".
+> All decisions are final (decision table below). This document is the
+> complete instruction for the headless code phase. **The code phase
+> implements EXCLUSIVELY phase 1 (section 4.2) and then stops.**
+> Phase 2 starts only after the hard gate check in section 4.3 — never
+> "just keep going" within the same run.
 
 ---
 
-## 1. Beschlüsse (Grilling 2026-07-17, alle final)
+## 1. Decisions (grilling 2026-07-17, all final)
 
-| Nr. | Frage | Beschluss |
+| No. | Question | Decision |
 |---|---|---|
-| G1 | Sektionsbuchstabe & Integrationsreihenfolge | Sektion **O**. `docs/ux-rules.md` wird in diesem Branch erst angefasst, nachdem CTX („N. Track-Kontextmenü", feature/context-menu-unification) auf main ist und main integriert wurde. HTML-Kommentar im Sektionsvorspann dokumentiert die Buchstabenlage (M Tooltips auf main, N durch CTX beansprucht). |
-| G2 | Token-Zuschnitt | **Micro 150 ms ease-out** · **Standard 250 ms ease-out-cubic**. Bestands-Flächen migrieren bewusst 150→250; Risiko „App fühlt sich anders an" bleibt als expliziter Abnahme-Hinweis. |
-| G2i | Icon-Crossfade Play/Pause | **Micro-Hälften (2×75 ms)** — keine Sonderzahl. |
-| G2ii | Akzentfade 400 ms | Viertes Token **„Ambient" 400 ms** für atmosphärische, nicht-interaktive Übergänge (Akzentfarben-Crossfade; künftig z. B. Artist-Hero-Glow). |
-| G3 | Adw-interne Animationen im MOT-1-Wortlaut | Wortlaut „jede von Reprise selbst konfigurierte Animation"; Adw-interne Animationen ohne Dauer-API (OverlaySplitView, NavigationSplitView, ToastOverlay, Banner, Dialog, Popover) gelten als systemgegeben und sind ausgenommen — inkl. der Push/Pop-Slides der Einstellungs-Unterseiten. KEINE Anlehnungs-Soll-Klausel. |
-| G4 | Spatial-Token | Bleibt im Regeltext („AdwSpringAnimation, Adw-Default-Springparameter, ab dem ersten gerichteten Navigationsfall"); in `ui/motion.rs` erst beim ersten Konsumenten angelegt (YAGNI). |
-| G5 | Widget-Wahl linke Sidebar | Linke Sidebar wird **`adw::OverlaySplitView` (Position Start)** — exakt das Widget der rechten Spalte. `apply_sidebar_visibility`/`manually_hidden`/Breakpoint(<800 px)-Logik portieren; Tests um Breakpoint-Fälle erweitern. |
-| G6 | Lint-Mechanik | `scripts/check-motion-tokens.sh` verbietet außerhalb `motion.rs`/`tokens.rs`: `TimedAnimation::new` mit Integer-Literal-Dauer und `set_transition_duration(`/`.transition_duration(` mit Literal. Ticks/CSS bleiben Review-Sache. |
-| G7 | EQ-Dauerloops | `reprise-eq` und `mini-eq-bar` = benannte MOT-5-Ausnahme: „EQ-Indikatoren laufen nur während aktiver Wiedergabe." |
-| G8 | MOT-7-Scope | Adw-Animationen via follow-enable-animations-Property + eigene Tick-Callbacks (Waveform-Positions-Glättung → Position hart setzen; Progress-Interpolation) + Pulse-Timer zentral gaten. `gtk::Spinner` und GTK-CSS-Mechanik = Systemverhalten, nicht gaten. T-V (CSS-Verhalten unter `gtk-enable-animations=false`) ist Pflicht-Verifikation; negativer Befund geht zurück ans Grilling, kein stiller Beschluss. |
-| G9 | Scope-Schnitt | **Kernschnitt.** Dieser Branch: Sektion O + `ui/motion.rs` + Lint + Sidebar-Symmetrie (MOT-3 inkl. Satz 2) + Token-Migration (MOT-1) + MOT-7 + MOT-6-Skip + MOT-2. MOT-5-Neuverhalten (Scale-Puls, Waveform-Crossfade, Pause-Entsättigung) und Queue-Drop/Remove-Animation (MOT-4-Ausnahme) = Folge-Branch; MOT-5 bleibt `[geplant]` mit Flip-Kriterium-Kommentar (Tooltip-Muster TIP-1b/2b). |
-| G10 | Pause-Entsättigung | Wortlaut: „Pause entsättigt den Waveform-Fill leicht (zur Draw-Zeit), Play kehrt es um" — Akzent-Pipeline (`cover_accent`) bleibt unberührt. |
-| G-Pfad | Modul-Ort | **`ui/motion.rs`** (UI-Root-Ebene, neben `nav_history.rs`/`notifications.rs`): Token-Konstanten, `timed()`-Konstruktor (setzt follow-enable-animations), Gate-Helper `animations_enabled()`, Slot-Helfer `replace_animation()` mit `skip()`. `tokens.rs` behält die CSS-`TRANSITION`-Konstante und konsumiert künftig die Micro-Dauer aus `motion.rs`. |
-| G-Sym | MOT-3 Satz 2 | Bleibt: innerer Tracks/Albums/Artists-Stack + StatusPage⇄Liste-Stacks crossfaden mit Standard-Token wie der äußere Library/Stats/Device-Stack. |
-| G-Seq | Sequenzierung | **Zweiphasig** nach verifiziertem Ownership-Befund: Phase 1 sofort und konfliktfrei (T0, T2, T7, T8, T3); Phase 2 GATED hinter dem Merge von feat/missing-import-errors UND feature/context-menu-unification auf main (T1, T4, T5, T6, T9, T10). ALLE Status-Flips liegen in Phase 2 (sie brauchen die Sektion). Details Abschnitt 4. |
+| G1 | Section letter & integration order | Section **O**. `docs/ux-rules.md` is only touched in this branch after CTX ("N. Track context menu", feature/context-menu-unification) is on main and main has been integrated. An HTML comment in the section preamble documents the letter situation (M tooltips on main, N claimed by CTX). |
+| G2 | Token cut | **Micro 150 ms ease-out** · **Standard 250 ms ease-out-cubic**. Existing surfaces deliberately migrate 150→250; the risk "the app feels different" remains as an explicit acceptance note. |
+| G2i | Play/Pause icon crossfade | **Micro halves (2×75 ms)** — no special number. |
+| G2ii | Accent fade 400 ms | Fourth token **"Ambient" 400 ms** for atmospheric, non-interactive transitions (accent-color crossfade; in future e.g. the artist hero glow). |
+| G3 | Adw-internal animations in the MOT-1 wording | Wording "every animation configured by Reprise itself"; Adw-internal animations without a duration API (OverlaySplitView, NavigationSplitView, ToastOverlay, Banner, Dialog, Popover) count as system-given and are exempt — including the push/pop slides of the settings subpages. NO clause requiring them to approximate the tokens. |
+| G4 | Spatial token | Stays in the rule text ("AdwSpringAnimation, Adw default spring parameters, starting with the first directed navigation case"); added in `ui/motion.rs` only with the first consumer (YAGNI). |
+| G5 | Widget choice for the left sidebar | The left sidebar becomes **`adw::OverlaySplitView` (position start)** — exactly the widget of the right column. Port the `apply_sidebar_visibility`/`manually_hidden`/breakpoint(<800 px) logic; extend the tests with breakpoint cases. |
+| G6 | Lint mechanics | `scripts/check-motion-tokens.sh` forbids, outside `motion.rs`/`tokens.rs`: `TimedAnimation::new` with an integer-literal duration, and `set_transition_duration(`/`.transition_duration(` with a literal. Ticks/CSS remain a review matter. |
+| G7 | EQ permanent loops | `reprise-eq` and `mini-eq-bar` = a named MOT-5 exception: "EQ indicators run only during active playback." |
+| G8 | MOT-7 scope | Gate centrally: Adw animations via the follow-enable-animations property + our own tick callbacks (waveform position smoothing → set the position hard; progress interpolation) + pulse timers. `gtk::Spinner` and GTK CSS mechanics = system behavior, not gated. T-V (CSS behavior under `gtk-enable-animations=false`) is a mandatory verification; a negative finding goes back to grilling, not a silent decision. |
+| G9 | Scope cut | **Core cut.** This branch: section O + `ui/motion.rs` + lint + sidebar symmetry (MOT-3 incl. sentence 2) + token migration (MOT-1) + MOT-7 + the MOT-6 skip + MOT-2. The new MOT-5 behavior (scale pulse, waveform crossfade, pause desaturation) and the queue drop/remove animation (MOT-4 exception) = follow-up branch; MOT-5 stays `[planned]` with a flip-criterion comment (tooltip pattern TIP-1b/2b). |
+| G10 | Pause desaturation | Wording: "pause slightly desaturates the waveform fill (at draw time), play reverses it" — the accent pipeline (`cover_accent`) stays untouched. |
+| G-Pfad | Module location | **`ui/motion.rs`** (UI root level, next to `nav_history.rs`/`notifications.rs`): token constants, the `timed()` constructor (sets follow-enable-animations), the gate helper `animations_enabled()`, the slot helper `replace_animation()` with `skip()`. `tokens.rs` keeps the CSS `TRANSITION` constant and will consume the Micro duration from `motion.rs`. |
+| G-Sym | MOT-3 sentence 2 | Stays: the inner Tracks/Albums/Artists stack + the StatusPage⇄list stacks crossfade with the Standard token like the outer Library/Stats/Device stack. |
+| G-Seq | Sequencing | **Two-phase** after a verified ownership finding: phase 1 immediately and conflict-free (T0, T2, T7, T8, T3); phase 2 GATED behind the merge of feat/missing-import-errors AND feature/context-menu-unification into main (T1, T4, T5, T6, T9, T10). ALL status flips lie in phase 2 (they need the section). Details in section 4. |
 
 ---
 
-## 2. Audit-Inventar (kondensiert, selbst verifiziert)
+## 2. Audit inventory (condensed, self-verified)
 
-Kein `.ui`/`.blp`/`.css`-Dateibestand — UI komplett imperativ, CSS inline als
-Strings (`ui/style/mod.rs::app_css()` → `CssProvider::load_from_string`).
+No `.ui`/`.blp`/`.css` files exist — the UI is entirely imperative, CSS inline
+as strings (`ui/style/mod.rs::app_css()` → `CssProvider::load_from_string`).
 
-### 2.1 Explizit konfigurierte Widget-Transitions
+### 2.1 Explicitly configured widget transitions
 
-| Stelle | Widget / Transition | Auslöser | Ziel-Token |
+| Location | Widget / transition | Trigger | Target token |
 |---|---|---|---|
-| `window/window.rs:368-369` | äußerer Stack (Library/Stats/Device), Crossfade 150 ms | Nutzer | Standard (Phase 2, T4) |
-| `compact/compact_player_layouts.rs:140-141` | Revealer Crossfade 150 ms (Hover-Overlay Mini-Player, 1000-ms-Linger) | Nutzer | Micro (T7) |
-| `scan/scan_progress.rs:155-156` | Revealer Crossfade 150 ms (Scan-Karte) | **Hintergrund** | Standard (Phase 2, T5) |
-| `sidebar/sidebar_device_card.rs:250-254` | 2×Stack + 2×Revealer, 150 ms bzw. 0 bei enable-animations=false (dynamisch, Z.248-255) | **Hintergrund** (Sync) | Standard (Phase 2, T5) |
-| `info_panel/info_panel.rs:148` | Stack Crossfade, Default-Dauer (~200 ms) | Nutzer (Tab) | Standard (T8) |
-| `lyrics/lyrics_view.rs:82` | Stack Crossfade, Default | **Hintergrund** (Ladezustand) | Standard (T8) |
-| `browse/browse_chooser.rs:28` | Stack SlideLeftRight, Default | Nutzer | Standard (T8) |
-| `preferences/preference_rhythmbox.rs:323` | Stack SlideLeft, Default | Nutzer | Standard (T8) |
+| `window/window.rs:368-369` | outer stack (Library/Stats/Device), crossfade 150 ms | user | Standard (phase 2, T4) |
+| `compact/compact_player_layouts.rs:140-141` | revealer crossfade 150 ms (hover overlay mini-player, 1000 ms linger) | user | Micro (T7) |
+| `scan/scan_progress.rs:155-156` | revealer crossfade 150 ms (scan card) | **background** | Standard (phase 2, T5) |
+| `sidebar/sidebar_device_card.rs:250-254` | 2× stack + 2× revealer, 150 ms or 0 with enable-animations=false (dynamic, lines 248-255) | **background** (sync) | Standard (phase 2, T5) |
+| `info_panel/info_panel.rs:148` | stack crossfade, default duration (~200 ms) | user (tab) | Standard (T8) |
+| `lyrics/lyrics_view.rs:82` | stack crossfade, default | **background** (loading state) | Standard (T8) |
+| `browse/browse_chooser.rs:28` | stack SlideLeftRight, default | user | Standard (T8) |
+| `preferences/preference_rhythmbox.rs:323` | stack SlideLeft, default | user | Standard (T8) |
 
-**Ohne Transition (harte Schnitte):** innerer Tracks/Albums/Artists-Stack
-(`library_shell.rs:43-66` — `gtk4::Stack::new()`, nichts gesetzt),
-StatusPage⇄Liste-Stack der Track-Tabelle, linke Sidebar
-(`window_navigation.rs:10-27`: `sidebar_page.set_visible(false)` — GTK animiert
-`visible` nie; Header-Toggle-Pfad Z.72-85 rein strukturell via
-`set_collapsed`/`set_show_content`), Mini⇄Voll
-(`minimal_view.rs`: `ToolbarView::set_content`-Tausch).
+**Without a transition (hard cuts):** the inner Tracks/Albums/Artists stack
+(`library_shell.rs:43-66` — `gtk4::Stack::new()`, nothing set), the
+StatusPage⇄list stack of the track table, the left sidebar
+(`window_navigation.rs:10-27`: `sidebar_page.set_visible(false)` — GTK never
+animates `visible`; the header toggle path, lines 72-85, is purely structural
+via `set_collapsed`/`set_show_content`), mini⇄full (`minimal_view.rs`:
+`ToolbarView::set_content` swap).
 
-**Adw-intern, keine Dauer-API in den Bindings (systemgegeben, G3):**
-OverlaySplitView (rechte Spalte, `information_column.rs:20-28`),
-NavigationSplitView, ToastOverlay, Banner, Dialog, Popover/PopoverMenu — dazu
-die einzigen echten `AdwNavigationView`-Pushes der App: die
-Settings-/Preferences-Subseiten (`preferences.rs:363`,
-`preference_sync.rs:150`, `preferences_window.rs:305`). Animation jeweils in C
-hart codiert; respektiert `gtk-enable-animations` nativ.
+**Adw-internal, no duration API in the bindings (system-given, G3):**
+OverlaySplitView (right column, `information_column.rs:20-28`),
+NavigationSplitView, ToastOverlay, Banner, Dialog, Popover/PopoverMenu — plus
+the app's only genuine `AdwNavigationView` pushes: the settings/preferences
+subpages (`preferences.rs:363`, `preference_sync.rs:150`,
+`preferences_window.rs:305`). The animation is hardcoded in C in each case; it
+respects `gtk-enable-animations` natively.
 
-### 2.2 Adw-Animationen und handgebaute Ticks
+### 2.2 Adw animations and hand-built ticks
 
-| Stelle | Was | Dauer | Gating heute | Ziel |
+| Location | What | Duration | Gated today | Target |
 |---|---|---|---|---|
-| `player_bar/player_bar.rs:281-339` | Track-Crossfade Cover+Titel+Artist, ein Slot | 125+125 ms | ja (Z.282) | Standard-Hälften 2×125 (T7) |
-| `player_bar/player_bar.rs:371-397` | Play/Pause-Icon-Crossfade, ein Slot | **60+60 ms** (Doc-Kommentar behauptet 120) | ja (Z.372) | Micro-Hälften 2×75 (T7, G2i) |
-| `compact/compact_player.rs:403-428` | Mini-Player Titel/Artist-Crossfade | 125+125 ms (`CROSSFADE_HALF_MS`) | ja (Z.133) | Standard-Hälften (T7) |
-| `style/cover_accent.rs:317-343` | Akzent-Crossfade, **globaler Ein-Slot** `CURRENT_ANIMATION` | 400 ms | ja (Z.322) | Ambient (T7, G2ii) |
-| `sidebar/sidebar_device_card.rs:339-372` | Tick: Progress-Interpolation, handgebautes ease-out-cubic | 150 ms | ja (Z.342) | Micro + zentraler Gate (Phase 2, T5) |
-| `player_bar/waveform_seek.rs:398ff` | Tick: Peaks-Build-up mit Pro-Balken-Stagger | 300 ms (`BUILD_DURATION_S`), Stagger 2 ms | ja (Z.314) | Ambient (T7; Stagger bleibt Implementierungsdetail) |
-| `player_bar/waveform_seek.rs:398ff` | Tick: Positions-Glättung (velocity-basiert) | kontinuierlich | **nein** | Gate: Position hart setzen (T7, G8) |
-| `scan/scan_progress.rs:298ff` | `ProgressBar::pulse()` alle 100 ms (`PULSE_INTERVAL`) | Dauerloop während Scan | **nein** | Gate: Timer startet nicht (Phase 2, T5, G8) |
+| `player_bar/player_bar.rs:281-339` | track crossfade cover+title+artist, one slot | 125+125 ms | yes (line 282) | Standard halves 2×125 (T7) |
+| `player_bar/player_bar.rs:371-397` | Play/Pause icon crossfade, one slot | **60+60 ms** (the doc comment claims 120) | yes (line 372) | Micro halves 2×75 (T7, G2i) |
+| `compact/compact_player.rs:403-428` | mini-player title/artist crossfade | 125+125 ms (`CROSSFADE_HALF_MS`) | yes (line 133) | Standard halves (T7) |
+| `style/cover_accent.rs:317-343` | accent crossfade, **global single slot** `CURRENT_ANIMATION` | 400 ms | yes (line 322) | Ambient (T7, G2ii) |
+| `sidebar/sidebar_device_card.rs:339-372` | tick: progress interpolation, hand-built ease-out-cubic | 150 ms | yes (line 342) | Micro + central gate (phase 2, T5) |
+| `player_bar/waveform_seek.rs:398ff` | tick: peaks build-up with a per-bar stagger | 300 ms (`BUILD_DURATION_S`), stagger 2 ms | yes (line 314) | Ambient (T7; the stagger stays an implementation detail) |
+| `player_bar/waveform_seek.rs:398ff` | tick: position smoothing (velocity-based) | continuous | **no** | gate: set the position hard (T7, G8) |
+| `scan/scan_progress.rs:298ff` | `ProgressBar::pulse()` every 100 ms (`PULSE_INTERVAL`) | permanent loop during a scan | **no** | gate: the timer does not start (phase 2, T5, G8) |
 
-`AdwAnimation::skip()` wird **nirgends** aufgerufen; neue Animationen ersetzen
-den alten Slot-Handle stillschweigend (die alte Adw-Animation läuft dabei
-weiter, da Adw sie während `play()` selbst referenziert) → MOT-6, T7.
+`AdwAnimation::skip()` is called **nowhere**; new animations silently replace
+the old slot handle (the old Adw animation keeps running, because Adw
+references it itself during `play()`) → MOT-6, T7.
 
 ### 2.3 CSS (inline)
 
-- Zentrales Token `style/tokens.rs:61`:
-  `TRANSITION = "150ms cubic-bezier(0.16, 1, 0.3, 1)"` — in ~10 CSS-Sections
-  verwendet (Hover/Focus app-weit). Bleibt 150 ms = Micro; konsumiert künftig
+- Central token `style/tokens.rs:61`:
+  `TRANSITION = "150ms cubic-bezier(0.16, 1, 0.3, 1)"` — used in ~10 CSS
+  sections (hover/focus app-wide). Stays 150 ms = Micro; will consume
   `motion::MICRO_MS` (T8).
-- Press-Scale: `transform 120ms ease-out`, `:active scale(0.94)`
-  (`player_bar_layout.rs:273-278`) → Micro-Kaskade via `tokens.rs` (T7).
-- Zwei `@keyframes`-Dauerloops, beide nur während Wiedergabe:
-  `reprise-eq` 1100 ms infinite (Now-Playing-Zeile; Datei ist
-  **`ui/eq_bars.rs`**) und `mini-eq-bar` 650 ms infinite alternate
-  (`player_bar_layout.rs:305-309`) — benannte MOT-5-Ausnahme (G7), Dauern
-  bleiben (Dauerloops sind keine Transition-Tokens).
-- **Unverifiziert:** ob GTKs CSS-Transitions/`@keyframes`
-  `gtk-enable-animations` respektieren → Pflicht-Verifikation **T-V in T2**
-  (Phase 1, damit ein negativer Befund VOR Phase 2 zurück ans Grilling geht).
+- Press-scale: `transform 120ms ease-out`, `:active scale(0.94)`
+  (`player_bar_layout.rs:273-278`) → Micro cascade via `tokens.rs` (T7).
+- Two `@keyframes` permanent loops, both only during playback:
+  `reprise-eq` 1100 ms infinite (now-playing row; the file is
+  **`ui/eq_bars.rs`**) and `mini-eq-bar` 650 ms infinite alternate
+  (`player_bar_layout.rs:305-309`) — a named MOT-5 exception (G7), the
+  durations stay (permanent loops are not transition tokens).
+- **Unverified:** whether GTK's CSS transitions/`@keyframes` respect
+  `gtk-enable-animations` → mandatory verification **T-V in T2**
+  (phase 1, so that a negative finding goes back to grilling BEFORE phase 2).
 
-### 2.4 Tragende Befunde
+### 2.4 Load-bearing findings
 
-1. **Der Bestand ist eine 150-ms-Welt** — Migration auf Standard 250 ist ein
-   bewusster, app-weiter Tempo-Change (G2, Abnahme-Hinweis).
-2. **Spatial hat heute null Konsumenten** (kein Album-Detail-Push; NavigationView
-   der Hauptansicht statisch; Mini⇄Voll unanimierter Content-Tausch) → G4.
-3. **Zentrale Gating-API existiert:** libadwaita 0.9 (Feature `v1_9`,
-   `Cargo.toml`) bindet `AnimationExt::set_follow_enable_animations_setting`
-   (Default der Property laut Adw-Doku **false** — deshalb gaten heute alle
-   sechs Stellen von Hand; T2 verifiziert das im Test).
-4. **Lint auf `Duration::from_millis` wäre wirkungslos** (59 Falschpositive,
-   echte Dauern sind rohe `u32`) → G6-Zuschnitt.
-5. **Parallel-Lage (verifiziert, Stand 2026-07-17):** siehe Sperrliste in
-   Abschnitt 4.1 — Grundlage des Zwei-Phasen-Schnitts (G-Seq).
+1. **The existing code is a 150 ms world** — migrating to Standard 250 is a
+   deliberate, app-wide tempo change (G2, acceptance note).
+2. **Spatial has zero consumers today** (no album-detail push; the main view's
+   NavigationView is static; mini⇄full is an unanimated content swap) → G4.
+3. **A central gating API exists:** libadwaita 0.9 (feature `v1_9`,
+   `Cargo.toml`) binds `AnimationExt::set_follow_enable_animations_setting`
+   (the property's default is **false** per the Adw docs — which is why all
+   six places gate by hand today; T2 verifies this in a test).
+4. **A lint on `Duration::from_millis` would be ineffective** (59 false
+   positives, the real durations are raw `u32`) → the G6 cut.
+5. **Parallel situation (verified, as of 2026-07-17):** see the blocklist in
+   section 4.1 — the basis for the two-phase cut (G-Seq).
 
 ---
 
-## 3. Finaler Sektionstext für `docs/ux-rules.md` (Phase 2, T1)
+## 3. Final section text for `docs/ux-rules.md` (phase 2, T1)
 
-Alle Regeln starten `[geplant]`; Flips nur in den benannten Task-Commits.
-Ebenen-Tags: `[gtk]`, wo ein Widget-Zustand headless prüfbar ist (Vorbild
-`sidebar_device_card.rs:579ff` mit `set_gtk_enable_animations`); `[manuell]`
-nur, wo ehrlich nichts Mechanisches greift (MOT-4-Sichtprüfung).
+All rules start `[planned]`; flips only in the named task commits. Level
+tags: `[gtk]` where a widget state is checkable headless (model
+`sidebar_device_card.rs:579ff` with `set_gtk_enable_animations`); `[manual]`
+only where honestly nothing mechanical applies (the MOT-4 visual check).
 
 ```markdown
 ## O. Motion & Transitions
 
-<!-- Sektionsbuchstabe: M (Tooltips) ist auf main vergeben; N ist durch
-     feature/context-menu-unification („N. Track-Kontextmenü") beansprucht.
-     Motion nimmt daher O; die Buchstabenlage wurde beim Einfügen dieser
-     Sektion gegen den main-Stand verifiziert. -->
+<!-- Section letter: M (tooltips) is assigned on main; N is claimed by
+     feature/context-menu-unification ("N. Track context menu").
+     Motion therefore takes O; the letter situation was verified against
+     the main state when this section was inserted. -->
 
-Motion illustriert, sie informiert nie exklusiv: jede Transition bestätigt
-eine Zustandsänderung, die auch ohne sie vollständig sichtbar wäre —
-`gtk-enable-animations=false` ist der Beweis (MOT-7). Animationen folgen
-direkten Nutzeraktionen; Hintergrundprozesse schalten hart oder faden an
-Ort und Stelle (MOT-2, die Motion-Lesart von P-4).
+Motion illustrates, it never informs exclusively: every transition confirms
+a state change that would also be fully visible without it —
+`gtk-enable-animations=false` is the proof (MOT-7). Animations follow direct
+user actions; background processes switch hard or fade in place (MOT-2, the
+motion reading of P-4).
 
-- **MOT-1** [geplant] [gtk] — Vier Tokens, keine freien Zahlen: jede von
-  Reprise selbst konfigurierte Animation nutzt eines von vier Tokens aus
-  `ui/motion.rs`: **Micro** 150 ms ease-out für Control-Zustand
-  (Icon-Wechsel Play⇄Pause, Hover-Pills, Chips, Rating, Press-Scale;
-  Icon-Crossfades laufen als zwei Micro-Hälften à 75 ms) · **Standard**
-  250 ms ease-out-cubic für Flächen (Sidebar-/Panel-Reveal, Toast rein,
-  Card-Collapse, Crossfades Cover/StatusPage⇄Liste) · **Ambient** 400 ms
-  ease-out-cubic für atmosphärische, nicht-interaktive Übergänge
-  (Akzentfarben-Crossfade) · **Spatial** = AdwSpringAnimation mit
-  Adw-Default-Springparametern für gerichtete Navigation, im Code angelegt
-  ab dem ersten gerichteten Navigationsfall. Ease-in nur für Verlassendes
-  (Toast raus, Micro-Dauer); linear nur für echte Fortschrittsbalken.
-  Adw-interne Widget-Animationen ohne Dauer-API (OverlaySplitView,
-  NavigationSplitView, ToastOverlay, Banner, Dialog, Popover — z. B. die
-  Push/Pop-Slides der Einstellungs-Unterseiten) gelten als systemgegeben
-  und sind vom Token-Zwang ausgenommen.
-  <!-- Flip-Kriterium MOT-1: alle Call-Sites aus dem Audit-Inventar des
-       Motion-Plans konsumieren Tokens; scripts/check-motion-tokens.sh ist
-       scharf und ohne Restlisten-Allowlist. -->
-- **MOT-2** [geplant] [gtk] — Nutzeraktion animiert, Hintergrund nie:
-  Transitions folgen direkten Nutzeraktionen. Scan/Watcher/Mount/Sync
-  schalten hart bzw. faden ohne Verschiebung (P-4 in Motion-Sprache).
-  Ausnahme: die vom Nutzer gestartete Prozess-Karte darf füllen/pulsieren.
-- **MOT-3** [geplant] [gtk] — Symmetrie: gleiches Muster = gleiches Widget
-  + gleiches Token. Konkret: die linke Bibliotheks-Sidebar nutzt exakt das
-  Widget und damit exakt die Transition der rechten Info-Spalte
-  (`adw::OverlaySplitView`, Position Start — Auslöser dieser Sektion); der
-  innere Tracks/Albums/Artists-Wechsel und die StatusPage⇄Liste-Stacks
-  crossfaden mit dem Standard-Token wie der äußere
-  Library/Stats/Device-Stack.
-- **MOT-4** [geplant] [manuell] — Listen bewegen sich nicht: kein
-  Stagger/Fade-in pro Row (windowed Model, 200er-Fenster, Bibliotheken
-  jenseits 1 600 Rows). Erlaubt: ein Crossfade der gesamten Fläche beim
-  View-Wechsel; benannte Ausnahme: die Queue darf DnD-Drop und
-  Einzel-Remove animieren.
-  <!-- Die Queue-Ausnahme ist erlaubend, nicht fordernd; ihre Umsetzung
-       liegt im Folge-Branch und blockiert den MOT-4-Flip nicht. -->
-- **MOT-5** [geplant] [gtk] — Player-Leiste lebt, aber leise: Play→Pause =
-  Icon-Crossfade (zwei Micro-Hälften) + Scale-Puls (1.0→0.92→1.0, Micro);
-  Track-Wechsel = Cover/Titel-Crossfade; die Waveform crossfadet zum neuen
-  Track statt auf 0 zu fahren; Pause entsättigt den Waveform-Fill leicht
-  (zur Draw-Zeit), Play kehrt es um — die Akzent-Pipeline (`cover_accent`)
-  bleibt unberührt. Die EQ-Indikatoren (Trackliste, Mini-Player) laufen
-  nur während aktiver Wiedergabe; die Idle-Leiste ist statisch — kein
-  Dauerloop ohne Wiedergabe.
-  <!-- Flip-Kriterium MOT-5 (Folge-Branch, Muster TIP-1b/2b): Scale-Puls,
-       Waveform-Crossfade und Pause-Entsättigung sind implementiert und
-       per [gtk]-Test gedeckt. Icon- und Track-Crossfade existieren
-       bereits tokenisiert; sie allein flippen die Regel nicht. -->
-- **MOT-6** [geplant] [gtk] — Nichts blockiert: das Modell ändert sich am
-  Frame 0, die Animation illustriert nur. Eine zweite Aktion während einer
-  laufenden Animation springt per `AdwAnimation::skip()` zum Endzustand und
-  startet dann die neue; Animations-Slots (Track-Crossfade, Icon-Crossfade,
-  Akzent-Fade) rufen `skip()` statt den alten Handle stillschweigend zu
-  droppen.
-- **MOT-7** [geplant] [gtk] — `gtk-enable-animations=false` gewinnt
-  ausnahmslos: jedes Token degradiert zentral in `ui/motion.rs` zum
-  Hard-Switch (`follow-enable-animations-setting` bzw. der zentrale
-  Gate-Helper `animations_enabled()`), nicht an 30 Call-Sites. Gilt auch
-  für eigene Tick-Callbacks (Waveform-Positions-Glättung: Position hart
-  setzen; Progress-Interpolation) und Pulse-Timer. `gtk::Spinner` und
-  GTK-interne CSS-Mechanik sind Systemverhalten und werden nicht gegated.
+- **MOT-1** [planned] [gtk] — Four tokens, no free-floating numbers: every
+  animation configured by Reprise itself uses one of four tokens from
+  `ui/motion.rs`: **Micro** 150 ms ease-out for control state (icon swap
+  Play⇄Pause, hover pills, chips, rating, press-scale; icon crossfades run
+  as two Micro halves of 75 ms each) · **Standard** 250 ms ease-out-cubic
+  for surfaces (sidebar/panel reveal, toast in, card collapse, crossfades
+  cover/StatusPage⇄list) · **Ambient** 400 ms ease-out-cubic for
+  atmospheric, non-interactive transitions (accent-color crossfade) ·
+  **Spatial** = AdwSpringAnimation with Adw default spring parameters for
+  directed navigation, added in code starting with the first directed
+  navigation case. Ease-in only for what is leaving (toast out, Micro
+  duration); linear only for genuine progress bars. Adw-internal widget
+  animations without a duration API (OverlaySplitView, NavigationSplitView,
+  ToastOverlay, Banner, Dialog, Popover — e.g. the push/pop slides of the
+  settings subpages) count as system-given and are exempt from the token
+  requirement.
+  <!-- Flip criterion MOT-1: all call sites from the motion plan's audit
+       inventory consume tokens; scripts/check-motion-tokens.sh is strict
+       and without a leftover allowlist. -->
+- **MOT-2** [planned] [gtk] — User action animates, background never:
+  transitions follow direct user actions. Scan/watcher/mount/sync switch
+  hard or fade without displacement (P-4 in motion language). Exception:
+  the process card started by the user may fill/pulse.
+- **MOT-3** [planned] [gtk] — Symmetry: same pattern = same widget + same
+  token. Specifically: the left library sidebar uses exactly the same
+  widget and thus exactly the same transition as the right info column
+  (`adw::OverlaySplitView`, position start — the trigger for this
+  section); the inner Tracks/Albums/Artists switch and the StatusPage⇄list
+  stacks crossfade with the Standard token like the outer
+  Library/Stats/Device stack.
+- **MOT-4** [planned] [manual] — Lists do not move: no stagger/fade-in per
+  row (windowed model, 200-item window, libraries beyond 1,600 rows).
+  Allowed: a crossfade of the entire surface on a view change; named
+  exception: the queue may animate DnD drop and single remove.
+  <!-- The queue exception is permissive, not mandatory; its
+       implementation lives in the follow-up branch and does not block the
+       MOT-4 flip. -->
+- **MOT-5** [planned] [gtk] — The player bar lives, but quietly: Play→Pause
+  = icon crossfade (two Micro halves) + scale pulse (1.0→0.92→1.0, Micro);
+  track change = cover/title crossfade; the waveform crossfades to the new
+  track instead of dropping to 0; pause slightly desaturates the waveform
+  fill (at draw time), play reverses it — the accent pipeline
+  (`cover_accent`) stays untouched. The EQ indicators (track list,
+  mini-player) run only during active playback; the idle bar is static — no
+  permanent loop without playback.
+  <!-- Flip criterion MOT-5 (follow-up branch, pattern TIP-1b/2b): scale
+       pulse, waveform crossfade and pause desaturation are implemented and
+       covered by a [gtk] test. Icon and track crossfade already exist
+       tokenized; they alone do not flip the rule. -->
+- **MOT-6** [planned] [gtk] — Nothing blocks: the model changes at frame 0,
+  the animation only illustrates. A second action during a running
+  animation jumps to the end state via `AdwAnimation::skip()` and then
+  starts the new one; animation slots (track crossfade, icon crossfade,
+  accent fade) call `skip()` instead of silently dropping the old handle.
+- **MOT-7** [planned] [gtk] — `gtk-enable-animations=false` wins without
+  exception: every token degrades centrally in `ui/motion.rs` to a hard
+  switch (`follow-enable-animations-setting` or the central gate helper
+  `animations_enabled()`), not at 30 call sites. Also applies to our own
+  tick callbacks (waveform position smoothing: set the position hard;
+  progress interpolation) and pulse timers. `gtk::Spinner` and
+  GTK-internal CSS mechanics are system behavior and are not gated.
 ```
 
 ---
 
-## 4. Taskplan — zwei Phasen
+## 4. Task plan — two phases
 
-> Format wie `docs/superpowers/plans/2026-07-17-ux-tooltips-taskplan.md`:
-> ein Commit pro Task, TDD wo ein Test benannt ist, Flips nur im benannten
-> Task-Commit, Commit-Titel trägt die Regel-ID.
+> Format: one commit per task, TDD wherever a test is named, flips only in
+> the named task commit, the commit title carries the rule ID.
 >
-> **HARTE ANWEISUNG AN DIE CODE-PHASE: Implementiere NUR Phase 1
-> (T0, T2, T7, T8, T3 in dieser Reihenfolge/Wellung), dann STOPP.**
-> Phase 2 (T1, T4, T5, T6, T9, T10) ist gesperrt, bis der Gate-Check in
-> 4.3 `GATE OPEN` liefert UND main integriert UND der Ownership-Scan
-> wiederholt wurde. Kein Task aus Phase 2 darf „vorgezogen" werden — auch
-> nicht teilweise, auch nicht als „nur der Test".
+> **HARD INSTRUCTION TO THE CODE PHASE: implement ONLY phase 1
+> (T0, T2, T7, T8, T3 in this order/wave), then STOP.**
+> Phase 2 (T1, T4, T5, T6, T9, T10) is locked until the gate check in
+> 4.3 returns `GATE OPEN` AND main has been integrated AND the ownership
+> scan has been repeated. No phase 2 task may be "pulled forward" — not
+> partially either, and not as "just the test".
 
-### 4.1 Globale Constraints
+### 4.1 Global constraints
 
-- Gates vor JEDEM Commit: `cargo fmt --check` ·
+- Gates before EVERY commit: `cargo fmt --check` ·
   `cargo clippy --locked --all-targets --workspace -- -D warnings` ·
   `env XDG_DATA_HOME=$(mktemp -d) XDG_CACHE_HOME=$(mktemp -d) cargo test --locked --workspace` ·
   `scripts/check-ux-traceability.sh` · `scripts/check-architecture.sh`.
-- Display-Tests headless über `scripts/check-display-tests.sh`
-  (Ignore-Marker `requires a display; run via xvfb-run` zählt als Coverage).
-- Statuswechsel `[geplant]→[aktiv]` NUR im Task-Commit, der es sagt — und
-  ausschließlich in Phase 2 (vorher existiert die Sektion nicht).
-- Neue User-facing Strings (voraussichtlich keine) über `N_!`-Kataloge +
-  `de.po` im selben Commit.
-- Commits englisch, kein Attribution-Footer, kein Push.
-- **Sperrliste Phase 1 (verifizierter Überlapp, Stand 2026-07-17 — NICHT
-  anfassen):**
-  - feat/missing-import-errors (OFFEN, Worktree `../reprise-issues`) besitzt:
-    `crates/reprise-gnome/src/ui/scan/**` (komplett),
-    `crates/reprise-gnome/src/ui/sidebar/**` (weitgehend, inkl.
+- Display tests headless via `scripts/check-display-tests.sh`
+  (the ignore marker `requires a display; run via xvfb-run` counts as
+  coverage).
+- Status change `[planned]→[active]` ONLY in the task commit that says so —
+  and exclusively in phase 2 (before that the section does not exist).
+- New user-facing strings (probably none) via the `N_!` catalogs + `de.po`
+  in the same commit.
+- Commits in English, no attribution footer, no push.
+- **Blocklist phase 1 (verified overlap, as of 2026-07-17 — do NOT
+  touch):**
+  - feat/missing-import-errors (OPEN, worktree `../reprise-issues`) owns:
+    `crates/reprise-gnome/src/ui/scan/**` (complete),
+    `crates/reprise-gnome/src/ui/sidebar/**` (largely, incl.
     `sidebar_presentation.rs`), `ui/style/mod.rs`,
     `ui/window/library_shell.rs`, `ui/window/window.rs`,
     `ui/window/window_runtime_wiring.rs`.
-  - feature/context-menu-unification (OFFEN) besitzt:
-    `ui/window/window_action_wiring.rs` und `docs/ux-rules.md` (Sektion N).
-  - `window_navigation.rs` und `information_column.rs` liegen im
-    T4-Umbaugebiet und bleiben in Phase 1 ebenfalls unangetastet.
-  - Gemergt und damit FREI: feat/tag-editor-rework,
+  - feature/context-menu-unification (OPEN) owns:
+    `ui/window/window_action_wiring.rs` and `docs/ux-rules.md` (section N).
+  - `window_navigation.rs` and `information_column.rs` lie in the T4 rework
+    area and likewise stay untouched in phase 1.
+  - Merged and therefore FREE: feat/tag-editor-rework,
     feat/queue-playlist-improvements, feat/context-menu-improvements,
-    feat/global-search-rework (`ui/browse/**` ist frei).
-- **`docs/ux-rules.md` wird in diesem Branch ausschließlich in Phase 2
-  angefasst** (G1) — einer integriert, nie zwei parallel.
+    feat/global-search-rework (`ui/browse/**` is free).
+- **`docs/ux-rules.md` is touched in this branch exclusively in phase 2**
+  (G1) — one integrates, never two in parallel.
 
-### 4.2 Phase 1 — sofort, konfliktfrei
+### 4.2 Phase 1 — immediate, conflict-free
 
-Parallelisierungs-Karte:
+Parallelization map:
 
 ```text
-T0 → T2 → { T7 ∥ T8 } → T3 → STOPP (Phasen-Gate 4.3)
+T0 → T2 → { T7 ∥ T8 } → T3 → STOP (phase gate 4.3)
 ```
 
-Datei-Ownership Welle Phase 1 (disjunkt, T7/T8 parallel durch getrennte
-Agenten; `ui/motion.rs` ist nach T2 für beide **read-only**):
+File ownership wave phase 1 (disjoint, T7/T8 in parallel through separate
+agents; `ui/motion.rs` is **read-only** for both after T2):
 
-| Task | Exklusive Dateien |
+| Task | Exclusive files |
 |---|---|
-| T2 | `ui/motion.rs` (neu), `ui/mod.rs` (Modul-Registrierung) |
+| T2 | `ui/motion.rs` (new), `ui/mod.rs` (module registration) |
 | T7 | `ui/player_bar/**`, `ui/compact/**`, `ui/style/cover_accent.rs` |
 | T8 | `ui/style/tokens.rs`, `ui/eq_bars.rs`, `ui/browse/browse_chooser.rs`, `ui/preferences/preference_rhythmbox.rs`, `ui/info_panel/info_panel.rs`, `ui/lyrics/lyrics_view.rs` |
-| T3 | `scripts/check-motion-tokens.sh` (neu), CI-/Gate-Einbindung |
+| T3 | `scripts/check-motion-tokens.sh` (new), CI/gate wiring |
 
-#### Task 0: Plan committen
+#### Task 0: commit the plan
 
-Diese Datei (`docs/plans/ux-rules-motion.md`) committen.
+Commit this file (`docs/plans/ux-rules-motion.md`).
 
 ```bash
 git commit -m "docs: add motion rules plan (grilled 2026-07-17)"
 ```
 
-#### Task 2: `ui/motion.rs` anlegen (+ Pflicht-Verifikation T-V)
+#### Task 2: create `ui/motion.rs` (+ mandatory verification T-V)
 
-- Token-Konstanten: `MICRO_MS = 150`, `STANDARD_MS = 250`,
-  `AMBIENT_MS = 400`; Crossfade-Hälften-Helfer (`half(token)`); Easings als
-  Konstanten für `adw::Easing` (Micro: EaseOutQuad/„ease-out", Standard und
-  Ambient: EaseOutCubic) und für CSS-Strings. **Kein Spatial-Code** (G4).
-- `timed(widget, from, to, token, target) -> adw::TimedAnimation` — setzt
+- Token constants: `MICRO_MS = 150`, `STANDARD_MS = 250`,
+  `AMBIENT_MS = 400`; crossfade-half helper (`half(token)`); easings as
+  constants for `adw::Easing` (Micro: EaseOutQuad/"ease-out", Standard and
+  Ambient: EaseOutCubic) and for CSS strings. **No spatial code** (G4).
+- `timed(widget, from, to, token, target) -> adw::TimedAnimation` — sets
   `set_follow_enable_animations_setting(true)`.
-- Gate-Helper `animations_enabled() -> bool` (eine Stelle statt sechs
-  Formulierungen) für Ticks/Timer.
-- Slot-Helfer `replace_animation(slot, new)` mit `skip()` auf dem Vorgänger
-  (für MOT-6, T7).
-- Unit-Tests für Token-Werte; `[gtk]`-Test, dass `timed(…)` die
-  Follow-Property setzt (verifiziert zugleich, dass der Adw-Default false
-  ist — Befund 2.4.3).
-- **T-V (Pflicht):** headless/xvfb-Spike, ob CSS-Transitions und
-  `@keyframes` unter `gtk-enable-animations=false` stillstehen. Ergebnis
-  als Kommentar in `ui/motion.rs` dokumentieren. **Fällt T-V negativ aus
-  (CSS ignoriert das Setting): Befund festhalten, Task normal abschließen,
-  aber im Abschlussbericht der code-Phase als GRILLING-RÜCKLÄUFER melden —
-  kein stiller Beschluss über einen CSS-Degradationspfad.**
+- Gate helper `animations_enabled() -> bool` (one place instead of six
+  formulations) for ticks/timers.
+- Slot helper `replace_animation(slot, new)` with `skip()` on the
+  predecessor (for MOT-6, T7).
+- Unit tests for the token values; a `[gtk]` test that `timed(…)` sets the
+  follow property (which at the same time verifies that the Adw default is
+  false — finding 2.4.3).
+- **T-V (mandatory):** a headless/xvfb spike on whether CSS transitions and
+  `@keyframes` stand still under `gtk-enable-animations=false`. Document the
+  result as a comment in `ui/motion.rs`. **If T-V comes out negative (CSS
+  ignores the setting): record the finding, finish the task normally, but
+  report it in the code phase's closing report as a GRILLING RETURN — no
+  silent decision about a CSS degradation path.**
 
 ```bash
 git commit -m "feat(motion): add motion tokens and central animation helpers"
 ```
 
-#### Task 7: Player/Compact/Akzent — Token-Migration + MOT-6-Skip-Semantik
+#### Task 7: player/compact/accent — token migration + MOT-6 skip semantics
 
-- Track-Crossfade (`player_bar.rs`) → Standard-Hälften (2×125, unverändertes
-  Tempo); Icon-Crossfade → **Micro-Hälften 2×75** (G2i — gewollt langsamer
-  als die bisherigen 2×60; Doc-Kommentar korrigieren);
-  `compact_player.rs::CROSSFADE_HALF_MS` → Standard-Hälfte;
-  Hover-Overlay-Revealer (`compact_player_layouts.rs`) → Micro;
-  Akzent-Crossfade (`cover_accent.rs`) → **Ambient** (G2ii);
-  Waveform-Peaks-Build-up (`waveform_seek.rs`) → Ambient (atmosphärisch,
-  nicht-interaktiv; Pro-Balken-Stagger bleibt Implementierungsdetail).
-- Alle Adw-Animationen dieser Dateien über `motion::timed()` bzw. Follow-
-  Property statt Hand-Gating; Waveform-Positions-Glättung gaten
-  (`animations_enabled()` false → Position hart setzen) (G8, Player-Seite).
-- MOT-6-Skip-Semantik: die Ein-Slot-Systeme (Track-Crossfade,
-  Icon-Crossfade, Akzent-Fade, compact_player) auf
-  `motion::replace_animation()` mit `skip()` umstellen.
-- TDD: `[gtk]`-Test `mot_6_…` (zweiter `set_track` während laufender
-  Animation → Endzustand des ersten sofort sichtbar, kein Zwischenzustand;
-  Modellzustand ändert sich vor Animationsende); `[gtk]`-Test
-  `set_gtk_enable_animations(false)` → sofortiger Endzustand inkl.
-  Positions-Glättung (Vorbild `sidebar_device_card.rs:579ff`).
-- KEIN Flip (Sektion existiert noch nicht; Flips in Phase 2, T9).
+- Track crossfade (`player_bar.rs`) → Standard halves (2×125, unchanged
+  tempo); icon crossfade → **Micro halves 2×75** (G2i — deliberately slower
+  than the previous 2×60; correct the doc comment);
+  `compact_player.rs::CROSSFADE_HALF_MS` → Standard half; the hover overlay
+  revealer (`compact_player_layouts.rs`) → Micro; the accent crossfade
+  (`cover_accent.rs`) → **Ambient** (G2ii); the waveform peaks build-up
+  (`waveform_seek.rs`) → Ambient (atmospheric, non-interactive; the per-bar
+  stagger stays an implementation detail).
+- All Adw animations in these files via `motion::timed()` or the follow
+  property instead of hand-gating; gate the waveform position smoothing
+  (`animations_enabled()` false → set the position hard) (G8, player side).
+- MOT-6 skip semantics: switch the single-slot systems (track crossfade,
+  icon crossfade, accent fade, compact_player) to
+  `motion::replace_animation()` with `skip()`.
+- TDD: `[gtk]` test `mot_6_…` (a second `set_track` during a running
+  animation → the end state of the first one is immediately visible, no
+  intermediate state; the model state changes before the animation ends);
+  `[gtk]` test `set_gtk_enable_animations(false)` → immediate end state
+  including position smoothing (model `sidebar_device_card.rs:579ff`).
+- NO flip (the section does not exist yet; flips in phase 2, T9).
 
 ```bash
 git commit -m "feat(motion): MOT-6 skip semantics and player-side token migration"
 ```
 
-#### Task 8: Token-Migration der konfliktfreien Rest-Call-Sites
+#### Task 8: token migration of the conflict-free remaining call sites
 
-- `tokens.rs`: `TRANSITION` konsumiert `motion::MICRO_MS` (Hover/Focus/Press:
-  Dauer bleibt 150 ms; Easing folgt dem Micro-Token (ease-out), abgenommen im
-  Review 2026-07-18).
+- `tokens.rs`: `TRANSITION` consumes `motion::MICRO_MS` (hover/focus/press:
+  the duration stays 150 ms; the easing follows the Micro token (ease-out),
+  accepted in the review of 2026-07-18).
 - `info_panel.rs:148`, `lyrics_view.rs:82`, `browse_chooser.rs:28`,
-  `preference_rhythmbox.rs:323`: explizite `set_transition_duration` mit
-  Standard-Token (bisher Default ~200 → bewusst 250).
-- `eq_bars.rs`: Kommentar auf die MOT-5-EQ-Ausnahme (G7) — Loop-Dauern
-  (1100/650 ms) sind keine Transition-Tokens und bleiben.
-- `[gtk]`-Test `mot_1_…` (Stichproben-Widgets tragen Token-Dauer).
-- KEIN Flip.
+  `preference_rhythmbox.rs:323`: explicit `set_transition_duration` with the
+  Standard token (previously the default ~200 → deliberately 250).
+- `eq_bars.rs`: a comment pointing at the MOT-5 EQ exception (G7) — the loop
+  durations (1100/650 ms) are not transition tokens and stay.
+- `[gtk]` test `mot_1_…` (sampled widgets carry the token duration).
+- NO flip.
 
 ```bash
 git commit -m "feat(motion): migrate conflict-free call sites to motion tokens"
 ```
 
-#### Task 3: Lint `scripts/check-motion-tokens.sh`
+#### Task 3: lint `scripts/check-motion-tokens.sh`
 
-Stil von `check-ux-traceability.sh`. Verbietet außerhalb
+In the style of `check-ux-traceability.sh`. Forbids, outside
 `ui/motion.rs`/`ui/style/tokens.rs` (G6):
-1. `TimedAnimation::new(…)` mit Integer-Literal als Dauer,
-2. `set_transition_duration(`/`.transition_duration(` mit Integer-Literal.
+1. `TimedAnimation::new(…)` with an integer literal as the duration,
+2. `set_transition_duration(`/`.transition_duration(` with an integer
+   literal.
 
-Ticks/CSS bleiben Review-Sache. **Phase-2-Restliste:** die noch nicht
-migrierten Dateien (`ui/sidebar/sidebar_device_card.rs`,
-`ui/scan/scan_progress.rs`, `ui/window/window.rs`) stehen in einer im
-Script dokumentierten Allowlist mit Kommentar `# Phase 2 — wird in T4/T5
-migriert und aus der Allowlist entfernt`. In die lokale Gate-Batterie der
-Folge-Tasks aufnehmen; Einbindung an derselben Stelle, an der
-`check-ux-traceability.sh` hängt.
+Ticks/CSS remain a review matter. **Phase 2 leftover list:** the files not
+yet migrated (`ui/sidebar/sidebar_device_card.rs`,
+`ui/scan/scan_progress.rs`, `ui/window/window.rs`) sit in an allowlist
+documented in the script with the comment `# Phase 2 — migrated in T4/T5 and
+removed from the allowlist`. Add it to the local gate battery of the
+follow-up tasks; wire it in at the same place where
+`check-ux-traceability.sh` hangs.
 
 ```bash
 git commit -m "ci: add motion-token lint (MOT-1 gate)"
 ```
 
-**→ ENDE PHASE 1. STOPP. Kein weiterer Task ohne Gate-Check 4.3.**
+**→ END OF PHASE 1. STOP. No further task without gate check 4.3.**
 
-### 4.3 Phasen-Gate (hartes Kriterium)
+### 4.3 Phase gate (hard criterion)
 
-Phase 2 darf erst beginnen, wenn ALLE drei Bedingungen erfüllt sind:
+Phase 2 may only begin once ALL three conditions are met:
 
-1. **Merge-Bedingung (maschinell):** das folgende Kommando gibt
-   `GATE OPEN` aus:
+1. **Merge condition (machine-checked):** the following command prints
+   `GATE OPEN`:
 
    ```bash
    git fetch origin --prune
@@ -398,214 +398,215 @@ Phase 2 darf erst beginnen, wenn ALLE drei Bedingungen erfüllt sind:
    [ "$gate_open" = "1" ] && echo "GATE OPEN"
    ```
 
-2. **Integration:** `origin/main` ist in `feat/ux-rules-motion` gemergt,
-   Konflikte aufgelöst, volle Gate-Batterie grün.
-3. **Ownership-Scan wiederholt:** die Sperrlisten-Prüfung aus 4.1 wird
-   gegen den DANN aktuellen Stand wiederholt (offene Branches/Worktrees
-   auflisten, Überlapp mit den T4/T5/T6-Dateien prüfen). Neue Überlappungen
-   werden Handoffs, keine Edits — im Zweifel zurück an den Nutzer.
+2. **Integration:** `origin/main` is merged into `feat/ux-rules-motion`,
+   conflicts resolved, the full gate battery green.
+3. **Ownership scan repeated:** the blocklist check from 4.1 is repeated
+   against the state current AT THAT POINT (list the open branches/worktrees,
+   check the overlap with the T4/T5/T6 files). New overlaps become handoffs,
+   not edits — when in doubt, back to the user.
 
-### 4.4 Phase 2 — nach dem Gate
+### 4.4 Phase 2 — after the gate
 
-Parallelisierungs-Karte:
+Parallelization map:
 
 ```text
 GATE → T1 → { T4 ∥ (T5 → T6) } → T9 → T10
 ```
 
-Datei-Ownership Welle Phase 2 (disjunkt, T4 und T5/T6 parallel durch
-getrennte Agenten; `ui/motion.rs` read-only):
+File ownership wave phase 2 (disjoint, T4 and T5/T6 in parallel through
+separate agents; `ui/motion.rs` read-only):
 
-| Task | Exklusive Dateien |
+| Task | Exclusive files |
 |---|---|
 | T1 | `docs/ux-rules.md` |
 | T4 | `ui/window/library_shell.rs`, `ui/window/window_navigation.rs`, `ui/window/window.rs`, `ui/sidebar/sidebar_presentation.rs`, `ui/info_panel/information_column.rs` |
-| T5+T6 | `ui/scan/scan_progress.rs`, `ui/sidebar/sidebar_device_card.rs` (+ zugehörige Tests) |
-| T9 | `RELEASING.md`, `docs/ux-rules.md` (Flips), `scripts/check-motion-tokens.sh` (Restlisten-Check) |
+| T5+T6 | `ui/scan/scan_progress.rs`, `ui/sidebar/sidebar_device_card.rs` (+ the associated tests) |
+| T9 | `RELEASING.md`, `docs/ux-rules.md` (flips), `scripts/check-motion-tokens.sh` (leftover-list check) |
 | T10 | `.superpowers/sdd/progress.md` |
 
-#### Task 1: Sektion O in `docs/ux-rules.md`
+#### Task 1: section O in `docs/ux-rules.md`
 
-Sektionstext aus Abschnitt 3 wörtlich hinter die letzte Sektion (erwartet:
-N), vor den Schluss-Absatz. Buchstabenlage gegen den realen main-Stand
-verifizieren (sollte N nicht die letzte Sektion sein: Kommentar anpassen,
-Buchstabe bleibt O nur, wenn O frei ist — sonst nächster freier Buchstabe
-plus Anpassung ALLER MOT-Verweise; das ist eine mechanische Umbenennung,
-kein neuer Beschluss). `scripts/check-ux-traceability.sh` grün (alle MOT
-`[geplant]`, Präfix wird dynamisch erkannt — kein Script-Update nötig).
+The section text from section 3 verbatim, after the last section (expected:
+N), before the closing paragraph. Verify the letter situation against the
+real state of main (should N not be the last section: adjust the comment;
+the letter stays O only if O is free — otherwise the next free letter plus
+an adjustment of ALL MOT references; that is a mechanical rename, not a new
+decision). `scripts/check-ux-traceability.sh` green (all MOT `[planned]`,
+the prefix is detected dynamically — no script update needed).
 
 ```bash
 git commit -m "docs: add ux-rules section O (MOT motion rules, planned)"
 ```
 
-#### Task 4: MOT-3 — Sidebar-Symmetrie (der Auslöser-Bug) → Flip MOT-3
+#### Task 4: MOT-3 — sidebar symmetry (the trigger bug) → flip MOT-3
 
-TDD: `[gtk]`-Displaytest `mot_3_…` zuerst (beide Seitenflächen nutzen
-dasselbe Widget-Muster; Toggle-Roundtrip bei breitem UND schmalem Fenster).
-Umbau laut G5: linke Sidebar auf `adw::OverlaySplitView` (Position Start);
-`apply_sidebar_visibility`, `manually_hidden`-Logik und
-Breakpoint(<800 px)-Zusammenspiel aus `window_navigation.rs` portieren;
-bestehende Tests um Breakpoint-Fälle erweitern (Fokus-Klau beim Verstecken
-prüfen). Innerer Tracks/Albums/Artists-Stack + StatusPage⇄Liste-Stacks
-erhalten den Standard-Crossfade (MOT-3 Satz 2); äußerer Stack
-(`window.rs:368`) migriert 150→Standard und fällt aus der Lint-Allowlist.
-Flip MOT-3 in diesem Commit.
+TDD: the `[gtk]` display test `mot_3_…` first (both side surfaces use the
+same widget pattern; toggle round trip with a wide AND a narrow window).
+Rework per G5: the left sidebar onto `adw::OverlaySplitView` (position
+start); port `apply_sidebar_visibility`, the `manually_hidden` logic and the
+breakpoint(<800 px) interplay out of `window_navigation.rs`; extend the
+existing tests with breakpoint cases (check for focus stealing when hiding).
+The inner Tracks/Albums/Artists stack + the StatusPage⇄list stacks receive
+the Standard crossfade (MOT-3 sentence 2); the outer stack
+(`window.rs:368`) migrates 150→Standard and drops out of the lint allowlist.
+Flip MOT-3 in this commit.
 
 ```bash
 git commit -m "feat(ui): MOT-3 — left sidebar slides like the right panel"
 ```
 
-#### Task 5: MOT-7 — Gating-Zentralisierung abschließen → Flip MOT-7
+#### Task 5: MOT-7 — finish centralizing the gating → flip MOT-7
 
-Restliche manuelle `is_gtk_enable_animations`-Stellen
-(`sidebar_device_card.rs`) auf motion.rs-Helfer; Progress-Interpolation
-(Tick) über `animations_enabled()` gaten (false → Wert hart setzen);
-Scan-Pulse-Timer gaten (false → Timer startet nicht, Balken bleibt
-statisch-determiniert); Transitions dieser Dateien 150→Standard-Token,
-Dateien aus der Lint-Allowlist entfernen. TDD nach Vorbild
-`sidebar_device_card.rs:579ff` (`set_gtk_enable_animations(false)` →
-Endzustand sofort, Pulse-Timer startet nicht). Flip MOT-7 in diesem Commit
-(Player-Seite ist seit T7/Phase 1 gedeckt, T-V-Befund liegt aus T2 vor).
+The remaining manual `is_gtk_enable_animations` places
+(`sidebar_device_card.rs`) onto the motion.rs helper; gate the progress
+interpolation (tick) through `animations_enabled()` (false → set the value
+hard); gate the scan pulse timer (false → the timer does not start, the bar
+stays statically determinate); the transitions of these files 150→Standard
+token, remove the files from the lint allowlist. TDD modelled on
+`sidebar_device_card.rs:579ff` (`set_gtk_enable_animations(false)` → the end
+state immediately, the pulse timer does not start). Flip MOT-7 in this commit
+(the player side has been covered since T7/phase 1, the T-V finding is
+available from T2).
 
 ```bash
 git commit -m "feat(motion): MOT-7 — centralize enable-animations gating"
 ```
 
-#### Task 6: MOT-2 — Hintergrundflächen härten → Flip MOT-2
+#### Task 6: MOT-2 — harden background surfaces → flip MOT-2
 
-Scan-Karte/Device-Card/Lyrics-Ladezustand: Crossfade ohne Verschiebung
-festschreiben (heute schon Crossfade — Test fixiert das), keine
-Slide-Transitions an Hintergrund-Auslösern. `[gtk]`-Test `mot_2_…`:
-Transition-Typen der Hintergrund-Widgets sind Crossfade/None;
-Scan-Karten-Reveal verschiebt keine Nachbarn (Allocation-Vergleich).
-Gleicher Agent wie T5 (Datei-Ownership überlappt), eigener Commit.
-Flip MOT-2 in diesem Commit.
+Scan card/device card/lyrics loading state: pin down crossfade without
+displacement (already a crossfade today — the test fixes that), no slide
+transitions on background triggers. `[gtk]` test `mot_2_…`: the transition
+types of the background widgets are Crossfade/None; the scan-card reveal
+displaces no neighbors (allocation comparison). Same agent as T5 (the file
+ownership overlaps), its own commit. Flip MOT-2 in this commit.
 
 ```bash
 git commit -m "feat(ui): MOT-2 — background surfaces fade in place, never slide"
 ```
 
-#### Task 9: RELEASING.md + verbleibende Flips (MOT-1, MOT-4, MOT-6)
+#### Task 9: RELEASING.md + the remaining flips (MOT-1, MOT-4, MOT-6)
 
-- MOT-4 `[manuell]`: Bullet in „## Manual GNOME QA" (englisch, IDs
-  wörtlich, Muster RELEASING.md:174-184) → Flip MOT-4.
-- Flip MOT-1: Lint-Allowlist ist leer (T4/T5 erledigt), alle
-  Inventar-Call-Sites konsumieren Tokens — Commit-Body verweist auf die
-  Phase-1-Commits (T7/T8).
-- Flip MOT-6: Implementierung liegt in T7 (Phase 1) — Commit-Body verweist
-  darauf.
-- MOT-5 bleibt `[geplant]` (G9, Folge-Branch) — Flip-Kriterium-Kommentar
-  steht bereits im Sektionstext.
+- MOT-4 `[manual]`: a bullet in "## Manual GNOME QA" (English, IDs
+  verbatim, pattern RELEASING.md:174-184) → flip MOT-4.
+- Flip MOT-1: the lint allowlist is empty (T4/T5 done), all call sites from
+  the inventory consume tokens — the commit body points at the phase 1
+  commits (T7/T8).
+- Flip MOT-6: the implementation lies in T7 (phase 1) — the commit body
+  points at it.
+- MOT-5 stays `[planned]` (G9, follow-up branch) — the flip-criterion
+  comment is already in the section text.
 
 ```bash
 git commit -m "docs: MOT-1/4/6 — manual QA entry and flip completed motion rules to active"
 ```
 
-#### Task 10: Abschluss
+#### Task 10: closing
 
-Volle Gate-Batterie inkl. Display-Tests; Ledger-Eintrag
-`.superpowers/sdd/progress.md` (nennt den Folge-Branch-Scope: MOT-5-
-Neuverhalten + Queue-Drop-Animation); Handoff-Notizen für in Phase 2 neu
-entdeckte Überlappungen; Merge-Titel dokumentiert die finale
-Sektionsbuchstaben-Lage.
+Full gate battery incl. display tests; ledger entry in
+`.superpowers/sdd/progress.md` (naming the follow-up branch scope: the new
+MOT-5 behavior + the queue drop animation); handoff notes for overlaps newly
+discovered in phase 2; the merge title documents the final section-letter
+situation.
 
 ---
 
-## 5. Teststrategie je Regel
+## 5. Test strategy per rule
 
-| Regel | Ebene | Mechanisch prüfbar (headless, xvfb) | Ehrlich manuell |
+| Rule | Level | Mechanically checkable (headless, xvfb) | Honestly manual |
 |---|---|---|---|
-| MOT-1 | [gtk] | Token-Konstanten (Unit); Stichproben: Widget-`transition_duration()` == Token; Lint T3 flankiert (zählt nicht als Coverage — der regelbenannte Test schon) | Gefühlte Stimmigkeit der Dauern (bewusster 150→250-Change!) |
-| MOT-2 | [gtk] | Transition-Typ der Hintergrund-Widgets (Crossfade/None, nie Slide); Scan-Karten-Reveal verschiebt keine Nachbarn (Allocation-Vergleich) | „Nichts animiert unter dem Cursor" in echt |
-| MOT-3 | [gtk] | Beide Seitenflächen: gleicher Widget-Typ (`OverlaySplitView`), gleiche Konfiguration; Toggle-Roundtrip bei breitem/schmalem Fenster; Breakpoint-Fälle | Optischer Gleichlauf der Slides (Adw-intern) |
-| MOT-4 | [manuell] | — (Negativregel über nicht-existenten Code) | Reload/Scroll/DnD einer 10k-Liste: keine Zeilenbewegung |
-| MOT-5 | [gtk] | **Dieser Branch:** Icon-Name nach Skip korrekt; bestehende Crossfades nutzen Micro-/Standard-Hälften. **Folge-Branch:** Puls-/Waveform-Crossfade-/Entsättigungs-Tests (`set_gtk_enable_animations(false)` → sofortiger Endzustand) | Wirkung von Puls/Entsättigung (Folge-Branch) |
-| MOT-6 | [gtk] | Zweiter `set_track`/`set_state` während laufender Animation → Endzustand Frame-genau; Modellzustand (`playback_state`) ändert sich vor Animationsende | Reaktionsgefühl unter schnellem Klicken |
-| MOT-7 | [gtk] | `set_gtk_enable_animations(false)`: Follow-Property gesetzt, Tick-Callbacks setzen hart, Pulse-Timer startet nicht (Vorbild `sidebar_device_card.rs:579ff`) | CSS-Verhalten auf realen Desktops (nach T-V) |
+| MOT-1 | [gtk] | Token constants (unit); samples: widget `transition_duration()` == token; lint T3 flanks it (does not count as coverage — the rule-named test does) | Felt coherence of the durations (the deliberate 150→250 change!) |
+| MOT-2 | [gtk] | Transition type of the background widgets (Crossfade/None, never Slide); the scan-card reveal displaces no neighbors (allocation comparison) | "Nothing animates under the cursor" for real |
+| MOT-3 | [gtk] | Both side surfaces: same widget type (`OverlaySplitView`), same configuration; toggle round trip with a wide/narrow window; breakpoint cases | Visual synchrony of the slides (Adw-internal) |
+| MOT-4 | [manual] | — (a negative rule about code that does not exist) | Reload/scroll/DnD of a 10k list: no row movement |
+| MOT-5 | [gtk] | **This branch:** the icon name after a skip is correct; the existing crossfades use Micro/Standard halves. **Follow-up branch:** pulse/waveform-crossfade/desaturation tests (`set_gtk_enable_animations(false)` → immediate end state) | The effect of pulse/desaturation (follow-up branch) |
+| MOT-6 | [gtk] | A second `set_track`/`set_state` during a running animation → end state frame-accurate; the model state (`playback_state`) changes before the animation ends | The feel of responsiveness under fast clicking |
+| MOT-7 | [gtk] | `set_gtk_enable_animations(false)`: the follow property is set, tick callbacks set hard, the pulse timer does not start (model `sidebar_device_card.rs:579ff`) | CSS behavior on real desktops (after T-V) |
 
 ---
 
-## 6. Abnahme-Checkliste
+## 6. Acceptance checklist
 
 **Phase 1:**
 
-- [ ] `ui/motion.rs` existiert (Micro 150 / Standard 250 / Ambient 400,
-      kein Spatial-Code); `timed()` setzt die Follow-Property (Test).
-- [ ] T-V-Befund als Kommentar in `motion.rs` dokumentiert; bei negativem
-      Befund als Grilling-Rückläufer gemeldet.
-- [ ] Player: Icon-Crossfade 2×75, Track-Crossfade Standard-Hälften,
-      Akzentfade Ambient; Skip-Semantik aktiv (MOT-6-Test grün).
-- [ ] Konfliktfreie Call-Sites tokenisiert; `tokens::TRANSITION` konsumiert
+- [ ] `ui/motion.rs` exists (Micro 150 / Standard 250 / Ambient 400, no
+      spatial code); `timed()` sets the follow property (test).
+- [ ] The T-V finding is documented as a comment in `motion.rs`; on a
+      negative finding it is reported as a grilling return.
+- [ ] Player: icon crossfade 2×75, track crossfade Standard halves, accent
+      fade Ambient; skip semantics active (MOT-6 test green).
+- [ ] Conflict-free call sites tokenized; `tokens::TRANSITION` consumes
       `MICRO_MS`.
-- [ ] `check-motion-tokens.sh` grün mit dokumentierter Phase-2-Restliste.
-- [ ] KEINE Datei der Sperrliste angefasst; `docs/ux-rules.md` unberührt;
-      keine Flips.
+- [ ] `check-motion-tokens.sh` green with a documented phase 2 leftover
+      list.
+- [ ] NO file from the blocklist touched; `docs/ux-rules.md` untouched;
+      no flips.
 
 **Phase 2:**
 
-- [ ] Gate-Check 4.3 lief und lieferte `GATE OPEN`; main integriert;
-      Ownership-Scan wiederholt.
-- [ ] Beide Sidebars gleiten identisch (`OverlaySplitView` beidseitig);
-      Breakpoint-/`manually_hidden`-Fälle getestet.
-- [ ] Innerer Library-Stack und StatusPage⇄Liste crossfaden wie der äußere
-      Stack (MOT-3 Satz 2 — bisher harte Schnitte).
-- [ ] Kein Hintergrundereignis (Scan/Sync/Mount/Lyrics-Laden) animiert
-      etwas unter dem Cursor oder verschiebt Layout.
-- [ ] `gtk-enable-animations=false` → komplett instant, inkl.
-      Positions-Glättung und Pulse.
-- [ ] Keine Animation verzögert je eine Aktion; zweite Aktion skippt.
-- [ ] Lint-Allowlist leer; keine Integer-Dauern an Animations-APIs
-      außerhalb `motion.rs`/`tokens.rs`.
-- [ ] `check-ux-traceability.sh` grün; MOT-1/2/3/4/6/7 `[aktiv]`, MOT-5
-      `[geplant]` mit Flip-Kriterium; MOT-4-Bullet wörtlich in
+- [ ] Gate check 4.3 ran and returned `GATE OPEN`; main integrated;
+      ownership scan repeated.
+- [ ] Both sidebars slide identically (`OverlaySplitView` on both sides);
+      breakpoint/`manually_hidden` cases tested.
+- [ ] The inner library stack and StatusPage⇄list crossfade like the outer
+      stack (MOT-3 sentence 2 — hard cuts until now).
+- [ ] No background event (scan/sync/mount/lyrics loading) animates
+      anything under the cursor or shifts layout.
+- [ ] `gtk-enable-animations=false` → completely instant, incl. position
+      smoothing and pulse.
+- [ ] No animation ever delays an action; a second action skips.
+- [ ] The lint allowlist is empty; no integer durations at animation APIs
+      outside `motion.rs`/`tokens.rs`.
+- [ ] `check-ux-traceability.sh` green; MOT-1/2/3/4/6/7 `[active]`, MOT-5
+      `[planned]` with its flip criterion; the MOT-4 bullet verbatim in
       RELEASING.md.
-- [ ] Ledger-Eintrag; Merge-Titel nennt die finale Sektionsbuchstaben-Lage.
-- [ ] **Bewusster Tempo-Change abgesegnet:** die App fühlt sich durch
-      150→250 auf Flächen messbar anders an — explizit abnehmen, nicht als
-      Nebenwirkung entdecken (G2).
+- [ ] Ledger entry; the merge title names the final section-letter
+      situation.
+- [ ] **Deliberate tempo change signed off:** the app feels measurably
+      different because of 150→250 on surfaces — accept that explicitly, do
+      not discover it as a side effect (G2).
 
-**Folge-Branch (nicht hier):** Play/Pause-Scale-Puls, Waveform-Crossfade
-beim Trackwechsel, Pause-Entsättigung des Waveform-Fills (→ Flip MOT-5),
-Queue-Drop/Remove-Animation (MOT-4-Ausnahme nutzen).
-
----
-
-## 7. Operative Notizen
-
-- Worktree `.worktrees/transitions` existiert (Branch `feat/transitions`,
-  sauber), hängt hinter origin/main. Vor Start: `git pull --ff-only`, dann
-  `git branch -m feat/transitions feat/ux-rules-motion`. **Kein Build beim
-  Worktree-Setup.**
-- Pipeline: dieser Plan → code-Phase headless im Worktree (NUR Phase 1) →
-  Gate-Check → separater Phase-2-Lauf.
-- `docs/ux-rules.md` bleibt bis zum Gate unangetastet (G1); Phase 1
-  (T2, T7, T8, T3) ist davon vollständig unabhängig.
+**Follow-up branch (not here):** the Play/Pause scale pulse, the waveform
+crossfade on track change, the pause desaturation of the waveform fill
+(→ flip MOT-5), the queue drop/remove animation (use the MOT-4 exception).
 
 ---
 
-## 8. Offene Risiken
+## 7. Operational notes
 
-1. **CSS-Transitions vs. enable-animations unverifiziert** (T-V in T2).
-   Fällt der Test negativ aus, braucht MOT-7 einen CSS-Degradationspfad
-   (animationslose Token-Variante laden) — das ist ein Grilling-Rückläufer,
-   kein stiller Beschluss; Aufwand heute nicht geschätzt.
-2. **OverlaySplitView-Animation nicht tokenisierbar** — die prominenteste
-   Transition der App bleibt per G3-Wortlaut außerhalb des Token-Systems;
-   Symmetrie (MOT-3) hängt daran, dass BEIDE Seiten dieselbe Adw-interne
-   Animation nutzen (deshalb G5: exakt dasselbe Widget).
-3. **Sidebar-Umbau (G5) berührt Fokus-/Breakpoint-Sonderfälle**
-   (`manually_hidden`, Fokus-Klau, <800 px) — Regressionsfläche; die
-   bestehenden Tests werden in T4 gezielt um Breakpoint-Fälle erweitert.
-4. **Default von `follow-enable-animations-setting`** ist laut Adw-Doku
-   false — T2 verifiziert das im Test, statt sich auf die Doku zu
-   verlassen.
-5. **Fühlbarkeit der Token-Migration** (G2): 150→250 ms auf allen Flächen
-   ist ein bewusster, app-weiter Tempo-Change — Abnahme segnet das
-   explizit ab (Checkliste Phase 2).
-6. **Phase-2-Wartezeit:** bis feat/missing-import-errors und
-   feature/context-menu-unification auf main sind, kann sich das
-   Territorium erneut verschieben (weitere Branches, umbenannte Dateien,
-   neue Sektionen in ux-rules.md). Deshalb wiederholt der Gate-Check 4.3
-   den Ownership-Scan zwingend; neue Überlappungen werden Handoffs, keine
-   Edits. Auch die Buchstabenlage O wird in T1 gegen den realen main-Stand
-   verifiziert.
+- The worktree `.worktrees/transitions` exists (branch `feat/transitions`,
+  clean) and lags behind origin/main. Before starting: `git pull --ff-only`,
+  then `git branch -m feat/transitions feat/ux-rules-motion`. **No build
+  during worktree setup.**
+- Pipeline: this plan → code phase headless in the worktree (ONLY phase 1) →
+  gate check → a separate phase 2 run.
+- `docs/ux-rules.md` stays untouched until the gate (G1); phase 1
+  (T2, T7, T8, T3) is fully independent of it.
+
+---
+
+## 8. Open risks
+
+1. **CSS transitions vs. enable-animations unverified** (T-V in T2). If the
+   test comes out negative, MOT-7 needs a CSS degradation path (load an
+   animation-free token variant) — that is a grilling return, not a silent
+   decision; the effort is not estimated today.
+2. **The OverlaySplitView animation cannot be tokenized** — by the G3
+   wording the app's most prominent transition stays outside the token
+   system; symmetry (MOT-3) depends on BOTH sides using the same
+   Adw-internal animation (hence G5: exactly the same widget).
+3. **The sidebar rework (G5) touches focus/breakpoint special cases**
+   (`manually_hidden`, focus stealing, <800 px) — a regression surface; the
+   existing tests are deliberately extended with breakpoint cases in T4.
+4. **The default of `follow-enable-animations-setting`** is false per the
+   Adw docs — T2 verifies that in a test instead of relying on the
+   documentation.
+5. **Perceptibility of the token migration** (G2): 150→250 ms on all
+   surfaces is a deliberate, app-wide tempo change — acceptance signs off on
+   it explicitly (phase 2 checklist).
+6. **Phase 2 waiting time:** until feat/missing-import-errors and
+   feature/context-menu-unification are on main, the territory may shift
+   again (further branches, renamed files, new sections in ux-rules.md).
+   That is why gate check 4.3 mandatorily repeats the ownership scan; new
+   overlaps become handoffs, not edits. The letter situation O is likewise
+   verified against the real state of main in T1.

@@ -1,142 +1,141 @@
-# Reprise-Domänensprache
+# Reprise Domain Language
 
-Dieses Glossar benennt Begriffe der Musikbibliothek, die in Core, nativen
-Frontends und künftigen Agenten-Adaptern dasselbe bedeuten müssen.
+This glossary names the terms of the music library that must mean the same
+thing in Core, in the native frontends and in future agent adapters.
 
-## Audioverständnis
+## Audio understanding
 
-**Audio-Evidenz**:
-Lokal aus dem dekodierten Audiosignal gemessene, versionierte Deskriptoren wie
-Tempo, Lautheitsverteilung, spektrale Helligkeit und Onset-Dichte.
-_Vermeiden_: Stimmung, Emotion, Atmosphäre
+**Audio evidence**:
+Versioned descriptors measured locally from the decoded audio signal, such as
+tempo, loudness distribution, spectral brightness and onset density.
+_Avoid_: mood, emotion, atmosphere
 
-**Klangprofil**:
-Eine versionierte, normalisierte Projektion der Audio-Evidenz auf wenige stabile
-Dimensionen, über die Menschen und Auswahllogik Titel vergleichen können.
-_Vermeiden_: Mood-Tag, Genre, Audio-Features
+**Sound profile**:
+A versioned, normalized projection of the audio evidence onto a few stable
+dimensions along which humans and selection logic can compare tracks.
+_Avoid_: mood tag, genre, audio features
 
-**Atmosphäre**:
-Eine menschenlesbare, unsichere Interpretation eines Klangprofils, niemals eine
-objektive Tatsache über den Titel oder seinen Hörer.
-_Vermeiden_: Emotion, Ground Truth, Mood-Label
+**Atmosphere**:
+A human-readable, uncertain interpretation of a sound profile, never an
+objective fact about the track or its listener.
+_Avoid_: emotion, ground truth, mood label
 
-**Analyseabdeckung**:
-Der Anteil geeigneter Bibliothekstitel oder Plays mit aktuellem Klangprofil,
-immer zusammen mit der beschriebenen Grundgesamtheit genannt.
-_Vermeiden_: Fertigstellung unter Einschluss veralteter oder ungeeigneter Titel
+**Analysis coverage**:
+The share of eligible library tracks or plays with a current sound profile,
+always named together with the population it describes.
+_Avoid_: completion that includes stale or ineligible tracks
 
-## Playlistplanung
+## Playlist planning
 
-**Mix-Absicht**:
-Eine deklarative Menge harter Bedingungen und weicher Wünsche für eine
-geordnete Musikauswahl; sie enthält keinen natürlichsprachlichen Prompt und
-verändert keine Userdaten.
-_Vermeiden_: Prompt, Abfrage, Playlist
+**Mix intent**:
+A declarative set of hard conditions and soft wishes for an ordered music
+selection; it contains no natural-language prompt and changes no user data.
+_Avoid_: prompt, query, playlist
 
-**Mix-Entwurf**:
-Eine unveränderliche, an ihren Quellsnapshot gebundene, geordnete Auswahl aus
-einer Mix-Absicht samt Coverage-Diagnostik und strukturierten Auswahlgründen.
-_Vermeiden_: Playlist, Preview-Abfrage
+**Mix draft**:
+An immutable, ordered selection derived from a mix intent and bound to its
+source snapshot, together with coverage diagnostics and structured selection
+reasons.
+_Avoid_: playlist, preview query
 
-**Auswahlgrund**:
-Eine strukturierte Aussage darüber, welche Profildimension, Bedingung oder
-Diversitätsregel einen Titel in einen Mix-Entwurf gebracht hat.
-_Vermeiden_: Chain of Thought, freie Begründung
+**Selection reason**:
+A structured statement about which profile dimension, condition or diversity
+rule brought a track into a mix draft.
+_Avoid_: chain of thought, free-form justification
 
-**Entwurfsfreigabe**:
-Explizite Befugnis, genau einen unveränderten Mix-Entwurf als manuelle Playlist
-zu persistieren.
-_Vermeiden_: Tool-Aufruf, implizite Zustimmung
+**Draft approval**:
+Explicit authority to persist exactly one unchanged mix draft as a manual
+playlist.
+_Avoid_: tool call, implicit consent
 
-## Agentenzugriff
+## Agent access
 
-**Agenten-Capability**:
-Eine separat erteilte Klasse von Operationen über einen Agenten-Adapter; Lesen,
-Mixplanung und Playlist-Erzeugung sind verschiedene Freigaben.
-_Vermeiden_: Serverzugriff, Alles-oder-nichts-Berechtigung
+**Agent capability**:
+A separately granted class of operations through an agent adapter; reading, mix
+planning and playlist creation are different grants.
+_Avoid_: server access, all-or-nothing permission
 
-## Bibliotheksnavigation
+## Library navigation
 
-**Browser-Ort**:
-Ein navigierbares Ziel samt eigenem Verfeinerungs-, Sortier-, Anker-, Auswahl-
-und Inhaltsfokuszustand. Zurück und Vorwärts restaurieren denselben Ort; eine
-frische Navigation erzeugt einen frischen Ort.
-_Vermeiden_: Ansicht, Tab, globaler Filterzustand
+**Browser place**:
+A navigable destination with its own refinement, sort, anchor, selection and
+content focus state. Back and forward restore the same place; a fresh
+navigation creates a fresh place.
+_Avoid_: view, tab, global filter state
 
-**Track-Quelle**:
-Die fachliche Herkunft einer Trackmenge, etwa Bibliothek, Playlist, Smart
-Playlist oder Queue.
-_Vermeiden_: Ansicht, Scope
+**Track source**:
+The domain origin of a set of tracks, for example library, playlist, smart
+playlist or queue.
+_Avoid_: view, scope
 
-**Library-Scope**:
-Ein navigierbarer, aus Track-Metadaten abgeleiteter Ausschnitt der Bibliothek:
-alle Tracks, ein Album, ein Interpret oder ein Genre. Ein Scope verwendet dieselbe
-Trackliste und ist keine eigene Darstellungsart oder dauerhafte Entität.
-_Vermeiden_: Modus, Tab, Filterchip, Albumobjekt
+**Library scope**:
+A navigable section of the library derived from track metadata: all tracks, one
+album, one artist or one genre. A scope uses the same track list and is neither
+a presentation style of its own nor a persistent entity.
+_Avoid_: mode, tab, filter chip, album object
 
-**Verfeinerung**:
-Eine lokale Einschränkung der sichtbaren Ergebnismenge eines Browser-Orts,
-etwa Textsuche, Genre, Jahr oder Bewertung.
-_Vermeiden_: Scope, Queue, globaler Filter
+**Refinement**:
+A local restriction of the visible result set of a browser place, for example
+text search, genre, year or rating.
+_Avoid_: scope, queue, global filter
 
-**Wiedergabe-Snapshot**:
-Die beim Start eingefrorene geordnete Menge stabiler Track-IDs samt Cursor.
-Spätere Navigation, Verfeinerung oder Quellmutation berechnet sie nicht neu.
-_Vermeiden_: sichtbare Liste, Live-Query
+**Playback snapshot**:
+The ordered set of stable track IDs frozen at start, together with the cursor.
+Later navigation, refinement or source mutation does not recompute it.
+_Avoid_: visible list, live query
 
-**Wiedergabe-Ursprung**:
-Der strukturierte Browser-Ort und eingefrorene Anzeigename, aus dem ein
-Wiedergabe-Snapshot gestartet wurde. Er dient dem spaeteren Aufdecken, besitzt
-aber nicht die Wiedergabe selbst.
-_Vermeiden_: aktuelle Ansicht, Queue
+**Playback origin**:
+The structured browser place and frozen display name a playback snapshot was
+started from. It serves later reveal, but does not own the playback itself.
+_Avoid_: current view, queue
 
-## Veröffentlichungsabgleich
+## Release reconciliation
 
-**Veröffentlichungsbesitz**:
-Eine konkrete Album- oder EP-Veröffentlichung gilt nur dann als vorhanden,
-wenn die Bibliothek sie als diese Veröffentlichung vollständig enthält.
-Einzelne Aufnahmen, die separat oder zuvor als Singles erschienen sind,
-begründen keinen Besitz des späteren Albums oder der EP.
-_Vermeiden_: vorhandene Songs, Track-Überschneidung
+**Release ownership**:
+A specific album or EP release counts as present only if the library contains
+it completely as that release. Individual recordings that were released
+separately or previously as singles do not establish ownership of the later
+album or EP.
+_Avoid_: songs present, track overlap
 
-**Diskografielücke**:
-Ein reguläres Album oder eine EP eines Bibliotheksinterpreten, für das kein
-Veröffentlichungsbesitz besteht. Einzelne vorhandene Aufnahmen oder Singles
-schließen die Lücke nicht.
-_Vermeiden_: fehlender Song, neue Veröffentlichung
+**Discography gap**:
+A regular album or EP by a library artist for which there is no release
+ownership. Individual recordings or singles that are present do not close the
+gap.
+_Avoid_: missing song, new release
 
-## KI-Fassungen und Provenienz
+## AI versions and provenance
 
-**Instrumental-Fassung**:
-Eine explizit beauftragte, dauerhafte Variante eines Bibliothekstitels, aus der
-per ML-Stem-Separation der Gesang entfernt wurde; ein regulärer, klar als
-KI-manipuliert gekennzeichneter Titel mit dem Titelsuffix „(Instrumental)", kein
-flüchtiger Effekt beim Abspielen und keine Regel-Playlist.
-_Vermeiden_: Karaoke-Spur, Remix, flüchtiger Render, Vocal-Toggle
+**Instrumental version**:
+An explicitly commissioned, permanent variant of a library track from which the
+vocals have been removed by ML stem separation; a regular track, clearly marked
+as AI-manipulated, with the title suffix "(Instrumental)", not a transient
+effect during playback and not a rule playlist.
+_Avoid_: karaoke track, remix, transient render, vocal toggle
 
-**KI-Provenienz**:
-Die offengelegte Herkunft eines KI-erzeugten oder -manipulierten Titels, doppelt
-hinterlegt: primär als Zeile in der Provenance-Registry der Datenbank (Flag und
-optionaler Quelltitel) und sekundär in menschenlesbaren Datei-Tags, damit die
-Kennzeichnung Rescans und den Export aus Reprise überlebt. Der Ausblende-Filter
-schlüsselt auf das DB-Flag, nie auf den Ablageordner.
-_Vermeiden_: Wasserzeichen, versteckte Markierung, App-interne ID im Tag
+**AI provenance**:
+The disclosed origin of an AI-generated or AI-manipulated track, stored twice:
+primarily as a row in the provenance registry of the database (flag and
+optional source title) and secondarily in human-readable file tags, so that the
+marking survives rescans and export out of Reprise. The hide filter keys on the
+DB flag, never on the storage folder.
+_Avoid_: watermark, hidden marking, app-internal ID in the tag
 
-## Änderungspropagation
+## Change propagation
 
-**change_log (Outbox)**:
-Die transaktionale Outbox: eine je Mutation in derselben Transaktion angehängte
-Zeile, die das *Was* einer Änderung total geordnet festhält (Entität,
-Entitäts-ID, Operation, Writer-Token). Sie ist die Wahrheit über Änderungen
-zwischen Prozessen, nicht der Weckruf selbst; Konsumenten spielen sie nicht
-nach, sondern lesen daraus den aktuellen Zustand.
-_Vermeiden_: Log-Datei, Audit-Trail, Nachrichten-Queue, Event-Sourcing
+**change_log (outbox)**:
+The transactional outbox: one row appended per mutation in the same
+transaction, which records the *what* of a change in a total order (entity,
+entity ID, operation, writer token). It is the truth about changes between
+processes, not the wake-up call itself; consumers do not replay it, they read
+the current state from it.
+_Avoid_: log file, audit trail, message queue, event sourcing
 
 **Notifier**:
-Der prozessübergreifende Weckruf: ein Hintergrund-Thread mit eigener Connection,
-der Datenbank und WAL beobachtet und nach kurzer Beruhigung `PRAGMA
-data_version` prüft — die sich nur bei Commits *anderer* Connections ändert. Er
-meldet nur, *dass* etwas geschah, worauf Konsumenten das change_log lesen; lässt
-sich kein Dateisystem-Watch armieren, degradiert er auf 2-Sekunden-Polling statt
-aufzugeben.
-_Vermeiden_: Daemon, Push-Dienst, Socket-Signal, IPC-Kanal
+The cross-process wake-up call: a background thread with its own connection
+that observes the database and the WAL and, after a short quiet period, checks
+`PRAGMA data_version` — which changes only on commits of *other* connections.
+It reports only *that* something happened, upon which consumers read the
+change_log; if no filesystem watch can be armed, it degrades to 2-second
+polling instead of giving up.
+_Avoid_: daemon, push service, socket signal, IPC channel

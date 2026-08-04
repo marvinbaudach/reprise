@@ -8,13 +8,12 @@ created: 2026-07-19
 ---
 # My Stats (Frame 25a) — editorial rebuild — implementation plan
 
-Language note: repo convention (AGENTS.md) puts design docs in German. This plan
-is written in English by explicit request; **all `docs/ux-rules.md` rule texts in
-section 6 stay German verbatim**, and all code/tests/comments are English as usual.
+Language note: this repository is English — documents, rule texts, code, tests
+and comments alike.
 
 Goal: rebuild the existing "My Stats" screen into the editorial Frame-25a layout,
 on one consistent play definition and one consistent grouping key, entirely
-local, and flip STATS-0..9 from `[geplant]` to `[aktiv]` in the commits that
+local, and flip STATS-0..9 from `[planned]` to `[active]` in the commits that
 finish them.
 
 This is the **final** plan. Every decision below was grilled and is binding; a
@@ -288,7 +287,7 @@ impl TimeZone for DstZone {
 ```
 
 **D4 — No cache, no rollup table: direct queries.**
-The spec wording is "Aggregationen materialisiert/gecacht". That is overruled by
+The spec wording is "aggregations materialized/cached". That is overruled by
 the project's KISS/YAGNI rule, on the numbers: the real library is **100
 `listen_events` rows across 1688 tracks**. Ten years of heavy listening —
 50 plays a day, every day — is ~180 000 rows. With D5's index that is a
@@ -367,8 +366,8 @@ will be smaller than the old screen showed. That is accepted as-is:
 **D8 — Ratings.** `tracks.rating` exists but no Frame-25a element needs it.
 Not used in this branch; no rule.
 
-**D9 — Genre spectrum is display-only.** The spec's "Optional klickbar →
-gefilterte Trackliste des Genres" is **out of scope for this branch**. The genre
+**D9 — Genre spectrum is display-only.** The spec's "optionally clickable →
+filtered track list of the genre" is **out of scope for this branch**. The genre
 bar is presentation, not navigation: no click handler, no cursor change, no
 `ViewSource::Genre(..)` variant.
 Rationale: adding a `ViewSource` variant means touching every exhaustive match
@@ -385,7 +384,7 @@ excluded from the denominator and surfaced as nothing (not as "Other").
 
 **D10 — Customize (STATS-7): three section toggles, nothing else.**
 The Customize menu contains exactly three `CheckButton`s — Clock, Genres,
-Highlights — and no spotlight chooser. The spec's "Wahl Spotlight: Artist /
+Highlights — and no spotlight chooser. The spec's "Spotlight choice: Artist /
 Genre / Track" is dropped **without replacement**: no `stats.spotlight` setting
 key, no `SpotlightKind` enum, not even a prepared variant. Frame 25a specifies
 only the artist spotlight; the genre and track variants have no design, so an
@@ -557,7 +556,7 @@ is `1` for a clean group and feeds D21.
 
 **D21 — Fix path: hint always, click wired.** When `variant_count >= 2`, the
 list row carries a discreet secondary-tone hint plus a tooltip
-("3 Schreibweisen zusammengefasst — im Tag-Editor vereinheitlichen?"). It is a
+("3 spellings merged — unify them in the tag editor?"). It is a
 **suggestion, never an automatic merge**: no tag is written without the user
 going through the tag editor.
 
@@ -625,11 +624,11 @@ them. Two files are shared and need a discipline instead:
 * `stats/mod.rs` and `library/mod.rs` are **append-only registries** — each task
   adds only its own `mod` line and rebases rather than reformats.
 * `docs/ux-rules.md` is **line-scoped**: T1 lands the whole section V with every
-  rule `[geplant]`; afterwards a task may only change the status token of the
+  rule `[planned]`; afterwards a task may only change the status token of the
   rules assigned to it below. No two tasks that can run in parallel own the same
   rule line.
 
-Rule → flipping task (a rule flips to `[aktiv]` in the commit of the task that
+Rule → flipping task (a rule flips to `[active]` in the commit of the task that
 **finishes** it, which is not always the task that writes its test):
 
 | Rule | Flipped by |
@@ -651,7 +650,7 @@ error, no coverage). `STATS-9` parses and is enforced. Every other ID in
 `docs/ux-rules.md` is numeric; the "dedup" mnemonic is kept in the rule text.
 
 ### T1 — Rulebook section + release checklist
-Owns: `docs/ux-rules.md` (creates section V, all rules `[geplant]`),
+Owns: `docs/ux-rules.md` (creates section V, all rules `[planned]`),
 `RELEASING.md`.
 First commit of the branch. Lands the verbatim block from section 6 after
 the existing section U and the "Manual GNOME QA" bullet. Must come first:
@@ -807,11 +806,11 @@ Verified against the gate: its reference regex is `fn (stats)_[0-9]+[a-z]?_`, so
 `dedup_no_fuzzy` and `dedup_does_not_mutate_tags` are **invisible** to it — all
 four are kept verbatim as required, and the rule-named aggregate-level test
 `stats_9_group_key_dedups_top_artists_and_genres` is added alongside them.
-Without it the build fails the moment STATS-9 flips to `[aktiv]`.
+Without it the build fails the moment STATS-9 flips to `[active]`.
 
 **T1**
 No Rust test. Verification is `scripts/check-ux-traceability.sh` passing with
-ten new `[geplant]` rules and the RELEASING bullet in place.
+ten new `[planned]` rules and the RELEASING bullet in place.
 
 **T2**
 1. `migrating_a_v16_database_adds_the_listen_events_track_index` — open a DB at
@@ -996,95 +995,94 @@ Gates before every commit: `cargo fmt --check`,
 ## 6. `docs/ux-rules.md` — rule texts verbatim
 
 Append a new section **after the existing section U** and before the
-closing `---` / "Wenn beim Testen ein Fall auftaucht …" paragraph, keeping the
+closing `---` / "If a case comes up during testing …" paragraph, keeping the
 exact bullet shape the traceability gate parses
-(`- **ID** [status] [ebene] — …`). Land this block in T1 with every rule
-`[geplant]`; the tasks named in section 3 flip their own rules to `[aktiv]`.
+(`- **ID** [status] [level] — …`). Land this block in T1 with every rule
+`[planned]`; the tasks named in section 3 flip their own rules to `[active]`.
 
 ```markdown
 ## V. My Stats
 
-- **STATS-0** [geplant] [core] — Ein „play" ist überall dieselbe Sache:
-  mindestens 50 % des Tracks oder mindestens vier Minuten gehört. Genau diese
-  Ereignisse stehen in `listen_events`, und die My-Stats-Ansicht rechnet
-  ausschließlich aus ihnen — Hero-Zeit, Plays, Top-Listen, Spotlight, Genres,
-  Clock und Highlights sind Projektionen derselben Zeilenmenge. Der laufende
-  Zähler `tracks.play_count` speist die Ansicht nie; Zeit und Anzahl können
-  daher nicht auseinanderlaufen. Tages- und Stundengrenzen entstehen nicht in
-  SQL: die Kernfunktionen nehmen eine Zeitzone als Parameter und bucketen jedes
-  Ereignis einzeln durch sie hindurch, damit Sommer-/Winterzeit-Wechsel keine
-  Grenze verschieben. Alles ist lokal: kein Netz, keine Cloud, keine
-  Fremdquelle wird eingemischt.
-- **STATS-1** [geplant] [core] — Der Kopf zeigt die Gesamt-Hörzeit groß, eine
-  Vergleichs-Pill „▲ N % vs <Vorperiode>" im teal App-Akzent (nie im
-  Cover-Akzent) und die Subzeile „N plays · Ø X min/day · N artists" auf
-  Sekundär-Ton. Rechts steht das Zeitraum-Dropdown („<Jahr> so far / <Vorjahr> /
-  All time / Last 30 days"). Darunter läuft ein schlankes Area-Ribbon der
-  Hörzeit, dessen Achse **exakt dem gewählten Zeitraum** folgt — „2026 so far"
-  zeigt Jan–Jul, nie ein rollendes 12-Monats-Fenster. Der laufende Bucket ist
-  offen markiert (gestrichelt, hohler Punkt), der Peak gesetzt; Hover nennt den
-  exakten Wert. Fehlt eine Vorperiode mit Hörzeit, entfällt die Pill.
-- **STATS-2** [geplant] [core] — Das Artist-Spotlight ist das Herzstück:
-  #1-Artist mit großem Cover und Rang-Badge, Eyebrow „YOUR #1 ARTIST", Name,
-  Zeile „N plays · N h · N % of your listening", drei Top-Track-Chips sowie die
-  Aktionen Play (Container-Play über die Trackliste des Artists) und
-  „Go to artist" (regulärer NAV-Push mit Back-Historie). Hinter dem Cover liegt
-  ein dezenter Cover-Akzent-Glow — der Cover-Akzent bleibt Playback-Elementen
-  vorbehalten. Darunter nennt eine Ghost-Zeile die Ränge 2–5.
-- **STATS-3** [geplant] [core] — Das Genre-Spektrum ist **eine** horizontale
-  Segment-Leiste in Teal-Abstufungen mit Legende (Punkt · Name · %), gespeist
-  aus den Genre-Tags der Bibliothek. Die fünf stärksten Genres bilden eigene
-  Segmente, der Rest wird zu „Other" gebündelt; Tracks ohne Genre zählen weder
-  als Segment noch als „Other". Die Leiste ist reine Anzeige und keine
-  Navigation: Segmente und Legende sind nicht klickbar.
-- **STATS-4** [geplant] [core] — Unter dem Spektrum steht eine asymmetrische
-  Reihe (1.35fr / 1fr): links die Listening Clock als 24-Stunden-Histogramm aus
-  den Timestamps mit teal hervorgehobenen Peak-Stunden und Caption
-  („Peak 11 PM–1 AM · night owl"), rechts vier Highlight-Kacheln — Streak
-  (längste Folge aufeinanderfolgender lokaler Tage mit ≥ 1 play), Discovered
-  (im Zeitraum erstmals gespielte Tracks), Busiest day, On repeat (höchste
-  Play-Zahl) — plus der CTA „Smart Mix aus Top-Genres? · Create", der eine
-  echte Smart Playlist anlegt. Tages- und Stundengrenzen folgen der lokalen
-  Zeit des Nutzers, nicht UTC. Im schmalen Fenster klappt die Reihe per
-  AdwBreakpoint einspaltig, ohne dass sich die Reihenfolge ändert.
-- **STATS-5** [geplant] [core] — Top Tracks steht über die volle Breite:
-  nummerierte Liste mit Cover, Titel und Artist, relativem Play-Balken und
-  Play-Count, mit Sort-Toggle „by plays / by time". Der Balken ist relativ zum
-  Spitzenreiter der Liste, nie zu einem absoluten Maximum.
-- **STATS-6** [geplant] [core] — Leere und dünne Datenlagen werden nie als
-  leere Diagramme gezeigt. Ohne Hörhistorie im Zeitraum erscheint ein
-  freundlicher Leerzustand („Start listening to see your stats") statt Achsen
-  mit einem einsamen Balken. Bei dünner Datenlage wird die Granularität feiner
-  (Tage bzw. Wochen statt größtenteils leerer Monate).
-- **STATS-7** [geplant] [gtk] — My Stats ist kuratiert, nicht frei editierbar:
-  kein Drag-and-Drop-Widget-Board. Ein ⋮-Menü „Customize" blendet die Sektionen
-  Clock, Genres und Highlights per CheckButton ein und aus; die Auswahl bleibt
-  über Sitzungen erhalten. Mehr enthält das Menü nicht — das Spotlight ist
-  fest das Artist-Spotlight. Die Reihenfolge der Sektionen ist fix, Größen sind
-  nicht manuell veränderbar — Anpassung an die Fensterbreite geschieht
-  ausschließlich per AdwBreakpoint.
-- **STATS-8** [geplant] [gtk] — In My Stats gibt es keine Filter-Zeile und
-  keine Suche der Trackliste — das ist eine andere Ansicht. Die rechte
-  Now-Playing-Spalte verhält sich wie überall. Das Zeitraum-Dropdown ist der
-  einzige Ansichts-Regler dieser Ansicht.
-- **STATS-9** [geplant] [core] — **Dedup:** Unsaubere Tags dürfen Zahlen nicht
-  zersplittern. Top Artists, Top Genres, Album-Artist-Aggregate und das
-  Spotlight gruppieren über einen zweistufigen Schlüssel: liegt eine MBID vor,
-  gilt sie; sonst ein normalisierter Schlüssel aus Trim, Unicode-Casefold
-  (nicht nur ASCII), Whitespace-Kollaps und Diakritika-Faltung (NFKD ohne
-  Combining Marks). „Lorna Shore", „lorna shore" und „Lorna Shore " sind damit
-  ein Eintrag mit einer Summe. Der Schlüssel existiert nur zur Laufzeit: keine
-  gespeicherte Spalte, und die Ansicht schreibt **niemals** Tags zurück —
-  Statistik ist lesend. Angezeigt wird stets eine echte Original-Schreibweise
-  der Gruppe (die häufigste; bei Gleichstand die zuletzt gespielte, dann
-  alphabetisch), nie die normalisierte Form. **Geraten wird nie:**
-  zusammengefasst wird ausschließlich, was nach Normalisierung exakt gleich ist
-  — kein Fuzzy-Matching, keine Levenshtein-Distanz, kein Präfix-Merge, also
-  bleibt „Lorna Shore Band" von „Lorna Shore" getrennt. Fasst eine Gruppe
-  mindestens zwei Schreibweisen zusammen, weist ein dezenter Hinweis am
-  Listeneintrag darauf hin und führt in den Mehrfach-Tag-Editor der betroffenen
-  Tracks; das Vereinheitlichen bleibt eine Einladung, nie ein automatischer
-  Schreibvorgang.
+- **STATS-0** [planned] [core] — A "play" is the same thing everywhere: at
+  least 50 % of the track or at least four minutes listened. Exactly these
+  events live in `listen_events`, and the My Stats view computes exclusively
+  from them — hero time, plays, top lists, spotlight, genres, clock and
+  highlights are projections of the same row set. The running counter
+  `tracks.play_count` never feeds the view; time and count therefore cannot
+  drift apart. Day and hour boundaries do not arise in SQL: the core
+  functions take a timezone as a parameter and bucket every event
+  individually through it, so that daylight-saving transitions never shift a
+  boundary. Everything is local: no network, no cloud, no third-party source
+  is mixed in.
+- **STATS-1** [planned] [core] — The header shows total listening time large,
+  a comparison pill "▲ N % vs <previous period>" in the teal app accent
+  (never the cover accent) and the subline "N plays · Ø X min/day · N
+  artists" in secondary tone. At the right sits the period dropdown ("<year>
+  so far / <previous year> / All time / Last 30 days"). Below that runs a
+  slim area ribbon of listening time whose axis **follows exactly the chosen
+  period** — "2026 so far" shows Jan–Jul, never a rolling 12-month window.
+  The running bucket is marked open (dashed, hollow point), the peak is set;
+  hover names the exact value. If a previous period with listening time is
+  missing, the pill is dropped.
+- **STATS-2** [planned] [core] — The Artist Spotlight is the centerpiece:
+  #1 artist with a large cover and rank badge, eyebrow "YOUR #1 ARTIST",
+  name, line "N plays · N h · N % of your listening", three top-track chips,
+  and the actions Play (container play over the artist's track list) and
+  "Go to artist" (regular NAV push with back history). Behind the cover sits
+  a subtle cover-accent glow — the cover accent stays reserved for playback
+  elements. Below it, a ghost row names ranks 2–5.
+- **STATS-3** [planned] [core] — The Genre Spectrum is **one** horizontal
+  segment bar in teal gradations with a legend (dot · name · %), fed from the
+  library's genre tags. The five strongest genres form their own segments,
+  the rest is bundled into "Other"; tracks without a genre count neither as a
+  segment nor as "Other". The bar is pure display and not navigation:
+  segments and legend are not clickable.
+- **STATS-4** [planned] [core] — Below the spectrum sits an asymmetric row
+  (1.35fr / 1fr): on the left the Listening Clock as a 24-hour histogram from
+  the timestamps with teal-highlighted peak hours and a caption ("Peak
+  11 PM–1 AM · night owl"), on the right four highlight tiles — Streak
+  (longest run of consecutive local days with ≥ 1 play), Discovered (tracks
+  first played in the period), Busiest day, On repeat (highest play count) —
+  plus the CTA "Smart Mix from top genres? · Create", which creates a genuine
+  Smart Playlist. Day and hour boundaries follow the user's local time, not
+  UTC. In a narrow window the row collapses to a single column via
+  AdwBreakpoint, without the order changing.
+- **STATS-5** [planned] [core] — Top Tracks spans the full width: numbered
+  list with cover, title and artist, a relative play bar and play count, with
+  a sort toggle "by plays / by time". The bar is relative to the list's
+  frontrunner, never to an absolute maximum.
+- **STATS-6** [planned] [core] — Empty and sparse data situations are never
+  shown as empty charts. Without listening history in the period, a friendly
+  empty state appears ("Start listening to see your stats") instead of axes
+  with a single lonely bar. With sparse data the granularity becomes finer
+  (days or weeks instead of mostly empty months).
+- **STATS-7** [planned] [gtk] — My Stats is curated, not freely editable: no
+  drag-and-drop widget board. A ⋮ menu "Customize" shows and hides the Clock,
+  Genres and Highlights sections via CheckButton; the selection persists
+  across sessions. The menu contains nothing more — the spotlight is fixed as
+  the Artist Spotlight. The order of sections is fixed, sizes are not
+  manually adjustable — adaptation to window width happens exclusively via
+  AdwBreakpoint.
+- **STATS-8** [planned] [gtk] — In My Stats there is no filter row and no
+  search of the track list — that is a different view. The right Now Playing
+  column behaves as everywhere. The period dropdown is this view's only view
+  control.
+- **STATS-9** [planned] [core] — **Dedup:** Unclean tags must not splinter
+  numbers. Top Artists, Top Genres, album-artist aggregates and the spotlight
+  group over a two-stage key: if an MBID is present, it applies; otherwise a
+  normalized key from trim, Unicode casefold (not just ASCII), whitespace
+  collapse and diacritics folding (NFKD without combining marks). "Lorna
+  Shore", "lorna shore" and "Lorna Shore " are thus one entry with one sum.
+  The key exists only at runtime: no stored column, and the view **never**
+  writes tags back — stats are read-only. What is displayed is always a
+  genuine original spelling of the group (the most frequent one; on a tie the
+  most recently played, then alphabetical), never the normalized form.
+  **Never guessed:** what is merged is exclusively what is exactly equal
+  after normalization — no fuzzy matching, no Levenshtein distance, no prefix
+  merge, so "Lorna Shore Band" stays separate from "Lorna Shore". If a group
+  combines at least two spellings, a subtle hint at the list entry points
+  this out and leads into the multi-tag editor of the affected tracks;
+  unifying remains an invitation, never an automatic write.
 ```
 
 `RELEASING.md`, "Manual GNOME QA" (line 109), add one bullet (German prose is
@@ -1197,10 +1195,10 @@ not used there — match the file's English):
   at all.
 
 **Process**
-* The traceability gate fails the build if a rule is `[aktiv]` without a
+* The traceability gate fails the build if a rule is `[active]` without a
   rule-named `#[test]`. Flip each rule only in the task listed in section 3's
-  mapping table, never earlier — a rule that is `[aktiv]` before its UI exists is
-  a false claim even when the gate is green.
+  mapping table, never earlier — a rule that is `[active]` before its UI exists
+  is a false claim even when the gate is green.
 * `stats_view.rs` and `stats_screen.rs` both approach the 800-line limit —
   extract siblings as planned, do not trim doc comments to fit.
 * T1 must land before anything else: `RELEASING.md` referencing STATS-1..4 while
