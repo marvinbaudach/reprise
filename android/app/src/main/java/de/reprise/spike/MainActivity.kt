@@ -243,6 +243,11 @@ class MainActivity : ComponentActivity() {
         if (!ratings.shutdown()) {
             Log.w(TAG, "A rating was still being written when the screen closed")
         }
+        // Artwork deliberately gets no such drain. A cover is a read, so the
+        // requests still queued are dropped rather than waited for, and a read
+        // already running needs no help: the bindings count a handle's in-flight
+        // calls and the close below frees the Rust object only once the last one
+        // has returned. `TrackArtwork.shutdown` carries the reasoning.
         if (artworkDelegate.isInitialized()) {
             artworkDelegate.value.shutdown()
         }

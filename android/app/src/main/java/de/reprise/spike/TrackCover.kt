@@ -58,6 +58,11 @@ internal class TrackArtwork(
             if (!gate.accepts(request)) {
                 return@execute
             }
+            // Catching here is load-bearing rather than tidy: Android ends the
+            // process for an exception that escapes *any* thread, and one of the
+            // failures this catches is teardown itself — a read that reaches the
+            // library handle after `MainActivity.onDestroy` closed it is refused
+            // with `IllegalStateException`. See [shutdown].
             val image = runCatching { resolve(request.trackUri, request.size)?.let(decode) }
                 .onFailure { error ->
                     Log.w(TAG, "Could not read artwork for ${request.trackUri}", error)
@@ -74,6 +79,30 @@ internal class TrackArtwork(
         }
     }
 
+    /**
+     * Stops reading covers. It does not wait for the read in progress, and it
+     * must not: a cover request that never finishes is a request whose loss
+     * costs nothing, so discarding the queue is the whole point of stopping.
+     *
+     * That is where this parts company with [RatingWriter.shutdown], which sits
+     * beside it in `onDestroy` and drains what it queued. The difference is not
+     * how careful the two are, it is what they carry. A rating is a write that
+     * has to land exactly once; a cover is a read, and an abandoned read is
+     * indistinguishable from a row that scrolled away.
+     *
+     * `shutdownNow` is that discard and nothing more — it is not what makes the
+     * close below it safe. Interrupting a thread that sits inside a native call
+     * only raises a flag the call never reads, so it stops nothing already
+     * running, here or anywhere.
+     *
+     * What makes it safe is `MusicLibrary` itself. The generated bindings count
+     * a handle's in-flight calls and free the Rust object only when the last one
+     * is out, so a `trackArtwork` still running when the handle is closed keeps
+     * it alive and frees it itself on the way out; and a read that starts after
+     * the close is refused before it reaches native code, which [load] catches.
+     * Both halves are pinned by `TrackArtworkTest`, because both are properties
+     * of a generated file that a UniFFI upgrade rewrites.
+     */
     fun shutdown() {
         worker.shutdownNow()
     }
