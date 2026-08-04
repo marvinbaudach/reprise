@@ -14,6 +14,14 @@ cd "$root"
 lib=scripts/lib
 palette=data/brand/palette.toml
 font=data/brand/fonts/Fraunces-SemiBold.ttf
+read -r palette_teal palette_violet < <(python3 - "$palette" <<'PY'
+import sys
+import tomllib
+with open(sys.argv[1], "rb") as source:
+    palette = tomllib.load(source)
+print(palette["reprise_teal"], palette["reprise_violet"])
+PY
+)
 mode=${1:-write}
 if [[ $mode != write && $mode != --check ]]; then
   printf 'usage: %s [--check]\n' "$0" >&2
@@ -92,8 +100,8 @@ build_surface_tree() { # <tree root relative to output> <active variant>
     python3 "$lib/svg_to_vectordrawable.py" "$variant_mark" \
       "$android/drawable/ic_launcher_foreground_${variant}.xml" \
       --fixed-offset 6 \
-      --colour-map '#4FDBD4=@color/reprise_teal' \
-      --colour-map '#A855F7=@color/reprise_violet'
+      --colour-map "$palette_teal=@color/reprise_teal" \
+      --colour-map "$palette_violet=@color/reprise_violet"
   done
   python3 "$lib/svg_to_vectordrawable.py" "$mark_mono" \
     "$android/drawable/ic_launcher_monochrome.xml" \

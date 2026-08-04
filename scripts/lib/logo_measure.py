@@ -118,6 +118,59 @@ def ink_components(png):
     return count
 
 
+def _foreground_components(mask):
+    """Count material foreground components in a precomputed boolean mask."""
+    h = len(mask)
+    w = len(mask[0]) if h else 0
+    floor = max(MIN_HOLE_PIXELS, int(MIN_HOLE_SHARE * w * h))
+    seen = [[False] * w for _ in range(h)]
+    count = 0
+    for sy in range(h):
+        for sx in range(w):
+            if seen[sy][sx] or not mask[sy][sx]:
+                continue
+            queue = deque([(sx, sy)])
+            seen[sy][sx] = True
+            area = 0
+            while queue:
+                x, y = queue.popleft()
+                area += 1
+                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    nx, ny = x + dx, y + dy
+                    if (0 <= nx < w and 0 <= ny < h and
+                            not seen[ny][nx] and mask[ny][nx]):
+                        seen[ny][nx] = True
+                        queue.append((nx, ny))
+            if area >= floor:
+                count += 1
+    return count
+
+
+def circle_clip(png, radius_share):
+    """Return clipped alpha share and component counts under a centred circle."""
+    image = _rgba(png)
+    w, h = image.size
+    alpha = image.getchannel("A").load()
+    cx, cy = w / 2, h / 2
+    radius_px = radius_share * w
+    total_alpha = clipped_alpha = 0
+    before = [[False] * w for _ in range(h)]
+    after = [[False] * w for _ in range(h)]
+    for y in range(h):
+        for x in range(w):
+            value = alpha[x, y]
+            total_alpha += value
+            ink = value >= 128
+            before[y][x] = ink
+            inside = math.hypot(x + 0.5 - cx, y + 0.5 - cy) <= radius_px
+            if not inside:
+                clipped_alpha += value
+            elif ink:
+                after[y][x] = True
+    share = clipped_alpha / total_alpha if total_alpha else 0.0
+    return share, _foreground_components(before), _foreground_components(after)
+
+
 def fill_ratio(png):
     """Anteil der Live-Fläche, den die Bounding-Box der Marke belegt."""
     w, h, bg = _alpha_mask(png)
@@ -476,6 +529,9 @@ def main():
         print(f"{overlap(args[0], args[1]):.4f}")
     elif cmd == "outline-overlap":
         print(f"{outline_overlap(args[0], args[1]):.4f}")
+    elif cmd == "circle-clip":
+        share, before, after = circle_clip(args[0], float(args[1]))
+        print(f"{share:.6f} {before} {after}")
     else:
         raise SystemExit(f"unknown command: {cmd}")
 
