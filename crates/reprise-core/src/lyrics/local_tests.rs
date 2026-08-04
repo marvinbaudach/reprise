@@ -47,10 +47,6 @@ struct VecLibrarySource {
 }
 
 impl crate::library::source::LibrarySource for VecLibrarySource {
-    fn rhythmbox_import_capability(&self) -> crate::library::source::RhythmboxImportCapability {
-        crate::library::source::RhythmboxImportCapability::Unsupported
-    }
-
     fn residence_token(&self, _at: &Path) -> Option<i64> {
         None
     }

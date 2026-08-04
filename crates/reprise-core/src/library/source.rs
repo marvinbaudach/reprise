@@ -10,11 +10,8 @@ use std::time::SystemTime;
 
 use crate::models::MissingReason;
 
-mod capabilities;
-
 pub(crate) use super::source_unix::{device_id, nearest_existing_ancestor};
 use super::source_unix::{file_identity, nearest_existing_ancestor_dev};
-pub use capabilities::RhythmboxImportCapability;
 
 /// The sibling-order guarantee requested from a library-source traversal.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -221,13 +218,6 @@ pub(crate) fn walk_with(
 /// so a source that answers the primitive gets the verdict for free and cannot
 /// get it wrong.
 pub trait LibrarySource: Send + Sync {
-    /// Whether this source can address a Rhythmbox collection chosen by its
-    /// surface.
-    ///
-    /// There is deliberately no default. Every adapter must state whether the
-    /// concept exists in its storage world instead of inheriting a guess.
-    fn rhythmbox_import_capability(&self) -> RhythmboxImportCapability;
-
     /// Returns the stable residence token of the nearest reachable location at
     /// `at`, or `None` when this source cannot provide one.
     fn residence_token(&self, at: &Path) -> Option<i64>;
@@ -354,10 +344,6 @@ pub struct UnixLibrarySource;
 pub(crate) use super::source_test_support::ExistingPathSource;
 
 impl LibrarySource for UnixLibrarySource {
-    fn rhythmbox_import_capability(&self) -> RhythmboxImportCapability {
-        RhythmboxImportCapability::Supported
-    }
-
     fn residence_token(&self, at: &Path) -> Option<i64> {
         nearest_existing_ancestor_dev(at).map(|device| device as i64)
     }
@@ -561,10 +547,6 @@ mod tests {
     }
 
     impl LibrarySource for DocumentTreeSource {
-        fn rhythmbox_import_capability(&self) -> super::RhythmboxImportCapability {
-            super::RhythmboxImportCapability::Unsupported
-        }
-
         fn residence_token(&self, _at: &Path) -> Option<i64> {
             self.provider_tree_id?.strip_prefix("tree-")?.parse().ok()
         }
@@ -679,10 +661,6 @@ mod tests {
     }
 
     impl LibrarySource for DocumentTreeTraversalSource {
-        fn rhythmbox_import_capability(&self) -> super::RhythmboxImportCapability {
-            super::RhythmboxImportCapability::Unsupported
-        }
-
         fn residence_token(&self, _at: &Path) -> Option<i64> {
             Some(41)
         }

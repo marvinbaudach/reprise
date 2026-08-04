@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 use super::source::{
     LibraryDirectoryEntry, LibraryLinkMode, LibraryPathMetadata, LibraryPathPresence,
     LibraryReadHandle, LibrarySource, LibraryWalkOrder, LibraryWalkVisitor,
-    RhythmboxImportCapability,
 };
 
 /// A source that reports every path as present, carrying only the
@@ -27,10 +26,6 @@ impl ExistingPathSource {
 }
 
 impl LibrarySource for ExistingPathSource {
-    fn rhythmbox_import_capability(&self) -> RhythmboxImportCapability {
-        RhythmboxImportCapability::Unsupported
-    }
-
     fn residence_token(&self, _at: &Path) -> Option<i64> {
         None
     }
@@ -83,10 +78,6 @@ impl LibrarySource for ExistingPathSource {
 pub(crate) struct UnknownProbeSource;
 
 impl LibrarySource for UnknownProbeSource {
-    fn rhythmbox_import_capability(&self) -> RhythmboxImportCapability {
-        RhythmboxImportCapability::Unsupported
-    }
-
     fn residence_token(&self, _at: &Path) -> Option<i64> {
         None
     }
@@ -127,10 +118,6 @@ impl LibrarySource for UnknownProbeSource {
 pub(crate) struct NamedUnixSource(pub(crate) &'static str);
 
 impl LibrarySource for NamedUnixSource {
-    fn rhythmbox_import_capability(&self) -> RhythmboxImportCapability {
-        RhythmboxImportCapability::Supported
-    }
-
     fn residence_token(&self, at: &Path) -> Option<i64> {
         super::source::UnixLibrarySource.residence_token(at)
     }

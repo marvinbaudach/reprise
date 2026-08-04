@@ -5,13 +5,13 @@ branch: feature/rhythmbox-boundary
 phase: complete
 created: 2026-08-03
 ---
-# Multi-Surface P3 — Rhythmbox als ausdrueckliche Quellenfaehigkeit
+# Multi-Surface P3 — Rhythmbox ueber generische Quellenprimitive lesen
 
-**Ziel:** Der Rhythmbox-Import ist eine ausdruecklich optionale Faehigkeit
-einer `LibrarySource`. Eine Pfadquelle unterstuetzt diese Faehigkeit, ein
-DocumentsProvider-Baum nicht. Eine Surface bietet den Einstieg nur an, wenn
-ihre Quelle die Faehigkeit besitzt; ein unbekanntes Sondierungsergebnis wird
-nicht als bestaetigte Abwesenheit ausgegeben.
+**Ziel:** Der Rhythmbox-Import greift in `reprise-core` nicht direkt auf das
+Dateisystem zu. Die GNOME-Surface entscheidet ueber ihren eigenen Einstieg und
+behandelt ein unbekanntes Sondierungsergebnis nicht als bestaetigte
+Abwesenheit. Der universelle `LibrarySource`-Vertrag traegt keine Frage ueber
+eine einzelne fremde GNOME-Anwendung.
 
 **Basis:** `dev` (`5fff82d152`).
 
@@ -38,35 +38,17 @@ nicht als bestaetigte Abwesenheit ausgegeben.
 
 ## Vertrag und Naht
 
-`LibrarySource` erhaelt die verpflichtende Methode
-`rhythmbox_import_capability() -> RhythmboxImportCapability`. Der benannte
-Enum hat genau zwei Werte:
-
-- `Supported`: Die Quelle hat eine Vorstellung von einer importierbaren
-  Rhythmbox-Sammlung und kann deren von der Surface gewaehlte Pfade mit ihren
-  bestehenden Lese- und Sondierungsoperationen beantworten.
-- `Unsupported`: Diese Speicherwelt besitzt keine solche Sammlung. Ein
-  DocumentsProvider-Baum antwortet so; die Surface darf den Einstieg nicht
-  anbieten.
-
-Es gibt keine Vorgabeimplementierung. Jeder Adapter muss die Frage bewusst
-beantworten und scheitert sonst beim Kompilieren. Der Unix-Pfadadapter ist
-`Supported`, der SAF-Adapter `Unsupported`.
-
-Die Faehigkeit ist nicht die Anwesenheit einer konkreten Datei. Fuer diese
-zweite Frage bleibt `LibrarySource::probe` zustaendig:
+Die GNOME-Surface besitzt Pfadwahl und Angebotsregel. Fuer die konkrete Datei
+bleibt `LibrarySource::probe` zustaendig:
 
 - `Present` mit einer regulaeren Datei bestaetigt den Einstieg.
 - `Absent` widerlegt ihn.
 - `Present` ohne regulaere Datei widerlegt genau die erwartete Dateiform.
 - `Unknown` bleibt unbekannt und darf nicht in `Absent` umgedeutet werden.
 
-Die GNOME-Surface behaelt die Pfadwahl. Ihre Angebotsregel kombiniert die
-Faehigkeit der aktiven Quelle mit deren `LibraryPathPresence`. Bei
-`Unsupported` bleibt die Zeile verborgen. Bei `Supported` bleibt das heutige
-Desktop-Verhalten fuer vorhandene Datei, fehlenden Pfad und Verzeichnis
-unveraendert; `Unknown` wird nicht mehr als Beweis fuer "kein Rhythmbox"
-behandelt.
+Damit bleibt das heutige Desktop-Verhalten fuer vorhandene Datei, fehlenden
+Pfad und Verzeichnis unveraendert; `Unknown` wird nicht mehr als Beweis fuer
+"kein Rhythmbox" behandelt.
 
 Core liest `rhythmdb.xml` und `playlists.xml` ueber `open_read`, gewinnt den
 Aenderungszeitpunkt aus `probe` und versucht bei `Unknown` weiterhin den
@@ -74,6 +56,36 @@ eigentlichen Lesevorgang. Nur `Absent` beziehungsweise eine bestaetigte
 Nicht-Datei unterdrueckt den optionalen Playlist-Import. Die bestehenden
 pfadbasierten Funktionen bleiben als schmale Unix-Adapter erhalten, damit
 Desktop-Aufrufer und ihre Tests unveraendert bleiben.
+
+Die quellengestuetzten Importfunktionen behalten `&dyn LibrarySource` als
+Leser. Das ist bereits die echte Speichernaht fuer `open_read` und `probe` und
+hat sowohl Produktions- als auch in-memory Adapter. Ein kleiner
+Rhythmbox-spezifischer Trait daneben wuerde dieselben Primitive nur duplizieren.
+Ein konkreter `UnixLibrarySource`-Parameter waere enger, wuerde aber den
+quellenreinen Test ohne Dateisystem verwerfen und Core wieder an eine konkrete
+Speicherimplementierung binden.
+
+Nichts im Typ verhindert eine kuenftige nicht-GNOME-Surface daran, diese
+Importfunktionen bewusst aufzurufen. Dafuer gibt es heute keinen Aufrufer und
+keine Anforderung: der gesamte Produktionsfluss liegt in
+`preference_rhythmbox.rs`, waehrend CLI, MCP und Android keine Verdrahtung
+besitzen. Ein Abwehr-Guard gegen diesen nicht existierenden Aufrufer waere
+keine Sicherheitsgrenze.
+
+## Korrektur nach Owner-Review
+
+Die ersten vier Commits dieses Plans versuchten eine verpflichtende
+`RhythmboxImportCapability` auf `LibrarySource`. Die anschliessende Messung
+widerlegte diese Form: Zwoelf Implementierungen mussten die Methode tragen,
+aber es gab nur zwei Produktionsaufrufe. Der einzige Oberflaechenaufruf fragte
+einen konkreten `UnixLibrarySource`; der zweite war der Core-Guard selbst.
+
+Die Korrektur entfernt deshalb die Trait-Methode, den Enum, alle zwoelf
+Implementierungen, `require_rhythmbox_import` und `UnsupportedSource`. Sie
+behaelt die unabhaengig richtigen Teile: alle fuenf direkten
+Dateisystemzugriffe bleiben entfernt, XML wird weiter ueber `LibrarySource`
+gelesen, und nur `Absent` beziehungsweise eine bestaetigte Nicht-Datei darf das
+GNOME-Angebot unterdruecken.
 
 ## Vertikale Umsetzung
 
@@ -83,26 +95,24 @@ Nur dieses Dokument. Keine Verhaltensaenderung.
 
 Commit: `docs(library): design optional Rhythmbox capability`
 
-### Commit 2 — Core-Vertrag und Import
+### Commit 2 — Core-Vertrag und Import (historisch, korrigiert)
 
-- `RhythmboxImportCapability` und die verpflichtende Trait-Methode einfuehren.
-- Unix- und SAF-Adapter sowie alle Testadapter bewusst klassifizieren.
+- Die spaeter zurueckgezogene `RhythmboxImportCapability` einfuehren.
 - Quellenbewusste Parser fuer Datenbank und Playlisten einfuehren; die
   bestehenden Pfadfunktionen bleiben unveraenderte Unix-Wrapper.
 - Prescan-Metadaten, -Lesen und optionale Playlisten durch dieselbe Quelle
   fuehren.
-- Eine in-memory Quelle beweist Lesen ohne Dateisystem; eine nicht
-  unterstuetzende Quelle beweist den expliziten Fehler. Beide neuen
-  Verhaltenswaechter werden vor der Implementierung rot beobachtet.
+- Eine in-memory Quelle beweist Lesen ohne Dateisystem. Der spaeter entfernte
+  Unsupported-Test belegte nur den spekulativen Guard.
 
 Commit: `refactor(library): make Rhythmbox import a source capability`
 
-### Commit 3 — GNOME-Angebotsregel
+### Commit 3 — GNOME-Angebotsregel (historisch, korrigiert)
 
 - Die vorhandene Pfadentscheidung beibehalten.
-- Angebotsregel aus Quellenfaehigkeit und verlustfreier Praesenz bilden.
-- `Unsupported` verbirgt die Zeile; `Unknown` wird nicht als `Absent`
-  behandelt.
+- Angebotsregel zunaechst aus Quellenfaehigkeit und verlustfreier Praesenz
+  bilden; die Korrektur reduziert sie auf Praesenz allein.
+- `Unknown` wird nicht als `Absent` behandelt.
 - Die vorhandenen Desktop-Tests bleiben bytegleich und gruen. Neue
   Policy-Tests werden vor der Implementierung rot beobachtet.
 
@@ -116,6 +126,16 @@ Commit: `refactor(gnome): gate Rhythmbox import on source capability`
   verbleibenden manuellen Pruefungen aktualisieren.
 
 Commit: `docs: record the optional Rhythmbox boundary`
+
+### Commit 5 — Scoped correction
+
+- Die spekulative Faehigkeit vom universellen Vertrag und allen Adaptern
+  entfernen.
+- Den nicht belegten Core-Guard samt Fehlerfall entfernen.
+- Quellenbasiertes Lesen und den `Unknown`-Waechter behalten.
+- Messung, Nahtentscheidung und fehlende nicht-GNOME-Sperre dokumentieren.
+
+Commit: `refactor(library): withdraw the Rhythmbox source capability`
 
 ## Gates vor jedem Commit
 

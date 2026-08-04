@@ -327,10 +327,6 @@ mod tests {
     }
 
     impl crate::library::source::LibrarySource for InMemoryAlbumSource {
-        fn rhythmbox_import_capability(&self) -> crate::library::source::RhythmboxImportCapability {
-            crate::library::source::RhythmboxImportCapability::Unsupported
-        }
-
         fn residence_token(&self, _at: &std::path::Path) -> Option<i64> {
             None
         }

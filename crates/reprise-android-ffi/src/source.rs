@@ -9,7 +9,7 @@ use crate::source_names::SourceNames;
 use reprise_core::library::source::{
     LibraryDirectoryEntry, LibraryEntry, LibraryLinkMode, LibraryPathMetadata, LibraryPathPresence,
     LibraryReadHandle, LibrarySource, LibraryWalkControl, LibraryWalkError, LibraryWalkErrorKind,
-    LibraryWalkItem, LibraryWalkOrder, LibraryWalkVisitor, RhythmboxImportCapability,
+    LibraryWalkItem, LibraryWalkOrder, LibraryWalkVisitor,
 };
 
 /// Provider facts returned by one SAF document query.
@@ -128,10 +128,6 @@ impl BridgedSource {
 }
 
 impl LibrarySource for BridgedSource {
-    fn rhythmbox_import_capability(&self) -> RhythmboxImportCapability {
-        RhythmboxImportCapability::Unsupported
-    }
-
     fn residence_token(&self, at: &Path) -> Option<i64> {
         self.source
             .residence_token(path_uri(at))

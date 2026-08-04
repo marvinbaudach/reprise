@@ -16,10 +16,8 @@ fn import_row_requires_a_detected_rhythmdb_file() {
 }
 
 #[test]
-fn import_offer_distinguishes_capability_from_unknown_presence() {
-    use reprise_core::library::source::{
-        LibraryPathMetadata, LibraryPathPresence, RhythmboxImportCapability,
-    };
+fn import_offer_treats_unknown_as_not_absent() {
+    use reprise_core::library::source::{LibraryPathMetadata, LibraryPathPresence};
 
     let file = || {
         LibraryPathPresence::Present(LibraryPathMetadata {
@@ -38,26 +36,10 @@ fn import_offer_distinguishes_capability_from_unknown_presence() {
         identity: None,
     });
 
-    assert!(!should_offer_rhythmbox_import(
-        RhythmboxImportCapability::Unsupported,
-        file()
-    ));
-    assert!(!should_offer_rhythmbox_import(
-        RhythmboxImportCapability::Supported,
-        LibraryPathPresence::Absent
-    ));
-    assert!(!should_offer_rhythmbox_import(
-        RhythmboxImportCapability::Supported,
-        directory
-    ));
-    assert!(should_offer_rhythmbox_import(
-        RhythmboxImportCapability::Supported,
-        LibraryPathPresence::Unknown
-    ));
-    assert!(should_offer_rhythmbox_import(
-        RhythmboxImportCapability::Supported,
-        file()
-    ));
+    assert!(!should_offer_rhythmbox_import(LibraryPathPresence::Absent));
+    assert!(!should_offer_rhythmbox_import(directory));
+    assert!(should_offer_rhythmbox_import(LibraryPathPresence::Unknown));
+    assert!(should_offer_rhythmbox_import(file()));
 }
 
 #[test]

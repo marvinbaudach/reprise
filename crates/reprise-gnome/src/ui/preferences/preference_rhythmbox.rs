@@ -12,8 +12,7 @@ use reprise_core::library::rhythmbox_import::{
     RhythmboxTrackStats,
 };
 use reprise_core::library::source::{
-    LibraryLinkMode, LibraryPathPresence, LibrarySource, RhythmboxImportCapability,
-    UnixLibrarySource,
+    LibraryLinkMode, LibraryPathPresence, LibrarySource, UnixLibrarySource,
 };
 
 use super::strings;
@@ -74,23 +73,14 @@ fn default_rhythmdb_path() -> PathBuf {
 }
 
 fn rhythmbox_data_available(rhythmdb_path: &Path) -> bool {
-    should_offer_rhythmbox_import(
-        UnixLibrarySource.rhythmbox_import_capability(),
-        UnixLibrarySource.probe(rhythmdb_path, LibraryLinkMode::Follow),
-    )
+    should_offer_rhythmbox_import(UnixLibrarySource.probe(rhythmdb_path, LibraryLinkMode::Follow))
 }
 
-fn should_offer_rhythmbox_import(
-    capability: RhythmboxImportCapability,
-    presence: LibraryPathPresence,
-) -> bool {
-    match (capability, presence) {
-        (RhythmboxImportCapability::Unsupported, _) => false,
-        (RhythmboxImportCapability::Supported, LibraryPathPresence::Present(metadata)) => {
-            metadata.is_file
-        }
-        (RhythmboxImportCapability::Supported, LibraryPathPresence::Absent) => false,
-        (RhythmboxImportCapability::Supported, LibraryPathPresence::Unknown) => true,
+fn should_offer_rhythmbox_import(presence: LibraryPathPresence) -> bool {
+    match presence {
+        LibraryPathPresence::Present(metadata) => metadata.is_file,
+        LibraryPathPresence::Absent => false,
+        LibraryPathPresence::Unknown => true,
     }
 }
 

@@ -10,8 +10,7 @@ use rusqlite::OptionalExtension;
 
 use crate::db::Db;
 use crate::library::source::{
-    LibraryLinkMode, LibraryPathPresence, LibrarySource, RhythmboxImportCapability,
-    UnixLibrarySource,
+    LibraryLinkMode, LibraryPathPresence, LibrarySource, UnixLibrarySource,
 };
 use thiserror::Error;
 
@@ -88,8 +87,6 @@ pub struct RhythmboxPlaylistSummary {
 
 #[derive(Debug, Error)]
 pub enum RhythmboxImportError {
-    #[error("this library source does not support Rhythmbox import")]
-    UnsupportedSource,
     #[error("could not read Rhythmbox database: {0}")]
     Io(#[from] std::io::Error),
     #[error("invalid Rhythmbox XML: {0}")]
@@ -192,7 +189,6 @@ pub fn parse_rhythmdb_with_source(
     source: &dyn LibrarySource,
     path: &Path,
 ) -> Result<Vec<RhythmboxTrackStats>, RhythmboxImportError> {
-    require_rhythmbox_import(source)?;
     let file = source.open_read(path)?;
     let mut reader = Reader::from_reader(BufReader::new(file));
     reader.config_mut().trim_text(true);
@@ -422,7 +418,6 @@ pub fn prescan_rhythmdb_with_source(
     db: &Db,
     library_root: Option<&str>,
 ) -> Result<RhythmboxPrescanResult, RhythmboxImportError> {
-    require_rhythmbox_import(source)?;
     let conn = db.conn();
     let last_modified = match source.probe(rhythmdb_path, LibraryLinkMode::Follow) {
         LibraryPathPresence::Present(metadata) if metadata.is_file => metadata.modified,
@@ -580,7 +575,6 @@ pub fn parse_playlists_with_source(
     source: &dyn LibrarySource,
     path: &Path,
 ) -> Result<Vec<RhythmboxPlaylist>, RhythmboxImportError> {
-    require_rhythmbox_import(source)?;
     let file = source.open_read(path)?;
     let mut reader = Reader::from_reader(BufReader::new(file));
     reader.config_mut().trim_text(true);
@@ -665,13 +659,6 @@ pub fn parse_playlists_with_source(
             _ => {}
         }
         buffer.clear();
-    }
-}
-
-fn require_rhythmbox_import(source: &dyn LibrarySource) -> Result<(), RhythmboxImportError> {
-    match source.rhythmbox_import_capability() {
-        RhythmboxImportCapability::Supported => Ok(()),
-        RhythmboxImportCapability::Unsupported => Err(RhythmboxImportError::UnsupportedSource),
     }
 }
 

@@ -6,37 +6,23 @@ use tempfile::tempdir;
 use crate::library::source::{
     LibraryDirectoryEntry, LibraryLinkMode, LibraryPathMetadata, LibraryPathPresence,
     LibraryReadHandle, LibrarySource, LibraryWalkOrder, LibraryWalkVisitor,
-    RhythmboxImportCapability,
 };
 
 use super::*;
 
 struct MemoryRhythmboxSource {
-    capability: RhythmboxImportCapability,
     files: std::collections::HashMap<PathBuf, Vec<u8>>,
 }
 
 impl MemoryRhythmboxSource {
-    fn supported(files: impl IntoIterator<Item = (PathBuf, Vec<u8>)>) -> Self {
+    fn new(files: impl IntoIterator<Item = (PathBuf, Vec<u8>)>) -> Self {
         Self {
-            capability: RhythmboxImportCapability::Supported,
             files: files.into_iter().collect(),
-        }
-    }
-
-    fn unsupported() -> Self {
-        Self {
-            capability: RhythmboxImportCapability::Unsupported,
-            files: std::collections::HashMap::new(),
         }
     }
 }
 
 impl LibrarySource for MemoryRhythmboxSource {
-    fn rhythmbox_import_capability(&self) -> RhythmboxImportCapability {
-        self.capability
-    }
-
     fn residence_token(&self, _at: &Path) -> Option<i64> {
         None
     }
@@ -96,7 +82,7 @@ fn source_backed_prescan_reads_both_xml_inputs_without_filesystem_paths() {
 <playlist name="Source only" type="static"><location>{track_uri}</location></playlist>
 </rhythmdb-playlists>"#
     );
-    let source = MemoryRhythmboxSource::supported([
+    let source = MemoryRhythmboxSource::new([
         (rhythmdb_path.clone(), rhythmdb.into_bytes()),
         (playlists_path.clone(), playlists.into_bytes()),
     ]);
@@ -119,19 +105,6 @@ fn source_backed_prescan_reads_both_xml_inputs_without_filesystem_paths() {
         result.last_modified,
         Some(std::time::SystemTime::UNIX_EPOCH)
     );
-}
-
-#[test]
-fn unsupported_source_rejects_import_before_reading() {
-    let result = parse_rhythmdb_with_source(
-        &MemoryRhythmboxSource::unsupported(),
-        Path::new("provider:/rhythmdb.xml"),
-    );
-
-    assert!(matches!(
-        result,
-        Err(RhythmboxImportError::UnsupportedSource)
-    ));
 }
 
 #[test]
