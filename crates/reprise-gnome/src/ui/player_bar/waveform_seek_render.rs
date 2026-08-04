@@ -12,7 +12,7 @@ pub(super) fn draw(
     cr: &gtk4::cairo::Context,
     width: i32,
     height: i32,
-    state: &State,
+    state: &mut State,
 ) {
     if width <= 0 || height <= 0 {
         return;
@@ -43,6 +43,7 @@ pub(super) fn draw(
             state,
             BarDrawStyle {
                 color: (r, g, b),
+                centroid: &state.previous_centroid,
                 build_progress: 1.0,
                 opacity: 1.0 - state.crossfade_progress,
             },
@@ -55,6 +56,7 @@ pub(super) fn draw(
             state,
             BarDrawStyle {
                 color: (r, g, b),
+                centroid: &state.shaped_centroid,
                 build_progress: 1.0,
                 opacity: state.crossfade_progress,
             },
@@ -68,21 +70,48 @@ pub(super) fn draw(
             state,
             BarDrawStyle {
                 color: (r, g, b),
+                centroid: &state.shaped_centroid,
                 build_progress: state.build_progress,
                 opacity: 1.0,
             },
         );
     }
 
-    // Playhead: a 1 px line, as narrow as a position marker gets. Outside the
-    // mini player it carries a slim glow beside it — see `draw_playhead`.
-    let playhead_x = (state.fraction * w).clamp(0.5, (w - 0.5).max(0.5));
-    draw_playhead(cr, w, h, playhead_x, (r, g, b), state);
+    let playhead_x = (state.fraction * w).clamp(1.5, (w - 1.5).max(1.5));
+    let head_colour = if state.raw_centroid.is_empty() {
+        (r, g, b)
+    } else {
+        state
+            .head_colour
+            .unwrap_or_else(|| spectral_colour(centroid_at(&state.raw_centroid, state.fraction)))
+    };
+    let top = (h - state.max_bar_height) / 2.0;
+    let decorations_are_live =
+        !state.fill_bars && state.build_progress >= 1.0 && state.crossfade_progress >= 1.0;
+    if decorations_are_live {
+        crate::ui::player_bar::waveform_playhead::draw_afterglow(
+            cr,
+            playhead_x,
+            top,
+            state.max_bar_height,
+            head_colour,
+        );
+    }
+    crate::ui::player_bar::waveform_playhead::draw_playhead(
+        cr,
+        playhead_x,
+        top,
+        state.max_bar_height,
+        head_colour,
+        decorations_are_live,
+        PLAYHEAD_ALPHA,
+    );
 }
 
 #[derive(Clone, Copy)]
-struct BarDrawStyle {
+struct BarDrawStyle<'a> {
     color: (f64, f64, f64),
+    centroid: &'a [f32],
     build_progress: f64,
     opacity: f64,
 }
@@ -97,83 +126,11 @@ const PLAYED_MIN_ALPHA: f64 = 0.55;
 const PLAYED_LIGHT_FLOOR: f64 = 0.74;
 const PLAYED_LIGHT_PER_PRESSURE: f64 = 0.16;
 const PLAYED_LIGHT_PER_SWELL: f64 = 0.10;
-/// Half-width of the playhead's glow, in device-independent pixels beside the
-/// 1 px line. Deliberately small: this sits where the user aims.
-const PLAYHEAD_GLOW_REST_PX: f64 = 2.0;
-const PLAYHEAD_GLOW_PER_PRESSURE_PX: f64 = 4.0;
-const PLAYHEAD_GLOW_ALPHA_REST: f64 = 0.22;
-const PLAYHEAD_GLOW_ALPHA_PER_PRESSURE: f64 = 0.26;
 
 pub(super) fn played_light(pressure: f64, swell: f64) -> f64 {
     PLAYED_LIGHT_FLOOR
         + PLAYED_LIGHT_PER_PRESSURE * pressure.clamp(0.0, 1.0)
         + PLAYED_LIGHT_PER_SWELL * swell.clamp(0.0, 1.0)
-}
-
-/// Half-width of the glow beside the playhead line.
-///
-/// It follows `pressure`, not `kick`. Four attempts drove something here from
-/// the raw beat — a lens twice, a radial glow, then a pulsing dot — and all
-/// four were rejected on sight for the same reason: at five to seven kicks a
-/// second this is the one surface the eye is aiming at, and anything answering
-/// per beat reads as flicker rather than as life. `pressure` moves over
-/// seconds, so it cannot flicker at all, and the line stays a line.
-pub(super) fn playhead_glow_half_width(pressure: f64) -> f64 {
-    PLAYHEAD_GLOW_REST_PX + PLAYHEAD_GLOW_PER_PRESSURE_PX * pressure.clamp(0.0, 1.0)
-}
-
-pub(super) fn playhead_glow_alpha(pressure: f64) -> f64 {
-    PLAYHEAD_GLOW_ALPHA_REST + PLAYHEAD_GLOW_ALPHA_PER_PRESSURE * pressure.clamp(0.0, 1.0)
-}
-
-pub(super) fn reactive_light_is_active(
-    fill_bars: bool,
-    drag_fraction: Option<f64>,
-    build_progress: f64,
-    crossfade_progress: f64,
-) -> bool {
-    !fill_bars && drag_fraction.is_none() && build_progress >= 1.0 && crossfade_progress >= 1.0
-}
-
-fn draw_playhead(
-    cr: &gtk4::cairo::Context,
-    width: f64,
-    height: f64,
-    x: f64,
-    color: (f64, f64, f64),
-    state: &State,
-) {
-    let (r, g, b) = color;
-    let top = (height - state.max_bar_height) / 2.0;
-
-    // The mini player is 46 bars wide; even a slim glow would wash it out.
-    let glow_is_live = reactive_light_is_active(
-        state.fill_bars,
-        state.drag_fraction,
-        state.build_progress,
-        state.crossfade_progress,
-    );
-    if glow_is_live {
-        let half = playhead_glow_half_width(state.bass_pressure);
-        let alpha = playhead_glow_alpha(state.bass_pressure);
-        cr.save().ok();
-        cr.rectangle(0.0, 0.0, width, height);
-        cr.clip();
-        cr.set_operator(gtk4::cairo::Operator::Add);
-        let gradient = gtk4::cairo::LinearGradient::new(x - half, 0.0, x + half, 0.0);
-        gradient.add_color_stop_rgba(0.0, r, g, b, 0.0);
-        gradient.add_color_stop_rgba(0.5, r, g, b, alpha);
-        gradient.add_color_stop_rgba(1.0, r, g, b, 0.0);
-        if cr.set_source(&gradient).is_ok() {
-            cr.rectangle(x - half, top, 2.0 * half, state.max_bar_height);
-            let _ = cr.fill();
-        }
-        cr.restore().ok();
-    }
-
-    cr.set_source_rgba(r, g, b, PLAYHEAD_ALPHA);
-    cr.rectangle(x - 0.5, top, 1.0, state.max_bar_height);
-    let _ = cr.fill();
 }
 
 /// Brightness of an already-played bar: dim at the start of the track, full at
@@ -193,7 +150,7 @@ fn draw_bars(
     h: f64,
     bars: &[DisplayBar],
     state: &State,
-    style: BarDrawStyle,
+    style: BarDrawStyle<'_>,
 ) {
     let count = bars.len();
     if count == 0 {
@@ -254,9 +211,19 @@ fn draw_bars(
                 .hover_fraction
                 .is_some_and(|hover| bar_center <= hover);
 
-        let (r, g, b) = style.color;
+        let accent = style.color;
+        let spectral = style
+            .centroid
+            .get(index)
+            .map(|value| spectral_colour(f64::from(*value)));
+        let (r, g, b) = spectral
+            .map(|colour| {
+                let chroma_factor = 1.0 - 0.55 * state.desaturation_progress;
+                scale_chroma(colour.0, colour.1, colour.2, chroma_factor)
+            })
+            .unwrap_or(accent);
         if is_ghost {
-            cr.set_source_rgba(r, g, b, GHOST_ALPHA * style.opacity);
+            cr.set_source_rgba(accent.0, accent.1, accent.2, GHOST_ALPHA * style.opacity);
         } else if played {
             cr.set_source_rgba(
                 r,

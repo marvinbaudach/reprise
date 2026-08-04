@@ -24,10 +24,15 @@ use super::waveform_shape::{shape_display_peaks, DisplayBar, SILENCE_DOT_HEIGHT}
 use crate::ui::motion;
 use crate::ui::style::color_math::scale_chroma;
 use reprise_core::format::format_duration;
+use reprise_view::spectral_colour::{centroid_at, shape_centroid, smooth_towards, spectral_colour};
 
 /// Shared, cloneable slot for the optional seek handler (cloned out before it
 /// is invoked so no `RefCell` borrow is held across the call).
 type SeekCallback = Rc<RefCell<Option<Rc<dyn Fn(f64)>>>>;
+
+fn colour_near(a: (f64, f64, f64), b: (f64, f64, f64), threshold: f64) -> bool {
+    (a.0 - b.0).abs() < threshold && (a.1 - b.1).abs() < threshold && (a.2 - b.2).abs() < threshold
+}
 
 pub(in crate::ui) const WAVEFORM_CSS_CLASS: &str = "waveform-seek";
 const CONTENT_HEIGHT: i32 = 28;
@@ -41,7 +46,7 @@ const UNPLAYED_ALPHA: f64 = 0.12;
 /// Alpha for unplayed bars between the playhead and the hovered position —
 /// the seek preview.
 const HOVER_PREVIEW_ALPHA: f64 = 0.30;
-/// Alpha of the 1 px playhead line drawn over the bars.
+/// Alpha of the rounded playhead drawn over the bars.
 const PLAYHEAD_ALPHA: f64 = 0.70;
 /// Alpha for bars in the drag ghost region.
 const GHOST_ALPHA: f64 = 0.40;
@@ -69,16 +74,19 @@ fn ensure_resampled(state: &mut State, width: i32) {
         && state.crossfade_progress < 1.0
     {
         state.previous_bars.clear();
+        state.previous_centroid.clear();
         state.crossfade_progress = 1.0;
         state.crossfade_start_us = 0;
     }
     if state.raw_peaks.is_empty() {
         state.display_peaks.clear();
+        state.shaped_centroid.clear();
         return;
     }
     if state.last_display_width != width || state.display_peaks.is_empty() {
         let count = resolve_bar_count(state.bar_count_override, width);
         state.display_peaks = shape_display_peaks(&state.raw_peaks, count);
+        state.shaped_centroid = shape_centroid(&state.raw_centroid, count);
         state.last_display_width = width;
     }
 }
@@ -86,6 +94,7 @@ fn ensure_resampled(state: &mut State, width: i32) {
 struct State {
     raw_peaks: Vec<u8>,             // stored peaks from DB (1000 values, 0-255)
     display_peaks: Vec<DisplayBar>, // shaped to current bar count
+    shaped_centroid: Vec<f32>,      // spectral positions shaped to display bars
     last_display_width: i32,        // width used for last resample
     fraction: f64,
     /// Pointer position as a 0..1 fraction while hovering — drives the
@@ -101,8 +110,11 @@ struct State {
     build_start_us: i64, // 0 means not running
     // Track-change alpha crossfade.
     previous_bars: Vec<DisplayBar>,
+    previous_centroid: Vec<f32>,
     crossfade_progress: f64, // 1.0 means no crossfade is running
     crossfade_start_us: i64,
+    head_colour_target: Option<(f64, f64, f64)>,
+    head_colour: Option<(f64, f64, f64)>,
     // Pause desaturation animation.
     desaturation_progress: f64, // 0.0 = full chroma, 1.0 = paused chroma
     #[allow(dead_code)] // Consumed by the PlayerBar/Compact wiring in MOT-5 Phase B.
@@ -211,6 +223,7 @@ impl WaveformSeek {
         let state = Rc::new(RefCell::new(State {
             raw_peaks: Vec::new(),
             display_peaks: Vec::new(),
+            shaped_centroid: Vec::new(),
             last_display_width: 0,
             fraction: 0.0,
             hover_fraction: None,
@@ -221,8 +234,11 @@ impl WaveformSeek {
             build_progress: 1.0,
             build_start_us: 0,
             previous_bars: Vec::new(),
+            previous_centroid: Vec::new(),
             crossfade_progress: 1.0,
             crossfade_start_us: 0,
+            head_colour_target: None,
+            head_colour: None,
             desaturation_progress: 0.0,
             desaturation_target: 0.0,
             bass_pressure: 0.0,
@@ -242,7 +258,7 @@ impl WaveformSeek {
             move |area, cr, width, height| {
                 let mut s = state.borrow_mut();
                 ensure_resampled(&mut s, width);
-                render::draw(area, cr, width, height, &s);
+                render::draw(area, cr, width, height, &mut s);
             }
         });
 
@@ -398,6 +414,7 @@ impl WaveformSeek {
             // When display_peaks is empty, keep the in-flight previous_bars.
             if !s.display_peaks.is_empty() {
                 s.previous_bars = std::mem::take(&mut s.display_peaks);
+                s.previous_centroid = std::mem::take(&mut s.shaped_centroid);
             }
             s.crossfade_progress = 0.0;
             s.crossfade_start_us = crossfade_start_us;
@@ -405,6 +422,7 @@ impl WaveformSeek {
             s.build_start_us = 0;
         } else {
             s.previous_bars.clear();
+            s.previous_centroid.clear();
             s.crossfade_progress = 1.0;
             s.crossfade_start_us = 0;
             if animate && !peaks.is_empty() {
@@ -417,11 +435,14 @@ impl WaveformSeek {
         }
         s.raw_peaks = peaks;
         s.display_peaks.clear();
+        s.shaped_centroid.clear();
         if !animate {
             s.fraction = s.target_fraction;
             s.fraction_velocity = 0.0;
         }
-        let should_tick = s.build_progress < 1.0 || s.crossfade_progress < 1.0;
+        let should_tick = s.build_progress < 1.0
+            || s.crossfade_progress < 1.0
+            || (!s.raw_centroid.is_empty() && motion::animations_enabled());
         drop(s);
         self.area.queue_draw();
         if should_tick {
@@ -590,11 +611,11 @@ impl WaveformSeek {
         let id = self.area.add_tick_callback(move |_, clock| {
             let now = clock.frame_time();
             let mut s = state.borrow_mut();
+            let dt = (now - s.last_tick_us).max(0) as f64;
 
             if motion::animations_enabled() {
                 // Advance the smooth-position interpolation (never past the
                 // target — see `interpolation_step`).
-                let dt = (now - s.last_tick_us).max(0) as f64;
                 s.fraction =
                     interpolation_step(s.fraction, s.fraction_velocity, dt, s.target_fraction);
                 s.last_tick_us = now;
@@ -610,6 +631,7 @@ impl WaveformSeek {
                     s.crossfade_progress = (elapsed / CROSSFADE_DURATION_S).clamp(0.0, 1.0);
                     if s.crossfade_progress >= 1.0 {
                         s.previous_bars.clear();
+                        s.previous_centroid.clear();
                         s.crossfade_start_us = 0;
                     }
                 }
@@ -619,13 +641,36 @@ impl WaveformSeek {
                 s.build_progress = 1.0;
                 s.build_start_us = 0;
                 s.previous_bars.clear();
+                s.previous_centroid.clear();
                 s.crossfade_progress = 1.0;
                 s.crossfade_start_us = 0;
             }
 
+            let accent = area.color();
+            let accent = (
+                f64::from(accent.red()),
+                f64::from(accent.green()),
+                f64::from(accent.blue()),
+            );
+            let target = if s.raw_centroid.is_empty() {
+                accent
+            } else {
+                spectral_colour(centroid_at(&s.raw_centroid, s.fraction))
+            };
+            s.head_colour_target = Some(target);
+            s.head_colour = Some(match s.head_colour {
+                Some(current) if motion::animations_enabled() => {
+                    smooth_towards(current, target, dt / 1_000_000.0, 0.120)
+                }
+                _ => target,
+            });
+
             let settled = (s.fraction - s.target_fraction).abs() < 0.001
                 && s.build_progress >= 1.0
-                && s.crossfade_progress >= 1.0;
+                && s.crossfade_progress >= 1.0
+                && s.head_colour.is_some_and(|colour| {
+                    colour_near(colour, s.head_colour_target.unwrap_or(colour), 1.0 / 512.0)
+                });
             drop(s);
 
             area.queue_draw();
