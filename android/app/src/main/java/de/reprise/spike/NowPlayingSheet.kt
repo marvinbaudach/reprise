@@ -37,6 +37,8 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -356,7 +358,9 @@ private fun RatingRow(track: LibraryTrack) {
                             failure = TransientMessage(message).after(failure)
                         }
                     },
-                    modifier = Modifier.size(48.dp),
+                    modifier = Modifier
+                        .size(48.dp)
+                        .semantics { selected = star <= rating },
                 ) {
                     MaterialSymbol(
                         name = if (star <= rating) "star" else "star_outline",

@@ -41,6 +41,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -156,7 +157,8 @@ private fun MiniPlayer(
             .fillMaxWidth()
             .height(libraryFrameMetrics.miniPlayerHeightDp.dp)
             .padding(horizontal = 12.dp)
-            .clickable(onClick = openNowPlaying),
+            .clickable(onClick = openNowPlaying)
+            .semantics { contentDescription = "Open Now Playing" },
         color = MaterialTheme.colorScheme.surfaceContainer,
         shape = MaterialTheme.shapes.large,
     ) {

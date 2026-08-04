@@ -134,9 +134,14 @@ Named here so they are not mistaken for the list above.
   bigger decision than a retry loop.
 - **One shared decode thread.** The 1092 px sheet cover queues behind list
   thumbnails on the same single-thread executor.
-- **No Compose-level tests.** The project has no `androidTest` source set at all,
-  so the slider's wiring and the rating's failure path are pinned only through
-  the state machines beneath them.
+- **Compose behavior is host-tested, not device-rendered.** The existing
+  `:app:testDebugUnitTest` gate now runs `compose-ui-test-junit4` 1.11.4 on
+  Robolectric 4.16.1's simulated API 36. It drives the seek gesture across a
+  snapshot tick and its release, a rejected rating without optimistic star
+  movement, and the mini player / predictive-back sheet lifecycle while the
+  Library stays composed.
+  This still does not prove pixel rendering, predictive-back gesture motion or
+  physical-device pointer dispatch; those remain device checks.
 - **`library/stats.rs` still documents its writes as happening "on the UI
   thread"**, which stopped being true for Android when play recording moved off
   it.
