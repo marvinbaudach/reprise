@@ -4,6 +4,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
@@ -85,6 +86,34 @@ class TrackArtworkTest {
             releaseList.countDown()
             artwork.shutdown()
         }
+    }
+
+    /**
+     * Teardown stops *both* lanes.
+     *
+     * One line of code and nothing pinning it: the full-size lane was added
+     * after the list lane, and the next such change is the one that forgets it.
+     * A lane that survives `shutdown` is a thread that keeps starting reads
+     * while `onDestroy` closes the handle underneath them — which is safe by
+     * `MusicLibrary`'s call counter, but pointless work in the moments the app
+     * has left, and it is not what this method claims to do.
+     */
+    @Test
+    fun shutdownStopsTheFullSizeLaneAndNotOnlyTheListLane() {
+        val listWorker = Executors.newSingleThreadExecutor()
+        val fullSizeWorker = Executors.newSingleThreadExecutor()
+        val artwork = TrackArtwork(
+            resolve = { _, _ -> null },
+            decode = { _ -> null },
+            worker = listWorker,
+            fullSizeWorker = fullSizeWorker,
+            onMainThread = { work -> work() },
+        )
+
+        artwork.shutdown()
+
+        assertThrows(RejectedExecutionException::class.java) { listWorker.execute {} }
+        assertThrows(RejectedExecutionException::class.java) { fullSizeWorker.execute {} }
     }
 
     /**
