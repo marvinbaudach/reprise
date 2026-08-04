@@ -23,6 +23,19 @@ thiserror = "2"
 # The artwork path swallows environmental failures behind an `Option`, so the
 # reason has to leave a trail somewhere; this is that somewhere.
 tracing = "0.1"
+# ...and the trail needs a sink, or `tracing` drops every one of those events.
+# Same crate and same features the desktop (`reprise-gnome`), the MCP server
+# and `reprise-platform-linux` already install their subscribers with, so the
+# `REPRISE_LOG` filter syntax is one thing across every frontend.
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+# The `logcat` end of that sink — a `tracing-subscriber` layer over
+# `__android_log_write`, which is the piece a host build has no equivalent for.
+# Taken as a dependency rather than hand-written: a bridge of our own would be
+# an `unsafe` FFI shim with a private ABI assumption, maintained here, to
+# reimplement 200 published lines.
+tracing-android = "0.2"
 
 [build-dependencies]
 uniffi = { version = "0.32", features = ["build"] }

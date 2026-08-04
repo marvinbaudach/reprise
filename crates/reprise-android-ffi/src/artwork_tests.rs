@@ -2,10 +2,11 @@ use std::fs::File;
 use std::os::fd::IntoRawFd;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
+use super::log_capture::{CapturedLogs, LogCapture};
 use super::source::{SafSource, SafSourceError, SourceChild, SourceFacts};
-use super::{AndroidArtworkSize, MusicLibrary, WindowRange};
+use super::{AndroidArtworkSize, LibraryError, MusicLibrary, WindowRange};
 
 const TINY_IMAGE: &[u8] = &[
     0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
@@ -112,54 +113,6 @@ fn full_window() -> WindowRange {
     }
 }
 
-/// A minimal `tracing::Subscriber` that records each event's fields as plain
-/// text, so a test can assert on what a real log line carried without pulling
-/// in `tracing-subscriber`. Mirrors the capture `reprise-core`'s podcast tests
-/// use for the same purpose.
-#[derive(Clone, Default)]
-struct CapturedLogs(Arc<Mutex<Vec<String>>>);
-
-impl CapturedLogs {
-    fn joined(&self) -> String {
-        self.0.lock().unwrap().join("\n")
-    }
-}
-
-struct FieldCollector(String);
-
-impl tracing::field::Visit for FieldCollector {
-    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
-        use std::fmt::Write as _;
-        let _ = write!(self.0, " {}={:?}", field.name(), value);
-    }
-}
-
-struct LogCapture(CapturedLogs);
-
-impl tracing::Subscriber for LogCapture {
-    fn enabled(&self, _metadata: &tracing::Metadata<'_>) -> bool {
-        true
-    }
-
-    fn new_span(&self, _span: &tracing::span::Attributes<'_>) -> tracing::span::Id {
-        tracing::span::Id::from_u64(1)
-    }
-
-    fn record(&self, _span: &tracing::span::Id, _values: &tracing::span::Record<'_>) {}
-
-    fn record_follows_from(&self, _span: &tracing::span::Id, _follows: &tracing::span::Id) {}
-
-    fn event(&self, event: &tracing::Event<'_>) {
-        let mut collector = FieldCollector(event.metadata().level().to_string());
-        event.record(&mut collector);
-        self.0 .0.lock().unwrap().push(collector.0);
-    }
-
-    fn enter(&self, _span: &tracing::span::Id) {}
-
-    fn exit(&self, _span: &tracing::span::Id) {}
-}
-
 #[test]
 fn artwork_is_resolved_only_by_the_lazy_track_call() {
     let directory = tempfile::tempdir().unwrap();
@@ -172,7 +125,9 @@ fn artwork_is_resolved_only_by_the_lazy_track_call() {
         0,
         "list_tracks must remain a metadata-only paged query",
     );
-    let artwork = library.track_artwork(&tracks[0].uri, AndroidArtworkSize::List);
+    let artwork = library
+        .track_artwork(&tracks[0].uri, AndroidArtworkSize::List)
+        .unwrap();
     assert_eq!(open_calls.load(Ordering::Relaxed), 2);
     assert!(artwork.is_some());
     assert!(Path::new(&artwork.unwrap()).starts_with(directory.path().join("cache/reprise/covers")));
@@ -188,15 +143,79 @@ fn now_playing_artwork_uses_the_1092_pixel_cache_rung() {
 
     let artwork = library
         .track_artwork(&track_uri, AndroidArtworkSize::NowPlaying)
+        .unwrap()
         .unwrap();
 
     assert!(artwork.ends_with("-1092.png"), "got {artwork}");
 }
 
+/// The two answers `track_artwork` has to keep apart, in one test.
+///
+/// A poisoned handle is the same condition every sibling method reports as a
+/// typed `LibraryError`; folding it into the `None` that means "this track has
+/// no picture" is what made a broken library look like a picture-less one. A
+/// track whose folder holds no image stays `Ok(None)` — ordinary, not an error.
+#[test]
+fn a_broken_library_is_an_error_while_a_track_without_a_picture_is_not() {
+    let directory = tempfile::tempdir().unwrap();
+    let (library, _) = library_with_one_album_cover(directory.path());
+    let track_uri = library.list_tracks(full_window()).unwrap().rows[0]
+        .uri
+        .clone();
+    std::fs::remove_file(directory.path().join("music/cover.bmp")).unwrap();
+
+    assert_eq!(
+        library
+            .track_artwork(&track_uri, AndroidArtworkSize::List)
+            .unwrap(),
+        None,
+        "a track with no picture is an ordinary answer, not a failure",
+    );
+
+    // Poisons the handle the only way a mutex can be poisoned: a panic while
+    // it is held. The panic message below is expected test output.
+    let library = Arc::new(library);
+    let poisoner = Arc::clone(&library);
+    let panicked = std::thread::spawn(move || {
+        let _guard = poisoner.state.lock().unwrap();
+        panic!("poisoning the library handle on purpose");
+    })
+    .join();
+    assert!(panicked.is_err());
+
+    assert!(
+        matches!(
+            library.track_artwork(&track_uri, AndroidArtworkSize::List),
+            Err(LibraryError::Database { .. }),
+        ),
+        "a poisoned handle must surface the way every sibling method surfaces it",
+    );
+}
+
+/// A tree that was never configured is the other condition the siblings report
+/// rather than swallow: `scan` answers `TreeNotConfigured`, and so does this.
+#[test]
+fn artwork_without_a_configured_tree_is_the_same_error_a_scan_reports() {
+    let directory = tempfile::tempdir().unwrap();
+    let library = MusicLibrary::open(
+        directory.path().to_str().unwrap(),
+        directory.path().join("cache").to_str().unwrap(),
+    )
+    .unwrap();
+
+    assert!(matches!(
+        library.track_artwork(
+            "content://provider/document/x.flac",
+            AndroidArtworkSize::List
+        ),
+        Err(LibraryError::TreeNotConfigured),
+    ));
+}
+
 /// An environmental failure must not look like "this track has no artwork".
-/// The FFI keeps answering `None` — that is the UI contract — but it has to
-/// leave a trail, or a full disk suppresses every cover in the library with
-/// nothing to find afterwards.
+/// The FFI keeps answering `Ok(None)` — the cover *cache* is what broke, not
+/// the library — but it has to leave a trail, or a full disk suppresses every
+/// cover in the library with nothing to find afterwards.
 #[test]
 fn an_unusable_cover_cache_is_logged_rather_than_passing_as_no_artwork() {
     let directory = tempfile::tempdir().unwrap();
@@ -214,7 +233,7 @@ fn an_unusable_cover_cache_is_logged_rather_than_passing_as_no_artwork() {
         library.track_artwork(&track_uri, AndroidArtworkSize::List)
     });
 
-    assert!(artwork.is_none());
+    assert_eq!(artwork.unwrap(), None);
     let logged = logs.joined();
     assert!(logged.contains("WARN"), "expected a warning, got {logged}");
     assert!(

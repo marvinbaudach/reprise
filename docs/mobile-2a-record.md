@@ -53,6 +53,23 @@ both **set and read back**, so the buttons show the mode rather than only
 changing it. A rating that writes through to the core, and — the thing the plan
 did not know it needed — playback that actually counts.
 
+### After the branch review
+
+Four Rust findings and three Kotlin ones, none of which changed what the surface
+does:
+
+- The `tracing` events now have a sink. `initLogging()` is exported from the FFI
+  and called once from `RepriseApplication.onCreate`, which runs before either
+  door into the library opens — the activity's `MusicLibrary` and the playback
+  service Media3 may start on its own. On a device the lines land in `logcat`
+  under the tag `Reprise`; on a host build they land in a buffer the crate's own
+  tests read, which is how the installation is proven rather than asserted.
+- A play count that loses to the scanner's write lock is offered again, bounded,
+  before it is given up — and giving up names the track.
+- `track_artwork` reports a poisoned handle or an unconfigured tree as a typed
+  `LibraryError` like every sibling method, while "this track has no picture"
+  stays the ordinary `null` the UI has always rendered.
+
 ## Verified on a device, not assumed
 
 Every claim below was observed on the `pixel10xl_api37` emulator against the
@@ -106,10 +123,12 @@ Named here so they are not mistaken for the list above.
 - **Rating writes are synchronous on the main thread.** Play counting was moved
   to a dedicated writer thread; a star tap was left, being a discrete action
   rather than a 500 ms tick. It is the same class of thing.
-- **The `tracing` events have no sink.** The artwork path warns about an unusable
-  cache or a poisoned handle, but the Android app installs no subscriber, so
-  those lines surface only in Rust tests. Every other frontend in this workspace
-  installs its own.
+- **A play can still be lost, but no longer silently.** The play-count writer
+  now offers a write that lost to the scanner's single folder-walk transaction
+  up to four times before giving up, and says which track it gave up on. What it
+  still has is no *persistent* queue: a play in hand when Android kills the
+  process is gone, and nothing survives to retry it after a restart. That is a
+  bigger decision than a retry loop.
 - **One shared decode thread.** The 1092 px sheet cover queues behind list
   thumbnails on the same single-thread executor.
 - **No Compose-level tests.** The project has no `androidTest` source set at all,

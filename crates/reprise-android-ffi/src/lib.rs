@@ -14,6 +14,7 @@ use source::{BridgedSource, SafSource};
 mod artwork_tests;
 mod browse;
 mod library_types;
+mod logging;
 mod play_recorder;
 pub mod playback;
 mod playback_session;
@@ -21,6 +22,8 @@ pub mod source;
 mod source_error;
 mod source_names;
 
+#[cfg(test)]
+mod log_capture;
 #[cfg(test)]
 mod playback_tests;
 
@@ -32,6 +35,7 @@ pub use library_types::{
     ScanSummary,
 };
 use library_types::{ConfiguredTree, LibraryState, DATABASE_FILE_NAME};
+pub use logging::init_logging;
 pub use playback_session::{
     AndroidPlaybackListener, AndroidPlaybackSession, AndroidPlaybackSnapshot, AndroidRepeatMode,
 };
@@ -177,46 +181,61 @@ impl MusicLibrary {
     }
 
     /// Resolves local artwork lazily for one track and returns its cached
-    /// measured-size thumbnail path. A missing or unreadable image stays `None`,
-    /// because "this track has no artwork" is a legitimate answer the UI must
-    /// render. An *environmental* failure — a poisoned handle, a full disk, a
-    /// cache directory that cannot be created — looks identical from the
-    /// Kotlin side, so every one of those leaves a `tracing` line behind
-    /// rather than silently suppressing covers forever.
-    pub fn track_artwork(&self, track_uri: &str, size: AndroidArtworkSize) -> Option<String> {
+    /// measured-size thumbnail path.
+    ///
+    /// The two answers are kept apart, the way every sibling method on this
+    /// object keeps them apart:
+    ///
+    /// * `Ok(None)` — **this track has no artwork**. A missing picture, or one
+    ///   that does not decode, is an ordinary answer the UI renders as the
+    ///   no-artwork symbol. It is not an error and Kotlin must not treat it as
+    ///   one.
+    /// * `Err(_)` — the library itself could not answer: a handle poisoned by
+    ///   an earlier panic, or no configured tree to read covers through. Those
+    ///   are the same conditions `set_track_rating`, `scan`, `list_*` and
+    ///   `search_tracks` all report as a typed [`LibraryError`], and folding
+    ///   them into the `None` that means "no cover" is what made a broken
+    ///   library indistinguishable from a picture-less one.
+    ///
+    /// A full disk still answers `Ok(None)` — the cover cache being unwritable
+    /// affects the *thumbnail*, not the library, and every following track will
+    /// fail the same way — but it says so in the log rather than passing
+    /// silently.
+    pub fn track_artwork(
+        &self,
+        track_uri: &str,
+        size: AndroidArtworkSize,
+    ) -> Result<Option<String>, LibraryError> {
         let source = {
-            let state = match self.lock() {
-                Ok(state) => state,
-                Err(error) => {
-                    tracing::warn!(%error, track = track_uri, "no artwork: library handle unusable");
-                    return None;
-                }
-            };
-            Arc::clone(&state.tree.as_ref()?.source)
+            let state = self.lock()?;
+            let tree = state.tree.as_ref().ok_or(LibraryError::TreeNotConfigured)?;
+            Arc::clone(&tree.source)
         };
-        let cover = reprise_core::cover::resolve_source_with_source(
+        let Some(cover) = reprise_core::cover::resolve_source_with_source(
             source.as_ref(),
             Path::new(&track_uri),
             &self.cache_root,
-        )?;
+        ) else {
+            return Ok(None);
+        };
         match reprise_core::cover::thumbnail_with_source(
             source.as_ref(),
             &cover,
             size.thumbnail_size(),
             &self.cache_root,
         ) {
-            Ok(path) => Some(path.to_string_lossy().into_owned()),
+            Ok(path) => Ok(Some(path.to_string_lossy().into_owned())),
             // The cache is unusable: every following track will fail the same
             // way, so this is the one worth waking someone up for.
             Err(error @ reprise_core::cover::CoverError::Io(_)) => {
                 tracing::warn!(%error, track = track_uri, "no artwork: cover cache unusable");
-                None
+                Ok(None)
             }
             // One unrenderable image among many. Expected in the wild, so it
             // stays at debug.
             Err(error) => {
                 tracing::debug!(%error, track = track_uri, "no artwork: cover did not decode");
-                None
+                Ok(None)
             }
         }
     }

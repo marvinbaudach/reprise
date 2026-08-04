@@ -100,6 +100,27 @@ pub fn record_play(db: &Db, track_id: i64, now_unix: i64) -> Result<(), rusqlite
     Ok(())
 }
 
+/// Whether a failed write lost to another writer holding the database, rather
+/// than failing for a reason that offering it again cannot fix.
+///
+/// Exists here because [`Db`] deliberately does not hand out its `Connection`
+/// (see `db_handle.rs`): a frontend that has to decide whether a write is worth
+/// retrying would otherwise take a `rusqlite` dependency of its own just to
+/// read one error code, which is precisely the door that type keeps shut. The
+/// Android play recorder is the first caller — its writes race a SAF scan that
+/// wraps a whole folder walk in one transaction, so `SQLITE_BUSY` there is an
+/// ordinary occurrence rather than a defect.
+pub fn is_database_busy(error: &rusqlite::Error) -> bool {
+    matches!(
+        error,
+        rusqlite::Error::SqliteFailure(failure, _)
+            if matches!(
+                failure.code,
+                rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
+            )
+    )
+}
+
 /// Pure "was this track listened to enough to count as a play" predicate:
 /// true when the track has a positive duration and the furthest position
 /// reached covers at least half of it. `max_position_ms` is the *highest*
@@ -249,5 +270,29 @@ mod tests {
             .unwrap();
         assert_eq!(count, 2);
         assert_eq!(last_played, 1_700_000_100);
+    }
+
+    /// The predicate has to recognise the error SQLite really produces under
+    /// contention, not the one we imagine it produces — so this test creates
+    /// the contention rather than constructing the error value. The contending
+    /// connection waits zero milliseconds, which makes the race the test's
+    /// instead of the clock's.
+    #[test]
+    fn a_write_that_lost_to_another_writer_is_told_apart_from_one_worth_no_retry() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("reprise.db");
+        let holder = Db::open_migrated(Some(&path)).unwrap();
+        holder
+            .conn()
+            .execute_batch("BEGIN IMMEDIATE; UPDATE tracks SET rating = 1")
+            .unwrap();
+
+        let contender = crate::db::open_with_options(Some(&path), 0).unwrap();
+        let busy = contender
+            .execute("UPDATE tracks SET play_count = play_count + 1", [])
+            .unwrap_err();
+
+        assert!(is_database_busy(&busy), "got {busy:?}");
+        assert!(!is_database_busy(&rusqlite::Error::QueryReturnedNoRows));
     }
 }
