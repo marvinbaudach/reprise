@@ -101,6 +101,29 @@ class BrowseSurfaceTest {
         assertEquals(TransientMessage("Could not save rating: gone"), first.after(null))
     }
 
+    /**
+     * The default behind [LocalPlaybackControls] must not be able to pass for a
+     * connected player. Every command is a no-op — and the one command that has
+     * to answer answers with a failure, never with the null that means the
+     * rating reached the database.
+     */
+    @Test
+    fun theDisconnectedControlsDoNothingAndNeverClaimARatingWasSaved() {
+        val controls: PlaybackControls = DisconnectedPlaybackControls
+
+        controls.togglePause()
+        controls.next()
+        controls.previous()
+        controls.seekTo(42_000)
+        controls.setShuffle(true)
+        controls.setRepeat(AndroidRepeatMode.ALL)
+
+        assertEquals(
+            "Could not save rating: playback is not connected.",
+            controls.setRating(trackId = 830, rating = 4),
+        )
+    }
+
     @Test
     fun repeatButtonCyclesAllThreeReadableModes() {
         assertEquals(AndroidRepeatMode.ALL, cycleRepeatMode(AndroidRepeatMode.OFF))

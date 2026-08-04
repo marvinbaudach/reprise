@@ -46,24 +46,22 @@ import androidx.compose.ui.unit.sp
 import kotlin.math.PI
 import kotlin.math.sin
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import uniffi.reprise_android_ffi.AndroidArtworkSize
 import uniffi.reprise_android_ffi.AndroidRepeatMode
 
-/** The one honest Android playback surface beyond the mini player. */
+/**
+ * The one honest Android playback surface beyond the mini player.
+ *
+ * Transport arrives through [LocalPlaybackControls] rather than as parameters:
+ * this sheet and the mini player are the only two leaves that issue commands,
+ * and everything between them and the activity was forwarding them untouched.
+ */
 @Composable
 internal fun NowPlayingSheet(
     track: LibraryTrack,
     playback: PlaybackUiState,
     close: () -> Unit,
-    seekTo: (Long) -> Unit,
-    togglePause: () -> Unit,
-    next: () -> Unit,
-    previous: () -> Unit,
-    setShuffle: (Boolean) -> Unit,
-    setRepeat: (AndroidRepeatMode) -> Unit,
-    setRating: (Long, Int) -> String?,
 ) {
     var backProgress by remember { mutableFloatStateOf(0f) }
     PredictiveBackHandler {
@@ -140,16 +138,9 @@ internal fun NowPlayingSheet(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            WavySeekSlider(trackId = track.id, playback = playback, seekTo = seekTo)
-            PlaybackActions(
-                playback = playback,
-                togglePause = togglePause,
-                next = next,
-                previous = previous,
-                setShuffle = setShuffle,
-                setRepeat = setRepeat,
-            )
-            RatingRow(track = track, setRating = setRating)
+            WavySeekSlider(trackId = track.id, playback = playback)
+            PlaybackActions(playback = playback)
+            RatingRow(track = track)
             playback.error?.let { message ->
                 Text(
                     text = message,
@@ -165,7 +156,8 @@ internal fun NowPlayingSheet(
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-private fun WavySeekSlider(trackId: Long, playback: PlaybackUiState, seekTo: (Long) -> Unit) {
+private fun WavySeekSlider(trackId: Long, playback: PlaybackUiState) {
+    val seekTo = LocalPlaybackControls.current::seekTo
     var position by remember(trackId) {
         mutableStateOf(SeekPositionState.fromSnapshot(playback.positionMs))
     }
@@ -257,14 +249,8 @@ private fun WavySliderTrack(progress: Float) {
 }
 
 @Composable
-private fun PlaybackActions(
-    playback: PlaybackUiState,
-    togglePause: () -> Unit,
-    next: () -> Unit,
-    previous: () -> Unit,
-    setShuffle: (Boolean) -> Unit,
-    setRepeat: (AndroidRepeatMode) -> Unit,
-) {
+private fun PlaybackActions(playback: PlaybackUiState) {
+    val controls = LocalPlaybackControls.current
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -274,13 +260,13 @@ private fun PlaybackActions(
             symbol = "shuffle",
             description = if (playback.shuffled) "Turn shuffle off" else "Turn shuffle on",
             active = playback.shuffled,
-            onClick = { setShuffle(!playback.shuffled) },
+            onClick = { controls.setShuffle(!playback.shuffled) },
         )
-        IconButton(onClick = previous, modifier = Modifier.size(48.dp)) {
+        IconButton(onClick = controls::previous, modifier = Modifier.size(48.dp)) {
             MaterialSymbol("skip_previous", "Previous track", sizeSp = 30)
         }
         IconButton(
-            onClick = togglePause,
+            onClick = controls::togglePause,
             modifier = Modifier
                 .size(nowPlayingMetrics.playButtonSizeDp.dp)
                 // The shape scale's top rung is the frame's 28 dp rounded
@@ -295,14 +281,14 @@ private fun PlaybackActions(
                 sizeSp = 40,
             )
         }
-        IconButton(onClick = next, modifier = Modifier.size(48.dp)) {
+        IconButton(onClick = controls::next, modifier = Modifier.size(48.dp)) {
             MaterialSymbol("skip_next", "Next track", sizeSp = 30)
         }
         ModeButton(
             symbol = if (playback.repeat == AndroidRepeatMode.ONE) "repeat_one" else "repeat",
             description = "Repeat ${playback.repeat.name.lowercase()}",
             active = playback.repeat != AndroidRepeatMode.OFF,
-            onClick = { setRepeat(cycleRepeatMode(playback.repeat)) },
+            onClick = { controls.setRepeat(cycleRepeatMode(playback.repeat)) },
         )
     }
 }
@@ -341,14 +327,15 @@ private fun ModeButton(
 }
 
 /**
- * [setRating] answers with the failure to show, or null when the rating was
- * saved. That message gets its own transient slot rather than the playback
- * snapshot's `error`: the snapshot is replaced wholesale by the next 500 ms
- * position tick, which would wipe the message before it could be read while a
- * track plays, and leave it standing forever while one is paused.
+ * `setRating` answers with the failure to show, or null when the rating was
+ * saved. That message is an acknowledgement rather than state — the star does
+ * not move, so without it the tap looks like it worked — which is why it gets a
+ * [TransientMessage] and the two errors on the browse screen do not. See that
+ * type for the rule.
  */
 @Composable
-private fun RatingRow(track: LibraryTrack, setRating: (Long, Int) -> String?) {
+private fun RatingRow(track: LibraryTrack) {
+    val setRating = LocalPlaybackControls.current::setRating
     var rating by remember(track.id) { mutableStateOf(track.rating.coerceIn(0, 5)) }
     var failure by remember(track.id) { mutableStateOf<TransientMessage?>(null) }
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -380,17 +367,6 @@ private fun RatingRow(track: LibraryTrack, setRating: (Long, Int) -> String?) {
                 }
             }
         }
-        failure?.let { message ->
-            LaunchedEffect(message) {
-                delay(RATING_FAILURE_MS)
-                failure = null
-            }
-            Text(
-                text = message.text,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodyMedium,
-                textAlign = TextAlign.Center,
-            )
-        }
+        TransientMessageText(failure) { failure = null }
     }
 }

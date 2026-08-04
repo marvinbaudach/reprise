@@ -65,6 +65,30 @@ class MainActivity : ComponentActivity() {
     }
     private val artworkDelegate = lazy { TrackArtwork(resolve = session::artworkFor) }
     private val artwork by artworkDelegate
+
+    /**
+     * Every transport command the surface can issue, bound once here instead of
+     * threaded through two composables that issue none of them.
+     */
+    private val playbackControls = object : PlaybackControls {
+        override fun togglePause() =
+            runPlaybackCommand("change playback state") { togglePause() }
+
+        override fun next() = runPlaybackCommand("skip to the next track") { next() }
+
+        override fun previous() = runPlaybackCommand("return to the previous track") { previous() }
+
+        override fun seekTo(positionMs: Long) = runPlaybackCommand("seek") { seekTo(positionMs) }
+
+        override fun setShuffle(enabled: Boolean) =
+            runPlaybackCommand("change shuffle") { setShuffle(enabled) }
+
+        override fun setRepeat(mode: AndroidRepeatMode) =
+            runPlaybackCommand("change repeat") { setRepeat(mode) }
+
+        override fun setRating(trackId: Long, rating: Int): String? =
+            setTrackRating(trackId, rating)
+    }
     private var playbackService: ReprisePlaybackService? = null
     private var playbackBound = false
     private val playbackState = mutableStateOf(PlaybackUiState())
@@ -103,7 +127,10 @@ class MainActivity : ComponentActivity() {
                     // NavigationBar consumes its own bottom inset, so the root
                     // must not consume that inset a second time.
                     Box(modifier = Modifier.statusBarsPadding()) {
-                        CompositionLocalProvider(LocalTrackArtwork provides artwork) {
+                        CompositionLocalProvider(
+                            LocalTrackArtwork provides artwork,
+                            LocalPlaybackControls provides playbackControls,
+                        ) {
                             LibraryScreen(
                                 initialState = initialState,
                                 playback = playbackState.value,
@@ -115,25 +142,6 @@ class MainActivity : ComponentActivity() {
                                 openAlbum = session::openAlbum,
                                 listAlbumTracks = session::listAlbumTracks,
                                 playTracks = ::playTracks,
-                                togglePause = {
-                                    runPlaybackCommand("change playback state") { togglePause() }
-                                },
-                                next = {
-                                    runPlaybackCommand("skip to the next track") { next() }
-                                },
-                                previous = {
-                                    runPlaybackCommand("return to the previous track") { previous() }
-                                },
-                                seekTo = { positionMs ->
-                                    runPlaybackCommand("seek") { seekTo(positionMs) }
-                                },
-                                setShuffle = { enabled ->
-                                    runPlaybackCommand("change shuffle") { setShuffle(enabled) }
-                                },
-                                setRepeat = { mode ->
-                                    runPlaybackCommand("change repeat") { setRepeat(mode) }
-                                },
-                                setRating = ::setTrackRating,
                             )
                         }
                     }
@@ -282,13 +290,6 @@ private fun LibraryScreen(
     openAlbum: (LibraryAlbum) -> AlbumTrackList,
     listAlbumTracks: (LibraryAlbum, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
     playTracks: (PlaybackSelection, (String) -> Unit) -> Unit,
-    togglePause: () -> Unit,
-    next: () -> Unit,
-    previous: () -> Unit,
-    seekTo: (Long) -> Unit,
-    setShuffle: (Boolean) -> Unit,
-    setRepeat: (AndroidRepeatMode) -> Unit,
-    setRating: (Long, Int) -> String?,
 ) {
     var state by remember { mutableStateOf(initialState) }
     val folderPicker = rememberLauncherForActivityResult(
@@ -319,13 +320,6 @@ private fun LibraryScreen(
             openAlbum = openAlbum,
             listAlbumTracks = listAlbumTracks,
             playTracks = playTracks,
-            togglePause = togglePause,
-            next = next,
-            previous = previous,
-            seekTo = seekTo,
-            setShuffle = setShuffle,
-            setRepeat = setRepeat,
-            setRating = setRating,
         )
     }
 }

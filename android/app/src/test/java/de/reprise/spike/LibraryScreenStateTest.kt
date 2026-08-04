@@ -58,7 +58,7 @@ private fun primitiveDefault(type: Class<*>): Any? = when (type) {
 }
 
 @Test
-fun positionReadoutUsesTheDurationDeliveredByTheBridge() {
+fun everyFieldTheSurfaceReadsSurvivesTheTripFromTheBridge() {
     val state = AndroidPlaybackSnapshot(
         state = AndroidPlaybackState.PLAYING,
         currentIndex = 2u,
@@ -69,7 +69,6 @@ fun positionReadoutUsesTheDurationDeliveredByTheBridge() {
         error = null,
     ).toUiState()
 
-    assertEquals("0:01 / 3:00", state.positionReadout)
     assertEquals(2, state.currentIndex)
     assertEquals(1_250L, state.positionMs)
     assertEquals(180_000L, state.durationMs)

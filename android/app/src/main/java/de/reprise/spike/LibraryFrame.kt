@@ -105,9 +105,6 @@ internal fun LibraryTopAppBar(
 internal fun LibraryBottomFrame(
     currentTrack: LibraryTrack?,
     playback: PlaybackUiState,
-    togglePause: () -> Unit,
-    next: () -> Unit,
-    previous: () -> Unit,
     openNowPlaying: () -> Unit,
 ) {
     Column {
@@ -115,9 +112,6 @@ internal fun LibraryBottomFrame(
             MiniPlayer(
                 track = currentTrack,
                 playback = playback,
-                togglePause = togglePause,
-                next = next,
-                previous = previous,
                 openNowPlaying = openNowPlaying,
             )
         }
@@ -154,11 +148,9 @@ internal fun LibraryBottomFrame(
 private fun MiniPlayer(
     track: LibraryTrack,
     playback: PlaybackUiState,
-    togglePause: () -> Unit,
-    next: () -> Unit,
-    previous: () -> Unit,
     openNowPlaying: () -> Unit,
 ) {
+    val controls = LocalPlaybackControls.current
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -195,11 +187,11 @@ private fun MiniPlayer(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                IconButton(onClick = previous, modifier = Modifier.size(48.dp)) {
+                IconButton(onClick = controls::previous, modifier = Modifier.size(48.dp)) {
                     MaterialSymbol("skip_previous", "Previous track")
                 }
                 IconButton(
-                    onClick = togglePause,
+                    onClick = controls::togglePause,
                     modifier = Modifier
                         .size(48.dp)
                         .clip(MaterialTheme.shapes.large)
@@ -212,7 +204,7 @@ private fun MiniPlayer(
                         sizeSp = 30,
                     )
                 }
-                IconButton(onClick = next, modifier = Modifier.size(48.dp)) {
+                IconButton(onClick = controls::next, modifier = Modifier.size(48.dp)) {
                     MaterialSymbol("skip_next", "Next track")
                 }
             }

@@ -69,6 +69,9 @@ does:
 - `track_artwork` reports a poisoned handle or an unconfigured tree as a typed
   `LibraryError` like every sibling method, while "this track has no picture"
   stays the ordinary `null` the UI has always rendered.
+- The seven transport commands travel through `LocalPlaybackControls` instead of
+  seventeen parameters, and `BrowseScreen.kt` became four files along the seams
+  it already had.
 
 ## Verified on a device, not assumed
 

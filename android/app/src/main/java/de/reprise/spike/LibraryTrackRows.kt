@@ -1,0 +1,190 @@
+package de.reprise.spike
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+
+/**
+ * The library's track list: the 72 dp rows, their continuation sentinel, and
+ * the badges the row carries. Shared by the Titles tab and by an opened album,
+ * which is why it is not part of either.
+ */
+@Composable
+internal fun TrackRows(
+    tracks: LibraryWindow<LibraryTrack>,
+    activeSelection: PlaybackSelection?,
+    playback: PlaybackUiState,
+    lastRequestedOffset: Long?,
+    play: (Int) -> Unit,
+    loadMore: (LibraryWindowRange) -> Unit,
+) {
+    LazyColumn(modifier = Modifier.fillMaxSize()) {
+        items(
+            items = trackListContent(tracks, lastRequestedOffset),
+            key = { content ->
+                when (content) {
+                    is TrackListContent.Row -> "track-${content.track.uri}"
+                    is TrackListContent.Continuation -> "load-window-${content.request.offset}"
+                }
+            },
+        ) { content ->
+            when (content) {
+                is TrackListContent.Row -> LibraryTrackRow(
+                    track = content.track,
+                    presentation = content.track.playbackPresentation(activeSelection, playback),
+                    play = { play(content.index) },
+                )
+                is TrackListContent.Continuation -> {
+                    LaunchedEffect(content.request.offset) { loadMore(content.request) }
+                    LoadingWindowRow()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LibraryTrackRow(
+    track: LibraryTrack,
+    presentation: TrackPlaybackPresentation,
+    play: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(libraryFrameMetrics.trackRowHeightDp.dp)
+            .clickable(onClick = play),
+        color = if (presentation.isCurrent) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+        } else {
+            MaterialTheme.colorScheme.background
+        },
+    ) {
+        Box {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                TrackCover(
+                    trackUri = track.uri,
+                    size = libraryFrameMetrics.trackCoverSizeDp,
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = track.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (presentation.isCurrent) {
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onBackground
+                        },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = track.details(),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TrackRating(track.rating)
+                    }
+                }
+                Column(
+                    modifier = Modifier.width(48.dp),
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    if (presentation.isCurrent) {
+                        PlayingBars(presentation.animateBars)
+                    } else {
+                        PlayCountBadge(track.playCount)
+                    }
+                    Text(
+                        text = formatDuration(track.durationMs),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            HorizontalDivider(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 88.dp)
+                    .align(Alignment.BottomStart),
+                color = MaterialTheme.colorScheme.outlineVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun TrackRating(rating: Int) {
+    val normalizedRating = rating.coerceIn(0, 5)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        MaterialSymbol(
+            name = if (normalizedRating > 0) "star" else "star_outline",
+            contentDescription = "$normalizedRating of 5 stars",
+            tint = MaterialTheme.colorScheme.tertiary,
+            sizeSp = 14,
+        )
+        Text(
+            text = "$normalizedRating/5",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.tertiary,
+        )
+    }
+}
+
+@Composable
+private fun PlayCountBadge(playCount: Long) {
+    val normalizedPlayCount = playCount.coerceAtLeast(0)
+    Surface(
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        shape = MaterialTheme.shapes.small,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            MaterialSymbol("play_arrow", "$normalizedPlayCount plays", sizeSp = 12)
+            Text(normalizedPlayCount.toString(), style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+/** What a window's continuation sentinel looks like while it loads. */
+@Composable
+internal fun LoadingWindowRow() {
+    Text(
+        text = "Loading…",
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(16.dp),
+    )
+}

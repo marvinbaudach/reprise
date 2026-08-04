@@ -27,22 +27,6 @@ internal val nowPlayingMetrics = NowPlayingMetrics(
     playButtonRadiusDp = 28,
 )
 
-/** How long a rating failure stays readable before it dismisses itself. */
-internal const val RATING_FAILURE_MS = 4_000L
-
-/**
- * A message that has to outlive the next 500 ms playback snapshot and then
- * leave on its own.
- *
- * [occurrence] is what makes the same text raised twice a *new* event: without
- * it the dismissal timer would still be running on the first one's schedule and
- * the second message would vanish early.
- */
-internal data class TransientMessage(val text: String, val occurrence: Long = 0) {
-    fun after(previous: TransientMessage?): TransientMessage =
-        if (previous == null) this else copy(occurrence = previous.occurrence + 1)
-}
-
 /**
  * The head's own reading of what is left, as `−m:ss`. The total belongs to the
  * track; the sheet is about where the playhead is.

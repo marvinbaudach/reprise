@@ -10,7 +10,6 @@ internal data class PlaybackUiState(
     val currentIndex: Int? = null,
     val positionMs: Long = 0,
     val durationMs: Long = 0,
-    val positionReadout: String = "0:00 / --:--",
     val playPauseLabel: String = "Play",
     val shuffled: Boolean = false,
     val repeat: AndroidRepeatMode = AndroidRepeatMode.OFF,
@@ -33,11 +32,6 @@ internal fun AndroidPlaybackSnapshot.toUiState(): PlaybackUiState = PlaybackUiSt
     currentIndex = currentIndex?.toInt(),
     positionMs = positionMs,
     durationMs = durationMs,
-    positionReadout = buildString {
-        append(formatDuration(positionMs))
-        append(" / ")
-        append(if (durationMs > 0) formatDuration(durationMs) else "--:--")
-    },
     playPauseLabel = if (state == AndroidPlaybackState.PLAYING) "Pause" else "Play",
     shuffled = shuffled,
     repeat = repeat,
