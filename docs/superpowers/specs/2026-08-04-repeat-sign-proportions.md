@@ -28,9 +28,27 @@ distinction matters because the two failure modes call for opposite fixes:
 strokes running together would mean the geometry is too tight, whereas strokes
 surviving but uncountable means the sign is below its useful size. The report
 derives its wording from the group sizes so it cannot assert a cause nobody
-measured. This is reported rather than hidden by changing the geometry. If a
-distinct 16 px mark becomes necessary, review a dedicated hinted symbolic
-drawing; this specification does not authorise one.
+measured.
+
+The 96-unit geometry is therefore not used at 16 px. That stage ships from
+`reprise-mark-16.svg`, the same sign redrawn on the 16-unit grid with every
+edge on a whole raster line: dots 3x3 at (3,5) and (3,9), barlines 1 and 3
+units wide at x 7 and x 9, all spanning y 3–12, on a 14-unit carrier inset by
+one. It renders four groups of 30, 10, 9 and 9 pixels — every element at least
+three times the noise floor, and the 1:3 ratio still legible.
+
+The dots are 3x3 rather than 2x2 deliberately. At 2x2 they measure 4 pixels
+against a 3-pixel floor: countable, but one rounding decision away from
+vanishing. Ink runs to 64% of the carrier's width against 48% in the 96-unit
+drawing, because thin features disappear at this size.
+
+Everything from 22 px up still comes from the 96-unit drawing. The gate asserts
+that the two sources render differently at 16 px, so a wiring mistake that
+silently fell back to downscaling cannot pass.
+
+The symbolic SVG keeps the 96-unit geometry: it is rendered at whatever size
+the shell asks for, and grid-fitting it to 16 would misfit every other size.
+A themed 16 px surface can use `reprise-mark-16-mono.svg`.
 
 Measured WCAG contrasts are 3.05 (`#A855F7`) and 7.13 (`#4FDBD4`) on the
 carrier, 4.99 and 11.68 on `#0a0a0e`, 5.70 (`#7C3AED`) and 5.95 (`#00706B`)
