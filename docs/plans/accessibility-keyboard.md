@@ -1,513 +1,514 @@
-# Accessibility & Tastatur — Implementierungsplan
+# Accessibility & keyboard — implementation plan
 
-Stand: 2026-07-18
-Ausgangsbasis: `main` bei `e0493d0`
-Arbeitsbranch: `feat/accessibility-keyboard`
+As of: 2026-07-18
+Starting base: `main` at `e0493d0`
+Working branch: `feat/accessibility-keyboard`
 
-## Ziel
+## Goal
 
-Jede aktuell ausgelieferte Reprise-Oberfläche muss ausschließlich mit der
-Tastatur verständlich, vollständig und ohne Fokus-Sackgasse bedienbar sein.
-Der Plan behandelt Tastaturbedienung nicht als Sammlung zusätzlicher
-Shortcuts, sondern als durchgängigen Vertrag aus:
+Every Reprise surface that ships today must be comprehensible, complete and
+free of focus dead ends when operated with the keyboard alone.
+The plan does not treat keyboard operation as a collection of additional
+shortcuts, but as an end-to-end contract made up of:
 
-1. vollständiger Parität zu Maus-/Touch-Aktionen;
-2. logischer Fokusordnung und stabilem Fokus-Lebenszyklus;
-3. nativer Semantik für GTK, AT-SPI und Screenreader;
-4. sichtbarem Fokus und fokusäquivalenten Hover-Affordances;
-5. Tastaturalternativen für Drag-and-drop und eigene Werte-Controls;
-6. automatisierter Abdeckung jeder GUI-Fläche plus ehrlicher manueller
-   GNOME-Abnahme.
+1. full parity with mouse/touch actions;
+2. logical focus order and a stable focus lifecycle;
+3. native semantics for GTK, AT-SPI and screen readers;
+4. visible focus and focus-equivalent hover affordances;
+5. keyboard alternatives for drag-and-drop and custom value controls;
+6. automated coverage of every GUI surface plus honest manual
+   GNOME acceptance.
 
-Die zugehörigen Regelvorschläge stehen als `ACC-1` bis `ACC-9` in
-`docs/ux-rules.md`. Sie bleiben bis zur vollständigen Umsetzung und ihrem
-regelbenannten Nachweis `[geplant]`.
+The corresponding proposed rules are recorded as `ACC-1` to `ACC-9` in
+`docs/ux-rules.md`. They stay `[planned]` until they are fully implemented and
+have their rule-named proof.
 
-## Abgrenzung
+## Scope boundary
 
-Dieser Plan umfasst alle bestehenden Oberflächen in `reprise-gnome`:
-Hauptfenster, Sidebar, Tracks/Albums/Artists, Queue/Playlists, Filter,
-Player-Leiste, Now-Playing/Lyrics, Issues, Geräte/Sync, Stats, Preferences,
-First Run, Tag-Editor, Import-/Bestätigungsdialoge, Popover, Compact/Minimal
-View und Portaldialog-Aufrufe.
+This plan covers all existing surfaces in `reprise-gnome`:
+main window, sidebar, Tracks/Albums/Artists, Queue/Playlists, filter,
+player bar, Now Playing/Lyrics, Issues, Devices/Sync, Stats, Preferences,
+First Run, tag editor, import/confirmation dialogs, popovers, compact/minimal
+view and portal dialog invocations.
 
-Nicht Teil dieser Stufe sind:
+Not part of this stage are:
 
-- ein visuelles Redesign außerhalb notwendiger Fokusindikatoren;
-- neue Produktfunktionen oder neue Roadmap-Views;
-- vollständige WCAG-Zertifizierung;
-- GNOME-/GTK-Upstream-Fixes;
-- native Wayland-, Media-Key- oder Lock-Screen-Verifikation;
-- Änderungen am Core-Datenmodell, sofern keine echte Keyboard-Operation sie
-  zwingend benötigt.
+- a visual redesign beyond the necessary focus indicators;
+- new product features or new roadmap views;
+- full WCAG certification;
+- GNOME/GTK upstream fixes;
+- native Wayland, media key or lock screen verification;
+- changes to the core data model, unless a genuine keyboard operation
+  absolutely requires them.
 
-Screenreader-Semantik, High Contrast und Large Text werden dennoch geprüft,
-weil ein scheinbar funktionierender Tastaturweg ohne Namen, Rolle oder
-sichtbaren Fokus keine belastbare Accessibility-Lösung ist.
+Screen reader semantics, High Contrast and Large Text are nevertheless
+checked, because an apparently working keyboard path without a name, role or
+visible focus is not a dependable accessibility solution.
 
-## Normative Grundlage
+## Normative basis
 
-- Die [GNOME-HIG zu Tastaturbedienung](https://developer.gnome.org/hig/guidelines/keyboard.html)
-  fordert Parität zu Pointer-Aktionen, logische Tab-Reihenfolge sowie die
-  Standardsemantik für Tab, Shift+Tab, Enter, Space, F10,
-  Menü-Taste/Shift+F10 und Esc.
-- Die [GNOME-HIG zu Accessibility](https://developer.gnome.org/hig/guidelines/accessibility.html)
-  fordert kurze beschreibende zugängliche Namen und reale Prüfungen mit
-  Keyboard, High Contrast, Large Text, Screenreader und Bildschirmtastatur.
-- Die [GTK4-Accessibility-Dokumentation](https://docs.gtk.org/gtk4/section-accessibility.html)
-  behandelt eine Rolle als Verhaltensversprechen: Eine per Gesture klickbare
-  eigene Fläche braucht nicht nur `Button`-Rolle, sondern auch eine
-  aktivierbare Action und die erwartete Tastatursemantik. Nichtstandard-
-  Interaktionen brauchen zugänglichen Hilfetext.
-- Die [GNOME-Referenz für Standardshortcuts](https://developer.gnome.org/hig/reference/keyboard)
-  ist für vorhandene Standardaktionen bindend; eigene Belegungen dürfen die
-  System- und Zugriffstasten nicht verdrängen.
-- WCAG 2.2 dient als ergänzende Prüfheuristik für
-  [Fokusordnung](https://www.w3.org/WAI/WCAG22/Understanding/focus-order.html)
-  und [sichtbaren Fokus](https://www.w3.org/WAI/WCAG22/Understanding/focus-visible).
-  GTK-/GNOME-Konventionen bleiben für die konkrete Desktop-Interaktion
-  vorrangig.
+- The [GNOME HIG on keyboard operation](https://developer.gnome.org/hig/guidelines/keyboard.html)
+  demands parity with pointer actions, a logical tab order as well as the
+  standard semantics for Tab, Shift+Tab, Enter, Space, F10,
+  Menu key/Shift+F10 and Esc.
+- The [GNOME HIG on accessibility](https://developer.gnome.org/hig/guidelines/accessibility.html)
+  demands short descriptive accessible names and real checks with
+  keyboard, High Contrast, Large Text, screen reader and on-screen keyboard.
+- The [GTK4 accessibility documentation](https://docs.gtk.org/gtk4/section-accessibility.html)
+  treats a role as a promise of behavior: a custom surface made clickable by
+  a gesture needs not only the `Button` role, but also an activatable action
+  and the expected keyboard semantics. Non-standard
+  interactions need accessible help text.
+- The [GNOME reference for standard shortcuts](https://developer.gnome.org/hig/reference/keyboard)
+  is binding for existing standard actions; custom bindings must not displace
+  the system and access keys.
+- WCAG 2.2 serves as a supplementary review heuristic for
+  [focus order](https://www.w3.org/WAI/WCAG22/Understanding/focus-order.html)
+  and [visible focus](https://www.w3.org/WAI/WCAG22/Understanding/focus-visible).
+  GTK/GNOME conventions remain paramount for the concrete desktop
+  interaction.
 
-## Arbeitsentscheidungen
+## Working decisions
 
-### Native Controls vor eigener Gesten-Semantik
+### Native controls before custom gesture semantics
 
-Wenn ein Element wie ein Button, Toggle, Link oder Range handelt, wird zuerst
-ein entsprechendes GTK/libadwaita-Control verwendet und nur visuell
-angepasst. Ein `GestureClick` auf `Label`, `Image`, `Box` oder `DrawingArea`
-bleibt nur, wenn ein natives Control technisch ungeeignet ist und Rolle,
-Name, Action, Fokus, Tasten und Tests vollständig mitgeliefert werden.
+When an element behaves like a button, toggle, link or range, a corresponding
+GTK/libadwaita control is used first and only adjusted visually. A
+`GestureClick` on `Label`, `Image`, `Box` or `DrawingArea`
+stays only when a native control is technically unsuitable and role,
+name, action, focus, keys and tests are supplied in full.
 
-### Ein Tab-Stop pro Collection, sekundäre Aktionen im Kontext
+### One tab stop per collection, secondary actions in context
 
-Sidebar, `ColumnView`, `GridView`, `ListBox` und vergleichbare Collections
-sind jeweils ein Tab-Stop. Pfeile bewegen den aktiven Eintrag. Unteraktionen
-einer Row/Card erzeugen nicht automatisch eine lange Kette verschachtelter
-Tab-Stops: Häufige native Buttons dürfen fokussierbar bleiben; weitere
-sekundäre Aktionen stehen im per Menü-Taste/Shift+F10 erreichbaren
-Kontextmenü. Der Mausweg und der Tastaturweg rufen dieselbe Action auf.
+Sidebar, `ColumnView`, `GridView`, `ListBox` and comparable collections
+are one tab stop each. Arrows move the active entry. Sub-actions
+of a row/card do not automatically produce a long chain of nested
+tab stops: frequently used native buttons may stay focusable; further
+secondary actions live in the context menu reachable via
+Menu key/Shift+F10. The mouse path and the keyboard path invoke the same
+action.
 
-### Fokus ist logische Identität, nicht Widget-Identität
+### Focus is logical identity, not widget identity
 
-Viele Reprise-Views bauen GTK-Widgets bei Filter, Scan, Geräte-Update oder
-Navigation neu. Fokuswiederherstellung speichert deshalb eine stabile
-Domänenidentität (`track_id`, Album-Key, Artist-Name, Geräte-ID,
-Issue-/Playlist-ID) und nicht bloß eine Position oder ein altes `Widget`.
-Wenn das Ziel verschwindet, gilt deterministisch: nächstes bedienbares Ziel,
-sonst vorheriges, sonst stabiler View-Container.
+Many Reprise views rebuild GTK widgets on filter, scan, device update or
+navigation. Focus restoration therefore stores a stable
+domain identity (`track_id`, album key, artist name, device ID,
+issue/playlist ID) and not merely a position or an old `Widget`.
+When the target disappears, the following applies deterministically: next
+operable target, otherwise the previous one, otherwise the stable view
+container.
 
-### Globale Shortcuts sind fokussensitiv
+### Global shortcuts are focus-sensitive
 
-Space löst auf passivem Content, in passiven Collections und selbst bei
-fokussiertem linken Sidebar-Toggle Play/Pause aus; der Toggle klappt die
-Sidebar nur per Pointer oder Enter um. Andere per Tastatur fokussierte
-Buttons, Toggles und Werte-Controls behalten Space lokal. Dasselbe
-Fokusprinzip gilt für Enter, Escape, Pfeile und Page-Tasten.
-Popover/Dialoge und Texteingaben gewinnen immer vor Fenster-Shortcuts. Diese
-Priorität wird mit echten Key-Events getestet, nicht aus Controller-Reihenfolge
-abgeleitet.
+Space triggers play/pause on passive content, in passive collections and even
+when the left sidebar toggle is focused; the toggle collapses the
+sidebar only via pointer or Enter. Other buttons, toggles and value controls
+focused via keyboard keep Space locally. The same
+focus principle applies to Enter, Escape, arrows and page keys.
+Popovers/dialogs and text entries always win over window shortcuts. This
+priority is tested with real key events, not derived from controller
+order.
 
-### Keine Pointer-Koordinaten als Accessibility-Nachweis
+### No pointer coordinates as accessibility proof
 
-Die abschließenden Keyboard-Szenarien verwenden AT-SPI-Ziele, Key-Events und
-Fokuszustände. Pointer-E2E bleibt für Hit-Testing/DnD-Gefühl nützlich, beweist
-aber keine Tastaturbedienung. Jeder App-Lauf bleibt mit privatem D-Bus, Xvfb,
-Scratch-XDG und `REPRISE_AUDIO_SINK=fakesink` von Nutzerdaten und Desktop
-isoliert.
+The final keyboard scenarios use AT-SPI targets, key events and
+focus states. Pointer E2E remains useful for hit testing/DnD feel, but proves
+no keyboard operability. Every app run stays isolated from user data and
+desktop with a private D-Bus, Xvfb, scratch XDG and
+`REPRISE_AUDIO_SINK=fakesink`.
 
-## Bestandsanalyse auf `e0493d0`
+## Existing-state analysis at `e0493d0`
 
-### Bereits gute Grundlagen
+### Already good foundations
 
-- Tracklisten aktivieren per Enter und öffnen ihr Kontextmenü per
-  Menü-Taste/Shift+F10.
-- Das Album-Grid besitzt Pfeilnavigation, Enter-Aktivierung, Keyboard-
-  Kontextmenü und einen eigenen `:focus-visible`-Ring.
-- Die Sidebar trennt Fokus-Browsing von Aktivierung; bloßes Tabbing/Arrowing
-  routet nicht mehr in eine andere View.
-- Der Tag-Editor besitzt mit TAG-8 eine detaillierte Enter-/Esc-/Tab-
-  Semantik und Ctrl+Page-Up/Down-Navigation.
-- Der Spalteneditor bietet Alt+Pfeil als Alternative zum internen Reorder und
-  exponiert `KeyShortcuts`.
-- Compact View und Track-/Album-Menüs besitzen bereits Keyboard-
-  Kontextmenüpfade.
-- Standardcontrols wie Button, Switch, ComboRow, DropDown, Scale,
-  SearchEntry und native libadwaita-Dialoge bringen einen belastbaren
-  Grundvertrag mit.
+- Track lists activate via Enter and open their context menu via
+  Menu key/Shift+F10.
+- The album grid has arrow navigation, Enter activation, a keyboard
+  context menu and its own `:focus-visible` ring.
+- The sidebar separates focus browsing from activation; mere tabbing/arrowing
+  no longer routes into a different view.
+- With TAG-8, the tag editor has detailed Enter/Esc/Tab
+  semantics and Ctrl+Page-Up/Down navigation.
+- The column editor offers Alt+Arrow as an alternative to the internal reorder
+  and exposes `KeyShortcuts`.
+- Compact view and track/album menus already have keyboard
+  context menu paths.
+- Standard controls such as Button, Switch, ComboRow, DropDown, Scale,
+  SearchEntry and native libadwaita dialogs come with a dependable
+  base contract.
 
-### Nachgewiesene oder sehr wahrscheinliche Lücken
+### Proven or highly likely gaps
 
-| Fläche | Befund | Risiko |
+| Surface | Finding | Risk |
 |---|---|---|
-| Player-Leiste | Cover, Titel und Artist sind passive `Image`/`Label` mit `GestureClick` | Pointer-only Aktionen, keine Rolle/Name/Fokus |
-| Waveform | `DrawingArea` mit `GestureDrag`, ohne Key- oder Range-Vertrag | Seek ist per Tastatur nicht erreichbar |
-| Artist-Detail | Top-Track ist eine `Box` mit Double-Click-Gesture | Enter/Space und Fokus fehlen |
-| Lyrics | Synced-Zeilen sind per Gesture seekbar | NPP-8 ist nur per Pointer operabel |
-| Album-Card | Artist-Untertitel ist ein klickbares `Label`; Play ist verschachtelter Hover-Button | unklare/duplizierte Fokuswege |
-| Sidebar-Aktivität | Geräte-, Scan- und Relink-Karten aktivieren über Gestures auf Containern | Karte ist semantisch/passiv für Keyboard/AT-SPI |
-| Issues | Row-Pills erscheinen nur bei Hover; mehrere Kontextmenüs sind nur per Rechtsklick verdrahtet | Aktionen sind nicht auffindbar/erreichbar |
-| DnD | Queue-/Playlist-Reorder und Drop auf Sidebar-Ziele sind pointerzentriert | keine gleichwertige Reihenfolge-/Add-Operation |
-| Suche | Zweites Esc fokussiert immer die Trackliste | falsches Ziel in Albums/Artists/Stats/Issues/Device |
-| View-Rebuilds | mehrere Views entfernen Kinder vollständig und bauen sie neu | Fokusverlust bei Filter/Sync/Refresh möglich |
-| View-Switcher CSS | `outline: none` ohne lokalen `:focus-visible`-Ersatz | Tastaturfokus kann unsichtbar sein |
-| Semantik | explizite Namen/Rollen/States sind nur punktuell gesetzt | AT-SPI/Orca kann Controls unvollständig melden |
-| Dialoge/Popover | viele eigene Esc- und Stack-Pfade, kein gemeinsamer Fokusvertrag | Fokus kann nicht zum Auslöser zurückkehren |
+| Player bar | Cover, title and artist are passive `Image`/`Label` with `GestureClick` | pointer-only actions, no role/name/focus |
+| Waveform | `DrawingArea` with `GestureDrag`, without a key or range contract | seek is not reachable by keyboard |
+| Artist detail | Top track is a `Box` with a double-click gesture | Enter/Space and focus are missing |
+| Lyrics | Synced lines are seekable via gesture | NPP-8 is operable only by pointer |
+| Album card | The artist subtitle is a clickable `Label`; Play is a nested hover button | unclear/duplicated focus paths |
+| Sidebar activity | Device, scan and relink cards activate via gestures on containers | the card is semantically/passively inert for keyboard/AT-SPI |
+| Issues | Row pills appear only on hover; several context menus are wired only for right-click | actions are not discoverable/reachable |
+| DnD | Queue/playlist reorder and drop onto sidebar targets are pointer-centric | no equivalent reorder/add operation |
+| Search | A second Esc always focuses the track list | wrong target in Albums/Artists/Stats/Issues/Device |
+| View rebuilds | several views remove children completely and rebuild them | focus loss possible on filter/sync/refresh |
+| View switcher CSS | `outline: none` without a local `:focus-visible` replacement | keyboard focus can be invisible |
+| Semantics | explicit names/roles/states are set only in places | AT-SPI/Orca can report controls incompletely |
+| Dialogs/popovers | many custom Esc and stack paths, no shared focus contract | focus cannot return to the trigger |
 
-### Noch live zu verifizieren
+### Still to be verified live
 
-Der CUA-Systemprobe ist in der aktuellen Sandbox vor dem App-Start mit
-`Operation not permitted` blockiert. Das ist ein Host-/Socket-Limit, kein
-Reprise-Befund. Darum sind folgende Aussagen bis zum isolierten Lauf auf
-einem AT-SPI-fähigen Host ausdrücklich Hypothesen:
+The CUA system probe is blocked in the current sandbox before app start with
+`Operation not permitted`. That is a host/socket limit, not a
+Reprise finding. For that reason the following statements are explicitly
+hypotheses until the isolated run on an AT-SPI-capable host:
 
-- konkrete Tab-Reihenfolge und sichtbarer Fokus im vollständigen Fenster;
-- tatsächliche Fokusfalle/-rückgabe von AdwDialog, FileDialog und Popover;
-- GTKs reale Priorität zwischen globalem Space und fokussierten Controls;
-- zugängliche Namen/Zustände, die GTK implizit aus Tooltip/Label ableitet;
-- Orca-Ausgabe und High-Contrast-Darstellung.
+- the concrete tab order and visible focus in the full window;
+- the actual focus trap/return of AdwDialog, FileDialog and popovers;
+- GTK's real priority between global Space and focused controls;
+- accessible names/states that GTK derives implicitly from tooltip/label;
+- Orca output and High Contrast rendering.
 
-## Ziel-Inventar der Keyboard-Flows
+## Target inventory of the keyboard flows
 
-Jede Zeile wird im finalen CUA-Sweep mindestens einmal allein per Tastatur
-erreicht, bedient und wieder verlassen.
+Every line is reached, operated and left again at least once in the final CUA
+sweep using the keyboard alone.
 
-| Bereich | Muss abgedeckt sein |
+| Area | Must be covered |
 |---|---|
-| App-Shell | Startfokus, Header, Sidebar-Toggle, Back/Forward, View-Switcher, Suche, Primärmenü, Shortcuts/Help/About |
-| Sidebar | Orte, Playlists, New/Import Playlist, Issues, Device-Card, Scan/Relink-Karten, Collapse/Overlay-Modus |
-| Tracks/Playlist/Queue | Arrow/Home/End/Page, Multi-Select, Enter, Rating, Sort, Filter, Kontextmenü, Queue-Sektionen |
-| Albums | Grid-Roving-Focus, Open, Play/Queue, Artist-Ziel, Kontextmenü, Back/Forward-Fokus |
-| Artists | Master-Liste, Detail, Album-Cards, Top-Tracks, Show-all, Hero-Menü |
-| Player/Now Playing | Transport, Shuffle/Repeat, Volume, Queue, Cover/Titel/Artist, Panel-Tabs, Up Next, Lyrics, Waveform |
-| Issues/Import | Gruppen, Collapse, Row-Auswahl, Pills/Menüs, Locate, Remove/Undo, Retry/Dismiss/Export |
-| Device/Sync | Filterchips, Trackliste, Sync/Cancel, Settings, Eject, Add-to-playlist-Drop-Alternative |
-| Preferences | Seitennavigation, alle Switch/Combo/Scale/Entry-Flächen, Scrobbler, Sync, Column-Editor |
-| Modale | First Run, Tag-Editor, Confirm/Discard/Delete/Locate, Import-Fortschritt, FileDialog, About/Shortcuts |
-| Stats | Jahresauswahl, Scrollen, nicht-interaktive Charts/Listen ohne falsche Fokus-Stops |
-| Compact/Minimal | Restore, Transport, Volume, Menü, Always-on-top, Preferences, Quit, Escape/Ctrl+W |
+| App shell | Start focus, header, sidebar toggle, back/forward, view switcher, search, primary menu, shortcuts/help/about |
+| Sidebar | Places, playlists, New/Import Playlist, Issues, device card, scan/relink cards, collapse/overlay mode |
+| Tracks/Playlist/Queue | Arrow/Home/End/Page, multi-select, Enter, rating, sort, filter, context menu, queue sections |
+| Albums | Grid roving focus, open, play/queue, artist target, context menu, back/forward focus |
+| Artists | Master list, detail, album cards, top tracks, show all, hero menu |
+| Player/Now Playing | Transport, shuffle/repeat, volume, queue, cover/title/artist, panel tabs, Up Next, lyrics, waveform |
+| Issues/Import | Groups, collapse, row selection, pills/menus, locate, remove/undo, retry/dismiss/export |
+| Device/Sync | Filter chips, track list, sync/cancel, settings, eject, add-to-playlist drop alternative |
+| Preferences | Page navigation, all switch/combo/scale/entry surfaces, scrobbler, sync, column editor |
+| Modals | First Run, tag editor, confirm/discard/delete/locate, import progress, FileDialog, About/Shortcuts |
+| Stats | Year selection, scrolling, non-interactive charts/lists without wrong focus stops |
+| Compact/Minimal | Restore, transport, volume, menu, always-on-top, Preferences, quit, Escape/Ctrl+W |
 
-## Umsetzung — taskweise, strikt TDD
+## Implementation — task by task, strictly TDD
 
-Jeder Task beginnt mit einem roten Test, führt nur die kleinste notwendige
-Änderung ein, läuft durch alle Repo-Gates, wird adversarial gegen Regeln und
-Inventar geprüft und endet in genau einem Commit. Die Ledger-Zeile wird nach
-dem Commit ergänzt. Keine Regel wird vor ihrer vollständigen Abdeckung auf
-`[aktiv]` gesetzt.
+Every task starts with a red test, introduces only the smallest necessary
+change, runs through all repo gates, is checked adversarially against rules and
+inventory and ends in exactly one commit. The ledger line is added after
+the commit. No rule is set to `[active]` before its full coverage.
 
-### Task KBD-1 — Keyboard-/AT-SPI-Testfundament erweitern
+### Task KBD-1 — Extend the keyboard/AT-SPI test foundation
 
-**Ziel:** Das bestehende CUA-Harness kann echte Key-Events, Fokuszustände,
-Tab-Sequenzen, Fensterwechsel und Fokus-Rückgabe beweisen.
+**Goal:** The existing CUA harness can prove real key events, focus states,
+tab sequences, window changes and focus return.
 
 **Red:**
 
-- Contracttests für noch fehlende `cua_press_key_label`,
+- Add contract tests for the still missing `cua_press_key_label`,
   `cua_press_key_focused`, `cua_hotkey`, `assert_focused_label`,
-  `assert_focus_within` und `assert_focus_returns_to` ergänzen.
-- Ein Fake-Driver-Szenario muss scheitern, wenn kein Vorher-/Nachher-Snapshot
-  existiert, der Key am falschen PID landet oder Fokus nach der Aktion nicht
-  den erwarteten semantischen Knoten trägt.
-- Der Runner muss auf `degraded`, `suspected_noop`, Escalation und fehlende
-  `focused`-States fail-closed reagieren.
+  `assert_focus_within` and `assert_focus_returns_to`.
+- A fake driver scenario must fail when no before/after snapshot
+  exists, the key lands at the wrong PID or focus after the action does not
+  carry the expected semantic node.
+- The runner must react fail-closed to `degraded`, `suspected_noop`,
+  escalation and missing `focused` states.
 
 **Green:**
 
-- `scripts/cua-e2e/lib.sh` um die Key-/Fokus-Primitiven erweitern.
-- `scripts/tests/cua-e2e.sh` mit deterministischem Fake-Tree ausbauen.
-- `scripts/cua-e2e/keyboard.sh` als separaten, vom Pointer-Sweep unabhängigen
-  Szenario-Runner anlegen.
-- Ein Manifest hält die obige Oberflächenliste und das zugehörige Szenario;
-  fehlende Bereiche lassen den Contracttest fehlschlagen.
+- Extend `scripts/cua-e2e/lib.sh` with the key/focus primitives.
+- Expand `scripts/tests/cua-e2e.sh` with a deterministic fake tree.
+- Create `scripts/cua-e2e/keyboard.sh` as a separate scenario runner,
+  independent of the pointer sweep.
+- A manifest holds the surface list above and the corresponding scenario;
+  missing areas make the contract test fail.
 
-**Prüfung:** Shellcheck/Contracttest, danach vollständige Gates. Der echte
-CUA-Lauf darf bei blockiertem Host nur als `deferred host check` dokumentiert
-werden, nie als grün.
+**Verification:** shellcheck/contract test, then the full gates. The real
+CUA run may be documented only as a `deferred host check` when the host is
+blocked, never as green.
 
 **Commit:** `test(a11y): add keyboard and focus acceptance primitives`
 
-### Task KBD-2 — Shell, Fokusziel und Shortcut-Priorität härten
+### Task KBD-2 — Harden the shell, focus target and shortcut priority
 
-**Ziel:** App-Shell, Sidebar und globale Aktionen bilden einen stabilen
-Fokusgraphen.
+**Goal:** App shell, sidebar and global actions form a stable
+focus graph.
 
 **Red:**
 
-- Displaytest: zweites Search-Esc gibt Fokus an Tracks, Albums, Artists,
-  Stats, Issues und Device jeweils an deren aktiven Container zurück.
-- Displaytest: Sidebar-Arrow verändert Fokus/Selektion, routet erst auf
+- Display test: a second search Esc returns focus to Tracks, Albums, Artists,
+  Stats, Issues and Device, each to their active container.
+- Display test: sidebar arrow changes focus/selection, routes only on
   Enter/Space.
-- Key-Delivery-Test: Space toggelt Playback auf passivem Content und in
-  passiven Collections, aber nie auf Entry, per Tastatur fokussiertem
-  Button/Toggle, Range oder offenem Popover/Dialog. Der linke Sidebar-Toggle
-  bleibt davon unabhängig immer ein globales Play/Pause-Ziel.
-- Tests für F10, Ctrl+W, Ctrl+Q und die Synchronität der Help-Liste.
+- Key delivery test: Space toggles playback on passive content and in
+  passive collections, but never on an entry, a button/toggle focused via
+  keyboard, a range or an open popover/dialog. Independently of that, the
+  left sidebar toggle always remains a global play/pause target.
+- Tests for F10, Ctrl+W, Ctrl+Q and the synchronicity of the help list.
 
 **Green:**
 
-- Ein `ActiveContentFocus`-Adapter ersetzt die feste TrackList-Abhängigkeit
-  der Esc-Logik; jede View exponiert genau ein stabiles Fokusziel.
-- Globale Actions prüfen eine zentrale Fokus-/Transient-Entscheidung statt
-  einzelner Widget-Ausnahmen.
-- Standardshortcuts werden als Actions verdrahtet; vorhandene
-  Alt+Left/Right-, Ctrl+F/L/,/?- und F1-Pfade bleiben unverändert.
-- Navigation und Back/Forward speichern/restaurieren Fokus logisch pro View.
+- An `ActiveContentFocus` adapter replaces the fixed TrackList dependency
+  of the Esc logic; every view exposes exactly one stable focus target.
+- Global actions consult a central focus/transient decision instead of
+  individual widget exceptions.
+- Standard shortcuts are wired as actions; existing
+  Alt+Left/Right, Ctrl+F/L/,/? and F1 paths remain unchanged.
+- Navigation and back/forward save/restore focus logically per view.
 
-**Betroffene Dateien:** `ui/shortcuts.rs`, `ui/help.rs`,
+**Affected files:** `ui/shortcuts.rs`, `ui/help.rs`,
 `ui/window/window_runtime_wiring.rs`, `ui/window/library_shell.rs`,
-`ui/sidebar/sidebar_row_wiring.rs`, die Focus-Adapter der Views.
+`ui/sidebar/sidebar_row_wiring.rs`, the focus adapters of the views.
 
 **Commit:** `fix(a11y): harden shell focus routing and shortcut scope`
 
-### Task KBD-3 — Library-Collections keyboard-complete machen
+### Task KBD-3 — Make library collections keyboard-complete
 
-**Ziel:** Tracks, Albums und Artists sind als native roving Collections
-bedienbar, ohne verschachtelte oder pointer-only Aktionen.
+**Goal:** Tracks, Albums and Artists are operable as native roving
+collections, without nested or pointer-only actions.
 
 **Red:**
 
-- Trackliste: Tab landet einmal im `ColumnView`; Arrow/Home/End/Page bewegen,
-  Enter aktiviert, Space selektiert, Menu/Shift+F10 öffnet auf der
-  Tastaturselektion.
-- Album-Grid: Card-Open, Play/Queue, Artist-Navigation und Kontextmenü sind
-  vom fokussierten Card-Item erreichbar; kein doppelter Card-/Child-Stop.
-- Artist: Master-Auswahl aktiviert nicht beim bloßen Fokuswechsel;
-  Album-Cards und Top-Tracks besitzen Enter-/Menüpfade.
-- Back/Forward restauriert Collection und logischen Eintrag.
+- Track list: Tab lands once in the `ColumnView`; Arrow/Home/End/Page move,
+  Enter activates, Space selects, Menu/Shift+F10 opens on the
+  keyboard selection.
+- Album grid: card open, play/queue, artist navigation and context menu are
+  reachable from the focused card item; no duplicate card/child stop.
+- Artist: master selection does not activate on a mere focus change;
+  album cards and top tracks have Enter/menu paths.
+- Back/forward restores the collection and the logical entry.
 
 **Green:**
 
-- Grid/List-native Activation bleibt der Primärpfad.
-- Sekundäre Card-/Row-Aktionen wandern in das Keyboard-Kontextmenü oder in
-  echte Controls; bestehende Maus-Aktionen delegieren auf dieselben Actions.
-- Passive Double-Click-Boxes werden durch native Rows/Buttons oder einen
-  vollständig semantischen Action-Surface ersetzt.
-- Selection/Fokus und Playing-Markierung bleiben getrennte Zustände.
+- Grid/list-native activation stays the primary path.
+- Secondary card/row actions move into the keyboard context menu or into
+  real controls; existing mouse actions delegate to the same actions.
+- Passive double-click boxes are replaced by native rows/buttons or a
+  fully semantic action surface.
+- Selection/focus and playing marker stay separate states.
 
-**Betroffene Dateien:** `ui/track_list/*`, `ui/library_views/album_*`,
+**Affected files:** `ui/track_list/*`, `ui/library_views/album_*`,
 `ui/library_views/artist_*`, `ui/nav_history.rs`.
 
 **Commit:** `fix(a11y): make library collections keyboard complete`
 
-### Task KBD-4 — Issues, Geräte und Aktivitätskarten erschließen
+### Task KBD-4 — Open up Issues, devices and activity cards
 
-**Ziel:** Jede Karte, Row und Inline-Aktion in Issues/Import/Device/Progress
-hat einen verständlichen Fokus- und Aktivierungspfad.
+**Goal:** Every card, row and inline action in Issues/Import/Device/Progress
+has a comprehensible focus and activation path.
 
 **Red:**
 
-- Scan-, Relink- und Device-Card müssen Name, Rolle, Zustand und Aktivierung
-  per Enter/Space exponieren.
-- Missing-/Import-Row-Kontextmenüs öffnen per Menu/Shift+F10 auf der aktuellen
-  Auswahl.
-- Hover-Pills sind bei Row-Fokus sichtbar oder im Keyboard-Kontextmenü
-  vollständig vertreten.
-- Rebuild/Collapse/Retry/Dismiss/Remove erhält Fokus logisch; entfernte Rows
-  nutzen die ACC-6-Fallback-Reihenfolge.
+- Scan, relink and device cards must expose name, role, state and activation
+  via Enter/Space.
+- Missing/import row context menus open via Menu/Shift+F10 on the current
+  selection.
+- Hover pills are visible on row focus or fully represented in the keyboard
+  context menu.
+- Rebuild/collapse/retry/dismiss/remove keeps focus logical; removed rows
+  use the ACC-6 fallback order.
 
 **Green:**
 
-- Container-Gestures durch `Button`/`ActionRow` ersetzen oder über einen
-  gemeinsamen Action-Surface-Helper vollständig semantisieren.
-- Pointer- und Keyboard-Menüs verwenden denselben Model-/Action-Builder.
-- `busy`, `expanded`, `disabled`, Progress-Name/Wert und Cancel-Aktion werden
-  dynamisch aktualisiert.
+- Replace container gestures with `Button`/`ActionRow` or make them fully
+  semantic via a shared action surface helper.
+- Pointer and keyboard menus use the same model/action builder.
+- `busy`, `expanded`, `disabled`, progress name/value and cancel action are
+  updated dynamically.
 
-**Betroffene Dateien:** `ui/issues/*`, `ui/import_errors_view.rs`,
+**Affected files:** `ui/issues/*`, `ui/import_errors_view.rs`,
 `ui/scan/scan_progress.rs`, `ui/sidebar/sidebar_device_card.rs`,
 `ui/device_view/device_view.rs`.
 
 **Commit:** `fix(a11y): expose issue device and activity surfaces to keyboards`
 
-### Task KBD-5 — Player, Waveform und Lyrics bedienen
+### Task KBD-5 — Operate player, waveform and lyrics
 
-**Ziel:** Sämtliche Player- und Now-Playing-Aktionen funktionieren ohne
-Pointer.
+**Goal:** All player and Now Playing actions work without a
+pointer.
 
 **Red:**
 
-- Cover, Titel und Artist der Player-Leiste besitzen eindeutige Fokus-Stops,
-  Namen und Enter-/Space-Aktivierung mit denselben Callbacks wie Click.
-- Transport/Volume/Queue behalten native Tasten; globales Space stört sie
-  nicht.
-- Waveform meldet Range-Min/Max/Now/Text und unterstützt Arrow,
-  Page-Up/Down, Home/End mit einem einzigen Seek-Commit pro Key.
-- Lyrics-Liste ist ein roving Focus-Container; Arrow bewegt, Enter seekt nur
-  bei synced Lyrics; unsynced Text ist kein falscher Action-Stop.
-- Now-Playing-Tabs exponieren TabList/Tab/Selected/Controls korrekt.
+- Cover, title and artist of the player bar have unambiguous focus stops,
+  names and Enter/Space activation with the same callbacks as click.
+- Transport/volume/queue keep native keys; global Space does not disturb
+  them.
+- The waveform reports range min/max/now/text and supports Arrow,
+  Page-Up/Down, Home/End with a single seek commit per key.
+- The lyrics list is a roving focus container; arrow moves, Enter seeks only
+  with synced lyrics; unsynced text is not a wrong action stop.
+- The Now Playing tabs expose TabList/Tab/Selected/Controls correctly.
 
 **Green:**
 
-- Passive Player-Metadaten in echte flache Controls oder vollständige
-  Action-Surfaces umwandeln.
-- `WaveformSeek` erhält eine zentrale `SeekStep`-Entscheidung, fokussierbare
-  Range-Semantik und zugänglichen Zeitwert; Drag und Keys rufen denselben
-  Commit-Pfad.
-- Lyrics-Zeilen verwenden List-/Row-Aktivierung statt Gesture-only Click.
+- Turn passive player metadata into real flat controls or complete
+  action surfaces.
+- `WaveformSeek` gets a central `SeekStep` decision, focusable
+  range semantics and an accessible time value; drag and keys call the same
+  commit path.
+- Lyrics lines use list/row activation instead of gesture-only click.
 
-**Betroffene Dateien:** `ui/player_bar/*`, `ui/now_playing/*`, `ui/lyrics/*`,
+**Affected files:** `ui/player_bar/*`, `ui/now_playing/*`, `ui/lyrics/*`,
 `ui/playback/*`, `ui/compact/*`.
 
 **Commit:** `fix(a11y): make player waveform and lyrics keyboard operable`
 
-### Task KBD-6 — Dialog-/Popover-Fokusvertrag vereinheitlichen
+### Task KBD-6 — Unify the dialog/popover focus contract
 
-**Ziel:** Jede transiente Ebene startet, enthält, schließt und restauriert
-Fokus deterministisch.
+**Goal:** Every transient layer starts, contains, closes and restores
+focus deterministically.
 
 **Red:**
 
-- Tab/Shift+Tab verlassen keinen offenen Dialog/Popover.
-- Esc-Kaskaden: Autocomplete → Tag-Editor → auslösende Library-Row;
-  Browse-Chooser → Browse-Button; Kontextmenü → fokussierte Row/Card;
-  Bestätigung → auslösender Button/Row.
-- First Run startet auf der primären sinnvollen Aktion; Preferences auf der
-  gewählten Seite; Rhythmbox-Import behält Fokus über Selection → Progress →
-  Complete.
-- Ctrl+W schließt die oberste schließbare Ebene, ohne darunterliegende App-
-  Aktion auszulösen.
+- Tab/Shift+Tab do not leave an open dialog/popover.
+- Esc cascades: autocomplete → tag editor → the triggering library row;
+  browse chooser → browse button; context menu → the focused row/card;
+  confirmation → the triggering button/row.
+- First Run starts on the primary sensible action; Preferences on the
+  chosen page; the Rhythmbox import keeps focus across selection → progress →
+  complete.
+- Ctrl+W closes the topmost closable layer, without triggering an underlying
+  app action.
 
 **Green:**
 
-- Gemeinsamer `TransientFocusGuard` speichert den schwachen Auslöser, setzt
-  Initialfokus nach Present und restauriert bei Close mit stabilem Fallback.
-- Eigene Esc-Controller delegieren an eine zentrale Kaskadenentscheidung;
-  native Dialogsemantik wird nicht doppelt überschrieben.
-- Primäraktionen und häufige Dialogbuttons erhalten übersetzbare Mnemonics;
-  Konflikte werden pro Oberfläche getestet.
+- A shared `TransientFocusGuard` stores the weak trigger, sets
+  initial focus after present and restores on close with a stable fallback.
+- Custom Esc controllers delegate to a central cascade decision;
+  native dialog semantics are not overridden twice.
+- Primary actions and frequently used dialog buttons get translatable
+  mnemonics; conflicts are tested per surface.
 
-**Betroffene Dateien:** `ui/tag_edit/*`, `ui/preferences/*`, `ui/first_run.rs`,
+**Affected files:** `ui/tag_edit/*`, `ui/preferences/*`, `ui/first_run.rs`,
 `ui/dialogs.rs`, `ui/delete_tracks.rs`, `ui/issues/missing_dialogs.rs`,
 `ui/browse/*`, `ui/track_list/column_layout_editor.rs`, `ui/about.rs`,
 `ui/help.rs`, `ui/sidebar/sidebar_playlist_creation.rs`.
 
 **Commit:** `fix(a11y): unify dialog and popover focus lifecycle`
 
-### Task KBD-7 — DnD und Reorder mit Tastaturalternativen versehen
+### Task KBD-7 — Give DnD and reorder keyboard alternatives
 
-**Ziel:** Keine Move-/Add-Operation hängt ausschließlich an Drag-and-drop.
+**Goal:** No move/add operation depends exclusively on drag-and-drop.
 
 **Red:**
 
-- Playlist-/Queue-Reorder per Keyboard produziert exakt dieselbe
-  `ReorderMove`/`QueueReorderOp` wie der Drop-Pfad und respektiert Sort-,
-  Filter-, Section- und Playing-Guards.
-- „Zu Playlist/Queue hinzufügen" ist von der fokussierten Trackselektion per
-  Kontextmenü erreichbar und delegiert auf dieselben Membership-/Queue-
-  Funktionen wie Sidebar-Drop.
-- Spaltenreorder per Alt+Arrow bleibt mit DnD synchron; Header-Reorder hat
-  über den Column-Editor denselben erreichbaren Persistenzpfad.
-- Nicht zulässige Moves sind disabled und benannt, nie stille No-ops.
+- Playlist/queue reorder via keyboard produces exactly the same
+  `ReorderMove`/`QueueReorderOp` as the drop path and respects sort,
+  filter, section and playing guards.
+- "Add to playlist/queue" is reachable from the focused track selection via
+  the context menu and delegates to the same membership/queue
+  functions as the sidebar drop.
+- Column reorder via Alt+Arrow stays in sync with DnD; header reorder has
+  the same reachable persistence path via the column editor.
+- Impermissible moves are disabled and named, never silent no-ops.
 
 **Green:**
 
-- Reorder-/Add-Commands werden als gemeinsame Actions aus den bestehenden
-  reinen Decision-Funktionen aufgebaut.
-- Kontextmenüs bieten Move up/down/to top bzw. Add-Ziele nur, wenn sie für
-  den aktuellen Kontext gültig sind.
-- `KeyShortcuts`/HelpText dokumentieren nichtstandardisierte Reorder-Tasten.
+- Reorder/add commands are built as shared actions out of the existing
+  pure decision functions.
+- Context menus offer move up/down/to top or add targets only when they are
+  valid for the current context.
+- `KeyShortcuts`/help text document non-standard reorder keys.
 
-**Betroffene Dateien:** `ui/track_list/track_list_dnd.rs`,
+**Affected files:** `ui/track_list/track_list_dnd.rs`,
 `ui/track_list/track_menu.rs`, `ui/track_list/track_list_context_menu.rs`,
-`ui/sidebar/sidebar_dnd.rs`, `ui/track_list/column_*`, Queue-/Playlist-Wiring.
+`ui/sidebar/sidebar_dnd.rs`, `ui/track_list/column_*`, queue/playlist wiring.
 
 **Commit:** `fix(a11y): add keyboard alternatives for drag and drop`
 
-### Task KBD-8 — Semantik-, Fokus- und Hover-Audit schließen
+### Task KBD-8 — Close the semantics, focus and hover audit
 
-**Ziel:** Der gesamte GTK-Baum besitzt ehrliche Namen/Rollen/States und
-sichtbare Fokusindikatoren; neue pointer-only Flächen werden zum Gate-Fehler.
+**Goal:** The entire GTK tree has honest names/roles/states and
+visible focus indicators; new pointer-only surfaces become a gate failure.
 
 **Red:**
 
-- Widget-Walks über jede konstruierbare Oberfläche melden namenlose
-  interaktive Controls, falsche Rollen, fehlende `selected/checked/expanded`
-  States, dekorative Doppelmeldungen und unsichtbare Fokus-Stops.
-- CSS-Gate schlägt bei `outline: none` ohne gleichwertige
-  `:focus-visible`-Regel fehl.
-- Input-Parity-Gate findet jede neue `GestureClick`, `GestureDrag`,
-  `DragSource`, `DropTarget` und Pointer-Cursor-Stelle ohne dokumentierten,
-  getesteten Keyboard-Partner.
-- Displaytest beweist Fokusindikatoren mindestens an Shell, Switcher,
-  Trackliste, Grid, Sidebar, Player, Dialog und Custom-Range.
+- Widget walks over every constructible surface report nameless
+  interactive controls, wrong roles, missing `selected/checked/expanded`
+  states, decorative duplicate reports and invisible focus stops.
+- The CSS gate fails on `outline: none` without an equivalent
+  `:focus-visible` rule.
+- The input parity gate finds every new `GestureClick`, `GestureDrag`,
+  `DragSource`, `DropTarget` and pointer cursor site without a documented,
+  tested keyboard partner.
+- A display test proves focus indicators at least on shell, switcher,
+  track list, grid, sidebar, player, dialog and custom range.
 
 **Green:**
 
-- Zugängliche Labels/Relations/States zentral ergänzen und bei Statewechseln
-  aktualisieren; Dekoration aus dem Tree nehmen.
-- View-Switcher- und weitere CSS-Fokuslücken schließen, ohne Theme-Defaults
-  unnötig zu überschreiben.
-- Hover-only Controls erhalten `:focus-within`-Darstellung oder vollständige
-  Keyboard-Menüparität.
-- Ein schmaler `scripts/check-input-parity.sh`-Gate verlangt für jede eigene
-  Pointer-/Drag-Fläche einen expliziten Rule-/Test-Verweis; keine pauschale
-  Datei-Allowlist.
+- Add accessible labels/relations/states centrally and update them on state
+  changes; take decoration out of the tree.
+- Close the view switcher and further CSS focus gaps, without overriding
+  theme defaults unnecessarily.
+- Hover-only controls get a `:focus-within` rendering or full
+  keyboard menu parity.
+- A narrow `scripts/check-input-parity.sh` gate demands an explicit
+  rule/test reference for every custom pointer/drag surface; no blanket
+  file allowlist.
 
 **Commit:** `test(a11y): gate semantics focus visibility and input parity`
 
-### Task KBD-9 — Regelbenannte End-to-End-Abnahme und Status-Flips
+### Task KBD-9 — Rule-named end-to-end acceptance and status flips
 
-**Ziel:** Alle automatisierbaren ACC-Regeln werden erst nach einem
-vollständigen Keyboard-Sweep einklagbar.
+**Goal:** All automatable ACC rules only become enforceable after a
+complete keyboard sweep.
 
 **Red:**
 
-- `acc-1-keyboard-only-surface-sweep` durchläuft das Ziel-Inventar ohne
-  Pointer-Aktion.
-- `acc_2_every_interactive_surface_has_name_role_state_and_action` prüft den
-  Widget-/AT-SPI-Vertrag.
+- `acc-1-keyboard-only-surface-sweep` walks the target inventory without a
+  pointer action.
+- `acc_2_every_interactive_surface_has_name_role_state_and_action` checks the
+  widget/AT-SPI contract.
 - `acc-3-tab-order-and-roving-collections`,
   `acc-4a-space-routes-global-and-local-controls`,
   `acc-5-transients-and-navigation_restore_focus`,
   `acc_6_dynamic_updates_preserve_logical_focus`,
-  `acc-8-direct-manipulation-has-keyboard-equivalence` und
-  `acc_9_help_matches_registered_standard_shortcuts` scheitern gezielt gegen
-  jeweils eine zurückgenommene Implementierung.
+  `acc-8-direct-manipulation-has-keyboard-equivalence` and
+  `acc_9_help_matches_registered_standard_shortcuts` each fail deliberately
+  against one reverted implementation.
 
 **Green:**
 
-- Echte isolierte CUA-Läufe für leeres und bestücktes Profil, schmale und
-  breite Fenster, jedes Inventar-Ziel und alle transienten Ebenen.
-- Nach jeder Aktion Snapshot; Fokus, State und sichtbarer Effekt werden
-  gemeinsam geprüft. Keine Koordinaten, kein stilles Escalation-Fallback.
-- Erst in diesem Commit `ACC-1/2/3/4/5/6/8/9` von `[geplant]` auf `[aktiv]`
-  setzen und Traceability laufen lassen.
-- `ACC-7` bleibt bis zur manuellen Sichtprüfung `[geplant]`.
+- Real isolated CUA runs for an empty and a populated profile, narrow and
+  wide windows, every inventory target and all transient layers.
+- A snapshot after every action; focus, state and visible effect are
+  checked together. No coordinates, no silent escalation fallback.
+- Only in this commit set `ACC-1/2/3/4/5/6/8/9` from `[planned]` to `[active]`
+  and run traceability.
+- `ACC-7` stays `[planned]` until the manual visual check.
 
 **Commit:** `test(a11y): activate the automated keyboard accessibility rules`
 
-### Manuelle GNOME-Abnahme und Stage-Closeout (kein Implementierungstask)
+### Manual GNOME acceptance and stage closeout (not an implementation task)
 
-Nach KBD-9 folgt die reale Sicht- und Assistive-Technology-Prüfung. Sie ist
-kein weiterer Implementierungstask und erzeugt nur dann einen Commit, wenn
-die Prüfung bestanden wurde und `ACC-7` samt Release-Checkliste ehrlich
-aktiviert werden kann.
+After KBD-9 comes the real visual and assistive technology check. It is
+not another implementation task and produces a commit only when
+the check has passed and `ACC-7` together with the release checklist can be
+activated honestly.
 
-**Manuelle Matrix:**
+**Manual matrix:**
 
-1. komplette App nur mit Tastatur, ohne Pointer;
-2. Default- und High-Contrast-Theme: Fokus an jedem Stop sichtbar und von
-   Selection/Hover/Playing unterscheidbar;
-3. Large Text: keine abgeschnittenen primären Controls oder unerreichbaren
-   Aktionen;
-4. Orca: Namen, Rollen, States, Werte und Kontext verständlich; Bedienung bei
-   ausgeschaltetem Monitor möglich;
-5. On-Screen-Keyboard: alle Entry-/Autocomplete-/Save-Pfade nutzbar;
-6. echtes GNOME/Wayland: Dialoge, Portal-FileChooser und Shortcut-Priorität;
-7. reduzierte Animation: Fokus/State bleibt sichtbar (MOT-7).
+1. the complete app with keyboard only, without a pointer;
+2. default and High Contrast theme: focus visible at every stop and
+   distinguishable from selection/hover/playing;
+3. Large Text: no truncated primary controls or unreachable
+   actions;
+4. Orca: names, roles, states, values and context comprehensible; operation
+   possible with the monitor switched off;
+5. on-screen keyboard: all entry/autocomplete/save paths usable;
+6. real GNOME/Wayland: dialogs, portal FileChooser and shortcut priority;
+7. reduced animation: focus/state stays visible (MOT-7).
 
-**Abschluss:**
+**Closeout:**
 
-- Ergebnisse mit wörtlicher `ACC-7`-Referenz in `RELEASING.md` aufnehmen.
-- Bei bestandener Sichtprüfung `ACC-7` im selben Commit auf `[aktiv]`
-  setzen; andernfalls bleibt die Regel ehrlich `[geplant]` und der konkrete
-  Befund wird als Manual Check dokumentiert.
-- Vollständige Gate-Batterie, Datei-Limits, Input-Parity-Lint, CUA-Evidence,
-  Ledger und ggf. Koordinationsboard aktualisieren; Lock freigeben.
+- Record the results with a literal `ACC-7` reference in `RELEASING.md`.
+- On a passed visual check set `ACC-7` to `[active]` in the same commit;
+  otherwise the rule stays honestly `[planned]` and the concrete
+  finding is documented as a manual check.
+- Update the full gate battery, file limits, input parity lint, CUA evidence,
+  ledger and, if applicable, the coordination board; release the lock.
 
-**Commit bei bestandener Sichtprüfung:**
+**Commit on a passed visual check:**
 `docs(a11y): activate the visible focus acceptance rule`
 
-## Pflicht-Gates je Task
+## Mandatory gates per task
 
 ```sh
 cargo fmt --check
@@ -517,20 +518,20 @@ cargo audit
 scripts/check-architecture.sh
 scripts/check-ux-traceability.sh
 scripts/check-display-tests.sh --rule-named
-scripts/check-input-parity.sh          # ab KBD-8
+scripts/check-input-parity.sh          # from KBD-8
 git diff --check
 ```
 
-Nach Änderungen an `reprise-core` zusätzlich:
+After changes to `reprise-core`, additionally:
 
 ```sh
 cargo tree -p reprise-core | grep -E 'gtk4|libadwaita|gstreamer|zbus'
 ```
 
-Die Ausgabe muss leer bleiben. Jeder wesentlich geänderte Code-File endet
-unter 800 Zeilen; bestehende strengere Architekturgrenzen gelten weiter.
+The output must stay empty. Every substantially changed code file ends up
+under 800 lines; existing stricter architecture limits continue to apply.
 
-Jeder echte App-/CUA-Lauf enthält vollständig:
+Every real app/CUA run contains in full:
 
 ```sh
 dbus-run-session -- xvfb-run -a env \
@@ -539,44 +540,44 @@ dbus-run-session -- xvfb-run -a env \
   <REPRISE_SMOKE_* hooks> cargo run
 ```
 
-Das existierende private AT-SPI-Harness darf diese Hülle intern aufbauen;
-die Evidence muss Scratch-XDG, privaten Bus, X11/Xvfb und Fake-Audio
-nachweisen.
+The existing private AT-SPI harness may build this shell internally;
+the evidence must prove scratch XDG, private bus, X11/Xvfb and fake audio.
 
-## Adversarial Review je Task
+## Adversarial review per task
 
-Vor jedem Commit wird gezielt nach folgenden Fehlerklassen gesucht:
+Before every commit, the following classes of defect are specifically
+looked for:
 
-- Pointer- und Keyboard-Pfad laufen in verschiedene Callback-/Guard-Pfade;
-- fokussierbare passive Controls oder aktive Controls ohne Fokus;
-- doppelte Tab-Stops innerhalb derselben Row/Card;
-- Navigation beim Fokuswechsel statt erst bei Aktivierung;
-- Fokus wird durch Rebuild/Sort/Filter/Async-Update verloren oder gestohlen;
-- Esc schließt mehrere Ebenen oder gibt Fokus an ein falsches/zerstörtes
-  Widget zurück;
-- globales Space/Enter/Escape/Pfeil überschreibt lokale Widget-Semantik;
-- Role/State/Name stimmt nicht mit der sichtbaren Funktion überein;
-- hidden/disabled Controls bleiben im Fokuspfad;
-- DnD-Alternative umgeht Sort-/Filter-/Identity-/Persistenz-Guards;
-- Fokusindikator ist nur im Default-Theme oder nur bei Hover sichtbar;
-- ein Test prüft nur einen Helper, aber nicht die reale Signal-/Action-
-  Verdrahtung;
-- CUA-Test nutzt Pointer oder Koordinaten und behauptet Keyboard-Abdeckung.
+- pointer and keyboard path run into different callback/guard paths;
+- focusable passive controls or active controls without focus;
+- duplicate tab stops within the same row/card;
+- navigation on focus change instead of only on activation;
+- focus is lost or stolen by a rebuild/sort/filter/async update;
+- Esc closes several layers or returns focus to a wrong/destroyed
+  widget;
+- global Space/Enter/Escape/arrow overrides local widget semantics;
+- role/state/name does not match the visible function;
+- hidden/disabled controls stay in the focus path;
+- the DnD alternative bypasses sort/filter/identity/persistence guards;
+- the focus indicator is visible only in the default theme or only on hover;
+- a test checks only a helper, but not the real signal/action
+  wiring;
+- a CUA test uses pointer or coordinates and claims keyboard coverage.
 
-## Definition of Done der Accessibility-Stufe
+## Definition of done for the accessibility stage
 
-- Alle Tasks KBD-1 bis KBD-9 sind in Reihenfolge umgesetzt und committed.
-- Das vollständige GUI-Inventar besitzt einen isolierten Keyboard-CUA-Flow.
-- `ACC-1/2/3/4/5/6/8/9` sind mit regelbenannten Tests `[aktiv]`.
-- Alle Maus-/Touch-/DnD-Aktionen besitzen einen gleichwertigen Keyboard-Pfad
-  auf demselben Action-/Guard-/Persistenzpfad.
-- Fokusordnung, -sichtbarkeit, -restauration und dynamische Erhaltung sind
-  auf allen Flächen geprüft.
-- Help/Shortcuts, zugängliche Properties und tatsächliche Actions sind
-  synchron.
-- Pflicht-Gates, Core-Purity und Datei-Limits sind grün.
-- Ledger/Koordinationsstand sind aktuell, Lock ist freigegeben.
-- Verbleibend sind ausschließlich ehrlich dokumentierte manuelle Checks;
-  `ACC-7` wird ohne echte Sichtprüfung nicht als aktiv bezeichnet.
+- All tasks KBD-1 to KBD-9 are implemented in order and committed.
+- The complete GUI inventory has an isolated keyboard CUA flow.
+- `ACC-1/2/3/4/5/6/8/9` are `[active]` with rule-named tests.
+- All mouse/touch/DnD actions have an equivalent keyboard path
+  on the same action/guard/persistence path.
+- Focus order, visibility, restoration and dynamic preservation are
+  checked on all surfaces.
+- Help/shortcuts, accessible properties and actual actions are
+  in sync.
+- Mandatory gates, core purity and file limits are green.
+- Ledger/coordination state are current, the lock is released.
+- What remains are exclusively honestly documented manual checks;
+  `ACC-7` is not called active without a real visual check.
 
-Die nächste Roadmap-Stufe beginnt dadurch nicht automatisch.
+The next roadmap stage does not begin automatically as a result.

@@ -1,20 +1,20 @@
-# Klangprofil und agentenfähige Playlistplanung — Design
+# Sound profile and agent-capable playlist planning — Design
 
-Status: bereit zur gemeinsamen Review
+Status: ready for joint review
 
 Branch: `feat/audio-character-mcp`
 
-Basis: `35045a33` (`main`, 2026-07-19)
+Base: `35045a33` (`main`, 2026-07-19)
 
-## 1. Ziel
+## 1. Goal
 
-Reprise analysiert Musikdateien ausschließlich lokal und bildet aus messbaren
-Audiosignalen ein erklärbares **Klangprofil**. Dieses Profil liefert dem User
-interessante, vorsichtig formulierte Informationen und speist einen einzigen,
-deterministischen Mix-Planer. Derselbe Planer wird von der nativen GTK-Oberfläche
-und später von einem lokalen MCP-Server verwendet.
+Reprise analyzes music files exclusively locally and forms an explainable
+**sound profile** from measurable audio signals. This profile provides the
+user with interesting, cautiously worded information and feeds a single,
+deterministic mix planner. The same planner is used by the native GTK surface
+and later by a local MCP server.
 
-Der zentrale Produktfluss lautet:
+The central product flow reads:
 
 ```text
 Audiodatei (read-only)
@@ -26,343 +26,340 @@ Audiodatei (read-only)
     -> manuelle Playlist
 ```
 
-Die Funktion behauptet nicht, eine objektive Emotion des Titels oder des Users
-zu kennen. In der ersten Stufe verwendet die UI deshalb „Audio Character" /
-„Klangprofil" und messnahe Dimensionen, nicht „happy", „sad" oder eine einzelne
-Mood-Kategorie.
+The feature does not claim to know an objective emotion of the track or of the
+user. In the first stage the UI therefore uses "Audio Character" /
+"Klangprofil" and measurement-near dimensions, not "happy", "sad", or a single
+mood category.
 
-## 2. Aktueller Reprise-Stand
+## 2. Current state of Reprise
 
-Der Plan baut auf vorhandenem, geprüftem Verhalten auf:
+The plan builds on existing, verified behavior:
 
-- `reprise-core::waveform::WaveformBackend` ist bereits die plattformneutrale
-  Naht für Waveform-Extraktion.
-- `reprise-platform-linux::waveform::GstreamerWaveformBackend` dekodiert Audio
-  heute über `gst-launch-1.0`, sammelt das vollständige 8-kHz-Monosignal im
-  Speicher und berechnet normalisierte RMS-Peaks.
-- Ein Startup-/Post-Scan-Backfill startet bis zu vier Waveform-Worker. Fehler
-  werden nur gezählt; ein dauerhafter Zustand, Pause, Abbruch oder Backoff
-  existiert nicht.
-- `tracks.waveform_peaks` speichert 1.000 `u8`-Peaks direkt am Track.
-- Die Smart-Playlist-Regeln sind eine validierte Feld-Whitelist, ausschließlich
-  per `AND` verbunden. Sie können Bereiche ausdrücken, aber weder Alternativen
-  noch Ähnlichkeitsdistanz, Diversität oder einen Spannungsbogen.
-- `playlists::create_with_tracks` erzeugt eine manuelle Playlist samt Tracks
-  bereits atomar. Diese Operation ist die spätere Persistenzsenke eines
-  freigegebenen Mix-Entwurfs.
-- Die README plant einen schmalen MCP-Adapter über Core-Verträge bereits ein:
-  explizite Capabilities, standardmäßig read-only, keine Pfad- oder
-  Credential-Leaks.
-- `My Stats` rechnet ausschließlich aus lokalen `listen_events`. Künftige
-  Klangprofil-Aussagen müssen dieselbe Ereignismenge verwenden und ihre
-  Analyseabdeckung nennen.
+- `reprise-core::waveform::WaveformBackend` is already the platform-neutral
+  seam for waveform extraction.
+- `reprise-platform-linux::waveform::GstreamerWaveformBackend` decodes audio
+  today via `gst-launch-1.0`, collects the complete 8 kHz mono signal in
+  memory, and computes normalized RMS peaks.
+- A startup/post-scan backfill starts up to four waveform workers. Errors are
+  only counted; a durable state, pause, cancel, or backoff does not exist.
+- `tracks.waveform_peaks` stores 1,000 `u8` peaks directly on the track.
+- The smart playlist rules are a validated field whitelist, joined exclusively
+  by `AND`. They can express ranges, but neither alternatives nor similarity
+  distance, diversity, or a dramatic arc.
+- `playlists::create_with_tracks` already creates a manual playlist together
+  with its tracks atomically. This operation is the later persistence sink of
+  an approved mix draft.
+- The README already plans for a narrow MCP adapter over core contracts:
+  explicit capabilities, read-only by default, no path or credential leaks.
+- `My Stats` computes exclusively from local `listen_events`. Future sound
+  profile statements must use the same event set and state their analysis
+  coverage.
 
-## 3. Verbindliche Produktentscheidungen
+## 3. Binding product decisions
 
-### D1 — „Klangprofil" ist der Produktbegriff
+### D1 — "Sound profile" is the product term
 
-Die deutsche UI verwendet „Klangprofil", die englische UI „Audio Character".
-„Atmosphäre" darf als vorsichtige Interpretation erscheinen, aber nicht als
-gespeicherte Wahrheit. „Mood" ist weder Tabellen- noch Haupt-UI-Begriff.
+The German UI uses "Klangprofil", the English UI "Audio Character".
+"Atmosphere" may appear as a cautious interpretation, but not as stored truth.
+"Mood" is neither a table term nor a main UI term.
 
-### D2 — Kontinuierliche Dimensionen statt exklusiver Labels
+### D2 — Continuous dimensions instead of exclusive labels
 
-Stufe 1A stellt genau diese normalisierten Dimensionen (`0.0..=1.0`) bereit:
+Stage 1A provides exactly these normalized dimensions (`0.0..=1.0`):
 
-- **Intensity** — ruhig bis intensiv;
-- **Brightness** — dunkel bis hell;
-- **Dynamicity** — gleichmäßig/komprimiert bis stark dynamisch;
-- **Rhythmicity** — fließend bis stark puls-/onset-geprägt.
+- **Intensity** — calm to intense;
+- **Brightness** — dark to bright;
+- **Dynamicity** — even/compressed to strongly dynamic;
+- **Rhythmicity** — flowing to strongly pulse-/onset-driven.
 
-Zusätzlich stehen messnahe Werte zur Verfügung:
+In addition, measurement-near values are available:
 
-- Tempo in BPM plus Tempo-Konfidenz;
-- Lautheit beziehungsweise Energieverteilung;
-- Dynamikspanne;
-- spektraler Schwerpunkt und Roll-off;
-- spektraler Fluss und Onset-Rate.
+- tempo in BPM plus tempo confidence;
+- loudness or rather energy distribution;
+- dynamic range;
+- spectral centroid and roll-off;
+- spectral flux and onset rate.
 
-Valenz, Fröhlichkeit, Traurigkeit, Aggressivität, Akustikanteil,
-Instrumentalität und freie Atmosphärenwörter gehören nicht zu Stufe 1A. Sie
-benötigen ein separat lizenziertes und evaluiertes semantisches Modell.
+Valence, happiness, sadness, aggressiveness, acousticness, instrumentalness,
+and free atmosphere words are not part of Stage 1A. They require a separately
+licensed and evaluated semantic model.
 
-### D3 — Messung und Projektion sind getrennt versioniert
+### D3 — Measurement and projection are versioned separately
 
-Audio evidence bewahrt die stabilen Messwerte. Das Sound profile ist eine
-deterministische Projektion daraus. Ändert sich nur die Normalisierung oder
-Gewichtung, kann Reprise das Profil ohne erneutes Dekodieren berechnen. Ändert
-sich der Extraktor, wird neu dekodiert.
+Audio evidence preserves the stable measured values. The sound profile is a
+deterministic projection of them. If only the normalization or weighting
+changes, Reprise can compute the profile without decoding again. If the
+extractor changes, decoding is redone.
 
-Jedes Ergebnis nennt mindestens:
+Every result states at least:
 
 - `extractor_version`;
 - `profile_version`;
-- Quellidentität aus Track-ID, `file_mtime` und `file_size`;
+- source identity from track ID, `file_mtime`, and `file_size`;
 - `analyzed_at`;
-- Konfidenz beziehungsweise Verfügbarkeit je unsicherem Messwert.
+- confidence or rather availability for each uncertain measured value.
 
-Ein Pfadwechsel allein invalidiert die Analyse nicht. Eine veränderte
-Dateigröße, MTime oder Extraktorversion tut es. Fehlende Tracks behalten ihren
-Cache, erscheinen aber nie als Mix-Kandidaten.
+A path change alone does not invalidate the analysis. A changed file size,
+mtime, or extractor version does. Missing tracks keep their cache but never
+appear as mix candidates.
 
-### D4 — Lokal, read-only und ohne Modell-Download
+### D4 — Local, read-only, and without model download
 
-Stufe 1A liest Audiodateien, schreibt sie nie und benötigt kein Netz. Sie lädt
-kein Modell nach und übermittelt weder Audio noch Merkmale. Die Funktion ist
-eine lokale Library-Einstellung, kein Eintrag der für externe Integrationen
-reservierten Plugins-Seite.
+Stage 1A reads audio files, never writes them, and needs no network. It
+downloads no model and transmits neither audio nor features. The feature is a
+local library setting, not an entry on the plugins page reserved for external
+integrations.
 
-### D5 — Analyse ist explizit aktiviert und beherrschbar
+### D5 — Analysis is explicitly enabled and controllable
 
-Eine neue Installation analysiert nicht ungefragt die gesamte Bibliothek. Die
-Einstellung „Analyze audio locally" aktiviert die Funktion. Danach gilt:
+A new installation does not analyze the entire library unasked. The setting
+"Analyze audio locally" enables the feature. After that:
 
-- genau ein Analyse-Worker standardmäßig;
-- Fortschritt mit fertig/gesamt/fehlgeschlagen;
-- Pause, Fortsetzen und Abbrechen;
-- Fortsetzung nach Neustart;
-- bestehende Wiedergabe, Scan und Android-Transcoding bleiben reaktionsfähig;
-- keine Analyse innerhalb der atomaren Scan-Transaktion;
-- Fehler werden typisiert persistiert und nicht bei jedem Start endlos neu
-  versucht;
-- eine bewusste Aktion „Retry failed" setzt den Backoff zurück;
-- Deaktivieren stoppt neue Arbeit, löscht aber vorhandene Profile nicht.
+- exactly one analysis worker by default;
+- progress with done/total/failed;
+- pause, resume, and cancel;
+- resumption after a restart;
+- existing playback, scan, and Android transcoding stay responsive;
+- no analysis inside the atomic scan transaction;
+- errors are persisted in typed form and not retried endlessly on every
+  start;
+- a deliberate "Retry failed" action resets the backoff;
+- disabling stops new work but does not delete existing profiles.
 
-Der Schalter betrifft ausschließlich Audio-Evidenz und Klangprofil. Die schon
-ausgelieferte Waveform bleibt eine bedingungslose Playerfunktion: Fehlende Peaks
-werden auch bei ausgeschaltetem Klangprofil weiter erzeugt. Ist das Klangprofil
-aktiv und fehlen beide Ergebnisse, koordiniert der Worker einen gemeinsamen
-Decode-Durchlauf statt zwei konkurrierende Backfills zu starten.
+The switch concerns audio evidence and the sound profile only. The already
+shipped waveform remains an unconditional player feature: missing peaks
+continue to be generated even with the sound profile switched off. If the
+sound profile is active and both results are missing, the worker coordinates a
+shared decode pass instead of starting two competing backfills.
 
-### D6 — Streaming statt vollständigem PCM im Speicher
+### D6 — Streaming instead of complete PCM in memory
 
-Der Linux-Adapter dekodiert PCM in begrenzten Blöcken über eine native
-GStreamer-Pipeline. Ein vollständiger Titel darf nicht als `Vec<i16>` im
-Speicher liegen. Die bestehenden Waveform-Peaks und die neue Audio evidence
-werden im Hintergrund in einem Decode-Durchlauf erzeugt.
+The Linux adapter decodes PCM in bounded blocks via a native GStreamer
+pipeline. A complete track must not sit in memory as a `Vec<i16>`. The
+existing waveform peaks and the new audio evidence are generated in the
+background in one decode pass.
 
-Die vorhandene On-Demand-Waveform-Funktion bleibt als eigenständige Fähigkeit
-erhalten. Der Linux-Adapter darf intern denselben begrenzten Decoder verwenden;
-ein Fehler des Klangprofils darf die Waveform der Playerbar nicht verhindern.
-Ein deaktiviertes Klangprofil darf die Waveform ebenfalls nicht verhindern.
+The existing on-demand waveform feature is retained as an independent
+capability. The Linux adapter may internally use the same bounded decoder; a
+failure of the sound profile must not prevent the player bar's waveform. A
+disabled sound profile must likewise not prevent the waveform.
 
-### D7 — Ein tiefer Core-Planer gehört UI und Agenten gemeinsam
+### D7 — One deep core planner belongs to the UI and agents jointly
 
-Die externe Naht des neuen Core-Moduls besteht aus wenigen Operationen:
+The external seam of the new core module consists of few operations:
 
 ```rust
 plan_mix(conn, intent) -> MixDraft
 approve_mix_draft(conn, draft_id, playlist_name) -> PlaylistCommit
 ```
 
-SQL, Skalennormalisierung, Kandidatenauswahl, Distanz, Diversität,
-Dauerfüllung, Draft-Persistenz und Konfliktprüfung bleiben Implementation des
-Moduls. GTK und MCP dürfen diese Regeln nicht nachbauen.
+SQL, scale normalization, candidate selection, distance, diversity, duration
+filling, draft persistence, and conflict checking remain implementation of the
+module. GTK and MCP must not rebuild these rules.
 
-### D8 — Der Agent übersetzt Sprache, Reprise entscheidet Musik
+### D8 — The agent translates language, Reprise decides music
 
-Reprise enthält in den Stufen 1A, 1B und 2 kein LLM und parst keine natürliche
-Sprache.
-Ein Agent übersetzt beispielsweise „ruhige, dunkle Musik für eine nächtliche
-Zugfahrt" in eine strukturierte Mix intent. Reprise validiert diese Absicht
-und liefert eine deterministische Auswahl.
+In stages 1A, 1B, and 2, Reprise contains no LLM and parses no natural
+language.
+An agent translates, for example, "calm, dark music for a night train ride"
+into a structured mix intent. Reprise validates this intent and delivers a
+deterministic selection.
 
-Das bewahrt Testbarkeit und macht dasselbe Ergebnis aus GTK-Slidern, einem
-MCP-Client oder einer künftigen nativen Plattform möglich.
+That preserves testability and makes the same result possible from GTK
+sliders, an MCP client, or a future native platform.
 
-### D9 — Harte Bedingungen und weiche Wünsche bleiben verschieden
+### D9 — Hard conditions and soft wishes stay distinct
 
-Eine Mix intent enthält:
+A mix intent contains:
 
-**Harte Bedingungen**
+**Hard conditions**
 
-- optionale Quellmenge (gesamte Bibliothek, Playlist, Artist, Album oder
-  explizite Trackmenge);
-- gewünschte maximale Anzahl beziehungsweise Zieldauer;
-- erforderliche aktuelle Analyse;
-- minimale Analysekonfidenz;
-- ausgeschlossene Track-, Artist- oder Album-Identitäten;
-- nur vorhandene, nicht entfernte Tracks.
+- optional source set (entire library, playlist, artist, album, or explicit
+  track set);
+- desired maximum count or rather target duration;
+- required up-to-date analysis;
+- minimum analysis confidence;
+- excluded track, artist, or album identities;
+- only present, not removed tracks.
 
-**Weiche Wünsche**
+**Soft wishes**
 
-- Ziel und Gewicht je Klangprofil-Dimension;
-- Tempoziel und Gewicht;
+- target and weight per sound profile dimension;
+- tempo target and weight;
 - Familiarity (`familiar`, `balanced`, `discover`);
 - Variety (`cohesive`, `balanced`, `wide`);
-- optionaler Energieverlauf (`flat`, `rise`, `fall`, `arc`).
+- optional energy curve (`flat`, `rise`, `fall`, `arc`).
 
-Unbekannte Felder, Werte außerhalb ihrer Bereiche und widersprüchliche harte
-Bedingungen sind Fehler. Sie werden nie still normalisiert.
+Unknown fields, values outside their ranges, and contradictory hard conditions
+are errors. They are never silently normalized.
 
-### D10 — Der Mix-Entwurf ist erklärbar, aber enthält keine Chain of Thought
+### D10 — The mix draft is explainable, but contains no chain of thought
 
-Ein Mix draft enthält:
+A mix draft contains:
 
-- eine stabile `draft_id`;
-- die normalisierte Mix intent;
-- Quellsnapshot, Extraktor- und Profilversion;
-- geordnete Track-IDs mit anzeigbaren Metadaten, nie Dateipfade;
-- Gesamtanzahl und Gesamtdauer;
-- Analyseabdeckung der betrachteten Population;
-- strukturierte Selection reasons pro Track;
-- Warnungen wie „only 43 of 80 eligible tracks are analyzed";
-- Ablaufzeit und Status `current` oder `stale`.
+- a stable `draft_id`;
+- the normalized mix intent;
+- source snapshot, extractor and profile version;
+- ordered track IDs with displayable metadata, never file paths;
+- total count and total duration;
+- analysis coverage of the population considered;
+- structured selection reasons per track;
+- warnings such as "only 43 of 80 eligible tracks are analyzed";
+- expiry time and status `current` or `stale`.
 
-Selection reasons sind kurze Daten wie `brightness_match`, `tempo_match`,
-`artist_gap` oder `duration_fit`, keine freien internen Gedankengänge.
+Selection reasons are short data such as `brightness_match`, `tempo_match`,
+`artist_gap`, or `duration_fit`, not free internal trains of thought.
 
-### D11 — Auswahl ist deterministisch und divers
+### D11 — Selection is deterministic and diverse
 
-Bei identischem Kandidaten-/Quellsnapshot, identischer Mix intent und
-identischem Seed entsteht dieselbe Reihenfolge. Der Planer:
+With an identical candidate/source snapshot, an identical mix intent, and an
+identical seed, the same order results. The planner:
 
-1. wendet harte Bedingungen in SQL an;
-2. berechnet die gewichtete Distanz zum Zielprofil;
-3. sortiert stabil nach Distanz, dann Track-ID;
-4. wählt greedily mit einer Diversitätsstrafe;
-5. verhindert Track-Duplikate;
-6. hält standardmäßig mindestens vier Positionen Abstand zwischen demselben
-   Artist, sofern die Kandidatenmenge das erlaubt;
-7. füllt die Zieldauer bis zur kleineren Abweichung; eine Überschreitung ist
-   höchstens die Dauer eines letzten Tracks;
-8. wendet den gewünschten Energieverlauf erst auf die ausgewählte Menge an,
-   ohne die Mitgliedschaft nachträglich zu verändern.
+1. applies hard conditions in SQL;
+2. computes the weighted distance to the target profile;
+3. sorts stably by distance, then track ID;
+4. selects greedily with a diversity penalty;
+5. prevents duplicate tracks;
+6. keeps by default at least four positions of distance between the same
+   artist, provided the candidate set allows it;
+7. fills the target duration up to the smaller deviation; an overshoot is at
+   most the duration of one final track;
+8. applies the desired energy curve only to the selected set, without
+   subsequently changing membership.
 
-Kann eine harte Bedingung nicht erfüllt werden, entsteht kein Draft. Sind nur
-weiche Wünsche oder die Dauer nicht vollständig erfüllbar, entsteht ein
-partieller Draft mit maschinenlesbarer Warnung.
+If a hard condition cannot be satisfied, no draft is created. If only soft
+wishes or the duration cannot be fully satisfied, a partial draft with a
+machine-readable warning is created.
 
-### D12 — Unanalysierte Tracks werden nicht erfunden
+### D12 — Unanalyzed tracks are not invented
 
-Ein Klangprofil-Mix enthält nur Tracks mit aktueller Analyse. Reprise füllt
-keine Lücke still mit Genre, Rating oder Zufallstiteln. Der User oder Agent
-kann die Analyse starten oder eine explizit andere, metadatenbasierte Auswahl
-anfordern; das ist eine andere Mix intent.
+A sound profile mix contains only tracks with an up-to-date analysis. Reprise
+does not silently fill a gap with genre, rating, or random tracks. The user or
+agent can start the analysis or request an explicitly different,
+metadata-based selection; that is a different mix intent.
 
-### D13 — Entwurf und Persistenz sind getrennte Vorgänge
+### D13 — Draft and persistence are separate operations
 
-`plan_mix` verändert keine Playlist, Queue, Wiedergabe oder Datei. Eine
-Draft approval erzeugt genau eine neue manuelle Playlist atomar. Sie verändert
-keine bestehende Playlist.
+`plan_mix` changes no playlist, queue, playback, or file. A
+draft approval creates exactly one new manual playlist atomically. It changes
+no existing playlist.
 
-Approval ist idempotent: derselbe Draft plus derselbe Idempotency-Key liefert
-dasselbe Ergebnis. Ein abgelaufener, bereits freigegebener oder in seinen
-ausgewählten Tracks beziehungsweise harten Bedingungen veralteter Draft wird
-nicht still neu geplant. Eine neue Analyse oder Metadatenänderung an einem
-unbeteiligten Track macht ihn ausdrücklich nicht stale. Der Aufrufer muss nur
-bei einer für genau diesen Draft relevanten Änderung neu planen.
+Approval is idempotent: the same draft plus the same idempotency key delivers
+the same result. A draft that has expired, has already been approved, or has
+become outdated in its selected tracks or hard conditions is not silently
+replanned. A new analysis or a metadata change on an uninvolved track
+explicitly does not make it stale. The caller only has to replan on a change
+relevant to exactly this draft.
 
-### D14 — GTK zeigt immer den Draft vor dem Speichern
+### D14 — GTK always shows the draft before saving
 
-Der native Mix-Builder bietet Profilziele, Dauer, Variety, Familiarity und
-Energieverlauf an. Vor „Save as Playlist" zeigt er Trackfolge, Dauer,
-Analyseabdeckung und Warnungen. Das Speichern verwendet ausschließlich die
-gezeigte `draft_id`; es führt keine zweite unsichtbare Planung aus.
+The native mix builder offers profile targets, duration, Variety, Familiarity,
+and energy curve. Before "Save as Playlist" it shows track order, duration,
+analysis coverage, and warnings. Saving uses exclusively the `draft_id` shown;
+it performs no second, invisible planning run.
 
-### D15 — My Stats nennt Population und Coverage
+### D15 — My Stats states population and coverage
 
-Klangprofil-Statistiken verwenden `listen_events` derselben Periode wie der
-restliche Screen. Ein Insight erscheint nur bei mindestens 20 analysierten
-Plays und mindestens 70 Prozent Analyseabdeckung der Plays mit noch
-vorhandenem Track. Jeder Insight nennt „based on N analyzed plays". Unterhalb
-der Schwellen erscheint keine scheinpräzise Aussage.
+Sound profile statistics use `listen_events` from the same period as the rest
+of the screen. An insight appears only with at least 20 analyzed plays and at
+least 70 percent analysis coverage of the plays whose track still exists.
+Every insight states "based on N analyzed plays". Below the thresholds no
+falsely precise statement appears.
 
-### D16 — MCP ist ein eigener, schmaler Adapter
+### D16 — MCP is its own, narrow adapter
 
-Stufe 2 ergänzt `crates/reprise-mcp` als lokales Binary. Es hängt von
-`reprise-core`, nicht von GTK oder `reprise-platform-linux`, ab. Der Adapter
-öffnet die lokale Datenbank über den normalen Core-Pfad und übersetzt
-MCP-Schemas in Core-Typen. Musiklogik, SQL-Fragmente und Playlist-Transaktionen
-gehören nicht in den Adapter.
+Stage 2 adds `crates/reprise-mcp` as a local binary. It depends on
+`reprise-core`, not on GTK or `reprise-platform-linux`. The adapter opens the
+local database via the normal core path and translates MCP schemas into core
+types. Music logic, SQL fragments, and playlist transactions do not belong in
+the adapter.
 
-Initial wird nur lokales `stdio` unterstützt. HTTP, Remote-Zugriff, OAuth,
-Server-Sent Events und ein dauerhaft lauschender Socket sind außerhalb von
-Stufe 2. Damit verlässt die Bibliothek den Host nicht, und der Server braucht
-keine Netzwerk-Credentials.
+Initially only local `stdio` is supported. HTTP, remote access, OAuth,
+Server-Sent Events, and a permanently listening socket are outside of
+Stage 2. This way the library does not leave the host, and the server needs
+no network credentials.
 
-Die Implementierung zielt auf die bei Baubeginn aktuelle stabile MCP-Revision.
-Stand der Designentscheidung ist `2025-11-25`; die angekündigte
-`2026-07-28`-Revision ist am 2026-07-19 noch Release Candidate und deshalb nur
-ein Kompatibilitäts-Watchpoint. Der offizielle Rust-SDK ist Tier 2; seine
-Version wird gepinnt und mit Schema-/Protokoll-Fixtures zusätzlich abgesichert.
+The implementation targets the stable MCP revision current at the start of
+building. The state at the time of the design decision is `2025-11-25`; the
+announced `2026-07-28` revision is still a release candidate on 2026-07-19 and
+therefore only a compatibility watchpoint. The official Rust SDK is Tier 2;
+its version is pinned and additionally secured with schema/protocol fixtures.
 
-### D17 — MCP-Primitive bleiben klein
+### D17 — MCP primitives stay small
 
-Stufe 2 exponiert:
+Stage 2 exposes:
 
 **Resources**
 
-- `reprise://library/summary` — Track-/Artist-/Albumzahl, Gesamtdauer und
-  Analyseabdeckung;
-- `reprise://audio-character/vocabulary` — Dimensionen, Wertebereiche und
-  Semantik der Mix intent;
-- `reprise://playlists` — Namen, IDs und Trackzahlen ohne Pfade.
+- `reprise://library/summary` — track/artist/album count, total duration, and
+  analysis coverage;
+- `reprise://audio-character/vocabulary` — dimensions, value ranges, and
+  semantics of the mix intent;
+- `reprise://playlists` — names, IDs, and track counts without paths.
 
 **Read-only tools**
 
-- `music_search_tracks` — begrenzte, paginierte Metadatensuche;
-- `music_get_sound_profiles` — Profile für höchstens 100 explizite Track-IDs;
-- `music_get_mix_draft` — liest einen vorhandenen Draft erneut.
+- `music_search_tracks` — bounded, paginated metadata search;
+- `music_get_sound_profiles` — profiles for at most 100 explicit track IDs;
+- `music_get_mix_draft` — re-reads an existing draft.
 
 **Planning tool**
 
-- `music_plan_playlist` — erzeugt und persistiert einen Mix draft, aber keine
-  Playlist, Queue-, Wiedergabe- oder Dateiveränderung. Die begrenzte
-  Draft-Persistenz wird im Toolvertrag ausdrücklich als Seiteneffekt genannt.
+- `music_plan_playlist` — creates and persists a mix draft, but no playlist,
+  queue, playback, or file change. The bounded draft persistence is
+  explicitly named as a side effect in the tool contract.
 
 **Write tool**
 
-- `music_create_playlist_from_draft` — atomare Approval eines Drafts.
+- `music_create_playlist_from_draft` — atomic approval of a draft.
 
-Es gibt in Stufe 2 kein beliebiges SQL, keine Dateipfade, Lyrics,
-Credential-Werte, Tagschreiboperation, Library-Löschung, Papierkorbaktion,
-Queue-Mutation oder Playback-Steuerung. Prompts werden zunächst nicht
-exponiert; Agenten können die JSON-Schemas unmittelbar verwenden.
+In Stage 2 there is no arbitrary SQL, no file paths, lyrics, credential
+values, tag write operation, library deletion, trash action, queue mutation,
+or playback control. Prompts are initially not exposed; agents can use the
+JSON schemas directly.
 
-> **Ergänzung (2026-07-21, multi-frontend-core-Plan):** Direktes
-> `music_create_playlist` (Name plus explizite Track-IDs) ist jetzt unter
-> derselben Capability `playlist:create` erlaubt; der hier beschriebene
-> Draft-Weg (`music_create_playlist_from_draft`) bleibt ein später
-> koexistierender Pfad. Überschreiben und Löschen via Agent bleiben
-> ausgeschlossen.
+> **Addition (2026-07-21, multi-frontend-core plan):** Direct
+> `music_create_playlist` (name plus explicit track IDs) is now allowed under
+> the same capability `playlist:create`; the draft route described here
+> (`music_create_playlist_from_draft`) remains a later coexisting path.
+> Overwriting and deleting via agent remain excluded.
 
-### D18 — Capabilities sind fail-closed
+### D18 — Capabilities are fail-closed
 
-Der MCP-Server startet standardmäßig mit `library:read` und `mix:plan`.
-`playlist:create` ist aus. Der User aktiviert sie explizit in Reprise und
-startet den MCP-Prozess anschließend neu; eine Umgebungsvariable darf die
-gespeicherte Ablehnung nicht überstimmen.
+The MCP server starts by default with `library:read` and `mix:plan`.
+`playlist:create` is off. The user enables it explicitly in Reprise and then
+restarts the MCP process; an environment variable must not override the
+stored refusal.
 
-Jedes Tool prüft seine Capability im Core-nahen Adapter vor dem Datenzugriff.
-Ein unbekannter Capability-Wert bedeutet „verweigert". Die Write-Capability
-erlaubt ausschließlich das Erzeugen einer neuen manuellen Playlist aus einem
-gültigen Draft. Sie erlaubt weder Überschreiben noch Löschen.
+Every tool checks its capability in the core-adjacent adapter before data
+access. An unknown capability value means "denied". The write capability
+allows exclusively the creation of a new manual playlist from a valid draft.
+It allows neither overwriting nor deleting.
 
-### D19 — Keine Pfad- oder Verlaufslecks
+### D19 — No path or history leaks
 
-MCP-Ergebnisse enthalten opaque Track-IDs und die Metadaten Titel, Artist,
-Album, Dauer, Jahr, Genre, Rating und Klangprofil. Sie enthalten niemals:
+MCP results contain opaque track IDs and the metadata title, artist, album,
+duration, year, genre, rating, and sound profile. They never contain:
 
-- Audio- oder Cover-Dateipfade;
-- XDG-, Cache- oder Datenbankpfade;
-- Lyrics;
-- Geräte-Seriennummern oder MTP-Pfade;
-- Credentials, Tokens oder Settings-Werte;
-- rohe Hörereignisse oder genaue Hörzeitpunkte.
+- audio or cover file paths;
+- XDG, cache, or database paths;
+- lyrics;
+- device serial numbers or MTP paths;
+- credentials, tokens, or settings values;
+- raw listen events or exact listening timestamps.
 
-Ein späterer Zugriff auf aggregierte Hörpräferenzen benötigt eine eigene,
-standardmäßig deaktivierte Capability. Stufe 2 bietet ihn nicht.
+Later access to aggregated listening preferences requires its own capability,
+disabled by default. Stage 2 does not offer it.
 
-### D20 — MCP bleibt stateless, Drafts sind langlebige Core-Daten
+### D20 — MCP stays stateless, drafts are long-lived core data
 
-Mix drafts werden mit begrenzter Lebensdauer in SQLite gespeichert, nicht in
-einer MCP-Session oder im Prozessspeicher. Damit überlebt ein Draft einen
-Client-Neustart und der Transport kann stateless bleiben. Abgelaufene Drafts
-werden beim Zugriff beziehungsweise in einer begrenzten Wartungsoperation
-bereinigt; keine ungebundene Startup-Schleife läuft über die gesamte Tabelle.
+Mix drafts are stored in SQLite with a bounded lifetime, not in an MCP session
+or in process memory. This way a draft survives a client restart and the
+transport can stay stateless. Expired drafts are cleaned up on access or
+rather in a bounded maintenance operation; no unbounded startup loop runs over
+the entire table.
 
-## 4. Architektur
+## 4. Architecture
 
 ```text
 reprise-gnome                         reprise-mcp (stdio)
@@ -389,235 +386,233 @@ reprise-platform-linux GStreamer adapter
   bounded PCM decode + evidence extraction
 ```
 
-### Modulgrenzen
+### Module boundaries
 
-`sound_profile` ist ein tiefes Core-Modul. Seine öffentliche Fläche umfasst
-Profile, Coverage, Pending-Work und persistierte Ergebnisse; Tabellenform,
-SQL und Projektionsgewichte bleiben intern.
+`sound_profile` is a deep core module. Its public surface comprises profiles,
+coverage, pending work, and persisted results; table shape, SQL, and
+projection weights remain internal.
 
-`audio_analysis` definiert den plattformneutralen Analysevertrag und die
-versionierten Ergebniswerte. Der Linux-Adapter ist die Produktionsumsetzung;
-Tests verwenden einen deterministischen Fake-Adapter.
+`audio_analysis` defines the platform-neutral analysis contract and the
+versioned result values. The Linux adapter is the production implementation;
+tests use a deterministic fake adapter.
 
-`mix_planner` besitzt Mix intent, Mix draft, Selection reasons und Approval.
-Es verwendet `sound_profile` und bestehende Playlist-Funktionen intern. Weder
-GTK noch MCP sehen seine SQL-Implementation.
+`mix_planner` owns mix intent, mix draft, selection reasons, and approval. It
+uses `sound_profile` and existing playlist functions internally. Neither GTK
+nor MCP sees its SQL implementation.
 
-`reprise-mcp` ist absichtlich flach: Transport-, Schema- und Capability-
-Adapter. Würde man das Crate löschen, bleibt jede Auswahl- und
-Persistenzfunktion in Core vollständig nutzbar.
+`reprise-mcp` is deliberately flat: transport, schema, and capability
+adapter. If one were to delete the crate, every selection and persistence
+function in core remains fully usable.
 
-## 5. Persistenzkonzept
+## 5. Persistence concept
 
-Die konkrete Schema-Version wird bei Beginn der Implementierung aus dem dann
-aktuellen `main` bestimmt; der heutige Stand ist v17, aber parallel laufende
-Branches dürfen die nächste Nummer belegen.
+The concrete schema version is determined at the start of the implementation
+from the `main` current at that point; today's state is v17, but branches
+running in parallel may claim the next number.
 
-Logisch werden benötigt:
+Logically the following are required:
 
 ### Track analysis
 
-Eine Zeile pro Track mit:
+One row per track with:
 
-- Source-Fingerprint (`file_mtime`, `file_size`);
-- Extractor-/Profilversion;
-- roher Audio evidence;
-- normalisiertem Sound profile;
-- Konfidenzen;
-- Status `ready | failed` plus typisiertem Fehler;
-- Analysezeit und Retry-Zustand.
+- source fingerprint (`file_mtime`, `file_size`);
+- extractor/profile version;
+- raw audio evidence;
+- normalized sound profile;
+- confidences;
+- status `ready | failed` plus typed error;
+- analysis time and retry state.
 
-`pending` wird nicht millionenfach materialisiert: Ein vorhandener Track ohne
-aktuelle Zeile ist pending. Track-Löschung kaskadiert. Missing/removed bleiben
-aus Pending- und Mix-Abfragen ausgeschlossen.
+`pending` is not materialized millions of times: a present track without an
+up-to-date row is pending. Track deletion cascades. Missing/removed stay
+excluded from pending and mix queries.
 
 ### Mix drafts
 
-Eine Draft-Kopfzeile enthält Intent-JSON in kanonischer Form, Quellsnapshot,
-Profilversion, Seed, Ablaufzeit, Status und Diagnostics.
-Positionszeilen speichern Track-ID, Position, Score und Selection reasons.
+A draft header row contains intent JSON in canonical form, source snapshot,
+profile version, seed, expiry time, status, and diagnostics.
+Position rows store track ID, position, score, and selection reasons.
 
-Der Quellsnapshot speichert die Identität/Fingerprints der ausgewählten Tracks
-und die harten Quellbedingungen. Approval prüft genau diese Auswahl erneut:
-Tracks müssen noch PRESENT sein, ihre Analysefingerprints müssen passen und sie
-müssen weiterhin der verlangten Quellmenge angehören. Neue oder geänderte
-unbeteiligte Tracks machen den Draft nicht stale. Approval und
-Playlist-Erzeugung laufen in einer Transaktion.
+The source snapshot stores the identity/fingerprints of the selected tracks
+and the hard source conditions. Approval re-checks exactly this selection:
+tracks must still be PRESENT, their analysis fingerprints must match, and they
+must still belong to the requested source set. New or changed uninvolved
+tracks do not make the draft stale. Approval and playlist creation run in one
+transaction.
 
-## 6. Analysequalität und Kalibrierung
+## 6. Analysis quality and calibration
 
-Stufe 1A benötigt einen reproduzierbaren Fixture-Korpus im Repository:
+Stage 1A requires a reproducible fixture corpus in the repository:
 
-- Stille und sehr leises Signal;
-- Sinus in tiefen und hohen Frequenzen;
-- Impuls-/Click-Track mit bekannten BPM;
-- dynamisch an- und abschwellendes Signal;
-- gleichmäßig komprimiertes Signal;
-- verrauschtes beziehungsweise breitbandiges Signal;
-- kurze reale, redistributable Musikfixtures für Container-/Codec-Integration.
+- silence and a very quiet signal;
+- sine waves at low and high frequencies;
+- impulse/click track with known BPM;
+- a signal swelling and ebbing dynamically;
+- an evenly compressed signal;
+- a noisy or rather broadband signal;
+- short real, redistributable music fixtures for container/codec integration.
 
-Synthetische Fixtures prüfen exakte mathematische Eigenschaften. Reale
-Fixtures prüfen nur robuste Bereiche und Ordnungen, nie subjektive
-Atmosphäre. Der Fixture-Ursprung und seine Lizenz werden neben der Datei
-dokumentiert.
+Synthetic fixtures check exact mathematical properties. Real fixtures check
+only robust ranges and orderings, never subjective atmosphere. The fixture's
+origin and its licence are documented next to the file.
 
-Release-Benchmarks messen:
+Release benchmarks measure:
 
-- Peak RSS beziehungsweise den nachweisbaren PCM-Pufferdeckel;
-- Decode-/Analysezeit pro Audiominute;
-- Datenbankgröße pro 10.000 Tracks;
-- Pending-Abfrage bei 100.000 Tracks;
-- Mixplanung bei 1.000, 10.000 und 100.000 Profilzeilen;
-- Ergebnisdeterminismus unabhängig von SQLite-Plan und Thread-Reihenfolge.
+- peak RSS or rather the demonstrable PCM buffer cap;
+- decode/analysis time per audio minute;
+- database size per 10,000 tracks;
+- pending query at 100,000 tracks;
+- mix planning at 1,000, 10,000, and 100,000 profile rows;
+- result determinism independent of the SQLite plan and thread ordering.
 
-Harte Verträge:
+Hard contracts:
 
-- PCM-Speicher ist durch feste Chunk-/FFT-Fenster begrenzt, nicht durch
-  Trackdauer;
-- Standardparallelität ist 1;
-- Mixplanung lädt keine vollständigen PCM-, Waveform- oder Embedding-BLOBs;
-- maximal 500 Kandidaten gelangen aus der SQL-Vorauswahl in die greedy
-  Diversitätsphase;
-- MCP-Antworten sind paginiert beziehungsweise hart begrenzt.
+- PCM memory is bounded by fixed chunk/FFT windows, not by track duration;
+- default parallelism is 1;
+- mix planning loads no complete PCM, waveform, or embedding BLOBs;
+- at most 500 candidates pass from the SQL preselection into the greedy
+  diversity phase;
+- MCP responses are paginated or rather hard-limited.
 
-## 7. Fehler- und Randfälle
+## 7. Error and edge cases
 
-- **Track ändert sich während der Analyse:** Ergebnis nur speichern, wenn der
-  Source-Fingerprint noch übereinstimmt; sonst verwerfen und erneut pending.
-- **Track wird missing:** laufende Analyse darf scheitern; kein Profil wird als
-  Kandidat ausgegeben.
-- **App wird beendet:** der Worker hält keinen GTK-Borrow; Abbruch beendet den
-  aktuellen Chunk-/Trackpfad sauber und lässt übrige Tracks pending.
-- **Tempo nicht bestimmbar:** BPM bleibt `None`, die übrigen Dimensionen sind
-  gültig; kein erfundener Nullwert.
-- **Stille:** Intensity und Rhythmicity werden definiert niedrig, Konfidenz
-  nennt die begrenzte Aussage; Division durch null ist ausgeschlossen.
-- **Zu wenige Kandidaten:** partieller Draft mit Diagnostic, sofern alle harten
-  Bedingungen erfüllt sind.
-- **Draft stale:** Approval lehnt ab, wenn ausgewählte Tracks oder harte
-  Quellbedingungen nicht mehr gelten; kein stilles Replan. Änderungen an
-  unbeteiligten Tracks bleiben folgenlos.
-- **Playlistname existiert:** Reprise bewahrt die heutige Semantik manueller
-  Playlists und darf eine zweite Playlist gleichen Namens erzeugen. Idempotency
-  verhindert nur den doppelten Commit desselben Drafts; eine bestehende
-  Playlist wird niemals überschrieben.
-- **MCP-Client fordert 100.000 IDs:** Schema-/Runtime-Limit lehnt vor SQL ab.
-- **Manipuliertes Intent-/Draft-JSON:** typisierte Validierung, kein dynamischer
-  SQL-Identifier und keine freie WHERE-Klausel.
-- **Capability ändert sich während Prozesslauf:** die gespeicherte Einstellung
-  wird pro Write-Aufruf neu gelesen; Entzug wirkt ohne Serverneustart. Neue
-  Freigaben werden erst nach Neustart sichtbar, damit kein Client überraschend
-  zusätzliche Tools erhält.
+- **Track changes during the analysis:** store the result only if the source
+  fingerprint still matches; otherwise discard it and make it pending again.
+- **Track becomes missing:** a running analysis may fail; no profile is
+  emitted as a candidate.
+- **App is terminated:** the worker holds no GTK borrow; cancellation ends the
+  current chunk/track path cleanly and leaves the remaining tracks pending.
+- **Tempo not determinable:** BPM stays `None`, the remaining dimensions are
+  valid; no invented zero value.
+- **Silence:** intensity and rhythmicity are set to a defined low value,
+  confidence states the limited significance; division by zero is excluded.
+- **Too few candidates:** partial draft with a diagnostic, provided all hard
+  conditions are satisfied.
+- **Draft stale:** approval refuses if selected tracks or hard source
+  conditions no longer hold; no silent replan. Changes to uninvolved tracks
+  remain without consequence.
+- **Playlist name exists:** Reprise preserves today's semantics of manual
+  playlists and may create a second playlist of the same name. Idempotency
+  only prevents the duplicate commit of the same draft; an existing playlist
+  is never overwritten.
+- **MCP client requests 100,000 IDs:** the schema/runtime limit refuses
+  before SQL.
+- **Manipulated intent/draft JSON:** typed validation, no dynamic SQL
+  identifier and no free WHERE clause.
+- **Capability changes while the process is running:** the stored setting is
+  re-read per write call; revocation takes effect without a server restart.
+  New grants only become visible after a restart, so that no client
+  unexpectedly receives additional tools.
 
-## 8. UX-Richtung für die Stufen 1A und 1B
+## 8. UX direction for stages 1A and 1B
 
 ### Settings
 
-Unter Library erscheint „Audio Analysis":
+Under Library, "Audio Analysis" appears:
 
-- Toggle „Analyze audio locally";
-- Erklärung „Reads your music locally. Nothing is uploaded.";
-- Coverage „1,204 of 1,686 tracks analyzed";
-- Progress/Fehlerzahl;
-- Pause/Resume;
-- „Retry failed";
-- „Reanalyze library" nur mit Bestätigung, weil es rechenintensiv ist, aber
-  keine Userdaten löscht.
+- toggle "Analyze audio locally";
+- explanation "Reads your music locally. Nothing is uploaded.";
+- coverage "1,204 of 1,686 tracks analyzed";
+- progress/error count;
+- pause/resume;
+- "Retry failed";
+- "Reanalyze library" only with confirmation, because it is compute-intensive
+  but deletes no user data.
 
-### Now-Playing-Panel
+### Now-playing panel
 
-Das bestehende rechte Now-Playing-Panel erhält neben „Up Next" und „Lyrics"
-einen dritten Tab „Audio Character" für den aktuell geladenen Track. Er zeigt
-vier beschriftete Skalen, BPM und eine kurze Zeile „Analyzed locally". Bei
-fehlender Analyse zeigt er „Not analyzed" plus die Aktivierungs-/Analyseaktion.
-Farbe ist nie der einzige Informationsträger. Eine allgemeine Detailfläche für
-beliebige ausgewählte Library-Tracks ist bewusst nicht Teil von Stufe 1A.
+The existing right-hand now-playing panel gains, alongside "Up Next" and
+"Lyrics", a third tab "Audio Character" for the currently loaded track. It
+shows four labeled scales, BPM, and a short line "Analyzed locally". Where the
+analysis is missing it shows "Not analyzed" plus the activation/analysis
+action. Color is never the sole carrier of information. A general detail
+surface for arbitrary selected library tracks is deliberately not part of
+Stage 1A.
 
 ### Mix Builder
 
-Der Builder bietet Presets als Startwerte, aber speichert die strukturierte
-Absicht:
+The builder offers presets as starting values, but stores the structured
+intent:
 
-- „Calm & dark";
-- „Bright & energetic";
-- „Dynamic focus";
-- „Steady pulse".
+- "Calm & dark";
+- "Bright & energetic";
+- "Dynamic focus";
+- "Steady pulse".
 
-Slider und Auswahlfelder bleiben nach Presetwahl editierbar. „Preview" erzeugt
-einen Mix draft. „Save as Playlist" bleibt bis zu einem gültigen, aktuellen
-Draft deaktiviert.
+Sliders and selection fields remain editable after a preset is chosen.
+"Preview" creates a mix draft. "Save as Playlist" stays disabled until there
+is a valid, current draft.
 
 ### My Stats
 
-Die erste Stats-Erweiterung ist klein: eine Klangprofil-Zusammenfassung der
-gehörten, analysierten Plays plus ein Deep-Link zum Mix Builder. Keine neue
-große Chart-Familie und kein semantisches „your mood".
+The first stats extension is small: a sound profile summary of the listened,
+analyzed plays plus a deep link to the Mix Builder. No new large chart family
+and no semantic "your mood".
 
-## 9. MCP-Sicherheit und Protokollgrenze
+## 9. MCP security and protocol boundary
 
-MCP trennt Resources, Prompts und Tools; Tools sind modellgesteuert. Der
-lokale Server exponiert deshalb nur klar annotierte, eng validierte Tools. Der
-Client sollte den User bei Writes einbeziehen, Reprise verlässt sich aber nicht
-allein darauf: `playlist:create` bleibt serverseitig fail-closed.
+MCP separates resources, prompts, and tools; tools are model-driven. The
+local server therefore exposes only clearly annotated, tightly validated
+tools. The client should involve the user on writes, but Reprise does not rely
+on that alone: `playlist:create` stays fail-closed on the server side.
 
-Tool-Resultate verwenden strukturierte Ausgabe und zusätzlich eine kurze
-Textzusammenfassung für weniger vollständige Clients. Read-only-,
-destructive- und idempotent-Hints werden korrekt gesetzt, aber nie als
-Sicherheitskontrolle missverstanden.
+Tool results use structured output plus a short text summary for less complete
+clients. Read-only, destructive, and idempotent hints are set correctly, but
+never misunderstood as a security control.
 
-Der stdio-Prozess schreibt Protokollausgaben ausschließlich nach `stderr`;
-`stdout` bleibt MCP. Logs enthalten Toolname, Ergebnisstatus, Dauer und
-anonymisierte Zählwerte, nie Trackmetadaten, Pfade, Intents oder Credentials.
+The stdio process writes log output exclusively to `stderr`; `stdout` stays
+MCP. Logs contain tool name, result status, duration, and anonymized counts,
+never track metadata, paths, intents, or credentials.
 
-## 10. Lizenz- und Modellgrenze
+## 10. Licence and model boundary
 
-Die MIT-Lizenz von `reprise-core` und `reprise-platform-linux` muss erhalten
-bleiben. Stufe 1A verwendet deshalb keine Essentia-Library und verteilt keine
-Essentia-Modelle. Essentia eignet sich als nicht eingebundener
-Forschungsvergleich, ist selbst AGPLv3; bereitgestellte Modelle tragen je nach
-Generation zusätzliche CC-BY-NC-SA/ND-Bedingungen beziehungsweise eine
-proprietäre Lizenzoption.
+The MIT licence of `reprise-core` and `reprise-platform-linux` must be
+preserved. Stage 1A therefore uses no Essentia library and distributes no
+Essentia models. Essentia is suitable as a non-integrated research
+comparison, and is itself AGPLv3; the models it provides carry, depending on
+generation, additional CC-BY-NC-SA/ND terms or rather a proprietary licence
+option.
 
-Eine spätere semantische Stufe beginnt nur mit einem eigenen
-Lizenz-/Qualitäts-Gate:
+A later semantic stage begins only with a licence/quality gate of its own:
 
-- kommerzielle Nutzung und Weitergabe mit MIT-Core/Proprietär-Frontends
-  vereinbar;
-- Trainingsdaten- und Modellherkunft dokumentiert;
-- lokaler CPU-Pfad ohne verpflichtende Cloud;
-- Genre-/Kultur-Bias auf einem festgelegten Korpus gemessen;
-- Modellversion und Konfidenz im Ergebnis;
-- Userkorrekturen getrennt vom Modellergebnis gespeichert.
+- commercial use and redistribution compatible with an MIT core/proprietary
+  frontends;
+- training data and model provenance documented;
+- local CPU path without a mandatory cloud;
+- genre/culture bias measured on a fixed corpus;
+- model version and confidence in the result;
+- user corrections stored separately from the model result.
 
-Ohne bestandenen Gate bleibt Reprise beim erklärbaren Klangprofil.
+Without a passed gate, Reprise stays with the explainable sound profile.
 
-## 11. Stufengrenzen
+## 11. Stage boundaries
 
-### Stufe 1A — Klangprofil-Grundlage
+### Stage 1A — Sound profile foundation
 
-Enthält Analysevertrag, Linux-Adapter, Persistenz, Worker, Settings und den
-Audio-Character-Tab des Now-Playing-Panels. Sie ist der nächste ausführbare
-Planabschnitt und bereits allein ein vollständiger Usernutzen.
+Contains the analysis contract, Linux adapter, persistence, worker, settings,
+and the Audio Character tab of the now-playing panel. It is the next
+executable plan section and on its own already a complete user benefit.
 
-### Stufe 1B — Nativer Mix-Planer
+### Stage 1B — Native mix planner
 
-Enthält gemeinsamen Mix-Planer, Draft/Approval, Mix-Builder und eine kleine
-My-Stats-Projektion. Sie beginnt erst nach expliziter Freigabe nach der
-Stufe-1A-Review.
+Contains the shared mix planner, draft/approval, mix builder, and a small
+My Stats projection. It begins only after explicit approval following the
+Stage 1A review.
 
-### Stufe 2 — Lokaler MCP-Adapter
+### Stage 2 — Local MCP adapter
 
-Enthält das separate stdio-Binary, Resources, read-only Tools, Mix-Planung und
-capability-geschützte Playlist-Erzeugung. Sie beginnt erst nach expliziter
-Freigabe nach der Stufe-1B-Review.
+Contains the separate stdio binary, resources, read-only tools, mix planning,
+and capability-protected playlist creation. It begins only after explicit
+approval following the Stage 1B review.
 
-### Stufe 3 — Semantische Atmosphäre und Ähnlichkeit
+### Stage 3 — Semantic atmosphere and similarity
 
-Optional: lizenziertes Modell für Valenz/Arousal oder Audio-Text-Embeddings,
-Userkorrekturen, „similar to this" und freie Atmosphären. Kein Teil des
-aktuellen Implementierungsumfangs.
+Optional: a licensed model for valence/arousal or audio-text embeddings, user
+corrections, "similar to this", and free atmospheres. Not part of the current
+implementation scope.
 
-## 12. Primärquellen
+## 12. Primary sources
 
 - MCP stable specification `2025-11-25`:
   <https://modelcontextprotocol.io/specification/2025-11-25>
