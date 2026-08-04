@@ -2374,12 +2374,7 @@ property is set and yet nothing happens.
   use the one-level-higher `sidebar_bg` surface of the active theme. Both
   flanks carry a 1px hairline on their inner edge. There is no pane-specific
   retinting and no hardcoded pane surface.
-- **STYLE-3** [planned] [gtk] — Two accent roles stay separate: the fixed
-  app accent (`@accent_color`) denotes durable UI meaning such as
-  selection, ratings, active toggles, links, chips, and focus; the dynamic
-  playback accent (`@reprise_player_accent`) denotes exclusively the
-  running track, such as Play/Pause, waveform, playing row, EQ, glow, and
-  the GRID-1 inner ring. An element never mixes the roles.
+- **STYLE-3** [replaced by STYLE-8] — Two accent roles stay separate.
 - **STYLE-4** [replaced by STYLE-1] — Chrome glass is neutral and
   theme-dependent, never tinted by the cover accent. GL/NGL/Vulkan use 24px
   backdrop blur over a neutral tint floor of at least 80%; Cairo, unknown
@@ -2409,6 +2404,11 @@ property is set and yet nothing happens.
   narrow window. Responsive changes never overwrite a stored sidebar or
   panel preference, and both header toggles remain reachable for manual
   reopening.
+- **STYLE-8** [active] [gtk] — Reprise has one effective accent color for
+  every accent role. Appearance offers exactly two sources between Theme and
+  Color Scheme: the Reprise app accent `#4FDBD4`, which is the default, and
+  the system accent provided by libadwaita. Changing the source applies
+  immediately without restarting the app.
 - **CONTRAST-1** [active] [gtk] — There are three central text levels:
   primary approximately 0.95 for titles and values, secondary approximately
   0.7 for artist, status, metadata, and column headers, hint approximately

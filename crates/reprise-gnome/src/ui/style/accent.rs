@@ -26,13 +26,6 @@ impl AccentSource {
     pub(in crate::ui) const DEFAULT: Self = Self::App;
 
     /// Stable persistence key.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the accent preference persists ids in accent-color source step 3"
-        )
-    )]
     pub(in crate::ui) const fn id(self) -> &'static str {
         match self {
             Self::App => "app",
