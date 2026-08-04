@@ -37,6 +37,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!--
+            No `android:process` here, and adding one has a cost worth knowing
+            before you do. The play-count journal that carries counted plays
+            across process death is a single-writer file: the second writer to
+            open it is refused its exclusive lock and its plays are dropped with
+            a warning rather than silently overwriting the first writer's. So a
+            service in its own process would stop counting plays until that
+            journal learns to be shared.
+        -->
         <service
             android:name=".ReprisePlaybackService"
             android:exported="true"

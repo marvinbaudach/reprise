@@ -28,13 +28,26 @@
 //! ## Surviving the process
 //!
 //! The writer appends every play to a bounded file in Android's private app
-//! directory before it asks SQLite to count it. Each entry has a monotonic
-//! sequence; Core increments the count and advances one applied high-water mark
-//! in the same transaction. The journal entry is removed only after that
-//! commit, so a kill on either side of the commit is safe: an unapplied entry is
-//! replayed, while an already-applied one is recognized without being counted
-//! twice. A malformed line or half-written final line is reported and repaired
-//! without blocking earlier valid entries.
+//! directory before it asks SQLite to count it, and follows the append through
+//! to the platter — so the promise reaches past process death to a flat battery.
+//! Each entry has a monotonic sequence; Core increments the count and advances
+//! one applied high-water mark in the same transaction. The journal entry is
+//! removed only after that commit, so a kill on either side of the commit is
+//! safe: an unapplied entry is replayed, while an already-applied one is
+//! recognized without being counted twice.
+//!
+//! What the journal does with a line it did not expect is [its own
+//! decision](crate::play_journal) — damage is discarded, an unknown format
+//! version is refused rather than rewritten away, and a colliding sequence is
+//! renumbered, because it describes a play that happened.
+//!
+//! One boundary is left standing on purpose: an entry whose *write* keeps
+//! failing for a reason retrying cannot fix does hold up the ones behind it.
+//! Applying a later entry would move the applied mark past this one and make
+//! the play it describes unrecognisable as pending, so stopping is the only way
+//! to keep it replayable. A user would see a play count that stops rising while
+//! the log carries `kept an Android play count in its journal` for the same
+//! track over and over.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -237,13 +250,17 @@ fn drain_journal(db: &Db, journal: &mut PlayJournal, shutting_down: &AtomicBool)
             return;
         }
         if let Err(error) = journal.remove_front() {
+            // Not a reason to stop. The entry is counted and its sequence is at
+            // the applied mark, so the line it leaves behind can only be
+            // recognised, never counted again — whereas stopping would park
+            // every later play behind it for as long as the file stays
+            // unwritable.
             tracing::warn!(
                 %error,
                 track_id = entry.play.track_id,
                 sequence = entry.sequence,
                 "an Android play committed but could not be removed from its journal",
             );
-            return;
         }
     }
 }
@@ -297,32 +314,46 @@ mod tests {
 
     use super::{record_play_with_retries, retry_after, RecordedPlay, BUSY_ATTEMPTS};
     use crate::log_capture::{CapturedLogs, LogCapture};
-    use crate::play_journal::{JournalEntry, FILE_NAME as JOURNAL_FILE_NAME};
+    use crate::play_journal::{
+        JournalEntry, PlayJournal, FILE_NAME as JOURNAL_FILE_NAME,
+        TEMP_FILE_NAME as JOURNAL_TEMP_FILE_NAME,
+    };
 
-    fn seeded_database(directory: &Path) -> (PathBuf, i64) {
+    fn seeded_tracks(directory: &Path, count: i64) -> (PathBuf, Vec<i64>) {
         let music = directory.join("music");
         std::fs::create_dir(&music).unwrap();
-        std::fs::copy(
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../android/app/src/main/assets/sine.flac"),
-            music.join("sine.flac"),
-        )
-        .unwrap();
+        let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../android/app/src/main/assets/sine.flac");
+        for index in 0..count {
+            std::fs::copy(&source, music.join(format!("sine-{index}.flac"))).unwrap();
+        }
         let database_path = directory.join("reprise.db");
         let database = Db::open_migrated(Some(&database_path)).unwrap();
         reprise_core::library::scanner::scan_folder(&database, &music).unwrap();
-        let track = reprise_core::queries::query_library_text_search(
+        let tracks: Vec<_> = reprise_core::queries::query_library_text_search(
             &database,
             "",
             reprise_core::queries::WindowRange {
                 offset: 0,
-                limit: 1,
+                limit: count,
             },
         )
         .unwrap()
         .rows
-        .remove(0);
-        (database_path, track.id)
+        .into_iter()
+        .map(|row| row.id)
+        .collect();
+        assert_eq!(
+            tracks.len(),
+            count as usize,
+            "the fixture must seed {count} tracks"
+        );
+        (database_path, tracks)
+    }
+
+    fn seeded_database(directory: &Path) -> (PathBuf, i64) {
+        let (database_path, tracks) = seeded_tracks(directory, 1);
+        (database_path, tracks[0])
     }
 
     fn play_count(database_path: &Path, track_id: i64) -> i64 {
@@ -380,6 +411,75 @@ mod tests {
         assert_eq!(
             std::fs::read(directory.path().join(JOURNAL_FILE_NAME)).unwrap(),
             b"",
+        );
+    }
+
+    /// Two writers that overlapped read the same applied mark and numbered
+    /// their plays alike. Both lines describe a play that happened, so the next
+    /// session counts both: the colliding entry is data, not damage.
+    #[test]
+    fn both_plays_journaled_under_one_sequence_are_counted() {
+        let directory = tempfile::tempdir().unwrap();
+        let (database_path, tracks) = seeded_tracks(directory.path(), 2);
+        std::fs::write(
+            directory.path().join(JOURNAL_FILE_NAME),
+            format!(
+                "v1\t1\t{}\t1700000000\nv1\t1\t{}\t1700000001\n",
+                tracks[0], tracks[1],
+            ),
+        )
+        .unwrap();
+
+        let recorder = super::PlayRecorder::spawn(database_path.clone(), 0);
+        drop(recorder);
+
+        assert_eq!(play_count(&database_path, tracks[0]), 1);
+        assert_eq!(
+            play_count(&database_path, tracks[1]),
+            1,
+            "the colliding entry described a play that happened",
+        );
+        assert_eq!(
+            std::fs::read(directory.path().join(JOURNAL_FILE_NAME)).unwrap(),
+            b"",
+            "both entries must leave the journal once they are counted",
+        );
+    }
+
+    /// A journal whose file cannot be rewritten still has to let later plays
+    /// through: the head is already counted, and leaving it in the file cannot
+    /// double-count it — its sequence is at the applied mark.
+    #[test]
+    fn a_play_behind_one_that_cannot_leave_the_journal_is_still_counted() {
+        let directory = tempfile::tempdir().unwrap();
+        let (database_path, tracks) = seeded_tracks(directory.path(), 2);
+        std::fs::write(
+            directory.path().join(JOURNAL_FILE_NAME),
+            format!(
+                "v1\t1\t{}\t1700000000\nv1\t2\t{}\t1700000001\n",
+                tracks[0], tracks[1],
+            ),
+        )
+        .unwrap();
+        let db = Db::open_ready(&database_path).unwrap();
+        let mut journal = PlayJournal::open(&database_path, 0).unwrap();
+        std::fs::create_dir(directory.path().join(JOURNAL_TEMP_FILE_NAME)).unwrap();
+
+        let logs = CapturedLogs::default();
+        tracing::subscriber::with_default(LogCapture(logs.clone()), || {
+            super::drain_journal(&db, &mut journal, &AtomicBool::new(false));
+        });
+
+        assert_eq!(play_count(&database_path, tracks[0]), 1);
+        assert_eq!(
+            play_count(&database_path, tracks[1]),
+            1,
+            "a play must not be parked behind one that is already counted",
+        );
+        let logged = logs.joined();
+        assert!(
+            logged.contains("could not be removed from its journal"),
+            "the unremovable entry must still be named, got {logged}",
         );
     }
 
