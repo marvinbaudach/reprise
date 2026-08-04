@@ -11,7 +11,7 @@
         <stop offset="1" stop-color="#070710"/>
       </linearGradient>
     </defs>
-    <rect x="8" y="8" width="112" height="112" rx="26" fill="url(#rp-plate-fill)"/>
+    <rect x="0" y="0" width="128" height="128" rx="22" fill="url(#rp-plate-fill)"/>
   </g>
   <g id="rp-mark" transform="translate(2.6667 2.6667) scale(7.666667)">
   <!-- Die Marke: das Wiederholungszeichen der Notenschrift. Es markiert
