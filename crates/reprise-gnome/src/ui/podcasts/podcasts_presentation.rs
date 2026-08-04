@@ -10,8 +10,6 @@ use reprise_core::podcasts::{EpisodeRow, EpisodeStatus, PodcastKind, SourceGroup
 use super::podcasts_context_menu::PodcastSyncDevice;
 use crate::ui::strings;
 
-pub(super) use crate::ui::source_row::detail_line;
-
 /// The filter the podcast view applies, which is exactly the filter the core
 /// persists — so it *is* the core's type rather than a field-for-field copy of
 /// it. The copy that used to live here had the same four fields and the same
@@ -389,11 +387,11 @@ mod tests {
 
         assert_eq!(relative_date(None, today), "");
         assert_eq!(
-            detail_line(["", "", strings::PODCAST_STATUS_NEW]),
+            crate::ui::source_row::detail_line(["", "", strings::PODCAST_STATUS_NEW]),
             strings::PODCAST_STATUS_NEW
         );
         assert_eq!(
-            detail_line(["Today", "", strings::PODCAST_STATUS_NEW]),
+            crate::ui::source_row::detail_line(["Today", "", strings::PODCAST_STATUS_NEW]),
             "Today · New"
         );
         assert_eq!(

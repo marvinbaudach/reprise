@@ -36,9 +36,9 @@ impl YoutubeChannelDetail {
             .selection_widgets
             .borrow()
             .iter()
-            .map(|(episode_id, widgets)| (*episode_id, widgets.row.clone()))
+            .map(|(episode_id, widgets)| (*episode_id, widgets.row.clone(), widgets.reveal.clone()))
             .collect::<Vec<_>>();
-        for (episode_id, row) in widgets {
+        for (episode_id, row, reveal) in widgets {
             let is_selected = selected.contains(&episode_id);
             if is_selected {
                 row.add_css_class(SELECTED_ROW_CLASS);
@@ -46,6 +46,9 @@ impl YoutubeChannelDetail {
                 row.remove_css_class(SELECTED_ROW_CLASS);
             }
             row.update_state(&[gtk4::accessible::State::Selected(Some(is_selected))]);
+            if let Some(reveal) = reveal {
+                reveal.set_selected(is_selected);
+            }
         }
         let summary = self
             .selection_summary

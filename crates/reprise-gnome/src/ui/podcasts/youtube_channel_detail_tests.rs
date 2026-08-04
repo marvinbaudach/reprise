@@ -33,6 +33,74 @@ fn episode(id: i64, duration_secs: Option<i64>) -> EpisodeRow {
     }
 }
 
+fn descendants(widget: &gtk4::Widget) -> Vec<gtk4::Widget> {
+    let mut found = Vec::new();
+    let mut child = widget.first_child();
+    while let Some(current) = child {
+        found.push(current.clone());
+        found.extend(descendants(&current));
+        child = current.next_sibling();
+    }
+    found
+}
+
+fn render_channel_row(resume: bool) -> gtk4::Widget {
+    let host = gtk4::Stack::new();
+    let detail = YoutubeChannelDetail::new(&host, false);
+    let mut episode = episode(1, Some(3_600));
+    if resume {
+        episode.position_ms = 1_800_000;
+    }
+    detail.build_episode_row(&episode, &mut BTreeMap::new(), &mut BTreeMap::new())
+}
+
+/// `SRC-16`: the same episode status reads as the same chip on both episode
+/// surfaces, including Resume's measured percentage.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_16_the_channel_page_renders_the_status_as_a_chip() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let row = render_channel_row(true);
+    let chips = descendants(&row)
+        .into_iter()
+        .filter_map(|widget| widget.downcast::<gtk4::Label>().ok())
+        .filter(|label| label.has_css_class("reprise-source-row-chip"))
+        .collect::<Vec<_>>();
+    assert_eq!(chips.len(), 1);
+    assert!(chips[0].text().starts_with("Resume"));
+}
+
+/// `SRC-17`: the channel page reserves the same quiet row-menu surface.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_17_the_channel_page_hides_its_row_menu_until_hover_focus_or_selection() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let row = render_channel_row(false);
+    let menu = descendants(&row)
+        .into_iter()
+        .find_map(|widget| widget.downcast::<gtk4::MenuButton>().ok())
+        .expect("channel episode menu");
+    assert_eq!(menu.opacity(), 0.0);
+}
+
+/// `POD-20`: adopting the chip and reveal grammar never changes this
+/// surface's permanent play glyph.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn pod_20_the_channel_page_keeps_its_permanent_play_glyph() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let row = render_channel_row(false);
+    let play = descendants(&row)
+        .into_iter()
+        .filter_map(|widget| widget.downcast::<gtk4::Image>().ok())
+        .find(|image| image.icon_name().as_deref() == Some("media-playback-start-symbolic"))
+        .expect("permanent play glyph");
+    assert_eq!(play.opacity(), 1.0);
+}
+
 /// `POD-20`: channel detail keeps its persistent thumbnail play glyph, but
 /// does not swap the loaded marker under the pointer.
 #[test]

@@ -22,7 +22,7 @@ use super::podcasts_groups::{self, DownloadRowWidgets};
 use super::podcasts_groups::{SelectionRowWidgets, SELECTED_ROW_CLASS};
 use super::podcasts_playback::EpisodeMark;
 use super::podcasts_presentation::{
-    detail_line, duration, on_phone, relative_date, source_header, status_pill, RenderedSourceGroup,
+    duration, on_phone, relative_date, source_header, RenderedSourceGroup,
 };
 use super::podcasts_row_interaction::{install_row_interaction, SELECT_CHANNEL_ROW_ACTION};
 use super::podcasts_selection::{PodcastSelection, SelectMode};
@@ -628,14 +628,6 @@ impl YoutubeChannelDetail {
             self.unavailable_episode.get(),
             SELECT_CHANNEL_ROW_ACTION,
         );
-        selection_widgets.insert(
-            episode.id,
-            SelectionRowWidgets {
-                row: row.clone(),
-                media: None,
-                reveal: None,
-            },
-        );
         let play = gtk4::Button::new();
         play.add_css_class("flat");
         play.set_tooltip_text(Some(&strings::text(strings::PLAY_OR_PAUSE)));
@@ -668,19 +660,21 @@ impl YoutubeChannelDetail {
         copy.append(&title);
         let date = relative_date(episode.published_at, Local::now().date_naive());
         let duration = duration(episode.duration_secs);
-        let status = status_pill(episode);
-        let subtitle_text = detail_line([
+        let detail = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+        let subtitle = gtk4::Label::new(Some(&crate::ui::source_row::detail_line([
             date.as_str(),
             duration.as_str(),
-            status.as_ref().map_or("", |pill| pill.label),
-        ]);
-        let subtitle = gtk4::Label::new(Some(&subtitle_text));
+        ])));
         subtitle.set_xalign(0.0);
         subtitle.add_css_class("caption");
         subtitle.add_css_class("dim-label");
         // SRC-8: same reason as the episode title above it.
         subtitle.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-        copy.append(&subtitle);
+        detail.append(&subtitle);
+        if let Some(spec) = podcasts_groups::chip_spec(episode) {
+            detail.append(&crate::ui::source_row::chip(&spec));
+        }
+        copy.append(&detail);
         row.append(&copy);
         let status = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
         let action = gtk4::Button::new();
@@ -708,12 +702,23 @@ impl YoutubeChannelDetail {
         );
         row.append(&download_widgets.status);
         row.append(&download_widgets.action);
-        row.append(&podcasts_context_surface::episode_menu_button(
+        let menu = podcasts_context_surface::episode_menu_button(
             episode,
             &selection,
             self.unavailable_episode.get(),
             SELECT_CHANNEL_ROW_ACTION,
-        ));
+        );
+        row.append(&menu);
+        let reveal = Rc::new(crate::ui::source_row::Reveal::install(&row, &menu));
+        reveal.set_selected(is_selected);
+        selection_widgets.insert(
+            episode.id,
+            SelectionRowWidgets {
+                row: row.clone(),
+                media: None,
+                reveal: Some(reveal),
+            },
+        );
         widgets.insert(episode.id, download_widgets);
         row.upcast()
     }
