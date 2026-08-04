@@ -355,6 +355,11 @@ impl TrackList {
     /// Reacts to a coarse playback-state change: freeze the now-playing
     /// equaliser on pause, resume it on play, drop the marker on stop.
     fn on_playback_state(&self, state: PlaybackState) {
+        self.shared
+            .diagnostic_trail
+            .record(super::diagnostic_trail::Event::PlaybackState {
+                state: format!("{state:?}").to_lowercase(),
+            });
         match state {
             PlaybackState::Playing => self.set_playback_paused(false),
             PlaybackState::Paused => self.set_playback_paused(true),

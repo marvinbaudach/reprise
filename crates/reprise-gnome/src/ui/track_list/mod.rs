@@ -3,6 +3,7 @@ pub(crate) mod column_layout;
 pub(in crate::ui) mod column_layout_editor;
 pub(in crate::ui) use reprise_view::column_widths;
 pub(in crate::ui) mod current_track_selection;
+pub(crate) mod diagnostic_trail;
 pub(in crate::ui) mod end_of_results;
 pub(in crate::ui) mod list_density;
 pub(in crate::ui) mod match_highlight;
@@ -22,6 +23,8 @@ pub(in crate::ui) mod rating_cell_refresh;
 mod rating_column;
 pub(in crate::ui) mod reload_restore;
 mod responsive_columns;
+pub(crate) mod row_loss_watchdog;
+pub(crate) mod row_loss_watchdog_state;
 #[path = "track_list.rs"]
 mod surface;
 pub(in crate::ui) mod tag_mutation_refresh;
