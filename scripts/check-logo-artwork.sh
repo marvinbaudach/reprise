@@ -1,289 +1,345 @@
 #!/usr/bin/env bash
-# Logo-Gate: misst die Zeichnungen, statt sie zu begutachten.
+# Measure the repeat-sign artwork against its geometry and delivery contract.
 #
-# Die Kriterien stehen in
-# docs/superpowers/specs/2026-08-03-owl-logo-monochrome-design.md.
-# V2 ist der entscheidende Test: bleibt bei kleiner Rendergröße
-# Negativraum übrig, oder wird die Marke zum Klumpen?
-#
-#   ./scripts/check-logo-artwork.sh --all        alles, was ausgeliefert wird
-#   ./scripts/check-logo-artwork.sh --mark <svg>  eine einzelne Zeichnung
+# The hard small-size gate is 28 px. The 16/22/24/32 px stages are reported
+# separately because 16 px is a physical raster limit, not licence to distort
+# the specified 96-unit geometry.
 set -euo pipefail
 
 repo_root=${LOGO_ARTWORK_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 cd "$repo_root"
 
-measure="python3 scripts/lib/logo_measure.py"
-flatten="python3 scripts/lib/svg_flatten.py"
-layer="python3 scripts/lib/svg_layer.py"
+measure=(python3 scripts/lib/logo_measure.py)
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
 fail=0
-ok()  { printf '  ok    %s\n' "$*"; }
+ok() { printf '  ok    %s\n' "$*"; }
 bad() { printf '  FAIL  %s\n' "$*" >&2; fail=1; }
 
-# Es gibt nur noch eine Zeichnung. Sie wird bei der kleinsten Größe geprüft,
-# bei der sie ausgeliefert wird — was dort trägt, trägt auch darüber.
-MARK_SIZE=16
-MARK_SHAPES=4
-# Punkt, Punkt, dünner Balken, dicker Balken.
+MARK_SIZE=28
 MARK_PARTS=4
+MIN_CONTRAST=3.0
+MAX_CIRCLE_CLIP=0.01
+GEOMETRY_TOLERANCE=$(awk 'BEGIN { print 96 / 512 }')
 
-# Kontrastschwellen. 3,0 ist WCAG 1.4.11 für grafische Objekte — die Grenze,
-# an der eine Fläche sich von ihrem Grund abhebt. Die frühere Fassung
-# verlangte 4,5, den Wert für Fließtext, und zwar von **jedem** Palettenwert
-# gegen Weiß und Schwarz. Das ist für eine Zeichnung, die auf ihrer eigenen
-# Platte sitzt, kein sinnvoller Test: er verbot helle Glanzpunkte und sagte
-# nichts darüber, ob die Marke auf ihrer Platte steht.
-MIN_EDGE=3.0
-MAX_BLIND=0.02      # Anteil der Fläche, der unter 1,5:1 im Grund versinkt
+read -r TEAL VIOLET TEAL_LIGHT VIOLET_LIGHT PLATE < <(python3 - <<'PY'
+import tomllib
+with open("data/brand/palette.toml", "rb") as source:
+    palette = tomllib.load(source)
+print(*(palette[key] for key in (
+    "reprise_teal", "reprise_violet", "reprise_teal_light",
+    "reprise_violet_light", "reprise_plate")))
+PY
+)
 
-is_square_viewbox() {   # <svg>
-  local vb w h
-  vb=$(grep -o 'viewBox="[^"]*"' "$1" | head -1 | sed 's/viewBox="//; s/"//')
-  w=$(echo "$vb" | awk '{print $3}'); h=$(echo "$vb" | awk '{print $4}')
-  awk "BEGIN{exit !($w == $h)}"
+check_source_contract() {
+  if python3 - <<'PY'
+import re
+import tomllib
+from pathlib import Path
+from xml.etree import ElementTree as ET
+
+brand = Path("data/brand")
+with (brand / "palette.toml").open("rb") as source:
+    palette = tomllib.load(source)
+ns = {"svg": "http://www.w3.org/2000/svg"}
+geometry = (
+    ("circle", {"cx": "30", "cy": "39", "r": "5.5"}),
+    ("circle", {"cx": "30", "cy": "57", "r": "5.5"}),
+    ("rect", {"x": "41", "y": "20", "width": "5", "height": "56", "rx": "1"}),
+    ("rect", {"x": "52", "y": "20", "width": "15", "height": "56", "rx": "1.5"}),
+)
+colours = {
+    "reprise-mark.svg": (palette["reprise_violet"], palette["reprise_teal"]),
+    "reprise-mark-light.svg": (palette["reprise_violet_light"], palette["reprise_teal_light"]),
 }
-
-check_v1() {   # <png> <stage> <svg>
-  if ! is_square_viewbox "$3"; then
-    ok "V1 übersprungen ($2 hat kein quadratisches Raster — auf den Zielflächen geprüft)"
-    return
+for name, (small, large) in colours.items():
+    root = ET.parse(brand / name).getroot()
+    assert root.attrib["viewBox"] == "0 0 96 96", name
+    shapes = list(root)
+    assert len(shapes) == 4, name
+    for index, (node, (tag, attributes)) in enumerate(zip(shapes, geometry, strict=True)):
+        assert node.tag.rsplit("}", 1)[-1] == tag, (name, index)
+        assert all(node.attrib.get(key) == value for key, value in attributes.items()), (name, index)
+        assert node.attrib["fill"] == (small if index < 3 else large), (name, index)
+    assert not re.search(r"(?:linear|radial)Gradient", ET.tostring(root, encoding="unicode"))
+mono = ET.parse(brand / "reprise-mark-mono.svg").getroot()
+assert mono.attrib["viewBox"] == "0 0 96 96"
+assert mono.attrib["fill"] == "currentColor"
+assert len(list(mono)) == 4
+plate = ET.parse(brand / "icon-plate.svg").getroot()
+assert plate.attrib["viewBox"] == "0 0 96 96"
+group = plate.find("svg:g", ns)
+rects = group.findall("svg:rect", ns)
+assert group.attrib["id"] == "rp-plate" and len(rects) == 1
+assert rects[0].attrib == {
+    "x": "4", "y": "4", "width": "88", "height": "88",
+    "rx": "22", "fill": palette["reprise_plate"],
+}
+PY
+  then
+    ok "source geometry: ordered circles, 1:3 barlines and solid 96-unit plate"
+  else
+    bad "source geometry differs from the specified 96-unit drawing"
   fi
-  read -r fw fh < <($measure fill-ratio "$1")
-  awk "BEGIN{exit !($fw >= 0.70 && $fh >= 0.70)}" \
-    && ok "V1 Randfüllung $2: ${fw} × ${fh}" \
-    || bad "V1 Randfüllung $2: ${fw} × ${fh} — mindestens 0.70 in beiden Achsen"
 }
 
-# V2 fragt: zerfällt die Marke bei kleiner Größe, oder wird sie zum Klotz?
-# Wie das zu messen ist, hängt davon ab, woraus sie gebaut ist. Eine Marke
-# mit Aussparungen — die frühere Eule — misst man am Negativraum. Ein
-# Zeichen aus getrennten Strichen hat keine Aussparungen; dort zählt, ob die
-# Striche getrennt bleiben. Zwei Balken, die bei 16 px verschmelzen, sind
-# kein Wiederholungszeichen mehr.
-check_v2() {   # <png> <label>
-  local n; n=$($measure ink-components "$1")
-  [ "$n" -eq "$MARK_PARTS" ] \
-    && ok "V2 Teilflächen $2: $n getrennt" \
-    || bad "V2 Teilflächen $2: $n statt $MARK_PARTS — die Striche sind zusammengelaufen"
+check_geometry_box() {
+  local png=$tmp/geometry.png
+  rsvg-convert -w 512 -h 512 -a "data/brand/reprise-mark.svg" -o "$png"
+  local sx0 sy0 sx1 sy1 x0 y0 x1 y1
+  read -r sx0 sy0 sx1 sy1 < <("${measure[@]}" ink-box "$png")
+  read -r x0 y0 x1 y1 < <(awk -v a="$sx0" -v b="$sy0" -v c="$sx1" -v d="$sy1" \
+    'BEGIN { printf "%.3f %.3f %.3f %.3f\n", a*96, b*96, c*96, d*96 }')
+  if awk -v x0="$x0" -v y0="$y0" -v x1="$x1" -v y1="$y1" \
+      -v t="$GEOMETRY_TOLERANCE" 'BEGIN {
+        ok=(x0 >= 24.5-t && x0 <= 24.5+t && y0 >= 20-t && y0 <= 20+t &&
+            x1 >= 67-t && x1 <= 67+t && y1 >= 76-t && y1 <= 76+t); exit !ok
+      }'; then
+    ok "V1 ink box at 512px: x=[$x0,$x1], y=[$y0,$y1] viewBox units (±1px)"
+  else
+    bad "V1 ink box x=[$x0,$x1], y=[$y0,$y1] misses the exact geometry"
+  fi
 }
 
-check_v3() {   # <svg> <stage> <size>
-  $flatten "$1" "$tmp/mono.svg"
-  rsvg-convert -w "$3" -h "$3" -a "$tmp/mono.svg" -o "$tmp/mono.png"
-  check_v2 "$tmp/mono.png" "${3}px einfarbig"
-}
-
-# Zur Erinnerung, warum hier kein Augen-Zähler steht: der Versuch, „bleiben
-# bei 48 px zwei Augen übrig" über zusammenhängende Farbflächen zu messen,
-# war nicht stabil. Auf der Verlaufs-Iris zerfällt jedes Auge in mehrere
-# Teilflächen, und die Zahl schwankt mit der Rendergröße zwischen 2 und 9 —
-# ein Gate, das mal grün und mal rot wird, ohne dass sich die Zeichnung
-# ändert, ist schlimmer als keins. Was den farbigen Stufen bleibt, ist V4:
-# die Marke muss auf ihrer Platte stehen. Ob sie innen liest, ist an
-# gerenderten Bildern entschieden und in der Spec begründet.
-
-# V4 misst am gerenderten Bild, nicht an Hex-Werten aus der Datei. Was
-# entscheidet, ob eine Marke auf einem Grund steht, ist ihr Saum: das Innere
-# darf beliebig hell sein, solange die Außenkante trägt.
-report_contrast() {   # <median> <min> <anteil3> <blind> <label>
-  awk -v m="$1" -v blind="$4" -v lim="$MIN_EDGE" -v maxblind="$MAX_BLIND" \
-      "BEGIN{exit !(m >= lim && blind <= maxblind)}" \
-    && ok "V4 $5: Median $1, blind $4" \
-    || bad "V4 $5: Median $1 (< $MIN_EDGE) oder blind $4 (> $MAX_BLIND)"
-}
-
-check_v4_ground() {   # <png> <hex> <label>
-  report_contrast $($measure edge-contrast "$1" "$2") "$3"
-}
-
-check_v4_plate() {   # <zusammengesetztes-icon.svg> <label>
-  # Marke und Platte einzeln rendern und Pixel gegen Pixel halten. Ein
-  # Verlauf hat keinen einzelnen Hex-Wert, gegen den sich rechnen ließe.
-  $layer "$1" rp-mark "$tmp/l-mark.svg"
-  $layer "$1" rp-plate "$tmp/l-plate.svg"
-  # Gemessen wird bei 512 px, nicht bei der Anzeigegröße. Der Saum ist zwei
-  # Pixel breit; bei kleiner Rendergröße sind das ein Prozent der Kantenlänge
-  # und der Saum greift bis in die Gesichtsscheibe hinein. Dann entscheidet
-  # die Auflösung der Messung über das Urteil statt die Zeichnung.
-  rsvg-convert -w 512 -h 512 "$tmp/l-mark.svg" -o "$tmp/l-mark.png"
-  rsvg-convert -w 512 -h 512 "$tmp/l-plate.svg" -o "$tmp/l-plate.png"
-  report_contrast $($measure pair-edge-contrast "$tmp/l-mark.png" "$tmp/l-plate.png") "$2"
-}
-
-check_v5() {   # <svg> <label> <budget>
-  read -r shapes maxcmd < <($measure shape-stats "$1")
-  local budget=$3
-  [ "$shapes" -le "$budget" ] \
-    && ok "V5 Formzahl $2: $shapes ≤ $budget" \
-    || bad "V5 Formzahl $2: $shapes > $budget"
-  [ "$maxcmd" -le 400 ] \
-    && ok "V5 größter Pfad $2: $maxcmd Befehle" \
-    || bad "V5 größter Pfad $2: $maxcmd Befehle > 400 — sieht nach Trace aus"
-}
-
-check_v7() {   # <svg>
-  # Formen werden gezählt, nicht Zeilen gegrept. `grep -c '<path'` zählt
-  # Zeilen mit mindestens einem Treffer: zwei Pfade in einer Zeile ergaben
-  # „genau ein Pfad", und jeder optimierte Export löst genau das aus.
-  read -r shapes _ < <($measure shape-stats "$1")
-  [ "$shapes" -eq 1 ] && ok "V7 genau eine Form" || bad "V7 $shapes Formen, erwartet genau 1"
-  grep -q 'viewBox="0 0 16 16"' "$1" && ok "V7 viewBox" || bad "V7 viewBox ist nicht 0 0 16 16"
-  # Konturen und Verläufe auch in `style="…"`-Schreibweise verbieten: das ist
-  # Inkscapes Standard-Exportform, und Inkscape steht auf diesem Rechner.
-  for forbidden in 'transform=' 'stroke=' 'stroke *:' 'linearGradient' 'radialGradient'; do
-    grep -Eq "$forbidden" "$1" \
-      && bad "V7 enthält $forbidden" \
-      || ok "V7 ohne $forbidden"
+report_components() {
+  local size png count
+  for size in 16 22 24 28 32; do
+    png=$tmp/mark-$size.png
+    rsvg-convert -w "$size" -h "$size" -a \
+      "data/brand/reprise-mark.svg" -o "$png"
+    count=$("${measure[@]}" ink-components "$png")
+    if [[ $size -eq $MARK_SIZE ]]; then
+      [[ $count -eq $MARK_PARTS ]] \
+        && ok "V2 ${size}px gate: $count separate components" \
+        || bad "V2 ${size}px gate: $count instead of $MARK_PARTS components"
+    elif [[ $count -lt $MARK_PARTS ]]; then
+      # Say what was measured, not what it probably means. A stage can fall
+      # short two ways and they call for opposite fixes: strokes running into
+      # each other (geometry too tight) or strokes surviving but too small to
+      # count (the sign is simply below its useful size). The raw group sizes
+      # tell them apart — groups still equal to MARK_PARTS means nothing
+      # merged.
+      local sizes groups floor
+      sizes=$("${measure[@]}" ink-component-sizes "$png")
+      floor=$("${measure[@]}" noise-floor "$png")
+      groups=$(wc -w <<<"$sizes")
+      if [[ $groups -eq $MARK_PARTS ]]; then
+        ok "V2 ${size}px report: $count of $MARK_PARTS components clear the ${floor}px noise floor; all $MARK_PARTS pixel groups survive separately at sizes [$sizes] — nothing merged, the small elements are just under the floor"
+      else
+        ok "V2 ${size}px report: $count components above the ${floor}px noise floor; $groups pixel groups at sizes [$sizes] — strokes have run together"
+      fi
+    else
+      ok "V2 ${size}px report: $count separate components"
+    fi
   done
 }
 
-# V8: Androids Themed Icon zeigt die Silhouette, der Launcher sonst die
-# farbige Fassung. Weichen beide voneinander ab, zeigt derselbe Launcher je
-# nach Einstellung zwei verschiedene Eulen.
-check_v8() {   # <farbig.svg> <silhouette.svg>
-  rsvg-convert -w 256 -a "$1" -o "$tmp/v8-a.png"
-  rsvg-convert -w 256 -a "$2" -o "$tmp/v8-b.png"
-  # Verglichen werden die **Umrisse**, Aussparungen aufgefüllt. Der rohe
-  # Flächenvergleich bestraft sonst genau das, was an der Silhouette Absicht
-  # ist: Augen und Schnabel sind dort Löcher und in der farbigen Fassung
-  # Flächen.
-  local j; j=$($measure outline-overlap "$tmp/v8-a.png" "$tmp/v8-b.png")
-  awk "BEGIN{exit !($j >= 0.97)}" \
-    && ok "V8 Deckung der Umrisse farbig/Silhouette: $j" \
-    || bad "V8 Deckung der Umrisse farbig/Silhouette: $j < 0.97 — zwei verschiedene Formen"
+check_pair_contrast() { # <small> <large> <ground> <label>
+  local small=$1 large=$2 ground=$3 label=$4 a b
+  a=$("${measure[@]}" contrast "$small" "$ground")
+  b=$("${measure[@]}" contrast "$large" "$ground")
+  if awk -v a="$a" -v b="$b" -v floor="$MIN_CONTRAST" \
+      'BEGIN { exit !(a >= floor && b >= floor) }'; then
+    ok "V4 on $label: small $a:1, thick $b:1"
+  else
+    bad "V4 on $label: small $a:1, thick $b:1 (minimum $MIN_CONTRAST:1)"
+  fi
 }
 
-# V9: Androids garantierte Fläche ist der 66-dp-Kreis, nicht das
-# 72-dp-Quadrat. Nur er ist auf jeder Maskenform sichtbar.
-check_v9() {   # <vectordrawable.xml>
-  local r; r=$(python3 - "$1" <<'PY'
-import re, subprocess, sys, tempfile, pathlib
+check_v7() {
+  local symbolic=data/icons/hicolor/symbolic/apps/org.reprise.Reprise-symbolic.svg
+  local shapes
+  shapes=$("${measure[@]}" shape-stats "$symbolic" | awk '{print $1}')
+  [[ $shapes -eq 4 ]] && ok "V7 symbolic has the four specified shapes" \
+    || bad "V7 symbolic has $shapes shapes instead of 4"
+  grep -q 'viewBox="0 0 96 96"' "$symbolic" \
+    && ok "V7 symbolic viewBox is 0 0 96 96" \
+    || bad "V7 symbolic viewBox is not 0 0 96 96"
+  local forbidden
+  for forbidden in 'transform=' 'stroke=' 'stroke *:' 'linearGradient' 'radialGradient'; do
+    if grep -Eq "$forbidden" "$symbolic"; then
+      bad "V7 symbolic contains forbidden $forbidden"
+    else
+      ok "V7 symbolic has no $forbidden"
+    fi
+  done
+  for source in data/brand/reprise-mark.svg data/brand/reprise-mark-light.svg; do
+    if grep -Eq '(linear|radial)Gradient' "$source"; then
+      bad "V7 coloured source contains a gradient: $source"
+    else
+      ok "V7 coloured source is gradient-free: $source"
+    fi
+  done
+}
+
+check_v8() {
+  local overlap
+  rsvg-convert -w 256 -h 256 -a "data/brand/reprise-mark.svg" \
+    -o "$tmp/v8-colour.png"
+  rsvg-convert -w 256 -h 256 -a data/brand/reprise-mark-mono.svg \
+    -o "$tmp/v8-mono.png"
+  overlap=$("${measure[@]}" outline-overlap \
+    "$tmp/v8-colour.png" "$tmp/v8-mono.png")
+  if awk -v value="$overlap" 'BEGIN { exit !(value >= 0.99) }'; then
+    ok "V8 colour/mono outline overlap: $overlap"
+  else
+    bad "V8 colour/mono outline overlap: $overlap < 0.99"
+  fi
+}
+
+check_v9() { # <VectorDrawable> <label>
+  local xml=$1 label=$2 svg=$tmp/v9-$2.svg png=$tmp/v9-$2.png
+  python3 - "$xml" "$svg" <<'PY'
+import pathlib
+import re
+import sys
 xml = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
 paths = re.findall(r'android:pathData="([^"]+)"', xml)
-body = "".join(f'<path fill="#000" d="{d}"/>' for d in paths)
-svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" '
-       f'width="108" height="108">{body}</svg>')
-with tempfile.TemporaryDirectory() as tmp:
-    source = pathlib.Path(tmp) / "vd.svg"
-    png = pathlib.Path(tmp) / "vd.png"
-    source.write_text(svg, encoding="utf-8")
-    subprocess.run(["rsvg-convert", "-w", "432", "-h", "432", str(source),
-                    "-o", str(png)], check=True, capture_output=True)
-    sys.path.insert(0, "scripts/lib")
-    from logo_measure import radius
-    print(f"{radius(png) * 108:.2f}")
+if len(paths) != 4:
+    raise SystemExit(f"expected four VectorDrawable paths, found {len(paths)}")
+body = "".join(f'<path fill="#000" d="{path}"/>' for path in paths)
+pathlib.Path(sys.argv[2]).write_text(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108">'
+    + body + '</svg>', encoding="utf-8")
 PY
-)
-  awk "BEGIN{exit !($r <= 33.5)}" \
-    && ok "V9 Radius ${r} dp ≤ 33 dp (66-dp-Kreis)" \
-    || bad "V9 Radius ${r} dp > 33 dp — wird auf Kreismasken beschnitten"
+  rsvg-convert -w 1080 -h 1080 -a "$svg" -o "$png"
+  local clipped before after
+  read -r clipped before after < <("${measure[@]}" circle-clip "$png" "$(awk 'BEGIN { print 33/108 }')")
+  if awk -v clipped="$clipped" -v limit="$MAX_CIRCLE_CLIP" \
+      -v before="$before" -v after="$after" \
+      'BEGIN { exit !(clipped <= limit && before == 4 && after == 4) }'; then
+    ok "V9 $label under 66dp circle: clipped $clipped of ink; components $before→$after"
+  else
+    bad "V9 $label under 66dp circle: clipped $clipped (limit $MAX_CIRCLE_CLIP); components $before→$after"
+  fi
+}
+
+check_palette_single_source() {
+  if python3 - <<'PY'
+import os
+import tomllib
+from pathlib import Path
+
+root = Path(".")
+palette_path = Path("data/brand/palette.toml")
+with palette_path.open("rb") as source:
+    palette = tomllib.load(source)
+palette_text = palette_path.read_text(encoding="utf-8")
+for value in palette.values():
+    assert palette_text.count(value) == 1, value
+
+skip_parts = {".git", "target", "build", ".gradle-user-home", ".cache-gradle", ".android-user"}
+failures = []
+for directory, names, files in os.walk(root):
+    names[:] = [name for name in names if name not in skip_parts and not name.startswith(".cache-")]
+    for name in files:
+        path = Path(directory) / name
+        relative = path.relative_to(root)
+        if name.startswith(".pipeline-"):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        hits = [value for value in palette.values() if value in text]
+        if not hits or relative == palette_path or relative.parts[0] == "docs":
+            continue
+        derived = (
+            str(relative).startswith("data/icons/") or
+            (str(relative).startswith("data/brand/") and relative.suffix == ".svg" and
+             ("Generated" in text or "Erzeugt" in text)) or
+            (str(relative).startswith("android/app/src/main/res/") and "Generated" in text)
+        )
+        if not derived:
+            failures.append(f"{relative}: {', '.join(hits)}")
+if failures:
+    raise SystemExit("maintained palette duplicates:\n" + "\n".join(failures))
+PY
+  then
+    ok "palette literals have one maintained source: data/brand/palette.toml"
+  else
+    bad "a palette literal is maintained outside data/brand/palette.toml"
+  fi
+}
+
+check_delivery() {
+  local required size dimensions
+  for size in 16 22 24 32 48 64 128 256 512; do
+    required="data/icons/hicolor/${size}x${size}/apps/org.reprise.Reprise.png"
+    [[ -f $required ]] || bad "missing hicolor stage: $required"
+  done
+  for required in \
+    data/icons/hicolor/scalable/apps/org.reprise.Reprise.svg \
+    data/icons/hicolor/symbolic/apps/org.reprise.Reprise-symbolic.svg \
+    data/brand/reprise-icon.svg \
+    data/brand/reprise-mark.svg data/brand/reprise-mark-light.svg \
+    android/app/src/main/res/drawable/ic_repeat_sign.xml; do
+    [[ -f $required ]] && ok "delivered: $required" || bad "missing: $required"
+  done
+  if grep -q 'transform=' data/icons/hicolor/scalable/apps/org.reprise.Reprise.svg; then
+    bad "shipped scalable icon rescales the specified geometry"
+  else
+    ok "shipped scalable icon preserves the 96-unit coordinates without transform"
+  fi
 }
 
 self_test() {
-  # Klumpen: eine Hintergrundkomponente. Ring: zwei.
-  # Die Fixtures sind SVG und laufen durch dieselbe Renderkette wie die
-  # echten Zeichnungen — ein Fehler in rsvg-convert fiele hier ebenfalls auf.
   cat > "$tmp/blob.svg" <<'EOF'
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"><path fill="#000000" d="M32 4a28 28 0 1 0 0.001 0z"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle cx="32" cy="32" r="28"/></svg>
 EOF
-  cat > "$tmp/ring.svg" <<'EOF'
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"><path fill="#000000" fill-rule="evenodd" d="M32 4a28 28 0 1 0 0.001 0z M32 18a14 14 0 1 1 -0.001 0z"/></svg>
+  cat > "$tmp/four.svg" <<'EOF'
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle cx="8" cy="8" r="4"/><circle cx="56" cy="8" r="4"/><circle cx="8" cy="56" r="4"/><circle cx="56" cy="56" r="4"/></svg>
 EOF
-  rsvg-convert -w 64 -h 64 "$tmp/blob.svg" -o "$tmp/blob.png"
-  rsvg-convert -w 64 -h 64 "$tmp/ring.svg" -o "$tmp/ring.png"
-  local b r; b=$($measure bg-components "$tmp/blob.png"); r=$($measure bg-components "$tmp/ring.png")
-  [ "$b" -eq 1 ] && ok "Selbsttest Klumpen = 1" || bad "Selbsttest Klumpen = $b, erwartet 1"
-  [ "$r" -eq 2 ] && ok "Selbsttest Ring = 2"   || bad "Selbsttest Ring = $r, erwartet 2"
-
-  # V3 muss auch Inkscapes Schreibweise abflachen. Ein `sed` auf
-  # `fill="…"` ließ `style="fill:…"` unberührt und maß danach die
-  # unveränderte Farbzeichnung — ein Test, der nichts prüft.
-  cat > "$tmp/styled.svg" <<'EOF'
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path style="fill:#ff0000;opacity:0.4" d="M0 0h64v64H0z"/></svg>
-EOF
-  $flatten "$tmp/styled.svg" "$tmp/styled-flat.svg"
-  grep -q 'fill:#000000' "$tmp/styled-flat.svg" && grep -q 'opacity:1' "$tmp/styled-flat.svg" \
-    && ok "Selbsttest V3 fasst style=\"fill:…\" an" \
-    || bad "Selbsttest V3 lässt style=\"fill:…\" stehen"
-
-  # V4 muss einen Verlauf erkennen, gegen den die Marke versinkt.
-  awk "BEGIN{exit !($($measure contrast 2B155E 1B082D) < 1.5)}" \
-    && ok "Selbsttest V4 erkennt 1,31:1 als blind" \
-    || bad "Selbsttest V4 hält 1,31:1 für sichtbar"
-}
-
-check_mark() {   # <svg>
-  echo "Marke: $1"
-  check_v5 "$1" "Marke" "$MARK_SHAPES"
-  # V1 fragt nach der Geometrie — füllt die Zeichnung ihr Raster aus? Bei
-  # 16 px entscheidet darüber die Kantenglättung: eine Federspitze, die eine
-  # halbe Rasterzeile hoch ist, landet unter der Alphaschwelle und fehlt in
-  # der Messung. Gemessen wird deshalb groß.
-  rsvg-convert -w 128 -a "$1" -o "$tmp/s.png"
-  check_v1 "$tmp/s.png" "Marke" "$1"
-}
-
-check_silhouette() {   # <svg>
-  echo "Einfarbige Fassung bei ${MARK_SIZE}px: $1"
-  rsvg-convert -w "$MARK_SIZE" -a "$1" -o "$tmp/sil.png"
-  check_v2 "$tmp/sil.png" "${MARK_SIZE}px"
+  rsvg-convert -w 64 -h 64 -a "$tmp/blob.svg" -o "$tmp/blob.png"
+  rsvg-convert -w 64 -h 64 -a "$tmp/four.svg" -o "$tmp/four.png"
+  [[ $("${measure[@]}" ink-components "$tmp/blob.png") -eq 1 ]] \
+    && ok "detector self-test: blob = 1 component" \
+    || bad "detector self-test failed for blob"
+  [[ $("${measure[@]}" ink-components "$tmp/four.png") -eq 4 ]] \
+    && ok "detector self-test: four dots = 4 components" \
+    || bad "detector self-test failed for four dots"
 }
 
 check_all() {
-  local icons=data/icons/hicolor brand=data/brand
-  local android=android/app/src/main/res
-
-  echo "Kalibrierung der Detektoren"
+  echo "Detector calibration"
   self_test
-
-  check_mark "$brand/mark.svg"
-  check_silhouette "$brand/mark-mono.svg"
-
-  local symbolic="$icons/symbolic/apps/org.reprise.Reprise-symbolic.svg"
-  echo "Symbolic: $symbolic"
-  check_v7 "$symbolic"
-  rsvg-convert -w 16 -h 16 "$symbolic" -o "$tmp/sym.png"
-  check_v2 "$tmp/sym.png" "16px"
-  # Kein Kontrasttest: GNOME färbt Symbolic-Icons zur Laufzeit mit der
-  # Vordergrundfarbe des Themes um. Der literale Wert #222222 wird nie
-  # angezeigt. Was hier zählt, ist die Form — und die prüft V2.
-
-  echo "App-Icon auf der Platte"
-  check_v4_plate "$icons/scalable/apps/org.reprise.Reprise.svg" "Marke auf der Platte"
-  check_v4_plate "$brand/favicon.svg" "Marke auf der randlosen Platte"
-
-  echo "Auf fremdem Grund"
-  # Dieselbe Zeichnung muss auf Weiß so gut stehen wie auf ihrer Platte,
-  # sonst braucht die Website eine zweite Fassung — und zwei Fassungen
-  # laufen auseinander.
-  rsvg-convert -w 256 -a "$brand/mark.svg" -o "$tmp/on-light.png"
-  check_v4_ground "$tmp/on-light.png" FFFFFF "Marke auf Weiß"
-
-  echo "Android"
-  check_v8 "$brand/mark.svg" "$brand/mark-mono.svg"
-  check_v9 "$android/drawable/ic_launcher_foreground.xml"
-  check_v9 "$android/drawable/ic_launcher_monochrome.xml"
-
-  echo "Herkunft der abgeleiteten Dateien"
-  ./scripts/build-brand-assets.sh --check
+  echo "Source and exact rendered geometry"
+  check_source_contract
+  check_geometry_box
+  echo "Raster component report"
+  report_components
+  echo "Contrast"
+  check_pair_contrast "$VIOLET" "$TEAL" "$PLATE" "plate $PLATE"
+  check_pair_contrast "$VIOLET" "$TEAL" '#0a0a0e' "dark dock #0a0a0e"
+  check_pair_contrast "$VIOLET_LIGHT" "$TEAL_LIGHT" '#FFFFFF' "white"
+  check_pair_contrast "$VIOLET_LIGHT" "$TEAL_LIGHT" '#eceef5' "light ground #eceef5"
+  echo "Symbolic and silhouette parity"
+  check_v7
+  check_v8
+  echo "Android 66dp mask"
+  check_v9 android/app/src/main/res/drawable/ic_launcher_foreground.xml colour
+  check_v9 android/app/src/main/res/drawable/ic_launcher_monochrome.xml monochrome
+  echo "Palette ownership and delivery"
+  check_palette_single_source
+  check_delivery
+  echo "Generated-file provenance"
+  ./scripts/build-brand-assets.sh --check || fail=1
 }
 
 case ${1:-} in
-  --self-test) echo "Kalibrierung der Detektoren"; self_test ;;
-  --all)       check_all ;;
-  --symbolic)
-    svg=$2; echo "Symbolic: $svg"
-    check_v7 "$svg"
-    rsvg-convert -w 16 -h 16 "$svg" -o "$tmp/sym.png"
-    check_v2 "$tmp/sym.png" "16px" ;;
-  --mark)      check_mark "$2" ;;
-  --silhouette) check_silhouette "$2" ;;
+  --all) check_all ;;
+  --self-test) self_test ;;
+  --mark)
+    check_source_contract
+    check_geometry_box "${2:-a}"
+    report_components "${2:-a}"
+    ;;
   *)
-    echo "Aufruf: $0 --all | --mark <svg> | --silhouette <svg> | --symbolic <svg> | --self-test" >&2
-    exit 2 ;;
+    printf 'usage: %s --all | --self-test | --mark [a|b]\n' "$0" >&2
+    exit 2
+    ;;
 esac
 
-exit $fail
+exit "$fail"
