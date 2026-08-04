@@ -21,6 +21,7 @@ use crate::ui::playback::external_media::{ExternalMedia, RadioPhase};
 use crate::ui::playback::player_controller::PlayerController;
 use crate::ui::sidebar::sidebar_presentation::NavIcon;
 use crate::ui::source_empty_state::{SourceEmptyState, SourceEmptyStateCopy};
+use crate::ui::source_reveal::LoadedItemChange;
 use crate::ui::source_error_banner::SourceErrorBanner;
 use crate::ui::strings;
 
@@ -70,6 +71,18 @@ struct Shared {
     /// `SRC-13`: kept so a station change arriving from outside this view
     /// reaches the same reveal policy that view entry uses.
     reveal: Rc<super::radio_reveal::RadioReveal>,
+    /// The bound cells whose content depends on playback rather than on the
+    /// station record. Re-applied on every snapshot so the playing marker and
+    /// the "Now playing" title move without a model signal.
+    cells: Rc<super::radio_live_cells::RadioLiveCells>,
+    /// The station a row of *this* table was last activated for, until it
+    /// actually connects. `SRC-13` says an activated row was visible by
+    /// definition and must not move the viewport — but a stream connects
+    /// asynchronously: `begin_radio` opens with `Reconnecting`, and the
+    /// `Connected` snapshot that finally moves the reveal arrives seconds
+    /// after the double-click has returned. Remembering the station, rather
+    /// than a moment, is what carries the "activated here" fact that far.
+    activated_here: Cell<Option<i64>>,
 }
 
 pub(in crate::ui) struct RadioView {
@@ -99,7 +112,8 @@ impl RadioView {
         column_view.add_css_class("reprise-radio-table");
         column_view.add_css_class(crate::ui::source_context_surface::TABLE_CSS_CLASS);
 
-        radio_columns::append_columns(&column_view, &live_source, &connectivity_source);
+        let cells = Rc::new(super::radio_live_cells::RadioLiveCells::default());
+        radio_columns::append_columns(&column_view, &live_source, &connectivity_source, &cells);
         {
             let live = live_source.clone();
             let connectivity = connectivity_source.clone();
@@ -167,6 +181,8 @@ impl RadioView {
             on_activated: RefCell::new(None),
             on_removed: RefCell::new(None),
             reveal,
+            cells,
+            activated_here: Cell::new(None),
         });
         let add_dialog = {
             let weak = Rc::downgrade(&shared);
@@ -239,24 +255,9 @@ impl RadioView {
         if let Some(controller) = controller {
             let weak = Rc::downgrade(&shared);
             controller.add_on_external_changed(move |snapshot| {
-                let Some(shared) = weak.upgrade() else {
-                    return;
-                };
-                let failure = snapshot
-                    .as_ref()
-                    .and_then(|snapshot| snapshot.radio.as_ref())
-                    .and_then(|radio| radio.inline_error())
-                    .map(str::to_owned);
-                let was_connected = super::radio_reveal::connected_station(&shared.live.borrow());
-                shared.live.replace(live_state(snapshot));
-                if let Some(failure) = failure {
-                    show_radio_failure(&shared, SourceErrorKind::Unreachable, failure);
-                } else {
-                    shared.failure_kind.replace(None);
-                    shared.error_banner.hide();
+                if let Some(shared) = weak.upgrade() {
+                    on_external_snapshot(&shared, snapshot);
                 }
-                render_rows(&shared);
-                shared.reveal.on_external_change(was_connected);
             });
         }
         refresh_shared(&shared);
@@ -319,6 +320,51 @@ impl RadioView {
         if let Some(dialog) = self.shared.add_dialog.borrow().as_ref() {
             dialog.set_on_location_settings(callback);
         }
+    }
+}
+
+/// Everything one external playback snapshot does to this view. Kept a free
+/// function rather than an inline closure so the tests can drive the exact
+/// path the controller drives.
+fn on_external_snapshot(
+    shared: &Rc<Shared>,
+    snapshot: Option<crate::ui::playback::external_media::ExternalPlaybackSnapshot>,
+) {
+    let failure = snapshot
+        .as_ref()
+        .and_then(|snapshot| snapshot.radio.as_ref())
+        .and_then(|radio| radio.inline_error())
+        .map(str::to_owned);
+    let was_connected = super::radio_reveal::connected_station(&shared.live.borrow());
+    shared.live.replace(live_state(snapshot));
+    if let Some(failure) = failure {
+        show_radio_failure(shared, SourceErrorKind::Unreachable, failure);
+    } else {
+        shared.failure_kind.replace(None);
+        shared.error_banner.hide();
+    }
+    render_rows(shared);
+    // The station list itself is unchanged for a pure playback snapshot, so
+    // `render_rows` left the store alone; the live parts of the visible rows
+    // are pushed straight into their cells instead.
+    shared.cells.reapply();
+    shared
+        .reveal
+        .on_external_change(was_connected, reveal_change(shared));
+}
+
+/// Where the station now connected came from, from this table's point of view.
+/// The pending "activated here" station survives until something actually
+/// connects — a stream that is still opening reports nothing connected, and
+/// that is precisely the window this has to bridge.
+fn reveal_change(shared: &Shared) -> LoadedItemChange {
+    let Some(connected) = super::radio_reveal::connected_station(&shared.live.borrow()) else {
+        return LoadedItemChange::ChangedElsewhere;
+    };
+    if shared.activated_here.replace(None) == Some(connected) {
+        LoadedItemChange::ActivatedHere
+    } else {
+        LoadedItemChange::ChangedElsewhere
     }
 }
 
@@ -392,6 +438,10 @@ fn present_add_dialog(shared: &Shared) {
 }
 
 fn activate_station(shared: &Rc<Shared>, station: &StationRow) {
+    // `SRC-13`: remembered until this station connects, so the reveal sees the
+    // connection for what it is — a row of this very table, already visible,
+    // started by the user. See `Shared::activated_here`.
+    shared.activated_here.set(Some(station.id));
     if shared.live.borrow().station_id == Some(station.id) {
         if shared.live.borrow().connected {
             if let Some(controller) = shared.controller.upgrade() {
@@ -710,6 +760,182 @@ mod tests {
         assert_eq!(
             radio_failure_action(FailureAction::FindNewUrl, None),
             RadioFailureAction::OpenAddDialog
+        );
+    }
+
+    fn add_station(conn: &Rc<Db>, name: &str) -> i64 {
+        radio::station::add_or_restore(
+            conn,
+            &radio::station::NewStation {
+                uuid: None,
+                name: name.into(),
+                stream_url: format!("https://example.invalid/{name}"),
+                homepage: None,
+                favicon_url: None,
+                genre: None,
+                codec: None,
+                bitrate_kbps: None,
+                country_code: None,
+                votes: None,
+            },
+            0,
+        )
+        .unwrap()
+    }
+
+    fn connected_snapshot(station_id: i64, title: &str) -> ExternalPlaybackSnapshot {
+        ExternalPlaybackSnapshot {
+            mode: PlaybackMode::Radio,
+            media: ExternalMedia::Radio {
+                station_id,
+                name: "Station".into(),
+                stream_url: "https://example.invalid/stream".into(),
+                uuid: None,
+            },
+            art_url: None,
+            can_go_previous: false,
+            can_go_next: false,
+            stream_tags: StreamTags {
+                title: Some(title.into()),
+                organization: None,
+            },
+            podcast_phase: None,
+            restored: false,
+            radio: Some(RadioPresentation::connected()),
+            error: None,
+        }
+    }
+
+    fn playing_cells(view: &RadioView) -> usize {
+        fn count(widget: &gtk4::Widget) -> usize {
+            let here = usize::from(widget.has_css_class("reprise-radio-playing"));
+            let mut child = widget.first_child();
+            let mut total = here;
+            while let Some(current) = child {
+                total += count(&current);
+                child = current.next_sibling();
+            }
+            total
+        }
+        count(&view.shared.root)
+    }
+
+    /// The reported radio bug: double-clicking a station moved the highlight
+    /// off it — every external snapshot (the play itself, the phase change,
+    /// and later every new ICY title) rebuilt the whole store with
+    /// `remove_all()`, and `GtkSingleSelection` answers that by autoselecting
+    /// row 0. The same rebuild emptied the store for an instant, which reset
+    /// the scroll offset — the "the rows keep switching around" half of the
+    /// report. Nothing about the station list changed here, so nothing in the
+    /// table may move.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn rad_1_a_live_state_update_never_moves_the_selection() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let conn = Rc::new(crate::test_db::open().unwrap());
+        add_station(&conn, "Alpha");
+        let bravo = add_station(&conn, "Bravo");
+        add_station(&conn, "Charlie");
+
+        let view = RadioView::new(conn, None);
+        let window = gtk4::Window::new();
+        window.set_default_size(900, 400);
+        window.set_child(Some(view.root()));
+        window.present();
+        crate::ui::source_context_surface::settle_layout();
+
+        view.shared.model.selection().set_selected(1);
+        assert_eq!(view.shared.model.selection().selected(), 1);
+
+        on_external_snapshot(&view.shared, Some(connected_snapshot(bravo, "Artist — Song")));
+        crate::ui::source_context_surface::settle_layout();
+
+        assert_eq!(
+            view.shared.model.selection().selected(),
+            1,
+            "a live-state snapshot must leave the selected station selected"
+        );
+        assert!(
+            playing_cells(&view) > 0,
+            "the connected station must still pick up its playing marker"
+        );
+
+        // A second snapshot carrying only a new title — the every-song case.
+        on_external_snapshot(&view.shared, Some(connected_snapshot(bravo, "Next — Song")));
+        crate::ui::source_context_surface::settle_layout();
+        assert_eq!(view.shared.model.selection().selected(), 1);
+    }
+
+    fn list_vadjustment(view: &RadioView) -> gtk4::Adjustment {
+        view.shared
+            .stack
+            .child_by_name(LIST_PAGE)
+            .and_downcast::<gtk4::ScrolledWindow>()
+            .expect("the list page is a ScrolledWindow")
+            .vadjustment()
+    }
+
+    /// The other half of the report — "the rows keep switching around". A
+    /// snapshot used to empty the store for an instant, which collapsed the
+    /// scrolled window's content height and reset the offset to the top; and
+    /// a station activated *here* was still classified as a change from
+    /// elsewhere, so the reveal centred the row the user had just clicked.
+    /// `SRC-13`: an activated row was visible by definition, so nothing moves.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn src_13_activating_a_station_here_leaves_the_viewport_where_the_user_put_it() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let conn = Rc::new(crate::test_db::open().unwrap());
+        let ids: Vec<i64> = (0..40)
+            .map(|index| add_station(&conn, &format!("Station {index:02}")))
+            .collect();
+
+        let view = RadioView::new(conn, None);
+        let window = gtk4::Window::new();
+        window.set_default_size(900, 300);
+        window.set_child(Some(view.root()));
+        window.present();
+        crate::ui::source_context_surface::settle_layout();
+
+        let adjustment = list_vadjustment(&view);
+        adjustment.set_value(adjustment.upper() / 2.0);
+        crate::ui::source_context_surface::settle_layout();
+        let scrolled_to = adjustment.value();
+        assert!(scrolled_to > 0.0, "the table must be scrollable for this");
+
+        // A double-click on a station of this table. Scrolling the table above
+        // counts as user activity, which would hold off *any* reveal for the
+        // next 1.5 seconds and make this pass for the wrong reason.
+        view.shared.reveal.forget_scroll_activity();
+        let station = radio::station::get(&view.shared.conn, ids[35])
+            .unwrap()
+            .unwrap();
+        activate_station(&view.shared, &station);
+        // The stream connects asynchronously: the activation itself is long
+        // over by the time the `Connected` snapshot — the one the reveal acts
+        // on — arrives.
+        on_external_snapshot(&view.shared, Some(connected_snapshot(ids[35], "Song")));
+        crate::ui::source_context_surface::settle_layout();
+
+        assert_eq!(
+            adjustment.value(),
+            scrolled_to,
+            "activating a station here must not move the table"
+        );
+
+        // The same change arriving from elsewhere — the player bar, MPRIS — is
+        // still revealed, which is what `SRC-13` promises. Without this the
+        // assertion above would prove nothing: a reveal that never runs at all
+        // also never moves the viewport.
+        view.shared.reveal.forget_scroll_activity();
+        on_external_snapshot(&view.shared, Some(connected_snapshot(ids[2], "Song")));
+        crate::ui::source_context_surface::settle_layout();
+        assert_ne!(
+            adjustment.value(),
+            scrolled_to,
+            "a station connected elsewhere is still revealed"
         );
     }
 
