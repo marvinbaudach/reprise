@@ -163,7 +163,9 @@ mod tests {
     fn nav_10a_reveal_follows_the_track_when_the_view_changes_underneath() {
         let track = 4242;
         let before: Vec<i64> = (0..100).map(|i| if i == 42 { track } else { i }).collect();
-        let after: Vec<i64> = (0..30).map(|i| if i == 5 { track } else { 900 + i }).collect();
+        let after: Vec<i64> = (0..30)
+            .map(|i| if i == 5 { track } else { 900 + i })
+            .collect();
 
         assert_eq!(
             visible_position_for_track_in_source(&before, track, None, false),

@@ -13,8 +13,6 @@
 
 use std::cell::RefCell;
 
-
-
 /// Edge length the cover is scaled to before sampling — small enough to be
 /// cheap, large enough to be representative.
 const SAMPLE_EDGE: i32 = 32;
@@ -530,6 +528,9 @@ mod tests {
     fn fade_to_theme_fallback_clears_cover_override_at_endpoint() {
         let css = accent_css(None);
         assert!(!css.contains("@define-color reprise_player_accent"));
-        assert!(css.is_empty(), "clearing the override must leave nothing behind");
+        assert!(
+            css.is_empty(),
+            "clearing the override must leave nothing behind"
+        );
     }
 }

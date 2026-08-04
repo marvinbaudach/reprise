@@ -104,7 +104,9 @@ impl Shared {
     /// entry's re-applier captured. See [`unregister_cell`] for why this must
     /// run on unbind.
     pub(in crate::ui) fn unregister_now_playing_marker(&self, item: &gtk4::ListItem) {
-        self.now_playing_markers.borrow_mut().remove(&cell_key(item));
+        self.now_playing_markers
+            .borrow_mut()
+            .remove(&cell_key(item));
     }
 
     /// Re-runs every registered cell's marker application against the current
@@ -115,7 +117,10 @@ impl Shared {
         let appliers: Vec<Rc<dyn Fn()>> = {
             let mut markers = self.now_playing_markers.borrow_mut();
             markers.retain(|_, marker| marker.item.upgrade().is_some());
-            markers.values().map(|marker| marker.apply.clone()).collect()
+            markers
+                .values()
+                .map(|marker| marker.apply.clone())
+                .collect()
         };
         for apply in appliers {
             apply();

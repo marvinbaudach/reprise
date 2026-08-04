@@ -259,11 +259,7 @@ impl PlayerController {
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner);
                     set_art_url_for_current_track(&mut mirror, track_id, art_url);
-                    apply_cover_accent(
-                        &cover_accent_generation,
-                        &cover_accent_last,
-                        &cover_path,
-                    );
+                    apply_cover_accent(&cover_accent_generation, &cover_accent_last, &cover_path);
                 },
             );
         } else {

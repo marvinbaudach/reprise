@@ -8,8 +8,6 @@
 
 use std::rc::Rc;
 
-use gtk4::prelude::*;
-
 use super::now_playing_marker::cell_key;
 use super::Shared;
 
@@ -44,9 +42,14 @@ impl Shared {
         // per rating save rather than per bind. A recycled address colliding
         // with a dead entry is harmless — the insert replaces it, and it was
         // dead anyway.
-        self.rating_cells
-            .borrow_mut()
-            .insert(cell_key(item), RatingCellMarker { item: weak, track_id, apply });
+        self.rating_cells.borrow_mut().insert(
+            cell_key(item),
+            RatingCellMarker {
+                item: weak,
+                track_id,
+                apply,
+            },
+        );
     }
 
     fn unregister_rating_cell(&self, item: &gtk4::ListItem) {
