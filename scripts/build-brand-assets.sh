@@ -1,134 +1,166 @@
 #!/usr/bin/env bash
-# Erzeugt jede abgeleitete Markendatei aus den Zeichnungen unter data/brand.
+# Build every derived brand file from palette.toml and the exact geometry.
 #
-# Handgezeichnet und damit Quelle sind nur:
-#   data/brand/mark.svg           die Marke, eine Zeichnung für jede Größe
-#   data/brand/mark-mono.svg      ihre einfarbige Fassung, ein Pfad
-#   data/brand/icon-plate.svg     Grundfläche und Verlauf des App-Icons
+# The palette and generator are maintained; SVG sources, platform resources,
+# raster stages, web assets and comparison trees are reproducible output.
 #
-# Alles andere entsteht hier. Das ist der Grund: das App-Icon war früher
-# eine Kopie der Marke, und die kleinen Stufen bekamen die Platte nie —
-# zwei verschiedene Icons für dieselbe App. Was erzeugt wird, kann nicht
-# auseinanderlaufen.
-#
-#   ./scripts/build-brand-assets.sh            schreibt in den Baum
-#   ./scripts/build-brand-assets.sh --check    erzeugt daneben und vergleicht
+#   ./scripts/build-brand-assets.sh
+#   ./scripts/build-brand-assets.sh --check
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$root"
 
 lib=scripts/lib
-brand=data/brand
-icons=data/icons/hicolor
-android=android/app/src/main/res
-font=$brand/fonts/Fraunces-SemiBold.ttf
-
+palette=data/brand/palette.toml
+font=data/brand/fonts/Fraunces-SemiBold.ttf
 mode=${1:-write}
-tmp=$(mktemp -d)
+if [[ $mode != write && $mode != --check ]]; then
+  printf 'usage: %s [--check]\n' "$0" >&2
+  exit 2
+fi
+
+scratch=$(mktemp -d)
 out=$root
-[ "$mode" = "--check" ] && out=$(mktemp -d)
-cleanup() { rm -rf "$tmp"; [ "$out" != "$root" ] && rm -rf "$out"; return 0; }
+[[ $mode == --check ]] && out=$(mktemp -d)
+cleanup() {
+  rm -rf "$scratch"
+  [[ $out == "$root" ]] || rm -rf "$out"
+}
 trap cleanup EXIT
 
-# Zielpfad im Ausgabebaum. Im Prüfmodus liegt daneben, was sonst überschriebe.
-dest() {
-  if [ "$out" = "$root" ]; then printf '%s\n' "$1"; else
-    mkdir -p "$out/$(dirname "$1")"; printf '%s\n' "$out/$1"
-  fi
+target() {
+  local relative=$1
+  mkdir -p "$out/$(dirname "$relative")"
+  printf '%s\n' "$out/$relative"
 }
 
 say() { printf '  %s\n' "$*"; }
 
-# Kantenlänge des Kastens, in den die Marke auf der 128er Platte passt.
-# Die Zeichnung ist fast quadratisch und braucht Rand, sonst stößt sie an
-# die gerundete Ecke der Platte.
-box=92
+echo "== Palette-backed source drawings =="
+generated_brand=$(target data/brand/.keep)
+generated_brand=$(dirname "$generated_brand")
+rm -f "$generated_brand/.keep"
+python3 "$lib/brand_sources.py" "$palette" "$generated_brand"
+say "six 96-unit SVG sources ← palette.toml"
 
-echo "== App-Icon: Platte + Zeichnung =="
-python3 $lib/compose_icon.py $brand/icon-plate.svg $brand/mark.svg \
-  "$(dest $icons/scalable/apps/org.reprise.Reprise.svg)" \
-  --box-width $box --box-height $box
-say "scalable ← mark.svg"
+mark_a=$generated_brand/reprise-mark-a.svg
+mark_b=$generated_brand/reprise-mark-b.svg
+mark_a_light=$generated_brand/reprise-mark-a-light.svg
+mark_b_light=$generated_brand/reprise-mark-b-light.svg
+mark_mono=$generated_brand/reprise-mark-mono.svg
+plate=$generated_brand/icon-plate.svg
 
-for size in 512 256 128 64 48; do
-  mkdir -p "$(dirname "$(dest $icons/${size}x${size}/apps/org.reprise.Reprise.png)")"
-  rsvg-convert -w $size -h $size \
-    "$(dest $icons/scalable/apps/org.reprise.Reprise.svg)" \
-    -o "$(dest $icons/${size}x${size}/apps/org.reprise.Reprise.png)"
-  say "${size}px ← scalable"
-done
+build_surface_tree() { # <tree root relative to output> <active variant>
+  local tree=$1 active=$2
+  local tree_root=$out/$tree
+  local brand=$tree_root/data/brand
+  local icons=$tree_root/data/icons/hicolor
+  local android=$tree_root/android/app/src/main/res
+  local active_mark active_light active_icon slug bleed
+  mkdir -p "$brand"
 
-# GNOME färbt Symbolic-Icons zur Laufzeit um; #222222 ist die Konvention.
-#
-# Eine Datei genügt jetzt. Die vorige Marke brauchte eine eigene, auf 16 px
-# gehintete Fassung, weil ihre Augenringe dort einen Pixel dünn waren. Das
-# Wiederholungszeichen besteht aus Rechtecken auf ganzen Rasterlinien und
-# ist bei 16 px von sich aus scharf.
-python3 $lib/svg_recolour.py $brand/mark-mono.svg \
-  "$(dest $icons/symbolic/apps/org.reprise.Reprise-symbolic.svg)" \
-  'currentColor=#222222'
-say "symbolic ← mark-mono.svg"
+  python3 "$lib/compose_icon.py" "$plate" "$mark_a" \
+    "$brand/reprise-icon-a.svg" --native
+  python3 "$lib/compose_icon.py" "$plate" "$mark_b" \
+    "$brand/reprise-icon-b.svg" --native
+  active_mark=$mark_a
+  active_light=$mark_a_light
+  active_icon=$brand/reprise-icon-a.svg
+  if [[ $active == b ]]; then
+    active_mark=$mark_b
+    active_light=$mark_b_light
+    active_icon=$brand/reprise-icon-b.svg
+  fi
 
-echo "== Android: adaptives Icon =="
-python3 $lib/svg_to_vectordrawable.py $brand/mark.svg \
-  "$(dest $android/drawable/ic_launcher_foreground.xml)"
-say "foreground ← mark.svg"
-python3 $lib/svg_to_vectordrawable.py $brand/mark-mono.svg \
-  "$(dest $android/drawable/ic_launcher_monochrome.xml)" --mono
-say "monochrome ← mark-mono.svg"
-python3 $lib/plate_to_vectordrawable.py $brand/icon-plate.svg \
-  "$(dest $android/drawable/ic_launcher_background.xml)"
-say "background ← icon-plate.svg"
+  mkdir -p "$icons/scalable/apps"
+  cp "$active_icon" "$icons/scalable/apps/org.reprise.Reprise.svg"
+  for size in 16 22 24 32 48 64 128 256 512; do
+    mkdir -p "$icons/${size}x${size}/apps"
+    rsvg-convert -w "$size" -h "$size" "$active_icon" \
+      -o "$icons/${size}x${size}/apps/org.reprise.Reprise.png"
+  done
+  mkdir -p "$icons/symbolic/apps"
+  python3 "$lib/svg_recolour.py" "$mark_mono" \
+    "$icons/symbolic/apps/org.reprise.Reprise-symbolic.svg" \
+    'currentColor=#222222'
 
-echo "== Web =="
-# Randlos für Apple und den Play Store: beide maskieren selbst, eine eigene
-# Rundung darunter erzeugte nur einen sichtbaren Saum.
-python3 $lib/compose_icon.py $brand/icon-plate.svg $brand/mark.svg \
-  "$tmp/icon-bleed.svg" --box-width $box --box-height $box \
-  --plate-inset 0 --plate-radius 0
-rsvg-convert -w 180 -h 180 "$tmp/icon-bleed.svg" \
-  -o "$(dest $brand/apple-touch-icon-180.png)"
-say "apple-touch-icon-180.png"
-# Der Play Store nimmt keine Transparenz an; die randlose Platte deckt.
-rsvg-convert -w 512 -h 512 "$tmp/icon-bleed.svg" \
-  -o "$(dest $brand/play-store-icon-512.png)"
-say "play-store-icon-512.png"
+  mkdir -p "$android/drawable"
+  for variant in a b; do
+    local variant_mark=$mark_a
+    [[ $variant == b ]] && variant_mark=$mark_b
+    python3 "$lib/svg_to_vectordrawable.py" "$variant_mark" \
+      "$android/drawable/ic_launcher_foreground_${variant}.xml" \
+      --fixed-offset 6 \
+      --colour-map '#4FDBD4=@color/reprise_teal' \
+      --colour-map '#A855F7=@color/reprise_violet'
+  done
+  python3 "$lib/svg_to_vectordrawable.py" "$mark_mono" \
+    "$android/drawable/ic_launcher_monochrome.xml" \
+    --fixed-offset 6 --mono
+  python3 "$lib/svg_to_vectordrawable.py" "$mark_mono" \
+    "$android/drawable/ic_repeat_sign.xml" \
+    --fixed-offset 6 --mono --mono-fill '@android:color/white' \
+    --tint '?attr/colorControlNormal'
+  python3 "$lib/plate_to_vectordrawable.py" "$plate" \
+    "$android/drawable/ic_launcher_background.xml" \
+    --colour-ref '@color/reprise_plate'
+  python3 "$lib/android_icon_resources.py" "$palette" "$android" --active "$active"
 
-python3 $lib/compose_icon.py $brand/icon-plate.svg $brand/mark.svg \
-  "$(dest $brand/favicon.svg)" --box-width $box --box-height $box \
-  --plate-inset 0 --plate-radius 22
-rsvg-convert -w 32 -h 32 "$(dest $brand/favicon.svg)" \
-  -o "$(dest $brand/favicon-32.png)"
-say "favicon.svg + favicon-32.png"
+  slug=$(printf '%s-%s' "$tree" "$active" | tr '/.' '__')
+  bleed=$scratch/${slug}-bleed.svg
+  python3 "$lib/compose_icon.py" "$plate" "$active_mark" "$bleed" \
+    --native --plate-inset 0 --plate-radius 0
+  python3 "$lib/legacy_launcher.py" "$bleed" "$android"
 
-# Keine eigene Fassung für helle oder dunkle Gründe. Gemessen: der Verlauf
-# erreicht gegen Weiß 5,30 und 4,08 und gegen die fast schwarze Platte 3,72
-# und 4,83 — dieselbe Zeichnung trägt auf beidem. Die vorige Marke brauchte
-# eine aufgehellte Zweitfassung, weil sie ein dunkles Violett war.
+  python3 "$lib/compose_icon.py" "$plate" "$active_mark" \
+    "$brand/favicon.svg" --native --plate-inset 0 --plate-radius 22
+  rsvg-convert -w 32 -h 32 "$brand/favicon.svg" -o "$brand/favicon-32.png"
+  rsvg-convert -w 180 -h 180 "$bleed" -o "$brand/apple-touch-icon-180.png"
+  rsvg-convert -w 512 -h 512 "$bleed" -o "$brand/play-store-icon-512.png"
 
-echo "== Lockups =="
-for mode_name in horizontal vertical; do
-  python3 $lib/compose_lockup.py $brand/mark.svg $font \
-    --mode $mode_name --size 268 --tracking 2 --mark-height 320 \
-    --prefix "rp-l$(printf '%.1s' "$mode_name")-" \
-    --live "$(dest $brand/lockup-$mode_name.svg)" \
-    --outlined "$(dest $brand/lockup-$mode_name-outlined.svg)"
-  say "lockup-$mode_name.svg + -outlined.svg"
-done
+  for lockup_mode in horizontal vertical; do
+    python3 "$lib/compose_lockup.py" "$active_mark" "$font" \
+      --mode "$lockup_mode" --size 268 --tracking 2 --mark-height 320 \
+      --prefix "rp-l$(printf '%.1s' "$lockup_mode")-" \
+      --live "$brand/lockup-$lockup_mode.svg" \
+      --outlined "$brand/lockup-$lockup_mode-outlined.svg"
+  done
 
-if [ "$mode" = "--check" ]; then
-  echo "== Abgleich mit dem Baum =="
-  status=0
+  # The light mark is intentionally consumed only by the comparison sheet.
+  # Keeping the variable here makes that platform distinction explicit.
+  test -f "$active_light"
+}
+
+echo "== Active asset tree: variant A =="
+build_surface_tree . a
+say "desktop, Android, web and lockups"
+
+echo "== Device-comparison trees =="
+build_surface_tree data/brand/variants/a a
+build_surface_tree data/brand/variants/b b
+say "variants/a and variants/b mirror the shipped subtree layout"
+
+echo "== Self-contained comparison sheet =="
+python3 "$lib/compare_sheet.py" "$(target data/brand/variants/compare.html)" \
+  --a "$mark_a" "$mark_a_light" "$generated_brand/reprise-icon-a.svg" \
+  --b "$mark_b" "$mark_b_light" "$generated_brand/reprise-icon-b.svg"
+say "data/brand/variants/compare.html"
+
+if [[ $mode == --check ]]; then
+  echo "== Compare generated files with the worktree =="
+  result=0
   while IFS= read -r generated; do
     relative=${generated#"$out"/}
     if ! cmp -s "$generated" "$relative"; then
-      printf '  FAIL  %s weicht von den Zeichnungen ab\n' "$relative" >&2
-      status=1
+      printf '  FAIL  %s differs from generated output\n' "$relative" >&2
+      result=1
     fi
-  done < <(find "$out" -type f)
-  [ $status -eq 0 ] && echo "  ok    jede abgeleitete Datei stammt aus den Zeichnungen"
-  exit $status
+  done < <(find "$out" -type f -print | sort)
+  if [[ $result -eq 0 ]]; then
+    echo "  ok    every derived file comes from palette and geometry"
+  fi
+  exit "$result"
 fi
 
-echo "Fertig. Prüfen mit: ./scripts/check-logo-artwork.sh --all"
+echo "Done. Verify with: ./scripts/check-logo-artwork.sh --all"
