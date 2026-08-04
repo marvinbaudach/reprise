@@ -205,6 +205,13 @@ fn restore_direct(inner: &HoldInner) {
 /// Queues a restore requested by an adjustment signal. GTK may emit both
 /// `changed` and `value-changed` from `gtk_adjustment_configure` while a
 /// widget is being allocated, so this path must not write synchronously.
+///
+/// The queue runs at `HIGH_IDLE`, not at the default idle priority: GDK
+/// repaints at `GDK_PRIORITY_REDRAW`, which is `G_PRIORITY_HIGH_IDLE + 20`,
+/// so a default-priority idle (`+100` below that) would land *after* the next
+/// frame — the table would visibly snap to the top for one frame, the exact
+/// regression this hold exists to prevent. `HIGH_IDLE` still leaves the
+/// allocation, which is all the deferral needs.
 fn restore_deferred(inner: &Rc<HoldInner>) {
     if inner.pending.get() {
         return;
@@ -217,9 +224,9 @@ fn restore_deferred(inner: &Rc<HoldInner>) {
     }
     inner.pending.set(true);
     let weak = Rc::downgrade(inner);
-    glib::idle_add_local_once(move || {
+    glib::idle_add_local_full(glib::Priority::HIGH_IDLE, move || {
         let Some(inner) = weak.upgrade() else {
-            return;
+            return glib::ControlFlow::Break;
         };
         inner.pending.set(false);
         // The hold may have expired or been superseded, and configure may
@@ -227,6 +234,7 @@ fn restore_deferred(inner: &Rc<HoldInner>) {
         if let Some(target) = correction_target(&inner) {
             write_target(&inner, target);
         }
+        glib::ControlFlow::Break
     });
 }
 
