@@ -1,5 +1,6 @@
 package de.reprise.spike
 
+import android.Manifest
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -48,6 +49,7 @@ import uniffi.reprise_android_ffi.ScanProgressUpdate
 
 private const val TAG = "RepriseScan"
 private const val PREFERENCES_NAME = "reprise_android"
+private const val NOTIFICATION_PERMISSION_ASKED = "notification_permission_asked"
 
 /** No scrim behind the system bars: the app's own ground is what shows through. */
 private const val TRANSPARENT_SYSTEM_BAR = 0
@@ -120,6 +122,13 @@ class MainActivity : ComponentActivity() {
 
         override fun setRating(trackId: Long, rating: Int, report: (String?) -> Unit) =
             setTrackRating(trackId, rating, report)
+    }
+    private val notificationPermission = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (!granted) {
+            Log.i(TAG, "Playback runs without a notification: the user said no")
+        }
     }
     private var playbackService: ReprisePlaybackService? = null
     private var playbackBound = false
@@ -309,14 +318,82 @@ class MainActivity : ComponentActivity() {
         }.start()
     }
 
-    private fun playTracks(
+    /**
+     * Internal rather than private because the test drives it: it is the same
+     * call the library screen makes, and reaching it through the activity is
+     * the only way to cover [onServiceConnected] and the service start below.
+     */
+    internal fun playTracks(
         selection: PlaybackSelection,
         reportError: (String) -> Unit,
     ) {
         val selected = selection.tracks[selection.startIndex]
+        keepPlaybackRunningWithoutThisScreen()
+        askAboutTheNotificationOnce()
         runPlaybackCommand("play ${selected.title}", reportError) {
             playTracks(selection.tracks, selection.startIndex)
         }
+    }
+
+    /**
+     * Gives the playback service a lifetime that does not end with this screen.
+     *
+     * Until this call the service was only ever bound, and a bound service is
+     * destroyed the moment its last client unbinds — which a rotation is, since
+     * it destroys the activity. The device showed it plainly: mid-track the
+     * session was destroyed and audio focus abandoned, so turning the phone
+     * stopped the music.
+     *
+     * Deliberately [startService] and not `startForegroundService`: starting
+     * carries no promise to post a notification within five seconds, and there
+     * is nothing to show yet at the instant the command is issued. Media3 does
+     * the foreground step itself, notification and all, once the player really
+     * plays — see [ReprisePlaybackService.onCreate].
+     *
+     * A start is only legal while the app is in the foreground, which it is:
+     * the user just tapped a track. A refusal is logged and left alone, because
+     * playback itself still works — it just would not survive this screen.
+     */
+    private fun keepPlaybackRunningWithoutThisScreen() {
+        runCatching { startService(Intent(this, ReprisePlaybackService::class.java)) }
+            .onFailure { error ->
+                Log.w(TAG, "Playback will not outlive this screen", error)
+            }
+    }
+
+    /**
+     * Asks, once ever, for the permission that lets the playing notification be
+     * seen.
+     *
+     * From API 33 a notification nobody allowed is simply not shown, and the
+     * playback notification is where the transport lives while the app is away:
+     * lock screen, shade, headphones. So the permission belongs to this app.
+     *
+     * Asked at the first playback command rather than at launch, because that
+     * is the moment the request explains itself — the user just started a song,
+     * and the answer buys the controls for it. A cold-start prompt would be a
+     * question without an occasion, and Android only grants two refusals before
+     * the dialog stops appearing at all.
+     *
+     * Asked once and then remembered: a prompt that returns after every
+     * rotation would be worse than no prompt. A refusal changes nothing about
+     * playback — the service still runs, it just plays out of sight.
+     */
+    private fun askAboutTheNotificationOnce() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            return
+        }
+        val preferences = getSharedPreferences(PREFERENCES_NAME, MODE_PRIVATE)
+        if (preferences.getBoolean(NOTIFICATION_PERMISSION_ASKED, false)) {
+            return
+        }
+        runCatching { notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) }
+            // Remembered only once the question was really put, so a launcher
+            // that refused to fire does not count as an answer.
+            .onSuccess {
+                preferences.edit().putBoolean(NOTIFICATION_PERMISSION_ASKED, true).apply()
+            }
+            .onFailure { error -> Log.w(TAG, "Could not ask about notifications", error) }
     }
 
     /**
