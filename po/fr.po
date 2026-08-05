@@ -4961,3 +4961,41 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:18
 msgid "Separate title bar"
 msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:33
+#, fuzzy
+msgid "Analyze Library"
+msgstr "Réanalyser la bibliothèque"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:34
+msgid "Stop Analysis"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:200
+#, fuzzy
+msgid "Analyzing library…"
+msgstr "Analyse de la bibliothèque"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:201
+#, fuzzy
+msgid "Library analysis complete"
+msgstr "Uniquement les artistes de la bibliothèque"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:202
+msgid "Library analysis stopped"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:203
+#, fuzzy
+msgid "Could not analyze the library"
+msgstr "Impossible d’enregistrer la disposition des colonnes"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:228
+#, fuzzy
+msgid "{analyzed} of {total} analyzed"
+msgstr "{processed} fichiers analysés sur {total}"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:240
+#, fuzzy
+msgid "{analyzed} analyzed · {failed} failed"
+msgstr "{removed} piste retirée ; {failed} échec"

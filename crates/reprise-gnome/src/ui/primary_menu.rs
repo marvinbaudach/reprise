@@ -15,6 +15,7 @@ use crate::ui::track_list::TrackList;
 pub(super) const ACTION_EDIT_COLUMN_LAYOUT: &str = "edit-column-layout";
 pub(super) const ACTION_TOGGLE_MINIMAL_VIEW: &str = "toggle-minimal-view";
 pub(super) const ACTION_RESCAN_LIBRARY: &str = "rescan-library";
+pub(super) const ACTION_ANALYZE_LIBRARY: &str = "analyze-library";
 pub(super) const ACTION_LIBRARY_DOCTOR: &str = "library-doctor";
 pub(super) const ACTION_SYNC_DEVICE: &str = "sync-device";
 pub(super) const ACTION_STOP_PLAYBACK: &str = "stop-playback";
@@ -29,6 +30,9 @@ pub(super) struct Callbacks {
     pub(super) on_minimal_view: Rc<dyn Fn()>,
     pub(super) on_rescan_library: Rc<dyn Fn()>,
     pub(super) on_cancel_scan: Rc<dyn Fn()>,
+    /// Starts the library analysis, or stops the running one. One callback for
+    /// both, because the menu item is one item with two labels.
+    pub(super) on_analyze_library: Rc<dyn Fn()>,
     pub(super) on_library_doctor: Rc<dyn Fn()>,
     pub(super) on_sync_device: Rc<dyn Fn()>,
     pub(super) on_stop_playback: Option<Rc<dyn Fn()>>,
@@ -43,18 +47,33 @@ fn view_section_entries() -> Vec<(String, &'static str)> {
     )]
 }
 
+/// Which long-running library jobs are currently going, which is all the
+/// library section needs to know to label its two toggling items.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(super) struct LibraryMenuState {
+    pub(super) is_scanning: bool,
+    pub(super) is_analyzing: bool,
+}
+
 /// Rebuilds the library section of the primary menu with the correct label
-/// for the current scan state: "Rescan Library" when idle, "Cancel Scan"
-/// when a scan is running. GTK reads the `gio::Menu` model on each popover
-/// open, so rebuilding here is sufficient.
-pub(super) fn update_library_section(menu: &gio::Menu, is_scanning: bool) {
+/// for the current job state: "Rescan Library" when idle, "Cancel Scan"
+/// when a scan is running, and the same pairing for "Analyze Library" /
+/// "Stop Analysis". GTK reads the `gio::Menu` model on each popover open, so
+/// rebuilding here is sufficient.
+pub(super) fn update_library_section(menu: &gio::Menu, state: LibraryMenuState) {
     menu.remove_all();
-    let label = if is_scanning {
+    let scan_label = if state.is_scanning {
         strings::text(strings::CANCEL_SCAN)
     } else {
         strings::text(strings::RESCAN_LIBRARY)
     };
-    menu.append(Some(&label), Some("win.rescan-library"));
+    menu.append(Some(&scan_label), Some("win.rescan-library"));
+    let analyze_label = if state.is_analyzing {
+        strings::text(strings::STOP_ANALYSIS)
+    } else {
+        strings::text(strings::ANALYZE_LIBRARY)
+    };
+    menu.append(Some(&analyze_label), Some("win.analyze-library"));
     menu.append(
         Some(&strings::text(strings::LIBRARY_DOCTOR)),
         Some("win.library-doctor"),
@@ -103,7 +122,13 @@ pub(super) fn install(
     scan_controls: &super::scan_flow::ScanControls,
 ) -> gio::Menu {
     let library = gio::Menu::new();
-    update_library_section(&library, scan_controls.is_scanning());
+    update_library_section(
+        &library,
+        LibraryMenuState {
+            is_scanning: scan_controls.is_scanning(),
+            is_analyzing: false,
+        },
+    );
     let menu = build_primary_menu(&library);
 
     let menu_button = gtk4::MenuButton::builder()
@@ -176,6 +201,13 @@ pub(super) fn install(
         });
     }
     window.add_action(&rescan);
+
+    let analyze = gio::SimpleAction::new(ACTION_ANALYZE_LIBRARY, None);
+    {
+        let cb = callbacks.on_analyze_library.clone();
+        analyze.connect_activate(move |_, _| cb());
+    }
+    window.add_action(&analyze);
 
     let library_doctor = gio::SimpleAction::new(ACTION_LIBRARY_DOCTOR, None);
     {
@@ -283,7 +315,7 @@ mod tests {
     #[test]
     fn primary_menu_omits_stop_playback_when_transport_is_persistent() {
         let library = gio::Menu::new();
-        update_library_section(&library, false);
+        update_library_section(&library, LibraryMenuState::default());
         let menu = build_primary_menu(&library);
         let actions = (0..menu.n_items())
             .filter_map(|index| menu.item_link(index, gio::MENU_LINK_SECTION))
@@ -304,7 +336,7 @@ mod tests {
     #[test]
     fn library_section_has_rescan_and_sync_when_idle() {
         let menu = gio::Menu::new();
-        update_library_section(&menu, false);
+        update_library_section(&menu, LibraryMenuState::default());
         let actions: Vec<_> = (0..menu.n_items())
             .filter_map(|i| {
                 menu.item_attribute_value(i, "action", Some(glib::VariantTy::STRING))
@@ -315,6 +347,7 @@ mod tests {
             actions,
             [
                 "win.rescan-library",
+                "win.analyze-library",
                 "win.library-doctor",
                 "win.sync-device"
             ]
@@ -322,9 +355,71 @@ mod tests {
     }
 
     #[test]
+    fn nav_7b_library_section_offers_analysis_next_to_the_scan() {
+        let menu = gio::Menu::new();
+        update_library_section(&menu, LibraryMenuState::default());
+        let label = menu
+            .item_attribute_value(1, "label", Some(glib::VariantTy::STRING))
+            .and_then(|v| v.get::<String>());
+        assert_eq!(
+            label.as_deref(),
+            Some(strings::text(strings::ANALYZE_LIBRARY).as_str())
+        );
+    }
+
+    #[test]
+    fn nav_7b_library_section_offers_to_stop_a_running_analysis() {
+        let menu = gio::Menu::new();
+        update_library_section(
+            &menu,
+            LibraryMenuState {
+                is_scanning: false,
+                is_analyzing: true,
+            },
+        );
+        let label = menu
+            .item_attribute_value(1, "label", Some(glib::VariantTy::STRING))
+            .and_then(|v| v.get::<String>());
+        assert_eq!(
+            label.as_deref(),
+            Some(strings::text(strings::STOP_ANALYSIS).as_str())
+        );
+    }
+
+    #[test]
+    fn nav_7b_a_running_scan_and_a_running_analysis_label_independently() {
+        let menu = gio::Menu::new();
+        update_library_section(
+            &menu,
+            LibraryMenuState {
+                is_scanning: true,
+                is_analyzing: true,
+            },
+        );
+        let label_at = |index| {
+            menu.item_attribute_value(index, "label", Some(glib::VariantTy::STRING))
+                .and_then(|v| v.get::<String>())
+        };
+        assert_eq!(
+            label_at(0).as_deref(),
+            Some(strings::text(strings::CANCEL_SCAN).as_str())
+        );
+        assert_eq!(
+            label_at(1).as_deref(),
+            Some(strings::text(strings::STOP_ANALYSIS).as_str())
+        );
+    }
+
+    #[test]
     fn library_section_shows_cancel_when_scanning() {
         let menu = gio::Menu::new();
-        update_library_section(&menu, true);
+        update_library_section(
+            &menu,
+            LibraryMenuState {
+                is_scanning: true,
+                is_analyzing: false,
+            },
+        );
         let label = menu
             .item_attribute_value(0, "label", Some(glib::VariantTy::STRING))
             .and_then(|v| v.get::<String>());
@@ -405,7 +500,7 @@ mod tests {
     #[test]
     fn no_rhythmbox_import_in_visible_menu() {
         let library = gio::Menu::new();
-        update_library_section(&library, false);
+        update_library_section(&library, LibraryMenuState::default());
         let library_actions: Vec<String> = (0..library.n_items())
             .filter_map(|i| {
                 library

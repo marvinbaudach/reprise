@@ -42,7 +42,11 @@ pub struct SpectrogramBackfillHandle {
 }
 
 impl SpectrogramBackfillHandle {
-    /// Starts only in direct response to an explicit caller action.
+    /// Starts a resumable pass over whatever is still pending.
+    ///
+    /// The window starts one on launch, so this must stay cheap when there is
+    /// nothing to do: it takes the pending list first and ends immediately when
+    /// that list is empty.
     pub fn start(database_path: PathBuf) -> Self {
         let cancelled = Arc::new(AtomicBool::new(false));
         let worker_cancelled = cancelled.clone();
@@ -71,6 +75,18 @@ impl SpectrogramBackfillHandle {
 
     pub fn try_progress(&self) -> impl Iterator<Item = BackfillProgress> + '_ {
         self.progress.try_iter()
+    }
+
+    /// Whether the worker thread has run to its end.
+    ///
+    /// A caller that polls progress needs to know when to stop polling without
+    /// blocking on `join`, which would freeze a UI thread for as long as the
+    /// current track takes to decode. `join` after this returns `true` does not
+    /// block.
+    pub fn is_finished(&self) -> bool {
+        self.worker
+            .as_ref()
+            .is_none_or(std::thread::JoinHandle::is_finished)
     }
 
     pub fn join(mut self) -> Result<BackfillSummary, BackfillWorkerError> {
