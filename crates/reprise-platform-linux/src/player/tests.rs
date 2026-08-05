@@ -1,7 +1,8 @@
 use super::*;
 use crate::player_effects::{build_audio_filter, requested_state, same_filter_topology};
 use crate::player_pipeline::{
-    is_remote_playback_uri, merge_stream_tags, BufferingThrottle, AUDIO_SINK_ENV_VAR,
+    download_buffering_flags, is_remote_playback_uri, merge_stream_tags, BufferingThrottle,
+    AUDIO_SINK_ENV_VAR,
 };
 use reprise_core::library::settings::TrackTransition;
 
@@ -64,6 +65,29 @@ fn buffering_events_are_remote_only_changed_and_throttled() {
     assert!(!throttle.should_emit(start + Duration::from_secs(1), (20, Some(10_000))));
     assert!(!throttle.should_emit(start + Duration::from_millis(200), (30, Some(15_000))));
     assert!(throttle.should_emit(start + Duration::from_millis(250), (30, Some(15_000))));
+}
+
+#[test]
+fn download_buffering_is_only_enabled_for_finite_remote_media() {
+    const DOWNLOAD: u32 = 0x80;
+    const PLAYBIN_DEFAULTS: u32 = 0x717;
+    let defaults_with_download = PLAYBIN_DEFAULTS | DOWNLOAD;
+
+    assert_eq!(
+        download_buffering_flags(PLAYBIN_DEFAULTS, "https://example.test/episode.mp3", false),
+        defaults_with_download,
+        "finite remote media enables progressive download buffering without dropping defaults"
+    );
+    assert_eq!(
+        download_buffering_flags(defaults_with_download, "file:///music/song.flac", false),
+        PLAYBIN_DEFAULTS,
+        "local files clear only the download bit"
+    );
+    assert_eq!(
+        download_buffering_flags(defaults_with_download, "https://radio.example/live", true),
+        PLAYBIN_DEFAULTS,
+        "live radio clears only the download bit"
+    );
 }
 
 #[test]

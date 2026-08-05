@@ -263,7 +263,9 @@ impl Transport {
         if media.location.trim().is_empty() {
             return Err(RuntimeError::Rejected(Rejected::NothingToPlay));
         }
-        let started = if media.remote {
+        let started = if media.remote && media.live {
+            backend.play_live_uri(&media.location)
+        } else if media.remote {
             backend.play_uri(&media.location)
         } else {
             backend.play(&media.location)

@@ -56,6 +56,7 @@ pub(crate) fn merge_stream_tags(
 }
 
 const BUFFERING_EVENT_INTERVAL: Duration = Duration::from_millis(250);
+const GST_PLAY_FLAG_DOWNLOAD: u32 = 0x80;
 type BufferingUpdate = (u8, Option<i64>);
 
 #[derive(Default)]
@@ -83,6 +84,43 @@ impl BufferingThrottle {
 
 pub(crate) fn is_remote_playback_uri(uri: Option<&str>) -> bool {
     uri.is_some_and(|uri| !uri.starts_with("file://"))
+}
+
+pub(crate) fn download_buffering_flags(current_flags: u32, uri: &str, live: bool) -> u32 {
+    if is_remote_playback_uri(Some(uri)) && !live {
+        current_flags | GST_PLAY_FLAG_DOWNLOAD
+    } else {
+        current_flags & !GST_PLAY_FLAG_DOWNLOAD
+    }
+}
+
+pub(crate) fn configure_download_buffering(
+    playbin: &gst::Element,
+    uri: &str,
+    live: bool,
+) -> Result<(), PlaybackError> {
+    let flags = playbin.property_value("flags");
+    let flags_class = gst::glib::FlagsClass::with_type(flags.type_()).ok_or_else(|| {
+        PlaybackError::Backend("GStreamer: playbin flags property is not a flags type".into())
+    })?;
+    let current_flags = flags_class
+        .values()
+        .iter()
+        .filter(|value| flags_class.is_set(&flags, value.value()))
+        .fold(0, |combined, value| combined | value.value());
+    let next_flags = download_buffering_flags(current_flags, uri, live);
+    let builder = flags_class
+        .builder_with_value(flags)
+        .ok_or_else(|| PlaybackError::Backend("GStreamer: could not read playbin flags".into()))?;
+    let next_value = if next_flags & GST_PLAY_FLAG_DOWNLOAD != 0 {
+        builder.set(GST_PLAY_FLAG_DOWNLOAD)
+    } else {
+        builder.unset(GST_PLAY_FLAG_DOWNLOAD)
+    }
+    .build()
+    .ok_or_else(|| PlaybackError::Backend("GStreamer: download flag is unavailable".into()))?;
+    playbin.set_property_from_value("flags", &next_value);
+    Ok(())
 }
 
 fn query_buffered_ms(playbin: &gst::Element) -> Option<i64> {

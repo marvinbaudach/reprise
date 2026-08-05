@@ -235,6 +235,13 @@ pub trait PlaybackBackend {
     /// Starts a non-local media URI. Implementations must accept `http`,
     /// `https`, and `file`; local-path callers continue to use [`Self::play`].
     fn play_uri(&self, uri: &str) -> Result<(), PlaybackError>;
+    /// Starts a live media URI whose stream has no finite end. Backends that
+    /// opt finite remote media into progressive download buffering must keep
+    /// that mode disabled here. The default is suitable for backends that do
+    /// not opt into download buffering at all.
+    fn play_live_uri(&self, uri: &str) -> Result<(), PlaybackError> {
+        self.play_uri(uri)
+    }
     fn toggle_pause(&self) -> Result<PlaybackState, PlaybackError>;
     fn seek_to(&self, position_ms: i64) -> Result<(), PlaybackError>;
     fn set_volume(&self, volume: f64);
