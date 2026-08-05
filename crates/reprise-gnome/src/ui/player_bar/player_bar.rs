@@ -646,7 +646,6 @@ impl PlayerBar {
         self.info_button.connect_clicked(move |_| f());
     }
 
-    #[allow(dead_code)] // wired to module activation in package P6
     pub(in crate::ui) fn set_sound_info_visible(&self, visible: bool) {
         self.info_button.set_visible(visible);
     }

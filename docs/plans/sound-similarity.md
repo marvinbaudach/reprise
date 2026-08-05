@@ -1,7 +1,7 @@
 ---
 slug: sound-similarity
-worktree:
-branch:
+worktree: /home/marvin/Projects/reprise-sound-similarity
+branch: feature/sound-similarity
 phase: coded
 codex_session:
 created: 2026-08-05
@@ -242,6 +242,16 @@ Sieben Pakete, in dieser Reihenfolge. P1–P3 sind reines `reprise-core` und
 haben keine GTK-Abhängigkeit.
 
 ### P1 — Merkmalsmodell und Speicher (`reprise-core`)
+
+> **Abweichung bei der Umsetzung, festgehalten nach dem Review:** Der Plan
+> nimmt an, `v56` sei frei. Das war schon bei Planaufstellung falsch —
+> `db_new_releases_accent::migrate_v56` liegt auf der Basis `527d5cbbbc` und
+> belegt die Nummer bereits (`db.rs:742`). Die Umsetzung teilt sich `v56`
+> deshalb: `db_sound_features::migrate_v56` prüft die Anwesenheit von Tabelle
+> und Trigger, statt `user_version` zu vertrauen, und klemmt auf
+> `version.max(56)`. `SUPPORTED_SCHEMA_VERSION` bleibt bei 56 und wird
+> **nicht** wie im Plantext angewiesen erhöht. Ein Test deckt die Koexistenz
+> beider `v56`-Schritte ab.
 
 **Neu:** `src/sound_features.rs`, `src/sound_features_tests.rs`,
 `src/db_sound_features.rs`

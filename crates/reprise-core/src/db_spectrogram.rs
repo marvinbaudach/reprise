@@ -3,7 +3,7 @@
 use rusqlite::{Connection, OptionalExtension};
 
 use crate::db::{Db, DbError};
-use crate::sound_features::derive_sound_features;
+use crate::sound_features::{derive_sound_features, SOUND_FEATURES_FORMAT_VERSION};
 use crate::spectrogram::{TrackSourceFingerprint, TrackSpectrogram, SPECTROGRAM_FORMAT_VERSION};
 use crate::waveform::TrackRenderData;
 const SCHEMA_V55: &str = r#"
@@ -319,7 +319,7 @@ pub fn pending_render_data_tracks(db: &Db) -> Result<Vec<PendingRenderDataTrack>
     ))?;
     let tracks = statement
         .query_map(
-            [SPECTROGRAM_FORMAT_VERSION, SPECTROGRAM_FORMAT_VERSION],
+            [SPECTROGRAM_FORMAT_VERSION, SOUND_FEATURES_FORMAT_VERSION],
             |row| {
                 let spectrogram = row
                     .get::<_, Option<Vec<u8>>>(6)?

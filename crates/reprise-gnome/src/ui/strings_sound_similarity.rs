@@ -19,7 +19,6 @@ pub const SOUND_WEIGHT_DEFAULT: &str = N_!("Default");
 pub const SOUND_WEIGHT_TIMBRE: &str = N_!("Timbre");
 pub const SOUND_WEIGHT_DYNAMICS: &str = N_!("Dynamics");
 pub const SOUND_NUMBER_OF_MATCHES: &str = N_!("Number of matches");
-#[allow(dead_code)] // installed in the track menu in package P6
 pub const SOUND_FIND_SIMILAR: &str = N_!("Find similar tracks");
 pub const SOUND_ANALYSING: &str = N_!("Analysing your library — {ready} of {total}");
 pub const SOUND_ANALYSIS_FAILED: &str = N_!("Sound analysis is unavailable");

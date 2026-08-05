@@ -1,9 +1,9 @@
 //! Pure neighbour ranking over library sound profiles.
 
+use crate::db::DbError;
 use crate::sound_distance::{sound_distance, DistanceWeights};
-use crate::sound_features::SoundFeatures;
+use crate::sound_features::{SoundFeatures, SOUND_FEATURES_FORMAT_VERSION};
 use crate::sound_stats::SoundStats;
-use crate::{db::DbError, spectrogram::SPECTROGRAM_FORMAT_VERSION};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SoundCandidate {
@@ -60,27 +60,28 @@ pub fn load_sound_candidates(db: &crate::db::Db) -> Result<Vec<SoundCandidate>, 
            AND f.format_version = ?1 ORDER BY t.id",
     )?;
     let candidates = statement
-        .query_map([SPECTROGRAM_FORMAT_VERSION], |row| {
+        .query_map([SOUND_FEATURES_FORMAT_VERSION], |row| {
+            let track_id = row.get::<_, i64>(0)?;
             let blob = row.get::<_, Vec<u8>>(6)?;
-            let features = SoundFeatures::from_blob(&blob).map_err(|error| {
-                rusqlite::Error::FromSqlConversionFailure(
-                    6,
-                    rusqlite::types::Type::Blob,
-                    Box::new(error),
-                )
-            })?;
-            Ok(SoundCandidate {
-                track_id: row.get(0)?,
+            // One unreadable row must not take the whole comparison population
+            // down with it: skip it and rank against the rest.
+            let Ok(features) = SoundFeatures::from_blob(&blob).inspect_err(|error| {
+                tracing::warn!(%error, track_id, "skipping unreadable sound profile");
+            }) else {
+                return Ok(None);
+            };
+            Ok(Some(SoundCandidate {
+                track_id,
                 path: row.get(1)?,
                 title: row.get(2)?,
                 artist: row.get(3)?,
                 album: row.get(4)?,
                 album_artist: row.get(5)?,
                 features,
-            })
+            }))
         })?
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(candidates)
+    Ok(candidates.into_iter().flatten().collect())
 }
 
 pub fn rank_sound_neighbours(

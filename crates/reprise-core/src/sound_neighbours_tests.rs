@@ -143,3 +143,28 @@ fn sound_neighbours_loads_only_current_profiles_for_present_tracks() {
     assert_eq!(loaded[0].artist, "Artist 1");
     assert_eq!(loaded[0].album, "Album 1");
 }
+
+#[test]
+fn sound_neighbours_skip_one_unreadable_row_and_keep_the_rest() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    for id in [1, 2] {
+        db.conn()
+            .execute(
+                "INSERT INTO tracks (id, path, title, added_at) VALUES (?1, ?2, ?3, 0)",
+                rusqlite::params![id, format!("/{id}.flac"), format!("Title {id}")],
+            )
+            .unwrap();
+        crate::db::set_track_sound_features(&db, id, &candidate(id, 0, "", "").features).unwrap();
+    }
+    db.conn()
+        .execute(
+            "UPDATE track_sound_features SET data = ?1 WHERE track_id = 1",
+            [vec![0_u8; 7]],
+        )
+        .unwrap();
+
+    let loaded = crate::sound_neighbours::load_sound_candidates(&db).unwrap();
+
+    assert_eq!(loaded.len(), 1);
+    assert_eq!(loaded[0].track_id, 2);
+}

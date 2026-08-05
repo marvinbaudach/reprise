@@ -3,7 +3,7 @@
 use rusqlite::{Connection, OptionalExtension};
 
 use crate::db::{Db, DbError};
-use crate::sound_features::SoundFeatures;
+use crate::sound_features::{SoundFeatures, SOUND_FEATURES_FORMAT_VERSION};
 use crate::spectrogram::{TrackSourceFingerprint, SPECTROGRAM_FORMAT_VERSION};
 
 const SCHEMA_V56: &str = r#"
@@ -88,7 +88,7 @@ pub(crate) fn write_sound_features(
         "INSERT INTO track_sound_features (track_id, format_version, data) \
          VALUES (?1, ?2, ?3) ON CONFLICT(track_id) DO UPDATE SET \
          format_version = excluded.format_version, data = excluded.data",
-        rusqlite::params![track_id, SPECTROGRAM_FORMAT_VERSION, features.to_blob()],
+        rusqlite::params![track_id, SOUND_FEATURES_FORMAT_VERSION, features.to_blob()],
     )?;
     Ok(())
 }
@@ -134,7 +134,7 @@ pub fn get_track_sound_features(db: &Db, track_id: i64) -> Result<Option<SoundFe
         .query_row(
             "SELECT data FROM track_sound_features \
              WHERE track_id = ?1 AND format_version = ?2",
-            rusqlite::params![track_id, SPECTROGRAM_FORMAT_VERSION],
+            rusqlite::params![track_id, SOUND_FEATURES_FORMAT_VERSION],
             |row| row.get::<_, Vec<u8>>(0),
         )
         .optional()?;
@@ -161,7 +161,7 @@ pub fn sound_feature_inventory(db: &Db) -> Result<(usize, usize), DbError> {
                AND t.removed_at IS NULL), \
            (SELECT COUNT(*) FROM tracks \
              WHERE missing_since IS NULL AND removed_at IS NULL)",
-        [SPECTROGRAM_FORMAT_VERSION],
+        [SOUND_FEATURES_FORMAT_VERSION],
         |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
     )?;
     Ok((
@@ -184,22 +184,20 @@ pub(crate) fn all_track_sound_features(db: &Db) -> Result<Vec<StoredSoundFeature
          ORDER BY f.track_id",
     )?;
     let rows = statement
-        .query_map([SPECTROGRAM_FORMAT_VERSION], |row| {
+        .query_map([SOUND_FEATURES_FORMAT_VERSION], |row| {
+            let track_id = row.get::<_, i64>(0)?;
             let blob = row.get::<_, Vec<u8>>(1)?;
-            let features = SoundFeatures::from_blob(&blob).map_err(|error| {
-                rusqlite::Error::FromSqlConversionFailure(
-                    1,
-                    rusqlite::types::Type::Blob,
-                    Box::new(error),
-                )
-            })?;
-            Ok(StoredSoundFeatures {
-                track_id: row.get(0)?,
-                features,
-            })
+            // One unreadable row must not blind the whole library: skip it and
+            // keep every profile that does decode.
+            let Ok(features) = SoundFeatures::from_blob(&blob).inspect_err(|error| {
+                tracing::warn!(%error, track_id, "skipping unreadable sound profile");
+            }) else {
+                return Ok(None);
+            };
+            Ok(Some(StoredSoundFeatures { track_id, features }))
         })?
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(rows)
+    Ok(rows.into_iter().flatten().collect())
 }
 
 pub(crate) fn sound_feature_count(db: &Db) -> Result<usize, DbError> {
@@ -207,7 +205,7 @@ pub(crate) fn sound_feature_count(db: &Db) -> Result<usize, DbError> {
         "SELECT COUNT(*) FROM track_sound_features f \
          JOIN tracks t ON t.id = f.track_id \
          WHERE f.format_version = ?1 AND t.missing_since IS NULL AND t.removed_at IS NULL",
-        [SPECTROGRAM_FORMAT_VERSION],
+        [SOUND_FEATURES_FORMAT_VERSION],
         |row| row.get::<_, i64>(0),
     )?;
     usize::try_from(count).map_err(|error| {

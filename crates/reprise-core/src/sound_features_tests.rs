@@ -1,4 +1,7 @@
-use crate::sound_features::{derive_sound_features, SoundFeatures};
+use crate::sound_features::{
+    derive_sound_features, sound_features_stamp, SoundFeatures, SOUND_FEATURES_FORMAT_VERSION,
+    SOUND_FEATURE_LAYOUT_VERSION,
+};
 use crate::spectrogram::{TrackSpectrogram, SPECTROGRAM_BAND_COUNT};
 use crate::{
     db::{
@@ -125,7 +128,7 @@ fn sim_1_sound_profile_cache_rejects_a_stale_spectrogram_format() {
     db.conn()
         .execute(
             "UPDATE track_sound_features SET format_version = ?1 WHERE track_id = 1",
-            [SPECTROGRAM_FORMAT_VERSION + 1],
+            [SOUND_FEATURES_FORMAT_VERSION + 1],
         )
         .unwrap();
     assert_eq!(get_track_sound_features(&db, 1).unwrap(), None);
@@ -175,6 +178,65 @@ fn sound_features_v56_repairs_a_database_already_stamped_by_the_other_v56_step()
         )
         .unwrap();
     assert_eq!(count, 1);
+}
+
+/// FNV-1a over the stored bytes — an order-sensitive canary on the blob layout.
+fn blob_fingerprint(blob: &[u8]) -> u64 {
+    blob.iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3)
+    })
+}
+
+#[test]
+fn sim_1_sound_profile_stamp_covers_the_spectrogram_format_and_the_blob_layout() {
+    assert_eq!(
+        SOUND_FEATURES_FORMAT_VERSION,
+        sound_features_stamp(SPECTROGRAM_FORMAT_VERSION, SOUND_FEATURE_LAYOUT_VERSION)
+    );
+    assert_ne!(
+        sound_features_stamp(SPECTROGRAM_FORMAT_VERSION + 1, SOUND_FEATURE_LAYOUT_VERSION),
+        SOUND_FEATURES_FORMAT_VERSION,
+        "a spectrogram format bump must invalidate the derived profiles"
+    );
+    assert_ne!(
+        sound_features_stamp(SPECTROGRAM_FORMAT_VERSION, SOUND_FEATURE_LAYOUT_VERSION + 1),
+        SOUND_FEATURES_FORMAT_VERSION,
+        "a blob layout bump must invalidate the derived profiles"
+    );
+
+    // The layout is pinned to its version: changing the stored bytes moves this
+    // fingerprint, and bumping SOUND_FEATURE_LAYOUT_VERSION in the same change
+    // is what keeps rows written by the old layout out of the SQL filter.
+    let blob = stored_features().to_blob();
+    assert_eq!(blob.len(), 113);
+    assert_eq!(blob_fingerprint(&blob), 0xd270_b346_1a3b_62b3);
+    assert_eq!(SOUND_FEATURE_LAYOUT_VERSION, 1);
+}
+
+#[test]
+fn sound_profiles_skip_one_unreadable_row_and_keep_the_rest() {
+    let db = Db::open_in_memory().unwrap();
+    for id in [1, 2] {
+        db.conn()
+            .execute(
+                "INSERT INTO tracks (id, path, title, added_at) VALUES (?1, ?2, ?3, 0)",
+                rusqlite::params![id, format!("/{id}.flac"), format!("Sound {id}")],
+            )
+            .unwrap();
+        set_track_sound_features(&db, id, &stored_features()).unwrap();
+    }
+    db.conn()
+        .execute(
+            "UPDATE track_sound_features SET data = ?1 WHERE track_id = 1",
+            [vec![0_u8; 7]],
+        )
+        .unwrap();
+
+    let rows = crate::db_sound_features::all_track_sound_features(&db).unwrap();
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].track_id, 2);
+    assert_eq!(rows[0].features, stored_features());
 }
 
 #[test]

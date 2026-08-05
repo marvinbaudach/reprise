@@ -27,6 +27,11 @@ mod tests;
 
 pub(super) const MIN_READY_FEATURES: usize = 50;
 const PROGRESS_RECHECK: Duration = Duration::from_millis(500);
+/// How many identical inventory readings in a row end the re-checks. The
+/// backfill stores one track at a time, so a library that is still catching up
+/// moves the counts well inside this budget; ten seconds of complete standstill
+/// mean nothing is deriving profiles any more and re-checking cannot help.
+const PROGRESS_STALL_LIMIT: usize = 20;
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct SoundPanelOptions {
@@ -72,7 +77,37 @@ enum Snapshot {
         file_info: Option<SoundFileInfo>,
         neighbours: SoundNeighbourResult,
     },
+    /// The inventory stopped advancing before it could carry this track, so
+    /// waiting longer changes nothing until something asks again.
+    Unavailable,
     Error(String),
+}
+
+/// Watches whether the profile inventory still advances between re-checks.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(super) struct ProgressWatch {
+    inventory: Option<(usize, usize)>,
+    stalled: usize,
+}
+
+impl ProgressWatch {
+    /// Folds one `(ready, total)` reading in. `None` means the counts have stood
+    /// still for `PROGRESS_STALL_LIMIT` readings: the library is not catching up
+    /// any more, so the panel settles instead of polling for the rest of the
+    /// session. A later request starts a fresh watch.
+    #[must_use]
+    pub(super) fn observe(self, inventory: (usize, usize)) -> Option<Self> {
+        if self.inventory != Some(inventory) {
+            return Some(Self {
+                inventory: Some(inventory),
+                stalled: 0,
+            });
+        }
+        (self.stalled < PROGRESS_STALL_LIMIT).then_some(Self {
+            inventory: self.inventory,
+            stalled: self.stalled + 1,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -98,11 +133,12 @@ pub(super) struct SoundPanel {
     matches_heading: gtk4::Label,
     matches: list::MatchList,
     footer: footer::Footer,
-    request: Option<async_channel::Sender<Request>>,
+    path: Option<PathBuf>,
+    request: RefCell<Option<async_channel::Sender<Request>>>,
+    enabled: Cell<bool>,
     generation: Cell<u64>,
     track_id: Cell<Option<i64>>,
     options: Cell<SoundPanelOptions>,
-    snapshot: RefCell<Option<Snapshot>>,
 }
 
 impl SoundPanel {
@@ -151,11 +187,9 @@ impl SoundPanel {
         root.add_named(&scrolled, Some("ready"));
         root.add_named(&error, Some("error"));
         root.set_visible_child_name("progress");
-        let (request, response) = conn.path().map_or((None, None), |path| {
-            let (request, response) = spawn_worker(path);
-            (Some(request), Some(response))
-        });
-        let panel = Rc::new(Self {
+        // Nothing is spawned here: a module the user never switched on gets no
+        // worker thread and no library query. `set_enabled` starts the work.
+        Rc::new(Self {
             root,
             progress_label,
             progress,
@@ -165,24 +199,45 @@ impl SoundPanel {
             matches_heading,
             matches,
             footer,
-            request,
+            path: conn.path(),
+            request: RefCell::new(None),
+            enabled: Cell::new(false),
             generation: Cell::new(0),
             track_id: Cell::new(None),
             options: Cell::new(SoundPanelOptions::default()),
-            snapshot: RefCell::new(None),
-        });
-        if let Some(response) = response {
-            panel.drain(response);
-        }
-        panel
+        })
     }
 
     pub(super) fn widget(&self) -> &gtk4::Stack {
         &self.root
     }
 
+    /// Follows the module switch. Enabling starts the worker and picks up the
+    /// track the panel was told about while it was off; disabling drops the
+    /// request channel, which ends the worker thread.
+    pub(super) fn set_enabled(self: &Rc<Self>, enabled: bool) {
+        if self.enabled.get() == enabled {
+            return;
+        }
+        self.enabled.set(enabled);
+        if !enabled {
+            self.request.borrow_mut().take();
+            // A response already in flight belongs to the enabled session.
+            self.generation.set(self.generation.get().wrapping_add(1));
+            self.render(Snapshot::Progress { ready: 0, total: 0 });
+            return;
+        }
+        self.start_worker();
+        if let Some(track_id) = self.track_id.get() {
+            self.request(track_id);
+        }
+    }
+
     pub(super) fn set_track(&self, track_id: Option<i64>) {
         self.track_id.set(track_id);
+        if !self.work_allowed() {
+            return;
+        }
         let Some(track_id) = track_id else {
             self.render(Snapshot::Progress { ready: 0, total: 0 });
             return;
@@ -190,9 +245,11 @@ impl SoundPanel {
         self.request(track_id);
     }
 
-    #[allow(dead_code)] // wired by the module preferences in package P6
     pub(super) fn set_options(&self, options: SoundPanelOptions) {
         self.options.set(options);
+        if !self.work_allowed() {
+            return;
+        }
         if let Some(track_id) = self.track_id.get() {
             self.request(track_id);
         }
@@ -221,10 +278,30 @@ impl SoundPanel {
             .set_add_to_queue(move |id| callback(&[id]));
     }
 
+    fn work_allowed(&self) -> bool {
+        sound_work_allowed(self.enabled.get(), self.path.is_some())
+    }
+
+    fn start_worker(self: &Rc<Self>) {
+        let running = self.request.borrow().is_some();
+        if running || !self.work_allowed() {
+            return;
+        }
+        let Some(path) = self.path.clone() else {
+            return;
+        };
+        let Some((sender, responses)) = spawn_worker(path) else {
+            return;
+        };
+        *self.request.borrow_mut() = Some(sender);
+        self.drain(responses);
+    }
+
     fn request(&self, track_id: i64) {
         let generation = self.generation.get().wrapping_add(1);
         self.generation.set(generation);
-        let Some(sender) = &self.request else {
+        let sender = self.request.borrow().clone();
+        let Some(sender) = sender else {
             return;
         };
         if let Err(error) = sender.try_send(Request {
@@ -249,14 +326,14 @@ impl SoundPanel {
     }
 
     fn render(&self, snapshot: Snapshot) {
-        match &snapshot {
+        match snapshot {
             Snapshot::Progress { ready, total } => {
                 self.progress_label
-                    .set_label(&crate::ui::strings::sound_analysing(*ready, *total));
-                let fraction = if *total == 0 {
+                    .set_label(&crate::ui::strings::sound_analysing(ready, total));
+                let fraction = if total == 0 {
                     0.0
                 } else {
-                    *ready as f64 / *total as f64
+                    ready as f64 / total as f64
                 };
                 self.progress.set_fraction(fraction.clamp(0.0, 1.0));
                 self.root.set_visible_child_name("progress");
@@ -266,7 +343,7 @@ impl SoundPanel {
                 file_info,
                 neighbours,
             } => {
-                self.profile.render(*profile);
+                self.profile.render(profile);
                 self.file_info.set_label(
                     &file_info
                         .as_ref()
@@ -277,19 +354,30 @@ impl SoundPanel {
                         neighbours.library_count,
                     ));
                 self.matches.render(&neighbours.matches);
-                self.footer.set_ids(shown_track_ids(neighbours));
+                self.footer.set_ids(shown_track_ids(&neighbours));
                 self.root.set_visible_child_name("ready");
             }
+            Snapshot::Unavailable => self.render_unavailable(),
             Snapshot::Error(message) => {
                 tracing::warn!(%message, "sound-panel calculation failed");
-                self.error.set_label(&crate::ui::strings::text(
-                    crate::ui::strings::SOUND_ANALYSIS_FAILED,
-                ));
-                self.root.set_visible_child_name("error");
+                self.render_unavailable();
             }
         }
-        *self.snapshot.borrow_mut() = Some(snapshot);
     }
+
+    fn render_unavailable(&self) {
+        self.error.set_label(&crate::ui::strings::text(
+            crate::ui::strings::SOUND_ANALYSIS_FAILED,
+        ));
+        self.root.set_visible_child_name("error");
+    }
+}
+
+/// A disabled module does no sound work at all: no worker thread, no library
+/// query, no ranking. The panel still remembers the track it was told about, so
+/// switching the module on picks it up without waiting for the next track.
+pub(super) fn sound_work_allowed(enabled: bool, has_database: bool) -> bool {
+    enabled && has_database
 }
 
 pub(super) fn ready_for_matches(feature_count: usize, current_present: bool) -> bool {
@@ -308,19 +396,25 @@ pub(super) fn shown_track_ids(result: &SoundNeighbourResult) -> Vec<i64> {
     result.matches.iter().map(|row| row.track_id).collect()
 }
 
+/// Starts the panel's worker thread. A thread the system refuses to start
+/// degrades to the same "no sound panel" state as a library without a path —
+/// this runs while the window is being built and must not take it down.
 fn spawn_worker(
     path: PathBuf,
-) -> (
+) -> Option<(
     async_channel::Sender<Request>,
     async_channel::Receiver<Response>,
-) {
+)> {
     let (requests, request_receiver) = async_channel::unbounded::<Request>();
     let (responses, response_receiver) = async_channel::unbounded();
-    std::thread::Builder::new()
+    if let Err(error) = std::thread::Builder::new()
         .name("reprise-sound-panel".into())
         .spawn(move || worker_loop(&path, &request_receiver, &responses))
-        .expect("sound-panel worker thread should start");
-    (requests, response_receiver)
+    {
+        tracing::warn!(%error, "could not start sound-panel worker");
+        return None;
+    }
+    Some((requests, response_receiver))
 }
 
 fn worker_loop(
@@ -332,30 +426,75 @@ fn worker_loop(
         Ok(db) => db,
         Err(error) => {
             tracing::warn!(%error, "sound-panel worker could not open library");
+            report_open_failure(&error.to_string(), requests, responses);
             return;
         }
     };
     let mut stats_cache = SoundStatsCache::default();
     while let Ok(mut request) = requests.recv_blocking() {
+        let mut watch = ProgressWatch::default();
         loop {
-            while let Ok(newer) = requests.try_recv() {
-                request = newer;
+            let mut newer = false;
+            loop {
+                match requests.try_recv() {
+                    Ok(request_from_panel) => {
+                        request = request_from_panel;
+                        newer = true;
+                    }
+                    Err(async_channel::TryRecvError::Empty) => break,
+                    // The panel dropped its request channel: the module is off.
+                    Err(async_channel::TryRecvError::Closed) => return,
+                }
+            }
+            if newer {
+                watch = ProgressWatch::default();
             }
             let snapshot = calculate(&db, &mut stats_cache, request);
-            let pending = matches!(snapshot, Snapshot::Progress { .. });
+            let inventory = match &snapshot {
+                Snapshot::Progress { ready, total } => Some((*ready, *total)),
+                _ => None,
+            };
+            let next_watch = inventory.and_then(|inventory| watch.observe(inventory));
+            let settled = inventory.is_some() && next_watch.is_none();
             if responses
                 .send_blocking(Response {
                     generation: request.generation,
-                    snapshot,
+                    snapshot: if settled {
+                        Snapshot::Unavailable
+                    } else {
+                        snapshot
+                    },
                 })
                 .is_err()
             {
                 return;
             }
-            if !pending {
+            let Some(next_watch) = next_watch else {
                 break;
-            }
+            };
+            watch = next_watch;
             std::thread::sleep(PROGRESS_RECHECK);
+        }
+    }
+}
+
+/// Answers every request with the failure the panel could not see otherwise:
+/// without this the response channel just closes and the tab keeps showing an
+/// empty progress bar for the whole session.
+fn report_open_failure(
+    message: &str,
+    requests: &async_channel::Receiver<Request>,
+    responses: &async_channel::Sender<Response>,
+) {
+    while let Ok(request) = requests.recv_blocking() {
+        if responses
+            .send_blocking(Response {
+                generation: request.generation,
+                snapshot: Snapshot::Error(message.to_owned()),
+            })
+            .is_err()
+        {
+            return;
         }
     }
 }
@@ -453,6 +592,7 @@ impl super::surface::NowPlayingPanel {
 
     pub(in crate::ui) fn set_sound_similarity_enabled(&self, enabled: bool) {
         self.sound_similarity_enabled.set(enabled);
+        self.widgets.sound.set_enabled(enabled);
         let external_active = self.external_snapshot.borrow().is_some();
         self.widgets
             .sound_page

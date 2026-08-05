@@ -2,8 +2,32 @@
 
 use crate::spectrogram::{
     TrackSpectrogram, SPECTROGRAM_BAND_COUNT, SPECTROGRAM_CEILING_DBFS, SPECTROGRAM_FLOOR_DBFS,
-    SPECTROGRAM_FRAME_RATE_HZ,
+    SPECTROGRAM_FORMAT_VERSION, SPECTROGRAM_FRAME_RATE_HZ,
 };
+
+/// The layout revision of the stored [`SoundFeatures`] blob. Bump it in the
+/// same change that alters `to_blob`/`from_blob`.
+pub(crate) const SOUND_FEATURE_LAYOUT_VERSION: i64 = 1;
+
+/// How many layout revisions fit under one spectrogram format.
+const SOUND_FEATURE_LAYOUT_STRIDE: i64 = 100;
+
+/// Folds both inputs of a stored profile into one stamp.
+pub(crate) const fn sound_features_stamp(spectrogram_format: i64, layout: i64) -> i64 {
+    spectrogram_format * SOUND_FEATURE_LAYOUT_STRIDE + layout
+}
+
+/// The stamp written into and filtered on in `track_sound_features.format_version`.
+///
+/// **Invariant:** it changes when *either* the spectrogram format or the derived
+/// blob layout changes. Derived profiles are computed from spectrogram bytes
+/// with this layout, so a spectrogram bump still has to invalidate them — and a
+/// silent layout change must not leave old rows matching the SQL filter, where
+/// `from_blob` would then reject every one of them while the backfill, gated on
+/// the same stamp, sees nothing missing. Both inputs feed one monotone number so
+/// the filter stays a single column comparison.
+pub(crate) const SOUND_FEATURES_FORMAT_VERSION: i64 =
+    sound_features_stamp(SPECTROGRAM_FORMAT_VERSION, SOUND_FEATURE_LAYOUT_VERSION);
 
 const BASS_BAND_COUNT: usize = 8;
 const MIN_TEMPO_BPM: f32 = 60.0;
