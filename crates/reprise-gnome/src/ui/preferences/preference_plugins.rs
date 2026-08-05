@@ -199,7 +199,16 @@ fn persist_module_state(
         }
         return match reprise_core::modules::set_enabled(&context.conn, descriptor, active) {
             Ok(()) => {
-                context.info_panel.set_song_visuals_enabled(active);
+                // Switching the module back on while a podcast plays must not
+                // resurrect the visuals: with a player present the effective
+                // answer comes from it, not from the switch. Without one there
+                // is no playback to suppress, so the switch is the answer.
+                context.info_panel.set_song_visuals_enabled(
+                    context
+                        .player
+                        .as_ref()
+                        .map_or(active, |player| player.audio_reactive_enabled()),
+                );
                 Ok(())
             }
             Err(error) => {

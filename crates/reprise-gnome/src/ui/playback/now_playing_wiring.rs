@@ -192,10 +192,40 @@ impl PlayerController {
         *self.song_visual_spectrum_changed.borrow_mut() = Some(Rc::new(callback));
     }
 
+    /// Persisted `song_visuals` module state in; the whole audio-reactive
+    /// chain re-synced from it. The module is only one of its two inputs —
+    /// see [`Self::audio_reactive_enabled`].
     pub(in crate::ui) fn set_song_visuals_enabled(
         &self,
         enabled: bool,
     ) -> Result<(), PlaybackError> {
+        self.song_visuals_module.set(enabled);
+        self.sync_audio_reactive()
+    }
+
+    /// Whether anything audio-reactive should be running right now: the
+    /// spectrum feed at the source, the Visual tab and the reactive light in
+    /// the panel, the bar's bass layers.
+    ///
+    /// Two inputs, one answer, one owner. Every surface asks this instead of
+    /// pairing the module switch with its own idea of what a podcast is —
+    /// the same decision living in two places is how the last two audible
+    /// bugs got in.
+    pub(in crate::ui) fn audio_reactive_enabled(&self) -> bool {
+        crate::ui::playback::preview::audio_reactive_enabled(
+            self.song_visuals_module.get(),
+            self.playback_mode(),
+        )
+    }
+
+    /// Applies [`Self::audio_reactive_enabled`] to the source. Cheap and safe
+    /// mid-playback: `set_spectrum_enabled` only flips `post-messages` and an
+    /// atomic the cava sink reads, it performs no pipeline surgery.
+    ///
+    /// Switching off also parks the bar's bass layers, which would otherwise
+    /// freeze at whatever the last frame said instead of settling to rest.
+    pub(in crate::ui) fn sync_audio_reactive(&self) -> Result<(), PlaybackError> {
+        let enabled = self.audio_reactive_enabled();
         if !enabled {
             self.sync_bass(0.0, 0.0);
         }

@@ -26,7 +26,8 @@ fn loaded_track() -> NowPlaying {
     }
 }
 
-fn external_episode_snapshot() -> crate::ui::playback::external_media::ExternalPlaybackSnapshot {
+pub(super) fn external_episode_snapshot(
+) -> crate::ui::playback::external_media::ExternalPlaybackSnapshot {
     use crate::ui::playback::external_media::{
         EpisodeSource, ExternalMedia, ExternalPlaybackSnapshot, PodcastPhase, StreamTags,
     };
@@ -53,7 +54,8 @@ fn external_episode_snapshot() -> crate::ui::playback::external_media::ExternalP
     }
 }
 
-fn external_radio_snapshot() -> crate::ui::playback::external_media::ExternalPlaybackSnapshot {
+pub(super) fn external_radio_snapshot(
+) -> crate::ui::playback::external_media::ExternalPlaybackSnapshot {
     use crate::ui::playback::external_media::{
         ExternalMedia, ExternalPlaybackSnapshot, RadioPresentation, StreamTags,
     };
