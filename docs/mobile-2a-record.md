@@ -216,6 +216,62 @@ out to do:
   cold start: Android allows two refusals before the dialog stops appearing, and
   a question asked out of context spends one of them for nothing.
 
+### M8 — a counted play survives the process, and what it took to believe it
+
+`play_recorder.rs` ended its own documentation by naming what it was not: a
+persistent queue. A play still in hand when Android killed the service was gone,
+**silently**. Android kills media services routinely, so that was the ordinary
+case rather than the unlucky one.
+
+The mechanism: a journal file appended **before** every database attempt, each
+entry carrying a sequence number; the applied high-water mark written **in the
+same transaction** as the count itself; everything above it replayed on the next
+open. The queue is a file rather than a table because putting pending plays in
+SQLite would put them behind the very lock they are waiting for — a scan holds
+one transaction for a whole folder walk, which is exactly when a play cannot be
+written.
+
+Three rounds of review and one device pass changed it substantially, and each
+change is worth keeping.
+
+**The journal had one drawer for everything it did not expect — "corrupt" — and
+that drawer deleted.** An adversarial review built the case: two overlapping
+writers both compute the same next sequence, both append, and on the next open
+the second entry is discarded as corrupt and physically rewritten out of the
+file. A second shape of the same fault: once a `v2` format exists, a `v1` line
+would vanish down the same path. This codebase has paid for that pattern before —
+the v53 migration destroyed what it could not read, and `MissingReason::Unknown`
+is forbidden from deleting for the same reason. Unexpected is not invalid.
+
+So a collision is now **renumbered** to `max(last kept, high-water) + 1`, above
+everything already committed, where it is applicable exactly once. An unknown
+format version **refuses the whole journal and leaves the file untouched**: a v1
+reader has no business editing records it cannot interpret. Each case names
+itself in the log, because reporting a collision as file corruption sends the
+next investigator the wrong way.
+
+**Then the device found that the fix for a theoretical problem had broken the
+real feature.** The single-writer lock added in the same round fails on Android:
+
+```
+no Android play counting: could not open the play journal
+error=try_lock() not supported
+```
+
+The filesystem does not support advisory locks, the error was fatal, and **play
+counting was dead** — all four device experiments read "no change" because the
+journal never opened at all. The unit tests run on tmpfs, where `flock` works.
+The round that introduced it had named exactly this as unproven.
+
+Two corrections followed. `Unsupported` is not a refusal — it is the absence of
+an answer, so the journal now runs unlocked and says so. And a journal that
+cannot be opened no longer discards every play: it counts them **without** a
+journal, honestly logged. A durability mechanism that fails must not leave things
+worse than having no durability mechanism, and before this it did.
+
+The lock stays as best effort. The guarantee does not rest on it — the
+renumbering is what preserves the data.
+
 ## Verified on a device, not assumed
 
 Every claim below was observed on the `pixel10xl_api37` emulator against the
@@ -281,6 +337,32 @@ landscape reaches into a library row. Reading the mini player's own nodes
 instead resolved it. Both are worth recording: neither the app nor the fix was
 at fault, and both would have been reported as defects by a less careful read.
 
+### M8 on a device
+
+Three attempts to prove this by racing the scanner failed, and the failures were
+the lesson: to catch a play *pending* at the moment of a kill you have to win a
+race against a folder walk, and a race you lose proves nothing. The journal's
+format is known — `v1⇥sequence⇥track⇥at_unix` — so the fourth attempt stopped
+racing and **wrote the state a kill would leave behind**, then asked four
+separate questions.
+
+| claim | evidence |
+| --- | --- |
+| Pending entries are applied on the next open | journal with sequences 1 and 2 → high-water `0 → 2`, both tracks `0 → 1`, journal emptied |
+| An entry left behind after its commit is not counted twice | the same two lines written again → high-water `2 → 2`, **no change**, journal emptied |
+| A sequence collision keeps **both** plays | two entries both numbered 3 → high-water `2 → 4`, both tracks `0 → 1`. Before the fix one of them was deleted as corrupt |
+| An unknown format version refuses the journal and leaves the file alone | a `v2` line → no change, and the file still 21 bytes with the same content |
+| The three states name themselves | `running unlocked: this filesystem does not enforce advisory locks`, `refused an Android play journal written in an unknown format`, `plays will be counted without a journal` |
+
+Zero crashes, zero ANRs across all four.
+
+What a device still has not shown: a **real** process kill inside the
+append/commit/remove window — the experiments reconstruct that state rather than
+producing it — and whether `sync_data` plus the directory fsync survives an
+actual power cut, which needs a harness nobody has built. Whether advisory locks
+work on real device storage is also open: this emulator says no, and a phone
+that says yes would exercise a refusal path only tmpfs has ever run.
+
 ## What was deliberately left out, and why
 
 These are **not** unfinished work. They were measured, found to have no backend,
@@ -315,12 +397,13 @@ Named here so they are not mistaken for the list above.
   foreground-service record with three transport actions, but nobody has seen it
   rendered: whether the cover loads, whether the title truncates, whether the
   three actions are the right three. That is an eyes-on check on a real phone.
-- **A play can still be lost, but no longer silently.** The play-count writer
-  now offers a write that lost to the scanner's single folder-walk transaction
-  up to four times before giving up, and says which track it gave up on. What it
-  still has is no *persistent* queue: a play in hand when Android kills the
-  process is gone, and nothing survives to retry it after a restart. That is a
-  bigger decision than a retry loop.
+- ~~**A play can still be lost.**~~ Closed by M8: the journal survives the
+  process and replays exactly once, proven on a device. Two narrower gaps are
+  left in its place. A play can still be **refused** when the journal is full —
+  1024 entries, meaning a database that has been unwritable for that long — and
+  the refusal names the track in the log but nowhere a user would look. And a
+  play whose journal line cannot be *written* blocks the ones behind it, because
+  skipping it would move the high-water mark past it and make it unfindable.
 - **One shared decode thread.** The 1092 px sheet cover queues behind list
   thumbnails on the same single-thread executor.
 - **Compose behavior is host-tested, not device-rendered.** The existing
