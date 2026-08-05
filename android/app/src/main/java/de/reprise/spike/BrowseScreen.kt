@@ -396,7 +396,7 @@ internal fun BrowseScreen(
                     .align(Alignment.TopEnd)
                     .padding(12.dp),
             ) {
-                Text("Dock-Modus")
+                Text("Dock mode")
             }
         }
         if (settingsVisible) {

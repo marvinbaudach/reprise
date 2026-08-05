@@ -62,7 +62,7 @@ class MainActivityRatingTest {
         assertEquals(2, application.trackRatings[1L] ?: 2)
         recreateAt("w916dp-h412dp-land")
 
-        compose.onNodeWithText("Dock-Modus").performClick()
+        compose.onNodeWithText("Dock mode").performClick()
         compose.waitForIdle()
         compose.onNodeWithTag("dock-star").performClick()
         compose.waitForIdle()
@@ -112,7 +112,7 @@ class MainActivityRatingTest {
         publishTrack(1)
         recreateAt("w916dp-h412dp-land")
 
-        compose.onNodeWithText("Dock-Modus").performClick()
+        compose.onNodeWithText("Dock mode").performClick()
         compose.waitForIdle()
         compose.onNodeWithTag("dock-star").performClick()
         compose.waitForIdle()

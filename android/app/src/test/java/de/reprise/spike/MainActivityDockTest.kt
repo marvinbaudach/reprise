@@ -51,11 +51,11 @@ class MainActivityDockTest {
         publishTrack(1)
         recreateAt("w916dp-h412dp-land")
 
-        compose.onNodeWithText("Dock-Modus").assertIsDisplayed()
+        compose.onNodeWithText("Dock mode").assertIsDisplayed()
         compose.onNodeWithTag("dock-surface").assertDoesNotExist()
         assertFalse(keepScreenOn())
 
-        compose.onNodeWithText("Dock-Modus").performClick()
+        compose.onNodeWithText("Dock mode").performClick()
         compose.onNodeWithTag("dock-surface").assertIsDisplayed()
         compose.onNodeWithTag("dock-cover").assertWidthIsEqualTo(290.dp)
         compose.onNodeWithTag("dock-play").assertWidthIsEqualTo(96.dp)
@@ -123,7 +123,7 @@ class MainActivityDockTest {
     private fun enterDock() {
         publishTrack(1)
         recreateAt("w916dp-h412dp-land")
-        compose.onNodeWithText("Dock-Modus").performClick()
+        compose.onNodeWithText("Dock mode").performClick()
         compose.waitForIdle()
     }
 
