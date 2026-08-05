@@ -102,6 +102,7 @@ internal class LibrarySession(
                 LibraryWindow.empty(),
                 LibraryWindow.empty(),
                 message,
+                treeUri,
             )
         }
     }
@@ -186,5 +187,6 @@ internal class LibrarySession(
             albums = port.listAlbums(firstLibraryWindow()),
             artists = port.listArtists(firstLibraryWindow()),
             message = message,
+            folderUri = port.rememberedTreeUri(),
         )
 }

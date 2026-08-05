@@ -22,11 +22,25 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.testTag
+
+internal data class LibraryRatingControl(
+    val enabled: Boolean,
+    val select: (Boolean) -> Unit,
+)
+
+/** The shipped activity supplies the persisted value; isolated previews retain the old row. */
+internal val LocalLibraryRatingControl = staticCompositionLocalOf {
+    LibraryRatingControl(enabled = true, select = {})
+}
+
+/** The whole rating badge, so a test can ask whether it is there at all. */
+internal const val TRACK_RATING_TAG = "track-rating"
 
 /**
  * The library's track list: the 72 dp rows, their continuation sentinel, and
@@ -189,7 +203,9 @@ private fun LibraryTrackRow(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f),
                         )
-                        TrackRating(rating)
+                        if (LocalLibraryRatingControl.current.enabled) {
+                            TrackRating(rating)
+                        }
                     }
                 }
                 Column(
@@ -223,7 +239,14 @@ private fun LibraryTrackRow(
 @Composable
 private fun TrackRating(rating: Int) {
     val normalizedRating = rating.coerceIn(0, 5)
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    // Tagged as one thing, because "no rating" is a claim about the whole
+    // affordance: a test that only looks for the text "4/5" passes just as
+    // happily when the row draws an empty star and "0/5", which is the setting
+    // half-applied rather than applied.
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.testTag(TRACK_RATING_TAG),
+    ) {
         MaterialSymbol(
             name = "star",
             contentDescription = "$normalizedRating of 5 stars",
