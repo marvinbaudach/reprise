@@ -7,6 +7,9 @@ internal data class LibraryFrameMetrics(
     val trackCoverSizeDp: Int,
     val miniPlayerHeightDp: Int,
     val navigationBarHeightDp: Int,
+    val navigationRailWidthDp: Int = 80,
+    val listColumns: Int = 1,
+    val listColumnGapDp: Int = 0,
 )
 
 internal val libraryFrameMetrics = LibraryFrameMetrics(
@@ -17,6 +20,22 @@ internal val libraryFrameMetrics = LibraryFrameMetrics(
     miniPlayerHeightDp = 72,
     navigationBarHeightDp = 80,
 )
+
+private val wideShortLibraryFrameMetrics = LibraryFrameMetrics(
+    topAppBarHeightDp = 52,
+    filterChipHeightDp = 32,
+    trackRowHeightDp = 64,
+    trackCoverSizeDp = 48,
+    miniPlayerHeightDp = 72,
+    navigationBarHeightDp = 80,
+    listColumns = 2,
+    listColumnGapDp = 16,
+)
+
+internal fun libraryFrameMetrics(layout: SurfaceLayout): LibraryFrameMetrics = when (layout) {
+    SurfaceLayout.STACKED -> libraryFrameMetrics
+    SurfaceLayout.WIDE_SHORT -> wideShortLibraryFrameMetrics
+}
 
 internal enum class LibraryDestination(
     val label: String,

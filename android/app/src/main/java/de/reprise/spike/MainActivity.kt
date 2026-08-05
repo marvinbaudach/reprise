@@ -39,6 +39,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
+import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
+import androidx.lifecycle.viewmodel.compose.viewModel
 import de.reprise.spike.ui.theme.RepriseTheme
 import uniffi.reprise_android_ffi.AndroidColorScheme
 import uniffi.reprise_android_ffi.AndroidEqualizerPoint
@@ -155,17 +158,20 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         // From SDK 35 the system draws behind the bars whether an app asks or
         // not; saying so explicitly is what lets us pick light bar icons for a
         // ground that is dark even when the system is not.
         configureEdgeToEdge(darkPalette = true)
         super.onCreate(savedInstanceState)
-        val initialTheme = restoreTheme()
-        val initialState = restoreLibrary()
+        val surface = (application as? MainActivitySurfaceProvider)?.mainActivitySurface()
+            ?: productionSurface()
         setContent {
-            var themeSelection by remember { mutableStateOf(initialTheme) }
+            var themeSelection by remember { mutableStateOf(surface.initialTheme) }
             val darkPalette = themeSelection.usesDarkPalette(isSystemInDarkTheme())
+            val surfaceState: MobileSurfaceViewModel = viewModel()
+            val surfaceLayout = surfaceLayoutFor(calculateWindowSizeClass(this))
             LaunchedEffect(darkPalette) { configureEdgeToEdge(darkPalette) }
             RepriseTheme(themeSelection, darkPalette) {
                 Surface(
@@ -177,30 +183,32 @@ class MainActivity : ComponentActivity() {
                     // must not consume that inset a second time.
                     Box(modifier = Modifier.statusBarsPadding()) {
                         CompositionLocalProvider(
-                            LocalTrackArtwork provides artwork,
-                            LocalPlaybackControls provides playbackControls,
+                            LocalTrackArtwork provides surface.artwork(),
+                            LocalPlaybackControls provides surface.playbackControls,
                         ) {
                             LibraryScreen(
-                                initialState = initialState,
+                                initialState = surface.initialState,
                                 playback = playbackState.value,
                                 playbackSettingsRevision = playbackSettingsRevision.value,
-                                chooseFolder = ::chooseTree,
-                                rescan = ::rescan,
-                                searchTitles = session::searchTitles,
-                                listAlbums = session::listAlbums,
-                                listArtists = session::listArtists,
-                                openAlbum = session::openAlbum,
-                                listAlbumTracks = session::listAlbumTracks,
-                                loadTrack = ::loadTrack,
+                                surfaceLayout = surfaceLayout,
+                                surfaceState = surfaceState,
+                                chooseFolder = surface.chooseFolder,
+                                rescan = surface.rescan,
+                                searchTitles = surface.searchTitles,
+                                listAlbums = surface.listAlbums,
+                                listArtists = surface.listArtists,
+                                openAlbum = surface.openAlbum,
+                                listAlbumTracks = surface.listAlbumTracks,
+                                loadTrack = surface.loadTrack,
                                 playTracks = ::playTracks,
-                                loadPlaybackSettings = ::loadPlaybackSettings,
-                                setEqualizerEnabled = ::setEqualizerEnabled,
-                                replaceEqualizerCurve = ::replaceEqualizerCurve,
-                                setGaplessEnabled = ::setGaplessEnabled,
+                                loadPlaybackSettings = surface.loadPlaybackSettings,
+                                setEqualizerEnabled = surface.setEqualizerEnabled,
+                                replaceEqualizerCurve = surface.replaceEqualizerCurve,
+                                setGaplessEnabled = surface.setGaplessEnabled,
                                 themeSelection = themeSelection,
                                 selectTheme = { palette ->
                                     runCatching {
-                                        themeController.select(themeSelection, palette)
+                                        surface.selectTheme(themeSelection, palette)
                                     }.onSuccess { selection ->
                                         themeSelection = selection
                                     }.onFailure { error ->
@@ -214,6 +222,26 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    private fun productionSurface() = MainActivitySurfaceDependencies(
+        initialTheme = restoreTheme(),
+        initialState = restoreLibrary(),
+        artwork = { artwork },
+        playbackControls = playbackControls,
+        chooseFolder = ::chooseTree,
+        rescan = ::rescan,
+        searchTitles = { query, range -> session.searchTitles(query, range) },
+        listAlbums = { range -> session.listAlbums(range) },
+        listArtists = { range -> session.listArtists(range) },
+        openAlbum = { album -> session.openAlbum(album) },
+        listAlbumTracks = { album, range -> session.listAlbumTracks(album, range) },
+        loadTrack = ::loadTrack,
+        loadPlaybackSettings = ::loadPlaybackSettings,
+        setEqualizerEnabled = ::setEqualizerEnabled,
+        replaceEqualizerCurve = ::replaceEqualizerCurve,
+        setGaplessEnabled = ::setGaplessEnabled,
+        selectTheme = { current, palette -> themeController.select(current, palette) },
+    )
 
     private fun configureEdgeToEdge(darkPalette: Boolean) {
         val transparent = SystemBarStyle.auto(
@@ -517,6 +545,8 @@ private fun LibraryScreen(
     initialState: LibraryScreenState,
     playback: PlaybackUiState,
     playbackSettingsRevision: Long,
+    surfaceLayout: SurfaceLayout,
+    surfaceState: MobileSurfaceViewModel,
     chooseFolder: (Uri, (LibraryScreenState) -> Unit) -> Unit,
     rescan: ((LibraryScreenState) -> Unit) -> Unit,
     searchTitles: (String, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
@@ -555,6 +585,8 @@ private fun LibraryScreen(
             state = current,
             playback = playback,
             playbackSettingsRevision = playbackSettingsRevision,
+            surfaceLayout = surfaceLayout,
+            surfaceState = surfaceState,
             chooseFolder = { folderPicker.launch(null) },
             rescan = { rescan { state = it } },
             searchTitles = searchTitles,

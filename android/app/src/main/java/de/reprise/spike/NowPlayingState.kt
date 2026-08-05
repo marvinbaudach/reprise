@@ -27,6 +27,22 @@ internal val nowPlayingMetrics = NowPlayingMetrics(
     playButtonRadiusDp = 28,
 )
 
+private val wideShortNowPlayingMetrics = NowPlayingMetrics(
+    coverSizeDp = 326,
+    coverRadiusDp = 28,
+    titleSizeSp = 28,
+    titleLineHeightSp = 36,
+    artistSizeSp = 16,
+    artistLineHeightSp = 24,
+    playButtonSizeDp = 64,
+    playButtonRadiusDp = 28,
+)
+
+internal fun nowPlayingMetrics(layout: SurfaceLayout): NowPlayingMetrics = when (layout) {
+    SurfaceLayout.STACKED -> nowPlayingMetrics
+    SurfaceLayout.WIDE_SHORT -> wideShortNowPlayingMetrics
+}
+
 /**
  * The head's own reading of what is left, as `−m:ss`. The total belongs to the
  * track; the sheet is about where the playhead is.
@@ -55,6 +71,12 @@ internal data class SeekPositionState(
     val positionMs: Long,
     val isDragging: Boolean,
 ) {
+    fun fractionOf(durationMs: Long): Float = if (durationMs > 0) {
+        (positionMs.toDouble() / durationMs.toDouble()).coerceIn(0.0, 1.0).toFloat()
+    } else {
+        0f
+    }
+
     fun acceptSnapshot(positionMs: Long): SeekPositionState =
         if (isDragging) this else fromSnapshot(positionMs)
 
