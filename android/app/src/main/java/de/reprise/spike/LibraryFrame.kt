@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -28,6 +29,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarDefaults
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -42,23 +45,27 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import de.reprise.spike.ui.theme.MaterialSymbolsRounded
 
 @Composable
 internal fun LibraryTopAppBar(
+    surfaceLayout: SurfaceLayout,
     searching: Boolean,
     toggleSearch: () -> Unit,
     rescan: () -> Unit,
     chooseFolder: () -> Unit,
     openSettings: () -> Unit,
 ) {
+    val metrics = libraryFrameMetrics(surfaceLayout)
     var menuExpanded by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(libraryFrameMetrics.topAppBarHeightDp.dp)
+            .height(metrics.topAppBarHeightDp.dp)
+            .testTag("library-top-app-bar")
             .padding(start = 16.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -112,17 +119,23 @@ internal fun LibraryTopAppBar(
 
 @Composable
 internal fun LibraryBottomFrame(
+    surfaceLayout: SurfaceLayout,
     currentTrack: LibraryTrack?,
     playback: PlaybackUiState,
     openNowPlaying: () -> Unit,
 ) {
+    val metrics = libraryFrameMetrics(surfaceLayout)
     Column {
         if (currentTrack != null) {
             MiniPlayer(
+                metrics = metrics,
                 track = currentTrack,
                 playback = playback,
                 openNowPlaying = openNowPlaying,
             )
+        }
+        if (surfaceLayout == SurfaceLayout.WIDE_SHORT) {
+            return@Column
         }
         // Material 3 pads the item row *inside* this component by the system
         // bar inset, so a bare 80 dp on the outside would be spent on the
@@ -134,10 +147,12 @@ internal fun LibraryBottomFrame(
         // spent.
         val systemBarInsets = NavigationBarDefaults.windowInsets
         NavigationBar(
-            modifier = Modifier.height(
-                libraryFrameMetrics.navigationBarHeightDp.dp +
+            modifier = Modifier
+                .height(
+                    metrics.navigationBarHeightDp.dp +
                     systemBarInsets.asPaddingValues().calculateBottomPadding(),
-            ),
+                )
+                .testTag("library-navigation-bar"),
             containerColor = MaterialTheme.colorScheme.surface,
             windowInsets = systemBarInsets,
         ) {
@@ -154,7 +169,32 @@ internal fun LibraryBottomFrame(
 }
 
 @Composable
+internal fun LibraryNavigationRail(surfaceLayout: SurfaceLayout) {
+    check(surfaceLayout == SurfaceLayout.WIDE_SHORT)
+    val metrics = libraryFrameMetrics(surfaceLayout)
+    NavigationRail(
+        modifier = Modifier
+            .width(metrics.navigationRailWidthDp.dp)
+            .fillMaxHeight()
+            .testTag("library-navigation-rail"),
+        containerColor = MaterialTheme.colorScheme.surface,
+    ) {
+        Spacer(Modifier.weight(1f))
+        libraryDestinations.forEach { destination ->
+            NavigationRailItem(
+                selected = true,
+                onClick = {},
+                icon = { MaterialSymbol(destination.symbol, destination.label) },
+                label = { Text(destination.label) },
+            )
+        }
+        Spacer(Modifier.weight(1f))
+    }
+}
+
+@Composable
 private fun MiniPlayer(
+    metrics: LibraryFrameMetrics,
     track: LibraryTrack,
     playback: PlaybackUiState,
     openNowPlaying: () -> Unit,
@@ -163,7 +203,8 @@ private fun MiniPlayer(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .height(libraryFrameMetrics.miniPlayerHeightDp.dp)
+            .height(metrics.miniPlayerHeightDp.dp)
+            .testTag("library-mini-player")
             .padding(horizontal = 12.dp)
             // The label names the *action*; it does not replace what this node
             // announces. A content description would: it wins over the merged
@@ -182,7 +223,7 @@ private fun MiniPlayer(
             ) {
                 TrackCover(
                     trackUri = track.uri,
-                    size = libraryFrameMetrics.trackCoverSizeDp,
+                    size = metrics.trackCoverSizeDp,
                     decorative = true,
                 )
                 Spacer(Modifier.width(12.dp))
@@ -245,9 +286,10 @@ internal fun CoverPlaceholder(
     size: Int,
     shape: androidx.compose.ui.graphics.Shape? = null,
     decorative: Boolean = false,
+    modifier: Modifier = Modifier,
 ) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .size(size.dp)
             .clip(shape ?: MaterialTheme.shapes.small)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh),
