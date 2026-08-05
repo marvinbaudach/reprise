@@ -25,9 +25,9 @@ const MIN_TEMPO_BPM: f32 = 60.0;
 /// Fastest period the pulse window looks for.
 const MAX_TEMPO_BPM: f32 = 200.0;
 /// Below this correlation the strongest lag is not a beat.
-const MIN_TEMPO_CORRELATION: f32 = 0.2;
+const MIN_PULSE_CORRELATION: f32 = 0.2;
 /// … and it must also stand this far above the other lags.
-const TEMPO_BACKGROUND_RATIO: f32 = 1.4;
+const PULSE_BACKGROUND_RATIO: f32 = 1.4;
 /// Half-width of the adaptive onset window: ±0.5 s at 20 fps.
 const ONSET_WINDOW_FRAMES: usize = 10;
 /// A peak counts as an onset only this far above its own local mean.
@@ -60,7 +60,12 @@ pub struct RhythmFeatures {
     /// moves: a steady loop against a track that stops and starts.
     pub flux_variation: f32,
     /// Normalized autocorrelation peak of the bass onset envelope inside the
-    /// musical period window, `0.0..=1.0`. How metronomic the track is.
+    /// musical period window, `0.0..=1.0`. How metronomic the track is — and
+    /// `0.0` unless that peak passes the same significance test the tempo
+    /// estimate applies. The peak is the best of roughly fifteen lag
+    /// candidates, so an arrhythmic track reaches a respectable number by
+    /// picking alone; only a peak that also stands out from the other lags is
+    /// a pulse rather than the loudest noise.
     pub pulse_strength: f32,
 }
 
@@ -89,6 +94,7 @@ pub fn derive_rhythm_features(spectrogram: &TrackSpectrogram) -> RhythmFeatures 
         flux_mean,
         flux_variation: variation(&frame_flux, flux_mean),
         pulse_strength: bass_pulse_peak(&bass_frame_energy(spectrogram))
+            .filter(PulsePeak::is_significant)
             .map_or(0.0, |peak| peak.correlation.clamp(0.0, 1.0)),
     }
 }
@@ -96,16 +102,13 @@ pub fn derive_rhythm_features(spectrogram: &TrackSpectrogram) -> RhythmFeatures 
 /// Tempo in BPM, or `None` when no lag in the musical window stands out from
 /// the rest.
 ///
-/// Shares [`bass_pulse_peak`] with `pulse_strength`: the tempo is that peak's
-/// period, its strength is that peak's height. Two answers from one question,
-/// never two questions.
+/// Shares [`bass_pulse_peak`] and its significance test with `pulse_strength`:
+/// the tempo is that peak's period, its strength is that peak's height, and
+/// neither is reported for a peak that is not a beat. Two answers from one
+/// question, never two questions.
 pub fn estimate_tempo(spectrogram: &TrackSpectrogram) -> Option<f32> {
-    let peak = bass_pulse_peak(&bass_frame_energy(spectrogram))?;
-    if peak.correlation < MIN_TEMPO_CORRELATION
-        || peak.correlation < peak.background * TEMPO_BACKGROUND_RATIO
-    {
-        return None;
-    }
+    let peak =
+        bass_pulse_peak(&bass_frame_energy(spectrogram)).filter(PulsePeak::is_significant)?;
     Some(SPECTROGRAM_FRAME_RATE_HZ as f32 * 60.0 / peak.lag_frames as f32)
 }
 
@@ -234,6 +237,16 @@ struct PulsePeak {
     /// Mean positive correlation of every other lag — what the peak has to
     /// stand out from before it may be called a beat.
     background: f32,
+}
+
+impl PulsePeak {
+    /// Whether the peak is a periodicity rather than the best of the lag
+    /// candidates. Both answers derived from it — the tempo and its strength —
+    /// ask this once, in one place.
+    fn is_significant(&self) -> bool {
+        self.correlation >= MIN_PULSE_CORRELATION
+            && self.correlation >= self.background * PULSE_BACKGROUND_RATIO
+    }
 }
 
 fn bass_pulse_peak(bass_energy: &[f32]) -> Option<PulsePeak> {

@@ -43,6 +43,14 @@ pub struct DistanceWeights {
 }
 
 impl DistanceWeights {
+    /// Measured on a real 1793-track library rather than reasoned about: what
+    /// matters is that rhythm is in the mix at all, not its exact share. With
+    /// rhythm at zero the genre lift is 1.04x; anywhere between 0.25 and 0.67
+    /// it sits at 1.16–1.19x, and rhythm alone falls back to 1.12x because the
+    /// production half still carries the artist and album coherence. The 0.50
+    /// below is the middle of that plateau, not a tuned optimum — re-measure
+    /// with `examples/sound_similarity_check` and `scripts/sound-similarity-score.py`
+    /// before trusting any future change to these numbers.
     pub const DEFAULT: Self = Self {
         band: 0.30,
         timbre: 0.12,

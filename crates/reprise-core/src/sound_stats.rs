@@ -6,10 +6,18 @@ use crate::sound_features::SoundFeatures;
 use crate::spectrogram::SPECTROGRAM_BAND_COUNT;
 
 const INVENTORY_RECOMPUTE_FRACTION: f64 = 0.05;
-/// Two tracks scatter around the library's centre independently, so the
-/// distance between them is about twice the distance of one of them to that
-/// centre — cosine distance is half the squared angle for the small angles
-/// real tracks span.
+/// Turns a distance-to-the-centre into the scale a distance *between* two
+/// tracks lives on, so a cosine term and a z-scored scalar can be weighted
+/// against each other by numbers that mean the same thing.
+///
+/// The value comes from the idea that two tracks scatter around the library's
+/// centre independently, putting them about twice as far from each other as
+/// from it. That reasoning is shaky for music — the vectors cluster by genre,
+/// which is the whole point of this model, so the displacements are not
+/// independent. It is kept because it was measured not to matter: over a real
+/// 1793-track library, factors of 1, 2 and 4 all rank at a genre lift of
+/// 1.17–1.18x, and only at 8 does the ranking start to degrade. This number is
+/// not load-bearing; the weights in `sound_distance.rs` are.
 const PAIR_SPREAD_FACTOR: f32 = 2.0;
 /// Below this spread the library holds one shape, and a distance inside it is
 /// quantization noise rather than a difference.

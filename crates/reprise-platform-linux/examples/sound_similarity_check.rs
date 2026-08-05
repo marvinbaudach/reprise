@@ -53,12 +53,26 @@ fn main() {
         .and_then(|value| value.parse().ok())
         .unwrap_or(7);
     let exclusions = flag_value("--exclusions").unwrap_or_else(|| "product".into());
-    let weights = match flag_value("--weights")
-        .unwrap_or_else(|| "default".into())
-        .as_str()
-    {
+    let weights_argument = flag_value("--weights").unwrap_or_else(|| "default".into());
+    let weights = match weights_argument.as_str() {
         "timbre" => DistanceWeights::TIMBRE,
         "dynamics" => DistanceWeights::DYNAMICS,
+        // An explicit split, so the shipped numbers can be probed for
+        // sensitivity without a rebuild per candidate.
+        custom if custom.contains(',') => {
+            let parts: Vec<f32> = custom
+                .split(',')
+                .map(|part| part.trim().parse().expect("weights are four numbers"))
+                .collect();
+            assert_eq!(parts.len(), 4, "expected band,timbre,dynamics,rhythm");
+            DistanceWeights {
+                band: parts[0],
+                timbre: parts[1],
+                dynamics: parts[2],
+                rhythm: parts[3],
+                tempo: 0.0,
+            }
+        }
         _ => DistanceWeights::DEFAULT,
     };
 

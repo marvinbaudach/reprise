@@ -258,10 +258,58 @@ fn sim_1_sound_profile_stamp_covers_the_spectrogram_format_and_the_blob_layout()
     // The layout is pinned to its version: changing the stored bytes moves this
     // fingerprint, and bumping SOUND_FEATURE_LAYOUT_VERSION in the same change
     // is what keeps rows written by the old layout out of the SQL filter.
-    let blob = stored_features().to_blob();
+    let blob = stored_features().to_blob().unwrap();
     assert_eq!(blob.len(), 225);
     assert_eq!(blob_fingerprint(&blob), 0x3550_ade2_d381_bee9);
-    assert_eq!(SOUND_FEATURE_LAYOUT_VERSION, 2);
+    // Revision 3 carries the same bytes as revision 2. It was bumped because
+    // pulse_strength changed what it reports, not where it sits: an arrhythmic
+    // track used to score its best noise peak and now scores zero. Without the
+    // bump, every profile derived by the older code would keep its inflated
+    // value forever, since the backfill only re-derives what the stamp
+    // declares stale.
+    assert_eq!(SOUND_FEATURE_LAYOUT_VERSION, 3);
+}
+
+/// The read path rejects a non-finite value, and the pending-work gate only
+/// asks whether a row exists — so a row stored with one would be skipped with a
+/// warning on every read and never derived again. The write path therefore has
+/// to refuse it, loudly, before it becomes a row.
+#[test]
+fn sound_features_refuse_to_store_a_non_finite_profile() {
+    let db = Db::open_in_memory().unwrap();
+    insert_track(&db);
+
+    for poisoned in [
+        SoundFeatures {
+            centroid_var: f32::NAN,
+            ..stored_features()
+        },
+        SoundFeatures {
+            rhythm: RhythmFeatures {
+                flux_mean: f32::INFINITY,
+                ..stored_features().rhythm
+            },
+            ..stored_features()
+        },
+        SoundFeatures {
+            tempo: Some(f32::NEG_INFINITY),
+            ..stored_features()
+        },
+    ] {
+        assert!(poisoned.to_blob().is_err());
+        assert!(
+            set_track_sound_features(&db, 1, &poisoned).is_err(),
+            "a refused profile must reach the caller as an error"
+        );
+    }
+
+    let rows: i64 = db
+        .conn()
+        .query_row("SELECT COUNT(*) FROM track_sound_features", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(rows, 0, "nothing unreadable may reach the table");
 }
 
 #[test]
@@ -334,8 +382,40 @@ fn sound_features_carry_the_temporal_derivation_of_the_same_spectrogram() {
     assert_eq!(features.rhythm, derive_rhythm_features(&pulsed));
     assert_eq!(features.rhythm.onset_rate, 2.0);
     assert_eq!(
-        SoundFeatures::from_blob(&features.to_blob()).unwrap(),
+        SoundFeatures::from_blob(&features.to_blob().unwrap()).unwrap(),
         features,
         "the temporal half has to survive the round trip through the blob"
     );
+}
+
+/// A distinct, non-symmetric value in every stored slot, so a swap of any two
+/// of them shows up as a different profile rather than as the same one.
+fn distinctly_valued_features() -> SoundFeatures {
+    SoundFeatures {
+        band_mean: std::array::from_fn(|index| 1.0 + index as f32),
+        centroid_mean: 101.0,
+        centroid_var: 102.0,
+        frame_crest_db: 103.0,
+        rhythm: RhythmFeatures {
+            band_flux: std::array::from_fn(|index| 201.0 + index as f32),
+            onset_rate: 301.0,
+            flux_mean: 302.0,
+            flux_variation: 303.0,
+            pulse_strength: 304.0,
+        },
+        tempo: Some(401.0),
+    }
+}
+
+/// The blob order is written down once, as the mutable slot list both
+/// directions walk. This is the value-level proof that they walk it the same
+/// way: every slot carries its own number, so a reordered, duplicated or
+/// skipped slot lands a value in the wrong field instead of going unnoticed.
+#[test]
+fn sound_features_round_trip_puts_every_value_back_in_its_own_field() {
+    let features = distinctly_valued_features();
+
+    let restored = SoundFeatures::from_blob(&features.to_blob().unwrap()).unwrap();
+
+    assert_eq!(restored, features);
 }

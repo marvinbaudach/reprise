@@ -63,11 +63,17 @@ pub(crate) fn write_sound_features(
     track_id: i64,
     features: &SoundFeatures,
 ) -> Result<(), rusqlite::Error> {
+    // A profile the reader would reject never reaches the row: the pending-work
+    // gate only asks whether a row exists, so storing one would poison the track
+    // permanently. The caller sees the refusal like any other write failure.
+    let blob = features
+        .to_blob()
+        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
     conn.execute(
         "INSERT INTO track_sound_features (track_id, format_version, data) \
          VALUES (?1, ?2, ?3) ON CONFLICT(track_id) DO UPDATE SET \
          format_version = excluded.format_version, data = excluded.data",
-        rusqlite::params![track_id, SOUND_FEATURES_FORMAT_VERSION, features.to_blob()],
+        rusqlite::params![track_id, SOUND_FEATURES_FORMAT_VERSION, blob],
     )?;
     Ok(())
 }

@@ -5,9 +5,13 @@ use crate::spectrogram::{
     cell_energy, TrackSpectrogram, SPECTROGRAM_BAND_COUNT, SPECTROGRAM_FORMAT_VERSION,
 };
 
-/// The layout revision of the stored [`SoundFeatures`] blob. Bump it in the
-/// same change that alters `to_blob`/`from_blob`.
-pub(crate) const SOUND_FEATURE_LAYOUT_VERSION: i64 = 2;
+/// The revision of the stored [`SoundFeatures`] blob. Bump it in the same
+/// change that alters `to_blob`/`from_blob` — and equally when a derivation
+/// starts producing a *different number in the same field*. A stored profile
+/// is a cache of what the derivation says today; a value whose meaning has
+/// changed is as stale as one whose offset has moved, and only this number
+/// tells the backfill to compute it again.
+pub(crate) const SOUND_FEATURE_LAYOUT_VERSION: i64 = 3;
 
 /// How many layout revisions fit under one spectrogram format.
 const SOUND_FEATURE_LAYOUT_STRIDE: i64 = 100;
@@ -60,30 +64,56 @@ impl SoundFeatures {
     const SCALAR_COUNT: usize = 2 * SPECTROGRAM_BAND_COUNT + 7;
     const BLOB_LEN: usize = Self::SCALAR_COUNT * size_of::<f32>() + 1 + size_of::<f32>();
 
-    /// Every stored scalar in blob order, so writing and reading cannot drift
-    /// apart in two places.
-    fn scalars(&self) -> impl Iterator<Item = f32> + '_ {
+    /// Every stored scalar as a mutable slot, in blob order — the one place
+    /// that order is written down. Writing copies the slots out, reading fills
+    /// them in, and the finiteness check walks the same list, so a reorder here
+    /// moves all three together and they cannot drift apart.
+    fn scalar_slots(&mut self) -> impl Iterator<Item = &mut f32> + '_ {
         self.band_mean
-            .iter()
-            .copied()
-            .chain([self.centroid_mean, self.centroid_var, self.frame_crest_db])
-            .chain(self.rhythm.band_flux)
+            .iter_mut()
             .chain([
-                self.rhythm.onset_rate,
-                self.rhythm.flux_mean,
-                self.rhythm.flux_variation,
-                self.rhythm.pulse_strength,
+                &mut self.centroid_mean,
+                &mut self.centroid_var,
+                &mut self.frame_crest_db,
+            ])
+            .chain(self.rhythm.band_flux.iter_mut())
+            .chain([
+                &mut self.rhythm.onset_rate,
+                &mut self.rhythm.flux_mean,
+                &mut self.rhythm.flux_variation,
+                &mut self.rhythm.pulse_strength,
             ])
     }
 
-    pub(crate) fn to_blob(&self) -> Vec<u8> {
+    /// Whether any stored value is one no reader may accept. The same question
+    /// on both sides of the blob, asked over the same slot list.
+    fn has_non_finite(&mut self) -> bool {
+        // Read out before the slot walk borrows the whole profile.
+        let tempo_is_non_finite = self.tempo.is_some_and(|tempo| !tempo.is_finite());
+        tempo_is_non_finite || self.scalar_slots().any(|value| !value.is_finite())
+    }
+
+    /// The stored bytes, or [`SoundFeaturesFormatError::NonFinite`] for a
+    /// profile that must not reach the database.
+    ///
+    /// Refusing here is what keeps the check symmetric: `from_blob` rejects a
+    /// non-finite row on every read, but the pending-work gate only asks
+    /// whether a row *exists*, so a row written with such a value would be
+    /// skipped with a warning forever and never derived again.
+    pub(crate) fn to_blob(&self) -> Result<Vec<u8>, SoundFeaturesFormatError> {
+        // The blob order lives on mutable slots, so the write side walks its
+        // own copy rather than keeping a second copy of the order.
+        let mut slots = self.clone();
+        if slots.has_non_finite() {
+            return Err(SoundFeaturesFormatError::NonFinite);
+        }
         let mut blob = Vec::with_capacity(Self::BLOB_LEN);
-        for value in self.scalars() {
+        for value in slots.scalar_slots() {
             blob.extend_from_slice(&value.to_le_bytes());
         }
         blob.push(u8::from(self.tempo.is_some()));
         blob.extend_from_slice(&self.tempo.unwrap_or(0.0).to_le_bytes());
-        blob
+        Ok(blob)
     }
 
     pub(crate) fn from_blob(blob: &[u8]) -> Result<Self, SoundFeaturesFormatError> {
@@ -91,44 +121,22 @@ impl SoundFeatures {
             return Err(SoundFeaturesFormatError::WrongLength { actual: blob.len() });
         }
         let mut offset = 0;
-        let mut next_f32 = || {
+        let mut features = neutral_features();
+        for slot in features.scalar_slots() {
             let bytes: [u8; 4] = blob[offset..offset + 4].try_into().expect("checked length");
+            *slot = f32::from_le_bytes(bytes);
             offset += 4;
-            f32::from_le_bytes(bytes)
-        };
-        let band_mean = std::array::from_fn(|_| next_f32());
-        let centroid_mean = next_f32();
-        let centroid_var = next_f32();
-        let frame_crest_db = next_f32();
-        let rhythm = RhythmFeatures {
-            band_flux: std::array::from_fn(|_| next_f32()),
-            onset_rate: next_f32(),
-            flux_mean: next_f32(),
-            flux_variation: next_f32(),
-            pulse_strength: next_f32(),
-        };
+        }
         let tempo_marker = blob[offset];
         offset += 1;
         let tempo_value =
             f32::from_le_bytes(blob[offset..offset + 4].try_into().expect("checked length"));
-        let tempo = match tempo_marker {
+        features.tempo = match tempo_marker {
             0 => None,
             1 => Some(tempo_value),
             marker => return Err(SoundFeaturesFormatError::InvalidTempoMarker(marker)),
         };
-        let features = Self {
-            band_mean,
-            centroid_mean,
-            centroid_var,
-            frame_crest_db,
-            rhythm,
-            tempo,
-        };
-        if features
-            .scalars()
-            .chain(features.tempo)
-            .any(|value| !value.is_finite())
-        {
+        if features.has_non_finite() {
             return Err(SoundFeaturesFormatError::NonFinite);
         }
         Ok(features)
@@ -209,6 +217,8 @@ pub fn derive_sound_features(spectrogram: &TrackSpectrogram) -> SoundFeatures {
     }
 }
 
+/// The profile of a track with nothing to describe — and the blank slate
+/// `from_blob` fills slot by slot.
 fn neutral_features() -> SoundFeatures {
     SoundFeatures {
         band_mean: [0.0; SPECTROGRAM_BAND_COUNT],

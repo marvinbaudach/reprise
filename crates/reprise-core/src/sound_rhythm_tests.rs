@@ -109,11 +109,12 @@ fn rhythm_reports_how_much_and_how_unevenly_a_track_moves() {
     assert_near(alternating.flux_mean, full_scale_db / 2.0, 0.5);
     assert_near(alternating.flux_variation, 1.0, 0.02);
 
-    // A track whose movement is spread evenly over every frame moves the same
-    // amount on average but not unevenly.
-    let even = derive_rhythm_features(&spectrogram(
-        (0..121).map(|index| frame(3, (index % 2 * 128) as u8 + 64)),
-    ));
+    // A track whose movement really is spread over every frame: one step up
+    // the cell scale per frame, so every frame carries the same rise. It moves
+    // far less than the alternating one — the question here is not how much
+    // but how evenly, and a constant flux does not vary at all.
+    let even = derive_rhythm_features(&spectrogram((0..121).map(|index| frame(3, index as u8))));
+    assert_near(even.flux_variation, 0.0, 1.0e-3);
     assert!(
         even.flux_variation < alternating.flux_variation,
         "an even mover must vary less than a stop-start one: {} vs {}",
@@ -154,6 +155,34 @@ fn rhythm_of_an_unsteady_track_is_less_metronomic_than_a_train() {
     // Both still land the same number of onsets: how often a track hits and
     // how regularly it hits are two different questions.
     assert_eq!(irregular.onset_rate, 2.0);
+}
+
+#[test]
+fn rhythm_of_a_track_without_a_beat_is_not_metronomic_at_all() {
+    // Twelve seconds of one slow swell: the bass rises and never repeats, so
+    // every lag in the musical window correlates about as well as every other
+    // and the best of them is the best of fifteen, not a pulse. Without the
+    // significance test this reads as 0.90 — near-perfectly metronomic for a
+    // track that has no beat in it.
+    let swell = spectrogram((0..240).map(|index| frame(2, (index * 255 / 239) as u8)));
+    // … and the other way a peak can be meaningless: bass activity that jumps
+    // about at random, where no lag correlates at all.
+    let mut state = 0x2545_f491_4f6c_dd1d_u64;
+    let noisy = spectrogram((0..240).map(|_| {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        frame(2, (state >> 33) as u8)
+    }));
+
+    for (name, arrhythmic) in [("a swell", &swell), ("noise", &noisy)] {
+        let features = derive_rhythm_features(arrhythmic);
+        assert_eq!(
+            features.pulse_strength, 0.0,
+            "{name} has no periodicity, so it must not read as metronomic"
+        );
+        assert_eq!(estimate_tempo(arrhythmic), None);
+    }
 }
 
 #[test]
