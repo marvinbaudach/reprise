@@ -238,6 +238,14 @@ pub fn reviewed_scan_id(conn: &Connection) -> Result<Option<i64>, DoctorError> {
     .map_err(DoctorError::from)
 }
 
+impl super::LibraryDoctor<'_> {
+    /// Marks the currently stored scan as acknowledged through the Core
+    /// facade, keeping SQLite connections out of frontend code.
+    pub fn set_reviewed_scan(&self, scan_id: i64) -> Result<(), DoctorError> {
+        set_reviewed_scan(self.conn, scan_id)
+    }
+}
+
 fn load_tracks(conn: &Connection, scan_id: i64) -> Result<Vec<DoctorTrackSnapshot>, DoctorError> {
     let mut statement = conn.prepare(
         "SELECT track_id, path, file_mtime, file_size, device, inode, read_ok, \

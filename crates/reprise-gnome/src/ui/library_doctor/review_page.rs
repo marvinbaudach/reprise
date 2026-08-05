@@ -216,7 +216,6 @@ const fn outcome_transition(state: DoctorWriteRowState) -> OutcomeTransition {
 
 pub(super) struct LibraryDoctorReviewPage {
     navigation_page: adw::NavigationPage,
-    filter: DoctorReviewFilter,
     state: Rc<ReviewState>,
     remote: adw::SwitchRow,
     rows: gtk4::ListView,
@@ -229,7 +228,6 @@ impl LibraryDoctorReviewPage {
         conn: &Rc<Db>,
         parent: &adw::ApplicationWindow,
         scan: DoctorScan,
-        filter: DoctorReviewFilter,
         on_remote_changed: Rc<dyn Fn(bool)>,
         on_edit: &Rc<dyn Fn(i64)>,
     ) -> Rc<Self> {
@@ -281,7 +279,10 @@ impl LibraryDoctorReviewPage {
 
         let state = Rc::new(ReviewState {
             scan: scan.clone(),
-            session: RefCell::new(DoctorReviewSession::from_scan(scan, filter)),
+            session: RefCell::new(DoctorReviewSession::from_scan(
+                scan,
+                DoctorReviewFilter::NeedsReview,
+            )),
             store,
             selection,
             content,
@@ -355,7 +356,6 @@ impl LibraryDoctorReviewPage {
             .build();
         let page = Rc::new(Self {
             navigation_page,
-            filter,
             state,
             remote,
             rows,
@@ -368,10 +368,6 @@ impl LibraryDoctorReviewPage {
 
     pub(super) fn navigation_page(&self) -> &adw::NavigationPage {
         &self.navigation_page
-    }
-
-    pub(super) const fn filter(&self) -> DoctorReviewFilter {
-        self.filter
     }
 
     pub(super) fn mark_paths_stale(&self, paths: &[PathBuf]) {
@@ -461,7 +457,7 @@ mod tests {
                 proposed: DoctorValue::Text("rock".into()),
                 source: ProposalSource::Local,
                 confidence: 100,
-                preselected: true,
+                preselected: false,
                 problem_class: ProblemClass::CasingWhitespace,
                 evidence: Vec::new(),
                 local_fallback: None,
@@ -478,14 +474,7 @@ mod tests {
         let parent = adw::ApplicationWindow::builder().build();
         let on_edit = Rc::new(|_| {}) as Rc<dyn Fn(i64)>;
 
-        let page = LibraryDoctorReviewPage::new(
-            &conn,
-            &parent,
-            scan(),
-            DoctorReviewFilter::NeedsReview,
-            Rc::new(|_| {}),
-            &on_edit,
-        );
+        let page = LibraryDoctorReviewPage::new(&conn, &parent, scan(), Rc::new(|_| {}), &on_edit);
 
         assert_eq!(page.state.store.n_items(), 1);
         assert_eq!(

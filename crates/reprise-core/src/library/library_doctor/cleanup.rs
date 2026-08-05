@@ -95,11 +95,22 @@ impl LibraryDoctor<'_> {
             .map(|(_, _, track_id)| *track_id)
             .collect::<HashSet<_>>()
             .len();
+        let change_count = self.conn.query_row(
+            &format!(
+                "SELECT COUNT(*) FROM tag_write_jobs j \
+                 JOIN tag_write_job_files f ON f.job_id=j.id \
+                 JOIN tag_write_journal v ON v.file_id=f.id \
+                 WHERE j.scan_id=?1 AND {ELIGIBLE} AND v.outcome='applied'"
+            ),
+            [scan_id],
+            |row| row.get::<_, i64>(0),
+        )?;
         Ok(Some(DoctorCleanup {
             scan_id,
             job_ids,
             created_at,
             track_count,
+            change_count: usize::try_from(change_count).unwrap_or_default(),
         }))
     }
 

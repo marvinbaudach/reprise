@@ -13,7 +13,6 @@ pub(super) fn show(overlay: &adw::ToastOverlay, text: &str) {
     overlay.add_toast(toast);
 }
 
-#[allow(dead_code)] // P7 wires the first Library Doctor action toast.
 pub(super) fn show_with_action(
     overlay: &adw::ToastOverlay,
     text: &str,

@@ -32,11 +32,6 @@ const fn remote_toggle_action(
     }
 }
 
-#[cfg(test)]
-pub(in crate::ui) const fn controls_sensitive(job_running: bool) -> bool {
-    !job_running
-}
-
 pub(in crate::ui) fn remote_suggestions_row_for(
     conn: &Rc<Db>,
     parent: &impl IsA<gtk4::Widget>,

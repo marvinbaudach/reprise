@@ -131,6 +131,9 @@ fn doc_10a_undo_reverts_the_quiet_and_the_reviewed_job_of_one_scan() {
     let db = crate::db::Db::open_in_memory().unwrap();
     let (_, quiet, reviewed) = apply_pair(&db, &paths);
 
+    let available = LibraryDoctor::new(&db).last_cleanup().unwrap().unwrap();
+    assert_eq!(available.change_count, 4);
+
     let cleanup = LibraryDoctor::new(&db)
         .revert_last_cleanup(|_| DoctorWriteControl::Continue)
         .unwrap()

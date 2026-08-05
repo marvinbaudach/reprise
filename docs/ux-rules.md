@@ -3203,26 +3203,26 @@ means deterministic and high-confidence, never „without review".
   rows on reopening, exact revalidation follows before writing. Newly
   added tracks are not retroactively taken into the snapshot.
 
-- **DOC-2b** [active] [gtk] — **26a is a summary, never a write
-  surface.** After the scan, Library Doctor separately shows
-  „N safe · local, preselected" and „N suggestions · review" as well as
-  problem classes for casing/whitespace, missing Album Artist, genre
-  variants, missing/wrong Year, and missing Recording MBID; each class
-  counts concrete track/field changes separately by safe/review. Ties
-  additionally appear as „N unresolved groups", not as safe.
-  „Review N changes" opens the full review table; „Review N safe fixes"
-  opens the same table locally filtered. No control on this page writes
-  tags. With the remote switch off, remote classes, rows, and counts
-  disappear completely, while the local result remains in place.
+- **DOC-2b** [active] [gtk] — **The result page is a summary of three
+  meanings, never a write surface.** After a scan the Doctor shows at most
+  three blocks: what was already applied without asking, what needs a
+  decision, and what has no clear winner. A block whose count is zero is not
+  rendered. The applied block names spacing/casing and MusicBrainz IDs
+  separately and carries Undo. The decision block names each remaining
+  category plus the album count and carries "Review N changes". The conflict
+  block says that conflicts are skippable at the end of review. Every number
+  counts tag changes that were or will be written; checked and skipped tracks
+  remain muted scan facts. Remote categories disappear completely while the
+  remote switch is off.
 
-- **DOC-2c** [active] [gtk] — **A running scan shows honest
-  intermediate results.** 26a replaces the empty starting state during
-  the job with „Results found so far" and updates checked/skipped
-  tracks, safe, review, problem, and unresolved counters after every
-  completed track. The intermediate state is read-only only: review
-  actions stay hidden until full completion, it is neither persisted nor
-  applicable. Cancel or an error discard it and show the last fully
-  completed result from DOC-2a again.
+- **DOC-2c** [active] [gtk] — **A running scan shows the same two blocks,
+  counting up in the tense that is true.** During the job the Doctor shows
+  "Results found so far" with applied and decision blocks updating after each
+  completed track, all actions insensitive, and the locked-controls reason.
+  The applied block says "N fixes to apply" and keeps Undo disabled until the
+  quiet write finishes; only then does it use applied wording and the write
+  report's actual counts. Intermediate state is never persisted or
+  applicable. Cancel or error restores the last completed result.
 
 - **DOC-3a** [active] [core] — **Review decides per field, and everything
   reviewable starts selected.** Every concrete track/field change has its own
@@ -3300,17 +3300,12 @@ means deterministic and high-confidence, never „without review".
   consumes the cleanup; Tag Editor jobs never replace its visible
   pointer.
 
-- **DOC-5c** [active] [gtk] — **Write jobs don't freeze the UI.** Apply
-  and Revert run in the shared progress card with a visible Cancel and
-  the same geometry as Scan/Sync. Button, progress, completion, and
-  errors count tracks primarily: „Apply 128 tracks",
-  „Updating tags… 42/128 tracks", „Tags updated · 128 tracks" or
-  „42 tracks updated · 86 cancelled". Tag changes and files are only
-  supplementary. A successful or partial Doctor write shows exactly one
-  undismissable undo-class toast with „Revert"; collected errors appear
-  once as „N updated, M failed · Details", never as a per-file toast.
-  The remote toggle and the Apply selection are locked during the write
-  job.
+- **DOC-5c** [active] [gtk] — **Write jobs don't freeze the UI.** Apply and
+  Revert run in the shared sidebar progress card with visible Cancel and the
+  same geometry as Scan/Sync. Progress counts tracks, while the Apply button
+  counts changes because that is what review decides. Completion names
+  updated tracks and collected errors once, never per file. The remote toggle
+  and selection remain locked during a write.
 
 - **DOC-5d** [active] [gtk] — **Result and app stay honestly current
   after writes.** After Apply or Revert, track list, Browse Bar,
@@ -3366,20 +3361,15 @@ means deterministic and high-confidence, never „without review".
   unavailable", while Local and pure MusicBrainz resolution keep
   working.
 
-- **DOC-7b** [active] [gtk] — **Library Doctor is a directly available
-  main-window navigation.** 26a lives as a root page in the existing
-  `content_nav`, 26b is pushed onto it; Back returns to 26a with the
-  in-session selection unchanged. There is no Doctor dialog and no
-  additional Apply confirmation dialog. Entry points are the Plugins
-  page with the privacy subtitle „contacts MusicBrainz / AcoustID", the
-  library's ⋮ menu, and the STATS-DEDUP hint; every entry leads directly
-  to the Doctor page. The scope is not a persistent plugin setting:
-  default Whole Library, suggested as Current View from a filtered view,
-  Selection from a selection context. The expanded plugin row shows,
-  without a main switch, scope, remote switch, the note „local fixes
-  always included · no network", „Run scan now", and „Revert last
-  cleanup". Revert remains available via a minimal Doctor job page and
-  activates no network.
+- **DOC-7b** [active] [gtk] — **The Library Doctor has exactly one entry
+  point.** The global ⋮ menu carries one flat "Library Doctor" item with no
+  badge or submenu; there is no Preferences surface. Its start page owns
+  scope, the remote switch, "Run Scan Now" and the only "Revert Last Cleanup"
+  in the app. The summary is a root page in `content_nav`, review is pushed
+  onto it, and Back preserves the in-session selection. There is no Doctor
+  dialog or Apply confirmation. Scope is not persistent: Whole Library by
+  default, Current View suggested from a filtered view, Selection from a
+  selection context.
 
 - **DOC-8a** [active] [gtk] — **The menu holds the verb, the sidebar holds
   the noun.** The global ⋮ menu is the only way to start a scan. While a
@@ -3419,6 +3409,23 @@ means deterministic and high-confidence, never „without review".
   `doc_8b_scan_completion_enqueues_the_auto_applied_job_before_the_summary`,
   `doc_8b_a_scan_with_no_auto_rows_creates_no_job`.
 
+- **DOC-8c** [active] [gtk] — **The start page owns the run.** Scope is a
+  segmented control with three always-visible options. The remote toggle
+  carries its privacy sentence verbatim and retains the versioned consent
+  sheet. "Run Scan Now" is the single primary action, with a track count and
+  rough duration beside it. Below a separator, and only while a revertible
+  cleanup exists, are the last-scan line and the only "Revert Last Cleanup"
+  action. *Tests:* `doc_8c_start_page_carries_scope_remote_run_and_the_only_revert`,
+  `doc_8c_last_scan_block_is_hidden_without_a_revertible_cleanup`.
+
+- **DOC-9a** [active] [gtk] — **The summary has no zero-count block.** The
+  applied, review, and conflict blocks follow DOC-2b's order and use written
+  tag changes as their shared unit, including album-level proposals expanded
+  over every affected track. *Tests:*
+  `doc_9a_summary_renders_three_blocks_and_never_a_zero_row`,
+  `doc_9a_summary_omits_the_conflicts_block_without_conflicts`,
+  `doc_9a_every_visible_count_is_a_written_change_count`.
+
 - **DOC-9b** [planned] [gtk] — **The review list is grouped by album.**
   Rows are grouped by album in scope order under one header per album. A
   change that applies identically to every track of an album collapses into
@@ -3431,6 +3438,17 @@ means deterministic and high-confidence, never „without review".
   `doc_9b_album_level_change_collapses_into_one_row_over_all_tracks`,
   `doc_9b_tracks_without_an_album_form_one_trailing_group`,
   `doc_9b_group_counts_report_written_changes_not_display_rows`.
+
+- **DOC-9c** [active] [gtk] — **After the write, and after a clean scan, the
+  Doctor says so on its own page.** Post-apply names updated tracks, written
+  changes, albums and conflicts left open, offers "Undo everything from this
+  scan" beside "Done", and names the quiet fixes included by Undo. Its counts
+  come from the write report, never the frozen plan. Done acknowledges the
+  whole scan. A clean scan is a distinct "Nothing to fix" page with checked
+  and skipped counts and "Scan again", never the pre-scan state. *Tests:*
+  `doc_9c_post_apply_names_the_quiet_fixes_and_the_unresolved_conflicts`,
+  `doc_9c_post_apply_reports_the_write_report_not_the_plan`,
+  `doc_9c_nothing_to_fix_is_distinct_from_the_pre_scan_state`.
 
 - **DOC-10a** [active] [core] — **Undo is one bracket per scan.** The job
   applied without asking and the reviewed job of the same scan revert together
@@ -3463,15 +3481,13 @@ means deterministic and high-confidence, never „without review".
   applied before the upgrade stays revertible. *Test:*
   `doc_10c_upgrade_clears_the_stored_scan_pointer_and_keeps_the_cleanup_revertible`.
 
-- **DOC-6c** [planned] [manual] — **The visible sign-off matches
-  frames 26a, 26b, and 27.** On a real GNOME display, wide and narrow
-  review geometry, row virtualization while scrolling, strikethrough and
-  empty display, teal/yellow/red source states, the 41% warning, focus
-  indicators in the normal and high-contrast theme, plugin expansion
-  including the one-time network confirmation, and the shared
-  scan/apply/revert progress card are checked. No text is truncated, no
-  column forces horizontal page scrolling, and the interface remains
-  operable during real file jobs.
+- **DOC-6c** [planned] [manual] — **The visible sign-off covers every Doctor
+  state.** On a real GNOME display, the start page, sidebar entry, grouped
+  review with one header, post-apply and nothing-to-fix pages, wide and narrow
+  geometry, virtualization, strikethrough, source states, focus indicators,
+  one-time network confirmation and the shared scan/apply/revert progress card
+  are checked. No text is truncated, no column forces horizontal scrolling,
+  and the interface remains operable during real file jobs.
 ## Z. Single-pane track browser
 
 - **BROWSE-1** [active] [e2e] — **Music has exactly one track list.**

@@ -9,8 +9,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use reprise_core::fingerprint::FingerprintBackend;
 use reprise_core::library_doctor::{
-    DoctorApplyPlan, DoctorCleanupReport, DoctorScanOutcome, DoctorScanProgress, DoctorScanRequest,
-    DoctorWriteControl, DoctorWriteProgress, DoctorWriteReport, LibraryDoctor, ScanControl,
+    DoctorApplyPlan, DoctorCleanupReport, DoctorScan, DoctorScanOutcome, DoctorScanProgress,
+    DoctorScanRequest, DoctorWriteControl, DoctorWriteProgress, DoctorWriteReport, LibraryDoctor,
+    ScanControl,
 };
 
 pub(super) fn run_scan(
@@ -29,6 +30,26 @@ pub(super) fn run_scan(
                 ScanControl::Cancel
             } else {
                 ScanControl::Continue
+            }
+        })
+        .map_err(|error| error.to_string())
+}
+
+pub(super) fn run_auto_apply(
+    db_path: &Path,
+    scan: &DoctorScan,
+    cancellation: &AtomicBool,
+    publish: &mut dyn FnMut(DoctorWriteProgress),
+) -> Result<Option<DoctorWriteReport>, String> {
+    let conn =
+        reprise_core::db::Db::open_migrated(Some(db_path)).map_err(|error| error.to_string())?;
+    LibraryDoctor::new(&conn)
+        .apply_auto_tier(scan, |progress| {
+            publish(progress);
+            if cancellation.load(Ordering::Relaxed) {
+                DoctorWriteControl::Cancel
+            } else {
+                DoctorWriteControl::Continue
             }
         })
         .map_err(|error| error.to_string())

@@ -237,12 +237,6 @@ fn set_11_online_content_header_owns_the_master_switch() {
 }
 
 #[test]
-fn doc_6b_library_doctor_controls_explain_job_locking() {
-    assert!(crate::ui::library_doctor::remote_toggle::controls_sensitive(false));
-    assert!(!crate::ui::library_doctor::remote_toggle::controls_sensitive(true));
-}
-
-#[test]
 fn doc_7b_library_doctor_has_no_preferences_surface() {
     assert!(!LOCAL_PLUGIN_IDS.contains(&"library_doctor"));
     assert!(!plugin_uses_expander("library_doctor"));

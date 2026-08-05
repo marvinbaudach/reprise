@@ -57,6 +57,7 @@ pub struct DoctorCleanup {
     pub job_ids: Vec<i64>,
     pub created_at: i64,
     pub track_count: usize,
+    pub change_count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
