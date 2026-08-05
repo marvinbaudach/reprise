@@ -5159,3 +5159,12 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:18
 msgid "Separate title bar"
 msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:177
+#, rust-format
+msgid "Streaming · {percent}% loaded"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_radio.rs:22
+msgid "LIVE"
+msgstr ""

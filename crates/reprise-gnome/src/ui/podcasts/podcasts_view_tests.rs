@@ -139,11 +139,11 @@ fn src_14_selecting_a_row_does_not_rebuild_it() {
     );
 }
 
-/// `SRC-14` and `SRC-12a` together: selection updates the retained media
-/// overlays without rebuilding the rows or exposing every checkbox at once.
+/// `SRC-14` and `SRC-12b` together: selection updates the retained row tint
+/// without rebuilding the rows or covering their artwork.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn src_12a_starting_a_selection_reveals_every_row_checkbox_without_a_rebuild() {
+fn src_12b_starting_a_selection_tints_the_row_without_a_rebuild() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let (view, _) = view_with_expanded_episodes(2);
@@ -158,24 +158,14 @@ fn src_12a_starting_a_selection_reveals_every_row_checkbox_without_a_rebuild() {
         widgets[&order[0]].row.as_ptr(),
         "the row widget was rebuilt"
     );
-    assert_eq!(
-        widgets[&order[0]]
-            .media
-            .as_ref()
-            .expect("grouped row media")
-            .checkbox()
-            .opacity(),
-        1.0
-    );
-    assert_eq!(
-        widgets[&order[1]]
-            .media
-            .as_ref()
-            .expect("grouped row media")
-            .checkbox()
-            .opacity(),
-        0.0,
-        "an unhovered, unselected row shows no checkbox in selection mode"
+    assert!(widgets[&order[0]]
+        .row
+        .has_css_class(podcasts_groups::SELECTED_ROW_CLASS));
+    assert!(
+        !widgets[&order[1]]
+            .row
+            .has_css_class(podcasts_groups::SELECTED_ROW_CLASS),
+        "an unselected row keeps its neutral background"
     );
 }
 
@@ -211,7 +201,7 @@ fn src_14_a_range_selects_every_row_between_anchor_and_target() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn src_12a_escape_clears_episode_selection_and_a_second_escape_proceeds() {
+fn src_12b_escape_clears_episode_selection_and_a_second_escape_proceeds() {
     gtk4::init().unwrap();
     let (view, _) = view_with_expanded_episodes(3);
     let order = view.rendered_order();

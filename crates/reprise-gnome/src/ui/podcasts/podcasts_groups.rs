@@ -43,7 +43,6 @@ pub(super) struct DownloadRowWidgets {
 /// be applied without rebuilding the list — see `PodcastsView::apply_selection`.
 pub(super) struct SelectionRowWidgets {
     pub(super) row: gtk4::Box,
-    pub(super) media: Option<Rc<crate::ui::source_row::MediaColumn>>,
     pub(super) reveal: Option<Rc<crate::ui::source_row::Reveal>>,
 }
 
@@ -73,7 +72,6 @@ struct GroupRenderContext<'a> {
     connectivity: Connectivity,
     unavailable_episode: Option<i64>,
     selection: &'a Rc<RefCell<PodcastSelection>>,
-    selected_ids: Vec<i64>,
 }
 
 struct EpisodeRenderContext<'a> {
@@ -82,7 +80,6 @@ struct EpisodeRenderContext<'a> {
     images_allowed: bool,
     network: RowNetworkState,
     selection: &'a Rc<RefCell<PodcastSelection>>,
-    selected_ids: &'a [i64],
     unavailable_episode: Option<i64>,
 }
 
@@ -109,7 +106,6 @@ pub(super) fn replace(
         selection: BTreeMap::new(),
         channels: BTreeMap::new(),
     };
-    let selected_ids = selection.borrow().selected_ids();
     let context = GroupRenderContext {
         playing_episode,
         expanded_sources,
@@ -121,7 +117,6 @@ pub(super) fn replace(
         connectivity,
         unavailable_episode,
         selection,
-        selected_ids,
     };
     for rendered in groups {
         container.append(&build_group(rendered, &context, &mut widgets));
@@ -211,7 +206,6 @@ fn build_group(
                     unavailable_now: context.unavailable_episode == Some(episode.id),
                 },
                 selection: context.selection,
-                selected_ids: &context.selected_ids,
                 unavailable_episode: context.unavailable_episode,
             },
         ));
@@ -358,13 +352,11 @@ fn episode_row(
         root.add_css_class(SELECTED_ROW_CLASS);
     }
     let (artwork, shape) = episode_thumbnail(row, context.images_allowed);
-    let media = Rc::new(crate::ui::source_row::MediaColumn::new(&artwork, shape));
+    let media = crate::ui::source_row::media(&artwork, shape);
     let marker = playing_marker::build();
-    marker.add_css_class("reprise-podcast-episode-marker");
     playing_marker::set_playing(&marker, playing);
-    media.set_state_overlay(&marker);
-    media.set_loaded(loaded);
-    skeleton.media.append(media.widget());
+    marker.set_visible(loaded);
+    skeleton.media.append(&media);
     install_row_interaction(&root, row.id, SELECT_ROW_ACTION);
     podcasts_context_surface::wire_episode_row(
         &root,
@@ -380,7 +372,13 @@ fn episode_row(
     title.set_xalign(0.0);
     title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
     title.add_css_class("reprise-source-row-title");
-    skeleton.identity.append(&title);
+    if loaded {
+        title.add_css_class(playing_marker::PLAYING_TITLE_CLASS);
+    }
+    let title_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+    title_row.append(&marker);
+    title_row.append(&title);
+    skeleton.identity.append(&title_row);
     let date = relative_date(row.published_at, Local::now().date_naive());
     let duration = duration(row.duration_secs);
     let detail_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
@@ -432,28 +430,10 @@ fn episode_row(
     skeleton.trailing.append(&menu);
     let reveal = Rc::new(crate::ui::source_row::Reveal::install(&root, &menu));
     reveal.set_selected(is_selected);
-    let hover_media = media.clone();
-    reveal.on_hover(move |hovered| hover_media.set_hovered(hovered));
-    let focus_media = media.clone();
-    root.connect_has_focus_notify(move |row| focus_media.set_focused(row.has_focus()));
-    media.set_selection_mode(!context.selected_ids.is_empty());
-    media.set_selected(is_selected);
-    let checkbox_id = row.id;
-    media.connect_toggled(move |checkbox| {
-        let target = (
-            checkbox_id,
-            super::podcasts_selection::SelectMode::Toggle.as_u8(),
-        )
-            .to_variant();
-        if let Err(error) = checkbox.activate_action(SELECT_ROW_ACTION, Some(&target)) {
-            tracing::debug!(%error, checkbox_id, "selection checkbox did not reach the action");
-        }
-    });
     widgets.selection.insert(
         row.id,
         SelectionRowWidgets {
             row: root.clone(),
-            media: Some(media),
             reveal: Some(reveal),
         },
     );

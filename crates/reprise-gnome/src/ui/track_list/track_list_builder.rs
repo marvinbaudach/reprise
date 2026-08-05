@@ -185,7 +185,7 @@ pub(in crate::ui) fn build(
             });
     }
 
-    // NAV-10a: "the user is scrolling right now" has to come from what the
+    // NAV-10b: "the user is scrolling right now" has to come from what the
     // user did, not from the adjustment moving. Every reload, every anchor
     // restore, GTK's own reset after `items_changed` — and the centering
     // glide itself — write this value, so reading activity off

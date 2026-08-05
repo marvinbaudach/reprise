@@ -5,7 +5,7 @@
 use super::*;
 
 #[test]
-fn nav_10a_playback_scroll_policy_distinguishes_user_intent() {
+fn nav_10b_playback_scroll_policy_distinguishes_user_intent() {
     assert_eq!(
         reveal_policy(CurrentTrackChange::PlaybackStarted, false),
         TrackRevealPolicy::MarkerOnly
@@ -26,7 +26,7 @@ fn nav_10a_playback_scroll_policy_distinguishes_user_intent() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn nav_10a_row_activation_marker_does_not_move_selection_or_viewport() {
+fn nav_10b_row_activation_marker_does_not_move_selection_or_viewport() {
     gtk4::init().unwrap();
     let conn = crate::test_db::open().unwrap();
     let fixture_conn = crate::test_db::connection(&conn);

@@ -24,7 +24,9 @@ use super::podcasts_playback::EpisodeMark;
 use super::podcasts_presentation::{
     duration, on_phone, relative_date, source_header, RenderedSourceGroup,
 };
-use super::podcasts_row_interaction::{install_row_interaction, SELECT_CHANNEL_ROW_ACTION};
+use super::podcasts_row_interaction::{
+    episode_thumbnail, install_row_interaction, SELECT_CHANNEL_ROW_ACTION,
+};
 use super::podcasts_selection::{PodcastSelection, SelectMode};
 use crate::ui::playing_marker;
 use crate::ui::strings;
@@ -636,6 +638,8 @@ impl YoutubeChannelDetail {
             self.unavailable_episode.get(),
             SELECT_CHANNEL_ROW_ACTION,
         );
+        let (artwork, shape) = episode_thumbnail(episode, self.images_allowed.get());
+        row.append(&crate::ui::source_row::media(&artwork, shape));
         let play = gtk4::Button::new();
         play.add_css_class("flat");
         play.set_tooltip_text(Some(&strings::text(strings::PLAY_OR_PAUSE)));
@@ -644,28 +648,27 @@ impl YoutubeChannelDetail {
         ))]);
         play.set_action_name(Some("podcasts.play"));
         play.set_action_target_value(Some(&episode.id.to_variant()));
-        let play_surface = gtk4::Overlay::new();
-        play_surface.set_size_request(32, 32);
         let marker = playing_marker::build();
-        marker.add_css_class("reprise-podcast-episode-marker");
         playing_marker::set_playing(&marker, playing);
         marker.set_visible(loaded);
-        play_surface.add_overlay(&marker);
         let play_glyph = gtk4::Image::from_icon_name(if playing {
             "media-playback-pause-symbolic"
         } else {
             "media-playback-start-symbolic"
         });
-        play_glyph.set_opacity(if loaded { 0.0 } else { 1.0 });
-        play_surface.add_overlay(&play_glyph);
-        play.set_child(Some(&play_surface));
-        row.append(&play);
+        play.set_child(Some(&play_glyph));
         let copy = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
         copy.set_hexpand(true);
         let title = gtk4::Label::new(Some(&episode.title));
         title.set_xalign(0.0);
         title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
-        copy.append(&title);
+        if loaded {
+            title.add_css_class(playing_marker::PLAYING_TITLE_CLASS);
+        }
+        let title_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+        title_row.append(&marker);
+        title_row.append(&title);
+        copy.append(&title_row);
         let date = relative_date(episode.published_at, Local::now().date_naive());
         let duration = duration(episode.duration_secs);
         let detail = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
@@ -684,6 +687,7 @@ impl YoutubeChannelDetail {
         }
         copy.append(&detail);
         row.append(&copy);
+        row.append(&play);
         let status = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
         let action = gtk4::Button::new();
         action.add_css_class("flat");
@@ -723,7 +727,6 @@ impl YoutubeChannelDetail {
             episode.id,
             SelectionRowWidgets {
                 row: row.clone(),
-                media: None,
                 reveal: Some(reveal),
             },
         );

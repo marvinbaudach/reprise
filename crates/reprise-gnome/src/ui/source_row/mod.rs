@@ -8,7 +8,7 @@ mod skeleton;
 
 pub(in crate::ui) use css::css;
 pub(in crate::ui) use detail_line::{chip, detail_line, resume_percent, ChipSpec};
-pub(in crate::ui) use media_column::{media_size, MediaColumn, MediaShape};
+pub(in crate::ui) use media_column::{media, media_size, MediaShape};
 pub(in crate::ui) use reveal::Reveal;
 #[allow(unused_imports)]
 pub(in crate::ui) use skeleton::{

@@ -1,6 +1,9 @@
 use super::*;
 use crate::player_effects::{build_audio_filter, requested_state, same_filter_topology};
-use crate::player_pipeline::{merge_stream_tags, AUDIO_SINK_ENV_VAR};
+use crate::player_pipeline::{
+    buffered_percent_to_ms, download_buffering_flags, is_remote_playback_uri, merge_stream_tags,
+    BufferingThrottle, AUDIO_SINK_ENV_VAR,
+};
 use reprise_core::library::settings::TrackTransition;
 
 mod cava_tests;
@@ -45,6 +48,89 @@ fn stream_tags_merge_partial_updates_and_suppress_duplicates() {
     assert_eq!(
         merge_stream_tags(&complete, Some("Current song".into()), None),
         None
+    );
+}
+
+#[test]
+fn buffering_events_are_remote_only_changed_and_throttled() {
+    use std::time::{Duration, Instant};
+
+    assert!(is_remote_playback_uri(Some("https://example.test/episode")));
+    assert!(!is_remote_playback_uri(Some("file:///music/song.flac")));
+    assert!(!is_remote_playback_uri(None));
+
+    let start = Instant::now();
+    let mut throttle = BufferingThrottle::default();
+    assert!(throttle.should_emit(start, (20, Some(10_000))));
+    assert!(!throttle.should_emit(start + Duration::from_secs(1), (20, Some(10_000))));
+    assert!(!throttle.should_emit(start + Duration::from_millis(200), (30, Some(15_000))));
+    assert!(throttle.should_emit(start + Duration::from_millis(250), (30, Some(15_000))));
+}
+
+/// The dedup is what keeps a steady buffer from spamming the bar, but it has
+/// no business reaching across a stream boundary: two different streams very
+/// plausibly open on the same `(0, None)` — nothing known yet — and the second
+/// one's first word would be swallowed, leaving the bar showing the previous
+/// track's buffer for as long as the new one stays at that value.
+#[test]
+fn a_new_stream_is_heard_even_when_it_opens_on_the_previous_one_s_last_value() {
+    use std::time::{Duration, Instant};
+
+    let start = Instant::now();
+    let mut throttle = BufferingThrottle::default();
+    assert!(throttle.should_emit(start, (0, None)));
+
+    let next_stream = start + Duration::from_secs(30);
+    assert!(
+        !throttle.should_emit(next_stream, (0, None)),
+        "without a reset the identical tuple is suppressed, however old it is"
+    );
+
+    throttle.reset();
+    assert!(
+        throttle.should_emit(next_stream, (0, None)),
+        "a stream start clears the memory, so the new stream is heard"
+    );
+}
+
+#[test]
+fn download_buffering_is_only_enabled_for_finite_remote_media() {
+    const DOWNLOAD: u32 = 0x80;
+    const PLAYBIN_DEFAULTS: u32 = 0x717;
+    let defaults_with_download = PLAYBIN_DEFAULTS | DOWNLOAD;
+
+    assert_eq!(
+        download_buffering_flags(PLAYBIN_DEFAULTS, "https://example.test/episode.mp3", false),
+        defaults_with_download,
+        "finite remote media enables progressive download buffering without dropping defaults"
+    );
+    assert_eq!(
+        download_buffering_flags(defaults_with_download, "file:///music/song.flac", false),
+        PLAYBIN_DEFAULTS,
+        "local files clear only the download bit"
+    );
+    assert_eq!(
+        download_buffering_flags(defaults_with_download, "https://radio.example/live", true),
+        PLAYBIN_DEFAULTS,
+        "live radio clears only the download bit"
+    );
+}
+
+#[test]
+fn percent_buffering_ranges_convert_to_duration_milliseconds() {
+    let percent_max = u64::from(gst::format::Percent::MAX.ppm());
+    assert_eq!(percent_max, 1_000_000, "GStreamer percent uses ppm scale");
+    assert_eq!(
+        buffered_percent_to_ms(percent_max, Some(120_000)),
+        Some(120_000)
+    );
+    assert_eq!(buffered_percent_to_ms(250_000, Some(120_000)), Some(30_000));
+    assert_eq!(buffered_percent_to_ms(0, Some(120_000)), Some(0));
+    assert_eq!(buffered_percent_to_ms(250_000, None), None);
+    assert_eq!(
+        buffered_percent_to_ms(u64::MAX, Some(120_000)),
+        Some(120_000),
+        "an invalid range stop is bounded without overflow"
     );
 }
 

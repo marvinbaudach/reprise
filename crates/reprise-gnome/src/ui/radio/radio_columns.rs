@@ -10,6 +10,7 @@ use super::radio_model::RadioObject;
 use super::radio_presentation::{
     format_bitrate, format_country, format_genre, now_playing, row_is_accented, RadioLiveState,
 };
+use crate::ui::playing_marker;
 use crate::ui::strings;
 use crate::ui::table_column_widths as widths;
 
@@ -17,6 +18,12 @@ pub(super) type LiveState = Rc<dyn Fn() -> RadioLiveState>;
 /// `NET-3b`: read at right-click/context-menu-key time so the Play entry's
 /// label always reflects current connectivity, never a stale snapshot.
 pub(super) type ConnectivitySource = Rc<dyn Fn() -> Connectivity>;
+
+#[derive(Clone, Copy)]
+struct ColumnTitle<'a> {
+    text: &'a str,
+    playback_accent: bool,
+}
 
 fn apply_playing_style(widget: &gtk4::Widget, playing: bool) {
     if playing {
@@ -30,13 +37,14 @@ fn apply_playing_style(widget: &gtk4::Widget, playing: bool) {
 /// must carry one (STYLE-9).
 fn text_column(
     view: &gtk4::ColumnView,
-    title: &str,
+    title: ColumnTitle<'_>,
     sizing: widths::Sizing,
     render: impl Fn(&StationRow, &RadioLiveState) -> String + 'static,
     live_state: &LiveState,
     connectivity: &ConnectivitySource,
     cells: &Rc<RadioLiveCells>,
 ) {
+    let is_title = title.playback_accent;
     let factory = gtk4::SignalListItemFactory::new();
     let live_for_gesture = live_state.clone();
     let connectivity_for_gesture = connectivity.clone();
@@ -86,7 +94,15 @@ fn text_column(
             Rc::new(move || {
                 let live = live_state();
                 label.set_text(&render(&row, &live));
-                apply_playing_style(label.upcast_ref(), row_is_accented(row.id, &live));
+                let loaded = row_is_accented(row.id, &live);
+                apply_playing_style(label.upcast_ref(), loaded);
+                if is_title {
+                    if loaded {
+                        label.add_css_class(playing_marker::PLAYING_TITLE_CLASS);
+                    } else {
+                        label.remove_css_class(playing_marker::PLAYING_TITLE_CLASS);
+                    }
+                }
             }) as Rc<dyn Fn()>
         };
         apply();
@@ -106,9 +122,12 @@ fn text_column(
         };
         label.set_text("");
         label.remove_css_class("reprise-radio-playing");
+        if is_title {
+            label.remove_css_class(playing_marker::PLAYING_TITLE_CLASS);
+        }
     });
     let column = gtk4::ColumnViewColumn::builder()
-        .title(title)
+        .title(title.text)
         .factory(&factory)
         .resizable(true)
         .build();
@@ -130,6 +149,9 @@ fn state_column(
             return;
         };
         let cell = gtk4::Box::new(gtk4::Orientation::Horizontal, 2);
+        let marker = playing_marker::build();
+        marker.set_visible(false);
+        cell.append(&marker);
         let icon = gtk4::Image::new();
         icon.set_pixel_size(24);
         cell.append(&icon);
@@ -156,7 +178,10 @@ fn state_column(
         let Some(cell) = surface.first_child().and_downcast::<gtk4::Box>() else {
             return;
         };
-        let Some(icon) = cell.first_child().and_downcast::<gtk4::Image>() else {
+        let Some(marker) = cell.first_child().and_downcast::<gtk4::Box>() else {
+            return;
+        };
+        let Some(icon) = marker.next_sibling().and_downcast::<gtk4::Image>() else {
             return;
         };
         let Some(object) = item.item().and_downcast::<RadioObject>() else {
@@ -166,13 +191,13 @@ fn state_column(
         let apply = {
             let live_state = live_state.clone();
             Rc::new(move || {
-                let playing = row_is_accented(station_id, &live_state());
-                icon.set_icon_name(Some(if playing {
-                    "audio-volume-high-symbolic"
-                } else {
-                    "network-wireless-symbolic"
-                }));
-                apply_playing_style(cell.upcast_ref(), playing);
+                let live = live_state();
+                let loaded = row_is_accented(station_id, &live);
+                playing_marker::set_playing(&marker, live.playing);
+                marker.set_visible(loaded);
+                icon.set_icon_name(Some("network-wireless-symbolic"));
+                icon.set_visible(!loaded);
+                apply_playing_style(cell.upcast_ref(), loaded);
             }) as Rc<dyn Fn()>
         };
         apply();
@@ -200,17 +225,78 @@ fn state_column(
     view.append_column(&column);
 }
 
+fn artwork_column(
+    view: &gtk4::ColumnView,
+    live_state: &LiveState,
+    connectivity: &ConnectivitySource,
+) {
+    let factory = gtk4::SignalListItemFactory::new();
+    let live_for_gesture = live_state.clone();
+    let connectivity_for_gesture = connectivity.clone();
+    factory.connect_setup(move |_, object| {
+        let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
+            return;
+        };
+        let cell = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+        let live = live_for_gesture.clone();
+        let connectivity = connectivity_for_gesture.clone();
+        let surface = crate::ui::source_context_surface::wrap(&cell);
+        radio_context_menu::wire_gesture(
+            &surface,
+            item,
+            move |id| row_is_accented(id, &live()),
+            move || connectivity(),
+        );
+        item.set_child(Some(&surface));
+    });
+    factory.connect_bind(move |_, object| {
+        let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
+            return;
+        };
+        let Some(surface) = item.child().and_downcast::<gtk4::Box>() else {
+            return;
+        };
+        let Some(cell) = surface.first_child().and_downcast::<gtk4::Box>() else {
+            return;
+        };
+        let Some(object) = item.item().and_downcast::<RadioObject>() else {
+            return;
+        };
+        while let Some(child) = cell.first_child() {
+            cell.remove(&child);
+        }
+        let row = object.row();
+        let artwork = crate::ui::podcasts::source_image::SourceImage::new(
+            row.favicon_url.as_deref(),
+            "audio-input-microphone-symbolic",
+            36,
+            crate::ui::podcasts::source_image::gate_open(),
+        );
+        cell.append(artwork.widget());
+    });
+    let column = gtk4::ColumnViewColumn::builder()
+        .factory(&factory)
+        .resizable(false)
+        .build();
+    widths::pin(&column, crate::ui::source_row::MEDIA_WIDTH);
+    view.append_column(&column);
+}
+
 pub(super) fn append_columns(
     view: &gtk4::ColumnView,
     live_state: &LiveState,
     connectivity: &ConnectivitySource,
     cells: &Rc<RadioLiveCells>,
 ) {
+    artwork_column(view, live_state, connectivity);
     state_column(view, live_state, connectivity, cells);
     // Station is the filler: it owns whatever width the pinned columns leave.
     text_column(
         view,
-        &strings::text(strings::RADIO_STATION),
+        ColumnTitle {
+            text: &strings::text(strings::RADIO_STATION),
+            playback_accent: true,
+        },
         widths::Sizing::filler(widths::TITLE_MIN),
         |row, _| row.name.clone(),
         live_state,
@@ -219,7 +305,10 @@ pub(super) fn append_columns(
     );
     text_column(
         view,
-        &strings::text(strings::RADIO_GENRE),
+        ColumnTitle {
+            text: &strings::text(strings::RADIO_GENRE),
+            playback_accent: false,
+        },
         widths::Sizing::pinned(widths::LABEL),
         |row, _| format_genre(row.genre.as_deref()),
         live_state,
@@ -228,7 +317,10 @@ pub(super) fn append_columns(
     );
     text_column(
         view,
-        &strings::text(strings::RADIO_BITRATE),
+        ColumnTitle {
+            text: &strings::text(strings::RADIO_BITRATE),
+            playback_accent: false,
+        },
         widths::Sizing::pinned(widths::NUMERIC),
         |row, _| format_bitrate(row.bitrate_kbps),
         live_state,
@@ -237,7 +329,10 @@ pub(super) fn append_columns(
     );
     text_column(
         view,
-        &strings::text(strings::RADIO_COUNTRY),
+        ColumnTitle {
+            text: &strings::text(strings::RADIO_COUNTRY),
+            playback_accent: false,
+        },
         widths::Sizing::pinned(widths::SHORT_LABEL),
         |row, _| format_country(row.country_code.as_deref()),
         live_state,
@@ -248,7 +343,10 @@ pub(super) fn append_columns(
     // the table, and the reason this column must never size itself.
     text_column(
         view,
-        &strings::text(strings::RADIO_NOW_PLAYING),
+        ColumnTitle {
+            text: &strings::text(strings::RADIO_NOW_PLAYING),
+            playback_accent: false,
+        },
         widths::Sizing::pinned(widths::NAME),
         |row, live| now_playing(row.id, live),
         live_state,
@@ -361,5 +459,28 @@ mod tests {
             !source.contains(&removed_icon),
             "the hover star is gone from the radio state cell"
         );
+    }
+
+    #[test]
+    fn nav_10b_the_radio_marker_reapplies_without_rebuilding_the_model() {
+        let source = include_str!("radio_columns.rs");
+
+        assert!(source.contains("playing_marker::build"));
+        assert!(source.contains("playing_marker::set_playing"));
+        assert!(source.contains("cells_for_bind.register"));
+        assert!(source.contains("playing_marker::PLAYING_TITLE_CLASS"));
+        let model_signal = ["items", "_changed"].concat();
+        assert!(!source.contains(&model_signal));
+        let retired_glyph = ["audio-volume-high", "-symbolic"].concat();
+        assert!(!source.contains(&retired_glyph));
+
+        let append = source
+            .split_once("pub(super) fn append_columns")
+            .expect("column composition")
+            .1;
+        let artwork = append.find("artwork_column").expect("artwork column");
+        let marker = append.find("state_column").expect("marker column");
+        let title = append.find("RADIO_STATION").expect("station title column");
+        assert!(artwork < marker && marker < title);
     }
 }

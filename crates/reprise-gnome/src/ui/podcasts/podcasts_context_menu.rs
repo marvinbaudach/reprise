@@ -549,7 +549,7 @@ mod tests {
     }
 
     #[test]
-    fn src_12a_a_menu_on_a_row_outside_the_selection_acts_on_that_row_alone() {
+    fn src_12b_a_menu_on_a_row_outside_the_selection_acts_on_that_row_alone() {
         let row = episode(3, false);
 
         let menu = build_for_selection(&row, &[1, 2], None);
@@ -577,7 +577,7 @@ mod tests {
     }
 
     #[test]
-    fn src_12a_a_menu_on_a_selected_row_acts_on_the_whole_selection() {
+    fn src_12b_a_menu_on_a_selected_row_acts_on_the_whole_selection() {
         let row = episode(2, false);
 
         let menu = build_for_selection(&row, &[1, 2, 3], None);
@@ -635,7 +635,7 @@ mod tests {
     }
 
     #[test]
-    fn src_12a_multi_selection_hides_single_targets_and_offers_explicit_played_states() {
+    fn src_12b_multi_selection_hides_single_targets_and_offers_explicit_played_states() {
         let mut entries = multi_selection_primary_entries();
         entries.push(multi_selection_destructive_entry());
         let actions = entries.iter().map(|entry| entry.action).collect::<Vec<_>>();

@@ -74,7 +74,7 @@ fn should_advance_after_user_delete(ids: &[i64], loaded: Option<i64>) -> bool {
 /// first Play only starts the audio, because the viewport is already the one
 /// the reveal would scroll to — and a glide onto the value the list already
 /// holds is the second visible centering this bug report is about. Every other
-/// start from Stopped keeps NAV-10a's explicit-transport reveal.
+/// start from Stopped keeps NAV-10b's explicit-transport reveal.
 fn toggle_action(
     status: MprisPlaybackStatus,
     current_track: Option<QueueItem>,

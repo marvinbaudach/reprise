@@ -1,4 +1,4 @@
-//! NAV-10a display test: a reload that lands mid-glide must not abort it.
+//! NAV-10b display test: a reload that lands mid-glide must not abort it.
 //!
 //! The follow-the-song glide yields to anything else that writes the
 //! adjustment (`scroll_glide.rs`'s `foreign_write`) — which is right for a
@@ -54,7 +54,7 @@ fn synthetic_track_list(rows: i64) -> (Rc<TrackList>, gtk4::Window) {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn nav_10a_a_scan_reload_mid_glide_does_not_strand_the_follow() {
+fn nav_10b_a_scan_reload_mid_glide_does_not_strand_the_follow() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     gtk4::Settings::default()

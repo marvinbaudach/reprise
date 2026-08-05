@@ -51,7 +51,10 @@ fn external_media_plays_without_a_library_id() {
     assert_eq!(snapshot.artist, "Example FM");
     assert_eq!(
         fixture.calls.calls(),
-        vec![BackendCall::PlayUri("https://stream.example/live".into())]
+        vec![BackendCall::PlayLiveUri(
+            "https://stream.example/live".into()
+        )],
+        "live media must reach the backend through the entry point that disables download buffering"
     );
 }
 

@@ -111,6 +111,7 @@ pub(crate) fn player_event_can_change_queue(event: &reprise_core::playback::Play
         | reprise_core::playback::PlayerEvent::Error(_) => true,
         reprise_core::playback::PlayerEvent::StateChanged(_)
         | reprise_core::playback::PlayerEvent::Position { .. }
+        | reprise_core::playback::PlayerEvent::Buffering { .. }
         | reprise_core::playback::PlayerEvent::StreamTags { .. }
         | reprise_core::playback::PlayerEvent::Spectrum(_) => false,
     }

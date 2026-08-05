@@ -18,6 +18,7 @@ pub const RADIO_GENRE: &str = N_!("Genre");
 pub const RADIO_BITRATE: &str = N_!("Bitrate");
 pub const RADIO_COUNTRY: &str = N_!("Country");
 pub const RADIO_NOW_PLAYING: &str = N_!("Now playing");
+pub const RADIO_LIVE: &str = N_!("LIVE");
 pub const RADIO_ADD: &str = N_!("Add station");
 pub const RADIO_ADD_FILTER: &str = N_!("Add filter");
 pub const RADIO_FILTER_GENRE: &str = N_!("Genre");

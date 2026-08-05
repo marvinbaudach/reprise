@@ -133,7 +133,7 @@ pub(in crate::ui) struct Shared {
     /// a superseded row after the marker has already moved elsewhere.
     pub(in crate::ui) track_reveal_generation: Cell<u64>,
     /// Whether a reveal has been asked for and has not moved the viewport yet.
-    /// NAV-10a: the request is made synchronously and carried out from an idle
+    /// NAV-10b: the request is made synchronously and carried out from an idle
     /// callback, and a reload can run in between — `delete_tracks::finish`
     /// advances the player and reloads in one turn. A reload that preserved
     /// the position it *finds* there would pin the list to the row playback

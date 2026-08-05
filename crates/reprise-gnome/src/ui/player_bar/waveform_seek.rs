@@ -46,6 +46,9 @@ const UNPLAYED_ALPHA: f64 = 0.12;
 /// Alpha for unplayed bars between the playhead and the hovered position —
 /// the seek preview.
 const HOVER_PREVIEW_ALPHA: f64 = 0.30;
+/// Buffered-but-unplayed media sits between the quiet unplayed waveform and
+/// the fully accented played segment.
+const BUFFERED_ALPHA: f64 = 0.24;
 /// Alpha of the rounded playhead drawn over the bars.
 const PLAYHEAD_ALPHA: f64 = 0.70;
 /// Alpha for bars in the drag ghost region.
@@ -98,6 +101,9 @@ struct State {
     shaped_centroid: Vec<f32>,      // spectral positions shaped to display bars
     last_display_width: i32,        // width used for last resample
     fraction: f64,
+    /// End of the contiguous remote-media buffer as a 0..1 fraction. `None`
+    /// means local/live playback or an unavailable buffering query.
+    buffered_fraction: Option<f64>,
     /// Pointer position as a 0..1 fraction while hovering — drives the
     /// seek-preview tint on unplayed bars up to the cursor.
     hover_fraction: Option<f64>,
@@ -237,6 +243,7 @@ impl WaveformSeek {
             shaped_centroid: Vec::new(),
             last_display_width: 0,
             fraction: 0.0,
+            buffered_fraction: None,
             hover_fraction: None,
             drag_fraction: None,
             target_fraction: 0.0,
@@ -557,6 +564,27 @@ impl WaveformSeek {
         drop(s);
         update_accessible_value(&self.area, fraction, self.state.borrow().duration_ms);
         self.area.queue_draw();
+    }
+
+    pub(in crate::ui) fn set_buffered_fraction(&self, fraction: Option<f64>) {
+        let fraction = fraction.map(|value| value.clamp(0.0, 1.0));
+        let changed = {
+            let mut state = self.state.borrow_mut();
+            if state.buffered_fraction == fraction {
+                false
+            } else {
+                state.buffered_fraction = fraction;
+                true
+            }
+        };
+        if changed {
+            self.area.queue_draw();
+        }
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn buffered_fraction_for_test(&self) -> Option<f64> {
+        self.state.borrow().buffered_fraction
     }
 
     /// Update the target playback fraction with velocity estimation for smooth
