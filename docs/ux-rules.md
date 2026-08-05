@@ -3236,18 +3236,19 @@ means deterministic and high-confidence, never „without review".
   the fixed field sequence Title, Artist, Album, Album Artist, Year, Genre.
   Apply receives an immutable plan of exactly the current selection.
 
-- **DOC-3b** [active] [gtk] — **26b shows the same diff wide and
-  narrow.** Wide, Checkbox · Track + Field · Current · Proposed · Source
-  sit in a virtualized table; empty appears as „— empty —", a replaced
-  Current value struck through. At the narrow breakpoint, the same row
-  stacks Current → Proposed with no horizontal page scroll. Both
-  presentations bind the same selection and preserve row focus and
-  stable order when switching. Ellipsized values have a full-text
-  tooltip and an accessible description. „Edit track tags…" opens the
-  existing Tag Editor; its Save marks affected Doctor rows stale and
-  deselects them. The footer treats tracks as the unit of action:
-  „Apply N tracks"; next to it „X tag changes · M files · undo available
-  after".
+- **DOC-3b** [active] [gtk] — **One column header serves the whole page,
+  wide and narrow.** The review page carries exactly one header row — Track,
+  Field, Current, Proposed, Source — bound to every row through shared size
+  groups; no row repeats a caption. Empty appears as „— empty —" and a
+  replaced Current value is struck through. One page-level breakpoint at 640
+  px stacks Current → Proposed and hides the shared header; there is no
+  per-row breakpoint or horizontal page scroll. Both presentations bind the
+  same selection and preserve row focus and stable order. Ellipsized values
+  retain full-text tooltips and an accessible description naming track,
+  field, current, proposed, and source. „Edit track tags…" opens the existing
+  Tag Editor; Save marks affected rows stale and deselects them. *Tests:*
+  `doc_3b_breakpoint_changes_layout_without_changing_row_identity`,
+  `doc_3b_review_page_virtualizes_rows_without_horizontal_scroll`.
 
 - **DOC-4a** [active] [core] — **Confidence never chooses for the
   user.** Unambiguous local fixes are preselected; remote suggestions,
@@ -3426,18 +3427,28 @@ means deterministic and high-confidence, never „without review".
   `doc_9a_summary_omits_the_conflicts_block_without_conflicts`,
   `doc_9a_every_visible_count_is_a_written_change_count`.
 
-- **DOC-9b** [planned] [gtk] — **The review list is grouped by album.**
-  Rows are grouped by album in scope order under one header per album. A
-  change that applies identically to every track of an album collapses into
-  one row reading "All N tracks"; a partial album does not collapse. Tracks
-  without an album form one trailing group. Every count reports tag changes
-  that will be written, not display rows. Stage 1 provides only the pure core
-  projection; the GTK behavior and its complete test list activate this rule
-  in Stage 2. *Core projection tests:*
+- **DOC-9b** [active] [gtk] — **The review list is grouped by album.** Rows
+  appear in scope order under one header per album carrying a group checkbox,
+  cover, title, artist and track count, and a change count. An identical
+  whole-album change collapses into „All N tracks"; a partial album does not.
+  Tracks without an album form one trailing group. The filter bar offers only
+  categories the scan produced. Spelling conflicts sit last in an explicitly
+  optional container with „Skip all". The virtualized list scrolls under one
+  sticky page header and above one sticky footer, without pagination or a
+  collapsed remainder row. Album pills, toolbar, and footer count tag changes
+  that will be written rather than display rows. *Tests:*
   `doc_9b_rows_group_by_album_in_scope_order`,
   `doc_9b_album_level_change_collapses_into_one_row_over_all_tracks`,
   `doc_9b_tracks_without_an_album_form_one_trailing_group`,
-  `doc_9b_group_counts_report_written_changes_not_display_rows`.
+  `doc_9b_group_counts_report_written_changes_not_display_rows`,
+  `doc_9b_one_column_header_serves_the_whole_page`,
+  `doc_9b_rows_carry_no_caption_labels`,
+  `doc_9b_review_groups_render_one_header_per_album`,
+  `doc_9b_every_reviewable_row_starts_selected`,
+  `doc_9b_the_filter_bar_offers_only_categories_present_in_the_scan`,
+  `doc_9b_conflicts_sit_at_the_end_and_skip_all_clears_them`,
+  `doc_9b_footer_counts_the_changes_that_will_be_written`,
+  `doc_9b_the_album_pill_counts_written_changes_not_display_rows`.
 
 - **DOC-9c** [active] [gtk] — **After the write, and after a clean scan, the
   Doctor says so on its own page.** Post-apply names updated tracks, written

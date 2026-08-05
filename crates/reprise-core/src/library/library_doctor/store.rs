@@ -244,6 +244,10 @@ impl super::LibraryDoctor<'_> {
     pub fn set_reviewed_scan(&self, scan_id: i64) -> Result<(), DoctorError> {
         set_reviewed_scan(self.conn, scan_id)
     }
+
+    pub fn reviewed_scan_id(&self) -> Result<Option<i64>, DoctorError> {
+        reviewed_scan_id(self.conn)
+    }
 }
 
 fn load_tracks(conn: &Connection, scan_id: i64) -> Result<Vec<DoctorTrackSnapshot>, DoctorError> {

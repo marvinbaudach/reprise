@@ -3,6 +3,9 @@ mod jobs;
 mod progress_card;
 pub(in crate::ui) mod remote_toggle;
 mod result_pages;
+mod review_conflicts;
+mod review_filter_bar;
+mod review_header;
 mod review_model;
 mod review_page;
 mod review_row;
@@ -395,17 +398,25 @@ impl LibraryDoctorCoordinator {
         };
         let existing = self.review.borrow().clone();
         if existing.is_none() {
-            let weak = Rc::downgrade(self);
+            let remote_weak = Rc::downgrade(self);
+            let reviewed_weak = Rc::downgrade(self);
             let track_list = self.track_list.clone();
-            let on_edit = Rc::new(move |track_id| track_list.edit_tags_for_ids(&[track_id]))
-                as Rc<dyn Fn(i64)>;
+            let on_edit = Rc::new(move |track_ids: &[i64]| track_list.edit_tags_for_ids(track_ids))
+                as Rc<dyn Fn(&[i64])>;
             let page = LibraryDoctorReviewPage::new(
                 &self.conn,
                 &self.window,
-                scan,
+                &scan,
                 Rc::new(move |_| {
-                    if let Some(coordinator) = weak.upgrade() {
+                    if let Some(coordinator) = remote_weak.upgrade() {
                         coordinator.page.sync_remote_preference(&coordinator.conn);
+                    }
+                }),
+                Rc::new(move || {
+                    if let Some(coordinator) = reviewed_weak.upgrade() {
+                        coordinator
+                            .sidebar
+                            .refresh("Library Doctor scan acknowledged");
                     }
                 }),
                 &on_edit,

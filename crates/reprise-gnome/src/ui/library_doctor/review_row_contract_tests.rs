@@ -1,7 +1,6 @@
 #[test]
-fn doc_3b_source_column_keeps_its_caption_and_value_in_one_parented_section() {
+fn doc_9b_rows_carry_no_caption_labels() {
     let source = include_str!("review_row.rs");
 
-    assert!(source.contains("source_box.append(&source.section);"));
-    assert!(!source.contains("source_box.append(&source.value);"));
+    assert!(!source.contains("value_widgets("));
 }

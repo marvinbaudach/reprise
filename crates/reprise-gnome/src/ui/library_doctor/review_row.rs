@@ -4,70 +4,66 @@ use std::rc::Rc;
 
 use gtk4::glib;
 use gtk4::prelude::*;
-use libadwaita as adw;
-use libadwaita::prelude::*;
-use reprise_core::library_doctor::{DoctorReviewRow, DoctorReviewRowId};
 
+use super::review_header::{OnSelect, ReviewColumnGroups};
 use super::review_model::{
-    outcome_label, row_selectable, ConfidenceTone, ReviewRowModel, WIDE_BREAKPOINT,
+    outcome_label, row_selectable, ConfidenceTone, ReviewLayout, ReviewRowModel,
 };
 use crate::ui::strings;
 
-type OnSelect = Rc<dyn Fn(DoctorReviewRowId, bool)>;
-type OnEdit = Rc<dyn Fn(i64)>;
-
-struct ValueWidgets {
-    section: gtk4::Box,
-    value: gtk4::Label,
-}
+type OnEdit = Rc<dyn Fn(&[i64])>;
 
 struct RowWidgets {
     root: gtk4::Box,
     selected: gtk4::CheckButton,
-    track_field: ValueWidgets,
-    current: ValueWidgets,
-    proposed: ValueWidgets,
-    source: ValueWidgets,
+    details: gtk4::Box,
+    track: gtk4::Label,
+    field: gtk4::Label,
+    current: gtk4::Label,
+    proposed: gtk4::Label,
+    source: gtk4::Label,
     warning: gtk4::Image,
     edit: gtk4::Button,
-    row: RefCell<Option<DoctorReviewRow>>,
+    model: RefCell<Option<ReviewRowModel>>,
     binding: Cell<bool>,
 }
 
-pub(super) fn factory(on_select: &OnSelect, on_edit: &OnEdit) -> gtk4::SignalListItemFactory {
+pub(super) fn factory(
+    on_select: &OnSelect,
+    on_edit: &OnEdit,
+    groups: &ReviewColumnGroups,
+    layout: &Rc<Cell<ReviewLayout>>,
+) -> gtk4::SignalListItemFactory {
     let factory = gtk4::SignalListItemFactory::new();
     let states = Rc::new(RefCell::new(HashMap::<usize, Rc<RowWidgets>>::new()));
     {
         let states = states.clone();
         let on_select = on_select.clone();
         let on_edit = on_edit.clone();
+        let groups = groups.clone();
         factory.connect_setup(move |_, object| {
             let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
                 return;
             };
-            let widgets = Rc::new(build_row());
+            let widgets = Rc::new(build_row(&groups));
             {
                 let widgets = widgets.clone();
                 let on_select = on_select.clone();
-                let button = widgets.selected.clone();
-                button.connect_toggled(move |button| {
+                widgets.selected.clone().connect_toggled(move |button| {
                     if widgets.binding.get() {
                         return;
                     }
-                    let row = widgets.row.borrow().clone();
-                    if let Some(row) = row {
-                        on_select(row.id, button.is_active());
+                    if let Some(model) = widgets.model.borrow().as_ref() {
+                        on_select(&model.selectable_row_ids, button.is_active());
                     }
                 });
             }
             {
                 let widgets = widgets.clone();
                 let on_edit = on_edit.clone();
-                let button = widgets.edit.clone();
-                button.connect_clicked(move |_| {
-                    let row = widgets.row.borrow().clone();
-                    if let Some(row) = row {
-                        on_edit(row.track_id);
+                widgets.edit.clone().connect_clicked(move |_| {
+                    if let Some(model) = widgets.model.borrow().as_ref() {
+                        on_edit(&model.track_ids);
                     }
                 });
             }
@@ -79,6 +75,7 @@ pub(super) fn factory(on_select: &OnSelect, on_edit: &OnEdit) -> gtk4::SignalLis
     }
     {
         let states = states.clone();
+        let layout = layout.clone();
         factory.connect_bind(move |_, object| {
             let Some(item) = object.downcast_ref::<gtk4::ListItem>() else {
                 return;
@@ -93,7 +90,7 @@ pub(super) fn factory(on_select: &OnSelect, on_edit: &OnEdit) -> gtk4::SignalLis
                 return;
             };
             let model = boxed.borrow::<ReviewRowModel>();
-            bind(&widgets, &model);
+            bind(&widgets, &model, layout.get());
         });
     }
     {
@@ -103,24 +100,26 @@ pub(super) fn factory(on_select: &OnSelect, on_edit: &OnEdit) -> gtk4::SignalLis
                 return;
             };
             if let Some(widgets) = states.borrow().get(&list_item_key(item)) {
-                widgets.row.borrow_mut().take();
+                widgets.model.borrow_mut().take();
             }
         });
     }
     factory
 }
 
-fn build_row() -> RowWidgets {
+fn build_row(groups: &ReviewColumnGroups) -> RowWidgets {
     let selected = gtk4::CheckButton::builder()
         .valign(gtk4::Align::Center)
         .build();
     selected.update_property(&[gtk4::accessible::Property::Label(&strings::text(
         strings::DOCTOR_SELECT_CHANGE,
     ))]);
-    let track_field = value_widgets(strings::DOCTOR_TRACK_AND_FIELD, true);
-    let current = value_widgets(strings::DOCTOR_CURRENT, false);
-    let proposed = value_widgets(strings::DOCTOR_PROPOSED, false);
-    let source = value_widgets(strings::DOCTOR_SOURCE, false);
+    let track = value_label(true);
+    let field = value_label(false);
+    let current = value_label(false);
+    let arrow = gtk4::Label::new(Some("→"));
+    let proposed = value_label(false);
+    let source = value_label(false);
     let warning = gtk4::Image::from_icon_name("dialog-warning-symbolic");
     warning.set_tooltip_text(Some(&strings::text(strings::DOCTOR_LOW_CONFIDENCE)));
     warning.update_property(&[gtk4::accessible::Property::Label(&strings::text(
@@ -129,29 +128,20 @@ fn build_row() -> RowWidgets {
     let source_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
     source_box.set_hexpand(true);
     source_box.append(&warning);
-    source_box.append(&source.section);
+    source_box.append(&source);
 
     let details = gtk4::Box::new(gtk4::Orientation::Horizontal, 18);
     details.set_hexpand(true);
-    details.append(&track_field.section);
-    details.append(&current.section);
-    details.append(&proposed.section);
-    details.append(&source_box);
-    let responsive = adw::BreakpointBin::new();
-    responsive.set_hexpand(true);
-    responsive.set_child(Some(&details));
-    let narrow = adw::BreakpointCondition::new_length(
-        adw::BreakpointConditionLengthType::MaxWidth,
-        f64::from(WIDE_BREAKPOINT),
-        adw::LengthUnit::Px,
-    );
-    let breakpoint = adw::Breakpoint::new(narrow);
-    breakpoint.add_setter(
-        &details,
-        "orientation",
-        Some(&gtk4::Orientation::Vertical.to_value()),
-    );
-    responsive.add_breakpoint(breakpoint);
+    for widget in [
+        track.clone().upcast::<gtk4::Widget>(),
+        field.clone().upcast(),
+        current.clone().upcast(),
+        arrow.clone().upcast(),
+        proposed.clone().upcast(),
+        source_box.clone().upcast(),
+    ] {
+        details.append(&widget);
+    }
 
     let edit = gtk4::Button::builder()
         .icon_name("document-edit-symbolic")
@@ -162,61 +152,73 @@ fn build_row() -> RowWidgets {
     edit.update_property(&[gtk4::accessible::Property::Label(&strings::text(
         strings::DOCTOR_EDIT_TRACK_TAGS,
     ))]);
+    for (group, widget) in [
+        (&groups.selection, selected.clone().upcast::<gtk4::Widget>()),
+        (&groups.track, track.clone().upcast()),
+        (&groups.field, field.clone().upcast()),
+        (&groups.current, current.clone().upcast()),
+        (&groups.arrow, arrow.clone().upcast()),
+        (&groups.proposed, proposed.clone().upcast()),
+        (&groups.source, source_box.clone().upcast()),
+        (&groups.edit, edit.clone().upcast()),
+    ] {
+        group.add_widget(&widget);
+    }
+
     let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
     root.set_margin_top(9);
     root.set_margin_bottom(9);
     root.set_margin_start(12);
     root.set_margin_end(12);
     root.append(&selected);
-    root.append(&responsive);
+    root.append(&details);
     root.append(&edit);
     root.set_accessible_role(gtk4::AccessibleRole::ListItem);
     RowWidgets {
         root,
         selected,
-        track_field,
+        details,
+        track,
+        field,
         current,
         proposed,
         source,
         warning,
         edit,
-        row: RefCell::new(None),
+        model: RefCell::new(None),
         binding: Cell::new(false),
     }
 }
 
-fn value_widgets(caption: &'static str, bold: bool) -> ValueWidgets {
-    let value = gtk4::Label::builder()
+fn value_label(bold: bool) -> gtk4::Label {
+    let label = gtk4::Label::builder()
         .xalign(0.0)
         .ellipsize(gtk4::pango::EllipsizeMode::End)
         .hexpand(true)
         .build();
     if bold {
-        value.add_css_class("heading");
+        label.add_css_class("heading");
     }
-    let caption = gtk4::Label::builder()
-        .label(strings::text(caption))
-        .xalign(0.0)
-        .css_classes(["caption", "dim-label"])
-        .build();
-    let section = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
-    section.set_hexpand(true);
-    section.append(&caption);
-    section.append(&value);
-    ValueWidgets { section, value }
+    label
 }
 
-fn bind(widgets: &RowWidgets, model: &ReviewRowModel) {
+fn bind(widgets: &RowWidgets, model: &ReviewRowModel, layout: ReviewLayout) {
     widgets.binding.set(true);
     widgets.selected.set_active(model.row.selected);
+    widgets.selected.set_inconsistent(
+        model.selected_change_count > 0
+            && model.selected_change_count < model.selectable_row_ids.len(),
+    );
     widgets.selected.set_sensitive(row_selectable(model));
     widgets.binding.set(false);
-    widgets
-        .track_field
-        .value
-        .set_label(&format!("{} · {}", model.track, model.field));
-    set_full_text(&widgets.current.value, &model.current);
-    set_full_text(&widgets.proposed.value, &model.proposed);
+    widgets.details.set_orientation(match layout {
+        ReviewLayout::Wide => gtk4::Orientation::Horizontal,
+        ReviewLayout::Narrow => gtk4::Orientation::Vertical,
+    });
+    set_full_text(&widgets.track, &model.track);
+    set_full_text(&widgets.field, &model.field);
+    set_full_text(&widgets.current, &model.current);
+    set_full_text(&widgets.proposed, &model.proposed);
     let source = model.outcome.as_ref().map_or_else(
         || model.confidence.label.clone(),
         |outcome| {
@@ -231,13 +233,13 @@ fn bind(widgets: &RowWidgets, model: &ReviewRowModel) {
                 .map_or(status.clone(), |error| format!("{status} · {error}"))
         },
     );
-    set_full_text(&widgets.source.value, &source);
+    set_full_text(&widgets.source, &source);
     let attrs = gtk4::pango::AttrList::new();
     attrs.insert(gtk4::pango::AttrInt::new_strikethrough(true));
-    widgets.current.value.set_attributes(Some(&attrs));
+    widgets.current.set_attributes(Some(&attrs));
     widgets.warning.set_visible(model.confidence.warning);
     for class in ["accent", "warning", "error"] {
-        widgets.source.value.remove_css_class(class);
+        widgets.source.remove_css_class(class);
     }
     let tone = match model.confidence.tone {
         ConfidenceTone::Accent => Some("accent"),
@@ -246,15 +248,15 @@ fn bind(widgets: &RowWidgets, model: &ReviewRowModel) {
         ConfidenceTone::Error => Some("error"),
     };
     if let Some(tone) = tone {
-        widgets.source.value.add_css_class(tone);
+        widgets.source.add_css_class(tone);
     }
     let description = model.accessible_description();
     widgets.root.update_property(&[
         gtk4::accessible::Property::Label(&format!("{} · {}", model.track, model.field)),
         gtk4::accessible::Property::Description(&description),
     ]);
-    widgets.edit.set_sensitive(model.row.track_id > 0);
-    *widgets.row.borrow_mut() = Some(model.row.clone());
+    widgets.edit.set_sensitive(!model.track_ids.is_empty());
+    *widgets.model.borrow_mut() = Some(model.clone());
 }
 
 fn set_full_text(label: &gtk4::Label, value: &str) {

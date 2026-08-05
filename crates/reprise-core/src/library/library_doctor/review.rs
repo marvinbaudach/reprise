@@ -493,6 +493,17 @@ impl DoctorReviewSession {
         Ok(())
     }
 
+    /// Clears every optional spelling decision and removes the concrete rows
+    /// materialized from those choices, without changing proposal selections.
+    pub fn clear_group_choices(&mut self) {
+        self.rows
+            .retain(|row| matches!(row.origin, DoctorReviewRowOrigin::Proposal));
+        for group in &mut self.groups {
+            group.chosen = None;
+        }
+        self.tie_selection.clear();
+    }
+
     pub fn mark_state(
         &mut self,
         id: DoctorReviewRowId,
