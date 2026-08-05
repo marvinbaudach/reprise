@@ -173,3 +173,27 @@ never write to it. Work on copies.
 **The machine reached 96 °C tonight.** Measure single tracks, not the library.
 No parallel `--workspace` runs. Nothing may open a window, a dialog or an app in
 the owner's foreground.
+
+## Resolved S1 implementation decisions
+
+- The producer uses 32 kHz PCM, 4,096/16,384-sample FFT grids, 24 logarithmic
+  bands from 20 Hz to 16 kHz, and raw frame-major bytes at 20 fps.
+- Cells use one shared absolute RMS window of −70…−6 dBFS. Stored frames have
+  no normalization, AGC, attack, or decay. CAVA feeds its live-only smoothing
+  from the same band mapper and absolute dB scale.
+- Raising the decode rate does change legacy peaks: on one dense real track the
+  mean absolute delta was 0.948/255, p95 was 2, and the maximum was 10. S1
+  accepts this one-time rendering-data recomputation rather than add a second
+  resampling feed.
+- A source fingerprint consists of mtime, size, device, and inode. A changed
+  component deletes the spectrogram and clears the old waveform cache; reads
+  reject stale rows and writes refuse results whose source changed mid-decode.
+  This deliberately fixes rather than follows the old waveform invalidation
+  omission.
+- The old waveform-only pending hook is generalized to pending render data,
+  because tracks with existing peaks still need spectrograms. The Linux worker
+  starts only through an explicit handle constructor, commits after each track,
+  requests cancellation when dropped, and resumes missing/stale rows on the
+  next explicit run.
+- `None` means absent/stale and retryable. A present zero-length blob means a
+  successfully computed empty stream and is not retried.

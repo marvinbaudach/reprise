@@ -9,12 +9,12 @@
 mod bands;
 mod smoothing;
 
-use std::sync::Arc;
-
-use realfft::{num_complex::Complex32, RealFftPlanner, RealToComplex};
 use thiserror::Error;
 
-use bands::{fft_size_for_rate, BandPlan};
+use crate::playback::spectral::{
+    absolute_dbfs_to_byte, absolute_dbfs_to_unit, BandPlan, FftWorkspace,
+};
+use bands::{band_plan, fft_size_for_rate};
 use smoothing::Smoother;
 
 /// Maximum supported display resolution.
@@ -24,7 +24,6 @@ const DEFAULT_HIGH_CUTOFF_HZ: u32 = 10_000;
 const DEFAULT_NOISE_REDUCTION: f32 = 0.77;
 const DEFAULT_NOISE_FLOOR: f32 = 0.04;
 const DEFAULT_AUTOSENSITIVITY: u32 = 1;
-const PCM_SILENCE_EPSILON: f32 = 1.0e-6;
 
 /// Configuration for [`CavaBarProcessor`].
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -102,7 +101,7 @@ impl CavaBarProcessor {
         if !config.noise_floor.is_finite() || !(0.0..=1.0).contains(&config.noise_floor) {
             return Err(CavaError::InvalidNoiseFloor);
         }
-        let band_plan = BandPlan::new(config)?;
+        let band_plan = band_plan(config)?;
         let fft_size = fft_size_for_rate(config.sample_rate_hz);
         Ok(Self {
             config,
@@ -140,17 +139,12 @@ impl CavaBarProcessor {
             .bands()
             .iter()
             .map(|band| {
-                let spectrum = if band.use_bass_fft {
-                    self.bass_fft.spectrum()
+                let workspace = if band.use_bass_fft {
+                    &self.bass_fft
                 } else {
-                    self.main_fft.spectrum()
+                    &self.main_fft
                 };
-                spectrum[band.lower_bin..=band.upper_bin]
-                    .iter()
-                    .map(|value| value.norm())
-                    .sum::<f32>()
-                    * band.equalizer
-                    * 65_535.0
+                absolute_dbfs_to_unit(workspace.band_rms_dbfs(band.bins()))
             })
             .collect();
         let new_samples = mono_samples.len().min(self.input_buffer.len());
@@ -173,7 +167,7 @@ impl CavaBarProcessor {
         let buffer_len = self.input_buffer.len();
         let kept = mono_samples.len().min(buffer_len);
         self.input_buffer.copy_within(..buffer_len - kept, kept);
-        let mut signal_present = false;
+        let mut sum_squares = 0.0_f64;
         for (target, sample) in self.input_buffer[..kept]
             .iter_mut()
             .rev()
@@ -184,61 +178,19 @@ impl CavaBarProcessor {
             } else {
                 0.0
             };
-            signal_present |= sample.abs() > PCM_SILENCE_EPSILON;
+            sum_squares += f64::from(sample) * f64::from(sample);
             *target = sample;
         }
-        signal_present
-    }
-}
-
-struct FftWorkspace {
-    plan: Arc<dyn RealToComplex<f32>>,
-    input: Vec<f32>,
-    spectrum: Vec<Complex32>,
-    scratch: Vec<Complex32>,
-    hann: Vec<f32>,
-}
-
-impl FftWorkspace {
-    fn new(len: usize) -> Self {
-        let mut planner = RealFftPlanner::<f32>::new();
-        let plan = planner.plan_fft_forward(len);
-        let input = plan.make_input_vec();
-        let spectrum = plan.make_output_vec();
-        let scratch = plan.make_scratch_vec();
-        let hann = (0..len)
-            .map(|index| {
-                0.5 * (1.0 - (std::f32::consts::TAU * index as f32 / (len - 1) as f32).cos())
-            })
-            .collect();
-        Self {
-            plan,
-            input,
-            spectrum,
-            scratch,
-            hann,
-        }
-    }
-
-    fn len(&self) -> usize {
-        self.input.len()
-    }
-
-    fn process(&mut self, samples: &[f32]) {
-        for ((target, sample), multiplier) in self
-            .input
-            .iter_mut()
-            .zip(samples.iter())
-            .zip(self.hann.iter())
-        {
-            *target = sample * multiplier;
-        }
-        self.plan
-            .process_with_scratch(&mut self.input, &mut self.spectrum, &mut self.scratch)
-            .expect("real FFT buffers are allocated by their plan");
-    }
-
-    fn spectrum(&self) -> &[Complex32] {
-        &self.spectrum
+        let rms = if kept == 0 {
+            0.0
+        } else {
+            (sum_squares / kept as f64).sqrt() as f32
+        };
+        let level_dbfs = if rms > 0.0 {
+            20.0 * rms.log10()
+        } else {
+            f32::NEG_INFINITY
+        };
+        absolute_dbfs_to_byte(level_dbfs) > 0
     }
 }

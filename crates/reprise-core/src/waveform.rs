@@ -3,6 +3,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::spectrogram::TrackSpectrogram;
+
 pub const STORED_PEAK_COUNT: usize = 1000;
 
 #[derive(Debug, thiserror::Error)]
@@ -38,10 +40,59 @@ pub trait WaveformBackend: Send + Sync {
     }
 }
 
+/// The two rendering datasets produced from one decoded PCM stream.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrackRenderData {
+    pub waveform_peaks: Vec<u8>,
+    pub spectrogram: TrackSpectrogram,
+}
+
+impl TrackRenderData {
+    pub fn empty() -> Self {
+        Self {
+            waveform_peaks: Vec::new(),
+            spectrogram: TrackSpectrogram::empty(),
+        }
+    }
+}
+
+/// Optional platform capability for producing peaks and frequency bands in
+/// one decode pass.
+pub trait RenderDataBackend: WaveformBackend {
+    fn extract_render_data(
+        &self,
+        _path: &Path,
+        _buckets: usize,
+    ) -> Result<TrackRenderData, WaveformError> {
+        Err(WaveformError::DecodeFailed(
+            "platform backend does not provide spectrogram rendering data".into(),
+        ))
+    }
+
+    fn extract_render_data_cancellable(
+        &self,
+        path: &Path,
+        buckets: usize,
+        cancelled: &AtomicBool,
+    ) -> Result<TrackRenderData, WaveformError> {
+        if cancelled.load(Ordering::Acquire) {
+            return Err(WaveformError::Cancelled);
+        }
+        let data = self.extract_render_data(path, buckets)?;
+        if cancelled.load(Ordering::Acquire) {
+            Err(WaveformError::Cancelled)
+        } else {
+            Ok(data)
+        }
+    }
+}
+
 /// Streaming bucketed-RMS reducer for seek-bar waveforms. Fold decoded mono
 /// PCM in via [`push`](Self::push) and finalize with [`finish`](Self::finish);
-/// the byte peaks it emits match what the old audio-character extractor
-/// produced for the waveform half, so cached peaks stay comparable.
+/// it retains the established per-track normalization. The shared producer's
+/// raised 32 kHz rate retains more high-frequency energy than the old 8 kHz
+/// feed, causing the measured sub-one-byte mean recomputation drift recorded
+/// in `docs/research/spectrogram-pipeline.md`.
 pub struct WaveformAccumulator {
     expected_samples: u64,
     samples_seen: u64,
