@@ -8,6 +8,7 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use libadwaita::prelude::AnimationExt;
 
+use crate::ui::playing_links::{self, LinkLabels};
 use crate::ui::{cover_loader::CoverLoader, motion, strings};
 
 use super::PlayerBar;
@@ -40,17 +41,29 @@ impl PlayerBar {
     }
 
     /// Shows `title`/`artist` and starts their shared 250 ms crossfade.
-    pub fn set_track(&self, title: &str, artist: &str) {
-        self.title_button
-            .update_property(&[gtk4::accessible::Property::Label(title)]);
-        self.artist_button
-            .update_property(&[gtk4::accessible::Property::Label(artist)]);
-        self.artist_button.set_sensitive(!artist.trim().is_empty());
-        self.cover_button
-            .update_property(&[gtk4::accessible::Property::Label(&strings::text(
-                strings::REVEAL_PLAYING_ALBUM,
-            ))]);
+    pub fn set_track(&self, title: &str, artist: &str, links: LinkLabels) {
+        self.apply_link_labels(links, true);
         self.animate_track_change(title, artist);
+    }
+
+    /// `PLAY-12`: the three metadata surfaces always name their current target
+    /// and are operable exactly while something is loaded.
+    fn apply_link_labels(&self, links: LinkLabels, sensitive: bool) {
+        let title_link = strings::text(links.title);
+        let artist_link = strings::text(links.subtitle);
+        let cover_link = strings::text(links.cover);
+        self.title_button
+            .update_property(&[gtk4::accessible::Property::Label(&title_link)]);
+        self.artist_button
+            .update_property(&[gtk4::accessible::Property::Label(&artist_link)]);
+        self.cover_button
+            .update_property(&[gtk4::accessible::Property::Label(&cover_link)]);
+        self.title_button.set_tooltip_text(Some(&title_link));
+        self.artist_button.set_tooltip_text(Some(&artist_link));
+        self.cover_button.set_tooltip_text(Some(&cover_link));
+        self.title_button.set_sensitive(sensitive);
+        self.artist_button.set_sensitive(sensitive);
+        self.cover_button.set_sensitive(sensitive);
     }
 
     /// 250 ms opacity crossfade: fade out cover + labels, swap text, fade in.
@@ -122,6 +135,10 @@ impl PlayerBar {
     }
 
     /// Clears the track labels back to empty when playback stops.
+    ///
+    /// `PLAY-12`: the surfaces go insensitive *and* back to the neutral idle
+    /// labels. Keeping the finished session's labels would leave "Jump to the
+    /// playing station" on a bar that plays nothing.
     pub fn clear_track(&self) {
         let generation = self.track_animation_generation.get().wrapping_add(1);
         self.track_animation_generation.set(generation);
@@ -131,7 +148,7 @@ impl PlayerBar {
         }
         self.title_label.set_text("");
         self.artist_label.set_text("");
-        self.artist_button.set_sensitive(false);
+        self.apply_link_labels(playing_links::idle_player_bar_labels(), false);
         self.clear_cover();
     }
 }

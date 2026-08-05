@@ -27,6 +27,8 @@ use crate::ui::strings;
 
 #[path = "radio_failure_ui.rs"]
 mod failure_ui;
+#[path = "radio_view_reveal_request.rs"]
+mod reveal_request;
 use failure_ui::{
     radio_failure_action, reresolve_station_url, should_clear_radio_failure,
     should_show_offline_radio_notice, RadioFailureAction,

@@ -22,6 +22,12 @@ pub(in crate::ui) enum LoadedItemChange {
     SessionRestore,
     /// The list just became the visible page.
     ViewEntered,
+    /// `SRC-13`: the user asked for this jump from the player bar or
+    /// `Ctrl+L`. It always reveals — also in the already visible view and
+    /// regardless of the 1.5-second grace period. The grace protects a
+    /// reading user from a viewport that jumps under their hand; here they
+    /// asked for the jump themselves.
+    RequestedByUser,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -52,7 +58,8 @@ pub(in crate::ui) fn reveal_policy(change: LoadedItemChange, user_scrolling: boo
         LoadedItemChange::ChangedElsewhere if user_scrolling => RevealPolicy::MarkerOnly,
         LoadedItemChange::ChangedElsewhere
         | LoadedItemChange::SessionRestore
-        | LoadedItemChange::ViewEntered => RevealPolicy::Reveal,
+        | LoadedItemChange::ViewEntered
+        | LoadedItemChange::RequestedByUser => RevealPolicy::Reveal,
     }
 }
 
@@ -94,6 +101,18 @@ mod tests {
         );
         assert_eq!(
             reveal_policy(LoadedItemChange::ViewEntered, false),
+            RevealPolicy::Reveal
+        );
+    }
+
+    #[test]
+    fn src_13_a_user_requested_jump_always_reveals() {
+        assert_eq!(
+            reveal_policy(LoadedItemChange::RequestedByUser, true),
+            RevealPolicy::Reveal
+        );
+        assert_eq!(
+            reveal_policy(LoadedItemChange::RequestedByUser, false),
             RevealPolicy::Reveal
         );
     }

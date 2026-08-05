@@ -8,8 +8,9 @@ use std::rc::Rc;
 use reprise_core::playback::{PlaybackState, SpectrumFrame};
 
 use super::player_controller::NowPlaying;
+use crate::ui::playing_links::LinkLabels;
 
-pub(in crate::ui) type OnNowPlayingPanelTrackChanged = Rc<dyn Fn(Option<NowPlaying>)>;
+pub(in crate::ui) type OnNowPlayingPanelTrackChanged = Rc<dyn Fn(Option<NowPlaying>, LinkLabels)>;
 pub(in crate::ui) type OnNowPlayingPanelStateChanged = Rc<dyn Fn(PlaybackState)>;
 pub(in crate::ui) type OnSongVisualSpectrumChanged = Rc<dyn Fn(SpectrumFrame)>;
 /// `(kick, pressure)` — the bass pair, for surfaces outside the player bar.

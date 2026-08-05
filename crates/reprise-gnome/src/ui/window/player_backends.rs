@@ -16,13 +16,13 @@
 use std::sync::Arc;
 
 use reprise_core::playback::{PlaybackError, PlayerEvent};
-use reprise_core::waveform::WaveformBackend;
+use reprise_core::waveform::RenderDataBackend;
 use reprise_platform_linux::player::Player;
 
 use super::player_controller::PlayerControllerBackends;
 
 pub(super) fn build(
-    waveform: Arc<dyn WaveformBackend>,
+    waveform: Arc<dyn RenderDataBackend>,
     media: reprise_core::media_integration::MediaIntegrationHandles,
 ) -> Result<PlayerControllerBackends, PlaybackError> {
     let (sender, playback_events) = async_channel::unbounded::<PlayerEvent>();

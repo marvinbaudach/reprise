@@ -7,6 +7,7 @@ use gtk4::prelude::*;
 use super::player_bar_state::external_bar_display;
 use super::surface::PlayerBar;
 use crate::ui::playback::external_media::ExternalPlaybackSnapshot;
+use crate::ui::playing_links::{self, LinkAvailability};
 
 impl PlayerBar {
     pub(in crate::ui) fn set_external_snapshot(&self, snapshot: Option<&ExternalPlaybackSnapshot>) {
@@ -27,7 +28,14 @@ impl PlayerBar {
             return;
         };
         let display = external_bar_display(snapshot);
-        self.set_track(&display.title, &display.subtitle);
+        let links = playing_links::player_bar_labels(
+            playing_links::external_mode(&snapshot.media),
+            LinkAvailability {
+                artist: true,
+                album: true,
+            },
+        );
+        self.set_track(&display.title, &display.subtitle, links);
         self.set_state(display.playback);
         self.external_podcast.set(!display.live);
         self.waveform.set_peaks(Vec::new());

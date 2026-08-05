@@ -22,6 +22,7 @@ pub(in crate::ui) mod player_event_handling;
 pub(in crate::ui) mod preview;
 pub(crate) mod queue_transport;
 pub(crate) mod session_player;
+pub(in crate::ui) mod source_item_identity;
 pub(in crate::ui) mod up_next_transport;
 #[allow(unused_imports)]
 use super::*;

@@ -1,4 +1,4 @@
-//! Schema v54: drops `new_releases.fallback_accent`.
+//! Schema v56: drops `new_releases.fallback_accent`.
 //!
 //! The column was a per-release tint extracted from an artist's most-played
 //! album cover, used to colour a release tile before its own cover finished
@@ -30,16 +30,16 @@
 
 use rusqlite::Connection;
 
-pub(crate) fn migrate_v54(conn: &Connection) -> Result<(), rusqlite::Error> {
+pub(crate) fn migrate_v56(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if version >= 54 {
+    if version >= 56 {
         return Ok(());
     }
     let transaction = conn.unchecked_transaction()?;
     if column_exists(&transaction, "new_releases", "fallback_accent")? {
         transaction.execute_batch("ALTER TABLE new_releases DROP COLUMN fallback_accent;")?;
     }
-    transaction.pragma_update(None, "user_version", 54)?;
+    transaction.pragma_update(None, "user_version", 56)?;
     transaction.commit()
 }
 
@@ -55,10 +55,10 @@ mod tests {
 
     use super::*;
 
-    /// The `new_releases` shape as of v53, rebuilt by hand so the test can
+    /// The `new_releases` shape as of v55, rebuilt by hand so the test can
     /// prove an *existing* user database — one that still carries the column
     /// and real rows in it — survives the drop with every other value intact.
-    const V53_NEW_RELEASES: &str = r#"
+    const PRE_V56_NEW_RELEASES: &str = r#"
 DROP TABLE new_releases;
 CREATE TABLE new_releases (
   release_group_mbid TEXT PRIMARY KEY,
@@ -78,7 +78,7 @@ CREATE TABLE new_releases (
 );
 CREATE INDEX idx_new_releases_artist ON new_releases(artist_mbid);
 CREATE INDEX idx_new_releases_unseen ON new_releases(seen_at) WHERE seen_at IS NULL;
-PRAGMA user_version = 53;
+PRAGMA user_version = 55;
 "#;
 
     fn columns(conn: &Connection) -> Vec<String> {
@@ -91,10 +91,10 @@ PRAGMA user_version = 53;
     }
 
     #[test]
-    fn v53_database_drops_the_accent_and_keeps_every_other_release_value() {
+    fn existing_database_drops_the_accent_and_keeps_every_other_release_value() {
         let conn = crate::db::open(None).unwrap();
         crate::db::migrate_connection(&conn).unwrap();
-        conn.execute_batch(V53_NEW_RELEASES).unwrap();
+        conn.execute_batch(PRE_V56_NEW_RELEASES).unwrap();
         conn.execute(
             "INSERT INTO new_releases (
                release_group_mbid, artist_name, artist_mbid, title, release_type,
@@ -107,13 +107,13 @@ PRAGMA user_version = 53;
         )
         .unwrap();
 
-        migrate_v54(&conn).unwrap();
-        migrate_v54(&conn).unwrap(); // idempotent re-run must not fail
+        migrate_v56(&conn).unwrap();
+        migrate_v56(&conn).unwrap(); // idempotent re-run must not fail
 
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 54);
+        assert_eq!(version, 56);
         assert_eq!(
             columns(&conn),
             [

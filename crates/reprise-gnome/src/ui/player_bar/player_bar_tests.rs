@@ -18,12 +18,22 @@ fn run_until_idle() {
     main_loop.run();
 }
 
+fn track_links() -> crate::ui::playing_links::LinkLabels {
+    crate::ui::playing_links::player_bar_labels(
+        crate::ui::playback::preview::PlaybackMode::Queue,
+        crate::ui::playing_links::LinkAvailability {
+            artist: true,
+            album: true,
+        },
+    )
+}
+
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn player_metadata_uses_native_keyboard_activation() {
     gtk4::init().unwrap();
     let bar = PlayerBar::new();
-    bar.set_track("Track title", "Artist name");
+    bar.set_track("Track title", "Artist name", track_links());
     for button in [&bar.cover_button, &bar.title_button, &bar.artist_button] {
         assert!(button.is_focusable());
     }
@@ -231,8 +241,8 @@ fn mot_6_second_track_and_state_changes_finish_the_previous_visual_state() {
 
     bar.title_label.set_text("Before");
     bar.artist_label.set_text("Before artist");
-    bar.set_track("First", "First artist");
-    bar.set_track("Second", "Second artist");
+    bar.set_track("First", "First artist", track_links());
+    bar.set_track("Second", "Second artist", track_links());
     assert_eq!(bar.title_label.text(), "First");
     assert_eq!(bar.artist_label.text(), "First artist");
     assert_eq!(bar.title_label.opacity(), 1.0);
@@ -276,7 +286,7 @@ fn mot_7_player_bar_hard_switches_when_system_animations_are_disabled() {
     settings.set_gtk_enable_animations(false);
 
     let bar = PlayerBar::new();
-    bar.set_track("Immediate", "Artist");
+    bar.set_track("Immediate", "Artist", track_links());
     bar.set_transport_enabled(true, false);
     bar.set_state(PlaybackState::Playing);
 
@@ -295,7 +305,7 @@ fn browse_4_player_bar_metadata_has_distinct_track_album_and_artist_targets() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let bar = PlayerBar::new();
-    bar.set_track("Track title", "Artist name");
+    bar.set_track("Track title", "Artist name", track_links());
 
     for (surface, tooltip) in [
         (

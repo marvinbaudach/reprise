@@ -25,7 +25,6 @@ use reprise_core::cover::ThumbnailSize;
 use reprise_core::media_integration::MprisState;
 use reprise_core::playback::{PlaybackError, PlaybackState, SpectrumFrame};
 use reprise_core::queue::Repeat;
-use reprise_core::waveform::STORED_PEAK_COUNT;
 
 fn cover_path_to_uri(path: &Path) -> Option<String> {
     match glib::filename_to_uri(path, None) {
@@ -118,9 +117,21 @@ impl PlayerController {
         _album: &str,
         _year: Option<i32>,
     ) {
-        self.bar.set_track(title, artist);
+        let availability = crate::ui::playing_links::LinkAvailability {
+            artist: !artist.trim().is_empty(),
+            album: self.current_album_identity().is_some(),
+        };
+        let mode = self.playback_mode();
+        self.bar.set_track(
+            title,
+            artist,
+            crate::ui::playing_links::player_bar_labels(mode, availability),
+        );
         self.compact_player.set_track(title, artist);
-        self.notify_now_playing_panel_track_changed();
+        self.notify_now_playing_panel_track_changed(crate::ui::playing_links::panel_labels(
+            mode,
+            availability,
+        ));
     }
 
     /// Clears Bar, Compact, Lyrics, and the Now Playing panel together — the
@@ -129,22 +140,41 @@ impl PlayerController {
         self.bar.clear_track();
         self.compact_player.clear_track();
         self.sync_lyrics_track(None);
-        self.notify_now_playing_panel_track_changed();
+        self.notify_now_playing_panel_track_changed(crate::ui::playing_links::panel_labels(
+            self.playback_mode(),
+            crate::ui::playing_links::LinkAvailability {
+                artist: false,
+                album: false,
+            },
+        ));
     }
 
     pub(in crate::ui) fn set_on_now_playing_panel_track_changed(
         &self,
-        callback: impl Fn(Option<super::player_controller::NowPlaying>) + 'static,
+        callback: impl Fn(Option<super::player_controller::NowPlaying>, crate::ui::playing_links::LinkLabels)
+            + 'static,
     ) {
         *self.now_playing_panel_track_changed.borrow_mut() = Some(Rc::new(callback));
-        self.notify_now_playing_panel_track_changed();
+        let track = self.now_playing.borrow().clone();
+        let availability = crate::ui::playing_links::LinkAvailability {
+            artist: track
+                .as_ref()
+                .is_some_and(|track| !track.artist.trim().is_empty()),
+            album: track
+                .as_ref()
+                .is_some_and(|track| !track.album.trim().is_empty()),
+        };
+        self.notify_now_playing_panel_track_changed(crate::ui::playing_links::panel_labels(
+            self.playback_mode(),
+            availability,
+        ));
     }
 
-    fn notify_now_playing_panel_track_changed(&self) {
+    fn notify_now_playing_panel_track_changed(&self, labels: crate::ui::playing_links::LinkLabels) {
         let track = self.now_playing.borrow().clone();
         let callback = self.now_playing_panel_track_changed.borrow().clone();
         if let Some(callback) = callback {
-            callback(track);
+            callback(track, labels);
         }
     }
 
@@ -261,20 +291,12 @@ impl PlayerController {
             reprise_core::db::Db::open_migrated(Some(&db_path))
                 .ok()
                 .and_then(|db| {
-                    let conn = &db;
-                    // Try DB first.
-                    if let Some(cached) = reprise_core::db::get_waveform_peaks(conn, track_id)
-                        .ok()
-                        .flatten()
-                    {
-                        return Some(cached);
-                    }
-                    // Not cached — extract now and store for next time.
-                    let peaks = waveform_backend
-                        .extract_peaks(&track_path, STORED_PEAK_COUNT)
-                        .ok()?;
-                    reprise_core::db::set_waveform_peaks(conn, track_id, &peaks).ok();
-                    Some(peaks)
+                    reprise_core::waveform_cache::peaks_for_playback(
+                        &db,
+                        track_id,
+                        &track_path,
+                        waveform_backend.as_ref(),
+                    )
                 })
         }) else {
             return;

@@ -186,7 +186,7 @@ use super::player_callbacks::{
 use reprise_core::queries;
 use reprise_core::queue::Queue;
 use reprise_core::up_next::{QueueItem, UpNextQueue};
-use reprise_core::waveform::WaveformBackend;
+use reprise_core::waveform::RenderDataBackend;
 
 use super::player_controller_types::ViewRefillIds;
 pub(in crate::ui) use super::player_controller_types::{
@@ -359,7 +359,7 @@ pub struct PlayerController {
     /// Generation token for the seek waveform's off-main peak load, so a
     /// rapid track change can't paint a stale waveform.
     pub(in crate::ui) waveform_generation: Rc<Cell<u64>>,
-    pub(in crate::ui) waveform_backend: Arc<dyn WaveformBackend>,
+    pub(in crate::ui) waveform_backend: Arc<dyn RenderDataBackend>,
     /// The owning `gio::Application`, for `play_track_id`'s track-change
     /// notification (Task 9: `app.send_notification`). Passed into `new` from
     /// `window::build`, which already holds the `&adw::Application` it builds

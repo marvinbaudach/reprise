@@ -51,9 +51,11 @@ mod db_mix_planner;
 mod db_new_releases_accent;
 mod db_new_releases_history;
 mod db_online_sources;
+mod db_play_journal;
 mod db_podcasts_radio;
 mod db_recently_added;
 mod db_release_discography;
+mod db_spectrogram;
 mod db_sync_log;
 mod db_tag_write_jobs;
 pub mod device_sync;
@@ -81,12 +83,15 @@ pub mod radio;
 pub mod remote_image;
 pub mod scrobbling;
 pub mod source_error;
+pub mod spectrogram;
+pub mod spectrogram_backfill;
 pub mod stem_separation;
 pub mod up_next;
 pub mod updates;
 pub mod view_source;
 pub mod visuals;
 pub mod waveform;
+pub mod waveform_cache;
 mod writeback_publish;
 
 #[cfg(test)]

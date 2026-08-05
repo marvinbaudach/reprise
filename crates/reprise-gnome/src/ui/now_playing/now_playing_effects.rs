@@ -53,6 +53,18 @@ impl super::NowPlayingPanel {
                 .stage
                 .remove_css_class("reprise-now-playing-idle");
         }
+        // `PLAY-12`: the panel's four link surfaces answer to the same rule as
+        // the bar's — operable exactly while something is loaded. `idle` is
+        // the panel's own "nothing loaded at all", so a surface can never sit
+        // there looking like a link and swallow the click.
+        for surface in [
+            self.widgets.cover.upcast_ref::<gtk4::Widget>(),
+            self.widgets.title.upcast_ref(),
+            self.widgets.artist.upcast_ref(),
+            self.widgets.album.upcast_ref(),
+        ] {
+            surface.set_sensitive(!presentation.idle);
+        }
         let generation = self.cover_generation.get().wrapping_add(1);
         self.cover_generation.set(generation);
         if let Some(external) = external {

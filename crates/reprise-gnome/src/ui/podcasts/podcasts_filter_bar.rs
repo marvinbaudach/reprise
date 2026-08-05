@@ -15,6 +15,18 @@ use crate::ui::style::buttons;
 const FILTER_BAR_MIN_HEIGHT: i32 = 34;
 type OnChanged = Rc<dyn Fn(PodcastFilter)>;
 
+pub(in crate::ui) fn add_button(kind: PodcastKind) -> gtk4::Button {
+    let add = gtk4::Button::builder()
+        .label(strings::text(match kind {
+            PodcastKind::Rss => strings::PODCAST_ADD,
+            PodcastKind::Youtube => strings::YOUTUBE_ADD,
+        }))
+        .build();
+    buttons::arm(&add, buttons::ADD_ACTION_CLASS);
+    add.set_action_name(Some("podcasts.open-add"));
+    add
+}
+
 pub(super) struct PodcastsFilterBar {
     root: gtk4::Box,
     conn: Rc<Db>,
@@ -23,6 +35,7 @@ pub(super) struct PodcastsFilterBar {
     popover_box: gtk4::Box,
     popover: gtk4::Popover,
     result: gtk4::Label,
+    clear_selection: gtk4::Button,
     base_result: RefCell<String>,
     on_changed: RefCell<Option<OnChanged>>,
     // `POD-15`: kept past the constructor because the summary line below the
@@ -46,15 +59,7 @@ impl PodcastsFilterBar {
         root.set_size_request(-1, FILTER_BAR_MIN_HEIGHT);
         root.add_css_class("toolbar");
 
-        let add = gtk4::Button::builder()
-            .icon_name("list-add-symbolic")
-            .label(strings::text(match kind {
-                PodcastKind::Rss => strings::PODCAST_ADD,
-                PodcastKind::Youtube => strings::YOUTUBE_ADD,
-            }))
-            .build();
-        buttons::arm(&add, buttons::ADD_ACTION_CLASS);
-        add.set_action_name(Some("podcasts.open-add"));
+        let add = add_button(kind);
         root.append(&add);
 
         let chips = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
@@ -77,6 +82,12 @@ impl PodcastsFilterBar {
         result.add_css_class("dim-label");
         result.add_css_class("caption");
         root.append(&result);
+        let clear_selection =
+            gtk4::Button::with_label(&strings::text(strings::PODCAST_CLEAR_SELECTION));
+        clear_selection.add_css_class("flat");
+        clear_selection.set_visible(false);
+        clear_selection.set_action_name(Some("podcasts.clear-selection"));
+        root.append(&clear_selection);
 
         let bar = Rc::new(Self {
             root,
@@ -86,6 +97,7 @@ impl PodcastsFilterBar {
             popover_box,
             popover,
             result,
+            clear_selection,
             base_result: RefCell::new(String::new()),
             on_changed: RefCell::new(None),
             kind,
@@ -150,10 +162,15 @@ impl PodcastsFilterBar {
                 &self.base_result.borrow(),
                 selected_count,
             ));
+        self.clear_selection.set_visible(selected_count > 0);
     }
 
     pub(super) fn clear_all(self: &Rc<Self>) {
         self.apply(PodcastFilter::default());
+    }
+
+    pub(super) fn apply_filter(self: &Rc<Self>, filter: PodcastFilter) {
+        self.apply(filter);
     }
 
     fn apply(self: &Rc<Self>, filter: PodcastFilter) {

@@ -11,6 +11,7 @@ license.workspace = true
 reprise-core = { path = "../reprise-core" }
 gstreamer = "0.25"
 gstreamer-app = "0.25"
+lofty = "0.24"
 # Default features ("async-io" + "blocking-api") are kept: "async-io" is
 # zbus's own lightweight internal reactor for the blocking API, not a
 # competing app-wide async runtime — the `tokio` feature (the thing Stage 2
@@ -59,7 +60,6 @@ reprise-runtime = { path = "../reprise-runtime", features = ["fakes"] }
 # are proved to agree rather than each looking correct alone. A dev-only edge:
 # the service does not depend on the client in a shipped build.
 reprise-runtime-client = { path = "../reprise-runtime-client" }
-lofty = "0.24"
 
 [lints]
 workspace = true

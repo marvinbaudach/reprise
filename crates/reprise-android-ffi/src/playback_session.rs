@@ -350,12 +350,18 @@ impl AndroidPlaybackSession {
         let playback_settings = crate::AndroidPlaybackSettings::load(&database);
         let transition = reprise_core::library::settings::get_track_transition(&database);
         let crossfade_seconds = reprise_core::library::settings::get_crossfade_seconds(&database);
+        let applied_play_sequence =
+            reprise_core::library::stats::play_journal_high_water(&database).map_err(|error| {
+                AndroidPlaybackError::Backend {
+                    detail: format!("could not read playback statistics journal state: {error}"),
+                }
+            })?;
         drop(database);
         let inner = Arc::new(SessionInner {
             state: Mutex::new(SessionState::new()),
             backend: OnceLock::new(),
             listener,
-            plays: PlayRecorder::spawn(database_path.clone()),
+            plays: PlayRecorder::spawn(database_path.clone(), applied_play_sequence),
             database_path,
         });
         let weak = Arc::downgrade(&inner);

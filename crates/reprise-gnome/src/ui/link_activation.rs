@@ -71,6 +71,12 @@ pub(in crate::ui) fn arm_slot(
     );
 }
 
+pub(in crate::ui) fn relabel(widget: &impl IsA<gtk4::Widget>, accessible_label: &str) {
+    widget
+        .upcast_ref::<gtk4::Widget>()
+        .update_property(&[gtk4::accessible::Property::Label(accessible_label)]);
+}
+
 pub(in crate::ui) fn css() -> String {
     format!(
         ".{LINK_CLASS}:focus-visible {{ \

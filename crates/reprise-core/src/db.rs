@@ -4,6 +4,11 @@ use std::path::Path;
 
 #[path = "db_handle.rs"]
 mod handle;
+pub use crate::db_spectrogram::{
+    get_track_spectrogram, get_waveform_peaks, pending_render_data_tracks, set_track_render_data,
+    set_track_spectrogram, set_waveform_peaks, track_source_fingerprint, PendingRenderDataTrack,
+    SpectrogramStoreOutcome,
+};
 pub use handle::Db;
 
 #[derive(Debug, thiserror::Error)]
@@ -18,7 +23,7 @@ pub enum DbError {
     SchemaNotReady { found: i64, supported: i64 },
 }
 
-pub const SUPPORTED_SCHEMA_VERSION: i64 = 54;
+pub const SUPPORTED_SCHEMA_VERSION: i64 = 56;
 
 /// Default SQLite `busy_timeout` (milliseconds) for every connection opened
 /// through [`Db`]: wait up to this long for a write lock instead of failing
@@ -728,45 +733,10 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
     crate::db_podcasts_radio::migrate_v51(conn)?;
     crate::db_podcasts_radio::migrate_v52(conn)?;
     crate::db_equalizer::migrate_v53(conn)?;
-    crate::db_new_releases_accent::migrate_v54(conn)?;
+    crate::db_play_journal::migrate_v54(conn)?;
+    crate::db_spectrogram::migrate_v55(conn)?;
+    crate::db_new_releases_accent::migrate_v56(conn)?;
     Ok(())
-}
-
-/// Stores pre-computed waveform peaks for a track.
-pub fn set_waveform_peaks(db: &Db, track_id: i64, peaks: &[u8]) -> Result<(), DbError> {
-    let conn = db.conn();
-    conn.execute(
-        "UPDATE tracks SET waveform_peaks = ?1 WHERE id = ?2",
-        rusqlite::params![peaks, track_id],
-    )?;
-    Ok(())
-}
-
-/// Loads pre-computed waveform peaks for a track. Returns `None` if not yet analyzed.
-pub fn get_waveform_peaks(db: &Db, track_id: i64) -> Result<Option<Vec<u8>>, DbError> {
-    let conn = db.conn();
-    let result = conn.query_row(
-        "SELECT waveform_peaks FROM tracks WHERE id = ?1",
-        [track_id],
-        |row| row.get::<_, Option<Vec<u8>>>(0),
-    )?;
-    Ok(result)
-}
-
-/// Returns live tracks which still need waveform analysis, in stable id
-/// order. SQL ownership stays in core while platform frontends only schedule
-/// extraction work.
-pub fn pending_waveform_tracks(db: &Db) -> Result<Vec<(i64, String)>, DbError> {
-    let conn = db.conn();
-    let mut statement = conn.prepare(&format!(
-        "SELECT id, path FROM tracks \
-         WHERE waveform_peaks IS NULL AND {} ORDER BY id",
-        crate::queries::PRESENT
-    ))?;
-    let tracks = statement
-        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
-        .collect::<Result<_, _>>()?;
-    Ok(tracks)
 }
 
 #[cfg(test)]

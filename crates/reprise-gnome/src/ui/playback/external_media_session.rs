@@ -42,6 +42,7 @@ fn restored_session(
         neighbours,
         automatic_advance: None,
         subscription_id: episode.subscription_id,
+        kind: episode.kind,
         published_at: episode.published_at,
         art_url: episode
             .image_url

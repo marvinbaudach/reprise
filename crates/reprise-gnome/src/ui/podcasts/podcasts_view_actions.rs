@@ -147,6 +147,14 @@ impl PodcastsView {
             view.select_row(episode_id, mode);
         });
         group.add_action(&select_row);
+        let clear_selection = gio::SimpleAction::new("clear-selection", None);
+        let weak = Rc::downgrade(self);
+        clear_selection.connect_activate(move |_, _| {
+            if let Some(view) = weak.upgrade() {
+                view.clear_visible_selection();
+            }
+        });
+        group.add_action(&clear_selection);
         self.youtube_detail.install_actions(&group);
         let add = gio::SimpleAction::new("open-add", None);
         let weak = Rc::downgrade(self);
@@ -298,7 +306,7 @@ impl PodcastsView {
     }
 
     fn remove_episodes(self: &Rc<Self>, episode_ids: &[i64]) {
-        // SRC-12 requires a one-episode selection to behave exactly as it did
+        // SRC-12a requires a one-episode selection to behave exactly as it did
         // before multi-selection existed. The batch path would report the
         // generic "1 removed" where the single path names the episode, so a
         // lone selection is handed straight back to it. The context menu makes
@@ -473,7 +481,7 @@ mod batch_tests {
     use reprise_core::podcasts::store::NewSubscription;
 
     #[test]
-    fn src_12_partial_batch_feedback_reports_every_success_and_failure_once() {
+    fn src_12a_partial_batch_feedback_reports_every_success_and_failure_once() {
         let result = BatchResult {
             requested: 7,
             succeeded_ids: vec![1, 2, 3, 4],
@@ -488,7 +496,7 @@ mod batch_tests {
     }
 
     #[test]
-    fn src_12_a_fully_successful_batch_says_nothing_about_failures() {
+    fn src_12a_a_fully_successful_batch_says_nothing_about_failures() {
         let result = BatchResult {
             requested: 3,
             succeeded_ids: vec![1, 2, 3],
