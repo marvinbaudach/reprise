@@ -39,9 +39,31 @@ pub(super) fn invalidate(state: &mut State) {
 }
 
 pub(super) fn cache_is_live(state: &State) -> bool {
-    state.build_progress >= 1.0
-        && state.crossfade_progress >= 1.0
-        && (state.desaturation_progress - state.desaturation_target).abs() < f64::EPSILON
+    cache_is_live_for(
+        state.build_progress,
+        state.crossfade_progress,
+        state.desaturation_progress,
+        state.desaturation_target,
+    )
+}
+
+/// Whether the cached surfaces may be used, as a pure function of the three
+/// animations that repaint the bars themselves.
+///
+/// During build-up, crossfade and desaturation every frame genuinely differs,
+/// so the cache would be rebuilt per frame and buy nothing; those states fall
+/// back to the direct drawing path. Split out from `cache_is_live` because a
+/// forgotten condition here silently shows stale bars, and that is worth a
+/// test that needs no display.
+pub(super) fn cache_is_live_for(
+    build_progress: f64,
+    crossfade_progress: f64,
+    desaturation_progress: f64,
+    desaturation_target: f64,
+) -> bool {
+    build_progress >= 1.0
+        && crossfade_progress >= 1.0
+        && (desaturation_progress - desaturation_target).abs() < f64::EPSILON
 }
 
 pub(super) fn ensure_cache(
@@ -228,4 +250,62 @@ fn paint_mask(
     cr.set_source_rgba(colour.0, colour.1, colour.2, alpha);
     let _ = cr.mask_surface(mask, 0.0, 0.0);
     cr.restore().ok();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const OPAQUE: (f64, f64, f64) = (0.5, 0.25, 0.75);
+
+    fn key(
+        width: i32,
+        height: i32,
+        scale_factor: i32,
+        bar_count: usize,
+        colour: (f64, f64, f64),
+        desaturation: f64,
+    ) -> SurfaceKey {
+        SurfaceKey::new(width, height, scale_factor, bar_count, colour, desaturation)
+    }
+
+    #[test]
+    fn surface_key_is_stable_for_unchanged_parameters() {
+        assert_eq!(
+            key(400, 28, 1, 80, OPAQUE, 0.0),
+            key(400, 28, 1, 80, OPAQUE, 0.0)
+        );
+    }
+
+    #[test]
+    fn surface_key_changes_with_every_dimension_that_repaints_the_bars() {
+        // One assertion per dimension: dropping any of them from the key would
+        // keep a stale cache on screen, and that is invisible until someone
+        // resizes, changes theme, or pauses.
+        let base = key(400, 28, 1, 80, OPAQUE, 0.0);
+        assert_ne!(base, key(401, 28, 1, 80, OPAQUE, 0.0), "width");
+        assert_ne!(base, key(400, 29, 1, 80, OPAQUE, 0.0), "height");
+        assert_ne!(base, key(400, 28, 2, 80, OPAQUE, 0.0), "scale factor");
+        assert_ne!(base, key(400, 28, 1, 81, OPAQUE, 0.0), "bar count");
+        assert_ne!(
+            base,
+            key(400, 28, 1, 80, (0.5, 0.25, 0.76), 0.0),
+            "widget colour"
+        );
+        assert_ne!(base, key(400, 28, 1, 80, OPAQUE, 1.0), "desaturation");
+    }
+
+    #[test]
+    fn cache_serves_only_the_settled_state() {
+        assert!(cache_is_live_for(1.0, 1.0, 0.0, 0.0));
+        assert!(cache_is_live_for(1.0, 1.0, 1.0, 1.0));
+        // Build-up, crossfade and desaturation each repaint the bars
+        // themselves, so each one alone must fall back to the direct path.
+        assert!(!cache_is_live_for(0.5, 1.0, 0.0, 0.0), "build-up running");
+        assert!(!cache_is_live_for(1.0, 0.5, 0.0, 0.0), "crossfade running");
+        assert!(
+            !cache_is_live_for(1.0, 1.0, 0.4, 1.0),
+            "desaturation in flight"
+        );
+    }
 }

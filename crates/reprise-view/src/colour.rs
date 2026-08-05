@@ -92,6 +92,14 @@ pub fn oklab_to_srgb(l: f64, a: f64, b: f64) -> (f64, f64, f64) {
 }
 
 /// Scales an sRGB colour's OKLCH chroma while preserving lightness and hue.
+///
+/// Deliberately continuous. The cover-accent version this replaced quantized
+/// both its input and its result to 8-bit steps, which was an artefact of that
+/// path starting from a `u8` triple; every caller here passes continuous
+/// channels — the widget colour and, since the spectral axis, an OKLCH
+/// interpolation — so rounding to 255 steps twice per call would only discard
+/// precision. The measured difference stays under one 8-bit step, which the
+/// existing cover-accent test already tolerates.
 pub fn scale_chroma(r: f64, g: f64, b: f64, factor: f64) -> (f64, f64, f64) {
     let (l, a, b) = srgb_to_oklab(r, g, b);
     let factor = factor.clamp(0.0, 1.0);

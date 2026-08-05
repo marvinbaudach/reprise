@@ -10,7 +10,14 @@ pub const TEAL: (u8, u8, u8) = (79, 219, 212);
 /// Maps the normalized absolute frequency position to the long, falling-hue
 /// OKLCH route from coral through magenta and blue to teal.
 pub fn spectral_colour(t: f64) -> (f64, f64, f64) {
-    let t = t.clamp(0.0, 1.0);
+    // `f64::clamp` passes NaN through unchanged, so clamping alone would carry
+    // it all the way into the returned channels and paint the playhead with
+    // NaN. This crate is toolkit-neutral and every frontend reaches these
+    // functions directly, so the guard belongs here rather than at one caller.
+    // Only NaN is redirected: an infinite position still clamps onto an end of
+    // the axis, while NaN has no place on it at all, and the middle is the one
+    // answer that claims nothing.
+    let t = if t.is_nan() { 0.5 } else { t.clamp(0.0, 1.0) };
     let normalized = |colour: (u8, u8, u8)| {
         (
             f64::from(colour.0) / 255.0,
@@ -61,6 +68,11 @@ pub fn centroid_at(raw: &[u8], fraction: f64) -> f64 {
         0 => 0.5,
         1 => f64::from(raw[0]) / 255.0,
         len => {
+            // See `spectral_colour`: a NaN fraction survives `clamp`, and
+            // `NaN as usize` then saturates to 0 while `amount` stays NaN, so
+            // the interpolation would return NaN instead of a support point.
+            // An infinite fraction needs no guard — `clamp` handles it.
+            let fraction = if fraction.is_nan() { 0.0 } else { fraction };
             let index = fraction.clamp(0.0, 1.0) * (len - 1) as f64;
             let lower = index.floor() as usize;
             let upper = (lower + 1).min(len - 1);
@@ -149,6 +161,31 @@ mod tests {
         assert_eq!(centroid_at(&[], 0.3), 0.5);
         assert_eq!(centroid_at(&[12, 200], -1.0), 12.0 / 255.0);
         assert_eq!(centroid_at(&[12, 200], 2.0), 200.0 / 255.0);
+    }
+
+    #[test]
+    fn non_finite_positions_never_leak_into_the_result() {
+        // `f64::clamp` returns NaN for NaN, so both entry points guard
+        // explicitly. Without that, the playhead is painted with NaN channels.
+        for fraction in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let sampled = centroid_at(&[12, 200], fraction);
+            assert!(
+                sampled.is_finite(),
+                "centroid_at({fraction}) was not finite"
+            );
+            assert!((0.0..=1.0).contains(&sampled));
+
+            let (r, g, b) = spectral_colour(fraction);
+            assert!(
+                r.is_finite() && g.is_finite() && b.is_finite(),
+                "spectral_colour({fraction}) was not finite"
+            );
+        }
+        // An infinite position still clamps onto the axis rather than
+        // collapsing to the middle: only NaN has no place on it.
+        assert_eq!(centroid_at(&[12, 200], f64::INFINITY), 200.0 / 255.0);
+        assert_eq!(centroid_at(&[12, 200], f64::NEG_INFINITY), 12.0 / 255.0);
+        assert_eq!(centroid_at(&[12, 200], f64::NAN), 12.0 / 255.0);
     }
 
     #[test]
