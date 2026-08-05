@@ -5040,3 +5040,35 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:18
 msgid "Separate title bar"
 msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:33
+msgid "Analyze Library"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:34
+msgid "Stop Analysis"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:200
+msgid "Analyzing library…"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:201
+msgid "Library analysis complete"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:202
+msgid "Library analysis stopped"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:203
+msgid "Could not analyze the library"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:228
+msgid "{analyzed} of {total} analyzed"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:240
+msgid "{analyzed} analyzed · {failed} failed"
+msgstr ""

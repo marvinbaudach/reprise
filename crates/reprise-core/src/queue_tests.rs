@@ -227,6 +227,53 @@ fn set_shuffle_guard_failure_does_not_desync_shuffled_flag() {
     );
 }
 
+/// Activating a row in a shuffled view must not strand the rows above it.
+/// `start_index` is a row in the *visible* list, not a slot in the play
+/// order: a freshly seeded context has no history, so the activated track
+/// leads and every other track stays upcoming. Before this was pinned, the
+/// activated track was forced onto play-order slot `start_index`, which made
+/// everything ahead of it count as already played — a click on row 11 of an
+/// 18-track view left only 7 tracks queued.
+#[test]
+fn set_tracks_while_shuffled_leaves_every_other_track_upcoming() {
+    fastrand::seed(42);
+    let mut q = Queue::new();
+    q.set_tracks(vec![1], 0);
+    q.set_shuffle(true);
+    assert!(q.is_shuffled());
+
+    let ids: Vec<i64> = (1..=18).map(|n| n * 10).collect();
+    q.set_tracks(ids.clone(), 10); // the 11th visible row
+
+    assert_eq!(q.current(), Some(110), "the activated row must play");
+    assert_eq!(
+        q.remaining_len(),
+        ids.len() - 1,
+        "every track except the activated one is still upcoming"
+    );
+
+    let mut upcoming = q.remaining_after_current();
+    upcoming.sort_unstable();
+    let expected: Vec<i64> = ids.into_iter().filter(|id| *id != 110).collect();
+    assert_eq!(upcoming, expected, "no track may be silently dropped");
+}
+
+/// The counterpart to the test above: toggling shuffle *during* playback has
+/// real history to preserve, so it keeps the playhead where it is. Only
+/// `set_tracks` seeds a fresh context.
+#[test]
+fn set_shuffle_mid_playback_keeps_the_playhead_and_its_history() {
+    fastrand::seed(42);
+    let mut q = Queue::new();
+    q.set_tracks(vec![10, 20, 30, 40], 2);
+
+    q.set_shuffle(true);
+
+    assert_eq!(q.current(), Some(30));
+    assert_eq!(q.pos, Some(2), "two played tracks stay behind the playhead");
+    assert_eq!(q.remaining_len(), 1);
+}
+
 // Test 8: next_manual at end
 #[test]
 fn test_next_manual_end_repeat_off() {

@@ -93,6 +93,7 @@ pub(in crate::ui) fn build(
         scrolled: scrolled.clone(),
         playing_track_id: Cell::new(None),
         track_reveal_generation: Cell::new(0),
+        track_reveal_pending: Cell::new(false),
         playing_episode: Cell::new(None),
         now_playing_markers: RefCell::new(std::collections::HashMap::new()),
         rating_cells: RefCell::new(std::collections::HashMap::new()),
@@ -149,7 +150,6 @@ pub(in crate::ui) fn build(
     });
 
     {
-        let shared_weak = Rc::downgrade(&shared);
         // Opt-in diagnostics for the elusive "double-click jumps the table to
         // the top" report that only reproduces in the installed build: with
         // `REPRISE_DEBUG_SCROLL=1` set, every large upward viewport jump logs a
@@ -182,12 +182,50 @@ pub(in crate::ui) fn build(
                 } else if debug_scroll {
                     tracing::debug!(value, previous, "SCROLL");
                 }
-                if let Some(shared) = shared_weak.upgrade() {
-                    shared
-                        .last_scroll_activity
-                        .set(Some(std::time::Instant::now()));
-                }
             });
+    }
+
+    // NAV-10a: "the user is scrolling right now" has to come from what the
+    // user did, not from the adjustment moving. Every reload, every anchor
+    // restore, GTK's own reset after `items_changed` — and the centering
+    // glide itself — write this value, so reading activity off
+    // `value-changed` marked the list as user-scrolled after every single
+    // reload. An automatic advance inside the following grace window was then
+    // demoted to a marker update: deleting the running track reloads and
+    // advances in one turn, and a library scan reloads in bursts, which is
+    // precisely when the table stopped following playback.
+    //
+    // Capture phase and `Proceed`: the scrolled window still handles the wheel
+    // exactly as before, this only witnesses it. The scrollbar is watched
+    // separately rather than through one gesture over the whole scroll area —
+    // a drag gesture there would compete with the rows' own `DragSource` for
+    // the pointer sequence, and reordering by dragging a row matters more than
+    // noticing that its scrollbar moved.
+    {
+        let scroll = gtk4::EventControllerScroll::new(gtk4::EventControllerScrollFlags::BOTH_AXES);
+        scroll.set_propagation_phase(gtk4::PropagationPhase::Capture);
+        let shared_weak = Rc::downgrade(&shared);
+        scroll.connect_scroll(move |_, _, _| {
+            if let Some(shared) = shared_weak.upgrade() {
+                shared
+                    .last_scroll_activity
+                    .set(Some(std::time::Instant::now()));
+            }
+            gtk4::glib::Propagation::Proceed
+        });
+        scrolled.add_controller(scroll);
+
+        let scrollbar_drag = gtk4::GestureDrag::new();
+        scrollbar_drag.set_propagation_phase(gtk4::PropagationPhase::Capture);
+        let shared_weak = Rc::downgrade(&shared);
+        scrollbar_drag.connect_drag_update(move |_, _, _| {
+            if let Some(shared) = shared_weak.upgrade() {
+                shared
+                    .last_scroll_activity
+                    .set(Some(std::time::Instant::now()));
+            }
+        });
+        scrolled.vscrollbar().add_controller(scrollbar_drag);
     }
 
     {

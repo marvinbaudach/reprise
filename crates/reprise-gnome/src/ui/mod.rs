@@ -87,11 +87,13 @@ mod source_error_banner;
 mod source_error_details;
 mod source_reveal;
 mod source_row;
+mod spectrogram;
 mod stats;
 pub mod status_bar;
 pub mod strings;
 mod style;
 mod swell;
+pub(crate) mod table_column_widths;
 mod tag_edit;
 mod tag_write_gate;
 #[cfg(test)]
@@ -175,6 +177,8 @@ use sidebar::{
 };
 #[allow(unused_imports)]
 pub(crate) use sidebar::{sidebar_dnd, sidebar_export, sidebar_session};
+#[allow(unused_imports)]
+use spectrogram::{spectrogram_batch, spectrogram_batch_progress};
 #[allow(unused_imports)]
 pub(crate) use stats::{stats_css, stats_view};
 #[allow(unused_imports)]

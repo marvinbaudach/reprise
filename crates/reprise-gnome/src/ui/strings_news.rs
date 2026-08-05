@@ -197,6 +197,10 @@ pub const COVER_DOWNLOAD_FAILED: &str = N_!("Could not check album covers");
 pub const LYRICS_BATCH_CHECKING: &str = N_!("Checking missing lyrics…");
 pub const LYRICS_BATCH_COMPLETE: &str = N_!("Lyrics check complete");
 pub const LYRICS_BATCH_FAILED: &str = N_!("Could not check lyrics");
+pub const SPECTROGRAM_BATCH_ANALYZING: &str = N_!("Analyzing library…");
+pub const SPECTROGRAM_BATCH_COMPLETE: &str = N_!("Library analysis complete");
+pub const SPECTROGRAM_BATCH_STOPPED: &str = N_!("Library analysis stopped");
+pub const SPECTROGRAM_BATCH_FAILED: &str = N_!("Could not analyze the library");
 
 pub fn cover_download_progress(
     checked: usize,
@@ -215,6 +219,28 @@ pub fn cover_download_progress(
             ("total", &total),
             ("downloaded", &downloaded),
             ("unavailable", &unavailable),
+        ],
+    )
+}
+
+pub fn spectrogram_batch_progress(analyzed: usize, total: usize) -> String {
+    formatted(
+        N_!("{analyzed} of {total} analyzed"),
+        &[
+            ("analyzed", &analyzed.to_string()),
+            ("total", &total.to_string()),
+        ],
+    )
+}
+
+/// The closing line. `failed` is carried even when it is zero: a run that
+/// silently dropped tracks would otherwise read exactly like a clean one.
+pub fn spectrogram_batch_summary(analyzed: usize, failed: usize) -> String {
+    formatted(
+        N_!("{analyzed} analyzed · {failed} failed"),
+        &[
+            ("analyzed", &analyzed.to_string()),
+            ("failed", &failed.to_string()),
         ],
     )
 }

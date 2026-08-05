@@ -5041,3 +5041,39 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:18
 msgid "Separate title bar"
 msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:33
+#, fuzzy
+msgid "Analyze Library"
+msgstr "লাইব্রেরি"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:34
+msgid "Stop Analysis"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:200
+#, fuzzy
+msgid "Analyzing library…"
+msgstr "লাইব্রেরি স্ক্যান করা হচ্ছে"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:201
+#, fuzzy
+msgid "Library analysis complete"
+msgstr "শুধু লাইব্রেরির শিল্পী"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:202
+msgid "Library analysis stopped"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:203
+#, fuzzy
+msgid "Could not analyze the library"
+msgstr "কলাম বিন্যাস সংরক্ষণ করা যায়নি"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:228
+msgid "{analyzed} of {total} analyzed"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:240
+msgid "{analyzed} analyzed · {failed} failed"
+msgstr ""

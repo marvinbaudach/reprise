@@ -9,6 +9,7 @@ use reprise_core::concerts::ConcertRow;
 use super::concerts_model::ConcertObject;
 use super::concerts_presentation::{format_distance_km, format_event_date, ticket_button_label};
 use crate::ui::strings;
+use crate::ui::table_column_widths as widths;
 
 pub(super) type OnOpenTarget = Rc<dyn Fn(String)>;
 
@@ -124,15 +125,20 @@ fn artist_column(view: &gtk4::ColumnView) {
         .title(strings::text(strings::CONCERTS_ARTIST))
         .factory(&factory)
         .resizable(true)
-        .expand(true)
         .build();
+    // Artist is the filler: it owns whatever width the pinned columns leave.
+    widths::pin_filler(&column, widths::TITLE_MIN);
     view.append_column(&column);
 }
 
+/// `sizing` fixes the column's width. Concerts' only filler is the artist
+/// column, so every column built here is pinned outright; see [`widths`]
+/// (STYLE-9).
 fn text_column(
     view: &gtk4::ColumnView,
     title: &str,
     id: Option<&str>,
+    sizing: widths::Sizing,
     numeric: bool,
     render: impl Fn(&ConcertRow) -> String + 'static,
     tooltip: impl Fn(&ConcertRow) -> Option<String> + 'static,
@@ -180,8 +186,8 @@ fn text_column(
         .title(title)
         .factory(&factory)
         .resizable(true)
-        .expand(true)
         .build();
+    sizing.apply(&column);
     if let Some(id) = id {
         column.set_id(Some(id));
         column.set_sorter(Some(&gtk4::CustomSorter::new(|_, _| gtk4::Ordering::Equal)));
@@ -262,6 +268,8 @@ fn ticket_column(view: &gtk4::ColumnView, on_open: &OnOpenTarget) {
         .factory(&factory)
         .resizable(false)
         .build();
+    // The button label differs per row (provider name vs none at all).
+    widths::pin(&column, widths::ACTION);
     view.append_column(&column);
 }
 
@@ -275,6 +283,7 @@ pub(super) fn append_columns(view: &gtk4::ColumnView, on_open: &OnOpenTarget) ->
         view,
         &strings::text(strings::CONCERTS_DATE),
         Some("date"),
+        widths::Sizing::pinned(widths::DATE),
         false,
         |row| format_event_date(&row.date_key, Local::now().date_naive()),
         |_| None,
@@ -284,6 +293,7 @@ pub(super) fn append_columns(view: &gtk4::ColumnView, on_open: &OnOpenTarget) ->
         view,
         &strings::text(strings::CONCERTS_CITY),
         None,
+        widths::Sizing::pinned(widths::LABEL),
         false,
         |row| row.city.clone(),
         city_tooltip,
@@ -292,6 +302,7 @@ pub(super) fn append_columns(view: &gtk4::ColumnView, on_open: &OnOpenTarget) ->
         view,
         &strings::text(strings::CONCERTS_VENUE),
         None,
+        widths::Sizing::pinned(widths::NAME),
         false,
         |row| row.venue.clone(),
         |_| None,
@@ -300,6 +311,7 @@ pub(super) fn append_columns(view: &gtk4::ColumnView, on_open: &OnOpenTarget) ->
         view,
         &strings::text(strings::CONCERTS_DISTANCE),
         Some("distance"),
+        widths::Sizing::pinned(widths::NUMERIC),
         true,
         |row| format_distance_km(row.distance_km),
         |_| None,
@@ -376,6 +388,30 @@ mod tests {
         );
         event.is_similar = false;
         assert_eq!(similar_caption(&event), None);
+    }
+
+    /// STYLE-9: the concerts table must not re-measure itself
+    /// from the rows currently on screen, or every scroll shifts the columns.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn style_9_concert_columns_keep_their_width_when_the_rows_change() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+
+        let store = gtk4::gio::ListStore::new::<ConcertObject>();
+        store.append(&ConcertObject::new(row(None, None)));
+        let view = gtk4::ColumnView::new(Some(gtk4::SingleSelection::new(Some(store.clone()))));
+        let on_open: OnOpenTarget = Rc::new(|_| {});
+        append_columns(&view, &on_open);
+
+        crate::ui::table_column_widths::assert_stable_across_row_change(&view, || {
+            let mut long = row(Some("https://tickets.example/offer"), None);
+            long.artist_name = "Godspeed You! Black Emperor and Friends".into();
+            long.venue = "Königsplatz Open Air Arena Munich".into();
+            long.city = "Ludwigshafen am Rhein".into();
+            long.distance_km = Some(1234.5);
+            store.splice(0, 1, &[ConcertObject::new(long)]);
+        });
     }
 
     #[test]

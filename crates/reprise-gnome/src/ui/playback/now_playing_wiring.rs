@@ -297,8 +297,11 @@ impl PlayerController {
                         &track_path,
                         waveform_backend.as_ref(),
                     )?;
-                    // Same decode, same store: the colour curve is derived from
-                    // the spectrogram the call above just made sure exists.
+                    // Only a track whose peaks had to be decoded just now also
+                    // got a spectrogram stored; one with cached peaks returns
+                    // from the call above untouched. So this is `None` for
+                    // everything the library analysis has not reached yet, and
+                    // the bar draws in the plain accent until it has.
                     let centroid = reprise_core::waveform_cache::centroid_for_playback(
                         &db,
                         track_id,
@@ -309,13 +312,48 @@ impl PlayerController {
         }) else {
             return;
         };
+        let colour_backend = self.waveform_backend.clone();
+        let colour_path = std::path::PathBuf::from(path);
         glib::spawn_future_local(async move {
             if let Ok(Some((peaks, centroid))) = receiver.recv().await {
-                if waveform_generation.get() == generation {
-                    // Same peaks feed both players so the mini waveform (frame
-                    // 1e) shows the real shape + progress, not the skeleton.
-                    compact_player.set_analysis(peaks.clone(), centroid.clone());
-                    waveform.set_analysis(peaks, centroid);
+                if waveform_generation.get() != generation {
+                    return;
+                }
+                let buckets = peaks.len();
+                // Same peaks feed both players so the mini waveform (frame
+                // 1e) shows the real shape + progress, not the skeleton.
+                compact_player.set_analysis(peaks.clone(), centroid.clone());
+                waveform.set_analysis(peaks.clone(), centroid.clone());
+                if centroid.is_some() {
+                    return;
+                }
+                // No curve yet: the shape is already on screen, so the decode
+                // that produces the colour runs behind it and the bar is
+                // recoloured when it lands. Nobody waits for this.
+                let db_path = reprise_core::db::default_path();
+                let Ok(receiver) = one_shot_task::spawn("reprise-waveform-colour", move || {
+                    reprise_core::db::Db::open_migrated(Some(&db_path))
+                        .ok()
+                        .and_then(|db| {
+                            reprise_core::waveform_cache::ensure_centroid_for_playback(
+                                &db,
+                                track_id,
+                                &colour_path,
+                                buckets,
+                                colour_backend.as_ref(),
+                            )
+                        })
+                }) else {
+                    return;
+                };
+                if let Ok(Some(curve)) = receiver.recv().await {
+                    if waveform_generation.get() == generation {
+                        // Same bars, now with colour: `set_analysis` crossfades
+                        // between them, so the bar warms into its colours
+                        // instead of snapping.
+                        compact_player.set_analysis(peaks.clone(), Some(curve.clone()));
+                        waveform.set_analysis(peaks, Some(curve));
+                    }
                 }
             }
         });

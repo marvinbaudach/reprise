@@ -102,13 +102,14 @@ fn ensure_window(
     conn: &Rc<Db>,
     db_path: &std::path::Path,
     shared: &SharedFileOpenHandler,
+    startup_intent: ui::file_open::StartupOpenIntent,
 ) -> ui::file_open::FileOpenHandler {
     let existing = shared.borrow().clone();
     if let Some(existing) = existing {
         return existing;
     }
 
-    let handler = ui::window::build(app, conn, db_path);
+    let handler = ui::window::build(app, conn, db_path, startup_intent);
     *shared.borrow_mut() = Some(handler.clone());
     handler
 }
@@ -223,7 +224,13 @@ fn main() -> glib::ExitCode {
         // Without this guard, a forwarded activate would build a second
         // window, PlayerController, playbin, and ticker thread all sharing
         // the same database connection.
-        let handler = ensure_window(app, &activate_conn, &activate_path, &activate_handler);
+        let handler = ensure_window(
+            app,
+            &activate_conn,
+            &activate_path,
+            &activate_handler,
+            ui::file_open::StartupOpenIntent::Library,
+        );
         tracing::debug!("presenting existing window");
         handler.present();
     });
@@ -231,8 +238,16 @@ fn main() -> glib::ExitCode {
     let open_conn = conn;
     let open_path = path;
     app.connect_open(move |app, files, _hint| {
-        let handler = ensure_window(app, &open_conn, &open_path, &file_open_handler);
-        handler.open(files);
+        let request = ui::file_open::resolve_open_request(&open_conn, files);
+        let startup_intent = request.startup_intent();
+        let handler = ensure_window(
+            app,
+            &open_conn,
+            &open_path,
+            &file_open_handler,
+            startup_intent,
+        );
+        handler.open_request(request);
     });
 
     app.run()

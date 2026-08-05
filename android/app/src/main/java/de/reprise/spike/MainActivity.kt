@@ -1,6 +1,7 @@
 package de.reprise.spike
 
 import android.Manifest
+import android.animation.ValueAnimator
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -10,6 +11,8 @@ import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.util.Log
+import android.view.View
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -39,10 +42,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
 import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.lifecycle.viewmodel.compose.viewModel
 import de.reprise.spike.ui.theme.RepriseTheme
+import de.reprise.spike.ui.theme.AmbientTrueBlack
 import uniffi.reprise_android_ffi.AndroidColorScheme
 import uniffi.reprise_android_ffi.AndroidEqualizerPoint
 import uniffi.reprise_android_ffi.AndroidRepeatMode
@@ -101,6 +108,9 @@ class MainActivity : ComponentActivity() {
             port = AndroidThemeSettingsPort(library),
             dynamicAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S,
         )
+    }
+    private val visualizerController by lazy {
+        VisualizerController(AndroidVisualizerSettingsPort(library))
     }
 
     /**
@@ -169,22 +179,46 @@ class MainActivity : ComponentActivity() {
             ?: productionSurface()
         setContent {
             var themeSelection by remember { mutableStateOf(surface.initialTheme) }
+            var visualizer by remember { mutableStateOf(surface.initialVisualizer) }
             val darkPalette = themeSelection.usesDarkPalette(isSystemInDarkTheme())
             val surfaceState: MobileSurfaceViewModel = viewModel()
             val surfaceLayout = surfaceLayoutFor(calculateWindowSizeClass(this))
+            val ambientMotion = remember(surface.observeAmbientScheduling) {
+                AmbientMotionController(surface.observeAmbientScheduling)
+            }
+            BindAmbientRuntime(ambientMotion, surface.animationsEnabled)
             LaunchedEffect(darkPalette) { configureEdgeToEdge(darkPalette) }
+            LaunchedEffect(surfaceState.dockMode) { setDockWindowMode(surfaceState.dockMode) }
             RepriseTheme(themeSelection, darkPalette) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background,
+                    color = if (surfaceState.dockMode) {
+                        AmbientTrueBlack
+                    } else {
+                        MaterialTheme.colorScheme.background
+                    },
                 ) {
                     // The frame starts below the clock. Material 3's
                     // NavigationBar consumes its own bottom inset, so the root
                     // must not consume that inset a second time.
-                    Box(modifier = Modifier.statusBarsPadding()) {
+                    Box(
+                        modifier = if (surfaceState.dockMode) {
+                            Modifier
+                        } else {
+                            Modifier.statusBarsPadding()
+                        },
+                    ) {
                         CompositionLocalProvider(
                             LocalTrackArtwork provides surface.artwork(),
                             LocalPlaybackControls provides surface.playbackControls,
+                            LocalVisualizerControl provides VisualizerControl(visualizer) { mode ->
+                                runCatching { surface.selectVisualizer(mode) }
+                                    .onSuccess { selected -> visualizer = selected }
+                                    .onFailure { error ->
+                                        Log.e(TAG, "Could not change visualizer", error)
+                                    }
+                            },
+                            LocalAmbientMotionController provides ambientMotion,
                         ) {
                             LibraryScreen(
                                 initialState = surface.initialState,
@@ -225,6 +259,7 @@ class MainActivity : ComponentActivity() {
 
     private fun productionSurface() = MainActivitySurfaceDependencies(
         initialTheme = restoreTheme(),
+        initialVisualizer = restoreVisualizer(),
         initialState = restoreLibrary(),
         artwork = { artwork },
         playbackControls = playbackControls,
@@ -241,6 +276,13 @@ class MainActivity : ComponentActivity() {
         replaceEqualizerCurve = ::replaceEqualizerCurve,
         setGaplessEnabled = ::setGaplessEnabled,
         selectTheme = { current, palette -> themeController.select(current, palette) },
+        // Keep native access behind the authored action, like theme selection:
+        // service-lifetime tests create and start this activity without ever
+        // composing a screen, and production should not open the library just
+        // because a callback was assembled.
+        selectVisualizer = { visualizer -> visualizerController.select(visualizer) },
+        animationsEnabled = ValueAnimator::areAnimatorsEnabled,
+        observeAmbientScheduling = {},
     )
 
     private fun configureEdgeToEdge(darkPalette: Boolean) {
@@ -254,6 +296,34 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    @Suppress("DEPRECATION")
+    private fun setDockWindowMode(docked: Boolean) {
+        val keepScreenOn = WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+        if (docked) {
+            window.addFlags(keepScreenOn)
+        } else {
+            window.clearFlags(keepScreenOn)
+        }
+        WindowCompat.getInsetsController(window, window.decorView).run {
+            systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            if (docked) {
+                hide(WindowInsetsCompat.Type.systemBars())
+            } else {
+                show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+        // Robolectric exposes this legacy request while the compat controller
+        // above is the API the device follows. Keeping both also covers API 26.
+        window.decorView.systemUiVisibility = if (docked) {
+            View.SYSTEM_UI_FLAG_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+        } else {
+            View.SYSTEM_UI_FLAG_VISIBLE
+        }
+    }
+
     private fun restoreTheme(): MobileThemeSelection = runCatching {
         themeController.load()
     }.getOrElse { error ->
@@ -263,6 +333,13 @@ class MainActivity : ComponentActivity() {
             colorScheme = AndroidColorScheme.SYSTEM,
             dynamicAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S,
         )
+    }
+
+    private fun restoreVisualizer(): MobileVisualizer = runCatching {
+        visualizerController.load()
+    }.getOrElse { error ->
+        Log.e(TAG, "Could not load visualizer setting; using Cover", error)
+        MobileVisualizer.COVER
     }
 
     override fun onStart() {
@@ -285,6 +362,9 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        setDockWindowMode(false)
+        // Compose disposal is not the release boundary: Android may destroy
+        // the activity while dock mode is still the ViewModel's current mode.
         // First, and before the library handle is closed below: a star tap that
         // is still queued has to reach the database it was written for, and a
         // write arriving at a closed handle would be a crash rather than a lost

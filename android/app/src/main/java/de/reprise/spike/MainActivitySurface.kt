@@ -9,6 +9,7 @@ internal interface MainActivitySurfaceProvider {
 
 internal data class MainActivitySurfaceDependencies(
     val initialTheme: MobileThemeSelection,
+    val initialVisualizer: MobileVisualizer,
     val initialState: LibraryScreenState,
     val artwork: () -> TrackArtwork?,
     val playbackControls: PlaybackControls,
@@ -25,4 +26,7 @@ internal data class MainActivitySurfaceDependencies(
     val replaceEqualizerCurve: (List<EqualizerCurvePoint>) -> PlaybackSettingsUiState,
     val setGaplessEnabled: (Boolean) -> PlaybackSettingsUiState,
     val selectTheme: (MobileThemeSelection, MobileTheme) -> MobileThemeSelection,
+    val selectVisualizer: (MobileVisualizer) -> MobileVisualizer,
+    val animationsEnabled: () -> Boolean,
+    val observeAmbientScheduling: (Boolean) -> Unit,
 )

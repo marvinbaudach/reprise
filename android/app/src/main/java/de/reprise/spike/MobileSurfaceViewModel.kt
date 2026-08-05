@@ -4,6 +4,7 @@ import androidx.compose.material3.windowsizeclass.WindowHeightSizeClass
 import androidx.compose.material3.windowsizeclass.WindowSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
@@ -103,12 +104,22 @@ internal class MobileSurfaceViewModel : ViewModel() {
         private set
     var settingsVisible by mutableStateOf(false)
         private set
+    var dockMode by mutableStateOf(false)
+        private set
+    var dockOfferVisible by mutableStateOf(false)
+        private set
+    var dockOfferVersion by mutableStateOf(0L)
+        private set
 
+    private val confirmedRatings = mutableStateMapOf<Long, Int>()
     private val scrollPositions = mutableMapOf<LibraryListKey, LibraryScrollPosition>()
     private var loadedWindows: LoadedLibraryWindows? = null
     private var loadedShape: LibraryCatalogShape? = null
     private var scrubTrackId: Long? = null
     private var scrubPosition by mutableStateOf<SeekPositionState?>(null)
+    private var previousSurfaceLayout: SurfaceLayout? = null
+    private var dockTrackId: Long? = null
+    private var dockRestorableRating: Int? = null
 
     fun selectTab(tab: BrowseTab) {
         selectedTab = tab
@@ -136,6 +147,95 @@ internal class MobileSurfaceViewModel : ViewModel() {
 
     fun showSettings(show: Boolean) {
         settingsVisible = show
+    }
+
+    fun observeSurfaceLayout(layout: SurfaceLayout) {
+        if (
+            previousSurfaceLayout == SurfaceLayout.STACKED &&
+            layout == SurfaceLayout.WIDE_SHORT &&
+            !dockMode
+        ) {
+            dockOfferVisible = true
+            dockOfferVersion += 1
+        }
+        previousSurfaceLayout = layout
+        if (layout == SurfaceLayout.STACKED && dockMode) {
+            exitDockMode()
+        }
+    }
+
+    fun dismissDockOffer(version: Long = dockOfferVersion) {
+        if (version == dockOfferVersion) dockOfferVisible = false
+    }
+
+    fun enterDockMode() {
+        dockMode = true
+        dockOfferVisible = false
+        nowPlayingExpanded = true
+        clearDockRatingMemory()
+    }
+
+    fun exitDockMode() {
+        dockMode = false
+        clearDockRatingMemory()
+    }
+
+    fun observeDockTrack(trackId: Long) {
+        if (dockTrackId == trackId) return
+        dockTrackId = trackId
+        dockRestorableRating = null
+    }
+
+    /**
+     * The rating to show for a row: what the database last accepted for that
+     * track while this screen has been alive, and otherwise what the row was
+     * loaded with.
+     *
+     * Three surfaces show one track's rating — the library row, the sheet's five
+     * stars and the dock's single one — and each of them used to keep its own
+     * `remember`ed copy that only its *own* successful write moved. Nothing
+     * reloads a row after a rating write (the playing row is re-read when the
+     * *track* changes, never when its rating does), so rating in the dock and
+     * stepping back out through ✕ left the sheet showing the value from before
+     * the visit. One place, one copy: the surfaces read this and remember
+     * nothing themselves.
+     *
+     * It holds one entry per track rated during the screen's life, which is as
+     * many as a listener taps — the map is never a copy of the library.
+     */
+    fun ratingOf(track: LibraryTrack): Int =
+        confirmedRatings[track.id] ?: track.rating.coerceIn(0, 5)
+
+    /**
+     * Takes up a rating, and only ever one the database has already agreed to.
+     *
+     * This is the sole writer of what [ratingOf] answers, which is what keeps
+     * the star from moving early: setting it optimistically and rolling back
+     * would be a star telling the listener something nobody had checked.
+     */
+    fun confirmRating(trackId: Long, previousRating: Int, savedRating: Int) {
+        confirmedRatings[trackId] = savedRating.coerceIn(0, 5)
+        confirmDockRating(trackId, previousRating, savedRating)
+    }
+
+    fun dockRatingTarget(trackId: Long, currentRating: Int): Int {
+        if (!dockMode || dockTrackId != trackId || currentRating != 5) return 5
+        return dockRestorableRating ?: 5
+    }
+
+    /** Records rating memory only after the database accepted the write. */
+    private fun confirmDockRating(trackId: Long, previousRating: Int, savedRating: Int) {
+        if (!dockMode || dockTrackId != trackId) return
+        if (savedRating == 5 && previousRating != 5) {
+            dockRestorableRating = previousRating.coerceIn(0, 4)
+        } else if (previousRating == 5 && savedRating == dockRestorableRating) {
+            dockRestorableRating = null
+        }
+    }
+
+    private fun clearDockRatingMemory() {
+        dockTrackId = null
+        dockRestorableRating = null
     }
 
     fun scrollPosition(list: LibraryListKey): LibraryScrollPosition =
