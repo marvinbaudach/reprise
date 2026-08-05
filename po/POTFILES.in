@@ -20,6 +20,7 @@ crates/reprise-view/src/strings/scan.rs
 crates/reprise-view/src/strings/playlists.rs
 crates/reprise-gnome/src/ui/strings_sources.rs
 crates/reprise-gnome/src/ui/strings_song_visuals.rs
+crates/reprise-gnome/src/ui/strings_seek.rs
 crates/reprise-gnome/src/ui/strings_sound_similarity.rs
 crates/reprise-gnome/src/ui/strings_tag_edit.rs
 crates/reprise-gnome/src/ui/strings_track_menu.rs

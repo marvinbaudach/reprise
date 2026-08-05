@@ -5357,3 +5357,39 @@ msgstr "Streaming · {percent} % geladen"
 #: crates/reprise-gnome/src/ui/strings_radio.rs:22
 msgid "LIVE"
 msgstr "LIVE"
+
+#: crates/reprise-gnome/src/ui/strings_seek.rs:13
+msgid "low"
+msgstr "tief"
+
+#: crates/reprise-gnome/src/ui/strings_seek.rs:14
+msgid "high"
+msgstr "hoch"
+
+#: crates/reprise-gnome/src/ui/strings_seek.rs:15
+msgid "Frequency centroid"
+msgstr "Frequenzschwerpunkt"
+
+#: crates/reprise-gnome/src/ui/strings_seek.rs:20
+msgid "Explain the Color Scale"
+msgstr "Farbskala erklären"
+
+#: crates/reprise-gnome/src/ui/strings_seek.rs:23
+msgid "Seek Bar"
+msgstr "Seek-Bar"
+
+#: crates/reprise-gnome/src/ui/strings_seek.rs:24
+msgid "Coloring"
+msgstr "Färbung"
+
+#: crates/reprise-gnome/src/ui/strings_seek.rs:26
+msgid "Color the bar by its frequency centroid, or in a single color"
+msgstr "Den Balken nach seinem Frequenzschwerpunkt färben oder einfarbig lassen"
+
+#: crates/reprise-gnome/src/ui/strings_seek.rs:28
+msgid "Frequency"
+msgstr "Frequenz"
+
+#: crates/reprise-gnome/src/ui/strings_seek.rs:31
+msgid "Single Color"
+msgstr "Einfarbig"

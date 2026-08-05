@@ -24,7 +24,11 @@ use super::waveform_shape::{shape_display_peaks, DisplayBar, SILENCE_DOT_HEIGHT}
 use crate::ui::motion;
 use crate::ui::style::color_math::scale_chroma;
 use reprise_core::format::format_duration;
-use reprise_view::spectral_colour::{centroid_at, shape_centroid, smooth_towards, spectral_colour};
+use reprise_core::library::settings::SeekColouring;
+use reprise_view::spectral_colour::{
+    centroid_at, section_boundaries, shape_centroid, smooth_centroid_over_seconds, smooth_towards,
+    spectral_colour, CENTROID_WINDOW_S,
+};
 
 /// Shared, cloneable slot for the optional seek handler (cloned out before it
 /// is invoked so no `RefCell` borrow is held across the call).
@@ -39,16 +43,42 @@ const CONTENT_HEIGHT: i32 = 28;
 /// Audible bars span 15%..100% of the max bar height.
 const MIN_BAR_HEIGHT: f64 = MAX_BAR_HEIGHT * 0.15;
 const MAX_BAR_HEIGHT: f64 = 26.0;
-/// Alpha for not-yet-played bars — white on dark background, deliberately
-/// receding so the played (accent) part keeps at least 3:1 luminance contrast
-/// at the quietest played-light value.
-const UNPLAYED_ALPHA: f64 = 0.12;
+/// Alpha for not-yet-played bars, which carry the same spectral colour as the
+/// played ones: progress is an opacity step, not a change of colour.
+///
+/// Measured, not chosen: below this the deep-blue stretches of a bass intro
+/// disappear against the bar's own background, and above it the played/unplayed
+/// boundary stops being readable at a glance.
+const UNPLAYED_ALPHA: f64 = 0.34;
 /// Alpha for unplayed bars between the playhead and the hovered position —
-/// the seek preview.
-const HOVER_PREVIEW_ALPHA: f64 = 0.30;
-/// Buffered-but-unplayed media sits between the quiet unplayed waveform and
-/// the fully accented played segment.
-const BUFFERED_ALPHA: f64 = 0.24;
+/// the seek preview. Between the two sides, so the preview reads as "this much
+/// would be played" rather than as a third state.
+const HOVER_PREVIEW_ALPHA: f64 = 0.62;
+/// The coming side of the single-colour bar.
+const SOLID_UNPLAYED: (f64, f64, f64) = (
+    0x3C as f64 / 255.0,
+    0x3F as f64 / 255.0,
+    0x44 as f64 / 255.0,
+);
+/// Its seek preview: the same grey, one step lighter. A dimmed grey would read
+/// as further away rather than as nearer.
+const SOLID_HOVER_PREVIEW: (f64, f64, f64) = (
+    0x5C as f64 / 255.0,
+    0x60 as f64 / 255.0,
+    0x68 as f64 / 255.0,
+);
+/// Hairlines at detected section boundaries — the single-colour bar's only
+/// remaining hint at where the music changes.
+const SECTION_MARK_ALPHA: f64 = 0.30;
+const SECTION_MARK_WIDTH: f64 = 1.0;
+/// Buffered-but-unplayed remote media, between the coming side and the played
+/// one.
+///
+/// Re-derived, not carried over: the 0.24 this arrived with was picked against
+/// an unplayed side of 0.12, and against 0.34 it would sit *below* the very
+/// thing it is supposed to be ahead of. It keeps its meaning — visibly more
+/// than not-yet-loaded, visibly less than played — on the new scale.
+const BUFFERED_ALPHA: f64 = 0.48;
 /// Alpha of the rounded playhead drawn over the bars.
 const PLAYHEAD_ALPHA: f64 = 0.70;
 /// Alpha for bars in the drag ghost region.
@@ -67,86 +97,6 @@ const MINI_CONTENT_HEIGHT: i32 = 16;
 const MINI_MAX_BAR_HEIGHT: f64 = 15.0;
 const MINI_MIN_BAR_HEIGHT: f64 = 3.0;
 const MINI_FALLBACK_BAR_HEIGHT: f64 = 3.0;
-
-/// Ensure `state.display_peaks` is up to date for the given `width`.
-/// Re-aggregates from the cached `raw_peaks` (never re-decodes) when the
-/// width changed or the cache is empty.
-fn ensure_resampled(state: &mut State, width: i32) {
-    if state.last_display_width != 0
-        && state.last_display_width != width
-        && state.crossfade_progress < 1.0
-    {
-        state.previous_bars.clear();
-        state.previous_centroid.clear();
-        state.crossfade_progress = 1.0;
-        state.crossfade_start_us = 0;
-    }
-    if state.raw_peaks.is_empty() {
-        state.display_peaks.clear();
-        state.shaped_centroid.clear();
-        return;
-    }
-    if state.last_display_width != width || state.display_peaks.is_empty() {
-        let count = resolve_bar_count(state.bar_count_override, width);
-        state.display_peaks = shape_display_peaks(&state.raw_peaks, count);
-        state.shaped_centroid = shape_centroid(&state.raw_centroid, count);
-        state.last_display_width = width;
-    }
-}
-
-struct State {
-    raw_peaks: Vec<u8>,             // stored peaks from DB (1000 values, 0-255)
-    raw_centroid: Vec<u8>,          // matching spectral positions, or empty
-    display_peaks: Vec<DisplayBar>, // shaped to current bar count
-    shaped_centroid: Vec<f32>,      // spectral positions shaped to display bars
-    last_display_width: i32,        // width used for last resample
-    fraction: f64,
-    /// End of the contiguous remote-media buffer as a 0..1 fraction. `None`
-    /// means local/live playback or an unavailable buffering query.
-    buffered_fraction: Option<f64>,
-    /// Pointer position as a 0..1 fraction while hovering — drives the
-    /// seek-preview tint on unplayed bars up to the cursor.
-    hover_fraction: Option<f64>,
-    drag_fraction: Option<f64>,
-    // Smooth interpolation.
-    target_fraction: f64,
-    fraction_velocity: f64, // fraction-per-microsecond
-    last_tick_us: i64,
-    // Build-up animation.
-    build_progress: f64, // 0.0 = not started, 1.0 = complete
-    build_start_us: i64, // 0 means not running
-    // Track-change alpha crossfade.
-    previous_bars: Vec<DisplayBar>,
-    previous_centroid: Vec<f32>,
-    crossfade_progress: f64, // 1.0 means no crossfade is running
-    crossfade_start_us: i64,
-    head_colour_target: Option<(f64, f64, f64)>,
-    head_colour: Option<(f64, f64, f64)>,
-    mask_surface: Option<gtk4::cairo::ImageSurface>,
-    colour_surface: Option<gtk4::cairo::ImageSurface>,
-    surface_key: Option<waveform_surface::SurfaceKey>,
-    last_drawn_head_x: Option<f64>,
-    last_drawn_colour: Option<(f64, f64, f64)>,
-    last_drawn_hover_fraction: Option<f64>,
-    last_drawn_drag_fraction: Option<f64>,
-    last_drawn_pressure: f64,
-    last_drawn_swell: f64,
-    // Pause desaturation animation.
-    desaturation_progress: f64, // 0.0 = full chroma, 1.0 = paused chroma
-    #[allow(dead_code)] // Consumed by the PlayerBar/Compact wiring in MOT-5 Phase B.
-    desaturation_target: f64,
-    /// Live bass readings, 0..1. Presentation only; the stored peaks never move.
-    bass_pressure: f64,
-    bass_swell: f64,
-    min_bar_height: f64,
-    max_bar_height: f64,
-    /// Fixed bar count for the mini player (frame 1e); `None` = width-derived.
-    bar_count_override: Option<usize>,
-    /// Fill-width equal bars (mini) vs fixed-width bars (full waveform).
-    fill_bars: bool,
-    // Duration of the current track (ms), for formatted tooltip display.
-    duration_ms: i64,
-}
 
 fn commit_seek(
     area: &gtk4::DrawingArea,
@@ -171,11 +121,17 @@ fn commit_seek(
     }
 }
 
+/// Fires on the first press anywhere in the bar, before any seek is committed.
+/// The colour-scale legend uses it to get out of the way the moment the user
+/// shows they are aiming at the bar rather than reading it.
+type PressCallback = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
+
 #[derive(Clone)]
 pub(in crate::ui) struct WaveformSeek {
     area: gtk4::DrawingArea,
     state: Rc<RefCell<State>>,
     on_seek: SeekCallback,
+    on_press: PressCallback,
     /// Active tick callback handle. Stored in an `Rc<RefCell<Option<…>>>` so
     /// the closure inside the callback can clear it on completion without needing
     /// an extra flag.  `TickCallbackId` is not `Clone`, so we take it out to
@@ -239,6 +195,9 @@ impl WaveformSeek {
         let state = Rc::new(RefCell::new(State {
             raw_peaks: Vec::new(),
             raw_centroid: Vec::new(),
+            colour_curve: Vec::new(),
+            section_marks: Vec::new(),
+            colouring: SeekColouring::DEFAULT,
             display_peaks: Vec::new(),
             shaped_centroid: Vec::new(),
             last_display_width: 0,
@@ -264,12 +223,8 @@ impl WaveformSeek {
             last_drawn_colour: None,
             last_drawn_hover_fraction: None,
             last_drawn_drag_fraction: None,
-            last_drawn_pressure: 0.0,
-            last_drawn_swell: 0.0,
             desaturation_progress: 0.0,
             desaturation_target: 0.0,
-            bass_pressure: 0.0,
-            bass_swell: 0.0,
             min_bar_height: min_h,
             max_bar_height: max_h,
             bar_count_override,
@@ -277,6 +232,7 @@ impl WaveformSeek {
             duration_ms: 0,
         }));
         let on_seek: SeekCallback = Rc::new(RefCell::new(None));
+        let on_press: PressCallback = Rc::new(RefCell::new(None));
         let tick_id: Rc<RefCell<Option<gtk4::TickCallbackId>>> = Rc::new(RefCell::new(None));
         let desaturation_animation = Rc::new(RefCell::new(None));
 
@@ -322,7 +278,13 @@ impl WaveformSeek {
         drag.connect_drag_begin({
             let state = state.clone();
             let area = area.clone();
+            let on_press = on_press.clone();
             move |gesture, x, _| {
+                // Cloned out before the call, so no borrow is held across it.
+                let pressed = on_press.borrow().clone();
+                if let Some(pressed) = pressed {
+                    pressed();
+                }
                 // Claim the sequence on press. In the mini player this widget
                 // sits inside the card's GtkWindowHandle, whose own drag
                 // gesture claims the sequence once the pointer passes the drag
@@ -403,6 +365,7 @@ impl WaveformSeek {
             area,
             state,
             on_seek,
+            on_press,
             tick_id,
             desaturation_animation,
         }
@@ -472,16 +435,18 @@ impl WaveformSeek {
             .filter(|curve| curve.len() == peaks.len())
             .unwrap_or_default();
         s.raw_peaks = peaks;
-        s.display_peaks.clear();
-        s.shaped_centroid.clear();
-        waveform_surface::invalidate(&mut s);
+        // Once per track, not once per frame: the averaged curve is what the
+        // bars are painted from and it never changes while the track plays.
+        // `rebuild_colour_curve` clears the shaped caches and the surfaces,
+        // which is what the old inline `display_peaks.clear()` did here.
+        rebuild_colour_curve(&mut s);
         if !animate {
             s.fraction = s.target_fraction;
             s.fraction_velocity = 0.0;
         }
         let should_tick = s.build_progress < 1.0
             || s.crossfade_progress < 1.0
-            || (!s.raw_centroid.is_empty() && motion::animations_enabled());
+            || (!s.colour_curve.is_empty() && motion::animations_enabled());
         drop(s);
         self.area.queue_draw();
         if should_tick {
@@ -526,30 +491,29 @@ impl WaveformSeek {
         animation.play();
     }
 
-    /// Feeds the played-bar colour and the playhead dot without changing the
-    /// stored waveform geometry. MOT-7 gates only the beat-driven dot; pressure
-    /// and swell are colour inputs and remain visible without animations.
-    /// The live bass readings the seek bar uses. `kick` is deliberately absent:
-    /// four attempts to drive something here from the raw beat were rejected on
-    /// sight, because this is the surface the user aims at and anything
-    /// answering per beat reads as flicker. Both readings here move over
-    /// seconds.
-    pub(in crate::ui) fn set_bass(&self, pressure: f64, swell: f64) {
-        let changed = {
+    /// Switches between the two colourings and rebuilds everything derived
+    /// from the curve. Cheap enough to call on every preference change: it
+    /// touches one cached curve per bar, not a frame.
+    pub(in crate::ui) fn set_colouring(&self, colouring: SeekColouring) {
+        {
             let mut state = self.state.borrow_mut();
-            if (state.bass_pressure - pressure).abs() < 0.01
-                && (state.bass_swell - swell).abs() < 0.01
-            {
-                false
-            } else {
-                state.bass_pressure = pressure;
-                state.bass_swell = swell;
-                true
+            if state.colouring == colouring {
+                return;
             }
-        };
-        if changed {
-            self.area.queue_draw();
+            state.colouring = colouring;
+            rebuild_colour_curve(&mut state);
+            // The playhead colour is derived from the curve, so a stale one
+            // would survive the switch until the next tick moved it.
+            state.head_colour = None;
+            state.head_colour_target = None;
         }
+        self.area.queue_draw();
+    }
+
+    /// Fires on the first press anywhere in the bar, before the drag gesture
+    /// resolves into a seek.
+    pub(in crate::ui) fn connect_pressed(&self, callback: impl Fn() + 'static) {
+        *self.on_press.borrow_mut() = Some(Rc::new(callback));
     }
 
     /// Instantly set the playback position (0..1).  Prefer `set_fraction_smooth`
@@ -645,13 +609,26 @@ impl WaveformSeek {
 
     /// Set the track duration so the hover tooltip can show formatted time
     /// instead of a raw percentage.
+    ///
+    /// The duration is also the colour curve's timescale. It arrives on every
+    /// position tick and independently of the curve itself, so a *changed*
+    /// duration rebuilds the averaged curve — and an unchanged one, which is
+    /// the case a few times a second, does nothing at all.
     pub(in crate::ui) fn set_duration(&self, duration_ms: i64) {
-        let (duration_ms, fraction) = {
+        let (duration_ms, fraction, rebuilt) = {
             let mut state = self.state.borrow_mut();
-            state.duration_ms = duration_ms.max(0);
-            (state.duration_ms, state.target_fraction)
+            let duration_ms = duration_ms.max(0);
+            let changed = state.duration_ms != duration_ms;
+            state.duration_ms = duration_ms;
+            if changed && !state.raw_centroid.is_empty() {
+                rebuild_colour_curve(&mut state);
+            }
+            (duration_ms, state.target_fraction, changed)
         };
         update_accessible_value(&self.area, fraction, duration_ms);
+        if rebuilt {
+            self.area.queue_draw();
+        }
     }
 
     pub(in crate::ui) fn connect_seek(&self, callback: impl Fn(f64) + 'static) {
@@ -712,10 +689,10 @@ impl WaveformSeek {
                 f64::from(accent.green()),
                 f64::from(accent.blue()),
             );
-            let target = if s.raw_centroid.is_empty() {
+            let target = if s.colour_curve.is_empty() {
                 accent
             } else {
-                spectral_colour(centroid_at(&s.raw_centroid, s.fraction))
+                spectral_colour(centroid_at(&s.colour_curve, s.fraction))
             };
             s.head_colour_target = Some(target);
             s.head_colour = Some(match s.head_colour {
@@ -734,8 +711,6 @@ impl WaveformSeek {
                 colour: s.head_colour.unwrap_or(target),
                 hover_fraction: s.hover_fraction,
                 drag_fraction: s.drag_fraction,
-                pressure: s.bass_pressure,
-                swell: s.bass_swell,
             };
             let last_drawn =
                 s.last_drawn_head_x
@@ -745,8 +720,6 @@ impl WaveformSeek {
                         colour,
                         hover_fraction: s.last_drawn_hover_fraction,
                         drag_fraction: s.last_drawn_drag_fraction,
-                        pressure: s.last_drawn_pressure,
-                        swell: s.last_drawn_swell,
                     });
             let redraw = should_redraw(last_drawn, current_draw, animation_running);
             let settled = (s.fraction - s.target_fraction).abs() < 0.001
@@ -770,6 +743,12 @@ impl WaveformSeek {
         *self.tick_id.borrow_mut() = Some(id);
     }
 }
+
+#[path = "waveform_seek_state.rs"]
+mod seek_state;
+pub(in crate::ui::player_bar::waveform_seek) use seek_state::{
+    ensure_resampled, rebuild_colour_curve, State,
+};
 
 #[path = "waveform_seek_render.rs"]
 mod render;

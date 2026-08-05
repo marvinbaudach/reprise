@@ -2,6 +2,9 @@ use super::*;
 use crate::ui::player_bar::waveform_primitives::compute_bar_count;
 use libadwaita::prelude::AnimationExt;
 
+#[path = "waveform_seek_colour_tests.rs"]
+mod colour;
+
 impl WaveformSeek {
     pub(in crate::ui) fn desaturation_target_for_test(&self) -> f64 {
         self.state.borrow().desaturation_target
@@ -79,59 +82,6 @@ fn composited_luminance(rgb: (f64, f64, f64), alpha: f64) -> f64 {
     0.2126 * linear(composite(rgb.0, background.0))
         + 0.7152 * linear(composite(rgb.1, background.1))
         + 0.0722 * linear(composite(rgb.2, background.2))
-}
-
-#[test]
-fn ac_24_the_played_colour_rides_a_floor_that_never_moves() {
-    use super::render::played_light;
-    // The floor is what keeps the progress boundary readable on a quiet track.
-    assert!((played_light(0.0, 0.0) - 0.74).abs() < 1e-9);
-    assert!((played_light(1.0, 0.0) - 0.90).abs() < 1e-9);
-    assert!((played_light(0.0, 1.0) - 0.84).abs() < 1e-9);
-    assert!((played_light(1.0, 1.0) - 1.00).abs() < 1e-9);
-    // Out-of-range readings clamp instead of over-driving the fill.
-    assert!((played_light(-1.0, -1.0) - 0.74).abs() < 1e-9);
-    assert!((played_light(4.0, 4.0) - 1.00).abs() < 1e-9);
-    // Never below the floor, at any reading in range.
-    for step in 0..=20 {
-        let reading = f64::from(step) / 20.0;
-        assert!(played_light(reading, reading) >= 0.74 - 1e-9);
-    }
-}
-
-#[test]
-fn ac_24_the_progress_boundary_is_legible_in_silence() {
-    use super::render::played_light;
-
-    // Measured requirement, not a matter of taste: at pressure = swell = 0 the
-    // played part must differ from the unplayed part by at least 3:1 in
-    // luminance, so the boundary reads without relying on hue — which is what
-    // a red/green-blind user, or a glance, actually has.
-    //
-    // Composite each side over the bar's own background and compare relative
-    // luminance (WCAG: (L1 + 0.05) / (L2 + 0.05)).
-    let played = composited_luminance(accent_rgb(), played_light(0.0, 0.0) * 1.0);
-    let unplayed = composited_luminance((1.0, 1.0, 1.0), UNPLAYED_ALPHA);
-    let ratio = (played.max(unplayed) + 0.05) / (played.min(unplayed) + 0.05);
-    assert!(
-        ratio >= 3.0,
-        "played/unplayed luminance ratio is only {ratio:.2}:1"
-    );
-}
-
-#[test]
-fn ac_24_played_bars_brighten_toward_the_playhead() {
-    use super::render::played_alpha;
-    // At the playhead: full. At the very start of the track: dimmest.
-    assert!((played_alpha(99, 100, 1.0) - 1.0).abs() < 0.02);
-    assert!(played_alpha(0, 100, 1.0) < played_alpha(50, 100, 1.0));
-    assert!(played_alpha(50, 100, 1.0) < played_alpha(99, 100, 1.0));
-    // Never darker than the floor, never brighter than opaque.
-    for index in 0..100 {
-        let a = played_alpha(index, 100, 1.0);
-        assert!((0.55..=1.0).contains(&a), "out of range at {index}: {a}");
-    }
-    assert_eq!(played_alpha(0, 0, 0.5), 1.0);
 }
 
 #[test]
@@ -300,44 +250,9 @@ fn compute_bar_count_uses_fixed_slots_and_caps_at_160() {
 #[test]
 fn ensure_resampled_clears_display_peaks_when_raw_empty() {
     let mut state = State {
-        raw_peaks: Vec::new(),
-        raw_centroid: Vec::new(),
         display_peaks: vec![DisplayBar::Level(0.5)],
-        shaped_centroid: Vec::new(),
         last_display_width: 100,
-        fraction: 0.0,
-        buffered_fraction: None,
-        hover_fraction: None,
-        drag_fraction: None,
-        target_fraction: 0.0,
-        fraction_velocity: 0.0,
-        last_tick_us: 0,
-        build_progress: 1.0,
-        build_start_us: 0,
-        previous_bars: Vec::new(),
-        previous_centroid: Vec::new(),
-        crossfade_progress: 1.0,
-        crossfade_start_us: 0,
-        head_colour_target: None,
-        head_colour: None,
-        mask_surface: None,
-        colour_surface: None,
-        surface_key: None,
-        last_drawn_head_x: None,
-        last_drawn_colour: None,
-        last_drawn_hover_fraction: None,
-        last_drawn_drag_fraction: None,
-        last_drawn_pressure: 0.0,
-        last_drawn_swell: 0.0,
-        desaturation_progress: 0.0,
-        desaturation_target: 0.0,
-        bass_pressure: 0.0,
-        bass_swell: 0.0,
-        min_bar_height: MIN_BAR_HEIGHT,
-        max_bar_height: MAX_BAR_HEIGHT,
-        bar_count_override: None,
-        fill_bars: false,
-        duration_ms: 0,
+        ..State::default()
     };
     ensure_resampled(&mut state, 200);
     assert!(state.display_peaks.is_empty());
@@ -347,43 +262,7 @@ fn ensure_resampled_clears_display_peaks_when_raw_empty() {
 fn ensure_resampled_populates_on_width_change() {
     let mut state = State {
         raw_peaks: vec![128u8; 1000],
-        raw_centroid: Vec::new(),
-        display_peaks: Vec::new(),
-        shaped_centroid: Vec::new(),
-        last_display_width: 0,
-        fraction: 0.0,
-        buffered_fraction: None,
-        hover_fraction: None,
-        drag_fraction: None,
-        target_fraction: 0.0,
-        fraction_velocity: 0.0,
-        last_tick_us: 0,
-        build_progress: 1.0,
-        build_start_us: 0,
-        previous_bars: Vec::new(),
-        previous_centroid: Vec::new(),
-        crossfade_progress: 1.0,
-        crossfade_start_us: 0,
-        head_colour_target: None,
-        head_colour: None,
-        mask_surface: None,
-        colour_surface: None,
-        surface_key: None,
-        last_drawn_head_x: None,
-        last_drawn_colour: None,
-        last_drawn_hover_fraction: None,
-        last_drawn_drag_fraction: None,
-        last_drawn_pressure: 0.0,
-        last_drawn_swell: 0.0,
-        desaturation_progress: 0.0,
-        desaturation_target: 0.0,
-        bass_pressure: 0.0,
-        bass_swell: 0.0,
-        min_bar_height: MIN_BAR_HEIGHT,
-        max_bar_height: MAX_BAR_HEIGHT,
-        bar_count_override: None,
-        fill_bars: false,
-        duration_ms: 0,
+        ..State::default()
     };
     ensure_resampled(&mut state, 600);
     assert!(!state.display_peaks.is_empty());
@@ -448,22 +327,24 @@ fn mot_7_waveform_position_hard_switches_when_system_animations_are_disabled() {
 }
 
 #[test]
-#[ignore = "requires a display; run via xvfb-run"]
-fn ac_24_the_seek_bar_carries_no_beat_at_all() {
-    // The bar's two live readings both move over seconds. There is no third
-    // one: `kick` reached this widget four times and was rejected four times,
-    // so the setter no longer takes it.
-    gtk4::init().unwrap();
-
-    let waveform = WaveformSeek::new();
-    waveform.set_bass(1.0, 0.0);
-
-    let state = waveform.state.borrow();
-    assert_eq!(state.bass_pressure, 1.0);
-    assert_eq!(state.bass_swell, 0.0);
-    assert_eq!(
-        super::render::played_light(state.bass_pressure, state.bass_swell),
-        0.90
+fn ac_24_no_live_reading_reaches_the_seek_bar_at_all() {
+    // The bar used to take `pressure` and `swell` on its played side. It takes
+    // neither now: progress reads as a step from full opacity to a third of
+    // it, and a bass term on the played side would eat that step. `kick` never
+    // reached this widget and still does not — four attempts, four rejections.
+    //
+    // The property to pin is that no reading arrives here, so this checks the
+    // seam rather than a number.
+    let seek = include_str!("waveform_seek.rs");
+    let render = include_str!("waveform_seek_render.rs");
+    let bar = include_str!("player_bar.rs");
+    for reading in ["bass_pressure", "bass_swell", "played_light"] {
+        assert!(!seek.contains(reading), "waveform_seek retained {reading}");
+        assert!(!render.contains(reading), "render retained {reading}");
+    }
+    assert!(
+        !bar.contains(&["waveform.set_", "bass("].concat()),
+        "the player bar still feeds the seek bar a live reading"
     );
 }
 

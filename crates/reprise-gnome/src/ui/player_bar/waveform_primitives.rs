@@ -24,8 +24,6 @@ pub(super) struct RedrawSnapshot {
     pub(super) colour: (f64, f64, f64),
     pub(super) hover_fraction: Option<f64>,
     pub(super) drag_fraction: Option<f64>,
-    pub(super) pressure: f64,
-    pub(super) swell: f64,
 }
 
 impl RedrawSnapshot {
@@ -36,8 +34,6 @@ impl RedrawSnapshot {
             colour,
             hover_fraction: None,
             drag_fraction: None,
-            pressure: 0.0,
-            swell: 0.0,
         }
     }
 }
@@ -57,8 +53,6 @@ pub(super) fn should_redraw(
         || (current.colour.2 - last.colour.2).abs() >= REDRAW_COLOUR_THRESHOLD
         || current.hover_fraction != last.hover_fraction
         || current.drag_fraction != last.drag_fraction
-        || current.pressure != last.pressure
-        || current.swell != last.swell
 }
 
 /// Advances the smooth-fill interpolation by one frame: `fraction` moves by

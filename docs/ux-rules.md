@@ -334,6 +334,51 @@ result.
   an accent point, “LIVE”, and the station name while retaining connected
   elapsed time. The point pulses only during active playback through MOT-7's
   central motion gate; pause and reduced motion leave the same point static.
+- **SEEK-1** [active] [gtk] — **The seek bar's colour is a reading, not a
+  decoration, and it is averaged over time.** The spectral centroid swings
+  from beat to beat: taken per bar it puts cyan next to magenta inside two
+  seconds of music, which is noise, and noise forms no pattern anyone can
+  read. The bar therefore averages the stored curve over a window of **eight
+  seconds** centred on each point — about four bars — and paints that. The
+  window is defined in **seconds and never in bars**: a window measured in
+  display bars would smooth a narrow window differently from a wide one, so
+  the same track would read differently after a window resize. It is derived
+  once per track, from the curve and the duration, and cached beside the bar
+  heights; nothing recomputes it while drawing. At the two ends the window
+  shrinks to what is available rather than being padded, because padding
+  would run the first and last seconds of every track into one end of the
+  axis regardless of what plays there. What the listener gets is contiguous
+  fields of eight to thirty seconds — an intro, a verse, a breakdown —
+  instead of a rainbow. A track with no structure may legitimately look
+  almost uniform; that is the correct answer, not a broken one.
+  **The colour lies on both sides of the playhead.** Played is the spectral
+  colour at full opacity, coming is the *same* colour at **0.34** — progress
+  is a step in opacity, never a change of colour. Ending the colour at the
+  playhead put it exactly where it was no longer needed: the point of seeing
+  the shape of a track is to see it before hearing it. The 0.34 is measured
+  at both ends of the axis: lower and a deep bass intro disappears against
+  the bar's background, higher and progress stops being readable at a glance.
+  Two colourings are offered under Appearance → Seek Bar — "Frequency" and
+  "Single Color" — and the quiet one is a second colouring, never an "off":
+  it draws the played side in the accent, the coming side in grey, and
+  hairlines where the music changes, so it still says where the structure is.
+- **SEEK-2** [active] [gtk] — **A colour scale nobody explains is a
+  decorative strip, so it is explained exactly once.** A legend sits under the
+  bar at the height of the times — the two ends named, a 150×6 px gradient
+  between them, and what it measures — and the gradient is drawn by the same
+  function the bar is, never rebuilt, so the two cannot drift apart. It
+  appears on the **first three track changes** and then no more; the measure
+  is a **count**, not a timestamp, because "seen it three times" says more
+  about having understood it than "shown two days ago" does. It leaves after
+  six seconds, fading and collapsing its height together so the row settles
+  instead of jumping, or at once on the first press anywhere in the bar —
+  a press means the user is aiming at the bar rather than reading it. There
+  is no close button: it would be larger than what it closes. Afterwards it
+  stays reachable from the bar's context menu ("Explain the Color Scale"),
+  because a one-off hint that can never be called back is a trap for
+  everyone who missed it the first time. In the single-colour bar it neither
+  appears nor spends a showing, and the menu entry is inactive: there is no
+  scale on screen to explain.
 
 ## D. Albums & artists view
 
@@ -3131,19 +3176,26 @@ STYLE-1).
   **The transport controls stay still.** The waveform's **bar heights** never
   move: three attempts to swell them around the playhead were rejected,
   because neighbouring bars cross their pixel boundary at different moments
-  and the eye reads that as noise rather than as life. What reacts instead is
-  colour. The played part takes a floor plus what the bass adds,
-  so every played bar changes by the same amount at the same instant and the
-  progress boundary stays legible at any volume — it keeps at least a 3:1
-  luminance ratio against the unplayed part in silence. The playhead stays a
+  and the eye reads that as noise rather than as life. **The seek bar now
+  reacts to nothing at all.** Its played part used to take a floor plus what
+  the bass added, to keep the progress boundary legible while that boundary
+  was a change of *colour*; since both sides carry the same colour and
+  progress reads as a step from full opacity to a third of it (SEEK-1), a
+  bass term on the played side would eat that very step — at the deep end of
+  the axis it would drop the played/coming luminance ratio to about 2.1:1.
+  The 3:1 requirement is unchanged and now has to hold at every point of the
+  axis, which is what the fixed opacities deliver. The playhead stays a
   one-pixel line with a slim glow beside it, and that glow follows `pressure`,
   not the beat. **Four** attempts put the beat on this surface — a lens twice,
   a radial glow, then a pulsing dot — and all four were rejected on sight, for
   one reason: at five to seven kicks a second, on the surface the user has to
   *aim* at, anything answering per beat reads as flicker rather than as life.
   Reducing its amplitude only makes the flicker quieter, because the rate is
-  what does the damage. The glow rests while the user drags the playhead,
-  during build-up and during a crossfade; the mini player has none.
+  what does the damage. The glow rests during build-up and during a
+  crossfade; the mini player has none. It stays put while the user drags the
+  playhead — the playhead is what the hand is holding on to, and it now
+  carries the only hard edge in the picture. The afterglow that used to trail
+  the played side is gone with the boundary it emphasised.
   Every large surface that does move breathes over seconds on `swell`, a
   UI-side slow envelope of `pressure` crossed with a free-running 5.5 s cycle
   — deliberately not locked to the tempo, because a swell that locks to the
@@ -3931,9 +3983,12 @@ available. The player plays only finished files.
   through as a "backing plate"). Layout per frame 1e: cover 52/radius 10
   with inset hairline; title 13 px bold and artist 11.5 px on one
   ellipsizing baseline row (title prioritized, artist contrast ≥ 4.5:1
-  on the tint); below it the mini waveform (46 equal-width bars, played
-  portion in the playback accent, remainder white ~18%, click = seek,
-  drag = scrub); play/pause 38 px in the accent. No volume, prev, or
+  on the tint); below it the mini waveform (46 equal-width bars, coloured
+  exactly as the full bar is under SEEK-1 — the track's own averaged
+  colour on both sides of the playhead, or the playback accent where no
+  curve exists yet; click = seek, drag = scrub); play/pause 38 px in the
+  accent. The mini bar carries no legend and no playhead glow: it is small
+  enough that a second explanation would be larger than the thing explained. No volume, prev, or
   next button visible — deliberate reduction. The compact geometry is
   isolated from the full-window size.
 

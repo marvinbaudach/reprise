@@ -24,6 +24,7 @@ use crate::ui::strings;
 use crate::ui::swell::Swell;
 use crate::ui::waveform_seek::WaveformSeek;
 use reprise_core::format::{format_duration, format_remaining};
+use reprise_core::library::settings::SeekColouring;
 use reprise_core::playback::PlaybackState;
 use reprise_core::queue::Repeat;
 
@@ -96,6 +97,17 @@ pub struct PlayerBar {
     pub(in crate::ui) live_dot: gtk4::Box,
     pub(in crate::ui) live_station_label: gtk4::Label,
     pub(in crate::ui) waveform: WaveformSeek,
+    pub(in crate::ui) legend: crate::ui::player_bar::seek_legend::SeekLegend,
+    /// Held so the legend keeps starting where the bar does.
+    _time_alignment: gtk4::SizeGroup,
+    /// The last track the legend was offered for. A track change is what the
+    /// count in settings counts, and a tag edit on the running track re-runs
+    /// the same wiring — without this it would burn one of the three showings.
+    pub(super) legend_track: Cell<Option<i64>>,
+    pub(super) seek_colouring: Cell<SeekColouring>,
+    /// The context-menu entry that calls the legend back. Disabled while the
+    /// bar is drawn in a single colour.
+    pub(super) explain_action: gtk4::gio::SimpleAction,
     /// Inline volume slider (replaces the old `ScaleButton`).
     volume_scale: gtk4::Scale,
     /// Volume icon button — click toggles mute.
@@ -174,6 +186,8 @@ impl PlayerBar {
             live_dot,
             live_station_label,
             waveform,
+            legend,
+            time_alignment,
             volume_icon,
             volume_scale,
             ..
@@ -234,6 +248,14 @@ impl PlayerBar {
         });
         artist_label.add_controller(artist_motion);
 
+        // A press anywhere in the bar means the user is aiming at it rather
+        // than reading it, so the legend gets out of the way at once.
+        waveform.connect_pressed({
+            let legend = legend.clone();
+            move || legend.hide()
+        });
+        let explain_action = super::seek_menu::install(&waveform, &legend);
+
         let bar = Self {
             root,
             cover,
@@ -259,6 +281,11 @@ impl PlayerBar {
             live_dot,
             live_station_label,
             waveform,
+            legend,
+            _time_alignment: time_alignment,
+            legend_track: Cell::new(None),
+            seek_colouring: Cell::new(SeekColouring::DEFAULT),
+            explain_action,
             volume_scale,
             volume_icon,
             duration_ms: Rc::new(Cell::new(0)),
@@ -350,9 +377,15 @@ impl PlayerBar {
         }
     }
 
-    /// The live bass reading, fanned out to the cover lift and the waveform's
-    /// geometry-neutral colour and playhead-dot layers. Called at the spectrum
-    /// rate (~86 Hz).
+    /// The live bass reading, fanned out to the cover lift. Called at the
+    /// spectrum rate (~86 Hz).
+    ///
+    /// The seek bar is no longer among the consumers. Its played side used to
+    /// take a floor plus what the bass added, to keep the progress boundary
+    /// legible while that boundary was a change of colour; with both sides
+    /// carrying the same colour and progress reading as a step from full
+    /// opacity to a third of it, a bass term on the played side would eat that
+    /// step — the very thing the boundary now rests on.
     ///
     /// The transport buttons are deliberately not among the consumers either —
     /// they are what a pointer aims at, and once the running track scrolls out
@@ -362,7 +395,6 @@ impl PlayerBar {
             *self.swell.borrow_mut() = Swell::default();
             self.swell_last_frame_us.set(0);
             self.cover_lift.set_swell(0.0);
-            self.waveform.set_bass(0.0, 0.0);
             return;
         }
 
@@ -382,7 +414,6 @@ impl PlayerBar {
                 swell.value_without_motion()
             }
         };
-        self.waveform.set_bass(pressure, value);
         self.cover_lift.set_swell(value);
     }
 
