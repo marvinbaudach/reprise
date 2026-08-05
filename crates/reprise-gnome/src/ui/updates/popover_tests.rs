@@ -20,7 +20,6 @@ fn release(id: &str) -> reprise_core::artist_news::StoredRelease {
         fetched_at: 100,
         seen_at: None,
         hidden: false,
-        fallback_accent: "#123456".into(),
         presence: reprise_core::artist_news::LibraryPresence::Absent,
         announce_url: None,
         track_count: None,

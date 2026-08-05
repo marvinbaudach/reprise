@@ -283,7 +283,6 @@ fn reads_every_stored_release_field_including_hidden_history() {
     assert_eq!(release["fetched_at"], 1000);
     assert_eq!(release["seen_at"], 1100);
     assert_eq!(release["hidden"], true);
-    assert_eq!(release["fallback_accent"], "#123456");
     assert_eq!(release["first_seen"], 900);
     assert_eq!(release["hidden_at"], 1200);
     assert_eq!(

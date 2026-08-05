@@ -36,7 +36,6 @@ pub struct StoredRelease {
     pub fetched_at: i64,
     pub seen_at: Option<i64>,
     pub hidden: bool,
-    pub fallback_accent: String,
     pub presence: LibraryPresence,
     pub announce_url: Option<String>,
     pub track_count: Option<i64>,
@@ -164,7 +163,7 @@ pub(crate) fn query_releases_in(
 ) -> Result<Vec<StoredRelease>, rusqlite::Error> {
     let mut statement = conn.prepare(
         "SELECT release_group_mbid, artist_name, artist_mbid, title, release_type,
-                first_release_date, fetched_at, seen_at, hidden, fallback_accent,
+                first_release_date, fetched_at, seen_at, hidden,
                 announce_url, track_count
          FROM new_releases
          WHERE ?1 OR hidden = 0",
@@ -181,9 +180,8 @@ pub(crate) fn query_releases_in(
                 fetched_at: row.get(6)?,
                 seen_at: row.get(7)?,
                 hidden: row.get::<_, i64>(8)? != 0,
-                fallback_accent: row.get(9)?,
-                announce_url: row.get(10)?,
-                track_count: row.get(11)?,
+                announce_url: row.get(9)?,
+                track_count: row.get(10)?,
                 local_track_count: 0,
                 presence: LibraryPresence::Absent,
             })

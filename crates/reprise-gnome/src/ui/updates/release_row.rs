@@ -233,7 +233,6 @@ mod tests {
             fetched_at: 100,
             seen_at: None,
             hidden: false,
-            fallback_accent: "#123456".into(),
             presence: LibraryPresence::Absent,
             announce_url: None,
             track_count: None,
