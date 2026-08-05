@@ -57,6 +57,47 @@ fn src_13_a_visible_episode_leaves_every_facet_standing() {
     assert_eq!(filter_without_hiding(&episode, &filter), filter);
 }
 
+/// The channel jump has to survive episodes that are hidden for *different*
+/// reasons: nothing fails for all of them, yet the group is empty. Dropping
+/// only the facets every episode fails would leave the filter untouched and
+/// the channel invisible — the click would do nothing at all.
+#[test]
+fn src_13_a_channel_hidden_by_mixed_facets_gives_up_the_cheapest_one_only() {
+    let mut played_and_downloaded = row(1);
+    played_and_downloaded.played_at = Some(30);
+    played_and_downloaded.downloaded_path = Some("/music/episode1.mp3".into());
+    let unplayed_and_missing = row(2);
+    let group = SourceGroup {
+        subscription_id: 7,
+        title: "Show".into(),
+        author: None,
+        image_url: None,
+        kind: PodcastKind::Rss,
+        sync_to_phone: false,
+        episodes: vec![played_and_downloaded, unplayed_and_missing],
+    };
+    let filter = PodcastFilter {
+        unplayed_only: true,
+        source: None,
+        downloaded_only: true,
+    };
+    assert!(apply_filter(&group.episodes, &filter).is_empty());
+
+    let adjusted = filter_without_hiding_group(&group, &filter);
+
+    // One facet is enough, and it is the first one in `PODCAST_FACETS` that
+    // makes an episode visible — "Downloaded" keeps standing.
+    assert_eq!(
+        adjusted,
+        PodcastFilter {
+            unplayed_only: false,
+            source: None,
+            downloaded_only: true,
+        }
+    );
+    assert!(!apply_filter(&group.episodes, &adjusted).is_empty());
+}
+
 #[test]
 fn src_13_a_channel_whose_episodes_all_fail_the_filter_drops_that_facet() {
     let mut first = row(1);
