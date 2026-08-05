@@ -361,7 +361,6 @@ check_frontend_allowlist() {
 
 check_frontend_allowlist 'gtk4::CssProvider::new' 'direct CssProvider construction' \
   crates/reprise-gnome/src/ui/style/mod.rs \
-  crates/reprise-gnome/src/ui/style/cover_accent.rs \
   crates/reprise-gnome/src/ui/style/reduced_motion.rs \
   crates/reprise-gnome/src/ui/library_views/artist_view_css.rs
 

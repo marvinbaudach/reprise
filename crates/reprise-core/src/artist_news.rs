@@ -74,9 +74,9 @@ pub(crate) use crate::artist_news_query::presence_for;
 /// presence lives in `artist_news_query`; re-exported here so existing
 /// callers keep using `artist_news::{query_releases, StoredRelease, ...}`.
 pub use crate::artist_news_query::{
-    delta_candidates, hidden_release_count, mark_releases_seen, most_played_album_track_path,
-    query_artist_news, query_artist_news_by_name, query_releases, set_release_hidden,
-    unseen_release_count, LibraryPresence, StoredRelease,
+    delta_candidates, hidden_release_count, mark_releases_seen, query_artist_news,
+    query_artist_news_by_name, query_releases, set_release_hidden, unseen_release_count,
+    LibraryPresence, StoredRelease,
 };
 
 /// Decisions and queries for the persistent Releases full view.

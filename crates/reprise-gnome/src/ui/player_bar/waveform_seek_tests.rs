@@ -57,11 +57,7 @@ fn rgb_from_hex(hex: &str) -> (f64, f64, f64) {
 }
 
 fn accent_rgb() -> (f64, f64, f64) {
-    rgb_from_hex(
-        crate::ui::style::theme::Theme::DEFAULT
-            .palette()
-            .player_accent,
-    )
+    rgb_from_hex(crate::ui::style::accent::APP_ACCENT)
 }
 
 fn composited_luminance(rgb: (f64, f64, f64), alpha: f64) -> f64 {

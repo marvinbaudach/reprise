@@ -174,12 +174,10 @@ use crate::ui::mpris_mirror;
 use crate::ui::player_bar::PlayerBar;
 use crate::ui::player_controller_wiring;
 use crate::ui::player_lyrics::{lyrics_query_for, start_track_for_lyrics, PlayerLyrics};
-use crate::ui::style::cover_accent::Rgb as AccentRgb;
 use reprise_core::media_integration::{
-    MediaIntegrationHandles, MprisPlaybackStatus, SharedAgentQueueState, SharedMprisState,
-    DEFAULT_VOLUME,
+    MprisPlaybackStatus, SharedAgentQueueState, SharedMprisState, DEFAULT_VOLUME,
 };
-use reprise_core::playback::{PlaybackBackend, PlayerEvent};
+use reprise_core::playback::PlaybackBackend;
 
 use super::player_callbacks::{
     OnBassChanged, OnNowPlayingPanelStateChanged, OnNowPlayingPanelTrackChanged,
@@ -190,54 +188,13 @@ use reprise_core::queue::Queue;
 use reprise_core::up_next::{QueueItem, UpNextQueue};
 use reprise_core::waveform::RenderDataBackend;
 
-/// The visible track view as the playback paths see it.
-///
-/// `ids` is what a refill plays: the visible query's id list, which stops at
-/// `queries::QUEUE_LIMIT` rows. `total` is the same view's row count, and it
-/// is *not* capped. PLAY-11 needs both, because the ids alone cannot tell a
-/// complete library from the first 10,000 rows of a filtered one — see
-/// `library_continuation::cleared_library_filter_handoff`.
-///
-/// Both come from one provider call so they always describe the same moment;
-/// two providers could be read either side of a reload and disagree.
-pub(in crate::ui) struct VisibleView {
-    pub(in crate::ui) ids: Vec<i64>,
-    pub(in crate::ui) total: usize,
-}
-
-impl VisibleView {
-    /// The view a playback path must not refill from — the Queue view itself,
-    /// or a track list that is already gone.
-    pub(in crate::ui) fn none() -> Self {
-        Self {
-            ids: Vec::new(),
-            total: 0,
-        }
-    }
-}
-
-type ViewRefillIds = Rc<dyn Fn() -> VisibleView>;
+use super::player_controller_types::ViewRefillIds;
+pub(in crate::ui) use super::player_controller_types::{
+    PlayerControllerBackends, StartPlayback, VisibleView,
+};
 
 use super::scrobble_runtime::ScrobbleRuntime;
 use super::scrobble_session::ScrobbleSession;
-
-/// Whether `present_track` should start the pipeline (`Yes` — ordinary path)
-/// or leave it running because `playbin3` already handed off gaplessly to the
-/// pre-fed URI (`No` — see `advance_gaplessly`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(in crate::ui) enum StartPlayback {
-    Yes,
-    No,
-}
-
-/// Contract-only platform resources assembled by the window composition root.
-/// Feature modules consume this bundle without naming a concrete OS backend.
-pub(in crate::ui) struct PlayerControllerBackends {
-    pub(in crate::ui) playback: Box<dyn PlaybackBackend>,
-    pub(in crate::ui) playback_events: async_channel::Receiver<PlayerEvent>,
-    pub(in crate::ui) media: MediaIntegrationHandles,
-    pub(in crate::ui) waveform: Arc<dyn RenderDataBackend>,
-}
 
 // `PlayerController::volume`'s initial value is the core media-integration
 // `DEFAULT_VOLUME` (Stage-3 close-out: deduplicated from what used to be a
@@ -403,15 +360,6 @@ pub struct PlayerController {
     /// rapid track change can't paint a stale waveform.
     pub(in crate::ui) waveform_generation: Rc<Cell<u64>>,
     pub(in crate::ui) waveform_backend: Arc<dyn RenderDataBackend>,
-    /// Generation token for the cover-accent off-main extraction, so a rapid
-    /// track change can't apply a stale album accent.
-    pub(in crate::ui) cover_accent_generation: Rc<Cell<u64>>,
-    /// The cover palette most recently applied (or `None` for no-cover / fallback).
-    /// Read by `reset_cover_accent` and `apply_cover_accent` to supply the
-    /// "from" palette for the 400 ms cross-fade; written back once each new
-    /// palette is committed. `pub(in crate::ui)` so `now_playing_wiring.rs` can
-    /// borrow it.
-    pub(in crate::ui) cover_accent_last: Rc<RefCell<Option<AccentRgb>>>,
     /// The owning `gio::Application`, for `play_track_id`'s track-change
     /// notification (Task 9: `app.send_notification`). Passed into `new` from
     /// `window::build`, which already holds the `&adw::Application` it builds
@@ -533,8 +481,6 @@ impl PlayerController {
             lyrics,
             waveform_generation: Rc::new(Cell::new(0)),
             waveform_backend: waveform,
-            cover_accent_generation: Rc::new(Cell::new(0)),
-            cover_accent_last: Rc::new(RefCell::new(None)),
             application: {
                 let weak = glib::WeakRef::new();
                 weak.set(Some(app.upcast_ref::<gio::Application>()));

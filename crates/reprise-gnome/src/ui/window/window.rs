@@ -48,9 +48,20 @@ const MIN_HEIGHT: i32 = 400;
 /// rather than sharing this one across threads), so this takes a borrow rather
 /// than owning it outright.
 pub fn build(app: &adw::Application, conn: &Rc<Db>, db_path: &Path) -> FileOpenHandler {
-    super::style::install();
     {
         let conn = &conn;
+        let accent_source = reprise_core::library::settings::get_setting(
+            conn,
+            super::style::accent::ACCENT_SOURCE_SETTING_KEY,
+        )
+        .ok()
+        .flatten()
+        .as_deref()
+        .map_or(
+            super::style::accent::AccentSource::DEFAULT,
+            super::style::accent::AccentSource::from_id,
+        );
+        super::style::set_accent_source(accent_source);
         let stored = reprise_core::library::settings::get_setting(
             conn,
             super::style::theme::THEME_SETTING_KEY,
@@ -65,6 +76,9 @@ pub fn build(app: &adw::Application, conn: &Rc<Db>, db_path: &Path) -> FileOpenH
         let scheme = reprise_core::library::settings::get_color_scheme(conn);
         super::style::set_color_scheme(scheme);
     }
+    // Theme, accent source, and appearance are now final, so installation
+    // loads the palette provider once instead of repainting it for each value.
+    super::style::install();
     let session_state = super::session_restore::load(conn);
     let first_run_decision = super::first_run::initial_decision(conn);
     let initial_view = super::compact_mode_controls::initial_transition(conn, first_run_decision);

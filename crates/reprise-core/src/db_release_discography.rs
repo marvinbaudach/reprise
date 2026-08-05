@@ -52,9 +52,9 @@ mod tests {
         let invalid = conn.execute(
             "INSERT INTO new_releases (
                release_group_mbid, artist_name, artist_mbid, title, release_type,
-               first_release_date, fetched_at, fallback_accent, track_count
+               first_release_date, fetched_at, track_count
              ) VALUES ('single-sized', 'Artist', 'artist', 'Album', 'Album',
-                       '2020-01-01', 1, '#123456', 1)",
+                       '2020-01-01', 1, 1)",
             [],
         );
         assert!(

@@ -1,9 +1,9 @@
 //! Named dark theme palettes for the redesign.
 //!
-//! Each theme is a [`Palette`] that overrides libadwaita's named colors via
-//! `@define-color` (see [`theme_css`]). Because every Adwaita widget resolves
-//! those named colors at draw time, swapping the palette recolors the whole
-//! app at once — the mechanism the redesign's live theme picker will drive.
+//! Each theme is a [`Palette`] for surface and text colors. [`theme_css`]
+//! combines that palette with the selected app or system accent source. Since
+//! every Adwaita widget resolves these named colors at draw time, either choice
+//! recolors the whole app immediately without coupling accent to album art.
 //!
 //! The dark palettes follow design frame 14a's surface hierarchy: the central
 //! table is darkest, side panels sit one step above it, and the header bar is
@@ -37,12 +37,6 @@ pub(in crate::ui) struct Palette {
     pub(in crate::ui) dialog_bg: &'static str,
     pub(in crate::ui) fg: &'static str,
     pub(in crate::ui) dim_fg: &'static str,
-    /// Theme-specific selection/toggle accent.
-    pub(in crate::ui) accent: &'static str,
-    pub(in crate::ui) accent_fg: &'static str,
-    /// Static play/waveform fallback: the theme accent (decision 8). The
-    /// cover-derived accent pipeline overrides it per track when available.
-    pub(in crate::ui) player_accent: &'static str,
 }
 
 impl Theme {
@@ -90,9 +84,6 @@ impl Theme {
                 dialog_bg: "#353b44",
                 fg: "#e7e9ec",
                 dim_fg: "#9198a0",
-                accent: "#33c9a3",
-                accent_fg: "#04140f",
-                player_accent: "#33c9a3",
             },
             Theme::NightTerrain => Palette {
                 window_bg: "#13161c",
@@ -104,9 +95,6 @@ impl Theme {
                 dialog_bg: "#333a48",
                 fg: "#e4e7ec",
                 dim_fg: "#8b93a1",
-                accent: "#4db6a9",
-                accent_fg: "#05130f",
-                player_accent: "#4db6a9",
             },
             Theme::MutedBloom => Palette {
                 window_bg: "#1a1518",
@@ -118,15 +106,11 @@ impl Theme {
                 dialog_bg: "#3a343c",
                 fg: "#ece6ea",
                 dim_fg: "#a2949c",
-                accent: "#c98bd0",
-                accent_fg: "#180612",
-                player_accent: "#c98bd0",
             },
         }
     }
 
     pub(in crate::ui) fn light_palette(self) -> Palette {
-        let dark = self.palette();
         match self {
             Theme::PerpetualRain => Palette {
                 window_bg: "#f4f5f7",
@@ -138,9 +122,6 @@ impl Theme {
                 dialog_bg: "#f0f2f5",
                 fg: "#1a1c1f",
                 dim_fg: "#6b7280",
-                accent: dark.accent,
-                accent_fg: dark.accent_fg,
-                player_accent: dark.player_accent,
             },
             Theme::NightTerrain => Palette {
                 window_bg: "#f2f4f8",
@@ -152,9 +133,6 @@ impl Theme {
                 dialog_bg: "#edf0f6",
                 fg: "#181b22",
                 dim_fg: "#636d7e",
-                accent: dark.accent,
-                accent_fg: dark.accent_fg,
-                player_accent: dark.player_accent,
             },
             Theme::MutedBloom => Palette {
                 window_bg: "#f6f3f5",
@@ -166,18 +144,20 @@ impl Theme {
                 dialog_bg: "#f2eef1",
                 fg: "#1f1a1d",
                 dim_fg: "#7a6e75",
-                accent: dark.accent,
-                accent_fg: dark.accent_fg,
-                player_accent: dark.player_accent,
             },
         }
     }
 }
 
 /// Produces the `@define-color` overrides that map `theme`'s palette onto the
-/// libadwaita named colors, plus two `reprise_*` colors the app's own CSS
-/// reads. Installed at application priority so it wins over Adwaita's defaults.
-pub(in crate::ui) fn theme_css(theme: Theme, is_dark: bool) -> String {
+/// libadwaita named colors, plus the `reprise_player_accent` alias the app's
+/// own CSS reads. Installed at application priority so it wins over Adwaita's
+/// defaults.
+pub(in crate::ui) fn theme_css(
+    theme: Theme,
+    is_dark: bool,
+    source: super::accent::AccentSource,
+) -> String {
     use super::tokens::{HINT_TEXT_ALPHA, PRIMARY_TEXT_ALPHA, SECONDARY_TEXT_ALPHA};
 
     let p = if is_dark {
@@ -185,6 +165,7 @@ pub(in crate::ui) fn theme_css(theme: Theme, is_dark: bool) -> String {
     } else {
         theme.light_palette()
     };
+    let accent_css = super::accent::css_overrides(source);
     format!(
         "@define-color window_bg_color {win};\n\
          @define-color window_fg_color {fg};\n\
@@ -200,15 +181,12 @@ pub(in crate::ui) fn theme_css(theme: Theme, is_dark: bool) -> String {
          @define-color popover_fg_color {fg};\n\
          @define-color dialog_bg_color {dlg};\n\
          @define-color dialog_fg_color {fg};\n\
-         @define-color accent_bg_color {acc};\n\
-         @define-color accent_fg_color {accfg};\n\
-         @define-color accent_color {acc};\n\
+         {accent_css}\
          @define-color reprise_primary_fg_color alpha({fg}, {primary_alpha});\n\
          @define-color reprise_secondary_fg_color alpha({fg}, {secondary_alpha});\n\
          @define-color reprise_hint_fg_color alpha({fg}, {hint_alpha});\n\
          @define-color reprise_dim_fg_color {dim};\n\
-         @define-color reprise_player_accent {play};\n\
-         @define-color reprise_cover_light {play};\n",
+         @define-color reprise_player_accent @accent_color;\n",
         win = p.window_bg,
         fg = p.fg,
         view = p.view_bg,
@@ -217,19 +195,18 @@ pub(in crate::ui) fn theme_css(theme: Theme, is_dark: bool) -> String {
         card = p.card_bg,
         pop = p.popover_bg,
         dlg = p.dialog_bg,
-        acc = p.accent,
-        accfg = p.accent_fg,
+        accent_css = accent_css,
         primary_alpha = PRIMARY_TEXT_ALPHA,
         secondary_alpha = SECONDARY_TEXT_ALPHA,
         hint_alpha = HINT_TEXT_ALPHA,
         dim = p.dim_fg,
-        play = p.player_accent,
     )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ui::style::accent::AccentSource;
 
     #[test]
     fn default_theme_is_listed() {
@@ -248,28 +225,45 @@ mod tests {
     }
 
     #[test]
-    fn theme_css_defines_core_named_colors() {
-        let css = theme_css(Theme::PerpetualRain, true);
+    fn app_accent_css_defines_the_brand_roles_and_player_alias() {
+        let css = theme_css(Theme::PerpetualRain, true, AccentSource::App);
         for name in [
             "@define-color window_bg_color",
             "@define-color view_bg_color",
-            "@define-color accent_bg_color",
-            "@define-color reprise_player_accent",
-            "@define-color reprise_cover_light",
         ] {
             assert!(css.contains(name), "missing color definition: {name}");
         }
+        for definition in [
+            "@define-color accent_color #4FDBD4;",
+            "@define-color accent_bg_color #4FDBD4;",
+            "@define-color accent_fg_color #04140f;",
+            "@define-color reprise_player_accent @accent_color;",
+        ] {
+            assert!(css.contains(definition), "missing definition: {definition}");
+        }
+    }
+
+    #[test]
+    fn system_accent_css_leaves_adwaita_roles_undefined_and_keeps_player_alias() {
+        let css = theme_css(Theme::PerpetualRain, true, AccentSource::System);
+        for name in ["accent_color", "accent_bg_color", "accent_fg_color"] {
+            assert!(
+                !css.contains(&format!("@define-color {name}")),
+                "system accent must leave {name} to libadwaita"
+            );
+        }
+        assert!(css.contains("@define-color reprise_player_accent @accent_color;"));
     }
 
     #[test]
     fn distinct_themes_produce_distinct_css() {
         assert_ne!(
-            theme_css(Theme::PerpetualRain, true),
-            theme_css(Theme::NightTerrain, true)
+            theme_css(Theme::PerpetualRain, true, AccentSource::App),
+            theme_css(Theme::NightTerrain, true, AccentSource::App)
         );
         assert_ne!(
-            theme_css(Theme::NightTerrain, true),
-            theme_css(Theme::MutedBloom, true)
+            theme_css(Theme::NightTerrain, true, AccentSource::App),
+            theme_css(Theme::MutedBloom, true, AccentSource::App)
         );
     }
 
@@ -321,19 +315,12 @@ mod tests {
     }
 
     #[test]
-    fn static_player_accent_matches_theme_accent_in_both_appearances() {
+    fn player_accent_alias_is_source_independent_in_both_appearances() {
         for theme in Theme::all() {
-            for (is_dark, palette) in [(true, theme.palette()), (false, theme.light_palette())] {
-                assert_eq!(
-                    palette.player_accent, palette.accent,
-                    "{theme:?} player fallback must use the theme accent"
-                );
-                let css = theme_css(theme, is_dark);
-                for name in ["reprise_player_accent", "reprise_cover_light"] {
-                    assert!(
-                        css.contains(&format!("@define-color {name} {};", palette.player_accent)),
-                        "{theme:?} is missing the {name} fallback"
-                    );
+            for is_dark in [true, false] {
+                for source in [AccentSource::App, AccentSource::System] {
+                    let css = theme_css(theme, is_dark, source);
+                    assert!(css.contains("@define-color reprise_player_accent @accent_color;"));
                 }
             }
         }
@@ -381,7 +368,7 @@ mod tests {
         const MINIMUM_RATIO: f64 = 4.5;
         for theme in Theme::all() {
             for (is_dark, palette) in [(true, theme.palette()), (false, theme.light_palette())] {
-                let css = theme_css(theme, is_dark);
+                let css = theme_css(theme, is_dark, AccentSource::App);
                 assert!(css.contains(&format!(
                     "@define-color reprise_primary_fg_color alpha({}, 0.95);",
                     palette.fg

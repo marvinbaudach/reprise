@@ -256,12 +256,12 @@ fn reads_every_stored_release_field_including_hidden_history() {
     conn.execute(
         "INSERT INTO new_releases (
            release_group_mbid, artist_name, artist_mbid, title, release_type,
-           first_release_date, fetched_at, seen_at, hidden, fallback_accent,
+           first_release_date, fetched_at, seen_at, hidden,
            first_seen, hidden_at, announce_url, track_count
          ) VALUES (
            'release-group-1', 'Artist One', 'artist-mbid-1',
            'Artist One Album', 'Album', '2025-08-15', 1000, 1100, 1,
-           '#123456', 900, 1200, 'https://musicbrainz.example/release-group-1',
+           900, 1200, 'https://musicbrainz.example/release-group-1',
            2
          )",
         [],
@@ -283,7 +283,6 @@ fn reads_every_stored_release_field_including_hidden_history() {
     assert_eq!(release["fetched_at"], 1000);
     assert_eq!(release["seen_at"], 1100);
     assert_eq!(release["hidden"], true);
-    assert_eq!(release["fallback_accent"], "#123456");
     assert_eq!(release["first_seen"], 900);
     assert_eq!(release["hidden_at"], 1200);
     assert_eq!(

@@ -4,10 +4,6 @@ use chrono::NaiveDate;
 
 use crate::artist_news::{refresh_with_progress_at, FetchScope, RefreshHooks, RefreshProgress};
 
-fn no_accent(_db: &crate::db::Db, _artist: &str) -> Option<String> {
-    None
-}
-
 #[test]
 fn nr_22_refresh_reports_determinate_progress_for_every_queued_artist() {
     let db = crate::db::Db::open_in_memory().unwrap();
@@ -45,7 +41,6 @@ fn nr_22_refresh_reports_determinate_progress_for_every_queued_artist() {
         true,
         &mut RefreshHooks {
             fetch: &mut fetch,
-            fallback_accent: &mut no_accent,
             on_progress: &mut |update| progress.push(update),
             completion_time: &mut completion_time,
         },
@@ -95,7 +90,6 @@ fn nr_22_successful_empty_refresh_still_records_its_completion_time() {
         true,
         &mut RefreshHooks {
             fetch: &mut fetch,
-            fallback_accent: &mut no_accent,
             on_progress: &mut |update| progress.push(update),
             completion_time: &mut completion_time,
         },
@@ -148,7 +142,6 @@ fn nr_22_failed_refresh_preserves_the_previous_successful_age() {
         true,
         &mut RefreshHooks {
             fetch: &mut fetch,
-            fallback_accent: &mut no_accent,
             on_progress: &mut |update| progress.push(update),
             completion_time: &mut completion_time,
         },

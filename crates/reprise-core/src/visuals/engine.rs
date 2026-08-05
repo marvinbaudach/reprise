@@ -7,7 +7,7 @@
 
 use crate::playback::{BassPressure, SpectrumFrame, SPECTRUM_BAND_COUNT};
 
-use super::color::{hue_shift, secondary_accent};
+use super::color::hue_shift;
 use super::modes;
 use super::scene::{Fill, Geom, Rgba, Scene, Shape};
 
@@ -48,7 +48,7 @@ pub struct ModeCtx<'a> {
 }
 
 impl ModeCtx<'_> {
-    /// Solid fill in the primary cover accent.
+    /// Solid fill in the primary effective accent.
     pub fn accent_fill(&self, alpha: f32) -> Fill {
         let (r, g, b) = self.accent;
         Fill::Solid(Rgba { r, g, b, a: alpha })
@@ -74,7 +74,6 @@ pub struct VisualEngine {
     idle_phase: f32,
     idle_amp: f32,
     accent: (f32, f32, f32),
-    cover_accent2: Option<(f32, f32, f32)>,
 }
 
 impl Default for VisualEngine {
@@ -96,7 +95,6 @@ impl VisualEngine {
             idle_phase: 0.0,
             idle_amp: 0.0,
             accent: (0.5, 0.5, 0.5),
-            cover_accent2: None,
         }
     }
 
@@ -149,14 +147,6 @@ impl VisualEngine {
 
     pub fn set_accent(&mut self, rgb: (f32, f32, f32)) {
         self.accent = rgb;
-    }
-
-    pub fn set_cover_pixels(&mut self, rgba: &[u8], pixel_count: usize) {
-        self.cover_accent2 = secondary_accent(rgba, pixel_count, self.accent);
-    }
-
-    pub fn clear_cover(&mut self) {
-        self.cover_accent2 = None;
     }
 
     /// Clears the previous track's bar and peak-cap history.
@@ -247,8 +237,7 @@ impl VisualEngine {
     }
 
     pub fn accent2(&self) -> (f32, f32, f32) {
-        self.cover_accent2
-            .unwrap_or_else(|| hue_shift(self.accent, FALLBACK_ACCENT2_HUE_SHIFT))
+        hue_shift(self.accent, FALLBACK_ACCENT2_HUE_SHIFT)
     }
 
     fn make_ctx(&self, width: f32, height: f32) -> ModeCtx<'_> {
@@ -554,7 +543,7 @@ mod tests {
     }
 
     #[test]
-    fn secondary_accent_falls_back_to_hue_shift() {
+    fn accent2_is_always_hue_shifted_from_the_effective_accent() {
         let mut engine = VisualEngine::new();
         engine.set_accent((0.8, 0.2, 0.2));
         let ctx_hue = color::rgb_hue(engine.accent2());

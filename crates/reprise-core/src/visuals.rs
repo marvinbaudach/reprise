@@ -6,7 +6,7 @@ pub mod modes;
 pub mod scene;
 
 // Re-export public types
-pub use color::{hsla_to_rgb, hue_shift, rgb_hue, secondary_accent};
+pub use color::{hsla_to_rgb, hue_shift, rgb_hue};
 pub use engine::{ModeCtx, VisualEngine};
 pub use scene::{Fill, Geom, Rgba, Scene, Shape};
 

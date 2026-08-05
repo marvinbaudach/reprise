@@ -713,9 +713,9 @@ fn assert_update_feed_rows_are_module_gated_ordered_and_badged() {
             .execute(
                 "INSERT INTO new_releases (
                release_group_mbid, artist_name, artist_mbid, title, release_type,
-               first_release_date, fetched_at, fallback_accent, first_seen
+               first_release_date, fetched_at, first_seen
              ) VALUES ('release', 'Artist', 'artist-id', 'Release', 'Album',
-                       '2099-08-01', 1, '#123456', 1)",
+                       '2099-08-01', 1, 1)",
                 [],
             )
             .unwrap();
