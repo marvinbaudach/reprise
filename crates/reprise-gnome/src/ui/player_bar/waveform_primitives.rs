@@ -16,6 +16,50 @@ const MAX_BAR_COUNT: usize = 160;
 pub(super) const MINI_BAR_COUNT: usize = 46;
 pub(super) const MINI_BAR_GAP: f64 = 1.5;
 pub(super) const MINI_BAR_RADIUS: f64 = 1.0;
+const REDRAW_COLOUR_THRESHOLD: f64 = 1.0 / 512.0;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct RedrawSnapshot {
+    pub(super) head_x: f64,
+    pub(super) colour: (f64, f64, f64),
+    pub(super) hover_fraction: Option<f64>,
+    pub(super) drag_fraction: Option<f64>,
+    pub(super) pressure: f64,
+    pub(super) swell: f64,
+}
+
+impl RedrawSnapshot {
+    #[cfg(test)]
+    pub(super) fn new(head_x: f64, colour: (f64, f64, f64)) -> Self {
+        Self {
+            head_x,
+            colour,
+            hover_fraction: None,
+            drag_fraction: None,
+            pressure: 0.0,
+            swell: 0.0,
+        }
+    }
+}
+
+pub(super) fn should_redraw(
+    last_drawn: Option<RedrawSnapshot>,
+    current: RedrawSnapshot,
+    animation_running: bool,
+) -> bool {
+    let Some(last) = last_drawn else {
+        return true;
+    };
+    animation_running
+        || (current.head_x - last.head_x).abs() >= 1.0
+        || (current.colour.0 - last.colour.0).abs() >= REDRAW_COLOUR_THRESHOLD
+        || (current.colour.1 - last.colour.1).abs() >= REDRAW_COLOUR_THRESHOLD
+        || (current.colour.2 - last.colour.2).abs() >= REDRAW_COLOUR_THRESHOLD
+        || current.hover_fraction != last.hover_fraction
+        || current.drag_fraction != last.drag_fraction
+        || current.pressure != last.pressure
+        || current.swell != last.swell
+}
 
 /// Advances the smooth-fill interpolation by one frame: `fraction` moves by
 /// `velocity * dt_us` but never past `target` — the interpolation chases the
@@ -149,6 +193,26 @@ pub(super) fn rounded_bar(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn redraw_waits_for_a_pixel_or_a_measurable_colour_change() {
+        let last = RedrawSnapshot::new(20.0, (0.2, 0.4, 0.6));
+        assert!(!should_redraw(
+            Some(last),
+            RedrawSnapshot::new(20.9, (0.2, 0.4, 0.6)),
+            false,
+        ));
+        assert!(should_redraw(
+            Some(last),
+            RedrawSnapshot::new(21.1, (0.2, 0.4, 0.6)),
+            false,
+        ));
+        assert!(should_redraw(
+            Some(last),
+            RedrawSnapshot::new(20.0, (0.2 + 1.1 / 512.0, 0.4, 0.6)),
+            false,
+        ));
+    }
 
     #[test]
     fn resolve_bar_count_prefers_override() {
