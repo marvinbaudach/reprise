@@ -68,6 +68,9 @@ pub(in crate::ui) struct PlayerBarWidgets {
     pub(super) play_glyph: TransportGlyph,
     pub(in crate::ui) next_button: gtk4::Button,
     pub(in crate::ui) repeat_button: gtk4::ToggleButton,
+    pub(in crate::ui) info_button: gtk4::Button,
+    #[cfg(test)]
+    pub(in crate::ui) transport_row: gtk4::Box,
     pub(in crate::ui) play_next_episode_button: gtk4::Button,
     pub(in crate::ui) retry_external_button: gtk4::Button,
     pub(in crate::ui) position_label: gtk4::Label,
@@ -180,6 +183,11 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     let next_button = transport_button(ICON_NEXT, strings::TOOLTIP_NEXT);
     next_button.set_sensitive(false);
     let repeat_button = transport_toggle(ICON_REPEAT_ALL, strings::REPEAT);
+    let info_button = gtk4::Button::builder()
+        .icon_name("dialog-information-symbolic")
+        .tooltip_text(strings::text(strings::SOUND_INFO_TOOLTIP))
+        .css_classes(["flat"])
+        .build();
     let play_next_episode_button =
         gtk4::Button::with_label(&strings::text(strings::PODCAST_PLAY_NEXT_EPISODE));
     play_next_episode_button.set_visible(false);
@@ -194,8 +202,6 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     transport_row.append(&play_pause_button);
     transport_row.append(&next_button);
     transport_row.append(&repeat_button);
-    transport_row.append(&play_next_episode_button);
-    transport_row.append(&retry_external_button);
     transport_row.set_halign(gtk4::Align::Center);
     // CSS class lets transport hover rules target only these buttons (spec 1.5).
     transport_row.add_css_class(TRANSPORT_ROW_CSS_CLASS);
@@ -219,7 +225,16 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
 
     // — Center zone (transport + seek) —
     let center_zone = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
-    center_zone.append(&transport_row);
+    // The information affordance sits immediately beside Repeat but outside
+    // the transport group: it changes the visible detail surface, not
+    // playback. External recovery actions follow it for the same reason.
+    let transport_shell = gtk4::Box::new(gtk4::Orientation::Horizontal, ZONE_SPACING);
+    transport_shell.append(&transport_row);
+    transport_shell.append(&info_button);
+    transport_shell.append(&play_next_episode_button);
+    transport_shell.append(&retry_external_button);
+    transport_shell.set_halign(gtk4::Align::Center);
+    center_zone.append(&transport_shell);
     center_zone.append(&seek_row);
     center_zone.set_hexpand(true);
     center_zone.set_size_request(CENTER_ZONE_MAX_WIDTH, -1);
@@ -347,6 +362,9 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
         play_pause_button,
         next_button,
         repeat_button,
+        info_button,
+        #[cfg(test)]
+        transport_row,
         play_glyph,
         play_next_episode_button,
         retry_external_button,

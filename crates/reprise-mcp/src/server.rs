@@ -64,6 +64,11 @@ const SERVER_INSTRUCTIONS: &str = "Reprise local music library and player. \
     they require the running Reprise app. Device-sync status exposes path-free \
     capacity, delta, progress, and transfer-rate data; configuration/start/cancel \
     require the opt-in 'device:sync' capability. \
+    `music_similar_tracks` and `music_sound_profile` read the local Sound \
+    Similarity module's derived profiles: ranked, path-free neighbours for one \
+    track and that track's own timbre/dynamics/tempo position. Both report how \
+    much of the library carries a profile instead of answering with an empty \
+    list. \
     `music_create_instrumental` queues experimental vocal-removal renders of \
     explicit tracks (requires the 'ai:create' capability, off by default) and \
     returns immediately with job ids; `music_get_job_status` reports their \
@@ -134,13 +139,14 @@ impl RepriseServer {
     fn build_tool_router() -> ToolRouter<Self> {
         Self::tool_router()
             + Self::source_tool_router()
+            + Self::sound_tool_router()
             + Self::playback_tool_router()
             + Self::device_tool_router()
     }
 
     #[cfg(not(feature = "mpris"))]
     fn build_tool_router() -> ToolRouter<Self> {
-        Self::tool_router() + Self::source_tool_router()
+        Self::tool_router() + Self::source_tool_router() + Self::sound_tool_router()
     }
 
     pub(crate) fn source_db_path(&self) -> Arc<PathBuf> {

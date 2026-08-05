@@ -29,4 +29,4 @@ pub(super) fn short_timeouts() -> YtDlpTimeouts {
     }
 }
 
-pub(super) use crate::log_capture::{CapturedLogs, LogCapture};
+pub(super) use crate::log_capture::CapturedLogs;

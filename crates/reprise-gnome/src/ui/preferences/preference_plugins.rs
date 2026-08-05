@@ -5,7 +5,7 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
-use reprise_core::modules::ModuleDescriptor;
+use reprise_core::modules::{ModuleDescriptor, Provision, ProvisionKind};
 
 use super::{strings, PreferencesContext};
 
@@ -19,7 +19,7 @@ enum PluginGroup {
     Connected,
 }
 
-const LOCAL_PLUGIN_IDS: &[&str] = &["song_visuals", "library_doctor"];
+const LOCAL_PLUGIN_IDS: &[&str] = &["song_visuals", "sound_similarity", "library_doctor"];
 const ONLINE_PLUGIN_IDS: &[&str] = &[
     "youtube",
     "podcasts",
@@ -44,7 +44,13 @@ fn plugin_ids_for_group(group: PluginGroup) -> &'static [&'static str] {
 fn plugin_uses_expander(id: &str) -> bool {
     matches!(
         id,
-        "library_doctor" | "youtube" | "podcasts" | "radio" | "new_releases" | "concerts"
+        "sound_similarity"
+            | "library_doctor"
+            | "youtube"
+            | "podcasts"
+            | "radio"
+            | "new_releases"
+            | "concerts"
     )
 }
 
@@ -112,6 +118,77 @@ fn descriptor(id: &str) -> &'static ModuleDescriptor {
         .unwrap_or_else(|| panic!("unknown Plugins capability: {id}"))
 }
 
+fn provision_badges_for(id: &str, group_ids: &[&str]) -> Vec<Provision> {
+    use std::collections::BTreeMap;
+
+    let mut frequencies = BTreeMap::<Vec<ProvisionKind>, usize>::new();
+    for group_id in group_ids {
+        let mut kinds = descriptor(group_id)
+            .provides
+            .iter()
+            .map(|provision| provision.kind)
+            .collect::<Vec<_>>();
+        kinds.sort_unstable();
+        kinds.dedup();
+        *frequencies.entry(kinds).or_default() += 1;
+    }
+    let mut ranked = frequencies.into_iter().collect::<Vec<_>>();
+    ranked.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+    let winner = ranked.first().and_then(|(kinds, count)| {
+        let second = ranked.get(1).map_or(0, |(_, count)| *count);
+        (*count >= 2 && *count > second).then_some(kinds)
+    });
+    let module = descriptor(id);
+    let mut module_kinds = module
+        .provides
+        .iter()
+        .map(|provision| provision.kind)
+        .collect::<Vec<_>>();
+    module_kinds.sort_unstable();
+    module_kinds.dedup();
+    if winner.is_some_and(|winner| winner == &module_kinds) {
+        Vec::new()
+    } else {
+        module.provides.to_vec()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ProvisionBadgeTone {
+    Accent,
+    Neutral,
+}
+
+fn provision_badge_tone(kind: ProvisionKind) -> ProvisionBadgeTone {
+    if matches!(
+        kind,
+        ProvisionKind::PanelTab | ProvisionKind::SidebarSection
+    ) {
+        ProvisionBadgeTone::Accent
+    } else {
+        ProvisionBadgeTone::Neutral
+    }
+}
+
+fn provision_badges(id: &str, group_ids: &[&str]) -> gtk4::Box {
+    let badges = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
+    for provision in provision_badges_for(id, group_ids) {
+        let badge = gtk4::Label::new(Some(provision.label));
+        badge.add_css_class("caption");
+        badge.add_css_class("pill");
+        if provision_badge_tone(provision.kind) == ProvisionBadgeTone::Accent {
+            badge.add_css_class("accent");
+        } else {
+            badge.add_css_class("dim-label");
+        }
+        if let Some(target) = provision.target {
+            badge.set_tooltip_text(Some(target));
+        }
+        badges.append(&badge);
+    }
+    badges
+}
+
 pub(in crate::ui) fn highlight_duration() -> std::time::Duration {
     std::time::Duration::from_millis(u64::from(crate::ui::motion::AMBIENT_MS))
 }
@@ -148,6 +225,7 @@ pub(in crate::ui) fn plugin_title(descriptor: &ModuleDescriptor) -> String {
         "online_lyrics" => strings::ONLINE_LYRICS,
         "source_images" => strings::SOURCE_IMAGES,
         "song_visuals" => strings::SONG_VISUALS,
+        "sound_similarity" => strings::SOUND,
         _ => return descriptor.name.to_string(),
     };
     strings::text(message)
@@ -168,6 +246,7 @@ pub(in crate::ui) fn plugin_description(descriptor: &ModuleDescriptor) -> String
         "online_lyrics" => strings::ONLINE_LYRICS_DESCRIPTION,
         "source_images" => strings::SOURCE_IMAGES_DESCRIPTION,
         "song_visuals" => strings::SONG_VISUALS_DESCRIPTION,
+        "sound_similarity" => strings::SOUND_SIMILARITY_DESCRIPTION,
         _ => return descriptor.description.to_string(),
     };
     strings::text(message)
@@ -208,6 +287,19 @@ fn persist_module_state(
                 }
                 Err(error.to_string())
             }
+        };
+    }
+    if descriptor.id == "sound_similarity" {
+        return match reprise_core::modules::set_enabled(&context.conn, descriptor, active) {
+            Ok(()) => {
+                context.info_panel.set_sound_similarity_enabled(active);
+                context.info_panel.refresh_sound_options();
+                if let Some(player) = &context.player {
+                    player.bar.set_sound_info_visible(active);
+                }
+                Ok(())
+            }
+            Err(error) => Err(error.to_string()),
         };
     }
     let result = match descriptor.id {
@@ -381,6 +473,11 @@ fn settings_plugin_row(
             rows.add_to(&row);
             Rc::new(move |enabled| rows.set_sensitive(enabled))
         }
+        "sound_similarity" => {
+            let rows = super::preference_sound_similarity::build(context, active);
+            rows.add_to(&row);
+            Rc::new(move |enabled| rows.set_sensitive(enabled))
+        }
         id => panic!("capability {id} has no Plugins child-row builder"),
     };
     register_plugin_row(context, descriptor, &row);
@@ -420,9 +517,20 @@ impl PreferencesContext {
         for id in plugin_ids_for_group(PluginGroup::Local) {
             match *id {
                 "library_doctor" => {
-                    local_group.add(&super::preference_library_doctor::plugin_row(self));
+                    let row = super::preference_library_doctor::plugin_row(self);
+                    row.add_suffix(&provision_badges(id, LOCAL_PLUGIN_IDS));
+                    local_group.add(&row);
                 }
-                id => local_group.add(&simple_plugin_row(self, descriptor(id))),
+                id if plugin_uses_expander(id) => {
+                    let row = settings_plugin_row(self, descriptor(id));
+                    row.add_suffix(&provision_badges(id, LOCAL_PLUGIN_IDS));
+                    local_group.add(&row);
+                }
+                id => {
+                    let row = simple_plugin_row(self, descriptor(id));
+                    row.add_suffix(&provision_badges(id, LOCAL_PLUGIN_IDS));
+                    local_group.add(&row);
+                }
             }
         }
         let online_disclosure = adw::ActionRow::builder().activatable(true).build();
@@ -432,9 +540,13 @@ impl PreferencesContext {
         for id in plugin_ids_for_group(PluginGroup::Online) {
             let descriptor = descriptor(id);
             let row = if plugin_uses_expander(id) {
-                settings_plugin_row(self, descriptor).upcast::<gtk4::Widget>()
+                let row = settings_plugin_row(self, descriptor);
+                row.add_suffix(&provision_badges(id, ONLINE_PLUGIN_IDS));
+                row.upcast::<gtk4::Widget>()
             } else {
-                simple_plugin_row(self, descriptor).upcast()
+                let row = simple_plugin_row(self, descriptor);
+                row.add_suffix(&provision_badges(id, ONLINE_PLUGIN_IDS));
+                row.upcast()
             };
             online_group.add(&row);
             online_rows.push(row);

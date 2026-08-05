@@ -61,6 +61,23 @@ impl TrackSpectrogram {
         &self.cells
     }
 
+    /// Upper edge of the highest stored band with energy above the absolute
+    /// spectrogram floor. This is display metadata derived from the existing
+    /// render cache, not a second analysis pass.
+    pub fn occupied_upper_hz(&self) -> Option<u32> {
+        let highest = (0..SPECTROGRAM_BAND_COUNT).rev().find(|band| {
+            self.cells
+                .iter()
+                .skip(*band)
+                .step_by(SPECTROGRAM_BAND_COUNT)
+                .any(|cell| *cell > 0)
+        })?;
+        let low = f64::from(SPECTROGRAM_LOW_HZ).ln();
+        let high = f64::from(SPECTROGRAM_HIGH_HZ).ln();
+        let edge = low + (high - low) * (highest + 1) as f64 / SPECTROGRAM_BAND_COUNT as f64;
+        Some(edge.exp().round() as u32)
+    }
+
     /// The seek bar's colour curve: one normalized spectral position per
     /// `bucket`, `0` at the track's own bass end and `255` at its treble end.
     ///
@@ -149,6 +166,28 @@ fn band_centre_octaves() -> Vec<f64> {
     (0..SPECTROGRAM_BAND_COUNT)
         .map(|band| low + step * (band as f64 + 0.5))
         .collect()
+}
+
+/// A stored cell back to absolute dBFS.
+///
+/// The exact inverse of the producer's quantization: the cell scale is linear
+/// in dB between [`SPECTROGRAM_FLOOR_DBFS`] and [`SPECTROGRAM_CEILING_DBFS`].
+/// Every derivation over the stored cells decodes through here, so there is
+/// one answer to what a cell means.
+pub(crate) fn cell_dbfs(cell: u8) -> f32 {
+    SPECTROGRAM_FLOOR_DBFS
+        + f32::from(cell) / 255.0 * (SPECTROGRAM_CEILING_DBFS - SPECTROGRAM_FLOOR_DBFS)
+}
+
+/// A stored cell back to linear power.
+///
+/// A floor cell reads as true silence rather than as the floor's own energy,
+/// so a silent band contributes nothing to a sum instead of a constant offset.
+pub(crate) fn cell_energy(cell: u8) -> f32 {
+    if cell == 0 {
+        return 0.0;
+    }
+    10.0_f32.powf(cell_dbfs(cell) / 10.0)
 }
 
 /// A stored cell back to a linear amplitude weight.
