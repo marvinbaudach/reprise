@@ -4924,3 +4924,39 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:18
 msgid "Separate title bar"
 msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:33
+#, fuzzy
+msgid "Analyze Library"
+msgstr "媒体库"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:34
+msgid "Stop Analysis"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:200
+#, fuzzy
+msgid "Analyzing library…"
+msgstr "正在扫描音乐库"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:201
+#, fuzzy
+msgid "Library analysis complete"
+msgstr "仅媒体库中的艺人"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:202
+msgid "Library analysis stopped"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:203
+#, fuzzy
+msgid "Could not analyze the library"
+msgstr "无法保存列布局"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:228
+msgid "{analyzed} of {total} analyzed"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:240
+msgid "{analyzed} analyzed · {failed} failed"
+msgstr ""

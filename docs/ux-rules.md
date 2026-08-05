@@ -142,6 +142,18 @@ human. Rationale for changes lives in the git history.
   scan, stays in the view (card appears). "Preferences" → Preferences
   window. "Keyboard Shortcuts" → shortcuts overlay. "About Reprise" →
   About dialog. No menu item silently switches the content view.
+- **NAV-7b** [active] [gtk] — The seek bar's colour arrives the way its
+  shape already does: by itself. The analysis starts with the app and is
+  resumable, so a library that is already done ends it at once and shows
+  nothing — a run appears on the scan card (P-1) only when it has real
+  work. The track being played is caught up on its own, and its bar
+  crossfades from the plain accent into its colours when the curve
+  lands; nothing waits for that. One hamburger item next to the scan
+  carries the same two-label shape as it does — "Analyze Library" /
+  "Stop Analysis", labelling independently of the scan — and exists to
+  stop a run under way or start one again, not to grant permission. A
+  first full pass is roughly three quarters of an hour of CPU, so
+  stopping it must always be one click away.
 - **NAV-8** [planned] [gtk] — My Stats is a sidebar place like any
   other: full content area, the header bar with search stays put (search
   there being disabled/hidden is allowed, but the bar remains).

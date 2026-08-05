@@ -5123,3 +5123,35 @@ msgstr "Chromium (CSD)"
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:18
 msgid "Separate title bar"
 msgstr "Barra de título independiente"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:33
+msgid "Analyze Library"
+msgstr "Analizar el audio de la biblioteca"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:34
+msgid "Stop Analysis"
+msgstr "Detener el análisis de audio"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:200
+msgid "Analyzing library…"
+msgstr "Analizando el audio de la biblioteca…"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:201
+msgid "Library analysis complete"
+msgstr "Análisis de audio completado"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:202
+msgid "Library analysis stopped"
+msgstr "Análisis de audio detenido"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:203
+msgid "Could not analyze the library"
+msgstr "No se pudo analizar el audio de la biblioteca"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:228
+msgid "{analyzed} of {total} analyzed"
+msgstr "{analyzed} de {total} analizados"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:240
+msgid "{analyzed} analyzed · {failed} failed"
+msgstr "{analyzed} analizados · {failed} fallidos"
