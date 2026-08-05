@@ -4,9 +4,11 @@ import android.app.Application
 import android.content.ComponentName
 import android.content.Intent
 import android.os.Looper
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -50,6 +52,9 @@ class MainActivityLibraryRatingSettingTest {
 
     @Test
     fun unsetDrawsNoStarsAndAnExplicitChoiceSurvivesRecreateAndFreshRead() {
+        // The badge as a whole: "4/5" alone would still be absent from a row
+        // that drew an empty star and "0/5", which is the setting half-applied.
+        compose.onAllNodesWithTag(TRACK_RATING_TAG, useUnmergedTree = true).assertCountEquals(0)
         compose.onNodeWithText("4/5").assertDoesNotExist()
         assertEquals(1, application.ratingPort.reads)
 
@@ -67,6 +72,7 @@ class MainActivityLibraryRatingSettingTest {
 
         compose.onNodeWithContentDescription("Back to Settings").performClick()
         compose.onNodeWithContentDescription("Back to Library").performClick()
+        compose.onAllNodesWithTag(TRACK_RATING_TAG, useUnmergedTree = true).assertCountEquals(1)
         compose.onNodeWithText("4/5").assertExists()
 
         assertTrue(LibraryRatingSettingController(application.ratingPort).load())

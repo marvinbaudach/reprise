@@ -72,9 +72,19 @@ class SettingsMenuTest {
         compose.onNodeWithText("Settings").performClick()
         compose.onNodeWithText("Library & scan folder").performClick()
         compose.onNodeWithText("Choose another folder").assertIsDisplayed().performClick()
-        compose.onNodeWithContentDescription("Rescan library").performClick()
-
+        // Leaving settings is part of both actions: what reports on the scan is
+        // a screen that replaces the one this overlay is drawn inside, so the
+        // overlay goes either way — deliberately, rather than dissolving under
+        // the listener halfway through.
+        compose.onNodeWithText("Choose another folder").assertDoesNotExist()
         assertEquals(1, folderChoices)
+
+        openMenu()
+        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithText("Library & scan folder").performClick()
+        compose.onNodeWithContentDescription("Rescan library").performClick()
+        compose.onNodeWithContentDescription("Rescan library").assertDoesNotExist()
+
         assertEquals(2, rescans)
     }
 

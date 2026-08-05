@@ -8,6 +8,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import de.reprise.spike.settings.SettingsNavigation
 import de.reprise.spike.ui.theme.RepriseTheme
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -57,7 +58,49 @@ class SettingsContentTest {
         compose.onNodeWithText(BuildConfig.REPRISE_CORE_LICENSE).assertIsDisplayed()
     }
 
-    private fun showSettings(dynamicAvailable: Boolean = false) {
+    @Test
+    fun theLibraryPageNamesTheFolderItScans() {
+        showSettings(folderName = "Music/Live")
+
+        compose.onNodeWithContentDescription("Open Library & scan folder").performClick()
+
+        compose.onNodeWithText("Music/Live").assertIsDisplayed()
+    }
+
+    /** An unnameable folder falls back to the count rather than to a token. */
+    @Test
+    fun theLibraryPageFallsBackToTheCountWhenTheFolderCannotBeNamed() {
+        showSettings(folderName = null)
+
+        compose.onNodeWithContentDescription("Open Library & scan folder").performClick()
+
+        compose.onNodeWithText("1 folder").assertIsDisplayed()
+    }
+
+    /**
+     * Both library actions hand back a catalogue, and the screen that reports
+     * on the scan replaces the one this overlay is drawn inside — so the
+     * overlay comes down either way. It has to come down on purpose: an
+     * overlay that dissolves mid-scan without anyone deciding it is the same
+     * movement with nobody behind it.
+     */
+    @Test
+    fun theLibraryActionsLeaveSettingsBeforeTheyStart() {
+        val closes = mutableListOf<String>()
+        showSettings(onClose = { closes += "close" }, onRescan = { closes += "rescan" })
+
+        compose.onNodeWithContentDescription("Open Library & scan folder").performClick()
+        compose.onNodeWithContentDescription("Rescan library").performClick()
+
+        assertEquals(listOf("close", "rescan"), closes)
+    }
+
+    private fun showSettings(
+        dynamicAvailable: Boolean = false,
+        folderName: String? = "Music",
+        onClose: () -> Unit = {},
+        onRescan: () -> Unit = {},
+    ) {
         val theme = MobileThemeSelection(
             palette = MobileTheme.NOCTURNE,
             colorScheme = AndroidColorScheme.SYSTEM,
@@ -77,10 +120,11 @@ class SettingsContentTest {
                     titleCount = 1_824,
                     albumCount = 143,
                     artistCount = 92,
+                    folderName = folderName,
                     themeSelection = theme,
-                    close = {},
+                    close = onClose,
                     chooseFolder = {},
-                    rescan = {},
+                    rescan = onRescan,
                     setEqualizerEnabled = {},
                     replaceEqualizerCurve = {},
                     setGaplessEnabled = {},

@@ -22,6 +22,7 @@ internal fun LibrarySettingsPage(
     titleCount: Long,
     albumCount: Long,
     artistCount: Long,
+    folderName: String?,
     back: () -> Unit,
     chooseFolder: () -> Unit,
     rescan: () -> Unit,
@@ -42,8 +43,11 @@ internal fun LibrarySettingsPage(
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Selected music folder", style = MaterialTheme.typography.bodyLarge)
+                    // The name, or the count when the provider's document id is
+                    // not a path — see `folderLabel`. Printing an opaque token
+                    // would be worse than saying nothing.
                     Text(
-                        "1 folder",
+                        folderName ?: "1 folder",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyMedium,
                     )

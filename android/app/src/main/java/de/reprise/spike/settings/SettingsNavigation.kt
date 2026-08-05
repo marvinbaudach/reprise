@@ -21,6 +21,7 @@ internal fun SettingsNavigation(
     titleCount: Long,
     albumCount: Long,
     artistCount: Long,
+    folderName: String?,
     themeSelection: MobileThemeSelection,
     close: () -> Unit,
     chooseFolder: () -> Unit,
@@ -57,9 +58,23 @@ internal fun SettingsNavigation(
                 titleCount = titleCount,
                 albumCount = albumCount,
                 artistCount = artistCount,
+                folderName = folderName,
                 back = { navController.navigateUp() },
-                chooseFolder = chooseFolder,
-                rescan = rescan,
+                // Both of these hand the library a new catalogue, and the
+                // screen that reports on it replaces the one this overlay is
+                // drawn inside — so the overlay would come down anyway, in the
+                // middle of a scan, without anyone having decided it. Leaving
+                // deliberately is the same movement with an author: the scan is
+                // watched where scans are watched, and the count that raised
+                // the suspicion is the first thing standing there afterwards.
+                chooseFolder = {
+                    close()
+                    chooseFolder()
+                },
+                rescan = {
+                    close()
+                    rescan()
+                },
             )
         }
         composable(SettingsRoute.AUDIO.route) {

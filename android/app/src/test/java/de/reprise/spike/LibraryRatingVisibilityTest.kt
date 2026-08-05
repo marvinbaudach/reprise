@@ -10,8 +10,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithText
 import de.reprise.spike.ui.theme.RepriseTheme
 import org.junit.Assert.assertTrue
@@ -37,11 +39,16 @@ class LibraryRatingVisibilityTest {
     fun offDrawsNoRatingAndOnDrawsTheStoredRating() {
         showTrackRow()
 
+        // The badge as a whole, not the string "4/5": a row that drew an empty
+        // star and "0/5" would satisfy the text assertion while showing the
+        // listener exactly the thing the switch is meant to remove.
+        compose.onAllNodesWithTag(TRACK_RATING_TAG, useUnmergedTree = true).assertCountEquals(0)
         compose.onNodeWithText("4/5").assertDoesNotExist()
         val off = renderSurface()
 
         ratingsVisible = true
         compose.waitForIdle()
+        compose.onAllNodesWithTag(TRACK_RATING_TAG, useUnmergedTree = true).assertCountEquals(1)
         compose.onNodeWithText("4/5").assertIsDisplayed()
         val on = renderSurface()
 

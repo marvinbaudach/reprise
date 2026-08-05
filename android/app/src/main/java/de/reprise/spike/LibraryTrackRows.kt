@@ -39,6 +39,9 @@ internal val LocalLibraryRatingControl = staticCompositionLocalOf {
     LibraryRatingControl(enabled = true, select = {})
 }
 
+/** The whole rating badge, so a test can ask whether it is there at all. */
+internal const val TRACK_RATING_TAG = "track-rating"
+
 /**
  * The library's track list: the 72 dp rows, their continuation sentinel, and
  * the badges the row carries. Shared by the Titles tab and by an opened album,
@@ -236,7 +239,14 @@ private fun LibraryTrackRow(
 @Composable
 private fun TrackRating(rating: Int) {
     val normalizedRating = rating.coerceIn(0, 5)
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    // Tagged as one thing, because "no rating" is a claim about the whole
+    // affordance: a test that only looks for the text "4/5" passes just as
+    // happily when the row draws an empty star and "0/5", which is the setting
+    // half-applied rather than applied.
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.testTag(TRACK_RATING_TAG),
+    ) {
         MaterialSymbol(
             name = "star",
             contentDescription = "$normalizedRating of 5 stars",

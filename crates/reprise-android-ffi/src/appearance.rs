@@ -379,4 +379,30 @@ mod tests {
             AndroidStoredLibraryRating::On,
         );
     }
+
+    /// Switching back off has to reach storage too.
+    ///
+    /// Every other test here writes `true`, so a body that ignored its argument
+    /// and always stored "on" would pass all of them — and ship a switch that
+    /// can be turned on and never off again.
+    #[test]
+    fn library_rating_can_be_switched_back_off() {
+        let directory = tempfile::tempdir().unwrap();
+        let cache = directory.path().join("cache");
+        let library =
+            MusicLibrary::open(directory.path().to_str().unwrap(), cache.to_str().unwrap())
+                .unwrap();
+
+        library.set_library_rating(true).unwrap();
+        assert_eq!(
+            library.library_rating_setting().unwrap(),
+            AndroidStoredLibraryRating::On,
+        );
+
+        library.set_library_rating(false).unwrap();
+        assert_eq!(
+            library.library_rating_setting().unwrap(),
+            AndroidStoredLibraryRating::Off,
+        );
+    }
 }

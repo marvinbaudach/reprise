@@ -68,11 +68,18 @@ internal sealed interface LibraryScreenState {
         val total: ULong? = null,
     ) : LibraryScreenState
 
+    /**
+     * [folderUri] is the tree the rows were read out of. It rides along because
+     * the settings screen has to name the folder, and the session is the only
+     * place that knows it — asking the port again from a composable would be a
+     * second reader of a fact this state already carries.
+     */
     data class Browse(
         val titles: LibraryWindow<LibraryTrack>,
         val albums: LibraryWindow<LibraryAlbum>,
         val artists: LibraryWindow<LibraryArtist>,
         val message: String? = null,
+        val folderUri: String? = null,
     ) : LibraryScreenState
 }
 

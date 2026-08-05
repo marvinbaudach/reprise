@@ -417,6 +417,7 @@ internal fun BrowseScreen(
                         titleCount = state.titles.total,
                         albumCount = state.albums.total,
                         artistCount = state.artists.total,
+                        folderName = folderLabel(state.folderUri),
                         themeSelection = themeSelection,
                         close = { surfaceState.showSettings(false) },
                         chooseFolder = chooseFolder,
