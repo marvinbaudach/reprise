@@ -6,7 +6,8 @@ use std::path::Path;
 mod handle;
 pub use crate::db_spectrogram::{
     get_track_spectrogram, get_waveform_peaks, pending_render_data_tracks, set_track_render_data,
-    set_track_spectrogram, set_waveform_peaks, PendingRenderDataTrack, SpectrogramStoreOutcome,
+    set_track_spectrogram, set_waveform_peaks, track_source_fingerprint, PendingRenderDataTrack,
+    SpectrogramStoreOutcome,
 };
 pub use handle::Db;
 

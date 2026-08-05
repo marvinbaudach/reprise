@@ -146,6 +146,103 @@ pub fn get_track_spectrogram(db: &Db, track_id: i64) -> Result<Option<TrackSpect
         .transpose()
 }
 
+/// Rendering data lifted out before a rewrite that changes a file's metadata
+/// but not its audio, so it can be re-keyed to the new source identity.
+///
+/// The invalidation trigger keys on file metadata because that is all it can
+/// see. A caller that rewrites tags knows more than the trigger does: it knows
+/// no sample changed. This type is how that knowledge is carried.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct CarriedRenderData {
+    waveform_peaks: Option<Vec<u8>>,
+    spectrogram: Option<(i64, Vec<u8>)>,
+}
+
+impl CarriedRenderData {
+    fn is_empty(&self) -> bool {
+        self.waveform_peaks.is_none() && self.spectrogram.is_none()
+    }
+}
+
+/// Captures the rendering data that is *currently valid* for a track. A stale
+/// spectrogram is deliberately left behind: it would have to be recomputed
+/// either way.
+pub(crate) fn snapshot_render_data(
+    conn: &Connection,
+    track_id: i64,
+) -> Result<CarriedRenderData, rusqlite::Error> {
+    conn.query_row(
+        "SELECT t.waveform_peaks, s.format_version, s.data \
+         FROM tracks t LEFT JOIN track_spectrograms s \
+           ON s.track_id = t.id \
+          AND s.source_mtime = t.file_mtime AND s.source_size = t.file_size \
+          AND s.source_device IS t.device AND s.source_inode IS t.inode \
+         WHERE t.id = ?1",
+        [track_id],
+        |row| {
+            let format_version = row.get::<_, Option<i64>>(1)?;
+            let data = row.get::<_, Option<Vec<u8>>>(2)?;
+            Ok(CarriedRenderData {
+                waveform_peaks: row.get(0)?,
+                spectrogram: format_version.zip(data),
+            })
+        },
+    )
+    .optional()
+    .map(Option::unwrap_or_default)
+}
+
+/// Re-keys carried rendering data onto the track's new source identity. A
+/// no-op when nothing was carried or the track no longer exists.
+pub(crate) fn restore_render_data(
+    conn: &Connection,
+    track_id: i64,
+    carried: &CarriedRenderData,
+) -> Result<(), rusqlite::Error> {
+    if carried.is_empty() {
+        return Ok(());
+    }
+    let Some(source) = source_fingerprint(conn, track_id)? else {
+        return Ok(());
+    };
+    if let Some(peaks) = &carried.waveform_peaks {
+        // Only fills the hole the trigger punched; never overwrites peaks that
+        // something else produced in the meantime.
+        conn.execute(
+            "UPDATE tracks SET waveform_peaks = ?1 \
+             WHERE id = ?2 AND waveform_peaks IS NULL",
+            rusqlite::params![peaks, track_id],
+        )?;
+    }
+    if let Some((format_version, data)) = &carried.spectrogram {
+        conn.execute(
+            "INSERT INTO track_spectrograms \
+             (track_id, source_mtime, source_size, source_device, source_inode, \
+              format_version, data) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
+             ON CONFLICT(track_id) DO NOTHING",
+            rusqlite::params![
+                track_id,
+                source.mtime_seconds,
+                source.size_bytes,
+                source.device,
+                source.inode,
+                format_version,
+                data,
+            ],
+        )?;
+    }
+    Ok(())
+}
+
+/// The track's current source identity, as the invalidation trigger sees it.
+pub fn track_source_fingerprint(
+    db: &Db,
+    track_id: i64,
+) -> Result<Option<TrackSourceFingerprint>, DbError> {
+    Ok(source_fingerprint(db.conn(), track_id)?)
+}
+
 fn source_fingerprint(
     conn: &Connection,
     track_id: i64,
