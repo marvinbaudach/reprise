@@ -15,6 +15,7 @@ use std::time::Instant;
 use gtk4::prelude::*;
 use reprise_core::radio::StationRow;
 
+use super::radio_filter_bar::{filter_rows, filter_without_hiding, RadioFilter};
 use super::radio_model::{RadioModel, RadioObject};
 use super::radio_presentation::RadioLiveState;
 use crate::ui::source_reveal::{self, LoadedItemChange, RevealPolicy};
@@ -50,6 +51,40 @@ pub(super) fn station_reveal_outcome(rows: &[StationRow], station_id: i64) -> St
         StationRevealOutcome::Reveal
     } else {
         StationRevealOutcome::NotListed
+    }
+}
+
+/// What a player-link jump to the connected station comes down to
+/// (`PLAY-12`/`SRC-13`), decided from state alone so the view only has to
+/// carry it out.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum ConnectedRevealPlan {
+    /// Nothing is connected, or the station is no longer in the favorites —
+    /// say so instead of scrolling to nothing.
+    NotListed,
+    /// Reveal the station. `relax_filter` carries the filter to apply first
+    /// when the active one hides it, and is `None` when it does not.
+    Reveal { relax_filter: Option<RadioFilter> },
+}
+
+pub(super) fn connected_reveal_plan(
+    live: &RadioLiveState,
+    rows: &[StationRow],
+    filter: &RadioFilter,
+) -> ConnectedRevealPlan {
+    let Some(station_id) = connected_station(live) else {
+        return ConnectedRevealPlan::NotListed;
+    };
+    let Some(station) = rows.iter().find(|row| row.id == station_id) else {
+        return ConnectedRevealPlan::NotListed;
+    };
+    let visible = filter_rows(rows, filter);
+    if station_position(&visible, station_id).is_some() {
+        return ConnectedRevealPlan::Reveal { relax_filter: None };
+    }
+    let relaxed = filter_without_hiding(station, filter);
+    ConnectedRevealPlan::Reveal {
+        relax_filter: (relaxed != *filter).then_some(relaxed),
     }
 }
 
@@ -253,6 +288,59 @@ mod tests {
         assert_eq!(
             station_reveal_outcome(&rows, 42),
             StationRevealOutcome::NotListed
+        );
+    }
+
+    fn connected(station_id: i64) -> RadioLiveState {
+        RadioLiveState {
+            station_id: Some(station_id),
+            connected: true,
+            ..RadioLiveState::default()
+        }
+    }
+
+    /// `PLAY-12`: the whole player-link jump for radio in one place — the
+    /// station is revealed, the active filter is relaxed exactly as far as it
+    /// has to be, and a station that left the favorites is reported instead of
+    /// being scrolled to.
+    #[test]
+    fn src_13_jumping_to_the_connected_station_relaxes_only_what_hides_it() {
+        let mut rows = rows(&[5, 9]);
+        rows[0].genre = Some("Jazz".into());
+        rows[0].country_code = Some("DE".into());
+        rows[1].genre = Some("Rock".into());
+        let unfiltered = RadioFilter::default();
+        let hiding = RadioFilter {
+            genre: Some("Rock".into()),
+            country: Some("DE".into()),
+        };
+
+        // Visible already: nothing to relax.
+        assert_eq!(
+            connected_reveal_plan(&connected(5), &rows, &unfiltered),
+            ConnectedRevealPlan::Reveal { relax_filter: None }
+        );
+
+        // Hidden by the genre chip only — the country chip matches and stays.
+        assert_eq!(
+            connected_reveal_plan(&connected(5), &rows, &hiding),
+            ConnectedRevealPlan::Reveal {
+                relax_filter: Some(RadioFilter {
+                    genre: None,
+                    country: Some("DE".into()),
+                }),
+            }
+        );
+
+        // No longer among the favorites, and nothing connected at all: both
+        // are "not listed", not a silent no-op.
+        assert_eq!(
+            connected_reveal_plan(&connected(42), &rows, &unfiltered),
+            ConnectedRevealPlan::NotListed
+        );
+        assert_eq!(
+            connected_reveal_plan(&RadioLiveState::default(), &rows, &unfiltered),
+            ConnectedRevealPlan::NotListed
         );
     }
 }

@@ -78,6 +78,8 @@ fn browse_4_a_reveal_in_the_open_source_view_yields_no_transition() {
         .is_none());
 }
 
+/// Every id is guarded the same way, so every id is checked the same way:
+/// zero and negative alike, on both episode fields and on the station.
 #[test]
 fn browse_4_invalid_source_ids_have_no_target() {
     let invalid = [
@@ -87,10 +89,21 @@ fn browse_4_invalid_source_ids_have_no_target() {
             kind: SourceKind::Podcasts,
         },
         NavigationIntent::RevealEpisode {
+            subscription_id: -1,
+            episode_id: Some(11),
+            kind: SourceKind::Podcasts,
+        },
+        NavigationIntent::RevealEpisode {
             subscription_id: 7,
             episode_id: Some(0),
             kind: SourceKind::Youtube,
         },
+        NavigationIntent::RevealEpisode {
+            subscription_id: 7,
+            episode_id: Some(-1),
+            kind: SourceKind::Youtube,
+        },
+        NavigationIntent::RevealStation { station_id: 0 },
         NavigationIntent::RevealStation { station_id: -1 },
     ];
 
