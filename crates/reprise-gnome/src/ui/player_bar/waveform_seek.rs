@@ -71,6 +71,14 @@ const SOLID_HOVER_PREVIEW: (f64, f64, f64) = (
 /// remaining hint at where the music changes.
 const SECTION_MARK_ALPHA: f64 = 0.30;
 const SECTION_MARK_WIDTH: f64 = 1.0;
+/// Buffered-but-unplayed remote media, between the coming side and the played
+/// one.
+///
+/// Re-derived, not carried over: the 0.24 this arrived with was picked against
+/// an unplayed side of 0.12, and against 0.34 it would sit *below* the very
+/// thing it is supposed to be ahead of. It keeps its meaning — visibly more
+/// than not-yet-loaded, visibly less than played — on the new scale.
+const BUFFERED_ALPHA: f64 = 0.48;
 /// Alpha of the rounded playhead drawn over the bars.
 const PLAYHEAD_ALPHA: f64 = 0.70;
 /// Alpha for bars in the drag ghost region.
@@ -194,6 +202,7 @@ impl WaveformSeek {
             shaped_centroid: Vec::new(),
             last_display_width: 0,
             fraction: 0.0,
+            buffered_fraction: None,
             hover_fraction: None,
             drag_fraction: None,
             target_fraction: 0.0,
@@ -519,6 +528,27 @@ impl WaveformSeek {
         drop(s);
         update_accessible_value(&self.area, fraction, self.state.borrow().duration_ms);
         self.area.queue_draw();
+    }
+
+    pub(in crate::ui) fn set_buffered_fraction(&self, fraction: Option<f64>) {
+        let fraction = fraction.map(|value| value.clamp(0.0, 1.0));
+        let changed = {
+            let mut state = self.state.borrow_mut();
+            if state.buffered_fraction == fraction {
+                false
+            } else {
+                state.buffered_fraction = fraction;
+                true
+            }
+        };
+        if changed {
+            self.area.queue_draw();
+        }
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn buffered_fraction_for_test(&self) -> Option<f64> {
+        self.state.borrow().buffered_fraction
     }
 
     /// Update the target playback fraction with velocity estimation for smooth

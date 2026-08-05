@@ -263,7 +263,9 @@ impl Transport {
         if media.location.trim().is_empty() {
             return Err(RuntimeError::Rejected(Rejected::NothingToPlay));
         }
-        let started = if media.remote {
+        let started = if media.remote && media.live {
+            backend.play_live_uri(&media.location)
+        } else if media.remote {
             backend.play_uri(&media.location)
         } else {
             backend.play(&media.location)
@@ -418,6 +420,9 @@ impl Transport {
                     track.title.clone_from(title);
                 }
             }
+            // Buffer state belongs to the rendering surface. It does not
+            // change transport identity or the durable playback snapshot.
+            PlayerEvent::Buffering { .. } => {}
             // Handled by the runtime rather than here: a frame is not
             // transport state, has no place in a snapshot, and must never
             // reach a mailbox — see `Clients::offer_spectrum`.

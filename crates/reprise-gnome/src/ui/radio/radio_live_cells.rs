@@ -1,7 +1,7 @@
 //! Trigger-free live-state updates for the radio table.
 //!
 //! Two things in a radio row depend on playback rather than on the station
-//! record: the playing accent (state icon plus the `reprise-radio-playing`
+//! record: the shared playing marker plus the `reprise-radio-playing`
 //! class) and the "Now playing" title. Both used to reach their cells only
 //! because every snapshot rebuilt the whole `ListStore` — which is exactly
 //! what moved the selection to row 0 and reset the scroll offset (see

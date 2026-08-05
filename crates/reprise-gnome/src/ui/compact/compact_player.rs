@@ -214,17 +214,14 @@ impl CompactPlayer {
         self.set_track(&display.title, &display.subtitle);
         self.set_state(display.playback);
         self.0.widgets.waveform.set_peaks(Vec::new());
-        self.0.seek_enabled.set(!display.live);
+        let live = display.progress_mode == crate::ui::player_bar_state::BarProgressMode::Live;
+        self.0.seek_enabled.set(!live);
+        self.0.widgets.waveform.widget().set_sensitive(!live);
         self.0
             .widgets
             .waveform
             .widget()
-            .set_sensitive(!display.live);
-        self.0
-            .widgets
-            .waveform
-            .widget()
-            .set_opacity(if display.live { 0.0 } else { 1.0 });
+            .set_opacity(if live { 0.0 } else { 1.0 });
         self.0
             .menu
             .set_navigation_enabled(snapshot.can_go_previous, snapshot.can_go_next);

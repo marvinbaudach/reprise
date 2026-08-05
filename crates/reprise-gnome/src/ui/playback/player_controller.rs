@@ -281,7 +281,7 @@ pub struct PlayerController {
     pub(in crate::ui) queue_changed: RefCell<Vec<Rc<dyn Fn()>>>,
     /// Loaded-track fan-out for every surface that carries the shared
     /// playback marker — the track table and the My Stats songs card. A list,
-    /// not a slot: NAV-10a wants *every* visible instance marked, so a second
+    /// not a slot: NAV-10b wants *every* visible instance marked, so a second
     /// listener must not silently evict the first.
     pub(in crate::ui) current_track_changed:
         RefCell<Vec<super::current_track_selection::OnCurrentTrackChanged>>,
@@ -621,7 +621,7 @@ impl PlayerController {
         // Ordinary queue playback leaves preview mode (INST-4b).
         self.leave_external_for_queue();
         // Whatever the start placed, this presentation supersedes it: from
-        // here on the ordinary NAV-10a reveal policy applies again (START-3).
+        // here on the ordinary NAV-10b reveal policy applies again (START-3).
         self.restored_placement_intact.set(false);
 
         let summary = {

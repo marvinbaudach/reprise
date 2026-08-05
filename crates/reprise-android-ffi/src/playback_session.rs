@@ -294,7 +294,9 @@ impl SessionInner {
                     state.snapshot.error = Some(message);
                     (FollowUp::Stop, None)
                 }
-                PlayerEvent::StreamTags { .. } | PlayerEvent::Spectrum(_) => (FollowUp::None, None),
+                PlayerEvent::Buffering { .. }
+                | PlayerEvent::StreamTags { .. }
+                | PlayerEvent::Spectrum(_) => (FollowUp::None, None),
             }
         };
 

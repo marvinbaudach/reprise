@@ -314,6 +314,43 @@ fn css_includes_new_cover_and_label_classes() {
     assert!(css.contains("border-radius: 8px"));
 }
 
+#[test]
+fn play_13_live_badge_uses_the_central_motion_token_and_accent_language() {
+    let css = super::css();
+
+    assert!(css.contains(&format!(".{}", super::LIVE_BADGE_CLASS)));
+    assert!(css.contains(&format!(".{}", super::LIVE_DOT_CLASS)));
+    assert!(css.contains("@keyframes reprise-live-pulse"));
+    assert!(css.contains(&format!("{}ms", crate::ui::motion::AMBIENT_MS)));
+    assert!(css.contains("infinite alternate"));
+    assert!(css.contains("letter-spacing: 0.08em"));
+    assert!(css.contains("@reprise_player_accent"));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn play_13_live_badge_places_dot_live_and_station_in_that_order() {
+    gtk4::init().expect("GTK init");
+    let layout = build();
+
+    assert_eq!(
+        layout.live_badge.first_child(),
+        Some(layout.live_dot.clone().upcast())
+    );
+    assert_eq!(
+        layout.live_dot.next_sibling(),
+        Some(layout.live_label.clone().upcast())
+    );
+    assert_eq!(
+        layout.live_label.next_sibling(),
+        Some(layout.live_station_label.clone().upcast())
+    );
+    assert_eq!(
+        layout.live_label.text(),
+        crate::ui::strings::text(crate::ui::strings::RADIO_LIVE)
+    );
+}
+
 /// The press sink is no longer the player bar's own business: it comes
 /// from the one central set (BTN-4), and the bar only adds the louder
 /// accent ring the main action is allowed (BTN-3).

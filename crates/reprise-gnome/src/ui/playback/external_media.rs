@@ -458,7 +458,7 @@ impl PlayerController {
             }
         }
         let _ = reprise_core::radio::station::update_stream_url(&self.conn, station_id, stream_url);
-        match self.player.play_uri(stream_url) {
+        match self.player.play_live_uri(stream_url) {
             Ok(()) => {
                 if let Some(ExternalSession::Radio(session)) =
                     self.external.borrow_mut().session.as_mut()

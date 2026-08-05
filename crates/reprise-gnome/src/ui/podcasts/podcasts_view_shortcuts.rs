@@ -149,7 +149,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn src_12a_escape_stops_only_after_clearing_a_selection() {
+    fn src_12b_escape_stops_only_after_clearing_a_selection() {
         assert_eq!(
             escape_propagation(gdk::Key::Escape, gdk::ModifierType::empty(), || true),
             glib::Propagation::Stop
@@ -161,7 +161,7 @@ mod tests {
     }
 
     #[test]
-    fn src_12a_ctrl_a_requires_exactly_the_control_modifier() {
+    fn src_12b_ctrl_a_requires_exactly_the_control_modifier() {
         assert!(is_select_all(gdk::Key::a, gdk::ModifierType::CONTROL_MASK));
         assert!(!is_select_all(gdk::Key::a, gdk::ModifierType::empty()));
         assert!(!is_select_all(
@@ -174,14 +174,14 @@ mod tests {
         ));
     }
 
-    /// `SRC-12a`: a lock key must not disarm the shortcut. Caps Lock sends the
+    /// `SRC-12b`: a lock key must not disarm the shortcut. Caps Lock sends the
     /// upper-case keyval *and* sets a lock bit — a user with it engaged would
     /// otherwise press Ctrl+A and watch nothing happen, with nothing on screen
     /// to explain it. Masking with the accelerator mask also drops the other
     /// lock bits a platform may add, which is why the mask is used rather than
     /// subtracting `LOCK_MASK` by hand.
     #[test]
-    fn src_12a_ctrl_a_survives_caps_lock() {
+    fn src_12b_ctrl_a_survives_caps_lock() {
         assert!(is_select_all(
             gdk::Key::A,
             gdk::ModifierType::CONTROL_MASK | gdk::ModifierType::LOCK_MASK
@@ -200,7 +200,7 @@ mod tests {
     }
 
     #[test]
-    fn src_12a_modified_escape_and_other_keys_proceed_without_clearing() {
+    fn src_12b_modified_escape_and_other_keys_proceed_without_clearing() {
         for (key, modifiers) in [
             (gdk::Key::Escape, gdk::ModifierType::CONTROL_MASK),
             (gdk::Key::Escape, gdk::ModifierType::SHIFT_MASK),

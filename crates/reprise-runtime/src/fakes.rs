@@ -27,6 +27,7 @@ use crate::ports::{Clock, DeviceEffects, LibraryPort, PlayableTrack, TrackLocati
 pub enum BackendCall {
     Play(String),
     PlayUri(String),
+    PlayLiveUri(String),
     TogglePause,
     Stop,
     SeekTo(i64),
@@ -200,6 +201,18 @@ impl PlaybackBackend for FakePlayback {
         self.calls
             .borrow_mut()
             .push(BackendCall::PlayUri(uri.into()));
+        if *self.refuse.borrow() {
+            return Err(PlaybackError::Backend("fake refuses to play".into()));
+        }
+        *self.generation.borrow_mut() += 1;
+        *self.state.borrow_mut() = PlaybackState::Playing;
+        Ok(())
+    }
+
+    fn play_live_uri(&self, uri: &str) -> Result<(), PlaybackError> {
+        self.calls
+            .borrow_mut()
+            .push(BackendCall::PlayLiveUri(uri.into()));
         if *self.refuse.borrow() {
             return Err(PlaybackError::Backend("fake refuses to play".into()));
         }

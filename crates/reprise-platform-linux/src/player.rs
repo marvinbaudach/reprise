@@ -17,7 +17,8 @@ use crate::player_effects::{
     update_existing_audio_filter,
 };
 use crate::player_pipeline::{
-    attach_bus_watch, attach_cava_sink, build_playbin, path_to_uri, validated_playback_uri,
+    attach_bus_watch, attach_cava_sink, build_playbin, configure_download_buffering, path_to_uri,
+    validated_playback_uri,
 };
 
 /// Default playback volume before the user ever moves the slider — full scale,
@@ -282,7 +283,7 @@ impl Player {
     /// Bumps `stream_generation` only once `Playing` is entered (a failed
     /// attempt never emits an event, nothing to mislabel), still under the
     /// `playbin` lock so no event — `StateChanged` below included — sees stale.
-    fn try_play(&self, uri: &str) -> Result<(), PlaybackError> {
+    fn try_play(&self, uri: &str, live: bool) -> Result<(), PlaybackError> {
         let playbin = self
             .playbin
             .lock()
@@ -290,6 +291,7 @@ impl Player {
         playbin
             .set_state(gst::State::Null)
             .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?;
+        configure_download_buffering(&playbin, uri, live)?;
         playbin.set_property("uri", uri);
         playbin
             .set_state(gst::State::Playing)
@@ -300,11 +302,11 @@ impl Player {
         Ok(())
     }
 
-    fn play_resolved_uri(&self, uri: &str, source: &str) -> Result<(), PlaybackError> {
+    fn play_resolved_uri(&self, uri: &str, source: &str, live: bool) -> Result<(), PlaybackError> {
         // A manual jump invalidates every gapless/crossfade transition. This
         // applies equally to local paths and external media.
         self.reset_transition();
-        match self.try_play(uri) {
+        match self.try_play(uri, live) {
             Ok(()) => Ok(()),
             Err(error) => {
                 tracing::warn!(
@@ -313,7 +315,7 @@ impl Player {
                     "playback failed; rebuilding pipeline and retrying once"
                 );
                 self.rebuild_playbin()?;
-                self.try_play(uri)
+                self.try_play(uri, live)
             }
         }
     }
@@ -400,12 +402,17 @@ impl PlaybackBackend for Player {
     /// to guarantee (a deleted file must never crash *or dead-end* the app).
     fn play(&self, path: &str) -> Result<(), PlaybackError> {
         let uri = path_to_uri(path)?;
-        self.play_resolved_uri(&uri, path)
+        self.play_resolved_uri(&uri, path, false)
     }
 
     fn play_uri(&self, uri: &str) -> Result<(), PlaybackError> {
         let uri = validated_playback_uri(uri)?;
-        self.play_resolved_uri(&uri, uri.as_str())
+        self.play_resolved_uri(&uri, uri.as_str(), false)
+    }
+
+    fn play_live_uri(&self, uri: &str) -> Result<(), PlaybackError> {
+        let uri = validated_playback_uri(uri)?;
+        self.play_resolved_uri(&uri, uri.as_str(), true)
     }
 
     fn toggle_pause(&self) -> Result<PlaybackState, PlaybackError> {

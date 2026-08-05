@@ -122,7 +122,11 @@ fn main() {
         println!(
             "    {} section marks — one every {:.0} s",
             marks.len(),
-            if marks.is_empty() { duration_s } else { duration_s / marks.len() as f64 }
+            if marks.is_empty() {
+                duration_s
+            } else {
+                duration_s / marks.len() as f64
+            }
         );
         let swatch = |bars: &[f32], at: f64| {
             hex(spectral_colour(f64::from(

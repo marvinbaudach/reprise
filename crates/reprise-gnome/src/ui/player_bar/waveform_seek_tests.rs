@@ -294,6 +294,17 @@ fn mini_waveform_has_16px_height() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn streaming_buffering_sets_the_waveform_segment() {
+    gtk4::init().expect("GTK init");
+    let waveform = WaveformSeek::new();
+
+    waveform.set_buffered_fraction(Some(0.65));
+
+    assert_eq!(waveform.buffered_fraction_for_test(), Some(0.65));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn mot_7_waveform_position_hard_switches_when_system_animations_are_disabled() {
     gtk4::init().unwrap();
     let settings = gtk4::Settings::default().unwrap();

@@ -36,7 +36,7 @@ pub(super) const NOW_PLAYING_CLASS: &str = "now-playing";
 /// accent indicator so it sits at the row's left edge without a per-row hunt.
 const NOW_PLAYING_LEADING_CLASS: &str = "now-playing-leading";
 /// Class on the title label of the playing row: bold + theme accent.
-pub(super) const NOW_PLAYING_TITLE_CLASS: &str = "now-playing-title";
+pub(super) const NOW_PLAYING_TITLE_CLASS: &str = playing_marker::PLAYING_TITLE_CLASS;
 /// Class on a missing track's title label; set and cleared on every bind.
 const MISSING_TRACK_TITLE_CLASS: &str = "missing-track-title";
 
@@ -54,7 +54,7 @@ pub(super) fn toggle_class(
     }
 }
 
-/// Keeps the title factory on the one shared NAV-10a marker constructor even
+/// Keeps the title factory on the one shared NAV-10b marker constructor even
 /// though that factory lives in a size-cap sibling.
 pub(super) fn build_playing_marker() -> gtk4::Box {
     playing_marker::build()

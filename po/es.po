@@ -5352,6 +5352,15 @@ msgstr "Chromium (CSD)"
 msgid "Separate title bar"
 msgstr "Barra de título independiente"
 
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:177
+#, rust-format
+msgid "Streaming · {percent}% loaded"
+msgstr "Streaming · {percent} % cargado"
+
+#: crates/reprise-gnome/src/ui/strings_radio.rs:22
+msgid "LIVE"
+msgstr "EN DIRECTO"
+
 #: crates/reprise-gnome/src/ui/strings_seek.rs:13
 msgid "low"
 msgstr "grave"

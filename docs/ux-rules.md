@@ -194,11 +194,11 @@ result.
   triggered) belongs, in the single-track browser, to the NAV-2 history
   complex; Album and Artist are no longer separate views but scopes of
   the music list.
-- **NAV-13** [replaced by NAV-10a] — Starting playback is not
+- **NAV-13** [replaced by NAV-10b] — Starting playback is not
   navigation: Enter or double-click on a track row leaves selection,
   keyboard focus, and viewport unchanged; only the now-playing marker
   changes. The separation of marking and scrolling in the one track
-  browser is now governed by NAV-10a.
+  browser is now governed by NAV-10b.
 - **NAV-14** [active] [gtk] — **A section header carries its own create
   action.** The PLAYLISTS header carries a `+` button that creates a playlist
   immediately: a new row appears in place, named "Untitled playlist" with the
@@ -324,6 +324,16 @@ result.
   leaving the finished session's labels standing. A surface's label and tooltip
   name the actual target for the current mode; the Now Playing and information
   panels share these links and labels.
+- **PLAY-13** [active] [gtk] — The source, never the view, selects exactly one
+  player-bar progress language. Local media keeps the ordinary played
+  progress and remaining time, without a buffer segment or network copy.
+  Finite remote media keeps played progress, adds a paler contiguous-buffer
+  segment underneath it, and says “Streaming · X% loaded” from buffered time
+  divided by duration only while loading is incomplete. Live media has no
+  seekable progress or duration: the full-width bar replaces the waveform with
+  an accent point, “LIVE”, and the station name while retaining connected
+  elapsed time. The point pulses only during active playback through MOT-7's
+  central motion gate; pause and reduced motion leave the same point static.
 - **SEEK-1** [active] [gtk] — **The seek bar's colour is a reading, not a
   decoration, and it is averaged over time.** The spectral centroid swings
   from beat to beat: taken per bar it puts cyan next to magenta inside two
@@ -1221,7 +1231,7 @@ result.
   Back/Forward stack and never autoplays. The last loaded track or episode is
   presented paused; the first Play starts that exact item through a fresh
   playable source, applying an episode's existing resume position, and leaves
-  the viewport exactly as the start placed it (NAV-10a). If its stable ID belongs to the
+  the viewport exactly as the start placed it (NAV-10b). If its stable ID belongs to the
   restored destination, that row becomes the sole selection and is centered
   without taking keyboard focus; grouped podcast and YouTube sources expand
   the required group and preview window first. An unavailable item leaves the
@@ -1709,8 +1719,9 @@ place (MOT-2, the motion reading of P-4).
   crossfades to the new track instead of dropping to 0; pause slightly
   desaturates the waveform fill with draw-local color math, play reverses
   it. The effective accent itself stays untouched. The EQ indicators
-  (track list, mini-player) run only during active playback; the idle
-  bar is static — no permanent loop without playback.
+  (track list, mini-player) and the radio LIVE point run only during active
+  playback; pause freezes them and the idle bar is static — no permanent loop
+  without playback.
 - **MOT-6** [active] [gtk] — Nothing blocks: the model changes at frame
   0, the animation only illustrates. A second action during a running
   animation jumps to the end state via `AdwAnimation::skip()` and then
@@ -2545,7 +2556,7 @@ property is set and yet nothing happens.
   view it is revealed once, later switches restore NAV-5's remembered
   ID-plus-offset anchor. Explicit "Go to album/artist" always jumps
   deterministically; selection never follows playback.
-- **NAV-10a** [active] [gtk] — **Marking and scrolling are separate.**
+- **NAV-10a** [replaced by NAV-10b] [gtk] — **Marking and scrolling are separate.**
   Every visible instance of the loaded track carries the same playback
   marker, from one implementation (`ui/playing_marker.rs`) serving every
   surface that lists tracks: the track table, the podcast groups, and the
@@ -2564,6 +2575,30 @@ property is set and yet nothing happens.
   GTK's own reset. A distance of more than three viewport heights is
   still applied at once, so the first placement after launch stays
   instant (START-1).
+  Auto-advance centers only if no scroll movement has occurred for 1.5
+  seconds; explicit metadata/reveal navigation always selects, focuses, and
+  centers.
+- **NAV-10b** [active] [gtk] — **Marking and scrolling are separate.**
+  Every visible instance of the loaded track carries the same playback
+  marker, from one implementation (`ui/playing_marker.rs`) serving every
+  surface that lists playable items: the track table, the podcast groups,
+  the YouTube channel detail, and the radio table. Its order is the same in
+  every surface: artwork, marker, then the title in the playback-accent
+  colour. The signal depends exclusively on playback state and never on
+  selection. The player bar is not such a surface — it shows the running
+  track's state through the play/pause button, not through a second copy of
+  the list marker. Double-click/Enter on an already-visible row does not
+  change the viewport. Play from Stopped as well as explicit Previous/Next
+  center the new track without stealing focus or selection — except for the
+  one Play that starts a restored session, whose track START-3 already
+  selected and centered at startup: that row is placed, so starting it only
+  starts the audio. Centring it again would be a second visible scroll on a
+  viewport that is already the target.
+  Centring moves the viewport over the Standard token rather than
+  teleporting it, and yields immediately to anything else that writes the
+  scroll position — the user's own scrolling, a model replacement, or GTK's
+  own reset. A distance of more than three viewport heights is still applied
+  at once, so the first placement after launch stays instant (START-1).
   Auto-advance centers only if no scroll movement has occurred for 1.5
   seconds; explicit metadata/reveal navigation always selects, focuses, and
   centers.
@@ -2887,7 +2922,7 @@ property is set and yet nothing happens.
   when playback moves. Title and bar take the playback accent with it, and the
   row keeps a tint that hover does not remove. Marking never re-renders either
   list: the expanded state and the scroll position survive a track change,
-  exactly as NAV-10a requires of the track table. Pausing is the transport's
+  exactly as NAV-10b requires of the track table. Pausing is the transport's
   job, not the row's — the marker reports the state, the player bar and Space
   change it.
 - **STATS-19** [active] [gtk] — Replaces STATS-17. **The page reads hours →
@@ -4229,7 +4264,7 @@ listening statistics.
   toast and a single undo. Escape clears the current episode selection in
   whichever of the two surfaces is showing, and is passed on untouched when
   nothing is selected.
-- **SRC-12a** [active] [gtk] — Episodes can be selected in bulk in both the
+- **SRC-12a** [replaced by SRC-12b] [gtk] — Episodes can be selected in bulk in both the
   grouped library view and the channel detail view, with one shared set of
   batch actions offered only by the context menu for the current selection.
   Selection is carried by a checkbox over the left media slot in grouped rows,
@@ -4254,6 +4289,36 @@ listening statistics.
   `src_12a_channel_page_select_all_stops_at_the_rendered_window` is what
   actually holds the channel-page clause above — `strings_podcasts`, and
   `source_row::media_column`.
+- **SRC-12b** [active] [gtk] — Episodes can be selected in bulk in both the
+  grouped library view and the channel detail view, with one shared set of
+  batch actions offered only by the context menu for the current selection.
+  Selection is shown in both surfaces solely by a neutral row tint; the left
+  media slot contains artwork only, never a checkbox, playback marker,
+  permanent extra column, or separate selection toolbar. Growing a selection
+  with the mouse takes a modifier — Ctrl+click toggles one row, Shift+click
+  extends a range — exactly as the music track list has always worked; a plain
+  click replaces the selection. The checkbox SRC-12a placed over the artwork
+  also let a modifier-free click add a row, and that gesture is deliberately
+  gone with it: one selection idiom across every list beats a second one that
+  exists only where there happens to be artwork to cover. Applying a selection
+  never rebuilds the list. Ctrl+A selects every rendered episode of the
+  focused source; with no focused row it selects the whole rendered list,
+  while the channel page selects its current rendered window. Collapsed
+  groups, episodes past a preview window, and filtered-out rows are never
+  swept up. Escape and the visible Clear action beside the selection count
+  both clear the current surface's selection; Escape propagates unchanged
+  when nothing was selected. Actions meaningless for more than one episode
+  stay hidden, and a batch reports one aggregated toast and one undo. Covered
+  by the `src_12b_…` tests in `podcasts_selection`,
+  `podcasts_view_shortcuts` (including
+  `src_12b_ctrl_a_survives_caps_lock`, because a shortcut that a lock key
+  disarms is not a shortcut), `podcasts_view_tests`, `podcasts_groups_tests`,
+  `podcasts_context_menu`, `podcasts_context_menu_browser_tests`,
+  `podcasts_view_actions` for the aggregated toast and undo,
+  `youtube_channel_detail_tests` — where
+  `src_12b_channel_page_select_all_stops_at_the_rendered_window` is what
+  actually holds the channel-page clause above — `strings_podcasts`, and
+  `source_row::media_column`.
 - **SRC-4a** [active] [gtk] — Radio keeps SRC-4's removal and undo
   behavior, and its station menus continue to omit "Play Next" and "Add
   to Queue". A live stream is deliberately not a citizen of an ordered
@@ -4269,7 +4334,7 @@ listening statistics.
   `page_url` when present and never treats its media enclosure in `audio_url`
   as an episode page. As a single-episode action it is absent from a
   multi-selection menu instead of targeting an arbitrary member, as required
-  by SRC-12a. This asymmetry with radio is deliberate. Unsubscribing is operated
+  by SRC-12b. This asymmetry with radio is deliberate. Unsubscribing is operated
   from the context menu alone; there is no hover star.
 - **SRC-13** [active] [gtk] — **Marking and scrolling are separate in the
   source lists.** The loaded item carries the shared playback marker in every
@@ -4612,8 +4677,9 @@ listening statistics.
   disconnected paused station, show "—". Only the player bar may keep
   the last ICY title dimmed as session memory.
 - **RAD-2** [active] [gtk] — Live playback has neither seek nor
-  duration: the player bar and mini-player show elapsed time and a
-  geometry-matched waveform placeholder, MPRIS reports `CanSeek=false`
+  duration: the full-width player bar shows elapsed time and PLAY-13's LIVE
+  badge, while the mini-player keeps elapsed time and its geometry-matched
+  waveform placeholder; MPRIS reports `CanSeek=false`
   and no length. Pause disconnects the stream but stays presented as
   Paused/CanPause with station and dimmed last title; play reconnects
   live. A reconnect error leaves the paused state standing and shows the

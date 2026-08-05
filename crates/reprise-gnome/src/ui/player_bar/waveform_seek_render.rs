@@ -163,6 +163,8 @@ pub(super) enum BarSide {
     Played,
     /// Not played yet, but between the playhead and the hovered position.
     HoverPreview,
+    /// Remote media that has arrived but has not been reached yet.
+    Buffered,
     Coming,
 }
 
@@ -182,9 +184,11 @@ pub(super) fn bar_fill(
     match (colouring, side) {
         (SeekColouring::Frequency, BarSide::Played) => (spectral, 1.0),
         (SeekColouring::Frequency, BarSide::HoverPreview) => (spectral, HOVER_PREVIEW_ALPHA),
+        (SeekColouring::Frequency, BarSide::Buffered) => (spectral, BUFFERED_ALPHA),
         (SeekColouring::Frequency, BarSide::Coming) => (spectral, UNPLAYED_ALPHA),
         (SeekColouring::Solid, BarSide::Played) => (accent, 1.0),
         (SeekColouring::Solid, BarSide::HoverPreview) => (SOLID_HOVER_PREVIEW, 1.0),
+        (SeekColouring::Solid, BarSide::Buffered) => (accent, BUFFERED_ALPHA),
         (SeekColouring::Solid, BarSide::Coming) => (SOLID_UNPLAYED, 1.0),
     }
 }
@@ -242,6 +246,10 @@ fn draw_bars(
 
         let bar_center = (index as f64 + 0.5) / count as f64;
         let played = bar_played(index, count, state.fraction);
+        let buffered = !played
+            && state
+                .buffered_fraction
+                .is_some_and(|fraction| bar_center <= fraction);
         let is_ghost = state.drag_fraction.is_some_and(|drag_frac| {
             let (lo, hi) = if drag_frac > state.fraction {
                 (state.fraction, drag_frac)
@@ -272,6 +280,8 @@ fn draw_bars(
                 BarSide::Played
             } else if is_hover_preview {
                 BarSide::HoverPreview
+            } else if buffered {
+                BarSide::Buffered
             } else {
                 BarSide::Coming
             };
@@ -347,8 +357,14 @@ fn draw_fallback(
         let x = index as f64 * slot + (slot - bar_w) / 2.0;
         let y = (h - bar_h) / 2.0;
 
+        let bar_center = (index as f64 + 0.5) / count as f64;
         if bar_played(index, count, state.fraction) {
             cr.set_source_rgba(r, g, b, 0.5);
+        } else if state
+            .buffered_fraction
+            .is_some_and(|fraction| bar_center <= fraction)
+        {
+            cr.set_source_rgba(r, g, b, BUFFERED_ALPHA);
         } else {
             cr.set_source_rgba(1.0, 1.0, 1.0, UNPLAYED_ALPHA * 0.6);
         }

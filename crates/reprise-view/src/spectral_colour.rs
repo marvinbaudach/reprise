@@ -408,7 +408,11 @@ mod tests {
         let mut raw = vec![0_u8; frames];
         for (index, value) in raw.iter_mut().enumerate() {
             // Eight blocks of 25 s, alternating high and low.
-            *value = if (index * 8 / frames) % 2 == 0 { 60 } else { 200 };
+            *value = if (index * 8 / frames) % 2 == 0 {
+                60
+            } else {
+                200
+            };
         }
         let smoothed = smooth_centroid_over_seconds(&raw, duration_s, CENTROID_WINDOW_S);
         let marks = section_boundaries(&smoothed, duration_s);

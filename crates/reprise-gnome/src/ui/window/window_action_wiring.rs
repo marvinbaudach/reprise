@@ -164,7 +164,7 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
         });
     }
     if let Some(player) = player.as_ref() {
-        // `STATS-18`/NAV-10a: the songs card is a second surface showing the
+        // `STATS-18`/NAV-10b: the songs card is a second surface showing the
         // loaded track, so it listens on the same fan-out as the track table.
         let marker = stats_view.playback_marker();
         player.add_on_current_track_changed(move |track_id, _, _| {

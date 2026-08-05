@@ -78,6 +78,9 @@ pub(in crate::ui::player_bar::waveform_seek) struct State {
     pub(in crate::ui::player_bar::waveform_seek) shaped_centroid: Vec<f32>, // spectral positions shaped to display bars
     pub(in crate::ui::player_bar::waveform_seek) last_display_width: i32, // width used for last resample
     pub(in crate::ui::player_bar::waveform_seek) fraction: f64,
+    /// End of the contiguous remote-media buffer as a 0..1 fraction. `None`
+    /// means local/live playback or an unavailable buffering query.
+    pub(in crate::ui::player_bar::waveform_seek) buffered_fraction: Option<f64>,
     /// Pointer position as a 0..1 fraction while hovering — drives the
     /// seek-preview tint on unplayed bars up to the cursor.
     pub(in crate::ui::player_bar::waveform_seek) hover_fraction: Option<f64>,
@@ -134,6 +137,7 @@ impl Default for State {
             shaped_centroid: Vec::new(),
             last_display_width: 0,
             fraction: 0.0,
+            buffered_fraction: None,
             hover_fraction: None,
             drag_fraction: None,
             target_fraction: 0.0,

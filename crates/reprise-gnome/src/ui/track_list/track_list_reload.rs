@@ -130,14 +130,14 @@ fn pending_reveal_anchor(shared: &Shared, old_total: u32) -> Option<(i64, f64)> 
 pub(in crate::ui) fn capture_reload_anchor(shared: &Shared) -> ReloadAnchor {
     let selected = selected_ids_before_swap(shared);
     let old_total = shared.model.n_items();
-    // NAV-10a: a reveal is already under way, so the viewport the user is
+    // NAV-10b: a reveal is already under way, so the viewport the user is
     // about to have is its destination — preserving the position the reload
     // *finds* would put the list back where playback just left, and the hold
     // guarding it would then out-write the reveal.
     if let Some(anchor) = pending_reveal_anchor(shared, old_total) {
         return reload_restore::capture(selected, Some(anchor));
     }
-    // NAV-10a: while the table is gliding to the loaded track, the viewport
+    // NAV-10b: while the table is gliding to the loaded track, the viewport
     // the user is about to have is the glide's destination, not the frame it
     // happens to be passing through. Anchoring on the live value instead
     // captured a waypoint — and the hold that guards it then wrote that
