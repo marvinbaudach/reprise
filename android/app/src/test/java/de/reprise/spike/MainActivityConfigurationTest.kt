@@ -290,7 +290,17 @@ class MainActivityConfigurationTest {
 }
 
 internal class ConfigurationTestApplication : Application(), MainActivitySurfaceProvider {
-    val controls = ConfigurationTestPlaybackControls()
+    // A write the fake accepts is a write the fake keeps: a rating that vanished
+    // the moment it was acknowledged would make every reload path look correct
+    // by having nothing to reload.
+    val controls = ConfigurationTestPlaybackControls { trackId, rating ->
+        trackRatings[trackId] = rating
+    }
+    val visualizerWrites = mutableListOf<MobileVisualizer>()
+    val ambientScheduleEvents = mutableListOf<Boolean>()
+    var animationsEnabled = true
+    val trackRatings = mutableMapOf<Long, Int>()
+    private var selectedVisualizer = MobileVisualizer.COVER
     private lateinit var serviceController: ServiceController<ConfigurationTestPlaybackService>
     lateinit var service: ConfigurationTestPlaybackService
         private set
@@ -305,6 +315,7 @@ internal class ConfigurationTestApplication : Application(), MainActivitySurface
             configurationTrack(
                 id = index.toLong(),
                 title = if (index <= 4) "Rotation Song $index" else "Title $index",
+                rating = trackRatings[index.toLong()] ?: 2,
             )
         }
     private val artists: List<LibraryArtist>
@@ -364,6 +375,7 @@ internal class ConfigurationTestApplication : Application(), MainActivitySurface
                 colorScheme = AndroidColorScheme.SYSTEM,
                 dynamicAvailable = false,
             ),
+            initialVisualizer = selectedVisualizer,
             initialState = browse,
             artwork = { null },
             playbackControls = controls,
@@ -389,6 +401,13 @@ internal class ConfigurationTestApplication : Application(), MainActivitySurface
                 PlaybackSettingsUiState(false, enabled, emptyList())
             },
             selectTheme = { current, _ -> current },
+            selectVisualizer = { visualizer ->
+                selectedVisualizer = visualizer
+                visualizerWrites += visualizer
+                visualizer
+            },
+            animationsEnabled = { animationsEnabled },
+            observeAmbientScheduling = ambientScheduleEvents::add,
         )
     }
 }
@@ -408,8 +427,14 @@ internal class ConfigurationTestPlaybackService : ReprisePlaybackService() {
     }
 }
 
-class ConfigurationTestPlaybackControls : PlaybackControls {
+class ConfigurationTestPlaybackControls(
+    private val store: (Long, Int) -> Unit = { _, _ -> },
+) : PlaybackControls {
     val seekPositions = mutableListOf<Long>()
+    val ratingRequests = mutableListOf<Pair<Long, Int>>()
+
+    /** What the write answers with; null is the database agreeing. */
+    var ratingFailure: String? = null
 
     override fun togglePause() = Unit
     override fun next() = Unit
@@ -419,7 +444,13 @@ class ConfigurationTestPlaybackControls : PlaybackControls {
     }
     override fun setShuffle(enabled: Boolean) = Unit
     override fun setRepeat(mode: AndroidRepeatMode) = Unit
-    override fun setRating(trackId: Long, rating: Int, report: (String?) -> Unit) = report(null)
+    override fun setRating(trackId: Long, rating: Int, report: (String?) -> Unit) {
+        ratingRequests += trackId to rating
+        if (ratingFailure == null) {
+            store(trackId, rating)
+        }
+        report(ratingFailure)
+    }
 }
 
 /** Enough rows that the screen has to ask for a second window to reach the end. */
@@ -440,7 +471,7 @@ private fun <T> List<T>.window(range: LibraryWindowRange): LibraryWindow<T> {
     )
 }
 
-private fun configurationTrack(id: Long, title: String) = LibraryTrack(
+private fun configurationTrack(id: Long, title: String, rating: Int = 2) = LibraryTrack(
     id = id,
     uri = "content://provider/document/$id.flac",
     title = title,
@@ -448,7 +479,7 @@ private fun configurationTrack(id: Long, title: String) = LibraryTrack(
     album = "Album",
     durationMs = 120_000,
     playCount = 0,
-    rating = 2,
+    rating = rating,
 )
 
 private fun playingSnapshot(positionMs: Long) = AndroidPlaybackSnapshot(

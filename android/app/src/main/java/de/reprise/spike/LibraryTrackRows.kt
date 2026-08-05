@@ -69,7 +69,7 @@ internal fun TrackRows(
                     }
                 },
             ) { item ->
-                TrackListItem(item, metrics, playback, play, loadMore)
+                TrackListItem(item, surfaceState, metrics, playback, play, loadMore)
             }
         }
         return
@@ -87,7 +87,7 @@ internal fun TrackRows(
             items = content,
             key = TrackListContent::stableKey,
         ) { content ->
-            TrackListItem(content, metrics, playback, play, loadMore)
+            TrackListItem(content, surfaceState, metrics, playback, play, loadMore)
         }
     }
 }
@@ -107,6 +107,7 @@ private fun LibraryListKey.testTag(): String = when (this) {
 @Composable
 private fun TrackListItem(
     content: TrackListContent,
+    surfaceState: MobileSurfaceViewModel,
     metrics: LibraryFrameMetrics,
     playback: PlaybackUiState,
     play: (Int) -> Unit,
@@ -115,6 +116,11 @@ private fun TrackListItem(
     when (content) {
         is TrackListContent.Row -> LibraryTrackRow(
             track = content.track,
+            // The row a window was paged in with is a *copy* of the track, and
+            // rating it in Now Playing does not rewrite that copy. The rating is
+            // therefore read from the one place all three surfaces read it —
+            // only for the rows on screen, never for the whole window.
+            rating = surfaceState.ratingOf(content.track),
             presentation = content.track.playbackPresentation(playback),
             metrics = metrics,
             play = { play(content.index) },
@@ -129,6 +135,7 @@ private fun TrackListItem(
 @Composable
 private fun LibraryTrackRow(
     track: LibraryTrack,
+    rating: Int,
     presentation: TrackPlaybackPresentation,
     metrics: LibraryFrameMetrics,
     play: () -> Unit,
@@ -182,7 +189,7 @@ private fun LibraryTrackRow(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f),
                         )
-                        TrackRating(track.rating)
+                        TrackRating(rating)
                     }
                 }
                 Column(
@@ -218,10 +225,11 @@ private fun TrackRating(rating: Int) {
     val normalizedRating = rating.coerceIn(0, 5)
     Row(verticalAlignment = Alignment.CenterVertically) {
         MaterialSymbol(
-            name = if (normalizedRating > 0) "star" else "star_outline",
+            name = "star",
             contentDescription = "$normalizedRating of 5 stars",
             tint = MaterialTheme.colorScheme.tertiary,
             sizeSp = 14,
+            filled = normalizedRating > 0,
         )
         Text(
             text = "$normalizedRating/5",

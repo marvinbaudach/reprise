@@ -53,7 +53,6 @@ import kotlin.math.PI
 import kotlin.math.sin
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collect
-import uniffi.reprise_android_ffi.AndroidArtworkSize
 import uniffi.reprise_android_ffi.AndroidRepeatMode
 
 /**
@@ -146,12 +145,10 @@ private fun StackedNowPlayingContent(
                     MaterialSymbol("keyboard_arrow_down", "Collapse Now Playing")
                 }
             }
-            TrackCover(
+            NowPlayingVisualizer(
                 trackUri = track.uri,
                 size = metrics.coverSizeDp,
-                artworkSize = AndroidArtworkSize.NOW_PLAYING,
                 shape = RoundedCornerShape(metrics.coverRadiusDp.dp),
-                modifier = Modifier.testTag("now-playing-cover"),
             )
             Spacer(Modifier.height(20.dp))
             Text(
@@ -178,7 +175,7 @@ private fun StackedNowPlayingContent(
             )
             WavySeekSlider(trackId = track.id, playback = playback, surfaceState = surfaceState)
             PlaybackActions(playback = playback, metrics = metrics, wideShort = false)
-            RatingRow(track = track)
+            RatingRow(track = track, surfaceState = surfaceState)
             playback.error?.let { message ->
                 Text(
                     text = message,
@@ -211,12 +208,10 @@ private fun WideShortNowPlayingContent(
                 .fillMaxHeight(),
             contentAlignment = Alignment.Center,
         ) {
-            TrackCover(
+            NowPlayingVisualizer(
                 trackUri = track.uri,
                 size = metrics.coverSizeDp,
-                artworkSize = AndroidArtworkSize.NOW_PLAYING,
                 shape = RoundedCornerShape(metrics.coverRadiusDp.dp),
-                modifier = Modifier.testTag("now-playing-cover"),
             )
         }
         Spacer(Modifier.width(24.dp))
@@ -255,7 +250,7 @@ private fun WideShortNowPlayingContent(
                     MaterialSymbol("keyboard_arrow_down", "Collapse Now Playing")
                 }
             }
-            RatingRow(track = track, wideShort = true)
+            RatingRow(track = track, surfaceState = surfaceState, wideShort = true)
             WavySeekSlider(trackId = track.id, playback = playback, surfaceState = surfaceState)
             playback.error?.let { message ->
                 Text(
@@ -479,14 +474,21 @@ private fun ModeButton(
  * [TransientMessage] and the two errors on the browse screen do not. See that
  * type for the rule.
  *
- * Both pieces of state are keyed on the track, so an answer that arrives after
- * the sheet has moved on lands in state nobody is showing rather than in the
- * next track's stars.
+ * The rating itself is not kept here. It is one value with three surfaces
+ * showing it, and a `remember`ed copy per surface is how the dock's star and
+ * these five came to disagree — see [MobileSurfaceViewModel.ratingOf]. The
+ * failure is genuinely this row's own, and stays keyed on the track so an
+ * answer arriving after the sheet has moved on lands in state nobody is showing
+ * rather than under the next track's stars.
  */
 @Composable
-private fun RatingRow(track: LibraryTrack, wideShort: Boolean = false) {
+private fun RatingRow(
+    track: LibraryTrack,
+    surfaceState: MobileSurfaceViewModel,
+    wideShort: Boolean = false,
+) {
     val setRating = LocalPlaybackControls.current::setRating
-    var rating by remember(track.id) { mutableStateOf(track.rating.coerceIn(0, 5)) }
+    val rating = surfaceState.ratingOf(track)
     var failure by remember(track.id) { mutableStateOf<TransientMessage?>(null) }
     val content: @Composable () -> Unit = {
         Text(
@@ -500,7 +502,7 @@ private fun RatingRow(track: LibraryTrack, wideShort: Boolean = false) {
                     onClick = {
                         setRating(track.id, star) { message ->
                             if (message == null) {
-                                rating = star
+                                surfaceState.confirmRating(track.id, rating, star)
                                 failure = null
                             } else {
                                 failure = TransientMessage(message).after(failure)
@@ -519,10 +521,11 @@ private fun RatingRow(track: LibraryTrack, wideShort: Boolean = false) {
                         .semantics { stateDescription = "Rated $rating of 5" },
                 ) {
                     MaterialSymbol(
-                        name = if (star <= rating) "star" else "star_outline",
+                        name = "star",
                         contentDescription = "Rate $star of 5 stars",
                         tint = MaterialTheme.colorScheme.tertiary,
                         sizeSp = 28,
+                        filled = star <= rating,
                     )
                 }
             }
