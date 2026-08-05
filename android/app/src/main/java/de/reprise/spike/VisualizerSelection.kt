@@ -9,9 +9,12 @@ internal enum class MobileVisualizer(
     val label: String,
     val available: Boolean,
 ) {
+    // The plan that specified these was written in German for its reader and
+    // named the modes in German prose. They are identifiers there, not strings
+    // to ship: every other label in this app is English.
     COVER("Cover", true),
-    SPECTRUM("Spektrum", false),
-    PREVIEW_BAND("Vorschauband", false),
+    SPECTRUM("Spectrum", false),
+    PREVIEW_BAND("Preview", false),
     AMBIENT("Ambient", true),
 }
 

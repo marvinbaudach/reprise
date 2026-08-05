@@ -76,7 +76,7 @@ class MainActivityVisualizerTest {
             HapticFeedbackConstants.LONG_PRESS,
             lastHapticFeedback(compose.activity.window.decorView),
         )
-        listOf("Cover", "Spektrum", "Vorschauband", "Ambient").forEach { label ->
+        listOf("Cover", "Spectrum", "Preview", "Ambient").forEach { label ->
             compose.onAllNodesWithText(label).assertCountEquals(2)
         }
         compose.onNodeWithTag("visualizer-menu-SPECTRUM").assertIsNotEnabled()
