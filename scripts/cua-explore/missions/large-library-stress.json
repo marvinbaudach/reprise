@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "large-library-stress",
+  "goal": "Stress visible library operations and a 512-track tag batch inside a generated 100,000-track catalog while preserving responsiveness and location.",
+  "persona": "experienced library power user",
+  "mode": "adversarial",
+  "agent": "required",
+  "profile": "stress-100k",
+  "budgets": {"actions": 120, "seconds": 3600, "restarts": 2},
+  "capabilities": ["activate", "type", "press", "hotkey", "scroll", "resize", "restart", "wait", "complete-workload", "finish"],
+  "fixture_tokens": {
+    "SEARCH_NEEDLE": "Needle 099700",
+    "WRITABLE_BATCH": "Writable Batch",
+    "BATCH_GENRE": "Exploratory Batch Genre",
+    "BATCH_YEAR": "2042",
+    "NO_MATCH": "NoSuchFixtureResult"
+  },
+  "oracles": ["clean-runtime", "feedback", "waiting-state", "layout-shift", "pointer-reachability", "scroll-direction", "main-loop-stall", "accessibility"],
+  "workloads": [
+    {"kind": "batch-edit", "selection_count": 512, "field_tokens": {"genre": "BATCH_GENRE", "year": "BATCH_YEAR"}, "verify": ["progress", "atomic-result", "selection", "scroll-anchor"]},
+    {"kind": "sort-cycle", "columns": ["title", "artist", "album", "year", "rating"], "repetitions": 24},
+    {"kind": "combined-filter", "facets": ["genre", "year", "rating"], "active_labels": {"genre": "Genre: Genre 00", "year": "Year: 1993", "rating": "Rating: 4"}, "include_search": true, "search_token": "SEARCH_NEEDLE"},
+    {"kind": "scroll-sweep", "directions": ["down", "up"], "pages": 40}
+  ],
+  "success": [
+    {"kind": "count", "description": "Exactly 512 generated files are updated"},
+    {"kind": "continuity", "description": "Sorting, filtering and scrolling remain responsive"}
+  ],
+  "forbidden": ["delete", "external-url", "real-library", "real-account", "foreground-desktop"]
+}

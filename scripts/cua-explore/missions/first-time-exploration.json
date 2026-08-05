@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "id": "first-time-exploration",
+  "goal": "Discover how to find and play local music without source-code knowledge, and report every dead end or unexplained state.",
+  "persona": "curious first-time listener with no Reprise vocabulary",
+  "mode": "first-time",
+  "agent": "optional",
+  "profile": "mixed-128",
+  "budgets": {"actions": 60, "seconds": 900, "restarts": 1},
+  "capabilities": ["activate", "type", "press", "hotkey", "scroll", "resize", "restart", "wait", "complete-workload", "finish"],
+  "fixture_tokens": {
+    "SEARCH_NEEDLE": "Writable Batch 0042",
+    "NO_MATCH": "NoSuchFixtureResult"
+  },
+  "oracles": ["clean-runtime", "feedback", "waiting-state", "layout-shift", "pointer-reachability", "scroll-direction", "main-loop-stall", "accessibility"],
+  "workloads": [
+    {"kind": "scroll-sweep", "directions": ["down", "up"]},
+    {"kind": "restart", "preserve": ["section"], "clear": ["transient-search"], "section": "Music", "search_token": "SEARCH_NEEDLE"}
+  ],
+  "success": [
+    {"kind": "task", "description": "A local track starts playing"},
+    {"kind": "explain", "description": "The tester can say where search applies"}
+  ],
+  "forbidden": ["delete", "external-url", "real-library", "real-account", "foreground-desktop"]
+}

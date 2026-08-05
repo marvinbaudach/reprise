@@ -48,6 +48,24 @@ pub enum Connectivity {
     Offline,
 }
 
+#[cfg(feature = "test-fixtures")]
+fn parse_test_connectivity(value: &str) -> Option<Connectivity> {
+    match value.trim() {
+        "online" => Some(Connectivity::Online),
+        "offline" => Some(Connectivity::Offline),
+        _ => None,
+    }
+}
+
+/// Reads the private connectivity control used only by isolated GUI fixtures.
+#[cfg(feature = "test-fixtures")]
+#[must_use]
+pub fn read_test_connectivity(path: &std::path::Path) -> Option<Connectivity> {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|value| parse_test_connectivity(&value))
+}
+
 impl Connectivity {
     #[must_use]
     pub const fn is_offline(self) -> bool {
@@ -140,6 +158,21 @@ pub const fn live_stream_action_outcome(connectivity: Connectivity) -> ActionOut
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "test-fixtures")]
+    #[test]
+    fn net_3_test_fixture_connectivity_accepts_only_explicit_states() {
+        assert_eq!(
+            parse_test_connectivity("online\n"),
+            Some(Connectivity::Online)
+        );
+        assert_eq!(
+            parse_test_connectivity(" offline "),
+            Some(Connectivity::Offline)
+        );
+        assert_eq!(parse_test_connectivity(""), None);
+        assert_eq!(parse_test_connectivity("maybe"), None);
+    }
 
     #[test]
     fn net_3a_downloaded_content_stays_playable_regardless_of_connectivity() {

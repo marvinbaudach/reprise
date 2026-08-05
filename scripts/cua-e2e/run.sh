@@ -5,6 +5,8 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 
 # shellcheck source=lib.sh
 source "$repo_root/scripts/cua-e2e/lib.sh"
+# shellcheck source=../cua-common/session.sh
+source "$repo_root/scripts/cua-common/session.sh"
 # shellcheck source=track_sort.sh
 source "$repo_root/scripts/cua-e2e/track_sort.sh"
 # shellcheck source=tag_autocomplete.sh
@@ -19,7 +21,6 @@ source "$repo_root/scripts/cua-e2e/source_modules.sh"
 source "$repo_root/scripts/cua-e2e/source_content.sh"
 source "$repo_root/scripts/cua-e2e/podcast_backlog.sh"
 source "$repo_root/scripts/cua-e2e/filter_clear_playback.sh"
-
 APP_ID=org.reprise.Reprise
 WINDOW_CLASS_MATCH=reprise
 CUA_E2E_PROFILE="${CUA_E2E_PROFILE:-debug}"
@@ -29,14 +30,12 @@ CUA_E2E_QUIT_DELAY_SECS="${CUA_E2E_QUIT_DELAY_SECS:-15}"
 CUA_E2E_KEYBOARD_QUIT_DELAY_SECS="${CUA_E2E_KEYBOARD_QUIT_DELAY_SECS:-150}"
 CUA_E2E_DRIVER_TIMEOUT_SECS="${CUA_E2E_DRIVER_TIMEOUT_SECS:-20}"
 export CUA_E2E_OUT_DIR CUA_E2E_SESSION="${CUA_E2E_SESSION:-reprise-acceptance}"
-
 required_command() {
   if ! command -v "$1" >/dev/null; then
     echo "required command is unavailable: $1" >&2
     exit 2
   fi
 }
-
 assert_clean_app_log() {
   local log_path=$1 scenario=$2
   local failures='Gtk-CRITICAL|GLib-CRITICAL|GLib-GObject-CRITICAL|panicked at|BorrowError|BorrowMutError|already borrowed|Failed to set text .* from markup|Entity did not end with a semicolon'
@@ -605,56 +604,23 @@ private_session_cleanup() {
   local exit_code=$?
   stop_app_on_failure
   stop_scrobbling_services
-  cua_driver end_session \
-    "$(jq -nc --arg session "$CUA_E2E_SESSION" '{session: $session}')" \
-    >/dev/null 2>&1 || true
-  if [[ -n "${CUA_DAEMON_PID:-}" ]]; then
-    kill -TERM "$CUA_DAEMON_PID" 2>/dev/null || true
-  fi
-  if [[ -n "${ATSPI_REGISTRYD_PID:-}" ]]; then
-    kill -TERM "$ATSPI_REGISTRYD_PID" 2>/dev/null || true
-  fi
-  if [[ -n "${ATSPI_PID:-}" ]]; then
-    kill -TERM "$ATSPI_PID" 2>/dev/null || true
-  fi
+  cua_common_stop_driver "$CUA_E2E_SESSION"
   exit "$exit_code"
 }
 
 start_private_cua_daemon() {
-  rm -f -- "$CUA_DRIVER_SOCKET"
-  env CUA_DRIVER_RS_UPDATE_CHECK=0 \
-    "$CUA_DRIVER_BIN" serve --no-overlay --socket "$CUA_DRIVER_SOCKET" \
-    >>"$CUA_E2E_OUT_DIR/cua-driver.log" 2>&1 &
-  CUA_DAEMON_PID=$!
-  for _ in $(seq 1 40); do
-    cua_driver status >/dev/null 2>&1 && break
-    sleep 0.25
-  done
-  cua_driver status >/dev/null
-  cua_driver start_session \
-    "$(jq -nc --arg session "$CUA_E2E_SESSION" '{session: $session}')" >/dev/null
+  cua_common_start_driver \
+    "$CUA_E2E_OUT_DIR" "$CUA_DRIVER_SOCKET" "$CUA_E2E_SESSION"
 }
 
 restart_private_cua_daemon() {
-  kill -TERM "$CUA_DAEMON_PID" 2>/dev/null || true
-  wait "$CUA_DAEMON_PID" 2>/dev/null || true
-  start_private_cua_daemon
+  cua_common_restart_driver \
+    "$CUA_E2E_OUT_DIR" "$CUA_DRIVER_SOCKET" "$CUA_E2E_SESSION"
 }
 
 run_private_session() {
   local private_group=${CUA_E2E_PRIVATE_GROUP:-${CUA_E2E_ONLY:-all}}
   trap private_session_cleanup EXIT
-
-  /usr/lib/at-spi-bus-launcher \
-    --launch-immediately --a11y=1 --screen-reader=1 \
-    >"$CUA_E2E_OUT_DIR/$private_group-at-spi.log" 2>&1 &
-  ATSPI_PID=$!
-  sleep 0.3
-
-  /usr/lib/at-spi2-registryd \
-    >"$CUA_E2E_OUT_DIR/$private_group-at-spi-registryd.log" 2>&1 &
-  ATSPI_REGISTRYD_PID=$!
-  sleep 0.3
 
   export CUA_DRIVER_SOCKET="$CUA_E2E_SCRATCH_ROOT/$private_group-cua-driver.sock"
   start_private_cua_daemon
@@ -770,75 +736,20 @@ mkdir -p "$CUA_E2E_OUT_DIR"
 } >"$CUA_E2E_OUT_DIR/run-manifest.txt"
 echo "[cua-e2e] evidence: $CUA_E2E_OUT_DIR"
 
-XVFB_PID=""
-OPENBOX_PID=""
 cleanup() {
   local exit_code=$?
-  [[ -z "$OPENBOX_PID" ]] || kill -TERM "$OPENBOX_PID" 2>/dev/null || true
-  [[ -z "$XVFB_PID" ]] || kill -TERM "$XVFB_PID" 2>/dev/null || true
+  cua_common_stop_display
   rm -rf "$CUA_E2E_SCRATCH_ROOT"
   exit "$exit_code"
 }
 trap cleanup EXIT
 
-display_file="$CUA_E2E_SCRATCH_ROOT/display"
-Xvfb -displayfd 8 -screen 0 "$CUA_E2E_SCREEN_RES" -nolisten tcp \
-  8>"$display_file" >"$CUA_E2E_OUT_DIR/xvfb.log" 2>&1 &
-XVFB_PID=$!
-for _ in $(seq 1 40); do
-  [[ -s "$display_file" ]] && break
-  kill -0 "$XVFB_PID" 2>/dev/null || break
-  sleep 0.1
-done
-display_number=$(tr -d '[:space:]' <"$display_file")
-if [[ -z "$display_number" ]]; then
-  echo "Xvfb did not allocate a private display" >&2
-  tail -n 20 "$CUA_E2E_OUT_DIR/xvfb.log" >&2 || true
-  exit 1
-fi
-DISPLAY=":$display_number"
-export DISPLAY
-openbox >"$CUA_E2E_OUT_DIR/openbox.log" 2>&1 &
-OPENBOX_PID=$!
-# Lets cua_driver fail fast if the WM dies mid-run instead of delivering keys
-# into the void (see lib.sh).
-export CUA_E2E_WM_PID="$OPENBOX_PID"
-sleep 0.5
-if ! kill -0 "$OPENBOX_PID" 2>/dev/null; then
-  echo "Openbox did not start on the private display" >&2
-  tail -n 20 "$CUA_E2E_OUT_DIR/openbox.log" >&2 || true
-  exit 1
-fi
-
+  cua_common_start_display \
+    "$CUA_E2E_OUT_DIR" "$CUA_E2E_SCRATCH_ROOT" "$CUA_E2E_SCREEN_RES"
 run_private_scenario_group() {
   local scenario_group=$1
-  local runtime_dir="$CUA_E2E_SCRATCH_ROOT/runtime-$scenario_group"
-  local root_profile="$CUA_E2E_SCRATCH_ROOT/root-$scenario_group"
-
-  mkdir -m 700 "$runtime_dir"
-  mkdir -p "$root_profile/data" "$root_profile/cache" "$root_profile/config"
-  dbus-run-session -- env \
-    -u GNOME_KEYRING_CONTROL \
-    -u GNOME_KEYRING_PID \
-    XDG_RUNTIME_DIR="$runtime_dir" \
-    XDG_DATA_HOME="$root_profile/data" \
-    XDG_CACHE_HOME="$root_profile/cache" \
-    XDG_CONFIG_HOME="$root_profile/config" \
-    GDK_BACKEND=x11 \
-    WAYLAND_DISPLAY= \
-    GTK_A11Y=atspi \
-    NO_AT_BRIDGE=0 \
-    REPRISE_AUDIO_SINK=fakesink \
-    CUA_E2E_OUT_DIR="$CUA_E2E_OUT_DIR" \
-    CUA_E2E_SCRATCH_ROOT="$CUA_E2E_SCRATCH_ROOT" \
-    CUA_E2E_BIN_PATH="$CUA_E2E_BIN_PATH" \
-    CUA_E2E_SESSION="$CUA_E2E_SESSION" \
-    CUA_E2E_QUIT_DELAY_SECS="$CUA_E2E_QUIT_DELAY_SECS" \
-    CUA_E2E_KEYBOARD_QUIT_DELAY_SECS="$CUA_E2E_KEYBOARD_QUIT_DELAY_SECS" \
-    CUA_E2E_DRIVER_TIMEOUT_SECS="$CUA_E2E_DRIVER_TIMEOUT_SECS" \
-    CUA_E2E_PRIVATE_GROUP="$scenario_group" \
-    CUA_DRIVER_BIN="$CUA_DRIVER_BIN" \
-    "$0" --private-session
+  cua_common_run_private \
+    "$0" "$scenario_group" "$CUA_E2E_SCRATCH_ROOT" "$CUA_E2E_OUT_DIR"
 }
 
 case "${CUA_E2E_ONLY:-all}" in
