@@ -8,24 +8,45 @@ use reprise_core::radio::StationRow;
 
 use crate::ui::browse::browse_bar::CHIP_CSS_CLASS;
 use crate::ui::enumerated::enumerated;
+use crate::ui::search_chip;
 use crate::ui::strings;
 use crate::ui::style::buttons;
+use reprise_view::search_scope::{self, SearchScope};
 
 const GENRE_KEY: &str = "radio.filter.genre";
 const COUNTRY_KEY: &str = "radio.filter.country";
 const FILTER_BAR_MIN_HEIGHT: i32 = 34;
 
 type FilterCallback = Rc<dyn Fn(RadioFilter)>;
+/// SEARCH-8: fired when the bar itself changes the query — the chip's ×
+/// or "Clear all" — so the header entry stops showing a query the view no
+/// longer applies.
+type OnQueryChanged = Rc<dyn Fn(&str)>;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(super) struct RadioFilter {
     pub genre: Option<String>,
     pub country: Option<String>,
+    /// SEARCH-8: this section's transient query, matched against station
+    /// names alone (FIL-1d). Never persisted — `persist_filter` writes the
+    /// two facets above and nothing else.
+    pub query: String,
 }
 
 impl RadioFilter {
     pub(super) fn is_active(&self) -> bool {
-        self.genre.is_some() || self.country.is_some()
+        self.genre.is_some() || self.country.is_some() || self.has_query()
+    }
+
+    pub(super) fn has_query(&self) -> bool {
+        !self.query.trim().is_empty()
+    }
+
+    pub(super) fn with_query(&self, query: &str) -> Self {
+        Self {
+            query: query.trim().to_owned(),
+            ..self.clone()
+        }
     }
 }
 
@@ -34,6 +55,9 @@ enumerated! {
     pub(super) enum RadioFilterFacet {
         Genre,
         Country,
+        /// SEARCH-8: the query relaxes like any other facet when a jump to
+        /// the connected station would otherwise land nowhere.
+        Query,
     }
 
     /// Generated from the declaration above: a facet that is missing here is
@@ -47,15 +71,19 @@ pub(super) fn remove_filter(filter: &RadioFilter, facet: RadioFilterFacet) -> Ra
     match facet {
         RadioFilterFacet::Genre => result.genre = None,
         RadioFilterFacet::Country => result.country = None,
+        RadioFilterFacet::Query => result.query.clear(),
     }
     result
 }
 
+/// FIL-1d: the query reads station names — the chip says "in station names",
+/// and nothing else here may quietly widen that.
 pub(super) fn filter_rows(rows: &[StationRow], filter: &RadioFilter) -> Vec<StationRow> {
     rows.iter()
         .filter(|row| {
             matches_value(row.genre.as_deref(), filter.genre.as_deref())
                 && matches_value(row.country_code.as_deref(), filter.country.as_deref())
+                && search_scope::matches_query(&row.name, &filter.query)
         })
         .cloned()
         .collect()
@@ -68,10 +96,16 @@ fn only_facet(filter: &RadioFilter, facet: RadioFilterFacet) -> RadioFilter {
         RadioFilterFacet::Genre => RadioFilter {
             genre: filter.genre.clone(),
             country: None,
+            ..RadioFilter::default()
         },
         RadioFilterFacet::Country => RadioFilter {
             genre: None,
             country: filter.country.clone(),
+            ..RadioFilter::default()
+        },
+        RadioFilterFacet::Query => RadioFilter {
+            query: filter.query.clone(),
+            ..RadioFilter::default()
         },
     }
 }
@@ -128,10 +162,13 @@ fn matches_value(candidate: Option<&str>, expected: Option<&str>) -> bool {
     candidate.is_some_and(|candidate| candidate.trim().eq_ignore_ascii_case(expected.trim()))
 }
 
+/// SEARCH-8: restores the two persisted facets. A launch never starts inside
+/// somebody's old query, so `query` stays empty here by construction.
 pub(super) fn load_filter(db: &Db) -> Result<RadioFilter, rusqlite::Error> {
     Ok(RadioFilter {
         genre: setting(db, GENRE_KEY)?,
         country: setting(db, COUNTRY_KEY)?,
+        query: String::new(),
     })
 }
 
@@ -169,6 +206,7 @@ pub(super) struct RadioFilterBar {
     visible_count: Cell<usize>,
     total_count: Cell<usize>,
     on_changed: RefCell<Option<FilterCallback>>,
+    on_query_changed: RefCell<Option<OnQueryChanged>>,
 }
 
 impl RadioFilterBar {
@@ -218,6 +256,7 @@ impl RadioFilterBar {
             visible_count: Cell::new(0),
             total_count: Cell::new(0),
             on_changed: RefCell::new(None),
+            on_query_changed: RefCell::new(None),
         });
         wire_chooser(&bar);
         bar.rebuild_chips();
@@ -255,19 +294,51 @@ impl RadioFilterBar {
     pub(super) fn set_counts(&self, visible: usize, total: usize) {
         self.visible_count.set(visible);
         self.total_count.set(total);
-        self.count.set_text(&if self.filter().is_active() {
-            strings::radio_filtered_count(visible, total)
+        // FIL-2: filtered lists count "N of TOTAL stations" with the shown
+        // number accented; an unfiltered one keeps its plain total.
+        if self.filter().is_active() {
+            self.count
+                .set_markup(&strings::radio_filtered_count_markup(visible, total));
+            self.count.add_css_class("accent");
         } else {
-            strings::radio_station_count(total)
-        });
+            self.count.remove_css_class("accent");
+            self.count.set_text(&strings::radio_station_count(total));
+        }
+    }
+
+    pub(super) fn set_on_query_changed(&self, callback: impl Fn(&str) + 'static) {
+        *self.on_query_changed.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    /// SEARCH-8: this section's query, handed in by the shell.
+    pub(super) fn set_query(self: &Rc<Self>, query: &str) {
+        let current = self.filter();
+        if current.query == query.trim() {
+            return;
+        }
+        self.apply_internal(current.with_query(query), false);
     }
 
     fn apply(self: &Rc<Self>, filter: RadioFilter) {
+        self.apply_internal(filter, true);
+    }
+
+    /// `announce_query`: whether a query change started here (the chip's ×,
+    /// "Clear all", a relaxed jump) and therefore has to be mirrored back
+    /// into the header entry. A query arriving *from* the entry is not
+    /// echoed, or the two would ping-pong.
+    fn apply_internal(self: &Rc<Self>, filter: RadioFilter, announce_query: bool) {
+        // SEARCH-8: only the facets are persisted; the query is transient.
         if let Err(error) = persist_filter(&self.conn, &filter) {
             tracing::warn!(%error, "could not persist radio filters");
         }
-        self.filter.replace(filter.clone());
+        let previous_query = self.filter.replace(filter.clone()).query;
         self.rebuild_chips();
+        if announce_query && previous_query != filter.query {
+            if let Some(callback) = self.on_query_changed.borrow().clone() {
+                callback(&filter.query);
+            }
+        }
         if let Some(callback) = self.on_changed.borrow().clone() {
             callback(filter);
         }
@@ -292,6 +363,9 @@ impl RadioFilterBar {
             let facet = gtk4::Label::new(Some(&strings::text(match choice.facet {
                 RadioFilterFacet::Genre => strings::RADIO_FILTER_GENRE,
                 RadioFilterFacet::Country => strings::RADIO_FILTER_COUNTRY,
+                // The query is never offered here: it is typed in the header,
+                // not chosen from the facet list.
+                RadioFilterFacet::Query => continue,
             })));
             facet.add_css_class("dim-label");
             let value = gtk4::Label::new(Some(&choice.value));
@@ -312,6 +386,17 @@ impl RadioFilterBar {
             self.chips.remove(&child);
         }
         let filter = self.filter();
+        // FIL-1a/FIL-1d: the search chip comes first, ahead of the facets.
+        if filter.has_query() {
+            let weak = Rc::downgrade(self);
+            let chip = search_chip::build(SearchScope::Radio, &filter.query, move || {
+                if let Some(bar) = weak.upgrade() {
+                    let cleared = bar.filter().with_query("");
+                    bar.apply(cleared);
+                }
+            });
+            self.chips.append(&chip);
+        }
         for (facet, value) in [
             (RadioFilterFacet::Genre, filter.genre.as_deref()),
             (RadioFilterFacet::Country, filter.country.as_deref()),
@@ -359,6 +444,7 @@ fn wire_chooser(bar: &Rc<RadioFilterBar>) {
         match choice.facet {
             RadioFilterFacet::Genre => filter.genre = Some(choice.value),
             RadioFilterFacet::Country => filter.country = Some(choice.value),
+            RadioFilterFacet::Query => return,
         }
         bar.add_filter.popdown();
         bar.apply(filter);
@@ -407,6 +493,7 @@ mod tests {
         let filter = RadioFilter {
             genre: Some("Metal".into()),
             country: Some("CH".into()),
+            ..RadioFilter::default()
         };
 
         persist_filter(&conn, &filter).unwrap();
@@ -416,6 +503,7 @@ mod tests {
             RadioFilter {
                 genre: None,
                 country: Some("CH".into()),
+                ..RadioFilter::default()
             }
         );
         assert_eq!(
@@ -423,6 +511,7 @@ mod tests {
             RadioFilter {
                 genre: Some("Metal".into()),
                 country: None,
+                ..RadioFilter::default()
             }
         );
     }
@@ -439,6 +528,7 @@ mod tests {
             &RadioFilter {
                 genre: Some("METAL".into()),
                 country: None,
+                ..RadioFilter::default()
             },
         );
         assert_eq!(
@@ -455,6 +545,7 @@ mod tests {
         let filter = RadioFilter {
             genre: Some("Metal".into()),
             country: Some("CH".into()),
+            ..RadioFilter::default()
         };
 
         assert_eq!(
@@ -462,6 +553,7 @@ mod tests {
             RadioFilter {
                 genre: Some("Metal".into()),
                 country: None,
+                ..RadioFilter::default()
             }
         );
     }
@@ -472,6 +564,7 @@ mod tests {
         let filter = RadioFilter {
             genre: Some("Metal".into()),
             country: Some("CH".into()),
+            ..RadioFilter::default()
         };
 
         assert_eq!(filter_without_hiding(&station, &filter), filter);
@@ -493,6 +586,73 @@ mod tests {
         assert!(bar.root.has_css_class("toolbar"));
         assert!(bar.add_filter.has_css_class("pill"));
         assert!(!bar.add_filter.has_css_class(CHIP_CSS_CLASS));
+    }
+
+    /// UX FIL-1d: the Radio query matches **station names**, case-insensitively
+    /// and mid-word, and composes with the facet chips instead of replacing
+    /// them. A genre the query does not name is still withheld by its chip.
+    #[test]
+    fn fil_1d_radio_query_matches_station_names_and_composes_with_facets() {
+        let mut nova = test_station(1, Some("Jazz"), Some("de"));
+        nova.name = "Radio Nova".into();
+        let mut werk = test_station(2, Some("Jazz"), Some("de"));
+        werk.name = "Werkstatt FM".into();
+        let mut antwerp = test_station(3, Some("Rock"), Some("be"));
+        antwerp.name = "Antwerpen Live".into();
+        let rows = vec![nova, werk, antwerp];
+
+        let names = |filter: &RadioFilter| {
+            filter_rows(&rows, filter)
+                .into_iter()
+                .map(|row| row.name)
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(
+            names(&RadioFilter {
+                query: "wer".into(),
+                ..RadioFilter::default()
+            }),
+            ["Werkstatt FM", "Antwerpen Live"],
+            "leading and mid-word matches, case-insensitively"
+        );
+        assert_eq!(
+            names(&RadioFilter {
+                genre: Some("Jazz".into()),
+                query: "wer".into(),
+                ..RadioFilter::default()
+            }),
+            ["Werkstatt FM"],
+            "the query narrows what the genre chip already returned"
+        );
+        assert_eq!(names(&RadioFilter::default()).len(), 3);
+        assert!(RadioFilter {
+            query: "wer".into(),
+            ..RadioFilter::default()
+        }
+        .is_active());
+        assert!(!RadioFilter::default().is_active());
+    }
+
+    /// UX SEARCH-8: the query is transient — `load_filter` restores the two
+    /// persisted facets and never a query.
+    #[test]
+    fn search_8_radio_query_is_never_restored_from_settings() {
+        let db = crate::test_db::open().unwrap();
+        persist_filter(
+            &db,
+            &RadioFilter {
+                genre: Some("Jazz".into()),
+                query: "wer".into(),
+                ..RadioFilter::default()
+            },
+        )
+        .unwrap();
+
+        let restored = load_filter(&db).unwrap();
+
+        assert_eq!(restored.genre.as_deref(), Some("Jazz"));
+        assert_eq!(restored.query, "");
     }
 
     fn test_station(

@@ -218,6 +218,7 @@ fn compact_episode_row_has_no_play_button_and_stays_within_height_budget() {
                 },
                 selection: &Rc::new(RefCell::new(PodcastSelection::default())),
                 unavailable_episode: None,
+                query: "",
             },
         );
         let buttons = descendants(&rendered)
@@ -286,6 +287,7 @@ fn src_14_grouped_secondary_click_opens_for_one_row_or_the_three_row_selection()
         Connectivity::Online,
         None,
         &selection,
+        "",
     );
     let window = gtk4::Window::new();
     window.set_child(Some(&container));
@@ -345,6 +347,7 @@ fn acc_1_every_point_of_a_grouped_episode_row_reaches_the_context_menu() {
             },
             selection: &selection,
             unavailable_episode: None,
+            query: "",
         },
     );
     let window = gtk4::Window::new();
@@ -417,6 +420,7 @@ fn collapsed_group_renders_ten_episodes_and_one_show_all_action() {
         Connectivity::Online,
         None,
         &Rc::new(RefCell::new(PodcastSelection::default())),
+        "",
     );
 
     let rows = container
@@ -475,6 +479,7 @@ fn src_5_one_expander_is_rendered_per_source_group() {
         Connectivity::Online,
         None,
         &Rc::new(RefCell::new(PodcastSelection::default())),
+        "",
     );
     assert!(widgets.downloads.is_empty());
     assert!(widgets.selection.is_empty());
@@ -527,6 +532,7 @@ fn src_12b_grouped_selection_survives_render_rebuild_on_the_row() {
             Connectivity::Online,
             None,
             &selection,
+            "",
         );
         let row = &widgets.selection[&1].row;
         assert!(row.has_css_class(SELECTED_ROW_CLASS));

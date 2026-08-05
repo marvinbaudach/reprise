@@ -9,13 +9,19 @@ use reprise_core::concerts::{ConcertFilter, DateHorizon};
 use reprise_core::db::Db;
 
 use crate::ui::browse::browse_bar::CHIP_CSS_CLASS;
+use crate::ui::search_chip;
 use crate::ui::strings;
+use reprise_view::search_scope::SearchScope;
 
 const FILTER_BAR_MIN_HEIGHT: i32 = 34;
 const FACET_PAGE: &str = "facets";
 const VALUE_PAGE: &str = "values";
 
 type OnChanged = Rc<dyn Fn(ConcertFilter)>;
+/// SEARCH-8: fired when the bar itself changes the query — the chip's ×
+/// or "Clear all" — so the header entry stops showing a query the view no
+/// longer applies.
+type OnQueryChanged = Rc<dyn Fn(&str)>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum FilterFacet {
@@ -147,7 +153,12 @@ pub(super) struct ConcertsFilterBar {
     similar_enabled: Cell<bool>,
     has_similar_rows: Cell<bool>,
     counts: Cell<(usize, usize)>,
+    /// SEARCH-8: this section's query, kept beside the persisted
+    /// `ConcertFilter` rather than inside it — a query must not be restored
+    /// on the next launch.
+    query: RefCell<String>,
     on_changed: RefCell<Option<OnChanged>>,
+    on_query_changed: RefCell<Option<OnQueryChanged>>,
 }
 
 impl ConcertsFilterBar {
@@ -232,7 +243,9 @@ impl ConcertsFilterBar {
             similar_enabled: Cell::new(false),
             has_similar_rows: Cell::new(false),
             counts: Cell::new((0, 0)),
+            query: RefCell::new(String::new()),
             on_changed: RefCell::new(None),
+            on_query_changed: RefCell::new(None),
         });
         wire(&bar);
         bar.rebuild();
@@ -249,6 +262,38 @@ impl ConcertsFilterBar {
 
     pub(super) fn set_on_changed(&self, callback: impl Fn(ConcertFilter) + 'static) {
         *self.on_changed.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub(super) fn set_on_query_changed(&self, callback: impl Fn(&str) + 'static) {
+        *self.on_query_changed.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    /// FIL-1d: matched against artist and venue.
+    pub(super) fn query(&self) -> String {
+        self.query.borrow().clone()
+    }
+
+    /// SEARCH-8: this section's query, handed in by the shell.
+    pub(super) fn set_query(self: &Rc<Self>, query: &str) {
+        if *self.query.borrow() == query.trim() {
+            return;
+        }
+        self.query.replace(query.trim().to_owned());
+        self.rebuild();
+        let callback = self.on_changed.borrow().clone();
+        if let Some(callback) = callback {
+            callback(self.filter());
+        }
+    }
+
+    fn clear_query(self: &Rc<Self>) {
+        if self.query.borrow().is_empty() {
+            return;
+        }
+        self.query.replace(String::new());
+        if let Some(callback) = self.on_query_changed.borrow().clone() {
+            callback("");
+        }
     }
 
     pub(super) fn set_context(
@@ -275,7 +320,9 @@ impl ConcertsFilterBar {
         Ok(())
     }
 
+    /// FIL-2: "Clear all" for this section — its query and its facets.
     pub(super) fn clear_all(self: &Rc<Self>) {
+        self.clear_query();
         self.apply_filter(ConcertFilter::default());
     }
 
@@ -303,8 +350,25 @@ impl ConcertsFilterBar {
         }
         self.chips.remove_all();
         let filter = self.filter();
+        let query = self.query();
         let facets = active_facets(&filter);
-        let active = !facets.is_empty();
+        let active = !facets.is_empty() || !query.is_empty();
+        // FIL-1a/FIL-1d: the search chip is the row's first chip.
+        if !query.is_empty() {
+            let weak = Rc::downgrade(self);
+            let chip = search_chip::build(SearchScope::Concerts, &query, move || {
+                let Some(bar) = weak.upgrade() else {
+                    return;
+                };
+                bar.clear_query();
+                bar.rebuild();
+                let callback = bar.on_changed.borrow().clone();
+                if let Some(callback) = callback {
+                    callback(bar.filter());
+                }
+            });
+            self.chips.append(&chip);
+        }
         for facet in facets {
             let button = gtk4::Button::with_label(&format!("{}  ×", chip_label(&filter, facet)));
             button.add_css_class("flat");
@@ -327,11 +391,16 @@ impl ConcertsFilterBar {
         self.section_label.set_visible(active);
         self.clear_all.set_visible(active);
         let (shown, total) = self.counts.get();
-        self.result_label.set_text(&if active {
-            strings::concert_count_line(shown, total)
+        // FIL-2: the shown number is accented while a restriction is active.
+        if active {
+            self.result_label
+                .set_markup(&strings::concert_count_line_markup(shown, total));
+            self.result_label.add_css_class("accent");
         } else {
-            strings::concert_total_line(total)
-        });
+            self.result_label.remove_css_class("accent");
+            self.result_label
+                .set_text(&strings::concert_total_line(total));
+        }
         self.rebuild_facets();
     }
 

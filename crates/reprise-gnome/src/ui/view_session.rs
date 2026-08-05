@@ -73,10 +73,15 @@ pub(super) fn snapshot(track_list: &TrackList) -> TrackViewSnapshot {
     }
 }
 
+/// `applies_here` answers SEARCH-8's question: is a track section the visible
+/// one? A query typed in Podcasts still reaches this handler — one entry
+/// serves the whole window — and must be ignored here rather than silently
+/// re-filtering Music behind the user's back.
 pub(super) fn wire_search(
     search_entry: &gtk4::SearchEntry,
     track_list: Rc<TrackList>,
     restoring: SearchRestoreGuard,
+    applies_here: Rc<dyn Fn() -> bool>,
 ) {
     {
         let entry = search_entry.clone();
@@ -89,7 +94,7 @@ pub(super) fn wire_search(
     }
     let pending: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
     search_entry.connect_search_changed(move |entry| {
-        if restoring.get() {
+        if restoring.get() || !applies_here() {
             return;
         }
         // A same-value programmatic update (notably clear-all setting the

@@ -1,5 +1,6 @@
 //! GTK renderer for filter-bar messages described by `reprise-view`.
 
+use reprise_view::search_scope::SearchScope;
 use reprise_view::strings::browse as messages;
 
 pub(in crate::ui) use messages::{
@@ -20,8 +21,22 @@ pub(in crate::ui) fn remove_filter_label(facet: &str, value: &str) -> String {
     render(&messages::remove_filter_label(facet, value))
 }
 
+/// FIL-1a's original, unscoped wording. Kept as the reference the FIL-1d
+/// tests measure Music's chip against, so a change to the scoped path that
+/// silently reworded Music would fail rather than pass quietly.
+#[cfg(test)]
 pub(in crate::ui) fn search_chip_label(query: &str) -> String {
     render(&messages::search_chip_label(query))
+}
+
+/// FIL-1d: the same chip, naming the fields the current section searches.
+pub(in crate::ui) fn scoped_search_chip_label(scope: SearchScope, query: &str) -> String {
+    render(&messages::search_chip_label_in(scope, query))
+}
+
+/// SEARCH-8: the tooltip on the insensitive lens of a section without a list.
+pub(in crate::ui) fn nothing_to_filter(section: &str) -> String {
+    render(&messages::nothing_to_filter(section))
 }
 
 pub(in crate::ui) fn remove_search_label(query: &str) -> String {
@@ -37,14 +52,18 @@ pub(in crate::ui) fn leave_place_label(place: &str) -> String {
 pub(in crate::ui) fn result_count_markup(filtered: usize, total: usize) -> (String, bool) {
     let (mut message, restricted) = messages::result_count_state(filtered, total);
     if restricted {
-        for (name, value) in &mut message.args {
-            if *name == messages::FILTERED_ARG {
-                *value = format!("<b>{value}</b>");
-                break;
-            }
-        }
+        accent_filtered(&mut message);
     }
     (render(&message), restricted)
+}
+
+fn accent_filtered(message: &mut reprise_view::strings::Message) {
+    for (name, value) in &mut message.args {
+        if *name == messages::FILTERED_ARG {
+            *value = format!("<b>{value}</b>");
+            break;
+        }
+    }
 }
 
 fn borrowed<'a>(args: &'a [(&'static str, String)]) -> Vec<(&'static str, &'a str)> {
@@ -80,6 +99,44 @@ mod tests {
     fn fil_1a_search_chip_label_quotes_the_query() {
         assert_eq!(search_chip_label("falling"), "⌕ “falling” in any field");
         assert_eq!(remove_search_label("falling"), "Remove search: falling");
+    }
+
+    // UX FIL-1d: the chip label names the scope per view; Library still says
+    // "in any field". The remove label stays scope-independent.
+    #[test]
+    fn fil_1d_chip_label_names_the_fields_of_its_view() {
+        let cases = [
+            (SearchScope::Tracks, "⌕ “wer” in any field"),
+            (SearchScope::Podcasts, "⌕ “wer” in episode titles"),
+            (SearchScope::Youtube, "⌕ “wer” in video titles"),
+            (SearchScope::Radio, "⌕ “wer” in station names"),
+            (SearchScope::Releases, "⌕ “wer” in title and artist"),
+            (SearchScope::Concerts, "⌕ “wer” in artist and venue"),
+            (SearchScope::Missing, "⌕ “wer” in file paths"),
+        ];
+
+        for (scope, expected) in cases {
+            assert_eq!(
+                scoped_search_chip_label(scope, "wer"),
+                expected,
+                "{scope:?}"
+            );
+        }
+        assert_eq!(
+            scoped_search_chip_label(SearchScope::Tracks, "falling"),
+            search_chip_label("falling"),
+            "Music must keep the FIL-1a wording verbatim"
+        );
+        assert_eq!(remove_search_label("wer"), "Remove search: wer");
+    }
+
+    // UX SEARCH-8: the lens explains itself where there is nothing to filter.
+    #[test]
+    fn search_8_insensitive_lens_names_the_section() {
+        assert_eq!(
+            nothing_to_filter("My Stats"),
+            "Nothing to filter in My Stats"
+        );
     }
 
     // UX FIL-2: the count is accented (bold markup) only under restriction.

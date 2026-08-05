@@ -61,6 +61,11 @@ pub(super) struct RenderedRowWidgets {
 struct GroupRenderContext<'a> {
     playing_episode: Option<EpisodeMark>,
     expanded_sources: &'a Rc<RefCell<BTreeSet<i64>>>,
+    /// `POD-25`: the section's query. A non-empty one opens every surviving
+    /// show for this render pass without writing to `expanded_sources` — the
+    /// manual state is restored the moment the query goes away — and is
+    /// accented inside the episode titles it matched.
+    query: &'a str,
     expanded_episode_sources: &'a Rc<RefCell<BTreeSet<i64>>>,
     download_states: &'a BTreeMap<i64, DownloadState>,
     connected_devices: &'a [podcasts_context_menu::PodcastSyncDevice],
@@ -81,6 +86,8 @@ struct EpisodeRenderContext<'a> {
     network: RowNetworkState,
     selection: &'a Rc<RefCell<PodcastSelection>>,
     unavailable_episode: Option<i64>,
+    /// `POD-25` / FIL-5: accented inside this row's title where it matched.
+    query: &'a str,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -97,6 +104,7 @@ pub(super) fn replace(
     connectivity: Connectivity,
     unavailable_episode: Option<i64>,
     selection: &Rc<RefCell<PodcastSelection>>,
+    query: &str,
 ) -> RenderedRowWidgets {
     while let Some(child) = container.first_child() {
         container.remove(&child);
@@ -109,6 +117,7 @@ pub(super) fn replace(
     let context = GroupRenderContext {
         playing_episode,
         expanded_sources,
+        query,
         expanded_episode_sources,
         download_states,
         connected_devices,
@@ -136,10 +145,13 @@ fn build_group(
     // button" with nothing to say which show it opens. Naming it is also what
     // lets a keyboard or assistive user address one show among several.
     expander.update_property(&[gtk4::accessible::Property::Label(&group.title)]);
-    let expanded = context
-        .expanded_sources
-        .borrow()
-        .contains(&group.subscription_id);
+    let expanded = super::podcasts_presentation::auto_expand_for_query(context.query)
+        || context
+            .expanded_sources
+            .borrow()
+            .contains(&group.subscription_id);
+    // Set before the notify handler is connected, so forcing a show open for
+    // a search never records that as a manual expansion.
     expander.set_expanded(expanded);
     let subscription_id = group.subscription_id;
     let expanded_sources = context.expanded_sources.clone();
@@ -207,6 +219,7 @@ fn build_group(
                 },
                 selection: context.selection,
                 unavailable_episode: context.unavailable_episode,
+                query: context.query,
             },
         ));
     }
@@ -368,7 +381,11 @@ fn episode_row(
     super::podcasts_dnd::wire_episode_drag_source(&root, row.id, context.selection);
 
     let title = gtk4::Label::new(None);
-    title.set_markup(&super::podcasts_title::markup(title_parts));
+    title.set_markup(&super::podcasts_title::markup_matching(
+        title_parts,
+        context.query,
+        crate::ui::track_list::match_highlight::accent_foreground(&title).as_deref(),
+    ));
     title.set_xalign(0.0);
     title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
     title.add_css_class("reprise-source-row-title");
@@ -463,6 +480,9 @@ pub(super) fn update_playback_state(widgets: &DownloadRowWidgets, playing: bool)
     playing_marker::set_playing(&widgets.marker, playing);
 }
 
+#[cfg(test)]
+#[path = "podcasts_groups_expansion_tests.rs"]
+mod expansion_tests;
 #[cfg(test)]
 #[path = "podcasts_groups_tests.rs"]
 mod tests;

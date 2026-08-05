@@ -172,6 +172,10 @@ pub(super) struct Shared {
     pending_undo_toasts: Cell<u32>,
     db_path: RefCell<Option<PathBuf>>,
     relink_progress: RelinkProgressView,
+    /// `FIL-1d`: this section's query, matched against file paths. Transient
+    /// — it lives in the widget for as long as the visit does and is never
+    /// written to settings.
+    query: RefCell<String>,
 }
 
 pub(in crate::ui) struct MissingFilesView {
@@ -213,6 +217,7 @@ impl MissingFilesView {
             pending_undo_toasts: Cell::new(0),
             db_path: RefCell::new(None),
             relink_progress: RelinkProgressView::new(),
+            query: RefCell::new(String::new()),
         });
         install_auto_clean_menu(&shared);
         Self { shared, root }
@@ -223,6 +228,14 @@ impl MissingFilesView {
     }
 
     pub(in crate::ui) fn refresh(&self) -> usize {
+        refresh(&self.shared)
+    }
+
+    /// SEARCH-8 / FIL-1d: applies this section's query, matched against file
+    /// paths. Returns the number of gaps that survived it, which is what the
+    /// filter row counts.
+    pub(in crate::ui) fn set_search_query(&self, query: &str) -> usize {
+        self.shared.query.replace(query.trim().to_owned());
         refresh(&self.shared)
     }
 
@@ -267,9 +280,10 @@ fn refresh(shared: &Rc<Shared>) -> usize {
         shared.groups.remove(&child);
     }
     update_auto_clean_label(shared);
+    let query = shared.query.borrow().clone();
     let groups = {
         let conn = &shared.conn;
-        queries::query_missing_groups(conn).unwrap_or_else(|error| {
+        queries::query_missing_groups_matching(conn, &query).unwrap_or_else(|error| {
             tracing::error!(%error, "missing view: failed to load groups");
             Vec::new()
         })
@@ -315,6 +329,7 @@ fn build_group(shared: &Rc<Shared>, group: &MissingGroup) -> gtk4::Widget {
         super::missing_menus::install_card_context_menu(shared, card.header_widget(), &copy.title);
     }
     let kind = group.kind.clone();
+    let query = shared.query.borrow().clone();
     let row_shared = shared.clone();
     let listbox = card.body_listbox().clone();
     CollapsedList::attach_to(
@@ -323,7 +338,7 @@ fn build_group(shared: &Rc<Shared>, group: &MissingGroup) -> gtk4::Widget {
         Rc::new(move |index| {
             let track = {
                 let conn = &row_shared.conn;
-                queries::query_missing_rows(conn, &kind, index, 1)
+                queries::query_missing_rows_matching(conn, &kind, &query, index, 1)
                     .ok()
                     .and_then(|mut rows| rows.pop())
             };

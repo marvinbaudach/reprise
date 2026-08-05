@@ -363,12 +363,33 @@ fn library_summary(subjects: &str, episodes: usize, new: usize) -> String {
 }
 
 pub fn podcast_filtered_count(visible: usize, total: usize) -> String {
+    filtered_episode_count(&visible.to_string(), total)
+}
+
+/// FIL-2: the same line with the shown number accented. The bold goes in as
+/// the *argument*, not as a substring search over the rendered sentence — a
+/// translation that puts the total first would otherwise bold the wrong
+/// number, silently.
+pub fn podcast_filtered_count_markup(visible: usize, total: usize) -> String {
+    filtered_episode_count(&format!("<b>{visible}</b>"), total)
+}
+
+/// `POD-15`: the YouTube page subscribes to channels of videos, and its
+/// search chip says "in video titles" — so its count says videos too.
+pub fn youtube_filtered_count_markup(visible: usize, total: usize) -> String {
     formatted(
-        N_!("{visible} of {total} episodes"),
+        N_!("{visible} of {total} videos"),
         &[
-            ("visible", &visible.to_string()),
+            ("visible", &format!("<b>{visible}</b>")),
             ("total", &total.to_string()),
         ],
+    )
+}
+
+fn filtered_episode_count(visible: &str, total: usize) -> String {
+    formatted(
+        N_!("{visible} of {total} episodes"),
+        &[("visible", visible), ("total", &total.to_string())],
     )
 }
 

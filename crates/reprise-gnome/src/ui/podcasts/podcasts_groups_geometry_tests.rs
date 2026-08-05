@@ -68,6 +68,7 @@ fn src_13_replace_returns_one_channel_widget_per_group() {
             Connectivity::Online,
             None,
             &Rc::new(RefCell::new(PodcastSelection::default())),
+            "",
         );
         (container, widgets)
     };

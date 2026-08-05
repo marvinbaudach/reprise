@@ -6,21 +6,69 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, Datelike, Local, NaiveDate, Utc};
 use reprise_core::podcasts::download_state::DownloadState;
 use reprise_core::podcasts::{EpisodeRow, EpisodeStatus, PodcastKind, SourceGroup};
+use reprise_view::search_scope;
 
 use super::podcasts_context_menu::PodcastSyncDevice;
 use crate::ui::enumerated::enumerated;
 use crate::ui::strings;
 
-/// The filter the podcast view applies, which is exactly the filter the core
-/// persists — so it *is* the core's type rather than a field-for-field copy of
-/// it. The copy that used to live here had the same four fields and the same
-/// derives, and every round trip through the database had to keep the two
-/// spellings in step by hand.
+/// The filter the podcast view applies: the three facets the core persists,
+/// plus the section's transient search query.
+///
+/// The facets are named exactly as `PodcastFilterConfig` names them and go
+/// back to it through [`PodcastFilter::facets`], so the round trip through the
+/// database still has one spelling. `query` deliberately stays out of that
+/// round trip — SEARCH-8 makes the query belong to the visit, not to the
+/// saved view; persisting it would resurrect a search the user never typed
+/// again on the next launch.
 ///
 /// (`SRC-10` addendum, Block B2: `downloaded_only` is the "Downloaded" chip —
 /// it matches only episodes with a file on disk right now, not a queued or
 /// downloading one.)
-pub(super) type PodcastFilter = reprise_core::podcasts::config::PodcastFilterConfig;
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(super) struct PodcastFilter {
+    pub unplayed_only: bool,
+    pub source: Option<PodcastKind>,
+    pub downloaded_only: bool,
+    /// `POD-25`: matched case-insensitively against episode titles alone.
+    pub query: String,
+}
+
+impl PodcastFilter {
+    /// The persisted half. Named rather than derived through a `From` so the
+    /// call sites that write to the database read as "facets only".
+    pub(super) fn facets(&self) -> PodcastFilterConfig {
+        PodcastFilterConfig {
+            unplayed_only: self.unplayed_only,
+            source: self.source,
+            downloaded_only: self.downloaded_only,
+        }
+    }
+
+    /// Restores the persisted half, leaving the query empty — a launch never
+    /// starts inside somebody's old search.
+    pub(super) fn from_facets(facets: &PodcastFilterConfig) -> Self {
+        Self {
+            unplayed_only: facets.unplayed_only,
+            source: facets.source,
+            downloaded_only: facets.downloaded_only,
+            query: String::new(),
+        }
+    }
+
+    pub(super) fn with_query(&self, query: &str) -> Self {
+        Self {
+            query: query.trim().to_owned(),
+            ..self.clone()
+        }
+    }
+
+    pub(super) fn has_query(&self) -> bool {
+        auto_expand_for_query(&self.query)
+    }
+}
+
+pub(super) use reprise_core::podcasts::config::PodcastFilterConfig;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Pill {
@@ -246,10 +294,14 @@ pub(super) fn status_pill(row: &EpisodeRow) -> Option<Pill> {
     }
 }
 
+/// `POD-25`: the query reads episode titles and nothing else — not the show,
+/// not the author, not the description. The chip says "in episode titles"
+/// (FIL-1d), and this is the function that has to keep that promise true.
 pub(super) fn matches_filter(row: &EpisodeRow, filter: &PodcastFilter) -> bool {
     (!filter.unplayed_only || row.played_at.is_none())
         && filter.source.is_none_or(|source| row.kind == source)
         && (!filter.downloaded_only || row.downloaded_path.is_some())
+        && search_scope::matches_query(&row.title, &filter.query)
 }
 
 pub(super) fn apply_filter(rows: &[EpisodeRow], filter: &PodcastFilter) -> Vec<EpisodeRow> {
@@ -268,6 +320,11 @@ enumerated! {
         Unplayed,
         Source,
         Downloaded,
+        /// `POD-25`: the search chip is a facet like the others, so a jump to
+        /// an episode the query hides relaxes it instead of landing on an
+        /// empty page. It comes last because dropping the user's typed query
+        /// is the most surprising relaxation of the four.
+        Query,
     }
 
     /// Generated from the declaration above: a facet that is missing here is
@@ -291,6 +348,10 @@ fn only_facet(filter: &PodcastFilter, facet: PodcastFilterFacet) -> PodcastFilte
             downloaded_only: filter.downloaded_only,
             ..PodcastFilter::default()
         },
+        PodcastFilterFacet::Query => PodcastFilter {
+            query: filter.query.clone(),
+            ..PodcastFilter::default()
+        },
     }
 }
 
@@ -310,6 +371,7 @@ pub(super) fn remove_facet(filter: &PodcastFilter, facet: PodcastFilterFacet) ->
         PodcastFilterFacet::Unplayed => result.unplayed_only = false,
         PodcastFilterFacet::Source => result.source = None,
         PodcastFilterFacet::Downloaded => result.downloaded_only = false,
+        PodcastFilterFacet::Query => result.query.clear(),
     }
     result
 }
@@ -367,7 +429,20 @@ pub(super) fn filter_without_hiding_group(
 }
 
 pub(super) fn active(filter: &PodcastFilter) -> bool {
-    filter.unplayed_only || filter.downloaded_only
+    filter.unplayed_only || filter.downloaded_only || filter.has_query()
+}
+
+/// `POD-25`: a query is a promise that the matches are on screen, so every
+/// show that survived it opens itself. Manual expansion state is untouched —
+/// the renderer forces the expanders open for this render pass only, and
+/// removing the query hands each show back its own collapsed/expanded state.
+///
+/// Takes the query rather than the whole filter because the renderer only
+/// ever carries the query: this stays the one definition of "a query is
+/// active", read by `PodcastFilter::has_query` and by `podcasts_groups`
+/// alike, instead of the same `trim().is_empty()` living in both.
+pub(super) fn auto_expand_for_query(query: &str) -> bool {
+    !query.trim().is_empty()
 }
 
 pub(super) fn sort_newest_first(rows: &mut [EpisodeRow]) {
@@ -414,341 +489,8 @@ pub(super) fn updated_ago(timestamp: Option<i64>, now: i64) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn row(id: i64, published_at: Option<i64>, kind: PodcastKind) -> EpisodeRow {
-        EpisodeRow {
-            id,
-            subscription_id: 1,
-            guid: format!("g{id}"),
-            title: format!("Episode {id}"),
-            show: if id == 3 { "Other" } else { "Show" }.into(),
-            show_image_url: None,
-            image_url: None,
-            kind,
-            audio_url: "https://example.test/episode.mp3".into(),
-            page_url: None,
-            published_at,
-            duration_secs: Some(4_533),
-            downloaded_path: None,
-            downloaded_bytes: None,
-            played_at: None,
-            position_ms: 0,
-            first_seen_at: id,
-            is_new: false,
-        }
-    }
-
-    #[test]
-    fn pod_9_presentation_formats_date_length_source_and_status() {
-        let today = NaiveDate::from_ymd_opt(2026, 7, 26).unwrap();
-        let today_timestamp = today.and_hms_opt(12, 0, 0).unwrap().and_utc().timestamp();
-        assert_eq!(relative_date(Some(today_timestamp), today), "Today");
-        assert_eq!(
-            relative_date(Some(today_timestamp - 86_400), today),
-            "Yesterday"
-        );
-        assert_eq!(duration(Some(4_533)), "1 h 15");
-        assert_eq!(file_size(Some(41_943_040)), Some("40.0 MB".to_owned()));
-        assert_eq!(source_pill(PodcastKind::Rss).label, "RSS");
-        let mut episode = row(1, Some(today_timestamp), PodcastKind::Rss);
-        assert_eq!(status_pill(&episode), None);
-        episode.is_new = true;
-        assert_eq!(status_pill(&episode).map(|pill| pill.label), Some("New"));
-        episode.position_ms = 10;
-        assert_eq!(status_pill(&episode).map(|pill| pill.label), Some("Resume"));
-        episode.played_at = Some(1);
-        assert_eq!(status_pill(&episode).map(|pill| pill.label), Some("Played"));
-    }
-
-    #[test]
-    fn duration_uses_unambiguous_minute_and_hour_boundaries() {
-        let cases = [
-            (None, ""),
-            (Some(-1), ""),
-            (Some(0), "< 1 min"),
-            (Some(59), "< 1 min"),
-            (Some(60), "1 min"),
-            (Some(3_599), "59 min"),
-            (Some(3_600), "1 h 00"),
-            (Some(7_500), "2 h 05"),
-        ];
-
-        for (value, expected) in cases {
-            assert_eq!(duration(value), expected, "duration {value:?}");
-        }
-    }
-
-    #[test]
-    fn file_size_omits_unknown_zero_and_negative_values() {
-        assert_eq!(file_size(None), None);
-        assert_eq!(file_size(Some(-1)), None);
-        assert_eq!(file_size(Some(0)), None);
-        assert_eq!(file_size(Some(1_048_576)), Some("1.0 MB".to_owned()));
-        assert_eq!(file_size(Some(1_073_741_824)), Some("1.0 GB".to_owned()));
-    }
-
-    #[test]
-    fn missing_dates_and_detail_parts_render_no_placeholders_or_empty_separators() {
-        let today = NaiveDate::from_ymd_opt(2026, 7, 26).unwrap();
-
-        assert_eq!(relative_date(None, today), "");
-        assert_eq!(
-            crate::ui::source_row::detail_line(["", "", strings::PODCAST_STATUS_NEW]),
-            strings::PODCAST_STATUS_NEW
-        );
-        assert_eq!(
-            crate::ui::source_row::detail_line(["Today", "", strings::PODCAST_STATUS_NEW]),
-            "Today · New"
-        );
-        assert_eq!(
-            strings::podcast_group_facts("15 episodes", 0, "", ""),
-            "15 episodes · 0 new"
-        );
-    }
-
-    #[test]
-    fn author_line_hides_title_prefixes_but_keeps_distinct_publishers() {
-        assert_eq!(author_line("The Daily", Some("The Daily")), None);
-        assert_eq!(
-            author_line("The Daily – News Briefing", Some("The Daily")),
-            None
-        );
-        assert_eq!(
-            author_line("The Daily", Some("The New York Times")),
-            Some("The New York Times")
-        );
-        assert_eq!(author_line("Artist Notes", Some("Art")), Some("Art"));
-        assert_eq!(author_line("Show", Some("   ")), None);
-    }
-
-    #[test]
-    fn src_5_youtube_header_has_one_channel_name_while_rss_keeps_its_author() {
-        assert_eq!(
-            source_header(PodcastKind::Youtube, "Ferris Media", Some("Ferris Media")),
-            SourceHeader {
-                title: "Ferris Media",
-                subtitle: None,
-            }
-        );
-        assert_eq!(
-            source_header(PodcastKind::Rss, "Systems Weekly", Some("Ada Lovelace")),
-            SourceHeader {
-                title: "Systems Weekly",
-                subtitle: Some("Ada Lovelace"),
-            }
-        );
-    }
-
-    #[test]
-    fn filtering_composes_unplayed_downloaded_and_source() {
-        let mut rows = vec![
-            row(1, Some(10), PodcastKind::Rss),
-            row(2, Some(20), PodcastKind::Youtube),
-            row(3, Some(30), PodcastKind::Rss),
-        ];
-        rows[0].played_at = Some(100);
-        rows[1].downloaded_path = Some("/music/ep2.mp3".into());
-        let filtered = apply_filter(
-            &rows,
-            &PodcastFilter {
-                unplayed_only: true,
-                source: Some(PodcastKind::Youtube),
-                downloaded_only: true,
-            },
-        );
-        assert_eq!(filtered.iter().map(|row| row.id).collect::<Vec<_>>(), [2]);
-    }
-
-    /// `SRC-10` addendum (Block B2): the "Downloaded" filter matches only
-    /// episodes with a file on disk — would go red if `downloaded_only`
-    /// were ignored, since one row here has no `downloaded_path` at all.
-    #[test]
-    fn src_10_downloaded_only_filter_matches_files_on_disk_not_download_state() {
-        let mut on_disk = row(1, Some(10), PodcastKind::Rss);
-        on_disk.downloaded_path = Some("/music/ep1.mp3".into());
-        let not_downloaded = row(2, Some(20), PodcastKind::Rss);
-        let rows = vec![on_disk, not_downloaded];
-
-        let filtered = apply_filter(
-            &rows,
-            &PodcastFilter {
-                downloaded_only: true,
-                ..PodcastFilter::default()
-            },
-        );
-
-        assert_eq!(filtered.iter().map(|row| row.id).collect::<Vec<_>>(), [1]);
-        assert!(active(&PodcastFilter {
-            downloaded_only: true,
-            ..PodcastFilter::default()
-        }));
-    }
-
-    #[test]
-    fn default_sort_is_date_descending_with_unknown_dates_last() {
-        let mut rows = vec![
-            row(1, None, PodcastKind::Rss),
-            row(2, Some(10), PodcastKind::Rss),
-            row(3, Some(30), PodcastKind::Rss),
-        ];
-        sort_newest_first(&mut rows);
-        assert_eq!(rows.iter().map(|row| row.id).collect::<Vec<_>>(), [3, 2, 1]);
-    }
-
-    #[test]
-    fn src_5_source_summary_counts_new_downloads_and_latest_episode() {
-        let mut first = row(1, Some(10), PodcastKind::Rss);
-        first.is_new = true;
-        first.downloaded_bytes = Some(2_000_000);
-        let mut second = row(2, Some(20), PodcastKind::Rss);
-        second.downloaded_bytes = Some(3_000_000);
-        second.played_at = Some(30);
-        let group = SourceGroup {
-            subscription_id: 7,
-            title: "Show".into(),
-            author: Some("Publisher".into()),
-            image_url: None,
-            kind: PodcastKind::Rss,
-            sync_to_phone: true,
-            episodes: vec![first, second],
-        };
-
-        let states = BTreeMap::from([
-            (1, DownloadState::Downloaded { bytes: 2_000_000 }),
-            (2, DownloadState::Downloaded { bytes: 3_000_000 }),
-        ]);
-        assert_eq!(
-            source_summary(&group, &states),
-            SourceSummary {
-                episode_count: 2,
-                new_count: 1,
-                downloaded_bytes: 5_000_000,
-                latest_published_at: Some(20),
-            }
-        );
-    }
-
-    /// `G2` (design 6a): the header line's "new" figure must sum the same
-    /// discovery definition as the per-group facts (`is_new`) across every
-    /// group, independent of playback status.
-    #[test]
-    fn pod_9_library_summary_counts_shows_episodes_and_new_across_all_groups() {
-        let mut played = row(1, Some(10), PodcastKind::Rss);
-        played.played_at = Some(30);
-        let mut unplayed = row(2, Some(20), PodcastKind::Rss);
-        unplayed.is_new = true;
-        let mut resuming = row(3, Some(15), PodcastKind::Rss);
-        resuming.position_ms = 5_000;
-        let group_a = SourceGroup {
-            subscription_id: 1,
-            title: "Show A".into(),
-            author: None,
-            image_url: None,
-            kind: PodcastKind::Rss,
-            sync_to_phone: false,
-            episodes: vec![played, unplayed],
-        };
-        let group_b = SourceGroup {
-            subscription_id: 2,
-            title: "Show B".into(),
-            author: None,
-            image_url: None,
-            kind: PodcastKind::Rss,
-            sync_to_phone: false,
-            episodes: vec![resuming],
-        };
-
-        let summary = library_summary(&[group_a, group_b]);
-
-        assert_eq!(
-            summary,
-            LibrarySummary {
-                shows: 2,
-                episodes: 3,
-                new: 1,
-            }
-        );
-    }
-
-    /// `G2`: an empty library must not fabricate counts.
-    #[test]
-    fn pod_9_library_summary_is_zero_for_no_subscriptions() {
-        assert_eq!(library_summary(&[]), LibrarySummary::default());
-    }
-
-    #[test]
-    fn pod_9_filtered_children_keep_the_full_source_summary() {
-        let mut played = row(1, Some(10), PodcastKind::Rss);
-        played.played_at = Some(30);
-        let mut unplayed = row(2, Some(20), PodcastKind::Rss);
-        unplayed.is_new = true;
-        let group = SourceGroup {
-            subscription_id: 7,
-            title: "Show".into(),
-            author: None,
-            image_url: None,
-            kind: PodcastKind::Rss,
-            sync_to_phone: false,
-            episodes: vec![played, unplayed],
-        };
-
-        let rendered = rendered_source_groups(
-            &[group],
-            &PodcastFilter {
-                unplayed_only: true,
-                ..PodcastFilter::default()
-            },
-            &BTreeMap::new(),
-        );
-
-        assert_eq!(rendered[0].group.episodes.len(), 1);
-        assert_eq!(rendered[0].summary.episode_count, 2);
-        assert_eq!(rendered[0].summary.new_count, 1);
-        assert_eq!(rendered[0].summary.latest_published_at, Some(20));
-    }
-
-    /// `POD-12` / `D3`: the "On phone" indicator must track the selection
-    /// exactly — on the moment a connected device is added to the
-    /// selection, off the moment it is removed, and unaffected by devices
-    /// that are not currently connected.
-    #[test]
-    fn pod_12_on_phone_reflects_the_toggle() {
-        let phone = PodcastSyncDevice {
-            id: "mtp:phone".into(),
-            name: "Phone".into(),
-        };
-        let tablet = PodcastSyncDevice {
-            id: "mtp:tablet".into(),
-            name: "Tablet".into(),
-        };
-
-        // Nothing selected yet.
-        assert!(!on_phone(std::slice::from_ref(&phone), &[]));
-
-        // Selected, but only for a device that is not currently connected.
-        assert!(!on_phone(
-            std::slice::from_ref(&phone),
-            &["mtp:tablet".to_owned()]
-        ));
-
-        // Selected for the connected device: the toggle just turned on.
-        assert!(on_phone(
-            std::slice::from_ref(&phone),
-            &["mtp:phone".to_owned(), "mtp:tablet".to_owned()]
-        ));
-
-        // A second connected device also counts.
-        assert!(on_phone(
-            &[phone.clone(), tablet],
-            &["mtp:tablet".to_owned()]
-        ));
-
-        // Un-toggled again: back to false.
-        assert!(!on_phone(&[phone], &[]));
-    }
-}
+#[path = "podcasts_presentation_tests.rs"]
+mod tests;
 
 #[cfg(test)]
 #[path = "podcasts_presentation_filter_tests.rs"]
