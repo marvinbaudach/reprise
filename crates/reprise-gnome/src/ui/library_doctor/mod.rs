@@ -1,5 +1,7 @@
 mod auto_apply;
 mod jobs;
+#[cfg(test)]
+mod jobs_tests;
 mod progress_card;
 pub(in crate::ui) mod remote_toggle;
 mod result_pages;

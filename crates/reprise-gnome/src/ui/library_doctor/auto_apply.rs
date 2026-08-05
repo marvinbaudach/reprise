@@ -22,13 +22,9 @@ impl LibraryDoctorCoordinator {
             return;
         }
         let Some(tag_write_lease) = self.tag_write_gate.try_acquire() else {
-            crate::ui::toasts::show(
-                &self.toast_overlay,
-                &crate::ui::strings::text(crate::ui::strings::TAG_WRITE_BUSY),
-            );
-            self.sidebar
-                .refresh("Library Doctor automatic fixes are waiting");
-            self.page.fail_auto_apply();
+            self.abandon_auto_apply(&crate::ui::strings::text(
+                crate::ui::strings::TAG_WRITE_BUSY,
+            ));
             return;
         };
         let cancellation = Arc::new(AtomicBool::new(false));
@@ -50,9 +46,10 @@ impl LibraryDoctorCoordinator {
             Ok(channels) => channels,
             Err(error) => {
                 self.finish_write_job();
-                self.page.fail_auto_apply();
                 tracing::error!(%error, "could not start Library Doctor automatic apply worker");
-                crate::ui::toasts::show(&self.toast_overlay, &error.to_string());
+                self.abandon_auto_apply(&crate::ui::strings::text(
+                    crate::ui::strings::DOCTOR_JOB_FAILED,
+                ));
                 return;
             }
         };
@@ -77,18 +74,36 @@ impl LibraryDoctorCoordinator {
             coordinator.finish_write_job();
             match received {
                 Ok(Ok(report)) => coordinator.handle_auto_apply_report(report),
-                Ok(Err(error)) => {
-                    coordinator.page.fail_auto_apply();
-                    tracing::error!(%error, "Library Doctor automatic apply failed");
-                    crate::ui::toasts::show(&coordinator.toast_overlay, &error);
+                Ok(Err(failure)) => {
+                    tracing::error!(
+                        detail = %failure.detail,
+                        "Library Doctor automatic apply failed"
+                    );
+                    coordinator.abandon_auto_apply(&failure.user_message());
                 }
                 Err(error) => {
-                    coordinator.page.fail_auto_apply();
                     tracing::error!(%error, "Library Doctor automatic apply worker disappeared");
-                    crate::ui::toasts::show(&coordinator.toast_overlay, &error.to_string());
+                    coordinator.abandon_auto_apply(&crate::ui::strings::text(
+                        crate::ui::strings::DOCTOR_JOB_FAILED,
+                    ));
                 }
             }
         });
+    }
+
+    /// The one way out of a failed silent apply.
+    ///
+    /// The scan stored its pointer before the write started, so from that
+    /// moment its findings are pending whether the write succeeded, failed or
+    /// never began. Every failing branch therefore has to refresh the sidebar
+    /// too — otherwise the entry that says "there is something to review here"
+    /// simply never appears, and the user is left with a toast and no trail
+    /// back to the findings.
+    fn abandon_auto_apply(self: &Rc<Self>, message: &str) {
+        self.page.fail_auto_apply();
+        self.sidebar
+            .refresh("Library Doctor automatic fixes did not run");
+        crate::ui::toasts::show(&self.toast_overlay, message);
     }
 
     fn handle_auto_apply_report(self: &Rc<Self>, report: Option<DoctorWriteReport>) {
