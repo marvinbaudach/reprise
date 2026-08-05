@@ -53,7 +53,6 @@ import kotlin.math.PI
 import kotlin.math.sin
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collect
-import uniffi.reprise_android_ffi.AndroidArtworkSize
 import uniffi.reprise_android_ffi.AndroidRepeatMode
 
 /**
@@ -146,12 +145,10 @@ private fun StackedNowPlayingContent(
                     MaterialSymbol("keyboard_arrow_down", "Collapse Now Playing")
                 }
             }
-            TrackCover(
+            NowPlayingVisualizer(
                 trackUri = track.uri,
                 size = metrics.coverSizeDp,
-                artworkSize = AndroidArtworkSize.NOW_PLAYING,
                 shape = RoundedCornerShape(metrics.coverRadiusDp.dp),
-                modifier = Modifier.testTag("now-playing-cover"),
             )
             Spacer(Modifier.height(20.dp))
             Text(
@@ -211,12 +208,10 @@ private fun WideShortNowPlayingContent(
                 .fillMaxHeight(),
             contentAlignment = Alignment.Center,
         ) {
-            TrackCover(
+            NowPlayingVisualizer(
                 trackUri = track.uri,
                 size = metrics.coverSizeDp,
-                artworkSize = AndroidArtworkSize.NOW_PLAYING,
                 shape = RoundedCornerShape(metrics.coverRadiusDp.dp),
-                modifier = Modifier.testTag("now-playing-cover"),
             )
         }
         Spacer(Modifier.width(24.dp))

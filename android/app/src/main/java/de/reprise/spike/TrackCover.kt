@@ -37,7 +37,7 @@ private const val TAG = "RepriseArtwork"
  */
 internal class TrackArtwork(
     private val resolve: (String, AndroidArtworkSize) -> String?,
-    private val decode: (String) -> ImageBitmap? = ::decodeCachedCover,
+    private val decode: (String) -> android.graphics.Bitmap? = BitmapFactory::decodeFile,
     private val worker: ExecutorService = singleArtworkThread("reprise-artwork-list"),
     private val fullSizeWorker: ExecutorService = singleArtworkThread("reprise-artwork-full"),
     private val onMainThread: (() -> Unit) -> Unit = { work ->
@@ -54,6 +54,13 @@ internal class TrackArtwork(
         request: ArtworkRequest,
         gate: ArtworkRequestGate,
         deliver: (ImageBitmap?) -> Unit,
+    ) = loadVisual(request, gate) { visual -> deliver(visual?.image) }
+
+    /** The full-size lane also derives the three bounded ambient colour fields. */
+    fun loadVisual(
+        request: ArtworkRequest,
+        gate: ArtworkRequestGate,
+        deliver: (ArtworkVisual?) -> Unit,
     ) {
         val lane = when (request.size) {
             AndroidArtworkSize.NOW_PLAYING -> fullSizeWorker
@@ -68,7 +75,18 @@ internal class TrackArtwork(
             // failures this catches is teardown itself — a read that reaches the
             // library handle after `MainActivity.onDestroy` closed it is refused
             // with `IllegalStateException`. See [shutdown].
-            val image = runCatching { resolve(request.trackUri, request.size)?.let(decode) }
+            val visual = runCatching {
+                resolve(request.trackUri, request.size)?.let(decode)?.let { bitmap ->
+                    ArtworkVisual(
+                        image = bitmap.asImageBitmap(),
+                        ambientColors = if (request.size == AndroidArtworkSize.NOW_PLAYING) {
+                            extractAmbientArtworkColors(bitmap)
+                        } else {
+                            null
+                        },
+                    )
+                }
+            }
                 .onFailure { error ->
                     Log.w(TAG, "Could not read artwork for ${request.trackUri}", error)
                 }
@@ -78,7 +96,7 @@ internal class TrackArtwork(
             }
             onMainThread {
                 if (gate.accepts(request)) {
-                    deliver(image)
+                    deliver(visual)
                 }
             }
         }
@@ -117,6 +135,11 @@ internal class TrackArtwork(
 /** No artwork unless an activity provides a reader — previews stay honest. */
 internal val LocalTrackArtwork = staticCompositionLocalOf<TrackArtwork?> { null }
 
+internal data class ArtworkVisual(
+    val image: ImageBitmap,
+    val ambientColors: AmbientArtworkColors?,
+)
+
 /**
  * A track's cover, or the honest no-artwork symbol until one arrives. Tracks
  * without local artwork keep the symbol: nothing is downloaded here.
@@ -136,16 +159,35 @@ internal fun TrackCover(
     shape: Shape? = null,
     decorative: Boolean = false,
 ) {
+    val visual = rememberTrackArtworkVisual(trackUri, artworkSize)
+    ArtworkCover(visual, size, modifier, shape, decorative)
+}
+
+@Composable
+internal fun rememberTrackArtworkVisual(
+    trackUri: String,
+    artworkSize: AndroidArtworkSize,
+): ArtworkVisual? {
     val artwork = LocalTrackArtwork.current
     val gate = remember { ArtworkRequestGate() }
-    var image by remember(trackUri, artworkSize) { mutableStateOf<ImageBitmap?>(null) }
+    var visual by remember(trackUri, artworkSize) { mutableStateOf<ArtworkVisual?>(null) }
     DisposableEffect(trackUri, artwork, artworkSize) {
         val request = gate.begin(trackUri, artworkSize)
-        artwork?.load(request, gate) { loaded -> image = loaded }
+        artwork?.loadVisual(request, gate) { loaded -> visual = loaded }
         onDispose { gate.invalidate(request) }
     }
+    return visual
+}
 
-    val cover = image
+@Composable
+internal fun ArtworkCover(
+    visual: ArtworkVisual?,
+    size: Int,
+    modifier: Modifier = Modifier,
+    shape: Shape? = null,
+    decorative: Boolean = false,
+) {
+    val cover = visual?.image
     if (cover == null) {
         CoverPlaceholder(size, shape, decorative, modifier)
         return
@@ -162,6 +204,3 @@ internal fun TrackCover(
 
 private fun singleArtworkThread(name: String): ExecutorService =
     Executors.newSingleThreadExecutor { runnable -> Thread(runnable, name) }
-
-private fun decodeCachedCover(path: String): ImageBitmap? =
-    BitmapFactory.decodeFile(path)?.asImageBitmap()

@@ -15,6 +15,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import de.reprise.spike.AmbientArtworkColors
 import de.reprise.spike.MobileThemeSelection
 import de.reprise.spike.R
 
@@ -32,6 +33,14 @@ private val NocturneOnTertiaryContainer = Color(0xFFC0BDFF)
 private val NocturneOutline = Color(0xFF3F424D)
 private val NocturneText = Color(0xFFE9E9ED)
 private val NocturneMutedText = Color(0xFFB2B6CA)
+private val AmbientFallbackOne = Color(0xFF203C58)
+private val AmbientFallbackTwo = Color(0xFF4A275E)
+private val AmbientFallbackThree = Color(0xFF124B45)
+internal val AmbientTrueBlack = Color(0xFF000000)
+
+internal fun ambientFieldColors(artwork: AmbientArtworkColors?): List<Color> =
+    artwork?.asList()?.map { argb -> Color(argb) }
+        ?: listOf(AmbientFallbackOne, AmbientFallbackTwo, AmbientFallbackThree)
 
 @Composable
 internal fun nocturneColorScheme() = colorResource(R.color.reprise_teal).let { primary ->

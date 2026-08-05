@@ -103,12 +103,21 @@ internal class MobileSurfaceViewModel : ViewModel() {
         private set
     var settingsVisible by mutableStateOf(false)
         private set
+    var dockMode by mutableStateOf(false)
+        private set
+    var dockOfferVisible by mutableStateOf(false)
+        private set
+    var dockOfferVersion by mutableStateOf(0L)
+        private set
 
     private val scrollPositions = mutableMapOf<LibraryListKey, LibraryScrollPosition>()
     private var loadedWindows: LoadedLibraryWindows? = null
     private var loadedShape: LibraryCatalogShape? = null
     private var scrubTrackId: Long? = null
     private var scrubPosition by mutableStateOf<SeekPositionState?>(null)
+    private var previousSurfaceLayout: SurfaceLayout? = null
+    private var dockTrackId: Long? = null
+    private var dockRestorableRating: Int? = null
 
     fun selectTab(tab: BrowseTab) {
         selectedTab = tab
@@ -136,6 +145,63 @@ internal class MobileSurfaceViewModel : ViewModel() {
 
     fun showSettings(show: Boolean) {
         settingsVisible = show
+    }
+
+    fun observeSurfaceLayout(layout: SurfaceLayout) {
+        if (
+            previousSurfaceLayout == SurfaceLayout.STACKED &&
+            layout == SurfaceLayout.WIDE_SHORT &&
+            !dockMode
+        ) {
+            dockOfferVisible = true
+            dockOfferVersion += 1
+        }
+        previousSurfaceLayout = layout
+        if (layout == SurfaceLayout.STACKED && dockMode) {
+            exitDockMode()
+        }
+    }
+
+    fun dismissDockOffer(version: Long = dockOfferVersion) {
+        if (version == dockOfferVersion) dockOfferVisible = false
+    }
+
+    fun enterDockMode() {
+        dockMode = true
+        dockOfferVisible = false
+        nowPlayingExpanded = true
+        clearDockRatingMemory()
+    }
+
+    fun exitDockMode() {
+        dockMode = false
+        clearDockRatingMemory()
+    }
+
+    fun observeDockTrack(trackId: Long) {
+        if (dockTrackId == trackId) return
+        dockTrackId = trackId
+        dockRestorableRating = null
+    }
+
+    fun dockRatingTarget(trackId: Long, currentRating: Int): Int {
+        if (!dockMode || dockTrackId != trackId || currentRating != 5) return 5
+        return dockRestorableRating ?: 5
+    }
+
+    /** Records rating memory only after the database accepted the write. */
+    fun confirmDockRating(trackId: Long, previousRating: Int, savedRating: Int) {
+        if (!dockMode || dockTrackId != trackId) return
+        if (savedRating == 5 && previousRating != 5) {
+            dockRestorableRating = previousRating.coerceIn(0, 4)
+        } else if (previousRating == 5 && savedRating == dockRestorableRating) {
+            dockRestorableRating = null
+        }
+    }
+
+    private fun clearDockRatingMemory() {
+        dockTrackId = null
+        dockRestorableRating = null
     }
 
     fun scrollPosition(list: LibraryListKey): LibraryScrollPosition =

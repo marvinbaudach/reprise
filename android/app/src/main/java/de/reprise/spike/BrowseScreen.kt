@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -32,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.delay
 
 /**
  * One answered request for the playing track's row, carrying the id it was
@@ -81,6 +83,14 @@ internal fun BrowseScreen(
     val selectedTab = surfaceState.selectedTab
     val searchVisible = surfaceState.searchVisible
     val searchText = surfaceState.searchText
+    LaunchedEffect(surfaceLayout) { surfaceState.observeSurfaceLayout(surfaceLayout) }
+    LaunchedEffect(surfaceState.dockOfferVersion, surfaceState.dockOfferVisible) {
+        if (surfaceState.dockOfferVisible) {
+            val version = surfaceState.dockOfferVersion
+            delay(4_000)
+            surfaceState.dismissDockOffer(version)
+        }
+    }
     // Everything the listener has paged in, or the first window when there is
     // nothing to take up: a replacement activity reloads one window, and the
     // anchors kept above are indices into all of them.
@@ -338,31 +348,55 @@ internal fun BrowseScreen(
                 }
             }
         }
-        if (surfaceLayout == SurfaceLayout.WIDE_SHORT) {
-            Row(modifier = Modifier.fillMaxSize()) {
-                LibraryNavigationRail(surfaceLayout)
-                libraryScaffold(Modifier.weight(1f))
+        if (!surfaceState.dockMode) {
+            if (surfaceLayout == SurfaceLayout.WIDE_SHORT) {
+                Row(modifier = Modifier.fillMaxSize()) {
+                    LibraryNavigationRail(surfaceLayout)
+                    libraryScaffold(Modifier.weight(1f))
+                }
+            } else {
+                libraryScaffold(Modifier.fillMaxSize())
             }
-        } else {
-            libraryScaffold(Modifier.fillMaxSize())
         }
-        AnimatedVisibility(
-            visible = nowPlayingExpanded && currentTrack != null,
-            enter = slideInVertically(initialOffsetY = { height -> height }) + expandVertically(
-                expandFrom = Alignment.Bottom,
-            ),
-            exit = slideOutVertically(targetOffsetY = { height -> height }) + shrinkVertically(
-                shrinkTowards = Alignment.Bottom,
-            ),
-        ) {
+        if (surfaceState.dockMode) {
             currentTrack?.let { track ->
-                NowPlayingSheet(
-                    track = track,
-                    playback = playback,
-                    surfaceLayout = surfaceLayout,
-                    surfaceState = surfaceState,
-                    close = { surfaceState.showNowPlaying(false) },
-                )
+                DockModeSurface(track, playback, surfaceState)
+            } ?: DockModeWaitingSurface()
+        } else {
+            AnimatedVisibility(
+                visible = nowPlayingExpanded && currentTrack != null,
+                enter = slideInVertically(initialOffsetY = { height -> height }) + expandVertically(
+                    expandFrom = Alignment.Bottom,
+                ),
+                exit = slideOutVertically(targetOffsetY = { height -> height }) + shrinkVertically(
+                    shrinkTowards = Alignment.Bottom,
+                ),
+            ) {
+                currentTrack?.let { track ->
+                    NowPlayingSheet(
+                        track = track,
+                        playback = playback,
+                        surfaceLayout = surfaceLayout,
+                        surfaceState = surfaceState,
+                        close = { surfaceState.showNowPlaying(false) },
+                    )
+                }
+            }
+        }
+        if (
+            surfaceState.dockOfferVisible &&
+            surfaceLayout == SurfaceLayout.WIDE_SHORT &&
+            currentTrack != null &&
+            !surfaceState.dockMode &&
+            !settingsVisible
+        ) {
+            Button(
+                onClick = surfaceState::enterDockMode,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(12.dp),
+            ) {
+                Text("Dock-Modus")
             }
         }
         if (settingsVisible) {
