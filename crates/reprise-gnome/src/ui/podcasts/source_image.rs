@@ -84,6 +84,12 @@ pub(in crate::ui) fn recompute_gate(conn: &Db) {
     GATE_OPEN.store(allowed, Ordering::Relaxed);
 }
 
+/// Current source-artwork permission for rows that bind after the gate was
+/// published by startup or Preferences.
+pub(in crate::ui) fn gate_open() -> bool {
+    GATE_OPEN.load(Ordering::Relaxed)
+}
+
 #[derive(Clone)]
 pub(crate) struct SourceImage {
     root: gtk4::Stack,

@@ -40,7 +40,7 @@ pub(in crate::ui) enum RevealPolicy {
 
 /// How long after the last scroll movement the list still counts as
 /// "the user is reading it". Same value and same purpose as the track table's
-/// `current_track_selection::USER_SCROLL_GRACE` (`NAV-10a`).
+/// `current_track_selection::USER_SCROLL_GRACE` (`NAV-10b`).
 pub(in crate::ui) const USER_SCROLL_GRACE: Duration = Duration::from_millis(1_500);
 
 /// Whether the last recorded scroll movement is recent enough that the list

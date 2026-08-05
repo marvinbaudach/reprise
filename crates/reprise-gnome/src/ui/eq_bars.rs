@@ -235,11 +235,12 @@ mod tests {
     }
 
     #[test]
-    fn nav_10a_one_marker_implementation_serves_every_list_surface() {
+    fn nav_10b_one_marker_implementation_serves_every_list_surface() {
         for source in [
             include_str!("track_list/track_list_columns.rs"),
             include_str!("podcasts/podcasts_groups.rs"),
             include_str!("podcasts/youtube_channel_detail.rs"),
+            include_str!("radio/radio_columns.rs"),
         ] {
             // One implementation, several surfaces: every marker goes through
             // `playing_marker`, none reaches for `eq_bars` directly.

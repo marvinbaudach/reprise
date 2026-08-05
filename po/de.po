@@ -5348,3 +5348,12 @@ msgstr "Chromium (CSD)"
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:18
 msgid "Separate title bar"
 msgstr "Separate Titelleiste"
+
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:177
+#, rust-format
+msgid "Streaming · {percent}% loaded"
+msgstr "Streaming · {percent} % geladen"
+
+#: crates/reprise-gnome/src/ui/strings_radio.rs:22
+msgid "LIVE"
+msgstr "LIVE"

@@ -227,6 +227,10 @@ fn draw_bars(
 
         let bar_center = (index as f64 + 0.5) / count as f64;
         let played = bar_played(index, count, state.fraction);
+        let buffered = !played
+            && state
+                .buffered_fraction
+                .is_some_and(|fraction| bar_center <= fraction);
         let is_ghost = state.drag_fraction.is_some_and(|drag_frac| {
             let (lo, hi) = if drag_frac > state.fraction {
                 (state.fraction, drag_frac)
@@ -263,6 +267,8 @@ fn draw_bars(
             );
         } else if is_hover_preview {
             cr.set_source_rgba(1.0, 1.0, 1.0, HOVER_PREVIEW_ALPHA * style.opacity);
+        } else if buffered {
+            cr.set_source_rgba(accent.0, accent.1, accent.2, BUFFERED_ALPHA * style.opacity);
         } else {
             cr.set_source_rgba(1.0, 1.0, 1.0, UNPLAYED_ALPHA * style.opacity);
         }
@@ -335,8 +341,14 @@ fn draw_fallback(
         let x = index as f64 * slot + (slot - bar_w) / 2.0;
         let y = (h - bar_h) / 2.0;
 
+        let bar_center = (index as f64 + 0.5) / count as f64;
         if bar_played(index, count, state.fraction) {
             cr.set_source_rgba(r, g, b, 0.5);
+        } else if state
+            .buffered_fraction
+            .is_some_and(|fraction| bar_center <= fraction)
+        {
+            cr.set_source_rgba(r, g, b, BUFFERED_ALPHA);
         } else {
             cr.set_source_rgba(1.0, 1.0, 1.0, UNPLAYED_ALPHA * 0.6);
         }

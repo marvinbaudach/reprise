@@ -48,7 +48,7 @@ fn target_for(track_list: &TrackList, position: u32) -> (gtk4::Adjustment, f64) 
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn nav_10a_centering_lands_exactly_on_the_target() {
+fn nav_10b_centering_lands_exactly_on_the_target() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     gtk4::Settings::default()
@@ -82,7 +82,7 @@ fn nav_10a_centering_lands_exactly_on_the_target() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn nav_10a_a_user_scroll_during_the_glide_wins() {
+fn nav_10b_a_user_scroll_during_the_glide_wins() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     gtk4::Settings::default()

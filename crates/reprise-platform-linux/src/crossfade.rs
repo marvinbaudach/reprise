@@ -27,7 +27,7 @@ use reprise_core::library::settings::TrackTransition;
 use reprise_core::playback::{AudioEffects, PlayerEvent};
 
 use crate::gapless::{HandoffFlag, NextUri};
-use crate::player_pipeline::{attach_bus_watch, build_playbin};
+use crate::player_pipeline::{attach_bus_watch, build_playbin, configure_download_buffering};
 
 /// Geteilter (Modus, Sekunden)-Zustand. Der Ticker liest ihn zur Trigger-
 /// Entscheidung, `set_transition` schreibt ihn, und der `about-to-finish`-
@@ -178,6 +178,12 @@ impl CrossfadeEngine {
             self.spectrum_enabled.load(Ordering::SeqCst),
         ) {
             tracing::warn!(%error, "crossfade: could not configure spectrum analyzer");
+        }
+        if let Err(error) = configure_download_buffering(&secondary, uri, false) {
+            tracing::warn!(%error, "crossfade: could not configure download buffering");
+            let _ = secondary.set_state(gst::State::Null);
+            self.crossfading.store(false, Ordering::SeqCst);
+            return;
         }
         secondary.set_property("uri", uri);
         secondary.set_property("volume", 0.0_f64);

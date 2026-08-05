@@ -174,6 +174,7 @@ pub const YOUTUBE_REMOVE_SELECTED: &str = N_!("Remove selected");
 pub const PODCAST_UNDO: &str = N_!("Undo");
 pub const PODCAST_DELETE_FILES: &str = N_!("Delete files");
 pub const PODCAST_PLAY_NEXT_EPISODE: &str = N_!("Play next episode");
+pub const PODCAST_STREAMING_LOADED: &str = N_!("Streaming · {percent}% loaded");
 pub const PODCAST_EPISODES_PER_SHOW: &str = N_!("Episodes per show");
 pub const PODCAST_PREFERENCES_AUTO_DOWNLOAD: &str = N_!("Download new episodes");
 pub const PODCAST_PREFERENCES_CLEANUP: &str = N_!("Delete played episodes");
@@ -209,7 +210,7 @@ pub fn podcast_episode_count(count: usize) -> String {
     )
 }
 
-/// SRC-12a batch feedback. One message per batch, never one per episode, and
+/// SRC-12b batch feedback. One message per batch, never one per episode, and
 /// never assembled by concatenating two separately translated fragments —
 /// word order and punctuation around "N done, M failed" differ per language,
 /// so both numbers live in one msgid, pluralised on the successful count.
@@ -248,7 +249,7 @@ pub fn episodes_added_to_queue_toast(count: usize) -> String {
     )
 }
 
-/// SRC-12a: acting on a selection that contains nothing to act on is still an
+/// SRC-12b: acting on a selection that contains nothing to act on is still an
 /// answer. Staying silent reads as a broken button.
 pub const PODCAST_BATCH_NOTHING_TO_DELETE: &str = N_!("No downloaded files in the selection");
 
@@ -297,6 +298,13 @@ pub fn podcast_status_resume(percent: Option<u8>) -> String {
         ),
         None => text(PODCAST_STATUS_RESUME),
     }
+}
+
+pub fn podcast_streaming_loaded(percent: u8) -> String {
+    formatted(
+        PODCAST_STREAMING_LOADED,
+        &[("percent", &percent.to_string())],
+    )
 }
 
 pub fn podcast_group_facts(episodes: &str, new: usize, latest: &str, downloaded: &str) -> String {
@@ -600,7 +608,7 @@ mod tests {
     }
 
     #[test]
-    fn src_12a_summary_reports_a_selection_and_drops_it_at_zero() {
+    fn src_12b_summary_reports_a_selection_and_drops_it_at_zero() {
         let summary = "2 channels · 54 episodes · 4 new";
 
         assert_eq!(

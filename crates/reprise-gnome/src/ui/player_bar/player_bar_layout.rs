@@ -42,6 +42,10 @@ const PLAY_CSS_CLASS: &str = "player-bar-play";
 const SURFACE_CSS_CLASS: &str = "player-bar-surface";
 /// CSS class on the transport button row, targeted by the hover-highlight rules.
 const TRANSPORT_ROW_CSS_CLASS: &str = "player-bar-transport";
+pub(in crate::ui) const LIVE_BADGE_CLASS: &str = "player-bar-live-badge";
+pub(in crate::ui) const LIVE_DOT_CLASS: &str = "player-bar-live-dot";
+pub(in crate::ui) const LIVE_DOT_PULSING_CLASS: &str = "pulsing";
+const LIVE_LABEL_CLASS: &str = "player-bar-live-label";
 /// CSS class on the volume scale, toggled on hover to reveal the knob.
 const VOLUME_SCALE_CSS_CLASS: &str = "player-bar-volume";
 /// CSS class added/removed by the hover controller to show the volume knob.
@@ -75,6 +79,14 @@ pub(in crate::ui) struct PlayerBarWidgets {
     pub(in crate::ui) retry_external_button: gtk4::Button,
     pub(in crate::ui) position_label: gtk4::Label,
     pub(in crate::ui) duration_label: gtk4::Label,
+    pub(in crate::ui) streaming_status_label: gtk4::Label,
+    pub(in crate::ui) progress_stack: gtk4::Stack,
+    #[cfg(test)]
+    pub(in crate::ui) live_badge: gtk4::Box,
+    pub(in crate::ui) live_dot: gtk4::Box,
+    #[cfg(test)]
+    pub(in crate::ui) live_label: gtk4::Label,
+    pub(in crate::ui) live_station_label: gtk4::Label,
     pub(in crate::ui) waveform: super::waveform_seek::WaveformSeek,
     pub(in crate::ui) volume_icon: gtk4::Button,
     pub(in crate::ui) volume_scale: gtk4::Scale,
@@ -109,7 +121,7 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     artist_label.add_css_class("player-bar-artist");
 
     // Title row: the title alone. The running state lives on the play/pause
-    // button (NAV-10a) — a second animated marker here doubles the track
+    // button (NAV-10b) — a second animated marker here doubles the track
     // list's on every view where the running track is visible.
     let title_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
     title_row.append(&title_label);
@@ -217,11 +229,40 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
         .widget()
         .set_tooltip_text(Some(&strings::text(strings::PLAYBACK_POSITION)));
 
+    let live_dot = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+    live_dot.add_css_class(LIVE_DOT_CLASS);
+    live_dot.set_accessible_role(gtk4::AccessibleRole::Presentation);
+    let live_label = gtk4::Label::new(Some(&strings::text(strings::RADIO_LIVE)));
+    live_label.add_css_class(LIVE_LABEL_CLASS);
+    let live_station_label = gtk4::Label::new(None);
+    live_station_label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+    live_station_label.set_max_width_chars(36);
+    let live_badge = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+    live_badge.add_css_class(LIVE_BADGE_CLASS);
+    live_badge.set_halign(gtk4::Align::Center);
+    live_badge.set_valign(gtk4::Align::Center);
+    live_badge.append(&live_dot);
+    live_badge.append(&live_label);
+    live_badge.append(&live_station_label);
+
+    let progress_stack = gtk4::Stack::new();
+    progress_stack.set_hexpand(true);
+    progress_stack.set_transition_type(gtk4::StackTransitionType::None);
+    progress_stack.add_named(waveform.widget(), Some("progress"));
+    progress_stack.add_named(&live_badge, Some("live"));
+    progress_stack.set_visible_child_name("progress");
+
     let seek_row = gtk4::Box::new(gtk4::Orientation::Horizontal, ZONE_SPACING);
     seek_row.append(&position_label);
-    seek_row.append(waveform.widget());
+    seek_row.append(&progress_stack);
     seek_row.append(&duration_label);
     seek_row.set_hexpand(true);
+
+    let streaming_status_label = gtk4::Label::new(None);
+    streaming_status_label.add_css_class("dim-label");
+    streaming_status_label.add_css_class("caption");
+    streaming_status_label.set_halign(gtk4::Align::Center);
+    streaming_status_label.set_visible(false);
 
     // — Center zone (transport + seek) —
     let center_zone = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
@@ -236,6 +277,7 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     transport_shell.set_halign(gtk4::Align::Center);
     center_zone.append(&transport_shell);
     center_zone.append(&seek_row);
+    center_zone.append(&streaming_status_label);
     center_zone.set_hexpand(true);
     center_zone.set_size_request(CENTER_ZONE_MAX_WIDTH, -1);
     center_zone.set_valign(gtk4::Align::Center);
@@ -370,6 +412,14 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
         retry_external_button,
         position_label,
         duration_label,
+        streaming_status_label,
+        progress_stack,
+        #[cfg(test)]
+        live_badge,
+        live_dot,
+        #[cfg(test)]
+        live_label,
+        live_station_label,
         waveform,
         volume_icon,
         volume_scale,
@@ -383,6 +433,7 @@ pub(in crate::ui) fn css() -> String {
     use super::{motion, style::tokens::RADIUS_SURFACE, style::tokens::TRANSITION};
     let micro_ms = motion::MICRO_MS;
     let micro_easing = motion::MICRO_CSS_EASING;
+    let ambient_ms = motion::AMBIENT_MS;
     format!(
         ".{SURFACE_CSS_CLASS} {{ \
            background-color: @headerbar_bg_color; \
@@ -430,6 +481,17 @@ pub(in crate::ui) fn css() -> String {
          .player-bar-artist.artist-hovered {{ color: @window_fg_color; }}\n\
          .player-bar-time {{ font-feature-settings: \"tnum\"; }}\n\
          .waveform-seek {{ color: @reprise_player_accent; }}\n\
+         .{LIVE_BADGE_CLASS} {{ color: alpha(@window_fg_color, 0.78); }}\n\
+         .{LIVE_DOT_CLASS} {{ min-width: 8px; min-height: 8px; \
+           border-radius: 999px; background-color: @reprise_player_accent; \
+           box-shadow: 0 0 0 3px alpha(@reprise_player_accent, 0.16); }}\n\
+         .{LIVE_DOT_CLASS}.{LIVE_DOT_PULSING_CLASS} {{ \
+           animation: reprise-live-pulse {ambient_ms}ms ease-in-out infinite alternate; }}\n\
+         @keyframes reprise-live-pulse {{ \
+           from {{ opacity: 1.0; transform: scale(1.0); }} \
+           to {{ opacity: 0.58; transform: scale(0.82); }} }}\n\
+         .{LIVE_LABEL_CLASS} {{ color: @reprise_player_accent; \
+           font-weight: 700; letter-spacing: 0.08em; }}\n\
          /* Shape only. Hover, press, focus and the checked state all come from \
             the one central set in `style::buttons` (BTN-4) — no local tint. */\n\
          .{TRANSPORT_ROW_CSS_CLASS} button {{ border-radius: 50%; }}\n\

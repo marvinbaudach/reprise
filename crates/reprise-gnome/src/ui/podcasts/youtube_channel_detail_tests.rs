@@ -186,7 +186,7 @@ fn pod_10_batch_selection_is_stable_and_channel_scoped() {
 }
 
 #[test]
-fn src_12a_clear_selected_drops_every_channels_selection_and_reports_emptiness() {
+fn src_12b_clear_selected_drops_every_channels_selection_and_reports_emptiness() {
     let mut state = YoutubeChannelState::default();
     state.set_selected(7, 11, true);
     state.set_selected(8, 21, true);
@@ -223,7 +223,7 @@ fn pod_10_channel_projection_windows_children_but_preserves_full_summary() {
     assert_eq!(projected.summary.episode_count, 12);
 }
 
-/// `SRC-12a`: Ctrl+A on the channel page takes that page's rendered window and
+/// `SRC-12b`: Ctrl+A on the channel page takes that page's rendered window and
 /// nothing behind it.
 ///
 /// The rule claims this surface, and until now nothing exercised
@@ -233,7 +233,7 @@ fn pod_10_channel_projection_windows_children_but_preserves_full_summary() {
 /// built from the unwindowed group would do.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn src_12a_channel_page_select_all_stops_at_the_rendered_window() {
+fn src_12b_channel_page_select_all_stops_at_the_rendered_window() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
 

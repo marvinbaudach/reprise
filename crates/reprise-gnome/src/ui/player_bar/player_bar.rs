@@ -91,6 +91,10 @@ pub struct PlayerBar {
     pub(in crate::ui) retry_external_button: gtk4::Button,
     pub(in crate::ui) position_label: gtk4::Label,
     pub(in crate::ui) duration_label: gtk4::Label,
+    pub(in crate::ui) streaming_status_label: gtk4::Label,
+    pub(in crate::ui) progress_stack: gtk4::Stack,
+    pub(in crate::ui) live_dot: gtk4::Box,
+    pub(in crate::ui) live_station_label: gtk4::Label,
     pub(in crate::ui) waveform: WaveformSeek,
     /// Inline volume slider (replaces the old `ScaleButton`).
     volume_scale: gtk4::Scale,
@@ -98,10 +102,15 @@ pub struct PlayerBar {
     volume_icon: gtk4::Button,
     /// Current track duration (ms) from the latest `set_position`, so
     /// `connect_seek` can turn the waveform's 0..1 fraction into a target ms.
-    duration_ms: Rc<Cell<i64>>,
+    pub(super) duration_ms: Rc<Cell<i64>>,
+    /// Which external item the bar currently shows, so a snapshot about the
+    /// *same* item cannot be mistaken for a new one (see `set_external_snapshot`).
+    pub(super) external_identity: Cell<Option<super::player_bar_state::ExternalMediaIdentity>>,
+    pub(super) buffering_percent: Cell<u8>,
+    pub(super) buffered_ms: Cell<Option<i64>>,
+    pub(in crate::ui) progress_mode: Cell<super::player_bar_state::BarProgressMode>,
     pub(in crate::ui) seek_enabled: Rc<Cell<bool>>,
     pub(in crate::ui) live_started_at: RefCell<Option<Instant>>,
-    pub(in crate::ui) external_podcast: Cell<bool>,
     pub(in crate::ui) play_next_available: Cell<bool>,
     playback_state: Cell<PlaybackState>,
     swell: RefCell<Swell>,
@@ -160,6 +169,10 @@ impl PlayerBar {
             retry_external_button,
             position_label,
             duration_label,
+            streaming_status_label,
+            progress_stack,
+            live_dot,
+            live_station_label,
             waveform,
             volume_icon,
             volume_scale,
@@ -241,13 +254,20 @@ impl PlayerBar {
             retry_external_button,
             position_label,
             duration_label,
+            streaming_status_label,
+            progress_stack,
+            live_dot,
+            live_station_label,
             waveform,
             volume_scale,
             volume_icon,
             duration_ms: Rc::new(Cell::new(0)),
+            external_identity: Cell::new(None),
+            buffering_percent: Cell::new(0),
+            buffered_ms: Cell::new(None),
+            progress_mode: Cell::new(super::player_bar_state::BarProgressMode::default()),
             seek_enabled: Rc::new(Cell::new(true)),
             live_started_at: RefCell::new(None),
-            external_podcast: Cell::new(false),
             play_next_available: Cell::new(false),
             playback_state: Cell::new(PlaybackState::Stopped),
             swell: RefCell::new(Swell::default()),
@@ -299,6 +319,7 @@ impl PlayerBar {
             .update_property(&[gtk4::accessible::Property::Label(&tooltip)]);
         self.playback_state.set(state);
         self.waveform.set_paused(!is_playing);
+        self.refresh_live_badge_pulse();
         if state != PlaybackState::Playing {
             // No spectrum arrives outside playback; without this the reactive
             // layers would freeze on the last frame that did (AC-24).
@@ -312,6 +333,21 @@ impl PlayerBar {
             self.animate_play_pulse();
         }
         self.animate_play_icon_change(new_glyph);
+    }
+
+    pub(super) fn refresh_live_badge_pulse(&self) {
+        let pulsing = super::player_bar_state::live_badge_should_pulse(
+            self.progress_mode.get(),
+            self.playback_state.get(),
+            crate::ui::motion::animations_enabled(),
+        );
+        if pulsing {
+            self.live_dot
+                .add_css_class(super::player_bar_layout::LIVE_DOT_PULSING_CLASS);
+        } else {
+            self.live_dot
+                .remove_css_class(super::player_bar_layout::LIVE_DOT_PULSING_CLASS);
+        }
     }
 
     /// The live bass reading, fanned out to the cover lift and the waveform's
@@ -452,8 +488,9 @@ impl PlayerBar {
             0.0
         };
         self.waveform.set_fraction_smooth(fraction);
+        self.refresh_buffering_presentation();
         self.position_label.set_text(&format_duration(position_ms));
-        if self.external_podcast.get() {
+        if self.progress_mode.get() == super::player_bar_state::BarProgressMode::Streaming {
             self.duration_label.set_text(&format_duration(duration_ms));
         } else {
             self.duration_label

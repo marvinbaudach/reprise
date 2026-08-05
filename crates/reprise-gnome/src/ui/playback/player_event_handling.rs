@@ -126,6 +126,17 @@ impl PlayerController {
                 // position`'s doc comment.
                 self.update_mpris_position(position_ms);
             }
+            PlayerEvent::Buffering {
+                percent,
+                buffered_ms,
+            } => {
+                tracing::debug!(
+                    percent,
+                    ?buffered_ms,
+                    "player bar: applying buffering update"
+                );
+                self.bar.set_buffering(percent, buffered_ms);
+            }
             PlayerEvent::TrackFinished => {
                 // INST-4b/5b: a finished instrumental preview stops without
                 // advancing the queue (so a stale gapless pre-feed / queue

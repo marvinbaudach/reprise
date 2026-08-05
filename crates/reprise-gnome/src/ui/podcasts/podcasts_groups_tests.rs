@@ -217,7 +217,6 @@ fn compact_episode_row_has_no_play_button_and_stays_within_height_budget() {
                     unavailable_now: false,
                 },
                 selection: &Rc::new(RefCell::new(PodcastSelection::default())),
-                selected_ids: &[],
                 unavailable_episode: None,
             },
         );
@@ -345,7 +344,6 @@ fn acc_1_every_point_of_a_grouped_episode_row_reaches_the_context_menu() {
                 unavailable_now: false,
             },
             selection: &selection,
-            selected_ids: &[],
             unavailable_episode: None,
         },
     );
@@ -489,7 +487,7 @@ fn src_5_one_expander_is_rendered_per_source_group() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn src_12a_grouped_selection_survives_render_rebuild_on_the_row() {
+fn src_12b_grouped_selection_survives_render_rebuild_on_the_row() {
     gtk4::init().unwrap();
     let mut selection = PodcastSelection::default();
     selection.set_selected(1, true);
@@ -541,18 +539,23 @@ fn src_12a_grouped_selection_survives_render_rebuild_on_the_row() {
             gtk4::AccessibleState::Selected
         ));
         assert!(row.is_focusable());
-        // The media column leads the row. It used to be the thumbnail overlay
-        // itself; since `SRC-16` the overlay sits inside the shared skeleton's
-        // fixed-width media host, which is what keeps the title at the same x
-        // position in both source kinds. The claim is unchanged — artwork
-        // first — only one level deeper.
+        // The media column leads the row, and since `SRC-12b` it carries
+        // nothing but the artwork — no overlay that a selection or a playback
+        // state could put in front of the image. It sits inside the shared
+        // skeleton's fixed-width media host (`SRC-16`), which is what keeps
+        // the title at the same x position in both source kinds.
         let media = row
             .first_child()
             .expect("the row leads with its media column");
         assert!(media.is::<gtk4::Box>());
-        assert!(media
+        let slot = media
             .first_child()
-            .is_some_and(|child| child.is::<gtk4::Overlay>()));
+            .expect("the media host holds the artwork slot");
+        assert!(slot.has_css_class("reprise-source-row-media"));
+        assert!(
+            slot.first_child().is_some(),
+            "the slot leads with the artwork"
+        );
     }
 }
 
