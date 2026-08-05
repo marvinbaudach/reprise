@@ -281,8 +281,8 @@ mod tests {
             .map(|index| if index == 50 { 255 } else { 0 })
             .collect();
         let smoothed = smooth_centroid_over_seconds(&raw, 100.0, 8.0);
-        for index in 46..=54 {
-            assert_eq!(smoothed[index], 28, "index {index}");
+        for (index, value) in smoothed.iter().enumerate().take(55).skip(46) {
+            assert_eq!(*value, 28, "index {index}");
         }
         assert_eq!(smoothed[45], 0);
         assert_eq!(smoothed[55], 0);
@@ -393,7 +393,7 @@ mod tests {
         assert!(section_boundaries(&smoothed, 300.0).is_empty());
         // Too short to measure a step across, and no timescale at all.
         assert!(section_boundaries(&[1, 2, 3], 300.0).is_empty());
-        assert!(section_boundaries(&vec![0, 255, 0, 255], 0.0).is_empty());
+        assert!(section_boundaries(&[0, 255, 0, 255], 0.0).is_empty());
     }
 
     #[test]

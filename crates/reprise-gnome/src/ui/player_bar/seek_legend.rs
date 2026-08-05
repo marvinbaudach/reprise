@@ -261,7 +261,7 @@ mod tests {
         // Two stops would cut the corner of a curve that runs the long way
         // round through magenta, and the legend would show a ramp the bar
         // never draws.
-        assert!(GRADIENT_STOPS >= 8);
+        const { assert!(GRADIENT_STOPS >= 8) };
         let first = spectral_colour(0.0);
         let last = spectral_colour(1.0);
         let midpoint = spectral_colour(0.5);

@@ -8,6 +8,36 @@ if [[ ! -x "$runner" ]]; then
   echo "$runner must exist and be executable" >&2
   exit 1
 fi
+session_library="$repo_root/scripts/cua-common/session.sh"
+if [[ ! -f "$session_library" ]]; then
+  echo "$session_library must exist" >&2
+  exit 1
+fi
+for pattern in \
+  'cua_common_start_display' \
+  'cua_common_stop_display' \
+  'cua_common_start_driver' \
+  'cua_common_stop_driver' \
+  'XDG_DATA_HOME=' \
+  'XDG_CACHE_HOME=' \
+  'GDK_BACKEND=x11' \
+  'WAYLAND_DISPLAY=' \
+  'REPRISE_AUDIO_SINK=fakesink'
+do
+  if ! rg --quiet --fixed-strings "$pattern" "$session_library"; then
+    echo "$session_library must contain reusable isolation contract: $pattern" >&2
+    exit 1
+  fi
+done
+if ! rg --quiet --fixed-strings \
+  'source "$repo_root/scripts/cua-common/session.sh"' "$runner"; then
+  echo "$runner must use the shared isolated CUA session" >&2
+  exit 1
+fi
+if (( $(wc -l <"$runner") >= 800 )); then
+  echo "$runner must remain below the 800-line code-file limit" >&2
+  exit 1
+fi
 sort_scenario="$repo_root/scripts/cua-e2e/track_sort.sh"
 tag_autocomplete_scenario="$repo_root/scripts/cua-e2e/tag_autocomplete.sh"
 responsive_window_scenario="$repo_root/scripts/cua-e2e/responsive_window.sh"
@@ -144,8 +174,8 @@ for pattern in \
   'nav-7-rescan-progress' \
   'Revert Last Cleanup'
 do
-  if ! rg --quiet -- "$pattern" "$runner"; then
-    echo "$runner must contain isolation/coverage pattern: $pattern" >&2
+  if ! rg --quiet -- "$pattern" "$runner" "$session_library"; then
+    echo "CUA runner/session must contain isolation/coverage pattern: $pattern" >&2
     exit 1
   fi
 done

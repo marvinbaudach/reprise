@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "id": "pointer-layout-reachability",
+  "goal": "Probe visible controls with semantic and pointer dispatch across wide and narrow windows; find missing handlers, centre-point overlays, misrouted clicks and late layout shifts.",
+  "persona": "impatient pointer user on a small display",
+  "mode": "adversarial",
+  "agent": "optional",
+  "profile": "mixed-128",
+  "budgets": {"actions": 100, "seconds": 1200, "restarts": 3},
+  "capabilities": ["activate", "press", "hotkey", "scroll", "resize", "restart", "wait", "complete-workload", "finish"],
+  "fixture_tokens": {"SEARCH_NEEDLE": "Writable Batch 0042"},
+  "oracles": ["clean-runtime", "feedback", "waiting-state", "layout-shift", "pointer-reachability", "scroll-direction", "main-loop-stall", "accessibility"],
+  "workloads": [
+    {"kind": "scroll-sweep", "directions": ["down", "up"], "pages": 10},
+    {"kind": "restart", "reason": "repeat semantic actions with pointer dispatch from a fresh profile"}
+  ],
+  "success": [
+    {"kind": "reachability", "description": "Every visibly enabled control reacts at its visible pointer target"},
+    {"kind": "stability", "description": "No stable chrome or row shifts after the direct effect settles"}
+  ],
+  "forbidden": ["delete", "external-url", "real-library", "real-account", "foreground-desktop"]
+}

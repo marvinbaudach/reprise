@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "id": "offline-recovery",
+  "goal": "Use local music and network-backed sources before, during and after an offline transition; identify lost local capability, dead retries, missing status, duplicate errors or failed recovery.",
+  "persona": "interrupted commuter whose connection disappears and returns",
+  "mode": "adversarial",
+  "agent": "required",
+  "profile": "mixed-sources-128",
+  "budgets": {"actions": 80, "seconds": 1200, "restarts": 1},
+  "capabilities": ["activate", "type", "press", "hotkey", "scroll", "set-connectivity", "restart", "wait", "complete-workload", "finish"],
+  "fixture_tokens": {
+    "SEARCH_NEEDLE": "Writable Batch 0042",
+    "PODCAST_ONLY_NEEDLE": "Fixture Podcast Needle",
+    "RADIO_ONLY_NEEDLE": "Fixture Radio Needle",
+    "NO_MATCH": "NoSuchFixtureResult"
+  },
+  "oracles": ["clean-runtime", "feedback", "waiting-state", "layout-shift", "pointer-reachability", "main-loop-stall", "accessibility", "offline-continuity"],
+  "workloads": [
+    {"kind": "offline-transition", "phases": ["online", "offline", "online"], "interrupt": "source-refresh", "source_tokens": {"Podcasts / YouTube": "PODCAST_ONLY_NEEDLE", "Radio": "RADIO_ONLY_NEEDLE"}},
+    {"kind": "restart", "connectivity": "offline", "status_label": "No connection"}
+  ],
+  "success": [
+    {"kind": "continuity", "description": "Local Music remains usable while offline"},
+    {"kind": "recovery", "description": "Offline-only status clears after reconnect without duplicating work"}
+  ],
+  "forbidden": ["delete", "external-url", "real-library", "real-account", "foreground-desktop"]
+}

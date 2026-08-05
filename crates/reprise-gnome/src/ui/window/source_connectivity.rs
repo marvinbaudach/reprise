@@ -1,4 +1,7 @@
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
+
+#[cfg(feature = "test-fixtures")]
+use std::{cell::Cell, time::Duration};
 
 use gtk4::gio;
 use gtk4::prelude::NetworkMonitorExt;
@@ -10,6 +13,92 @@ pub(super) const fn connectivity_for(network_available: bool) -> Connectivity {
     } else {
         Connectivity::Offline
     }
+}
+
+#[cfg(feature = "test-fixtures")]
+const TEST_CONNECTIVITY_FILE_ENV: &str = "REPRISE_TEST_CONNECTIVITY_FILE";
+
+#[derive(Clone)]
+struct ConnectivityTargets {
+    concerts: Weak<crate::ui::concerts::ConcertsView>,
+    releases: Weak<crate::ui::releases::ReleasesView>,
+    podcasts: Weak<crate::ui::podcasts::PodcastsView>,
+    youtube: Weak<crate::ui::podcasts::PodcastsView>,
+    radio: Weak<crate::ui::radio::RadioView>,
+    device_sync: Weak<crate::ui::device_sync_runtime::DeviceSyncRuntime>,
+}
+
+impl ConnectivityTargets {
+    fn new(
+        concerts: &Rc<crate::ui::concerts::ConcertsView>,
+        releases: &Rc<crate::ui::releases::ReleasesView>,
+        podcasts: &Rc<crate::ui::podcasts::PodcastsView>,
+        youtube: &Rc<crate::ui::podcasts::PodcastsView>,
+        radio: &Rc<crate::ui::radio::RadioView>,
+        device_sync: &Rc<crate::ui::device_sync_runtime::DeviceSyncRuntime>,
+    ) -> Self {
+        Self {
+            concerts: Rc::downgrade(concerts),
+            releases: Rc::downgrade(releases),
+            podcasts: Rc::downgrade(podcasts),
+            youtube: Rc::downgrade(youtube),
+            radio: Rc::downgrade(radio),
+            device_sync: Rc::downgrade(device_sync),
+        }
+    }
+
+    fn project(&self, connectivity: Connectivity, metered: bool) {
+        if let Some(view) = self.concerts.upgrade() {
+            view.set_connectivity(connectivity);
+        }
+        if let Some(view) = self.releases.upgrade() {
+            view.set_connectivity(connectivity);
+        }
+        if let Some(view) = self.podcasts.upgrade() {
+            view.set_connectivity(connectivity);
+        }
+        if let Some(view) = self.youtube.upgrade() {
+            view.set_connectivity(connectivity);
+        }
+        if let Some(view) = self.radio.upgrade() {
+            view.set_connectivity(connectivity);
+        }
+        if let Some(runtime) = self.device_sync.upgrade() {
+            runtime.set_connectivity(connectivity);
+            runtime.set_metered(metered);
+        }
+    }
+}
+
+#[cfg(feature = "test-fixtures")]
+fn wire_test_connectivity(targets: ConnectivityTargets) -> bool {
+    let Ok(path) = std::env::var(TEST_CONNECTIVITY_FILE_ENV) else {
+        return false;
+    };
+    let path = std::path::Path::new(&path).to_path_buf();
+    let initial = reprise_core::connectivity::read_test_connectivity(&path);
+    if initial.is_none() {
+        tracing::warn!(
+            path = %path.display(),
+            "test connectivity control starts online until it contains online or offline"
+        );
+    }
+    let initial = initial.unwrap_or(Connectivity::Online);
+    targets.project(initial, false);
+    let last = Cell::new(initial);
+    gtk4::glib::timeout_add_local(Duration::from_millis(100), move || {
+        let next = reprise_core::connectivity::read_test_connectivity(&path);
+        let Some(next) = next else {
+            return gtk4::glib::ControlFlow::Continue;
+        };
+        if next == last.get() {
+            return gtk4::glib::ControlFlow::Continue;
+        }
+        last.set(next);
+        targets.project(next, false);
+        gtk4::glib::ControlFlow::Continue
+    });
+    true
 }
 
 /// Projects `gio::NetworkMonitor` at the window boundary and pushes the result
@@ -32,46 +121,21 @@ pub(super) fn wire(
     radio: &Rc<crate::ui::radio::RadioView>,
     device_sync: &Rc<crate::ui::device_sync_runtime::DeviceSyncRuntime>,
 ) {
+    let targets =
+        ConnectivityTargets::new(concerts, releases, podcasts, youtube, radio, device_sync);
+    #[cfg(feature = "test-fixtures")]
+    if wire_test_connectivity(targets.clone()) {
+        return;
+    }
     let monitor = gio::NetworkMonitor::default();
     let initial = connectivity_for(monitor.is_network_available());
-    concerts.set_connectivity(initial);
-    releases.set_connectivity(initial);
-    podcasts.set_connectivity(initial);
-    youtube.set_connectivity(initial);
-    radio.set_connectivity(initial);
-    device_sync.set_connectivity(initial);
-    device_sync.set_metered(monitor.is_network_metered());
-
-    let concerts = Rc::downgrade(concerts);
-    let releases = Rc::downgrade(releases);
-    let podcasts = Rc::downgrade(podcasts);
-    let youtube = Rc::downgrade(youtube);
-    let radio = Rc::downgrade(radio);
-    let device_sync = Rc::downgrade(device_sync);
+    targets.project(initial, monitor.is_network_metered());
     monitor.connect_network_changed(move |monitor, available| {
         let connectivity = connectivity_for(available);
-        if let Some(view) = concerts.upgrade() {
-            view.set_connectivity(connectivity);
-        }
-        if let Some(view) = releases.upgrade() {
-            view.set_connectivity(connectivity);
-        }
-        if let Some(view) = podcasts.upgrade() {
-            view.set_connectivity(connectivity);
-        }
-        if let Some(view) = youtube.upgrade() {
-            view.set_connectivity(connectivity);
-        }
-        if let Some(view) = radio.upgrade() {
-            view.set_connectivity(connectivity);
-        }
-        if let Some(runtime) = device_sync.upgrade() {
-            runtime.set_connectivity(connectivity);
-            // `MTP-43` reads metered separately, and it changes on the same
-            // signal — tethering after Wi-Fi drops is one network change, not
-            // two, so device sync must not be left believing the old answer.
-            runtime.set_metered(monitor.is_network_metered());
-        }
+        // `MTP-43` reads metered separately, and it changes on the same
+        // signal — tethering after Wi-Fi drops is one network change, not
+        // two, so device sync must not be left believing the old answer.
+        targets.project(connectivity, monitor.is_network_metered());
     });
 }
 
