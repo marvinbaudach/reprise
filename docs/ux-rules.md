@@ -273,15 +273,18 @@ human. Rationale for changes lives in the git history.
   is not the complete library, or no other title exists, playback ends as
   before. Explicit Play Next entries retain priority and Repeat One/All
   retain their existing queue behavior.
-- **PLAY-12** [active] [gtk] — **The player bar has no dead surfaces.** The
-  title, channel/artist line, and cover are links in every playback mode. What
-  is playing is findable: each of the three surfaces leads to the place where
-  the loaded item stands in a list. If a surface has no distinct target in a
-  mode, it leads to the nearest target that does exist, never nowhere. A
-  surface may be insensitive only when no item at all is loaded; it is then
-  visibly inactive rather than silently inert. Its label and tooltip name the
-  actual target for the current mode. The Now Playing and information panels
-  share these links and labels.
+- **PLAY-12** [active] [gtk] — **The player bar and the Now Playing panel have
+  no dead surfaces.** The title, channel/artist line, and cover are links in
+  every playback mode. What is playing is findable: each of the three surfaces
+  leads to the place where the loaded item stands in a list. If a surface has
+  no distinct target in a mode, it leads to the nearest target that does exist,
+  never nowhere. A surface may be insensitive only when no item at all is
+  loaded; it is then visibly inactive rather than silently inert, on both
+  surfaces alike — a link that stays clickable with nothing loaded swallows the
+  click. Ending playback returns them to that state instead of leaving the
+  finished session's labels standing. Its label and tooltip name the actual
+  target for the current mode; the Now Playing and information panels share
+  these links and labels.
 
 ## D. Albums & artists view
 

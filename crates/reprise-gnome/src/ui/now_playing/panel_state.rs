@@ -86,6 +86,9 @@ pub(super) fn panel_presentation(
     }
 }
 
+/// `idle` is the panel's "nothing is loaded at all": no queue track and no
+/// external session. `render_track` hangs both the idle styling and — per
+/// `PLAY-12` — the link surfaces' sensitivity on it.
 pub(super) fn panel_presentation_with_external(
     track: Option<&NowPlaying>,
     external: Option<&ExternalPlaybackSnapshot>,
