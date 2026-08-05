@@ -23,6 +23,7 @@ internal fun SettingsNavigation(
     artistCount: Long,
     folderName: String?,
     themeSelection: MobileThemeSelection,
+    playingTrackId: Long? = null,
     close: () -> Unit,
     chooseFolder: () -> Unit,
     rescan: () -> Unit,
@@ -94,6 +95,7 @@ internal fun SettingsNavigation(
             AppearanceSettingsPage(
                 themeSelection = themeSelection,
                 selectTheme = selectTheme,
+                playingTrackId = playingTrackId,
                 back = { navController.navigateUp() },
             )
         }

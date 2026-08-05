@@ -1,7 +1,6 @@
 package de.reprise.spike
 
 import androidx.activity.compose.PredictiveBackHandler
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,10 +33,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -49,8 +44,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import kotlin.math.PI
-import kotlin.math.sin
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collect
 import uniffi.reprise_android_ffi.AndroidRepeatMode
@@ -146,7 +139,9 @@ private fun StackedNowPlayingContent(
                 }
             }
             NowPlayingVisualizer(
+                trackId = track.id,
                 trackUri = track.uri,
+                playbackFraction = playback.progressFraction,
                 size = metrics.coverSizeDp,
                 shape = RoundedCornerShape(metrics.coverRadiusDp.dp),
             )
@@ -173,7 +168,7 @@ private fun StackedNowPlayingContent(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            WavySeekSlider(trackId = track.id, playback = playback, surfaceState = surfaceState)
+            SpectralSeekSlider(trackId = track.id, playback = playback, surfaceState = surfaceState)
             PlaybackActions(playback = playback, metrics = metrics, wideShort = false)
             RatingRow(track = track, surfaceState = surfaceState)
             playback.error?.let { message ->
@@ -209,7 +204,9 @@ private fun WideShortNowPlayingContent(
             contentAlignment = Alignment.Center,
         ) {
             NowPlayingVisualizer(
+                trackId = track.id,
                 trackUri = track.uri,
+                playbackFraction = playback.progressFraction,
                 size = metrics.coverSizeDp,
                 shape = RoundedCornerShape(metrics.coverRadiusDp.dp),
             )
@@ -251,7 +248,7 @@ private fun WideShortNowPlayingContent(
                 }
             }
             RatingRow(track = track, surfaceState = surfaceState, wideShort = true)
-            WavySeekSlider(trackId = track.id, playback = playback, surfaceState = surfaceState)
+            SpectralSeekSlider(trackId = track.id, playback = playback, surfaceState = surfaceState)
             playback.error?.let { message ->
                 Text(
                     text = message,
@@ -269,7 +266,7 @@ private fun WideShortNowPlayingContent(
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-private fun WavySeekSlider(
+private fun SpectralSeekSlider(
     trackId: Long,
     playback: PlaybackUiState,
     surfaceState: MobileSurfaceViewModel,
@@ -293,12 +290,9 @@ private fun WavySeekSlider(
             valueRange = 0f..sliderMaximum,
             enabled = durationMs > 0,
             track = {
-                WavySliderTrack(
-                    progress = if (durationMs > 0) {
-                        displayed.toFloat() / durationMs.toFloat()
-                    } else {
-                        0f
-                    },
+                SpectralTrackBand(
+                    trackId = trackId,
+                    modifier = Modifier.height(32.dp),
                 )
             },
         )
@@ -317,49 +311,6 @@ private fun WavySeekSlider(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-    }
-}
-
-/**
- * The wave is what has been played. Right of the head the track is still to
- * come, so it stays a flat line — a wave there would claim motion the player
- * has not made yet.
- */
-@Composable
-private fun WavySliderTrack(progress: Float) {
-    val active = MaterialTheme.colorScheme.primary
-    val inactive = MaterialTheme.colorScheme.outline
-    Canvas(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(32.dp),
-    ) {
-        val center = size.height / 2f
-        val head = size.width * progress.coerceIn(0f, 1f)
-        val thickness = 3.dp.toPx()
-        drawLine(
-            color = inactive,
-            start = Offset(head, center),
-            end = Offset(size.width, center),
-            strokeWidth = thickness,
-            cap = StrokeCap.Round,
-        )
-        if (head <= 0f) {
-            return@Canvas
-        }
-        val amplitude = 4.dp.toPx()
-        val wavelength = 24.dp.toPx()
-        val step = 2.dp.toPx()
-        fun waveAt(x: Float) = center + sin((x / wavelength) * 2.0 * PI).toFloat() * amplitude
-        val elapsed = Path()
-        elapsed.moveTo(0f, center)
-        var x = 0f
-        while (x < head) {
-            elapsed.lineTo(x, waveAt(x))
-            x += step
-        }
-        elapsed.lineTo(head, waveAt(head))
-        drawPath(elapsed, active, style = Stroke(width = thickness, cap = StrokeCap.Round))
     }
 }
 

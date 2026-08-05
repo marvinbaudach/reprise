@@ -24,15 +24,18 @@ import de.reprise.spike.LocalLibraryRatingControl
 import de.reprise.spike.MobileTheme
 import de.reprise.spike.MobileThemeSelection
 import de.reprise.spike.MobileVisualizer
+import de.reprise.spike.trackRenderDataAvailable
 
 @Composable
 internal fun AppearanceSettingsPage(
     themeSelection: MobileThemeSelection,
     selectTheme: (MobileTheme) -> Unit,
+    playingTrackId: Long?,
     back: () -> Unit,
 ) {
     val visualizer = LocalVisualizerControl.current
     val libraryRating = LocalLibraryRatingControl.current
+    val trackAnalysed = trackRenderDataAvailable(playingTrackId)
     Column(modifier = Modifier.fillMaxSize()) {
         SettingsTopAppBar(
             title = "Appearance",
@@ -57,6 +60,7 @@ internal fun AppearanceSettingsPage(
                 VisualizerChoiceRow(
                     mode = mode,
                     selected = visualizer.selected == mode,
+                    available = mode.isAvailable(trackAnalysed),
                     select = { visualizer.select(mode) },
                 )
             }
@@ -106,6 +110,7 @@ private fun LibraryRatingRow(
 private fun VisualizerChoiceRow(
     mode: MobileVisualizer,
     selected: Boolean,
+    available: Boolean,
     select: () -> Unit,
 ) {
     // The row is the target. A disabled choice stays visibly disabled: the row
@@ -116,7 +121,7 @@ private fun VisualizerChoiceRow(
             .fillMaxWidth()
             .selectable(
                 selected = selected,
-                enabled = mode.available,
+                enabled = available,
                 onClick = select,
                 role = Role.RadioButton,
             )
@@ -125,7 +130,7 @@ private fun VisualizerChoiceRow(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(mode.label)
-            if (!mode.available) {
+            if (!available) {
                 Text(
                     "Needs track analysis",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -133,7 +138,7 @@ private fun VisualizerChoiceRow(
                 )
             }
         }
-        RadioButton(selected = selected, enabled = mode.available, onClick = null)
+        RadioButton(selected = selected, enabled = available, onClick = null)
     }
 }
 
