@@ -50,6 +50,13 @@ internal data class LoadedLibraryWindows(
     val titles: LibraryWindow<LibraryTrack>,
     val albums: LibraryWindow<LibraryAlbum>,
     val artists: LibraryWindow<LibraryArtist>,
+    /**
+     * The album the listener is standing in, if any, and the tracks of it they
+     * have paged in. It is kept here rather than reopened, because reopening it
+     * means asking the library for the album inside a composition — the read
+     * that takes the lock a scan holds for its whole walk.
+     */
+    val openAlbum: AlbumTrackList?,
 )
 
 /**
@@ -78,8 +85,9 @@ internal fun LibraryScreenState.Browse.catalogShape() = LibraryCatalogShape(
  * State whose lifetime is the screen rather than one composition.
  *
  * Configuration changes replace the activity and every composition below it,
- * so the selected browser place, an open refinement, list anchors, the catalog
- * windows those anchors point into, overlays, and an in-flight scrub live here.
+ * so the selected browser place — including an album that is standing open —
+ * an open refinement, list anchors, the catalog windows those anchors point
+ * into, overlays, and an in-flight scrub live here.
  * Transient errors, menus, and drawing state remain with the composition. The
  * playing track is deliberately absent: the playback session owns it and the
  * activity asks.

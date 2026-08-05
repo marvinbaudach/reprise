@@ -78,6 +78,7 @@ class MobileSurfaceStateTest {
             titles = LibraryWindow(total = 450, rows = emptyList(), hasMore = true),
             albums = LibraryWindow.empty(),
             artists = LibraryWindow.empty(),
+            openAlbum = null,
         )
         val shape = LibraryCatalogShape(titles = 450, albums = 0, artists = 0)
 

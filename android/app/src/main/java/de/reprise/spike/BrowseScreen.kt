@@ -89,7 +89,7 @@ internal fun BrowseScreen(
     var visibleTitles by remember(state) { mutableStateOf(restored?.titles ?: state.titles) }
     var visibleAlbums by remember(state) { mutableStateOf(restored?.albums ?: state.albums) }
     var visibleArtists by remember(state) { mutableStateOf(restored?.artists ?: state.artists) }
-    var selectedAlbum by remember(state) { mutableStateOf<AlbumTrackList?>(null) }
+    var selectedAlbum by remember(state) { mutableStateOf(restored?.openAlbum) }
     var browseError by remember(state) { mutableStateOf(state.message) }
     var titlesRequestedOffset by remember(state, searchText) { mutableStateOf<Long?>(null) }
     var albumsRequestedOffset by remember(state) { mutableStateOf<Long?>(null) }
@@ -160,7 +160,12 @@ internal fun BrowseScreen(
     // below: a state value read only from an inner lambda invalidates only that
     // lambda, and an effect in this scope would then keep handing back the
     // window it saw first — 200 rows, however many the listener had paged in.
-    val loaded = LoadedLibraryWindows(visibleTitles, visibleAlbums, visibleArtists)
+    val loaded = LoadedLibraryWindows(
+        titles = visibleTitles,
+        albums = visibleAlbums,
+        artists = visibleArtists,
+        openAlbum = selectedAlbum,
+    )
     SideEffect { surfaceState.keepLoadedWindows(shape, loaded) }
 
     // The query is durable, and so is the window it produced — for as long as

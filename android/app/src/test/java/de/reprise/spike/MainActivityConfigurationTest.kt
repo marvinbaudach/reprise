@@ -152,6 +152,49 @@ class MainActivityConfigurationTest {
         compose.onNodeWithText("Artist 211").assertDoesNotExist()
     }
 
+    /**
+     * An open album is a place, and it is the one a turn used to cost most: not
+     * a different row but the whole surface, back out to the album list.
+     */
+    @Test
+    fun anOpenAlbumAndTheDepthPagedIntoItBothSurviveTheTurn() {
+        compose.onNodeWithText("Albums").performClick()
+        compose.onNodeWithText(DEEP_ALBUM).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("library-album-tracks-list").performScrollToIndex(200)
+        compose.waitForIdle()
+        compose.onNodeWithTag("library-album-tracks-list").performScrollToIndex(210)
+        compose.waitForIdle()
+        compose.onNodeWithText("Album Song 211").assertIsDisplayed()
+
+        recreateAt("w916dp-h412dp-land")
+
+        // Still inside the album, and still where it was left.
+        compose.onNodeWithContentDescription("Back to albums").assertIsDisplayed()
+        compose.onNodeWithText("Album Song 211").assertIsDisplayed()
+        compose.onNodeWithText("Album Song 1").assertDoesNotExist()
+    }
+
+    /**
+     * And the same limit as everywhere else: rows kept across the turn can go
+     * out of date, so a scan that changed the catalog closes the album rather
+     * than showing tracks that may no longer be in it.
+     */
+    @Test
+    fun anAlbumWhoseCatalogChangedUnderTheScreenIsLetGoRatherThanShownStale() {
+        compose.onNodeWithText("Albums").performClick()
+        compose.onNodeWithText(DEEP_ALBUM).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Album Song 1").assertIsDisplayed()
+
+        application.catalogSize = CATALOG_SIZE + 1
+        recreateAt("w916dp-h412dp-land")
+
+        compose.onNodeWithContentDescription("Back to albums").assertDoesNotExist()
+        compose.onNodeWithText("Album Song 1").assertDoesNotExist()
+        compose.onNodeWithText(DEEP_ALBUM).assertIsDisplayed()
+    }
+
     @Test
     fun inFlightScrubSurvivesTheTurnWithoutCommittingASeek() {
         assertEquals(1, shadowOf(application).boundServiceConnections.size)
@@ -274,6 +317,26 @@ internal class ConfigurationTestApplication : Application(), MainActivitySurface
             )
         }
 
+    /** One album, deep enough that standing in it means having paged into it. */
+    private val albums: List<LibraryAlbum>
+        get() = listOf(
+            LibraryAlbum(
+                title = DEEP_ALBUM,
+                artist = "Artist 1",
+                representativeUri = "content://provider/album/deep.flac",
+                trackCount = catalogSize.toLong(),
+                year = 1999,
+                totalDurationMs = catalogSize * 120_000L,
+            ),
+        )
+    private val albumTracks: List<LibraryTrack>
+        get() = (1..catalogSize).map { index ->
+            configurationTrack(
+                id = ALBUM_TRACK_ID_BASE + index,
+                title = "Album Song $index",
+            )
+        }
+
     override fun onCreate() {
         super.onCreate()
         serviceController = Robolectric.buildService(ConfigurationTestPlaybackService::class.java)
@@ -292,7 +355,7 @@ internal class ConfigurationTestApplication : Application(), MainActivitySurface
     override fun mainActivitySurface(): MainActivitySurfaceDependencies {
         val browse = LibraryScreenState.Browse(
             titles = tracks.window(firstLibraryWindow()),
-            albums = LibraryWindow.empty(),
+            albums = albums.window(firstLibraryWindow()),
             artists = artists.window(firstLibraryWindow()),
         )
         return MainActivitySurfaceDependencies(
@@ -310,11 +373,13 @@ internal class ConfigurationTestApplication : Application(), MainActivitySurface
                 tracks.filter { track -> track.title.contains(query, ignoreCase = true) }
                     .window(range)
             },
-            listAlbums = { browse.albums },
+            listAlbums = { range -> albums.window(range) },
             listArtists = { range -> artists.window(range) },
-            openAlbum = { error("Album navigation is outside this test") },
-            listAlbumTracks = { _, _ -> LibraryWindow.empty() },
-            loadTrack = { id, deliver -> deliver(tracks.firstOrNull { it.id == id }) },
+            openAlbum = { album -> AlbumTrackList(album, albumTracks.window(firstLibraryWindow())) },
+            listAlbumTracks = { _, range -> albumTracks.window(range) },
+            loadTrack = { id, deliver ->
+                deliver((tracks + albumTracks).firstOrNull { it.id == id })
+            },
             loadPlaybackSettings = { PlaybackSettingsUiState(false, true, emptyList()) },
             setEqualizerEnabled = { enabled ->
                 PlaybackSettingsUiState(enabled, true, emptyList())
@@ -359,6 +424,10 @@ class ConfigurationTestPlaybackControls : PlaybackControls {
 
 /** Enough rows that the screen has to ask for a second window to reach the end. */
 private const val CATALOG_SIZE = 450
+private const val DEEP_ALBUM = "Deep Album"
+
+/** Album tracks are their own rows, so they get their own ids and titles. */
+private const val ALBUM_TRACK_ID_BASE = 1_000_000L
 
 /** The library's own paging contract: honour the offset, the limit, and the end. */
 private fun <T> List<T>.window(range: LibraryWindowRange): LibraryWindow<T> {
