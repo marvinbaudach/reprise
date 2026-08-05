@@ -38,6 +38,9 @@ pub(super) fn defer(
     generation: u64,
     attempts: u8,
 ) {
+    // Claimed synchronously, before yielding: a reload in this same main-loop
+    // turn has to see that the viewport is already spoken for.
+    shared.track_reveal_pending.set(true);
     let shared = Rc::downgrade(shared);
     gtk4::glib::idle_add_local_once(move || {
         if let Some(shared) = shared.upgrade() {
@@ -120,6 +123,10 @@ fn reveal(
     });
 }
 
+/// Every attempt ends here, which makes it the one place that can honestly
+/// close the claim `defer` opened: it outlives this attempt only when another
+/// one is queued behind it. Past that, a reveal that reached its target is
+/// represented by the glide it started (`ScrollGlide::destination`).
 fn record_reveal(
     shared: &Shared,
     track_id: i64,
@@ -127,6 +134,7 @@ fn record_reveal(
     change: CurrentTrackChange,
     outcome: &str,
 ) {
+    shared.track_reveal_pending.set(outcome == "retry");
     shared
         .diagnostic_trail
         .record(super::diagnostic_trail::Event::Reveal {
