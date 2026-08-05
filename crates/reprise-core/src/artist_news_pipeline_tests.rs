@@ -23,10 +23,6 @@ fn migrated_conn() -> crate::db::Db {
     crate::db::Db::open_in_memory().unwrap()
 }
 
-fn no_accent(_db: &crate::db::Db, _artist: &str) -> Option<String> {
-    None
-}
-
 #[test]
 fn nr_1a_tag_mbid_skips_search_and_persists_releases() {
     let conn = migrated_conn();
@@ -50,7 +46,6 @@ fn nr_1a_tag_mbid_skips_search_and_persists_releases() {
         FetchScope::TopArtists,
         true,
         &mut fetch,
-        &mut no_accent,
     )
     .unwrap();
 
@@ -118,10 +113,10 @@ fn nr_16_refresh_excludes_featured_artist_credits_but_keeps_co_headliners() {
         .execute(
             "INSERT INTO new_releases (
                release_group_mbid, artist_name, artist_mbid, title, release_type,
-               first_release_date, fetched_at, fallback_accent, first_seen
+               first_release_date, fetched_at, first_seen
              ) VALUES (
                'guest', 'The Devil Wears Prada', ?1, 'Make Me Believe', 'EP',
-               '2027-01-12', 1, '#3584E4', 1
+               '2027-01-12', 1, 1
              )",
             [ARTIST_ID],
         )
@@ -153,7 +148,6 @@ fn nr_16_refresh_excludes_featured_artist_credits_but_keeps_co_headliners() {
         FetchScope::TopArtists,
         true,
         &mut fetch,
-        &mut no_accent,
     )
     .unwrap();
 
@@ -218,7 +212,6 @@ fn dg_3_refresh_pages_the_discography_and_enriches_local_matches() {
         FetchScope::TopArtists,
         true,
         &mut fetch,
-        &mut no_accent,
     )
     .unwrap();
 
@@ -273,7 +266,6 @@ fn nr_1a_name_resolution_persists_positive_and_negative_results() {
         FetchScope::TopArtists,
         true,
         &mut fetch,
-        &mut no_accent,
     )
     .unwrap();
 
@@ -299,44 +291,6 @@ fn nr_1a_name_resolution_persists_positive_and_negative_results() {
 }
 
 #[test]
-fn refresh_normalizes_and_stores_the_supplied_fallback_accent() {
-    let conn = migrated_conn();
-    conn.conn()
-        .execute(
-            "INSERT INTO tracks (path, title, artist, artist_mbid, play_count, added_at) \
-         VALUES ('/music/accent.flac', 'Track', 'Pink Floyd', ?1, 10, 0)",
-            [ARTIST_ID],
-        )
-        .unwrap();
-    let mut fetch = |_url: &str| Ok(RELEASES.to_string());
-    let mut accent = |_db: &crate::db::Db, artist: &str| {
-        assert_eq!(artist, "Pink Floyd");
-        Some("#123456".to_string())
-    };
-
-    refresh_with(
-        &conn,
-        date(),
-        1_000_000,
-        FetchScope::TopArtists,
-        true,
-        &mut fetch,
-        &mut accent,
-    )
-    .unwrap();
-
-    let stored: String = conn
-        .conn()
-        .query_row(
-            "SELECT fallback_accent FROM new_releases LIMIT 1",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(stored, "#123456");
-}
-
-#[test]
 fn nr_3a_seen_item_not_rebadged() {
     let conn = migrated_conn();
     conn.conn()
@@ -357,7 +311,6 @@ fn nr_3a_seen_item_not_rebadged() {
         FetchScope::TopArtists,
         true,
         &mut first_fetch,
-        &mut no_accent,
     )
     .unwrap();
     mark_releases_seen(&conn, &["known".into()], 20).unwrap();
@@ -374,7 +327,6 @@ fn nr_3a_seen_item_not_rebadged() {
         FetchScope::TopArtists,
         true,
         &mut second_fetch,
-        &mut no_accent,
     )
     .unwrap();
 
@@ -409,7 +361,6 @@ fn first_seen_is_set_on_insert_and_preserved_across_upsert() {
         FetchScope::TopArtists,
         true,
         &mut fetch,
-        &mut no_accent,
     )
     .unwrap();
 
@@ -431,7 +382,6 @@ fn first_seen_is_set_on_insert_and_preserved_across_upsert() {
         FetchScope::TopArtists,
         true,
         &mut fetch,
-        &mut no_accent,
     )
     .unwrap();
 
@@ -481,7 +431,6 @@ fn ledger_marks_artist_without_news_fresh_and_second_run_skips_it() {
         FetchScope::TopArtists,
         false,
         &mut fetch,
-        &mut no_accent,
     )
     .unwrap();
     assert_eq!(first.artists_fetched, 1);
@@ -495,7 +444,6 @@ fn ledger_marks_artist_without_news_fresh_and_second_run_skips_it() {
         FetchScope::TopArtists,
         false,
         &mut fetch,
-        &mut no_accent,
     )
     .unwrap();
     assert_eq!(
@@ -532,7 +480,6 @@ fn ledger_records_unmatched_outcome_and_negative_match_excludes_future_search() 
         FetchScope::TopArtists,
         false,
         &mut fetch,
-        &mut no_accent,
     )
     .unwrap();
     assert_eq!(first.unmatched, 1);
@@ -570,7 +517,6 @@ fn ledger_records_unmatched_outcome_and_negative_match_excludes_future_search() 
         FetchScope::TopArtists,
         false,
         &mut fetch,
-        &mut no_accent,
     )
     .unwrap();
     assert_eq!(
@@ -605,7 +551,6 @@ fn ledger_records_failed_outcome_for_a_failed_artist_search() {
         FetchScope::TopArtists,
         false,
         &mut fetch,
-        &mut no_accent,
     )
     .unwrap();
     assert_eq!(first.failed, 1);
@@ -654,7 +599,6 @@ fn ledger_records_failed_fetch_and_ttl_prevents_a_retry_within_the_window() {
         FetchScope::TopArtists,
         false,
         &mut fetch,
-        &mut no_accent,
     )
     .unwrap();
     assert_eq!(first.failed, 1);
@@ -687,7 +631,6 @@ fn ledger_records_failed_fetch_and_ttl_prevents_a_retry_within_the_window() {
         FetchScope::TopArtists,
         false,
         &mut fetch,
-        &mut no_accent,
     )
     .unwrap();
     assert_eq!(
@@ -720,7 +663,6 @@ fn net_3d_new_releases_classification_never_forwards_the_raw_payload() {
         FetchScope::TopArtists,
         true,
         &mut fetch,
-        &mut no_accent,
     )
     .unwrap();
 

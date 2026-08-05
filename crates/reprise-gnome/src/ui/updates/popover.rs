@@ -762,7 +762,7 @@ fn fetch_from_database(
     let today = chrono::Local::now().date_naive();
     let scope = reprise_core::artist_news::configured_fetch_scope(&conn)
         .map_err(|error| reprise_core::artist_news::NewsError::Database(error.to_string()))?;
-    reprise_core::artist_news::refresh(&conn, today, scope, true, |_, _| None)
+    reprise_core::artist_news::refresh(&conn, today, scope, true)
 }
 
 #[cfg(test)]

@@ -494,7 +494,7 @@ fn fetch_from_database(
     let today = Local::now().date_naive();
     let scope = artist_news::configured_fetch_scope(&conn)
         .map_err(|error| artist_news::NewsError::Database(error.to_string()))?;
-    artist_news::refresh_with_progress(&conn, today, scope, true, |_, _| None, on_progress)
+    artist_news::refresh_with_progress(&conn, today, scope, true, on_progress)
 }
 
 fn finish_fetch(shared: &Rc<Shared>, failure: Option<SourceError>) {

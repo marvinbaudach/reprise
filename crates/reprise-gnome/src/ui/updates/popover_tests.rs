@@ -187,9 +187,9 @@ fn nr_7_header_button_stays_hidden_with_cached_releases_while_disabled() {
         .execute(
             "INSERT INTO new_releases (
            release_group_mbid, artist_name, artist_mbid, title, release_type,
-           first_release_date, fetched_at, fallback_accent
+           first_release_date, fetched_at
          ) VALUES ('release', 'Artist', 'artist', 'Release', 'Album',
-                   '2026-08-01', 1, '#123456')",
+                   '2026-08-01', 1)",
             [],
         )
         .unwrap();
@@ -214,9 +214,9 @@ fn nr_3a_header_button_is_visible_only_when_releases_exist_after_first_fetch() {
         .execute(
             "INSERT INTO new_releases (
                release_group_mbid, artist_name, artist_mbid, title, release_type,
-               first_release_date, fetched_at, fallback_accent
+               first_release_date, fetched_at
              ) VALUES ('release', 'Artist', 'artist', 'Release', 'Album',
-                       '2026-08-01', 1, '#123456')",
+                       '2026-08-01', 1)",
             [],
         )
         .unwrap();
@@ -284,9 +284,9 @@ fn nr_9b_opening_keeps_the_pre_stamp_count_and_clears_the_badge() {
             .execute(
                 "INSERT INTO new_releases (
                release_group_mbid, artist_name, artist_mbid, title, release_type,
-               first_release_date, fetched_at, fallback_accent
+               first_release_date, fetched_at
              ) VALUES (?1, 'Artist', 'artist', 'Release', 'Album',
-                       '2026-08-01', ?2, '#123456')",
+                       '2026-08-01', ?2)",
                 rusqlite::params![mbid, now],
             )
             .unwrap();
@@ -332,9 +332,9 @@ fn nr_23_a_held_over_batch_renders_without_claiming_to_be_new() {
         .execute(
             "INSERT INTO new_releases (
                release_group_mbid, artist_name, artist_mbid, title, release_type,
-               first_release_date, fetched_at, seen_at, fallback_accent
+               first_release_date, fetched_at, seen_at
              ) VALUES ('already-read', 'Artist', 'artist', 'Release', 'Album',
-                       '2026-08-01', ?1, ?1, '#123456')",
+                       '2026-08-01', ?1, ?1)",
             rusqlite::params![now],
         )
         .unwrap();

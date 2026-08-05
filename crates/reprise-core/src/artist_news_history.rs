@@ -330,8 +330,8 @@ mod tests {
             .execute(
                 "INSERT INTO new_releases (
                release_group_mbid, artist_name, artist_mbid, title, release_type,
-               first_release_date, fetched_at, fallback_accent, first_seen
-             ) VALUES (?1, 'Artist', 'artist-mbid', 'Title', ?2, ?3, ?4, '#123456', ?4)",
+               first_release_date, fetched_at, first_seen
+             ) VALUES (?1, 'Artist', 'artist-mbid', 'Title', ?2, ?3, ?4, ?4)",
                 rusqlite::params![mbid, release_type, first_release_date, first_seen],
             )
             .unwrap();

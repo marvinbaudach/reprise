@@ -183,7 +183,6 @@ fn spawn(database_path: Option<PathBuf>) -> async_channel::Sender<ArtistNewsRequ
                                     today,
                                     scope,
                                     request.force,
-                                    |_, _| None,
                                 )
                             })
                             .and_then(|_| {
