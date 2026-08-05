@@ -23,7 +23,6 @@ pub const SOUND_FIND_SIMILAR: &str = N_!("Find similar tracks");
 pub const SOUND_ANALYSING: &str = N_!("Analysing your library — {ready} of {total}");
 pub const SOUND_ANALYSIS_FAILED: &str = N_!("Sound analysis is unavailable");
 pub const SOUND_FILE_UP_TO: &str = N_!("up to {frequency}");
-#[allow(dead_code)] // displayed by the module preference in package P6
 pub const SOUND_TEMPO_WARNING: &str =
     N_!("Estimated from onsets; halftime and time changes can put it out by a factor of two.");
 

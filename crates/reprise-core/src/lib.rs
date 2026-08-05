@@ -88,7 +88,9 @@ pub mod sound_features;
 pub mod sound_file_info;
 pub mod sound_neighbours;
 pub mod sound_preferences;
+pub mod sound_profile;
 pub mod sound_rhythm;
+pub mod sound_snapshot;
 pub mod sound_stats;
 pub mod source_error;
 pub mod spectrogram;
@@ -126,6 +128,10 @@ mod sound_features_tests;
 #[cfg(test)]
 mod sound_neighbours_tests;
 #[cfg(test)]
+mod sound_profile_tests;
+#[cfg(test)]
 mod sound_rhythm_tests;
+#[cfg(test)]
+mod sound_snapshot_tests;
 #[cfg(test)]
 mod sound_stats_tests;

@@ -70,6 +70,21 @@ adding a `[planned]` draft with the next free ID in the affected section,
 marked with `<!-- REVIEW: rule proposal -->` — the decision rests with the
 human. Rationale for changes lives in the git history.
 
+**Every feature reaches every frontend.** A feature is not finished when
+its window works. If a caller without a window could sensibly use it, it
+is also exposed over MCP in the same change — not later, not "if someone
+asks". The window is one frontend among several; `reprise-core` holds the
+feature and each frontend only presents it, so a feature that only the
+GTK app can reach is a sign that logic leaked into the window. Sensibly
+means: it reads or changes something a caller can name and act on
+(library data, playback, playlists, queue, derived analysis). It does not
+mean pure presentation — an animation, a hover state or a panel's layout
+has nothing to expose. When a feature deliberately stops at the window,
+its plan says so and why; silence is not an exemption. The MCP surface
+degrades honestly: a feature whose data has not been computed yet reports
+what is missing instead of returning an empty answer that reads like a
+result.
+
 ## A. Core principles
 
 - **P-1** [planned] [manual] — Every feedback role has exactly one
@@ -4510,7 +4525,7 @@ keeps all ranking work off the GTK thread.
   album (album title plus album artist) and same artist exclusions are applied
   only after those ranks are formed, so changing a filter never changes the
   meaning of a percentage.
-- **SIM-4** [active] [gtk] — The Sound tab remains present while analysis is
+- **SIM-4** [active] [core] [gtk] — The Sound tab remains present while analysis is
   incomplete and shows numeric progress. Results require at least 50 current
   profiles and the playing track's profile. Profile markers are library-wide
   feature percentiles; the tempo axis is disabled while tempo is excluded.

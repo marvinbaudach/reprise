@@ -1,28 +1,6 @@
 use gtk4::prelude::*;
 
-use reprise_core::sound_features::SoundFeatures;
-use reprise_core::sound_stats::SoundStats;
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct ProfilePositions {
-    pub(super) timbre: f32,
-    pub(super) dynamics: f32,
-    pub(super) tempo: Option<f32>,
-}
-
-pub(super) fn positions(
-    features: &SoundFeatures,
-    stats: &SoundStats,
-    include_tempo: bool,
-) -> ProfilePositions {
-    ProfilePositions {
-        timbre: stats.centroid_mean.percentile(features.centroid_mean),
-        dynamics: stats.frame_crest_db.percentile(features.frame_crest_db),
-        tempo: include_tempo
-            .then(|| features.tempo.map(|tempo| stats.tempo.percentile(tempo)))
-            .flatten(),
-    }
-}
+use reprise_core::sound_profile::ProfilePositions;
 
 pub(super) struct Profile {
     root: gtk4::Box,
