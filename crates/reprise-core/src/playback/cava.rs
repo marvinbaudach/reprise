@@ -9,12 +9,10 @@
 mod bands;
 mod smoothing;
 
-use std::sync::Arc;
-
-use realfft::{num_complex::Complex32, RealFftPlanner, RealToComplex};
 use thiserror::Error;
 
-use bands::{fft_size_for_rate, BandPlan};
+use crate::playback::spectral::{BandPlan, FftWorkspace};
+use bands::{band_plan, equalizer_curve, fft_size_for_rate};
 use smoothing::Smoother;
 
 /// Maximum supported display resolution.
@@ -24,7 +22,12 @@ const DEFAULT_HIGH_CUTOFF_HZ: u32 = 10_000;
 const DEFAULT_NOISE_REDUCTION: f32 = 0.77;
 const DEFAULT_NOISE_FLOOR: f32 = 0.04;
 const DEFAULT_AUTOSENSITIVITY: u32 = 1;
+/// PCM below this magnitude is silence for the renderer's gain search. CAVA
+/// ages its autosensitivity on individual samples, not on a windowed level.
 const PCM_SILENCE_EPSILON: f32 = 1.0e-6;
+/// `cavacore` works in 16-bit fixed point; the compensation curve is scaled to
+/// that domain, so the magnitude sum is lifted into it before smoothing.
+const CAVA_FIXED_POINT_SCALE: f32 = 65_535.0;
 
 /// Configuration for [`CavaBarProcessor`].
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -73,6 +76,7 @@ pub enum CavaError {
 pub struct CavaBarProcessor {
     config: CavaConfig,
     band_plan: BandPlan,
+    equalizer: Vec<f32>,
     input_buffer: Vec<f32>,
     main_fft: FftWorkspace,
     bass_fft: FftWorkspace,
@@ -102,11 +106,13 @@ impl CavaBarProcessor {
         if !config.noise_floor.is_finite() || !(0.0..=1.0).contains(&config.noise_floor) {
             return Err(CavaError::InvalidNoiseFloor);
         }
-        let band_plan = BandPlan::new(config)?;
+        let band_plan = band_plan(config)?;
+        let equalizer = equalizer_curve(config, &band_plan);
         let fft_size = fft_size_for_rate(config.sample_rate_hz);
         Ok(Self {
             config,
             band_plan,
+            equalizer,
             input_buffer: vec![0.0; fft_size * 2],
             main_fft: FftWorkspace::new(fft_size),
             bass_fft: FftWorkspace::new(fft_size * 2),
@@ -139,18 +145,14 @@ impl CavaBarProcessor {
             .band_plan
             .bands()
             .iter()
-            .map(|band| {
-                let spectrum = if band.use_bass_fft {
-                    self.bass_fft.spectrum()
+            .zip(self.equalizer.iter())
+            .map(|(band, equalizer)| {
+                let workspace = if band.use_bass_fft {
+                    &self.bass_fft
                 } else {
-                    self.main_fft.spectrum()
+                    &self.main_fft
                 };
-                spectrum[band.lower_bin..=band.upper_bin]
-                    .iter()
-                    .map(|value| value.norm())
-                    .sum::<f32>()
-                    * band.equalizer
-                    * 65_535.0
+                workspace.band_magnitude_sum(band.bins()) * equalizer * CAVA_FIXED_POINT_SCALE
             })
             .collect();
         let new_samples = mono_samples.len().min(self.input_buffer.len());
@@ -188,57 +190,5 @@ impl CavaBarProcessor {
             *target = sample;
         }
         signal_present
-    }
-}
-
-struct FftWorkspace {
-    plan: Arc<dyn RealToComplex<f32>>,
-    input: Vec<f32>,
-    spectrum: Vec<Complex32>,
-    scratch: Vec<Complex32>,
-    hann: Vec<f32>,
-}
-
-impl FftWorkspace {
-    fn new(len: usize) -> Self {
-        let mut planner = RealFftPlanner::<f32>::new();
-        let plan = planner.plan_fft_forward(len);
-        let input = plan.make_input_vec();
-        let spectrum = plan.make_output_vec();
-        let scratch = plan.make_scratch_vec();
-        let hann = (0..len)
-            .map(|index| {
-                0.5 * (1.0 - (std::f32::consts::TAU * index as f32 / (len - 1) as f32).cos())
-            })
-            .collect();
-        Self {
-            plan,
-            input,
-            spectrum,
-            scratch,
-            hann,
-        }
-    }
-
-    fn len(&self) -> usize {
-        self.input.len()
-    }
-
-    fn process(&mut self, samples: &[f32]) {
-        for ((target, sample), multiplier) in self
-            .input
-            .iter_mut()
-            .zip(samples.iter())
-            .zip(self.hann.iter())
-        {
-            *target = sample * multiplier;
-        }
-        self.plan
-            .process_with_scratch(&mut self.input, &mut self.spectrum, &mut self.scratch)
-            .expect("real FFT buffers are allocated by their plan");
-    }
-
-    fn spectrum(&self) -> &[Complex32] {
-        &self.spectrum
     }
 }

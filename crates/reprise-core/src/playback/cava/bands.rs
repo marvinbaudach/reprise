@@ -1,143 +1,57 @@
+use crate::playback::spectral::{BandPlan, BandPlanError};
+
 use super::{CavaConfig, CavaError};
 
 const BASE_FFT_SIZE: usize = 512;
 const BASS_SPLIT_HZ: f32 = 100.0;
 
-pub(super) struct BandPlan {
-    cutoff_frequencies_hz: Vec<f32>,
-    bands: Vec<Band>,
+pub(super) fn band_plan(config: CavaConfig) -> Result<BandPlan, CavaError> {
+    let fft_size = fft_size_for_rate(config.sample_rate_hz);
+    BandPlan::new(
+        config.sample_rate_hz,
+        config.bar_count,
+        config.low_cutoff_hz,
+        config.high_cutoff_hz,
+        fft_size,
+        fft_size * 2,
+        BASS_SPLIT_HZ,
+    )
+    .map_err(|error| match error {
+        BandPlanError::TooManyBands => CavaError::InvalidBarCount,
+        BandPlanError::InvalidConfiguration => CavaError::InvalidCutoffRange,
+    })
 }
 
-pub(super) struct Band {
-    pub(super) lower_bin: usize,
-    pub(super) upper_bin: usize,
-    pub(super) use_bass_fft: bool,
-    pub(super) equalizer: f32,
-}
-
-impl BandPlan {
-    pub(super) fn new(config: CavaConfig) -> Result<Self, CavaError> {
-        let fft_size = fft_size_for_rate(config.sample_rate_hz);
-        if config.bar_count > fft_size / 2 + 1 {
-            return Err(CavaError::InvalidBarCount);
-        }
-        let bass_fft_size = fft_size * 2;
-        let boundary_count = config.bar_count + 1;
-        let mut cutoffs = vec![0.0_f32; boundary_count];
-        let mut relative_cutoffs = vec![0.0_f32; boundary_count];
-        let mut lower_bins = vec![0usize; boundary_count];
-        let mut upper_bins = vec![0usize; boundary_count];
-        let frequency_constant = frequency_constant(config);
-        let min_bandwidth_hz = (config.sample_rate_hz / bass_fft_size as u32) as f32;
-        let relative_nyquist_hz = (config.sample_rate_hz / 2) as f32;
-        let exact_nyquist_hz = config.sample_rate_hz as f32 / 2.0;
-        let mut bass_boundary_count = 0usize;
-        let mut first_bar = true;
-
-        for boundary in 0..boundary_count {
-            let distribution = -frequency_constant
-                + f64::from((boundary as f32 + 1.0) / (boundary_count as f32)) * frequency_constant;
-            cutoffs[boundary] =
-                (f64::from(config.high_cutoff_hz) * 10.0_f64.powf(distribution)) as f32;
-            if boundary > 0 && cutoffs[boundary - 1] >= cutoffs[boundary] {
-                cutoffs[boundary] = cutoffs[boundary - 1] + min_bandwidth_hz;
-            }
-
-            relative_cutoffs[boundary] = cutoffs[boundary] / relative_nyquist_hz;
-            if cutoffs[boundary] < BASS_SPLIT_HZ {
-                lower_bins[boundary] =
-                    (relative_cutoffs[boundary] * (bass_fft_size / 2) as f32) as usize;
-                bass_boundary_count += 1;
-                if bass_boundary_count > 1 {
-                    first_bar = false;
-                }
-                lower_bins[boundary] = lower_bins[boundary].min(bass_fft_size / 2);
-            } else {
-                lower_bins[boundary] =
-                    (relative_cutoffs[boundary] * (fft_size / 2) as f32).ceil() as usize;
-                if boundary == bass_boundary_count {
-                    first_bar = true;
-                    if boundary > 0 {
-                        upper_bins[boundary - 1] = (relative_cutoffs[boundary]
-                            * (bass_fft_size / 2) as f32
-                            - 1.0) as usize;
-                    }
-                } else {
-                    first_bar = false;
-                }
-                lower_bins[boundary] = lower_bins[boundary].min(fft_size / 2);
-            }
-
-            if boundary > 0 {
-                if first_bar {
-                    if upper_bins[boundary - 1] < lower_bins[boundary - 1] {
-                        upper_bins[boundary - 1] = lower_bins[boundary - 1] + 1;
-                    }
-                } else {
-                    upper_bins[boundary - 1] = lower_bins[boundary].saturating_sub(1);
-                    if lower_bins[boundary] <= lower_bins[boundary - 1] {
-                        let half_size = if boundary < bass_boundary_count {
-                            bass_fft_size / 2
-                        } else {
-                            fft_size / 2
-                        };
-                        if lower_bins[boundary - 1] + 1 < half_size + 1 {
-                            lower_bins[boundary] = lower_bins[boundary - 1] + 1;
-                            upper_bins[boundary - 1] = lower_bins[boundary] - 1;
-                        }
-                    }
-                }
-            }
-
-            let source_fft_size = if boundary < bass_boundary_count {
+/// CAVA's per-band frequency compensation, one factor per bar.
+///
+/// Absolute spectral energy falls off towards the treble and a wide band sums
+/// more bins than a narrow one, so an uncompensated bar chart is bass-heavy and
+/// its shape depends on the FFT grid. `cavacore` corrects both with this curve.
+/// It is a property of *drawing* a spectrum, not of measuring one, which is why
+/// it lives beside the renderer instead of in the shared band plan: the stored
+/// spectrogram deliberately keeps raw absolute levels.
+///
+/// A single global sensitivity scalar cannot stand in for this — it moves every
+/// bar by the same amount and therefore cannot restore a shape.
+pub(super) fn equalizer_curve(config: CavaConfig, plan: &BandPlan) -> Vec<f32> {
+    let fft_size = fft_size_for_rate(config.sample_rate_hz);
+    let bass_fft_size = fft_size * 2;
+    let cutoffs = plan.cutoff_frequencies_hz();
+    plan.bands()
+        .iter()
+        .enumerate()
+        .map(|(index, band)| {
+            let window_size = if band.use_bass_fft {
                 bass_fft_size
             } else {
                 fft_size
             };
-            relative_cutoffs[boundary] = lower_bins[boundary] as f32 / (source_fft_size / 2) as f32;
-            cutoffs[boundary] = relative_cutoffs[boundary] * exact_nyquist_hz;
-        }
-
-        let bands = (0..config.bar_count)
-            .map(|bar| {
-                let use_bass_fft = bar < bass_boundary_count;
-                let window_size = if use_bass_fft {
-                    bass_fft_size
-                } else {
-                    fft_size
-                };
-                let bin_count = upper_bins[bar] - lower_bins[bar] + 1;
-                let equalizer = 2.0_f32.powi(-28) * cutoffs[bar + 1].powf(0.85)
-                    / (window_size as f32).log2()
-                    / bin_count as f32;
-                Band {
-                    lower_bin: lower_bins[bar],
-                    upper_bin: upper_bins[bar],
-                    use_bass_fft,
-                    equalizer,
-                }
-            })
-            .collect();
-
-        Ok(Self {
-            cutoff_frequencies_hz: cutoffs,
-            bands,
+            let bin_count = band.upper_bin.saturating_sub(band.lower_bin) + 1;
+            2.0_f32.powi(-28) * cutoffs[index + 1].powf(0.85)
+                / (window_size as f32).log2()
+                / bin_count as f32
         })
-    }
-
-    pub(super) fn cutoff_frequencies_hz(&self) -> &[f32] {
-        &self.cutoff_frequencies_hz
-    }
-
-    pub(super) fn bands(&self) -> &[Band] {
-        &self.bands
-    }
-}
-
-fn frequency_constant(config: CavaConfig) -> f64 {
-    let cutoff_ratio = config.low_cutoff_hz as f32 / config.high_cutoff_hz as f32;
-    let denominator = 1.0_f32 / (config.bar_count as f32 + 1.0) - 1.0;
-    f64::from(cutoff_ratio).log10() / f64::from(denominator)
+        .collect()
 }
 
 pub(super) fn fft_size_for_rate(sample_rate_hz: u32) -> usize {
@@ -149,5 +63,41 @@ pub(super) fn fft_size_for_rate(sample_rate_hz: u32) -> usize {
         75_001..=150_000 => BASE_FFT_SIZE * 16,
         150_001..=300_000 => BASE_FFT_SIZE * 32,
         _ => BASE_FFT_SIZE * 64,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn equalizer_curve_matches_cavas_pinned_compensation() {
+        let config = CavaConfig::new(44_100, 10);
+        let plan = band_plan(config).unwrap();
+        // `cavacore`'s own values for this layout. Dropping the compensation
+        // flattens the live picture in a way the global sensitivity scalar
+        // cannot undo, so these are pinned rather than merely bounded.
+        let expected = [
+            1.9958803e-9,
+            1.8505456e-9,
+            3.736_56e-9,
+            3.2925376e-9,
+            3.0513663e-9,
+            2.8075227e-9,
+            2.5947273e-9,
+            2.4007636e-9,
+            2.2097977e-9,
+            2.0417181e-9,
+        ];
+
+        let curve = equalizer_curve(config, &plan);
+
+        assert_eq!(curve.len(), expected.len());
+        for (index, (actual, expected)) in curve.iter().zip(expected).enumerate() {
+            assert!(
+                (actual - expected).abs() <= expected * 1.0e-5,
+                "band {index}: expected {expected:e}, got {actual:e}"
+            );
+        }
     }
 }
