@@ -1,5 +1,7 @@
 use std::cell::{Cell, RefCell};
 
+use reprise_core::spectrogram_backfill::BackfillStatus;
+
 use super::*;
 
 /// A run the test drives by hand: it reports what it is told to report and
@@ -180,9 +182,4 @@ fn subscribers_see_every_step_of_a_run() {
             SpectrogramBatchState::Running,
         ]
     );
-}
-
-#[test]
-fn an_empty_library_never_divides_by_zero() {
-    assert!((SpectrogramBatchProgress::idle().fraction() - 0.0).abs() < f64::EPSILON);
 }

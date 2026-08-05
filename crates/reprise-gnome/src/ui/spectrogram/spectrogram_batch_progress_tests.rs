@@ -17,20 +17,11 @@ fn an_idle_batch_shows_no_card_at_all() {
     assert!(!presentation.auto_hide);
 }
 
-/// The analysis starts on every launch, so the overwhelmingly common case is a
-/// library that is already done. That run must leave no trace on screen.
+/// The rule lives in `reprise_view::analysis_progress`; what matters here is
+/// that the card actually asks it instead of showing everything.
 #[test]
 fn nav_7b_an_autostarted_run_with_nothing_to_do_shows_no_card() {
     assert!(!presentation(running(0, 0)).visible);
-    assert!(
-        !presentation(SpectrogramBatchProgress {
-            state: SpectrogramBatchState::Complete,
-            analyzed: 0,
-            total: 0,
-            failed: 0,
-        })
-        .visible
-    );
 }
 
 #[test]

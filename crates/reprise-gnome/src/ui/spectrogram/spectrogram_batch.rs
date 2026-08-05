@@ -1,20 +1,26 @@
 //! GTK runtime adapter for the library-wide rendering-data backfill.
 //!
-//! The backfill itself lives in `reprise_core::spectrogram_backfill` and its
-//! worker thread in the platform crate. This adapter owns only the part that
-//! is specific to a running window: when a run may start, how its progress
-//! reaches the scan card, and what happens when the listener stops it.
+//! The backfill itself lives in `reprise_core::spectrogram_backfill`, its
+//! worker thread in the platform crate, and the progress state in
+//! `reprise_view::analysis_progress` — shared with the other frontends, which
+//! analyze the same library and must not answer "how far along, and is this
+//! worth showing" differently. What remains here is the GTK part: a frame-clock
+//! poll, and the lifetime of one run inside one window.
 //!
 //! The run is reached through [`BackfillRun`] rather than by naming the
 //! platform handle, per the composition-root rule in `ui/mod.rs`. That seam
-//! also lets the state machine below be tested without GStreamer or a display.
+//! also lets this be tested without GStreamer or a display.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::Duration;
 
 use gtk4::glib;
-use reprise_core::spectrogram_backfill::{BackfillProgress, BackfillStatus, BackfillSummary};
+use reprise_core::spectrogram_backfill::{BackfillProgress, BackfillSummary};
+use reprise_view::analysis_progress::settled;
+pub(in crate::ui) use reprise_view::analysis_progress::{
+    AnalysisProgress as SpectrogramBatchProgress, AnalysisState as SpectrogramBatchState,
+};
 
 use super::progress_subscribers::ProgressSubscribers;
 
@@ -24,41 +30,6 @@ use super::progress_subscribers::ProgressSubscribers;
 /// than the data it reports; it is chosen to keep the card's motion smooth,
 /// and the timer exists only while a run does.
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(in crate::ui) enum SpectrogramBatchState {
-    Idle,
-    Running,
-    Complete,
-    Stopped,
-    Failed,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(in crate::ui) struct SpectrogramBatchProgress {
-    pub(in crate::ui) state: SpectrogramBatchState,
-    pub(in crate::ui) analyzed: usize,
-    pub(in crate::ui) total: usize,
-    pub(in crate::ui) failed: usize,
-}
-
-impl SpectrogramBatchProgress {
-    pub(in crate::ui) fn idle() -> Self {
-        Self {
-            state: SpectrogramBatchState::Idle,
-            analyzed: 0,
-            total: 0,
-            failed: 0,
-        }
-    }
-
-    pub(in crate::ui) fn fraction(self) -> f64 {
-        if self.total == 0 {
-            return 0.0;
-        }
-        self.analyzed as f64 / self.total as f64
-    }
-}
 
 /// One backfill run, as much of it as the window needs to see.
 pub(in crate::ui) trait BackfillRun {
@@ -90,7 +61,7 @@ impl SpectrogramBatch {
     }
 
     pub(in crate::ui) fn is_running(&self) -> bool {
-        self.progress.get().state == SpectrogramBatchState::Running
+        self.progress.get().is_running()
     }
 
     pub(in crate::ui) fn subscribe_progress(
@@ -120,17 +91,11 @@ impl SpectrogramBatch {
         }
         let Some(run) = (self.launch)() else {
             tracing::warn!("could not start the library analysis worker");
-            self.set_progress(SpectrogramBatchProgress {
-                state: SpectrogramBatchState::Failed,
-                ..SpectrogramBatchProgress::idle()
-            });
+            self.set_progress(SpectrogramBatchProgress::failed());
             return;
         };
         *self.run.borrow_mut() = Some(run);
-        self.set_progress(SpectrogramBatchProgress {
-            state: SpectrogramBatchState::Running,
-            ..SpectrogramBatchProgress::idle()
-        });
+        self.set_progress(SpectrogramBatchProgress::running());
         let batch = Rc::downgrade(self);
         glib::timeout_add_local(POLL_INTERVAL, move || {
             let Some(batch) = batch.upgrade() else {
@@ -181,32 +146,6 @@ impl SpectrogramBatch {
     fn set_progress(&self, progress: SpectrogramBatchProgress) {
         self.progress.set(progress);
         self.subscribers.notify(progress);
-    }
-}
-
-/// The closing state of a run, from its summary.
-///
-/// A worker that vanished without a summary counts as failed rather than
-/// complete: reporting a clean finish for a run whose outcome nobody saw is
-/// exactly the lie that made the missing backfill hard to notice.
-fn settled(
-    progress: SpectrogramBatchProgress,
-    summary: Option<BackfillSummary>,
-) -> SpectrogramBatchProgress {
-    let Some(summary) = summary else {
-        return SpectrogramBatchProgress {
-            state: SpectrogramBatchState::Failed,
-            ..progress
-        };
-    };
-    SpectrogramBatchProgress {
-        state: match summary.status {
-            BackfillStatus::Completed => SpectrogramBatchState::Complete,
-            BackfillStatus::Cancelled => SpectrogramBatchState::Stopped,
-        },
-        analyzed: summary.stored,
-        total: progress.total.max(summary.stored),
-        failed: summary.failed,
     }
 }
 

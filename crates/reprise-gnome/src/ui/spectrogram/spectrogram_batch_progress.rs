@@ -35,23 +35,11 @@ fn presentation(progress: SpectrogramBatchProgress) -> ProgressPresentation {
         strings::spectrogram_batch_summary(progress.analyzed, progress.failed)
     };
     ProgressPresentation {
-        // The analysis starts by itself on every launch, so a run with nothing
-        // to do must stay invisible — otherwise the card flashes at each start
-        // and reports "0 analyzed". A failure still shows: that is not noise.
-        visible: match progress.state {
-            SpectrogramBatchState::Idle => false,
-            SpectrogramBatchState::Failed => true,
-            _ => progress.total > 0 || progress.analyzed > 0 || progress.failed > 0,
-        },
+        visible: progress.is_worth_showing(),
         title,
         detail,
-        fraction: progress.fraction().clamp(0.0, 1.0),
-        auto_hide: matches!(
-            progress.state,
-            SpectrogramBatchState::Complete
-                | SpectrogramBatchState::Stopped
-                | SpectrogramBatchState::Failed
-        ),
+        fraction: progress.fraction(),
+        auto_hide: progress.is_terminal(),
     }
 }
 
