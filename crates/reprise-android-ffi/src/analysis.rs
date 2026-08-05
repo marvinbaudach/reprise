@@ -37,6 +37,41 @@ pub struct AndroidTrackRenderBar {
     pub blue: f64,
 }
 
+/// One band's place on the shared spectral axis, as a colour.
+#[derive(Clone, Copy, Debug, PartialEq, uniffi::Record)]
+pub struct AndroidSpectralBandColour {
+    pub red: f64,
+    pub green: f64,
+    pub blue: f64,
+}
+
+/// The colour of every band in a `band_count`-band column, low to high.
+///
+/// A spectrum column arrives as levels alone, and the surface must not turn a
+/// band index into a colour itself: the axis is shared with the desktop, and a
+/// second implementation of it is a second picture of the same song. The answer
+/// depends on nothing but the count, so a caller reads it once and keeps it
+/// rather than asking per frame.
+///
+/// A single band has no position on an axis; it is given the middle, which is
+/// the one answer that claims nothing — the same choice `spectral_colour` makes
+/// for a position it cannot place.
+#[uniffi::export]
+pub fn spectral_band_colours(band_count: u32) -> Vec<AndroidSpectralBandColour> {
+    let count = band_count as usize;
+    (0..count)
+        .map(|band| {
+            let position = if count <= 1 {
+                0.5
+            } else {
+                band as f64 / (count - 1) as f64
+            };
+            let (red, green, blue) = spectral_colour(position);
+            AndroidSpectralBandColour { red, green, blue }
+        })
+        .collect()
+}
+
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum TrackAnalysisError {
     #[error("track {track_id} is no longer available for analysis")]
@@ -607,5 +642,33 @@ mod tests {
                 .unwrap(),
             Some(cells[SPECTROGRAM_BAND_COUNT * 2..SPECTROGRAM_BAND_COUNT * 3].to_vec())
         );
+    }
+
+    #[test]
+    fn band_colours_walk_the_whole_axis_from_the_low_end_to_the_high_one() {
+        let colours = super::spectral_band_colours(SPECTROGRAM_BAND_COUNT as u32);
+        assert_eq!(colours.len(), SPECTROGRAM_BAND_COUNT);
+
+        let ends = |position: f64| {
+            let (red, green, blue) = reprise_view::spectral_colour::spectral_colour(position);
+            super::AndroidSpectralBandColour { red, green, blue }
+        };
+        assert_eq!(colours[0], ends(0.0));
+        assert_eq!(colours[SPECTROGRAM_BAND_COUNT - 1], ends(1.0));
+        assert!(
+            colours.windows(2).any(|pair| pair[0] != pair[1]),
+            "every band was given the same colour"
+        );
+    }
+
+    /// One band has no position on an axis, and the middle claims nothing.
+    #[test]
+    fn a_single_band_is_given_the_middle_rather_than_an_end() {
+        let (red, green, blue) = reprise_view::spectral_colour::spectral_colour(0.5);
+        assert_eq!(
+            super::spectral_band_colours(1),
+            vec![super::AndroidSpectralBandColour { red, green, blue }]
+        );
+        assert!(super::spectral_band_colours(0).is_empty());
     }
 }
