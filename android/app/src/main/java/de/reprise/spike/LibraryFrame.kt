@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
@@ -30,6 +31,7 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarDefaults
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailDefaults
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -45,6 +47,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -168,16 +171,36 @@ internal fun LibraryBottomFrame(
     }
 }
 
+/**
+ * The wide-short arrangement's navigation, on the left edge.
+ *
+ * The active entry carries Material 3's own 56 × 32 dp indicator, which is the
+ * pill 17a asks for. It is not declared a second time in
+ * [LibraryFrameMetrics]: this component cannot be handed an indicator size, so
+ * a constant would be a number the rail never reads and a test of it would only
+ * prove that a constant equals itself.
+ */
 @Composable
 internal fun LibraryNavigationRail(surfaceLayout: SurfaceLayout) {
     check(surfaceLayout == SurfaceLayout.WIDE_SHORT)
     val metrics = libraryFrameMetrics(surfaceLayout)
+    // The same arithmetic the bottom bar needs below, on the other edge and for
+    // the same reason: Material 3 pads the item column *inside* this component
+    // by the system bar inset, so a bare 80 dp would be spent on the inset
+    // rather than on the rail. Turned sideways that inset is where a
+    // three-button navigation bar goes — wider than a rail item — and where a
+    // rounded corner or a camera cut-out sits on the devices that have one.
+    val systemBarInsets = NavigationRailDefaults.windowInsets
+    val startInset = systemBarInsets
+        .asPaddingValues()
+        .calculateStartPadding(LocalLayoutDirection.current)
     NavigationRail(
         modifier = Modifier
-            .width(metrics.navigationRailWidthDp.dp)
+            .width(metrics.navigationRailWidthDp.dp + startInset)
             .fillMaxHeight()
             .testTag("library-navigation-rail"),
         containerColor = MaterialTheme.colorScheme.surface,
+        windowInsets = systemBarInsets,
     ) {
         Spacer(Modifier.weight(1f))
         libraryDestinations.forEach { destination ->

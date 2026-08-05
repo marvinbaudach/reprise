@@ -8,12 +8,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ListItem
@@ -193,13 +191,10 @@ private fun AlbumRows(
     loadMore: (LibraryWindowRange) -> Unit,
 ) {
     val key = LibraryListKey.ALBUMS
-    val anchor = surfaceState.scrollPosition(key)
+    val anchor = surfaceState.scrollPosition(key).within(albums.itemCount(requestedOffset))
     if (surfaceLayout == SurfaceLayout.WIDE_SHORT) {
         val metrics = libraryFrameMetrics(surfaceLayout)
-        val gridState = rememberLazyGridState(
-            anchor.firstVisibleItemIndex,
-            anchor.firstVisibleItemScrollOffset,
-        )
+        val gridState = rememberLibraryGridState(anchor)
         ObserveLibraryGridAnchor(key, gridState, surfaceState)
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
@@ -222,10 +217,7 @@ private fun AlbumRows(
         }
         return
     }
-    val listState = rememberLazyListState(
-        anchor.firstVisibleItemIndex,
-        anchor.firstVisibleItemScrollOffset,
-    )
+    val listState = rememberLibraryListState(anchor)
     ObserveLibraryListAnchor(key, listState, surfaceState)
     LazyColumn(
         state = listState,
@@ -260,13 +252,10 @@ private fun ArtistRows(
     loadMore: (LibraryWindowRange) -> Unit,
 ) {
     val key = LibraryListKey.ARTISTS
-    val anchor = surfaceState.scrollPosition(key)
+    val anchor = surfaceState.scrollPosition(key).within(artists.itemCount(requestedOffset))
     if (surfaceLayout == SurfaceLayout.WIDE_SHORT) {
         val metrics = libraryFrameMetrics(surfaceLayout)
-        val gridState = rememberLazyGridState(
-            anchor.firstVisibleItemIndex,
-            anchor.firstVisibleItemScrollOffset,
-        )
+        val gridState = rememberLibraryGridState(anchor)
         ObserveLibraryGridAnchor(key, gridState, surfaceState)
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
@@ -286,10 +275,7 @@ private fun ArtistRows(
         }
         return
     }
-    val listState = rememberLazyListState(
-        anchor.firstVisibleItemIndex,
-        anchor.firstVisibleItemScrollOffset,
-    )
+    val listState = rememberLibraryListState(anchor)
     ObserveLibraryListAnchor(key, listState, surfaceState)
     LazyColumn(
         state = listState,

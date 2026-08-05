@@ -11,12 +11,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -47,13 +45,10 @@ internal fun TrackRows(
     loadMore: (LibraryWindowRange) -> Unit,
 ) {
     val metrics = libraryFrameMetrics(surfaceLayout)
-    val anchor = surfaceState.scrollPosition(listKey)
     val content = trackListContent(tracks, lastRequestedOffset)
+    val anchor = surfaceState.scrollPosition(listKey).within(content.size)
     if (surfaceLayout == SurfaceLayout.WIDE_SHORT) {
-        val gridState = rememberLazyGridState(
-            initialFirstVisibleItemIndex = anchor.firstVisibleItemIndex,
-            initialFirstVisibleItemScrollOffset = anchor.firstVisibleItemScrollOffset,
-        )
+        val gridState = rememberLibraryGridState(anchor)
         ObserveLibraryGridAnchor(listKey, gridState, surfaceState)
         LazyVerticalGrid(
             columns = GridCells.Fixed(metrics.listColumns),
@@ -80,10 +75,7 @@ internal fun TrackRows(
         return
     }
 
-    val listState = rememberLazyListState(
-        initialFirstVisibleItemIndex = anchor.firstVisibleItemIndex,
-        initialFirstVisibleItemScrollOffset = anchor.firstVisibleItemScrollOffset,
-    )
+    val listState = rememberLibraryListState(anchor)
     ObserveLibraryListAnchor(listKey, listState, surfaceState)
     LazyColumn(
         state = listState,

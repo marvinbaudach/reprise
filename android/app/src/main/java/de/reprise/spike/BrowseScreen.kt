@@ -23,6 +23,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -80,9 +81,14 @@ internal fun BrowseScreen(
     val selectedTab = surfaceState.selectedTab
     val searchVisible = surfaceState.searchVisible
     val searchText = surfaceState.searchText
-    var visibleTitles by remember(state) { mutableStateOf(state.titles) }
-    var visibleAlbums by remember(state) { mutableStateOf(state.albums) }
-    var visibleArtists by remember(state) { mutableStateOf(state.artists) }
+    // Everything the listener has paged in, or the first window when there is
+    // nothing to take up: a replacement activity reloads one window, and the
+    // anchors kept above are indices into all of them.
+    val shape = state.catalogShape()
+    val restored = remember(state) { surfaceState.loadedWindows(shape) }
+    var visibleTitles by remember(state) { mutableStateOf(restored?.titles ?: state.titles) }
+    var visibleAlbums by remember(state) { mutableStateOf(restored?.albums ?: state.albums) }
+    var visibleArtists by remember(state) { mutableStateOf(restored?.artists ?: state.artists) }
     var selectedAlbum by remember(state) { mutableStateOf<AlbumTrackList?>(null) }
     var browseError by remember(state) { mutableStateOf(state.message) }
     var titlesRequestedOffset by remember(state, searchText) { mutableStateOf<Long?>(null) }
@@ -146,11 +152,23 @@ internal fun BrowseScreen(
             .onFailure { error -> browseError = error.browseDetail("search") }
     }
 
-    // The query is durable, the result window is not. A replacement activity
-    // asks the library for that refinement again instead of keeping a second
-    // catalog inside the ViewModel.
+    // What is on screen is what a replacement activity has to be able to put
+    // back. Handed over from the composition itself rather than from each of
+    // the five places that change a window, so the two cannot drift apart.
+    //
+    // Assembled *here*, in this function's own scope, and not inside the effect
+    // below: a state value read only from an inner lambda invalidates only that
+    // lambda, and an effect in this scope would then keep handing back the
+    // window it saw first — 200 rows, however many the listener had paged in.
+    val loaded = LoadedLibraryWindows(visibleTitles, visibleAlbums, visibleArtists)
+    SideEffect { surfaceState.keepLoadedWindows(shape, loaded) }
+
+    // The query is durable, and so is the window it produced — for as long as
+    // that window is still the catalog's. When a scan has changed the library
+    // underneath, there is nothing to take up and the refinement is asked for
+    // again rather than replayed from rows that no longer describe it.
     LaunchedEffect(state) {
-        if (searchText.isNotEmpty()) {
+        if (searchText.isNotEmpty() && restored == null) {
             search(searchText)
         }
     }

@@ -8,8 +8,6 @@ internal data class LibraryFrameMetrics(
     val miniPlayerHeightDp: Int,
     val navigationBarHeightDp: Int,
     val navigationRailWidthDp: Int = 80,
-    val navigationRailIndicatorWidthDp: Int = 56,
-    val navigationRailIndicatorHeightDp: Int = 32,
     val listColumns: Int = 1,
     val listColumnGapDp: Int = 0,
 )

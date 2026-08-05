@@ -6,6 +6,7 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -31,8 +32,6 @@ class MobileSurfaceStateTest {
                 miniPlayerHeightDp = 72,
                 navigationBarHeightDp = 80,
                 navigationRailWidthDp = 80,
-                navigationRailIndicatorWidthDp = 56,
-                navigationRailIndicatorHeightDp = 32,
                 listColumns = 1,
                 listColumnGapDp = 0,
             ),
@@ -46,8 +45,13 @@ class MobileSurfaceStateTest {
         assertEquals(64, nowPlayingMetrics(SurfaceLayout.WIDE_SHORT).playButtonSizeDp)
     }
 
+    /**
+     * The ViewModel's own contract, not a claim about configuration changes —
+     * that one is made by [MainActivityConfigurationTest], which goes through
+     * the activity path a configuration change really takes.
+     */
     @Test
-    fun onlyConfigurationDurableSurfaceStateLivesInTheViewModel() {
+    fun openingSearchReturnsToTitlesAndTheViewModelKeepsWhatItIsHanded() {
         val state = MobileSurfaceViewModel()
 
         state.selectTab(BrowseTab.ARTISTS)
@@ -55,16 +59,68 @@ class MobileSurfaceStateTest {
         state.updateSearch("slowdive")
         state.updateScroll(
             LibraryListKey.ARTISTS,
-            LibraryScrollPosition(firstVisibleItemIndex = 18, firstVisibleItemScrollOffset = 7),
+            LibraryScrollPosition(firstVisibleItemIndex = 18, itemOffsetFraction = 0.25f),
         )
 
         assertEquals(BrowseTab.TITLES, state.selectedTab)
         assertTrue(state.searchVisible)
         assertEquals("slowdive", state.searchText)
         assertEquals(
-            LibraryScrollPosition(firstVisibleItemIndex = 18, firstVisibleItemScrollOffset = 7),
+            LibraryScrollPosition(firstVisibleItemIndex = 18, itemOffsetFraction = 0.25f),
             state.scrollPosition(LibraryListKey.ARTISTS),
         )
+    }
+
+    @Test
+    fun pagedInWindowsAreHandedBackOnlyWhileTheCatalogStillHasTheSameShape() {
+        val state = MobileSurfaceViewModel()
+        val paged = LoadedLibraryWindows(
+            titles = LibraryWindow(total = 450, rows = emptyList(), hasMore = true),
+            albums = LibraryWindow.empty(),
+            artists = LibraryWindow.empty(),
+        )
+        val shape = LibraryCatalogShape(titles = 450, albums = 0, artists = 0)
+
+        state.keepLoadedWindows(shape, paged)
+
+        assertEquals(paged, state.loadedWindows(shape))
+        assertNull(state.loadedWindows(shape.copy(titles = 451)))
+    }
+
+    @Test
+    fun anAnchorBeyondTheLoadedRowsOpensAtTheTopRatherThanOnTheLastOne() {
+        val deep = LibraryScrollPosition(firstVisibleItemIndex = 210, itemOffsetFraction = 0.4f)
+
+        assertEquals(deep, deep.within(itemCount = 401))
+        assertEquals(LibraryScrollPosition(), deep.within(itemCount = 201))
+        assertEquals(LibraryScrollPosition(), deep.within(itemCount = 0))
+    }
+
+    @Test
+    fun aMidRowAnchorIsKeptAsAFractionSoAShorterRowMeansTheSamePlace() {
+        // 108 px into a 216 px row — half a title row on a 3x screen stacked.
+        val anchor = libraryScrollPosition(
+            firstVisibleItemIndex = 7,
+            firstVisibleItemScrollOffsetPx = 108,
+            itemHeightPx = 216,
+        )
+
+        assertEquals(0.5f, anchor.itemOffsetFraction, 0.0001f)
+        assertEquals(108, anchor.offsetPxIn(itemHeightPx = 216))
+        // The same half row, in the 64 dp row the wide-short arrangement uses.
+        assertEquals(96, anchor.offsetPxIn(itemHeightPx = 192))
+    }
+
+    @Test
+    fun aListThatHasNotMeasuredARowYetReportsNoOffsetRatherThanDividingByIt() {
+        val anchor = libraryScrollPosition(
+            firstVisibleItemIndex = 3,
+            firstVisibleItemScrollOffsetPx = 40,
+            itemHeightPx = 0,
+        )
+
+        assertEquals(3, anchor.firstVisibleItemIndex)
+        assertEquals(0f, anchor.itemOffsetFraction, 0.0001f)
     }
 
     @Test

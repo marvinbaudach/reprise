@@ -95,6 +95,63 @@ class MainActivityConfigurationTest {
         compose.onNodeWithText("Rotation Song 1").assertIsDisplayed()
     }
 
+    /**
+     * The one the device would have shown and the suite could not: scroll past
+     * the first window, turn, and land where you were.
+     *
+     * `MainActivity.onCreate` restores exactly one window. Everything past it
+     * was paged in by the screen, and the anchor is an index into all of it —
+     * so an anchor that survives while the rows do not is not a restored
+     * position at all: a lazy list asked to start beyond its last item starts
+     * at that last item and says nothing.
+     */
+    @Test
+    fun rowsPagedInPastTheFirstWindowSurviveTheTurnAndSoDoesThePlace() {
+        assertEquals(1, shadowOf(application).boundServiceConnections.size)
+        compose.onNodeWithText("Artists").performClick()
+        // The continuation sentinel sits after the last loaded row; reaching it
+        // is what asks the library for the next window.
+        compose.onNodeWithTag("library-artists-list").performScrollToIndex(200)
+        compose.waitForIdle()
+        compose.onNodeWithTag("library-artists-list").performScrollToIndex(210)
+        compose.waitForIdle()
+        compose.onNodeWithText("Artist 211").assertIsDisplayed()
+
+        recreateAt("w916dp-h412dp-land")
+
+        compose.onNodeWithText("Artist 211").assertIsDisplayed()
+        // The two places a lost second window puts you instead — the last row
+        // of the reloaded window, or the top.
+        compose.onNodeWithText("Artist 200").assertDoesNotExist()
+        compose.onNodeWithText("Artist 1").assertDoesNotExist()
+    }
+
+    /**
+     * The other side of keeping rows across the turn: they can go out of date.
+     *
+     * A scan that finishes between the two activities leaves paged-in rows
+     * describing a catalog that is gone, so they are dropped — and then the
+     * anchor points past what is loaded. That is where the honest answer
+     * matters: the top, which reads as a reset, and not the last row of the
+     * reloaded window, which reads as a restored place and is not one.
+     */
+    @Test
+    fun aCatalogThatChangedUnderTheScreenReopensAtTheTopAndNotMidWindow() {
+        compose.onNodeWithText("Artists").performClick()
+        compose.onNodeWithTag("library-artists-list").performScrollToIndex(200)
+        compose.waitForIdle()
+        compose.onNodeWithTag("library-artists-list").performScrollToIndex(210)
+        compose.waitForIdle()
+        compose.onNodeWithText("Artist 211").assertIsDisplayed()
+
+        application.catalogSize = CATALOG_SIZE + 1
+        recreateAt("w916dp-h412dp-land")
+
+        compose.onNodeWithText("Artist 1").assertIsDisplayed()
+        compose.onNodeWithText("Artist 200").assertDoesNotExist()
+        compose.onNodeWithText("Artist 211").assertDoesNotExist()
+    }
+
     @Test
     fun inFlightScrubSurvivesTheTurnWithoutCommittingASeek() {
         assertEquals(1, shadowOf(application).boundServiceConnections.size)
@@ -194,20 +251,28 @@ internal class ConfigurationTestApplication : Application(), MainActivitySurface
     private lateinit var serviceController: ServiceController<ConfigurationTestPlaybackService>
     lateinit var service: ConfigurationTestPlaybackService
         private set
-    private val tracks = (1..40).map { index ->
-        configurationTrack(
-            id = index.toLong(),
-            title = if (index <= 4) "Rotation Song $index" else "Title $index",
-        )
-    }
-    private val artists = (1..40).map { index ->
-        LibraryArtist(
-            name = "Artist $index",
-            trackCount = index.toLong(),
-            albumCount = 1,
-            representativeUri = "content://provider/artist/$index.flac",
-        )
-    }
+    // More rows than one window holds, and served one window at a time. A
+    // fixture that hands over the whole catalog at once cannot fail the way the
+    // device did: it makes the second window — the part `onCreate` never
+    // reloads — unreachable, and every test written on it green by omission.
+    /** What a scan would change: the test moves it to act as one. */
+    var catalogSize = CATALOG_SIZE
+    private val tracks: List<LibraryTrack>
+        get() = (1..catalogSize).map { index ->
+            configurationTrack(
+                id = index.toLong(),
+                title = if (index <= 4) "Rotation Song $index" else "Title $index",
+            )
+        }
+    private val artists: List<LibraryArtist>
+        get() = (1..catalogSize).map { index ->
+            LibraryArtist(
+                name = "Artist $index",
+                trackCount = index.toLong(),
+                albumCount = 1,
+                representativeUri = "content://provider/artist/$index.flac",
+            )
+        }
 
     override fun onCreate() {
         super.onCreate()
@@ -226,9 +291,9 @@ internal class ConfigurationTestApplication : Application(), MainActivitySurface
 
     override fun mainActivitySurface(): MainActivitySurfaceDependencies {
         val browse = LibraryScreenState.Browse(
-            titles = LibraryWindow(total = 40, rows = tracks, hasMore = false),
+            titles = tracks.window(firstLibraryWindow()),
             albums = LibraryWindow.empty(),
-            artists = LibraryWindow(total = 40, rows = artists, hasMore = false),
+            artists = artists.window(firstLibraryWindow()),
         )
         return MainActivitySurfaceDependencies(
             initialTheme = MobileThemeSelection(
@@ -241,12 +306,12 @@ internal class ConfigurationTestApplication : Application(), MainActivitySurface
             playbackControls = controls,
             chooseFolder = { _, _ -> },
             rescan = {},
-            searchTitles = { query, _ ->
-                val rows = tracks.filter { track -> track.title.contains(query, ignoreCase = true) }
-                LibraryWindow(total = rows.size.toLong(), rows = rows, hasMore = false)
+            searchTitles = { query, range ->
+                tracks.filter { track -> track.title.contains(query, ignoreCase = true) }
+                    .window(range)
             },
             listAlbums = { browse.albums },
-            listArtists = { browse.artists },
+            listArtists = { range -> artists.window(range) },
             openAlbum = { error("Album navigation is outside this test") },
             listAlbumTracks = { _, _ -> LibraryWindow.empty() },
             loadTrack = { id, deliver -> deliver(tracks.firstOrNull { it.id == id }) },
@@ -290,6 +355,20 @@ class ConfigurationTestPlaybackControls : PlaybackControls {
     override fun setShuffle(enabled: Boolean) = Unit
     override fun setRepeat(mode: AndroidRepeatMode) = Unit
     override fun setRating(trackId: Long, rating: Int, report: (String?) -> Unit) = report(null)
+}
+
+/** Enough rows that the screen has to ask for a second window to reach the end. */
+private const val CATALOG_SIZE = 450
+
+/** The library's own paging contract: honour the offset, the limit, and the end. */
+private fun <T> List<T>.window(range: LibraryWindowRange): LibraryWindow<T> {
+    val from = range.offset.toInt().coerceIn(0, size)
+    val until = (from + range.limit.toInt()).coerceIn(from, size)
+    return LibraryWindow(
+        total = size.toLong(),
+        rows = subList(from, until).toList(),
+        hasMore = until < size,
+    )
 }
 
 private fun configurationTrack(id: Long, title: String) = LibraryTrack(
