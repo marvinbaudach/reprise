@@ -5097,3 +5097,8 @@ msgstr "{processed} fichiers analysés sur {total}"
 #, fuzzy
 msgid "{analyzed} analyzed · {failed} failed"
 msgstr "{removed} piste retirée ; {failed} échec"
+
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:177
+#, rust-format
+msgid "Streaming · {percent}% loaded"
+msgstr ""

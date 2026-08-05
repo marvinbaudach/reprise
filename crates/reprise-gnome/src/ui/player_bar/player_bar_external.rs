@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use gtk4::prelude::*;
 
-use super::player_bar_state::external_bar_display;
+use super::player_bar_state::{external_bar_display, BarProgressMode};
 use super::surface::PlayerBar;
 use crate::ui::playback::external_media::ExternalPlaybackSnapshot;
 use crate::ui::playing_links::{self, LinkAvailability};
@@ -13,7 +13,8 @@ impl PlayerBar {
     pub(in crate::ui) fn set_external_snapshot(&self, snapshot: Option<&ExternalPlaybackSnapshot>) {
         let Some(snapshot) = snapshot else {
             self.seek_enabled.set(true);
-            self.external_podcast.set(false);
+            self.progress_mode.set(BarProgressMode::Local);
+            self.set_buffering(0, None);
             *self.live_started_at.borrow_mut() = None;
             self.waveform.widget().set_opacity(1.0);
             self.waveform.widget().set_sensitive(true);
@@ -37,13 +38,15 @@ impl PlayerBar {
         );
         self.set_track(&display.title, &display.subtitle, links);
         self.set_state(display.playback);
-        self.external_podcast.set(!display.live);
+        self.progress_mode.set(display.progress_mode);
+        self.set_buffering(0, None);
         self.waveform.set_peaks(Vec::new());
-        self.seek_enabled.set(!display.live);
-        self.waveform.widget().set_sensitive(!display.live);
+        let live = display.progress_mode == BarProgressMode::Live;
+        self.seek_enabled.set(!live);
+        self.waveform.widget().set_sensitive(!live);
         self.waveform
             .widget()
-            .set_opacity(if display.live { 0.0 } else { 1.0 });
+            .set_opacity(if live { 0.0 } else { 1.0 });
         self.shuffle_button.set_sensitive(false);
         self.repeat_button.set_sensitive(false);
         self.prev_button.set_sensitive(snapshot.can_go_previous);
@@ -51,14 +54,14 @@ impl PlayerBar {
         let reconnecting = snapshot.radio.as_ref().is_some_and(|radio| {
             radio.phase() == crate::ui::playback::external_media::RadioPhase::Reconnecting
         });
-        if display.live
+        if live
             && display.playback == reprise_core::playback::PlaybackState::Playing
             && (reconnecting || self.live_started_at.borrow().is_none())
         {
             *self.live_started_at.borrow_mut() = Some(Instant::now());
             self.position_label.set_text("0:00");
             self.duration_label.set_text("");
-        } else if !display.live {
+        } else if !live {
             *self.live_started_at.borrow_mut() = None;
         }
         if display.title_dimmed {

@@ -418,6 +418,9 @@ impl Transport {
                     track.title.clone_from(title);
                 }
             }
+            // Buffer state belongs to the rendering surface. It does not
+            // change transport identity or the durable playback snapshot.
+            PlayerEvent::Buffering { .. } => {}
             // Handled by the runtime rather than here: a frame is not
             // transport state, has no place in a snapshot, and must never
             // reach a mailbox — see `Clients::offer_spectrum`.

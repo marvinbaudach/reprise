@@ -1,6 +1,8 @@
 use super::*;
 use crate::player_effects::{build_audio_filter, requested_state, same_filter_topology};
-use crate::player_pipeline::{merge_stream_tags, AUDIO_SINK_ENV_VAR};
+use crate::player_pipeline::{
+    is_remote_playback_uri, merge_stream_tags, BufferingThrottle, AUDIO_SINK_ENV_VAR,
+};
 use reprise_core::library::settings::TrackTransition;
 
 mod cava_tests;
@@ -46,6 +48,22 @@ fn stream_tags_merge_partial_updates_and_suppress_duplicates() {
         merge_stream_tags(&complete, Some("Current song".into()), None),
         None
     );
+}
+
+#[test]
+fn buffering_events_are_remote_only_changed_and_throttled() {
+    use std::time::{Duration, Instant};
+
+    assert!(is_remote_playback_uri(Some("https://example.test/episode")));
+    assert!(!is_remote_playback_uri(Some("file:///music/song.flac")));
+    assert!(!is_remote_playback_uri(None));
+
+    let start = Instant::now();
+    let mut throttle = BufferingThrottle::default();
+    assert!(throttle.should_emit(start, (20, Some(10_000))));
+    assert!(!throttle.should_emit(start + Duration::from_secs(1), (20, Some(10_000))));
+    assert!(!throttle.should_emit(start + Duration::from_millis(200), (30, Some(15_000))));
+    assert!(throttle.should_emit(start + Duration::from_millis(250), (30, Some(15_000))));
 }
 
 #[test]

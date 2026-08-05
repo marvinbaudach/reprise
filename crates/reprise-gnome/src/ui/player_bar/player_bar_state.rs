@@ -6,12 +6,19 @@ use crate::ui::playback::external_media::{
     ExternalMedia, ExternalPlaybackSnapshot, PodcastPhase, RadioPresentation,
 };
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::ui) enum BarProgressMode {
+    Local,
+    Streaming,
+    Live,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::ui) struct ExternalBarDisplay {
     pub(in crate::ui) title: String,
     pub(in crate::ui) subtitle: String,
     pub(in crate::ui) playback: PlaybackState,
-    pub(in crate::ui) live: bool,
+    pub(in crate::ui) progress_mode: BarProgressMode,
     pub(in crate::ui) title_dimmed: bool,
     pub(in crate::ui) inline_error: Option<String>,
 }
@@ -28,7 +35,7 @@ pub(in crate::ui) fn external_bar_display(
                 Some(PodcastPhase::Failed) => PlaybackState::Stopped,
                 _ => PlaybackState::Playing,
             },
-            live: false,
+            progress_mode: BarProgressMode::Streaming,
             title_dimmed: false,
             inline_error: snapshot.error.clone(),
         },
@@ -57,13 +64,44 @@ fn radio_display(
             Some(crate::ui::playback::external_media::RadioPhase::Paused) => PlaybackState::Paused,
             _ => PlaybackState::Playing,
         },
-        live: true,
+        progress_mode: BarProgressMode::Live,
         title_dimmed: matches!(
             phase,
             Some(crate::ui::playback::external_media::RadioPhase::Paused)
         ),
         inline_error: error,
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(in crate::ui) struct BufferingPresentation {
+    pub(in crate::ui) buffered_fraction: f64,
+    pub(in crate::ui) loaded_percent: u8,
+    pub(in crate::ui) show_status: bool,
+}
+
+/// Turns a backend buffering event into player-bar geometry and copy. The
+/// backend's ring-buffer percentage is deliberately not used here: “loaded”
+/// describes the share of the media duration covered by `buffered_ms`.
+pub(in crate::ui) fn buffering_presentation(
+    event: &reprise_core::playback::PlayerEvent,
+    mode: BarProgressMode,
+    duration_ms: i64,
+) -> Option<BufferingPresentation> {
+    let reprise_core::playback::PlayerEvent::Buffering { buffered_ms, .. } = event else {
+        return None;
+    };
+    if mode != BarProgressMode::Streaming || duration_ms <= 0 {
+        return None;
+    }
+    let buffered_ms = (*buffered_ms)?.clamp(0, duration_ms);
+    let buffered_fraction = buffered_ms as f64 / duration_ms as f64;
+    let loaded_percent = (buffered_fraction * 100.0).round() as u8;
+    Some(BufferingPresentation {
+        buffered_fraction,
+        loaded_percent,
+        show_status: buffered_ms < duration_ms,
+    })
 }
 
 pub(in crate::ui) fn format_live_elapsed(elapsed_ms: i64) -> String {
@@ -82,6 +120,29 @@ pub(in crate::ui) fn bar_should_be_sensitive(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct FakePlaybackEvents;
+
+    impl FakePlaybackEvents {
+        fn buffering(percent: u8, buffered_ms: i64) -> reprise_core::playback::PlayerEvent {
+            reprise_core::playback::PlayerEvent::Buffering {
+                percent,
+                buffered_ms: Some(buffered_ms),
+            }
+        }
+    }
+
+    #[test]
+    fn streaming_buffering_event_reaches_the_bar_and_produces_a_segment() {
+        let event = FakePlaybackEvents::buffering(61, 45_000);
+
+        let presentation = buffering_presentation(&event, BarProgressMode::Streaming, 90_000)
+            .expect("a streaming buffering event should reach the player bar");
+
+        assert_eq!(presentation.buffered_fraction, 0.5);
+        assert_eq!(presentation.loaded_percent, 50);
+        assert!(presentation.show_status);
+    }
 
     #[test]
     fn play_9_stopped_bar_is_enabled_when_the_library_can_start() {
@@ -119,7 +180,7 @@ mod tests {
 
         assert_eq!(display.title, "Last song");
         assert_eq!(display.playback, PlaybackState::Paused);
-        assert!(display.live);
+        assert_eq!(display.progress_mode, BarProgressMode::Live);
         assert!(display.title_dimmed);
         assert_eq!(display.inline_error.as_deref(), Some("Offline"));
     }

@@ -306,6 +306,7 @@ fn ensure_resampled_clears_display_peaks_when_raw_empty() {
         shaped_centroid: Vec::new(),
         last_display_width: 100,
         fraction: 0.0,
+        buffered_fraction: None,
         hover_fraction: None,
         drag_fraction: None,
         target_fraction: 0.0,
@@ -351,6 +352,7 @@ fn ensure_resampled_populates_on_width_change() {
         shaped_centroid: Vec::new(),
         last_display_width: 0,
         fraction: 0.0,
+        buffered_fraction: None,
         hover_fraction: None,
         drag_fraction: None,
         target_fraction: 0.0,
@@ -409,6 +411,17 @@ fn mini_waveform_has_16px_height() {
     }
     let w = WaveformSeek::new_mini();
     assert_eq!(w.widget().content_height(), 16);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn streaming_buffering_sets_the_waveform_segment() {
+    gtk4::init().expect("GTK init");
+    let waveform = WaveformSeek::new();
+
+    waveform.set_buffered_fraction(Some(0.65));
+
+    assert_eq!(waveform.buffered_fraction_for_test(), Some(0.65));
 }
 
 #[test]

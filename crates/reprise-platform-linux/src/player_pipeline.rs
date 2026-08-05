@@ -12,6 +12,7 @@ use gstreamer::prelude::*;
 use gstreamer_app as gst_app;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use reprise_core::playback::{
     AudioEffects, BassPressureDetector, CavaBarProcessor, CavaConfig, PlaybackError, PlayerEvent,
@@ -52,6 +53,48 @@ pub(crate) fn merge_stream_tags(
         organization.or_else(|| previous.1.clone()),
     );
     (next != *previous).then_some(next)
+}
+
+const BUFFERING_EVENT_INTERVAL: Duration = Duration::from_millis(250);
+type BufferingUpdate = (u8, Option<i64>);
+
+#[derive(Default)]
+pub(crate) struct BufferingThrottle {
+    last_emitted: Option<(Instant, BufferingUpdate)>,
+}
+
+impl BufferingThrottle {
+    pub(crate) fn should_emit(&mut self, now: Instant, update: BufferingUpdate) -> bool {
+        if self
+            .last_emitted
+            .is_some_and(|(_, previous)| previous == update)
+        {
+            return false;
+        }
+        if self.last_emitted.is_some_and(|(previous, _)| {
+            now.saturating_duration_since(previous) < BUFFERING_EVENT_INTERVAL
+        }) {
+            return false;
+        }
+        self.last_emitted = Some((now, update));
+        true
+    }
+}
+
+pub(crate) fn is_remote_playback_uri(uri: Option<&str>) -> bool {
+    uri.is_some_and(|uri| !uri.starts_with("file://"))
+}
+
+fn query_buffered_ms(playbin: &gst::Element) -> Option<i64> {
+    let mut query = gst::query::Buffering::new(gst::Format::Time);
+    if !playbin.query(&mut query) {
+        return None;
+    }
+    let (_, stop, _) = query.range();
+    let gst::GenericFormattedValue::Time(Some(stop)) = stop else {
+        return None;
+    };
+    i64::try_from(stop.mseconds()).ok()
 }
 
 /// Environment variable that, when set, overrides playbin's audio sink
@@ -216,7 +259,9 @@ pub(crate) fn attach_bus_watch(
     let bus = playbin
         .bus()
         .ok_or_else(|| PlaybackError::Backend("GStreamer: no bus".into()))?;
+    let watched_playbin = playbin.clone();
     let mut stream_tags = (None::<String>, None::<String>);
+    let mut buffering_throttle = BufferingThrottle::default();
     bus.add_watch(move |_, msg| {
         use gst::MessageView;
         match msg.view() {
@@ -252,6 +297,23 @@ pub(crate) fn attach_bus_watch(
                         title: next.0,
                         organization: next.1,
                     });
+                }
+            }
+            MessageView::Buffering(message) => {
+                let current_uri = watched_playbin
+                    .property::<Option<String>>("current-uri")
+                    .or_else(|| watched_playbin.property::<Option<String>>("uri"));
+                if is_remote_playback_uri(current_uri.as_deref()) {
+                    let update = (
+                        message.percent().clamp(0, 100) as u8,
+                        query_buffered_ms(&watched_playbin),
+                    );
+                    if buffering_throttle.should_emit(Instant::now(), update) {
+                        (*on_event)(PlayerEvent::Buffering {
+                            percent: update.0,
+                            buffered_ms: update.1,
+                        });
+                    }
                 }
             }
             MessageView::Error(e) => {

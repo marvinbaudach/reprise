@@ -174,6 +174,7 @@ pub const YOUTUBE_REMOVE_SELECTED: &str = N_!("Remove selected");
 pub const PODCAST_UNDO: &str = N_!("Undo");
 pub const PODCAST_DELETE_FILES: &str = N_!("Delete files");
 pub const PODCAST_PLAY_NEXT_EPISODE: &str = N_!("Play next episode");
+pub const PODCAST_STREAMING_LOADED: &str = N_!("Streaming · {percent}% loaded");
 pub const PODCAST_EPISODES_PER_SHOW: &str = N_!("Episodes per show");
 pub const PODCAST_PREFERENCES_AUTO_DOWNLOAD: &str = N_!("Download new episodes");
 pub const PODCAST_PREFERENCES_CLEANUP: &str = N_!("Delete played episodes");
@@ -297,6 +298,13 @@ pub fn podcast_status_resume(percent: Option<u8>) -> String {
         ),
         None => text(PODCAST_STATUS_RESUME),
     }
+}
+
+pub fn podcast_streaming_loaded(percent: u8) -> String {
+    formatted(
+        PODCAST_STREAMING_LOADED,
+        &[("percent", &percent.to_string())],
+    )
 }
 
 pub fn podcast_group_facts(episodes: &str, new: usize, latest: &str, downloaded: &str) -> String {

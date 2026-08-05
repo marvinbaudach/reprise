@@ -75,6 +75,7 @@ pub(in crate::ui) struct PlayerBarWidgets {
     pub(in crate::ui) retry_external_button: gtk4::Button,
     pub(in crate::ui) position_label: gtk4::Label,
     pub(in crate::ui) duration_label: gtk4::Label,
+    pub(in crate::ui) streaming_status_label: gtk4::Label,
     pub(in crate::ui) waveform: super::waveform_seek::WaveformSeek,
     pub(in crate::ui) volume_icon: gtk4::Button,
     pub(in crate::ui) volume_scale: gtk4::Scale,
@@ -223,6 +224,12 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     seek_row.append(&duration_label);
     seek_row.set_hexpand(true);
 
+    let streaming_status_label = gtk4::Label::new(None);
+    streaming_status_label.add_css_class("dim-label");
+    streaming_status_label.add_css_class("caption");
+    streaming_status_label.set_halign(gtk4::Align::Center);
+    streaming_status_label.set_visible(false);
+
     // — Center zone (transport + seek) —
     let center_zone = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
     // The information affordance sits immediately beside Repeat but outside
@@ -236,6 +243,7 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     transport_shell.set_halign(gtk4::Align::Center);
     center_zone.append(&transport_shell);
     center_zone.append(&seek_row);
+    center_zone.append(&streaming_status_label);
     center_zone.set_hexpand(true);
     center_zone.set_size_request(CENTER_ZONE_MAX_WIDTH, -1);
     center_zone.set_valign(gtk4::Align::Center);
@@ -370,6 +378,7 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
         retry_external_button,
         position_label,
         duration_label,
+        streaming_status_label,
         waveform,
         volume_icon,
         volume_scale,

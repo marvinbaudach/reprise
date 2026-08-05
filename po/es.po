@@ -5257,3 +5257,8 @@ msgstr "{analyzed} de {total} analizados"
 #: crates/reprise-gnome/src/ui/strings_news.rs:240
 msgid "{analyzed} analyzed · {failed} failed"
 msgstr "{analyzed} analizados · {failed} fallidos"
+
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:177
+#, rust-format
+msgid "Streaming · {percent}% loaded"
+msgstr "Streaming · {percent} % cargado"

@@ -24,7 +24,7 @@ use crate::ui::strings;
 use crate::ui::swell::Swell;
 use crate::ui::waveform_seek::WaveformSeek;
 use reprise_core::format::{format_duration, format_remaining};
-use reprise_core::playback::PlaybackState;
+use reprise_core::playback::{PlaybackState, PlayerEvent};
 use reprise_core::queue::Repeat;
 
 pub(in crate::ui) const ICON_SHUFFLE: &str = "media-playlist-shuffle-symbolic";
@@ -91,6 +91,7 @@ pub struct PlayerBar {
     pub(in crate::ui) retry_external_button: gtk4::Button,
     pub(in crate::ui) position_label: gtk4::Label,
     pub(in crate::ui) duration_label: gtk4::Label,
+    pub(in crate::ui) streaming_status_label: gtk4::Label,
     pub(in crate::ui) waveform: WaveformSeek,
     /// Inline volume slider (replaces the old `ScaleButton`).
     volume_scale: gtk4::Scale,
@@ -99,9 +100,11 @@ pub struct PlayerBar {
     /// Current track duration (ms) from the latest `set_position`, so
     /// `connect_seek` can turn the waveform's 0..1 fraction into a target ms.
     duration_ms: Rc<Cell<i64>>,
+    buffering_percent: Cell<u8>,
+    buffered_ms: Cell<Option<i64>>,
+    pub(in crate::ui) progress_mode: Cell<super::player_bar_state::BarProgressMode>,
     pub(in crate::ui) seek_enabled: Rc<Cell<bool>>,
     pub(in crate::ui) live_started_at: RefCell<Option<Instant>>,
-    pub(in crate::ui) external_podcast: Cell<bool>,
     pub(in crate::ui) play_next_available: Cell<bool>,
     playback_state: Cell<PlaybackState>,
     swell: RefCell<Swell>,
@@ -160,6 +163,7 @@ impl PlayerBar {
             retry_external_button,
             position_label,
             duration_label,
+            streaming_status_label,
             waveform,
             volume_icon,
             volume_scale,
@@ -241,13 +245,16 @@ impl PlayerBar {
             retry_external_button,
             position_label,
             duration_label,
+            streaming_status_label,
             waveform,
             volume_scale,
             volume_icon,
             duration_ms: Rc::new(Cell::new(0)),
+            buffering_percent: Cell::new(0),
+            buffered_ms: Cell::new(None),
+            progress_mode: Cell::new(super::player_bar_state::BarProgressMode::Local),
             seek_enabled: Rc::new(Cell::new(true)),
             live_started_at: RefCell::new(None),
-            external_podcast: Cell::new(false),
             play_next_available: Cell::new(false),
             playback_state: Cell::new(PlaybackState::Stopped),
             swell: RefCell::new(Swell::default()),
@@ -452,12 +459,43 @@ impl PlayerBar {
             0.0
         };
         self.waveform.set_fraction_smooth(fraction);
+        self.refresh_buffering_presentation();
         self.position_label.set_text(&format_duration(position_ms));
-        if self.external_podcast.get() {
+        if self.progress_mode.get() == super::player_bar_state::BarProgressMode::Streaming {
             self.duration_label.set_text(&format_duration(duration_ms));
         } else {
             self.duration_label
                 .set_text(&format_remaining(position_ms, duration_ms));
+        }
+    }
+
+    pub(in crate::ui) fn set_buffering(&self, percent: u8, buffered_ms: Option<i64>) {
+        self.buffering_percent.set(percent.min(100));
+        self.buffered_ms.set(buffered_ms.map(|value| value.max(0)));
+        self.refresh_buffering_presentation();
+    }
+
+    fn refresh_buffering_presentation(&self) {
+        let event = PlayerEvent::Buffering {
+            percent: self.buffering_percent.get(),
+            buffered_ms: self.buffered_ms.get(),
+        };
+        let presentation = super::player_bar_state::buffering_presentation(
+            &event,
+            self.progress_mode.get(),
+            self.duration_ms.get(),
+        );
+        self.waveform
+            .set_buffered_fraction(presentation.map(|presentation| presentation.buffered_fraction));
+        if let Some(presentation) = presentation.filter(|presentation| presentation.show_status) {
+            self.streaming_status_label
+                .set_text(&crate::ui::strings::podcast_streaming_loaded(
+                    presentation.loaded_percent,
+                ));
+            self.streaming_status_label.set_visible(true);
+        } else {
+            self.streaming_status_label.set_visible(false);
+            self.streaming_status_label.set_text("");
         }
     }
 
