@@ -23,6 +23,7 @@ use crate::ui::cover_lift::CoverLift;
 use crate::ui::lyrics_view::LyricsView;
 use crate::ui::playback::external_media::ExternalPlaybackSnapshot;
 use crate::ui::player_controller::NowPlaying;
+use crate::ui::playing_links::LinkLabels;
 use crate::ui::style::tokens;
 use crate::ui::swell::Swell;
 
@@ -418,6 +419,14 @@ impl NowPlayingPanel {
 
     pub(in crate::ui) fn toggle_button(&self) -> gtk4::ToggleButton {
         self.toggle.clone()
+    }
+
+    pub(in crate::ui) fn set_link_labels(&self, labels: LinkLabels) {
+        let cover = strings::text(labels.cover);
+        crate::ui::link_activation::relabel(&self.widgets.cover, &cover);
+        crate::ui::link_activation::relabel(&self.widgets.album, &cover);
+        crate::ui::link_activation::relabel(&self.widgets.title, &strings::text(labels.title));
+        crate::ui::link_activation::relabel(&self.widgets.artist, &strings::text(labels.subtitle));
     }
 
     pub(in crate::ui) fn lyrics_view(&self) -> Rc<LyricsView> {

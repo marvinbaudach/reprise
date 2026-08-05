@@ -15,8 +15,9 @@ pub(in crate::ui) fn install(
     queue_model: &SharedQueueModel,
 ) {
     let panel_weak = Rc::downgrade(panel);
-    player.set_on_now_playing_panel_track_changed(move |track| {
+    player.set_on_now_playing_panel_track_changed(move |track, labels| {
         if let Some(panel) = panel_weak.upgrade() {
+            panel.set_link_labels(labels);
             panel.set_loaded_track(track);
         }
     });
@@ -27,8 +28,37 @@ pub(in crate::ui) fn install(
         }
     });
     let panel_weak = Rc::downgrade(panel);
+    let player_weak = Rc::downgrade(player);
     player.add_on_external_changed(move |snapshot| {
         if let Some(panel) = panel_weak.upgrade() {
+            let labels = snapshot.as_ref().map_or_else(
+                || {
+                    let availability = player_weak.upgrade().map_or(
+                        crate::ui::playing_links::LinkAvailability {
+                            artist: false,
+                            album: false,
+                        },
+                        |player| crate::ui::playing_links::LinkAvailability {
+                            artist: player.current_artist_identity().is_some(),
+                            album: player.current_album_identity().is_some(),
+                        },
+                    );
+                    crate::ui::playing_links::panel_labels(
+                        crate::ui::playback::preview::PlaybackMode::Queue,
+                        availability,
+                    )
+                },
+                |snapshot| {
+                    crate::ui::playing_links::panel_labels(
+                        crate::ui::playing_links::external_mode(&snapshot.media),
+                        crate::ui::playing_links::LinkAvailability {
+                            artist: true,
+                            album: true,
+                        },
+                    )
+                },
+            );
+            panel.set_link_labels(labels);
             panel.set_external_snapshot(snapshot);
         }
     });

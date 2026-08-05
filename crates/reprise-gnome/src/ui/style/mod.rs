@@ -129,6 +129,7 @@ fn app_css() -> String {
         super::releases::css::css(),
         super::updates::css(),
         super::podcasts::css(),
+        super::source_row::css(),
         super::radio::css(),
         super::source_empty_state::css(),
         super::toasts::css(),

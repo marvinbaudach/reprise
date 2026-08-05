@@ -1,14 +1,17 @@
 //! One rendering edge for every track, album, and artist metadata link.
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use libadwaita as adw;
-use reprise_core::browser::navigation::NavigationIntent;
+use reprise_core::browser::navigation::{NavigationIntent, SourceTarget};
 
 use super::library_shell::{self, ActiveContentFocus};
 use crate::ui::nav_history::NavHistory;
 use crate::ui::sidebar::Sidebar;
 use crate::ui::track_list::TrackList;
+
+type SourceRevealCallback = Rc<dyn Fn(SourceTarget)>;
 
 fn normalize_catalog_intent(
     intent: NavigationIntent,
@@ -36,6 +39,23 @@ fn normalize_catalog_intent(
     }
 }
 
+/// `BROWSE-4`: order is contractual. The target view must hold the reveal
+/// request before routing maps it, and it must hold it *whichever* way routing
+/// ends: an already-open source view yields no transition, and a torn-down
+/// window has no widgets left to route with. Both leave through `route` doing
+/// nothing, and neither may swallow the reveal the user asked for.
+fn reveal_then_route(
+    slot: &RefCell<Option<SourceRevealCallback>>,
+    target: SourceTarget,
+    route: impl FnOnce(),
+) {
+    let callback = slot.borrow().clone();
+    if let Some(callback) = callback {
+        callback(target);
+    }
+    route();
+}
+
 #[derive(Clone)]
 pub(in crate::ui) struct MetadataNavigator {
     history: Rc<NavHistory>,
@@ -44,6 +64,7 @@ pub(in crate::ui) struct MetadataNavigator {
     content_stack: gtk4::Stack,
     source_title: adw::WindowTitle,
     active_content_focus: ActiveContentFocus,
+    on_source_reveal: Rc<RefCell<Option<SourceRevealCallback>>>,
 }
 
 impl MetadataNavigator {
@@ -62,10 +83,39 @@ impl MetadataNavigator {
             content_stack,
             source_title,
             active_content_focus,
+            on_source_reveal: Rc::new(RefCell::new(None)),
         }
     }
 
+    pub(in crate::ui) fn set_on_source_reveal(&self, callback: impl Fn(SourceTarget) + 'static) {
+        self.on_source_reveal.replace(Some(Rc::new(callback)));
+    }
+
     pub(in crate::ui) fn navigate(&self, intent: NavigationIntent, reason: &'static str) {
+        if let Some(target) = intent.source_target() {
+            reveal_then_route(&self.on_source_reveal, target, || {
+                let (Some(sidebar), Some(track_list)) =
+                    (self.sidebar.upgrade(), self.track_list.upgrade())
+                else {
+                    return;
+                };
+                if let Some(place) = self
+                    .history
+                    .navigate_from(intent, track_list.browser_place())
+                {
+                    library_shell::route_to_place(
+                        &place,
+                        &sidebar,
+                        &track_list,
+                        &self.content_stack,
+                        &self.source_title,
+                        &self.active_content_focus,
+                        reason,
+                    );
+                }
+            });
+            return;
+        }
         let (Some(sidebar), Some(track_list)) = (self.sidebar.upgrade(), self.track_list.upgrade())
         else {
             return;
@@ -152,6 +202,46 @@ mod tests {
                 anchor_track_id: None,
             }
         );
+    }
+
+    /// `BROWSE-4`: the reveal reaches the source view before routing, and
+    /// survives a routing step that does nothing — dead widget refs after a
+    /// window teardown, or `navigate_from` returning `None` because the view
+    /// is already open. That second case is the everyday one: jumping to the
+    /// station while the Radio view is open routes nowhere, and the reveal is
+    /// the entire visible effect.
+    #[test]
+    fn browse_4_the_source_reveal_fires_first_and_survives_a_routing_no_op() {
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let slot: Rc<RefCell<Option<SourceRevealCallback>>> =
+            Rc::new(RefCell::new(Some(Rc::new({
+                let events = events.clone();
+                move |target| events.borrow_mut().push(format!("reveal {target:?}"))
+            }))));
+
+        reveal_then_route(&slot, SourceTarget::Station { station_id: 5 }, {
+            let events = events.clone();
+            move || events.borrow_mut().push("route".to_owned())
+        });
+        // The routing half found nothing to do — the reveal still happened.
+        reveal_then_route(&slot, SourceTarget::Station { station_id: 5 }, || {});
+
+        assert_eq!(
+            *events.borrow(),
+            [
+                "reveal Station { station_id: 5 }",
+                "route",
+                "reveal Station { station_id: 5 }",
+            ]
+        );
+
+        // No callback registered yet: routing must still run.
+        slot.replace(None);
+        reveal_then_route(&slot, SourceTarget::Station { station_id: 5 }, {
+            let events = events.clone();
+            move || events.borrow_mut().push("route".to_owned())
+        });
+        assert_eq!(events.borrow().len(), 4);
     }
 
     #[test]

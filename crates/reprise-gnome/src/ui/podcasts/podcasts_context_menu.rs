@@ -330,6 +330,16 @@ pub(super) fn build_source(
     selected_device_ids: &[String],
 ) -> gio::Menu {
     let menu = gio::Menu::new();
+    if group.kind == PodcastKind::Youtube {
+        let channel = gio::Menu::new();
+        append_targeted(
+            &channel,
+            strings::YOUTUBE_OPEN_CHANNEL,
+            "open-channel",
+            group.subscription_id,
+        );
+        menu.append_section(None, &channel);
+    }
     match sync_control(devices, selected_device_ids) {
         SyncControl::Hidden => {}
         SyncControl::Direct { device, selected } => append_device_targeted(
@@ -539,7 +549,7 @@ mod tests {
     }
 
     #[test]
-    fn src_12_a_menu_on_a_row_outside_the_selection_acts_on_that_row_alone() {
+    fn src_12a_a_menu_on_a_row_outside_the_selection_acts_on_that_row_alone() {
         let row = episode(3, false);
 
         let menu = build_for_selection(&row, &[1, 2], None);
@@ -567,7 +577,7 @@ mod tests {
     }
 
     #[test]
-    fn src_12_a_menu_on_a_selected_row_acts_on_the_whole_selection() {
+    fn src_12a_a_menu_on_a_selected_row_acts_on_the_whole_selection() {
         let row = episode(2, false);
 
         let menu = build_for_selection(&row, &[1, 2, 3], None);
@@ -625,7 +635,7 @@ mod tests {
     }
 
     #[test]
-    fn src_12_multi_selection_hides_single_targets_and_offers_explicit_played_states() {
+    fn src_12a_multi_selection_hides_single_targets_and_offers_explicit_played_states() {
         let mut entries = multi_selection_primary_entries();
         entries.push(multi_selection_destructive_entry());
         let actions = entries.iter().map(|entry| entry.action).collect::<Vec<_>>();
@@ -722,8 +732,8 @@ mod tests {
             }],
             &[],
         );
-        // 1 section for "Sync to <device>" plus 1 for "Unsubscribe".
-        assert_eq!(menu.n_items(), 2);
+        // Open channel, "Sync to <device>", and Unsubscribe.
+        assert_eq!(menu.n_items(), 3);
     }
 
     #[test]
@@ -775,6 +785,10 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "podcasts_source_menu_tests.rs"]
+mod source_menu_tests;
 
 #[cfg(test)]
 #[path = "podcasts_context_menu_browser_tests.rs"]

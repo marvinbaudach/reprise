@@ -273,6 +273,18 @@ human. Rationale for changes lives in the git history.
   is not the complete library, or no other title exists, playback ends as
   before. Explicit Play Next entries retain priority and Repeat One/All
   retain their existing queue behavior.
+- **PLAY-12** [active] [gtk] — **The player bar and the Now Playing panel have
+  no dead surfaces.** The title, channel/artist line, and cover are links in
+  every playback mode. What is playing is findable: each of the three surfaces
+  leads to the place where the loaded item stands in a list. If a surface has
+  no distinct target in a mode, it leads to the nearest target that does exist,
+  never nowhere. A surface may be insensitive only when no item at all is
+  loaded; it is then visibly inactive rather than silently inert, in the bar
+  and in the panel alike — a link that stays clickable with nothing loaded
+  swallows the click. Ending playback returns both to that state instead of
+  leaving the finished session's labels standing. A surface's label and tooltip
+  name the actual target for the current mode; the Now Playing and information
+  panels share these links and labels.
 
 ## D. Albums & artists view
 
@@ -3389,7 +3401,11 @@ means deterministic and high-confidence, never „without review".
   intents RevealTrack, OpenAlbum, and OpenArtist, regardless of whether
   they originate from the player bar, Now Playing panel, track list,
   queue, cover, or My Stats. The destination selects, focuses, and
-  centers the anchor track; Back restores the point of origin.
+  centers the anchor track; Back restores the point of origin. For a playing
+  podcast or YouTube item, the title and Ctrl+L reveal the episode while the
+  channel line and cover reveal its channel. For radio, all three surfaces
+  reveal the station row. These jumps always land in the source list, never a
+  detail page; an open channel detail page closes for the jump.
 
 - **BROWSE-5** [replaced by BROWSE-12] — Session restore previously retained
   sorting and playback origin but always opened the library root.
@@ -3815,7 +3831,10 @@ listening statistics.
   condition is a radio empty state with exactly one directly reachable
   "Add station" action.
 - **SRC-2** [active] [gtk] — Adding uses a tinted rectangular button
-  with plus, label, and radius 8 in both sources, never the chip shape.
+  with a label and radius 8 in both sources, never the chip shape. The plus was
+  never rendered on the podcast side because setting its label replaced the
+  icon child, and is now absent from radio too, so both buttons describe the
+  behavior they actually share.
   The shared toolbar grammar reads Add button · "Add filter" · active,
   deletable filter pills · count on the right; filter rows keep their
   height across state changes. On Podcasts and YouTube, the popover offers
@@ -3933,7 +3952,7 @@ listening statistics.
   all three add dialogs) computes the gate itself at its own connection rather
   than relying on an upstream checkpoint — the lesson from `T6-G1-gap`: a
   privacy promise in UI copy needs a test per call path, not per feature.
-- **SRC-12** [active] [gtk] — Episodes can be selected in bulk in both the
+- **SRC-12** [replaced by SRC-12a] [gtk] — Episodes can be selected in bulk in both the
   grouped library view and the channel detail view, with one shared set of
   batch actions offered only by the context menu for the current selection;
   there are no episode checkboxes or separate selection toolbar. Actions that
@@ -3942,6 +3961,31 @@ listening statistics.
   toast and a single undo. Escape clears the current episode selection in
   whichever of the two surfaces is showing, and is passed on untouched when
   nothing is selected.
+- **SRC-12a** [active] [gtk] — Episodes can be selected in bulk in both the
+  grouped library view and the channel detail view, with one shared set of
+  batch actions offered only by the context menu for the current selection.
+  Selection is carried by a checkbox over the left media slot in grouped rows,
+  never by a permanent extra column or a separate selection toolbar; the
+  channel page keeps its existing tint-only selection because it has no media
+  column. A checkbox appears only while a selection exists and only on a row
+  that is selected, hovered, or focused. Applying a selection never rebuilds
+  the list. Ctrl+A selects every rendered episode of the focused source; with
+  no focused row it selects the whole rendered list, while the channel page
+  selects its current rendered window. Collapsed groups, episodes past a
+  preview window, and filtered-out rows are never swept up. Escape and the
+  visible Clear action beside the selection count both clear the current
+  surface's selection; Escape propagates unchanged when nothing was selected.
+  Actions meaningless for more than one episode stay hidden, and a batch
+  reports one aggregated toast and one undo. Covered by the `src_12a_…` tests
+  in `podcasts_selection`, `podcasts_view_shortcuts` (including
+  `src_12a_ctrl_a_survives_caps_lock`, because a shortcut that a lock key
+  disarms is not a shortcut), `podcasts_view_tests`, `podcasts_groups_tests`,
+  `podcasts_context_menu`, `podcasts_context_menu_browser_tests`,
+  `podcasts_view_actions` for the aggregated toast and undo,
+  `youtube_channel_detail_tests` — where
+  `src_12a_channel_page_select_all_stops_at_the_rendered_window` is what
+  actually holds the channel-page clause above — `strings_podcasts`, and
+  `source_row::media_column`.
 - **SRC-4a** [active] [gtk] — Radio keeps SRC-4's removal and undo
   behavior, and its station menus continue to omit "Play Next" and "Add
   to Queue". A live stream is deliberately not a citizen of an ordered
@@ -3957,7 +4001,7 @@ listening statistics.
   `page_url` when present and never treats its media enclosure in `audio_url`
   as an episode page. As a single-episode action it is absent from a
   multi-selection menu instead of targeting an arbitrary member, as required
-  by SRC-12. This asymmetry with radio is deliberate. Unsubscribing is operated
+  by SRC-12a. This asymmetry with radio is deliberate. Unsubscribing is operated
   from the context menu alone; there is no hover star.
 - **SRC-13** [active] [gtk] — **Marking and scrolling are separate in the
   source lists.** The loaded item carries the shared playback marker in every
@@ -3969,7 +4013,10 @@ listening statistics.
   one cold-start restoration, which makes the restored episode the sole
   selection without taking focus. A collapsed group's ten-episode preview
   window opens when the loaded episode sits past it; an item hidden by the
-  active filter is not revealed and the filter is never cleared to reach it.
+  active filter is not revealed and the filter is never cleared to reach it. A
+  jump the user asked for always reveals, also in the already visible view and
+  regardless of the 1.5-second grace period; it drops exactly those filter
+  facets that would otherwise keep the target hidden, and nothing else.
 - **SRC-14** [active] [gtk] — **Episode rows select like track rows.** A click
   selects the row alone, Ctrl-click toggles it, Shift-click extends the
   selection from the anchor across the rendered order, and playback takes a
@@ -3994,6 +4041,47 @@ listening statistics.
   nothing carrying a genre shows **no chip at all** — an empty or invented
   suggestion is worse than none, and the dialogs remain fully usable through
   their search field.
+- **SRC-16** [active] [gtk] — **Podcast and YouTube episode lists share one
+  row grammar.** A fixed 64 × 40 media column hosts either 64 × 36 wide art or
+  36 × 36 square art, so both source kinds start their title at the same x
+  position and keep the same minimum row height. The second line drops absent
+  date or duration values instead of leaving separators behind, and carries at
+  most one status chip outside that fact chain. Resume states include the
+  measured whole percentage when duration is known and fall back to Resume
+  without inventing one otherwise. The 110-pixel download-state slot stays
+  reserved on the right even when no size is known; selection occupies the
+  media overlay on the left. Covered by
+  `src_16_the_shared_row_geometry_is_one_set_of_constants`,
+  `src_16_the_row_height_is_carried_by_the_shared_style`,
+  `src_16_both_shapes_fit_the_same_column`,
+  `src_16_the_checkbox_replaces_the_playing_marker_rather_than_covering_it`,
+  `src_16_the_title_starts_at_the_same_x_in_both_source_views`,
+  `src_16_rows_have_the_same_height_in_both_source_views`,
+  `src_16_a_row_renders_exactly_one_status_chip`,
+  `src_16_the_detail_line_drops_empty_values` and
+  `src_16_resume_reports_a_whole_percent_and_omits_it_without_a_duration` for
+  the second line, `src_16_the_channel_page_renders_the_status_as_a_chip`,
+  `src_16_the_rss_source_header_types_its_second_line_like_the_shared_grammar`,
+  and `src_16_the_style_takes_its_measurements_from_the_shared_constants` —
+  the last one because a stylesheet literal outranks the skeleton's size
+  request, so the constants only govern the layout for as long as the
+  stylesheet keeps deriving from them. **[planned]** RSS author
+  subtitles already use the same quiet second-line typography, but a YouTube
+  channel handle cannot join it until the source projection carries a durable
+  handle field; no subtitle is invented from other channel data meanwhile.
+- **SRC-17** [active] [gtk] — **Approach reveals one reserved source-row
+  action surface.** A source row's ⋮ keeps its layout space at all times and
+  changes only opacity and targeting on hover, keyboard focus, or selection;
+  revealing it can therefore never move the title under the pointer. The same
+  hover state is shared with the media overlay rather than collected by a
+  second controller. **Focus is watched on the revealed control itself, not
+  only on the row:** a container's focus does not bubble up from its children,
+  so a row-only rule leaves a control that Tab can reach but no one can see.
+  Covered by `src_17_revealing_keeps_the_space_and_only_changes_opacity`,
+  `src_17_focusing_the_control_itself_reveals_it`,
+  `src_17_the_row_menu_button_is_transparent_until_hover_focus_or_selection`,
+  `src_17_the_channel_page_hides_its_row_menu_until_hover_focus_or_selection`,
+  and `src_17_revealing_the_row_menu_button_does_not_move_the_title`.
 - **POD-1** [active] [core] — Episode status is a pure derivation:
   Played exactly when `played_at` is set, otherwise Resume when
   `position_ms > 0`, otherwise unstarted. The visible New pill is a
@@ -4069,7 +4157,11 @@ listening statistics.
   keeps Shorts hidden by default. "Load more" extends that same channel once,
   past the yt-dlp provider boundary, up to entry 40. Selection and bulk
   download or removal stay bound to the channel; every row shows the download
-  state from POD-7.
+  state from POD-7. The channel page is reached from the source row's existing
+  menu; the already-expandable channel header carries no arrow button or
+  second competing navigation affordance. Covered by
+  `pod_10_the_source_menu_opens_the_channel_page` and
+  `pod_10_the_channel_header_has_no_arrow_button`.
 - **POD-11** [active] [core] [gtk] — On the YouTube channel page every row
   carries a download column of its own with the state from POD-7 and, as soon
   as a file actually exists, its compactly formatted size (e.g. "148 MB",

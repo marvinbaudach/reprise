@@ -7,6 +7,7 @@ use reprise_core::db::Db;
 use reprise_core::radio::StationRow;
 
 use crate::ui::browse::browse_bar::CHIP_CSS_CLASS;
+use crate::ui::enumerated::enumerated;
 use crate::ui::strings;
 use crate::ui::style::buttons;
 
@@ -28,10 +29,17 @@ impl RadioFilter {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum RadioFilterFacet {
-    Genre,
-    Country,
+enumerated! {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub(super) enum RadioFilterFacet {
+        Genre,
+        Country,
+    }
+
+    /// Generated from the declaration above: a facet that is missing here is
+    /// never relaxed, so a jump to the connected station silently does
+    /// nothing when that facet is what hides it.
+    const RADIO_FILTER_FACETS;
 }
 
 pub(super) fn remove_filter(filter: &RadioFilter, facet: RadioFilterFacet) -> RadioFilter {
@@ -51,6 +59,41 @@ pub(super) fn filter_rows(rows: &[StationRow], filter: &RadioFilter) -> Vec<Stat
         })
         .cloned()
         .collect()
+}
+
+/// A filter containing only the selected facet, keeping `filter_rows` as the
+/// single source of matching behavior.
+fn only_facet(filter: &RadioFilter, facet: RadioFilterFacet) -> RadioFilter {
+    match facet {
+        RadioFilterFacet::Genre => RadioFilter {
+            genre: filter.genre.clone(),
+            country: None,
+        },
+        RadioFilterFacet::Country => RadioFilter {
+            genre: None,
+            country: filter.country.clone(),
+        },
+    }
+}
+
+pub(super) fn facet_hides_station(
+    row: &StationRow,
+    filter: &RadioFilter,
+    facet: RadioFilterFacet,
+) -> bool {
+    filter_rows(std::slice::from_ref(row), &only_facet(filter, facet)).is_empty()
+}
+
+pub(super) fn filter_without_hiding(row: &StationRow, filter: &RadioFilter) -> RadioFilter {
+    if !filter_rows(std::slice::from_ref(row), filter).is_empty() {
+        return filter.clone();
+    }
+    RADIO_FILTER_FACETS
+        .into_iter()
+        .filter(|facet| facet_hides_station(row, filter, *facet))
+        .fold(filter.clone(), |filter, facet| {
+            remove_filter(&filter, facet)
+        })
 }
 
 pub(super) fn genre_facets(rows: &[StationRow]) -> Vec<String> {
@@ -130,11 +173,7 @@ pub(super) struct RadioFilterBar {
 
 impl RadioFilterBar {
     pub(super) fn new(conn: Rc<Db>) -> Rc<Self> {
-        let add = gtk4::Button::new();
-        let add_content = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
-        add_content.append(&gtk4::Image::from_icon_name("list-add-symbolic"));
-        add_content.append(&gtk4::Label::new(Some(&strings::text(strings::RADIO_ADD))));
-        add.set_child(Some(&add_content));
+        let add = gtk4::Button::with_label(&strings::text(strings::RADIO_ADD));
         buttons::arm(&add, buttons::ADD_ACTION_CLASS);
 
         let add_filter = gtk4::MenuButton::builder()
@@ -203,6 +242,10 @@ impl RadioFilterBar {
 
     pub(super) fn clear_all(self: &Rc<Self>) {
         self.apply(RadioFilter::default());
+    }
+
+    pub(super) fn apply_filter(self: &Rc<Self>, filter: RadioFilter) {
+        self.apply(filter);
     }
 
     pub(super) fn set_rows(&self, rows: &[StationRow]) {
@@ -326,6 +369,38 @@ fn wire_chooser(bar: &Rc<RadioFilterBar>) {
 mod tests {
     use super::*;
 
+    fn descendant_images(widget: &impl IsA<gtk4::Widget>) -> Vec<gtk4::Image> {
+        let mut found = Vec::new();
+        let mut child = widget.as_ref().first_child();
+        while let Some(current) = child {
+            if let Ok(image) = current.clone().downcast::<gtk4::Image>() {
+                found.push(image);
+            }
+            found.extend(descendant_images(&current));
+            child = current.next_sibling();
+        }
+        found
+    }
+
+    /// `SRC-2`: both library add buttons use the same label-only grammar.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn src_2_both_add_buttons_carry_a_label_and_no_icon() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let radio = RadioFilterBar::new(Rc::new(crate::test_db::open().unwrap()));
+        let buttons = [
+            radio.add.clone(),
+            crate::ui::podcasts::podcast_add_button(reprise_core::podcasts::PodcastKind::Rss),
+        ];
+        for button in buttons {
+            assert!(button.icon_name().is_none(), "add buttons carry no icon");
+            assert!(!button.label().unwrap_or_default().is_empty());
+            assert!(button.has_css_class(buttons::ADD_ACTION_CLASS));
+            assert!(descendant_images(&button).is_empty());
+        }
+    }
+
     #[test]
     fn radio_filter_facets_are_sticky_and_each_chip_removes_one_constraint() {
         let conn = crate::test_db::open().unwrap();
@@ -372,6 +447,34 @@ mod tests {
         );
         assert_eq!(genre_facets(&rows), ["Jazz", "Metal"]);
         assert_eq!(country_facets(&rows), ["CH", "DE"]);
+    }
+
+    #[test]
+    fn src_13_only_the_hiding_facet_is_dropped_for_a_station() {
+        let station = test_station(1, Some("Metal"), Some("DE"));
+        let filter = RadioFilter {
+            genre: Some("Metal".into()),
+            country: Some("CH".into()),
+        };
+
+        assert_eq!(
+            filter_without_hiding(&station, &filter),
+            RadioFilter {
+                genre: Some("Metal".into()),
+                country: None,
+            }
+        );
+    }
+
+    #[test]
+    fn src_13_a_visible_station_leaves_every_facet_standing() {
+        let station = test_station(1, Some("Metal"), Some("CH"));
+        let filter = RadioFilter {
+            genre: Some("Metal".into()),
+            country: Some("CH".into()),
+        };
+
+        assert_eq!(filter_without_hiding(&station, &filter), filter);
     }
 
     #[test]

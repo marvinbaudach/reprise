@@ -6,7 +6,7 @@ macro_rules! N_ {
     };
 }
 
-use super::{formatted, plural};
+use super::{formatted, plural, text};
 
 pub const PODCASTS: &str = N_!("Podcasts");
 pub const YOUTUBE: &str = N_!("YouTube");
@@ -15,6 +15,10 @@ pub const PODCASTS_DESCRIPTION: &str =
 pub const PODCAST_DATE: &str = N_!("Date");
 pub const PODCAST_EPISODE: &str = N_!("Episode");
 pub const PODCAST_SHOW: &str = N_!("Show");
+pub const JUMP_TO_PLAYING_EPISODE: &str = N_!("Jump to the playing episode");
+pub const GO_TO_PLAYING_CHANNEL: &str = N_!("Go to the channel");
+pub const EPISODE_NOT_IN_SUBSCRIPTIONS: &str =
+    N_!("This episode is no longer in your subscriptions");
 pub const PODCAST_LENGTH: &str = N_!("Length");
 pub const PODCAST_SOURCE: &str = N_!("Source");
 pub const PODCAST_STATUS: &str = N_!("Status");
@@ -22,6 +26,10 @@ pub const PODCAST_SOURCE_RSS: &str = N_!("RSS");
 pub const PODCAST_SOURCE_YOUTUBE: &str = N_!("YouTube");
 pub const PODCAST_STATUS_NEW: &str = N_!("New");
 pub const PODCAST_STATUS_RESUME: &str = N_!("Resume");
+/// The Resume chip with the share already heard. `PODCAST_STATUS_RESUME`
+/// stays for episodes whose duration is unknown, where a percentage would be
+/// invented rather than measured.
+pub const PODCAST_STATUS_RESUME_PERCENT: &str = N_!("Resume {percent} %");
 pub const PODCAST_STATUS_PLAYED: &str = N_!("Played");
 pub const PODCAST_TODAY: &str = N_!("Today");
 pub const PODCAST_YESTERDAY: &str = N_!("Yesterday");
@@ -35,6 +43,9 @@ pub const PODCAST_FILTER_UNPLAYED: &str = N_!("Unplayed");
 pub const PODCAST_FILTER_DOWNLOADED: &str = N_!("Downloaded");
 pub const PODCAST_FILTER_SOURCE: &str = N_!("Source");
 pub const PODCAST_CLEAR_ALL: &str = N_!("Clear all");
+/// Beside the selection count. "Clear all" drops filters, so the two must not
+/// read alike.
+pub const PODCAST_CLEAR_SELECTION: &str = N_!("Clear");
 pub const PODCAST_NEW_COUNT: &str = N_!("{count} new");
 pub const PODCAST_LATEST: &str = N_!("latest {date}");
 /// `SRC-10`: the shared empty-state grammar's copy for Podcasts — title, one
@@ -198,7 +209,7 @@ pub fn podcast_episode_count(count: usize) -> String {
     )
 }
 
-/// SRC-12 batch feedback. One message per batch, never one per episode, and
+/// SRC-12a batch feedback. One message per batch, never one per episode, and
 /// never assembled by concatenating two separately translated fragments —
 /// word order and punctuation around "N done, M failed" differ per language,
 /// so both numbers live in one msgid, pluralised on the successful count.
@@ -237,7 +248,7 @@ pub fn episodes_added_to_queue_toast(count: usize) -> String {
     )
 }
 
-/// SRC-12: acting on a selection that contains nothing to act on is still an
+/// SRC-12a: acting on a selection that contains nothing to act on is still an
 /// answer. Staying silent reads as a broken button.
 pub const PODCAST_BATCH_NOTHING_TO_DELETE: &str = N_!("No downloaded files in the selection");
 
@@ -276,6 +287,16 @@ pub fn podcast_duration_hours(hours: i64, minutes: i64) -> String {
             ("minutes", &format!("{minutes:02}")),
         ],
     )
+}
+
+pub fn podcast_status_resume(percent: Option<u8>) -> String {
+    match percent {
+        Some(percent) => formatted(
+            PODCAST_STATUS_RESUME_PERCENT,
+            &[("percent", &percent.to_string())],
+        ),
+        None => text(PODCAST_STATUS_RESUME),
+    }
 }
 
 pub fn podcast_group_facts(episodes: &str, new: usize, latest: &str, downloaded: &str) -> String {
@@ -531,6 +552,12 @@ mod tests {
         assert_eq!(podcast_show_all_episodes(15), "Show all 15 episodes");
     }
 
+    #[test]
+    fn the_resume_chip_states_a_percentage_only_when_there_is_one() {
+        assert_eq!(podcast_status_resume(Some(42)), "Resume 42 %");
+        assert_eq!(podcast_status_resume(None), "Resume");
+    }
+
     /// `G2` (design 6a): matches the owner's design example verbatim.
     #[test]
     fn pod_9_library_summary_matches_the_owners_design_example() {
@@ -573,7 +600,7 @@ mod tests {
     }
 
     #[test]
-    fn src_12_summary_reports_a_selection_and_drops_it_at_zero() {
+    fn src_12a_summary_reports_a_selection_and_drops_it_at_zero() {
         let summary = "2 channels · 54 episodes · 4 new";
 
         assert_eq!(
