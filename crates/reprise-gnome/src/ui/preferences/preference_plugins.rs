@@ -162,7 +162,6 @@ pub(in crate::ui) fn plugin_description(descriptor: &ModuleDescriptor) -> String
         "youtube" => strings::ONLINE_SOURCES_YOUTUBE_SUBTITLE,
         "podcasts" => strings::ONLINE_SOURCES_PODCASTS_SUBTITLE,
         "radio" => strings::ONLINE_SOURCES_RADIO_SUBTITLE,
-        "library_doctor" => strings::LIBRARY_DOCTOR_DESCRIPTION,
         "cover_download" => strings::COVER_DOWNLOAD_DESCRIPTION,
         "artist_portraits" => strings::ARTIST_PORTRAITS_DESCRIPTION,
         "online_lyrics" => strings::ONLINE_LYRICS_DESCRIPTION,
