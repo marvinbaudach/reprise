@@ -584,7 +584,7 @@ impl FeedFetcher for LeakingFeed {
     }
 }
 
-use crate::log_capture::{CapturedLogs, LogCapture};
+use crate::log_capture::CapturedLogs;
 
 /// `POD-13`: the redaction this rule promises — feed `download_episode` a
 /// provider error carrying a signed URL, a query string, a credential and
@@ -607,8 +607,7 @@ fn pod_13_a_failed_download_never_leaks_the_raw_provider_message_into_state_or_l
     let episode_id = super::super::query::episodes_for_subscription(&conn, id).unwrap()[0].id;
 
     let logs = CapturedLogs::default();
-    let subscriber = LogCapture(logs.clone());
-    let outcome = tracing::subscriber::with_default(subscriber, || {
+    let outcome = logs.capture(|| {
         download_episode(
             &conn,
             &LeakingFeed,
@@ -661,8 +660,7 @@ fn pod_13_a_failed_cleanup_never_leaks_the_local_path_into_logs() {
     let episode_id = 42;
 
     let logs = CapturedLogs::default();
-    let subscriber = LogCapture(logs.clone());
-    tracing::subscriber::with_default(subscriber, || {
+    logs.capture(|| {
         remove_completed_download(episode_id, &unremovable);
     });
 

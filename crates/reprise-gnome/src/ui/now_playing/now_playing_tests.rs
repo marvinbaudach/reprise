@@ -95,59 +95,6 @@ fn test_widgets_for_session(
 }
 
 #[test]
-#[ignore = "requires a display; run via xvfb-run"]
-fn four_tab_labels_fit_the_300_px_panel_without_ellipsizing() {
-    let _main_context = crate::ui::test_main_context::lock_main_context();
-    gtk4::init().unwrap();
-    let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    content.set_width_request(600);
-    let widgets = test_widgets(&content, true);
-    let window = gtk4::Window::builder()
-        .default_width(900)
-        .default_height(700)
-        .child(widgets.column.widget())
-        .build();
-    window.present();
-    wait_for_layout(100);
-
-    assert_eq!(
-        widgets.tab_switcher.display_mode(),
-        adw::InlineViewSwitcherDisplayMode::Labels
-    );
-    let labels = descendant_labels(widgets.tab_switcher.upcast_ref());
-    for expected in ["Up Next", "Lyrics", "Visuals", "Sound"] {
-        let label = labels
-            .iter()
-            .find(|label| label.text().as_str() == expected)
-            .unwrap_or_else(|| panic!("missing tab label {expected:?}"));
-        let (natural_width, _) = label.layout().pixel_size();
-        assert!(
-            !label.layout().is_ellipsized(),
-            "tab label {expected:?} is ellipsized: allocation {} px, text {} px",
-            label.width(),
-            natural_width
-        );
-    }
-    window.close();
-}
-
-fn descendant_labels(root: &gtk4::Widget) -> Vec<gtk4::Label> {
-    let mut labels = Vec::new();
-    let mut pending = vec![root.clone()];
-    while let Some(widget) = pending.pop() {
-        if let Ok(label) = widget.clone().downcast::<gtk4::Label>() {
-            labels.push(label);
-        }
-        let mut child = widget.first_child();
-        while let Some(current) = child {
-            child = current.next_sibling();
-            pending.push(current);
-        }
-    }
-    labels
-}
-
-#[test]
 fn loaded_track_presentation_is_identical_while_playing_or_paused() {
     let track = loaded_track();
     let playing = panel_presentation(Some(&track), PlaybackState::Playing);
@@ -262,20 +209,6 @@ fn pod_21_lyrics_falls_back_and_stays_hidden_for_podcast_youtube_and_radio() {
         panel.set_external_snapshot(None);
         assert!(panel.widgets.lyrics_page.is_visible());
     }
-}
-
-#[test]
-fn ac_23_visual_is_the_third_panel_tab() {
-    assert_eq!(PanelTab::Visual.page_name(), VISUAL_PAGE);
-    assert_eq!(
-        PANEL_TABS,
-        [
-            PanelTab::UpNext,
-            PanelTab::Lyrics,
-            PanelTab::Visual,
-            PanelTab::Sound,
-        ]
-    );
 }
 
 #[test]
@@ -505,7 +438,7 @@ fn head_and_pill_match_the_21a_structure() {
     assert!(widgets.title.has_css_class("reprise-now-playing-title"));
     assert!(widgets.artist.has_css_class("reprise-now-playing-subtitle"));
     assert!(widgets.album.has_css_class("reprise-now-playing-subtitle"));
-    assert_eq!(PANEL_TABS.len(), 3);
+    assert_eq!(PANEL_TABS.len(), 4);
     assert!(widgets
         .tab_switcher
         .has_css_class("reprise-now-playing-tabs"));
@@ -514,10 +447,10 @@ fn head_and_pill_match_the_21a_structure() {
         Some(&widgets.tab_stack)
     );
     assert!(widgets.tab_stack.child_by_name(VISUAL_PAGE).is_some());
-    assert_eq!(widgets.tab_stack.pages().n_items(), 3);
+    assert_eq!(widgets.tab_stack.pages().n_items(), 4);
     let visual = widgets.tab_stack.child_by_name(VISUAL_PAGE).unwrap();
     let page = widgets.tab_stack.page(&visual);
-    assert_eq!(page.title().as_deref(), Some("Visual"));
+    assert_eq!(page.title().as_deref(), Some("Visuals"));
     // Rising bars, not a speaker: the tab shows what the audio looks like,
     // not where it comes out. Adwaita ships no equalizer or spectrum symbol,
     // so the signal-strength bars stand in — the glyph matches the visual

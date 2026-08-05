@@ -9,12 +9,14 @@ use reprise_core::sound_neighbours::SoundNeighbour;
 use crate::ui::cover_loader::CoverLoader;
 
 type IdCallback = Rc<dyn Fn(i64)>;
+type AlbumCallback = Rc<dyn Fn(i64, &str, &str)>;
 
 #[derive(Default)]
 pub(super) struct RowCallbacks {
     play: RefCell<Option<IdCallback>>,
     play_next: RefCell<Option<IdCallback>>,
     add_to_queue: RefCell<Option<IdCallback>>,
+    open_album: RefCell<Option<AlbumCallback>>,
 }
 
 impl RowCallbacks {
@@ -28,6 +30,10 @@ impl RowCallbacks {
 
     pub(super) fn set_add_to_queue(&self, callback: impl Fn(i64) + 'static) {
         *self.add_to_queue.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub(super) fn set_open_album(&self, callback: impl Fn(i64, &str, &str) + 'static) {
+        *self.open_album.borrow_mut() = Some(Rc::new(callback));
     }
 }
 
@@ -120,11 +126,17 @@ fn build_row(
         move |_, _, _, _| invoke(&callbacks.play, id)
     });
     row.add_controller(click);
-    install_context_menu(&row, id, callbacks);
+    install_context_menu(
+        &row,
+        id,
+        &neighbour.album,
+        &neighbour.album_artist,
+        callbacks,
+    );
     row
 }
 
-fn install_context_menu(row: &gtk4::Box, id: i64, callbacks: &Rc<RowCallbacks>) {
+pub(super) fn build_context_menu_model() -> gio::Menu {
     let menu = gio::Menu::new();
     menu.append(
         Some(&crate::ui::strings::text(
@@ -138,6 +150,23 @@ fn install_context_menu(row: &gtk4::Box, id: i64, callbacks: &Rc<RowCallbacks>) 
         )),
         Some("sound.add-to-queue"),
     );
+    menu.append(
+        Some(&crate::ui::strings::text(
+            crate::ui::strings::CONTEXT_MENU_GO_TO_ALBUM,
+        )),
+        Some("sound.open-album"),
+    );
+    menu
+}
+
+fn install_context_menu(
+    row: &gtk4::Box,
+    id: i64,
+    album: &str,
+    album_artist: &str,
+    callbacks: &Rc<RowCallbacks>,
+) {
+    let menu = build_context_menu_model();
     let actions = gio::SimpleActionGroup::new();
     add_action(&actions, "play-next", id, callbacks, ActionKind::PlayNext);
     add_action(
@@ -147,6 +176,19 @@ fn install_context_menu(row: &gtk4::Box, id: i64, callbacks: &Rc<RowCallbacks>) 
         callbacks,
         ActionKind::AddToQueue,
     );
+    let open_album = gio::SimpleAction::new("open-album", None);
+    open_album.connect_activate({
+        let callbacks = callbacks.clone();
+        let album = album.to_owned();
+        let album_artist = album_artist.to_owned();
+        move |_, _| {
+            let callback = callbacks.open_album.borrow().clone();
+            if let Some(callback) = callback {
+                callback(id, &album, &album_artist);
+            }
+        }
+    });
+    actions.add_action(&open_album);
     row.insert_action_group("sound", Some(&actions));
     let popover = gtk4::PopoverMenu::from_model(Some(&menu));
     popover.set_parent(row);

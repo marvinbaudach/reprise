@@ -78,7 +78,7 @@ fn set_10_plugins_is_the_single_settings_home_in_the_design_order() {
 }
 
 #[test]
-fn provision_badges_use_the_static_group_majority_rule() {
+fn sim_8_provision_badges_use_the_static_group_majority_rule() {
     use reprise_core::modules::ProvisionKind;
 
     assert!(provision_badges_for("youtube", ONLINE_PLUGIN_IDS).is_empty());
@@ -95,6 +95,18 @@ fn provision_badges_use_the_static_group_majority_rule() {
             "a tied Local row must retain its badge: {id}"
         );
     }
+    assert_eq!(
+        provision_badge_tone(ProvisionKind::PanelTab),
+        ProvisionBadgeTone::Accent
+    );
+    assert_eq!(
+        provision_badge_tone(ProvisionKind::SidebarSection),
+        ProvisionBadgeTone::Accent
+    );
+    assert_eq!(
+        provision_badge_tone(ProvisionKind::ContextItem),
+        ProvisionBadgeTone::Neutral
+    );
 }
 
 #[test]

@@ -22,7 +22,7 @@ fn features(
 }
 
 #[test]
-fn sound_distance_default_uses_cosine_bands_and_standardized_scalars() {
+fn sim_2_distance_uses_cosine_bands_and_standardized_scalars() {
     let first = features(0, 10.0, 2.0, 4.0, Some(100.0));
     let second = features(1, 12.0, 4.0, 8.0, Some(120.0));
     let stats = compute_sound_stats(&[first.clone(), second.clone()]);
@@ -36,7 +36,7 @@ fn sound_distance_default_uses_cosine_bands_and_standardized_scalars() {
 }
 
 #[test]
-fn sound_distance_zero_spread_and_disabled_tempo_add_nothing() {
+fn sim_2_zero_spread_and_disabled_tempo_add_nothing() {
     let first = features(0, 10.0, 2.0, 4.0, Some(100.0));
     let second = features(0, 10.0, 2.0, 4.0, Some(200.0));
     let stats = compute_sound_stats(&[first.clone(), second.clone()]);
@@ -46,7 +46,7 @@ fn sound_distance_zero_spread_and_disabled_tempo_add_nothing() {
 }
 
 #[test]
-fn sound_distance_tempo_option_assigns_a_nonzero_weight_only_when_enabled() {
+fn sim_2_tempo_assigns_a_nonzero_weight_only_when_enabled() {
     assert_eq!(DistanceWeights::DEFAULT.tempo, 0.0);
     let enabled = DistanceWeights::DEFAULT.with_tempo(true);
     assert_eq!(enabled.tempo, 0.2);

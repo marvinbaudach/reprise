@@ -267,7 +267,7 @@ mod tests {
     }
 
     #[test]
-    fn sound_similarity_is_a_live_opt_in_local_module() {
+    fn sim_6_sound_similarity_is_a_live_opt_in_local_module() {
         assert_eq!(SOUND_SIMILARITY_MODULE.id, "sound_similarity");
         const { assert!(!SOUND_SIMILARITY_MODULE.default_enabled) };
         const { assert!(SOUND_SIMILARITY_MODULE.applies_live) };

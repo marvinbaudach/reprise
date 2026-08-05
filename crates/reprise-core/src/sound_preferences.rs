@@ -108,7 +108,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn sound_preferences_default_and_round_trip() {
+    fn sim_6_sound_preferences_default_and_round_trip() {
         let db = Db::open_in_memory().unwrap();
         assert_eq!(
             SoundSimilarityPreferences::load(&db).unwrap(),

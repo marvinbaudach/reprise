@@ -47,6 +47,17 @@ pub(super) fn should_render_up_next(panel_visible: bool, selected_tab: PanelTab)
     panel_visible && selected_tab == PanelTab::UpNext
 }
 
+pub(super) fn tab_after_sound_visibility_change(
+    selected: PanelTab,
+    sound_visible: bool,
+) -> PanelTab {
+    if !sound_visible && selected == PanelTab::Sound {
+        PanelTab::UpNext
+    } else {
+        selected
+    }
+}
+
 #[derive(Default)]
 pub(super) struct TabSession {
     pub(super) selected: Cell<PanelTab>,
@@ -62,12 +73,37 @@ pub(super) struct TabFooters {
 
 #[cfg(test)]
 mod tests {
-    use super::{PanelTab, SOUND_PAGE};
+    use super::{tab_after_sound_visibility_change, PanelTab, PANEL_TABS, SOUND_PAGE};
 
     #[test]
-    fn sound_tab_round_trips_through_its_page_name() {
+    fn npp_14_extension_tab_follows_the_three_built_in_tabs() {
+        assert_eq!(
+            PANEL_TABS,
+            [
+                PanelTab::UpNext,
+                PanelTab::Lyrics,
+                PanelTab::Visual,
+                PanelTab::Sound,
+            ]
+        );
         assert_eq!(PanelTab::Sound.page_name(), SOUND_PAGE);
         assert_eq!(PanelTab::from_page_name(SOUND_PAGE), Some(PanelTab::Sound));
+    }
+
+    #[test]
+    fn npp_15_hiding_the_open_extension_tab_falls_back_to_up_next() {
+        assert_eq!(
+            tab_after_sound_visibility_change(PanelTab::Sound, false),
+            PanelTab::UpNext
+        );
+        assert_eq!(
+            tab_after_sound_visibility_change(PanelTab::Lyrics, false),
+            PanelTab::Lyrics
+        );
+        assert_eq!(
+            tab_after_sound_visibility_change(PanelTab::Sound, true),
+            PanelTab::Sound
+        );
     }
 }
 

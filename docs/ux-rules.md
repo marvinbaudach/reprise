@@ -2499,6 +2499,21 @@ property is set and yet nothing happens.
   not change with the track. Newly loaded synchronized lyrics start at line 0 and
   position it per LYR-4. Without animations, cover and content switch hard
   (MOT-7).
+- **NPP-14** [active] [gtk] — At the regular fixed 300 px panel width the
+  switcher uses the four short labels **Up Next · Lyrics · Visuals · Sound**
+  in that order without ellipsizing. Built-in tabs always precede extension
+  tabs; extensions follow in activation order. Every tab retains an installed
+  symbolic icon, but icons replace labels only at the measured compact
+  breakpoint of 224 px or below — never merely because the regular panel is
+  narrow.
+- **NPP-15** [active] [gtk] — Disabling an extension never leaves its selected
+  page empty. If its tab is open, selection falls back to **Up Next** before
+  the page is hidden; disabling it while another tab is selected leaves that
+  selection unchanged.
+- **NPP-16** [planned] [gtk] — Once a fifth reachable panel tab exists, the
+  switcher moves extension tabs beyond the fourth into an overflow menu whose
+  button carries their count. No overflow control exists while four tabs are
+  the only reachable registry state.
 
 ## V. My Stats
 
@@ -4439,6 +4454,47 @@ plan.
   stops it is stopping someone else's session. The runtime names the
   originator of what is loaded, so this is a question the surface can
   answer rather than guess.
+
+## AH. Sound Similarity
+
+Sound Similarity is an optional local module. Its stored profile is a derived
+cache over the spectrogram, never a second audio decode or a mutation of the
+rendering dataset. It compares the playing track with the local library and
+keeps all ranking work off the GTK thread.
+
+- **SIM-1** [active] [core] — A sound profile lives in its own versioned cache
+  and follows the spectrogram's source-identity invalidation and track
+  deletion. A stale format is absent and is derived again from the stored
+  spectrogram; the spectrogram schema itself gains no recommendation scalar.
+- **SIM-2** [active] [core] — Band means remain L2-normalized and are compared
+  with cosine distance. Only centroid mean, centroid variance,
+  frame-level crest, and an enabled tempo estimate are standardized against
+  library spread; zero spread contributes zero. The default weights are
+  bands 0.5, timbre 0.25, dynamics 0.25, tempo 0.
+- **SIM-3** [active] [core] — A row's percentage is its rank in the current
+  track's distance distribution across the complete eligible library. Same
+  album (album title plus album artist) and same artist exclusions are applied
+  only after those ranks are formed, so changing a filter never changes the
+  meaning of a percentage.
+- **SIM-4** [active] [gtk] — The Sound tab remains present while analysis is
+  incomplete and shows numeric progress. Results require at least 50 current
+  profiles and the playing track's profile. Profile markers are library-wide
+  feature percentiles; the tempo axis is disabled while tempo is excluded.
+- **SIM-5** [active] [gtk] — The default result limit is seven. **Add to
+  queue** appends exactly the currently shown matches in their displayed
+  nearest-first order and never shuffles them.
+- **SIM-6** [active] [core] — Sound Similarity is a live, default-off Local
+  module. Its defaults exclude the same album, retain the same artist, omit
+  tempo, use Default weighting, and show seven matches. Its static registry
+  declaration provides both the Sound panel tab and **Find similar tracks**.
+- **SIM-7** [active] [gtk] — **Find similar tracks** appears in a single,
+  present-track context menu only while the module is enabled; disabling the
+  module removes the route.
+- **SIM-8** [active] [gtk] — Plugin provision badges are derived from the
+  static registry, never current enable state. A provision-kind set is the
+  unbadged group norm only when it occurs at least twice and strictly more
+  often than the runner-up; otherwise every row is badged. Panel-tab and
+  sidebar-section badges use the accent, while all other kinds are neutral.
 
 ---
 

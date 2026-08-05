@@ -113,7 +113,7 @@ fn insert_track(db: &Db) {
 }
 
 #[test]
-fn sound_features_store_round_trips_and_rejects_an_old_spectrogram_format() {
+fn sim_1_sound_profile_cache_rejects_a_stale_spectrogram_format() {
     let db = Db::open_in_memory().unwrap();
     insert_track(&db);
     set_track_sound_features(&db, 1, &stored_features()).unwrap();
@@ -132,7 +132,7 @@ fn sound_features_store_round_trips_and_rejects_an_old_spectrogram_format() {
 }
 
 #[test]
-fn sound_features_follow_track_cascade_and_source_invalidation() {
+fn sim_1_sound_profile_cache_follows_track_and_source_invalidation() {
     let db = Db::open_in_memory().unwrap();
     insert_track(&db);
     set_track_sound_features(&db, 1, &stored_features()).unwrap();
@@ -178,7 +178,7 @@ fn sound_features_v56_repairs_a_database_already_stamped_by_the_other_v56_step()
 }
 
 #[test]
-fn sound_features_are_stored_atomically_with_new_render_data() {
+fn sim_1_sound_profile_is_stored_atomically_with_render_data() {
     let db = Db::open_in_memory().unwrap();
     insert_track(&db);
     let spectrogram = spectrogram([frame(5, 255), frame(7, 255)]);

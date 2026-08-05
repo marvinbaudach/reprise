@@ -2,7 +2,7 @@
 slug: sound-similarity
 worktree:
 branch:
-phase: planned
+phase: coded
 codex_session:
 created: 2026-08-05
 ---

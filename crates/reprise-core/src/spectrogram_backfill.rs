@@ -240,7 +240,7 @@ mod tests {
     }
 
     #[test]
-    fn stored_spectrograms_backfill_features_without_a_second_decode() {
+    fn sim_1_stored_spectrograms_backfill_profiles_without_a_second_decode() {
         let db = database();
         let source = pending_render_data_tracks(&db).unwrap()[0].source;
         let spectrogram = TrackSpectrogram::from_cells(vec![180; 48]).unwrap();

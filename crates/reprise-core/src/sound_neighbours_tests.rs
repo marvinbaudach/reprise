@@ -13,6 +13,7 @@ fn candidate(id: i64, band: usize, artist: &str, album: &str) -> SoundCandidate 
         title: format!("Track {id}"),
         artist: artist.into(),
         album: album.into(),
+        album_artist: artist.into(),
         features: SoundFeatures {
             band_mean,
             centroid_mean: band as f32,
@@ -24,7 +25,7 @@ fn candidate(id: i64, band: usize, artist: &str, album: &str) -> SoundCandidate 
 }
 
 #[test]
-fn sound_neighbours_rank_nearest_first_and_percentile_against_the_whole_library() {
+fn sim_3_neighbours_rank_against_the_whole_library() {
     let current = candidate(1, 0, "Artist", "Album");
     let candidates = [
         current.clone(),
@@ -64,13 +65,16 @@ fn sound_neighbours_rank_nearest_first_and_percentile_against_the_whole_library(
 }
 
 #[test]
-fn sound_neighbours_apply_album_and_artist_exclusions_after_percentiles() {
+fn sim_3_exclusions_apply_after_whole_library_percentiles() {
     let current = candidate(1, 0, "Artist", "Album");
+    let mut same_album = candidate(3, 0, "Other", "Album");
+    same_album.album_artist = "Artist".into();
     let candidates = [
         current.clone(),
         candidate(2, 0, "Artist", "Other"),
-        candidate(3, 0, "Other", "Album"),
+        same_album,
         candidate(4, 1, "Other", "Other"),
+        candidate(5, 1, "Different", "Album"),
     ];
     let stats = compute_sound_stats(
         &candidates
@@ -97,9 +101,10 @@ fn sound_neighbours_apply_album_and_artist_exclusions_after_percentiles() {
         },
     );
 
-    assert_eq!(filtered.library_count, 3);
-    assert_eq!(filtered.matches.len(), 1);
+    assert_eq!(filtered.library_count, 4);
+    assert_eq!(filtered.matches.len(), 2);
     assert_eq!(filtered.matches[0].track_id, 4);
+    assert_eq!(filtered.matches[1].track_id, 5);
     let original = unfiltered
         .matches
         .iter()

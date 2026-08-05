@@ -12,6 +12,7 @@ pub struct SoundCandidate {
     pub title: String,
     pub artist: String,
     pub album: String,
+    pub album_artist: String,
     pub features: SoundFeatures,
 }
 
@@ -38,6 +39,8 @@ pub struct SoundNeighbour {
     pub path: String,
     pub title: String,
     pub artist: String,
+    pub album: String,
+    pub album_artist: String,
     pub distance: f32,
     /// Share of the full comparison population that lies farther away.
     pub percentile: f32,
@@ -51,17 +54,17 @@ pub struct SoundNeighbourResult {
 
 pub fn load_sound_candidates(db: &crate::db::Db) -> Result<Vec<SoundCandidate>, DbError> {
     let mut statement = db.conn().prepare(
-        "SELECT t.id, t.path, t.title, t.artist, t.album, f.data \
+        "SELECT t.id, t.path, t.title, t.artist, t.album, t.album_artist, f.data \
          FROM tracks t JOIN track_sound_features f ON f.track_id = t.id \
          WHERE t.missing_since IS NULL AND t.removed_at IS NULL \
            AND f.format_version = ?1 ORDER BY t.id",
     )?;
     let candidates = statement
         .query_map([SPECTROGRAM_FORMAT_VERSION], |row| {
-            let blob = row.get::<_, Vec<u8>>(5)?;
+            let blob = row.get::<_, Vec<u8>>(6)?;
             let features = SoundFeatures::from_blob(&blob).map_err(|error| {
                 rusqlite::Error::FromSqlConversionFailure(
-                    5,
+                    6,
                     rusqlite::types::Type::Blob,
                     Box::new(error),
                 )
@@ -72,6 +75,7 @@ pub fn load_sound_candidates(db: &crate::db::Db) -> Result<Vec<SoundCandidate>, 
                 title: row.get(2)?,
                 artist: row.get(3)?,
                 album: row.get(4)?,
+                album_artist: row.get(5)?,
                 features,
             })
         })?
@@ -121,6 +125,8 @@ pub fn rank_sound_neighbours(
             path: candidate.path.clone(),
             title: candidate.title.clone(),
             artist: candidate.artist.clone(),
+            album: candidate.album.clone(),
+            album_artist: candidate.album_artist.clone(),
             distance: *distance,
             percentile,
         });
@@ -139,7 +145,9 @@ fn excluded(
     candidate: &SoundCandidate,
     options: SoundNeighbourOptions,
 ) -> bool {
-    (options.exclude_same_album && same_nonempty(&current.album, &candidate.album))
+    (options.exclude_same_album
+        && same_nonempty(&current.album, &candidate.album)
+        && same_nonempty(&current.album_artist, &candidate.album_artist))
         || (options.exclude_same_artist && same_nonempty(&current.artist, &candidate.artist))
 }
 

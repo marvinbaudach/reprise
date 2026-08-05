@@ -17,7 +17,7 @@ use reprise_core::sound_neighbours::{
 use reprise_core::sound_stats::{SoundStats, SoundStatsCache};
 
 use super::super::cover_loader::CoverLoader;
-use super::panel_state::{PanelTab, SOUND_PAGE, UP_NEXT_PAGE};
+use super::panel_state::{tab_after_sound_visibility_change, SOUND_PAGE};
 
 mod footer;
 mod list;
@@ -204,6 +204,10 @@ impl SoundPanel {
 
     pub(super) fn set_on_play_next(&self, callback: impl Fn(i64) + 'static) {
         self.matches.callbacks().set_play_next(callback);
+    }
+
+    pub(super) fn set_on_open_album(&self, callback: impl Fn(i64, &str, &str) + 'static) {
+        self.matches.callbacks().set_open_album(callback);
     }
 
     pub(super) fn set_on_add_to_queue(&self, callback: impl Fn(&[i64]) + 'static) {
@@ -453,8 +457,12 @@ impl super::surface::NowPlayingPanel {
         self.widgets
             .sound_page
             .set_visible(enabled && !external_active);
-        if !enabled && self.widgets.session.selected.get() == PanelTab::Sound {
-            self.widgets.tab_stack.set_visible_child_name(UP_NEXT_PAGE);
+        let selected = self.widgets.session.selected.get();
+        let next = tab_after_sound_visibility_change(selected, enabled);
+        if next != selected {
+            self.widgets
+                .tab_stack
+                .set_visible_child_name(next.page_name());
         }
     }
 
@@ -471,6 +479,13 @@ impl super::surface::NowPlayingPanel {
 
     pub(in crate::ui) fn set_on_sound_play_next(&self, callback: impl Fn(i64) + 'static) {
         self.widgets.sound.set_on_play_next(callback);
+    }
+
+    pub(in crate::ui) fn set_on_sound_open_album(
+        &self,
+        callback: impl Fn(i64, &str, &str) + 'static,
+    ) {
+        self.widgets.sound.set_on_open_album(callback);
     }
 
     pub(in crate::ui) fn set_on_sound_add_to_queue(&self, callback: impl Fn(&[i64]) + 'static) {

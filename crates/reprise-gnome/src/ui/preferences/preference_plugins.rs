@@ -153,16 +153,30 @@ fn provision_badges_for(id: &str, group_ids: &[&str]) -> Vec<Provision> {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ProvisionBadgeTone {
+    Accent,
+    Neutral,
+}
+
+fn provision_badge_tone(kind: ProvisionKind) -> ProvisionBadgeTone {
+    if matches!(
+        kind,
+        ProvisionKind::PanelTab | ProvisionKind::SidebarSection
+    ) {
+        ProvisionBadgeTone::Accent
+    } else {
+        ProvisionBadgeTone::Neutral
+    }
+}
+
 fn provision_badges(id: &str, group_ids: &[&str]) -> gtk4::Box {
     let badges = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
     for provision in provision_badges_for(id, group_ids) {
         let badge = gtk4::Label::new(Some(provision.label));
         badge.add_css_class("caption");
         badge.add_css_class("pill");
-        if matches!(
-            provision.kind,
-            ProvisionKind::PanelTab | ProvisionKind::SidebarSection
-        ) {
+        if provision_badge_tone(provision.kind) == ProvisionBadgeTone::Accent {
             badge.add_css_class("accent");
         } else {
             badge.add_css_class("dim-label");

@@ -8,7 +8,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use super::test_support::{fake_binary, short_timeouts, CapturedLogs, LogCapture};
+use super::test_support::{fake_binary, short_timeouts, CapturedLogs};
 use super::{collect_output, YtDlp, YtDlpTimeouts};
 
 #[test]
@@ -40,10 +40,8 @@ fn missing_component_log_names_the_operation_without_exposing_its_path() {
     let runner =
         YtDlp::with_binary_and_timeouts("/missing/private/reprise-yt-dlp", short_timeouts());
     let logs = CapturedLogs::default();
-    let subscriber = LogCapture(logs.clone());
 
-    let error =
-        tracing::subscriber::with_default(subscriber, || runner.probe_version().unwrap_err());
+    let error = logs.capture(|| runner.probe_version().unwrap_err());
 
     assert_eq!(
         error.to_string(),
@@ -77,10 +75,8 @@ fn unexecutable_component_is_actionable_and_logged_without_its_path() {
     fs::set_permissions(&binary, fs::Permissions::from_mode(0o600)).unwrap();
     let runner = YtDlp::with_binary_and_timeouts(&binary, short_timeouts());
     let logs = CapturedLogs::default();
-    let subscriber = LogCapture(logs.clone());
 
-    let error =
-        tracing::subscriber::with_default(subscriber, || runner.probe_version().unwrap_err());
+    let error = logs.capture(|| runner.probe_version().unwrap_err());
 
     assert_eq!(
         error.to_string(),
@@ -134,9 +130,8 @@ fn output_reader_failure_is_actionable_and_logged_without_os_error_text() {
         )))
         .unwrap();
     let logs = CapturedLogs::default();
-    let subscriber = LogCapture(logs.clone());
 
-    let error = tracing::subscriber::with_default(subscriber, || {
+    let error = logs.capture(|| {
         collect_output(
             "resolve",
             "stdout",
@@ -176,9 +171,8 @@ fn output_reader_failure_is_actionable_and_logged_without_os_error_text() {
 fn output_reader_timeout_logs_stream_and_configured_deadline() {
     let (_sender, receiver) = std::sync::mpsc::sync_channel(1);
     let logs = CapturedLogs::default();
-    let subscriber = LogCapture(logs.clone());
 
-    let error = tracing::subscriber::with_default(subscriber, || {
+    let error = logs.capture(|| {
         collect_output(
             "download",
             "stdout",
@@ -245,10 +239,8 @@ fn timed_out_probe_logs_operation_and_deadline() {
         },
     );
     let logs = CapturedLogs::default();
-    let subscriber = LogCapture(logs.clone());
 
-    let error =
-        tracing::subscriber::with_default(subscriber, || runner.probe_version().unwrap_err());
+    let error = logs.capture(|| runner.probe_version().unwrap_err());
 
     let logged = logs.joined();
     assert_eq!(
