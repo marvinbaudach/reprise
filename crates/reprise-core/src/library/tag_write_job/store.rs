@@ -56,7 +56,7 @@ pub(crate) fn prepare_tag_write_job(
     mutations: &[(usize, PreparedTagMutation)],
 ) -> Result<PreparedTagWriteJob, TagWriteJobError> {
     let transaction = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
-    crate::library::tag_write_lock::claim_tag_write_slot(&transaction)?;
+    crate::library::tag_write_lock::claim_tag_write_slot::<TagWriteJobError>(&transaction)?;
     let created_at = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()

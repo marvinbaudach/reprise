@@ -294,7 +294,7 @@ pub(super) fn prepare_job(
 ) -> Result<(i64, Vec<ExecutableFile>), DoctorError> {
     let files = prepare_files(conn, changes)?;
     let transaction = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
-    crate::library::tag_write_lock::claim_tag_write_slot(&transaction)?;
+    crate::library::tag_write_lock::claim_tag_write_slot::<DoctorError>(&transaction)?;
     transaction.execute(
         "INSERT INTO tag_write_jobs \
          (kind, source_job_id, scan_id, state, created_at, finished_at, total_tracks) \

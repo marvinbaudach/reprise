@@ -41,6 +41,8 @@ mod tag_mutation_guarded_tests;
 pub(crate) mod tag_probe;
 pub mod tag_write_job;
 mod tag_write_lock;
+#[cfg(test)]
+mod tag_write_lock_tests;
 pub use tag_write_lock::TagWriteBusy;
 pub mod trash_tracks;
 pub mod watcher;
