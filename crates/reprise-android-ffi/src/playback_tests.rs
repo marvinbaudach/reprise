@@ -5,170 +5,14 @@ use reprise_core::playback::{
     AudioEffects, PlaybackBackend, PlaybackState, PlayerEvent, StreamEvent, StreamGeneration,
 };
 
+use super::test_support::{recording_session, PortCall, RecordingListener, RecordingPort};
 use crate::playback::{
-    AndroidPlaybackBackend, AndroidPlaybackError, AndroidPlaybackPort, AndroidPlaybackState,
-    AndroidPlayerEvent, AndroidTransitionMode, PlaybackEventBridge,
+    AndroidPlaybackBackend, AndroidPlaybackState, AndroidPlayerEvent, AndroidTransitionMode,
+    PlaybackEventBridge,
 };
 use crate::{
-    AndroidEqualizerPoint, AndroidEqualizerSnapshot, AndroidPlaybackListener,
-    AndroidPlaybackSession, AndroidPlaybackSnapshot, AndroidRepeatMode,
+    AndroidEqualizerPoint, AndroidPlaybackSession, AndroidPlaybackSnapshot, AndroidRepeatMode,
 };
-
-#[derive(Clone, Debug, PartialEq)]
-enum PortCall {
-    SetEventBridge,
-    PlayPath(String),
-    PlayUri(String),
-    TogglePause,
-    SeekTo(i64),
-    SetVolume(f64),
-    SetEqualizer(bool, Vec<AndroidEqualizerPoint>),
-    EqualizerSnapshot,
-    SetAudioEffects,
-    SetSpectrumEnabled(bool),
-    Stop,
-    SetNext(Option<String>),
-    SetTransition(AndroidTransitionMode),
-    CurrentGeneration,
-}
-
-struct RecordingPort {
-    calls: Arc<Mutex<Vec<PortCall>>>,
-    bridge: Arc<Mutex<Option<Arc<PlaybackEventBridge>>>>,
-}
-
-impl AndroidPlaybackPort for RecordingPort {
-    fn set_event_bridge(
-        &self,
-        bridge: Arc<PlaybackEventBridge>,
-    ) -> Result<(), AndroidPlaybackError> {
-        self.record(PortCall::SetEventBridge);
-        *self.bridge.lock().unwrap() = Some(bridge);
-        Ok(())
-    }
-
-    fn play_path(&self, path: String) -> Result<(), AndroidPlaybackError> {
-        self.record(PortCall::PlayPath(path));
-        Ok(())
-    }
-
-    fn play_uri(&self, uri: String) -> Result<(), AndroidPlaybackError> {
-        self.record(PortCall::PlayUri(uri));
-        Ok(())
-    }
-
-    fn toggle_pause(&self) -> Result<AndroidPlaybackState, AndroidPlaybackError> {
-        self.record(PortCall::TogglePause);
-        Ok(AndroidPlaybackState::Paused)
-    }
-
-    fn seek_to(&self, position_ms: i64) -> Result<(), AndroidPlaybackError> {
-        self.record(PortCall::SeekTo(position_ms));
-        Ok(())
-    }
-
-    fn set_volume(&self, volume: f64) -> Result<(), AndroidPlaybackError> {
-        self.record(PortCall::SetVolume(volume));
-        Ok(())
-    }
-
-    fn set_equalizer(
-        &self,
-        enabled: bool,
-        curve: Vec<AndroidEqualizerPoint>,
-    ) -> Result<(), AndroidPlaybackError> {
-        self.record(PortCall::SetEqualizer(enabled, curve));
-        Ok(())
-    }
-
-    fn equalizer_snapshot(&self) -> Result<Option<AndroidEqualizerSnapshot>, AndroidPlaybackError> {
-        self.record(PortCall::EqualizerSnapshot);
-        Ok(None)
-    }
-
-    fn set_audio_effects(&self) -> Result<(), AndroidPlaybackError> {
-        self.record(PortCall::SetAudioEffects);
-        Err(AndroidPlaybackError::Unsupported {
-            detail: "audio effects are not supported by the Android backend".to_owned(),
-        })
-    }
-
-    fn set_spectrum_enabled(&self, enabled: bool) -> Result<(), AndroidPlaybackError> {
-        self.record(PortCall::SetSpectrumEnabled(enabled));
-        Err(AndroidPlaybackError::Unsupported {
-            detail: "spectrum analysis is not supported by the Android backend".to_owned(),
-        })
-    }
-
-    fn stop(&self) -> Result<(), AndroidPlaybackError> {
-        self.record(PortCall::Stop);
-        Ok(())
-    }
-
-    fn set_next(&self, uri: Option<String>) -> Result<(), AndroidPlaybackError> {
-        self.record(PortCall::SetNext(uri));
-        Ok(())
-    }
-
-    fn set_transition(&self, mode: AndroidTransitionMode) -> Result<(), AndroidPlaybackError> {
-        self.record(PortCall::SetTransition(mode));
-        Ok(())
-    }
-
-    fn current_generation(&self) -> Result<u64, AndroidPlaybackError> {
-        self.record(PortCall::CurrentGeneration);
-        Ok(23)
-    }
-}
-
-impl RecordingPort {
-    fn record(&self, call: PortCall) {
-        self.calls.lock().unwrap().push(call);
-    }
-}
-
-struct RecordingListener {
-    snapshots: Arc<Mutex<Vec<AndroidPlaybackSnapshot>>>,
-}
-
-impl AndroidPlaybackListener for RecordingListener {
-    fn on_playback_changed(&self, snapshot: AndroidPlaybackSnapshot) {
-        self.snapshots.lock().unwrap().push(snapshot);
-    }
-}
-
-struct SessionFixture {
-    session: AndroidPlaybackSession,
-    calls: Arc<Mutex<Vec<PortCall>>>,
-    bridge: Arc<Mutex<Option<Arc<PlaybackEventBridge>>>>,
-    snapshots: Arc<Mutex<Vec<AndroidPlaybackSnapshot>>>,
-    _directory: tempfile::TempDir,
-}
-
-fn recording_session() -> SessionFixture {
-    let calls = Arc::new(Mutex::new(Vec::new()));
-    let bridge = Arc::new(Mutex::new(None));
-    let snapshots = Arc::new(Mutex::new(Vec::new()));
-    let directory = tempfile::tempdir().unwrap();
-    let session = AndroidPlaybackSession::new(
-        directory.path().to_str().unwrap(),
-        Box::new(RecordingPort {
-            calls: Arc::clone(&calls),
-            bridge: Arc::clone(&bridge),
-        }),
-        Box::new(RecordingListener {
-            snapshots: Arc::clone(&snapshots),
-        }),
-    )
-    .unwrap();
-    SessionFixture {
-        session,
-        calls,
-        bridge,
-        snapshots,
-        _directory: directory,
-    }
-}
 
 #[test]
 fn android_backend_routes_every_core_command_through_the_media3_port() {
@@ -247,6 +91,8 @@ fn tapping_a_track_starts_a_core_queue_at_that_position() {
         AndroidPlaybackSnapshot {
             state: AndroidPlaybackState::Playing,
             current_index: Some(1),
+            current_track_id: Some(11),
+            current_track_uri: Some("content://provider/second.flac".to_owned()),
             position_ms: 0,
             duration_ms: 0,
             shuffled: false,
@@ -316,6 +162,58 @@ fn tapping_a_track_starts_a_core_queue_at_that_position() {
 }
 
 #[test]
+fn an_empty_session_snapshot_has_no_current_track_identity() {
+    let fixture = recording_session();
+
+    assert_eq!(
+        fixture.session.snapshot().unwrap(),
+        AndroidPlaybackSnapshot {
+            state: AndroidPlaybackState::Stopped,
+            current_index: None,
+            current_track_id: None,
+            current_track_uri: None,
+            position_ms: 0,
+            duration_ms: 0,
+            shuffled: false,
+            repeat: AndroidRepeatMode::Off,
+            error: None,
+        }
+    );
+}
+
+#[test]
+fn a_new_selection_replaces_the_current_track_identity() {
+    let fixture = recording_session();
+    fixture
+        .session
+        .play_tracks(
+            vec![10, 11],
+            vec![
+                "content://provider/first.flac".to_owned(),
+                "content://provider/second.flac".to_owned(),
+            ],
+            1,
+        )
+        .unwrap();
+
+    fixture
+        .session
+        .play_tracks(
+            vec![90],
+            vec!["content://provider/replacement.flac".to_owned()],
+            0,
+        )
+        .unwrap();
+
+    let snapshot = fixture.session.snapshot().unwrap();
+    assert_eq!(snapshot.current_track_id, Some(90));
+    assert_eq!(
+        snapshot.current_track_uri.as_deref(),
+        Some("content://provider/replacement.flac")
+    );
+}
+
+#[test]
 fn core_queue_owns_gapless_advance_and_manual_next_previous() {
     let fixture = recording_session();
     fixture
@@ -347,6 +245,8 @@ fn core_queue_owns_gapless_advance_and_manual_next_previous() {
         AndroidPlaybackSnapshot {
             state: AndroidPlaybackState::Playing,
             current_index: Some(1),
+            current_track_id: Some(11),
+            current_track_uri: Some("content://provider/second.flac".to_owned()),
             position_ms: 1_250,
             duration_ms: 180_000,
             shuffled: false,

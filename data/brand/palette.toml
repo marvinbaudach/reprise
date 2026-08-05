@@ -1,0 +1,6 @@
+# These five values are the only maintained colour literals in the brand pipeline.
+reprise_teal = "#4FDBD4"
+reprise_coral = "#FF6F5E"
+reprise_teal_light = "#00706B"
+reprise_coral_light = "#C4362A"
+reprise_plate = "#33363F"

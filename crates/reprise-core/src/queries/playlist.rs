@@ -7,7 +7,7 @@ use crate::db::Db;
 use crate::models::Track;
 
 use super::clauses::{
-    ai_projection, filter_clause, like_pattern, order_clause, row_to_id, row_to_playlist_track,
+    filter_clause, like_pattern, order_clause, row_to_id, row_to_playlist_track, track_projection,
     PRESENT,
 };
 use super::queue::QUEUE_LIMIT;
@@ -36,15 +36,9 @@ fn build_playlist_track_query(
 ) -> String {
     let order = order_clause(sort_field, sort_dir);
     let filter_clause = filter_clause(has_filter, 4);
-    let is_ai = ai_projection(project_ai);
+    let projection = track_projection("tracks.", project_ai);
     format!(
-        "SELECT tracks.id, tracks.path, tracks.title, tracks.artist, tracks.album, \
-         tracks.album_artist, tracks.year, tracks.track_no, tracks.genre, \
-         tracks.duration_ms, tracks.bitrate_kbps, tracks.rating, tracks.play_count, \
-         tracks.last_played_at, tracks.added_at, tracks.file_mtime, tracks.missing_since, \
-         tracks.missing_reason, tracks.untagged, tracks.file_size, tracks.device, \
-         tracks.inode, \
-         {is_ai} AS is_ai, \
+        "SELECT {projection}, \
          pt.position \
          FROM tracks JOIN playlist_tracks pt ON pt.track_id = tracks.id \
          WHERE pt.playlist_id = ?3{filter_clause} \
@@ -173,15 +167,9 @@ pub fn query_playlist_tracks_full(
     // M3U export ignores `is_ai`, so project the cheap literal `0` (no
     // per-row provenance subquery) while keeping the column at its fixed index
     // for `row_to_playlist_track` (INST-10 / FIX-4).
-    let is_ai = ai_projection(false);
+    let projection = track_projection("tracks.", false);
     let sql = format!(
-        "SELECT tracks.id, tracks.path, tracks.title, tracks.artist, tracks.album, \
-         tracks.album_artist, tracks.year, tracks.track_no, tracks.genre, \
-         tracks.duration_ms, tracks.bitrate_kbps, tracks.rating, tracks.play_count, \
-         tracks.last_played_at, tracks.added_at, tracks.file_mtime, tracks.missing_since, \
-         tracks.missing_reason, tracks.untagged, tracks.file_size, tracks.device, \
-         tracks.inode, \
-         {is_ai} AS is_ai, \
+        "SELECT {projection}, \
          pt.position \
          FROM tracks JOIN playlist_tracks pt ON pt.track_id = tracks.id \
          WHERE pt.playlist_id = ?1 AND {PRESENT} \

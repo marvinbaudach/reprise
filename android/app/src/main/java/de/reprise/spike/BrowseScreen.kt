@@ -32,6 +32,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
+/**
+ * One answered request for the playing track's row, carrying the id it was
+ * asked for. The id is what makes a late answer harmless: it is only ever
+ * shown while it is still the track the session reports as playing.
+ */
+private data class AnsweredTrack(val id: Long, val track: LibraryTrack?)
+
 private enum class BrowseTab(val label: String) {
     TITLES("Titles"),
     ALBUMS("Albums"),
@@ -59,6 +66,7 @@ internal fun BrowseScreen(
     listArtists: (LibraryWindowRange) -> LibraryWindow<LibraryArtist>,
     openAlbum: (LibraryAlbum) -> AlbumTrackList,
     listAlbumTracks: (LibraryAlbum, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
+    loadTrack: (Long, (LibraryTrack?) -> Unit) -> Unit,
     playTracks: (PlaybackSelection, (String) -> Unit) -> Unit,
     loadPlaybackSettings: () -> PlaybackSettingsUiState,
     setEqualizerEnabled: (Boolean) -> PlaybackSettingsUiState,
@@ -74,7 +82,6 @@ internal fun BrowseScreen(
     var visibleAlbums by remember(state) { mutableStateOf(state.albums) }
     var visibleArtists by remember(state) { mutableStateOf(state.artists) }
     var selectedAlbum by remember(state) { mutableStateOf<AlbumTrackList?>(null) }
-    var activeSelection by remember { mutableStateOf<PlaybackSelection?>(null) }
     var browseError by remember(state) { mutableStateOf(state.message) }
     var titlesRequestedOffset by remember(state, searchText) { mutableStateOf<Long?>(null) }
     var albumsRequestedOffset by remember(state) { mutableStateOf<Long?>(null) }
@@ -126,7 +133,6 @@ internal fun BrowseScreen(
 
     fun play(selection: PlaybackSelection) {
         browseError = null
-        activeSelection = selection
         playTracks(selection) { message -> browseError = message }
     }
 
@@ -186,7 +192,25 @@ internal fun BrowseScreen(
             .onFailure { error -> browseError = error.browseDetail("load more album tracks") }
     }
 
-    val currentTrack = activeSelection?.currentTrack(playback)
+    // The row behind the mini player and the sheet is *read*, and reading it
+    // takes the same library lock a folder scan holds for its whole walk — so
+    // it is asked for from an effect and answered later, never fetched inside
+    // the composition. See [TrackLoader].
+    var answeredTrack by remember { mutableStateOf<AnsweredTrack?>(null) }
+    val playingTrackId = playback.currentTrackId
+    LaunchedEffect(playingTrackId, playback.currentTrackUri) {
+        if (playingTrackId != null) {
+            loadTrack(playingTrackId) { track ->
+                answeredTrack = AnsweredTrack(playingTrackId, track)
+            }
+        }
+    }
+    // Nothing is shown until the answer for *this* track arrives. Keeping the
+    // previous track on screen would be the shorter blank, but it would also be
+    // a row that answers for a track that is no longer playing — and the star in
+    // the sheet would rate it. A session that stopped therefore blanks the
+    // moment it stops, without waiting for anything.
+    val currentTrack = answeredTrack?.takeIf { it.id == playingTrackId }?.track
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
@@ -234,7 +258,6 @@ internal fun BrowseScreen(
                         searchVisible = searchVisible,
                         searchText = searchText,
                         search = ::search,
-                        activeSelection = activeSelection,
                         playback = playback,
                         lastRequestedOffset = titlesRequestedOffset,
                         play = { index -> play(PlaybackSelection(visibleTitles.rows, index)) },
@@ -243,7 +266,6 @@ internal fun BrowseScreen(
                     BrowseTab.ALBUMS -> AlbumsTab(
                         albums = visibleAlbums,
                         selectedAlbum = selectedAlbum,
-                        activeSelection = activeSelection,
                         playback = playback,
                         openAlbum = { album ->
                             runCatching { openAlbum(album) }

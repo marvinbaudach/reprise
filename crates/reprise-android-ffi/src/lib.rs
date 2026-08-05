@@ -16,6 +16,7 @@ mod artwork_tests;
 mod browse;
 mod library_types;
 mod logging;
+mod play_journal;
 mod play_recorder;
 pub mod playback;
 mod playback_session;

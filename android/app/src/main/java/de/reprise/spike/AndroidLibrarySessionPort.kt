@@ -84,6 +84,9 @@ internal class AndroidLibrarySessionPort(
     ): LibraryWindow<LibraryTrack> =
         library.listAlbumTracks(album, albumArtist, window.toFfi()).toLibraryTracks()
 
+    override fun trackById(trackId: Long): LibraryTrack? =
+        library.trackById(trackId)?.toLibraryTrack()
+
     override fun artworkFor(trackUri: String, size: AndroidArtworkSize): String? =
         library.trackArtwork(trackUri, size)
 

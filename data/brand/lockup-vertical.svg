@@ -1,32 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 848.39 579.60" width="848.39" height="579.60">
   <!-- Erzeugt von scripts/build-brand-assets.sh. Nicht von Hand ändern. -->
-  <g id="rp-lv-mark" transform="translate(210.8607 -49.3333) scale(26.666667)">
-  <!-- Die Marke: das Wiederholungszeichen der Notenschrift. Es markiert
-       genau das, wonach die App heißt — eine Reprise.
-
-       Auf dem **16er Raster** gezeichnet, jede Kante auf einer ganzen
-       Rasterlinie: Punkte bei x 2–5, dünner Balken 7–9, dicker Balken
-       10–14, alle Balken y 2–14. Damit sind 32, 48, 128 und 512 px glatte
-       Vielfache, und bei 16 px ist jeder Pixel ganz an oder ganz aus.
-
-       Die beiden Balken sind **absichtlich ungleich** — 2 gegen 4 Einheiten.
-       Gleich breit gezeichnet liest das Zeichen als Pausensymbol; die
-       Notenschrift setzt dünn vor dick, und genau dieser Unterschied trennt
-       die beiden Bedeutungen.
-
-       Ein Pfad, vier Teilflächen. Der Verlauf läuft von Violett nach Blau
-       quer über alle vier — sie gehören zusammen, also teilen sie ihn. -->
-  <defs>
-    <linearGradient id="rp-lv-rp-mark-fill" x1="0" y1="0" x2="0.6" y2="1">
-      <stop offset="0" stop-color="#A020F0"/>
-      <stop offset="1" stop-color="#4A72FF"/>
-    </linearGradient>
-  </defs>
-  <path id="rp-lv-rp-sign" fill="url(#rp-lv-rp-mark-fill)"
-        d="M 10 2 L 14 2 L 14 14 L 10 14 Z
-           M 7 2 L 9 2 L 9 14 L 7 14 Z
-           M 2 5.5 A 1.5 1.5 0 1 0 5 5.5 A 1.5 1.5 0 1 0 2 5.5 Z
-           M 2 10.5 A 1.5 1.5 0 1 0 5 10.5 A 1.5 1.5 0 1 0 2 10.5 Z"/>
+  <g id="rp-lv-mark" transform="translate(162.1806 -110.8993) scale(5.727069)">
+  <!-- Generated from palette.toml. Teal carries the thick barline so the
+       largest field holds the brighter colour; coral accents the dots
+       and the thin barline. -->
+  <circle cx="30" cy="39" r="5.5" fill="#FF6F5E"/>
+  <circle cx="30" cy="57" r="5.5" fill="#FF6F5E"/>
+  <rect x="41" y="20" width="5" height="56" rx="1" fill="#FF6F5E"/>
+  <rect x="52" y="20" width="15" height="56" rx="1.5" fill="#4FDBD4"/>
   </g>
   <style>
     @font-face {

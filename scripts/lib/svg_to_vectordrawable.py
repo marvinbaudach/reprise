@@ -1,15 +1,11 @@
 #!/usr/bin/env python3
-"""Übersetzt eine Zeichnung in einen Android VectorDrawable.
+"""Translate an SVG drawing into an Android VectorDrawable.
 
-Nötig, weil VectorDrawable nur <path> kennt: Ellipsen und Kreise müssen
-vorher aufgelöst werden.
-
-Die Skalierung richtet sich nach Androids **garantierter** Fläche. Das ist
-nicht das 72-dp-Quadrat, sondern der 66-dp-Kreis um die Mitte: nur er ist
-auf jeder Maskenform sichtbar. Die erste Fassung rechnete gegen das Quadrat
-und ließ die Ohrlappen knapp 5 dp darüber hinausragen — auf Launchern mit
-Kreismaske wurden sie flach abgeschnitten. Der Radius wird deshalb hier
-gemessen, nicht geschätzt.
+VectorDrawable only carries paths, so circles, ellipses and rounded rectangles
+are resolved here. Drawings may either be fitted to Android's guaranteed
+66-dp circle or placed at a fixed offset without scaling. Literal SVG colours
+can be mapped to Android resources so generated XML does not become another
+maintained palette.
 """
 import argparse
 import re
@@ -32,12 +28,12 @@ NUMBER = re.compile(r"[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?")
 COMMAND_ARITY = {"M": 2, "L": 2, "H": 1, "V": 1, "C": 6, "S": 4,
                  "Q": 4, "T": 2, "A": 7, "Z": 0}
 TOKEN = re.compile(r"[MLHVCSQTAZz]|" + NUMBER.pattern)
-SHAPE = re.compile(r"<(path|ellipse|circle)\b([^>]*?)/?>", re.S)
+SHAPE = re.compile(r"<(path|ellipse|circle|rect)\b([^>]*?)/?>", re.S)
 GROUP_FILL = re.compile(r'<(?:g|svg)\b[^>]*?\bfill="([^"]+)"')
 
 
 class Transform:
-    """Quellkoordinaten → 108er Raster, zentriert und auf den Kreis gepasst."""
+    """Map source coordinates onto Android's 108-unit viewport."""
 
     def __init__(self, scale, tx, ty):
         self.scale, self.tx, self.ty = scale, tx, ty
@@ -72,6 +68,16 @@ def build_transform(svg_path):
     cx, cy, r = measure(svg_path)
     scale = SAFE_RADIUS / r
     return Transform(scale, VIEWPORT / 2 - cx * scale, VIEWPORT / 2 - cy * scale)
+
+
+def fixed_transform(svg_path, offset):
+    x, y, width, height = view_box(Path(svg_path).read_text(encoding="utf-8"))
+    if x != 0 or y != 0:
+        raise SystemExit(f"fixed placement needs a zero-origin viewBox, got {x:g} {y:g}")
+    if width + 2 * offset > VIEWPORT or height + 2 * offset > VIEWPORT:
+        raise SystemExit(
+            f"{width:g}×{height:g} source with offset {offset:g} exceeds 108 viewport")
+    return Transform(1.0, offset, offset)
 
 
 def scale_path(d, transform):
@@ -123,6 +129,21 @@ def ellipse_path(cx, cy, rx, ry, transform):
     return (f"M{cx - rx:.3f},{cy:.3f}"
             f"a{rx:.3f},{ry:.3f} 0 1,0 {2 * rx:.3f},0"
             f"a{rx:.3f},{ry:.3f} 0 1,0 {-2 * rx:.3f},0z")
+
+
+def rounded_rect_path(x, y, width, height, rx, ry, transform):
+    x0, y0 = transform.x(x), transform.y(y)
+    x1, y1 = transform.x(x + width), transform.y(y + height)
+    rx, ry = rx * transform.scale, ry * transform.scale
+    if rx == 0 or ry == 0:
+        return f"M{x0:.3f},{y0:.3f}H{x1:.3f}V{y1:.3f}H{x0:.3f}Z"
+    return (
+        f"M{x0 + rx:.3f},{y0:.3f}H{x1 - rx:.3f}"
+        f"A{rx:.3f},{ry:.3f} 0 0,1 {x1:.3f},{y0 + ry:.3f}"
+        f"V{y1 - ry:.3f}A{rx:.3f},{ry:.3f} 0 0,1 {x1 - rx:.3f},{y1:.3f}"
+        f"H{x0 + rx:.3f}A{rx:.3f},{ry:.3f} 0 0,1 {x0:.3f},{y1 - ry:.3f}"
+        f"V{y0 + ry:.3f}A{rx:.3f},{ry:.3f} 0 0,1 {x0 + rx:.3f},{y0:.3f}Z"
+    )
 
 
 def resolve_fill(attrs, inherited):
@@ -229,9 +250,12 @@ def gradient_block(spec, bounds, indent="        "):
             f"{indent}</aapt:attr>\n")
 
 
-def convert(src, mono):
+def convert(src, mono, fixed_offset=None, colour_map=None,
+            mono_fill="#000000", tint=None):
     text = Path(src).read_text(encoding="utf-8")
-    transform = build_transform(src)
+    transform = (fixed_transform(src, fixed_offset)
+                 if fixed_offset is not None else build_transform(src))
+    colour_map = colour_map or {}
     gradients = gradient_defs(text)
     bounds = ink_bounds_108(src, transform) if gradients else None
     inherited = GROUP_FILL.search(text)
@@ -239,17 +263,18 @@ def convert(src, mono):
     shapes = []
     for match in SHAPE.finditer(text):
         kind, attrs = match.group(1), match.group(2)
-        fill = "#000000" if mono else check_flat(resolve_fill(attrs, inherited),
+        fill = mono_fill if mono else check_flat(resolve_fill(attrs, inherited),
                                                  attrs, gradients)
         if fill == "none":
             continue
         if fill == "currentColor":
-            fill = "#000000"
+            fill = mono_fill
+        fill = colour_map.get(fill.upper(), fill)
         fill_type = "evenOdd" if "evenodd" in attrs else "nonZero"
         if kind == "path":
             d = re.search(r'\sd="([^"]+)"', attrs, re.S).group(1)
             shapes.append((scale_path(d, transform), fill, fill_type))
-        else:
+        elif kind in ("circle", "ellipse"):
             def number(key):
                 found = re.search(rf'{key}="([^"]+)"', attrs)
                 if not found:
@@ -259,16 +284,33 @@ def convert(src, mono):
             ry = rx if kind == "circle" else number("ry")
             shapes.append((ellipse_path(number("cx"), number("cy"), rx, ry,
                                         transform), fill, fill_type))
+        else:
+            def number(key, default=None):
+                found = re.search(rf'{key}="([^"]+)"', attrs)
+                if found:
+                    return float(found.group(1))
+                if default is not None:
+                    return default
+                raise SystemExit(f"{kind} without {key}")
+            rx = number("rx", 0.0)
+            ry = number("ry", rx)
+            shapes.append((
+                rounded_rect_path(number("x"), number("y"), number("width"),
+                                  number("height"), rx, ry, transform),
+                fill,
+                fill_type,
+            ))
     if not shapes:
         raise SystemExit(f"keine Formen in {src}")
 
     uses_gradient = any(f.startswith("url(") for _, f, _ in shapes)
     head = ('<?xml version="1.0" encoding="utf-8"?>\n'
-            "<!-- Erzeugt von scripts/build-brand-assets.sh."
-            " Nicht von Hand ändern. -->\n"
+            "<!-- Generated by scripts/build-brand-assets.sh."
+            " Do not edit by hand. -->\n"
             '<vector xmlns:android="http://schemas.android.com/apk/res/android"\n'
             + ('    xmlns:aapt="http://schemas.android.com/aapt"\n'
                if uses_gradient else "")
+            + (f'    android:tint="{tint}"\n' if tint else "")
             + '    android:width="108dp"\n'
             '    android:height="108dp"\n'
             '    android:viewportWidth="108"\n'
@@ -295,10 +337,24 @@ def main():
     parser.add_argument("source")
     parser.add_argument("destination")
     parser.add_argument("--mono", action="store_true",
-                        help="alle Flächen schwarz: das System tönt den Layer")
+                        help="replace every shape fill with --mono-fill")
+    parser.add_argument("--mono-fill", default="#000000")
+    parser.add_argument("--fixed-offset", type=float,
+                        help="translate by this amount without scaling")
+    parser.add_argument("--colour-map", action="append", default=[],
+                        metavar="SVG=ANDROID",
+                        help="map a literal SVG colour to an Android resource")
+    parser.add_argument("--tint", help="optional android:tint on the vector")
     args = parser.parse_args()
-    Path(args.destination).write_text(convert(args.source, args.mono),
-                                      encoding="utf-8")
+    colour_map = {}
+    for item in args.colour_map:
+        if "=" not in item:
+            parser.error(f"--colour-map needs SVG=ANDROID, got {item!r}")
+        source, target = item.split("=", 1)
+        colour_map[source.upper()] = target
+    Path(args.destination).write_text(
+        convert(args.source, args.mono, args.fixed_offset, colour_map,
+                args.mono_fill, args.tint), encoding="utf-8")
 
 
 if __name__ == "__main__":

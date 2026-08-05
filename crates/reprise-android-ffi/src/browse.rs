@@ -2,6 +2,8 @@
 
 use reprise_core::queries;
 
+use crate::{LibraryError, MusicLibrary};
+
 /// One row as the UI needs it — deliberately not the full Core `Track`, so
 /// the binding surface stays a decision rather than an accident.
 ///
@@ -158,5 +160,63 @@ impl From<queries::ArtistWindow> for ArtistWindow {
                 .collect(),
             has_more: window.has_more,
         }
+    }
+}
+
+#[uniffi::export]
+impl MusicLibrary {
+    /// Loads one present track by its stable library identity.
+    pub fn track_by_id(&self, track_id: i64) -> Result<Option<TrackRow>, LibraryError> {
+        let state = self.lock()?;
+        queries::query_present_track_by_id(&state.db, track_id)
+            .map(|track| track.map(TrackRow::from))
+            .map_err(|error| LibraryError::Query {
+                detail: error.to_string(),
+            })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::MusicLibrary;
+
+    #[test]
+    fn the_android_library_loads_one_present_track_by_stable_id() {
+        let directory = tempfile::tempdir().unwrap();
+        let music = directory.path().join("music");
+        std::fs::create_dir(&music).unwrap();
+        let track_path = music.join("playing.flac");
+        std::fs::copy(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../android/app/src/main/assets/sine.flac"),
+            &track_path,
+        )
+        .unwrap();
+        let database_path = directory.path().join("reprise.db");
+        let database = reprise_core::db::Db::open_migrated(Some(&database_path)).unwrap();
+        reprise_core::library::scanner::scan_folder(&database, &music).unwrap();
+        let expected = queries::query_library_text_search(
+            &database,
+            "",
+            queries::WindowRange {
+                offset: 0,
+                limit: 1,
+            },
+        )
+        .unwrap()
+        .rows
+        .remove(0);
+        drop(database);
+        let library = MusicLibrary::open(
+            directory.path().to_str().unwrap(),
+            directory.path().join("cache").to_str().unwrap(),
+        )
+        .unwrap();
+
+        let playing = library.track_by_id(expected.id).unwrap().unwrap();
+
+        assert_eq!(playing, TrackRow::from(expected));
+        assert_eq!(library.track_by_id(999).unwrap(), None);
     }
 }

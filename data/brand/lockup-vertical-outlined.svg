@@ -1,32 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 848.39 579.60" width="848.39" height="579.60">
   <!-- Erzeugt von scripts/build-brand-assets.sh. Nicht von Hand ändern. -->
-  <g id="rp-lv-o-mark" transform="translate(210.8607 -49.3333) scale(26.666667)">
-  <!-- Die Marke: das Wiederholungszeichen der Notenschrift. Es markiert
-       genau das, wonach die App heißt — eine Reprise.
-
-       Auf dem **16er Raster** gezeichnet, jede Kante auf einer ganzen
-       Rasterlinie: Punkte bei x 2–5, dünner Balken 7–9, dicker Balken
-       10–14, alle Balken y 2–14. Damit sind 32, 48, 128 und 512 px glatte
-       Vielfache, und bei 16 px ist jeder Pixel ganz an oder ganz aus.
-
-       Die beiden Balken sind **absichtlich ungleich** — 2 gegen 4 Einheiten.
-       Gleich breit gezeichnet liest das Zeichen als Pausensymbol; die
-       Notenschrift setzt dünn vor dick, und genau dieser Unterschied trennt
-       die beiden Bedeutungen.
-
-       Ein Pfad, vier Teilflächen. Der Verlauf läuft von Violett nach Blau
-       quer über alle vier — sie gehören zusammen, also teilen sie ihn. -->
-  <defs>
-    <linearGradient id="rp-lv-o-rp-mark-fill" x1="0" y1="0" x2="0.6" y2="1">
-      <stop offset="0" stop-color="#A020F0"/>
-      <stop offset="1" stop-color="#4A72FF"/>
-    </linearGradient>
-  </defs>
-  <path id="rp-lv-o-rp-sign" fill="url(#rp-lv-o-rp-mark-fill)"
-        d="M 10 2 L 14 2 L 14 14 L 10 14 Z
-           M 7 2 L 9 2 L 9 14 L 7 14 Z
-           M 2 5.5 A 1.5 1.5 0 1 0 5 5.5 A 1.5 1.5 0 1 0 2 5.5 Z
-           M 2 10.5 A 1.5 1.5 0 1 0 5 10.5 A 1.5 1.5 0 1 0 2 10.5 Z"/>
+  <g id="rp-lv-o-mark" transform="translate(162.1806 -110.8993) scale(5.727069)">
+  <!-- Generated from palette.toml. Teal carries the thick barline so the
+       largest field holds the brighter colour; coral accents the dots
+       and the thin barline. -->
+  <circle cx="30" cy="39" r="5.5" fill="#FF6F5E"/>
+  <circle cx="30" cy="57" r="5.5" fill="#FF6F5E"/>
+  <rect x="41" y="20" width="5" height="56" rx="1" fill="#FF6F5E"/>
+  <rect x="52" y="20" width="15" height="56" rx="1.5" fill="#4FDBD4"/>
   </g>
   <g fill="currentColor" transform="translate(4.0000 575.6000)">
     <path transform="translate(0.0000 0) scale(0.134000 -0.134000)" d="M1236 913Q1236 813 1192.5 732.5Q1149 652 1070.5 599.0Q992 546 883 527Q859 523 835.5 519.0Q812 515 787.5 513.0Q763 511 733 511Q660 511 603.0 520.5Q546 530 501.5 548.5Q457 567 421 594L429 631Q463 605 501.0 589.5Q539 574 580.5 567.5Q622 561 665 561Q797 561 875.0 646.0Q953 731 953 903Q953 1035 903.0 1137.5Q853 1240 766.5 1298.5Q680 1357 569 1357H481V100Q481 78 490.5 67.5Q500 57 522 52L596 39Q607 37 611.5 32.0Q616 27 616 19Q616 0 594 0H89Q78 0 72.0 5.0Q66 10 66 19Q66 33 86 39L160 52Q182 57 191.5 67.5Q201 78 201 100V1311Q201 1327 191.0 1335.5Q181 1344 160 1348L86 1361Q66 1367 66 1381Q66 1390 72.0 1395.0Q78 1400 89 1400H571Q780 1400 928.5 1339.0Q1077 1278 1156.5 1168.5Q1236 1059 1236 913ZM686 539 949 570 1224 104Q1244 72 1266.0 59.5Q1288 47 1318 39Q1330 36 1335.0 31.5Q1340 27 1340 19Q1340 10 1334.5 5.0Q1329 0 1317 0H876Q854 0 854 19Q854 26 858.0 29.0Q862 32 870 36L913 45Q935 52 940.0 66.0Q945 80 928 110Z"/>
