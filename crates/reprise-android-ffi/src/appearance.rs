@@ -10,6 +10,7 @@ use reprise_core::library::settings;
 use crate::{LibraryError, MusicLibrary};
 
 const THEME_SETTING_KEY: &str = "ui.theme";
+const VISUALIZER_SETTING_KEY: &str = "ui.now_playing.visualizer";
 
 /// What the shared `ui.theme` key currently contains.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -43,6 +44,50 @@ impl AndroidThemeChoice {
         match self {
             Self::Nocturne => "nocturne",
             Self::Dynamic => "dynamic",
+        }
+    }
+}
+
+/// What the shared Now Playing visualizer key currently contains.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum AndroidStoredVisualizer {
+    Unset,
+    Cover,
+    Spectrum,
+    PreviewBand,
+    Ambient,
+    Unsupported { id: String },
+}
+
+impl AndroidStoredVisualizer {
+    fn from_setting(value: Option<&str>) -> Self {
+        match value {
+            None => Self::Unset,
+            Some("cover") => Self::Cover,
+            Some("spectrum") => Self::Spectrum,
+            Some("preview-band") => Self::PreviewBand,
+            Some("ambient") => Self::Ambient,
+            Some(id) => Self::Unsupported { id: id.to_owned() },
+        }
+    }
+}
+
+/// Visualizer ids Android is allowed to persist after an explicit choice.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum AndroidVisualizerChoice {
+    Cover,
+    Spectrum,
+    PreviewBand,
+    Ambient,
+}
+
+impl AndroidVisualizerChoice {
+    fn setting_id(self) -> &'static str {
+        match self {
+            Self::Cover => "cover",
+            Self::Spectrum => "spectrum",
+            Self::PreviewBand => "preview-band",
+            Self::Ambient => "ambient",
         }
     }
 }
@@ -94,13 +139,35 @@ impl MusicLibrary {
             }
         })
     }
+
+    pub fn visualizer_setting(&self) -> Result<AndroidStoredVisualizer, LibraryError> {
+        let state = self.lock()?;
+        let value = settings::get_setting(&state.db, VISUALIZER_SETTING_KEY).map_err(|error| {
+            LibraryError::Database {
+                detail: error.to_string(),
+            }
+        })?;
+        Ok(AndroidStoredVisualizer::from_setting(value.as_deref()))
+    }
+
+    pub fn set_visualizer(&self, visualizer: AndroidVisualizerChoice) -> Result<(), LibraryError> {
+        let state = self.lock()?;
+        settings::set_setting(&state.db, VISUALIZER_SETTING_KEY, visualizer.setting_id()).map_err(
+            |error| LibraryError::Database {
+                detail: error.to_string(),
+            },
+        )
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use reprise_core::library::settings;
 
-    use super::{AndroidColorScheme, AndroidStoredTheme, AndroidThemeChoice};
+    use super::{
+        AndroidColorScheme, AndroidStoredTheme, AndroidStoredVisualizer, AndroidThemeChoice,
+        AndroidVisualizerChoice,
+    };
     use crate::MusicLibrary;
 
     #[test]
@@ -138,6 +205,39 @@ mod tests {
                 theme: AndroidStoredTheme::Dynamic,
                 color_scheme: AndroidColorScheme::Dark,
             },
+        );
+    }
+
+    #[test]
+    fn visualizer_setting_crosses_the_typed_boundary_without_stealing_unknown_values() {
+        let directory = tempfile::tempdir().unwrap();
+        let library = MusicLibrary::open(
+            directory.path().to_str().unwrap(),
+            directory.path().join("cache").to_str().unwrap(),
+        )
+        .unwrap();
+        {
+            let state = library.lock().unwrap();
+            settings::set_setting(
+                &state.db,
+                super::VISUALIZER_SETTING_KEY,
+                "future-data-driven-mode",
+            )
+            .unwrap();
+        }
+
+        assert_eq!(
+            library.visualizer_setting().unwrap(),
+            AndroidStoredVisualizer::Unsupported {
+                id: "future-data-driven-mode".to_owned(),
+            },
+        );
+        library
+            .set_visualizer(AndroidVisualizerChoice::Ambient)
+            .unwrap();
+        assert_eq!(
+            library.visualizer_setting().unwrap(),
+            AndroidStoredVisualizer::Ambient,
         );
     }
 }

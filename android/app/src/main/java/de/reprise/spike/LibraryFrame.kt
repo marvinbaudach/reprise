@@ -52,6 +52,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import de.reprise.spike.ui.theme.MaterialSymbolsRounded
+import de.reprise.spike.ui.theme.MaterialSymbolsRoundedFilled
 
 @Composable
 internal fun LibraryTopAppBar(
@@ -367,17 +368,26 @@ internal fun PlayingBars(animate: Boolean) {
     }
 }
 
+/**
+ * One Material Symbols glyph, named by its ligature.
+ *
+ * [filled] is a *separate* parameter and not another [name] on purpose: fill is
+ * a variable-font axis in this font, so the "filled" and "outlined" spellings of
+ * a symbol are one and the same glyph — see [MaterialSymbolsRoundedFilled].
+ * A caller that carried an on/off state in the name drew the same pixels twice.
+ */
 @Composable
 internal fun MaterialSymbol(
     name: String,
     contentDescription: String,
     tint: Color = LocalContentColor.current,
     sizeSp: Int = 24,
+    filled: Boolean = false,
 ) {
     Text(
         text = name,
         color = tint,
-        fontFamily = MaterialSymbolsRounded,
+        fontFamily = if (filled) MaterialSymbolsRoundedFilled else MaterialSymbolsRounded,
         fontSize = sizeSp.sp,
         lineHeight = sizeSp.sp,
         maxLines = 1,
