@@ -130,6 +130,14 @@ pub(in crate::ui) struct Shared {
     /// loaded-track change advances it so an older idle callback cannot center
     /// a superseded row after the marker has already moved elsewhere.
     pub(in crate::ui) track_reveal_generation: Cell<u64>,
+    /// Whether a reveal has been asked for and has not moved the viewport yet.
+    /// NAV-10a: the request is made synchronously and carried out from an idle
+    /// callback, and a reload can run in between — `delete_tracks::finish`
+    /// advances the player and reloads in one turn. A reload that preserved
+    /// the position it *finds* there would pin the list to the row playback
+    /// just left, so `track_list_reload::capture_reload_anchor` reads this and
+    /// anchors on where the viewport is going instead.
+    pub(in crate::ui) track_reveal_pending: Cell<bool>,
     /// POD-20's shared loaded-episode marker. Separate from
     /// `playing_track_id` because the two id spaces are unrelated and may
     /// collide numerically; the marker also retains running versus paused.

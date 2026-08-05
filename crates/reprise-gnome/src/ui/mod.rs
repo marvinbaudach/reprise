@@ -92,6 +92,7 @@ pub mod status_bar;
 pub mod strings;
 mod style;
 mod swell;
+pub(crate) mod table_column_widths;
 mod tag_edit;
 mod tag_write_gate;
 #[cfg(test)]

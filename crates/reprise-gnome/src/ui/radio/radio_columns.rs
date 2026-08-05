@@ -11,6 +11,7 @@ use super::radio_presentation::{
     format_bitrate, format_country, format_genre, now_playing, row_is_accented, RadioLiveState,
 };
 use crate::ui::strings;
+use crate::ui::table_column_widths as widths;
 
 pub(super) type LiveState = Rc<dyn Fn() -> RadioLiveState>;
 /// `NET-3b`: read at right-click/context-menu-key time so the Play entry's
@@ -25,10 +26,12 @@ fn apply_playing_style(widget: &gtk4::Widget, playing: bool) {
     }
 }
 
+/// `sizing` fixes the column's width; see [`widths`] for why every column
+/// must carry one (STYLE-9).
 fn text_column(
     view: &gtk4::ColumnView,
     title: &str,
-    expand: bool,
+    sizing: widths::Sizing,
     render: impl Fn(&StationRow, &RadioLiveState) -> String + 'static,
     live_state: &LiveState,
     connectivity: &ConnectivitySource,
@@ -108,8 +111,8 @@ fn text_column(
         .title(title)
         .factory(&factory)
         .resizable(true)
-        .expand(expand)
         .build();
+    sizing.apply(&column);
     view.append_column(&column);
 }
 
@@ -193,6 +196,7 @@ fn state_column(
         .factory(&factory)
         .resizable(false)
         .build();
+    widths::pin(&column, widths::ICON_ACTION);
     view.append_column(&column);
 }
 
@@ -203,10 +207,11 @@ pub(super) fn append_columns(
     cells: &Rc<RadioLiveCells>,
 ) {
     state_column(view, live_state, connectivity, cells);
+    // Station is the filler: it owns whatever width the pinned columns leave.
     text_column(
         view,
         &strings::text(strings::RADIO_STATION),
-        true,
+        widths::Sizing::filler(widths::TITLE_MIN),
         |row, _| row.name.clone(),
         live_state,
         connectivity,
@@ -215,7 +220,7 @@ pub(super) fn append_columns(
     text_column(
         view,
         &strings::text(strings::RADIO_GENRE),
-        false,
+        widths::Sizing::pinned(widths::LABEL),
         |row, _| format_genre(row.genre.as_deref()),
         live_state,
         connectivity,
@@ -224,7 +229,7 @@ pub(super) fn append_columns(
     text_column(
         view,
         &strings::text(strings::RADIO_BITRATE),
-        false,
+        widths::Sizing::pinned(widths::NUMERIC),
         |row, _| format_bitrate(row.bitrate_kbps),
         live_state,
         connectivity,
@@ -233,16 +238,18 @@ pub(super) fn append_columns(
     text_column(
         view,
         &strings::text(strings::RADIO_COUNTRY),
-        false,
+        widths::Sizing::pinned(widths::SHORT_LABEL),
         |row, _| format_country(row.country_code.as_deref()),
         live_state,
         connectivity,
         cells,
     );
+    // Now Playing carries live stream metadata — the most volatile text in
+    // the table, and the reason this column must never size itself.
     text_column(
         view,
         &strings::text(strings::RADIO_NOW_PLAYING),
-        true,
+        widths::Sizing::pinned(widths::NAME),
         |row, live| now_playing(row.id, live),
         live_state,
         connectivity,
@@ -311,6 +318,36 @@ mod tests {
             uncovered.is_empty(),
             "radio row points without a context surface: {uncovered:?}"
         );
+    }
+
+    /// STYLE-9: the radio table must not re-measure itself from the rows
+    /// currently on screen, or every scroll shifts the columns.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn style_9_radio_columns_keep_their_width_when_the_rows_change() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+
+        let store = gtk4::gio::ListStore::new::<RadioObject>();
+        store.append(&RadioObject::new(station()));
+        let view = gtk4::ColumnView::new(Some(gtk4::SingleSelection::new(Some(store.clone()))));
+        let live_state: LiveState = Rc::new(RadioLiveState::default);
+        let connectivity: ConnectivitySource = Rc::new(|| Connectivity::Online);
+        append_columns(
+            &view,
+            &live_state,
+            &connectivity,
+            &Rc::new(RadioLiveCells::default()),
+        );
+
+        crate::ui::table_column_widths::assert_stable_across_row_change(&view, || {
+            let mut long = station();
+            long.name = "Radio Nacional Clásica Buenos Aires Extended".into();
+            long.genre = Some("Progressive Electronic Ambient".into());
+            long.bitrate_kbps = Some(320);
+            long.country_code = Some("AR".into());
+            store.splice(0, 1, &[RadioObject::new(long)]);
+        });
     }
 
     /// `SRC-4a`: the radio star was hover-only and not even focusable, so the

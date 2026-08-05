@@ -219,19 +219,20 @@ Do not point development hooks at the maintainer's real library.
 - Exercise Minimal View through the menu and Ctrl+M, including playback controls,
   repeated Full/Minimal transitions, close/reopen, and restoration of the full
   window geometry. Exercise every Preferences page and restart to verify persisted
-  theme, density, sidebar/status, player-bar position, columns, library root and
-  module states.
+  theme, accent source, density, sidebar/status, player-bar position, columns,
+  library root and module states. With the System accent selected, change the
+  GNOME accent and confirm Reprise updates without a restart.
 - NPP-1: Toggle the Now Playing panel repeatedly at wide and narrow sizes; its 300 px
   column must slide in and out like the 240 px left sidebar without covering content.
-- NPP-3: In both light and dark appearance, confirm the cover-derived glow stays in
+- NPP-3: In both light and dark appearance, confirm the effective-accent glow stays in
   the upper third, fades into the neutral-dark stage, and disappears in the idle state.
 - NPP-5/NPP-6: Play copied music with synchronized lyrics and inspect the 100/45/32/28
   line hierarchy, centered accent underline, 150 ms line fades, and calm centered glide.
 - NPP-13: Change tracks with animations enabled and disabled; the right panel, active
   tab, queue, and footer must remain visible while only the outgoing cover fades over
-  the resolved new cover. The queue advances independently, the cover-derived accent
-  follows its ambient transition, and new synchronized lyrics start with line zero
-  centered.
+  the resolved new cover. The queue advances independently, the effective accent stays
+  stable through the cover transition, and new synchronized lyrics start with line
+  zero centered.
 - For the reduced-motion variants above, toggle GNOME's system animation
   setting for the duration of the test and restore its previous value after
   closing Reprise. A per-profile GTK `settings.ini` can be overridden by the

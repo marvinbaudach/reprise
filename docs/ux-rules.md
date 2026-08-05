@@ -1592,20 +1592,11 @@ place (MOT-2, the motion reading of P-4).
   (OverlaySplitView, NavigationSplitView, ToastOverlay, Banner, Dialog,
   Popover — e.g. the push/pop slides of the settings subpages) count
   as system-given and are exempt from the token requirement.
-  **The cover accent is not its own animation.** It used to be listed as
-  the Ambient case, animated in Rust by interpolating the colour and
-  reloading a display-wide provider per frame — which restyled the whole
-  widget tree ~24 times per track change and cost ~190 ms of main-thread
-  time (measured 2026-08-04, see `docs/plans/track-change-ui-stall.md`).
-  It is now a single colour change, and it inherits the transition the
-  carrying widget already declares: the play button transitions
-  `background-color` and `box-shadow` on Micro, so its accent moves on
-  Micro. That is MOT-3 rather than an exception to it — the alternative
-  is impossible, not merely expensive: the properties carrying the accent
-  are the same ones carrying hover and focus, a CSS property has exactly
-  one transition, and it cannot tell an accent change from a hover. Any
-  duration imposed centrally would override the token the widget declares
-  for its own interaction states.
+  **The accent is not its own animation.** Changing its source reloads one
+  named color; the carrying widget's existing transition applies. The play
+  button, for example, transitions `background-color` and `box-shadow` on
+  Micro. A central accent duration would override that widget's interaction
+  transition because a CSS property has exactly one transition.
   <!-- Flip criterion MOT-1: all call sites from the motion plan's
        audit inventory consume tokens; scripts/check-motion-tokens.sh
        is strict and without a leftover allowlist. -->
@@ -1632,16 +1623,15 @@ place (MOT-2, the motion reading of P-4).
   Pause = icon crossfade (two Micro halves) + scale pulse (1.0→0.92→
   1.0, Micro); track change = cover/title crossfade; the waveform
   crossfades to the new track instead of dropping to 0; pause slightly
-  desaturates the waveform fill (at draw time), play reverses it — the
-  accent pipeline (`cover_accent`) stays untouched. The EQ indicators
+  desaturates the waveform fill with draw-local color math, play reverses
+  it. The effective accent itself stays untouched. The EQ indicators
   (track list, mini-player) run only during active playback; the idle
   bar is static — no permanent loop without playback.
 - **MOT-6** [active] [gtk] — Nothing blocks: the model changes at frame
   0, the animation only illustrates. A second action during a running
   animation jumps to the end state via `AdwAnimation::skip()` and then
-  starts the new one; animation slots (track crossfade, icon
-  crossfade, accent fade) call `skip()` instead of silently dropping
-  the old handle.
+  starts the new one; animation slots (track crossfade and icon crossfade)
+  call `skip()` instead of silently dropping the old handle.
 - **MOT-7** [active] [gtk] — `gtk-enable-animations=false` wins without
   exception: every token degrades centrally in `ui/motion.rs` to a
   hard switch (`follow-enable-animations-setting` or the central gate
@@ -1692,18 +1682,17 @@ the panel).
   toggle, a retry belongs in the tab's error state. **No volume
   control** (P-1).
 - **NPP-3** [active] [gtk] — Glow instead of full tint: a radial
-  gradient of the cover accent color sits in the upper third behind
+  gradient of the effective accent color (`@accent_color`) sits in the upper third behind
   the cover and fades down into neutral panel-dark. The reason is
   legibility — the base surface stays neutral so the lyrics contrast
-  stays constant over the whole height. Fallback is the theme accent
-  (petrol), idle shows no glow. Rendered as a gradient, never
+  stays constant over the whole height. Idle shows no glow. Rendered as a gradient, never
   live-blurred.
 - **NPP-4** [active] [gtk] — Tab memory only for the session (NAV-5); a
   restart lands on Up Next. Panel *visibility* continues to persist
   across restarts — tab and visibility are separate states.
 - **NPP-5** [active] [gtk] — Line hierarchy in the lyrics tab: active
   line 15 px bold white with accent underline (26 × 2.5 px, centered,
-  color = cover accent), neighbors stepped white 45% (±1) / 32% (±2) /
+  color = `@accent_color`), neighbors stepped white 45% (±1) / 32% (±2) /
   28% (further). All lines centered, 13 px, generous spacing. Whole
   LRC lines, no karaoke word highlighting.
 - **NPP-6** [active] [gtk] — Line change: the new line fades to
@@ -1802,7 +1791,7 @@ the panel).
 - **NR-2** [active] [gtk] — Release covers load lazily via Cover Art
   Archive (`/release-group/{mbid}/front-250`). A missing cover is the
   normal state and immediately shows an equally sized tile made of the
-  stored artist accent color plus initials — never a hole or a
+  effective accent color from STYLE-8 plus initials — never a hole or a
   permanent spinner.
 - **NR-3** [replaced by NR-3a] [gtk] — The header ✦ appears only
   when entries exist and carries a badge exclusively for `seen_at IS
@@ -2386,14 +2375,14 @@ property is set and yet nothing happens.
   use the one-level-higher `sidebar_bg` surface of the active theme. Both
   flanks carry a 1px hairline on their inner edge. There is no pane-specific
   retinting and no hardcoded pane surface.
-- **STYLE-3** [planned] [gtk] — Two accent roles stay separate: the fixed
+- **STYLE-3** [replaced by STYLE-8] — Two accent roles stay separate: the fixed
   app accent (`@accent_color`) denotes durable UI meaning such as
   selection, ratings, active toggles, links, chips, and focus; the dynamic
   playback accent (`@reprise_player_accent`) denotes exclusively the
   running track, such as Play/Pause, waveform, playing row, EQ, glow, and
   the GRID-1 inner ring. An element never mixes the roles.
 - **STYLE-4** [replaced by STYLE-1] — Chrome glass is neutral and
-  theme-dependent, never tinted by the cover accent. GL/NGL/Vulkan use 24px
+  theme-dependent, never tinted by the effective accent. GL/NGL/Vulkan use 24px
   backdrop blur over a neutral tint floor of at least 80%; Cairo, unknown
   renderers, High Contrast, and disabled animations degrade fail-closed to
   a neutral, at least 94% opaque tint.
@@ -2421,6 +2410,25 @@ property is set and yet nothing happens.
   narrow window. Responsive changes never overwrite a stored sidebar or
   panel preference, and both header toggles remain reachable for manual
   reopening.
+- **STYLE-8** [active] [gtk] — Reprise has one effective accent color for
+  every accent role. Appearance offers exactly two sources between Theme and
+  Color Scheme: the Reprise app accent `#4FDBD4`, which is the default, and
+  the system accent provided by libadwaita. Changing the source applies
+  immediately without restarting the app.
+- **STYLE-9** [active] [gtk] — **A column never takes its width from the
+  rows that happen to be on screen.** Every column of every table carries an
+  explicitly set width; exactly one column per table additionally expands and
+  absorbs the leftover width. A column left at the framework default
+  (`fixed-width = -1`) measures itself against the cells realized at that
+  moment, and `GtkColumnView` recycles its row widgets while scrolling — so
+  the whole table shifts sideways as the user scrolls, and the column that
+  visibly jumps is usually not the one at fault but the one absorbing what
+  its unset neighbors leave over. The width stays the user's: columns remain
+  resizable, and a header drag simply writes a new width. Where the set
+  widths exceed the window, the table scrolls horizontally instead of
+  squeezing its columns (STYLE-6). **Test rule:** measured, not asserted —
+  the rule-named test exchanges the rows on screen for markedly wider ones
+  and compares the columns' realized widths.
 - **CONTRAST-1** [active] [gtk] — There are three central text levels:
   primary approximately 0.95 for titles and values, secondary approximately
   0.7 for artist, status, metadata, and column headers, hint approximately
@@ -2501,9 +2509,8 @@ property is set and yet nothing happens.
   standard token; the old cover lies on top of the fully resolved new
   cover or placeholder for this and only fades out afterward. The queue
   updates its rows independently of this, so the played title moves up out
-  of the list. The playback accent derived from the cover continues to
-  follow the ambient transition from MOT-1 separately; interruptions
-  follow MOT-6. Newly loaded synchronized lyrics start at line 0 and
+  of the list. The effective accent is independent of the cover and does
+  not change with the track. Newly loaded synchronized lyrics start at line 0 and
   position it per LYR-4. Without animations, cover and content switch hard
   (MOT-7).
 
@@ -2523,7 +2530,7 @@ property is set and yet nothing happens.
 - **STATS-1** [replaced by STATS-11/STATS-12] [core] — The header shows
   total listening time large in whole hours ("68 hours"; under an hour in
   minutes, never "0 hours"), a comparison pill "▲ N % vs <previous period>"
-  in the teal app accent (never the cover accent), and the subline "N
+  in the effective accent, and the subline "N
   plays · Ø X min/day · N artists" in secondary tone. Given enough width,
   the period dropdown sits at the right ("<year> so far / <previous year> /
   All time / Last 30 days"). Before total time or pill ellipsize, dropdown
@@ -2565,8 +2572,8 @@ property is set and yet nothing happens.
   population that forms the ranking, not to every play —, three top-track
   chips, and the actions Play (container play over the artist's track
   list) and "Go to artist" (regular NAV push with back history). Behind
-  the cover sits a subtle cover-accent glow — the cover accent stays
-  reserved for playback elements. Below it, a ghost row names ranks 2–5.
+  the cover sits a subtle effective-accent glow. Below it, a ghost row names
+  ranks 2–5.
 - **STATS-3** [replaced by STATS-15] [core] — The Genre Spectrum is
   **one** horizontal segment bar in teal gradations with a legend (dot ·
   name · %), fed from the library's genre tags. The five strongest genres
@@ -2885,8 +2892,8 @@ STYLE-1).
   <!-- Deliberate HIG deviation: Adwaita buttons don't change the cursor. -->
 - **BTN-2** [active] [gtk] — Toggle buttons show their state persistently,
   not just in the moment of the click. Shuffle and Repeat are both
-  `GtkToggleButton` and speak the same `:checked`: accent surface in the
-  app accent (never the cover accent) plus a small dot under the icon as a
+  `GtkToggleButton` and speak the same `:checked`: a surface in the effective
+  accent from STYLE-8 plus a small dot under the icon as a
   second, **non-color** signal — color alone doesn't carry for color
   blindness. The state survives hover and unhover; hover only modulates
   the surface's brightness and never flips the state indicator. Repeat-One
@@ -3014,9 +3021,10 @@ STYLE-1).
   internal scene raster area and scales it to the unchanged canvas
   size. When panel height is tight, the visual content stays below the
   tab switcher and scrolls within its own tab, instead of covering the
-  switcher. The labeled canvas takes on the current cover accent via the
-  same global ambient crossfade as the player bar; only without a usable
-  cover color does the theme accent apply.
+  switcher. The labeled canvas takes on the effective accent color from
+  STYLE-8; its secondary hue is always a fixed 42-degree shift of that same
+  color. Changing the app/system source or the live system accent updates the
+  canvas without reading or sampling the cover.
 
 - **AC-24** [active] [gtk] — The reactive light lives on the cover and the
   playhead, nowhere else. The now-playing backdrop, the cover in the panel
@@ -3073,10 +3081,9 @@ STYLE-1).
   artwork turning behind it — one turn a minute. The seam sits
   one pixel outside the artwork, so the cover's footprint grows by exactly
   one pixel on each side; nothing crosses the picture itself. The seam
-  takes its hue from the cover but not its chroma: the player accent is
-  ink and stays muted for the waveform and the play button, while a
-  translucent one-pixel seam at that chroma measured as invisible, so the
-  seam reads the same hue lifted into a wider band. **The turning disc is
+  uses the effective app or system accent (`@accent_color`), exactly like
+  the other accent-bearing UI; it never extracts a separate color from the
+  cover. **The turning disc is
   the artwork itself, not colours extracted from it.** A palette sweep was
   built first and measured against a real library: half the covers are
   greyscale or near-black and yield no usable colour at all, and most of

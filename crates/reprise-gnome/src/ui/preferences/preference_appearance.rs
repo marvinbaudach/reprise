@@ -5,18 +5,24 @@ use libadwaita::prelude::*;
 
 use super::strings;
 use super::PreferencesContext;
-use crate::ui::style::{self, theme::Theme};
+use crate::ui::style::{
+    self,
+    accent::{AccentSource, ACCENT_SOURCE_SETTING_KEY},
+    theme::Theme,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AppearanceSection {
     Theme,
+    AccentColor,
     ColorScheme,
     WindowDecorations,
 }
 
-fn appearance_sections() -> [AppearanceSection; 3] {
+fn appearance_sections() -> [AppearanceSection; 4] {
     [
         AppearanceSection::Theme,
+        AppearanceSection::AccentColor,
         AppearanceSection::ColorScheme,
         AppearanceSection::WindowDecorations,
     ]
@@ -32,6 +38,13 @@ pub(in crate::ui) fn build(context: &Rc<PreferencesContext>) -> adw::Preferences
             AppearanceSection::Theme => {
                 let group = adw::PreferencesGroup::builder().title("Theme").build();
                 group.add(&theme_row(context));
+                page.add(&group);
+            }
+            AppearanceSection::AccentColor => {
+                let group = adw::PreferencesGroup::builder()
+                    .title(strings::text(strings::ACCENT_COLOR))
+                    .build();
+                group.add(&accent_row(context));
                 page.add(&group);
             }
             AppearanceSection::ColorScheme => {
@@ -100,6 +113,58 @@ fn theme_row(context: &Rc<PreferencesContext>) -> adw::ComboRow {
     row
 }
 
+/// A `ComboRow` that live-switches and persists the accent source.
+fn accent_row(context: &Rc<PreferencesContext>) -> adw::ComboRow {
+    let sources = [AccentSource::App, AccentSource::System];
+    let names = [
+        strings::text(strings::ACCENT_SOURCE_APP),
+        strings::text(strings::SCHEME_SYSTEM),
+    ];
+    let model = gtk4::StringList::new(
+        &names
+            .iter()
+            .map(std::string::String::as_str)
+            .collect::<Vec<_>>(),
+    );
+    let row = adw::ComboRow::builder()
+        .title(strings::text(strings::ACCENT_COLOR))
+        .subtitle(strings::text(strings::ACCENT_COLOR_SUBTITLE))
+        .model(&model)
+        .build();
+
+    let stored =
+        reprise_core::library::settings::get_setting(&context.conn, ACCENT_SOURCE_SETTING_KEY)
+            .ok()
+            .flatten();
+    let current = stored
+        .as_deref()
+        .map_or(AccentSource::DEFAULT, AccentSource::from_id);
+    let index = sources
+        .iter()
+        .position(|source| *source == current)
+        .unwrap_or_default();
+    row.set_selected(index as u32);
+
+    row.connect_selected_notify({
+        let context = context.clone();
+        move |row| {
+            let Some(source) = sources.get(row.selected() as usize).copied() else {
+                return;
+            };
+            style::set_accent_source(source);
+            if let Err(error) = reprise_core::library::settings::set_setting(
+                &context.conn,
+                ACCENT_SOURCE_SETTING_KEY,
+                source.id(),
+            ) {
+                tracing::warn!(%error, "could not persist the selected accent source");
+            }
+        }
+    });
+
+    row
+}
+
 /// A `ComboRow` that switches between System / Dark / Light color schemes.
 fn color_scheme_row(context: &Rc<PreferencesContext>) -> adw::ComboRow {
     let schemes = [
@@ -152,14 +217,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn appearance_page_lists_theme_color_scheme_then_window_decorations() {
+    fn style_8_appearance_places_accent_between_theme_and_color_scheme() {
         assert_eq!(
             appearance_sections(),
             [
                 AppearanceSection::Theme,
+                AppearanceSection::AccentColor,
                 AppearanceSection::ColorScheme,
                 AppearanceSection::WindowDecorations,
             ]
+        );
+    }
+
+    #[test]
+    fn accent_source_persistence_round_trips_and_unknown_defaults_to_app() {
+        for source in [AccentSource::App, AccentSource::System] {
+            assert_eq!(AccentSource::from_id(source.id()), source);
+        }
+        assert_eq!(
+            AccentSource::from_id("future-source"),
+            AccentSource::DEFAULT
         );
     }
 }

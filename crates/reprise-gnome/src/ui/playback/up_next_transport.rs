@@ -233,7 +233,9 @@ impl PlayerController {
 
     /// Rebuilds the exhausted playback context from the visible view's ids
     /// (see `PlayerController::set_view_refill_provider`) and starts playing
-    /// it — at a random position when shuffle is on, from the top otherwise.
+    /// it — starting on a random track when shuffle is on, from the top
+    /// otherwise. Either way `Queue::set_tracks` leads the shuffled order
+    /// with that track, so the whole view is queued behind it.
     /// Returns whether a refill actually started playback; `false` (no
     /// provider, empty view, or the Queue view itself) leaves the caller's
     /// ordinary stop path in charge.

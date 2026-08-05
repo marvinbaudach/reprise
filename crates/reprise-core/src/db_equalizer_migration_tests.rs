@@ -23,7 +23,7 @@ fn migration_projects_the_legacy_ten_levels_back_exactly() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 55);
+    assert_eq!(version, crate::db::SUPPORTED_SCHEMA_VERSION);
     let db = Db::from_connection(conn);
     assert_eq!(
         crate::library::settings::get_setting(&db, LEGACY_BANDS_KEY).unwrap(),

@@ -23,8 +23,8 @@ fn insert_release(db: &crate::db::Db, mbid: &str, seen_at: Option<i64>) {
         .execute(
             "INSERT INTO new_releases (
            release_group_mbid, artist_name, artist_mbid, title, release_type,
-           first_release_date, fetched_at, seen_at, fallback_accent
-         ) VALUES (?1, 'Artist', 'artist-id', 'Release', 'Album', '2026-08-01', 1, ?2, '#123456')",
+           first_release_date, fetched_at, seen_at
+         ) VALUES (?1, 'Artist', 'artist-id', 'Release', 'Album', '2026-08-01', 1, ?2)",
             rusqlite::params![mbid, seen_at],
         )
         .unwrap();
@@ -35,8 +35,8 @@ fn insert_named_release(db: &crate::db::Db, mbid: &str, title: &str, seen_at: Op
         .execute(
             "INSERT INTO new_releases (
            release_group_mbid, artist_name, artist_mbid, title, release_type,
-           first_release_date, fetched_at, seen_at, fallback_accent
-         ) VALUES (?1, 'Artist', 'artist-id', ?2, 'Album', '2026-08-01', 1, ?3, '#123456')",
+           first_release_date, fetched_at, seen_at
+         ) VALUES (?1, 'Artist', 'artist-id', ?2, 'Album', '2026-08-01', 1, ?3)",
             rusqlite::params![mbid, title, seen_at],
         )
         .unwrap();
@@ -127,8 +127,8 @@ fn nr_16_updates_query_excludes_historical_catalog_releases() {
             .execute(
                 "INSERT INTO new_releases (
                release_group_mbid, artist_name, artist_mbid, title, release_type,
-               first_release_date, fetched_at, fallback_accent, first_seen
-             ) VALUES (?1, 'Artist', 'artist-id', ?2, 'Album', ?3, 1, '#123456', 1)",
+               first_release_date, fetched_at, first_seen
+             ) VALUES (?1, 'Artist', 'artist-id', ?2, 'Album', ?3, 1, 1)",
                 rusqlite::params![id, title, first_release_date],
             )
             .unwrap();
@@ -157,8 +157,8 @@ fn nr_1a_updates_query_caps_each_artist_after_catalog_filtering() {
             .execute(
                 "INSERT INTO new_releases (
                release_group_mbid, artist_name, artist_mbid, title, release_type,
-               first_release_date, fetched_at, fallback_accent, first_seen
-             ) VALUES (?1, 'Artist', 'artist-id', ?2, 'Album', '2026-08-01', 1, '#123456', 1)",
+               first_release_date, fetched_at, first_seen
+             ) VALUES (?1, 'Artist', 'artist-id', ?2, 'Album', '2026-08-01', 1, 1)",
                 rusqlite::params![format!("release-{index:02}"), format!("Release {index:02}")],
             )
             .unwrap();
@@ -230,22 +230,24 @@ fn hide_sets_hidden_and_set_release_hidden_false_restores_it() {
 #[test]
 fn nr_13_query_marks_local_albums_instead_of_dropping_them() {
     let conn = migrated_conn();
-    conn.conn().execute(
-        "INSERT INTO new_releases (
+    conn.conn()
+        .execute(
+            "INSERT INTO new_releases (
            release_group_mbid, artist_name, artist_mbid, title, release_type,
-           first_release_date, fetched_at, fallback_accent, track_count
-         ) VALUES ('owned', 'Pink Floyd', 'artist-id', 'Local Album', 'Album', '2026-06-01', 1, '#123456', 2)",
-        [],
-    )
-    .unwrap();
-    conn.conn().execute(
-        "INSERT INTO new_releases (
+           first_release_date, fetched_at, track_count
+         ) VALUES ('owned', 'Pink Floyd', 'artist-id', 'Local Album', 'Album', '2026-06-01', 1, 2)",
+            [],
+        )
+        .unwrap();
+    conn.conn()
+        .execute(
+            "INSERT INTO new_releases (
            release_group_mbid, artist_name, artist_mbid, title, release_type,
-           first_release_date, fetched_at, fallback_accent
-         ) VALUES ('new', 'Pink Floyd', 'artist-id', 'Brand New Album', 'Album', '2026-06-01', 1, '#123456')",
-        [],
-    )
-    .unwrap();
+           first_release_date, fetched_at
+         ) VALUES ('new', 'Pink Floyd', 'artist-id', 'Brand New Album', 'Album', '2026-06-01', 1)",
+            [],
+        )
+        .unwrap();
     conn.conn()
         .execute(
             "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
@@ -329,9 +331,9 @@ fn query_releases_reports_partial_ownership_for_a_single_track() {
     conn.conn()
         .execute(
             "INSERT INTO new_releases (release_group_mbid, artist_name, artist_mbid, title, \
-         release_type, first_release_date, fetched_at, fallback_accent, first_seen) \
+         release_type, first_release_date, fetched_at, first_seen) \
          VALUES ('rg-1', 'Pink Floyd', 'mbid-1', 'Eclipse', 'Album', '2026-09-01', 100, \
-         '#3584E4', 100)",
+         100)",
             [],
         )
         .unwrap();
@@ -352,9 +354,9 @@ fn dg_2_future_release_cannot_be_hidden_as_already_complete() {
         .execute(
             "INSERT INTO new_releases (
            release_group_mbid, artist_name, artist_mbid, title, release_type,
-           first_release_date, fetched_at, fallback_accent, track_count
+           first_release_date, fetched_at, track_count
          ) VALUES ('future-ep', 'Ocean Sleeper', 'artist-id', 'Future EP',
-                   'EP', '2027-01-01', 1, '#123456', 2)",
+                   'EP', '2027-01-01', 1, 2)",
             [],
         )
         .unwrap();

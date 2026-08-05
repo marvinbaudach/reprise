@@ -8,9 +8,8 @@ const REORDER_TARGET_CSS_CLASS: &str = "reprise-reorder-target";
 /// The `.now-playing*` class names are literals here to match the pattern
 /// this file already follows for `.reprise-track-cell` (see `expand_to_cell`)
 /// — they are set on cells by `track_list_columns.rs`'s `apply_now_playing`.
-/// The marker uses the theme `@accent_color` (teal), deliberately distinct
-/// from the cover-derived `@reprise_player_accent` that tints the equaliser,
-/// play button and waveform.
+/// The marker uses the effective `@accent_color`, shared with
+/// `@reprise_player_accent` across the equaliser, play button, and waveform.
 pub(in crate::ui) fn css() -> String {
     use super::style::tokens::DROP_INDICATOR_THICKNESS;
     format!(

@@ -17,17 +17,22 @@ use libadwaita::prelude::AnimationExt;
 use super::waveform_primitives::BAR_GAP;
 use super::waveform_primitives::{
     bar_played, bar_slot_width, fraction_at, interpolation_step, keyboard_seek_target,
-    resolve_bar_count, rounded_bar, update_accessible_value, BAR_RADIUS, MINI_BAR_COUNT,
-    MINI_BAR_GAP, MINI_BAR_RADIUS,
+    resolve_bar_count, rounded_bar, should_redraw, update_accessible_value, RedrawSnapshot,
+    BAR_RADIUS, MINI_BAR_COUNT, MINI_BAR_GAP, MINI_BAR_RADIUS,
 };
 use super::waveform_shape::{shape_display_peaks, DisplayBar, SILENCE_DOT_HEIGHT};
 use crate::ui::motion;
-use crate::ui::style::cover_accent::scale_chroma;
+use crate::ui::style::color_math::scale_chroma;
 use reprise_core::format::format_duration;
+use reprise_view::spectral_colour::{centroid_at, shape_centroid, smooth_towards, spectral_colour};
 
 /// Shared, cloneable slot for the optional seek handler (cloned out before it
 /// is invoked so no `RefCell` borrow is held across the call).
 type SeekCallback = Rc<RefCell<Option<Rc<dyn Fn(f64)>>>>;
+
+fn colour_near(a: (f64, f64, f64), b: (f64, f64, f64), threshold: f64) -> bool {
+    (a.0 - b.0).abs() < threshold && (a.1 - b.1).abs() < threshold && (a.2 - b.2).abs() < threshold
+}
 
 pub(in crate::ui) const WAVEFORM_CSS_CLASS: &str = "waveform-seek";
 const CONTENT_HEIGHT: i32 = 28;
@@ -41,7 +46,7 @@ const UNPLAYED_ALPHA: f64 = 0.12;
 /// Alpha for unplayed bars between the playhead and the hovered position —
 /// the seek preview.
 const HOVER_PREVIEW_ALPHA: f64 = 0.30;
-/// Alpha of the 1 px playhead line drawn over the bars.
+/// Alpha of the rounded playhead drawn over the bars.
 const PLAYHEAD_ALPHA: f64 = 0.70;
 /// Alpha for bars in the drag ghost region.
 const GHOST_ALPHA: f64 = 0.40;
@@ -69,23 +74,28 @@ fn ensure_resampled(state: &mut State, width: i32) {
         && state.crossfade_progress < 1.0
     {
         state.previous_bars.clear();
+        state.previous_centroid.clear();
         state.crossfade_progress = 1.0;
         state.crossfade_start_us = 0;
     }
     if state.raw_peaks.is_empty() {
         state.display_peaks.clear();
+        state.shaped_centroid.clear();
         return;
     }
     if state.last_display_width != width || state.display_peaks.is_empty() {
         let count = resolve_bar_count(state.bar_count_override, width);
         state.display_peaks = shape_display_peaks(&state.raw_peaks, count);
+        state.shaped_centroid = shape_centroid(&state.raw_centroid, count);
         state.last_display_width = width;
     }
 }
 
 struct State {
     raw_peaks: Vec<u8>,             // stored peaks from DB (1000 values, 0-255)
+    raw_centroid: Vec<u8>,          // matching spectral positions, or empty
     display_peaks: Vec<DisplayBar>, // shaped to current bar count
+    shaped_centroid: Vec<f32>,      // spectral positions shaped to display bars
     last_display_width: i32,        // width used for last resample
     fraction: f64,
     /// Pointer position as a 0..1 fraction while hovering — drives the
@@ -101,8 +111,20 @@ struct State {
     build_start_us: i64, // 0 means not running
     // Track-change alpha crossfade.
     previous_bars: Vec<DisplayBar>,
+    previous_centroid: Vec<f32>,
     crossfade_progress: f64, // 1.0 means no crossfade is running
     crossfade_start_us: i64,
+    head_colour_target: Option<(f64, f64, f64)>,
+    head_colour: Option<(f64, f64, f64)>,
+    mask_surface: Option<gtk4::cairo::ImageSurface>,
+    colour_surface: Option<gtk4::cairo::ImageSurface>,
+    surface_key: Option<waveform_surface::SurfaceKey>,
+    last_drawn_head_x: Option<f64>,
+    last_drawn_colour: Option<(f64, f64, f64)>,
+    last_drawn_hover_fraction: Option<f64>,
+    last_drawn_drag_fraction: Option<f64>,
+    last_drawn_pressure: f64,
+    last_drawn_swell: f64,
     // Pause desaturation animation.
     desaturation_progress: f64, // 0.0 = full chroma, 1.0 = paused chroma
     #[allow(dead_code)] // Consumed by the PlayerBar/Compact wiring in MOT-5 Phase B.
@@ -210,7 +232,9 @@ impl WaveformSeek {
 
         let state = Rc::new(RefCell::new(State {
             raw_peaks: Vec::new(),
+            raw_centroid: Vec::new(),
             display_peaks: Vec::new(),
+            shaped_centroid: Vec::new(),
             last_display_width: 0,
             fraction: 0.0,
             hover_fraction: None,
@@ -221,8 +245,20 @@ impl WaveformSeek {
             build_progress: 1.0,
             build_start_us: 0,
             previous_bars: Vec::new(),
+            previous_centroid: Vec::new(),
             crossfade_progress: 1.0,
             crossfade_start_us: 0,
+            head_colour_target: None,
+            head_colour: None,
+            mask_surface: None,
+            colour_surface: None,
+            surface_key: None,
+            last_drawn_head_x: None,
+            last_drawn_colour: None,
+            last_drawn_hover_fraction: None,
+            last_drawn_drag_fraction: None,
+            last_drawn_pressure: 0.0,
+            last_drawn_swell: 0.0,
             desaturation_progress: 0.0,
             desaturation_target: 0.0,
             bass_pressure: 0.0,
@@ -242,7 +278,7 @@ impl WaveformSeek {
             move |area, cr, width, height| {
                 let mut s = state.borrow_mut();
                 ensure_resampled(&mut s, width);
-                render::draw(area, cr, width, height, &s);
+                render::draw(area, cr, width, height, &mut s);
             }
         });
 
@@ -373,6 +409,14 @@ impl WaveformSeek {
     /// animation (gated on `gtk-enable-animations`). Use this whenever the
     /// track changes.
     pub(in crate::ui) fn set_peaks(&self, peaks: Vec<u8>) {
+        self.set_analysis(peaks, None);
+    }
+
+    /// Peaks plus the spectral colour curve derived from the track's stored
+    /// spectrogram. A curve whose length does not match the peaks is dropped
+    /// rather than trusted — the bar then draws in the plain accent, as it did
+    /// before there was a spectral axis at all.
+    pub(in crate::ui) fn set_analysis(&self, peaks: Vec<u8>, centroid: Option<Vec<u8>>) {
         // Peaks can arrive before the player bar is mapped, when the drawing
         // area has no frame clock yet. Monotonic time uses the same timescale
         // as `GdkFrameClock::frame_time`, so the first mapped frame can always
@@ -398,6 +442,7 @@ impl WaveformSeek {
             // When display_peaks is empty, keep the in-flight previous_bars.
             if !s.display_peaks.is_empty() {
                 s.previous_bars = std::mem::take(&mut s.display_peaks);
+                s.previous_centroid = std::mem::take(&mut s.shaped_centroid);
             }
             s.crossfade_progress = 0.0;
             s.crossfade_start_us = crossfade_start_us;
@@ -405,6 +450,7 @@ impl WaveformSeek {
             s.build_start_us = 0;
         } else {
             s.previous_bars.clear();
+            s.previous_centroid.clear();
             s.crossfade_progress = 1.0;
             s.crossfade_start_us = 0;
             if animate && !peaks.is_empty() {
@@ -415,13 +461,20 @@ impl WaveformSeek {
                 s.build_start_us = 0;
             }
         }
+        s.raw_centroid = centroid
+            .filter(|curve| curve.len() == peaks.len())
+            .unwrap_or_default();
         s.raw_peaks = peaks;
         s.display_peaks.clear();
+        s.shaped_centroid.clear();
+        waveform_surface::invalidate(&mut s);
         if !animate {
             s.fraction = s.target_fraction;
             s.fraction_velocity = 0.0;
         }
-        let should_tick = s.build_progress < 1.0 || s.crossfade_progress < 1.0;
+        let should_tick = s.build_progress < 1.0
+            || s.crossfade_progress < 1.0
+            || (!s.raw_centroid.is_empty() && motion::animations_enabled());
         drop(s);
         self.area.queue_draw();
         if should_tick {
@@ -430,7 +483,7 @@ impl WaveformSeek {
     }
 
     /// Animates the local waveform fill toward the paused or playing chroma.
-    /// This never mutates the application-wide cover-accent provider.
+    /// This never mutates the application-wide effective accent.
     pub(in crate::ui) fn set_paused(&self, paused: bool) {
         let target = if paused { 1.0 } else { 0.0 };
         if self.state.borrow().desaturation_target == target {
@@ -590,11 +643,11 @@ impl WaveformSeek {
         let id = self.area.add_tick_callback(move |_, clock| {
             let now = clock.frame_time();
             let mut s = state.borrow_mut();
+            let dt = (now - s.last_tick_us).max(0) as f64;
 
             if motion::animations_enabled() {
                 // Advance the smooth-position interpolation (never past the
                 // target — see `interpolation_step`).
-                let dt = (now - s.last_tick_us).max(0) as f64;
                 s.fraction =
                     interpolation_step(s.fraction, s.fraction_velocity, dt, s.target_fraction);
                 s.last_tick_us = now;
@@ -610,6 +663,7 @@ impl WaveformSeek {
                     s.crossfade_progress = (elapsed / CROSSFADE_DURATION_S).clamp(0.0, 1.0);
                     if s.crossfade_progress >= 1.0 {
                         s.previous_bars.clear();
+                        s.previous_centroid.clear();
                         s.crossfade_start_us = 0;
                     }
                 }
@@ -619,16 +673,65 @@ impl WaveformSeek {
                 s.build_progress = 1.0;
                 s.build_start_us = 0;
                 s.previous_bars.clear();
+                s.previous_centroid.clear();
                 s.crossfade_progress = 1.0;
                 s.crossfade_start_us = 0;
             }
 
+            let accent = area.color();
+            let accent = (
+                f64::from(accent.red()),
+                f64::from(accent.green()),
+                f64::from(accent.blue()),
+            );
+            let target = if s.raw_centroid.is_empty() {
+                accent
+            } else {
+                spectral_colour(centroid_at(&s.raw_centroid, s.fraction))
+            };
+            s.head_colour_target = Some(target);
+            s.head_colour = Some(match s.head_colour {
+                Some(current) if motion::animations_enabled() => {
+                    smooth_towards(current, target, dt / 1_000_000.0, 0.120)
+                }
+                _ => target,
+            });
+
+            let animation_running = s.build_progress < 1.0
+                || s.crossfade_progress < 1.0
+                || (s.desaturation_progress - s.desaturation_target).abs() > f64::EPSILON;
+            let current_draw = RedrawSnapshot {
+                head_x: (s.fraction * f64::from(area.width()))
+                    .clamp(1.5, (f64::from(area.width()) - 1.5).max(1.5)),
+                colour: s.head_colour.unwrap_or(target),
+                hover_fraction: s.hover_fraction,
+                drag_fraction: s.drag_fraction,
+                pressure: s.bass_pressure,
+                swell: s.bass_swell,
+            };
+            let last_drawn =
+                s.last_drawn_head_x
+                    .zip(s.last_drawn_colour)
+                    .map(|(head_x, colour)| RedrawSnapshot {
+                        head_x,
+                        colour,
+                        hover_fraction: s.last_drawn_hover_fraction,
+                        drag_fraction: s.last_drawn_drag_fraction,
+                        pressure: s.last_drawn_pressure,
+                        swell: s.last_drawn_swell,
+                    });
+            let redraw = should_redraw(last_drawn, current_draw, animation_running);
             let settled = (s.fraction - s.target_fraction).abs() < 0.001
                 && s.build_progress >= 1.0
-                && s.crossfade_progress >= 1.0;
+                && s.crossfade_progress >= 1.0
+                && s.head_colour.is_some_and(|colour| {
+                    colour_near(colour, s.head_colour_target.unwrap_or(colour), 1.0 / 512.0)
+                });
             drop(s);
 
-            area.queue_draw();
+            if redraw {
+                area.queue_draw();
+            }
 
             if settled {
                 *tick_id_slot.borrow_mut() = None;
@@ -642,6 +745,9 @@ impl WaveformSeek {
 
 #[path = "waveform_seek_render.rs"]
 mod render;
+
+#[path = "waveform_surface.rs"]
+mod waveform_surface;
 
 #[cfg(test)]
 #[path = "waveform_seek_tests.rs"]
