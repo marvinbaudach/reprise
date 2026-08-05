@@ -170,3 +170,84 @@ fn sound_neighbours_skip_one_unreadable_row_and_keep_the_rest() {
     assert_eq!(loaded.len(), 1);
     assert_eq!(loaded[0].track_id, 2);
 }
+
+/// SIM-10: one artist may hold two places, and the list moves on to someone
+/// else rather than turning into a back catalogue. Six candidates by "Prolific"
+/// sit nearer than the two by other people, so without the cap the list would
+/// be all Prolific.
+#[test]
+fn sim_10_at_most_two_matches_carry_the_same_artist() {
+    let current = candidate(1, 0, "Seed", "Seed album");
+    let mut candidates = vec![current.clone()];
+    for id in 2..8 {
+        candidates.push(candidate(id, 0, "Prolific", &format!("Album {id}")));
+    }
+    candidates.push(candidate(20, 1, "Distant one", "Elsewhere"));
+    candidates.push(candidate(21, 2, "Distant two", "Elsewhere too"));
+    let stats = compute_sound_stats(
+        &candidates
+            .iter()
+            .map(|candidate| candidate.features.clone())
+            .collect::<Vec<_>>(),
+    );
+
+    let result = rank_sound_neighbours(
+        &current,
+        &candidates,
+        &stats,
+        DistanceWeights::DEFAULT,
+        SoundNeighbourOptions {
+            exclude_same_album: false,
+            exclude_same_artist: false,
+            limit: 7,
+        },
+    );
+
+    let prolific = result
+        .matches
+        .iter()
+        .filter(|neighbour| neighbour.artist == "Prolific")
+        .count();
+    assert_eq!(prolific, 2, "one artist may hold two places, not six");
+    // The nearest match is never displaced by the cap.
+    assert_eq!(result.matches[0].artist, "Prolific");
+    // What the cap frees goes to other people, not to nobody.
+    let artists: Vec<&str> = result
+        .matches
+        .iter()
+        .map(|neighbour| neighbour.artist.as_str())
+        .collect();
+    assert!(artists.contains(&"Distant one"));
+    assert!(artists.contains(&"Distant two"));
+}
+
+/// SIM-10: an empty artist tag is not an identity two tracks share, so those
+/// tracks must not cap each other out of the list.
+#[test]
+fn sim_10_tracks_without_an_artist_do_not_cap_each_other() {
+    let current = candidate(1, 0, "Seed", "Seed album");
+    let mut candidates = vec![current.clone()];
+    for id in 2..8 {
+        candidates.push(candidate(id, 0, "", &format!("Album {id}")));
+    }
+    let stats = compute_sound_stats(
+        &candidates
+            .iter()
+            .map(|candidate| candidate.features.clone())
+            .collect::<Vec<_>>(),
+    );
+
+    let result = rank_sound_neighbours(
+        &current,
+        &candidates,
+        &stats,
+        DistanceWeights::DEFAULT,
+        SoundNeighbourOptions {
+            exclude_same_album: false,
+            exclude_same_artist: false,
+            limit: 7,
+        },
+    );
+
+    assert_eq!(result.matches.len(), 6);
+}

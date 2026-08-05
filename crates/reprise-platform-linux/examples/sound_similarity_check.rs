@@ -125,8 +125,10 @@ fn main() {
     let stats = compute_sound_stats(&features);
 
     let options = SoundNeighbourOptions {
-        exclude_same_album: exclusions == "product",
-        exclude_same_artist: false,
+        exclude_same_album: exclusions != "none",
+        // "artist" is the stricter shape: no sibling album *and* no sibling
+        // artist, so what is left has to be found by sound alone.
+        exclude_same_artist: exclusions == "artist",
         limit,
     };
 

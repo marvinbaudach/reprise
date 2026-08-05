@@ -4538,6 +4538,12 @@ keeps all ranking work off the GTK thread.
   tempo estimate are standardized against library spread; zero spread
   contributes zero. The default weights are bands 0.30, timbre 0.12,
   dynamics 0.08, rhythm 0.50, tempo 0.
+- **SIM-10** [active] [core] — At most two matches carry the same artist, and
+  the list fills up with the next nearest track by someone else. The nearest
+  match is never displaced by this. Tracks that name no artist are not capped
+  against each other, because unnamed is not a shared identity. The cap applies
+  whatever **Exclude tracks by the same artist** is set to; that setting is the
+  stricter step, not a replacement.
 
 ---
 

@@ -84,6 +84,17 @@ pub fn load_sound_candidates(db: &crate::db::Db) -> Result<Vec<SoundCandidate>, 
     Ok(candidates.into_iter().flatten().collect())
 }
 
+/// How many matches one artist may fill before the list moves on.
+///
+/// Measured, not guessed: with no cap the strongest matches are so often the
+/// same artist that a list of seven can be one artist's back catalogue, which
+/// is a shelf rather than a discovery. Excluding that artist outright costs
+/// almost all the genre agreement the ranking has — the nearest match drops to
+/// chance — because much of that agreement travels through the artist. A cap of
+/// two keeps the best match untouched, keeps the genre quality, and still puts
+/// several different artists in front of the listener.
+const MAX_MATCHES_PER_ARTIST: usize = 2;
+
 pub fn rank_sound_neighbours(
     current: &SoundCandidate,
     candidates: &[SoundCandidate],
@@ -108,6 +119,7 @@ pub fn rank_sound_neighbours(
     });
     let library_count = distances.len();
     let mut matches = Vec::new();
+    let mut per_artist: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     for (candidate, distance) in &distances {
         let farther = distances
             .iter()
@@ -120,6 +132,13 @@ pub fn rank_sound_neighbours(
         };
         if excluded(current, candidate, options) {
             continue;
+        }
+        if let Some(key) = artist_key(&candidate.artist) {
+            let taken = per_artist.entry(key).or_insert(0);
+            if *taken >= MAX_MATCHES_PER_ARTIST {
+                continue;
+            }
+            *taken += 1;
         }
         matches.push(SoundNeighbour {
             track_id: candidate.track_id,
@@ -139,6 +158,14 @@ pub fn rank_sound_neighbours(
         library_count,
         matches,
     }
+}
+
+/// The grouping key for the per-artist cap, or `None` for a track that names
+/// no artist. Unnamed is not a shared identity: two tracks with an empty artist
+/// tag have nothing in common and must not push each other out of the list.
+fn artist_key(artist: &str) -> Option<String> {
+    let artist = artist.trim();
+    (!artist.is_empty()).then(|| artist.to_ascii_lowercase())
 }
 
 fn excluded(
