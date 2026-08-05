@@ -419,6 +419,7 @@ internal fun BrowseScreen(
                         artistCount = state.artists.total,
                         folderName = folderLabel(state.folderUri),
                         themeSelection = themeSelection,
+                        playingTrackId = playingTrackId,
                         close = { surfaceState.showSettings(false) },
                         chooseFolder = chooseFolder,
                         rescan = rescan,
