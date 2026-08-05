@@ -102,6 +102,30 @@ paths in a mapped window. It proves explicit opt-in, Upcoming/New cards, delayed
 selection rejection, close/reopen reuse, disable behavior, request-field privacy and a
 shared interval of at least one second without network access.
 
+## Optional exploratory UX check before `main`
+
+Before promoting a tested `dev` snapshot to `main`, run the opt-in exploratory
+CUA mission deck on that exact clean commit. This check is deliberately absent
+from ordinary CI: it combines large generated data, heuristic UX oracles, and
+optionally a reasoning agent, so its evidence requires human review.
+
+```sh
+scripts/cua-explore/run.sh --list-missions
+scripts/cua-explore/run.sh \
+  scripts/cua-explore/missions/first-time-exploration.json \
+  target/cua-explore-evidence/first-time-seed-11 \
+  --profile release --seed 11
+```
+
+Run all five supplied missions, including `offline-recovery` and
+`large-library-stress`; attach a reasoning agent for the structured batch-edit,
+sort, and filter workloads. Repeat newly observed anomalies with a fresh output
+directory and seed. Review each retained `report.md` together with its
+before/action/after states. A reproduced error blocks promotion unless the
+maintainer explicitly accepts it with evidence; warnings and one-off heuristic
+findings stay advisory. The complete operator guide, external-agent protocol,
+privacy boundary, and limitations are in `scripts/cua-explore/README.md`.
+
 The synchronized-lyrics smoke copies and tags three synthetic FLAC fixtures and sets
 `REPRISE_SMOKE_LYRICS=1` with `REPRISE_LRCLIB_FIXTURE_DIR` and a private request log.
 It must show active-line indices 0 then 1, reject a delayed stale track in favor of the

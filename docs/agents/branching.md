@@ -25,7 +25,10 @@ to it. See "Merge method".
 4. Merge only after the gate is green — see "What actually enforces this"
    below for which gate that is today. The merge is a squash; GitHub offers no
    other button.
-5. Promote a tested development snapshot by fast-forwarding `main` to `dev`:
+5. Before a planned promotion, run and review the opt-in exploratory UX mission
+   deck described in `scripts/cua-explore/README.md` on the exact clean `dev`
+   candidate. It is a maintainer-owned advisory check, not ordinary CI.
+6. Promote a tested development snapshot by fast-forwarding `main` to `dev`:
 
    ```sh
    git fetch origin
