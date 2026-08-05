@@ -3388,6 +3388,7 @@ means deterministic and high-confidence, never „without review".
   `doc_8a_pending_review_count_excludes_everything_already_written_for_that_scan`,
   `doc_8a_pending_review_count_is_zero_once_the_scan_is_marked_reviewed`,
   `doc_8a_conflicts_alone_do_not_produce_a_pending_count`,
+  `doc_8a_auto_tier_write_conflict_does_not_produce_a_pending_count`,
   `doc_8a_done_marks_the_scan_reviewed_and_clears_the_sidebar_entry`,
   `doc_8a_skip_all_marks_the_scan_reviewed`.
 

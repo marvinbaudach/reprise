@@ -31,11 +31,19 @@ pub enum DoctorReviewFilter {
 }
 
 pub fn is_auto_applied(proposal: &DoctorProposal, stale: bool) -> bool {
+    is_auto_applied_parts(proposal.field, proposal.source, proposal.preselected, stale)
+}
+
+pub(crate) fn is_auto_applied_parts(
+    field: DoctorField,
+    source: ProposalSource,
+    preselected: bool,
+    stale: bool,
+) -> bool {
     if stale {
         return false;
     }
-    proposal.field == DoctorField::RecordingMbid
-        || (proposal.source == ProposalSource::Local && proposal.preselected)
+    field == DoctorField::RecordingMbid || (source == ProposalSource::Local && preselected)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
