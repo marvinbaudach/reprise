@@ -130,11 +130,7 @@ pub(super) struct RadioFilterBar {
 
 impl RadioFilterBar {
     pub(super) fn new(conn: Rc<Db>) -> Rc<Self> {
-        let add = gtk4::Button::new();
-        let add_content = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
-        add_content.append(&gtk4::Image::from_icon_name("list-add-symbolic"));
-        add_content.append(&gtk4::Label::new(Some(&strings::text(strings::RADIO_ADD))));
-        add.set_child(Some(&add_content));
+        let add = gtk4::Button::with_label(&strings::text(strings::RADIO_ADD));
         buttons::arm(&add, buttons::ADD_ACTION_CLASS);
 
         let add_filter = gtk4::MenuButton::builder()
@@ -325,6 +321,38 @@ fn wire_chooser(bar: &Rc<RadioFilterBar>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn descendant_images(widget: &impl IsA<gtk4::Widget>) -> Vec<gtk4::Image> {
+        let mut found = Vec::new();
+        let mut child = widget.as_ref().first_child();
+        while let Some(current) = child {
+            if let Ok(image) = current.clone().downcast::<gtk4::Image>() {
+                found.push(image);
+            }
+            found.extend(descendant_images(&current));
+            child = current.next_sibling();
+        }
+        found
+    }
+
+    /// `SRC-2`: both library add buttons use the same label-only grammar.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn src_2_both_add_buttons_carry_a_label_and_no_icon() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let radio = RadioFilterBar::new(Rc::new(crate::test_db::open().unwrap()));
+        let buttons = [
+            radio.add.clone(),
+            crate::ui::podcasts::podcast_add_button(reprise_core::podcasts::PodcastKind::Rss),
+        ];
+        for button in buttons {
+            assert!(button.icon_name().is_none(), "add buttons carry no icon");
+            assert!(!button.label().unwrap_or_default().is_empty());
+            assert!(button.has_css_class(buttons::ADD_ACTION_CLASS));
+            assert!(descendant_images(&button).is_empty());
+        }
+    }
 
     #[test]
     fn radio_filter_facets_are_sticky_and_each_chip_removes_one_constraint() {

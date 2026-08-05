@@ -39,3 +39,30 @@ pub(crate) fn lock_main_context() -> MutexGuard<'static, ()> {
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
 }
+
+/// Waits until the toplevel holds the global input focus.
+///
+/// `gtk_widget_has_focus()` is `is_focus() && window.is_active()`, and X
+/// delivers the activation asynchronously — measured at ~21 ms under Xvfb. A
+/// non-blocking drain returns long before that, so any test that exercises a
+/// `has_focus()`-gated code path must wait here first. `iteration(true)`
+/// blocks until there is something to dispatch rather than spinning a core.
+///
+/// Lives here rather than beside one test module because more than one surface
+/// needs it: the sidebar's drop targets and the source row's reveal-on-focus
+/// rule both fail without it, and in exactly the same misleading way — the
+/// widget takes the focus, `has_focus()` says otherwise, and the test reads as
+/// a product bug.
+pub(crate) fn settle_until_active(window: &gtk4::Window) {
+    use gtk4::prelude::*;
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    while !window.is_active() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "test window did not become active within 2s; \
+             the display server must grant focus for has_focus() assertions"
+        );
+        gtk4::glib::MainContext::default().iteration(true);
+    }
+}
