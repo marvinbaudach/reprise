@@ -120,6 +120,13 @@ pub(crate) fn configure_download_buffering(
     .build()
     .ok_or_else(|| PlaybackError::Backend("GStreamer: download flag is unavailable".into()))?;
     playbin.set_property_from_value("flags", &next_value);
+    tracing::debug!(
+        current_flags,
+        next_flags,
+        live,
+        readback = ?playbin.property_value("flags"),
+        "playbin download buffering configured"
+    );
     Ok(())
 }
 
@@ -345,6 +352,14 @@ pub(crate) fn attach_bus_watch(
                     let update = (
                         message.percent().clamp(0, 100) as u8,
                         query_buffered_ms(&watched_playbin),
+                    );
+                    // A buffering event that leaves no trace is undiagnosable:
+                    // the buffered-range query answering `None` and the event
+                    // never arriving look identical from the outside.
+                    tracing::debug!(
+                        percent = update.0,
+                        buffered_ms = ?update.1,
+                        "GStreamer buffering"
                     );
                     if buffering_throttle.should_emit(Instant::now(), update) {
                         (*on_event)(PlayerEvent::Buffering {
