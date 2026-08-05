@@ -4,7 +4,9 @@ use std::path::Path;
 
 #[path = "db_handle.rs"]
 mod handle;
-pub use crate::db_sound_features::{get_track_sound_features, set_track_sound_features};
+pub use crate::db_sound_features::{
+    get_track_sound_features, set_track_sound_features, StoredSoundFeatures,
+};
 pub use crate::db_spectrogram::{
     get_track_spectrogram, get_waveform_peaks, pending_render_data_tracks, set_track_render_data,
     set_track_spectrogram, set_waveform_peaks, track_source_fingerprint, PendingRenderDataTrack,

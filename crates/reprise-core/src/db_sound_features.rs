@@ -105,3 +105,52 @@ pub fn get_track_sound_features(db: &Db, track_id: i64) -> Result<Option<SoundFe
     })
     .transpose()
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StoredSoundFeatures {
+    pub track_id: i64,
+    pub features: SoundFeatures,
+}
+
+pub(crate) fn all_track_sound_features(db: &Db) -> Result<Vec<StoredSoundFeatures>, DbError> {
+    let mut statement = db.conn().prepare(
+        "SELECT f.track_id, f.data FROM track_sound_features f \
+         JOIN tracks t ON t.id = f.track_id \
+         WHERE f.format_version = ?1 AND t.missing_since IS NULL AND t.removed_at IS NULL \
+         ORDER BY f.track_id",
+    )?;
+    let rows = statement
+        .query_map([SPECTROGRAM_FORMAT_VERSION], |row| {
+            let blob = row.get::<_, Vec<u8>>(1)?;
+            let features = SoundFeatures::from_blob(&blob).map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    1,
+                    rusqlite::types::Type::Blob,
+                    Box::new(error),
+                )
+            })?;
+            Ok(StoredSoundFeatures {
+                track_id: row.get(0)?,
+                features,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+pub(crate) fn sound_feature_count(db: &Db) -> Result<usize, DbError> {
+    let count = db.conn().query_row(
+        "SELECT COUNT(*) FROM track_sound_features f \
+         JOIN tracks t ON t.id = f.track_id \
+         WHERE f.format_version = ?1 AND t.missing_since IS NULL AND t.removed_at IS NULL",
+        [SPECTROGRAM_FORMAT_VERSION],
+        |row| row.get::<_, i64>(0),
+    )?;
+    usize::try_from(count).map_err(|error| {
+        DbError::Sqlite(rusqlite::Error::FromSqlConversionFailure(
+            0,
+            rusqlite::types::Type::Integer,
+            Box::new(error),
+        ))
+    })
+}

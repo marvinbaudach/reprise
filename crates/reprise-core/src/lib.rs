@@ -83,7 +83,10 @@ pub mod queue;
 pub mod radio;
 pub mod remote_image;
 pub mod scrobbling;
+pub mod sound_distance;
 pub mod sound_features;
+pub mod sound_neighbours;
+pub mod sound_stats;
 pub mod source_error;
 pub mod spectrogram;
 pub mod spectrogram_backfill;
@@ -114,4 +117,10 @@ mod artist_news_view_tests;
 #[cfg(test)]
 mod fingerprint_tests;
 #[cfg(test)]
+mod sound_distance_tests;
+#[cfg(test)]
 mod sound_features_tests;
+#[cfg(test)]
+mod sound_neighbours_tests;
+#[cfg(test)]
+mod sound_stats_tests;
