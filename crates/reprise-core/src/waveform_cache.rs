@@ -9,7 +9,9 @@
 
 use std::path::Path;
 
-use crate::db::{get_waveform_peaks, set_track_render_data, track_source_fingerprint, Db};
+use crate::db::{
+    get_track_spectrogram, get_waveform_peaks, set_track_render_data, track_source_fingerprint, Db,
+};
 use crate::waveform::{RenderDataBackend, STORED_PEAK_COUNT};
 
 /// Returns the track's waveform peaks, decoding once if nothing is stored yet.
@@ -53,6 +55,23 @@ pub fn peaks_for_playback(
         tracing::warn!(track_id, %error, "could not store on-demand rendering data");
     }
     Some(data.waveform_peaks)
+}
+
+/// The seek bar's colour curve for a track, with one value per stored peak.
+///
+/// Derived from the spectrogram the decode above already produced and stored —
+/// there is no second analysis and no second column. Returns `None` while a
+/// track has no stored spectrogram yet (the backfill has not reached it, or a
+/// rescan moved the file mid-decode); the bar then draws in the plain accent.
+pub fn centroid_for_playback(db: &Db, track_id: i64, buckets: usize) -> Option<Vec<u8>> {
+    match get_track_spectrogram(db, track_id) {
+        Ok(Some(spectrogram)) => Some(spectrogram.centroid_curve(buckets)),
+        Ok(None) => None,
+        Err(error) => {
+            tracing::warn!(track_id, %error, "could not read the stored spectrogram");
+            None
+        }
+    }
 }
 
 #[cfg(test)]

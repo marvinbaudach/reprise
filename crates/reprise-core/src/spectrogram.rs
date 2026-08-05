@@ -60,6 +60,123 @@ impl TrackSpectrogram {
     pub fn cells(&self) -> &[u8] {
         &self.cells
     }
+
+    /// The seek bar's colour curve: one normalized spectral position per
+    /// `bucket`, `0` at the track's own bass end and `255` at its treble end.
+    ///
+    /// Derived from the stored cells rather than measured again. The frequency
+    /// content of a track is decided once, by the producer above; a second
+    /// analysis beside it would be a second answer to the same question, and
+    /// the two would drift.
+    ///
+    /// Normalized per track (5th to 95th percentile, widened to at least
+    /// [`MIN_SPAN_OCTAVES`]), not against an absolute frequency range.
+    /// Measured over a real library on 2026-08-05, an absolute axis put every
+    /// sampled track inside one narrow band and the seek bar read as a single
+    /// colour. What has to be visible is the travel within one track, so
+    /// comparability between two tracks is given up — the same trade the
+    /// height mapping already makes.
+    pub fn centroid_curve(&self, buckets: usize) -> Vec<u8> {
+        let frame_count = self.frame_count();
+        if frame_count == 0 || buckets == 0 {
+            return Vec::new();
+        }
+        let centres = band_centre_octaves();
+
+        // Octave position per bucket, weighted by each frame's own loudness so
+        // a near-silent frame cannot colour a bucket it barely occupies.
+        let octaves: Vec<Option<f64>> = (0..buckets)
+            .map(|bucket| {
+                let start = bucket * frame_count / buckets;
+                let end = (((bucket + 1) * frame_count / buckets).max(start + 1)).min(frame_count);
+                let mut weighted = 0.0;
+                let mut weight = 0.0;
+                for frame in start..end {
+                    let Some(cells) = self.frame(frame) else {
+                        continue;
+                    };
+                    for (cell, centre) in cells.iter().zip(&centres) {
+                        let amplitude = cell_amplitude(*cell);
+                        weighted += centre * amplitude;
+                        weight += amplitude;
+                    }
+                }
+                (weight > CELL_ENERGY_EPSILON).then(|| weighted / weight)
+            })
+            .collect();
+
+        let Some((low, high)) = percentile_window(&octaves) else {
+            return vec![NEUTRAL_CENTROID; buckets];
+        };
+        let mut last_valid = None;
+        octaves
+            .iter()
+            .map(|octave| match octave {
+                Some(octave) => {
+                    let value =
+                        ((((octave - low) / (high - low)).clamp(0.0, 1.0) * 255.0).round()) as u8;
+                    last_valid = Some(value);
+                    value
+                }
+                // True silence carries the last colour rather than a jump to
+                // one end: a pause is not a statement about frequency.
+                None => last_valid.unwrap_or(NEUTRAL_CENTROID),
+            })
+            .collect()
+    }
+}
+
+/// Colour position of a track with no usable spectral content at all.
+const NEUTRAL_CENTROID: u8 = 128;
+/// Below this summed cell amplitude a bucket counts as silent.
+const CELL_ENERGY_EPSILON: f64 = 1.0e-6;
+/// Narrowest colour axis a single track may span, in octaves.
+///
+/// Without it, a track that holds one spectral position would have its own
+/// measurement jitter stretched across the whole axis and flicker between the
+/// two ends.
+const MIN_SPAN_OCTAVES: f64 = 0.5;
+
+/// Log-frequency centre of every stored band, in octaves.
+///
+/// The bands tile [`SPECTROGRAM_LOW_HZ`]..[`SPECTROGRAM_HIGH_HZ`] on a
+/// logarithmic scale, so a band's centre is the geometric mean of its edges —
+/// which on a log axis is simply the midpoint.
+fn band_centre_octaves() -> Vec<f64> {
+    let low = f64::from(SPECTROGRAM_LOW_HZ).log2();
+    let high = f64::from(SPECTROGRAM_HIGH_HZ).log2();
+    let step = (high - low) / SPECTROGRAM_BAND_COUNT as f64;
+    (0..SPECTROGRAM_BAND_COUNT)
+        .map(|band| low + step * (band as f64 + 0.5))
+        .collect()
+}
+
+/// A stored cell back to a linear amplitude weight.
+fn cell_amplitude(cell: u8) -> f64 {
+    if cell == 0 {
+        return 0.0;
+    }
+    let unit = f64::from(cell) / 255.0;
+    let dbfs = f64::from(SPECTROGRAM_FLOOR_DBFS)
+        + unit * f64::from(SPECTROGRAM_CEILING_DBFS - SPECTROGRAM_FLOOR_DBFS);
+    10.0_f64.powf(dbfs / 20.0)
+}
+
+/// The octave window a track's own axis spans.
+fn percentile_window(octaves: &[Option<f64>]) -> Option<(f64, f64)> {
+    let mut sorted: Vec<f64> = octaves.iter().flatten().copied().collect();
+    if sorted.is_empty() {
+        return None;
+    }
+    sorted.sort_by(f64::total_cmp);
+    let at = |p: f64| sorted[(((sorted.len() - 1) as f64) * p).round() as usize];
+    let (low, high) = (at(0.05), at(0.95));
+    let deficit = MIN_SPAN_OCTAVES - (high - low);
+    if deficit > 0.0 {
+        Some((low - deficit / 2.0, high + deficit / 2.0))
+    } else {
+        Some((low, high))
+    }
 }
 
 #[derive(Debug, thiserror::Error, Clone, Copy, PartialEq, Eq)]

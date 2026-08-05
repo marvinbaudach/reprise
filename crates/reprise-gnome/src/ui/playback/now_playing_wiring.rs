@@ -291,23 +291,31 @@ impl PlayerController {
             reprise_core::db::Db::open_migrated(Some(&db_path))
                 .ok()
                 .and_then(|db| {
-                    reprise_core::waveform_cache::peaks_for_playback(
+                    let peaks = reprise_core::waveform_cache::peaks_for_playback(
                         &db,
                         track_id,
                         &track_path,
                         waveform_backend.as_ref(),
-                    )
+                    )?;
+                    // Same decode, same store: the colour curve is derived from
+                    // the spectrogram the call above just made sure exists.
+                    let centroid = reprise_core::waveform_cache::centroid_for_playback(
+                        &db,
+                        track_id,
+                        peaks.len(),
+                    );
+                    Some((peaks, centroid))
                 })
         }) else {
             return;
         };
         glib::spawn_future_local(async move {
-            if let Ok(Some(peaks)) = receiver.recv().await {
+            if let Ok(Some((peaks, centroid))) = receiver.recv().await {
                 if waveform_generation.get() == generation {
                     // Same peaks feed both players so the mini waveform (frame
                     // 1e) shows the real shape + progress, not the skeleton.
-                    compact_player.set_peaks(peaks.clone());
-                    waveform.set_peaks(peaks);
+                    compact_player.set_analysis(peaks.clone(), centroid.clone());
+                    waveform.set_analysis(peaks, centroid);
                 }
             }
         });
