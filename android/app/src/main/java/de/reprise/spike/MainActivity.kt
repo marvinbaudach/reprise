@@ -112,6 +112,9 @@ class MainActivity : ComponentActivity() {
     private val visualizerController by lazy {
         VisualizerController(AndroidVisualizerSettingsPort(library))
     }
+    private val libraryRatingController by lazy {
+        LibraryRatingSettingController(AndroidLibraryRatingSettingPort(library))
+    }
 
     /**
      * Every transport command the surface can issue, bound once here instead of
@@ -175,11 +178,15 @@ class MainActivity : ComponentActivity() {
         // ground that is dark even when the system is not.
         configureEdgeToEdge(darkPalette = true)
         super.onCreate(savedInstanceState)
-        val surface = (application as? MainActivitySurfaceProvider)?.mainActivitySurface()
-            ?: productionSurface()
+        val surfaceProvider = application as? MainActivitySurfaceProvider
+        val surface = surfaceProvider?.mainActivitySurface() ?: productionSurface()
+        val libraryRating =
+            (application as? MainActivityLibraryRatingProvider)?.mainActivityLibraryRating()
+                ?: if (surfaceProvider == null) productionLibraryRating() else legacyTestRating()
         setContent {
             var themeSelection by remember { mutableStateOf(surface.initialTheme) }
             var visualizer by remember { mutableStateOf(surface.initialVisualizer) }
+            var libraryRatingEnabled by remember { mutableStateOf(libraryRating.initialEnabled) }
             val darkPalette = themeSelection.usesDarkPalette(isSystemInDarkTheme())
             val surfaceState: MobileSurfaceViewModel = viewModel()
             val surfaceLayout = surfaceLayoutFor(calculateWindowSizeClass(this))
@@ -216,6 +223,15 @@ class MainActivity : ComponentActivity() {
                                     .onSuccess { selected -> visualizer = selected }
                                     .onFailure { error ->
                                         Log.e(TAG, "Could not change visualizer", error)
+                                    }
+                            },
+                            LocalLibraryRatingControl provides LibraryRatingControl(
+                                libraryRatingEnabled,
+                            ) { enabled ->
+                                runCatching { libraryRating.select(enabled) }
+                                    .onSuccess { selected -> libraryRatingEnabled = selected }
+                                    .onFailure { error ->
+                                        Log.e(TAG, "Could not change library rating visibility", error)
                                     }
                             },
                             LocalAmbientMotionController provides ambientMotion,
@@ -284,6 +300,19 @@ class MainActivity : ComponentActivity() {
         animationsEnabled = ValueAnimator::areAnimatorsEnabled,
         observeAmbientScheduling = {},
     )
+
+    private fun productionLibraryRating() = LibraryRatingSurfaceDependencies(
+        initialEnabled = runCatching { libraryRatingController.load() }.getOrElse { error ->
+            Log.e(TAG, "Could not load library rating visibility; hiding ratings", error)
+            false
+        },
+        // Keep native access behind the authored action: service-lifetime
+        // tests create this activity without ever composing the screen.
+        select = { enabled -> libraryRatingController.select(enabled) },
+    )
+
+    /** Existing JVM surfaces predate this preference and keep their authored rating checks. */
+    private fun legacyTestRating() = LibraryRatingSurfaceDependencies(true) { it }
 
     private fun configureEdgeToEdge(darkPalette: Boolean) {
         val transparent = SystemBarStyle.auto(

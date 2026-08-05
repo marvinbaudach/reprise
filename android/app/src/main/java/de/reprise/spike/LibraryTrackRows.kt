@@ -22,11 +22,22 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.testTag
+
+internal data class LibraryRatingControl(
+    val enabled: Boolean,
+    val select: (Boolean) -> Unit,
+)
+
+/** The shipped activity supplies the persisted value; isolated previews retain the old row. */
+internal val LocalLibraryRatingControl = staticCompositionLocalOf {
+    LibraryRatingControl(enabled = true, select = {})
+}
 
 /**
  * The library's track list: the 72 dp rows, their continuation sentinel, and
@@ -189,7 +200,9 @@ private fun LibraryTrackRow(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f),
                         )
-                        TrackRating(rating)
+                        if (LocalLibraryRatingControl.current.enabled) {
+                            TrackRating(rating)
+                        }
                     }
                 }
                 Column(

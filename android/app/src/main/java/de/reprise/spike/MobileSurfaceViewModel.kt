@@ -15,6 +15,16 @@ internal enum class SurfaceLayout {
     WIDE_SHORT,
 }
 
+/** JVM-replaceable edge for the activity's one read and write-through setting. */
+internal interface MainActivityLibraryRatingProvider {
+    fun mainActivityLibraryRating(): LibraryRatingSurfaceDependencies
+}
+
+internal data class LibraryRatingSurfaceDependencies(
+    val initialEnabled: Boolean,
+    val select: (Boolean) -> Boolean,
+)
+
 internal fun surfaceLayoutFor(windowSizeClass: WindowSizeClass): SurfaceLayout =
     if (
         windowSizeClass.widthSizeClass == WindowWidthSizeClass.Expanded &&
