@@ -275,6 +275,54 @@ fn doc_10a_cancel_between_jobs_does_not_start_the_remaining_job() {
 }
 
 #[test]
+fn doc_10a_prepare_failure_returns_the_completed_partial_report() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = vec![
+        fixture(dir.path(), "quiet-busy.flac", " Quiet "),
+        fixture(dir.path(), "reviewed-busy.flac", " Reviewed "),
+    ];
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let (_, quiet, reviewed) = apply_pair(&db, &paths);
+    let mut occupied_slot = false;
+
+    let error = LibraryDoctor::new(&db)
+        .revert_last_cleanup(|progress| {
+            if progress.completed_tracks == 1 && !occupied_slot {
+                db.conn()
+                    .execute(
+                        "INSERT INTO tag_write_jobs \
+                         (kind, source_job_id, scan_id, state, created_at, finished_at, \
+                          total_tracks) \
+                         VALUES ('tag_editor', NULL, NULL, 'prepared', 1, NULL, 0)",
+                        [],
+                    )
+                    .unwrap();
+                occupied_slot = true;
+            }
+            DoctorWriteControl::Continue
+        })
+        .unwrap_err();
+
+    let DoctorError::CleanupPartiallyCompleted { report, source } = error else {
+        panic!("expected a partial cleanup error, got {error}");
+    };
+    assert!(matches!(*source, DoctorError::TagWriteBusy(_)));
+    assert_eq!(report.reverted_tracks, 1);
+    assert_eq!(report.reports.len(), 1);
+    assert_eq!(report.reports[0].source_job_id, Some(reviewed.job_id));
+    assert_eq!(read_editable_tags(&paths[0]).unwrap().artist, "Quiet");
+    assert_eq!(read_editable_tags(&paths[1]).unwrap().artist, " Reviewed ");
+    assert_eq!(
+        LibraryDoctor::new(&db)
+            .last_cleanup()
+            .unwrap()
+            .unwrap()
+            .job_ids,
+        vec![quiet.job_id]
+    );
+}
+
+#[test]
 fn doc_10a_a_fully_reverted_scan_is_no_longer_offered() {
     let dir = tempfile::tempdir().unwrap();
     let paths = vec![

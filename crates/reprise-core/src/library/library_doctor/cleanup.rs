@@ -51,6 +51,31 @@ fn revert_inputs(conn: &Connection, source_job_id: i64) -> Result<Vec<InputChang
     Ok(inputs)
 }
 
+fn cleanup_report(reports: Vec<super::DoctorWriteReport>, cancelled: bool) -> DoctorCleanupReport {
+    DoctorCleanupReport {
+        reverted_tracks: reports.iter().map(|report| report.updated_tracks).sum(),
+        failed_tracks: reports.iter().map(|report| report.failed_tracks).sum(),
+        conflict_tracks: reports.iter().map(|report| report.conflict_tracks).sum(),
+        unavailable_tracks: reports.iter().map(|report| report.unavailable_tracks).sum(),
+        reports,
+        cancelled,
+    }
+}
+
+fn preserve_partial_cleanup(
+    source: DoctorError,
+    reports: Vec<super::DoctorWriteReport>,
+    cancelled: bool,
+) -> DoctorError {
+    if reports.is_empty() {
+        return source;
+    }
+    DoctorError::CleanupPartiallyCompleted {
+        report: cleanup_report(reports, cancelled),
+        source: Box::new(source),
+    }
+}
+
 impl LibraryDoctor<'_> {
     pub fn last_cleanup(&self) -> Result<Option<DoctorCleanup>, DoctorError> {
         let scan_id = self
@@ -140,14 +165,19 @@ impl LibraryDoctor<'_> {
         let mut cancelled = false;
         let mut reports = Vec::new();
         for (source_job_id, inputs, track_count) in jobs {
-            let (job_id, files) = prepare_job(
+            let (job_id, files) = match prepare_job(
                 self.conn,
                 "doctor_revert",
                 Some(source_job_id),
                 Some(cleanup.scan_id),
                 &inputs,
-            )?;
-            let report = run_job(
+            ) {
+                Ok(prepared) => prepared,
+                Err(error) => {
+                    return Err(preserve_partial_cleanup(error, reports, cancelled));
+                }
+            };
+            let report = match run_job(
                 self.conn,
                 job_id,
                 &files,
@@ -160,20 +190,18 @@ impl LibraryDoctor<'_> {
                     cancelled |= control == DoctorWriteControl::Cancel;
                     control
                 },
-            )?;
+            ) {
+                Ok(report) => report,
+                Err(error) => {
+                    return Err(preserve_partial_cleanup(error, reports, cancelled));
+                }
+            };
             reports.push(report);
             completed_tracks += track_count;
             if cancelled {
                 break;
             }
         }
-        Ok(Some(DoctorCleanupReport {
-            reverted_tracks: reports.iter().map(|report| report.updated_tracks).sum(),
-            failed_tracks: reports.iter().map(|report| report.failed_tracks).sum(),
-            conflict_tracks: reports.iter().map(|report| report.conflict_tracks).sum(),
-            unavailable_tracks: reports.iter().map(|report| report.unavailable_tracks).sum(),
-            reports,
-            cancelled,
-        }))
+        Ok(Some(cleanup_report(reports, cancelled)))
     }
 }

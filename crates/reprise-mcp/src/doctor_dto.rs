@@ -147,6 +147,8 @@ pub struct ApplyTagsResult {
     pub unavailable: usize,
     pub cancelled: usize,
     pub failures: Vec<DoctorFailureDto>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub incomplete_error: Option<&'static str>,
 }
 
 impl ApplyTagsResult {

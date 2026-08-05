@@ -216,17 +216,22 @@ fn revert_cleanup(db: &reprise_core::db::Db) -> Result<ApplyTagsResult, DataErro
     let scan = LibraryDoctor::new(db)
         .last_complete_scan()
         .map_err(map_doctor_error)?;
-    let report = LibraryDoctor::new(db)
-        .revert_last_cleanup(|_| DoctorWriteControl::Continue)
-        .map_err(map_doctor_error)?
-        .ok_or_else(|| {
-            DataError::InvalidInput("no revertible Library Doctor cleanup".to_owned())
-        })?;
-    Ok(result_from_reports(
-        "revert",
-        scan.as_ref(),
-        &report.reports,
-    ))
+    let outcome = LibraryDoctor::new(db).revert_last_cleanup(|_| DoctorWriteControl::Continue);
+    let (report, incomplete_error) = match outcome {
+        Ok(Some(report)) => (report, None),
+        Ok(None) => {
+            return Err(DataError::InvalidInput(
+                "no revertible Library Doctor cleanup".to_owned(),
+            ));
+        }
+        Err(DoctorError::CleanupPartiallyCompleted { report, source }) => {
+            (report, Some(doctor_error_kind(&source)))
+        }
+        Err(error) => return Err(map_doctor_error(error)),
+    };
+    let mut result = result_from_reports("revert", scan.as_ref(), &report.reports);
+    result.incomplete_error = incomplete_error;
+    Ok(result)
 }
 
 fn last_scan(db: &reprise_core::db::Db) -> Result<DoctorScan, DataError> {
@@ -267,6 +272,7 @@ fn result_from_reports(
         unavailable: count(DoctorWriteRowState::Unavailable),
         cancelled: count(DoctorWriteRowState::Cancelled),
         failures,
+        incomplete_error: None,
     }
 }
 
@@ -519,5 +525,15 @@ pub(crate) fn map_doctor_error(error: DoctorError) -> DataError {
         DoctorError::Database(error) => DataError::Db(error),
         DoctorError::TagWriteBusy(_) => DataError::TagWriteBusy,
         DoctorError::InvalidStoredData(message) => DataError::Internal(message),
+        DoctorError::CleanupPartiallyCompleted { source, .. } => map_doctor_error(*source),
+    }
+}
+
+fn doctor_error_kind(error: &DoctorError) -> &'static str {
+    match error {
+        DoctorError::Database(_) => "database",
+        DoctorError::InvalidStoredData(_) => "invalid_state",
+        DoctorError::TagWriteBusy(_) => "busy",
+        DoctorError::CleanupPartiallyCompleted { source, .. } => doctor_error_kind(source),
     }
 }

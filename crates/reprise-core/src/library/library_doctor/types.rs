@@ -318,4 +318,9 @@ pub enum DoctorError {
     InvalidStoredData(String),
     #[error(transparent)]
     TagWriteBusy(#[from] crate::library::TagWriteBusy),
+    #[error("Library Doctor cleanup stopped after partially completing: {source}")]
+    CleanupPartiallyCompleted {
+        report: super::DoctorCleanupReport,
+        source: Box<DoctorError>,
+    },
 }

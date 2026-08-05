@@ -3470,6 +3470,7 @@ means deterministic and high-confidence, never „without review".
   `doc_10a_undo_reverts_the_quiet_and_the_reviewed_job_of_one_scan`,
   `doc_10a_undo_works_when_only_the_quiet_job_exists`,
   `doc_10a_partial_revert_leaves_the_cleanup_available_for_a_second_attempt`,
+  `doc_10a_prepare_failure_returns_the_completed_partial_report`,
   `doc_10a_cancel_between_jobs_does_not_start_the_remaining_job`,
   `doc_10a_a_fully_reverted_scan_is_no_longer_offered`.
 
