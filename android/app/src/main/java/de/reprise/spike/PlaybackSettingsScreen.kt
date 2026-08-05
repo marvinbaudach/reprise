@@ -14,7 +14,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -27,6 +26,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -74,7 +74,7 @@ internal fun PlaybackSettingsLoading(close: () -> Unit) {
             .fillMaxSize()
             .padding(horizontal = 16.dp),
     ) {
-        SettingsHeader(close)
+        SettingsHeader("Settings", "Back to Library", close)
         Text(
             "Reading playback settings…",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -92,6 +92,8 @@ internal fun PlaybackSettingsScreen(
     replaceEqualizerCurve: (List<EqualizerCurvePoint>) -> Unit,
     setGaplessEnabled: (Boolean) -> Unit,
     selectTheme: (MobileTheme) -> Unit,
+    pageTitle: String = "Audio",
+    backContentDescription: String = "Back to Library",
 ) {
     var confirmEdit by rememberSaveable { mutableStateOf(false) }
     var editing by rememberSaveable { mutableStateOf(false) }
@@ -102,9 +104,10 @@ internal fun PlaybackSettingsScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .testTag("settings-page-audio")
             .padding(horizontal = 16.dp),
     ) {
-        SettingsHeader(close)
+        SettingsHeader(pageTitle, backContentDescription, close)
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -167,15 +170,6 @@ internal fun PlaybackSettingsScreen(
                     }
                 }
             }
-            item { HorizontalDivider() }
-            item { SettingsSectionTitle("Appearance") }
-            itemsIndexed(themeSelection.availableThemes) { _, theme ->
-                ThemeChoiceRow(
-                    theme = theme,
-                    selected = themeSelection.palette == theme,
-                    select = { selectTheme(theme) },
-                )
-            }
             state.error?.let { error ->
                 item {
                     Text(
@@ -216,7 +210,11 @@ internal fun PlaybackSettingsScreen(
 }
 
 @Composable
-private fun SettingsHeader(close: () -> Unit) {
+private fun SettingsHeader(
+    title: String,
+    backContentDescription: String,
+    close: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -224,9 +222,9 @@ private fun SettingsHeader(close: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = close) {
-            MaterialSymbol("arrow_back", "Back to Library")
+            MaterialSymbol("arrow_back", backContentDescription)
         }
-        Text("Settings", style = MaterialTheme.typography.titleLarge)
+        Text(title, style = MaterialTheme.typography.titleLarge)
     }
 }
 
@@ -285,36 +283,6 @@ private fun EqualizerBandRow(
                 contentDescription = "$frequency equalizer band"
             },
         )
-    }
-}
-
-@Composable
-private fun ThemeChoiceRow(
-    theme: MobileTheme,
-    selected: Boolean,
-    select: () -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                when (theme) {
-                    MobileTheme.NOCTURNE -> "Nocturne"
-                    MobileTheme.DYNAMIC -> "Dynamic colour"
-                },
-            )
-            Text(
-                when (theme) {
-                    MobileTheme.NOCTURNE -> "Reprise's dark palette"
-                    MobileTheme.DYNAMIC -> "Colours from this device"
-                },
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        }
-        RadioButton(selected = selected, onClick = select)
     }
 }
 
