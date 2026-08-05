@@ -427,13 +427,11 @@ pub(super) fn css() -> String {
 }
 
 impl super::surface::NowPlayingPanel {
-    #[allow(dead_code)] // the information button is added in package P5
     pub(in crate::ui) fn show_sound(&self) {
-        if self.widgets.sound_page.is_visible() {
-            self.widgets.tab_stack.set_visible_child_name(SOUND_PAGE);
-        } else {
-            self.widgets.tab_stack.set_visible_child_name(UP_NEXT_PAGE);
+        if !self.widgets.sound_page.is_visible() {
+            return;
         }
+        self.widgets.tab_stack.set_visible_child_name(SOUND_PAGE);
         self.widgets.column.set_visible(true);
     }
 

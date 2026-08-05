@@ -14,6 +14,12 @@ pub(in crate::ui) fn install(
     panel: &Rc<NowPlayingPanel>,
     queue_model: &SharedQueueModel,
 ) {
+    let panel_for_info = Rc::downgrade(panel);
+    player.bar.connect_sound_info_clicked(move || {
+        if let Some(panel) = panel_for_info.upgrade() {
+            panel.show_sound();
+        }
+    });
     let panel_weak = Rc::downgrade(panel);
     player.set_on_now_playing_panel_track_changed(move |track, labels| {
         if let Some(panel) = panel_weak.upgrade() {

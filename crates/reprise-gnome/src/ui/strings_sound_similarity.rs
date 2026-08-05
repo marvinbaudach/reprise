@@ -8,6 +8,7 @@ pub const SOUND_TEMPO_AXIS: &str = N_!("Tempo · slow ↔ fast");
 pub const SOUND_SOUNDS_LIKE: &str = N_!("Sounds like · of {count}");
 pub const SOUND_ADD_TO_QUEUE: &str = N_!("Add to queue");
 pub const SOUND_MORE_ACTIONS: &str = N_!("More actions");
+pub const SOUND_INFO_TOOLTIP: &str = N_!("Show sound details");
 #[allow(dead_code)] // installed in the track menu in package P6
 pub const SOUND_FIND_SIMILAR: &str = N_!("Find similar tracks");
 pub const SOUND_ANALYSING: &str = N_!("Analysing your library — {ready} of {total}");

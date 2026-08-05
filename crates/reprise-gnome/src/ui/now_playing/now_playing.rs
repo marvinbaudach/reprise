@@ -30,6 +30,10 @@ use crate::ui::swell::Swell;
 
 type OnVoid = Rc<dyn Fn()>;
 const TAB_SWITCHER_MIN_HEIGHT: i32 = 50;
+// Measured with the actual Adwaita switcher and installed font: four labels
+// first fit without Pango ellipsizing at 228 px; 224 px is the last failing
+// width and therefore the icons-only compact cutoff.
+const TAB_ICONS_MAX_WIDTH: f64 = 224.0;
 
 #[path = "now_playing_effects.rs"]
 mod now_playing_effects;
@@ -219,7 +223,7 @@ fn build_widgets_for_session(
     tabs.set_child(Some(&tab_switcher));
     let narrow = adw::BreakpointCondition::new_length(
         adw::BreakpointConditionLengthType::MaxWidth,
-        320.0,
+        TAB_ICONS_MAX_WIDTH,
         adw::LengthUnit::Px,
     );
     let breakpoint = adw::Breakpoint::new(narrow);
