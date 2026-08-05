@@ -104,6 +104,24 @@ fn row_height(column_view: &gtk4::ColumnView, n_rows: u32) -> Option<f64> {
     (upper > 0.0).then(|| upper / f64::from(n_rows))
 }
 
+/// The anchor a reveal that has been requested but has not started moving is
+/// heading for: the loaded track, centred, in the `(track id, offset)` form
+/// the restore resolves against the rebuilt list. Expressing it as an anchor
+/// rather than a pixel value is what survives the rows the reload is about to
+/// add or drop.
+fn pending_reveal_anchor(shared: &Shared, old_total: u32) -> Option<(i64, f64)> {
+    if !shared.track_reveal_pending.get() {
+        return None;
+    }
+    let track_id = shared.playing_track_id.get()?;
+    let adjustment = gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view)?;
+    let height = row_height(&shared.column_view, old_total)?;
+    // `scroll_center::centered_scroll_value` in anchor form: the row's middle
+    // on the viewport's middle is its top, minus half a viewport, plus half a
+    // row.
+    Some((track_id, height.mul_add(0.5, -adjustment.page_size() / 2.0)))
+}
+
 /// Captures the pre-swap `ReloadAnchor`. The anchor row is resolved through
 /// a single `track_at` lookup at the viewport-top index rather than by
 /// scanning the whole old model into an id array — `TrackListModel` lazily
@@ -112,8 +130,24 @@ fn row_height(column_view: &gtk4::ColumnView, n_rows: u32) -> Option<f64> {
 pub(in crate::ui) fn capture_reload_anchor(shared: &Shared) -> ReloadAnchor {
     let selected = selected_ids_before_swap(shared);
     let old_total = shared.model.n_items();
-    let scroll_value = gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view)
-        .map_or(0.0, |adjustment| adjustment.value());
+    // NAV-10a: a reveal is already under way, so the viewport the user is
+    // about to have is its destination — preserving the position the reload
+    // *finds* would put the list back where playback just left, and the hold
+    // guarding it would then out-write the reveal.
+    if let Some(anchor) = pending_reveal_anchor(shared, old_total) {
+        return reload_restore::capture(selected, Some(anchor));
+    }
+    // NAV-10a: while the table is gliding to the loaded track, the viewport
+    // the user is about to have is the glide's destination, not the frame it
+    // happens to be passing through. Anchoring on the live value instead
+    // captured a waypoint — and the hold that guards it then wrote that
+    // waypoint back, which reads to `ScrollGlide` as a foreign write and ends
+    // the glide there. A scan reloads in bursts, so this lands mid-follow
+    // routinely.
+    let scroll_value = shared.scroll_glide.destination().unwrap_or_else(|| {
+        gtk4::prelude::ScrollableExt::vadjustment(&shared.column_view)
+            .map_or(0.0, |adjustment| adjustment.value())
+    });
     // An untouched list (nothing selected, sitting at the top) records no
     // anchor: the rebuilt list is already at the top, so there is nothing to
     // put back, and `restore_reload_anchor` can then skip resolving the id
@@ -150,13 +184,7 @@ fn restore_reload_anchor(
         return;
     }
     let current_ids = shared.current_view_ids();
-    if !reload_restore::is_noop(captured) {
-        let positions = reload_restore::positions_for_ids(&captured.selected_ids, &current_ids);
-        shared.selection.unselect_all();
-        for position in positions {
-            shared.selection.select_item(position, false);
-        }
-    }
+    select_captured_ids(shared, captured, &current_ids);
 
     if matches!(viewport, ReloadViewport::CenterPlayingTrack) {
         let playing_track_id = shared.playing_track_id.get();
@@ -177,6 +205,19 @@ fn restore_reload_anchor(
         SCROLL_RESTORE_MAX_ATTEMPTS,
         hold,
     );
+}
+
+/// Puts the captured selection back on the rebuilt model. Rows the swap
+/// dropped simply fall out — see `reload_restore::positions_for_ids`.
+fn select_captured_ids(shared: &Shared, captured: &ReloadAnchor, current_ids: &[i64]) {
+    if reload_restore::is_noop(captured) {
+        return;
+    }
+    let positions = reload_restore::positions_for_ids(&captured.selected_ids, current_ids);
+    shared.selection.unselect_all();
+    for position in positions {
+        shared.selection.select_item(position, false);
+    }
 }
 
 fn schedule_centered_scroll_restore(
@@ -731,3 +772,11 @@ mod tests {
         ));
     }
 }
+
+#[cfg(test)]
+#[path = "reveal_track_display_tests.rs"]
+mod reveal_track_display_tests;
+
+#[cfg(test)]
+#[path = "glide_reload_display_tests.rs"]
+mod glide_reload_display_tests;
