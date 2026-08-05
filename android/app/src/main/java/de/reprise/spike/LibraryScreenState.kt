@@ -29,6 +29,15 @@ internal data class LibraryWindow<T>(
         )
     }
 
+    /**
+     * How many items a lazy list built from this window holds — the loaded rows
+     * plus the continuation sentinel, when there is one. It is what an anchor
+     * has to be checked against: the sentinel is a place the listener can be
+     * looking at.
+     */
+    fun itemCount(lastRequestedOffset: Long?): Int =
+        rows.size + if (nextRequest(lastRequestedOffset) == null) 0 else 1
+
     companion object {
         fun <T> empty(): LibraryWindow<T> = LibraryWindow(
             total = 0,

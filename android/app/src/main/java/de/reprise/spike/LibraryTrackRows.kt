@@ -11,6 +11,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -22,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.testTag
 
 /**
  * The library's track list: the 72 dp rows, their continuation sentinel, and
@@ -30,33 +35,93 @@ import androidx.compose.ui.unit.dp
  */
 @Composable
 internal fun TrackRows(
+    surfaceLayout: SurfaceLayout,
+    surfaceState: MobileSurfaceViewModel,
+    listKey: LibraryListKey,
     tracks: LibraryWindow<LibraryTrack>,
     playback: PlaybackUiState,
     lastRequestedOffset: Long?,
     play: (Int) -> Unit,
     loadMore: (LibraryWindowRange) -> Unit,
 ) {
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
-        items(
-            items = trackListContent(tracks, lastRequestedOffset),
-            key = { content ->
-                when (content) {
-                    is TrackListContent.Row -> "track-${content.track.uri}"
-                    is TrackListContent.Continuation -> "load-window-${content.request.offset}"
-                }
-            },
-        ) { content ->
-            when (content) {
-                is TrackListContent.Row -> LibraryTrackRow(
-                    track = content.track,
-                    presentation = content.track.playbackPresentation(playback),
-                    play = { play(content.index) },
-                )
-                is TrackListContent.Continuation -> {
-                    LaunchedEffect(content.request.offset) { loadMore(content.request) }
-                    LoadingWindowRow()
-                }
+    val metrics = libraryFrameMetrics(surfaceLayout)
+    val content = trackListContent(tracks, lastRequestedOffset)
+    val anchor = surfaceState.scrollPosition(listKey).within(content.size)
+    if (surfaceLayout == SurfaceLayout.WIDE_SHORT) {
+        val gridState = rememberLibraryGridState(anchor)
+        ObserveLibraryGridAnchor(listKey, gridState, surfaceState)
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(metrics.listColumns),
+            state = gridState,
+            modifier = Modifier
+                .fillMaxSize()
+                .testTag(listKey.testTag()),
+            horizontalArrangement = Arrangement.spacedBy(metrics.listColumnGapDp.dp),
+        ) {
+            items(
+                items = content,
+                key = TrackListContent::stableKey,
+                span = { item ->
+                    if (item is TrackListContent.Continuation) {
+                        GridItemSpan(maxLineSpan)
+                    } else {
+                        GridItemSpan(1)
+                    }
+                },
+            ) { item ->
+                TrackListItem(item, metrics, playback, play, loadMore)
             }
+        }
+        return
+    }
+
+    val listState = rememberLibraryListState(anchor)
+    ObserveLibraryListAnchor(listKey, listState, surfaceState)
+    LazyColumn(
+        state = listState,
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag(listKey.testTag()),
+    ) {
+        items(
+            items = content,
+            key = TrackListContent::stableKey,
+        ) { content ->
+            TrackListItem(content, metrics, playback, play, loadMore)
+        }
+    }
+}
+
+private fun TrackListContent.stableKey(): String = when (this) {
+    is TrackListContent.Row -> "track-${track.uri}"
+    is TrackListContent.Continuation -> "load-window-${request.offset}"
+}
+
+private fun LibraryListKey.testTag(): String = when (this) {
+    LibraryListKey.TITLES -> "library-titles-list"
+    LibraryListKey.ALBUMS -> "library-albums-list"
+    LibraryListKey.ARTISTS -> "library-artists-list"
+    LibraryListKey.ALBUM_TRACKS -> "library-album-tracks-list"
+}
+
+@Composable
+private fun TrackListItem(
+    content: TrackListContent,
+    metrics: LibraryFrameMetrics,
+    playback: PlaybackUiState,
+    play: (Int) -> Unit,
+    loadMore: (LibraryWindowRange) -> Unit,
+) {
+    when (content) {
+        is TrackListContent.Row -> LibraryTrackRow(
+            track = content.track,
+            presentation = content.track.playbackPresentation(playback),
+            metrics = metrics,
+            play = { play(content.index) },
+        )
+        is TrackListContent.Continuation -> {
+            LaunchedEffect(content.request.offset) { loadMore(content.request) }
+            LoadingWindowRow()
         }
     }
 }
@@ -65,12 +130,14 @@ internal fun TrackRows(
 private fun LibraryTrackRow(
     track: LibraryTrack,
     presentation: TrackPlaybackPresentation,
+    metrics: LibraryFrameMetrics,
     play: () -> Unit,
 ) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .height(libraryFrameMetrics.trackRowHeightDp.dp)
+            .height(metrics.trackRowHeightDp.dp)
+            .testTag("library-track-row-${track.id}")
             .clickable(onClick = play),
         color = if (presentation.isCurrent) {
             MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
@@ -88,7 +155,7 @@ private fun LibraryTrackRow(
             ) {
                 TrackCover(
                     trackUri = track.uri,
-                    size = libraryFrameMetrics.trackCoverSizeDp,
+                    size = metrics.trackCoverSizeDp,
                     // The row is one clickable node, so anything described
                     // below it is merged into what the row announces. A cover
                     // saying "Album artwork" there replaces the song.

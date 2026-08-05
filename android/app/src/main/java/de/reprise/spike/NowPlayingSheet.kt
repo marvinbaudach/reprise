@@ -9,10 +9,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -39,12 +41,14 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlin.math.PI
 import kotlin.math.sin
 import kotlinx.coroutines.CancellationException
@@ -63,8 +67,11 @@ import uniffi.reprise_android_ffi.AndroidRepeatMode
 internal fun NowPlayingSheet(
     track: LibraryTrack,
     playback: PlaybackUiState,
+    surfaceLayout: SurfaceLayout = SurfaceLayout.STACKED,
+    surfaceState: MobileSurfaceViewModel = viewModel(),
     close: () -> Unit,
 ) {
+    val metrics = nowPlayingMetrics(surfaceLayout)
     var backProgress by remember { mutableFloatStateOf(0f) }
     PredictiveBackHandler {
         try {
@@ -90,7 +97,35 @@ internal fun NowPlayingSheet(
         ),
         shadowElevation = 12.dp,
     ) {
-        Column(
+        if (surfaceLayout == SurfaceLayout.WIDE_SHORT) {
+            WideShortNowPlayingContent(
+                track = track,
+                playback = playback,
+                surfaceState = surfaceState,
+                metrics = metrics,
+                close = close,
+            )
+        } else {
+            StackedNowPlayingContent(
+                track = track,
+                playback = playback,
+                surfaceState = surfaceState,
+                metrics = metrics,
+                close = close,
+            )
+        }
+    }
+}
+
+@Composable
+private fun StackedNowPlayingContent(
+    track: LibraryTrack,
+    playback: PlaybackUiState,
+    surfaceState: MobileSurfaceViewModel,
+    metrics: NowPlayingMetrics,
+    close: () -> Unit,
+) {
+    Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
@@ -113,16 +148,17 @@ internal fun NowPlayingSheet(
             }
             TrackCover(
                 trackUri = track.uri,
-                size = nowPlayingMetrics.coverSizeDp,
+                size = metrics.coverSizeDp,
                 artworkSize = AndroidArtworkSize.NOW_PLAYING,
-                shape = RoundedCornerShape(nowPlayingMetrics.coverRadiusDp.dp),
+                shape = RoundedCornerShape(metrics.coverRadiusDp.dp),
+                modifier = Modifier.testTag("now-playing-cover"),
             )
             Spacer(Modifier.height(20.dp))
             Text(
                 text = track.title,
                 style = TextStyle(
-                    fontSize = nowPlayingMetrics.titleSizeSp.sp,
-                    lineHeight = nowPlayingMetrics.titleLineHeightSp.sp,
+                    fontSize = metrics.titleSizeSp.sp,
+                    lineHeight = metrics.titleLineHeightSp.sp,
                     fontWeight = FontWeight.SemiBold,
                 ),
                 textAlign = TextAlign.Center,
@@ -132,16 +168,16 @@ internal fun NowPlayingSheet(
             Text(
                 text = track.artist.ifBlank { "Unknown artist" },
                 style = TextStyle(
-                    fontSize = nowPlayingMetrics.artistSizeSp.sp,
-                    lineHeight = nowPlayingMetrics.artistLineHeightSp.sp,
+                    fontSize = metrics.artistSizeSp.sp,
+                    lineHeight = metrics.artistLineHeightSp.sp,
                 ),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            WavySeekSlider(trackId = track.id, playback = playback)
-            PlaybackActions(playback = playback)
+            WavySeekSlider(trackId = track.id, playback = playback, surfaceState = surfaceState)
+            PlaybackActions(playback = playback, metrics = metrics, wideShort = false)
             RatingRow(track = track)
             playback.error?.let { message ->
                 Text(
@@ -152,30 +188,112 @@ internal fun NowPlayingSheet(
                 )
             }
             Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun WideShortNowPlayingContent(
+    track: LibraryTrack,
+    playback: PlaybackUiState,
+    surfaceState: MobileSurfaceViewModel,
+    metrics: NowPlayingMetrics,
+    close: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .width(metrics.coverSizeDp.dp)
+                .fillMaxHeight(),
+            contentAlignment = Alignment.Center,
+        ) {
+            TrackCover(
+                trackUri = track.uri,
+                size = metrics.coverSizeDp,
+                artworkSize = AndroidArtworkSize.NOW_PLAYING,
+                shape = RoundedCornerShape(metrics.coverRadiusDp.dp),
+                modifier = Modifier.testTag("now-playing-cover"),
+            )
+        }
+        Spacer(Modifier.width(24.dp))
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight(),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = track.title,
+                        style = TextStyle(
+                            fontSize = metrics.titleSizeSp.sp,
+                            lineHeight = metrics.titleLineHeightSp.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = track.artist.ifBlank { "Unknown artist" },
+                        style = TextStyle(
+                            fontSize = metrics.artistSizeSp.sp,
+                            lineHeight = metrics.artistLineHeightSp.sp,
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                IconButton(onClick = close, modifier = Modifier.size(48.dp)) {
+                    MaterialSymbol("keyboard_arrow_down", "Collapse Now Playing")
+                }
+            }
+            RatingRow(track = track, wideShort = true)
+            WavySeekSlider(trackId = track.id, playback = playback, surfaceState = surfaceState)
+            playback.error?.let { message ->
+                Text(
+                    text = message,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Spacer(Modifier.weight(1f))
+            PlaybackActions(playback = playback, metrics = metrics, wideShort = true)
         }
     }
 }
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-private fun WavySeekSlider(trackId: Long, playback: PlaybackUiState) {
+private fun WavySeekSlider(
+    trackId: Long,
+    playback: PlaybackUiState,
+    surfaceState: MobileSurfaceViewModel,
+) {
     val seekTo = LocalPlaybackControls.current::seekTo
-    var position by remember(trackId) {
-        mutableStateOf(SeekPositionState.fromSnapshot(playback.positionMs))
-    }
+    val position = surfaceState.seekPosition(trackId, playback.positionMs)
     LaunchedEffect(trackId, playback.positionMs) {
-        position = position.acceptSnapshot(playback.positionMs)
+        surfaceState.acceptPlaybackSnapshot(trackId, playback.positionMs)
     }
     val durationMs = playback.durationMs.coerceAtLeast(0)
     val sliderMaximum = durationMs.coerceAtLeast(1).toFloat()
     val displayed = position.positionMs.coerceIn(0, durationMs.coerceAtLeast(0))
     Column(modifier = Modifier.fillMaxWidth()) {
         Slider(
+            modifier = Modifier.testTag("now-playing-seek"),
             value = displayed.toFloat(),
-            onValueChange = { value -> position = position.dragTo(value.toLong()) },
+            onValueChange = { value -> surfaceState.dragTo(trackId, value.toLong()) },
             onValueChangeFinished = {
-                seekTo(position.positionMs)
-                position = position.release()
+                seekTo(surfaceState.releaseScrub(trackId).positionMs)
             },
             valueRange = 0f..sliderMaximum,
             enabled = durationMs > 0,
@@ -251,26 +369,38 @@ private fun WavySliderTrack(progress: Float) {
 }
 
 @Composable
-private fun PlaybackActions(playback: PlaybackUiState) {
+private fun PlaybackActions(
+    playback: PlaybackUiState,
+    metrics: NowPlayingMetrics,
+    wideShort: Boolean,
+) {
     val controls = LocalPlaybackControls.current
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().testTag("now-playing-transport"),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ModeButton(
-            symbol = "shuffle",
-            description = if (playback.shuffled) "Turn shuffle off" else "Turn shuffle on",
-            active = playback.shuffled,
-            onClick = { controls.setShuffle(!playback.shuffled) },
-        )
+        if (!wideShort) {
+            ModeButton(
+                symbol = "shuffle",
+                description = if (playback.shuffled) "Turn shuffle off" else "Turn shuffle on",
+                active = playback.shuffled,
+                onClick = { controls.setShuffle(!playback.shuffled) },
+            )
+        }
         IconButton(onClick = controls::previous, modifier = Modifier.size(48.dp)) {
             MaterialSymbol("skip_previous", "Previous track", sizeSp = 30)
+        }
+        if (wideShort) {
+            IconButton(onClick = controls::next, modifier = Modifier.size(48.dp)) {
+                MaterialSymbol("skip_next", "Next track", sizeSp = 30)
+            }
         }
         IconButton(
             onClick = controls::togglePause,
             modifier = Modifier
-                .size(nowPlayingMetrics.playButtonSizeDp.dp)
+                .size(metrics.playButtonSizeDp.dp)
+                .testTag("now-playing-play")
                 // The shape scale's top rung is the frame's 28 dp rounded
                 // square; a circle would be a different control.
                 .clip(MaterialTheme.shapes.extraLarge)
@@ -283,8 +413,17 @@ private fun PlaybackActions(playback: PlaybackUiState) {
                 sizeSp = 40,
             )
         }
-        IconButton(onClick = controls::next, modifier = Modifier.size(48.dp)) {
-            MaterialSymbol("skip_next", "Next track", sizeSp = 30)
+        if (!wideShort) {
+            IconButton(onClick = controls::next, modifier = Modifier.size(48.dp)) {
+                MaterialSymbol("skip_next", "Next track", sizeSp = 30)
+            }
+        } else {
+            ModeButton(
+                symbol = "shuffle",
+                description = if (playback.shuffled) "Turn shuffle off" else "Turn shuffle on",
+                active = playback.shuffled,
+                onClick = { controls.setShuffle(!playback.shuffled) },
+            )
         }
         ModeButton(
             symbol = if (playback.repeat == AndroidRepeatMode.ONE) "repeat_one" else "repeat",
@@ -345,11 +484,11 @@ private fun ModeButton(
  * next track's stars.
  */
 @Composable
-private fun RatingRow(track: LibraryTrack) {
+private fun RatingRow(track: LibraryTrack, wideShort: Boolean = false) {
     val setRating = LocalPlaybackControls.current::setRating
     var rating by remember(track.id) { mutableStateOf(track.rating.coerceIn(0, 5)) }
     var failure by remember(track.id) { mutableStateOf<TransientMessage?>(null) }
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    val content: @Composable () -> Unit = {
         Text(
             text = "${track.playCount.coerceAtLeast(0)} plays",
             style = MaterialTheme.typography.labelLarge,
@@ -389,5 +528,18 @@ private fun RatingRow(track: LibraryTrack) {
             }
         }
         TransientMessageText(failure) { failure = null }
+    }
+    if (wideShort) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            content()
+        }
+    } else {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            content()
+        }
     }
 }

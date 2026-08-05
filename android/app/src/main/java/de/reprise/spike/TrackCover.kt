@@ -131,6 +131,7 @@ internal val LocalTrackArtwork = staticCompositionLocalOf<TrackArtwork?> { null 
 internal fun TrackCover(
     trackUri: String,
     size: Int,
+    modifier: Modifier = Modifier,
     artworkSize: AndroidArtworkSize = AndroidArtworkSize.LIST,
     shape: Shape? = null,
     decorative: Boolean = false,
@@ -146,14 +147,14 @@ internal fun TrackCover(
 
     val cover = image
     if (cover == null) {
-        CoverPlaceholder(size, shape, decorative)
+        CoverPlaceholder(size, shape, decorative, modifier)
         return
     }
     Image(
         bitmap = cover,
         contentDescription = if (decorative) null else "Album artwork",
         contentScale = ContentScale.Crop,
-        modifier = Modifier
+        modifier = modifier
             .size(size.dp)
             .clip(shape ?: MaterialTheme.shapes.small),
     )

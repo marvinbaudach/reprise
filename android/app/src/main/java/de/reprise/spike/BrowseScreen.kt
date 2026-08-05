@@ -23,14 +23,15 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 
 /**
  * One answered request for the playing track's row, carrying the id it was
@@ -39,7 +40,7 @@ import androidx.compose.ui.unit.dp
  */
 private data class AnsweredTrack(val id: Long, val track: LibraryTrack?)
 
-private enum class BrowseTab(val label: String) {
+internal enum class BrowseTab(val label: String) {
     TITLES("Titles"),
     ALBUMS("Albums"),
     ARTISTS("Artists"),
@@ -59,6 +60,8 @@ internal fun BrowseScreen(
     state: LibraryScreenState.Browse,
     playback: PlaybackUiState,
     playbackSettingsRevision: Long,
+    surfaceLayout: SurfaceLayout = SurfaceLayout.STACKED,
+    surfaceState: MobileSurfaceViewModel = viewModel(),
     chooseFolder: () -> Unit,
     rescan: () -> Unit,
     searchTitles: (String, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
@@ -75,23 +78,25 @@ internal fun BrowseScreen(
     themeSelection: MobileThemeSelection,
     selectTheme: (MobileTheme) -> Unit,
 ) {
-    var selectedTab by remember { mutableStateOf(BrowseTab.TITLES) }
-    var searchVisible by remember { mutableStateOf(false) }
-    var searchText by remember(state) { mutableStateOf("") }
-    var visibleTitles by remember(state) { mutableStateOf(state.titles) }
-    var visibleAlbums by remember(state) { mutableStateOf(state.albums) }
-    var visibleArtists by remember(state) { mutableStateOf(state.artists) }
-    var selectedAlbum by remember(state) { mutableStateOf<AlbumTrackList?>(null) }
+    val selectedTab = surfaceState.selectedTab
+    val searchVisible = surfaceState.searchVisible
+    val searchText = surfaceState.searchText
+    // Everything the listener has paged in, or the first window when there is
+    // nothing to take up: a replacement activity reloads one window, and the
+    // anchors kept above are indices into all of them.
+    val shape = state.catalogShape()
+    val restored = remember(state) { surfaceState.loadedWindows(shape) }
+    var visibleTitles by remember(state) { mutableStateOf(restored?.titles ?: state.titles) }
+    var visibleAlbums by remember(state) { mutableStateOf(restored?.albums ?: state.albums) }
+    var visibleArtists by remember(state) { mutableStateOf(restored?.artists ?: state.artists) }
+    var selectedAlbum by remember(state) { mutableStateOf(restored?.openAlbum) }
     var browseError by remember(state) { mutableStateOf(state.message) }
     var titlesRequestedOffset by remember(state, searchText) { mutableStateOf<Long?>(null) }
     var albumsRequestedOffset by remember(state) { mutableStateOf<Long?>(null) }
     var artistsRequestedOffset by remember(state) { mutableStateOf<Long?>(null) }
     var albumRequestedOffset by remember(state, selectedAlbum?.album) { mutableStateOf<Long?>(null) }
-    // Saveable, not remembered: a rotation recreates the activity, and a
-    // sheet the user opened is not something the device orientation gets to
-    // close.
-    var nowPlayingExpanded by rememberSaveable { mutableStateOf(false) }
-    var settingsVisible by rememberSaveable { mutableStateOf(false) }
+    val nowPlayingExpanded = surfaceState.nowPlayingExpanded
+    val settingsVisible = surfaceState.settingsVisible
     var settingsState by remember { mutableStateOf<PlaybackSettingsUiState?>(null) }
 
     // A failure has to leave a *state* behind, never null: null renders
@@ -110,7 +115,7 @@ internal fun BrowseScreen(
         settingsState = runCatching(loadPlaybackSettings).getOrElse { error ->
             failedSettings("Could not load playback settings: ${error.message ?: "unknown error"}")
         }
-        settingsVisible = true
+        surfaceState.showSettings(true)
     }
 
     fun updateSettings(action: () -> PlaybackSettingsUiState) {
@@ -137,7 +142,7 @@ internal fun BrowseScreen(
     }
 
     fun search(text: String) {
-        searchText = text
+        surfaceState.updateSearch(text)
         runCatching { searchTitles(text, firstLibraryWindow()) }
             .onSuccess { tracks ->
                 visibleTitles = tracks
@@ -145,6 +150,32 @@ internal fun BrowseScreen(
                 browseError = null
             }
             .onFailure { error -> browseError = error.browseDetail("search") }
+    }
+
+    // What is on screen is what a replacement activity has to be able to put
+    // back. Handed over from the composition itself rather than from each of
+    // the five places that change a window, so the two cannot drift apart.
+    //
+    // Assembled *here*, in this function's own scope, and not inside the effect
+    // below: a state value read only from an inner lambda invalidates only that
+    // lambda, and an effect in this scope would then keep handing back the
+    // window it saw first — 200 rows, however many the listener had paged in.
+    val loaded = LoadedLibraryWindows(
+        titles = visibleTitles,
+        albums = visibleAlbums,
+        artists = visibleArtists,
+        openAlbum = selectedAlbum,
+    )
+    SideEffect { surfaceState.keepLoadedWindows(shape, loaded) }
+
+    // The query is durable, and so is the window it produced — for as long as
+    // that window is still the catalog's. When a scan has changed the library
+    // underneath, there is nothing to take up and the refinement is asked for
+    // again rather than replayed from rows that no longer describe it.
+    LaunchedEffect(state) {
+        if (searchText.isNotEmpty() && restored == null) {
+            search(searchText)
+        }
     }
 
     fun loadMoreTitles(request: LibraryWindowRange) {
@@ -212,15 +243,21 @@ internal fun BrowseScreen(
     // moment it stops, without waiting for anything.
     val currentTrack = answeredTrack?.takeIf { it.id == playingTrackId }?.track
     Box(modifier = Modifier.fillMaxSize()) {
-        Scaffold(
+        val libraryScaffold: @Composable (Modifier) -> Unit = { frameModifier ->
+            Scaffold(
+            modifier = frameModifier,
             containerColor = MaterialTheme.colorScheme.background,
             topBar = {
                 LibraryTopAppBar(
+                    surfaceLayout = surfaceLayout,
                     searching = searchVisible,
                     toggleSearch = {
-                        searchVisible = !searchVisible
-                        selectedTab = BrowseTab.TITLES
-                        if (!searchVisible && searchText.isNotEmpty()) search("")
+                        if (searchVisible) {
+                            surfaceState.closeSearch()
+                            if (searchText.isNotEmpty()) search("")
+                        } else {
+                            surfaceState.openSearch()
+                        }
                     },
                     rescan = rescan,
                     chooseFolder = chooseFolder,
@@ -229,22 +266,23 @@ internal fun BrowseScreen(
             },
             bottomBar = {
                 LibraryBottomFrame(
+                    surfaceLayout = surfaceLayout,
                     currentTrack = currentTrack,
                     playback = playback,
-                    openNowPlaying = { nowPlayingExpanded = true },
+                    openNowPlaying = { surfaceState.showNowPlaying(true) },
                 )
             },
-        ) { contentPadding ->
-            Column(
+            ) { contentPadding ->
+                Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(contentPadding),
-            ) {
+                ) {
                 BrowseFilterChips(
+                    surfaceLayout = surfaceLayout,
                     selected = selectedTab,
                     select = { tab ->
-                        selectedTab = tab
-                        if (tab != BrowseTab.TITLES) searchVisible = false
+                        surfaceState.selectTab(tab)
                     },
                 )
                 // Both of these are state rather than acknowledgements, so both
@@ -254,6 +292,8 @@ internal fun BrowseScreen(
                 playback.error?.let { BrowseErrorLine(it) }
                 when (selectedTab) {
                     BrowseTab.TITLES -> TitlesTab(
+                        surfaceLayout = surfaceLayout,
+                        surfaceState = surfaceState,
                         tracks = visibleTitles,
                         searchVisible = searchVisible,
                         searchText = searchText,
@@ -264,6 +304,8 @@ internal fun BrowseScreen(
                         loadMore = ::loadMoreTitles,
                     )
                     BrowseTab.ALBUMS -> AlbumsTab(
+                        surfaceLayout = surfaceLayout,
+                        surfaceState = surfaceState,
                         albums = visibleAlbums,
                         selectedAlbum = selectedAlbum,
                         playback = playback,
@@ -286,12 +328,23 @@ internal fun BrowseScreen(
                         loadMoreAlbumTracks = ::loadMoreAlbumTracks,
                     )
                     BrowseTab.ARTISTS -> ArtistsTab(
+                        surfaceLayout = surfaceLayout,
+                        surfaceState = surfaceState,
                         artists = visibleArtists,
                         lastRequestedOffset = artistsRequestedOffset,
                         loadMore = ::loadMoreArtists,
                     )
                 }
+                }
             }
+        }
+        if (surfaceLayout == SurfaceLayout.WIDE_SHORT) {
+            Row(modifier = Modifier.fillMaxSize()) {
+                LibraryNavigationRail(surfaceLayout)
+                libraryScaffold(Modifier.weight(1f))
+            }
+        } else {
+            libraryScaffold(Modifier.fillMaxSize())
         }
         AnimatedVisibility(
             visible = nowPlayingExpanded && currentTrack != null,
@@ -306,12 +359,14 @@ internal fun BrowseScreen(
                 NowPlayingSheet(
                     track = track,
                     playback = playback,
-                    close = { nowPlayingExpanded = false },
+                    surfaceLayout = surfaceLayout,
+                    surfaceState = surfaceState,
+                    close = { surfaceState.showNowPlaying(false) },
                 )
             }
         }
         if (settingsVisible) {
-            BackHandler { settingsVisible = false }
+            BackHandler { surfaceState.showSettings(false) }
             Surface(
                 modifier = Modifier.fillMaxSize(),
                 color = MaterialTheme.colorScheme.background,
@@ -320,11 +375,11 @@ internal fun BrowseScreen(
                 // and no way back is what a rotation used to leave behind while
                 // the settings were being read again.
                 when (val current = settingsState) {
-                    null -> PlaybackSettingsLoading(close = { settingsVisible = false })
+                    null -> PlaybackSettingsLoading(close = { surfaceState.showSettings(false) })
                     else -> PlaybackSettingsScreen(
                         state = current,
                         themeSelection = themeSelection,
-                        close = { settingsVisible = false },
+                        close = { surfaceState.showSettings(false) },
                         setEqualizerEnabled = { enabled ->
                             updateSettings { setEqualizerEnabled(enabled) }
                         },
@@ -352,7 +407,11 @@ private fun BrowseErrorLine(message: String) {
 }
 
 @Composable
-private fun BrowseFilterChips(selected: BrowseTab, select: (BrowseTab) -> Unit) {
+private fun BrowseFilterChips(
+    surfaceLayout: SurfaceLayout,
+    selected: BrowseTab,
+    select: (BrowseTab) -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -370,7 +429,9 @@ private fun BrowseFilterChips(selected: BrowseTab, select: (BrowseTab) -> Unit) 
                 } else {
                     null
                 },
-                modifier = Modifier.height(libraryFrameMetrics.filterChipHeightDp.dp),
+                modifier = Modifier.height(
+                    libraryFrameMetrics(surfaceLayout).filterChipHeightDp.dp,
+                ),
                 shape = MaterialTheme.shapes.small,
             )
         }
