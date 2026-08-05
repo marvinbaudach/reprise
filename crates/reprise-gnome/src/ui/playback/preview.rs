@@ -101,7 +101,7 @@ mod tests {
     }
 
     #[test]
-    fn pod_4_external_session_never_scrobbles() {
+    fn pod_24_external_session_never_scrobbles() {
         assert!(PlaybackMode::Queue.credits_listening());
         assert!(!PlaybackMode::QueuedEpisode.credits_listening());
         assert!(!PlaybackMode::Preview.credits_listening());

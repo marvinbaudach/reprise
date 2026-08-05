@@ -212,7 +212,7 @@ mod tests {
     }
 
     #[test]
-    fn pod_4_finish_offers_next_unplayed_of_show() {
+    fn pod_24_finish_offers_next_unplayed_of_show() {
         let db = db();
         let show = add_show(db.conn(), "https://example.test/show", "Show");
         let other = add_show(db.conn(), "https://example.test/other", "Other");
