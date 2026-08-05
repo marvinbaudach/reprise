@@ -1,4 +1,60 @@
-use super::{narrow_prefixed, strike_range, ReviewLayout, ValueKind};
+use gtk4::prelude::*;
+
+use super::super::review_header::ReviewHeader;
+use super::{build_row, narrow_prefixed, strike_range, value_label, ReviewLayout, ValueKind};
+
+/// A window this wide is an ordinary maximised desktop window. Everything the
+/// review row promises has to be readable inside it.
+const DESKTOP_WIDTH: i32 = 1760;
+
+/// A label that ellipsizes still asks for its whole text unless something caps
+/// its natural width. Bound into a horizontal size group, that request becomes
+/// the column's width for every row — and the columns to its right leave the
+/// page, silently, because the list refuses to scroll sideways.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn doc_3b_a_long_value_does_not_widen_its_column_without_bound() {
+    gtk4::init().unwrap();
+    let label = value_label(false, super::VALUE_MAX_CHARS);
+    label.set_text(&"unreasonably descriptive track title ".repeat(8));
+
+    let (_, natural, _, _) = label.measure(gtk4::Orientation::Horizontal, -1);
+
+    assert!(
+        natural < DESKTOP_WIDTH / 3,
+        "one value wants {natural}px; three of those plus track, field and \
+         source cannot fit a {DESKTOP_WIDTH}px window"
+    );
+}
+
+/// The regression this pins: with long values in the rows, the shared header
+/// grew past the window and Current, Proposed and Source were rendered outside
+/// it. The user saw that a year would change but never to what.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn doc_3b_every_column_still_fits_a_desktop_window_with_long_values() {
+    gtk4::init().unwrap();
+    let header = ReviewHeader::new();
+    let widgets = build_row(&header.groups);
+    let long = "unreasonably descriptive track title that never ends".repeat(3);
+    widgets.track.set_text(&long);
+    widgets.field.set_text(&long);
+    widgets.current.set_text(&long);
+    widgets.proposed.set_text(&long);
+    widgets.source.set_text(&long);
+
+    let (_, header_natural, _, _) = header.root.measure(gtk4::Orientation::Horizontal, -1);
+    let (_, row_natural, _, _) = widgets.root.measure(gtk4::Orientation::Horizontal, -1);
+
+    assert!(
+        header_natural <= DESKTOP_WIDTH,
+        "the shared header wants {header_natural}px in a {DESKTOP_WIDTH}px window"
+    );
+    assert!(
+        row_natural <= DESKTOP_WIDTH,
+        "a row wants {row_natural}px in a {DESKTOP_WIDTH}px window"
+    );
+}
 
 #[test]
 fn doc_9b_rows_carry_no_caption_labels() {

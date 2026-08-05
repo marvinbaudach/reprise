@@ -284,6 +284,14 @@ pub(super) fn value_text(value: &DoctorValue) -> String {
     }
 }
 
+/// What the pill reads: the spelling and how many tracks carry it. The
+/// evidence behind it goes to [`candidate_description`], which feeds the
+/// tooltip and the accessible description — printed on the button itself it
+/// is a line wider than the window.
+pub(super) fn candidate_label(candidate: &DoctorCandidate) -> String {
+    strings::doctor_candidate(&value_text(&candidate.value), candidate.count)
+}
+
 pub(super) fn candidate_description(candidate: &DoctorCandidate) -> String {
     let mut parts = vec![strings::doctor_candidate(
         &value_text(&candidate.value),
@@ -361,8 +369,8 @@ mod tests {
     };
 
     use super::{
-        candidate_description, confidence_presentation, layout_for_width, ConfidenceTone,
-        ReviewLayout,
+        candidate_description, candidate_label, confidence_presentation, layout_for_width,
+        ConfidenceTone, ReviewLayout,
     };
 
     #[test]
@@ -424,5 +432,50 @@ mod tests {
         assert!(description.contains("Canonical album"));
         assert!(description.contains("1999"));
         assert!(description.contains("250 ms"));
+    }
+
+    /// The pill is a choice between spellings, so it shows the spelling and
+    /// how often it occurs. Its evidence — source, confidence, the matched
+    /// release's artist, title, album, year and duration — belongs to the
+    /// description a screen reader reads and the tooltip a pointer reveals.
+    /// Printed on the button it produced a single line wider than the window,
+    /// truncated mid-sentence, with the spelling itself pushed off the page.
+    #[test]
+    fn doc_4b_a_candidate_pill_shows_the_spelling_and_leaves_evidence_to_its_description() {
+        let candidate = DoctorCandidate {
+            value: DoctorValue::Text("The Beatles".into()),
+            count: 9,
+            evidence: vec![RemoteEvidence {
+                source: RemoteEvidenceSource::MusicBrainz,
+                confidence: 100,
+                recording_mbid: None,
+                release_mbid: None,
+                release_group_mbid: None,
+                artist_mbid: None,
+                release_artist_mbid: None,
+                title: Some("Dehumanized".into()),
+                artist: Some("Bring Me the Horizon".into()),
+                album: Some("Count Your Blessings".into()),
+                year: Some(2026),
+                duration_ms: Some(268_000),
+                duration_delta_ms: Some(12),
+            }],
+        };
+
+        let label = candidate_label(&candidate);
+        let description = candidate_description(&candidate);
+
+        assert!(label.contains("The Beatles"), "the spelling must be shown");
+        assert!(label.contains('9'), "so must how often it occurs");
+        for evidence in ["MusicBrainz", "Bring Me the Horizon", "268000", "2026"] {
+            assert!(
+                !label.contains(evidence),
+                "evidence leaked onto the pill: {label}"
+            );
+        }
+        assert!(
+            description.contains("MusicBrainz") && description.contains("Bring Me the Horizon"),
+            "the description still carries the full evidence"
+        );
     }
 }

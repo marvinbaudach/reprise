@@ -7,7 +7,7 @@ use reprise_core::library_doctor::{
     DoctorReviewGroup, DoctorReviewGroupId, DoctorUnresolvedGroup, DoctorValue,
 };
 
-use super::review_model::{candidate_description, field_label};
+use super::review_model::{candidate_description, candidate_label, field_label};
 use crate::ui::strings;
 
 type OnChoose = Rc<dyn Fn(DoctorReviewGroupId, &DoctorValue)>;
@@ -82,7 +82,8 @@ impl ReviewConflicts {
             let mut first = None::<gtk4::CheckButton>;
             for candidate in &group.candidates {
                 let button = gtk4::CheckButton::builder()
-                    .label(candidate_description(candidate))
+                    .label(candidate_label(candidate))
+                    .tooltip_text(candidate_description(candidate))
                     .css_classes(["pill"])
                     .build();
                 if let Some(first) = &first {

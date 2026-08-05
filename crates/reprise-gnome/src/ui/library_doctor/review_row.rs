@@ -114,12 +114,12 @@ fn build_row(groups: &ReviewColumnGroups) -> RowWidgets {
     selected.update_property(&[gtk4::accessible::Property::Label(&strings::text(
         strings::DOCTOR_SELECT_CHANGE,
     ))]);
-    let track = value_label(true);
-    let field = value_label(false);
-    let current = value_label(false);
+    let track = value_label(true, TRACK_MAX_CHARS);
+    let field = value_label(false, FIELD_MAX_CHARS);
+    let current = value_label(false, VALUE_MAX_CHARS);
     let arrow = gtk4::Label::new(Some("→"));
-    let proposed = value_label(false);
-    let source = value_label(false);
+    let proposed = value_label(false, VALUE_MAX_CHARS);
+    let source = value_label(false, SOURCE_MAX_CHARS);
     let warning = gtk4::Image::from_icon_name("dialog-warning-symbolic");
     warning.set_tooltip_text(Some(&strings::text(strings::DOCTOR_LOW_CONFIDENCE)));
     warning.update_property(&[gtk4::accessible::Property::Label(&strings::text(
@@ -190,10 +190,24 @@ fn build_row(groups: &ReviewColumnGroups) -> RowWidgets {
     }
 }
 
-fn value_label(bold: bool) -> gtk4::Label {
+/// Natural widths, in characters, for the row's five text columns.
+///
+/// An ellipsizing label still requests its whole text as its natural width.
+/// Bound into a horizontal size group, that request sets the column width for
+/// every row, and the row grows past a scrolled window that refuses to scroll
+/// sideways — so the rightmost columns are simply not drawn. Capping the
+/// natural width is what keeps every column on the page; ellipsizing then
+/// shortens the few values that are genuinely too long.
+pub(super) const TRACK_MAX_CHARS: i32 = 30;
+pub(super) const FIELD_MAX_CHARS: i32 = 12;
+pub(super) const VALUE_MAX_CHARS: i32 = 24;
+pub(super) const SOURCE_MAX_CHARS: i32 = 20;
+
+pub(super) fn value_label(bold: bool, max_chars: i32) -> gtk4::Label {
     let label = gtk4::Label::builder()
         .xalign(0.0)
         .ellipsize(gtk4::pango::EllipsizeMode::End)
+        .max_width_chars(max_chars)
         .hexpand(true)
         .build();
     if bold {
