@@ -109,7 +109,11 @@ pub(in crate::ui) fn buffering_presentation(
     }
     let buffered_ms = (*buffered_ms)?.clamp(0, duration_ms);
     let buffered_fraction = buffered_ms as f64 / duration_ms as f64;
-    let loaded_percent = (buffered_fraction * 100.0).round() as u8;
+    // Truncate rather than round: rounding lets 99.6 % report "100 % loaded"
+    // while the caption is still on screen, which contradicts its own
+    // presence. Truncation can only reach 100 when the media really is
+    // complete — and then `show_status` has already taken the caption away.
+    let loaded_percent = (buffered_fraction * 100.0) as u8;
     Some(BufferingPresentation {
         buffered_fraction,
         loaded_percent,
@@ -163,6 +167,34 @@ mod tests {
         assert_eq!(presentation.buffered_fraction, 0.5);
         assert_eq!(presentation.loaded_percent, 50);
         assert!(presentation.show_status);
+    }
+
+    /// The caption may only say 100 % when the media really is complete, and
+    /// at that point it is gone. Rounding would let 99.6 % read as "100 %
+    /// loaded" while the line is still on screen — a number that contradicts
+    /// its own presence.
+    #[test]
+    fn a_nearly_loaded_stream_never_claims_to_be_finished() {
+        let almost = buffering_presentation(
+            &FakePlaybackEvents::buffering(100, 99_600),
+            BarProgressMode::Streaming,
+            100_000,
+        )
+        .expect("a partially buffered stream has a presentation");
+        assert_eq!(almost.loaded_percent, 99);
+        assert!(almost.show_status, "it is not finished, so it still speaks");
+
+        let complete = buffering_presentation(
+            &FakePlaybackEvents::buffering(100, 100_000),
+            BarProgressMode::Streaming,
+            100_000,
+        )
+        .expect("a fully buffered stream still has a segment");
+        assert_eq!(complete.loaded_percent, 100);
+        assert!(
+            !complete.show_status,
+            "at 100 % the caption goes away rather than standing there"
+        );
     }
 
     #[test]
