@@ -112,3 +112,30 @@ fn late_scan_progress_is_rejected_after_finish_or_new_generation() {
     ));
     assert!(!super::accepts_scan_progress(4, 4, false, None));
 }
+
+#[test]
+fn doc_8a_done_marks_the_scan_reviewed_and_clears_the_sidebar_entry() {
+    let db = crate::test_db::open().unwrap();
+    let request = reprise_core::library_doctor::DoctorScanRequest {
+        scope: DoctorScopeRequest::WholeLibrary,
+        options: reprise_core::library_doctor::DoctorScanOptions::local_only(),
+    };
+    let outcome = reprise_core::library_doctor::LibraryDoctor::new(&db)
+        .scan(&request, Some(&NeverFingerprint), |_| {
+            reprise_core::library_doctor::ScanControl::Continue
+        })
+        .unwrap();
+    let reprise_core::library_doctor::DoctorScanOutcome::Completed(scan) = outcome else {
+        panic!("empty scan must complete")
+    };
+
+    reprise_core::library_doctor::LibraryDoctor::new(&db)
+        .set_reviewed_scan(scan.id)
+        .unwrap();
+    assert_eq!(
+        reprise_core::queries::count_pending_doctor_findings(&db).unwrap(),
+        0
+    );
+    let coordinator = include_str!("mod.rs");
+    assert!(coordinator.contains("Library Doctor scan acknowledged"));
+}

@@ -15,8 +15,8 @@ fn test_shared() -> Rc<Shared> {
         queue_len_provider: Box::new(|| 0),
         current_source: RefCell::new(ViewSource::default()),
         rows: RefCell::new(Vec::new()),
-        new_playlist_row: RefCell::new(None),
-        import_playlist_row: RefCell::new(None),
+        playlist_add_button: RefCell::new(None),
+        playlist_quick_edit_id: Cell::new(None),
         on_select: RefCell::new(None),
         on_show_content: RefCell::new(None),
         on_import_playlist: RefCell::new(None),
@@ -55,6 +55,13 @@ fn has_drop_target(row: &gtk4::ListBoxRow) -> bool {
             .item(index)
             .is_some_and(|controller| controller.is::<gtk4::DropTarget>())
     })
+}
+
+#[test]
+fn doc_8a_the_issues_entry_appears_only_with_unreviewed_findings() {
+    assert!(!super::super::sidebar_rebuild::doctor_issue_visible(0));
+    assert!(super::super::sidebar_rebuild::doctor_issue_visible(1));
+    assert!(super::super::sidebar_rebuild::doctor_issue_visible(14));
 }
 
 /// Waits until the toplevel holds the global input focus.

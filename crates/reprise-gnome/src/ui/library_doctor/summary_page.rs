@@ -1,16 +1,16 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk4::prelude::*;
 use libadwaita as adw;
-use libadwaita::prelude::*;
 use reprise_core::db::Db;
 use reprise_core::library_doctor::{
-    scan_summary, DoctorProblemCount, DoctorScan, DoctorScanSummary, DoctorWriteReport,
-    ProblemClass,
+    group_review_rows, scan_summary, DoctorProblemCount, DoctorReviewFilter, DoctorReviewSession,
+    DoctorScan, DoctorScanSummary, DoctorWriteReport, DoctorWriteRowState, ProblemClass,
 };
 
-use crate::ui::preferences::preference_library_doctor;
+use super::result_pages::DoctorResultPages;
+use super::start_page::DoctorStartPage;
 use crate::ui::strings;
 
 const PROBLEM_CLASSES: [ProblemClass; 5] = [
@@ -22,119 +22,237 @@ const PROBLEM_CLASSES: [ProblemClass; 5] = [
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct ProblemRowModel {
-    class: ProblemClass,
-    safe: usize,
-    review: usize,
+struct AppliedBlock {
+    changes: usize,
+    spacing_casing: usize,
+    recording_mbids: usize,
+    pending: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct SummaryModel {
-    safe_changes: usize,
-    review_changes: usize,
-    unresolved_groups: usize,
+struct ReviewLine {
+    class: ProblemClass,
+    changes: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ReviewBlock {
+    changes: usize,
+    albums: Option<usize>,
+    lines: Vec<ReviewLine>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SummaryBlocks {
+    applied: Option<AppliedBlock>,
+    review: Option<ReviewBlock>,
+    conflicts: Option<usize>,
     checked_tracks: usize,
     skipped_tracks: usize,
-    problem_rows: Vec<ProblemRowModel>,
-}
-
-impl SummaryModel {
-    fn from_scan(scan: &DoctorScan, remote_visible: bool) -> Self {
-        let summary = scan_summary(scan, remote_visible);
-        Self {
-            safe_changes: summary.safe_changes,
-            review_changes: summary.review_changes,
-            unresolved_groups: summary.unresolved_groups,
-            checked_tracks: summary.checked_tracks,
-            skipped_tracks: summary.skipped_tracks,
-            problem_rows: PROBLEM_CLASSES
-                .into_iter()
-                .map(|class| {
-                    let DoctorProblemCount { safe, review } = summary.counts_for(class);
-                    ProblemRowModel {
-                        class,
-                        safe,
-                        review,
-                    }
-                })
-                .collect(),
-        }
-    }
-
-    fn from_summary(summary: DoctorScanSummary) -> Self {
-        Self {
-            safe_changes: summary.safe_changes,
-            review_changes: summary.review_changes,
-            unresolved_groups: summary.unresolved_groups,
-            checked_tracks: summary.checked_tracks,
-            skipped_tracks: summary.skipped_tracks,
-            problem_rows: PROBLEM_CLASSES
-                .into_iter()
-                .map(|class| {
-                    let DoctorProblemCount { safe, review } = summary.counts_for(class);
-                    ProblemRowModel {
-                        class,
-                        safe,
-                        review,
-                    }
-                })
-                .collect(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct SummaryDisplay {
-    model: SummaryModel,
     partial: bool,
 }
 
-impl SummaryDisplay {
-    fn review_available(&self) -> bool {
-        !self.partial
-            && self.model.safe_changes + self.model.review_changes + self.model.unresolved_groups
-                > 0
+impl SummaryBlocks {
+    fn from_scan(scan: &DoctorScan, remote_visible: bool) -> Self {
+        let summary = scan_summary(scan, remote_visible);
+        let session = DoctorReviewSession::from_scan(scan.clone(), DoctorReviewFilter::NeedsReview);
+        let albums = group_review_rows(scan, &session).len();
+        Self::from_summary(summary, albums, false)
+    }
+
+    fn from_partial(summary: DoctorScanSummary) -> Self {
+        Self::from_summary(summary, 0, true)
+    }
+
+    fn from_summary(summary: DoctorScanSummary, albums: usize, partial: bool) -> Self {
+        let mbids = summary
+            .counts_for(ProblemClass::MissingRecordingMbid)
+            .auto_applied;
+        let applied = (summary.auto_applied_changes > 0).then_some(AppliedBlock {
+            changes: summary.auto_applied_changes,
+            spacing_casing: summary.auto_applied_changes.saturating_sub(mbids),
+            recording_mbids: mbids,
+            pending: partial,
+        });
+        let lines = PROBLEM_CLASSES
+            .into_iter()
+            .filter_map(|class| {
+                let DoctorProblemCount { review, .. } = summary.counts_for(class);
+                (review > 0).then_some(ReviewLine {
+                    class,
+                    changes: review,
+                })
+            })
+            .collect();
+        let review = (summary.review_changes > 0).then_some(ReviewBlock {
+            changes: summary.review_changes,
+            albums: (!partial).then_some(albums),
+            lines,
+        });
+        Self {
+            applied,
+            review,
+            conflicts: (summary.unresolved_groups > 0).then_some(summary.unresolved_groups),
+            checked_tracks: summary.checked_tracks,
+            skipped_tracks: summary.skipped_tracks,
+            partial,
+        }
+    }
+
+    fn with_applied_report(mut self, report: Option<&DoctorWriteReport>) -> Self {
+        let Some(block) = &mut self.applied else {
+            return self;
+        };
+        block.pending = false;
+        if let Some(report) = report {
+            let applied_rows = report
+                .rows
+                .iter()
+                .filter(|row| row.state == DoctorWriteRowState::Applied)
+                .collect::<Vec<_>>();
+            block.changes = applied_rows.len();
+            block.recording_mbids = applied_rows
+                .iter()
+                .filter(|row| row.field == reprise_core::library_doctor::DoctorField::RecordingMbid)
+                .count();
+            block.spacing_casing = block.changes.saturating_sub(block.recording_mbids);
+        }
+        self.applied = (block.changes > 0).then_some(block.clone());
+        self
+    }
+
+    const fn visible_count(&self) -> usize {
+        self.applied.is_some() as usize
+            + self.review.is_some() as usize
+            + self.conflicts.is_some() as usize
+    }
+
+    const fn is_empty(&self) -> bool {
+        self.visible_count() == 0
     }
 }
 
-fn summary_display(
-    partial: Option<DoctorScanSummary>,
-    complete: Option<&DoctorScan>,
-    remote_visible: bool,
-) -> Option<SummaryDisplay> {
-    if let Some(summary) = partial {
-        return Some(SummaryDisplay {
-            model: SummaryModel::from_summary(summary),
-            partial: true,
-        });
+struct DoctorSummaryPanel {
+    root: gtk4::Box,
+    heading: gtk4::Label,
+    blocks: gtk4::Box,
+    applied_undo: gtk4::Button,
+    review: gtk4::Button,
+    scan_again: gtk4::Button,
+}
+
+impl DoctorSummaryPanel {
+    fn new() -> Self {
+        let root = gtk4::Box::new(gtk4::Orientation::Vertical, 16);
+        let heading = gtk4::Label::builder()
+            .xalign(0.0)
+            .css_classes(["title-2"])
+            .build();
+        heading.set_label(&strings::text(strings::DOCTOR_RESULTS_SO_FAR));
+        root.append(&heading);
+        let blocks = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
+        root.append(&blocks);
+        let applied_undo = gtk4::Button::with_label(&strings::text(strings::DOCTOR_UNDO));
+        let review = gtk4::Button::builder()
+            .css_classes(["suggested-action"])
+            .build();
+        let scan_again = gtk4::Button::with_label(&strings::text(strings::DOCTOR_SCAN_AGAIN));
+        root.append(&scan_again);
+        root.append(&gtk4::Label::new(Some(&strings::text(
+            strings::DOCTOR_RESULTS_KEPT,
+        ))));
+        Self {
+            root,
+            heading,
+            blocks,
+            applied_undo,
+            review,
+            scan_again,
+        }
     }
-    complete.map(|scan| SummaryDisplay {
-        model: SummaryModel::from_scan(scan, remote_visible),
-        partial: false,
-    })
+
+    fn widget(&self) -> &gtk4::Box {
+        &self.root
+    }
+
+    fn render(&self, model: &SummaryBlocks, actions_locked: bool) {
+        self.heading.set_label(&if model.partial {
+            strings::text(strings::DOCTOR_RESULTS_SO_FAR)
+        } else {
+            strings::doctor_tracks_checked_heading(model.checked_tracks)
+        });
+        remove_all(&self.blocks);
+        if let Some(applied) = &model.applied {
+            let card = block_card(&if applied.pending {
+                strings::doctor_fixes_to_apply(applied.changes)
+            } else {
+                strings::doctor_fixes_applied(applied.changes)
+            });
+            append_line(
+                &card,
+                &strings::doctor_spacing_casing_line(applied.spacing_casing),
+            );
+            append_line(
+                &card,
+                &if applied.pending {
+                    strings::doctor_mbid_line_pending(applied.recording_mbids)
+                } else {
+                    strings::doctor_mbid_line(applied.recording_mbids)
+                },
+            );
+            self.applied_undo
+                .set_sensitive(!actions_locked && !applied.pending);
+            card.append(&self.applied_undo);
+            self.blocks.append(&card);
+        }
+        if let Some(review) = &model.review {
+            let card = block_card(&strings::doctor_changes_need_your_eye(review.changes));
+            for line in &review.lines {
+                append_line(
+                    &card,
+                    &format!("{} · {}", problem_title(line.class), line.changes),
+                );
+            }
+            if let Some(albums) = review.albums {
+                append_line(&card, &strings::doctor_across_albums(albums));
+            }
+            self.review
+                .set_label(&strings::doctor_review_changes(review.changes));
+            self.review.set_sensitive(!actions_locked);
+            card.append(&self.review);
+            self.blocks.append(&card);
+        }
+        if let Some(conflicts) = model.conflicts {
+            let card = block_card(&strings::doctor_conflicts_headline(conflicts));
+            card.add_css_class("card");
+            append_line(&card, &strings::text(strings::DOCTOR_CONFLICTS_BODY));
+            self.blocks.append(&card);
+        }
+        append_line(
+            &self.blocks,
+            &strings::doctor_checked_counts(model.checked_tracks, model.skipped_tracks),
+        );
+        if actions_locked {
+            append_line(
+                &self.blocks,
+                &strings::text(strings::DOCTOR_CONTROLS_LOCKED),
+            );
+        }
+        self.scan_again.set_sensitive(!actions_locked);
+    }
 }
 
 pub(in crate::ui) struct LibraryDoctorPage {
     navigation_page: adw::NavigationPage,
-    scope: adw::ComboRow,
-    remote: adw::SwitchRow,
-    acoustid_unavailable: adw::ActionRow,
-    fingerprint_available: bool,
-    run: gtk4::Button,
-    review_all: gtk4::Button,
-    review_safe: gtk4::Button,
-    review_actions: gtk4::Box,
-    summary: adw::PreferencesGroup,
-    empty: adw::StatusPage,
-    results: gtk4::Box,
-    safe_row: adw::ActionRow,
-    review_row: adw::ActionRow,
-    unresolved_row: adw::ActionRow,
-    checked_row: adw::ActionRow,
-    write_row: adw::ActionRow,
-    problem_rows: Vec<(ProblemClass, adw::ActionRow)>,
+    stack: gtk4::Stack,
+    start: DoctorStartPage,
+    summary: DoctorSummaryPanel,
+    results: DoctorResultPages,
     current_scan: RefCell<Option<DoctorScan>>,
     partial_summary: RefCell<Option<DoctorScanSummary>>,
+    quiet_report: RefCell<Option<DoctorWriteReport>>,
+    auto_complete: Cell<bool>,
+    auto_running: Cell<bool>,
 }
 
 impl LibraryDoctorPage {
@@ -144,112 +262,28 @@ impl LibraryDoctorPage {
         fingerprint_available: bool,
         on_remote_changed: Rc<dyn Fn(bool)>,
     ) -> Rc<Self> {
-        let scope_model = gtk4::StringList::new(&[
-            &strings::text(strings::DOCTOR_SCOPE_WHOLE_LIBRARY),
-            &strings::text(strings::DOCTOR_SCOPE_CURRENT_VIEW),
-            &strings::text(strings::DOCTOR_SCOPE_SELECTION),
-        ]);
-        let scope = adw::ComboRow::builder()
-            .title(strings::text(strings::DOCTOR_SCOPE))
-            .model(&scope_model)
-            .selected(0)
+        let start = DoctorStartPage::new(conn, parent, fingerprint_available, on_remote_changed);
+        let summary = DoctorSummaryPanel::new();
+        let results = DoctorResultPages::new();
+        let stack = gtk4::Stack::new();
+        stack.add_named(start.widget(), Some("start"));
+        stack.add_named(summary.widget(), Some("summary"));
+        stack.add_named(results.widget(), Some("result"));
+        let content = adw::Clamp::builder()
+            .maximum_size(760)
+            .tightening_threshold(560)
+            .child(&stack)
             .build();
-        let remote =
-            preference_library_doctor::remote_suggestions_row_for(conn, parent, on_remote_changed);
-        let options = adw::PreferencesGroup::builder()
-            .title(strings::text(strings::DOCTOR_SCAN_OPTIONS))
-            .build();
-        options.add(&scope);
-        options.add(&remote);
-        let warning_icon = gtk4::Image::from_icon_name("dialog-warning-symbolic");
-        let acoustid_unavailable = adw::ActionRow::builder()
-            .title(strings::text(strings::DOCTOR_ACOUSTID_UNAVAILABLE))
-            .subtitle(strings::text(
-                strings::DOCTOR_ACOUSTID_UNAVAILABLE_DESCRIPTION,
-            ))
-            .use_markup(false)
-            .build();
-        acoustid_unavailable.add_prefix(&warning_icon);
-        acoustid_unavailable.set_visible(show_acoustid_unavailable(
-            remote.is_active(),
-            fingerprint_available,
-        ));
-        options.add(&acoustid_unavailable);
-
-        let run = gtk4::Button::builder()
-            .label(strings::text(strings::DOCTOR_RUN_SCAN))
-            .css_classes(["suggested-action", "pill"])
-            .halign(gtk4::Align::Start)
-            .build();
-        let safe_row = summary_row(strings::DOCTOR_SAFE_FIXES);
-        let review_row = summary_row(strings::DOCTOR_SUGGESTIONS);
-        let unresolved_row = summary_row(strings::DOCTOR_UNRESOLVED_GROUPS);
-        let checked_row = summary_row(strings::DOCTOR_TRACKS_CHECKED);
-        let write_row = summary_row(strings::DOCTOR_CLEANUP_STATUS);
-        write_row.set_visible(false);
-        let problem_rows = PROBLEM_CLASSES
-            .into_iter()
-            .map(|class| (class, summary_row(problem_title(class))))
-            .collect::<Vec<_>>();
-        let summary = adw::PreferencesGroup::builder()
-            .title(strings::text(strings::DOCTOR_RESULTS))
-            .build();
-        summary.add(&safe_row);
-        summary.add(&review_row);
-        summary.add(&unresolved_row);
-        summary.add(&checked_row);
-        summary.add(&write_row);
-        for (_, row) in &problem_rows {
-            summary.add(row);
-        }
-
-        let review_all = gtk4::Button::builder()
-            .label(strings::text(strings::DOCTOR_REVIEW_CHANGES))
-            .css_classes(["suggested-action"])
-            .build();
-        let review_safe = gtk4::Button::builder()
-            .label(strings::text(strings::DOCTOR_REVIEW_SAFE))
-            .build();
-        let review_actions = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
-        review_actions.append(&review_all);
-        review_actions.append(&review_safe);
-        // DOC-13 wires these actions to the review surface. Keep them out of
-        // the tab order until that navigation is available.
-        review_actions.set_visible(false);
-
-        let results = gtk4::Box::new(gtk4::Orientation::Vertical, 18);
-        results.append(&summary);
-        results.append(&review_actions);
-        results.set_visible(false);
-
-        let empty = adw::StatusPage::builder()
-            .icon_name("system-search-symbolic")
-            .title(strings::text(strings::DOCTOR_NO_RESULTS))
-            .description(strings::text(strings::DOCTOR_NO_RESULTS_DESCRIPTION))
-            .vexpand(false)
-            .build();
-
-        let content = gtk4::Box::new(gtk4::Orientation::Vertical, 24);
         content.set_margin_top(24);
         content.set_margin_bottom(36);
         content.set_margin_start(24);
         content.set_margin_end(24);
-        content.append(&options);
-        content.append(&run);
-        content.append(&empty);
-        content.append(&results);
-        let clamp = adw::Clamp::builder()
-            .maximum_size(760)
-            .tightening_threshold(560)
-            .child(&content)
-            .build();
         let scrolled = gtk4::ScrolledWindow::builder()
             .hscrollbar_policy(gtk4::PolicyType::Never)
-            .child(&clamp)
+            .child(&content)
             .build();
-        let header = adw::HeaderBar::new();
         let toolbar = adw::ToolbarView::new();
-        toolbar.add_top_bar(&header);
+        toolbar.add_top_bar(&adw::HeaderBar::new());
         toolbar.set_content(Some(&scrolled));
         let navigation_page = adw::NavigationPage::builder()
             .title(strings::text(strings::LIBRARY_DOCTOR))
@@ -258,25 +292,15 @@ impl LibraryDoctorPage {
             .build();
         Rc::new(Self {
             navigation_page,
-            scope,
-            remote,
-            acoustid_unavailable,
-            fingerprint_available,
-            run,
-            review_all,
-            review_safe,
-            review_actions,
+            stack,
+            start,
             summary,
-            empty,
             results,
-            safe_row,
-            review_row,
-            unresolved_row,
-            checked_row,
-            write_row,
-            problem_rows,
             current_scan: RefCell::new(None),
             partial_summary: RefCell::new(None),
+            quiet_report: RefCell::new(None),
+            auto_complete: Cell::new(true),
+            auto_running: Cell::new(false),
         })
     }
 
@@ -285,69 +309,112 @@ impl LibraryDoctorPage {
     }
 
     pub(in crate::ui) fn connect_run(&self, callback: impl Fn() + 'static) {
-        self.run.connect_clicked(move |_| callback());
+        self.start.connect_run(callback);
     }
 
-    pub(in crate::ui) fn connect_review_all(&self, callback: impl Fn() + 'static) {
-        self.review_all.connect_clicked(move |_| callback());
+    pub(in crate::ui) fn connect_start_revert(&self, callback: impl Fn() + 'static) {
+        self.start.connect_revert(callback);
     }
 
-    pub(in crate::ui) fn connect_review_safe(&self, callback: impl Fn() + 'static) {
-        self.review_safe.connect_clicked(move |_| callback());
+    pub(in crate::ui) fn connect_review(&self, callback: impl Fn() + 'static) {
+        self.summary.review.connect_clicked(move |_| callback());
+    }
+
+    pub(in crate::ui) fn connect_summary_undo(&self, callback: impl Fn() + 'static) {
+        self.summary
+            .applied_undo
+            .connect_clicked(move |_| callback());
+    }
+
+    pub(in crate::ui) fn connect_scan_again(&self, callback: Rc<dyn Fn()>) {
+        {
+            let callback = callback.clone();
+            self.summary.scan_again.connect_clicked(move |_| callback());
+        }
+        self.results.connect_scan_again(move || callback());
+    }
+
+    pub(in crate::ui) fn connect_result_undo(&self, callback: impl Fn() + 'static) {
+        self.results.connect_undo(callback);
+    }
+
+    pub(in crate::ui) fn connect_done(&self, callback: impl Fn() + 'static) {
+        self.results.connect_done(callback);
     }
 
     pub(in crate::ui) fn scan(&self) -> Option<DoctorScan> {
         self.current_scan.borrow().clone()
     }
 
-    pub(in crate::ui) fn set_write_report(&self, report: &DoctorWriteReport, reverted: bool) {
-        let remaining = report.cancelled_tracks
-            + report.failed_tracks
-            + report.conflict_tracks
-            + report.unavailable_tracks;
-        self.write_row.set_title(&strings::text(if reverted {
-            strings::DOCTOR_REVERT_STATUS
-        } else {
-            strings::DOCTOR_CLEANUP_STATUS
-        }));
-        self.write_row
-            .set_subtitle(&strings::doctor_cleanup_summary(
-                report.updated_tracks,
-                remaining,
-            ));
-        self.write_row.set_visible(true);
-    }
-
     pub(in crate::ui) fn selected_scope(&self) -> u32 {
-        self.scope.selected()
+        self.start.selected_scope()
     }
 
     pub(in crate::ui) fn set_selected_scope(&self, scope: u32) {
-        self.scope.set_selected(scope);
+        self.start.set_selected_scope(scope);
     }
 
     pub(in crate::ui) fn remote_active(&self) -> bool {
-        self.remote.is_active()
+        self.start.remote_active()
     }
 
     pub(in crate::ui) fn sync_remote_preference(&self, db: &Db) {
-        let active = reprise_core::library_doctor::remote_suggestion_preference(db)
-            .is_ok_and(|preference| preference.enabled);
-        self.remote.set_active(active);
+        self.start.sync_remote_preference(db);
         self.refresh();
+    }
+
+    pub(in crate::ui) fn refresh_remote_availability(&self) {
+        self.start.refresh_remote_availability();
     }
 
     pub(in crate::ui) fn set_running(&self, running: bool) {
-        self.scope.set_sensitive(!running);
-        self.remote.set_sensitive(!running);
-        self.run.set_sensitive(!running);
+        self.start.set_running(running);
+        if self.stack.visible_child_name().as_deref() == Some("summary") {
+            self.refresh();
+        }
+    }
+
+    pub(in crate::ui) fn show_start(&self, db: &Db) {
+        self.start.refresh(db);
+        self.stack.set_visible_child_name("start");
     }
 
     pub(in crate::ui) fn set_scan(&self, scan: Option<DoctorScan>) {
-        self.write_row.set_visible(false);
-        self.partial_summary.borrow_mut().take();
         *self.current_scan.borrow_mut() = scan;
+        self.partial_summary.borrow_mut().take();
+        self.quiet_report.borrow_mut().take();
+        self.auto_complete.set(true);
+        self.auto_running.set(false);
         self.refresh();
+    }
+
+    pub(in crate::ui) fn set_scan_pending_auto(&self, scan: DoctorScan) {
+        *self.current_scan.borrow_mut() = Some(scan);
+        self.partial_summary.borrow_mut().take();
+        self.quiet_report.borrow_mut().take();
+        self.auto_complete.set(false);
+        self.auto_running.set(true);
+        self.refresh();
+    }
+
+    pub(in crate::ui) fn complete_auto_apply(&self, report: Option<DoctorWriteReport>) {
+        *self.quiet_report.borrow_mut() = report;
+        self.auto_complete.set(true);
+        self.auto_running.set(false);
+        self.refresh();
+    }
+
+    pub(in crate::ui) fn fail_auto_apply(&self) {
+        self.auto_running.set(false);
+        self.refresh();
+    }
+
+    pub(in crate::ui) fn quiet_change_count(&self) -> usize {
+        self.quiet_report
+            .borrow()
+            .as_ref()
+            .map(applied_change_count)
+            .unwrap_or_default()
     }
 
     pub(in crate::ui) fn begin_partial_scan(&self) {
@@ -358,111 +425,116 @@ impl LibraryDoctorPage {
     }
 
     pub(in crate::ui) fn set_partial_summary(&self, summary: DoctorScanSummary) {
-        if self.partial_summary.borrow().as_ref() == Some(&summary) {
-            return;
+        if self.partial_summary.borrow().as_ref() != Some(&summary) {
+            self.partial_summary.borrow_mut().replace(summary);
+            self.refresh();
         }
-        self.partial_summary.borrow_mut().replace(summary);
-        self.refresh();
     }
 
     pub(in crate::ui) fn clear_partial_scan(&self) {
         self.partial_summary.borrow_mut().take();
-        self.refresh();
+    }
+
+    pub(in crate::ui) fn show_post_apply(
+        &self,
+        report: &DoctorWriteReport,
+        albums: usize,
+        conflicts: usize,
+    ) {
+        self.results
+            .show_post_apply(report, albums, self.quiet_change_count(), conflicts);
+        self.stack.set_visible_child_name("result");
     }
 
     pub(in crate::ui) fn refresh(&self) {
-        self.acoustid_unavailable
-            .set_visible(show_acoustid_unavailable(
-                self.remote.is_active(),
-                self.fingerprint_available,
-            ));
-        let partial = *self.partial_summary.borrow();
-        let complete = self.current_scan.borrow().clone();
-        let display = summary_display(partial, complete.as_ref(), self.remote.is_active());
-        let Some(display) = display else {
-            self.empty.set_visible(true);
-            self.results.set_visible(false);
+        if let Some(partial) = *self.partial_summary.borrow() {
+            let blocks = SummaryBlocks::from_partial(partial);
+            self.summary.render(&blocks, true);
+            self.stack.set_visible_child_name("summary");
+            return;
+        }
+        let scan = self.current_scan.borrow().clone();
+        let Some(scan) = scan else {
+            self.stack.set_visible_child_name("start");
             return;
         };
-        let review_available = display.review_available();
-        let SummaryDisplay { model, partial } = display;
-        self.summary.set_title(&strings::text(if partial {
-            strings::DOCTOR_RESULTS_SO_FAR
-        } else {
-            strings::DOCTOR_RESULTS
-        }));
-        self.safe_row
-            .set_subtitle(&strings::doctor_change_count(model.safe_changes));
-        self.review_row
-            .set_subtitle(&strings::doctor_change_count(model.review_changes));
-        self.unresolved_row
-            .set_subtitle(&strings::doctor_group_count(model.unresolved_groups));
-        self.checked_row
-            .set_subtitle(&strings::doctor_checked_counts(
-                model.checked_tracks,
-                model.skipped_tracks,
-            ));
-        for (class, row) in &self.problem_rows {
-            let counts = model
-                .problem_rows
-                .iter()
-                .find(|item| item.class == *class)
-                .expect("every fixed problem class must be projected");
-            row.set_subtitle(&strings::doctor_problem_counts(counts.safe, counts.review));
-            row.set_visible(problem_class_visible(*class, self.remote.is_active()));
+        let mut blocks = SummaryBlocks::from_scan(&scan, self.remote_active());
+        if self.auto_complete.get() {
+            blocks = blocks.with_applied_report(self.quiet_report.borrow().as_ref());
+        } else if let Some(applied) = &mut blocks.applied {
+            applied.pending = true;
         }
-        self.review_all.set_label(&strings::doctor_review_changes(
-            model.safe_changes + model.review_changes,
-        ));
-        self.review_safe
-            .set_label(&strings::doctor_review_safe_fixes(model.safe_changes));
-        self.review_all
-            .set_sensitive(model.safe_changes + model.review_changes + model.unresolved_groups > 0);
-        self.review_safe.set_sensitive(model.safe_changes > 0);
-        self.review_actions.set_visible(review_available);
-        self.empty.set_visible(false);
-        self.results.set_visible(true);
+        if blocks.is_empty() && self.auto_complete.get() {
+            self.results
+                .show_nothing(blocks.checked_tracks, blocks.skipped_tracks);
+            self.stack.set_visible_child_name("result");
+        } else {
+            self.summary.render(&blocks, self.auto_running.get());
+            self.stack.set_visible_child_name("summary");
+        }
     }
 }
 
-const fn show_acoustid_unavailable(remote_active: bool, fingerprint_available: bool) -> bool {
-    remote_active && !fingerprint_available
+fn applied_change_count(report: &DoctorWriteReport) -> usize {
+    report
+        .rows
+        .iter()
+        .filter(|row| row.state == DoctorWriteRowState::Applied)
+        .count()
 }
 
-fn summary_row(title: &'static str) -> adw::ActionRow {
-    adw::ActionRow::builder()
-        .title(strings::text(title))
-        .use_markup(false)
-        .build()
+fn block_card(title: &str) -> gtk4::Box {
+    let card = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
+    card.add_css_class("boxed-list");
+    let title = gtk4::Label::builder()
+        .label(title)
+        .xalign(0.0)
+        .wrap(true)
+        .css_classes(["title-3"])
+        .build();
+    card.append(&title);
+    card
 }
 
-const fn problem_title(class: ProblemClass) -> &'static str {
-    match class {
+fn append_line(container: &gtk4::Box, text: &str) {
+    let label = gtk4::Label::builder()
+        .label(text)
+        .xalign(0.0)
+        .wrap(true)
+        .css_classes(["dim-label"])
+        .build();
+    container.append(&label);
+}
+
+fn remove_all(container: &gtk4::Box) {
+    while let Some(child) = container.first_child() {
+        container.remove(&child);
+    }
+}
+
+fn problem_title(class: ProblemClass) -> String {
+    strings::text(match class {
         ProblemClass::CasingWhitespace => strings::DOCTOR_CASING_WHITESPACE,
         ProblemClass::MissingAlbumArtist => strings::DOCTOR_MISSING_ALBUM_ARTIST,
         ProblemClass::GenreVariant => strings::DOCTOR_GENRE_VARIANTS,
         ProblemClass::MissingWrongYear => strings::DOCTOR_MISSING_WRONG_YEAR,
         ProblemClass::MissingRecordingMbid => strings::DOCTOR_MISSING_RECORDING_MBID,
-    }
-}
-
-const fn problem_class_visible(class: ProblemClass, remote_visible: bool) -> bool {
-    remote_visible
-        || !matches!(
-            class,
-            ProblemClass::MissingWrongYear | ProblemClass::MissingRecordingMbid
-        )
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{summary_display, SummaryModel};
+    use super::*;
     use reprise_core::library_doctor::*;
 
-    fn proposal(source: ProposalSource, class: ProblemClass) -> DoctorProposal {
+    fn proposal(source: ProposalSource, class: ProblemClass, track_id: i64) -> DoctorProposal {
         DoctorProposal {
-            track_id: 1,
-            field: DoctorField::Artist,
+            track_id,
+            field: if class == ProblemClass::MissingRecordingMbid {
+                DoctorField::RecordingMbid
+            } else {
+                DoctorField::Artist
+            },
             current: DoctorValue::Text("old".into()),
             proposed: DoctorValue::Text("new".into()),
             source,
@@ -474,81 +546,85 @@ mod tests {
         }
     }
 
-    #[test]
-    fn doc_2b_root_model_keeps_safe_review_and_track_counts_separate() {
-        let scan = DoctorScan {
+    fn scan(proposals: Vec<DoctorProposal>, groups: usize) -> DoctorScan {
+        DoctorScan {
             id: 1,
             scope_kind: "whole_library".into(),
             created_at: 2,
-            options: DoctorScanOptions {
-                remote_enabled: true,
-            },
-            checked_tracks: 8,
-            skipped_tracks: 2,
-            track_ids: vec![1],
+            options: DoctorScanOptions::local_only(),
+            checked_tracks: 2,
+            skipped_tracks: 0,
+            track_ids: vec![1, 2],
             tracks: Vec::new(),
-            proposals: vec![
-                proposal(ProposalSource::Local, ProblemClass::CasingWhitespace),
+            proposals,
+            unresolved_groups: (0..groups)
+                .map(|index| DoctorUnresolvedGroup {
+                    field: DoctorField::Artist,
+                    group_key: index.to_string(),
+                    candidates: Vec::new(),
+                    members: Vec::new(),
+                    local_fallback: None,
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn doc_9a_summary_renders_three_blocks_and_never_a_zero_row() {
+        let blocks = SummaryBlocks::from_scan(
+            &scan(
+                vec![proposal(
+                    ProposalSource::Local,
+                    ProblemClass::CasingWhitespace,
+                    1,
+                )],
+                0,
+            ),
+            true,
+        );
+        assert!(blocks.applied.is_some());
+        assert!(blocks.review.is_none());
+        assert!(blocks.conflicts.is_none());
+        assert_eq!(blocks.visible_count(), 1);
+    }
+
+    #[test]
+    fn doc_9a_summary_omits_the_conflicts_block_without_conflicts() {
+        assert!(SummaryBlocks::from_scan(&scan(Vec::new(), 0), true)
+            .conflicts
+            .is_none());
+    }
+
+    #[test]
+    fn doc_9a_every_visible_count_is_a_written_change_count() {
+        let proposals = (1..=11)
+            .map(|track_id| {
                 proposal(
                     ProposalSource::MusicBrainz,
-                    ProblemClass::MissingRecordingMbid,
-                ),
-            ],
-            unresolved_groups: Vec::new(),
-        };
-
-        let model = SummaryModel::from_scan(&scan, true);
-
-        assert_eq!(model.safe_changes, 1);
-        assert_eq!(model.review_changes, 1);
-        assert_eq!(model.checked_tracks, 8);
-        assert_eq!(model.skipped_tracks, 2);
-        assert_eq!(model.problem_rows.len(), 5);
-        assert_eq!(model.problem_rows[0].safe, 1);
-        assert_eq!(model.problem_rows[4].review, 1);
+                    ProblemClass::MissingAlbumArtist,
+                    track_id,
+                )
+            })
+            .collect();
+        let blocks = SummaryBlocks::from_scan(&scan(proposals, 0), true);
+        assert_eq!(blocks.review.unwrap().changes, 11);
     }
 
     #[test]
-    fn doc_2c_running_scan_prefers_partial_results_without_enabling_review() {
+    fn doc_2c_running_scan_shows_the_same_two_blocks_counting_up_with_actions_locked() {
         let mut partial = DoctorScanSummary::default();
-        partial.safe_changes = 3;
+        partial.auto_applied_changes = 3;
         partial.review_changes = 2;
-        partial.checked_tracks = 4;
-
-        let display = summary_display(Some(partial), None, true)
-            .expect("a running scan must expose its partial result");
-
-        assert!(display.partial);
-        assert!(!display.review_available());
-        assert_eq!(display.model.safe_changes, 3);
-        assert_eq!(display.model.review_changes, 2);
-        assert_eq!(display.model.checked_tracks, 4);
+        let blocks = SummaryBlocks::from_partial(partial);
+        assert!(blocks.partial);
+        assert_eq!(blocks.visible_count(), 2);
     }
 
     #[test]
-    fn doc_7a_acoustid_unavailable_is_visible_only_for_remote_mode() {
-        assert!(super::show_acoustid_unavailable(true, false));
-        assert!(!super::show_acoustid_unavailable(false, false));
-        assert!(!super::show_acoustid_unavailable(true, true));
-    }
-
-    #[test]
-    fn doc_2b_remote_only_problem_classes_disappear_with_remote_results() {
-        assert!(super::problem_class_visible(
-            ProblemClass::MissingWrongYear,
-            true
-        ));
-        assert!(!super::problem_class_visible(
-            ProblemClass::MissingWrongYear,
-            false
-        ));
-        assert!(!super::problem_class_visible(
-            ProblemClass::MissingRecordingMbid,
-            false
-        ));
-        assert!(super::problem_class_visible(
-            ProblemClass::GenreVariant,
-            false
-        ));
+    fn doc_2c_block_one_counts_in_the_future_until_the_quiet_write_finishes() {
+        let mut partial = DoctorScanSummary::default();
+        partial.auto_applied_changes = 3;
+        let blocks = SummaryBlocks::from_partial(partial);
+        assert!(blocks.applied.unwrap().pending);
     }
 }

@@ -316,4 +316,11 @@ pub enum DoctorError {
     Database(#[from] rusqlite::Error),
     #[error("stored Library Doctor data is invalid: {0}")]
     InvalidStoredData(String),
+    #[error(transparent)]
+    TagWriteBusy(#[from] crate::library::TagWriteBusy),
+    #[error("Library Doctor cleanup stopped after partially completing: {source}")]
+    CleanupPartiallyCompleted {
+        report: super::DoctorCleanupReport,
+        source: Box<DoctorError>,
+    },
 }

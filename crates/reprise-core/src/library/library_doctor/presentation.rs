@@ -5,13 +5,13 @@ use super::{
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct DoctorProblemCount {
-    pub safe: usize,
+    pub auto_applied: usize,
     pub review: usize,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct DoctorScanSummary {
-    pub safe_changes: usize,
+    pub auto_applied_changes: usize,
     pub review_changes: usize,
     pub unresolved_groups: usize,
     pub checked_tracks: usize,
@@ -25,7 +25,9 @@ impl DoctorScanSummary {
     }
 
     pub(crate) fn merge(&mut self, other: Self) {
-        self.safe_changes = self.safe_changes.saturating_add(other.safe_changes);
+        self.auto_applied_changes = self
+            .auto_applied_changes
+            .saturating_add(other.auto_applied_changes);
         self.review_changes = self.review_changes.saturating_add(other.review_changes);
         self.unresolved_groups = self
             .unresolved_groups
@@ -33,7 +35,7 @@ impl DoctorScanSummary {
         self.checked_tracks = self.checked_tracks.saturating_add(other.checked_tracks);
         self.skipped_tracks = self.skipped_tracks.saturating_add(other.skipped_tracks);
         for (counts, added) in self.problem_counts.iter_mut().zip(other.problem_counts) {
-            counts.safe = counts.safe.saturating_add(added.safe);
+            counts.auto_applied = counts.auto_applied.saturating_add(added.auto_applied);
             counts.review = counts.review.saturating_add(added.review);
         }
     }
@@ -126,13 +128,12 @@ fn summary_for_parts(
         ..DoctorScanSummary::default()
     };
     for proposal in proposals {
-        let safe = proposal.source == ProposalSource::Local
-            && proposal.preselected
-            && !stale_tracks.contains(&proposal.track_id);
+        let auto =
+            super::review::is_auto_applied(proposal, stale_tracks.contains(&proposal.track_id));
         let counts = &mut summary.problem_counts[problem_class_position(proposal.problem_class)];
-        if safe {
-            summary.safe_changes += 1;
-            counts.safe += 1;
+        if auto {
+            summary.auto_applied_changes += 1;
+            counts.auto_applied += 1;
         } else {
             summary.review_changes += 1;
             counts.review += 1;
@@ -286,26 +287,32 @@ mod tests {
     }
 
     #[test]
-    fn doc_2b_summary_separates_safe_review_classes_and_unresolved_groups() {
+    fn doc_2b_summary_reports_auto_applied_review_and_conflicts_separately() {
         let scan = remote_scan();
 
         let local = scan_summary(&scan, false);
         let remote = scan_summary(&scan, true);
 
-        assert_eq!(local.safe_changes, 1);
+        assert_eq!(local.auto_applied_changes, 1);
         assert_eq!(local.review_changes, 0);
         assert_eq!(local.unresolved_groups, 0);
         assert_eq!(local.checked_tracks, 2);
         assert_eq!(local.skipped_tracks, 1);
         assert_eq!(
             local.counts_for(ProblemClass::CasingWhitespace),
-            DoctorProblemCount { safe: 1, review: 0 }
+            DoctorProblemCount {
+                auto_applied: 1,
+                review: 0,
+            }
         );
-        assert_eq!(remote.safe_changes, 0);
-        assert_eq!(remote.review_changes, 2);
+        assert_eq!(remote.auto_applied_changes, 1);
+        assert_eq!(remote.review_changes, 1);
         assert_eq!(
             remote.counts_for(ProblemClass::MissingRecordingMbid),
-            DoctorProblemCount { safe: 0, review: 1 }
+            DoctorProblemCount {
+                auto_applied: 1,
+                review: 0,
+            }
         );
     }
 }

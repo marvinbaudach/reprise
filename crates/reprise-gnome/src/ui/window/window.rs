@@ -610,7 +610,6 @@ pub fn build(
         podcasts_runtime: &podcasts_runtime,
         content_stack: &content_stack,
         device_sync: &device_sync,
-        open_device: &open_device,
         window_title: &window_title,
         scan_controls: &scan_controls,
         toast_overlay: &toast_overlay,

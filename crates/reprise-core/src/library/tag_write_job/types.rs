@@ -2,6 +2,14 @@ use std::path::PathBuf;
 
 use super::super::tag_mutation::PreparedTagMutation;
 
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum TagWriteJobError {
+    #[error("{0}")]
+    Database(#[from] rusqlite::Error),
+    #[error(transparent)]
+    Busy(#[from] crate::library::TagWriteBusy),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TagWriteJobKind {
     TagEditor,

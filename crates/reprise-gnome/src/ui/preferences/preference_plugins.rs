@@ -19,7 +19,7 @@ enum PluginGroup {
     Connected,
 }
 
-const LOCAL_PLUGIN_IDS: &[&str] = &["song_visuals", "sound_similarity", "library_doctor"];
+const LOCAL_PLUGIN_IDS: &[&str] = &["song_visuals", "sound_similarity"];
 const ONLINE_PLUGIN_IDS: &[&str] = &[
     "youtube",
     "podcasts",
@@ -44,13 +44,7 @@ fn plugin_ids_for_group(group: PluginGroup) -> &'static [&'static str] {
 fn plugin_uses_expander(id: &str) -> bool {
     matches!(
         id,
-        "sound_similarity"
-            | "library_doctor"
-            | "youtube"
-            | "podcasts"
-            | "radio"
-            | "new_releases"
-            | "concerts"
+        "sound_similarity" | "youtube" | "podcasts" | "radio" | "new_releases" | "concerts"
     )
 }
 
@@ -240,7 +234,6 @@ pub(in crate::ui) fn plugin_description(descriptor: &ModuleDescriptor) -> String
         "youtube" => strings::ONLINE_SOURCES_YOUTUBE_SUBTITLE,
         "podcasts" => strings::ONLINE_SOURCES_PODCASTS_SUBTITLE,
         "radio" => strings::ONLINE_SOURCES_RADIO_SUBTITLE,
-        "library_doctor" => strings::LIBRARY_DOCTOR_DESCRIPTION,
         "cover_download" => strings::COVER_DOWNLOAD_DESCRIPTION,
         "artist_portraits" => strings::ARTIST_PORTRAITS_DESCRIPTION,
         "online_lyrics" => strings::ONLINE_LYRICS_DESCRIPTION,
@@ -525,11 +518,6 @@ impl PreferencesContext {
             .build();
         for id in plugin_ids_for_group(PluginGroup::Local) {
             match *id {
-                "library_doctor" => {
-                    let row = super::preference_library_doctor::plugin_row(self);
-                    row.add_suffix(&provision_badges(id, LOCAL_PLUGIN_IDS));
-                    local_group.add(&row);
-                }
                 id if plugin_uses_expander(id) => {
                     let row = settings_plugin_row(self, descriptor(id));
                     row.add_suffix(&provision_badges(id, LOCAL_PLUGIN_IDS));
@@ -723,11 +711,6 @@ impl PreferencesContext {
                 }
             });
         }
-    }
-
-    pub(in crate::ui) fn set_library_doctor_job_running(&self, running: bool) {
-        self.library_doctor_job_running.set(running);
-        self.doctor_controls.set_job_running(running);
     }
 }
 
