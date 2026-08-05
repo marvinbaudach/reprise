@@ -3483,7 +3483,8 @@ means deterministic and high-confidence, never „without review".
   `doc_10b_a_second_tag_write_job_is_refused_while_one_is_prepared_or_running`,
   `doc_10b_a_finalized_interrupted_job_does_not_hold_the_lock`,
   `doc_10b_tag_editor_and_doctor_share_one_lock`,
-  `doc_10b_gui_sees_the_same_refusal_while_an_mcp_job_runs`.
+  `doc_10b_gui_sees_the_same_refusal_while_an_mcp_job_runs`,
+  `doc_10b_mcp_refuses_while_a_gui_job_holds_the_lock`.
 
 - **DOC-10c** [active] [core] — **An upgrade never inherits a decision.** A
   scan stored under the previous rules is not reinterpreted and nothing from
@@ -3491,6 +3492,23 @@ means deterministic and high-confidence, never „without review".
   Doctor opens on its start page. The undo journal is untouched, so a cleanup
   applied before the upgrade stays revertible. *Test:*
   `doc_10c_upgrade_clears_the_stored_scan_pointer_and_keeps_the_cleanup_revertible`.
+
+- **DOC-11a** [active] [core] — **The agent adapter finds and reports; it
+  writes only when asked.** `music_scan_tags` is read-only by default: the
+  automatic application of unambiguous changes happens only with an explicit
+  `apply_safe`. Every mutation — `apply_safe`, and every
+  `music_apply_tags` action — requires the `tags:write` capability, which is
+  off by default, granted at startup and revocable live. Responses carry no
+  file paths, library roots or credentials, and every reported change count
+  uses the same per-track-and-field unit as the app. Both surfaces use the
+  same job queue and scan id, so an agent scan produces the app's sidebar
+  entry and app Undo reverts an agent apply. *Tests:*
+  `doc_11a_scan_tags_does_not_write_without_apply_safe`,
+  `doc_11a_apply_safe_requires_the_tags_write_capability`,
+  `doc_11a_apply_tags_requires_the_tags_write_capability`,
+  `doc_11a_review_tags_groups_by_album_and_filters_by_category`,
+  `doc_11a_review_tags_counts_written_changes_per_album`,
+  `doc_11a_doctor_responses_carry_no_file_paths`.
 
 - **DOC-6c** [planned] [manual] — **The visible sign-off covers every Doctor
   state.** On a real GNOME display, the start page, sidebar entry, grouped

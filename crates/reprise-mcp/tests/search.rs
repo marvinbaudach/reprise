@@ -56,6 +56,7 @@ fn tool_discovery_lists_the_expected_tools() {
     // delete surface exists in the MCP (Beschluss 2). Playback and live device
     // synchronization tools only exist under the `mpris` feature.
     let mut expected = vec![
+        "music_apply_tags",
         "music_create_instrumental",
         "music_create_playlist",
         "music_get_channel_detail",
@@ -65,6 +66,8 @@ fn tool_discovery_lists_the_expected_tools() {
         "music_manage_online_sources",
         "music_manage_podcasts",
         "music_manage_radio",
+        "music_review_tags",
+        "music_scan_tags",
         "music_search_albums",
         "music_search_artists",
         "music_search_sources",

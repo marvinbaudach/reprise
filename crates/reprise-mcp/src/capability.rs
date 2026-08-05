@@ -22,6 +22,8 @@ pub const CAP_PLAYLIST_MANAGE: &str = "agent.capability.playlist:manage";
 pub const CAP_AI_CREATE: &str = "agent.capability.ai:create";
 /// Settings key granting podcast, YouTube, and radio source mutations.
 pub const CAP_SOURCES_MANAGE: &str = "agent.capability.sources:manage";
+/// Settings key granting Library Doctor tag-file mutations.
+pub const CAP_TAGS_WRITE: &str = "agent.capability.tags:write";
 /// Settings key granting Android-device synchronization mutations.
 #[cfg(feature = "mpris")]
 pub const CAP_DEVICE_SYNC: &str = "agent.capability.device:sync";
@@ -41,6 +43,7 @@ const PLAYLIST_MANAGE_DEFAULT: bool = false;
 // `playlist:create`.
 const AI_CREATE_DEFAULT: bool = false;
 const SOURCES_MANAGE_DEFAULT: bool = false;
+const TAGS_WRITE_DEFAULT: bool = false;
 #[cfg(feature = "mpris")]
 const DEVICE_SYNC_DEFAULT: bool = false;
 // Playback control starts audio but destroys no data — on by default, like the
@@ -71,6 +74,11 @@ pub fn ai_create_granted(db: &Db) -> Result<bool, rusqlite::Error> {
 /// Whether `sources:manage` is currently granted (the live setting value).
 pub fn sources_manage_granted(db: &Db) -> Result<bool, rusqlite::Error> {
     settings::get_bool(db, CAP_SOURCES_MANAGE, SOURCES_MANAGE_DEFAULT)
+}
+
+/// Whether `tags:write` is currently granted (the live setting value).
+pub fn tags_write_granted(db: &Db) -> Result<bool, rusqlite::Error> {
+    settings::get_bool(db, CAP_TAGS_WRITE, TAGS_WRITE_DEFAULT)
 }
 
 /// Whether playback control is currently granted (live setting value).
@@ -125,6 +133,11 @@ pub fn sources_manage_effective(
     granted_at_startup: bool,
 ) -> Result<bool, rusqlite::Error> {
     Ok(effective(granted_at_startup, sources_manage_granted(db)?))
+}
+
+/// Whether a Library Doctor tag mutation is permitted right now.
+pub fn tags_write_effective(db: &Db, granted_at_startup: bool) -> Result<bool, rusqlite::Error> {
+    Ok(effective(granted_at_startup, tags_write_granted(db)?))
 }
 
 #[cfg(feature = "mpris")]
