@@ -60,7 +60,7 @@ pub(super) fn restore(
         Ok(false) => {}
         Err(error) => tracing::error!(%error, "failed to record restored issue view as viewed"),
     }
-    finish_track_source(track_list, &source);
+    finish_track_source(track_list, &source, None);
     search_guard.set(false);
 }
 
@@ -132,7 +132,7 @@ pub(super) fn restore_browser_place(track_list: &TrackList, place: &BrowserPlace
         &saved.sort.field,
         &saved.sort.dir,
     );
-    finish_track_source(track_list, &source);
+    finish_track_source(track_list, &source, Some(&saved));
     let ids = track_list.shared.current_view_ids();
     crate::ui::track_list::view_state_memory::restore(&track_list.shared, &saved, &ids);
     if let Some(callback) = track_list.shared.on_search_restored.borrow().as_ref() {
@@ -178,10 +178,33 @@ fn visible_restored_sort(registry: &ColumnRegistry, field: &str, dir: &str) -> S
     }
 }
 
-fn finish_track_source(track_list: &TrackList, source: &ViewSource) {
+/// Swaps the source and re-runs the query.
+///
+/// `target` is the viewport this restore is *going* to install a moment later
+/// (`view_state_memory::restore`). Handing it to the reload instead of letting
+/// it capture the live one is what keeps a reveal from being pulled back:
+/// `reload` otherwise preserves where the user came from — with a 250 ms
+/// `AdjustmentHold` guarding it — and then fights the anchor that follows.
+/// Both halves now aim at the same row, so the hold protects the reveal
+/// instead of undoing it. A restore without an anchor of its own (a plain
+/// source switch, the startup session restore) keeps the preserving reload.
+fn finish_track_source(
+    track_list: &TrackList,
+    source: &ViewSource,
+    target: Option<&crate::ui::track_list::view_state_memory::SavedViewState>,
+) {
     *track_list.shared.source.borrow_mut() = source.clone();
     track_list.shared.browse_bar.set_source_context(source);
-    reload(&track_list.shared);
+    match target.filter(|saved| saved.anchor.is_some()) {
+        Some(saved) => crate::ui::track_list::track_list_reload::reload_with_anchor(
+            &track_list.shared,
+            &crate::ui::track_list::reload_restore::capture(
+                saved.selected_ids.clone(),
+                saved.anchor,
+            ),
+        ),
+        None => reload(&track_list.shared),
+    }
 }
 
 pub(super) fn arm_smoke(

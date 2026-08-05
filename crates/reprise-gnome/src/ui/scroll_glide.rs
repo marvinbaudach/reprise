@@ -52,6 +52,18 @@ impl ScrollGlide {
         }
     }
 
+    /// Where a glide in flight is heading, or `None` when the viewport is at
+    /// rest. A reload asks before capturing what to preserve: mid-glide, the
+    /// value on screen is a waypoint, and preserving *that* would strand the
+    /// follow halfway (see `track_list_reload::capture_reload_anchor`).
+    pub(in crate::ui) fn destination(&self) -> Option<f64> {
+        self.inner
+            .animation
+            .borrow()
+            .as_ref()
+            .map(adw::TimedAnimation::value_to)
+    }
+
     pub(in crate::ui) fn glide_to(&self, adjustment: &gtk4::Adjustment, target: f64) {
         let current = adjustment.value();
         let distance = target - current;
