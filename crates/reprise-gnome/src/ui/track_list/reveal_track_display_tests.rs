@@ -12,9 +12,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gtk4::prelude::*;
-use reprise_core::browser::{
-    BrowserPlace, LibraryScope, TrackAnchor, TrackCollection, TrackFocus,
-};
+use reprise_core::browser::{BrowserPlace, LibraryScope, TrackAnchor, TrackCollection, TrackFocus};
 use reprise_core::view_source::ViewSource;
 
 use crate::ui::track_list::{reload_restore, TrackList};
@@ -70,12 +68,7 @@ fn anchor_target(track_list: &TrackList, track_id: i64) -> Option<f64> {
     let adjustment = track_list.shared.column_view.vadjustment()?;
     let ids = track_list.shared.current_view_ids();
     let height = adjustment.upper() / ids.len() as f64;
-    reload_restore::scroll_target(
-        Some((track_id, 0.0)),
-        &ids,
-        height,
-        adjustment.page_size(),
-    )
+    reload_restore::scroll_target(Some((track_id, 0.0)), &ids, height, adjustment.page_size())
 }
 
 /// What the player bar's title link does while Music is already open and the
