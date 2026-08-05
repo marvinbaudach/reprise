@@ -90,6 +90,7 @@ pub mod updates;
 pub mod view_source;
 pub mod visuals;
 pub mod waveform;
+pub mod waveform_cache;
 mod writeback_publish;
 
 #[cfg(test)]

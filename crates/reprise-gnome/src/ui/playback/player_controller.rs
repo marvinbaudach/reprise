@@ -188,7 +188,7 @@ use super::player_callbacks::{
 use reprise_core::queries;
 use reprise_core::queue::Queue;
 use reprise_core::up_next::{QueueItem, UpNextQueue};
-use reprise_core::waveform::WaveformBackend;
+use reprise_core::waveform::RenderDataBackend;
 
 /// The visible track view as the playback paths see it.
 ///
@@ -236,7 +236,7 @@ pub(in crate::ui) struct PlayerControllerBackends {
     pub(in crate::ui) playback: Box<dyn PlaybackBackend>,
     pub(in crate::ui) playback_events: async_channel::Receiver<PlayerEvent>,
     pub(in crate::ui) media: MediaIntegrationHandles,
-    pub(in crate::ui) waveform: Arc<dyn WaveformBackend>,
+    pub(in crate::ui) waveform: Arc<dyn RenderDataBackend>,
 }
 
 // `PlayerController::volume`'s initial value is the core media-integration
@@ -402,7 +402,7 @@ pub struct PlayerController {
     /// Generation token for the seek waveform's off-main peak load, so a
     /// rapid track change can't paint a stale waveform.
     pub(in crate::ui) waveform_generation: Rc<Cell<u64>>,
-    pub(in crate::ui) waveform_backend: Arc<dyn WaveformBackend>,
+    pub(in crate::ui) waveform_backend: Arc<dyn RenderDataBackend>,
     /// Generation token for the cover-accent off-main extraction, so a rapid
     /// track change can't apply a stale album accent.
     pub(in crate::ui) cover_accent_generation: Rc<Cell<u64>>,

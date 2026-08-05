@@ -70,6 +70,28 @@ The three-track mean for decode plus the pessimistic Python analyzer was about
 native `realfft` implementation already runs more work in real time; decode is
 expected to dominate, yielding about 46 minutes for a serial initial backfill.
 
+### What the shipped pipeline actually costs
+
+The table above used `ffmpeg` plus single-threaded NumPy as stand-ins. Once the
+real producer existed it was measured directly, release build, one real FLAC
+(67.6 s, 1,352 stored frames), three rounds after a warm-up:
+
+| Round | Peaks only | Peaks + bands | Band share |
+|---|---:|---:|---:|
+| 0 | 74.6 ms | 82.7 ms | 9.9 % |
+| 1 | 70.5 ms | 92.7 ms | 24.0 % |
+| 2 | 72.6 ms | 81.5 ms | 11.0 % |
+
+Two things follow. The GStreamer decode dominates, as predicted, but the whole
+extraction is an order of magnitude cheaper than the Python proxy suggested —
+roughly 0.3 s for a four-minute track, not 2.8 s. And the bands ride along for
+about a tenth of that.
+
+That ratio decides the on-play path. A listener starting an unanalyzed track
+waits about 10 % longer if the bands are computed too — and in exchange the
+track is finished, so the backfill never decodes it again. Taking both and
+storing both is cheaper in total than taking peaks alone and decoding twice.
+
 ### Compression result
 
 Raw frame-major data is 24 bytes × 20 frames/second: 109,848–121,440 bytes for

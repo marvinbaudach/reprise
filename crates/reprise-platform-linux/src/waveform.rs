@@ -1,9 +1,11 @@
 //! GStreamer-backed waveform extraction for Linux frontends.
 //!
 //! A bounded `uridecodebin` pipeline decodes to calibrated 32 kHz mono F32 PCM
-//! and feeds both the waveform and spectrogram accumulators from that one
-//! stream. Decoding is memory-bounded (a small queue of buffers) and
-//! cancellable between pulled samples.
+//! and feeds the waveform and — when the caller asked for them — the
+//! spectrogram accumulator from that one stream. A peaks-only request skips
+//! the bands entirely rather than computing and discarding them. Decoding is
+//! memory-bounded (a small queue of buffers) and cancellable between pulled
+//! samples.
 
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -12,7 +14,9 @@ use gstreamer as gst;
 use gstreamer::prelude::*;
 use gstreamer_app as gst_app;
 use lofty::prelude::AudioFile;
-use reprise_core::spectrogram::{SpectrogramAccumulator, SPECTROGRAM_SAMPLE_RATE_HZ};
+use reprise_core::spectrogram::{
+    SpectrogramAccumulator, TrackSpectrogram, SPECTROGRAM_SAMPLE_RATE_HZ,
+};
 use reprise_core::waveform::{
     RenderDataBackend, TrackRenderData, WaveformAccumulator, WaveformBackend, WaveformError,
 };
@@ -30,13 +34,27 @@ const METADATA_DURATION_HEADROOM_SAMPLES: u64 = SAMPLE_RATE as u64;
 #[derive(Clone, Copy, Default)]
 pub struct GstreamerWaveformBackend;
 
+/// Which datasets one decode pass is asked to produce. The bands cost real
+/// time (two FFTs per stored frame), so a caller that only wants peaks does
+/// not pay for them.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RenderRequest {
+    PeaksOnly,
+    PeaksAndBands,
+}
+
 impl RenderDataBackend for GstreamerWaveformBackend {
     fn extract_render_data(
         &self,
         path: &Path,
         buckets: usize,
     ) -> Result<TrackRenderData, WaveformError> {
-        extract(path, buckets, &AtomicBool::new(false))
+        extract(
+            path,
+            buckets,
+            &AtomicBool::new(false),
+            RenderRequest::PeaksAndBands,
+        )
     }
 
     fn extract_render_data_cancellable(
@@ -45,17 +63,13 @@ impl RenderDataBackend for GstreamerWaveformBackend {
         buckets: usize,
         cancelled: &AtomicBool,
     ) -> Result<TrackRenderData, WaveformError> {
-        extract(path, buckets, cancelled)
+        extract(path, buckets, cancelled, RenderRequest::PeaksAndBands)
     }
 }
 
 impl WaveformBackend for GstreamerWaveformBackend {
     fn extract_peaks(&self, path: &Path, buckets: usize) -> Result<Vec<u8>, WaveformError> {
-        if buckets == 0 {
-            return Ok(Vec::new());
-        }
-        self.extract_render_data(path, buckets)
-            .map(|data| data.waveform_peaks)
+        self.extract_peaks_cancellable(path, buckets, &AtomicBool::new(false))
     }
 
     fn extract_peaks_cancellable(
@@ -67,8 +81,7 @@ impl WaveformBackend for GstreamerWaveformBackend {
         if buckets == 0 {
             return Ok(Vec::new());
         }
-        self.extract_render_data_cancellable(path, buckets, cancelled)
-            .map(|data| data.waveform_peaks)
+        extract(path, buckets, cancelled, RenderRequest::PeaksOnly).map(|data| data.waveform_peaks)
     }
 }
 
@@ -76,6 +89,7 @@ fn extract(
     path: &Path,
     buckets: usize,
     cancelled: &AtomicBool,
+    request: RenderRequest,
 ) -> Result<TrackRenderData, WaveformError> {
     if !path.is_file() {
         return Err(WaveformError::FileNotFound(path.to_path_buf()));
@@ -85,7 +99,7 @@ fn extract(
     }
     gst::init().map_err(|error| WaveformError::DecodeFailed(error.to_string()))?;
     let (pipeline, sink) = build_pipeline(path)?;
-    let result = run_pipeline(path, &pipeline, &sink, cancelled, buckets);
+    let result = run_pipeline(path, &pipeline, &sink, cancelled, buckets, request);
     let _ = pipeline.set_state(gst::State::Null);
     result
 }
@@ -118,6 +132,7 @@ fn run_pipeline(
     sink: &gst_app::AppSink,
     cancelled: &AtomicBool,
     buckets: usize,
+    request: RenderRequest,
 ) -> Result<TrackRenderData, WaveformError> {
     pipeline
         .set_state(gst::State::Paused)
@@ -152,7 +167,8 @@ fn run_pipeline(
         return Err(WaveformError::EmptyStream);
     }
     let mut waveform = WaveformAccumulator::new(expected_samples, buckets)?;
-    let mut spectrogram = SpectrogramAccumulator::new();
+    let mut spectrogram =
+        (request == RenderRequest::PeaksAndBands).then(SpectrogramAccumulator::new);
     let bus = pipeline
         .bus()
         .ok_or_else(|| WaveformError::DecodeFailed("pipeline has no bus".into()))?;
@@ -161,7 +177,7 @@ fn run_pipeline(
             return Err(WaveformError::Cancelled);
         }
         if let Some(sample) = sink.try_pull_sample(PULL_TIMEOUT) {
-            push_sample(&mut waveform, &mut spectrogram, &sample)?;
+            push_sample(&mut waveform, spectrogram.as_mut(), &sample)?;
             continue;
         }
         if let Some(message) = bus.timed_pop_filtered(
@@ -186,7 +202,8 @@ fn run_pipeline(
     }
     Ok(TrackRenderData {
         waveform_peaks: waveform.finish()?,
-        spectrogram: spectrogram.finish(),
+        spectrogram: spectrogram
+            .map_or_else(TrackSpectrogram::empty, SpectrogramAccumulator::finish),
     })
 }
 
@@ -198,7 +215,7 @@ fn metadata_duration(path: &Path) -> Option<gst::ClockTime> {
 
 fn push_sample(
     waveform: &mut WaveformAccumulator,
-    spectrogram: &mut SpectrogramAccumulator,
+    spectrogram: Option<&mut SpectrogramAccumulator>,
     sample: &gst::Sample,
 ) -> Result<(), WaveformError> {
     let buffer = sample
@@ -218,7 +235,9 @@ fn push_sample(
         .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
         .collect::<Vec<_>>();
     waveform.push(&samples)?;
-    spectrogram.push(&samples);
+    if let Some(spectrogram) = spectrogram {
+        spectrogram.push(&samples);
+    }
     Ok(())
 }
 
@@ -259,6 +278,32 @@ mod tests {
             wav.extend_from_slice(&sample.to_le_bytes());
         }
         fs::write(path, wav).unwrap();
+    }
+
+    #[test]
+    fn a_peaks_only_request_computes_no_bands() {
+        let peaks_only = extract(
+            &flac_fixture(),
+            64,
+            &AtomicBool::new(false),
+            RenderRequest::PeaksOnly,
+        )
+        .unwrap();
+        let both = extract(
+            &flac_fixture(),
+            64,
+            &AtomicBool::new(false),
+            RenderRequest::PeaksAndBands,
+        )
+        .unwrap();
+
+        assert_eq!(peaks_only.waveform_peaks, both.waveform_peaks);
+        assert_eq!(
+            peaks_only.spectrogram,
+            TrackSpectrogram::empty(),
+            "a caller that asked for peaks alone must not pay for the bands"
+        );
+        assert!(both.spectrogram.frame_count() > 0);
     }
 
     #[test]
