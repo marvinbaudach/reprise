@@ -53,7 +53,10 @@ fn main() {
         .and_then(|value| value.parse().ok())
         .unwrap_or(7);
     let exclusions = flag_value("--exclusions").unwrap_or_else(|| "product".into());
-    let weights = match flag_value("--weights").unwrap_or_else(|| "default".into()).as_str() {
+    let weights = match flag_value("--weights")
+        .unwrap_or_else(|| "default".into())
+        .as_str()
+    {
         "timbre" => DistanceWeights::TIMBRE,
         "dynamics" => DistanceWeights::DYNAMICS,
         _ => DistanceWeights::DEFAULT,
@@ -63,26 +66,34 @@ fn main() {
         let db = Db::open_migrated(Some(&database_path)).expect("open library for backfill");
         let cancelled = AtomicBool::new(false);
         let started = std::time::Instant::now();
-        let summary = run_render_data_backfill(&db, &GstreamerWaveformBackend, &cancelled, |progress| {
-            if progress.completed % 25 == 0 || progress.completed == progress.total {
-                let elapsed = started.elapsed().as_secs_f64();
-                let rate = if elapsed > 0.0 {
-                    progress.completed as f64 / elapsed
-                } else {
-                    0.0
-                };
-                let remaining = progress.total.saturating_sub(progress.completed) as f64;
-                eprintln!(
-                    "backfill {}/{} ({:.2} tracks/s, ~{:.0} min left)",
-                    progress.completed,
-                    progress.total,
-                    rate,
-                    if rate > 0.0 { remaining / rate / 60.0 } else { 0.0 }
-                );
-            }
-        })
-        .expect("backfill runs to completion");
-        eprintln!("backfill summary: {summary:?} in {:.1} min", started.elapsed().as_secs_f64() / 60.0);
+        let summary =
+            run_render_data_backfill(&db, &GstreamerWaveformBackend, &cancelled, |progress| {
+                if progress.completed % 25 == 0 || progress.completed == progress.total {
+                    let elapsed = started.elapsed().as_secs_f64();
+                    let rate = if elapsed > 0.0 {
+                        progress.completed as f64 / elapsed
+                    } else {
+                        0.0
+                    };
+                    let remaining = progress.total.saturating_sub(progress.completed) as f64;
+                    eprintln!(
+                        "backfill {}/{} ({:.2} tracks/s, ~{:.0} min left)",
+                        progress.completed,
+                        progress.total,
+                        rate,
+                        if rate > 0.0 {
+                            remaining / rate / 60.0
+                        } else {
+                            0.0
+                        }
+                    );
+                }
+            })
+            .expect("backfill runs to completion");
+        eprintln!(
+            "backfill summary: {summary:?} in {:.1} min",
+            started.elapsed().as_secs_f64() / 60.0
+        );
     }
 
     let db = Db::open_migrated(Some(&database_path)).expect("open library for ranking");

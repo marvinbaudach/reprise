@@ -6,7 +6,7 @@ use crate::db::{Db, DbError};
 use crate::sound_features::{SoundFeatures, SOUND_FEATURES_FORMAT_VERSION};
 use crate::spectrogram::{TrackSourceFingerprint, SPECTROGRAM_FORMAT_VERSION};
 
-const SCHEMA_V56: &str = r#"
+const SCHEMA_V57: &str = r#"
 CREATE TABLE IF NOT EXISTS track_sound_features (
   track_id       INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
   format_version INTEGER NOT NULL CHECK (format_version > 0),
@@ -27,47 +27,26 @@ BEGIN
 END;
 "#;
 
-/// Ensures the Sound Similarity part of schema v56.
+/// Schema v57: the Sound Similarity profile cache.
 ///
-/// Another branch already assigned v56 to an independent migration. This step
-/// therefore checks its own schema instead of trusting `user_version`; a
-/// database stamped by either v56 shape repairs to their union on open.
-pub(crate) fn migrate_v56(conn: &Connection) -> Result<(), rusqlite::Error> {
-    if table_exists(conn, "track_sound_features")?
-        && trigger_mentions(conn, "invalidate_track_render_data", "track_sound_features")?
-    {
+/// Its own version number, because `user_version` is the only thing
+/// `Db::open_ready` can ask: sharing v56 with the accent drop made a database
+/// with this table and one without it report the same number, and a reader
+/// then failed on `no such table` instead of `SchemaNotReady`.
+///
+/// The batch stays written with `IF NOT EXISTS` / `DROP TRIGGER IF EXISTS`
+/// because a database an earlier build of this branch already stamped at 56
+/// carries the table and the extended trigger: it has to walk through this
+/// step once more and must land on their union, not on an error.
+pub(crate) fn migrate_v57(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if version >= 57 {
         return Ok(());
     }
-    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     let transaction = conn.unchecked_transaction()?;
-    transaction.execute_batch(SCHEMA_V56)?;
-    transaction.pragma_update(None, "user_version", version.max(56))?;
+    transaction.execute_batch(SCHEMA_V57)?;
+    transaction.pragma_update(None, "user_version", 57)?;
     transaction.commit()
-}
-
-fn table_exists(conn: &Connection, table: &str) -> Result<bool, rusqlite::Error> {
-    conn.query_row(
-        "SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?1",
-        [table],
-        |_| Ok(()),
-    )
-    .optional()
-    .map(|row| row.is_some())
-}
-
-fn trigger_mentions(
-    conn: &Connection,
-    trigger: &str,
-    fragment: &str,
-) -> Result<bool, rusqlite::Error> {
-    let sql = conn
-        .query_row(
-            "SELECT sql FROM sqlite_schema WHERE type = 'trigger' AND name = ?1",
-            [trigger],
-            |row| row.get::<_, String>(0),
-        )
-        .optional()?;
-    Ok(sql.is_some_and(|sql| sql.contains(fragment)))
 }
 
 pub fn set_track_sound_features(

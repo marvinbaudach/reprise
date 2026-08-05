@@ -246,15 +246,23 @@ haben keine GTK-Abhängigkeit.
 > **Abweichung bei der Umsetzung, festgehalten nach dem Review:** Der Plan
 > nimmt an, `v56` sei frei. Das war schon bei Planaufstellung falsch —
 > `db_new_releases_accent::migrate_v56` liegt auf der Basis `527d5cbbbc` und
-> belegt die Nummer bereits (`db.rs:742`). Die Umsetzung teilt sich `v56`
-> deshalb: `db_sound_features::migrate_v56` prüft die Anwesenheit von Tabelle
-> und Trigger, statt `user_version` zu vertrauen, und klemmt auf
-> `version.max(56)`. `SUPPORTED_SCHEMA_VERSION` bleibt bei 56 und wird
-> **nicht** wie im Plantext angewiesen erhöht. Ein Test deckt die Koexistenz
-> beider `v56`-Schritte ab.
+> belegt die Nummer bereits (`db.rs:742`). Die Merkmalstabelle bekommt deshalb
+> **`v57`**, `SUPPORTED_SCHEMA_VERSION` steht auf 57.
+>
+> Der erste Umsetzungsversuch teilte sich `v56` und prüfte die Anwesenheit von
+> Tabelle und Trigger, statt `user_version` zu vertrauen. Das ist am realen
+> Bestand aufgefallen: `Db::open_ready` vergleicht nur `user_version`, konnte
+> eine DB mit `track_sound_features` also nicht von einer ohne unterscheiden
+> und ließ den Leser später an `no such table` scheitern statt sauber an
+> `DbError::SchemaNotReady`. Mit eigener Nummer ist der Schritt ein gewöhnlicher
+> Versionsschritt. Was bleibt: die Batch-Anweisungen sind weiter mit
+> `IF NOT EXISTS` bzw. `DROP TRIGGER IF EXISTS` geschrieben, damit eine von
+> einem früheren Stand dieses Branches auf 56 gestempelte DB den Schritt noch
+> einmal durchläuft und dabei auf der Vereinigung landet statt auf einem
+> Fehler. Ein Test deckt beide Ausgangslagen ab.
 
 **Neu:** `src/sound_features.rs`, `src/sound_features_tests.rs`,
-`src/db_sound_features.rs`
+`src/db_sound_features.rs`, `src/sound_rhythm.rs`, `src/sound_rhythm_tests.rs`
 
 ```rust
 pub struct SoundFeatures {
@@ -262,9 +270,25 @@ pub struct SoundFeatures {
     pub centroid_mean: f32,
     pub centroid_var: f32,
     pub frame_crest_db: f32,
+    pub rhythm: RhythmFeatures,
     pub tempo: Option<f32>,
 }
+
+pub struct RhythmFeatures {
+    pub band_flux: [f32; SPECTROGRAM_BAND_COUNT], // L2-normiert
+    pub onset_rate: f32,
+    pub flux_mean: f32,
+    pub flux_variation: f32,
+    pub pulse_strength: f32,
+}
 ```
+
+> **Nachtrag nach der Messung (2026-08-05, 1793 Titel):** Die Produktionshälfte
+> allein findet dasselbe Album (11,98x) und dasselbe Genre nicht (1,07x). Was
+> Genres trennt, ist Bewegung — deshalb `RhythmFeatures`, abgeleitet aus
+> demselben gespeicherten Spektrogramm (E1 bleibt: keine neue Spalte, kein
+> Skalar hinein). `SOUND_FEATURE_LAYOUT_VERSION` steigt auf 2, der Backfill
+> leitet die Profile ohne zweiten Dekodier-Pass neu ab.
 
 - Ableitung aus `&TrackSpectrogram`: **rein, ohne Datei-I/O, ohne DB.** Das ist
   die testbare Kernfunktion.
@@ -273,14 +297,14 @@ pub struct SoundFeatures {
 - `frame_crest_db`: lauteste Frame-Summe gegen mittlere Frame-Summe, in dB.
 - `tempo`: Autokorrelation über die Frame-zu-Frame-Energiedifferenz der unteren
   Bänder; `None`, wenn kein Maximum sicher über dem Untergrund liegt.
-- Migration **v56**: `track_sound_features` (`track_id` PK →
+- Migration **v57**: `track_sound_features` (`track_id` PK →
   `tracks(id) ON DELETE CASCADE`, `format_version INTEGER NOT NULL`, `data BLOB`).
   `format_version` = `SPECTROGRAM_FORMAT_VERSION`; abweichende Version = Zeile
   ist ungültig und wird neu abgeleitet.
 - Trigger `invalidate_track_render_data` um `DELETE FROM track_sound_features
   WHERE track_id = NEW.id` erweitern — dieselbe Invalidierung wie beim
   Spektrogramm, an derselben Stelle, nicht als zweiter Mechanismus.
-- `SUPPORTED_SCHEMA_VERSION` auf 56; die Migrations-Assertions in den
+- `SUPPORTED_SCHEMA_VERSION` auf 57; die Migrations-Assertions in den
   bestehenden Tests mitziehen (beim v27-Umbau waren das 31 Stellen — hier
   ebenso vollständig nachziehen).
 
@@ -293,9 +317,14 @@ pub struct SoundFeatures {
   sortierten Merkmalsspalten für die Achsen-Perzentile (E10.2).
 - Neuberechnung bei **> 5 %** Bestandsänderung seit der letzten Statistik;
   Zähler in `library::settings`. Nicht bei jedem Import.
-- `sound_distance`: die Formel des Briefs, im Raum aus E8.
-  Gewichtsvorgaben als Konstanten: `Default` (band 0.5 / timbre 0.25 / dyn 0.25 /
-  tempo 0.0), `Timbre`, `Dynamics`.
+- `sound_distance`: die Formel des Briefs, im Raum aus E8, erweitert um den
+  Rhythmus-Term. Gewichtsvorgaben als Konstanten: `Default` (band 0.30 /
+  timbre 0.12 / dyn 0.08 / rhythm 0.50 / tempo 0.0), `Timbre`, `Dynamics` —
+  drei Optionen, keine vierte (P6).
+- Kosinus-Abstände (`band_mean`, `band_flux`) werden durch die
+  Bibliotheks-Streuung geteilt, damit ein nominelles Gewicht auch ein
+  wirksames ist: rohe Kosinus-Abstände liegen im Hundertstel-Bereich, ein
+  z-standardisierter Skalarabstand bei etwa eins.
 - `sound_neighbours`: aktueller Vektor gegen alle → sortierte Trefferliste mit
   Perzentilrang (E10.1), Ausschlüsse nach E11 **nach** der Perzentilbildung.
 

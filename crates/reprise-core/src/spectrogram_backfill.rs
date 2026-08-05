@@ -263,6 +263,50 @@ mod tests {
         assert!(pending_render_data_tracks(&db).unwrap().is_empty());
     }
 
+    /// The shape a layout bump leaves behind: the spectrogram is still current,
+    /// only the derived profile is stale. That has to re-derive from the stored
+    /// cells — a decode here would turn a seconds-long re-derivation of the
+    /// whole library into a ten-minute one.
+    #[test]
+    fn sim_1_a_stale_profile_layout_re_derives_from_the_stored_spectrogram() {
+        let db = database();
+        let source = pending_render_data_tracks(&db).unwrap()[0].source;
+        let spectrogram = TrackSpectrogram::from_cells(vec![180; 48]).unwrap();
+        set_track_spectrogram(&db, 1, source, &spectrogram).unwrap();
+        crate::db::set_waveform_peaks(&db, 1, &[9]).unwrap();
+        db.conn()
+            .execute(
+                "UPDATE track_sound_features SET format_version = 1 WHERE track_id = 1",
+                [],
+            )
+            .unwrap();
+        let backend = FakeBackend {
+            calls: AtomicUsize::new(0),
+            cancel_after_first: false,
+        };
+
+        assert_eq!(
+            pending_render_data_tracks(&db)
+                .unwrap()
+                .iter()
+                .find(|track| track.track_id == 1)
+                .and_then(|track| track.spectrogram.clone()),
+            Some(spectrogram.clone()),
+            "the pending row has to carry the stored cells along"
+        );
+        run_render_data_backfill(&db, &backend, &AtomicBool::new(false), |_| {}).unwrap();
+
+        assert_eq!(
+            backend.calls.load(Ordering::Relaxed),
+            2,
+            "only the two tracks without a spectrogram may be decoded"
+        );
+        assert_eq!(
+            get_track_sound_features(&db, 1).unwrap(),
+            Some(crate::sound_features::derive_sound_features(&spectrogram))
+        );
+    }
+
     #[test]
     fn stored_spectrogram_does_not_skip_a_still_missing_waveform() {
         let db = database();

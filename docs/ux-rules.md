@@ -4466,11 +4466,11 @@ keeps all ranking work off the GTK thread.
   and follows the spectrogram's source-identity invalidation and track
   deletion. A stale format is absent and is derived again from the stored
   spectrogram; the spectrogram schema itself gains no recommendation scalar.
-- **SIM-2** [active] [core] — Band means remain L2-normalized and are compared
-  with cosine distance. Only centroid mean, centroid variance,
-  frame-level crest, and an enabled tempo estimate are standardized against
-  library spread; zero spread contributes zero. The default weights are
-  bands 0.5, timbre 0.25, dynamics 0.25, tempo 0.
+- **SIM-2** [replaced by SIM-9] — The earlier rule compared band means and the
+  mastering scalars alone. Measured over a real library that found the same
+  production and not the genre, and the weights it fixed were nominal rather
+  than effective; SIM-9 adds the temporal half and the scale that makes a
+  weight mean what it says.
 - **SIM-3** [active] [core] — A row's percentage is its rank in the current
   track's distance distribution across the complete eligible library. Same
   album (album title plus album artist) and same artist exclusions are applied
@@ -4495,6 +4495,15 @@ keeps all ranking work off the GTK thread.
   unbadged group norm only when it occurs at least twice and strictly more
   often than the runner-up; otherwise every row is badged. Panel-tab and
   sidebar-section badges use the accent, while all other kinds are neutral.
+- **SIM-9** [active] [core] — The comparison carries how a track is produced
+  *and* how it moves, both derived from the stored spectrogram alone. Band
+  means and per-band positive flux stay L2-normalized and are compared with
+  cosine distance, each divided by the library's own spread so that a nominal
+  weight is an effective one. Centroid mean, centroid variance, frame-level
+  crest, onset rate, flux mean, flux variation, pulse strength and an enabled
+  tempo estimate are standardized against library spread; zero spread
+  contributes zero. The default weights are bands 0.30, timbre 0.12,
+  dynamics 0.08, rhythm 0.50, tempo 0.
 
 ---
 

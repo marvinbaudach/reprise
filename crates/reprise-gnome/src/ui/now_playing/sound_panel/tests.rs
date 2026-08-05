@@ -2,6 +2,7 @@ use gtk4::gio::prelude::MenuModelExt;
 use gtk4::prelude::Cast;
 use reprise_core::sound_features::SoundFeatures;
 use reprise_core::sound_neighbours::{SoundNeighbour, SoundNeighbourResult};
+use reprise_core::sound_rhythm::RhythmFeatures;
 use reprise_core::sound_stats::compute_sound_stats;
 
 use super::{
@@ -31,6 +32,7 @@ fn feature(timbre: f32, dynamics: f32, tempo: Option<f32>) -> SoundFeatures {
         centroid_mean: timbre,
         centroid_var: 0.0,
         frame_crest_db: dynamics,
+        rhythm: RhythmFeatures::still(),
         tempo,
     }
 }

@@ -1,6 +1,7 @@
 use crate::sound_distance::DistanceWeights;
 use crate::sound_features::SoundFeatures;
 use crate::sound_neighbours::{rank_sound_neighbours, SoundCandidate, SoundNeighbourOptions};
+use crate::sound_rhythm::RhythmFeatures;
 use crate::sound_stats::compute_sound_stats;
 use crate::spectrogram::SPECTROGRAM_BAND_COUNT;
 
@@ -19,6 +20,7 @@ fn candidate(id: i64, band: usize, artist: &str, album: &str) -> SoundCandidate 
             centroid_mean: band as f32,
             centroid_var: 1.0,
             frame_crest_db: 1.0,
+            rhythm: RhythmFeatures::still(),
             tempo: None,
         },
     }

@@ -2,6 +2,7 @@ use crate::sound_features::{
     derive_sound_features, sound_features_stamp, SoundFeatures, SOUND_FEATURES_FORMAT_VERSION,
     SOUND_FEATURE_LAYOUT_VERSION,
 };
+use crate::sound_rhythm::{derive_rhythm_features, RhythmFeatures};
 use crate::spectrogram::{TrackSpectrogram, SPECTROGRAM_BAND_COUNT};
 use crate::{
     db::{
@@ -38,6 +39,7 @@ fn sound_features_empty_spectrogram_has_a_finite_neutral_profile() {
             centroid_mean: 0.0,
             centroid_var: 0.0,
             frame_crest_db: 0.0,
+            rhythm: RhythmFeatures::still(),
             tempo: None,
         }
     );
@@ -100,6 +102,13 @@ fn stored_features() -> SoundFeatures {
         centroid_mean: 4.25,
         centroid_var: 2.5,
         frame_crest_db: 7.75,
+        rhythm: RhythmFeatures {
+            band_flux: std::array::from_fn(|index| index as f32 / 200.0),
+            onset_rate: 3.25,
+            flux_mean: 12.5,
+            flux_variation: 0.75,
+            pulse_strength: 0.5,
+        },
         tempo: Some(123.5),
     }
 }
@@ -157,27 +166,69 @@ fn sim_1_sound_profile_cache_follows_track_and_source_invalidation() {
     assert_eq!(rows, 0);
 }
 
+/// The two v56 steps no longer share a number: the accent drop keeps 56 and
+/// the profile cache owns 57, so `user_version` alone says whether
+/// `track_sound_features` is there.
+///
+/// Both starting points have to land on the same schema — a plain v56 database
+/// that never saw this branch, and one an earlier build of this branch already
+/// stamped 56 *with* the table and the extended trigger in it.
 #[test]
-fn sound_features_v56_repairs_a_database_already_stamped_by_the_other_v56_step() {
-    let conn = crate::db::open(None).unwrap();
-    crate::db::migrate_connection(&conn).unwrap();
-    conn.execute("DROP TABLE track_sound_features", []).unwrap();
-    assert_eq!(
-        conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
-            .unwrap(),
-        56
-    );
+fn sound_features_v57_upgrades_a_plain_v56_and_one_this_branch_already_stamped() {
+    for branch_already_stamped in [false, true] {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate_connection(&conn).unwrap();
+        if !branch_already_stamped {
+            conn.execute("DROP TRIGGER invalidate_track_render_data", [])
+                .unwrap();
+            conn.execute("DROP TABLE track_sound_features", []).unwrap();
+        }
+        conn.pragma_update(None, "user_version", 56).unwrap();
 
-    crate::db_sound_features::migrate_v56(&conn).unwrap();
-    crate::db_sound_features::migrate_v56(&conn).unwrap();
-    let count: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name = 'track_sound_features'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(count, 1);
+        crate::db_sound_features::migrate_v57(&conn).unwrap();
+        crate::db_sound_features::migrate_v57(&conn).unwrap(); // idempotent re-run must not fail
+
+        assert_eq!(
+            conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
+                .unwrap(),
+            57
+        );
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name = 'track_sound_features'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+        let trigger: String = conn
+            .query_row(
+                "SELECT sql FROM sqlite_schema \
+                 WHERE type = 'trigger' AND name = 'invalidate_track_render_data'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(trigger.contains("track_sound_features"));
+    }
+}
+
+/// A library still on the shared 56 is not ready for a reader that expects the
+/// profile cache, and now says so instead of failing later on `no such table`.
+#[test]
+fn sim_1_a_database_without_the_profile_cache_is_not_ready() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("library.db");
+    let conn = crate::db::open(Some(&path)).unwrap();
+    crate::db::migrate_connection(&conn).unwrap();
+    conn.pragma_update(None, "user_version", 56).unwrap();
+    drop(conn);
+
+    assert!(matches!(
+        Db::open_ready(&path),
+        Err(crate::db::DbError::SchemaNotReady { found, supported })
+            if found == 56 && supported == crate::db::SUPPORTED_SCHEMA_VERSION
+    ));
 }
 
 /// FNV-1a over the stored bytes — an order-sensitive canary on the blob layout.
@@ -208,9 +259,9 @@ fn sim_1_sound_profile_stamp_covers_the_spectrogram_format_and_the_blob_layout()
     // fingerprint, and bumping SOUND_FEATURE_LAYOUT_VERSION in the same change
     // is what keeps rows written by the old layout out of the SQL filter.
     let blob = stored_features().to_blob();
-    assert_eq!(blob.len(), 113);
-    assert_eq!(blob_fingerprint(&blob), 0xd270_b346_1a3b_62b3);
-    assert_eq!(SOUND_FEATURE_LAYOUT_VERSION, 1);
+    assert_eq!(blob.len(), 225);
+    assert_eq!(blob_fingerprint(&blob), 0x3550_ade2_d381_bee9);
+    assert_eq!(SOUND_FEATURE_LAYOUT_VERSION, 2);
 }
 
 #[test]
@@ -267,5 +318,24 @@ fn sim_1_sound_profile_is_stored_atomically_with_render_data() {
     assert_eq!(
         get_track_sound_features(&db, 1).unwrap(),
         Some(derive_sound_features(&spectrogram))
+    );
+}
+
+#[test]
+fn sound_features_carry_the_temporal_derivation_of_the_same_spectrogram() {
+    // The profile is the two halves side by side: whatever the rhythm
+    // derivation says about these cells is what the stored profile carries.
+    let pulsed = spectrogram(
+        (0..=120).map(|index| frame(2, if index > 0 && index % 10 == 0 { 255 } else { 0 })),
+    );
+
+    let features = derive_sound_features(&pulsed);
+
+    assert_eq!(features.rhythm, derive_rhythm_features(&pulsed));
+    assert_eq!(features.rhythm.onset_rate, 2.0);
+    assert_eq!(
+        SoundFeatures::from_blob(&features.to_blob()).unwrap(),
+        features,
+        "the temporal half has to survive the round trip through the blob"
     );
 }

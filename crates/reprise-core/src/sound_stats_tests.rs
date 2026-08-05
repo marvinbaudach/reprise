@@ -1,4 +1,5 @@
 use crate::sound_features::SoundFeatures;
+use crate::sound_rhythm::RhythmFeatures;
 use crate::sound_stats::{
     compute_sound_stats, count_changed_more_than_five_percent, SoundStatsCache,
 };
@@ -10,7 +11,24 @@ fn features(centroid: f32, variance: f32, crest: f32, tempo: Option<f32>) -> Sou
         centroid_mean: centroid,
         centroid_var: variance,
         frame_crest_db: crest,
+        rhythm: RhythmFeatures::still(),
         tempo,
+    }
+}
+
+/// A profile whose only interesting content is its movement.
+fn moving(band: usize, onset_rate: f32, pulse_strength: f32) -> SoundFeatures {
+    let mut band_flux = [0.0; SPECTROGRAM_BAND_COUNT];
+    band_flux[band] = 1.0;
+    SoundFeatures {
+        rhythm: RhythmFeatures {
+            band_flux,
+            onset_rate,
+            flux_mean: 10.0,
+            flux_variation: 0.5,
+            pulse_strength,
+        },
+        ..features(1.0, 1.0, 1.0, None)
     }
 }
 
@@ -75,4 +93,36 @@ fn sound_stats_cache_records_the_inventory_count_in_library_settings() {
         Some(2)
     );
     assert!(!cache.refresh(&db).unwrap());
+}
+
+#[test]
+fn sound_stats_standardize_the_rhythm_scalars_too() {
+    let stats = compute_sound_stats(&[moving(1, 2.0, 0.2), moving(1, 4.0, 0.6)]);
+
+    assert_eq!(stats.rhythm.onset_rate.mean, 3.0);
+    assert_eq!(stats.rhythm.onset_rate.std_dev, 1.0);
+    assert_eq!(stats.rhythm.onset_rate.z_score(4.0), 1.0);
+    assert_eq!(stats.rhythm.pulse_strength.sorted, vec![0.2, 0.6]);
+    assert_eq!(stats.rhythm.flux_variation.std_dev, 0.0);
+}
+
+#[test]
+fn sound_stats_put_a_cosine_distance_on_the_scale_of_a_standardized_difference() {
+    // Two vectors pointing at different bands. Each sits 1 - 1/sqrt(2) away
+    // from the direction they share, so the distance between them — a full
+    // 1.0 — is a touch more than one standardized step apart, not a fiftieth
+    // of one as the raw cosine distance would have made it.
+    let stats = compute_sound_stats(&[moving(1, 1.0, 0.5), moving(5, 1.0, 0.5)]);
+
+    let spread = stats.rhythm.band_flux.spread;
+    assert!((spread - (1.0 - 0.5_f32.sqrt())).abs() < 1.0e-5, "{spread}");
+    assert!((stats.rhythm.band_flux.standardize(1.0) - 1.0 / (2.0 * spread)).abs() < 1.0e-5);
+}
+
+#[test]
+fn sound_stats_zero_vector_spread_contributes_zero() {
+    let stats = compute_sound_stats(&[moving(3, 1.0, 0.5), moving(3, 2.0, 0.5)]);
+
+    assert_eq!(stats.rhythm.band_flux.spread, 0.0);
+    assert_eq!(stats.rhythm.band_flux.standardize(1.0), 0.0);
 }
