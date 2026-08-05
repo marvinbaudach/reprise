@@ -436,15 +436,15 @@ pub(in crate::ui) enum ExternalMedia {
 - **YouTube play:** activation → immediate reaction (P-2): the bar shows the episode + a "Resolving
   audio…" state; a one_shot_task calls `ytdlp::resolve`; the generation guard discards stale
   resolutions; error → readable toast (FB-1), the bar falls back to Stopped.
-- **Events (podcast):** `TrackFinished` → `mark_played` + `end_external()` (stop, no
-  auto-advance — a named v1.1 candidate, 12) + a sidebar/view refresh, **plus the "Play
-  next" hook-up (grilled decision):** the pure query
+- **Events (podcast):** `TrackFinished` → `mark_played`; a directly started YouTube episode with a
+  next item in its frozen rendered POD-21 context starts that exact neighbour automatically. RSS
+  and YouTube without such a neighbour call `end_external()` (stop) + a sidebar/view refresh,
+  **plus the "Play next" hook-up (grilled decision):** the pure query
   `podcasts::query::next_unplayed_of_show(subscription_id, after_published_at)` returns the
   next UNPLAYED episode of THE SAME show by date — never "the next table row". It
   feeds **two offers of the same action**: (a) a toast ~10 s "Play next: “{title}”" with an
   action button directly after the episode ends, (b) a **persistent "Play next
   episode" button in the empty/stopped player bar** (6.4) that does not disappear with the toast.
-  Playback never starts automatically.
 - **Events (radio, pause=disconnect — grilled decision):** pause (bar button/MPRIS) → the pipeline
   stops (disconnect), the controller holds the station as **presented-paused** (bar/MPRIS:
   Paused); play → reconnect "live now" (a fresh `play_uri`, elapsed starts over).
@@ -472,8 +472,9 @@ as an inline line with a retry, never as an empty bar. The split is deliberate: 
 live truth (a paused station = not connected = "—", RAD-1), the bar is
 session memory** (the dimmed last title). **Podcast:** the waveform in its fallback shape (flat —
 the draw path can do that, there are simply no peaks), seek active, "Elapsed / Total" as soon as the
-duration is known; after an episode ends the stopped/empty bar shows the **persistent "Play next
-episode" button** (6.3) as long as an unplayed episode of the same show exists.
+duration is known; after an RSS episode or a YouTube episode without a next frozen neighbour ends,
+the stopped/empty bar shows the **persistent "Play next episode" button** (6.3) as long as an
+unplayed episode of the same show exists.
 **Mini player audit (MINI-1..4):** the same state feeds the 46-bar compact waveform — in
 live mode likewise a placeholder, including the pause presentation; a checklist item in E3.
 
@@ -669,10 +670,13 @@ flipped to `[active]` in the respective implementation commit with rule-named te
   classified into readable messages and never crash; without the binary the provider degrades
   visibly. A switch in the preferences (default on); the degradation is display on the switch — the
   setting is never flipped automatically.
-- **POD-4** [gtk] — Episode playback resumes at the stored position; the position is persisted on
-  pause/stop/switch/quit and throttled during playback. After an episode ends the app offers "Play
-  next" of the same show (toast + persistent bar button, query by date), but never plays on
-  automatically. Podcasts never produce scrobbles, listen_events or play counts.
+- **POD-4** [replaced by POD-24] [gtk] — Episode playback resumes at the stored position; the
+  position is persisted on pause/stop/switch/quit and throttled during playback. The original
+  completion policy always offered "Play next" of the same show without automatic playback.
+- **POD-24** [gtk] — A directly started YouTube episode automatically continues through the next
+  no-wrap item in its frozen rendered POD-21 context. RSS, and a YouTube episode without such a
+  neighbour, retain the manual next-unplayed offer. Explicit manual-queue playback remains QUE-9.
+  Podcast and YouTube sessions never produce scrobbles, listen events or play counts.
 - **POD-5** [gtk] — Downloads are opt-in (per subscription), live under the app's XDG data path and
   follow the cleanup policy; downloaded episodes play locally (the offline path).
 - **RAD-1** [gtk] — The playing station is the only accented table state (icon, name, now-playing,
@@ -729,7 +733,8 @@ starts the real yt-dlp.
   `can_go_next`/`can_go_previous` = episode neighbors for context-bound external, otherwise false;
   length omitted; `artUrl` from
   `image_url`/`favicon_url`; `metadata_differs` on an ICY change); the `PlaybackMode` matrix (only
-  Queue advances; podcast finish → played + the play-next offer; radio finish → the reconnect
+  Queue advances; direct YouTube finish → played + the next frozen POD-21 neighbour when one
+  exists, other podcast finishes → played + the play-next offer; radio finish → the reconnect
   policy); the **radio pause state matrix** (paused→play = reconnect with an elapsed reset;
   reconnect failure → paused + inline error, never an empty state; activation = stop; the bar dims
   the last title, the table "—"); **scrobble exclusion** as a rule-named test (a simulated external
@@ -743,8 +748,10 @@ starts the real yt-dlp.
   `src_4a_remove_is_tombstone_until_toast_commit`,
   `src_4b_unsubscribe_commit_toast_trashes_never_hard_deletes`,
   `src_4b_podcast_context_menu_exposes_queue_membership_actions`, `pod_1_status_matrix`,
-  `pod_3_ytdlp_errors_are_readable_never_panic`, `pod_4_external_session_never_scrobbles`,
-  `pod_4_finish_offers_next_unplayed_of_show`,
+  `pod_3_ytdlp_errors_are_readable_never_panic`,
+  `pod_24_external_session_never_scrobbles`,
+  `pod_24_direct_youtube_completion_uses_the_frozen_next_episode`,
+  `pod_24_finish_offers_next_unplayed_of_show`,
   `rad_2_live_state_disables_seek_and_reports_no_length`,
   `rad_2_pause_is_disconnect_presented_as_paused`, `rad_3_dead_stream_reresolves_once`, … —
   `check-ux-traceability.sh`.
@@ -762,10 +769,10 @@ starts the real yt-dlp.
 3. **Chapters & transcripts** — a heterogeneous data situation, its own part of the player UI.
 4. **Playback speed** — needs rate plumbing in the backend + bar UI; orthogonal. **Named
   v1.1 candidate no. 1** (podcast listeners want it; grilled decision).
-5. **Auto-advance to the next episode of the same show** stays excluded: direct
-  episodes still end with played + stop + the manual "Play next" offer (6.3). The
-  queue citizenship implemented in the meantime is separate from this: only an episode explicitly
-  queued manually continues with the next queue entry.
+5. **Broad podcast auto-advance to the next episode of the same show** stays excluded: direct RSS
+  episodes still end with played + stop + the manual "Play next" offer (6.3). POD-24 deliberately
+  narrows this boundary for directly started YouTube episodes that already have a next item in
+  their frozen rendered context; queue citizenship remains separate under QUE-9.
 6. **Desktop notifications** for new episodes (parity with the Concerts decision).
 7. **CLI/MCP surface** — a **named v1.1 candidate** (grilled decision): read-only `reprise-cli
   podcasts list` / `reprise://podcasts` + `reprise://radio` (pure cache reads, a package-M clone
@@ -848,9 +855,9 @@ onto dev as soon as Concerts is merged; the F tasks re-check both "next free num
 | 8 | YouTube: the official UULF feed delivers the first long-form window; "Load more" extends it once via yt-dlp up to entry 40; audio-only/opus, bestaudio resolve per play (never persisted), yt-dlp errors readable, without the managed component it degrades as display (switch subtitle, the setting never auto-flipped) | `pod_3_*`, `pod_10_*`, fake binary tests, resolve generation test, prefs decision units |
 | 9 | Podcast resume: the position is persisted (pause/stop/switch/quit + throttle), playback continues; end → played; duration probe on the first play | `pod_4_*` resume units, store roundtrips |
 | 10 | Radio live: ICY now-playing in the table + player bar + MPRIS from one event; no seek, no duration, elapsed only; pause = disconnect-presented-as-pause (the bar dims the last title, the table "—", reconnect "live now", failure → paused + inline retry, never an empty bar); dead favorites re-resolve via uuid | `rad_2_*`/`rad_3_*`, pause state matrix, MPRIS matrix, StreamTags plumbing test |
-| 11 | Podcasts/radio never produce scrobbles/listen_events/play counts | `pod_4_external_session_never_scrobbles` + the radio counterpart |
+| 11 | Podcasts/radio never produce scrobbles/listen_events/play counts | `pod_24_external_session_never_scrobbles` + the radio counterpart |
 | 12 | All network + yt-dlp off the main loop (worker/one_shot); auto-refresh only when the module is on ∧ ≥ 1 subscription, TTL-coalesced, metered-gated (manual stays); strings translatable (both catalogs + POTFILES); gates green | code audit "no http/Command outside the boundaries", gating decision units, gate battery, `check-ux-traceability.sh` |
-| 13 | The end of an episode offers "Play next" of the same show by date (toast + persistent bar button), never plays automatically; MPRIS external fully functional except for CanGoNext/CanGoPrevious=false, artUrl = a remote pass-through | `pod_4_finish_offers_next_unplayed_of_show`, ordering units, MPRIS predicate matrix, manual GNOME Shell pass |
+| 13 | The end of an RSS episode, or a YouTube episode without a next frozen neighbour, offers "Play next" of the same show by date; a directly started YouTube episode with such a neighbour continues automatically through that POD-21 context; MPRIS follows the same neighbour availability and artUrl remains a remote pass-through | `pod_24_direct_youtube_completion_uses_the_frozen_next_episode`, `pod_24_finish_offers_next_unplayed_of_show`, MPRIS predicate matrix, manual GNOME Shell pass |
 
 ## 15. Work packages as waves (file ownership)
 
@@ -909,7 +916,7 @@ agents — a lesson learned). Every task: TDD (red first), the full gate battery
     state machine disconnect/reconnect/error-stays-paused). Depends on E1 + the A/C stores
     (save_position, mark_played, next_unplayed_of_show, click/re-resolve). TDD: the mode matrix, the
     resume policy, the pause state matrix, scrobble exclusion,
-    `pod_4_finish_offers_next_unplayed_of_show`.
+    `pod_24_finish_offers_next_unplayed_of_show`.
   - **E3 · Player bar/mini live.** Files: `player_bar_state.rs`, `player_bar.rs`,
     `waveform_seek.rs` gating, `player_bar_seek.rs` (drag guard), the compact audit (`ui/compact/*`
     reviewed read-only, changes minimal). Bar states out of the grill: radio paused (play symbol,

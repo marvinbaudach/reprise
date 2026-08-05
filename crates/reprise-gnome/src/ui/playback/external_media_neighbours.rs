@@ -88,7 +88,7 @@ impl PlayerController {
         true
     }
 
-    fn play_item_from_neighbour(
+    pub(super) fn play_item_from_neighbour(
         self: &Rc<Self>,
         neighbours: NeighbourContext,
         automatic_advance: AutomaticAdvance,
