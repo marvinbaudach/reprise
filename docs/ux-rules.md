@@ -2415,6 +2415,20 @@ property is set and yet nothing happens.
   Color Scheme: the Reprise app accent `#4FDBD4`, which is the default, and
   the system accent provided by libadwaita. Changing the source applies
   immediately without restarting the app.
+- **STYLE-9** [active] [gtk] — **A column never takes its width from the
+  rows that happen to be on screen.** Every column of every table carries an
+  explicitly set width; exactly one column per table additionally expands and
+  absorbs the leftover width. A column left at the framework default
+  (`fixed-width = -1`) measures itself against the cells realized at that
+  moment, and `GtkColumnView` recycles its row widgets while scrolling — so
+  the whole table shifts sideways as the user scrolls, and the column that
+  visibly jumps is usually not the one at fault but the one absorbing what
+  its unset neighbors leave over. The width stays the user's: columns remain
+  resizable, and a header drag simply writes a new width. Where the set
+  widths exceed the window, the table scrolls horizontally instead of
+  squeezing its columns (STYLE-6). **Test rule:** measured, not asserted —
+  the rule-named test exchanges the rows on screen for markedly wider ones
+  and compares the columns' realized widths.
 - **CONTRAST-1** [active] [gtk] — There are three central text levels:
   primary approximately 0.95 for titles and values, secondary approximately
   0.7 for artist, status, metadata, and column headers, hint approximately
