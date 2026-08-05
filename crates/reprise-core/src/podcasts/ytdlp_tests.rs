@@ -5,7 +5,7 @@ use std::{
     process::Command,
 };
 
-use super::test_support::{fake_binary, short_timeouts, CapturedLogs, LogCapture};
+use super::test_support::{fake_binary, short_timeouts, CapturedLogs};
 use super::{classify_stderr, finalize_download, resolve_binary, YtDlp, YtDlpFailureKind};
 use crate::podcasts::config::YoutubeBrowser;
 
@@ -433,9 +433,8 @@ fn malformed_resolve_response_is_actionable_and_logged_without_response_body() {
     );
     let runner = YtDlp::with_binary_and_timeouts(binary, short_timeouts());
     let logs = CapturedLogs::default();
-    let subscriber = LogCapture(logs.clone());
 
-    let error = tracing::subscriber::with_default(subscriber, || {
+    let error = logs.capture(|| {
         runner
             .resolve("https://youtube.test/watch?v=private")
             .unwrap_err()
@@ -470,9 +469,8 @@ fn resolved_response_without_audio_is_actionable_and_logged() {
     let binary = fake_binary(directory.path(), "printf '%s\\n' '{\"duration\":42}'");
     let runner = YtDlp::with_binary_and_timeouts(binary, short_timeouts());
     let logs = CapturedLogs::default();
-    let subscriber = LogCapture(logs.clone());
 
-    let error = tracing::subscriber::with_default(subscriber, || {
+    let error = logs.capture(|| {
         runner
             .resolve("https://youtube.test/watch?v=private")
             .unwrap_err()
@@ -508,9 +506,8 @@ fn failed_resolve_logs_operation_category_and_exit_code_without_provider_details
     );
     let runner = YtDlp::with_binary_and_timeouts(binary, short_timeouts());
     let logs = CapturedLogs::default();
-    let subscriber = LogCapture(logs.clone());
 
-    let error = tracing::subscriber::with_default(subscriber, || {
+    let error = logs.capture(|| {
         runner
             .resolve("https://youtube.test/watch?v=private")
             .unwrap_err()

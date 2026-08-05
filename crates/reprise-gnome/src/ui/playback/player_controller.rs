@@ -302,6 +302,10 @@ pub struct PlayerController {
         RefCell<Option<OnNowPlayingPanelStateChanged>>,
     /// Bounded live-spectrum feed for the optional Now Playing visualizer.
     pub(in crate::ui) song_visual_spectrum_changed: RefCell<Option<OnSongVisualSpectrumChanged>>,
+    /// The `song_visuals` module's persisted state. One of the two inputs to
+    /// `audio_reactive_enabled` (the other is the playback mode); kept here so
+    /// that answer has a single owner instead of being recomputed per surface.
+    pub(in crate::ui) song_visuals_module: Cell<bool>,
     /// Supplies the current view's ids when an exhausted queue needs refill.
     pub(in crate::ui) view_refill_ids: RefCell<Option<ViewRefillIds>>,
     /// How many *consecutive* auto-skips (Stage 2 Task 5) have happened since
@@ -466,6 +470,7 @@ impl PlayerController {
             now_playing_panel_track_changed: RefCell::new(None),
             now_playing_panel_state_changed: RefCell::new(None),
             song_visual_spectrum_changed: RefCell::new(None),
+            song_visuals_module: Cell::new(false),
             view_refill_ids: RefCell::new(None),
             consecutive_skips: Cell::new(0),
             failure_skip_limit: Cell::new(0),
@@ -498,9 +503,18 @@ impl PlayerController {
             &reprise_core::modules::SONG_VISUALS_MODULE,
         )
         .unwrap_or(reprise_core::modules::SONG_VISUALS_MODULE.default_enabled);
-        if let Err(error) = controller.player.set_spectrum_enabled(song_visuals_enabled) {
+        controller.song_visuals_module.set(song_visuals_enabled);
+        if let Err(error) = controller.sync_audio_reactive() {
             tracing::warn!(%error, "could not restore live song visuals; using the static profile");
         }
+        let sound_similarity_enabled = reprise_core::modules::is_enabled(
+            &controller.conn,
+            &reprise_core::modules::SOUND_SIMILARITY_MODULE,
+        )
+        .unwrap_or(reprise_core::modules::SOUND_SIMILARITY_MODULE.default_enabled);
+        controller
+            .bar
+            .set_sound_info_visible(sound_similarity_enabled);
 
         crate::ui::player_event_handling::spawn_event_drain(&controller, receiver);
 

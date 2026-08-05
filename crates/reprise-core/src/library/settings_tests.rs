@@ -394,7 +394,7 @@ fn a_ten_band_write_over_a_foreign_curve_is_accepted_and_said_out_loud() {
     set_equalizer_curve(&conn, &phone).unwrap();
 
     let logs = crate::log_capture::CapturedLogs::default();
-    tracing::subscriber::with_default(crate::log_capture::LogCapture(logs.clone()), || {
+    logs.capture(|| {
         set_equalizer_bands(&conn, [3.0; 10]).unwrap();
     });
 
@@ -417,7 +417,7 @@ fn a_ten_band_write_over_a_foreign_curve_is_accepted_and_said_out_loud() {
     // A desktop edit on top of a desktop curve replaces nothing, and says
     // nothing. Otherwise the warning would be noise every preference change.
     let quiet = crate::log_capture::CapturedLogs::default();
-    tracing::subscriber::with_default(crate::log_capture::LogCapture(quiet.clone()), || {
+    quiet.capture(|| {
         set_equalizer_bands(&conn, [1.0; 10]).unwrap();
     });
     assert!(

@@ -33,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import de.reprise.spike.settings.SettingsNavigation
 import kotlinx.coroutines.delay
 
 /**
@@ -270,7 +271,6 @@ internal fun BrowseScreen(
                         }
                     },
                     rescan = rescan,
-                    chooseFolder = chooseFolder,
                     openSettings = ::openSettings,
                 )
             },
@@ -400,7 +400,6 @@ internal fun BrowseScreen(
             }
         }
         if (settingsVisible) {
-            BackHandler { surfaceState.showSettings(false) }
             Surface(
                 modifier = Modifier.fillMaxSize(),
                 color = MaterialTheme.colorScheme.background,
@@ -409,11 +408,20 @@ internal fun BrowseScreen(
                 // and no way back is what a rotation used to leave behind while
                 // the settings were being read again.
                 when (val current = settingsState) {
-                    null -> PlaybackSettingsLoading(close = { surfaceState.showSettings(false) })
-                    else -> PlaybackSettingsScreen(
+                    null -> {
+                        BackHandler { surfaceState.showSettings(false) }
+                        PlaybackSettingsLoading(close = { surfaceState.showSettings(false) })
+                    }
+                    else -> SettingsNavigation(
                         state = current,
+                        titleCount = state.titles.total,
+                        albumCount = state.albums.total,
+                        artistCount = state.artists.total,
+                        folderName = folderLabel(state.folderUri),
                         themeSelection = themeSelection,
                         close = { surfaceState.showSettings(false) },
+                        chooseFolder = chooseFolder,
+                        rescan = rescan,
                         setEqualizerEnabled = { enabled ->
                             updateSettings { setEqualizerEnabled(enabled) }
                         },

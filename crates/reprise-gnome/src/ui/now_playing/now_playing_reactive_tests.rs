@@ -51,3 +51,55 @@ fn ac_24_the_panel_head_looks_the_same_whichever_tab_is_open() {
     panel.set_transient_visibility(false);
     assert!(!panel.widgets.shimmer.widget().is_visible());
 }
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn ac_25_a_podcast_takes_the_visual_tab_and_the_reactive_light_with_it() {
+    if gtk4::init().is_err() {
+        return;
+    }
+    let (_window, panel) = super::tests::test_panel("org.reprise.Reprise.NowPlayingPodcastVisuals");
+    panel.set_transient_visibility(true);
+    panel.set_song_visuals_enabled(true);
+    panel.widgets.tab_stack.set_visible_child_name(VISUAL_PAGE);
+    assert!(panel.widgets.visual_page.is_visible());
+    // The shimmer's own `visible` flag, not `is_visible()`: the latter also
+    // asks whether every ancestor is mapped, which an unpresented test window
+    // is not — it would answer "hidden" whatever the pin says.
+    assert!(shimmer_unpinned(&panel));
+
+    // Exactly what the wiring hands the panel when an episode starts: the
+    // session, and the one effective answer the controller owns for it.
+    panel.set_external_snapshot(Some(super::tests::external_episode_snapshot()));
+    panel.set_song_visuals_enabled(false);
+
+    assert!(
+        !panel.widgets.visual_page.is_visible(),
+        "a podcast leaves no Visual tab to open"
+    );
+    assert_eq!(
+        panel.widgets.tab_stack.visible_child_name().as_deref(),
+        Some(UP_NEXT_PAGE),
+        "the user standing on the Visual tab lands on Up Next"
+    );
+    assert!(
+        !shimmer_unpinned(&panel),
+        "the reactive light rests for speech"
+    );
+
+    // Radio is music, and the answer for it is the plugin's own again.
+    panel.set_external_snapshot(Some(super::tests::external_radio_snapshot()));
+    panel.set_song_visuals_enabled(true);
+    assert!(
+        panel.widgets.visual_page.is_visible(),
+        "radio keeps the visuals a podcast took away"
+    );
+    assert!(
+        shimmer_unpinned(&panel),
+        "radio gets the reactive light back"
+    );
+}
+
+fn shimmer_unpinned(panel: &NowPlayingPanel) -> bool {
+    panel.widgets.shimmer.widget().property::<bool>("visible")
+}

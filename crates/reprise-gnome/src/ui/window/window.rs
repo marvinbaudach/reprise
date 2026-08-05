@@ -459,6 +459,16 @@ pub fn build(
     let split_view = library_shell.split_view;
     let content_nav = library_shell.content_nav;
     let info_panel = library_shell.info_panel;
+    {
+        let player = player.clone();
+        let panel = info_panel.clone();
+        track_list.set_on_find_similar(move |id| {
+            if let Some(player) = &player {
+                player.play_track_id(id);
+                panel.show_sound();
+            }
+        });
+    }
     let open_device: super::device_sync_launcher::OpenDevice = Rc::new({
         let content_stack = content_stack.clone();
         let window_title = window_title.clone();
@@ -478,7 +488,12 @@ pub fn build(
     super::device_sync_feedback::install(&header, &split_view, &toast_overlay, &device_sync);
     info_panel.retain_for_window(&window);
     if let Some(player) = &player {
-        super::window_now_playing_wiring::install(player, &info_panel, &queue_model);
+        super::window_now_playing_wiring::install(
+            player,
+            &info_panel,
+            &queue_model,
+            &metadata_navigator,
+        );
     }
     let player_bar_widget = player
         .as_ref()
@@ -600,7 +615,6 @@ pub fn build(
         podcasts_runtime: &podcasts_runtime,
         content_stack: &content_stack,
         device_sync: &device_sync,
-        open_device: &open_device,
         window_title: &window_title,
         scan_controls: &scan_controls,
         toast_overlay: &toast_overlay,

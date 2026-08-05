@@ -103,12 +103,73 @@ fn scan_with_group(group: DoctorUnresolvedGroup) -> DoctorScan {
 }
 
 #[test]
+fn doc_8b_auto_applied_tier_is_local_preselected_plus_every_recording_mbid() {
+    let mut remote_mbid = proposal(3, DoctorField::RecordingMbid, ProposalSource::MusicBrainz);
+    remote_mbid.preselected = false;
+    let review = DoctorReviewSession::from_scan(
+        scan(vec![
+            proposal(1, DoctorField::Artist, ProposalSource::Local),
+            proposal(2, DoctorField::Album, ProposalSource::MusicBrainz),
+            remote_mbid,
+        ]),
+        DoctorReviewFilter::AutoApply,
+    );
+
+    assert_eq!(review.rows().len(), 2);
+    assert!(review.rows().iter().all(|row| row.selected));
+    assert!(review.rows().iter().any(|row| row.track_id == 1));
+    assert!(review.rows().iter().any(|row| row.track_id == 3));
+}
+
+#[test]
+fn doc_8b_stale_rows_are_never_auto_applied() {
+    let mut source = scan(vec![proposal(
+        1,
+        DoctorField::Artist,
+        ProposalSource::Local,
+    )]);
+    source.tracks[0].stale = true;
+
+    let review = DoctorReviewSession::from_scan(source, DoctorReviewFilter::AutoApply);
+
+    assert!(review.rows().is_empty());
+}
+
+#[test]
+fn doc_8b_review_tier_preselects_every_ready_row() {
+    let review = DoctorReviewSession::from_scan(
+        scan(vec![
+            proposal(1, DoctorField::Artist, ProposalSource::MusicBrainz),
+            proposal(2, DoctorField::Genre, ProposalSource::AcoustId),
+        ]),
+        DoctorReviewFilter::NeedsReview,
+    );
+
+    assert_eq!(review.rows().len(), 2);
+    assert!(review.rows().iter().all(|row| row.selected));
+}
+
+#[test]
+fn doc_8b_recording_mbid_never_reaches_the_review_tier() {
+    let review = DoctorReviewSession::from_scan(
+        scan(vec![proposal(
+            1,
+            DoctorField::RecordingMbid,
+            ProposalSource::AcoustId,
+        )]),
+        DoctorReviewFilter::NeedsReview,
+    );
+
+    assert!(review.rows().is_empty());
+}
+
+#[test]
 fn doc_3a_review_selects_each_track_field_independently() {
     let scan = scan(vec![
-        proposal(1, DoctorField::Artist, ProposalSource::Local),
-        proposal(1, DoctorField::Album, ProposalSource::Local),
+        proposal(1, DoctorField::Artist, ProposalSource::MusicBrainz),
+        proposal(1, DoctorField::Album, ProposalSource::MusicBrainz),
     ]);
-    let mut review = DoctorReviewSession::from_scan(scan, DoctorReviewFilter::AllChanges);
+    let mut review = DoctorReviewSession::from_scan(scan, DoctorReviewFilter::NeedsReview);
     let rows = review.rows();
     assert_eq!(rows.len(), 2);
     assert!(rows.iter().all(|row| row.selected));
@@ -139,34 +200,26 @@ fn doc_3a_review_selects_each_track_field_independently() {
 }
 
 #[test]
-fn doc_3a_all_safe_is_an_exact_reset() {
-    let scan = scan(vec![
-        proposal(1, DoctorField::Artist, ProposalSource::Local),
+fn doc_8b_all_preset_selects_every_ready_row_and_none_clears_them() {
+    let source = scan(vec![
+        proposal(1, DoctorField::Artist, ProposalSource::AcoustId),
         proposal(2, DoctorField::Album, ProposalSource::MusicBrainz),
     ]);
-    let mut review = DoctorReviewSession::from_scan(scan, DoctorReviewFilter::AllChanges);
-    let local = review
-        .rows()
-        .iter()
-        .find(|row| row.source == ProposalSource::Local)
-        .unwrap()
-        .id;
-    let remote = review
-        .rows()
-        .iter()
-        .find(|row| row.source == ProposalSource::MusicBrainz)
-        .unwrap()
-        .id;
-    review.set_selected(local, false).unwrap();
-    review.set_selected(remote, true).unwrap();
+    let mut review = DoctorReviewSession::from_scan(source, DoctorReviewFilter::NeedsReview);
+    let ready = review.rows()[0].id;
+    let stale = review.rows()[1].id;
+    review
+        .mark_state(stale, DoctorReviewRowState::Stale)
+        .unwrap();
+    review.set_selected(ready, false).unwrap();
 
-    review.all_safe();
+    review.all();
 
     assert!(
         review
             .rows()
             .iter()
-            .find(|row| row.id == local)
+            .find(|row| row.id == ready)
             .unwrap()
             .selected
     );
@@ -174,20 +227,24 @@ fn doc_3a_all_safe_is_an_exact_reset() {
         !review
             .rows()
             .iter()
-            .find(|row| row.id == remote)
+            .find(|row| row.id == stale)
             .unwrap()
             .selected
     );
+
+    review.none();
+
+    assert!(review.rows().iter().all(|row| !row.selected));
 }
 
 #[test]
 fn doc_3a_none_clears_every_row() {
     let mut review = DoctorReviewSession::from_scan(
         scan(vec![
-            proposal(1, DoctorField::Artist, ProposalSource::Local),
+            proposal(1, DoctorField::Artist, ProposalSource::AcoustId),
             proposal(2, DoctorField::Album, ProposalSource::MusicBrainz),
         ]),
-        DoctorReviewFilter::AllChanges,
+        DoctorReviewFilter::NeedsReview,
     );
     let remote = review
         .rows()
@@ -212,27 +269,21 @@ fn doc_7a_review_remote_toggle_removes_selection_and_restores_local_result() {
     });
     let mut source = scan(vec![remote]);
     source.options.remote_enabled = true;
-    let mut review = DoctorReviewSession::from_scan(source, DoctorReviewFilter::AllChanges);
+    let mut review = DoctorReviewSession::from_scan(source, DoctorReviewFilter::NeedsReview);
     let remote_id = review.rows()[0].id;
     review.set_selected(remote_id, true).unwrap();
 
     review.set_remote_visible(false);
 
     assert!(!review.remote_visible());
-    assert_eq!(review.rows().len(), 1);
-    assert_eq!(review.rows()[0].source, ProposalSource::Local);
-    assert_eq!(
-        review.rows()[0].proposed,
-        DoctorValue::Text("local-title".into())
-    );
-    assert!(review.rows()[0].selected);
+    assert!(review.rows().is_empty());
 
     review.set_remote_visible(true);
 
     assert!(review.remote_visible());
     assert_eq!(review.rows().len(), 1);
     assert_eq!(review.rows()[0].source, ProposalSource::MusicBrainz);
-    assert!(!review.rows()[0].selected);
+    assert!(review.rows()[0].selected);
 }
 
 #[test]
@@ -243,7 +294,7 @@ fn doc_3a_tie_choice_materializes_only_real_diffs() {
         &[(1, "AC/DC"), (2, "ac/dc"), (3, "ac/dc")],
     );
     let mut review =
-        DoctorReviewSession::from_scan(scan_with_group(group), DoctorReviewFilter::AllChanges);
+        DoctorReviewSession::from_scan(scan_with_group(group), DoctorReviewFilter::NeedsReview);
     let group_id = review.groups()[0].id;
     assert!(review.rows().is_empty());
 
@@ -274,7 +325,7 @@ fn candidate_switch_preserves_manual_deselections() {
         &[(1, "A"), (2, "B"), (3, "C")],
     );
     let mut review =
-        DoctorReviewSession::from_scan(scan_with_group(group), DoctorReviewFilter::AllChanges);
+        DoctorReviewSession::from_scan(scan_with_group(group), DoctorReviewFilter::NeedsReview);
     let group_id = review.groups()[0].id;
     review
         .choose_candidate(group_id, &DoctorValue::Text("A".into()))
@@ -312,11 +363,11 @@ fn candidate_switch_preserves_manual_deselections() {
 #[test]
 fn stale_and_conflict_rows_cannot_be_selected() {
     let mut source = scan(vec![
-        proposal(1, DoctorField::Artist, ProposalSource::Local),
-        proposal(2, DoctorField::Artist, ProposalSource::Local),
+        proposal(1, DoctorField::Artist, ProposalSource::MusicBrainz),
+        proposal(2, DoctorField::Artist, ProposalSource::MusicBrainz),
     ]);
     source.tracks[0].stale = true;
-    let mut review = DoctorReviewSession::from_scan(source, DoctorReviewFilter::AllChanges);
+    let mut review = DoctorReviewSession::from_scan(source, DoctorReviewFilter::NeedsReview);
     let stale = review
         .rows()
         .iter()
@@ -351,9 +402,9 @@ fn doc_3a_apply_plan_is_an_owned_selection_snapshot() {
         scan(vec![proposal(
             1,
             DoctorField::Artist,
-            ProposalSource::Local,
+            ProposalSource::MusicBrainz,
         )]),
-        DoctorReviewFilter::AllChanges,
+        DoctorReviewFilter::NeedsReview,
     );
 
     let plan = review.freeze_plan();
@@ -390,7 +441,7 @@ fn local_safe_review_filter_excludes_remote_and_manual_groups() {
         &[(1, "Rock"), (3, "rock")],
     ));
 
-    let review = DoctorReviewSession::from_scan(source, DoctorReviewFilter::LocalSafeOnly);
+    let review = DoctorReviewSession::from_scan(source, DoctorReviewFilter::AutoApply);
 
     assert_eq!(review.rows().len(), 1);
     assert_eq!(review.rows()[0].source, ProposalSource::Local);
@@ -405,7 +456,7 @@ fn review_summary_counts_tracks_files_and_tag_changes_once() {
             proposal(1, DoctorField::Album, ProposalSource::Local),
             proposal(2, DoctorField::Genre, ProposalSource::Local),
         ]),
-        DoctorReviewFilter::AllChanges,
+        DoctorReviewFilter::AutoApply,
     );
 
     assert_eq!(
@@ -426,7 +477,7 @@ fn invalid_tie_candidate_is_rejected_without_mutation() {
         &[(1, "A"), (2, "B")],
     );
     let mut review =
-        DoctorReviewSession::from_scan(scan_with_group(group), DoctorReviewFilter::AllChanges);
+        DoctorReviewSession::from_scan(scan_with_group(group), DoctorReviewFilter::NeedsReview);
     let group_id = review.groups()[0].id;
 
     let result = review.choose_candidate(group_id, &DoctorValue::Text("Invented".into()));
@@ -446,17 +497,17 @@ fn review_order_is_stable_across_selection_and_candidate_changes() {
     high.confidence = 98;
     let mut source = scan(vec![
         low,
-        proposal(2, DoctorField::Album, ProposalSource::Local),
+        proposal(2, DoctorField::Album, ProposalSource::MusicBrainz),
         medium,
         high,
-        proposal(1, DoctorField::Genre, ProposalSource::Local),
+        proposal(1, DoctorField::Genre, ProposalSource::MusicBrainz),
     ]);
     source.unresolved_groups.push(unresolved_group(
         DoctorField::AlbumArtist,
         &[("A", 1), ("B", 1)],
         &[(1, "A"), (2, "B")],
     ));
-    let mut review = DoctorReviewSession::from_scan(source, DoctorReviewFilter::AllChanges);
+    let mut review = DoctorReviewSession::from_scan(source, DoctorReviewFilter::NeedsReview);
     let group_id = review.groups()[0].id;
     review
         .choose_candidate(group_id, &DoctorValue::Text("A".into()))
@@ -485,10 +536,10 @@ fn review_order_is_stable_across_selection_and_candidate_changes() {
             .map(|(_, track_id, field)| (*track_id, *field))
             .collect::<Vec<_>>(),
         vec![
-            (1, DoctorField::Genre),
-            (2, DoctorField::Album),
             (2, DoctorField::AlbumArtist),
+            (1, DoctorField::Genre),
             (2, DoctorField::Title),
+            (2, DoctorField::Album),
             (1, DoctorField::Artist),
             (1, DoctorField::Title),
         ]
@@ -496,25 +547,25 @@ fn review_order_is_stable_across_selection_and_candidate_changes() {
 }
 
 #[test]
-fn preset_reset_clears_hidden_tie_selection_memory() {
+fn all_preset_selects_hidden_tie_selection_memory() {
     let group = unresolved_group(
         DoctorField::Artist,
         &[("A", 1), ("B", 1), ("C", 1)],
         &[(1, "A"), (2, "B"), (3, "C")],
     );
     let mut review =
-        DoctorReviewSession::from_scan(scan_with_group(group), DoctorReviewFilter::AllChanges);
+        DoctorReviewSession::from_scan(scan_with_group(group), DoctorReviewFilter::NeedsReview);
     let group_id = review.groups()[0].id;
     review
         .choose_candidate(group_id, &DoctorValue::Text("A".into()))
         .unwrap();
 
-    review.all_safe();
+    review.all();
     review
         .choose_candidate(group_id, &DoctorValue::Text("B".into()))
         .unwrap();
 
-    assert!(review.rows().iter().all(|row| !row.selected));
+    assert!(review.rows().iter().all(|row| row.selected));
 }
 
 #[test]
@@ -524,7 +575,7 @@ fn marking_a_row_stale_does_not_reorder_the_session() {
             proposal(1, DoctorField::Artist, ProposalSource::Local),
             proposal(2, DoctorField::Artist, ProposalSource::Local),
         ]),
-        DoctorReviewFilter::AllChanges,
+        DoctorReviewFilter::AutoApply,
     );
     let before = review.rows().iter().map(|row| row.id).collect::<Vec<_>>();
 
@@ -546,7 +597,7 @@ fn manual_stale_state_survives_candidate_switches() {
         &[(1, "A"), (2, "B"), (3, "C")],
     );
     let mut review =
-        DoctorReviewSession::from_scan(scan_with_group(group), DoctorReviewFilter::AllChanges);
+        DoctorReviewSession::from_scan(scan_with_group(group), DoctorReviewFilter::NeedsReview);
     let group_id = review.groups()[0].id;
     review
         .choose_candidate(group_id, &DoctorValue::Text("A".into()))
