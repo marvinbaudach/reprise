@@ -221,6 +221,10 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
             }
         }) as Rc<dyn Fn()>
     });
+    // Built here rather than in `window.rs` for the same reason the fingerprint
+    // backend above is: this is where the window layer may name a platform
+    // concrete, and the composition root is held below 600 lines.
+    let spectrogram_batch = super::spectrogram_backend::build(db_path.to_path_buf());
     let library_menu = super::primary_menu::install(
         header,
         window,
@@ -239,6 +243,10 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
                 );
             }),
             on_cancel_scan: Rc::new(move || cancel_scan_controls.request_cancel()),
+            on_analyze_library: Rc::new({
+                let batch = spectrogram_batch.clone();
+                move || batch.toggle()
+            }),
             on_library_doctor: Rc::new(move || menu_library_doctor.open()),
             on_import_playlist: {
                 let sidebar = sidebar.clone();
@@ -250,12 +258,41 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         scan_controls,
     );
     app.set_accels_for_action("win.open-primary-menu", &["F10"]);
-    scan_controls.set_on_scan_state_changed({
+    // One refresh for both jobs: the section's two labels are rebuilt together,
+    // so a scan starting can never leave the analysis item showing the label of
+    // the other state.
+    let refresh_library_menu = {
         let library_menu = library_menu.clone();
-        move |is_scanning| {
-            super::primary_menu::update_library_section(&library_menu, is_scanning);
-        }
+        let scan_controls = scan_controls.clone();
+        let batch = Rc::downgrade(&spectrogram_batch);
+        Rc::new(move || {
+            super::primary_menu::update_library_section(
+                &library_menu,
+                super::primary_menu::LibraryMenuState {
+                    is_scanning: scan_controls.is_scanning(),
+                    is_analyzing: batch.upgrade().is_some_and(|batch| batch.is_running()),
+                },
+            );
+        })
+    };
+    scan_controls.set_on_scan_state_changed({
+        let refresh = refresh_library_menu.clone();
+        move |_| refresh()
     });
+    spectrogram_batch.subscribe_progress(|| true, {
+        let refresh = refresh_library_menu.clone();
+        move |_| refresh()
+    });
+    super::spectrogram_batch_progress::install(scan_controls, &spectrogram_batch);
+    // The colour of the seek bar arrives the way its shape already does: by
+    // itself. The run is resumable, so a library that is already analyzed ends
+    // it immediately and shows nothing; the menu item is the way to stop one
+    // that is under way. Deferred to idle so it never competes with the first
+    // frame.
+    {
+        let batch = spectrogram_batch.clone();
+        gtk4::glib::idle_add_local_once(move || batch.start());
+    }
 
     playing_source_wiring::install(
         app,
@@ -502,12 +539,21 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         let active_content_focus = active_content_focus.clone();
         Rc::new(move || active_content_focus.focus())
     };
+    let show_sound: Rc<dyn Fn()> = {
+        let panel = Rc::downgrade(info_panel);
+        Rc::new(move || {
+            if let Some(panel) = panel.upgrade() {
+                panel.show_sound();
+            }
+        })
+    };
     super::shortcuts::wire(
         app,
         window,
         search_bar,
         search_entry,
         focus_active_content,
+        show_sound,
         player.clone(),
     );
 

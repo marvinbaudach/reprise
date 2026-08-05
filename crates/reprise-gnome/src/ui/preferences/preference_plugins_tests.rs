@@ -36,7 +36,10 @@ fn source_plugins_expose_the_service_specific_privacy_copy() {
 
 #[test]
 fn set_10_plugins_is_the_single_settings_home_in_the_design_order() {
-    assert_eq!(plugin_ids_for_group(PluginGroup::Local), &["song_visuals"]);
+    assert_eq!(
+        plugin_ids_for_group(PluginGroup::Local),
+        &["song_visuals", "sound_similarity"]
+    );
     assert_eq!(
         plugin_ids_for_group(PluginGroup::Online),
         &[
@@ -62,7 +65,46 @@ fn set_10_plugins_is_the_single_settings_home_in_the_design_order() {
             .copied()
             .filter(|id| plugin_uses_expander(id))
             .collect::<Vec<_>>(),
-        ["youtube", "podcasts", "radio", "new_releases", "concerts",]
+        [
+            "sound_similarity",
+            "youtube",
+            "podcasts",
+            "radio",
+            "new_releases",
+            "concerts",
+        ]
+    );
+}
+
+#[test]
+fn sim_8_provision_badges_use_the_static_group_majority_rule() {
+    use reprise_core::modules::ProvisionKind;
+
+    assert!(provision_badges_for("youtube", ONLINE_PLUGIN_IDS).is_empty());
+    assert_eq!(
+        provision_badges_for("cover_download", ONLINE_PLUGIN_IDS)
+            .iter()
+            .map(|provision| provision.kind)
+            .collect::<Vec<_>>(),
+        [ProvisionKind::Extends]
+    );
+    for id in LOCAL_PLUGIN_IDS {
+        assert!(
+            !provision_badges_for(id, LOCAL_PLUGIN_IDS).is_empty(),
+            "a tied Local row must retain its badge: {id}"
+        );
+    }
+    assert_eq!(
+        provision_badge_tone(ProvisionKind::PanelTab),
+        ProvisionBadgeTone::Accent
+    );
+    assert_eq!(
+        provision_badge_tone(ProvisionKind::SidebarSection),
+        ProvisionBadgeTone::Accent
+    );
+    assert_eq!(
+        provision_badge_tone(ProvisionKind::ContextItem),
+        ProvisionBadgeTone::Neutral
     );
 }
 

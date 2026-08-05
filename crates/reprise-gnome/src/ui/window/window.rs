@@ -27,7 +27,7 @@ use reprise_core::view_source::ViewSource;
 use reprise_core::waveform::RenderDataBackend;
 
 use super::cover_download_worker;
-use super::file_open::FileOpenHandler;
+use super::file_open::{FileOpenHandler, StartupOpenIntent};
 use super::player_controller::PlayerController;
 use super::scan_progress::ScanProgressView;
 use super::sidebar::Sidebar;
@@ -47,7 +47,12 @@ const MIN_HEIGHT: i32 = 400;
 /// scan-worker thread or the watcher (both open their own `Db` handle over it
 /// rather than sharing this one across threads), so this takes a borrow rather
 /// than owning it outright.
-pub fn build(app: &adw::Application, conn: &Rc<Db>, db_path: &Path) -> FileOpenHandler {
+pub fn build(
+    app: &adw::Application,
+    conn: &Rc<Db>,
+    db_path: &Path,
+    startup_intent: StartupOpenIntent,
+) -> FileOpenHandler {
     {
         let conn = &conn;
         let accent_source = reprise_core::library::settings::get_setting(
@@ -81,7 +86,6 @@ pub fn build(app: &adw::Application, conn: &Rc<Db>, db_path: &Path) -> FileOpenH
     super::style::install();
     let session_state = super::session_restore::load(conn);
     let first_run_decision = super::first_run::initial_decision(conn);
-    let initial_view = super::compact_mode_controls::initial_transition(conn, first_run_decision);
     let window = adw::ApplicationWindow::builder()
         .application(app)
         .title(strings::text(strings::APP_NAME))
@@ -179,6 +183,9 @@ pub fn build(app: &adw::Application, conn: &Rc<Db>, db_path: &Path) -> FileOpenH
             None
         }
     };
+    let startup_intent = startup_intent.with_player_available(player.is_some());
+    let initial_view =
+        super::compact_mode_controls::initial_transition(conn, first_run_decision, startup_intent);
     let startup_purged = match super::issues::purge_startup_tombstones(conn) {
         Ok(ids) => ids,
         Err(error) => {
@@ -447,6 +454,16 @@ pub fn build(app: &adw::Application, conn: &Rc<Db>, db_path: &Path) -> FileOpenH
     let split_view = library_shell.split_view;
     let content_nav = library_shell.content_nav;
     let info_panel = library_shell.info_panel;
+    {
+        let player = player.clone();
+        let panel = info_panel.clone();
+        track_list.set_on_find_similar(move |id| {
+            if let Some(player) = &player {
+                player.play_track_id(id);
+                panel.show_sound();
+            }
+        });
+    }
     let open_device: super::device_sync_launcher::OpenDevice = Rc::new({
         let content_stack = content_stack.clone();
         let window_title = window_title.clone();
@@ -466,7 +483,12 @@ pub fn build(app: &adw::Application, conn: &Rc<Db>, db_path: &Path) -> FileOpenH
     super::device_sync_feedback::install(&header, &split_view, &toast_overlay, &device_sync);
     info_panel.retain_for_window(&window);
     if let Some(player) = &player {
-        super::window_now_playing_wiring::install(player, &info_panel, &queue_model);
+        super::window_now_playing_wiring::install(
+            player,
+            &info_panel,
+            &queue_model,
+            &metadata_navigator,
+        );
     }
     let player_bar_widget = player
         .as_ref()

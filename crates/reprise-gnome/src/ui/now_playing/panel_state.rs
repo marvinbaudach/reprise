@@ -10,6 +10,7 @@ use crate::ui::playback::external_media::ExternalPlaybackSnapshot;
 pub(super) const UP_NEXT_PAGE: &str = "up-next";
 pub(super) const LYRICS_PAGE: &str = "lyrics";
 pub(super) const VISUAL_PAGE: &str = "visual";
+pub(super) const SOUND_PAGE: &str = "sound";
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(super) enum PanelTab {
@@ -17,9 +18,15 @@ pub(super) enum PanelTab {
     UpNext,
     Lyrics,
     Visual,
+    Sound,
 }
 
-pub(super) const PANEL_TABS: [PanelTab; 3] = [PanelTab::UpNext, PanelTab::Lyrics, PanelTab::Visual];
+pub(super) const PANEL_TABS: [PanelTab; 4] = [
+    PanelTab::UpNext,
+    PanelTab::Lyrics,
+    PanelTab::Visual,
+    PanelTab::Sound,
+];
 
 impl PanelTab {
     pub(super) fn page_name(self) -> &'static str {
@@ -27,6 +34,7 @@ impl PanelTab {
             Self::UpNext => UP_NEXT_PAGE,
             Self::Lyrics => LYRICS_PAGE,
             Self::Visual => VISUAL_PAGE,
+            Self::Sound => SOUND_PAGE,
         }
     }
 
@@ -39,6 +47,17 @@ pub(super) fn should_render_up_next(panel_visible: bool, selected_tab: PanelTab)
     panel_visible && selected_tab == PanelTab::UpNext
 }
 
+pub(super) fn tab_after_sound_visibility_change(
+    selected: PanelTab,
+    sound_visible: bool,
+) -> PanelTab {
+    if !sound_visible && selected == PanelTab::Sound {
+        PanelTab::UpNext
+    } else {
+        selected
+    }
+}
+
 #[derive(Default)]
 pub(super) struct TabSession {
     pub(super) selected: Cell<PanelTab>,
@@ -49,6 +68,43 @@ pub(super) struct TabFooters {
     pub(super) up_next: String,
     pub(super) lyrics: String,
     pub(super) visual: String,
+    pub(super) sound: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{tab_after_sound_visibility_change, PanelTab, PANEL_TABS, SOUND_PAGE};
+
+    #[test]
+    fn npp_14_extension_tab_follows_the_three_built_in_tabs() {
+        assert_eq!(
+            PANEL_TABS,
+            [
+                PanelTab::UpNext,
+                PanelTab::Lyrics,
+                PanelTab::Visual,
+                PanelTab::Sound,
+            ]
+        );
+        assert_eq!(PanelTab::Sound.page_name(), SOUND_PAGE);
+        assert_eq!(PanelTab::from_page_name(SOUND_PAGE), Some(PanelTab::Sound));
+    }
+
+    #[test]
+    fn npp_15_hiding_the_open_extension_tab_falls_back_to_up_next() {
+        assert_eq!(
+            tab_after_sound_visibility_change(PanelTab::Sound, false),
+            PanelTab::UpNext
+        );
+        assert_eq!(
+            tab_after_sound_visibility_change(PanelTab::Lyrics, false),
+            PanelTab::Lyrics
+        );
+        assert_eq!(
+            tab_after_sound_visibility_change(PanelTab::Sound, true),
+            PanelTab::Sound
+        );
+    }
 }
 
 thread_local! {

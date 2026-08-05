@@ -388,6 +388,7 @@ fun restoringLibraryLoadsAllThreeTabsThroughTheCorePort() {
             titles = titleWindow,
             albums = completeWindow(listOf(album)),
             artists = completeWindow(listOf(artist)),
+            folderUri = "content://provider/tree/Music",
         ),
         state,
     )

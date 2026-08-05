@@ -192,10 +192,40 @@ impl PlayerController {
         *self.song_visual_spectrum_changed.borrow_mut() = Some(Rc::new(callback));
     }
 
+    /// Persisted `song_visuals` module state in; the whole audio-reactive
+    /// chain re-synced from it. The module is only one of its two inputs —
+    /// see [`Self::audio_reactive_enabled`].
     pub(in crate::ui) fn set_song_visuals_enabled(
         &self,
         enabled: bool,
     ) -> Result<(), PlaybackError> {
+        self.song_visuals_module.set(enabled);
+        self.sync_audio_reactive()
+    }
+
+    /// Whether anything audio-reactive should be running right now: the
+    /// spectrum feed at the source, the Visual tab and the reactive light in
+    /// the panel, the bar's bass layers.
+    ///
+    /// Two inputs, one answer, one owner. Every surface asks this instead of
+    /// pairing the module switch with its own idea of what a podcast is —
+    /// the same decision living in two places is how the last two audible
+    /// bugs got in.
+    pub(in crate::ui) fn audio_reactive_enabled(&self) -> bool {
+        crate::ui::playback::preview::audio_reactive_enabled(
+            self.song_visuals_module.get(),
+            self.playback_mode(),
+        )
+    }
+
+    /// Applies [`Self::audio_reactive_enabled`] to the source. Cheap and safe
+    /// mid-playback: `set_spectrum_enabled` only flips `post-messages` and an
+    /// atomic the cava sink reads, it performs no pipeline surgery.
+    ///
+    /// Switching off also parks the bar's bass layers, which would otherwise
+    /// freeze at whatever the last frame said instead of settling to rest.
+    pub(in crate::ui) fn sync_audio_reactive(&self) -> Result<(), PlaybackError> {
+        let enabled = self.audio_reactive_enabled();
         if !enabled {
             self.sync_bass(0.0, 0.0);
         }
@@ -297,8 +327,11 @@ impl PlayerController {
                         &track_path,
                         waveform_backend.as_ref(),
                     )?;
-                    // Same decode, same store: the colour curve is derived from
-                    // the spectrogram the call above just made sure exists.
+                    // Only a track whose peaks had to be decoded just now also
+                    // got a spectrogram stored; one with cached peaks returns
+                    // from the call above untouched. So this is `None` for
+                    // everything the library analysis has not reached yet, and
+                    // the bar draws in the plain accent until it has.
                     let centroid = reprise_core::waveform_cache::centroid_for_playback(
                         &db,
                         track_id,
@@ -309,13 +342,48 @@ impl PlayerController {
         }) else {
             return;
         };
+        let colour_backend = self.waveform_backend.clone();
+        let colour_path = std::path::PathBuf::from(path);
         glib::spawn_future_local(async move {
             if let Ok(Some((peaks, centroid))) = receiver.recv().await {
-                if waveform_generation.get() == generation {
-                    // Same peaks feed both players so the mini waveform (frame
-                    // 1e) shows the real shape + progress, not the skeleton.
-                    compact_player.set_analysis(peaks.clone(), centroid.clone());
-                    waveform.set_analysis(peaks, centroid);
+                if waveform_generation.get() != generation {
+                    return;
+                }
+                let buckets = peaks.len();
+                // Same peaks feed both players so the mini waveform (frame
+                // 1e) shows the real shape + progress, not the skeleton.
+                compact_player.set_analysis(peaks.clone(), centroid.clone());
+                waveform.set_analysis(peaks.clone(), centroid.clone());
+                if centroid.is_some() {
+                    return;
+                }
+                // No curve yet: the shape is already on screen, so the decode
+                // that produces the colour runs behind it and the bar is
+                // recoloured when it lands. Nobody waits for this.
+                let db_path = reprise_core::db::default_path();
+                let Ok(receiver) = one_shot_task::spawn("reprise-waveform-colour", move || {
+                    reprise_core::db::Db::open_migrated(Some(&db_path))
+                        .ok()
+                        .and_then(|db| {
+                            reprise_core::waveform_cache::ensure_centroid_for_playback(
+                                &db,
+                                track_id,
+                                &colour_path,
+                                buckets,
+                                colour_backend.as_ref(),
+                            )
+                        })
+                }) else {
+                    return;
+                };
+                if let Ok(Some(curve)) = receiver.recv().await {
+                    if waveform_generation.get() == generation {
+                        // Same bars, now with colour: `set_analysis` crossfades
+                        // between them, so the bar warms into its colours
+                        // instead of snapping.
+                        compact_player.set_analysis(peaks.clone(), Some(curve.clone()));
+                        waveform.set_analysis(peaks, Some(curve));
+                    }
                 }
             }
         });

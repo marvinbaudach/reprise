@@ -93,9 +93,9 @@ pub(crate) fn migrate_v19(conn: &Connection) -> Result<(), rusqlite::Error> {
     transaction.commit()
 }
 
-pub(crate) fn migrate_v57(conn: &Connection) -> Result<(), rusqlite::Error> {
+pub(crate) fn migrate_v58(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if version >= 57 {
+    if version >= 58 {
         return Ok(());
     }
     let transaction = conn.unchecked_transaction()?;
@@ -119,7 +119,7 @@ pub(crate) fn migrate_v57(conn: &Connection) -> Result<(), rusqlite::Error> {
          SET last_complete_scan_id=NULL, reviewed_scan_id=NULL",
         [],
     )?;
-    transaction.pragma_update(None, "user_version", 57)?;
+    transaction.pragma_update(None, "user_version", 58)?;
     transaction.commit()
 }
 
@@ -242,7 +242,7 @@ mod tests {
         .unwrap();
         conn.pragma_update(None, "user_version", 56).unwrap();
 
-        super::migrate_v57(conn).unwrap();
+        super::migrate_v58(conn).unwrap();
 
         let pointers: (Option<i64>, Option<i64>) = conn
             .query_row(

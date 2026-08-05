@@ -12,6 +12,7 @@ use super::compact_player::CompactPlayer;
 use super::compact_player_layouts::{
     CARD_MARGIN, CSS_PASSTHROUGH, CSS_WINDOW_CLASS, MINI_HEIGHT, MINI_WIDTH,
 };
+use super::file_open::StartupOpenIntent;
 use super::first_run::FirstRunDecision;
 use super::strings;
 use super::window_decorations::WindowContentHost;
@@ -31,9 +32,12 @@ pub(in crate::ui) fn startup_transition(
     persisted_mode: WindowViewMode,
     persisted_layout: CompactLayout,
     first_run: FirstRunDecision,
+    intent: StartupOpenIntent,
 ) -> ViewTransition {
     let mode = if first_run == FirstRunDecision::ShowWizard {
         WindowViewMode::Library
+    } else if intent == StartupOpenIntent::CompactPlayback {
+        WindowViewMode::Compact
     } else {
         persisted_mode
     };
@@ -349,6 +353,7 @@ mod tests {
     use gtk4::gio;
 
     use super::*;
+    use crate::ui::file_open::StartupOpenIntent;
 
     #[test]
     fn toggling_alternates_library_and_compact_modes() {
@@ -436,9 +441,54 @@ mod tests {
             WindowViewMode::Compact,
             CompactLayout::Pill,
             FirstRunDecision::ShowWizard,
+            StartupOpenIntent::Library,
         );
         assert_eq!(transition.mode, WindowViewMode::Library);
         assert_eq!(transition.layout, CompactLayout::Pill);
+    }
+
+    #[test]
+    fn file_open_intent_precedes_persisted_mode_but_not_first_run() {
+        let cases = [
+            (
+                WindowViewMode::Compact,
+                CompactLayout::Pill,
+                FirstRunDecision::ShowWizard,
+                StartupOpenIntent::CompactPlayback,
+                WindowViewMode::Library,
+            ),
+            (
+                WindowViewMode::Library,
+                CompactLayout::Card,
+                FirstRunDecision::AlreadyCompleted,
+                StartupOpenIntent::CompactPlayback,
+                WindowViewMode::Compact,
+            ),
+            (
+                WindowViewMode::Compact,
+                CompactLayout::Cover,
+                FirstRunDecision::ExistingLibrary,
+                StartupOpenIntent::Library,
+                WindowViewMode::Compact,
+            ),
+            (
+                WindowViewMode::Library,
+                CompactLayout::Pill,
+                FirstRunDecision::AlreadyCompleted,
+                StartupOpenIntent::Library,
+                WindowViewMode::Library,
+            ),
+        ];
+
+        for (persisted_mode, layout, first_run, intent, expected_mode) in cases {
+            assert_eq!(
+                startup_transition(persisted_mode, layout, first_run, intent),
+                ViewTransition {
+                    mode: expected_mode,
+                    layout,
+                }
+            );
+        }
     }
 
     #[test]
@@ -448,7 +498,12 @@ mod tests {
             FirstRunDecision::ExistingLibrary,
         ] {
             assert_eq!(
-                startup_transition(WindowViewMode::Compact, CompactLayout::Cover, decision),
+                startup_transition(
+                    WindowViewMode::Compact,
+                    CompactLayout::Cover,
+                    decision,
+                    StartupOpenIntent::Library,
+                ),
                 ViewTransition {
                     mode: WindowViewMode::Compact,
                     layout: CompactLayout::Cover,

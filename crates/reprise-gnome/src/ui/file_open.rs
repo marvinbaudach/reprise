@@ -33,6 +33,40 @@ struct AudioResolution {
     unresolved: Vec<PathBuf>,
 }
 
+pub(crate) struct OpenRequest {
+    audio_ids: Vec<i64>,
+    unresolved: Vec<PathBuf>,
+    playlists: Vec<PathBuf>,
+    unsupported: usize,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum StartupOpenIntent {
+    #[default]
+    Library,
+    CompactPlayback,
+}
+
+impl StartupOpenIntent {
+    pub(crate) fn with_player_available(self, available: bool) -> Self {
+        if available {
+            self
+        } else {
+            Self::Library
+        }
+    }
+}
+
+impl OpenRequest {
+    pub(crate) fn startup_intent(&self) -> StartupOpenIntent {
+        if !self.audio_ids.is_empty() && self.playlists.is_empty() {
+            StartupOpenIntent::CompactPlayback
+        } else {
+            StartupOpenIntent::Library
+        }
+    }
+}
+
 fn classify_path(path: &Path) -> OpenFileKind {
     let Some(extension) = path.extension().and_then(|extension| extension.to_str()) else {
         return OpenFileKind::Unsupported;
@@ -90,6 +124,37 @@ fn resolve_audio_ids(db: &Db, paths: &[PathBuf]) -> AudioResolution {
     AudioResolution { ids, unresolved }
 }
 
+pub(crate) fn resolve_open_request(db: &Db, files: &[gio::File]) -> OpenRequest {
+    let mut audio_paths = Vec::new();
+    let mut playlists = Vec::new();
+    let mut unsupported = 0;
+    for file in files {
+        let Some(path) = file.path() else {
+            unsupported += 1;
+            continue;
+        };
+        if !path.is_file() {
+            unsupported += 1;
+            continue;
+        }
+        match classify_path(&path) {
+            OpenFileKind::Audio => audio_paths.push(path),
+            OpenFileKind::Playlist => playlists.push(path),
+            OpenFileKind::Unsupported => unsupported += 1,
+        }
+    }
+    let AudioResolution {
+        ids: audio_ids,
+        unresolved,
+    } = resolve_audio_ids(db, &audio_paths);
+    OpenRequest {
+        audio_ids,
+        unresolved,
+        playlists,
+        unsupported,
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct FileOpenHandler {
     window: adw::ApplicationWindow,
@@ -120,66 +185,44 @@ impl FileOpenHandler {
         self.window.present();
     }
 
-    pub(crate) fn open(&self, files: &[gio::File]) {
+    pub(crate) fn open_request(&self, request: OpenRequest) {
         self.present();
 
-        let mut audio_paths = Vec::new();
-        let mut playlist_paths = Vec::new();
-        let mut unsupported = 0;
-        for file in files {
-            let Some(path) = file.path() else {
-                unsupported += 1;
-                continue;
-            };
-            if !path.is_file() {
-                unsupported += 1;
-                continue;
-            }
-            match classify_path(&path) {
-                OpenFileKind::Audio => audio_paths.push(path),
-                OpenFileKind::Playlist => playlist_paths.push(path),
-                OpenFileKind::Unsupported => unsupported += 1,
-            }
-        }
-
-        for path in playlist_paths {
+        for path in request.playlists {
             let result = playlist_io::import_playlist(&self.conn, &path);
             playlist_io::apply_import_result(result, &self.toast_overlay, &self.sidebar);
         }
 
-        if !audio_paths.is_empty() {
-            let resolution = resolve_audio_ids(&self.conn, &audio_paths);
-            if !resolution.ids.is_empty() {
-                match &self.player {
-                    Some(player) => {
-                        tracing::info!(
-                            count = resolution.ids.len(),
-                            "playing files opened through desktop association"
-                        );
-                        player.play_from_view(
-                            resolution.ids,
-                            0,
-                            crate::ui::playback::play_origin::PlayOrigin::library(),
-                        );
-                    }
-                    None => toasts::show(
-                        &self.toast_overlay,
-                        &strings::file_open_playback_unavailable_toast(),
-                    ),
+        if !request.audio_ids.is_empty() {
+            match &self.player {
+                Some(player) => {
+                    tracing::info!(
+                        count = request.audio_ids.len(),
+                        "playing files opened through desktop association"
+                    );
+                    player.play_from_view(
+                        request.audio_ids,
+                        0,
+                        crate::ui::playback::play_origin::PlayOrigin::library(),
+                    );
                 }
-            }
-            if !resolution.unresolved.is_empty() {
-                toasts::show(
+                None => toasts::show(
                     &self.toast_overlay,
-                    &strings::file_open_not_in_library_toast(resolution.unresolved.len()),
-                );
+                    &strings::file_open_playback_unavailable_toast(),
+                ),
             }
         }
-
-        if unsupported > 0 {
+        if !request.unresolved.is_empty() {
             toasts::show(
                 &self.toast_overlay,
-                &strings::file_open_unsupported_toast(unsupported),
+                &strings::file_open_not_in_library_toast(request.unresolved.len()),
+            );
+        }
+
+        if request.unsupported > 0 {
+            toasts::show(
+                &self.toast_overlay,
+                &strings::file_open_unsupported_toast(request.unsupported),
             );
         }
     }
@@ -189,7 +232,26 @@ impl FileOpenHandler {
 mod tests {
     use std::path::{Path, PathBuf};
 
-    use super::{classify_path, resolve_audio_ids, OpenFileKind};
+    use gtk4::gio;
+    use reprise_core::db::Db;
+
+    use super::{
+        classify_path, resolve_audio_ids, resolve_open_request, OpenFileKind, StartupOpenIntent,
+    };
+
+    fn open_request_fixture(name: &str) -> (Db, PathBuf) {
+        let db = crate::test_db::open().unwrap();
+        let root = std::env::temp_dir().join(format!(
+            "reprise-open-request-{}-{name}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        (db, root)
+    }
+
+    fn open_file(path: &Path) -> gio::File {
+        gio::File::for_path(path)
+    }
 
     #[test]
     fn supported_extensions_are_classified_case_insensitively() {
@@ -254,6 +316,84 @@ mod tests {
             .unwrap();
         assert_eq!(count, 2, "opening files must never insert library rows");
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn single_resolvable_audio_file_requests_compact_playback() {
+        let (db, root) = open_request_fixture("resolvable-audio");
+        let audio = root.join("known.flac");
+        std::fs::write(&audio, b"fixture").unwrap();
+        crate::test_db::connection(&db)
+            .execute(
+                "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (1, ?1, 'Known', '', 0)",
+                [audio.to_string_lossy().as_ref()],
+            )
+            .unwrap();
+
+        let request = resolve_open_request(&db, &[open_file(&audio)]);
+
+        assert_eq!(request.startup_intent(), StartupOpenIntent::CompactPlayback);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn resolvable_audio_mixed_with_playlist_requests_library() {
+        let (db, root) = open_request_fixture("audio-and-playlist");
+        let audio = root.join("known.flac");
+        let playlist = root.join("mix.m3u");
+        std::fs::write(&audio, b"fixture").unwrap();
+        std::fs::write(&playlist, b"#EXTM3U\n").unwrap();
+        crate::test_db::connection(&db)
+            .execute(
+                "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (1, ?1, 'Known', '', 0)",
+                [audio.to_string_lossy().as_ref()],
+            )
+            .unwrap();
+
+        let request = resolve_open_request(&db, &[open_file(&audio), open_file(&playlist)]);
+
+        assert_eq!(request.startup_intent(), StartupOpenIntent::Library);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn only_unresolvable_audio_requests_library() {
+        let (db, root) = open_request_fixture("unresolvable-audio");
+        let audio = root.join("unknown.flac");
+        std::fs::write(&audio, b"fixture").unwrap();
+
+        let request = resolve_open_request(&db, &[open_file(&audio)]);
+
+        assert_eq!(request.startup_intent(), StartupOpenIntent::Library);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn playlist_alone_requests_library() {
+        let (db, root) = open_request_fixture("playlist");
+        let playlist = root.join("mix.m3u8");
+        std::fs::write(&playlist, b"#EXTM3U\n").unwrap();
+
+        let request = resolve_open_request(&db, &[open_file(&playlist)]);
+
+        assert_eq!(request.startup_intent(), StartupOpenIntent::Library);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn mini_6_compact_startup_intent_requires_a_player() {
+        assert_eq!(
+            StartupOpenIntent::CompactPlayback.with_player_available(true),
+            StartupOpenIntent::CompactPlayback
+        );
+        assert_eq!(
+            StartupOpenIntent::CompactPlayback.with_player_available(false),
+            StartupOpenIntent::Library
+        );
+        assert_eq!(
+            StartupOpenIntent::Library.with_player_available(false),
+            StartupOpenIntent::Library
+        );
     }
 
     #[test]

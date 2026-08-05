@@ -68,6 +68,12 @@ pub(in crate::ui) fn wire_bar_controls(controller: &Rc<PlayerController>) {
                 .waveform_generation
                 .set(controller.waveform_generation.get().wrapping_add(1));
         }
+        // A podcast session starting or ending changes the answer to
+        // "should anything be reacting to the audio", so the source gate is
+        // re-asked here rather than only when the user flips the module.
+        if let Err(error) = controller.sync_audio_reactive() {
+            tracing::warn!(%error, "could not re-gate the spectrum feed for this session");
+        }
         controller.sync_external_bar_artwork(snapshot.as_ref());
         controller.bar.set_external_snapshot(snapshot.as_ref());
         controller

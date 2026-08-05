@@ -2,10 +2,20 @@
 //! plain text, so a test can assert on what a real log line carried without
 //! pulling in `tracing-subscriber`'s formatting.
 //!
-//! Installed per test with `tracing::subscriber::with_default`, which is
-//! thread-local, so a test using this one sees only its own events.
+//! One process-global subscriber routes events into a thread-local capture.
+//! Keeping the dispatcher stable avoids races in tracing's global callsite
+//! interest cache when Rust's test runner starts logging tests concurrently.
 
-use std::sync::{Arc, Mutex};
+use std::{
+    cell::RefCell,
+    sync::{Arc, Mutex, OnceLock},
+};
+
+static INSTALL_CAPTURE: OnceLock<()> = OnceLock::new();
+
+thread_local! {
+    static ACTIVE_CAPTURE: RefCell<Option<CapturedLogs>> = const { RefCell::new(None) };
+}
 
 #[derive(Clone, Default)]
 pub(crate) struct CapturedLogs(Arc<Mutex<Vec<String>>>);
@@ -13,6 +23,34 @@ pub(crate) struct CapturedLogs(Arc<Mutex<Vec<String>>>);
 impl CapturedLogs {
     pub(crate) fn joined(&self) -> String {
         self.0.lock().unwrap().join("\n")
+    }
+
+    /// Runs one assertion scope with this thread's events routed here.
+    pub(crate) fn capture<T>(&self, operation: impl FnOnce() -> T) -> T {
+        INSTALL_CAPTURE.get_or_init(|| {
+            tracing::subscriber::set_global_default(LogCapture)
+                .expect("test log capture must own the Core test subscriber");
+        });
+        let guard = CaptureGuard::install(self.clone());
+        let result = operation();
+        drop(guard);
+        result
+    }
+}
+
+struct CaptureGuard(Option<CapturedLogs>);
+
+impl CaptureGuard {
+    fn install(logs: CapturedLogs) -> Self {
+        Self(ACTIVE_CAPTURE.with(|slot| slot.replace(Some(logs))))
+    }
+}
+
+impl Drop for CaptureGuard {
+    fn drop(&mut self) {
+        ACTIVE_CAPTURE.with(|slot| {
+            slot.replace(self.0.take());
+        });
     }
 }
 
@@ -25,11 +63,18 @@ impl tracing::field::Visit for FieldCollector {
     }
 }
 
-pub(crate) struct LogCapture(pub(crate) CapturedLogs);
+struct LogCapture;
 
 impl tracing::Subscriber for LogCapture {
     fn enabled(&self, _metadata: &tracing::Metadata<'_>) -> bool {
-        true
+        ACTIVE_CAPTURE.with(|slot| slot.borrow().is_some())
+    }
+
+    fn register_callsite(
+        &self,
+        _metadata: &'static tracing::Metadata<'static>,
+    ) -> tracing::subscriber::Interest {
+        tracing::subscriber::Interest::sometimes()
     }
 
     fn new_span(&self, _span: &tracing::span::Attributes<'_>) -> tracing::span::Id {
@@ -43,7 +88,11 @@ impl tracing::Subscriber for LogCapture {
     fn event(&self, event: &tracing::Event<'_>) {
         let mut collector = FieldCollector(event.metadata().name().to_owned());
         event.record(&mut collector);
-        self.0 .0.lock().unwrap().push(collector.0);
+        ACTIVE_CAPTURE.with(|slot| {
+            if let Some(logs) = slot.borrow().as_ref() {
+                logs.0.lock().unwrap().push(collector.0);
+            }
+        });
     }
 
     fn enter(&self, _span: &tracing::span::Id) {}

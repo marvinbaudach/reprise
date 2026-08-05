@@ -10,6 +10,8 @@ use reprise_core::library::settings;
 use crate::{LibraryError, MusicLibrary};
 
 const THEME_SETTING_KEY: &str = "ui.theme";
+const VISUALIZER_SETTING_KEY: &str = "ui.now_playing.visualizer";
+const LIBRARY_RATING_SETTING_KEY: &str = "ui.mobile.library_rating";
 
 /// What the shared `ui.theme` key currently contains.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -43,6 +45,74 @@ impl AndroidThemeChoice {
         match self {
             Self::Nocturne => "nocturne",
             Self::Dynamic => "dynamic",
+        }
+    }
+}
+
+/// What the shared Now Playing visualizer key currently contains.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum AndroidStoredVisualizer {
+    Unset,
+    Cover,
+    Spectrum,
+    PreviewBand,
+    Ambient,
+    Unsupported { id: String },
+}
+
+impl AndroidStoredVisualizer {
+    fn from_setting(value: Option<&str>) -> Self {
+        match value {
+            None => Self::Unset,
+            Some("cover") => Self::Cover,
+            Some("spectrum") => Self::Spectrum,
+            Some("preview-band") => Self::PreviewBand,
+            Some("ambient") => Self::Ambient,
+            Some(id) => Self::Unsupported { id: id.to_owned() },
+        }
+    }
+}
+
+/// What the Android library-row rating key currently contains.
+///
+/// This key is surface-scoped because desktop rating visibility is a column in
+/// `ui.column_layout`, not a boolean. Sharing either setting would couple two
+/// different presentation contracts.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum AndroidStoredLibraryRating {
+    Unset,
+    Off,
+    On,
+    Unsupported { id: String },
+}
+
+impl AndroidStoredLibraryRating {
+    fn from_setting(value: Option<&str>) -> Self {
+        match value {
+            Some("0") => Self::Off,
+            Some("1") => Self::On,
+            None => Self::Unset,
+            Some(id) => Self::Unsupported { id: id.to_owned() },
+        }
+    }
+}
+
+/// Visualizer ids Android is allowed to persist after an explicit choice.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum AndroidVisualizerChoice {
+    Cover,
+    Spectrum,
+    PreviewBand,
+    Ambient,
+}
+
+impl AndroidVisualizerChoice {
+    fn setting_id(self) -> &'static str {
+        match self {
+            Self::Cover => "cover",
+            Self::Spectrum => "spectrum",
+            Self::PreviewBand => "preview-band",
+            Self::Ambient => "ambient",
         }
     }
 }
@@ -94,13 +164,55 @@ impl MusicLibrary {
             }
         })
     }
+
+    pub fn visualizer_setting(&self) -> Result<AndroidStoredVisualizer, LibraryError> {
+        let state = self.lock()?;
+        let value = settings::get_setting(&state.db, VISUALIZER_SETTING_KEY).map_err(|error| {
+            LibraryError::Database {
+                detail: error.to_string(),
+            }
+        })?;
+        Ok(AndroidStoredVisualizer::from_setting(value.as_deref()))
+    }
+
+    pub fn set_visualizer(&self, visualizer: AndroidVisualizerChoice) -> Result<(), LibraryError> {
+        let state = self.lock()?;
+        settings::set_setting(&state.db, VISUALIZER_SETTING_KEY, visualizer.setting_id()).map_err(
+            |error| LibraryError::Database {
+                detail: error.to_string(),
+            },
+        )
+    }
+
+    pub fn library_rating_setting(&self) -> Result<AndroidStoredLibraryRating, LibraryError> {
+        let state = self.lock()?;
+        let value =
+            settings::get_setting(&state.db, LIBRARY_RATING_SETTING_KEY).map_err(|error| {
+                LibraryError::Database {
+                    detail: error.to_string(),
+                }
+            })?;
+        Ok(AndroidStoredLibraryRating::from_setting(value.as_deref()))
+    }
+
+    pub fn set_library_rating(&self, enabled: bool) -> Result<(), LibraryError> {
+        let state = self.lock()?;
+        settings::set_bool(&state.db, LIBRARY_RATING_SETTING_KEY, enabled).map_err(|error| {
+            LibraryError::Database {
+                detail: error.to_string(),
+            }
+        })
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use reprise_core::library::settings;
 
-    use super::{AndroidColorScheme, AndroidStoredTheme, AndroidThemeChoice};
+    use super::{
+        AndroidColorScheme, AndroidStoredLibraryRating, AndroidStoredTheme,
+        AndroidStoredVisualizer, AndroidThemeChoice, AndroidVisualizerChoice,
+    };
     use crate::MusicLibrary;
 
     #[test]
@@ -138,6 +250,159 @@ mod tests {
                 theme: AndroidStoredTheme::Dynamic,
                 color_scheme: AndroidColorScheme::Dark,
             },
+        );
+    }
+
+    #[test]
+    fn visualizer_setting_crosses_the_typed_boundary_without_stealing_unknown_values() {
+        let directory = tempfile::tempdir().unwrap();
+        let library = MusicLibrary::open(
+            directory.path().to_str().unwrap(),
+            directory.path().join("cache").to_str().unwrap(),
+        )
+        .unwrap();
+        {
+            let state = library.lock().unwrap();
+            settings::set_setting(
+                &state.db,
+                super::VISUALIZER_SETTING_KEY,
+                "future-data-driven-mode",
+            )
+            .unwrap();
+        }
+
+        assert_eq!(
+            library.visualizer_setting().unwrap(),
+            AndroidStoredVisualizer::Unsupported {
+                id: "future-data-driven-mode".to_owned(),
+            },
+        );
+        library
+            .set_visualizer(AndroidVisualizerChoice::Ambient)
+            .unwrap();
+        assert_eq!(
+            library.visualizer_setting().unwrap(),
+            AndroidStoredVisualizer::Ambient,
+        );
+    }
+
+    #[test]
+    fn stored_library_rating_true_reads_as_on() {
+        let directory = tempfile::tempdir().unwrap();
+        let library = MusicLibrary::open(
+            directory.path().to_str().unwrap(),
+            directory.path().join("cache").to_str().unwrap(),
+        )
+        .unwrap();
+        {
+            let state = library.lock().unwrap();
+            settings::set_setting(&state.db, super::LIBRARY_RATING_SETTING_KEY, "1").unwrap();
+        }
+
+        assert_eq!(
+            library.library_rating_setting().unwrap(),
+            AndroidStoredLibraryRating::On,
+        );
+    }
+
+    #[test]
+    fn unsupported_library_rating_value_is_reported_without_being_destroyed() {
+        let directory = tempfile::tempdir().unwrap();
+        let library = MusicLibrary::open(
+            directory.path().to_str().unwrap(),
+            directory.path().join("cache").to_str().unwrap(),
+        )
+        .unwrap();
+        {
+            let state = library.lock().unwrap();
+            settings::set_setting(
+                &state.db,
+                super::LIBRARY_RATING_SETTING_KEY,
+                "future-choice",
+            )
+            .unwrap();
+        }
+
+        assert_eq!(
+            library.library_rating_setting().unwrap(),
+            AndroidStoredLibraryRating::Unsupported {
+                id: "future-choice".to_owned(),
+            },
+        );
+        let state = library.lock().unwrap();
+        assert_eq!(
+            settings::get_setting(&state.db, super::LIBRARY_RATING_SETTING_KEY)
+                .unwrap()
+                .as_deref(),
+            Some("future-choice"),
+        );
+    }
+
+    #[test]
+    fn unset_library_rating_is_distinct_from_stored_off() {
+        let directory = tempfile::tempdir().unwrap();
+        let library = MusicLibrary::open(
+            directory.path().to_str().unwrap(),
+            directory.path().join("cache").to_str().unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            library.library_rating_setting().unwrap(),
+            AndroidStoredLibraryRating::Unset,
+        );
+        {
+            let state = library.lock().unwrap();
+            settings::set_setting(&state.db, super::LIBRARY_RATING_SETTING_KEY, "0").unwrap();
+        }
+        assert_eq!(
+            library.library_rating_setting().unwrap(),
+            AndroidStoredLibraryRating::Off,
+        );
+    }
+
+    #[test]
+    fn library_rating_write_is_visible_through_a_fresh_handle() {
+        let directory = tempfile::tempdir().unwrap();
+        let cache = directory.path().join("cache");
+        let library =
+            MusicLibrary::open(directory.path().to_str().unwrap(), cache.to_str().unwrap())
+                .unwrap();
+
+        library.set_library_rating(true).unwrap();
+        drop(library);
+
+        let fresh = MusicLibrary::open(directory.path().to_str().unwrap(), cache.to_str().unwrap())
+            .unwrap();
+        assert_eq!(
+            fresh.library_rating_setting().unwrap(),
+            AndroidStoredLibraryRating::On,
+        );
+    }
+
+    /// Switching back off has to reach storage too.
+    ///
+    /// Every other test here writes `true`, so a body that ignored its argument
+    /// and always stored "on" would pass all of them — and ship a switch that
+    /// can be turned on and never off again.
+    #[test]
+    fn library_rating_can_be_switched_back_off() {
+        let directory = tempfile::tempdir().unwrap();
+        let cache = directory.path().join("cache");
+        let library =
+            MusicLibrary::open(directory.path().to_str().unwrap(), cache.to_str().unwrap())
+                .unwrap();
+
+        library.set_library_rating(true).unwrap();
+        assert_eq!(
+            library.library_rating_setting().unwrap(),
+            AndroidStoredLibraryRating::On,
+        );
+
+        library.set_library_rating(false).unwrap();
+        assert_eq!(
+            library.library_rating_setting().unwrap(),
+            AndroidStoredLibraryRating::Off,
         );
     }
 }

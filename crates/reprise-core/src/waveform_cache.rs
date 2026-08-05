@@ -74,6 +74,55 @@ pub fn centroid_for_playback(db: &Db, track_id: i64, buckets: usize) -> Option<V
     }
 }
 
+/// Produces and stores the track's spectrogram when only its peaks are cached,
+/// then returns the colour curve.
+///
+/// Tracks whose peaks were stored before there was a spectrogram column keep
+/// their peaks and have no bands, so `peaks_for_playback` returns early and
+/// never fills that gap. The background backfill closes it eventually; this
+/// closes it now, for the one track a listener is actually hearing.
+///
+/// Costs a full decode, so callers must not block a listener on it: the peaks
+/// are already on screen by then and the colour is applied when it arrives.
+/// Returns `None` if the track is unknown, already has a curve, or cannot be
+/// decoded.
+pub fn ensure_centroid_for_playback(
+    db: &Db,
+    track_id: i64,
+    path: &Path,
+    buckets: usize,
+    backend: &dyn RenderDataBackend,
+) -> Option<Vec<u8>> {
+    match get_track_spectrogram(db, track_id) {
+        Ok(Some(_)) => return None,
+        Ok(None) => {}
+        Err(error) => {
+            tracing::warn!(track_id, %error, "could not read the stored spectrogram");
+            return None;
+        }
+    }
+    let source = match track_source_fingerprint(db, track_id) {
+        Ok(Some(source)) => source,
+        Ok(None) => return None,
+        Err(error) => {
+            tracing::warn!(track_id, %error, "could not read the track's source identity");
+            return None;
+        }
+    };
+    let data = match backend.extract_render_data(path, STORED_PEAK_COUNT) {
+        Ok(data) => data,
+        Err(error) => {
+            tracing::warn!(track_id, %error, "on-demand spectrogram extraction failed");
+            return None;
+        }
+    };
+    if let Err(error) = set_track_render_data(db, track_id, source, &data) {
+        tracing::warn!(track_id, %error, "could not store the on-demand spectrogram");
+        return None;
+    }
+    Some(data.spectrogram.centroid_curve(buckets))
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
@@ -240,5 +289,51 @@ mod tests {
 
         assert_eq!(peaks, None);
         assert_eq!(backend.decodes.load(Ordering::Relaxed), 0);
+    }
+
+    /// The gap this closes: peaks stored before the spectrogram column existed
+    /// make `peaks_for_playback` return early forever, so those tracks never
+    /// gain a colour curve from the on-play path alone.
+    #[test]
+    fn a_track_with_only_cached_peaks_gains_its_curve_on_play() {
+        let db = database();
+        let backend = CountingBackend::default();
+        crate::db::set_waveform_peaks(&db, 1, &vec![3; STORED_PEAK_COUNT]).unwrap();
+        assert_eq!(centroid_for_playback(&db, 1, STORED_PEAK_COUNT), None);
+
+        let curve =
+            ensure_centroid_for_playback(&db, 1, Path::new("/played.flac"), 16, &backend).unwrap();
+
+        assert_eq!(curve.len(), 16);
+        assert_eq!(backend.decodes.load(Ordering::Relaxed), 1);
+        assert!(centroid_for_playback(&db, 1, STORED_PEAK_COUNT).is_some());
+    }
+
+    #[test]
+    fn a_track_that_already_has_a_curve_is_never_decoded_again() {
+        let db = database();
+        let backend = CountingBackend::default();
+        peaks_for_playback(&db, 1, Path::new("/played.flac"), &backend);
+        let decodes_after_first_play = backend.decodes.load(Ordering::Relaxed);
+
+        let curve = ensure_centroid_for_playback(&db, 1, Path::new("/played.flac"), 16, &backend);
+
+        assert_eq!(curve, None, "nothing to redo, so nothing is handed back");
+        assert_eq!(
+            backend.decodes.load(Ordering::Relaxed),
+            decodes_after_first_play
+        );
+    }
+
+    #[test]
+    fn an_undecodable_track_gains_no_curve_and_stores_nothing() {
+        let db = database();
+        crate::db::set_waveform_peaks(&db, 1, &vec![3; STORED_PEAK_COUNT]).unwrap();
+
+        let curve =
+            ensure_centroid_for_playback(&db, 1, Path::new("/played.flac"), 16, &FailingBackend);
+
+        assert_eq!(curve, None);
+        assert_eq!(centroid_for_playback(&db, 1, STORED_PEAK_COUNT), None);
     }
 }

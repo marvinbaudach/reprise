@@ -1,5 +1,7 @@
 package de.reprise.spike
 
+import android.graphics.Bitmap
+import android.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -7,6 +9,7 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -41,6 +44,31 @@ private const val DESTROYED = "already been destroyed"
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class TrackArtworkTest {
+    @Test
+    fun ambientColorsComeFromBoundedSamplesOfTheAlreadyDecodedArtwork() {
+        val bitmap = Bitmap.createBitmap(12, 12, Bitmap.Config.ARGB_8888)
+        for (y in 0 until bitmap.height) {
+            for (x in 0 until bitmap.width) {
+                bitmap.setPixel(
+                    x,
+                    y,
+                    when (x / 4) {
+                        0 -> Color.rgb(240, 24, 32)
+                        1 -> Color.rgb(16, 220, 80)
+                        else -> Color.rgb(32, 72, 232)
+                    },
+                )
+            }
+        }
+
+        val fields = extractAmbientArtworkColors(bitmap)
+
+        assertEquals(
+            setOf(Color.rgb(240, 24, 32), Color.rgb(16, 220, 80), Color.rgb(32, 72, 232)),
+            fields.asList().toSet(),
+        )
+    }
+
     /**
      * A full-size sheet request is useful now; queued row work belongs to the
      * list the sheet just covered. It therefore gets a separate serial lane,
