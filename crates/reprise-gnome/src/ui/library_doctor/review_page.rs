@@ -15,7 +15,7 @@ use reprise_core::library_doctor::{
 };
 
 use super::review_model::{rows_for, ReviewOutcome, ReviewRowModel};
-use crate::ui::preferences::preference_library_doctor;
+use crate::ui::library_doctor::remote_toggle;
 use crate::ui::strings;
 
 struct ReviewState {
@@ -324,7 +324,7 @@ impl LibraryDoctorReviewPage {
         header.pack_end(&presets);
 
         let state_for_remote = state.clone();
-        let remote = preference_library_doctor::remote_suggestions_row_for(
+        let remote = remote_toggle::remote_suggestions_row_for(
             conn,
             parent,
             Rc::new(move |visible| {

@@ -10,7 +10,7 @@ use reprise_core::library_doctor::{
     ProblemClass,
 };
 
-use crate::ui::preferences::preference_library_doctor;
+use crate::ui::library_doctor::remote_toggle;
 use crate::ui::strings;
 
 const PROBLEM_CLASSES: [ProblemClass; 5] = [
@@ -162,8 +162,7 @@ impl LibraryDoctorPage {
             .model(&scope_model)
             .selected(0)
             .build();
-        let remote =
-            preference_library_doctor::remote_suggestions_row_for(conn, parent, on_remote_changed);
+        let remote = remote_toggle::remote_suggestions_row_for(conn, parent, on_remote_changed);
         let options = adw::PreferencesGroup::builder()
             .title(strings::text(strings::DOCTOR_SCAN_OPTIONS))
             .build();

@@ -28,7 +28,6 @@ pub const QUIT_REPRISE: &str = N_!("Quit Reprise");
 // Primary menu items.
 pub const RESCAN_LIBRARY: &str = N_!("Rescan Library");
 pub const CANCEL_SCAN: &str = N_!("Cancel Scan");
-pub const SYNC_DEVICE: &str = N_!("Sync Device…");
 pub const KEYBOARD_SHORTCUTS: &str = N_!("Keyboard Shortcuts");
 pub const OPEN_KEYBOARD_SHORTCUTS: &str = N_!("Open Keyboard Shortcuts");
 

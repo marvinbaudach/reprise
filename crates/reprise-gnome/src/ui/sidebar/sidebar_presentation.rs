@@ -20,14 +20,13 @@ pub(in crate::ui) enum NavIcon {
     Library,
     Queue,
     Playlist,
-    NewPlaylist,
-    ImportPlaylist,
     RecentlyPlayed,
     TopRated,
     RecentlyAdded,
     GenericSmart,
     ImportErrors,
     Missing,
+    LibraryDoctor,
     Releases,
     Concerts,
     Podcasts,
@@ -42,12 +41,12 @@ impl NavIcon {
             Self::Library => "folder-music-symbolic",
             Self::Queue | Self::GenericSmart => "view-list-symbolic",
             Self::Playlist => "media-playlist-consecutive-symbolic",
-            Self::NewPlaylist | Self::RecentlyAdded => "list-add-symbolic",
-            Self::ImportPlaylist => "document-open-symbolic",
+            Self::RecentlyAdded => "list-add-symbolic",
             Self::RecentlyPlayed => "document-open-recent-symbolic",
             Self::TopRated => "starred-symbolic",
             Self::ImportErrors => "dialog-warning-symbolic",
             Self::Missing => "edit-delete-symbolic",
+            Self::LibraryDoctor => "system-search-symbolic",
             Self::Releases => "star-new-symbolic",
             Self::Concerts => "ticket-symbolic",
             Self::Podcasts => "audio-input-microphone-symbolic",
@@ -94,7 +93,7 @@ pub(in crate::ui) struct IssueRowPresentation {
 pub(in crate::ui) fn issue_row_presentation(new_count: u32, icon: NavIcon) -> IssueRowPresentation {
     IssueRowPresentation {
         badge: nonzero_count(i64::from(new_count)),
-        attention: new_count > 0 && matches!(icon, NavIcon::ImportErrors),
+        attention: new_count > 0 && matches!(icon, NavIcon::ImportErrors | NavIcon::LibraryDoctor),
     }
 }
 
@@ -179,46 +178,61 @@ pub(in crate::ui) fn append_header(listbox: &gtk4::ListBox, text: &str) -> gtk4:
     row
 }
 
-pub(in crate::ui) struct PlaylistActionRows {
-    pub(in crate::ui) new_playlist: gtk4::ListBoxRow,
-    pub(in crate::ui) import_playlist: gtk4::ListBoxRow,
-}
-
-pub(in crate::ui) fn append_playlist_action_rows(listbox: &gtk4::ListBox) -> PlaylistActionRows {
-    let new_playlist =
-        append_playlist_action_row(listbox, strings::SIDEBAR_NEW_PLAYLIST, NavIcon::NewPlaylist);
-    let import_playlist =
-        append_playlist_action_row(listbox, strings::IMPORT_PLAYLIST, NavIcon::ImportPlaylist);
-    PlaylistActionRows {
-        new_playlist,
-        import_playlist,
-    }
-}
-
-fn append_playlist_action_row(
+pub(in crate::ui) fn append_header_with_action(
     listbox: &gtk4::ListBox,
-    label_id: &str,
-    icon: NavIcon,
-) -> gtk4::ListBoxRow {
-    let hbox = row_box();
-    hbox.append(&nav_icon(icon));
-
-    let label_text = strings::text(label_id);
-    let label = gtk4::Label::new(Some(&label_text));
-    label.set_xalign(0.0);
-    label.add_css_class("dim-label");
+    text: &str,
+    action_name: &str,
+    on_activate: impl Fn() + 'static,
+) -> gtk4::Button {
+    let hbox = gtk4::Box::new(gtk4::Orientation::Horizontal, ROW_SPACING);
+    let label = header_label(text);
+    label.set_hexpand(true);
     hbox.append(&label);
+
+    let button = gtk4::Button::from_icon_name("list-add-symbolic");
+    button.add_css_class("flat");
+    button.set_tooltip_text(Some(action_name));
+    button.update_property(&[gtk4::accessible::Property::Label(action_name)]);
+    // a11y-semantics: role=button name=new-playlist state=focusable action=activate
+    button.set_focusable(true);
+    button.connect_clicked(move |_| on_activate());
+    hbox.append(&button);
 
     let row = gtk4::ListBoxRow::builder()
         .child(&hbox)
         .selectable(false)
-        .activatable(true)
-        .focusable(true)
+        .activatable(false)
+        .focusable(false)
         .build();
-    row.set_accessible_role(gtk4::AccessibleRole::ListItem);
-    row.update_property(&[gtk4::accessible::Property::Label(&label_text)]);
+    row.set_accessible_role(gtk4::AccessibleRole::Presentation);
     listbox.append(&row);
-    row
+    button
+}
+
+pub(in crate::ui) fn build_editable_playlist_row(
+    title: &str,
+    count: Option<i64>,
+) -> (gtk4::ListBoxRow, gtk4::EditableLabel) {
+    let hbox = row_box();
+    hbox.append(&nav_icon(NavIcon::Playlist));
+
+    let editor = gtk4::EditableLabel::new(title);
+    editor.set_halign(gtk4::Align::Fill);
+    editor.set_hexpand(true);
+    editor.set_accessible_role(gtk4::AccessibleRole::TextBox);
+    editor.update_property(&[gtk4::accessible::Property::Label("Playlist name")]);
+    // a11y-semantics: role=text-box name=playlist-name state=editable action=type
+    editor.set_focusable(true);
+    hbox.append(&editor);
+
+    if let Some(count) = count {
+        let count_label = gtk4::Label::new(Some(&format_thousands(count)));
+        count_label.add_css_class("dim-label");
+        count_label.add_css_class("numeric");
+        hbox.append(&count_label);
+    }
+
+    (navigation_row(&hbox, title), editor)
 }
 
 pub(in crate::ui) fn problem_header() -> gtk4::Label {
@@ -309,11 +323,6 @@ mod tests {
             NavIcon::Playlist.icon_name(),
             "media-playlist-consecutive-symbolic"
         );
-        assert_eq!(NavIcon::NewPlaylist.icon_name(), "list-add-symbolic");
-        assert_eq!(
-            NavIcon::ImportPlaylist.icon_name(),
-            "document-open-symbolic"
-        );
         assert_eq!(NavIcon::ImportErrors.icon_name(), "dialog-warning-symbolic");
         assert_eq!(NavIcon::Missing.icon_name(), "edit-delete-symbolic");
         assert_eq!(NavIcon::MyStats.icon_name(), "starred-symbolic");
@@ -371,25 +380,6 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn playlist_actions_group_creation_and_import() {
-        gtk4::init().unwrap();
-        let listbox = gtk4::ListBox::new();
-        let rows = append_playlist_action_rows(&listbox);
-
-        assert_eq!(row_label(&rows.new_playlist), "New playlist");
-        assert_eq!(row_label(&rows.import_playlist), "Import playlist…");
-        assert_eq!(
-            rows.new_playlist.next_sibling(),
-            Some(rows.import_playlist.clone().upcast())
-        );
-        assert!(!rows.new_playlist.is_selectable());
-        assert!(!rows.import_playlist.is_selectable());
-        assert!(rows.new_playlist.is_activatable());
-        assert!(rows.import_playlist.is_activatable());
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
     fn problem_sources_use_a_labeled_section_header() {
         gtk4::init().unwrap();
         let label = problem_header();
@@ -408,19 +398,16 @@ mod tests {
         let header = append_header(&listbox, "SMART");
         let nav_row = build_nav_row("My Stats", None, NavIcon::MyStats);
         listbox.append(&nav_row);
-        let action_rows = append_playlist_action_rows(&listbox);
 
-        for row in [&nav_row, &action_rows.new_playlist] {
-            assert!(gtk4::test_accessible_has_role(
-                row,
-                gtk4::AccessibleRole::ListItem
-            ));
-            assert!(gtk4::test_accessible_has_property(
-                row,
-                gtk4::AccessibleProperty::Label
-            ));
-            assert!(row.is_activatable());
-        }
+        assert!(gtk4::test_accessible_has_role(
+            &nav_row,
+            gtk4::AccessibleRole::ListItem
+        ));
+        assert!(gtk4::test_accessible_has_property(
+            &nav_row,
+            gtk4::AccessibleProperty::Label
+        ));
+        assert!(nav_row.is_activatable());
 
         let activated = std::rc::Rc::new(std::cell::Cell::new(false));
         listbox.connect_row_activated({
@@ -497,16 +484,5 @@ mod tests {
             .sidebar(&sidebar)
             .content(&content)
             .build()
-    }
-
-    fn row_label(row: &gtk4::ListBoxRow) -> String {
-        row.child()
-            .unwrap()
-            .last_child()
-            .unwrap()
-            .downcast::<gtk4::Label>()
-            .unwrap()
-            .text()
-            .to_string()
     }
 }

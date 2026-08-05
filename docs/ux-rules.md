@@ -172,6 +172,18 @@ human. Rationale for changes lives in the git history.
   keyboard focus, and viewport unchanged; only the now-playing marker
   changes. The separation of marking and scrolling in the one track
   browser is now governed by NAV-10a.
+- **NAV-14** [active] [gtk] — **A section header carries its own create
+  action.** The PLAYLISTS header carries a `+` button that creates a playlist
+  immediately: a new row appears in place, named "Untitled playlist" with the
+  name selected for inline rename, and no dialog opens. Enter or moving focus
+  away commits the typed name; an empty name keeps "Untitled playlist";
+  Escape discards the row and the playlist with it. "Import playlist…" lives
+  in the global ⋮ menu with the other library-wide verbs; neither action
+  occupies a sidebar row. *Tests:*
+  `nav_14_the_playlists_header_creates_a_playlist_in_place_without_a_dialog`,
+  `nav_14_escape_discards_the_new_playlist_row_and_the_playlist`,
+  `nav_14_an_empty_name_keeps_the_untitled_playlist`,
+  `nav_14_import_playlist_lives_in_the_overflow_menu`.
 
 ## C. Playback, queue, shuffle, filter
 
@@ -3369,13 +3381,24 @@ means deterministic and high-confidence, never „without review".
   cleanup". Revert remains available via a minimal Doctor job page and
   activates no network.
 
-- **DOC-8a** [planned] [gtk] — **The menu holds the verb, the sidebar holds
-  the noun.** Stage 1 provides the core pending-change count and whole-scan
-  acknowledgement state. The menu, sidebar row, toast, and receipt behavior
-  activate this rule in Stage 2. *Core state tests:*
+- **DOC-8a** [active] [gtk] — **The menu holds the verb, the sidebar holds
+  the noun.** The global ⋮ menu is the only way to start a scan. While a
+  completed scan has unreviewed findings, and only then, a "Library Doctor"
+  row appears under ISSUES next to "Missing files", carrying the count of tag
+  changes still waiting; it disappears when the scan is acknowledged —
+  "Done" on the post-apply page, or "Skip all" in the conflicts section —
+  even if not every row was applied. A finished scan never interrupts: on the
+  Doctor page it resolves in place, elsewhere it is that sidebar row. Exactly
+  one toast fires, "N tags fixed" with Undo, and only for the set that was
+  applied without asking. Findings that need review never toast. *Tests:*
+  `doc_8a_the_menu_carries_exactly_one_library_doctor_item_and_no_sync_device`,
+  `doc_8a_the_issues_entry_appears_only_with_unreviewed_findings`,
+  `doc_8a_quiet_fixes_produce_one_undo_toast_and_review_findings_produce_none`,
   `doc_8a_pending_review_count_excludes_everything_already_written_for_that_scan`,
   `doc_8a_pending_review_count_is_zero_once_the_scan_is_marked_reviewed`,
-  `doc_8a_conflicts_alone_do_not_produce_a_pending_count`.
+  `doc_8a_conflicts_alone_do_not_produce_a_pending_count`,
+  `doc_8a_done_marks_the_scan_reviewed_and_clears_the_sidebar_entry`,
+  `doc_8a_skip_all_marks_the_scan_reviewed`.
 
 - **DOC-8b** [active] [core] — **Two tiers, and exactly one predicate
   decides.** A proposal is applied without asking when it is a MusicBrainz

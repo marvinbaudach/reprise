@@ -19,7 +19,7 @@ enum PluginGroup {
     Connected,
 }
 
-const LOCAL_PLUGIN_IDS: &[&str] = &["song_visuals", "library_doctor"];
+const LOCAL_PLUGIN_IDS: &[&str] = &["song_visuals"];
 const ONLINE_PLUGIN_IDS: &[&str] = &[
     "youtube",
     "podcasts",
@@ -44,7 +44,7 @@ fn plugin_ids_for_group(group: PluginGroup) -> &'static [&'static str] {
 fn plugin_uses_expander(id: &str) -> bool {
     matches!(
         id,
-        "library_doctor" | "youtube" | "podcasts" | "radio" | "new_releases" | "concerts"
+        "youtube" | "podcasts" | "radio" | "new_releases" | "concerts"
     )
 }
 
@@ -418,12 +418,7 @@ impl PreferencesContext {
             .title(strings::text(strings::PLUGIN_GROUP_CONNECTED_SERVICES))
             .build();
         for id in plugin_ids_for_group(PluginGroup::Local) {
-            match *id {
-                "library_doctor" => {
-                    local_group.add(&super::preference_library_doctor::plugin_row(self));
-                }
-                id => local_group.add(&simple_plugin_row(self, descriptor(id))),
-            }
+            local_group.add(&simple_plugin_row(self, descriptor(id)));
         }
         let online_disclosure = adw::ActionRow::builder().activatable(true).build();
         online_disclosure.add_suffix(&gtk4::Image::from_icon_name("go-next-symbolic"));
@@ -602,11 +597,6 @@ impl PreferencesContext {
                 }
             });
         }
-    }
-
-    pub(in crate::ui) fn set_library_doctor_job_running(&self, running: bool) {
-        self.library_doctor_job_running.set(running);
-        self.doctor_controls.set_job_running(running);
     }
 }
 

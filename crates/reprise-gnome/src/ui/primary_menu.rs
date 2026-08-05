@@ -16,7 +16,7 @@ pub(super) const ACTION_EDIT_COLUMN_LAYOUT: &str = "edit-column-layout";
 pub(super) const ACTION_TOGGLE_MINIMAL_VIEW: &str = "toggle-minimal-view";
 pub(super) const ACTION_RESCAN_LIBRARY: &str = "rescan-library";
 pub(super) const ACTION_LIBRARY_DOCTOR: &str = "library-doctor";
-pub(super) const ACTION_SYNC_DEVICE: &str = "sync-device";
+pub(super) const ACTION_IMPORT_PLAYLIST: &str = "import-playlist";
 pub(super) const ACTION_STOP_PLAYBACK: &str = "stop-playback";
 pub(super) const ACTION_PREFERENCES: &str = "preferences";
 pub(super) const ACTION_KEYBOARD_SHORTCUTS: &str = "keyboard-shortcuts";
@@ -30,7 +30,7 @@ pub(super) struct Callbacks {
     pub(super) on_rescan_library: Rc<dyn Fn()>,
     pub(super) on_cancel_scan: Rc<dyn Fn()>,
     pub(super) on_library_doctor: Rc<dyn Fn()>,
-    pub(super) on_sync_device: Rc<dyn Fn()>,
+    pub(super) on_import_playlist: Rc<dyn Fn()>,
     pub(super) on_stop_playback: Option<Rc<dyn Fn()>>,
     pub(super) on_preferences: Rc<dyn Fn()>,
 }
@@ -60,8 +60,8 @@ pub(super) fn update_library_section(menu: &gio::Menu, is_scanning: bool) {
         Some("win.library-doctor"),
     );
     menu.append(
-        Some(&strings::text(strings::SYNC_DEVICE)),
-        Some("win.sync-device"),
+        Some(&strings::text(strings::IMPORT_PLAYLIST)),
+        Some("win.import-playlist"),
     );
 }
 
@@ -184,12 +184,12 @@ pub(super) fn install(
     }
     window.add_action(&library_doctor);
 
-    let sync_device = gio::SimpleAction::new(ACTION_SYNC_DEVICE, None);
+    let import_playlist = gio::SimpleAction::new(ACTION_IMPORT_PLAYLIST, None);
     {
-        let cb = callbacks.on_sync_device.clone();
-        sync_device.connect_activate(move |_, _| cb());
+        let cb = callbacks.on_import_playlist.clone();
+        import_playlist.connect_activate(move |_, _| cb());
     }
-    window.add_action(&sync_device);
+    window.add_action(&import_playlist);
 
     let stop_playback = gio::SimpleAction::new(ACTION_STOP_PLAYBACK, None);
     stop_playback.set_enabled(callbacks.on_stop_playback.is_some());
@@ -302,7 +302,7 @@ mod tests {
     }
 
     #[test]
-    fn library_section_has_rescan_and_sync_when_idle() {
+    fn doc_8a_the_menu_carries_exactly_one_library_doctor_item_and_no_sync_device() {
         let menu = gio::Menu::new();
         update_library_section(&menu, false);
         let actions: Vec<_> = (0..menu.n_items())
@@ -316,9 +316,32 @@ mod tests {
             [
                 "win.rescan-library",
                 "win.library-doctor",
-                "win.sync-device"
+                "win.import-playlist"
             ]
         );
+        assert_eq!(
+            actions
+                .iter()
+                .filter(|action| action.as_str() == "win.library-doctor")
+                .count(),
+            1
+        );
+        assert!(!actions.iter().any(|action| action == "win.sync-device"));
+    }
+
+    #[test]
+    fn nav_14_import_playlist_lives_in_the_overflow_menu() {
+        let menu = gio::Menu::new();
+        update_library_section(&menu, false);
+        let actions = (0..menu.n_items())
+            .filter_map(|index| {
+                menu.item_attribute_value(index, "action", Some(glib::VariantTy::STRING))
+                    .and_then(|value| value.get::<String>())
+            })
+            .collect::<Vec<_>>();
+
+        assert!(actions.iter().any(|action| action == "win.import-playlist"));
+        assert!(!actions.iter().any(|action| action == "win.sync-device"));
     }
 
     #[test]

@@ -36,10 +36,7 @@ fn source_plugins_expose_the_service_specific_privacy_copy() {
 
 #[test]
 fn set_10_plugins_is_the_single_settings_home_in_the_design_order() {
-    assert_eq!(
-        plugin_ids_for_group(PluginGroup::Local),
-        &["song_visuals", "library_doctor"]
-    );
+    assert_eq!(plugin_ids_for_group(PluginGroup::Local), &["song_visuals"]);
     assert_eq!(
         plugin_ids_for_group(PluginGroup::Online),
         &[
@@ -65,14 +62,7 @@ fn set_10_plugins_is_the_single_settings_home_in_the_design_order() {
             .copied()
             .filter(|id| plugin_uses_expander(id))
             .collect::<Vec<_>>(),
-        [
-            "library_doctor",
-            "youtube",
-            "podcasts",
-            "radio",
-            "new_releases",
-            "concerts",
-        ]
+        ["youtube", "podcasts", "radio", "new_releases", "concerts",]
     );
 }
 
@@ -248,18 +238,12 @@ fn set_11_online_content_header_owns_the_master_switch() {
 
 #[test]
 fn doc_6b_library_doctor_controls_explain_job_locking() {
-    let idle = super::super::preference_library_doctor::control_state(false);
-    assert!(idle.remote_sensitive);
-    assert!(!idle.subtitle.contains("running"));
-
-    let running = super::super::preference_library_doctor::control_state(true);
-    assert!(!running.remote_sensitive);
-    assert!(running.subtitle.contains("running"));
+    assert!(crate::ui::library_doctor::remote_toggle::controls_sensitive(false));
+    assert!(!crate::ui::library_doctor::remote_toggle::controls_sensitive(true));
 }
 
 #[test]
-fn doc_7b_library_doctor_is_available_without_an_activation_state() {
-    let idle = super::super::preference_library_doctor::control_state(false);
-    assert!(idle.remote_sensitive);
-    assert!(idle.revert_sensitive);
+fn doc_7b_library_doctor_has_no_preferences_surface() {
+    assert!(!LOCAL_PLUGIN_IDS.contains(&"library_doctor"));
+    assert!(!plugin_uses_expander("library_doctor"));
 }

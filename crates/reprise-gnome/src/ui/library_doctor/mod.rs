@@ -1,6 +1,7 @@
 mod job_page;
 mod jobs;
 mod progress_card;
+pub(in crate::ui) mod remote_toggle;
 mod review_model;
 mod review_page;
 mod review_row;
@@ -25,7 +26,6 @@ use reprise_core::library_doctor::{
 };
 use reprise_core::view_source::ViewSource;
 
-use super::preferences::PreferencesContext;
 use super::scan_flow::ScanControls;
 use super::sidebar::Sidebar;
 use super::track_list::TrackList;
@@ -44,7 +44,6 @@ pub(in crate::ui) struct LibraryDoctorCoordinator {
     track_list: Rc<TrackList>,
     scan_controls: ScanControls,
     fingerprint: Arc<dyn FingerprintBackend>,
-    preferences: std::rc::Weak<PreferencesContext>,
     cancellation: RefCell<Option<Arc<AtomicBool>>>,
     running: Cell<bool>,
     scan_generation: Cell<u64>,
@@ -66,7 +65,6 @@ pub(in crate::ui) struct LibraryDoctorContext<'a> {
     pub(in crate::ui) track_list: &'a Rc<TrackList>,
     pub(in crate::ui) scan_controls: &'a ScanControls,
     pub(in crate::ui) fingerprint: Arc<dyn FingerprintBackend>,
-    pub(in crate::ui) preferences: &'a Rc<PreferencesContext>,
     pub(in crate::ui) sidebar: &'a Rc<Sidebar>,
     pub(in crate::ui) toast_overlay: &'a adw::ToastOverlay,
     pub(in crate::ui) refresh_views: Rc<dyn Fn()>,
@@ -82,7 +80,6 @@ impl LibraryDoctorCoordinator {
             track_list,
             scan_controls,
             fingerprint,
-            preferences,
             sidebar,
             toast_overlay,
             refresh_views,
@@ -115,7 +112,6 @@ impl LibraryDoctorCoordinator {
                 track_list: track_list.clone(),
                 scan_controls: scan_controls.clone(),
                 fingerprint,
-                preferences: Rc::downgrade(preferences),
                 cancellation: RefCell::new(None),
                 running: Cell::new(false),
                 scan_generation: Cell::new(0),
@@ -174,22 +170,6 @@ impl LibraryDoctorCoordinator {
             });
         }
         coordinator.install_tag_edit_observer();
-        {
-            let run = Rc::downgrade(&coordinator);
-            let revert = Rc::downgrade(&coordinator);
-            preferences.doctor_controls.set_callbacks(
-                move |scope| {
-                    if let Some(coordinator) = run.upgrade() {
-                        coordinator.run_from_preferences(scope);
-                    }
-                },
-                move || {
-                    if let Some(coordinator) = revert.upgrade() {
-                        coordinator.start_revert();
-                    }
-                },
-            );
-        }
         coordinator
     }
 
@@ -225,15 +205,6 @@ impl LibraryDoctorCoordinator {
         } else {
             self.navigation.push(self.page.navigation_page());
         }
-    }
-
-    fn run_from_preferences(self: &Rc<Self>, scope: u32) {
-        if scope != 2 {
-            self.selection_override.borrow_mut().take();
-        }
-        self.page.set_selected_scope(scope);
-        self.open_available();
-        self.start_scan();
     }
 
     fn load_last_scan(&self) {
@@ -276,9 +247,6 @@ impl LibraryDoctorCoordinator {
         self.scan_generation.set(generation);
         self.cancellation.borrow_mut().replace(cancellation.clone());
         self.running.set(true);
-        if let Some(preferences) = self.preferences.upgrade() {
-            preferences.set_library_doctor_job_running(true);
-        }
         self.job_kind.set(Some(DoctorJobKind::Scan));
         self.page.set_running(true);
         self.page.begin_partial_scan();
@@ -369,9 +337,6 @@ impl LibraryDoctorCoordinator {
     fn finish_scan(&self) {
         self.cancellation.borrow_mut().take();
         self.running.set(false);
-        if let Some(preferences) = self.preferences.upgrade() {
-            preferences.set_library_doctor_job_running(false);
-        }
         self.job_kind.set(None);
         self.page.set_running(false);
         self.page.clear_partial_scan();
@@ -472,9 +437,6 @@ impl LibraryDoctorCoordinator {
         let cancellation = Arc::new(AtomicBool::new(false));
         self.cancellation.borrow_mut().replace(cancellation.clone());
         self.running.set(true);
-        if let Some(preferences) = self.preferences.upgrade() {
-            preferences.set_library_doctor_job_running(true);
-        }
         self.job_kind.set(Some(DoctorJobKind::Apply));
         self.page.set_running(true);
         if let Some(review) = self.review.borrow().as_ref() {
@@ -526,9 +488,6 @@ impl LibraryDoctorCoordinator {
         let cancellation = Arc::new(AtomicBool::new(false));
         self.cancellation.borrow_mut().replace(cancellation.clone());
         self.running.set(true);
-        if let Some(preferences) = self.preferences.upgrade() {
-            preferences.set_library_doctor_job_running(true);
-        }
         self.job_kind.set(Some(DoctorJobKind::Revert));
         self.job_page.set_running(DoctorJobKind::Revert);
         self.open_job_page();
@@ -608,9 +567,6 @@ impl LibraryDoctorCoordinator {
     fn finish_write_job(&self) {
         self.cancellation.borrow_mut().take();
         self.running.set(false);
-        if let Some(preferences) = self.preferences.upgrade() {
-            preferences.set_library_doctor_job_running(false);
-        }
         self.job_kind.set(None);
         self.page.set_running(false);
         if let Some(review) = self.review.borrow().as_ref() {
