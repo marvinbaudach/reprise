@@ -80,6 +80,14 @@ impl BufferingThrottle {
         self.last_emitted = Some((now, update));
         true
     }
+
+    /// Forgets what was last sent. Called on `StreamStart`: the dedup above is
+    /// about a *steady* buffer, and two streams are not one buffer — without
+    /// this, a new stream opening on the same tuple the previous one ended on
+    /// is silently swallowed.
+    pub(crate) fn reset(&mut self) {
+        self.last_emitted = None;
+    }
 }
 
 pub(crate) fn is_remote_playback_uri(uri: Option<&str>) -> bool {
@@ -365,6 +373,7 @@ pub(crate) fn attach_bus_watch(
                 // Fires on every stream start; only a gapless handoff (flagged
                 // by the `about-to-finish` handler) turns into `AdvancedToNext`.
                 stream_tags = (None, None);
+                buffering_throttle.reset();
                 note_stream_start(&handoff_pending, on_event.as_ref());
             }
             MessageView::Tag(message) => {

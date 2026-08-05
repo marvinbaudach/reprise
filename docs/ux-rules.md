@@ -4102,7 +4102,13 @@ listening statistics.
   batch actions offered only by the context menu for the current selection.
   Selection is shown in both surfaces solely by a neutral row tint; the left
   media slot contains artwork only, never a checkbox, playback marker,
-  permanent extra column, or separate selection toolbar. Applying a selection
+  permanent extra column, or separate selection toolbar. Growing a selection
+  with the mouse takes a modifier — Ctrl+click toggles one row, Shift+click
+  extends a range — exactly as the music track list has always worked; a plain
+  click replaces the selection. The checkbox SRC-12a placed over the artwork
+  also let a modifier-free click add a row, and that gesture is deliberately
+  gone with it: one selection idiom across every list beats a second one that
+  exists only where there happens to be artwork to cover. Applying a selection
   never rebuilds the list. Ctrl+A selects every rendered episode of the
   focused source; with no focused row it selects the whole rendered list,
   while the channel page selects its current rendered window. Collapsed

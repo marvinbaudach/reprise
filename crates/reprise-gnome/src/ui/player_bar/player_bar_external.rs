@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use gtk4::prelude::*;
 
-use super::player_bar_state::{external_bar_display, BarProgressMode};
+use super::player_bar_state::{
+    external_bar_display, external_media_identity, external_seed_duration_ms, BarProgressMode,
+};
 use super::surface::PlayerBar;
 use crate::ui::playback::external_media::ExternalPlaybackSnapshot;
 use crate::ui::playing_links::{self, LinkAvailability};
@@ -14,6 +16,7 @@ impl PlayerBar {
         let Some(snapshot) = snapshot else {
             self.seek_enabled.set(true);
             self.progress_mode.set(BarProgressMode::Local);
+            self.external_identity.set(None);
             self.set_buffering(0, None);
             self.progress_stack.set_visible_child_name("progress");
             self.live_station_label.set_text("");
@@ -42,7 +45,20 @@ impl PlayerBar {
         );
         self.set_track(&display.title, &display.subtitle, links);
         self.set_state(display.playback);
-        self.set_buffering(0, None);
+        // Only a genuinely different item invalidates the buffer. Snapshots
+        // also arrive on pause, retry and neighbour changes; resetting on
+        // those wipes a buffer nothing will re-send, because the backend
+        // speaks only when the buffer changes and a finished one never does.
+        let identity = external_media_identity(&snapshot.media);
+        if self.external_identity.get() != Some(identity) {
+            self.external_identity.set(Some(identity));
+            // Seed the length from the item itself: buffering messages beat
+            // the first position tick, and the previous item's duration would
+            // make a fresh stream read as nearly loaded.
+            self.duration_ms
+                .set(external_seed_duration_ms(&snapshot.media));
+            self.set_buffering(0, None);
+        }
         self.waveform.set_peaks(Vec::new());
         let live = display.progress_mode == BarProgressMode::Live;
         self.seek_enabled.set(!live);

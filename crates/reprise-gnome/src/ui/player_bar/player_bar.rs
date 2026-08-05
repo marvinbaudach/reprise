@@ -103,6 +103,9 @@ pub struct PlayerBar {
     /// Current track duration (ms) from the latest `set_position`, so
     /// `connect_seek` can turn the waveform's 0..1 fraction into a target ms.
     pub(super) duration_ms: Rc<Cell<i64>>,
+    /// Which external item the bar currently shows, so a snapshot about the
+    /// *same* item cannot be mistaken for a new one (see `set_external_snapshot`).
+    pub(super) external_identity: Cell<Option<super::player_bar_state::ExternalMediaIdentity>>,
     pub(super) buffering_percent: Cell<u8>,
     pub(super) buffered_ms: Cell<Option<i64>>,
     pub(in crate::ui) progress_mode: Cell<super::player_bar_state::BarProgressMode>,
@@ -259,6 +262,7 @@ impl PlayerBar {
             volume_scale,
             volume_icon,
             duration_ms: Rc::new(Cell::new(0)),
+            external_identity: Cell::new(None),
             buffering_percent: Cell::new(0),
             buffered_ms: Cell::new(None),
             progress_mode: Cell::new(super::player_bar_state::BarProgressMode::default()),

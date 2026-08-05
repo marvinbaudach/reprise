@@ -21,6 +21,36 @@ pub(in crate::ui) fn external_progress_mode(media: &ExternalMedia) -> BarProgres
     }
 }
 
+/// What the player bar means by "the same thing is still loaded". A snapshot
+/// arrives on every phase change, retry and neighbour update, not only when a
+/// new episode starts — so buffer state must be keyed to the media itself,
+/// never to the arrival of a snapshot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::ui) enum ExternalMediaIdentity {
+    Podcast(i64),
+    Radio(i64),
+}
+
+pub(in crate::ui) fn external_media_identity(media: &ExternalMedia) -> ExternalMediaIdentity {
+    match media {
+        ExternalMedia::Podcast { episode_id, .. } => ExternalMediaIdentity::Podcast(*episode_id),
+        ExternalMedia::Radio { station_id, .. } => ExternalMediaIdentity::Radio(*station_id),
+    }
+}
+
+/// The duration the bar should measure a buffer against when `media` becomes
+/// the loaded item. `None` means "not known yet" and must clear whatever the
+/// previous item left behind: measuring a new episode's buffer against the
+/// previous one's length is how a fresh stream reports itself as most of the
+/// way loaded. The first real position tick supplies the true value.
+pub(in crate::ui) fn external_seed_duration_ms(media: &ExternalMedia) -> i64 {
+    match media {
+        ExternalMedia::Podcast { duration_ms, .. } => duration_ms.unwrap_or(0).max(0),
+        // Live radio has no length to measure against, and shows no buffer.
+        ExternalMedia::Radio { .. } => 0,
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::ui) struct ExternalBarDisplay {
     pub(in crate::ui) title: String,
@@ -167,6 +197,82 @@ mod tests {
         assert_eq!(presentation.buffered_fraction, 0.5);
         assert_eq!(presentation.loaded_percent, 50);
         assert!(presentation.show_status);
+    }
+
+    fn podcast(episode_id: i64, duration_ms: Option<i64>) -> ExternalMedia {
+        ExternalMedia::Podcast {
+            episode_id,
+            title: "Episode".into(),
+            show: "Show".into(),
+            source: crate::ui::playback::external_media::EpisodeSource::Url("https://e".into()),
+            resume_ms: 0,
+            duration_ms,
+        }
+    }
+
+    /// A snapshot arrives whenever anything about the external session changes
+    /// — pausing alone produces one. Keying the buffer reset to the snapshot
+    /// rather than to the media means pausing a stream wipes its buffer
+    /// display, and nothing re-sends it: the backend only speaks when the
+    /// buffer *changes*, and a finished download never changes again.
+    #[test]
+    fn pausing_the_same_episode_is_not_a_reason_to_forget_its_buffer() {
+        let playing = podcast(7, Some(600_000));
+        let paused = podcast(7, Some(600_000));
+        assert_eq!(
+            external_media_identity(&playing),
+            external_media_identity(&paused),
+            "the same episode stays the same episode across a phase change"
+        );
+
+        let next_episode = podcast(8, Some(600_000));
+        assert_ne!(
+            external_media_identity(&playing),
+            external_media_identity(&next_episode)
+        );
+
+        let station = ExternalMedia::Radio {
+            station_id: 7,
+            name: "Station".into(),
+            stream_url: "https://s".into(),
+            uuid: None,
+        };
+        assert_ne!(
+            external_media_identity(&playing),
+            external_media_identity(&station),
+            "an episode and a station that share a row id are not the same thing"
+        );
+    }
+
+    /// Buffering messages for a new stream arrive before its first position
+    /// tick. Carrying the previous item's duration over means the new stream's
+    /// buffer is measured against the wrong length — a 90-minute episode
+    /// following a 10-minute one reads as fully loaded from the first message.
+    #[test]
+    fn a_new_episode_never_measures_its_buffer_against_the_old_one_s_length() {
+        assert_eq!(
+            external_seed_duration_ms(&podcast(8, Some(5_400_000))),
+            5_400_000
+        );
+        assert_eq!(
+            external_seed_duration_ms(&podcast(8, None)),
+            0,
+            "an unknown length clears the previous one instead of inheriting it"
+        );
+        assert_eq!(
+            external_seed_duration_ms(&podcast(8, Some(-1))),
+            0,
+            "a nonsense length is no length"
+        );
+
+        // A zero duration is exactly what makes the presentation stay silent
+        // until the first genuine position tick supplies the real length.
+        assert!(buffering_presentation(
+            &FakePlaybackEvents::buffering(50, 30_000),
+            BarProgressMode::Streaming,
+            0,
+        )
+        .is_none());
     }
 
     /// The caption may only say 100 % when the media really is complete, and

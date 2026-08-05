@@ -67,6 +67,32 @@ fn buffering_events_are_remote_only_changed_and_throttled() {
     assert!(throttle.should_emit(start + Duration::from_millis(250), (30, Some(15_000))));
 }
 
+/// The dedup is what keeps a steady buffer from spamming the bar, but it has
+/// no business reaching across a stream boundary: two different streams very
+/// plausibly open on the same `(0, None)` — nothing known yet — and the second
+/// one's first word would be swallowed, leaving the bar showing the previous
+/// track's buffer for as long as the new one stays at that value.
+#[test]
+fn a_new_stream_is_heard_even_when_it_opens_on_the_previous_one_s_last_value() {
+    use std::time::{Duration, Instant};
+
+    let start = Instant::now();
+    let mut throttle = BufferingThrottle::default();
+    assert!(throttle.should_emit(start, (0, None)));
+
+    let next_stream = start + Duration::from_secs(30);
+    assert!(
+        !throttle.should_emit(next_stream, (0, None)),
+        "without a reset the identical tuple is suppressed, however old it is"
+    );
+
+    throttle.reset();
+    assert!(
+        throttle.should_emit(next_stream, (0, None)),
+        "a stream start clears the memory, so the new stream is heard"
+    );
+}
+
 #[test]
 fn download_buffering_is_only_enabled_for_finite_remote_media() {
     const DOWNLOAD: u32 = 0x80;
