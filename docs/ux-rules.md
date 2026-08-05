@@ -312,6 +312,16 @@ result.
   leaving the finished session's labels standing. A surface's label and tooltip
   name the actual target for the current mode; the Now Playing and information
   panels share these links and labels.
+- **PLAY-13** [active] [gtk] — The source, never the view, selects exactly one
+  player-bar progress language. Local media keeps the ordinary played
+  progress and remaining time, without a buffer segment or network copy.
+  Finite remote media keeps played progress, adds a paler contiguous-buffer
+  segment underneath it, and says “Streaming · X% loaded” from buffered time
+  divided by duration only while loading is incomplete. Live media has no
+  seekable progress or duration: the full-width bar replaces the waveform with
+  an accent point, “LIVE”, and the station name while retaining connected
+  elapsed time. The point pulses only during active playback through MOT-7's
+  central motion gate; pause and reduced motion leave the same point static.
 
 ## D. Albums & artists view
 
@@ -1652,8 +1662,9 @@ place (MOT-2, the motion reading of P-4).
   crossfades to the new track instead of dropping to 0; pause slightly
   desaturates the waveform fill with draw-local color math, play reverses
   it. The effective accent itself stays untouched. The EQ indicators
-  (track list, mini-player) run only during active playback; the idle
-  bar is static — no permanent loop without playback.
+  (track list, mini-player) and the radio LIVE point run only during active
+  playback; pause freezes them and the idle bar is static — no permanent loop
+  without playback.
 - **MOT-6** [active] [gtk] — Nothing blocks: the model changes at frame
   0, the animation only illustrates. A second action during a running
   animation jumps to the end state via `AdwAnimation::skip()` and then
@@ -4468,8 +4479,9 @@ listening statistics.
   disconnected paused station, show "—". Only the player bar may keep
   the last ICY title dimmed as session memory.
 - **RAD-2** [active] [gtk] — Live playback has neither seek nor
-  duration: the player bar and mini-player show elapsed time and a
-  geometry-matched waveform placeholder, MPRIS reports `CanSeek=false`
+  duration: the full-width player bar shows elapsed time and PLAY-13's LIVE
+  badge, while the mini-player keeps elapsed time and its geometry-matched
+  waveform placeholder; MPRIS reports `CanSeek=false`
   and no length. Pause disconnects the stream but stays presented as
   Paused/CanPause with station and dimmed last title; play reconnects
   live. A reconnect error leaves the paused state standing and shows the

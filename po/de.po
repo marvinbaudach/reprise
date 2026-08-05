@@ -5261,3 +5261,7 @@ msgstr "{analyzed} analysiert · {failed} fehlgeschlagen"
 #, rust-format
 msgid "Streaming · {percent}% loaded"
 msgstr "Streaming · {percent} % geladen"
+
+#: crates/reprise-gnome/src/ui/strings_radio.rs:22
+msgid "LIVE"
+msgstr "LIVE"

@@ -6,11 +6,19 @@ use crate::ui::playback::external_media::{
     ExternalMedia, ExternalPlaybackSnapshot, PodcastPhase, RadioPresentation,
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(in crate::ui) enum BarProgressMode {
+    #[default]
     Local,
     Streaming,
     Live,
+}
+
+pub(in crate::ui) fn external_progress_mode(media: &ExternalMedia) -> BarProgressMode {
+    match media {
+        ExternalMedia::Podcast { .. } => BarProgressMode::Streaming,
+        ExternalMedia::Radio { .. } => BarProgressMode::Live,
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -26,6 +34,7 @@ pub(in crate::ui) struct ExternalBarDisplay {
 pub(in crate::ui) fn external_bar_display(
     snapshot: &ExternalPlaybackSnapshot,
 ) -> ExternalBarDisplay {
+    let progress_mode = external_progress_mode(&snapshot.media);
     match &snapshot.media {
         ExternalMedia::Podcast { title, show, .. } => ExternalBarDisplay {
             title: title.clone(),
@@ -35,13 +44,16 @@ pub(in crate::ui) fn external_bar_display(
                 Some(PodcastPhase::Failed) => PlaybackState::Stopped,
                 _ => PlaybackState::Playing,
             },
-            progress_mode: BarProgressMode::Streaming,
+            progress_mode,
             title_dimmed: false,
             inline_error: snapshot.error.clone(),
         },
-        ExternalMedia::Radio { name, .. } => {
-            radio_display(name, snapshot.radio.as_ref(), snapshot.error.clone())
-        }
+        ExternalMedia::Radio { name, .. } => radio_display(
+            name,
+            snapshot.radio.as_ref(),
+            snapshot.error.clone(),
+            progress_mode,
+        ),
     }
 }
 
@@ -49,6 +61,7 @@ fn radio_display(
     name: &str,
     presentation: Option<&RadioPresentation>,
     error: Option<String>,
+    progress_mode: BarProgressMode,
 ) -> ExternalBarDisplay {
     let phase = presentation.map(RadioPresentation::phase);
     let title = presentation
@@ -64,7 +77,7 @@ fn radio_display(
             Some(crate::ui::playback::external_media::RadioPhase::Paused) => PlaybackState::Paused,
             _ => PlaybackState::Playing,
         },
-        progress_mode: BarProgressMode::Live,
+        progress_mode,
         title_dimmed: matches!(
             phase,
             Some(crate::ui::playback::external_media::RadioPhase::Paused)
@@ -102,6 +115,14 @@ pub(in crate::ui) fn buffering_presentation(
         loaded_percent,
         show_status: buffered_ms < duration_ms,
     })
+}
+
+pub(in crate::ui) fn live_badge_should_pulse(
+    mode: BarProgressMode,
+    playback: PlaybackState,
+    animations_enabled: bool,
+) -> bool {
+    mode == BarProgressMode::Live && playback == PlaybackState::Playing && animations_enabled
 }
 
 pub(in crate::ui) fn format_live_elapsed(elapsed_ms: i64) -> String {
@@ -145,6 +166,30 @@ mod tests {
     }
 
     #[test]
+    fn mot_5_live_pulse_requires_live_playback_and_enabled_motion() {
+        assert!(live_badge_should_pulse(
+            BarProgressMode::Live,
+            PlaybackState::Playing,
+            true
+        ));
+        assert!(!live_badge_should_pulse(
+            BarProgressMode::Live,
+            PlaybackState::Paused,
+            true
+        ));
+        assert!(!live_badge_should_pulse(
+            BarProgressMode::Live,
+            PlaybackState::Playing,
+            false
+        ));
+        assert!(!live_badge_should_pulse(
+            BarProgressMode::Streaming,
+            PlaybackState::Playing,
+            true
+        ));
+    }
+
+    #[test]
     fn play_9_stopped_bar_is_enabled_when_the_library_can_start() {
         assert!(bar_should_be_sensitive(
             PlaybackState::Stopped,
@@ -176,7 +221,12 @@ mod tests {
         radio.on_stream_title(Some("Last song".into()));
         radio.pause();
 
-        let display = radio_display("Station", Some(&radio), Some("Offline".into()));
+        let display = radio_display(
+            "Station",
+            Some(&radio),
+            Some("Offline".into()),
+            BarProgressMode::Live,
+        );
 
         assert_eq!(display.title, "Last song");
         assert_eq!(display.playback, PlaybackState::Paused);
@@ -188,5 +238,29 @@ mod tests {
     #[test]
     fn rad_2_live_elapsed_has_no_duration_component() {
         assert_eq!(format_live_elapsed(65_000), "1:05");
+    }
+
+    #[test]
+    fn play_13_the_source_selects_one_of_three_progress_languages() {
+        let podcast = ExternalMedia::Podcast {
+            episode_id: 7,
+            title: "Episode".into(),
+            show: "Show".into(),
+            source: crate::ui::playback::external_media::EpisodeSource::Url(
+                "https://example.test/episode.mp3".into(),
+            ),
+            resume_ms: 0,
+            duration_ms: None,
+        };
+        let radio = ExternalMedia::Radio {
+            station_id: 9,
+            name: "Station".into(),
+            stream_url: "https://radio.test/live".into(),
+            uuid: None,
+        };
+
+        assert_eq!(BarProgressMode::default(), BarProgressMode::Local);
+        assert_eq!(external_progress_mode(&podcast), BarProgressMode::Streaming);
+        assert_eq!(external_progress_mode(&radio), BarProgressMode::Live);
     }
 }

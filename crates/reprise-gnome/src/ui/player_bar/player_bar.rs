@@ -24,7 +24,7 @@ use crate::ui::strings;
 use crate::ui::swell::Swell;
 use crate::ui::waveform_seek::WaveformSeek;
 use reprise_core::format::{format_duration, format_remaining};
-use reprise_core::playback::{PlaybackState, PlayerEvent};
+use reprise_core::playback::PlaybackState;
 use reprise_core::queue::Repeat;
 
 pub(in crate::ui) const ICON_SHUFFLE: &str = "media-playlist-shuffle-symbolic";
@@ -92,6 +92,9 @@ pub struct PlayerBar {
     pub(in crate::ui) position_label: gtk4::Label,
     pub(in crate::ui) duration_label: gtk4::Label,
     pub(in crate::ui) streaming_status_label: gtk4::Label,
+    pub(in crate::ui) progress_stack: gtk4::Stack,
+    pub(in crate::ui) live_dot: gtk4::Box,
+    pub(in crate::ui) live_station_label: gtk4::Label,
     pub(in crate::ui) waveform: WaveformSeek,
     /// Inline volume slider (replaces the old `ScaleButton`).
     volume_scale: gtk4::Scale,
@@ -99,9 +102,9 @@ pub struct PlayerBar {
     volume_icon: gtk4::Button,
     /// Current track duration (ms) from the latest `set_position`, so
     /// `connect_seek` can turn the waveform's 0..1 fraction into a target ms.
-    duration_ms: Rc<Cell<i64>>,
-    buffering_percent: Cell<u8>,
-    buffered_ms: Cell<Option<i64>>,
+    pub(super) duration_ms: Rc<Cell<i64>>,
+    pub(super) buffering_percent: Cell<u8>,
+    pub(super) buffered_ms: Cell<Option<i64>>,
     pub(in crate::ui) progress_mode: Cell<super::player_bar_state::BarProgressMode>,
     pub(in crate::ui) seek_enabled: Rc<Cell<bool>>,
     pub(in crate::ui) live_started_at: RefCell<Option<Instant>>,
@@ -164,6 +167,9 @@ impl PlayerBar {
             position_label,
             duration_label,
             streaming_status_label,
+            progress_stack,
+            live_dot,
+            live_station_label,
             waveform,
             volume_icon,
             volume_scale,
@@ -246,13 +252,16 @@ impl PlayerBar {
             position_label,
             duration_label,
             streaming_status_label,
+            progress_stack,
+            live_dot,
+            live_station_label,
             waveform,
             volume_scale,
             volume_icon,
             duration_ms: Rc::new(Cell::new(0)),
             buffering_percent: Cell::new(0),
             buffered_ms: Cell::new(None),
-            progress_mode: Cell::new(super::player_bar_state::BarProgressMode::Local),
+            progress_mode: Cell::new(super::player_bar_state::BarProgressMode::default()),
             seek_enabled: Rc::new(Cell::new(true)),
             live_started_at: RefCell::new(None),
             play_next_available: Cell::new(false),
@@ -306,6 +315,7 @@ impl PlayerBar {
             .update_property(&[gtk4::accessible::Property::Label(&tooltip)]);
         self.playback_state.set(state);
         self.waveform.set_paused(!is_playing);
+        self.refresh_live_badge_pulse();
         if state != PlaybackState::Playing {
             // No spectrum arrives outside playback; without this the reactive
             // layers would freeze on the last frame that did (AC-24).
@@ -319,6 +329,21 @@ impl PlayerBar {
             self.animate_play_pulse();
         }
         self.animate_play_icon_change(new_glyph);
+    }
+
+    pub(super) fn refresh_live_badge_pulse(&self) {
+        let pulsing = super::player_bar_state::live_badge_should_pulse(
+            self.progress_mode.get(),
+            self.playback_state.get(),
+            crate::ui::motion::animations_enabled(),
+        );
+        if pulsing {
+            self.live_dot
+                .add_css_class(super::player_bar_layout::LIVE_DOT_PULSING_CLASS);
+        } else {
+            self.live_dot
+                .remove_css_class(super::player_bar_layout::LIVE_DOT_PULSING_CLASS);
+        }
     }
 
     /// The live bass reading, fanned out to the cover lift and the waveform's
@@ -466,36 +491,6 @@ impl PlayerBar {
         } else {
             self.duration_label
                 .set_text(&format_remaining(position_ms, duration_ms));
-        }
-    }
-
-    pub(in crate::ui) fn set_buffering(&self, percent: u8, buffered_ms: Option<i64>) {
-        self.buffering_percent.set(percent.min(100));
-        self.buffered_ms.set(buffered_ms.map(|value| value.max(0)));
-        self.refresh_buffering_presentation();
-    }
-
-    fn refresh_buffering_presentation(&self) {
-        let event = PlayerEvent::Buffering {
-            percent: self.buffering_percent.get(),
-            buffered_ms: self.buffered_ms.get(),
-        };
-        let presentation = super::player_bar_state::buffering_presentation(
-            &event,
-            self.progress_mode.get(),
-            self.duration_ms.get(),
-        );
-        self.waveform
-            .set_buffered_fraction(presentation.map(|presentation| presentation.buffered_fraction));
-        if let Some(presentation) = presentation.filter(|presentation| presentation.show_status) {
-            self.streaming_status_label
-                .set_text(&crate::ui::strings::podcast_streaming_loaded(
-                    presentation.loaded_percent,
-                ));
-            self.streaming_status_label.set_visible(true);
-        } else {
-            self.streaming_status_label.set_visible(false);
-            self.streaming_status_label.set_text("");
         }
     }
 

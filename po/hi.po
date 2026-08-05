@@ -5081,3 +5081,7 @@ msgstr ""
 #, rust-format
 msgid "Streaming · {percent}% loaded"
 msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_radio.rs:22
+msgid "LIVE"
+msgstr ""

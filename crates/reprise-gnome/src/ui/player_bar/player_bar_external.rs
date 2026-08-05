@@ -15,6 +15,9 @@ impl PlayerBar {
             self.seek_enabled.set(true);
             self.progress_mode.set(BarProgressMode::Local);
             self.set_buffering(0, None);
+            self.progress_stack.set_visible_child_name("progress");
+            self.live_station_label.set_text("");
+            self.refresh_live_badge_pulse();
             *self.live_started_at.borrow_mut() = None;
             self.waveform.widget().set_opacity(1.0);
             self.waveform.widget().set_sensitive(true);
@@ -29,6 +32,7 @@ impl PlayerBar {
             return;
         };
         let display = external_bar_display(snapshot);
+        self.progress_mode.set(display.progress_mode);
         let links = playing_links::player_bar_labels(
             playing_links::external_mode(&snapshot.media),
             LinkAvailability {
@@ -38,15 +42,22 @@ impl PlayerBar {
         );
         self.set_track(&display.title, &display.subtitle, links);
         self.set_state(display.playback);
-        self.progress_mode.set(display.progress_mode);
         self.set_buffering(0, None);
         self.waveform.set_peaks(Vec::new());
         let live = display.progress_mode == BarProgressMode::Live;
         self.seek_enabled.set(!live);
         self.waveform.widget().set_sensitive(!live);
-        self.waveform
-            .widget()
-            .set_opacity(if live { 0.0 } else { 1.0 });
+        self.progress_stack
+            .set_visible_child_name(if live { "live" } else { "progress" });
+        let station_name = match &snapshot.media {
+            crate::ui::playback::external_media::ExternalMedia::Radio { name, .. } => name,
+            crate::ui::playback::external_media::ExternalMedia::Podcast { .. } => "",
+        };
+        self.live_station_label.set_text(station_name);
+        self.refresh_live_badge_pulse();
+        if live {
+            self.duration_label.set_text("");
+        }
         self.shuffle_button.set_sensitive(false);
         self.repeat_button.set_sensitive(false);
         self.prev_button.set_sensitive(snapshot.can_go_previous);
@@ -73,6 +84,36 @@ impl PlayerBar {
             .set_tooltip_text(display.inline_error.as_deref());
         self.retry_external_button
             .set_visible(display.inline_error.is_some());
+    }
+
+    pub(in crate::ui) fn set_buffering(&self, percent: u8, buffered_ms: Option<i64>) {
+        self.buffering_percent.set(percent.min(100));
+        self.buffered_ms.set(buffered_ms.map(|value| value.max(0)));
+        self.refresh_buffering_presentation();
+    }
+
+    pub(super) fn refresh_buffering_presentation(&self) {
+        let event = reprise_core::playback::PlayerEvent::Buffering {
+            percent: self.buffering_percent.get(),
+            buffered_ms: self.buffered_ms.get(),
+        };
+        let presentation = super::player_bar_state::buffering_presentation(
+            &event,
+            self.progress_mode.get(),
+            self.duration_ms.get(),
+        );
+        self.waveform
+            .set_buffered_fraction(presentation.map(|presentation| presentation.buffered_fraction));
+        if let Some(presentation) = presentation.filter(|presentation| presentation.show_status) {
+            self.streaming_status_label
+                .set_text(&crate::ui::strings::podcast_streaming_loaded(
+                    presentation.loaded_percent,
+                ));
+            self.streaming_status_label.set_visible(true);
+        } else {
+            self.streaming_status_label.set_visible(false);
+            self.streaming_status_label.set_text("");
+        }
     }
 
     pub(in crate::ui) fn show_play_next_episode(&self, visible: bool) {

@@ -133,6 +133,60 @@ fn play_10_external_snapshot_wiring_syncs_the_player_bar_artwork() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn play_13_live_mode_replaces_the_waveform_and_freezes_its_pulse_when_paused() {
+    use crate::ui::playback::external_media::{
+        ExternalMedia, ExternalPlaybackSnapshot, RadioPresentation, StreamTags,
+    };
+    use crate::ui::playback::preview::PlaybackMode;
+
+    gtk4::init().expect("GTK init");
+    let settings = gtk4::Settings::default().expect("GTK settings");
+    let previous = settings.is_gtk_enable_animations();
+    settings.set_gtk_enable_animations(true);
+    let bar = PlayerBar::new();
+    let snapshot = ExternalPlaybackSnapshot {
+        mode: PlaybackMode::Radio,
+        media: ExternalMedia::Radio {
+            station_id: 9,
+            name: "Example FM".into(),
+            stream_url: "https://radio.test/live".into(),
+            uuid: None,
+        },
+        art_url: None,
+        can_go_previous: false,
+        can_go_next: false,
+        stream_tags: StreamTags::default(),
+        podcast_phase: None,
+        restored: false,
+        radio: Some(RadioPresentation::connected()),
+        error: None,
+    };
+
+    bar.set_external_snapshot(Some(&snapshot));
+    assert_eq!(
+        bar.progress_stack.visible_child_name().as_deref(),
+        Some("live")
+    );
+    assert_eq!(bar.live_station_label.text(), "Example FM");
+    assert!(bar
+        .live_dot
+        .has_css_class(super::player_bar_layout::LIVE_DOT_PULSING_CLASS));
+
+    bar.set_state(PlaybackState::Paused);
+    assert!(!bar
+        .live_dot
+        .has_css_class(super::player_bar_layout::LIVE_DOT_PULSING_CLASS));
+    settings.set_gtk_enable_animations(false);
+    bar.set_state(PlaybackState::Playing);
+    assert!(!bar
+        .live_dot
+        .has_css_class(super::player_bar_layout::LIVE_DOT_PULSING_CLASS));
+
+    settings.set_gtk_enable_animations(previous);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn mot_5_play_pause_pulses_on_state_change() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
