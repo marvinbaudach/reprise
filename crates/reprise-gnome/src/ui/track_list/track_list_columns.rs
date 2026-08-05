@@ -54,7 +54,7 @@ pub(super) fn toggle_class(
     }
 }
 
-/// Keeps the title factory on the one shared NAV-10a marker constructor even
+/// Keeps the title factory on the one shared NAV-10b marker constructor even
 /// though that factory lives in a size-cap sibling.
 pub(super) fn build_playing_marker() -> gtk4::Box {
     playing_marker::build()

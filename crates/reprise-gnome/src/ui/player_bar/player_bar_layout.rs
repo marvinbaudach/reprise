@@ -109,7 +109,7 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     artist_label.add_css_class("player-bar-artist");
 
     // Title row: the title alone. The running state lives on the play/pause
-    // button (NAV-10a) — a second animated marker here doubles the track
+    // button (NAV-10b) — a second animated marker here doubles the track
     // list's on every view where the running track is visible.
     let title_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
     title_row.append(&title_label);

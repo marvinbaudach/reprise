@@ -194,11 +194,11 @@ result.
   triggered) belongs, in the single-track browser, to the NAV-2 history
   complex; Album and Artist are no longer separate views but scopes of
   the music list.
-- **NAV-13** [replaced by NAV-10a] — Starting playback is not
+- **NAV-13** [replaced by NAV-10b] — Starting playback is not
   navigation: Enter or double-click on a track row leaves selection,
   keyboard focus, and viewport unchanged; only the now-playing marker
   changes. The separation of marking and scrolling in the one track
-  browser is now governed by NAV-10a.
+  browser is now governed by NAV-10b.
 
 ## C. Playback, queue, shuffle, filter
 
@@ -1164,7 +1164,7 @@ result.
   Back/Forward stack and never autoplays. The last loaded track or episode is
   presented paused; the first Play starts that exact item through a fresh
   playable source, applying an episode's existing resume position, and leaves
-  the viewport exactly as the start placed it (NAV-10a). If its stable ID belongs to the
+  the viewport exactly as the start placed it (NAV-10b). If its stable ID belongs to the
   restored destination, that row becomes the sole selection and is centered
   without taking keyboard focus; grouped podcast and YouTube sources expand
   the required group and preview window first. An unavailable item leaves the
@@ -2488,7 +2488,7 @@ property is set and yet nothing happens.
   view it is revealed once, later switches restore NAV-5's remembered
   ID-plus-offset anchor. Explicit "Go to album/artist" always jumps
   deterministically; selection never follows playback.
-- **NAV-10a** [active] [gtk] — **Marking and scrolling are separate.**
+- **NAV-10a** [replaced by NAV-10b] [gtk] — **Marking and scrolling are separate.**
   Every visible instance of the loaded track carries the same playback
   marker, from one implementation (`ui/playing_marker.rs`) serving every
   surface that lists tracks: the track table, the podcast groups, and the
@@ -2507,6 +2507,30 @@ property is set and yet nothing happens.
   GTK's own reset. A distance of more than three viewport heights is
   still applied at once, so the first placement after launch stays
   instant (START-1).
+  Auto-advance centers only if no scroll movement has occurred for 1.5
+  seconds; explicit metadata/reveal navigation always selects, focuses, and
+  centers.
+- **NAV-10b** [active] [gtk] — **Marking and scrolling are separate.**
+  Every visible instance of the loaded track carries the same playback
+  marker, from one implementation (`ui/playing_marker.rs`) serving every
+  surface that lists playable items: the track table, the podcast groups,
+  the YouTube channel detail, and the radio table. Its order is the same in
+  every surface: artwork, marker, then the title in the playback-accent
+  colour. The signal depends exclusively on playback state and never on
+  selection. The player bar is not such a surface — it shows the running
+  track's state through the play/pause button, not through a second copy of
+  the list marker. Double-click/Enter on an already-visible row does not
+  change the viewport. Play from Stopped as well as explicit Previous/Next
+  center the new track without stealing focus or selection — except for the
+  one Play that starts a restored session, whose track START-3 already
+  selected and centered at startup: that row is placed, so starting it only
+  starts the audio. Centring it again would be a second visible scroll on a
+  viewport that is already the target.
+  Centring moves the viewport over the Standard token rather than
+  teleporting it, and yields immediately to anything else that writes the
+  scroll position — the user's own scrolling, a model replacement, or GTK's
+  own reset. A distance of more than three viewport heights is still applied
+  at once, so the first placement after launch stays instant (START-1).
   Auto-advance centers only if no scroll movement has occurred for 1.5
   seconds; explicit metadata/reveal navigation always selects, focuses, and
   centers.
@@ -2830,7 +2854,7 @@ property is set and yet nothing happens.
   when playback moves. Title and bar take the playback accent with it, and the
   row keeps a tint that hover does not remove. Marking never re-renders either
   list: the expanded state and the scroll position survive a track change,
-  exactly as NAV-10a requires of the track table. Pausing is the transport's
+  exactly as NAV-10b requires of the track table. Pausing is the transport's
   job, not the row's — the marker reports the state, the player bar and Space
   change it.
 - **STATS-19** [active] [gtk] — Replaces STATS-17. **The page reads hours →

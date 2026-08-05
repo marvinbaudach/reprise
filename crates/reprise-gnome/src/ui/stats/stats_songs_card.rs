@@ -274,7 +274,7 @@ impl StatsSongsCard {
     /// does **not** re-render: a track change would otherwise rebuild both
     /// lists, throwing away the expanded state and scroll position. The
     /// already-built rows are mutated in place, which is the same
-    /// viewport-neutral discipline NAV-10a imposes on the track table.
+    /// viewport-neutral discipline NAV-10b imposes on the track table.
     fn set_mark(&self, mark: Option<TrackMark>) {
         self.summary.mark.set(mark);
         for playback in self.summary.playbacks.borrow().iter() {
@@ -493,7 +493,7 @@ fn render_full_rows(
         let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 10);
         row.add_css_class("stats-top-track-row");
         row.set_height_request(56);
-        // `STATS-18`: NAV-10a wants *every* visible instance of the loaded
+        // `STATS-18`: NAV-10b wants *every* visible instance of the loaded
         // track marked, so the expanded ranking marks its rank slot too.
         let rank_slot = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
         rank_slot.add_css_class("stats-song-rank-slot");

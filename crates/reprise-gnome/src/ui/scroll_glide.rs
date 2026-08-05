@@ -157,7 +157,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn nav_10a_a_far_target_jumps_instead_of_gliding() {
+    fn nav_10b_a_far_target_jumps_instead_of_gliding() {
         // Three viewport heights. Beyond that a glide is either absurdly slow
         // or a blur, and at launch the list is at 0 with the loaded track far
         // away — which is exactly how START-3 keeps its instant placement.
@@ -172,7 +172,7 @@ mod tests {
     }
 
     #[test]
-    fn nav_10a_a_foreign_write_ends_the_glide() {
+    fn nav_10b_a_foreign_write_ends_the_glide() {
         // Anything that writes the adjustment beats the glide: the user
         // scrolling, `AdjustmentHold` restoring a value across a GTK handover,
         // or GTK resetting to zero after a model replacement. One rule covers

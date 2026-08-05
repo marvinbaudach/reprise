@@ -43,6 +43,7 @@ mod tests {
             include_str!("track_list/track_list_columns.rs"),
             include_str!("podcasts/podcasts_groups.rs"),
             include_str!("podcasts/youtube_channel_detail.rs"),
+            include_str!("radio/radio_columns.rs"),
         ] {
             assert!(source.contains("playing_marker::build"));
             assert!(!source.contains("eq_bars::build"));

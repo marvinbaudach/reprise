@@ -3,6 +3,7 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::connectivity::{self, Connectivity};
 use reprise_core::db::Db;
+use reprise_core::playback::PlaybackState;
 use reprise_core::radio::{self, StationRow};
 use reprise_core::source_error::{
     source_failure_presentation, SourceError, SourceErrorKind, SourceSurface,
@@ -115,6 +116,14 @@ impl RadioView {
         column_view.add_css_class(crate::ui::source_context_surface::TABLE_CSS_CLASS);
 
         let cells = Rc::new(super::radio_live_cells::RadioLiveCells::default());
+        if let Some(controller) = controller {
+            let live_for_state = live.clone();
+            let cells_for_state = cells.clone();
+            controller.add_on_playback_state_changed(move |state| {
+                live_for_state.borrow_mut().playing = state == PlaybackState::Playing;
+                cells_for_state.reapply();
+            });
+        }
         radio_columns::append_columns(&column_view, &live_source, &connectivity_source, &cells);
         {
             let live = live_source.clone();
@@ -338,7 +347,10 @@ fn on_external_snapshot(
         .and_then(|radio| radio.inline_error())
         .map(str::to_owned);
     let was_connected = super::radio_reveal::connected_station(&shared.live.borrow());
-    shared.live.replace(live_state(snapshot));
+    let playing = shared.live.borrow().playing;
+    let mut next_live = live_state(snapshot);
+    next_live.playing = playing;
+    shared.live.replace(next_live);
     if let Some(failure) = failure {
         show_radio_failure(shared, SourceErrorKind::Unreachable, failure);
     } else {
@@ -511,6 +523,7 @@ fn live_state(
             .radio
             .as_ref()
             .is_some_and(|radio| radio.phase() == RadioPhase::Connected),
+        playing: false,
         title: snapshot.stream_tags.title,
         failed: snapshot
             .radio

@@ -1,4 +1,4 @@
-//! Keeps playing markers synchronized with playback while applying NAV-10a's
+//! Keeps playing markers synchronized with playback while applying NAV-10b's
 //! intent-sensitive viewport policy. Row activation never moves the viewport;
 //! explicit transport centers, and automatic advance yields to recent scrolling.
 //! Explicit metadata reveals restore selection/focus through `BrowserPlace`.
@@ -142,7 +142,7 @@ pub(in crate::ui) fn wire(player: Option<&Rc<PlayerController>>, track_list: &Rc
 impl PlayerController {
     /// Adds a loaded-track listener. Appends rather than replaces: every
     /// surface that carries the shared playback marker registers here, and
-    /// NAV-10a requires all of them to be told, not just the last one to
+    /// NAV-10b requires all of them to be told, not just the last one to
     /// register.
     pub(in crate::ui) fn add_on_current_track_changed(
         &self,
@@ -287,7 +287,7 @@ impl TrackList {
         let is_queue = matches!(*self.shared.source.borrow(), ViewSource::Queue);
 
         // Every change carries a loaded track, including the session restore:
-        // NAV-10a asks for the marker on every visible instance of the
+        // NAV-10b asks for the marker on every visible instance of the
         // *loaded* track, not only the running one.
         self.shared.playing_track_id.set(Some(track_id));
         if change == CurrentTrackChange::SessionRestore {

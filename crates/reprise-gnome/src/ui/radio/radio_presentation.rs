@@ -7,6 +7,7 @@ use crate::ui::strings;
 pub(super) struct RadioLiveState {
     pub station_id: Option<i64>,
     pub connected: bool,
+    pub playing: bool,
     pub title: Option<String>,
     pub failed: bool,
 }
@@ -98,6 +99,7 @@ mod tests {
         let live = RadioLiveState {
             station_id: Some(1),
             connected: true,
+            playing: true,
             title: Some("Artist — Song".into()),
             failed: false,
         };
@@ -110,5 +112,22 @@ mod tests {
         };
         assert_eq!(now_playing(1, &paused), "—");
         assert!(!row_is_accented(1, &paused));
+    }
+
+    #[test]
+    fn nav_10b_a_paused_radio_keeps_the_loaded_marker_but_freezes_its_motion() {
+        let paused = RadioLiveState {
+            station_id: Some(1),
+            connected: true,
+            playing: false,
+            title: None,
+            failed: false,
+        };
+
+        assert!(
+            row_is_accented(1, &paused),
+            "the loaded marker stays visible"
+        );
+        assert!(!paused.playing, "its shared EQ animation is paused");
     }
 }
