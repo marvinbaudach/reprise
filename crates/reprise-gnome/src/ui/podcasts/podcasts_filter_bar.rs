@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk4::prelude::*;
@@ -9,11 +9,17 @@ use reprise_core::podcasts::{self, PodcastKind};
 // classification), not duplicated here.
 use super::podcasts_presentation::{active, LibrarySummary, PodcastFilter};
 use crate::ui::browse::browse_bar::CHIP_CSS_CLASS;
+use crate::ui::search_chip;
 use crate::ui::strings;
 use crate::ui::style::buttons;
+use reprise_view::search_scope::SearchScope;
 
 const FILTER_BAR_MIN_HEIGHT: i32 = 34;
 type OnChanged = Rc<dyn Fn(PodcastFilter)>;
+/// SEARCH-8: fired when the bar itself changes the query — the chip's ×, or a
+/// jump that had to relax the search to reach its episode. The shell listens
+/// so the header entry stops showing a query the view no longer applies.
+type OnQueryChanged = Rc<dyn Fn(&str)>;
 
 pub(in crate::ui) fn add_button(kind: PodcastKind) -> gtk4::Button {
     let add = gtk4::Button::builder()
@@ -37,7 +43,11 @@ pub(super) struct PodcastsFilterBar {
     result: gtk4::Label,
     clear_selection: gtk4::Button,
     base_result: RefCell<String>,
+    /// Whether the summary line is markup (FIL-2's accented count) or plain
+    /// text, so the selection suffix is appended in the same mode.
+    base_is_markup: Cell<bool>,
     on_changed: RefCell<Option<OnChanged>>,
+    on_query_changed: RefCell<Option<OnQueryChanged>>,
     // `POD-15`: kept past the constructor because the summary line below the
     // chips names channels on the YouTube page and shows on the RSS one.
     kind: PodcastKind,
@@ -46,11 +56,10 @@ pub(super) struct PodcastsFilterBar {
 impl PodcastsFilterBar {
     pub(super) fn new(conn: Rc<Db>, kind: PodcastKind) -> Rc<Self> {
         let stored = podcasts::config::load_filter(&conn).unwrap_or_default();
-        let filter = PodcastFilter {
-            unplayed_only: stored.unplayed_only,
+        let filter = PodcastFilter::from_facets(&podcasts::config::PodcastFilterConfig {
             source: None,
-            downloaded_only: stored.downloaded_only,
-        };
+            ..stored
+        });
         let root = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
         root.set_margin_top(6);
         root.set_margin_bottom(6);
@@ -99,7 +108,9 @@ impl PodcastsFilterBar {
             result,
             clear_selection,
             base_result: RefCell::new(String::new()),
+            base_is_markup: Cell::new(false),
             on_changed: RefCell::new(None),
+            on_query_changed: RefCell::new(None),
             kind,
         });
         bar.rebuild();
@@ -128,15 +139,40 @@ impl PodcastsFilterBar {
         *self.on_changed.borrow_mut() = Some(Rc::new(callback));
     }
 
+    pub(super) fn set_on_query_changed(&self, callback: impl Fn(&str) + 'static) {
+        *self.on_query_changed.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    /// SEARCH-8: the section's query, handed in by the shell as the user
+    /// types. A no-op for an unchanged query so a re-entry into the section
+    /// does not re-render the whole list.
+    pub(super) fn set_query(self: &Rc<Self>, query: &str) {
+        let current = self.filter();
+        if current.query == query.trim() {
+            return;
+        }
+        self.apply_internal(current.with_query(query), false);
+    }
+
     pub(super) fn set_context(
         self: &Rc<Self>,
         shown: usize,
         summary: LibrarySummary,
         selected_count: usize,
     ) {
-        let base_result = if active(&self.filter()) {
-            strings::podcast_filtered_count(shown, summary.episodes)
+        let filter = self.filter();
+        let base_result = if active(&filter) {
+            // FIL-2: a filtered list counts in its own unit with the shown
+            // number accented.
+            self.base_is_markup.set(true);
+            match self.kind {
+                PodcastKind::Rss => strings::podcast_filtered_count_markup(shown, summary.episodes),
+                PodcastKind::Youtube => {
+                    strings::youtube_filtered_count_markup(shown, summary.episodes)
+                }
+            }
         } else {
+            self.base_is_markup.set(false);
             // `G2` (design 6a): "4 shows · 41 episodes · 7 new" replaces the
             // bare episode count once nothing is filtered. The filtered
             // branch above is unchanged — "shown of total" is what matters
@@ -157,14 +193,20 @@ impl PodcastsFilterBar {
     }
 
     pub(super) fn set_selection_count(&self, selected_count: usize) {
-        self.result
-            .set_text(&strings::podcast_summary_with_selection(
-                &self.base_result.borrow(),
-                selected_count,
-            ));
+        let text =
+            strings::podcast_summary_with_selection(&self.base_result.borrow(), selected_count);
+        if self.base_is_markup.get() {
+            self.result.set_markup(&text);
+            self.result.add_css_class("accent");
+        } else {
+            self.result.remove_css_class("accent");
+            self.result.set_text(&text);
+        }
         self.clear_selection.set_visible(selected_count > 0);
     }
 
+    /// FIL-2 / SEARCH-8: "Clear all" drops this section's query together with
+    /// its facets, and nothing outside this section.
     pub(super) fn clear_all(self: &Rc<Self>) {
         self.apply(PodcastFilter::default());
     }
@@ -174,16 +216,49 @@ impl PodcastsFilterBar {
     }
 
     fn apply(self: &Rc<Self>, filter: PodcastFilter) {
-        if let Err(error) = podcasts::config::save_filter(&self.conn, &filter) {
-            tracing::warn!(%error, "could not persist podcast filters");
-            return;
+        self.apply_internal(filter, true);
+    }
+
+    /// `announce_query`: whether a query change originated here (chip ×,
+    /// "Clear all", a jump that relaxed the search) and therefore has to be
+    /// mirrored back into the header entry. A query arriving *from* the entry
+    /// must not be echoed, or the two would ping-pong.
+    fn apply_internal(self: &Rc<Self>, filter: PodcastFilter, announce_query: bool) {
+        let previous = self.filter.replace(filter.clone());
+        // SEARCH-8: only the facets are persisted, and only when they
+        // actually changed — every keystroke in the header search comes
+        // through here, and none of them is a settings write.
+        //
+        // The applied filter is deliberately not gated on that write
+        // succeeding. It used to be, and that made a transient `SQLITE_BUSY`
+        // eat the keystroke that hit it: the view kept rendering the previous
+        // filter while the entry showed the new query, with nothing but a log
+        // line to say so. A filter the user can see and remove is the honest
+        // failure mode; the next successful write re-syncs the disk.
+        if previous.facets() != filter.facets() {
+            if let Err(error) = podcasts::config::save_filter(&self.conn, &filter.facets()) {
+                tracing::warn!(%error, "could not persist podcast filters");
+            }
         }
-        self.filter.replace(filter.clone());
+        let previous_query = previous.query;
         self.popover.popdown();
         self.rebuild();
+        if announce_query && previous_query != filter.query {
+            let callback = self.on_query_changed.borrow().clone();
+            if let Some(callback) = callback {
+                callback(&filter.query);
+            }
+        }
         let callback = self.on_changed.borrow().clone();
         if let Some(callback) = callback {
             callback(filter);
+        }
+    }
+
+    fn scope(&self) -> SearchScope {
+        match self.kind {
+            PodcastKind::Rss => SearchScope::Podcasts,
+            PodcastKind::Youtube => SearchScope::Youtube,
         }
     }
 
@@ -226,6 +301,19 @@ impl PodcastsFilterBar {
                 }
             });
             self.chips.prepend(&clear);
+        }
+        // FIL-1a/FIL-1d: prepended after everything else, so the search chip
+        // ends up first in the row — ahead of the facet chips and of the
+        // "Clear all" pill, the way the Library filter row already reads.
+        if filter.has_query() {
+            let weak = Rc::downgrade(self);
+            let chip = search_chip::build(self.scope(), &filter.query, move || {
+                if let Some(bar) = weak.upgrade() {
+                    let cleared = bar.filter().with_query("");
+                    bar.apply(cleared);
+                }
+            });
+            self.chips.prepend(&chip);
         }
         self.rebuild_popover();
     }
@@ -288,6 +376,45 @@ impl PodcastsFilterBar {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// UX SEARCH-8: typing in the header is not a settings write. The query
+    /// leaves the persisted facets untouched, and — the point of the
+    /// separation — applying it is not gated on a write succeeding, so a
+    /// busy database can never eat a keystroke.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn search_8_a_query_neither_persists_nor_depends_on_persistence() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let conn = Rc::new(crate::test_db::open().unwrap());
+        let bar = PodcastsFilterBar::new(conn.clone(), PodcastKind::Rss);
+        bar.apply_filter(PodcastFilter {
+            unplayed_only: true,
+            ..PodcastFilter::default()
+        });
+
+        bar.set_query("wer");
+
+        assert_eq!(bar.filter().query, "wer", "the query is applied in-session");
+        let stored = podcasts::config::load_filter(&conn).unwrap();
+        assert!(
+            stored.unplayed_only,
+            "the facet the user picked is persisted"
+        );
+        assert_eq!(
+            PodcastFilter::from_facets(&stored),
+            PodcastFilter {
+                unplayed_only: true,
+                ..PodcastFilter::default()
+            },
+            "nothing the query touched reached the database"
+        );
+
+        // Removing the query is the same trade in the other direction.
+        bar.set_query("");
+        assert_eq!(bar.filter().query, "");
+        assert!(podcasts::config::load_filter(&conn).unwrap().unplayed_only);
+    }
 
     #[test]
     fn src_2_add_action_is_tinted_button_not_chip() {

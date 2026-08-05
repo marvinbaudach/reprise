@@ -15,6 +15,7 @@ mod radio_model;
 mod radio_presentation;
 mod radio_reveal;
 mod radio_view;
+mod radio_view_search;
 mod station_preview;
 
 pub(in crate::ui) use radio_view::RadioView;

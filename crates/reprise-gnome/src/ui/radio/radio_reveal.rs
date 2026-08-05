@@ -313,6 +313,7 @@ mod tests {
         let hiding = RadioFilter {
             genre: Some("Rock".into()),
             country: Some("DE".into()),
+            ..RadioFilter::default()
         };
 
         // Visible already: nothing to relax.
@@ -328,6 +329,7 @@ mod tests {
                 relax_filter: Some(RadioFilter {
                     genre: None,
                     country: Some("DE".into()),
+                    ..RadioFilter::default()
                 }),
             }
         );

@@ -63,9 +63,21 @@ pub const CONCERTS_SIMILAR_COUNT: &str = N_!("Similar artists per top artist");
 pub const CONCERTS_OFF: &str = N_!("Off");
 
 pub fn concert_count_line(shown: usize, total: usize) -> String {
+    concert_count(&shown.to_string(), total)
+}
+
+/// FIL-2: the same line with the shown number accented. The bold goes in as
+/// the *argument*, not as a substring search over the rendered sentence — a
+/// translation that puts the total first would otherwise bold the wrong
+/// number, silently.
+pub fn concert_count_line_markup(shown: usize, total: usize) -> String {
+    concert_count(&format!("<b>{shown}</b>"), total)
+}
+
+fn concert_count(shown: &str, total: usize) -> String {
     formatted(
         N_!("{shown} of {total} concerts"),
-        &[("shown", &shown.to_string()), ("total", &total.to_string())],
+        &[("shown", shown), ("total", &total.to_string())],
     )
 }
 

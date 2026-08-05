@@ -1307,12 +1307,15 @@ result.
   header-bar search (chip ⌕ "falling" in any field, own ×-click target
   ≥ 20 px; the × removes only the search, Esc per NAV-6). Applies in
   every track source (Library, Playlist, Smart, Queue, Missing). The
-  search is global across track sources and travels along on location
-  change; its chip appears everywhere it actually restricts — in
-  sources without search effect (Import Errors: own panel rows) no chip
-  appears. Facet chips and "+ Add filter" stay library-only. An
-  invisible active filter is a bug. Per-location scoping of the search
-  would be its own future rule, not part of this one.
+  search travels along within the track sources; its chip appears
+  everywhere it actually restricts — in sources without search effect
+  (Import Errors: own panel rows) no chip appears. Facet chips and
+  "+ Add filter" stay library-only. An invisible active filter is a bug.
+  (Revised 2026-08-05: the search is no longer global across the whole
+  window. It belongs to the section it was typed in — SEARCH-8 — and
+  every other list view carries it as its own first chip, worded for the
+  fields that view actually reads — FIL-1d. Within the track sources
+  nothing changes: this is still one section.)
 - **FIL-1b** [planned] [gtk] — Albums/Artists mode: the global search
   already works there (grid filtering); the same chip row incl.
   counting and "Clear all" will follow there per the pattern of
@@ -1335,6 +1338,23 @@ result.
   removable scope chips under the FILTER heading — one shape for two
   meanings, which measurably read as a filter that turned out to be a
   navigation.)
+- **FIL-1d** [active] [gtk] — The search chip names its scope. Every
+  list view accepts the section's query as its **first** chip, ahead of
+  the facet chips and with the same removable ×-affordance FIL-1a gave
+  the Library one — whether or not the list is playable: Music,
+  Podcasts, YouTube, Radio, Queue, playlists, Releases, Concerts,
+  Missing files. The wording is not decoration but a promise about what
+  was matched, so it names the fields that view actually reads: Music
+  and its sibling track sources keep "⌕ "{query}" in any field";
+  Podcasts says "in episode titles", YouTube "in video titles", Radio
+  "in station names", Releases "in title and artist", Concerts "in
+  artist and venue", Missing files "in file paths". A view may never
+  claim a field it does not search, and may never quietly search one it
+  does not name. Matching is case-insensitive substring matching,
+  mid-word included ("wer" matches "Antwerpen"). The chip's accessible
+  remove name stays "Remove search: {query}" everywhere. The chip's ×
+  and "Clear all" clear the query and the facets of the **current**
+  section only (FIL-2, SEARCH-8).
 - **FIL-2** [active] [gtk] — Counting is state: the filter row is the
   permanent list header of every track source — it never appears or
   disappears (no layout shift by design, P-4). Idle as quiet as
@@ -2460,6 +2480,20 @@ property is set and yet nothing happens.
   remains, per SEARCH-3/5, as an active filter along with its chip and
   accent magnifier; a click on the magnifier must not accidentally reopen
   the bar that was closed by that same focus change.
+- **SEARCH-8** [active] [gtk] — The query belongs to the section it was
+  typed in, not to the window. Switching sections swaps the header
+  entry's text to that section's own query; it never carries over, and a
+  query typed in Podcasts leaves the Music query untouched and vice
+  versa. Per section, SEARCH-5 and SEARCH-6 hold unchanged: collapsing
+  the bar preserves that section's query, and a query the user
+  explicitly removed is never resurrected. The query is **transient**:
+  it is not persisted with the section's facet filters (podcast filter
+  config, radio settings keys) — a launch never starts inside somebody's
+  old search. Where there is no list there is no search: in My Stats and
+  device Sync the header lens is insensitive with the tooltip "Nothing
+  to filter in {section}", Ctrl+F is a no-op, and the search bar cannot
+  be revealed by typing either. The scoped chip each section shows for
+  its own query is FIL-1d.
 - **LYR-4** [active] [gtk] — Centering of the active lyrics line is
   clamped to the top at the start of the song. As long as there aren't
   enough context lines above the active line, the text block sits at the
@@ -4683,6 +4717,24 @@ listening statistics.
   `pod_24_direct_youtube_completion_uses_the_frozen_next_episode`,
   `pod_24_finish_offers_next_unplayed_of_show`, and
   `pod_24_external_session_never_scrobbles`.
+- **POD-25** [active] [gtk] — The Podcasts and YouTube search matches
+  **episode titles only**, case-insensitively and mid-word — not show
+  names, not authors, not descriptions (FIL-1d: "in episode titles" /
+  "in video titles"). A show is rendered when at least one of its
+  episodes matches; it is then auto-expanded and renders only the
+  matching episodes, and a show without a match drops out of the list
+  entirely. Auto-expansion is for the duration of the query only: it
+  never overwrites the show's own collapsed/expanded state, which
+  returns as soon as the query goes. The per-group facts line and the
+  page summary stay **unfiltered** (POD-9 / G2) — they describe the
+  library, not the search. Counting follows FIL-2: while a query or a
+  facet narrows the list the status line reads "N of TOTAL episodes"
+  with the shown number accented, and returns to the unfiltered summary
+  ("3 shows · 13 episodes · 1 new") once nothing restricts. Inside every
+  rendered episode title the query itself is accented, the way FIL-5
+  already accents it in the track table — the same helper, so a hit reads
+  the same wherever the user finds it; a channel tail the row deliberately
+  dims (POD-15) is never accented.
 - **RAD-1** [active] [gtk] — Only the currently connected station is
   accented in the table; its state icon, name, now-playing, and row
   tint change together. All others, as well as a presented but

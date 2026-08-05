@@ -45,11 +45,11 @@ const EMPTY_PAGE: &str = "empty";
 type IdCallback = Rc<dyn Fn(i64)>;
 type Callback = Rc<dyn Fn()>;
 
-struct Shared {
+pub(super) struct Shared {
     conn: Rc<Db>,
     controller: std::rc::Weak<PlayerController>,
     model: Rc<RadioModel>,
-    filter_bar: Rc<RadioFilterBar>,
+    pub(super) filter_bar: Rc<RadioFilterBar>,
     rows: RefCell<Vec<StationRow>>,
     live: Rc<RefCell<RadioLiveState>>,
     /// `NET-3b`: explicit, injectable connectivity seam (see
@@ -89,7 +89,7 @@ struct Shared {
 }
 
 pub(in crate::ui) struct RadioView {
-    shared: Rc<Shared>,
+    pub(super) shared: Rc<Shared>,
 }
 
 impl RadioView {

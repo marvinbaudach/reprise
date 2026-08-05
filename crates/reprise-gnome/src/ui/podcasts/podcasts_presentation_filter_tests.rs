@@ -32,6 +32,7 @@ fn src_13_only_the_hiding_facet_is_dropped_for_an_episode() {
         unplayed_only: true,
         source: Some(PodcastKind::Rss),
         downloaded_only: true,
+        ..PodcastFilter::default()
     };
 
     assert_eq!(
@@ -40,6 +41,7 @@ fn src_13_only_the_hiding_facet_is_dropped_for_an_episode() {
             unplayed_only: false,
             source: Some(PodcastKind::Rss),
             downloaded_only: true,
+            ..PodcastFilter::default()
         }
     );
 }
@@ -52,6 +54,7 @@ fn src_13_a_visible_episode_leaves_every_facet_standing() {
         unplayed_only: true,
         source: Some(PodcastKind::Rss),
         downloaded_only: true,
+        ..PodcastFilter::default()
     };
 
     assert_eq!(filter_without_hiding(&episode, &filter), filter);
@@ -80,6 +83,7 @@ fn src_13_a_channel_hidden_by_mixed_facets_gives_up_the_cheapest_one_only() {
         unplayed_only: true,
         source: None,
         downloaded_only: true,
+        ..PodcastFilter::default()
     };
     assert!(apply_filter(&group.episodes, &filter).is_empty());
 
@@ -93,6 +97,7 @@ fn src_13_a_channel_hidden_by_mixed_facets_gives_up_the_cheapest_one_only() {
             unplayed_only: false,
             source: None,
             downloaded_only: true,
+            ..PodcastFilter::default()
         }
     );
     assert!(!apply_filter(&group.episodes, &adjusted).is_empty());
@@ -117,6 +122,7 @@ fn src_13_a_channel_whose_episodes_all_fail_the_filter_drops_that_facet() {
         unplayed_only: true,
         source: Some(PodcastKind::Rss),
         downloaded_only: false,
+        ..PodcastFilter::default()
     };
 
     assert_eq!(
@@ -125,6 +131,7 @@ fn src_13_a_channel_whose_episodes_all_fail_the_filter_drops_that_facet() {
             unplayed_only: false,
             source: Some(PodcastKind::Rss),
             downloaded_only: false,
+            ..PodcastFilter::default()
         }
     );
 }

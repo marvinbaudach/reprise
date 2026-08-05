@@ -143,15 +143,28 @@ pub fn wire(
     window: &adw::ApplicationWindow,
     search_bar: &gtk4::SearchBar,
     search_entry: &gtk4::SearchEntry,
-    focus_active_content: Rc<dyn Fn() -> bool>,
-    show_sound: Rc<dyn Fn()>,
+    hooks: ShortcutHooks,
     player: Option<Rc<PlayerController>>,
 ) {
+    let ShortcutHooks {
+        focus_active_content,
+        show_sound,
+        search_available,
+    } = hooks;
     wire_toggle_play_pause(app, window, player);
     wire_window_lifecycle(app, window);
-    wire_focus_search(app, window, search_bar, search_entry);
+    wire_focus_search(app, window, search_bar, search_entry, search_available);
     wire_show_sound(app, window, show_sound);
     wire_escape(search_bar, search_entry, focus_active_content);
+}
+
+/// The three shell decisions the shortcuts have to ask about rather than
+/// make: where Escape hands focus, what "Show sound" opens, and — SEARCH-8 —
+/// whether the visible section has a list for Ctrl+F to filter at all.
+pub struct ShortcutHooks {
+    pub focus_active_content: Rc<dyn Fn() -> bool>,
+    pub show_sound: Rc<dyn Fn()>,
+    pub search_available: Rc<dyn Fn() -> bool>,
 }
 
 fn wire_show_sound(
@@ -231,6 +244,7 @@ fn wire_focus_search(
     window: &adw::ApplicationWindow,
     search_bar: &gtk4::SearchBar,
     search_entry: &gtk4::SearchEntry,
+    search_available: Rc<dyn Fn() -> bool>,
 ) {
     let pending_focus = Rc::new(std::cell::Cell::new(false));
     let pending_focus_on_map = pending_focus.clone();
@@ -249,6 +263,12 @@ fn wire_focus_search(
     let window_weak = window.downgrade();
     let pending_focus_on_activate = pending_focus.clone();
     action.connect_activate(move |_, _| {
+        // SEARCH-8: where there is no list, Ctrl+F is a no-op — the same
+        // truth the insensitive lens tells, said in the keyboard's language.
+        if !search_available() {
+            tracing::debug!("focus-search: the visible section has nothing to filter");
+            return;
+        }
         let Some(search_bar) = search_bar_weak.upgrade() else {
             tracing::warn!("focus-search: search bar is gone; ignoring");
             return;
@@ -398,7 +418,7 @@ mod tests {
         content.append(&invoker);
         content.append(&search_bar);
         window.set_content(Some(&content));
-        wire_focus_search(&app, &window, &search_bar, &entry);
+        wire_focus_search(&app, &window, &search_bar, &entry, Rc::new(|| true));
         window.present();
         while gtk4::glib::MainContext::default().iteration(false) {}
         gtk4::prelude::GtkWindowExt::set_focus(&window, Some(&invoker));

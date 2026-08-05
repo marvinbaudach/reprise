@@ -697,3 +697,90 @@ fn purge_tombstones_survives_a_resurrection_racing_the_delete_itself() {
         "the survivor's listening history must not be cascaded away"
     );
 }
+
+/// UX FIL-1d: the Missing section's query matches **file paths**, so a
+/// group is only rendered for the gaps whose path contains it, and a group
+/// with no match drops out entirely. The unfiltered call is the same
+/// function with an empty query, so the two can never drift.
+#[test]
+fn fil_1d_missing_groups_and_rows_narrow_to_matching_paths() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    seed_missing_track(conn, 1, "A", "One", Some(1), MissingReason::Deleted, None);
+    seed_missing_track(conn, 2, "B", "Two", Some(1), MissingReason::Deleted, None);
+    conn.execute(
+        "UPDATE tracks SET path = '/music/Antwerpen/a.flac' WHERE id = 1",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "UPDATE tracks SET path = '/music/Elsewhere/b.flac' WHERE id = 2",
+        [],
+    )
+    .unwrap();
+    seed_missing_track(
+        conn,
+        3,
+        "C",
+        "Three",
+        Some(1),
+        MissingReason::Unmounted,
+        Some("/mnt/usb"),
+    );
+
+    // Unfiltered: every card, every row.
+    assert_eq!(query_missing_groups(&db).unwrap().len(), 2);
+
+    // Mid-word and case-insensitive, exactly like every other scoped search.
+    let groups = query_missing_groups_matching(&db, "wer").unwrap();
+    assert_eq!(
+        groups.len(),
+        1,
+        "the unmounted card has no matching path and drops out: {groups:?}"
+    );
+    assert_eq!(groups[0].kind, MissingGroupKind::Deleted);
+    assert_eq!(groups[0].track_count, 1);
+
+    let rows = query_missing_rows_matching(&db, &MissingGroupKind::Deleted, "WER", 0, 10).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].path, "/music/Antwerpen/a.flac");
+
+    // An empty query is the unfiltered call verbatim.
+    assert_eq!(
+        query_missing_rows_matching(&db, &MissingGroupKind::Deleted, "", 0, 10)
+            .unwrap()
+            .len(),
+        query_missing_rows(&db, &MissingGroupKind::Deleted, 0, 10)
+            .unwrap()
+            .len()
+    );
+}
+
+/// UX FIL-1d: LIKE's own wildcards inside the query are matched literally —
+/// a user typing `%` is searching for a percent sign, not for everything.
+#[test]
+fn fil_1d_missing_path_query_never_turns_into_a_wildcard() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    seed_missing_track(conn, 1, "A", "One", Some(1), MissingReason::Deleted, None);
+    seed_missing_track(conn, 2, "B", "Two", Some(1), MissingReason::Deleted, None);
+    conn.execute(
+        "UPDATE tracks SET path = '/music/100%25 Live/a.flac' WHERE id = 1",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "UPDATE tracks SET path = '/music/Quiet/b.flac' WHERE id = 2",
+        [],
+    )
+    .unwrap();
+
+    let rows = query_missing_rows_matching(&db, &MissingGroupKind::Deleted, "%", 0, 10).unwrap();
+
+    assert_eq!(
+        rows.len(),
+        1,
+        "a literal percent matched every row: {rows:?}"
+    );
+    assert!(rows[0].path.contains('%'));
+}
