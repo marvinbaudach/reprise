@@ -32,6 +32,41 @@ pub(super) struct RevealTarget {
     pub(super) needs_full_window: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum RevealRequest {
+    Episode(i64),
+    Channel(i64),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum RevealOutcome {
+    Reveal(RevealRequest),
+    NotListed,
+}
+
+/// Resolves an explicit request against the unfiltered source groups. The
+/// episode must belong to the addressed subscription, so stale or mismatched
+/// identities are reported rather than silently aimed at another group.
+pub(super) fn reveal_outcome(
+    groups: &[SourceGroup],
+    subscription_id: i64,
+    episode_id: Option<i64>,
+) -> RevealOutcome {
+    let Some(group) = groups
+        .iter()
+        .find(|group| group.subscription_id == subscription_id)
+    else {
+        return RevealOutcome::NotListed;
+    };
+    match episode_id {
+        Some(episode_id) if group.episodes.iter().any(|row| row.id == episode_id) => {
+            RevealOutcome::Reveal(RevealRequest::Episode(episode_id))
+        }
+        Some(_) => RevealOutcome::NotListed,
+        None => RevealOutcome::Reveal(RevealRequest::Channel(subscription_id)),
+    }
+}
+
 /// Locates `episode_id` in the rendered groups and reports what must open for
 /// it to become visible. `None` when the episode is not in this list at all —
 /// a filtered-out episode, or the other kind's view.
@@ -49,6 +84,27 @@ pub(super) fn reveal_target(
         subscription_id: group.subscription_id,
         needs_full_window: index >= rendered,
     })
+}
+
+/// Locates a channel in the rendered groups. `needs_full_window` is always
+/// false: whoever jumps to the channel wants to see it from the top, not a row
+/// in the middle of its episode list (Spec A.2).
+///
+/// Measured on 2026-08-05 in the first post-idle Xvfb tick: the header was
+/// 40 px high both collapsed and expanded; the respective expanders were 60
+/// and 102 px high. The header is therefore the stable centering target in
+/// both states, while the expanded expander would include episode rows.
+pub(super) fn channel_reveal_target(
+    groups: &[SourceGroup],
+    subscription_id: i64,
+) -> Option<RevealTarget> {
+    groups
+        .iter()
+        .any(|group| group.subscription_id == subscription_id)
+        .then_some(RevealTarget {
+            subscription_id,
+            needs_full_window: false,
+        })
 }
 
 /// Adjustment value that vertically centers a row spanning
@@ -247,6 +303,56 @@ mod tests {
 
         assert_eq!(reveal_target(&groups, 99, false), None);
         assert_eq!(reveal_target(&[], 1, false), None);
+    }
+
+    #[test]
+    fn src_13_a_channel_reveal_only_expands_its_group() {
+        let groups = [group(7, &[1, 2, 3])];
+
+        assert_eq!(
+            channel_reveal_target(&groups, 7),
+            Some(RevealTarget {
+                subscription_id: 7,
+                needs_full_window: false,
+            })
+        );
+    }
+
+    #[test]
+    fn src_13_a_channel_reveal_leaves_the_episode_window_closed() {
+        let ids = (1..=15).collect::<Vec<_>>();
+        let groups = [group(7, &ids)];
+
+        assert_eq!(
+            channel_reveal_target(&groups, 7),
+            Some(RevealTarget {
+                subscription_id: 7,
+                needs_full_window: false,
+            })
+        );
+    }
+
+    #[test]
+    fn src_13_a_channel_that_is_not_listed_has_nothing_to_reveal() {
+        let groups = [group(7, &[1, 2])];
+
+        assert_eq!(channel_reveal_target(&groups, 99), None);
+        assert_eq!(channel_reveal_target(&[], 7), None);
+    }
+
+    #[test]
+    fn src_13_an_unlisted_episode_is_reported_instead_of_ignored() {
+        let groups = [group(7, &[1, 2])];
+
+        assert_eq!(
+            reveal_outcome(&groups, 7, Some(99)),
+            RevealOutcome::NotListed
+        );
+        assert_eq!(reveal_outcome(&groups, 99, None), RevealOutcome::NotListed);
+        assert_eq!(
+            reveal_outcome(&groups, 7, Some(2)),
+            RevealOutcome::Reveal(RevealRequest::Episode(2))
+        );
     }
 
     #[test]

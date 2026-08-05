@@ -12,6 +12,8 @@ pub const RADIO: &str = N_!("Radio");
 pub const RADIO_DESCRIPTION: &str =
     N_!("Contacts radio-browser.info for search; each favorite play reports its etiquette click");
 pub const RADIO_STATION: &str = N_!("Station");
+pub const JUMP_TO_PLAYING_STATION: &str = N_!("Go to the playing station");
+pub const STATION_NOT_IN_FAVORITES: &str = N_!("This station is no longer in your favorites");
 pub const RADIO_GENRE: &str = N_!("Genre");
 pub const RADIO_BITRATE: &str = N_!("Bitrate");
 pub const RADIO_COUNTRY: &str = N_!("Country");

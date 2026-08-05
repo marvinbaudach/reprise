@@ -8,6 +8,7 @@ use reprise_core::podcasts::download_state::DownloadState;
 use reprise_core::podcasts::{EpisodeRow, EpisodeStatus, PodcastKind, SourceGroup};
 
 use super::podcasts_context_menu::PodcastSyncDevice;
+use crate::ui::enumerated::enumerated;
 use crate::ui::strings;
 
 /// The filter the podcast view applies, which is exactly the filter the core
@@ -256,6 +257,113 @@ pub(super) fn apply_filter(rows: &[EpisodeRow], filter: &PodcastFilter) -> Vec<E
         .filter(|row| matches_filter(row, filter))
         .cloned()
         .collect()
+}
+
+enumerated! {
+    /// Declaration order is the tie-break order: `PODCAST_FACETS` lists the
+    /// facets in it, and `Ord` follows it, so two equally cheap relaxations
+    /// always resolve the same way.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+    pub(super) enum PodcastFilterFacet {
+        Unplayed,
+        Source,
+        Downloaded,
+    }
+
+    /// Generated from the declaration above: a facet that is missing here is
+    /// never relaxed, so a jump into a filtered view silently does nothing.
+    pub(super) const PODCAST_FACETS;
+}
+
+/// A filter containing only the selected facet. This deliberately delegates
+/// the facet's actual matching semantics back to `matches_filter`.
+fn only_facet(filter: &PodcastFilter, facet: PodcastFilterFacet) -> PodcastFilter {
+    match facet {
+        PodcastFilterFacet::Unplayed => PodcastFilter {
+            unplayed_only: filter.unplayed_only,
+            ..PodcastFilter::default()
+        },
+        PodcastFilterFacet::Source => PodcastFilter {
+            source: filter.source,
+            ..PodcastFilter::default()
+        },
+        PodcastFilterFacet::Downloaded => PodcastFilter {
+            downloaded_only: filter.downloaded_only,
+            ..PodcastFilter::default()
+        },
+    }
+}
+
+/// `matches_filter` is a conjunction of independent facets, so a facet hides
+/// the row exactly when the row fails that facet alone.
+pub(super) fn facet_hides(
+    row: &EpisodeRow,
+    filter: &PodcastFilter,
+    facet: PodcastFilterFacet,
+) -> bool {
+    !matches_filter(row, &only_facet(filter, facet))
+}
+
+pub(super) fn remove_facet(filter: &PodcastFilter, facet: PodcastFilterFacet) -> PodcastFilter {
+    let mut result = filter.clone();
+    match facet {
+        PodcastFilterFacet::Unplayed => result.unplayed_only = false,
+        PodcastFilterFacet::Source => result.source = None,
+        PodcastFilterFacet::Downloaded => result.downloaded_only = false,
+    }
+    result
+}
+
+/// The facets that hide `row`, in `PODCAST_FACETS` order — the smallest
+/// relaxation that makes this one row visible, since `matches_filter` is a
+/// conjunction of independent facets.
+fn hiding_facets(row: &EpisodeRow, filter: &PodcastFilter) -> Vec<PodcastFilterFacet> {
+    PODCAST_FACETS
+        .into_iter()
+        .filter(|facet| facet_hides(row, filter, *facet))
+        .collect()
+}
+
+fn without_facets(filter: &PodcastFilter, facets: &[PodcastFilterFacet]) -> PodcastFilter {
+    facets.iter().fold(filter.clone(), |filter, facet| {
+        remove_facet(&filter, *facet)
+    })
+}
+
+/// `SRC-13`: the filter an explicit jump to this episode needs — unchanged
+/// when the episode is visible, otherwise the same filter minus exactly the
+/// facets that hide it.
+pub(super) fn filter_without_hiding(row: &EpisodeRow, filter: &PodcastFilter) -> PodcastFilter {
+    if matches_filter(row, filter) {
+        return filter.clone();
+    }
+    without_facets(filter, &hiding_facets(row, filter))
+}
+
+/// The filter required for a channel jump. A filtered group disappears when no
+/// episode survives, so the group is back as soon as *one* episode is visible
+/// again — dropping only the facets that every episode fails is not enough,
+/// because different episodes can fail different facets and then no single
+/// facet fails for all of them.
+///
+/// So take the cheapest episode's own relaxation ([`filter_without_hiding`]'s
+/// facet set), which is minimal for that episode and therefore minimal for the
+/// group: every relaxation that revives the group revives some episode, and
+/// that episode's hiding facets are a subset of it. Ties resolve by
+/// `PODCAST_FACETS` order, so the result does not depend on episode order.
+pub(super) fn filter_without_hiding_group(
+    group: &SourceGroup,
+    filter: &PodcastFilter,
+) -> PodcastFilter {
+    if !apply_filter(&group.episodes, filter).is_empty() {
+        return filter.clone();
+    }
+    group
+        .episodes
+        .iter()
+        .map(|row| hiding_facets(row, filter))
+        .min_by(|left, right| left.len().cmp(&right.len()).then_with(|| left.cmp(right)))
+        .map_or_else(|| filter.clone(), |facets| without_facets(filter, &facets))
 }
 
 pub(super) fn active(filter: &PodcastFilter) -> bool {
@@ -641,3 +749,7 @@ mod tests {
         assert!(!on_phone(&[phone], &[]));
     }
 }
+
+#[cfg(test)]
+#[path = "podcasts_presentation_filter_tests.rs"]
+mod filter_tests;

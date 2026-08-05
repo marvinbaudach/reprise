@@ -11,8 +11,7 @@ use std::sync::Arc;
 
 use gtk4::prelude::*;
 use libadwaita as adw;
-use reprise_core::browser::navigation::NavigationIntent;
-use reprise_core::browser::{AlbumKey, ArtistKey, BrowserPlace};
+use reprise_core::browser::BrowserPlace;
 use reprise_core::db::Db;
 use reprise_core::library::session::SessionState;
 use reprise_core::library::watcher::WatcherHandle;
@@ -31,6 +30,9 @@ use super::scan_flow::ScanControls;
 use super::sidebar::Sidebar;
 use super::stats_view::StatsView;
 use super::track_list::TrackList;
+
+#[path = "window_playing_source_wiring.rs"]
+mod playing_source_wiring;
 
 pub(in crate::ui) struct RuntimeWiring<'a> {
     pub(in crate::ui) app: &'a adw::Application,
@@ -260,99 +262,18 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         }
     });
 
-    if let Some(player) = player {
-        // BROWSE-4: every metadata surface emits one of the same three
-        // semantic navigation intents. The router owns history and anchors.
-        let reveal_playing_track: Rc<dyn Fn()> = {
-            let player = Rc::downgrade(player);
-            let navigator = metadata_navigator.clone();
-            Rc::new(move || {
-                let Some(player) = player.upgrade() else {
-                    return;
-                };
-                let Some(track_id) = player.current_track_id() else {
-                    return;
-                };
-                let origin = player.current_play_origin().map_or_else(
-                    || BrowserPlace::from(ViewSource::Library),
-                    |origin| origin.place,
-                );
-                navigator.navigate(
-                    NavigationIntent::RevealTrack {
-                        origin: Box::new(origin),
-                        track_id,
-                    },
-                    "playing track link",
-                );
-            })
-        };
-        let reveal_playing_album: Rc<dyn Fn()> = {
-            let player = Rc::downgrade(player);
-            let navigator = metadata_navigator.clone();
-            Rc::new(move || {
-                let Some(player) = player.upgrade() else {
-                    return;
-                };
-                let Some((album, album_artist)) = player.current_album_identity() else {
-                    return;
-                };
-                navigator.navigate(
-                    NavigationIntent::OpenAlbum {
-                        album: AlbumKey::new(album, album_artist),
-                        anchor_track_id: player.current_track_id(),
-                    },
-                    "playing album link",
-                );
-            })
-        };
-        let reveal_playing_artist: Rc<dyn Fn()> = {
-            let player = Rc::downgrade(player);
-            let navigator = metadata_navigator.clone();
-            Rc::new(move || {
-                let Some(player) = player.upgrade() else {
-                    return;
-                };
-                let Some(artist) = player.current_artist_identity() else {
-                    return;
-                };
-                navigator.navigate(
-                    NavigationIntent::OpenArtist {
-                        artist: ArtistKey::new(artist),
-                        anchor_track_id: player.current_track_id(),
-                    },
-                    "playing artist link",
-                );
-            })
-        };
-        {
-            let reveal = reveal_playing_album.clone();
-            player.connect_cover_clicked(move || reveal());
-        }
-        {
-            let reveal = reveal_playing_track.clone();
-            player.set_on_title_click(move || reveal());
-        }
-        {
-            let reveal = reveal_playing_artist.clone();
-            player.connect_artist_clicked(move || reveal());
-        }
-        {
-            let reveal = reveal_playing_album.clone();
-            info_panel.set_on_album_reveal(move || reveal());
-        }
-        {
-            let reveal = reveal_playing_track.clone();
-            info_panel.set_on_track_reveal(move || reveal());
-        }
-        {
-            let reveal = reveal_playing_artist.clone();
-            info_panel.set_on_artist_reveal(move || reveal());
-        }
-        let jump_action = gtk4::gio::SimpleAction::new("jump-to-now-playing", None);
-        jump_action.connect_activate(move |_, _| reveal_playing_track());
-        window.add_action(&jump_action);
-        app.set_accels_for_action("win.jump-to-now-playing", &["<Control>l"]);
+    playing_source_wiring::install(
+        app,
+        window,
+        player.as_ref(),
+        info_panel,
+        metadata_navigator,
+        podcasts_view,
+        youtube_view,
+        radio_view,
+    );
 
+    if player.is_some() {
         // NAV-2 Back: pop the most recent place and route there without
         // re-recording (begin/end_back around the synchronous re-route).
         let back_action = gtk4::gio::SimpleAction::new("nav-back", None);

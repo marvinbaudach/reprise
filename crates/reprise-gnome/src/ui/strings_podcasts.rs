@@ -15,6 +15,10 @@ pub const PODCASTS_DESCRIPTION: &str =
 pub const PODCAST_DATE: &str = N_!("Date");
 pub const PODCAST_EPISODE: &str = N_!("Episode");
 pub const PODCAST_SHOW: &str = N_!("Show");
+pub const JUMP_TO_PLAYING_EPISODE: &str = N_!("Jump to the playing episode");
+pub const GO_TO_PLAYING_CHANNEL: &str = N_!("Go to the channel");
+pub const EPISODE_NOT_IN_SUBSCRIPTIONS: &str =
+    N_!("This episode is no longer in your subscriptions");
 pub const PODCAST_LENGTH: &str = N_!("Length");
 pub const PODCAST_SOURCE: &str = N_!("Source");
 pub const PODCAST_STATUS: &str = N_!("Status");

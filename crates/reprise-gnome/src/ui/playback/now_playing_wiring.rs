@@ -150,9 +150,21 @@ impl PlayerController {
         _album: &str,
         _year: Option<i32>,
     ) {
-        self.bar.set_track(title, artist);
+        let availability = crate::ui::playing_links::LinkAvailability {
+            artist: !artist.trim().is_empty(),
+            album: self.current_album_identity().is_some(),
+        };
+        let mode = self.playback_mode();
+        self.bar.set_track(
+            title,
+            artist,
+            crate::ui::playing_links::player_bar_labels(mode, availability),
+        );
         self.compact_player.set_track(title, artist);
-        self.notify_now_playing_panel_track_changed();
+        self.notify_now_playing_panel_track_changed(crate::ui::playing_links::panel_labels(
+            mode,
+            availability,
+        ));
     }
 
     /// Clears Bar, Compact, Lyrics, and the Now Playing panel together — the
@@ -162,22 +174,41 @@ impl PlayerController {
         self.compact_player.clear_track();
         self.sync_lyrics_track(None);
         self.reset_cover_accent();
-        self.notify_now_playing_panel_track_changed();
+        self.notify_now_playing_panel_track_changed(crate::ui::playing_links::panel_labels(
+            self.playback_mode(),
+            crate::ui::playing_links::LinkAvailability {
+                artist: false,
+                album: false,
+            },
+        ));
     }
 
     pub(in crate::ui) fn set_on_now_playing_panel_track_changed(
         &self,
-        callback: impl Fn(Option<super::player_controller::NowPlaying>) + 'static,
+        callback: impl Fn(Option<super::player_controller::NowPlaying>, crate::ui::playing_links::LinkLabels)
+            + 'static,
     ) {
         *self.now_playing_panel_track_changed.borrow_mut() = Some(Rc::new(callback));
-        self.notify_now_playing_panel_track_changed();
+        let track = self.now_playing.borrow().clone();
+        let availability = crate::ui::playing_links::LinkAvailability {
+            artist: track
+                .as_ref()
+                .is_some_and(|track| !track.artist.trim().is_empty()),
+            album: track
+                .as_ref()
+                .is_some_and(|track| !track.album.trim().is_empty()),
+        };
+        self.notify_now_playing_panel_track_changed(crate::ui::playing_links::panel_labels(
+            self.playback_mode(),
+            availability,
+        ));
     }
 
-    fn notify_now_playing_panel_track_changed(&self) {
+    fn notify_now_playing_panel_track_changed(&self, labels: crate::ui::playing_links::LinkLabels) {
         let track = self.now_playing.borrow().clone();
         let callback = self.now_playing_panel_track_changed.borrow().clone();
         if let Some(callback) = callback {
-            callback(track);
+            callback(track, labels);
         }
     }
 

@@ -47,10 +47,16 @@ pub(super) struct SelectionRowWidgets {
     pub(super) reveal: Option<Rc<crate::ui::source_row::Reveal>>,
 }
 
+#[derive(Clone)]
+pub(super) struct ChannelRowWidgets {
+    pub(super) header: gtk4::Widget,
+}
+
 /// Everything `replace` hands back for later targeted updates.
 pub(super) struct RenderedRowWidgets {
     pub(super) downloads: BTreeMap<i64, DownloadRowWidgets>,
     pub(super) selection: BTreeMap<i64, SelectionRowWidgets>,
+    pub(super) channels: BTreeMap<i64, ChannelRowWidgets>,
 }
 
 struct GroupRenderContext<'a> {
@@ -101,6 +107,7 @@ pub(super) fn replace(
     let mut widgets = RenderedRowWidgets {
         downloads: BTreeMap::new(),
         selection: BTreeMap::new(),
+        channels: BTreeMap::new(),
     };
     let selected_ids = selection.borrow().selected_ids();
     let context = GroupRenderContext {
@@ -160,6 +167,12 @@ fn build_group(
         context.images_allowed,
     );
     expander.set_label_widget(Some(&header));
+    widgets.channels.insert(
+        subscription_id,
+        ChannelRowWidgets {
+            header: header.clone(),
+        },
+    );
 
     let episodes = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     episodes.add_css_class("reprise-podcast-episodes");
@@ -477,3 +490,7 @@ mod tests;
 #[cfg(test)]
 #[path = "podcasts_source_row_tests.rs"]
 mod source_row_tests;
+
+#[cfg(test)]
+#[path = "podcasts_groups_geometry_tests.rs"]
+mod geometry_tests;
