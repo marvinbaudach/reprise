@@ -14,6 +14,7 @@
 //! 2026-08-01-multi-surface-frontends-design.md` §4 (P1a) beschreibt, was
 //! zuerst hier einzieht.
 
+pub mod analysis_progress;
 pub mod browse;
 pub mod colour;
 pub mod column_widths;

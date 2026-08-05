@@ -9,6 +9,7 @@ pub(in crate::ui) mod responsive_side_panels;
 mod source_connectivity;
 pub(in crate::ui) mod source_views;
 mod source_views_smoke;
+mod spectrogram_backend;
 #[path = "window.rs"]
 mod surface;
 pub(in crate::ui) mod window_action_wiring;
