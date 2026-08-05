@@ -86,8 +86,6 @@ pub fn build(
     super::style::install();
     let session_state = super::session_restore::load(conn);
     let first_run_decision = super::first_run::initial_decision(conn);
-    let initial_view =
-        super::compact_mode_controls::initial_transition(conn, first_run_decision, startup_intent);
     let window = adw::ApplicationWindow::builder()
         .application(app)
         .title(strings::text(strings::APP_NAME))
@@ -185,6 +183,9 @@ pub fn build(
             None
         }
     };
+    let startup_intent = startup_intent.with_player_available(player.is_some());
+    let initial_view =
+        super::compact_mode_controls::initial_transition(conn, first_run_decision, startup_intent);
     let startup_purged = match super::issues::purge_startup_tombstones(conn) {
         Ok(ids) => ids,
         Err(error) => {

@@ -3747,6 +3747,14 @@ available. The player plays only finished files.
   path as Ctrl+M; Reprise never switches on its own. If no player is
   available or the compact view is already active, the offer does not
   appear.
+- **MINI-6** [active] [gtk] — **A file-open cold start goes straight to
+  the song.** When a desktop audio-file association starts Reprise and
+  at least one requested file is a playable library track, the first
+  window is the mini player. A request with no playable library track,
+  any playlist, first-run setup, or unavailable playback opens the
+  Library instead. This automatic transition never writes the saved
+  window mode, and a request forwarded to an already-running Reprise
+  never changes its mode.
 
 ## AE. Concerts
 

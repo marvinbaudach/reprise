@@ -199,6 +199,60 @@ mod tests {
         assert!(!always_on_top_available(false));
     }
 
+    #[test]
+    fn mini_6_file_open_startup_does_not_persist_compact_mode() {
+        let db = crate::test_db::open().unwrap();
+        settings::set_window_view_mode(&db, WindowViewMode::Library).unwrap();
+
+        let transition = initial_transition(
+            &db,
+            FirstRunDecision::AlreadyCompleted,
+            StartupOpenIntent::CompactPlayback,
+        );
+
+        assert_eq!(transition.mode, WindowViewMode::Compact);
+        assert_eq!(settings::get_window_view_mode(&db), WindowViewMode::Library);
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn mini_6_apply_initial_does_not_persist_automatic_compact_mode() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        if gtk4::init().is_err() {
+            return;
+        }
+        let app = adw::Application::builder()
+            .application_id("org.reprise.Reprise.FileOpenCompactModeTest")
+            .flags(gio::ApplicationFlags::NON_UNIQUE)
+            .build();
+        app.register(None::<&gio::Cancellable>).unwrap();
+        let window = adw::ApplicationWindow::builder().application(&app).build();
+        let full_root = test_split_view();
+        let compact = CompactPlayer::new();
+        let conn = Rc::new(crate::test_db::open().unwrap());
+        settings::set_window_view_mode(&conn, WindowViewMode::Library).unwrap();
+        let content_host = WindowContentHost::new(&window);
+        let mode = MinimalView::new(
+            &window,
+            &content_host,
+            full_root.upcast_ref(),
+            Some(&compact),
+            conn.clone(),
+            ViewTransition {
+                mode: WindowViewMode::Compact,
+                layout: CompactLayout::Card,
+            },
+            Rc::new(|_| {}),
+        );
+
+        mode.apply_initial();
+
+        assert_eq!(
+            settings::get_window_view_mode(&conn),
+            WindowViewMode::Library
+        );
+    }
+
     fn has_button_with_tooltip(root: &impl IsA<gtk4::Widget>, tooltip: &str) -> bool {
         let mut child = root.first_child();
         while let Some(widget) = child {

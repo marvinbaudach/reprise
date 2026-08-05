@@ -47,6 +47,16 @@ pub(crate) enum StartupOpenIntent {
     CompactPlayback,
 }
 
+impl StartupOpenIntent {
+    pub(crate) fn with_player_available(self, available: bool) -> Self {
+        if available {
+            self
+        } else {
+            Self::Library
+        }
+    }
+}
+
 impl OpenRequest {
     pub(crate) fn startup_intent(&self) -> StartupOpenIntent {
         if !self.audio_ids.is_empty() && self.playlists.is_empty() {
@@ -368,6 +378,22 @@ mod tests {
 
         assert_eq!(request.startup_intent(), StartupOpenIntent::Library);
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn mini_6_compact_startup_intent_requires_a_player() {
+        assert_eq!(
+            StartupOpenIntent::CompactPlayback.with_player_available(true),
+            StartupOpenIntent::CompactPlayback
+        );
+        assert_eq!(
+            StartupOpenIntent::CompactPlayback.with_player_available(false),
+            StartupOpenIntent::Library
+        );
+        assert_eq!(
+            StartupOpenIntent::Library.with_player_available(false),
+            StartupOpenIntent::Library
+        );
     }
 
     #[test]
