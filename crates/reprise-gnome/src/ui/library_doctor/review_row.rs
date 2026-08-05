@@ -217,8 +217,10 @@ fn bind(widgets: &RowWidgets, model: &ReviewRowModel, layout: ReviewLayout) {
     });
     set_full_text(&widgets.track, &model.track);
     set_full_text(&widgets.field, &model.field);
-    set_full_text(&widgets.current, &model.current);
-    set_full_text(&widgets.proposed, &model.proposed);
+    let current = narrow_prefixed(layout, ValueKind::Current, &model.current);
+    let proposed = narrow_prefixed(layout, ValueKind::Proposed, &model.proposed);
+    set_full_text(&widgets.current, &current);
+    set_full_text(&widgets.proposed, &proposed);
     let source = model.outcome.as_ref().map_or_else(
         || model.confidence.label.clone(),
         |outcome| {
@@ -233,9 +235,16 @@ fn bind(widgets: &RowWidgets, model: &ReviewRowModel, layout: ReviewLayout) {
                 .map_or(status.clone(), |error| format!("{status} · {error}"))
         },
     );
-    set_full_text(&widgets.source, &source);
+    set_full_text(
+        &widgets.source,
+        &narrow_prefixed(layout, ValueKind::Source, &source),
+    );
     let attrs = gtk4::pango::AttrList::new();
-    attrs.insert(gtk4::pango::AttrInt::new_strikethrough(true));
+    let mut strikethrough = gtk4::pango::AttrInt::new_strikethrough(true);
+    let (start, end) = strike_range(&current, &model.current);
+    strikethrough.set_start_index(start);
+    strikethrough.set_end_index(end);
+    attrs.insert(strikethrough);
     widgets.current.set_attributes(Some(&attrs));
     widgets.warning.set_visible(model.confidence.warning);
     for class in ["accent", "warning", "error"] {
@@ -257,6 +266,41 @@ fn bind(widgets: &RowWidgets, model: &ReviewRowModel, layout: ReviewLayout) {
     ]);
     widgets.edit.set_sensitive(!model.track_ids.is_empty());
     *widgets.model.borrow_mut() = Some(model.clone());
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum ValueKind {
+    Current,
+    Proposed,
+    Source,
+}
+
+/// Below the breakpoint the shared column header is hidden, so each value has
+/// to name itself. Above it the header does that job and the value stands
+/// alone — the same row, two ways of saying which column it is in.
+pub(super) fn narrow_prefixed(layout: ReviewLayout, kind: ValueKind, value: &str) -> String {
+    match layout {
+        ReviewLayout::Wide => value.to_owned(),
+        ReviewLayout::Narrow => match kind {
+            ValueKind::Current => strings::doctor_narrow_current(value),
+            ValueKind::Proposed => strings::doctor_narrow_proposed(value),
+            ValueKind::Source => strings::doctor_narrow_source(value),
+        },
+    }
+}
+
+/// Byte range of `value` inside `rendered`, for the strikethrough.
+///
+/// The prefix must not be struck through — it is a label, not a superseded
+/// value — and a translation is free to put it somewhere other than the front,
+/// so the range is searched rather than assumed.
+pub(super) fn strike_range(rendered: &str, value: &str) -> (u32, u32) {
+    let start = rendered.find(value).unwrap_or(0);
+    let end = start + value.len();
+    (
+        u32::try_from(start).unwrap_or(0),
+        u32::try_from(end).unwrap_or(u32::MAX),
+    )
 }
 
 fn set_full_text(label: &gtk4::Label, value: &str) {

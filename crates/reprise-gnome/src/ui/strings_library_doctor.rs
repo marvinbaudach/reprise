@@ -109,7 +109,23 @@ pub const DOCTOR_NO_ALBUM: &str = N_!("No album");
 pub const DOCTOR_FILTER_CASING: &str = N_!("Casing");
 pub const DOCTOR_FILTER_YEAR: &str = N_!("Year");
 pub const DOCTOR_FILTER_GENRE: &str = N_!("Genre");
+pub const DOCTOR_FILTER_LABEL: &str = N_!("Filter tag changes");
 pub const NEW_PLAYLIST_UNTITLED: &str = N_!("Untitled playlist");
+
+// Narrow layout only. The shared column header is what names the values, and
+// below the breakpoint it is hidden — so each value carries its own short
+// prefix instead. Keep them short: they sit in front of every value.
+pub fn doctor_narrow_current(value: &str) -> String {
+    formatted(N_!("Now: {value}"), &[("value", value)])
+}
+
+pub fn doctor_narrow_proposed(value: &str) -> String {
+    formatted(N_!("New: {value}"), &[("value", value)])
+}
+
+pub fn doctor_narrow_source(value: &str) -> String {
+    formatted(N_!("From: {value}"), &[("value", value)])
+}
 
 pub fn doctor_scan_estimate(tracks: usize, minutes: usize) -> String {
     formatted(
