@@ -66,13 +66,22 @@ class TrackAnalysisControllerTest {
     fun aChangedSourceIsNotPublishedAsSuccessfulAnalysis() {
         val backend = RecordingAnalysisBackend()
         val data = RecordingRenderDataStore(false)
-        val controller = TrackAnalysisController(backend, data)
+        val reported = mutableListOf<String>()
+        val controller = TrackAnalysisController(backend, data, reported::add)
         controller.surfaceActive(true)
         controller.observe(true, 7, "content://provider/document/7.flac")
 
         backend.finish(AndroidTrackAnalysisOutcome.SOURCE_CHANGED)
 
         assertEquals(emptyList<Long>(), data.storedTrackIds)
+        // And it says so. A pass that stores nothing leaves a flat bar that
+        // cannot be told from one that never started; on a real phone that
+        // state lasted forever with nothing in the log to explain it.
+        assertEquals(1, reported.size)
+        assertTrue(
+            "the report named neither the track nor the outcome: ${reported.first()}",
+            reported.first().contains("7") && reported.first().contains("SOURCE_CHANGED"),
+        )
     }
 
     @Test

@@ -1,6 +1,9 @@
 package de.reprise.spike
 
+import android.util.Log
 import uniffi.reprise_android_ffi.AndroidTrackAnalysisOutcome
+
+private const val TAG = "Reprise"
 
 internal typealias TrackAnalysisResult = Result<AndroidTrackAnalysisOutcome>
 
@@ -35,6 +38,13 @@ internal interface TrackAnalysisCoordinator {
 internal class TrackAnalysisController(
     private val backend: TrackAnalysisBackend,
     private val renderData: TrackAnalysisRenderDataStore,
+    /**
+     * Where a pass that produced nothing says so. It is a seam rather than a
+     * direct `Log.w` because the reporting is the behaviour under test: a
+     * silent failure is what let a phone draw a flat bar forever with nothing
+     * in the log to explain it.
+     */
+    private val report: (String) -> Unit = { message -> Log.w(TAG, message) },
 ) : TrackAnalysisCoordinator {
     private data class Target(val trackId: Long, val contentUri: String)
 
@@ -88,6 +98,20 @@ internal class TrackAnalysisController(
                 currentWork = null
                 if (outcome.getOrNull() == AndroidTrackAnalysisOutcome.STORED) {
                     renderData.analysisStored(target.trackId)
+                } else {
+                    // An analysis that produces nothing leaves a flat bar, which
+                    // is indistinguishable from one that has not started. On a
+                    // phone whose library was MP3 and Opus that state lasted
+                    // forever and said nothing — the log is where the next
+                    // person finds out why.
+                    report(
+                        "no rendering data for track ${target.trackId}: " +
+                            (
+                                outcome.exceptionOrNull()?.toString()
+                                    ?: outcome.getOrNull()?.toString()
+                                    ?: "the pass ended without an answer"
+                                ),
+                    )
                 }
             }
         }

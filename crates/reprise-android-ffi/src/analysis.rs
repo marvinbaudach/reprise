@@ -82,6 +82,14 @@ pub enum TrackAnalysisError {
     InvalidPcm { detail: String },
     #[error("decoded PCM format changed during one track: {detail}")]
     FormatChanged { detail: String },
+    #[error(
+        "decoded only {decoded_samples} of the {expected_samples} samples the track's duration \
+         declares, which is too little of it to store"
+    )]
+    TooShort {
+        decoded_samples: u64,
+        expected_samples: u64,
+    },
     #[error("track analysis session has already ended")]
     Ended,
     #[error("track analysis database error: {detail}")]
@@ -93,6 +101,25 @@ struct AnalysisState {
     spectrogram: SpectrogramAccumulator,
     resampler: Option<PcmResampler>,
     input_format: Option<(u32, u32)>,
+    /// The bucket budget the waveform was built with, and how much of it the
+    /// decoder has actually filled.
+    ///
+    /// A track's stored duration is an **estimate**, and the two ways it can be
+    /// wrong are not symmetric. Both were found on real devices:
+    ///
+    /// * **Too short.** MP3 and Opus decode to slightly more samples than their
+    ///   tagged duration — encoder delay, padding, pre-skip, rounding. The
+    ///   waveform accumulator treats one sample past its bound as a decode
+    ///   failure, so on a phone whose library is MP3 and Opus *every* analysis
+    ///   ended with nothing stored and nothing said. The overflow now runs past
+    ///   the accumulator into the spectrogram alone: the last bucket saturates,
+    ///   which is what a bucket at the end of a track is for.
+    /// * **Too long.** A truncated or replaced file decodes to far less than
+    ///   the duration claims, and the unused buckets stay silent — a bar that is
+    ///   mostly silence, stored as a finished analysis. [`finish`](Self::finish)
+    ///   refuses that rather than presenting it as whole.
+    expected_samples: u64,
+    accepted_samples: u64,
 }
 
 impl AnalysisState {
@@ -130,12 +157,20 @@ impl AnalysisState {
     }
 
     fn push_mono(&mut self, mono: &[f32]) -> Result<(), TrackAnalysisError> {
+        // The spectrogram takes everything: it has no declared length, and the
+        // audio past the estimate is as real as the rest.
+        self.spectrogram.push(mono);
+        let room = self.expected_samples.saturating_sub(self.accepted_samples);
+        let taken = usize::try_from(room).unwrap_or(usize::MAX).min(mono.len());
+        if taken == 0 {
+            return Ok(());
+        }
         self.waveform
-            .push(mono)
+            .push(&mono[..taken])
             .map_err(|error| TrackAnalysisError::InvalidPcm {
                 detail: error.to_string(),
             })?;
-        self.spectrogram.push(mono);
+        self.accepted_samples += taken as u64;
         Ok(())
     }
 
@@ -143,6 +178,17 @@ impl AnalysisState {
         if let Some(resampler) = self.resampler.take() {
             let tail = resampler.finish();
             self.push_mono(&tail)?;
+        }
+        // Far less audio than the track claims is not a shorter song; it is a
+        // file that is not what the library thinks it is — truncated, replaced,
+        // or a decode that stopped early. Storing it would draw a bar that ends
+        // in the middle of the track and calls itself finished.
+        if self.accepted_samples * 100 < self.expected_samples * u64::from(MINIMUM_COVERAGE_PERCENT)
+        {
+            return Err(TrackAnalysisError::TooShort {
+                decoded_samples: self.accepted_samples,
+                expected_samples: self.expected_samples,
+            });
         }
         let waveform_peaks =
             self.waveform
@@ -156,6 +202,15 @@ impl AnalysisState {
         })
     }
 }
+
+/// How much of the declared duration a decode has to cover before its result is
+/// a picture of the track rather than a picture of its first few seconds.
+///
+/// Ninety per cent leaves room for the ordinary disagreements between a tagged
+/// duration and a real decode — a second or two at the end of a long track —
+/// while the case this exists for is nowhere near it: two seconds of a
+/// three-minute song is under two per cent.
+const MINIMUM_COVERAGE_PERCENT: u32 = 90;
 
 fn invalid_pcm_error(error: impl std::fmt::Display) -> TrackAnalysisError {
     TrackAnalysisError::InvalidPcm {
@@ -222,6 +277,8 @@ impl TrackAnalysisSession {
                 spectrogram: SpectrogramAccumulator::new(),
                 resampler: None,
                 input_format: None,
+                expected_samples,
+                accepted_samples: 0,
             })),
         }))
     }
@@ -478,6 +535,53 @@ mod tests {
         for chunk in interleaved.chunks(44_100 * 2) {
             session.push(chunk.to_vec(), 44_100, 2).unwrap();
         }
+    }
+
+    /// The regression a phone found and no emulator could: MP3 and Opus decode
+    /// to slightly more samples than their tagged duration — encoder delay,
+    /// padding, pre-skip, rounding — and one sample past the waveform's bound
+    /// used to end the whole pass with nothing stored and nothing said. On a
+    /// library of those two formats that was every track, forever.
+    #[test]
+    fn a_decode_that_runs_a_little_past_the_declared_duration_is_still_stored() {
+        let fixture = fixture();
+        let session =
+            TrackAnalysisSession::begin(fixture.library.clone(), fixture.track_id).unwrap();
+        push_complete(&session, fixture.duration_ms);
+        // A quarter of a second more than the duration claims, which is the
+        // order of magnitude a real encoder's padding adds.
+        session.push(vec![0.2; 8_000], 32_000, 1).unwrap();
+
+        assert_eq!(
+            session.finish().unwrap(),
+            AndroidTrackAnalysisOutcome::Stored,
+        );
+        let db = Db::open_migrated(Some(&fixture.database_path)).unwrap();
+        assert!(get_waveform_peaks(&db, fixture.track_id).unwrap().is_some());
+        assert!(get_track_spectrogram(&db, fixture.track_id)
+            .unwrap()
+            .is_some());
+    }
+
+    /// The other half of the same wrong assumption, found on the emulator: a
+    /// truncated or replaced file decodes to a fraction of what the duration
+    /// claims, and the unused buckets stay silent. Storing that is a bar that
+    /// ends in the middle of the track and calls itself finished.
+    #[test]
+    fn a_decode_far_shorter_than_the_declared_duration_stores_nothing() {
+        let fixture = fixture();
+        let session =
+            TrackAnalysisSession::begin(fixture.library.clone(), fixture.track_id).unwrap();
+        // A tenth of a second of a track the fixture believes is 1.16 s: the
+        // proportion is what matters, and it is the proportion a two-second
+        // stand-in of a three-minute song has.
+        session.push(vec![0.25; 3_200], 32_000, 1).unwrap();
+
+        assert!(matches!(
+            session.finish(),
+            Err(TrackAnalysisError::TooShort { .. })
+        ));
+        assert_no_render_data(&fixture.database_path, fixture.track_id);
     }
 
     fn assert_no_render_data(database_path: &Path, track_id: i64) {
