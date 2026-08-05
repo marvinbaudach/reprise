@@ -220,7 +220,9 @@ pub(in crate::ui) fn build_editable_playlist_row(
     editor.set_halign(gtk4::Align::Fill);
     editor.set_hexpand(true);
     editor.set_accessible_role(gtk4::AccessibleRole::TextBox);
-    editor.update_property(&[gtk4::accessible::Property::Label("Playlist name")]);
+    editor.update_property(&[gtk4::accessible::Property::Label(
+        &crate::ui::strings::text(crate::ui::strings::NEW_PLAYLIST_ENTRY_PLACEHOLDER),
+    )]);
     // a11y-semantics: role=text-box name=playlist-name state=editable action=type
     editor.set_focusable(true);
     hbox.append(&editor);

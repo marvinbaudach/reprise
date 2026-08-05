@@ -118,7 +118,9 @@ fn build_toggle(categories: &[ReviewCategory], active: &str) -> adw::ToggleGroup
     }
     toggle.set_active_name(Some(active));
     // a11y-semantics: role=group name=doctor-filter state=one-selected action=arrow-keys
-    toggle.update_property(&[gtk4::accessible::Property::Label("Filter tag changes")]);
+    toggle.update_property(&[gtk4::accessible::Property::Label(&strings::text(
+        strings::DOCTOR_FILTER_LABEL,
+    ))]);
     toggle
 }
 
