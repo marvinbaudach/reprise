@@ -9,15 +9,21 @@ use reprise_core::db::Db;
 use reprise_core::library::settings;
 
 use super::compact_player::CompactPlayer;
+use super::file_open::StartupOpenIntent;
 use super::first_run::FirstRunDecision;
 use super::minimal_view::{self, MinimalView, ViewTransition};
 use super::window_decorations::WindowContentHost;
 
-pub(in crate::ui) fn initial_transition(db: &Db, first_run: FirstRunDecision) -> ViewTransition {
+pub(in crate::ui) fn initial_transition(
+    db: &Db,
+    first_run: FirstRunDecision,
+    intent: StartupOpenIntent,
+) -> ViewTransition {
     minimal_view::startup_transition(
         settings::get_window_view_mode(db),
         settings::get_compact_layout(db),
         first_run,
+        intent,
     )
 }
 
