@@ -279,12 +279,12 @@ human. Rationale for changes lives in the git history.
   leads to the place where the loaded item stands in a list. If a surface has
   no distinct target in a mode, it leads to the nearest target that does exist,
   never nowhere. A surface may be insensitive only when no item at all is
-  loaded; it is then visibly inactive rather than silently inert, on both
-  surfaces alike — a link that stays clickable with nothing loaded swallows the
-  click. Ending playback returns them to that state instead of leaving the
-  finished session's labels standing. Its label and tooltip name the actual
-  target for the current mode; the Now Playing and information panels share
-  these links and labels.
+  loaded; it is then visibly inactive rather than silently inert, in the bar
+  and in the panel alike — a link that stays clickable with nothing loaded
+  swallows the click. Ending playback returns both to that state instead of
+  leaving the finished session's labels standing. A surface's label and tooltip
+  name the actual target for the current mode; the Now Playing and information
+  panels share these links and labels.
 
 ## D. Albums & artists view
 
