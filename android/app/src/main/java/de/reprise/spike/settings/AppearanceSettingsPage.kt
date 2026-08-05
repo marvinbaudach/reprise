@@ -1,5 +1,7 @@
 package de.reprise.spike.settings
 
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,6 +16,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import de.reprise.spike.LocalVisualizerControl
@@ -73,8 +76,18 @@ private fun LibraryRatingRow(
     checked: Boolean,
     select: (Boolean) -> Unit,
 ) {
+    // The row is the target, not the switch at its edge — see the note on
+    // `SettingsSwitchRow`. The tag rides on the row for the same reason: it is
+    // the node that now carries the state and the click.
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .toggleable(
+                value = checked,
+                onValueChange = select,
+                role = Role.Switch,
+            )
+            .testTag("settings-library-rating"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
@@ -85,11 +98,7 @@ private fun LibraryRatingRow(
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
-        Switch(
-            checked = checked,
-            onCheckedChange = select,
-            modifier = Modifier.testTag("settings-library-rating"),
-        )
+        Switch(checked = checked, onCheckedChange = null)
     }
 }
 
@@ -99,8 +108,19 @@ private fun VisualizerChoiceRow(
     selected: Boolean,
     select: () -> Unit,
 ) {
+    // The row is the target. A disabled choice stays visibly disabled: the row
+    // takes no click either, so "Needs track analysis" is the whole answer
+    // rather than a label above a control that quietly does nothing.
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .selectable(
+                selected = selected,
+                enabled = mode.available,
+                onClick = select,
+                role = Role.RadioButton,
+            )
+            .testTag("settings-visualizer-${mode.name}"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
@@ -113,12 +133,7 @@ private fun VisualizerChoiceRow(
                 )
             }
         }
-        RadioButton(
-            selected = selected,
-            enabled = mode.available,
-            onClick = select,
-            modifier = Modifier.testTag("settings-visualizer-${mode.name}"),
-        )
+        RadioButton(selected = selected, enabled = mode.available, onClick = null)
     }
 }
 
@@ -129,7 +144,9 @@ private fun ThemeChoiceRow(
     select: () -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .selectable(selected = selected, onClick = select, role = Role.RadioButton),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
@@ -143,6 +160,6 @@ private fun ThemeChoiceRow(
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
-        RadioButton(selected = selected, onClick = select)
+        RadioButton(selected = selected, onClick = null)
     }
 }

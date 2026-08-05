@@ -59,7 +59,12 @@ class MainActivityLibraryRatingSettingTest {
         assertEquals(1, application.ratingPort.reads)
 
         openAppearanceSettings()
-        compose.onNodeWithTag("settings-library-rating").assertIsOff().performClick()
+        // Tapped by its label, not by its switch. Measured on a device: only the
+        // 52 x 32 dp control at the right edge answered, so nine tenths of the
+        // row a listener aims at did nothing — and a test that clicks the switch
+        // cannot tell that apart.
+        compose.onNodeWithTag("settings-library-rating").assertIsOff()
+        compose.onNodeWithText("Show ratings in library rows").performClick()
         compose.onNodeWithTag("settings-library-rating").assertIsOn()
         assertEquals(listOf(true), application.ratingPort.writes)
 
