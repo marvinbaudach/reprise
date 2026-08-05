@@ -1,8 +1,8 @@
 use super::*;
 use crate::player_effects::{build_audio_filter, requested_state, same_filter_topology};
 use crate::player_pipeline::{
-    download_buffering_flags, is_remote_playback_uri, merge_stream_tags, BufferingThrottle,
-    AUDIO_SINK_ENV_VAR,
+    buffered_percent_to_ms, download_buffering_flags, is_remote_playback_uri, merge_stream_tags,
+    BufferingThrottle, AUDIO_SINK_ENV_VAR,
 };
 use reprise_core::library::settings::TrackTransition;
 
@@ -87,6 +87,24 @@ fn download_buffering_is_only_enabled_for_finite_remote_media() {
         download_buffering_flags(defaults_with_download, "https://radio.example/live", true),
         PLAYBIN_DEFAULTS,
         "live radio clears only the download bit"
+    );
+}
+
+#[test]
+fn percent_buffering_ranges_convert_to_duration_milliseconds() {
+    let percent_max = u64::from(gst::format::Percent::MAX.ppm());
+    assert_eq!(percent_max, 1_000_000, "GStreamer percent uses ppm scale");
+    assert_eq!(
+        buffered_percent_to_ms(percent_max, Some(120_000)),
+        Some(120_000)
+    );
+    assert_eq!(buffered_percent_to_ms(250_000, Some(120_000)), Some(30_000));
+    assert_eq!(buffered_percent_to_ms(0, Some(120_000)), Some(0));
+    assert_eq!(buffered_percent_to_ms(250_000, None), None);
+    assert_eq!(
+        buffered_percent_to_ms(u64::MAX, Some(120_000)),
+        Some(120_000),
+        "an invalid range stop is bounded without overflow"
     );
 }
 

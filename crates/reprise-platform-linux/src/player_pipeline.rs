@@ -130,7 +130,15 @@ pub(crate) fn configure_download_buffering(
     Ok(())
 }
 
-fn query_buffered_ms(playbin: &gst::Element) -> Option<i64> {
+pub(crate) fn buffered_percent_to_ms(stop_ppm: u64, duration_ms: Option<u64>) -> Option<i64> {
+    let duration_ms = duration_ms?;
+    let percent_max = u64::from(gst::format::Percent::MAX.ppm());
+    let bounded_stop = stop_ppm.min(percent_max);
+    let buffered_ms = u128::from(duration_ms) * u128::from(bounded_stop) / u128::from(percent_max);
+    i64::try_from(buffered_ms).ok()
+}
+
+fn query_time_buffered_ms(playbin: &gst::Element) -> Option<i64> {
     let mut query = gst::query::Buffering::new(gst::Format::Time);
     if !playbin.query(&mut query) {
         return None;
@@ -140,6 +148,37 @@ fn query_buffered_ms(playbin: &gst::Element) -> Option<i64> {
         return None;
     };
     i64::try_from(stop.mseconds()).ok()
+}
+
+fn query_duration_ms(playbin: &gst::Element) -> Option<u64> {
+    let mut query = gst::query::Duration::new(gst::Format::Time);
+    if !playbin.query(&mut query) {
+        return None;
+    }
+    let gst::GenericFormattedValue::Time(Some(duration)) = query.result() else {
+        return None;
+    };
+    Some(duration.mseconds())
+}
+
+fn query_percent_buffered_ms(playbin: &gst::Element, duration_ms: Option<u64>) -> Option<i64> {
+    let duration_ms = duration_ms?;
+    let mut query = gst::query::Buffering::new(gst::Format::Percent);
+    if !playbin.query(&mut query) {
+        return None;
+    }
+    let (_, stop, _) = query.range();
+    let gst::GenericFormattedValue::Percent(Some(stop)) = stop else {
+        return None;
+    };
+    buffered_percent_to_ms(u64::from(stop.ppm()), Some(duration_ms))
+}
+
+fn query_buffered_ms(playbin: &gst::Element) -> Option<i64> {
+    query_time_buffered_ms(playbin).or_else(|| {
+        let duration_ms = query_duration_ms(playbin);
+        query_percent_buffered_ms(playbin, duration_ms)
+    })
 }
 
 /// Environment variable that, when set, overrides playbin's audio sink
