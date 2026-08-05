@@ -457,12 +457,39 @@ These are **not** unfinished work. They were measured, found to have no backend,
 and omitted rather than mocked — the same rule that elsewhere in this codebase
 made `MissingReason::Unknown` unable to delete anything.
 
-- **Desktop sync.** The frames show a paired host, "Wi-Fi gekoppelt · vor 2 Min",
-  pending play counts, mirrored playlists, an MTP fallback and a sync history.
-  **None of it exists on Android**: no pairing, no transport, no queue of pending
-  changes. A screen announcing a connection to a machine nothing is connected to
-  is a fabrication, not a placeholder.
+- **Sync & devices.** The whole section stays out: the direction diagram,
+  pairing, automatic-sync switches, history and the one-line action that would
+  start looking for a desktop. **None of it exists on Android**: no pairing, no
+  transport, no queue of pending changes and therefore no asymmetry for the
+  diagram to explain. Asking for network permission merely to report that
+  nothing can be found would teach the listener that sync is broken. MTP is a
+  separate fact — the desktop writes to a phone folder — and is unaffected.
 - **The sync assist chip** with its breathing dot, for the same reason.
+- **The played threshold.** The frame is right that two devices must agree on
+  when a listen counts, and right that pairing should supply that value. Without
+  pairing, a phone-local default would create exactly the drift the warning is
+  meant to prevent. Android therefore keeps the existing half-the-track rule in
+  `should_count_play` until sync can carry one shared decision.
+- **Crossfade.** The shared core already stores this preference and the Linux
+  backend really performs it with a second overlapping GStreamer pipeline.
+  Android has no corresponding engine: ExoPlayer needs two players and a mixer
+  before the row can be honest. Exposing the shared switch now would change the
+  desktop while doing nothing on the phone.
+- **ReplayGain.** This is nearer, but still not a setting-row task. The core has
+  `ReplayGainMode`; Android has neither a per-track gain column nor a reader for
+  the gain values that remain in file tags. Until that playback path exists, the
+  switch would again be a remote control for the desktop rather than a phone
+  feature.
+- **Bit-perfect playback.** It is buildable with `AudioTrack` at the source
+  sample rate when the device supports that rate, but the work is playback
+  engineering and device measurement. A switch cannot substitute for proving
+  that the path actually avoids resampling.
+- **The remaining audio convenience switches.** Skip silence, mono downmix,
+  Bluetooth codec selection, output-device selection and all four headphone
+  behaviours have no backend. One half-feature is deliberately left as
+  behaviour rather than dressed up as a preference: M7 already enables
+  `setHandleAudioBecomingNoisy(true)`, so unplugging pauses playback. There is no
+  switch because there is no second implemented behaviour to choose.
 - **Lyrics.** `reprise-core` has a lyrics module; the Android FFI exposes nothing
   from it. A lyrics screen would have had to invent its content.
 - **Playlists and Queue as destinations.** The FFI has no playlist call. The
