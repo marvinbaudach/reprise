@@ -1,19 +1,45 @@
 //! File-backed pending plays for the Android playback-session writer.
 //!
-//! ## One writer, held open rather than assumed
+//! ## One writer, where the filesystem is willing to say so
 //!
 //! Two journals over one file would each hold their own view of the pending
 //! queue, read the same applied high-water mark, hand out the same sequence
 //! numbers, and — the moment either one removes an entry — write its view over
-//! the other's lines. Nothing in the app arranges that today (service and
-//! activity share one process, and the session is built once), but nothing in
-//! the app forbids it either: one `android:process` attribute would be enough.
+//! the other's lines. That last one is the damage no later repair can undo:
+//! [`parse_entries`] can renumber a colliding line because the line is still
+//! there, but a line a rename wrote over is gone before anything reads it.
+//! Nothing in the app arranges that today (service and activity share one
+//! process, and the session is built once), but nothing in the app forbids it
+//! either: one `android:process` attribute would be enough.
 //!
-//! So it is not assumed. [`PlayJournal::open`] takes an exclusive advisory lock
-//! and a second writer is refused with an error rather than quietly allowed to
-//! destroy plays it cannot see. The lock sits in its own file because
-//! [`rewrite`] replaces the journal by rename: a lock on that inode would be
-//! left holding an unlinked file as soon as the first entry left.
+//! So [`PlayJournal::open`] asks for an exclusive advisory lock, and a second
+//! writer it can see is refused. What it cannot do is promise it sees one:
+//! advisory locking is a property of the filesystem underneath, not of the API
+//! on top, and `try_lock` answers `Unsupported` on storage Android really ships
+//! — the emulator's own app-private directory among it. An unenforceable lock
+//! is the absence of an answer, not a collision, so [`claim`] treats it as one:
+//! the refusal is named in the log and the journal opens unlocked. Only
+//! `WouldBlock` refuses, because only `WouldBlock` is an answer, and the answer
+//! it gives is a second writer.
+//!
+//! Being refused is not the end of counting either. [`crate::play_recorder`]
+//! falls back to writing plays straight to the library, so the most a lock can
+//! cost the writer it turns away is the promise that its plays outlive a kill —
+//! never the plays themselves.
+//!
+//! The lock sits in its own file because [`rewrite`] replaces the journal by
+//! rename: a lock on that inode would be left holding an unlinked file as soon
+//! as the first entry left.
+//!
+//! ## What only a device can prove
+//!
+//! All of that is filesystem behaviour, and these tests run on Linux tmpfs,
+//! where `flock` works. So a green run here proves the *policy* — that an
+//! unenforceable lock opens the journal rather than closing the feature — and
+//! proves nothing about which answer a particular Android device gives. The M8
+//! device pass found `Unsupported` in exactly the place every test had found
+//! success, and the whole play count went with it. Before concluding anything
+//! about locking on Android, read the line the app logs on the device.
 //!
 //! ## What "durable" means here
 //!
@@ -66,7 +92,10 @@ pub(super) struct PlayJournal {
     path: PathBuf,
     /// The exclusive claim on this journal, held for as long as the journal is.
     /// Never read; dropping it — or the process dying — is what releases it.
-    _lock: File,
+    /// `None` where the filesystem does not enforce advisory locks, which is
+    /// the ordinary case on Android: the journal then runs unlocked rather than
+    /// not at all.
+    _lock: Option<File>,
     entries: VecDeque<JournalEntry>,
     /// Lines a failed [`Self::remove_front`] left in the file that are no
     /// longer in `entries`. They are harmless to replay, but they are still
@@ -171,7 +200,7 @@ impl PlayJournal {
     }
 }
 
-/// Takes the journal's exclusive advisory lock, or says who has it.
+/// Takes the journal's exclusive advisory lock where there is one to take.
 ///
 /// A refusal is a real error, not a silent fallback to sharing: the second
 /// writer's first rewrite would write its own view of the queue over entries
@@ -183,19 +212,54 @@ impl PlayJournal {
 /// via `close()` — which drops `PlayRecorder`, which joins the writer thread,
 /// which is what drops this lock. Waiting would only ever help a *second*
 /// writer, and a second writer is the thing being refused.
-fn claim(path: &Path) -> io::Result<File> {
-    let file = OpenOptions::new()
+///
+/// Failing to *open* the lock file is treated the same way as failing to lock
+/// it. It says nothing about other writers, and the journal open that follows
+/// is about to try the same directory anyway and will report its own reason.
+fn claim(path: &Path) -> io::Result<Option<File>> {
+    let file = match OpenOptions::new()
         .create(true)
         .write(true)
         .truncate(false)
-        .open(path)?;
-    match file.try_lock() {
-        Ok(()) => Ok(file),
+        .open(path)
+    {
+        Ok(file) => file,
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                "the Android play journal is running unlocked: its lock file could not be opened",
+            );
+            return Ok(None);
+        }
+    };
+    Ok(enforced(file.try_lock())?.then_some(file))
+}
+
+/// Turns a lock attempt into the journal's answer: refuse, or carry on.
+///
+/// Split out from [`claim`] and kept free of the filesystem on purpose. The
+/// case that matters is one no test on this host can create — `try_lock`
+/// reports `Unsupported` on Android app storage and succeeds on every Linux
+/// filesystem the suite can reach — so the policy is made decidable from the
+/// outcome alone, and that is what gets tested — the same shape as
+/// `play_recorder::retry_after`.
+///
+/// `Ok(true)` means the lock is held, `Ok(false)` that nothing was learned and
+/// nothing is refused, and an error that a second writer answered for itself.
+fn enforced(attempt: Result<(), TryLockError>) -> io::Result<bool> {
+    match attempt {
+        Ok(()) => Ok(true),
         Err(TryLockError::WouldBlock) => Err(io::Error::new(
             io::ErrorKind::ResourceBusy,
             "another writer already holds the Android play journal",
         )),
-        Err(TryLockError::Error(error)) => Err(error),
+        Err(TryLockError::Error(error)) => {
+            tracing::warn!(
+                %error,
+                "the Android play journal is running unlocked: this filesystem does not enforce advisory locks",
+            );
+            Ok(false)
+        }
     }
 }
 
@@ -400,9 +464,10 @@ fn write_entry(writer: &mut impl Write, entry: JournalEntry) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs::TryLockError;
     use std::io::ErrorKind;
 
-    use super::{PlayJournal, MAX_PENDING_PLAYS};
+    use super::{enforced, PlayJournal, MAX_PENDING_PLAYS};
     use crate::log_capture::{CapturedLogs, LogCapture};
     use crate::play_recorder::RecordedPlay;
 
@@ -415,6 +480,82 @@ mod tests {
                 })
                 .unwrap());
         }
+    }
+
+    /// The regression the M8 device pass found: `try_lock` answers
+    /// `Unsupported` on Android app storage, that error travelled all the way
+    /// out of `open`, and play counting stopped entirely — the lock destroyed
+    /// the feature it was insuring.
+    ///
+    /// No filesystem this suite can reach reproduces that answer (tmpfs, ext4
+    /// and every overlay in CI all support `flock`), so the outcome is handed
+    /// to the policy directly instead of being staged. Two more tests carry
+    /// what this one cannot: `an_unopenable_journal_still_counts_plays` proves
+    /// counting survives a failed `open`, and
+    /// `a_writer_refused_the_journal_still_counts_its_plays` proves it survives
+    /// a lock that *is* enforced and does refuse.
+    #[test]
+    fn a_lock_this_filesystem_cannot_enforce_does_not_refuse_the_journal() {
+        let logs = CapturedLogs::default();
+        let unenforceable = tracing::subscriber::with_default(LogCapture(logs.clone()), || {
+            enforced(Err(TryLockError::Error(ErrorKind::Unsupported.into())))
+        });
+
+        assert!(
+            !unenforceable.expect("an unenforceable lock must not refuse the journal"),
+            "a lock that was never taken must not be reported as held",
+        );
+        let logged = logs.joined();
+        assert!(
+            logged.contains("running unlocked"),
+            "the missing protection must be named, got {logged}",
+        );
+    }
+
+    /// The other half of the same policy: `WouldBlock` is not a filesystem
+    /// shrugging, it is a second writer answering for itself, and that one is
+    /// still refused.
+    #[test]
+    fn a_lock_another_writer_holds_still_refuses_the_journal() {
+        assert!(
+            enforced(Ok(())).expect("a lock that was taken must not refuse"),
+            "a taken lock must be reported as held",
+        );
+
+        let error = enforced(Err(TryLockError::WouldBlock))
+            .expect_err("a second writer must still be refused");
+
+        assert_eq!(error.kind(), ErrorKind::ResourceBusy, "got {error}");
+    }
+
+    /// The same rule one step earlier: a lock file that will not even open
+    /// says nothing about other writers, so it must not be the thing that
+    /// closes the journal. The fixture puts a directory in the lock file's
+    /// place, which no `OpenOptions` can open for writing and which leaves the
+    /// journal itself perfectly writable.
+    #[test]
+    fn a_lock_file_that_cannot_be_opened_does_not_close_the_journal() {
+        let directory = tempfile::tempdir().unwrap();
+        let database_path = directory.path().join("reprise.db");
+        std::fs::create_dir(directory.path().join(super::LOCK_FILE_NAME)).unwrap();
+
+        let logs = CapturedLogs::default();
+        let mut journal = tracing::subscriber::with_default(LogCapture(logs.clone()), || {
+            PlayJournal::open(&database_path, 0)
+                .expect("an unopenable lock file must not refuse the journal")
+        });
+
+        assert!(journal
+            .append(RecordedPlay {
+                track_id: 11,
+                at_unix: 1_700_000_000,
+            })
+            .unwrap());
+        let logged = logs.joined();
+        assert!(
+            logged.contains("running unlocked"),
+            "the missing protection must be named, got {logged}",
+        );
     }
 
     /// Two writers over one journal each hold their own view of the pending

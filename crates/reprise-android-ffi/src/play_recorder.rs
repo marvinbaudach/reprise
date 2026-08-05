@@ -41,6 +41,22 @@
 //! version is refused rather than rewritten away, and a colliding sequence is
 //! renumbered, because it describes a play that happened.
 //!
+//! ## When there is no journal to survive in
+//!
+//! A journal that will not open — an unenforceable lock's `Unsupported`, a
+//! format from a newer build, a directory that has gone read-only — takes the
+//! promise away, and nothing else. The writer then counts plays the way it did
+//! before the journal existed: straight to the library, losing only what a kill
+//! catches between the play and SQLite's commit.
+//!
+//! It is worth being blunt about why, because the first version of this got it
+//! backwards and the whole feature went dark on a device. Holding a play back
+//! because its *durability* mechanism is broken loses that play with certainty;
+//! writing it without the mechanism loses it only if the process dies in the
+//! next few milliseconds. A durability mechanism that can make the outcome
+//! worse than its own absence is not one, so its failure is a downgrade and
+//! says so in the log — never a shutdown.
+//!
 //! One boundary is left standing on purpose: an entry whose *write* keeps
 //! failing for a reason retrying cannot fix does hold up the ones behind it.
 //! Applying a later entry would move the applied mark past this one and make
@@ -199,28 +215,41 @@ fn write_queued_plays(
     queued: Receiver<RecordedPlay>,
     shutting_down: &AtomicBool,
 ) {
-    let mut journal = match PlayJournal::open(database_path, applied_sequence) {
-        Ok(journal) => journal,
+    let journal = match PlayJournal::open(database_path, applied_sequence) {
+        Ok(journal) => Some(journal),
         Err(error) => {
-            tracing::warn!(%error, "no Android play counting: could not open the play journal");
-            for play in queued {
-                tracing::warn!(
-                    track_id = play.track_id,
-                    "dropped an Android play count: the journal never opened",
-                );
-            }
-            return;
+            tracing::warn!(
+                %error,
+                "Android plays will be counted without a journal: it could not be opened",
+            );
+            None
         }
     };
     let db = match Db::open_ready(database_path) {
         Ok(db) => db,
         Err(error) => {
+            let Some(mut journal) = journal else {
+                tracing::warn!(%error, "no Android play counting: could not open the library");
+                for play in queued {
+                    tracing::warn!(
+                        track_id = play.track_id,
+                        "dropped an Android play count: neither the journal nor the library opened",
+                    );
+                }
+                return;
+            };
             tracing::warn!(%error, "Android play counts will remain journaled: could not open the library");
             for play in queued {
                 append_or_warn(&mut journal, play);
             }
             return;
         }
+    };
+    let Some(mut journal) = journal else {
+        for play in queued {
+            record_unjournaled_play(&db, play, shutting_down);
+        }
+        return;
     };
     drain_journal(&db, &mut journal, shutting_down);
     for play in queued {
@@ -269,32 +298,104 @@ fn drain_journal(db: &Db, journal: &mut PlayJournal, shutting_down: &AtomicBool)
 /// is another writer. A retry round that gives up leaves a warning naming the
 /// track and sequence; the caller keeps the entry durable for a later drain.
 fn record_play_with_retries(db: &Db, entry: JournalEntry, shutting_down: &AtomicBool) -> bool {
-    let mut attempt = 1;
-    loop {
-        let error = match reprise_core::library::stats::record_journaled_play(
-            db,
-            entry.sequence,
-            entry.play.track_id,
-            entry.play.at_unix,
-        ) {
-            Ok(_) => return true,
-            Err(error) => error,
-        };
-        let busy = reprise_core::library::stats::is_database_busy(&error);
-        let wait = retry_after(busy, attempt).filter(|_| !shutting_down.load(Ordering::Relaxed));
-        let Some(wait) = wait else {
+    let written = with_busy_retries(
+        shutting_down,
+        entry.play.track_id,
+        reprise_core::library::stats::is_database_busy,
+        || {
+            reprise_core::library::stats::record_journaled_play(
+                db,
+                entry.sequence,
+                entry.play.track_id,
+                entry.play.at_unix,
+            )
+            .map(|_| ())
+        },
+    );
+    match written {
+        Ok(()) => true,
+        Err(GaveUp { attempts, error }) => {
             tracing::warn!(
                 %error,
                 track_id = entry.play.track_id,
                 sequence = entry.sequence,
-                attempts = attempt,
+                attempts,
                 "kept an Android play count in its journal after a write failure",
             );
-            return false;
+            false
+        }
+    }
+}
+
+/// Counts one play with no journal behind it, because there is no journal to
+/// have.
+///
+/// This is what the writer did before M8, and it is deliberately what it falls
+/// back to: a play written straight to the library is lost only if the process
+/// dies in the seconds before SQLite commits, while a play held back because
+/// the durability mechanism is broken is lost every single time. The weaker
+/// promise is named in the log so nobody reads a rising count as the strong
+/// one.
+fn record_unjournaled_play(db: &Db, play: RecordedPlay, shutting_down: &AtomicBool) {
+    let written = with_busy_retries(
+        shutting_down,
+        play.track_id,
+        reprise_core::library::stats::is_database_busy,
+        || reprise_core::library::stats::record_play(db, play.track_id, play.at_unix),
+    );
+    match written {
+        Ok(()) => tracing::debug!(
+            track_id = play.track_id,
+            "counted an Android play without a journal: it would not survive a kill",
+        ),
+        Err(GaveUp { attempts, error }) => tracing::warn!(
+            %error,
+            track_id = play.track_id,
+            attempts,
+            "dropped an Android play count: no journal was open to keep it",
+        ),
+    }
+}
+
+/// The last failure of a write that ran out of patience or reasons to retry.
+struct GaveUp<E> {
+    attempts: u32,
+    error: E,
+}
+
+/// Offers `write` again while the only thing in the way is another writer.
+///
+/// Both counting paths share it, because both lose the same race to the
+/// scanner and both should be exactly as patient about it. What differs is the
+/// statement and what a final failure costs, and that stays with the callers:
+/// this one only reports how it ended.
+///
+/// It is generic over the error rather than naming `rusqlite::Error` because
+/// this crate deliberately does not depend on SQLite — Core owns the SQL, and
+/// [`reprise_core::library::stats::is_database_busy`] is how it lends out the
+/// one judgement about that SQL a retry needs.
+fn with_busy_retries<E: std::fmt::Display>(
+    shutting_down: &AtomicBool,
+    track_id: i64,
+    is_busy: fn(&E) -> bool,
+    mut write: impl FnMut() -> Result<(), E>,
+) -> Result<(), GaveUp<E>> {
+    let mut attempt = 1;
+    loop {
+        let error = match write() {
+            Ok(()) => return Ok(()),
+            Err(error) => error,
+        };
+        let wait = retry_after(is_busy(&error), attempt)
+            .filter(|_| !shutting_down.load(Ordering::Relaxed));
+        let Some(wait) = wait else {
+            return Err(GaveUp {
+                attempts: attempt,
+                error,
+            });
         };
         tracing::debug!(
-            track_id = entry.play.track_id,
-            sequence = entry.sequence,
+            track_id,
             attempt,
             "the library is busy; offering an Android play count again",
         );
@@ -481,6 +582,87 @@ mod tests {
             logged.contains("could not be removed from its journal"),
             "the unremovable entry must still be named, got {logged}",
         );
+    }
+
+    /// The failure mode the M8 device pass found, from the outside: the
+    /// journal does not open, and every play is thrown away with it. It must
+    /// downgrade instead — count the play now, without the promise that it
+    /// outlives a kill.
+    ///
+    /// The refusal here is a format version from a newer build, which is the
+    /// only way this suite can make `open` fail with the very `ErrorKind` a
+    /// device's unenforceable lock produced (`Unsupported`). What made the
+    /// journal unopenable is deliberately not what this test is about: the
+    /// writer must not care, because on a device it was a reason no test had
+    /// on its list.
+    #[test]
+    fn an_unopenable_journal_still_counts_plays() {
+        let directory = tempfile::tempdir().unwrap();
+        let (database_path, track_id) = seeded_database(directory.path());
+        let foreign = format!("v2\t1\t{track_id}\t1700000000\n");
+        std::fs::write(directory.path().join(JOURNAL_FILE_NAME), &foreign).unwrap();
+
+        let (plays, queued) = mpsc::channel();
+        plays
+            .send(RecordedPlay {
+                track_id,
+                at_unix: 1_700_000_000,
+            })
+            .unwrap();
+        drop(plays);
+
+        let logs = CapturedLogs::default();
+        tracing::subscriber::with_default(LogCapture(logs.clone()), || {
+            super::write_queued_plays(&database_path, 0, queued, &AtomicBool::new(false));
+        });
+
+        assert_eq!(
+            play_count(&database_path, track_id),
+            1,
+            "a broken durability mechanism must not stop the counting it was insuring",
+        );
+        assert_eq!(
+            std::fs::read_to_string(directory.path().join(JOURNAL_FILE_NAME)).unwrap(),
+            foreign,
+            "the journal this build cannot read must still survive it untouched",
+        );
+        let logged = logs.joined();
+        assert!(
+            logged.contains("counted without a journal"),
+            "the weaker promise must be on the record, got {logged}",
+        );
+        assert!(
+            logged.contains("will be counted without a journal"),
+            "the downgrade must name itself where a device log can be read for it, got {logged}",
+        );
+    }
+
+    /// A lock that works is not allowed to cost more than a lock that does not.
+    /// The refused writer loses the promise that its plays outlive a kill; it
+    /// does not lose the plays.
+    #[test]
+    fn a_writer_refused_the_journal_still_counts_its_plays() {
+        let directory = tempfile::tempdir().unwrap();
+        let (database_path, track_id) = seeded_database(directory.path());
+        let held = PlayJournal::open(&database_path, 0)
+            .expect("the fixture needs the first writer to hold the lock");
+        let (plays, queued) = mpsc::channel();
+        plays
+            .send(RecordedPlay {
+                track_id,
+                at_unix: 1_700_000_000,
+            })
+            .unwrap();
+        drop(plays);
+
+        super::write_queued_plays(&database_path, 0, queued, &AtomicBool::new(false));
+
+        assert_eq!(
+            play_count(&database_path, track_id),
+            1,
+            "the writer the lock turned away must still count what it was given",
+        );
+        drop(held);
     }
 
     #[test]
