@@ -7,15 +7,19 @@ import uniffi.reprise_android_ffi.MusicLibrary
 
 internal enum class MobileVisualizer(
     val label: String,
-    val available: Boolean,
+    private val requiresTrackAnalysis: Boolean,
 ) {
     // The plan that specified these was written in German for its reader and
     // named the modes in German prose. They are identifiers there, not strings
     // to ship: every other label in this app is English.
-    COVER("Cover", true),
-    SPECTRUM("Spectrum", false),
-    PREVIEW_BAND("Preview", false),
-    AMBIENT("Ambient", true),
+    COVER("Cover", false),
+    SPECTRUM("Spectrum", true),
+    PREVIEW_BAND("Preview", true),
+    AMBIENT("Ambient", false),
+    ;
+
+    fun isAvailable(trackAnalysed: Boolean): Boolean =
+        !requiresTrackAnalysis || trackAnalysed
 }
 
 internal interface VisualizerSettingsPort {
