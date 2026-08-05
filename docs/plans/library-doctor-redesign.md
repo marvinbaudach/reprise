@@ -2,7 +2,7 @@
 slug: library-doctor-redesign
 worktree: /home/marvin/Projects/reprise-library-doctor-redesign
 branch: feature/library-doctor-redesign
-phase: planned
+phase: refactored
 codex_session:
 created: 2026-08-05
 ---
