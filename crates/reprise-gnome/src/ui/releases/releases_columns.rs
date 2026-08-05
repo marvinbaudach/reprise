@@ -13,6 +13,7 @@ use super::releases_presentation::{
     bandcamp_purchase_target, format_release_date, release_status_label, release_type_label,
 };
 use crate::ui::strings;
+use crate::ui::table_column_widths as widths;
 
 const PILL_PAGE: &str = "pill";
 const ACTION_PAGE: &str = "action";
@@ -34,11 +35,13 @@ pub(super) fn column_contract() -> Vec<String> {
     .collect()
 }
 
+/// `sizing` fixes the column's width; see [`widths`] for why every column
+/// must carry one (STYLE-9).
 fn text_column(
     view: &gtk4::ColumnView,
     title: &str,
     id: Option<&str>,
-    expand: bool,
+    sizing: widths::Sizing,
     render: impl Fn(&HistoryEntry) -> String + 'static,
 ) -> gtk4::ColumnViewColumn {
     let factory = gtk4::SignalListItemFactory::new();
@@ -77,8 +80,8 @@ fn text_column(
         .title(title)
         .factory(&factory)
         .resizable(true)
-        .expand(expand)
         .build();
+    sizing.apply(&column);
     if let Some(id) = id {
         column.set_id(Some(id));
         column.set_sorter(Some(&gtk4::CustomSorter::new(|_, _| gtk4::Ordering::Equal)));
@@ -243,6 +246,9 @@ fn status_column(view: &gtk4::ColumnView, on_set_hidden: &OnSetHidden) {
         .factory(&factory)
         .resizable(false)
         .build();
+    // The pill and the hover action swap inside a Stack, and both are wider
+    // in some rows than others — unpinned, this cell alone re-sizes the table.
+    widths::pin(&column, widths::PILL);
     view.append_column(&column);
 }
 
@@ -305,6 +311,7 @@ fn purchase_column(view: &gtk4::ColumnView, on_open: &OnOpenTarget) {
         .factory(&factory)
         .resizable(false)
         .build();
+    widths::pin(&column, widths::ACTION);
     view.append_column(&column);
 }
 
@@ -314,16 +321,35 @@ pub(super) fn append_columns(
     on_open: &OnOpenTarget,
 ) -> gtk4::ColumnViewColumn {
     let titles = column_contract();
-    let date = text_column(view, &titles[0], Some("date"), false, |entry| {
-        format_release_date(&entry.first_release_date, Local::now().date_naive())
-    });
-    text_column(view, &titles[1], None, true, |entry| entry.title.clone());
-    text_column(view, &titles[2], None, true, |entry| {
-        entry.artist_name.clone()
-    });
-    text_column(view, &titles[3], None, false, |entry| {
-        release_type_label(&entry.release_type)
-    });
+    let date = text_column(
+        view,
+        &titles[0],
+        Some("date"),
+        widths::Sizing::pinned(widths::DATE),
+        |entry| format_release_date(&entry.first_release_date, Local::now().date_naive()),
+    );
+    // Title is the filler: it owns whatever width the pinned columns leave.
+    text_column(
+        view,
+        &titles[1],
+        None,
+        widths::Sizing::filler(widths::TITLE_MIN),
+        |entry| entry.title.clone(),
+    );
+    text_column(
+        view,
+        &titles[2],
+        None,
+        widths::Sizing::pinned(widths::NAME),
+        |entry| entry.artist_name.clone(),
+    );
+    text_column(
+        view,
+        &titles[3],
+        None,
+        widths::Sizing::pinned(widths::SHORT_LABEL),
+        |entry| release_type_label(&entry.release_type),
+    );
     status_column(view, on_set_hidden);
     purchase_column(view, on_open);
     date
@@ -332,6 +358,60 @@ pub(super) fn append_columns(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use reprise_core::artist_news::LibraryPresence;
+
+    fn entry(artist: &str, title: &str, release_type: &str, date: &str) -> HistoryEntry {
+        HistoryEntry {
+            release_group_mbid: "mbid".into(),
+            artist_name: artist.into(),
+            title: title.into(),
+            release_type: release_type.into(),
+            first_release_date: date.into(),
+            first_seen: None,
+            seen_at: None,
+            hidden: false,
+            hidden_at: None,
+            presence: LibraryPresence::Absent,
+            announce_url: None,
+            track_count: None,
+            local_track_count: 0,
+        }
+    }
+
+    /// STYLE-9: the releases table must not re-measure itself
+    /// from the rows currently on screen, or every scroll shifts the columns.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn style_9_releases_columns_keep_their_width_when_the_rows_change() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+
+        let store = gtk4::gio::ListStore::new::<ReleaseObject>();
+        store.append(&ReleaseObject::new(entry(
+            "Air",
+            "Moon",
+            "EP",
+            "2026-01-02",
+        )));
+        let view = gtk4::ColumnView::new(Some(gtk4::SingleSelection::new(Some(store.clone()))));
+        let on_set_hidden: OnSetHidden = Rc::new(|_, _| {});
+        let on_open: OnOpenTarget = Rc::new(|_| {});
+        append_columns(&view, &on_set_hidden, &on_open);
+
+        crate::ui::table_column_widths::assert_stable_across_row_change(&view, || {
+            store.splice(
+                0,
+                1,
+                &[ReleaseObject::new(entry(
+                    "Godspeed You! Black Emperor and Friends",
+                    "Lift Your Skinny Fists Like Antennas to Heaven",
+                    "Compilation",
+                    "2026-09-14",
+                ))],
+            );
+        });
+    }
 
     #[test]
     fn nr_17_table_has_the_five_named_columns() {
