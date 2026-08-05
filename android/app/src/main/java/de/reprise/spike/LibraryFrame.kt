@@ -60,7 +60,6 @@ internal fun LibraryTopAppBar(
     searching: Boolean,
     toggleSearch: () -> Unit,
     rescan: () -> Unit,
-    chooseFolder: () -> Unit,
     openSettings: () -> Unit,
 ) {
     val metrics = libraryFrameMetrics(surfaceLayout)
@@ -98,14 +97,6 @@ internal fun LibraryTopAppBar(
                     onClick = {
                         menuExpanded = false
                         rescan()
-                    },
-                )
-                DropdownMenuItem(
-                    text = { Text("Choose another folder") },
-                    leadingIcon = { MaterialSymbol("folder_open", "") },
-                    onClick = {
-                        menuExpanded = false
-                        chooseFolder()
                     },
                 )
                 DropdownMenuItem(

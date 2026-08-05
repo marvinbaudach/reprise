@@ -161,6 +161,7 @@ fun rememberedReadableTreeListsCatalogWithoutScanning() {
             titles = completeTestWindow(listOf(testTrack())),
             albums = completeTestWindow(emptyList()),
             artists = completeTestWindow(emptyList()),
+            folderUri = "content://provider/tree/Music",
         ),
         state,
     )
@@ -201,6 +202,7 @@ fun choosingTreePersistsGrantAndPreferenceBeforeScanning() {
             titles = completeTestWindow(listOf(testTrack())),
             albums = completeTestWindow(emptyList()),
             artists = completeTestWindow(emptyList()),
+            folderUri = "content://provider/tree/Music",
         ),
         state,
     )
@@ -236,6 +238,7 @@ fun rescanUsesRememberedTreeWithoutChoosingAgain() {
             titles = completeTestWindow(listOf(testTrack())),
             albums = completeTestWindow(emptyList()),
             artists = completeTestWindow(emptyList()),
+            folderUri = "content://provider/tree/Music",
         ),
         state,
     )
