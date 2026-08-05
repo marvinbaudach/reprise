@@ -123,4 +123,23 @@ pub(in crate::ui) fn install(
         player.append_queue_items(items);
         true
     });
+
+    let player_for_sound = Rc::downgrade(player);
+    panel.set_on_sound_play(move |id| {
+        if let Some(player) = player_for_sound.upgrade() {
+            player.play_track_id(id);
+        }
+    });
+    let player_for_sound_next = Rc::downgrade(player);
+    panel.set_on_sound_play_next(move |id| {
+        if let Some(player) = player_for_sound_next.upgrade() {
+            player.play_next(&[id]);
+        }
+    });
+    let player_for_sound_queue = Rc::downgrade(player);
+    panel.set_on_sound_add_to_queue(move |ids| {
+        if let Some(player) = player_for_sound_queue.upgrade() {
+            player.append_to_queue(ids);
+        }
+    });
 }

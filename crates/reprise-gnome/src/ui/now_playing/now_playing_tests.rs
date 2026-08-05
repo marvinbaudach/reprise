@@ -81,7 +81,7 @@ fn external_radio_snapshot() -> crate::ui::playback::external_media::ExternalPla
 fn test_widgets(content: &impl IsA<gtk4::Widget>, visible: bool) -> PanelWidgets {
     let conn = crate::test_db::open().unwrap();
     let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
-    build_widgets(content, visible, Rc::new(conn), &cover_loader)
+    build_widgets(content, visible, &Rc::new(conn), &cover_loader)
 }
 
 fn test_widgets_for_session(
@@ -91,7 +91,7 @@ fn test_widgets_for_session(
 ) -> PanelWidgets {
     let conn = crate::test_db::open().unwrap();
     let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
-    build_widgets_for_session(content, visible, session, Rc::new(conn), &cover_loader)
+    build_widgets_for_session(content, visible, session, &Rc::new(conn), &cover_loader)
 }
 
 #[test]
@@ -216,7 +216,12 @@ fn ac_23_visual_is_the_third_panel_tab() {
     assert_eq!(PanelTab::Visual.page_name(), VISUAL_PAGE);
     assert_eq!(
         PANEL_TABS,
-        [PanelTab::UpNext, PanelTab::Lyrics, PanelTab::Visual]
+        [
+            PanelTab::UpNext,
+            PanelTab::Lyrics,
+            PanelTab::Visual,
+            PanelTab::Sound,
+        ]
     );
 }
 

@@ -85,6 +85,7 @@ pub mod remote_image;
 pub mod scrobbling;
 pub mod sound_distance;
 pub mod sound_features;
+pub mod sound_file_info;
 pub mod sound_neighbours;
 pub mod sound_stats;
 pub mod source_error;

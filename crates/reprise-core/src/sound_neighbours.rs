@@ -8,6 +8,7 @@ use crate::{db::DbError, spectrogram::SPECTROGRAM_FORMAT_VERSION};
 #[derive(Debug, Clone, PartialEq)]
 pub struct SoundCandidate {
     pub track_id: i64,
+    pub path: String,
     pub title: String,
     pub artist: String,
     pub album: String,
@@ -34,6 +35,7 @@ impl Default for SoundNeighbourOptions {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SoundNeighbour {
     pub track_id: i64,
+    pub path: String,
     pub title: String,
     pub artist: String,
     pub distance: f32,
@@ -49,26 +51,27 @@ pub struct SoundNeighbourResult {
 
 pub fn load_sound_candidates(db: &crate::db::Db) -> Result<Vec<SoundCandidate>, DbError> {
     let mut statement = db.conn().prepare(
-        "SELECT t.id, t.title, t.artist, t.album, f.data \
+        "SELECT t.id, t.path, t.title, t.artist, t.album, f.data \
          FROM tracks t JOIN track_sound_features f ON f.track_id = t.id \
          WHERE t.missing_since IS NULL AND t.removed_at IS NULL \
            AND f.format_version = ?1 ORDER BY t.id",
     )?;
     let candidates = statement
         .query_map([SPECTROGRAM_FORMAT_VERSION], |row| {
-            let blob = row.get::<_, Vec<u8>>(4)?;
+            let blob = row.get::<_, Vec<u8>>(5)?;
             let features = SoundFeatures::from_blob(&blob).map_err(|error| {
                 rusqlite::Error::FromSqlConversionFailure(
-                    4,
+                    5,
                     rusqlite::types::Type::Blob,
                     Box::new(error),
                 )
             })?;
             Ok(SoundCandidate {
                 track_id: row.get(0)?,
-                title: row.get(1)?,
-                artist: row.get(2)?,
-                album: row.get(3)?,
+                path: row.get(1)?,
+                title: row.get(2)?,
+                artist: row.get(3)?,
+                album: row.get(4)?,
                 features,
             })
         })?
@@ -115,6 +118,7 @@ pub fn rank_sound_neighbours(
         }
         matches.push(SoundNeighbour {
             track_id: candidate.track_id,
+            path: candidate.path.clone(),
             title: candidate.title.clone(),
             artist: candidate.artist.clone(),
             distance: *distance,

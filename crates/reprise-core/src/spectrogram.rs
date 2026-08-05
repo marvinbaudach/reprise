@@ -61,6 +61,23 @@ impl TrackSpectrogram {
         &self.cells
     }
 
+    /// Upper edge of the highest stored band with energy above the absolute
+    /// spectrogram floor. This is display metadata derived from the existing
+    /// render cache, not a second analysis pass.
+    pub fn occupied_upper_hz(&self) -> Option<u32> {
+        let highest = (0..SPECTROGRAM_BAND_COUNT).rev().find(|band| {
+            self.cells
+                .iter()
+                .skip(*band)
+                .step_by(SPECTROGRAM_BAND_COUNT)
+                .any(|cell| *cell > 0)
+        })?;
+        let low = f64::from(SPECTROGRAM_LOW_HZ).ln();
+        let high = f64::from(SPECTROGRAM_HIGH_HZ).ln();
+        let edge = low + (high - low) * (highest + 1) as f64 / SPECTROGRAM_BAND_COUNT as f64;
+        Some(edge.exp().round() as u32)
+    }
+
     /// The seek bar's colour curve: one normalized spectral position per
     /// `bucket`, `0` at the track's own bass end and `255` at its treble end.
     ///

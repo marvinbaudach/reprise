@@ -9,6 +9,7 @@ fn candidate(id: i64, band: usize, artist: &str, album: &str) -> SoundCandidate 
     band_mean[band] = 1.0;
     SoundCandidate {
         track_id: id,
+        path: format!("/{id}.flac"),
         title: format!("Track {id}"),
         artist: artist.into(),
         album: album.into(),
@@ -132,6 +133,7 @@ fn sound_neighbours_loads_only_current_profiles_for_present_tracks() {
     let loaded = crate::sound_neighbours::load_sound_candidates(&db).unwrap();
     assert_eq!(loaded.len(), 1);
     assert_eq!(loaded[0].track_id, 1);
+    assert_eq!(loaded[0].path, "/1.flac");
     assert_eq!(loaded[0].title, "Title 1");
     assert_eq!(loaded[0].artist, "Artist 1");
     assert_eq!(loaded[0].album, "Album 1");

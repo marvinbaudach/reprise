@@ -150,6 +150,26 @@ pub fn get_track_sound_features(db: &Db, track_id: i64) -> Result<Option<SoundFe
     .transpose()
 }
 
+/// `(valid feature rows, present library tracks)` for the progressive Sound
+/// panel empty state. Both counts come from the same database snapshot.
+pub fn sound_feature_inventory(db: &Db) -> Result<(usize, usize), DbError> {
+    let counts = db.conn().query_row(
+        "SELECT \
+           (SELECT COUNT(*) FROM track_sound_features f \
+              JOIN tracks t ON t.id = f.track_id \
+             WHERE f.format_version = ?1 AND t.missing_since IS NULL \
+               AND t.removed_at IS NULL), \
+           (SELECT COUNT(*) FROM tracks \
+             WHERE missing_since IS NULL AND removed_at IS NULL)",
+        [SPECTROGRAM_FORMAT_VERSION],
+        |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+    )?;
+    Ok((
+        usize::try_from(counts.0).unwrap_or(usize::MAX),
+        usize::try_from(counts.1).unwrap_or(usize::MAX),
+    ))
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct StoredSoundFeatures {
     pub track_id: i64,
