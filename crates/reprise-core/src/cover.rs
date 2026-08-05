@@ -361,6 +361,15 @@ fn mtime_nanos(path: &Path) -> u128 {
         .map_or(0, |since| since.as_nanos())
 }
 
+/// Bumped whenever an index entry's meaning changes, so entries written by an
+/// older format fall out as a stamp mismatch instead of being misread.
+///
+/// Version 2 introduced [`RESOLUTION_UNKNOWN`]. Before it, an entry the batch
+/// had settled without a resolution behind it was indistinguishable from "this
+/// track has no cover" — both are an empty answer line — so those entries have
+/// to be discarded rather than believed.
+const RESOLUTION_FORMAT: u32 = 2;
+
 /// What has to stay the same for a remembered resolution to still be true.
 ///
 /// Three things can change a track's cover without the track itself changing:
@@ -376,7 +385,10 @@ fn resolution_stamp(track_path: &Path) -> Option<String> {
     let track = mtime_nanos(track_path);
     let folder = track_path.parent().map_or(0, mtime_nanos);
     let downloaded = mtime_nanos(&crate::cover_download::publish_marker());
-    Some(format!("{track}:{}:{folder}:{downloaded}", meta.len()))
+    Some(format!(
+        "{RESOLUTION_FORMAT}:{track}:{}:{folder}:{downloaded}",
+        meta.len()
+    ))
 }
 
 /// The thumbnail for a track, asking what was resolved last time before
@@ -421,6 +433,18 @@ pub fn thumbnail_for_track(track_path: &Path, size: ThumbnailSize) -> Option<Pat
 /// thumbnail, and the whole library rendered as placeholders.
 const DOWNLOAD_EXHAUSTED: &str = "-";
 
+/// Answer-line marker for "nothing has been resolved for this track yet", as
+/// opposed to an empty line, which is the real answer "this track has no
+/// cover".
+///
+/// The two have to be distinguishable because the batch settles the download
+/// side for every track it walks, and on launch that happens before most rows
+/// have ever been rendered — so it settles tracks whose cover has never been
+/// looked at. Without this marker that wrote an empty answer, and an empty
+/// answer is final: the stamp stays valid, nothing opens the file again, and
+/// the row keeps its placeholder however many covers the file actually holds.
+const RESOLUTION_UNKNOWN: &str = "?";
+
 /// The three lines an index entry holds: the stamp it is valid for, the
 /// thumbnail the cover resolved to (empty for "no cover"), and whether the
 /// download side is settled.
@@ -457,6 +481,10 @@ pub fn download_marked_unavailable(track_path: &Path, size: ThumbnailSize) -> bo
 
 /// Remember that the download side had nothing to do for this track, keeping
 /// whatever the cover itself resolved to.
+///
+/// With no resolution on file the answer stays [`RESOLUTION_UNKNOWN`]: this
+/// call knows only what the download side found, and says nothing about what
+/// the track's own tags or album folder hold.
 pub fn remember_download_unavailable(track_path: &Path, size: ThumbnailSize) {
     let Some(stamp) = resolution_stamp(track_path) else {
         return;
@@ -464,8 +492,7 @@ pub fn remember_download_unavailable(track_path: &Path, size: ThumbnailSize) {
     let index = resolution_index_path(track_path, size);
     let thumbnail = read_entry(&index)
         .filter(|entry| entry.stamp == stamp)
-        .map(|entry| entry.thumbnail)
-        .unwrap_or_default();
+        .map_or_else(|| RESOLUTION_UNKNOWN.to_owned(), |entry| entry.thumbnail);
     write_entry(&index, &stamp, &thumbnail, true);
 }
 
@@ -475,6 +502,9 @@ pub fn remember_download_unavailable(track_path: &Path, size: ThumbnailSize) {
 fn read_resolution(index: &Path, stamp: &str) -> Option<Option<PathBuf>> {
     let entry = read_entry(index)?;
     if entry.stamp != stamp {
+        return None;
+    }
+    if entry.thumbnail == RESOLUTION_UNKNOWN {
         return None;
     }
     if entry.thumbnail.is_empty() {
@@ -1014,6 +1044,63 @@ mod tests {
         );
 
         std::fs::remove_file(resolution_index_path(&track, ThumbnailSize::List)).ok();
+        resolved.map(|path| std::fs::remove_file(path).ok());
+    }
+
+    #[test]
+    fn settling_the_download_side_first_does_not_invent_a_missing_cover() {
+        // The batch walks the whole library on launch, long before most rows
+        // have ever been rendered — so for nearly every track it settles the
+        // download side with no resolution on file yet. "Nothing known about
+        // the cover" must not be written down as "this track has no cover":
+        // that answer is final, the stamp stays valid, and the row shows a
+        // placeholder for good.
+        let dir = tempfile::tempdir().unwrap();
+        let album = format!("Settled First {}", fastrand::u64(..));
+        let track = tagged_track_with_cover(dir.path(), "f.flac", &album, solid_png([7, 8, 9]));
+
+        remember_download_unavailable(&track, ThumbnailSize::List);
+        let resolved = thumbnail_for_track(&track, ThumbnailSize::List);
+
+        assert!(
+            resolved.is_some(),
+            "the embedded cover must still be found after the batch settled the download side"
+        );
+        assert!(
+            download_marked_unavailable(&track, ThumbnailSize::List),
+            "resolving the cover must not undo what the batch settled"
+        );
+
+        std::fs::remove_file(resolution_index_path(&track, ThumbnailSize::List)).ok();
+        resolved.map(|path| std::fs::remove_file(path).ok());
+    }
+
+    #[test]
+    fn an_entry_written_before_the_unknown_state_is_not_believed() {
+        // Entries from the older format cannot be told apart from a real "no
+        // cover": both are an empty answer line. The stamp carries a format
+        // version so those fall out as a mismatch and get resolved again.
+        let dir = tempfile::tempdir().unwrap();
+        let album = format!("Legacy {}", fastrand::u64(..));
+        let track = tagged_track_with_cover(dir.path(), "l.flac", &album, solid_png([2, 4, 6]));
+        let index = resolution_index_path(&track, ThumbnailSize::List);
+
+        let legacy_stamp = format!(
+            "{}:{}:{}:{}",
+            mtime_nanos(&track),
+            std::fs::metadata(&track).unwrap().len(),
+            mtime_nanos(dir.path()),
+            mtime_nanos(&crate::cover_download::publish_marker())
+        );
+        write_resolution_body(&index, &legacy_stamp, &format!("\n{DOWNLOAD_EXHAUSTED}"));
+
+        let resolved = thumbnail_for_track(&track, ThumbnailSize::List);
+        assert!(
+            resolved.is_some(),
+            "an entry from the older format must not settle a track as coverless"
+        );
+
+        std::fs::remove_file(&index).ok();
         resolved.map(|path| std::fs::remove_file(path).ok());
     }
 
