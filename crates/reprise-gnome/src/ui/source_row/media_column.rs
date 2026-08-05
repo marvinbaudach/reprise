@@ -28,7 +28,22 @@ struct OverlayState {
     selection_mode: Cell<bool>,
     selected: Cell<bool>,
     hovered: Cell<bool>,
-    focused: Cell<bool>,
+    /// The row holds the focus. Kept apart from `focused_self` because either
+    /// alone is reason enough to show the checkbox, and one shared flag would
+    /// let the row losing focus *to the checkbox* hide it in the same breath.
+    focused_row: Cell<bool>,
+    /// The checkbox itself holds the focus.
+    focused_self: Cell<bool>,
+}
+
+impl OverlayState {
+    fn shows_checkbox(&self) -> bool {
+        self.selection_mode.get()
+            && (self.selected.get()
+                || self.hovered.get()
+                || self.focused_row.get()
+                || self.focused_self.get())
+    }
 }
 
 pub(in crate::ui) struct MediaColumn {
@@ -65,6 +80,18 @@ impl MediaColumn {
             state: Rc::new(OverlayState::default()),
             toggle_handler: RefCell::new(None),
         };
+        // The checkbox watches its own focus here rather than leaving it to
+        // the caller: a row's `has-focus` is false while the focus sits on one
+        // of its children, so a caller that only forwards the row's focus
+        // hands a keyboard user an invisible checkbox. Wiring it where the
+        // widget is created is what stops the next caller from forgetting.
+        let focus_state = column.state.clone();
+        let focus_overlay = column.state_overlay.clone();
+        let focus_checkbox = column.checkbox.clone();
+        column.checkbox.connect_has_focus_notify(move |checkbox| {
+            focus_state.focused_self.set(checkbox.has_focus());
+            recompute_with(&focus_state, &focus_overlay, &focus_checkbox);
+        });
         column.recompute();
         column
     }
@@ -111,7 +138,15 @@ impl MediaColumn {
 
     /// Installs the view-owned selection action while keeping state updates
     /// from feeding back into that action through `set_active`.
+    ///
+    /// Replaces any previous handler outright. Only the newest id is blocked
+    /// during `set_active`, so a forgotten predecessor would keep firing —
+    /// with a stale episode id — through exactly the feedback loop the
+    /// blocking exists to close.
     pub(in crate::ui) fn connect_toggled(&self, callback: impl Fn(&gtk4::CheckButton) + 'static) {
+        if let Some(previous) = self.toggle_handler.borrow_mut().take() {
+            self.checkbox.disconnect(previous);
+        }
         let handler = self.checkbox().connect_toggled(callback);
         self.toggle_handler.replace(Some(handler));
     }
@@ -121,24 +156,35 @@ impl MediaColumn {
         self.recompute();
     }
 
+    /// The *row's* focus. The checkbox's own focus is wired in `new` and needs
+    /// no caller.
     pub(in crate::ui) fn set_focused(&self, focused: bool) {
-        self.state.focused.set(focused);
+        self.state.focused_row.set(focused);
         self.recompute();
     }
 
-    /// Exactly one thing sits above the artwork. A later hover-play glyph
-    /// belongs in a branch here, between the checkbox and playing marker, so
-    /// the complete precedence remains visible in one place.
     fn recompute(&self) {
-        let show_checkbox = self.state.selection_mode.get()
-            && (self.state.selected.get() || self.state.hovered.get() || self.state.focused.get());
-        self.checkbox
-            .set_opacity(if show_checkbox { 1.0 } else { 0.0 });
-        self.checkbox.set_can_target(show_checkbox);
-        let state_overlay = self.state_overlay.borrow().clone();
-        if let Some(overlay) = state_overlay {
-            overlay.set_visible(self.state.loaded.get() && !show_checkbox);
-        }
+        recompute_with(&self.state, &self.state_overlay, &self.checkbox);
+    }
+}
+
+/// Exactly one thing sits above the artwork. A later hover-play glyph belongs
+/// in a branch here, between the checkbox and the playing marker, so the
+/// complete precedence remains visible in one place.
+///
+/// Free-standing rather than a method because the checkbox's own focus handler
+/// cannot hold a borrow of the column that owns it.
+fn recompute_with(
+    state: &Rc<OverlayState>,
+    state_overlay: &Rc<RefCell<Option<gtk4::Widget>>>,
+    checkbox: &gtk4::CheckButton,
+) {
+    let show_checkbox = state.shows_checkbox();
+    checkbox.set_opacity(if show_checkbox { 1.0 } else { 0.0 });
+    checkbox.set_can_target(show_checkbox);
+    let state_overlay = state_overlay.borrow().clone();
+    if let Some(overlay) = state_overlay {
+        overlay.set_visible(state.loaded.get() && !show_checkbox);
     }
 }
 

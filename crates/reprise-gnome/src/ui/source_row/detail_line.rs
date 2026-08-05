@@ -13,13 +13,11 @@ pub(in crate::ui) fn detail_line<'a>(parts: impl IntoIterator<Item = &'a str>) -
         .join(" · ")
 }
 
-#[allow(dead_code)]
 pub(in crate::ui) struct ChipSpec {
     pub label: String,
     pub css_class: &'static str,
 }
 
-#[allow(dead_code)]
 pub(in crate::ui) fn chip(spec: &ChipSpec) -> gtk4::Label {
     let label = gtk4::Label::new(Some(&spec.label));
     label.add_css_class("reprise-source-row-chip");
@@ -30,7 +28,6 @@ pub(in crate::ui) fn chip(spec: &ChipSpec) -> gtk4::Label {
 
 /// Whole percent of the episode already heard, clamped away from the two ends
 /// that would misread as "new" or "played".
-#[allow(dead_code)]
 pub(in crate::ui) fn resume_percent(position_ms: i64, duration_secs: Option<i64>) -> Option<u8> {
     let duration_secs = duration_secs.filter(|secs| *secs > 0)?;
     let total_ms = duration_secs.saturating_mul(1_000);

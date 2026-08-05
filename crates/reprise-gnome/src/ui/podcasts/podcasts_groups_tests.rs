@@ -545,7 +545,9 @@ fn src_12a_grouped_selection_survives_render_rebuild_on_the_row() {
         // fixed-width media host, which is what keeps the title at the same x
         // position in both source kinds. The claim is unchanged — artwork
         // first — only one level deeper.
-        let media = row.first_child().expect("the row leads with its media column");
+        let media = row
+            .first_child()
+            .expect("the row leads with its media column");
         assert!(media.is::<gtk4::Box>());
         assert!(media
             .first_child()

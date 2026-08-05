@@ -223,6 +223,75 @@ fn pod_10_channel_projection_windows_children_but_preserves_full_summary() {
     assert_eq!(projected.summary.episode_count, 12);
 }
 
+/// `SRC-12a`: Ctrl+A on the channel page takes that page's rendered window and
+/// nothing behind it.
+///
+/// The rule claims this surface, and until now nothing exercised
+/// `select_all_visible` at all — the clause was true only by reading the code.
+/// The trap it guards is a select-all that reaches past the ten-item window
+/// into episodes the user cannot see, which is precisely what a selection
+/// built from the unwindowed group would do.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_12a_channel_page_select_all_stops_at_the_rendered_window() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+
+    let episodes = (1..=12)
+        .rev()
+        .map(|id| episode(id, Some(600)))
+        .collect::<Vec<_>>();
+    let group = reprise_core::podcasts::SourceGroup {
+        subscription_id: 7,
+        title: "Channel".into(),
+        author: None,
+        image_url: None,
+        kind: PodcastKind::Youtube,
+        sync_to_phone: false,
+        episodes,
+    };
+    let rendered = RenderedSourceGroup {
+        summary: source_summary(&group, &BTreeMap::<i64, DownloadState>::new()),
+        group,
+    };
+
+    let host = gtk4::Stack::new();
+    let detail = YoutubeChannelDetail::new(&host, false);
+    detail.state.borrow_mut().open_channel(7);
+    detail.update(
+        std::slice::from_ref(&rendered),
+        &BTreeMap::new(),
+        &[],
+        &BTreeMap::new(),
+        false,
+        Connectivity::Online,
+        None,
+        None,
+    );
+
+    assert!(detail.select_all_visible());
+
+    let selected = detail.state.borrow().selected_ids(7);
+    assert_eq!(
+        selected.len(),
+        10,
+        "the window shows ten, so ten is what Ctrl+A may take"
+    );
+    // The fixture is newest-first (`(1..=12).rev()`), so the ten-item window
+    // keeps 12 down to 3 and it is the *lowest* ids that fall off the end —
+    // the oldest videos, which is what "past the window" means on this page.
+    for episode_id in [1, 2] {
+        assert!(
+            !selected.contains(&episode_id),
+            "episode {episode_id} is past the window and must stay unreachable"
+        );
+    }
+    assert!(
+        selected.contains(&12) && selected.contains(&3),
+        "the window's own newest and oldest entries are both in reach"
+    );
+}
+
 #[test]
 fn pod_10_channel_detail_is_an_explicit_open_and_close_location() {
     let mut state = YoutubeChannelState::default();

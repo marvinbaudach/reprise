@@ -3961,8 +3961,15 @@ listening statistics.
   surface's selection; Escape propagates unchanged when nothing was selected.
   Actions meaningless for more than one episode stay hidden, and a batch
   reports one aggregated toast and one undo. Covered by the `src_12a_…` tests
-  in `podcasts_selection`, `podcasts_view_shortcuts`, `podcasts_view_tests`,
-  and `source_row::media_column`.
+  in `podcasts_selection`, `podcasts_view_shortcuts` (including
+  `src_12a_ctrl_a_survives_caps_lock`, because a shortcut that a lock key
+  disarms is not a shortcut), `podcasts_view_tests`, `podcasts_groups_tests`,
+  `podcasts_context_menu`, `podcasts_context_menu_browser_tests`,
+  `podcasts_view_actions` for the aggregated toast and undo,
+  `youtube_channel_detail_tests` — where
+  `src_12a_channel_page_select_all_stops_at_the_rendered_window` is what
+  actually holds the channel-page clause above — `strings_podcasts`, and
+  `source_row::media_column`.
 - **SRC-4a** [active] [gtk] — Radio keeps SRC-4's removal and undo
   behavior, and its station menus continue to omit "Play Next" and "Add
   to Queue". A live stream is deliberately not a citizen of an ordered
@@ -4030,8 +4037,16 @@ listening statistics.
   `src_16_both_shapes_fit_the_same_column`,
   `src_16_the_checkbox_replaces_the_playing_marker_rather_than_covering_it`,
   `src_16_the_title_starts_at_the_same_x_in_both_source_views`,
-  `src_16_rows_have_the_same_height_in_both_source_views`, and
-  `src_16_a_row_renders_exactly_one_status_chip`. **[planned]** RSS author
+  `src_16_rows_have_the_same_height_in_both_source_views`,
+  `src_16_a_row_renders_exactly_one_status_chip`,
+  `src_16_the_detail_line_drops_empty_values` and
+  `src_16_resume_reports_a_whole_percent_and_omits_it_without_a_duration` for
+  the second line, `src_16_the_channel_page_renders_the_status_as_a_chip`,
+  `src_16_the_rss_source_header_types_its_second_line_like_the_shared_grammar`,
+  and `src_16_the_style_takes_its_measurements_from_the_shared_constants` —
+  the last one because a stylesheet literal outranks the skeleton's size
+  request, so the constants only govern the layout for as long as the
+  stylesheet keeps deriving from them. **[planned]** RSS author
   subtitles already use the same quiet second-line typography, but a YouTube
   channel handle cannot join it until the source projection carries a durable
   handle field; no subtitle is invented from other channel data meanwhile.
@@ -4040,9 +4055,13 @@ listening statistics.
   changes only opacity and targeting on hover, keyboard focus, or selection;
   revealing it can therefore never move the title under the pointer. The same
   hover state is shared with the media overlay rather than collected by a
-  second controller. Covered by
-  `src_17_revealing_keeps_the_space_and_only_changes_opacity`,
+  second controller. **Focus is watched on the revealed control itself, not
+  only on the row:** a container's focus does not bubble up from its children,
+  so a row-only rule leaves a control that Tab can reach but no one can see.
+  Covered by `src_17_revealing_keeps_the_space_and_only_changes_opacity`,
+  `src_17_focusing_the_control_itself_reveals_it`,
   `src_17_the_row_menu_button_is_transparent_until_hover_focus_or_selection`,
+  `src_17_the_channel_page_hides_its_row_menu_until_hover_focus_or_selection`,
   and `src_17_revealing_the_row_menu_button_does_not_move_the_title`.
 - **POD-1** [active] [core] — Episode status is a pure derivation:
   Played exactly when `played_at` is set, otherwise Resume when
