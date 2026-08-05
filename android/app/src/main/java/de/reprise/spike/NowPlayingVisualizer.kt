@@ -14,9 +14,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -28,7 +29,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
@@ -49,6 +49,7 @@ import uniffi.reprise_android_ffi.AndroidArtworkSize
 
 private const val VISUALIZER_CROSSFADE_MS = 120
 private const val UNAVAILABLE_EXPLANATION = "Needs track analysis"
+private const val PREVIEW_BAND_SLOT_DP = 30
 
 @Composable
 internal fun NowPlayingVisualizer(
@@ -64,11 +65,19 @@ internal fun NowPlayingVisualizer(
     var menuOpen by remember { mutableStateOf(false) }
     var menuTouch by remember { mutableStateOf(Offset.Zero) }
     val haptics = LocalHapticFeedback.current
+    val renderedMode = control.selected.renderedMode(analysed)
 
     Column {
         Box(
             modifier = Modifier
-                .size(size.dp)
+                .width(size.dp)
+                .height(
+                    (size + if (renderedMode == MobileVisualizer.PREVIEW_BAND) {
+                        PREVIEW_BAND_SLOT_DP
+                    } else {
+                        0
+                    }).dp,
+                )
                 .clip(shape)
                 .testTag("visualizer-surface")
                 .pointerInput(Unit) {
@@ -82,7 +91,7 @@ internal fun NowPlayingVisualizer(
                 },
         ) {
             AnimatedContent(
-                targetState = control.selected.renderedMode(analysed),
+                targetState = renderedMode,
                 modifier = Modifier
                     .fillMaxSize()
                     .testTag("now-playing-cover"),
@@ -114,7 +123,7 @@ internal fun NowPlayingVisualizer(
                                 .padding(16.dp),
                         )
                     }
-                    MobileVisualizer.PREVIEW_BAND -> Box(
+                    MobileVisualizer.PREVIEW_BAND -> Column(
                         modifier = Modifier
                             .fillMaxSize()
                             .testTag("visualizer-preview-surface"),
@@ -123,10 +132,9 @@ internal fun NowPlayingVisualizer(
                         SpectralTrackBand(
                             trackId = trackId,
                             modifier = Modifier
-                                .align(Alignment.BottomCenter)
                                 .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 10.dp)
-                                .height(18.dp),
+                                .height(PREVIEW_BAND_SLOT_DP.dp)
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
                         )
                     }
                     else -> Box(

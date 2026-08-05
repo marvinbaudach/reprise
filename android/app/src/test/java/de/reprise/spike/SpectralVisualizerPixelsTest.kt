@@ -72,7 +72,12 @@ class SpectralVisualizerPixelsTest {
         }
         showVisualizer(MobileVisualizer.PREVIEW_BAND)
 
-        val previewPixels = render().pixelsNear(PREVIEW_RED, PREVIEW_GREEN, PREVIEW_BLUE)
+        val previewPixels = render().pixelsNear(
+            red = PREVIEW_RED,
+            green = PREVIEW_GREEN,
+            blue = PREVIEW_BLUE,
+            firstRow = VISUALIZER_SIZE_DP,
+        )
         assertTrue(
             "Preview must draw the seek bar's own RGB cells, but only $previewPixels pixels did",
             previewPixels >= MINIMUM_PREVIEW_PIXELS,
@@ -120,7 +125,8 @@ class SpectralVisualizerPixelsTest {
         red: Float,
         green: Float,
         blue: Float,
-    ): Int = (0 until height).sumOf { y ->
+        firstRow: Int = 0,
+    ): Int = (firstRow until height).sumOf { y ->
         (0 until width).count { x ->
             val pixel = this[x, y]
             kotlin.math.abs(pixel.red - red) <= COLOUR_TOLERANCE &&
