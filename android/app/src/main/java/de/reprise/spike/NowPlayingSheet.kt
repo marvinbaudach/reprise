@@ -521,10 +521,11 @@ private fun RatingRow(
                         .semantics { stateDescription = "Rated $rating of 5" },
                 ) {
                     MaterialSymbol(
-                        name = if (star <= rating) "star" else "star_outline",
+                        name = "star",
                         contentDescription = "Rate $star of 5 stars",
                         tint = MaterialTheme.colorScheme.tertiary,
                         sizeSp = 28,
+                        filled = star <= rating,
                     )
                 }
             }

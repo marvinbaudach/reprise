@@ -237,7 +237,7 @@ private fun DockStar(track: LibraryTrack, surfaceState: MobileSurfaceViewModel) 
             .semantics { stateDescription = "Rating $rating of 5" },
     ) {
         MaterialSymbol(
-            name = if (rating == 5) "star" else "star_outline",
+            name = "star",
             contentDescription = if (rating == 5) {
                 "Restore previous rating"
             } else {
@@ -245,6 +245,7 @@ private fun DockStar(track: LibraryTrack, surfaceState: MobileSurfaceViewModel) 
             },
             tint = MaterialTheme.colorScheme.tertiary,
             sizeSp = 48,
+            filled = rating == 5,
         )
     }
     TransientMessageText(failure) { failure = null }

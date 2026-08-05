@@ -225,10 +225,11 @@ private fun TrackRating(rating: Int) {
     val normalizedRating = rating.coerceIn(0, 5)
     Row(verticalAlignment = Alignment.CenterVertically) {
         MaterialSymbol(
-            name = if (normalizedRating > 0) "star" else "star_outline",
+            name = "star",
             contentDescription = "$normalizedRating of 5 stars",
             tint = MaterialTheme.colorScheme.tertiary,
             sizeSp = 14,
+            filled = normalizedRating > 0,
         )
         Text(
             text = "$normalizedRating/5",

@@ -9,9 +9,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -84,9 +86,31 @@ private val RobotoFlex = FontFamily(
     Font(R.font.roboto_flex, weight = FontWeight.Bold),
 )
 
-internal val MaterialSymbolsRounded = FontFamily(
-    Font(R.font.material_symbols_rounded, weight = FontWeight.Normal),
+/**
+ * Material Symbols carries "filled" on the variable-font axis `FILL`, not in a
+ * second glyph: the `star_outline` ligature resolves to the *same* glyph id as
+ * `star`, and nothing in the font's `gvar` moves a point unless `FILL` moves.
+ * Asking for a different ligature name therefore drew the identical outline,
+ * which is how a rating could be written correctly and still never be seen. The
+ * state has to ride the axis, so a filled symbol needs its own family — the
+ * same ttf pinned at the other end of `FILL`.
+ *
+ * `variationSettings` is honoured from API 26 up, which is this module's
+ * `minSdk`; on anything older Compose ignores it rather than failing, so the
+ * worst case stays the outline we already drew.
+ */
+@OptIn(ExperimentalTextApi::class)
+private fun materialSymbolsAt(fill: Float) = FontFamily(
+    Font(
+        R.font.material_symbols_rounded,
+        weight = FontWeight.Normal,
+        variationSettings = FontVariation.Settings(FontVariation.Setting("FILL", fill)),
+    ),
 )
+
+internal val MaterialSymbolsRounded = materialSymbolsAt(fill = 0f)
+
+internal val MaterialSymbolsRoundedFilled = materialSymbolsAt(fill = 1f)
 
 private fun TextStyle.onRobotoFlex(
     fontSize: androidx.compose.ui.unit.TextUnit = this.fontSize,
