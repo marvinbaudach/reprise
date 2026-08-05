@@ -7,6 +7,7 @@ use reprise_core::db::Db;
 use reprise_core::radio::StationRow;
 
 use crate::ui::browse::browse_bar::CHIP_CSS_CLASS;
+use crate::ui::enumerated::enumerated;
 use crate::ui::strings;
 use crate::ui::style::buttons;
 
@@ -28,14 +29,18 @@ impl RadioFilter {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum RadioFilterFacet {
-    Genre,
-    Country,
-}
+enumerated! {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub(super) enum RadioFilterFacet {
+        Genre,
+        Country,
+    }
 
-const RADIO_FILTER_FACETS: [RadioFilterFacet; 2] =
-    [RadioFilterFacet::Genre, RadioFilterFacet::Country];
+    /// Generated from the declaration above: a facet that is missing here is
+    /// never relaxed, so a jump to the connected station silently does
+    /// nothing when that facet is what hides it.
+    const RADIO_FILTER_FACETS;
+}
 
 pub(super) fn remove_filter(filter: &RadioFilter, facet: RadioFilterFacet) -> RadioFilter {
     let mut result = filter.clone();

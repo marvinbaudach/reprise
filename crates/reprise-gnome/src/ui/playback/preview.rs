@@ -3,30 +3,29 @@
 use reprise_core::media_integration::MprisPlaybackStatus;
 use reprise_core::playback::PlaybackState;
 
+use crate::ui::enumerated::enumerated;
 use crate::ui::player_controller::PlayerController;
 
-/// Whether the controller is playing an ordinary queue track or external media.
-/// `Queue` is the default (ordinary playback).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(in crate::ui) enum PlaybackMode {
-    #[default]
-    Queue,
-    QueuedEpisode,
-    Preview,
-    Podcast,
-    Radio,
+enumerated! {
+    /// Whether the controller is playing an ordinary queue track or external media.
+    /// `Queue` is the default (ordinary playback).
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+    pub(in crate::ui) enum PlaybackMode {
+        #[default]
+        Queue,
+        QueuedEpisode,
+        Preview,
+        Podcast,
+        Radio,
+    }
+
+    /// Every mode, generated from the declaration above so a new one cannot
+    /// stay out of the `PLAY-12` link contract it is checked against.
+    #[allow(dead_code)] // Exhaustive contract exercised by PLAY-12 tests.
+    pub(in crate::ui) const Self::ALL;
 }
 
 impl PlaybackMode {
-    #[allow(dead_code)] // Exhaustive contract exercised by PLAY-12 tests.
-    pub(in crate::ui) const ALL: [Self; 5] = [
-        Self::Queue,
-        Self::QueuedEpisode,
-        Self::Preview,
-        Self::Podcast,
-        Self::Radio,
-    ];
-
     /// Whether a `TrackFinished` event in this mode should advance the queue.
     /// Only a queue track does; a finished external-media session stops instead.
     pub(in crate::ui) fn advances_queue_on_finish(self) -> bool {

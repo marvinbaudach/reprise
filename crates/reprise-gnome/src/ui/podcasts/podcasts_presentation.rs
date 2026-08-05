@@ -8,6 +8,7 @@ use reprise_core::podcasts::download_state::DownloadState;
 use reprise_core::podcasts::{EpisodeRow, EpisodeStatus, PodcastKind, SourceGroup};
 
 use super::podcasts_context_menu::PodcastSyncDevice;
+use crate::ui::enumerated::enumerated;
 use crate::ui::strings;
 
 /// The filter the podcast view applies, which is exactly the filter the core
@@ -258,21 +259,21 @@ pub(super) fn apply_filter(rows: &[EpisodeRow], filter: &PodcastFilter) -> Vec<E
         .collect()
 }
 
-/// Declaration order is the tie-break order: `PODCAST_FACETS` lists the facets
-/// in it, and `Ord` follows it, so two equally cheap relaxations always resolve
-/// the same way.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) enum PodcastFilterFacet {
-    Unplayed,
-    Source,
-    Downloaded,
-}
+enumerated! {
+    /// Declaration order is the tie-break order: `PODCAST_FACETS` lists the
+    /// facets in it, and `Ord` follows it, so two equally cheap relaxations
+    /// always resolve the same way.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+    pub(super) enum PodcastFilterFacet {
+        Unplayed,
+        Source,
+        Downloaded,
+    }
 
-pub(super) const PODCAST_FACETS: [PodcastFilterFacet; 3] = [
-    PodcastFilterFacet::Unplayed,
-    PodcastFilterFacet::Source,
-    PodcastFilterFacet::Downloaded,
-];
+    /// Generated from the declaration above: a facet that is missing here is
+    /// never relaxed, so a jump into a filtered view silently does nothing.
+    pub(super) const PODCAST_FACETS;
+}
 
 /// A filter containing only the selected facet. This deliberately delegates
 /// the facet's actual matching semantics back to `matches_filter`.

@@ -179,6 +179,11 @@ mod tests {
         }
     }
 
+    /// Completeness of `ALL` is guaranteed by its declaration (`enumerated!`
+    /// generates it from the variants), not by this test — a test can only
+    /// read the list, which is the thing that would be short. What is checked
+    /// here is its *order*: the exhaustive `match` names each mode's slot, so
+    /// a reordering that would silently repoint the loops above shows up.
     #[test]
     fn play_12_all_lists_every_playback_mode() {
         fn index_of(mode: PlaybackMode) -> usize {
@@ -191,9 +196,12 @@ mod tests {
             }
         }
 
-        assert_eq!(PlaybackMode::ALL.len(), 5);
         for mode in PlaybackMode::ALL {
-            assert_eq!(PlaybackMode::ALL[index_of(mode)], mode);
+            assert_eq!(
+                PlaybackMode::ALL[index_of(mode)],
+                mode,
+                "{mode:?} does not stand where the match says it does"
+            );
         }
     }
 
