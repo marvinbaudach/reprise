@@ -501,6 +501,14 @@ impl PlayerController {
         if let Err(error) = controller.player.set_spectrum_enabled(song_visuals_enabled) {
             tracing::warn!(%error, "could not restore live song visuals; using the static profile");
         }
+        let sound_similarity_enabled = reprise_core::modules::is_enabled(
+            &controller.conn,
+            &reprise_core::modules::SOUND_SIMILARITY_MODULE,
+        )
+        .unwrap_or(reprise_core::modules::SOUND_SIMILARITY_MODULE.default_enabled);
+        controller
+            .bar
+            .set_sound_info_visible(sound_similarity_enabled);
 
         crate::ui::player_event_handling::spawn_event_drain(&controller, receiver);
 

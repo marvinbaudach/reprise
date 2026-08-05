@@ -63,7 +63,7 @@ fn a_legacy_value_the_migration_cannot_parse_is_replaced_out_loud() {
         conn.pragma_update(None, "user_version", 52).unwrap();
 
         let logs = crate::log_capture::CapturedLogs::default();
-        tracing::subscriber::with_default(crate::log_capture::LogCapture(logs.clone()), || {
+        logs.capture(|| {
             crate::db_equalizer::migrate_v53(&conn).unwrap();
         });
 

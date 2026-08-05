@@ -4,6 +4,10 @@ use std::path::Path;
 
 #[path = "db_handle.rs"]
 mod handle;
+pub use crate::db_sound_features::{
+    get_track_sound_features, set_track_sound_features, sound_feature_inventory,
+    StoredSoundFeatures,
+};
 pub use crate::db_spectrogram::{
     get_track_spectrogram, get_waveform_peaks, pending_render_data_tracks, set_track_render_data,
     set_track_spectrogram, set_waveform_peaks, track_source_fingerprint, PendingRenderDataTrack,
@@ -23,7 +27,7 @@ pub enum DbError {
     SchemaNotReady { found: i64, supported: i64 },
 }
 
-pub const SUPPORTED_SCHEMA_VERSION: i64 = 56;
+pub const SUPPORTED_SCHEMA_VERSION: i64 = 57;
 
 /// Default SQLite `busy_timeout` (milliseconds) for every connection opened
 /// through [`Db`]: wait up to this long for a write lock instead of failing
@@ -736,6 +740,7 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
     crate::db_play_journal::migrate_v54(conn)?;
     crate::db_spectrogram::migrate_v55(conn)?;
     crate::db_new_releases_accent::migrate_v56(conn)?;
+    crate::db_sound_features::migrate_v57(conn)?;
     Ok(())
 }
 

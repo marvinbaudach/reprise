@@ -70,6 +70,21 @@ adding a `[planned]` draft with the next free ID in the affected section,
 marked with `<!-- REVIEW: rule proposal -->` — the decision rests with the
 human. Rationale for changes lives in the git history.
 
+**Every feature reaches every frontend.** A feature is not finished when
+its window works. If a caller without a window could sensibly use it, it
+is also exposed over MCP in the same change — not later, not "if someone
+asks". The window is one frontend among several; `reprise-core` holds the
+feature and each frontend only presents it, so a feature that only the
+GTK app can reach is a sign that logic leaked into the window. Sensibly
+means: it reads or changes something a caller can name and act on
+(library data, playback, playlists, queue, derived analysis). It does not
+mean pure presentation — an animation, a hover state or a panel's layout
+has nothing to expose. When a feature deliberately stops at the window,
+its plan says so and why; silence is not an exemption. The MCP surface
+degrades honestly: a feature whose data has not been computed yet reports
+what is missing instead of returning an empty answer that reads like a
+result.
+
 ## A. Core principles
 
 - **P-1** [planned] [manual] — Every feedback role has exactly one
@@ -2525,6 +2540,21 @@ property is set and yet nothing happens.
   not change with the track. Newly loaded synchronized lyrics start at line 0 and
   position it per LYR-4. Without animations, cover and content switch hard
   (MOT-7).
+- **NPP-14** [active] [gtk] — At the regular fixed 300 px panel width the
+  switcher uses the four short labels **Up Next · Lyrics · Visuals · Sound**
+  in that order without ellipsizing. Built-in tabs always precede extension
+  tabs; extensions follow in activation order. Every tab retains an installed
+  symbolic icon, but icons replace labels only at the measured compact
+  breakpoint of 224 px or below — never merely because the regular panel is
+  narrow.
+- **NPP-15** [active] [gtk] — Disabling an extension never leaves its selected
+  page empty. If its tab is open, selection falls back to **Up Next** before
+  the page is hidden; disabling it while another tab is selected leaves that
+  selection unchanged.
+- **NPP-16** [planned] [gtk] — Once a fifth reachable panel tab exists, the
+  switcher moves extension tabs beyond the fourth into an overflow menu whose
+  button carries their count. No overflow control exists while four tabs are
+  the only reachable registry state.
 
 ## V. My Stats
 
@@ -4473,6 +4503,62 @@ plan.
   stops it is stopping someone else's session. The runtime names the
   originator of what is loaded, so this is a question the surface can
   answer rather than guess.
+
+## AH. Sound Similarity
+
+Sound Similarity is an optional local module. Its stored profile is a derived
+cache over the spectrogram, never a second audio decode or a mutation of the
+rendering dataset. It compares the playing track with the local library and
+keeps all ranking work off the GTK thread.
+
+- **SIM-1** [active] [core] — A sound profile lives in its own versioned cache
+  and follows the spectrogram's source-identity invalidation and track
+  deletion. A stale format is absent and is derived again from the stored
+  spectrogram; the spectrogram schema itself gains no recommendation scalar.
+- **SIM-2** [replaced by SIM-9] — The earlier rule compared band means and the
+  mastering scalars alone. Measured over a real library that found the same
+  production and not the genre, and the weights it fixed were nominal rather
+  than effective; SIM-9 adds the temporal half and the scale that makes a
+  weight mean what it says.
+- **SIM-3** [active] [core] — A row's percentage is its rank in the current
+  track's distance distribution across the complete eligible library. Same
+  album (album title plus album artist) and same artist exclusions are applied
+  only after those ranks are formed, so changing a filter never changes the
+  meaning of a percentage.
+- **SIM-4** [active] [core] [gtk] — The Sound tab remains present while analysis is
+  incomplete and shows numeric progress. Results require at least 50 current
+  profiles and the playing track's profile. Profile markers are library-wide
+  feature percentiles; the tempo axis is disabled while tempo is excluded.
+- **SIM-5** [active] [gtk] — The default result limit is seven. **Add to
+  queue** appends exactly the currently shown matches in their displayed
+  nearest-first order and never shuffles them.
+- **SIM-6** [active] [core] — Sound Similarity is a live, default-off Local
+  module. Its defaults exclude the same album, retain the same artist, omit
+  tempo, use Default weighting, and show seven matches. Its static registry
+  declaration provides both the Sound panel tab and **Find similar tracks**.
+- **SIM-7** [active] [gtk] — **Find similar tracks** appears in a single,
+  present-track context menu only while the module is enabled; disabling the
+  module removes the route.
+- **SIM-8** [active] [gtk] — Plugin provision badges are derived from the
+  static registry, never current enable state. A provision-kind set is the
+  unbadged group norm only when it occurs at least twice and strictly more
+  often than the runner-up; otherwise every row is badged. Panel-tab and
+  sidebar-section badges use the accent, while all other kinds are neutral.
+- **SIM-9** [active] [core] — The comparison carries how a track is produced
+  *and* how it moves, both derived from the stored spectrogram alone. Band
+  means and per-band positive flux stay L2-normalized and are compared with
+  cosine distance, each divided by the library's own spread so that a nominal
+  weight is an effective one. Centroid mean, centroid variance, frame-level
+  crest, onset rate, flux mean, flux variation, pulse strength and an enabled
+  tempo estimate are standardized against library spread; zero spread
+  contributes zero. The default weights are bands 0.30, timbre 0.12,
+  dynamics 0.08, rhythm 0.50, tempo 0.
+- **SIM-10** [active] [core] — At most two matches carry the same artist, and
+  the list fills up with the next nearest track by someone else. The nearest
+  match is never displaced by this. Tracks that name no artist are not capped
+  against each other, because unnamed is not a shared identity. The cap applies
+  whatever **Exclude tracks by the same artist** is set to; that setting is the
+  stricter step, not a replacement.
 
 ---
 

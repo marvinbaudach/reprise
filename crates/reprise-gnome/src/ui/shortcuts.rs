@@ -3,9 +3,9 @@
 //! first, then collapses the search bar and returns focus to the active content
 //! surface. Ctrl+F toggles the search bar while preserving its query.
 //!
-//! ## Three shortcuts, three different wiring mechanisms — on purpose
+//! ## Shortcut wiring mechanisms
 //!
-//! Ctrl+F and Space are each backed by a `gio::SimpleAction` in the window's
+//! Ctrl+F, `i`, and Space are each backed by a `gio::SimpleAction` in the window's
 //! own `"win"` action group, exactly the way the brief asks for ("this also
 //! lays groundwork for a future menu" — a menu item can bind to `win.focus-
 //! search`/`win.toggle-play-pause` by name without this module knowing a
@@ -16,6 +16,10 @@
 //!   set_accels_for_action`. Nothing else in this app binds Ctrl+F, and
 //!   opening focuses and selects the existing query, while invoking it again
 //!   closes the bar without clearing that query.
+//!
+//! - **i** uses the same action/accelerator path and opens the retained Sound
+//!   tab when that module is enabled. The panel owns the disabled no-op, so
+//!   the shortcut never exposes a hidden page.
 //!
 //! - **Space** uses a capture-phase `EventControllerKey`, not an application
 //!   accelerator. The controller inspects the actual focused widget before
@@ -59,6 +63,7 @@ use super::player_controller::PlayerController;
 /// internal identifiers, not user-facing text.
 const ACTION_TOGGLE_PLAY_PAUSE: &str = "toggle-play-pause";
 const ACTION_FOCUS_SEARCH: &str = "focus-search";
+const ACTION_SHOW_SOUND: &str = "show-sound";
 pub(in crate::ui) const SIDEBAR_TOGGLE_CSS_CLASS: &str = "reprise-sidebar-toggle";
 
 /// Pure decision for the Space key: should it toggle playback, or be left
@@ -127,7 +132,7 @@ pub fn escape_action_for(search_has_text: bool) -> EscapeAction {
     }
 }
 
-/// Wires all three shortcuts. Called once from `window::build`, after
+/// Wires the window shortcuts. Called once from `window::build`, after
 /// `window`, `search_bar`, `search_entry`, and `player` all exist. `player`
 /// is `None` when GStreamer was unavailable at startup (see `window::
 /// build`'s own doc comment on that degradation) — the Space action still
@@ -139,12 +144,25 @@ pub fn wire(
     search_bar: &gtk4::SearchBar,
     search_entry: &gtk4::SearchEntry,
     focus_active_content: Rc<dyn Fn() -> bool>,
+    show_sound: Rc<dyn Fn()>,
     player: Option<Rc<PlayerController>>,
 ) {
     wire_toggle_play_pause(app, window, player);
     wire_window_lifecycle(app, window);
     wire_focus_search(app, window, search_bar, search_entry);
+    wire_show_sound(app, window, show_sound);
     wire_escape(search_bar, search_entry, focus_active_content);
+}
+
+fn wire_show_sound(
+    app: &adw::Application,
+    window: &adw::ApplicationWindow,
+    show_sound: Rc<dyn Fn()>,
+) {
+    let action = gio::SimpleAction::new(ACTION_SHOW_SOUND, None);
+    action.connect_activate(move |_, _| show_sound());
+    window.add_action(&action);
+    app.set_accels_for_action(&format!("win.{ACTION_SHOW_SOUND}"), &["i"]);
 }
 
 /// Space: `win.toggle-play-pause`, dispatched by a focus-sensitive capture

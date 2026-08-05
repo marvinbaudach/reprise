@@ -81,7 +81,7 @@ fn external_radio_snapshot() -> crate::ui::playback::external_media::ExternalPla
 fn test_widgets(content: &impl IsA<gtk4::Widget>, visible: bool) -> PanelWidgets {
     let conn = crate::test_db::open().unwrap();
     let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
-    build_widgets(content, visible, Rc::new(conn), &cover_loader)
+    build_widgets(content, visible, &Rc::new(conn), &cover_loader)
 }
 
 fn test_widgets_for_session(
@@ -91,7 +91,7 @@ fn test_widgets_for_session(
 ) -> PanelWidgets {
     let conn = crate::test_db::open().unwrap();
     let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
-    build_widgets_for_session(content, visible, session, Rc::new(conn), &cover_loader)
+    build_widgets_for_session(content, visible, session, &Rc::new(conn), &cover_loader)
 }
 
 #[test]
@@ -209,15 +209,6 @@ fn pod_21_lyrics_falls_back_and_stays_hidden_for_podcast_youtube_and_radio() {
         panel.set_external_snapshot(None);
         assert!(panel.widgets.lyrics_page.is_visible());
     }
-}
-
-#[test]
-fn ac_23_visual_is_the_third_panel_tab() {
-    assert_eq!(PanelTab::Visual.page_name(), VISUAL_PAGE);
-    assert_eq!(
-        PANEL_TABS,
-        [PanelTab::UpNext, PanelTab::Lyrics, PanelTab::Visual]
-    );
 }
 
 #[test]
@@ -447,7 +438,7 @@ fn head_and_pill_match_the_21a_structure() {
     assert!(widgets.title.has_css_class("reprise-now-playing-title"));
     assert!(widgets.artist.has_css_class("reprise-now-playing-subtitle"));
     assert!(widgets.album.has_css_class("reprise-now-playing-subtitle"));
-    assert_eq!(PANEL_TABS.len(), 3);
+    assert_eq!(PANEL_TABS.len(), 4);
     assert!(widgets
         .tab_switcher
         .has_css_class("reprise-now-playing-tabs"));
@@ -456,10 +447,10 @@ fn head_and_pill_match_the_21a_structure() {
         Some(&widgets.tab_stack)
     );
     assert!(widgets.tab_stack.child_by_name(VISUAL_PAGE).is_some());
-    assert_eq!(widgets.tab_stack.pages().n_items(), 3);
+    assert_eq!(widgets.tab_stack.pages().n_items(), 4);
     let visual = widgets.tab_stack.child_by_name(VISUAL_PAGE).unwrap();
     let page = widgets.tab_stack.page(&visual);
-    assert_eq!(page.title().as_deref(), Some("Visual"));
+    assert_eq!(page.title().as_deref(), Some("Visuals"));
     // Rising bars, not a speaker: the tab shows what the audio looks like,
     // not where it comes out. Adwaita ships no equalizer or spectrum symbol,
     // so the signal-strength bars stand in — the glyph matches the visual

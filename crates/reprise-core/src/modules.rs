@@ -9,6 +9,22 @@ use rusqlite::Connection;
 
 use crate::library::settings;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum ProvisionKind {
+    PanelTab,
+    SidebarSection,
+    Window,
+    ContextItem,
+    Extends,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Provision {
+    pub kind: ProvisionKind,
+    pub label: &'static str,
+    pub target: Option<&'static str>,
+}
+
 pub struct ModuleDescriptor {
     /// Stable machine id; forms the settings key `module.<id>.enabled`.
     pub id: &'static str,
@@ -19,6 +35,18 @@ pub struct ModuleDescriptor {
     pub default_enabled: bool,
     /// Whether changing the setting affects the running application immediately.
     pub applies_live: bool,
+    /// Static declaration of the surfaces this built-in module contributes to.
+    pub provides: &'static [Provision],
+}
+
+macro_rules! provision {
+    ($kind:ident, $label:literal, $target:literal) => {
+        Provision {
+            kind: ProvisionKind::$kind,
+            label: $label,
+            target: Some($target),
+        }
+    };
 }
 
 pub const MPRIS_MODULE: ModuleDescriptor = ModuleDescriptor {
@@ -27,6 +55,7 @@ pub const MPRIS_MODULE: ModuleDescriptor = ModuleDescriptor {
     description: "GNOME media controls, media keys, and lock-screen integration (D-Bus)",
     default_enabled: true,
     applies_live: false,
+    provides: &[provision!(Extends, "Media controls", "Desktop session")],
 };
 
 pub const LISTENBRAINZ_MODULE: ModuleDescriptor = ModuleDescriptor {
@@ -35,6 +64,7 @@ pub const LISTENBRAINZ_MODULE: ModuleDescriptor = ModuleDescriptor {
     description: "Scrobble completed listens to ListenBrainz (network; off by default)",
     default_enabled: false,
     applies_live: true,
+    provides: &[provision!(Extends, "ListenBrainz", "Listening history")],
 };
 
 pub const LASTFM_MODULE: ModuleDescriptor = ModuleDescriptor {
@@ -43,6 +73,7 @@ pub const LASTFM_MODULE: ModuleDescriptor = ModuleDescriptor {
     description: "Scrobble completed listens to Last.fm (network; off by default)",
     default_enabled: false,
     applies_live: true,
+    provides: &[provision!(Extends, "Last.fm", "Listening history")],
 };
 
 pub const NEW_RELEASES_MODULE: ModuleDescriptor = ModuleDescriptor {
@@ -51,6 +82,7 @@ pub const NEW_RELEASES_MODULE: ModuleDescriptor = ModuleDescriptor {
     description: "Show upcoming and newly released albums; contacts MusicBrainz",
     default_enabled: false,
     applies_live: true,
+    provides: &[provision!(SidebarSection, "New Releases", "Sidebar")],
 };
 
 pub const CONCERTS_MODULE: ModuleDescriptor = ModuleDescriptor {
@@ -59,6 +91,7 @@ pub const CONCERTS_MODULE: ModuleDescriptor = ModuleDescriptor {
     description: "Show upcoming concerts for library artists; contacts event providers",
     default_enabled: false,
     applies_live: true,
+    provides: &[provision!(SidebarSection, "Concerts", "Sidebar")],
 };
 
 pub const PODCASTS_MODULE: ModuleDescriptor = ModuleDescriptor {
@@ -67,6 +100,7 @@ pub const PODCASTS_MODULE: ModuleDescriptor = ModuleDescriptor {
     description: "Subscribe to podcast RSS feeds; search via Apple Podcasts",
     default_enabled: false,
     applies_live: true,
+    provides: &[provision!(SidebarSection, "Podcasts", "Sidebar")],
 };
 
 /// YouTube is a peer of Podcasts and Radio, not a sub-setting of Podcasts
@@ -79,6 +113,7 @@ pub const YOUTUBE_MODULE: ModuleDescriptor = ModuleDescriptor {
     description: "Subscribe to YouTube channels; audio via yt-dlp",
     default_enabled: false,
     applies_live: true,
+    provides: &[provision!(SidebarSection, "YouTube", "Sidebar")],
 };
 
 pub const RADIO_MODULE: ModuleDescriptor = ModuleDescriptor {
@@ -87,6 +122,7 @@ pub const RADIO_MODULE: ModuleDescriptor = ModuleDescriptor {
     description: "Play favorite stations; each play reports a click to radio-browser.info",
     default_enabled: true,
     applies_live: true,
+    provides: &[provision!(SidebarSection, "Radio", "Sidebar")],
 };
 
 pub const LIBRARY_DOCTOR_MODULE: ModuleDescriptor = ModuleDescriptor {
@@ -95,6 +131,7 @@ pub const LIBRARY_DOCTOR_MODULE: ModuleDescriptor = ModuleDescriptor {
     description: "Review local tag cleanup suggestions; optional remote suggestions; contacts MusicBrainz / AcoustID",
     default_enabled: true,
     applies_live: true,
+    provides: &[provision!(Window, "Library Doctor", "Application window")],
 };
 
 pub const COVER_DOWNLOAD_MODULE: ModuleDescriptor = ModuleDescriptor {
@@ -103,6 +140,7 @@ pub const COVER_DOWNLOAD_MODULE: ModuleDescriptor = ModuleDescriptor {
     description: "Download missing album covers from online services",
     default_enabled: false,
     applies_live: true,
+    provides: &[provision!(Extends, "Cover Download", "Album artwork")],
 };
 
 pub const ARTIST_PORTRAITS_MODULE: ModuleDescriptor = ModuleDescriptor {
@@ -111,6 +149,7 @@ pub const ARTIST_PORTRAITS_MODULE: ModuleDescriptor = ModuleDescriptor {
     description: "Download artist portraits from online services",
     default_enabled: false,
     applies_live: true,
+    provides: &[provision!(Extends, "Artist Portraits", "Artist artwork")],
 };
 
 pub const ONLINE_LYRICS_MODULE: ModuleDescriptor = ModuleDescriptor {
@@ -119,6 +158,7 @@ pub const ONLINE_LYRICS_MODULE: ModuleDescriptor = ModuleDescriptor {
     description: "Load missing lyrics from an online service",
     default_enabled: false,
     applies_live: true,
+    provides: &[provision!(Extends, "Online Lyrics", "Lyrics")],
 };
 
 /// `C1`/`SRC-11`: channel, show and station artwork (YouTube thumbnails,
@@ -130,6 +170,7 @@ pub const SOURCE_IMAGES_MODULE: ModuleDescriptor = ModuleDescriptor {
     description: "Download channel, show, and station artwork for Podcasts, YouTube, and Radio",
     default_enabled: false,
     applies_live: true,
+    provides: &[provision!(Extends, "Source Images", "Online sources")],
 };
 
 pub const SONG_VISUALS_MODULE: ModuleDescriptor = ModuleDescriptor {
@@ -138,11 +179,25 @@ pub const SONG_VISUALS_MODULE: ModuleDescriptor = ModuleDescriptor {
     description: "Show local audio-reactive visuals in Now Playing",
     default_enabled: true,
     applies_live: true,
+    provides: &[provision!(PanelTab, "Visuals", "Now Playing")],
+};
+
+pub const SOUND_SIMILARITY_MODULE: ModuleDescriptor = ModuleDescriptor {
+    id: "sound_similarity",
+    name: "Sound Similarity",
+    description: "Compare timbre, dynamics and tempo across the local library",
+    default_enabled: false,
+    applies_live: true,
+    provides: &[
+        provision!(PanelTab, "Sound", "Now Playing"),
+        provision!(ContextItem, "Find similar tracks", "Track menu"),
+    ],
 };
 
 /// Every optional integration the app currently exposes, in Plugins-page order.
 pub const ALL_MODULES: &[&ModuleDescriptor] = &[
     &SONG_VISUALS_MODULE,
+    &SOUND_SIMILARITY_MODULE,
     &LIBRARY_DOCTOR_MODULE,
     &NEW_RELEASES_MODULE,
     &CONCERTS_MODULE,
@@ -209,6 +264,37 @@ mod tests {
 
     fn migrated_db() -> crate::db::Db {
         crate::db::Db::open_in_memory().unwrap()
+    }
+
+    #[test]
+    fn sim_6_sound_similarity_is_a_live_opt_in_local_module() {
+        assert_eq!(SOUND_SIMILARITY_MODULE.id, "sound_similarity");
+        const { assert!(!SOUND_SIMILARITY_MODULE.default_enabled) };
+        const { assert!(SOUND_SIMILARITY_MODULE.applies_live) };
+        assert_eq!(
+            SOUND_SIMILARITY_MODULE.description,
+            "Compare timbre, dynamics and tempo across the local library"
+        );
+        assert_eq!(
+            SOUND_SIMILARITY_MODULE.provides,
+            &[
+                Provision {
+                    kind: ProvisionKind::PanelTab,
+                    label: "Sound",
+                    target: Some("Now Playing"),
+                },
+                Provision {
+                    kind: ProvisionKind::ContextItem,
+                    label: "Find similar tracks",
+                    target: Some("Track menu"),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn every_registered_module_declares_where_it_integrates() {
+        assert!(ALL_MODULES.iter().all(|module| !module.provides.is_empty()));
     }
 
     #[test]
@@ -285,7 +371,7 @@ mod tests {
     }
 
     #[test]
-    fn online_modules_are_every_module_except_the_two_local_ones() {
+    fn online_modules_are_every_module_except_the_three_local_ones() {
         let online: Vec<&str> = ONLINE_MODULES.iter().map(|module| module.id).collect();
         let local: Vec<&str> = ALL_MODULES
             .iter()
@@ -298,7 +384,10 @@ mod tests {
         // network-reaching module escape the grandfathering evidence check,
         // and defaulting it to "online" would let an always-on local module
         // masquerade as proof that someone used an online feature.
-        assert_eq!(local, vec!["song_visuals", "library_doctor"]);
+        assert_eq!(
+            local,
+            vec!["song_visuals", "sound_similarity", "library_doctor"]
+        );
     }
 
     #[test]
