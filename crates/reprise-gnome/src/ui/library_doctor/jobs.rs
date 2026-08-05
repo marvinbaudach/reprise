@@ -9,8 +9,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use reprise_core::fingerprint::FingerprintBackend;
 use reprise_core::library_doctor::{
-    DoctorApplyPlan, DoctorScanOutcome, DoctorScanProgress, DoctorScanRequest, DoctorWriteControl,
-    DoctorWriteProgress, DoctorWriteReport, LibraryDoctor, ScanControl,
+    DoctorApplyPlan, DoctorCleanupReport, DoctorScanOutcome, DoctorScanProgress, DoctorScanRequest,
+    DoctorWriteControl, DoctorWriteProgress, DoctorWriteReport, LibraryDoctor, ScanControl,
 };
 
 pub(super) fn run_scan(
@@ -59,7 +59,7 @@ pub(super) fn run_revert(
     db_path: &Path,
     cancellation: &AtomicBool,
     publish: &mut dyn FnMut(DoctorWriteProgress),
-) -> Result<Option<DoctorWriteReport>, String> {
+) -> Result<Option<DoctorCleanupReport>, String> {
     let conn =
         reprise_core::db::Db::open_migrated(Some(db_path)).map_err(|error| error.to_string())?;
     LibraryDoctor::new(&conn)

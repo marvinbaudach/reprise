@@ -306,7 +306,7 @@ impl LibraryDoctorReviewPage {
         {
             let state = state.clone();
             all_safe.connect_clicked(move |_| {
-                state.session.borrow_mut().all_safe();
+                state.session.borrow_mut().all();
                 state.refresh();
             });
         }
@@ -482,7 +482,7 @@ mod tests {
             &conn,
             &parent,
             scan(),
-            DoctorReviewFilter::AllChanges,
+            DoctorReviewFilter::NeedsReview,
             Rc::new(|_| {}),
             &on_edit,
         );

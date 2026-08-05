@@ -20,8 +20,8 @@ use libadwaita::prelude::*;
 use reprise_core::db::Db;
 use reprise_core::fingerprint::{FingerprintBackend, FingerprintCapability};
 use reprise_core::library_doctor::{
-    DoctorApplyPlan, DoctorScanOutcome, DoctorScanRequest, DoctorScopeRequest, DoctorViewSnapshot,
-    DoctorWriteProgress, DoctorWriteReport, LibraryDoctor,
+    DoctorApplyPlan, DoctorCleanupReport, DoctorScanOutcome, DoctorScanRequest, DoctorScopeRequest,
+    DoctorViewSnapshot, DoctorWriteProgress, DoctorWriteReport, LibraryDoctor,
 };
 use reprise_core::view_source::ViewSource;
 
@@ -160,7 +160,7 @@ impl LibraryDoctorCoordinator {
             coordinator.page.connect_review_all(move || {
                 if let Some(coordinator) = weak.upgrade() {
                     coordinator
-                        .open_review(reprise_core::library_doctor::DoctorReviewFilter::AllChanges);
+                        .open_review(reprise_core::library_doctor::DoctorReviewFilter::NeedsReview);
                 }
             });
         }
@@ -168,9 +168,8 @@ impl LibraryDoctorCoordinator {
             let weak = Rc::downgrade(&coordinator);
             coordinator.page.connect_review_safe(move || {
                 if let Some(coordinator) = weak.upgrade() {
-                    coordinator.open_review(
-                        reprise_core::library_doctor::DoctorReviewFilter::LocalSafeOnly,
-                    );
+                    coordinator
+                        .open_review(reprise_core::library_doctor::DoctorReviewFilter::AutoApply);
                 }
             });
         }
@@ -545,6 +544,7 @@ impl LibraryDoctorCoordinator {
             move |publish| {
                 let _tag_write_lease = tag_write_lease;
                 run_revert(&db_path, &cancellation, publish)
+                    .map(|report| report.map(combined_cleanup_report))
             },
         );
         let (progress, result) = match spawned {
@@ -711,6 +711,34 @@ impl LibraryDoctorCoordinator {
             });
             self.toast_overlay.add_toast(toast);
         }
+    }
+}
+
+fn combined_cleanup_report(cleanup: DoctorCleanupReport) -> DoctorWriteReport {
+    let job_id = cleanup
+        .reports
+        .first()
+        .map(|report| report.job_id)
+        .unwrap_or_default();
+    let cancelled_tracks = cleanup
+        .reports
+        .iter()
+        .map(|report| report.cancelled_tracks)
+        .sum();
+    let rows = cleanup
+        .reports
+        .into_iter()
+        .flat_map(|report| report.rows)
+        .collect();
+    DoctorWriteReport {
+        job_id,
+        source_job_id: None,
+        updated_tracks: cleanup.reverted_tracks,
+        cancelled_tracks,
+        failed_tracks: cleanup.failed_tracks,
+        conflict_tracks: cleanup.conflict_tracks,
+        unavailable_tracks: cleanup.unavailable_tracks,
+        rows,
     }
 }
 

@@ -24,13 +24,13 @@ const PROBLEM_CLASSES: [ProblemClass; 5] = [
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ProblemRowModel {
     class: ProblemClass,
-    safe: usize,
+    auto_applied: usize,
     review: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct SummaryModel {
-    safe_changes: usize,
+    auto_applied_changes: usize,
     review_changes: usize,
     unresolved_groups: usize,
     checked_tracks: usize,
@@ -42,7 +42,7 @@ impl SummaryModel {
     fn from_scan(scan: &DoctorScan, remote_visible: bool) -> Self {
         let summary = scan_summary(scan, remote_visible);
         Self {
-            safe_changes: summary.safe_changes,
+            auto_applied_changes: summary.auto_applied_changes,
             review_changes: summary.review_changes,
             unresolved_groups: summary.unresolved_groups,
             checked_tracks: summary.checked_tracks,
@@ -50,10 +50,13 @@ impl SummaryModel {
             problem_rows: PROBLEM_CLASSES
                 .into_iter()
                 .map(|class| {
-                    let DoctorProblemCount { safe, review } = summary.counts_for(class);
+                    let DoctorProblemCount {
+                        auto_applied,
+                        review,
+                    } = summary.counts_for(class);
                     ProblemRowModel {
                         class,
-                        safe,
+                        auto_applied,
                         review,
                     }
                 })
@@ -63,7 +66,7 @@ impl SummaryModel {
 
     fn from_summary(summary: DoctorScanSummary) -> Self {
         Self {
-            safe_changes: summary.safe_changes,
+            auto_applied_changes: summary.auto_applied_changes,
             review_changes: summary.review_changes,
             unresolved_groups: summary.unresolved_groups,
             checked_tracks: summary.checked_tracks,
@@ -71,10 +74,13 @@ impl SummaryModel {
             problem_rows: PROBLEM_CLASSES
                 .into_iter()
                 .map(|class| {
-                    let DoctorProblemCount { safe, review } = summary.counts_for(class);
+                    let DoctorProblemCount {
+                        auto_applied,
+                        review,
+                    } = summary.counts_for(class);
                     ProblemRowModel {
                         class,
-                        safe,
+                        auto_applied,
                         review,
                     }
                 })
@@ -92,7 +98,9 @@ struct SummaryDisplay {
 impl SummaryDisplay {
     fn review_available(&self) -> bool {
         !self.partial
-            && self.model.safe_changes + self.model.review_changes + self.model.unresolved_groups
+            && self.model.auto_applied_changes
+                + self.model.review_changes
+                + self.model.unresolved_groups
                 > 0
     }
 }
@@ -392,7 +400,7 @@ impl LibraryDoctorPage {
             strings::DOCTOR_RESULTS
         }));
         self.safe_row
-            .set_subtitle(&strings::doctor_change_count(model.safe_changes));
+            .set_subtitle(&strings::doctor_change_count(model.auto_applied_changes));
         self.review_row
             .set_subtitle(&strings::doctor_change_count(model.review_changes));
         self.unresolved_row
@@ -408,17 +416,24 @@ impl LibraryDoctorPage {
                 .iter()
                 .find(|item| item.class == *class)
                 .expect("every fixed problem class must be projected");
-            row.set_subtitle(&strings::doctor_problem_counts(counts.safe, counts.review));
+            row.set_subtitle(&strings::doctor_problem_counts(
+                counts.auto_applied,
+                counts.review,
+            ));
             row.set_visible(problem_class_visible(*class, self.remote.is_active()));
         }
         self.review_all.set_label(&strings::doctor_review_changes(
-            model.safe_changes + model.review_changes,
+            model.auto_applied_changes + model.review_changes,
         ));
         self.review_safe
-            .set_label(&strings::doctor_review_safe_fixes(model.safe_changes));
-        self.review_all
-            .set_sensitive(model.safe_changes + model.review_changes + model.unresolved_groups > 0);
-        self.review_safe.set_sensitive(model.safe_changes > 0);
+            .set_label(&strings::doctor_review_safe_fixes(
+                model.auto_applied_changes,
+            ));
+        self.review_all.set_sensitive(
+            model.auto_applied_changes + model.review_changes + model.unresolved_groups > 0,
+        );
+        self.review_safe
+            .set_sensitive(model.auto_applied_changes > 0);
         self.review_actions.set_visible(review_available);
         self.empty.set_visible(false);
         self.results.set_visible(true);
@@ -462,7 +477,11 @@ mod tests {
     fn proposal(source: ProposalSource, class: ProblemClass) -> DoctorProposal {
         DoctorProposal {
             track_id: 1,
-            field: DoctorField::Artist,
+            field: if class == ProblemClass::MissingRecordingMbid {
+                DoctorField::RecordingMbid
+            } else {
+                DoctorField::Artist
+            },
             current: DoctorValue::Text("old".into()),
             proposed: DoctorValue::Text("new".into()),
             source,
@@ -499,19 +518,19 @@ mod tests {
 
         let model = SummaryModel::from_scan(&scan, true);
 
-        assert_eq!(model.safe_changes, 1);
-        assert_eq!(model.review_changes, 1);
+        assert_eq!(model.auto_applied_changes, 2);
+        assert_eq!(model.review_changes, 0);
         assert_eq!(model.checked_tracks, 8);
         assert_eq!(model.skipped_tracks, 2);
         assert_eq!(model.problem_rows.len(), 5);
-        assert_eq!(model.problem_rows[0].safe, 1);
-        assert_eq!(model.problem_rows[4].review, 1);
+        assert_eq!(model.problem_rows[0].auto_applied, 1);
+        assert_eq!(model.problem_rows[4].auto_applied, 1);
     }
 
     #[test]
     fn doc_2c_running_scan_prefers_partial_results_without_enabling_review() {
         let mut partial = DoctorScanSummary::default();
-        partial.safe_changes = 3;
+        partial.auto_applied_changes = 3;
         partial.review_changes = 2;
         partial.checked_tracks = 4;
 
@@ -520,7 +539,7 @@ mod tests {
 
         assert!(display.partial);
         assert!(!display.review_available());
-        assert_eq!(display.model.safe_changes, 3);
+        assert_eq!(display.model.auto_applied_changes, 3);
         assert_eq!(display.model.review_changes, 2);
         assert_eq!(display.model.checked_tracks, 4);
     }
