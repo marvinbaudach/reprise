@@ -60,7 +60,9 @@ impl Queue {
 
     /// Set the queue to a list of track IDs and start playback at `start_index`.
     /// If `start_index` is out of range, it is clamped to the last track (or None if empty).
-    /// If shuffle is active, re-shuffle the new order while keeping the start_index track as current.
+    /// If shuffle is active, the new order is reshuffled with the `start_index`
+    /// track *leading* it, so every other track stays upcoming — see the
+    /// in-body comment for why it does not keep `start_index` as its slot.
     pub fn set_tracks(&mut self, ids: Vec<i64>, start_index: usize) {
         self.ids = ids;
         let len = self.ids.len();
@@ -75,10 +77,18 @@ impl Queue {
             Some(start_index.min(len - 1))
         };
 
-        // If shuffle is sticky, re-shuffle the new order while keeping current track in place
+        // If shuffle is sticky, re-shuffle the new order behind the activated
+        // track. `start_index` is a row in the *visible* list, not a slot in
+        // the play order — a freshly seeded context has no history, so the
+        // activated track leads and everything else stays upcoming. Keeping
+        // it at play-order slot `start_index` instead would make every track
+        // ahead of it count as already played and silently drop it: a click
+        // on row 11 of an 18-track view left only 7 tracks queued.
+        // `set_shuffle` is the opposite case (real history to preserve) and
+        // deliberately still pins the playhead where it is.
         if self.shuffled && len > 0 {
             if let Some(current_pos) = self.pos {
-                // Remember the current track's track-index
+                // Remember the activated track's track-index
                 let current_track_slot = self.order.get(current_pos).copied();
 
                 // Fisher-Yates shuffle: permute indices
@@ -88,10 +98,11 @@ impl Queue {
                     self.order.swap(i, j);
                 }
 
-                // Move current track back to its position
+                // Move the activated track to the front of the shuffled order
                 if let Some(track_slot) = current_track_slot {
                     if let Some(pos) = self.order.iter().position(|&idx| idx == track_slot) {
-                        self.order.swap(current_pos, pos);
+                        self.order.swap(0, pos);
+                        self.pos = Some(0);
                     } else {
                         warn!(
                             "Current track slot {} not found in order after shuffle",
