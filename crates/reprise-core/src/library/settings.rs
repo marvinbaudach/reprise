@@ -783,6 +783,10 @@ fn set_last_viewed_import_errors_in(conn: &Connection, now: i64) -> Result<(), r
     set_setting_in(conn, LAST_VIEWED_IMPORT_ERRORS_KEY, &now.to_string())
 }
 
+#[path = "settings_seek.rs"]
+mod seek;
+pub use seek::*;
+
 #[cfg(test)]
 #[path = "settings_compact_tests.rs"]
 mod compact_tests;

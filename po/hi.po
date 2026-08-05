@@ -5168,3 +5168,39 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/strings_radio.rs:22
 msgid "LIVE"
 msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_seek.rs:13
+msgid "low"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_seek.rs:14
+msgid "high"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_seek.rs:15
+msgid "Frequency centroid"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_seek.rs:20
+msgid "Explain the Color Scale"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_seek.rs:23
+msgid "Seek Bar"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_seek.rs:24
+msgid "Coloring"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_seek.rs:26
+msgid "Color the bar by its frequency centroid, or in a single color"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_seek.rs:28
+msgid "Frequency"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_seek.rs:31
+msgid "Single Color"
+msgstr ""

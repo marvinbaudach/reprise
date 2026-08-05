@@ -1,7 +1,14 @@
+//! The playhead and its glow.
+//!
+//! There used to be an afterglow here — a gradient trailing the played side —
+//! whose job was to emphasise the progress boundary while that boundary was a
+//! change of *colour*. With both sides carrying the same colour and progress
+//! reading as a step in opacity, it emphasised nothing and only made the fill
+//! restless, so it is gone. The playhead now carries the one hard edge in the
+//! picture, which makes it more important than it was, not less.
+
 pub(super) const PLAYHEAD_WIDTH: f64 = 3.0;
 pub(super) const PLAYHEAD_OVERHANG: f64 = 3.0;
-pub(super) const AFTERGLOW_WIDTH: f64 = 14.0;
-const AFTERGLOW_ALPHA: f64 = 0.33;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct PlayheadRect {
@@ -20,21 +27,18 @@ pub(super) struct GlowLayer {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct DecorationVisibility {
     pub(super) glow: bool,
-    pub(super) afterglow: bool,
 }
 
 pub(super) fn decoration_visibility(
     fill_bars: bool,
-    dragging: bool,
+    _dragging: bool,
     animations_enabled: bool,
     build_progress: f64,
     crossfade_progress: f64,
 ) -> DecorationVisibility {
     let settled = build_progress >= 1.0 && crossfade_progress >= 1.0;
-    let decorate = !fill_bars && animations_enabled && settled;
     DecorationVisibility {
-        glow: decorate,
-        afterglow: decorate && !dragging,
+        glow: !fill_bars && animations_enabled && settled,
     }
 }
 
@@ -57,52 +61,6 @@ pub(super) fn glow_layers(playhead: PlayheadRect) -> [GlowLayer; 3] {
         },
         alpha,
     })
-}
-
-pub(super) fn afterglow_rect(
-    head_x: f64,
-    top: f64,
-    max_bar_height: f64,
-    dragging: bool,
-    animations_enabled: bool,
-) -> Option<PlayheadRect> {
-    if dragging || !animations_enabled {
-        return None;
-    }
-    let x = (head_x - AFTERGLOW_WIDTH).max(0.0);
-    let width = head_x - x;
-    (width > 0.0).then_some(PlayheadRect {
-        x,
-        y: top,
-        width,
-        height: max_bar_height,
-    })
-}
-
-pub(super) fn draw_afterglow(
-    cr: &gtk4::cairo::Context,
-    head_x: f64,
-    top: f64,
-    max_bar_height: f64,
-    colour: (f64, f64, f64),
-    dragging: bool,
-    animations_enabled: bool,
-) {
-    let Some(rect) = afterglow_rect(head_x, top, max_bar_height, dragging, animations_enabled)
-    else {
-        return;
-    };
-    let (r, g, b) = colour;
-    let gradient = gtk4::cairo::LinearGradient::new(rect.x, 0.0, head_x, 0.0);
-    gradient.add_color_stop_rgba(0.0, r, g, b, 0.0);
-    gradient.add_color_stop_rgba(1.0, r, g, b, AFTERGLOW_ALPHA);
-    cr.save().ok();
-    cr.set_operator(gtk4::cairo::Operator::Over);
-    if cr.set_source(&gradient).is_ok() {
-        cr.rectangle(rect.x, rect.y, rect.width, rect.height);
-        let _ = cr.fill();
-    }
-    cr.restore().ok();
 }
 
 pub(super) fn draw_playhead(
@@ -164,48 +122,37 @@ mod tests {
         assert_eq!(layers.map(|layer| layer.alpha), [0.35, 0.18, 0.08]);
     }
 
+    /// The afterglow is gone, and this is the regression that keeps it gone:
+    /// it existed to mark a boundary that was a colour change. With both sides
+    /// carrying the same colour it marked nothing and only made the played
+    /// fill restless, so no decoration may trail the playhead again.
     #[test]
-    fn afterglow_trails_left_of_the_playhead_and_clips_at_zero() {
-        let ordinary = afterglow_rect(40.0, 7.0, 26.0, false, true).unwrap();
-        assert_eq!((ordinary.x, ordinary.width), (26.0, 14.0));
-        assert_eq!((ordinary.y, ordinary.height), (7.0, 26.0));
-        assert!(ordinary.x + ordinary.width <= 40.0);
-
-        let clipped = afterglow_rect(6.0, 7.0, 26.0, false, true).unwrap();
-        assert_eq!((clipped.x, clipped.width), (0.0, 6.0));
-        assert!(afterglow_rect(0.0, 7.0, 26.0, false, true).is_none());
-        assert!(afterglow_rect(40.0, 7.0, 26.0, true, true).is_none());
-        assert!(afterglow_rect(40.0, 7.0, 26.0, false, false).is_none());
+    fn nothing_trails_the_played_side_of_the_playhead() {
+        let source = include_str!("waveform_playhead.rs");
+        assert!(!source.contains(&["AFTER", "GLOW_WIDTH"].concat()));
+        assert!(!source.contains(&["fn after", "glow_rect"].concat()));
+        let render = include_str!("waveform_seek_render.rs");
+        assert!(!render.contains(&["draw_after", "glow"].concat()));
     }
 
     #[test]
     fn decorations_respect_animation_drag_and_mini_player_state() {
+        // The glow survives a drag: it is the playhead's own, and the playhead
+        // is exactly what the user is holding on to.
         assert_eq!(
             decoration_visibility(false, false, true, 1.0, 1.0),
-            DecorationVisibility {
-                glow: true,
-                afterglow: true,
-            }
+            DecorationVisibility { glow: true }
         );
         assert_eq!(
             decoration_visibility(false, true, true, 1.0, 1.0),
-            DecorationVisibility {
-                glow: true,
-                afterglow: false,
-            }
+            DecorationVisibility { glow: true }
         );
         for visibility in [
             decoration_visibility(false, false, false, 1.0, 1.0),
             decoration_visibility(true, false, true, 1.0, 1.0),
             decoration_visibility(false, false, true, 0.5, 1.0),
         ] {
-            assert_eq!(
-                visibility,
-                DecorationVisibility {
-                    glow: false,
-                    afterglow: false,
-                }
-            );
+            assert_eq!(visibility, DecorationVisibility { glow: false });
         }
     }
 }

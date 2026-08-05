@@ -88,15 +88,17 @@ pub(super) fn draw(
         );
     }
 
+    draw_section_marks(cr, w, h, state);
+
     let animations_enabled = motion::animations_enabled();
-    let head_colour = if state.raw_centroid.is_empty() {
+    let head_colour = if state.colour_curve.is_empty() {
         (r, g, b)
     } else if !animations_enabled {
-        spectral_colour(centroid_at(&state.raw_centroid, state.fraction))
+        spectral_colour(centroid_at(&state.colour_curve, state.fraction))
     } else {
         state
             .head_colour
-            .unwrap_or_else(|| spectral_colour(centroid_at(&state.raw_centroid, state.fraction)))
+            .unwrap_or_else(|| spectral_colour(centroid_at(&state.colour_curve, state.fraction)))
     };
     let top = (h - state.max_bar_height) / 2.0;
     let decorations = crate::ui::player_bar::waveform_playhead::decoration_visibility(
@@ -106,17 +108,6 @@ pub(super) fn draw(
         state.build_progress,
         state.crossfade_progress,
     );
-    if decorations.afterglow {
-        crate::ui::player_bar::waveform_playhead::draw_afterglow(
-            cr,
-            playhead_x,
-            top,
-            state.max_bar_height,
-            head_colour,
-            state.drag_fraction.is_some(),
-            animations_enabled,
-        );
-    }
     crate::ui::player_bar::waveform_playhead::draw_playhead(
         cr,
         playhead_x,
@@ -134,8 +125,28 @@ pub(super) fn draw(
     state.last_drawn_colour = Some(head_colour);
     state.last_drawn_hover_fraction = state.hover_fraction;
     state.last_drawn_drag_fraction = state.drag_fraction;
-    state.last_drawn_pressure = state.bass_pressure;
-    state.last_drawn_swell = state.bass_swell;
+}
+
+/// Hairlines where the music changes — the single-colour bar's replacement for
+/// the structure the spectral fill shows as colour. Drawn over the bars and
+/// under the playhead: they mark positions, they do not compete with it.
+pub(super) fn draw_section_marks(cr: &gtk4::cairo::Context, w: f64, h: f64, state: &State) {
+    if state.section_marks.is_empty() {
+        return;
+    }
+    cr.save().ok();
+    cr.set_source_rgba(1.0, 1.0, 1.0, SECTION_MARK_ALPHA);
+    for mark in &state.section_marks {
+        let x = (mark * w).clamp(0.0, (w - SECTION_MARK_WIDTH).max(0.0));
+        cr.rectangle(
+            x,
+            (h - state.max_bar_height) / 2.0,
+            SECTION_MARK_WIDTH,
+            state.max_bar_height,
+        );
+    }
+    let _ = cr.fill();
+    cr.restore().ok();
 }
 
 #[derive(Clone, Copy)]
@@ -146,32 +157,40 @@ struct BarDrawStyle<'a> {
     opacity: f64,
 }
 
-const PLAYED_MIN_ALPHA: f64 = 0.55;
-
-/// The colour term of a played bar: a floor plus what the music adds.
-///
-/// The floor is not tuning. The played/unplayed boundary is the seek bar's
-/// primary information, and a boundary that dims with a quiet passage makes
-/// the position unreadable exactly when the listener looks for it.
-const PLAYED_LIGHT_FLOOR: f64 = 0.74;
-const PLAYED_LIGHT_PER_PRESSURE: f64 = 0.16;
-const PLAYED_LIGHT_PER_SWELL: f64 = 0.10;
-
-pub(super) fn played_light(pressure: f64, swell: f64) -> f64 {
-    PLAYED_LIGHT_FLOOR
-        + PLAYED_LIGHT_PER_PRESSURE * pressure.clamp(0.0, 1.0)
-        + PLAYED_LIGHT_PER_SWELL * swell.clamp(0.0, 1.0)
+/// Where a bar sits relative to the playhead.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum BarSide {
+    Played,
+    /// Not played yet, but between the playhead and the hovered position.
+    HoverPreview,
+    /// Remote media that has arrived but has not been reached yet.
+    Buffered,
+    Coming,
 }
 
-/// Brightness of an already-played bar: dim at the start of the track, full at
-/// the playhead. Purely positional, so it holds still within a frame.
-pub(super) fn played_alpha(index: usize, count: usize, fraction: f64) -> f64 {
-    if count == 0 {
-        return 1.0;
+/// The colour and alpha one bar is filled with.
+///
+/// In the frequency colouring the played and the coming side carry the *same*
+/// colour and differ only in opacity: progress is a step in opacity, not a
+/// change of colour, so the colour survives on the side it is actually needed —
+/// ahead of the playhead, where the build-up has yet to be heard. In the
+/// single-colour bar the coming side is its own opaque grey.
+pub(super) fn bar_fill(
+    colouring: SeekColouring,
+    side: BarSide,
+    spectral: (f64, f64, f64),
+    accent: (f64, f64, f64),
+) -> ((f64, f64, f64), f64) {
+    match (colouring, side) {
+        (SeekColouring::Frequency, BarSide::Played) => (spectral, 1.0),
+        (SeekColouring::Frequency, BarSide::HoverPreview) => (spectral, HOVER_PREVIEW_ALPHA),
+        (SeekColouring::Frequency, BarSide::Buffered) => (spectral, BUFFERED_ALPHA),
+        (SeekColouring::Frequency, BarSide::Coming) => (spectral, UNPLAYED_ALPHA),
+        (SeekColouring::Solid, BarSide::Played) => (accent, 1.0),
+        (SeekColouring::Solid, BarSide::HoverPreview) => (SOLID_HOVER_PREVIEW, 1.0),
+        (SeekColouring::Solid, BarSide::Buffered) => (accent, BUFFERED_ALPHA),
+        (SeekColouring::Solid, BarSide::Coming) => (SOLID_UNPLAYED, 1.0),
     }
-    let head = fraction * count as f64;
-    let distance = ((head - index as f64) / count as f64).clamp(0.0, 1.0);
-    PLAYED_MIN_ALPHA + (1.0 - PLAYED_MIN_ALPHA) * (1.0 - distance)
 }
 
 fn draw_bars(
@@ -256,21 +275,18 @@ fn draw_bars(
         });
         if is_ghost {
             cr.set_source_rgba(accent.0, accent.1, accent.2, GHOST_ALPHA * style.opacity);
-        } else if played {
-            cr.set_source_rgba(
-                r,
-                g,
-                b,
-                style.opacity
-                    * played_light(state.bass_pressure, state.bass_swell)
-                    * played_alpha(index, count, state.fraction),
-            );
-        } else if is_hover_preview {
-            cr.set_source_rgba(1.0, 1.0, 1.0, HOVER_PREVIEW_ALPHA * style.opacity);
-        } else if buffered {
-            cr.set_source_rgba(accent.0, accent.1, accent.2, BUFFERED_ALPHA * style.opacity);
         } else {
-            cr.set_source_rgba(1.0, 1.0, 1.0, UNPLAYED_ALPHA * style.opacity);
+            let side = if played {
+                BarSide::Played
+            } else if is_hover_preview {
+                BarSide::HoverPreview
+            } else if buffered {
+                BarSide::Buffered
+            } else {
+                BarSide::Coming
+            };
+            let (fill, alpha) = bar_fill(state.colouring, side, (r, g, b), accent);
+            cr.set_source_rgba(fill.0, fill.1, fill.2, alpha * style.opacity);
         }
         rounded_bar(cr, x, y, bar_w, bar_h, bar_radius);
         let _ = cr.fill();
