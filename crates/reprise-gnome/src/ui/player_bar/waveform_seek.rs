@@ -22,7 +22,7 @@ use super::waveform_primitives::{
 };
 use super::waveform_shape::{shape_display_peaks, DisplayBar, SILENCE_DOT_HEIGHT};
 use crate::ui::motion;
-use crate::ui::style::cover_accent::scale_chroma;
+use crate::ui::style::color_math::scale_chroma;
 use reprise_core::format::format_duration;
 
 /// Shared, cloneable slot for the optional seek handler (cloned out before it
@@ -430,7 +430,7 @@ impl WaveformSeek {
     }
 
     /// Animates the local waveform fill toward the paused or playing chroma.
-    /// This never mutates the application-wide cover-accent provider.
+    /// This never mutates the application-wide effective accent.
     pub(in crate::ui) fn set_paused(&self, paused: bool) {
         let target = if paused { 1.0 } else { 0.0 };
         if self.state.borrow().desaturation_target == target {

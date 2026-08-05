@@ -203,7 +203,7 @@ Erzeugt 2026-08-01 aus vier parallelen Durchgängen über `docs/ux-rules.md`.
 | MOT-2 | F–R | `[surface:all]` | Prinzip „User-Aktion animiert, Hintergrund schaltet hart" ist reine P-4-Verhaltensregel; die genannte „process card" ist nur ein GTK-Beispiel, keine Voraussetzung |
 | MOT-3 | F–R | `[surface:gtk]` | `adw::OverlaySplitView`/StatusPage explizit benannt — codebase-interne Widget-Symmetrie, keine übertragbare Aussage |
 | MOT-4 | F–R | `[surface:gtk]` | (replaced) Podcasts⇄Music-Beispiel (ausgeschlossen) + „200-item window" GTK-Virtualisierung |
-| MOT-5 | F–R | `[surface:gtk]` | waveform-draw-time-Desaturierung, `cover_accent`-Pipeline, EQ-Indikatoren sind Implementierungsdetails; Intent „Player-Statuswechsel animiert weich statt hart" wäre für Mobile Now-Playing sinnvoll |
+| MOT-5 | F–R | `[surface:gtk]` | Waveform draw-time desaturation, color math, and EQ indicators are implementation details; the intent that player-state changes animate smoothly rather than switching abruptly would transfer to Mobile Now Playing. |
 | MOT-6 | F–R | `[surface:all]` | Prinzip „Modell ändert sich bei Frame 0, Animation blockiert nie, laufende Animation ist jederzeit sicher unterbrechbar" ist plattformunabhängig zentral; `AdwAnimation::skip()` ist nur die GTK-Mechanik dafür |
 | MOT-7 | F–R | `[surface:gtk]` | `gtk-enable-animations=false` ist ein GNOME-Setting; das Prinzip „OS-Reduced-Motion zentral statt an 30 Stellen respektieren" müsste pro Plattform neu verdrahtet werden (prefers-reduced-motion / Android Animator-Scale) |
 | MOT-8 | F–R | `[surface:gtk]` | windowed-model/Podcasts-YouTube-Beispiel GTK-spezifisch; Intent „Listen faden nicht zeilenweise ein" wäre für virtualisierte Listen auf jeder Fläche sinnvoll |

@@ -5,7 +5,6 @@
 //! `artist_news::{query_releases, StoredRelease, LibraryPresence, ...}`.
 
 use std::cmp::Ordering;
-use std::path::PathBuf;
 
 use chrono::NaiveDate;
 use rusqlite::Connection;
@@ -37,7 +36,6 @@ pub struct StoredRelease {
     pub fetched_at: i64,
     pub seen_at: Option<i64>,
     pub hidden: bool,
-    pub fallback_accent: String,
     pub presence: LibraryPresence,
     pub announce_url: Option<String>,
     pub track_count: Option<i64>,
@@ -165,7 +163,7 @@ pub(crate) fn query_releases_in(
 ) -> Result<Vec<StoredRelease>, rusqlite::Error> {
     let mut statement = conn.prepare(
         "SELECT release_group_mbid, artist_name, artist_mbid, title, release_type,
-                first_release_date, fetched_at, seen_at, hidden, fallback_accent,
+                first_release_date, fetched_at, seen_at, hidden,
                 announce_url, track_count
          FROM new_releases
          WHERE ?1 OR hidden = 0",
@@ -182,9 +180,8 @@ pub(crate) fn query_releases_in(
                 fetched_at: row.get(6)?,
                 seen_at: row.get(7)?,
                 hidden: row.get::<_, i64>(8)? != 0,
-                fallback_accent: row.get(9)?,
-                announce_url: row.get(10)?,
-                track_count: row.get(11)?,
+                announce_url: row.get(9)?,
+                track_count: row.get(10)?,
                 local_track_count: 0,
                 presence: LibraryPresence::Absent,
             })
@@ -376,27 +373,6 @@ pub fn query_artist_news_by_name(
     };
     let artist_mbid = row.get::<_, String>(0)?;
     query_artist_news_in(conn, &artist_mbid, today)
-}
-
-pub fn most_played_album_track_path(
-    db: &crate::db::Db,
-    artist: &str,
-) -> Result<Option<PathBuf>, rusqlite::Error> {
-    let conn = db.conn();
-    let mut statement = conn.prepare(
-        "SELECT MIN(path), SUM(play_count) AS album_plays
-         FROM tracks
-         WHERE lower(trim(artist)) = lower(trim(?1))
-           AND removed_at IS NULL AND missing_since IS NULL AND trim(album) <> ''
-         GROUP BY lower(trim(album))
-         ORDER BY album_plays DESC, lower(trim(album)) ASC
-         LIMIT 1",
-    )?;
-    let mut rows = statement.query([artist])?;
-    let Some(row) = rows.next()? else {
-        return Ok(None);
-    };
-    Ok(Some(PathBuf::from(row.get::<_, String>(0)?)))
 }
 
 fn compare_stored_releases(

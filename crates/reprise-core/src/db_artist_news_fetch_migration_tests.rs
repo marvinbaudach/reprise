@@ -16,15 +16,15 @@ fn v30_creates_ledger_and_backfills_from_new_releases() {
     crate::db::migrate_connection(&conn).unwrap();
     conn.execute(
         "INSERT INTO new_releases (release_group_mbid, artist_name, artist_mbid, title, \
-         release_type, first_release_date, fetched_at, fallback_accent, first_seen) \
-         VALUES ('rg-1', ' Pink Floyd ', 'mbid-1', 'A', 'Album', '2026-07-01', 500, '#3584E4', 500)",
+         release_type, first_release_date, fetched_at, first_seen) \
+         VALUES ('rg-1', ' Pink Floyd ', 'mbid-1', 'A', 'Album', '2026-07-01', 500, 500)",
         [],
     )
     .unwrap();
     conn.execute(
         "INSERT INTO new_releases (release_group_mbid, artist_name, artist_mbid, title, \
-         release_type, first_release_date, fetched_at, fallback_accent, first_seen) \
-         VALUES ('rg-2', 'PINK FLOYD', 'mbid-1', 'B', 'Album', '2026-07-02', 900, '#3584E4', 900)",
+         release_type, first_release_date, fetched_at, first_seen) \
+         VALUES ('rg-2', 'PINK FLOYD', 'mbid-1', 'B', 'Album', '2026-07-02', 900, 900)",
         [],
     )
     .unwrap();

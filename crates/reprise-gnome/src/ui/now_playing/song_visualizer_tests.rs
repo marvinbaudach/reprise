@@ -9,6 +9,13 @@ fn ac_23_visual_chrome_is_a_bars_only_canvas() {
 }
 
 #[test]
+fn visualizer_has_no_cover_color_input() {
+    let visualizer = include_str!("song_visualizer.rs");
+    assert!(!visualizer.contains(&["set_", "cover"].concat()));
+    assert!(!visualizer.contains(&["downscale_cover", "_rgba"].concat()));
+}
+
+#[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn ac_23_visual_widget_exposes_only_a_labeled_bars_canvas() {
     gtk4::init().unwrap();

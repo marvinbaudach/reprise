@@ -62,7 +62,6 @@ pub struct ReleaseHistoryRecord {
     pub fetched_at: i64,
     pub seen_at: Option<i64>,
     pub hidden: bool,
-    pub fallback_accent: String,
     pub first_seen: Option<i64>,
     pub hidden_at: Option<i64>,
     pub announce_url: Option<String>,
@@ -150,7 +149,7 @@ fn query_complete_history_in(
     let mut statement = conn.prepare(
         "SELECT release_group_mbid, artist_name, artist_mbid, title,
                 release_type, first_release_date, fetched_at, seen_at, hidden,
-                fallback_accent, first_seen, hidden_at, announce_url,
+                first_seen, hidden_at, announce_url,
                 track_count
          FROM new_releases",
     )?;
@@ -166,11 +165,10 @@ fn query_complete_history_in(
                 fetched_at: row.get(6)?,
                 seen_at: row.get(7)?,
                 hidden: row.get::<_, i64>(8)? != 0,
-                fallback_accent: row.get(9)?,
-                first_seen: row.get(10)?,
-                hidden_at: row.get(11)?,
-                announce_url: row.get(12)?,
-                track_count: row.get(13)?,
+                first_seen: row.get(9)?,
+                hidden_at: row.get(10)?,
+                announce_url: row.get(11)?,
+                track_count: row.get(12)?,
                 local_track_count: 0,
                 presence: crate::artist_news::LibraryPresence::Absent,
             })
@@ -332,8 +330,8 @@ mod tests {
             .execute(
                 "INSERT INTO new_releases (
                release_group_mbid, artist_name, artist_mbid, title, release_type,
-               first_release_date, fetched_at, fallback_accent, first_seen
-             ) VALUES (?1, 'Artist', 'artist-mbid', 'Title', ?2, ?3, ?4, '#123456', ?4)",
+               first_release_date, fetched_at, first_seen
+             ) VALUES (?1, 'Artist', 'artist-mbid', 'Title', ?2, ?3, ?4, ?4)",
                 rusqlite::params![mbid, release_type, first_release_date, first_seen],
             )
             .unwrap();

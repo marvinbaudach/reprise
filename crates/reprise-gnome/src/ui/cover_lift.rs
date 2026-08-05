@@ -98,7 +98,7 @@ pub(in crate::ui) fn css() -> String {
          .{PANEL_FAR_CLASS} {{ box-shadow: {}; }}\n\
          .{BAR_NEAR_CLASS} {{ box-shadow: {}; }}\n\
          .{BAR_FAR_CLASS} {{ box-shadow: {}; }}\n\
-         .{EDGE_CLASS} {{ border: 1px solid @reprise_cover_light; \
+         .{EDGE_CLASS} {{ border: 1px solid @accent_color; \
                           border-radius: {edge_radius}px; }}",
         lift_shadow(f64::from(PANEL_WIDTH), 0.0),
         lift_shadow(f64::from(PANEL_WIDTH), 1.0),
@@ -276,9 +276,9 @@ mod tests {
     }
 
     #[test]
-    fn ac_24_the_edge_light_is_one_static_pixel_in_the_cover_accent() {
+    fn ac_24_the_edge_light_is_one_static_pixel_in_the_accent_color() {
         let css = css();
-        assert!(css.contains("border: 1px solid @reprise_cover_light"));
+        assert!(css.contains("border: 1px solid @accent_color"));
         // The cover's radius plus the one pixel the seam sits outside it.
         assert!(css.contains("border-radius: 13px"));
         // Only the alpha moves. A seam whose width or radius changed per frame

@@ -994,22 +994,34 @@ msgid "Quit"
 msgstr "退出"
 
 #: crates/reprise-gnome/src/ui/strings_app_shell.rs:40
-msgid "Color Scheme"
-msgstr "配色"
+msgid "Accent Color"
+msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_app_shell.rs:41
-msgid "Choose light, dark, or follow system preference"
+msgid "Choose the Reprise accent or follow the system"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_app_shell.rs:42
+msgid "App Accent"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:43
+msgid "Color Scheme"
+msgstr "配色"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:44
+msgid "Choose light, dark, or follow system preference"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:45
 msgid "Light"
 msgstr "轻"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:43
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:46
 msgid "Dark"
 msgstr "暗色"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:44
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:47
 msgid "System"
 msgstr "系统"
 

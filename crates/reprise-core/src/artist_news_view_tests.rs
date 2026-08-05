@@ -243,10 +243,10 @@ fn nr_18_sidebar_badge_count_matches_visible_gap_rows() {
         .execute(
             "INSERT INTO new_releases (
            release_group_mbid, artist_name, artist_mbid, title, release_type,
-           first_release_date, fetched_at, fallback_accent, first_seen
+           first_release_date, fetched_at, first_seen
          ) VALUES
-           ('one', 'Artist', 'artist-id', 'One', 'Album', '2026-08-01', 1, '#123456', 1),
-           ('two', 'Artist', 'artist-id', 'Two', 'Single', '2026-08-02', 1, '#123456', 1)",
+           ('one', 'Artist', 'artist-id', 'One', 'Album', '2026-08-01', 1, 1),
+           ('two', 'Artist', 'artist-id', 'Two', 'Single', '2026-08-02', 1, 1)",
             [],
         )
         .unwrap();
@@ -277,12 +277,12 @@ fn nr_16_releases_view_is_limited_to_current_library_artists() {
         .execute(
             "INSERT INTO new_releases (
            release_group_mbid, artist_name, artist_mbid, title, release_type,
-           first_release_date, fetched_at, fallback_accent, first_seen
+           first_release_date, fetched_at, first_seen
          ) VALUES
            ('local', 'Library Artist', 'artist-id', 'Missing Album', 'Album',
-            '2020-01-01', 1, '#123456', 1),
+            '2020-01-01', 1, 1),
            ('foreign', 'Former Artist', 'former-id', 'Foreign Album', 'Album',
-            '2020-01-01', 1, '#123456', 1)",
+            '2020-01-01', 1, 1)",
             [],
         )
         .unwrap();

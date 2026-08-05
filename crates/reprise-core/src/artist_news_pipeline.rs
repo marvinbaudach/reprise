@@ -17,7 +17,6 @@ use crate::musicbrainz::{self, FetchError};
 use crate::source_error::{SourceError, SourceErrorKind};
 
 const FETCH_TTL_SECONDS: i64 = 7 * 24 * 60 * 60;
-const DEFAULT_FALLBACK_ACCENT: &str = "#3584E4";
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RefreshReport {
@@ -38,9 +37,8 @@ pub struct RefreshProgress {
     pub total: usize,
 }
 
-pub(crate) struct RefreshHooks<'a, F, A, P, C> {
+pub(crate) struct RefreshHooks<'a, F, P, C> {
     pub fetch: &'a mut F,
-    pub fallback_accent: &'a mut A,
     pub on_progress: &'a mut P,
     pub completion_time: &'a mut C,
 }
@@ -87,29 +85,23 @@ impl NewsError {
     }
 }
 
-pub fn refresh<A>(
+pub fn refresh(
     db: &crate::db::Db,
     today: NaiveDate,
     scope: FetchScope,
     force: bool,
-    fallback_accent: A,
-) -> Result<RefreshReport, NewsError>
-where
-    A: FnMut(&crate::db::Db, &str) -> Option<String>,
-{
-    refresh_with_progress(db, today, scope, force, fallback_accent, |_| {})
+) -> Result<RefreshReport, NewsError> {
+    refresh_with_progress(db, today, scope, force, |_| {})
 }
 
-pub fn refresh_with_progress<A, P>(
+pub fn refresh_with_progress<P>(
     db: &crate::db::Db,
     today: NaiveDate,
     scope: FetchScope,
     force: bool,
-    mut fallback_accent: A,
     mut on_progress: P,
 ) -> Result<RefreshReport, NewsError>
 where
-    A: FnMut(&crate::db::Db, &str) -> Option<String>,
     P: FnMut(RefreshProgress),
 {
     let started_at = chrono::Utc::now().timestamp();
@@ -122,7 +114,6 @@ where
         force,
         &mut RefreshHooks {
             fetch: &mut musicbrainz::get,
-            fallback_accent: &mut fallback_accent,
             on_progress: &mut on_progress,
             completion_time: &mut completion_time,
         },
@@ -130,18 +121,16 @@ where
 }
 
 #[cfg(test)]
-pub(crate) fn refresh_with<F, A>(
+pub(crate) fn refresh_with<F>(
     db: &crate::db::Db,
     today: NaiveDate,
     now: i64,
     scope: FetchScope,
     force: bool,
     fetch: &mut F,
-    fallback_accent: &mut A,
 ) -> Result<RefreshReport, NewsError>
 where
     F: FnMut(&str) -> Result<String, FetchError>,
-    A: FnMut(&crate::db::Db, &str) -> Option<String>,
 {
     let mut on_progress = |_| {};
     let mut completion_time = || now;
@@ -153,24 +142,22 @@ where
         force,
         &mut RefreshHooks {
             fetch,
-            fallback_accent,
             on_progress: &mut on_progress,
             completion_time: &mut completion_time,
         },
     )
 }
 
-pub(crate) fn refresh_with_progress_at<F, A, P, C>(
+pub(crate) fn refresh_with_progress_at<F, P, C>(
     db: &crate::db::Db,
     today: NaiveDate,
     now: i64,
     scope: FetchScope,
     force: bool,
-    hooks: &mut RefreshHooks<'_, F, A, P, C>,
+    hooks: &mut RefreshHooks<'_, F, P, C>,
 ) -> Result<RefreshReport, NewsError>
 where
     F: FnMut(&str) -> Result<String, FetchError>,
-    A: FnMut(&crate::db::Db, &str) -> Option<String>,
     P: FnMut(RefreshProgress),
     C: FnMut() -> i64,
 {
@@ -260,13 +247,11 @@ where
                         break 'candidate;
                     }
                 };
-            let accent = normalize_fallback_accent((hooks.fallback_accent)(db, &candidate.name));
             sync_releases(
                 conn,
                 &candidate.name,
                 &mbid,
                 now,
-                &accent,
                 &discography.items,
                 &discography.excluded_release_group_mbids,
             )
@@ -484,7 +469,6 @@ fn sync_releases(
     artist: &str,
     artist_mbid: &str,
     fetched_at: i64,
-    fallback_accent: &str,
     items: &[AlbumNews],
     excluded_release_group_mbids: &[String],
 ) -> Result<(), rusqlite::Error> {
@@ -500,8 +484,8 @@ fn sync_releases(
         transaction.execute(
             "INSERT INTO new_releases (
                release_group_mbid, artist_name, artist_mbid, title, release_type,
-               first_release_date, fetched_at, fallback_accent, first_seen, announce_url
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?7, ?9)
+               first_release_date, fetched_at, first_seen, announce_url
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8)
              ON CONFLICT(release_group_mbid) DO UPDATE SET
                artist_name = excluded.artist_name,
                artist_mbid = excluded.artist_mbid,
@@ -518,25 +502,11 @@ fn sync_releases(
                 item.primary_type,
                 item.first_release_date,
                 fetched_at,
-                fallback_accent,
                 item.announce_url,
             ],
         )?;
     }
     transaction.commit()
-}
-
-fn normalize_fallback_accent(accent: Option<String>) -> String {
-    accent
-        .filter(|value| {
-            value.len() == 7
-                && value.starts_with('#')
-                && value[1..].bytes().all(|byte| byte.is_ascii_hexdigit())
-        })
-        .map_or_else(
-            || DEFAULT_FALLBACK_ACCENT.to_string(),
-            |value| value.to_ascii_uppercase(),
-        )
 }
 
 fn database_error(error: rusqlite::Error) -> NewsError {

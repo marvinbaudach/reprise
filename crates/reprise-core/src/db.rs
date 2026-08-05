@@ -23,7 +23,7 @@ pub enum DbError {
     SchemaNotReady { found: i64, supported: i64 },
 }
 
-pub const SUPPORTED_SCHEMA_VERSION: i64 = 55;
+pub const SUPPORTED_SCHEMA_VERSION: i64 = 56;
 
 /// Default SQLite `busy_timeout` (milliseconds) for every connection opened
 /// through [`Db`]: wait up to this long for a write lock instead of failing
@@ -360,8 +360,8 @@ ALTER TABLE tracks DROP COLUMN missing;
 /// lookup from a track that has not been resolved yet, so background fetches
 /// do not retry the same artist forever. Release rows carry both lifecycle
 /// clocks: `fetched_at` records cache age while nullable `seen_at` is the
-/// episode-style badge truth. The fallback accent is computed before insert,
-/// keeping rendering free of cover I/O.
+/// episode-style badge truth. The fallback accent is retired by v54
+/// (`db_new_releases_accent`); this shipped step keeps it, immutably.
 const SCHEMA_V12: &str = r#"
 ALTER TABLE tracks ADD COLUMN artist_mbid TEXT;
 ALTER TABLE tracks ADD COLUMN artist_mbid_negative INTEGER NOT NULL DEFAULT 0
@@ -735,6 +735,7 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
     crate::db_equalizer::migrate_v53(conn)?;
     crate::db_play_journal::migrate_v54(conn)?;
     crate::db_spectrogram::migrate_v55(conn)?;
+    crate::db_new_releases_accent::migrate_v56(conn)?;
     Ok(())
 }
 
