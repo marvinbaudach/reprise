@@ -301,6 +301,7 @@ fn compute_bar_count_uses_fixed_slots_and_caps_at_160() {
 fn ensure_resampled_clears_display_peaks_when_raw_empty() {
     let mut state = State {
         raw_peaks: Vec::new(),
+        raw_centroid: Vec::new(),
         display_peaks: vec![DisplayBar::Level(0.5)],
         shaped_centroid: Vec::new(),
         last_display_width: 100,
@@ -345,6 +346,7 @@ fn ensure_resampled_clears_display_peaks_when_raw_empty() {
 fn ensure_resampled_populates_on_width_change() {
     let mut state = State {
         raw_peaks: vec![128u8; 1000],
+        raw_centroid: Vec::new(),
         display_peaks: Vec::new(),
         shaped_centroid: Vec::new(),
         last_display_width: 0,

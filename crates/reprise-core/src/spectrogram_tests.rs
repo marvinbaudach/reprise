@@ -89,3 +89,71 @@ fn a_partial_final_interval_is_computed_not_mistaken_for_empty_audio() {
 
     assert_eq!(accumulator.finish().frame_count(), 1);
 }
+
+/// One frame whose energy sits in `band`, everything else silent.
+fn frame_at_band(band: usize) -> Vec<u8> {
+    let mut cells = vec![0u8; SPECTROGRAM_BAND_COUNT];
+    cells[band] = 220;
+    cells
+}
+
+#[test]
+fn the_colour_curve_travels_from_bass_to_treble_across_a_track() {
+    // Energy climbs from the lowest band to the highest over the track, so the
+    // curve has to run from one end of the axis to the other.
+    let cells: Vec<u8> = (0..SPECTROGRAM_BAND_COUNT)
+        .flat_map(frame_at_band)
+        .collect();
+    let spectrogram = TrackSpectrogram::from_cells(cells).unwrap();
+
+    let curve = spectrogram.centroid_curve(SPECTROGRAM_BAND_COUNT);
+
+    assert_eq!(curve.len(), SPECTROGRAM_BAND_COUNT);
+    assert!(
+        curve[0] < 24,
+        "the curve did not start at the bass end: {curve:?}"
+    );
+    assert!(
+        *curve.last().unwrap() > 231,
+        "the curve did not reach the treble end: {curve:?}"
+    );
+    assert!(
+        curve.windows(2).all(|pair| pair[0] <= pair[1]),
+        "a rising sweep produced a curve that falls: {curve:?}"
+    );
+}
+
+#[test]
+fn a_track_that_holds_one_band_does_not_flicker_across_the_axis() {
+    // Without the minimum span, a track with no spectral movement would have
+    // its own rounding noise stretched over the whole axis.
+    let cells: Vec<u8> = (0..40).flat_map(|_| frame_at_band(9)).collect();
+    let spectrogram = TrackSpectrogram::from_cells(cells).unwrap();
+
+    let curve = spectrogram.centroid_curve(20);
+
+    let spread = curve.iter().max().unwrap() - curve.iter().min().unwrap();
+    assert_eq!(spread, 0, "a held band moved on the axis: {curve:?}");
+}
+
+#[test]
+fn silence_carries_the_last_colour_rather_than_jumping() {
+    let mut cells: Vec<u8> = (0..4).flat_map(|_| frame_at_band(4)).collect();
+    cells.extend(std::iter::repeat_n(0u8, SPECTROGRAM_BAND_COUNT * 4));
+    cells.extend((0..4).flat_map(|_| frame_at_band(18)));
+    let spectrogram = TrackSpectrogram::from_cells(cells).unwrap();
+
+    let curve = spectrogram.centroid_curve(12);
+
+    // The silent middle repeats the colour that led into it; it never becomes
+    // a statement about frequency of its own.
+    assert_eq!(curve[4], curve[3]);
+    assert_eq!(curve[5], curve[3]);
+}
+
+#[test]
+fn an_empty_spectrogram_yields_no_curve() {
+    assert!(TrackSpectrogram::empty().centroid_curve(100).is_empty());
+    let spectrogram = TrackSpectrogram::from_cells(frame_at_band(3)).unwrap();
+    assert!(spectrogram.centroid_curve(0).is_empty());
+}

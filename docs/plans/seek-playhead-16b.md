@@ -74,67 +74,27 @@ playhead code that reacts to level is replaced, not supplemented.
 
 ---
 
-## Package A — Extract frequency position (`reprise-core`, `reprise-platform-linux`)
+## Package A — Derive the frequency position (`reprise-core`)
 
-### A1. `SpectralAccumulator` in `crates/reprise-core/src/waveform.rs`
+Reprise already computes and stores a spectrogram per track (24 logarithmic
+bands, 20 Hz–16 kHz, 20 frames/s, from 32 kHz PCM; see
+`docs/research/spectrogram-pipeline.md`). The colour curve is derived from it.
 
-Run it beside `WaveformAccumulator`, fed from the same PCM stream; there is no
-second decode pass.
+**This replaces the plan's original packages A and B**, which measured a second
+spectral centroid from an 8 kHz decode and stored it in a column of its own.
+That was written before the spectrogram pipeline landed on `dev`. Keeping both
+would mean two decodes, two backfills, two migrations and two answers to the
+same question — and the 8 kHz path stopped at 4 kHz, so cymbals and hi-hats,
+the very thing that makes a track sound bright, never reached the measurement.
 
-- Construct like the amplitude accumulator:
-  `new(expected_samples, buckets, sample_rate)`.
-- Use 256-sample frames (32 ms at 8 kHz), hop 128, Hann window, `realfft`.
-- Per frame, calculate spectral centroid `Σ(f_k · m_k) / Σ(m_k)` over
-  magnitudes `m_k`; frames without meaningful energy (sum below a threshold)
-  contribute nothing.
-- Assign each frame to a bucket by its centre-sample position using the same
-  bucket mapping as the amplitude accumulator and average it there weighted
-  by energy, so a quiet frame cannot colour the bucket.
-- `finish() -> Vec<u8>` returns `buckets` values, mapping centroid Hz through
-  decision 3's `log2` scale to `0..=255`.
-- Buckets without a valid frame inherit the last valid value; if none exists,
-  the entire vector is `128`. A colour jump at silence would claim knowledge
-  about nothing.
-- The accumulator must be independent of chunk size. GStreamer may split
-  buffers arbitrarily, so preserve frame tails between `push` calls.
-
-### A2. Trait conversion
-
-`WaveformBackend` now returns both curves:
-
-```rust
-pub struct WaveformAnalysis { pub peaks: Vec<u8>, pub centroid: Vec<u8> }
-
-fn extract_waveform(&self, path: &Path, buckets: usize) -> Result<WaveformAnalysis, WaveformError>;
-fn extract_waveform_cancellable(&self, path: &Path, buckets: usize, cancelled: &AtomicBool) -> Result<WaveformAnalysis, WaveformError>;
-```
-
-Remove `extract_peaks` / `extract_peaks_cancellable`; there is one real
-implementor plus test fakes. Update every call site. `peaks` and `centroid`
-always have the same length; record that as a `debug_assert`.
-
-### A3. GStreamer backend
-
-`push_sample` passes the same `&[f32]` slice to both accumulators. The sample
-rate already exists as `SAMPLE_RATE`. Cancellation, decode and empty-stream
-error paths remain unchanged.
-
-## Package B — Persist (`reprise-core/src/db.rs`)
-
-- Migration **v54**: `ALTER TABLE tracks ADD COLUMN waveform_centroid BLOB;`
-  and raise `SUPPORTED_SCHEMA_VERSION` to 54.
-- `set_waveform_analysis(db, track_id, peaks, centroid)` writes both columns in
-  one statement; remove `set_waveform_peaks`.
-- `get_waveform_analysis(db, track_id) -> Result<Option<StoredWaveform>, DbError>`
-  with `StoredWaveform { peaks: Vec<u8>, centroid: Option<Vec<u8>> }`. Treat a
-  centroid curve whose length differs from the peak curve as `None` instead of
-  panicking; foreign data is foreign data.
-- Extend `pending_waveform_tracks` to
-  `(waveform_peaks IS NULL OR waveform_centroid IS NULL)`, so background work
-  supplements frequency positions for already-analysed tracks. Do not add a
-  separate backfill pass or a startup-blocking migration step.
-- `now_playing_wiring.rs` loads both and passes them to the player bar and
-  compact player.
+- `TrackSpectrogram::centroid_curve(buckets)` in `crates/reprise-core/src/spectrogram.rs`:
+  each stored cell back to a linear amplitude, the energy-weighted mean of the
+  band centres in octaves per bucket, then the per-track percentile window from
+  decision 3. Silent buckets inherit the last valid colour.
+- `waveform_cache::centroid_for_playback` reads the stored spectrogram beside
+  the peaks. No new column, no new migration, no second decode.
+- A track without a stored spectrogram yields `None`, and the bar draws in the
+  plain accent exactly as it did before there was a spectral axis.
 
 ## Package C — Colour function (`crates/reprise-view/src/spectral_colour.rs`, new)
 

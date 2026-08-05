@@ -93,6 +93,7 @@ fn ensure_resampled(state: &mut State, width: i32) {
 
 struct State {
     raw_peaks: Vec<u8>,             // stored peaks from DB (1000 values, 0-255)
+    raw_centroid: Vec<u8>,          // matching spectral positions, or empty
     display_peaks: Vec<DisplayBar>, // shaped to current bar count
     shaped_centroid: Vec<f32>,      // spectral positions shaped to display bars
     last_display_width: i32,        // width used for last resample
@@ -231,6 +232,7 @@ impl WaveformSeek {
 
         let state = Rc::new(RefCell::new(State {
             raw_peaks: Vec::new(),
+            raw_centroid: Vec::new(),
             display_peaks: Vec::new(),
             shaped_centroid: Vec::new(),
             last_display_width: 0,
@@ -407,6 +409,14 @@ impl WaveformSeek {
     /// animation (gated on `gtk-enable-animations`). Use this whenever the
     /// track changes.
     pub(in crate::ui) fn set_peaks(&self, peaks: Vec<u8>) {
+        self.set_analysis(peaks, None);
+    }
+
+    /// Peaks plus the spectral colour curve derived from the track's stored
+    /// spectrogram. A curve whose length does not match the peaks is dropped
+    /// rather than trusted — the bar then draws in the plain accent, as it did
+    /// before there was a spectral axis at all.
+    pub(in crate::ui) fn set_analysis(&self, peaks: Vec<u8>, centroid: Option<Vec<u8>>) {
         // Peaks can arrive before the player bar is mapped, when the drawing
         // area has no frame clock yet. Monotonic time uses the same timescale
         // as `GdkFrameClock::frame_time`, so the first mapped frame can always
@@ -451,6 +461,9 @@ impl WaveformSeek {
                 s.build_start_us = 0;
             }
         }
+        s.raw_centroid = centroid
+            .filter(|curve| curve.len() == peaks.len())
+            .unwrap_or_default();
         s.raw_peaks = peaks;
         s.display_peaks.clear();
         s.shaped_centroid.clear();
