@@ -1,3 +1,4 @@
+mod grouping;
 mod local_rules;
 mod preferences;
 mod presentation;
@@ -11,6 +12,7 @@ mod write;
 mod write_recovery;
 mod write_types;
 
+pub use grouping::*;
 pub use preferences::*;
 pub use presentation::*;
 pub use remote::{RemoteEvidence, RemoteEvidenceSource, RemoteTrackMetadata};
@@ -19,6 +21,8 @@ pub use scan::LibraryDoctor;
 pub use types::*;
 pub use write_types::*;
 
+#[cfg(test)]
+mod grouping_tests;
 #[cfg(test)]
 mod remote_tests;
 #[cfg(test)]
