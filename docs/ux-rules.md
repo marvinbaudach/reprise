@@ -4438,7 +4438,7 @@ listening statistics.
   paths. If the binary is missing, the setting stays unchanged and
   the degradation is made visible on the YouTube toggle, which is
   active by default.
-- **POD-4** [active] [gtk] — Episodes start at the saved position;
+- **POD-4** [replaced by POD-24] [gtk] — Episodes start at the saved position;
   this is persisted throttled as well as on pause, stop, switch, and
   quit. After the end, the app offers the next unplayed episode of the
   same show by date via toast and a persistent player-bar button, but
@@ -4671,6 +4671,18 @@ listening statistics.
   original title remains unchanged — Reprise never invents a machine
   translation. Stored episode titles adopt an available localized title on the
   next source refresh.
+- **POD-24** [active] [core] [gtk] — Episodes start at the saved position; this is
+  persisted throttled as well as on pause, stop, switch, and quit. When a
+  directly started YouTube episode reaches its natural end and its frozen
+  POD-21 context has a next rendered episode, Reprise automatically starts that
+  exact no-wrap neighbour — the same target as the enabled Next transport.
+  RSS episodes and YouTube episodes without a next frozen neighbour keep the
+  manual next-unplayed offer preserved from POD-4; QUE-9 continues to own
+  automatic progress through explicitly queued episodes. Podcast and YouTube sessions
+  produce neither scrobbles nor `listen_events` nor play counts. Covered by
+  `pod_24_direct_youtube_completion_uses_the_frozen_next_episode`,
+  `pod_24_finish_offers_next_unplayed_of_show`, and
+  `pod_24_external_session_never_scrobbles`.
 - **RAD-1** [active] [gtk] — Only the currently connected station is
   accented in the table; its state icon, name, now-playing, and row
   tint change together. All others, as well as a presented but
