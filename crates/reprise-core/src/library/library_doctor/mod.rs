@@ -1,3 +1,4 @@
+mod cleanup;
 mod grouping;
 mod local_rules;
 mod preferences;
@@ -21,6 +22,8 @@ pub use scan::LibraryDoctor;
 pub use types::*;
 pub use write_types::*;
 
+#[cfg(test)]
+mod cleanup_tests;
 #[cfg(test)]
 mod grouping_tests;
 #[cfg(test)]

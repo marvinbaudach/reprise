@@ -193,7 +193,7 @@ fn doc_undo_restores_previous_values() {
         .unwrap()
         .unwrap();
 
-    assert_eq!(revert.source_job_id, Some(apply.job_id));
+    assert_eq!(revert.reports[0].source_job_id, Some(apply.job_id));
     assert_eq!(read_editable_tags(&path).unwrap().artist, " Artist ");
     assert!(LibraryDoctor::new(&conn).last_cleanup().unwrap().is_none());
 }
@@ -293,8 +293,8 @@ fn doc_5b_cancel_stops_between_files_and_preserves_completed_write() {
             .last_cleanup()
             .unwrap()
             .unwrap()
-            .job_id,
-        report.job_id
+            .job_ids,
+        vec![report.job_id]
     );
 }
 
@@ -330,8 +330,8 @@ fn tag_editor_job_never_replaces_doctor_cleanup_pointer() {
             .last_cleanup()
             .unwrap()
             .unwrap()
-            .job_id,
-        apply.job_id
+            .job_ids,
+        vec![apply.job_id]
     );
 }
 
@@ -358,8 +358,8 @@ fn partial_revert_keeps_pointer_and_full_revert_reveals_previous_cleanup() {
             .last_cleanup()
             .unwrap()
             .unwrap()
-            .job_id,
-        second_apply.job_id
+            .job_ids,
+        vec![second_apply.job_id]
     );
 
     crate::library::tag_edit::apply_patch_to_file(
@@ -380,8 +380,8 @@ fn partial_revert_keeps_pointer_and_full_revert_reveals_previous_cleanup() {
             .last_cleanup()
             .unwrap()
             .unwrap()
-            .job_id,
-        second_apply.job_id
+            .job_ids,
+        vec![second_apply.job_id]
     );
 
     crate::library::tag_edit::apply_patch_to_file(
@@ -396,14 +396,14 @@ fn partial_revert_keeps_pointer_and_full_revert_reveals_previous_cleanup() {
         .revert_last_cleanup(continue_job)
         .unwrap()
         .unwrap();
-    assert_eq!(complete.updated_tracks, 1);
+    assert_eq!(complete.reverted_tracks, 1);
     assert_eq!(
         LibraryDoctor::new(&conn)
             .last_cleanup()
             .unwrap()
             .unwrap()
-            .job_id,
-        first_apply.job_id
+            .job_ids,
+        vec![first_apply.job_id]
     );
 }
 
@@ -432,8 +432,16 @@ fn doc_5b_revert_cancel_preserves_completed_and_unstarted_rows() {
         .unwrap()
         .unwrap();
 
-    assert_eq!(revert.updated_tracks, 1);
-    assert_eq!(revert.cancelled_tracks, 1);
+    assert_eq!(revert.reverted_tracks, 1);
+    assert_eq!(
+        revert
+            .reports
+            .iter()
+            .map(|report| report.cancelled_tracks)
+            .sum::<usize>(),
+        1
+    );
+    assert!(revert.cancelled);
     assert_eq!(read_editable_tags(&paths[0]).unwrap().artist, " One ");
     assert_eq!(read_editable_tags(&paths[1]).unwrap().artist, "Two");
     assert_eq!(
@@ -441,15 +449,15 @@ fn doc_5b_revert_cancel_preserves_completed_and_unstarted_rows() {
             .last_cleanup()
             .unwrap()
             .unwrap()
-            .job_id,
-        apply.job_id
+            .job_ids,
+        vec![apply.job_id]
     );
 
     let final_revert = LibraryDoctor::new(&conn)
         .revert_last_cleanup(continue_job)
         .unwrap()
         .unwrap();
-    assert_eq!(final_revert.updated_tracks, 1);
+    assert_eq!(final_revert.reverted_tracks, 1);
     assert_eq!(read_editable_tags(&paths[1]).unwrap().artist, " Two ");
     assert!(LibraryDoctor::new(&conn).last_cleanup().unwrap().is_none());
 }
@@ -482,8 +490,8 @@ fn doc_5b_post_write_failure_reports_file_truth_and_remains_revertible() {
             .last_cleanup()
             .unwrap()
             .unwrap()
-            .job_id,
-        report.job_id
+            .job_ids,
+        vec![report.job_id]
     );
 }
 
@@ -510,9 +518,9 @@ fn doc_5b_post_write_revert_failure_consumes_the_fields_that_were_restored() {
         .unwrap();
 
     assert_eq!(read_editable_tags(&path).unwrap().artist, " Artist ");
-    assert_eq!(report.updated_tracks, 1);
+    assert_eq!(report.reverted_tracks, 1);
     assert_eq!(report.failed_tracks, 1);
-    assert!(report.rows[0].file_written);
+    assert!(report.reports[0].rows[0].file_written);
     assert!(LibraryDoctor::new(&conn).last_cleanup().unwrap().is_none());
 }
 
@@ -657,8 +665,8 @@ fn doctor_cleanup_pointer_survives_database_restart() {
             .last_cleanup()
             .unwrap()
             .unwrap()
-            .job_id,
-        job_id
+            .job_ids,
+        vec![job_id]
     );
 }
 

@@ -3388,6 +3388,43 @@ means deterministic and high-confidence, never „without review".
   `doc_8b_scan_completion_enqueues_the_auto_applied_job_before_the_summary`,
   `doc_8b_a_scan_with_no_auto_rows_creates_no_job`.
 
+- **DOC-9b** [planned] [gtk] — **The review list is grouped by album.**
+  Rows are grouped by album in scope order under one header per album. A
+  change that applies identically to every track of an album collapses into
+  one row reading "All N tracks"; a partial album does not collapse. Tracks
+  without an album form one trailing group. Every count reports tag changes
+  that will be written, not display rows. Stage 1 provides only the pure core
+  projection; the GTK behavior and its complete test list activate this rule
+  in Stage 2. *Core projection tests:*
+  `doc_9b_rows_group_by_album_in_scope_order`,
+  `doc_9b_album_level_change_collapses_into_one_row_over_all_tracks`,
+  `doc_9b_tracks_without_an_album_form_one_trailing_group`,
+  `doc_9b_group_counts_report_written_changes_not_display_rows`.
+
+- **DOC-10a** [active] [core] — **Undo is one bracket per scan.** The job
+  applied without asking and the reviewed job of the same scan revert together
+  as one operation with one progress count. A failing field does not stop the
+  remaining fields or the remaining job; a cancel does stop the next job. A
+  partially reverted cleanup stays offered, so a second Undo retries exactly
+  the remainder, and a fully reverted scan is no longer offered. *Tests:*
+  `doc_10a_undo_reverts_the_quiet_and_the_reviewed_job_of_one_scan`,
+  `doc_10a_undo_works_when_only_the_quiet_job_exists`,
+  `doc_10a_partial_revert_leaves_the_cleanup_available_for_a_second_attempt`,
+  `doc_10a_cancel_between_jobs_does_not_start_the_remaining_job`,
+  `doc_10a_a_fully_reverted_scan_is_no_longer_offered`.
+
+- **DOC-10b** [active] [core] — **One tag-write slot, enforced in the
+  database.** A tag-write job of any kind may only be created while no other
+  job is prepared or running; the check and the insert share one transaction.
+  The refusal is caller-visible on both surfaces — a toast in the app, a
+  retryable tool error for an agent — and never an internal error. A job left
+  behind by a crashed process is finalized by the existing recovery path and
+  holds no slot. *Tests:*
+  `doc_10b_a_second_tag_write_job_is_refused_while_one_is_prepared_or_running`,
+  `doc_10b_a_finalized_interrupted_job_does_not_hold_the_lock`,
+  `doc_10b_tag_editor_and_doctor_share_one_lock`,
+  `doc_10b_gui_sees_the_same_refusal_while_an_mcp_job_runs`.
+
 - **DOC-6c** [planned] [manual] — **The visible sign-off matches
   frames 26a, 26b, and 27.** On a real GNOME display, wide and narrow
   review geometry, row virtualization while scrolling, strikethrough and

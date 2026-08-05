@@ -51,10 +51,20 @@ pub struct DoctorWriteReport {
     pub rows: Vec<DoctorWriteRow>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DoctorCleanup {
-    pub job_id: i64,
     pub scan_id: i64,
+    pub job_ids: Vec<i64>,
     pub created_at: i64,
     pub track_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DoctorCleanupReport {
+    pub reports: Vec<DoctorWriteReport>,
+    pub reverted_tracks: usize,
+    pub failed_tracks: usize,
+    pub conflict_tracks: usize,
+    pub unavailable_tracks: usize,
+    pub cancelled: bool,
 }

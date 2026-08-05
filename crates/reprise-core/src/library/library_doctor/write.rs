@@ -2,10 +2,10 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rusqlite::{params, Connection, OptionalExtension, Transaction};
+use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 
 use super::{
-    DoctorApplyChange, DoctorApplyPlan, DoctorCleanup, DoctorError, DoctorField, DoctorReviewRowId,
+    DoctorApplyChange, DoctorApplyPlan, DoctorError, DoctorField, DoctorReviewRowId,
     DoctorTrackRef, DoctorValue, DoctorWriteControl, DoctorWriteProgress, DoctorWriteReport,
     DoctorWriteRow, DoctorWriteRowState, LibraryDoctor,
 };
@@ -16,12 +16,12 @@ use crate::library::tag_mutation::{
 use crate::library::tag_write_job::TagWriteRecovery;
 
 #[derive(Debug, Clone)]
-struct InputChange {
-    row_id: Option<DoctorReviewRowId>,
-    track: DoctorTrackRef,
-    field: DoctorField,
-    expected: DoctorValue,
-    proposed: DoctorValue,
+pub(super) struct InputChange {
+    pub(super) row_id: Option<DoctorReviewRowId>,
+    pub(super) track: DoctorTrackRef,
+    pub(super) field: DoctorField,
+    pub(super) expected: DoctorValue,
+    pub(super) proposed: DoctorValue,
 }
 
 #[derive(Debug)]
@@ -44,7 +44,7 @@ struct PreparedFile {
 }
 
 #[derive(Debug)]
-struct ExecutableFile {
+pub(super) struct ExecutableFile {
     id: i64,
     track_id: i64,
     path: PathBuf,
@@ -88,7 +88,7 @@ const fn guarded_field(field: DoctorField) -> GuardedTagField {
     }
 }
 
-fn decoded(field: DoctorField, value: Option<String>) -> DoctorValue {
+pub(super) fn decoded(field: DoctorField, value: Option<String>) -> DoctorValue {
     match (field, value) {
         (DoctorField::Year, None) => DoctorValue::Empty,
         (DoctorField::Year, Some(value)) => value
@@ -285,7 +285,7 @@ fn insert_file(
     }))
 }
 
-fn prepare_job(
+pub(super) fn prepare_job(
     conn: &Connection,
     kind: &'static str,
     source_job_id: Option<i64>,
@@ -293,7 +293,8 @@ fn prepare_job(
     changes: &[InputChange],
 ) -> Result<(i64, Vec<ExecutableFile>), DoctorError> {
     let files = prepare_files(conn, changes)?;
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
+    crate::library::tag_write_lock::claim_tag_write_slot(&transaction)?;
     transaction.execute(
         "INSERT INTO tag_write_jobs \
          (kind, source_job_id, scan_id, state, created_at, finished_at, total_tracks) \
@@ -528,7 +529,7 @@ fn complete_job(conn: &Connection, job_id: i64) -> Result<(), DoctorError> {
     Ok(())
 }
 
-fn run_job(
+pub(super) fn run_job(
     conn: &Connection,
     job_id: i64,
     files: &[ExecutableFile],
@@ -664,39 +665,6 @@ fn apply_inputs(plan: &DoctorApplyPlan) -> Vec<InputChange> {
         .collect()
 }
 
-fn revert_inputs(conn: &Connection, source_job_id: i64) -> Result<Vec<InputChange>, DoctorError> {
-    let mut statement = conn.prepare(
-        "SELECT v.review_row_id, f.track_id, f.path, v.field, v.after_value, v.before_value \
-         FROM tag_write_job_files f JOIN tag_write_journal v ON v.file_id=f.id \
-         WHERE f.job_id=?1 AND v.outcome='applied' ORDER BY f.position, v.position",
-    )?;
-    let inputs = statement
-        .query_map([source_job_id], |row| {
-            let raw = row.get::<_, String>(3)?;
-            let field = DoctorField::parse(&raw).ok_or(rusqlite::Error::InvalidQuery)?;
-            Ok(InputChange {
-                row_id: row
-                    .get::<_, Option<i64>>(0)?
-                    .and_then(|id| u64::try_from(id).ok())
-                    .map(DoctorReviewRowId::from_raw),
-                track: DoctorTrackRef {
-                    track_id: row.get(1)?,
-                    path: PathBuf::from(row.get::<_, String>(2)?),
-                    file_mtime: 0,
-                    file_size: 0,
-                    device: None,
-                    inode: None,
-                },
-                field,
-                expected: decoded(field, row.get(4)?),
-                proposed: decoded(field, row.get(5)?),
-            })
-        })?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(DoctorError::from)?;
-    Ok(inputs)
-}
-
 impl LibraryDoctor<'_> {
     pub fn apply_review_plan(
         &mut self,
@@ -712,49 +680,6 @@ impl LibraryDoctor<'_> {
             &inputs,
         )?;
         run_job(self.conn, job_id, &files, None, progress)
-    }
-
-    pub fn last_cleanup(&self) -> Result<Option<DoctorCleanup>, DoctorError> {
-        self.conn
-            .query_row(
-                "SELECT j.id, j.scan_id, j.created_at, COUNT(DISTINCT f.track_id) \
-                 FROM tag_write_jobs j JOIN tag_write_job_files f ON f.job_id=j.id \
-                 JOIN tag_write_journal v ON v.file_id=f.id \
-                 WHERE j.kind='doctor_apply' AND j.state IN ('completed', 'cancelled', 'interrupted') \
-                   AND v.outcome='applied' AND NOT EXISTS (SELECT 1 FROM tag_write_job_files uf \
-                     JOIN tag_write_journal uv ON uv.file_id=uf.id WHERE uf.job_id=j.id \
-                     AND uv.outcome IN ('pending', 'prepared')) \
-                 GROUP BY j.id ORDER BY j.id DESC LIMIT 1",
-                [],
-                |row| {
-                    Ok(DoctorCleanup {
-                        job_id: row.get(0)?,
-                        scan_id: row.get(1)?,
-                        created_at: row.get(2)?,
-                        track_count: usize::try_from(row.get::<_, i64>(3)?).unwrap_or_default(),
-                    })
-                },
-            )
-            .optional()
-            .map_err(DoctorError::from)
-    }
-
-    pub fn revert_last_cleanup(
-        &mut self,
-        progress: impl FnMut(DoctorWriteProgress) -> DoctorWriteControl,
-    ) -> Result<Option<DoctorWriteReport>, DoctorError> {
-        let Some(cleanup) = self.last_cleanup()? else {
-            return Ok(None);
-        };
-        let inputs = revert_inputs(self.conn, cleanup.job_id)?;
-        let (job_id, files) = prepare_job(
-            self.conn,
-            "doctor_revert",
-            Some(cleanup.job_id),
-            Some(cleanup.scan_id),
-            &inputs,
-        )?;
-        run_job(self.conn, job_id, &files, Some(cleanup.job_id), progress).map(Some)
     }
 
     pub fn recover_incomplete_writes(&self) -> Result<Vec<TagWriteRecovery>, DoctorError> {
