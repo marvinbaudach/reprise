@@ -79,6 +79,22 @@ fn position(order: &[i64], episode_id: i64) -> Option<usize> {
     order.iter().position(|candidate| *candidate == episode_id)
 }
 
+/// `SRC-12a`: every rendered episode of the focused row's source, or the
+/// complete rendered order when no row has focus.
+pub(super) fn select_all_in_source(order: &[(i64, i64)], focused: Option<i64>) -> Vec<i64> {
+    let source = focused.and_then(|focused| {
+        order
+            .iter()
+            .find(|(_, episode_id)| *episode_id == focused)
+            .map(|(subscription_id, _)| *subscription_id)
+    });
+    order
+        .iter()
+        .filter(|(subscription_id, _)| source.is_none_or(|source| *subscription_id == source))
+        .map(|(_, episode_id)| *episode_id)
+        .collect()
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(super) struct PodcastSelection {
     selected: BTreeSet<i64>,
@@ -102,6 +118,12 @@ impl PodcastSelection {
         } else {
             self.selected.remove(&episode_id);
         }
+    }
+
+    pub(super) fn replace_with(&mut self, episode_ids: impl IntoIterator<Item = i64>) {
+        let episode_ids = episode_ids.into_iter().collect::<Vec<_>>();
+        self.anchor = episode_ids.first().copied();
+        self.selected = episode_ids.into_iter().collect();
     }
 
     pub(super) fn selected_ids(&self) -> Vec<i64> {
@@ -147,6 +169,26 @@ mod tests {
 
     fn ids(selected: &BTreeSet<i64>) -> Vec<i64> {
         selected.iter().copied().collect()
+    }
+
+    /// `SRC-12a`: Ctrl+A means the focused source, not every expanded group.
+    #[test]
+    fn src_12a_ctrl_a_selects_the_focused_sources_rendered_episodes() {
+        let order = [(1, 10), (1, 11), (2, 20), (2, 21)];
+        assert_eq!(select_all_in_source(&order, Some(11)), vec![10, 11]);
+        assert_eq!(select_all_in_source(&order, Some(20)), vec![20, 21]);
+    }
+
+    #[test]
+    fn src_12a_ctrl_a_without_a_focused_row_takes_the_rendered_list() {
+        let order = [(1, 10), (2, 20)];
+        assert_eq!(select_all_in_source(&order, None), vec![10, 20]);
+    }
+
+    #[test]
+    fn src_12a_ctrl_a_cannot_reach_unrendered_episodes() {
+        let order = [(1, 10)];
+        assert_eq!(select_all_in_source(&order, Some(10)), vec![10]);
     }
 
     #[test]
@@ -280,7 +322,7 @@ mod tests {
     }
 
     #[test]
-    fn src_12_selection_survives_a_widget_rebuild_and_spans_shows() {
+    fn src_12a_selection_survives_a_widget_rebuild_and_spans_shows() {
         let mut selection = PodcastSelection::default();
         selection.set_selected(11, true);
         selection.set_selected(21, true);
@@ -291,7 +333,7 @@ mod tests {
     }
 
     #[test]
-    fn src_12_clear_reports_and_drops_a_non_empty_selection() {
+    fn src_12a_clear_reports_and_drops_a_non_empty_selection() {
         let mut selection = PodcastSelection::default();
         selection.set_selected(11, true);
         selection.set_selected(21, true);
@@ -301,7 +343,7 @@ mod tests {
     }
 
     #[test]
-    fn src_12_clear_reports_an_already_empty_selection() {
+    fn src_12a_clear_reports_an_already_empty_selection() {
         let mut selection = PodcastSelection::default();
 
         assert!(!selection.clear());

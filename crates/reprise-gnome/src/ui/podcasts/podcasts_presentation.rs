@@ -170,15 +170,6 @@ pub(super) fn file_size(bytes: Option<i64>) -> Option<String> {
     }
 }
 
-pub(super) fn detail_line<'a>(parts: impl IntoIterator<Item = &'a str>) -> String {
-    parts
-        .into_iter()
-        .map(str::trim)
-        .filter(|part| !part.is_empty())
-        .collect::<Vec<_>>()
-        .join(" · ")
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct SourceHeader<'a> {
     pub(super) title: &'a str,
@@ -396,11 +387,11 @@ mod tests {
 
         assert_eq!(relative_date(None, today), "");
         assert_eq!(
-            detail_line(["", "", strings::PODCAST_STATUS_NEW]),
+            crate::ui::source_row::detail_line(["", "", strings::PODCAST_STATUS_NEW]),
             strings::PODCAST_STATUS_NEW
         );
         assert_eq!(
-            detail_line(["Today", "", strings::PODCAST_STATUS_NEW]),
+            crate::ui::source_row::detail_line(["Today", "", strings::PODCAST_STATUS_NEW]),
             "Today · New"
         );
         assert_eq!(

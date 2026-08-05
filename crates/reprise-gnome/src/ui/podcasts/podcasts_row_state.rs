@@ -70,6 +70,8 @@ pub(super) fn update_download_state(widgets: &DownloadRowWidgets, state: &Downlo
 
 pub(super) fn download_status(state: &DownloadState) -> gtk4::Widget {
     let root = gtk4::Box::new(gtk4::Orientation::Vertical, 3);
+    root.set_size_request(crate::ui::source_row::SIZE_SLOT_WIDTH, -1);
+    root.add_css_class("reprise-source-row-size");
     if matches!(state, DownloadState::NotDownloaded) {
         return root.upcast();
     }
@@ -84,7 +86,6 @@ pub(super) fn download_status(state: &DownloadState) -> gtk4::Widget {
     if let Some(failure) = localized_tooltip.as_deref() {
         root.set_tooltip_text(Some(failure));
     }
-    root.set_size_request(110, -1);
     let label = gtk4::Label::new(None);
     label.set_xalign(1.0);
     label.add_css_class("caption");

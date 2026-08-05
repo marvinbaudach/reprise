@@ -84,6 +84,7 @@ mod source_empty_state;
 mod source_error_banner;
 mod source_error_details;
 mod source_reveal;
+mod source_row;
 mod stats;
 pub mod status_bar;
 pub mod strings;
