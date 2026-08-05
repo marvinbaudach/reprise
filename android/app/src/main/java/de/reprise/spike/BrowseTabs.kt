@@ -8,6 +8,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ListItem
@@ -18,10 +22,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 
 @Composable
 internal fun TitlesTab(
+    surfaceLayout: SurfaceLayout,
+    surfaceState: MobileSurfaceViewModel,
     tracks: LibraryWindow<LibraryTrack>,
     searchVisible: Boolean,
     searchText: String,
@@ -57,6 +64,9 @@ internal fun TitlesTab(
             )
         } else {
             TrackRows(
+                surfaceLayout = surfaceLayout,
+                surfaceState = surfaceState,
+                listKey = LibraryListKey.TITLES,
                 tracks = tracks,
                 playback = playback,
                 lastRequestedOffset = lastRequestedOffset,
@@ -69,6 +79,8 @@ internal fun TitlesTab(
 
 @Composable
 internal fun AlbumsTab(
+    surfaceLayout: SurfaceLayout,
+    surfaceState: MobileSurfaceViewModel,
     albums: LibraryWindow<LibraryAlbum>,
     selectedAlbum: AlbumTrackList?,
     playback: PlaybackUiState,
@@ -106,6 +118,9 @@ internal fun AlbumsTab(
                 Text("No tracks in this album.", modifier = Modifier.padding(16.dp))
             } else {
                 TrackRows(
+                    surfaceLayout = surfaceLayout,
+                    surfaceState = surfaceState,
+                    listKey = LibraryListKey.ALBUM_TRACKS,
                     tracks = selectedAlbum.tracks,
                     playback = playback,
                     lastRequestedOffset = albumRequestedOffset,
@@ -127,25 +142,21 @@ internal fun AlbumsTab(
             style = MaterialTheme.typography.labelMedium,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
         )
-        LazyColumn(modifier = Modifier.fillMaxSize()) {
-            items(albums.rows, key = { album -> "${album.artist}\u0000${album.title}" }) { album ->
-                ListItem(
-                    headlineContent = { Text(album.title) },
-                    supportingContent = { Text(album.details()) },
-                    trailingContent = { Text(formatDuration(album.totalDurationMs)) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { openAlbum(album) },
-                )
-                HorizontalDivider()
-            }
-            windowContinuation(albums, albumsRequestedOffset, loadMoreAlbums)
-        }
+        AlbumRows(
+            surfaceLayout = surfaceLayout,
+            surfaceState = surfaceState,
+            albums = albums,
+            requestedOffset = albumsRequestedOffset,
+            openAlbum = openAlbum,
+            loadMore = loadMoreAlbums,
+        )
     }
 }
 
 @Composable
 internal fun ArtistsTab(
+    surfaceLayout: SurfaceLayout,
+    surfaceState: MobileSurfaceViewModel,
     artists: LibraryWindow<LibraryArtist>,
     lastRequestedOffset: Long?,
     loadMore: (LibraryWindowRange) -> Unit,
@@ -160,17 +171,128 @@ internal fun ArtistsTab(
             style = MaterialTheme.typography.labelMedium,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
         )
-        LazyColumn(modifier = Modifier.fillMaxSize()) {
-            items(artists.rows, key = LibraryArtist::name) { artist ->
-                ListItem(
-                    headlineContent = { Text(artist.name) },
-                    supportingContent = { Text(artist.details()) },
-                )
-                HorizontalDivider()
-            }
-            windowContinuation(artists, lastRequestedOffset, loadMore)
-        }
+        ArtistRows(
+            surfaceLayout = surfaceLayout,
+            surfaceState = surfaceState,
+            artists = artists,
+            requestedOffset = lastRequestedOffset,
+            loadMore = loadMore,
+        )
     }
+}
+
+@Composable
+private fun AlbumRows(
+    surfaceLayout: SurfaceLayout,
+    surfaceState: MobileSurfaceViewModel,
+    albums: LibraryWindow<LibraryAlbum>,
+    requestedOffset: Long?,
+    openAlbum: (LibraryAlbum) -> Unit,
+    loadMore: (LibraryWindowRange) -> Unit,
+) {
+    val key = LibraryListKey.ALBUMS
+    val anchor = surfaceState.scrollPosition(key).within(albums.itemCount(requestedOffset))
+    if (surfaceLayout == SurfaceLayout.WIDE_SHORT) {
+        val metrics = libraryFrameMetrics(surfaceLayout)
+        val gridState = rememberLibraryGridState(anchor)
+        ObserveLibraryGridAnchor(key, gridState, surfaceState)
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            state = gridState,
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(
+                metrics.listColumnGapDp.dp,
+            ),
+            modifier = Modifier.fillMaxSize().testTag("library-albums-list"),
+        ) {
+            gridItems(
+                items = albums.rows,
+                key = { album -> "${album.artist}\u0000${album.title}" },
+            ) { album -> AlbumRow(album, openAlbum) }
+            albums.nextRequest(requestedOffset)?.let { request ->
+                item(key = "load-window-${request.offset}", span = { GridItemSpan(maxLineSpan) }) {
+                    LaunchedEffect(request.offset) { loadMore(request) }
+                    LoadingWindowRow()
+                }
+            }
+        }
+        return
+    }
+    val listState = rememberLibraryListState(anchor)
+    ObserveLibraryListAnchor(key, listState, surfaceState)
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize().testTag("library-albums-list"),
+    ) {
+        items(albums.rows, key = { album -> "${album.artist}\u0000${album.title}" }) { album ->
+            AlbumRow(album, openAlbum)
+        }
+        windowContinuation(albums, requestedOffset, loadMore)
+    }
+}
+
+@Composable
+private fun AlbumRow(album: LibraryAlbum, openAlbum: (LibraryAlbum) -> Unit) {
+    ListItem(
+        headlineContent = { Text(album.title) },
+        supportingContent = { Text(album.details()) },
+        trailingContent = { Text(formatDuration(album.totalDurationMs)) },
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { openAlbum(album) },
+    )
+    HorizontalDivider()
+}
+
+@Composable
+private fun ArtistRows(
+    surfaceLayout: SurfaceLayout,
+    surfaceState: MobileSurfaceViewModel,
+    artists: LibraryWindow<LibraryArtist>,
+    requestedOffset: Long?,
+    loadMore: (LibraryWindowRange) -> Unit,
+) {
+    val key = LibraryListKey.ARTISTS
+    val anchor = surfaceState.scrollPosition(key).within(artists.itemCount(requestedOffset))
+    if (surfaceLayout == SurfaceLayout.WIDE_SHORT) {
+        val metrics = libraryFrameMetrics(surfaceLayout)
+        val gridState = rememberLibraryGridState(anchor)
+        ObserveLibraryGridAnchor(key, gridState, surfaceState)
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            state = gridState,
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(
+                metrics.listColumnGapDp.dp,
+            ),
+            modifier = Modifier.fillMaxSize().testTag("library-artists-list"),
+        ) {
+            gridItems(artists.rows, key = LibraryArtist::name) { artist -> ArtistRow(artist) }
+            artists.nextRequest(requestedOffset)?.let { request ->
+                item(key = "load-window-${request.offset}", span = { GridItemSpan(maxLineSpan) }) {
+                    LaunchedEffect(request.offset) { loadMore(request) }
+                    LoadingWindowRow()
+                }
+            }
+        }
+        return
+    }
+    val listState = rememberLibraryListState(anchor)
+    ObserveLibraryListAnchor(key, listState, surfaceState)
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize().testTag("library-artists-list"),
+    ) {
+        items(artists.rows, key = LibraryArtist::name) { artist -> ArtistRow(artist) }
+        windowContinuation(artists, requestedOffset, loadMore)
+    }
+}
+
+@Composable
+private fun ArtistRow(artist: LibraryArtist) {
+    ListItem(
+        headlineContent = { Text(artist.name) },
+        supportingContent = { Text(artist.details()) },
+    )
+    HorizontalDivider()
 }
 
 private fun <T> LazyListScope.windowContinuation(

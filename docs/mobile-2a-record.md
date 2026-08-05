@@ -272,6 +272,62 @@ worse than having no durability mechanism, and before this it did.
 The lock stays as best effort. The guarantee does not rest on it — the
 renumbering is what preserves the data.
 
+### M9a — the surface learns to turn, and what a green suite was hiding
+
+Landscape only became worth building the night M7 stopped a rotation from killing
+the music. Before that there was no reason to turn the phone at all.
+
+The package leads with something that is not layout: **there was no ViewModel
+anywhere in this app.** Every piece of state lived in a composable and died with
+the activity. `MobileSurfaceViewModel` now holds what an activity recreation must
+not lose — the tab, an open search and its text, a scroll anchor per list, the
+open overlays, the current scrub interaction — while catalog windows, transient
+messages, menus and back-gesture progress stay where they belong. The playing
+track stays out on purpose: the session owns it and the replacement activity
+reloads that one row, which is M7's arrangement unchanged.
+
+The layout branch reads `WindowWidthSizeClass.Expanded` with
+`WindowHeightSizeClass.Compact`, never `Configuration.orientation` — a folded and
+an unfolded foldable are both landscape at wildly different sizes.
+
+**Then the review found that surviving the turn was half true.** An adversarial
+pass proved through the real activity path that scrolling past the first
+200-row window and rotating lands you not where you were but silently at row 200
+— the end of the one window the rebuild reloads. Compose clamps without
+complaining. Two reviewers reached it from opposite directions: one with the
+failing assertion, one with the mechanism in `LibraryListAnchor.kt`, where the
+anchor is written unconditionally while `restoreLibrary()` only ever loads the
+first window.
+
+The fix turned on noticing that a constraint had been imported from the wrong
+place. The catalog windows were kept out of the ViewModel by analogy to why 500
+tracks do not belong in `savedInstanceState` — and that reason is
+`TransactionTooLargeException`, a **Binder** limit. A ViewModel crosses no
+process boundary. The analogy never applied. The windows moved in, held against
+the catalog's *shape* so a completed scan discards them and a counted play does
+not, and when the cache does not apply the anchor clamps to the **top** rather
+than to the last loaded row: "top" reads as a reset, row 200 pretends to be a
+restore.
+
+Three smaller things came out of the same review and are worth keeping:
+
+- **The fixtures had made the bug invisible.** Every fixture loaded with
+  `hasMore = false`, so no test in the suite could ever have seen a pagination
+  loss. A fixture that excludes the interesting case makes a green suite
+  meaningless.
+- **A constant was declared, asserted, and never used.** The navigation pill's
+  56 × 32 dp lived in the policy and had a test — but reached no composable. The
+  pill was right only because Material 3's default happens to match, and the test
+  proved that a constant equals itself. Deleted.
+- **The scroll offset is now a fraction of a row**, because a pixel offset
+  recorded in 72 dp rows means a different place in 64 dp rows.
+
+An open album survives the turn too, with the depth paged into it. When a scan
+has changed the catalog underneath, the album is **let go** rather than held
+open: keeping it would mean re-querying its tracks synchronously inside
+composition, under the very lock the scan holds — the defect M7 and this
+package's own review each had to remove once already.
+
 ## Verified on a device, not assumed
 
 Every claim below was observed on the `pixel10xl_api37` emulator against the
@@ -362,6 +418,38 @@ producing it — and whether `sync_data` plus the directory fsync survives an
 actual power cut, which needs a harness nobody has built. Whether advisory locks
 work on real device storage is also open: this emulator says no, and a phone
 that says yes would exercise a refusal path only tmpfs has ever run.
+
+### M9a on a device
+
+Robolectric recreates an activity but does not turn a phone, and it reports
+**zero window insets** — so the pass aimed at exactly what it cannot see.
+
+| claim | evidence |
+| --- | --- |
+| A deep scroll survives the turn | scrolled far past the first window; the same rows are on screen before and after — `Humanity's Last Breath • Ashen`, `Beast of Darkness`, `BECAUSE WE'RE DOOMED`, `Bedtime Stories`. Not row 200, not the top |
+| Landscape is two columns | row titles start at **two** x positions (798 and 2039) against one (264) in portrait |
+| An open album survives the turn | `Back to albums` still present after rotating, same album |
+| The rail adds its inset instead of eating it | content begins at x=399 without a cutout (**133 dp** of rail) and x=384 with a 144 px left cutout (**128 dp** = 80 dp + 48 dp). Never below 80 dp |
+| The active pill matches the design | measured **56.3 dp** wide against 56 dp specified; 36.7 dp tall against 32 dp, the difference consistent with the soft edges of a rounded shape at 3× |
+| Nothing crashed | zero FATAL, zero ANR across five arrangements |
+
+The cutout was switched on deliberately
+(`cmd overlay enable …cutout.emulation.corner`), because the review's one
+explicitly unproven point was that `NavigationRailDefaults.windowInsets` covers
+`systemBars` and not `displayCutout`. With a real 144 px left inset the rail is
+128 dp, so the failure mode that once cost the bottom bar its height does not
+occur here. Whether `displayCutout` is separately accounted for remains open;
+what is measured is that the bar is never squeezed below its 80 dp.
+
+**One method note, because it is the fourth time in two nights.** The first
+reading of the inset test came from derived text positions and said the content
+had moved the *wrong way* — it looked like a finding. A pixel scan of the same
+screenshots found the rail's real edges and showed it was fine: the content had
+shifted because the system-bar inset differed between the two runs, not because
+the rail had shrunk. Derived positions have now misled four times tonight —
+a database copy without its write-ahead log, a star already at the value being
+tapped, a title picked from the wrong row by a proximity window, and this. Every
+one of them looked like a defect in the app. The instrument gets checked first.
 
 ## What was deliberately left out, and why
 
