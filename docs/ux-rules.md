@@ -2365,7 +2365,7 @@ property is set and yet nothing happens.
   retinting and no hardcoded pane surface.
 - **STYLE-3** [replaced by STYLE-8] — Two accent roles stay separate.
 - **STYLE-4** [replaced by STYLE-1] — Chrome glass is neutral and
-  theme-dependent, never tinted by the cover accent. GL/NGL/Vulkan use 24px
+  theme-dependent, never tinted by the effective accent. GL/NGL/Vulkan use 24px
   backdrop blur over a neutral tint floor of at least 80%; Cairo, unknown
   renderers, High Contrast, and disabled animations degrade fail-closed to
   a neutral, at least 94% opaque tint.
@@ -2499,7 +2499,7 @@ property is set and yet nothing happens.
 - **STATS-1** [replaced by STATS-11/STATS-12] [core] — The header shows
   total listening time large in whole hours ("68 hours"; under an hour in
   minutes, never "0 hours"), a comparison pill "▲ N % vs <previous period>"
-  in the teal app accent (never the cover accent), and the subline "N
+  in the effective accent, and the subline "N
   plays · Ø X min/day · N artists" in secondary tone. Given enough width,
   the period dropdown sits at the right ("<year> so far / <previous year> /
   All time / Last 30 days"). Before total time or pill ellipsize, dropdown
@@ -2541,8 +2541,8 @@ property is set and yet nothing happens.
   population that forms the ranking, not to every play —, three top-track
   chips, and the actions Play (container play over the artist's track
   list) and "Go to artist" (regular NAV push with back history). Behind
-  the cover sits a subtle cover-accent glow — the cover accent stays
-  reserved for playback elements. Below it, a ghost row names ranks 2–5.
+  the cover sits a subtle effective-accent glow. Below it, a ghost row names
+  ranks 2–5.
 - **STATS-3** [replaced by STATS-15] [core] — The Genre Spectrum is
   **one** horizontal segment bar in teal gradations with a legend (dot ·
   name · %), fed from the library's genre tags. The five strongest genres
@@ -2861,8 +2861,8 @@ STYLE-1).
   <!-- Deliberate HIG deviation: Adwaita buttons don't change the cursor. -->
 - **BTN-2** [active] [gtk] — Toggle buttons show their state persistently,
   not just in the moment of the click. Shuffle and Repeat are both
-  `GtkToggleButton` and speak the same `:checked`: accent surface in the
-  app accent (never the cover accent) plus a small dot under the icon as a
+  `GtkToggleButton` and speak the same `:checked`: a surface in the effective
+  accent from STYLE-8 plus a small dot under the icon as a
   second, **non-color** signal — color alone doesn't carry for color
   blindness. The state survives hover and unhover; hover only modulates
   the surface's brightness and never flips the state indicator. Repeat-One

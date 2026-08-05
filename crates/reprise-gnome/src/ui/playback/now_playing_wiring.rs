@@ -413,8 +413,8 @@ mod tests {
         for retired in [
             ["apply_cover", "_accent"].concat(),
             ["reset_cover", "_accent"].concat(),
-            ["cover_accent", "_generation"].concat(),
-            ["cover_accent", "_last"].concat(),
+            ["cover", "_accent", "_generation"].concat(),
+            ["cover", "_accent", "_last"].concat(),
         ] {
             assert!(!wiring.contains(&retired), "wiring retained {retired}");
             assert!(
