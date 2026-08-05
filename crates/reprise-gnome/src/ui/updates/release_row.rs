@@ -150,7 +150,6 @@ pub(in crate::ui) fn build(
     let cover = LazyReleaseCover::new(
         &release.release_group_mbid,
         &release.artist_name,
-        &release.fallback_accent,
         COVER_EDGE,
     );
 

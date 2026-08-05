@@ -70,7 +70,7 @@ pub(in crate::ui) fn highlight_from_filter(
 /// Resolves libadwaita's current accent into the literal color Pango markup
 /// requires. The widget parameter keeps the binding-facing interface stable.
 pub(in crate::ui) fn accent_foreground(_widget: &impl IsA<gtk4::Widget>) -> Option<String> {
-    let rgba = libadwaita::StyleManager::default().accent_color_rgba();
+    let rgba = crate::ui::style::accent::accent_rgba();
     Some(format!(
         "#{:02x}{:02x}{:02x}",
         (rgba.red() * 255.0) as u8,
@@ -153,5 +153,28 @@ mod tests {
         assert!(!is_searchable_column("track_number"));
         assert!(!is_searchable_column("duration"));
         assert!(!is_searchable_column("play_count"));
+    }
+
+    #[test]
+    fn nr_2_release_placeholders_and_search_highlights_use_the_central_accent() {
+        let highlight = include_str!("match_highlight.rs");
+        let release_cover = include_str!("../updates/release_cover.rs");
+        let central = ["style::accent", "::accent_rgba()"].concat();
+        assert!(highlight.contains(&central));
+        assert!(release_cover.contains(&central));
+        for retired in [
+            ["StyleManager", "::default"].concat(),
+            ["DEFAULT", "_ACCENT"].concat(),
+            ["cover_", "palette"].concat(),
+        ] {
+            assert!(
+                !highlight.contains(&retired),
+                "highlight retained {retired}"
+            );
+            assert!(
+                !release_cover.contains(&retired),
+                "release cover retained {retired}"
+            );
+        }
     }
 }

@@ -1779,7 +1779,7 @@ the panel).
 - **NR-2** [active] [gtk] — Release covers load lazily via Cover Art
   Archive (`/release-group/{mbid}/front-250`). A missing cover is the
   normal state and immediately shows an equally sized tile made of the
-  stored artist accent color plus initials — never a hole or a
+  effective accent color from STYLE-8 plus initials — never a hole or a
   permanent spinner.
 - **NR-3** [replaced by NR-3a] [gtk] — The header ✦ appears only
   when entries exist and carries a badge exclusively for `seen_at IS

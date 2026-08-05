@@ -5,7 +5,6 @@
 //! `artist_news::{query_releases, StoredRelease, LibraryPresence, ...}`.
 
 use std::cmp::Ordering;
-use std::path::PathBuf;
 
 use chrono::NaiveDate;
 use rusqlite::Connection;
@@ -376,27 +375,6 @@ pub fn query_artist_news_by_name(
     };
     let artist_mbid = row.get::<_, String>(0)?;
     query_artist_news_in(conn, &artist_mbid, today)
-}
-
-pub fn most_played_album_track_path(
-    db: &crate::db::Db,
-    artist: &str,
-) -> Result<Option<PathBuf>, rusqlite::Error> {
-    let conn = db.conn();
-    let mut statement = conn.prepare(
-        "SELECT MIN(path), SUM(play_count) AS album_plays
-         FROM tracks
-         WHERE lower(trim(artist)) = lower(trim(?1))
-           AND removed_at IS NULL AND missing_since IS NULL AND trim(album) <> ''
-         GROUP BY lower(trim(album))
-         ORDER BY album_plays DESC, lower(trim(album)) ASC
-         LIMIT 1",
-    )?;
-    let mut rows = statement.query([artist])?;
-    let Some(row) = rows.next()? else {
-        return Ok(None);
-    };
-    Ok(Some(PathBuf::from(row.get::<_, String>(0)?)))
 }
 
 fn compare_stored_releases(

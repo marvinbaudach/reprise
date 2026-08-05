@@ -183,7 +183,7 @@ fn spawn(database_path: Option<PathBuf>) -> async_channel::Sender<ArtistNewsRequ
                                     today,
                                     scope,
                                     request.force,
-                                    crate::ui::updates::release_cover::fallback_accent_for_artist,
+                                    |_, _| None,
                                 )
                             })
                             .and_then(|_| {

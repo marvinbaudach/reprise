@@ -14,7 +14,6 @@ use crate::ui::{one_shot_task, strings};
 use super::badge::{self, FeedBadgeInput};
 use super::concerts_section::ConcertsSection;
 use super::feed_snapshot;
-use super::release_cover::fallback_accent_for_artist;
 use super::release_row;
 use super::shell;
 
@@ -763,7 +762,7 @@ fn fetch_from_database(
     let today = chrono::Local::now().date_naive();
     let scope = reprise_core::artist_news::configured_fetch_scope(&conn)
         .map_err(|error| reprise_core::artist_news::NewsError::Database(error.to_string()))?;
-    reprise_core::artist_news::refresh(&conn, today, scope, true, fallback_accent_for_artist)
+    reprise_core::artist_news::refresh(&conn, today, scope, true, |_, _| None)
 }
 
 #[cfg(test)]

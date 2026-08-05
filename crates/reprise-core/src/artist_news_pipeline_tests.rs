@@ -6,8 +6,7 @@
 use chrono::NaiveDate;
 
 use crate::artist_news::{
-    mark_releases_seen, most_played_album_track_path, query_releases, refresh_with,
-    unseen_release_count, FetchScope,
+    mark_releases_seen, query_releases, refresh_with, unseen_release_count, FetchScope,
 };
 
 const ARTIST_ID: &str = "83d91898-7763-47d7-b03b-b92132375c47";
@@ -300,7 +299,7 @@ fn nr_1a_name_resolution_persists_positive_and_negative_results() {
 }
 
 #[test]
-fn nr_2_fallback_accent_is_computed_when_release_is_inserted() {
+fn refresh_normalizes_and_stores_the_supplied_fallback_accent() {
     let conn = migrated_conn();
     conn.conn()
         .execute(
@@ -335,31 +334,6 @@ fn nr_2_fallback_accent_is_computed_when_release_is_inserted() {
         )
         .unwrap();
     assert_eq!(stored, "#123456");
-}
-
-#[test]
-fn nr_2_accent_source_uses_the_most_played_album() {
-    let conn = migrated_conn();
-    for (path, album, plays) in [
-        ("/music/a-one.flac", "Album A", 5),
-        ("/music/a-two.flac", "Album A", 4),
-        ("/music/b.flac", "Album B", 8),
-    ] {
-        conn.conn()
-            .execute(
-                "INSERT INTO tracks (path, title, artist, album, play_count, added_at) \
-             VALUES (?1, 'Track', 'Artist', ?2, ?3, 0)",
-                rusqlite::params![path, album, plays],
-            )
-            .unwrap();
-    }
-
-    let path = most_played_album_track_path(&conn, "Artist").unwrap();
-
-    assert_eq!(
-        path.as_deref(),
-        Some(std::path::Path::new("/music/a-one.flac"))
-    );
 }
 
 #[test]
