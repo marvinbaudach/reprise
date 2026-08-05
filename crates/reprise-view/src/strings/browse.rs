@@ -1,6 +1,7 @@
 //! Filter-bar messages shared by every surface.
 
 use super::{plural, Message, Plural};
+use crate::search_scope::SearchScope;
 
 pub const FILTERS: &str = N_!("FILTER");
 pub const ADD_FILTER: &str = N_!("Add filter");
@@ -23,6 +24,16 @@ pub const UNKNOWN_RATING: &str = N_!("Unrated");
 const CHIP_LABEL: &str = N_!("{facet}: {value}");
 const REMOVE_FILTER_LABEL: &str = N_!("Remove {facet} filter: {value}");
 const SEARCH_CHIP_LABEL: &str = N_!("⌕ “{query}” in any field");
+// FIL-1d: one msgid per scope rather than one template with an interpolated
+// field list — a translator needs the whole sentence to inflect it, and a
+// section that gains a searched field has to change its own text here.
+const SEARCH_CHIP_LABEL_EPISODE_TITLES: &str = N_!("⌕ “{query}” in episode titles");
+const SEARCH_CHIP_LABEL_VIDEO_TITLES: &str = N_!("⌕ “{query}” in video titles");
+const SEARCH_CHIP_LABEL_STATION_NAMES: &str = N_!("⌕ “{query}” in station names");
+const SEARCH_CHIP_LABEL_TITLE_AND_ARTIST: &str = N_!("⌕ “{query}” in title and artist");
+const SEARCH_CHIP_LABEL_ARTIST_AND_VENUE: &str = N_!("⌕ “{query}” in artist and venue");
+const SEARCH_CHIP_LABEL_FILE_PATHS: &str = N_!("⌕ “{query}” in file paths");
+const NOTHING_TO_FILTER: &str = N_!("Nothing to filter in {section}");
 const REMOVE_SEARCH_LABEL: &str = N_!("Remove search: {query}");
 const LEAVE_PLACE_LABEL: &str = N_!("Leave {place}");
 const TOTAL_TRACKS: (&str, &str) = plural("{total} track", "{total} tracks");
@@ -49,6 +60,27 @@ pub fn remove_filter_label(facet: &str, value: &str) -> Message {
 
 pub fn search_chip_label(query: &str) -> Message {
     message_with_one_arg(SEARCH_CHIP_LABEL, "query", query)
+}
+
+/// FIL-1d: the search chip names the fields its own view actually reads.
+/// Music keeps "in any field"; every other list says what it matched.
+pub fn search_chip_label_in(scope: SearchScope, query: &str) -> Message {
+    let id = match scope {
+        SearchScope::Tracks | SearchScope::Unsupported => SEARCH_CHIP_LABEL,
+        SearchScope::Podcasts => SEARCH_CHIP_LABEL_EPISODE_TITLES,
+        SearchScope::Youtube => SEARCH_CHIP_LABEL_VIDEO_TITLES,
+        SearchScope::Radio => SEARCH_CHIP_LABEL_STATION_NAMES,
+        SearchScope::Releases => SEARCH_CHIP_LABEL_TITLE_AND_ARTIST,
+        SearchScope::Concerts => SEARCH_CHIP_LABEL_ARTIST_AND_VENUE,
+        SearchScope::Missing => SEARCH_CHIP_LABEL_FILE_PATHS,
+    };
+    message_with_one_arg(id, "query", query)
+}
+
+/// SEARCH-8: the insensitive lens says why it is insensitive, naming the
+/// section the user is actually looking at.
+pub fn nothing_to_filter(section: &str) -> Message {
+    message_with_one_arg(NOTHING_TO_FILTER, "section", section)
 }
 
 pub fn remove_search_label(query: &str) -> Message {
@@ -170,6 +202,44 @@ mod tests {
         assert_eq!(search_chip_label("falling").id, "⌕ “{query}” in any field");
         assert_eq!(remove_search_label("falling").id, "Remove search: {query}");
         assert_eq!(leave_place_label("Lorna Shore").id, "Leave {place}");
+    }
+
+    // UX FIL-1d: the chip names the fields the view reads; Music keeps the
+    // unchanged "in any field" msgid so its catalog entry survives.
+    #[test]
+    fn fil_1d_search_chip_msgid_follows_the_scope() {
+        assert_eq!(
+            search_chip_label_in(SearchScope::Tracks, "wer").id,
+            "⌕ “{query}” in any field"
+        );
+        assert_eq!(
+            search_chip_label_in(SearchScope::Podcasts, "wer").id,
+            "⌕ “{query}” in episode titles"
+        );
+        assert_eq!(
+            search_chip_label_in(SearchScope::Youtube, "wer").id,
+            "⌕ “{query}” in video titles"
+        );
+        assert_eq!(
+            search_chip_label_in(SearchScope::Radio, "wer").id,
+            "⌕ “{query}” in station names"
+        );
+        assert_eq!(
+            search_chip_label_in(SearchScope::Releases, "wer").id,
+            "⌕ “{query}” in title and artist"
+        );
+        assert_eq!(
+            search_chip_label_in(SearchScope::Concerts, "wer").id,
+            "⌕ “{query}” in artist and venue"
+        );
+        assert_eq!(
+            search_chip_label_in(SearchScope::Missing, "wer").id,
+            "⌕ “{query}” in file paths"
+        );
+        assert_eq!(
+            search_chip_label_in(SearchScope::Podcasts, "wer").args,
+            vec![("query", "wer".to_owned())]
+        );
     }
 
     #[test]

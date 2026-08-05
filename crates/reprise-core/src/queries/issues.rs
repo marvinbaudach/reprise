@@ -98,21 +98,59 @@ const MISSING_ROWS_SELECT: &str = "SELECT id, path, title, artist, album, album_
 /// if any exist, then the single `Deleted` group if any exist. See the
 /// module doc for why `unknown` and `deleted` can never be merged.
 pub fn query_missing_groups(db: &Db) -> Result<Vec<MissingGroup>, rusqlite::Error> {
+    query_missing_groups_matching(db, "")
+}
+
+/// `FIL-1d`: the same cards, narrowed to the tracks whose **path** contains
+/// `path_query` (case-insensitively). An empty query is the unfiltered call,
+/// so the two never diverge on what a card counts. A card whose filtered
+/// count is zero is absent, exactly as an empty card always was.
+pub fn query_missing_groups_matching(
+    db: &Db,
+    path_query: &str,
+) -> Result<Vec<MissingGroup>, rusqlite::Error> {
     let conn = db.conn();
-    let mut groups = query_unavailable_groups(conn)?;
+    let mut groups = query_unavailable_groups(conn, path_query)?;
     if let Some(unknown) = query_reason_count_group(
         conn,
         MissingReason::Unknown,
         MissingGroupKind::Unavailable { mount_point: None },
+        path_query,
     )? {
         groups.push(unknown);
     }
-    if let Some(deleted) =
-        query_reason_count_group(conn, MissingReason::Deleted, MissingGroupKind::Deleted)?
-    {
+    if let Some(deleted) = query_reason_count_group(
+        conn,
+        MissingReason::Deleted,
+        MissingGroupKind::Deleted,
+        path_query,
+    )? {
         groups.push(deleted);
     }
     Ok(groups)
+}
+
+/// The `AND path LIKE …` fragment, or nothing at all for an empty query.
+/// Returning an empty fragment rather than a always-true `LIKE '%'` keeps
+/// the unfiltered plan identical to the one this view has always run.
+fn path_clause(path_query: &str) -> &'static str {
+    if path_query.trim().is_empty() {
+        ""
+    } else {
+        " AND path LIKE ?2 ESCAPE '\\'"
+    }
+}
+
+/// A case-insensitive "contains" pattern with LIKE's own wildcards escaped,
+/// so a path containing `%` or `_` is matched literally rather than turning
+/// the user's query into a wildcard they never typed.
+fn like_pattern(path_query: &str) -> String {
+    let escaped = path_query
+        .trim()
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
+    format!("%{escaped}%")
 }
 
 /// The per-mount half of [`query_missing_groups`]: one row per distinct
@@ -121,12 +159,21 @@ pub fn query_missing_groups(db: &Db) -> Result<Vec<MissingGroup>, rusqlite::Erro
 /// group filtering is needed here (unlike the single-count `unknown`/
 /// `deleted` groups, which need an explicit `count > 0` check since a plain
 /// `COUNT(*)` always returns one row, even when it's zero).
-fn query_unavailable_groups(conn: &Connection) -> Result<Vec<MissingGroup>, rusqlite::Error> {
+fn query_unavailable_groups(
+    conn: &Connection,
+    path_query: &str,
+) -> Result<Vec<MissingGroup>, rusqlite::Error> {
+    let path_clause = path_clause(path_query);
     let mut stmt = conn.prepare(&format!(
-        "SELECT mount_point, count(*) FROM tracks WHERE {MISSING} AND missing_reason = ?1 \
-         GROUP BY mount_point ORDER BY mount_point COLLATE NOCASE"
+        "SELECT mount_point, count(*) FROM tracks WHERE {MISSING} AND missing_reason = ?1\
+         {path_clause} GROUP BY mount_point ORDER BY mount_point COLLATE NOCASE"
     ))?;
-    let rows = stmt.query_map(rusqlite::params![MissingReason::Unmounted.as_str()], |r| {
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> =
+        vec![Box::new(MissingReason::Unmounted.as_str().to_owned())];
+    if !path_clause.is_empty() {
+        params.push(Box::new(like_pattern(path_query)));
+    }
+    let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), |r| {
         Ok((r.get::<_, Option<String>>(0)?, r.get::<_, i64>(1)?))
     })?;
     rows.map(|row| {
@@ -147,10 +194,18 @@ fn query_reason_count_group(
     conn: &Connection,
     reason: MissingReason,
     kind: MissingGroupKind,
+    path_query: &str,
 ) -> Result<Option<MissingGroup>, rusqlite::Error> {
+    let path_clause = path_clause(path_query);
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(reason.as_str().to_owned())];
+    if !path_clause.is_empty() {
+        params.push(Box::new(like_pattern(path_query)));
+    }
     let count: i64 = conn.query_row(
-        &format!("SELECT count(*) FROM tracks WHERE {MISSING} AND missing_reason = ?1"),
-        rusqlite::params![reason.as_str()],
+        &format!(
+            "SELECT count(*) FROM tracks WHERE {MISSING} AND missing_reason = ?1{path_clause}"
+        ),
+        rusqlite::params_from_iter(params.iter()),
         |r| r.get(0),
     )?;
     Ok((count > 0).then_some(MissingGroup {
@@ -177,6 +232,18 @@ pub fn query_missing_rows(
     offset: u32,
     limit: u32,
 ) -> Result<Vec<Track>, rusqlite::Error> {
+    query_missing_rows_matching(db, kind, "", offset, limit)
+}
+
+/// `FIL-1d`: one page of a card's tracks, narrowed to paths containing
+/// `path_query`. An empty query is [`query_missing_rows`] verbatim.
+pub fn query_missing_rows_matching(
+    db: &Db,
+    kind: &MissingGroupKind,
+    path_query: &str,
+    offset: u32,
+    limit: u32,
+) -> Result<Vec<Track>, rusqlite::Error> {
     let conn = db.conn();
     let (reason, mount_point) = match kind {
         MissingGroupKind::Deleted => (MissingReason::Deleted, None),
@@ -190,21 +257,31 @@ pub fn query_missing_rows(
     } else {
         ""
     };
+    // The path filter always takes the next free index, so the statement
+    // never declares a parameter the binding below does not supply.
+    let path_index = if mount_point.is_some() { 5 } else { 4 };
+    let path_filter = if path_query.trim().is_empty() {
+        String::new()
+    } else {
+        format!(" AND path LIKE ?{path_index} ESCAPE '\\'")
+    };
     let sql = format!(
-        "{MISSING_ROWS_SELECT} WHERE {MISSING} AND missing_reason = ?3{mount_filter} \
+        "{MISSING_ROWS_SELECT} WHERE {MISSING} AND missing_reason = ?3{mount_filter}{path_filter} \
          ORDER BY artist COLLATE NOCASE, album COLLATE NOCASE, track_no LIMIT ?1 OFFSET ?2"
     );
     let mut stmt = conn.prepare(&sql)?;
-    let rows = match mount_point {
-        Some(mount_point) => stmt.query_map(
-            rusqlite::params![limit, offset, reason.as_str(), mount_point],
-            row_to_track,
-        )?,
-        None => stmt.query_map(
-            rusqlite::params![limit, offset, reason.as_str()],
-            row_to_track,
-        )?,
-    };
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = vec![
+        Box::new(limit),
+        Box::new(offset),
+        Box::new(reason.as_str().to_owned()),
+    ];
+    if let Some(mount_point) = mount_point {
+        params.push(Box::new(mount_point.to_owned()));
+    }
+    if !path_filter.is_empty() {
+        params.push(Box::new(like_pattern(path_query)));
+    }
+    let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), row_to_track)?;
     rows.collect()
 }
 

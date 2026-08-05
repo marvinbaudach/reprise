@@ -10,6 +10,7 @@ mod concerts_failure_ui;
 mod concerts_filter_bar;
 mod concerts_model;
 mod concerts_presentation;
+mod concerts_search;
 mod concerts_view;
 mod concerts_worker;
 pub(super) mod css;

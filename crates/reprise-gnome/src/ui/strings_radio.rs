@@ -98,12 +98,21 @@ pub fn radio_station_count(count: usize) -> String {
 }
 
 pub fn radio_filtered_count(visible: usize, total: usize) -> String {
+    filtered_station_count(&visible.to_string(), total)
+}
+
+/// FIL-2: the same line with the shown number accented. The bold goes in as
+/// the *argument*, not as a substring search over the rendered sentence — a
+/// translation that puts the total first would otherwise bold the wrong
+/// number, silently.
+pub fn radio_filtered_count_markup(visible: usize, total: usize) -> String {
+    filtered_station_count(&format!("<b>{visible}</b>"), total)
+}
+
+fn filtered_station_count(visible: &str, total: usize) -> String {
     formatted(
         N_!("{visible} of {total} stations"),
-        &[
-            ("visible", &visible.to_string()),
-            ("total", &total.to_string()),
-        ],
+        &[("visible", visible), ("total", &total.to_string())],
     )
 }
 

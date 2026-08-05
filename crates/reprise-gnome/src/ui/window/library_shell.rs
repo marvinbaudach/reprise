@@ -167,6 +167,7 @@ pub(in crate::ui) fn wire_source_routing(
     source_title: &adw::WindowTitle,
     show_content: Rc<dyn Fn()>,
     active_content_focus: &ActiveContentFocus,
+    section_search: &Rc<super::section_search::SectionSearch>,
 ) {
     let track_list = track_list.clone();
     let content_stack = content_stack.clone();
@@ -182,6 +183,7 @@ pub(in crate::ui) fn wire_source_routing(
     let show_content_on_select = show_content.clone();
     let nav_history = nav_history.clone();
     let active_content_focus = active_content_focus.clone();
+    let section_search = section_search.clone();
     sidebar.set_on_select(move |source, source_name| {
         // NAV-2: every routed switch records the place it leaves. Back
         // re-routes through here too, silenced by its suppression flag.
@@ -205,6 +207,15 @@ pub(in crate::ui) fn wire_source_routing(
             Ok(false) => {}
             Err(error) => tracing::error!(%error, "failed to record issue view as viewed"),
         }
+        // SEARCH-8: the scope switches BEFORE the view is routed, not after.
+        // `track_list.set_source` restores that source's own remembered
+        // search into the shared entry on its way in; if the scope were
+        // still the outgoing section at that moment, that restored text
+        // would be recorded as the *outgoing* section's query — silently
+        // overwriting it — and the entry would then be overwritten again
+        // with whatever the incoming scope last held. Switching first makes
+        // the restore land in the section it belongs to.
+        section_search.activate_source(&source, &source_name);
         if matches!(source, ViewSource::MyStats) {
             super::content_stack::show_page(&content_stack, "stats");
             stats_view.prepare_entrance();
@@ -226,7 +237,7 @@ pub(in crate::ui) fn wire_source_routing(
             super::content_stack::show_page(&content_stack, "radio");
         } else {
             super::content_stack::show_page(&content_stack, "library");
-            track_list.set_source(source);
+            track_list.set_source(source.clone());
         }
         source_title.set_title(&source_name);
         show_content_on_select();

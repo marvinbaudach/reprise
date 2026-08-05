@@ -74,6 +74,7 @@ fn render_single_group(kind: PodcastKind) -> RenderedEpisode {
         Connectivity::Online,
         None,
         &Rc::new(RefCell::new(PodcastSelection::default())),
+        "",
     );
     let window = gtk4::Window::builder()
         .default_width(1_200)

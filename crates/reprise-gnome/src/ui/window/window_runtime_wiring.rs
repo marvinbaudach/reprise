@@ -42,6 +42,7 @@ pub(in crate::ui) struct RuntimeWiring<'a> {
     pub(in crate::ui) header: &'a adw::HeaderBar,
     pub(in crate::ui) search_entry: &'a gtk4::SearchEntry,
     pub(in crate::ui) search_bar: &'a gtk4::SearchBar,
+    pub(in crate::ui) search_toggle: &'a gtk4::ToggleButton,
     pub(in crate::ui) sidebar_toggle: &'a gtk4::ToggleButton,
     pub(in crate::ui) sidebar_page: &'a adw::NavigationPage,
     pub(in crate::ui) split_view: &'a adw::OverlaySplitView,
@@ -86,6 +87,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         header,
         search_entry,
         search_bar,
+        search_toggle,
         sidebar_toggle,
         sidebar_page,
         split_view,
@@ -440,13 +442,28 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         }
     }
 
+    // SEARCH-8: one query per section. Built before the routing below so the
+    // first route already lands in the right scope.
+    let section_search =
+        super::section_search::SectionSearch::new(search_entry, search_bar, search_toggle, window);
+    super::section_search_wiring::install(
+        &section_search,
+        &super::section_search_wiring::SectionSearchViews {
+            track_list,
+            podcasts_view,
+            youtube_view,
+            radio_view,
+            releases_view,
+            concerts_view,
+        },
+    );
+
     let clear_all = gtk4::gio::SimpleAction::new("clear-all-filters", None);
     {
-        let track_list = track_list.clone();
-        let search_entry = search_entry.clone();
+        let section_search = section_search.clone();
         clear_all.connect_activate(move |_, _| {
-            track_list.clear_all_restrictions();
-            search_entry.set_text("");
+            // FIL-2: the current section only — its query and its facets.
+            section_search.clear_all();
         });
     }
     window.add_action(&clear_all);
@@ -495,7 +512,14 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         window_title,
         show_content_if_collapsed,
         &active_content_focus,
+        &section_search,
     );
+    {
+        let track_list = track_list.clone();
+        section_search.observe(content_stack, window_title, move || {
+            track_list.current_source()
+        });
+    }
     super::podcast_refresh_scheduler::arm(conn, db_path, podcasts_runtime, podcasts_view);
 
     let track_list_weak = Rc::downgrade(track_list);
@@ -523,11 +547,21 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     });
 
     let search_restore_guard = super::view_session::new_search_restore_guard();
-    super::view_session::wire_search(
-        search_entry,
-        track_list.clone(),
-        search_restore_guard.clone(),
-    );
+    {
+        // SEARCH-8: the track list answers to the header entry only while a
+        // track section is the visible one. A query typed in Podcasts must
+        // not silently re-filter Music behind the user's back.
+        let section_search = section_search.clone();
+        super::view_session::wire_search(
+            search_entry,
+            track_list.clone(),
+            search_restore_guard.clone(),
+            Rc::new(move || {
+                section_search.is_active(reprise_view::search_scope::SearchScope::Tracks)
+                    || section_search.is_active(reprise_view::search_scope::SearchScope::Missing)
+            }),
+        );
+    }
     super::view_session::arm_smoke(
         search_entry,
         track_list,
@@ -552,8 +586,16 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
         window,
         search_bar,
         search_entry,
-        focus_active_content,
-        show_sound,
+        super::shortcuts::ShortcutHooks {
+            focus_active_content,
+            show_sound,
+            // SEARCH-8: Ctrl+F is a no-op where the visible section has no
+            // list to filter.
+            search_available: {
+                let section_search = section_search.clone();
+                Rc::new(move || section_search.supports_search())
+            },
+        },
         player.clone(),
     );
 

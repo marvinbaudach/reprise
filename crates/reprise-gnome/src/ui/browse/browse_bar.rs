@@ -314,6 +314,12 @@ impl BrowseBar {
         self.sync_visibility();
     }
 
+    /// FIL-1d: the scope this bar's search chip speaks for — derived from the
+    /// source it is currently describing, never guessed.
+    pub(in crate::ui) fn search_scope(&self) -> reprise_view::search_scope::SearchScope {
+        reprise_view::search_scope::scope_for(&self.source.borrow())
+    }
+
     pub fn set_search(self: &Rc<Self>, text: &str) {
         *self.search.borrow_mut() = text.to_string();
         self.refresh();
@@ -462,17 +468,11 @@ impl BrowseBar {
         self.chips.remove_all();
         let query = self.search.borrow().trim().to_string();
         if !query.is_empty() {
-            let button = gtk4::Button::with_label(&format!(
-                "{}  ×",
-                filter_strings::search_chip_label(&query)
-            ));
-            button.add_css_class("flat");
-            button.add_css_class(CHIP_CSS_CLASS);
-            button.update_property(&[gtk4::accessible::Property::Label(
-                &filter_strings::remove_search_label(&query),
-            )]);
+            // FIL-1d: Music and its sibling track sources keep "in any field";
+            // Missing files says "in file paths", because that is what its
+            // list is made of.
             let weak = Rc::downgrade(self);
-            button.connect_clicked(move |_| {
+            let button = super::search_chip::build(self.search_scope(), &query, move || {
                 let Some(bar) = weak.upgrade() else {
                     return;
                 };

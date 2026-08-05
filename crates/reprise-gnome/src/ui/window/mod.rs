@@ -6,6 +6,8 @@ pub(in crate::ui) mod metadata_navigation;
 mod player_backends;
 pub(in crate::ui) mod podcast_refresh_scheduler;
 pub(in crate::ui) mod responsive_side_panels;
+pub(in crate::ui) mod section_search;
+pub(in crate::ui) mod section_search_wiring;
 mod source_connectivity;
 pub(in crate::ui) mod source_views;
 mod source_views_smoke;

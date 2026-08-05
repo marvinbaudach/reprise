@@ -600,6 +600,7 @@ pub fn build(
         header: &header,
         search_entry: &search_entry,
         search_bar: &library_chrome.search_bar,
+        search_toggle: &library_chrome.search_toggle,
         sidebar_toggle: &sidebar_toggle,
         sidebar_page: &sidebar_page,
         split_view: &split_view,
