@@ -209,6 +209,12 @@ fn build_widgets_for_session(
         // and is deliberately not shipped as an alien icon dependency.
         "audio-x-generic-symbolic",
     );
+    // The module ships switched off, so the tab starts hidden and only appears
+    // once it is enabled. Adding it visible and hiding it a moment later in
+    // `set_sound_similarity_enabled` would put a fourth switcher button in
+    // front of everyone who never turned the plugin on — including, briefly,
+    // at startup.
+    sound_page.set_visible(false);
     tab_stack.set_visible_child_name(session.selected.get().page_name());
     lyrics.set_tab_open(session.selected.get() == PanelTab::Lyrics);
     let tab_switcher = adw::InlineViewSwitcher::builder()

@@ -33,6 +33,11 @@ fn four_tab_labels_fit_the_300_px_panel_without_ellipsizing() {
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     content.set_width_request(600);
     let widgets = test_widgets(&content);
+    // Four tabs only exist while Sound Similarity is switched on; the module
+    // ships off, so its page starts hidden. Enabling it here is what puts the
+    // fourth label into the switcher — measuring the three-tab bar would not
+    // answer the question E3 asks.
+    widgets.sound_page.set_visible(true);
     let window = gtk4::Window::builder()
         .default_width(900)
         .default_height(700)
