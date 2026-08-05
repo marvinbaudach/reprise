@@ -67,6 +67,10 @@ pub enum DataError {
     CapabilityDenied(&'static str),
     /// Caller input was invalid (caller-visible message).
     InvalidInput(String),
+    /// A tag-write job in another surface currently owns the shared slot.
+    TagWriteBusy,
+    /// A Library Doctor invariant failed. Logged, never exposed to callers.
+    Internal(String),
 }
 
 impl std::fmt::Display for DataError {
@@ -78,6 +82,8 @@ impl std::fmt::Display for DataError {
                 write!(f, "capability denied: {capability}")
             }
             Self::InvalidInput(message) => write!(f, "invalid input: {message}"),
+            Self::TagWriteBusy => write!(f, "another tag-writing job is already running"),
+            Self::Internal(message) => write!(f, "internal error: {message}"),
         }
     }
 }

@@ -9,7 +9,6 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 
 use super::sidebar::{find_row, select_row_in_its_listbox, Shared};
-use super::sidebar_playlist_creation;
 
 /// Wires the `ListBox`'s `row-selected` signal: a navigation row becoming
 /// selected updates `shared.current_source` and notifies `on_select` — but
@@ -102,9 +101,7 @@ fn route_row(shared: &Rc<Shared>, row: &gtk4::ListBoxRow) {
 /// (found in `shared.rows`) invokes `on_show_content` here unconditionally —
 /// cheap and idempotent (`window.rs`'s callback only flips `show-content`
 /// when the split view is collapsed), so firing it redundantly alongside a
-/// real `on_select`-driven switch is harmless. The "New playlist" row (non-
-/// selectable, so it never appears in `shared.rows`) is handled separately:
-/// it opens the dialog instead.
+/// real `on_select`-driven switch is harmless.
 /// While keyboard focus browses the sidebar, GTK's focus-driven selection
 /// wanders WITHOUT routing (see `wire_row_selected_on`). If focus then
 /// leaves the lists without a commit, snap the visual selection back to the
@@ -137,19 +134,6 @@ pub(in crate::ui) fn wire_row_activated(shared: &Rc<Shared>) {
 fn wire_row_activated_on(shared: &Rc<Shared>, listbox: &gtk4::ListBox) {
     let shared = shared.clone();
     listbox.connect_row_activated(move |_, row| {
-        let is_new_playlist_row = shared.new_playlist_row.borrow().as_ref() == Some(row);
-        if is_new_playlist_row {
-            sidebar_playlist_creation::show_new_playlist_dialog(&shared);
-            return;
-        }
-        let is_import_playlist_row = shared.import_playlist_row.borrow().as_ref() == Some(row);
-        if is_import_playlist_row {
-            let callback = shared.on_import_playlist.borrow().clone();
-            if let Some(callback) = callback {
-                callback();
-            }
-            return;
-        }
         let is_nav_row = shared.rows.borrow().iter().any(|(r, _, _)| r == row);
         if is_nav_row {
             // The user COMMITTED to this row (single click, Enter, Space) —

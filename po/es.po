@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-08-05 11:49+0200\n"
+"POT-Creation-Date: 2026-08-05 18:15+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Spanish\n"
@@ -53,6 +53,7 @@ msgstr "Los paneles laterales se cerraron para ajustarse a la ventana"
 
 #: crates/reprise-gnome/src/ui/strings.rs:134
 #: crates/reprise-gnome/src/ui/strings_issues.rs:42
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:81
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:174
 #: crates/reprise-gnome/src/ui/strings_radio.rs:63
 msgid "Undo"
@@ -540,10 +541,12 @@ msgid "Album"
 msgstr "Álbum"
 
 #: crates/reprise-gnome/src/ui/strings.rs:382
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:83
 msgid "Track"
 msgstr "Pista"
 
 #: crates/reprise-gnome/src/ui/strings.rs:383
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:88
 #: crates/reprise-gnome/src/ui/strings_radio.rs:17
 #: crates/reprise-gnome/src/ui/strings_radio.rs:23
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:167
@@ -552,6 +555,7 @@ msgid "Genre"
 msgstr "Género"
 
 #: crates/reprise-gnome/src/ui/strings.rs:384
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:87
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:165
 #: crates/reprise-view/src/strings/browse.rs:15
 msgid "Year"
@@ -1001,55 +1005,59 @@ msgstr "Volver a analizar la biblioteca"
 msgid "Cancel Scan"
 msgstr "Cancelar el análisis"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:31
-msgid "Sync Device…"
-msgstr "Sincronizar dispositivo…"
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:33
+msgid "Analyze Library"
+msgstr "Analizar el audio de la biblioteca"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:32
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:34
+msgid "Stop Analysis"
+msgstr "Detener el análisis de audio"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:35
 msgid "Keyboard Shortcuts"
 msgstr "Atajos de teclado"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:33
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:36
 msgid "Open Keyboard Shortcuts"
 msgstr "Abrir los atajos de teclado"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:36
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:39
 msgid "Always on Top"
 msgstr "Siempre_encima"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:37
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:40
 msgid "Quit"
 msgstr "Salir"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:40
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:43
 msgid "Accent Color"
 msgstr "Color de acento"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:41
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:44
 msgid "Choose the Reprise accent or follow the system"
 msgstr "Usar el acento de Reprise o seguir el sistema"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:42
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:45
 msgid "App Accent"
 msgstr "Acento de la aplicación"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:43
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:46
 msgid "Color Scheme"
 msgstr "Esquema de color"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:44
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:47
 msgid "Choose light, dark, or follow system preference"
 msgstr "Elegir el modo claro, oscuro o seguir la preferencia del sistema"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:45
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:48
 msgid "Light"
 msgstr "Liviano"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:46
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:49
 msgid "Dark"
 msgstr "Oscuro"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:47
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:50
 msgid "System"
 msgstr "Sistema"
 
@@ -1428,7 +1436,7 @@ msgid "{count} failed"
 msgstr "{count} fallidos"
 
 #: crates/reprise-gnome/src/ui/strings_issues.rs:201
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:74
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:58
 #: crates/reprise-gnome/src/ui/strings_sources.rs:17
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:150
 msgid "Details"
@@ -1442,19 +1450,11 @@ msgstr "Pista no disponible; se omitió"
 msgid "Library Doctor"
 msgstr "Doctor de la biblioteca"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:11
-msgid ""
-"Review local tag cleanup suggestions; optional remote suggestions; contacts "
-"MusicBrainz / AcoustID"
-msgstr ""
-"Revisa sugerencias locales para limpiar etiquetas y sugerencias remotas "
-"opcionales; contacta con MusicBrainz y AcoustID"
-
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:12
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:10
 msgid "MusicBrainz / AcoustID suggestions"
 msgstr "Sugerencias de MusicBrainz y AcoustID"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:14
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:12
 msgid ""
 "Optional network lookup · local fixes are always included · no file paths or "
 "private library data"
@@ -1462,11 +1462,11 @@ msgstr ""
 "Consulta de red opcional · las correcciones locales siempre se incluyen · "
 "sin rutas de archivo ni datos privados de la biblioteca"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:15
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:13
 msgid "Enable remote tag suggestions?"
 msgstr "¿Activar las sugerencias remotas de etiquetas?"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:17
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:15
 msgid ""
 "Reprise sends only existing title, artist, album, album artist, MusicBrainz "
 "IDs, and duration to MusicBrainz. AcoustID receives only a fingerprint and "
@@ -1479,397 +1479,497 @@ msgstr ""
 "archivo, raíces de la biblioteca, valoraciones, historial de escucha, listas "
 "de reproducción ni datos de dispositivos."
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:19
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:17
 msgid "Enable Suggestions"
 msgstr "Activar sugerencias"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:20
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:18
 msgid "Scope"
 msgstr "Ámbito"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:21
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:19
 msgid "Whole Library"
 msgstr "Toda la biblioteca"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:22
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:20
 msgid "Current View"
 msgstr "Vista actual"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:23
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:21
 msgid "Selection"
 msgstr "Selección"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:24
-msgid "Scan Options"
-msgstr "Opciones de análisis"
-
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:25
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:22
 msgid "Run Scan Now"
 msgstr "Analizar ahora"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:26
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:23
 msgid "Checking tracks…"
 msgstr "Comprobando pistas…"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:27
-msgid "Results"
-msgstr "Resultados"
-
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:28
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:24
 msgid "Results Found So Far"
 msgstr "Resultados encontrados hasta ahora"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:29
-msgid "Safe · local, preselected"
-msgstr "Seguras · locales y preseleccionadas"
-
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:30
-msgid "Suggestions · review"
-msgstr "Sugerencias · revisar"
-
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:31
-msgid "Unresolved Groups"
-msgstr "Grupos sin resolver"
-
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:32
-msgid "Tracks Checked · skipped"
-msgstr "Pistas comprobadas · omitidas"
-
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:33
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:25
 msgid "Casing / Whitespace"
 msgstr "Mayúsculas y espacios"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:34
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:26
 msgid "Missing Album Artist"
 msgstr "Falta el artista del álbum"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:35
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:27
 msgid "Genre Variants"
 msgstr "Variantes del género"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:36
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:28
 msgid "Missing / Incorrect Year"
 msgstr "Año ausente o incorrecto"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:37
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:29
 msgid "Missing Recording MBID"
 msgstr "Falta el MBID de la grabación"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:38
-msgid "Review Changes"
-msgstr "Revisar cambios"
-
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:39
-msgid "Review Safe Fixes"
-msgstr "Revisar correcciones seguras"
-
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:40
-msgid "No Library Doctor Results Yet"
-msgstr "Aún no hay resultados del Doctor de la biblioteca"
-
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:42
-msgid "Choose a scope and run a read-only scan. No tags are changed here."
-msgstr ""
-"Elige un ámbito y ejecuta un análisis de solo lectura. Aquí no se cambia "
-"ninguna etiqueta."
-
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:44
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:31
 msgid "That scope is no longer available. Scanning the whole library instead."
 msgstr "Ese ámbito ya no está disponible. Se analizará toda la biblioteca."
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:45
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:32
 msgid "AcoustID Unavailable"
 msgstr "AcoustID no está disponible"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:47
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:34
 msgid "Local checks and MusicBrainz suggestions remain available."
 msgstr ""
 "Las comprobaciones locales y las sugerencias de MusicBrainz siguen "
 "disponibles."
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:48
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:35
 #: crates/reprise-gnome/src/ui/strings_online_sources.rs:11
 msgid "Local"
 msgstr "Local"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:49
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:36
 msgid "MusicBrainz"
 msgstr "MusicBrainz"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:50
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:37
 msgid "AcoustID"
 msgstr "AcoustID"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:51
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:38
 msgid "Recording MBID"
 msgstr "MBID de la grabación"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:52
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:39
 msgid "Unknown Track"
 msgstr "Pista desconocida"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:53
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:40
 msgid "— empty —"
 msgstr "— vacío —"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:54
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:41
 msgid "Select tag change"
 msgstr "Seleccionar cambio de etiqueta"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:55
-msgid "Track + Field"
-msgstr "Pista y campo"
-
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:56
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:42
 msgid "Current"
 msgstr "Actual"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:57
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:43
 msgid "Proposed"
 msgstr "Propuesto"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:58
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:44
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:26
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:23
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:44
 msgid "Source"
 msgstr "Origen"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:59
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:45
 msgid "Low confidence; review before selecting"
 msgstr "Confianza baja; revisar antes de seleccionar"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:60
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:46
 msgid "Edit track tags…"
 msgstr "Editar etiquetas de la pista…"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:61
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:47
 msgid "No Changes to Review"
 msgstr "No hay cambios que revisar"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:63
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:49
 msgid "Return to the results and choose another review filter."
 msgstr "Vuelve a los resultados y elige otro filtro de revisión."
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:64
-msgid "All Safe"
-msgstr "Todas las seguras"
-
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:65
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:50
 msgid "None"
 msgstr "Ninguno"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:66
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:51
 msgid "Review Tag Changes"
 msgstr "Revisar cambios de etiquetas"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:67
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:52
 msgid "Pick one spelling to materialize its track changes."
 msgstr "Elige una grafía para materializar los cambios de sus pistas."
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:68
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:53
 msgid "Updating tags…"
 msgstr "Actualizando etiquetas…"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:69
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:54
 msgid "Reverting tags…"
 msgstr "Revirtiendo etiquetas…"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:70
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:55
 msgid "Library Doctor progress"
 msgstr "Progreso del Doctor de la biblioteca"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:71
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:56
 msgid "Locked while a Library Doctor job is running"
 msgstr "Bloqueado mientras se ejecuta una tarea del Doctor de la biblioteca"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:72
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:57
 msgid "Another tag-writing job is already running"
 msgstr "Ya se está ejecutando otra tarea de escritura de etiquetas"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:73
-#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:189
-msgid "Revert"
-msgstr "Revertir"
-
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:75
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:59
 msgid "Applied"
 msgstr "Aplicado"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:76
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:60
 msgid "Reverted"
 msgstr "Revertido"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:77
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:61
 msgid "Remaining"
 msgstr "Restante"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:78
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:62
 msgid "Conflict"
 msgstr "Conflicto"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:79
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:63
 msgid "Stale"
 msgstr "Desactualizado"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:80
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:64
 msgid "Failed"
 msgstr "Falló"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:81
-msgid "Cleanup Status"
-msgstr "Estado de la limpieza"
-
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:82
-msgid "Revert Status"
-msgstr "Estado de la reversión"
-
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:83
-msgid "Local fixes always included · no network"
-msgstr "Las correcciones locales siempre se incluyen · sin red"
-
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:84
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:65
 msgid "Revert Last Cleanup"
 msgstr "Revertir la última limpieza"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:86
-msgid ""
-"This job continues in the background. Progress and Cancel stay in the "
-"sidebar."
-msgstr ""
-"Esta tarea continúa en segundo plano. El progreso y la opción de cancelar "
-"permanecen en la barra lateral."
-
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:87
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:66
 msgid "Library Doctor Job Failed"
 msgstr "Falló la tarea del Doctor de la biblioteca"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:91
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:67
+msgid "Check your library"
+msgstr "Revisar tu biblioteca"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:69
+msgid ""
+"Reprise fixes what is unambiguous — stray spaces, casing, missing "
+"MusicBrainz IDs — and asks you about the rest. Everything it does can be "
+"undone in one step."
+msgstr ""
+"Reprise corrige lo inequívoco — espacios sobrantes, uso de mayúsculas y "
+"minúsculas e identificadores de MusicBrainz ausentes — y te consulta el "
+"resto. Todo se puede deshacer en un solo paso."
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:72
+msgid ""
+"Waiting at the end of the review list. Skippable — nothing breaks if you "
+"leave them."
+msgstr ""
+"Te esperan al final de la lista de revisión. Puedes omitirlos: no pasa nada "
+"si los dejas."
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:73
+msgid "Spelling conflicts"
+msgstr "Conflictos ortográficos"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:74
+msgid "Optional · nothing happens if you skip these"
+msgstr "Opcional · no pasa nada si los omites"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:75
+msgid "Skip all"
+msgstr "Omitir todos"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:76
+msgid "Scan again"
+msgstr "Volver a analizar"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:77
+msgid "Results are kept until the next scan."
+msgstr "Los resultados se conservan hasta el próximo análisis."
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:78
+msgid "Nothing to fix"
+msgstr "Nada que corregir"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:79
+msgid "Undo everything from this scan"
+msgstr "Deshacer todo lo de este análisis"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:80
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:29
+msgid "Done"
+msgstr "Hecho"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:82
+msgid "All"
+msgstr "Todos"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:84
+msgid "Field"
+msgstr "Campo"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:85
+msgid "No album"
+msgstr "Sin álbum"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:86
+msgid "Casing"
+msgstr "Mayúsculas/minúsculas"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:89
+msgid "Filter tag changes"
+msgstr "Filtrar cambios de etiquetas"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:90
+msgid "Untitled playlist"
+msgstr "Lista de reproducción sin título"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:96
+#, rust-format
+msgid "Now: {value}"
+msgstr "Ahora: {value}"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:100
+#, rust-format
+msgid "New: {value}"
+msgstr "Nuevo: {value}"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:104
+#, rust-format
+msgid "From: {value}"
+msgstr "De: {value}"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:109
+#, rust-format
+msgid "{tracks} tracks · about {minutes} minutes"
+msgstr "{tracks} pistas · unos {minutes} minutos"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:118
+#, rust-format
+msgid "Last scan · {when}"
+msgstr "Último análisis · {when}"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:123
+#, rust-format
+msgid "{count} fixes applied · still reversible"
+msgstr "{count} correcciones aplicadas · aún reversibles"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:130
+#, rust-format
+msgid "{count} fixes already applied"
+msgstr "{count} correcciones ya aplicadas"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:137
+#, rust-format
+msgid "{count} fixes to apply"
+msgstr "{count} correcciones por aplicar"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:144
+#, rust-format
+msgid "{count} stray spaces and casing corrections"
+msgstr "{count} correcciones de espacios sobrantes y mayúsculas/minúsculas"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:151
+#, rust-format
+msgid "{count} MusicBrainz IDs filled in — no visible change to your tags"
+msgstr ""
+"{count} identificadores de MusicBrainz completados — sin cambios visibles en "
+"tus etiquetas"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:158
+#, rust-format
+msgid "{count} MusicBrainz IDs to fill in — no visible change to your tags"
+msgstr ""
+"{count} identificadores de MusicBrainz por completar — sin cambios visibles "
+"en tus etiquetas"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:165
+#, rust-format
+msgid "{count} changes need your eye"
+msgstr "{count} cambios requieren tu atención"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:172
+#, rust-format
+msgid "across {count} albums"
+msgstr "en {count} álbumes"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:179
+#, rust-format
+msgid "{count} spelling conflicts, no clear winner"
+msgstr "{count} conflictos ortográficos, sin ganador claro"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:187
+#, rust-format
+msgid "Apply {count} change"
+msgstr "Aplicar {count} cambio"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:188
+#, rust-format
+msgid "Apply {count} changes"
+msgstr "Aplicar {count} cambios"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:196
+#, rust-format
+msgid ""
+"{checked} tracks checked, {skipped} skipped. Your tags are already "
+"consistent with each other."
+msgstr ""
+"{checked} pistas revisadas, {skipped} omitidas. Tus etiquetas ya son "
+"coherentes entre sí."
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:206
+#, rust-format
+msgid "{count} tracks checked"
+msgstr "{count} pistas revisadas"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:213
+#, rust-format
+msgid "Includes the {count} quiet fixes. Available until the next scan."
+msgstr ""
+"Incluye las {count} correcciones silenciosas. Disponible hasta el próximo "
+"análisis."
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:219
+#, rust-format
+msgid "{count} tags fixed"
+msgstr "{count} etiquetas corregidas"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:225
+#, rust-format
+msgid "All {count} track"
+msgstr "La {count} pista"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:226
+#, rust-format
+msgid "All {count} tracks"
+msgstr "Las {count} pistas"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:233
+msgid "Everything here is preselected. Uncheck what you disagree with."
+msgstr "Todo está preseleccionado. Desmarca lo que no te parezca correcto."
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:238
+#, rust-format
+msgid "{changes} changes · {albums} albums"
+msgstr "{changes} cambios · {albums} álbumes"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:248
+#, rust-format
+msgid "{field} · {tracks} tracks"
+msgstr "{field} · {tracks} pistas"
+
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:255
 #, rust-format
 msgid "{source} · {confidence}%"
 msgstr "{source} · {confidence}%"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:98
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:262
 #, rust-format
 msgid "{source} · {confidence}% · low confidence"
 msgstr "{source} · {confidence}% · confianza baja"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:111
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:275
 #, rust-format
 msgid ""
 "{track}, {field}. Current: {current}. Proposed: {proposed}. Source: {source}."
 msgstr ""
 "{track}, {field}. Actual: {current}. Propuesto: {proposed}. Fuente: {source}."
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:125
-#, rust-format
-msgid "Apply {count} track"
-msgid_plural "Apply {count} tracks"
-msgstr[0] "Aplicar a {count} pista"
-msgstr[1] "Aplicar a {count} pistas"
-
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:134
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:288
 #, rust-format
 msgid "{changes} tag changes · {files} files · undo available after"
 msgstr ""
 "{changes} cambios de etiquetas · {files} archivos · se podrán deshacer "
 "después"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:144
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:298
 #, rust-format
 msgid "{value} ({count})"
 msgstr "{value} ({count})"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:152
-#, rust-format
-msgid "{count} spelling, no clear winner"
-msgid_plural "{count} spellings, no clear winner"
-msgstr[0] "{count} grafía, sin una opción claramente preferida"
-msgstr[1] "{count} grafías, sin una opción claramente preferida"
-
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:161
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:305
 #, rust-format
 msgid "{label}: {value}"
 msgstr "{label}: {value}"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:168
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:312
 #, rust-format
 msgid "Duration: {duration} ms"
 msgstr "Duración: {duration} ms"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:175
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:319
 #, rust-format
 msgid "Duration difference: {delta} ms"
 msgstr "Diferencia de duración: {delta} ms"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:182
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:326
 #, rust-format
 msgid "{completed}/{total} tracks"
 msgstr "{completed}/{total} pistas"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:192
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:336
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:117
 #, rust-format
 msgid "Tags updated · {count} tracks"
 msgstr "Etiquetas actualizadas · {count} pistas"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:199
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:343
 #, rust-format
 msgid "Tags reverted · {count} tracks"
 msgstr "Etiquetas revertidas · {count} pistas"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:206
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:350
 #, rust-format
 msgid "{updated} tracks updated · {cancelled} cancelled"
 msgstr "{updated} pistas actualizadas · {cancelled} canceladas"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:216
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:360
 #, rust-format
 msgid "{updated} updated, {failed} failed"
 msgstr "{updated} actualizadas, {failed} fallidas"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:226
-#, rust-format
-msgid "{applied} applied · {remaining} remaining"
-msgstr "{applied} aplicados · {remaining} restantes"
-
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:237
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:371
 #, rust-format
 msgid "{count} change"
 msgid_plural "{count} changes"
 msgstr[0] "{count} cambio"
 msgstr[1] "{count} cambios"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:247
-#, rust-format
-msgid "{count} group"
-msgid_plural "{count} groups"
-msgstr[0] "{count} grupo"
-msgstr[1] "{count} grupos"
-
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:256
-#, rust-format
-msgid "{safe} safe · {review} review"
-msgstr "{safe} seguras · {review} para revisar"
-
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:263
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:380
 #, rust-format
 msgid "{checked} checked · {skipped} skipped"
 msgstr "{checked} comprobadas · {skipped} omitidas"
 
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:274
+#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:391
 #, rust-format
 msgid "Review {count} change"
 msgid_plural "Review {count} changes"
 msgstr[0] "Revisar {count} cambio"
 msgstr[1] "Revisar {count} cambios"
-
-#: crates/reprise-gnome/src/ui/strings_library_doctor.rs:284
-#, rust-format
-msgid "Review {count} safe fix"
-msgid_plural "Review {count} safe fixes"
-msgstr[0] "Revisar {count} corrección segura"
-msgstr[1] "Revisar {count} correcciones seguras"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:10
 msgid "Information"
@@ -2237,7 +2337,23 @@ msgstr "Comprobación de letras completada"
 msgid "Could not check lyrics"
 msgstr "No se pudieron comprobar las letras"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:212
+#: crates/reprise-gnome/src/ui/strings_news.rs:200
+msgid "Analyzing library…"
+msgstr "Analizando el audio de la biblioteca…"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:201
+msgid "Library analysis complete"
+msgstr "Análisis de audio completado"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:202
+msgid "Library analysis stopped"
+msgstr "Análisis de audio detenido"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:203
+msgid "Could not analyze the library"
+msgstr "No se pudo analizar el audio de la biblioteca"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:216
 #, rust-format
 msgid ""
 "{checked} of {total} checked · {downloaded} downloaded · {unavailable} "
@@ -2246,7 +2362,17 @@ msgstr ""
 "{checked} de {total} comprobadas · {downloaded} descargadas · {unavailable} "
 "no disponibles"
 
-#: crates/reprise-gnome/src/ui/strings_news.rs:229
+#: crates/reprise-gnome/src/ui/strings_news.rs:228
+#, rust-format
+msgid "{analyzed} of {total} analyzed"
+msgstr "{analyzed} de {total} analizados"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:240
+#, rust-format
+msgid "{analyzed} analyzed · {failed} failed"
+msgstr "{analyzed} analizados · {failed} fallidos"
+
+#: crates/reprise-gnome/src/ui/strings_news.rs:255
 #, rust-format
 msgid ""
 "{checked} of {total} checked · {cached} cached · {unavailable} unavailable"
@@ -3685,10 +3811,6 @@ msgstr "Archivos que ya no están en el disco"
 msgid "Podcasts & radio streams"
 msgstr "Pódcast y emisiones de radio"
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:29
-msgid "Done"
-msgstr "Hecho"
-
 #: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:36
 #, rust-format
 msgid "{matched} of {total} Rhythmbox entries matched your library"
@@ -4483,25 +4605,25 @@ msgstr "Dinámica"
 msgid "Number of matches"
 msgstr "Número de coincidencias"
 
-#: crates/reprise-gnome/src/ui/strings_sound_similarity.rs:23
+#: crates/reprise-gnome/src/ui/strings_sound_similarity.rs:22
 msgid "Find similar tracks"
 msgstr "Buscar pistas similares"
 
-#: crates/reprise-gnome/src/ui/strings_sound_similarity.rs:24
+#: crates/reprise-gnome/src/ui/strings_sound_similarity.rs:23
 #, rust-format
 msgid "Analysing your library — {ready} of {total}"
 msgstr "Analizando tu biblioteca — {ready} de {total}"
 
-#: crates/reprise-gnome/src/ui/strings_sound_similarity.rs:25
+#: crates/reprise-gnome/src/ui/strings_sound_similarity.rs:24
 msgid "Sound analysis is unavailable"
 msgstr "El análisis de sonido no está disponible"
 
-#: crates/reprise-gnome/src/ui/strings_sound_similarity.rs:26
+#: crates/reprise-gnome/src/ui/strings_sound_similarity.rs:25
 #, rust-format
 msgid "up to {frequency}"
 msgstr "hasta {frequency}"
 
-#: crates/reprise-gnome/src/ui/strings_sound_similarity.rs:29
+#: crates/reprise-gnome/src/ui/strings_sound_similarity.rs:27
 msgid ""
 "Estimated from onsets; halftime and time changes can put it out by a factor "
 "of two."
@@ -4661,6 +4783,10 @@ msgstr "{count} cambio pendiente"
 #, rust-format
 msgid "{count} changes pending"
 msgstr "{count} cambios pendientes"
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:189
+msgid "Revert"
+msgstr "Revertir"
 
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:196
 msgid "Save changes?"
@@ -5225,35 +5351,3 @@ msgstr "Chromium (CSD)"
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:18
 msgid "Separate title bar"
 msgstr "Barra de título independiente"
-
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:33
-msgid "Analyze Library"
-msgstr "Analizar el audio de la biblioteca"
-
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:34
-msgid "Stop Analysis"
-msgstr "Detener el análisis de audio"
-
-#: crates/reprise-gnome/src/ui/strings_news.rs:200
-msgid "Analyzing library…"
-msgstr "Analizando el audio de la biblioteca…"
-
-#: crates/reprise-gnome/src/ui/strings_news.rs:201
-msgid "Library analysis complete"
-msgstr "Análisis de audio completado"
-
-#: crates/reprise-gnome/src/ui/strings_news.rs:202
-msgid "Library analysis stopped"
-msgstr "Análisis de audio detenido"
-
-#: crates/reprise-gnome/src/ui/strings_news.rs:203
-msgid "Could not analyze the library"
-msgstr "No se pudo analizar el audio de la biblioteca"
-
-#: crates/reprise-gnome/src/ui/strings_news.rs:228
-msgid "{analyzed} of {total} analyzed"
-msgstr "{analyzed} de {total} analizados"
-
-#: crates/reprise-gnome/src/ui/strings_news.rs:240
-msgid "{analyzed} analyzed · {failed} failed"
-msgstr "{analyzed} analizados · {failed} fallidos"

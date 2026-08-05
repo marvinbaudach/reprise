@@ -20,6 +20,9 @@ mod device_sync;
 #[cfg(feature = "mpris")]
 mod device_tools;
 mod discovery_actions;
+mod doctor_actions;
+mod doctor_dto;
+mod doctor_tools;
 mod dto;
 mod episode_actions;
 mod error;
@@ -99,6 +102,7 @@ async fn serve(db_path: PathBuf, staging_path: PathBuf, caps: startup::StartupCa
         caps.playlist_manage,
         caps.ai_create,
         caps.sources_manage,
+        caps.tags_write,
         #[cfg(feature = "mpris")]
         caps.device_sync,
     );

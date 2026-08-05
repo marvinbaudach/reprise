@@ -1,5 +1,5 @@
-use std::cell::RefCell;
-use std::collections::HashMap;
+use std::cell::{Cell, RefCell};
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -10,35 +10,63 @@ use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::db::Db;
 use reprise_core::library_doctor::{
-    DoctorApplyPlan, DoctorReviewFilter, DoctorReviewRowId, DoctorReviewRowState,
-    DoctorReviewSession, DoctorScan, DoctorWriteReport, DoctorWriteRowState,
+    DoctorApplyPlan, DoctorReviewFilter, DoctorReviewGroupId, DoctorReviewRowId,
+    DoctorReviewRowState, DoctorReviewSession, DoctorScan, DoctorValue, DoctorWriteReport,
+    DoctorWriteRowState, LibraryDoctor,
 };
 
-use super::review_model::{rows_for, ReviewOutcome, ReviewRowModel};
-use crate::ui::preferences::preference_library_doctor;
+use super::review_conflicts::ReviewConflicts;
+use super::review_filter_bar::ReviewFilterBar;
+use super::review_header::{album_header_factory, OnSelect, ReviewColumnGroups, ReviewHeader};
+use super::review_model::{
+    available_categories, grouped_rows_for, layout_for_width, ReviewCategory, ReviewLayout,
+    ReviewOutcome, ReviewRowModel, WIDE_BREAKPOINT,
+};
+use crate::ui::library_doctor::remote_toggle;
 use crate::ui::strings;
 
+type OnEdit = Rc<dyn Fn(&[i64])>;
+
 struct ReviewState {
+    conn: Rc<Db>,
     scan: DoctorScan,
     session: RefCell<DoctorReviewSession>,
     store: gio::ListStore,
+    filter: gtk4::CustomFilter,
+    sorted: gtk4::SortListModel,
+    category: Rc<Cell<Option<ReviewCategory>>>,
     selection: gtk4::SingleSelection,
     content: gtk4::Stack,
-    groups: gtk4::Box,
+    conflicts: gtk4::Box,
+    filter_bar: ReviewFilterBar,
     apply: gtk4::Button,
     change_summary: gtk4::Label,
+    layout: Rc<Cell<ReviewLayout>>,
+    column_groups: ReviewColumnGroups,
     outcomes: RefCell<HashMap<DoctorReviewRowId, ReviewOutcome>>,
+    on_reviewed: Rc<dyn Fn()>,
 }
 
 impl ReviewState {
     fn refresh(self: &Rc<Self>) {
         let selected = self.selection.selected();
-        self.store.remove_all();
         let session = self.session.borrow();
-        for row in rows_for(&self.scan, &session, &self.outcomes.borrow()) {
-            self.store.append(&glib::BoxedAnyObject::new(row));
+        let categories = available_categories(&session);
+        if self
+            .category
+            .get()
+            .is_some_and(|active| !categories.contains(&active))
+        {
+            self.category.set(None);
         }
-        let count = self.store.n_items();
+        self.filter_bar.set_categories(&categories);
+        let objects = grouped_rows_for(&self.scan, &session, &self.outcomes.borrow())
+            .into_iter()
+            .map(|row| glib::BoxedAnyObject::new(row).upcast::<glib::Object>())
+            .collect::<Vec<_>>();
+        self.store.splice(0, self.store.n_items(), &objects);
+        self.filter.changed(gtk4::FilterChange::Different);
+        let count = self.sorted.n_items();
         self.content
             .set_visible_child_name(if count == 0 { "empty" } else { "rows" });
         if count > 0 && selected != gtk4::INVALID_LIST_POSITION {
@@ -46,38 +74,81 @@ impl ReviewState {
         }
         let summary = session.summary();
         self.apply
-            .set_label(&strings::doctor_apply_tracks(summary.track_count));
-        self.apply.set_sensitive(summary.track_count > 0);
+            .set_label(&strings::doctor_apply_changes(summary.tag_change_count));
+        self.apply.set_sensitive(summary.tag_change_count > 0);
         self.change_summary
             .set_label(&strings::doctor_apply_summary(
                 summary.tag_change_count,
                 summary.file_count,
             ));
-        self.refresh_groups();
+        drop(session);
+        self.refresh_filter_summary();
+        self.refresh_conflicts();
     }
 
-    fn set_selected(self: &Rc<Self>, row_id: DoctorReviewRowId, selected: bool) {
-        if let Err(error) = self.session.borrow_mut().set_selected(row_id, selected) {
-            tracing::warn!(%error, "could not update Library Doctor review selection");
+    fn visible_rows(&self) -> Vec<ReviewRowModel> {
+        (0..self.sorted.n_items())
+            .filter_map(|position| row_at(&self.sorted, position))
+            .collect()
+    }
+
+    fn refresh_filter_summary(&self) {
+        let rows = self.visible_rows();
+        let changes = rows.iter().map(|row| row.selected_change_count).sum();
+        let albums = rows
+            .iter()
+            .map(|row| row.album_key.as_str())
+            .collect::<HashSet<_>>()
+            .len();
+        self.filter_bar.set_summary(changes, albums);
+    }
+
+    fn set_selected(self: &Rc<Self>, row_ids: &[DoctorReviewRowId], selected: bool) {
+        let mut session = self.session.borrow_mut();
+        for row_id in row_ids {
+            if let Err(error) = session.set_selected(*row_id, selected) {
+                tracing::warn!(%error, "could not update Library Doctor review selection");
+            }
         }
+        drop(session);
         self.refresh();
     }
 
     fn toggle_position(self: &Rc<Self>, position: u32) {
         let Some(boxed) = self
-            .store
+            .selection
             .item(position)
             .and_then(|object| object.downcast::<glib::BoxedAnyObject>().ok())
         else {
             return;
         };
         let model = boxed.borrow::<ReviewRowModel>();
-        self.set_selected(model.row.id, !model.row.selected);
+        self.set_selected(&model.row_ids, !model.row.selected);
+    }
+
+    fn set_category(&self, category: Option<ReviewCategory>) {
+        self.category.set(category);
+        self.filter.changed(gtk4::FilterChange::Different);
+        self.content
+            .set_visible_child_name(if self.sorted.n_items() == 0 {
+                "empty"
+            } else {
+                "rows"
+            });
+        self.refresh_filter_summary();
     }
 
     fn set_remote_visible(self: &Rc<Self>, visible: bool) {
         self.session.borrow_mut().set_remote_visible(visible);
         self.refresh();
+    }
+
+    fn set_layout(self: &Rc<Self>, layout: ReviewLayout) {
+        if self.layout.replace(layout) != layout {
+            self.column_groups
+                .set_wide(matches!(layout, ReviewLayout::Wide));
+            self.refresh();
+        }
     }
 
     fn mark_paths_stale(self: &Rc<Self>, paths: &[PathBuf]) {
@@ -104,61 +175,45 @@ impl ReviewState {
         self.refresh();
     }
 
-    fn refresh_groups(self: &Rc<Self>) {
-        while let Some(child) = self.groups.first_child() {
-            self.groups.remove(&child);
+    fn refresh_conflicts(self: &Rc<Self>) {
+        while let Some(child) = self.conflicts.first_child() {
+            self.conflicts.remove(&child);
         }
-        let groups = self.session.borrow().groups().to_vec();
-        self.groups.set_visible(!groups.is_empty());
-        if groups.is_empty() {
+        let weak = Rc::downgrade(self);
+        let on_choose = Rc::new(move |group_id, value: &DoctorValue| {
+            let Some(state) = weak.upgrade() else {
+                return;
+            };
+            if let Err(error) = state.session.borrow_mut().choose_candidate(group_id, value) {
+                tracing::warn!(%error, "could not choose Library Doctor spelling");
+                return;
+            }
+            state.refresh();
+        }) as Rc<dyn Fn(DoctorReviewGroupId, &DoctorValue)>;
+        let panel = ReviewConflicts::new(
+            self.session.borrow().groups(),
+            &self.scan.unresolved_groups,
+            &on_choose,
+        );
+        {
+            let weak = Rc::downgrade(self);
+            panel.skip.connect_clicked(move |_| {
+                if let Some(state) = weak.upgrade() {
+                    state.skip_all_conflicts();
+                }
+            });
+        }
+        self.conflicts.append(&panel.root);
+    }
+
+    fn skip_all_conflicts(self: &Rc<Self>) {
+        if let Err(error) = acknowledge_skipped_scan(&self.conn, self.scan.id) {
+            tracing::warn!(%error, "could not acknowledge skipped Library Doctor conflicts");
             return;
         }
-        let heading = gtk4::Label::builder()
-            .label(strings::text(strings::DOCTOR_UNRESOLVED_GROUPS))
-            .xalign(0.0)
-            .css_classes(["heading"])
-            .build();
-        self.groups.append(&heading);
-        for group in groups {
-            let labels = group
-                .candidates
-                .iter()
-                .map(super::review_model::candidate_description)
-                .collect::<Vec<_>>();
-            let model =
-                gtk4::StringList::new(&labels.iter().map(String::as_str).collect::<Vec<_>>());
-            let row = adw::ComboRow::builder()
-                .title(strings::doctor_unresolved_spellings(group.candidates.len()))
-                .subtitle(strings::text(strings::DOCTOR_PICK_ONE))
-                .model(&model)
-                .selected(gtk4::INVALID_LIST_POSITION)
-                .build();
-            row.set_tooltip_text(Some(&labels.join("\n")));
-            let weak = Rc::downgrade(self);
-            let candidates = group.candidates.clone();
-            row.connect_selected_notify(move |row| {
-                let position = row.selected();
-                if position == gtk4::INVALID_LIST_POSITION {
-                    return;
-                }
-                let Some(state) = weak.upgrade() else {
-                    return;
-                };
-                let Some(candidate) = candidates.get(position as usize) else {
-                    return;
-                };
-                if let Err(error) = state
-                    .session
-                    .borrow_mut()
-                    .choose_candidate(group.id, &candidate.value)
-                {
-                    tracing::warn!(%error, "could not choose Library Doctor spelling");
-                    return;
-                }
-                state.refresh();
-            });
-            self.groups.append(&row);
-        }
+        self.session.borrow_mut().clear_group_choices();
+        (self.on_reviewed)();
+        self.refresh();
     }
 
     fn apply_report(self: &Rc<Self>, report: &DoctorWriteReport) {
@@ -184,6 +239,42 @@ impl ReviewState {
         }
         drop(outcomes);
         self.refresh();
+    }
+}
+
+fn acknowledge_skipped_scan(db: &Db, scan_id: i64) -> Result<(), String> {
+    LibraryDoctor::new(db)
+        .set_reviewed_scan(scan_id)
+        .map_err(|error| error.to_string())
+}
+
+fn row_at(model: &gtk4::SortListModel, position: u32) -> Option<ReviewRowModel> {
+    let object = model
+        .item(position)?
+        .downcast::<glib::BoxedAnyObject>()
+        .ok()?;
+    let row = object.borrow::<ReviewRowModel>().clone();
+    Some(row)
+}
+
+fn compare_rows(left: &glib::Object, right: &glib::Object, section_only: bool) -> gtk4::Ordering {
+    let Some(left) = left.downcast_ref::<glib::BoxedAnyObject>() else {
+        return gtk4::Ordering::Equal;
+    };
+    let Some(right) = right.downcast_ref::<glib::BoxedAnyObject>() else {
+        return gtk4::Ordering::Equal;
+    };
+    let left = left.borrow::<ReviewRowModel>();
+    let right = right.borrow::<ReviewRowModel>();
+    let ordering = if section_only {
+        left.album_position.cmp(&right.album_position)
+    } else {
+        (left.album_position, left.row_position).cmp(&(right.album_position, right.row_position))
+    };
+    match ordering {
+        std::cmp::Ordering::Less => gtk4::Ordering::Smaller,
+        std::cmp::Ordering::Equal => gtk4::Ordering::Equal,
+        std::cmp::Ordering::Greater => gtk4::Ordering::Larger,
     }
 }
 
@@ -216,11 +307,10 @@ const fn outcome_transition(state: DoctorWriteRowState) -> OutcomeTransition {
 
 pub(super) struct LibraryDoctorReviewPage {
     navigation_page: adw::NavigationPage,
-    filter: DoctorReviewFilter,
     state: Rc<ReviewState>,
     remote: adw::SwitchRow,
     rows: gtk4::ListView,
-    all_safe: gtk4::Button,
+    all: gtk4::Button,
     none: gtk4::Button,
 }
 
@@ -228,14 +318,32 @@ impl LibraryDoctorReviewPage {
     pub(super) fn new(
         conn: &Rc<Db>,
         parent: &adw::ApplicationWindow,
-        scan: DoctorScan,
-        filter: DoctorReviewFilter,
+        scan: &DoctorScan,
         on_remote_changed: Rc<dyn Fn(bool)>,
-        on_edit: &Rc<dyn Fn(i64)>,
+        on_reviewed: Rc<dyn Fn()>,
+        on_edit: &OnEdit,
     ) -> Rc<Self> {
+        let session = DoctorReviewSession::from_scan(scan.clone(), DoctorReviewFilter::NeedsReview);
+        let categories = available_categories(&session);
+        let category = Rc::new(Cell::new(None::<ReviewCategory>));
+        let active_category = category.clone();
+        let filter = gtk4::CustomFilter::new(move |object| {
+            let Some(boxed) = object.downcast_ref::<glib::BoxedAnyObject>() else {
+                return false;
+            };
+            let model = boxed.borrow::<ReviewRowModel>();
+            active_category
+                .get()
+                .is_none_or(|category| category.matches(model.row.problem_class))
+        });
         let store = gio::ListStore::new::<glib::BoxedAnyObject>();
+        let filtered = gtk4::FilterListModel::new(Some(store.clone()), Some(filter.clone()));
+        let sorter = gtk4::CustomSorter::new(|left, right| compare_rows(left, right, false));
+        let sorted = gtk4::SortListModel::new(Some(filtered.clone()), Some(sorter));
+        let section_sorter = gtk4::CustomSorter::new(|left, right| compare_rows(left, right, true));
+        sorted.set_section_sorter(Some(&section_sorter));
         let selection = gtk4::SingleSelection::builder()
-            .model(&store)
+            .model(&sorted)
             .autoselect(false)
             .can_unselect(true)
             .build();
@@ -243,6 +351,8 @@ impl LibraryDoctorReviewPage {
             .model(&selection)
             .single_click_activate(false)
             .build();
+        let header = ReviewHeader::new();
+        let filter_bar = ReviewFilterBar::new(&categories);
         let empty = adw::StatusPage::builder()
             .icon_name("emblem-ok-symbolic")
             .title(strings::text(strings::DOCTOR_NO_CHANGES))
@@ -257,10 +367,7 @@ impl LibraryDoctorReviewPage {
         content.set_vexpand(true);
         content.add_named(&scrolled, Some("rows"));
         content.add_named(&empty, Some("empty"));
-        let groups = gtk4::Box::new(gtk4::Orientation::Vertical, 6);
-        groups.set_margin_start(18);
-        groups.set_margin_end(18);
-
+        let conflicts = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         let apply = gtk4::Button::builder()
             .css_classes(["suggested-action", "pill"])
             .build();
@@ -268,45 +375,64 @@ impl LibraryDoctorReviewPage {
             .xalign(0.0)
             .css_classes(["caption", "dim-label"])
             .build();
-        let footer_copy = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
-        footer_copy.set_hexpand(true);
-        footer_copy.append(&change_summary);
         let footer = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
         footer.set_margin_top(12);
         footer.set_margin_bottom(12);
         footer.set_margin_start(18);
         footer.set_margin_end(18);
-        footer.append(&footer_copy);
+        change_summary.set_hexpand(true);
+        footer.append(&change_summary);
         footer.append(&apply);
-
+        let layout = Rc::new(Cell::new(ReviewLayout::Wide));
         let state = Rc::new(ReviewState {
+            conn: conn.clone(),
             scan: scan.clone(),
-            session: RefCell::new(DoctorReviewSession::from_scan(scan, filter)),
+            session: RefCell::new(session),
             store,
+            filter,
+            sorted,
+            category,
             selection,
             content,
-            groups,
+            conflicts,
+            filter_bar,
             apply,
             change_summary,
+            layout,
+            column_groups: header.groups.clone(),
             outcomes: RefCell::new(HashMap::new()),
+            on_reviewed,
         });
         let on_select = {
             let state = state.clone();
-            Rc::new(move |row_id, selected| state.set_selected(row_id, selected))
-                as Rc<dyn Fn(DoctorReviewRowId, bool)>
+            Rc::new(move |row_ids: &[DoctorReviewRowId], selected| {
+                state.set_selected(row_ids, selected);
+            }) as OnSelect
         };
-        rows.set_factory(Some(&super::review_row::factory(&on_select, on_edit)));
+        rows.set_factory(Some(&super::review_row::factory(
+            &on_select,
+            on_edit,
+            &header.groups,
+            &state.layout,
+        )));
+        rows.set_header_factory(Some(&album_header_factory(&state.sorted, &on_select)));
         {
             let state = state.clone();
             rows.connect_activate(move |_, position| state.toggle_position(position));
         }
+        {
+            let callback_state = state.clone();
+            state.filter_bar.connect_changed(Rc::new(move |category| {
+                callback_state.set_category(category);
+            }));
+        }
 
-        let all_safe = gtk4::Button::with_label(&strings::text(strings::DOCTOR_ALL_SAFE));
+        let all = gtk4::Button::with_label(&strings::text(strings::DOCTOR_ALL));
         let none = gtk4::Button::with_label(&strings::text(strings::DOCTOR_NONE));
         {
             let state = state.clone();
-            all_safe.connect_clicked(move |_| {
-                state.session.borrow_mut().all_safe();
+            all.connect_clicked(move |_| {
+                state.session.borrow_mut().all();
                 state.refresh();
             });
         }
@@ -318,13 +444,13 @@ impl LibraryDoctorReviewPage {
             });
         }
         let presets = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
-        presets.append(&all_safe);
+        presets.append(&all);
         presets.append(&none);
-        let header = adw::HeaderBar::new();
-        header.pack_end(&presets);
+        let top_bar = adw::HeaderBar::new();
+        top_bar.pack_end(&presets);
 
         let state_for_remote = state.clone();
-        let remote = preference_library_doctor::remote_suggestions_row_for(
+        let remote = remote_toggle::remote_suggestions_row_for(
             conn,
             parent,
             Rc::new(move |visible| {
@@ -342,12 +468,36 @@ impl LibraryDoctorReviewPage {
         let page_content = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
         page_content.set_margin_top(12);
         page_content.append(&options_clamp);
-        page_content.append(&state.groups);
+        page_content.append(&state.filter_bar.root);
+        page_content.append(&header.root);
         page_content.append(&state.content);
+        page_content.append(&state.conflicts);
         page_content.append(&footer);
+        let responsive = adw::BreakpointBin::new();
+        responsive.set_child(Some(&page_content));
+        let condition = adw::BreakpointCondition::new_length(
+            adw::BreakpointConditionLengthType::MaxWidth,
+            f64::from(WIDE_BREAKPOINT),
+            adw::LengthUnit::Px,
+        );
+        let breakpoint = adw::Breakpoint::new(condition);
+        breakpoint.add_setter(&header.root, "visible", Some(&false.to_value()));
+        {
+            let state = state.clone();
+            breakpoint.connect_apply(move |_| {
+                state.set_layout(layout_for_width(WIDE_BREAKPOINT - 1));
+            });
+        }
+        {
+            let state = state.clone();
+            breakpoint.connect_unapply(move |_| {
+                state.set_layout(layout_for_width(WIDE_BREAKPOINT));
+            });
+        }
+        responsive.add_breakpoint(breakpoint);
         let toolbar = adw::ToolbarView::new();
-        toolbar.add_top_bar(&header);
-        toolbar.set_content(Some(&page_content));
+        toolbar.add_top_bar(&top_bar);
+        toolbar.set_content(Some(&responsive));
         let navigation_page = adw::NavigationPage::builder()
             .title(strings::text(strings::DOCTOR_REVIEW_TITLE))
             .tag("library-doctor-review")
@@ -355,11 +505,10 @@ impl LibraryDoctorReviewPage {
             .build();
         let page = Rc::new(Self {
             navigation_page,
-            filter,
             state,
             remote,
             rows,
-            all_safe,
+            all,
             none,
         });
         page.state.refresh();
@@ -368,10 +517,6 @@ impl LibraryDoctorReviewPage {
 
     pub(super) fn navigation_page(&self) -> &adw::NavigationPage {
         &self.navigation_page
-    }
-
-    pub(super) const fn filter(&self) -> DoctorReviewFilter {
-        self.filter
     }
 
     pub(super) fn mark_paths_stale(&self, paths: &[PathBuf]) {
@@ -390,7 +535,7 @@ impl LibraryDoctorReviewPage {
         let state = self.state.clone();
         self.state.apply.connect_clicked(move |_| {
             let plan = state.session.borrow().freeze_plan();
-            if plan.track_count() > 0 {
+            if plan.tag_change_count() > 0 {
                 callback(plan);
             }
         });
@@ -399,8 +544,9 @@ impl LibraryDoctorReviewPage {
     pub(super) fn set_running(&self, running: bool) {
         self.remote.set_sensitive(!running);
         self.rows.set_sensitive(!running);
-        self.all_safe.set_sensitive(!running);
+        self.all.set_sensitive(!running);
         self.none.set_sensitive(!running);
+        self.state.filter_bar.set_sensitive(!running);
         if running {
             self.state.apply.set_sensitive(false);
         } else {
@@ -414,124 +560,5 @@ impl LibraryDoctorReviewPage {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::path::PathBuf;
-
-    use reprise_core::library::tag_edit::EditableTags;
-    use reprise_core::library_doctor::{
-        DoctorField, DoctorProposal, DoctorScanOptions, DoctorTrackRef, DoctorTrackSnapshot,
-        DoctorValue, ProblemClass, ProposalSource,
-    };
-
-    use super::*;
-
-    fn scan() -> DoctorScan {
-        DoctorScan {
-            id: 1,
-            scope_kind: "whole_library".into(),
-            created_at: 2,
-            options: DoctorScanOptions::local_only(),
-            checked_tracks: 1,
-            skipped_tracks: 0,
-            track_ids: vec![7],
-            tracks: vec![DoctorTrackSnapshot {
-                reference: DoctorTrackRef {
-                    track_id: 7,
-                    path: PathBuf::from("/tmp/doctor-review.flac"),
-                    file_mtime: 1,
-                    file_size: 2,
-                    device: None,
-                    inode: None,
-                },
-                tags: Some(EditableTags {
-                    title: "Review track".into(),
-                    artist: "Artist".into(),
-                    album: "Album".into(),
-                    album_artist: "Artist".into(),
-                    year: Some(2020),
-                    track_no: Some(1),
-                    genre: "Rock".into(),
-                }),
-                stale: false,
-            }],
-            proposals: vec![DoctorProposal {
-                track_id: 7,
-                field: DoctorField::Genre,
-                current: DoctorValue::Text(" rock ".into()),
-                proposed: DoctorValue::Text("rock".into()),
-                source: ProposalSource::Local,
-                confidence: 100,
-                preselected: true,
-                problem_class: ProblemClass::CasingWhitespace,
-                evidence: Vec::new(),
-                local_fallback: None,
-            }],
-            unresolved_groups: Vec::new(),
-        }
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn doc_3b_review_page_virtualizes_rows_without_horizontal_scroll() {
-        gtk4::init().unwrap();
-        let conn = Rc::new(crate::test_db::open().unwrap());
-        let parent = adw::ApplicationWindow::builder().build();
-        let on_edit = Rc::new(|_| {}) as Rc<dyn Fn(i64)>;
-
-        let page = LibraryDoctorReviewPage::new(
-            &conn,
-            &parent,
-            scan(),
-            DoctorReviewFilter::AllChanges,
-            Rc::new(|_| {}),
-            &on_edit,
-        );
-
-        assert_eq!(page.state.store.n_items(), 1);
-        assert_eq!(
-            page.state.content.visible_child_name().as_deref(),
-            Some("rows")
-        );
-        let scrolled = page
-            .state
-            .content
-            .child_by_name("rows")
-            .and_downcast::<gtk4::ScrolledWindow>()
-            .unwrap();
-        assert_eq!(scrolled.hscrollbar_policy(), gtk4::PolicyType::Never);
-        assert!(scrolled.child().unwrap().is::<gtk4::ListView>());
-
-        page.mark_paths_stale(&[PathBuf::from("/tmp/doctor-review.flac")]);
-
-        let session = page.state.session.borrow();
-        assert_eq!(session.rows()[0].state, DoctorReviewRowState::Stale);
-        assert!(!session.rows()[0].selected);
-    }
-
-    #[test]
-    fn doc_5d_write_outcomes_preserve_honest_review_state() {
-        assert_eq!(
-            outcome_transition(DoctorWriteRowState::Applied).selected,
-            Some(false)
-        );
-        assert_eq!(
-            outcome_transition(DoctorWriteRowState::Reverted).selected,
-            Some(false)
-        );
-        assert_eq!(
-            outcome_transition(DoctorWriteRowState::Conflict).review_state,
-            Some(DoctorReviewRowState::Conflict)
-        );
-        assert_eq!(
-            outcome_transition(DoctorWriteRowState::Unavailable).review_state,
-            Some(DoctorReviewRowState::Stale)
-        );
-        assert_eq!(
-            outcome_transition(DoctorWriteRowState::Failed),
-            OutcomeTransition {
-                selected: None,
-                review_state: None,
-            }
-        );
-    }
-}
+#[path = "review_page_tests.rs"]
+mod tests;

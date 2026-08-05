@@ -9,6 +9,7 @@ pub(in crate::ui) mod sidebar_issue_strings;
 mod sidebar_issues_section;
 mod sidebar_navigation_scroller;
 pub(in crate::ui) mod sidebar_playlist_creation;
+mod sidebar_playlist_quick_add;
 pub(in crate::ui) mod sidebar_presentation;
 pub(in crate::ui) mod sidebar_rebuild;
 mod sidebar_root;

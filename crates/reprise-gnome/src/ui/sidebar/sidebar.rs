@@ -1,7 +1,7 @@
 //! The navigation sidebar (design mockup 7a): a `gtk::ListBox` (the
 //! "navigation-sidebar" GNOME style class) grouped into LIBRARY (Music,
 //! Queue — both with a track-count label), PLAYLISTS (`library::playlists::
-//! list`, each with its track count, plus grouped create/import actions), and
+//! list`, each with its track count, plus an inline create action), and
 //! SMART (`library::playlists::list_smart`, no counts — the mockup doesn't
 //! show any), persistent connected-device state, then one bottom-pinned region
 //! that shows either active progress cards or the complete Issues surface
@@ -111,14 +111,12 @@ pub(in crate::ui) struct Shared {
     /// (see the module doc's `## Row identity` section). Rebuilt from
     /// scratch on every `rebuild` call.
     pub(in crate::ui) rows: RefCell<Vec<RowEntry>>,
-    /// The "New playlist" action row, so `wire_row_activated` can tell it
-    /// apart from a normal navigation row (identity compare) — it's
-    /// `selectable(false)` so it never appears in `rows`/`row-selected`, only
-    /// `row-activated`.
-    pub(in crate::ui) new_playlist_row: RefCell<Option<gtk4::ListBoxRow>>,
-    /// The adjacent "Import playlist…" action row. Kept separately so row
-    /// activation can invoke the file-dialog callback wired by `window.rs`.
-    pub(in crate::ui) import_playlist_row: RefCell<Option<gtk4::ListBoxRow>>,
+    /// The PLAYLISTS header's create button, retained so Escape from a fresh
+    /// inline edit can restore keyboard focus to the action that created it.
+    pub(in crate::ui) playlist_add_button: RefCell<Option<gtk4::Button>>,
+    /// The freshly created placeholder playlist whose row must be rendered
+    /// as an inline editor during the next sidebar rebuild.
+    pub(in crate::ui) playlist_quick_edit_id: Cell<Option<i64>>,
     /// Invoked whenever the logically selected source *changes* (real user
     /// click or an explicit forced selection) — never
     /// for a same-source reselect (see `wire_row_selected`'s dedup-by-value
@@ -235,8 +233,8 @@ impl Sidebar {
             queue_len_provider: Box::new(queue_len_provider),
             current_source: RefCell::new(ViewSource::default()),
             rows: RefCell::new(Vec::new()),
-            new_playlist_row: RefCell::new(None),
-            import_playlist_row: RefCell::new(None),
+            playlist_add_button: RefCell::new(None),
+            playlist_quick_edit_id: Cell::new(None),
             on_select: RefCell::new(None),
             on_show_content: RefCell::new(None),
             on_import_playlist: RefCell::new(None),
@@ -295,6 +293,15 @@ impl Sidebar {
     /// Sets the callback invoked by the Playlist section's import action.
     pub fn set_on_import_playlist(&self, callback: impl Fn() + 'static) {
         *self.shared.on_import_playlist.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    /// Activates the global playlist import action installed by
+    /// `playlists::playlist_io`.
+    pub(in crate::ui) fn activate_import_playlist(&self) {
+        let callback = self.shared.on_import_playlist.borrow().clone();
+        if let Some(callback) = callback {
+            callback();
+        }
     }
 
     /// Sets the callback invoked after a drag-and-drop drop onto a playlist
