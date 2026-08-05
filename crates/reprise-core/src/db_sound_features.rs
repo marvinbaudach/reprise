@@ -4,7 +4,7 @@ use rusqlite::{Connection, OptionalExtension};
 
 use crate::db::{Db, DbError};
 use crate::sound_features::SoundFeatures;
-use crate::spectrogram::SPECTROGRAM_FORMAT_VERSION;
+use crate::spectrogram::{TrackSourceFingerprint, SPECTROGRAM_FORMAT_VERSION};
 
 const SCHEMA_V56: &str = r#"
 CREATE TABLE IF NOT EXISTS track_sound_features (
@@ -75,13 +75,57 @@ pub fn set_track_sound_features(
     track_id: i64,
     features: &SoundFeatures,
 ) -> Result<(), DbError> {
-    db.conn().execute(
+    write_sound_features(db.conn(), track_id, features)?;
+    Ok(())
+}
+
+pub(crate) fn write_sound_features(
+    conn: &Connection,
+    track_id: i64,
+    features: &SoundFeatures,
+) -> Result<(), rusqlite::Error> {
+    conn.execute(
         "INSERT INTO track_sound_features (track_id, format_version, data) \
          VALUES (?1, ?2, ?3) ON CONFLICT(track_id) DO UPDATE SET \
          format_version = excluded.format_version, data = excluded.data",
         rusqlite::params![track_id, SPECTROGRAM_FORMAT_VERSION, features.to_blob()],
     )?;
     Ok(())
+}
+
+pub(crate) fn set_track_sound_features_for_source(
+    db: &Db,
+    track_id: i64,
+    source: TrackSourceFingerprint,
+    features: &SoundFeatures,
+) -> Result<crate::db_spectrogram::SpectrogramStoreOutcome, DbError> {
+    let transaction = db.conn().unchecked_transaction()?;
+    let current = transaction
+        .query_row(
+            "SELECT 1 FROM tracks t JOIN track_spectrograms s ON s.track_id = t.id \
+             WHERE t.id = ?1 AND t.file_mtime = ?2 AND t.file_size = ?3 \
+               AND t.device IS ?4 AND t.inode IS ?5 \
+               AND s.source_mtime = t.file_mtime AND s.source_size = t.file_size \
+               AND s.source_device IS t.device AND s.source_inode IS t.inode \
+               AND s.format_version = ?6",
+            rusqlite::params![
+                track_id,
+                source.mtime_seconds,
+                source.size_bytes,
+                source.device,
+                source.inode,
+                SPECTROGRAM_FORMAT_VERSION
+            ],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if !current {
+        return Ok(crate::db_spectrogram::SpectrogramStoreOutcome::SourceChanged);
+    }
+    write_sound_features(&transaction, track_id, features)?;
+    transaction.commit()?;
+    Ok(crate::db_spectrogram::SpectrogramStoreOutcome::Stored)
 }
 
 pub fn get_track_sound_features(db: &Db, track_id: i64) -> Result<Option<SoundFeatures>, DbError> {

@@ -1,8 +1,12 @@
 use crate::sound_features::{derive_sound_features, SoundFeatures};
 use crate::spectrogram::{TrackSpectrogram, SPECTROGRAM_BAND_COUNT};
 use crate::{
-    db::{get_track_sound_features, set_track_sound_features, Db},
-    spectrogram::SPECTROGRAM_FORMAT_VERSION,
+    db::{
+        get_track_sound_features, set_track_render_data, set_track_sound_features, Db,
+        SpectrogramStoreOutcome,
+    },
+    spectrogram::{TrackSourceFingerprint, SPECTROGRAM_FORMAT_VERSION},
+    waveform::TrackRenderData,
 };
 
 fn frame(active_band: usize, level: u8) -> Vec<u8> {
@@ -171,4 +175,35 @@ fn sound_features_v56_repairs_a_database_already_stamped_by_the_other_v56_step()
         )
         .unwrap();
     assert_eq!(count, 1);
+}
+
+#[test]
+fn sound_features_are_stored_atomically_with_new_render_data() {
+    let db = Db::open_in_memory().unwrap();
+    insert_track(&db);
+    let spectrogram = spectrogram([frame(5, 255), frame(7, 255)]);
+    let source = TrackSourceFingerprint {
+        mtime_seconds: 11,
+        size_bytes: 22,
+        device: Some(33),
+        inode: Some(44),
+    };
+
+    assert_eq!(
+        set_track_render_data(
+            &db,
+            1,
+            source,
+            &TrackRenderData {
+                waveform_peaks: vec![1, 2],
+                spectrogram: spectrogram.clone(),
+            },
+        )
+        .unwrap(),
+        SpectrogramStoreOutcome::Stored
+    );
+    assert_eq!(
+        get_track_sound_features(&db, 1).unwrap(),
+        Some(derive_sound_features(&spectrogram))
+    );
 }

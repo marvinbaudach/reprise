@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use crate::db::{
     pending_render_data_tracks, set_track_render_data, Db, DbError, SpectrogramStoreOutcome,
 };
+use crate::sound_features::derive_sound_features;
 use crate::waveform::{RenderDataBackend, TrackRenderData, WaveformError, STORED_PEAK_COUNT};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,6 +48,28 @@ pub fn run_render_data_backfill(
         if cancelled.load(Ordering::Acquire) {
             summary.status = BackfillStatus::Cancelled;
             break;
+        }
+        if let Some(spectrogram) = track.spectrogram.as_ref() {
+            let features = derive_sound_features(spectrogram);
+            match crate::db_sound_features::set_track_sound_features_for_source(
+                db,
+                track.track_id,
+                track.source,
+                &features,
+            )? {
+                SpectrogramStoreOutcome::Stored => summary.stored += 1,
+                SpectrogramStoreOutcome::SourceChanged => summary.source_changed += 1,
+            }
+            on_progress(BackfillProgress {
+                completed: index + 1,
+                total,
+                track_id: track.track_id,
+            });
+            if cancelled.load(Ordering::Acquire) {
+                summary.status = BackfillStatus::Cancelled;
+                break;
+            }
+            continue;
         }
         let data = match backend.extract_render_data_cancellable(
             std::path::Path::new(&track.path),
@@ -98,6 +121,7 @@ mod tests {
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     use super::*;
+    use crate::db::{get_track_sound_features, set_track_spectrogram};
     use crate::db::{get_track_spectrogram, pending_render_data_tracks};
     use crate::spectrogram::TrackSpectrogram;
     use crate::waveform::{RenderDataBackend, TrackRenderData, WaveformBackend, WaveformError};
@@ -213,5 +237,54 @@ mod tests {
             Some(TrackSpectrogram::empty())
         );
         assert!(pending_render_data_tracks(&db).unwrap().is_empty());
+    }
+
+    #[test]
+    fn stored_spectrograms_backfill_features_without_a_second_decode() {
+        let db = database();
+        let source = pending_render_data_tracks(&db).unwrap()[0].source;
+        let spectrogram = TrackSpectrogram::from_cells(vec![180; 48]).unwrap();
+        set_track_spectrogram(&db, 1, source, &spectrogram).unwrap();
+        db.conn()
+            .execute("DELETE FROM track_sound_features WHERE track_id = 1", [])
+            .unwrap();
+        crate::db::set_waveform_peaks(&db, 1, &[9]).unwrap();
+        let backend = FakeBackend {
+            calls: AtomicUsize::new(0),
+            cancel_after_first: false,
+        };
+
+        let summary =
+            run_render_data_backfill(&db, &backend, &AtomicBool::new(false), |_| {}).unwrap();
+
+        assert_eq!(summary.stored, 3);
+        assert_eq!(backend.calls.load(Ordering::Relaxed), 2);
+        assert!(get_track_sound_features(&db, 1).unwrap().is_some());
+        assert!(pending_render_data_tracks(&db).unwrap().is_empty());
+    }
+
+    #[test]
+    fn stored_spectrogram_does_not_skip_a_still_missing_waveform() {
+        let db = database();
+        let source = pending_render_data_tracks(&db).unwrap()[0].source;
+        set_track_spectrogram(
+            &db,
+            1,
+            source,
+            &TrackSpectrogram::from_cells(vec![180; 48]).unwrap(),
+        )
+        .unwrap();
+        let backend = FakeBackend {
+            calls: AtomicUsize::new(0),
+            cancel_after_first: false,
+        };
+
+        run_render_data_backfill(&db, &backend, &AtomicBool::new(false), |_| {}).unwrap();
+
+        assert_eq!(backend.calls.load(Ordering::Relaxed), 3);
+        assert_eq!(
+            crate::db::get_waveform_peaks(&db, 1).unwrap(),
+            Some(vec![1; STORED_PEAK_COUNT])
+        );
     }
 }
