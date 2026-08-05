@@ -7,6 +7,7 @@
 mod bass_pressure;
 mod cava;
 mod fault_policy;
+pub(crate) mod spectral;
 
 pub use bass_pressure::{BassPressure, BassPressureDetector, STEADY_GLOW};
 pub use cava::{CavaBarProcessor, CavaConfig, CavaError};

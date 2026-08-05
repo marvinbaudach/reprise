@@ -24,7 +24,7 @@ use reprise_core::db::Db;
 use reprise_core::library::settings;
 use reprise_core::library::watcher::WatcherHandle;
 use reprise_core::view_source::ViewSource;
-use reprise_core::waveform::WaveformBackend;
+use reprise_core::waveform::RenderDataBackend;
 
 use super::cover_download_worker;
 use super::file_open::FileOpenHandler;
@@ -76,7 +76,7 @@ pub fn build(app: &adw::Application, conn: &Rc<Db>, db_path: &Path) -> FileOpenH
         .width_request(MIN_WIDTH)
         .height_request(MIN_HEIGHT)
         .build();
-    let waveform_backend: Arc<dyn WaveformBackend> =
+    let waveform_backend: Arc<dyn RenderDataBackend> =
         Arc::new(reprise_platform_linux::waveform::GstreamerWaveformBackend);
     super::focus_evidence::install(&window);
     super::session_restore::apply_initial_geometry(&window, &session_state);
