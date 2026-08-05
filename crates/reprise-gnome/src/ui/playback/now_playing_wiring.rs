@@ -279,6 +279,7 @@ impl PlayerController {
     /// to the player bar. If no peaks exist yet, extracts them on demand and
     /// stores them in the DB so subsequent plays are instant.
     pub(in crate::ui) fn sync_waveform(&self, track_id: i64, path: &str) {
+        self.offer_colour_legend(track_id);
         let generation = self.waveform_generation.get().wrapping_add(1);
         self.waveform_generation.set(generation);
         let waveform_generation = self.waveform_generation.clone();
@@ -357,6 +358,29 @@ impl PlayerController {
                 }
             }
         });
+    }
+
+    /// Shows the colour-scale legend for the first few track changes and then
+    /// stops. The count lives in settings, so it survives restarts; the bar
+    /// itself decides whether this track is a new one and whether its bar even
+    /// has a scale to explain.
+    fn offer_colour_legend(&self, track_id: i64) {
+        use reprise_core::library::settings;
+
+        if !self.bar.colour_legend_due_for(track_id) {
+            return;
+        }
+        let seen = settings::get_seek_legend_seen(&self.conn);
+        if !crate::ui::player_bar::seek_legend::shows_on_track_change(seen) {
+            return;
+        }
+        if let Err(error) = settings::set_seek_legend_seen(&self.conn, seen + 1) {
+            // Failing to store the count would show the legend forever, which
+            // is worse than not showing it now.
+            tracing::warn!(%error, "could not record the colour legend showing");
+            return;
+        }
+        self.bar.show_colour_legend();
     }
 
     pub(in crate::ui) fn sync_state(&self, state: PlaybackState) {

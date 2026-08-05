@@ -4,6 +4,8 @@ mod player_bar_external;
 pub(in crate::ui) mod player_bar_layout;
 pub(in crate::ui) mod player_bar_seek;
 pub(in crate::ui) mod player_bar_state;
+pub(in crate::ui) mod seek_legend;
+mod seek_menu;
 #[path = "player_bar.rs"]
 mod surface;
 mod transport_glyph;

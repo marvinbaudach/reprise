@@ -40,6 +40,10 @@ pub use artist::*;
 mod song_visuals;
 pub use song_visuals::*;
 
+#[path = "strings_seek.rs"]
+mod seek;
+pub use seek::*;
+
 #[path = "strings_issues.rs"]
 mod issues;
 pub use issues::*;

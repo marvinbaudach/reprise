@@ -408,6 +408,11 @@ pub fn build(
     super::source_views::wire_update_sidebar_refresh(&concerts_view, &releases_view, &sidebar);
 
     let bar_position = settings::get_player_bar_position(conn);
+    if let Some(player) = player.as_ref() {
+        player
+            .bar
+            .set_seek_colouring(settings::get_seek_colouring(conn));
+    }
 
     {
         let overlay = toast_overlay.downgrade();

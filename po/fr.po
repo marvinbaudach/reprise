@@ -4999,3 +4999,44 @@ msgstr "{processed} fichiers analysés sur {total}"
 #, fuzzy
 msgid "{analyzed} analyzed · {failed} failed"
 msgstr "{removed} piste retirée ; {failed} échec"
+
+#: crates/reprise-gnome/src/ui/strings_seek.rs:13
+msgid "low"
+msgstr "grave"
+
+#: crates/reprise-gnome/src/ui/strings_seek.rs:14
+msgid "high"
+msgstr "aigu"
+
+#: crates/reprise-gnome/src/ui/strings_seek.rs:15
+msgid "Frequency centroid"
+msgstr "Centroïde fréquentiel"
+
+#: crates/reprise-gnome/src/ui/strings_seek.rs:20
+msgid "Explain the Color Scale"
+msgstr "Expliquer l'échelle de couleurs"
+
+#: crates/reprise-gnome/src/ui/strings_seek.rs:23
+msgid "Seek Bar"
+msgstr "Barre de lecture"
+
+#: crates/reprise-gnome/src/ui/strings_seek.rs:24
+msgid "Coloring"
+msgstr "Coloration"
+
+#: crates/reprise-gnome/src/ui/strings_seek.rs:26
+msgid "Color the bar by its frequency centroid, or in a single color"
+msgstr "Colorer la barre selon son centroïde fréquentiel, ou en une seule couleur"
+
+#: crates/reprise-gnome/src/ui/strings_seek.rs:28
+msgid "Frequency"
+msgstr "Fréquence"
+
+#: crates/reprise-gnome/src/ui/strings_seek.rs:31
+msgid "Single Color"
+msgstr "Une seule couleur"
+
+#: crates/reprise-gnome/src/ui/strings_podcasts.rs:32
+#, rust-format
+msgid "Resume {percent} %"
+msgstr "Reprendre {percent} %"

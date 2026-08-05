@@ -73,6 +73,10 @@ pub(in crate::ui) struct PlayerBarWidgets {
     pub(in crate::ui) position_label: gtk4::Label,
     pub(in crate::ui) duration_label: gtk4::Label,
     pub(in crate::ui) waveform: super::waveform_seek::WaveformSeek,
+    pub(in crate::ui) legend: super::seek_legend::SeekLegend,
+    /// Kept alive with the widgets: a `GtkSizeGroup` that nothing holds stops
+    /// aligning, and the legend would slide out from under the bar.
+    pub(in crate::ui) time_alignment: gtk4::SizeGroup,
     pub(in crate::ui) volume_icon: gtk4::Button,
     pub(in crate::ui) volume_scale: gtk4::Scale,
 }
@@ -217,10 +221,24 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     seek_row.append(&duration_label);
     seek_row.set_hexpand(true);
 
-    // — Center zone (transport + seek) —
+    // — Colour-scale legend, under the bar and at the height of the times —
+    // An empty leader in a size group with the position label so the legend
+    // starts where the bar does. Measuring the label at build time would be a
+    // guess: it is 0:00 now and 1:04:12 later, and the row would drift.
+    let legend = super::seek_legend::SeekLegend::new();
+    let legend_leader = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+    let time_alignment = gtk4::SizeGroup::new(gtk4::SizeGroupMode::Horizontal);
+    time_alignment.add_widget(&position_label);
+    time_alignment.add_widget(&legend_leader);
+    let legend_row = gtk4::Box::new(gtk4::Orientation::Horizontal, ZONE_SPACING);
+    legend_row.append(&legend_leader);
+    legend_row.append(legend.widget());
+
+    // — Center zone (transport + seek + legend) —
     let center_zone = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
     center_zone.append(&transport_row);
     center_zone.append(&seek_row);
+    center_zone.append(&legend_row);
     center_zone.set_hexpand(true);
     center_zone.set_size_request(CENTER_ZONE_MAX_WIDTH, -1);
     center_zone.set_valign(gtk4::Align::Center);
@@ -353,6 +371,8 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
         position_label,
         duration_label,
         waveform,
+        legend,
+        time_alignment,
         volume_icon,
         volume_scale,
     }
@@ -365,6 +385,7 @@ pub(in crate::ui) fn css() -> String {
     use super::{motion, style::tokens::RADIUS_SURFACE, style::tokens::TRANSITION};
     let micro_ms = motion::MICRO_MS;
     let micro_easing = motion::MICRO_CSS_EASING;
+    let legend_css = super::seek_legend::css();
     format!(
         ".{SURFACE_CSS_CLASS} {{ \
            background-color: @headerbar_bg_color; \
@@ -412,6 +433,7 @@ pub(in crate::ui) fn css() -> String {
          .player-bar-artist.artist-hovered {{ color: @window_fg_color; }}\n\
          .player-bar-time {{ font-feature-settings: \"tnum\"; }}\n\
          .waveform-seek {{ color: @reprise_player_accent; }}\n\
+         {legend_css}\n\
          /* Shape only. Hover, press, focus and the checked state all come from \
             the one central set in `style::buttons` (BTN-4) — no local tint. */\n\
          .{TRANSPORT_ROW_CSS_CLASS} button {{ border-radius: 50%; }}\n\

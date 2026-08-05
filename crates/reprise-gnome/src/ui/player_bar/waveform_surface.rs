@@ -1,4 +1,4 @@
-use gtk4::cairo::{Context, Format, ImageSurface, LinearGradient};
+use gtk4::cairo::{Context, Format, ImageSurface};
 
 use super::*;
 
@@ -10,6 +10,10 @@ pub(super) struct SurfaceKey {
     bar_count: usize,
     colour: [u64; 3],
     desaturation: u64,
+    /// The colouring the cached bars were painted in. Without it, switching
+    /// colouring keeps every other dimension identical and the stale surface
+    /// stays on screen.
+    colouring: SeekColouring,
 }
 
 impl SurfaceKey {
@@ -20,6 +24,7 @@ impl SurfaceKey {
         bar_count: usize,
         colour: (f64, f64, f64),
         desaturation: f64,
+        colouring: SeekColouring,
     ) -> Self {
         Self {
             width,
@@ -28,6 +33,7 @@ impl SurfaceKey {
             bar_count,
             colour: [colour.0.to_bits(), colour.1.to_bits(), colour.2.to_bits()],
             desaturation: desaturation.to_bits(),
+            colouring,
         }
     }
 }
@@ -80,6 +86,7 @@ pub(super) fn ensure_cache(
         state.display_peaks.len(),
         widget_colour,
         state.desaturation_progress,
+        state.colouring,
     );
     if state.surface_key == Some(key)
         && state.mask_surface.is_some()
@@ -168,6 +175,11 @@ fn build_surfaces(
     Some((mask, colour))
 }
 
+/// Paints the cached bars in three horizontal bands: coming, seek preview, and
+/// played. All three read from the *same* colour surface in the frequency
+/// colouring and differ only in the alpha they are painted at — the cached
+/// counterpart of `render::bar_fill`, and the reason the colour survives ahead
+/// of the playhead.
 pub(super) fn draw_cached_bars(
     cr: &Context,
     state: &State,
@@ -179,43 +191,26 @@ pub(super) fn draw_cached_bars(
     let (Some(mask), Some(colour)) = (&state.mask_surface, &state.colour_surface) else {
         return;
     };
+    let hover_x = state
+        .hover_fraction
+        .map_or(head_x, |hover| (hover * width).clamp(head_x, width));
 
-    paint_mask(
-        cr,
-        mask,
-        (1.0, 1.0, 1.0),
-        UNPLAYED_ALPHA,
-        head_x,
-        width,
-        height,
-    );
-
-    if let Some(hover) = state.hover_fraction {
-        let hover_x = (hover * width).clamp(head_x, width);
-        paint_mask(
-            cr,
-            mask,
-            (1.0, 1.0, 1.0),
-            HOVER_PREVIEW_ALPHA,
-            head_x,
-            hover_x,
-            height,
-        );
+    match state.colouring {
+        SeekColouring::Frequency => {
+            paint_surface(cr, colour, UNPLAYED_ALPHA, hover_x, width, height);
+            paint_surface(cr, colour, HOVER_PREVIEW_ALPHA, head_x, hover_x, height);
+            paint_surface(cr, colour, 1.0, 0.0, head_x, height);
+        }
+        SeekColouring::Solid => {
+            paint_mask(cr, mask, SOLID_UNPLAYED, 1.0, hover_x, width, height);
+            paint_mask(cr, mask, SOLID_HOVER_PREVIEW, 1.0, head_x, hover_x, height);
+            // The colour surface already carries the accent here: with no
+            // curve, `build_surfaces` paints every bar in it.
+            paint_surface(cr, colour, 1.0, 0.0, head_x, height);
+        }
     }
 
-    cr.save().ok();
-    cr.rectangle(0.0, 0.0, head_x, height);
-    cr.clip();
-    if cr.set_source_surface(colour, 0.0, 0.0).is_ok() {
-        let count = state.display_peaks.len();
-        let start_alpha = render::played_alpha(0, count, state.fraction);
-        let light = render::played_light(state.bass_pressure, state.bass_swell);
-        let gradient = LinearGradient::new(0.0, 0.0, head_x.max(1.0), 0.0);
-        gradient.add_color_stop_rgba(0.0, 0.0, 0.0, 0.0, start_alpha * light);
-        gradient.add_color_stop_rgba(1.0, 0.0, 0.0, 0.0, light);
-        let _ = cr.mask(&gradient);
-    }
-    cr.restore().ok();
+    render::draw_section_marks(cr, width, height, state);
 
     if let Some(drag) = state.drag_fraction {
         let drag_x = (drag * width).clamp(0.0, width);
@@ -252,6 +247,30 @@ fn paint_mask(
     cr.restore().ok();
 }
 
+/// Paints a horizontal band of the pre-coloured bar surface at one alpha.
+/// `Source` rather than `Over` so the three bands never composite on top of
+/// each other: each one owns its slice of the width outright.
+fn paint_surface(
+    cr: &Context,
+    colour: &ImageSurface,
+    alpha: f64,
+    from_x: f64,
+    to_x: f64,
+    height: f64,
+) {
+    if to_x <= from_x {
+        return;
+    }
+    cr.save().ok();
+    cr.rectangle(from_x, 0.0, to_x - from_x, height);
+    cr.clip();
+    cr.set_operator(gtk4::cairo::Operator::Source);
+    if cr.set_source_surface(colour, 0.0, 0.0).is_ok() {
+        let _ = cr.paint_with_alpha(alpha);
+    }
+    cr.restore().ok();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -266,7 +285,15 @@ mod tests {
         colour: (f64, f64, f64),
         desaturation: f64,
     ) -> SurfaceKey {
-        SurfaceKey::new(width, height, scale_factor, bar_count, colour, desaturation)
+        SurfaceKey::new(
+            width,
+            height,
+            scale_factor,
+            bar_count,
+            colour,
+            desaturation,
+            SeekColouring::DEFAULT,
+        )
     }
 
     #[test]
@@ -293,6 +320,11 @@ mod tests {
             "widget colour"
         );
         assert_ne!(base, key(400, 28, 1, 80, OPAQUE, 1.0), "desaturation");
+        assert_ne!(
+            base,
+            SurfaceKey::new(400, 28, 1, 80, OPAQUE, 0.0, SeekColouring::Solid),
+            "colouring"
+        );
     }
 
     #[test]
