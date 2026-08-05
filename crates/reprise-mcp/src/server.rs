@@ -4,8 +4,8 @@
 //! Resources: `reprise://library/summary`, `reprise://playlists`,
 //! `reprise://concerts`, `reprise://concerts/all`, and
 //! `reprise://releases`, `reprise://podcasts`, and `reprise://radio`. Tools:
-//! `music_search_tracks` (read),
-//! `music_create_playlist` (write, gated on the `playlist:create` capability).
+//! `music_search_tracks` and Library Doctor review are read-only; playlist and
+//! tag-file mutations are protected by their respective capabilities.
 //! All blocking database and bus work runs on `spawn_blocking`; the handler
 //! itself holds only paths and startup capability snapshots, so it stays
 //! `Send + Sync`.
@@ -58,7 +58,9 @@ const SERVER_INSTRUCTIONS: &str = "Reprise local music library and player. \
     `music_manage_podcasts` and `music_manage_radio` add, edit, remove, or \
     refresh remote sources under the opt-in 'sources:manage' capability; \
     resource responses never expose stored source URLs. Playlist creation and \
-    safe rename/append operations use separate opt-in capabilities. Playback \
+    safe rename/append operations use separate opt-in capabilities. \
+    Library Doctor scans are read-only by default; applying or reverting tag \
+    changes requires the opt-in 'tags:write' capability. Playback \
     tools expose transport, live state, \
     volume, seek, shuffle, repeat, targeted play, and a bounded Play Next queue; \
     they require the running Reprise app. Device-sync status exposes path-free \
@@ -83,6 +85,7 @@ pub struct RepriseServer {
     playlist_manage_granted_at_startup: bool,
     ai_create_granted_at_startup: bool,
     sources_manage_granted_at_startup: bool,
+    tags_write_granted_at_startup: bool,
     #[cfg(feature = "mpris")]
     device_sync_granted_at_startup: bool,
     tool_router: ToolRouter<Self>,
@@ -103,9 +106,10 @@ impl RepriseServer {
     }
 
     /// Builds a handler bound to `db_path` (and `staging_path` for the AI job
-    /// queue). The four booleans are startup snapshots for the write-class
-    /// capabilities (`playlist:create`, `playlist:manage`, `ai:create`, and
-    /// `sources:manage`) — the restart half of the D18 / Beschluss 7 gate.
+    /// queue). The booleans are startup snapshots for the write-class
+    /// capabilities (`playlist:create`, `playlist:manage`, `ai:create`,
+    /// `sources:manage`, and `tags:write`) — the restart half of the D18 /
+    /// Beschluss 7 gate.
     pub fn new(
         db_path: PathBuf,
         staging_path: PathBuf,
@@ -113,6 +117,7 @@ impl RepriseServer {
         playlist_manage_granted_at_startup: bool,
         ai_create_granted_at_startup: bool,
         sources_manage_granted_at_startup: bool,
+        tags_write_granted_at_startup: bool,
         #[cfg(feature = "mpris")] device_sync_granted_at_startup: bool,
     ) -> Self {
         Self {
@@ -122,6 +127,7 @@ impl RepriseServer {
             playlist_manage_granted_at_startup,
             ai_create_granted_at_startup,
             sources_manage_granted_at_startup,
+            tags_write_granted_at_startup,
             #[cfg(feature = "mpris")]
             device_sync_granted_at_startup,
             tool_router: Self::build_tool_router(),
@@ -140,13 +146,17 @@ impl RepriseServer {
         Self::tool_router()
             + Self::source_tool_router()
             + Self::sound_tool_router()
+            + Self::doctor_tool_router()
             + Self::playback_tool_router()
             + Self::device_tool_router()
     }
 
     #[cfg(not(feature = "mpris"))]
     fn build_tool_router() -> ToolRouter<Self> {
-        Self::tool_router() + Self::source_tool_router() + Self::sound_tool_router()
+        Self::tool_router()
+            + Self::source_tool_router()
+            + Self::sound_tool_router()
+            + Self::doctor_tool_router()
     }
 
     pub(crate) fn source_db_path(&self) -> Arc<PathBuf> {
@@ -155,6 +165,14 @@ impl RepriseServer {
 
     pub(crate) fn sources_manage_granted_at_startup(&self) -> bool {
         self.sources_manage_granted_at_startup
+    }
+
+    pub(crate) fn doctor_db_path(&self) -> Arc<PathBuf> {
+        self.db_path.clone()
+    }
+
+    pub(crate) fn tags_write_granted_at_startup(&self) -> bool {
+        self.tags_write_granted_at_startup
     }
 
     #[cfg(feature = "mpris")]

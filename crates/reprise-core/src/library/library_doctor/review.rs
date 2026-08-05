@@ -9,11 +9,11 @@ use super::{
 pub struct DoctorReviewRowId(u64);
 
 impl DoctorReviewRowId {
-    pub(crate) const fn raw(self) -> u64 {
+    pub const fn raw(self) -> u64 {
         self.0
     }
 
-    pub(crate) const fn from_raw(value: u64) -> Self {
+    pub const fn from_raw(value: u64) -> Self {
         Self(value)
     }
 }
@@ -23,8 +23,27 @@ pub struct DoctorReviewGroupId(u64);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DoctorReviewFilter {
-    AllChanges,
-    LocalSafeOnly,
+    /// Written without asking: local + preselected + not stale, plus every
+    /// Recording MBID proposal regardless of source or confidence.
+    AutoApply,
+    /// Shown for review, with every ready row preselected.
+    NeedsReview,
+}
+
+pub fn is_auto_applied(proposal: &DoctorProposal, stale: bool) -> bool {
+    is_auto_applied_parts(proposal.field, proposal.source, proposal.preselected, stale)
+}
+
+pub(crate) fn is_auto_applied_parts(
+    field: DoctorField,
+    source: ProposalSource,
+    preselected: bool,
+    stale: bool,
+) -> bool {
+    if stale {
+        return false;
+    }
+    field == DoctorField::RecordingMbid || (source == ProposalSource::Local && preselected)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -142,7 +161,6 @@ pub struct DoctorReviewSession {
     rows: Vec<DoctorReviewRow>,
     groups: Vec<DoctorReviewGroup>,
     sort_keys: HashMap<DoctorReviewRowId, RowSortKey>,
-    local_safe: HashMap<DoctorReviewRowId, bool>,
     tie_templates: HashMap<DoctorReviewGroupId, Vec<TieRowTemplate>>,
     tie_selection: HashMap<DoctorReviewRowId, bool>,
 }
@@ -187,12 +205,10 @@ impl DoctorReviewSession {
             .collect::<HashMap<_, _>>();
         let mut rows = Vec::new();
         let mut sort_keys = HashMap::new();
-        let mut local_safe = HashMap::new();
         let mut next_id = 0_u64;
         for proposal in scan.proposals {
             let is_stale = stale.get(&proposal.track_id).copied().unwrap_or(true);
-            let is_local_safe = proposal.source == ProposalSource::Local && proposal.preselected;
-            if filter == DoctorReviewFilter::LocalSafeOnly && (!is_local_safe || is_stale) {
+            if is_auto_applied(&proposal, is_stale) != (filter == DoctorReviewFilter::AutoApply) {
                 continue;
             }
             let id = DoctorReviewRowId(next_id);
@@ -214,7 +230,6 @@ impl DoctorReviewSession {
                     sequence: next_id,
                 },
             );
-            local_safe.insert(id, is_local_safe);
             rows.push(DoctorReviewRow {
                 id,
                 track_id: proposal.track_id,
@@ -226,13 +241,13 @@ impl DoctorReviewSession {
                 evidence: proposal.evidence,
                 problem_class: proposal.problem_class,
                 state,
-                selected: state == DoctorReviewRowState::Ready && is_local_safe,
+                selected: state == DoctorReviewRowState::Ready,
                 origin: DoctorReviewRowOrigin::Proposal,
             });
         }
         let mut groups = Vec::new();
         let mut tie_templates = HashMap::new();
-        if filter == DoctorReviewFilter::AllChanges {
+        if filter == DoctorReviewFilter::NeedsReview {
             for unresolved in scan.unresolved_groups {
                 let group_id = DoctorReviewGroupId(groups.len() as u64);
                 let mut templates = Vec::new();
@@ -252,7 +267,6 @@ impl DoctorReviewSession {
                             sequence: next_id,
                         },
                     );
-                    local_safe.insert(id, false);
                     templates.push(TieRowTemplate {
                         id,
                         track_id: member.track_id,
@@ -302,7 +316,6 @@ impl DoctorReviewSession {
             rows,
             groups,
             sort_keys,
-            local_safe,
             tie_templates,
             tie_selection: HashMap::new(),
         }
@@ -394,15 +407,15 @@ impl DoctorReviewSession {
         Ok(())
     }
 
-    pub fn all_safe(&mut self) {
+    pub fn all(&mut self) {
         for templates in self.tie_templates.values() {
             for template in templates {
-                self.tie_selection.insert(template.id, false);
+                self.tie_selection
+                    .insert(template.id, template.state == DoctorReviewRowState::Ready);
             }
         }
         for row in &mut self.rows {
-            row.selected = row.state == DoctorReviewRowState::Ready
-                && self.local_safe.get(&row.id).copied().unwrap_or(false);
+            row.selected = row.state == DoctorReviewRowState::Ready;
         }
     }
 
@@ -486,6 +499,17 @@ impl DoctorReviewSession {
         }
         self.sort_rows();
         Ok(())
+    }
+
+    /// Clears every optional spelling decision and removes the concrete rows
+    /// materialized from those choices, without changing proposal selections.
+    pub fn clear_group_choices(&mut self) {
+        self.rows
+            .retain(|row| matches!(row.origin, DoctorReviewRowOrigin::Proposal));
+        for group in &mut self.groups {
+            group.chosen = None;
+        }
+        self.tie_selection.clear();
     }
 
     pub fn mark_state(

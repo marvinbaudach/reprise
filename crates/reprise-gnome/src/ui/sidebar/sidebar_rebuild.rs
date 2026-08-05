@@ -16,6 +16,7 @@ use reprise_core::{podcasts, radio};
 use super::sidebar_dnd;
 use super::sidebar_export;
 use super::sidebar_issue_cleanup;
+use super::sidebar_playlist_quick_add;
 use super::sidebar_presentation::{self, NavIcon};
 use super::strings;
 use super::surface::remember_issue_focus_entry;
@@ -36,6 +37,7 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
         music_count,
         missing_count,
         new_missing_count,
+        pending_doctor_count,
         active_import_error_count,
         dismissed_import_error_count,
         new_import_error_count,
@@ -67,6 +69,11 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
         let new_missing_count = queries::count_new_missing(conn, last_viewed_missing)
             .unwrap_or_else(|error| {
                 tracing::error!(%error, "failed to count new missing files for sidebar badge");
+                0
+            });
+        let pending_doctor_count =
+            queries::count_pending_doctor_findings(conn).unwrap_or_else(|error| {
+                tracing::error!(%error, "failed to count pending Library Doctor findings");
                 0
             });
         let active_import_error_count = queries::count_import_errors_active(conn)
@@ -197,6 +204,7 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
             music_count,
             missing_count,
             new_missing_count,
+            pending_doctor_count,
             active_import_error_count,
             dismissed_import_error_count,
             new_import_error_count,
@@ -220,8 +228,7 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
     shared.listbox.remove_all();
     shared.issues_listbox.remove_all();
     shared.rows.borrow_mut().clear();
-    *shared.new_playlist_row.borrow_mut() = None;
-    *shared.import_playlist_row.borrow_mut() = None;
+    *shared.playlist_add_button.borrow_mut() = None;
 
     sidebar_presentation::append_header(
         &shared.listbox,
@@ -269,10 +276,16 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
         NavIcon::Queue,
     );
 
-    sidebar_presentation::append_header(
+    let playlist_add_button = sidebar_presentation::append_header_with_action(
         &shared.listbox,
         &strings::text(strings::SIDEBAR_SECTION_PLAYLISTS),
+        &strings::text(strings::SIDEBAR_NEW_PLAYLIST),
+        {
+            let shared = shared.clone();
+            move || sidebar_playlist_quick_add::begin(&shared)
+        },
     );
+    *shared.playlist_add_button.borrow_mut() = Some(playlist_add_button);
     for playlist in &playlist_rows {
         add_row(
             shared,
@@ -282,10 +295,6 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
             NavIcon::Playlist,
         );
     }
-    let action_rows = sidebar_presentation::append_playlist_action_rows(&shared.listbox);
-    *shared.new_playlist_row.borrow_mut() = Some(action_rows.new_playlist);
-    *shared.import_playlist_row.borrow_mut() = Some(action_rows.import_playlist);
-
     sidebar_presentation::append_header(
         &shared.listbox,
         &strings::text(strings::SIDEBAR_SECTION_SMART),
@@ -333,7 +342,8 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
     // Dismissed import errors stay reachable through the triage view's
     // collapsed footer, even though they never contribute to the badge.
     let has_import_errors = active_import_error_count > 0 || dismissed_import_error_count > 0;
-    let has_issues = has_import_errors || missing_count > 0;
+    let has_issues =
+        has_import_errors || missing_count > 0 || doctor_issue_visible(pending_doctor_count);
     shared.issues_listbox.set_visible(has_issues);
     if has_issues {
         if has_import_errors {
@@ -352,6 +362,15 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
                 &strings::text(strings::SIDEBAR_MISSING_FILES),
                 new_missing_count,
                 NavIcon::Missing,
+            );
+        }
+        if doctor_issue_visible(pending_doctor_count) {
+            add_issue_action_row(
+                shared,
+                &strings::text(strings::LIBRARY_DOCTOR),
+                pending_doctor_count,
+                NavIcon::LibraryDoctor,
+                "win.library-doctor",
             );
         }
     }
@@ -400,6 +419,10 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
     }
 }
 
+pub(in crate::ui) const fn doctor_issue_visible(pending_count: u32) -> bool {
+    pending_count > 0
+}
+
 fn add_row(
     shared: &Rc<Shared>,
     source: ViewSource,
@@ -407,7 +430,23 @@ fn add_row(
     count: Option<i64>,
     icon: NavIcon,
 ) {
-    let row = sidebar_presentation::build_nav_row(title, count, icon);
+    let editing_playlist_id = match &source {
+        ViewSource::Playlist(playlist_id)
+            if shared.playlist_quick_edit_id.get() == Some(*playlist_id) =>
+        {
+            Some(*playlist_id)
+        }
+        _ => None,
+    };
+    let (row, editor) = if editing_playlist_id.is_some() {
+        let (row, editor) = sidebar_presentation::build_editable_playlist_row(title, count);
+        (row, Some(editor))
+    } else {
+        (
+            sidebar_presentation::build_nav_row(title, count, icon),
+            None,
+        )
+    };
     match &source {
         ViewSource::Playlist(playlist_id) => {
             sidebar_dnd::wire_playlist_drop_target(shared, &row, *playlist_id, title);
@@ -427,6 +466,9 @@ fn add_row(
         &shared.listbox
     };
     target.append(&row);
+    if let (Some(playlist_id), Some(editor)) = (editing_playlist_id, editor) {
+        sidebar_playlist_quick_add::wire_editor(shared, &row, playlist_id, &editor);
+    }
     let entry: RowEntry = (row, source, title.to_string());
     shared.rows.borrow_mut().push(entry);
 }
@@ -447,4 +489,25 @@ fn add_issue_row(
         .rows
         .borrow_mut()
         .push((row, source, title.to_string()));
+}
+
+fn add_issue_action_row(
+    shared: &Rc<Shared>,
+    title: &str,
+    count: u32,
+    icon: NavIcon,
+    action: &'static str,
+) {
+    let presentation = sidebar_presentation::issue_row_presentation(count, icon);
+    let row = sidebar_presentation::build_issue_nav_row(title, presentation, icon);
+    row.set_selectable(false);
+    // a11y-semantics: role=list-item name=library-doctor state=focusable action=activate
+    row.set_focusable(true);
+    row.connect_activate(move |row| {
+        if let Err(error) = row.activate_action(action, None) {
+            tracing::error!(%error, action, "failed to activate sidebar issue action");
+        }
+    });
+    shared.issues_listbox.append(&row);
+    remember_issue_focus_entry(&shared.issues_listbox, &row);
 }

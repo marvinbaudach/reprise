@@ -1,12 +1,12 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, Transaction, TransactionBehavior};
 
 use super::super::tag_edit::{EditableTags, TagPatch};
 use super::super::tag_mutation::{
     commit_tag_mutation, PreparedTagMutation, TagMutationFailure, WriteErrorKind,
 };
-use super::types::{JournaledTagMutation, PreparedTagWriteJob, TagWriteJobSpec};
+use super::types::{JournaledTagMutation, PreparedTagWriteJob, TagWriteJobError, TagWriteJobSpec};
 
 #[derive(Debug)]
 struct JournalEntry {
@@ -54,8 +54,9 @@ pub(crate) fn prepare_tag_write_job(
     conn: &Connection,
     spec: TagWriteJobSpec,
     mutations: &[(usize, PreparedTagMutation)],
-) -> Result<PreparedTagWriteJob, rusqlite::Error> {
-    let transaction = conn.unchecked_transaction()?;
+) -> Result<PreparedTagWriteJob, TagWriteJobError> {
+    let transaction = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
+    crate::library::tag_write_lock::claim_tag_write_slot::<TagWriteJobError>(&transaction)?;
     let created_at = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()

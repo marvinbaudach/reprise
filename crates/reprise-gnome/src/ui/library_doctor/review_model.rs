@@ -1,22 +1,21 @@
 use std::collections::HashMap;
 
 use reprise_core::library_doctor::{
-    DoctorCandidate, DoctorField, DoctorReviewRow, DoctorReviewRowState, DoctorReviewSession,
-    DoctorScan, DoctorValue, DoctorWriteRowState, ProposalSource, RemoteEvidenceSource,
+    group_review_rows, DoctorCandidate, DoctorField, DoctorReviewDisplayRow, DoctorReviewRow,
+    DoctorReviewRowId, DoctorReviewRowState, DoctorReviewSession, DoctorScan, DoctorValue,
+    DoctorWriteRowState, ProblemClass, ProposalSource, RemoteEvidenceSource,
 };
 
 use crate::ui::strings;
 
 pub(super) const WIDE_BREAKPOINT: i32 = 640;
 
-#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ReviewLayout {
     Narrow,
     Wide,
 }
 
-#[cfg(test)]
 pub(super) const fn layout_for_width(width: i32) -> ReviewLayout {
     if width < WIDE_BREAKPOINT {
         ReviewLayout::Narrow
@@ -85,6 +84,16 @@ pub(super) struct ReviewOutcome {
 #[derive(Debug, Clone)]
 pub(super) struct ReviewRowModel {
     pub(super) row: DoctorReviewRow,
+    pub(super) row_ids: Vec<DoctorReviewRowId>,
+    pub(super) selectable_row_ids: Vec<DoctorReviewRowId>,
+    pub(super) track_ids: Vec<i64>,
+    pub(super) album_position: usize,
+    pub(super) row_position: usize,
+    pub(super) album_key: String,
+    pub(super) album_title: String,
+    pub(super) album_artist: String,
+    pub(super) album_track_count: usize,
+    pub(super) selected_change_count: usize,
     pub(super) track: String,
     pub(super) field: String,
     pub(super) current: String,
@@ -111,7 +120,7 @@ impl ReviewRowModel {
     }
 }
 
-pub(super) fn rows_for(
+pub(super) fn grouped_rows_for(
     scan: &DoctorScan,
     review: &DoctorReviewSession,
     outcomes: &HashMap<reprise_core::library_doctor::DoctorReviewRowId, ReviewOutcome>,
@@ -132,23 +141,139 @@ pub(super) fn rows_for(
             (track.reference.track_id, title)
         })
         .collect::<HashMap<_, _>>();
-    review
+    let rows_by_id = review
         .rows()
         .iter()
-        .cloned()
-        .map(|row| ReviewRowModel {
-            track: titles
-                .get(&row.track_id)
-                .cloned()
-                .unwrap_or_else(|| strings::text(strings::DOCTOR_UNKNOWN_TRACK)),
-            field: strings::text(field_label(row.field)),
-            current: value_text(&row.current),
-            proposed: value_text(&row.proposed),
-            confidence: confidence_presentation(row.source, row.confidence),
-            outcome: outcomes.get(&row.id).cloned(),
-            row,
+        .map(|row| (row.id, row))
+        .collect::<HashMap<_, _>>();
+    group_review_rows(scan, review)
+        .into_iter()
+        .enumerate()
+        .flat_map(|(album_position, album)| {
+            let rows_by_id = &rows_by_id;
+            let titles = &titles;
+            let album_key = album.key;
+            let album_title = album.title;
+            let album_artist = album.artist;
+            let album_track_count = album.track_count;
+            album
+                .rows
+                .into_iter()
+                .enumerate()
+                .filter_map(move |(row_position, display)| {
+                    let (row_ids, track_ids, track) = match display {
+                        DoctorReviewDisplayRow::Track { row_id, track_id } => (
+                            vec![row_id],
+                            vec![track_id],
+                            titles
+                                .get(&track_id)
+                                .cloned()
+                                .unwrap_or_else(|| strings::text(strings::DOCTOR_UNKNOWN_TRACK)),
+                        ),
+                        DoctorReviewDisplayRow::AllTracks {
+                            row_ids,
+                            track_count,
+                        } => {
+                            let track_ids = row_ids
+                                .iter()
+                                .filter_map(|id| rows_by_id.get(id).map(|row| row.track_id))
+                                .collect();
+                            (row_ids, track_ids, strings::doctor_all_tracks(track_count))
+                        }
+                    };
+                    let first = rows_by_id.get(row_ids.first()?)?;
+                    let selectable_row_ids = row_ids
+                        .iter()
+                        .filter(|id| {
+                            rows_by_id
+                                .get(id)
+                                .is_some_and(|row| row.state == DoctorReviewRowState::Ready)
+                        })
+                        .copied()
+                        .collect::<Vec<_>>();
+                    let selected_change_count = row_ids
+                        .iter()
+                        .filter_map(|id| rows_by_id.get(id))
+                        .filter(|row| row.selected && row.state == DoctorReviewRowState::Ready)
+                        .count();
+                    let mut row = (*first).clone();
+                    row.selected = !selectable_row_ids.is_empty()
+                        && selected_change_count == selectable_row_ids.len();
+                    Some(ReviewRowModel {
+                        field: strings::text(field_label(row.field)),
+                        current: value_text(&row.current),
+                        proposed: value_text(&row.proposed),
+                        confidence: confidence_presentation(row.source, row.confidence),
+                        outcome: outcomes.get(&row.id).cloned(),
+                        row,
+                        row_ids,
+                        selectable_row_ids,
+                        track_ids,
+                        album_position,
+                        row_position,
+                        album_key: album_key.clone(),
+                        album_title: album_title.clone(),
+                        album_artist: album_artist.clone(),
+                        album_track_count,
+                        selected_change_count,
+                        track,
+                    })
+                })
+                .collect::<Vec<_>>()
         })
         .collect()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ReviewCategory {
+    Casing,
+    Year,
+    Genre,
+}
+
+impl ReviewCategory {
+    pub(super) const fn name(self) -> &'static str {
+        match self {
+            Self::Casing => "casing",
+            Self::Year => "year",
+            Self::Genre => "genre",
+        }
+    }
+
+    pub(super) const fn label(self) -> &'static str {
+        match self {
+            Self::Casing => strings::DOCTOR_FILTER_CASING,
+            Self::Year => strings::DOCTOR_FILTER_YEAR,
+            Self::Genre => strings::DOCTOR_FILTER_GENRE,
+        }
+    }
+
+    pub(super) const fn matches(self, class: ProblemClass) -> bool {
+        match self {
+            Self::Casing => matches!(
+                class,
+                ProblemClass::CasingWhitespace | ProblemClass::MissingAlbumArtist
+            ),
+            Self::Year => matches!(class, ProblemClass::MissingWrongYear),
+            Self::Genre => matches!(class, ProblemClass::GenreVariant),
+        }
+    }
+}
+
+pub(super) fn available_categories(review: &DoctorReviewSession) -> Vec<ReviewCategory> {
+    [
+        ReviewCategory::Casing,
+        ReviewCategory::Year,
+        ReviewCategory::Genre,
+    ]
+    .into_iter()
+    .filter(|category| {
+        review
+            .rows()
+            .iter()
+            .any(|row| category.matches(row.problem_class))
+    })
+    .collect()
 }
 
 pub(super) fn value_text(value: &DoctorValue) -> String {
@@ -157,6 +282,14 @@ pub(super) fn value_text(value: &DoctorValue) -> String {
         DoctorValue::Text(value) => value.clone(),
         DoctorValue::Year(value) => value.to_string(),
     }
+}
+
+/// What the pill reads: the spelling and how many tracks carry it. The
+/// evidence behind it goes to [`candidate_description`], which feeds the
+/// tooltip and the accessible description — printed on the button itself it
+/// is a line wider than the window.
+pub(super) fn candidate_label(candidate: &DoctorCandidate) -> String {
+    strings::doctor_candidate(&value_text(&candidate.value), candidate.count)
 }
 
 pub(super) fn candidate_description(candidate: &DoctorCandidate) -> String {
@@ -199,7 +332,7 @@ pub(super) fn candidate_description(candidate: &DoctorCandidate) -> String {
 }
 
 pub(super) fn row_selectable(model: &ReviewRowModel) -> bool {
-    matches!(model.row.state, DoctorReviewRowState::Ready)
+    !model.selectable_row_ids.is_empty()
         && !matches!(
             model.outcome.as_ref().map(|outcome| outcome.state),
             Some(DoctorWriteRowState::Applied)
@@ -217,7 +350,7 @@ pub(super) const fn outcome_label(outcome: DoctorWriteRowState) -> &'static str 
     }
 }
 
-const fn field_label(field: DoctorField) -> &'static str {
+pub(super) const fn field_label(field: DoctorField) -> &'static str {
     match field {
         DoctorField::Title => strings::TAG_TITLE,
         DoctorField::Artist => strings::TAG_ARTIST,
@@ -236,8 +369,8 @@ mod tests {
     };
 
     use super::{
-        candidate_description, confidence_presentation, layout_for_width, ConfidenceTone,
-        ReviewLayout,
+        candidate_description, candidate_label, confidence_presentation, layout_for_width,
+        ConfidenceTone, ReviewLayout,
     };
 
     #[test]
@@ -299,5 +432,50 @@ mod tests {
         assert!(description.contains("Canonical album"));
         assert!(description.contains("1999"));
         assert!(description.contains("250 ms"));
+    }
+
+    /// The pill is a choice between spellings, so it shows the spelling and
+    /// how often it occurs. Its evidence — source, confidence, the matched
+    /// release's artist, title, album, year and duration — belongs to the
+    /// description a screen reader reads and the tooltip a pointer reveals.
+    /// Printed on the button it produced a single line wider than the window,
+    /// truncated mid-sentence, with the spelling itself pushed off the page.
+    #[test]
+    fn doc_4b_a_candidate_pill_shows_the_spelling_and_leaves_evidence_to_its_description() {
+        let candidate = DoctorCandidate {
+            value: DoctorValue::Text("The Beatles".into()),
+            count: 9,
+            evidence: vec![RemoteEvidence {
+                source: RemoteEvidenceSource::MusicBrainz,
+                confidence: 100,
+                recording_mbid: None,
+                release_mbid: None,
+                release_group_mbid: None,
+                artist_mbid: None,
+                release_artist_mbid: None,
+                title: Some("Dehumanized".into()),
+                artist: Some("Bring Me the Horizon".into()),
+                album: Some("Count Your Blessings".into()),
+                year: Some(2026),
+                duration_ms: Some(268_000),
+                duration_delta_ms: Some(12),
+            }],
+        };
+
+        let label = candidate_label(&candidate);
+        let description = candidate_description(&candidate);
+
+        assert!(label.contains("The Beatles"), "the spelling must be shown");
+        assert!(label.contains('9'), "so must how often it occurs");
+        for evidence in ["MusicBrainz", "Bring Me the Horizon", "268000", "2026"] {
+            assert!(
+                !label.contains(evidence),
+                "evidence leaked onto the pill: {label}"
+            );
+        }
+        assert!(
+            description.contains("MusicBrainz") && description.contains("Bring Me the Horizon"),
+            "the description still carries the full evidence"
+        );
     }
 }
