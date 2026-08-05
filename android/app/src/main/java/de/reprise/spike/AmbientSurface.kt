@@ -121,9 +121,9 @@ private fun BoxScope.DriftingFields(colors: List<Color>) {
         animationSpec = ambientPeriod(24_000),
         label = "ambient-field-24s",
     )
-    AmbientField(colors[0], Alignment.TopStart, first, 0.35f)
-    AmbientField(colors[1], Alignment.CenterEnd, second, -0.55f)
-    AmbientField(colors[2], Alignment.BottomCenter, third, 0.7f)
+    AmbientField(colors[0], Alignment.TopStart, first, 0.35f, AMBIENT_FIELD_TAGS[0])
+    AmbientField(colors[1], Alignment.CenterEnd, second, -0.55f, AMBIENT_FIELD_TAGS[1])
+    AmbientField(colors[2], Alignment.BottomCenter, third, 0.7f, AMBIENT_FIELD_TAGS[2])
 }
 
 private fun ambientPeriod(periodMillis: Int) = infiniteRepeatable<Float>(
@@ -133,10 +133,25 @@ private fun ambientPeriod(periodMillis: Int) = infiniteRepeatable<Float>(
 
 @Composable
 private fun BoxScope.StaticFields(colors: List<Color>) {
-    AmbientField(colors[0], Alignment.TopStart, -0.55f, 0.35f)
-    AmbientField(colors[1], Alignment.CenterEnd, 0.6f, -0.55f)
-    AmbientField(colors[2], Alignment.BottomCenter, 0.15f, 0.7f)
+    AmbientField(colors[0], Alignment.TopStart, -0.55f, 0.35f, AMBIENT_FIELD_TAGS[0])
+    AmbientField(colors[1], Alignment.CenterEnd, 0.6f, -0.55f, AMBIENT_FIELD_TAGS[1])
+    AmbientField(colors[2], Alignment.BottomCenter, 0.15f, 0.7f, AMBIENT_FIELD_TAGS[2])
 }
+
+/**
+ * The three fields carry the *same* marks whichever branch drew them.
+ *
+ * That is deliberate: a test that could tell drifting from static by which mark
+ * exists would be back to asking a flag whether it is itself. Told apart only
+ * by where they sit after the clock has moved, they answer the question that
+ * matters — did the surface actually move — and no arrangement of the
+ * scheduling flag can fake it.
+ *
+ * The mark goes last in the chain, after [graphicsLayer]: the drift is a layer
+ * transform rather than a layout offset, and only a semantics node *inside* that
+ * layer reports a position that carries it.
+ */
+private val AMBIENT_FIELD_TAGS = listOf("ambient-field-0", "ambient-field-1", "ambient-field-2")
 
 @Composable
 private fun BoxScope.AmbientField(
@@ -144,6 +159,7 @@ private fun BoxScope.AmbientField(
     alignment: Alignment,
     driftX: Float,
     driftY: Float,
+    tag: String,
 ) {
     Box(
         modifier = Modifier
@@ -154,6 +170,7 @@ private fun BoxScope.AmbientField(
                 translationY = driftY * 48.dp.toPx()
             }
             .blur(30.dp, BlurredEdgeTreatment.Unbounded)
-            .background(color.copy(alpha = 0.62f), CircleShape),
+            .background(color.copy(alpha = 0.62f), CircleShape)
+            .testTag(tag),
     )
 }

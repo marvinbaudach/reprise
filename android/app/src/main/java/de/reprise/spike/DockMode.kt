@@ -207,20 +207,24 @@ private fun DockTransportButton(
     }
 }
 
+/**
+ * The dock's one star, reading the rating from the same place the sheet and the
+ * library row read it — see [MobileSurfaceViewModel.ratingOf]. It keeps no copy
+ * of its own; a copy here is what used to survive the ✕ and leave the sheet
+ * showing the rating from before the dock was entered.
+ */
 @Composable
 private fun DockStar(track: LibraryTrack, surfaceState: MobileSurfaceViewModel) {
     val setRating = LocalPlaybackControls.current::setRating
-    var rating by remember(track.id) { mutableStateOf(track.rating.coerceIn(0, 5)) }
+    val rating = surfaceState.ratingOf(track)
     var failure by remember(track.id) { mutableStateOf<TransientMessage?>(null) }
     IconButton(
         onClick = {
             val target = surfaceState.dockRatingTarget(track.id, rating)
             if (target == rating) return@IconButton
-            val previous = rating
             setRating(track.id, target) { message ->
                 if (message == null) {
-                    surfaceState.confirmDockRating(track.id, previous, target)
-                    rating = target
+                    surfaceState.confirmRating(track.id, rating, target)
                     failure = null
                 } else {
                     failure = TransientMessage(message).after(failure)

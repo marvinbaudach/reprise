@@ -159,8 +159,34 @@ private fun VisualizerBar(control: VisualizerControl) {
                         },
                     ),
             ) {
-                Text(mode.label, maxLines = 1)
+                VisualizerModeLabel(mode)
             }
+        }
+    }
+}
+
+/**
+ * A mode's name, and — when it cannot be chosen — the one line that says why.
+ *
+ * Shared by the always-visible bar and the long-press menu on purpose. The
+ * explanation used to live in the menu alone, so a listener who never long-holds
+ * saw two permanently greyed entries with no reason given, and absent-for-a-
+ * reason is indistinguishable from broken. The line is a child of the button
+ * itself rather than a tooltip, which is also how a screen reader gets it: the
+ * button merges its descendants, so the mode is announced with its reason and
+ * its disabled state in one go.
+ */
+@Composable
+private fun VisualizerModeLabel(mode: MobileVisualizer) {
+    Column {
+        Text(mode.label, maxLines = 1)
+        if (!mode.available) {
+            Text(
+                UNAVAILABLE_EXPLANATION,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
         }
     }
 }
@@ -175,19 +201,7 @@ private fun VisualizerMenu(
     DropdownMenu(expanded = expanded, onDismissRequest = dismiss) {
         MobileVisualizer.entries.forEach { mode ->
             DropdownMenuItem(
-                text = {
-                    Column {
-                        Text(mode.label)
-                        if (!mode.available) {
-                            Text(
-                                UNAVAILABLE_EXPLANATION,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                            )
-                        }
-                    }
-                },
+                text = { VisualizerModeLabel(mode) },
                 leadingIcon = {
                     MaterialSymbol(
                         name = if (mode == selected) "radio_button_checked" else "radio_button_unchecked",

@@ -10,6 +10,8 @@ import android.view.ViewGroup
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -149,6 +151,30 @@ class MainActivityVisualizerTest {
         compose.onNodeWithTag("visualizer-ambient-surface").assertExists()
         assertEquals(false, application.ambientScheduleEvents.lastOrNull())
         assertTrue(application.ambientScheduleEvents.none { it })
+    }
+
+    /**
+     * The bar is on screen the whole time the sheet is; the menu needs a long
+     * press nobody is told about. A greyed entry that gives no reason there
+     * reads as a failure rather than as something the library has not computed
+     * yet — so the reason has to be where the greying is.
+     */
+    @Test
+    fun theAlwaysVisibleBarSaysWhyItsGreyedEntriesCannotBeChosen() {
+        application.service.publish(m9bSnapshot(trackId = 1))
+        shadowOf(Looper.getMainLooper()).idle()
+        compose.waitForIdle()
+        compose.onNodeWithTag("library-mini-player").performClick()
+
+        compose.onNodeWithTag("visualizer-bar-SPECTRUM")
+            .assertIsNotEnabled()
+            .assertTextContains("Needs track analysis")
+        compose.onNodeWithTag("visualizer-bar-PREVIEW_BAND")
+            .assertIsNotEnabled()
+            .assertTextContains("Needs track analysis")
+        // And only there: an explanation under every entry would say nothing.
+        compose.onNodeWithTag("visualizer-bar-COVER").assertTextEquals("Cover")
+        compose.onNodeWithTag("visualizer-bar-AMBIENT").assertTextEquals("Ambient")
     }
 
     private fun openAmbient() {

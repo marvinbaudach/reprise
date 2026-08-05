@@ -290,7 +290,12 @@ class MainActivityConfigurationTest {
 }
 
 internal class ConfigurationTestApplication : Application(), MainActivitySurfaceProvider {
-    val controls = ConfigurationTestPlaybackControls()
+    // A write the fake accepts is a write the fake keeps: a rating that vanished
+    // the moment it was acknowledged would make every reload path look correct
+    // by having nothing to reload.
+    val controls = ConfigurationTestPlaybackControls { trackId, rating ->
+        trackRatings[trackId] = rating
+    }
     val visualizerWrites = mutableListOf<MobileVisualizer>()
     val ambientScheduleEvents = mutableListOf<Boolean>()
     var animationsEnabled = true
@@ -422,9 +427,14 @@ internal class ConfigurationTestPlaybackService : ReprisePlaybackService() {
     }
 }
 
-class ConfigurationTestPlaybackControls : PlaybackControls {
+class ConfigurationTestPlaybackControls(
+    private val store: (Long, Int) -> Unit = { _, _ -> },
+) : PlaybackControls {
     val seekPositions = mutableListOf<Long>()
     val ratingRequests = mutableListOf<Pair<Long, Int>>()
+
+    /** What the write answers with; null is the database agreeing. */
+    var ratingFailure: String? = null
 
     override fun togglePause() = Unit
     override fun next() = Unit
@@ -436,7 +446,10 @@ class ConfigurationTestPlaybackControls : PlaybackControls {
     override fun setRepeat(mode: AndroidRepeatMode) = Unit
     override fun setRating(trackId: Long, rating: Int, report: (String?) -> Unit) {
         ratingRequests += trackId to rating
-        report(null)
+        if (ratingFailure == null) {
+            store(trackId, rating)
+        }
+        report(ratingFailure)
     }
 }
 
