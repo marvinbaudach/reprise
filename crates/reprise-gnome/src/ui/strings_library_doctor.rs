@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 macro_rules! N_ {
     ($message:literal) => {
         $message
@@ -85,6 +87,175 @@ pub const DOCTOR_REVERT_LAST_CLEANUP: &str = N_!("Revert Last Cleanup");
 pub const DOCTOR_JOB_PAGE_DESCRIPTION: &str =
     N_!("This job continues in the background. Progress and Cancel stay in the sidebar.");
 pub const DOCTOR_JOB_FAILED: &str = N_!("Library Doctor Job Failed");
+pub const DOCTOR_START_HEADING: &str = N_!("Check your library");
+pub const DOCTOR_START_BODY: &str = N_!(
+    "Reprise fixes what is unambiguous — stray spaces, casing, missing MusicBrainz IDs — and asks you about the rest. Everything it does can be undone in one step."
+);
+pub const DOCTOR_CONFLICTS_BODY: &str =
+    N_!("Waiting at the end of the review list. Skippable — nothing breaks if you leave them.");
+pub const DOCTOR_CONFLICTS_SECTION: &str = N_!("Spelling conflicts");
+pub const DOCTOR_CONFLICTS_OPTIONAL: &str = N_!("Optional · nothing happens if you skip these");
+pub const DOCTOR_SKIP_ALL: &str = N_!("Skip all");
+pub const DOCTOR_SCAN_AGAIN: &str = N_!("Scan again");
+pub const DOCTOR_RESULTS_KEPT: &str = N_!("Results are kept until the next scan.");
+pub const DOCTOR_NOTHING_TO_FIX: &str = N_!("Nothing to fix");
+pub const DOCTOR_UNDO_EVERYTHING: &str = N_!("Undo everything from this scan");
+pub const DOCTOR_DONE: &str = N_!("Done");
+pub const DOCTOR_UNDO: &str = N_!("Undo");
+pub const DOCTOR_ALL: &str = N_!("All");
+pub const DOCTOR_TRACK: &str = N_!("Track");
+pub const DOCTOR_FIELD: &str = N_!("Field");
+pub const DOCTOR_NO_ALBUM: &str = N_!("No album");
+pub const DOCTOR_FILTER_CASING: &str = N_!("Casing");
+pub const DOCTOR_FILTER_YEAR: &str = N_!("Year");
+pub const DOCTOR_FILTER_GENRE: &str = N_!("Genre");
+pub const NEW_PLAYLIST_UNTITLED: &str = N_!("Untitled playlist");
+
+pub fn doctor_scan_estimate(tracks: usize, minutes: usize) -> String {
+    formatted(
+        N_!("{tracks} tracks · about {minutes} minutes"),
+        &[
+            ("tracks", &tracks.to_string()),
+            ("minutes", &minutes.to_string()),
+        ],
+    )
+}
+
+pub fn doctor_last_scan(when: &str) -> String {
+    formatted(N_!("Last scan · {when}"), &[("when", when)])
+}
+
+pub fn doctor_last_scan_fixes(count: usize) -> String {
+    formatted(
+        N_!("{count} fixes applied · still reversible"),
+        &[("count", &count.to_string())],
+    )
+}
+
+pub fn doctor_fixes_applied(count: usize) -> String {
+    formatted(
+        N_!("{count} fixes already applied"),
+        &[("count", &count.to_string())],
+    )
+}
+
+pub fn doctor_fixes_to_apply(count: usize) -> String {
+    formatted(
+        N_!("{count} fixes to apply"),
+        &[("count", &count.to_string())],
+    )
+}
+
+pub fn doctor_spacing_casing_line(count: usize) -> String {
+    formatted(
+        N_!("{count} stray spaces and casing corrections"),
+        &[("count", &count.to_string())],
+    )
+}
+
+pub fn doctor_mbid_line(count: usize) -> String {
+    formatted(
+        N_!("{count} MusicBrainz IDs filled in — no visible change to your tags"),
+        &[("count", &count.to_string())],
+    )
+}
+
+pub fn doctor_mbid_line_pending(count: usize) -> String {
+    formatted(
+        N_!("{count} MusicBrainz IDs to fill in — no visible change to your tags"),
+        &[("count", &count.to_string())],
+    )
+}
+
+pub fn doctor_changes_need_your_eye(count: usize) -> String {
+    formatted(
+        N_!("{count} changes need your eye"),
+        &[("count", &count.to_string())],
+    )
+}
+
+pub fn doctor_across_albums(count: usize) -> String {
+    formatted(
+        N_!("across {count} albums"),
+        &[("count", &count.to_string())],
+    )
+}
+
+pub fn doctor_conflicts_headline(count: usize) -> String {
+    formatted(
+        N_!("{count} spelling conflicts, no clear winner"),
+        &[("count", &count.to_string())],
+    )
+}
+
+pub fn doctor_apply_changes(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        N_!("Apply {count} change"),
+        N_!("Apply {count} changes"),
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+pub fn doctor_nothing_to_fix_body(checked: usize, skipped: usize) -> String {
+    formatted(
+        N_!("{checked} tracks checked, {skipped} skipped. Your tags are already consistent with each other."),
+        &[
+            ("checked", &checked.to_string()),
+            ("skipped", &skipped.to_string()),
+        ],
+    )
+}
+
+pub fn doctor_tracks_checked_heading(count: usize) -> String {
+    formatted(
+        N_!("{count} tracks checked"),
+        &[("count", &count.to_string())],
+    )
+}
+
+pub fn doctor_includes_quiet_fixes(count: usize) -> String {
+    formatted(
+        N_!("Includes the {count} quiet fixes. Available until the next scan."),
+        &[("count", &count.to_string())],
+    )
+}
+
+pub fn doctor_tags_fixed(count: usize) -> String {
+    formatted(N_!("{count} tags fixed"), &[("count", &count.to_string())])
+}
+
+pub fn doctor_all_tracks(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        N_!("All {count} track"),
+        N_!("All {count} tracks"),
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+pub fn doctor_preselected_hint() -> String {
+    N_!("Everything here is preselected. Uncheck what you disagree with.").to_owned()
+}
+
+pub fn doctor_changes_and_albums(changes: usize, albums: usize) -> String {
+    formatted(
+        N_!("{changes} changes · {albums} albums"),
+        &[
+            ("changes", &changes.to_string()),
+            ("albums", &albums.to_string()),
+        ],
+    )
+}
+
+pub fn doctor_conflict_scope(field: &str, tracks: usize) -> String {
+    formatted(
+        N_!("{field} · {tracks} tracks"),
+        &[("field", field), ("tracks", &tracks.to_string())],
+    )
+}
 
 pub fn doctor_remote_confidence(source: &str, confidence: u8) -> String {
     formatted(
