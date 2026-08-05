@@ -160,6 +160,37 @@ fn seek_1_the_two_sides_carry_one_colour_and_differ_only_in_opacity() {
 }
 
 #[test]
+fn seek_1_buffered_media_reads_as_ahead_of_what_has_not_arrived() {
+    use super::render::{bar_fill, BarSide};
+    use reprise_view::spectral_colour::spectral_colour;
+
+    // Buffered-but-unplayed remote media has one job: to say "this much is
+    // here already". It only says that while it is visibly *more* than the
+    // part that has not arrived and visibly *less* than the played part.
+    //
+    // The regression this pins is not hypothetical. The alpha arrived as 0.24,
+    // chosen against a coming side of 0.12; when the coming side became 0.34
+    // the buffered segment silently fell *behind* the thing it is ahead of,
+    // and nothing failed. Only the ordering is pinned here, not the numbers —
+    // the numbers may be retuned, the order may not.
+    let spectral = spectral_colour(0.4);
+    let accent = accent_rgb();
+    for colouring in [SeekColouring::Frequency, SeekColouring::Solid] {
+        let luminance = |side| {
+            let (colour, alpha) = bar_fill(colouring, side, spectral, accent);
+            composited_luminance(colour, alpha)
+        };
+        let coming = luminance(BarSide::Coming);
+        let buffered = luminance(BarSide::Buffered);
+        let played = luminance(BarSide::Played);
+        assert!(
+            coming < buffered && buffered < played,
+            "{colouring:?}: coming {coming:.4}, buffered {buffered:.4}, played {played:.4}"
+        );
+    }
+}
+
+#[test]
 fn the_single_colour_bar_keeps_its_grey_coming_side() {
     use super::render::{bar_fill, BarSide};
     use reprise_view::spectral_colour::spectral_colour;
