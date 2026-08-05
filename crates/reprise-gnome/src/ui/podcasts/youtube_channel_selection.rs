@@ -74,7 +74,7 @@ impl YoutubeChannelDetail {
         self.apply_selection();
     }
 
-    /// `SRC-12a`: this page has one unambiguous source, so Ctrl+A takes its
+    /// `SRC-12b`: this page has one unambiguous source, so Ctrl+A takes its
     /// rendered window and cannot reach filtered or not-yet-loaded episodes.
     pub(in crate::ui::podcasts) fn select_all_visible(self: &Rc<Self>) -> bool {
         let Some(subscription_id) = self.state.borrow().active_channel() else {

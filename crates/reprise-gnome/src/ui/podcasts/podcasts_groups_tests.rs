@@ -217,7 +217,6 @@ fn compact_episode_row_has_no_play_button_and_stays_within_height_budget() {
                     unavailable_now: false,
                 },
                 selection: &Rc::new(RefCell::new(PodcastSelection::default())),
-                selected_ids: &[],
                 unavailable_episode: None,
             },
         );
@@ -345,7 +344,6 @@ fn acc_1_every_point_of_a_grouped_episode_row_reaches_the_context_menu() {
                 unavailable_now: false,
             },
             selection: &selection,
-            selected_ids: &[],
             unavailable_episode: None,
         },
     );
@@ -489,7 +487,7 @@ fn src_5_one_expander_is_rendered_per_source_group() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn src_12a_grouped_selection_survives_render_rebuild_on_the_row() {
+fn src_12b_grouped_selection_survives_render_rebuild_on_the_row() {
     gtk4::init().unwrap();
     let mut selection = PodcastSelection::default();
     selection.set_selected(1, true);

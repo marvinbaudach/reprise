@@ -121,7 +121,7 @@ fn src_4b_open_in_browser_appears_exactly_when_browser_url_exists() {
 }
 
 #[test]
-fn src_12a_multi_selection_hides_open_in_browser_instead_of_targeting_one_row() {
+fn src_12b_multi_selection_hides_open_in_browser_instead_of_targeting_one_row() {
     let mut youtube = episode(1, PodcastKind::Youtube);
     youtube.audio_url = "https://www.youtube.com/watch?v=video-id".into();
 

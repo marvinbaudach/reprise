@@ -4037,7 +4037,7 @@ listening statistics.
   toast and a single undo. Escape clears the current episode selection in
   whichever of the two surfaces is showing, and is passed on untouched when
   nothing is selected.
-- **SRC-12a** [active] [gtk] — Episodes can be selected in bulk in both the
+- **SRC-12a** [replaced by SRC-12b] [gtk] — Episodes can be selected in bulk in both the
   grouped library view and the channel detail view, with one shared set of
   batch actions offered only by the context menu for the current selection.
   Selection is carried by a checkbox over the left media slot in grouped rows,
@@ -4062,6 +4062,30 @@ listening statistics.
   `src_12a_channel_page_select_all_stops_at_the_rendered_window` is what
   actually holds the channel-page clause above — `strings_podcasts`, and
   `source_row::media_column`.
+- **SRC-12b** [active] [gtk] — Episodes can be selected in bulk in both the
+  grouped library view and the channel detail view, with one shared set of
+  batch actions offered only by the context menu for the current selection.
+  Selection is shown in both surfaces solely by a neutral row tint; the left
+  media slot contains artwork only, never a checkbox, playback marker,
+  permanent extra column, or separate selection toolbar. Applying a selection
+  never rebuilds the list. Ctrl+A selects every rendered episode of the
+  focused source; with no focused row it selects the whole rendered list,
+  while the channel page selects its current rendered window. Collapsed
+  groups, episodes past a preview window, and filtered-out rows are never
+  swept up. Escape and the visible Clear action beside the selection count
+  both clear the current surface's selection; Escape propagates unchanged
+  when nothing was selected. Actions meaningless for more than one episode
+  stay hidden, and a batch reports one aggregated toast and one undo. Covered
+  by the `src_12b_…` tests in `podcasts_selection`,
+  `podcasts_view_shortcuts` (including
+  `src_12b_ctrl_a_survives_caps_lock`, because a shortcut that a lock key
+  disarms is not a shortcut), `podcasts_view_tests`, `podcasts_groups_tests`,
+  `podcasts_context_menu`, `podcasts_context_menu_browser_tests`,
+  `podcasts_view_actions` for the aggregated toast and undo,
+  `youtube_channel_detail_tests` — where
+  `src_12b_channel_page_select_all_stops_at_the_rendered_window` is what
+  actually holds the channel-page clause above — `strings_podcasts`, and
+  `source_row::media_column`.
 - **SRC-4a** [active] [gtk] — Radio keeps SRC-4's removal and undo
   behavior, and its station menus continue to omit "Play Next" and "Add
   to Queue". A live stream is deliberately not a citizen of an ordered
@@ -4077,7 +4101,7 @@ listening statistics.
   `page_url` when present and never treats its media enclosure in `audio_url`
   as an episode page. As a single-episode action it is absent from a
   multi-selection menu instead of targeting an arbitrary member, as required
-  by SRC-12a. This asymmetry with radio is deliberate. Unsubscribing is operated
+  by SRC-12b. This asymmetry with radio is deliberate. Unsubscribing is operated
   from the context menu alone; there is no hover star.
 - **SRC-13** [active] [gtk] — **Marking and scrolling are separate in the
   source lists.** The loaded item carries the shared playback marker in every
