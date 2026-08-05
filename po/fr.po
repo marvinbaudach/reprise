@@ -1012,22 +1012,34 @@ msgid "Quit"
 msgstr "Quitter"
 
 #: crates/reprise-gnome/src/ui/strings_app_shell.rs:40
+msgid "Accent Color"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:41
+msgid "Choose the Reprise accent or follow the system"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:42
+msgid "App Accent"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:43
 msgid "Color Scheme"
 msgstr "Schéma de couleurs"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:41
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:44
 msgid "Choose light, dark, or follow system preference"
 msgstr "Choisir le thème clair, sombre ou suivre la préférence du système"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:42
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:45
 msgid "Light"
 msgstr "Clair"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:43
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:46
 msgid "Dark"
 msgstr "Foncé"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:44
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:47
 msgid "System"
 msgstr "Système"
 

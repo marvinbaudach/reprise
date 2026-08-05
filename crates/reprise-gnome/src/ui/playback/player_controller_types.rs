@@ -13,7 +13,11 @@ use reprise_core::waveform::WaveformBackend;
 /// `ids` is what a refill plays: the visible query's id list, which stops at
 /// `queries::QUEUE_LIMIT` rows. `total` is the same view's row count, and it
 /// is *not* capped. PLAY-11 needs both, because the ids alone cannot tell a
-/// complete library from the first 10,000 rows of a filtered one.
+/// complete library from the first 10,000 rows of a filtered one — see
+/// `library_continuation::cleared_library_filter_handoff`.
+///
+/// Both come from one provider call so they always describe the same moment;
+/// two providers could be read either side of a reload and disagree.
 pub(in crate::ui) struct VisibleView {
     pub(in crate::ui) ids: Vec<i64>,
     pub(in crate::ui) total: usize,
@@ -42,6 +46,7 @@ pub(in crate::ui) enum StartPlayback {
 }
 
 /// Contract-only platform resources assembled by the window composition root.
+/// Feature modules consume this bundle without naming a concrete OS backend.
 pub(in crate::ui) struct PlayerControllerBackends {
     pub(in crate::ui) playback: Box<dyn PlaybackBackend>,
     pub(in crate::ui) playback_events: async_channel::Receiver<PlayerEvent>,

@@ -232,7 +232,10 @@ pub(super) fn install() {
         manager.connect_dark_notify(|_| {
             reload_theme_for_appearance();
         });
-        manager.connect_accent_color_notify(|_| {
+        // The rgba property, not the quantized `AccentColor` enum: `accent_rgba`
+        // reads `accent-color-rgba`, so hooking the same property keeps the two
+        // in step even when a custom color maps onto an existing enum value.
+        manager.connect_accent_color_rgba_notify(|_| {
             if accent::current() == accent::AccentSource::System {
                 reload_theme_for_appearance();
             }

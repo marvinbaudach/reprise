@@ -2363,7 +2363,12 @@ property is set and yet nothing happens.
   use the one-level-higher `sidebar_bg` surface of the active theme. Both
   flanks carry a 1px hairline on their inner edge. There is no pane-specific
   retinting and no hardcoded pane surface.
-- **STYLE-3** [replaced by STYLE-8] — Two accent roles stay separate.
+- **STYLE-3** [replaced by STYLE-8] — Two accent roles stay separate: the fixed
+  app accent (`@accent_color`) denotes durable UI meaning such as
+  selection, ratings, active toggles, links, chips, and focus; the dynamic
+  playback accent (`@reprise_player_accent`) denotes exclusively the
+  running track, such as Play/Pause, waveform, playing row, EQ, glow, and
+  the GRID-1 inner ring. An element never mixes the roles.
 - **STYLE-4** [replaced by STYLE-1] — Chrome glass is neutral and
   theme-dependent, never tinted by the effective accent. GL/NGL/Vulkan use 24px
   backdrop blur over a neutral tint floor of at least 80%; Cairo, unknown
