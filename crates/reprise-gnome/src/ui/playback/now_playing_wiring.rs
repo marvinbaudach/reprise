@@ -27,7 +27,6 @@ use reprise_core::cover::ThumbnailSize;
 use reprise_core::media_integration::MprisState;
 use reprise_core::playback::{PlaybackError, PlaybackState, SpectrumFrame};
 use reprise_core::queue::Repeat;
-use reprise_core::waveform::STORED_PEAK_COUNT;
 
 fn cover_path_to_uri(path: &Path) -> Option<String> {
     match glib::filename_to_uri(path, None) {
@@ -348,20 +347,12 @@ impl PlayerController {
             reprise_core::db::Db::open_migrated(Some(&db_path))
                 .ok()
                 .and_then(|db| {
-                    let conn = &db;
-                    // Try DB first.
-                    if let Some(cached) = reprise_core::db::get_waveform_peaks(conn, track_id)
-                        .ok()
-                        .flatten()
-                    {
-                        return Some(cached);
-                    }
-                    // Not cached — extract now and store for next time.
-                    let peaks = waveform_backend
-                        .extract_peaks(&track_path, STORED_PEAK_COUNT)
-                        .ok()?;
-                    reprise_core::db::set_waveform_peaks(conn, track_id, &peaks).ok();
-                    Some(peaks)
+                    reprise_core::waveform_cache::peaks_for_playback(
+                        &db,
+                        track_id,
+                        &track_path,
+                        waveform_backend.as_ref(),
+                    )
                 })
         }) else {
             return;

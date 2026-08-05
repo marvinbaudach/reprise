@@ -437,9 +437,20 @@ pub(crate) fn prepare_reconciliation(
 }
 
 pub(super) fn reconcile_after_write(conn: &Connection, id: i64, path: &Path) -> Result<(), String> {
+    // A tag write always moves the file's mtime and usually its size, so the
+    // rescan below looks exactly like "the file was replaced" to the rendering
+    // invalidation trigger — which would throw away a waveform and spectrogram
+    // that cost seconds to produce, for a rewrite that changed no audio at all.
+    // The trigger cannot tell the two apart; this path can, because it is the
+    // one that wrote the tags. So it carries the caches across its own rescan.
+    let carried = crate::db_spectrogram::snapshot_render_data(conn, id)
+        .map_err(|error| format!("could not preserve rendering data: {error}"))?;
     prepare_reconciliation(conn, id, path)?;
     match crate::library::scanner::scan_folder_in(conn, path) {
-        Ok(ScanOutcome::Completed(scan)) if scan.errors == 0 => Ok(()),
+        Ok(ScanOutcome::Completed(scan)) if scan.errors == 0 => {
+            crate::db_spectrogram::restore_render_data(conn, id, &carried)
+                .map_err(|error| format!("could not restore rendering data: {error}"))
+        }
         Ok(ScanOutcome::Completed(scan)) => Err(format!(
             "tag reconciliation reported {} error(s)",
             scan.errors
@@ -521,6 +532,7 @@ mod tests {
 
     use super::*;
     use crate::library::tag_edit::{read_editable_tags, TagPatch};
+    use crate::spectrogram::{TrackSourceFingerprint, TrackSpectrogram};
 
     fn fixture_copy(dir: &Path, name: &str) -> PathBuf {
         let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac");
@@ -552,6 +564,88 @@ mod tests {
             })
             .unwrap();
         (conn, id, path)
+    }
+
+    fn current_fingerprint(db: &crate::db::Db, id: i64) -> TrackSourceFingerprint {
+        db.conn()
+            .query_row(
+                "SELECT file_mtime, file_size, device, inode FROM tracks WHERE id=?1",
+                [id],
+                |row| {
+                    Ok(TrackSourceFingerprint {
+                        mtime_seconds: row.get(0)?,
+                        size_bytes: row.get(1)?,
+                        device: row.get(2)?,
+                        inode: row.get(3)?,
+                    })
+                },
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn a_tag_write_keeps_the_rendering_data_it_did_not_invalidate() {
+        let dir = tempfile::tempdir().unwrap();
+        let (conn, id, path) = seeded_track(dir.path(), "retagged.flac");
+        let spectrogram = TrackSpectrogram::from_cells(vec![5; 48]).unwrap();
+        crate::db::set_waveform_peaks(&conn, id, &[3, 4, 5]).unwrap();
+        crate::db::set_track_spectrogram(&conn, id, current_fingerprint(&conn, id), &spectrogram)
+            .unwrap();
+
+        let prepared = prepare_tag_mutation(
+            conn.conn(),
+            id,
+            &path,
+            &TagPatch {
+                title: Some("Retagged".into()),
+                ..TagPatch::default()
+            },
+        )
+        .unwrap()
+        .unwrap();
+        commit_tag_mutation(conn.conn(), &prepared, false).unwrap();
+
+        assert_eq!(read_editable_tags(&path).unwrap().title, "Retagged");
+        assert_eq!(
+            crate::db::get_waveform_peaks(&conn, id).unwrap(),
+            Some(vec![3, 4, 5]),
+            "a tag write must not throw away the waveform"
+        );
+        assert_eq!(
+            crate::db::get_track_spectrogram(&conn, id).unwrap(),
+            Some(spectrogram),
+            "a tag write must not throw away the spectrogram"
+        );
+        assert!(
+            crate::db::pending_render_data_tracks(&conn)
+                .unwrap()
+                .is_empty(),
+            "a tag write must not queue the track for a pointless recomputation"
+        );
+    }
+
+    #[test]
+    fn a_replaced_file_still_loses_its_rendering_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let (conn, id, _path) = seeded_track(dir.path(), "replaced.flac");
+        crate::db::set_waveform_peaks(&conn, id, &[3, 4, 5]).unwrap();
+        crate::db::set_track_spectrogram(
+            &conn,
+            id,
+            current_fingerprint(&conn, id),
+            &TrackSpectrogram::from_cells(vec![5; 48]).unwrap(),
+        )
+        .unwrap();
+
+        conn.conn()
+            .execute(
+                "UPDATE tracks SET file_size = file_size + 1 WHERE id=?1",
+                [id],
+            )
+            .unwrap();
+
+        assert_eq!(crate::db::get_waveform_peaks(&conn, id).unwrap(), None);
+        assert_eq!(crate::db::get_track_spectrogram(&conn, id).unwrap(), None);
     }
 
     #[test]

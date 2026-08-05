@@ -587,7 +587,7 @@ fn open_migrated_returns_a_ready_to_use_database() {
 }
 
 #[test]
-fn pending_waveform_tracks_excludes_cached_and_missing_rows() {
+fn pending_render_data_tracks_includes_legacy_peaks_but_excludes_missing_rows() {
     let db = Db::open_in_memory().unwrap();
     for (id, path, missing_since) in [
         (1, "/one.flac", None),
@@ -605,7 +605,11 @@ fn pending_waveform_tracks_excludes_cached_and_missing_rows() {
     set_waveform_peaks(&db, 2, &[1, 2, 3]).unwrap();
 
     assert_eq!(
-        pending_waveform_tracks(&db).unwrap(),
-        vec![(1, "/one.flac".to_string())]
+        pending_render_data_tracks(&db)
+            .unwrap()
+            .into_iter()
+            .map(|track| (track.track_id, track.path))
+            .collect::<Vec<_>>(),
+        vec![(1, "/one.flac".to_string()), (2, "/two.flac".to_string())]
     );
 }

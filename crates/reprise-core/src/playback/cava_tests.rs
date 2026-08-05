@@ -157,6 +157,30 @@ fn silence_never_inflates_autosensitivity() {
 }
 
 #[test]
+fn faint_pcm_above_pcm_silence_still_ages_autosensitivity_into_view() {
+    let mut processor = CavaBarProcessor::new(CavaConfig::new(44_100, 10)).unwrap();
+    // About -90 dBFS: far below the stored spectrogram's absolute floor, but
+    // audible material for a renderer whose whole job is to find a gain for
+    // whatever is playing. CAVA decides silence per sample, not per window.
+    let faint = |chunk| {
+        sine_chunk(200.0, chunk)
+            .into_iter()
+            .map(|sample| sample * 0.0001)
+            .collect::<Vec<_>>()
+    };
+    let mut bars = Vec::new();
+
+    for chunk in 0..300 {
+        bars = processor.process(&faint(chunk));
+    }
+
+    assert!(
+        bars[2] > 0.0,
+        "faint playback must still find a gain, got {bars:?}"
+    );
+}
+
+#[test]
 fn noise_floor_cuts_subthreshold_fft_leakage() {
     let mut processor = CavaBarProcessor::new(CavaConfig::new(44_100, 10)).unwrap();
     let whisper: Vec<f32> = sine_chunk(200.0, 0)
