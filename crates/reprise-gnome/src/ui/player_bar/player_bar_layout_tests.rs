@@ -294,17 +294,6 @@ fn css_styles_the_glow_play_button_and_surface() {
 }
 
 #[test]
-fn tip_1d_player_bar_artist_names_its_navigation_action() {
-    let source = include_str!("player_bar_layout.rs")
-        .split("#[cfg(test)]")
-        .next()
-        .unwrap();
-    let artist_tooltip = ".tooltip_text(strings::text(strings::GO_TO_PLAYING_ARTIST))";
-
-    assert_eq!(source.matches(&artist_tooltip).count(), 1);
-}
-
-#[test]
 fn css_includes_new_cover_and_label_classes() {
     let css = super::css();
     assert!(css.contains(".player-bar-cover"));

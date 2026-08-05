@@ -233,6 +233,7 @@ pub(super) struct PodcastSession {
     pub(super) neighbours: Option<NeighbourContext>,
     pub(super) automatic_advance: Option<AutomaticAdvance>,
     pub(super) subscription_id: i64,
+    pub(super) kind: PodcastKind,
     pub(super) published_at: Option<i64>,
     pub(super) art_url: Option<String>,
     pub(super) phase: PodcastPhase,
@@ -588,6 +589,7 @@ mod tests {
             neighbours,
             automatic_advance,
             subscription_id: 42,
+            kind: PodcastKind::Rss,
             published_at: None,
             art_url: None,
             phase: PodcastPhase::Playing,
@@ -711,6 +713,38 @@ mod tests {
         assert_eq!(state.phase(), RadioPhase::Paused);
         assert_eq!(state.inline_error(), Some("station unavailable"));
         assert!(!state.is_empty());
+    }
+
+    /// `PLAY-12`: stopping external playback ends the session outright —
+    /// nothing takes over, so the projection the player bar and the panel
+    /// follow goes away with it and they have to drop to their empty state.
+    /// (`leave_external_for_queue` is the other exit: there a queue track
+    /// takes over and keeps the surfaces loaded.)
+    #[test]
+    fn play_12_a_stopped_radio_session_leaves_nothing_to_project() {
+        let mut state = ExternalPlaybackState {
+            session: Some(ExternalSession::Radio(RadioSession {
+                media: ExternalMedia::Radio {
+                    station_id: 5,
+                    name: "Station".into(),
+                    stream_url: "https://example.test/stream".into(),
+                    uuid: None,
+                },
+                art_url: None,
+                presentation: RadioPresentation::connected(),
+                retry_guard: reprise_core::radio::click::ReresolveGuard::default(),
+            })),
+            ..ExternalPlaybackState::default()
+        };
+        assert_eq!(
+            state.snapshot().map(|snapshot| snapshot.mode),
+            Some(PlaybackMode::Radio)
+        );
+
+        state.clear_session();
+        state.clear_preview();
+
+        assert!(state.snapshot().is_none());
     }
 
     #[test]

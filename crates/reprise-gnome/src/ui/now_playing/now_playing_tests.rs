@@ -115,6 +115,28 @@ fn no_loaded_track_uses_the_idle_presentation() {
     assert!(presentation.idle);
 }
 
+/// `PLAY-12`: the panel's cover, title, artist and album are links, and
+/// `render_track` makes them operable exactly while `idle` is false. So `idle`
+/// has to mean "nothing loaded at all" and nothing else — a loaded track *or*
+/// an external session keeps the surfaces alive, and only the empty panel
+/// switches them off instead of letting clicks fall through to nowhere.
+#[test]
+fn play_12_only_an_empty_panel_switches_its_link_surfaces_off() {
+    let track = loaded_track();
+
+    assert!(panel_presentation_with_external(None, None, PlaybackState::Stopped).idle);
+    assert!(
+        !panel_presentation_with_external(Some(&track), None, PlaybackState::Paused).idle,
+        "a loaded track keeps the panel's links operable"
+    );
+    for snapshot in [external_episode_snapshot(), external_radio_snapshot()] {
+        assert!(
+            !panel_presentation_with_external(None, Some(&snapshot), PlaybackState::Playing).idle,
+            "an external session keeps the panel's links operable"
+        );
+    }
+}
+
 #[test]
 fn pod_21_external_episode_uses_the_shared_bar_identity_instead_of_idle_copy() {
     let snapshot = external_episode_snapshot();

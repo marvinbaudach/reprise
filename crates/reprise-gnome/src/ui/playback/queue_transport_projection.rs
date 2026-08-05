@@ -149,6 +149,7 @@ mod tests {
             neighbours,
             automatic_advance: None,
             subscription_id: 42,
+            kind: reprise_core::podcasts::PodcastKind::Rss,
             published_at: None,
             art_url: None,
             phase: PodcastPhase::Playing,

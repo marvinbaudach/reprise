@@ -3,7 +3,6 @@
 //! the merge of the artwork and multi-selection work pushed it to 849.
 
 use super::*;
-
 fn episode(image_url: Option<&str>) -> EpisodeRow {
     EpisodeRow {
         id: 1,
@@ -200,6 +199,7 @@ fn compact_episode_row_has_no_play_button_and_stays_within_height_budget() {
         let mut widgets = RenderedRowWidgets {
             downloads: BTreeMap::new(),
             selection: BTreeMap::new(),
+            channels: BTreeMap::new(),
         };
         let rendered = episode_row(
             &row,
@@ -326,6 +326,7 @@ fn acc_1_every_point_of_a_grouped_episode_row_reaches_the_context_menu() {
     let mut widgets = RenderedRowWidgets {
         downloads: BTreeMap::new(),
         selection: BTreeMap::new(),
+        channels: BTreeMap::new(),
     };
     let row = episode(None);
     let rendered = episode_row(
