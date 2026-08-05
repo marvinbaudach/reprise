@@ -37,9 +37,9 @@ pub const ALWAYS_ON_TOP: &str = N_!("Always on Top");
 pub const QUIT: &str = N_!("Quit");
 
 // Appearance accent and color scheme preferences.
-pub const ACCENT_COLOUR: &str = N_!("Accent colour");
-pub const ACCENT_COLOUR_SUBTITLE: &str = N_!("Use the Reprise accent or follow the system");
-pub const APP_ACCENT: &str = N_!("App accent");
+pub const ACCENT_COLOR: &str = N_!("Accent Color");
+pub const ACCENT_COLOR_SUBTITLE: &str = N_!("Choose the Reprise accent or follow the system");
+pub const ACCENT_SOURCE_APP: &str = N_!("App Accent");
 pub const COLOR_SCHEME: &str = N_!("Color Scheme");
 pub const COLOR_SCHEME_SUBTITLE: &str = N_!("Choose light, dark, or follow system preference");
 pub const SCHEME_LIGHT: &str = N_!("Light");

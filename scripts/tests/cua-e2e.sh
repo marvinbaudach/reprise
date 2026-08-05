@@ -173,7 +173,7 @@ for obsolete_visual_mode in '"Grid"' '"Bars"' '"Flow"' '"Pulse"'; do
 done
 for obsolete_song_visuals_contract in \
   '"Rings"' \
-  '"F11 Fullscreen · color follows the cover '"accent"'"' \
+  '"F11 Fullscreen · color follows the cover accent"' \
   '"Song analysis"'; do
   if rg --quiet --fixed-strings "$obsolete_song_visuals_contract" "$runner"; then
     echo "$runner must not retain removed Song Visuals contract: $obsolete_song_visuals_contract" >&2

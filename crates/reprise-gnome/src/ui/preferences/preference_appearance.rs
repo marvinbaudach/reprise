@@ -42,7 +42,7 @@ pub(in crate::ui) fn build(context: &Rc<PreferencesContext>) -> adw::Preferences
             }
             AppearanceSection::AccentColor => {
                 let group = adw::PreferencesGroup::builder()
-                    .title(strings::text(strings::ACCENT_COLOUR))
+                    .title(strings::text(strings::ACCENT_COLOR))
                     .build();
                 group.add(&accent_row(context));
                 page.add(&group);
@@ -117,7 +117,7 @@ fn theme_row(context: &Rc<PreferencesContext>) -> adw::ComboRow {
 fn accent_row(context: &Rc<PreferencesContext>) -> adw::ComboRow {
     let sources = [AccentSource::App, AccentSource::System];
     let names = [
-        strings::text(strings::APP_ACCENT),
+        strings::text(strings::ACCENT_SOURCE_APP),
         strings::text(strings::SCHEME_SYSTEM),
     ];
     let model = gtk4::StringList::new(
@@ -127,8 +127,8 @@ fn accent_row(context: &Rc<PreferencesContext>) -> adw::ComboRow {
             .collect::<Vec<_>>(),
     );
     let row = adw::ComboRow::builder()
-        .title(strings::text(strings::ACCENT_COLOUR))
-        .subtitle(strings::text(strings::ACCENT_COLOUR_SUBTITLE))
+        .title(strings::text(strings::ACCENT_COLOR))
+        .subtitle(strings::text(strings::ACCENT_COLOR_SUBTITLE))
         .model(&model)
         .build();
 

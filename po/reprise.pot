@@ -996,15 +996,15 @@ msgid "Quit"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_app_shell.rs:40
-msgid "Accent colour"
+msgid "Accent Color"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_app_shell.rs:41
-msgid "Use the Reprise accent or follow the system"
+msgid "Choose the Reprise accent or follow the system"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_app_shell.rs:42
-msgid "App accent"
+msgid "App Accent"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_app_shell.rs:43
