@@ -60,7 +60,7 @@ fn plan_for(
     let DoctorScanOutcome::Completed(scan) = outcome else {
         panic!("scan must complete")
     };
-    let mut review = DoctorReviewSession::from_scan(scan, DoctorReviewFilter::AllChanges);
+    let mut review = DoctorReviewSession::from_scan(scan, DoctorReviewFilter::AutoApply);
     let choices = review
         .rows()
         .iter()
@@ -153,7 +153,7 @@ fn remote_review_preserves_raw_current_tag_for_guarded_apply() {
     let DoctorScanOutcome::Completed(scan) = outcome else {
         panic!("scan must complete")
     };
-    let mut review = DoctorReviewSession::from_scan(scan, DoctorReviewFilter::AllChanges);
+    let mut review = DoctorReviewSession::from_scan(scan, DoctorReviewFilter::NeedsReview);
     let row = review
         .rows()
         .iter()
@@ -612,7 +612,7 @@ fn doc_5a_recording_mbid_uses_the_guarded_review_write_path() {
         evidence: Vec::new(),
         local_fallback: None,
     });
-    let mut review = DoctorReviewSession::from_scan(scan, DoctorReviewFilter::AllChanges);
+    let mut review = DoctorReviewSession::from_scan(scan, DoctorReviewFilter::AutoApply);
     let row = review
         .rows()
         .iter()

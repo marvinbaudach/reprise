@@ -3212,21 +3212,17 @@ means deterministic and high-confidence, never „without review".
   applicable. Cancel or an error discard it and show the last fully
   completed result from DOC-2a again.
 
-- **DOC-3a** [active] [core] — **Review decides per field.** Every
-  concrete track/field change has its own selection. „All safe" is a
-  reset preset to exactly all currently allowed unambiguous local fixes
-  and removes remote, manual, stale, and unresolved selection; „None"
-  removes everything. A tie shows „N spellings, no clear winner — pick
-  one" with only real candidates and their frequencies, with no
-  default. Picking a candidate materializes the affected track/field
-  diffs; individual rows remain deselectable. Changing the candidate
-  recalculates them and preserves manual deselections, as long as the
-  same row remains affected. The review order stays stable during the
-  session: selected local safe, tie groups, remote at 85%+, remote
-  50–84%, remote under 50%, stale/conflict; within that, scope order and
-  the fixed field sequence Title, Artist, Album, Album Artist, Year,
-  Genre, Recording MBID. Apply receives an immutable plan made of
-  exactly the current selection.
+- **DOC-3a** [active] [core] — **Review decides per field, and everything
+  reviewable starts selected.** Every concrete track/field change has its own
+  selection and arrives preselected. „All" selects every ready row, „None"
+  clears everything; neither touches a stale or conflicting row. A tie shows
+  „N spellings, no clear winner — pick one" with only real candidates and
+  their frequencies, with no default. Picking a candidate materializes the
+  affected diffs; individual rows stay deselectable; changing the candidate
+  recomputes them and preserves manual deselections while the same row remains
+  affected. Review order stays stable during the session, in scope order and
+  the fixed field sequence Title, Artist, Album, Album Artist, Year, Genre.
+  Apply receives an immutable plan of exactly the current selection.
 
 - **DOC-3b** [active] [gtk] — **26b shows the same diff wide and
   narrow.** Wide, Checkbox · Track + Field · Current · Proposed · Source
@@ -3372,6 +3368,25 @@ means deterministic and high-confidence, never „without review".
   always included · no network", „Run scan now", and „Revert last
   cleanup". Revert remains available via a minimal Doctor job page and
   activates no network.
+
+- **DOC-8b** [active] [core] — **Two tiers, and exactly one predicate
+  decides.** A proposal is applied without asking when it is a MusicBrainz
+  recording ID, or when it is local and preselected; never when its track is
+  stale. Everything else is shown for review, preselected. Recording IDs never
+  appear in the review list. The applied set is enqueued as a tag-write job the
+  moment the scan completes, before the summary is presented, and is reported
+  as done; nothing is written while the scan is still running. There is no
+  surface that lists the applied set — it is represented by two counted lines
+  and an Undo. The tier is computed by one function used by the core, the GTK
+  surface and the agent adapter alike; a second copy of the condition is a
+  defect. *Tests:*
+  `doc_8b_auto_applied_tier_is_local_preselected_plus_every_recording_mbid`,
+  `doc_8b_stale_rows_are_never_auto_applied`,
+  `doc_8b_review_tier_preselects_every_ready_row`,
+  `doc_8b_recording_mbid_never_reaches_the_review_tier`,
+  `doc_8b_all_preset_selects_every_ready_row_and_none_clears_them`,
+  `doc_8b_scan_completion_enqueues_the_auto_applied_job_before_the_summary`,
+  `doc_8b_a_scan_with_no_auto_rows_creates_no_job`.
 
 - **DOC-6c** [planned] [manual] — **The visible sign-off matches
   frames 26a, 26b, and 27.** On a real GNOME display, wide and narrow
