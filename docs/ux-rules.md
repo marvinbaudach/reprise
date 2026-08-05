@@ -3369,6 +3369,14 @@ means deterministic and high-confidence, never „without review".
   cleanup". Revert remains available via a minimal Doctor job page and
   activates no network.
 
+- **DOC-8a** [planned] [gtk] — **The menu holds the verb, the sidebar holds
+  the noun.** Stage 1 provides the core pending-change count and whole-scan
+  acknowledgement state. The menu, sidebar row, toast, and receipt behavior
+  activate this rule in Stage 2. *Core state tests:*
+  `doc_8a_pending_review_count_excludes_everything_already_written_for_that_scan`,
+  `doc_8a_pending_review_count_is_zero_once_the_scan_is_marked_reviewed`,
+  `doc_8a_conflicts_alone_do_not_produce_a_pending_count`.
+
 - **DOC-8b** [active] [core] — **Two tiers, and exactly one predicate
   decides.** A proposal is applied without asking when it is a MusicBrainz
   recording ID, or when it is local and preselected; never when its track is
@@ -3424,6 +3432,13 @@ means deterministic and high-confidence, never „without review".
   `doc_10b_a_finalized_interrupted_job_does_not_hold_the_lock`,
   `doc_10b_tag_editor_and_doctor_share_one_lock`,
   `doc_10b_gui_sees_the_same_refusal_while_an_mcp_job_runs`.
+
+- **DOC-10c** [active] [core] — **An upgrade never inherits a decision.** A
+  scan stored under the previous rules is not reinterpreted and nothing from
+  it is applied; the stored result pointer is cleared on upgrade and the
+  Doctor opens on its start page. The undo journal is untouched, so a cleanup
+  applied before the upgrade stays revertible. *Test:*
+  `doc_10c_upgrade_clears_the_stored_scan_pointer_and_keeps_the_cleanup_revertible`.
 
 - **DOC-6c** [planned] [manual] — **The visible sign-off matches
   frames 26a, 26b, and 27.** On a real GNOME display, wide and narrow

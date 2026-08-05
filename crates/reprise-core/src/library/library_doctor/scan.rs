@@ -13,6 +13,12 @@ use super::{
 };
 use crate::fingerprint::FingerprintBackend;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DoctorScanCompletion {
+    pub scan: super::DoctorScan,
+    pub auto_applied: Option<super::DoctorWriteReport>,
+}
+
 pub struct LibraryDoctor<'connection> {
     pub(super) db: &'connection Db,
     pub(super) conn: &'connection Connection,
@@ -199,6 +205,22 @@ impl<'connection> LibraryDoctor<'connection> {
 
     pub fn last_complete_scan(&self) -> Result<Option<super::DoctorScan>, DoctorError> {
         super::store::last_complete_scan(self.conn)
+    }
+
+    pub fn apply_auto_tier(
+        &mut self,
+        scan: &super::DoctorScan,
+        progress: impl FnMut(super::DoctorWriteProgress) -> super::DoctorWriteControl,
+    ) -> Result<Option<super::DoctorWriteReport>, DoctorError> {
+        let plan = super::DoctorReviewSession::from_scan(
+            scan.clone(),
+            super::DoctorReviewFilter::AutoApply,
+        )
+        .freeze_plan();
+        if plan.changes().is_empty() {
+            return Ok(None);
+        }
+        self.apply_review_plan(&plan, progress).map(Some)
     }
 }
 

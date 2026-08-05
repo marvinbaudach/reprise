@@ -219,6 +219,25 @@ pub(super) fn last_complete_scan(conn: &Connection) -> Result<Option<DoctorScan>
     }))
 }
 
+pub fn set_reviewed_scan(conn: &Connection, scan_id: i64) -> Result<(), DoctorError> {
+    conn.execute(
+        "UPDATE library_doctor_state SET reviewed_scan_id=?1 WHERE singleton=1",
+        [scan_id],
+    )?;
+    Ok(())
+}
+
+pub fn reviewed_scan_id(conn: &Connection) -> Result<Option<i64>, DoctorError> {
+    conn.query_row(
+        "SELECT reviewed_scan_id FROM library_doctor_state WHERE singleton=1",
+        [],
+        |row| row.get(0),
+    )
+    .optional()
+    .map(Option::flatten)
+    .map_err(DoctorError::from)
+}
+
 fn load_tracks(conn: &Connection, scan_id: i64) -> Result<Vec<DoctorTrackSnapshot>, DoctorError> {
     let mut statement = conn.prepare(
         "SELECT track_id, path, file_mtime, file_size, device, inode, read_ok, \
