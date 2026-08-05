@@ -9,8 +9,7 @@ use super::strings;
 use super::transport_glyph::{Glyph, TransportGlyph};
 use super::{ICON_NEXT, ICON_PREVIOUS, ICON_REPEAT_ALL, ICON_SHUFFLE};
 use crate::ui::cover_lift::CoverLift;
-use crate::ui::playback::preview::PlaybackMode;
-use crate::ui::playing_links::{self, LinkAvailability};
+use crate::ui::playing_links;
 use crate::ui::style::buttons;
 
 pub(in crate::ui) const VOLUME_MIN: f64 = 0.0;
@@ -79,13 +78,9 @@ pub(in crate::ui) struct PlayerBarWidgets {
 }
 
 pub(in crate::ui) fn build() -> PlayerBarWidgets {
-    let link_labels = playing_links::player_bar_labels(
-        PlaybackMode::Queue,
-        LinkAvailability {
-            artist: true,
-            album: true,
-        },
-    );
+    // A freshly built bar has nothing loaded, so it starts in exactly the
+    // state `clear_track` returns it to (`PLAY-12`).
+    let link_labels = playing_links::idle_player_bar_labels();
     // — Cover —
     let cover = gtk4::Image::new();
     cover.set_pixel_size(COVER_PIXEL_SIZE);

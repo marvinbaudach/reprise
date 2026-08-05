@@ -531,6 +531,9 @@ impl PlayerController {
         }
     }
 
+    /// Ends the external session for good — nothing takes over from it. The
+    /// queue-takeover path is [`Self::leave_external_for_queue`], which leaves
+    /// the loaded track alone.
     pub(in crate::ui) fn stop_external(&self) {
         self.persist_external_position();
         {
@@ -541,10 +544,16 @@ impl PlayerController {
         *self.now_playing.borrow_mut() = None;
         self.update_mpris_mirror(MprisPlaybackStatus::Stopped);
         self.notify_external_changed();
+        // `PLAY-12`: nothing is loaded any more, so the bar, the compact
+        // player and the panel go to their empty state — whether or not the
+        // pipeline managed to stop. Leaving this to the error path kept the
+        // finished session's title, channel and cover links operable, still
+        // labelled for a target that no longer plays. Same order as
+        // `finish_podcast`.
+        self.sync_clear_track();
         if let Err(error) = self.player.stop() {
             tracing::error!(%error, "failed to stop external playback");
             self.sync_state(PlaybackState::Stopped);
-            self.sync_clear_track();
         }
     }
 

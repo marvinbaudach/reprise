@@ -113,6 +113,22 @@ pub(in crate::ui) fn panel_labels(mode: PlaybackMode, available: LinkAvailabilit
     labels(mode, available, panel_label)
 }
 
+/// `PLAY-12`: the labels the player bar's three surfaces carry while nothing
+/// is loaded at all. The empty state is queue-shaped — it is what the bar is
+/// built with — and naming it here is what keeps a finished podcast or radio
+/// session from leaving "Go to playing channel" on a surface whose target is
+/// gone. Those surfaces are insensitive in this state; the label is what a
+/// screen reader and the tooltip still read.
+pub(in crate::ui) fn idle_player_bar_labels() -> LinkLabels {
+    player_bar_labels(
+        PlaybackMode::Queue,
+        LinkAvailability {
+            artist: true,
+            album: true,
+        },
+    )
+}
+
 fn labels(
     mode: PlaybackMode,
     available: LinkAvailability,
@@ -196,6 +212,42 @@ mod tests {
                 link_target(PlaybackMode::Radio, surface),
                 LinkTarget::Station
             );
+        }
+    }
+
+    /// `PLAY-12`: when external playback ends and nothing takes over, the bar
+    /// falls back to the labels it was built with. Keeping the finished
+    /// session's labels is what made an insensitive surface still read "Jump
+    /// to the playing station".
+    #[test]
+    fn play_12_the_empty_state_keeps_no_finished_sessions_labels() {
+        let idle = idle_player_bar_labels();
+        assert_eq!(
+            idle,
+            player_bar_labels(
+                PlaybackMode::Queue,
+                LinkAvailability {
+                    artist: true,
+                    album: true,
+                }
+            )
+        );
+
+        for mode in [
+            PlaybackMode::Radio,
+            PlaybackMode::Podcast,
+            PlaybackMode::QueuedEpisode,
+        ] {
+            let external = player_bar_labels(
+                mode,
+                LinkAvailability {
+                    artist: true,
+                    album: true,
+                },
+            );
+            assert_ne!(idle.title, external.title, "{mode:?}");
+            assert_ne!(idle.subtitle, external.subtitle, "{mode:?}");
+            assert_ne!(idle.cover, external.cover, "{mode:?}");
         }
     }
 
