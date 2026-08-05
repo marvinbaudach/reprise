@@ -62,40 +62,16 @@ fn pcm_sines_land_in_the_same_bands_as_cavas_standalone_test() {
     assert_eq!(peak_index(&bass_bars), 2);
     assert_eq!(peak_index(&mid_bars), 6);
     assert!(
-        bass_bars[2] > bass_bars[1] * 1.3,
+        bass_bars[2] > bass_bars[1] * 5.0,
         "bass target={}, neighbor={}",
         bass_bars[2],
         bass_bars[1]
     );
     assert!(
-        mid_bars[6] > mid_bars[5] * 1.3,
+        mid_bars[6] > mid_bars[5] * 5.0,
         "mid target={}, neighbor={}",
         mid_bars[6],
         mid_bars[5]
-    );
-}
-
-#[test]
-fn unsmoothed_live_bands_use_the_shared_absolute_db_scale() {
-    let mut config = CavaConfig::new(32_000, 24);
-    config.low_cutoff_hz = 20;
-    config.high_cutoff_hz = 16_000;
-    config.noise_reduction = 0.0;
-    config.noise_floor = 0.0;
-    config.autosensitivity = 0;
-    let mut processor = CavaBarProcessor::new(config).unwrap();
-    let samples = (0..4_096)
-        .map(|index| (std::f32::consts::TAU * 1_000.0 * index as f32 / 32_000.0).sin() * 0.25)
-        .collect::<Vec<_>>();
-
-    let bands = processor.process(&samples);
-
-    assert_eq!(peak_index(&bands), 14);
-    assert!(
-        (bands[14] - 219.0 / 255.0).abs() < 0.03,
-        "live={}, stored={}",
-        bands[14],
-        219.0 / 255.0
     );
 }
 
@@ -181,24 +157,27 @@ fn silence_never_inflates_autosensitivity() {
 }
 
 #[test]
-fn pcm_below_the_shared_absolute_floor_does_not_inflate_live_sensitivity() {
-    let mut fresh = CavaBarProcessor::new(CavaConfig::new(44_100, 10)).unwrap();
-    let mut aged = CavaBarProcessor::new(CavaConfig::new(44_100, 10)).unwrap();
-    let subfloor = sine_chunk(200.0, 0)
-        .into_iter()
-        .map(|sample| sample * 0.0001)
-        .collect::<Vec<_>>();
+fn faint_pcm_above_pcm_silence_still_ages_autosensitivity_into_view() {
+    let mut processor = CavaBarProcessor::new(CavaConfig::new(44_100, 10)).unwrap();
+    // About -90 dBFS: far below the stored spectrogram's absolute floor, but
+    // audible material for a renderer whose whole job is to find a gain for
+    // whatever is playing. CAVA decides silence per sample, not per window.
+    let faint = |chunk| {
+        sine_chunk(200.0, chunk)
+            .into_iter()
+            .map(|sample| sample * 0.0001)
+            .collect::<Vec<_>>()
+    };
+    let mut bars = Vec::new();
 
-    for _ in 0..128 {
-        aged.process(&subfloor);
+    for chunk in 0..300 {
+        bars = processor.process(&faint(chunk));
     }
 
-    let expected = fresh.process(&sine_chunk(200.0, 0));
-    let actual = aged.process(&sine_chunk(200.0, 0));
-    assert!(actual
-        .iter()
-        .zip(expected)
-        .all(|(actual, expected)| (actual - expected).abs() < 0.0001));
+    assert!(
+        bars[2] > 0.0,
+        "faint playback must still find a gain, got {bars:?}"
+    );
 }
 
 #[test]

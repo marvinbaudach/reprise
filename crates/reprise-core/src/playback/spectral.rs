@@ -1,9 +1,16 @@
 //! Shared frequency-band measurement primitives.
 //!
 //! The live CAVA renderer and the stored spectrogram deliberately meet here:
-//! they use one logarithmic band mapper and one calibrated dBFS conversion.
-//! Temporal smoothing remains a renderer concern and does not live in this
-//! module.
+//! they share one logarithmic band mapper and one windowed FFT workspace, so a
+//! band means the same frequency range on both sides.
+//!
+//! They deliberately do *not* share how a band is turned into something a
+//! viewer sees. The stored dataset is a raw absolute measurement
+//! ([`FftWorkspace::band_rms_dbfs`] on the calibrated dBFS scale); the live
+//! renderer keeps CAVA's linear magnitude domain
+//! ([`FftWorkspace::band_magnitude_sum`]) together with its frequency
+//! compensation and temporal smoothing. Both of those are properties of
+//! drawing, not of measuring, and live in `playback/cava`.
 
 use std::ops::RangeInclusive;
 use std::sync::Arc;
@@ -219,6 +226,12 @@ impl FftWorkspace {
             .expect("real FFT buffers are allocated by their plan");
     }
 
+    /// Linear one-sided magnitude sum over a band. The live renderer measures
+    /// in this domain; the stored spectrogram uses [`Self::band_rms_dbfs`].
+    pub(crate) fn band_magnitude_sum(&self, bins: RangeInclusive<usize>) -> f32 {
+        bins.map(|bin| self.spectrum[bin].norm()).sum()
+    }
+
     pub(crate) fn band_rms_dbfs(&self, bins: RangeInclusive<usize>) -> f32 {
         let nyquist = self.spectrum.len().saturating_sub(1);
         let power = bins
@@ -240,6 +253,6 @@ pub(crate) fn absolute_dbfs_to_byte(level_dbfs: f32) -> u8 {
     (absolute_dbfs_to_unit(level_dbfs) * 255.0).round() as u8
 }
 
-pub(crate) fn absolute_dbfs_to_unit(level_dbfs: f32) -> f32 {
+fn absolute_dbfs_to_unit(level_dbfs: f32) -> f32 {
     ((level_dbfs - ABSOLUTE_DB_FLOOR) / (ABSOLUTE_DB_CEILING - ABSOLUTE_DB_FLOOR)).clamp(0.0, 1.0)
 }

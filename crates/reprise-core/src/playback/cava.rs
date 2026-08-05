@@ -11,10 +11,8 @@ mod smoothing;
 
 use thiserror::Error;
 
-use crate::playback::spectral::{
-    absolute_dbfs_to_byte, absolute_dbfs_to_unit, BandPlan, FftWorkspace,
-};
-use bands::{band_plan, fft_size_for_rate};
+use crate::playback::spectral::{BandPlan, FftWorkspace};
+use bands::{band_plan, equalizer_curve, fft_size_for_rate};
 use smoothing::Smoother;
 
 /// Maximum supported display resolution.
@@ -24,6 +22,12 @@ const DEFAULT_HIGH_CUTOFF_HZ: u32 = 10_000;
 const DEFAULT_NOISE_REDUCTION: f32 = 0.77;
 const DEFAULT_NOISE_FLOOR: f32 = 0.04;
 const DEFAULT_AUTOSENSITIVITY: u32 = 1;
+/// PCM below this magnitude is silence for the renderer's gain search. CAVA
+/// ages its autosensitivity on individual samples, not on a windowed level.
+const PCM_SILENCE_EPSILON: f32 = 1.0e-6;
+/// `cavacore` works in 16-bit fixed point; the compensation curve is scaled to
+/// that domain, so the magnitude sum is lifted into it before smoothing.
+const CAVA_FIXED_POINT_SCALE: f32 = 65_535.0;
 
 /// Configuration for [`CavaBarProcessor`].
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -72,6 +76,7 @@ pub enum CavaError {
 pub struct CavaBarProcessor {
     config: CavaConfig,
     band_plan: BandPlan,
+    equalizer: Vec<f32>,
     input_buffer: Vec<f32>,
     main_fft: FftWorkspace,
     bass_fft: FftWorkspace,
@@ -102,10 +107,12 @@ impl CavaBarProcessor {
             return Err(CavaError::InvalidNoiseFloor);
         }
         let band_plan = band_plan(config)?;
+        let equalizer = equalizer_curve(config, &band_plan);
         let fft_size = fft_size_for_rate(config.sample_rate_hz);
         Ok(Self {
             config,
             band_plan,
+            equalizer,
             input_buffer: vec![0.0; fft_size * 2],
             main_fft: FftWorkspace::new(fft_size),
             bass_fft: FftWorkspace::new(fft_size * 2),
@@ -138,13 +145,14 @@ impl CavaBarProcessor {
             .band_plan
             .bands()
             .iter()
-            .map(|band| {
+            .zip(self.equalizer.iter())
+            .map(|(band, equalizer)| {
                 let workspace = if band.use_bass_fft {
                     &self.bass_fft
                 } else {
                     &self.main_fft
                 };
-                absolute_dbfs_to_unit(workspace.band_rms_dbfs(band.bins()))
+                workspace.band_magnitude_sum(band.bins()) * equalizer * CAVA_FIXED_POINT_SCALE
             })
             .collect();
         let new_samples = mono_samples.len().min(self.input_buffer.len());
@@ -167,7 +175,7 @@ impl CavaBarProcessor {
         let buffer_len = self.input_buffer.len();
         let kept = mono_samples.len().min(buffer_len);
         self.input_buffer.copy_within(..buffer_len - kept, kept);
-        let mut sum_squares = 0.0_f64;
+        let mut signal_present = false;
         for (target, sample) in self.input_buffer[..kept]
             .iter_mut()
             .rev()
@@ -178,19 +186,9 @@ impl CavaBarProcessor {
             } else {
                 0.0
             };
-            sum_squares += f64::from(sample) * f64::from(sample);
+            signal_present |= sample.abs() > PCM_SILENCE_EPSILON;
             *target = sample;
         }
-        let rms = if kept == 0 {
-            0.0
-        } else {
-            (sum_squares / kept as f64).sqrt() as f32
-        };
-        let level_dbfs = if rms > 0.0 {
-            20.0 * rms.log10()
-        } else {
-            f32::NEG_INFINITY
-        };
-        absolute_dbfs_to_byte(level_dbfs) > 0
+        signal_present
     }
 }
