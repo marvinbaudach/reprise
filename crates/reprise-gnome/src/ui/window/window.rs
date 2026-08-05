@@ -447,6 +447,16 @@ pub fn build(app: &adw::Application, conn: &Rc<Db>, db_path: &Path) -> FileOpenH
     let split_view = library_shell.split_view;
     let content_nav = library_shell.content_nav;
     let info_panel = library_shell.info_panel;
+    {
+        let player = player.clone();
+        let panel = info_panel.clone();
+        track_list.set_on_find_similar(move |id| {
+            if let Some(player) = &player {
+                player.play_track_id(id);
+                panel.show_sound();
+            }
+        });
+    }
     let open_device: super::device_sync_launcher::OpenDevice = Rc::new({
         let content_stack = content_stack.clone();
         let window_title = window_title.clone();

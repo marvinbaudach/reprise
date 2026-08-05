@@ -49,6 +49,18 @@ impl Default for SoundPanelOptions {
     }
 }
 
+impl From<reprise_core::sound_preferences::SoundSimilarityPreferences> for SoundPanelOptions {
+    fn from(preferences: reprise_core::sound_preferences::SoundSimilarityPreferences) -> Self {
+        Self {
+            exclude_same_album: preferences.exclude_same_album,
+            exclude_same_artist: preferences.exclude_same_artist,
+            include_tempo: preferences.include_tempo,
+            weights: preferences.weighting.weights(),
+            limit: preferences.match_count,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 enum Snapshot {
     Progress {
@@ -443,6 +455,13 @@ impl super::surface::NowPlayingPanel {
             .set_visible(enabled && !external_active);
         if !enabled && self.widgets.session.selected.get() == PanelTab::Sound {
             self.widgets.tab_stack.set_visible_child_name(UP_NEXT_PAGE);
+        }
+    }
+
+    pub(in crate::ui) fn refresh_sound_options(&self) {
+        match reprise_core::sound_preferences::SoundSimilarityPreferences::load(&self.conn) {
+            Ok(preferences) => self.widgets.sound.set_options(preferences.into()),
+            Err(error) => tracing::warn!(%error, "could not load Sound Similarity preferences"),
         }
     }
 

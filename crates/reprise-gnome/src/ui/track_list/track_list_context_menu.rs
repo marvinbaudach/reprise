@@ -51,8 +51,8 @@ use gtk4::prelude::*;
 
 use super::queue_item_menu::{build_common_queue_menu, route, QueueMenuRoute};
 use super::track_menu::{
-    action_states, build_track_menu, playlist_entries, summarize_selection, MenuContext,
-    MenuInputs, SelectionSummary,
+    action_states, append_find_similar, build_track_menu, playlist_entries, summarize_selection,
+    MenuContext, MenuInputs, SelectionSummary,
 };
 use super::track_playback_selection::{self, ContextPlayDecision, PlayableSelection};
 use crate::ui::delete_tracks;
@@ -73,6 +73,7 @@ use reprise_core::view_source::ViewSource;
 /// menu item labels themselves).
 const ACTION_PLAY: &str = "play";
 const ACTION_ADD_TO_QUEUE: &str = "add-to-queue";
+const ACTION_FIND_SIMILAR: &str = "find-similar-tracks";
 pub(in crate::ui) const ACTION_PLAY_NEXT: &str = "play-next";
 const ACTION_MOVE_TO_TOP: &str = "move-to-top";
 const ACTION_MOVE_UP: &str = "move-up";
@@ -208,6 +209,15 @@ pub(in crate::ui) fn build_context_menu_model(shared: &Rc<Shared>) -> gio::Menu 
             is_missing_view,
         })
     };
+    let sound_enabled = reprise_core::modules::is_enabled(
+        &shared.conn,
+        &reprise_core::modules::SOUND_SIMILARITY_MODULE,
+    )
+    .unwrap_or(reprise_core::modules::SOUND_SIMILARITY_MODULE.default_enabled);
+    append_find_similar(
+        &menu,
+        sound_enabled && summary.count == 1 && !summary.all_missing,
+    );
     if matches!(context, MenuContext::Playlist | MenuContext::Queue)
         && (context != MenuContext::Queue || queue_projection_editable)
     {
@@ -328,6 +338,21 @@ pub(in crate::ui) fn wire_context_menu_actions(
         });
     }
     action_group.add_action(&queue_action);
+
+    let find_similar_action = gio::SimpleAction::new(ACTION_FIND_SIMILAR, None);
+    {
+        let shared = shared.clone();
+        find_similar_action.connect_activate(move |_, _| {
+            let Some(id) = current_selection_ids(&shared).first().copied() else {
+                return;
+            };
+            let callback = shared.on_find_similar.borrow().clone();
+            if let Some(callback) = callback {
+                callback(id);
+            }
+        });
+    }
+    action_group.add_action(&find_similar_action);
 
     for (name, direction) in [
         (

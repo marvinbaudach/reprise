@@ -245,6 +245,16 @@ pub(in crate::ui) fn build_track_menu(inputs: &MenuInputs<'_>) -> gio::Menu {
     menu
 }
 
+/// Adds the optional Sound Similarity entry as its own stable menu section.
+pub(in crate::ui) fn append_find_similar(menu: &gio::Menu, enabled: bool) {
+    if !enabled {
+        return;
+    }
+    let section = gio::Menu::new();
+    append_action(&section, strings::SOUND_FIND_SIMILAR, "find-similar-tracks");
+    menu.append_section(None, &section);
+}
+
 fn append_action(menu: &gio::Menu, label: &str, action: &str) {
     menu.append(
         Some(&strings::text(label)),
@@ -788,5 +798,16 @@ mod tests {
         // Any non-playlist source leaves every row actionable.
         let in_library = playlist_entries(&rows, &ViewSource::Library);
         assert!(in_library.iter().all(|entry| !entry.is_current));
+    }
+
+    #[test]
+    fn find_similar_entry_follows_module_visibility() {
+        let disabled = gio::Menu::new();
+        append_find_similar(&disabled, false);
+        assert!(!menu_labels(&disabled).contains(&"Find similar tracks".to_string()));
+
+        let enabled = gio::Menu::new();
+        append_find_similar(&enabled, true);
+        assert!(menu_labels(&enabled).contains(&"Find similar tracks".to_string()));
     }
 }

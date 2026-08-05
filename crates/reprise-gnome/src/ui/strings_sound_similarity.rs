@@ -9,6 +9,16 @@ pub const SOUND_SOUNDS_LIKE: &str = N_!("Sounds like · of {count}");
 pub const SOUND_ADD_TO_QUEUE: &str = N_!("Add to queue");
 pub const SOUND_MORE_ACTIONS: &str = N_!("More actions");
 pub const SOUND_INFO_TOOLTIP: &str = N_!("Show sound details");
+pub const SOUND_SIMILARITY_DESCRIPTION: &str =
+    N_!("Compare timbre, dynamics and tempo across the local library");
+pub const SOUND_EXCLUDE_SAME_ALBUM: &str = N_!("Exclude tracks from the same album");
+pub const SOUND_EXCLUDE_SAME_ARTIST: &str = N_!("Exclude tracks by the same artist");
+pub const SOUND_INCLUDE_TEMPO: &str = N_!("Include tempo");
+pub const SOUND_WEIGHTING: &str = N_!("Weighting");
+pub const SOUND_WEIGHT_DEFAULT: &str = N_!("Default");
+pub const SOUND_WEIGHT_TIMBRE: &str = N_!("Timbre");
+pub const SOUND_WEIGHT_DYNAMICS: &str = N_!("Dynamics");
+pub const SOUND_NUMBER_OF_MATCHES: &str = N_!("Number of matches");
 #[allow(dead_code)] // installed in the track menu in package P6
 pub const SOUND_FIND_SIMILAR: &str = N_!("Find similar tracks");
 pub const SOUND_ANALYSING: &str = N_!("Analysing your library — {ready} of {total}");

@@ -341,7 +341,7 @@ fn build_widgets_for_session(
 pub(in crate::ui) struct NowPlayingPanel {
     pub(super) widgets: PanelWidgets,
     toggle: gtk4::ToggleButton,
-    conn: Rc<Db>,
+    pub(super) conn: Rc<Db>,
     cover_loader: Rc<CoverLoader>,
     cover_generation: Rc<Cell<u64>>,
     loaded_track: RefCell<Option<NowPlaying>>,
@@ -373,6 +373,11 @@ impl NowPlayingPanel {
         let song_visuals_enabled =
             reprise_core::modules::is_enabled(&conn, &reprise_core::modules::SONG_VISUALS_MODULE)
                 .unwrap_or(reprise_core::modules::SONG_VISUALS_MODULE.default_enabled);
+        let sound_similarity_enabled = reprise_core::modules::is_enabled(
+            &conn,
+            &reprise_core::modules::SOUND_SIMILARITY_MODULE,
+        )
+        .unwrap_or(reprise_core::modules::SOUND_SIMILARITY_MODULE.default_enabled);
         let panel = Rc::new(Self {
             widgets: build_widgets(content, visible, &conn, &cover_loader),
             toggle: gtk4::ToggleButton::builder()
@@ -394,7 +399,7 @@ impl NowPlayingPanel {
             cover_transition_active: Cell::new(false),
             on_track_reveal: Rc::new(RefCell::new(None)),
             song_visuals_enabled: Cell::new(song_visuals_enabled),
-            sound_similarity_enabled: Cell::new(false),
+            sound_similarity_enabled: Cell::new(sound_similarity_enabled),
             swell: RefCell::new(Swell::default()),
             swell_pressure: Cell::new(0.0),
             swell_last_frame_us: Cell::new(0),
@@ -430,7 +435,8 @@ impl NowPlayingPanel {
             &panel.on_album_reveal,
         );
         panel.set_song_visuals_enabled(song_visuals_enabled);
-        panel.set_sound_similarity_enabled(false);
+        panel.refresh_sound_options();
+        panel.set_sound_similarity_enabled(sound_similarity_enabled);
         panel.wire();
         panel.sync_visual_activity();
         panel.sync_bloom_activity();
