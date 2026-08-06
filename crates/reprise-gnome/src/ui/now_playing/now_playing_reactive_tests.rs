@@ -37,19 +37,19 @@ fn ac_24_the_panel_head_looks_the_same_whichever_tab_is_open() {
     panel.set_song_visuals_enabled(true);
     panel.widgets.shimmer.set_light(0.8, 0.7);
     panel.widgets.shimmer.set_frame_time(15_000_000);
-    assert!(panel.widgets.shimmer.widget().is_visible());
+    assert!(shimmer_unpinned(&panel));
 
     // The Visual tab used to pin the backdrop and hide the disc, on the theory
     // that two light languages in one panel fight each other. In use the plain
     // treatment was better there too, so switching tabs must change nothing
     // about the head.
     panel.widgets.tab_stack.set_visible_child_name(VISUAL_PAGE);
-    assert!(panel.widgets.shimmer.widget().is_visible());
+    assert!(shimmer_unpinned(&panel));
 
     // Closing the panel still rests both: a pinned backdrop runs no tick, and
     // without that the paused breath would redraw a widget nobody can see.
     panel.set_transient_visibility(false);
-    assert!(!panel.widgets.shimmer.widget().is_visible());
+    assert!(!shimmer_unpinned(&panel));
 }
 
 #[test]
