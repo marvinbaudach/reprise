@@ -82,6 +82,21 @@ pub(super) fn external_radio_snapshot(
     }
 }
 
+pub(super) fn external_youtube_snapshot(
+) -> crate::ui::playback::external_media::ExternalPlaybackSnapshot {
+    let mut snapshot = external_episode_snapshot();
+    snapshot.podcast_kind = Some(reprise_core::podcasts::PodcastKind::Youtube);
+    if let crate::ui::playback::external_media::ExternalMedia::Podcast { title, source, .. } =
+        &mut snapshot.media
+    {
+        *title = "YouTube episode".into();
+        *source = crate::ui::playback::external_media::EpisodeSource::Url(
+            "https://youtube.test/watch?v=42".into(),
+        );
+    }
+    snapshot
+}
+
 fn test_widgets(content: &impl IsA<gtk4::Widget>, visible: bool) -> PanelWidgets {
     let conn = crate::test_db::open().unwrap();
     let cover_loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
@@ -179,19 +194,10 @@ fn pod_21_external_header_uses_episode_identity_and_source_tile() {
 fn pod_21_lyrics_falls_back_and_stays_hidden_for_podcast_youtube_and_radio() {
     gtk4::init().unwrap();
     let (_window, panel) = test_panel("org.reprise.Reprise.ExternalLyricsTest");
-    let mut youtube = external_episode_snapshot();
-    if let crate::ui::playback::external_media::ExternalMedia::Podcast { title, source, .. } =
-        &mut youtube.media
-    {
-        *title = "YouTube episode".into();
-        *source = crate::ui::playback::external_media::EpisodeSource::Url(
-            "https://youtube.test/watch?v=42".into(),
-        );
-    }
 
     for snapshot in [
         external_episode_snapshot(),
-        youtube,
+        external_youtube_snapshot(),
         external_radio_snapshot(),
     ] {
         panel.widgets.tab_stack.set_visible_child_name(LYRICS_PAGE);
@@ -213,6 +219,49 @@ fn pod_21_lyrics_falls_back_and_stays_hidden_for_podcast_youtube_and_radio() {
         panel.set_external_snapshot(None);
         assert!(panel.widgets.lyrics_page.is_visible());
     }
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn ac_26_youtube_keeps_the_visual_page_while_an_rss_podcast_hides_it() {
+    gtk4::init().unwrap();
+    let (_window, panel) = test_panel("org.reprise.Reprise.ExternalVisualVisibilityTest");
+    panel.set_song_visuals_enabled(true);
+
+    panel.set_external_snapshot(Some(external_youtube_snapshot()));
+    assert!(panel.widgets.visual_page.is_visible());
+
+    panel.set_external_snapshot(Some(external_episode_snapshot()));
+    assert!(!panel.widgets.visual_page.is_visible());
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn ac_26_an_rss_podcast_moves_the_selected_visual_tab_to_up_next() {
+    gtk4::init().unwrap();
+    let (_window, panel) = test_panel("org.reprise.Reprise.ExternalVisualFallbackTest");
+    panel.set_song_visuals_enabled(true);
+    panel.widgets.tab_stack.set_visible_child_name(VISUAL_PAGE);
+
+    panel.set_external_snapshot(Some(external_episode_snapshot()));
+
+    assert_eq!(panel.widgets.session.selected.get(), PanelTab::UpNext);
+    assert_eq!(
+        panel.widgets.tab_stack.visible_child_name().as_deref(),
+        Some(UP_NEXT_PAGE)
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn ac_26_a_late_empty_track_update_keeps_an_external_session_loaded() {
+    gtk4::init().unwrap();
+    let (_window, panel) = test_panel("org.reprise.Reprise.ExternalVisualizerTrackTest");
+    panel.set_external_snapshot(Some(external_youtube_snapshot()));
+
+    panel.set_loaded_track(None);
+
+    assert!(panel.widgets.visualizer.reports_track_for_test());
 }
 
 #[test]

@@ -85,13 +85,6 @@ pub(in crate::ui) fn install(
             );
             panel.set_link_labels(labels);
             panel.set_external_snapshot(snapshot);
-            // The panel never learns what a podcast is; it is handed the one
-            // answer the controller owns. A podcast session therefore takes
-            // the Visual tab and the reactive light with it exactly as the
-            // module switch would, and gives them back when it ends.
-            if let Some(player) = player_weak.upgrade() {
-                panel.set_song_visuals_enabled(player.audio_reactive_enabled());
-            }
         }
     });
     let panel_weak = Rc::downgrade(panel);
