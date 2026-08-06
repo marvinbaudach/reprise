@@ -1,0 +1,528 @@
+use std::path::Path;
+use std::sync::{Arc, Mutex};
+
+use super::test_support::{PortCall, RecordingListener, RecordingPort};
+use crate::playback::{AndroidPlaybackState, AndroidPlayerEvent, PlaybackEventBridge};
+use crate::{AndroidPlaybackSession, AndroidRepeatMode, WindowRange};
+
+type TestSessionControls = (
+    AndroidPlaybackSession,
+    Arc<Mutex<Vec<PortCall>>>,
+    Arc<Mutex<Option<Arc<PlaybackEventBridge>>>>,
+);
+
+fn seed_tracks(directory: &Path, titles: &[&str]) -> Vec<reprise_core::models::Track> {
+    let music = directory.join("music");
+    std::fs::create_dir(&music).unwrap();
+    let fixture =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../android/app/src/main/assets/sine.flac");
+    for (index, title) in titles.iter().enumerate() {
+        let path = music.join(format!("{index}.flac"));
+        std::fs::copy(&fixture, &path).unwrap();
+        reprise_core::library::tag_edit::apply_patch_to_file(
+            &path,
+            &reprise_core::library::tag_edit::TagPatch {
+                title: Some((*title).to_owned()),
+                artist: Some("Boundary Artist".to_owned()),
+                album: Some("Boundary Album".to_owned()),
+                album_artist: Some("Boundary Artist".to_owned()),
+                year: Some(Some(2026)),
+                track_no: Some(Some((index + 1) as u32)),
+                genre: Some("Test".to_owned()),
+            },
+        )
+        .unwrap();
+    }
+    let database_path = directory.join(crate::DATABASE_FILE_NAME);
+    let database = reprise_core::db::Db::open_migrated(Some(&database_path)).unwrap();
+    reprise_core::library::scanner::scan_folder(&database, &music).unwrap();
+    reprise_core::queries::query_library_text_search(
+        &database,
+        "",
+        reprise_core::queries::WindowRange {
+            offset: 0,
+            limit: 500,
+        },
+    )
+    .unwrap()
+    .rows
+}
+
+fn session_in(directory: &Path) -> AndroidPlaybackSession {
+    session_with_calls(directory).0
+}
+
+fn session_with_calls(directory: &Path) -> (AndroidPlaybackSession, Arc<Mutex<Vec<PortCall>>>) {
+    let (session, calls, _) = session_with_controls(directory);
+    (session, calls)
+}
+
+fn session_with_controls(directory: &Path) -> TestSessionControls {
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let bridge = Arc::new(Mutex::new(None));
+    AndroidPlaybackSession::new(
+        directory.to_str().unwrap(),
+        Box::new(RecordingPort {
+            calls: Arc::clone(&calls),
+            bridge: Arc::clone(&bridge),
+        }),
+        Box::new(RecordingListener {
+            snapshots: Arc::new(Mutex::new(Vec::new())),
+        }),
+    )
+    .map(|session| (session, calls, bridge))
+    .unwrap()
+}
+
+#[test]
+fn upcoming_window_excludes_the_current_track_and_counts_beyond_the_page() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["Current", "First", "Second", "Third"]);
+    let track = |title: &str| tracks.iter().find(|track| track.title == title).unwrap();
+    let ordered = [
+        track("Current"),
+        track("First"),
+        track("Second"),
+        track("Third"),
+    ];
+    let session = session_in(directory.path());
+    session
+        .play_tracks(
+            ordered.iter().map(|track| track.id).collect(),
+            ordered.iter().map(|track| track.path.clone()).collect(),
+            0,
+        )
+        .unwrap();
+
+    let window = session
+        .upcoming_tracks(WindowRange {
+            offset: 0,
+            limit: 2,
+        })
+        .unwrap();
+
+    assert_eq!(
+        window.total, 3,
+        "total is the complete future, not the page"
+    );
+    assert_eq!(
+        window.rows.iter().map(|row| row.id).collect::<Vec<_>>(),
+        vec![track("First").id, track("Second").id],
+    );
+    assert!(window.has_more);
+}
+
+#[test]
+fn play_now_promotes_one_upcoming_track_without_dropping_the_others() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["Current", "First", "Second", "Target"]);
+    let track = |title: &str| tracks.iter().find(|track| track.title == title).unwrap();
+    let ordered = [
+        track("Current"),
+        track("First"),
+        track("Second"),
+        track("Target"),
+    ];
+    let session = session_in(directory.path());
+    session
+        .play_tracks(
+            ordered.iter().map(|track| track.id).collect(),
+            ordered.iter().map(|track| track.path.clone()).collect(),
+            0,
+        )
+        .unwrap();
+
+    assert!(session
+        .play_upcoming_track_now(2, track("Target").id)
+        .unwrap());
+
+    assert_eq!(
+        session.snapshot().unwrap().current_track_id,
+        Some(track("Target").id),
+    );
+    let future = session
+        .upcoming_tracks(WindowRange {
+            offset: 0,
+            limit: 10,
+        })
+        .unwrap();
+    assert_eq!(future.total, 2);
+    assert_eq!(
+        future.rows.iter().map(|row| row.id).collect::<Vec<_>>(),
+        vec![track("First").id, track("Second").id],
+        "the tracks passed by Play Now stay ahead in their original order",
+    );
+    let database =
+        reprise_core::db::Db::open_ready(&directory.path().join(crate::DATABASE_FILE_NAME))
+            .unwrap();
+    let saved = reprise_core::library::session::load(&database).queue;
+    assert_eq!(saved.ids.len(), 4, "Play Now must not shorten the queue");
+    let mut queue = reprise_core::queue::Queue::new();
+    queue.restore_snapshot(saved).unwrap();
+    assert_eq!(
+        queue.ids_in_order(),
+        vec![
+            track("Current").id,
+            track("Target").id,
+            track("First").id,
+            track("Second").id,
+        ],
+    );
+}
+
+#[test]
+fn an_exhausted_future_is_an_empty_window_not_an_error() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["Only"]);
+    let session = session_in(directory.path());
+    session
+        .play_tracks(vec![tracks[0].id], vec![tracks[0].path.clone()], 0)
+        .unwrap();
+
+    let future = session
+        .upcoming_tracks(WindowRange {
+            offset: 0,
+            limit: 200,
+        })
+        .unwrap();
+
+    assert_eq!(future.total, 0);
+    assert!(future.rows.is_empty());
+    assert!(!future.has_more);
+}
+
+#[test]
+fn moving_and_removing_identity_checked_rows_changes_the_next_window() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["Current", "First", "Second", "Third"]);
+    let track = |title: &str| tracks.iter().find(|track| track.title == title).unwrap();
+    let ordered = [
+        track("Current"),
+        track("First"),
+        track("Second"),
+        track("Third"),
+    ];
+    let session = session_in(directory.path());
+    session
+        .play_tracks(
+            ordered.iter().map(|track| track.id).collect(),
+            ordered.iter().map(|track| track.path.clone()).collect(),
+            0,
+        )
+        .unwrap();
+
+    assert!(session
+        .move_upcoming_track(2, track("Third").id, 0)
+        .unwrap());
+    let database =
+        reprise_core::db::Db::open_ready(&directory.path().join(crate::DATABASE_FILE_NAME))
+            .unwrap();
+    let saved = reprise_core::library::session::load(&database).queue;
+    drop(database);
+    let mut saved_queue = reprise_core::queue::Queue::new();
+    saved_queue.restore_snapshot(saved).unwrap();
+    assert_eq!(
+        saved_queue.ids_in_order(),
+        vec![
+            track("Current").id,
+            track("Third").id,
+            track("First").id,
+            track("Second").id,
+        ],
+        "moving a row must persist before any later edit",
+    );
+    assert!(session.remove_upcoming_track(1, track("First").id).unwrap());
+    drop(session);
+
+    let restored = session_in(directory.path());
+    let future = restored
+        .upcoming_tracks(WindowRange {
+            offset: 0,
+            limit: 10,
+        })
+        .unwrap();
+    assert_eq!(future.total, 2);
+    assert_eq!(
+        future.rows.iter().map(|row| row.id).collect::<Vec<_>>(),
+        vec![track("Third").id, track("Second").id],
+    );
+}
+
+#[test]
+fn stale_position_after_removal_is_reported_without_touching_the_new_occupant() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(
+        directory.path(),
+        &["Current", "Remove", "Later", "Occupant"],
+    );
+    let track = |title: &str| tracks.iter().find(|track| track.title == title).unwrap();
+    let ordered = [
+        track("Current"),
+        track("Remove"),
+        track("Later"),
+        track("Occupant"),
+    ];
+    let session = session_in(directory.path());
+    session
+        .play_tracks(
+            ordered.iter().map(|track| track.id).collect(),
+            ordered.iter().map(|track| track.path.clone()).collect(),
+            0,
+        )
+        .unwrap();
+
+    assert!(session
+        .remove_upcoming_track(0, track("Remove").id)
+        .unwrap());
+    assert!(
+        !session
+            .move_upcoming_track(1, track("Later").id, 0)
+            .unwrap(),
+        "move must reject the identity that occupied this position before removal",
+    );
+    assert!(
+        !session.remove_upcoming_track(1, track("Later").id).unwrap(),
+        "remove must reject the identity that occupied this position before removal",
+    );
+    assert!(
+        !session
+            .play_upcoming_track_now(1, track("Later").id)
+            .unwrap(),
+        "the row that used to be at position 1 must be rejected after renumbering",
+    );
+
+    assert_eq!(
+        session.snapshot().unwrap().current_track_id,
+        Some(track("Current").id),
+    );
+    let future = session
+        .upcoming_tracks(WindowRange {
+            offset: 0,
+            limit: 10,
+        })
+        .unwrap();
+    assert_eq!(
+        future.rows.iter().map(|row| row.id).collect::<Vec<_>>(),
+        vec![track("Later").id, track("Occupant").id],
+        "a stale action is a no-op, including for the row now at that position",
+    );
+}
+
+#[test]
+fn a_fresh_session_restores_the_saved_order_and_position_paused() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["Current", "First", "Second", "Third"]);
+    let track = |title: &str| tracks.iter().find(|track| track.title == title).unwrap();
+    let ordered = [
+        track("Current"),
+        track("First"),
+        track("Second"),
+        track("Third"),
+    ];
+    let session = session_in(directory.path());
+    session
+        .play_tracks(
+            ordered.iter().map(|track| track.id).collect(),
+            ordered.iter().map(|track| track.path.clone()).collect(),
+            0,
+        )
+        .unwrap();
+    assert!(session
+        .move_upcoming_track(2, track("Third").id, 0)
+        .unwrap());
+    assert!(session
+        .play_upcoming_track_now(0, track("Third").id)
+        .unwrap());
+    session.set_repeat(AndroidRepeatMode::All).unwrap();
+    drop(session);
+
+    let (restored, calls) = session_with_calls(directory.path());
+
+    let snapshot = restored.snapshot().unwrap();
+    assert_eq!(snapshot.state, AndroidPlaybackState::Paused);
+    assert_eq!(snapshot.current_track_id, Some(track("Third").id));
+    assert_eq!(snapshot.repeat, AndroidRepeatMode::All);
+    let future = restored
+        .upcoming_tracks(WindowRange {
+            offset: 0,
+            limit: 10,
+        })
+        .unwrap();
+    assert_eq!(
+        future.rows.iter().map(|row| row.id).collect::<Vec<_>>(),
+        vec![track("First").id, track("Second").id],
+    );
+    assert!(
+        !calls
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|call| matches!(call, PortCall::PlayUri(_))),
+        "restoring must not start Media3",
+    );
+
+    restored.toggle_pause().unwrap();
+    assert_eq!(
+        restored.snapshot().unwrap().state,
+        AndroidPlaybackState::Playing,
+    );
+    assert!(calls
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|call| matches!(call, PortCall::PlayUri(uri) if uri == &track("Third").path)));
+}
+
+#[test]
+fn restore_discards_a_deleted_track_without_losing_the_surviving_queue() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["Current", "Deleted", "Survivor"]);
+    let track = |title: &str| tracks.iter().find(|track| track.title == title).unwrap();
+    let ordered = [track("Current"), track("Deleted"), track("Survivor")];
+    let session = session_in(directory.path());
+    session
+        .play_tracks(
+            ordered.iter().map(|track| track.id).collect(),
+            ordered.iter().map(|track| track.path.clone()).collect(),
+            0,
+        )
+        .unwrap();
+    drop(session);
+
+    let database_path = directory.path().join(crate::DATABASE_FILE_NAME);
+    let database = reprise_core::db::Db::open_ready(&database_path).unwrap();
+    assert_eq!(
+        reprise_core::queries::remove_tracks_matching_paths(
+            &database,
+            &[(
+                track("Deleted").id,
+                std::path::PathBuf::from(&track("Deleted").path),
+            )],
+        )
+        .unwrap(),
+        vec![track("Deleted").id],
+    );
+    drop(database);
+
+    let restored = session_in(directory.path());
+
+    assert_eq!(
+        restored.snapshot().unwrap().current_track_id,
+        Some(track("Current").id),
+    );
+    let future = restored
+        .upcoming_tracks(WindowRange {
+            offset: 0,
+            limit: 10,
+        })
+        .unwrap();
+    assert_eq!(future.total, 1);
+    assert_eq!(
+        future.rows.iter().map(|row| row.id).collect::<Vec<_>>(),
+        vec![track("Survivor").id],
+    );
+}
+
+#[test]
+fn automatic_advance_is_saved_for_the_next_process() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["First", "Second", "Third"]);
+    let track = |title: &str| tracks.iter().find(|track| track.title == title).unwrap();
+    let ordered = [track("First"), track("Second"), track("Third")];
+    let (session, _, bridge) = session_with_controls(directory.path());
+    session
+        .play_tracks(
+            ordered.iter().map(|track| track.id).collect(),
+            ordered.iter().map(|track| track.path.clone()).collect(),
+            0,
+        )
+        .unwrap();
+
+    bridge
+        .lock()
+        .unwrap()
+        .clone()
+        .unwrap()
+        .emit(23, AndroidPlayerEvent::TrackFinished);
+    assert_eq!(
+        session.snapshot().unwrap().current_track_id,
+        Some(track("Second").id),
+    );
+    drop(session);
+
+    let restored = session_in(directory.path());
+    assert_eq!(
+        restored.snapshot().unwrap().state,
+        AndroidPlaybackState::Paused
+    );
+    assert_eq!(
+        restored.snapshot().unwrap().current_track_id,
+        Some(track("Second").id),
+    );
+}
+
+#[test]
+fn queue_saves_leave_unrelated_desktop_session_fields_untouched() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["Only"]);
+    let database_path = directory.path().join(crate::DATABASE_FILE_NAME);
+    let database = reprise_core::db::Db::open_ready(&database_path).unwrap();
+    let mut desktop_state = reprise_core::library::session::load(&database);
+    desktop_state.search = "desktop search survives".to_owned();
+    desktop_state.window_width = 1777;
+    reprise_core::library::session::save(&database, &desktop_state).unwrap();
+    drop(database);
+
+    let session = session_in(directory.path());
+    session
+        .play_tracks(vec![tracks[0].id], vec![tracks[0].path.clone()], 0)
+        .unwrap();
+    drop(session);
+
+    let database = reprise_core::db::Db::open_ready(&database_path).unwrap();
+    let saved = reprise_core::library::session::load(&database);
+    assert_eq!(saved.search, "desktop search survives");
+    assert_eq!(saved.window_width, 1777);
+}
+
+#[test]
+fn manual_cursor_moves_and_shuffle_each_survive_a_fresh_session() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["First", "Second", "Third"]);
+    let track = |title: &str| tracks.iter().find(|track| track.title == title).unwrap();
+    let ordered = [track("First"), track("Second"), track("Third")];
+    let session = session_in(directory.path());
+    session
+        .play_tracks(
+            ordered.iter().map(|track| track.id).collect(),
+            ordered.iter().map(|track| track.path.clone()).collect(),
+            0,
+        )
+        .unwrap();
+    session.next().unwrap();
+    drop(session);
+
+    let session = session_in(directory.path());
+    assert_eq!(
+        session.snapshot().unwrap().current_track_id,
+        Some(track("Second").id),
+    );
+    session.previous().unwrap();
+    drop(session);
+
+    let session = session_in(directory.path());
+    assert_eq!(
+        session.snapshot().unwrap().current_track_id,
+        Some(track("First").id),
+    );
+    session.set_shuffle(true).unwrap();
+    drop(session);
+
+    let restored = session_in(directory.path());
+    assert!(restored.snapshot().unwrap().shuffled);
+    assert_eq!(
+        restored.snapshot().unwrap().current_track_id,
+        Some(track("First").id),
+        "shuffle persistence must retain the current track",
+    );
+}
