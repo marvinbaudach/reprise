@@ -35,6 +35,7 @@ pub(super) fn external_episode_snapshot(
 
     ExternalPlaybackSnapshot {
         mode: PlaybackMode::Podcast,
+        podcast_kind: Some(reprise_core::podcasts::PodcastKind::Rss),
         media: ExternalMedia::Podcast {
             episode_id: 42,
             title: "External episode".into(),
@@ -63,6 +64,7 @@ pub(super) fn external_radio_snapshot(
 
     ExternalPlaybackSnapshot {
         mode: PlaybackMode::Radio,
+        podcast_kind: None,
         media: ExternalMedia::Radio {
             station_id: 7,
             name: "External radio".into(),

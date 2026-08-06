@@ -291,6 +291,7 @@ pub(super) enum ExternalSession {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::ui) struct ExternalPlaybackSnapshot {
     pub(in crate::ui) mode: PlaybackMode,
+    pub(in crate::ui) podcast_kind: Option<PodcastKind>,
     pub(in crate::ui) media: ExternalMedia,
     pub(in crate::ui) art_url: Option<String>,
     pub(in crate::ui) can_go_previous: bool,
@@ -300,6 +301,18 @@ pub(in crate::ui) struct ExternalPlaybackSnapshot {
     pub(in crate::ui) restored: bool,
     pub(in crate::ui) radio: Option<RadioPresentation>,
     pub(in crate::ui) error: Option<String>,
+}
+
+impl ExternalPlaybackSnapshot {
+    /// YouTube and radio carry music, so they get the Song Visuals treatment;
+    /// an RSS podcast is speech and stays quiet.
+    pub(in crate::ui) fn carries_music(&self) -> bool {
+        match self.podcast_kind {
+            Some(PodcastKind::Youtube) => true,
+            Some(PodcastKind::Rss) => false,
+            None => matches!(self.media, ExternalMedia::Radio { .. }),
+        }
+    }
 }
 
 type StreamTagsCallback = Rc<dyn Fn(StreamTags)>;
@@ -411,6 +424,7 @@ impl ExternalPlaybackState {
                     PodcastOrigin::Direct => PlaybackMode::Podcast,
                     PodcastOrigin::ManualQueue => PlaybackMode::QueuedEpisode,
                 },
+                podcast_kind: Some(session.kind),
                 media: session.media.clone(),
                 art_url: session.art_url.clone(),
                 can_go_previous: session
@@ -429,6 +443,7 @@ impl ExternalPlaybackState {
             }),
             ExternalSession::Radio(session) => Some(ExternalPlaybackSnapshot {
                 mode: PlaybackMode::Radio,
+                podcast_kind: None,
                 media: session.media.clone(),
                 art_url: session.art_url.clone(),
                 can_go_previous: false,
