@@ -98,6 +98,7 @@ ALLOWED_WORKLOADS = {
     "scroll-sweep",
     "offline-transition",
     "restart",
+    "hover-sweep",
 }
 DESTRUCTIVE_TARGET_WORDS = ("delete", "remove", "forget", "eject", "trash", "erase")
 EXTERNAL_TARGET_PHRASES = ("open in browser", "open website", "external link")
@@ -243,6 +244,12 @@ def _validate_workloads(
                 "search_token",
                 "status_label",
             },
+            "hover-sweep": {
+                "kind",
+                "sections",
+                "min_targets_per_section",
+                "roles",
+            },
         }[kind]
         _reject_unknown(workload, allowed_fields, f"{kind} workload")
         if kind == "batch-edit":
@@ -308,6 +315,23 @@ def _validate_workloads(
                     raise ContractError(f"unknown restart search token: {search_token}")
             if workload.get("connectivity") is not None:
                 _string(workload.get("status_label"), "restart status_label")
+        elif kind == "hover-sweep":
+            sections = workload.get("sections")
+            roles = workload.get("roles")
+            if not isinstance(sections, list) or not sections:
+                raise ContractError("hover-sweep sections must be a non-empty list")
+            if not isinstance(roles, list) or not roles:
+                raise ContractError("hover-sweep roles must be a non-empty list")
+            for section in sections:
+                _string(section, "hover-sweep section")
+            for role in roles:
+                _string(role, "hover-sweep role")
+            _integer(
+                workload.get("min_targets_per_section"),
+                "hover-sweep min_targets_per_section",
+                1,
+                28,
+            )
 
 
 def load_mission(path: pathlib.Path | str) -> Mission:

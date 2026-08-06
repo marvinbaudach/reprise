@@ -7,10 +7,12 @@ import hashlib
 from typing import Any, Mapping
 
 from protocol import Mission, SCHEMA_VERSION
+from ui_vocabulary import canonical_role
 
 
 DESTRUCTIVE_WORDS = ("delete", "remove", "forget", "eject", "trash", "erase")
 ASYNC_WORDS = ("refresh", "scan", "sync", "download", "analyze", "import", "save", "retry")
+MAX_HOVER_TARGETS_PER_SECTION = 28
 SURFACE_PRIORITY = (
     "Music",
     "Queue",
@@ -38,6 +40,9 @@ class DeterministicExplorer:
         self._proposal_count = 0
         self._workload_index = 0
         self._workload_queue: list[dict[str, Any]] = []
+        self._hover_section_index = 0
+        self._hover_pending_section: str | None = None
+        self._hover_seen: set[tuple[str, str]] = set()
 
     def propose(self, observation: Mapping[str, Any]) -> dict[str, Any]:
         state_id = str(observation.get("state_id", ""))
@@ -52,7 +57,7 @@ class DeterministicExplorer:
                 "expect_status": True,
             }
         if self._proposal_count >= 12:
-            workload_action = self._next_workload_action(state_id)
+            workload_action = self._next_workload_action(state_id, observation)
             if workload_action is not None:
                 return workload_action
         signature = str(observation.get("state_signature", state_id))
@@ -150,7 +155,7 @@ class DeterministicExplorer:
                 "reason": "No safe novel action remains",
             }
         if self._fallback_index >= len(fallbacks) * 3:
-            workload_action = self._next_workload_action(state_id)
+            workload_action = self._next_workload_action(state_id, {})
             if workload_action is not None:
                 return workload_action
         action = dict(fallbacks[self._fallback_index % len(fallbacks)])
@@ -158,7 +163,9 @@ class DeterministicExplorer:
         action.update({"schema_version": SCHEMA_VERSION, "state_id": state_id})
         return action
 
-    def _next_workload_action(self, state_id: str) -> dict[str, Any] | None:
+    def _next_workload_action(
+        self, state_id: str, observation: Mapping[str, Any]
+    ) -> dict[str, Any] | None:
         if not self._workload_queue and self._workload_index < len(self.mission.workloads):
             workload = self.mission.workloads[self._workload_index]
             kind = workload.get("kind")
@@ -200,15 +207,27 @@ class DeterministicExplorer:
                         ),
                     }
                 )
+            elif kind == "hover-sweep":
+                action = self._next_hover_sweep_action(state_id, observation, workload)
+                if action is not None:
+                    return action
+                self._workload_queue.append(
+                    {
+                        "kind": "complete-workload",
+                        "workload_index": self._workload_index,
+                    }
+                )
+                self._workload_index += 1
             else:
                 return None
-            self._workload_queue.append(
-                {
-                    "kind": "complete-workload",
-                    "workload_index": self._workload_index,
-                }
-            )
-            self._workload_index += 1
+            if kind != "hover-sweep":
+                self._workload_queue.append(
+                    {
+                        "kind": "complete-workload",
+                        "workload_index": self._workload_index,
+                    }
+                )
+                self._workload_index += 1
         if self._workload_queue:
             action = self._workload_queue.pop(0)
             return {
@@ -223,6 +242,55 @@ class DeterministicExplorer:
                 "kind": "finish",
                 "reason": "Bounded deterministic workload coverage is complete",
             }
+        return None
+
+    def _next_hover_sweep_action(
+        self,
+        state_id: str,
+        observation: Mapping[str, Any],
+        workload: Mapping[str, Any],
+    ) -> dict[str, Any] | None:
+        sections = tuple(str(item) for item in workload.get("sections", []))
+        if self._hover_pending_section is not None:
+            roles = {canonical_role(str(item)) for item in workload.get("roles", [])}
+            candidates = []
+            for item in observation.get("elements", []):
+                if not isinstance(item, dict):
+                    continue
+                label = str(item.get("label") or "")
+                if (
+                    not label
+                    or item.get("actionable") is not True
+                    or item.get("enabled") is not True
+                    or item.get("visible") is not True
+                    or canonical_role(str(item.get("role", ""))) not in roles
+                    or (self._hover_pending_section, label) in self._hover_seen
+                ):
+                    continue
+                frame = item.get("frame", {})
+                if not isinstance(frame, dict):
+                    frame = {}
+                candidates.append(
+                    (
+                        float(frame.get("y", 0)),
+                        float(frame.get("x", 0)),
+                        label,
+                    )
+                )
+            for _y, _x, label in sorted(candidates)[:MAX_HOVER_TARGETS_PER_SECTION]:
+                self._hover_seen.add((self._hover_pending_section, label))
+                self._workload_queue.append(
+                    {"kind": "hover", "target": {"label": label}}
+                )
+            self._hover_pending_section = None
+            self._hover_section_index += 1
+            if self._workload_queue:
+                action = self._workload_queue.pop(0)
+                return {"schema_version": SCHEMA_VERSION, "state_id": state_id, **action}
+        if self._hover_section_index < len(sections):
+            section = sections[self._hover_section_index]
+            self._hover_pending_section = section
+            return self._activate(state_id, section)
         return None
 
     def _activate(self, state_id: str, label: str) -> dict[str, Any]:

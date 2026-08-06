@@ -22,6 +22,7 @@ class ActionTrace:
     after_actionable_labels: tuple[str, ...] = ()
     before_values: tuple[tuple[str, str], ...] = ()
     after_values: tuple[tuple[str, str], ...] = ()
+    after_roles: tuple[tuple[str, str], ...] = ()
     finding_codes: tuple[str, ...] = ()
     state_changed: bool = False
     after_busy: bool = False
@@ -577,6 +578,55 @@ def _audit_batch(
     }
 
 
+def _audit_hover_sweep(
+    workload: Mapping[str, Any], traces: Sequence[ActionTrace]
+) -> dict[str, Any]:
+    sections = tuple(str(item) for item in workload.get("sections", []))
+    minimum = int(workload.get("min_targets_per_section", 0))
+    visited = {section: False for section in sections}
+    hovered = {section: 0 for section in sections}
+    measured = {section: 0 for section in sections}
+    hover_findings: list[dict[str, Any]] = []
+    current_section: str | None = None
+    unmeasured_codes = {"hover-unmeasurable", "hover-skipped"}
+    for trace in traces:
+        action = trace.action
+        if action.get("kind") == "activate" and action.get("target_label") in visited:
+            current_section = str(action.get("target_label"))
+            if trace.state_changed:
+                visited[current_section] = True
+            continue
+        if action.get("kind") != "hover" or current_section is None:
+            continue
+        label = str(action.get("target_label", ""))
+        roles = dict(trace.after_roles)
+        codes = [str(code) for code in trace.finding_codes]
+        hovered[current_section] += 1
+        if not unmeasured_codes.intersection(codes):
+            measured[current_section] += 1
+        hover_findings.append(
+            {
+                "section": current_section,
+                "label": label,
+                "role": roles.get(label, "unknown"),
+                "codes": codes,
+            }
+        )
+    complete = bool(sections) and all(
+        visited[section]
+        and hovered[section] >= minimum
+        and measured[section] >= 1
+        for section in sections
+    )
+    return {
+        "complete": complete,
+        "sections_visited": visited,
+        "hovered_per_section": hovered,
+        "measured_per_section": measured,
+        "hover_findings": hover_findings,
+    }
+
+
 def audit_action_workload(
     workload_index: int,
     workload: Mapping[str, Any],
@@ -599,6 +649,8 @@ def audit_action_workload(
         details = _audit_section_search(workload, traces, fixture_tokens or {})
     elif kind == "restart":
         details = _audit_restart(workload, traces, fixture_tokens or {})
+    elif kind == "hover-sweep":
+        details = _audit_hover_sweep(workload, traces)
     else:
         details = {"complete": False, "error": "unsupported workload kind"}
     return {"workload_index": workload_index, "kind": kind, **details}

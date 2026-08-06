@@ -25,7 +25,7 @@ for phrase in "opt-in" "not ordinary CI" "fresh output" "100,000" "512" "--hover
   fi
 done
 missions=$($runner --list-missions)
-for mission in first-time-exploration large-library-stress offline-recovery section-search-isolation pointer-layout-reachability; do
+for mission in first-time-exploration hover-affordance-sweep large-library-stress offline-recovery section-search-isolation pointer-layout-reachability; do
   if ! rg --quiet --fixed-strings --line-regexp "$mission" <<<"$missions"; then
     echo "exploratory runner must list mission: $mission" >&2
     exit 1

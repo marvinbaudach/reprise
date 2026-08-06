@@ -76,6 +76,7 @@ class MissionContractTests(unittest.TestCase):
             {mission.mission_id for mission in missions},
             {
                 "first-time-exploration",
+                "hover-affordance-sweep",
                 "large-library-stress",
                 "offline-recovery",
                 "pointer-layout-reachability",

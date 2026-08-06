@@ -120,6 +120,13 @@ sweeps use `--gtk-animations off`; compare an optional `on` run with `hover_comp
 find affordances that disappear when GTK animations are disabled. Icon buttons without an
 accessible name remain outside the sweep and are reported by the accessibility oracle.
 
+The agent-free `hover-affordance-sweep` mission visits Music, Queue, Playlists, Podcasts,
+YouTube, Radio, and My Stats in that order. In each section it hovers at most 28 named,
+actionable, enabled, visible button-like elements, sorted by geometry and label. Its
+workload is complete when every section was reached, the configured minimum target count
+was hovered, and at least one hover per section produced measurable screenshots. Hover
+findings are the mission result and do not themselves make the workload incomplete.
+
 Start review with `report.md`, then inspect the referenced before/action/after
 states. A report with no findings means only that no anomaly was observed within
 that persona, seed, action budget, and headless environment. It is not proof that

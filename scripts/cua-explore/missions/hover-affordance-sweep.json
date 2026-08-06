@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "id": "hover-affordance-sweep",
+  "goal": "Prove that every button and link in every section answers the pointer with a visible state change (ux-rules W, BTN-1/BTN-3/BTN-4).",
+  "persona": "reviewer who points at everything before clicking anything",
+  "mode": "discovery",
+  "agent": "optional",
+  "profile": "mixed-sources-128",
+  "budgets": {"actions": 220, "seconds": 1800, "restarts": 0},
+  "capabilities": ["activate", "hover", "scroll", "wait", "complete-workload", "finish"],
+  "fixture_tokens": {"SEARCH_NEEDLE": "Writable Batch 0042"},
+  "oracles": ["clean-runtime", "feedback", "layout-shift", "pointer-reachability", "accessibility", "hover-affordance"],
+  "workloads": [
+    {
+      "kind": "hover-sweep",
+      "sections": ["Music", "Queue", "Playlists", "Podcasts", "YouTube", "Radio", "My Stats"],
+      "min_targets_per_section": 3,
+      "roles": ["button", "toggle button", "link", "check box", "tab"]
+    }
+  ],
+  "success": [
+    {"kind": "hover", "description": "Every button and link changes visibly under the pointer"},
+    {"kind": "scope", "description": "List rows answer with a background wash and never with a scale"}
+  ],
+  "forbidden": ["delete", "external-url", "real-library", "real-account", "foreground-desktop"]
+}

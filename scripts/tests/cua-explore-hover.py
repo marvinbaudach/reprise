@@ -19,6 +19,7 @@ sys.path.insert(0, str(TEST_ROOT))
 from cua_explore_png import write_png  # noqa: E402
 from actions import HoverAction  # noqa: E402
 from driver import CuaExecutor, DriverError, hover_preflight  # noqa: E402
+from explorer import DeterministicExplorer, MAX_HOVER_TARGETS_PER_SECTION  # noqa: E402
 from hover_geometry import (  # noqa: E402
     WindowGeometry,
     desktop_point,
@@ -30,6 +31,7 @@ from hover_oracle import analyze_hover  # noqa: E402
 from pngdiff import UnsupportedImage, UnmeasurableImage, read_rgb, rect_change_ratio  # noqa: E402
 from protocol import ActionGateway, ContractError, load_mission  # noqa: E402
 from runner import prepare_hover, write_gtk_animation_settings  # noqa: E402
+from workload_audit import ActionTrace, audit_action_workload  # noqa: E402
 
 
 class PngDiffTests(unittest.TestCase):
@@ -486,6 +488,202 @@ class HoverCompareTests(unittest.TestCase):
                 }
             ]
         }
+
+
+class HoverSweepProtocolTests(unittest.TestCase):
+    def test_hover_sweep_workload_rejects_an_empty_section_list(self) -> None:
+        raw = self._mission_raw()
+        raw["workloads"][0]["sections"] = []
+
+        with self.assertRaisesRegex(ContractError, "sections must be a non-empty list"):
+            self._load(raw)
+
+    def test_hover_sweep_workload_rejects_unknown_fields(self) -> None:
+        raw = self._mission_raw()
+        raw["workloads"][0]["surprise"] = True
+
+        with self.assertRaisesRegex(ContractError, "unknown hover-sweep workload field"):
+            self._load(raw)
+
+    def _mission_raw(self):
+        return json.loads(
+            (EXPLORE_ROOT / "missions" / "hover-affordance-sweep.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+    def _load(self, raw):
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "mission.json"
+            path.write_text(json.dumps(raw), encoding="utf-8")
+            return load_mission(path)
+
+
+class HoverSweepExplorerTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.mission = load_mission(
+            EXPLORE_ROOT / "missions" / "hover-affordance-sweep.json"
+        )
+        self.explorer = DeterministicExplorer(self.mission, 1)
+
+    def test_hover_sweep_explorer_activates_every_section_before_hovering_it(self) -> None:
+        actions = self._drive(
+            [self._element("First"), self._element("Second", x=40)]
+        )
+        sections = self.mission.workloads[0]["sections"]
+
+        for section in sections:
+            activate = next(
+                index
+                for index, action in enumerate(actions)
+                if action["kind"] == "activate"
+                and action["target"]["label"] == section
+            )
+            hovers = [
+                index
+                for index, action in enumerate(actions)
+                if action["kind"] == "hover"
+                and action.get("section_for_test") == section
+            ]
+            self.assertTrue(hovers)
+            self.assertLess(activate, min(hovers))
+
+    def test_hover_sweep_explorer_hovers_only_actionable_enabled_visible_elements(self) -> None:
+        actions = self._drive(
+            [
+                self._element("Good"),
+                self._element("Disabled", enabled=False),
+                self._element("Hidden", visible=False),
+                self._element("Passive", actionable=False),
+                self._element("Row", role="row"),
+            ]
+        )
+
+        labels = {action["target"]["label"] for action in actions if action["kind"] == "hover"}
+        self.assertEqual(labels, {"Good"})
+
+    def test_hover_sweep_explorer_caps_targets_per_section(self) -> None:
+        elements = [self._element(f"Button {index}", y=index) for index in range(40)]
+
+        actions = self._drive(elements)
+
+        first_section = self.mission.workloads[0]["sections"][0]
+        count = sum(
+            action["kind"] == "hover" and action.get("section_for_test") == first_section
+            for action in actions
+        )
+        self.assertEqual(count, MAX_HOVER_TARGETS_PER_SECTION)
+
+    def _drive(self, elements):
+        actions = []
+        observation = {"state_id": "s-0", "elements": [], "actionable_labels": []}
+        current_section = None
+        for index in range(self.mission.budgets.actions):
+            action = self.explorer._next_workload_action(
+                f"s-{index}", observation
+            )
+            self.assertIsNotNone(action)
+            if action["kind"] == "activate":
+                current_section = action["target"]["label"]
+                observation = {
+                    "state_id": f"s-{index + 1}",
+                    "elements": elements,
+                    "actionable_labels": [item["label"] for item in elements],
+                }
+            if action["kind"] == "hover":
+                action = {**action, "section_for_test": current_section}
+            actions.append(action)
+            if action["kind"] == "finish":
+                break
+        return actions
+
+    def _element(
+        self,
+        label,
+        *,
+        role="button",
+        x=10,
+        y=10,
+        enabled=True,
+        visible=True,
+        actionable=True,
+    ):
+        return {
+            "label": label,
+            "role": role,
+            "enabled": enabled,
+            "visible": visible,
+            "actionable": actionable,
+            "frame": {"x": x, "y": y, "width": 20, "height": 20},
+        }
+
+
+class HoverSweepAuditTests(unittest.TestCase):
+    def test_hover_sweep_audit_requires_one_measured_hover_per_section(self) -> None:
+        workload = self._workload(minimum=1)
+        traces = [
+            self._activate("Music"),
+            self._hover("Play", ("hover-unmeasurable",)),
+        ]
+
+        audit = audit_action_workload(0, workload, traces)
+
+        self.assertFalse(audit["complete"])
+        self.assertEqual(audit["hovered_per_section"]["Music"], 1)
+        self.assertEqual(audit["measured_per_section"]["Music"], 0)
+
+    def test_hover_sweep_audit_names_element_and_section_for_every_finding(self) -> None:
+        workload = self._workload(minimum=1)
+        traces = [
+            self._activate("Music"),
+            self._hover("Play", ("hover-affordance-missing",)),
+        ]
+
+        audit = audit_action_workload(0, workload, traces)
+
+        self.assertTrue(audit["complete"])
+        self.assertEqual(
+            audit["hover_findings"],
+            [
+                {
+                    "section": "Music",
+                    "label": "Play",
+                    "role": "button",
+                    "codes": ["hover-affordance-missing"],
+                }
+            ],
+        )
+
+    def _workload(self, minimum):
+        return {
+            "kind": "hover-sweep",
+            "sections": ["Music"],
+            "min_targets_per_section": minimum,
+            "roles": ["button"],
+        }
+
+    def _activate(self, section):
+        return ActionTrace(
+            action={"kind": "activate", "target_label": section},
+            state_changed=True,
+        )
+
+    def _hover(self, label, codes):
+        return ActionTrace(
+            action={"kind": "hover", "target_label": label},
+            after_roles=((label, "button"),),
+            finding_codes=codes,
+        )
+
+
+class HoverSweepMissionTests(unittest.TestCase):
+    def test_hover_sweep_mission_validates_and_is_listed_by_the_runner(self) -> None:
+        mission = load_mission(
+            EXPLORE_ROOT / "missions" / "hover-affordance-sweep.json"
+        )
+
+        self.assertEqual(mission.mission_id, "hover-affordance-sweep")
+        self.assertEqual(mission.agent, "optional")
 
 
 if __name__ == "__main__":

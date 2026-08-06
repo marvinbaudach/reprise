@@ -326,6 +326,11 @@ def _trace_from_observations(
         ),
         before_values=values(before),
         after_values=values(after),
+        after_roles=tuple(
+            (str(item["label"]), str(item.get("role", "")))
+            for item in after_elements
+            if item.get("label")
+        ),
         finding_codes=tuple(finding_codes),
         state_changed=before.get("state_signature") != after.get("state_signature"),
         after_busy=any(
