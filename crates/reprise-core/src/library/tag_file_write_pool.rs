@@ -6,7 +6,12 @@ use std::sync::mpsc;
 use super::tag_mutation::TagMutationFailure;
 use super::tag_write_job::{write_tag_write_file, JournaledTagMutation};
 
-const MAX_FILE_WRITE_WORKERS: usize = 4;
+/// Measured on a 13-track album of 16 MB MP3s (cold page cache, real library):
+/// serial 1.85 s, four workers 1.17 s, eight workers 0.80 s. The gain is I/O
+/// bandwidth rather than CPU, so the cap is deliberately above the point where
+/// four workers left throughput on the table, and low enough that a batch never
+/// has more than eight large rewrites in flight at once.
+const MAX_FILE_WRITE_WORKERS: usize = 8;
 
 fn file_write_worker_count(task_count: usize, available: usize) -> usize {
     task_count.min(available.max(1)).min(MAX_FILE_WRITE_WORKERS)
@@ -73,14 +78,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tag_batch_file_writes_use_four_workers_without_exceeding_the_cap() {
+    fn tag_batch_file_writes_use_eight_workers_without_exceeding_the_cap() {
         let active = AtomicUsize::new(0);
         let peak = AtomicUsize::new(0);
         let tasks = (0..12).collect::<Vec<_>>();
 
         let completed = parallel_map(
             &tasks,
-            8,
+            16,
             |_| {
                 let now_active = active.fetch_add(1, Ordering::SeqCst) + 1;
                 peak.fetch_max(now_active, Ordering::SeqCst);
@@ -91,8 +96,9 @@ mod tests {
         );
 
         assert_eq!(completed.len(), tasks.len());
-        assert_eq!(peak.load(Ordering::SeqCst), 4);
+        assert_eq!(peak.load(Ordering::SeqCst), 8);
         assert_eq!(file_write_worker_count(13, 2), 2);
+        assert_eq!(file_write_worker_count(13, 16), 8);
         assert_eq!(file_write_worker_count(1, 8), 1);
         assert_eq!(file_write_worker_count(0, 8), 0);
     }
