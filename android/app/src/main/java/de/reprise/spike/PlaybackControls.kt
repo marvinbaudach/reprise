@@ -64,6 +64,10 @@ internal interface PlaybackControls {
         expectedTrackId: Long,
         report: (Result<Boolean>) -> Unit,
     ) = report(Result.failure(IllegalStateException("playback is not connected")))
+
+    fun startSleepTimer(selection: SleepTimerSelection) = Unit
+
+    fun cancelSleepTimer() = Unit
 }
 
 /**

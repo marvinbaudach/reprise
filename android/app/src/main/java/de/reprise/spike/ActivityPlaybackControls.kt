@@ -55,6 +55,12 @@ internal class ActivityPlaybackControls(
         report: (Result<Boolean>) -> Unit,
     ) = query(report) { removeUpcomingTrack(position, expectedTrackId) }
 
+    override fun startSleepTimer(selection: SleepTimerSelection) = command("start sleep timer") {
+        startSleepTimer(selection)
+    }
+
+    override fun cancelSleepTimer() = command("cancel sleep timer") { cancelSleepTimer() }
+
     private fun <T> query(
         report: (Result<T>) -> Unit,
         operation: ReprisePlaybackService.() -> T,

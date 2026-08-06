@@ -333,6 +333,8 @@ internal class ConfigurationTestApplication : Application(), MainActivitySurface
         playUpcoming = ::playUpcoming,
         moveUpcoming = ::moveUpcoming,
         removeUpcoming = ::removeUpcoming,
+        startSleepTimer = { selection -> service.startSleepTimer(selection) },
+        cancelSleepTimer = { service.cancelSleepTimer() },
     )
     val visualizerWrites = mutableListOf<MobileVisualizer>()
     val ambientScheduleEvents = mutableListOf<Boolean>()
@@ -574,6 +576,8 @@ internal class ConfigurationTestPlaybackControls(
     private val playUpcoming: (Int, Long) -> Boolean = { _, _ -> false },
     private val moveUpcoming: (Int, Long, Int) -> Boolean = { _, _, _ -> false },
     private val removeUpcoming: (Int, Long) -> Boolean = { _, _ -> false },
+    private val startSleepTimer: (SleepTimerSelection) -> Unit = {},
+    private val cancelSleepTimer: () -> Unit = {},
 ) : PlaybackControls {
     val seekPositions = mutableListOf<Long>()
     val ratingRequests = mutableListOf<Pair<Long, Int>>()
@@ -637,6 +641,10 @@ internal class ConfigurationTestPlaybackControls(
         removeUpcomingRequests += position to expectedTrackId
         report(Result.success(removeUpcoming(position, expectedTrackId)))
     }
+
+    override fun startSleepTimer(selection: SleepTimerSelection) = startSleepTimer.invoke(selection)
+
+    override fun cancelSleepTimer() = cancelSleepTimer.invoke()
 }
 
 /** Enough rows that the screen has to ask for a second window to reach the end. */

@@ -140,6 +140,7 @@ private fun StackedNowPlayingContent(
                 horizontalArrangement = Arrangement.End,
             ) {
                 QueuePageButton(surfaceState)
+                SleepTimerControl(playback.sleepTimer)
                 IconButton(onClick = close, modifier = Modifier.size(48.dp)) {
                     MaterialSymbol("keyboard_arrow_down", "Collapse Now Playing")
                 }
@@ -264,6 +265,7 @@ private fun WideShortNowPlayingContent(
                     )
                 }
                 QueuePageButton(surfaceState)
+                SleepTimerControl(playback.sleepTimer)
                 IconButton(onClick = close, modifier = Modifier.size(48.dp)) {
                     MaterialSymbol("keyboard_arrow_down", "Collapse Now Playing")
                 }

@@ -137,12 +137,19 @@ class MainActivity : ComponentActivity() {
             val service = (binder as ReprisePlaybackService.LocalBinder).service()
             playbackService = service
             service.attachObserver { snapshot ->
-                runOnUiThread { playbackState.value = snapshot.toUiState() }
+                runOnUiThread {
+                    playbackState.value = snapshot.toUiState().copy(
+                        sleepTimer = playbackState.value.sleepTimer,
+                    )
+                }
             }
             service.attachSettingsObserver {
                 runOnUiThread {
                     playbackSettingsRevision.value += 1L
                 }
+            }
+            service.attachSleepTimerObserver { timer ->
+                runOnUiThread { playbackState.value = playbackState.value.copy(sleepTimer = timer) }
             }
         }
 
@@ -353,6 +360,7 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         playbackService?.detachObserver()
         playbackService?.detachSettingsObserver()
+        playbackService?.detachSleepTimerObserver()
         playbackService = null
         if (playbackBound) {
             unbindService(playbackConnection)
