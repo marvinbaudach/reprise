@@ -104,6 +104,16 @@ pub enum PlayerEvent {
         position_ms: i64,
         duration_ms: i64,
     },
+    /// How far the network buffer extends beyond the playhead. Remote
+    /// sources emit this event; local files never do.
+    Buffering {
+        /// GStreamer's current ring-buffer fill level, clamped to 0..=100.
+        /// Playback may stall while this is below 100.
+        percent: u8,
+        /// End of the contiguous buffered range in milliseconds, when the
+        /// pipeline can report it. This drives the seek-bar buffer segment.
+        buffered_ms: Option<i64>,
+    },
     TrackFinished,
     /// The gaplessly pre-fed next track (see `PlaybackBackend::set_next`) has
     /// taken over without a pipeline restart: `about-to-finish` consumed the
@@ -225,6 +235,13 @@ pub trait PlaybackBackend {
     /// Starts a non-local media URI. Implementations must accept `http`,
     /// `https`, and `file`; local-path callers continue to use [`Self::play`].
     fn play_uri(&self, uri: &str) -> Result<(), PlaybackError>;
+    /// Starts a live media URI whose stream has no finite end. Backends that
+    /// opt finite remote media into progressive download buffering must keep
+    /// that mode disabled here. The default is suitable for backends that do
+    /// not opt into download buffering at all.
+    fn play_live_uri(&self, uri: &str) -> Result<(), PlaybackError> {
+        self.play_uri(uri)
+    }
     fn toggle_pause(&self) -> Result<PlaybackState, PlaybackError>;
     fn seek_to(&self, position_ms: i64) -> Result<(), PlaybackError>;
     fn set_volume(&self, volume: f64);

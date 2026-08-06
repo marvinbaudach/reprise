@@ -192,10 +192,40 @@ impl PlayerController {
         *self.song_visual_spectrum_changed.borrow_mut() = Some(Rc::new(callback));
     }
 
+    /// Persisted `song_visuals` module state in; the whole audio-reactive
+    /// chain re-synced from it. The module is only one of its two inputs —
+    /// see [`Self::audio_reactive_enabled`].
     pub(in crate::ui) fn set_song_visuals_enabled(
         &self,
         enabled: bool,
     ) -> Result<(), PlaybackError> {
+        self.song_visuals_module.set(enabled);
+        self.sync_audio_reactive()
+    }
+
+    /// Whether anything audio-reactive should be running right now: the
+    /// spectrum feed at the source, the Visual tab and the reactive light in
+    /// the panel, the bar's bass layers.
+    ///
+    /// Two inputs, one answer, one owner. Every surface asks this instead of
+    /// pairing the module switch with its own idea of what a podcast is —
+    /// the same decision living in two places is how the last two audible
+    /// bugs got in.
+    pub(in crate::ui) fn audio_reactive_enabled(&self) -> bool {
+        crate::ui::playback::preview::audio_reactive_enabled(
+            self.song_visuals_module.get(),
+            self.playback_mode(),
+        )
+    }
+
+    /// Applies [`Self::audio_reactive_enabled`] to the source. Cheap and safe
+    /// mid-playback: `set_spectrum_enabled` only flips `post-messages` and an
+    /// atomic the cava sink reads, it performs no pipeline surgery.
+    ///
+    /// Switching off also parks the bar's bass layers, which would otherwise
+    /// freeze at whatever the last frame said instead of settling to rest.
+    pub(in crate::ui) fn sync_audio_reactive(&self) -> Result<(), PlaybackError> {
+        let enabled = self.audio_reactive_enabled();
         if !enabled {
             self.sync_bass(0.0, 0.0);
         }
@@ -279,6 +309,7 @@ impl PlayerController {
     /// to the player bar. If no peaks exist yet, extracts them on demand and
     /// stores them in the DB so subsequent plays are instant.
     pub(in crate::ui) fn sync_waveform(&self, track_id: i64, path: &str) {
+        self.offer_colour_legend(track_id);
         let generation = self.waveform_generation.get().wrapping_add(1);
         self.waveform_generation.set(generation);
         let waveform_generation = self.waveform_generation.clone();
@@ -357,6 +388,29 @@ impl PlayerController {
                 }
             }
         });
+    }
+
+    /// Shows the colour-scale legend for the first few track changes and then
+    /// stops. The count lives in settings, so it survives restarts; the bar
+    /// itself decides whether this track is a new one and whether its bar even
+    /// has a scale to explain.
+    fn offer_colour_legend(&self, track_id: i64) {
+        use reprise_core::library::settings;
+
+        if !self.bar.colour_legend_due_for(track_id) {
+            return;
+        }
+        let seen = settings::get_seek_legend_seen(&self.conn);
+        if !crate::ui::player_bar::seek_legend::shows_on_track_change(seen) {
+            return;
+        }
+        if let Err(error) = settings::set_seek_legend_seen(&self.conn, seen + 1) {
+            // Failing to store the count would show the legend forever, which
+            // is worse than not showing it now.
+            tracing::warn!(%error, "could not record the colour legend showing");
+            return;
+        }
+        self.bar.show_colour_legend();
     }
 
     pub(in crate::ui) fn sync_state(&self, state: PlaybackState) {

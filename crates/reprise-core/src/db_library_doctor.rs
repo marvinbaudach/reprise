@@ -93,6 +93,36 @@ pub(crate) fn migrate_v19(conn: &Connection) -> Result<(), rusqlite::Error> {
     transaction.commit()
 }
 
+pub(crate) fn migrate_v58(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if version >= 58 {
+        return Ok(());
+    }
+    let transaction = conn.unchecked_transaction()?;
+    let reviewed_column_exists = transaction.query_row(
+        "SELECT EXISTS(
+           SELECT 1 FROM pragma_table_info('library_doctor_state')
+           WHERE name='reviewed_scan_id'
+         )",
+        [],
+        |row| row.get::<_, bool>(0),
+    )?;
+    if !reviewed_column_exists {
+        transaction.execute(
+            "ALTER TABLE library_doctor_state ADD COLUMN reviewed_scan_id INTEGER \
+             REFERENCES library_doctor_scans(id) ON DELETE SET NULL",
+            [],
+        )?;
+    }
+    transaction.execute(
+        "UPDATE library_doctor_state \
+         SET last_complete_scan_id=NULL, reviewed_scan_id=NULL",
+        [],
+    )?;
+    transaction.pragma_update(None, "user_version", 58)?;
+    transaction.commit()
+}
+
 #[cfg(test)]
 mod tests {
     use rusqlite::Connection;
@@ -157,5 +187,75 @@ mod tests {
                 [],
             )
             .is_err());
+    }
+
+    #[test]
+    fn doc_10c_upgrade_clears_the_stored_scan_pointer_and_keeps_the_cleanup_revertible() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        let conn = db.conn();
+        conn.execute_batch(
+            "DROP TABLE library_doctor_state;
+             CREATE TABLE library_doctor_state (
+               singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+               last_complete_scan_id INTEGER REFERENCES library_doctor_scans(id) ON DELETE SET NULL
+             );
+             INSERT INTO library_doctor_state (singleton, last_complete_scan_id)
+             VALUES (1, NULL);",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO library_doctor_scans \
+             (scope_kind, created_at, remote_enabled, checked_tracks, skipped_tracks) \
+             VALUES ('selection', 1, 0, 1, 0)",
+            [],
+        )
+        .unwrap();
+        let scan_id = conn.last_insert_rowid();
+        conn.execute(
+            "UPDATE library_doctor_state SET last_complete_scan_id=?1 WHERE singleton=1",
+            [scan_id],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tag_write_jobs \
+             (kind, source_job_id, scan_id, state, created_at, finished_at, total_tracks) \
+             VALUES ('doctor_apply', NULL, ?1, 'completed', 1, 2, 1)",
+            [scan_id],
+        )
+        .unwrap();
+        let job_id = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO tag_write_job_files \
+             (job_id, position, track_id, path, state, file_written) \
+             VALUES (?1, 0, 42, 'fixture.flac', 'complete', 1)",
+            [job_id],
+        )
+        .unwrap();
+        let file_id = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO tag_write_journal \
+             (file_id, position, review_row_id, field, guard_is_set, expected_value, \
+              expected_is_null, before_value, before_is_null, after_value, after_is_null, outcome) \
+             VALUES (?1, 0, 1, 'artist', 1, 'Before', 0, 'Before', 0, 'After', 0, 'applied')",
+            [file_id],
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 56).unwrap();
+
+        super::migrate_v58(conn).unwrap();
+
+        let pointers: (Option<i64>, Option<i64>) = conn
+            .query_row(
+                "SELECT last_complete_scan_id, reviewed_scan_id \
+                 FROM library_doctor_state WHERE singleton=1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(pointers, (None, None));
+        assert!(crate::library::library_doctor::LibraryDoctor::new(&db)
+            .last_cleanup()
+            .unwrap()
+            .is_some());
     }
 }

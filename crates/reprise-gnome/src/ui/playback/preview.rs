@@ -35,6 +35,27 @@ impl PlaybackMode {
     pub(in crate::ui) fn credits_listening(self) -> bool {
         matches!(self, PlaybackMode::Queue)
     }
+
+    /// Whether the audio-reactive apparatus — the spectrum feed, the Visual
+    /// tab and the reactive light — has anything to show in this mode.
+    ///
+    /// Podcasts are speech: a spectrum of a voice is a flicker, not a visual,
+    /// so both podcast modes switch the whole chain off at the source. Radio
+    /// plays music and keeps it. This is the ONE place that names which modes
+    /// count as a podcast — `audio_reactive_enabled` reads the answer, nobody
+    /// re-derives it.
+    pub(in crate::ui) fn runs_audio_visuals(self) -> bool {
+        !matches!(self, PlaybackMode::Podcast | PlaybackMode::QueuedEpisode)
+    }
+}
+
+/// The whole audio-reactive question in one expression: the module the user
+/// can switch off in Preferences, AND a mode that has something to show.
+///
+/// Pure and free-standing because the controller it answers for cannot be
+/// built outside a window — this is where the rule can actually be tested.
+pub(in crate::ui) fn audio_reactive_enabled(module_enabled: bool, mode: PlaybackMode) -> bool {
+    module_enabled && mode.runs_audio_visuals()
 }
 
 impl PlayerController {
@@ -56,7 +77,7 @@ impl PlayerController {
 
 #[cfg(test)]
 mod tests {
-    use super::PlaybackMode;
+    use super::{audio_reactive_enabled, PlaybackMode};
 
     // A finished preview never advances the queue, while an ordinary queue
     // track does.
@@ -80,7 +101,7 @@ mod tests {
     }
 
     #[test]
-    fn pod_4_external_session_never_scrobbles() {
+    fn pod_24_external_session_never_scrobbles() {
         assert!(PlaybackMode::Queue.credits_listening());
         assert!(!PlaybackMode::QueuedEpisode.credits_listening());
         assert!(!PlaybackMode::Preview.credits_listening());
@@ -96,5 +117,42 @@ mod tests {
     #[test]
     fn rad_2_external_session_never_scrobbles() {
         assert!(!PlaybackMode::Radio.credits_listening());
+    }
+
+    // Every mode is named, so a sixth one cannot slip into the visuals
+    // contract unexamined: a podcast — direct or queued — runs no audio
+    // visuals, everything else does.
+    #[test]
+    fn podcasts_run_no_audio_visuals_while_music_and_radio_do() {
+        for mode in PlaybackMode::ALL {
+            // Spelled out arm by arm with no wildcard: a sixth mode stops the
+            // build here rather than inheriting an answer by accident.
+            let expected = match mode {
+                PlaybackMode::Queue => true,
+                PlaybackMode::Preview => true,
+                PlaybackMode::Radio => true,
+                PlaybackMode::Podcast => false,
+                PlaybackMode::QueuedEpisode => false,
+            };
+            assert_eq!(
+                mode.runs_audio_visuals(),
+                expected,
+                "{mode:?} disagrees with the podcast rule"
+            );
+        }
+    }
+
+    // The two inputs, all four corners: a podcast suppresses the visuals even
+    // with the module on, and the module still wins over every other mode.
+    #[test]
+    fn a_podcast_suppresses_the_visuals_the_module_switch_would_allow() {
+        assert!(audio_reactive_enabled(true, PlaybackMode::Queue));
+        assert!(audio_reactive_enabled(true, PlaybackMode::Radio));
+        assert!(!audio_reactive_enabled(true, PlaybackMode::Podcast));
+        assert!(!audio_reactive_enabled(true, PlaybackMode::QueuedEpisode));
+
+        assert!(!audio_reactive_enabled(false, PlaybackMode::Queue));
+        assert!(!audio_reactive_enabled(false, PlaybackMode::Radio));
+        assert!(!audio_reactive_enabled(false, PlaybackMode::Podcast));
     }
 }

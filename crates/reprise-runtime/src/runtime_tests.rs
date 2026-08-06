@@ -129,6 +129,10 @@ fn frequent_player_reports_do_not_require_a_whole_queue_comparison() {
             position_ms: 30_000,
             duration_ms: 180_000,
         },
+        PlayerEvent::Buffering {
+            percent: 75,
+            buffered_ms: Some(120_000),
+        },
         PlayerEvent::StreamTags {
             title: Some("News".into()),
             organization: Some("Example FM".into()),

@@ -40,7 +40,6 @@
 //! already-selected row (alone, or as part of a larger multi-selection)
 //! leaves the selection untouched, so the menu acts on the whole set — see
 //! [`show_context_menu`].
-
 use std::rc::Rc;
 
 use gtk4::gio;
@@ -208,6 +207,7 @@ pub(in crate::ui) fn build_context_menu_model(shared: &Rc<Shared>) -> gio::Menu 
             is_missing_view,
         })
     };
+    super::track_list_sound_similarity::append_menu_item(&menu, shared, summary);
     if matches!(context, MenuContext::Playlist | MenuContext::Queue)
         && (context != MenuContext::Queue || queue_projection_editable)
     {
@@ -328,6 +328,8 @@ pub(in crate::ui) fn wire_context_menu_actions(
         });
     }
     action_group.add_action(&queue_action);
+
+    super::track_list_sound_similarity::wire_action(&action_group, shared);
 
     for (name, direction) in [
         (

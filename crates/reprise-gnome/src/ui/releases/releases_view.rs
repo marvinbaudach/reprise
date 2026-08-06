@@ -222,6 +222,21 @@ impl ReleasesView {
         }
     }
 
+    /// SEARCH-8: applies this section's query (FIL-1d: title and artist).
+    pub(in crate::ui) fn set_search_query(&self, query: &str) {
+        self.shared.filter_bar.set_query(query);
+    }
+
+    /// SEARCH-8: the bar removed the query itself, so the entry must follow.
+    pub(in crate::ui) fn set_on_search_query_changed(&self, callback: impl Fn(&str) + 'static) {
+        self.shared.filter_bar.set_on_query_changed(callback);
+    }
+
+    /// FIL-2: "Clear all" for this section — its query and its facets.
+    pub(in crate::ui) fn clear_all_filters(&self) {
+        self.shared.filter_bar.clear_all();
+    }
+
     pub(in crate::ui) fn set_on_launch_error(&self, callback: impl Fn(String) + 'static) {
         *self.shared.on_launch_error.borrow_mut() = Some(Rc::new(callback));
     }
@@ -244,14 +259,37 @@ impl ReleasesView {
     }
 }
 
+/// FIL-1d: "in title and artist" — no other column takes part, so the chip's
+/// promise and the match stay one statement.
+fn releases_matching(rows: Vec<HistoryEntry>, query: &str) -> Vec<HistoryEntry> {
+    if query.trim().is_empty() {
+        return rows;
+    }
+    rows.into_iter()
+        .filter(|entry| {
+            reprise_view::search_scope::matches_any(
+                [entry.title.as_str(), entry.artist_name.as_str()],
+                query,
+            )
+        })
+        .collect()
+}
+
 fn render_cache(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
     let today = Local::now().date_naive();
     let filter = shared.filter_bar.filter();
-    let rows = artist_news::query_releases_view(&shared.conn, &filter, today)?;
-    let total = if filter == ReleasesFilter::default() {
-        rows.len()
-    } else {
+    let query = shared.filter_bar.query();
+    // FIL-1d: the query narrows what the facets already returned, matching
+    // release title and artist — the two fields the chip names.
+    let rows = releases_matching(
+        artist_news::query_releases_view(&shared.conn, &filter, today)?,
+        &query,
+    );
+    let restricted = filter != ReleasesFilter::default() || !query.is_empty();
+    let total = if restricted {
         artist_news::count_releases_view(&shared.conn, &ReleasesFilter::default(), today)? as usize
+    } else {
+        rows.len()
     };
     let latest = artist_news::latest_fetched_at(&shared.conn)?;
     shared.filter_bar.set_counts(rows.len(), total);
@@ -260,11 +298,7 @@ fn render_cache(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
     shared.cached_items.set(total);
     apply_empty_state(
         shared,
-        releases_empty_state_for(
-            rows.len(),
-            filter != ReleasesFilter::default(),
-            latest.is_none(),
-        ),
+        releases_empty_state_for(rows.len(), restricted, latest.is_none()),
         total,
     );
     if !shared.fetching.get() {
@@ -606,6 +640,48 @@ fn wire_sorting(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn history_entry(title: &str, artist: &str) -> HistoryEntry {
+        HistoryEntry {
+            release_group_mbid: format!("mbid-{title}"),
+            artist_name: artist.to_owned(),
+            title: title.to_owned(),
+            release_type: "Album".into(),
+            first_release_date: "2026-08-05".into(),
+            first_seen: None,
+            seen_at: None,
+            hidden: false,
+            hidden_at: None,
+            presence: reprise_core::artist_news::LibraryPresence::Absent,
+            announce_url: None,
+            track_count: None,
+            local_track_count: 0,
+        }
+    }
+
+    /// UX FIL-1d: the Releases query matches **title and artist** — the two
+    /// fields its chip names — case-insensitively and mid-word.
+    #[test]
+    fn fil_1d_releases_query_matches_title_and_artist_only() {
+        let rows = vec![
+            history_entry("Pain Remains", "Lorna Shore"),
+            history_entry("Antwerpen Sessions", "Quiet Hands"),
+            history_entry("Elsewhere", "Sanguisugabogg"),
+        ];
+
+        let titles = |query: &str| {
+            releases_matching(rows.clone(), query)
+                .into_iter()
+                .map(|entry| entry.title)
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(titles("wer"), ["Antwerpen Sessions"]);
+        assert_eq!(titles("LORNA"), ["Pain Remains"]);
+        assert_eq!(titles("remains"), ["Pain Remains"]);
+        assert_eq!(titles("").len(), 3, "an empty query withholds nothing");
+        assert!(titles("cattle").is_empty());
+    }
 
     fn pump_until(label: &str, condition: impl Fn() -> bool) {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);

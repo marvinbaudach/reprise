@@ -8,6 +8,18 @@ use gtk4::prelude::*;
 use super::{build, PLAY_CSS_CLASS};
 
 #[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn sound_info_button_is_adjacent_to_but_outside_the_transport_row() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let layout = build();
+
+    assert!(layout.info_button.is_ancestor(&layout.root));
+    assert!(!layout.info_button.is_ancestor(&layout.transport_row));
+    assert!(layout.transport_row.is_ancestor(&layout.root));
+}
+
+#[test]
 fn ac_24_the_transport_control_stays_still() {
     // The play/pause button is what a pointer aims at, and once the running
     // track scrolls out of the list it is the only place the playback state is
@@ -300,6 +312,43 @@ fn css_includes_new_cover_and_label_classes() {
     assert!(css.contains(".player-bar-title"));
     assert!(css.contains(".player-bar-artist"));
     assert!(css.contains("border-radius: 8px"));
+}
+
+#[test]
+fn play_13_live_badge_uses_the_central_motion_token_and_accent_language() {
+    let css = super::css();
+
+    assert!(css.contains(&format!(".{}", super::LIVE_BADGE_CLASS)));
+    assert!(css.contains(&format!(".{}", super::LIVE_DOT_CLASS)));
+    assert!(css.contains("@keyframes reprise-live-pulse"));
+    assert!(css.contains(&format!("{}ms", crate::ui::motion::AMBIENT_MS)));
+    assert!(css.contains("infinite alternate"));
+    assert!(css.contains("letter-spacing: 0.08em"));
+    assert!(css.contains("@reprise_player_accent"));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn play_13_live_badge_places_dot_live_and_station_in_that_order() {
+    gtk4::init().expect("GTK init");
+    let layout = build();
+
+    assert_eq!(
+        layout.live_badge.first_child(),
+        Some(layout.live_dot.clone().upcast())
+    );
+    assert_eq!(
+        layout.live_dot.next_sibling(),
+        Some(layout.live_label.clone().upcast())
+    );
+    assert_eq!(
+        layout.live_label.next_sibling(),
+        Some(layout.live_station_label.clone().upcast())
+    );
+    assert_eq!(
+        layout.live_label.text(),
+        crate::ui::strings::text(crate::ui::strings::RADIO_LIVE)
+    );
 }
 
 /// The press sink is no longer the player bar's own business: it comes

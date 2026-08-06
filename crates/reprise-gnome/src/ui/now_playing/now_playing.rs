@@ -16,6 +16,7 @@ use super::now_playing_column::NowPlayingColumn;
 use super::now_playing_column::PANEL_WIDTH;
 use super::panel_state::*;
 use super::song_visualizer::SongVisualizer;
+use super::sound_panel::SoundPanel;
 use super::strings;
 use super::up_next_panel::UpNextPanel;
 use crate::ui::artist_news_worker::ArtistNewsRuntime;
@@ -29,6 +30,10 @@ use crate::ui::swell::Swell;
 
 type OnVoid = Rc<dyn Fn()>;
 const TAB_SWITCHER_MIN_HEIGHT: i32 = 50;
+// Measured with the actual Adwaita switcher and installed font: four labels
+// first fit without Pango ellipsizing at 228 px; 224 px is the last failing
+// width and therefore the icons-only compact cutoff.
+const TAB_ICONS_MAX_WIDTH: f64 = 224.0;
 
 #[path = "now_playing_effects.rs"]
 mod now_playing_effects;
@@ -41,10 +46,12 @@ pub(super) struct PanelWidgets {
     lyrics: Rc<LyricsView>,
     up_next: Rc<UpNextPanel>,
     pub(super) visualizer: SongVisualizer,
+    pub(super) sound: Rc<SoundPanel>,
     pub(super) bloom: cover_bloom::CoverBloom,
     pub(super) shimmer: cover_shimmer::CoverShimmer,
     lyrics_page: adw::ViewStackPage,
     visual_page: adw::ViewStackPage,
+    pub(super) sound_page: adw::ViewStackPage,
     cover_stack: gtk4::Stack,
     pub(super) cover_lift: CoverLift,
     external_cover: gtk4::Box,
@@ -66,7 +73,7 @@ pub(super) struct PanelWidgets {
 fn build_widgets(
     content: &impl IsA<gtk4::Widget>,
     visible: bool,
-    conn: Rc<Db>,
+    conn: &Rc<Db>,
     cover_loader: &Rc<CoverLoader>,
 ) -> PanelWidgets {
     TAB_SESSION
@@ -77,7 +84,7 @@ fn build_widgets_for_session(
     content: &impl IsA<gtk4::Widget>,
     visible: bool,
     session: &Rc<TabSession>,
-    conn: Rc<Db>,
+    conn: &Rc<Db>,
     cover_loader: &Rc<CoverLoader>,
 ) -> PanelWidgets {
     let cover = gtk4::Image::builder()
@@ -161,8 +168,9 @@ fn build_widgets_for_session(
     head_overlay.add_overlay(&head);
 
     let lyrics = LyricsView::new();
-    let up_next = UpNextPanel::new(conn, cover_loader);
+    let up_next = UpNextPanel::new(conn.clone(), cover_loader);
     let visualizer = SongVisualizer::new();
+    let sound = SoundPanel::new(conn, cover_loader);
     let visual_viewport = gtk4::ScrolledWindow::builder()
         .hscrollbar_policy(gtk4::PolicyType::Never)
         .vscrollbar_policy(gtk4::PolicyType::Automatic)
@@ -192,6 +200,21 @@ fn build_widgets_for_session(
         // exactly the visual's, only the icon name is borrowed.
         "network-cellular-signal-excellent-symbolic",
     );
+    let sound_page = tab_stack.add_titled_with_icon(
+        sound.widget(),
+        Some(SOUND_PAGE),
+        &strings::text(strings::SOUND),
+        // A waveform-like pulse is the closest installed Adwaita glyph to
+        // comparison by audio character; the mockup's hub glyph is Material
+        // and is deliberately not shipped as an alien icon dependency.
+        "audio-x-generic-symbolic",
+    );
+    // The module ships switched off, so the tab starts hidden and only appears
+    // once it is enabled. Adding it visible and hiding it a moment later in
+    // `set_sound_similarity_enabled` would put a fourth switcher button in
+    // front of everyone who never turned the plugin on — including, briefly,
+    // at startup.
+    sound_page.set_visible(false);
     tab_stack.set_visible_child_name(session.selected.get().page_name());
     lyrics.set_tab_open(session.selected.get() == PanelTab::Lyrics);
     let tab_switcher = adw::InlineViewSwitcher::builder()
@@ -206,7 +229,7 @@ fn build_widgets_for_session(
     tabs.set_child(Some(&tab_switcher));
     let narrow = adw::BreakpointCondition::new_length(
         adw::BreakpointConditionLengthType::MaxWidth,
-        320.0,
+        TAB_ICONS_MAX_WIDTH,
         adw::LengthUnit::Px,
     );
     let breakpoint = adw::Breakpoint::new(narrow);
@@ -223,11 +246,13 @@ fn build_widgets_for_session(
         up_next: super::up_next_panel::format_up_next_footer(&[]),
         lyrics: String::new(),
         visual: String::new(),
+        sound: String::new(),
     }));
     let initial_footer = match session.selected.get() {
         PanelTab::UpNext => footers.borrow().up_next.clone(),
         PanelTab::Lyrics => footers.borrow().lyrics.clone(),
         PanelTab::Visual => footers.borrow().visual.clone(),
+        PanelTab::Sound => footers.borrow().sound.clone(),
     };
     footer.set_label(&initial_footer);
 
@@ -267,6 +292,7 @@ fn build_widgets_for_session(
                 PanelTab::UpNext => &footers.up_next,
                 PanelTab::Lyrics => &footers.lyrics,
                 PanelTab::Visual => &footers.visual,
+                PanelTab::Sound => &footers.sound,
             };
             footer.set_label(text);
         });
@@ -295,10 +321,12 @@ fn build_widgets_for_session(
         lyrics,
         up_next,
         visualizer,
+        sound,
         bloom,
         shimmer,
         lyrics_page,
         visual_page,
+        sound_page,
         cover_stack,
         cover_lift,
         external_cover,
@@ -319,11 +347,11 @@ fn build_widgets_for_session(
 pub(in crate::ui) struct NowPlayingPanel {
     pub(super) widgets: PanelWidgets,
     toggle: gtk4::ToggleButton,
-    conn: Rc<Db>,
+    pub(super) conn: Rc<Db>,
     cover_loader: Rc<CoverLoader>,
     cover_generation: Rc<Cell<u64>>,
     loaded_track: RefCell<Option<NowPlaying>>,
-    external_snapshot: RefCell<Option<ExternalPlaybackSnapshot>>,
+    pub(super) external_snapshot: RefCell<Option<ExternalPlaybackSnapshot>>,
     pub(super) playback_state: Cell<PlaybackState>,
     syncing_visibility: Cell<bool>,
     on_up_next_refresh: RefCell<Option<OnVoid>>,
@@ -332,6 +360,7 @@ pub(in crate::ui) struct NowPlayingPanel {
     cover_transition_active: Cell<bool>,
     on_track_reveal: crate::ui::link_activation::ActivationSlot,
     pub(super) song_visuals_enabled: Cell<bool>,
+    pub(super) sound_similarity_enabled: Cell<bool>,
     pub(super) swell: RefCell<Swell>,
     pub(super) swell_pressure: Cell<f64>,
     pub(super) swell_last_frame_us: Cell<i64>,
@@ -350,8 +379,13 @@ impl NowPlayingPanel {
         let song_visuals_enabled =
             reprise_core::modules::is_enabled(&conn, &reprise_core::modules::SONG_VISUALS_MODULE)
                 .unwrap_or(reprise_core::modules::SONG_VISUALS_MODULE.default_enabled);
+        let sound_similarity_enabled = reprise_core::modules::is_enabled(
+            &conn,
+            &reprise_core::modules::SOUND_SIMILARITY_MODULE,
+        )
+        .unwrap_or(reprise_core::modules::SOUND_SIMILARITY_MODULE.default_enabled);
         let panel = Rc::new(Self {
-            widgets: build_widgets(content, visible, conn.clone(), &cover_loader),
+            widgets: build_widgets(content, visible, &conn, &cover_loader),
             toggle: gtk4::ToggleButton::builder()
                 .icon_name("sidebar-show-right-symbolic")
                 .tooltip_text(strings::text(strings::INFO_PANEL_TOGGLE))
@@ -371,6 +405,7 @@ impl NowPlayingPanel {
             cover_transition_active: Cell::new(false),
             on_track_reveal: Rc::new(RefCell::new(None)),
             song_visuals_enabled: Cell::new(song_visuals_enabled),
+            sound_similarity_enabled: Cell::new(sound_similarity_enabled),
             swell: RefCell::new(Swell::default()),
             swell_pressure: Cell::new(0.0),
             swell_last_frame_us: Cell::new(0),
@@ -406,6 +441,8 @@ impl NowPlayingPanel {
             &panel.on_album_reveal,
         );
         panel.set_song_visuals_enabled(song_visuals_enabled);
+        panel.refresh_sound_options();
+        panel.set_sound_similarity_enabled(sound_similarity_enabled);
         panel.wire();
         panel.sync_visual_activity();
         panel.sync_bloom_activity();
@@ -461,6 +498,7 @@ impl NowPlayingPanel {
     }
 
     pub(in crate::ui) fn set_loaded_track(self: &Rc<Self>, track: Option<NowPlaying>) {
+        let sound_track_id = track.as_ref().map(|track| track.id);
         let (changed, id_changed) = {
             let current = self.loaded_track.borrow();
             match (current.as_ref(), track.as_ref()) {
@@ -474,6 +512,9 @@ impl NowPlayingPanel {
         };
         let has_track = track.is_some();
         *self.loaded_track.borrow_mut() = track;
+        if id_changed {
+            self.widgets.sound.set_track(sound_track_id);
+        }
         self.widgets.visualizer.set_has_track(has_track);
         if id_changed {
             // A new track started: reset the visual engine's clock, water
@@ -499,7 +540,13 @@ impl NowPlayingPanel {
         let external_active = snapshot.is_some();
         *self.external_snapshot.borrow_mut() = snapshot;
         self.widgets.lyrics_page.set_visible(!external_active);
+        self.widgets
+            .sound_page
+            .set_visible(!external_active && self.sound_similarity_enabled.get());
         if external_active && self.widgets.session.selected.get() == PanelTab::Lyrics {
+            self.widgets.tab_stack.set_visible_child_name(UP_NEXT_PAGE);
+        }
+        if external_active && self.widgets.session.selected.get() == PanelTab::Sound {
             self.widgets.tab_stack.set_visible_child_name(UP_NEXT_PAGE);
         }
         let has_media = external_active || self.loaded_track.borrow().is_some();
@@ -697,6 +744,9 @@ pub(in crate::ui) fn css() -> String {
 #[cfg(test)]
 #[path = "now_playing_reactive_tests.rs"]
 mod reactive_tests;
+#[cfg(test)]
+#[path = "now_playing_tab_tests.rs"]
+mod tab_tests;
 #[cfg(test)]
 #[path = "now_playing_tests.rs"]
 mod tests;

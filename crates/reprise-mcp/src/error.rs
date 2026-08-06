@@ -57,7 +57,10 @@ pub fn into_tool_outcome(error: DataError) -> Result<CallToolResult, ErrorData> 
              Enable it in Reprise and restart the MCP server."
         ))),
         DataError::InvalidInput(message) => Ok(tool_error(message)),
-        internal @ (DataError::Db(_) | DataError::Open(_)) => {
+        DataError::TagWriteBusy => Ok(tool_error(
+            "another tag-writing job is already running".to_owned(),
+        )),
+        internal @ (DataError::Db(_) | DataError::Open(_) | DataError::Internal(_)) => {
             tracing::error!(error = %internal, "internal error handling MCP tool call");
             Err(ErrorData::internal_error("internal server error", None))
         }
@@ -73,7 +76,10 @@ pub fn resource_error(error: DataError) -> ErrorData {
             ErrorData::invalid_request(format!("the '{cap}' capability is not granted"), None)
         }
         DataError::InvalidInput(message) => ErrorData::invalid_params(message, None),
-        internal @ (DataError::Db(_) | DataError::Open(_)) => {
+        DataError::TagWriteBusy => {
+            ErrorData::invalid_request("another tag-writing job is already running", None)
+        }
+        internal @ (DataError::Db(_) | DataError::Open(_) | DataError::Internal(_)) => {
             tracing::error!(error = %internal, "internal error handling MCP resource read");
             ErrorData::internal_error("internal server error", None)
         }

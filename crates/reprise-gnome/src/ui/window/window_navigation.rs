@@ -251,7 +251,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn doc_6b_sidebar_navigation_leaves_a_running_job_page_visible_in_the_background() {
+    fn doc_6b_sidebar_navigation_leaves_the_running_summary_visible_in_the_background() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let sidebar = adw::NavigationPage::builder()

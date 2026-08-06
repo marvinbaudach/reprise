@@ -35,13 +35,15 @@ pub struct StartupCaps {
     pub ai_create: bool,
     /// Whether `sources:manage` was granted at startup.
     pub sources_manage: bool,
+    /// Whether `tags:write` was granted at startup.
+    pub tags_write: bool,
     #[cfg(feature = "mpris")]
     pub device_sync: bool,
 }
 
 /// Opens and migrates the database, then snapshots the write-class capabilities
-/// (`playlist:create`, `playlist:manage`, `ai:create`, `sources:manage`) as they
-/// stood at startup.
+/// (`playlist:create`, `playlist:manage`, `ai:create`, `sources:manage`, and
+/// `tags:write`) as they stood at startup.
 pub fn prepare(db_path: &Path) -> Result<StartupCaps, StartupError> {
     let db = match Db::open_migrated(Some(db_path)) {
         Ok(db) => db,
@@ -50,11 +52,14 @@ pub fn prepare(db_path: &Path) -> Result<StartupCaps, StartupError> {
         }
         Err(other) => return Err(StartupError::Open(other)),
     };
+    reprise_core::library::tag_write_job::recover_incomplete_tag_write_jobs(&db)
+        .map_err(StartupError::Query)?;
     Ok(StartupCaps {
         playlist_create: capability::playlist_create_granted(&db).map_err(StartupError::Query)?,
         playlist_manage: capability::playlist_manage_granted(&db).map_err(StartupError::Query)?,
         ai_create: capability::ai_create_granted(&db).map_err(StartupError::Query)?,
         sources_manage: capability::sources_manage_granted(&db).map_err(StartupError::Query)?,
+        tags_write: capability::tags_write_granted(&db).map_err(StartupError::Query)?,
         #[cfg(feature = "mpris")]
         device_sync: capability::device_sync_granted(&db).map_err(StartupError::Query)?,
     })

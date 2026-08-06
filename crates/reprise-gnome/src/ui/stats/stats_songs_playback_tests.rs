@@ -44,7 +44,7 @@ fn stats_18_rows_mark_through_the_shared_marker() {
     assert!(source.contains("playing_marker::build"));
     assert!(source.contains("playing_marker::set_playing"));
     // The animated equaliser is only ever reached through the shared marker,
-    // never rebuilt locally — see `playing_marker.rs`'s NAV-10a test.
+    // never rebuilt locally — see `playing_marker.rs`'s NAV-10b test.
     assert!(!source.contains("eq_bars::build"));
 }
 

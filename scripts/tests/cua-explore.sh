@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+set -euo pipefail
+export PYTHONDONTWRITEBYTECODE=1
+
+repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+cd "$repo_root"
+
+python3 scripts/tests/cua-explore.py
+python3 scripts/tests/cua-explore-review.py
+python3 scripts/tests/cua-explore-audit-adversarial.py
+python3 scripts/cua-explore/protocol.py validate-mission \
+  scripts/cua-explore/missions/first-time-exploration.json >/dev/null
+
+runner=scripts/cua-explore/run.sh
+if [[ ! -x $runner ]]; then
+  echo "$runner must exist and be executable" >&2
+  exit 1
+fi
+help=$($runner --help)
+for phrase in "opt-in" "not ordinary CI" "fresh output" "100,000" "512"; do
+  if [[ $help != *"$phrase"* ]]; then
+    echo "exploratory runner help must mention: $phrase" >&2
+    exit 1
+  fi
+done
+missions=$($runner --list-missions)
+for mission in first-time-exploration large-library-stress offline-recovery section-search-isolation pointer-layout-reachability; do
+  if ! rg --quiet --fixed-strings --line-regexp "$mission" <<<"$missions"; then
+    echo "exploratory runner must list mission: $mission" >&2
+    exit 1
+  fi
+done
+$runner --validate-only \
+  scripts/cua-explore/missions/large-library-stress.json >/dev/null
+if $runner scripts/cua-explore/missions/large-library-stress.json \
+  /tmp/reprise-cua-explore-must-not-exist; then
+  echo "large-library stress must require an external reasoning agent" >&2
+  exit 1
+fi
+if [[ -e /tmp/reprise-cua-explore-must-not-exist ]]; then
+  echo "agent preflight must fail before creating evidence" >&2
+  exit 1
+fi
+
+for required in \
+  'source "$repo_root/scripts/cua-common/session.sh"' \
+  'cua_common_start_display' \
+  'cua_common_exec_private' \
+  'REPRISE_AUDIO_SINK=fakesink' \
+  'GDK_BACKEND=x11' \
+  'WAYLAND_DISPLAY=' \
+  'XDG_DATA_HOME=' \
+  'XDG_CACHE_HOME='; do
+  if ! rg --quiet --fixed-strings "$required" "$runner" scripts/cua-common/session.sh; then
+    echo "exploratory runner is missing isolation contract: $required" >&2
+    exit 1
+  fi
+done
+for required in \
+  'REPRISE_CUA_SCRATCH_BASE:-$HOME/.cache/reprise-scratch' \
+  'complete-workload' \
+  'verified workload checkpoints'; do
+  if ! rg --quiet --fixed-strings "$required" "$runner" scripts/cua-explore; then
+    echo "exploratory runner is missing reviewed workload contract: $required" >&2
+    exit 1
+  fi
+done
+if rg --quiet --fixed-strings '/tmp/reprise-cua-explore-run' "$runner"; then
+  echo "large generated profiles must not use the RAM-backed /tmp scratch" >&2
+  exit 1
+fi
+validate_base_line=$(rg -n --fixed-strings 'fixtures.py" validate-base' "$runner" | cut -d: -f1)
+create_base_line=$(rg -n --fixed-strings 'mkdir -p "$scratch_base"' "$runner" | cut -d: -f1)
+if [[ -z $validate_base_line || -z $create_base_line || $validate_base_line -ge $create_base_line ]]; then
+  echo "scratch base must be validated before the runner creates it" >&2
+  exit 1
+fi
+
+for required in 'unshare' '--map-root-user' '--net'; do
+  if ! rg --quiet --fixed-strings -- "$required" "$runner" scripts/cua-explore/runner.py; then
+    echo "exploratory app must use a private network namespace: $required" >&2
+    exit 1
+  fi
+done
+host_network=$(readlink /proc/self/ns/net)
+private_network=$(unshare --user --map-root-user --net readlink /proc/self/ns/net)
+if [[ $host_network == "$private_network" ]]; then
+  echo "exploratory app network namespace must differ from the host" >&2
+  exit 1
+fi
+
+if rg --quiet --fixed-strings 'cua-explore' .github/workflows; then
+  echo "exploratory UX runs must stay out of ordinary CI workflows" >&2
+  exit 1
+fi
+
+if python3 scripts/cua-explore/protocol.py validate-action \
+  scripts/cua-explore/missions/first-time-exploration.json <<'EOF'
+{"schema_version":1,"state_id":"stale","kind":"shell","command":"rm -rf /"}
+EOF
+then
+  echo "exploratory action gateway must reject arbitrary shell commands" >&2
+  exit 1
+fi
+
+echo "CUA exploratory QA contract passed"

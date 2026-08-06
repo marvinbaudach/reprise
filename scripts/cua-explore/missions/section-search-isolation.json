@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "id": "section-search-isolation",
+  "goal": "Discover search without implementation knowledge and prove that a query, result set and visible scope follow the current section instead of silently filtering Music elsewhere.",
+  "persona": "curious source-switcher who assumes search follows the visible page",
+  "mode": "adversarial",
+  "agent": "required",
+  "profile": "mixed-sources-128",
+  "budgets": {"actions": 70, "seconds": 900, "restarts": 1},
+  "capabilities": ["activate", "type", "press", "hotkey", "scroll", "restart", "wait", "complete-workload", "finish"],
+  "fixture_tokens": {
+    "SEARCH_NEEDLE": "Writable Batch 0042",
+    "MUSIC_ONLY_NEEDLE": "Writable Batch 0042",
+    "PODCAST_ONLY_NEEDLE": "Fixture Podcast Needle",
+    "RADIO_ONLY_NEEDLE": "Fixture Radio Needle",
+    "NO_MATCH": "NoSuchFixtureResult"
+  },
+  "oracles": ["clean-runtime", "feedback", "waiting-state", "layout-shift", "pointer-reachability", "scroll-direction", "main-loop-stall", "accessibility"],
+  "workloads": [
+    {"kind": "section-search", "route_tokens": {"Music": "MUSIC_ONLY_NEEDLE", "Podcasts / YouTube": "PODCAST_ONLY_NEEDLE", "Radio": "RADIO_ONLY_NEEDLE"}, "unsupported": ["My Stats"]},
+    {"kind": "restart", "preserve": ["section"], "clear": ["transient-search"], "section": "Music", "search_token": "MUSIC_ONLY_NEEDLE"}
+  ],
+  "success": [
+    {"kind": "scope", "description": "Each visible search result belongs to the section named by the UI"},
+    {"kind": "disabled", "description": "Sections without search expose no fake interactive search affordance"}
+  ],
+  "forbidden": ["delete", "external-url", "real-library", "real-account", "foreground-desktop"]
+}

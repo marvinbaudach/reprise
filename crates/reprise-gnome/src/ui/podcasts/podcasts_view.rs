@@ -265,6 +265,25 @@ impl PodcastsView {
         view
     }
 
+    /// SEARCH-8: applies this section's query. The shell calls it as the
+    /// header entry changes and once more when the section becomes visible
+    /// again, so a query typed here is exactly what is applied here.
+    pub(in crate::ui) fn set_search_query(&self, query: &str) {
+        self.filter_bar.set_query(query);
+    }
+
+    /// SEARCH-8: the reverse direction — the bar removed the query itself
+    /// (its × or a jump that had to relax it), so the header entry has to
+    /// follow.
+    pub(in crate::ui) fn set_on_search_query_changed(&self, callback: impl Fn(&str) + 'static) {
+        self.filter_bar.set_on_query_changed(callback);
+    }
+
+    /// FIL-2: "Clear all" for this section — its query and its facets.
+    pub(in crate::ui) fn clear_all_filters(&self) {
+        self.filter_bar.clear_all();
+    }
+
     /// Wires the module-off empty state's "Enable in Preferences" button.
     /// Set post-construction because `PodcastsView` is built before the
     /// `Preferences` context exists in `window.rs` (mirrors
@@ -402,6 +421,7 @@ impl PodcastsView {
             self.connectivity.get(),
             self.unavailable_episode.get(),
             &self.selection,
+            &filter.query,
         );
         self.download_widgets.replace(rendered_widgets.downloads);
         self.selection_widgets.replace(rendered_widgets.selection);

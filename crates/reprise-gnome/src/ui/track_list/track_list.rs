@@ -85,6 +85,8 @@ pub(in crate::ui) use super::track_list_callbacks::{
 };
 pub(in crate::ui) use super::track_list_toast::show_toast;
 
+type OnFindSimilar = Rc<dyn Fn(i64)>;
+
 /// `pub(in crate::ui)` (visible to `crate::ui` and its descendants, e.g. `ui::
 /// track_list_context_menu` — see that module's doc comment) rather than
 /// fully private: Stage 3 Task 5 splits the context-menu logic out into a
@@ -131,7 +133,7 @@ pub(in crate::ui) struct Shared {
     /// a superseded row after the marker has already moved elsewhere.
     pub(in crate::ui) track_reveal_generation: Cell<u64>,
     /// Whether a reveal has been asked for and has not moved the viewport yet.
-    /// NAV-10a: the request is made synchronously and carried out from an idle
+    /// NAV-10b: the request is made synchronously and carried out from an idle
     /// callback, and a reload can run in between — `delete_tracks::finish`
     /// advances the player and reloads in one turn. A reload that preserved
     /// the position it *finds* there would pin the list to the row playback
@@ -242,6 +244,8 @@ pub(in crate::ui) struct Shared {
     /// `TrackList::set_on_queue_selected` — wraps `PlayerController::
     /// append_to_queue`.
     pub(in crate::ui) on_queue_selected: RefCell<Option<OnQueueSelected>>,
+    /// Optional Sound Similarity route for the selected track.
+    pub(in crate::ui) on_find_similar: RefCell<Option<OnFindSimilar>>,
     /// Context-menu "Play next" (QUE-3): same shape as `on_queue_selected`,
     /// but the ids jump the manual line instead of appending to it.
     pub(in crate::ui) on_play_next_selected: RefCell<Option<OnQueueSelected>>,
@@ -532,6 +536,10 @@ impl TrackList {
 
     pub fn set_on_queue_selected(&self, callback: impl Fn(Vec<i64>) + 'static) {
         *self.shared.on_queue_selected.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    pub(in crate::ui) fn set_on_find_similar(&self, callback: impl Fn(i64) + 'static) {
+        *self.shared.on_find_similar.borrow_mut() = Some(Rc::new(callback));
     }
 
     pub fn set_on_queue_activate(

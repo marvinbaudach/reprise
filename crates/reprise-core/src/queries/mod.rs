@@ -81,6 +81,7 @@ mod artist_context;
 pub mod autocomplete;
 mod browse;
 mod clauses;
+mod doctor;
 mod import_errors;
 mod issues;
 mod library;
@@ -96,6 +97,7 @@ pub use album_directories::query_album_directories;
 pub use artist_context::{query_artist_albums, query_stats_album_target_for_path};
 pub use browse::{query_browse_values, BrowseFacet, BrowseFilter, BrowseValue};
 pub use clauses::build_track_ids_query;
+pub use doctor::count_pending_doctor_findings;
 // Task 1.2: the centralized presence predicate, re-exported so modules
 // outside this one (`library::scanner`, `library::artist_detail`, `db::
 // pending_waveform_tracks`) can share the exact same "row is present" SQL
@@ -124,7 +126,10 @@ pub use clauses::build_track_query;
 // `pub use` (not `pub(crate)`) so `reprise-gnome` can name these types
 // directly, the same reachability fix Task 1's `ImportErrorKind` move to
 // `models` made for the same reason (see that commit's message).
-pub use issues::{query_missing_groups, query_missing_rows, MissingGroup, MissingGroupKind};
+pub use issues::{
+    query_missing_groups, query_missing_groups_matching, query_missing_rows,
+    query_missing_rows_matching, MissingGroup, MissingGroupKind,
+};
 // Task 2.5: the sidebar badge counts, keyed on `last_viewed_*` — see
 // `issues`'s "Badge counts" section for the `count_missing`/`count_new_
 // missing` split. `pub use` for the same cross-crate reachability reason as

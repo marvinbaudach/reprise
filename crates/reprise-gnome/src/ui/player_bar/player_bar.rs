@@ -24,6 +24,7 @@ use crate::ui::strings;
 use crate::ui::swell::Swell;
 use crate::ui::waveform_seek::WaveformSeek;
 use reprise_core::format::{format_duration, format_remaining};
+use reprise_core::library::settings::SeekColouring;
 use reprise_core::playback::PlaybackState;
 use reprise_core::queue::Repeat;
 
@@ -86,21 +87,42 @@ pub struct PlayerBar {
     play_glyph: TransportGlyph,
     pub(in crate::ui) next_button: gtk4::Button,
     pub(in crate::ui) repeat_button: gtk4::ToggleButton,
+    info_button: gtk4::Button,
     pub(in crate::ui) play_next_episode_button: gtk4::Button,
     pub(in crate::ui) retry_external_button: gtk4::Button,
     pub(in crate::ui) position_label: gtk4::Label,
     pub(in crate::ui) duration_label: gtk4::Label,
+    pub(in crate::ui) streaming_status_label: gtk4::Label,
+    pub(in crate::ui) progress_stack: gtk4::Stack,
+    pub(in crate::ui) live_dot: gtk4::Box,
+    pub(in crate::ui) live_station_label: gtk4::Label,
     pub(in crate::ui) waveform: WaveformSeek,
+    pub(in crate::ui) legend: crate::ui::player_bar::seek_legend::SeekLegend,
+    /// Held so the legend keeps starting where the bar does.
+    _time_alignment: gtk4::SizeGroup,
+    /// The last track the legend was offered for. A track change is what the
+    /// count in settings counts, and a tag edit on the running track re-runs
+    /// the same wiring — without this it would burn one of the three showings.
+    pub(super) legend_track: Cell<Option<i64>>,
+    pub(super) seek_colouring: Cell<SeekColouring>,
+    /// The context-menu entry that calls the legend back. Disabled while the
+    /// bar is drawn in a single colour.
+    pub(super) explain_action: gtk4::gio::SimpleAction,
     /// Inline volume slider (replaces the old `ScaleButton`).
     volume_scale: gtk4::Scale,
     /// Volume icon button — click toggles mute.
     volume_icon: gtk4::Button,
     /// Current track duration (ms) from the latest `set_position`, so
     /// `connect_seek` can turn the waveform's 0..1 fraction into a target ms.
-    duration_ms: Rc<Cell<i64>>,
+    pub(super) duration_ms: Rc<Cell<i64>>,
+    /// Which external item the bar currently shows, so a snapshot about the
+    /// *same* item cannot be mistaken for a new one (see `set_external_snapshot`).
+    pub(super) external_identity: Cell<Option<super::player_bar_state::ExternalMediaIdentity>>,
+    pub(super) buffering_percent: Cell<u8>,
+    pub(super) buffered_ms: Cell<Option<i64>>,
+    pub(in crate::ui) progress_mode: Cell<super::player_bar_state::BarProgressMode>,
     pub(in crate::ui) seek_enabled: Rc<Cell<bool>>,
     pub(in crate::ui) live_started_at: RefCell<Option<Instant>>,
-    pub(in crate::ui) external_podcast: Cell<bool>,
     pub(in crate::ui) play_next_available: Cell<bool>,
     playback_state: Cell<PlaybackState>,
     swell: RefCell<Swell>,
@@ -154,11 +176,18 @@ impl PlayerBar {
             play_glyph,
             next_button,
             repeat_button,
+            info_button,
             play_next_episode_button,
             retry_external_button,
             position_label,
             duration_label,
+            streaming_status_label,
+            progress_stack,
+            live_dot,
+            live_station_label,
             waveform,
+            legend,
+            time_alignment,
             volume_icon,
             volume_scale,
             ..
@@ -219,6 +248,14 @@ impl PlayerBar {
         });
         artist_label.add_controller(artist_motion);
 
+        // A press anywhere in the bar means the user is aiming at it rather
+        // than reading it, so the legend gets out of the way at once.
+        waveform.connect_pressed({
+            let legend = legend.clone();
+            move || legend.hide()
+        });
+        let explain_action = super::seek_menu::install(&waveform, &legend);
+
         let bar = Self {
             root,
             cover,
@@ -234,17 +271,30 @@ impl PlayerBar {
             play_glyph,
             next_button,
             repeat_button,
+            info_button,
             play_next_episode_button,
             retry_external_button,
             position_label,
             duration_label,
+            streaming_status_label,
+            progress_stack,
+            live_dot,
+            live_station_label,
             waveform,
+            legend,
+            _time_alignment: time_alignment,
+            legend_track: Cell::new(None),
+            seek_colouring: Cell::new(SeekColouring::DEFAULT),
+            explain_action,
             volume_scale,
             volume_icon,
             duration_ms: Rc::new(Cell::new(0)),
+            external_identity: Cell::new(None),
+            buffering_percent: Cell::new(0),
+            buffered_ms: Cell::new(None),
+            progress_mode: Cell::new(super::player_bar_state::BarProgressMode::default()),
             seek_enabled: Rc::new(Cell::new(true)),
             live_started_at: RefCell::new(None),
-            external_podcast: Cell::new(false),
             play_next_available: Cell::new(false),
             playback_state: Cell::new(PlaybackState::Stopped),
             swell: RefCell::new(Swell::default()),
@@ -296,6 +346,7 @@ impl PlayerBar {
             .update_property(&[gtk4::accessible::Property::Label(&tooltip)]);
         self.playback_state.set(state);
         self.waveform.set_paused(!is_playing);
+        self.refresh_live_badge_pulse();
         if state != PlaybackState::Playing {
             // No spectrum arrives outside playback; without this the reactive
             // layers would freeze on the last frame that did (AC-24).
@@ -311,9 +362,30 @@ impl PlayerBar {
         self.animate_play_icon_change(new_glyph);
     }
 
-    /// The live bass reading, fanned out to the cover lift and the waveform's
-    /// geometry-neutral colour and playhead-dot layers. Called at the spectrum
-    /// rate (~86 Hz).
+    pub(super) fn refresh_live_badge_pulse(&self) {
+        let pulsing = super::player_bar_state::live_badge_should_pulse(
+            self.progress_mode.get(),
+            self.playback_state.get(),
+            crate::ui::motion::animations_enabled(),
+        );
+        if pulsing {
+            self.live_dot
+                .add_css_class(super::player_bar_layout::LIVE_DOT_PULSING_CLASS);
+        } else {
+            self.live_dot
+                .remove_css_class(super::player_bar_layout::LIVE_DOT_PULSING_CLASS);
+        }
+    }
+
+    /// The live bass reading, fanned out to the cover lift. Called at the
+    /// spectrum rate (~86 Hz).
+    ///
+    /// The seek bar is no longer among the consumers. Its played side used to
+    /// take a floor plus what the bass added, to keep the progress boundary
+    /// legible while that boundary was a change of colour; with both sides
+    /// carrying the same colour and progress reading as a step from full
+    /// opacity to a third of it, a bass term on the played side would eat that
+    /// step — the very thing the boundary now rests on.
     ///
     /// The transport buttons are deliberately not among the consumers either —
     /// they are what a pointer aims at, and once the running track scrolls out
@@ -323,7 +395,6 @@ impl PlayerBar {
             *self.swell.borrow_mut() = Swell::default();
             self.swell_last_frame_us.set(0);
             self.cover_lift.set_swell(0.0);
-            self.waveform.set_bass(0.0, 0.0);
             return;
         }
 
@@ -343,7 +414,6 @@ impl PlayerBar {
                 swell.value_without_motion()
             }
         };
-        self.waveform.set_bass(pressure, value);
         self.cover_lift.set_swell(value);
     }
 
@@ -449,8 +519,9 @@ impl PlayerBar {
             0.0
         };
         self.waveform.set_fraction_smooth(fraction);
+        self.refresh_buffering_presentation();
         self.position_label.set_text(&format_duration(position_ms));
-        if self.external_podcast.get() {
+        if self.progress_mode.get() == super::player_bar_state::BarProgressMode::Streaming {
             self.duration_label.set_text(&format_duration(duration_ms));
         } else {
             self.duration_label
@@ -637,6 +708,14 @@ impl PlayerBar {
     /// value back via `set_repeat_indicator`.
     pub fn connect_repeat_clicked<F: Fn() + 'static>(&self, f: F) {
         self.repeat_button.connect_clicked(move |_| f());
+    }
+
+    pub(in crate::ui) fn connect_sound_info_clicked<F: Fn() + 'static>(&self, f: F) {
+        self.info_button.connect_clicked(move |_| f());
+    }
+
+    pub(in crate::ui) fn set_sound_info_visible(&self, visible: bool) {
+        self.info_button.set_visible(visible);
     }
 
     /// Updates transport-dependent controls and the stopped bar's reachability.

@@ -2,7 +2,7 @@
 
 use std::fs;
 
-use super::test_support::{fake_binary, short_timeouts, CapturedLogs, LogCapture};
+use super::test_support::{fake_binary, short_timeouts, CapturedLogs};
 use super::YtDlp;
 
 #[test]
@@ -137,9 +137,8 @@ fn failed_download_logs_operation_category_and_exit_code_without_provider_detail
     );
     let runner = YtDlp::with_binary_and_timeouts(binary, short_timeouts());
     let logs = CapturedLogs::default();
-    let subscriber = LogCapture(logs.clone());
 
-    let error = tracing::subscriber::with_default(subscriber, || {
+    let error = logs.capture(|| {
         runner
             .download("https://youtube.test/watch?v=private", &output)
             .unwrap_err()
@@ -186,9 +185,8 @@ fn unreported_download_file_is_actionable_and_logged_without_local_paths() {
     );
     let runner = YtDlp::with_binary_and_timeouts(binary, short_timeouts());
     let logs = CapturedLogs::default();
-    let subscriber = LogCapture(logs.clone());
 
-    let error = tracing::subscriber::with_default(subscriber, || {
+    let error = logs.capture(|| {
         runner
             .download("https://youtube.test/watch?v=private", &output)
             .unwrap_err()

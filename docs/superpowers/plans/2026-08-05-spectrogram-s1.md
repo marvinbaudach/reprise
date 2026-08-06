@@ -24,7 +24,9 @@ deliberately removed from this project (`db_drop_audio_analysis_mix.rs`), and
 this is not a way back in. No tempo, no brightness, no similarity scalars, no
 per-track summary numbers that invite a recommendation feature later. If a field
 would be useful to a recommender and useless to a renderer, it does not belong
-here.
+here. Derived caches may be computed from this dataset, but they live in their
+own tables and never change the spectrogram format or make the renderer depend
+on them.
 
 ## Format
 

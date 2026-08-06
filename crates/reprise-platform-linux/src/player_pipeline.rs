@@ -12,6 +12,7 @@ use gstreamer::prelude::*;
 use gstreamer_app as gst_app;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use reprise_core::playback::{
     AudioEffects, BassPressureDetector, CavaBarProcessor, CavaConfig, PlaybackError, PlayerEvent,
@@ -52,6 +53,140 @@ pub(crate) fn merge_stream_tags(
         organization.or_else(|| previous.1.clone()),
     );
     (next != *previous).then_some(next)
+}
+
+const BUFFERING_EVENT_INTERVAL: Duration = Duration::from_millis(250);
+const GST_PLAY_FLAG_DOWNLOAD: u32 = 0x80;
+type BufferingUpdate = (u8, Option<i64>);
+
+#[derive(Default)]
+pub(crate) struct BufferingThrottle {
+    last_emitted: Option<(Instant, BufferingUpdate)>,
+}
+
+impl BufferingThrottle {
+    pub(crate) fn should_emit(&mut self, now: Instant, update: BufferingUpdate) -> bool {
+        if self
+            .last_emitted
+            .is_some_and(|(_, previous)| previous == update)
+        {
+            return false;
+        }
+        if self.last_emitted.is_some_and(|(previous, _)| {
+            now.saturating_duration_since(previous) < BUFFERING_EVENT_INTERVAL
+        }) {
+            return false;
+        }
+        self.last_emitted = Some((now, update));
+        true
+    }
+
+    /// Forgets what was last sent. Called on `StreamStart`: the dedup above is
+    /// about a *steady* buffer, and two streams are not one buffer — without
+    /// this, a new stream opening on the same tuple the previous one ended on
+    /// is silently swallowed.
+    pub(crate) fn reset(&mut self) {
+        self.last_emitted = None;
+    }
+}
+
+pub(crate) fn is_remote_playback_uri(uri: Option<&str>) -> bool {
+    uri.is_some_and(|uri| !uri.starts_with("file://"))
+}
+
+pub(crate) fn download_buffering_flags(current_flags: u32, uri: &str, live: bool) -> u32 {
+    if is_remote_playback_uri(Some(uri)) && !live {
+        current_flags | GST_PLAY_FLAG_DOWNLOAD
+    } else {
+        current_flags & !GST_PLAY_FLAG_DOWNLOAD
+    }
+}
+
+pub(crate) fn configure_download_buffering(
+    playbin: &gst::Element,
+    uri: &str,
+    live: bool,
+) -> Result<(), PlaybackError> {
+    let flags = playbin.property_value("flags");
+    let flags_class = gst::glib::FlagsClass::with_type(flags.type_()).ok_or_else(|| {
+        PlaybackError::Backend("GStreamer: playbin flags property is not a flags type".into())
+    })?;
+    let current_flags = flags_class
+        .values()
+        .iter()
+        .filter(|value| flags_class.is_set(&flags, value.value()))
+        .fold(0, |combined, value| combined | value.value());
+    let next_flags = download_buffering_flags(current_flags, uri, live);
+    let builder = flags_class
+        .builder_with_value(flags)
+        .ok_or_else(|| PlaybackError::Backend("GStreamer: could not read playbin flags".into()))?;
+    let next_value = if next_flags & GST_PLAY_FLAG_DOWNLOAD != 0 {
+        builder.set(GST_PLAY_FLAG_DOWNLOAD)
+    } else {
+        builder.unset(GST_PLAY_FLAG_DOWNLOAD)
+    }
+    .build()
+    .ok_or_else(|| PlaybackError::Backend("GStreamer: download flag is unavailable".into()))?;
+    playbin.set_property_from_value("flags", &next_value);
+    tracing::debug!(
+        current_flags,
+        next_flags,
+        live,
+        readback = ?playbin.property_value("flags"),
+        "playbin download buffering configured"
+    );
+    Ok(())
+}
+
+pub(crate) fn buffered_percent_to_ms(stop_ppm: u64, duration_ms: Option<u64>) -> Option<i64> {
+    let duration_ms = duration_ms?;
+    let percent_max = u64::from(gst::format::Percent::MAX.ppm());
+    let bounded_stop = stop_ppm.min(percent_max);
+    let buffered_ms = u128::from(duration_ms) * u128::from(bounded_stop) / u128::from(percent_max);
+    i64::try_from(buffered_ms).ok()
+}
+
+fn query_time_buffered_ms(playbin: &gst::Element) -> Option<i64> {
+    let mut query = gst::query::Buffering::new(gst::Format::Time);
+    if !playbin.query(&mut query) {
+        return None;
+    }
+    let (_, stop, _) = query.range();
+    let gst::GenericFormattedValue::Time(Some(stop)) = stop else {
+        return None;
+    };
+    i64::try_from(stop.mseconds()).ok()
+}
+
+fn query_duration_ms(playbin: &gst::Element) -> Option<u64> {
+    let mut query = gst::query::Duration::new(gst::Format::Time);
+    if !playbin.query(&mut query) {
+        return None;
+    }
+    let gst::GenericFormattedValue::Time(Some(duration)) = query.result() else {
+        return None;
+    };
+    Some(duration.mseconds())
+}
+
+fn query_percent_buffered_ms(playbin: &gst::Element, duration_ms: Option<u64>) -> Option<i64> {
+    let duration_ms = duration_ms?;
+    let mut query = gst::query::Buffering::new(gst::Format::Percent);
+    if !playbin.query(&mut query) {
+        return None;
+    }
+    let (_, stop, _) = query.range();
+    let gst::GenericFormattedValue::Percent(Some(stop)) = stop else {
+        return None;
+    };
+    buffered_percent_to_ms(u64::from(stop.ppm()), Some(duration_ms))
+}
+
+fn query_buffered_ms(playbin: &gst::Element) -> Option<i64> {
+    query_time_buffered_ms(playbin).or_else(|| {
+        let duration_ms = query_duration_ms(playbin);
+        query_percent_buffered_ms(playbin, duration_ms)
+    })
 }
 
 /// Environment variable that, when set, overrides playbin's audio sink
@@ -216,7 +351,9 @@ pub(crate) fn attach_bus_watch(
     let bus = playbin
         .bus()
         .ok_or_else(|| PlaybackError::Backend("GStreamer: no bus".into()))?;
+    let watched_playbin = playbin.clone();
     let mut stream_tags = (None::<String>, None::<String>);
+    let mut buffering_throttle = BufferingThrottle::default();
     bus.add_watch(move |_, msg| {
         use gst::MessageView;
         match msg.view() {
@@ -236,6 +373,7 @@ pub(crate) fn attach_bus_watch(
                 // Fires on every stream start; only a gapless handoff (flagged
                 // by the `about-to-finish` handler) turns into `AdvancedToNext`.
                 stream_tags = (None, None);
+                buffering_throttle.reset();
                 note_stream_start(&handoff_pending, on_event.as_ref());
             }
             MessageView::Tag(message) => {
@@ -252,6 +390,31 @@ pub(crate) fn attach_bus_watch(
                         title: next.0,
                         organization: next.1,
                     });
+                }
+            }
+            MessageView::Buffering(message) => {
+                let current_uri = watched_playbin
+                    .property::<Option<String>>("current-uri")
+                    .or_else(|| watched_playbin.property::<Option<String>>("uri"));
+                if is_remote_playback_uri(current_uri.as_deref()) {
+                    let update = (
+                        message.percent().clamp(0, 100) as u8,
+                        query_buffered_ms(&watched_playbin),
+                    );
+                    // A buffering event that leaves no trace is undiagnosable:
+                    // the buffered-range query answering `None` and the event
+                    // never arriving look identical from the outside.
+                    tracing::debug!(
+                        percent = update.0,
+                        buffered_ms = ?update.1,
+                        "GStreamer buffering"
+                    );
+                    if buffering_throttle.should_emit(Instant::now(), update) {
+                        (*on_event)(PlayerEvent::Buffering {
+                            percent: update.0,
+                            buffered_ms: update.1,
+                        });
+                    }
                 }
             }
             MessageView::Error(e) => {

@@ -10,7 +10,8 @@ use super::strings;
 pub(in crate::ui) struct LibraryChrome {
     pub(in crate::ui) root: adw::ToolbarView,
     pub(in crate::ui) search_bar: gtk4::SearchBar,
-    #[cfg(test)]
+    /// SEARCH-8 needs the lens outside tests too: a section without a list
+    /// makes it insensitive and re-labels it.
     pub(in crate::ui) search_toggle: gtk4::ToggleButton,
 }
 
@@ -59,7 +60,6 @@ pub(in crate::ui) fn build(
     LibraryChrome {
         root,
         search_bar,
-        #[cfg(test)]
         search_toggle,
     }
 }

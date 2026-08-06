@@ -180,11 +180,11 @@ pub(super) fn reveal_position(shared: &Rc<Shared>, position: u32, attempts: u8) 
 mod tests {
     use super::*;
 
-    // NAV-10a: a pending reveal must follow the track, not the row number it
+    // NAV-10b: a pending reveal must follow the track, not the row number it
     // happened to sit on. The generation token cannot see a filter change, so
     // this is what keeps the deferred scroll honest.
     #[test]
-    fn nav_10a_reveal_follows_the_track_when_the_view_changes_underneath() {
+    fn nav_10b_reveal_follows_the_track_when_the_view_changes_underneath() {
         let track = 4242;
         let before: Vec<i64> = (0..100).map(|i| if i == 42 { track } else { i }).collect();
         let after: Vec<i64> = (0..30)

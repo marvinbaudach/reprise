@@ -11,13 +11,19 @@ use reprise_core::artist_news::{
 use reprise_core::db::Db;
 
 use crate::ui::browse::browse_bar::CHIP_CSS_CLASS;
+use crate::ui::search_chip;
 use crate::ui::strings;
+use reprise_view::search_scope::SearchScope;
 
 const FILTER_BAR_MIN_HEIGHT: i32 = 34;
 const FACET_PAGE: &str = "facets";
 const VALUE_PAGE: &str = "values";
 
 type OnChanged = Rc<dyn Fn(ReleasesFilter)>;
+/// SEARCH-8: fired when the bar itself changes the query — the chip's ×
+/// or "Clear all" — so the header entry stops showing a query the view no
+/// longer applies.
+type OnQueryChanged = Rc<dyn Fn(&str)>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum FilterFacet {
@@ -96,7 +102,12 @@ pub(super) struct ReleasesFilterBar {
     result_label: gtk4::Label,
     clear_all: gtk4::Button,
     counts: Cell<(usize, usize)>,
+    /// SEARCH-8: this section's query. Deliberately *beside* `ReleasesFilter`
+    /// rather than inside it: that type is the persisted one, and a query
+    /// that rode along in it would be restored on the next launch.
+    query: RefCell<String>,
     on_changed: RefCell<Option<OnChanged>>,
+    on_query_changed: RefCell<Option<OnQueryChanged>>,
 }
 
 impl ReleasesFilterBar {
@@ -172,7 +183,9 @@ impl ReleasesFilterBar {
             result_label,
             clear_all,
             counts: Cell::new((0, 0)),
+            query: RefCell::new(String::new()),
             on_changed: RefCell::new(None),
+            on_query_changed: RefCell::new(None),
         });
         wire(&bar);
         bar.rebuild();
@@ -191,12 +204,48 @@ impl ReleasesFilterBar {
         *self.on_changed.borrow_mut() = Some(Rc::new(callback));
     }
 
+    pub(super) fn set_on_query_changed(&self, callback: impl Fn(&str) + 'static) {
+        *self.on_query_changed.borrow_mut() = Some(Rc::new(callback));
+    }
+
+    /// FIL-1d: matched against release title and artist.
+    pub(super) fn query(&self) -> String {
+        self.query.borrow().clone()
+    }
+
+    /// SEARCH-8: this section's query, handed in by the shell.
+    pub(super) fn set_query(self: &Rc<Self>, query: &str) {
+        if *self.query.borrow() == query.trim() {
+            return;
+        }
+        self.query.replace(query.trim().to_owned());
+        self.rebuild();
+        if let Some(callback) = self.on_changed.borrow().clone() {
+            callback(self.filter());
+        }
+    }
+
+    /// The bar removed the query itself (its chip's ×, or "Clear all"), so
+    /// the header entry has to follow.
+    fn clear_query(self: &Rc<Self>) {
+        if self.query.borrow().is_empty() {
+            return;
+        }
+        self.query.replace(String::new());
+        if let Some(callback) = self.on_query_changed.borrow().clone() {
+            callback("");
+        }
+    }
+
     pub(super) fn set_counts(self: &Rc<Self>, shown: usize, total: usize) {
         self.counts.set((shown, total));
         self.rebuild();
     }
 
+    /// FIL-2: "Clear all" drops this section's query together with its
+    /// facets, and nothing outside this section.
     pub(super) fn clear_all(self: &Rc<Self>) {
+        self.clear_query();
         self.apply_filter(ReleasesFilter::default());
     }
 
@@ -223,8 +272,25 @@ impl ReleasesFilterBar {
         }
         self.chips.remove_all();
         let filter = self.filter();
+        let query = self.query();
         let facets = active_facets(&filter);
-        let active = !facets.is_empty();
+        let active = !facets.is_empty() || !query.is_empty();
+        // FIL-1a/FIL-1d: the search chip is the row's first chip.
+        if !query.is_empty() {
+            let weak = Rc::downgrade(self);
+            let chip = search_chip::build(SearchScope::Releases, &query, move || {
+                let Some(bar) = weak.upgrade() else {
+                    return;
+                };
+                bar.clear_query();
+                bar.rebuild();
+                let callback = bar.on_changed.borrow().clone();
+                if let Some(callback) = callback {
+                    callback(bar.filter());
+                }
+            });
+            self.chips.append(&chip);
+        }
         for facet in facets {
             let button = gtk4::Button::with_label(&format!("{}  ×", chip_label(&filter, facet)));
             button.add_css_class("flat");
@@ -242,11 +308,16 @@ impl ReleasesFilterBar {
         self.section_label.set_visible(active);
         self.clear_all.set_visible(active);
         let (shown, total) = self.counts.get();
-        self.result_label.set_text(&if active {
-            strings::release_count_line(shown, total)
+        // FIL-2: the shown number is accented while a restriction is active.
+        if active {
+            self.result_label
+                .set_markup(&strings::release_count_line_markup(shown, total));
+            self.result_label.add_css_class("accent");
         } else {
-            strings::release_total_line(total)
-        });
+            self.result_label.remove_css_class("accent");
+            self.result_label
+                .set_text(&strings::release_total_line(total));
+        }
         self.rebuild_facets();
     }
 

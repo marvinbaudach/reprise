@@ -1,4 +1,4 @@
-//! NAV-10a display test: deleting the running track must not cost the table
+//! NAV-10b display test: deleting the running track must not cost the table
 //! its follow to the next one.
 //!
 //! `delete_tracks::finish` advances the player first and reloads second, in
@@ -80,7 +80,7 @@ fn centered_value_for(track_list: &TrackList, track_id: i64) -> Option<f64> {
 /// table stopped following playback for as long as a scan ran.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn nav_10a_a_reload_does_not_count_as_the_user_scrolling() {
+fn nav_10b_a_reload_does_not_count_as_the_user_scrolling() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let (track_list, window) = synthetic_track_list(200);
@@ -109,7 +109,7 @@ fn nav_10a_a_reload_does_not_count_as_the_user_scrolling() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn nav_10a_deleting_the_running_track_keeps_the_follow_to_the_next_one() {
+fn nav_10b_deleting_the_running_track_keeps_the_follow_to_the_next_one() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     gtk4::Settings::default()

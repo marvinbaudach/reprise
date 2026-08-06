@@ -2,7 +2,7 @@
 //!
 //! Anything that appears on hover, focus, or selection goes through here.
 
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
@@ -14,12 +14,9 @@ struct RevealState {
     selected: Cell<bool>,
 }
 
-type HoverCallback = Rc<dyn Fn(bool)>;
-
 pub(in crate::ui) struct Reveal {
     state: Rc<RevealState>,
     target: gtk4::Widget,
-    on_hover: Rc<RefCell<Option<HoverCallback>>>,
     /// Focus is watched in two places and either one counts, so each needs its
     /// own memory — a single flag would let the row losing focus to its own
     /// child immediately hide the control that just gained it.
@@ -35,7 +32,6 @@ impl Reveal {
         let reveal = Self {
             state: Rc::new(RevealState::default()),
             target: target.as_ref().clone(),
-            on_hover: Rc::new(RefCell::new(None)),
             focused_host: Rc::new(Cell::new(false)),
             focused_target: Rc::new(Cell::new(false)),
         };
@@ -43,19 +39,15 @@ impl Reveal {
         let motion = gtk4::EventControllerMotion::new();
         let enter_state = reveal.state.clone();
         let enter_target = target.as_ref().downgrade();
-        let enter_hover = reveal.on_hover.clone();
         motion.connect_enter(move |_, _, _| {
             enter_state.hovered.set(true);
             apply(&enter_state, &enter_target);
-            notify(&enter_hover, true);
         });
         let leave_state = reveal.state.clone();
         let leave_target = target.as_ref().downgrade();
-        let leave_hover = reveal.on_hover.clone();
         motion.connect_leave(move |_| {
             leave_state.hovered.set(false);
             apply(&leave_state, &leave_target);
-            notify(&leave_hover, false);
         });
         host.as_ref().add_controller(motion);
 
@@ -98,13 +90,6 @@ impl Reveal {
         self.state.selected.set(selected);
         apply(&self.state, &self.target.downgrade());
     }
-
-    /// Lets a caller mirror the hover state elsewhere — the media column needs
-    /// it for the selection checkbox, and a second motion controller on the
-    /// same row is exactly the duplication this module exists to prevent.
-    pub(in crate::ui) fn on_hover(&self, callback: impl Fn(bool) + 'static) {
-        self.on_hover.replace(Some(Rc::new(callback)));
-    }
 }
 
 fn apply(state: &RevealState, target: &gtk4::glib::WeakRef<gtk4::Widget>) {
@@ -114,13 +99,6 @@ fn apply(state: &RevealState, target: &gtk4::glib::WeakRef<gtk4::Widget>) {
     let shown = state.hovered.get() || state.focused.get() || state.selected.get();
     target.set_opacity(if shown { 1.0 } else { 0.0 });
     target.set_can_target(shown);
-}
-
-fn notify(callback: &RefCell<Option<HoverCallback>>, hovered: bool) {
-    let callback = callback.borrow().clone();
-    if let Some(callback) = callback {
-        callback(hovered);
-    }
 }
 
 #[cfg(test)]

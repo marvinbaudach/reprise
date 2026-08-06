@@ -21,6 +21,7 @@ use super::concerts_failure_ui::{
 use super::concerts_filter_bar::ConcertsFilterBar;
 use super::concerts_model::{ConcertObject, ConcertsModel};
 use super::concerts_presentation::{sort_rows, updated_ago, ConcertSortKey, SortDirection};
+use super::concerts_search::concerts_matching;
 use super::concerts_worker::{request_allowed, ConcertsRequest, ConcertsResponse, ConcertsRuntime};
 use crate::ui::external_link::{self, LaunchErrorSlot};
 use crate::ui::source_empty_state::SourceFailureState;
@@ -264,6 +265,21 @@ impl ConcertsView {
         &self.root
     }
 
+    /// SEARCH-8: applies this section's query (FIL-1d: artist and venue).
+    pub(in crate::ui) fn set_search_query(&self, query: &str) {
+        self.shared.filter_bar.set_query(query);
+    }
+
+    /// SEARCH-8: the bar removed the query itself, so the entry must follow.
+    pub(in crate::ui) fn set_on_search_query_changed(&self, callback: impl Fn(&str) + 'static) {
+        self.shared.filter_bar.set_on_query_changed(callback);
+    }
+
+    /// FIL-2: "Clear all" for this section — its query and its facets.
+    pub(in crate::ui) fn clear_all_filters(&self) {
+        self.shared.filter_bar.clear_all();
+    }
+
     pub(in crate::ui) fn refresh(&self) {
         if let Err(error) = render_cache(&self.shared) {
             tracing::warn!(%error, "could not load concerts view");
@@ -319,12 +335,19 @@ fn render_cache(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
     let credentials = concerts::config::credentials(conn)?;
     let similar_enabled = concerts::config::similar_config(conn)?.enabled;
     let has_similar_rows = concerts::has_similar_events(conn)?;
-    let rows = concerts::query_events(conn, &filter, location.as_ref(), today)?;
-    let total = if filter == ConcertFilter::default() {
-        rows.len()
-    } else {
+    let query = shared.filter_bar.query();
+    // FIL-1d: the query narrows what the facets returned, matching artist and
+    // venue — the two fields the chip names.
+    let rows = concerts_matching(
+        concerts::query_events(conn, &filter, location.as_ref(), today)?,
+        &query,
+    );
+    let restricted = filter != ConcertFilter::default() || !query.is_empty();
+    let total = if restricted {
         concerts::count_upcoming(conn, &ConcertFilter::default(), location.as_ref(), today)?
             as usize
+    } else {
+        rows.len()
     };
     let latest_fetch = concerts::latest_fetch_at(conn)?;
     let never_fetched = latest_fetch.is_none();
@@ -337,7 +360,7 @@ fn render_cache(shared: &Rc<Shared>) -> Result<(), rusqlite::Error> {
     shared.cached_items.set(total);
     let state = concerts_empty_state_for(
         rows.len(),
-        filter != ConcertFilter::default(),
+        restricted,
         !credentials.is_empty(),
         never_fetched,
     );

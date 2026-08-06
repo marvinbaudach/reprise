@@ -1,0 +1,14 @@
+{
+  "jsonrpc": "2.0",
+  "id": 42,
+  "method": "tools/call",
+  "params": {
+    "name": "music_scan_tags",
+    "arguments": {
+      "scope": "selection",
+      "track_ids": [1],
+      "remote": false,
+      "apply_safe": false
+    }
+  }
+}

@@ -267,6 +267,36 @@ fn browse_bar_defaults_visible_and_round_trips() {
 }
 
 #[test]
+fn seek_colouring_defaults_to_frequency_and_round_trips() {
+    let conn = migrated_conn();
+    assert_eq!(get_seek_colouring(&conn), SeekColouring::Frequency);
+    set_seek_colouring(&conn, SeekColouring::Solid).unwrap();
+    assert_eq!(get_seek_colouring(&conn), SeekColouring::Solid);
+    set_seek_colouring(&conn, SeekColouring::Frequency).unwrap();
+    assert_eq!(get_seek_colouring(&conn), SeekColouring::Frequency);
+    // A hand-edited or future value must not leave the bar uncoloured.
+    set_setting(&conn, SEEK_COLOURING_KEY, "rainbow").unwrap();
+    assert_eq!(get_seek_colouring(&conn), SeekColouring::Frequency);
+}
+
+#[test]
+fn the_colour_legend_counts_three_showings_and_then_stops() {
+    let conn = migrated_conn();
+    assert_eq!(get_seek_legend_seen(&conn), 0);
+    for shown in 1..=SEEK_LEGEND_SHOWS {
+        set_seek_legend_seen(&conn, shown).unwrap();
+        assert_eq!(get_seek_legend_seen(&conn), shown);
+    }
+    // The count is a cap, not a running total: nothing beyond the third
+    // showing is worth storing, and a corrupt value must not hide the legend
+    // forever either.
+    set_seek_legend_seen(&conn, 99).unwrap();
+    assert_eq!(get_seek_legend_seen(&conn), SEEK_LEGEND_SHOWS);
+    set_setting(&conn, SEEK_LEGEND_SEEN_KEY, "later").unwrap();
+    assert_eq!(get_seek_legend_seen(&conn), 0);
+}
+
+#[test]
 fn unknown_typed_preferences_fall_back_safely() {
     let conn = migrated_conn();
     set_setting(&conn, LIST_DENSITY_KEY, "microscopic").unwrap();
@@ -364,7 +394,7 @@ fn a_ten_band_write_over_a_foreign_curve_is_accepted_and_said_out_loud() {
     set_equalizer_curve(&conn, &phone).unwrap();
 
     let logs = crate::log_capture::CapturedLogs::default();
-    tracing::subscriber::with_default(crate::log_capture::LogCapture(logs.clone()), || {
+    logs.capture(|| {
         set_equalizer_bands(&conn, [3.0; 10]).unwrap();
     });
 
@@ -387,7 +417,7 @@ fn a_ten_band_write_over_a_foreign_curve_is_accepted_and_said_out_loud() {
     // A desktop edit on top of a desktop curve replaces nothing, and says
     // nothing. Otherwise the warning would be noise every preference change.
     let quiet = crate::log_capture::CapturedLogs::default();
-    tracing::subscriber::with_default(crate::log_capture::LogCapture(quiet.clone()), || {
+    quiet.capture(|| {
         set_equalizer_bands(&conn, [1.0; 10]).unwrap();
     });
     assert!(

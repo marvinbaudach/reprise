@@ -70,6 +70,21 @@ adding a `[planned]` draft with the next free ID in the affected section,
 marked with `<!-- REVIEW: rule proposal -->` — the decision rests with the
 human. Rationale for changes lives in the git history.
 
+**Every feature reaches every frontend.** A feature is not finished when
+its window works. If a caller without a window could sensibly use it, it
+is also exposed over MCP in the same change — not later, not "if someone
+asks". The window is one frontend among several; `reprise-core` holds the
+feature and each frontend only presents it, so a feature that only the
+GTK app can reach is a sign that logic leaked into the window. Sensibly
+means: it reads or changes something a caller can name and act on
+(library data, playback, playlists, queue, derived analysis). It does not
+mean pure presentation — an animation, a hover state or a panel's layout
+has nothing to expose. When a feature deliberately stops at the window,
+its plan says so and why; silence is not an exemption. The MCP surface
+degrades honestly: a feature whose data has not been computed yet reports
+what is missing instead of returning an empty answer that reads like a
+result.
+
 ## A. Core principles
 
 - **P-1** [planned] [manual] — Every feedback role has exactly one
@@ -179,11 +194,23 @@ human. Rationale for changes lives in the git history.
   triggered) belongs, in the single-track browser, to the NAV-2 history
   complex; Album and Artist are no longer separate views but scopes of
   the music list.
-- **NAV-13** [replaced by NAV-10a] — Starting playback is not
+- **NAV-13** [replaced by NAV-10b] — Starting playback is not
   navigation: Enter or double-click on a track row leaves selection,
   keyboard focus, and viewport unchanged; only the now-playing marker
   changes. The separation of marking and scrolling in the one track
-  browser is now governed by NAV-10a.
+  browser is now governed by NAV-10b.
+- **NAV-14** [active] [gtk] — **A section header carries its own create
+  action.** The PLAYLISTS header carries a `+` button that creates a playlist
+  immediately: a new row appears in place, named "Untitled playlist" with the
+  name selected for inline rename, and no dialog opens. Enter or moving focus
+  away commits the typed name; an empty name keeps "Untitled playlist";
+  Escape discards the row and the playlist with it. "Import playlist…" lives
+  in the global ⋮ menu with the other library-wide verbs; neither action
+  occupies a sidebar row. *Tests:*
+  `nav_14_the_playlists_header_creates_a_playlist_in_place_without_a_dialog`,
+  `nav_14_escape_discards_the_new_playlist_row_and_the_playlist`,
+  `nav_14_an_empty_name_keeps_the_untitled_playlist`,
+  `nav_14_import_playlist_lives_in_the_overflow_menu`.
 
 ## C. Playback, queue, shuffle, filter
 
@@ -297,6 +324,61 @@ human. Rationale for changes lives in the git history.
   leaving the finished session's labels standing. A surface's label and tooltip
   name the actual target for the current mode; the Now Playing and information
   panels share these links and labels.
+- **PLAY-13** [active] [gtk] — The source, never the view, selects exactly one
+  player-bar progress language. Local media keeps the ordinary played
+  progress and remaining time, without a buffer segment or network copy.
+  Finite remote media keeps played progress, adds a paler contiguous-buffer
+  segment underneath it, and says “Streaming · X% loaded” from buffered time
+  divided by duration only while loading is incomplete. Live media has no
+  seekable progress or duration: the full-width bar replaces the waveform with
+  an accent point, “LIVE”, and the station name while retaining connected
+  elapsed time. The point pulses only during active playback through MOT-7's
+  central motion gate; pause and reduced motion leave the same point static.
+- **SEEK-1** [active] [gtk] — **The seek bar's colour is a reading, not a
+  decoration, and it is averaged over time.** The spectral centroid swings
+  from beat to beat: taken per bar it puts cyan next to magenta inside two
+  seconds of music, which is noise, and noise forms no pattern anyone can
+  read. The bar therefore averages the stored curve over a window of **eight
+  seconds** centred on each point — about four bars — and paints that. The
+  window is defined in **seconds and never in bars**: a window measured in
+  display bars would smooth a narrow window differently from a wide one, so
+  the same track would read differently after a window resize. It is derived
+  once per track, from the curve and the duration, and cached beside the bar
+  heights; nothing recomputes it while drawing. At the two ends the window
+  shrinks to what is available rather than being padded, because padding
+  would run the first and last seconds of every track into one end of the
+  axis regardless of what plays there. What the listener gets is contiguous
+  fields of eight to thirty seconds — an intro, a verse, a breakdown —
+  instead of a rainbow. A track with no structure may legitimately look
+  almost uniform; that is the correct answer, not a broken one.
+  **The colour lies on both sides of the playhead.** Played is the spectral
+  colour at full opacity, coming is the *same* colour at **0.34** — progress
+  is a step in opacity, never a change of colour. Ending the colour at the
+  playhead put it exactly where it was no longer needed: the point of seeing
+  the shape of a track is to see it before hearing it. The 0.34 is measured
+  at both ends of the axis: lower and a deep bass intro disappears against
+  the bar's background, higher and progress stops being readable at a glance.
+  Two colourings are offered under Appearance → Seek Bar — "Frequency" and
+  "Single Color" — and the quiet one is a second colouring, never an "off":
+  it draws the played side in the accent, the coming side in grey, and
+  hairlines where the music changes, so it still says where the structure is.
+- **SEEK-2** [active] [gtk] — **A colour scale nobody explains is a
+  decorative strip, so it is explained exactly once.** A legend sits under the
+  bar at the height of the times — the two ends named, a 150×6 px gradient
+  between them, and what it measures — and the gradient is drawn by the same
+  function the bar is, never rebuilt, so the two cannot drift apart. It
+  appears on the **first three track changes** and then no more; the measure
+  is a **count**, not a timestamp, because "seen it three times" says more
+  about having understood it than "shown two days ago" does. It leaves after
+  six seconds, fading and collapsing its height together so the row settles
+  instead of jumping, or at once on the first press anywhere in the bar —
+  a press means the user is aiming at the bar rather than reading it. There
+  is no close button: it would be larger than what it closes. Afterwards it
+  stays reachable from the bar's context menu ("Explain the Color Scale"),
+  because a one-off hint that can never be called back is a trap for
+  everyone who missed it the first time. In the single-colour bar it neither
+  appears nor spends a showing, and the menu entry is inactive: there is no
+  scale on screen to explain.
 
 ## D. Albums & artists view
 
@@ -1149,7 +1231,7 @@ human. Rationale for changes lives in the git history.
   Back/Forward stack and never autoplays. The last loaded track or episode is
   presented paused; the first Play starts that exact item through a fresh
   playable source, applying an episode's existing resume position, and leaves
-  the viewport exactly as the start placed it (NAV-10a). If its stable ID belongs to the
+  the viewport exactly as the start placed it (NAV-10b). If its stable ID belongs to the
   restored destination, that row becomes the sole selection and is centered
   without taking keyboard focus; grouped podcast and YouTube sources expand
   the required group and preview window first. An unavailable item leaves the
@@ -1225,12 +1307,15 @@ human. Rationale for changes lives in the git history.
   header-bar search (chip ⌕ "falling" in any field, own ×-click target
   ≥ 20 px; the × removes only the search, Esc per NAV-6). Applies in
   every track source (Library, Playlist, Smart, Queue, Missing). The
-  search is global across track sources and travels along on location
-  change; its chip appears everywhere it actually restricts — in
-  sources without search effect (Import Errors: own panel rows) no chip
-  appears. Facet chips and "+ Add filter" stay library-only. An
-  invisible active filter is a bug. Per-location scoping of the search
-  would be its own future rule, not part of this one.
+  search travels along within the track sources; its chip appears
+  everywhere it actually restricts — in sources without search effect
+  (Import Errors: own panel rows) no chip appears. Facet chips and
+  "+ Add filter" stay library-only. An invisible active filter is a bug.
+  (Revised 2026-08-05: the search is no longer global across the whole
+  window. It belongs to the section it was typed in — SEARCH-8 — and
+  every other list view carries it as its own first chip, worded for the
+  fields that view actually reads — FIL-1d. Within the track sources
+  nothing changes: this is still one section.)
 - **FIL-1b** [planned] [gtk] — Albums/Artists mode: the global search
   already works there (grid filtering); the same chip row incl.
   counting and "Clear all" will follow there per the pattern of
@@ -1253,6 +1338,23 @@ human. Rationale for changes lives in the git history.
   removable scope chips under the FILTER heading — one shape for two
   meanings, which measurably read as a filter that turned out to be a
   navigation.)
+- **FIL-1d** [active] [gtk] — The search chip names its scope. Every
+  list view accepts the section's query as its **first** chip, ahead of
+  the facet chips and with the same removable ×-affordance FIL-1a gave
+  the Library one — whether or not the list is playable: Music,
+  Podcasts, YouTube, Radio, Queue, playlists, Releases, Concerts,
+  Missing files. The wording is not decoration but a promise about what
+  was matched, so it names the fields that view actually reads: Music
+  and its sibling track sources keep "⌕ "{query}" in any field";
+  Podcasts says "in episode titles", YouTube "in video titles", Radio
+  "in station names", Releases "in title and artist", Concerts "in
+  artist and venue", Missing files "in file paths". A view may never
+  claim a field it does not search, and may never quietly search one it
+  does not name. Matching is case-insensitive substring matching,
+  mid-word included ("wer" matches "Antwerpen"). The chip's accessible
+  remove name stays "Remove search: {query}" everywhere. The chip's ×
+  and "Clear all" clear the query and the facets of the **current**
+  section only (FIL-2, SEARCH-8).
 - **FIL-2** [active] [gtk] — Counting is state: the filter row is the
   permanent list header of every track source — it never appears or
   disappears (no layout shift by design, P-4). Idle as quiet as
@@ -1637,8 +1739,9 @@ place (MOT-2, the motion reading of P-4).
   crossfades to the new track instead of dropping to 0; pause slightly
   desaturates the waveform fill with draw-local color math, play reverses
   it. The effective accent itself stays untouched. The EQ indicators
-  (track list, mini-player) run only during active playback; the idle
-  bar is static — no permanent loop without playback.
+  (track list, mini-player) and the radio LIVE point run only during active
+  playback; pause freezes them and the idle bar is static — no permanent loop
+  without playback.
 - **MOT-6** [active] [gtk] — Nothing blocks: the model changes at frame
   0, the animation only illustrates. A second action during a running
   animation jumps to the end state via `AdwAnimation::skip()` and then
@@ -2377,6 +2480,20 @@ property is set and yet nothing happens.
   remains, per SEARCH-3/5, as an active filter along with its chip and
   accent magnifier; a click on the magnifier must not accidentally reopen
   the bar that was closed by that same focus change.
+- **SEARCH-8** [active] [gtk] — The query belongs to the section it was
+  typed in, not to the window. Switching sections swaps the header
+  entry's text to that section's own query; it never carries over, and a
+  query typed in Podcasts leaves the Music query untouched and vice
+  versa. Per section, SEARCH-5 and SEARCH-6 hold unchanged: collapsing
+  the bar preserves that section's query, and a query the user
+  explicitly removed is never resurrected. The query is **transient**:
+  it is not persisted with the section's facet filters (podcast filter
+  config, radio settings keys) — a launch never starts inside somebody's
+  old search. Where there is no list there is no search: in My Stats and
+  device Sync the header lens is insensitive with the tooltip "Nothing
+  to filter in {section}", Ctrl+F is a no-op, and the search bar cannot
+  be revealed by typing either. The scoped chip each section shows for
+  its own query is FIL-1d.
 - **LYR-4** [active] [gtk] — Centering of the active lyrics line is
   clamped to the top at the start of the song. As long as there aren't
   enough context lines above the active line, the text block sits at the
@@ -2473,7 +2590,7 @@ property is set and yet nothing happens.
   view it is revealed once, later switches restore NAV-5's remembered
   ID-plus-offset anchor. Explicit "Go to album/artist" always jumps
   deterministically; selection never follows playback.
-- **NAV-10a** [active] [gtk] — **Marking and scrolling are separate.**
+- **NAV-10a** [replaced by NAV-10b] [gtk] — **Marking and scrolling are separate.**
   Every visible instance of the loaded track carries the same playback
   marker, from one implementation (`ui/playing_marker.rs`) serving every
   surface that lists tracks: the track table, the podcast groups, and the
@@ -2492,6 +2609,30 @@ property is set and yet nothing happens.
   GTK's own reset. A distance of more than three viewport heights is
   still applied at once, so the first placement after launch stays
   instant (START-1).
+  Auto-advance centers only if no scroll movement has occurred for 1.5
+  seconds; explicit metadata/reveal navigation always selects, focuses, and
+  centers.
+- **NAV-10b** [active] [gtk] — **Marking and scrolling are separate.**
+  Every visible instance of the loaded track carries the same playback
+  marker, from one implementation (`ui/playing_marker.rs`) serving every
+  surface that lists playable items: the track table, the podcast groups,
+  the YouTube channel detail, and the radio table. Its order is the same in
+  every surface: artwork, marker, then the title in the playback-accent
+  colour. The signal depends exclusively on playback state and never on
+  selection. The player bar is not such a surface — it shows the running
+  track's state through the play/pause button, not through a second copy of
+  the list marker. Double-click/Enter on an already-visible row does not
+  change the viewport. Play from Stopped as well as explicit Previous/Next
+  center the new track without stealing focus or selection — except for the
+  one Play that starts a restored session, whose track START-3 already
+  selected and centered at startup: that row is placed, so starting it only
+  starts the audio. Centring it again would be a second visible scroll on a
+  viewport that is already the target.
+  Centring moves the viewport over the Standard token rather than
+  teleporting it, and yields immediately to anything else that writes the
+  scroll position — the user's own scrolling, a model replacement, or GTK's
+  own reset. A distance of more than three viewport heights is still applied
+  at once, so the first placement after launch stays instant (START-1).
   Auto-advance centers only if no scroll movement has occurred for 1.5
   seconds; explicit metadata/reveal navigation always selects, focuses, and
   centers.
@@ -2525,6 +2666,21 @@ property is set and yet nothing happens.
   not change with the track. Newly loaded synchronized lyrics start at line 0 and
   position it per LYR-4. Without animations, cover and content switch hard
   (MOT-7).
+- **NPP-14** [active] [gtk] — At the regular fixed 300 px panel width the
+  switcher uses the four short labels **Up Next · Lyrics · Visuals · Sound**
+  in that order without ellipsizing. Built-in tabs always precede extension
+  tabs; extensions follow in activation order. Every tab retains an installed
+  symbolic icon, but icons replace labels only at the measured compact
+  breakpoint of 224 px or below — never merely because the regular panel is
+  narrow.
+- **NPP-15** [active] [gtk] — Disabling an extension never leaves its selected
+  page empty. If its tab is open, selection falls back to **Up Next** before
+  the page is hidden; disabling it while another tab is selected leaves that
+  selection unchanged.
+- **NPP-16** [planned] [gtk] — Once a fifth reachable panel tab exists, the
+  switcher moves extension tabs beyond the fourth into an overflow menu whose
+  button carries their count. No overflow control exists while four tabs are
+  the only reachable registry state.
 
 ## V. My Stats
 
@@ -2800,7 +2956,7 @@ property is set and yet nothing happens.
   when playback moves. Title and bar take the playback accent with it, and the
   row keeps a tint that hover does not remove. Marking never re-renders either
   list: the expanded state and the scroll position survive a track change,
-  exactly as NAV-10a requires of the track table. Pausing is the transport's
+  exactly as NAV-10b requires of the track table. Pausing is the transport's
   job, not the row's — the marker reports the state, the player bar and Space
   change it.
 - **STATS-19** [active] [gtk] — Replaces STATS-17. **The page reads hours →
@@ -3054,19 +3210,26 @@ STYLE-1).
   **The transport controls stay still.** The waveform's **bar heights** never
   move: three attempts to swell them around the playhead were rejected,
   because neighbouring bars cross their pixel boundary at different moments
-  and the eye reads that as noise rather than as life. What reacts instead is
-  colour. The played part takes a floor plus what the bass adds,
-  so every played bar changes by the same amount at the same instant and the
-  progress boundary stays legible at any volume — it keeps at least a 3:1
-  luminance ratio against the unplayed part in silence. The playhead stays a
+  and the eye reads that as noise rather than as life. **The seek bar now
+  reacts to nothing at all.** Its played part used to take a floor plus what
+  the bass added, to keep the progress boundary legible while that boundary
+  was a change of *colour*; since both sides carry the same colour and
+  progress reads as a step from full opacity to a third of it (SEEK-1), a
+  bass term on the played side would eat that very step — at the deep end of
+  the axis it would drop the played/coming luminance ratio to about 2.1:1.
+  The 3:1 requirement is unchanged and now has to hold at every point of the
+  axis, which is what the fixed opacities deliver. The playhead stays a
   one-pixel line with a slim glow beside it, and that glow follows `pressure`,
   not the beat. **Four** attempts put the beat on this surface — a lens twice,
   a radial glow, then a pulsing dot — and all four were rejected on sight, for
   one reason: at five to seven kicks a second, on the surface the user has to
   *aim* at, anything answering per beat reads as flicker rather than as life.
   Reducing its amplitude only makes the flicker quieter, because the rate is
-  what does the damage. The glow rests while the user drags the playhead,
-  during build-up and during a crossfade; the mini player has none.
+  what does the damage. The glow rests during build-up and during a
+  crossfade; the mini player has none. It stays put while the user drags the
+  playhead — the playhead is what the hand is holding on to, and it now
+  carries the only hard edge in the picture. The afterglow that used to trail
+  the played side is gone with the boundary it emphasised.
   Every large surface that does move breathes over seconds on `swell`, a
   UI-side slow envelope of `pressure` crossed with a free-running 5.5 s cycle
   — deliberately not locked to the tempo, because a swell that locks to the
@@ -3118,6 +3281,25 @@ STYLE-1).
   "Song Visuals" plugin is off or the panel is closed — the second because a
   pinned backdrop runs no tick, and without it the paused breath would keep
   redrawing a widget nobody can see.
+
+- **AC-25** [active] [gtk] — **A podcast runs no audio visuals.** Speech has
+  no spectrum worth drawing: the bars flicker around a voice instead of
+  answering it, and the reactive light breathes on a signal with no beat in
+  it. While a podcast episode plays — reached directly from the Podcasts
+  view or as a queued episode, both count — the whole audio-reactive chain
+  behaves exactly as though the "Song Visuals" plugin (AC-23) were switched
+  off: the spectrum stops at the source, the Visual tab disappears from the
+  panel, the reactive light of AC-24 rests, and the bar's bass layers settle
+  instead of freezing at their last reading. The episode's own surfaces are
+  untouched — the seek bar, the source image, and the playing marker in the
+  episode list are status, not visualization. **Radio keeps its visuals**:
+  it plays music. When the episode ends, the plugin's own setting decides
+  again. A user who was on the Visual tab lands on Up Next and stays there,
+  the same way an external session already displaces the Lyrics tab
+  (`POD-21`). The
+  effective answer — plugin state AND playback mode — has exactly one owner
+  in the code; no surface pairs the switch with its own idea of what a
+  podcast is.
 
 ## Y. Library Doctor / Tag Cleanup
 
@@ -3203,55 +3385,52 @@ means deterministic and high-confidence, never „without review".
   rows on reopening, exact revalidation follows before writing. Newly
   added tracks are not retroactively taken into the snapshot.
 
-- **DOC-2b** [active] [gtk] — **26a is a summary, never a write
-  surface.** After the scan, Library Doctor separately shows
-  „N safe · local, preselected" and „N suggestions · review" as well as
-  problem classes for casing/whitespace, missing Album Artist, genre
-  variants, missing/wrong Year, and missing Recording MBID; each class
-  counts concrete track/field changes separately by safe/review. Ties
-  additionally appear as „N unresolved groups", not as safe.
-  „Review N changes" opens the full review table; „Review N safe fixes"
-  opens the same table locally filtered. No control on this page writes
-  tags. With the remote switch off, remote classes, rows, and counts
-  disappear completely, while the local result remains in place.
+- **DOC-2b** [active] [gtk] — **The result page is a summary of three
+  meanings, never a write surface.** After a scan the Doctor shows at most
+  three blocks: what was already applied without asking, what needs a
+  decision, and what has no clear winner. A block whose count is zero is not
+  rendered. The applied block names spacing/casing and MusicBrainz IDs
+  separately and carries Undo. The decision block names each remaining
+  category plus the album count and carries "Review N changes". The conflict
+  block says that conflicts are skippable at the end of review. Every number
+  counts tag changes that were or will be written; checked and skipped tracks
+  remain muted scan facts. Remote categories disappear completely while the
+  remote switch is off.
 
-- **DOC-2c** [active] [gtk] — **A running scan shows honest
-  intermediate results.** 26a replaces the empty starting state during
-  the job with „Results found so far" and updates checked/skipped
-  tracks, safe, review, problem, and unresolved counters after every
-  completed track. The intermediate state is read-only only: review
-  actions stay hidden until full completion, it is neither persisted nor
-  applicable. Cancel or an error discard it and show the last fully
-  completed result from DOC-2a again.
+- **DOC-2c** [active] [gtk] — **A running scan shows the same two blocks,
+  counting up in the tense that is true.** During the job the Doctor shows
+  "Results found so far" with applied and decision blocks updating after each
+  completed track, all actions insensitive, and the locked-controls reason.
+  The applied block says "N fixes to apply" and keeps Undo disabled until the
+  quiet write finishes; only then does it use applied wording and the write
+  report's actual counts. Intermediate state is never persisted or
+  applicable. Cancel or error restores the last completed result.
 
-- **DOC-3a** [active] [core] — **Review decides per field.** Every
-  concrete track/field change has its own selection. „All safe" is a
-  reset preset to exactly all currently allowed unambiguous local fixes
-  and removes remote, manual, stale, and unresolved selection; „None"
-  removes everything. A tie shows „N spellings, no clear winner — pick
-  one" with only real candidates and their frequencies, with no
-  default. Picking a candidate materializes the affected track/field
-  diffs; individual rows remain deselectable. Changing the candidate
-  recalculates them and preserves manual deselections, as long as the
-  same row remains affected. The review order stays stable during the
-  session: selected local safe, tie groups, remote at 85%+, remote
-  50–84%, remote under 50%, stale/conflict; within that, scope order and
-  the fixed field sequence Title, Artist, Album, Album Artist, Year,
-  Genre, Recording MBID. Apply receives an immutable plan made of
-  exactly the current selection.
+- **DOC-3a** [active] [core] — **Review decides per field, and everything
+  reviewable starts selected.** Every concrete track/field change has its own
+  selection and arrives preselected. „All" selects every ready row, „None"
+  clears everything; neither touches a stale or conflicting row. A tie shows
+  „N spellings, no clear winner — pick one" with only real candidates and
+  their frequencies, with no default. Picking a candidate materializes the
+  affected diffs; individual rows stay deselectable; changing the candidate
+  recomputes them and preserves manual deselections while the same row remains
+  affected. Review order stays stable during the session, in scope order and
+  the fixed field sequence Title, Artist, Album, Album Artist, Year, Genre.
+  Apply receives an immutable plan of exactly the current selection.
 
-- **DOC-3b** [active] [gtk] — **26b shows the same diff wide and
-  narrow.** Wide, Checkbox · Track + Field · Current · Proposed · Source
-  sit in a virtualized table; empty appears as „— empty —", a replaced
-  Current value struck through. At the narrow breakpoint, the same row
-  stacks Current → Proposed with no horizontal page scroll. Both
-  presentations bind the same selection and preserve row focus and
-  stable order when switching. Ellipsized values have a full-text
-  tooltip and an accessible description. „Edit track tags…" opens the
-  existing Tag Editor; its Save marks affected Doctor rows stale and
-  deselects them. The footer treats tracks as the unit of action:
-  „Apply N tracks"; next to it „X tag changes · M files · undo available
-  after".
+- **DOC-3b** [active] [gtk] — **One column header serves the whole page,
+  wide and narrow.** The review page carries exactly one header row — Track,
+  Field, Current, Proposed, Source — bound to every row through shared size
+  groups; no row repeats a caption. Empty appears as „— empty —" and a
+  replaced Current value is struck through. One page-level breakpoint at 640
+  px stacks Current → Proposed and hides the shared header; there is no
+  per-row breakpoint or horizontal page scroll. Both presentations bind the
+  same selection and preserve row focus and stable order. Ellipsized values
+  retain full-text tooltips and an accessible description naming track,
+  field, current, proposed, and source. „Edit track tags…" opens the existing
+  Tag Editor; Save marks affected rows stale and deselects them. *Tests:*
+  `doc_3b_breakpoint_changes_layout_without_changing_row_identity`,
+  `doc_3b_review_page_virtualizes_rows_without_horizontal_scroll`.
 
 - **DOC-4a** [active] [core] — **Confidence never chooses for the
   user.** Unambiguous local fixes are preselected; remote suggestions,
@@ -3304,17 +3483,12 @@ means deterministic and high-confidence, never „without review".
   consumes the cleanup; Tag Editor jobs never replace its visible
   pointer.
 
-- **DOC-5c** [active] [gtk] — **Write jobs don't freeze the UI.** Apply
-  and Revert run in the shared progress card with a visible Cancel and
-  the same geometry as Scan/Sync. Button, progress, completion, and
-  errors count tracks primarily: „Apply 128 tracks",
-  „Updating tags… 42/128 tracks", „Tags updated · 128 tracks" or
-  „42 tracks updated · 86 cancelled". Tag changes and files are only
-  supplementary. A successful or partial Doctor write shows exactly one
-  undismissable undo-class toast with „Revert"; collected errors appear
-  once as „N updated, M failed · Details", never as a per-file toast.
-  The remote toggle and the Apply selection are locked during the write
-  job.
+- **DOC-5c** [active] [gtk] — **Write jobs don't freeze the UI.** Apply and
+  Revert run in the shared sidebar progress card with visible Cancel and the
+  same geometry as Scan/Sync. Progress counts tracks, while the Apply button
+  counts changes because that is what review decides. Completion names
+  updated tracks and collected errors once, never per file. The remote toggle
+  and selection remain locked during a write.
 
 - **DOC-5d** [active] [gtk] — **Result and app stay honestly current
   after writes.** After Apply or Revert, track list, Browse Bar,
@@ -3370,30 +3544,163 @@ means deterministic and high-confidence, never „without review".
   unavailable", while Local and pure MusicBrainz resolution keep
   working.
 
-- **DOC-7b** [active] [gtk] — **Library Doctor is a directly available
-  main-window navigation.** 26a lives as a root page in the existing
-  `content_nav`, 26b is pushed onto it; Back returns to 26a with the
-  in-session selection unchanged. There is no Doctor dialog and no
-  additional Apply confirmation dialog. Entry points are the Plugins
-  page with the privacy subtitle „contacts MusicBrainz / AcoustID", the
-  library's ⋮ menu, and the STATS-DEDUP hint; every entry leads directly
-  to the Doctor page. The scope is not a persistent plugin setting:
-  default Whole Library, suggested as Current View from a filtered view,
-  Selection from a selection context. The expanded plugin row shows,
-  without a main switch, scope, remote switch, the note „local fixes
-  always included · no network", „Run scan now", and „Revert last
-  cleanup". Revert remains available via a minimal Doctor job page and
-  activates no network.
+- **DOC-7b** [active] [gtk] — **The Library Doctor has exactly one entry
+  point.** The global ⋮ menu carries one flat "Library Doctor" item with no
+  badge or submenu; there is no Preferences surface. Its start page owns
+  scope, the remote switch, "Run Scan Now" and the only "Revert Last Cleanup"
+  in the app. The summary is a root page in `content_nav`, review is pushed
+  onto it, and Back preserves the in-session selection. There is no Doctor
+  dialog or Apply confirmation. Scope is not persistent: Whole Library by
+  default, Current View suggested from a filtered view, Selection from a
+  selection context.
 
-- **DOC-6c** [planned] [manual] — **The visible sign-off matches
-  frames 26a, 26b, and 27.** On a real GNOME display, wide and narrow
-  review geometry, row virtualization while scrolling, strikethrough and
-  empty display, teal/yellow/red source states, the 41% warning, focus
-  indicators in the normal and high-contrast theme, plugin expansion
-  including the one-time network confirmation, and the shared
-  scan/apply/revert progress card are checked. No text is truncated, no
-  column forces horizontal page scrolling, and the interface remains
-  operable during real file jobs.
+- **DOC-8a** [active] [gtk] — **The menu holds the verb, the sidebar holds
+  the noun.** The global ⋮ menu is the only way to start a scan. While a
+  completed scan has unreviewed findings, and only then, a "Library Doctor"
+  row appears under ISSUES next to "Missing files", carrying the count of tag
+  changes still waiting; it disappears when the scan is acknowledged —
+  "Done" on the post-apply page, or "Skip all" in the conflicts section —
+  even if not every row was applied. A finished scan never interrupts: on the
+  Doctor page it resolves in place, elsewhere it is that sidebar row. Exactly
+  one toast fires, "N tags fixed" with Undo, and only for the set that was
+  applied without asking. Findings that need review never toast. *Tests:*
+  `doc_8a_the_menu_carries_exactly_one_library_doctor_item_and_no_sync_device`,
+  `doc_8a_the_issues_entry_appears_only_with_unreviewed_findings`,
+  `doc_8a_quiet_fixes_produce_one_undo_toast_and_review_findings_produce_none`,
+  `doc_8a_pending_review_count_excludes_everything_already_written_for_that_scan`,
+  `doc_8a_pending_review_count_is_zero_once_the_scan_is_marked_reviewed`,
+  `doc_8a_conflicts_alone_do_not_produce_a_pending_count`,
+  `doc_8a_auto_tier_write_conflict_does_not_produce_a_pending_count`,
+  `doc_8a_done_marks_the_scan_reviewed_and_clears_the_sidebar_entry`,
+  `doc_8a_skip_all_marks_the_scan_reviewed`.
+
+- **DOC-8b** [active] [core] — **Two tiers, and exactly one predicate
+  decides.** A proposal is applied without asking when it is a MusicBrainz
+  recording ID, or when it is local and preselected; never when its track is
+  stale. Everything else is shown for review, preselected. Recording IDs never
+  appear in the review list. The applied set is enqueued as a tag-write job the
+  moment the scan completes, before the summary is presented, and is reported
+  as done; nothing is written while the scan is still running. There is no
+  surface that lists the applied set — it is represented by two counted lines
+  and an Undo. The tier is computed by one function used by the core, the GTK
+  surface and the agent adapter alike; a second copy of the condition is a
+  defect. *Tests:*
+  `doc_8b_auto_applied_tier_is_local_preselected_plus_every_recording_mbid`,
+  `doc_8b_stale_rows_are_never_auto_applied`,
+  `doc_8b_review_tier_preselects_every_ready_row`,
+  `doc_8b_recording_mbid_never_reaches_the_review_tier`,
+  `doc_8b_all_preset_selects_every_ready_row_and_none_clears_them`,
+  `doc_8b_scan_completion_enqueues_the_auto_applied_job_before_the_summary`,
+  `doc_8b_a_scan_with_no_auto_rows_creates_no_job`.
+
+- **DOC-8c** [active] [gtk] — **The start page owns the run.** Scope is a
+  segmented control with three always-visible options. The remote toggle
+  carries its privacy sentence verbatim and retains the versioned consent
+  sheet. "Run Scan Now" is the single primary action, with a track count and
+  rough duration beside it. Below a separator, and only while a revertible
+  cleanup exists, are the last-scan line and the only "Revert Last Cleanup"
+  action. *Tests:* `doc_8c_start_page_carries_scope_remote_run_and_the_only_revert`,
+  `doc_8c_last_scan_block_is_hidden_without_a_revertible_cleanup`.
+
+- **DOC-9a** [active] [gtk] — **The summary has no zero-count block.** The
+  applied, review, and conflict blocks follow DOC-2b's order and use written
+  tag changes as their shared unit, including album-level proposals expanded
+  over every affected track. *Tests:*
+  `doc_9a_summary_renders_three_blocks_and_never_a_zero_row`,
+  `doc_9a_summary_omits_the_conflicts_block_without_conflicts`,
+  `doc_9a_every_visible_count_is_a_written_change_count`.
+
+- **DOC-9b** [active] [gtk] — **The review list is grouped by album.** Rows
+  appear in scope order under one header per album carrying a group checkbox,
+  cover, title, artist and track count, and a change count. An identical
+  whole-album change collapses into „All N tracks"; a partial album does not.
+  Tracks without an album form one trailing group. The filter bar offers only
+  categories the scan produced. Spelling conflicts sit last in an explicitly
+  optional container with „Skip all". The virtualized list scrolls under one
+  sticky page header and above one sticky footer, without pagination or a
+  collapsed remainder row. Album pills, toolbar, and footer count tag changes
+  that will be written rather than display rows. *Tests:*
+  `doc_9b_rows_group_by_album_in_scope_order`,
+  `doc_9b_album_level_change_collapses_into_one_row_over_all_tracks`,
+  `doc_9b_tracks_without_an_album_form_one_trailing_group`,
+  `doc_9b_group_counts_report_written_changes_not_display_rows`,
+  `doc_9b_one_column_header_serves_the_whole_page`,
+  `doc_9b_rows_carry_no_caption_labels`,
+  `doc_9b_review_groups_render_one_header_per_album`,
+  `doc_9b_every_reviewable_row_starts_selected`,
+  `doc_9b_the_filter_bar_offers_only_categories_present_in_the_scan`,
+  `doc_9b_conflicts_sit_at_the_end_and_skip_all_clears_them`,
+  `doc_9b_footer_counts_the_changes_that_will_be_written`,
+  `doc_9b_the_album_pill_counts_written_changes_not_display_rows`.
+
+- **DOC-9c** [active] [gtk] — **After the write, and after a clean scan, the
+  Doctor says so on its own page.** Post-apply names updated tracks, written
+  changes, albums and conflicts left open, offers "Undo everything from this
+  scan" beside "Done", and names the quiet fixes included by Undo. Its counts
+  come from the write report, never the frozen plan. Done acknowledges the
+  whole scan. A clean scan is a distinct "Nothing to fix" page with checked
+  and skipped counts and "Scan again", never the pre-scan state. *Tests:*
+  `doc_9c_post_apply_names_the_quiet_fixes_and_the_unresolved_conflicts`,
+  `doc_9c_post_apply_reports_the_write_report_not_the_plan`,
+  `doc_9c_nothing_to_fix_is_distinct_from_the_pre_scan_state`.
+
+- **DOC-10a** [active] [core] — **Undo is one bracket per scan.** The job
+  applied without asking and the reviewed job of the same scan revert together
+  as one operation with one progress count. A failing field does not stop the
+  remaining fields or the remaining job; a cancel does stop the next job. A
+  partially reverted cleanup stays offered, so a second Undo retries exactly
+  the remainder, and a fully reverted scan is no longer offered. *Tests:*
+  `doc_10a_undo_reverts_the_quiet_and_the_reviewed_job_of_one_scan`,
+  `doc_10a_undo_works_when_only_the_quiet_job_exists`,
+  `doc_10a_partial_revert_leaves_the_cleanup_available_for_a_second_attempt`,
+  `doc_10a_prepare_failure_returns_the_completed_partial_report`,
+  `doc_10a_cancel_between_jobs_does_not_start_the_remaining_job`,
+  `doc_10a_a_fully_reverted_scan_is_no_longer_offered`.
+
+- **DOC-10b** [active] [core] — **One tag-write slot, enforced in the
+  database.** A tag-write job of any kind may only be created while no other
+  job is prepared or running; the check and the insert share one transaction.
+  The refusal is caller-visible on both surfaces — a toast in the app, a
+  retryable tool error for an agent — and never an internal error. A job left
+  behind by a crashed process is finalized by the existing recovery path and
+  holds no slot. *Tests:*
+  `doc_10b_a_second_tag_write_job_is_refused_while_one_is_prepared_or_running`,
+  `doc_10b_a_finalized_interrupted_job_does_not_hold_the_lock`,
+  `doc_10b_tag_editor_and_doctor_share_one_lock`,
+  `doc_10b_gui_sees_the_same_refusal_while_an_mcp_job_runs`,
+  `doc_10b_mcp_refuses_while_a_gui_job_holds_the_lock`.
+
+- **DOC-10c** [active] [core] — **An upgrade never inherits a decision.** A
+  scan stored under the previous rules is not reinterpreted and nothing from
+  it is applied; the stored result pointer is cleared on upgrade and the
+  Doctor opens on its start page. The undo journal is untouched, so a cleanup
+  applied before the upgrade stays revertible. *Test:*
+  `doc_10c_upgrade_clears_the_stored_scan_pointer_and_keeps_the_cleanup_revertible`.
+
+- **DOC-11a** [active] [core] — **The agent adapter finds and reports; it
+  writes only when asked.** `music_scan_tags` is read-only by default: the
+  automatic application of unambiguous changes happens only with an explicit
+  `apply_safe`. Every mutation — `apply_safe`, and every
+  `music_apply_tags` action — requires the `tags:write` capability, which is
+  off by default, granted at startup and revocable live. Responses carry no
+  file paths, library roots or credentials, and every reported change count
+  uses the same per-track-and-field unit as the app. Both surfaces use the
+  same job queue and scan id, so an agent scan produces the app's sidebar
+  entry and app Undo reverts an agent apply. *Tests:*
+  `doc_11a_scan_tags_does_not_write_without_apply_safe`,
+  `doc_11a_apply_safe_requires_the_tags_write_capability`,
+  `doc_11a_apply_tags_requires_the_tags_write_capability`,
+  `doc_11a_review_tags_groups_by_album_and_filters_by_category`,
+  `doc_11a_review_tags_counts_written_changes_per_album`,
+  `doc_11a_doctor_responses_carry_no_file_paths`.
+
+- **DOC-6c** [planned] [manual] — **The visible sign-off covers every Doctor
+  state.** On a real GNOME display, the start page, sidebar entry, grouped
+  review with one header, post-apply and nothing-to-fix pages, wide and narrow
+  geometry, virtualization, strikethrough, source states, focus indicators,
+  one-time network confirmation and the shared scan/apply/revert progress card
+  are checked. No text is truncated, no column forces horizontal scrolling,
+  and the interface remains operable during real file jobs.
 ## Z. Single-pane track browser
 
 - **BROWSE-1** [active] [e2e] — **Music has exactly one track list.**
@@ -3710,9 +4017,12 @@ available. The player plays only finished files.
   through as a "backing plate"). Layout per frame 1e: cover 52/radius 10
   with inset hairline; title 13 px bold and artist 11.5 px on one
   ellipsizing baseline row (title prioritized, artist contrast ≥ 4.5:1
-  on the tint); below it the mini waveform (46 equal-width bars, played
-  portion in the playback accent, remainder white ~18%, click = seek,
-  drag = scrub); play/pause 38 px in the accent. No volume, prev, or
+  on the tint); below it the mini waveform (46 equal-width bars, coloured
+  exactly as the full bar is under SEEK-1 — the track's own averaged
+  colour on both sides of the playhead, or the playback accent where no
+  curve exists yet; click = seek, drag = scrub); play/pause 38 px in the
+  accent. The mini bar carries no legend and no playhead glow: it is small
+  enough that a second explanation would be larger than the thing explained. No volume, prev, or
   next button visible — deliberate reduction. The compact geometry is
   isolated from the full-window size.
 
@@ -3988,7 +4298,7 @@ listening statistics.
   toast and a single undo. Escape clears the current episode selection in
   whichever of the two surfaces is showing, and is passed on untouched when
   nothing is selected.
-- **SRC-12a** [active] [gtk] — Episodes can be selected in bulk in both the
+- **SRC-12a** [replaced by SRC-12b] [gtk] — Episodes can be selected in bulk in both the
   grouped library view and the channel detail view, with one shared set of
   batch actions offered only by the context menu for the current selection.
   Selection is carried by a checkbox over the left media slot in grouped rows,
@@ -4013,6 +4323,36 @@ listening statistics.
   `src_12a_channel_page_select_all_stops_at_the_rendered_window` is what
   actually holds the channel-page clause above — `strings_podcasts`, and
   `source_row::media_column`.
+- **SRC-12b** [active] [gtk] — Episodes can be selected in bulk in both the
+  grouped library view and the channel detail view, with one shared set of
+  batch actions offered only by the context menu for the current selection.
+  Selection is shown in both surfaces solely by a neutral row tint; the left
+  media slot contains artwork only, never a checkbox, playback marker,
+  permanent extra column, or separate selection toolbar. Growing a selection
+  with the mouse takes a modifier — Ctrl+click toggles one row, Shift+click
+  extends a range — exactly as the music track list has always worked; a plain
+  click replaces the selection. The checkbox SRC-12a placed over the artwork
+  also let a modifier-free click add a row, and that gesture is deliberately
+  gone with it: one selection idiom across every list beats a second one that
+  exists only where there happens to be artwork to cover. Applying a selection
+  never rebuilds the list. Ctrl+A selects every rendered episode of the
+  focused source; with no focused row it selects the whole rendered list,
+  while the channel page selects its current rendered window. Collapsed
+  groups, episodes past a preview window, and filtered-out rows are never
+  swept up. Escape and the visible Clear action beside the selection count
+  both clear the current surface's selection; Escape propagates unchanged
+  when nothing was selected. Actions meaningless for more than one episode
+  stay hidden, and a batch reports one aggregated toast and one undo. Covered
+  by the `src_12b_…` tests in `podcasts_selection`,
+  `podcasts_view_shortcuts` (including
+  `src_12b_ctrl_a_survives_caps_lock`, because a shortcut that a lock key
+  disarms is not a shortcut), `podcasts_view_tests`, `podcasts_groups_tests`,
+  `podcasts_context_menu`, `podcasts_context_menu_browser_tests`,
+  `podcasts_view_actions` for the aggregated toast and undo,
+  `youtube_channel_detail_tests` — where
+  `src_12b_channel_page_select_all_stops_at_the_rendered_window` is what
+  actually holds the channel-page clause above — `strings_podcasts`, and
+  `source_row::media_column`.
 - **SRC-4a** [active] [gtk] — Radio keeps SRC-4's removal and undo
   behavior, and its station menus continue to omit "Play Next" and "Add
   to Queue". A live stream is deliberately not a citizen of an ordered
@@ -4028,7 +4368,7 @@ listening statistics.
   `page_url` when present and never treats its media enclosure in `audio_url`
   as an episode page. As a single-episode action it is absent from a
   multi-selection menu instead of targeting an arbitrary member, as required
-  by SRC-12a. This asymmetry with radio is deliberate. Unsubscribing is operated
+  by SRC-12b. This asymmetry with radio is deliberate. Unsubscribing is operated
   from the context menu alone; there is no hover star.
 - **SRC-13** [active] [gtk] — **Marking and scrolling are separate in the
   source lists.** The loaded item carries the shared playback marker in every
@@ -4132,7 +4472,7 @@ listening statistics.
   paths. If the binary is missing, the setting stays unchanged and
   the degradation is made visible on the YouTube toggle, which is
   active by default.
-- **POD-4** [active] [gtk] — Episodes start at the saved position;
+- **POD-4** [replaced by POD-24] [gtk] — Episodes start at the saved position;
   this is persisted throttled as well as on pause, stop, switch, and
   quit. After the end, the app offers the next unplayed episode of the
   same show by date via toast and a persistent player-bar button, but
@@ -4365,14 +4705,45 @@ listening statistics.
   original title remains unchanged — Reprise never invents a machine
   translation. Stored episode titles adopt an available localized title on the
   next source refresh.
+- **POD-24** [active] [core] [gtk] — Episodes start at the saved position; this is
+  persisted throttled as well as on pause, stop, switch, and quit. When a
+  directly started YouTube episode reaches its natural end and its frozen
+  POD-21 context has a next rendered episode, Reprise automatically starts that
+  exact no-wrap neighbour — the same target as the enabled Next transport.
+  RSS episodes and YouTube episodes without a next frozen neighbour keep the
+  manual next-unplayed offer preserved from POD-4; QUE-9 continues to own
+  automatic progress through explicitly queued episodes. Podcast and YouTube sessions
+  produce neither scrobbles nor `listen_events` nor play counts. Covered by
+  `pod_24_direct_youtube_completion_uses_the_frozen_next_episode`,
+  `pod_24_finish_offers_next_unplayed_of_show`, and
+  `pod_24_external_session_never_scrobbles`.
+- **POD-25** [active] [gtk] — The Podcasts and YouTube search matches
+  **episode titles only**, case-insensitively and mid-word — not show
+  names, not authors, not descriptions (FIL-1d: "in episode titles" /
+  "in video titles"). A show is rendered when at least one of its
+  episodes matches; it is then auto-expanded and renders only the
+  matching episodes, and a show without a match drops out of the list
+  entirely. Auto-expansion is for the duration of the query only: it
+  never overwrites the show's own collapsed/expanded state, which
+  returns as soon as the query goes. The per-group facts line and the
+  page summary stay **unfiltered** (POD-9 / G2) — they describe the
+  library, not the search. Counting follows FIL-2: while a query or a
+  facet narrows the list the status line reads "N of TOTAL episodes"
+  with the shown number accented, and returns to the unfiltered summary
+  ("3 shows · 13 episodes · 1 new") once nothing restricts. Inside every
+  rendered episode title the query itself is accented, the way FIL-5
+  already accents it in the track table — the same helper, so a hit reads
+  the same wherever the user finds it; a channel tail the row deliberately
+  dims (POD-15) is never accented.
 - **RAD-1** [active] [gtk] — Only the currently connected station is
   accented in the table; its state icon, name, now-playing, and row
   tint change together. All others, as well as a presented but
   disconnected paused station, show "—". Only the player bar may keep
   the last ICY title dimmed as session memory.
 - **RAD-2** [active] [gtk] — Live playback has neither seek nor
-  duration: the player bar and mini-player show elapsed time and a
-  geometry-matched waveform placeholder, MPRIS reports `CanSeek=false`
+  duration: the full-width player bar shows elapsed time and PLAY-13's LIVE
+  badge, while the mini-player keeps elapsed time and its geometry-matched
+  waveform placeholder; MPRIS reports `CanSeek=false`
   and no length. Pause disconnects the stream but stays presented as
   Paused/CanPause with station and dimmed last title; play reconnects
   live. A reconnect error leaves the paused state standing and shows the
@@ -4473,6 +4844,62 @@ plan.
   stops it is stopping someone else's session. The runtime names the
   originator of what is loaded, so this is a question the surface can
   answer rather than guess.
+
+## AH. Sound Similarity
+
+Sound Similarity is an optional local module. Its stored profile is a derived
+cache over the spectrogram, never a second audio decode or a mutation of the
+rendering dataset. It compares the playing track with the local library and
+keeps all ranking work off the GTK thread.
+
+- **SIM-1** [active] [core] — A sound profile lives in its own versioned cache
+  and follows the spectrogram's source-identity invalidation and track
+  deletion. A stale format is absent and is derived again from the stored
+  spectrogram; the spectrogram schema itself gains no recommendation scalar.
+- **SIM-2** [replaced by SIM-9] — The earlier rule compared band means and the
+  mastering scalars alone. Measured over a real library that found the same
+  production and not the genre, and the weights it fixed were nominal rather
+  than effective; SIM-9 adds the temporal half and the scale that makes a
+  weight mean what it says.
+- **SIM-3** [active] [core] — A row's percentage is its rank in the current
+  track's distance distribution across the complete eligible library. Same
+  album (album title plus album artist) and same artist exclusions are applied
+  only after those ranks are formed, so changing a filter never changes the
+  meaning of a percentage.
+- **SIM-4** [active] [core] [gtk] — The Sound tab remains present while analysis is
+  incomplete and shows numeric progress. Results require at least 50 current
+  profiles and the playing track's profile. Profile markers are library-wide
+  feature percentiles; the tempo axis is disabled while tempo is excluded.
+- **SIM-5** [active] [gtk] — The default result limit is seven. **Add to
+  queue** appends exactly the currently shown matches in their displayed
+  nearest-first order and never shuffles them.
+- **SIM-6** [active] [core] — Sound Similarity is a live, default-off Local
+  module. Its defaults exclude the same album, retain the same artist, omit
+  tempo, use Default weighting, and show seven matches. Its static registry
+  declaration provides both the Sound panel tab and **Find similar tracks**.
+- **SIM-7** [active] [gtk] — **Find similar tracks** appears in a single,
+  present-track context menu only while the module is enabled; disabling the
+  module removes the route.
+- **SIM-8** [active] [gtk] — Plugin provision badges are derived from the
+  static registry, never current enable state. A provision-kind set is the
+  unbadged group norm only when it occurs at least twice and strictly more
+  often than the runner-up; otherwise every row is badged. Panel-tab and
+  sidebar-section badges use the accent, while all other kinds are neutral.
+- **SIM-9** [active] [core] — The comparison carries how a track is produced
+  *and* how it moves, both derived from the stored spectrogram alone. Band
+  means and per-band positive flux stay L2-normalized and are compared with
+  cosine distance, each divided by the library's own spread so that a nominal
+  weight is an effective one. Centroid mean, centroid variance, frame-level
+  crest, onset rate, flux mean, flux variation, pulse strength and an enabled
+  tempo estimate are standardized against library spread; zero spread
+  contributes zero. The default weights are bands 0.30, timbre 0.12,
+  dynamics 0.08, rhythm 0.50, tempo 0.
+- **SIM-10** [active] [core] — At most two matches carry the same artist, and
+  the list fills up with the next nearest track by someone else. The nearest
+  match is never displaced by this. Tracks that name no artist are not capped
+  against each other, because unnamed is not a shared identity. The cap applies
+  whatever **Exclude tracks by the same artist** is set to; that setting is the
+  stricter step, not a replacement.
 
 ---
 

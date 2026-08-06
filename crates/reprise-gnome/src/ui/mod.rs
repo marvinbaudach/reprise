@@ -118,7 +118,7 @@ use artist_news::artist_news_worker;
 #[allow(unused_imports)]
 pub(crate) use browse::browse_bar;
 #[allow(unused_imports)]
-use browse::{browse_filter_count, browse_filter_strings};
+use browse::{browse_filter_count, browse_filter_strings, search_chip};
 #[allow(unused_imports)]
 use compact::{
     compact_mode_controls, compact_mode_suggestion, compact_player, compact_player_layouts,

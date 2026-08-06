@@ -1,6 +1,21 @@
 use super::*;
 
 #[test]
+fn occupied_upper_frequency_uses_the_highest_band_above_the_stored_floor() {
+    let mut cells = vec![0; SPECTROGRAM_BAND_COUNT * 2];
+    cells[SPECTROGRAM_BAND_COUNT + 11] = 1;
+    let spectrogram = TrackSpectrogram::from_cells(cells).unwrap();
+
+    let upper = spectrogram.occupied_upper_hz().unwrap();
+
+    assert!(
+        (upper as i64 - 566).abs() <= 2,
+        "unexpected upper edge: {upper}"
+    );
+    assert_eq!(TrackSpectrogram::empty().occupied_upper_hz(), None);
+}
+
+#[test]
 fn one_kilohertz_quarter_scale_tone_lands_in_its_absolute_level_band() {
     let samples = (0..SPECTROGRAM_SAMPLE_RATE_HZ)
         .map(|sample| {

@@ -41,9 +41,21 @@ pub const RELEASES_FETCHING: &str = N_!("Fetching releases…");
 pub const RELEASES_FETCH_PREPARING: &str = N_!("Preparing release check…");
 
 pub fn release_count_line(shown: usize, total: usize) -> String {
+    gap_count_line(&shown.to_string(), total)
+}
+
+/// FIL-2: the same line with the shown number accented. The bold goes in as
+/// the *argument*, not as a substring search over the rendered sentence — a
+/// translation that puts the total first would otherwise bold the wrong
+/// number, silently.
+pub fn release_count_line_markup(shown: usize, total: usize) -> String {
+    gap_count_line(&format!("<b>{shown}</b>"), total)
+}
+
+fn gap_count_line(shown: &str, total: usize) -> String {
     formatted(
         N_!("{shown} of {total} gaps"),
-        &[("shown", &shown.to_string()), ("total", &total.to_string())],
+        &[("shown", shown), ("total", &total.to_string())],
     )
 }
 

@@ -32,7 +32,6 @@ pub const CANCEL_SCAN: &str = N_!("Cancel Scan");
 /// coloured seek bar and the visualisers — not for the spectrogram behind it.
 pub const ANALYZE_LIBRARY: &str = N_!("Analyze Library");
 pub const STOP_ANALYSIS: &str = N_!("Stop Analysis");
-pub const SYNC_DEVICE: &str = N_!("Sync Device…");
 pub const KEYBOARD_SHORTCUTS: &str = N_!("Keyboard Shortcuts");
 pub const OPEN_KEYBOARD_SHORTCUTS: &str = N_!("Open Keyboard Shortcuts");
 

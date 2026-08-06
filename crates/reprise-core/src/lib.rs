@@ -55,6 +55,7 @@ mod db_play_journal;
 mod db_podcasts_radio;
 mod db_recently_added;
 mod db_release_discography;
+mod db_sound_features;
 mod db_spectrogram;
 mod db_sync_log;
 mod db_tag_write_jobs;
@@ -83,6 +84,15 @@ pub mod queue;
 pub mod radio;
 pub mod remote_image;
 pub mod scrobbling;
+pub mod sound_distance;
+pub mod sound_features;
+pub mod sound_file_info;
+pub mod sound_neighbours;
+pub mod sound_preferences;
+pub mod sound_profile;
+pub mod sound_rhythm;
+pub mod sound_snapshot;
+pub mod sound_stats;
 pub mod source_error;
 pub mod spectrogram;
 pub mod spectrogram_backfill;
@@ -112,3 +122,17 @@ mod artist_news_query_tests;
 mod artist_news_view_tests;
 #[cfg(test)]
 mod fingerprint_tests;
+#[cfg(test)]
+mod sound_distance_tests;
+#[cfg(test)]
+mod sound_features_tests;
+#[cfg(test)]
+mod sound_neighbours_tests;
+#[cfg(test)]
+mod sound_profile_tests;
+#[cfg(test)]
+mod sound_rhythm_tests;
+#[cfg(test)]
+mod sound_snapshot_tests;
+#[cfg(test)]
+mod sound_stats_tests;
