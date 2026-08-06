@@ -4,7 +4,8 @@ use rusqlite::{params, Connection, Transaction, TransactionBehavior};
 
 use super::super::tag_edit::{EditableTags, TagPatch};
 use super::super::tag_mutation::{
-    commit_tag_mutation, PreparedTagMutation, TagMutationFailure, WriteErrorKind,
+    reconcile_prepared_tag_mutation, validate_registered_track, write_prepared_tag_mutation,
+    PreparedTagMutation, TagMutationFailure, WriteErrorKind,
 };
 use super::types::{JournaledTagMutation, PreparedTagWriteJob, TagWriteJobError, TagWriteJobSpec};
 
@@ -251,6 +252,53 @@ fn mark_terminal(
         .map_err(|error| sqlite_failure(&error, file_written))
 }
 
+pub(crate) fn begin_tag_write_file(
+    conn: &Connection,
+    job_id: i64,
+    file: &JournaledTagMutation,
+    before_save: &mut dyn FnMut(&Connection, i64, i64),
+) -> Result<(), TagMutationFailure> {
+    claim_tag_write_file(conn, job_id, file)?;
+    before_save(conn, job_id, file.file_id);
+    Ok(())
+}
+
+pub(crate) fn validate_tag_write_file(
+    conn: &Connection,
+    file: &JournaledTagMutation,
+) -> Result<(), TagMutationFailure> {
+    validate_registered_track(conn, file.mutation.id, &file.mutation.path).map_err(|error| {
+        TagMutationFailure {
+            kind: WriteErrorKind::Io,
+            error,
+            file_written: false,
+        }
+    })
+}
+
+pub(crate) fn write_tag_write_file(
+    file: &JournaledTagMutation,
+    ignore_watcher: bool,
+) -> Result<(), TagMutationFailure> {
+    write_prepared_tag_mutation(&file.mutation, ignore_watcher)
+}
+
+pub(crate) fn complete_tag_write_file(
+    conn: &Connection,
+    file: &JournaledTagMutation,
+    write_result: Result<(), TagMutationFailure>,
+) -> Result<(), TagMutationFailure> {
+    let result = write_result.and_then(|()| reconcile_prepared_tag_mutation(conn, &file.mutation));
+    match result {
+        Ok(()) => mark_terminal(conn, file, None),
+        Err(failure) => {
+            mark_terminal(conn, file, Some(&failure))?;
+            Err(failure)
+        }
+    }
+}
+
+#[cfg(test)]
 pub(crate) fn execute_tag_write_file(
     conn: &Connection,
     job_id: i64,
@@ -258,16 +306,11 @@ pub(crate) fn execute_tag_write_file(
     ignore_watcher: bool,
     before_save: &mut dyn FnMut(&Connection, i64, i64),
 ) -> Result<(), TagMutationFailure> {
-    claim_tag_write_file(conn, job_id, file)?;
-    before_save(conn, job_id, file.file_id);
+    begin_tag_write_file(conn, job_id, file, before_save)?;
+    let write_result = validate_tag_write_file(conn, file)
+        .and_then(|()| write_tag_write_file(file, ignore_watcher));
 
-    match commit_tag_mutation(conn, &file.mutation, ignore_watcher) {
-        Ok(()) => mark_terminal(conn, file, None),
-        Err(failure) => {
-            mark_terminal(conn, file, Some(&failure))?;
-            Err(failure)
-        }
-    }
+    complete_tag_write_file(conn, file, write_result)
 }
 
 pub(crate) fn finish_tag_write_job(conn: &Connection, job_id: i64) -> Result<(), rusqlite::Error> {

@@ -54,6 +54,82 @@ const SORT_WHITELIST: [(&str, &str); 12] = [
     ("playlist_order", "pt.position"),
 ];
 
+/// The stored columns read by a track-list sort key.
+///
+/// Tag editing uses this metadata to decide whether a successful patch can
+/// move rows under the active sort. Unknown keys mirror [`order_clause`]'s
+/// title fallback rather than claiming that no column affects their order.
+pub fn sort_key_columns(sort_field: &str) -> &'static [&'static str] {
+    match sort_field {
+        "title" => &["title"],
+        "artist" => &["artist", "year", "album", "track_no"],
+        "album" => &["album", "track_no"],
+        "track_no" => &["track_no"],
+        "genre" => &["genre", "artist"],
+        "year" => &["year"],
+        "duration_ms" => &["duration_ms"],
+        "rating" => &["rating"],
+        "play_count" => &["play_count"],
+        "added_at" => &["added_at"],
+        "album_canonical" => &["disc_no", "track_no", "path", "id"],
+        "playlist_order" => &["position"],
+        _ => &["title"],
+    }
+}
+
+#[cfg(test)]
+mod sort_key_column_tests {
+    use super::{sort_key_columns, SORT_WHITELIST};
+
+    fn referenced_columns(expression: &str) -> Vec<&str> {
+        let mut columns = Vec::new();
+        for token in expression.split(|character: char| {
+            !(character.is_ascii_alphanumeric() || character == '_' || character == '.')
+        }) {
+            let column = token.rsplit('.').next().unwrap_or(token);
+            if column.is_empty()
+                || column.chars().all(|character| character.is_ascii_digit())
+                || matches!(
+                    column.to_ascii_uppercase().as_str(),
+                    "COLLATE"
+                        | "NOCASE"
+                        | "CASE"
+                        | "WHEN"
+                        | "IS"
+                        | "NULL"
+                        | "THEN"
+                        | "ELSE"
+                        | "END"
+                )
+                || columns.contains(&column)
+            {
+                continue;
+            }
+            columns.push(column);
+        }
+        columns
+    }
+
+    #[test]
+    fn sort_key_columns_cover_every_column_read_by_the_sql_whitelist() {
+        for (sort_field, expression) in SORT_WHITELIST {
+            assert_eq!(
+                sort_key_columns(sort_field),
+                referenced_columns(expression),
+                "sort metadata drifted for {sort_field}"
+            );
+        }
+    }
+
+    #[test]
+    fn artist_sort_names_year_as_part_of_its_compound_key() {
+        assert_eq!(
+            sort_key_columns("artist"),
+            ["artist", "year", "album", "track_no"]
+        );
+    }
+}
+
 /// Shared LIKE-filter clause on `(title, artist, album, genre)`, parameterized
 /// by the positional index of the bound `?N` placeholder: callers bind the
 /// filter value at whatever placeholder index is free once their own
