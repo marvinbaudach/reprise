@@ -5,17 +5,21 @@ import uniffi.reprise_android_ffi.AndroidStoredVisualizer
 import uniffi.reprise_android_ffi.AndroidVisualizerChoice
 import uniffi.reprise_android_ffi.MusicLibrary
 
-internal enum class MobileVisualizer(
-    val label: String,
-    val available: Boolean,
-) {
+/**
+ * What the Now Playing surface can show.
+ *
+ * Spectrum and the preview band are absent rather than disabled: they need a
+ * stored spectrogram, the phone no longer computes one, and nothing brings one
+ * across yet. An entry that can never become available is worse than no entry —
+ * "Needs track analysis" would be an explanation for a wait that never ends.
+ * They return with whatever package makes the desktop's analyses reach a phone.
+ */
+internal enum class MobileVisualizer(val label: String) {
     // The plan that specified these was written in German for its reader and
     // named the modes in German prose. They are identifiers there, not strings
     // to ship: every other label in this app is English.
-    COVER("Cover", true),
-    SPECTRUM("Spectrum", false),
-    PREVIEW_BAND("Preview", false),
-    AMBIENT("Ambient", true),
+    COVER("Cover"),
+    AMBIENT("Ambient"),
 }
 
 internal interface VisualizerSettingsPort {
@@ -41,8 +45,12 @@ internal class VisualizerController(
     fun load(): MobileVisualizer = when (port.visualizerSetting()) {
         AndroidStoredVisualizer.Ambient -> MobileVisualizer.AMBIENT
         AndroidStoredVisualizer.Cover -> MobileVisualizer.COVER
-        AndroidStoredVisualizer.PreviewBand -> MobileVisualizer.PREVIEW_BAND
-        AndroidStoredVisualizer.Spectrum -> MobileVisualizer.SPECTRUM
+        // A stored spectrum or preview band is a choice this surface can no
+        // longer render. It falls back to the cover *without writing*, the way
+        // an unknown id does: the value belongs to whoever stored it, and a
+        // fallback that overwrote it would decide for the other surface.
+        AndroidStoredVisualizer.PreviewBand,
+        AndroidStoredVisualizer.Spectrum,
         AndroidStoredVisualizer.Unset,
         is AndroidStoredVisualizer.Unsupported,
         -> MobileVisualizer.COVER
@@ -52,8 +60,6 @@ internal class VisualizerController(
         port.setVisualizer(
             when (visualizer) {
                 MobileVisualizer.COVER -> AndroidVisualizerChoice.COVER
-                MobileVisualizer.SPECTRUM -> AndroidVisualizerChoice.SPECTRUM
-                MobileVisualizer.PREVIEW_BAND -> AndroidVisualizerChoice.PREVIEW_BAND
                 MobileVisualizer.AMBIENT -> AndroidVisualizerChoice.AMBIENT
             },
         )
