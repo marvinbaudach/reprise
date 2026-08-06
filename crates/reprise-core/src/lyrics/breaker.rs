@@ -18,6 +18,7 @@ pub(super) enum BreakerOutcome {
 struct BreakerState {
     failures: u32,
     open_until: Option<i64>,
+    retry_after_until: Option<i64>,
 }
 
 pub(super) struct Breaker {
@@ -36,13 +37,17 @@ impl Breaker {
     }
 
     pub(super) fn can_attempt(&self, host: &'static str, now: i64, force: bool) -> bool {
-        if force {
+        let states = self.states();
+        let Some(state) = states.get(host) else {
             return true;
+        };
+        if state
+            .retry_after_until
+            .is_some_and(|retry_after_until| now < retry_after_until)
+        {
+            return false;
         }
-        self.states()
-            .get(host)
-            .and_then(|state| state.open_until)
-            .is_none_or(|open_until| now >= open_until)
+        force || state.open_until.is_none_or(|open_until| now >= open_until)
     }
 
     pub(super) fn record(&self, host: &'static str, outcome: BreakerOutcome, now: i64) {
@@ -59,6 +64,25 @@ impl Breaker {
                 }
             }
         }
+    }
+
+    pub(super) fn record_rate_limited_until(
+        &self,
+        host: &'static str,
+        now: i64,
+        retry_after_until: Option<i64>,
+    ) {
+        let Some(retry_after_until) = retry_after_until else {
+            self.record(host, BreakerOutcome::Failure, now);
+            return;
+        };
+        let mut states = self.states();
+        let state = states.entry(host).or_default();
+        state.retry_after_until = Some(
+            state
+                .retry_after_until
+                .map_or(retry_after_until, |current| current.max(retry_after_until)),
+        );
     }
 
     pub(super) fn all_open(&self, hosts: &[&'static str], now: i64) -> bool {
