@@ -3292,29 +3292,31 @@ STYLE-1).
   panel looks the same whichever tab is open.** The Visual tab used to hold
   the backdrop at rest and darken the turning disc, on the theory that two
   light languages in one panel fight each other; in use the plain treatment
-  was simply better there too. The backdrop and the disc rest only when the
-  "Song Visuals" plugin is off or the panel is closed — the second because a
-  pinned backdrop runs no tick, and without it the paused breath would keep
-  redrawing a widget nobody can see.
+  was simply better there too. The backdrop and the disc rest when the
+  "Song Visuals" plugin is off, when the panel is closed, or when what plays
+  is not music (AC-26) — the second because a pinned backdrop runs no tick,
+  and without it the paused breath would keep redrawing a widget nobody can
+  see.
 
-- **AC-25** [active] [gtk] — **A podcast runs no audio visuals.** Speech has
-  no spectrum worth drawing: the bars flicker around a voice instead of
-  answering it, and the reactive light breathes on a signal with no beat in
-  it. While a podcast episode plays — reached directly from the Podcasts
-  view or as a queued episode, both count — the whole audio-reactive chain
-  behaves exactly as though the "Song Visuals" plugin (AC-23) were switched
-  off: the spectrum stops at the source, the Visual tab disappears from the
-  panel, the reactive light of AC-24 rests, and the bar's bass layers settle
-  instead of freezing at their last reading. The episode's own surfaces are
-  untouched — the seek bar, the source image, and the playing marker in the
-  episode list are status, not visualization. **Radio keeps its visuals**:
-  it plays music. When the episode ends, the plugin's own setting decides
-  again. A user who was on the Visual tab lands on Up Next and stays there,
-  the same way an external session already displaces the Lyrics tab
-  (`POD-21`). The
-  effective answer — plugin state AND playback mode — has exactly one owner
-  in the code; no surface pairs the switch with its own idea of what a
-  podcast is.
+- **AC-25** [replaced by AC-26]
+- **AC-26** [active] [gtk] — **Song Visuals follow the music, not the source.**
+  A playing YouTube episode or radio station gets the same treatment as a
+  local track: the Visual tab with its audio-reactive bars, and the cover
+  bloom and shimmer driven by the session's own artwork — one load, shared
+  with the cover it already shows, never a second request for the same image.
+  An RSS podcast is speech, not music: speech has no spectrum worth drawing,
+  so the bars would flicker around a voice instead of answering it. While an
+  episode plays, the whole audio-reactive chain behaves as though the "Song
+  Visuals" plugin (AC-23) were off: **the spectrum stops at the source**, the
+  Visual tab disappears from the panel, the reactive light of AC-24 rests
+  without a cover, and **the bar's bass layers settle instead of freezing at
+  their last reading**. The episode's own surfaces are untouched — the seek
+  bar, the source image and the playing marker are status, not visualization.
+  A user who was on the Visual tab lands on Up Next and stays there, the same
+  way an external session displaces the Lyrics tab (`POD-21`). When the
+  episode ends, the plugin's own setting decides again. One predicate decides
+  the category, `ExternalPlaybackSnapshot::carries_music`; no surface
+  re-derives it from the media variant.
 
 ## Y. Library Doctor / Tag Cleanup
 
@@ -4696,8 +4698,9 @@ listening statistics.
   neighbours: ⏮/⏭ move to the adjacent row of the list it was started from,
   in rendered order, without wrapping. The neighbour list is frozen when
   playback starts. Radio has no neighbours. While any external session is
-  active the lyrics tab is hidden and the panel header shows the episode
-  instead of "Nothing playing".
+  active the lyrics tab is hidden; the Visual tab is hidden only for RSS
+  podcasts under AC-26. The panel header shows the episode instead of
+  "Nothing playing".
 - **POD-22** [active] [core] [gtk] — When yt-dlp classifies a YouTube
   failure as requiring verification, the failed episode row keeps its normal
   retry action and replaces the generic provider reason with the fixed,

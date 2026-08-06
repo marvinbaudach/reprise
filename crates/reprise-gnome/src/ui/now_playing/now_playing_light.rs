@@ -5,11 +5,37 @@
 //! hands them to the cover lift, the backdrop, the shimmer and the readout —
 //! having two such places is how a duplicated predicate drifts.
 
-use super::panel_state::PanelTab;
+use super::panel_state::{PanelTab, UP_NEXT_PAGE};
 use super::surface::NowPlayingPanel;
+use crate::ui::playback::external_media::ExternalPlaybackSnapshot;
 use crate::ui::swell::Swell;
 
 impl NowPlayingPanel {
+    fn carries_music_or_has_no_external_session(&self) -> bool {
+        self.external_snapshot
+            .borrow()
+            .as_ref()
+            .is_none_or(ExternalPlaybackSnapshot::carries_music)
+    }
+
+    pub(super) fn song_visuals_active_for_media(&self) -> bool {
+        self.song_visuals_enabled.get() && self.carries_music_or_has_no_external_session()
+    }
+
+    pub(super) fn sync_visual_page_visibility(&self) {
+        let visible = self.song_visuals_active_for_media();
+        self.widgets.visual_page.set_visible(visible);
+        if !visible && self.widgets.session.selected.get() == PanelTab::Visual {
+            self.widgets.tab_stack.set_visible_child_name(UP_NEXT_PAGE);
+        }
+    }
+
+    pub(super) fn sync_media_presence(&self) {
+        let has_media =
+            self.loaded_track.borrow().is_some() || self.external_snapshot.borrow().is_some();
+        self.widgets.visualizer.set_has_track(has_media);
+    }
+
     pub(super) fn advance_swell(&self, frame_time_us: i64) {
         if frame_time_us <= 0 {
             *self.swell.borrow_mut() = Swell::default();
@@ -49,7 +75,7 @@ impl NowPlayingPanel {
 
     pub(super) fn sync_visual_activity(&self) {
         self.widgets.visualizer.set_active(
-            self.song_visuals_enabled.get()
+            self.song_visuals_active_for_media()
                 && self.widgets.column.is_visible()
                 && self.widgets.session.selected.get() == PanelTab::Visual,
         );
@@ -72,7 +98,7 @@ impl NowPlayingPanel {
     /// the cover twitching. The head of the panel now looks the same whichever
     /// tab is open.
     pub(super) fn sync_bloom_activity(&self) {
-        let pinned = !self.song_visuals_enabled.get() || !self.widgets.column.is_visible();
+        let pinned = !self.song_visuals_active_for_media() || !self.widgets.column.is_visible();
         self.widgets.bloom.set_pinned(pinned);
         self.widgets.shimmer.set_pinned(pinned);
         if !pinned {

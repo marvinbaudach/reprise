@@ -12,6 +12,7 @@ use reprise_core::source_error::FailureAction;
 fn rad_1_table_projects_only_connected_radio_snapshots() {
     let connected = live_state(Some(ExternalPlaybackSnapshot {
         mode: PlaybackMode::Radio,
+        podcast_kind: None,
         media: ExternalMedia::Radio {
             station_id: 7,
             name: "Station".into(),
@@ -74,6 +75,7 @@ fn add_station(conn: &Rc<Db>, name: &str) -> i64 {
 fn connected_snapshot(station_id: i64, title: &str) -> ExternalPlaybackSnapshot {
     ExternalPlaybackSnapshot {
         mode: PlaybackMode::Radio,
+        podcast_kind: None,
         media: ExternalMedia::Radio {
             station_id,
             name: "Station".into(),

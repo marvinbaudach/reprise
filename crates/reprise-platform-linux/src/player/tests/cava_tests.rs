@@ -2,6 +2,26 @@ use super::*;
 use crate::player_effects::{build_audio_filter, set_spectrum_messages};
 use crate::player_pipeline::AUDIO_SINK_ENV_VAR;
 use gstreamer_app as gst_app;
+use reprise_core::playback::SpectrumFrame;
+
+fn wait_for_spectrum_frame(rx: &std::sync::mpsc::Receiver<PlayerEvent>) -> SpectrumFrame {
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        while gst::glib::MainContext::default().pending() {
+            gst::glib::MainContext::default().iteration(false);
+        }
+        while let Ok(event) = rx.try_recv() {
+            if let PlayerEvent::Spectrum(frame) = event {
+                return frame;
+            }
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "expected a spectrum frame within timeout"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
 
 #[test]
 fn ac_23_audio_filter_exposes_normalized_mono_pcm_to_cava() {
@@ -93,27 +113,35 @@ fn ac_23_enabled_player_emits_live_cava_frames() {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
     player.play(path).unwrap();
 
-    let deadline = std::time::Instant::now() + Duration::from_secs(5);
-    let frame = 'wait: loop {
-        while gst::glib::MainContext::default().pending() {
-            gst::glib::MainContext::default().iteration(false);
-        }
-        while let Ok(event) = rx.try_recv() {
-            if let PlayerEvent::Spectrum(frame) = event {
-                break 'wait frame;
-            }
-        }
-        assert!(
-            std::time::Instant::now() < deadline,
-            "expected a spectrum frame within timeout"
-        );
-        std::thread::sleep(Duration::from_millis(5));
-    };
+    let frame = wait_for_spectrum_frame(&rx);
 
     assert!(frame
         .bands()
         .iter()
         .all(|value| (0.0..=1.0).contains(value)));
+    assert!(frame.bands().iter().any(|value| *value > 0.0));
+    player.stop().unwrap();
+    std::env::remove_var(AUDIO_SINK_ENV_VAR);
+}
+
+#[test]
+fn ac_26_enabled_uri_playback_emits_live_cava_frames() {
+    let _guard = AUDIO_SINK_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    std::env::set_var(AUDIO_SINK_ENV_VAR, "fakesink");
+
+    let (tx, rx) = std::sync::mpsc::channel::<PlayerEvent>();
+    let player = Player::new(Box::new(move |event| {
+        let _ = tx.send(event);
+    }))
+    .unwrap();
+    player.set_spectrum_enabled(true).unwrap();
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
+    let uri = gst::glib::filename_to_uri(path, None).unwrap();
+    player.play_uri(uri.as_str()).unwrap();
+
+    let frame = wait_for_spectrum_frame(&rx);
     assert!(frame.bands().iter().any(|value| *value > 0.0));
     player.stop().unwrap();
     std::env::remove_var(AUDIO_SINK_ENV_VAR);

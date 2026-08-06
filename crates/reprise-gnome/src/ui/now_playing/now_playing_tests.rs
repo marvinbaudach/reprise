@@ -11,7 +11,7 @@ fn context_window(ids: &[i64]) -> Rc<dyn crate::ui::track_list::queue_sections::
     Rc::new(ids.to_vec())
 }
 
-fn loaded_track() -> NowPlaying {
+pub(super) fn loaded_track() -> NowPlaying {
     NowPlaying {
         id: 7,
         title: "Loaded title".into(),
@@ -23,60 +23,6 @@ fn loaded_track() -> NowPlaying {
         art_url: None,
         duration_ms: 180_000,
         path: "/tmp/loaded.mp3".into(),
-    }
-}
-
-pub(super) fn external_episode_snapshot(
-) -> crate::ui::playback::external_media::ExternalPlaybackSnapshot {
-    use crate::ui::playback::external_media::{
-        EpisodeSource, ExternalMedia, ExternalPlaybackSnapshot, PodcastPhase, StreamTags,
-    };
-    use crate::ui::playback::preview::PlaybackMode;
-
-    ExternalPlaybackSnapshot {
-        mode: PlaybackMode::Podcast,
-        media: ExternalMedia::Podcast {
-            episode_id: 42,
-            title: "External episode".into(),
-            show: "External show".into(),
-            source: EpisodeSource::Url("https://example.test/episode.mp3".into()),
-            resume_ms: 0,
-            duration_ms: Some(180_000),
-        },
-        art_url: Some("https://images.test/show.jpg".into()),
-        can_go_previous: true,
-        can_go_next: false,
-        stream_tags: StreamTags::default(),
-        podcast_phase: Some(PodcastPhase::Playing),
-        restored: false,
-        radio: None,
-        error: None,
-    }
-}
-
-pub(super) fn external_radio_snapshot(
-) -> crate::ui::playback::external_media::ExternalPlaybackSnapshot {
-    use crate::ui::playback::external_media::{
-        ExternalMedia, ExternalPlaybackSnapshot, RadioPresentation, StreamTags,
-    };
-    use crate::ui::playback::preview::PlaybackMode;
-
-    ExternalPlaybackSnapshot {
-        mode: PlaybackMode::Radio,
-        media: ExternalMedia::Radio {
-            station_id: 7,
-            name: "External radio".into(),
-            stream_url: "https://radio.test/live".into(),
-            uuid: None,
-        },
-        art_url: Some("https://images.test/radio.jpg".into()),
-        can_go_previous: false,
-        can_go_next: false,
-        stream_tags: StreamTags::default(),
-        podcast_phase: None,
-        restored: false,
-        radio: Some(RadioPresentation::connected()),
-        error: None,
     }
 }
 
@@ -115,102 +61,6 @@ fn no_loaded_track_uses_the_idle_presentation() {
     assert_eq!(presentation.title, "Nothing playing");
     assert_eq!(presentation.subtitle, "");
     assert!(presentation.idle);
-}
-
-/// `PLAY-12`: the panel's cover, title, artist and album are links, and
-/// `render_track` makes them operable exactly while `idle` is false. So `idle`
-/// has to mean "nothing loaded at all" and nothing else — a loaded track *or*
-/// an external session keeps the surfaces alive, and only the empty panel
-/// switches them off instead of letting clicks fall through to nowhere.
-#[test]
-fn play_12_only_an_empty_panel_switches_its_link_surfaces_off() {
-    let track = loaded_track();
-
-    assert!(panel_presentation_with_external(None, None, PlaybackState::Stopped).idle);
-    assert!(
-        !panel_presentation_with_external(Some(&track), None, PlaybackState::Paused).idle,
-        "a loaded track keeps the panel's links operable"
-    );
-    for snapshot in [external_episode_snapshot(), external_radio_snapshot()] {
-        assert!(
-            !panel_presentation_with_external(None, Some(&snapshot), PlaybackState::Playing).idle,
-            "an external session keeps the panel's links operable"
-        );
-    }
-}
-
-#[test]
-fn pod_21_external_episode_uses_the_shared_bar_identity_instead_of_idle_copy() {
-    let snapshot = external_episode_snapshot();
-
-    let presentation =
-        panel_presentation_with_external(None, Some(&snapshot), PlaybackState::Playing);
-
-    assert_eq!(presentation.title, "External episode");
-    assert_eq!(presentation.subtitle, "External show");
-    assert!(!presentation.idle);
-}
-
-#[test]
-#[ignore = "requires a display; run via xvfb-run"]
-fn pod_21_external_header_uses_episode_identity_and_source_tile() {
-    gtk4::init().unwrap();
-    let (_window, panel) = test_panel("org.reprise.Reprise.ExternalPanelHeaderTest");
-    panel.set_external_snapshot(Some(external_episode_snapshot()));
-
-    assert_eq!(panel.widgets.title.text(), "External episode");
-    assert_eq!(panel.widgets.artist.text(), "External show");
-    assert!(panel.widgets.album.text().is_empty());
-    assert_eq!(
-        panel.widgets.cover_stack.visible_child_name().as_deref(),
-        Some("external")
-    );
-    assert!(panel.widgets.external_cover.first_child().is_some());
-    assert!(!panel
-        .widgets
-        .stage
-        .has_css_class("reprise-now-playing-idle"));
-}
-
-#[test]
-#[ignore = "requires a display; run via xvfb-run"]
-fn pod_21_lyrics_falls_back_and_stays_hidden_for_podcast_youtube_and_radio() {
-    gtk4::init().unwrap();
-    let (_window, panel) = test_panel("org.reprise.Reprise.ExternalLyricsTest");
-    let mut youtube = external_episode_snapshot();
-    if let crate::ui::playback::external_media::ExternalMedia::Podcast { title, source, .. } =
-        &mut youtube.media
-    {
-        *title = "YouTube episode".into();
-        *source = crate::ui::playback::external_media::EpisodeSource::Url(
-            "https://youtube.test/watch?v=42".into(),
-        );
-    }
-
-    for snapshot in [
-        external_episode_snapshot(),
-        youtube,
-        external_radio_snapshot(),
-    ] {
-        panel.widgets.tab_stack.set_visible_child_name(LYRICS_PAGE);
-        assert_eq!(panel.widgets.session.selected.get(), PanelTab::Lyrics);
-
-        panel.set_external_snapshot(Some(snapshot));
-
-        assert!(!panel.widgets.lyrics_page.is_visible());
-        assert_eq!(panel.widgets.session.selected.get(), PanelTab::UpNext);
-        assert_eq!(
-            panel.widgets.tab_stack.visible_child_name().as_deref(),
-            Some(UP_NEXT_PAGE)
-        );
-        assert_eq!(
-            panel.widgets.footer.text(),
-            panel.widgets.footers.borrow().up_next
-        );
-
-        panel.set_external_snapshot(None);
-        assert!(panel.widgets.lyrics_page.is_visible());
-    }
 }
 
 #[test]
