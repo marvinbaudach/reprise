@@ -67,6 +67,10 @@ pub fn get_with_timeout(url: &str, timeout: Duration) -> Result<String, RadioErr
 }
 
 pub fn icy_headers(url: &str) -> Result<Vec<(String, String)>, RadioError> {
+    #[cfg(any(test, feature = "test-fixtures"))]
+    if let Some(directory) = fixture_directory() {
+        return fixture_icy_headers(url, &directory);
+    }
     wait_for_request_slot();
     let response = ureq::Agent::config_builder()
         .timeout_global(Some(HTTP_TIMEOUT))
@@ -142,6 +146,7 @@ enum FixtureRequest {
     Search(String),
     Click(String),
     ByUrl(String),
+    Stream(String),
 }
 
 #[cfg(any(test, feature = "test-fixtures"))]
@@ -152,6 +157,14 @@ impl FixtureRequest {
             Self::Search(term) => format!("search-{}.json", fixture_component(term)),
             Self::Click(uuid) => format!("click-{}.json", fixture_component(uuid)),
             Self::ByUrl(url) => format!("byurl-{}.json", fixture_component(url)),
+            Self::Stream(url) => format!("stream-{}.body", fixture_component(url)),
+        }
+    }
+
+    fn headers_filename(&self) -> Option<String> {
+        match self {
+            Self::Stream(url) => Some(format!("stream-{}.headers.json", fixture_component(url))),
+            _ => None,
         }
     }
 }
@@ -209,7 +222,7 @@ fn fixture_request(value: &str) -> Option<FixtureRequest> {
             .find_map(|(key, value)| (key == "url").then(|| value.into_owned()))
             .map(FixtureRequest::ByUrl);
     }
-    None
+    matches!(url.scheme(), "http" | "https").then(|| FixtureRequest::Stream(value.to_owned()))
 }
 
 #[cfg(any(test, feature = "test-fixtures"))]
@@ -219,6 +232,17 @@ fn fixture_get(url: &str, directory: &Path) -> Result<String, RadioError> {
     let file = std::fs::File::open(directory.join(request.filename()))
         .map_err(|error| RadioError::Transport(error.to_string()))?;
     http_body::read_bounded_string(file).map_err(map_body_error)
+}
+
+#[cfg(any(test, feature = "test-fixtures"))]
+fn fixture_icy_headers(url: &str, directory: &Path) -> Result<Vec<(String, String)>, RadioError> {
+    let filename = fixture_request(url)
+        .and_then(|request| request.headers_filename())
+        .ok_or_else(|| RadioError::Transport("unsupported fixture route".into()))?;
+    let file = std::fs::File::open(directory.join(filename))
+        .map_err(|error| RadioError::Transport(error.to_string()))?;
+    let body = http_body::read_bounded_string(file).map_err(map_body_error)?;
+    serde_json::from_str(&body).map_err(|error| RadioError::Transport(error.to_string()))
 }
 
 fn wait_for_request_slot() {
