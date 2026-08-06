@@ -3,11 +3,33 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
 
-SELECTION_MARKER_NOUNS = ("select", "track")
+# A selection marker is the count standing next to a selection noun, as in the
+# tag dialog title "Edit 512 Tracks" or a status line "512 selected". The count
+# merely occurring somewhere inside a longer string is not evidence: the 100k
+# fixture names its rows "Track NNNNNN", so "Track 005128" would otherwise pass.
+SELECTION_MARKER_NOUNS = ("tracks", "track", "songs", "song", "items", "item", "selected")
+SELECTION_MARKER_VERBS = ("selected", "selection", "select")
+
+
+def selection_marker_pattern(selection_count: int) -> re.Pattern[str]:
+    """Match the count immediately adjacent to a selection noun, either order."""
+    nouns = "|".join(re.escape(noun) for noun in SELECTION_MARKER_NOUNS)
+    verbs = "|".join(re.escape(verb) for verb in SELECTION_MARKER_VERBS)
+    count = re.escape(str(selection_count))
+    return re.compile(
+        rf"(?<!\d){count}(?!\d)[\s\u00a0]*(?:{nouns})\b"
+        rf"|\b(?:{verbs})[\s:\u00a0]*(?<!\d){count}(?!\d)",
+        re.IGNORECASE,
+    )
+
+
+def label_shows_selection_count(label: str, selection_count: int) -> bool:
+    return selection_marker_pattern(selection_count).search(label) is not None
 
 
 @dataclass(frozen=True)
@@ -448,14 +470,10 @@ def _audit_batch(
 ) -> dict[str, Any]:
     field_tokens = workload.get("field_tokens", {})
     selection_count = int(workload.get("selection_count", 0))
-    selection_pattern = str(selection_count)
+    selection_pattern = selection_marker_pattern(selection_count)
 
     def has_selection_marker(trace: ActionTrace) -> bool:
-        return any(
-            selection_pattern in label
-            and any(noun in label.casefold() for noun in SELECTION_MARKER_NOUNS)
-            for label in trace.after_labels
-        )
+        return any(selection_pattern.search(label) for label in trace.after_labels)
 
     edit_index = next(
         (

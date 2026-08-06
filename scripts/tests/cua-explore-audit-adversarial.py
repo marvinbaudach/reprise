@@ -359,6 +359,55 @@ class WorkloadEvidenceAdversarialTests(unittest.TestCase):
                     audit_action_workload(0, workload, traces)["selection_observed"]
                 )
 
+    def test_batch_rejects_a_row_title_that_merely_contains_the_digits(self) -> None:
+        # The 100k fixture names its rows "Track NNNNNN". "Track 005128" holds
+        # both the digits 512 and the word "track" without any selection ever
+        # being visible.
+        workload = self.stress.workloads[0]
+        for labels in (
+            ("Track 005128",),
+            ("Track 005120", "Track 105129"),
+            ("5124 tracks scanned",),
+        ):
+            with self.subTest(labels=labels):
+                traces = [
+                    ActionTrace(
+                        action={"kind": "activate", "target_label": "Edit Tags"},
+                        after_labels=labels,
+                        state_changed=True,
+                    ),
+                    ActionTrace(
+                        action={"kind": "activate", "target_label": "Save 512"},
+                        after_labels=labels,
+                        state_changed=True,
+                    ),
+                ]
+
+                self.assertFalse(
+                    audit_action_workload(0, workload, traces)["selection_observed"]
+                )
+
+    def test_batch_accepts_a_visible_selection_count(self) -> None:
+        workload = self.stress.workloads[0]
+        for labels in (("512 selected",), ("Selected: 512",), ("512 tracks",)):
+            with self.subTest(labels=labels):
+                traces = [
+                    ActionTrace(
+                        action={"kind": "activate", "target_label": "Edit Tags"},
+                        after_labels=labels,
+                        state_changed=True,
+                    ),
+                    ActionTrace(
+                        action={"kind": "activate", "target_label": "Save 512"},
+                        after_labels=labels,
+                        state_changed=True,
+                    ),
+                ]
+
+                self.assertTrue(
+                    audit_action_workload(0, workload, traces)["selection_observed"]
+                )
+
     def test_batch_accepts_the_multi_tag_dialog_title(self) -> None:
         workload = self.stress.workloads[0]
         traces = [
