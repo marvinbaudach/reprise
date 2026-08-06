@@ -71,7 +71,7 @@ pub(in crate::ui) struct BrowseSnapshot {
 }
 
 impl BrowseSnapshot {
-    fn ids(&self) -> Vec<i64> {
+    pub(in crate::ui) fn ids(&self) -> Vec<i64> {
         self.tracks.iter().map(|track| track.id).collect()
     }
 }

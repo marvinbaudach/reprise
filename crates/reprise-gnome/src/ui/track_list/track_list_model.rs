@@ -45,6 +45,8 @@ use reprise_core::queries::{self, BrowseFilter, QueueItemMetadata};
 use reprise_core::up_next::QueueItem;
 use reprise_core::view_source::ViewSource;
 
+use super::track_list_model_change::ModelChange;
+
 /// Row count per lazily-loaded window. Carried over from the stage-1 fixed
 /// page size (`track_list.rs`'s former `WINDOW_LIMIT`), now used as the unit
 /// of lazy loading rather than the single page loaded in full every reload.
@@ -100,6 +102,14 @@ mod imp {
     pub struct TrackListModel {
         pub conn: RefCell<Option<Rc<Db>>>,
         pub state: RefCell<ModelState>,
+        /// Bumped on every repopulation. A narrowed `items_changed` range is
+        /// computed synchronously but applied a main-loop turn later; if the
+        /// model was refilled in between, that range describes rows that no
+        /// longer exist as described, so the range is discarded in favour of a
+        /// full invalidation. Counting refills is enough — comparing the id
+        /// lists themselves would cost the sorted full-table query this whole
+        /// change exists to avoid.
+        pub generation: std::cell::Cell<u64>,
     }
 
     #[glib::object_subclass]
@@ -364,6 +374,54 @@ impl TrackListModel {
         queue_items: &[QueueItem],
         exclude_ai: bool,
     ) {
+        self.set_query_browsed_ai_inner(
+            source,
+            sort_field,
+            sort_dir,
+            filter,
+            browse,
+            queue_items,
+            exclude_ai,
+            None,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn set_query_browsed_ai_changed(
+        &self,
+        source: &ViewSource,
+        sort_field: &str,
+        sort_dir: &str,
+        filter: &str,
+        browse: &BrowseFilter,
+        queue_items: &[QueueItem],
+        exclude_ai: bool,
+        change: ModelChange,
+    ) {
+        self.set_query_browsed_ai_inner(
+            source,
+            sort_field,
+            sort_dir,
+            filter,
+            browse,
+            queue_items,
+            exclude_ai,
+            Some(change),
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn set_query_browsed_ai_inner(
+        &self,
+        source: &ViewSource,
+        sort_field: &str,
+        sort_dir: &str,
+        filter: &str,
+        browse: &BrowseFilter,
+        queue_items: &[QueueItem],
+        exclude_ai: bool,
+        requested_change: Option<ModelChange>,
+    ) {
         let old_total = self.imp().state.borrow().total;
 
         let Some(conn) = self.imp().conn.borrow().clone() else {
@@ -445,12 +503,39 @@ impl TrackListModel {
             filter_len: filter.chars().count(),
             exclude_ai,
         });
+        let generation = self.imp().generation.get();
+        let change = requested_change
+            .filter(|change| {
+                // Totals and bounds only prove the range FITS. The generation
+                // proves it still DESCRIBES this model: same row count with
+                // different rows underneath would otherwise pass.
+                change.generation == generation
+                    && change.before_total == old_total
+                    && change.after_total == new_total
+                    && change.position.saturating_add(change.removed) <= old_total
+                    && change.position.saturating_add(change.added) <= new_total
+            })
+            .unwrap_or(ModelChange {
+                position: 0,
+                removed: old_total,
+                added: new_total,
+                before_total: old_total,
+                after_total: new_total,
+                generation,
+            });
+        self.imp().generation.set(generation.wrapping_add(1));
         super::diagnostic_trail::record(super::diagnostic_trail::Event::ItemsChanged {
-            position: 0,
-            removed: old_total,
-            added: new_total,
+            position: change.position,
+            removed: change.removed,
+            added: change.added,
         });
-        self.items_changed(0, old_total, new_total);
+        self.items_changed(change.position, change.removed, change.added);
+    }
+
+    /// How often the model has been repopulated. See `imp::TrackListModel::
+    /// generation` for why a narrowed change range is keyed on this.
+    pub(in crate::ui) fn generation(&self) -> u64 {
+        self.imp().generation.get()
     }
 
     /// Returns a clone of the `Track` at `position` (for row activation and,

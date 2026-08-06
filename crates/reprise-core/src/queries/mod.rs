@@ -96,7 +96,7 @@ mod surface_browse;
 pub use album_directories::query_album_directories;
 pub use artist_context::{query_artist_albums, query_stats_album_target_for_path};
 pub use browse::{query_browse_values, BrowseFacet, BrowseFilter, BrowseValue};
-pub use clauses::build_track_ids_query;
+pub use clauses::{build_track_ids_query, sort_key_columns};
 pub use doctor::count_pending_doctor_findings;
 // Task 1.2: the centralized presence predicate, re-exported so modules
 // outside this one (`library::scanner`, `library::artist_detail`, `db::
