@@ -19,6 +19,9 @@ use crate::models::ImportErrorKind;
 use super::scanner::ScanOutcome;
 use super::tag_edit::{read_editable_tags, EditableTags, TagEditError, TagPatch};
 
+pub(crate) use super::tag_mutation_commit::{
+    commit_tag_mutation, reconcile_prepared_tag_mutation, write_prepared_tag_mutation,
+};
 pub(crate) use super::tag_mutation_guarded::{
     commit_guarded_tag_changes, read_tag_field_values, GuardedTagChange, GuardedTagField,
 };
@@ -200,7 +203,7 @@ pub(crate) fn apply_tag_patch_to_file(path: &Path, patch: &TagPatch) -> Result<(
     apply_tag_patch_to_tagged(&mut tagged, path, patch)
 }
 
-fn apply_tag_patch_to_tagged(
+pub(super) fn apply_tag_patch_to_tagged(
     tagged: &mut TaggedFile,
     path: &Path,
     patch: &TagPatch,
@@ -377,7 +380,7 @@ pub(super) fn save_loaded_tagged(tagged: &TaggedFile, path: &Path) -> Result<(),
     Ok(())
 }
 
-fn editable_tags_from_tagged(tagged: &TaggedFile) -> EditableTags {
+pub(super) fn editable_tags_from_tagged(tagged: &TaggedFile) -> EditableTags {
     let tag = tagged.primary_tag().or_else(|| tagged.first_tag());
     EditableTags {
         title: tag
@@ -407,7 +410,10 @@ fn editable_tags_from_tagged(tagged: &TaggedFile) -> EditableTags {
     }
 }
 
-fn affected_fields_still_match(prepared: &PreparedTagMutation, current: &EditableTags) -> bool {
+pub(super) fn affected_fields_still_match(
+    prepared: &PreparedTagMutation,
+    current: &EditableTags,
+) -> bool {
     let patch = &prepared.patch;
     let before = &prepared.before;
     (patch.title.is_none() || current.title == before.title)
@@ -461,69 +467,6 @@ pub(super) fn reconcile_after_write(conn: &Connection, id: i64, path: &Path) -> 
         )),
         Err(error) => Err(format!("tag reconciliation failed: {error}")),
     }
-}
-
-pub(crate) fn commit_tag_mutation(
-    conn: &Connection,
-    prepared: &PreparedTagMutation,
-    ignore_watcher: bool,
-) -> Result<(), TagMutationFailure> {
-    validate_registered_track(conn, prepared.id, &prepared.path).map_err(|error| {
-        TagMutationFailure {
-            kind: WriteErrorKind::Io,
-            error,
-            file_written: false,
-        }
-    })?;
-    if prepared.strip_and_rewrite {
-        if ignore_watcher {
-            super::watcher::ignore_path(&prepared.path, IGNORE_DURATION);
-        }
-        strip_and_rewrite_tag(&prepared.path, &prepared.patch).map_err(|error| {
-            TagMutationFailure {
-                kind: classify_write_error(&error),
-                error: error.to_string(),
-                file_written: true,
-            }
-        })?;
-        return reconcile_after_write(conn, prepared.id, &prepared.path).map_err(|error| {
-            TagMutationFailure {
-                kind: WriteErrorKind::Io,
-                error,
-                file_written: true,
-            }
-        });
-    }
-    let mut tagged = lofty::read_from_path(&prepared.path).map_err(|error| {
-        let error = TagEditError::from(error);
-        TagMutationFailure {
-            kind: classify_write_error(&error),
-            error: error.to_string(),
-            file_written: false,
-        }
-    })?;
-    if !affected_fields_still_match(prepared, &editable_tags_from_tagged(&tagged)) {
-        return Err(TagMutationFailure {
-            kind: WriteErrorKind::Io,
-            error: "tags changed after the mutation was prepared; refusing stale write".into(),
-            file_written: false,
-        });
-    }
-    if ignore_watcher {
-        super::watcher::ignore_path(&prepared.path, IGNORE_DURATION);
-    }
-    apply_tag_patch_to_tagged(&mut tagged, &prepared.path, &prepared.patch).map_err(|error| {
-        TagMutationFailure {
-            kind: classify_write_error(&error),
-            error: error.to_string(),
-            file_written: false,
-        }
-    })?;
-    reconcile_after_write(conn, prepared.id, &prepared.path).map_err(|error| TagMutationFailure {
-        kind: WriteErrorKind::Io,
-        error,
-        file_written: true,
-    })
 }
 
 #[cfg(test)]

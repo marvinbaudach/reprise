@@ -22,12 +22,15 @@ use rusqlite::Connection;
 
 use crate::db::Db;
 
-use super::tag_edit::{TagBatchReport, TagWriteFailure, TrackEditPatch};
+use super::tag_edit::{TagBatchReport, TrackEditPatch};
+use super::tag_edit_write_report::{apply_rating_only, push_failure};
+use super::tag_file_write_pool::parallel_file_writes;
 use super::tag_mutation::{
     prepare_tag_mutation, validate_registered_track, PreparedTagMutation, WriteErrorKind,
 };
 use super::tag_write_job::{
-    execute_tag_write_file, finish_tag_write_job, prepare_tag_write_job, TagWriteJobSpec,
+    begin_tag_write_file, complete_tag_write_file, finish_tag_write_job, prepare_tag_write_job,
+    validate_tag_write_file, TagWriteJobSpec,
 };
 
 /// One track's write request: the effective patch to apply plus enough
@@ -37,49 +40,6 @@ pub struct TrackWrite {
     pub id: i64,
     pub path: PathBuf,
     pub patch: TrackEditPatch,
-}
-
-fn push_failure(
-    report: &mut TagBatchReport,
-    id: i64,
-    path: &std::path::Path,
-    kind: WriteErrorKind,
-    error: String,
-) {
-    report.failures.push(TagWriteFailure {
-        id,
-        path: path.to_path_buf(),
-        kind,
-        error,
-    });
-}
-
-fn apply_rating_only(conn: &Connection, write: &TrackWrite, report: &mut TagBatchReport) {
-    let Some(rating) = write.patch.rating else {
-        return;
-    };
-    match crate::library::stats::set_rating_for_registered_track(
-        conn,
-        write.id,
-        &write.path,
-        rating,
-    ) {
-        Ok(true) => report.updated_ids.push(write.id),
-        Ok(false) => push_failure(
-            report,
-            write.id,
-            &write.path,
-            WriteErrorKind::Io,
-            "track path changed before rating; refusing stale request".into(),
-        ),
-        Err(error) => push_failure(
-            report,
-            write.id,
-            &write.path,
-            WriteErrorKind::Io,
-            format!("could not save rating: {error}"),
-        ),
-    }
 }
 
 /// Applies each of `writes` in order, reporting `(processed, total)` via
@@ -149,22 +109,72 @@ fn apply_track_writes_inner(
         }
     };
 
+    let mut file_results = job
+        .as_ref()
+        .map(|job| (0..job.files.len()).map(|_| None).collect::<Vec<_>>())
+        .unwrap_or_default();
+    let mut file_claimed = vec![false; file_results.len()];
+    let mut file_progress_reported = vec![false; file_results.len()];
+    let mut active_file_indices = Vec::new();
+    let mut completed = 0;
+    if let Some(job) = &job {
+        for (file_index, file) in job.files.iter().enumerate() {
+            match begin_tag_write_file(conn, job.id, file, before_save) {
+                Ok(()) => {
+                    file_claimed[file_index] = true;
+                    match validate_tag_write_file(conn, file) {
+                        Ok(()) => active_file_indices.push(file_index),
+                        Err(failure) => file_results[file_index] = Some(Err(failure)),
+                    }
+                }
+                Err(failure) => file_results[file_index] = Some(Err(failure)),
+            }
+        }
+        let active_files = active_file_indices
+            .iter()
+            .map(|index| &job.files[*index])
+            .collect::<Vec<_>>();
+        let mut report_file_completion = || {
+            completed += 1;
+            progress(completed, total);
+        };
+        for (active_index, result) in
+            parallel_file_writes(&active_files, &mut report_file_completion)
+        {
+            file_progress_reported[active_file_indices[active_index]] = true;
+            file_results[active_file_indices[active_index]] = Some(result);
+        }
+    }
+
     for (index, write) in writes.iter().enumerate() {
         if let Some((kind, error)) = preparation_failures[index].take() {
             push_failure(&mut report, write.id, &write.path, kind, error);
-            progress(index + 1, total);
+            completed += 1;
+            progress(completed, total);
             continue;
         }
-        let journaled = job
-            .as_ref()
-            .and_then(|job| job.files.iter().find(|file| file.position == index));
-        if let Some(file) = journaled {
-            if let Err(failure) =
-                execute_tag_write_file(conn, job.as_ref().unwrap().id, file, true, before_save)
-            {
+        let journaled = job.as_ref().and_then(|job| {
+            job.files
+                .iter()
+                .enumerate()
+                .find(|(_, file)| file.position == index)
+        });
+        if let Some((file_index, file)) = journaled {
+            let result = file_results[file_index]
+                .take()
+                .expect("every claimed tag-write file has a terminal file result");
+            let result = if file_claimed[file_index] {
+                complete_tag_write_file(conn, file, result)
+            } else {
+                result
+            };
+            if let Err(failure) = result {
                 let (kind, error, _) = failure.into_parts();
                 push_failure(&mut report, write.id, &write.path, kind, error);
-                progress(index + 1, total);
+                if !file_progress_reported[file_index] {
+                    completed += 1;
+                    progress(completed, total);
+                }
                 continue;
             }
             if write.patch.rating.is_some() {
@@ -172,10 +182,14 @@ fn apply_track_writes_inner(
             } else {
                 report.updated_ids.push(write.id);
             }
+            if file_progress_reported[file_index] {
+                continue;
+            }
         } else {
             apply_rating_only(conn, write, &mut report);
         }
-        progress(index + 1, total);
+        completed += 1;
+        progress(completed, total);
     }
     if let Some(job) = job {
         if let Err(error) = finish_tag_write_job(conn, job.id) {
