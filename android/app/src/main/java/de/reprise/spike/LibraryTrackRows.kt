@@ -22,25 +22,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.testTag
-
-internal data class LibraryRatingControl(
-    val enabled: Boolean,
-    val select: (Boolean) -> Unit,
-)
-
-/** The shipped activity supplies the persisted value; isolated previews retain the old row. */
-internal val LocalLibraryRatingControl = staticCompositionLocalOf {
-    LibraryRatingControl(enabled = true, select = {})
-}
-
-/** The whole rating badge, so a test can ask whether it is there at all. */
-internal const val TRACK_RATING_TAG = "track-rating"
 
 /**
  * The library's track list: the 72 dp rows, their continuation sentinel, and
@@ -57,6 +43,8 @@ internal fun TrackRows(
     lastRequestedOffset: Long?,
     play: (Int) -> Unit,
     loadMore: (LibraryWindowRange) -> Unit,
+    subtitle: TrackRowSubtitle = TrackRowSubtitle.ARTIST_AND_ALBUM,
+    onFavouriteChanged: (LibraryTrack, Boolean) -> Unit = { _, _ -> },
 ) {
     val metrics = libraryFrameMetrics(surfaceLayout)
     val content = trackListContent(tracks, lastRequestedOffset)
@@ -83,7 +71,16 @@ internal fun TrackRows(
                     }
                 },
             ) { item ->
-                TrackListItem(item, surfaceState, metrics, playback, play, loadMore)
+                TrackListItem(
+                    item,
+                    surfaceState,
+                    metrics,
+                    playback,
+                    play,
+                    loadMore,
+                    subtitle,
+                    onFavouriteChanged,
+                )
             }
         }
         return
@@ -101,7 +98,16 @@ internal fun TrackRows(
             items = content,
             key = TrackListContent::stableKey,
         ) { content ->
-            TrackListItem(content, surfaceState, metrics, playback, play, loadMore)
+            TrackListItem(
+                content,
+                surfaceState,
+                metrics,
+                playback,
+                play,
+                loadMore,
+                subtitle,
+                onFavouriteChanged,
+            )
         }
     }
 }
@@ -115,7 +121,14 @@ private fun LibraryListKey.testTag(): String = when (this) {
     LibraryListKey.TITLES -> "library-titles-list"
     LibraryListKey.ALBUMS -> "library-albums-list"
     LibraryListKey.ARTISTS -> "library-artists-list"
+    LibraryListKey.FAVOURITES -> "library-favourites-list"
     LibraryListKey.ALBUM_TRACKS -> "library-album-tracks-list"
+    LibraryListKey.ARTIST_TRACKS -> "library-artist-tracks-list"
+}
+
+internal enum class TrackRowSubtitle {
+    ARTIST_AND_ALBUM,
+    ALBUM_ONLY,
 }
 
 @Composable
@@ -126,17 +139,21 @@ private fun TrackListItem(
     playback: PlaybackUiState,
     play: (Int) -> Unit,
     loadMore: (LibraryWindowRange) -> Unit,
+    subtitle: TrackRowSubtitle,
+    onFavouriteChanged: (LibraryTrack, Boolean) -> Unit,
 ) {
     when (content) {
         is TrackListContent.Row -> LibraryTrackRow(
             track = content.track,
             // The row a window was paged in with is a *copy* of the track, and
-            // rating it in Now Playing does not rewrite that copy. The rating is
+            // hearting it in Now Playing does not rewrite that copy. The rating is
             // therefore read from the one place all three surfaces read it —
             // only for the rows on screen, never for the whole window.
-            rating = surfaceState.ratingOf(content.track),
+            surfaceState = surfaceState,
             presentation = content.track.playbackPresentation(playback),
             metrics = metrics,
+            subtitle = subtitle,
+            onFavouriteChanged = onFavouriteChanged,
             play = { play(content.index) },
         )
         is TrackListContent.Continuation -> {
@@ -149,9 +166,11 @@ private fun TrackListItem(
 @Composable
 private fun LibraryTrackRow(
     track: LibraryTrack,
-    rating: Int,
+    surfaceState: MobileSurfaceViewModel,
     presentation: TrackPlaybackPresentation,
     metrics: LibraryFrameMetrics,
+    subtitle: TrackRowSubtitle,
+    onFavouriteChanged: (LibraryTrack, Boolean) -> Unit,
     play: () -> Unit,
 ) {
     Surface(
@@ -194,20 +213,24 @@ private fun LibraryTrackRow(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = track.details(),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f),
-                        )
-                        if (LocalLibraryRatingControl.current.enabled) {
-                            TrackRating(rating)
-                        }
-                    }
+                    Text(
+                        text = when (subtitle) {
+                            TrackRowSubtitle.ARTIST_AND_ALBUM -> track.details()
+                            TrackRowSubtitle.ALBUM_ONLY -> track.album.ifBlank {
+                                "Unknown album"
+                            }
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
+                FavouriteHeartButton(
+                    track = track,
+                    surfaceState = surfaceState,
+                    onConfirmed = { favourite -> onFavouriteChanged(track, favourite) },
+                )
                 Column(
                     modifier = Modifier.width(48.dp),
                     horizontalAlignment = Alignment.End,
@@ -233,32 +256,6 @@ private fun LibraryTrackRow(
                 color = MaterialTheme.colorScheme.outlineVariant,
             )
         }
-    }
-}
-
-@Composable
-private fun TrackRating(rating: Int) {
-    val normalizedRating = rating.coerceIn(0, 5)
-    // Tagged as one thing, because "no rating" is a claim about the whole
-    // affordance: a test that only looks for the text "4/5" passes just as
-    // happily when the row draws an empty star and "0/5", which is the setting
-    // half-applied rather than applied.
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.testTag(TRACK_RATING_TAG),
-    ) {
-        MaterialSymbol(
-            name = "star",
-            contentDescription = "$normalizedRating of 5 stars",
-            tint = MaterialTheme.colorScheme.tertiary,
-            sizeSp = 14,
-            filled = normalizedRating > 0,
-        )
-        Text(
-            text = "$normalizedRating/5",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.tertiary,
-        )
     }
 }
 

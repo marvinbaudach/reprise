@@ -84,12 +84,12 @@ class MainActivity : ComponentActivity() {
     private val artwork by artworkDelegate
 
     /**
-     * Star taps, off the main thread and answered back on it. The lambda defers
+     * Heart taps, off the main thread and answered back on it. The lambda defers
      * touching [session] until a rating is actually made, so opening the
      * library still happens when the screen asks for it and not before.
      */
     private val ratings = RatingWriter(
-        write = { trackId, rating -> session.setRating(trackId, rating) },
+        write = { trackId, favourite -> session.setFavourite(trackId, favourite) },
         onMainThread = { work -> runOnUiThread { work() } },
     )
 
@@ -112,10 +112,6 @@ class MainActivity : ComponentActivity() {
     private val visualizerController by lazy {
         VisualizerController(AndroidVisualizerSettingsPort(library))
     }
-    private val libraryRatingController by lazy {
-        LibraryRatingSettingController(AndroidLibraryRatingSettingPort(library))
-    }
-
     /**
      * Every transport command the surface can issue, bound once here instead of
      * threaded through two composables that issue none of them.
@@ -136,8 +132,11 @@ class MainActivity : ComponentActivity() {
         override fun setRepeat(mode: AndroidRepeatMode) =
             runPlaybackCommand("change repeat") { setRepeat(mode) }
 
-        override fun setRating(trackId: Long, rating: Int, report: (String?) -> Unit) =
-            setTrackRating(trackId, rating, report)
+        override fun setFavourite(
+            trackId: Long,
+            favourite: Boolean,
+            report: (String?) -> Unit,
+        ) = this@MainActivity.setFavourite(trackId, favourite, report)
     }
     private val notificationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -180,13 +179,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val surfaceProvider = application as? MainActivitySurfaceProvider
         val surface = surfaceProvider?.mainActivitySurface() ?: productionSurface()
-        val libraryRating =
-            (application as? MainActivityLibraryRatingProvider)?.mainActivityLibraryRating()
-                ?: if (surfaceProvider == null) productionLibraryRating() else legacyTestRating()
         setContent {
             var themeSelection by remember { mutableStateOf(surface.initialTheme) }
             var visualizer by remember { mutableStateOf(surface.initialVisualizer) }
-            var libraryRatingEnabled by remember { mutableStateOf(libraryRating.initialEnabled) }
             val darkPalette = themeSelection.usesDarkPalette(isSystemInDarkTheme())
             val surfaceState: MobileSurfaceViewModel = viewModel()
             val surfaceLayout = surfaceLayoutFor(calculateWindowSizeClass(this))
@@ -225,15 +220,6 @@ class MainActivity : ComponentActivity() {
                                         Log.e(TAG, "Could not change visualizer", error)
                                     }
                             },
-                            LocalLibraryRatingControl provides LibraryRatingControl(
-                                libraryRatingEnabled,
-                            ) { enabled ->
-                                runCatching { libraryRating.select(enabled) }
-                                    .onSuccess { selected -> libraryRatingEnabled = selected }
-                                    .onFailure { error ->
-                                        Log.e(TAG, "Could not change library rating visibility", error)
-                                    }
-                            },
                             LocalAmbientMotionController provides ambientMotion,
                         ) {
                             LibraryScreen(
@@ -249,8 +235,11 @@ class MainActivity : ComponentActivity() {
                                 listArtists = surface.listArtists,
                                 openAlbum = surface.openAlbum,
                                 listAlbumTracks = surface.listAlbumTracks,
+                                openArtist = surface.openArtist,
+                                listArtistTracks = surface.listArtistTracks,
+                                listFavourites = surface.listFavourites,
                                 loadTrack = surface.loadTrack,
-                                playTracks = ::playTracks,
+                                playTracks = surface.playTracks,
                                 loadPlaybackSettings = surface.loadPlaybackSettings,
                                 setEqualizerEnabled = surface.setEqualizerEnabled,
                                 replaceEqualizerCurve = surface.replaceEqualizerCurve,
@@ -286,7 +275,11 @@ class MainActivity : ComponentActivity() {
         listArtists = { range -> session.listArtists(range) },
         openAlbum = { album -> session.openAlbum(album) },
         listAlbumTracks = { album, range -> session.listAlbumTracks(album, range) },
+        openArtist = { artist -> session.openArtist(artist) },
+        listArtistTracks = { artist, range -> session.listArtistTracks(artist, range) },
+        listFavourites = { range -> session.listFavourites(range) },
         loadTrack = ::loadTrack,
+        playTracks = ::playTracks,
         loadPlaybackSettings = ::loadPlaybackSettings,
         setEqualizerEnabled = ::setEqualizerEnabled,
         replaceEqualizerCurve = ::replaceEqualizerCurve,
@@ -300,19 +293,6 @@ class MainActivity : ComponentActivity() {
         animationsEnabled = ValueAnimator::areAnimatorsEnabled,
         observeAmbientScheduling = {},
     )
-
-    private fun productionLibraryRating() = LibraryRatingSurfaceDependencies(
-        initialEnabled = runCatching { libraryRatingController.load() }.getOrElse { error ->
-            Log.e(TAG, "Could not load library rating visibility; hiding ratings", error)
-            false
-        },
-        // Keep native access behind the authored action: service-lifetime
-        // tests create this activity without ever composing the screen.
-        select = { enabled -> libraryRatingController.select(enabled) },
-    )
-
-    /** Existing JVM surfaces predate this preference and keep their authored rating checks. */
-    private fun legacyTestRating() = LibraryRatingSurfaceDependencies(true) { it }
 
     private fun configureEdgeToEdge(darkPalette: Boolean) {
         val transparent = SystemBarStyle.auto(
@@ -402,7 +382,7 @@ class MainActivity : ComponentActivity() {
         setDockWindowMode(false)
         // Compose disposal is not the release boundary: Android may destroy
         // the activity while dock mode is still the ViewModel's current mode.
-        // First, and before the library handle is closed below: a star tap that
+        // First, and before the library handle is closed below: a heart tap that
         // is still queued has to reach the database it was written for, and a
         // write arriving at a closed handle would be a crash rather than a lost
         // rating.
@@ -551,20 +531,20 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Persists one rating off the main thread and answers on it with the
+     * Persists one favourite change off the main thread and answers on it with the
      * failure to show, or null when it was saved.
      *
      * Deliberately not through [playbackState]: that whole record is replaced
      * by the next 500 ms position tick, so a message left there is gone before
-     * anyone reads it. The rating's outcome belongs to the control the user
+     * anyone reads it. The favourite write belongs to the control the user
      * tapped.
      *
      * Which is also why the outcome is logged when it is a failure: the control
      * the user tapped can be gone by the time a queued write answers, and a
      * refusal nobody is left to show belongs in `logcat` rather than nowhere.
      */
-    private fun setTrackRating(trackId: Long, rating: Int, report: (String?) -> Unit) {
-        ratings.rate(trackId, rating) { outcome ->
+    private fun setFavourite(trackId: Long, favourite: Boolean, report: (String?) -> Unit) {
+        ratings.setFavourite(trackId, favourite) { outcome ->
             val message = outcome.fold(
                 onSuccess = { null },
                 onFailure = { error -> "Could not save rating: ${error.detail()}" },
@@ -671,6 +651,9 @@ private fun LibraryScreen(
     listArtists: (LibraryWindowRange) -> LibraryWindow<LibraryArtist>,
     openAlbum: (LibraryAlbum) -> AlbumTrackList,
     listAlbumTracks: (LibraryAlbum, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
+    openArtist: (LibraryArtist) -> ArtistTrackList,
+    listArtistTracks: (LibraryArtist, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
+    listFavourites: (LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
     loadTrack: (Long, (LibraryTrack?) -> Unit) -> Unit,
     playTracks: (PlaybackSelection, (String) -> Unit) -> Unit,
     loadPlaybackSettings: () -> PlaybackSettingsUiState,
@@ -711,6 +694,9 @@ private fun LibraryScreen(
             listArtists = listArtists,
             openAlbum = openAlbum,
             listAlbumTracks = listAlbumTracks,
+            openArtist = openArtist,
+            listArtistTracks = listArtistTracks,
+            listFavourites = listFavourites,
             loadTrack = loadTrack,
             playTracks = playTracks,
             loadPlaybackSettings = loadPlaybackSettings,

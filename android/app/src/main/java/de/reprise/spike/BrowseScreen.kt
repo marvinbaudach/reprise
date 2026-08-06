@@ -47,6 +47,7 @@ internal enum class BrowseTab(val label: String) {
     TITLES("Titles"),
     ALBUMS("Albums"),
     ARTISTS("Artists"),
+    FAVOURITES("Favourites"),
 }
 
 /**
@@ -72,6 +73,13 @@ internal fun BrowseScreen(
     listArtists: (LibraryWindowRange) -> LibraryWindow<LibraryArtist>,
     openAlbum: (LibraryAlbum) -> AlbumTrackList,
     listAlbumTracks: (LibraryAlbum, LibraryWindowRange) -> LibraryWindow<LibraryTrack>,
+    openArtist: (LibraryArtist) -> ArtistTrackList = { artist ->
+        ArtistTrackList(artist, LibraryWindow.empty())
+    },
+    listArtistTracks: (LibraryArtist, LibraryWindowRange) -> LibraryWindow<LibraryTrack> =
+        { _, _ -> LibraryWindow.empty() },
+    listFavourites: (LibraryWindowRange) -> LibraryWindow<LibraryTrack> =
+        { LibraryWindow.empty() },
     loadTrack: (Long, (LibraryTrack?) -> Unit) -> Unit,
     playTracks: (PlaybackSelection, (String) -> Unit) -> Unit,
     loadPlaybackSettings: () -> PlaybackSettingsUiState,
@@ -100,12 +108,20 @@ internal fun BrowseScreen(
     var visibleTitles by remember(state) { mutableStateOf(restored?.titles ?: state.titles) }
     var visibleAlbums by remember(state) { mutableStateOf(restored?.albums ?: state.albums) }
     var visibleArtists by remember(state) { mutableStateOf(restored?.artists ?: state.artists) }
+    var visibleFavourites by remember(state) {
+        mutableStateOf(restored?.favourites ?: state.favourites)
+    }
     var selectedAlbum by remember(state) { mutableStateOf(restored?.openAlbum) }
+    var selectedArtist by remember(state) { mutableStateOf(restored?.openArtist) }
     var browseError by remember(state) { mutableStateOf(state.message) }
     var titlesRequestedOffset by remember(state, searchText) { mutableStateOf<Long?>(null) }
     var albumsRequestedOffset by remember(state) { mutableStateOf<Long?>(null) }
     var artistsRequestedOffset by remember(state) { mutableStateOf<Long?>(null) }
+    var favouritesRequestedOffset by remember(state) { mutableStateOf<Long?>(null) }
     var albumRequestedOffset by remember(state, selectedAlbum?.album) { mutableStateOf<Long?>(null) }
+    var artistRequestedOffset by remember(state, selectedArtist?.artist) {
+        mutableStateOf<Long?>(null)
+    }
     val nowPlayingExpanded = surfaceState.nowPlayingExpanded
     val settingsVisible = surfaceState.settingsVisible
     var settingsState by remember { mutableStateOf<PlaybackSettingsUiState?>(null) }
@@ -175,7 +191,9 @@ internal fun BrowseScreen(
         titles = visibleTitles,
         albums = visibleAlbums,
         artists = visibleArtists,
+        favourites = visibleFavourites,
         openAlbum = selectedAlbum,
+        openArtist = selectedArtist,
     )
     SideEffect { surfaceState.keepLoadedWindows(shape, loaded) }
 
@@ -234,6 +252,39 @@ internal fun BrowseScreen(
             .onFailure { error -> browseError = error.browseDetail("load more album tracks") }
     }
 
+    fun loadMoreArtistTracks(request: LibraryWindowRange) {
+        val detail = selectedArtist ?: return
+        if (detail.tracks.nextRequest(artistRequestedOffset) != request) return
+        artistRequestedOffset = request.offset
+        runCatching { listArtistTracks(detail.artist, request) }
+            .onSuccess { continuation ->
+                selectedArtist = detail.copy(tracks = detail.tracks.append(continuation))
+                browseError = null
+            }
+            .onFailure { error -> browseError = error.browseDetail("load more artist tracks") }
+    }
+
+    fun loadMoreFavourites(request: LibraryWindowRange) {
+        if (visibleFavourites.nextRequest(favouritesRequestedOffset) != request) return
+        favouritesRequestedOffset = request.offset
+        runCatching { listFavourites(request) }
+            .onSuccess { continuation ->
+                visibleFavourites = visibleFavourites.append(continuation)
+                browseError = null
+            }
+            .onFailure { error -> browseError = error.browseDetail("load more favourites") }
+    }
+
+    BackHandler(
+        enabled = !nowPlayingExpanded && !settingsVisible &&
+            (selectedAlbum != null || selectedArtist != null),
+    ) {
+        when {
+            selectedArtist != null -> selectedArtist = null
+            selectedAlbum != null -> selectedAlbum = null
+        }
+    }
+
     // The row behind the mini player and the sheet is *read*, and reading it
     // takes the same library lock a folder scan holds for its whole walk — so
     // it is asked for from an effect and answered later, never fetched inside
@@ -249,8 +300,8 @@ internal fun BrowseScreen(
     }
     // Nothing is shown until the answer for *this* track arrives. Keeping the
     // previous track on screen would be the shorter blank, but it would also be
-    // a row that answers for a track that is no longer playing — and the star in
-    // the sheet would rate it. A session that stopped therefore blanks the
+    // a row that answers for a track that is no longer playing — and the heart
+    // in the sheet would change it. A session that stopped therefore blanks the
     // moment it stops, without waiting for anything.
     val currentTrack = answeredTrack?.takeIf { it.id == playingTrackId }?.track
     Box(modifier = Modifier.fillMaxSize()) {
@@ -292,6 +343,21 @@ internal fun BrowseScreen(
                     surfaceLayout = surfaceLayout,
                     selected = selectedTab,
                     select = { tab ->
+                        if (tab != selectedTab) {
+                            selectedAlbum = null
+                            selectedArtist = null
+                        }
+                        if (tab == BrowseTab.FAVOURITES) {
+                            runCatching { listFavourites(firstLibraryWindow()) }
+                                .onSuccess { favourites ->
+                                    visibleFavourites = favourites
+                                    favouritesRequestedOffset = null
+                                    browseError = null
+                                }
+                                .onFailure { error ->
+                                    browseError = error.browseDetail("refresh favourites")
+                                }
+                        }
                         surfaceState.selectTab(tab)
                     },
                 )
@@ -341,8 +407,44 @@ internal fun BrowseScreen(
                         surfaceLayout = surfaceLayout,
                         surfaceState = surfaceState,
                         artists = visibleArtists,
+                        selectedArtist = selectedArtist,
+                        playback = playback,
+                        openArtist = { artist ->
+                            runCatching { openArtist(artist) }
+                                .onSuccess { detail ->
+                                    selectedArtist = detail
+                                    artistRequestedOffset = null
+                                    browseError = null
+                                }
+                                .onFailure { error ->
+                                    browseError = error.browseDetail("open the artist")
+                                }
+                        },
+                        closeArtist = { selectedArtist = null },
+                        play = { index ->
+                            selectedArtist?.let { play(it.playbackSelection(index)) }
+                        },
                         lastRequestedOffset = artistsRequestedOffset,
-                        loadMore = ::loadMoreArtists,
+                        artistRequestedOffset = artistRequestedOffset,
+                        loadMoreArtists = ::loadMoreArtists,
+                        loadMoreArtistTracks = ::loadMoreArtistTracks,
+                    )
+                    BrowseTab.FAVOURITES -> FavouritesTab(
+                        surfaceLayout = surfaceLayout,
+                        surfaceState = surfaceState,
+                        tracks = visibleFavourites,
+                        playback = playback,
+                        lastRequestedOffset = favouritesRequestedOffset,
+                        play = { index ->
+                            play(PlaybackSelection(visibleFavourites.rows, index))
+                        },
+                        loadMore = ::loadMoreFavourites,
+                        removeFavourite = { track ->
+                            visibleFavourites = visibleFavourites.copy(
+                                total = (visibleFavourites.total - 1).coerceAtLeast(0),
+                                rows = visibleFavourites.rows.filterNot { it.id == track.id },
+                            )
+                        },
                     )
                 }
                 }

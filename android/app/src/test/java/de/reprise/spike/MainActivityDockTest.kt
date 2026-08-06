@@ -46,7 +46,7 @@ class MainActivityDockTest {
     }
 
     @Test
-    fun rotatingOnlyOffersDockAndItsSingleStarRestoresWithoutCrossingTracks() {
+    fun rotatingOnlyOffersDockAndItsHeartWritesOnlyZeroOrFiveAcrossTracks() {
         application.trackRatings[2] = 5
         publishTrack(1)
         recreateAt("w916dp-h412dp-land")
@@ -61,26 +61,26 @@ class MainActivityDockTest {
         compose.onNodeWithTag("dock-play").assertWidthIsEqualTo(96.dp)
         compose.onNodeWithTag("dock-previous").assertWidthIsEqualTo(76.dp)
         compose.onNodeWithTag("dock-next").assertWidthIsEqualTo(76.dp)
-        compose.onNodeWithTag("dock-star").assertWidthIsEqualTo(64.dp)
-        compose.onNodeWithTag("dock-star").assertHeightIsEqualTo(64.dp)
+        compose.onNodeWithTag("dock-heart").assertWidthIsEqualTo(64.dp)
+        compose.onNodeWithTag("dock-heart").assertHeightIsEqualTo(64.dp)
         compose.onNodeWithTag("dock-title").assertTextContains("Rotation Song 1")
         compose.onNodeWithTag("dock-clock").assertIsDisplayed()
         compose.onNodeWithTag("library-navigation-rail").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Rate 1 of 5 stars").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Add to favourites").assertIsDisplayed()
         compose.onNodeWithText("0 plays").assertDoesNotExist()
 
-        compose.onNodeWithTag("dock-star").performClick()
-        compose.onNodeWithTag("dock-star").performClick()
-        compose.onNodeWithTag("dock-star").performClick()
+        compose.onNodeWithTag("dock-heart").performClick()
+        compose.onNodeWithTag("dock-heart").performClick()
+        compose.onNodeWithTag("dock-heart").performClick()
         assertEquals(
-            listOf(1L to 5, 1L to 2, 1L to 5),
+            listOf(1L to 5, 1L to 0, 1L to 5),
             application.controls.ratingRequests,
         )
 
         publishTrack(2)
         compose.onNodeWithTag("dock-title").assertTextContains("Rotation Song 2")
-        compose.onNodeWithTag("dock-star").performClick()
-        assertEquals(3, application.controls.ratingRequests.size)
+        compose.onNodeWithTag("dock-heart").performClick()
+        assertEquals(listOf(1L to 5, 1L to 0, 1L to 5, 2L to 0), application.controls.ratingRequests)
 
         recreateAt("w412dp-h916dp-port")
         compose.onNodeWithTag("dock-surface").assertDoesNotExist()

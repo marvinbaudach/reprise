@@ -340,5 +340,5 @@ private class RecordingLibrarySessionPort(
 
     override fun artworkFor(trackUri: String, size: AndroidArtworkSize): String? = null
 
-    override fun setRating(trackId: Long, rating: Int) = Unit
+    override fun setFavourite(trackId: Long, favourite: Boolean) = Unit
 }

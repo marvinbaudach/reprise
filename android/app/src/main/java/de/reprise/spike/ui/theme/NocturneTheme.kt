@@ -88,10 +88,10 @@ private val RobotoFlex = FontFamily(
 
 /**
  * Material Symbols carries "filled" on the variable-font axis `FILL`, not in a
- * second glyph: the `star_outline` ligature resolves to the *same* glyph id as
- * `star`, and nothing in the font's `gvar` moves a point unless `FILL` moves.
+ * second glyph: `favorite_border` and `favorite` resolve to the same glyph, and
+ * nothing in the font's `gvar` moves a point unless `FILL` moves.
  * Asking for a different ligature name therefore drew the identical outline,
- * which is how a rating could be written correctly and still never be seen. The
+ * which is how a favourite could be written correctly and still never be seen. The
  * state has to ride the axis, so a filled symbol needs its own family — the
  * same ttf pinned at the other end of `FILL`.
  *

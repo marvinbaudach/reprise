@@ -25,7 +25,7 @@ internal const val TRANSIENT_MESSAGE_MS = 4_000L
  *   read out of whatever the surface currently knows, so neither needs a
  *   lifetime of its own.
  * * **An acknowledgement** is raised once, by one tap, and has no state behind
- *   it to be read out of. A rating that failed is the example: the star does
+ *   it to be read out of. A rating that failed is the example: the heart does
  *   not change, so without a message the tap looks like it worked, and there is
  *   no later event that would clear the message again. It therefore has to
  *   carry its own dismissal — which is what this type is.

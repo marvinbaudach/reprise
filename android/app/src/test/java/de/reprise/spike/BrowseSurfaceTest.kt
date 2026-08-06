@@ -120,7 +120,7 @@ class BrowseSurfaceTest {
 
         var answered: String? = null
         var answers = 0
-        controls.setRating(trackId = 830, rating = 4) { message ->
+        controls.setFavourite(trackId = 830, favourite = true) { message ->
             answered = message
             answers += 1
         }
@@ -543,7 +543,7 @@ private class RecordingBrowsePort(
         return artwork[trackUri]
     }
 
-    override fun setRating(trackId: Long, rating: Int) {
-        operations += "rating:$trackId:$rating"
+    override fun setFavourite(trackId: Long, favourite: Boolean) {
+        operations += "rating:$trackId:${if (favourite) 5 else 0}"
     }
 }

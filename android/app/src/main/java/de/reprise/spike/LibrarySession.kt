@@ -28,6 +28,14 @@ internal interface LibrarySessionPort {
 
     fun listArtists(window: LibraryWindowRange): LibraryWindow<LibraryArtist>
 
+    fun listArtistTracks(
+        artist: String,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryTrack> = LibraryWindow.empty()
+
+    fun listFavourites(window: LibraryWindowRange): LibraryWindow<LibraryTrack> =
+        LibraryWindow.empty()
+
     fun listAlbumTracks(
         album: String,
         albumArtist: String,
@@ -38,7 +46,7 @@ internal interface LibrarySessionPort {
 
     fun artworkFor(trackUri: String, size: AndroidArtworkSize): String?
 
-    fun setRating(trackId: Long, rating: Int)
+    fun setFavourite(trackId: Long, favourite: Boolean)
 }
 
 private data class ArtworkCacheKey(
@@ -101,6 +109,7 @@ internal class LibrarySession(
                 LibraryWindow.empty(),
                 LibraryWindow.empty(),
                 LibraryWindow.empty(),
+                LibraryWindow.empty(),
                 message,
                 treeUri,
             )
@@ -123,15 +132,28 @@ internal class LibrarySession(
         tracks = listAlbumTracks(album, firstLibraryWindow()),
     )
 
+    fun openArtist(artist: LibraryArtist): ArtistTrackList = ArtistTrackList(
+        artist = artist,
+        tracks = listArtistTracks(artist, firstLibraryWindow()),
+    )
+
     fun listAlbumTracks(
         album: LibraryAlbum,
         window: LibraryWindowRange,
     ): LibraryWindow<LibraryTrack> = port.listAlbumTracks(album.title, album.artist, window)
 
+    fun listArtistTracks(
+        artist: LibraryArtist,
+        window: LibraryWindowRange,
+    ): LibraryWindow<LibraryTrack> = port.listArtistTracks(artist.name, window)
+
+    fun listFavourites(window: LibraryWindowRange): LibraryWindow<LibraryTrack> =
+        port.listFavourites(window)
+
     fun trackById(trackId: Long): LibraryTrack? = port.trackById(trackId)
 
-    fun setRating(trackId: Long, rating: Int) {
-        port.setRating(trackId, rating)
+    fun setFavourite(trackId: Long, favourite: Boolean) {
+        port.setFavourite(trackId, favourite)
     }
 
     /**
@@ -186,6 +208,7 @@ internal class LibrarySession(
             titles = port.searchTracks("", firstLibraryWindow()),
             albums = port.listAlbums(firstLibraryWindow()),
             artists = port.listArtists(firstLibraryWindow()),
+            favourites = port.listFavourites(firstLibraryWindow()),
             message = message,
             folderUri = port.rememberedTreeUri(),
         )

@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Button
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -117,6 +118,10 @@ internal fun AlbumsTab(
             if (selectedAlbum.tracks.rows.isEmpty()) {
                 Text("No tracks in this album.", modifier = Modifier.padding(16.dp))
             } else {
+                ListPlayButton(
+                    description = "Play ${selectedAlbum.album.title}",
+                    onClick = { play(0) },
+                )
                 TrackRows(
                     surfaceLayout = surfaceLayout,
                     surfaceState = surfaceState,
@@ -158,9 +163,56 @@ internal fun ArtistsTab(
     surfaceLayout: SurfaceLayout,
     surfaceState: MobileSurfaceViewModel,
     artists: LibraryWindow<LibraryArtist>,
+    selectedArtist: ArtistTrackList?,
+    playback: PlaybackUiState,
+    openArtist: (LibraryArtist) -> Unit,
+    closeArtist: () -> Unit,
+    play: (Int) -> Unit,
     lastRequestedOffset: Long?,
-    loadMore: (LibraryWindowRange) -> Unit,
+    artistRequestedOffset: Long?,
+    loadMoreArtists: (LibraryWindowRange) -> Unit,
+    loadMoreArtistTracks: (LibraryWindowRange) -> Unit,
 ) {
+    if (selectedArtist != null) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = closeArtist)
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                MaterialSymbol("arrow_back", "Back to artists")
+                Text(selectedArtist.artist.name, style = MaterialTheme.typography.titleLarge)
+            }
+            Text(
+                selectedArtist.tracks.visibleCountLabel("track", "tracks"),
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            )
+            if (selectedArtist.tracks.rows.isEmpty()) {
+                Text("No tracks by this artist.", modifier = Modifier.padding(16.dp))
+            } else {
+                ListPlayButton(
+                    description = "Play ${selectedArtist.artist.name}",
+                    onClick = { play(0) },
+                )
+                TrackRows(
+                    surfaceLayout = surfaceLayout,
+                    surfaceState = surfaceState,
+                    listKey = LibraryListKey.ARTIST_TRACKS,
+                    tracks = selectedArtist.tracks,
+                    playback = playback,
+                    lastRequestedOffset = artistRequestedOffset,
+                    play = play,
+                    loadMore = loadMoreArtistTracks,
+                    subtitle = TrackRowSubtitle.ALBUM_ONLY,
+                )
+            }
+        }
+        return
+    }
+
     if (artists.rows.isEmpty()) {
         Text("No artists found in this folder.", modifier = Modifier.padding(16.dp))
         return
@@ -176,8 +228,58 @@ internal fun ArtistsTab(
             surfaceState = surfaceState,
             artists = artists,
             requestedOffset = lastRequestedOffset,
-            loadMore = loadMore,
+            openArtist = openArtist,
+            loadMore = loadMoreArtists,
         )
+    }
+}
+
+@Composable
+internal fun FavouritesTab(
+    surfaceLayout: SurfaceLayout,
+    surfaceState: MobileSurfaceViewModel,
+    tracks: LibraryWindow<LibraryTrack>,
+    playback: PlaybackUiState,
+    lastRequestedOffset: Long?,
+    play: (Int) -> Unit,
+    loadMore: (LibraryWindowRange) -> Unit,
+    removeFavourite: (LibraryTrack) -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        Text(
+            tracks.visibleCountLabel("favourite", "favourites"),
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+        )
+        if (tracks.rows.isEmpty()) {
+            Text("No favourites yet.", modifier = Modifier.padding(16.dp))
+        } else {
+            ListPlayButton(description = "Play favourites", onClick = { play(0) })
+            TrackRows(
+                surfaceLayout = surfaceLayout,
+                surfaceState = surfaceState,
+                listKey = LibraryListKey.FAVOURITES,
+                tracks = tracks,
+                playback = playback,
+                lastRequestedOffset = lastRequestedOffset,
+                play = play,
+                loadMore = loadMore,
+                onFavouriteChanged = { track, favourite ->
+                    if (!favourite) removeFavourite(track)
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ListPlayButton(description: String, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+    ) {
+        MaterialSymbol("play_arrow", description)
+        Text("Play")
     }
 }
 
@@ -249,6 +351,7 @@ private fun ArtistRows(
     surfaceState: MobileSurfaceViewModel,
     artists: LibraryWindow<LibraryArtist>,
     requestedOffset: Long?,
+    openArtist: (LibraryArtist) -> Unit,
     loadMore: (LibraryWindowRange) -> Unit,
 ) {
     val key = LibraryListKey.ARTISTS
@@ -265,7 +368,9 @@ private fun ArtistRows(
             ),
             modifier = Modifier.fillMaxSize().testTag("library-artists-list"),
         ) {
-            gridItems(artists.rows, key = LibraryArtist::name) { artist -> ArtistRow(artist) }
+            gridItems(artists.rows, key = LibraryArtist::name) { artist ->
+                ArtistRow(artist, openArtist)
+            }
             artists.nextRequest(requestedOffset)?.let { request ->
                 item(key = "load-window-${request.offset}", span = { GridItemSpan(maxLineSpan) }) {
                     LaunchedEffect(request.offset) { loadMore(request) }
@@ -281,16 +386,21 @@ private fun ArtistRows(
         state = listState,
         modifier = Modifier.fillMaxSize().testTag("library-artists-list"),
     ) {
-        items(artists.rows, key = LibraryArtist::name) { artist -> ArtistRow(artist) }
+        items(artists.rows, key = LibraryArtist::name) { artist ->
+            ArtistRow(artist, openArtist)
+        }
         windowContinuation(artists, requestedOffset, loadMore)
     }
 }
 
 @Composable
-private fun ArtistRow(artist: LibraryArtist) {
+private fun ArtistRow(artist: LibraryArtist, openArtist: (LibraryArtist) -> Unit) {
     ListItem(
         headlineContent = { Text(artist.name) },
         supportingContent = { Text(artist.details()) },
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { openArtist(artist) },
     )
     HorizontalDivider()
 }
