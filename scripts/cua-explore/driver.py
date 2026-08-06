@@ -27,6 +27,7 @@ from actions import (
 )
 from oracles import ActionEvidence, Finding, OracleEngine, Snapshot, normalize_snapshot
 from protocol import ContractError, SCHEMA_VERSION
+from ui_vocabulary import ACTIONABLE_ROLES, canonical_role
 
 
 class DriverError(RuntimeError):
@@ -407,7 +408,12 @@ class CuaExecutor:
         matches = [item for item in elements if isinstance(item, dict) and item.get("label") == label]
         if not matches:
             raise DriverError(f"fresh snapshot no longer exposes target: {label}")
-        actionable = [item for item in matches if item.get("actions") or item.get("role") in {"button", "row", "entry", "switch", "toggle button", "check box"}]
+        actionable = [
+            item
+            for item in matches
+            if item.get("actions")
+            or canonical_role(str(item.get("role", ""))) in ACTIONABLE_ROLES
+        ]
         return actionable[0] if actionable else matches[0]
 
     def _address(self, target: Mapping[str, Any], dispatch: str) -> Mapping[str, Any]:

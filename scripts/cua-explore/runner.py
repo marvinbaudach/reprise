@@ -27,6 +27,7 @@ from explorer import DeterministicExplorer
 from fixtures import FixtureError, audit_batch_edit
 from protocol import ActionGateway, ContractError, Mission, load_mission
 from report import RunReport
+from ui_vocabulary import BUSY_ROLES, BUSY_WORDS, is_row
 from workload_audit import ActionTrace, audit_action_workload
 
 
@@ -231,7 +232,7 @@ def _trace_from_observations(
     def rows(observation: Mapping[str, Any]) -> tuple[tuple[str, float], ...]:
         projected = []
         for item in elements(observation):
-            if item.get("role") != "row" or not item.get("label"):
+            if not is_row(str(item.get("role", ""))) or not item.get("label"):
                 continue
             frame = item.get("frame", {})
             y = frame.get("y", 0.0) if isinstance(frame, dict) else 0.0
@@ -252,8 +253,6 @@ def _trace_from_observations(
             if item.get("label")
         )
 
-    busy_roles = {"progress bar", "spinner", "status", "statusbar"}
-    busy_words = {"loading", "refreshing", "scanning", "saving", "working", "progress"}
     after_elements = elements(after)
     return ActionTrace(
         action=action,
@@ -273,8 +272,11 @@ def _trace_from_observations(
         finding_codes=tuple(finding_codes),
         state_changed=before.get("state_signature") != after.get("state_signature"),
         after_busy=any(
-            item.get("role") in busy_roles
-            or any(word in str(item.get("label", "")).casefold() for word in busy_words)
+            str(item.get("role", "")) in BUSY_ROLES
+            or any(
+                word in str(item.get("label", "")).casefold()
+                for word in BUSY_WORDS
+            )
             for item in after_elements
         ),
     )
@@ -288,11 +290,9 @@ def ensure_run_complete(finished: bool, summary: Mapping[str, Any]) -> None:
 
 
 def _snapshot_has_busy_state(snapshot: Any) -> bool:
-    busy_roles = {"progress bar", "spinner", "status", "statusbar"}
-    busy_words = ("loading", "refreshing", "scanning", "saving", "working", "progress")
     return any(
-        item.role in busy_roles
-        or any(word in item.label.casefold() for word in busy_words)
+        item.role in BUSY_ROLES
+        or any(word in item.label.casefold() for word in BUSY_WORDS)
         for item in snapshot.elements
     )
 

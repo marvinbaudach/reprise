@@ -13,7 +13,47 @@ sys.path.insert(0, str(EXPLORE_ROOT))
 
 from protocol import load_mission  # noqa: E402
 from fixtures import FixtureError, validate_scratch_base  # noqa: E402
+from oracles import normalize_snapshot  # noqa: E402
+from ui_vocabulary import (  # noqa: E402
+    CANONICAL_ROW_ROLE,
+    KNOWN_SECTION_LABELS,
+    canonical_role,
+)
 from workload_audit import ActionTrace, audit_action_workload  # noqa: E402
+
+
+class UiVocabularyContractTests(unittest.TestCase):
+    def test_role_aliases_map_table_row_to_the_canonical_row_role(self) -> None:
+        self.assertEqual(canonical_role("table row"), CANONICAL_ROW_ROLE)
+
+    def test_normalize_snapshot_canonicalises_row_roles(self) -> None:
+        snapshot = normalize_snapshot(
+            {
+                "structuredContent": {
+                    "elements": [{"label": "Track", "role": "table row"}]
+                }
+            },
+            state_id="state-1",
+            captured_ms=0,
+        )
+
+        self.assertEqual(snapshot.elements[0].role, CANONICAL_ROW_ROLE)
+
+    def test_no_module_redefines_the_busy_role_table(self) -> None:
+        definitions = []
+        for path in sorted(EXPLORE_ROOT.glob("*.py")):
+            for line_number, line in enumerate(
+                path.read_text(encoding="utf-8").splitlines(), start=1
+            ):
+                if line.lstrip().startswith(("BUSY_ROLES =", "busy_roles =")):
+                    definitions.append((path.name, line_number))
+
+        self.assertEqual([name for name, _line in definitions], ["ui_vocabulary.py"])
+
+    def test_known_section_labels_contain_podcasts_and_youtube_separately(self) -> None:
+        self.assertIn("Podcasts", KNOWN_SECTION_LABELS)
+        self.assertIn("YouTube", KNOWN_SECTION_LABELS)
+        self.assertNotIn("Podcasts / YouTube", KNOWN_SECTION_LABELS)
 
 
 class WorkloadEvidenceAdversarialTests(unittest.TestCase):

@@ -9,30 +9,16 @@ import statistics
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Mapping, Sequence
 
-
-ACTIONABLE_ROLES = {
-    "button",
-    "check box",
-    "entry",
-    "link",
-    "menu item",
-    "row",
-    "switch",
-    "tab",
-    "toggle button",
-}
-BUSY_ROLES = {"progress bar", "spinner", "status", "statusbar"}
-BUSY_WORDS = (
-    "loading",
-    "refreshing",
-    "scanning",
-    "saving",
-    "working",
-    "progress",
-    "queued",
-    "waiting",
+from ui_vocabulary import (
+    ACTIONABLE_ROLES,
+    BUSY_ROLES,
+    BUSY_WORDS,
+    CANONICAL_ROW_ROLE,
+    OFFLINE_WORDS,
+    canonical_role,
 )
-OFFLINE_WORDS = ("offline", "no connection", "needs network", "queued offline")
+
+
 GEOMETRY_EPSILON_PX = 6.0
 
 
@@ -183,7 +169,7 @@ def normalize_snapshot(
         if not isinstance(frame_raw, dict):
             frame_raw = {}
         label = str(raw_element.get("label") or "")
-        role = str(raw_element.get("role") or "unknown").lower()
+        role = canonical_role(str(raw_element.get("role") or "unknown"))
         frame = Frame(
             _number(frame_raw.get("x")),
             _number(frame_raw.get("y")),
@@ -287,12 +273,12 @@ class OracleEngine:
             cached_before = {
                 element.label
                 for element in before.elements
-                if element.role == "row" and element.label
+                if element.role == CANONICAL_ROW_ROLE and element.label
             }
             cached_after = {
                 element.label
                 for element in projected.elements
-                if element.role == "row" and element.label
+                if element.role == CANONICAL_ROW_ROLE and element.label
             }
             lost_cached = sorted(cached_before - cached_after)
             if lost_cached:
@@ -385,8 +371,16 @@ class OracleEngine:
     def _scroll_findings(
         self, action: ActionEvidence, before: Snapshot, after: Snapshot
     ) -> list[Finding]:
-        before_rows = {key: value for key, value in before.by_key.items() if value.role == "row"}
-        after_rows = {key: value for key, value in after.by_key.items() if value.role == "row"}
+        before_rows = {
+            key: value
+            for key, value in before.by_key.items()
+            if value.role == CANONICAL_ROW_ROLE
+        }
+        after_rows = {
+            key: value
+            for key, value in after.by_key.items()
+            if value.role == CANONICAL_ROW_ROLE
+        }
         shared = sorted(set(before_rows) & set(after_rows))
         findings = []
         if shared and action.direction in {"up", "down"}:
