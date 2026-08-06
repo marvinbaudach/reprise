@@ -591,4 +591,3 @@ Belege je Regel-ID in `ux-android-praxis.md` (Scratchpad).
 die Android-App 61 Regeln (`p5-surface-scopes.md`). Ihr Verhalten bezieht
 die mobile Oberfläche also überwiegend aus diesen Entwürfen, nicht aus
 dem Bestand.
-
