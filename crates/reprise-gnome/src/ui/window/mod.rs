@@ -15,6 +15,7 @@ mod spectrogram_backend;
 #[path = "window.rs"]
 mod surface;
 pub(in crate::ui) mod window_action_wiring;
+mod window_bootstrap;
 pub(in crate::ui) mod window_decoration_strings;
 pub(in crate::ui) mod window_decorations;
 pub(in crate::ui) mod window_navigation;
