@@ -41,6 +41,11 @@ use progress_card::{DoctorJobKind, DoctorProgressCard};
 use review_page::LibraryDoctorReviewPage;
 use summary_page::LibraryDoctorPage;
 
+pub(in crate::ui) fn css() -> String {
+    ".doctor-conflicts-dashed { border: 1px dashed @borders; border-radius: 12px; padding: 12px; }"
+        .into()
+}
+
 pub(in crate::ui) struct LibraryDoctorCoordinator {
     conn: Rc<Db>,
     db_path: PathBuf,
