@@ -4,6 +4,7 @@
 mod add_dialog;
 mod add_dialog_input;
 mod add_dialog_results;
+mod add_dialog_subscription;
 mod css;
 mod podcasts_batch_actions;
 mod podcasts_callbacks;
