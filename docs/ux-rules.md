@@ -2429,12 +2429,20 @@ property is set and yet nothing happens.
   specified for lyrics today; were it to arise, `NET-3` would govern it, not
   this rule — the two states must not be confused.
 - **LYR-5** [active] [core] — Lyrics providers run in this order: embedded
-  tags and `.lrc` sidecar locally, then LRCLIB, then NetEase. The first
-  synchronized result wins; the first plain result remains the fallback.
+  tags and `.lrc` sidecar locally, LRCLIB exact lookup, conservative LRCLIB
+  search, then NetEase. LRCLIB search runs only after a clean exact miss or to
+  upgrade an exact plain result. It requires normalized exact title and artist
+  plus duration within two seconds; album equality ranks otherwise valid
+  candidates, synchronized lyrics outrank plain lyrics, and an equally ranked
+  tie is rejected. An exact plain result remains the fallback unless search
+  finds one valid synchronized result. Across providers, the first
+  synchronized result wins and the first plain result remains the fallback.
   Instrumental stops the chain unless local text was already found. Transport
   and 5xx failures open a per-host circuit breaker after three failures for
-  five minutes; a user retry bypasses cache and breaker. The Lyrics footer
-  names the source and whether the result is synchronized.
+  five minutes. LRCLIB `429 Retry-After` blocks requests until its deadline; a
+  user retry bypasses cache and the ordinary breaker, but not that server
+  deadline. The Lyrics footer names the source and whether the result is
+  synchronized.
 - **LYR-6** [active] [core] [gtk] — With the Online Lyrics module enabled, a
   cancellable serial background run fills the lyrics cache for the present
   library after the cover batch, after completed library scans, and the moment
